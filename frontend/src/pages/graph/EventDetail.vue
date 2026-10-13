@@ -13,8 +13,8 @@ import { kindOf } from "../../composables/useEventGraph";
 import { useEditorStore } from "../../stores/editor";
 import { useWorkspaceStore } from "../../stores/workspace";
 import { capital, countKinds, plural } from "../../lib/format";
+import DetailHeader from "../../ui/DetailHeader.vue";
 import LocQuote from "../../ui/LocQuote.vue";
-import OriginChip from "../../ui/OriginChip.vue";
 import OriginDot from "../../ui/OriginDot.vue";
 import ScriptSnippet from "../../ui/ScriptSnippet.vue";
 import SourceLink from "../../ui/SourceLink.vue";
@@ -145,16 +145,17 @@ function open(path: string, line: number): void {
 
 <template>
   <aside class="flex min-h-0 min-w-0 flex-col bg-muted">
-    <div class="flex flex-col gap-1.5 border-b border-default px-4 pt-3.5 pb-3">
-      <div class="flex items-center gap-2">
-        <UBadge :label="detail.kind" :icon="kind.icon" size="sm" class="bg-current/16" :style="{ color: kind.color }" />
-        <OriginChip :label="store.originName(detail.at.origin)" :color="store.originColor(detail.at.origin)" small />
-        <span class="grow" />
-        <UButton icon="i-lucide-x" variant="ghost" size="sm" square aria-label="Close detail" @click="emit('close')" />
-      </div>
-      <span class="font-mono text-16 leading-5.5 font-semibold break-all text-highlighted">{{ detail.name }}</span>
-      <SourceLink :place="detail.at" :line="detail.line" class="self-start" />
-      <div class="mt-1.5 flex items-center gap-2">
+    <DetailHeader
+      :kind="detail.kind"
+      :kind-color="kind.color"
+      :kind-icon="kind.icon"
+      :origin="detail.at.origin"
+      :name="detail.name"
+      :place="detail.at"
+      :line="detail.line"
+      @close="emit('close')"
+    >
+      <template #actions>
         <UButton
           label="Set as root"
           icon="i-lucide-target"
@@ -163,10 +164,9 @@ function open(path: string, line: number): void {
           :disabled="isRoot"
           @click="emit('root', detail.name)"
         />
-        <span class="grow" />
         <UButton label="Open in IDE" icon="i-lucide-external-link" @click="open(detail.at.path, detail.line)" />
-      </div>
-    </div>
+      </template>
+    </DetailHeader>
     <UTabs
       :items="tabs"
       variant="link"

@@ -1,6 +1,7 @@
 /**
  * The IDE's palette commands, set in the commands store when the editor installs: the compares, Open the event under
- * the cursor, Format, Save, the splits, Find in files and the Wiki pane.
+ * the cursor, Format, Save, the splits, the views and panel of a kind of file that has them, Find in files and the Wiki
+ * pane.
  */
 import type { RouteLocationRaw, Router } from "vue-router";
 import { Hover } from "@services/ideservice";
@@ -11,7 +12,7 @@ import { useEditorStore } from "../stores/editor";
 import { useGitStore } from "../stores/git";
 import { useWorkspaceStore } from "../stores/workspace";
 import { runAction } from "./editor";
-import { diffTab } from "./tabs";
+import { diffTab, viewsOf } from "./tabs";
 
 /** Set the IDE's commands: those that need a file are listed only while one is shown. */
 export function installIdeCommands(router: Router): void {
@@ -108,6 +109,7 @@ export function installIdeCommands(router: Router): void {
       kbds,
       onSelect,
     });
+    const views = viewsOf(locate(active)?.rel ?? active);
     return [
       {
         label: "Open the event under the cursor",
@@ -149,6 +151,38 @@ export function installIdeCommands(router: Router): void {
         "i-lucide-arrow-right-to-line",
         run(() => editor.moveTabToNextGroup()),
       ),
+      ...(views
+        ? [
+            item(
+              "Open as Code",
+              "i-lucide-code",
+              run(() => editor.setView(active, "code")),
+            ),
+            item(
+              "Open as Visual",
+              "i-lucide-eye",
+              run(() => editor.setView(active, "visual")),
+            ),
+            ...(views.split
+              ? [
+                  item(
+                    "Open as Split",
+                    "i-lucide-columns-2",
+                    run(() => editor.setView(active, "split")),
+                  ),
+                ]
+              : []),
+            ...(views.panel
+              ? [
+                  item(
+                    `Toggle the ${views.panel} panel`,
+                    "i-lucide-panel-right",
+                    run(() => editor.togglePanel(active)),
+                  ),
+                ]
+              : []),
+          ]
+        : []),
     ];
   }
 

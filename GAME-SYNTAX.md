@@ -801,3 +801,88 @@ Three further facts from the same corpus:
 replacing and for the listing — and consult the per-game convention
 (`game.GameInfo.ThumbnailDir`) only when the mod has none. This is the same
 "don't fight what mods already do" rule the mod calendar follows.
+
+## 22. The GUI, measured
+
+Measured over the three installs on this machine, 2026-10-12, by reading every `.gui` file through the engine's own
+parse and index. `<game>` is an install's `game` folder (EU5's `in_game`); the commands run in bash at the Steam
+`common` folder.
+
+| fact | CK3 | Vic3 | EU5 |
+|---|---|---|---|
+| `.gui` files; their bytes; every file parsed once | 558; 8.2 MB; 68 ms | 362; 7.1 MB; 48 ms | 661; 11.8 MB; 75 ms |
+| types defined; built-in kinds seen (a base no type defines, or a type based on its own name) | 2,235; 35 | 2,245; 39 | 1,819; 45 |
+| types based on their own name (`type hbox = hbox { }`: the kind's defaults) | 18 | 22 | 17 |
+| windows (a top-level widget, or a type named as its file) | 735 | 672 | 1,527 |
+| `visible` bindings over every window: literal; decided by the opening state; computed; unknown | 9,266; 371; 873; 64,619 | 19,149; 1,201; 4,634; 25,302 | 31,703; 443; 11,110; 87,657 |
+| windows with siblings sharing a box (anchor, position, size as written) that both carry a `visible` binding | 368 of 735 | 402 of 672 | 1,093 of 1,527 |
+
+**A type based on its own name is a built-in kind's defaults.** Each game ships `type hbox = hbox { … }` for the kinds
+it gives defaults to (CK3 18, Vic3 22, EU5 17 such types); a base no type defines (CK3 17 of 35) is a kind too. The
+install states its own list of kinds, which no table of PMT's holds.
+
+```
+find "<game>" -name '*.gui' -print0 | xargs -0 grep -hoE '^\s*type\s+(\w+)\s*=\s*\1\b'
+```
+
+**The words a widget's layout is written in.** Five layout policy words, case-insensitively: `expanding` (CK3 10,935
+uses), `growing`, `preferred`, `fixed`, `shrinking`; three EU5 values are bindings. Anchors are `left right top bottom
+center hcenter vcenter` joined by `|`; fit types `centercrop end start center fill`; sprite types `corneredtiled
+corneredstretched stretched` (quoted in EU5, and written as `Corneredtiled` and `corneredtiled`); blend modes
+`alphamultiply overlay colordodge multiply add normal mask`; directions `vertical horizontal`.
+
+```
+find "<game>" -name '*.gui' -print0 | xargs -0 grep -hoE '^\s*layoutpolicy_(horizontal|vertical)\s*=\s*\S+' | sed -E 's/.*=\s*//' | sort | uniq -c | sort -rn
+find "<game>" -name '*.gui' -print0 | xargs -0 grep -hoE '^\s*(fittype|spriteType|spritetype|blend_mode|direction|align|parentanchor|widgetanchor)\s*=\s*[^#]*' | sed -E 's/^\s*//; s/\s+$//' | sort | uniq -c | sort -rn
+```
+
+**What a window is as the game opens it.** A window's state named `_show` (CK3 455, Vic3 180, EU5 53) and every state
+with `trigger_on_create = yes` (305, 117, 5) run as it opens, writing their end values (`position_x`, `alpha`) as the
+widget's own; `_hide` does not.
+
+```
+find "<game>" -name '*.gui' -print0 | xargs -0 grep -hoE '^\s*name\s*=\s*_[a-z_]+' | sed -E 's/.*=\s*//' | sort | uniq -c | sort -rn
+```
+
+**What no file answers.** A binding's function names tell what it reads. `Exists`, `HasValue`, `IsTabSelected` and
+`Get` belong only to the variable systems, the tab holders and `Context`; `IsTooltipLocked` only to `PdxGuiWidget`; the
+pointer's `IsHovered`, `IsMouseOver`, `IsHighlighted` and `IsPressed` to widgets. All of them read what is unset as a
+window opens, so each answers no. The rest is game data the files do not hold (`ScriptedRelation.HasRelationBetween`,
+CK3 6,900 uses; `ConditionLine.HasFailed`, EU5 4,874): a stand-in that says it is not known.
+
+```
+cat "<Documents>/<game>/logs/data_types/"*.txt | grep -oE '^[A-Za-z0-9_]+\.(Exists|HasValue|IsTabSelected|Get|IsTooltipLocked|IsHovered|IsMouseOver|IsHighlighted|IsPressed)\(' | sort | uniq -c
+```
+
+**The functions whose meaning is the engine's.** The dumps declare `And`, `Or`, `Not`, the typed comparison and
+arithmetic families (`GreaterThan_int32`, `Select_CString`, …), `And3` to `And8`, `IsDataModelEmpty`, `Localize`,
+`Concatenate` and the conversions, each with its return type, and no file states what they compute; a data model's row
+index is known to the widget it is drawn for (`PdxGuiWidget.GetIndexInDataModel`), which `IsOdd_*` and `IsEven_*`
+(EU5 15,741 uses, Vic3 913) read. A function's return type of `[unregistered]` is the dumps' word for a type they do
+not name (CK3 7,741 functions): the property it is read for says what it is.
+
+**A data binding macro** is a `data_binding` entry: a `definition = "Name(A,B)"` and a `replace_with` text over its
+parameters. The dumps do not declare macros as global functions.
+
+```
+head -12 "<game>/data_binding/00_script_value_bindings.txt"
+```
+
+**Text.** A `font` entry names a `fontstyle` per style (CK3 regular, bold and italic; EU5 regular only), each a
+`fontfiles` entry of language groups whose files are tried in order: a file lacks glyphs the next one has (Noto Sans SC
+has no `ż`, Open Sans no CJK), so a glyph is measured in the first file of the group that has it. Formats are
+`gui.format` entries of `;`-joined words (`color:{r,g,b}`, `bold`, `italic`, another format's name); text icons are
+`texticon` entries. In localization, `#format text#!`, `@icon!`, `$key$` and `[call]` are the markup (CK3 `#EMP` 5,890
+uses, Vic3 `#v` 3,147, EU5 `#T` 1,275; `[…]` 195,886, 61,161 and 114,128). The default font and size of a text are the
+types' own: `type textbox = textbox { font = "StandardGameFont" fontsize = 15 … }`.
+
+```
+grep -oE 'style\s*=\s*\w+' "<game>/fonts/fonts.font" | sort | uniq -c
+grep -rn -A3 '^\s*format = {' "<game>/gui/preload/textformatting.gui"
+cat "<game>/localization/english/"*.yml | grep -oE '#[A-Za-z_]+' | sort | uniq -c | sort -rn | head
+```
+
+**A block named in a type is overridden below it.** `blockoverride "n" { … }` written in a widget replaces the `block
+"n"` of the type the widget is, and of every type it instantiates below: a window's content is usually its own
+`blockoverride` of a base type's `block "entire_content_area"`, written inside a child of the base's body. An override
+written in the same type as the block it names is read as a block.

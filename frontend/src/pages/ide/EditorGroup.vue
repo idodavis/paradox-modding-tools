@@ -3,7 +3,8 @@
  * An editor group: its tabs, each with its file's icon, a dot while unsaved and a lock on
  * the game's files, and a menu of what to do with it (a diff tab's is its file's, its diff named after it); a tab dragged onto a tab or the strip goes there, onto the
  * editor's edge into a new group there. The breadcrumb, the file's origin, folders and name, then where the caret
- * is (Inspect.within), and a Markdown file's Raw or Rich; then the shown tab's editor. The group at the top right
+ * is (Inspect.within), and the view switch of a kind of file with views (Markdown's Raw or Rich, a GUI file's Code,
+ * Visual or Split) with its panel's toggle; then the shown tab's editor. The group at the top right
  * ends its strip with the Wiki button. A diff tab shows its file's diff (GitDiff) in place of the breadcrumb and editor.
  * A game file a mod replaces says so, with a compare. A tab moves into a window of its own, and back.
  */
@@ -22,6 +23,7 @@ import { Close } from "@services/windowservice";
 import { isMain, useWindowsStore, windowName, windowPart } from "../../stores/windows";
 import { fileName } from "../../lib/format";
 import UnsavedChangesModal from "../../ui/UnsavedChangesModal.vue";
+import DrawPane from "../../draw/DrawPane.vue";
 import { iconOf } from "./fileKinds";
 import CodeEditor from "./CodeEditor.vue";
 import GitDiff from "./GitDiff.vue";
@@ -234,20 +236,27 @@ const { data: card } = useQuery(() => ({
 const crumbs = computed(() => [...(located.value?.rel.split("/") ?? []), ...(card.value?.within ?? [])]);
 const folders = computed(() => (located.value?.rel.split("/").length ?? 0) - 1);
 
-// a file with two views (Markdown, SVG) switches on its bar; an image's visual is the image pane
-const views = computed(() => {
-  const labels = viewsOf(active.value);
-  return (
-    labels && [
-      { label: labels.code, value: "code" },
-      { label: labels.visual, value: "visual" },
-    ]
-  );
-});
+// a file with views (Markdown, SVG, GUI) switches on its bar; an image's visual is the image pane, and a kind that
+// splits draws its visual in a pane of its own (Markdown's Rich is the editor's mode), beside the code in Split
+const row = computed(() => viewsOf(located.value?.rel ?? active.value));
+const shown = computed(() => editor.viewOf(active.value));
+const ownPane = computed(() => !!row.value?.split);
+const views = computed(
+  () =>
+    row.value && [
+      { label: row.value.code, value: "code" },
+      { label: row.value.visual, value: "visual" },
+      ...(row.value.split ? [{ label: "Split", value: "split" }] : []),
+    ],
+);
 function setView(view: string | number): void {
-  editor.views.set(active.value, view === "visual" ? "visual" : "code");
+  editor.setView(active.value, view === "visual" || view === "split" ? view : "code");
 }
-const image = computed(() => IMAGES.test(active.value) && editor.viewOf(active.value) === "visual");
+const image = computed(() => IMAGES.test(active.value) && shown.value === "visual");
+const halves = [
+  { id: "code", slot: "code", order: 1, defaultSize: 50, minSize: 20 },
+  { id: "visual", slot: "visual", order: 2, defaultSize: 50, minSize: 20 },
+];
 </script>
 
 <template>
@@ -379,16 +388,44 @@ const image = computed(() => IMAGES.test(active.value) && editor.viewOf(active.v
       </template>
       <UTabs
         v-if="views"
-        :model-value="editor.viewOf(active)"
+        :model-value="shown"
         :items="views"
         :content="false"
         size="xs"
         @update:model-value="setView"
       />
+      <UTooltip v-if="row?.panel" :text="`${row.panel} panel`">
+        <UButton
+          icon="i-lucide-panel-right"
+          size="xs"
+          square
+          color="primary"
+          :variant="editor.panels.get(active) ? 'soft' : 'ghost'"
+          :aria-label="`${row.panel} panel`"
+          :aria-pressed="!!editor.panels.get(active)"
+          @click="editor.togglePanel(active)"
+        />
+      </UTooltip>
     </div>
     <div class="relative flex min-h-0 flex-1 flex-col">
       <GitDiff v-if="diff" :key="active" :workspace-id="workspaceId" :tab="active" />
       <ImageView v-else-if="image" :key="`image:${active}`" :path="active" />
+      <USplitter
+        v-else-if="ownPane && shown === 'split'"
+        :items="halves"
+        auto-save-id="pmt.ide.split"
+        class="min-h-0 min-w-0 flex-1"
+      >
+        <template #code>
+          <div class="relative flex min-h-0 min-w-0 flex-1 flex-col">
+            <CodeEditor :key="active" :workspace-id="workspaceId" :path="active" :group="groupId" />
+          </div>
+        </template>
+        <template #visual>
+          <DrawPane :key="active" :workspace-id="workspaceId" :path="active" />
+        </template>
+      </USplitter>
+      <DrawPane v-else-if="ownPane && shown === 'visual'" :key="active" :workspace-id="workspaceId" :path="active" />
       <CodeEditor v-else-if="active" :key="active" :workspace-id="workspaceId" :path="active" :group="groupId" />
       <div v-else class="flex flex-1 items-center justify-center bg-(--bg-0) text-12 text-dimmed">
         Open a file from the explorer, or Ctrl P

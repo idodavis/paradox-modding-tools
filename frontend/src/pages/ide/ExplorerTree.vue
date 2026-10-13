@@ -21,6 +21,7 @@ import {
 } from "@services/fileservice";
 import { OpenFolder, RemoveWorkspaceMod } from "@services/workspaceservice";
 import { pathKey, useIdeRoots } from "../../composables/useIdeRoots";
+import { viewsOf } from "../../editor/tabs";
 import { BINARY_EXTENSIONS, TREE_ICONS } from "./fileKinds";
 import { Close, Show } from "@services/windowservice";
 import { useWindowsStore } from "../../stores/windows";
@@ -323,6 +324,7 @@ const menu = computed<ContextMenuItem[][]>(() => {
   const selected = (tree.value?.getSelectedPaths() ?? []).filter((p) => !p.endsWith("/"));
   const file = path.endsWith("/") ? "" : diskPath(path);
   const comparing = editor.comparing;
+  const views = file ? viewsOf(locate(file, roots)?.rel ?? file) : undefined;
   // a mod's own folder in no repository is made one, and source control shown
   const bare = root ? git.bare.find((mod) => pathKey(mod.path) === pathKey(diskPath(path))) : undefined;
   return [
@@ -334,6 +336,18 @@ const menu = computed<ContextMenuItem[][]>(() => {
             icon: "i-lucide-app-window",
             onSelect: () => void windows.openInNewWindow(file),
           },
+          ...(views?.visual
+            ? [
+                {
+                  label: "Open as Visual",
+                  icon: "i-lucide-eye",
+                  onSelect: () => {
+                    editor.setView(file, "visual");
+                    editor.open(file);
+                  },
+                },
+              ]
+            : []),
         ]
       : windowed
         ? [{ label: "Close the window", icon: "i-lucide-panel-top-close", onSelect: () => void Close(windowed) }]

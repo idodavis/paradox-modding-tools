@@ -1,6 +1,6 @@
 ---
 title: Roadmap
-description: Loose direction — Health-first patching, GUI preview, Event Graph pictures, CK3 map editor, IDE undock, a terminal and AI agents.
+description: Loose direction — Health-first patching, Event Graph pictures, CK3 map editor, IDE undock, a terminal and AI agents.
 weight: 7
 ---
 
@@ -14,6 +14,7 @@ This is **direction**, not a calendar. Order can change. File issues against a [
 - A new look across the app: seven theme families, each dark and light, that the pages and the editor share.
 - The [IDE]({{< relref "/pages/ide" >}}) is rebuilt on Monaco: editor groups and splits, hover cards, search and replace, the Wiki pane, and git source control with a graph and merge conflicts resolved in the editor.
 - The [Event Graph]({{< relref "/pages/event-graph" >}}) and [Health]({{< relref "/pages/health" >}}) are redesigned: a graph with its detail beside or below it; six cards over a sortable, filterable table with each row's definitions beside it.
+- A `.gui` file has a Visual view in the [IDE]({{< relref "/pages/ide" >}}): its window drawn from the game's own types, templates, textures and fonts, with a Widgets panel beside it.
 - [Patch Notes]({{< relref "/pages/patch-notes" >}}) reads the game's patch notes from its wiki.
 - [Publish]({{< relref "/pages/publish" >}}) is a three-step flow: the description from Markdown, BBCode or Steam's own text, screenshots and videos imported from Steam, and a compare with what Steam has.
 
@@ -25,10 +26,6 @@ After a game patch today:
 2. Read [Health]({{< relref "/pages/health" >}}): dangling refs and overrides.
 
 Later: suggested **file-level retarget in the IDE** (open the mod's copy of a changed game file, copy forward what you still own).
-
-## GUI preview
-
-A future preview using the same Jomini CST already used for `.gui`. Goal is a **structural** HTML/CSS widget tree (`hbox` / `vbox` / `button`) so you can see nesting — not a pixel-perfect launcher clone.
 
 ## Event Graph pictures
 

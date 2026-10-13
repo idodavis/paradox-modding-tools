@@ -143,12 +143,12 @@ func TestTextAndParse(t *testing.T) {
 		t.Errorf("the disk's text: %v", err)
 	}
 	ws.DidChange(events, "namespace = m\nm.7 = {}\n")
-	first, text, _ := ws.Parsed(events)
-	again, _, _ := ws.Parsed(events)
+	first, text, _ := ws.Parsed(Parses{}, events)
+	again, _, _ := ws.Parsed(Parses{}, events)
 	if text != "namespace = m\nm.7 = {}\n" || first != again {
 		t.Error("an open buffer is parsed once per text")
 	}
-	if _, _, err := ws.Parsed(filepath.Join(dir, "nothing.txt")); err == nil {
+	if _, _, err := ws.Parsed(Parses{}, filepath.Join(dir, "nothing.txt")); err == nil {
 		t.Error("a file that is nowhere")
 	}
 
@@ -211,7 +211,7 @@ func TestLockContract(t *testing.T) {
 			index.Lookup(ws.Indexes(), schema.Defines, "events", "m.1")
 			ws.Loc("v.1.t", "")
 			ws.PlaceOf(events)
-			_, _, _ = ws.Parsed(events)
+			_, _, _ = ws.Parsed(Parses{}, events)
 			ws.LocKeys("v", 3)
 		}()
 		go func() {

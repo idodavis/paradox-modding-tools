@@ -6,11 +6,13 @@
  */
 import { defineQueryOptions } from "@pinia/colada";
 import { GetVersion } from "@services/appservice";
+import { GUI, Properties } from "@services/drawservice";
 import { LastRunCrashed } from "@services/logservice";
 import { ReadImageFacts, ReadText } from "@services/fileservice";
 import { GetEventDetail, GetEventGraph, SearchRoots } from "@services/eventgraphservice";
 import { GetHealth, GetLines, LocReaders } from "@services/healthservice";
 import type { GitCommit } from "@services/models";
+import type { List, Request as DrawRequest } from "@services/internal/draw";
 import type { EventGraph, Params, Roots, SourceAt } from "@services/internal/pages/models";
 import { DiagnosticCodes, DocumentSymbols, FindLoc, Hover, ReplacedBy } from "@services/ideservice";
 import { FileSearch } from "@services/searchservice";
@@ -49,6 +51,12 @@ export const releaseKeys = {
 };
 
 export const wikiKeys = { all: ["wiki"] as const };
+
+/** A GUI file's drawn list, and a part's properties; a file's change or a fact's answer reads them again. */
+export const drawKeys = { list: ["draw"] as const, properties: ["draw-properties"] as const };
+
+/** The source lines of the open workspace's places, which an edit of a file changes. */
+export const linesKeys = (id: string) => [...workspaceKeys.open(id), "lines"] as const;
 
 export const fileKeys = {
   image: (path: string) => ["file", "image", path] as const,
@@ -243,11 +251,7 @@ export const guidePageQuery = defineQueryOptions(
 
 /** The source lines of the places a pane shows: a definition's statement, a reference's line. */
 export const linesQuery = defineQueryOptions(({ id, places }: { id: string; places: SourceAt[] }) => ({
-  key: [
-    ...workspaceKeys.open(id),
-    "lines",
-    places.map((place) => `${place.path}:${place.line}:${place.col}:${place.definition}`),
-  ],
+  key: [...linesKeys(id), places.map((place) => `${place.path}:${place.line}:${place.col}:${place.definition}`)],
   query: () => GetLines(id, places),
   enabled: useWorkspaceStore().isOpen(id) && places.length > 0,
 }));
@@ -295,6 +299,52 @@ export const symbolsQuery = defineQueryOptions(({ id, path }: { id: string; path
   query: async () => (await DocumentSymbols(id, path)) ?? [],
   enabled: !!id && !!path,
 }));
+
+/** A drawn window: the file it is of (a list kept while the next is read must be that file's), the list, and the
+ * milliseconds Go took. */
+export type Rendered = { path: string; list: List | null; renderedMs: number };
+
+/** A GUI file's window drawn as a list, the one drawn kept while the next is read; only while the workspace is open. */
+export const drawQuery = defineQueryOptions(({ id, request }: { id: string; request: DrawRequest }) => ({
+  key: [
+    ...drawKeys.list,
+    id,
+    request.path,
+    request.name,
+    request.width,
+    request.height,
+    request.scale,
+    request.language,
+    request.hideUnknown,
+  ],
+  query: async (): Promise<Rendered> => {
+    const startTime = performance.now();
+    const list = await GUI(id, request);
+    return { path: request.path, list, renderedMs: Math.round(performance.now() - startTime) };
+  },
+  enabled: useWorkspaceStore().isOpen(id) && !!request.path && !!request.name,
+  placeholderData: (previous: Rendered | undefined) => (previous?.path === request.path ? previous : undefined),
+}));
+
+/** A part's properties of a drawn window, each with who wrote it and the choices its input offers. */
+export const propertiesQuery = defineQueryOptions(
+  ({ id, request, part }: { id: string; request: DrawRequest; part: number }) => ({
+    key: [
+      ...drawKeys.properties,
+      id,
+      request.path,
+      request.name,
+      request.width,
+      request.height,
+      request.scale,
+      request.language,
+      request.hideUnknown,
+      part,
+    ],
+    query: async () => (await Properties(id, request, part)) ?? [],
+    enabled: useWorkspaceStore().isOpen(id) && !!request.path && !!request.name && part >= 0,
+  }),
+);
 
 export const codesQuery = defineQueryOptions({
   key: ["ide", "codes"],

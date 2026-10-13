@@ -28,7 +28,6 @@ import FieldGroup from "./FieldGroup.vue";
 import GameIcon from "../../ui/GameIcon.vue";
 import InstallPicker from "../../ui/InstallPicker.vue";
 import OriginColorField from "./OriginColorField.vue";
-import SettingRow from "../../ui/SettingRow.vue";
 import SettingSection from "./SettingSection.vue";
 import StatusFacts from "../../ui/StatusFacts.vue";
 import SteamState from "../../ui/SteamState.vue";
@@ -275,21 +274,26 @@ function rowClass(on: boolean): string[] {
           />
         </SettingSection>
         <SettingSection title="IDE" hint="How the IDE opens this workspace.">
-          <SettingRow label="Reopen the IDE's tabs" hint="The files that were open when you left or closed PMT.">
+          <UFormField
+            label="Reopen the IDE's tabs"
+            description="The files that were open when you left or closed PMT."
+            orientation="horizontal"
+          >
             <USwitch
               :model-value="!workspace.resetIdeOnOpen"
               @update:model-value="savePrefs({ ws: workspace, resetIdeOnOpen: !$event })"
             />
-          </SettingRow>
-          <SettingRow
+          </UFormField>
+          <UFormField
             label="Hide binaries in the explorer"
-            hint="dll, exe, pdb and the like. Images, sounds, meshes and .metadata stay."
+            description="dll, exe, pdb and the like. Images, sounds, meshes and .metadata stay."
+            orientation="horizontal"
           >
             <USwitch
               :model-value="workspace.hideExplorerBinaries"
               @update:model-value="savePrefs({ ws: workspace, hideExplorerBinaries: $event })"
             />
-          </SettingRow>
+          </UFormField>
         </SettingSection>
       </div>
     </template>

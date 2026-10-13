@@ -94,16 +94,24 @@ func (ws *Session) Text(path string) (string, error) {
 	return inventory.File{Path: path}.Text()
 }
 
-// Parsed is the parse of a file's text: an open buffer's, made once per text, else the disk's.
-func (ws *Session) Parsed(path string) (*jomini.Result, string, error) {
+// Parses is the parses one request made, by path: a file the request reads again is not parsed again.
+type Parses map[string]*jomini.Result
+
+// Parsed is the parse of a file's text: an open buffer's, made once per text, else the one parses holds, else the
+// disk's, which parses then holds.
+func (ws *Session) Parsed(parses Parses, path string) (*jomini.Result, string, error) {
 	if buffer := ws.buffers[appdata.PathKey(path)]; buffer != nil {
 		return &buffer.parsed, buffer.text, nil
+	}
+	if held := parses[path]; held != nil {
+		return held, held.Src, nil
 	}
 	text, err := ws.Text(path)
 	if err != nil {
 		return nil, "", err
 	}
 	parsed := jomini.Parse(text)
+	parses[path] = &parsed
 	return &parsed, text, nil
 }
 

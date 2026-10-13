@@ -5,7 +5,10 @@
 package game
 
 import (
+	"cmp"
+	"fmt"
 	"slices"
+	"strconv"
 	"strings"
 )
 
@@ -332,29 +335,111 @@ var OptionFlags = []string{"default_option", "historical_option"}
 // Bools are the words a yes-or-no value is written with.
 var Bools = []string{"yes", "no"}
 
-// Color is a tagged block a color is written with (rgb { 255 0 0 }).
+// Color is a block a color is written with, by the tag before it (rgb { 255 0 0 }), or none ({ 0.8 0.3 0.3 1 }).
 type Color struct {
 	Tag        string
 	HSV        bool    // hue, saturation, value; else red, green, blue
-	Hex        bool    // one hex word
+	Hex        bool    // one hex word, given as its bytes
 	Hue, Parts float64 // what the hue and the other parts are out of; 0 means 1
 }
 
-// Colors are the color blocks script writes; rgb's parts are out of 255, or of 1 where every part
-// is at most 1.
+// RGBA is a color, each part from 0 to 1.
+type RGBA struct{ R, G, B, A float64 }
+
+// Colors are the color blocks script writes; a part of rgb or of no tag is out of 255, or of 1 where every part
+// of red, green and blue is at most 1, and a fourth part is its alpha.
 var Colors = []Color{
-	{Tag: "rgb"}, {Tag: "hsv", HSV: true}, {Tag: "hsv360", HSV: true, Hue: 360, Parts: 100}, {Tag: "hex", Hex: true},
+	{Tag: "rgb"}, {Tag: ""}, {Tag: "hsv", HSV: true}, {Tag: "hsv360", HSV: true, Hue: 360, Parts: 100}, {Tag: "hex", Hex: true},
 }
 
+// ColorOf is the color the numbers of a color block make by the Colors row of its tag, matched without regard to
+// case: false for a tag no row has and for fewer than three parts.
+func ColorOf(tag string, parts []float64) (RGBA, bool) {
+	i := slices.IndexFunc(Colors, func(row Color) bool { return strings.EqualFold(row.Tag, tag) })
+	if i < 0 || len(parts) < 3 {
+		return RGBA{}, false
+	}
+	row, scale := Colors[i], 255.0
+	var red, green, blue float64
+	if row.HSV {
+		scale = cmp.Or(row.Parts, 1)
+		red, green, blue = hsvToRGB(parts[0]/cmp.Or(row.Hue, 1), parts[1]/scale, parts[2]/scale)
+	} else {
+		if !row.Hex && max(parts[0], parts[1], parts[2]) <= 1 {
+			scale = 1
+		}
+		red, green, blue = parts[0]/scale, parts[1]/scale, parts[2]/scale
+	}
+	alpha := 1.0
+	if len(parts) > 3 {
+		alpha = parts[3] / scale
+	}
+	return RGBA{clamp(red), clamp(green), clamp(blue), clamp(alpha)}, true
+}
+
+// hsvToRGB is the red, green and blue of a hue, saturation and value, each from 0 to 1.
+func hsvToRGB(hue, saturation, value float64) (red, green, blue float64) {
+	sector, fraction := int(hue*6)%6, hue*6-float64(int(hue*6))
+	bottom, falling, rising := value*(1-saturation), value*(1-fraction*saturation), value*(1-(1-fraction)*saturation)
+	switch sector {
+	case 0:
+		return value, rising, bottom
+	case 1:
+		return falling, value, bottom
+	case 2:
+		return bottom, value, rising
+	case 3:
+		return bottom, falling, value
+	case 4:
+		return rising, bottom, value
+	}
+	return value, bottom, falling
+}
+
+// clamp is a part held to 0 through 1.
+func clamp(part float64) float64 { return min(max(part, 0), 1) }
+
+// Hex is the color as #rrggbb, alpha left out.
+func (color RGBA) Hex() string {
+	return fmt.Sprintf("#%02x%02x%02x", byteOf(color.R), byteOf(color.G), byteOf(color.B))
+}
+
+// CSS is the color as rgba(red, green, blue, alpha), the parts of red, green and blue out of 255 and alpha out of 1.
+func (color RGBA) CSS() string {
+	return fmt.Sprintf("rgba(%d, %d, %d, %s)", byteOf(color.R), byteOf(color.G), byteOf(color.B),
+		strconv.FormatFloat(color.A, 'f', -1, 64))
+}
+
+// byteOf is a part from 0 to 1 as a byte, rounded.
+func byteOf(part float64) int { return int(part*255 + 0.5) }
+
 // DumpWords are the dumps' words the engine decides by: a blurb opening "Iterate through" with no
-// target walks a list or variable map, so its block's scope is unknown; none and all name no scope.
+// target walks a list or variable map, so its block's scope is unknown; none and all name no scope; a function's
+// return type of the third word names no type the dumps declare.
 var DumpWords = struct {
-	Iterates string
-	NoScope  []string
-}{"Iterate through", []string{"none", "all"}}
+	Iterates     string
+	NoScope      []string
+	Unregistered string
+}{"Iterate through", []string{"none", "all"}, "[unregistered]"}
 
 // GlobalType is the data type a data call's first step is read on.
 const GlobalType = "Global"
+
+// What a value of the data system is, as a binding's answer and a fact's Returns say it.
+const (
+	DataBool   = "bool"
+	DataNumber = "number"
+	DataText   = "text"
+	DataList   = "list"
+	DataObject = "object"
+)
+
+// DataKinds is what each primitive type of the data system is, by its name; any other type is an object, and a list
+// where a data model reads it. No dump states which return types are numbers or text.
+var DataKinds = map[string]string{
+	"bool": DataBool, "int32": DataNumber, "uint32": DataNumber, "int64": DataNumber, "uint64": DataNumber,
+	"float": DataNumber, "double": DataNumber, "CFixedPoint": DataNumber, "CString": DataText, "CUTF8String": DataText,
+}
 
 // ---- Files and folders: where entries are and how they are named.
 
@@ -405,14 +490,34 @@ var entryModes = []EntryMode{
 	{Word: "INJECT"}, {Word: "REPLACE", Replaces: true},
 }
 
+// Localization, File and DataFunction are the databases a loc key, a file path and a data function (Type.Function)
+// name; no definition carries them, so the index resolves the first two from the loc entries and the inventories.
+const (
+	Localization = "localization"
+	File         = "file"
+	DataFunction = "datafunction"
+)
+
+// Ref is what the words at a position name: the entries of a database ("" the row's own database), or the files
+// under a folder from a root. In a file type's row At is a key at any depth, and a row naming neither a database nor
+// a folder makes the key the calling word of the entries its value names (using = x); in a database's row At is the
+// key path from the entry (on_actions, random_on_action/<number>).
+type Ref struct {
+	At       string
+	Database string
+	Folder   string
+}
+
 // FileType is how files of one extension name entries; an extension with no row defines nothing.
 type FileType struct {
-	NameKey   string            // the key whose value names a top block's entry: .asset name = x
-	Keywords  []string          // the words that declare an entry: type x = button { }
-	NameKeyOf map[string]string // a block key at any depth, and the key whose value names its entry
-	WidgetKey string            // every other top block is an entry of <ext>.widget, named by this key's value
-	Body      Shape             // the kind its entries' blocks hold
-	Refs      map[string]string // keys whose value names an entry of <ext>.<word>, at any depth
+	NameKey    string            // the key whose value names a top block's entry: .asset name = x
+	Keywords   []string          // the words that declare an entry: type x = button { }
+	NameKeyOf  map[string]string // a block key at any depth, and the key whose value names its entry
+	WidgetKey  string            // every other top block is an entry of <ext>.widget, named by this key's value
+	Body       Shape             // the kind its entries' blocks hold
+	TagCalls   string            // the word that calls the tag a block is written with (type x = button { }), "" none
+	ContextKey string            // the key whose value is the data call the bindings of its block read in, "" none
+	Refs       []Ref             // the keys, at any depth, whose value names an entry or a file
 }
 
 // FileTypes are how .txt, .asset, .font and .gui files name entries, in every game. In a .gui file
@@ -422,11 +527,16 @@ var FileTypes = map[string]FileType{
 	".asset": {NameKey: "name"},
 	".font":  {NameKey: "name"},
 	".gui": {
-		Keywords:  []string{"type", "local_type", "template", "local_template", "block", "layer"},
-		NameKeyOf: map[string]string{"texticon": "icon", "format": "name"},
-		WidgetKey: "name",
-		Body:      ShapeWidget,
-		Refs:      map[string]string{"using": "template", "layer": "layer"},
+		Keywords:   []string{"type", "local_type", "template", "local_template", "block", "layer"},
+		NameKeyOf:  map[string]string{"texticon": "icon", "format": "name"},
+		WidgetKey:  "name",
+		Body:       ShapeWidget,
+		TagCalls:   "widget",
+		ContextKey: "datacontext",
+		Refs: []Ref{
+			{At: "using"}, {At: "layer", Database: "gui.layer"}, {At: "texture", Database: File},
+			{At: "font", Database: "font.font"}, {At: "text", Database: Localization}, {At: "title", Database: Localization},
+		},
 	},
 }
 
@@ -476,7 +586,8 @@ type Descriptor struct {
 	Body       Shape    // what an entry's block holds; ShapeUnknown: its own fields
 	Callers    []string // scripted: the words a call by an entry's name resolves by
 	Parameters bool     // scripted: a call passes parameters
-	Refs       []string // positions in an entry (key/<number>) whose words name this database's entries
+	Local      bool     // its entries answer only in the file that declares them
+	Refs       []Ref    // positions in an entry (key/<number>) whose words name an entry of a database
 	Names      []string // keys whose values in an entry also name this database's entries (trait groups)
 }
 
@@ -495,7 +606,7 @@ var layouts = map[string]Layout{
 	"ck3": {
 		Descriptors: withShared([]Descriptor{
 			folder("common/on_action", Descriptor{Purpose: PurposeOnActions,
-				Refs: []string{"on_actions", "random_on_action/<number>", "first_valid_on_action", "fallback"}}),
+				Refs: []Ref{{At: "on_actions"}, {At: "random_on_action/<number>"}, {At: "first_valid_on_action"}, {At: "fallback"}}}),
 			folder("common/traits", Descriptor{Names: []string{"group", "group_equivalence"}}),
 			folder("gfx/map/map_object_data", Descriptor{Identity: IdentityNone}),
 			folder("history/titles", Descriptor{Purpose: PurposeHistory, Of: "landed_titles"}),
@@ -521,7 +632,7 @@ var layouts = map[string]Layout{
 	"vic3": {
 		Descriptors: withShared([]Descriptor{
 			folder("common/on_actions", Descriptor{Purpose: PurposeOnActions,
-				Refs: []string{"on_actions", "random_on_actions/<number>", "first_valid_on_action", "fallback"}}),
+				Refs: []Ref{{At: "on_actions"}, {At: "random_on_actions/<number>"}, {At: "first_valid_on_action"}, {At: "fallback"}}}),
 			folder("gfx/map/map_object_data", Descriptor{Identity: IdentityNone}),
 			folder("gfx/map/post_effects", Descriptor{Identity: IdentityByField, NameKey: "name", Wrappers: []string{"posteffect_volumes"}}),
 			// COUNTRIES = { … }: effects
@@ -533,7 +644,7 @@ var layouts = map[string]Layout{
 	"eu5": {
 		Descriptors: withShared([]Descriptor{
 			folder("common/on_action", Descriptor{Purpose: PurposeOnActions,
-				Refs: []string{"on_actions", "random_on_action/<number>", "first_valid_on_action", "fallback"}}),
+				Refs: []Ref{{At: "on_actions"}, {At: "random_on_action/<number>"}, {At: "first_valid_on_action"}, {At: "fallback"}}}),
 			folder("gfx/map/map_objects", Descriptor{Identity: IdentityNone}),
 			folder("gfx/map/city_data", Descriptor{Identity: IdentityByField, NameKey: "name"}),
 			folder("setup/start", Descriptor{Purpose: PurposeHistory}),
@@ -586,8 +697,11 @@ var shared = []Descriptor{
 	folder("common/coat_of_arms/template_lists", Descriptor{Wrappers: []string{"coat_of_arms_template_lists",
 		"pattern_texture_lists", "colored_emblem_texture_lists", "textured_emblem_texture_lists", "color_lists"}}),
 	folder("gui/scripted_widgets", Descriptor{Identity: IdentityNone}),
-	{Database: "gui.type", Callers: []string{"widget"}},         // a widget key naming a type
-	{Database: "gui.block", Callers: []string{"blockoverride"}}, // blockoverride "x" { }
+	{Database: "gui.type", Callers: []string{"widget"}},                       // a widget key naming a type
+	{Database: "gui.local_type", Callers: []string{"widget"}, Local: true},    // the same, written in its own file
+	{Database: "gui.template", Callers: []string{"using"}},                    // using = x
+	{Database: "gui.local_template", Callers: []string{"using"}, Local: true}, // the same, written in its own file
+	{Database: "gui.block", Callers: []string{"blockoverride"}},               // blockoverride "x" { }
 	folder("music/music_player_categories", Descriptor{Identity: IdentityByField, NameKey: "id"}),
 	nested("common/defines", "", "define"),
 }
@@ -650,4 +764,114 @@ func (layout Layout) Nested(rel string) (rows []Descriptor) {
 		}
 	}
 	return rows
+}
+
+// ---- Widgets: how a built-in widget kind arranges its children, and what a binding answers with no game running.
+
+// LayoutClass is how a built-in widget kind arranges its children.
+type LayoutClass uint8
+
+// The layout classes.
+const (
+	LayoutPlain  LayoutClass = iota // children by their anchors and positions
+	LayoutRow                       // children side by side
+	LayoutColumn                    // children stacked
+	LayoutGrid                      // children in cells
+	LayoutFlow                      // children along a direction, wrapping
+	LayoutScroll                    // one content, clipped and scrolled
+	LayoutText                      // a text
+	LayoutImage                     // a texture
+)
+
+// LayoutClasses is each built-in kind that arranges its children by other than its anchors, by the kind's name; a
+// kind with no row is plain.
+var LayoutClasses = map[string]LayoutClass{
+	"hbox": LayoutRow, "uberhbox": LayoutRow,
+	"vbox": LayoutColumn, "ubervbox": LayoutColumn,
+	"fixedgridbox": LayoutGrid, "dynamicgridbox": LayoutGrid,
+	"flowcontainer": LayoutFlow,
+	"scrollarea":    LayoutScroll, "uberscrollarea": LayoutScroll, "scrollvbox": LayoutScroll,
+	"textbox": LayoutText, "ubertextbox": LayoutText, "editbox": LayoutText, "debug_textbox": LayoutText,
+	"icon": LayoutImage, "background": LayoutImage,
+}
+
+// LayoutPolicy is what a layoutpolicy word means for a widget's sizes in a row or column.
+type LayoutPolicy struct {
+	Grows   bool // takes extra room
+	Shrinks bool // gives room below its preferred size, down to its minimum
+	Fixed   bool // its preferred size is its minimum and maximum
+}
+
+// LayoutPolicies are the five policy words, read without regard to case.
+var LayoutPolicies = map[string]LayoutPolicy{
+	"expanding": {Grows: true, Shrinks: true}, "growing": {Grows: true}, "preferred": {Shrinks: true},
+	"shrinking": {Shrinks: true}, "fixed": {Fixed: true},
+}
+
+// Computation is what the evaluator computes a global function as.
+type Computation uint8
+
+// The computations.
+const (
+	ComputeAnd         Computation = iota // no when a side is no, yes when every side is yes, else unknown
+	ComputeOr                             // yes when a side is yes, no when every side is no, else unknown
+	ComputeNot                            // the opposite; unknown stays unknown
+	ComputeCompare                        // two known numbers or texts compared by the name's verb
+	ComputeArithmetic                     // two known numbers combined by the name's verb; unknown otherwise
+	ComputeParity                         // IsOdd and IsEven of a known number
+	ComputeListCount                      // IsDataModelEmpty no, DataModelHasItems yes, GetDataModelSize the count
+	ComputeTextEmpty                      // StringIsEmpty of the text: no for a stand-in
+	ComputeValid                          // IsValid: yes, a stand-in exists
+	ComputeSelect                         // Select_*(cond, a, b): a or b by a known cond, else a
+	ComputeLocalize                       // Localize('KEY'): the key's text
+	ComputeConcatenate                    // Concatenate: the texts joined
+	ComputeConvert                        // FixedPointToFloat, IntToFixedPoint, FixedPointToInt: the number itself
+	ComputeRowIndex                       // GetIndexInDataModel: the data model row this widget is drawn for
+)
+
+// ComputedFunction is one global function, or a family of them by prefix, and its computation.
+type ComputedFunction struct {
+	Name   string
+	Prefix bool
+	Computation
+}
+
+// ComputedFunctions are Jomini's global functions whose meaning is the engine's, not game data; the dumps declare
+// their names and return types. An exact name is tried before a prefix.
+var ComputedFunctions = []ComputedFunction{
+	{Name: "And", Computation: ComputeAnd}, {Name: "Or", Computation: ComputeOr}, {Name: "Not", Computation: ComputeNot},
+	{Name: "And", Prefix: true, Computation: ComputeAnd}, {Name: "Or", Prefix: true, Computation: ComputeOr},
+	{Name: "ObjectsEqual", Computation: ComputeCompare},
+	{Name: "EqualTo_", Prefix: true, Computation: ComputeCompare}, {Name: "NotEqualTo_", Prefix: true, Computation: ComputeCompare},
+	{Name: "GreaterThan_", Prefix: true, Computation: ComputeCompare},
+	{Name: "GreaterThanOrEqualTo_", Prefix: true, Computation: ComputeCompare},
+	{Name: "LessThan_", Prefix: true, Computation: ComputeCompare},
+	{Name: "LessThanOrEqualTo_", Prefix: true, Computation: ComputeCompare},
+	{Name: "Add_", Prefix: true, Computation: ComputeArithmetic}, {Name: "Subtract_", Prefix: true, Computation: ComputeArithmetic},
+	{Name: "Multiply_", Prefix: true, Computation: ComputeArithmetic}, {Name: "Divide_", Prefix: true, Computation: ComputeArithmetic},
+	{Name: "Min_", Prefix: true, Computation: ComputeArithmetic}, {Name: "Max_", Prefix: true, Computation: ComputeArithmetic},
+	{Name: "Abs_", Prefix: true, Computation: ComputeArithmetic},
+	{Name: "IsOdd_", Prefix: true, Computation: ComputeParity}, {Name: "IsEven_", Prefix: true, Computation: ComputeParity},
+	{Name: "IsDataModelEmpty", Computation: ComputeListCount}, {Name: "DataModelHasItems", Computation: ComputeListCount},
+	{Name: "GetDataModelSize", Computation: ComputeListCount},
+	{Name: "StringIsEmpty", Computation: ComputeTextEmpty}, {Name: "IsValid", Computation: ComputeValid},
+	{Name: "Select_", Prefix: true, Computation: ComputeSelect}, {Name: "Localize", Computation: ComputeLocalize},
+	{Name: "Concatenate", Computation: ComputeConcatenate},
+	{Name: "FixedPointToFloat", Computation: ComputeConvert}, {Name: "IntToFixedPoint", Computation: ComputeConvert},
+	{Name: "FixedPointToInt", Computation: ComputeConvert},
+	{Name: "GetIndexInDataModel", Computation: ComputeRowIndex},
+}
+
+// OpeningState is the state a window runs as the game opens it; a state with trigger_on_create = yes runs too.
+const OpeningState = "_show"
+
+// StateControls are the keys of a state that run it rather than say how the widget ends up.
+var StateControls = []string{"name", "using", "on_start", "on_finish", "duration", "delay", "next", "trigger_on_create"}
+
+// UnsetAtOpen are the function names that read what is unset as the game opens a window: a UI variable or tab
+// (Exists, HasValue, IsTabSelected, Get), and the pointer, which is nowhere yet. In the three games' dumps those
+// names belong only to the variable systems, the tab holders and the widgets' pointer state.
+var UnsetAtOpen = []string{
+	"Exists", "HasValue", "IsTabSelected", "Get", "IsTooltipLocked", "IsHovered", "IsMouseOver", "IsHighlighted",
+	"IsPressed",
 }

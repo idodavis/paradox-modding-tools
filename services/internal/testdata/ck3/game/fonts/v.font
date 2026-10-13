@@ -1,3 +1,14 @@
 font = {
 	name = "v_font"
+	fontstyle = {
+		style = regular
+		fontfiles = "v_files"
+	}
+}
+fontfiles = {
+	name = "v_files"
+	group = {
+		languages = { "l_english" }
+		files = { "fonts/Go-Regular.ttf" }
+	}
 }

@@ -57,11 +57,11 @@ func (file *openFile) sites(ref schema.Occurrence) []Location {
 	ws, indexes := file.ws, file.ws.Indexes()
 	var out []Location
 	switch ref.Database {
-	case schema.Localization:
-		for _, entry := range index.Lookup(indexes, schema.Localizes, schema.Localization, ref.ID) {
+	case game.Localization:
+		for _, entry := range index.Lookup(indexes, schema.Localizes, game.Localization, ref.ID) {
 			out = append(out, locate(ws, entry.File().Path, Position{Line: int(entry.Occurrence().Line)}))
 		}
-	case schema.File:
+	case game.File:
 		if found, listed := index.FileAt(indexes, ref.ID); listed {
 			out = []Location{locate(ws, found.Path, Position{})}
 		}

@@ -50,6 +50,7 @@ func main() {
 		application.NewService(&services.FileService{}),
 		application.NewService(workspaces),
 		application.NewService(services.NewIdeService(config, workspaces)),
+		application.NewService(services.NewDrawService(workspaces, config)),
 		application.NewService(services.NewEventGraphService(workspaces)),
 		application.NewService(services.NewHealthService(workspaces)),
 		application.NewService(services.NewWikiService(config, workspaces, wikis)),
@@ -75,7 +76,7 @@ func newApp(logSvc *services.LogService, registered []application.Service) *appl
 		Services:    registered,
 		Assets: application.AssetOptions{
 			Handler:    application.BundledAssetFileServer(assets),
-			Middleware: services.ServeImages,
+			Middleware: services.ServeFiles,
 			// a line per file the page loads would push everything else out of pmt.log's tail
 			DisableLogging: true,
 		},

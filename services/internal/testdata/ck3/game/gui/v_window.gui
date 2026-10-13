@@ -24,3 +24,34 @@ window = {
 	name = "v_other_window"
 	v_label = { }
 }
+template v_sized {
+	size = { 100 20 }
+}
+type v_box = vbox {
+	block "rows" {
+		v_button = { }
+	}
+}
+window = {
+	name = "v_layout_window"
+	size = { 200 100 }
+	v_box = {
+		using = v_sized
+		spacing = 4
+		blockoverride "rows" {
+			v_button = { size = { 50 20 } }
+			v_button = { size = { 50 20 } layoutpolicy_vertical = expanding }
+		}
+		v_label = { text = "v_key" font = "v_font" fontsize = 16 }
+		icon = { texture = "gfx/interface/v_frame.dds" }
+		vbox = {
+			datamodel = "[GetPlayer.GetVassals]"
+			item = { v_label = { } }
+		}
+		widget = { visible = "[GetVariableSystem.Exists('v_flag')]" size = { 10 10 } }
+		widget = { visible = "[GetPlayer.IsAlive]" size = { 10 10 } }
+	}
+}
+type window = window { }
+type widget = widget { }
+type icon = icon { }

@@ -1,16 +1,16 @@
 <script setup lang="ts">
 /**
- * What a word is: the problems found there, its kind, name and scope, the
+ * What a word is: a lead the caller draws above it, the problems found there, its kind, name and scope, the
  * facts it carries (what it takes and returns, ...), its text and prose, and last where it is defined and what it
  * replaces. Where the backend has no card (plain text in a localization value) the problems show alone.
  */
 import { computed } from "vue";
-import type { monaco } from "../../lib/monaco";
+import type { monaco } from "../lib/monaco";
 import type { Inspect, Location } from "@services/internal/lsp";
-import { useEditorStore } from "../../stores/editor";
-import { useWorkspaceStore } from "../../stores/workspace";
-import LocQuote from "../../ui/LocQuote.vue";
-import OriginChip from "../../ui/OriginChip.vue";
+import { useEditorStore } from "../stores/editor";
+import { useWorkspaceStore } from "../stores/workspace";
+import LocQuote from "./LocQuote.vue";
+import OriginChip from "./OriginChip.vue";
 
 const { card, problems = [] } = defineProps<{ card: Inspect | null; problems?: monaco.editor.IMarker[] }>();
 
@@ -97,6 +97,7 @@ function open(site: Location): void {
 <template>
   <div class="flex w-max max-w-198 flex-col overflow-hidden divide-y divide-default">
     <!-- as wide as its content, up to 792px -->
+    <div v-if="$slots.lead" class="px-3.5 py-2.5"><slot name="lead" /></div>
     <div v-if="problems.length" class="flex flex-col gap-1 px-3.5 py-2.5">
       <div v-for="(problem, i) in problems" :key="i" class="flex items-start gap-2 text-12">
         <UIcon

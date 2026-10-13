@@ -370,3 +370,40 @@ func TestInterpolations(t *testing.T) {
 		}
 	}
 }
+
+func TestColorParts(t *testing.T) {
+	parsed := Parse("a = rgb { 255 0 0 }\nb = { 0.8 0.3 0.3 1 }\nc = hex { 0xff8000ff }\nd = red\ne = { a b }\n")
+	for i, want := range []struct {
+		tag   string
+		parts []float64
+		ok    bool
+	}{
+		{"rgb", []float64{255, 0, 0}, true},
+		{"", []float64{0.8, 0.3, 0.3, 1}, true},
+		{"hex", []float64{255, 128, 0, 255}, true},
+		{"", nil, false},
+		{"", nil, false},
+	} {
+		tag, parts, ok := ColorParts(parsed.Root.Statements[i].(*Assignment).Value)
+		if tag != want.tag || ok != want.ok || !reflect.DeepEqual(parts, want.parts) {
+			t.Errorf("statement %d: %q %v %v, want %q %v %v", i, tag, parts, ok, want.tag, want.parts, want.ok)
+		}
+	}
+}
+
+func TestCast(t *testing.T) {
+	for _, want := range []struct {
+		text, typ, value string
+		ok               bool
+	}{
+		{"'(int32)3'", "int32", "3", true},
+		{"(CFixedPoint)0", "CFixedPoint", "0", true},
+		{"'(float)0.4'", "float", "0.4", true},
+		{"'x'", "", "", false},
+	} {
+		typ, value, ok := Cast(want.text)
+		if typ != want.typ || value != want.value || ok != want.ok {
+			t.Errorf("%s: %q %q %v, want %q %q %v", want.text, typ, value, ok, want.typ, want.value, want.ok)
+		}
+	}
+}

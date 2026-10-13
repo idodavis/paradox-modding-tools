@@ -71,3 +71,4 @@ loc english "english" lang=english line=69
 loc french "french" lang=english line=70
 loc v.1.toast "Toast" lang=english line=71
 loc v.1.toast_first "First" lang=english line=72
+loc v_key "Fixture text" lang=english line=73

@@ -1,9 +1,9 @@
 /**
  * The IDE's client state: the editor groups, their tabs and where they sit, the unsaved files, the open files'
- * problems, the caret, the cursor a tab is asked to show, the views, the sidebar, panel and wiki pane, the explorer's
- * selection and its undoable moves. The models and their text are editor/models.ts's, which this store reaches for
- * the save and which reaches it for the tabs, and the windows store is reached for where a file is open, each inside a
- * function.
+ * problems, the caret, the cursor a tab is asked to show, the views and their panels, the sidebar, panel and wiki
+ * pane, the explorer's selection and its undoable moves. The models and their text are editor/models.ts's, which this
+ * store reaches for the save and which reaches it for the tabs, and the windows store is reached for where a file is
+ * open, each inside a function.
  */
 import { computed, ref, shallowRef } from "vue";
 import { defineStore } from "pinia";
@@ -107,6 +107,7 @@ export const useEditorStore = defineStore("editor", () => {
   const selected = ref<string[]>([]);
   const comparing = ref("");
   const views = ref(new Map<string, View>());
+  const panels = ref(new Map<string, boolean>());
   const dragging = ref<{ tab: string; sourceGroup: number } | null>(null);
   const fileMoves = ref<{ done: FileMove[]; undone: FileMove[] }>({ done: [], undone: [] });
   const ideSettingsOpen = shallowRef(false);
@@ -135,6 +136,19 @@ export const useEditorStore = defineStore("editor", () => {
   function backendPath(file: string): string {
     const key = pathKey(file);
     return openTabs.value.find((tab) => pathKey(tab) === key) ?? file;
+  }
+
+  /** Show a file in a view; Visual also opens the panel of a kind that has one, Split and Code leave it as it is. */
+  function setView(file: string, view: View): void {
+    const path = backendPath(file);
+    views.value.set(path, view);
+    if (view === "visual" && viewsOf(path)?.panel) panels.value.set(path, true);
+  }
+
+  /** Open a file's panel, or close it. */
+  function togglePanel(file: string): void {
+    const path = backendPath(file);
+    panels.value.set(path, !panels.value.get(path));
   }
 
   /** The window a file shows in: the one holding a tab of it, else this one with it, else the one whose folders hold
@@ -430,6 +444,7 @@ export const useEditorStore = defineStore("editor", () => {
     selected,
     comparing,
     views,
+    panels,
     dragging,
     ideSettingsOpen,
     sidebar,
@@ -442,6 +457,8 @@ export const useEditorStore = defineStore("editor", () => {
     problemCounts,
     group,
     viewOf,
+    setView,
+    togglePanel,
     open,
     addTabHidden,
     resizeSplit,

@@ -10,7 +10,7 @@ How every file under `frontend/src` is written, and what checks each rule. The l
 | --------------- | --------------------------------------- | ----------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
 | `npm run check` | vue-tsc over `.ts` and `.vue`           | types, the typed route names, the bindings' payloads                                                                                                                                                              |
 | `npm run lint`  | eslint, then `prettier --check`         | the import rules (Layout), `vue/no-mutating-props`, `no-floating-promises`, `no-non-null-assertion`, typescript-eslint's recommended type-checked set (`no-explicit-any`, the `no-unsafe-*` rules) and formatting |
-| `npm test`      | vitest                                  | the stores' and the editor's tab logic                                                                                                                                                                            |
+| `npm test`      | vitest                                  | the stores' and the editor's tab logic, and the rows of the views a kind of file has                                                                                                                              |
 | review          | a person or an agent reading the change | every rule below that names no check                                                                                                                                                                              |
 
 `task check:frontend` runs the three commands; `task check` runs them with the backend's.
@@ -20,14 +20,15 @@ How every file under `frontend/src` is written, and what checks each rule. The l
 Each page is a folder under `pages/` (`library/`, `wizard/`, `settings/`, `health/`, `graph/`, `notes/`, `publish/`,
 `ide/`) holding the page and the components only it uses. The app's frame (top bar, status bar, command palette) is
 `app/`, with the router, the events' refreshes and the page catalogue (`pages.ts`); the editor's modules are `editor/`;
-a component two or more pages use is in `ui/`. `stores/`, `composables/` and `lib/` stay flat; the root holds `main.ts`
-and `queries.ts`.
+a component two or more pages use is in `ui/`; the visual editors' panes, which the IDE shows beside the code, are
+`draw/`. `stores/`, `composables/` and `lib/` stay flat; the root holds `main.ts` and `queries.ts`.
 
 A page imports from `stores/`, `queries.ts`, `lib/`, `composables/`, `ui/` and itself, never another page's folder and
 never the frame's components. `editor/` is imported only by `pages/ide/` and the stores; `ui/`, `composables/` and
 `lib/` import no page, frame or editor module; the frame and the stores reach a page only through the router. Two
 exceptions: the page catalogue `app/pages.ts` is imported by pages and `ui/` as data, and `app/events.ts` imports
-`editor/models.ts` to send the open files again.
+`editor/models.ts` to send the open files again. `draw/` imports `ui/`, `stores/`, `queries.ts`, `composables/`, `lib/`
+and `editor/`, never a page or the frame, and only `pages/ide/` imports `draw/`.
 
 _Checked by:_ partly, eslint's `no-restricted-imports` blocks in `frontend/eslint.config.js`: they allow
 `app/pages.ts` by name, and no block covers the frame importing `editor/`; the rest is review.
@@ -145,7 +146,9 @@ or `URadioGroup` with `:items` and item slots; lists are `UListbox` or `UCollaps
 `UButton variant="link"`; resizable panes are a `USplitter` (its handle themed in `vite.config.ts`, its sizes kept by
 `auto-save-id`). Nuxt UI's components and composables are auto-imported (no deep `@nuxt/ui/…` import); our components
 are imported explicitly, in the `<script setup>` of the file whose template uses them. Colors by aliases (`primary`,
-`neutral`, …) and the tokens; theme keys in `vite.config.ts`'s `ui()`, never `ui.base` overrides.
+`neutral`, …) and the tokens; theme keys in `vite.config.ts`'s `ui()`, never `ui.base` overrides. A thing you look at has
+its list or tree on one side, the thing in the middle and its detail on the right; a detail column is a `DetailHeader`
+over a `UAccordion` of `UFormField` rows, with a `UTree` for a tree.
 
 ```ts
 const remove = useOverlay().create(RemoveWorkspaceModal);
@@ -196,17 +199,18 @@ _Checked by:_ review.
 
 ## Where to change what
 
-| To change                     | Edit                                                                                                                                                   |
-| ----------------------------- | ------------------------------------------------------------------------------------------------------------------------------------------------------ |
-| a theme token, or add a theme | `styles/themes.css` (a block of tokens per `data-theme`; the family list is in `stores/settings.ts`)                                                   |
-| a window event                | `services/windowservice.go` declares it; the table at the head of `stores/windows.ts` says who answers                                                 |
-| what a page reads from Go     | its option in `queries.ts`, then the component's `useQuery`                                                                                            |
-| what an event refreshes       | `app/events.ts`                                                                                                                                        |
-| a command in the palette      | `app/CommandPalette.vue` builds the pages', workspaces' and settings' rows; the IDE's are registered by `editor/commands.ts` into `stores/commands.ts` |
-| the hover card's look         | `pages/ide/HoverCard.vue`; its words are the backend's (`services/internal/lsp/wording.go`)                                                            |
-| a Health section              | `pages/health/` and `composables/useHealth.ts`; its rows are `services/internal/pages/health.go` and `health_*.go`                                     |
-| the event graph               | `pages/graph/` and `composables/useEventGraph.ts`                                                                                                      |
-| a setting                     | its typed accessor in `stores/settings.ts`                                                                                                             |
+| To change                         | Edit                                                                                                                                                   |
+| --------------------------------- | ------------------------------------------------------------------------------------------------------------------------------------------------------ |
+| a theme token, or add a theme     | `styles/themes.css` (a block of tokens per `data-theme`; the family list is in `stores/settings.ts`)                                                   |
+| a window event                    | `services/windowservice.go` declares it; the table at the head of `stores/windows.ts` says who answers                                                 |
+| what a page reads from Go         | its option in `queries.ts`, then the component's `useQuery`                                                                                            |
+| what an event refreshes           | `app/events.ts`                                                                                                                                        |
+| a command in the palette          | `app/CommandPalette.vue` builds the pages', workspaces' and settings' rows; the IDE's are registered by `editor/commands.ts` into `stores/commands.ts` |
+| the hover card's look             | `ui/HoverCard.vue`; its words are the backend's (`services/internal/lsp/wording.go`)                                                                   |
+| the Visual view of a kind of file | `editor/tabs.ts`' `VIEW_ROWS` and `draw/`                                                                                                              |
+| a Health section                  | `pages/health/` and `composables/useHealth.ts`; its rows are `services/internal/pages/health.go` and `health_*.go`                                     |
+| the event graph                   | `pages/graph/` and `composables/useEventGraph.ts`                                                                                                      |
+| a setting                         | its typed accessor in `stores/settings.ts`                                                                                                             |
 
 ## Smallest
 

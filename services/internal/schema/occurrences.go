@@ -4,11 +4,13 @@
 package schema
 
 import (
+	"path"
 	"slices"
 	"strings"
 
 	"paradox-modding-tools/services/internal/game"
 	"paradox-modding-tools/services/internal/jomini"
+	"paradox-modding-tools/services/internal/loc"
 )
 
 // Role is what an occurrence does: defines a name, refers to one, or localizes one.
@@ -41,14 +43,9 @@ type Occurrence struct {
 	IsName    bool
 }
 
-// Localization and File are the databases a loc key and a file path name; no definition carries
-// them, so the index resolves them from the loc entries and the inventories. Parameter holds a
-// scripted entry's $NAME$ parameters, each named <entry>:<NAME> where defined and where passed.
-const (
-	Localization = "localization"
-	File         = "file"
-	Parameter    = "parameter"
-)
+// Parameter is the database of a scripted entry's $NAME$ parameters, each named <entry>:<NAME> where defined
+// and where passed.
+const Parameter = "parameter"
 
 // scalarFacts is what every occurrence rule asks of a word: the statement's key, whether the statement is an
 // entry's own and the entry's database and ID, whether the word is read as a name at all, the key's own position
@@ -86,9 +83,88 @@ func (walk *fileWalk) occurrencesOf(context, inner Context, statement jomini.Sta
 	}
 	if scalar, isScalar := jomini.ValueOf(statement).(*jomini.Scalar); isScalar {
 		occurrences = walk.scalarOccurrences(occurrences, scalar, walk.facts(context, inner, statement, scalar, false))
+		occurrences = walk.callOccurrences(occurrences, scalar, context.Block)
 	}
+	occurrences = walk.tagCall(occurrences, inner, statement)
 	for i := range occurrences {
 		occurrences[i].Entry, occurrences[i].InTrigger = context.Entry, inTrigger
+	}
+	return occurrences
+}
+
+// callOccurrences adds, for each data call a value holds ([GetPlayer.GetName]), a reference to the function every
+// declared step names, as Type.Function, and to those the calls in its arguments name; a first step no type declares
+// that is written with arguments may be a macro, so it refers to the functions database's entry of its name. The
+// steps read in the data type the block's datacontext leads to, where it has one.
+func (walk *fileWalk) callOccurrences(occurrences []Occurrence, scalar *jomini.Scalar, block *jomini.Block) []Occurrence {
+	if !strings.Contains(scalar.Text, "[") {
+		return occurrences
+	}
+	start := scalar.TextStart()
+	dataType := walk.dataContext(block, scalar)
+	for _, segment := range jomini.Calls(scalar.Text, start) {
+		steps := jomini.ParseCall(scalar.Text[segment.Start-start:segment.End-start], segment.Start)
+		occurrences = walk.stepOccurrences(occurrences, steps, dataType)
+	}
+	return occurrences
+}
+
+// stepOccurrences adds what each step of a data call names, read from the data type dataType (""'s global
+// functions): a function of the type the steps before it lead to, as Type.Function; a data type written first names
+// nothing itself; the first unknown step ends the call.
+func (walk *fileWalk) stepOccurrences(occurrences []Occurrence, steps []jomini.CallStep, dataType string) []Occurrence {
+	for i, step := range steps {
+		owner, _, isFunction := walk.schema.CallStep(steps, i, dataType)
+		_, isType := walk.schema.DataTypes[step.Name]
+		switch {
+		case owner == "":
+			return occurrences
+		case isFunction:
+			occurrences = append(occurrences, Occurrence{Role: Refers, Database: game.DataFunction, ID: owner + "." + step.Name, Range: step.Range})
+		case i == 0 && isType:
+		case i == 0 && len(step.Args) > 0 && walk.schema.Functions != "":
+			occurrences = append(occurrences, Occurrence{Role: Refers, Database: walk.schema.Functions, ID: step.Name, Range: step.Range})
+		default:
+			return occurrences
+		}
+		for _, arg := range step.Args {
+			if !arg.Quoted {
+				occurrences = walk.stepOccurrences(occurrences, jomini.ParseCall(arg.Text, arg.Range.Start), dataType)
+			}
+		}
+	}
+	return occurrences
+}
+
+// dataContext is the data type the datacontext a block writes leads to, read from the global functions; "" where the
+// block writes none, or it is the value held (a datacontext reads outside its own).
+func (walk *fileWalk) dataContext(block *jomini.Block, held *jomini.Scalar) string {
+	key := walk.fileType.ContextKey
+	if block == nil || key == "" {
+		return ""
+	}
+	for _, field := range jomini.Fields(block) {
+		scalar, isScalar := field.Value.(*jomini.Scalar)
+		if !isScalar || scalar == held || field.Key.Text != key {
+			continue
+		}
+		start := scalar.TextStart()
+		if calls := jomini.Calls(scalar.Text, start); len(calls) > 0 {
+			return walk.schema.CallLeadsTo(jomini.ParseCall(scalar.Text[calls[0].Start-start:calls[0].End-start], calls[0].Start), "")
+		}
+	}
+	return ""
+}
+
+// tagCall adds a call, by the file type's TagCalls word, of the tag a statement that defines an entry writes its
+// block with (type x = button { }): the kind the entry is based on.
+func (walk *fileWalk) tagCall(occurrences []Occurrence, inner Context, statement jomini.Statement) []Occurrence {
+	assign, isAssign := statement.(*jomini.Assignment)
+	if !isAssign || !inner.Defines || walk.fileType.TagCalls == "" {
+		return occurrences
+	}
+	if tagged, isTagged := assign.Value.(*jomini.TaggedBlock); isTagged {
+		occurrences = append(occurrences, Occurrence{Role: Refers, Caller: walk.fileType.TagCalls, ID: tagged.Tag.Text, Range: tagged.Tag.Range})
 	}
 	return occurrences
 }
@@ -200,15 +276,12 @@ func (walk *fileWalk) keyOccurrences(occurrences []Occurrence, scalar *jomini.Sc
 // by its words, never its numbers; a word where a number is expected names a script value.
 func (walk *fileWalk) valueOccurrence(occurrences []Occurrence, scalar *jomini.Scalar, facts scalarFacts) []Occurrence {
 	occurrence := Occurrence{Role: Refers, ID: scalar.Text, Range: scalar.Range}
-	fileRef := ""
-	if facts.key != nil {
-		fileRef = game.FileTypes[walk.ext].Refs[facts.key.Text]
-	}
+	ref, isRef := walk.fileRef(facts.key, scalar.Text)
 	switch {
 	case facts.isEntry && facts.database != nil && facts.database.Descriptor.Of != "":
 		occurrence.Database = facts.database.Descriptor.Of
-	case fileRef != "":
-		occurrence.Database = walk.ext[1:] + "." + fileRef
+	case isRef:
+		occurrence.Database, occurrence.Caller, occurrence.ID = ref.Database, ref.Caller, ref.ID
 	case facts.makes && facts.stored != "":
 		occurrence.Role, occurrence.Database = Defines, facts.stored
 	case facts.key != nil && facts.database != nil && facts.atEntry && slices.Contains(facts.database.Descriptor.Names, facts.key.Text):
@@ -218,9 +291,9 @@ func (walk *fileWalk) valueOccurrence(occurrences []Occurrence, scalar *jomini.S
 	case facts.claim.Type == ValueReference && (facts.position.Value.Source != SourceVanilla || facts.literal != jomini.LitNumber):
 		occurrence.Database = facts.claim.Database
 	case facts.claim.Type == ValueLoc:
-		occurrence.Database = Localization
+		occurrence.Database = game.Localization
 	case facts.claim.Type == ValueFile:
-		occurrence.Database = File
+		occurrence.Database = game.File
 	case facts.literal != jomini.LitNumber && facts.literal != jomini.LitDate && facts.position != nil &&
 		(facts.claim.Type == ValueNumber || facts.position.Vanilla.Writes&WritesNumber != 0):
 		occurrence.Caller = game.Shapes[game.ShapeValue].Caller
@@ -235,16 +308,38 @@ func (walk *fileWalk) valueOccurrence(occurrences []Occurrence, scalar *jomini.S
 	return occurrences
 }
 
+// fileRef is what a value names where the file type has a Ref row for the statement's key: an occurrence with
+// the database and ID of an entry, a file under the row's folder, or a localization key, or with the ID and the
+// calling word of a call the key makes; false where it names nothing, which a text is where it is no key or holds a
+// data call.
+func (walk *fileWalk) fileRef(key *jomini.Scalar, value string) (ref Occurrence, isRef bool) {
+	if key == nil {
+		return ref, false
+	}
+	for _, row := range game.FileTypes[walk.ext].Refs {
+		if row.At != key.Text {
+			continue
+		}
+		switch {
+		case row.Folder != "":
+			return Occurrence{Database: game.File, ID: path.Join(row.Folder, value)}, true
+		case row.Database == "":
+			return Occurrence{Caller: key.Text, ID: value}, true
+		case row.Database == game.Localization && (!loc.LooksLikeKey(value) || len(jomini.Calls(value, 0)) > 0):
+			return ref, false
+		}
+		return Occurrence{Database: row.Database, ID: value}, true
+	}
+	return ref, false
+}
+
 // parameterDefinitions defines each $NAME$ an entry of a folder with Parameters writes, at its
 // first use in the file.
 func (walk *fileWalk) parameterDefinitions(occurrences []Occurrence, scalar *jomini.Scalar, facts scalarFacts) []Occurrence {
 	if facts.database == nil || !facts.database.Descriptor.Parameters {
 		return occurrences
 	}
-	start := scalar.Range.Start
-	if scalar.Quoted {
-		start++
-	}
+	start := scalar.TextStart()
 	for _, span := range jomini.Interpolations(scalar.Text) {
 		name := facts.entryID + ":" + span.Name
 		if !walk.defined[name] {

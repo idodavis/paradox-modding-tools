@@ -50,7 +50,7 @@ rest sort by `Rel`, then by position in the file. `Names` is every name a databa
 
 **Resolution.** `Resolve` is the one resolver: a call looks in the databases its caller word names (`Descriptor.Callers`,
 `Schema.Callees`); a scope the game saves from code, a loc key or a file path is known with no
-definitions; anything else is `Lookup`. A local definition answers only its own file. `RefsTo` is
+definitions; a call by `widget` naming a built-in widget kind (`Schema.WidgetKinds`) is known the same way; anything else is `Lookup`. A local definition answers only its own file. `RefsTo` is
 Resolve turned around: every reference to a name of a database, the calls into it included.
 
 **Entry modes.** `Winner` applies a name's definitions in load order, plain first, then each entry

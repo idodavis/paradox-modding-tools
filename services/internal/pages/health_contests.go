@@ -163,7 +163,7 @@ func (shipped shippedFiles) parse(ws *workspace.Session, file inventory.File) *j
 	if len(shipped.defines[file.Path]) == 0 {
 		return nil
 	}
-	parsed, _, err := ws.Parsed(file.Path)
+	parsed, _, err := ws.Parsed(workspace.Parses{}, file.Path)
 	if err != nil {
 		return nil
 	}
@@ -173,7 +173,7 @@ func (shipped shippedFiles) parse(ws *workspace.Session, file inventory.File) *j
 // row is one path's contest: a site per file with the names it defines, and on each file but the kept one the
 // names it writes otherwise than the kept file does; the kept file's site lists the names any other changes.
 func (shipped shippedFiles) row(ws *workspace.Session, files []inventory.File, kept int, sources *sourceIndex) Contest {
-	row := Contest{Database: schema.File, Kind: game.KindName(schema.File), Name: files[kept].Rel, Winner: kept, Rule: "LIOS"}
+	row := Contest{Database: game.File, Kind: game.KindName(game.File), Name: files[kept].Rel, Winner: kept, Rule: "LIOS"}
 	keptParse := shipped.parse(ws, files[kept])
 	keptDefs := map[string]index.At{}
 	for _, def := range shipped.defines[files[kept].Path] {

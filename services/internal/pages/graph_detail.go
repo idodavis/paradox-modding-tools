@@ -298,13 +298,13 @@ func (text eventText) blockName(field *jomini.Assignment) (Version, bool) {
 }
 
 // references is what the block names, grouped by database in the order first written: a call by the database that
-// defines what it calls, and one nothing defines is left out.
+// defines what it calls, and one nothing defines is left out, as are a parameter and a data function.
 func references(ws *workspace.Session, def index.At, file inventory.File) []RefGroup {
 	var groups []RefGroup
 	for _, ref := range index.RefsInside(def) {
 		occurrence := ref.Occurrence()
 		database := occurrence.Database
-		if database == schema.Parameter {
+		if database == schema.Parameter || database == game.DataFunction {
 			continue
 		}
 		if occurrence.Caller != "" {

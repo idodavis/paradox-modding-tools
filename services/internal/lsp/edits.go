@@ -12,11 +12,11 @@ import (
 	"os"
 	"strings"
 
+	"paradox-modding-tools/services/internal/game"
 	"paradox-modding-tools/services/internal/index"
 	"paradox-modding-tools/services/internal/inventory"
 	"paradox-modding-tools/services/internal/jomini"
 	"paradox-modding-tools/services/internal/loc"
-	"paradox-modding-tools/services/internal/schema"
 	"paradox-modding-tools/services/internal/workspace"
 )
 
@@ -130,7 +130,7 @@ func CodeActions(ws *workspace.Session, path string, line, col int) ([]CodeActio
 		return out, nil
 	}
 	ref := file.target(file.parsed.Lines().OffsetAt(line, col))
-	if ref == nil || ref.Database != schema.Localization || !loc.LooksLikeKey(ref.ID) {
+	if ref == nil || ref.Database != game.Localization || !loc.LooksLikeKey(ref.ID) {
 		return out, nil
 	}
 	if _, known := index.Resolve(ws.Install.Schema, ws.Indexes(), *ref, path); known {

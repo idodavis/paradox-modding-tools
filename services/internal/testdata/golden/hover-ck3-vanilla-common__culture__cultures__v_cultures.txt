@@ -43,6 +43,7 @@
     "a block"
    ],
    "winner": -1,
+   "color": "#010203",
    "within": [
     "english"
    ],
@@ -257,6 +258,7 @@
     "a block"
    ],
    "winner": -1,
+   "color": "#030201",
    "within": [
     "french"
    ],

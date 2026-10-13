@@ -506,7 +506,8 @@ func TestFindEntries(t *testing.T) {
 		{"vic3", "common/history/countries/v_countries.txt", []string{"history "}},
 		{ck3, "gui/v_window.gui", []string{
 			"gui.type v_button", "gui.type v_label", "gui.template v_plain", "gui.template v_faded",
-			"gui.widget v_window", "gui.widget v_other_window",
+			"gui.widget v_window", "gui.widget v_other_window", "gui.template v_sized", "gui.type v_box", "gui.block rows",
+			"gui.widget v_layout_window", "gui.type window", "gui.type widget", "gui.type icon",
 		}},
 	}
 	for _, c := range cases {
@@ -574,9 +575,9 @@ func TestOccurrences(t *testing.T) {
 		{eventsFile, []string{v1, immediate, vEffect}, []Occurrence{call("effect", vEffect, 645, 653)}, ""},
 		{eventsFile, []string{v1, immediate, vEffect, "AMOUNT"},
 			[]Occurrence{ref(Parameter, "v_effect:AMOUNT", 658, 664)}, ""},
-		{eventsFile, []string{v1, "title"}, []Occurrence{ref(Localization, "v.1.t", 83, 88)}, ""},
+		{eventsFile, []string{v1, "title"}, []Occurrence{ref(game.Localization, "v.1.t", 83, 88)}, ""},
 		{"common/traits/v_traits.txt", []string{"brave", "icon"},
-			[]Occurrence{ref(File, "gfx/interface/icons/traits/brave.dds", 57, 95)}, ""},
+			[]Occurrence{ref(game.File, "gfx/interface/icons/traits/brave.dds", 57, 95)}, ""},
 		{effects, []string{vEffect, "add_gold"}, []Occurrence{def(Parameter, "v_effect:AMOUNT", 25, 33)}, ""},
 		{effects, []string{"v_list_effect", "every_in_list", "variable"}, []Occurrence{ref("var", "seen_list", 183, 192)}, "var"},
 		{triggers, []string{"v_rich_trigger", "OR", "gold"}, []Occurrence{ref("script_values", "big_value", 71, 80)}, ""},
@@ -604,5 +605,21 @@ func TestWalkFileEntries(t *testing.T) {
 	}
 	if entry := stepAt(t, s, more, "namespace").context.Entry; entry != -1 {
 		t.Errorf("namespace: entry %d, want -1", entry)
+	}
+}
+
+func TestCallLeadsTo(t *testing.T) {
+	s := fixtureSchema(t, ck3)
+	for _, testCase := range []struct {
+		call, context, want string
+	}{
+		{"GetPlayer.GetName", "", "[unregistered]"},
+		{"Character.IsAlive", "", "bool"},
+		{"IsAlive", "Character", "bool"},
+		{"NoSuchType.Char", "", ""},
+	} {
+		if got := s.CallLeadsTo(jomini.ParseCall(testCase.call, 0), testCase.context); got != testCase.want {
+			t.Errorf("%s from %q leads to %q, want %q", testCase.call, testCase.context, got, testCase.want)
+		}
 	}
 }

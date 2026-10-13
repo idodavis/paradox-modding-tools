@@ -2,7 +2,8 @@
 /**
  * The IDE: the sidebar's explorer, a section for the mods and one for the game's files, its search
  * and its source control; the editor groups where they sit; the panel's problems, search
- * results and Git output; and the Wiki pane. A workspace's tabs come back when it opens, in their groups. The status
+ * results and Git output; and, on the right, the shown file's panel (a GUI file's Widgets) or the Wiki pane. A
+ * workspace's tabs come back when it opens, in their groups. The status
  * bar shows the problems and the branch, then the shown file's caret, indentation, kind and encoding, or what a
  * diff compares. In a window of its own (windows.ts) it shows one part: an editor group, the game's files, or the panel.
  */
@@ -24,7 +25,7 @@ import { languageOf } from "../../lib/monaco";
 import { textQuery } from "../../queries";
 import { useGitStore } from "../../stores/git";
 import { useEditorStore } from "../../stores/editor";
-import { tabOf } from "../../editor/tabs";
+import { tabOf, viewsOf } from "../../editor/tabs";
 import { useSettingsStore } from "../../stores/settings";
 import { Close, Show } from "@services/windowservice";
 import { holdsFiles, isMain, useWindowsStore, windowName, windowPart } from "../../stores/windows";
@@ -34,6 +35,7 @@ import IdePanel from "./IdePanel.vue";
 import IdeSettingsCard from "./IdeSettingsCard.vue";
 import SearchView from "./SearchView.vue";
 import SourceControlView from "./SourceControlView.vue";
+import GuiDetail from "../../draw/GuiDetail.vue";
 import StatusFacts from "../../ui/StatusFacts.vue";
 import WikiPane from "./WikiPane.vue";
 
@@ -103,18 +105,25 @@ function collapseAll(): void {
   gameTree.value?.collapseAll();
 }
 
-// the panes, their sizes kept by the splitters: the sidebar, the editors (at least a third of the page) and the Wiki
-// pane while open; under the editors the panel (the editors keeping half); in the explorer the mods' section and the
-// game's files under it, which fold to their header and give the mods their room
+// the shown file's panel, while its kind has one and it is open
+const detail = computed(
+  () => !!editor.panels.get(editor.activeFile) && !!viewsOf(locate(editor.activeFile)?.rel ?? editor.activeFile)?.panel,
+);
+
+// the panes, their sizes kept by the splitters: the sidebar, the editors (at least a third of the page) and, while
+// one is open, the file's panel or else the Wiki pane; under the editors the panel (the editors keeping half); in the
+// explorer the mods' section and the game's files under it, which fold to their header and give the mods their room
 const gameOpen = useLocalStorage("pmt.ide.gameOpen", true);
 const panes = computed(() => [
   ...(isMain || own.value.length
     ? [{ id: "sidebar", slot: "sidebar", order: 1, sizeUnit: "px" as const, defaultSize: 264, minSize: 170 }]
     : []),
   ...(windowPart !== "panel" ? [{ id: "editors", slot: "editors", order: 2, minSize: 33 }] : []),
-  ...(isMain && editor.wikiOpen
-    ? [{ id: "wiki", slot: "wiki", order: 3, sizeUnit: "px" as const, defaultSize: 440, minSize: 320 }]
-    : []),
+  ...(detail.value
+    ? [{ id: "detail", slot: "detail", order: 3, sizeUnit: "px" as const, defaultSize: 360, minSize: 280 }]
+    : isMain && editor.wikiOpen
+      ? [{ id: "wiki", slot: "wiki", order: 3, sizeUnit: "px" as const, defaultSize: 440, minSize: 320 }]
+      : []),
 ]);
 const editorPanes = computed(() => [
   { id: "code", slot: "code", order: 1, minSize: 50 },
@@ -401,6 +410,9 @@ function showProblems(): void {
             <div class="flex min-h-0 min-w-0 flex-1 border-t border-default"><IdePanel :workspace-id="id" /></div>
           </template>
         </USplitter>
+      </template>
+      <template #detail>
+        <GuiDetail :workspace-id="id" :path="editor.activeFile" class="min-w-0 flex-1" />
       </template>
       <template #wiki>
         <WikiPane :workspace-id="id" class="min-w-0 flex-1" />

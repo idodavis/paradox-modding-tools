@@ -5,7 +5,7 @@ Parses the localization dialect the games write (not real YAML): entries with th
 
 | file | holds |
 |---|---|
-| `loc.go` | `Parse`, a line-by-line scanner that never panics and returns entries with typed errors; `Interpolations`; the language of a file from its header, name or path (`LanguageFromFilename`, `LanguageFromRel`); `Stub`, a new file's contents |
+| `loc.go` | `Parse`, a line-by-line scanner that never panics and returns entries with typed errors; `Interpolations`; a text's markup read into the stretches that share one formatting (`Segments`); the language of a file from its header, name or path (`LanguageFromFilename`, `LanguageFromRel`); `Stub`, a new file's contents |
 
 ## Decisions
 

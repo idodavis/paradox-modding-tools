@@ -4,7 +4,68 @@ def gui.template "v_plain" mode="" 160-167 @9:9 local=false named=false
 def gui.template "v_faded" mode="" 192-199 @12:9 local=false named=false
 def gui.widget "v_window" mode="" 217-223 @15:0 local=false named=false
 def gui.widget "v_other_window" mode="" 315-321 @22:0 local=false named=false
+def gui.template "v_sized" mode="" 377-384 @26:9 local=false named=false
+def gui.type "v_box" mode="" 413-418 @29:5 local=false named=false
+def gui.block "rows" mode="" 435-441 @30:7 local=false named=false
+def gui.widget "v_layout_window" mode="" 466-472 @34:0 local=false named=false
+def gui.type "window" mode="" 1049-1055 @54:5 local=false named=false
+def gui.type "widget" mode="" 1074-1080 @55:5 local=false named=false
+def gui.type "icon" mode="" 1099-1103 @56:5 local=false named=false
+ref  "button" called="widget" 32-38 @1:17 from=0 trigger=false
+ref file "v_frame.dds" called="" 72-85 @3:12 from=0 trigger=false
+ref  "textbox" called="widget" 105-112 @5:16 from=1 trigger=false
+ref datafunction "Global.GetPlayer" called="" 126-135 @6:11 from=1 trigger=false
+ref datafunction "Character.GetName" called="" 136-143 @6:21 from=1 trigger=false
 ref gui.widget "v_window" called="" 236-246 @16:8 from=4 trigger=false
 ref  "v_button" called="widget" 248-256 @17:1 from=4 trigger=false
+ref  "icon" called="widget" 264-268 @18:1 from=4 trigger=false
+ref parameter "icon:texture" called="" 275-282 @19:2 from=4 trigger=false
+ref file "gfx/interface/v_bg.tga" called="" 285-309 @19:12 from=4 trigger=false
 ref gui.widget "v_other_window" called="" 334-350 @23:8 from=5 trigger=false
 ref  "v_label" called="widget" 352-359 @24:1 from=5 trigger=false
+ref  "vbox" called="widget" 421-425 @29:13 from=7 trigger=false
+ref  "v_button" called="widget" 446-454 @31:2 from=8 trigger=false
+ref gui.widget "v_layout_window" called="" 485-502 @35:8 from=9 trigger=false
+ref  "v_box" called="widget" 524-529 @37:1 from=9 trigger=false
+ref parameter "v_box:using" called="" 536-541 @38:2 from=9 trigger=false
+ref  "v_sized" called="using" 544-551 @38:10 from=9 trigger=false
+ref parameter "v_box:spacing" called="" 554-561 @39:2 from=9 trigger=false
+ref  "rows" called="widget" 582-588 @40:16 from=9 trigger=false
+ref parameter "v_box:rows" called="" 582-588 @40:16 from=9 trigger=false
+ref  "v_button" called="widget" 594-602 @41:3 from=9 trigger=false
+ref parameter "rows:v_button" called="" 594-602 @41:3 from=9 trigger=false
+ref parameter "v_button:size" called="" 607-611 @41:16 from=9 trigger=false
+ref  "v_button" called="widget" 629-637 @42:3 from=9 trigger=false
+ref parameter "rows:v_button" called="" 629-637 @42:3 from=9 trigger=false
+ref parameter "v_button:size" called="" 642-646 @42:16 from=9 trigger=false
+ref parameter "v_button:layoutpolicy_vertical" called="" 659-680 @42:33 from=9 trigger=false
+ref  "v_label" called="widget" 701-708 @44:2 from=9 trigger=false
+ref parameter "v_box:v_label" called="" 701-708 @44:2 from=9 trigger=false
+ref parameter "v_label:text" called="" 713-717 @44:14 from=9 trigger=false
+ref localization "v_key" called="" 720-727 @44:21 from=9 trigger=false
+ref parameter "v_label:font" called="" 728-732 @44:29 from=9 trigger=false
+ref font.font "v_font" called="" 735-743 @44:36 from=9 trigger=false
+ref parameter "v_label:fontsize" called="" 744-752 @44:45 from=9 trigger=false
+ref  "icon" called="widget" 762-766 @45:2 from=9 trigger=false
+ref parameter "v_box:icon" called="" 762-766 @45:2 from=9 trigger=false
+ref parameter "icon:texture" called="" 771-778 @45:11 from=9 trigger=false
+ref file "gfx/interface/v_frame.dds" called="" 781-808 @45:21 from=9 trigger=false
+ref parameter "v_box:vbox" called="" 813-817 @46:2 from=9 trigger=false
+ref datafunction "Global.GetPlayer" called="" 839-848 @47:17 from=9 trigger=false
+ref datafunction "Character.GetVassals" called="" 849-859 @47:27 from=9 trigger=false
+ref  "v_label" called="widget" 874-881 @48:12 from=9 trigger=false
+ref  "widget" called="widget" 896-902 @50:2 from=9 trigger=false
+ref parameter "v_box:widget" called="" 896-902 @50:2 from=9 trigger=false
+ref parameter "widget:visible" called="" 907-914 @50:13 from=9 trigger=false
+ref datafunction "Global.GetVariableSystem" called="" 919-936 @50:25 from=9 trigger=false
+ref datafunction "VariableSystem.Exists" called="" 937-953 @50:43 from=9 trigger=false
+ref parameter "widget:size" called="" 956-960 @50:62 from=9 trigger=false
+ref  "widget" called="widget" 977-983 @51:2 from=9 trigger=false
+ref parameter "v_box:widget" called="" 977-983 @51:2 from=9 trigger=false
+ref parameter "widget:visible" called="" 988-995 @51:13 from=9 trigger=false
+ref datafunction "Global.GetPlayer" called="" 1000-1009 @51:25 from=9 trigger=false
+ref datafunction "Character.IsAlive" called="" 1010-1017 @51:35 from=9 trigger=false
+ref parameter "widget:size" called="" 1020-1024 @51:45 from=9 trigger=false
+ref  "window" called="widget" 1058-1064 @54:14 from=10 trigger=false
+ref  "widget" called="widget" 1083-1089 @55:14 from=11 trigger=false
+ref  "icon" called="widget" 1106-1110 @56:12 from=12 trigger=false

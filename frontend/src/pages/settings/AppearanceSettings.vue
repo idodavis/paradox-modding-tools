@@ -11,7 +11,6 @@ import { FONT_SCALES, THEMES, useSettingsStore, type ThemeFamily, type ThemeId }
 import { modColor, updatePrefs, useWorkspaceStore } from "../../stores/workspace";
 import { WORKSPACE_TOOLS, type WorkspaceToolName } from "../../app/pages";
 import OriginChip from "../../ui/OriginChip.vue";
-import SettingRow from "../../ui/SettingRow.vue";
 import SettingSection from "./SettingSection.vue";
 import ThemePreview from "./ThemePreview.vue";
 
@@ -76,15 +75,16 @@ const { mutate: resetColors, isLoading: resetting } = useMutation({
       title="Theme"
       hint="Every theme is the same set of tokens with different values, so all pages and the editor change together. Each comes dark and light: switch with the sun and moon in the top bar."
     >
-      <SettingRow
+      <UFormField
         label="Match the workspace's game"
-        hint="Crusader Kings III workspaces use Crusader Kings. Turn off to use your pick everywhere."
+        description="Crusader Kings III workspaces use Crusader Kings. Turn off to use your pick everywhere."
+        orientation="horizontal"
       >
         <USwitch
           :model-value="settings.matchGameTheme"
           @update:model-value="settings.setOn('ui.matchGameTheme', $event)"
         />
-      </SettingRow>
+      </UFormField>
       <div class="grid grid-cols-3 gap-3.5">
         <button
           v-for="family in THEMES"
@@ -109,9 +109,13 @@ const { mutate: resetColors, isLoading: resetting } = useMutation({
       title="Light and dark"
       hint="The sun and moon in the top bar switch them on every page; switching stops following Windows."
     >
-      <SettingRow label="Follow Windows" hint="Use the light or dark mode your system is set to.">
+      <UFormField
+        label="Follow Windows"
+        description="Use the light or dark mode your system is set to."
+        orientation="horizontal"
+      >
         <USwitch :model-value="settings.appearance === 'system'" @update:model-value="settings.followSystem($event)" />
-      </SettingRow>
+      </UFormField>
     </SettingSection>
 
     <SettingSection title="Text size">

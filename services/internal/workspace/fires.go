@@ -43,7 +43,7 @@ type fireWalk struct {
 	from   index.At
 	place  bool
 	seen   map[index.At]bool
-	parsed map[string]*jomini.Result
+	parsed Parses
 	out    []Fire
 }
 
@@ -66,7 +66,7 @@ func (ws *Session) FiredBy(target index.At, place bool) []Fire {
 
 // newFireWalk is a walk out of or into from, with nothing entered and nothing parsed yet.
 func (ws *Session) newFireWalk(from index.At) *fireWalk {
-	return &fireWalk{ws: ws, from: from, seen: map[index.At]bool{from: true}, parsed: map[string]*jomini.Result{}}
+	return &fireWalk{ws: ws, from: from, seen: map[index.At]bool{from: true}, parsed: Parses{}}
 }
 
 // follow reads the references written in one definition; via is the entries entered to reach it, start the
@@ -146,13 +146,9 @@ func (walk *fireWalk) locateFire(fire Fire, origin, firing fireRef) Fire {
 // part where it has one: option a), the statement that holds it, and that statement's other fields as written.
 // A list's weight (random_events' 100 = x) is an argument, and a block's id is its statement's.
 func (walk *fireWalk) fireSite(firing fireRef) (block, command, args string) {
-	path := firing.ref.File().Path
-	parsed := walk.parsed[path]
+	parsed, _, _ := walk.ws.Parsed(walk.parsed, firing.ref.File().Path)
 	if parsed == nil {
-		if parsed, _, _ = walk.ws.Parsed(path); parsed == nil {
-			return "", "", ""
-		}
-		walk.parsed[path] = parsed
+		return "", "", ""
 	}
 	top := parsed.AssignmentAt(int(firing.def.Occurrence().Line), int(firing.def.Occurrence().Col))
 	if top == nil {

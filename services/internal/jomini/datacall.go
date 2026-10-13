@@ -45,6 +45,22 @@ func Calls(text string, offset int) []Range {
 	return calls
 }
 
+// Cast reads a cast literal, '(int32)3' or (CFixedPoint)0, into its type and value; false for any other text.
+func Cast(text string) (typ, value string, ok bool) {
+	text = strings.TrimSuffix(strings.TrimPrefix(text, "'"), "'")
+	rest, opened := strings.CutPrefix(text, "(")
+	typ, value, closed := strings.Cut(rest, ")")
+	if !opened || !closed || typ == "" || value == "" {
+		return "", "", false
+	}
+	for i := range len(typ) {
+		if !isAlnumUnder(typ[i]) {
+			return "", "", false
+		}
+	}
+	return typ, value, true
+}
+
 // ParseCall reads one data call, with or without its brackets, into its steps; what does not parse
 // ends the steps, so a half-typed call gives the steps before it. The call ends at a | outside
 // parentheses and quotes: [glory|E] is the step glory, written with the format E.

@@ -89,11 +89,7 @@ func (file *openFile) scriptCard(offset int) *Inspect {
 	if scalar == nil {
 		return bareCard(within, file.span(jomini.Range{Start: offset, End: offset}))
 	}
-	start := scalar.Range.Start
-	if scalar.Quoted {
-		start++
-	}
-	if steps := dataCallAt(scalar.Text, start, offset); steps != nil {
+	if steps := dataCallAt(scalar.Text, scalar.TextStart(), offset); steps != nil {
 		card := file.dataCallCard(steps)
 		if card == nil {
 			return bareCard(within, file.span(scalar.Range))
@@ -120,7 +116,10 @@ func (file *openFile) scriptCard(offset int) *Inspect {
 		card.Sites = []Location{locate(file.ws, file.path, file.parsed.Lines().PositionAt(at))}
 	}
 	if isKey && isAssign {
-		card.Color = colorFact(assign)
+		tag, parts, isColor := jomini.ColorParts(assign.Value)
+		if color, known := game.ColorOf(tag, parts); isColor && known {
+			card.Color = color.Hex()
+		}
 		if len(cursor.chain) > 1 {
 			holder := cursor.chain[len(cursor.chain)-2]
 			card.Weight = weightFact(assign, jomini.ChildBlock(holder.statement), holder.inner)
@@ -177,6 +176,8 @@ func (file *openFile) describe(card *Inspect, subject subject) bool {
 		card.Stale = card.Stale || s.Sources[from].Stale
 	}
 	switch {
+	case subject.ref != nil && file.kindCard(card, *subject.ref):
+		return true
 	case subject.ref != nil && file.cardForReference(card, subject, mark):
 		return true
 	case subject.command != nil:
@@ -185,6 +186,20 @@ func (file *openFile) describe(card *Inspect, subject subject) bool {
 		return cardForPosition(card, subject, mark)
 	}
 	return false
+}
+
+// kindCard fills the card of a call that names a kind the game builds in, which no definition answers; false for
+// any other reference.
+func (file *openFile) kindCard(card *Inspect, ref schema.Occurrence) bool {
+	if ref.Caller == "" {
+		return false
+	}
+	defs, known := index.Resolve(file.ws.Install.Schema, file.ws.Indexes(), ref, file.place.Path)
+	if !known || len(defs) > 0 {
+		return false
+	}
+	card.Word, card.Head = ref.ID, builtInHeading(ref.Caller)
+	return true
 }
 
 // scopeCard is the record a card carries: nil where neither the scope nor its root is known.
@@ -207,7 +222,7 @@ func (file *openFile) cardForReference(card *Inspect, subject subject, mark func
 		database = defs[0].Occurrence().Database
 	}
 	row := s.Databases[database]
-	inSchema := row != nil || database == schema.Localization || database == schema.File
+	inSchema := row != nil || database == game.Localization || database == game.File
 	if unknown := !known && (ref.Caller != "" || !inSchema); unknown {
 		return false
 	}
@@ -215,7 +230,7 @@ func (file *openFile) cardForReference(card *Inspect, subject subject, mark func
 	if entry, name, _ := strings.Cut(ref.ID, ":"); database == schema.Parameter {
 		card.Word, card.Head = name, "parameter of "+entry
 	}
-	if database == schema.Localization || database == schema.File {
+	if database == game.Localization || database == game.File {
 		file.placeCard(card, database, ref.ID)
 		return true
 	}
@@ -257,7 +272,7 @@ func (file *openFile) cardForReference(card *Inspect, subject subject, mark func
 // and for an image its header).
 func (file *openFile) placeCard(card *Inspect, database, id string) {
 	ws := file.ws
-	if database == schema.Localization {
+	if database == game.Localization {
 		if entry, known := ws.Loc(id, ""); known {
 			card.Name, card.Winner = loc.Plain(entry.Text()), 0
 			card.Sites = []Location{locate(ws, entry.File().Path, Position{Line: int(entry.Occurrence().Line)})}
@@ -441,74 +456,6 @@ func weightFact(branch *jomini.Assignment, holder *jomini.Block, context schema.
 	return int(mine*100/sum + 0.5)
 }
 
-// colorFact is a color written as a tagged block (rgb { 255 0 0 }) spelled as #rrggbb; "" for any
-// other value, an unknown tag or too few parts.
-func colorFact(assign *jomini.Assignment) string {
-	tagged, isTagged := assign.Value.(*jomini.TaggedBlock)
-	if !isTagged {
-		return ""
-	}
-	var words []string
-	var parts []float64
-	for _, statement := range tagged.Block.Statements {
-		value, isValue := statement.(*jomini.ValueStmt)
-		if !isValue {
-			continue
-		}
-		if scalar, isScalar := value.Value.(*jomini.Scalar); isScalar {
-			words = append(words, scalar.Text)
-			number, _ := strconv.ParseFloat(scalar.Text, 64)
-			parts = append(parts, number)
-		}
-	}
-	i := slices.IndexFunc(game.Colors, func(color game.Color) bool { return strings.EqualFold(color.Tag, tagged.Tag.Text) })
-	if i < 0 {
-		return ""
-	}
-	row := game.Colors[i]
-	if row.Hex && len(words) == 1 {
-		if digits := strings.TrimPrefix(strings.ToLower(words[0]), "0x"); len(digits) >= 6 {
-			return "#" + digits[:6]
-		}
-		return ""
-	}
-	switch {
-	case len(parts) < 3:
-		return ""
-	case row.HSV:
-		return hex(hsv(parts[0]/cmp.Or(row.Hue, 1), parts[1]/cmp.Or(row.Parts, 1), parts[2]/cmp.Or(row.Parts, 1)))
-	}
-	return hex(parts[0], parts[1], parts[2])
-}
-
-// hex spells a color whose parts are 0 to 255, or 0 to 1 where every part is at most 1, as #rrggbb.
-func hex(red, green, blue float64) string {
-	scale := 1.0
-	if max(red, green, blue) <= 1 {
-		scale = 255
-	}
-	return fmt.Sprintf("#%02x%02x%02x", int(red*scale+0.5), int(green*scale+0.5), int(blue*scale+0.5))
-}
-
-// hsv turns a hue, a saturation and a value, each 0 to 1, into red, green and blue, each 0 to 1.
-func hsv(hue, saturation, value float64) (red, green, blue float64) {
-	sector, fraction := int(hue*6)%6, hue*6-float64(int(hue*6))
-	bottom, falling, rising := value*(1-saturation), value*(1-fraction*saturation), value*(1-(1-fraction)*saturation)
-	switch sector {
-	case 0:
-		return value, rising, bottom
-	case 1:
-		return falling, value, bottom
-	case 2:
-		return bottom, value, rising
-	case 3:
-		return bottom, falling, value
-	case 4:
-		return rising, bottom, value
-	}
-	return value, bottom, falling
-}
-
 // writtenInFact says where a key is written when nothing else names it: in its entry's database
 // where the key sits in the entry's own block, else in the key of the block that holds it.
 func (cursor cursor) writtenInFact(card *Inspect) {
@@ -554,7 +501,7 @@ func (file *openFile) dataCallCard(steps []jomini.CallStep) *Inspect {
 	ws, s := file.ws, file.ws.Install.Schema
 	step := steps[len(steps)-1]
 	card := &Inspect{Word: step.Name, Range: file.span(step.Range), Winner: -1}
-	typeName := stepsLeadTo(s.DataTypes, steps[:len(steps)-1])
+	typeName := s.CallLeadsTo(steps[:len(steps)-1], "")
 	stale := s.Sources[schema.SourceDumps].Stale
 	for _, arg := range step.Args {
 		if custom, isCustom := s.CustomLoc[arg.Text]; arg.Quoted && isCustom {
@@ -581,6 +528,7 @@ func (file *openFile) dataCallCard(steps []jomini.CallStep) *Inspect {
 		card.Head, card.Leads = cmp.Or(card.Head, "data function"), function.Returns
 		card.Scope = scopeCard(schema.Scope{This: typeName, Reason: "what " + step.Name + " is called on"})
 		card.Stale = card.Stale || stale
+		card.Sites = file.uses(schema.Occurrence{Database: game.DataFunction, ID: typeName + "." + step.Name})
 	}
 	if _, isType := s.DataTypes[step.Name]; len(steps) == 1 && isType && !known {
 		card.Head, card.Stale = "data type", card.Stale || stale

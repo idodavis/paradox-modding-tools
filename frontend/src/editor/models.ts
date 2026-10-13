@@ -58,6 +58,9 @@ const dotSheet = new CSSStyleSheet();
 /** Asked again when the session is built again: a date's era after it, where the mods declare a calendar. */
 export const hintsChanged = new monaco.Emitter<void>();
 
+/** Fired with a file's path once the backend has an edit of its text, so what is drawn from it is read again. */
+export const textEdited = new monaco.Emitter<string>();
+
 /** The workspace the editors are of, and which of its files are read only; another workspace's files go. */
 export function setWorkspace(id: string, isReadOnlyPath: (path: string) => boolean): void {
   readOnlyRule = isReadOnlyPath;
@@ -205,6 +208,7 @@ function flush(file: File | undefined): Promise<unknown> {
   clearTimeout(file.timer);
   file.pending = false;
   send(file);
+  void file.sent.then(() => textEdited.fire(file.path));
   return file.sent;
 }
 

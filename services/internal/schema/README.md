@@ -10,11 +10,11 @@ the file named for the step: `declareDatabases` in `build.go`, `dumpsOrShipped` 
 
 | file | holds |
 |---|---|
-| `schema.go` | the types (`Schema`, `Database`, `Position` with its `Claims`, `Claim`, `Command`, `Vanilla`, `Writes`, `ValueType`), `Link`, `DatabaseNamed`, `DatabasesWhere`, `MayAccuse` |
+| `schema.go` | the types (`Schema`, `Database`, `Position` with its `Claims`, `Claim`, `Command`, `Vanilla`, `Writes`, `ValueType`), `Link`, `CallLeadsTo` and `CallStep` (where a data call's steps lead), `DatabaseNamed`, `DatabasesWhere`, `MayAccuse` |
 | `build.go` | the pipeline: `Input`, `Build`; declaring the databases (`declare`, `declareDatabases`) |
 | `dumps.go` | `dumpsOrShipped`, then the parsers of the console dumps: the label table, one `parse…` per record kind; the usages merged into each command's arguments once every command is declared (`mergeUsages`, `usageRoots`, `mergeUsage`, `argument`) |
 | `docs.go` | the documentation dialect: `parseDocScript`, the one reader of docscript that the install's docs, the wiki's examples and the dumps' usages share (`DocNode`: a statement's key, value slot, prose and block); `parseDocs`, the docs and examples parsed to trees with every key they write noted for the entry detector; `mergeDocs`, their claims merged into the entry trees after vanilla (`mergeNode`, `mergeTemplate`, `docClaims`); the phrase table `docPhrases` and `claimsOf`, which both merges read claims with |
-| `vanilla.go` | steps 5 and 6: `countVanilla` and `countFile`, what vanilla writes at each position, and `inferTypesAndPrefixes`, the kind its scalars share where nothing declares one |
+| `vanilla.go` | steps 5 and 6: `countVanilla` and `countFile`, what vanilla writes at each position, the built-in widget kinds the GUI files imply (`Schema.WidgetKinds`, by `kindCollector`), and `inferTypesAndPrefixes`, the kind its scalars share where nothing declares one |
 | `entries.go` | the entry detector, `entryAt`: whether a statement defines an entry and in which database, by the game's `Layout` rows (`game.Descriptor`: identity, wrappers, keywords, nested key paths), the file type and the file's own database (`folder`, `DatabaseAt`); a table's or list's entries (`tableEntries`), a whole-file entry (`wholeFileEntry`) |
 | `walk.go` | the walker: `Context` (where statements read), `ValuePosition` (the position that types a statement's value: the key's own, or the block's for a word listed in it), `Visit`, `WalkFile` (the entries decided as it meets them, `entryOpens` the context an entry opens), `WalkBlock`, `EntryContext`, `EntryScope`; `Enter`, the one step from the context a statement is written in to the one its block reads in, by the first key rule that fits (`fits`), its row (`game.KeyRules`) and the first construct (`game.Constructs`); `holdsOf`, `commandShape`, `scopeOf` (the scope record `Scope`: this scope, the entry's root, the ones before, the saved scopes, the reason), `Follow` (a link chain, link by link), `commandScope` |
 | `occurrences.go` | `Occurrence`, one occurrence of a name with its `Role` (`Defines`, `Refers`, `Localizes`), and the occurrence rules: which entry each scalar of a placed statement stands for (`keyOccurrences`, `valueOccurrence`, `prefixReferences`, `parameterDefinitions`); the `Localization`, `File` and `Parameter` databases |
@@ -50,6 +50,8 @@ under its name for the entry where its block runs effects, and inside a command'
 save_scope_as = x }`) a scope the command makes, unknown. Two readers use the walker: `countFile` and the index's
 `Collect`;
 the doc and usage merges call `Enter` on a synthetic statement.
+
+**What a word names.** Beside the rules of `occurrences.go`: the tag of a block an entry is written with (`type x = button { }`) is a call by the file type's `TagCalls` word; a key a file type's `Ref` names refers to an entry, a file or a localization key, or calls by its own word (`using = x`); and each step of a data call in a value is a reference to the function it names (`Type.Function` in the `datafunction` database), read from the data type the block's `datacontext` leads to. A first step no type declares, written with arguments, refers to the functions database's entry of its name (a `data_binding` macro).
 
 `WalkFile` is the one walk of a whole file: it reads every statement in source order, outer before inner, decides
 at each whether it defines an entry (`entryAt`: by the game's `Layout` rows, the file type and the file's

@@ -1,6 +1,6 @@
 <script setup lang="ts">
 /**
- * The open row: its name with its kind and rule, what the rule does, then
+ * The open row: its header (its name, kind, origin and rule), what the rule does, then
  * each place it is written as a site card with its lines; an untranslated key's file in the language it
  * goes in, and what reads it. A contest compares the kept definition's file with the one it replaces.
  */
@@ -11,6 +11,7 @@ import { sitesOf, typeOf, type Row } from "../../composables/useHealth";
 import { linesQuery, locReadersQuery } from "../../queries";
 import { useWorkspaceStore } from "../../stores/workspace";
 import CompareFiles from "../../ui/CompareFiles.vue";
+import DetailHeader from "../../ui/DetailHeader.vue";
 import { list } from "../../lib/format";
 import OriginDot from "../../ui/OriginDot.vue";
 import ScriptSnippet from "../../ui/ScriptSnippet.vue";
@@ -54,6 +55,15 @@ const title = computed(() => {
 // a problem row's type in its color, then what kind of name it is or the language it is fixed in
 const type = computed(() => (row && ("code" in row || "key" in row) ? typeOf(row) : null));
 const tag = computed(() => (row && (("kind" in row && row.kind) || ("language" in row && row.language))) || "");
+// the type's color as the header tints its badge with: a Nuxt UI color's variable, none for neutral
+const kindColor = computed(() =>
+  type.value && type.value.color !== "neutral" ? `var(--ui-${type.value.color})` : undefined,
+);
+// the origin the row is about: a dependency's reader, else the kept site's (a contest's) or the first site's
+const origin = computed(() => {
+  if (row && "from" in row) return row.from;
+  return sites.value[Math.max(contest.value?.winner ?? 0, 0)]?.place.origin ?? "";
+});
 
 const names = computed(() => sites.value.map((site) => store.originName(site.place.origin)));
 /** Each site's part in a contest: kept, added to the kept one, or replaced by it. */
@@ -132,18 +142,15 @@ function openCompare(): void {
   <section class="flex min-w-0 grow flex-col bg-default">
     <p v-if="!row" class="p-4 text-12 text-dimmed">Select a row.</p>
     <template v-else>
-      <div class="flex flex-col gap-2 border-b border-default px-4 py-3">
-        <div class="flex items-center gap-2">
-          <span class="truncate font-mono text-13 font-semibold">{{ title }}</span>
-          <UBadge v-if="type" :label="type.label" :color="type.color" size="sm" />
-          <UBadge v-if="tag" :label="tag" size="sm" />
+      <DetailHeader :kind="type?.label ?? tag" :kind-color="kindColor" :origin="origin" :name="title">
+        <template #actions>
+          <UBadge v-if="type && tag" :label="tag" size="sm" />
           <UBadge v-if="contest" :label="contest.rule" :color="contest.firstWins ? 'warning' : 'info'" size="sm" />
           <UBadge v-if="replacedMod" label="Replaces a mod's own" color="error" size="sm" />
-          <span class="grow" />
           <UButton v-if="nearest >= 0" label="Compare the two" icon="i-lucide-diff" @click="openCompare" />
-        </div>
-        <p v-if="rule" class="text-12 text-muted">{{ rule }}</p>
-      </div>
+        </template>
+      </DetailHeader>
+      <p v-if="rule" class="border-b border-default px-4 py-2 text-12 text-muted">{{ rule }}</p>
       <div class="flex min-h-0 flex-col gap-3 overflow-auto px-4 py-3">
         <div
           v-for="{ site, i } in ordered"

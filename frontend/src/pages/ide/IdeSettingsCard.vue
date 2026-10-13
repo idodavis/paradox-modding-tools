@@ -11,7 +11,6 @@ import { codesQuery } from "../../queries";
 import { useEditorStore } from "../../stores/editor";
 import { switchesOf, useSettingsStore } from "../../stores/settings";
 import { TOAST_PREFS, useWikiPrefs } from "../../composables/useWikiPrefs";
-import SettingRow from "../../ui/SettingRow.vue";
 
 const TABS = ["editor", "language", "checks", "explorer", "wiki"] as const;
 type Tab = (typeof TABS)[number];
@@ -120,10 +119,18 @@ function resetTab(): void {
         >
           <template #editor>
             <div class="divide-y divide-default">
-              <SettingRow label="Font" hint="Any font installed on this computer, by name">
+              <UFormField
+                label="Font"
+                description="Any font installed on this computer, by name"
+                orientation="horizontal"
+              >
                 <UInputMenu v-model="font" mode="autocomplete" :items="FONTS" size="sm" class="w-40" />
-              </SettingRow>
-              <SettingRow label="Line height" hint="The room between the editor's lines">
+              </UFormField>
+              <UFormField
+                label="Line height"
+                description="The room between the editor's lines"
+                orientation="horizontal"
+              >
                 <UTabs
                   :model-value="settings.roomy ? 'roomy' : 'compact'"
                   :items="LINE_HEIGHT"
@@ -131,8 +138,12 @@ function resetTab(): void {
                   size="xs"
                   @update:model-value="settings.set('ide.lineHeight', String($event))"
                 />
-              </SettingRow>
-              <SettingRow label="Editor text size" hint="Code in the editor, peek and compare">
+              </UFormField>
+              <UFormField
+                label="Editor text size"
+                description="Code in the editor, peek and compare"
+                orientation="horizontal"
+              >
                 <UInput
                   type="number"
                   size="sm"
@@ -142,35 +153,53 @@ function resetTab(): void {
                 >
                   <template #trailing><span class="text-11 text-dimmed">px</span></template>
                 </UInput>
-              </SettingRow>
-              <SettingRow v-for="row in switchesOf('editor')" :key="row.key" :label="row.label" :hint="row.hint">
+              </UFormField>
+              <UFormField
+                v-for="row in switchesOf('editor')"
+                :key="row.key"
+                :label="row.label"
+                :description="row.hint"
+                orientation="horizontal"
+              >
                 <USwitch :model-value="settings.on(row.key)" @update:model-value="settings.setOn(row.key, $event)" />
-              </SettingRow>
-              <SettingRow label="Indentation" hint="For new lines; a file keeps its own">
-                <UTabs
-                  :model-value="settings.indentSpaces ? 'spaces' : 'tabs'"
-                  :items="INDENT"
-                  :content="false"
-                  size="xs"
-                  @update:model-value="settings.set('ide.indent', String($event))"
-                />
-                <UInput
-                  type="number"
-                  size="sm"
-                  class="w-14"
-                  :min="1"
-                  :max="8"
-                  :model-value="settings.indentSize"
-                  @update:model-value="setNumber('ide.indentSize', $event)"
-                />
-              </SettingRow>
+              </UFormField>
+              <UFormField
+                label="Indentation"
+                description="For new lines; a file keeps its own"
+                orientation="horizontal"
+              >
+                <div class="flex items-center gap-4">
+                  <UTabs
+                    :model-value="settings.indentSpaces ? 'spaces' : 'tabs'"
+                    :items="INDENT"
+                    :content="false"
+                    size="xs"
+                    @update:model-value="settings.set('ide.indent', String($event))"
+                  />
+                  <UInput
+                    type="number"
+                    size="sm"
+                    class="w-14"
+                    :min="1"
+                    :max="8"
+                    :model-value="settings.indentSize"
+                    @update:model-value="setNumber('ide.indentSize', $event)"
+                  />
+                </div>
+              </UFormField>
             </div>
           </template>
           <template #language>
             <div class="divide-y divide-default">
-              <SettingRow v-for="row in switchesOf('language')" :key="row.key" :label="row.label" :hint="row.hint">
+              <UFormField
+                v-for="row in switchesOf('language')"
+                :key="row.key"
+                :label="row.label"
+                :description="row.hint"
+                orientation="horizontal"
+              >
                 <USwitch :model-value="settings.on(row.key)" @update:model-value="settings.setOn(row.key, $event)" />
-              </SettingRow>
+              </UFormField>
             </div>
           </template>
           <template #checks>
@@ -179,17 +208,28 @@ function resetTab(): void {
               Hides a check in the editor only. Health's counts do not change.
             </div>
             <div class="min-h-0 divide-y divide-default overflow-y-auto">
-              <SettingRow v-for="check in codes ?? []" :key="check.code" :label="check.summary" :hint="check.code" mono>
+              <UFormField
+                v-for="check in codes ?? []"
+                :key="check.code"
+                :label="check.summary"
+                :description="check.code"
+                :ui="{ description: 'font-mono' }"
+                orientation="horizontal"
+              >
                 <USwitch
                   :model-value="settings.on(`ide.diag.${check.code}`, check.default)"
                   @update:model-value="settings.setOn(`ide.diag.${check.code}`, $event)"
                 />
-              </SettingRow>
+              </UFormField>
             </div>
           </template>
           <template #explorer>
             <div class="divide-y divide-default">
-              <SettingRow label="Explorer and panel text size" hint="The explorer, Problems, Search and the Wiki">
+              <UFormField
+                label="Explorer and panel text size"
+                description="The explorer, Problems, Search and the Wiki"
+                orientation="horizontal"
+              >
                 <UInput
                   type="number"
                   size="sm"
@@ -199,8 +239,12 @@ function resetTab(): void {
                 >
                   <template #trailing><span class="text-11 text-dimmed">px</span></template>
                 </UInput>
-              </SettingRow>
-              <SettingRow label="Row density" hint="Compact fits more; Relaxed is easier to hit">
+              </UFormField>
+              <UFormField
+                label="Row density"
+                description="Compact fits more; Relaxed is easier to hit"
+                orientation="horizontal"
+              >
                 <UTabs
                   :model-value="settings.treeDensity"
                   :items="DENSITY"
@@ -208,18 +252,34 @@ function resetTab(): void {
                   size="xs"
                   @update:model-value="settings.set('ide.density', String($event))"
                 />
-              </SettingRow>
-              <SettingRow v-for="row in switchesOf('explorer')" :key="row.key" :label="row.label" :hint="row.hint">
+              </UFormField>
+              <UFormField
+                v-for="row in switchesOf('explorer')"
+                :key="row.key"
+                :label="row.label"
+                :description="row.hint"
+                orientation="horizontal"
+              >
                 <USwitch :model-value="settings.on(row.key)" @update:model-value="settings.setOn(row.key, $event)" />
-              </SettingRow>
+              </UFormField>
             </div>
           </template>
           <template #wiki>
             <div class="divide-y divide-default">
-              <SettingRow v-for="row in switchesOf('wiki')" :key="row.key" :label="row.label" :hint="row.hint">
+              <UFormField
+                v-for="row in switchesOf('wiki')"
+                :key="row.key"
+                :label="row.label"
+                :description="row.hint"
+                orientation="horizontal"
+              >
                 <USwitch :model-value="settings.on(row.key)" @update:model-value="settings.setOn(row.key, $event)" />
-              </SettingRow>
-              <SettingRow label="Suggestion toast" hint="A note when the Wiki has pages for a new file">
+              </UFormField>
+              <UFormField
+                label="Suggestion toast"
+                description="A note when the Wiki has pages for a new file"
+                orientation="horizontal"
+              >
                 <USelect
                   :model-value="toastPref"
                   :items="TOAST_PREFS"
@@ -229,7 +289,7 @@ function resetTab(): void {
                   class="w-33"
                   @update:model-value="setToastPref"
                 />
-              </SettingRow>
+              </UFormField>
             </div>
           </template>
         </UTabs>

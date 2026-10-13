@@ -144,6 +144,9 @@ func heading(database string) string {
 	return strings.NewReplacer("_", " ", ".", " ").Replace(database[strings.LastIndexByte(database, '/')+1:])
 }
 
+// builtInHeading is what a card calls a kind the game builds in, one a call by this word names (a widget kind).
+func builtInHeading(caller string) string { return "built-in " + caller + " kind" }
+
 // oneOf is a word list as a card says it: the first six, then how many more.
 func oneOf(words []string) string {
 	if len(words) > 6 {

@@ -279,7 +279,7 @@ func (judge *judge) unresolved(occurrences []schema.Occurrence) {
 		case isEvent:
 		case linked:
 			code, message = "unresolved-ref", unresolvedRef
-		case typed && text == ref.ID && claim.Type == schema.ValueFile && ref.Database == schema.File:
+		case typed && text == ref.ID && claim.Type == schema.ValueFile && ref.Database == game.File:
 			code, message = "missing-file", ref.ID+" exists nowhere in the install or the mods"
 		case typed && text == ref.ID && claim.Type == schema.ValueReference && claim.Database == ref.Database:
 			code, message = "unresolved-ref", unresolvedRef

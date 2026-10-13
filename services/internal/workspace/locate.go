@@ -109,7 +109,7 @@ func (ws *Session) Statement(def index.At) (*jomini.Result, jomini.Statement) {
 	if def == (index.At{}) {
 		return nil, nil
 	}
-	parsed, _, err := ws.Parsed(def.File().Path)
+	parsed, _, err := ws.Parsed(Parses{}, def.File().Path)
 	if err != nil {
 		return nil, nil
 	}
@@ -119,7 +119,7 @@ func (ws *Session) Statement(def index.At) (*jomini.Result, jomini.Statement) {
 // Loc is a key's entry in a language, the last loaded: a mod's over the install's. With none in the language it
 // is the english one, so a title shows; whether the key exists is Resolve's to say.
 func (ws *Session) Loc(key, language string) (index.At, bool) {
-	entries := index.Lookup(ws.Indexes(), schema.Localizes, schema.Localization, key)
+	entries := index.Lookup(ws.Indexes(), schema.Localizes, game.Localization, key)
 	for _, wanted := range []string{cmp.Or(language, ws.Language), game.BaseLanguage} {
 		for _, entry := range slices.Backward(entries) {
 			if entry.Language() == wanted {

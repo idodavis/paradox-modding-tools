@@ -18,7 +18,7 @@ Unofficial. Not affiliated with Paradox Interactive. Licensed **GPL-3.0-or-later
 |------|----------------|
 | **Library** | Workspaces by game, the active one in full; New workspace / New mod; Reset all PMT data |
 | **New workspace** | Game → install (found or added) → mods in load order → name and language |
-| **IDE** | Monaco editors in groups and splits; hover cards, completion, checks; search and replace; git source control with a graph and inline merge conflicts; the Wiki pane; game files read only |
+| **IDE** | Monaco editors in groups and splits; hover cards, completion, checks; a Visual view of GUI files; search and replace; git source control with a graph and inline merge conflicts; the Wiki pane; game files read only |
 | **Event Graph** | Events and on_actions and what fires them, by origin; open from the IDE with Ctrl Shift G |
 | **Health** | Which mod's definition wins (first or last loaded), overrides, dependencies, dangling references, untranslated and misplaced localization, the editor's findings |
 | **Patch Notes** | The game's patch notes from its wiki |

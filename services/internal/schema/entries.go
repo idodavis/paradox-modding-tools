@@ -223,12 +223,17 @@ func (walk *fileWalk) isField(key string, row game.Descriptor, database *Databas
 }
 
 // entry is a definition in a database by its written name: the game's mode word split off, at a span, after the
-// file's entries so far, and declared inline where a keyword declares its database in another database's file.
+// file's entries so far, and local where a keyword declares its database in another database's file or the
+// database's row says its entries answer only in their file.
 func (walk *fileWalk) entry(database, written string, span jomini.Range) Occurrence {
 	mode, name := game.Get(walk.schema.Game).Mode(written)
+	local := walk.inline[database] && database != walk.own
+	if row := walk.schema.Databases[database]; row != nil {
+		local = local || row.Descriptor.Local
+	}
 	return Occurrence{
 		Role: Defines, Database: database, ID: name, Mode: mode, Range: span, Entry: int32(len(walk.entries)),
-		Local: walk.inline[database] && database != walk.own,
+		Local: local,
 	}
 }
 

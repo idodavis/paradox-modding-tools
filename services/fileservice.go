@@ -22,6 +22,7 @@ import (
 	"github.com/wailsapp/wails/v3/pkg/application"
 
 	"paradox-modding-tools/services/internal/appdata"
+	"paradox-modding-tools/services/internal/draw"
 	"paradox-modding-tools/services/internal/inventory"
 	"paradox-modding-tools/services/internal/texture"
 
@@ -184,18 +185,18 @@ func readCapped(fullPath string) (data []byte, missing bool, reject string, err 
 	return data, false, "", nil
 }
 
-// ImageRoute is where the page reads an image file, on Wails' asset server: ?path= its absolute path.
-const ImageRoute = "/pmt/image"
+// FileRoute is where the page reads an image or font file, on Wails' asset server: ?path= its absolute path.
+const FileRoute = draw.FileRoute
 
 // maxImageBytes is the largest image file shown; the games' map data runs past it.
 const maxImageBytes = 64 << 20
 
-// imageTypes is the files ImageRoute serves, by extension.
-var imageTypes = map[string]bool{".png": true, ".jpg": true, ".jpeg": true, ".gif": true, ".webp": true, ".bmp": true,
-	".ico": true, ".svg": true, ".dds": true, ".tga": true}
+// fileTypes is the files FileRoute serves, by extension: the images and the fonts a window draws with.
+var fileTypes = map[string]bool{".png": true, ".jpg": true, ".jpeg": true, ".gif": true, ".webp": true, ".bmp": true,
+	".ico": true, ".svg": true, ".dds": true, ".tga": true, ".ttf": true, ".otf": true}
 
 // ImageFacts is an image file's header (none where Go reads no header of its kind: SVG, WebP, BMP, ICO), its format as
-// the page names it, its size, and its URL at ImageRoute, which names when the file changed so a changed file is read
+// the page names it, its size, and its URL at FileRoute, which names when the file changed so a changed file is read
 // again; Reject says why it is not shown.
 type ImageFacts struct {
 	Info   texture.Facts `json:"info"`
@@ -205,14 +206,14 @@ type ImageFacts struct {
 	Reject string        `json:"reject,omitempty"`
 }
 
-// ReadImageFacts is an image file's facts, which its pixels at ImageRoute do not carry.
+// ReadImageFacts is an image file's facts, which its pixels at FileRoute do not carry.
 func (s *FileService) ReadImageFacts(fullPath string) (ImageFacts, error) {
 	fullPath = filepath.Clean(filepath.FromSlash(fullPath))
 	stat, err := os.Stat(fullPath)
 	if err != nil {
 		return ImageFacts{}, err
 	}
-	facts := ImageFacts{Bytes: stat.Size(), URL: ImageRoute + "?path=" + url.QueryEscape(fullPath) + "&v=" + strconv.FormatInt(stat.ModTime().UnixMilli(), 10)}
+	facts := ImageFacts{Bytes: stat.Size(), URL: FileRoute + "?path=" + url.QueryEscape(fullPath) + "&v=" + strconv.FormatInt(stat.ModTime().UnixMilli(), 10)}
 	if stat.Size() > maxImageBytes {
 		facts.Reject = fmt.Sprintf("larger than %d MB: not shown", maxImageBytes>>20)
 	}
@@ -229,12 +230,12 @@ func (s *FileService) ReadImageFacts(fullPath string) (ImageFacts, error) {
 	return facts, nil
 }
 
-// ServeImages answers ImageRoute ahead of the page's assets (Wails' asset server takes it as its middleware): a DDS or
-// TGA decoded and sent as a PNG, any other image file as it is, which the webview draws and caches itself. Each is
-// read again only when the file changed.
-func ServeImages(next http.Handler) http.Handler {
+// ServeFiles answers FileRoute ahead of the page's assets (Wails' asset server takes it as its middleware): a DDS or
+// TGA decoded and sent as a PNG, any other image or font file as it is, which the webview draws and caches itself.
+// Each is read again only when the file changed.
+func ServeFiles(next http.Handler) http.Handler {
 	return http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
-		if r.URL.Path != ImageRoute {
+		if r.URL.Path != FileRoute {
 			next.ServeHTTP(w, r)
 			return
 		}
@@ -242,7 +243,7 @@ func ServeImages(next http.Handler) http.Handler {
 		ext := strings.ToLower(filepath.Ext(path))
 		stat, err := os.Stat(path)
 		switch {
-		case err != nil || stat.IsDir() || !imageTypes[ext]:
+		case err != nil || stat.IsDir() || !fileTypes[ext]:
 			http.NotFound(w, r)
 			return
 		case stat.Size() > maxImageBytes:

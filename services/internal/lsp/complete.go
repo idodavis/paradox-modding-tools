@@ -198,6 +198,12 @@ func (completer *completer) keys(cursor cursor) {
 	for _, name := range s.Callees[inner.Caller] {
 		completer.names(name, "", 2)
 	}
+	if inner.Caller == game.Shapes[game.ShapeWidget].Caller {
+		for _, kind := range slices.Sorted(maps.Keys(s.WidgetKinds)) {
+			kindCall := subject{ref: &schema.Occurrence{Role: schema.Refers, Caller: inner.Caller, ID: kind}}
+			completer.add(Item{Label: kind, Head: builtInHeading(inner.Caller), Rank: 2}, kindCall)
+		}
+	}
 }
 
 // parameters offers the parameters of the scripted entry a block's key calls, as the keys the call
@@ -313,8 +319,8 @@ func (completer *completer) values(at step) {
 		}
 		if claim.Type == schema.ValueLoc {
 			for _, key := range ws.LocKeys(completer.prefix, maxComplete+1) {
-				reference := subject{ref: &schema.Occurrence{Database: schema.Localization, ID: key}}
-				completer.add(Item{Label: key, Head: heading(schema.Localization), Rank: 3}, reference)
+				reference := subject{ref: &schema.Occurrence{Database: game.Localization, ID: key}}
+				completer.add(Item{Label: key, Head: heading(game.Localization), Rank: 3}, reference)
 			}
 		}
 	}
@@ -327,7 +333,7 @@ func (completer *completer) values(at step) {
 func (completer *completer) dataCalls(call string) {
 	s := completer.file.ws.Install.Schema
 	if strings.HasSuffix(call, ".") {
-		typeName := stepsLeadTo(s.DataTypes, jomini.ParseCall(call[:len(call)-1], 0))
+		typeName := s.CallLeadsTo(jomini.ParseCall(call[:len(call)-1], 0), "")
 		for _, name := range slices.Sorted(maps.Keys(s.DataTypes[typeName].Functions)) {
 			completer.add(Item{Label: name, Head: "data function", Rank: 1}, subject{})
 		}

@@ -31,7 +31,7 @@ type openFile struct {
 // open reads the file at a path as the request sees it: the editor's text where the file is open
 // there, else the disk's, parsed once per text, and placed in the workspace.
 func open(ws *workspace.Session, path string) (*openFile, error) {
-	parsed, text, err := ws.Parsed(path)
+	parsed, text, err := ws.Parsed(workspace.Parses{}, path)
 	if err != nil {
 		return nil, err
 	}
@@ -230,7 +230,7 @@ func (file *openFile) locRef(offset int) (ref *schema.Occurrence, steps []jomini
 		if key, _, isEntry := strings.Cut(strings.TrimSpace(line), ":"); isEntry && !strings.HasPrefix(key, "l_") && !strings.HasPrefix(key, "#") {
 			keyStart := start + strings.Index(line, key)
 			if span := (jomini.Range{Start: keyStart, End: keyStart + len(key)}); covers(span, offset) {
-				ref = &schema.Occurrence{Role: schema.Defines, Database: schema.Localization, ID: key, Range: span}
+				ref = &schema.Occurrence{Role: schema.Defines, Database: game.Localization, ID: key, Range: span}
 			}
 		}
 	}
@@ -249,23 +249,4 @@ func dataCallAt(text string, start, offset int) []jomini.CallStep {
 		}
 	}
 	return nil
-}
-
-// stepsLeadTo is the data type a data call's steps lead to: from the global functions, or a data
-// type written first, through each function's return type; "" where a step is unknown.
-func stepsLeadTo(types map[string]schema.DataType, steps []jomini.CallStep) string {
-	typeName := game.GlobalType
-	for i, step := range steps {
-		function, isFunction := types[typeName].Functions[step.Name]
-		_, isType := types[step.Name]
-		switch {
-		case isFunction:
-			typeName = function.Returns
-		case i == 0 && isType:
-			typeName = step.Name
-		default:
-			return ""
-		}
-	}
-	return typeName
 }

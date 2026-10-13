@@ -6,6 +6,7 @@
 package loc
 
 import (
+	"cmp"
 	"path/filepath"
 	"regexp"
 	"strconv"
@@ -321,6 +322,167 @@ func LooksLikeKey(name string) bool {
 // key as its name, formatting dropped.
 func Plain(text string) string {
 	return plainMarks.ReplaceAllString(text, "$1$2")
+}
+
+// Segment is one stretch of a localization value under one formatting: its text, the bold and italic marks, the named
+// format (#high), a text icon (@gold!), an interpolated key ($NAME$) or a data call ([GetName]); a segment holds
+// one of Text, Icon, Key and Call.
+type Segment struct {
+	Text         string
+	Bold, Italic bool
+	Format       string
+	Icon, Key    string
+	Call         string
+}
+
+// formatMark is one format a value has opened and not yet closed with #!.
+type formatMark struct {
+	bold, italic bool
+	format       string
+}
+
+// Segments reads a value into its segments: #word opens a format (bold and italic set their marks, any other word is
+// a named format, a ;-joined list sets each), #! closes the last one opened, @name! is a text icon, $name$ or
+// $name|filter$ an interpolation, [ … ] a data call (nested brackets kept inside) and \n a line break (a segment of
+// the text "\n"); a #, @, $ or [ that opens nothing is text.
+func Segments(value string) []Segment {
+	var segments []Segment
+	var open []formatMark
+	var text strings.Builder
+	put := func(segment Segment) {
+		for _, mark := range open {
+			segment.Bold, segment.Italic = segment.Bold || mark.bold, segment.Italic || mark.italic
+			segment.Format = cmp.Or(mark.format, segment.Format)
+		}
+		segments = append(segments, segment)
+	}
+	flush := func() {
+		if text.Len() > 0 {
+			put(Segment{Text: text.String()})
+			text.Reset()
+		}
+	}
+	for i := 0; i < len(value); {
+		kind, length, payload := markupAt(value[i:])
+		switch kind {
+		case markText:
+			text.WriteByte(value[i])
+			length = 1
+		case markBreak:
+			flush()
+			put(Segment{Text: "\n"})
+		case markClose:
+			flush()
+			if len(open) > 0 {
+				open = open[:len(open)-1]
+			}
+		case markOpen:
+			flush()
+			open = append(open, formatOf(payload))
+		case markIcon:
+			flush()
+			put(Segment{Icon: payload})
+		case markKey:
+			flush()
+			put(Segment{Key: payload})
+		case markCall:
+			flush()
+			put(Segment{Call: payload})
+		}
+		i += length
+	}
+	flush()
+	return segments
+}
+
+// The kinds of markup markupAt finds at the start of a value.
+const (
+	markText  = iota // none: the byte is text
+	markBreak        // \n
+	markClose        // #!
+	markOpen         // #word
+	markIcon         // @name!
+	markKey          // $name$ or $name|filter$
+	markCall         // [ ... ]
+)
+
+// markupAt reads the markup that starts a text: its kind, its length in bytes and the word it carries (the format's
+// words, the icon's or key's name, the call's inside).
+func markupAt(text string) (kind, length int, payload string) {
+	switch text[0] {
+	case '\\':
+		if strings.HasPrefix(text, `\n`) {
+			return markBreak, 2, ""
+		}
+	case '#':
+		if strings.HasPrefix(text, "#!") {
+			return markClose, 2, ""
+		}
+		if end := runEnd(text[1:], ";"); end > 0 && end < len(text)-1 && text[1+end] == ' ' {
+			return markOpen, end + 2, text[1 : 1+end]
+		}
+	case '@':
+		if end := runEnd(text[1:], ""); end > 0 && end < len(text)-1 && text[1+end] == '!' {
+			return markIcon, end + 2, text[1 : 1+end]
+		}
+	case '$':
+		if end := runEnd(text[1:], "."); end > 0 {
+			if close := strings.IndexByte(text[1+end:], '$'); close >= 0 && (close == 0 || text[1+end] == '|') {
+				return markKey, end + close + 2, text[1 : 1+end]
+			}
+		}
+	case '[':
+		if end := closingBracket(text); end > 0 {
+			return markCall, end + 1, text[1:end]
+		}
+	}
+	return markText, 1, ""
+}
+
+// runEnd is the length of the run of letters, digits and _ a word or a name is made of, with the bytes of extra
+// allowed in it too.
+func runEnd(text, extra string) int {
+	for i := 0; i < len(text); i++ {
+		c := text[i]
+		inside := c == '_' || c >= '0' && c <= '9' || c >= 'a' && c <= 'z' || c >= 'A' && c <= 'Z'
+		if !inside && strings.IndexByte(extra, c) < 0 {
+			return i
+		}
+	}
+	return len(text)
+}
+
+// closingBracket is the index of the ] that closes the [ a text starts with, nested brackets counted; -1 for none.
+func closingBracket(text string) int {
+	depth := 0
+	for i := 0; i < len(text); i++ {
+		switch text[i] {
+		case '[':
+			depth++
+		case ']':
+			if depth--; depth == 0 {
+				return i
+			}
+		}
+	}
+	return -1
+}
+
+// formatOf is the mark a #word opens: its bold and italic words set the marks, any other word names the format.
+func formatOf(opening string) formatMark {
+	var mark formatMark
+	for part := range strings.SplitSeq(opening, ";") {
+		switch strings.ToLower(part) {
+		case "bold":
+			mark.bold = true
+		case "italic":
+			mark.italic = true
+		case "":
+		default:
+			mark.format = part
+		}
+	}
+	return mark
 }
 
 // Stub is a new localization file's contents: the byte order mark the games want, and the header that names its

@@ -100,21 +100,25 @@ func Names(indexes []*Index, database string) (names []string) {
 }
 
 // Resolve is a reference's definitions, the reference given as the walk produced it (from is its file's path,
-// "" for none): a call's in the databases its calling word names; a scope saved from code, a loc key or a file
-// path known with no definitions; else Lookup. A local definition answers only a reference in its own file.
+// "" for none): a call's in the databases its calling word names; a scope saved from code, a loc key, a file
+// path or a built-in widget kind known with no definitions; else Lookup. A local definition answers only a
+// reference in its own file.
 func Resolve(s *schema.Schema, indexes []*Index, ref schema.Occurrence, from string) (defs []At, known bool) {
 	switch {
 	case ref.Caller != "":
 		for _, database := range s.Callees[ref.Caller] {
 			defs = append(defs, Lookup(indexes, schema.Defines, database, ref.ID)...)
 		}
+		if len(defs) == 0 && ref.Caller == game.Shapes[game.ShapeWidget].Caller && s.WidgetKinds[ref.ID] {
+			return nil, true
+		}
 	case ref.Database == game.SavedScopes && s.Saved[ref.ID]:
 		return nil, true
-	case ref.Database == schema.Localization:
+	case ref.Database == game.Localization:
 		return nil, slices.ContainsFunc(indexes, func(index *Index) bool {
-			return len(index.listed(schema.Localizes, schema.Localization, ref.ID)) > 0
+			return len(index.listed(schema.Localizes, game.Localization, ref.ID)) > 0
 		})
-	case ref.Database == schema.File:
+	case ref.Database == game.File:
 		_, listed := FileAt(indexes, ref.ID)
 		return nil, listed
 	default:

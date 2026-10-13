@@ -74,16 +74,17 @@ func (schema *Schema) stampConstructs() {
 }
 
 // declareDatabase makes a database. Its entry block is a fields block unless its descriptor's Body says what
-// the entry holds; each of the descriptor's Refs names the database's entries.
+// the entry holds; each of the descriptor's Refs names the entries of its database, the database's own where it
+// says none.
 func (schema *Schema) declareDatabase(name string, row game.Descriptor) {
 	database := &Database{Name: name, Entry: &Position{}, Descriptor: row, Fields: map[string]bool{}}
 	database.Entry.Holds.Set(cmp.Or(row.Body, game.ShapeFields), SourceRegistry)
-	for _, at := range row.Refs {
+	for _, ref := range row.Refs {
 		position := database.Entry
-		for step := range strings.SplitSeq(at, "/") {
+		for step := range strings.SplitSeq(ref.At, "/") {
 			position = position.EnsureChild(step)
 		}
-		position.Value.Set(Expected{Type: ValueReference, Database: name}, SourceRegistry)
+		position.Value.Set(Expected{Type: ValueReference, Database: cmp.Or(ref.Database, name)}, SourceRegistry)
 	}
 	schema.Databases[name] = database
 }
@@ -136,4 +137,5 @@ func (schema *Schema) declareDatabases(install []inventory.File, info *game.Game
 	}
 	schema.Lists = cmp.Or(schema.DatabasesWhere(func(row game.Descriptor) bool { return row.Purpose == game.PurposeLists })...)
 	schema.Events = cmp.Or(schema.DatabasesWhere(func(row game.Descriptor) bool { return row.Purpose == game.PurposeEvents })...)
+	schema.Functions = cmp.Or(schema.DatabasesWhere(func(row game.Descriptor) bool { return row.Purpose == game.PurposeFunctions })...)
 }

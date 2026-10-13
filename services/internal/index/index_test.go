@@ -158,8 +158,8 @@ func TestResolve(t *testing.T) {
 			schema.Occurrence{Caller: trigger, ID: inline}, pathOf("common/scripted_triggers/v_triggers.txt"), 0, false},
 		{"a local trigger from its own file",
 			schema.Occurrence{Caller: trigger, ID: inline}, pathOf("events/v_more_events.txt"), 1, true},
-		{"a loc key", schema.Occurrence{Database: schema.Localization, ID: "v.1.t"}, "", 0, true},
-		{"a file", schema.Occurrence{Database: schema.File, ID: "gfx/interface/icons/traits/brave.dds"}, "", 0, true},
+		{"a loc key", schema.Occurrence{Database: game.Localization, ID: "v.1.t"}, "", 0, true},
+		{"a file", schema.Occurrence{Database: game.File, ID: "gfx/interface/icons/traits/brave.dds"}, "", 0, true},
 		{"a trait vanilla and the mod define", schema.Occurrence{Database: "traits", ID: "brave"}, "", 2, true},
 	}
 	for _, c := range cases {

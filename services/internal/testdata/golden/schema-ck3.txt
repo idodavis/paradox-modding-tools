@@ -58,7 +58,16 @@ database events fields=[cooldown days desc has_trait name option]
   /type value={0  []}/0 block=0/0 scope=""/0 required={0 }/0 default=""/0 blurb=""/0 written=0 seen=in:8,blocks:0,forms:8,values:map[character_event:8]
 database font.font fields=[]
   (entry) value={0  []}/0 block=1/1 scope=""/0 required={0 }/0 default=""/0 blurb=""/0 written=0 seen=in:0,blocks:1,forms:32,values:map[]
+  /fontstyle value={0  []}/0 block=0/0 scope=""/0 required={0 }/0 default=""/0 blurb=""/0 written=0 seen=in:1,blocks:1,forms:32,values:map[]
+  /fontstyle/fontfiles value={5 font.fontfiles []}/3 block=0/0 scope=""/0 required={0 }/0 default=""/0 blurb=""/0 written=0 seen=in:1,blocks:0,forms:16,values:map[v_files:1]
+  /fontstyle/style value={0  []}/0 block=0/0 scope=""/0 required={0 }/0 default=""/0 blurb=""/0 written=0 seen=in:1,blocks:0,forms:8,values:map[regular:1]
   /name value={5 font.font []}/3 block=0/0 scope=""/0 required={0 }/0 default=""/0 blurb=""/0 written=0 seen=in:1,blocks:0,forms:16,values:map[v_font:1]
+database font.fontfiles fields=[]
+  (entry) value={0  []}/0 block=1/1 scope=""/0 required={0 }/0 default=""/0 blurb=""/0 written=0 seen=in:0,blocks:1,forms:32,values:map[]
+  /group value={0  []}/0 block=0/0 scope=""/0 required={0 }/0 default=""/0 blurb=""/0 written=0 seen=in:1,blocks:1,forms:32,values:map[]
+  /group/files value={0  []}/0 block=0/0 scope=""/0 required={0 }/0 default=""/0 blurb=""/0 written=0 seen=in:1,blocks:1,forms:48,values:map[fonts/Go-Regular.ttf:1]
+  /group/languages value={0  []}/0 block=0/0 scope=""/0 required={0 }/0 default=""/0 blurb=""/0 written=0 seen=in:1,blocks:1,forms:48,values:map[l_english:1]
+  /name value={5 font.fontfiles []}/3 block=0/0 scope=""/0 required={0 }/0 default=""/0 blurb=""/0 written=0 seen=in:1,blocks:0,forms:16,values:map[v_files:1]
 database game_rules fields=[apply_modifier categories default flag game_rule setting_name]
   (entry) value={9  []}/4 block=1/1 scope=""/0 required={0 }/0 default=""/0 blurb=""/0 written=4 seen=in:0,blocks:3,forms:32,values:map[]
   /default value={0  []}/0 block=0/0 scope=""/0 required={0 }/0 default=""/0 blurb="Which setting to default to"/4 written=4 seen=in:3,blocks:0,forms:8,values:map[opt_a:1 opt_easy:1 opt_slow:1]
@@ -69,20 +78,33 @@ database game_rules fields=[apply_modifier categories default flag game_rule set
   /opt_hard value={0  []}/0 block=0/0 scope=""/0 required={0 }/0 default=""/0 blurb=""/0 written=0 seen=in:1,blocks:1,forms:32,values:map[]
   /opt_slow value={0  []}/0 block=0/0 scope=""/0 required={0 }/0 default=""/0 blurb=""/0 written=0 seen=in:1,blocks:1,forms:32,values:map[]
 database gui.block fields=[]
+  (entry) value={0  []}/0 block=8/1 scope=""/0 required={0 }/0 default=""/0 blurb=""/0 written=0 seen=in:1,blocks:2,forms:32,values:map[]
+database gui.local_template fields=[]
+  (entry) value={0  []}/0 block=8/1 scope=""/0 required={0 }/0 default=""/0 blurb=""/0 written=0 seen=in:0,blocks:0,forms:0,values:map[]
+database gui.local_type fields=[]
   (entry) value={0  []}/0 block=8/1 scope=""/0 required={0 }/0 default=""/0 blurb=""/0 written=0 seen=in:0,blocks:0,forms:0,values:map[]
 database gui.template fields=[]
-  (entry) value={0  []}/0 block=8/1 scope=""/0 required={0 }/0 default=""/0 blurb=""/0 written=0 seen=in:0,blocks:2,forms:32,values:map[]
+  (entry) value={0  []}/0 block=8/1 scope=""/0 required={0 }/0 default=""/0 blurb=""/0 written=0 seen=in:0,blocks:3,forms:32,values:map[]
   /alpha value={0  []}/0 block=0/0 scope=""/0 required={0 }/0 default=""/0 blurb=""/0 written=0 seen=in:2,blocks:0,forms:1,values:map[]
-database gui.type fields=[]
-  (entry) value={0  []}/0 block=8/1 scope=""/0 required={0 }/0 default=""/0 blurb=""/0 written=0 seen=in:2,blocks:4,forms:32,values:map[]
   /size value={0  []}/0 block=0/0 scope=""/0 required={0 }/0 default=""/0 blurb=""/0 written=0 seen=in:1,blocks:1,forms:33,values:map[]
-  /text value={0  []}/0 block=0/0 scope=""/0 required={0 }/0 default=""/0 blurb=""/0 written=0 seen=in:1,blocks:0,forms:16,values:map[[GetPlayer.GetName]:1]
-  /texture value={0  []}/0 block=0/0 scope=""/0 required={0 }/0 default=""/0 blurb=""/0 written=0 seen=in:1,blocks:0,forms:16,values:map[v_frame.dds:1]
+database gui.type fields=[]
+  (entry) value={0  []}/0 block=8/1 scope=""/0 required={0 }/0 default=""/0 blurb=""/0 written=0 seen=in:7,blocks:18,forms:40,values:map[block:1 blockoverride:1]
+  /font value={5 font.font []}/3 block=0/0 scope=""/0 required={0 }/0 default=""/0 blurb=""/0 written=0 seen=in:1,blocks:0,forms:16,values:map[v_font:1]
+  /fontsize value={0  []}/0 block=0/0 scope=""/0 required={0 }/0 default=""/0 blurb=""/0 written=0 seen=in:1,blocks:0,forms:1,values:map[]
+  /layoutpolicy_vertical value={0  []}/0 block=0/0 scope=""/0 required={0 }/0 default=""/0 blurb=""/0 written=0 seen=in:1,blocks:0,forms:8,values:map[expanding:1]
+  /size value={0  []}/0 block=0/0 scope=""/0 required={0 }/0 default=""/0 blurb=""/0 written=0 seen=in:5,blocks:5,forms:33,values:map[]
+  /spacing value={0  []}/0 block=0/0 scope=""/0 required={0 }/0 default=""/0 blurb=""/0 written=0 seen=in:1,blocks:0,forms:1,values:map[]
+  /text value={0  []}/0 block=0/0 scope=""/0 required={0 }/0 default=""/0 blurb=""/0 written=0 seen=in:2,blocks:0,forms:16,values:map[[GetPlayer.GetName]:1 v_key:1]
+  /texture value={0  []}/0 block=0/0 scope=""/0 required={0 }/0 default=""/0 blurb=""/0 written=0 seen=in:3,blocks:0,forms:16,values:map[gfx/interface/v_bg.tga:1 gfx/interface/v_frame.dds:1 v_frame.dds:1]
+  /using value={5 gui.template []}/3 block=0/0 scope=""/0 required={0 }/0 default=""/0 blurb=""/0 written=0 seen=in:1,blocks:0,forms:8,values:map[v_sized:1]
+  /vbox value={0  []}/0 block=0/0 scope=""/0 required={0 }/0 default=""/0 blurb=""/0 written=0 seen=in:1,blocks:1,forms:32,values:map[]
+  /vbox/datamodel value={0  []}/0 block=0/0 scope=""/0 required={0 }/0 default=""/0 blurb=""/0 written=0 seen=in:1,blocks:0,forms:16,values:map[[GetPlayer.GetVassals]:1]
+  /vbox/item value={0  []}/0 block=0/0 scope=""/0 required={0 }/0 default=""/0 blurb=""/0 written=0 seen=in:1,blocks:1,forms:32,values:map[]
+  /visible value={0  []}/0 block=0/0 scope=""/0 required={0 }/0 default=""/0 blurb=""/0 written=0 seen=in:2,blocks:0,forms:16,values:map[[GetPlayer.IsAlive]:1 [GetVariableSystem.Exists('v_flag')]:1]
 database gui.widget fields=[]
-  (entry) value={0  []}/0 block=8/1 scope=""/0 required={0 }/0 default=""/0 blurb=""/0 written=0 seen=in:0,blocks:2,forms:32,values:map[]
-  /icon value={0  []}/0 block=0/0 scope=""/0 required={0 }/0 default=""/0 blurb=""/0 written=0 seen=in:1,blocks:1,forms:32,values:map[]
-  /icon/texture value={0  []}/0 block=0/0 scope=""/0 required={0 }/0 default=""/0 blurb=""/0 written=0 seen=in:1,blocks:0,forms:16,values:map[gfx/interface/v_bg.tga:1]
-  /name value={5 gui.widget []}/3 block=0/0 scope=""/0 required={0 }/0 default=""/0 blurb=""/0 written=0 seen=in:2,blocks:0,forms:16,values:map[v_other_window:1 v_window:1]
+  (entry) value={0  []}/0 block=8/1 scope=""/0 required={0 }/0 default=""/0 blurb=""/0 written=0 seen=in:0,blocks:3,forms:32,values:map[]
+  /name value={5 gui.widget []}/3 block=0/0 scope=""/0 required={0 }/0 default=""/0 blurb=""/0 written=0 seen=in:3,blocks:0,forms:16,values:map[v_layout_window:1 v_other_window:1 v_window:1]
+  /size value={0  []}/0 block=0/0 scope=""/0 required={0 }/0 default=""/0 blurb=""/0 written=0 seen=in:1,blocks:1,forms:33,values:map[]
 database history/characters fields=[]
   (entry) value={0  []}/0 block=7/1 scope=""/0 required={0 }/0 default=""/0 blurb=""/0 written=0 seen=in:0,blocks:3,forms:32,values:map[]
   /add_spouse value={0  []}/0 block=0/0 scope=""/0 required={0 }/0 default=""/0 blurb=""/0 written=0 seen=in:1,blocks:0,forms:1,values:map[]
@@ -20148,8 +20170,9 @@ callee * [script_values scripted_effects scripted_triggers]
 callee blockoverride [gui.block]
 callee effect [scripted_effects]
 callee trigger [script_values scripted_triggers]
+callee using [gui.local_template gui.template]
 callee value [script_values]
-callee widget [gui.type]
+callee widget [gui.local_type gui.type]
 prefixes map[acclaimed_knight: accolade: accolade_owner: accolade_successor: accolade_type: activity_doctrine: activity_host: activity_location: activity_tenet: activity_type: administrative_contract: administrative_obligation: aptitude: aptitude_score: army_commander: army_owner: array_define: artifact_age: artifact_owner: assigned_tax_slot: barony: barony_active_holy_site: barony_controller: betrothed: calc_culture_dominant_faith: calc_culture_dominant_religion: capital_barony: capital_county: capital_province: capital_vassal: casus_belli: casus_belli_type: challenger_sponsor: character:history/characters character_participant_group: claimant: clerical_elector_title: clerical_region_title: combat: combat_attacker: combat_defender: combat_war: commanding_army: concubinist: confederation: confederation_type: contract_type: contributor: council_owner: council_task: councillor: councillor_task_target: county: county_active_holy_site: county_controller: court_owner: court_position: court_position_type: cp: creator: culture:culture/cultures culture_head: culture_innovation: culture_pillar: culture_tradition: current_heir: current_location: current_or_last_legend_owner: current_travel_plan: de_facto_liege: de_jure_liege: dead_var: decision:decisions default_location: define:defines departure_location: designated_diarch: designated_heir: diarch: diarchy_successor: doctrine: domicile: domicile_culture: domicile_faith: domicile_location: duchy: dummy_female: dummy_male: dynast: dynasty: dynasty_founder: empire: employer: enemy_side: epidemic_trait: epidemic_type: event_id: faction_leader: faction_target: faction_war: faith: faith_theocratic_goverment_type: fallback_succession_character: fallback_succession_title: father: final_destination_province: flag: forced_next_councillor: founder: founder_culture: founder_dynasty: founder_faith: founder_house: geographical_region: ghw_beneficiary: ghw_designated_winner: ghw_target_character: ghw_target_title: ghw_title_recipient: ghw_war: ghw_war_declarer: global_var:global_var government_type: great_holy_war: great_project: great_project_founder: great_project_founder_heir: great_project_location: great_project_owner: great_project_type: head_of_rite: hegemony: holder: holding_type: holy_order: holy_order_patron: holy_site: holy_site_barony: holy_site_controller: holy_site_county: holy_site_type: home_court: host: house: house_confederation: house_dynasty: house_founder: house_head: imprisoner: initial_type: inspiration: inspiration_owner: inspiration_sponsor: intent_target: involved_activity: involved_combat_side: joined_faction: killer: kingdom: knight_army: last_house_head: last_played_character: leader: leading_house: legend_owner: legend_property: legend_protagonist: legend_type: lessee: lessee_title: liege: liege_or_court_owner: local_player_open_court_event_court_owner: local_var:local_var location: main_holy_site: main_rite: matchmaker: memory_owner: memory_participant: mercenary_company_leader: mother: next_destination_province: next_location: no: noble_family: obedience_target: obligation: order_faith: order_founder: order_rite: order_tenet: organization: origin_faith: origin_rite: outbreak_province: overlord: owner: participant_group_situation: participant_group_sub_region: player_heir: pregnancy_assumed_father: pregnancy_real_father: prev: previous_holder: previous_owner: previous_owner_level_2: previous_owner_level_3: primary_attacker: primary_defender: primary_heir: primary_partner: primary_spouse: primary_title: promoted_legend: province: province_owner: puppet: puppeteer: real_father: real_mother: realm_priest: regiment_controller: regiment_controlling_title: regiment_owner: regiment_owning_title: regiment_station: religion:religion/religions religious_head: religious_head_or_challenger: religious_head_title: rite: rite_faith: rite_founder: rite_type: root: saint_burial_location: saint_in_province: scheme: scheme_artifact: scheme_defender: scheme_owner: scheme_target_character: scheme_target_culture: scheme_target_faith: scheme_target_title: scope:scope secret_faith: secret_owner: secret_target: side_commander: side_primary_participant: situation: situation_center_province: situation_participant_group: situation_sub_region: situation_top_barter_goods: situation_top_gold: situation_top_herd: situation_top_participant_group: situation_top_provisions: situation_top_sub_region: slot_character: special_character: special_guest: special_title: state_faith: state_rite: story_owner: struggle: sub_region_participant_group: subject_contract_type: superior: suzerain: task_contract: task_contract_destination: task_contract_employer: task_contract_location: task_contract_taker: task_contract_target: task_contract_type: tax_collector: tax_slot: tax_slot_liege: tenet: this: title:landed_titles title_capital_county: title_domicile: title_preferred_capital_county: title_province: top_liege: top_overlord: top_participant_group: top_superior: top_suzerain: trait:traits travel_leader: travel_plan_activity: travel_plan_owner: var:var vassal_contract: vassal_contract_type: vassal_tax_collector: war: warden: yes:]
 lists "scripted_lists"
 macro *:age_limit_value database=script_values
@@ -20171,6 +20194,7 @@ macro *:v_rule_trigger database=scripted_triggers
 macro *:v_trigger database=scripted_triggers
   (entry) value={0  []}/0 block=0/0 scope=""/0 required={0 }/0 default=""/0 blurb=""/0 written=0 seen=in:1,blocks:1,forms:32,values:map[]
   /TARGET value={0  []}/0 block=0/0 scope=""/0 required={0 }/0 default=""/0 blurb=""/0 written=0 seen=in:1,blocks:0,forms:8,values:map[root:1]
+macro blockoverride:rows database=gui.block
 macro effect:v_effect database=scripted_effects
   (entry) value={0  []}/0 block=0/0 scope=""/0 required={0 }/0 default=""/0 blurb=""/0 written=0 seen=in:3,blocks:3,forms:32,values:map[]
   /AMOUNT value={0  []}/0 block=0/0 scope=""/0 required={0 }/0 default=""/0 blurb=""/0 written=0 seen=in:3,blocks:0,forms:1,values:map[]
@@ -20190,8 +20214,15 @@ macro trigger:v_rule_trigger database=scripted_triggers
 macro trigger:v_trigger database=scripted_triggers
   (entry) value={0  []}/0 block=0/0 scope=""/0 required={0 }/0 default=""/0 blurb=""/0 written=0 seen=in:1,blocks:1,forms:32,values:map[]
   /TARGET value={0  []}/0 block=0/0 scope=""/0 required={0 }/0 default=""/0 blurb=""/0 written=0 seen=in:1,blocks:0,forms:8,values:map[root:1]
+macro using:v_faded database=gui.template
+macro using:v_plain database=gui.template
+macro using:v_sized database=gui.template
 macro value:age_limit_value database=script_values
 macro value:big_value database=script_values
 macro value:small_value database=script_values
+macro widget:icon database=gui.type
+macro widget:v_box database=gui.type
 macro widget:v_button database=gui.type
 macro widget:v_label database=gui.type
+macro widget:widget database=gui.type
+macro widget:window database=gui.type

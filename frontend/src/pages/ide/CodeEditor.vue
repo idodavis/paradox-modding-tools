@@ -22,7 +22,7 @@ import { useEditorStore } from "../../stores/editor";
 import { useWorkspaceStore } from "../../stores/workspace";
 import { useCommandsStore } from "../../stores/commands";
 import { MARKDOWN_TOOLBAR } from "../../lib/markdown";
-import HoverCard from "./HoverCard.vue";
+import HoverCard from "../../ui/HoverCard.vue";
 
 const { workspaceId, path, group } = defineProps<{ workspaceId: string; path: string; group: number }>();
 

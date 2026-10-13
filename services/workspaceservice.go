@@ -21,6 +21,7 @@ import (
 	"github.com/wailsapp/wails/v3/pkg/application"
 
 	"paradox-modding-tools/services/internal/appdata"
+	"paradox-modding-tools/services/internal/draw"
 	"paradox-modding-tools/services/internal/game"
 	"paradox-modding-tools/services/internal/index"
 	"paradox-modding-tools/services/internal/modfiles"
@@ -448,8 +449,33 @@ func (s *WorkspaceService) openWorkspace(workspaceID string) (*workspace.Session
 	case built:
 		slog.Info("workspace opened", "workspace", workspaceID, "by", runtime.FuncForPC(caller).Name())
 		emit(EventWorkspaceOpened, workspaceID)
+		s.pruneFacts(workspaceID, ws)
 	}
 	return ws, err
+}
+
+// pruneFacts takes out of the workspace's saved facts those whose function nothing declares or names, once its index
+// is built.
+func (s *WorkspaceService) pruneFacts(workspaceID string, ws *workspace.Session) {
+	entry, _, err := s.config.workspace(workspaceID)
+	if err != nil || len(entry.Facts) == 0 {
+		return
+	}
+	ws.RLock()
+	_, dropped := draw.PruneFacts(ws, entry.Facts)
+	ws.RUnlock()
+	if len(dropped) == 0 {
+		return
+	}
+	err = s.mutateWorkspace(workspaceID, func(saved *Workspace) error {
+		for _, key := range dropped {
+			delete(saved.Facts, key)
+		}
+		return nil
+	})
+	if err != nil {
+		slog.Warn("facts not pruned", "workspace", workspaceID, "error", err)
+	}
 }
 
 // request is what a workspace is opened from, as the config says now. Its fingerprint is the inputs an edit could

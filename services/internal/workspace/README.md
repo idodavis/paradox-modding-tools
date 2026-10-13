@@ -7,7 +7,7 @@ query resolves names across the two indexes in load order. The open one is `Sess
 
 | file | holds |
 |---|---|
-| `workspace.go` | `Session`: the indexes, the open buffers (`DidChange`, `DidSave`, `DidClose`, `DiskChanged`), the text and parse of a file, `Winner`, the lock |
+| `workspace.go` | `Session`: the indexes, the open buffers (`DidChange`, `DidSave`, `DidClose`, `DiskChanged`), the text and parse of a file (`Parsed`, which keeps what a request parses in its `Parses`), `Winner`, the lock |
 | `open.go` | `Request` and `Slot`: the one workspace open at a time, built once for many callers |
 | `locate.go` | where a path and a definition sit: the file, the mod and the database at a path, a definition's statement, a key's localization and a definition's title, a mod's calendar |
 | `fires.go` | what fires what: the events and on_actions a definition fires, through the scripted entries it runs, and what fires it |
@@ -23,4 +23,4 @@ query resolves names across the two indexes in load order. The open one is `Sess
 - **The install's index never changes from the editor.** A saved or changed mod file is walked again into the mods'
   index (`index.Reindex`) and a deleted one forgotten (`index.Forget`); a file of the install or outside any root does
   nothing.
-- **A buffer's parse is kept per text,** so a request on the open file parses nothing twice.
+- **A buffer's parse is kept per text,** so a request on the open file parses nothing twice; a file read from disk is parsed once per request, in the `Parses` the request makes, and never kept past it.

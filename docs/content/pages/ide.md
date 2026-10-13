@@ -52,6 +52,21 @@ tabs than fit, the strip scrolls (with the mouse wheel too).
 Above the editor, the path to the file and, at the caret, the blocks it is in. A Markdown file has a **Raw** /
 **Rich** switch there: Raw is its text, Rich the same editor as Publish's description.
 
+A GUI file (**.gui**) has a **Code** / **Visual** / **Split** switch there, and a button that opens its **Widgets**
+panel in the right column. Visual draws the file's window or widget from the game's own data: its types and templates,
+textures, fonts and localization, at the resolution and UI scale you pick (**1280 by 720** up to **3840 by 2160**,
+**100%** to **200%**) and in the language you pick. The toolbar chooses which window, type or template of the file to
+draw; **Bounds** outlines every element and **Hide unknown** lays out what the game would decide at runtime as hidden.
+Zoom with **Ctrl** and the wheel, or **Fit**, **100%**, **−** and **+**. Click an element to select its widget; Split
+shows the code beside the picture, and the caret and the selection follow each other.
+
+The Widgets panel lists the window's widgets as a tree, the selected widget's properties with who wrote each (the
+widget, or the type or template it comes from), the **sample data** its bindings ask, and its script. A property you
+change is written into the widget's own block through the editor, so Undo and Save work as for any edit; a game file's
+properties are read only. What a binding asks that nothing in the files answers (a character's name, whether a flag is
+set) is drawn faded and listed as sample data: set an answer there once, and the workspace keeps it. A status line
+says what the game's files did not give: a template, texture or font that was not found, and how long the render took.
+
 The status bar shows the open files' errors and warnings, the git branch, then the caret's line and column, the
 indentation, the file's kind and its encoding (UTF-8, or UTF-8 BOM).
 

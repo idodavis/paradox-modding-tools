@@ -1,19 +1,18 @@
 <script setup lang="ts">
 /**
- * An image tab: the image on the theme's checkerboard, fit to the pane until zoomed (Fit, 100%,
- * − and +, Ctrl+wheel around the pointer), and a line with its size, format, mip levels and file size. Go's image
- * route serves it, a DDS or TGA decoded there; a format it does not decode, or a file too large, says so.
+ * An image tab: the image in a Viewport (fit to the pane until zoomed), and a line under it with its size, format, mip
+ * levels and file size. Go's image route serves it, a DDS or TGA decoded there; a format it does not decode, or a file
+ * too large, says so.
  */
-import { computed, nextTick, shallowRef, useTemplateRef, watch } from "vue";
+import { computed, shallowRef, useTemplateRef, watch } from "vue";
 import { useQuery } from "@pinia/colada";
-import { useElementSize } from "@vueuse/core";
 import { bytes } from "../../lib/format";
 import { imageQuery } from "../../queries";
+import Viewport from "../../draw/Viewport.vue";
 
 const { path } = defineProps<{ path: string }>();
 const { data: image } = useQuery(() => imageQuery(path));
-const pane = useTemplateRef("pane");
-const size = useElementSize(pane);
+const viewport = useTemplateRef("viewport");
 
 // the pixels as drawn (a DDS past 4096 a side is drawn at a smaller mip level), and a load that failed
 const drawn = shallowRef({ width: 0, height: 0 });
@@ -25,28 +24,6 @@ watch(
 function loaded(e: Event): void {
   const img = e.target as HTMLImageElement;
   drawn.value = { width: img.naturalWidth, height: img.naturalHeight };
-}
-
-// the zoom; none fits the image to the pane, never past its own size
-const zoom = shallowRef<number>();
-const fit = computed(() =>
-  drawn.value.width
-    ? Math.min(1, (size.width.value - 32) / drawn.value.width, (size.height.value - 32) / drawn.value.height)
-    : 1,
-);
-const scale = computed(() => zoom.value ?? fit.value);
-const zoomTo = (next: number) => (zoom.value = Math.min(32, Math.max(0.02, next)));
-// Ctrl+wheel zooms around the pointer: the point under it stays there
-function onWheel(e: WheelEvent): void {
-  const el = pane.value;
-  if (!e.ctrlKey || !el) return;
-  e.preventDefault();
-  const box = el.getBoundingClientRect();
-  const x = e.clientX - box.left;
-  const y = e.clientY - box.top;
-  const previous = scale.value;
-  const ratio = zoomTo(previous * (e.deltaY < 0 ? 1.25 : 0.8)) / previous;
-  void nextTick(() => el.scrollTo((el.scrollLeft + x) * ratio - x, (el.scrollTop + y) * ratio - y));
 }
 
 const facts = computed(() => image.value?.facts);
@@ -71,52 +48,22 @@ const why = computed(
 </script>
 
 <template>
-  <div class="flex min-h-0 flex-1 flex-col bg-(--bg-0)">
-    <div
-      ref="pane"
-      class="relative min-h-0 flex-1 overflow-auto"
-      style="background: repeating-conic-gradient(var(--bg-0) 0 25%, var(--bg-4) 0 50%) 0 0 / 16px 16px"
-      @wheel="onWheel"
-    >
-      <div class="flex min-h-full w-max min-w-full items-center justify-center p-4">
-        <img
-          v-if="visible"
-          :src="image?.src"
-          alt=""
-          class="max-w-none"
-          :class="{ invisible: !drawn.width }"
-          :style="{ width: `${drawn.width * scale}px`, imageRendering: scale > 1 ? 'pixelated' : undefined }"
-          @load="loaded"
-          @error="failed = true"
-        />
-      </div>
-      <p v-if="why" class="absolute inset-x-0 top-10 text-center text-12 text-dimmed">{{ why }}</p>
-    </div>
-    <div
-      class="flex h-7 shrink-0 items-center gap-1.5 border-t border-default px-3.5 text-12 whitespace-nowrap text-dimmed tabular-nums"
-    >
-      <span class="truncate">{{ line }}</span>
-      <span class="grow" />
-      <UButton label="Fit" variant="ghost" size="xs" :disabled="!visible" @click="zoom = undefined" />
-      <UButton label="100%" variant="ghost" size="xs" :disabled="!visible" @click="zoom = 1" />
-      <UButton
-        icon="i-lucide-minus"
-        variant="ghost"
-        size="xs"
-        square
-        aria-label="Zoom out"
-        :disabled="!visible"
-        @click="zoomTo(scale * 0.8)"
+  <div class="relative flex min-h-0 flex-1 flex-col">
+    <Viewport ref="viewport" :width="visible ? drawn.width : 0" :height="visible ? drawn.height : 0">
+      <img
+        v-if="visible"
+        :src="image?.src"
+        alt=""
+        class="block max-w-none"
+        :class="{ invisible: !drawn.width }"
+        :style="{ imageRendering: (viewport?.zoom ?? 1) > 1 ? 'pixelated' : undefined }"
+        @load="loaded"
+        @error="failed = true"
       />
-      <UButton
-        icon="i-lucide-plus"
-        variant="ghost"
-        size="xs"
-        square
-        aria-label="Zoom in"
-        :disabled="!visible"
-        @click="zoomTo(scale * 1.25)"
-      />
-    </div>
+      <template #toolbar>
+        <span class="truncate">{{ line }}</span>
+      </template>
+    </Viewport>
+    <p v-if="why" class="absolute inset-x-0 top-10 text-center text-12 text-dimmed">{{ why }}</p>
   </div>
 </template>

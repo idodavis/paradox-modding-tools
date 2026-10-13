@@ -111,7 +111,10 @@ export default defineConfig({
         tv: {
           twMergeConfig: {
             extend: {
-              theme: { text: ["11", "12", "13", "14", "16", "18", "20", "28", "tiny"], radius: ["chip", "tile"] },
+              theme: {
+                text: ["11", "11.5", "12", "13", "14", "16", "18", "20", "28", "tiny"],
+                radius: ["chip", "tile"],
+              },
             },
           },
         },
@@ -205,7 +208,8 @@ export default defineConfig({
             { active: false, class: { item: "data-highlighted:not-data-disabled:before:bg-(--accent-soft)" } },
           ],
         },
-        // the boards' .f: a .label over its control, 5px apart, hints in the quiet 11px
+        // the boards' .f: a .label over its control, 5px apart, hints in the quiet 11px; horizontal is a setting's
+        // row, its name and hint with the control at the end
         formField: {
           slots: {
             label: "text-12 font-medium text-toned",
@@ -214,7 +218,46 @@ export default defineConfig({
             help: "mt-1.25 text-11 text-dimmed",
             error: "mt-1.25 text-11",
           },
-          variants: { size: { md: { root: "text-12" } }, orientation: { vertical: { container: "mt-1.25" } } },
+          variants: {
+            size: { md: { root: "text-12" } },
+            orientation: {
+              vertical: { container: "mt-1.25" },
+              horizontal: {
+                root: "min-h-11 items-center gap-4 px-3.5 py-1.75",
+                label: "text-13 leading-4.5 font-medium text-highlighted",
+                description: "text-11 leading-3.75 text-dimmed",
+              },
+            },
+          },
+        },
+        // a detail column's sections: a 32px head at 12px 600 over the rule
+        accordion: {
+          slots: {
+            trigger: "h-8 ps-3 pe-2 py-0 gap-1.5 text-12 font-semibold text-toned rounded-none",
+            trailingIcon: "size-3.5 text-dimmed",
+            body: "pb-1 text-12",
+          },
+        },
+        // a 22px row at 12px, the picked one on the accent's soft fill with a 2px accent bar
+        tree: {
+          slots: { linkLabel: "font-mono text-11.5" },
+          variants: {
+            size: {
+              md: {
+                link: "h-5.5 px-2 py-0 gap-1.5 text-12 rounded-sm before:rounded-sm",
+                linkLeadingIcon: "size-3.5",
+                linkTrailingIcon: "size-3.5",
+              },
+            },
+          },
+          compoundVariants: [
+            {
+              color: "primary",
+              class: {
+                link: "data-selected:bg-(--accent-soft) data-selected:text-highlighted data-selected:shadow-[inset_2px_0_0_var(--accent)] data-selected:before:bg-transparent",
+              },
+            },
+          ],
         },
         // a description wraps where Steam's will: Steam's text column is 639px at 14/20 on every window width
         // (its .workshopItemDescription, 655px with 8px sides, measured 2026-10-05); headings and bold at 600

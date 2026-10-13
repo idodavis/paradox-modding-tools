@@ -7,6 +7,8 @@ import (
 	"runtime"
 	"testing"
 	"time"
+
+	"paradox-modding-tools/services/internal/jomini"
 )
 
 func writeLauncher(t *testing.T, body string) string {
@@ -182,5 +184,25 @@ func TestInstallUpdatedAt(t *testing.T) {
 	}
 	if InstallUpdatedAt(flat).IsZero() {
 		t.Error("no binaries/ dir should fall back to the install root")
+	}
+}
+
+func TestColorOf(t *testing.T) {
+	parsed := jomini.Parse("a = rgb { 255 0 0 }\nb = rgb { 1 0.5 0 }\nc = hsv { 0.5 1 1 }\nd = hsv360 { 180 100 100 }\n" +
+		"e = hex { 0xff8000ff }\nf = rgb { 255 0 }\ng = { 1 2 3 }\nh = foo { 1 2 3 }\n")
+	for i, want := range []string{"#ff0000", "#ff8000", "#00ffff", "#00ffff", "#ff8000", "", "#010203", ""} {
+		assign := parsed.Root.Statements[i].(*jomini.Assignment)
+		tag, parts, isColor := jomini.ColorParts(assign.Value)
+		color, known := ColorOf(tag, parts)
+		if got := color.Hex(); !isColor || !known {
+			got = ""
+		} else if got != want {
+			t.Errorf("%s: %q, want %q", assign.Key.Text, got, want)
+		} else {
+			continue
+		}
+		if want != "" || isColor && known {
+			t.Errorf("%s: no color, want %q", assign.Key.Text, want)
+		}
 	}
 }

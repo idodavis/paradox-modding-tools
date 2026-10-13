@@ -5,11 +5,11 @@ and every offset is a UTF-8 byte index (UTF-16 exists only in the frontend's `ed
 
 | file | holds |
 |---|---|
-| `cst.go` | the tree (`Root`, `Statement`, `Value`, `Scalar`, `Block`, `Assignment`), the line index, and every reading of a parse (`Result`'s `Flat` and `Attach`; `Walk`, `BlockOf`, `Fields`) |
+| `cst.go` | the tree (`Root`, `Statement`, `Value`, `Scalar`, `Block`, `Assignment`), the line index, and every reading of a parse (`Result`'s `Flat` and `Attach`; `Walk`, `BlockOf`, `Fields`, `ColorParts`) |
 | `lexer.go` | the tokenizer: one pass over a file's bytes |
 | `parse.go` | the error-tolerant recursive-descent parser: it never panics and returns a tree with the structural errors it recovered from |
 | `names.go` | one written word read the same in every Jomini game: name shapes, numbers, dates, `prefix:name`, `@constant`, `$NAME$` |
-| `datacall.go` | a data call, `[Root.GetCountry.GetName]`, into its steps and arguments |
+| `datacall.go` | a data call, `[Root.GetCountry.GetName]`, into its steps and arguments, and a cast literal, `'(int32)3'`, into its type and value (`Cast`) |
 
 ## Decisions
 

@@ -5,6 +5,7 @@ package jomini
 
 import (
 	"sort"
+	"strconv"
 	"strings"
 )
 
@@ -396,6 +397,58 @@ func ScalarOf(block *Block, key string) *Scalar {
 	return nil
 }
 
+// ColorParts reads a color block: the tag written before it ("" for none) and the numbers it holds. A block holding
+// one hex word (hex { 0xff8000ff }) gives that word's bytes, so its digit count is kept. False for a value that is no
+// block, an empty block, and a block holding anything but numbers.
+func ColorParts(value Value) (tag string, parts []float64, ok bool) {
+	block := BlockOf(value)
+	if block == nil {
+		return "", nil, false
+	}
+	if tagged, isTagged := value.(*TaggedBlock); isTagged {
+		tag = tagged.Tag.Text
+	}
+	for _, statement := range block.Statements {
+		item, isValue := statement.(*ValueStmt)
+		if !isValue {
+			return "", nil, false
+		}
+		scalar, isScalar := item.Value.(*Scalar)
+		if !isScalar {
+			return "", nil, false
+		}
+		bytes := hexBytes(scalar.Text)
+		switch {
+		case Literal(scalar.Text) == LitNumber:
+			number, _ := strconv.ParseFloat(scalar.Text, 64)
+			parts = append(parts, number)
+		case bytes != nil:
+			parts = append(parts, bytes...)
+		default:
+			return "", nil, false
+		}
+	}
+	return tag, parts, len(parts) > 0
+}
+
+// hexBytes is the bytes a 0x word writes, at most four, from its first digits; nil for a word that is no hex number
+// of at least six digits.
+func hexBytes(text string) []float64 {
+	digits, isHex := strings.CutPrefix(strings.ToLower(text), "0x")
+	if !isHex || len(digits) < 6 {
+		return nil
+	}
+	var bytes []float64
+	for i := 0; i+2 <= len(digits) && len(bytes) < 4; i += 2 {
+		value, err := strconv.ParseUint(digits[i:i+2], 16, 8)
+		if err != nil {
+			return nil
+		}
+		bytes = append(bytes, float64(value))
+	}
+	return bytes
+}
+
 // Walk visits every statement depth-first. depth is 0 at root; parent is the
 // enclosing block (nil at root). Returning false skips the subtree.
 func Walk(root *Root, fn func(st Statement, depth int, parent *Block) bool) {
@@ -418,6 +471,14 @@ func (root Root) NodeRange() Range { return root.Range }
 
 // NodeRange is the scalar's span.
 func (scalar Scalar) NodeRange() Range { return scalar.Range }
+
+// TextStart is the offset the scalar's text starts at: past the opening quote of a quoted one.
+func (scalar Scalar) TextStart() int {
+	if scalar.Quoted {
+		return scalar.Range.Start + 1
+	}
+	return scalar.Range.Start
+}
 
 // NodeRange is the block's span.
 func (block Block) NodeRange() Range { return block.Range }

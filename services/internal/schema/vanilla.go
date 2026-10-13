@@ -20,7 +20,8 @@ import (
 // rather than as arguments. It returns the entry names vanilla defines, by database; a database made for a
 // new name is declared on the way.
 func (schema *Schema) countVanilla(ctx context.Context, install []inventory.File, info *game.GameInfo) (map[string]map[string]bool, error) {
-	schema.ScriptedEntries = map[string]ScriptedEntry{}
+	schema.ScriptedEntries, schema.WidgetKinds = map[string]ScriptedEntry{}, map[string]bool{}
+	kinds := &kindCollector{schema: schema, bases: map[string]bool{}}
 	names := map[string]map[string]bool{}
 	parsedFirst := map[string]jomini.Result{}
 	var files []inventory.File
@@ -28,9 +29,13 @@ func (schema *Schema) countVanilla(ctx context.Context, install []inventory.File
 		at, _ := schema.folder(file.Rel)
 		row, _ := info.At(at)
 		gui := game.FileTypes[strings.ToLower(path.Ext(file.Rel))].Keywords != nil
+		var visit Visit
+		if gui {
+			visit = kinds.note
+		}
 		if file.Format == inventory.Script && (len(row.Callers) > 0 || gui) {
 			parsed := parseScript(file)
-			for _, entry := range schema.WalkFile(file, &parsed, false, nil) {
+			for _, entry := range schema.WalkFile(file, &parsed, false, visit) {
 				schema.registerScriptedEntries(entry)
 			}
 			parsedFirst[file.Path] = parsed
@@ -39,6 +44,7 @@ func (schema *Schema) countVanilla(ctx context.Context, install []inventory.File
 			files = append(files, file)
 		}
 	}
+	kinds.settle()
 	work := func(file inventory.File) (parsed jomini.Result) {
 		if first, found := parsedFirst[file.Path]; found {
 			return first
@@ -58,6 +64,41 @@ func (schema *Schema) countVanilla(ctx context.Context, install []inventory.File
 		}
 	}
 	return names, inventory.Ordered(ctx, files, work, keep)
+}
+
+// kindCollector finds the built-in widget kinds from the tag each GUI type's block is written with: a tag that is
+// the type's own name (type hbox = hbox { }) is one, and so is a base no type is named, once every file is read.
+type kindCollector struct {
+	schema *Schema
+	bases  map[string]bool // every tag a type is written with that is not its own name
+}
+
+// note records the tag a statement that defines an entry writes its block with; the walk calls it for every
+// statement of a GUI file, and always reads on.
+func (collector *kindCollector) note(statement jomini.Statement, _ Context, inner *Context, occurrences []Occurrence) bool {
+	assign, isAssign := statement.(*jomini.Assignment)
+	if !isAssign || !inner.Defines {
+		return true
+	}
+	for _, occurrence := range occurrences {
+		switch {
+		case occurrence.Caller == "":
+		case occurrence.ID == assign.Key.Text:
+			collector.schema.WidgetKinds[strings.Clone(occurrence.ID)] = true
+		default:
+			collector.bases[strings.Clone(occurrence.ID)] = true
+		}
+	}
+	return true
+}
+
+// settle adds each tag no type of the install is named, once every GUI file's entries are registered.
+func (collector *kindCollector) settle() {
+	for tag := range collector.bases {
+		if _, defined := collector.schema.ScriptedEntries[game.Shapes[game.ShapeWidget].Caller+":"+tag]; !defined {
+			collector.schema.WidgetKinds[tag] = true
+		}
+	}
 }
 
 // noteEntry makes the database of an entry that has none (a table's, a file type's with its Body: gui.x) and

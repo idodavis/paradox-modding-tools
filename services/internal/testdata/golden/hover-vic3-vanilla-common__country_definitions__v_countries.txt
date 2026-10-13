@@ -60,6 +60,7 @@
     "a block"
    ],
    "winner": -1,
+   "color": "#c81e1e",
    "within": [
     "GBR"
    ],
@@ -250,6 +251,7 @@
     "a block"
    ],
    "winner": -1,
+   "color": "#1e1ec8",
    "within": [
     "FRA"
    ],

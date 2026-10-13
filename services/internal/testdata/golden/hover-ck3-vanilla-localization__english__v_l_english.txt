@@ -2527,3 +2527,39 @@
    }
   }
 72:20 First -
+73:1 v_key:0
+  {
+   "word": "v_key",
+   "head": "localization",
+   "name": "Fixture text",
+   "sites": [
+    {
+     "path": "<fixtures>/ck3/game/localization/english/v_l_english.yml",
+     "origin": "vanilla",
+     "rel": "localization/english/v_l_english.yml",
+     "range": {
+      "start": {
+       "line": 73,
+       "character": 0
+      },
+      "end": {
+       "line": 73,
+       "character": 0
+      }
+     }
+    }
+   ],
+   "winner": 0,
+   "range": {
+    "start": {
+     "line": 73,
+     "character": 1
+    },
+    "end": {
+     "line": 73,
+     "character": 6
+    }
+   }
+  }
+73:10 Fixture -
+73:18 text -

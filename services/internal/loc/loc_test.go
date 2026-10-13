@@ -4,7 +4,10 @@
 
 package loc
 
-import "testing"
+import (
+	"reflect"
+	"testing"
+)
 
 // The words the fixtures repeat.
 const (
@@ -160,6 +163,36 @@ func TestLooksLikeKey(t *testing.T) {
 	} {
 		if got := LooksLikeKey(testCase.text); got != testCase.want {
 			t.Errorf("LooksLikeKey(%q) = %v, want %v", testCase.text, got, testCase.want)
+		}
+	}
+}
+
+func TestSegments(t *testing.T) {
+	got := Segments("#bold Hello#! $NAME$ @gold! [GetName] line\\nbreak #high;italic x#!")
+	want := []Segment{
+		{Text: "Hello", Bold: true},
+		{Text: " "},
+		{Key: "NAME"},
+		{Text: " "},
+		{Icon: "gold"},
+		{Text: " "},
+		{Call: "GetName"},
+		{Text: " line"},
+		{Text: "\n"},
+		{Text: "break "},
+		{Text: "x", Format: "high", Italic: true},
+	}
+	if !reflect.DeepEqual(got, want) {
+		t.Errorf("segments:\n got %+v\nwant %+v", got, want)
+	}
+	for text, want := range map[string][]Segment{
+		"a # b @ c $ d [e":         {{Text: "a # b @ c $ d [e"}},
+		"[a[b]c] $k|f$":            {{Call: "a[b]c"}, {Text: " "}, {Key: "k"}},
+		"#low;bold a #x b#! c#! d": {{Text: "a ", Bold: true, Format: "low"}, {Text: "b", Bold: true, Format: "x"}, {Text: " c", Bold: true, Format: "low"}, {Text: " d"}},
+		"[concept|E] and":          {{Call: "concept|E"}, {Text: " and"}},
+	} {
+		if got := Segments(text); !reflect.DeepEqual(got, want) {
+			t.Errorf("%q:\n got %+v\nwant %+v", text, got, want)
 		}
 	}
 }

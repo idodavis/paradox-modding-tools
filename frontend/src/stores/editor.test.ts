@@ -192,6 +192,20 @@ describe("groups and layout", () => {
     expect(editor.openTabs).toEqual(["C:/m/a.txt"]);
     expect(editor.cursor).toEqual({ path: "C:/m/a.txt", line: 7, col: 1 });
   });
+  it("opens a file's panel with Visual and never with Split or Code", () => {
+    const editor = inApp(useEditorStore);
+    editor.open("gui/a.gui");
+    editor.setView("gui/a.gui", "visual");
+    expect(editor.panels.get("gui/a.gui")).toBe(true);
+    editor.setView("gui/a.gui", "split");
+    expect(editor.panels.get("gui/a.gui")).toBe(true);
+    editor.togglePanel("gui/a.gui");
+    expect(editor.panels.get("gui/a.gui")).toBe(false);
+    editor.setView("gui/a.gui", "code");
+    expect(editor.panels.get("gui/a.gui")).toBe(false);
+    editor.setView("readme.md", "visual");
+    expect(editor.panels.get("readme.md")).toBeUndefined();
+  });
   it("starts with the problems panel open", () => {
     expect(inApp(useEditorStore).panel).toBe("problems");
   });

@@ -4,6 +4,7 @@
 package schema
 
 import (
+	"cmp"
 	"slices"
 	"strings"
 	"time"
@@ -208,7 +209,9 @@ type Schema struct {
 	CustomLoc       map[string]CustomLoc
 	Prefixes        map[string]string        // a link prefix → the database the names written after it are in; "" none
 	ScriptedEntries map[string]ScriptedEntry // vanilla's scripted entries by calling word and name (word:name)
+	WidgetKinds     map[string]bool          // the built-in widget kinds the GUI files imply: a base no type defines, a type based on its own name
 	Lists           string                   // the database of scripted lists (a row of PurposeLists); "" none
+	Functions       string                   // the database of data functions' macros (a row of PurposeFunctions); "" none
 	Events          string                   // the database of events (a row of PurposeEvents); "" none
 }
 
@@ -223,6 +226,48 @@ func (schema *Schema) Link(key string) *Command {
 		}
 	}
 	return nil
+}
+
+// CallLeadsTo is the data type a data call's steps lead to: from the functions of the context type, then the global
+// ones, or a data type written first, through each function's return type; "" where a step is unknown.
+func (schema *Schema) CallLeadsTo(steps []jomini.CallStep, context string) string {
+	typeName := cmp.Or(context, game.GlobalType)
+	for i, step := range steps {
+		_, function, isFunction := schema.functionOf(typeName, i == 0, step.Name)
+		_, isType := schema.DataTypes[step.Name]
+		switch {
+		case isFunction:
+			typeName = function.Returns
+		case i == 0 && isType:
+			typeName = step.Name
+		default:
+			return ""
+		}
+	}
+	return typeName
+}
+
+// CallStep is the type the step at index i of a data call is called on and the function it names there; false where
+// the steps before it lead nowhere known or it names no function of that type (a data type written first is such a
+// step, and the type the next one is called on).
+func (schema *Schema) CallStep(steps []jomini.CallStep, i int, context string) (owner string, function DataFunction, ok bool) {
+	owner = schema.CallLeadsTo(steps[:i], context)
+	if owner == "" {
+		return "", DataFunction{}, false
+	}
+	return schema.functionOf(owner, i == 0, steps[i].Name)
+}
+
+// functionOf is the function a name is on a type, and the type it is on: the type's own, else where it is a call's
+// first step the global functions'.
+func (schema *Schema) functionOf(owner string, first bool, name string) (string, DataFunction, bool) {
+	if function, ok := schema.DataTypes[owner].Functions[name]; ok {
+		return owner, function, true
+	}
+	if function, ok := schema.DataTypes[game.GlobalType].Functions[name]; ok && first {
+		return game.GlobalType, function, true
+	}
+	return owner, DataFunction{}, false
 }
 
 // DatabaseNamed returns the database a word names: the one called by the word or its plural, else the one

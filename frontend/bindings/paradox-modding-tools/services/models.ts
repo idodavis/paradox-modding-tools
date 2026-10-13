@@ -227,7 +227,7 @@ export interface IdeRoots {
 
 /**
  * ImageFacts is an image file's header (none where Go reads no header of its kind: SVG, WebP, BMP, ICO), its format as
- * the page names it, its size, and its URL at ImageRoute, which names when the file changed so a changed file is read
+ * the page names it, its size, and its URL at FileRoute, which names when the file changed so a changed file is read
  * again; Reject says why it is not shown.
  */
 export interface ImageFacts {
@@ -528,6 +528,11 @@ export interface Workspace {
     "resetIdeOnOpen": boolean;
     "hideExplorerBinaries": boolean;
     "defaultTool"?: string;
+
+    /**
+     * the answers to what bindings ask, by fact key
+     */
+    "facts"?: { [_ in string]?: string } | null;
     "mods": WorkspaceMod[] | null;
 }
 

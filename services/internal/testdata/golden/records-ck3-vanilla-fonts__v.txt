@@ -1,2 +1,5 @@
 def font.font "v_font" mode="" 0-4 @0:0 local=false named=false
+def font.fontfiles "v_files" mode="" 88-97 @7:0 local=false named=false
 ref font.font "v_font" called="" 17-25 @1:8 from=0 trigger=false
+ref font.fontfiles "v_files" called="" 73-82 @4:14 from=0 trigger=false
+ref font.fontfiles "v_files" called="" 110-119 @8:8 from=1 trigger=false

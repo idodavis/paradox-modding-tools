@@ -871,17 +871,6 @@ func TestWeightFact(t *testing.T) {
 	}
 }
 
-func TestColorFact(t *testing.T) {
-	parsed := jomini.Parse("a = rgb { 255 0 0 }\nb = rgb { 1 0.5 0 }\nc = hsv { 0.5 1 1 }\nd = hsv360 { 180 100 100 }\n" +
-		"e = hex { 0xff8000ff }\nf = rgb { 255 0 }\ng = { 1 2 3 }\nh = foo { 1 2 3 }\n")
-	for i, want := range []string{"#ff0000", "#ff8000", "#00ffff", "#00ffff", "#ff8000", "", "", ""} {
-		assign := parsed.Root.Statements[i].(*jomini.Assignment)
-		if got := colorFact(assign); got != want {
-			t.Errorf("%s: %q, want %q", assign.Key.Text, got, want)
-		}
-	}
-}
-
 func TestModifierFact(t *testing.T) {
 	s := goldenInstall(t, ck3).Schema
 	if modifier, isModifier := modifierFact(s, "monthly_prestige"); !isModifier || modifier.Pattern != "" {

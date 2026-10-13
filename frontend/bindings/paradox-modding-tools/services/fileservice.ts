@@ -37,7 +37,7 @@ export function ListDirectory(dirPath: string, showAll: boolean): $CancellablePr
 }
 
 /**
- * ReadImageFacts is an image file's facts, which its pixels at ImageRoute do not carry.
+ * ReadImageFacts is an image file's facts, which its pixels at FileRoute do not carry.
  */
 export function ReadImageFacts(fullPath: string): $CancellablePromise<$models.ImageFacts> {
     return $Call.ByID(2047657521, fullPath);

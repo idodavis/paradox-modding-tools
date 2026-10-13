@@ -12,6 +12,7 @@ import (
 	"cmp"
 	"slices"
 
+	"paradox-modding-tools/services/internal/game"
 	"paradox-modding-tools/services/internal/index"
 	"paradox-modding-tools/services/internal/inventory"
 	"paradox-modding-tools/services/internal/jomini"
@@ -141,8 +142,9 @@ func Lines(ws *workspace.Session, places []SourceAt) [][]string {
 	ws.RLock()
 	defer ws.RUnlock()
 	out := make([][]string, len(places))
+	parses := workspace.Parses{}
 	for i, place := range places {
-		parsed, _, err := ws.Parsed(place.Path)
+		parsed, _, err := ws.Parsed(parses, place.Path)
 		if err != nil {
 			continue
 		}
@@ -161,7 +163,7 @@ func LocReaders(ws *workspace.Session, key string) []Cited {
 	ws.RLock()
 	defer ws.RUnlock()
 	var readers []Cited
-	for _, ref := range index.Lookup(ws.Indexes(), schema.Refers, schema.Localization, key) {
+	for _, ref := range index.Lookup(ws.Indexes(), schema.Refers, game.Localization, key) {
 		occurrence := ref.Occurrence()
 		readers = append(readers, Cited{Name: occurrence.ID, Line: int(occurrence.Line), Col: int(occurrence.Col), At: ref.File()})
 	}

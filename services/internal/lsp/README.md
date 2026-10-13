@@ -34,7 +34,7 @@ first, as a `subject` (`subjectAt`): a reference the walk read in it, else its k
 scope it is written in. `describe` fills the card from it by one of three functions, `cardForReference` (a name and
 where it is defined), `cardForCommand` (an effect, trigger or link the dumps declare) and `cardForPosition` (a key
 only its place knows). Then each fact the written form adds is its own function over the scalar alone: `modifierFact`,
-`dateFact`, `constantFact`, `weightFact`, `colorFact`, `writtenInFact`. The words are `wording.go`'s, so no card
+`dateFact`, `constantFact`, `weightFact`, `writtenInFact`, and the color the block writes (`jomini.ColorParts`, then `game.ColorOf`). The words are `wording.go`'s, so no card
 function writes prose. A completion item's card (`Resolve`) is the same `describe` over the subject the item was
 offered with.
 

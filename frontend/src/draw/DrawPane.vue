@@ -77,8 +77,9 @@ function clipOf(box: Box, clip: Box): string {
   return `inset(${px(...[top, right, bottom, left].map((side) => Math.max(0, side)))})`;
 }
 
-/** The CSS of a texture: its frame or fit, its slices, its mirror, tint, blend and mask. */
-function textureStyle(texture: Texture): CSSProperties {
+/** The CSS of a texture in a box: its frame scaled to the box or its fit, its slices, its mirror, tint, blend and
+ * mask. */
+function textureStyle(texture: Texture, box: Box): CSSProperties {
   const image = `url(${quote(texture.url)})`;
   const style: CSSProperties = {};
   if (texture.mirror) style.transform = "scaleX(-1)";
@@ -92,11 +93,14 @@ function textureStyle(texture: Texture): CSSProperties {
       borderImage: `${image} ${texture.border.join(" ")} fill / ${slices} ${texture.tiled ? "repeat" : "stretch"}`,
     };
   }
+  // a frame fills the box: the whole image is scaled as the frame is, and moved so the frame sits at the origin
   const { frame } = texture;
-  const layer =
-    frame.width > 0 && frame.height > 0
-      ? { size: px(texture.width, texture.height), position: px(-frame.x, -frame.y) }
-      : (FITS[texture.fit] ?? FILL);
+  const framed = frame.width > 0 && frame.height > 0;
+  const scaleX = framed ? box.width / frame.width : 1;
+  const scaleY = framed ? box.height / frame.height : 1;
+  const layer = framed
+    ? { size: px(texture.width * scaleX, texture.height * scaleY), position: px(-frame.x * scaleX, -frame.y * scaleY) }
+    : (FITS[texture.fit] ?? FILL);
   // a tint multiplies the image under a layer of its color, and the image's own alpha keeps the shape
   const tinted = texture.tint !== "";
   const masks = [
@@ -129,7 +133,7 @@ function styleOf(element: DrawElement): CSSProperties {
     ...boxStyle(element.box),
     opacity: element.alpha,
     clipPath: element.clip ? clipOf(element.box, element.clip) : undefined,
-    ...(element.texture ? textureStyle(element.texture) : {}),
+    ...(element.texture ? textureStyle(element.texture, element.box) : {}),
     ...(text
       ? { fontFamily: quote(text.font), fontSize: `${text.size}px`, color: text.color, lineHeight: "normal" }
       : {}),

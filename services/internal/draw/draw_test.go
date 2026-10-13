@@ -129,8 +129,9 @@ func TestResolveFixture(t *testing.T) {
 	if label := box.children[2]; label.text == nil || len(label.pieces) != 2 || label.pieces[0].Text != "Fixture " {
 		t.Errorf("the loc key's text, measured by its words: %+v", box.children[2].pieces)
 	}
-	if icon := box.children[3]; len(icon.textures) != 1 || icon.textures[0].Width != 4 {
-		t.Errorf("the texture by its path: %+v", box.children[3].textures)
+	if icon := box.children[3]; len(icon.textures) != 2 || icon.textures[0].Width != 4 ||
+		icon.textures[1].Frame != (Box{Y: 2, Width: 2, Height: 2}) {
+		t.Errorf("the texture by its path, and a modify_texture's frame picked in its block: %+v", box.children[3].textures)
 	}
 	if list := box.children[4]; list.rows != 3 {
 		t.Errorf("a data model draws three rows: %d", list.rows)

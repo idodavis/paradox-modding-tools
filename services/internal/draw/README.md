@@ -45,7 +45,10 @@ wins everywhere (`widget.last`). A window runs in its opening state: the state n
 are resolved once and drawn once a row. A text with no `fontsize` takes the font and size of the install's `textbox`
 type.
 
-A binding (`[GetPlayer.GetName]`) is the game's to answer, so nothing answers it: a `visible` that is one draws the
+A widget's textures are its `texture` and then each `modify_texture` in order, the latter's blocks expanded and
+overridden as the widget's own are, so a color overlay's `block "master_color_frame" { frame = 7 }` picks its frame;
+a frame is drawn scaled to the widget's box. A binding (`[GetPlayer.GetName]`) is the game's to answer, so nothing
+answers it: a `visible` that is one draws the
 widget, a `text` that is one is drawn as written, a `texture` or a number that is one is none. One thing the text
 alone says: two siblings whose `visible` bindings are `[X]` and `[Not(X)]` are shown one at a time, so the later
 takes the earlier's place (`pairAlternatives`: `either` on the earlier, `alternate` on the later) instead of a place

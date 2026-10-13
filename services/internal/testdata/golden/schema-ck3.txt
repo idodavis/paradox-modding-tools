@@ -80,7 +80,8 @@ database game_rules fields=[apply_modifier categories default flag game_rule set
   /opt_hard value={0  []}/0 block=0/0 scope=""/0 required={0 }/0 default=""/0 blurb=""/0 written=0 seen=in:1,blocks:1,forms:32,values:map[]
   /opt_slow value={0  []}/0 block=0/0 scope=""/0 required={0 }/0 default=""/0 blurb=""/0 written=0 seen=in:1,blocks:1,forms:32,values:map[]
 database gui.block fields=[]
-  (entry) value={0  []}/0 block=8/1 scope=""/0 required={0 }/0 default=""/0 blurb=""/0 written=0 seen=in:1,blocks:2,forms:32,values:map[]
+  (entry) value={0  []}/0 block=8/1 scope=""/0 required={0 }/0 default=""/0 blurb=""/0 written=0 seen=in:1,blocks:3,forms:32,values:map[]
+  /frame value={0  []}/0 block=0/0 scope=""/0 required={0 }/0 default=""/0 blurb=""/0 written=0 seen=in:1,blocks:0,forms:1,values:map[]
 database gui.format fields=[]
   (entry) value={0  []}/0 block=8/1 scope=""/0 required={0 }/0 default=""/0 blurb=""/0 written=0 seen=in:0,blocks:1,forms:32,values:map[]
   /format value={0  []}/0 block=0/0 scope=""/0 required={0 }/0 default=""/0 blurb=""/0 written=0 seen=in:1,blocks:0,forms:16,values:map[bold:1]
@@ -104,6 +105,9 @@ database gui.type fields=[]
   /fontsize value={0  []}/0 block=0/0 scope=""/0 required={0 }/0 default=""/0 blurb=""/0 written=0 seen=in:3,blocks:0,forms:1,values:map[]
   /layoutpolicy_horizontal value={0  []}/0 block=0/0 scope=""/0 required={0 }/0 default=""/0 blurb=""/0 written=0 seen=in:5,blocks:0,forms:8,values:map[expanding:5]
   /layoutpolicy_vertical value={0  []}/0 block=0/0 scope=""/0 required={0 }/0 default=""/0 blurb=""/0 written=0 seen=in:1,blocks:0,forms:8,values:map[expanding:1]
+  /modify_texture value={0  []}/0 block=0/0 scope=""/0 required={0 }/0 default=""/0 blurb=""/0 written=0 seen=in:1,blocks:1,forms:40,values:map[block:1]
+  /modify_texture/framesize value={0  []}/0 block=0/0 scope=""/0 required={0 }/0 default=""/0 blurb=""/0 written=0 seen=in:1,blocks:1,forms:33,values:map[]
+  /modify_texture/texture value={0  []}/0 block=0/0 scope=""/0 required={0 }/0 default=""/0 blurb=""/0 written=0 seen=in:1,blocks:0,forms:16,values:map[gfx/interface/v_bg.dds:1]
   /multiline value={0  []}/0 block=0/0 scope=""/0 required={0 }/0 default=""/0 blurb=""/0 written=0 seen=in:1,blocks:0,forms:2,values:map[yes:1]
   /name value={0  []}/0 block=0/0 scope=""/0 required={0 }/0 default=""/0 blurb=""/0 written=0 seen=in:14,blocks:0,forms:16,values:map[v_after:1 v_backed:1 v_background:1 v_backing:1 v_container:1 v_flow:1 v_footer:1 v_multi:1 v_no:1 v_nothing:1 v_row:1 v_unset:1 v_unset_icon:1 v_yes:1]
   /parentanchor value={0  []}/0 block=0/0 scope=""/0 required={0 }/0 default=""/0 blurb=""/0 written=0 seen=in:2,blocks:0,forms:8,values:map[bottom|hcenter:1 right:1]
@@ -20218,6 +20222,7 @@ macro *:v_trigger database=scripted_triggers
   (entry) value={0  []}/0 block=0/0 scope=""/0 required={0 }/0 default=""/0 blurb=""/0 written=0 seen=in:1,blocks:1,forms:32,values:map[]
   /TARGET value={0  []}/0 block=0/0 scope=""/0 required={0 }/0 default=""/0 blurb=""/0 written=0 seen=in:1,blocks:0,forms:8,values:map[root:1]
 macro blockoverride:rows database=gui.block
+macro blockoverride:v_pick database=gui.block
 macro effect:v_effect database=scripted_effects
   (entry) value={0  []}/0 block=0/0 scope=""/0 required={0 }/0 default=""/0 blurb=""/0 written=0 seen=in:3,blocks:3,forms:32,values:map[]
   /AMOUNT value={0  []}/0 block=0/0 scope=""/0 required={0 }/0 default=""/0 blurb=""/0 written=0 seen=in:3,blocks:0,forms:1,values:map[]

@@ -43,7 +43,10 @@ window = {
 			v_button = { size = { 50 20 } layoutpolicy_vertical = expanding }
 		}
 		v_label = { text = "v_key" font = "v_font" fontsize = 16 }
-		icon = { texture = "gfx/interface/v_frame.dds" }
+		icon = {
+			texture = "gfx/interface/v_frame.dds"
+			modify_texture = { texture = "gfx/interface/v_bg.dds" framesize = { 2 2 } block "v_pick" { frame = 3 } }
+		}
 		vbox = {
 			datamodel = "[GetPlayer.GetVassals]"
 			item = { v_label = { } }

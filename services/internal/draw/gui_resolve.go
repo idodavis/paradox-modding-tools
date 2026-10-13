@@ -462,8 +462,9 @@ func isBinding(text string) bool {
 	return len(calls) == 1 && calls[0].Start == 0 && calls[0].End == len(text) && strings.HasSuffix(text, "]")
 }
 
-// textures is the widget's textures: texture through FileAt across the indexes, then each modify_texture in order; a
-// file not found goes to Missing.
+// textures is the widget's textures: texture through FileAt across the indexes, then each modify_texture in order,
+// its blocks expanded and overridden as the widget's are (a color overlay picks its frame in one); a file not found
+// goes to Missing.
 func (resolver *resolver) textures(node *widget) {
 	first, textured := resolver.textureOf(node)
 	if !textured {
@@ -477,7 +478,8 @@ func (resolver *resolver) textures(node *widget) {
 		if !strings.EqualFold(assignment.assign.Key.Text, "modify_texture") {
 			continue
 		}
-		modifier := &widget{statements: fieldStatements(assignment)}
+		modifier := &widget{overrides: node.overrides, scale: node.scale}
+		resolver.expand(modifier, assignment, 0)
 		more, isTexture := resolver.textureOf(modifier)
 		switch {
 		case !isTexture:

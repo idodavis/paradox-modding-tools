@@ -19,6 +19,8 @@ var assets embed.FS
 
 var version = "dev"
 
+// main serves a Workshop publish when started as one; otherwise it opens the log, the config and the services and
+// runs the app.
 func main() {
 	if exitCode, served := services.ServeSteamPublish(); served {
 		os.Exit(exitCode)
@@ -41,8 +43,8 @@ func main() {
 	logSvc := services.NewLogService(logFile, config)
 	appSvc := services.NewAppService(config, workspaces, wikis, version)
 
-	// registered first, so Wails shuts it down last and the others' shutdowns are logged
 	app := newApp(logSvc, []application.Service{
+		// registered first, so Wails shuts it down last and the others' shutdowns are logged
 		application.NewService(logSvc),
 		application.NewService(appSvc),
 		application.NewService(&services.FileService{}),
@@ -65,12 +67,12 @@ func main() {
 }
 
 // newApp makes the application over its services: the assets, the single-instance rule and the platform options.
-func newApp(logSvc *services.LogService, list []application.Service) *application.App {
+func newApp(logSvc *services.LogService, registered []application.Service) *application.App {
 	return application.New(application.Options{
 		Name:        "paradox-modding-tools",
 		Description: "Desktop tools for Paradox Interactive game modding",
 		Logger:      logSvc.Logger,
-		Services:    list,
+		Services:    registered,
 		Assets: application.AssetOptions{
 			Handler:    application.BundledAssetFileServer(assets),
 			Middleware: services.ServeImages,

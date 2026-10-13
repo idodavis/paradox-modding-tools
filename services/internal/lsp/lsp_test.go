@@ -35,7 +35,7 @@ const fixtureMod = "mod"
 const (
 	ck3             = "ck3"
 	eventFile       = "events/x.txt"
-	callSiteFile    = "events/e.txt"
+	otherEventFile  = "events/e.txt"
 	inlineEventFile = "events/i.txt"
 	onActionFile    = "common/on_action/m.txt"
 	locFile         = "localization/english/m_l_english.yml"
@@ -229,15 +229,6 @@ func aim(t *testing.T, text, needle string, plus int) (int, int) {
 	return line, at - (strings.LastIndex(text[:at], "\n") + 1)
 }
 
-// labelsOf gives the label of each completion item, in order.
-func labelsOf(items []Item) []string {
-	var out []string
-	for _, item := range items {
-		out = append(out, item.Label)
-	}
-	return out
-}
-
 // TestComplete checks which names each position offers, which it does not, and the order and range of some.
 func TestComplete(t *testing.T) {
 	install, dir := fixture(t, "ck3")
@@ -279,7 +270,10 @@ func TestComplete(t *testing.T) {
 		if err != nil {
 			t.Fatal(err)
 		}
-		names := labelsOf(got.Items)
+		var names []string
+		for _, item := range got.Items {
+			names = append(names, item.Label)
+		}
 		for _, want := range tt.has {
 			if !slices.Contains(names, want) {
 				t.Errorf("%s: no %q in %v", tt.what, want, names)
@@ -320,22 +314,22 @@ func TestDefinition(t *testing.T) {
 		plus                    int
 		files                   []string // a suffix of each location's rel, in order
 	}{
-		{"a macro from its call", callSiteFile, "namespace = m\nm.1 = {\n\ttrigger = { m_trig = yes }\n}\n", "m_trig", 0, []string{"scripted_triggers/x.txt"}},
+		{"a macro from its call", otherEventFile, "namespace = m\nm.1 = {\n\ttrigger = { m_trig = yes }\n}\n", "m_trig", 0, []string{"scripted_triggers/x.txt"}},
 		{"a macro on its own name", "common/scripted_triggers/x.txt", "m_trig = {\n\thas_trait = brave\n}\n", "m_trig", 0, []string{"scripted_triggers/x.txt"}},
 		{"an inline declaration, on the name", inlineEventFile, "namespace = i\nscripted_trigger i_trig = { is_adult = yes }\ni.1 = { trigger = { i_trig = yes } }\n", "i_trig = {", 0, []string{inlineEventFile}},
 		{"an inline declaration, from its call", inlineEventFile, "namespace = i\nscripted_trigger i_trig = { is_adult = yes }\ni.1 = { trigger = { i_trig = yes } }\n", "i_trig = yes", 0, []string{inlineEventFile}},
-		{"a dotted event, on either half", callSiteFile, "namespace = m\nm.1 = {\n\timmediate = { trigger_event = v.2 }\n}\n", "v.2", 2, []string{"events/v_events.txt"}},
+		{"a dotted event, on either half", otherEventFile, "namespace = m\nm.1 = {\n\timmediate = { trigger_event = v.2 }\n}\n", "v.2", 2, []string{"events/v_events.txt"}},
 		{"a bare culture name", "history/characters/m.txt", "1000 = {\n\tculture = norse\n}\n", "norse", 0, []string{"cultures/v_cultures.txt"}},
-		{"the same name cited", callSiteFile, "namespace = m\nm.1 = {\n\ttrigger = { exists = culture:norse }\n}\n", "norse", 0, []string{"cultures/v_cultures.txt"}},
-		{"a nested title", callSiteFile, "namespace = m\nm.1 = {\n\ttrigger = { exists = title:c_x }\n}\n", "c_x", 0, []string{"landed_titles/v_titles.txt"}},
-		{"a character by number", callSiteFile, "namespace = m\nm.1 = {\n\ttrigger = { exists = character:186004 }\n}\n", "186004", 0, []string{"history/characters/v_characters.txt"}},
-		{"a script value", callSiteFile, "namespace = m\nm.1 = {\n\timmediate = { add_gold = small_value }\n}\n", "small_value", 0, []string{"script_values/v_values.txt"}},
-		{"a variable read goes to where it is set", callSiteFile, "namespace = m\nm.1 = {\n\timmediate = { set_variable = { name = foo value = 1 } }\n\ttrigger = { exists = var:foo }\n}\n", "var:foo", 4, []string{callSiteFile}},
-		{"a saved scope", callSiteFile, "namespace = m\nm.1 = {\n\timmediate = { save_scope_as = mine }\n\ttrigger = { exists = scope:mine }\n}\n", "scope:mine", 6, []string{callSiteFile}},
+		{"the same name cited", otherEventFile, "namespace = m\nm.1 = {\n\ttrigger = { exists = culture:norse }\n}\n", "norse", 0, []string{"cultures/v_cultures.txt"}},
+		{"a nested title", otherEventFile, "namespace = m\nm.1 = {\n\ttrigger = { exists = title:c_x }\n}\n", "c_x", 0, []string{"landed_titles/v_titles.txt"}},
+		{"a character by number", otherEventFile, "namespace = m\nm.1 = {\n\ttrigger = { exists = character:186004 }\n}\n", "186004", 0, []string{"history/characters/v_characters.txt"}},
+		{"a script value", otherEventFile, "namespace = m\nm.1 = {\n\timmediate = { add_gold = small_value }\n}\n", "small_value", 0, []string{"script_values/v_values.txt"}},
+		{"a variable read goes to where it is set", otherEventFile, "namespace = m\nm.1 = {\n\timmediate = { set_variable = { name = foo value = 1 } }\n\ttrigger = { exists = var:foo }\n}\n", "var:foo", 4, []string{otherEventFile}},
+		{"a saved scope", otherEventFile, "namespace = m\nm.1 = {\n\timmediate = { save_scope_as = mine }\n\ttrigger = { exists = scope:mine }\n}\n", "scope:mine", 6, []string{otherEventFile}},
 		{"a word listed in a block vanilla types", "common/culture/cultures/m.txt", "m_culture = {\n\ttraditions = { tradition_x }\n}\n", "tradition_x", 0, []string{"culture/traditions/v_traditions.txt"}},
-		{"a parameter, from the call site, goes to the macro that was called", callSiteFile, "namespace = m\nm.1 = {\n\timmediate = { v_effect = { AMOUNT = 1 } }\n}\n", "AMOUNT", 0, []string{"scripted_effects/v_effects.txt"}},
+		{"a parameter, from the call site, goes to the macro that was called", otherEventFile, "namespace = m\nm.1 = {\n\timmediate = { v_effect = { AMOUNT = 1 } }\n}\n", "AMOUNT", 0, []string{"scripted_effects/v_effects.txt"}},
 		{"a parameter inside its body", "common/scripted_effects/p.txt", "p_effect = {\n\tadd_gold = $AMOUNT$\n\tadd_prestige = $AMOUNT$\n}\n", "$AMOUNT$\n\tadd_prestige", 1, []string{"scripted_effects/p.txt"}},
-		{"a loc key from script", callSiteFile, "namespace = m\nm.1 = {\n\ttitle = v.1.t\n}\n", "v.1.t", 0, []string{"v_l_english.yml"}},
+		{"a loc key from script", otherEventFile, "namespace = m\nm.1 = {\n\ttitle = v.1.t\n}\n", "v.1.t", 0, []string{"v_l_english.yml"}},
 		{"a mod's twin loaded last: the winner first", "events/zz_e.txt", "namespace = v\nv.1 = {\n\ttype = character_event\n}\n", "v.1 =", 0, []string{"events/zz_e.txt", "events/v_events.txt"}},
 	} {
 		path := opened(install, dir, tt.rel, tt.text)
@@ -353,9 +347,9 @@ func TestDefinition(t *testing.T) {
 	}
 
 	for _, tt := range []struct{ what, rel, text, needle string }{
-		{"an ephemeral prefix stays ephemeral", callSiteFile, "namespace = m\nm.1 = {\n\ttrigger = { exists = flag:some_flag }\n}\n", "some_flag"},
-		{"a literal", callSiteFile, "namespace = m\nm.1 = {\n\ttrigger = { is_adult = yes }\n}\n", boolYes},
-		{"a token", callSiteFile, "namespace = m\nm.1 = {\n\ttrigger = { is_adult = yes }\n}\n", "is_adult"},
+		{"an ephemeral prefix stays ephemeral", otherEventFile, "namespace = m\nm.1 = {\n\ttrigger = { exists = flag:some_flag }\n}\n", "some_flag"},
+		{"a literal", otherEventFile, "namespace = m\nm.1 = {\n\ttrigger = { is_adult = yes }\n}\n", boolYes},
+		{"a token", otherEventFile, "namespace = m\nm.1 = {\n\ttrigger = { is_adult = yes }\n}\n", "is_adult"},
 	} {
 		path := opened(install, dir, tt.rel, tt.text)
 		line, col := aim(t, tt.text, tt.needle, 0)
@@ -368,7 +362,7 @@ func TestDefinition(t *testing.T) {
 func TestReferences(t *testing.T) {
 	install, dir := fixture(t, "ck3")
 	call := "namespace = m\nm.1 = {\n\ttrigger = { m_trig = yes }\n\ttitle = m.1.t\n\tdesc = only_script\n}\n"
-	opened(install, dir, callSiteFile, call)
+	opened(install, dir, otherEventFile, call)
 	decl := "m_trig = {\n\thas_trait = brave\n}\n"
 	trig := opened(install, dir, "common/scripted_triggers/x.txt", decl)
 	locText := "l_english:\n m.1.t:0 \"Hi $only_loc|U$\"\n only_loc:0 \"There\"\n"
@@ -390,10 +384,10 @@ func TestReferences(t *testing.T) {
 		return slices.ContainsFunc(got, func(rel string) bool { return strings.HasSuffix(rel, want) })
 	}
 
-	if got := rels(trig, decl, "m_trig", 0); !has(got, callSiteFile) || !has(got, "scripted_triggers/x.txt") {
+	if got := rels(trig, decl, "m_trig", 0); !has(got, otherEventFile) || !has(got, "scripted_triggers/x.txt") {
 		t.Errorf("from the declaration, the call site and the declaration: %v", got)
 	}
-	if got := rels(locPath, locText, "m.1.t", 0); !has(got, callSiteFile) || !has(got, "m_l_english.yml") {
+	if got := rels(locPath, locText, "m.1.t", 0); !has(got, otherEventFile) || !has(got, "m_l_english.yml") {
 		t.Errorf("a loc key: its script site and its own line: %v", got)
 	}
 	if got := rels(locPath, locText, "only_loc|U", 0); !has(got, "m_l_english.yml") || len(got) != 2 {
@@ -414,7 +408,7 @@ func TestReferences(t *testing.T) {
 func TestSymbols(t *testing.T) {
 	install, dir := fixture(t, "ck3")
 	text := "namespace = m\nscripted_trigger m_inline = { is_adult = yes }\nm.1 = {\n\timmediate = { save_scope_as = mine }\n}\nm.2 = { }\n"
-	path := opened(install, dir, callSiteFile, text)
+	path := opened(install, dir, otherEventFile, text)
 	got, err := DocumentSymbols(install, path)
 	var names []string
 	for _, sym := range got {
@@ -514,7 +508,6 @@ func TestDiagnoseBOMOnDisk(t *testing.T) {
 	if got, _ := Diagnose(install, locPath, nil); len(got) != 0 {
 		t.Errorf("a BOM on disk: %+v", got)
 	}
-
 }
 
 // TestDiagnoseSettings checks that the settings turn a code off and on.
@@ -630,11 +623,11 @@ func assertSampleWithinCeilings(t *testing.T, ws *workspace.Session, mod string,
 	var lines []string
 	for _, sample := range samples {
 		path := filepath.Join(mod, filepath.FromSlash(sample.Rel))
-		found, err := Diagnose(ws, path, on)
+		findings, err := Diagnose(ws, path, on)
 		if err != nil {
 			t.Fatal(err)
 		}
-		for _, finding := range found {
+		for _, finding := range findings {
 			if !on[finding.Code] && !slices.ContainsFunc(Codes, func(known Code) bool { return known.Code == finding.Code }) {
 				parse++
 				continue

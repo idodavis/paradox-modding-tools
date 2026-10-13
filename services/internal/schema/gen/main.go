@@ -19,6 +19,7 @@ import (
 	"paradox-modding-tools/services/internal/schema"
 )
 
+// main writes the shipped backup schema of the game the flags name.
 func main() {
 	gameID := flag.String("game", "", "game id: ck3, vic3 or eu5")
 	installDir := flag.String("dir", "", "install root; the first Steam install found when empty")

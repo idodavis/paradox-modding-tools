@@ -1,6 +1,7 @@
 /**
  * The Visual view's client state, shared by a GUI file's pane and its Widgets panel: the toolbar's choices, kept on
- * this computer, and per file the entry drawn and the part selected. What is drawn is the query's (queries.ts).
+ * this computer, and per file the entry drawn, the part selected and the parts hidden for the session. What is
+ * drawn is the query's (queries.ts).
  */
 import { computed, ref } from "vue";
 import { defineStore } from "pinia";
@@ -47,9 +48,17 @@ export const useDrawStore = defineStore("draw", () => {
     set: (value: string) => (chosenLanguage.value = value),
   });
 
-  // by file path: the entry the user picked, and the part selected
+  // by file path: the entry the user picked, the part selected, and the parts hidden for this session
   const picked = ref(new Map<string, string>());
   const selected = ref(new Map<string, number>());
+  const hidden = ref(new Map<string, Set<number>>());
+
+  /** Hides a file's part, or shows it again; what it holds goes with it. Kept until the app closes. */
+  function toggleHidden(path: string, part: number): void {
+    const parts = hidden.value.get(path) ?? new Set<number>();
+    if (!parts.delete(part)) parts.add(part);
+    hidden.value.set(path, parts);
+  }
 
   /** What a file's entry is drawn as: the toolbar's resolution, scale and language. */
   function requestOf(path: string, entry: string): DrawRequest {
@@ -63,5 +72,5 @@ export const useDrawStore = defineStore("draw", () => {
     };
   }
 
-  return { width, height, scale, bounds, language, languages, picked, selected, requestOf };
+  return { width, height, scale, bounds, language, languages, picked, selected, hidden, toggleHidden, requestOf };
 });

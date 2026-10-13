@@ -1,8 +1,8 @@
 <script setup lang="ts">
 /**
  * The Widgets panel of a GUI file: under the file's header, where the selected widget sits (its ancestors, each a
- * click away) and its properties as written, each with who wrote it: the widget, or the type or template it comes
- * from. The selection is the pane's or the caret's.
+ * click away), whether it is shown for this session, and its properties as written in the code's colors, each with
+ * who wrote it: the widget, or the type or template it comes from. The selection is the pane's or the caret's.
  */
 import { computed } from "vue";
 import { useQuery } from "@pinia/colada";
@@ -11,13 +11,16 @@ import { useDraw } from "../composables/useDraw";
 import { useIdeRoots } from "../composables/useIdeRoots";
 import { fileName } from "../lib/format";
 import { propertiesQuery } from "../queries";
+import { useDrawStore } from "../stores/draw";
 import DetailHeader from "../ui/DetailHeader.vue";
+import ScriptSnippet from "../ui/ScriptSnippet.vue";
 
 const { workspaceId, path } = defineProps<{ workspaceId: string; path: string }>();
 
 /** A widget on the way to the selected one: its row of the breadcrumb and its part. */
 type Crumb = BreadcrumbItem & { part: number };
 
+const store = useDrawStore();
 const { locate } = useIdeRoots(() => workspaceId);
 const located = computed(() => locate(path));
 const { selected, request, parts } = useDraw(
@@ -36,6 +39,9 @@ const crumbs = computed(() => {
   return items;
 });
 
+// whether the selected part itself is hidden for the session (one under a hidden part is drawn with it again)
+const shown = computed(() => !store.hidden.get(path)?.has(selected.value));
+
 const { data: properties } = useQuery(() =>
   propertiesQuery({ id: workspaceId, request: request.value, part: part.value ? selected.value : -1 }),
 );
@@ -45,11 +51,15 @@ const { data: properties } = useQuery(() =>
   <aside class="flex min-h-0 min-w-0 flex-col border-s border-default bg-muted text-(length:--ide-ui-font)">
     <DetailHeader kind="GUI" :origin="located?.root.origin ?? ''" :name="fileName(path)" />
     <template v-if="part">
-      <UBreadcrumb :items="crumbs" class="border-b border-default px-3.5 py-2">
+      <UBreadcrumb
+        :items="crumbs"
+        class="border-b border-default px-3.5 py-2"
+        :ui="{ list: 'flex-wrap gap-x-1 gap-y-0.5', separatorIcon: 'size-3' }"
+      >
         <template #item="{ item, active }">
           <button
             type="button"
-            class="font-mono text-11.5"
+            class="font-mono text-11.5 break-all text-start"
             :class="active ? 'text-highlighted' : 'text-toned hover:text-highlighted'"
             @click="selected = item.part"
           >
@@ -57,14 +67,27 @@ const { data: properties } = useQuery(() =>
           </button>
         </template>
       </UBreadcrumb>
-      <div class="min-h-0 flex-1 overflow-auto px-3.5 py-2">
-        <div class="pb-1.5 text-11 text-dimmed">{{ part.kind }}</div>
-        <div v-for="property in properties" :key="property.key" class="py-1 text-11.5">
-          <div class="flex gap-3">
-            <span class="shrink-0 font-mono text-toned">{{ property.key }}</span>
-            <span class="min-w-0 grow text-end font-mono break-all text-highlighted">{{ property.value }}</span>
-          </div>
-          <div v-if="property.writtenBy" class="text-11 text-dimmed">from {{ property.writtenBy }}</div>
+      <div class="flex h-8 shrink-0 items-center gap-2 border-b border-default bg-elevated px-3.5 text-12">
+        <span class="text-muted">{{ part.kind }}</span>
+        <span class="grow" />
+        <USwitch
+          :model-value="shown"
+          size="xs"
+          :label="shown ? 'Shown' : 'Hidden'"
+          :ui="{ label: 'text-11.5 text-muted' }"
+          @update:model-value="store.toggleHidden(path, selected)"
+        />
+      </div>
+      <div class="min-h-0 flex-1 divide-y divide-default overflow-auto">
+        <div
+          v-for="property in properties"
+          :key="property.key"
+          class="flex items-baseline gap-3 px-3.5 py-1.5 text-11.5 odd:bg-elevated/40"
+        >
+          <span class="shrink-0 text-muted">{{ property.key }}</span>
+          <span v-if="property.writtenBy" class="truncate text-11 text-dimmed">from {{ property.writtenBy }}</span>
+          <span class="grow" />
+          <ScriptSnippet :text="property.value" :name="path" inline class="min-w-0 text-end break-all" />
         </div>
       </div>
     </template>

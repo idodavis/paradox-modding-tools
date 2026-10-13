@@ -26,7 +26,7 @@ const { workspaceId, path } = defineProps<{ workspaceId: string; path: string }>
 
 const store = useDrawStore();
 const editor = useEditorStore();
-const { entries, entry, selected, list, parts, renderedMs, error } = useDraw(
+const { entries, entry, selected, list, parts, hidden, renderedMs, error } = useDraw(
   () => workspaceId,
   () => path,
 );
@@ -136,8 +136,10 @@ function styleOf(element: DrawElement): CSSProperties {
   };
 }
 
+// the elements drawn: the list's, less those of the parts hidden for the session
+const drawn = computed(() => (list.value?.elements ?? []).filter((element) => !hidden.value.has(element.part)));
 // every element's style at once, so the pointer moving over the scene redraws its marks and not the elements
-const styles = computed(() => (list.value?.elements ?? []).map(styleOf));
+const styles = computed(() => drawn.value.map(styleOf));
 
 // the fonts the list's texts use, registered with the page while a list names them
 const faces = new Map<string, FontFace>();
@@ -167,7 +169,7 @@ onScopeDispose(() => faces.forEach((face) => document.fonts.delete(face)));
 // the marks over the elements: the selected part's, the one under the pointer's, and every element's bounds
 const hovered = shallowRef(-1);
 const marks = computed(() =>
-  (list.value?.elements ?? []).flatMap((element): Mark[] => {
+  drawn.value.flatMap((element): Mark[] => {
     const kind = element.part === selected.value ? "selected" : element.part === hovered.value ? "hovered" : "bounds";
     return kind === "bounds" && !store.bounds ? [] : [{ element, kind }];
   }),
@@ -191,9 +193,10 @@ function elementOf(event: Event): HTMLElement | null {
 /** The part an element draws, -1 for none. */
 const partOf = (element: HTMLElement | null) => (element ? Number(element.dataset.part) : -1);
 
-/** Draws another entry of the file, with no part selected. */
+/** Draws another entry of the file, with no part selected and nothing hidden. */
 function pickEntry(next: string): void {
   store.picked.set(path, next);
+  store.hidden.delete(path);
   selected.value = -1;
 }
 
@@ -336,7 +339,7 @@ const empty = computed(() => {
           @pointerleave="untrack"
         >
           <div
-            v-for="(element, i) in list?.elements ?? []"
+            v-for="(element, i) in drawn"
             :key="i"
             :data-part="element.part"
             class="absolute box-border"

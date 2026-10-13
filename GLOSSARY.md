@@ -72,7 +72,7 @@ does, measured against real installs, is in [GAME-SYNTAX.md](GAME-SYNTAX.md); ho
 | draw list | one render of a GUI entry: the elements to paint, its parts and the fonts they use | `draw.List` |
 | element | one painted rectangle of a draw list, at an absolute box, with its texture or text | `draw.Element` |
 | part | one widget of an entry, listed whether it is drawn or not, with where it is written | `draw.Part` |
-| panel | the Widgets panel in the IDE's right column: where the selected widget sits, and its properties | `frontend/src/draw/GuiDetail.vue` |
+| panel | the Widgets panel in the IDE's right column: where the selected widget sits, whether it is shown for the session, and its properties | `frontend/src/draw/GuiDetail.vue` |
 | diagnostic | something wrong in a mod's file, with a code; the code is what `# pmt:ignore <code>` and the settings toggle name | `lsp.Diagnose` |
 | tab | an open file's path, or a diff tab `git:<changes\|staged\|conflict>:<path>` or `git:commit@<hash>:<path>` | `frontend/src/editor/tabs.ts` |
 | editor group | a strip of tabs in the IDE; the groups sit in rows and columns, laid out per workspace | `frontend/src/stores/editor.ts` |

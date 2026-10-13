@@ -126,8 +126,8 @@ func TestResolveFixture(t *testing.T) {
 	if first := box.children[0]; first.kind != "button" || first.statements[len(first.statements)-1].writtenBy != "" {
 		t.Errorf("the override's button replaces the block's, written by the widget: %+v", first.kind)
 	}
-	if label := box.children[2]; label.text == nil || label.text.Lines[0].Runs[0].Text != "Fixture text" {
-		t.Errorf("the loc key's text: %+v", box.children[2].text)
+	if label := box.children[2]; label.text == nil || len(label.pieces) != 2 || label.pieces[0].Text != "Fixture " {
+		t.Errorf("the loc key's text, measured by its words: %+v", box.children[2].pieces)
 	}
 	if icon := box.children[3]; len(icon.textures) != 1 || icon.textures[0].Width != 4 {
 		t.Errorf("the texture by its path: %+v", box.children[3].textures)
@@ -345,6 +345,20 @@ func TestContentSizes(t *testing.T) {
 		if !drawn || got.Width != tt.want.Width || got.Height != tt.want.Height ||
 			tt.name != "v_flow" && tt.name != "v_nothing" && (got.X != tt.want.X || got.Y != tt.want.Y) {
 			t.Errorf("%s: %+v, want %+v", tt.name, got, tt.want)
+		}
+	}
+	backed, _ := boxOf(list, partNamed(list, "v_backed"))
+	backing, _ := boxOf(list, partNamed(list, "v_backing"))
+	if backed.Width != 20 || backed.Height != 10 || backing != backed {
+		t.Errorf("a background fills its parent and takes no place among its siblings: %+v in %+v", backing, backed)
+	}
+	if unset, _ := boxOf(list, partNamed(list, "v_unset_icon")); unset.Width != 100 {
+		t.Errorf("a size written negative is unset, so an expanding child takes the row: %+v", unset)
+	}
+	multi := partNamed(list, "v_multi")
+	for _, element := range list.Elements {
+		if element.Part == multi && element.Text != nil && (len(element.Text.Lines) < 2 || element.Box.Width != 60) {
+			t.Errorf("a multiline text takes the width it is given and wraps there: %+v", element)
 		}
 	}
 }

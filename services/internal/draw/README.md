@@ -60,10 +60,15 @@ other widget places each child by its `parentanchor`, `widgetanchor` (the `paren
 
 A widget that declares no size on an axis finds it by its kind's row in `game.Sizings`: a row or column by its children
 summed and the widest, a container by the bounds of its children, a flow or grid by its cells, a background by the room
-it is given, a text by its measured text, an icon by its texture; any other kind is zero. A size written in pixels is
+it is given, a text by its lines, an icon by its texture; any other kind is zero. A size written in pixels is
 multiplied by the UI scale once; a percent is a fraction of what the parent hands out where its children are placed,
 and of nothing where a parent's size is measured from them, so a child's `100%` does not make its parent as wide as the
-room.
+room; a number written negative is unset on its axis, as vanilla writes `size = { -1 32 }` under an expanding policy
+and `maximumsize = { 400 -1 }` for no maximum. A kind that fills its parent (`background`) takes no place among its
+siblings: it is laid over the parent's whole box, and the parent's children are placed and measured without it. A flow
+or grid measures its cells with the limit it will be placed at, the room held to its own size and maximum. A text's
+words are measured once (`pieces`) and its lines broken where it is placed: at its `max_width`, else its declared
+width, else, where it is `multiline`, at the width the layout gives it.
 
 ## Decisions
 

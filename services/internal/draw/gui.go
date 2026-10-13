@@ -58,9 +58,11 @@ type widget struct {
 	overrides  map[string]statement // the blockoverrides in force, by the block's name
 	rows       int                  // a data model's rows drawn; 0 for no data model
 	hidden     bool                 // visible = no: the widget and what it holds are not drawn
-	text       *Text
-	lineWidths []float64 // the width of each of the text's lines
-	lineHeight float64   // how far apart the text's lines sit
+	text       *Text                // the text's font, size and color; its lines are broken where it is placed
+	pieces     []piece              // the text's words, measured, which its lines are broken from
+	lineHeight float64              // how far apart the text's lines sit
+	textLimit  float64              // the width the text's own words break it at (max_width, else its size); 0 none
+	multiline  bool                 // the text breaks at the width it is given
 	textures   []Texture
 	content    size    // what the widget's text or texture measures: the content its sizes fall back to
 	template   bool    // a data model item's widget, drawn once per row

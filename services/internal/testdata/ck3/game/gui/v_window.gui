@@ -86,6 +86,22 @@ window = {
 		icon = { size = { 10 10 } }
 	}
 	widget = { name = "v_nothing" }
+	hbox = {
+		name = "v_backed"
+		background = { name = "v_backing" }
+		icon = { size = { 10 10 } }
+		icon = { size = { 10 10 } }
+	}
+	hbox = {
+		name = "v_unset"
+		size = { 100 10 }
+		icon = { name = "v_unset_icon" size = { -1 10 } layoutpolicy_horizontal = expanding }
+	}
+	vbox = {
+		name = "v_wrapped"
+		size = { 60 100 }
+		textbox = { name = "v_multi" text = "v_long" font = "v_font" fontsize = 16 multiline = yes layoutpolicy_horizontal = expanding }
+	}
 }
 window = {
 	name = "v_hidden_entry"

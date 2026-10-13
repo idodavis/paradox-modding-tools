@@ -2338,11 +2338,11 @@
      "rel": "gui/v_window.gui",
      "range": {
       "start": {
-       "line": 93,
+       "line": 109,
        "character": 13
       },
       "end": {
-       "line": 93,
+       "line": 109,
        "character": 13
       }
      }
@@ -2397,11 +2397,11 @@
      "rel": "gui/v_window.gui",
      "range": {
       "start": {
-       "line": 93,
+       "line": 109,
        "character": 31
       },
       "end": {
-       "line": 93,
+       "line": 109,
        "character": 31
       }
      }
@@ -4701,7 +4701,1205 @@
     }
    }
   }
-89:0 window
+88:1 hbox
+  {
+   "word": "hbox",
+   "key": "hbox",
+   "head": "gui type",
+   "sites": [
+    {
+     "path": "<fixtures>/ck3/game/gui/preload/defaults.gui",
+     "origin": "vanilla",
+     "rel": "gui/preload/defaults.gui",
+     "range": {
+      "start": {
+       "line": 6,
+       "character": 5
+      },
+      "end": {
+       "line": 6,
+       "character": 5
+      }
+     }
+    }
+   ],
+   "winner": 0,
+   "within": [
+    "v_layout_rules"
+   ],
+   "range": {
+    "start": {
+     "line": 88,
+     "character": 1
+    },
+    "end": {
+     "line": 88,
+     "character": 5
+    }
+   }
+  }
+89:2 name
+  {
+   "word": "name",
+   "key": "name",
+   "head": "in `hbox`",
+   "writes": [
+    "text"
+   ],
+   "winner": -1,
+   "within": [
+    "v_layout_rules",
+    "hbox"
+   ],
+   "range": {
+    "start": {
+     "line": 89,
+     "character": 2
+    },
+    "end": {
+     "line": 89,
+     "character": 6
+    }
+   }
+  }
+89:10 v_backed
+  {
+   "word": "",
+   "winner": -1,
+   "within": [
+    "v_layout_rules",
+    "hbox"
+   ],
+   "range": {
+    "start": {
+     "line": 89,
+     "character": 9
+    },
+    "end": {
+     "line": 89,
+     "character": 19
+    }
+   }
+  }
+90:2 background
+  {
+   "word": "background",
+   "key": "background",
+   "head": "gui type",
+   "sites": [
+    {
+     "path": "<fixtures>/ck3/game/gui/preload/defaults.gui",
+     "origin": "vanilla",
+     "rel": "gui/preload/defaults.gui",
+     "range": {
+      "start": {
+       "line": 5,
+       "character": 5
+      },
+      "end": {
+       "line": 5,
+       "character": 5
+      }
+     }
+    }
+   ],
+   "winner": 0,
+   "within": [
+    "v_layout_rules",
+    "hbox"
+   ],
+   "range": {
+    "start": {
+     "line": 90,
+     "character": 2
+    },
+    "end": {
+     "line": 90,
+     "character": 12
+    }
+   }
+  }
+90:17 name
+  {
+   "word": "name",
+   "key": "name",
+   "head": "in `background`",
+   "writes": [
+    "text"
+   ],
+   "winner": -1,
+   "within": [
+    "v_layout_rules",
+    "hbox",
+    "background"
+   ],
+   "range": {
+    "start": {
+     "line": 90,
+     "character": 17
+    },
+    "end": {
+     "line": 90,
+     "character": 21
+    }
+   }
+  }
+90:25 v_backing
+  {
+   "word": "",
+   "winner": -1,
+   "within": [
+    "v_layout_rules",
+    "hbox",
+    "background"
+   ],
+   "range": {
+    "start": {
+     "line": 90,
+     "character": 24
+    },
+    "end": {
+     "line": 90,
+     "character": 35
+    }
+   }
+  }
+91:2 icon
+  {
+   "word": "icon",
+   "key": "icon",
+   "head": "gui type",
+   "sites": [
+    {
+     "path": "<fixtures>/ck3/game/gui/v_window.gui",
+     "origin": "vanilla",
+     "rel": "gui/v_window.gui",
+     "range": {
+      "start": {
+       "line": 56,
+       "character": 5
+      },
+      "end": {
+       "line": 56,
+       "character": 5
+      }
+     }
+    }
+   ],
+   "winner": 0,
+   "within": [
+    "v_layout_rules",
+    "hbox"
+   ],
+   "range": {
+    "start": {
+     "line": 91,
+     "character": 2
+    },
+    "end": {
+     "line": 91,
+     "character": 6
+    }
+   }
+  }
+91:11 size
+  {
+   "word": "size",
+   "key": "size",
+   "head": "in `icon`",
+   "writes": [
+    "a number",
+    "one of 100%",
+    "a block"
+   ],
+   "winner": -1,
+   "within": [
+    "v_layout_rules",
+    "hbox",
+    "icon"
+   ],
+   "range": {
+    "start": {
+     "line": 91,
+     "character": 11
+    },
+    "end": {
+     "line": 91,
+     "character": 15
+    }
+   }
+  }
+91:20 10
+  {
+   "word": "",
+   "winner": -1,
+   "within": [
+    "v_layout_rules",
+    "hbox",
+    "icon",
+    "size"
+   ],
+   "range": {
+    "start": {
+     "line": 91,
+     "character": 20
+    },
+    "end": {
+     "line": 91,
+     "character": 22
+    }
+   }
+  }
+91:23 10
+  {
+   "word": "",
+   "winner": -1,
+   "within": [
+    "v_layout_rules",
+    "hbox",
+    "icon",
+    "size"
+   ],
+   "range": {
+    "start": {
+     "line": 91,
+     "character": 23
+    },
+    "end": {
+     "line": 91,
+     "character": 25
+    }
+   }
+  }
+92:2 icon
+  {
+   "word": "icon",
+   "key": "icon",
+   "head": "gui type",
+   "sites": [
+    {
+     "path": "<fixtures>/ck3/game/gui/v_window.gui",
+     "origin": "vanilla",
+     "rel": "gui/v_window.gui",
+     "range": {
+      "start": {
+       "line": 56,
+       "character": 5
+      },
+      "end": {
+       "line": 56,
+       "character": 5
+      }
+     }
+    }
+   ],
+   "winner": 0,
+   "within": [
+    "v_layout_rules",
+    "hbox"
+   ],
+   "range": {
+    "start": {
+     "line": 92,
+     "character": 2
+    },
+    "end": {
+     "line": 92,
+     "character": 6
+    }
+   }
+  }
+92:11 size
+  {
+   "word": "size",
+   "key": "size",
+   "head": "in `icon`",
+   "writes": [
+    "a number",
+    "one of 100%",
+    "a block"
+   ],
+   "winner": -1,
+   "within": [
+    "v_layout_rules",
+    "hbox",
+    "icon"
+   ],
+   "range": {
+    "start": {
+     "line": 92,
+     "character": 11
+    },
+    "end": {
+     "line": 92,
+     "character": 15
+    }
+   }
+  }
+92:20 10
+  {
+   "word": "",
+   "winner": -1,
+   "within": [
+    "v_layout_rules",
+    "hbox",
+    "icon",
+    "size"
+   ],
+   "range": {
+    "start": {
+     "line": 92,
+     "character": 20
+    },
+    "end": {
+     "line": 92,
+     "character": 22
+    }
+   }
+  }
+92:23 10
+  {
+   "word": "",
+   "winner": -1,
+   "within": [
+    "v_layout_rules",
+    "hbox",
+    "icon",
+    "size"
+   ],
+   "range": {
+    "start": {
+     "line": 92,
+     "character": 23
+    },
+    "end": {
+     "line": 92,
+     "character": 25
+    }
+   }
+  }
+94:1 hbox
+  {
+   "word": "hbox",
+   "key": "hbox",
+   "head": "gui type",
+   "sites": [
+    {
+     "path": "<fixtures>/ck3/game/gui/preload/defaults.gui",
+     "origin": "vanilla",
+     "rel": "gui/preload/defaults.gui",
+     "range": {
+      "start": {
+       "line": 6,
+       "character": 5
+      },
+      "end": {
+       "line": 6,
+       "character": 5
+      }
+     }
+    }
+   ],
+   "winner": 0,
+   "within": [
+    "v_layout_rules"
+   ],
+   "range": {
+    "start": {
+     "line": 94,
+     "character": 1
+    },
+    "end": {
+     "line": 94,
+     "character": 5
+    }
+   }
+  }
+95:2 name
+  {
+   "word": "name",
+   "key": "name",
+   "head": "in `hbox`",
+   "writes": [
+    "text"
+   ],
+   "winner": -1,
+   "within": [
+    "v_layout_rules",
+    "hbox"
+   ],
+   "range": {
+    "start": {
+     "line": 95,
+     "character": 2
+    },
+    "end": {
+     "line": 95,
+     "character": 6
+    }
+   }
+  }
+95:10 v_unset
+  {
+   "word": "",
+   "winner": -1,
+   "within": [
+    "v_layout_rules",
+    "hbox"
+   ],
+   "range": {
+    "start": {
+     "line": 95,
+     "character": 9
+    },
+    "end": {
+     "line": 95,
+     "character": 18
+    }
+   }
+  }
+96:2 size
+  {
+   "word": "size",
+   "key": "size",
+   "head": "in `hbox`",
+   "writes": [
+    "a number",
+    "one of 100%",
+    "a block"
+   ],
+   "winner": -1,
+   "within": [
+    "v_layout_rules",
+    "hbox"
+   ],
+   "range": {
+    "start": {
+     "line": 96,
+     "character": 2
+    },
+    "end": {
+     "line": 96,
+     "character": 6
+    }
+   }
+  }
+96:11 100
+  {
+   "word": "",
+   "winner": -1,
+   "within": [
+    "v_layout_rules",
+    "hbox",
+    "size"
+   ],
+   "range": {
+    "start": {
+     "line": 96,
+     "character": 11
+    },
+    "end": {
+     "line": 96,
+     "character": 14
+    }
+   }
+  }
+96:15 10
+  {
+   "word": "",
+   "winner": -1,
+   "within": [
+    "v_layout_rules",
+    "hbox",
+    "size"
+   ],
+   "range": {
+    "start": {
+     "line": 96,
+     "character": 15
+    },
+    "end": {
+     "line": 96,
+     "character": 17
+    }
+   }
+  }
+97:2 icon
+  {
+   "word": "icon",
+   "key": "icon",
+   "head": "gui type",
+   "sites": [
+    {
+     "path": "<fixtures>/ck3/game/gui/v_window.gui",
+     "origin": "vanilla",
+     "rel": "gui/v_window.gui",
+     "range": {
+      "start": {
+       "line": 56,
+       "character": 5
+      },
+      "end": {
+       "line": 56,
+       "character": 5
+      }
+     }
+    }
+   ],
+   "winner": 0,
+   "within": [
+    "v_layout_rules",
+    "hbox"
+   ],
+   "range": {
+    "start": {
+     "line": 97,
+     "character": 2
+    },
+    "end": {
+     "line": 97,
+     "character": 6
+    }
+   }
+  }
+97:11 name
+  {
+   "word": "name",
+   "key": "name",
+   "head": "in `icon`",
+   "writes": [
+    "text"
+   ],
+   "winner": -1,
+   "within": [
+    "v_layout_rules",
+    "hbox",
+    "icon"
+   ],
+   "range": {
+    "start": {
+     "line": 97,
+     "character": 11
+    },
+    "end": {
+     "line": 97,
+     "character": 15
+    }
+   }
+  }
+97:19 v_unset_icon
+  {
+   "word": "",
+   "winner": -1,
+   "within": [
+    "v_layout_rules",
+    "hbox",
+    "icon"
+   ],
+   "range": {
+    "start": {
+     "line": 97,
+     "character": 18
+    },
+    "end": {
+     "line": 97,
+     "character": 32
+    }
+   }
+  }
+97:33 size
+  {
+   "word": "size",
+   "key": "size",
+   "head": "in `icon`",
+   "writes": [
+    "a number",
+    "one of 100%",
+    "a block"
+   ],
+   "winner": -1,
+   "within": [
+    "v_layout_rules",
+    "hbox",
+    "icon"
+   ],
+   "range": {
+    "start": {
+     "line": 97,
+     "character": 33
+    },
+    "end": {
+     "line": 97,
+     "character": 37
+    }
+   }
+  }
+97:42 -1
+  {
+   "word": "",
+   "winner": -1,
+   "within": [
+    "v_layout_rules",
+    "hbox",
+    "icon",
+    "size"
+   ],
+   "range": {
+    "start": {
+     "line": 97,
+     "character": 42
+    },
+    "end": {
+     "line": 97,
+     "character": 44
+    }
+   }
+  }
+97:45 10
+  {
+   "word": "",
+   "winner": -1,
+   "within": [
+    "v_layout_rules",
+    "hbox",
+    "icon",
+    "size"
+   ],
+   "range": {
+    "start": {
+     "line": 97,
+     "character": 45
+    },
+    "end": {
+     "line": 97,
+     "character": 47
+    }
+   }
+  }
+97:50 layoutpolicy_horizontal
+  {
+   "word": "layoutpolicy_horizontal",
+   "key": "layoutpolicy_horizontal",
+   "head": "in `icon`",
+   "writes": [
+    "one of expanding"
+   ],
+   "winner": -1,
+   "within": [
+    "v_layout_rules",
+    "hbox",
+    "icon"
+   ],
+   "range": {
+    "start": {
+     "line": 97,
+     "character": 50
+    },
+    "end": {
+     "line": 97,
+     "character": 73
+    }
+   }
+  }
+97:76 expanding
+  {
+   "word": "",
+   "winner": -1,
+   "within": [
+    "v_layout_rules",
+    "hbox",
+    "icon"
+   ],
+   "range": {
+    "start": {
+     "line": 97,
+     "character": 76
+    },
+    "end": {
+     "line": 97,
+     "character": 85
+    }
+   }
+  }
+99:1 vbox
+  {
+   "word": "vbox",
+   "key": "vbox",
+   "head": "in gui widget",
+   "writes": [
+    "a block"
+   ],
+   "winner": -1,
+   "within": [
+    "v_layout_rules"
+   ],
+   "range": {
+    "start": {
+     "line": 99,
+     "character": 1
+    },
+    "end": {
+     "line": 99,
+     "character": 5
+    }
+   }
+  }
+100:2 name
+  {
+   "word": "name",
+   "key": "name",
+   "head": "in `vbox`",
+   "writes": [
+    "text"
+   ],
+   "winner": -1,
+   "within": [
+    "v_layout_rules",
+    "vbox"
+   ],
+   "range": {
+    "start": {
+     "line": 100,
+     "character": 2
+    },
+    "end": {
+     "line": 100,
+     "character": 6
+    }
+   }
+  }
+100:10 v_wrapped
+  {
+   "word": "",
+   "winner": -1,
+   "within": [
+    "v_layout_rules",
+    "vbox"
+   ],
+   "range": {
+    "start": {
+     "line": 100,
+     "character": 9
+    },
+    "end": {
+     "line": 100,
+     "character": 20
+    }
+   }
+  }
+101:2 size
+  {
+   "word": "size",
+   "key": "size",
+   "head": "in `vbox`",
+   "writes": [
+    "a number",
+    "a block"
+   ],
+   "winner": -1,
+   "within": [
+    "v_layout_rules",
+    "vbox"
+   ],
+   "range": {
+    "start": {
+     "line": 101,
+     "character": 2
+    },
+    "end": {
+     "line": 101,
+     "character": 6
+    }
+   }
+  }
+101:11 60
+  {
+   "word": "",
+   "winner": -1,
+   "within": [
+    "v_layout_rules",
+    "vbox",
+    "size"
+   ],
+   "range": {
+    "start": {
+     "line": 101,
+     "character": 11
+    },
+    "end": {
+     "line": 101,
+     "character": 13
+    }
+   }
+  }
+101:14 100
+  {
+   "word": "",
+   "winner": -1,
+   "within": [
+    "v_layout_rules",
+    "vbox",
+    "size"
+   ],
+   "range": {
+    "start": {
+     "line": 101,
+     "character": 14
+    },
+    "end": {
+     "line": 101,
+     "character": 17
+    }
+   }
+  }
+102:2 textbox
+  {
+   "word": "textbox",
+   "key": "textbox",
+   "head": "gui type",
+   "sites": [
+    {
+     "path": "<fixtures>/ck3/game/gui/preload/defaults.gui",
+     "origin": "vanilla",
+     "rel": "gui/preload/defaults.gui",
+     "range": {
+      "start": {
+       "line": 0,
+       "character": 5
+      },
+      "end": {
+       "line": 0,
+       "character": 5
+      }
+     }
+    }
+   ],
+   "winner": 0,
+   "within": [
+    "v_layout_rules",
+    "vbox"
+   ],
+   "range": {
+    "start": {
+     "line": 102,
+     "character": 2
+    },
+    "end": {
+     "line": 102,
+     "character": 9
+    }
+   }
+  }
+102:14 name
+  {
+   "word": "name",
+   "key": "name",
+   "head": "in `textbox`",
+   "writes": [
+    "text"
+   ],
+   "winner": -1,
+   "within": [
+    "v_layout_rules",
+    "vbox",
+    "textbox"
+   ],
+   "range": {
+    "start": {
+     "line": 102,
+     "character": 14
+    },
+    "end": {
+     "line": 102,
+     "character": 18
+    }
+   }
+  }
+102:22 v_multi
+  {
+   "word": "",
+   "winner": -1,
+   "within": [
+    "v_layout_rules",
+    "vbox",
+    "textbox"
+   ],
+   "range": {
+    "start": {
+     "line": 102,
+     "character": 21
+    },
+    "end": {
+     "line": 102,
+     "character": 30
+    }
+   }
+  }
+102:31 text
+  {
+   "word": "text",
+   "key": "text",
+   "head": "in `textbox`",
+   "writes": [
+    "text"
+   ],
+   "winner": -1,
+   "within": [
+    "v_layout_rules",
+    "vbox",
+    "textbox"
+   ],
+   "range": {
+    "start": {
+     "line": 102,
+     "character": 31
+    },
+    "end": {
+     "line": 102,
+     "character": 35
+    }
+   }
+  }
+102:39 v_long
+  {
+   "word": "v_long",
+   "key": "text",
+   "head": "localization",
+   "name": "Words that must wrap in sixty pixels",
+   "sites": [
+    {
+     "path": "<fixtures>/ck3/game/localization/english/v_l_english.yml",
+     "origin": "vanilla",
+     "rel": "localization/english/v_l_english.yml",
+     "range": {
+      "start": {
+       "line": 75,
+       "character": 0
+      },
+      "end": {
+       "line": 75,
+       "character": 0
+      }
+     }
+    }
+   ],
+   "winner": 0,
+   "within": [
+    "v_layout_rules",
+    "vbox",
+    "textbox"
+   ],
+   "range": {
+    "start": {
+     "line": 102,
+     "character": 38
+    },
+    "end": {
+     "line": 102,
+     "character": 46
+    }
+   }
+  }
+102:47 font
+  {
+   "word": "font",
+   "key": "font",
+   "head": "in `textbox`",
+   "writes": [
+    "font font"
+   ],
+   "winner": -1,
+   "within": [
+    "v_layout_rules",
+    "vbox",
+    "textbox"
+   ],
+   "range": {
+    "start": {
+     "line": 102,
+     "character": 47
+    },
+    "end": {
+     "line": 102,
+     "character": 51
+    }
+   }
+  }
+102:55 v_font
+  {
+   "word": "v_font",
+   "key": "font",
+   "head": "font font",
+   "sites": [
+    {
+     "path": "<fixtures>/ck3/game/fonts/v.font",
+     "origin": "vanilla",
+     "rel": "fonts/v.font",
+     "range": {
+      "start": {
+       "line": 0,
+       "character": 0
+      },
+      "end": {
+       "line": 0,
+       "character": 0
+      }
+     }
+    }
+   ],
+   "winner": 0,
+   "within": [
+    "v_layout_rules",
+    "vbox",
+    "textbox"
+   ],
+   "range": {
+    "start": {
+     "line": 102,
+     "character": 54
+    },
+    "end": {
+     "line": 102,
+     "character": 62
+    }
+   }
+  }
+102:63 fontsize
+  {
+   "word": "fontsize",
+   "key": "fontsize",
+   "head": "in `textbox`",
+   "writes": [
+    "a number"
+   ],
+   "winner": -1,
+   "within": [
+    "v_layout_rules",
+    "vbox",
+    "textbox"
+   ],
+   "range": {
+    "start": {
+     "line": 102,
+     "character": 63
+    },
+    "end": {
+     "line": 102,
+     "character": 71
+    }
+   }
+  }
+102:74 16
+  {
+   "word": "",
+   "winner": -1,
+   "within": [
+    "v_layout_rules",
+    "vbox",
+    "textbox"
+   ],
+   "range": {
+    "start": {
+     "line": 102,
+     "character": 74
+    },
+    "end": {
+     "line": 102,
+     "character": 76
+    }
+   }
+  }
+102:77 multiline
+  {
+   "word": "multiline",
+   "key": "multiline",
+   "head": "in `textbox`",
+   "writes": [
+    "yes or no"
+   ],
+   "winner": -1,
+   "within": [
+    "v_layout_rules",
+    "vbox",
+    "textbox"
+   ],
+   "range": {
+    "start": {
+     "line": 102,
+     "character": 77
+    },
+    "end": {
+     "line": 102,
+     "character": 86
+    }
+   }
+  }
+102:89 yes
+  {
+   "word": "",
+   "winner": -1,
+   "within": [
+    "v_layout_rules",
+    "vbox",
+    "textbox"
+   ],
+   "range": {
+    "start": {
+     "line": 102,
+     "character": 89
+    },
+    "end": {
+     "line": 102,
+     "character": 92
+    }
+   }
+  }
+102:93 layoutpolicy_horizontal
+  {
+   "word": "layoutpolicy_horizontal",
+   "key": "layoutpolicy_horizontal",
+   "head": "in `textbox`",
+   "writes": [
+    "one of expanding"
+   ],
+   "winner": -1,
+   "within": [
+    "v_layout_rules",
+    "vbox",
+    "textbox"
+   ],
+   "range": {
+    "start": {
+     "line": 102,
+     "character": 93
+    },
+    "end": {
+     "line": 102,
+     "character": 116
+    }
+   }
+  }
+102:119 expanding
+  {
+   "word": "",
+   "winner": -1,
+   "within": [
+    "v_layout_rules",
+    "vbox",
+    "textbox"
+   ],
+   "range": {
+    "start": {
+     "line": 102,
+     "character": 119
+    },
+    "end": {
+     "line": 102,
+     "character": 128
+    }
+   }
+  }
+105:0 window
   {
    "word": "v_hidden_entry",
    "key": "window",
@@ -4713,11 +5911,11 @@
      "rel": "gui/v_window.gui",
      "range": {
       "start": {
-       "line": 89,
+       "line": 105,
        "character": 0
       },
       "end": {
-       "line": 89,
+       "line": 105,
        "character": 0
       }
      }
@@ -4726,16 +5924,16 @@
    "winner": 0,
    "range": {
     "start": {
-     "line": 89,
+     "line": 105,
      "character": 0
     },
     "end": {
-     "line": 89,
+     "line": 105,
      "character": 6
     }
    }
   }
-90:1 name
+106:1 name
   {
    "word": "name",
    "key": "name",
@@ -4749,16 +5947,16 @@
    ],
    "range": {
     "start": {
-     "line": 90,
+     "line": 106,
      "character": 1
     },
     "end": {
-     "line": 90,
+     "line": 106,
      "character": 5
     }
    }
   }
-90:9 v_hidden_entry
+106:9 v_hidden_entry
   {
    "word": "v_hidden_entry",
    "key": "name",
@@ -4770,11 +5968,11 @@
      "rel": "gui/v_window.gui",
      "range": {
       "start": {
-       "line": 89,
+       "line": 105,
        "character": 0
       },
       "end": {
-       "line": 89,
+       "line": 105,
        "character": 0
       }
      }
@@ -4786,16 +5984,16 @@
    ],
    "range": {
     "start": {
-     "line": 90,
+     "line": 106,
      "character": 8
     },
     "end": {
-     "line": 90,
+     "line": 106,
      "character": 24
     }
    }
   }
-91:1 size
+107:1 size
   {
    "word": "size",
    "key": "size",
@@ -4810,16 +6008,16 @@
    ],
    "range": {
     "start": {
-     "line": 91,
+     "line": 107,
      "character": 1
     },
     "end": {
-     "line": 91,
+     "line": 107,
      "character": 5
     }
    }
   }
-91:10 100
+107:10 100
   {
    "word": "",
    "winner": -1,
@@ -4829,16 +6027,16 @@
    ],
    "range": {
     "start": {
-     "line": 91,
+     "line": 107,
      "character": 10
     },
     "end": {
-     "line": 91,
+     "line": 107,
      "character": 13
     }
    }
   }
-91:14 50
+107:14 50
   {
    "word": "",
    "winner": -1,
@@ -4848,16 +6046,16 @@
    ],
    "range": {
     "start": {
-     "line": 91,
+     "line": 107,
      "character": 14
     },
     "end": {
-     "line": 91,
+     "line": 107,
      "character": 16
     }
    }
   }
-92:1 parentanchor
+108:1 parentanchor
   {
    "word": "parentanchor",
    "key": "parentanchor",
@@ -4871,16 +6069,16 @@
    ],
    "range": {
     "start": {
-     "line": 92,
+     "line": 108,
      "character": 1
     },
     "end": {
-     "line": 92,
+     "line": 108,
      "character": 13
     }
    }
   }
-92:16 top|right
+108:16 top|right
   {
    "word": "",
    "winner": -1,
@@ -4889,16 +6087,16 @@
    ],
    "range": {
     "start": {
-     "line": 92,
+     "line": 108,
      "character": 16
     },
     "end": {
-     "line": 92,
+     "line": 108,
      "character": 25
     }
    }
   }
-93:1 visible
+109:1 visible
   {
    "word": "visible",
    "key": "visible",
@@ -4912,16 +6110,16 @@
    ],
    "range": {
     "start": {
-     "line": 93,
+     "line": 109,
      "character": 1
     },
     "end": {
-     "line": 93,
+     "line": 109,
      "character": 8
     }
    }
   }
-93:13 GetVariableSystem.Exists
+109:13 GetVariableSystem.Exists
   {
    "word": "GetVariableSystem",
    "head": "data function",
@@ -4952,11 +6150,11 @@
      "rel": "gui/v_window.gui",
      "range": {
       "start": {
-       "line": 93,
+       "line": 109,
        "character": 13
       },
       "end": {
-       "line": 93,
+       "line": 109,
        "character": 13
       }
      }
@@ -4969,16 +6167,16 @@
    ],
    "range": {
     "start": {
-     "line": 93,
+     "line": 109,
      "character": 13
     },
     "end": {
-     "line": 93,
+     "line": 109,
      "character": 30
     }
    }
   }
-93:38 'x'
+109:38 'x'
   {
    "word": "Exists",
    "head": "data function",
@@ -5009,11 +6207,11 @@
      "rel": "gui/v_window.gui",
      "range": {
       "start": {
-       "line": 93,
+       "line": 109,
        "character": 31
       },
       "end": {
-       "line": 93,
+       "line": 109,
        "character": 31
       }
      }
@@ -5026,16 +6224,16 @@
    ],
    "range": {
     "start": {
-     "line": 93,
+     "line": 109,
      "character": 31
     },
     "end": {
-     "line": 93,
+     "line": 109,
      "character": 42
     }
    }
   }
-95:0 window
+111:0 window
   {
    "word": "v_default_text",
    "key": "window",
@@ -5047,11 +6245,11 @@
      "rel": "gui/v_window.gui",
      "range": {
       "start": {
-       "line": 95,
+       "line": 111,
        "character": 0
       },
       "end": {
-       "line": 95,
+       "line": 111,
        "character": 0
       }
      }
@@ -5060,16 +6258,16 @@
    "winner": 0,
    "range": {
     "start": {
-     "line": 95,
+     "line": 111,
      "character": 0
     },
     "end": {
-     "line": 95,
+     "line": 111,
      "character": 6
     }
    }
   }
-96:1 name
+112:1 name
   {
    "word": "name",
    "key": "name",
@@ -5083,16 +6281,16 @@
    ],
    "range": {
     "start": {
-     "line": 96,
+     "line": 112,
      "character": 1
     },
     "end": {
-     "line": 96,
+     "line": 112,
      "character": 5
     }
    }
   }
-96:9 v_default_text
+112:9 v_default_text
   {
    "word": "v_default_text",
    "key": "name",
@@ -5104,11 +6302,11 @@
      "rel": "gui/v_window.gui",
      "range": {
       "start": {
-       "line": 95,
+       "line": 111,
        "character": 0
       },
       "end": {
-       "line": 95,
+       "line": 111,
        "character": 0
       }
      }
@@ -5120,16 +6318,16 @@
    ],
    "range": {
     "start": {
-     "line": 96,
+     "line": 112,
      "character": 8
     },
     "end": {
-     "line": 96,
+     "line": 112,
      "character": 24
     }
    }
   }
-97:1 v_textbox
+113:1 v_textbox
   {
    "word": "v_textbox",
    "key": "v_textbox",
@@ -5157,16 +6355,16 @@
    ],
    "range": {
     "start": {
-     "line": 97,
+     "line": 113,
      "character": 1
     },
     "end": {
-     "line": 97,
+     "line": 113,
      "character": 10
     }
    }
   }
-97:15 text
+113:15 text
   {
    "word": "text",
    "key": "text",
@@ -5181,16 +6379,16 @@
    ],
    "range": {
     "start": {
-     "line": 97,
+     "line": 113,
      "character": 15
     },
     "end": {
-     "line": 97,
+     "line": 113,
      "character": 19
     }
    }
   }
-97:23 v_key
+113:23 v_key
   {
    "word": "v_key",
    "key": "text",
@@ -5220,16 +6418,16 @@
    ],
    "range": {
     "start": {
-     "line": 97,
+     "line": 113,
      "character": 22
     },
     "end": {
-     "line": 97,
+     "line": 113,
      "character": 29
     }
    }
   }
-98:1 button
+114:1 button
   {
    "word": "button",
    "key": "button",
@@ -5243,16 +6441,16 @@
    ],
    "range": {
     "start": {
-     "line": 98,
+     "line": 114,
      "character": 1
     },
     "end": {
-     "line": 98,
+     "line": 114,
      "character": 7
     }
    }
   }
-98:12 text
+114:12 text
   {
    "word": "text",
    "key": "text",
@@ -5267,16 +6465,16 @@
    ],
    "range": {
     "start": {
-     "line": 98,
+     "line": 114,
      "character": 12
     },
     "end": {
-     "line": 98,
+     "line": 114,
      "character": 16
     }
    }
   }
-98:20 v_key
+114:20 v_key
   {
    "word": "v_key",
    "key": "text",
@@ -5306,16 +6504,16 @@
    ],
    "range": {
     "start": {
-     "line": 98,
+     "line": 114,
      "character": 19
     },
     "end": {
-     "line": 98,
+     "line": 114,
      "character": 26
     }
    }
   }
-100:0 window
+116:0 window
   {
    "word": "v_concepts",
    "key": "window",
@@ -5327,11 +6525,11 @@
      "rel": "gui/v_window.gui",
      "range": {
       "start": {
-       "line": 100,
+       "line": 116,
        "character": 0
       },
       "end": {
-       "line": 100,
+       "line": 116,
        "character": 0
       }
      }
@@ -5340,16 +6538,16 @@
    "winner": 0,
    "range": {
     "start": {
-     "line": 100,
+     "line": 116,
      "character": 0
     },
     "end": {
-     "line": 100,
+     "line": 116,
      "character": 6
     }
    }
   }
-101:1 name
+117:1 name
   {
    "word": "name",
    "key": "name",
@@ -5363,16 +6561,16 @@
    ],
    "range": {
     "start": {
-     "line": 101,
+     "line": 117,
      "character": 1
     },
     "end": {
-     "line": 101,
+     "line": 117,
      "character": 5
     }
    }
   }
-101:9 v_concepts
+117:9 v_concepts
   {
    "word": "v_concepts",
    "key": "name",
@@ -5384,11 +6582,11 @@
      "rel": "gui/v_window.gui",
      "range": {
       "start": {
-       "line": 100,
+       "line": 116,
        "character": 0
       },
       "end": {
-       "line": 100,
+       "line": 116,
        "character": 0
       }
      }
@@ -5400,16 +6598,16 @@
    ],
    "range": {
     "start": {
-     "line": 101,
+     "line": 117,
      "character": 8
     },
     "end": {
-     "line": 101,
+     "line": 117,
      "character": 20
     }
    }
   }
-102:1 textbox
+118:1 textbox
   {
    "word": "textbox",
    "key": "textbox",
@@ -5437,16 +6635,16 @@
    ],
    "range": {
     "start": {
-     "line": 102,
+     "line": 118,
      "character": 1
     },
     "end": {
-     "line": 102,
+     "line": 118,
      "character": 8
     }
    }
   }
-102:13 text
+118:13 text
   {
    "word": "text",
    "key": "text",
@@ -5461,16 +6659,16 @@
    ],
    "range": {
     "start": {
-     "line": 102,
+     "line": 118,
      "character": 13
     },
     "end": {
-     "line": 102,
+     "line": 118,
      "character": 17
     }
    }
   }
-102:22 v_concept|E
+118:22 v_concept|E
   {
    "word": "v_concept",
    "head": "game concept",
@@ -5499,16 +6697,16 @@
    ],
    "range": {
     "start": {
-     "line": 102,
+     "line": 118,
      "character": 22
     },
     "end": {
-     "line": 102,
+     "line": 118,
      "character": 31
     }
    }
   }
-102:35 rules
+118:35 rules
   {
    "word": "",
    "winner": -1,
@@ -5518,16 +6716,16 @@
    ],
    "range": {
     "start": {
-     "line": 102,
+     "line": 118,
      "character": 20
     },
     "end": {
-     "line": 102,
+     "line": 118,
      "character": 41
     }
    }
   }
-103:1 textbox
+119:1 textbox
   {
    "word": "textbox",
    "key": "textbox",
@@ -5555,16 +6753,16 @@
    ],
    "range": {
     "start": {
-     "line": 103,
+     "line": 119,
      "character": 1
     },
     "end": {
-     "line": 103,
+     "line": 119,
      "character": 8
     }
    }
   }
-103:13 text
+119:13 text
   {
    "word": "text",
    "key": "text",
@@ -5579,16 +6777,16 @@
    ],
    "range": {
     "start": {
-     "line": 103,
+     "line": 119,
      "character": 13
     },
     "end": {
-     "line": 103,
+     "line": 119,
      "character": 17
     }
    }
   }
-103:22 v_nothing|E
+119:22 v_nothing|E
   {
    "word": "",
    "winner": -1,
@@ -5598,16 +6796,16 @@
    ],
    "range": {
     "start": {
-     "line": 103,
+     "line": 119,
      "character": 20
     },
     "end": {
-     "line": 103,
+     "line": 119,
      "character": 35
     }
    }
   }
-105:0 texticon
+121:0 texticon
   {
    "word": "v_icon",
    "key": "texticon",
@@ -5619,11 +6817,11 @@
      "rel": "gui/v_window.gui",
      "range": {
       "start": {
-       "line": 105,
+       "line": 121,
        "character": 0
       },
       "end": {
-       "line": 105,
+       "line": 121,
        "character": 0
       }
      }
@@ -5632,16 +6830,16 @@
    "winner": 0,
    "range": {
     "start": {
-     "line": 105,
+     "line": 121,
      "character": 0
     },
     "end": {
-     "line": 105,
+     "line": 121,
      "character": 8
     }
    }
   }
-106:1 icon
+122:1 icon
   {
    "word": "icon",
    "key": "icon",
@@ -5669,16 +6867,16 @@
    ],
    "range": {
     "start": {
-     "line": 106,
+     "line": 122,
      "character": 1
     },
     "end": {
-     "line": 106,
+     "line": 122,
      "character": 5
     }
    }
   }
-106:8 v_icon
+122:8 v_icon
   {
    "word": "",
    "winner": -1,
@@ -5687,16 +6885,16 @@
    ],
    "range": {
     "start": {
-     "line": 106,
+     "line": 122,
      "character": 8
     },
     "end": {
-     "line": 106,
+     "line": 122,
      "character": 14
     }
    }
   }
-107:1 iconsize
+123:1 iconsize
   {
    "word": "iconsize",
    "key": "iconsize",
@@ -5710,16 +6908,16 @@
    ],
    "range": {
     "start": {
-     "line": 107,
+     "line": 123,
      "character": 1
     },
     "end": {
-     "line": 107,
+     "line": 123,
      "character": 9
     }
    }
   }
-107:14 texture
+123:14 texture
   {
    "word": "texture",
    "key": "texture",
@@ -5734,16 +6932,16 @@
    ],
    "range": {
     "start": {
-     "line": 107,
+     "line": 123,
      "character": 14
     },
     "end": {
-     "line": 107,
+     "line": 123,
      "character": 21
     }
    }
   }
-107:25 gfx
+123:25 gfx
   {
    "word": "gfx/interface/v_bg.dds",
    "key": "texture",
@@ -5778,16 +6976,16 @@
    ],
    "range": {
     "start": {
-     "line": 107,
+     "line": 123,
      "character": 24
     },
     "end": {
-     "line": 107,
+     "line": 123,
      "character": 48
     }
    }
   }
-107:29 interface
+123:29 interface
   {
    "word": "gfx/interface/v_bg.dds",
    "key": "texture",
@@ -5822,16 +7020,16 @@
    ],
    "range": {
     "start": {
-     "line": 107,
+     "line": 123,
      "character": 24
     },
     "end": {
-     "line": 107,
+     "line": 123,
      "character": 48
     }
    }
   }
-107:39 v_bg.dds
+123:39 v_bg.dds
   {
    "word": "gfx/interface/v_bg.dds",
    "key": "texture",
@@ -5866,16 +7064,16 @@
    ],
    "range": {
     "start": {
-     "line": 107,
+     "line": 123,
      "character": 24
     },
     "end": {
-     "line": 107,
+     "line": 123,
      "character": 48
     }
    }
   }
-107:49 size
+123:49 size
   {
    "word": "size",
    "key": "size",
@@ -5891,16 +7089,16 @@
    ],
    "range": {
     "start": {
-     "line": 107,
+     "line": 123,
      "character": 49
     },
     "end": {
-     "line": 107,
+     "line": 123,
      "character": 53
     }
    }
   }
-107:58 8
+123:58 8
   {
    "word": "",
    "winner": -1,
@@ -5911,16 +7109,16 @@
    ],
    "range": {
     "start": {
-     "line": 107,
+     "line": 123,
      "character": 58
     },
     "end": {
-     "line": 107,
+     "line": 123,
      "character": 59
     }
    }
   }
-107:60 8
+123:60 8
   {
    "word": "",
    "winner": -1,
@@ -5931,16 +7129,16 @@
    ],
    "range": {
     "start": {
-     "line": 107,
+     "line": 123,
      "character": 60
     },
     "end": {
-     "line": 107,
+     "line": 123,
      "character": 61
     }
    }
   }
-109:0 format
+125:0 format
   {
    "word": "v_format",
    "key": "format",
@@ -5952,11 +7150,11 @@
      "rel": "gui/v_window.gui",
      "range": {
       "start": {
-       "line": 109,
+       "line": 125,
        "character": 0
       },
       "end": {
-       "line": 109,
+       "line": 125,
        "character": 0
       }
      }
@@ -5965,16 +7163,16 @@
    "winner": 0,
    "range": {
     "start": {
-     "line": 109,
+     "line": 125,
      "character": 0
     },
     "end": {
-     "line": 109,
+     "line": 125,
      "character": 6
     }
    }
   }
-110:1 name
+126:1 name
   {
    "word": "name",
    "key": "name",
@@ -5988,16 +7186,16 @@
    ],
    "range": {
     "start": {
-     "line": 110,
+     "line": 126,
      "character": 1
     },
     "end": {
-     "line": 110,
+     "line": 126,
      "character": 5
     }
    }
   }
-110:9 v_format
+126:9 v_format
   {
    "word": "v_format",
    "key": "name",
@@ -6009,11 +7207,11 @@
      "rel": "gui/v_window.gui",
      "range": {
       "start": {
-       "line": 109,
+       "line": 125,
        "character": 0
       },
       "end": {
-       "line": 109,
+       "line": 125,
        "character": 0
       }
      }
@@ -6025,16 +7223,16 @@
    ],
    "range": {
     "start": {
-     "line": 110,
+     "line": 126,
      "character": 8
     },
     "end": {
-     "line": 110,
+     "line": 126,
      "character": 18
     }
    }
   }
-111:1 format
+127:1 format
   {
    "word": "format",
    "key": "format",
@@ -6048,16 +7246,16 @@
    ],
    "range": {
     "start": {
-     "line": 111,
+     "line": 127,
      "character": 1
     },
     "end": {
-     "line": 111,
+     "line": 127,
      "character": 7
     }
    }
   }
-111:11 bold
+127:11 bold
   {
    "word": "",
    "winner": -1,
@@ -6066,11 +7264,11 @@
    ],
    "range": {
     "start": {
-     "line": 111,
+     "line": 127,
      "character": 10
     },
     "end": {
-     "line": 111,
+     "line": 127,
      "character": 16
     }
    }

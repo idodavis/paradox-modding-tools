@@ -1,5 +1,6 @@
 // gui_text.go is a widget's text: the loc entry or literal it holds, its markup read into runs with the formats'
-// colors and the text icons' textures, each measured with the real font files and broken into lines.
+// colors and the text icons' textures, each word measured with the real font files; the lines are broken where the
+// widget is placed.
 
 package draw
 
@@ -52,9 +53,15 @@ type style struct {
 	color        string
 }
 
+// piece is one word of a text with the spaces after it, or a line break, and how wide it measures.
+type piece struct {
+	Run
+	advance float64
+}
+
 // text resolves a widget's text: the value's loc entry in the request's language else english (a key), the value
-// itself (a literal), its markup as runs, measured and broken at the width the widget allows. A text with no font
-// size, or a font nothing opens, is listed and drawn as none.
+// itself (a literal), its markup as runs, measured word by word; the lines are broken where the widget is placed
+// (gui_layout.go's linesAt). A text with no font size, or a font nothing opens, is listed and drawn as none.
 func (resolver *resolver) text(node *widget) *Text {
 	value, has := node.scalar("text")
 	raw := false
@@ -81,11 +88,29 @@ func (resolver *resolver) text(node *widget) *Text {
 	if color, isColor := resolver.color(node, "fontcolor"); isColor {
 		base.color = color
 	}
-	runs := resolver.runs(resolver.valueText(value, raw), base, 0)
-	lines, widths := resolver.breakLines(node, runs, int(pixels*resolver.scale()))
-	node.lineWidths, node.lineHeight = widths, lineHeight(regular)
-	node.content = size{width: slices.Max(widths), height: float64(len(lines)) * node.lineHeight}
-	return &Text{Font: regular.font.Name, Size: int(pixels * resolver.scale()), Color: base.color, Lines: lines}
+	scaled := int(pixels * resolver.scale())
+	node.lineHeight = lineHeight(regular)
+	for _, run := range resolver.runs(resolver.valueText(value, raw), base, 0) {
+		for _, word := range pieces(run) {
+			measured := piece{Run: word}
+			if word.Text != "\n" {
+				measured.advance = resolver.advance(word, resolver.runFace(node, word, scaled), node.lineHeight)
+			}
+			node.pieces = append(node.pieces, measured)
+		}
+	}
+	node.textLimit = textLimit(node)
+	multiline, _ := node.scalar("multiline")
+	node.multiline = strings.EqualFold(multiline, yes)
+	return &Text{Font: regular.font.Name, Size: scaled, Color: base.color}
+}
+
+// textLimit is the width a text's own words break it at: its max_width, else its declared width; zero for none.
+func textLimit(node *widget) float64 {
+	if maxWidth, has := node.single("max_width"); has && maxWidth > 0 {
+		return maxWidth
+	}
+	return node.extent("size").width
 }
 
 // valueText is the text a widget's text value stands for: a key's loc entry in the request's language, else the value
@@ -379,41 +404,31 @@ func (resolver *resolver) languageGroup(groups []fileGroup) []string {
 	return nil
 }
 
-// breakLines measures the runs glyph by glyph and breaks them at the widget's max_width, else its size's width, at
-// spaces, into lines with their tops; widths are each line's width.
-func (resolver *resolver) breakLines(node *widget, runs []Run, pixels int) (lines []Line, widths []float64) {
-	limit := 0.0
-	if maxWidth, has := node.numbers("max_width"); has && maxWidth[0] > 0 {
-		limit = maxWidth[0] * resolver.scale()
-	} else if declared, has := node.numbers("size"); has && declared[0] > 0 {
-		limit = declared[0] * resolver.scale()
-	}
-	regular := resolver.fontOf(node, "regular", pixels)
-	height := lineHeight(regular)
+// linesAt breaks a text's measured pieces into lines at a width limit (zero breaks never), between words, each line
+// at its top; widths are each line's width. There is always one line.
+func linesAt(node *widget, limit float64) (lines []Line, widths []float64) {
 	line, offset := Line{}, 0.0
 	finish := func() {
-		line.Y = float64(len(lines)) * height
+		line.Y = float64(len(lines)) * node.lineHeight
 		lines, widths = append(lines, line), append(widths, offset)
 		line, offset = Line{}, 0
 	}
-	for _, run := range runs {
-		for _, piece := range pieces(run) {
-			if piece.Text == "\n" {
-				finish()
-				continue
-			}
-			advance := resolver.advance(piece, resolver.runFace(node, piece, pixels), height)
-			if limit > 0 && offset > 0 && offset+advance > limit && strings.TrimSpace(piece.Text) != "" {
-				finish()
-			}
-			offset += advance
-			if last := len(line.Runs); last > 0 && sameStyle(line.Runs[last-1], piece) {
-				line.Runs[last-1].Text += piece.Text
-				continue
-			}
-			piece.X = offset - advance
-			line.Runs = append(line.Runs, piece)
+	for _, word := range node.pieces {
+		if word.Text == "\n" {
+			finish()
+			continue
 		}
+		if limit > 0 && offset > 0 && offset+word.advance > limit && strings.TrimSpace(word.Text) != "" {
+			finish()
+		}
+		offset += word.advance
+		if last := len(line.Runs); last > 0 && sameStyle(line.Runs[last-1], word.Run) {
+			line.Runs[last-1].Text += word.Text
+			continue
+		}
+		run := word.Run
+		run.X = offset - word.advance
+		line.Runs = append(line.Runs, run)
 	}
 	if len(line.Runs) > 0 || len(lines) == 0 {
 		finish()

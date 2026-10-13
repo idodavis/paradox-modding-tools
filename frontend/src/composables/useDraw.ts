@@ -1,7 +1,7 @@
 /**
  * A GUI file's window as its pane and its Widgets panel read it: the entries the file holds, the one drawn, the
- * part selected, the request the toolbar's choices make of it and the list Go draws. Both read the one query, so a
- * window is drawn once.
+ * part selected, the parts hidden, the request the toolbar's choices make of it and the list Go draws. Both read the
+ * one query, so a window is drawn once.
  */
 import { computed, toValue, watch, type MaybeRefOrGetter } from "vue";
 import { useQuery } from "@pinia/colada";
@@ -56,5 +56,16 @@ export function useDraw(workspaceId: MaybeRefOrGetter<string>, path: MaybeRefOrG
   const parts = computed(() => list.value?.parts ?? []);
   const renderedMs = computed(() => data.value?.renderedMs ?? 0);
 
-  return { entries, entry, selected, request, list, parts, renderedMs, error };
+  // the parts hidden for the session, and every part under one of them: a hidden widget takes what it holds with it
+  const hidden = computed(() => {
+    const chosen = store.hidden.get(toValue(path));
+    const all = new Set<number>();
+    if (!chosen?.size) return all;
+    parts.value.forEach((part, index) => {
+      if (chosen.has(index) || all.has(part.parent)) all.add(index);
+    });
+    return all;
+  });
+
+  return { entries, entry, selected, request, list, parts, hidden, renderedMs, error };
 }

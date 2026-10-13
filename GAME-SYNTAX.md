@@ -836,6 +836,27 @@ find "<game>" -name '*.gui' -print0 | xargs -0 grep -hoE '^\s*layoutpolicy_(hori
 find "<game>" -name '*.gui' -print0 | xargs -0 grep -hoE '^\s*(fittype|spriteType|spritetype|blend_mode|direction|align|parentanchor|widgetanchor)\s*=\s*[^#]*' | sed -E 's/^\s*//; s/\s+$//' | sort | uniq -c | sort -rn
 ```
 
+**A size written negative is unset on its axis, never a percent.** `size = { -1 32 }` is written under
+`layoutpolicy_horizontal = expanding` and `maximumsize = { 400 -1 }` for no maximum: CK3 45 negative sizes and 155
+negative maximums, Vic3 35 and 666, EU5 1,916 and 724. A percent is always written with `%`. Reading a negative as a
+fraction made a mod's `size = { -10 0 }` spacer ten times its row.
+
+```
+find "<game>" -name '*.gui' -print0 | xargs -0 grep -hE '^\s*size = \{ *(-[0-9]+ +[0-9%]+|[0-9%]+ +-[0-9]+) *\}' | wc -l
+find "<game>" -name '*.gui' -print0 | xargs -0 grep -hE '^\s*maximumsize = \{.*-1' | wc -l
+```
+
+**A `background` fills its parent and takes no place among its siblings.** It is written directly under a row,
+column, flow or grid (CK3 17 times on the line after the box opens, more further in) and over the whole box; laid out as
+an item it pushed every sibling by the box's width. **A `multiline` text takes the width the layout gives it** and
+wraps there (`multiline = yes` CK3 148, Vic3 519, EU5 79; `text_multi` is `textbox { multiline = yes }`, CK3 640 uses),
+where `text_single` is `autoresize = yes` and sized by its words.
+
+```
+find "<game>" -name '*.gui' -print0 | xargs -0 grep -hB1 -E '^\s*background = \{' | grep -cE '^\s*(hbox|vbox|flowcontainer|uberhbox|ubervbox|fixedgridbox|dynamicgridbox) = \{'
+find "<game>" -name '*.gui' -print0 | xargs -0 grep -hE '^\s*multiline = yes' | wc -l
+```
+
 **What a window is as the game opens it.** A window's state named `_show` (CK3 455, Vic3 180, EU5 53) and every state
 with `trigger_on_create = yes` (305, 117, 5) run as it opens, writing their end values (`position_x`, `alpha`) as the
 widget's own; `_hide` does not.

@@ -73,3 +73,4 @@ loc v.1.toast "Toast" lang=english line=71
 loc v.1.toast_first "First" lang=english line=72
 loc v_key "Fixture text" lang=english line=73
 loc game_concept_v_concept "Fixture concept" lang=english line=74
+loc v_long "Words that must wrap in sixty pixels" lang=english line=75

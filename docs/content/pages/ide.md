@@ -62,11 +62,13 @@ format is drawn by itself, at its own size. **Bounds** outlines every element. Z
 **Fit**, **100%**, **−** and **+**. Click an element to select its widget; Split shows the code beside the picture, where
 the caret and the selection follow each other and the selected widget's lines are marked.
 
-The Widgets panel shows where the selected widget sits (the way down to it from the window, each step a click) and its
-properties as written, with who wrote each: the widget, or the type or template it comes from. Nothing the game would
-decide at runtime is simulated, and nothing asks you to answer it: a widget whose `visible` is a binding is drawn, a
-text that is a binding shows the binding itself, and a texture that is one is left empty. A status line says what the
-game's files did not give: a template, texture or font that was not found, and how long the render took.
+The Widgets panel shows where the selected widget sits (the way down to it from the window, each step a click), a
+**Shown** switch that hides the widget and everything in it until the app closes, and its properties as written, with
+who wrote each: the widget, or the type or template it comes from. Nothing the game would decide at runtime is
+simulated, and nothing asks you to answer it: a widget whose `visible` is a binding is drawn (hide it with the switch
+to see the window without it), a text that is a binding shows the binding itself, and a texture that is one is left
+empty. A status line says what the game's files did not give: a template, texture or font that was not found, and how
+long the render took.
 
 The status bar shows the open files' errors and warnings, the git branch, then the caret's line and column, the
 indentation, the file's kind and its encoding (UTF-8, or UTF-8 BOM).

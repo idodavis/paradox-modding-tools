@@ -2599,3 +2599,44 @@
   }
 74:27 Fixture -
 74:35 concept -
+75:1 v_long:0
+  {
+   "word": "v_long",
+   "head": "localization",
+   "name": "Words that must wrap in sixty pixels",
+   "sites": [
+    {
+     "path": "<fixtures>/ck3/game/localization/english/v_l_english.yml",
+     "origin": "vanilla",
+     "rel": "localization/english/v_l_english.yml",
+     "range": {
+      "start": {
+       "line": 75,
+       "character": 0
+      },
+      "end": {
+       "line": 75,
+       "character": 0
+      }
+     }
+    }
+   ],
+   "winner": 0,
+   "range": {
+    "start": {
+     "line": 75,
+     "character": 1
+    },
+    "end": {
+     "line": 75,
+     "character": 7
+    }
+   }
+  }
+75:11 Words -
+75:17 that -
+75:22 must -
+75:27 wrap -
+75:32 in -
+75:35 sixty -
+75:41 pixels -

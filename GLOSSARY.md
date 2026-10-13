@@ -69,9 +69,9 @@ does, measured against real installs, is in [GAME-SYNTAX.md](GAME-SYNTAX.md); ho
 |---|---|---|
 | hover card | what the editor shows for the word under the cursor: what it is, what it takes, where it is defined | `lsp.Hover`, `frontend/src/ui/HoverCard.vue` |
 | Visual view | a `.gui` file drawn from its text, beside Code and Split | `frontend/src/draw/`, `frontend/src/editor/tabs.ts` |
-| draw list | one render of a GUI entry: the elements to paint, its parts and the fonts they use | `draw.List` |
-| element | one painted rectangle of a draw list, at an absolute box, with its texture or text | `draw.Element` |
-| part | one widget of an entry, listed whether it is drawn or not, with where it is written | `draw.Part` |
+| draw list | one render of a GUI entry: its elements and the fonts their texts use | `draw.List` |
+| element | one widget of an entry, listed whether it is drawn or not, with where it is written, its layout words as written, its textures and its text; the page nests the elements for the browser to lay out | `draw.Element` |
+| slot | a key whose block is a widget the game treats apart from a child: a skin (`background`), chrome (a scroll bar) or an attachment (a tooltip) | `game.WidgetSlots` |
 | panel | the Widgets panel in the IDE's right column: where the selected widget sits, whether it is shown for the session, and its properties | `frontend/src/draw/GuiDetail.vue` |
 | diagnostic | something wrong in a mod's file, with a code; the code is what `# pmt:ignore <code>` and the settings toggle name | `lsp.Diagnose` |
 | tab | an open file's path, or a diff tab `git:<changes\|staged\|conflict>:<path>` or `git:commit@<hash>:<path>` | `frontend/src/editor/tabs.ts` |

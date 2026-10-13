@@ -1,17 +1,16 @@
 // gui.go is a GUI file's entry drawn as a list: the request, the calls the service makes (Entries, GUI, Properties),
-// and the widget the two passes share with the block reader that every lookup of a property goes through.
+// the widget the resolver builds with the block reader that every lookup of a property goes through, and the layout
+// words the page is handed.
 
 package draw
 
 import (
 	"fmt"
 	"maps"
-	"math"
 	"slices"
 	"strconv"
 	"strings"
 
-	"paradox-modding-tools/services/internal/game"
 	"paradox-modding-tools/services/internal/jomini"
 	"paradox-modding-tools/services/internal/lsp"
 	"paradox-modding-tools/services/internal/workspace"
@@ -33,45 +32,26 @@ const (
 // FileRoute is where the page reads a file, on Wails' asset server: ?path= its absolute path and &v= when it changed.
 const FileRoute = "/pmt/file"
 
-// Request is what a GUI render is asked for: the file, the entry drawn, the resolution and UI scale the window is
-// laid out at, and the language of its texts.
+// Request is what a GUI render is asked for: the file, the entry drawn, the resolution a window's percents are of,
+// and the language of its texts.
 type Request struct {
-	Path     string  `json:"path"`
-	Name     string  `json:"name"`
-	Width    int     `json:"width"`
-	Height   int     `json:"height"`
-	Scale    float64 `json:"scale"`
-	Language string  `json:"language"`
+	Path     string `json:"path"`
+	Name     string `json:"name"`
+	Width    int    `json:"width"`
+	Height   int    `json:"height"`
+	Language string `json:"language"`
 }
 
-// widget is one resolved widget: its part, its kind and layout class, every statement that applies to it in the
-// order they apply (the chain's, each template's where it is used, its own), its children, and what the passes
-// found: rows, text, textures, sizes and box.
+// widget is one resolved widget: its element, its kind, every statement that applies to it in the order they apply (the
+// chain's, each template's where it is used, its own), and its children.
 type widget struct {
-	part       int
+	element    int
 	kind       string
-	class      game.LayoutClass
 	statements []statement
 	children   []*widget
 	pending    []statement          // the child statements found while expanding, resolved once it is done
 	items      []statement          // the widgets of a data model's item, the template of its rows
 	overrides  map[string]statement // the blockoverrides in force, by the block's name
-	rows       int                  // a data model's rows drawn; 0 for no data model
-	hidden     bool                 // visible = no: the widget and what it holds are not drawn
-	either     []*widget            // the later siblings whose visible negates this one's: they take its place
-	alternate  bool                 // the widget takes an earlier sibling's place, so its box lays it out not
-	text       *Text                // the text's font, size and color; its lines are broken where it is placed
-	pieces     []piece              // the text's words, measured, which its lines are broken from
-	lineHeight float64              // how far apart the text's lines sit
-	textLimit  float64              // the width the text's own words break it at (max_width, else its size); 0 none
-	multiline  bool                 // the text breaks at the width it is given
-	textures   []Texture
-	content    size    // what the widget's text or texture measures: the content its sizes fall back to
-	template   bool    // a data model item's widget, drawn once per row
-	scale      float64 // the request's UI scale, which a size written in pixels is multiplied by
-	alpha      float64 // the widget's own opacity, from 0 to 1
-	box        Box
-	clip       *Box
 }
 
 // statement is one assignment that applies to a widget, with the file it is in and who wrote it: "" the widget's
@@ -83,8 +63,16 @@ type statement struct {
 	writtenBy string
 }
 
-// size is a width and a height: positive in pixels, negative a fraction of the parent's (-1 is 100%), zero unset.
-type size struct{ width, height float64 }
+// layoutKeys are the words a widget is laid out by, handed to the page as written; the page's table says what each
+// means to the browser's layout, and a key with no row there is not carried.
+var layoutKeys = []string{
+	"size", "minimumsize", "maximumsize", "min_width", "min_height", "max_width", "max_height",
+	"position", "position_x", "position_y", "parentanchor", "widgetanchor",
+	"layoutpolicy_horizontal", "layoutpolicy_vertical", "layoutstretchfactor_horizontal", "layoutstretchfactor_vertical",
+	"margin", "margin_left", "margin_right", "margin_top", "margin_bottom", "spacing",
+	"direction", "datamodel_wrap", "flipdirection", "addcolumn", "addrow", "ignoreinvisible",
+	"align", "autoresize", "multiline", "elide", "scissor", "alpha",
+}
 
 // blendModes is each blend_mode word as the page draws it: a CSS mix-blend-mode, or "mask" for the two that
 // multiply the first texture's alpha.
@@ -102,8 +90,8 @@ var missingKinds = map[string]string{
 	"cycle": "Type cycle: %s", "templatecycle": "Template cycle: %s",
 	"texture": "Texture not found: %s", fontKey: "Font not found: %s", "fontsize": "Font size missing: %s",
 	"format": "Text format not found: %s", "texticon": "Text icon not found: %s", "loc": "Localization key not found: %s",
-	"blend": "Blend mode not drawn: %s", "glyph": "Glyph missing for %s",
-	"empty": "Nothing to draw: %s has no size and no texture of its own",
+	"blend": "Blend mode not drawn: %s",
+	"empty": "Nothing to draw: %s has no size, no texture, no text and no children of its own",
 }
 
 // misses is what a render did not find, each a sentence the status line shows.
@@ -124,33 +112,38 @@ func Entries(ws *workspace.Session, path string) ([]lsp.Symbol, error) {
 	return slices.DeleteFunc(symbols, func(symbol lsp.Symbol) bool { return entryHow[symbol.Database] == "" }), nil
 }
 
-// GUI resolves the file's entry into a list: pass 1 over the parse and the indexes, pass 2 over the resolved tree at
-// the request's size. The scene is a window's resolution, or the size of an entry drawn alone, which is listed when it
-// has none. The caller holds the workspace's read lock.
+// GUI resolves the file's entry into a list over the parse and the indexes. The scene is a window's resolution; an
+// entry drawn alone is its own size, and one with nothing to show is listed. The caller holds the workspace's read
+// lock.
 func GUI(ws *workspace.Session, request Request) (*List, error) {
 	resolved, root, err := resolve(ws, request)
 	if err != nil {
 		return nil, err
 	}
-	elements, scene := place(root, request, resolved.alone)
-	if resolved.alone && (scene.width == 0 || scene.height == 0) {
+	switch {
+	case !resolved.alone:
+		resolved.list.Width, resolved.list.Height = request.Width, request.Height
+	case drawsNothing(resolved.list.Elements[0], root):
 		resolved.missing.add("empty", request.Name)
 	}
-	resolved.list.Elements = elements
-	resolved.list.Width, resolved.list.Height = int(math.Ceil(scene.width)), int(math.Ceil(scene.height))
 	resolved.list.Missing = slices.Sorted(maps.Keys(resolved.missing))
 	return resolved.list, nil
 }
 
-// Properties is the part's effective properties: every key that applies to it with its last value and who wrote it.
-func Properties(ws *workspace.Session, request Request, part int) ([]Property, error) {
+// drawsNothing reports whether an entry drawn alone shows nothing: no size, texture, text or child of its own.
+func drawsNothing(element Element, root *widget) bool {
+	return element.Layout["size"] == "" && len(element.Textures) == 0 && element.Text == nil && len(root.children) == 0
+}
+
+// Properties is the element's effective properties: every key that applies to it with its last value and who wrote it.
+func Properties(ws *workspace.Session, request Request, element int) ([]Property, error) {
 	_, root, err := resolve(ws, request)
 	if err != nil {
 		return nil, err
 	}
-	target := root.find(part)
+	target := root.find(element)
 	if target == nil {
-		return nil, fmt.Errorf("the window has no part %d", part)
+		return nil, fmt.Errorf("the window has no element %d", element)
 	}
 	var rows []Property
 	positions := map[string]int{}
@@ -170,13 +163,13 @@ func Properties(ws *workspace.Session, request Request, part int) ([]Property, e
 	return rows, nil
 }
 
-// find is the widget of a part in a tree; nil for none.
-func (node *widget) find(part int) *widget {
-	if node.part == part {
+// find is the widget of an element in a tree; nil for none.
+func (node *widget) find(element int) *widget {
+	if node.element == element {
 		return node
 	}
 	for _, child := range node.children {
-		if descendant := child.find(part); descendant != nil {
+		if descendant := child.find(element); descendant != nil {
 			return descendant
 		}
 	}
@@ -194,6 +187,18 @@ func valueText(assignment statement) string {
 	return assignment.parsed.Flat(assignment.assign.Value.NodeRange())
 }
 
+// layoutWords are the widget's layout words as written, by key, the last written of each: a word's text, or a block's
+// words with a space between (size = { 100 20 } is "100 20").
+func layoutWords(node *widget) map[string]string {
+	words := map[string]string{}
+	for _, key := range layoutKeys {
+		if latest, has := node.last(key); has {
+			words[key] = strings.Join(valuesOf(latest.assign.Value), " ")
+		}
+	}
+	return words
+}
+
 // last is the statement that last wrote a key, without regard to case; false for none. The block reader: every
 // lookup of a property goes through it, so the last written wins everywhere.
 func (node *widget) last(key string) (statement, bool) {
@@ -205,8 +210,8 @@ func (node *widget) last(key string) (statement, bool) {
 	return statement{}, false
 }
 
-// numbers are the numbers a key's last value holds (size = { 380 36 }, alpha = 0.5), a percent kept as a negative
-// fraction of the parent (100% is -1); false where the key is never written or its value holds anything else.
+// numbers are the numbers a key's last value holds (framesize = { 32 32 }, alpha = 0.5), a percent kept as a negative
+// fraction (100% is -1); false where the key is never written or its value holds anything else.
 func (node *widget) numbers(key string) ([]float64, bool) {
 	latest, has := node.last(key)
 	if !has {
@@ -223,7 +228,7 @@ func (node *widget) numbers(key string) ([]float64, bool) {
 	return numbers, len(numbers) > 0
 }
 
-// choices are the lower-cased words a key's last value names (parentanchor = bottom|hcenter is bottom, hcenter).
+// choices are the lower-cased words a key's last value names (fittype = centercrop, spritetype = Corneredtiled).
 func (node *widget) choices(key string) ([]string, bool) {
 	latest, has := node.last(key)
 	if !has {
@@ -231,8 +236,8 @@ func (node *widget) choices(key string) ([]string, bool) {
 	}
 	var choices []string
 	for _, item := range valuesOf(latest.assign.Value) {
-		for part := range strings.FieldsFuncSeq(strings.ToLower(item), func(char rune) bool { return char == '|' || char == ' ' }) {
-			choices = append(choices, part)
+		for element := range strings.FieldsFuncSeq(strings.ToLower(item), func(char rune) bool { return char == '|' || char == ' ' }) {
+			choices = append(choices, element)
 		}
 	}
 	return choices, len(choices) > 0

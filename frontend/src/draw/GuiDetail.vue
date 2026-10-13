@@ -19,33 +19,33 @@ import ScriptSnippet from "../ui/ScriptSnippet.vue";
 
 const { workspaceId, path } = defineProps<{ workspaceId: string; path: string }>();
 
-/** A widget on the way to the selected one: its row of the breadcrumb and its part. */
-type Crumb = BreadcrumbItem & { part: number };
+/** A widget on the way to the selected one: its row of the breadcrumb and its element. */
+type Crumb = BreadcrumbItem & { element: number };
 
 const store = useDrawStore();
 const { locate } = useIdeRoots(() => workspaceId);
 const located = computed(() => locate(path));
-const { selected, request, parts } = useDraw(
+const { selected, request, elements } = useDraw(
   () => workspaceId,
   () => path,
 );
 
-// the selected part and the way down to it, root first
-const part = computed(() => parts.value[selected.value]);
+// the selected element and the way down to it, root first
+const element = computed(() => elements.value[selected.value]);
 const crumbs = computed(() => {
   const items: Crumb[] = [];
-  for (let at = selected.value; at >= 0; at = parts.value[at].parent) {
-    const one = parts.value[at];
-    items.unshift({ label: one.name || one.key, part: at });
+  for (let at = selected.value; at >= 0; at = elements.value[at].parent) {
+    const one = elements.value[at];
+    items.unshift({ label: one.name || one.key, element: at });
   }
   return items;
 });
 
-// whether the selected part itself is hidden for the session (one under a hidden part is drawn with it again)
+// whether the selected element itself is hidden for the session (one under a hidden element is drawn with it again)
 const shown = computed(() => !store.hidden.get(path)?.has(selected.value));
 
 const { data: properties } = useQuery(() =>
-  propertiesQuery({ id: workspaceId, request: request.value, part: part.value ? selected.value : -1 }),
+  propertiesQuery({ id: workspaceId, request: request.value, element: element.value ? selected.value : -1 }),
 );
 
 // the properties by who wrote them, the widget's own first, then each writer as it first appears
@@ -63,7 +63,7 @@ const groups = computed(() => {
 <template>
   <aside class="flex min-h-0 min-w-0 flex-col border-s border-default bg-muted text-(length:--ide-ui-font)">
     <DetailHeader kind="GUI" :origin="located?.root.origin ?? ''" :name="fileName(path)" />
-    <template v-if="part">
+    <template v-if="element">
       <UBreadcrumb
         :items="crumbs"
         class="border-b border-default px-3.5 py-2"
@@ -74,14 +74,14 @@ const groups = computed(() => {
             type="button"
             class="font-mono text-11.5 break-all text-start"
             :class="active ? 'text-highlighted' : 'text-toned hover:text-highlighted'"
-            @click="selected = item.part"
+            @click="selected = item.element"
           >
             {{ item.label }}
           </button>
         </template>
       </UBreadcrumb>
       <div class="flex h-8 shrink-0 items-center gap-2 border-b border-default bg-elevated px-3.5 text-12">
-        <span class="text-muted">{{ part.kind }}</span>
+        <span class="text-muted">{{ element.kind }}</span>
         <span class="grow" />
         <USwitch
           :model-value="shown"

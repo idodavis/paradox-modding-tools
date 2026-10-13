@@ -39,3 +39,31 @@ export interface GameList {
     "originVanilla": string;
     "games": (GameInfo | null)[] | null;
 }
+
+/**
+ * WidgetRole is what a widget-valued block is to the widget that writes it: a child, laid out among its siblings and
+ * drawn in written order (every block with no row), or one of the three the game treats apart.
+ */
+export enum WidgetRole {
+    /**
+     * The Go zero value for the underlying type of the enum.
+     */
+    $zero = "",
+
+    /**
+     * The roles a block has besides being a child.
+     *
+     * fills the widget and is drawn behind its children: a background
+     */
+    RoleSkin = "skin",
+
+    /**
+     * sits at the widget's edge over its content: a scroll bar
+     */
+    RoleChrome = "chrome",
+
+    /**
+     * shown on an event, never in the window: a tooltip
+     */
+    RoleAttachment = "attachment",
+};

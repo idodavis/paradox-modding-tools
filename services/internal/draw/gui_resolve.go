@@ -1,10 +1,11 @@
-// gui_resolve.go is pass 1: a GUI file's entry resolved into a tree of widgets. Each widget's type chain is followed
-// to its built-in kind, its templates and blocks expanded in the order they apply, the state a window opens in
-// applied, and its text and textures found; every widget is listed as a part.
+// gui_resolve.go is a GUI file's entry resolved into a tree of widgets, each listed as an element. Each widget's type chain
+// is followed to its built-in kind, its templates and blocks expanded in the order they apply, the state a window opens
+// in applied, and its element described: the words it is laid out by, its text and its textures.
 
 package draw
 
 import (
+	"cmp"
 	"fmt"
 	"iter"
 	"maps"
@@ -49,26 +50,26 @@ const (
 	entryFormat   = "format"
 )
 
-// resolver is pass 1 over one request: the workspace, the parses made for it, and the list being built with what was
-// not found.
+// resolver is one request's resolve: the workspace, the parses made for it, and the list being built with what was not
+// found.
 type resolver struct {
 	ws       *workspace.Session
 	parses   workspace.Parses
 	list     *List
 	request  Request
 	alone    bool             // the entry is a type, template, text icon or format drawn by itself, not a window
-	fonts    map[string]*face // by name, style and size, the faces opened for this render
+	fonts    map[string]*Font // by name and style, the faces found for this render; nil where none was
 	fallback *widget          // the install's textbox type: the style a text with none of its own is drawn in
 	missing  misses
 	places   map[string]inventory.File // by path, where each file sits
 }
 
-// resolve runs pass 1: the entry found by name, its widget tree resolved, every part listed.
+// resolve finds the entry by name and resolves its widget tree, every element listed.
 func resolve(ws *workspace.Session, request Request) (*resolver, *widget, error) {
 	resolver := &resolver{
-		ws: ws, parses: workspace.Parses{}, request: request, fonts: map[string]*face{},
+		ws: ws, parses: workspace.Parses{}, request: request, fonts: map[string]*Font{},
 		missing: misses{}, places: map[string]inventory.File{},
-		list: &List{Elements: []Element{}, Parts: []Part{}, Fonts: []Font{}, Missing: []string{}},
+		list: &List{Elements: []Element{}, Fonts: []Font{}, Missing: []string{}},
 	}
 	resolver.fallback = resolver.textDefault()
 	entry, key, err := resolver.entry(request.Path, request.Name)
@@ -76,7 +77,8 @@ func resolve(ws *workspace.Session, request Request) (*resolver, *widget, error)
 		return nil, nil, err
 	}
 	root := resolver.widget(nil, key, entry, 0)
-	resolver.list.Parts[0].Name = request.Name
+	resolver.list.Elements[0].Name = request.Name
+	resolver.list.Elements[0].Hidden = false // the entry drawn by name is drawn whatever its own visible says
 	return resolver, root, nil
 }
 
@@ -153,20 +155,22 @@ func iconFields(assign *jomini.Assignment) []jomini.Statement {
 	return nil
 }
 
-// widget resolves one widget statement under a parent: its kind and chain, its statements expanded, its opening
-// state, its children, text and textures; a Part is appended for it first, so a parent's index is lower than its
-// descendants'.
+// widget resolves one widget statement under a parent: its kind and chain (a slot's kind where the key is one), its
+// statements expanded, its opening state, its children, and its element described; a Element is appended for it first, so a
+// parent's index is lower than its descendants'.
 func (resolver *resolver) widget(parent *widget, key string, own statement, depth int) *widget {
-	node := &widget{part: len(resolver.list.Parts), overrides: map[string]statement{}, scale: resolver.scale(), alpha: 1}
-	parentPart := -1
+	node := &widget{element: len(resolver.list.Elements), overrides: map[string]statement{}}
+	parentElement := -1
 	if parent != nil {
-		parentPart = parent.part
+		parentElement = parent.element
 		maps.Copy(node.overrides, parent.overrides)
 	}
-	resolver.list.Parts = append(resolver.list.Parts, Part{Parent: parentPart, Key: key, Location: resolver.location(own)})
-	kind, chain := resolver.chain(key)
-	node.kind, node.class = kind, game.LayoutClasses[kind]
-	resolver.list.Parts[node.part].Kind = kind
+	slot := game.WidgetSlots[strings.ToLower(key)]
+	resolver.list.Elements = append(resolver.list.Elements, Element{
+		Parent: parentElement, Key: key, Role: slot.Role, Pair: -1, Location: resolver.location(own),
+	})
+	kind, chain := resolver.chain(cmp.Or(slot.Kind, key))
+	node.kind = kind
 	chain = append(chain, own)
 	for _, source := range chain {
 		resolver.scanOverrides(node, source, 0)
@@ -175,21 +179,23 @@ func (resolver *resolver) widget(parent *widget, key string, own statement, dept
 		resolver.expand(node, source, depth)
 	}
 	resolver.opening(node)
-	if name, isNamed := node.scalar("name"); isNamed {
-		resolver.list.Parts[node.part].Name = name
-	}
-	if _, has := node.scalar("datamodel"); has {
-		node.rows = defaultRows
-	}
 	resolver.children(node, depth)
-	pairAlternatives(node)
-	node.hidden = hidden(node)
-	if alpha, has := resolver.number(node, "alpha"); has {
-		node.alpha = min(max(alpha, 0), 1)
-	}
-	node.text = resolver.text(node)
-	resolver.textures(node)
+	resolver.pairAlternatives(node)
+	resolver.describe(node)
 	return node
+}
+
+// describe fills the widget's element with what the page lays it out and draws by: its kind and name, whether it is
+// hidden, its layout words, its text and its textures. It runs once the children are resolved, since the elements list
+// grows under them.
+func (resolver *resolver) describe(node *widget) {
+	element := &resolver.list.Elements[node.element]
+	element.Kind = node.kind
+	element.Name, _ = node.scalar("name")
+	element.Hidden = hidden(node)
+	element.Layout = layoutWords(node)
+	element.Text = resolver.text(node)
+	element.Textures = resolver.textures(node)
 }
 
 // children resolves the child statements an expansion found, each under the widget; the data model's item is the
@@ -200,12 +206,12 @@ func (resolver *resolver) children(node *widget, depth int) {
 	}
 	for _, child := range node.items {
 		template := resolver.widget(node, child.assign.Key.Text, child, depth+1)
-		template.template = true
+		resolver.list.Elements[template.element].Rows = defaultRows
 		node.children = append(node.children, template)
 	}
 }
 
-// location is the part's location: the statement's file placed in the workspace and its whole range.
+// location is the element's location: the statement's file placed in the workspace and its whole range.
 func (resolver *resolver) location(assignment statement) lsp.Location {
 	file, placed := resolver.places[assignment.path]
 	if !placed {
@@ -343,9 +349,12 @@ func (resolver *resolver) expand(node *widget, source statement, depth int) {
 }
 
 // apply does what one statement of a block does to the widget; previous is the word written before it (block or
-// blockoverride).
+// blockoverride). A slot's block is a child of its role, but for an attachment (a tooltip), shown on an event the
+// preview has not, which is left out.
 func (resolver *resolver) apply(node *widget, assignment statement, previous string, depth int) {
 	key := strings.ToLower(assignment.assign.Key.Text)
+	slot, isSlot := game.WidgetSlots[key]
+	holdsBlock := jomini.ChildBlock(assignment.assign) != nil
 	switch {
 	case previous == "block":
 		source := assignment
@@ -356,9 +365,13 @@ func (resolver *resolver) apply(node *widget, assignment statement, previous str
 	case previous == "blockoverride":
 	case key == usingKey:
 		resolver.use(node, assignment, depth)
-	case key == "item" && jomini.ChildBlock(assignment.assign) != nil:
+	case key == "item" && holdsBlock:
 		resolver.collectItem(node, assignment)
-	case jomini.ChildBlock(assignment.assign) != nil && resolver.isWidget(assignment.assign.Key.Text):
+	case isSlot && holdsBlock:
+		if slot.Role != game.RoleAttachment {
+			node.pending = append(node.pending, assignment)
+		}
+	case holdsBlock && resolver.isWidget(assignment.assign.Key.Text):
 		node.pending = append(node.pending, assignment)
 	default:
 		node.statements = append(node.statements, assignment)
@@ -429,8 +442,8 @@ func hidden(node *widget) bool {
 }
 
 // pairAlternatives finds the children whose visible bindings are each other's negation, [X] and [Not(X)]: the game
-// shows one of them, so the later takes the earlier's place instead of one of its own.
-func pairAlternatives(node *widget) {
+// shows one of them, so the later shares the earlier's place (its Pair) instead of taking one of its own.
+func (resolver *resolver) pairAlternatives(node *widget) {
 	calls := make([]string, len(node.children))
 	for i, child := range node.children {
 		text, _ := child.scalar("visible")
@@ -440,12 +453,11 @@ func pairAlternatives(node *widget) {
 	}
 	for i, first := range node.children {
 		for j := i + 1; j < len(node.children); j++ {
-			later := node.children[j]
-			if calls[i] == "" || later.alternate || !negates(calls[i], calls[j]) {
+			later := &resolver.list.Elements[node.children[j].element]
+			if calls[i] == "" || later.Pair >= 0 || !negates(calls[i], calls[j]) {
 				continue
 			}
-			later.alternate = true
-			first.either = append(first.either, later)
+			later.Pair = first.element
 		}
 	}
 }
@@ -466,31 +478,30 @@ func isBinding(text string) bool {
 // its blocks expanded and overridden as the widget's are (a color overlay picks its frame in one), each masked by the
 // widget's texture since the game keeps its alpha, or masking it where the blend says so; a file not found goes to
 // Missing.
-func (resolver *resolver) textures(node *widget) {
+func (resolver *resolver) textures(node *widget) []Texture {
+	drawn := []Texture{}
 	first, textured := resolver.textureOf(node)
 	if !textured {
-		return
+		return drawn
 	}
-	node.textures = []Texture{first}
-	if node.text == nil {
-		node.content = size{width: float64(first.Width), height: float64(first.Height)}
-	}
+	drawn = append(drawn, first)
 	for _, assignment := range node.statements {
 		if !strings.EqualFold(assignment.assign.Key.Text, "modify_texture") {
 			continue
 		}
-		modifier := &widget{overrides: node.overrides, scale: node.scale}
+		modifier := &widget{overrides: node.overrides}
 		resolver.expand(modifier, assignment, 0)
 		more, isTexture := resolver.textureOf(modifier)
 		switch {
 		case !isTexture:
 		case more.Blend == blendMask:
-			node.textures[0].Mask = &more
+			drawn[0].Mask = &more
 		default:
 			more.Mask = &first
-			node.textures = append(node.textures, more)
+			drawn = append(drawn, more)
 		}
 	}
+	return drawn
 }
 
 // fieldStatements are the assignments a statement's block holds, as statements of the same file.

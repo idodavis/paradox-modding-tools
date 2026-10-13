@@ -3,10 +3,13 @@
 
 // eslint-disable-next-line @typescript-eslint/ban-ts-comment
 // @ts-ignore: Unused imports
+import * as game$0 from "../game/models.js";
+// eslint-disable-next-line @typescript-eslint/ban-ts-comment
+// @ts-ignore: Unused imports
 import * as lsp$0 from "../lsp/models.js";
 
 /**
- * Box is a rectangle in scene pixels.
+ * Box is a rectangle in an image's pixels.
  */
 export interface Box {
     "x": number;
@@ -16,61 +19,9 @@ export interface Box {
 }
 
 /**
- * Element is one painted rectangle, in paint order, at an absolute box.
+ * Element is one widget of the entry, with where it is written and what the page lays it out and draws by.
  */
 export interface Element {
-    "part": number;
-    "box": Box;
-    "clip"?: Box | null;
-    "alpha": number;
-    "texture"?: Texture | null;
-    "text"?: Text | null;
-}
-
-/**
- * Font is one face the texts use: the game's font name, the style the file is for, and the file route's URL.
- */
-export interface Font {
-    "name": string;
-    "style": string;
-    "url": string;
-}
-
-/**
- * Line is one line of a text, at its top's offset from the element's top.
- */
-export interface Line {
-    "y": number;
-    "runs": Run[] | null;
-}
-
-/**
- * List is one render of a file's entry: what to draw, its structure, and what nothing found.
- */
-export interface List {
-    /**
-     * the scene in pixels: a window's resolution, or the size of an entry drawn alone
-     */
-    "width": number;
-
-    /**
-     * the scene in pixels
-     */
-    "height": number;
-    "elements": Element[] | null;
-    "parts": Part[] | null;
-    "fonts": Font[] | null;
-
-    /**
-     * what was not found, each a sentence the status line shows
-     */
-    "missing": string[] | null;
-}
-
-/**
- * Part is one widget of the entry, drawn or not, with where it is written.
- */
-export interface Part {
     /**
      * -1 at the root
      */
@@ -91,10 +42,72 @@ export interface Part {
      */
     "name": string;
     "location": lsp$0.Location;
+
+    /**
+     * "" a child among its siblings; skin or chrome
+     */
+    "role": game$0.WidgetRole;
+
+    /**
+     * visible = no: the widget keeps its place and shows nothing
+     */
+    "hidden": boolean;
+
+    /**
+     * a data model item's widget is drawn once a row; 0 for the rest
+     */
+    "rows": number;
+
+    /**
+     * the earlier sibling whose place this element shares, the game showing one of them; -1 none
+     */
+    "pair": number;
+
+    /**
+     * the layout words as written, by lower-cased key
+     */
+    "layout": { [_ in string]?: string } | null;
+
+    /**
+     * the widget's texture, then each overlay
+     */
+    "textures": Texture[] | null;
+    "text"?: Text | null;
 }
 
 /**
- * Property is one resolved property of a part, as written, with the type or template that wrote it ("" the part
+ * Font is one face the texts use: the game's font name, the style the file is for, and the file route's URL.
+ */
+export interface Font {
+    "name": string;
+    "style": string;
+    "url": string;
+}
+
+/**
+ * List is one render of a file's entry: its elements, pre-order, the fonts their texts use, and what nothing found.
+ */
+export interface List {
+    /**
+     * the scene in pixels: a window's resolution; zero for an entry drawn alone, its own size
+     */
+    "width": number;
+
+    /**
+     * the scene in pixels
+     */
+    "height": number;
+    "elements": Element[] | null;
+    "fonts": Font[] | null;
+
+    /**
+     * what was not found, each a sentence the status line shows
+     */
+    "missing": string[] | null;
+}
+
+/**
+ * Property is one resolved property of an element, as written, with the type or template that wrote it ("" the element
  * itself).
  */
 export interface Property {
@@ -104,23 +117,21 @@ export interface Property {
 }
 
 /**
- * Request is what a GUI render is asked for: the file, the entry drawn, the resolution and UI scale the window is
- * laid out at, and the language of its texts.
+ * Request is what a GUI render is asked for: the file, the entry drawn, the resolution a window's percents are of,
+ * and the language of its texts.
  */
 export interface Request {
     "path": string;
     "name": string;
     "width": number;
     "height": number;
-    "scale": number;
     "language": string;
 }
 
 /**
- * Run is one stretch of a line under one style, at its offset from the element's left; Icon is a text icon's URL.
+ * Run is one stretch of a text under one style; Icon is a text icon's URL, drawn in place of text.
  */
 export interface Run {
-    "x": number;
     "text": string;
     "bold": boolean;
     "italic": boolean;
@@ -129,17 +140,18 @@ export interface Run {
 }
 
 /**
- * Text is lines of runs, already broken and measured; Font names a Fonts row's Name.
+ * Text is an element's text as runs, in a font the Fonts name, at the size written; the browser breaks its lines.
  */
 export interface Text {
     "font": string;
     "size": number;
     "color": string;
-    "lines": Line[] | null;
+    "runs": Run[] | null;
 }
 
 /**
- * Texture is what an element paints from a file: the route's URL, the part drawn, the slicing, the tint and blend.
+ * Texture is what an element paints from a file: the route's URL, the part of the image drawn, the slicing, the tint
+ * and blend.
  */
 export interface Texture {
     "url": string;
@@ -155,7 +167,7 @@ export interface Texture {
     "height": number;
 
     /**
-     * the part drawn; the whole image when zero
+     * the part of the image drawn, in its pixels; the whole image when zero
      */
     "frame": Box;
 

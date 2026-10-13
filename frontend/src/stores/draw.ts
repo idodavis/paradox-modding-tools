@@ -1,6 +1,6 @@
 /**
  * The Visual view's client state, shared by a GUI file's pane and its Widgets panel: the toolbar's choices, kept on
- * this computer, and per file the entry drawn, the part selected and the parts hidden for the session. What is
+ * this computer, and per file the entry drawn, the element selected and the elements hidden for the session. What is
  * drawn is the query's (queries.ts).
  */
 import { computed, ref } from "vue";
@@ -27,7 +27,7 @@ export const SCALES = [
   { label: "200%", value: 2 },
 ];
 
-/** Holds the toolbar's choices, and per file the entry picked and the part selected. */
+/** Holds the toolbar's choices, and per file the entry picked and the element selected. */
 export const useDrawStore = defineStore("draw", () => {
   const workspace = useWorkspaceStore();
 
@@ -48,26 +48,25 @@ export const useDrawStore = defineStore("draw", () => {
     set: (value: string) => (chosenLanguage.value = value),
   });
 
-  // by file path: the entry the user picked, the part selected, and the parts hidden for this session
+  // by file path: the entry the user picked, the element selected, and the elements hidden for this session
   const picked = ref(new Map<string, string>());
   const selected = ref(new Map<string, number>());
   const hidden = ref(new Map<string, Set<number>>());
 
-  /** Hides a file's part, or shows it again; what it holds goes with it. Kept until the app closes. */
-  function toggleHidden(path: string, part: number): void {
-    const parts = hidden.value.get(path) ?? new Set<number>();
-    if (!parts.delete(part)) parts.add(part);
-    hidden.value.set(path, parts);
+  /** Hides a file's element, or shows it again; what it holds goes with it. Kept until the app closes. */
+  function toggleHidden(path: string, element: number): void {
+    const elements = hidden.value.get(path) ?? new Set<number>();
+    if (!elements.delete(element)) elements.add(element);
+    hidden.value.set(path, elements);
   }
 
-  /** What a file's entry is drawn as: the toolbar's resolution, scale and language. */
+  /** What a file's entry is drawn as: the toolbar's resolution and language; the scale is the page's zoom. */
   function requestOf(path: string, entry: string): DrawRequest {
     return {
       path,
       name: entry,
       width: width.value,
       height: height.value,
-      scale: scale.value,
       language: language.value,
     };
   }

@@ -25,7 +25,7 @@ under the engine knows about the editor, the pages, the services or the Workshop
 | workspace | [`workspace`](internal/workspace/README.md) | A workspace open in the editor: the install's schema and index, the mods' index over it, the open buffers, the watcher, one lock, and the one open at a time. |
 | | [`lsp`](internal/lsp/README.md) | The editor's requests over one open file: hover, completion, definition, references, symbols, diagnostics, edits. |
 | | [`pages`](internal/pages/README.md) | The Go side of each page, answered from the open workspace: the Health report, the event graph and its detail, the text search. |
-| | [`draw`](internal/draw/README.md) | What the visual editors draw: a GUI file's window resolved from the index into one flat list of elements, parts and fonts, which the page draws and computes nothing over: a structural preview, where nothing about the game's state is simulated. |
+| | [`draw`](internal/draw/README.md) | What the visual editors draw: a GUI file's window resolved from the index into one list of elements, each with its layout words as written, its textures and its text, which the page nests for the browser to lay out: a structural preview, where nothing about the game's state is simulated and nothing is measured in Go. |
 
 The saved record of a workspace is `services.Workspace`; the open one is `workspace.Session`. `internal/testdata/` holds
 the fixture installs the tests read.
@@ -52,7 +52,7 @@ the fixture installs the tests read.
 | File | `fileservice.go` | the IDE's file system: read, write (atomic), list, rename, delete; the route the page reads an image or a font file by |
 | Log | `logservice.go` | the app log (`pmt.log`), the frontend's log lines, crash detection |
 | Ide | `ideservice.go` | every editor request, one method each, forwarded to `lsp` |
-| Draw | `drawservice.go` | a GUI file's Visual view: what it can draw, an entry as a list, a part's properties |
+| Draw | `drawservice.go` | a GUI file's Visual view: what it can draw, an entry as a list, an element's properties |
 | Health | `healthservice.go` | the Health page: three calls into `pages` |
 | EventGraph | `eventgraphservice.go` | the event graph, one event's detail and the root search: three calls into `pages` |
 | Search | `searchservice.go` | the IDE's text and file search and replace: three calls into `pages` |
@@ -111,7 +111,7 @@ dump or a new app build is another file and the next open scans again by itself.
 | what a doc or dump phrase means | `docPhrases` in `internal/schema/docs.go`; the dump labels in `internal/schema/dumps.go` |
 | a diagnostic | `internal/lsp/diagnostics.go` (`Codes`) |
 | what a hover card says | `internal/lsp/hover.go` (its facts), `internal/lsp/wording.go` (its words); drawn by `frontend/src/ui/HoverCard.vue` |
-| how a GUI window lays out | `LayoutClasses`, `Sizings` and `LayoutPolicies` in `internal/game/lang-rules.go`; how a class places its children in `internal/draw/gui_layout.go`; the state a window opens in, `OpeningState` and `StateControls` |
+| how a GUI window lays out | the words handed to the page, `layoutKeys` in `internal/draw/gui.go`, and what each means to the browser, the tables of `frontend/src/draw/widgets.ts`; which blocks are a widget's skin, chrome or attachment, `WidgetSlots` in `internal/game/lang-rules.go`; the state a window opens in, `OpeningState` and `StateControls` |
 | a Health section | `internal/pages/health.go` (the cards and which code each lists) and `health_*.go`; its page is `frontend/src/pages/health/` and `frontend/src/composables/useHealth.ts` |
 | what the event graph or a search answers | `internal/pages/graph.go`, `graph_detail.go`, `search.go` |
 | a window event | declared in `windowservice.go`, answered where the table at the head of `frontend/src/stores/windows.ts` says |

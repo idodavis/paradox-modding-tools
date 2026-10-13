@@ -870,6 +870,18 @@ find "<game>" -name '*.gui' -print0 | xargs -0 grep -hB1 -E '^\s*background = \{
 find "<game>" -name '*.gui' -print0 | xargs -0 grep -hE '^\s*multiline = yes' | wc -l
 ```
 
+**The blocks a widget writes that are not its children.** A `background = { }` is the widget's skin, filling it and
+drawn behind its children (CK3 2,305, Vic3 1,294, EU5 1,455); a `tooltipwidget = { }` is shown on hover and never in the
+window (679, 682, 3,811); a `scrollbar_vertical` or `scrollbar_horizontal = { }` is a `scrollbar` at the area's edge (CK3
+59 and 12). Every other block whose key names a widget is a child, laid out among its siblings in written order. The
+layout words are the same in the three games (`hbox` CK3 3,545, Vic3 715, EU5 3,267; `layoutpolicy_horizontal` 8,754,
+1,939, 4,546; `parentanchor` 4,427, 6,801, 2,837), and the preview hands them to the browser as written, each mapped to
+the CSS word that means the same (`frontend/src/draw/widgets.ts`); Go measures nothing.
+
+```
+for k in background tooltipwidget scrollbar_vertical scrollbar_horizontal hbox layoutpolicy_horizontal parentanchor; do printf '%-24s %s\n' "$k" "$(grep -rhoE "^\s*$k\s*=" "<game>/gui" | wc -l)"; done
+```
+
 **What a window is as the game opens it.** A window's state named `_show` (CK3 455, Vic3 180, EU5 53) and every state
 with `trigger_on_create = yes` (305, 117, 5) run as it opens, writing their end values (`position_x`, `alpha`) as the
 widget's own; `_hide` does not.

@@ -100,7 +100,7 @@ database gui.texticon fields=[]
   /iconsize/size value={0  []}/0 block=0/0 scope=""/0 required={0 }/0 default=""/0 blurb=""/0 written=0 seen=in:1,blocks:1,forms:33,values:map[]
   /iconsize/texture value={0  []}/0 block=0/0 scope=""/0 required={0 }/0 default=""/0 blurb=""/0 written=0 seen=in:1,blocks:0,forms:16,values:map[gfx/interface/v_bg.dds:1]
 database gui.type fields=[]
-  (entry) value={0  []}/0 block=8/1 scope=""/0 required={0 }/0 default=""/0 blurb=""/0 written=0 seen=in:21,blocks:55,forms:40,values:map[block:1 blockoverride:1 v_icon:1]
+  (entry) value={0  []}/0 block=8/1 scope=""/0 required={0 }/0 default=""/0 blurb=""/0 written=0 seen=in:21,blocks:58,forms:40,values:map[block:1 blockoverride:1 v_icon:1]
   /font value={5 font.font []}/3 block=0/0 scope=""/0 required={0 }/0 default=""/0 blurb=""/0 written=0 seen=in:3,blocks:0,forms:16,values:map[v_font:3]
   /fontsize value={0  []}/0 block=0/0 scope=""/0 required={0 }/0 default=""/0 blurb=""/0 written=0 seen=in:3,blocks:0,forms:1,values:map[]
   /framesize value={0  []}/0 block=0/0 scope=""/0 required={0 }/0 default=""/0 blurb=""/0 written=0 seen=in:1,blocks:1,forms:33,values:map[]
@@ -110,16 +110,20 @@ database gui.type fields=[]
   /modify_texture/framesize value={0  []}/0 block=0/0 scope=""/0 required={0 }/0 default=""/0 blurb=""/0 written=0 seen=in:1,blocks:1,forms:33,values:map[]
   /modify_texture/texture value={0  []}/0 block=0/0 scope=""/0 required={0 }/0 default=""/0 blurb=""/0 written=0 seen=in:1,blocks:0,forms:16,values:map[gfx/interface/v_bg.dds:1]
   /multiline value={0  []}/0 block=0/0 scope=""/0 required={0 }/0 default=""/0 blurb=""/0 written=0 seen=in:1,blocks:0,forms:2,values:map[yes:1]
-  /name value={0  []}/0 block=0/0 scope=""/0 required={0 }/0 default=""/0 blurb=""/0 written=0 seen=in:14,blocks:0,forms:16,values:map[v_after:1 v_backed:1 v_background:1 v_backing:1 v_container:1 v_flow:1 v_footer:1 v_multi:1 v_no:1 v_nothing:1 v_row:1 v_unset:1 v_unset_icon:1 v_yes:1]
+  /name value={0  []}/0 block=0/0 scope=""/0 required={0 }/0 default=""/0 blurb=""/0 written=0 seen=in:15,blocks:0,forms:16,values:map[v_after:1 v_backed:1 v_background:1 v_backing:1 v_container:1 v_flow:1 v_footer:1 v_multi:1 v_no:1 v_nothing:1 v_row:1 v_scroll:1 v_unset:1 v_unset_icon:1 v_yes:1]
   /parentanchor value={0  []}/0 block=0/0 scope=""/0 required={0 }/0 default=""/0 blurb=""/0 written=0 seen=in:2,blocks:0,forms:8,values:map[bottom|hcenter:1 right:1]
   /position value={0  []}/0 block=0/0 scope=""/0 required={0 }/0 default=""/0 blurb=""/0 written=0 seen=in:1,blocks:1,forms:33,values:map[]
-  /size value={0  []}/0 block=0/0 scope=""/0 required={0 }/0 default=""/0 blurb=""/0 written=0 seen=in:23,blocks:23,forms:41,values:map[100%:3]
+  /scrollbar_vertical value={0  []}/0 block=0/0 scope=""/0 required={0 }/0 default=""/0 blurb=""/0 written=0 seen=in:1,blocks:1,forms:32,values:map[]
+  /scrollbar_vertical/name value={0  []}/0 block=0/0 scope=""/0 required={0 }/0 default=""/0 blurb=""/0 written=0 seen=in:1,blocks:0,forms:16,values:map[v_bar:1]
+  /size value={0  []}/0 block=0/0 scope=""/0 required={0 }/0 default=""/0 blurb=""/0 written=0 seen=in:24,blocks:24,forms:41,values:map[100%:3]
   /spacing value={0  []}/0 block=0/0 scope=""/0 required={0 }/0 default=""/0 blurb=""/0 written=0 seen=in:1,blocks:0,forms:1,values:map[]
   /text value={0  []}/0 block=0/0 scope=""/0 required={0 }/0 default=""/0 blurb=""/0 written=0 seen=in:6,blocks:0,forms:16,values:map[[GetPlayer.GetName]:1 [v_concept|E] rules:1 [v_nothing|E]:1 v_key:2 v_long:1]
   /texture value={0  []}/0 block=0/0 scope=""/0 required={0 }/0 default=""/0 blurb=""/0 written=0 seen=in:3,blocks:0,forms:16,values:map[gfx/interface/v_bg.tga:1 gfx/interface/v_frame.dds:1 v_frame.dds:1]
+  /tooltipwidget value={0  []}/0 block=0/0 scope=""/0 required={0 }/0 default=""/0 blurb=""/0 written=0 seen=in:1,blocks:1,forms:32,values:map[]
+  /tooltipwidget/name value={0  []}/0 block=0/0 scope=""/0 required={0 }/0 default=""/0 blurb=""/0 written=0 seen=in:1,blocks:0,forms:16,values:map[v_tip:1]
   /upframe value={0  []}/0 block=0/0 scope=""/0 required={0 }/0 default=""/0 blurb=""/0 written=0 seen=in:1,blocks:0,forms:1,values:map[]
   /using value={5 gui.template []}/3 block=0/0 scope=""/0 required={0 }/0 default=""/0 blurb=""/0 written=0 seen=in:1,blocks:0,forms:8,values:map[v_sized:1]
-  /vbox value={0  []}/0 block=0/0 scope=""/0 required={0 }/0 default=""/0 blurb=""/0 written=0 seen=in:1,blocks:1,forms:32,values:map[]
+  /vbox value={0  []}/0 block=0/0 scope=""/0 required={0 }/0 default=""/0 blurb=""/0 written=0 seen=in:2,blocks:2,forms:32,values:map[]
   /vbox/datamodel value={0  []}/0 block=0/0 scope=""/0 required={0 }/0 default=""/0 blurb=""/0 written=0 seen=in:1,blocks:0,forms:16,values:map[[GetPlayer.GetVassals]:1]
   /vbox/item value={0  []}/0 block=0/0 scope=""/0 required={0 }/0 default=""/0 blurb=""/0 written=0 seen=in:1,blocks:1,forms:32,values:map[]
   /visible value={0  []}/0 block=0/0 scope=""/0 required={0 }/0 default=""/0 blurb=""/0 written=0 seen=in:4,blocks:0,forms:16,values:map[[GetPlayer.IsAlive]:2 [GetVariableSystem.Exists('v_flag')]:1 [Not( GetPlayer.IsAlive )]:1]
@@ -20255,6 +20259,8 @@ macro widget:container database=gui.type
 macro widget:flowcontainer database=gui.type
 macro widget:hbox database=gui.type
 macro widget:icon database=gui.type
+macro widget:scrollarea database=gui.type
+macro widget:scrollbar database=gui.type
 macro widget:textbox database=gui.type
 macro widget:v_box database=gui.type
 macro widget:v_button database=gui.type

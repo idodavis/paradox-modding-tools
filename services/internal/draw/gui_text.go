@@ -1,6 +1,6 @@
 // gui_text.go is a widget's text: the loc entry or literal it holds, its markup read into runs with the formats'
-// colors and the text icons' textures, each word measured with the real font files; the lines are broken where the
-// widget is placed.
+// colors and the text icons' textures, and the font files the page loads to draw them; the browser measures the words
+// and breaks the lines.
 
 package draw
 
@@ -10,9 +10,6 @@ import (
 	"slices"
 	"strconv"
 	"strings"
-
-	"golang.org/x/image/font"
-	"golang.org/x/image/font/opentype"
 
 	"paradox-modding-tools/services/internal/game"
 	"paradox-modding-tools/services/internal/index"
@@ -40,28 +37,15 @@ var (
 	plainKeys  = []string{"size", "glow_color", "glow_offset", "shadow", "underline", fontKey}
 )
 
-// face is one opened font at one size: the row the page registers, and the files of the language's group in order,
-// a glyph being measured in the first that has it.
-type face struct {
-	font  Font
-	files []font.Face
-}
-
 // style is what the runs of a text are drawn in: the formats' effect on top of the widget's own font.
 type style struct {
 	bold, italic bool
 	color        string
 }
 
-// piece is one word of a text with the spaces after it, or a line break, and how wide it measures.
-type piece struct {
-	Run
-	advance float64
-}
-
 // text resolves a widget's text: the value's loc entry in the request's language else english (a key), the value
-// itself (a literal), its markup as runs, measured word by word; the lines are broken where the widget is placed
-// (gui_layout.go's linesAt). A text with no font size, or a font nothing opens, is listed and drawn as none.
+// itself (a literal), its markup as runs, in the font and at the size written, each style the runs use listed for the
+// page to load. A text with no font size, or a font with no file, is listed and drawn as none.
 func (resolver *resolver) text(node *widget) *Text {
 	value, has := node.scalar("text")
 	raw := false
@@ -80,7 +64,7 @@ func (resolver *resolver) text(node *widget) *Text {
 		resolver.missing.add("fontsize", node.kind)
 		return nil
 	}
-	regular := resolver.fontOf(node, "regular", int(pixels*resolver.scale()))
+	regular := resolver.fontOf(node, "regular")
 	if regular == nil {
 		return nil
 	}
@@ -88,29 +72,16 @@ func (resolver *resolver) text(node *widget) *Text {
 	if color, isColor := resolver.color(node, "fontcolor"); isColor {
 		base.color = color
 	}
-	scaled := int(pixels * resolver.scale())
-	node.lineHeight = lineHeight(regular)
-	for _, run := range resolver.runs(resolver.valueText(value, raw), base, 0) {
-		for _, word := range pieces(run) {
-			measured := piece{Run: word}
-			if word.Text != "\n" {
-				measured.advance = resolver.advance(word, resolver.runFace(node, word, scaled), node.lineHeight)
-			}
-			node.pieces = append(node.pieces, measured)
+	runs := resolver.runs(resolver.valueText(value, raw), base, 0)
+	for _, run := range runs {
+		switch {
+		case run.Bold:
+			resolver.fontOf(node, "bold")
+		case run.Italic:
+			resolver.fontOf(node, "italic")
 		}
 	}
-	node.textLimit = textLimit(node)
-	multiline, _ := node.scalar("multiline")
-	node.multiline = strings.EqualFold(multiline, yes)
-	return &Text{Font: regular.font.Name, Size: scaled, Color: base.color}
-}
-
-// textLimit is the width a text's own words break it at: its max_width, else its declared width; zero for none.
-func textLimit(node *widget) float64 {
-	if maxWidth, has := node.single("max_width"); has && maxWidth > 0 {
-		return maxWidth
-	}
-	return node.extent("size").width
+	return &Text{Font: regular.Name, Size: int(pixels), Color: base.color, Runs: runs}
 }
 
 // valueText is the text a widget's text value stands for: a key's loc entry in the request's language, else the value
@@ -263,10 +234,10 @@ func (resolver *resolver) entryFields(database, name string) (*widget, bool) {
 	return &widget{statements: fieldStatements(holder)}, true
 }
 
-// fontOf opens the face a widget names (font, else the install's first font entry) for a style at a pixel size: the
-// font entry's fontstyle for the style, its fontfiles entry's group for the language, each file opened once per
-// render; a font that is not found goes to Missing and gives none.
-func (resolver *resolver) fontOf(node *widget, fontStyle string, pixels int) *face {
+// fontOf is the face a widget names (font, else the install's first font entry) for a style: the font entry's
+// fontstyle for the style, its fontfiles entry's group for the language, listed once per render for the page to load;
+// a font with no file goes to Missing and is nil.
+func (resolver *resolver) fontOf(node *widget, fontStyle string) *Font {
 	name, hasFont := node.scalar(fontKey)
 	if !hasFont {
 		name, hasFont = resolver.fallback.scalar(fontKey)
@@ -279,69 +250,34 @@ func (resolver *resolver) fontOf(node *widget, fontStyle string, pixels int) *fa
 		}
 		name = names[0]
 	}
-	key := name + "/" + fontStyle + "/" + strconv.Itoa(pixels)
-	if opened, cached := resolver.fonts[key]; cached {
-		return opened
+	key := name + "/" + fontStyle
+	if found, cached := resolver.fonts[key]; cached {
+		return found
 	}
-	opened := resolver.openFace(name, fontStyle, pixels)
-	resolver.fonts[key] = opened
-	if opened != nil && !slices.Contains(resolver.list.Fonts, opened.font) {
-		resolver.list.Fonts = append(resolver.list.Fonts, opened.font)
+	found := resolver.fontFile(name, fontStyle)
+	resolver.fonts[key] = found
+	if found != nil && !slices.Contains(resolver.list.Fonts, *found) {
+		resolver.list.Fonts = append(resolver.list.Fonts, *found)
 	}
-	return opened
+	return found
 }
 
-// scale is the request's UI scale, one where it is none.
-func (resolver *resolver) scale() float64 {
-	if resolver.request.Scale <= 0 {
-		return 1
-	}
-	return resolver.request.Scale
-}
-
-// openFace opens a font's style: its fontfiles entry's group for the request's language, the files in order.
-func (resolver *resolver) openFace(name, fontStyle string, pixels int) *face {
+// fontFile is a font's style as the page loads it: the first file of its fontfiles entry's group for the request's
+// language that the install has; nil, listed, where there is none.
+func (resolver *resolver) fontFile(name, fontStyle string) *Font {
 	definition, defined := resolver.entryFields(fontDatabase, name)
 	if !defined {
 		resolver.missing.add(fontKey, name)
 		return nil
 	}
-	files, resolved := resolver.styleFiles(definition, fontStyle)
-	opened := &face{font: Font{Name: name, Style: resolved}}
-	for _, rel := range resolver.languageGroup(files) {
-		file, listed := index.FileAt(resolver.ws.Indexes(), rel)
-		parsed, err := parseFont(file, listed)
-		if err != nil {
-			resolver.missing.add(fontKey, rel)
-			continue
+	groups, resolved := resolver.styleFiles(definition, fontStyle)
+	for _, rel := range resolver.languageGroup(groups) {
+		if file, listed := index.FileAt(resolver.ws.Indexes(), rel); listed {
+			return &Font{Name: name, Style: resolved, URL: fileURL(file)}
 		}
-		sized, err := opentype.NewFace(parsed, &opentype.FaceOptions{Size: float64(pixels), DPI: 72, Hinting: font.HintingNone})
-		if err != nil {
-			resolver.missing.add(fontKey, rel)
-			continue
-		}
-		if opened.font.URL == "" {
-			opened.font.URL = fileURL(file)
-		}
-		opened.files = append(opened.files, sized)
 	}
-	if len(opened.files) == 0 {
-		resolver.missing.add(fontKey, name)
-		return nil
-	}
-	return opened
-}
-
-// parseFont reads a font file into a font.
-func parseFont(file inventory.File, listed bool) (*opentype.Font, error) {
-	if !listed {
-		return nil, os.ErrNotExist
-	}
-	data, err := os.ReadFile(file.Path)
-	if err != nil {
-		return nil, err
-	}
-	return opentype.Parse(data)
+	resolver.missing.add(fontKey, name)
+	return nil
 }
 
 // fileGroup is the files a fontfiles entry lists for some languages.
@@ -402,121 +338,6 @@ func (resolver *resolver) languageGroup(groups []fileGroup) []string {
 		}
 	}
 	return nil
-}
-
-// linesAt breaks a text's measured pieces into lines at a width limit (zero breaks never), between words, each line
-// at its top; widths are each line's width. There is always one line.
-func linesAt(node *widget, limit float64) (lines []Line, widths []float64) {
-	line, offset := Line{}, 0.0
-	finish := func() {
-		line.Y = float64(len(lines)) * node.lineHeight
-		lines, widths = append(lines, line), append(widths, offset)
-		line, offset = Line{}, 0
-	}
-	for _, word := range node.pieces {
-		if word.Text == "\n" {
-			finish()
-			continue
-		}
-		if limit > 0 && offset > 0 && offset+word.advance > limit && strings.TrimSpace(word.Text) != "" {
-			finish()
-		}
-		offset += word.advance
-		if last := len(line.Runs); last > 0 && sameStyle(line.Runs[last-1], word.Run) {
-			line.Runs[last-1].Text += word.Text
-			continue
-		}
-		run := word.Run
-		run.X = offset - word.advance
-		line.Runs = append(line.Runs, run)
-	}
-	if len(line.Runs) > 0 || len(lines) == 0 {
-		finish()
-	}
-	return lines, widths
-}
-
-// sameStyle reports whether two runs are text drawn alike, so the second continues the first.
-func sameStyle(first, second Run) bool {
-	return first.Icon == "" && second.Icon == "" && first.Bold == second.Bold && first.Italic == second.Italic &&
-		first.Color == second.Color
-}
-
-// runFace is the face a run is measured in: its bold or italic file where the font has one, else the regular.
-func (resolver *resolver) runFace(node *widget, run Run, pixels int) *face {
-	fontStyle := "regular"
-	switch {
-	case run.Bold:
-		fontStyle = "bold"
-	case run.Italic:
-		fontStyle = "italic"
-	}
-	return resolver.fontOf(node, fontStyle, pixels)
-}
-
-// pieces splits a run at its spaces and line breaks, so a line breaks between words: each piece is a word with the
-// spaces after it, and a break is a piece of its own.
-func pieces(run Run) []Run {
-	if run.Icon != "" || run.Text == "" {
-		return []Run{run}
-	}
-	var out []Run
-	for i, part := range strings.Split(run.Text, "\n") {
-		if i > 0 {
-			out = append(out, Run{Text: "\n"})
-		}
-		for len(part) > 0 {
-			end := 0
-			for end < len(part) && part[end] != ' ' {
-				end++
-			}
-			for end < len(part) && part[end] == ' ' {
-				end++
-			}
-			head := run
-			head.Text, part = part[:end], part[end:]
-			out = append(out, head)
-		}
-	}
-	return out
-}
-
-// advance is the width of a piece in pixels: each rune in the first file of the group that has the glyph, plus the
-// kerning between neighbors; a text icon is as wide as the line is high. A glyph no file has is listed.
-func (resolver *resolver) advance(piece Run, typeface *face, height float64) float64 {
-	if piece.Icon != "" || typeface == nil {
-		return height
-	}
-	var total float64
-	previous := rune(-1)
-	for _, char := range piece.Text {
-		measured := false
-		for _, candidate := range typeface.files {
-			width, hasGlyph := candidate.GlyphAdvance(char)
-			if !hasGlyph {
-				continue
-			}
-			total += float64(width) / 64
-			if previous >= 0 {
-				total += float64(candidate.Kern(previous, char)) / 64
-			}
-			measured = true
-			break
-		}
-		if !measured {
-			resolver.missing.add("glyph", resolver.request.Language)
-		}
-		previous = char
-	}
-	return total
-}
-
-// lineHeight is how far apart the lines of a face's text sit: the first file's line height.
-func lineHeight(of *face) float64 {
-	if of == nil || len(of.files) == 0 {
-		return 0
-	}
-	return float64(of.files[0].Metrics().Height) / 64
 }
 
 // fileURL is the route's URL for a file, which names when the file changed so a changed file is read again.

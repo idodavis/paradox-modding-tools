@@ -1,4 +1,4 @@
-// drawservice.go is the visual editors' service: a GUI file's entries and the flat list Go resolves one into, under
+// drawservice.go is the visual editors' service: a GUI file's entries and the list of elements Go resolves one into, under
 // the open workspace's read lock for each call.
 
 package services
@@ -38,13 +38,13 @@ func (s *DrawService) GUI(workspaceID string, request draw.Request) (*draw.List,
 	return draw.GUI(ws, request)
 }
 
-// Properties is a part's properties as the Widgets panel lists them: each key's last value and who wrote it.
-func (s *DrawService) Properties(workspaceID string, request draw.Request, part int) ([]draw.Property, error) {
+// Properties is an element's properties as the Widgets panel lists them: each key's last value and who wrote it.
+func (s *DrawService) Properties(workspaceID string, request draw.Request, element int) ([]draw.Property, error) {
 	ws, err := s.workspaces.openWorkspace(workspaceID)
 	if err != nil {
 		return nil, err
 	}
 	ws.RLock()
 	defer ws.RUnlock()
-	return draw.Properties(ws, request, part)
+	return draw.Properties(ws, request, element)
 }

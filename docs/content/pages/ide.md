@@ -59,11 +59,12 @@ strip icon opens it again. A single click on a file in the explorer opens it in 
 next single click replaces; a double click on the file or its tab, an edit, or opening it from anywhere else keeps
 the tab. Visual draws the file's window or widget from the game's own data: its types and templates,
 textures, fonts and localization, at the resolution and UI scale you pick (**1280 by 720** up to **3840 by 2160**,
-**100%** to **200%**) and in the language you pick. It is a structural preview: the layout is the game's rules with no
-game running, so a vanilla window is a stress test of them, not a promise that it looks as it does in the game. The
+**100%** to **200%**) and in the language you pick. It is a structural preview: the window is laid out by the browser from the
+words the file writes, the same box model the game uses, with no game running, so a vanilla window is a stress test
+of it, not a promise that it looks as it does in the game. The
 toolbar chooses which window, type, template, text icon or format of the file to draw; a type, template, text icon or
-format is drawn by itself, at its own size. **Bounds** outlines every element. Zoom with **Ctrl** and the wheel, or
-**Fit**, **100%**, **−** and **+**. Click an element to select its widget; Split shows the code beside the picture, where
+format is drawn by itself, at its own size. **Bounds** outlines every widget. Zoom with **Ctrl** and the wheel, or
+**Fit**, **100%**, **−** and **+**. Click a widget to select it; Split shows the code beside the picture, where
 the caret and the selection follow each other and the selected widget's lines are marked.
 
 The Widgets panel shows where the selected widget sits (the way down to it from the window, each step a click), a
@@ -71,7 +72,7 @@ The Widgets panel shows where the selected widget sits (the way down to it from 
 who wrote each: the widget, or the type or template it comes from. Nothing the game would decide at runtime is
 simulated, and nothing asks you to answer it: a widget whose `visible` is a binding is drawn (hide it with the switch
 to see the window without it), a text that is a binding shows the binding itself, and a texture that is one is left
-empty. Two siblings shown on a binding and its negation (`[X]` and `[Not(X)]`) share one place, the second drawn
+empty. A tooltip is not drawn in its window, and a background lies under what its widget holds. Two siblings shown on a binding and its negation (`[X]` and `[Not(X)]`) share one place, the second drawn
 over the first, since the game shows one of them. A status line says what the game's files did not give: a template, texture or font that was not found, and how
 long the render took.
 

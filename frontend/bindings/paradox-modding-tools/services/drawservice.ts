@@ -32,8 +32,8 @@ export function GUI(workspaceID: string, request: draw$0.Request): $CancellableP
 }
 
 /**
- * Properties is a part's properties as the Widgets panel lists them: each key's last value and who wrote it.
+ * Properties is an element's properties as the Widgets panel lists them: each key's last value and who wrote it.
  */
-export function Properties(workspaceID: string, request: draw$0.Request, part: number): $CancellablePromise<draw$0.Property[] | null> {
-    return $Call.ByID(4086947928, workspaceID, request, part);
+export function Properties(workspaceID: string, request: draw$0.Request, element: number): $CancellablePromise<draw$0.Property[] | null> {
+    return $Call.ByID(4086947928, workspaceID, request, element);
 }

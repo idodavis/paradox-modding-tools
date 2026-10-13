@@ -1,6 +1,6 @@
 /**
  * A GUI file's window as its pane and its Widgets panel read it: the entries the file holds, the one drawn, the
- * part selected, the parts hidden, the request the toolbar's choices make of it and the list Go draws. Both read the
+ * element selected, the elements hidden, the request the toolbar's choices make of it and the list Go draws. Both read the
  * one query, so a window is drawn once.
  */
 import { computed, toValue, watch, type MaybeRefOrGetter } from "vue";
@@ -47,25 +47,25 @@ export function useDraw(workspaceId: MaybeRefOrGetter<string>, path: MaybeRefOrG
   });
   const selected = computed({
     get: () => store.selected.get(toValue(path)) ?? -1,
-    set: (part: number) => store.selected.set(toValue(path), part),
+    set: (element: number) => store.selected.set(toValue(path), element),
   });
 
   const request = computed(() => store.requestOf(toValue(path), entry.value));
   const { data, error } = useQuery(() => drawQuery({ id: toValue(workspaceId), request: request.value }));
   const list = computed(() => data.value?.list ?? null);
-  const parts = computed(() => list.value?.parts ?? []);
+  const elements = computed(() => list.value?.elements ?? []);
   const renderedMs = computed(() => data.value?.renderedMs ?? 0);
 
-  // the parts hidden for the session, and every part under one of them: a hidden widget takes what it holds with it
+  // the elements hidden for the session, and every element under one of them: a hidden widget takes what it holds with it
   const hidden = computed(() => {
     const chosen = store.hidden.get(toValue(path));
     const all = new Set<number>();
     if (!chosen?.size) return all;
-    parts.value.forEach((part, index) => {
-      if (chosen.has(index) || all.has(part.parent)) all.add(index);
+    elements.value.forEach((element, index) => {
+      if (chosen.has(index) || all.has(element.parent)) all.add(index);
     });
     return all;
   });
 
-  return { entries, entry, selected, request, list, parts, hidden, renderedMs, error };
+  return { entries, entry, selected, request, list, elements, hidden, renderedMs, error };
 }

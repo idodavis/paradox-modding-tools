@@ -756,66 +756,32 @@ func (layout Layout) Nested(rel string) (rows []Descriptor) {
 	return rows
 }
 
-// ---- Widgets: how a built-in widget kind arranges its children, and what a binding answers with no game running.
+// ---- Widgets: what a widget-valued block is to the widget that writes it, and the state a window opens in.
 
-// LayoutClass is how a built-in widget kind arranges its children.
-type LayoutClass uint8
+// WidgetRole is what a widget-valued block is to the widget that writes it: a child, laid out among its siblings and
+// drawn in written order (every block with no row), or one of the three the game treats apart.
+type WidgetRole string
 
-// The layout classes.
+// The roles a block has besides being a child.
 const (
-	LayoutPlain  LayoutClass = iota // children by their anchors and positions
-	LayoutRow                       // children side by side
-	LayoutColumn                    // children stacked
-	LayoutGrid                      // children in cells
-	LayoutFlow                      // children along a direction, wrapping
-	LayoutScroll                    // one content, clipped and scrolled
+	RoleSkin       WidgetRole = "skin"       // fills the widget and is drawn behind its children: a background
+	RoleChrome     WidgetRole = "chrome"     // sits at the widget's edge over its content: a scroll bar
+	RoleAttachment WidgetRole = "attachment" // shown on an event, never in the window: a tooltip
 )
 
-// LayoutClasses is each built-in kind that arranges its children by other than its anchors, by the kind's name; a
-// kind with no row is plain.
-var LayoutClasses = map[string]LayoutClass{
-	"hbox": LayoutRow, "uberhbox": LayoutRow,
-	"vbox": LayoutColumn, "ubervbox": LayoutColumn,
-	"fixedgridbox": LayoutGrid, "dynamicgridbox": LayoutGrid,
-	"flowcontainer": LayoutFlow,
-	"scrollarea":    LayoutScroll, "uberscrollarea": LayoutScroll, "scrollvbox": LayoutScroll,
+// WidgetSlot is a key whose block is a widget of a role: the role, and the kind the block is where the key names none.
+type WidgetSlot struct {
+	Role WidgetRole
+	Kind string
 }
 
-// Sizing is how a built-in widget kind finds its size on an axis it declares none for.
-type Sizing uint8
-
-// The sizings; a kind with no row is zero where it declares no size.
-const (
-	SizeChildren Sizing = iota + 1 // a row's or column's children summed along it, the widest across
-	SizeBounds                     // the bounds of its children placed by their anchors with no room
-	SizeCells                      // the bounds of its placed cells (a flow, a grid)
-	SizeParent                     // the room it is given: it fills what holds it
-	SizeText                       // its measured text
-	SizeTexture                    // its texture's pixels
-)
-
-// Sizings is each built-in kind that sizes by other than its declaration, by the kind's name. Vanilla CK3 writes a
-// size on under 3% of these and on 83% or more of the kinds left out (widget, margin_widget, scrollarea, window).
-var Sizings = map[string]Sizing{
-	"hbox": SizeChildren, "uberhbox": SizeChildren, "vbox": SizeChildren, "ubervbox": SizeChildren,
-	"container": SizeBounds, "button_group": SizeBounds,
-	"flowcontainer": SizeCells, "fixedgridbox": SizeCells, "dynamicgridbox": SizeCells,
-	"background": SizeParent,
-	"textbox":    SizeText, "ubertextbox": SizeText, "editbox": SizeText, "debug_textbox": SizeText,
-	"icon": SizeTexture,
-}
-
-// LayoutPolicy is what a layoutpolicy word means for a widget's sizes in a row or column.
-type LayoutPolicy struct {
-	Grows   bool // takes extra room
-	Shrinks bool // gives room below its preferred size, down to its minimum
-	Fixed   bool // its preferred size is its minimum and maximum
-}
-
-// LayoutPolicies are the five policy words, read without regard to case.
-var LayoutPolicies = map[string]LayoutPolicy{
-	"expanding": {Grows: true, Shrinks: true}, "growing": {Grows: true}, "preferred": {Shrinks: true},
-	"shrinking": {Shrinks: true}, "fixed": {Fixed: true},
+// WidgetSlots are the keys whose block is a widget with a role of its own, by the key's lower-cased name. Vanilla CK3
+// writes background 2,305 times, tooltipwidget 627, scrollbar_vertical 59 and scrollbar_horizontal 12.
+var WidgetSlots = map[string]WidgetSlot{
+	"background":           {Role: RoleSkin},
+	"tooltipwidget":        {Role: RoleAttachment},
+	"scrollbar_vertical":   {Role: RoleChrome, Kind: "scrollbar"},
+	"scrollbar_horizontal": {Role: RoleChrome, Kind: "scrollbar"},
 }
 
 // OpeningState is the state a window runs as the game opens it; a state with trigger_on_create = yes runs too.

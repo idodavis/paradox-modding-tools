@@ -663,10 +663,10 @@ func TestDrawService(t *testing.T) {
 	}
 	request := draw.Request{
 		Path: filepath.Join("internal", "testdata", gameCK3, "game", "gui", "v_window.gui"), Name: "v_window",
-		Width: 1920, Height: 1080, Scale: 1, Language: game.BaseLanguage,
+		Width: 1920, Height: 1080, Language: game.BaseLanguage,
 	}
 	list, err := service.GUI("ws", request)
-	if err != nil || len(list.Parts) == 0 {
+	if err != nil || len(list.Elements) == 0 {
 		t.Fatalf("a window drawn: %v", err)
 	}
 	if _, err := service.GUI("nobody", request); err == nil {

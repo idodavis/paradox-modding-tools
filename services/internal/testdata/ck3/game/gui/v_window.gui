@@ -60,6 +60,8 @@ window = {
 type window = window { }
 type widget = widget { }
 type icon = icon { }
+type scrollarea = scrollarea { }
+type scrollbar = scrollbar { }
 type v_tab = button {
 	layoutpolicy_horizontal = expanding
 }
@@ -115,6 +117,13 @@ window = {
 		name = "v_footer"
 		parentanchor = bottom|hcenter
 		icon = { size = { 10 10 } }
+	}
+	scrollarea = {
+		name = "v_scroll"
+		size = { 50 50 }
+		scrollbar_vertical = { name = "v_bar" }
+		tooltipwidget = { name = "v_tip" }
+		vbox = { }
 	}
 	vbox = {
 		name = "v_either"

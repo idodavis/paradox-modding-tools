@@ -52,7 +52,7 @@ export const releaseKeys = {
 
 export const wikiKeys = { all: ["wiki"] as const };
 
-/** A GUI file's drawn list, a part's properties and the entries it holds; a file's change reads them again. */
+/** A GUI file's drawn list, an element's properties and the entries it holds; a file's change reads them again. */
 export const drawKeys = {
   list: ["draw"] as const,
   properties: ["draw-properties"] as const,
@@ -317,16 +317,7 @@ export type Rendered = { path: string; list: List | null; renderedMs: number };
 
 /** A GUI file's window drawn as a list, the one drawn kept while the next is read; only while the workspace is open. */
 export const drawQuery = defineQueryOptions(({ id, request }: { id: string; request: DrawRequest }) => ({
-  key: [
-    ...drawKeys.list,
-    id,
-    request.path,
-    request.name,
-    request.width,
-    request.height,
-    request.scale,
-    request.language,
-  ],
+  key: [...drawKeys.list, id, request.path, request.name, request.width, request.height, request.language],
   query: async (): Promise<Rendered> => {
     const startTime = performance.now();
     const list = await GUI(id, request);
@@ -336,9 +327,9 @@ export const drawQuery = defineQueryOptions(({ id, request }: { id: string; requ
   placeholderData: (previous: Rendered | undefined) => (previous?.path === request.path ? previous : undefined),
 }));
 
-/** A part's properties of a drawn window, each with who wrote it and the choices its input offers. */
+/** An element's properties of a drawn window, each with who wrote it and the choices its input offers. */
 export const propertiesQuery = defineQueryOptions(
-  ({ id, request, part }: { id: string; request: DrawRequest; part: number }) => ({
+  ({ id, request, element }: { id: string; request: DrawRequest; element: number }) => ({
     key: [
       ...drawKeys.properties,
       id,
@@ -346,12 +337,11 @@ export const propertiesQuery = defineQueryOptions(
       request.name,
       request.width,
       request.height,
-      request.scale,
       request.language,
-      part,
+      element,
     ],
-    query: async () => (await Properties(id, request, part)) ?? [],
-    enabled: useWorkspaceStore().isOpen(id) && !!request.path && !!request.name && part >= 0,
+    query: async () => (await Properties(id, request, element)) ?? [],
+    enabled: useWorkspaceStore().isOpen(id) && !!request.path && !!request.name && element >= 0,
   }),
 );
 

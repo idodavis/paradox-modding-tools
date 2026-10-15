@@ -49,34 +49,99 @@ compare, Compare with selected and Copy path. Drag a tab onto another tab to reo
 split there; groups nest in rows and columns, and the same file can be open in several groups. When there are more
 tabs than fit, the strip scrolls (with the mouse wheel too).
 
-Above the editor, the path to the file and, at the caret, the blocks it is in. A Markdown file has a **Raw** /
-**Rich** switch there: Raw is its text, Rich the same editor as Publish's description.
+Above the editor, the path to the file and, at the caret, the blocks it is in.
 
-A GUI file (**.gui**) has a **Code** / **Visual** / **Split** switch there, and a button for its **Widgets** panel in
-the right column, which is open while the file is drawn (Visual or Split) until you close it. The file opens in
-Split; the IDE settings' Editor tab picks what each kind of file with views opens in. The sidebar folds to a strip of its tabs when you click the open tab's icon again or drag it shut, and a
-strip icon opens it again. A single click on a file in the explorer opens it in a preview tab, in italics, which the
-next single click replaces; a double click on the file or its tab, an edit, or opening it from anywhere else keeps
-the tab. Visual draws the file's window or widget from the game's own data: its types and templates,
-textures, fonts and localization, at the resolution and UI scale you pick (**1280 by 720** up to **3840 by 2160**,
-**100%** to **200%**) and in the language you pick. It is a structural preview: the window is laid out by the browser from the
-words the file writes, the same box model the game uses, with no game running, so a vanilla window is a stress test
-of it, not a promise that it looks as it does in the game. The
-toolbar chooses which window, type, template, text icon or format of the file to draw; a type, template, text icon or
-format is drawn by itself, at its own size. **Bounds** outlines every widget. Zoom with **Ctrl** and the wheel, or
-**Fit**, **100%**, **−** and **+**; drag the floor to pan, or use the wheel alone. An entry drawn alone is shown whole, whatever hangs
-outside its own box included. Click a widget to select it; Split shows the code beside the picture, where
-the caret and the selection follow each other and the selected widget's lines are marked.
+A file with views switches them at the end of the tab strip, and **Ctrl Shift V** cycles through them: a Markdown file's
+**Raw** and **Rich** (Raw is its text, Rich the same editor as Publish's description), and a GUI file's (**.gui**)
+**Code**, **Split** and **Visual**. The strip ends with the switch of the pane beside the editor: a GUI file's
+**Widgets** panel and, in the group at the top right, the **Wiki** pane, the one shown tinted; click it again to close
+it. The pane opens beside the editor, under the group's tabs and path; the Widgets panel is open while the file is
+drawn (Visual or Split) until you close it. A GUI file opens in Split; the IDE settings' Visual view tab picks what it
+opens in and whether its Widgets panel opens with the picture, and the Editor tab what Markdown and SVG files open in.
 
-The Widgets panel shows where the selected widget sits (the way down to it from the window, each step a click), a
-**Shown** switch that hides the widget and everything in it until the app closes, and its properties as written, with
-who wrote each: the widget, or the type or template it comes from. Nothing the game would decide at runtime is
-simulated, and nothing asks you to answer it: a widget whose `visible` is a binding is drawn (hide it with the switch
-to see the window without it), a text that is a binding shows the binding itself, and a texture that is one shows the
-binding written in its box. An entry with nothing to draw, a type with no size and no texture of its own, says so on
-the floor. A tooltip is not drawn in its window, and a background lies under what its widget holds. Two siblings shown on a binding and its negation (`[X]` and `[Not(X)]`) share one place, the second drawn
-over the first, since the game shows one of them. A status line says what the game's files did not give: a template, texture or font that was not found, and how
-long the render took.
+The sidebar folds to a strip of its tabs when you click the open tab's icon again or drag it shut, and a strip icon
+opens it again. A single click on a file in the explorer opens it in a preview tab, in italics, which the next single
+click replaces; a double click on the file or its tab, an edit, or opening it from anywhere else keeps the tab.
+
+Visual draws the file's window or widget from the game's own data: its types and templates, textures, fonts and
+localization, at the resolution you pick (**1280 × 720** up to **3840 × 2160**, the ultrawide **3440 × 1440** among
+them) and in the workspace's language, at the game's 100% interface scale. It is a preview, not the game: each widget is
+drawn by the properties the file writes, each meaning in the browser what the game's wiki says it means (a box centers
+its children and spreads them out unless an `expand` pushes them aside), with no game running, so a vanilla window is
+a stress test of it, not a promise that it looks as it does in the game.
+
+The toolbar's picker chooses what of the file to draw, grouped as windows, types, templates, text icons and formats,
+each with the line it starts on; a file opens on its first window. A type, template, text icon or format is drawn by
+itself, at its own size. **Bounds** outlines every widget. **States** lists the conditions the window shows its widgets
+on, grouped by call: the tabs of `IsTabSelected('a')` and `IsTabSelected('b')` are one group, a flag and its `Not(...)`
+the same group. Each group is drawn at one of its values, its first unless you pick another, or at every value or none,
+so the window is drawn in one state instead of every tab and popup at once. Two kinds of group are drawn at none until
+you pick a value: the pages of a column after its first, where each of its widgets shown on a condition has a group of
+its own (EU5's government tabs), and a group that shows only widgets outside the window, a side window or tool the game
+opens on a click. The resolution and
+Bounds are also in the IDE settings' **Visual view** tab, with **Rows per list**: how many rows a data
+model's list is drawn with, one by default, since the game fills it. A window is drawn on a screen of the resolution,
+framed, with its size at the corner, where the game puts it: an EU5 lateral view in the left panel under the top bar,
+a Victoria 3 panel under its top bar, beside the side bar.
+Drag the floor to pan, or use the wheel alone; zoom with **Ctrl** and the wheel, or with **−** and **+** in the bar
+under the floor, whose percentage goes back to **100%** when clicked. **Fit** shows the window whole, or an entry drawn
+alone with whatever hangs outside its own box, and keeps it so as the pane changes size until you pan or zoom.
+
+Click a widget to select it: it is outlined, with a chip that gives its type, key, name and size, and the widget under
+the pointer is outlined the same way in the link color. A click picks the smallest widget drawn under the pointer, the
+topmost of equal ones, whatever the game lets the mouse do: a text in its frame, a button in its panel; a click on a
+widget's background selects the widget, and one on the floor around the picture, or **Esc**, selects nothing. A widget
+that draws nothing of its own, a box or a spacer, is selected from the panel's path, with the Up key or from its code,
+and a right-click lists every widget drawn under the pointer. Split shows
+the code beside the picture, where the caret and the selection follow each other and the selected widget's lines are
+marked. Right-click a widget for its menu: the widgets drawn under the pointer, to select one under another; select
+its parent, hide or show it, show everything hidden, go to its code, open the type it is made from, and copy its name
+or its path. With the picture
+focused, the keys move the selection:
+
+| Keys | Does |
+|------|------|
+| **↑** / **↓** | Select the parent / the first child |
+| **←** / **→** | Select the sibling before / after |
+| **H** / **Shift H** | Hide or show the selected widget / show everything hidden |
+| **Enter** | Go to the selected widget's code |
+| **F** | Fit the selected widget |
+| **Esc** | Select nothing |
+
+In Split the code and the picture point at each other. The pointer on a widget's code outlines the widget in the
+picture, and the pointer on a widget tints its lines in the code. An eye before each widget's first line hides it until
+the app closes, its code dimmed while it is hidden; after that line comes the size the picture lays it out at, in orange
+where it is nothing, with how many rows a data model draws. With the caret on a layout word, the picture draws what it
+does: a margin's bands with their widths, or an anchor's two points, the parent's and the widget's own, joined by the
+offset its position adds. What the game's files did not give is squiggled on the first line of the widget that asked for it, its
+sentence on the hover card, and marked on the widget with an orange badge.
+
+The bar under the floor says how long the render took, or that it is drawing again, how many things the game's files
+did not give, and how many widgets you hid. Click either count for its list, where a row selects its widget: the
+templates, textures and fonts that were not found, or the hidden widgets, each with an eye that shows it again, and
+**Show all**. A render that fails says why, with **Open in code** and **Try again**, and an entry with nothing to draw,
+a type with no size and no texture of its own, says so on the floor.
+
+The Widgets panel shows the way down to the selected widget from the window, each step a chip: pointing at a chip
+outlines its widget in the picture, and a click selects it. Under it the widget with
+**Go to code**, and a **Shown** switch that hides the widget and everything in it until the app closes. A widget whose
+`visible` is a binding says **Shown when** and the binding, with each group of conditions it reads and the value that
+group is drawn at, which you can change there as in **States**. Then its properties as written, grouped by who
+wrote them: the widget, then each type or template it comes from, each group linked to where it is written and each
+property a click away from its own line. With nothing selected, the panel says how to select a widget.
+
+Nothing the game would decide at runtime is simulated, and nothing asks you to answer it: a widget whose `visible` is a
+binding is drawn in the state **States** picks (hide it to see the window without it), and a binding in a text is a
+value the game fills, drawn `[…]` in the code's binding color, so it widens nothing; the panel's properties show it as
+written. A game
+concept's link is drawn as the game shows it: the concept's name (`[faith|E]`), or the text a `Concept('x', 'text')`
+link writes. A texture that is a binding draws the file the scan
+finds for it: the entry its call or its widget's data context names (a map mode's icon), by the file the entry's icon or
+texture names. Where none is found, and for a portrait, it shows a placeholder. A tooltip is not drawn in its window,
+and a background lies under what its widget holds. A box takes no room for a widget that is not drawn, as in the game,
+so the tab drawn takes the place the others would; in Victoria 3 a flow does the same, and elsewhere a flow or a
+container keeps the room unless it writes `ignoreinvisible = yes`, as the CK3 wiki documents. A frame of a sprite sheet
+is drawn alone, its slices included.
 
 The status bar shows the open files' errors and warnings, the git branch, then the caret's line and column, the
 indentation, the file's kind and its encoding (UTF-8, or UTF-8 BOM).
@@ -103,6 +168,7 @@ On Paradox script, localization and GUI files:
 | Folding | By the file's blocks |
 | Quick fixes | Add a missing UTF-8 BOM; create a missing localization key |
 | Inlay hints | A date in the mod's own calendar era, where the mod has one |
+| Colors | A swatch before every color a file writes: a tagged block (`rgb { }`, `hsv { }`), an untagged one under a key ending in `color` (`fontcolor`, a culture's `color`; not a portrait gene such as `hair_color`), a named color's entry and a coat of arms' color (`color1 = { 82 10 10 }`); click it for a picker that writes the color back as the block wrote it |
 | Event Graph | **Ctrl Shift G** draws the graph from the event at the caret |
 
 Right-click in the editor for the same actions, Show in Health, Format document, Cut, Copy, Paste and the command
@@ -199,7 +265,9 @@ a pull or push that needs one fails with git's message, so set up your credentia
 
 ## Wiki
 
-The Wiki pane shows the community wiki's pages for the file you are editing, as tabs ("Suggested for event
+The Wiki pane opens beside the editor of the main window's top-right group, under its tabs and path, from the
+**Wiki** button that ends that group's tab strip; a GUI file's Widgets panel takes its place there while the panel is
+open. It shows the community wiki's pages for the file you are editing, as tabs ("Suggested for event
 files"), and the page's contents beside it (drag their edge to resize them; the button beside them hides them). Its
 search keeps the pages it finds and marks its words in the page, as Patch Notes' find does: **Enter** and **Shift
 Enter** for the next and previous match, and **Ctrl F**, outside the editor, puts the cursor in it. It follows the
@@ -228,7 +296,6 @@ Parts of PMT open in windows of their own, to put on another screen:
   window mark; click it to bring that window to the front, or use the folder's menu, **Close the window**.
 - **The panel.** The window button in the panel's header. It shows the problems of every window's files, and a row
   opens its file where it is open.
-
 Drag a tab onto another window's tabs or editor to move it there: a line between the tabs, or a highlighted half
 of the editor, shows where it lands. Drop it outside every window for a window of its own. The Game files window
 takes only game files.
@@ -266,6 +333,7 @@ They apply to every workspace. Each tab can be reset to its defaults.
 | **Ctrl J** | The panel |
 | **Ctrl Shift W** | The Wiki pane |
 | **Ctrl \\** | Split the editor right |
+| **Ctrl Shift V** | Cycle a file's views: Code, Split, Visual (Raw, Rich for Markdown) |
 | **Ctrl F** / **Ctrl H** | Find / replace in the file |
 | **Ctrl Z** / **Ctrl Y** in the explorer | Undo / redo a rename, move or delete |
 | **F12**, **Alt F12**, **Shift F12**, **Shift Alt F12** | Definition, peek, references, all references |

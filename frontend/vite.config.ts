@@ -94,16 +94,24 @@ export default defineConfig({
       },
       ui: {
         // a pane's resize handle takes no room: a 2px line on the border between two panes, the accent on hover and
-        // while dragging (reka's hit area reaches past it)
+        // while dragging, grabbed on a strip 4px into each pane over the panes' own layers (Monaco's scrollbar is at
+        // z-index 11), since a press that lands in a pane is taken there (Monaco, the floor's camera) before reka,
+        // which listens on the body, hears it
         splitter: {
           slots: {
             handle:
-              "z-10 after:absolute after:bg-(--line-1) data-[state=hover]:after:bg-primary data-[state=drag]:after:bg-primary",
+              "z-20 before:absolute after:absolute after:bg-(--line-1) data-[state=hover]:after:bg-primary data-[state=drag]:after:bg-primary",
           },
           variants: {
             orientation: {
-              horizontal: { handle: "w-0 after:inset-y-0 after:start-1/2 after:w-0.5 after:-translate-x-1/2" },
-              vertical: { handle: "h-0 after:inset-x-0 after:top-1/2 after:h-0.5 after:-translate-y-1/2" },
+              horizontal: {
+                handle:
+                  "w-0 before:inset-y-0 before:-inset-x-1 after:inset-y-0 after:start-1/2 after:w-0.5 after:-translate-x-1/2",
+              },
+              vertical: {
+                handle:
+                  "h-0 before:inset-x-0 before:-inset-y-1 after:inset-x-0 after:top-1/2 after:h-0.5 after:-translate-y-1/2",
+              },
             },
           },
         },

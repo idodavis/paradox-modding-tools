@@ -3,6 +3,9 @@
 
 // eslint-disable-next-line @typescript-eslint/ban-ts-comment
 // @ts-ignore: Unused imports
+import * as game$0 from "../game/models.js";
+// eslint-disable-next-line @typescript-eslint/ban-ts-comment
+// @ts-ignore: Unused imports
 import * as jomini$0 from "../jomini/models.js";
 // eslint-disable-next-line @typescript-eslint/ban-ts-comment
 // @ts-ignore: Unused imports
@@ -233,6 +236,14 @@ export interface Signature {
     "label": string;
     "parameters": string[] | null;
     "docs"?: string;
+}
+
+/**
+ * Swatch is a color a file writes: the value that writes it and the color it makes.
+ */
+export interface Swatch {
+    "range": Range;
+    "color": game$0.RGBA;
 }
 
 /**

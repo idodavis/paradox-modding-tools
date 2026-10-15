@@ -6,13 +6,13 @@
  */
 import { defineQueryOptions } from "@pinia/colada";
 import { GetVersion } from "@services/appservice";
-import { Entries, GUI, Properties } from "@services/drawservice";
+import { List, Properties } from "@services/drawservice";
 import { LastRunCrashed } from "@services/logservice";
 import { ReadImageFacts, ReadText } from "@services/fileservice";
 import { GetEventDetail, GetEventGraph, SearchRoots } from "@services/eventgraphservice";
 import { GetHealth, GetLines, LocReaders } from "@services/healthservice";
 import type { GitCommit } from "@services/models";
-import type { List, Request as DrawRequest } from "@services/internal/draw";
+import type { List as DrawList, Request as DrawRequest } from "@services/internal/draw";
 import type { EventGraph, Params, Roots, SourceAt } from "@services/internal/pages/models";
 import { DiagnosticCodes, DocumentSymbols, FindLoc, Hover, ReplacedBy } from "@services/ideservice";
 import { FileSearch } from "@services/searchservice";
@@ -52,12 +52,14 @@ export const releaseKeys = {
 
 export const wikiKeys = { all: ["wiki"] as const };
 
-/** A GUI file's drawn list, an element's properties and the entries it holds; a file's change reads them again. */
+/** A GUI file's drawn list and an element's properties; a file's change reads them again. */
 export const drawKeys = {
   list: ["draw"] as const,
   properties: ["draw-properties"] as const,
-  entries: ["draw-entries"] as const,
 };
+
+/** The names a file defines, which the command palette and the Visual view's entry picker list; an edit changes them. */
+export const symbolKeys = { all: ["ide", "symbols"] as const };
 
 /** The source lines of the open workspace's places, which an edit of a file changes. */
 export const linesKeys = (id: string) => [...workspaceKeys.open(id), "lines"] as const;
@@ -299,49 +301,33 @@ export const locQuery = defineQueryOptions(({ id, prefix }: { id: string; prefix
 
 /** The names a file defines. */
 export const symbolsQuery = defineQueryOptions(({ id, path }: { id: string; path: string }) => ({
-  key: ["ide", "symbols", path],
+  key: [...symbolKeys.all, path],
   query: async () => (await DocumentSymbols(id, path)) ?? [],
   enabled: !!id && !!path,
 }));
 
-/** What a GUI file can draw: its windows, types, templates, text icons and formats, in file order. */
-export const entriesQuery = defineQueryOptions(({ id, path }: { id: string; path: string }) => ({
-  key: [...drawKeys.entries, id, path],
-  query: async () => (await Entries(id, path)) ?? [],
-  enabled: useWorkspaceStore().isOpen(id) && !!path,
-}));
-
 /** A drawn window: the file it is of (a list kept while the next is read must be that file's), the list, and the
  * milliseconds Go took. */
-export type Rendered = { path: string; list: List | null; renderedMs: number };
+export type Rendered = { path: string; list: DrawList | null; renderedMs: number };
 
-/** A GUI file's window drawn as a list, the one drawn kept while the next is read; only while the workspace is open. */
+/** A file's entry drawn as a list, the one drawn kept while the next is read; only while the workspace is open. */
 export const drawQuery = defineQueryOptions(({ id, request }: { id: string; request: DrawRequest }) => ({
-  key: [...drawKeys.list, id, request.path, request.name, request.width, request.height, request.language],
+  key: [...drawKeys.list, id, request.path, request.id, request.database],
   query: async (): Promise<Rendered> => {
     const startTime = performance.now();
-    const list = await GUI(id, request);
+    const list = await List(id, request);
     return { path: request.path, list, renderedMs: Math.round(performance.now() - startTime) };
   },
-  enabled: useWorkspaceStore().isOpen(id) && !!request.path && !!request.name,
+  enabled: useWorkspaceStore().isOpen(id) && !!request.path && !!request.id,
   placeholderData: (previous: Rendered | undefined) => (previous?.path === request.path ? previous : undefined),
 }));
 
-/** An element's properties of a drawn window, each with who wrote it and the choices its input offers. */
+/** An element's properties of a drawn entry, each with who wrote it and where. */
 export const propertiesQuery = defineQueryOptions(
   ({ id, request, element }: { id: string; request: DrawRequest; element: number }) => ({
-    key: [
-      ...drawKeys.properties,
-      id,
-      request.path,
-      request.name,
-      request.width,
-      request.height,
-      request.language,
-      element,
-    ],
+    key: [...drawKeys.properties, id, request.path, request.id, request.database, element],
     query: async () => (await Properties(id, request, element)) ?? [],
-    enabled: useWorkspaceStore().isOpen(id) && !!request.path && !!request.name && element >= 0,
+    enabled: useWorkspaceStore().isOpen(id) && !!request.path && !!request.id && element >= 0,
   }),
 );
 

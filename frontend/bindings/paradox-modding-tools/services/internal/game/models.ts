@@ -41,8 +41,37 @@ export interface GameList {
 }
 
 /**
- * WidgetRole is what a widget-valued block is to the widget that writes it: a child, laid out among its siblings and
- * drawn in written order (every block with no row), or one of the three the game treats apart.
+ * Holding is how a built-in type holds its children.
+ */
+export enum Holding {
+    /**
+     * The Go zero value for the underlying type of the enum.
+     */
+    $zero = "",
+
+    /**
+     * The holdings; the zero value holds children by their anchors.
+     */
+    HoldsRow = "row",
+    HoldsColumn = "column",
+    HoldsFlow = "flow",
+    HoldsGrid = "grid",
+    HoldsScroll = "scroll",
+    HoldsCell = "cell",
+};
+
+/**
+ * RGBA is a color, each part from 0 to 1.
+ */
+export interface RGBA {
+    "r": number;
+    "g": number;
+    "b": number;
+    "a": number;
+}
+
+/**
+ * WidgetRole is what a widget-valued block is to the widget that writes it: a child ("") or one of the four below.
  */
 export enum WidgetRole {
     /**
@@ -53,12 +82,12 @@ export enum WidgetRole {
     /**
      * The roles a block has besides being a child.
      *
-     * fills the widget and is drawn behind its children: a background
+     * fills the widget, drawn behind its children: a background
      */
     RoleSkin = "skin",
 
     /**
-     * sits at the widget's edge over its content: a scroll bar
+     * sits at the widget's edge: a scroll bar
      */
     RoleChrome = "chrome",
 
@@ -66,4 +95,9 @@ export enum WidgetRole {
      * shown on an event, never in the window: a tooltip
      */
     RoleAttachment = "attachment",
+
+    /**
+     * holds the widget that draws its widget's text: buttonText
+     */
+    RoleLabel = "label",
 };

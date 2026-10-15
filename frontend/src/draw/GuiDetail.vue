@@ -1,126 +1,231 @@
 <script setup lang="ts">
 /**
- * The Widgets panel of a GUI file: under the file's header, where the selected widget sits (its ancestors, each a
- * click away), whether it is shown for this session, and its properties as written in the code's colors, grouped by
- * who wrote them: the widget itself first, then each type or template it comes from. The selection is the pane's or
- * the caret's.
+ * The Widgets panel of a GUI file: under the file's header, the way down to the selected widget as chips (the one the
+ * pointer is on is the picture's hovered widget, outlined there); the widget, a link to its code and whether it is
+ * shown for this session; the condition it is shown on, with the state each group it reads is drawn at; and its
+ * properties as written, grouped by who wrote them, each a link to where it is written. The selection is the
+ * picture's or the caret's.
  */
-import { computed } from "vue";
+import { computed, onScopeDispose } from "vue";
 import { useQuery } from "@pinia/colada";
 import type { BreadcrumbItem } from "@nuxt/ui";
-import type { Property } from "@services/internal/draw";
-import { useDraw } from "../composables/useDraw";
-import { useIdeRoots } from "../composables/useIdeRoots";
+import type { Location } from "@services/internal/lsp";
+import { pathKey, useIdeRoots } from "../composables/useIdeRoots";
 import { fileName } from "../lib/format";
 import { propertiesQuery } from "../queries";
-import { useDrawStore } from "../stores/draw";
+import { useDraw, useDrawStore } from "../stores/draw";
 import DetailHeader from "../ui/DetailHeader.vue";
 import ScriptSnippet from "../ui/ScriptSnippet.vue";
+import { choicesOf, groupsOf, stateOf, typeIcon } from "./widgets";
 
 const { workspaceId, path } = defineProps<{ workspaceId: string; path: string }>();
 
-/** A widget on the way to the selected one: its row of the breadcrumb and its element. */
-type Crumb = BreadcrumbItem & { element: number };
+/** A widget on the way to the selected one: its key as the label, a name of its own ("" for none), its element. */
+type Crumb = BreadcrumbItem & { name: string; element: number };
 
 const store = useDrawStore();
 const { locate } = useIdeRoots(() => workspaceId);
-const located = computed(() => locate(path));
-const { selected, request, elements } = useDraw(
+const root = computed(() => locate(path)?.root);
+const { file, request, list, elements } = useDraw(
   () => workspaceId,
   () => path,
 );
 
 // the selected element and the way down to it, root first
-const element = computed(() => elements.value[selected.value]);
-const crumbs = computed(() => {
-  const items: Crumb[] = [];
-  for (let at = selected.value; at >= 0; at = elements.value[at].parent) {
-    const one = elements.value[at];
-    items.unshift({ label: one.name || one.key, element: at });
-  }
-  return items;
-});
-
-// whether the selected element itself is hidden for the session (one under a hidden element is drawn with it again)
-const shown = computed(() => !store.hidden.get(path)?.has(selected.value));
-
-const { data: properties } = useQuery(() =>
-  propertiesQuery({ id: workspaceId, request: request.value, element: element.value ? selected.value : -1 }),
+const selection = computed(() => file.value.selection);
+const element = computed(() => elements.value[selection.value]);
+const crumbs = computed(() =>
+  [...(element.value?.ancestors ?? []), selection.value].flatMap((step): Crumb[] => {
+    const crumb = elements.value[step];
+    if (!crumb) return [];
+    return [
+      { label: crumb.key, name: crumb.name !== crumb.key ? crumb.name : "", icon: typeIcon(crumb.type), element: step },
+    ];
+  }),
 );
 
-// the properties by who wrote them, the widget's own first, then each writer as it first appears
-const groups = computed(() => {
-  const by = new Map<string, Property[]>([["", []]]);
-  for (const property of properties.value ?? []) {
-    const rows = by.get(property.writtenBy) ?? [];
-    rows.push(property);
-    by.set(property.writtenBy, rows);
-  }
-  return [...by].filter(([, rows]) => rows.length).map(([writer, rows]) => ({ writer, rows }));
+/** Makes a step of the path the picture's hovered widget; -1 for none. */
+const point = (step: number) => (file.value.hover = step);
+
+/** A chip's look: the selected widget's in the accent, the hovered one's in the link color, any other plain. */
+function chipClass(index: number): string {
+  if (index === selection.value) return "border-primary/45 bg-(--accent-soft) text-primary";
+  if (index === file.value.hover) return "border-secondary/45 bg-(--link-soft) text-secondary";
+  return "border-transparent text-dimmed hover:bg-accented";
+}
+
+// a panel closed while a chip is pointed at leaves no mark on the picture
+onScopeDispose(() => point(-1));
+
+// whether the selected element itself is hidden for the session (one under a hidden element is drawn with it again)
+const isShown = computed(() => !file.value.hidden.has(selection.value));
+
+// the groups the selected element's condition reads, each with the value it is drawn at and its choices
+const conditionGroups = computed(() => {
+  const condition = element.value?.condition;
+  if (!condition) return [];
+  return groupsOf(condition).flatMap((index) => {
+    const group = list.value?.groups?.[index];
+    return group ? [{ call: group.call, value: stateOf(file.value, group), items: choicesOf(group) }] : [];
+  });
 });
+
+const { data: properties } = useQuery(() =>
+  propertiesQuery({ id: workspaceId, request: request.value, element: element.value ? selection.value : -1 }),
+);
+
+// the properties by who wrote them, the widget's own first, then each writer as it first appears (the sort is
+// stable); a writer's location is where it writes its first row
+const writers = computed(() =>
+  [...Map.groupBy(properties.value ?? [], (property) => property.writer)]
+    .sort(([a], [b]) => Number(a !== "") - Number(b !== ""))
+    .map(([writer, rows]) => ({ writer, rows, location: rows[0].location })),
+);
+
+/** A location as a card's link writes it: the line alone in this file, else the file and the line. */
+function linkText(location: Location): string {
+  const line = location.range.start.line + 1;
+  return pathKey(location.path) === pathKey(path) ? `L${line}` : `${location.rel}:${line}`;
+}
 </script>
 
 <template>
   <aside class="flex min-h-0 min-w-0 flex-col border-s border-default bg-muted text-(length:--ide-ui-font)">
-    <DetailHeader kind="GUI" :origin="located?.root.origin ?? ''" :name="fileName(path)" />
-    <template v-if="element">
-      <UBreadcrumb
-        :items="crumbs"
-        class="border-b border-default px-3.5 py-2"
-        :ui="{ list: 'flex-wrap gap-x-1 gap-y-0.5', separatorIcon: 'size-3' }"
-      >
-        <template #item="{ item, active }">
-          <button
-            type="button"
-            class="font-mono text-11.5 break-all text-start"
-            :class="active ? 'text-highlighted' : 'text-toned hover:text-highlighted'"
-            @click="selected = item.element"
-          >
-            {{ item.label }}
-          </button>
-        </template>
-      </UBreadcrumb>
-      <div class="flex h-8 shrink-0 items-center gap-2 border-b border-default bg-elevated px-3.5 text-12">
-        <span class="text-muted">{{ element.kind }}</span>
+    <DetailHeader kind="GUI" :origin="root?.origin ?? ''" :name="fileName(path)" />
+    <template v-if="element && list">
+      <!-- the way down to the selected widget: the chip the pointer is on outlines its widget -->
+      <div class="mx-3 mt-3 rounded-lg border border-default bg-default p-1.25" @mouseleave="point(-1)">
+        <UBreadcrumb
+          :items="crumbs"
+          color="neutral"
+          :ui="{ list: 'flex-wrap gap-x-px gap-y-1', separatorIcon: 'size-3 text-dimmed' }"
+        >
+          <template #item="{ item }">
+            <button
+              type="button"
+              class="flex h-6 max-w-full min-w-0 items-center gap-1.25 rounded-sm border ps-1.25 pe-1.75 font-mono text-11.5 font-normal whitespace-nowrap"
+              :class="chipClass(item.element)"
+              :title="item.name ? `${item.label} ${item.name}` : item.label"
+              @mouseenter="point(item.element)"
+              @focus="point(item.element)"
+              @blur="point(-1)"
+              @click="file.selection = item.element"
+            >
+              <UIcon :name="item.icon ?? ''" class="size-3.25 shrink-0" />
+              <span class="truncate text-highlighted">{{ item.label }}</span>
+              <span v-if="item.name" class="truncate text-dimmed">{{ item.name }}</span>
+            </button>
+          </template>
+        </UBreadcrumb>
+      </div>
+      <div class="mt-3 flex h-10 shrink-0 items-center gap-2 border-y border-default px-3">
+        <span class="min-w-0 truncate font-mono text-13 font-semibold text-highlighted">{{ element.label }}</span>
+        <span class="shrink-0 text-11.5 text-dimmed">{{ element.type }}</span>
         <span class="grow" />
+        <UTooltip text="Put the caret where this widget is written">
+          <UButton
+            label="Go to code"
+            trailing-icon="i-lucide-arrow-up-right"
+            variant="ghost"
+            color="neutral"
+            size="xs"
+            class="shrink-0"
+            @click="store.goTo(path, element.location)"
+          />
+        </UTooltip>
         <USwitch
-          :model-value="shown"
+          :model-value="isShown"
           size="xs"
-          :label="shown ? 'Shown' : 'Hidden'"
-          :ui="{ label: 'text-11.5 text-muted' }"
-          @update:model-value="store.toggleHidden(path, selected)"
+          :label="isShown ? 'Shown' : 'Hidden'"
+          :ui="{ label: 'text-12 text-muted' }"
+          class="shrink-0"
+          @update:model-value="store.toggleHidden(path, [selection])"
         />
       </div>
-      <!-- one card per writer: a filled header naming it, its rows inside -->
-      <div class="flex min-h-0 flex-1 flex-col gap-3 overflow-auto p-3.5">
+      <!-- the condition the widget is shown on: the game answers it; the window is drawn at one value of each group -->
+      <UAlert
+        v-if="conditionGroups.length"
+        title="Shown when"
+        :description="element.visibleBinding"
+        color="secondary"
+        variant="subtle"
+        orientation="vertical"
+        class="mx-3 mt-2.5 w-auto shrink-0 px-2.5 py-2"
+        :ui="{
+          title: 'text-11.5 font-normal text-toned',
+          description: 'mt-1 font-mono text-11.5 break-all text-(--syn-ref) opacity-100',
+          actions: 'mt-1.5 w-full flex-col items-stretch gap-1',
+        }"
+      >
+        <template #actions>
+          <div v-for="group in conditionGroups" :key="group.call" class="flex items-center gap-2">
+            <span class="min-w-0 grow truncate font-mono text-11 text-dimmed" :title="group.call">{{
+              group.call
+            }}</span>
+            <USelect
+              :model-value="group.value"
+              :items="group.items"
+              size="xs"
+              class="w-40 shrink-0"
+              @update:model-value="(value) => store.setState(path, group.call, String(value))"
+            />
+          </div>
+        </template>
+      </UAlert>
+      <!-- one card per writer: its header names it and links to where it writes, each row a link of its own -->
+      <div class="flex min-h-0 flex-1 flex-col gap-2.5 overflow-auto p-3">
         <section
-          v-for="group in groups"
+          v-for="group in writers"
           :key="group.writer"
-          class="shrink-0 overflow-hidden rounded-lg border border-default bg-elevated"
+          class="shrink-0 overflow-hidden rounded-lg border border-default bg-default"
         >
-          <div class="flex h-7 items-center gap-1.5 border-b border-default bg-accented/40 px-3 text-11 text-toned">
-            <UIcon :name="group.writer ? 'i-lucide-layers-2' : 'i-lucide-square-dashed'" class="size-3.5 text-dimmed" />
+          <div
+            class="flex h-7.5 items-center gap-1.5 border-b border-default bg-elevated ps-2.5 pe-1.5 text-11.5 whitespace-nowrap text-dimmed"
+          >
+            <UIcon :name="group.writer ? 'i-lucide-layers' : 'i-lucide-pen'" class="size-3.25 shrink-0" />
             <template v-if="group.writer">
-              <span class="text-dimmed">from</span>
-              <span class="truncate font-mono font-semibold" :title="group.writer">{{ group.writer }}</span>
-            </template>
-            <span v-else class="font-semibold">This widget</span>
-          </div>
-          <div class="divide-y divide-default">
-            <div
-              v-for="property in group.rows"
-              :key="property.key"
-              class="grid grid-cols-[minmax(0,2fr)_minmax(0,3fr)] items-baseline gap-x-4 px-3 py-1.5 text-11.5 even:bg-accented/20"
-            >
-              <span class="truncate font-medium text-toned" :title="property.key">{{ property.key }}</span>
-              <span class="min-w-0 truncate text-end" :title="property.value">
-                <ScriptSnippet :text="property.value" :name="path" inline />
+              <span>from</span>
+              <span class="min-w-0 truncate font-mono font-medium text-highlighted" :title="group.writer">
+                {{ group.writer }}
               </span>
-            </div>
+            </template>
+            <span v-else>This widget</span>
+            <UTooltip text="Open where it is written">
+              <UButton
+                :label="linkText(group.location)"
+                trailing-icon="i-lucide-arrow-up-right"
+                variant="ghost"
+                color="neutral"
+                size="xs"
+                class="ms-auto min-w-0 px-1.25 py-0.5 font-mono text-11 text-dimmed hover:bg-accented hover:text-secondary"
+                :ui="{ label: 'truncate', trailingIcon: 'size-2.75' }"
+                @click="store.goTo(path, group.location)"
+              />
+            </UTooltip>
           </div>
+          <button
+            v-for="property in group.rows"
+            :key="property.key"
+            type="button"
+            class="group grid h-7 w-full grid-cols-[112px_minmax(0,1fr)_14px] items-center gap-x-3 ps-2.5 pe-2 text-start text-11.5 even:bg-accented/30 hover:bg-accented"
+            :title="`${property.key} = ${property.value}`"
+            @click="store.goTo(path, property.location)"
+          >
+            <span class="truncate font-medium text-toned">{{ property.key }}</span>
+            <span class="min-w-0 truncate text-end"><ScriptSnippet :text="property.value" :name="path" inline /></span>
+            <UIcon name="i-lucide-arrow-up-right" class="size-3.25 text-secondary opacity-0 group-hover:opacity-100" />
+          </button>
         </section>
       </div>
     </template>
-    <p v-else class="px-3.5 py-2 text-11 text-dimmed">Click a widget in the picture, or put the caret in one.</p>
+    <UEmpty
+      v-else
+      icon="i-lucide-mouse-pointer-click"
+      title="Select a widget"
+      description="Click it in the picture, or put the caret in its code."
+      variant="naked"
+      size="sm"
+      class="flex-1"
+    />
   </aside>
 </template>

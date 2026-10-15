@@ -28,6 +28,7 @@ type dependencyWalk struct {
 	sources  *sourceIndex
 	resolved map[[4]string][]index.At // by database, caller, id and file path
 	compared map[[2]index.At]bool     // whether a definition's statement differs from the one it hides
+	parses   workspace.Parses         // the files compared so far, each parsed once for the walk
 	rows     map[dependency]Dependency
 }
 
@@ -35,7 +36,7 @@ type dependencyWalk struct {
 func dependencies(ws *workspace.Session, sources *sourceIndex) []Dependency {
 	walk := &dependencyWalk{
 		ws: ws, sources: sources, resolved: map[[4]string][]index.At{}, compared: map[[2]index.At]bool{},
-		rows: map[dependency]Dependency{},
+		parses: workspace.Parses{}, rows: map[dependency]Dependency{},
 	}
 	for _, file := range loadedFiles(ws) {
 		walk.file(file)
@@ -145,8 +146,8 @@ func (walk *dependencyWalk) overridden(ref schema.Occurrence, path string, defs 
 	}
 	pair := [2]index.At{winner, base}
 	if _, done := walk.compared[pair]; !done && base != (index.At{}) {
-		_, winning := walk.ws.Statement(winner)
-		_, hidden := walk.ws.Statement(base)
+		_, winning := walk.ws.Statement(walk.parses, winner)
+		_, hidden := walk.ws.Statement(walk.parses, base)
 		walk.compared[pair] = !sameStatement(winning, hidden)
 	}
 	return base, walk.compared[pair]

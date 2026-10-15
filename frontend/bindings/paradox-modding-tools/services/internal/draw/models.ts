@@ -9,74 +9,92 @@ import * as game$0 from "../game/models.js";
 import * as lsp$0 from "../lsp/models.js";
 
 /**
- * Box is a rectangle in an image's pixels.
+ * Absent is a thing the game's files did not give: the status line's sentence and the element that asked (-1 none).
  */
-export interface Box {
-    "x": number;
-    "y": number;
-    "width": number;
-    "height": number;
+export interface Absent {
+    "text": string;
+    "element": number;
 }
 
 /**
- * Element is one widget of the entry, with where it is written and what the page lays it out and draws by.
+ * Condition is what a widget is shown on: a fact, one of the list's groups at a value, or a boolean over conditions.
+ */
+export interface Condition {
+    /**
+     * "" a fact
+     */
+    "operator": string;
+    "operands"?: Condition[] | null;
+    "group": number;
+    "value"?: string;
+}
+
+/**
+ * Element is one widget of the entry: where it is written and how it is named, how its type draws, and what it is
+ * drawn by: its properties as written, its textures, its text and what it is shown on.
  */
 export interface Element {
     /**
      * -1 at the root
      */
     "parent": number;
-
-    /**
-     * the statement's key: hbox, text_single
-     */
     "key": string;
 
     /**
-     * the built-in kind it resolves to
+     * the built-in type the key resolves to
      */
-    "kind": string;
+    "type": string;
+    "name": string;
 
     /**
-     * name = "…" where there is one
+     * the key, then the name where it has one of its own
      */
-    "name": string;
+    "label": string;
+
+    /**
+     * the labels from the window down
+     */
+    "path": string;
+    "ancestors": number[] | null;
     "location": lsp$0.Location;
 
     /**
-     * "" a child among its siblings; skin or chrome
+     * "" a child among its siblings
      */
     "role": game$0.WidgetRole;
+    "isItem": boolean;
+    "holds": game$0.Holding;
+    "clips": boolean;
+    "fills": boolean;
+    "centersText": boolean;
 
     /**
-     * visible = no: the widget keeps its place and shows nothing
+     * a hidden child of it takes no room
      */
-    "hidden": boolean;
+    "dropsHidden": boolean;
 
     /**
-     * a data model item's widget is drawn once a row; 0 for the rest
+     * visible = no, or visible_at_creation = no
      */
-    "rows": number;
+    "isHidden": boolean;
+    "visibleBinding": string;
+    "condition"?: Condition | null;
 
     /**
-     * the earlier sibling whose place this element shares, the game showing one of them; -1 none
+     * by lower-cased key, the last written, as written
      */
-    "pair": number;
+    "properties": { [_ in string]?: string } | null;
 
     /**
-     * the layout words as written, by lower-cased key
+     * its own, then its overlays
      */
-    "layout": { [_ in string]?: string } | null;
-
-    /**
-     * the widget's texture, then each overlay
-     */
-    "textures": Texture[] | null;
+    "textures": number[] | null;
+    "textureBinding": string;
     "text"?: Text | null;
 }
 
 /**
- * Font is one face the texts use: the game's font name, the style the file is for, and the file route's URL.
+ * Font is one face the texts use: the game's font name, its style and its file.
  */
 export interface Font {
     "name": string;
@@ -85,62 +103,69 @@ export interface Font {
 }
 
 /**
- * List is one render of a file's entry: its elements, pre-order, the fonts their texts use, and what nothing found.
+ * Group is a call widgets are shown on, its last quoted argument blanked, and the values its facts are written with.
  */
-export interface List {
-    /**
-     * the scene in pixels: a window's resolution; zero for an entry drawn alone, its own size
-     */
-    "width": number;
-
-    /**
-     * the scene in pixels
-     */
-    "height": number;
-    "elements": Element[] | null;
-    "fonts": Font[] | null;
-
-    /**
-     * what was not found, each a sentence the status line shows
-     */
-    "missing": string[] | null;
+export interface Group {
+    "call": string;
+    "values": string[] | null;
 }
 
 /**
- * Property is one resolved property of an element, as written, with the type or template that wrote it ("" the element
- * itself).
+ * List is one render of an entry: the widgets the game lays it out in, its elements in pre-order, the textures they
+ * draw and the fonts they use, each listed once, the calls they are shown on, and what nothing found.
+ */
+export interface List {
+    /**
+     * a type, template, text icon or format drawn by itself, not a window
+     */
+    "isAlone": boolean;
+
+    /**
+     * outermost first, each of its type row and properties alone
+     */
+    "holders": Element[] | null;
+    "elements": Element[] | null;
+    "textures": Texture[] | null;
+    "groups": Group[] | null;
+    "fonts": Font[] | null;
+    "missing": Absent[] | null;
+}
+
+/**
+ * Property is one property of an element as written, with the type or template that wrote it ("" the element) and
+ * where.
  */
 export interface Property {
     "key": string;
     "value": string;
-    "writtenBy": string;
+    "writer": string;
+    "location": lsp$0.Location;
 }
 
 /**
- * Request is what a GUI render is asked for: the file, the entry drawn, the resolution a window's percents are of,
- * and the language of its texts.
+ * Request is what a render is asked for: the file, and the entry's id and database ("" for the first of the id). Its
+ * texts are in the workspace's language.
  */
 export interface Request {
     "path": string;
-    "name": string;
-    "width": number;
-    "height": number;
-    "language": string;
+    "id": string;
+    "database": string;
 }
 
 /**
- * Run is one stretch of a text under one style; Icon is a text icon's URL, drawn in place of text.
+ * Run is one stretch of a text under one style: an icon drawn in place of text, or a data call drawn as a value.
  */
 export interface Run {
     "text": string;
-    "bold": boolean;
-    "italic": boolean;
+    "isBold": boolean;
+    "isItalic": boolean;
     "color": string;
     "icon": string;
+    "call": string;
 }
 
 /**
- * Text is an element's text as runs, in a font the Fonts name, at the size written; the browser breaks its lines.
+ * Text is an element's text as runs in a font at a size.
  */
 export interface Text {
     "font": string;
@@ -150,56 +175,41 @@ export interface Text {
 }
 
 /**
- * Texture is what an element paints from a file: the route's URL, the part of the image drawn, the slicing, the tint
- * and blend.
+ * Texture is what an element paints from a file: its size in the image's pixels over its density, its border in
+ * the screen's, its frame, tiling, mirror, fit, tint and blend, and the texture that masks it.
  */
 export interface Texture {
     "url": string;
-
-    /**
-     * the image's pixels
-     */
     "width": number;
-
-    /**
-     * the image's pixels
-     */
     "height": number;
+    "density": number;
 
     /**
-     * the part of the image drawn, in its pixels; the whole image when zero
-     */
-    "frame": Box;
-
-    /**
-     * spriteborder insets top, right, bottom, left; zero is stretched
+     * top, right, bottom, left
      */
     "border": number[];
-
-    /**
-     * corneredtiled
-     */
-    "tiled": boolean;
-    "mirror": boolean;
-
-    /**
-     * fittype as written, lower-cased
-     */
+    "isTiled": boolean;
+    "isMirrored": boolean;
     "fit": string;
 
     /**
-     * a CSS color; "" none
+     * the color the image is multiplied by, opaque; "" none
      */
     "tint": string;
 
     /**
-     * blend_mode as a CSS blend mode
+     * what the tint multiplies the image's alpha by; 1 none
      */
-    "blend": string;
+    "tintAlpha": number;
 
     /**
-     * the texture whose alpha masks this one, drawn as its own URL, frame and fit say: an overlay is masked by the
-     * widget's texture, the widget's texture by a mask overlay; nil for none
+     * a CSS blend mode
      */
-    "mask"?: Texture | null;
+    "blend": string;
+    "alpha": number;
+
+    /**
+     * the list's texture whose brightness masks this one; -1 none
+     */
+    "mask": number;
 }

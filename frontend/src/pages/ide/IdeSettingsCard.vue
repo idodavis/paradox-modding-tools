@@ -1,24 +1,26 @@
 <script setup lang="ts">
 /**
- * The IDE's settings: a card opened in the middle of the window
- * from the gear at the end of the sidebar's row. Editor, Language, Checks, Explorer and Wiki; each applies
- * to every workspace and its tab resets to the defaults.
+ * The IDE's settings: a card opened in the middle of the window from the gear at the end of the sidebar's row. Editor,
+ * Explorer, Language, Checks, Visual view (what a drawn kind of file opens in and whether its panel opens with the
+ * picture, and how a window is drawn) and Wiki; each applies to every workspace and its tab resets to the defaults.
  */
 import { computed, shallowRef } from "vue";
 import { useQuery } from "@pinia/colada";
-import { watchDebounced } from "@vueuse/core";
+import { createReusableTemplate, watchDebounced } from "@vueuse/core";
 import { codesQuery } from "../../queries";
-import { VIEW_ROWS, type ViewRow } from "../../editor/tabs";
+import { VIEW_ROWS, viewItems, type ViewRow } from "../../editor/tabs";
+import { RESOLUTIONS, useDrawStore } from "../../stores/draw";
 import { useEditorStore } from "../../stores/editor";
 import { switchesOf, useSettingsStore } from "../../stores/settings";
 import { TOAST_PREFS, useWikiPrefs } from "../../composables/useWikiPrefs";
 
-const TABS = ["editor", "language", "checks", "explorer", "wiki"] as const;
+const TABS = ["editor", "language", "checks", "explorer", "visual", "wiki"] as const;
 type Tab = (typeof TABS)[number];
 const isTab = (value: string | number): value is Tab => TABS.some((name) => name === value);
 
 const settings = useSettingsStore();
 const editor = useEditorStore();
+const draw = useDrawStore();
 const { toastPref, setToastPref } = useWikiPrefs();
 const tab = shallowRef<Tab>("editor");
 
@@ -30,6 +32,7 @@ const tabs = computed(() => [
   { label: "Explorer", value: "explorer", slot: "explorer" as const },
   { label: "Language", value: "language", slot: "language" as const },
   { label: "Checks", value: "checks", slot: "checks" as const, badge: codes.value?.length },
+  { label: "Visual view", value: "visual", slot: "visual" as const },
   { label: "Wiki", value: "wiki", slot: "wiki" as const },
 ]);
 
@@ -59,14 +62,14 @@ const FONTS = [
 const font = shallowRef(settings.editorFont);
 watchDebounced(font, (name) => settings.set("ui.editorFont", name?.trim() ?? ""), { debounce: 500 });
 
-// the view a kind of file opens in: the kinds with views (tabs.ts), each with its own names for them
-const OPENS = VIEW_ROWS.filter((row) => row.ext);
+// the kinds of file with views (tabs.ts), each with its own names for them: the Editor tab sets the view a kind with no
+// panel opens in; the Visual view tab sets it for a kind with a panel, and whether its panel opens with the picture
+const OPENS = VIEW_ROWS.filter((row) => row.ext && !row.panel);
+const VISUAL_ROWS = VIEW_ROWS.filter((row) => row.ext && row.panel);
 const viewKey = (row: ViewRow) => `ide.view.${row.ext}`;
-const viewsOf = (row: ViewRow) => [
-  { label: row.code, value: "code" },
-  ...(row.split ? [{ label: "Split", value: "split" }] : []),
-  { label: row.visual, value: "visual" },
-];
+const panelKey = (row: ViewRow) => `ide.panel.${row.ext}`;
+// the field that sets the view a kind opens in, written once for both tabs
+const [DefineViewField, ViewField] = createReusableTemplate<{ row: ViewRow }>();
 
 function setNumber(key: "ui.editorFontSize" | "ui.ideUiFontSize" | "ide.indentSize", value: string | number): void {
   settings.set(key, String(value));
@@ -87,6 +90,12 @@ function resetTab(): void {
     language: switchesOf("language").map((one) => one.key),
     checks: (codes.value ?? []).map((check) => `ide.diag.${check.code}`),
     explorer: ["ui.ideUiFontSize", "ide.density", ...switchesOf("explorer").map((one) => one.key)],
+    visual: [
+      "ide.draw.width",
+      "ide.draw.rows",
+      "ide.draw.bounds",
+      ...VISUAL_ROWS.flatMap((row) => [viewKey(row), panelKey(row)]),
+    ],
     wiki: switchesOf("wiki").map((one) => one.key),
   };
   if (tab.value === "wiki") setToastPref("show");
@@ -96,6 +105,21 @@ function resetTab(): void {
 </script>
 
 <template>
+  <DefineViewField v-slot="{ row }">
+    <UFormField
+      :label="`${row.ext?.toUpperCase()} files open in`"
+      description="A tab's own switch still changes it"
+      orientation="horizontal"
+    >
+      <UTabs
+        :model-value="settings.values[viewKey(row)] || row.first"
+        :items="viewItems(row)"
+        :content="false"
+        size="xs"
+        @update:model-value="settings.set(viewKey(row), String($event))"
+      />
+    </UFormField>
+  </DefineViewField>
   <UButton
     icon="i-lucide-settings"
     square
@@ -174,21 +198,7 @@ function resetTab(): void {
               >
                 <USwitch :model-value="settings.on(row.key)" @update:model-value="settings.setOn(row.key, $event)" />
               </UFormField>
-              <UFormField
-                v-for="row in OPENS"
-                :key="row.ext"
-                :label="`${row.ext?.toUpperCase()} files open in`"
-                description="A tab's own switch still changes it"
-                orientation="horizontal"
-              >
-                <UTabs
-                  :model-value="settings.values[viewKey(row)] || row.first"
-                  :items="viewsOf(row)"
-                  :content="false"
-                  size="xs"
-                  @update:model-value="settings.set(viewKey(row), String($event))"
-                />
-              </UFormField>
+              <ViewField v-for="row in OPENS" :key="row.ext" :row="row" />
               <UFormField
                 label="Indentation"
                 description="For new lines; a file keeps its own"
@@ -287,6 +297,48 @@ function resetTab(): void {
                 orientation="horizontal"
               >
                 <USwitch :model-value="settings.on(row.key)" @update:model-value="settings.setOn(row.key, $event)" />
+              </UFormField>
+            </div>
+          </template>
+          <template #visual>
+            <div class="divide-y divide-default">
+              <template v-for="row in VISUAL_ROWS" :key="row.ext">
+                <ViewField :row="row" />
+                <UFormField
+                  :label="`Open the ${row.panel} panel with the picture`"
+                  description="Its button beside the views still opens or closes it"
+                  orientation="horizontal"
+                >
+                  <USwitch
+                    :model-value="settings.on(panelKey(row), true)"
+                    @update:model-value="settings.setOn(panelKey(row), $event)"
+                  />
+                </UFormField>
+              </template>
+              <UFormField label="Resolution" description="The screen a window is drawn on" orientation="horizontal">
+                <USelect v-model="draw.width" :items="RESOLUTIONS" size="sm" class="w-36" />
+              </UFormField>
+              <UFormField
+                label="Rows per list"
+                description="How many rows a data model's list is drawn with; the game fills it"
+                orientation="horizontal"
+              >
+                <UInput
+                  type="number"
+                  size="sm"
+                  class="w-19"
+                  :min="1"
+                  :max="20"
+                  :model-value="draw.rows"
+                  @update:model-value="draw.rows = Math.min(Math.max(Number($event) || 1, 1), 20)"
+                />
+              </UFormField>
+              <UFormField
+                label="Outline every widget"
+                description="Each widget's bounds, dashed"
+                orientation="horizontal"
+              >
+                <USwitch v-model="draw.bounds" />
               </UFormField>
             </div>
           </template>

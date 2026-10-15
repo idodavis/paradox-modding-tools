@@ -210,6 +210,9 @@ func nameEnd(name string) int {
 	return len(name)
 }
 
+// maxConstantDepth is how deep constants name one another before a cycle is assumed.
+const maxConstantDepth = 8
+
 // Constant is the name in @name. An inline expression, @[ … ], is a constant with no name.
 func Constant(text string) (name string, ok bool) {
 	if len(text) < 2 || text[0] != '@' {
@@ -219,6 +222,154 @@ func Constant(text string) (name string, ok bool) {
 		return "", true
 	}
 	return text[1:], true
+}
+
+// ConstantAt is the value a file gives a constant (@panel_width) at a place in it, and where the declaration's key
+// starts: the last declaration of the name with a word in the innermost block around the place that declares it, else
+// in the file's top statements; false where the name is no constant or none declares it.
+func (result *Result) ConstantAt(name string, place int) (value string, at int, ok bool) {
+	if constant, isConstant := Constant(name); !isConstant || constant == "" {
+		return "", 0, false
+	}
+	for statements := result.Root.Statements; statements != nil; {
+		var inner []Statement
+		for _, statement := range statements {
+			assign, isAssign := statement.(*Assignment)
+			if !isAssign {
+				continue
+			}
+			if scalar, isScalar := assign.Value.(*Scalar); isScalar && assign.Key.Text == name {
+				value, at, ok = scalar.Text, assign.Key.Range.Start, true
+			}
+			if block := ChildBlock(assign); block != nil && block.Range.Start <= place && place < block.Range.End {
+				inner = block.Statements
+			}
+		}
+		statements = inner
+	}
+	return value, at, ok
+}
+
+// Evaluated is a word written at a place with its file's constants put in: @name the constant's value, @[ expression ]
+// the number its arithmetic (+ - * / and brackets) over numbers and the file's constants makes; the word as written
+// where it is no constant, names one the file does not give there, or computes anything else (a data call).
+func (result *Result) Evaluated(word string, place int) string {
+	if value, ok := result.evaluate(word, place, 0); ok {
+		return value
+	}
+	return word
+}
+
+// evaluate is a constant word's value at a place, the constants it names followed as deep as maxConstantDepth.
+func (result *Result) evaluate(word string, place, depth int) (string, bool) {
+	name, isConstant := Constant(word)
+	if result == nil || !isConstant || depth > maxConstantDepth {
+		return "", false
+	}
+	if name != "" {
+		value, _, declared := result.ConstantAt(word, place)
+		if _, nested := Constant(value); declared && nested {
+			return result.evaluate(value, place, depth+1)
+		}
+		return value, declared
+	}
+	math := &inlineMath{result: result, place: place, depth: depth, tokens: mathTokens(strings.TrimSuffix(word[2:], "]"))}
+	number, ok := math.sum()
+	if !ok || math.next < len(math.tokens) {
+		return "", false
+	}
+	return strconv.FormatFloat(number, 'f', -1, 64), true
+}
+
+// inlineMath reads an inline expression's tokens in turn: sums of products of numbers, constants and brackets.
+type inlineMath struct {
+	result *Result
+	tokens []string
+	next   int
+	place  int
+	depth  int
+}
+
+// mathTokens are an inline expression's numbers and names, each a run of word characters, and its operators and
+// brackets, each one character.
+func mathTokens(text string) []string {
+	var tokens []string
+	start := -1
+	for i, char := range text {
+		word := char == '_' || char == '.' || unicode.IsLetter(char) || unicode.IsDigit(char)
+		if word && start < 0 {
+			start = i
+		}
+		if !word && start >= 0 {
+			tokens, start = append(tokens, text[start:i]), -1
+		}
+		if !word && !unicode.IsSpace(char) {
+			tokens = append(tokens, string(char))
+		}
+	}
+	if start >= 0 {
+		tokens = append(tokens, text[start:])
+	}
+	return tokens
+}
+
+// sum is a run of products joined by + and -.
+func (math *inlineMath) sum() (float64, bool) {
+	total, ok := math.product()
+	for ok && math.next < len(math.tokens) && (math.tokens[math.next] == "+" || math.tokens[math.next] == "-") {
+		operator := math.tokens[math.next]
+		math.next++
+		var term float64
+		term, ok = math.product()
+		if operator == "-" {
+			term = -term
+		}
+		total += term
+	}
+	return total, ok
+}
+
+// product is a run of factors joined by * and /.
+func (math *inlineMath) product() (float64, bool) {
+	total, ok := math.factor()
+	for ok && math.next < len(math.tokens) && (math.tokens[math.next] == "*" || math.tokens[math.next] == "/") {
+		operator := math.tokens[math.next]
+		math.next++
+		var factor float64
+		factor, ok = math.factor()
+		if operator == "/" {
+			factor = 1 / factor
+		}
+		total *= factor
+	}
+	return total, ok
+}
+
+// factor is a number, a constant of the file, a bracketed sum, or one of them negated.
+func (math *inlineMath) factor() (float64, bool) {
+	if math.next >= len(math.tokens) {
+		return 0, false
+	}
+	token := math.tokens[math.next]
+	math.next++
+	switch token {
+	case "-":
+		value, ok := math.factor()
+		return -value, ok
+	case "(":
+		value, ok := math.sum()
+		if !ok || math.next >= len(math.tokens) || math.tokens[math.next] != ")" {
+			return 0, false
+		}
+		math.next++
+		return value, true
+	}
+	if number, err := strconv.ParseFloat(token, 64); err == nil {
+		return number, true
+	}
+	value, ok := math.result.evaluate("@"+token, math.place, math.depth+1)
+	number, err := strconv.ParseFloat(value, 64)
+	return number, ok && err == nil
 }
 
 // Span is one $NAME$ inside a word or a string, by byte offset into it; Start is the first

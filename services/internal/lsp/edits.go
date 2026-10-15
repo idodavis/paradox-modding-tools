@@ -2,7 +2,8 @@
 // leading whitespace only, by brace depth, and keeps a file's line endings and its BOM or lack of
 // one: a Vic3 .asset breaks on CRLF, and EU5's setup/start must have no BOM while its other folders
 // need one. Folding is one range per block. The quick-fixes add a BOM or a missing loc key. Inlay
-// hints give a date's era where the mod declares a calendar.
+// hints give a date's era where the mod declares a calendar. A color block gets a swatch, and is
+// written again in its own form with a color picked.
 
 package lsp
 
@@ -10,6 +11,7 @@ import (
 	"bytes"
 	"fmt"
 	"os"
+	"path/filepath"
 	"strings"
 
 	"paradox-modding-tools/services/internal/game"
@@ -17,8 +19,15 @@ import (
 	"paradox-modding-tools/services/internal/inventory"
 	"paradox-modding-tools/services/internal/jomini"
 	"paradox-modding-tools/services/internal/loc"
+	"paradox-modding-tools/services/internal/schema"
 	"paradox-modding-tools/services/internal/workspace"
 )
+
+// Swatch is a color a file writes: the value that writes it and the color it makes.
+type Swatch struct {
+	Range Range     `json:"range"`
+	Color game.RGBA `json:"color"`
+}
 
 // TextEdit replaces a range of a file with new text.
 type TextEdit struct {
@@ -202,4 +211,76 @@ func InlayHints(ws *workspace.Session, path string) ([]InlayHint, error) {
 		return true
 	})
 	return out, nil
+}
+
+// geneDatabase is the database of the install's portrait genes, whose names a DNA writes as keys.
+var geneDatabase = game.NameOf("common/genes")
+
+// Colors is every color a file writes (blockColor), each a swatch before its block. The file's walk over the schema
+// gives each block its position; every block is tried, a file the schema reads nothing of too.
+func Colors(ws *workspace.Session, path string) ([]Swatch, error) {
+	ws.RLock()
+	defer ws.RUnlock()
+	file, err := open(ws, path)
+	if err != nil {
+		return nil, err
+	}
+	positions := map[*jomini.Assignment]*schema.Position{}
+	index.Collect(ws.Install.Schema, file.place.File, file.parsed,
+		func(statement jomini.Statement, context schema.Context, inner *schema.Context, _ []schema.Occurrence) bool {
+			if assign, isAssign := statement.(*jomini.Assignment); isAssign {
+				positions[assign] = schema.ValuePosition(statement, context, *inner)
+			}
+			return true
+		})
+	var swatches []Swatch
+	jomini.Walk(file.parsed.Root, func(statement jomini.Statement, _ int, _ *jomini.Block) bool {
+		if assign, isAssign := statement.(*jomini.Assignment); isAssign {
+			if color, isColor := blockColor(file, assign, positions[assign]); isColor {
+				swatches = append(swatches, Swatch{Range: file.span(assign.Value.NodeRange()), Color: color})
+			}
+		}
+		return true
+	})
+	return swatches, nil
+}
+
+// blockColor is the color an assignment's block makes, the one rule hover and the swatches share: a tagged color block
+// (rgb { }, hsv { }) under any key; an untagged one at a position where vanilla writes only colors or words that name
+// them (a named color's entry, a coat of arms' color1: Vanilla.WritesColors), and under a key ending as its file type's
+// color keys do (color, fontcolor), but a key that names one of the install's genes (a DNA's hair_color holds two
+// pairs into a color map). The position is the block's in the schema; nil where it has none.
+func blockColor(file *openFile, assign *jomini.Assignment, position *schema.Position) (game.RGBA, bool) {
+	tag, parts, isBlock := jomini.ColorParts(assign.Value)
+	color, known := game.ColorOf(tag, parts)
+	if !isBlock || !known {
+		return color, false
+	}
+	if tag != "" || position != nil && position.Vanilla.WritesColors() {
+		return color, true
+	}
+	suffix := game.FileTypes[strings.ToLower(filepath.Ext(file.path))].ColorSuffix
+	colorKey := suffix != "" && strings.HasSuffix(strings.ToLower(assign.Key.Text), suffix)
+	return color, colorKey && len(index.Lookup(file.ws.Indexes(), schema.Defines, geneDatabase, assign.Key.Text)) == 0
+}
+
+// Recolor is a color block written again with another color in its own form: its tag, then the parts game.PartsOf
+// writes.
+func Recolor(block string, color game.RGBA) (string, error) {
+	var value jomini.Value
+	if statements := jomini.Parse("color = " + block).Root.Statements; len(statements) == 1 {
+		if assign, isAssign := statements[0].(*jomini.Assignment); isAssign {
+			value = assign.Value
+		}
+	}
+	tag, parts, isBlock := jomini.ColorParts(value)
+	texts, known := game.PartsOf(tag, parts, color)
+	if !isBlock || !known {
+		return "", fmt.Errorf("%q is no color block", block)
+	}
+	text := "{ " + strings.Join(texts, " ") + " }"
+	if tag != "" {
+		text = tag + " " + text
+	}
+	return text, nil
 }

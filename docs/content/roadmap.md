@@ -37,6 +37,14 @@ An event node shows its background picture behind its kind bar. Where the pictur
 
 It needs a DDS decoder, which comes with this first use; its formats are surveyed then (CK3's scenes are DXT1 and DXT5).
 
+## The window's own state in the Visual view
+
+A window keeps state of its own while it is open, its variables and a panel's selected tab, which its GUI writes on a
+click and reads in a `visible`: a tab shows its page, an expand button opens its panel. Today the Visual view draws
+every one of those widgets at once. Later it plays that state, a click pressing what it lands on as in the game, built
+as part of one foundation for what a window decides while it runs (its state, hovers, tooltips and animations) rather
+than as a feature of its own, so that it covers every window that keeps state.
+
 ## Map / title editor
 
 **CK3 political layer first.**

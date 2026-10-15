@@ -111,13 +111,14 @@ func (file *openFile) scriptCard(offset int) *Inspect {
 	if date, isDate := dateFact(scalar.Text, file.place.Calendar); isDate {
 		card.Date, card.Head = date, cmp.Or(card.Head, "date")
 	}
-	if value, at, isConstant := constantFact(file.parsed, scalar.Text); isConstant {
+	if value, at, isConstant := file.parsed.ConstantAt(scalar.Text, scalar.Range.Start); isConstant {
 		card.Head, card.Name, card.Winner = "script constant", value, 0
 		card.Sites = []Location{locate(file.ws, file.path, file.parsed.Lines().PositionAt(at))}
 	}
 	if isKey && isAssign {
-		tag, parts, isColor := jomini.ColorParts(assign.Value)
-		if color, known := game.ColorOf(tag, parts); isColor && known {
+		innermost := cursor.chain[len(cursor.chain)-1]
+		position := schema.ValuePosition(innermost.statement, innermost.context, innermost.inner)
+		if color, isColor := blockColor(file, assign, position); isColor {
 			card.Color = color.Hex()
 		}
 		if len(cursor.chain) > 1 {
@@ -246,7 +247,7 @@ func (file *openFile) cardForReference(card *Inspect, subject subject, mark func
 		}
 	}
 	if row != nil {
-		card.Name, card.Prose = loc.Plain(ws.Title(ref.ID, winner)), authorComment(ws, winner)
+		card.Name, card.Prose = loc.Plain(ws.Title(ref.ID, winner, "")), authorComment(ws, winner)
 		card.About = row.Entry.Blurb.Value
 		if source := row.Entry.Blurb.Source; source == schema.SourceDumps || source == schema.SourceDocs {
 			mark(source)
@@ -298,7 +299,7 @@ func authorComment(ws *workspace.Session, def index.At) string {
 	if origin := def.File().Origin; origin == game.OriginVanilla || origin == "" {
 		return ""
 	}
-	parsed, statement := ws.Statement(def)
+	parsed, statement := ws.Statement(workspace.Parses{}, def)
 	if statement == nil {
 		return ""
 	}
@@ -410,25 +411,6 @@ func ordinal(number int) string {
 		}
 	}
 	return strconv.Itoa(number) + suffix
-}
-
-// constantFact is a script constant's value in this file: the value of the last top statement that
-// writes the name with a scalar, and where that statement's key starts; isConstant is false for a
-// name that is no constant (@x) or that no top statement writes so.
-func constantFact(parsed *jomini.Result, name string) (value string, at int, isConstant bool) {
-	if _, constant := jomini.Constant(name); !constant {
-		return "", 0, false
-	}
-	for _, statement := range parsed.Root.Statements {
-		top, isTop := statement.(*jomini.Assignment)
-		if !isTop || top.Key.Text != name {
-			continue
-		}
-		if scalar, isScalar := top.Value.(*jomini.Scalar); isScalar {
-			value, at, isConstant = scalar.Text, top.Key.Range.Start, true
-		}
-	}
-	return value, at, isConstant
 }
 
 // weightFact is a numbered branch's share of its siblings' numbers, in percent, where the holder's

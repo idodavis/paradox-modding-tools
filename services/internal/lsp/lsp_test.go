@@ -829,24 +829,6 @@ func TestDateFact(t *testing.T) {
 	}
 }
 
-func TestConstantFact(t *testing.T) {
-	last := jomini.Parse("@x = 5\n@x = 6\nk = @x\n")
-	if value, at, isConstant := constantFact(&last, "@x"); value != "6" || at != 7 || !isConstant {
-		t.Errorf("the last top statement wins: %q at %d, %v", value, at, isConstant)
-	}
-	if _, _, isConstant := constantFact(&last, "@y"); isConstant {
-		t.Error("a constant nothing writes")
-	}
-	block := jomini.Parse("@z = { a = 1 }\n")
-	if _, _, isConstant := constantFact(&block, "@z"); isConstant {
-		t.Error("a block is no value")
-	}
-	plain := jomini.Parse("k = 1\n")
-	if _, _, isConstant := constantFact(&plain, "k"); isConstant {
-		t.Error("a name without @ is no constant")
-	}
-}
-
 func TestWeightFact(t *testing.T) {
 	parsed := jomini.Parse("random_list = {\n\t10 = { }\n\t30 = { }\n}\n")
 	list := parsed.Root.Statements[0].(*jomini.Assignment)

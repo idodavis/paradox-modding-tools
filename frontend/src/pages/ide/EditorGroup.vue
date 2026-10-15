@@ -1,12 +1,15 @@
 <script setup lang="ts">
 /**
- * An editor group: its tabs, each with its file's icon, a dot while unsaved and a lock on
- * the game's files, and a menu of what to do with it (a diff tab's is its file's, its diff named after it); a tab dragged onto a tab or the strip goes there, onto the
- * editor's edge into a new group there. The breadcrumb, the file's origin, folders and name, then where the caret
- * is (Inspect.within), and the view switch of a kind of file with views (Markdown's Raw or Rich, a GUI file's Code,
- * Visual or Split) with its panel's toggle; then the shown tab's editor. The group at the top right
- * ends its strip with the Wiki button. A diff tab shows its file's diff (GitDiff) in place of the breadcrumb and editor.
- * A game file a mod replaces says so, with a compare. A tab moves into a window of its own, and back.
+ * An editor group: its tabs, each with its file's icon, a dot while unsaved and a lock on the game's files, and a menu
+ * of what to do with it (a diff tab's is its file's, its diff named after it); a tab dragged onto a tab or the strip
+ * goes there, onto the editor's edge into a new group there; at the strip's end the view switch of a kind of file with
+ * views (Markdown's Raw or Rich, a GUI file's Code, Split or Visual), then Split right and the group's actions, then
+ * the switch of the pane beside the editor: the shown file's panel, and in the main window's group at the top right
+ * the Wiki pane, one lit while it is shown, the lit one closed by its click. The breadcrumb, the file's origin,
+ * folders and name, then where the caret is (Inspect.within); then the shown tab's editor, and beside it, under the
+ * tabs and path, the pane the group shows. A diff
+ * tab shows its file's diff (GitDiff) in place of the breadcrumb and editor. A game file a mod replaces says so, with a
+ * compare. A tab moves into a window of its own, and back.
  */
 import { computed, shallowRef, useTemplateRef, watch } from "vue";
 import { useQuery } from "@pinia/colada";
@@ -17,17 +20,19 @@ import { useCompare } from "../../composables/useCompare";
 import { useIdeRoots } from "../../composables/useIdeRoots";
 import { hoverQuery, replacedQuery } from "../../queries";
 import { useEditorStore, type Edge } from "../../stores/editor";
-import { IMAGES, tabOf, viewsOf } from "../../editor/tabs";
+import { IMAGES, tabOf, viewItems, viewsOf } from "../../editor/tabs";
 import { useWorkspaceStore } from "../../stores/workspace";
 import { Close } from "@services/windowservice";
 import { isMain, useWindowsStore, windowName, windowPart } from "../../stores/windows";
 import { fileName } from "../../lib/format";
 import UnsavedChangesModal from "../../ui/UnsavedChangesModal.vue";
 import DrawPane from "../../draw/DrawPane.vue";
+import GuiDetail from "../../draw/GuiDetail.vue";
 import { iconOf } from "./fileKinds";
 import CodeEditor from "./CodeEditor.vue";
 import GitDiff from "./GitDiff.vue";
 import ImageView from "./ImageView.vue";
+import WikiPane from "./WikiPane.vue";
 import OriginDot from "../../ui/OriginDot.vue";
 
 const { workspaceId, groupId } = defineProps<{ workspaceId: string; groupId: number }>();
@@ -241,14 +246,7 @@ const folders = computed(() => (located.value?.rel.split("/").length ?? 0) - 1);
 const row = computed(() => viewsOf(located.value?.rel ?? active.value));
 const shown = computed(() => editor.viewOf(active.value));
 const ownPane = computed(() => !!row.value?.split);
-const views = computed(
-  () =>
-    row.value && [
-      { label: row.value.code, value: "code" },
-      { label: row.value.visual, value: "visual" },
-      ...(row.value.split ? [{ label: "Split", value: "split" }] : []),
-    ],
-);
+const views = computed(() => row.value && viewItems(row.value));
 function setView(view: string | number): void {
   editor.setView(active.value, view === "visual" || view === "split" ? view : "code");
 }
@@ -257,6 +255,24 @@ const halves = [
   { id: "code", slot: "code", order: 1, defaultSize: 50, minSize: 20 },
   { id: "visual", slot: "visual", order: 2, defaultSize: 50, minSize: 20 },
 ];
+
+/** The panes a group shows beside its editor, at the widths they open at. */
+const PANES = {
+  detail: { id: "detail", slot: "pane", order: 2, sizeUnit: "px" as const, defaultSize: 360, minSize: 280 },
+  wiki: { id: "wiki", slot: "pane", order: 2, sizeUnit: "px" as const, defaultSize: 440, minSize: 320 },
+};
+// the pane beside the editor: the shown file's panel while it is open, else in the main window's corner group the
+// Wiki pane while it is open
+const hasPanel = computed(() => !diff.value && !!row.value?.panel);
+const hasWiki = computed(() => isMain && groupId === editor.cornerGroup);
+const pane = computed<keyof typeof PANES | "">(() => {
+  if (hasPanel.value && editor.panelOpen(active.value)) return "detail";
+  return hasWiki.value && editor.wikiOpen ? "wiki" : "";
+});
+const sides = computed(() => [
+  { id: "body", slot: "body", order: 1, minSize: 30 },
+  ...(pane.value ? [PANES[pane.value]] : []),
+]);
 </script>
 
 <template>
@@ -339,6 +355,20 @@ const halves = [
       </div>
       <span class="grow" />
       <div class="flex shrink-0 items-center gap-0.5 px-2">
+        <!-- a file with views switches them here -->
+        <template v-if="views && !diff">
+          <UTooltip text="Cycle the views" :kbds="['Ctrl Shift V']">
+            <UTabs
+              :model-value="shown"
+              :items="views"
+              :content="false"
+              size="xs"
+              class="me-1"
+              @update:model-value="setView"
+            />
+          </UTooltip>
+          <USeparator orientation="vertical" class="mx-1 h-4" />
+        </template>
         <UTooltip text="Split right" :kbds="['Ctrl \\']">
           <UButton
             icon="i-lucide-columns-2"
@@ -353,19 +383,31 @@ const halves = [
         <UDropdownMenu :items="actions">
           <UButton icon="i-lucide-ellipsis" variant="ghost" size="sm" square aria-label="Tab actions" />
         </UDropdownMenu>
-        <template v-if="isMain && groupId === editor.cornerGroup">
+        <!-- the pane beside the editor: the file's panel, the Wiki pane, or neither; the lit one is shown -->
+        <template v-if="hasPanel || hasWiki">
           <USeparator orientation="vertical" class="mx-1 h-4" />
-          <UTooltip text="Wiki pane" :kbds="['Ctrl Shift W']">
-            <UButton
-              label="Wiki"
-              icon="i-lucide-book-open"
-              size="xs"
-              color="primary"
-              :variant="editor.wikiOpen ? 'soft' : 'outline'"
-              :aria-pressed="editor.wikiOpen"
-              @click="editor.wikiOpen = !editor.wikiOpen"
-            />
-          </UTooltip>
+          <UFieldGroup size="xs">
+            <UTooltip v-if="hasPanel" :text="`${row?.panel} panel`">
+              <UButton
+                :label="row?.panel"
+                icon="i-lucide-panel-right"
+                :color="pane === 'detail' ? 'primary' : 'neutral'"
+                :variant="pane === 'detail' ? 'soft' : 'outline'"
+                :aria-pressed="pane === 'detail'"
+                @click="editor.togglePanel(active)"
+              />
+            </UTooltip>
+            <UTooltip v-if="hasWiki" text="Wiki pane" :kbds="['Ctrl Shift W']">
+              <UButton
+                label="Wiki"
+                icon="i-lucide-book-open"
+                :color="pane === 'wiki' ? 'primary' : 'neutral'"
+                :variant="pane === 'wiki' ? 'soft' : 'outline'"
+                :aria-pressed="pane === 'wiki'"
+                @click="editor.toggleWiki()"
+              />
+            </UTooltip>
+          </UFieldGroup>
         </template>
       </div>
     </div>
@@ -388,64 +430,58 @@ const halves = [
         <span class="text-toned">{{ store.originName(loaded.origin) }}</span>
         <UButton label="Compare" variant="ghost" size="xs" @click="compare.files(active, loaded.path)" />
       </template>
-      <UTabs
-        v-if="views"
-        :model-value="shown"
-        :items="views"
-        :content="false"
-        size="xs"
-        @update:model-value="setView"
-      />
-      <UTooltip v-if="row?.panel" :text="`${row.panel} panel`">
-        <UButton
-          icon="i-lucide-panel-right"
-          size="xs"
-          square
-          color="primary"
-          :variant="editor.panelOpen(active) ? 'soft' : 'ghost'"
-          :aria-label="`${row.panel} panel`"
-          :aria-pressed="editor.panelOpen(active)"
-          @click="editor.togglePanel(active)"
-        />
-      </UTooltip>
     </div>
-    <div class="relative flex min-h-0 flex-1 flex-col">
-      <GitDiff v-if="diff" :key="active" :workspace-id="workspaceId" :tab="active" />
-      <ImageView v-else-if="image" :key="`image:${active}`" :path="active" />
-      <USplitter
-        v-else-if="ownPane && shown === 'split'"
-        :items="halves"
-        auto-save-id="pmt.ide.split"
-        class="min-h-0 min-w-0 flex-1"
-      >
-        <template #code>
-          <div class="relative flex min-h-0 min-w-0 flex-1 flex-col">
-            <CodeEditor :key="active" :workspace-id="workspaceId" :path="active" :group="groupId" />
+    <!-- the group's editor, and beside it, under the tabs and path, the pane it shows -->
+    <USplitter :items="sides" auto-save-id="pmt.ide.pane" class="min-h-0 min-w-0 flex-1">
+      <template #body>
+        <div class="relative flex min-h-0 min-w-0 flex-1 flex-col">
+          <GitDiff v-if="diff" :key="active" :workspace-id="workspaceId" :tab="active" />
+          <ImageView v-else-if="image" :key="`image:${active}`" :path="active" />
+          <USplitter
+            v-else-if="ownPane && shown === 'split'"
+            :items="halves"
+            auto-save-id="pmt.ide.split"
+            class="min-h-0 min-w-0 flex-1"
+          >
+            <template #code>
+              <div class="relative flex min-h-0 min-w-0 flex-1 flex-col">
+                <CodeEditor :key="active" :workspace-id="workspaceId" :path="active" :group="groupId" />
+              </div>
+            </template>
+            <template #visual>
+              <DrawPane :key="active" :workspace-id="workspaceId" :path="active" />
+            </template>
+          </USplitter>
+          <DrawPane
+            v-else-if="ownPane && shown === 'visual'"
+            :key="active"
+            :workspace-id="workspaceId"
+            :path="active"
+          />
+          <CodeEditor v-else-if="active" :key="active" :workspace-id="workspaceId" :path="active" :group="groupId" />
+          <div v-else class="flex flex-1 items-center justify-center bg-(--bg-0) text-12 text-dimmed">
+            Open a file from the explorer, or Ctrl P
           </div>
-        </template>
-        <template #visual>
-          <DrawPane :key="active" :workspace-id="workspaceId" :path="active" />
-        </template>
-      </USplitter>
-      <DrawPane v-else-if="ownPane && shown === 'visual'" :key="active" :workspace-id="workspaceId" :path="active" />
-      <CodeEditor v-else-if="active" :key="active" :workspace-id="workspaceId" :path="active" :group="groupId" />
-      <div v-else class="flex flex-1 items-center justify-center bg-(--bg-0) text-12 text-dimmed">
-        Open a file from the explorer, or Ctrl P
-      </div>
-      <!-- while a tab is dragged: where it would go -->
-      <div
-        v-if="editor.dragging || over"
-        class="absolute inset-0 z-20"
-        @dragover="zoneAt"
-        @dragleave="zone = null"
-        @drop="dropTab($event, zone ?? 'middle')"
-      >
-        <div
-          v-if="zone"
-          class="pointer-events-none absolute bg-(--accent-soft) ring-1 ring-primary ring-inset"
-          :class="ZONES[zone]"
-        />
-      </div>
-    </div>
+          <!-- while a tab is dragged: where it would go -->
+          <div
+            v-if="editor.dragging || over"
+            class="absolute inset-0 z-20"
+            @dragover="zoneAt"
+            @dragleave="zone = null"
+            @drop="dropTab($event, zone ?? 'middle')"
+          >
+            <div
+              v-if="zone"
+              class="pointer-events-none absolute bg-(--accent-soft) ring-1 ring-primary ring-inset"
+              :class="ZONES[zone]"
+            />
+          </div>
+        </div>
+      </template>
+      <template #pane>
+        <GuiDetail v-if="pane === 'detail'" :workspace-id="workspaceId" :path="active" class="min-w-0 flex-1" />
+        <WikiPane v-else-if="pane === 'wiki'" :workspace-id="workspaceId" class="min-w-0 flex-1" />
+      </template>
+    </USplitter>
   </section>
 </template>

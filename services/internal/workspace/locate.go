@@ -103,13 +103,14 @@ func (ws *Session) PlaceOf(path string) FilePlace {
 	return place
 }
 
-// Statement is a definition's statement in its file's parse: the assignment whose key starts at the definition's
-// line and column; nil where its file does not parse or none starts there.
-func (ws *Session) Statement(def index.At) (*jomini.Result, jomini.Statement) {
+// Statement is a definition's statement in its file's parse, from the parses a caller that asks for many keeps: the
+// assignment whose key starts at the definition's line and column; nil where its file does not parse or none starts
+// there.
+func (ws *Session) Statement(parses Parses, def index.At) (*jomini.Result, jomini.Statement) {
 	if def == (index.At{}) {
 		return nil, nil
 	}
-	parsed, _, err := ws.Parsed(Parses{}, def.File().Path)
+	parsed, _, err := ws.Parsed(parses, def.File().Path)
 	if err != nil {
 		return nil, nil
 	}
@@ -130,20 +131,21 @@ func (ws *Session) Loc(key, language string) (index.At, bool) {
 	return index.At{}, false
 }
 
-// Title is the display name of a definition of id: the text of the id as a loc key (after its database's prefix where
-// it has one), else of the definition's first field typed as a loc key that has text (the zero At: the loc key alone).
-func (ws *Session) Title(id string, def index.At) string {
+// Title is the display name of a definition of id in a language ("" the workspace's): the text of the id as a loc key
+// (after its database's prefix where it has one), else of the definition's first field typed as a loc key that has
+// text (the zero At: the loc key alone).
+func (ws *Session) Title(id string, def index.At, language string) string {
 	row := ws.Install.Schema.Databases[def.Occurrence().Database]
 	keys := []string{id}
 	if row != nil && row.Descriptor.LocPrefix != "" {
 		keys = []string{row.Descriptor.LocPrefix + id, id}
 	}
 	for _, key := range keys {
-		if entry, known := ws.Loc(key, ""); known {
+		if entry, known := ws.Loc(key, language); known {
 			return entry.Text()
 		}
 	}
-	_, statement := ws.Statement(def)
+	_, statement := ws.Statement(Parses{}, def)
 	for i, block := 0, jomini.ChildBlock(statement); row != nil && block != nil && i < len(block.Statements); i++ {
 		field, isField := block.Statements[i].(*jomini.Assignment)
 		if !isField {
@@ -154,7 +156,7 @@ func (ws *Session) Title(id string, def index.At) string {
 		if !isScalar || position == nil || position.Value.Value.Type != schema.ValueLoc {
 			continue
 		}
-		if entry, known := ws.Loc(value.Text, ""); known {
+		if entry, known := ws.Loc(value.Text, language); known {
 			return entry.Text()
 		}
 	}

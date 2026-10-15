@@ -7,6 +7,7 @@ import (
 	"context"
 	"errors"
 	"fmt"
+	"image"
 	"image/png"
 	"io"
 	"net/http"
@@ -231,8 +232,9 @@ func (s *FileService) ReadImageFacts(fullPath string) (ImageFacts, error) {
 }
 
 // ServeFiles answers FileRoute ahead of the page's assets (Wails' asset server takes it as its middleware): a DDS or
-// TGA decoded and sent as a PNG, any other image or font file as it is, which the webview draws and caches itself.
-// Each is read again only when the file changed.
+// TGA decoded and sent as a PNG, as is a frame of any image (&frame=x,y,width,height, a sheet's part a widget draws);
+// any other image or font file as it is, which the webview draws and caches itself. Each is read again only when the
+// file changed.
 func ServeFiles(next http.Handler) http.Handler {
 	return http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 		if r.URL.Path != FileRoute {
@@ -251,7 +253,8 @@ func ServeFiles(next http.Handler) http.Handler {
 			return
 		}
 		w.Header().Set("Cache-Control", "no-cache")
-		if ext != ".dds" && ext != ".tga" {
+		frame := r.URL.Query().Get("frame")
+		if ext != ".dds" && ext != ".tga" && frame == "" {
 			http.ServeFile(w, r, path)
 			return
 		}
@@ -264,6 +267,9 @@ func ServeFiles(next http.Handler) http.Handler {
 			http.Error(w, err.Error(), http.StatusUnsupportedMediaType)
 			return
 		}
+		if frame != "" {
+			img = framePart(img, frame)
+		}
 		var out bytes.Buffer
 		if err := (&png.Encoder{CompressionLevel: png.BestSpeed}).Encode(&out, img); err != nil {
 			http.Error(w, err.Error(), http.StatusInternalServerError)
@@ -271,6 +277,19 @@ func ServeFiles(next http.Handler) http.Handler {
 		}
 		http.ServeContent(w, r, "image.png", stat.ModTime(), bytes.NewReader(out.Bytes()))
 	})
+}
+
+// framePart is the part of an image a frame names (x,y,width,height), as much of it as the image holds; the whole image
+// where the frame does not read.
+func framePart(img image.Image, frame string) image.Image {
+	var x, y, width, height int
+	cropper, isCroppable := img.(interface {
+		SubImage(image.Rectangle) image.Image
+	})
+	if _, err := fmt.Sscanf(frame, "%d,%d,%d,%d", &x, &y, &width, &height); err != nil || !isCroppable {
+		return img
+	}
+	return cropper.SubImage(image.Rect(x, y, x+width, y+height).Add(img.Bounds().Min))
 }
 
 // ReadText is a file as the editor reads it.

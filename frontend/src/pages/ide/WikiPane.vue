@@ -107,7 +107,7 @@ watch(guide, (wikiGuide) => {
   suggestedKinds.add(kind);
   toast.add({
     title: `Wiki: ${wikiGuide.pages[0]?.title}`,
-    actions: [{ label: "Open", color: "neutral", variant: "outline", onClick: () => void (editor.wikiOpen = true) }],
+    actions: [{ label: "Open", color: "neutral", variant: "outline", onClick: () => editor.toggleWiki() }],
   });
 });
 watch(

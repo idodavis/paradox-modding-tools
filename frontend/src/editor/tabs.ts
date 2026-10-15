@@ -46,3 +46,12 @@ export function viewsOf(rel: string): ViewRow | undefined {
   const ext = rel.slice(rel.lastIndexOf(".") + 1).toLowerCase();
   return VIEW_ROWS.find((row) => row.ext === ext || (row.folder !== undefined && rel.startsWith(row.folder)));
 }
+
+/** A kind's views in the order its switch shows them and Ctrl+Shift+V steps through them, each with its icon. */
+export function viewItems(row: ViewRow): { label: string; value: View; icon: string }[] {
+  return [
+    { label: row.code, value: "code", icon: "i-lucide-code" },
+    ...(row.split ? [{ label: "Split", value: "split" as const, icon: "i-lucide-columns-2" }] : []),
+    { label: row.visual, value: "visual", icon: "i-lucide-eye" },
+  ];
+}

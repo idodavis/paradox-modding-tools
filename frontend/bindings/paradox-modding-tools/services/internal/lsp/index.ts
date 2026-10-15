@@ -14,6 +14,7 @@ export type {
     Position,
     Range,
     Signature,
+    Swatch,
     Symbol,
     TextEdit,
     WorkspaceEdit

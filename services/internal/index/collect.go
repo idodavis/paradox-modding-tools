@@ -163,8 +163,8 @@ func collectLoc(gameID string, file inventory.File, text string, languages []str
 	return records
 }
 
-// conceptReferences refers to each game concept a loc entry's data calls name: [x|E] and
-// Concept('x', …) name one in the concepts database.
+// conceptReferences refers to each game concept a loc entry's data calls mark as one (loc.Concepts) in the
+// concepts database.
 func conceptReferences(
 	text string, entry loc.Entry, concepts string, refer func(database, name string, span jomini.Range),
 ) {
@@ -173,14 +173,9 @@ func conceptReferences(
 		if len(steps) == 0 {
 			continue
 		}
-		format := strings.TrimLeft(text[steps[0].Range.End:call.End], " \t")
-		if len(steps) == 1 && len(steps[0].Args) == 0 && (format == "|E]" || format == "|e]") {
-			refer(concepts, steps[0].Name, steps[0].Range)
-		}
-		for _, step := range steps {
-			if step.Name == "Concept" && len(step.Args) > 0 && step.Args[0].Quoted {
-				arg := step.Args[0]
-				refer(concepts, arg.Text, jomini.Range{Start: arg.Range.Start + 1, End: arg.Range.End - 1})
+		for _, concept := range loc.Concepts(steps, text[steps[0].Range.End:call.End]) {
+			if concept.IsMarked {
+				refer(concepts, concept.Name, concept.Span)
 			}
 		}
 	}

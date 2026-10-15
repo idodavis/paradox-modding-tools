@@ -93,6 +93,7 @@ const (
 	WritesCommand // a block that holds a trigger or an effect
 	WritesTrigger // a trigger written in the block
 	WritesEffect  // an effect written in the block
+	WritesColor   // a tagged color block: rgb { }, hsv { }
 )
 
 // writesOf returns the form a scalar is written in.
@@ -114,10 +115,18 @@ func writesOf(scalar *jomini.Scalar) Writes {
 
 // Vanilla is what vanilla writes at a position; it is never a claim.
 type Vanilla struct {
-	Count  int            // how many of the parent's written blocks hold this key
-	Blocks int            // how many times this position was written as a block
-	Writes Writes         // the forms written here
-	Values map[string]int // words written, with counts
+	Count     int            // how many of the parent's written blocks hold this key
+	Blocks    int            // how many times this position was written as a block
+	NotColors int            // how many values written here are no color: neither a block of a color's numbers nor a word
+	Writes    Writes         // the forms written here
+	Values    map[string]int // words written, with counts
+}
+
+// WritesColors reports whether vanilla writes nothing but colors at the position, one of them tagged, so that an
+// untagged block of numbers there is a color too: a named color's entry, a coat of arms' color1, written as numbers
+// or as words (countColor).
+func (vanilla Vanilla) WritesColors() bool {
+	return vanilla.Writes&WritesColor != 0 && vanilla.NotColors == 0
 }
 
 // Claims is what the sources state about a position, each claim with its source.
@@ -209,7 +218,7 @@ type Schema struct {
 	CustomLoc       map[string]CustomLoc
 	Prefixes        map[string]string        // a link prefix → the database the names written after it are in; "" none
 	ScriptedEntries map[string]ScriptedEntry // vanilla's scripted entries by calling word and name (word:name)
-	WidgetKinds     map[string]bool          // the built-in widget kinds the GUI files imply: a base no type defines, a type based on its own name
+	WidgetTypes     map[string]bool          // the built-in widget types: untyped bases, self-based types, game.UndeclaredTypes
 	Lists           string                   // the database of scripted lists (a row of PurposeLists); "" none
 	Functions       string                   // the database of data functions' macros (a row of PurposeFunctions); "" none
 	Events          string                   // the database of events (a row of PurposeEvents); "" none

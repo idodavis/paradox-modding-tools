@@ -60,10 +60,15 @@ type Location struct {
 	Range  Range  `json:"range"`
 }
 
-// locate gives the editor's location of a position in a file of the workspace or the install.
+// Locate is the editor's location of a range of a file of the workspace or the install.
+func Locate(ws *workspace.Session, path string, span Range) Location {
+	file, _, _ := ws.Locate(path)
+	return Location{Path: path, Origin: file.Origin, Rel: file.Rel, Range: span}
+}
+
+// locate is Locate at a position.
 func locate(ws *workspace.Session, path string, at Position) Location {
-	place, _, _ := ws.Locate(path)
-	return Location{Path: path, Origin: place.Origin, Rel: place.Rel, Range: Range{Start: at, End: at}}
+	return Locate(ws, path, Range{Start: at, End: at})
 }
 
 // siteOf gives where a definition is written.

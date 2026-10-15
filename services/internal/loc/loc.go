@@ -36,6 +36,18 @@ type Interpolation struct {
 	KeyRange Range // inner key, not `$` or `|filter`
 }
 
+// Concept is a game concept a data call may name, where its name is written, whether the call marks it as one, and
+// the text its link shows where the call writes one. A call marks it with the format E or e after a call of one step
+// ([faith|E]), or as a Concept('x', 'text') step, which shows its text; a call of one step with no arguments and any
+// other format or none (Vic3's [concept_pop]) names one only where the concepts database defines it, which is the
+// caller's to ask.
+type Concept struct {
+	Name     string
+	Span     Range
+	IsMarked bool
+	Text     string // "" the concept's own name
+}
+
 // ErrorCode is a parse error's code, the same type as script's.
 type ErrorCode = jomini.ErrorCode
 
@@ -266,6 +278,29 @@ func Interpolations(value string, valueStart int) []Interpolation {
 	return out
 }
 
+// Concepts are the game concepts a data call's steps may name; rest is the text after its first step, with or
+// without the closing bracket.
+func Concepts(steps []jomini.CallStep, rest string) []Concept {
+	var concepts []Concept
+	if len(steps) == 1 && len(steps[0].Args) == 0 {
+		format := strings.TrimSuffix(strings.TrimLeft(rest, " \t"), "]")
+		isMarked := format == "|E" || format == "|e"
+		concepts = append(concepts, Concept{Name: steps[0].Name, Span: steps[0].Range, IsMarked: isMarked})
+	}
+	for _, step := range steps {
+		if step.Name == "Concept" && len(step.Args) > 0 && step.Args[0].Quoted {
+			arg := step.Args[0]
+			span := Range{Start: arg.Range.Start + 1, End: arg.Range.End - 1}
+			concept := Concept{Name: arg.Text, Span: span, IsMarked: true}
+			if len(step.Args) > 1 && step.Args[1].Quoted {
+				concept.Text = step.Args[1].Text
+			}
+			concepts = append(concepts, concept)
+		}
+	}
+	return concepts
+}
+
 // LanguageFromFilename returns the language id encoded in a loc filename, or ""
 // if the name does not follow the `..._l_<language>.yml` convention.
 func LanguageFromFilename(path string) string {
@@ -418,7 +453,7 @@ func markupAt(text string) (kind, length int, payload string) {
 		if strings.HasPrefix(text, "#!") {
 			return markClose, 2, ""
 		}
-		if end := runEnd(text[1:], ";"); end > 0 && end < len(text)-1 && text[1+end] == ' ' {
+		if end := formatEnd(text[1:]); end > 0 && end < len(text)-1 && text[1+end] == ' ' {
 			return markOpen, end + 2, text[1 : 1+end]
 		}
 	case '@':
@@ -447,6 +482,29 @@ func runEnd(text, extra string) int {
 		inside := c == '_' || c >= '0' && c <= '9' || c >= 'a' && c <= 'z' || c >= 'A' && c <= 'Z'
 		if !inside && strings.IndexByte(extra, c) < 0 {
 			return i
+		}
+	}
+	return len(text)
+}
+
+// formatEnd is the length of a format's words after its #: names joined by ;, the last one's argument after a colon
+// running to the first space outside brackets (#tooltip:[Character.GetTooltipTag],sway_tt opposed to it#!).
+func formatEnd(text string) int {
+	end := runEnd(text, ";")
+	if end == 0 || end >= len(text) || text[end] != ':' {
+		return end
+	}
+	depth := 0
+	for i := end; i < len(text); i++ {
+		switch text[i] {
+		case '[':
+			depth++
+		case ']':
+			depth--
+		case ' ':
+			if depth == 0 {
+				return i
+			}
 		}
 	}
 	return len(text)

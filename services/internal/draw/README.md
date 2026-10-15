@@ -1,83 +1,86 @@
 # draw
 
-**A structural preview of a mod's GUI entries, with the game's own textures, fonts and localization, where nothing
-about the game's state is simulated and nothing is asked.** Every widget is drawn unless its file says `visible = no`;
-what only the game would know, a binding, is drawn as written. A vanilla window is a stress test of the layout, never a
-promise of fidelity.
+**A preview of a mod's GUI entries with the game's own textures, fonts and localization, where nothing about the
+game's state is simulated and nothing is asked.** Every widget is drawn unless its file says `visible = no` or
+`visible_at_creation = no` (`game.GUIHiddenKeys`); what only
+the game would know, a binding, is drawn as written, but for a texture whose file the scan finds. A vanilla window is a
+stress test of the preview, never a promise of fidelity.
 
-What the visual editors draw: a GUI file's entry resolved from the index and the file's own text into one list of
-elements, each with the words it is laid out by as written, its textures and its text. The page nests them as HTML
-elements and the browser lays them out (`frontend/src/draw/widgets.ts`): nothing here measures or places. It decides
-nothing about script (the schema's walker did), and it writes nothing.
+The preview translates; three engines think. The index resolves the script. The game's shaders say how a sprite is
+cut, scaled and masked. The browser lays out, breaks lines, slices, masks and blends. Everything the preview decides
+that none of the three does is a row in a table with its source beside it: the CK3 wiki's Interface page, a shader
+file, or vanilla observed in the app. The rows are `game/gui-rules.go` (how each built-in type draws, the roles of a
+widget's blocks, where a window is laid out, the state it opens in, the calls the preview answers) and
+`frontend/src/draw/picture.ts` (what a holding and a property mean in CSS).
 
-Read `gui.go` first: `GUI` is the whole of a render.
+Read `draw.go` first: `Render.List` is the whole of a render.
 
-| file | holds |
+## Files
+
+| file | the one job |
 |---|---|
-| `draw.go` | the list and what it holds: `List`, `Element`, `Texture`, `Text`, `Run`, `Font`, `Box`, `Property` |
-| `gui.go` | `Request`, `Entries`, `GUI`, `Properties`; the `widget` and `statement` the resolver builds and the block reader every property goes through (`last`, `numbers`, `choices`, `scalar`); the layout words handed to the page (`layoutKeys`), the blend and fit words, and the sentences of what is not found |
-| `gui_resolve.go` | the entry found, each widget's type chain followed to its built-in kind through the one `lookup` of a name, its templates and blocks expanded in the order they apply, the opening state, the roles of the blocks it writes, its data model's rows, its siblings shown one at a time, its textures; every widget described as an element |
-| `gui_text.go` | a widget's text: the loc entry or literal, its markup into runs with the formats' colors and the icons' textures, and the font files the page loads |
+| `draw.go` | the payload types and the two calls, the last resolve kept between them |
+| `block.go` | the reader every property goes through: a statement with the file and writer it comes from, a block of them read by key, the last written winning |
+| `resolve.go` | an entry resolved into a tree of widgets, each an element: the type chain, templates and blocks under the overrides in force, the opening state, the children, the holders |
+| `text.go` | a widget's text as runs, and the fonts that draw them |
+| `texture.go` | a widget's textures, read as the sprite shader reads them, and the file a texture binding draws |
+| `draw_test.go` | the fixture tests and the three-install gate (`PMT_VANILLA_GATE`) |
 
 ## The list
 
-`List` is one render. `Elements` are the widgets, pre-order, so an element's parent is always before it; an element
-is listed whether it is drawn or not, with its location in the file. Each carries its `Role` (a child among its
-siblings, or the skin or chrome of its parent), whether it is `Hidden`, the `Rows` a data model item is drawn, the
-sibling whose place it shares (`Pair`), its `Layout` words as written by key (`size = { 100 20 }` is `"100 20"`), its
-`Textures` and its `Text`. `Fonts` are the faces the texts use, one row a name and style, with the route's URL;
-`Missing` is what nothing found, each a sentence the status line shows ("Template not found: x"). The scene (`Width`,
-`Height`) is a window's resolution; an entry drawn alone (a type, template, text icon or format) is its own size, and
-one with no size, texture, text or child of its own is listed. A `Property` is an element's key as written, with who
-wrote it.
+`Render.List` resolves a request (a file, an entry's id and database) into one `List`: the entry's
+elements in pre-order, the widgets the game lays the entry out in (`Holders`), the textures they draw and the fonts
+they use, each listed once, the calls they are shown on (`Groups`), and what nothing found (`Missing`). An entry is a
+window drawn as written, or a type, template, text icon or format drawn alone (`IsAlone`) as the script `entryRows`
+names it by.
+
+An `Element` is one widget: where it is written (`Location`), how it is named (`Label`, `Path`, `Ancestors`, which the
+pane, the panel and the code read as they are), its role among its siblings (`WidgetSlots`: a skin, chrome, a label, a
+data model's item), its type's row stamped for the workspace's game (`Type`, `Holds`, `Clips`, `Fills`, `CentersText`,
+`DropsHidden`), every property as written (`Properties`, the last written of each key, a call `GUIAnswered` names
+replaced by the entry's value), its textures and its text, and what it is shown on (`IsHidden`, `Condition`).
+
+`Render.Properties` answers the panel from the same resolve: each property's last value, who wrote it and where.
 
 ## Resolving
 
-An entry's name picks a statement of the file: a window is its own, a type is drawn by naming it and a template by a
-widget that uses it, a text icon by an icon of its texture and size, and a format by a text written in it. The entry
-drawn by name is drawn whatever its own `visible` says. A widget's key follows the types to a built-in kind (`chain`):
-each type's block, base first; a type based on its own name ends the chain with the kind's defaults; a base no type
-defines is a kind the install implies (`Schema.WidgetKinds`). One `lookup` answers every name a caller resolves, a
-definition of the file before the load order's winner. The statements that apply are the chain's blocks, each `using`
-at its point, the widget's own last; a `blockoverride` replaces the `block` of its name wherever the block is written
-below the widget that wrote the override, and a child sees the overrides of its parent. The last statement of a key
-wins everywhere (`widget.last`). A window runs in its opening state: the state named `_show`, and every state with
-`trigger_on_create = yes`, writes its end values as the widget's own. A data model's item widgets are resolved once
-and drawn three rows. A text with no `fontsize` takes the font and size of the install's `textbox` type.
+A widget's statements come from its type chain (base first), each template in place where it is used, its own block,
+then the end values of the states that run as the window opens (`GUIOpeningStates`). A `block` applies its statements,
+or those of the `blockoverride` in force for its name where another writer wrote one; the overrides are scanned before
+any block is applied, a later one over an earlier, so the widget's own win. A block whose key is a slot, a type or a
+built-in is a child; an `item` block's widgets are a data model's row; a `buttontext` block's widget is the label that
+draws the button's text; a tooltip is left out. A child written by the widget or an ancestor is left out, since it would
+nest without end.
 
-A block whose key names a widget is a child, laid out among its siblings and drawn in written order, but for the keys
-of `game.WidgetSlots`, which the game treats apart: a `background` is its widget's skin, filling it and drawn behind
-its children; a `scrollbar_vertical` or `scrollbar_horizontal` is chrome at the edge, a `scrollbar`; a `tooltipwidget`
-is shown on an event the preview has not, and is left out.
+Each property is read through `block`: a statement's words with its file's constants put in, as numbers, as
+lower-cased choices, or as a color. A definition is found through the index (`index.Resolve`, the load order's winner,
+a local type or template of the file first) and read once a render.
 
-A widget's textures are its `texture` and then each `modify_texture` in order, the latter's blocks expanded and
-overridden as the widget's own are, so a color overlay's `block "master_color_frame" { frame = 7 }` picks its frame.
-An overlay is masked by the widget's texture (`Texture.Mask`), since the game keeps the texture's alpha, so a color
-added to a flat icon shows in the glyph's shape; a `mask` or `alphamultiply` overlay masks the texture instead. A
-binding (`[GetPlayer.GetName]`) is the game's to answer, so nothing answers it: a `visible` that is one draws the
-widget, a `text` that is one is drawn as written, a `texture` that is one is written in the widget's box as its text,
-and a number that is one is none. One thing the text
-alone says: two siblings whose `visible` bindings are `[X]` and `[Not(X)]` are shown one at a time, so the later shares
-the earlier's place (`Pair`) instead of taking one of its own.
+## Textures and text
 
-## Laying out
+A texture is its file's size at its density, its frame of a sheet (`framesize` in the screen's pixels or
+`frame_grid`, which the file route cuts), its border, tiling, mirror, fit, tint and blend, as `pdxgui_sprite_base.fxh`
+reads them. Each `modify_texture` is an overlay at its alpha; an `alphamultiply` masks the widget's texture, a `mask`
+scales every overlay after it. A texture that is a binding draws the file the scan finds for the entry a quoted key
+names (`GUIPictureKeys`, the `_ICON_PATH` defines), else nothing, and the page draws a placeholder.
 
-The page's table (`widgets.ts`) maps each kind and each layout word to the CSS that means the same thing, and the
-browser does the rest: a row or column is a flex box whose items' policies are their grow and shrink, a flow wraps,
-a grid has cells, a scroll area clips, and every other kind is one grid cell its children sit in by their anchors,
-moved by their position. A word with no row is not carried, and the browser lays the rest out as if it were not
-written. Go hands over only the words (`layoutKeys`), as written, scaled by nothing: the UI scale is a zoom on the
-window.
+A text is its loc entry in the workspace's language (else as written), its markup read into runs: a format's color, bold
+and italic through the `gui.format` entries, a text icon's texture, a `$key$`'s text, a concept link's name, a `[call]`
+as `[…]`. Its font is the face the `font.font` entry names for the style and language, listed for the page to load.
 
-## Decisions
+## Holders
 
-- **No row per game.** Each fact comes from the install (the types and defaults, the fonts and their files, the
-  formats, the text icons) or from a language row in `game/lang-rules.go`; a row exists only where no file of the
-  install could state it.
-- **One parse per request.** `workspace.Parses` holds the files a render reads; nothing is kept past it.
-- **The browser is the layout engine.** The game's layout is a box model with size hints, policies, stretch factors and
-  anchors, the model flexbox and grid implement; Go computes no size and no box, so nothing here can disagree with the
-  browser about where a word puts a widget. The fonts are the game's files, loaded by the page, and the browser breaks
-  the lines.
-- **Nothing is answered for the game.** No evaluator, no sample data, no default for what a binding returns: a widget
-  whose visibility is a binding is drawn, and a bound text shows the binding, so a modder sees which binding sits where.
+A window is drawn on the screen. A window made from a type `GUIHolders` names is drawn in that window. A type or
+template drawn alone is drawn in the widgets around the one place the install writes it (`index.RefsTo`), each an
+element of its type row and properties alone; none where it is written nowhere, in several places, or in a block.
+
+## Accepted as different from the game
+
+- Shrinking under pressure: flexbox shrinks in proportion to size; the game shrinks evenly to each minimum.
+- A percent height inside a parent sized by its content: the browser resolves the width, the height sometimes.
+- A 9-slice in a box smaller than its borders: the browser squeezes the slices; the shader samples fewer pixels.
+- A negative margin on a widget that is no skin: the game pulls its children outward; CSS has no negative padding.
+- A scroll bar is drawn unless its policy says `always_off`; the game shows it only when the content overflows.
+- `wrap_count` and `setitemsizefromcell`: known, not drawn.
+
+Each gets a row, never a function, if one is ever worth fixing.

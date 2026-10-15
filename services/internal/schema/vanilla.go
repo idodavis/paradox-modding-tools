@@ -20,8 +20,8 @@ import (
 // rather than as arguments. It returns the entry names vanilla defines, by database; a database made for a
 // new name is declared on the way.
 func (schema *Schema) countVanilla(ctx context.Context, install []inventory.File, info *game.GameInfo) (map[string]map[string]bool, error) {
-	schema.ScriptedEntries, schema.WidgetKinds = map[string]ScriptedEntry{}, map[string]bool{}
-	kinds := &kindCollector{schema: schema, bases: map[string]bool{}}
+	schema.ScriptedEntries, schema.WidgetTypes = map[string]ScriptedEntry{}, map[string]bool{}
+	types := &typeCollector{schema: schema, bases: map[string]bool{}}
 	names := map[string]map[string]bool{}
 	parsedFirst := map[string]jomini.Result{}
 	var files []inventory.File
@@ -31,7 +31,7 @@ func (schema *Schema) countVanilla(ctx context.Context, install []inventory.File
 		gui := game.FileTypes[strings.ToLower(path.Ext(file.Rel))].Keywords != nil
 		var visit Visit
 		if gui {
-			visit = kinds.note
+			visit = types.note
 		}
 		if file.Format == inventory.Script && (len(row.Callers) > 0 || gui) {
 			parsed := parseScript(file)
@@ -44,7 +44,7 @@ func (schema *Schema) countVanilla(ctx context.Context, install []inventory.File
 			files = append(files, file)
 		}
 	}
-	kinds.settle()
+	types.settle()
 	work := func(file inventory.File) (parsed jomini.Result) {
 		if first, found := parsedFirst[file.Path]; found {
 			return first
@@ -66,16 +66,17 @@ func (schema *Schema) countVanilla(ctx context.Context, install []inventory.File
 	return names, inventory.Ordered(ctx, files, work, keep)
 }
 
-// kindCollector finds the built-in widget kinds from the tag each GUI type's block is written with: a tag that is
-// the type's own name (type hbox = hbox { }) is one, and so is a base no type is named, once every file is read.
-type kindCollector struct {
+// typeCollector finds the built-in widget types from the tag each GUI type's block is written with: a tag that is
+// the type's own name (type hbox = hbox { }) is one, and so is a base no type is named, once every file is read;
+// the types no file declares are game.UndeclaredTypes.
+type typeCollector struct {
 	schema *Schema
 	bases  map[string]bool // every tag a type is written with that is not its own name
 }
 
 // note records the tag a statement that defines an entry writes its block with; the walk calls it for every
 // statement of a GUI file, and always reads on.
-func (collector *kindCollector) note(statement jomini.Statement, _ Context, inner *Context, occurrences []Occurrence) bool {
+func (collector *typeCollector) note(statement jomini.Statement, _ Context, inner *Context, occurrences []Occurrence) bool {
 	assign, isAssign := statement.(*jomini.Assignment)
 	if !isAssign || !inner.Defines {
 		return true
@@ -84,7 +85,7 @@ func (collector *kindCollector) note(statement jomini.Statement, _ Context, inne
 		switch {
 		case occurrence.Caller == "":
 		case occurrence.ID == assign.Key.Text:
-			collector.schema.WidgetKinds[strings.Clone(occurrence.ID)] = true
+			collector.schema.WidgetTypes[strings.Clone(occurrence.ID)] = true
 		default:
 			collector.bases[strings.Clone(occurrence.ID)] = true
 		}
@@ -92,12 +93,16 @@ func (collector *kindCollector) note(statement jomini.Statement, _ Context, inne
 	return true
 }
 
-// settle adds each tag no type of the install is named, once every GUI file's entries are registered.
-func (collector *kindCollector) settle() {
+// settle adds each tag no type of the install is named, once every GUI file's entries are registered, and the types
+// no file declares.
+func (collector *typeCollector) settle() {
 	for tag := range collector.bases {
 		if _, defined := collector.schema.ScriptedEntries[game.Shapes[game.ShapeWidget].Caller+":"+tag]; !defined {
-			collector.schema.WidgetKinds[tag] = true
+			collector.schema.WidgetTypes[tag] = true
 		}
+	}
+	for _, widgetType := range game.UndeclaredTypes {
+		collector.schema.WidgetTypes[widgetType] = true
 	}
 }
 
@@ -167,9 +172,11 @@ func (counter *counter) count(statement jomini.Statement, context Context, inner
 		switch written := statement.(type) {
 		case *jomini.Assignment:
 			countValue(written.Value, inner.At)
+			countColor(written.Value, inner.At)
 		case *jomini.ValueStmt:
 			if block := jomini.ChildBlock(statement); block != nil {
 				countValue(block, inner.At)
+				countColor(block, inner.At)
 			} else {
 				countValue(written.Value, context.At)
 			}
@@ -210,6 +217,7 @@ func (counter *counter) count(statement jomini.Statement, context Context, inner
 		}
 	}
 	countValue(assign.Value, position)
+	countColor(assign.Value, position)
 	return true
 }
 
@@ -233,6 +241,28 @@ func countValue(value jomini.Value, position *Position) {
 		position.Vanilla.Blocks++
 		position.Vanilla.Writes |= WritesBlock
 	}
+}
+
+// countColor records whether the value of a position, an assignment's or an entry's, is a color, as the editor's
+// swatches read it (Vanilla.WritesColors): a tagged color block marks its form; a word may name one (a named color,
+// a list of them, another slot: a coat of arms writes color1 = "red", list "x" and color2); a number, a yes, a date or
+// any other block counts against the position (a map's lighting writes sun_direction beside its colors, and numbers).
+// The words listed in a block are its contents, so a color's own numbers count for nothing here.
+func countColor(value jomini.Value, position *Position) {
+	if position == nil {
+		return
+	}
+	tag, parts, isNumbers := jomini.ColorParts(value)
+	if _, isColor := game.ColorOf(tag, parts); isNumbers && isColor {
+		if tag != "" {
+			position.Vanilla.Writes |= WritesColor
+		}
+		return
+	}
+	if scalar, isScalar := value.(*jomini.Scalar); isScalar && writesOf(scalar)&(WritesIdent|WritesString) != 0 {
+		return
+	}
+	position.Vanilla.NotColors++
 }
 
 // inferTypesAndPrefixes gives positions the type vanilla's words share and each link prefix the database of

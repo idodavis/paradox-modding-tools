@@ -1,8 +1,8 @@
 /**
  * The Paradox languages' features over IdeService, registered once for `file:` models of the three languages (a
  * compare's text models are never asked of the backend, which would read them as files): completion and its
- * prediction, signature help, definition, references, rename, formatting, folding, quick fixes and inlay hints; what
- * opens a definition in another file; and a game file read only in every editor.
+ * prediction, signature help, definition, references, rename, formatting, folding, quick fixes, inlay hints and the
+ * colors script writes; what opens a definition in another file; and a game file read only in every editor.
  */
 import * as rpc from "@services/ideservice";
 import type { CodeAction, Completion, Inspect, Item } from "@services/internal/lsp";
@@ -23,6 +23,8 @@ import {
 } from "./models";
 
 const PARADOX = ["paradox", "paradox-loc", "paradox-gui"].map((language) => ({ language, scheme: "file" }));
+// script and GUI files, the ones that write color blocks
+const SCRIPT = PARADOX.filter(({ language }) => language !== "paradox-loc");
 
 /** Whether a card says something: a field besides its place (within, range) and the winner is set. */
 export function cardSaysSomething(card: Inspect): boolean {
@@ -226,6 +228,23 @@ export function installProviders(): void {
         }),
         dispose() {},
       };
+    },
+  });
+
+  // the colors a file writes, a swatch before each, and a color picked written back in its block's own form
+  monaco.languages.registerColorProvider(SCRIPT, {
+    async provideDocumentColors(model) {
+      await flushed(model);
+      const swatches = (await rpc.Colors(workspaceId, pathOf(model))) ?? [];
+      return swatches.map(({ range, color }) => ({
+        range: toRange(model, range),
+        color: { red: color.r, green: color.g, blue: color.b, alpha: color.a },
+      }));
+    },
+    async provideColorPresentations(model, { color, range }) {
+      const block = model.getValueInRange(range);
+      const text = await rpc.Recolor(block, { r: color.red, g: color.green, b: color.blue, a: color.alpha });
+      return [{ label: text, textEdit: { range, text } }];
     },
   });
 

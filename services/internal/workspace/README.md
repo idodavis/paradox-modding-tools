@@ -9,7 +9,7 @@ query resolves names across the two indexes in load order. The open one is `Sess
 |---|---|
 | `workspace.go` | `Session`: the indexes, the open buffers (`DidChange`, `DidSave`, `DidClose`, `DiskChanged`), the text and parse of a file (`Parsed`, which keeps what a request parses in its `Parses`), `Winner`, the lock |
 | `open.go` | `Request` and `Slot`: the one workspace open at a time, built once for many callers |
-| `locate.go` | where a path and a definition sit: the file, the mod and the database at a path, a definition's statement, a key's localization and a definition's title, a mod's calendar |
+| `locate.go` | where a path and a definition sit: the file, the mod and the database at a path, a definition's statement, a key's localization and a definition's title in a language ("" the workspace's), a mod's calendar |
 | `fires.go` | what fires what: the events and on_actions a definition fires, through the scripted entries it runs, and what fires it |
 | `watcher.go` | debounced changes to the files under a set of roots, folders made later included |
 

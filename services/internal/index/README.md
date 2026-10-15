@@ -13,7 +13,7 @@ file again; each step is a function named for it, in the file that holds its hal
 | `scan.go` | the pipeline: `Request`, `Install`, `Mod`; `Scan`, `ScanMods`, `Reindex`; the steps only these call: `inventoryOf`, `localizationOf`, `schemaOf`, `schemaInput`, `BuildSchema` |
 | `collect.go` | `Index.collectFiles`, `collectFile`, `Collect`, `collector.collect`, `scopePair`, `collectLoc`, `conceptReferences` |
 | `store.go` | what a scan keeps: `Occurrence` (the stored form), `At` (a handle), the symbol `table`s, `Index`; `Rebuild`, `add`, `Drop`, `At`, `InFile`, `Forget`, `WritesInScope`, `LocKeys`, `Repeated`; the handle's accessors `Occurrence`, `File`, `Entry`, `Text`, `Language` |
-| `lookup.go` | the store's questions in the game's load order: `Lookup`, `FileAt`, `Loaded`, `RefsInside`, `Names`, `Resolve`, `RefsTo`, `Winner`, `Fires`, `Runs`, `Scripted` |
+| `lookup.go` | the store's questions in the game's load order: `Lookup`, `FileAt` (a path read as the game reads it: any case, doubled slashes, a slash before it), `Loaded`, `RefsInside`, `Names`, `Resolve`, `RefsTo`, `Winner`, `Fires`, `Runs`, `Scripted` |
 | `cache.go` | steps 1 and 6: `fromCache`, `SaveInstall`, `LoadInstall`, `CachedAt`, `DropInstall` and the cache file's name |
 
 ## The collector (`collect.go`)
@@ -26,7 +26,8 @@ the entry it is in; an entry's definition points at itself. `visit` sees each st
 diagnostics judges each statement, and the editor stops at the cursor. `collectFile` picks by format, and
 `Index.collectFiles` runs it on a worker per CPU, handing each file's result (`collected`) to `add` in file order. A
 loc file is collected by `collectLoc`: each entry `Localizes` its key, each `$key$` in a text is a loc reference, and
-`[x|E]` or `Concept('x', …)` a reference to a game concept (`conceptReferences`).
+each concept a data call marks as one (`loc.Concepts`: `[x|E]` or `Concept('x', …)`) a reference to a game concept
+(`conceptReferences`).
 
 ## The store and the lookups (`store.go`, `lookup.go`)
 

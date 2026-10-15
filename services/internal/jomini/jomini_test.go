@@ -121,6 +121,24 @@ func TestParseErrors(t *testing.T) {
 }
 
 // TestLineIndex pins offset and position math, including UTF-8 byte columns.
+func TestConstantAt(t *testing.T) {
+	last := Parse("@x = 5\n@x = 6\nk = @x\n")
+	if value, at, isConstant := last.ConstantAt("@x", len(last.Src)); value != "6" || at != 7 || !isConstant {
+		t.Errorf("the last top statement wins: %q at %d, %v", value, at, isConstant)
+	}
+	if _, _, isConstant := last.ConstantAt("@y", 0); isConstant {
+		t.Error("a constant nothing writes")
+	}
+	block := Parse("@z = { a = 1 }\n")
+	if _, _, isConstant := block.ConstantAt("@z", 0); isConstant {
+		t.Error("a block is no value")
+	}
+	plain := Parse("k = 1\n")
+	if _, _, isConstant := plain.ConstantAt("k", 0); isConstant {
+		t.Error("a name without @ is no constant")
+	}
+}
+
 func TestLineIndex(t *testing.T) {
 	lines := NewLineIndex("ab\ncde\nf")
 	for _, testCase := range []struct{ offset, line, col int }{

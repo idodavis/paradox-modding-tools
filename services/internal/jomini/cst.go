@@ -271,16 +271,30 @@ func isIdentByte(char byte) bool {
 		(char >= 'A' && char <= 'Z') || (char >= 'a' && char <= 'z') || (char >= '0' && char <= '9')
 }
 
-// AssignmentAt is the assignment whose key starts at a line and column of Src; nil where none does.
+// AssignmentAt is the assignment whose key, or the tag of whose value, starts at a line and column of Src (a name a
+// keyword declares with an equals sign: template = name { }); nil where none does. A block's statements are in
+// source order, so the one that holds the place is found by halving them, block by block down, never by a walk of
+// the file.
 func (result Result) AssignmentAt(line, col int) Statement {
-	start, match := result.Lines().OffsetAt(line, col), Statement(nil)
-	Walk(result.Root, func(statement Statement, _ int, _ *Block) bool {
-		if assign, isAssign := statement.(*Assignment); isAssign && assign.Key.Range.Start == start {
-			match = statement
+	start := result.Lines().OffsetAt(line, col)
+	statements := result.Root.Statements
+	for {
+		i := sort.Search(len(statements), func(i int) bool { return statements[i].NodeRange().End > start })
+		if i == len(statements) || statements[i].NodeRange().Start > start {
+			return nil
 		}
-		return match == nil && statement.NodeRange().Start <= start && start < statement.NodeRange().End
-	})
-	return match
+		if assign, isAssign := statements[i].(*Assignment); isAssign {
+			tagged, isTagged := assign.Value.(*TaggedBlock)
+			if assign.Key.Range.Start == start || isTagged && tagged.Tag.Range.Start == start {
+				return assign
+			}
+		}
+		block := ChildBlock(statements[i])
+		if block == nil {
+			return nil
+		}
+		statements = block.Statements
+	}
 }
 
 // Attach gives each statement the comments that belong to it, and the comments that belong to none.

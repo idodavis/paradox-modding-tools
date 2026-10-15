@@ -376,7 +376,7 @@ func (schema *Schema) valueFromTraits(command *Command, name, traits string) (cl
 		claim.Type = ValueScope
 	case strings.HasPrefix(traits, "class C") && strings.HasSuffix(traits, "Database key"):
 		class := strings.TrimSuffix(strings.TrimPrefix(traits, "class C"), "Database key")
-		schema.mergeUsage(parseDocScript([]string{name + " = <" + snakeCase(strings.TrimSpace(class)) + ">"}).Children[0], command)
+		schema.mergeUsage(parseDocScript([]string{name + " = <" + SnakeCase(strings.TrimSpace(class)) + ">"}).Children[0], command)
 	case strings.Contains(traits, ", "):
 		list := traits
 		if _, after, found := strings.Cut(traits, ": "); found {
@@ -391,8 +391,8 @@ func (schema *Schema) valueFromTraits(command *Command, name, traits string) (cl
 	return claim
 }
 
-// snakeCase turns a class name into snake_case: TenetType is tenet_type.
-func snakeCase(class string) string {
+// SnakeCase turns a class name into snake_case: TenetType is tenet_type.
+func SnakeCase(class string) string {
 	var out strings.Builder
 	for i, char := range class {
 		if unicode.IsUpper(char) && i > 0 {

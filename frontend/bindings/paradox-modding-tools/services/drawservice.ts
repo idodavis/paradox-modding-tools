@@ -13,22 +13,12 @@ import { Call as $Call, CancellablePromise as $CancellablePromise } from "@wails
 // eslint-disable-next-line @typescript-eslint/ban-ts-comment
 // @ts-ignore: Unused imports
 import * as draw$0 from "./internal/draw/models.js";
-// eslint-disable-next-line @typescript-eslint/ban-ts-comment
-// @ts-ignore: Unused imports
-import * as lsp$0 from "./internal/lsp/models.js";
 
 /**
- * Entries is what a GUI file can draw: its windows, types, templates, text icons and formats, in file order.
+ * List is a file's entry drawn as a list.
  */
-export function Entries(workspaceID: string, path: string): $CancellablePromise<lsp$0.Symbol[] | null> {
-    return $Call.ByID(1015550551, workspaceID, path);
-}
-
-/**
- * GUI is a GUI file's entry drawn as a list at the request's resolution, scale and language.
- */
-export function GUI(workspaceID: string, request: draw$0.Request): $CancellablePromise<draw$0.List | null> {
-    return $Call.ByID(1007593076, workspaceID, request);
+export function List(workspaceID: string, request: draw$0.Request): $CancellablePromise<draw$0.List | null> {
+    return $Call.ByID(1635818557, workspaceID, request);
 }
 
 /**

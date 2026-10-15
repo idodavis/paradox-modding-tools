@@ -12,7 +12,11 @@ import { useWorkspaceStore } from "../stores/workspace";
 import LocQuote from "./LocQuote.vue";
 import OriginChip from "./OriginChip.vue";
 
-const { card, problems = [] } = defineProps<{ card: Inspect | null; problems?: monaco.editor.IMarker[] }>();
+const {
+  card,
+  problems = [],
+  size = "full",
+} = defineProps<{ card: Inspect | null; problems?: monaco.editor.IMarker[]; size?: "full" | "compact" }>();
 
 const store = useWorkspaceStore();
 const editor = useEditorStore();
@@ -28,8 +32,13 @@ const others = computed(() =>
       : [{ site, part: winner.value < 0 ? "Defined by" : card?.adds?.includes(i) ? "Adds to it" : "Replaces" }],
   ),
 );
-// an origin lists its first two files and counts the rest, so a name written in many files keeps the card short
-const SHOWN = 2;
+// each size's width, its sections' padding, how many files an origin lists before it counts the rest (so a name
+// written in many files keeps the card short), and whether the editor's keys end it
+const SIZES = {
+  full: { root: "max-w-198", section: "px-3.5 py-2.5", shown: 2, keys: true },
+  compact: { root: "max-w-90 text-12", section: "px-2.5 py-1.5", shown: 1, keys: false },
+};
+const look = computed(() => SIZES[size]);
 /** The sites as rows: a part's sites of one origin together, each file once with how many places it holds. */
 const groups = computed(() => {
   const rows: { part: string; origin: string; files: { rel: string; first: Location; count: number }[] }[] = [];
@@ -95,10 +104,10 @@ function open(site: Location): void {
 </script>
 
 <template>
-  <div class="flex w-max max-w-198 flex-col overflow-hidden divide-y divide-default">
-    <!-- as wide as its content, up to 792px -->
-    <div v-if="$slots.lead" class="px-3.5 py-2.5"><slot name="lead" /></div>
-    <div v-if="problems.length" class="flex flex-col gap-1 px-3.5 py-2.5">
+  <div class="flex w-max flex-col overflow-hidden divide-y divide-default" :class="look.root">
+    <!-- as wide as its content, up to its size's width -->
+    <div v-if="$slots.lead" :class="look.section"><slot name="lead" /></div>
+    <div v-if="problems.length" class="flex flex-col gap-1" :class="look.section">
       <div v-for="(problem, i) in problems" :key="i" class="flex items-start gap-2 text-12">
         <UIcon
           :name="problem.severity === 8 ? 'i-lucide-circle-x' : 'i-lucide-triangle-alert'"
@@ -113,7 +122,7 @@ function open(site: Location): void {
       </div>
     </div>
     <template v-if="card">
-      <div v-if="identified" class="flex flex-col gap-1 px-3.5 py-2.5">
+      <div v-if="identified" class="flex flex-col gap-1" :class="look.section">
         <div class="flex min-w-0 items-center gap-2">
           <UBadge v-if="card.head" :label="card.head" color="info" size="sm" />
           <span class="min-w-0 font-mono text-13 font-semibold break-all text-highlighted">{{
@@ -129,7 +138,7 @@ function open(site: Location): void {
           >
         </div>
       </div>
-      <div v-if="facts.length || color" class="px-3.5 py-2.5">
+      <div v-if="facts.length || color" :class="look.section">
         <!-- a value wraps to three lines, the rest on its tooltip -->
         <div class="grid grid-cols-[78px_minmax(0,1fr)] items-baseline gap-x-2.5 gap-y-1 text-12">
           <template v-for="[label, value] in facts" :key="label">
@@ -147,12 +156,12 @@ function open(site: Location): void {
           </template>
         </div>
       </div>
-      <div v-if="card.name || card.prose || card.about" class="flex flex-col gap-1.5 px-3.5 py-2.5">
+      <div v-if="card.name || card.prose || card.about" class="flex flex-col gap-1.5" :class="look.section">
         <LocQuote v-if="card.name" :text="card.name" />
         <p v-if="card.prose" class="whitespace-pre-line text-12 text-toned">{{ card.prose }}</p>
         <p v-if="card.about" class="text-11 text-dimmed">{{ card.about }}</p>
       </div>
-      <div v-if="groups.length" class="px-3.5 py-2.5">
+      <div v-if="groups.length" :class="look.section">
         <!-- each origin's chip, under it its first files once each: the line, or how many places it holds (its first
              opens); then how many files more -->
         <div class="grid grid-cols-[78px_minmax(0,1fr)] gap-x-2.5 gap-y-2 text-12">
@@ -161,7 +170,7 @@ function open(site: Location): void {
             <span class="flex min-w-0 flex-col items-start gap-0.5">
               <OriginChip :label="store.originName(group.origin)" :color="store.originColor(group.origin)" small />
               <button
-                v-for="file in group.files.slice(0, SHOWN)"
+                v-for="file in group.files.slice(0, look.shown)"
                 :key="file.rel"
                 type="button"
                 class="cursor-pointer text-start font-mono text-11 break-all text-muted hover:text-highlighted hover:underline"
@@ -170,8 +179,8 @@ function open(site: Location): void {
                 {{ file.count > 1 ? file.rel : `${file.rel}:${file.first.range.start.line + 1}`
                 }}<span v-if="file.count > 1" class="font-sans text-dimmed"> · {{ file.count }} places</span>
               </button>
-              <span v-if="group.files.length > SHOWN" class="text-11 text-dimmed"
-                >+{{ group.files.length - SHOWN }} more</span
+              <span v-if="group.files.length > look.shown" class="text-11 text-dimmed"
+                >+{{ group.files.length - look.shown }} more</span
               >
             </span>
           </template>
@@ -179,7 +188,7 @@ function open(site: Location): void {
       </div>
       <!-- each key with its word on one line; a narrow card wraps between them -->
       <div
-        v-if="identified"
+        v-if="identified && look.keys"
         class="flex flex-wrap items-center gap-x-3 gap-y-1 bg-muted px-3.5 py-1.5 text-tiny whitespace-nowrap text-dimmed"
       >
         <span v-for="[key, word] in KEYS" :key="key" class="flex items-center gap-1"

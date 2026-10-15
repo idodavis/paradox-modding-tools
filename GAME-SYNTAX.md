@@ -818,11 +818,25 @@ parse and index. `<game>` is an install's `game` folder (EU5's `in_game`); the c
 | windows with siblings sharing a box (anchor, position, size as written) that both carry a `visible` binding | 368 of 735 | 402 of 672 | 1,093 of 1,527 |
 
 **A type based on its own name is a built-in kind's defaults.** Each game ships `type hbox = hbox { … }` for the kinds
-it gives defaults to (CK3 18, Vic3 22, EU5 17 such types); a base no type defines (CK3 17 of 35) is a kind too. The
-install states its own list of kinds, which no table of PMT's holds.
+it gives defaults to (CK3 18, Vic3 22, EU5 17 such types); a base no type defines (CK3 17 of 35) is a kind too. A few
+kinds are written with no type based on them or named for them, so no file states that they are kinds. Over each whole
+install (`game`, `jomini`, `clausewitz`; the debug and tool windows' editor widgets are types `clausewitz` defines)
+they are CK3's `zoomarea` and `text_occluder`, Vic3's `overlappingitembox` (39), `treemapchart`, `axis` and
+`portrait_button`, and EU5's `axis`, `plotline`, `screen_grab` and `newsfeed_carousel`: `game.UndeclaredKinds`. No
+rule finds them in the files without false kinds. A block written `key = { }` among a widget's children that writes a
+key sizing or placing its own box (`size`, `position`, the anchors, the layout policies, the margins) finds them in the
+game's own folder, a `state` left out (CK3 2,552, Vic3 1,296, EU5 201), whose box keys are its widget's at the state's
+end; but over the engine's shared folders, which every Jomini game ships alike, it also takes `attachto` (all three
+games), a block that attaches its window to another widget by id with the anchors it attaches by, and EU5's
+`header_pattern` and `button_standard`, CK3 and Vic3 types that a shared `jomini` window writes and EU5 does not
+define. Learning from a block that holds widgets, or from any key the page lays out (`alpha`, `alwaystransparent`),
+would also take a holder's parts (a scroll bar's `slider`, `track`, `inc_button`, `dec_button`, a button's
+`buttontext`, a progress bar's `marker`, a dropdown's `active_item` and `list`), EU5's `contextmenu_widget` (72), a
+menu shown on a right click, and `glow` (CK3 102, EU5 1,124), an effect drawn around its holder.
 
 ```
 find "<game>" -name '*.gui' -print0 | xargs -0 grep -hoE '^\s*type\s+(\w+)\s*=\s*\1\b'
+find "<game>" -name '*.gui' -print0 | xargs -0 grep -hoE '^\s*(zoomarea|overlappingitembox|contextmenu_widget|glow|state)\s*=\s*\{' | tr -d ' \t={' | sort | uniq -c
 ```
 
 **The words a widget's layout is written in.** Five layout policy words, case-insensitively: `expanding` (CK3 10,935
@@ -868,18 +882,75 @@ where `text_single` is `autoresize = yes` and sized by its words.
 ```
 find "<game>" -name '*.gui' -print0 | xargs -0 grep -hB1 -E '^\s*background = \{' | grep -cE '^\s*(hbox|vbox|flowcontainer|uberhbox|ubervbox|fixedgridbox|dynamicgridbox) = \{'
 find "<game>" -name '*.gui' -print0 | xargs -0 grep -hE '^\s*multiline = yes' | wc -l
+find "<game>" -name '*.gui' -print0 | xargs -0 grep -hoE '^\s*(scrollwidget|zoomwidget|zoomarea)\s*=\s*\{' | tr -d ' \t={' | sort | uniq -c
+grep -rlE --include=*.gui '=\s*zoomarea\s*\{' "<install>"
 ```
 
 **The blocks a widget writes that are not its children.** A `background = { }` is the widget's skin, filling it and
 drawn behind its children (CK3 2,305, Vic3 1,294, EU5 1,455); a `tooltipwidget = { }` is shown on hover and never in the
-window (679, 682, 3,811); a `scrollbar_vertical` or `scrollbar_horizontal = { }` is a `scrollbar` at the area's edge (CK3
-59 and 12). Every other block whose key names a widget is a child, laid out among its siblings in written order. The
-layout words are the same in the three games (`hbox` CK3 3,545, Vic3 715, EU5 3,267; `layoutpolicy_horizontal` 8,754,
-1,939, 4,546; `parentanchor` 4,427, 6,801, 2,837), and the preview hands them to the browser as written, each mapped to
-the CSS word that means the same (`frontend/src/draw/widgets.ts`); Go measures nothing.
+window (679, 682, 3,811); a `scrollbar_vertical` or `scrollbar_horizontal = { }` is a `scrollbar` at the area's edge
+(CK3 59 and 12); a `scrollwidget = { }` is the widget a scroll area scrolls and a `zoomwidget = { }` the one a zoom area
+zooms, each a plain widget though no type is named after it (`scrollwidget` CK3 65, Vic3 52, EU5 183; `zoomwidget` 3, 3,
+4). A `zoomarea` is a type's base in Vic3 (`modifier_debugger.gui`, `tech_tree.gui`, `ticktask_debugger.gui`) and in
+EU5's `jomini` folder, never in CK3, which writes it 3 times. Every other block whose key names a widget is a child,
+laid out among its siblings in written order. The properties are the same in the three games (`hbox` CK3 3,545, Vic3
+715, EU5 3,267; `layoutpolicy_horizontal` 8,754, 1,939, 4,546; `parentanchor` 4,427, 6,801, 2,837), and the preview
+hands them to the browser as written, each mapped to the CSS that means the same (`frontend/src/draw/picture.ts`);
+Go measures nothing.
 
 ```
 for k in background tooltipwidget scrollbar_vertical scrollbar_horizontal hbox layoutpolicy_horizontal parentanchor; do printf '%-24s %s\n' "$k" "$(grep -rhoE "^\s*$k\s*=" "<game>/gui" | wc -l)"; done
+```
+
+**What the words mean, measured over every window.** Each whole install's windows were resolved (CK3 687, Vic3 594, EU5
+1,346, with the workspaces' mods) and drawn in the app, every text measured against its widget's box; a rule below is
+the one under which the game's own windows fit their literal text. GUI files declare constants (`@panel_width = 540`:
+CK3 31 at the top of a file and 18 inside blocks, Vic3 806 and 10, EU5 159 and 37) and write them in place of a number
+(CK3 382, Vic3 1,091, EU5 397, Vic3's mostly sizes: `size` 388, `minimumsize` 302, `maximumsize` 175), or inline
+arithmetic over them, `@[ panel_width - 20 ]` (CK3 2, Vic3 15, EU5 186) with `+ - * /`, brackets and a leading minus;
+each file declares the constants it uses, a block's own before the file's. A `textbox` that writes `autoresize = yes` is
+its text's size whatever size it writes (`text_multi` writes a default 45 by 45 that windows autoresize up to
+`max_width`); the wiki says a textbox is fixed size or autoresized. The layout policies are the wiki's: `expanding`
+grows and never shrinks below its own size, `growing` the same at lower priority, `preferred` grows or shrinks,
+`shrinking` only shrinks, `fixed` neither; the priority is common, as 1,718 of CK3's 17,141 rows and columns (in 343 of
+its 687 windows) mix an expanding child with growing or preferred ones. `ignore_layout = yes` takes a widget out of its box's layout (EU5 271, an
+overlay at `size = { 100% 100% }`), and a position may be written in percent of what holds the widget (`position = { 82%
+52% }`: CK3 163, Vic3 23, EU5 39). `raw_text` names a loc entry where one exists (57 of vanilla Vic3's 64 key-like raw
+texts are entries; the rest are words), a text's `#format` is matched without regard to case (the files define `V`, `R`,
+`N`, `I`, `P`, `high`, `weak`; the texts write `#v`, `#r`, `#HIGH`, `#Weak`), and `#underline` is an engine word no file
+defines. A texture path may begin with a slash or double one (Vic3 `/gfx/interface/map_markers/small_nib.dds`, CK3
+`gfx/interface/icons//icon_barter.dds`), which the game reads as the plain path; a `portrait_texture` is a binding in
+every one written (CK3 306, Vic3 209, EU5 176). Two Vic3 templates are written `template = name { }`
+(`block_windows.gui`; `map_modes_button_position` places the map-mode button of ten panels): the entry detector reads
+a keyword before an equals sign as declaring the tag's name, and `AssignmentAt` finds the statement by that tag.
+
+```
+grep -rhE --include=*.gui '^@[A-Za-z_]\w*\s*=' "<install>" | wc -l; grep -rhE --include=*.gui '^\s+@[A-Za-z_]\w*\s*=' "<install>" | wc -l
+grep -rhoE --include=*.gui '@\[[^]]*\]' "<install>" | grep -oE '[^][@A-Za-z0-9_. ]' | sort | uniq -c
+grep -rhoE --include=*.gui 'position\s*=\s*\{[^}]*%[^}]*\}' "<install>" | wc -l
+grep -rhoiE --include=*.gui '^\s*(ignore_layout|portrait_texture)\s*=\s*\S+' "<install>" | sort | uniq -c
+grep -rhoE --include=*.gui 'raw_text\s*=\s*"[A-Z][A-Z0-9_]+"' "<game>/gui" | sort -u | wc -l
+grep -rhoE --include=*.gui '^\s*(template|local_template)\s*=\s*[A-Za-z_]\w*\s*\{' "<install>"
+```
+
+**How a widget's textures blend, read from the game's shader.** The installs ship the GUI shader's source:
+`clausewitz/gfx/FX/cw/pdxgui_sprite_base.fxh` in CK3 and Vic3 (EU5: `clausewitz/loading_screen/gfx/FX/cw/`) holds `Blend`
+and `ApplyModifyTextures`; the coat of arms headers are under `jomini/gfx/FX/coat_of_arms/` (EU5:
+`jomini/main_menu/gfx/FX/coat_of_arms/`). Each `modify_texture` is laid on the widget's texture in order, at its own
+`alpha` (CK3 writes one 341 times, Vic3 95, EU5 310), in its `blend_mode`: add, overlay, multiply, colordodge, lighten,
+darken and normal all keep the widget's texture's alpha, so an overlay never reaches outside the texture's shape;
+`alphamultiply` (CK3 920, Vic3 260, EU5 398) scales that alpha by its own; `mask` (CK3 22, all shimmer effects) draws
+nothing and scales every overlay after it. The game's overlay chooses its formula by the base color, which is CSS's
+`overlay`. A coat of arms is colored as its headers say: a pattern blends from a fallback color toward color 1 by its
+red, color 2 by its green and color 3 by its blue, then takes a 20% overlay of the mask texture's blue; a colored emblem
+starts at color 1, blends to color 2 by its green and color 3 by its red, then takes a full overlay of its own blue.
+Neither is a CSS filter: the products of channels and the overlay need the pixels computed.
+
+```
+grep -n -A45 'float4 Blend( float4 Base' "<install>/clausewitz/gfx/FX/cw/pdxgui_sprite_base.fxh"
+grep -n -A8 'float4 Pattern( VS_OUTPUT_COA_ATLAS Input, float4 PatternTex )' "<install>/jomini/gfx/FX/coat_of_arms/coat_of_arms_pattern.fxh"
+grep -n -B2 -A8 'ifdef COLORED_EMBLEM' "<install>/jomini/gfx/FX/coat_of_arms/coat_of_arms_textured_emblem.fxh"
+find "<game>" -name '*.gui' -print0 | xargs -0 grep -hoE '^\s*blend_mode\s*=\s*\w+' | sed -E 's/.*=\s*//' | sort | uniq -c
 ```
 
 **What a window is as the game opens it.** A window's state named `_show` (CK3 455, Vic3 180, EU5 53) and every state
@@ -942,7 +1013,7 @@ grep -rhoi parentanchor "<ck3>/game/gui" | wc -l
 grep -rhoi widgetanchor "<ck3>/game/gui" | wc -l
 ```
 
-**Where a widget's size comes from.** The layout kinds are written without a size and the plain kinds with one. Every
+**Where a widget's size comes from.** The box types are written without a size and the plain types with one. Every
 block-valued key of every vanilla CK3 `.gui`, with and without a direct `size`: `hbox` 3,507 blocks, 20 sized; `vbox`
 3,149, 12; `container` 1,009, 32; `flowcontainer` 517, 9; `fixedgridbox` 305, 10; `dynamicgridbox` 52, 0;
 `background` 2,321, 19; `text_single` 3,418, 72 (1,106 with a `minimumsize` or `maximumsize`, 399 with `autoresize`);
@@ -982,3 +1053,27 @@ grep -rn '^game_concept_abandon_celibacy\|^ game_concept_abandon_celibacy' "<ck3
 "n"` of the type the widget is, and of every type it instantiates below: a window's content is usually its own
 `blockoverride` of a base type's `block "entire_content_area"`, written inside a child of the base's body. An override
 written in the same type as the block it names is read as a block.
+
+## 23. A color is told by its place, not by its numbers
+
+A block of three or four numbers is a color only where its place says so: script writes far more of them that are no
+color (`position = { x y z }`, CK3 90,376 times, Vic3 4,858, EU5 107,518; `rotation`, `scale`, a camera's `look_at`,
+a light's `sun_direction`) than colors. A tagged block (`rgb { }`, `hsv { }`) is a color anywhere. An untagged one is a
+color under a key ending in `color` (a culture's `color`, a GUI file's `fontcolor`), but a key naming a portrait gene
+(`hair_color` holds two pairs into a color map), and where vanilla writes nothing at its position but colors, one of
+them tagged, and words, which name colors there: a named color's entry, which CK3 writes untagged 82 times of 112 (30
+tagged), Vic3 3 of 185 and EU5 0 of 4,103, and a coat of arms' `color1` to `color5`, written as numbers, as a named
+color (`"red"`), as `list "x"` or as another slot (`color1 = color2`). A mod writes them as its game does (TFE's
+`culture_colors.txt` 82, its coats of arms 26). Over the three installs and their workspaces' mods, that last rule
+colors those and one EU5 `color2`, nothing else. Two rules that look the same fail: "the position of a tagged color"
+colors the map's lighting files (`gfx/map/environment`, whose entries mix `hsv { }` colors, plain numbers and
+`sun_direction` vectors at one position; the numbers keep the rule above off them), and "a block beside a tagged
+color" colors 2,067 portrait camera `look_at`s in CK3.
+
+```
+for g in "Crusader Kings III/game/common" "Victoria 3/game/common" "Europa Universalis V/game/main_menu/common"; do
+  cat "$g/named_colors"/*.txt | grep -cE '^\s*\w+\s*=\s*(hsv|rgb|hsv360|hex)\s*\{'   # tagged
+  cat "$g/named_colors"/*.txt | grep -cE '^\s*\w+\s*=\s*\{\s*-?[0-9.]'                # untagged
+done
+grep -rhoE --include=*.txt '\bposition\s*=\s*\{\s*-?[0-9.]+\s+-?[0-9.]+\s+-?[0-9.]+' "<game>" | wc -l
+```

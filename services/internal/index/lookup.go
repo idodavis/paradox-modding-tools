@@ -4,6 +4,7 @@ package index
 
 import (
 	"cmp"
+	"path"
 	"slices"
 	"strings"
 
@@ -40,11 +41,13 @@ func (index *Index) listed(role schema.Role, database, id string) []At {
 	return index.postings[posting{role, uint16(databaseOrdinal), uint32(idOrdinal)}]
 }
 
-// FileAt is the file at a Rel across the indexes, whatever its case: the last index's that lists
-// it, at its last place there.
+// FileAt is the file at a Rel across the indexes, read as the game reads a path: whatever its case, its
+// doubled slashes and a slash before it (Vic3 writes /gfx/interface/...); the last index's that lists it, at
+// its last place there.
 func FileAt(indexes []*Index, rel string) (inventory.File, bool) {
+	key := strings.TrimPrefix(path.Clean("/"+strings.ToLower(rel)), "/")
 	for _, index := range slices.Backward(indexes) {
-		if pos, listed := index.rels[strings.ToLower(rel)]; listed {
+		if pos, listed := index.rels[key]; listed {
 			return index.Files[pos], true
 		}
 	}
@@ -109,7 +112,7 @@ func Resolve(s *schema.Schema, indexes []*Index, ref schema.Occurrence, from str
 		for _, database := range s.Callees[ref.Caller] {
 			defs = append(defs, Lookup(indexes, schema.Defines, database, ref.ID)...)
 		}
-		if len(defs) == 0 && ref.Caller == game.Shapes[game.ShapeWidget].Caller && s.WidgetKinds[ref.ID] {
+		if len(defs) == 0 && ref.Caller == game.Shapes[game.ShapeWidget].Caller && s.WidgetTypes[ref.ID] {
 			return nil, true
 		}
 	case ref.Database == game.SavedScopes && s.Saved[ref.ID]:

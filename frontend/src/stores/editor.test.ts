@@ -5,8 +5,11 @@ import { inApp } from "../../vitest.setup";
 import { useEditorStore } from "./editor";
 import { useWindowsStore } from "./windows";
 
-// the settings the editor reads a kind's view from, with none set; the real store puts the theme on the page
-vi.mock("./settings", () => ({ useSettingsStore: () => ({ values: {} }) }));
+// the settings the editor reads a kind's view and its panel's switch from, with none set, so a switch is its default;
+// the real store puts the theme on the page
+vi.mock("./settings", () => ({
+  useSettingsStore: () => ({ values: {}, on: (_key: string, fallback: boolean) => fallback }),
+}));
 
 describe("groups and layout", () => {
   beforeEach(() => {

@@ -12,6 +12,9 @@ import { Call as $Call, CancellablePromise as $CancellablePromise } from "@wails
 
 // eslint-disable-next-line @typescript-eslint/ban-ts-comment
 // @ts-ignore: Unused imports
+import * as game$0 from "./internal/game/models.js";
+// eslint-disable-next-line @typescript-eslint/ban-ts-comment
+// @ts-ignore: Unused imports
 import * as inventory$0 from "./internal/inventory/models.js";
 // eslint-disable-next-line @typescript-eslint/ban-ts-comment
 // @ts-ignore: Unused imports
@@ -22,6 +25,13 @@ import * as lsp$0 from "./internal/lsp/models.js";
  */
 export function CodeActions(workspaceID: string, path: string, line: number, col: number): $CancellablePromise<lsp$0.CodeAction[] | null> {
     return $Call.ByID(1850891185, workspaceID, path, line, col);
+}
+
+/**
+ * Colors is the colors a file writes, each a swatch the editor draws, from lsp.Colors.
+ */
+export function Colors(workspaceID: string, path: string): $CancellablePromise<lsp$0.Swatch[] | null> {
+    return $Call.ByID(512434499, workspaceID, path);
 }
 
 /**
@@ -114,6 +124,13 @@ export function Hover(workspaceID: string, path: string, line: number, col: numb
  */
 export function InlayHints(workspaceID: string, path: string): $CancellablePromise<lsp$0.InlayHint[] | null> {
     return $Call.ByID(1595071124, workspaceID, path);
+}
+
+/**
+ * Recolor is a color block's text written with another color in its own form, from lsp.Recolor.
+ */
+export function Recolor(block: string, color: game$0.RGBA): $CancellablePromise<string> {
+    return $Call.ByID(2928222789, block, color);
 }
 
 /**

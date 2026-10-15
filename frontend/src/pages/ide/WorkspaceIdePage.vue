@@ -1,13 +1,12 @@
 <script setup lang="ts">
 /**
  * The IDE: the sidebar's explorer, a section for the mods and one for the game's files, its search
- * and its source control; the editor groups where they sit; the panel's problems, search
- * results and Git output; and, on the right, the shown file's panel (a GUI file's Widgets) or the Wiki pane. A
- * workspace's tabs come back when it opens, in their groups. The status
+ * and its source control; the editor groups where they sit, each with its pane; the panel's problems, search
+ * results and Git output. A workspace's tabs come back when it opens, in their groups. The status
  * bar shows the problems and the branch, then the shown file's caret, indentation, kind and encoding, or what a
  * diff compares. In a window of its own (windows.ts) it shows one part: an editor group, the game's files, or the panel.
  */
-import { computed, onActivated, onDeactivated, shallowRef, useTemplateRef, watch } from "vue";
+import { computed, nextTick, onActivated, onDeactivated, shallowRef, useTemplateRef, watch } from "vue";
 import { useRouter } from "vue-router";
 import { useMutation, useQuery } from "@pinia/colada";
 import { useLocalStorage, watchDebounced } from "@vueuse/core";
@@ -25,7 +24,7 @@ import { languageOf } from "../../lib/monaco";
 import { textQuery } from "../../queries";
 import { useGitStore } from "../../stores/git";
 import { useEditorStore } from "../../stores/editor";
-import { tabOf, viewsOf } from "../../editor/tabs";
+import { tabOf } from "../../editor/tabs";
 import { useSettingsStore } from "../../stores/settings";
 import { Close, Show } from "@services/windowservice";
 import { holdsFiles, isMain, useWindowsStore, windowName, windowPart } from "../../stores/windows";
@@ -35,9 +34,7 @@ import IdePanel from "./IdePanel.vue";
 import IdeSettingsCard from "./IdeSettingsCard.vue";
 import SearchView from "./SearchView.vue";
 import SourceControlView from "./SourceControlView.vue";
-import GuiDetail from "../../draw/GuiDetail.vue";
 import StatusFacts from "../../ui/StatusFacts.vue";
-import WikiPane from "./WikiPane.vue";
 
 const { id } = defineProps<{ id: string }>();
 
@@ -105,15 +102,10 @@ function collapseAll(): void {
   gameTree.value?.collapseAll();
 }
 
-// the shown file's panel, while its kind has one and it is open
-const detail = computed(
-  () => editor.panelOpen(editor.activeFile) && !!viewsOf(locate(editor.activeFile)?.rel ?? editor.activeFile)?.panel,
-);
-
 // the panes, their sizes kept by the splitters: the sidebar (folded to its strip of tabs when dragged shut or its
-// open tab is clicked again), the editors (at least a third of the page) and, while one is open, the file's panel or
-// else the Wiki pane; under the editors the panel (the editors keeping half); in the explorer the mods' section and
-// the game's files under it, which fold to their header and give the mods their room
+// open tab is clicked again) and the editors, whose groups show a file's panel and the Wiki pane beside their own
+// editors; under the editors the panel (the editors keeping half); in the explorer the mods' section and the game's
+// files under it, which fold to their header and give the mods their room
 const gameOpen = useLocalStorage("pmt.ide.gameOpen", true);
 const STRIP = 36;
 const panes = computed(() => [
@@ -144,11 +136,6 @@ const panes = computed(() => [
           },
         ]),
   ...(windowPart !== "panel" ? [{ id: "editors", slot: "editors", order: 2, minSize: 33 }] : []),
-  ...(detail.value
-    ? [{ id: "detail", slot: "detail", order: 3, sizeUnit: "px" as const, defaultSize: 360, minSize: 280 }]
-    : isMain && editor.wikiOpen
-      ? [{ id: "wiki", slot: "wiki", order: 3, sizeUnit: "px" as const, defaultSize: 440, minSize: 320 }]
-      : []),
 ]);
 const editorPanes = computed(() => [
   { id: "code", slot: "code", order: 1, minSize: 50 },
@@ -189,11 +176,12 @@ defineShortcuts(
   computed(() =>
     visible.value
       ? {
-          meta_shift_w: key(() => (editor.wikiOpen = !editor.wikiOpen)),
+          meta_shift_w: key(() => editor.toggleWiki()),
           meta_shift_f: key(() => editor.openSidebar("search")),
           meta_shift_e: key(() => editor.openSidebar("explorer")),
           meta_j: key(() => (editor.panel = editor.panel ? "" : "problems")),
           "meta_\\": key(() => editor.split("right")),
+          meta_shift_v: key(() => editor.cycleView(editor.activeTab)),
         }
       : {},
   ),
@@ -210,10 +198,28 @@ function clickSidebar(tab: (typeof SIDEBAR_TABS)[number]["tab"]): void {
   if (editor.sidebarOpen && editor.sidebar === tab) editor.sidebarOpen = false;
   else editor.openSidebar(tab);
 }
-/** The sidebar dragged shut folds to its strip. */
-function onCollapse(index: number): void {
-  if (panes.value[index]?.id === "sidebar") editor.sidebarOpen = false;
+/** The sidebar dragged shut folds to its strip: only a drag of a handle folds it, never a size the splitter restores
+ * for its panes. */
+let dragging = false;
+function onDragging(_index: number, on: boolean): void {
+  dragging = on;
 }
+function onCollapse(index: number): void {
+  if (dragging && panes.value[index]?.id === "sidebar") editor.sidebarOpen = false;
+}
+// a sidebar that opens at the folded size the splitter remembers for these panes (it was dragged shut there) opens
+// at its own size
+const splitter = useTemplateRef("splitter");
+watch(
+  () => editor.sidebarOpen,
+  async (open) => {
+    if (!open) return;
+    await nextTick();
+    const sidebar = splitter.value?.panelsRef[0];
+    if (sidebar?.isCollapsed) sidebar.expand();
+  },
+  { immediate: true },
+);
 
 // the status bar: the open files' problems, then the shown file's facts
 const { data: file } = useQuery(() => textQuery(editor.activeFile));
@@ -268,7 +274,14 @@ function showProblems(): void {
 <template>
   <div class="nokey flex h-full min-h-0">
     <IdePanel v-if="windowPart === 'panel'" :workspace-id="id" />
-    <USplitter :items="panes" auto-save-id="pmt.ide" class="min-w-0 flex-1" @collapse="onCollapse">
+    <USplitter
+      ref="splitter"
+      :items="panes"
+      auto-save-id="pmt.ide"
+      class="min-w-0 flex-1"
+      @collapse="onCollapse"
+      @dragging="onDragging"
+    >
       <template #sidebar>
         <aside
           v-if="isMain && !editor.sidebarOpen"
@@ -453,12 +466,6 @@ function showProblems(): void {
             <div class="flex min-h-0 min-w-0 flex-1 border-t border-default"><IdePanel :workspace-id="id" /></div>
           </template>
         </USplitter>
-      </template>
-      <template #detail>
-        <GuiDetail :workspace-id="id" :path="editor.activeFile" class="min-w-0 flex-1" />
-      </template>
-      <template #wiki>
-        <WikiPane :workspace-id="id" class="min-w-0 flex-1" />
       </template>
     </USplitter>
   </div>

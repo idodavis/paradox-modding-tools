@@ -8,6 +8,7 @@ import (
 	"strconv"
 	"strings"
 
+	"paradox-modding-tools/services/internal/game"
 	"paradox-modding-tools/services/internal/inventory"
 	"paradox-modding-tools/services/internal/lsp"
 )
@@ -162,6 +163,20 @@ func (s *IdeService) CodeActions(workspaceID, path string, line, col int) ([]lsp
 		return nil, err
 	}
 	return lsp.CodeActions(ws, path, line, col)
+}
+
+// Colors is the colors a file writes, each a swatch the editor draws, from lsp.Colors.
+func (s *IdeService) Colors(workspaceID, path string) ([]lsp.Swatch, error) {
+	ws, err := s.workspaces.openWorkspace(workspaceID)
+	if err != nil {
+		return nil, err
+	}
+	return lsp.Colors(ws, path)
+}
+
+// Recolor is a color block's text written with another color in its own form, from lsp.Recolor.
+func (s *IdeService) Recolor(block string, color game.RGBA) (string, error) {
+	return lsp.Recolor(block, color)
 }
 
 // InlayHints is the hints drawn inside a file's text, from lsp.InlayHints.

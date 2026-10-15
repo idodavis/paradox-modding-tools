@@ -13,11 +13,11 @@ import { useLocalStorage } from "@vueuse/core";
 import { Events } from "@wailsio/runtime";
 import { RenamePath } from "@services/fileservice";
 import { DidClose } from "@services/ideservice";
-import type { Diagnostic, Range } from "@services/internal/lsp";
+import type { Diagnostic } from "@services/internal/lsp";
 import type { PanelResults } from "@services/models";
 import { pathKey } from "../composables/useIdeRoots";
 import { saveFile } from "../editor/models";
-import { IMAGES, tabOf, viewsOf, type View } from "../editor/tabs";
+import { IMAGES, tabOf, viewItems, viewsOf, type View } from "../editor/tabs";
 import { useSettingsStore } from "./settings";
 import { useWindowsStore, holdsFiles, isMain, windowName } from "./windows";
 import { useWorkspaceStore } from "./workspace";
@@ -30,8 +30,6 @@ export type Layout = { group: number } | { split: "row" | "column"; parts: Layou
 export type Edge = "left" | "right" | "up" | "down" | "middle";
 /** A place a tab is asked to show: a 0-based line and UTF-8 byte column, as the backend counts. */
 export type Cursor = { path: string; line: number; col: number };
-/** The statement a file's code marks: the widget the Visual view selected, where this file writes it. */
-export type Marked = { path: string; range: Range };
 /** A rename, move or delete done in the explorer; a delete moved the path into the trash. */
 export type FileMove = { from: string; to: string; deleted?: boolean };
 
@@ -106,7 +104,6 @@ export const useEditorStore = defineStore("editor", () => {
   const problems = ref(new Map<string, Diagnostic[]>());
   const caret = ref<{ line: number; character: number; col: number } | null>(null);
   const cursor = ref<Cursor | null>(null);
-  const marked = ref<Marked | null>(null);
   // the tab a single click opened, which the next single click replaces until a double click, an edit or another
   // way of opening it keeps it; "" for none
   const preview = ref("");
@@ -163,16 +160,35 @@ export const useEditorStore = defineStore("editor", () => {
     panels.value.delete(path);
   }
 
-  /** Whether a file's panel is open: as it was toggled, else open while the file is drawn (Visual or Split). */
-  function panelOpen(file: string): boolean {
-    const path = backendPath(file);
-    return panels.value.get(path) ?? viewOf(path) !== "code";
+  /** Shows a file's next view: Code, then Split where its kind splits, then Visual, then Code again. */
+  function cycleView(file: string): void {
+    const row = viewsOf(file);
+    if (!row) return;
+    const order = viewItems(row).map((item) => item.value);
+    setView(file, order[(order.indexOf(viewOf(file)) + 1) % order.length] ?? "code");
   }
 
-  /** Open a file's panel, or close it. */
+  /** Whether a file's panel is open: as it was toggled, else, where its kind opens its panel with the picture
+   * (`ide.panel.<ext>`, on unless turned off), while the file is drawn (Visual or Split). */
+  function panelOpen(file: string): boolean {
+    const path = backendPath(file);
+    const isWithPicture = useSettingsStore().on(`ide.panel.${viewsOf(path)?.ext}`, true);
+    return panels.value.get(path) ?? (isWithPicture && viewOf(path) !== "code");
+  }
+
+  /** Open a file's panel, closing the Wiki pane, which shares its place; or close it. */
   function togglePanel(file: string): void {
     const path = backendPath(file);
     panels.value.set(path, !panelOpen(path));
+    if (panels.value.get(path)) wikiOpen.value = false;
+  }
+
+  /** Open the Wiki pane, closing the panel of the file shown in the corner group, which shares its place; or close
+   * it. */
+  function toggleWiki(): void {
+    wikiOpen.value = !wikiOpen.value;
+    const shown = group(cornerGroup.value)?.active;
+    if (wikiOpen.value && shown) panels.value.set(backendPath(shown), false);
   }
 
   /** The window a file shows in: the one holding a tab of it, else this one with it, else the one whose folders hold
@@ -479,7 +495,6 @@ export const useEditorStore = defineStore("editor", () => {
     problems,
     caret,
     cursor,
-    marked,
     preview,
     pin,
     results,
@@ -502,8 +517,10 @@ export const useEditorStore = defineStore("editor", () => {
     group,
     viewOf,
     setView,
+    cycleView,
     panelOpen,
     togglePanel,
+    toggleWiki,
     open,
     addTabHidden,
     resizeSplit,

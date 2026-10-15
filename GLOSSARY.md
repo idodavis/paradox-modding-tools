@@ -69,15 +69,26 @@ does, measured against real installs, is in [GAME-SYNTAX.md](GAME-SYNTAX.md); ho
 |---|---|---|
 | hover card | what the editor shows for the word under the cursor: what it is, what it takes, where it is defined | `lsp.Hover`, `frontend/src/ui/HoverCard.vue` |
 | Visual view | a `.gui` file drawn from its text, beside Code and Split | `frontend/src/draw/`, `frontend/src/editor/tabs.ts` |
-| draw list | one render of a GUI entry: its elements and the fonts their texts use | `draw.List` |
-| element | one widget of an entry, listed whether it is drawn or not, with where it is written, its layout words as written, its textures and its text; the page nests the elements for the browser to lay out | `draw.Element` |
-| slot | a key whose block is a widget the game treats apart from a child: a skin (`background`), chrome (a scroll bar) or an attachment (a tooltip) | `game.WidgetSlots` |
-| panel | the Widgets panel in the IDE's right column: where the selected widget sits, whether it is shown for the session, and its properties | `frontend/src/draw/GuiDetail.vue` |
+| draw list | one render of a file's entry: its elements, the files they are written in (the engine's `inventory.File` rows), the textures they draw, the groups they are shown on and the fonts their texts use | `draw.List`, kept by `draw.Render` |
+| element | one widget of an entry, listed whether it is drawn or not: where it is written and how it is named, its type's row, its properties as written, its textures, its text and the condition it is shown on | `draw.Element` |
+| property | one `key = value` a widget is written with, as the game's wiki calls it; an element carries every one of its own as written | `Element.Properties`, `draw.Property` |
+| type | the built-in widget a key resolves to through the types written on it (`hbox`, `uberbutton`, `pieslice`); a type's row says how it draws | `Element.Type`, `game.GUITypes` |
+| holding | how a type holds its children: row, column, flow, grid, scroll, or cell (by their anchors) | `game.Holding`, `picture.ts`' `HOLDS` |
+| picture | the DOM the browser lays out and paints for a list, one div per drawn widget | `frontend/src/draw/picture.ts` |
+| rect | a drawn widget's box read back from the picture, in the picture's pixels, one per drawn copy; what the marks, the panel and the code link read | `DrawFile.rects` |
+| group | a call widgets are shown on, with the values its facts are written with; the page draws each at one value, and a side group, whose widgets all lie outside the window, closed until opened | `draw.Group`, `draw.Condition`, `frontend/src/draw/widgets.ts` |
+| holder | a widget a window is laid out in, not drawn: the widgets around the one place the install writes it, or the layer the engine puts it in (EU5's lateral views) | `draw.List.Holders`, `game.GUIHolders` |
+| slot | a key whose block is a widget no type is named after: a skin (`background`), chrome (a scroll bar), an attachment (a tooltip), or the widget a scroll or zoom area holds (`scrollwidget`, `zoomwidget`) | `game.WidgetSlots` |
+| panel | the Widgets panel beside a GUI file's editor, under its group's tabs and path: where the selected widget sits, whether it is shown for the session, the binding it is shown on with each group it reads and that group's state, and its properties by writer | `frontend/src/draw/GuiDetail.vue` |
+| writer | the type or template that writes a property of an element; "" the element's own block | `draw.Property.Writer` |
+| absent | a thing the game's files did not give a render: its sentence and the element that asked for it | `draw.Absent` |
+| code link | a GUI file's code beside its picture: the picture's marks in the code, and the code's pointer and caret in the picture | `frontend/src/draw/CodeLink.vue` |
+| swatch | a color a file writes, drawn before its block; a color picked is written back in the block's own form | `lsp.Swatch`, `lsp.Recolor` |
 | diagnostic | something wrong in a mod's file, with a code; the code is what `# pmt:ignore <code>` and the settings toggle name | `lsp.Diagnose` |
 | tab | an open file's path, or a diff tab `git:<changes\|staged\|conflict>:<path>` or `git:commit@<hash>:<path>` | `frontend/src/editor/tabs.ts` |
 | editor group | a strip of tabs in the IDE; the groups sit in rows and columns, laid out per workspace | `frontend/src/stores/editor.ts` |
 | window | the main window, or another showing one thing: a page, an editor group, the game's files, a folder or the panel | `frontend/src/stores/windows.ts` |
-| Wiki pane | the pane beside the IDE editor showing the wiki's guides for the open file | `frontend/src/pages/ide/WikiPane.vue` |
+| Wiki pane | the pane beside the editor of the main window's top-right group, showing the wiki's guides for the open file | `frontend/src/pages/ide/WikiPane.vue` |
 | contest | a name two mods define where one takes, or tries to take, the other's place; the load order decides which the game keeps | `index.Winner` |
 | override | a name or a file path two origins define where no two mods contend: one mod's over another origin's, vanilla's or a mod's it adds to | `pages.Health` |
 | dependency | a name a mod writes that another mod's definitions decide | `pages.Health` |

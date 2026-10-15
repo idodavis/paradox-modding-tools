@@ -199,9 +199,9 @@ func (completer *completer) keys(cursor cursor) {
 		completer.names(name, "", 2)
 	}
 	if inner.Caller == game.Shapes[game.ShapeWidget].Caller {
-		for _, kind := range slices.Sorted(maps.Keys(s.WidgetKinds)) {
-			kindCall := subject{ref: &schema.Occurrence{Role: schema.Refers, Caller: inner.Caller, ID: kind}}
-			completer.add(Item{Label: kind, Head: builtInHeading(inner.Caller), Rank: 2}, kindCall)
+		for _, widgetType := range slices.Sorted(maps.Keys(s.WidgetTypes)) {
+			typeCall := subject{ref: &schema.Occurrence{Role: schema.Refers, Caller: inner.Caller, ID: widgetType}}
+			completer.add(Item{Label: widgetType, Head: builtInHeading(inner.Caller), Rank: 2}, typeCall)
 		}
 	}
 }

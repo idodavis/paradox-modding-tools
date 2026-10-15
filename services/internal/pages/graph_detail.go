@@ -101,7 +101,7 @@ func EventDetail(ws *workspace.Session, id string) *Detail {
 		Kind: game.KindName(occurrence.Database), Name: occurrence.ID, Line: int(occurrence.Line), At: file,
 		Fires: ws.Fires(def), FiredBy: ws.FiredBy(def, true),
 	}
-	parsed, statement := ws.Statement(def)
+	parsed, statement := ws.Statement(workspace.Parses{}, def)
 	block := jomini.ChildBlock(statement)
 	if block == nil {
 		return detail

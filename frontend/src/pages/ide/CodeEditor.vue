@@ -15,7 +15,7 @@ import { createEditor, editorOptions } from "../../editor/editor";
 import { applyFix, bytesAt, editText, openFile } from "../../editor/models";
 import { showReferences } from "../../editor/search";
 import { editorRange } from "../../editor/columns";
-import { pathKey, useIdeRoots } from "../../composables/useIdeRoots";
+import { useIdeRoots } from "../../composables/useIdeRoots";
 import { monaco } from "../../lib/monaco";
 import { textQuery } from "../../queries";
 import { useEditorStore } from "../../stores/editor";
@@ -23,6 +23,7 @@ import { useWorkspaceStore } from "../../stores/workspace";
 import { useCommandsStore } from "../../stores/commands";
 import { MARKDOWN_TOOLBAR } from "../../lib/markdown";
 import HoverCard from "../../ui/HoverCard.vue";
+import CodeLink from "../../draw/CodeLink.vue";
 
 const { workspaceId, path, group } = defineProps<{ workspaceId: string; path: string; group: number }>();
 
@@ -67,29 +68,11 @@ watch(
     // the status bar's caret is the shown tab's
     if (editor.focused === group) view.value.reportCaret();
     showPlace();
-    marks = codeEditor.createDecorationsCollection();
-    markWidget();
   },
   { flush: "post" },
 );
 watch(editorOptions, (options) => view.value?.editor.updateOptions(options));
 onBeforeUnmount(() => view.value?.editor.dispose());
-
-// the widget the Visual view selected, marked over its lines while this file writes it
-let marks: monaco.editor.IEditorDecorationsCollection | undefined;
-function markWidget(): void {
-  const { marked } = editor;
-  if (!marks) return;
-  if (!marked || pathKey(marked.path) !== pathKey(path)) return marks.clear();
-  const { start, end } = marked.range;
-  marks.set([
-    {
-      range: new monaco.Range(start.line + 1, 1, end.line + 1, 1),
-      options: { isWholeLine: true, className: "pmt-marked-widget" },
-    },
-  ]);
-}
-watch(() => editor.marked, markWidget);
 
 /** A place asked of this file in this group: the caret there, scrolled into view. */
 function showPlace(): void {
@@ -290,6 +273,14 @@ function writeRich(markdown: string | undefined): void {
     </div>
   </UEditor>
   <p v-if="file?.reject" class="absolute inset-x-0 top-10 text-center text-12 text-dimmed">{{ file.reject }}</p>
+  <!-- a GUI file's code beside its picture: the picture's marks in the code, and the pointer's widget in the picture -->
+  <CodeLink
+    v-if="view && textModel && editor.viewOf(path) === 'split'"
+    :code-editor="view.editor"
+    :model="textModel"
+    :workspace-id="workspaceId"
+    :path="path"
+  />
   <UPopover
     :open="!!hover"
     :reference="reference"

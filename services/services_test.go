@@ -662,14 +662,13 @@ func TestDrawService(t *testing.T) {
 		t.Fatal(err)
 	}
 	request := draw.Request{
-		Path: filepath.Join("internal", "testdata", gameCK3, "game", "gui", "v_window.gui"), Name: "v_window",
-		Width: 1920, Height: 1080, Language: game.BaseLanguage,
+		Path: filepath.Join("internal", "testdata", gameCK3, "game", "gui", "v_window.gui"), ID: "v_window",
 	}
-	list, err := service.GUI("ws", request)
+	list, err := service.List("ws", request)
 	if err != nil || len(list.Elements) == 0 {
 		t.Fatalf("a window drawn: %v", err)
 	}
-	if _, err := service.GUI("nobody", request); err == nil {
+	if _, err := service.List("nobody", request); err == nil {
 		t.Error("a workspace nobody listed is refused")
 	}
 }

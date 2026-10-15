@@ -118,6 +118,12 @@ func (walk *fileWalk) entryAt(context Context, statements []jomini.Statement, i 
 			return walk.entry(walk.declares[word], key, span), false, walk.declares[word] != ""
 		}
 	}
+	// a keyword written with an equals sign before the name it declares (Vic3's template = name { })
+	if isAssign && walk.declares[key] != "" {
+		if named, isNamed := assign.Value.(*jomini.TaggedBlock); isNamed {
+			return walk.entry(walk.declares[key], named.Tag.Text, named.Tag.Range), false, true
+		}
+	}
 	if _, constant := jomini.Constant(key); constant {
 		return entry, false, false
 	}

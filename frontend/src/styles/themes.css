@@ -628,7 +628,35 @@
 .monaco-editor .pmt-conflict-incoming {
   background: var(--blue-soft);
 }
-/* the widget the Visual view selected (ide/CodeEditor.vue): its lines, where this file writes it */
+/* a GUI file's code beside its picture (draw/CodeLink.vue): the selected widget's lines, the hovered one's, a hidden
+   one's text dimmed and the eye before each widget's first line */
 .monaco-editor .pmt-marked-widget {
   background: color-mix(in srgb, var(--accent) 12%, transparent);
+}
+.monaco-editor .pmt-hovered-widget {
+  background: var(--link-soft);
+}
+.monaco-editor .pmt-hidden-widget {
+  opacity: 0.38;
+}
+.monaco-editor .pmt-eye {
+  color: var(--fg-3);
+  cursor: pointer;
+}
+.monaco-editor .pmt-eye-off {
+  color: var(--accent);
+  cursor: pointer;
+}
+/* the chip after a line: a widget's size (a size of nothing in orange) */
+.monaco-editor .pmt-size {
+  margin-inline-start: 8px;
+  padding: 0 5px;
+  border-radius: 4px;
+  font-size: 0.85em;
+  background: var(--bg-3);
+  color: var(--fg-3);
+}
+.monaco-editor .pmt-size-empty {
+  background: var(--orange-soft);
+  color: var(--orange);
 }

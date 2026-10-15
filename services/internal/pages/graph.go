@@ -148,7 +148,7 @@ func (grapher *grapher) node(id string, root bool) {
 	database := def.Occurrence().Database
 	grapher.drawn[id] = true
 	grapher.out.Nodes = append(grapher.out.Nodes, Node{
-		ID: id, Database: database, Kind: game.KindName(database), Title: grapher.ws.Title(id, def),
+		ID: id, Database: database, Kind: game.KindName(database), Title: grapher.ws.Title(id, def, ""),
 		Origin: def.File().Origin, Root: root,
 	})
 }

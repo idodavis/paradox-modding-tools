@@ -7,7 +7,7 @@ import { useQueryCache } from "@pinia/colada";
 import { Events } from "@wailsio/runtime";
 import { useDebounceFn } from "@vueuse/core";
 import { resendOpenFiles, textEdited } from "../editor/models";
-import { drawKeys, fileKeys, installKeys, wikiKeys, workspaceKeys } from "../queries";
+import { drawKeys, fileKeys, installKeys, symbolKeys, wikiKeys, workspaceKeys } from "../queries";
 import { useEditorStore } from "../stores/editor";
 import { useGitStore } from "../stores/git";
 import { useSettingsStore } from "../stores/settings";
@@ -20,8 +20,9 @@ export function subscribeEvents(): void {
   const settings = useSettingsStore();
   const git = useGitStore();
   const editor = useEditorStore();
-  // the windows drawn: the lists, the properties of their parts and the entries of their files
-  const drawn = [drawKeys.list, drawKeys.properties, drawKeys.entries];
+  // what an edit changes besides its file's text: the windows drawn, the properties of their parts, and the names its
+  // file defines
+  const drawn = [drawKeys.list, drawKeys.properties, symbolKeys.all];
 
   Events.On("install:scanning", ({ data }) => {
     scans.set(data.installId, { percent: data.percent, stage: data.stage });

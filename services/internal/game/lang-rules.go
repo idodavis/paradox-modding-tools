@@ -5,10 +5,7 @@
 package game
 
 import (
-	"cmp"
-	"fmt"
 	"slices"
-	"strconv"
 	"strings"
 )
 
@@ -343,75 +340,11 @@ type Color struct {
 	Hue, Parts float64 // what the hue and the other parts are out of; 0 means 1
 }
 
-// RGBA is a color, each part from 0 to 1.
-type RGBA struct{ R, G, B, A float64 }
-
 // Colors are the color blocks script writes; a part of rgb or of no tag is out of 255, or of 1 where every part
 // of red, green and blue is at most 1, and a fourth part is its alpha.
 var Colors = []Color{
 	{Tag: "rgb"}, {Tag: ""}, {Tag: "hsv", HSV: true}, {Tag: "hsv360", HSV: true, Hue: 360, Parts: 100}, {Tag: "hex", Hex: true},
 }
-
-// ColorOf is the color the numbers of a color block make by the Colors row of its tag, matched without regard to
-// case: false for a tag no row has and for fewer than three parts.
-func ColorOf(tag string, parts []float64) (RGBA, bool) {
-	i := slices.IndexFunc(Colors, func(row Color) bool { return strings.EqualFold(row.Tag, tag) })
-	if i < 0 || len(parts) < 3 {
-		return RGBA{}, false
-	}
-	row, scale := Colors[i], 255.0
-	var red, green, blue float64
-	if row.HSV {
-		scale = cmp.Or(row.Parts, 1)
-		red, green, blue = hsvToRGB(parts[0]/cmp.Or(row.Hue, 1), parts[1]/scale, parts[2]/scale)
-	} else {
-		if !row.Hex && max(parts[0], parts[1], parts[2]) <= 1 {
-			scale = 1
-		}
-		red, green, blue = parts[0]/scale, parts[1]/scale, parts[2]/scale
-	}
-	alpha := 1.0
-	if len(parts) > 3 {
-		alpha = parts[3] / scale
-	}
-	return RGBA{clamp(red), clamp(green), clamp(blue), clamp(alpha)}, true
-}
-
-// hsvToRGB is the red, green and blue of a hue, saturation and value, each from 0 to 1.
-func hsvToRGB(hue, saturation, value float64) (red, green, blue float64) {
-	sector, fraction := int(hue*6)%6, hue*6-float64(int(hue*6))
-	bottom, falling, rising := value*(1-saturation), value*(1-fraction*saturation), value*(1-(1-fraction)*saturation)
-	switch sector {
-	case 0:
-		return value, rising, bottom
-	case 1:
-		return falling, value, bottom
-	case 2:
-		return bottom, value, rising
-	case 3:
-		return bottom, falling, value
-	case 4:
-		return rising, bottom, value
-	}
-	return value, bottom, falling
-}
-
-// clamp is a part held to 0 through 1.
-func clamp(part float64) float64 { return min(max(part, 0), 1) }
-
-// Hex is the color as #rrggbb, alpha left out.
-func (color RGBA) Hex() string {
-	return fmt.Sprintf("#%02x%02x%02x", byteOf(color.R), byteOf(color.G), byteOf(color.B))
-}
-
-// CSS is the color as rgba(red, green, blue, alpha), the parts of red, green and blue out of 255 and alpha out of 1.
-func (color RGBA) CSS() string {
-	return fmt.Sprintf("rgba(%d, %d, %d, %s)", byteOf(color.R), byteOf(color.G), byteOf(color.B),
-		strconv.FormatFloat(color.A, 'f', -1, 64))
-}
-
-// byteOf is a part from 0 to 1 as a byte, rounded.
-func byteOf(part float64) int { return int(part*255 + 0.5) }
 
 // DumpWords are the dumps' words the engine decides by: a blurb opening "Iterate through" with no
 // target walks a list or variable map, so its block's scope is unknown; none and all name no scope; a function's
@@ -492,31 +425,36 @@ type Ref struct {
 	Folder   string
 }
 
-// FileType is how files of one extension name entries; an extension with no row defines nothing.
+// FileType is how files of one extension name entries, and which of their untagged blocks are colors; an extension
+// with no row defines nothing.
 type FileType struct {
-	NameKey    string            // the key whose value names a top block's entry: .asset name = x
-	Keywords   []string          // the words that declare an entry: type x = button { }
-	NameKeyOf  map[string]string // a block key at any depth, and the key whose value names its entry
-	WidgetKey  string            // every other top block is an entry of <ext>.widget, named by this key's value
-	Body       Shape             // the kind its entries' blocks hold
-	TagCalls   string            // the word that calls the tag a block is written with (type x = button { }), "" none
-	ContextKey string            // the key whose value is the data call the bindings of its block read in, "" none
-	Refs       []Ref             // the keys, at any depth, whose value names an entry or a file
+	NameKey     string            // the key whose value names a top block's entry: .asset name = x
+	Keywords    []string          // the words that declare an entry: type x = button { }
+	NameKeyOf   map[string]string // a block key at any depth, and the key whose value names its entry
+	WidgetKey   string            // every other top block is an entry of <ext>.widget, named by this key's value
+	Body        Shape             // the kind its entries' blocks hold
+	TagCalls    string            // the word that calls the tag a block is written with (type x = button { }), "" none
+	ContextKey  string            // the key whose value is the data call the bindings of its block read in, "" none
+	Refs        []Ref             // the keys, at any depth, whose value names an entry or a file
+	ColorSuffix string            // the ending of the keys whose untagged number block is a color (fontcolor), "" none
 }
 
 // FileTypes are how .txt, .asset, .font and .gui files name entries, in every game. In a .gui file
-// a word before a top block declares it (template x { }) or groups declarations (types x { }).
+// a word before a top block declares it (template x { }) or groups declarations (types x { }). A key ending in color
+// holds a color even untagged, in script (a culture's color) as in a GUI file (fontcolor, tintcolor),
+// but a key naming a portrait gene (hair_color), which lsp's blockColor leaves out.
 var FileTypes = map[string]FileType{
-	".txt":   {},
+	".txt":   {ColorSuffix: "color"},
 	".asset": {NameKey: "name"},
 	".font":  {NameKey: "name"},
 	".gui": {
-		Keywords:   []string{"type", "local_type", "template", "local_template", "block", "layer"},
-		NameKeyOf:  map[string]string{"texticon": "icon", "format": "name"},
-		WidgetKey:  "name",
-		Body:       ShapeWidget,
-		TagCalls:   "widget",
-		ContextKey: "datacontext",
+		Keywords:    []string{"type", "local_type", "template", "local_template", "block", "layer"},
+		NameKeyOf:   map[string]string{"texticon": "icon", "format": "name"},
+		WidgetKey:   "name",
+		Body:        ShapeWidget,
+		TagCalls:    "widget",
+		ContextKey:  "datacontext",
+		ColorSuffix: "color",
 		Refs: []Ref{
 			{At: "using"}, {At: "layer", Database: "gui.layer"}, {At: "texture", Database: File},
 			{At: "font", Database: "font.font"}, {At: "text", Database: Localization}, {At: "title", Database: Localization},
@@ -755,37 +693,3 @@ func (layout Layout) Nested(rel string) (rows []Descriptor) {
 	}
 	return rows
 }
-
-// ---- Widgets: what a widget-valued block is to the widget that writes it, and the state a window opens in.
-
-// WidgetRole is what a widget-valued block is to the widget that writes it: a child, laid out among its siblings and
-// drawn in written order (every block with no row), or one of the three the game treats apart.
-type WidgetRole string
-
-// The roles a block has besides being a child.
-const (
-	RoleSkin       WidgetRole = "skin"       // fills the widget and is drawn behind its children: a background
-	RoleChrome     WidgetRole = "chrome"     // sits at the widget's edge over its content: a scroll bar
-	RoleAttachment WidgetRole = "attachment" // shown on an event, never in the window: a tooltip
-)
-
-// WidgetSlot is a key whose block is a widget of a role: the role, and the kind the block is where the key names none.
-type WidgetSlot struct {
-	Role WidgetRole
-	Kind string
-}
-
-// WidgetSlots are the keys whose block is a widget with a role of its own, by the key's lower-cased name. Vanilla CK3
-// writes background 2,305 times, tooltipwidget 627, scrollbar_vertical 59 and scrollbar_horizontal 12.
-var WidgetSlots = map[string]WidgetSlot{
-	"background":           {Role: RoleSkin},
-	"tooltipwidget":        {Role: RoleAttachment},
-	"scrollbar_vertical":   {Role: RoleChrome, Kind: "scrollbar"},
-	"scrollbar_horizontal": {Role: RoleChrome, Kind: "scrollbar"},
-}
-
-// OpeningState is the state a window runs as the game opens it; a state with trigger_on_create = yes runs too.
-const OpeningState = "_show"
-
-// StateControls are the keys of a state that run it rather than say how the widget ends up.
-var StateControls = []string{"name", "using", "on_start", "on_finish", "duration", "delay", "next", "trigger_on_create"}

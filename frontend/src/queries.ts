@@ -4,15 +4,15 @@
  * or a mutation refreshes one workspace's and never opens another (Open and the page RPCs open a workspace,
  * closing the one open).
  */
-import { defineQueryOptions } from "@pinia/colada";
+import { defineQueryOptions, useQueryCache } from "@pinia/colada";
 import { GetVersion } from "@services/appservice";
-import { Frames, List, Names, Properties, Textures } from "@services/drawservice";
+import { Coat, CoatFile, Coats, Colors, Frames, List, Properties, Textures } from "@services/drawservice";
 import { LastRunCrashed } from "@services/logservice";
 import { ReadImageFacts, ReadText } from "@services/fileservice";
 import { GetEventDetail, GetEventGraph, SearchRoots } from "@services/eventgraphservice";
 import { GetHealth, GetLines, LocReaders } from "@services/healthservice";
 import type { GitCommit } from "@services/models";
-import type { List as DrawList, Request as DrawRequest } from "@services/internal/draw";
+import type { Coat as DrawCoat, List as DrawList, Request as DrawRequest } from "@services/internal/draw";
 import type { EventGraph, Params, Roots, SourceAt } from "@services/internal/pages/models";
 import { DiagnosticCodes, DocumentSymbols, FindLoc, Hover, ReplacedBy } from "@services/ideservice";
 import { FileSearch } from "@services/searchservice";
@@ -52,15 +52,16 @@ export const releaseKeys = {
 
 export const wikiKeys = { all: ["wiki"] as const };
 
-/** A file's drawn list and an element's properties, which a file's change reads again; and what the coat pickers list
- * (a database's names, a folder's textures, the frames), which a file changed on disk reads again. */
+/** What a file draws (an entry, the coats a feed shows) and an element's properties, which a file's change reads again;
+ * and the designer's lists (the named colors, a folder's textures, the frames), which a file changed on disk reads
+ * again. */
 export const drawKeys = {
   list: ["draw"] as const,
   properties: ["draw-properties"] as const,
-  names: ["draw-names"] as const,
+  lists: ["draw-lists"] as const,
 };
 
-/** The names a file defines, which the command palette and the Visual view's entry picker list; an edit changes them. */
+/** The names a file defines, which the command palette and the Entries tab list; an edit changes them. */
 export const symbolKeys = { all: ["ide", "symbols"] as const };
 
 /** The source lines of the open workspace's places, which an edit of a file changes. */
@@ -308,50 +309,93 @@ export const symbolsQuery = defineQueryOptions(({ id, path }: { id: string; path
   enabled: !!id && !!path,
 }));
 
-/** A drawn window: the file it is of (a list kept while the next is read must be that file's), the list, and the
- * milliseconds Go took. */
-export type Rendered = { path: string; list: DrawList | null; renderedMs: number };
+/** Reads again what an edit changes besides its file's text: what files draw (their elements' properties read with
+ * each render) and the names they define. A read that fails is its query's error, which the page shows, so this never
+ * fails. */
+export function redraw(): Promise<unknown> {
+  const queryCache = useQueryCache();
+  return Promise.all(
+    [drawKeys.list, symbolKeys.all].map((key) => queryCache.invalidateQueries({ key }).catch(() => undefined)),
+  );
+}
 
-/** A file's entry drawn as a list, the one drawn kept while the next is read; only while the workspace is open. */
-export const drawQuery = defineQueryOptions(({ id, request }: { id: string; request: DrawRequest }) => ({
-  key: [...drawKeys.list, id, request.path, request.id, request.database],
-  query: async (): Promise<Rendered> => {
-    const startTime = performance.now();
-    const list = await List(id, request);
-    return { path: request.path, list, renderedMs: Math.round(performance.now() - startTime) };
-  },
-  enabled: useWorkspaceStore().isOpen(id) && !!request.path && !!request.id,
-  placeholderData: (previous: Rendered | undefined) => (previous?.path === request.path ? previous : undefined),
-}));
+/** A drawn entry: the file it is of (one kept while the next is read must be that file's), the GUI list or the coat,
+ * the milliseconds Go took, and the render's number, which its elements' properties are read by. */
+export type Rendered = {
+  path: string;
+  list: DrawList | null;
+  coat: DrawCoat | null;
+  renderedMs: number;
+  render: number;
+};
 
-/** An element's properties of a drawn entry, each with who wrote it and where. */
+// the draw reads made, each one's number keying the properties read of its elements, so those are read again with each
+// render and never asked of an element a render no longer has
+let renders = 0;
+
+/** A file's entry drawn, a GUI list or a coat as the file's kind draws, the one drawn kept while the next is read; only
+ * while the workspace is open. */
+export const drawQuery = defineQueryOptions(
+  ({ id, request, drawing }: { id: string; request: DrawRequest; drawing: "gui" | "coat" }) => ({
+    key: [...drawKeys.list, id, drawing, request.path, request.id, request.database],
+    query: async (): Promise<Rendered> => {
+      const startTime = performance.now();
+      const [list, coat] = drawing === "coat" ? [null, await Coat(id, request)] : [await List(id, request), null];
+      return {
+        path: request.path,
+        list,
+        coat,
+        renderedMs: Math.round(performance.now() - startTime),
+        render: ++renders,
+      };
+    },
+    enabled: useWorkspaceStore().isOpen(id) && !!request.path && !!request.id,
+    placeholderData: (previous: Rendered | undefined) => (previous?.path === request.path ? previous : undefined),
+  }),
+);
+
+/** An element's properties of a render of a drawn entry, each with who wrote it and where. */
 export const propertiesQuery = defineQueryOptions(
-  ({ id, request, element }: { id: string; request: DrawRequest; element: number }) => ({
-    key: [...drawKeys.properties, id, request.path, request.id, request.database, element],
+  ({ id, request, render, element }: { id: string; request: DrawRequest; render: number; element: number }) => ({
+    key: [...drawKeys.properties, id, request.path, request.id, request.database, render, element],
     query: async () => (await Properties(id, request, element)) ?? [],
     enabled: useWorkspaceStore().isOpen(id) && !!request.path && !!request.id && element >= 0,
   }),
 );
 
-/** A database's entries with their colors, which the Layers panel's color picker lists. */
-export const namesQuery = defineQueryOptions(({ id, database }: { id: string; database: string }) => ({
-  key: [...drawKeys.names, id, "database", database],
-  query: async () => (await Names(id, database)) ?? [],
-  enabled: useWorkspaceStore().isOpen(id) && !!database,
+/** The coats of a file a feed shows, drawn by one call; a coat the file no longer holds is null. */
+export const coatsQuery = defineQueryOptions(({ id, path, ids }: { id: string; path: string; ids: string[] }) => ({
+  key: [...drawKeys.list, id, "coats", path, ids.join("|")],
+  query: async () => (await Coats(id, path, ids)) ?? [],
+  enabled: useWorkspaceStore().isOpen(id) && !!path && ids.length > 0,
 }));
 
-/** The images a coat texture key's folder holds, which the Layers panel's tile picker lists. */
+/** The named colors' CSS by id, which the Layers panel's color picker lists. */
+export const colorsQuery = defineQueryOptions(({ id }: { id: string }) => ({
+  key: [...drawKeys.lists, id, "colors"],
+  query: async () => (await Colors(id)) ?? {},
+  enabled: useWorkspaceStore().isOpen(id),
+}));
+
+/** The routes of the images a coat texture key's folder holds by file name, which the tile picker lists. */
 export const texturesQuery = defineQueryOptions(({ id, key }: { id: string; key: string }) => ({
-  key: [...drawKeys.names, id, "textures", key],
-  query: async () => (await Textures(id, key)) ?? [],
+  key: [...drawKeys.lists, id, "textures", key],
+  query: async () => (await Textures(id, key)) ?? {},
   enabled: useWorkspaceStore().isOpen(id) && !!key,
 }));
 
-/** The frames the workspace's game cuts its coats to, which the coat toolbar's Frame picker lists. */
+/** The shapes the game's coat designer previews a coat in, which the coat toolbar's Frame picker lists. */
 export const framesQuery = defineQueryOptions(({ id }: { id: string }) => ({
-  key: [...drawKeys.names, id, "frames"],
+  key: [...drawKeys.lists, id, "frames"],
   query: async () => (await Frames(id)) ?? [],
   enabled: useWorkspaceStore().isOpen(id),
+}));
+
+/** The file a mod's new coat of arms is written in, and what writing it makes first, which the new coat dialog says. */
+export const coatFileQuery = defineQueryOptions(({ id, mod }: { id: string; mod: string }) => ({
+  key: [...drawKeys.list, id, "coat-file", mod],
+  query: () => CoatFile(id, mod),
+  enabled: useWorkspaceStore().isOpen(id) && !!mod,
 }));
 
 export const codesQuery = defineQueryOptions({

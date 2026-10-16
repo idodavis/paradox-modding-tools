@@ -822,7 +822,7 @@ it gives defaults to (CK3 18, Vic3 22, EU5 17 such types); a base no type define
 kinds are written with no type based on them or named for them, so no file states that they are kinds. Over each whole
 install (`game`, `jomini`, `clausewitz`; the debug and tool windows' editor widgets are types `clausewitz` defines)
 they are CK3's `zoomarea` and `text_occluder`, Vic3's `overlappingitembox` (39), `treemapchart`, `axis` and
-`portrait_button`, and EU5's `axis`, `plotline`, `screen_grab` and `newsfeed_carousel`: `game.UndeclaredKinds`. No
+`portrait_button`, and EU5's `axis`, `plotline`, `screen_grab` and `newsfeed_carousel`: `game.UndeclaredTypes`. No
 rule finds them in the files without false kinds. A block written `key = { }` among a widget's children that writes a
 key sizing or placing its own box (`size`, `position`, the anchors, the layout policies, the margins) finds them in the
 game's own folder, a `state` left out (CK3 2,552, Vic3 1,296, EU5 201), whose box keys are its widget's at the state's

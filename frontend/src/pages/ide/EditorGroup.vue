@@ -2,14 +2,14 @@
 /**
  * An editor group: its tabs, each with its file's icon, a dot while unsaved and a lock on the game's files, and a menu
  * of what to do with it (a diff tab's is its file's, its diff named after it); a tab dragged onto a tab or the strip
- * goes there, onto the editor's edge into a new group there; at the strip's end the view switch of a kind of file with
- * views (Markdown's Raw or Rich, a GUI file's Code, Split or Visual), then Split right and the group's actions, then
- * the switch of the pane beside the editor: the shown file's panel, and in the main window's group at the top right
- * the Wiki pane, one lit while it is shown, the lit one closed by its click. The breadcrumb, the file's origin,
- * folders and name, then where the caret is (Inspect.within); then the shown tab's editor, and beside it, under the
- * tabs and path, the pane the group shows. A diff
- * tab shows its file's diff (GitDiff) in place of the breadcrumb and editor. A game file a mod replaces says so, with a
- * compare. A tab moves into a window of its own, and back.
+ * goes there, onto the editor's edge into a new group there; at the strip's end Split right and the group's actions,
+ * then the switch of the pane beside the editor: the shown file's panel, and in the main window's group at the top
+ * right the Wiki pane, one lit while it is shown, the lit one closed by its click. The breadcrumb, the file's origin,
+ * folders and name, then where the caret is (Inspect.within), and at its end the view switch of a kind of file with
+ * views (Markdown's Raw or Rich, a GUI file's Code, Split or Visual); then the shown tab's editor, and beside it,
+ * under the tabs and path, the pane the group shows. A diff tab shows its file's diff (GitDiff) in place of the
+ * breadcrumb and editor. A game file a mod replaces says so, with a compare. A tab moves into a window of its own, and
+ * back.
  */
 import { computed, shallowRef, useTemplateRef, watch } from "vue";
 import { useQuery } from "@pinia/colada";
@@ -355,20 +355,6 @@ const sides = computed(() => [
       </div>
       <span class="grow" />
       <div class="flex shrink-0 items-center gap-0.5 px-2">
-        <!-- a file with views switches them here -->
-        <template v-if="views && !diff">
-          <UTooltip text="Cycle the views" :kbds="['Ctrl Shift V']">
-            <UTabs
-              :model-value="shown"
-              :items="views"
-              :content="false"
-              size="xs"
-              class="me-1"
-              @update:model-value="setView"
-            />
-          </UTooltip>
-          <USeparator orientation="vertical" class="mx-1 h-4" />
-        </template>
         <UTooltip text="Split right" :kbds="['Ctrl \\']">
           <UButton
             icon="i-lucide-columns-2"
@@ -430,6 +416,17 @@ const sides = computed(() => [
         <span class="text-toned">{{ store.originName(loaded.origin) }}</span>
         <UButton label="Compare" variant="ghost" size="xs" @click="compare.files(active, loaded.path)" />
       </template>
+      <!-- a file with views switches them here -->
+      <UTooltip v-if="views" text="Cycle the views" :kbds="['Ctrl Shift V']">
+        <UTabs
+          :model-value="shown"
+          :items="views"
+          :content="false"
+          size="xs"
+          :ui="{ list: 'h-5.5', trigger: 'h-4.5 px-2 text-11', leadingIcon: 'size-3' }"
+          @update:model-value="setView"
+        />
+      </UTooltip>
     </div>
     <!-- the group's editor, and beside it, under the tabs and path, the pane it shows -->
     <USplitter :items="sides" auto-save-id="pmt.ide.pane" class="min-h-0 min-w-0 flex-1">

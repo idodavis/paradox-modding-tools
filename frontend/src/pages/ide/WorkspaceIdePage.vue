@@ -29,6 +29,7 @@ import { useSettingsStore } from "../../stores/settings";
 import { Close, Show } from "@services/windowservice";
 import { holdsFiles, isMain, useWindowsStore, windowName, windowPart } from "../../stores/windows";
 import CoatDialog from "../../draw/CoatDialog.vue";
+import FileEntries from "../../draw/FileEntries.vue";
 import EditorLayout from "./EditorLayout.vue";
 import ExplorerTree from "./ExplorerTree.vue";
 import IdePanel from "./IdePanel.vue";
@@ -103,39 +104,27 @@ function collapseAll(): void {
   gameTree.value?.collapseAll();
 }
 
-// the panes, their sizes kept by the splitters: the sidebar (folded to its strip of tabs when dragged shut or its
-// open tab is clicked again) and the editors, whose groups show a file's panel and the Wiki pane beside their own
+// the panes, their sizes kept by the splitters: the sidebar (in the main window folded to its strip of tabs when
+// dragged shut or its open tab is clicked again, and unfolded by a drag of the strip's edge or a tab) and the editors, whose groups show a file's panel and the Wiki pane beside their own
 // editors; under the editors the panel (the editors keeping half); in the explorer the mods' section and the game's
 // files under it, which fold to their header and give the mods their room
 const gameOpen = useLocalStorage("pmt.ide.gameOpen", true);
 const STRIP = 36;
 const panes = computed(() => [
-  ...(!(isMain || own.value.length)
-    ? []
-    : editor.sidebarOpen
-      ? [
-          {
-            id: "sidebar",
-            slot: "sidebar",
-            order: 1,
-            sizeUnit: "px" as const,
-            defaultSize: 264,
-            minSize: 170,
-            collapsible: true,
-            collapsedSize: STRIP,
-          },
-        ]
-      : [
-          {
-            id: "sidebar-folded",
-            slot: "sidebar",
-            order: 1,
-            sizeUnit: "px" as const,
-            defaultSize: STRIP,
-            minSize: STRIP,
-            maxSize: STRIP,
-          },
-        ]),
+  ...(isMain || own.value.length
+    ? [
+        {
+          id: "sidebar",
+          slot: "sidebar",
+          order: 1,
+          sizeUnit: "px" as const,
+          defaultSize: 264,
+          minSize: 170,
+          collapsible: isMain,
+          collapsedSize: STRIP,
+        },
+      ]
+    : []),
   ...(windowPart !== "panel" ? [{ id: "editors", slot: "editors", order: 2, minSize: 33 }] : []),
 ]);
 const editorPanes = computed(() => [
@@ -188,36 +177,37 @@ defineShortcuts(
   ),
 );
 
-// the sidebar's tabs: the explorer, the search and source control; a tab clicked while it is the open one folds the
-// sidebar to its strip, and a tab of the strip opens it again
+// the sidebar's tabs: the explorer, the search, source control and the entries the active file draws; a tab clicked
+// while it is the open one folds the sidebar to its strip, and a tab of the strip opens it again
 const SIDEBAR_TABS = [
   { tab: "explorer", icon: "i-lucide-files", label: "Explorer" },
   { tab: "search", icon: "i-lucide-search", label: "Search" },
   { tab: "git", icon: "i-lucide-git-compare", label: "Source control" },
+  { tab: "entries", icon: "i-lucide-shapes", label: "Entries" },
 ] as const;
 function clickSidebar(tab: (typeof SIDEBAR_TABS)[number]["tab"]): void {
   if (editor.sidebarOpen && editor.sidebar === tab) editor.sidebarOpen = false;
   else editor.openSidebar(tab);
 }
-/** The sidebar dragged shut folds to its strip: only a drag of a handle folds it, never a size the splitter restores
- * for its panes. */
+/** The sidebar dragged shut folds to its strip, and its strip dragged open unfolds it on the tab it had: only a drag
+ * of a handle opens or folds it, never a size the splitter restores for its panes. */
 let dragging = false;
 function onDragging(_index: number, on: boolean): void {
   dragging = on;
 }
-function onCollapse(index: number): void {
-  if (dragging && panes.value[index]?.id === "sidebar") editor.sidebarOpen = false;
+function onFold(index: number, isOpen: boolean): void {
+  if (dragging && panes.value[index]?.id === "sidebar") editor.sidebarOpen = isOpen;
 }
-// a sidebar that opens at the folded size the splitter remembers for these panes (it was dragged shut there) opens
-// at its own size
+// the main window's sidebar pane follows its tabs: a tab of the strip unfolds it, the open one clicked again folds it
 const splitter = useTemplateRef("splitter");
 watch(
   () => editor.sidebarOpen,
   async (open) => {
-    if (!open) return;
     await nextTick();
     const sidebar = splitter.value?.panelsRef[0];
-    if (sidebar?.isCollapsed) sidebar.expand();
+    if (!isMain || !sidebar) return;
+    if (open && sidebar.isCollapsed) sidebar.expand();
+    if (!open && !sidebar.isCollapsed) sidebar.collapse();
   },
   { immediate: true },
 );
@@ -280,7 +270,8 @@ function showProblems(): void {
       :items="panes"
       auto-save-id="pmt.ide"
       class="min-w-0 flex-1"
-      @collapse="onCollapse"
+      @collapse="(index: number) => onFold(index, false)"
+      @expand="(index: number) => onFold(index, true)"
       @dragging="onDragging"
     >
       <template #sidebar>
@@ -450,6 +441,7 @@ function showProblems(): void {
           </USplitter>
           <SearchView v-show="editor.sidebar === 'search'" :roots="roots" :hide-binaries="hideBinaries" />
           <SourceControlView v-if="editor.sidebar === 'git'" />
+          <FileEntries v-if="editor.sidebar === 'entries'" :workspace-id="id" :path="editor.activeFile" />
         </aside>
         <aside
           v-else

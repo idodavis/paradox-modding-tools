@@ -1,100 +1,97 @@
-<script lang="ts">
-/** How each coat property is edited, by its lower-cased key; any other key is read-only, as a GUI widget's are. The
- * wiki's Coat of arms modding page. */
-export const COAT_FIELDS: Record<string, { input: "texture" | "color" | "pair" | "number" | "regions" }> = {
-  pattern: { input: "texture" },
-  texture: { input: "texture" },
-  color1: { input: "color" },
-  color2: { input: "color" },
-  color3: { input: "color" },
-  color4: { input: "color" },
-  color5: { input: "color" },
-  position: { input: "pair" },
-  scale: { input: "pair" },
-  offset: { input: "pair" },
-  rotation: { input: "number" },
-  depth: { input: "number" },
-  mask: { input: "regions" },
-};
-</script>
-
 <script setup lang="ts">
 /**
- * One property of a coat edited as its key's row says: a texture as tiles of its folder's images colored as its layer
- * is, a color as the named colors with their swatches, a pair or a number as typed, a mask as region toggles. Each
- * write is one change of the value in the file's text, through its model; the same value writes nothing.
+ * One value of a coat layer, edited as its key's row says: a texture in the texture picker, a color as a chip of the
+ * named colors (a later slot cleared by its ×), a pair or a number as typed, a mask as region toggles. A value the
+ * layer writes is written anew, one it does not is added to its block (an emblem that writes no instance gets one);
+ * each write is one change of the file's text, the same value writing nothing.
  */
 import { computed, shallowRef } from "vue";
 import { useQuery } from "@pinia/colada";
-import type { Property, Texture } from "@services/internal/draw";
+import type { Layer, Property } from "@services/internal/draw";
 import { textAt } from "../editor/models";
-import { namesQuery, texturesQuery } from "../queries";
+import { colorsQuery } from "../queries";
 import { useDrawStore } from "../stores/draw";
-import { recolored } from "./recolor";
+import { placementDefaults } from "./coat";
+import TexturePicker from "./TexturePicker.vue";
 
 const {
   workspaceId,
   path,
-  property,
-  evaluated,
-  textureKey,
-  texture = undefined,
+  field,
+  layer,
+  property = undefined,
+  isReadOnly = false,
 } = defineProps<{
   workspaceId: string;
   path: string;
-  property: Property;
-  /** The value with its file's constants and inline math put in, as the picture reads it. */
-  evaluated: string;
-  /** The key the texture's folder is written by (pattern, colored_emblem, textured_emblem). */
-  textureKey: string;
-  /** The layer's texture, whose colors the tiles are drawn in; undefined for none. */
-  texture?: Texture;
+  /** The key it writes, lower-cased. */
+  field: string;
+  /** The layer it is of: its value, its block (where a key it writes none of is added) and its texture's colors. */
+  layer: Layer;
+  /** The property that writes it; undefined where the layer writes none. */
+  property?: Property;
+  /** Shown only: a parent coat writes it, or the coat is not the open file's to write. */
+  isReadOnly?: boolean;
 }>();
 
-/** The database whose names a color slot names. */
-const NAMED_COLORS = "named_colors";
-
-/** The most tiles the picker draws at once, each colored on a canvas. */
-const TILES = 48;
+/** How each value is edited, by its key (the wiki's Coat of arms modding page). */
+const INPUTS: Record<string, "texture" | "color" | "pair" | "number" | "regions"> = {
+  pattern: "texture",
+  texture: "texture",
+  color1: "color",
+  color2: "color",
+  color3: "color",
+  color4: "color",
+  color5: "color",
+  position: "pair",
+  scale: "pair",
+  offset: "pair",
+  rotation: "number",
+  depth: "number",
+  mask: "regions",
+};
 
 const store = useDrawStore();
-const input = computed(() => COAT_FIELDS[property.key.toLowerCase()]?.input);
-// the numbers the value holds, as a pair, a number or the regions a mask keeps (NaN for a word that is none), and as
-// the inputs show them
-const numbers = computed(() => evaluated.split(/\s+/).filter(Boolean).map(Number));
+const input = computed(() => INPUTS[field]);
+// the value as the picture reads it, its file's constants put in, and the numbers it holds (NaN for a word)
+const value = computed(() => layer.properties?.[field] ?? "");
+const numbers = computed(() => value.value.split(/\s+/).filter(Boolean).map(Number));
 const typedNumbers = computed(() => numbers.value.map((one) => (Number.isFinite(one) ? String(one) : "")));
+// what a chip names: the value, else the property as written (a color block holds no scalars)
+const chipText = computed(() => value.value || property?.value || "");
+// a color the layer writes after its first can be cleared, its line removed: not every emblem paints a second or third
+const isClearable = computed(() => input.value === "color" && field !== "color1" && !!property && !isReadOnly);
 
-/** Writes the property's value. */
-const write = (text: string) => void store.rewrite(path, property.valueLocation, text);
+/** Writes the value: the property's anew, else the key added to the layer's block, inside an instance block where the
+ * layer is the one an emblem that writes none has. */
+function write(text: string): void {
+  if (property) {
+    void store.rewrite(path, property.valueLocation, text);
+    return;
+  }
+  const isImplicit = layer.type === "instance" && layer.key !== "instance";
+  void store.addInside(path, layer.location, [isImplicit ? `instance = { ${field} = ${text} }` : `${field} = ${text}`]);
+}
 /** Whether an input holds a number: an emptied one holds none. */
 const isNumber = (typed: string) => typed.trim() !== "" && Number.isFinite(Number(typed));
-/** A word as the value was written: quoted where it was. */
-const quotedLike = (word: string) => (textAt(path, property.valueLocation.range)?.startsWith('"') ? `"${word}"` : word);
+/** A word as the value is written: quoted unless it is written bare. */
+const quotedLike = (text: string) =>
+  property && !textAt(path, property.valueLocation.range)?.startsWith('"') ? text : `"${text}"`;
 
 // the named colors, with their swatches
-const { data: colors } = useQuery(() =>
-  namesQuery({ id: workspaceId, database: input.value === "color" ? NAMED_COLORS : "" }),
-);
+const { data: colors } = useQuery(() => colorsQuery({ id: input.value === "color" ? workspaceId : "" }));
 const colorItems = computed(() =>
-  (colors.value ?? []).map((one) => ({ label: one.id, value: one.id, color: one.color })),
+  Object.entries(colors.value ?? {}).map(([id, css]) => ({ label: id, value: id, color: css ?? "" })),
 );
-const swatch = computed(() => colorItems.value.find((one) => one.value === property.value)?.color);
 
-// the folder's images, those the search finds drawn as tiles while the picker is open
+// the texture picker, open while picking; the key a texture is written by names its folder: a pattern's, else the
+// emblem's own
 const isPicking = shallowRef(false);
-const search = shallowRef("");
-const { data: tiles } = useQuery(() =>
-  texturesQuery({ id: workspaceId, key: input.value === "texture" && isPicking.value ? textureKey : "" }),
-);
-const shown = computed(() =>
-  (tiles.value ?? []).filter((one) => one.id.toLowerCase().includes(search.value.toLowerCase())).slice(0, TILES),
-);
-/** A tile's image colored as the layer is. */
-const tileOf = (url: string) => (texture ? recolored({ ...texture, url, regions: [] }) : url);
+const textureKey = computed(() => (field === "texture" ? layer.key : field));
 
 /** Writes a tile's texture and closes the picker. */
-function pick(id: string): void {
-  write(quotedLike(id));
+function pick(file: string): void {
+  write(quotedLike(file));
   isPicking.value = false;
 }
 
@@ -103,82 +100,83 @@ function writeNumber(typed: string): void {
   if (isNumber(typed)) write(typed.trim());
 }
 
-/** Writes a pair, its numbers as typed, the other as it holds (0 where it holds none). */
-function writePair(i: number, typed: string): void {
+/** Writes a pair, its number as typed, the other as it holds, else as the layer takes it unwritten (0 where nothing
+ * says). */
+function writePair(index: number, typed: string): void {
   if (!isNumber(typed)) return;
-  const pair = [0, 1].map((k) => (Number.isFinite(numbers.value[k]) ? numbers.value[k] : 0));
-  pair[i] = Number(typed);
+  const defaults = placementDefaults(layer.type, field);
+  const pair = [0, 1].map((one) => (Number.isFinite(numbers.value[one]) ? numbers.value[one] : (defaults[one] ?? 0)));
+  pair[index] = Number(typed);
   write(`{ ${pair.join(" ")} }`);
 }
 
-/** Keeps a mask's region or stops keeping it. */
+/** Keeps a mask's region or stops keeping it; keeping none is the whole field, the mask removed. */
 function toggleRegion(region: number): void {
-  const kept = new Set(numbers.value.filter(Number.isFinite));
-  if (kept.has(region)) kept.delete(region);
-  else kept.add(region);
-  write(`{ ${[...kept].sort((a, b) => a - b).join(" ")} }`);
+  const regions = new Set(numbers.value.filter(Number.isFinite));
+  if (regions.has(region)) regions.delete(region);
+  else regions.add(region);
+  if (regions.size) write(`{ ${[...regions].sort((first, second) => first - second).join(" ")} }`);
+  else if (property) void store.removeBlock(path, property.location);
 }
 </script>
 
 <template>
   <USelectMenu
     v-if="input === 'color'"
-    :model-value="property.value"
+    :model-value="value"
     :items="colorItems"
     value-key="value"
+    variant="none"
     size="xs"
-    class="w-full"
+    trailing-icon=""
+    :disabled="isReadOnly"
     :search-input="{ placeholder: 'Find a named color' }"
+    :clear="isClearable"
+    :reset-model-value-on-clear="false"
+    :ui="{ base: 'p-0', content: 'w-60', trailing: 'static ps-0.5' }"
     @update:model-value="(id) => write(quotedLike(String(id)))"
+    @clear="property && store.removeBlock(path, property.location)"
   >
-    <template #leading>
-      <span class="size-3 rounded-sm border border-default" :style="{ background: swatch }" />
-    </template>
+    <span
+      class="flex h-5.5 items-center gap-1.25 rounded-md border bg-elevated ps-1 pe-1.75 text-11.5 whitespace-nowrap"
+      :class="chipText ? 'border-default text-highlighted' : 'border-dashed border-default text-dimmed'"
+    >
+      <span
+        class="size-3.5 rounded-sm border border-black/35"
+        :class="!chipText && 'border-dashed'"
+        :style="{ background: chipText ? layer.colors?.[Number(field.slice(5))] : 'transparent' }"
+      />{{ chipText || field.slice(5) }}
+    </span>
     <template #item-leading="{ item }">
       <span class="size-3 rounded-sm border border-default" :style="{ background: item.color }" />
     </template>
   </USelectMenu>
   <UPopover v-else-if="input === 'texture'" v-model:open="isPicking" :content="{ side: 'left', align: 'start' }">
-    <UButton
-      :label="property.value"
-      trailing-icon="i-lucide-images"
-      color="neutral"
-      variant="outline"
-      size="xs"
-      class="w-full justify-between font-mono"
-      :ui="{ label: 'truncate' }"
-    />
+    <div class="flex min-w-0 items-center gap-2">
+      <span class="min-w-0 grow truncate font-mono text-11.5 text-highlighted" :title="value">{{ value }}</span>
+      <UButton v-if="!isReadOnly" label="Change" color="neutral" variant="outline" size="xs" />
+    </div>
     <template #content>
-      <div class="flex w-96 flex-col gap-2 p-2">
-        <UInput v-model="search" icon="i-lucide-search" size="sm" placeholder="Find a texture" autofocus />
-        <div class="grid max-h-96 grid-cols-4 gap-1.5 overflow-auto">
-          <button
-            v-for="tile in shown"
-            :key="tile.id"
-            type="button"
-            class="flex flex-col items-center gap-1 rounded-md border p-1 hover:bg-elevated"
-            :class="tile.id === property.value ? 'border-primary bg-(--accent-soft)' : 'border-transparent'"
-            :title="tile.id"
-            @click="pick(tile.id)"
-          >
-            <img v-if="tileOf(tile.url)" :src="tileOf(tile.url)" alt="" class="size-14 object-contain" />
-            <span v-else class="size-14 rounded-sm bg-muted" />
-            <span class="w-full truncate font-mono text-10.5 text-dimmed">{{ tile.id }}</span>
-          </button>
-        </div>
-      </div>
+      <TexturePicker
+        :workspace-id="workspaceId"
+        :texture-key="textureKey"
+        :colors="layer.colors ?? []"
+        :value="value"
+        @pick="pick"
+      />
     </template>
   </UPopover>
   <div v-else-if="input === 'pair'" class="flex gap-1">
     <UInput
-      v-for="i in [0, 1]"
-      :key="i"
-      :model-value="typedNumbers[i] ?? ''"
+      v-for="index in [0, 1]"
+      :key="index"
+      :model-value="typedNumbers[index] ?? ''"
       type="number"
       step="0.01"
       size="xs"
+      :disabled="isReadOnly"
       class="w-0 grow font-mono"
-      @change="(event: Event) => writePair(i, (event.target as HTMLInputElement).value)"
+      @change="(event: Event) => writePair(index, (event.target as HTMLInputElement).value)"
     />
   </div>
   <UInput
@@ -187,19 +185,27 @@ function toggleRegion(region: number): void {
     type="number"
     step="1"
     size="xs"
+    :disabled="isReadOnly"
     class="w-full font-mono"
     @change="(event: Event) => writeNumber((event.target as HTMLInputElement).value)"
   />
-  <div v-else-if="input === 'regions'" class="flex gap-1">
+  <UFieldGroup v-else-if="input === 'regions'" size="xs">
+    <UButton
+      label="Whole field"
+      :color="numbers.length ? 'neutral' : 'primary'"
+      :variant="numbers.length ? 'outline' : 'soft'"
+      :disabled="isReadOnly || !numbers.length"
+      @click="property && store.removeBlock(path, property.location)"
+    />
     <UButton
       v-for="region in [1, 2, 3]"
       :key="region"
       :label="String(region)"
-      size="xs"
       :color="numbers.includes(region) ? 'primary' : 'neutral'"
       :variant="numbers.includes(region) ? 'soft' : 'outline'"
       :aria-pressed="numbers.includes(region)"
+      :disabled="isReadOnly"
       @click="toggleRegion(region)"
     />
-  </div>
+  </UFieldGroup>
 </template>

@@ -7,7 +7,7 @@ import { useQueryCache } from "@pinia/colada";
 import { Events } from "@wailsio/runtime";
 import { useDebounceFn } from "@vueuse/core";
 import { resendOpenFiles, textEdited } from "../editor/models";
-import { drawKeys, fileKeys, installKeys, symbolKeys, wikiKeys, workspaceKeys } from "../queries";
+import { drawKeys, fileKeys, installKeys, redraw, wikiKeys, workspaceKeys } from "../queries";
 import { useEditorStore } from "../stores/editor";
 import { useGitStore } from "../stores/git";
 import { useSettingsStore } from "../stores/settings";
@@ -20,9 +20,6 @@ export function subscribeEvents(): void {
   const settings = useSettingsStore();
   const git = useGitStore();
   const editor = useEditorStore();
-  // what an edit changes besides its file's text: the windows drawn, the properties of their parts, and the names its
-  // file defines
-  const drawn = [drawKeys.list, drawKeys.properties, symbolKeys.all];
 
   Events.On("install:scanning", ({ data }) => {
     scans.set(data.installId, { percent: data.percent, stage: data.stage });
@@ -33,7 +30,8 @@ export function subscribeEvents(): void {
     scans.clear();
     void queryCache.invalidateQueries({ key: workspaceKeys.open(id) });
     void queryCache.invalidateQueries({ key: workspaceKeys.state(id) });
-    for (const key of [...drawn, drawKeys.names]) void queryCache.invalidateQueries({ key });
+    void redraw();
+    void queryCache.invalidateQueries({ key: drawKeys.lists });
     if (holdsFiles && editor.editingWorkspaceId === id) resendOpenFiles();
   });
   // the open workspace closed (its inputs changed, or another opened): its state is read again, and its pages'
@@ -62,10 +60,11 @@ export function subscribeEvents(): void {
     if (section === "settings" || !section) void settings.load();
   });
   // a file changed on disk is read again; source control reads its repository and the windows drawn are drawn again
-  // once a burst of changes is over, any file being a template or texture of a window, as are the pickers' names
+  // once a burst of changes is over, any file being a template or texture of a window, as are the designer's lists
   const gitChanged = useDebounceFn(() => git.refresh(), 500);
   const drawChanged = useDebounceFn(() => {
-    for (const key of [...drawn, drawKeys.names]) void queryCache.invalidateQueries({ key });
+    void redraw();
+    void queryCache.invalidateQueries({ key: drawKeys.lists });
   }, 300);
   Events.On("fs:changed", ({ data }) => {
     void queryCache.invalidateQueries({ key: fileKeys.text(data.path) });
@@ -74,9 +73,7 @@ export function subscribeEvents(): void {
     void gitChanged();
   });
   // an edit the backend has now, saved or not: the windows drawn from it are drawn again
-  textEdited.event(() => {
-    for (const key of drawn) void queryCache.invalidateQueries({ key });
-  });
+  textEdited.event(() => void redraw());
   Events.On("git:output", ({ data }) => git.appendOutput(data));
   Events.On("wiki:updated", ({ data }) => {
     void queryCache.invalidateQueries({ key: wikiKeys.all });

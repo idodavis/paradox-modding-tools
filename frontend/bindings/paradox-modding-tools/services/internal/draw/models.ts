@@ -17,6 +17,29 @@ export interface Absent {
 }
 
 /**
+ * Coat is one render of a coat of arms: the field it is drawn on (the first atlas' tile, else the pattern's image),
+ * the cloth that shades it ("" none), its layers in pre-order, and what nothing found.
+ */
+export interface Coat {
+    "width": number;
+    "height": number;
+    "shading": string;
+    "layers": Layer[] | null;
+    "missing": Absent[] | null;
+}
+
+/**
+ * CoatTarget is the file a mod's new coat of arms is written in: its path, its path in the mod, and whether writing it
+ * makes the file, and its folder, first.
+ */
+export interface CoatTarget {
+    "path": string;
+    "rel": string;
+    "isNewFile": boolean;
+    "isNewFolder": boolean;
+}
+
+/**
  * Condition is what a widget is shown on: a fact, one of the list's groups at a value, or a boolean over conditions.
  */
 export interface Condition {
@@ -30,10 +53,37 @@ export interface Condition {
 }
 
 /**
- * Element is one widget of the entry: where it is written and how it is named, how its type draws, and what it is
- * drawn by: its properties as written, its textures, its text and what it is shown on.
+ * Font is one face the texts use: the game's font name, its style and its file.
  */
-export interface Element {
+export interface Font {
+    "name": string;
+    "style": string;
+    "url": string;
+}
+
+/**
+ * Frame is a shape the game's windows cut a coat to: its label, its mask's route, and the origin of the mask that wins.
+ */
+export interface Frame {
+    "label": string;
+    "url": string;
+    "origin": string;
+}
+
+/**
+ * Group is a call widgets are shown on, its last quoted argument blanked, and the values its facts are written with.
+ */
+export interface Group {
+    "call": string;
+    "values": string[] | null;
+}
+
+/**
+ * Layer is one layer of a coat: the element it is, the file it paints ("" none) and how its shader colors it (a key of
+ * coat.ts' recolor rows, and its slots as CSS, "" the shader's fallback), an emblem's mask (its coat's pattern file,
+ * "" none) and the regions it keeps, and every property as written, by lower-cased key.
+ */
+export interface Layer {
     /**
      * -1 at the root
      */
@@ -41,7 +91,7 @@ export interface Element {
     "key": string;
 
     /**
-     * the built-in type the key resolves to
+     * a widget's built-in type; a layer's kind: coat, pattern, emblem, instance, sub
      */
     "type": string;
     "name": string;
@@ -52,7 +102,148 @@ export interface Element {
     "label": string;
 
     /**
-     * the labels from the window down
+     * the labels from the root down
+     */
+    "path": string;
+    "ancestors": number[] | null;
+    "location": lsp$0.Location;
+    "url": string;
+    "recolor": string;
+    "colors": string[] | null;
+    "mask": string;
+    "regions": number[] | null;
+    "properties": { [_ in string]?: string } | null;
+}
+
+/**
+ * List is one render of a GUI entry: the widgets the game lays it out in, its widgets in pre-order, the textures they
+ * draw and the fonts they use, each listed once, the calls they are shown on, and what nothing found.
+ */
+export interface List {
+    /**
+     * a type, template, text icon or format drawn by itself, not a window
+     */
+    "isAlone": boolean;
+
+    /**
+     * outermost first, each of its type row and properties alone
+     */
+    "holders": Widget[] | null;
+    "elements": Widget[] | null;
+    "textures": Texture[] | null;
+    "groups": Group[] | null;
+    "fonts": Font[] | null;
+    "missing": Absent[] | null;
+}
+
+/**
+ * Property is one property of an element as written, with the type, template or parent coat that wrote it ("" the
+ * element), where, and where its value is, which an edit replaces.
+ */
+export interface Property {
+    "key": string;
+    "value": string;
+    "writer": string;
+    "location": lsp$0.Location;
+    "valueLocation": lsp$0.Location;
+}
+
+/**
+ * Request is what a render is asked for: the file, and the entry's id and database ("" for the first of the id). Its
+ * texts are in the workspace's language.
+ */
+export interface Request {
+    "path": string;
+    "id": string;
+    "database": string;
+}
+
+/**
+ * Run is one stretch of a text under one style: an icon drawn in place of text, or a data call drawn as a value.
+ */
+export interface Run {
+    "text": string;
+    "isBold": boolean;
+    "isItalic": boolean;
+    "color": string;
+    "icon": string;
+    "call": string;
+}
+
+/**
+ * Text is a widget's text as runs in a font at a size.
+ */
+export interface Text {
+    "font": string;
+    "size": number;
+    "color": string;
+    "runs": Run[] | null;
+}
+
+/**
+ * Texture is what a widget paints from a file: its size in the image's pixels over its density, its border in the
+ * screen's, its frame, tiling, mirror, fit, tint and blend, and the texture that masks it.
+ */
+export interface Texture {
+    "url": string;
+    "width": number;
+    "height": number;
+    "density": number;
+
+    /**
+     * top, right, bottom, left
+     */
+    "border": number[];
+    "isTiled": boolean;
+    "isMirrored": boolean;
+    "fit": string;
+
+    /**
+     * the color the image is multiplied by, opaque; "" none
+     */
+    "tint": string;
+
+    /**
+     * what the tint multiplies the image's alpha by; 1 none
+     */
+    "tintAlpha": number;
+
+    /**
+     * a CSS blend mode
+     */
+    "blend": string;
+    "alpha": number;
+
+    /**
+     * the list's texture whose brightness masks this one; -1 none
+     */
+    "mask": number;
+}
+
+/**
+ * Widget is one widget of the entry: the element it is, how its type draws, and what it is drawn by: its properties
+ * as written, its textures, its text and what it is shown on.
+ */
+export interface Widget {
+    /**
+     * -1 at the root
+     */
+    "parent": number;
+    "key": string;
+
+    /**
+     * a widget's built-in type; a layer's kind: coat, pattern, emblem, instance, sub
+     */
+    "type": string;
+    "name": string;
+
+    /**
+     * the key, then the name where it has one of its own
+     */
+    "label": string;
+
+    /**
+     * the labels from the root down
      */
     "path": string;
     "ancestors": number[] | null;
@@ -91,157 +282,4 @@ export interface Element {
     "textures": number[] | null;
     "textureBinding": string;
     "text"?: Text | null;
-}
-
-/**
- * Font is one face the texts use: the game's font name, its style and its file.
- */
-export interface Font {
-    "name": string;
-    "style": string;
-    "url": string;
-}
-
-/**
- * Group is a call widgets are shown on, its last quoted argument blanked, and the values its facts are written with.
- */
-export interface Group {
-    "call": string;
-    "values": string[] | null;
-}
-
-/**
- * List is one render of an entry: the widgets the game lays it out in, its elements in pre-order, the textures they
- * draw and the fonts they use, each listed once, the calls they are shown on, and what nothing found.
- */
-export interface List {
-    /**
-     * a type, template, text icon, format or coat drawn alone, not a window
-     */
-    "isAlone": boolean;
-
-    /**
-     * a coat's: a larger depth in front, which a reorder writes depths by
-     */
-    "depthInFront": boolean;
-
-    /**
-     * outermost first, each of its type row and properties alone
-     */
-    "holders": Element[] | null;
-    "elements": Element[] | null;
-    "textures": Texture[] | null;
-    "groups": Group[] | null;
-    "fonts": Font[] | null;
-    "missing": Absent[] | null;
-}
-
-/**
- * Name is a thing a picker lists: an entry of a database by its id and the color its block is as CSS, or a texture
- * file by its name and its route ("" for none).
- */
-export interface Name {
-    "id": string;
-    "color": string;
-    "url": string;
-}
-
-/**
- * Property is one property of an element as written, with the type or template that wrote it ("" the element),
- * where, and where its value is, which an edit replaces.
- */
-export interface Property {
-    "key": string;
-    "value": string;
-    "writer": string;
-    "location": lsp$0.Location;
-    "valueLocation": lsp$0.Location;
-}
-
-/**
- * Request is what a render is asked for: the file, and the entry's id and database ("" for the first of the id). Its
- * texts are in the workspace's language.
- */
-export interface Request {
-    "path": string;
-    "id": string;
-    "database": string;
-}
-
-/**
- * Run is one stretch of a text under one style: an icon drawn in place of text, or a data call drawn as a value.
- */
-export interface Run {
-    "text": string;
-    "isBold": boolean;
-    "isItalic": boolean;
-    "color": string;
-    "icon": string;
-    "call": string;
-}
-
-/**
- * Text is an element's text as runs in a font at a size.
- */
-export interface Text {
-    "font": string;
-    "size": number;
-    "color": string;
-    "runs": Run[] | null;
-}
-
-/**
- * Texture is what an element paints from a file: its size in the image's pixels over its density, its border in
- * the screen's, its frame, tiling, mirror, fit, tint and blend, the texture that masks it, and how its pixels are
- * colored.
- */
-export interface Texture {
-    "url": string;
-    "width": number;
-    "height": number;
-    "density": number;
-
-    /**
-     * top, right, bottom, left
-     */
-    "border": number[];
-    "isTiled": boolean;
-    "isMirrored": boolean;
-    "fit": string;
-
-    /**
-     * the color the image is multiplied by, opaque; "" none
-     */
-    "tint": string;
-
-    /**
-     * what the tint multiplies the image's alpha by; 1 none
-     */
-    "tintAlpha": number;
-
-    /**
-     * a CSS blend mode
-     */
-    "blend": string;
-    "alpha": number;
-
-    /**
-     * the list's texture whose brightness masks this one; -1 none
-     */
-    "mask": number;
-
-    /**
-     * how the page colors it, a key of the page's recolor rows; "" as its pixels are
-     */
-    "recolor": string;
-
-    /**
-     * the slots the recolor reads as CSS, slot n at n, "" the shader's fallback
-     */
-    "colors": string[] | null;
-
-    /**
-     * for a mask texture: the pattern's regions kept
-     */
-    "regions": number[] | null;
 }

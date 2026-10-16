@@ -26,6 +26,7 @@ import { BINARY_EXTENSIONS, TREE_ICONS } from "./fileKinds";
 import { Close, Show } from "@services/windowservice";
 import { useWindowsStore } from "../../stores/windows";
 import { GIT_LETTERS, useGitStore } from "../../stores/git";
+import { stepHistory } from "../../lib/history";
 import { useDrawStore } from "../../stores/draw";
 import { useEditorStore } from "../../stores/editor";
 import { useSettingsStore } from "../../stores/settings";
@@ -328,9 +329,9 @@ const menu = computed<ContextMenuItem[][]>(() => {
   const views = file ? viewsOf(locate(file, roots)?.rel ?? file) : undefined;
   // a mod's own folder in no repository is made one, and source control shown
   const bare = root ? git.bare.find((mod) => pathKey(mod.path) === pathKey(diskPath(path))) : undefined;
-  // a folder of coats of arms (a file in it would be drawn with the Layers panel) offers a new coat for its mod
+  // a folder of coats of arms (a file in it draws coats) offers a new coat for its mod
   const coatsMod =
-    viewsOf(`${dir}x.txt`)?.panel === "Layers" ? rootOf(path.slice(0, path.indexOf("/") + 1))?.origin : "";
+    viewsOf(`${dir}x.txt`)?.drawing === "coat" ? rootOf(path.slice(0, path.indexOf("/") + 1))?.origin : "";
   return [
     file
       ? [
@@ -461,15 +462,8 @@ function popOutFolder(path: string): void {
   void windows.openFolderWindow(`files:${disk}`, path.replace(/\/$/, "").split("/").at(-1) ?? disk, [disk]);
 }
 
-// Ctrl Z moves the last rename, move or delete back, Ctrl Y or Ctrl Shift Z does it again
-function onKey(e: KeyboardEvent): void {
-  const key = e.key.toLowerCase();
-  if (!e.ctrlKey || (key !== "z" && key !== "y") || e.composedPath().some((el) => el instanceof HTMLInputElement))
-    return;
-  e.preventDefault();
-  if (key === "z" && !e.shiftKey) editor.undoMove();
-  else editor.redoMove();
-}
+// the explorer's history: Ctrl Z moves the last rename, move or delete back, Ctrl Y or Ctrl Shift Z does it again
+const moves = { undo: editor.undoMove, redo: editor.redoMove };
 
 /** Delete a path once asked, into PMT's trash; a mod's own folder (its only slash the last) also leaves the workspace. */
 const { mutate: remove } = useMutation({
@@ -515,7 +509,7 @@ const { mutate: remove } = useMutation({
           '--trees-status-ignored-override': 'color-mix(in oklab, var(--fg-3), var(--bg-2) 40%)',
         }"
         @contextmenu.capture="onContext"
-        @keydown="onKey"
+        @keydown="stepHistory($event, moves)"
         @click.capture="showFolderWindow"
         @dblclick="editor.pin(editor.activeTab)"
       />

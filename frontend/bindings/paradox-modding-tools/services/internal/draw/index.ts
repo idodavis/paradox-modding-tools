@@ -3,15 +3,18 @@
 
 export type {
     Absent,
+    Coat,
+    CoatTarget,
     Condition,
-    Element,
     Font,
+    Frame,
     Group,
+    Layer,
     List,
-    Name,
     Property,
     Request,
     Run,
     Text,
-    Texture
+    Texture,
+    Widget
 } from "./models.js";

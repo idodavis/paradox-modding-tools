@@ -1,18 +1,19 @@
 <script setup lang="ts">
 /**
  * The code side of a file's Visual view, in one editor of the file while the picture is beside it: the picture's marks
- * on the code that writes it, the caret selecting what it is in, and the pointer on an element's code outlining it in
- * the picture. It reads what the code says from the editor's own text and what the picture drew from the file's record,
- * so it asks Go nothing of its own.
+ * on the code that writes it, the caret drawing the entry it is in and selecting what it is in there, a selection
+ * brought into view, and the pointer on an element's code outlining it in the picture. It reads what the code says from
+ * the editor's own text and what the picture drew from the file's record.
  */
 import { computed, onScopeDispose, watch, watchEffect } from "vue";
 import { refDebounced } from "@vueuse/core";
-import type { Element as DrawElement } from "@services/internal/draw";
-import type { Position, Range } from "@services/internal/lsp";
+import { useQuery } from "@pinia/colada";
+import type { Range } from "@services/internal/lsp";
 import { pathKey } from "../composables/useIdeRoots";
 import { bytesAt, toRange } from "../editor/models";
 import { monaco } from "../lib/monaco";
-import { useDraw, useDrawStore } from "../stores/draw";
+import { symbolsQuery } from "../queries";
+import { entriesOf, entryAt, isAtOrBefore, useDraw, useDrawStore, type DrawElement } from "../stores/draw";
 import { useEditorStore } from "../stores/editor";
 import { hiddenOf, withDescendants } from "./widgets";
 
@@ -29,14 +30,10 @@ const GLYPHS = monaco.editor.MouseTargetType.GUTTER_GLYPH_MARGIN;
 
 const store = useDrawStore();
 const editor = useEditorStore();
-const { file, list, elements } = useDraw(
+const { file, list, elements, missing } = useDraw(
   () => workspaceId,
   () => path,
 );
-
-/** Whether a position comes at or before another, by line and byte column. */
-const isAtOrBefore = (first: Position, second: Position) =>
-  first.line < second.line || (first.line === second.line && first.character <= second.character);
 
 /** A block's lines, whole, as the editor counts them. */
 const linesOf = (range: Range) => new monaco.Range(range.start.line + 1, 1, range.end.line + 1, 1);
@@ -78,18 +75,54 @@ const firstLines = computed(() => {
   return lines;
 });
 
-// what the caret rests on, a moment after it stops: the element whose block holds it, the key its line writes and the
-// token under it, which the picture's guides read. The caret selects the element, unless the view put the caret
-// there, or the element is written in the same place as the selected one (a template used twice)
+// where the caret rests, a moment after it stops; in another entry the picture can draw, that entry is drawn, and what
+// the caret is in is selected once it is
 const caret = refDebounced(
   computed(() => (pathKey(editor.activeFile) === pathKey(path) ? editor.caret : null)),
   300,
 );
+const { data: symbols } = useQuery(() => symbolsQuery({ id: workspaceId, path }));
+const entries = computed(() => entriesOf(symbols.value ?? []));
+let isEntryPending = false;
 watch(caret, (position) => {
   if (!position) {
     file.value.caret = null;
     return;
   }
+  const entry = entryAt(entries.value, position.line, position.col);
+  if (entry && (entry.name !== file.value.entry || entry.database !== file.value.database)) {
+    store.pickEntry(path, entry);
+    isEntryPending = true;
+    return;
+  }
+  selectAt(position);
+});
+watch(blocks, () => {
+  if (!isEntryPending || !caret.value) return;
+  isEntryPending = false;
+  selectAt(caret.value);
+});
+
+// a selection made anywhere (the picture, the panel, the keys) brings its first line into view, the caret where it was;
+// one the caret made is where the caret already is
+watch(
+  () => file.value.selection,
+  (selection) => {
+    const block = blocks.value.find(({ element }) => element === selection);
+    const cursor = codeEditor.getPosition();
+    const [line, character] = cursor ? bytesAt(model, cursor) : [-1, -1];
+    const holdsCaret =
+      !!block &&
+      isAtOrBefore(block.range.start, { line, character }) &&
+      isAtOrBefore({ line, character }, block.range.end);
+    if (block && !holdsCaret) codeEditor.revealLineInCenterIfOutsideViewport(block.range.start.line + 1);
+  },
+);
+
+/** What the caret rests on: the element whose block holds it, the key its line writes and the token under it, which
+ * the picture's guides read. It selects the element, unless the view put the caret there, or the element is written
+ * in the same place as the selected one (a template used twice). */
+function selectAt(position: { line: number; col: number }): void {
   const element = elementAt(position.line, position.col);
   const key = /^\s*([\w.]+)\s*=/.exec(model.getLineContent(position.line + 1))?.[1] ?? "";
   const cursor = codeEditor.getPosition();
@@ -99,13 +132,13 @@ watch(caret, (position) => {
   if (target && target.line === position.line && target.col === position.col) return;
   if (element >= 0 && spanKey(elements.value[element]) !== spanKey(elements.value[file.value.selection]))
     file.value.selection = element;
-});
+}
 
 // the blocks' marks: the selected one's lines, the hidden ones' text dimmed, each first line's eye and drawn size
 const marks = codeEditor.createDecorationsCollection();
 watchEffect(() => {
   const { selection, hidden: sessionHidden, rects } = file.value;
-  const hidden = withDescendants(elements.value, list.value ? hiddenOf(list.value, file.value) : new Set<number>());
+  const hidden = withDescendants(elements.value, list.value ? hiddenOf(list.value, file.value) : file.value.hidden);
   marks.set([
     ...blocks.value.flatMap(({ element, range }) => [
       ...(element === selection
@@ -148,7 +181,7 @@ watchEffect(() => {
 // what the game's files did not give, squiggled on the first line of the block of the element that asked for it
 watchEffect(() => {
   const starts = new Map(blocks.value.map(({ element, range }) => [element, range.start]));
-  const markers = (list.value?.missing ?? []).flatMap(({ text, element }) => {
+  const markers = missing.value.flatMap(({ text, element }) => {
     const start = starts.get(element);
     if (!start) return [];
     const { startLineNumber, startColumn } = toRange(model, { start, end: start });

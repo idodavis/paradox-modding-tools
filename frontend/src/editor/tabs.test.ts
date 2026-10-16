@@ -18,9 +18,9 @@ describe("tab keys", () => {
       first: "split",
       split: true,
       panel: "Widgets",
-      toolbar: "window",
+      drawing: "gui",
     });
-    expect(viewsOf("C:\\eu5\\main_menu\\common\\coat_of_arms\\coat_of_arms\\x.txt")?.panel).toBe("Layers");
+    expect(viewsOf("C:\\eu5\\main_menu\\common\\coat_of_arms\\coat_of_arms\\x.txt")?.drawing).toBe("coat");
     expect(viewsOf("readme.md")?.split).toBe(false);
     expect(viewsOf("logo.SVG")?.first).toBe("visual");
     expect(viewsOf("events/x.txt")).toBeUndefined();

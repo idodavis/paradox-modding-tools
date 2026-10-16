@@ -15,43 +15,57 @@ import { Call as $Call, CancellablePromise as $CancellablePromise } from "@wails
 import * as draw$0 from "./internal/draw/models.js";
 
 /**
- * CoatFile is the file a mod's new coat of arms is written in.
+ * Coat is a file's coat of arms drawn as its layers.
  */
-export function CoatFile(workspaceID: string, modID: string): $CancellablePromise<string> {
+export function Coat(workspaceID: string, request: draw$0.Request): $CancellablePromise<draw$0.Coat | null> {
+    return $Call.ByID(1925799950, workspaceID, request);
+}
+
+/**
+ * CoatFile is the file a mod's new coat of arms is written in, and what writing it makes first.
+ */
+export function CoatFile(workspaceID: string, modID: string): $CancellablePromise<draw$0.CoatTarget> {
     return $Call.ByID(146316328, workspaceID, modID);
 }
 
 /**
- * Frames are the frames the game cuts its coats to, as the coat toolbar's Frame picker lists them.
+ * Coats are coats of one file, as the Entries feed draws them; a coat the file does not hold is null.
  */
-export function Frames(workspaceID: string): $CancellablePromise<draw$0.Name[] | null> {
+export function Coats(workspaceID: string, path: string, ids: string[] | null): $CancellablePromise<(draw$0.Coat | null)[] | null> {
+    return $Call.ByID(805496007, workspaceID, path, ids);
+}
+
+/**
+ * Colors are the named colors' CSS by id, as the Layers panel's color picker lists them.
+ */
+export function Colors(workspaceID: string): $CancellablePromise<{ [_ in string]?: string } | null> {
+    return $Call.ByID(2871034117, workspaceID);
+}
+
+/**
+ * Frames are the shapes the game's coat designer previews a coat in, as the coat toolbar's Frame picker lists them.
+ */
+export function Frames(workspaceID: string): $CancellablePromise<draw$0.Frame[] | null> {
     return $Call.ByID(4134236995, workspaceID);
 }
 
 /**
- * List is a file's entry drawn as a list.
+ * List is a file's GUI entry drawn as a list.
  */
 export function List(workspaceID: string, request: draw$0.Request): $CancellablePromise<draw$0.List | null> {
     return $Call.ByID(1635818557, workspaceID, request);
 }
 
 /**
- * Names are a database's entries with their colors, as the Layers panel's pickers list them.
- */
-export function Names(workspaceID: string, database: string): $CancellablePromise<draw$0.Name[] | null> {
-    return $Call.ByID(1838797307, workspaceID, database);
-}
-
-/**
- * Properties is an element's properties as the Widgets panel lists them: each key's last value and who wrote it.
+ * Properties is an element's properties as the panel lists them: each key's last value and who wrote it.
  */
 export function Properties(workspaceID: string, request: draw$0.Request, element: number): $CancellablePromise<draw$0.Property[] | null> {
     return $Call.ByID(4086947928, workspaceID, request, element);
 }
 
 /**
- * Textures are the images a coat texture key's folder holds, as the Layers panel's tile picker lists them.
+ * Textures are the routes of the images a coat texture key's folder holds by file name, as the tile picker lists them.
  */
-export function Textures(workspaceID: string, key: string): $CancellablePromise<draw$0.Name[] | null> {
+export function Textures(workspaceID: string, key: string): $CancellablePromise<{ [_ in string]?: string } | null> {
     return $Call.ByID(4177793961, workspaceID, key);
 }

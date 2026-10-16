@@ -1,105 +1,86 @@
 <script setup lang="ts">
 /**
- * A file's entry drawn on the zoomable floor between its toolbar (what is drawn, and how) and its status bar (how the
- * render went, what is missing or hidden): the picture the browser lays out (picture.ts), each widget's rect read
- * back from it for the marks over it (WidgetMarks.vue), the selection by click, caret or keys, and the widget's menu.
+ * A file's entry drawn on the zoomable floor between its toolbar (how it is drawn) and its status bar (how the
+ * render went, what is missing or hidden): the picture the browser lays out (picture.ts for a GUI entry, coat.ts for a
+ * coat), each element's rect read back from it for the marks over it (WidgetMarks.vue), the selection by click, caret
+ * or keys, the element's menu, and a coat's instances dragged.
  */
 import { computed, nextTick, onScopeDispose, shallowRef, useTemplateRef, watch } from "vue";
 import { useEventListener } from "@vueuse/core";
 import { useQuery } from "@pinia/colada";
 import { Clipboard } from "@wailsio/runtime";
-import type { ContextMenuItem, SelectMenuItem } from "@nuxt/ui";
+import type { ContextMenuItem } from "@nuxt/ui";
 import { WidgetRole } from "@services/internal/game";
 import { ReadText } from "@services/fileservice";
 import { Definition } from "@services/ideservice";
 import { pathKey } from "../composables/useIdeRoots";
 import { openFile, openText } from "../editor/models";
-import { viewsOf } from "../editor/tabs";
+import { stepHistory } from "../lib/history";
 import { framesQuery, propertiesQuery, symbolsQuery } from "../queries";
-import { COATS, RESOLUTIONS, useDraw, useDrawStore } from "../stores/draw";
+import { entriesOf, entryAt, RESOLUTIONS, useDraw, useDrawStore } from "../stores/draw";
 import { useEditorStore } from "../stores/editor";
+import { useWorkspaceStore } from "../stores/workspace";
 import WidgetMarks from "./WidgetMarks.vue";
-import { centerOf, Picture, quote } from "./picture";
+import { centerOf, CoatPicture, coatNumber, coatOf, isEditable } from "./coat";
+import { Picture, quote } from "./picture";
 import Viewport from "./Viewport.vue";
-import {
-  choicesOf,
-  coatNumber,
-  coatOf,
-  hiddenOf,
-  isEditable,
-  pageGroups,
-  sideGroups,
-  stateOf,
-  typeIcon,
-} from "./widgets";
+import { choicesOf, hiddenOf, pageGroups, sideGroups, stateOf, typeIcon } from "./widgets";
 
 const { workspaceId, path } = defineProps<{ workspaceId: string; path: string }>();
-
-/** Each database whose entries the picker offers: its heading, icon and place among the groups. */
-const ENTRY_GROUPS: Record<string, { label: string; icon: string; order: number }> = {
-  "gui.widget": { label: "Windows", icon: "i-lucide-app-window", order: 0 },
-  "gui.type": { label: "Types", icon: "i-lucide-shapes", order: 1 },
-  "gui.local_type": { label: "Types", icon: "i-lucide-shapes", order: 1 },
-  "gui.template": { label: "Templates", icon: "i-lucide-layers", order: 2 },
-  "gui.local_template": { label: "Templates", icon: "i-lucide-layers", order: 2 },
-  "gui.texticon": { label: "Text icons", icon: "i-lucide-image", order: 3 },
-  "gui.format": { label: "Formats", icon: "i-lucide-type", order: 4 },
-  [COATS]: { label: "Coats", icon: "i-lucide-shield", order: 0 },
-};
 
 /** The roles whose element is its widget's to the pointer: a skin, and the label a button's text is drawn in. */
 const PARTS_OF_WIDGET = new Set<string>([WidgetRole.RoleSkin, WidgetRole.RoleLabel]);
 
 const store = useDrawStore();
 const editor = useEditorStore();
-const { file, request, list, elements, drawing, renderedMs, error, refetch } = useDraw(
-  () => workspaceId,
-  () => path,
-);
+const workspace = useWorkspaceStore();
+const { file, request, drawing, list, coat, elements, missing, isDrawing, renderedMs, render, error, refetch } =
+  useDraw(
+    () => workspaceId,
+    () => path,
+  );
 const viewport = useTemplateRef("viewport");
 const scene = useTemplateRef("scene");
 const root = useTemplateRef("root");
 const zoom = computed(() => viewport.value?.zoom ?? 1);
-// what the toolbar offers: a window's resolution and states, or a coat's field and the frames its game cuts it to
-const isWindow = computed(() => viewsOf(path)?.toolbar === "window");
 // a coat is read and edited through its file's model, which the code beside the picture opens; the picture alone
 // opens it too
 watch(
-  [() => path, isWindow],
+  [() => path, drawing],
   async () => {
-    if (isWindow.value || openText(path) !== undefined) return;
+    if (drawing.value !== "coat" || openText(path) !== undefined) return;
     const text = await ReadText(path);
     if (!text.reject && openText(path) === undefined) openFile(path, text);
   },
   { immediate: true },
 );
-const { data: frames } = useQuery(() => framesQuery({ id: isWindow.value ? "" : workspaceId }));
+// the shapes the game's coat designer previews a coat in, each named with the mod whose mask wins where one does
+const { data: frames } = useQuery(() => framesQuery({ id: drawing.value === "coat" ? workspaceId : "" }));
 const frameItems = computed(() => [
-  { label: "Field", value: "" },
-  ...(frames.value ?? []).map((one) => ({ label: one.id, value: one.id })),
+  { label: "Field", value: "field" },
+  ...(frames.value ?? []).map((frame) => ({
+    label:
+      frame.origin === workspace.originVanilla ? frame.label : `${frame.label} · ${workspace.originName(frame.origin)}`,
+    value: frame.label,
+  })),
 ]);
-const frameMask = computed(() => frames.value?.find((one) => one.id === file.value.frame)?.url ?? "");
+const frameMask = computed(() => frames.value?.find((frame) => frame.label === file.value.frame)?.url ?? "");
 const selection = computed({ get: () => file.value.selection, set: (one: number) => (file.value.selection = one) });
 const hover = computed({ get: () => file.value.hover, set: (one: number) => (file.value.hover = one) });
 
-// the entries the file holds, the ids it defines in the picker's databases; it opens on the one the caret is in, else
-// its first window, else its first entry, and keeps the one picked while the file holds it
+// the entries the file holds that the Visual view draws; it opens on the one the caret is in, else its first window,
+// else its first entry, and keeps the one drawn while the file holds it
 const { data: symbols } = useQuery(() => symbolsQuery({ id: workspaceId, path }));
-const entrySymbols = computed(() => (symbols.value ?? []).filter((one) => one.database in ENTRY_GROUPS));
+const entries = computed(() => entriesOf(symbols.value ?? []));
 const entry = computed(() => file.value.entry);
-/** An entry as the picker keys it: its database and its id. */
-const entryKey = ({ database, name }: { database: string; name: string }) => `${database}|${name}`;
 watch(
-  entrySymbols,
-  (entries) => {
-    if (!entries.length || entries.some((one) => entryKey(one) === entryKey({ ...file.value, name: entry.value })))
-      return;
+  entries,
+  (all) => {
+    if (!all.length || all.some((one) => one.name === entry.value && one.database === file.value.database)) return;
     const caret = editor.viewOf(path) === "split" && pathKey(editor.activeFile) === pathKey(path) ? editor.caret : null;
-    const caretEntry = caret
-      ? entries.findLast(({ location: { range } }) => range.start.line <= caret.line)
-      : undefined;
-    const first = caretEntry ?? entries.find((one) => one.database === "gui.widget") ?? entries[0];
-    Object.assign(file.value, { entry: first.name, database: first.database });
+    const first =
+      (caret && entryAt(all, caret.line, caret.col)) ?? all.find((one) => one.database === "gui.widget") ?? all[0];
+    store.pickEntry(path, first);
   },
   { immediate: true },
 );
@@ -131,8 +112,8 @@ watch(
 );
 onScopeDispose(() => faces.forEach((face) => document.fonts.delete(face)));
 
-// the widgets hidden, each by itself: by the session, and by the state each group of conditions is drawn at
-const hidden = computed(() => (list.value ? hiddenOf(list.value, file.value) : new Set<number>()));
+// the elements hidden, each by itself: by the session, and a window's by the state each group of conditions is drawn at
+const hidden = computed(() => (list.value ? hiddenOf(list.value, file.value) : file.value.hidden));
 // the screen the entry is laid out on, in the game's pixels: the resolution
 const screen = computed<[number, number]>(() => [store.width, store.height]);
 
@@ -152,38 +133,39 @@ watch(
 /** Reads every drawn widget's rect from the picture, in the picture's pixels, one per drawn copy. */
 function measureRects(): void {
   const origin = root.value?.getBoundingClientRect();
-  if (!origin || !list.value) return;
+  if (!origin || !(list.value || coat.value)) return;
   const scale = zoom.value;
   const rects = new Map<number, DOMRect[]>();
   for (const node of root.value?.querySelectorAll<HTMLElement>("[data-element]") ?? []) {
     const index = Number(node.dataset.element);
-    const drawn = node.getBoundingClientRect();
+    const box = node.getBoundingClientRect();
     const rect = new DOMRect(
-      (drawn.left - origin.left) / scale,
-      (drawn.top - origin.top) / scale,
-      drawn.width / scale,
-      drawn.height / scale,
+      (box.left - origin.left) / scale,
+      (box.top - origin.top) / scale,
+      box.width / scale,
+      box.height / scale,
     );
     rects.set(index, [...(rects.get(index) ?? []), rect]);
   }
   file.value.rects = rects;
-  if (!isSidesPending) return;
+  if (!isSidesPending || !list.value) return;
   isSidesPending = false;
   const closed = pageGroups(list.value).union(sideGroups(list.value, rects));
   if (closed.size !== file.value.closedGroups.size) file.value.closedGroups = closed;
 }
-watch([list, hidden, screen, () => store.rows], () => void nextTick(measureRects), { flush: "post" });
+watch([list, coat, hidden, screen, () => store.rows], () => void nextTick(measureRects), { flush: "post" });
 useEventListener(document.fonts, "loadingdone", measureRects);
 
 /** An element's first rect; undefined for none drawn. */
 const rectOf = (element: number): DOMRect | undefined => file.value.rects.get(element)?.[0];
 
-// an entry drawn alone is the extent of everything it draws, but what a widget that clips holds, moved so what hangs
-// above or left of it is on the scene; a window is drawn on its screen
+// a GUI entry drawn alone is the extent of everything it draws, but what a widget that clips holds, moved so what
+// hangs above or left of it is on the scene; a window is drawn on its screen, a coat on its field
 const extent = computed<DOMRect>(() => {
-  const isClipped = (index: number) => elements.value[index]?.ancestors?.some((one) => elements.value[one]?.clips);
+  const widgets = list.value?.elements ?? [];
+  const isClipped = (index: number) => widgets[index]?.ancestors?.some((one) => widgets[one]?.clips);
   const rects = [...file.value.rects]
-    .flatMap(([index, drawn]) => (isClipped(index) ? [] : drawn))
+    .flatMap(([index, copies]) => (isClipped(index) ? [] : copies))
     .filter((rect) => rect.width && rect.height);
   if (!list.value?.isAlone || !rects.length) return new DOMRect(0, 0, 0, 0);
   const left = Math.min(...rects.map((rect) => rect.left));
@@ -194,8 +176,8 @@ const extent = computed<DOMRect>(() => {
 });
 // an entry drawn alone that draws nothing: no size, texture, text or child of its own
 const isEmpty = computed(() => !!list.value?.isAlone && file.value.rects.size > 0 && !extent.value.width);
-const sceneWidth = computed(() => (list.value?.isAlone ? extent.value.width : store.width));
-const sceneHeight = computed(() => (list.value?.isAlone ? extent.value.height : store.height));
+const sceneWidth = computed(() => coat.value?.width ?? (list.value?.isAlone ? extent.value.width : store.width));
+const sceneHeight = computed(() => coat.value?.height ?? (list.value?.isAlone ? extent.value.height : store.height));
 
 /** A rect of the picture on the scene, which the camera fits. */
 const sceneRect = (rect: DOMRect) =>
@@ -223,8 +205,8 @@ function hitsUnder(event: MouseEvent): number[] {
   const hits = new Set<number>();
   for (const node of document.elementsFromPoint(event.clientX, event.clientY)) {
     const index = Number((node as HTMLElement).dataset.element ?? -1);
-    const part = elements.value[index];
-    if (part) hits.add(PARTS_OF_WIDGET.has(part.role) ? part.parent : index);
+    const widget = list.value?.elements?.[index];
+    if (elements.value[index]) hits.add(widget && PARTS_OF_WIDGET.has(widget.role) ? widget.parent : index);
   }
   return [...hits];
 }
@@ -238,35 +220,15 @@ function target(hits: number[]): number {
   return hits.reduce((smallest, one) => (area(one) < area(smallest) ? one : smallest), hits[0] ?? -1);
 }
 
-// the entries as the picker groups them, each with its icon and the line it starts on
-const items = computed<SelectMenuItem[][]>(() => {
-  const entries = [...Map.groupBy(entrySymbols.value, entryKey).values()].map((same) => same[0]);
-  const groups = Map.groupBy(entries, (symbol) => ENTRY_GROUPS[symbol.database].order);
-  return [...groups]
-    .sort(([a], [b]) => a - b)
-    .map(([, group]) => [
-      { type: "label" as const, label: ENTRY_GROUPS[group[0].database].label },
-      ...group.map((symbol) => ({
-        label: symbol.name,
-        value: entryKey(symbol),
-        icon: ENTRY_GROUPS[symbol.database].icon,
-        line: symbol.location.range.start.line + 1,
-      })),
-    ]);
-});
-/** A picker row as an object: the rows are, but the menu's type allows a bare value. */
-const rowOf = (item: SelectMenuItem) => (typeof item === "object" && item ? item : { label: String(item) });
-const entryIcon = computed(() => ENTRY_GROUPS[file.value.database]?.icon);
 // the status bar's lists, a row selecting its widget: what the game's files did not give, and what the session hides
 const lists = computed(() => {
-  const missing = list.value?.missing ?? [];
-  const hiddenRows = [...file.value.hidden].sort((a, b) => a - b);
+  const hiddenRows = [...file.value.hidden].sort((first, second) => first - second);
   return [
     {
-      label: `${missing.length} missing`,
+      label: `${missing.value.length} missing`,
       icon: "i-lucide-triangle-alert",
       color: "warning" as const,
-      rows: missing.map(({ text, element }) => ({
+      rows: missing.value.map(({ text, element }) => ({
         element,
         text,
         detail: elements.value[element]?.label ?? "",
@@ -308,26 +270,10 @@ const states = computed(() =>
   })),
 );
 
-/** Draws another entry of the file, its picker key, with no element selected and nothing hidden. */
-function pickEntry(key: string): void {
-  const [database, id] = [key.slice(0, key.indexOf("|")), key.slice(key.indexOf("|") + 1)];
-  Object.assign(file.value, {
-    entry: id,
-    database,
-    hidden: new Set<number>(),
-    states: new Map<string, string>(),
-    selection: -1,
-  });
-}
-
-/** Selects the element clicked, taking the keys; with the code beside it, the caret goes to where the element is
- * written in this file. */
+/** Selects the element clicked, taking the keys; the code beside it brings it into view (CodeLink). */
 function pick(event: MouseEvent): void {
   scene.value?.focus({ preventScroll: true });
   selection.value = target(hitsUnder(event));
-  const location = elements.value[selection.value]?.location;
-  if (location && editor.viewOf(path) === "split" && pathKey(location.path) === pathKey(path))
-    editor.open(path, { line: location.range.start.line, col: location.range.start.character });
 }
 
 // an element selected elsewhere (the panel, the code) comes into view
@@ -375,7 +321,9 @@ const KEYS: Record<string, () => void> = {
     if (rect) viewport.value?.fitTo(sceneRect(rect));
   },
 };
+/** Does what a key asks of the picture: a step of the file's history, else its own action. */
 function onKey(event: KeyboardEvent): void {
+  if (stepHistory(event, store.historyOf(path))) return;
   const action = event.ctrlKey || event.altKey || event.metaKey ? undefined : KEYS[event.key];
   if (!action) return;
   event.preventDefault();
@@ -447,7 +395,7 @@ const menu = computed<ContextMenuItem[][]>(() => {
     ],
     [
       { label: "Go to code", icon: "i-lucide-code", kbds: ["enter"], onSelect: () => goToElement(index) },
-      ...(element.key !== element.type
+      ...(drawing.value === "gui" && element.key !== element.type
         ? [{ label: `Open its type, ${element.key}`, icon: "i-lucide-layers", onSelect: () => void openType(index) }]
         : []),
     ],
@@ -470,6 +418,7 @@ const { data: selected } = useQuery(() =>
   propertiesQuery({
     id: workspaceId,
     request: request.value,
+    render: render.value,
     element: elements.value[selection.value]?.type === "instance" ? selection.value : -1,
   }),
 );
@@ -494,7 +443,8 @@ function endDrag(event: PointerEvent): void {
   drag.node.style.translate = "";
   const element = elements.value[selection.value];
   const box = rectOf(coatOf(elements.value, selection.value) ?? 0);
-  const center = element && centerOf(element);
+  const layer = coat.value?.layers?.[selection.value];
+  const center = layer && centerOf(layer);
   const [dx, dy] = [(event.clientX - drag.x) / zoom.value, (event.clientY - drag.y) / zoom.value];
   drag = null;
   if (!element || !center || !box?.width || Math.hypot(dx, dy) < 2) return;
@@ -502,8 +452,8 @@ function endDrag(event: PointerEvent): void {
   const value = `{ ${coatNumber(x + dx / box.width)} ${coatNumber(y + dy / box.height)} }`;
   const property = selected.value?.find((one) => one.key.toLowerCase() === "position");
   if (property) void store.rewrite(path, property.valueLocation, value);
-  else if (element.key === "instance") void store.addInside(path, element.location, `position = ${value}`);
-  else void store.addInside(path, element.location, `instance = { position = ${value} }`);
+  else if (element.key === "instance") void store.addInside(path, element.location, [`position = ${value}`]);
+  else void store.addInside(path, element.location, [`instance = { position = ${value} }`]);
 }
 
 /** Follows the pointer over the elements: the one a click there would select, which the marks outline. */
@@ -523,30 +473,8 @@ onScopeDispose(() => (file.value.hover = -1));
 <template>
   <div class="flex min-h-0 min-w-0 flex-1 flex-col">
     <div class="flex h-10 shrink-0 items-center gap-1.5 overflow-x-auto border-b border-default bg-muted px-2">
-      <!-- the entry's full id is its tooltip, on the picker and on each row; the menu is as wide as its ids -->
-      <span :title="entry" class="contents">
-        <USelectMenu
-          :model-value="entryKey({ database: file.database, name: entry })"
-          :items="items"
-          value-key="value"
-          size="sm"
-          :icon="entryIcon"
-          class="w-60 shrink-0"
-          :search-input="{ placeholder: 'Find an entry of this file' }"
-          :ui="{ content: 'w-max min-w-(--reka-combobox-trigger-width) max-w-xl', value: 'font-mono' }"
-          placeholder="No window"
-          @update:model-value="(key) => pickEntry(String(key))"
-        >
-          <template #item-label="{ item }">
-            <span :title="rowOf(item).label" class="font-mono">{{ rowOf(item).label }}</span>
-          </template>
-          <template #item-trailing="{ item }">
-            <span v-if="rowOf(item).line" class="font-mono text-11 text-dimmed">L{{ rowOf(item).line }}</span>
-          </template>
-        </USelectMenu>
-      </span>
       <USelect
-        v-if="isWindow"
+        v-if="drawing === 'gui'"
         v-model="store.width"
         :items="RESOLUTIONS"
         icon="i-lucide-monitor"
@@ -556,6 +484,7 @@ onScopeDispose(() => (file.value.hover = -1));
       <USelect
         v-else-if="frameItems.length > 1"
         v-model="file.frame"
+        placeholder="Field"
         :items="frameItems"
         icon="i-lucide-shield"
         size="sm"
@@ -575,7 +504,7 @@ onScopeDispose(() => (file.value.hover = -1));
         />
       </UTooltip>
       <!-- the window's conditions: each group drawn at one of its values, its first unless another is chosen -->
-      <UPopover v-if="isWindow && states.length" :content="{ side: 'bottom', align: 'start' }">
+      <UPopover v-if="drawing === 'gui' && states.length" :content="{ side: 'bottom', align: 'start' }">
         <UButton
           :label="`States ${states.length}`"
           icon="i-lucide-braces"
@@ -611,7 +540,7 @@ onScopeDispose(() => (file.value.hover = -1));
         :width="sceneWidth"
         :height="sceneHeight"
         :focus="windowRect"
-        :fit-limit="isWindow ? 1 : 16"
+        :fit-limit="drawing === 'coat' ? 16 : 1"
         @floor="deselect"
       >
         <UContextMenu :items="menu" :disabled="!hitCount" :ui="{ content: 'w-80' }">
@@ -649,12 +578,13 @@ onScopeDispose(() => (file.value.hover = -1));
                 :rows="store.rows"
                 :width="screen[0]"
                 :height="screen[1]"
-                :mask="frameMask"
               />
+              <CoatPicture v-else-if="coat" :coat="coat" :hidden="hidden" :frame="frameMask" />
               <WidgetMarks
                 :file="file"
                 :elements="elements"
-                :missing="list?.missing ?? []"
+                :widgets="list?.elements ?? []"
+                :missing="missing"
                 :screen="
                   list && !list.isAlone
                     ? { width: screen[0], height: screen[1], label: `${store.width} × ${store.height}` }
@@ -667,10 +597,10 @@ onScopeDispose(() => (file.value.hover = -1));
           </div>
         </UContextMenu>
         <template #toolbar>
-          <span v-if="drawing" class="flex items-center gap-1.5 px-1">
+          <span v-if="isDrawing" class="flex items-center gap-1.5 px-1">
             <UIcon name="i-lucide-loader-circle" class="size-3.5 animate-spin" />Drawing
           </span>
-          <span v-else-if="list" class="flex items-center gap-1.5 px-1">
+          <span v-else-if="list || coat" class="flex items-center gap-1.5 px-1">
             <UIcon name="i-lucide-circle-check" class="size-3.5 text-success" />Rendered in {{ renderedMs }} ms
           </span>
           <!-- what the game's files did not give, and what the session hides: a row selects its widget -->
@@ -717,11 +647,11 @@ onScopeDispose(() => (file.value.hover = -1));
         </template>
       </Viewport>
       <div
-        v-if="!list || isEmpty"
+        v-if="!(list || coat) || isEmpty"
         class="pointer-events-none absolute inset-x-0 top-0 bottom-7 flex items-center justify-center p-6"
       >
         <UAlert
-          v-if="error && !list"
+          v-if="error && !(list || coat)"
           class="pointer-events-auto max-w-120"
           color="error"
           variant="subtle"
@@ -735,10 +665,7 @@ onScopeDispose(() => (file.value.hover = -1));
               color: 'neutral',
               variant: 'outline',
               onClick: () =>
-                store.goTo(
-                  path,
-                  entrySymbols.find((one) => entryKey(one) === entryKey({ ...file, name: entry }))?.location,
-                ),
+                store.goTo(path, entries.find((one) => one.name === entry && one.database === file.database)?.location),
             },
             {
               label: 'Try again',

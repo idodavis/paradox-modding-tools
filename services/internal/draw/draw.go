@@ -1,11 +1,15 @@
-// draw.go is what the visual editors draw: the request, the list an entry resolves into, the two calls that answer it
-// from one resolve kept between them, and the names the pickers list: a database's entries, a folder's textures.
+// draw.go is what both drawn kinds share: the request, the element every drawn thing is, a property as written and
+// what nothing found; the calls that answer a GUI entry from one resolve kept between them and a coat from its own;
+// and the resolve both start from: the request's entry, the definitions and routes read once, and what is missing.
 
 package draw
 
 import (
 	"fmt"
-	"path"
+	"net/url"
+	"os"
+	"slices"
+	"strconv"
 	"strings"
 	"sync"
 
@@ -29,112 +33,21 @@ type Request struct {
 	Database string `json:"database"`
 }
 
-// List is one render of an entry: the widgets the game lays it out in, its elements in pre-order, the textures they
-// draw and the fonts they use, each listed once, the calls they are shown on, and what nothing found.
-type List struct {
-	IsAlone      bool      `json:"isAlone"`      // a type, template, text icon, format or coat drawn alone, not a window
-	DepthInFront bool      `json:"depthInFront"` // a coat's: a larger depth in front, which a reorder writes depths by
-	Holders      []Element `json:"holders"`      // outermost first, each of its type row and properties alone
-	Elements     []Element `json:"elements"`
-	Textures     []Texture `json:"textures"`
-	Groups       []Group   `json:"groups"`
-	Fonts        []Font    `json:"fonts"`
-	Missing      []Absent  `json:"missing"`
-}
-
-// Element is one widget of the entry: where it is written and how it is named, how its type draws, and what it is
-// drawn by: its properties as written, its textures, its text and what it is shown on.
+// Element is one drawn thing of an entry, a GUI widget or a coat layer: where it sits in the tree, how it is named on
+// the way down, and where it is written; the page selects, marks and links it to its code by these alone.
 type Element struct {
 	Parent    int          `json:"parent"` // -1 at the root
 	Key       string       `json:"key"`
-	Type      string       `json:"type"` // the built-in type the key resolves to
+	Type      string       `json:"type"` // a widget's built-in type; a layer's kind: coat, pattern, emblem, instance, sub
 	Name      string       `json:"name"`
 	Label     string       `json:"label"` // the key, then the name where it has one of its own
-	Path      string       `json:"path"`  // the labels from the window down
+	Path      string       `json:"path"`  // the labels from the root down
 	Ancestors []int        `json:"ancestors"`
 	Location  lsp.Location `json:"location"`
-
-	Role   game.WidgetRole `json:"role"` // "" a child among its siblings
-	IsItem bool            `json:"isItem"`
-
-	Holds       game.Holding `json:"holds"`
-	Clips       bool         `json:"clips"`
-	Fills       bool         `json:"fills"`
-	CentersText bool         `json:"centersText"`
-	DropsHidden bool         `json:"dropsHidden"` // a hidden child of it takes no room
-
-	IsHidden       bool              `json:"isHidden"` // visible = no, or visible_at_creation = no
-	VisibleBinding string            `json:"visibleBinding"`
-	Condition      *Condition        `json:"condition,omitempty"`
-	Properties     map[string]string `json:"properties"` // by lower-cased key, the last written, as written
-	Textures       []int             `json:"textures"`   // its own, then its overlays
-	TextureBinding string            `json:"textureBinding"`
-	Text           *Text             `json:"text,omitempty"`
 }
 
-// Texture is what an element paints from a file: its size in the image's pixels over its density, its border in
-// the screen's, its frame, tiling, mirror, fit, tint and blend, the texture that masks it, and how its pixels are
-// colored.
-type Texture struct {
-	URL        string   `json:"url"`
-	Width      int      `json:"width"`
-	Height     int      `json:"height"`
-	Density    float64  `json:"density"`
-	Border     [4]int   `json:"border"` // top, right, bottom, left
-	IsTiled    bool     `json:"isTiled"`
-	IsMirrored bool     `json:"isMirrored"`
-	Fit        string   `json:"fit"`
-	Tint       string   `json:"tint"`      // the color the image is multiplied by, opaque; "" none
-	TintAlpha  float64  `json:"tintAlpha"` // what the tint multiplies the image's alpha by; 1 none
-	Blend      string   `json:"blend"`     // a CSS blend mode
-	Alpha      float64  `json:"alpha"`
-	Mask       int      `json:"mask"`    // the list's texture whose brightness masks this one; -1 none
-	Recolor    string   `json:"recolor"` // how the page colors it, a key of the page's recolor rows; "" as its pixels are
-	Colors     []string `json:"colors"`  // the slots the recolor reads as CSS, slot n at n, "" the shader's fallback
-	Regions    []int    `json:"regions"` // for a mask texture: the pattern's regions kept
-}
-
-// Text is an element's text as runs in a font at a size.
-type Text struct {
-	Font  string `json:"font"`
-	Size  int    `json:"size"`
-	Color string `json:"color"`
-	Runs  []Run  `json:"runs"`
-}
-
-// Run is one stretch of a text under one style: an icon drawn in place of text, or a data call drawn as a value.
-type Run struct {
-	Text     string `json:"text"`
-	IsBold   bool   `json:"isBold"`
-	IsItalic bool   `json:"isItalic"`
-	Color    string `json:"color"`
-	Icon     string `json:"icon"`
-	Call     string `json:"call"`
-}
-
-// Font is one face the texts use: the game's font name, its style and its file.
-type Font struct {
-	Name  string `json:"name"`
-	Style string `json:"style"`
-	URL   string `json:"url"`
-}
-
-// Condition is what a widget is shown on: a fact, one of the list's groups at a value, or a boolean over conditions.
-type Condition struct {
-	Operator string      `json:"operator"` // "" a fact
-	Operands []Condition `json:"operands,omitempty"`
-	Group    int         `json:"group"`
-	Value    string      `json:"value,omitempty"`
-}
-
-// Group is a call widgets are shown on, its last quoted argument blanked, and the values its facts are written with.
-type Group struct {
-	Call   string   `json:"call"`
-	Values []string `json:"values"`
-}
-
-// Property is one property of an element as written, with the type or template that wrote it ("" the element),
-// where, and where its value is, which an edit replaces.
+// Property is one property of an element as written, with the type, template or parent coat that wrote it ("" the
+// element), where, and where its value is, which an edit replaces.
 type Property struct {
 	Key           string       `json:"key"`
 	Value         string       `json:"value"`
@@ -149,131 +62,281 @@ type Absent struct {
 	Element int    `json:"element"`
 }
 
-// Name is a thing a picker lists: an entry of a database by its id and the color its block is as CSS, or a texture
-// file by its name and its route ("" for none).
-type Name struct {
-	ID    string `json:"id"`
-	Color string `json:"color"`
-	URL   string `json:"url"`
-}
-
-// Render is the last resolve of an entry, kept while the session's records and the request are the same.
+// Render is the last GUI entry resolved, kept while the session's records and the request are the same.
 type Render struct {
 	mu      sync.Mutex
 	changes int64
 	request Request
-	last    *resolver
+	last    *guiResolver
 }
 
-// List is the request's entry resolved into a list. The caller holds the workspace's read lock.
+// resolver is what a resolve of either kind shares: the workspace, the parses made for it, the request, the element
+// being resolved, where a thing not found is listed, the definitions and routes read once, and what nothing found.
+type resolver struct {
+	ws          *workspace.Session
+	parses      workspace.Parses
+	request     Request
+	element     int                  // -1 for none
+	definitions map[string]statement // by "caller|database|id"; no assignment for none
+	urls        map[string]string    // a file's route by path
+	missing     []Absent
+}
+
+// maxDepth is the deepest types, templates, blocks and parent coats nest before a cycle is assumed.
+const maxDepth = 40
+
+// missingTexts is the status line's sentence for each thing not found, of either kind; %s is what was asked for.
+var missingTexts = map[string]string{
+	"template": "Template not found: %s", "type": "Type not found: %s",
+	"cycle": "Type cycle: %s", "templatecycle": "Template cycle: %s",
+	"texture": "Texture not found: %s", fontKey: "Font not found: %s", "fontsize": "Font size missing: %s",
+	"format": "Text format not found: %s", "texticon": "Text icon not found: %s", "loc": "Localization key not found: %s",
+	"blend": "Blend mode not drawn: %s", "field": "Field size not found in %s",
+	"list": "Picked from a list, not drawn: %s", "parent": "Parent coat not found: %s",
+	"color": "Named color not found: %s",
+}
+
+// List is the request's GUI entry resolved into a list. The caller holds the workspace's read lock.
 func (render *Render) List(ws *workspace.Session, request Request) (*List, error) {
 	render.mu.Lock()
 	defer render.mu.Unlock()
-	resolver, err := render.resolver(ws, request)
+	resolver, err := render.gui(ws, request)
 	if err != nil {
 		return nil, err
 	}
 	return resolver.list, nil
 }
 
-// Properties is an element's properties: every key that applies to it but a state, its last value, its writer and
-// where it is written, in the order the keys are first written.
+// Properties is an element's properties, a widget's or a coat layer's: every key that applies to it but a state, its
+// last value, its writer and where it is written, in the order the keys are first written. The caller holds the
+// workspace's read lock.
 func (render *Render) Properties(ws *workspace.Session, request Request, element int) ([]Property, error) {
 	render.mu.Lock()
 	defer render.mu.Unlock()
-	resolver, err := render.resolver(ws, request)
+	elementProperties, err := render.statementsOf(ws, request)
 	if err != nil {
 		return nil, err
 	}
-	if element < 0 || element >= len(resolver.widgets) {
+	if element < 0 || element >= len(elementProperties) {
 		return nil, fmt.Errorf("the entry has no element %d", element)
 	}
-	widget := resolver.widgets[element]
-	properties := []Property{}
+	properties := elementProperties[element]
+	rows := []Property{}
 	keys := map[string]bool{}
-	for _, statement := range widget.statements {
+	for _, statement := range properties.statements {
 		key := strings.ToLower(statement.assignment.Key.Text)
 		if key == stateKey || keys[key] {
 			continue
 		}
 		keys[key] = true
-		last, _ := widget.last(key)
-		properties = append(properties, Property{
+		last, _ := properties.last(key)
+		rows = append(rows, Property{
 			Key: last.assignment.Key.Text, Value: last.text(), Writer: last.writer,
 			Location: lsp.Locate(ws, last.path, last.span()), ValueLocation: lsp.Locate(ws, last.path, last.valueSpan()),
 		})
 	}
-	return properties, nil
+	return rows, nil
 }
 
-// Names are the entries a database defines across the load order, each once, with the color the winner's block is.
-// The caller holds the workspace's read lock.
-func Names(ws *workspace.Session, database string) []Name {
-	parses := workspace.Parses{}
-	names := []Name{}
-	for _, id := range index.Names(ws.Indexes(), database) {
-		defs := index.Lookup(ws.Indexes(), schema.Defines, database, id)
-		if len(defs) == 0 {
+// CoatOf is the request's coat of arms resolved into its layers. The caller holds the workspace's read lock.
+func CoatOf(ws *workspace.Session, request Request) (*Coat, error) {
+	resolver, err := newCoatResolver(newResolver(ws, request))
+	if err != nil {
+		return nil, err
+	}
+	return resolver.coat, nil
+}
+
+// CoatsOf are coats of one file resolved over one resolve's parses, definitions and routes, so a file their parents
+// are in is read once; a coat the file does not hold is nil. The caller holds the workspace's read lock.
+func CoatsOf(ws *workspace.Session, path string, ids []string) []*Coat {
+	shared := newResolver(ws, Request{Path: path, Database: game.CoatDatabases.Coats})
+	coats := make([]*Coat, 0, len(ids))
+	for _, id := range ids {
+		core := *shared
+		core.request.ID, core.element, core.missing = id, -1, []Absent{}
+		resolver, err := newCoatResolver(&core)
+		if err != nil {
+			coats = append(coats, nil)
 			continue
 		}
-		name := Name{ID: id}
-		winner, _, _, _ := ws.Winner(defs)
-		if _, definition := ws.Statement(parses, winner); definition != nil {
-			name.Color = cssOf(jomini.ValueOf(definition))
-		}
-		names = append(names, name)
+		coats = append(coats, resolver.coat)
 	}
-	return names
+	return coats
 }
 
-// Frames are the frames the workspace's game cuts its coats to, each its label and its mask's route; one whose mask
-// no origin holds is left out. The caller holds the workspace's read lock.
-func Frames(ws *workspace.Session) []Name {
-	frames := []Name{}
-	for _, frame := range game.CoatFrames[ws.Game.ID] {
-		if file, isListed := index.FileAt(ws.Indexes(), frame.Mask); isListed {
-			frames = append(frames, Name{ID: frame.Label, URL: routeOf(file.Path)})
-		}
-	}
-	return frames
-}
-
-// Textures are the images a coat texture key's folder holds across the load order, each name once, a later origin's
-// over an earlier's. The caller holds the workspace's read lock.
-func Textures(ws *workspace.Session, key string) []Name {
-	folder, isKnown := game.CoatTextureFolders[key]
-	names := []Name{}
-	if !isKnown {
-		return names
-	}
-	byFile := map[string]int{}
-	for _, scanned := range ws.Indexes() {
-		for _, file := range scanned.Files {
-			dir, base := path.Split(file.Rel)
-			if file.Format != inventory.Image || !strings.EqualFold(strings.TrimSuffix(dir, "/"), folder) {
-				continue
-			}
-			texture := Name{ID: base, URL: routeOf(file.Path)}
-			if i, isListed := byFile[strings.ToLower(base)]; isListed {
-				names[i] = texture
-				continue
-			}
-			byFile[strings.ToLower(base)] = len(names)
-			names = append(names, texture)
-		}
-	}
-	return names
-}
-
-// resolver is the request's resolve: the last where the request and the session's records are the same, else anew.
-func (render *Render) resolver(ws *workspace.Session, request Request) (*resolver, error) {
+// gui is the request's GUI resolve: the last where the request and the session's records are the same, else anew.
+func (render *Render) gui(ws *workspace.Session, request Request) (*guiResolver, error) {
 	if render.last != nil && render.changes == ws.Changes && render.request == request {
 		return render.last, nil
 	}
-	resolver, err := newResolver(ws, request)
+	resolver, err := newGUIResolver(newResolver(ws, request))
 	if err != nil {
 		return nil, err
 	}
 	render.changes, render.request, render.last = ws.Changes, request, resolver
 	return resolver, nil
+}
+
+// statementsOf is what applies to each element of the request's entry, by element: the widgets' statements from the
+// GUI resolve kept, a coat's layers' from the coat resolved anew.
+func (render *Render) statementsOf(ws *workspace.Session, request Request) ([]*properties, error) {
+	if request.Database == game.CoatDatabases.Coats {
+		resolver, err := newCoatResolver(newResolver(ws, request))
+		if err != nil {
+			return nil, err
+		}
+		return resolver.layerProperties, nil
+	}
+	resolver, err := render.gui(ws, request)
+	if err != nil {
+		return nil, err
+	}
+	elementProperties := make([]*properties, len(resolver.widgets))
+	for ordinal, widget := range resolver.widgets {
+		elementProperties[ordinal] = &widget.properties
+	}
+	return elementProperties, nil
+}
+
+// newResolver is a request's resolve before anything is read.
+func newResolver(ws *workspace.Session, request Request) *resolver {
+	return &resolver{
+		ws: ws, parses: workspace.Parses{}, request: request, element: -1, definitions: map[string]statement{},
+		urls: map[string]string{}, missing: []Absent{},
+	}
+}
+
+// entry is the statement that defines the request's entry in its file, of one of a kind's databases; the request's
+// database becomes the entry's. what names the kind's entries for the error that none is there.
+func (resolver *resolver) entry(what string, databases []string) (statement, error) {
+	request := resolver.request
+	if _, _, isInWorkspace := resolver.ws.Locate(request.Path); !isInWorkspace {
+		return statement{}, fmt.Errorf("%s is not in the open workspace: it is under neither its %s install nor its mods",
+			request.Path, resolver.ws.Game.Name)
+	}
+	parsed, _, err := resolver.ws.Parsed(resolver.parses, request.Path)
+	if err != nil {
+		return statement{}, err
+	}
+	for _, scanned := range resolver.ws.Indexes() {
+		for _, def := range scanned.InFile(request.Path) {
+			occurrence := def.Occurrence()
+			isEntry := occurrence.Role == schema.Defines && occurrence.ID == request.ID &&
+				slices.Contains(databases, occurrence.Database) &&
+				(request.Database == "" || occurrence.Database == request.Database)
+			definition, isAssignment := parsed.AssignmentAt(int(occurrence.Line), int(occurrence.Col)).(*jomini.Assignment)
+			if isEntry && isAssignment {
+				resolver.request.Database = occurrence.Database
+				return statement{assignment: definition, parsed: parsed, path: request.Path}, nil
+			}
+		}
+	}
+	return statement{}, fmt.Errorf("%s holds no %s %q", request.Path, what, request.ID)
+}
+
+// definition is the statement a reference resolves to, written by its id, read once a render; false for none.
+func (resolver *resolver) definition(ref schema.Occurrence) (statement, bool) {
+	key := ref.Caller + "|" + ref.Database + "|" + ref.ID
+	definition, isKnown := resolver.definitions[key]
+	if !isKnown {
+		if winner, isDefined := resolver.winner(ref); isDefined {
+			parsed, assignment := resolver.ws.Statement(resolver.parses, winner)
+			if assignment, isAssignment := assignment.(*jomini.Assignment); isAssignment {
+				definition = statement{assignment: assignment, parsed: parsed, path: winner.File().Path, writer: ref.ID}
+			}
+		}
+		resolver.definitions[key] = definition
+	}
+	return definition, definition.assignment != nil
+}
+
+// winner is the definition a reference resolves to: one of this file first (a local type or template), else the
+// load order's winner; false for none.
+func (resolver *resolver) winner(ref schema.Occurrence) (index.At, bool) {
+	ref.Role = schema.Refers
+	defs, _ := index.Resolve(resolver.ws.Install.Schema, resolver.ws.Indexes(), ref, resolver.request.Path)
+	if local := slices.IndexFunc(defs, func(def index.At) bool { return def.Occurrence().Local }); local >= 0 {
+		return defs[local], true
+	}
+	winner, _, _, _ := resolver.ws.Winner(defs)
+	return winner, winner != index.At{}
+}
+
+// identify fills how an element is named and where it is written, before its children are, which name it in their
+// paths: its name an id ("" for none), the root's the request's; its label its key, then a name of its own; its path
+// the labels from the root down. parent is nil at the root.
+func (resolver *resolver) identify(element, parent *Element, statement statement, id string) {
+	element.Name, element.Label = id, element.Key
+	if parent == nil {
+		element.Name = resolver.request.ID
+	}
+	if element.Name != "" && element.Name != element.Key {
+		element.Label += " " + element.Name
+	}
+	element.Path, element.Ancestors = element.Label, []int{}
+	if parent != nil {
+		element.Path = parent.Path + " › " + element.Label
+		element.Ancestors = append(slices.Clone(parent.Ancestors), element.Parent)
+	}
+	element.Location = lsp.Locate(resolver.ws, statement.path, statement.span())
+}
+
+// propertyTexts is every property statements write, by lower-cased key, the last written, its scalars as written, a
+// call the preview answers replaced by the entry's value.
+func (resolver *resolver) propertyTexts(statements []statement) map[string]string {
+	properties := map[string]string{}
+	for _, statement := range statements {
+		scalars := statement.scalars()
+		if len(scalars) == 0 {
+			continue
+		}
+		text := strings.Join(scalars, " ")
+		if define, isAnswered := resolver.answered(text); isAnswered {
+			text = strings.TrimSuffix(strings.Join(define.scalars(), " "), ";")
+		}
+		properties[strings.ToLower(statement.assignment.Key.Text)] = text
+	}
+	return properties
+}
+
+// answered is the entry a value that is one call of GUIAnswered names, its last argument the id; false otherwise.
+func (resolver *resolver) answered(text string) (statement, bool) {
+	steps := jomini.ParseCall(text, 0)
+	if !isBinding(text) || len(steps) != 1 || len(steps[0].Args) == 0 {
+		return statement{}, false
+	}
+	database, isAnswered := game.GUIAnswered[steps[0].Name]
+	if !isAnswered {
+		return statement{}, false
+	}
+	args := steps[0].Args
+	return resolver.definition(schema.Occurrence{Database: database, ID: args[len(args)-1].Text})
+}
+
+// addMissing lists a thing not found at the element being resolved, once.
+func (resolver *resolver) addMissing(cause, text string) {
+	absent := Absent{Text: fmt.Sprintf(missingTexts[cause], text), Element: resolver.element}
+	if !slices.Contains(resolver.missing, absent) {
+		resolver.missing = append(resolver.missing, absent)
+	}
+}
+
+// urlOf is the route's URL for a file, made once a render.
+func (resolver *resolver) urlOf(file inventory.File) string {
+	if route, isKnown := resolver.urls[file.Path]; isKnown {
+		return route
+	}
+	route := routeOf(file.Path)
+	resolver.urls[file.Path] = route
+	return route
+}
+
+// routeOf is the route's URL for a file, with when it changed.
+func routeOf(path string) string {
+	version := "0"
+	if stat, err := os.Stat(path); err == nil {
+		version = strconv.FormatInt(stat.ModTime().UnixMilli(), 10)
+	}
+	return FileRoute + "?path=" + url.QueryEscape(path) + "&v=" + version
 }

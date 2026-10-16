@@ -1,22 +1,17 @@
 /**
  * The picture: what a holding and a property mean in CSS, as tables, and the DOM built from them, one div per drawn
- * widget or coat layer, which the browser lays out and paints.
+ * widget, which the browser lays out and paints.
  */
 import { defineComponent, h, type CSSProperties, type PropType, type VNode } from "vue";
-import type { Element as DrawElement, List as DrawList, Text, Texture } from "@services/internal/draw";
+import type { List as DrawList, Text, Texture, Widget } from "@services/internal/draw";
 import { Holding, WidgetRole } from "@services/internal/game";
-import { placeOf, recolored, ROTATION_CLOCKWISE } from "./recolor";
 
 type Axis = 0 | 1;
-type Properties = NonNullable<DrawElement["properties"]>;
-
-/** A part of the transform a coat layer is moved, sized and turned by. */
-type Placing = "center" | "corner" | "size" | "turn";
+type Properties = NonNullable<Widget["properties"]>;
 
 /** What a property means in CSS, by its shape; a rule with nothing in it is a property known and not drawn. */
 type Rule =
-  | { lengths: [keyof CSSProperties, keyof CSSProperties]; ratio?: string }
-  | { transform: Placing; defaults: number[] }
+  | { lengths: [keyof CSSProperties, keyof CSSProperties] }
   | { length: keyof CSSProperties }
   | { number: keyof CSSProperties }
   | { count: keyof CSSProperties }
@@ -79,8 +74,8 @@ const FILL = { size: "100% 100%", position: "0 0" };
 
 const ELLIPSIS: CSSProperties = { overflow: "hidden", textOverflow: "ellipsis", maxWidth: "100%" };
 
-/** What each property means in CSS, applied in this order, a later row over an earlier; a row of a type (`type.key`)
- * over the plain one. The wiki's Interface page, unless the row says otherwise. */
+/** What each property means in CSS, applied in this order, a later row over an earlier. The wiki's Interface page,
+ * unless the row says observed. */
 const PROPERTIES: Record<string, Rule> = {
   size: { lengths: ["width", "height"] },
   minimumsize: { lengths: ["minWidth", "minHeight"] },
@@ -128,23 +123,7 @@ const PROPERTIES: Record<string, Rule> = {
   setitemsizefromcell: {},
   wrap_count: {},
   alwaystransparent: {},
-  // a coat of arms, the wiki's Coat of arms modding page: every layer is a box the field's size, an instance or a sub
-  // moved, sized and turned in it as the coat shader moves an emblem's quad (coat_of_arms_textured_emblem.fxh): turned
-  // in the field's own units, sized, a negative size a flip, then centered; by default, the field's middle at full size
-  // (observed: the wiki's 0 0 is the corner) and a sub's corner the field's
-  "field.size": { lengths: ["width", "height"], ratio: "--coat-aspect" },
-  "instance.position": { transform: "center", defaults: [0.5, 0.5] },
-  "instance.scale": { transform: "size", defaults: [1, 1] },
-  "instance.rotation": { transform: "turn", defaults: [0] },
-  "sub.offset": { transform: "corner", defaults: [0, 0] },
-  "sub.scale": { transform: "size", defaults: [1, 1] },
 };
-
-/** PROPERTIES' rows in order, each with the type it is of ("" every type) and the key of the property it reads. */
-const ROWS = Object.entries(PROPERTIES).map(([row, rule]) => {
-  const [type, key] = row.includes(".") ? row.split(".") : ["", row];
-  return { type, key, rule };
-});
 
 /** The picture of a list on a screen: its holders around its root, each a div the browser lays out. */
 export const Picture = defineComponent({
@@ -154,15 +133,13 @@ export const Picture = defineComponent({
     rows: { type: Number, required: true },
     width: { type: Number, required: true },
     height: { type: Number, required: true },
-    /** The image whose alpha cuts the holder the entry is drawn in (a coat's frame); "" none. */
-    mask: { type: String, default: "" },
   },
   setup(props) {
     return () => {
       const { list, hidden, rows } = props;
       const elements = list.elements ?? [];
       const childrenOf = Map.groupBy(elements.keys(), (index) => elements[index].parent);
-      const screen: DrawElement = {
+      const screen: Widget = {
         ...elements[0],
         key: "screen",
         holds: Holding.HoldsCell,
@@ -172,10 +149,10 @@ export const Picture = defineComponent({
       const holders = [screen, ...(list.holders ?? [])];
       let node = nodeOf(list, childrenOf, hidden, rows, 0, holders.at(-1) ?? screen, Holding.HoldsCell, "0");
       for (let i = holders.length - 1; i > 0; i--) {
-        const style = styleOf(holders[i], holders[i - 1], [], [], false);
-        if (i === holders.length - 1 && props.mask)
-          Object.assign(style, { maskImage: `url(${quote(props.mask)})`, maskSize: "100% 100%" });
-        node = h("div", { key: `h${i}`, class: "pmt-holder", style }, [node]);
+        const holder = holders[i];
+        node = h("div", { key: `h${i}`, class: "pmt-holder", style: styleOf(holder, holders[i - 1], [], [], false) }, [
+          node,
+        ]);
       }
       return h("div", { style: { position: "relative", width: `${props.width}px`, height: `${props.height}px` } }, [
         node,
@@ -192,7 +169,7 @@ function nodeOf(
   hidden: Set<number>,
   rows: number,
   index: number,
-  holder: DrawElement,
+  holder: Widget,
   holding: Holding,
   key: string,
 ): VNode {
@@ -201,12 +178,9 @@ function nodeOf(
   const kids = (childrenOf.get(index) ?? []).map((i) => elements[i]);
   const parts: VNode[] = [];
   const byRole = (role: WidgetRole) => (childrenOf.get(index) ?? []).filter((i) => elements[i].role === role);
-  const textures = list.textures ?? [];
-  const byPlace = Map.groupBy(element.textures ?? [], (i) => placeOf(textures[i]).place);
   for (const i of byRole(WidgetRole.RoleSkin))
     parts.push(nodeOf(list, childrenOf, hidden, rows, i, element, Holding.HoldsCell, `${key}.${i}`));
-  const layers = byPlace.get("layer") ?? [];
-  if (layers.length) parts.push(texturesNode(textures, layers, `${key}t`));
+  if (element.textures?.length) parts.push(texturesNode(list.textures ?? [], element.textures, `${key}t`));
   if (element.textureBinding)
     parts.push(h("div", { key: `${key}p`, class: "pmt-placeholder absolute inset-0 grid place-items-center" }));
   if (element.text) parts.push(textNode(element, element.text, `${key}x`));
@@ -222,13 +196,10 @@ function nodeOf(
     if (policy !== "always_off")
       parts.push(nodeOf(list, childrenOf, hidden, rows, i, element, Holding.HoldsCell, `${key}.${i}`));
   }
-  const overs = byPlace.get("over") ?? [];
-  for (const i of overs) parts.push(overNode(textures[i], `${key}o${i}`));
   const siblings = (childrenOf.get(element.parent) ?? []).map((i) => elements[i]);
   const isHidden = element.isHidden || hidden.has(index);
-  const style = styleOf(element, { ...holder, holds: holding }, siblings, kids, isHidden, textures[layers[0] ?? -1]);
-  Object.assign(style, maskStyle((byPlace.get("mask") ?? []).map((i) => [textures[i], "alpha"])));
-  if (overs.length) style.isolation = "isolate";
+  const texture = (list.textures ?? [])[element.textures?.[0] ?? -1];
+  const style = styleOf(element, { ...holder, holds: holding }, siblings, kids, isHidden, texture);
   return h("div", { key, "data-element": index, style }, parts);
 }
 
@@ -236,10 +207,10 @@ function nodeOf(
  * is written, a child that sizes it, how its role sits in its holder, and whether it is hidden, taking no room where
  * the holder drops hidden children. */
 function styleOf(
-  element: DrawElement,
-  holder: DrawElement,
-  siblings: DrawElement[],
-  children: DrawElement[],
+  element: Widget,
+  holder: Widget,
+  siblings: Widget[],
+  children: Widget[],
   isHidden: boolean,
   texture?: Texture,
 ): CSSProperties {
@@ -252,11 +223,10 @@ function styleOf(
     minWidth: 0,
     minHeight: 0,
   };
-  for (const { type, key, rule } of ROWS) {
+  for (const [key, rule] of Object.entries(PROPERTIES)) {
     const value = properties[key];
-    const isOverridden = !type && `${element.type}.${key}` in PROPERTIES;
-    if ((type && type !== element.type) || value === undefined || isOverridden) continue;
-    if ("anchor" in rule || "policy" in rule || "transform" in rule) continue;
+    if (value === undefined) continue;
+    if ("anchor" in rule || "policy" in rule) continue;
     Object.assign(style, plainStyle(rule, value));
   }
   // the wiki: a widget with a texture and no size is the texture's size
@@ -273,7 +243,6 @@ function styleOf(
     Object.assign(style, { width: "100%", height: "100%" });
   if (element.clips) style.overflow = "hidden";
   if (element.fills) Object.assign(style, { position: "absolute", inset: 0, width: "auto", height: "auto" });
-  Object.assign(style, transformStyle(element));
   if (element.role === WidgetRole.RoleSkin) Object.assign(style, skinStyle(properties));
   if (element.role === WidgetRole.RoleChrome) Object.assign(style, barStyle(element));
   if (holds === Holding.HoldsScroll)
@@ -291,8 +260,6 @@ function plainStyle(rule: Rule, value: string): CSSProperties {
     const second = lengthOf(down ?? across);
     if (first !== undefined) Object.assign(style, { [rule.lengths[0]]: first });
     if (second !== undefined) Object.assign(style, { [rule.lengths[1]]: second });
-    if (rule.ratio && Number(across) > 0 && Number(down) > 0)
-      Object.assign(style, { [rule.ratio]: Number(across) / Number(down) });
     return style;
   }
   if ("length" in rule) {
@@ -306,60 +273,18 @@ function plainStyle(rule: Rule, value: string): CSSProperties {
   return {};
 }
 
-/** The transform a coat layer is placed by, from its type's transform rows (none where its type has none), as the coat
- * shader moves an emblem's quad: a box the field's size turned in the field's own units (its aspect, --coat-aspect,
- * undone around the turn), sized, flipped where a size is negative, and moved to its center, or to its corner plus
- * half its size, each a fraction of the field. */
-function transformStyle(element: DrawElement): CSSProperties {
-  const parts = partsOf(element);
-  if (!parts.size) return {};
-  const [width, height] = parts.get("size") ?? [1, 1];
-  const corner = parts.get("corner");
-  const [x, y] = corner
-    ? [corner[0] + Math.abs(width) / 2, corner[1] + Math.abs(height) / 2]
-    : (parts.get("center") ?? [0.5, 0.5]);
-  const turn = (parts.get("turn")?.[0] ?? 0) * (ROTATION_CLOCKWISE ? 1 : -1);
-  return {
-    transform: [
-      `translate(${(x - 0.5) * 100}%, ${(y - 0.5) * 100}%)`,
-      `scale(${Math.abs(width)}, ${Math.abs(height)})`,
-      `scale(var(--coat-aspect, 1), 1) rotate(${turn}deg) scale(calc(1 / var(--coat-aspect, 1)), 1)`,
-      `scale(${Math.sign(width) || 1}, ${Math.sign(height) || 1})`,
-    ].join(" "),
-  };
-}
-
-/** The parts of a coat layer's transform by its type's transform rows: each its numbers as written, else the row's
- * defaults; none where its type has no transform rows. */
-function partsOf(element: DrawElement): Map<Placing, number[]> {
-  const parts = new Map<Placing, number[]>();
-  for (const { type, key, rule } of ROWS) {
-    if (!("transform" in rule) || type !== element.type) continue;
-    const numbers = (element.properties?.[key] ?? "").split(/\s+/).filter(Boolean).map(Number);
-    parts.set(
-      rule.transform,
-      rule.defaults.map((fallback, i) => (Number.isFinite(numbers[i]) ? numbers[i] : fallback)),
-    );
-  }
-  return parts;
-}
-
-/** Where a coat layer's center is as fractions of its coat's box, written or not; undefined for one placed by no
- * center. */
-export const centerOf = (element: DrawElement): number[] | undefined => partsOf(element).get("center");
-
 /** A length as CSS: a number in px, a percent as itself; none for -1, 0 or a binding. */
-function lengthOf(word?: string): string | undefined {
-  if (!word) return undefined;
-  if (word.endsWith("%")) return word;
-  const number = Number(word);
+function lengthOf(value?: string): string | undefined {
+  if (!value) return undefined;
+  if (value.endsWith("%")) return value;
+  const number = Number(value);
   return Number.isFinite(number) && number > 0 ? `${number}px` : undefined;
 }
 
 /** The fraction anchor or align words name on an axis; undefined for none. */
-export function anchorOf(words: string | undefined, axis: 0 | 1): number | undefined {
+export function anchorOf(value: string | undefined, axis: 0 | 1): number | undefined {
   let fraction: number | undefined;
-  for (const word of words?.toLowerCase().split(/[|\s]+/) ?? []) fraction = ANCHORS[axis][word] ?? fraction;
+  for (const choice of value?.toLowerCase().split(/[|\s]+/) ?? []) fraction = ANCHORS[axis][choice] ?? fraction;
   return fraction;
 }
 
@@ -379,8 +304,8 @@ function anchorStyle(properties: Properties, holds: Holding): CSSProperties {
   const place = ["start", "center", "end"] as const;
   if (holds === Holding.HoldsRow || holds === Holding.HoldsColumn) {
     const across: Axis = holds === Holding.HoldsRow ? 1 : 0;
-    const word = anchorOf(properties.parentanchor, across);
-    return word === undefined ? {} : { alignSelf: place[word * 2] };
+    const fraction = anchorOf(properties.parentanchor, across);
+    return fraction === undefined ? {} : { alignSelf: place[fraction * 2] };
   }
   if (holds !== Holding.HoldsCell) return {};
   if (properties.ignore_layout?.toLowerCase() === "yes")
@@ -401,7 +326,7 @@ function anchorStyle(properties: Properties, holds: Holding): CSSProperties {
 /** How an element takes room by its policies: along a box, it grows for expanding, and for growing where no sibling
  * expands, shrinks for shrinking and preferred, a stretch factor its weight; across a box it stretches for both; in
  * a cell it fills the axis. */
-function policyStyle(properties: Properties, holds: Holding, siblings: DrawElement[]): CSSProperties {
+function policyStyle(properties: Properties, holds: Holding, siblings: Widget[]): CSSProperties {
   const policy = (one: Properties, axis: Axis) =>
     POLICIES[(one[axis ? "layoutpolicy_vertical" : "layoutpolicy_horizontal"] ?? "fixed").toLowerCase()] ??
     POLICIES.fixed;
@@ -429,7 +354,7 @@ function policyStyle(properties: Properties, holds: Holding, siblings: DrawEleme
 }
 
 /** A holder's size follows its children where one writes a fits row, on the axes the row names. */
-function fitStyle(children: DrawElement[]): CSSProperties {
+function fitStyle(children: Widget[]): CSSProperties {
   const style: CSSProperties = {};
   for (const child of children) {
     for (const [key, rule] of Object.entries(PROPERTIES)) {
@@ -457,7 +382,7 @@ function skinStyle(properties: Properties): CSSProperties {
 
 /** A scroll bar sits at the edge its key names, vertical at the right at full height, horizontal at the bottom at
  * full width, as wide or tall as its size. */
-function barStyle(element: DrawElement): CSSProperties {
+function barStyle(element: Widget): CSSProperties {
   const [across, down] = (element.properties?.size ?? "").split(/\s+/);
   return element.key.toLowerCase().includes("vertical")
     ? {
@@ -531,7 +456,7 @@ function backgroundOf(texture: Texture): { size: string; position: string; repea
 function maskStyle(masks: [Texture, string][]): CSSProperties {
   if (!masks.length) return {};
   const layers = masks.map(([texture, mode]) => ({
-    url: `url(${quote(recolored(texture) ?? "")})`,
+    url: `url(${quote(texture.url)})`,
     mode,
     ...backgroundOf(texture),
   }));
@@ -560,25 +485,22 @@ function sliceOf(texture: Texture): string {
 
 /** A texture as one layer: its image, with its fit or tiling, slices and mirror, and under a tint a second div in
  * the image's shape multiplying it, as the shader multiplies a sample by its color, the pair's opacity the tint's
- * alpha; an overlay (on `under`) at its alpha and blend, kept to the own texture's shape and to the brightness of
+ * alpha; an overlay (on `base`) at its alpha and blend, kept to the own texture's shape and to the brightness of
  * its masks. */
-function layerNode(textures: Texture[], texture: Texture, under: Texture | undefined, key: string): VNode {
+function layerNode(textures: Texture[], texture: Texture, base: Texture | undefined, key: string): VNode {
   const layer: CSSProperties = {
     position: "absolute",
     inset: 0,
-    opacity: (under ? texture.alpha : 1) * (texture.tint ? texture.tintAlpha : 1),
+    opacity: (base ? texture.alpha : 1) * (texture.tint ? texture.tintAlpha : 1),
     isolation: texture.tint ? "isolate" : undefined,
     transform: texture.isMirrored ? "scaleX(-1)" : undefined,
   };
-  if (under) layer.mixBlendMode = blendOf(texture);
-  if (under && isSliced(under)) layer.WebkitMaskBoxImage = sliceOf(under);
-  if (under && !isSliced(under))
+  if (base) layer.mixBlendMode = blendOf(texture);
+  if (base && isSliced(base)) layer.WebkitMaskBoxImage = sliceOf(base);
+  if (base && !isSliced(base))
     Object.assign(
       layer,
-      maskStyle([
-        [under, "alpha"],
-        ...masksOf(textures, texture).map((mask): [Texture, string] => [mask, "luminance"]),
-      ]),
+      maskStyle([[base, "alpha"], ...masksOf(textures, texture).map((mask): [Texture, string] => [mask, "luminance"])]),
     );
   const image: CSSProperties = { position: "absolute", inset: 0 };
   const tint: CSSProperties = {
@@ -593,9 +515,8 @@ function layerNode(textures: Texture[], texture: Texture, under: Texture | undef
     tint.WebkitMaskBoxImage = slices;
   } else {
     const background = backgroundOf(texture);
-    const source = recolored(texture);
     Object.assign(image, {
-      backgroundImage: source ? `url(${quote(source)})` : undefined,
+      backgroundImage: `url(${quote(texture.url)})`,
       backgroundRepeat: background.repeat,
       backgroundSize: background.size,
       backgroundPosition: background.position,
@@ -608,27 +529,9 @@ function layerNode(textures: Texture[], texture: Texture, under: Texture | undef
   ]);
 }
 
-/** A texture drawn over an element's children, filling it, in an overlay at its place's strength: a coat's cloth. The
- * coat shaders' GetOverlay chooses its formula by the overlay's value, which is CSS's hard-light with it on top. */
-function overNode(texture: Texture, key: string): VNode {
-  const source = recolored(texture);
-  return h("div", {
-    key,
-    style: {
-      position: "absolute",
-      inset: 0,
-      pointerEvents: "none",
-      mixBlendMode: "hard-light",
-      opacity: placeOf(texture).opacity,
-      backgroundImage: source ? `url(${quote(source)})` : undefined,
-      backgroundSize: "100% 100%",
-    },
-  });
-}
-
 /** A text in its widget's cell: its runs in the text's font, placed by its align words (centered where the type
  * centers text), on one line unless multiline, cut with "…" where it elides or holds a binding. */
-function textNode(element: DrawElement, text: Text, key: string): VNode {
+function textNode(element: Widget, text: Text, key: string): VNode {
   const properties = element.properties ?? {};
   const start = element.centersText ? 0.5 : 0;
   const across = anchorOf(properties.align, 0) ?? start;

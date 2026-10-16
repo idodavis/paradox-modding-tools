@@ -1,13 +1,13 @@
 // coa-rules.go is the registry of what a game does with a coat of arms beyond its syntax: the databases it reads,
-// where each game keeps its coats and their textures, the file that sizes its field, which way depth orders its layers,
-// the texture that shades it and the frames its windows cut it to. A row from the wiki says nothing of it; one from
-// vanilla observed in the app says observed.
+// where each game keeps its coats and their textures, the file that sizes its field, which way depth orders its
+// layers, the texture that shades it and the frames its coat designer previews it in. A row from the wiki says nothing
+// of it; one from vanilla observed in the app says observed.
 
 package game
 
-// CoatFrame is a shape a game's windows draw a coat in: what the picker calls it, and the mask whose alpha cuts the
-// field to it.
-type CoatFrame struct{ Label, Mask string }
+// CoatFrame is a shape the game's coat designer previews a coat in: its label, and its mask, a file or the mask of the
+// frame a define names (a culture's frame, drawn as the default).
+type CoatFrame struct{ Label, Mask, Define string }
 
 // CoatDatabases are the databases a coat reads: its own, and the named colors its color slots name.
 var CoatDatabases = struct{ Coats, Colors string }{Coats: "coat_of_arms/coat_of_arms", Colors: "named_colors"}
@@ -40,12 +40,17 @@ const CoatDepthInFront = false
 // alpha; a game not listed shades none.
 var CoatShading = map[string]string{ck3: "gfx/coat_of_arms/coa_mask_texture.dds"}
 
-// CoatFrames are the frames each game's windows cut its coats to, the masks its GUI files name as a coat_of_arms_mask
-// (observed: a title's shield, a dynasty's frame); a game not listed draws its coats as their field, as its flags are,
-// and the masks a binding picks (a realm's, a culture's house frame) are the game's to choose.
+// CoatFrameMask is where a named frame's mask is (common/culture/cultures/_cultures.info).
+const CoatFrameMask = "gfx/interface/coat_of_arms/frames/%s_mask.dds"
+
+// CoatFrames are the shapes each game's coat designer previews a coat in, in its order (CK3's
+// gui/shared/coa_designer.gui and its types in gui/shared/coat_of_arms.gui; the unit's banner is 3D and left out); a
+// game with no designer has none.
 var CoatFrames = map[string][]CoatFrame{
 	ck3: {
+		{Label: "Dynasty", Define: "DEFAULT_DYNASTY_COA_FRAME_NAME"},
+		{Label: "House", Define: "DEFAULT_HOUSE_COA_FRAME_NAME"},
 		{Label: "Title", Mask: "gfx/interface/coat_of_arms/title_mask.dds"},
-		{Label: "Dynasty", Mask: "gfx/interface/coat_of_arms/frames/dynasty_mask.dds"},
+		{Label: "Realm", Mask: "gfx/interface/icons/realm_frames/_default_mask.dds"},
 	},
 }

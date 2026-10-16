@@ -112,3 +112,7 @@ Later, in this order, as the pieces mature:
 ## Game coverage
 
 Deeper EU5 extract rules and wiki coverage. More loc languages in hover without a full rescan (today the install's cache is kept per language).
+
+## Game Log Reader
+
+A new page or extension of Health that allows you toimport your game log files and it gives a dashboard/report on what errors were found, which mods are likely culprit, and a detailed map/grouping of relevant information output by the logs outside of errors.

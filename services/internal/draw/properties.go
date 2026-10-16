@@ -1,5 +1,5 @@
-// block.go is the reader every property goes through: a statement with the file and writer it comes from, and a
-// block of statements read by key, the last written winning.
+// properties.go is the reader every property goes through: a statement with the file and writer it comes from, and
+// the properties statements write, read by key, the last written winning.
 
 package draw
 
@@ -22,8 +22,8 @@ type statement struct {
 	writer     string
 }
 
-// block is the statements that apply to a widget in the order they apply, the last of each key at hand.
-type block struct {
+// properties is the statements that apply to a widget in the order they apply, the last of each key at hand.
+type properties struct {
 	statements []statement
 	byKey      map[string]statement
 }
@@ -54,35 +54,35 @@ func fields(holder statement) iter.Seq2[string, statement] {
 	}
 }
 
-// blockOf is a statement's block as a block.
-func blockOf(holder statement) *block {
-	block := &block{}
+// propertiesOf is what a statement's block writes, as properties.
+func propertiesOf(holder statement) *properties {
+	properties := &properties{}
 	for _, field := range fields(holder) {
-		block.add(field)
+		properties.add(field)
 	}
-	return block
+	return properties
 }
 
 // add appends statements, each the last of its key.
-func (block *block) add(statements ...statement) {
-	if block.byKey == nil {
-		block.byKey = map[string]statement{}
+func (properties *properties) add(statements ...statement) {
+	if properties.byKey == nil {
+		properties.byKey = map[string]statement{}
 	}
 	for _, statement := range statements {
-		block.statements = append(block.statements, statement)
-		block.byKey[strings.ToLower(statement.assignment.Key.Text)] = statement
+		properties.statements = append(properties.statements, statement)
+		properties.byKey[strings.ToLower(statement.assignment.Key.Text)] = statement
 	}
 }
 
 // last is the statement that last wrote a key; false for none.
-func (block *block) last(key string) (statement, bool) {
-	statement, has := block.byKey[strings.ToLower(key)]
+func (properties *properties) last(key string) (statement, bool) {
+	statement, has := properties.byKey[strings.ToLower(key)]
 	return statement, has
 }
 
 // scalar is the one word a key's last statement holds, its file's constants put in; false for none or a block.
-func (block *block) scalar(key string) (string, bool) {
-	last, has := block.last(key)
+func (properties *properties) scalar(key string) (string, bool) {
+	last, has := properties.last(key)
 	if !has {
 		return "", false
 	}
@@ -94,13 +94,13 @@ func (block *block) scalar(key string) (string, bool) {
 }
 
 // numbers are the numbers a key's last value holds; false for none, or a value that is not numbers alone.
-func (block *block) numbers(key string) ([]float64, bool) {
-	last, has := block.last(key)
+func (properties *properties) numbers(key string) ([]float64, bool) {
+	last, has := properties.last(key)
 	if !has {
 		return nil, false
 	}
 	var numbers []float64
-	for _, text := range last.words() {
+	for _, text := range last.scalars() {
 		number, err := strconv.ParseFloat(text, 64)
 		if jomini.Literal(text) != jomini.LitNumber || err != nil {
 			return nil, false
@@ -111,13 +111,13 @@ func (block *block) numbers(key string) ([]float64, bool) {
 }
 
 // choices are the lower-cased words a key's last value names, split on | and space; false for none.
-func (block *block) choices(key string) ([]string, bool) {
-	last, has := block.last(key)
+func (properties *properties) choices(key string) ([]string, bool) {
+	last, has := properties.last(key)
 	if !has {
 		return nil, false
 	}
 	var choices []string
-	for _, text := range last.words() {
+	for _, text := range last.scalars() {
 		for choice := range strings.FieldsFuncSeq(strings.ToLower(text), func(char rune) bool { return char == '|' || char == ' ' }) {
 			choices = append(choices, choice)
 		}
@@ -126,8 +126,8 @@ func (block *block) choices(key string) ([]string, bool) {
 }
 
 // color is a key's last color block as CSS; false for none.
-func (block *block) color(key string) (string, bool) {
-	last, has := block.last(key)
+func (properties *properties) color(key string) (string, bool) {
+	last, has := properties.last(key)
 	if !has {
 		return "", false
 	}
@@ -144,30 +144,30 @@ func cssOf(value jomini.Value) string {
 	return ""
 }
 
-// words are a statement's value as words with its file's constants put in: a scalar, a block's values, or the x and
-// y a block writes as keys.
-func (statement statement) words() []string {
-	var words []string
+// scalars are a statement's value with its file's constants put in: a scalar, a block's values, or the x and y a
+// block writes as keys.
+func (statement statement) scalars() []string {
+	var scalars []string
 	switch value := statement.assignment.Value.(type) {
 	case *jomini.Scalar:
-		words = []string{value.Text}
+		scalars = []string{value.Text}
 	case *jomini.Block:
-		if x, y := jomini.ScalarOf(value, "x"), jomini.ScalarOf(value, "y"); x != nil && y != nil {
-			words = []string{x.Text, y.Text}
+		if across, down := jomini.ScalarOf(value, "x"), jomini.ScalarOf(value, "y"); across != nil && down != nil {
+			scalars = []string{across.Text, down.Text}
 			break
 		}
 		for _, item := range value.Statements {
 			if valued, isValue := item.(*jomini.ValueStmt); isValue {
 				if scalar, isScalar := valued.Value.(*jomini.Scalar); isScalar {
-					words = append(words, scalar.Text)
+					scalars = append(scalars, scalar.Text)
 				}
 			}
 		}
 	}
-	for i, text := range words {
-		words[i] = statement.parsed.Evaluated(text, statement.assignment.Range.Start)
+	for i, text := range scalars {
+		scalars[i] = statement.parsed.Evaluated(text, statement.assignment.Range.Start)
 	}
-	return words
+	return scalars
 }
 
 // text is a statement's value as written.

@@ -25,7 +25,7 @@ under the engine knows about the editor, the pages, the services or the Workshop
 | workspace | [`workspace`](internal/workspace/README.md) | A workspace open in the editor: the install's schema and index, the mods' index over it, the open buffers, the watcher, one lock, and the one open at a time. |
 | | [`lsp`](internal/lsp/README.md) | The editor's requests over one open file: hover, completion, definition, references, symbols, diagnostics, edits, colors. |
 | | [`pages`](internal/pages/README.md) | The Go side of each page, answered from the open workspace: the Health report, the event graph and its detail, the text search. |
-| | [`draw`](internal/draw/README.md) | What the visual editors draw: a file's entry resolved from the index into one list of elements, each with its type's row (`game/gui-rules.go`), its properties as written, its textures, its text and what it is shown on, which the page turns into a DOM the browser lays out; nothing about the game's state is simulated and nothing is measured in Go. One list, one render memo (`Render`) and two calls serve every drawn entry. |
+| | [`draw`](internal/draw/README.md) | What the visual editors draw: a GUI entry resolved from the index into a list of widgets, each with its type's row (`game/gui-rules.go`), its properties as written, its textures, its text and what it is shown on, and a coat of arms into layers on its field (`game/coa-rules.go`), both over one element, which the page turns into a DOM the browser lays out; nothing about the game's state is simulated and nothing is measured in Go. One render memo (`Render`) keeps the last GUI entry. |
 
 The saved record of a workspace is `services.Workspace`; the open one is `workspace.Session`. `internal/testdata/` holds
 the fixture installs the tests read.
@@ -52,7 +52,7 @@ the fixture installs the tests read.
 | File | `fileservice.go` | the IDE's file system: read, write (atomic), list, rename, delete; the route the page reads an image or a font file by |
 | Log | `logservice.go` | the app log (`pmt.log`), the frontend's log lines, crash detection |
 | Ide | `ideservice.go` | every editor request, one method each, forwarded to `lsp` |
-| Draw | `drawservice.go` | a file's Visual view: the last render held across requests (`draw.Render`), an entry as a list (`List`), an element's properties |
+| Draw | `drawservice.go` | a file's Visual view: the last GUI render held across requests (`draw.Render`), a GUI entry as a list (`List`), a coat (`Coat`) and the coats a feed shows (`Coats`), an element's properties, the designer's lists (`Colors`, `Textures`, `Frames`), a new coat's file (`CoatFile`) |
 | Health | `healthservice.go` | the Health page: three calls into `pages` |
 | EventGraph | `eventgraphservice.go` | the event graph, one event's detail and the root search: three calls into `pages` |
 | Search | `searchservice.go` | the IDE's text and file search and replace: three calls into `pages` |

@@ -115,7 +115,7 @@ export const useEditorStore = defineStore("editor", () => {
   const dragging = ref<{ tab: string; sourceGroup: number } | null>(null);
   const fileMoves = ref<{ done: FileMove[]; undone: FileMove[] }>({ done: [], undone: [] });
   const ideSettingsOpen = shallowRef(false);
-  const sidebar = persisted<"explorer" | "search" | "git">("pmt.ide.sidebar", "explorer");
+  const sidebar = persisted<"explorer" | "search" | "git" | "entries">("pmt.ide.sidebar", "explorer");
   const sidebarOpen = persisted("pmt.ide.sidebarOpen", true);
   const panel = persisted<"problems" | "git" | "">("pmt.ide.panel", "problems");
   const wikiOpen = persisted("pmt.ide.wikiOpen", false);
@@ -142,7 +142,7 @@ export const useEditorStore = defineStore("editor", () => {
   }
 
   /** Shows a sidebar tab, opening the sidebar where it is folded. */
-  function openSidebar(tab: "explorer" | "search" | "git"): void {
+  function openSidebar(tab: "explorer" | "search" | "git" | "entries"): void {
     sidebar.value = tab;
     sidebarOpen.value = true;
   }

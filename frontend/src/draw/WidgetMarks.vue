@@ -5,14 +5,16 @@
  * margin's bands or an anchor's two points. Strokes and chips keep one size on the screen at any zoom.
  */
 import { computed } from "vue";
-import type { Absent, Element as DrawElement } from "@services/internal/draw";
-import type { DrawFile } from "../stores/draw";
+import type { Absent, Widget } from "@services/internal/draw";
+import type { DrawElement, DrawFile } from "../stores/draw";
 import { anchorOf } from "./picture";
 import { typeIcon } from "./widgets";
 
-const { file, elements, missing, screen, zoom, host } = defineProps<{
+const { file, elements, widgets, missing, screen, zoom, host } = defineProps<{
   file: DrawFile;
   elements: DrawElement[];
+  /** A GUI entry's widgets, which the caret's guides read; none for a coat. */
+  widgets: Widget[];
   missing: Absent[];
   /** A window's screen, framed with its size above its corner; null for an entry drawn alone. */
   screen: { width: number; height: number; label: string } | null;
@@ -71,7 +73,7 @@ const badges = computed(() =>
 const guide = computed(() => {
   const caret = file.caret;
   const key = caret?.key.toLowerCase() ?? "";
-  const element = caret ? elements[caret.element] : undefined;
+  const element = caret ? widgets[caret.element] : undefined;
   const rect = caret ? rectOf(caret.element) : undefined;
   if (!caret || !element || !rect || !GUIDES[key]) return null;
   if (GUIDES[key] === "margin") {

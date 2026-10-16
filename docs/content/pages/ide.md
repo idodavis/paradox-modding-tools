@@ -51,17 +51,17 @@ tabs than fit, the strip scrolls (with the mouse wheel too).
 
 Above the editor, the path to the file and, at the caret, the blocks it is in.
 
-A file with views switches them at the end of the tab strip, and **Ctrl Shift V** cycles through them: a Markdown file's
-**Raw** and **Rich** (Raw is its text, Rich the same editor as Publish's description), and a GUI file's (**.gui**)
+A file with views switches them at the end of the path above the editor, and **Ctrl Shift V** cycles through them: a
+Markdown file's **Raw** and **Rich** (Raw is its text, Rich the same editor as Publish's description), and a GUI file's (**.gui**)
 or a coat of arms file's (`common/coat_of_arms/coat_of_arms`, EU5's under `main_menu`) **Code**, **Split** and
-**Visual**. The strip ends with the switch of the pane beside the editor: a GUI file's **Widgets** panel, a coat of
+**Visual**. The tab strip ends with the switch of the pane beside the editor: a GUI file's **Widgets** panel, a coat of
 arms file's **Layers** panel and, in the group at the top right, the **Wiki** pane, the one shown tinted; click it
 again to close it. The pane opens beside the editor, under the group's tabs and path; the panel is open while the file
 is drawn (Visual or Split) until you close it. Both kinds open in Split; the IDE settings' Visual view tab picks what
 each opens in and whether its panel opens with the picture, and the Editor tab what Markdown and SVG files open in.
 
 The sidebar folds to a strip of its tabs when you click the open tab's icon again or drag it shut, and a strip icon
-opens it again. A single click on a file in the explorer opens it in a preview tab, in italics, which the next single
+or a drag of the strip's edge opens it again on the tab it had. A single click on a file in the explorer opens it in a preview tab, in italics, which the next single
 click replaces; a double click on the file or its tab, an edit, or opening it from anywhere else keeps the tab.
 
 Visual draws the file's window or widget from the game's own data: its types and templates, textures, fonts and
@@ -71,9 +71,11 @@ drawn by the properties the file writes, each meaning in the browser what the ga
 its children and spreads them out unless an `expand` pushes them aside), with no game running, so a vanilla window is
 a stress test of it, not a promise that it looks as it does in the game.
 
-The toolbar's picker chooses what of the file to draw, grouped as windows, types, templates, text icons and formats,
-each with the line it starts on; a file opens on its first window. A type, template, text icon or format is drawn by
-itself, at its own size. **Bounds** outlines every widget. **States** lists the conditions the window shows its widgets
+The sidebar's **Entries** tab lists what the active file can draw, grouped as windows, types, templates, text icons
+and formats, each with the line it starts on. Search it by name, and click an entry to draw it; a file opens on its
+first window. With the code beside the picture, putting the caret in another entry draws that one, and selecting
+a widget anywhere brings its code into view without moving the caret. A type, template, text icon or format is drawn
+by itself, at its own size. **Bounds** outlines every widget. **States** lists the conditions the window shows its widgets
 on, grouped by call: the tabs of `IsTabSelected('a')` and `IsTabSelected('b')` are one group, a flag and its `Not(...)`
 the same group. Each group is drawn at one of its values, its first unless you pick another, or at every value or none,
 so the window is drawn in one state instead of every tab and popup at once. Two kinds of group are drawn at none until
@@ -158,26 +160,37 @@ A coat of arms file's Visual view draws each coat as the game's shaders color it
 emblem's instances moved, sized, turned and flipped where they write it, masked to the pattern's regions where they
 write a mask, the later drawn over the earlier and a larger `depth` behind a smaller, each `sub` drawn from its parent
 coat with its own colors over the parent's, and in Crusader Kings III the cloth the game shades every coat with. The
-picker lists the file's coats; a coat written as another's name draws that coat. The toolbar's **Frame** cuts the coat
-to a shape the game's windows use (Crusader Kings III's title shield and dynasty frame, as your mods leave them); a flag
+Entries tab lists the file's coats, each with its picture; a coat written as another's name draws that coat. The
+toolbar's **Frame** cuts the coat to a shape Crusader Kings III's coat designer previews it in: **Dynasty**, **House**,
+**Title** and **Realm**, each named with the mod whose mask your load order uses where a mod replaces the game's; a flag
 of Victoria 3 or Europa Universalis V is its field. A value the game picks from a list is not drawn and is said under
 the floor.
 
-The **Layers** panel lists the coat, its pattern, each emblem with its instances and each sub, an eye on each to hide it
-until the app closes; pointing at a row outlines its layer, a click selects it, as clicking it in the picture does.
-Under it the selected layer's properties, edited where they are written: a texture from tiles of its folder drawn in
-the layer's colors, a color from the game's named colors with their swatches, a position, scale or offset as two
-numbers, a rotation or depth as one, a mask as its three regions. The buttons beside the layer add an instance to an
-emblem or an emblem to the coat, after the last of its kind and written as the file writes its others, remove it, or
-draw an instance in front of the next or behind the one before. Drag the selected instance in the picture to move it.
-Every edit is a change of the file's text, as typing is: **Ctrl Z** undoes it, **Ctrl S** saves it, and source control
-sees it. A game's own file is drawn but never changed; **Edit a copy** writes its coat into one of your mods under the
-same name, where it replaces the game's.
+The **Layers** panel lists what the coat writes, in the order written: its pattern, each emblem with its file and its
+count of instances, and each sub with its parent. An eye on each row hides it until the app closes; pointing at a row
+outlines it in the picture, and a click selects it, as clicking it in the picture does. Drag a row by its grip to move
+that emblem or sub before or after another in the file. Where the coat writes a `depth`, depth decides what is drawn
+in front, the panel says so, and a drop changes the order only among equal depths. **+** adds an emblem: pick its
+texture from the tiles, and it is written white, at the field's middle at half size. The trash at the panel's top
+deletes the coat from the file.
+
+Under the list, the selected row's card: its **Texture** (**Change** picks one from tiles of its folder drawn in its
+colors), its **Colors** (a chip for each of its first three slots, the color and its name where one is written; an
+empty slot is dashed with its number, and a color picked for it is written; the **×** beside a second or third
+color removes it), an emblem's **Mask** (**Whole field**, or the pattern's regions **1**, **2** and **3**), and its
+**Instances**, the selected one's position, scale, turn and depth typed in place, with **Add** and **Remove**; where
+depth orders the coat, **Drawn** says each instance's place from the back. A value the coat's parent writes is shown,
+not changed. Drag the selected instance in the picture to move it. Every edit is a change of the file's text, as typing
+is: **Ctrl Z** and **Ctrl Y** step it back and forth in the picture and the panel as in the code (a number box keeps its
+own), **Ctrl S** saves it, and source control sees it. A game's own file is drawn but never changed; **Edit a copy**
+writes its coat into one of your mods under the same name, where it replaces the game's.
 
 **Copy** puts the coat's script on the clipboard for the game's coat of arms designer, and **Paste** replaces the coat
 with the script the designer copies. From anywhere, the command palette's **New coat of arms** and **Paste a coat from
-the game**, or **New coat of arms** on a coat of arms folder in the explorer, ask for a mod and a name and write the
-coat into that mod's last coat of arms file, or a new one in the folder its game keeps them in, then show it.
+the game**, **New coat of arms** on a coat of arms folder in the explorer, or **+** in the Entries tab of one of your
+mod's coat of arms files, ask for a mod and a name and write the coat into that mod's last coat of arms file, or a new
+one in the folder its game keeps them in, then show it; the dialog says which, and whether it makes the file and its
+folders.
 
 ### Language features
 

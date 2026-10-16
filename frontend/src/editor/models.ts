@@ -297,13 +297,34 @@ export function textAt(path: string, range: ByteRange): string | undefined {
   return file?.model.getValueInRange(toRange(file.model, range));
 }
 
-/** An open file's text at a backend range replaced, as one change it can undo, and sent to the backend at once; the
- * same text changes nothing, and a game file is never changed. Resolves once the backend has the text. */
-export function replaceText(path: string, range: ByteRange, text: string): Promise<unknown> {
+/** An open file's text at backend ranges replaced, each range as the text was before any, as one change it can
+ * undo, and sent to the backend at once; the same text changes nothing, and a game file is never changed. Resolves
+ * once the backend has the text. */
+export function replaceText(path: string, edits: { range: ByteRange; text: string }[]): Promise<unknown> {
   const file = files.get(fileUri(path).toString());
   if (!file?.open || isReadOnly(file.path)) return Promise.resolve();
-  const editorRange = toRange(file.model, range);
-  if (file.model.getValueInRange(editorRange) !== text) change(file.model, [{ range: editorRange, text }]);
+  const changes = edits
+    .map(({ range, text }) => ({ range: toRange(file.model, range), text }))
+    .filter(({ range, text }) => file.model.getValueInRange(range) !== text);
+  if (changes.length) change(file.model, changes);
+  return flush(file);
+}
+
+/** An open file's last change undone, as Ctrl Z in its code does, and sent to the backend at once; a game file has no
+ * history to step. Resolves once the backend has the text. */
+export async function undoText(path: string): Promise<unknown> {
+  const file = files.get(fileUri(path).toString());
+  if (!file?.open || isReadOnly(file.path)) return;
+  await file.model.undo();
+  return flush(file);
+}
+
+/** An open file's last undone change made again, as Ctrl Y in its code does, and sent to the backend at once. Resolves
+ * once the backend has the text. */
+export async function redoText(path: string): Promise<unknown> {
+  const file = files.get(fileUri(path).toString());
+  if (!file?.open || isReadOnly(file.path)) return;
+  await file.model.redo();
   return flush(file);
 }
 

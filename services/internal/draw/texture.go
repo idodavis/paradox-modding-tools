@@ -6,15 +6,11 @@ package draw
 import (
 	"fmt"
 	"maps"
-	"net/url"
-	"os"
 	"slices"
-	"strconv"
 	"strings"
 
 	"paradox-modding-tools/services/internal/game"
 	"paradox-modding-tools/services/internal/index"
-	"paradox-modding-tools/services/internal/inventory"
 	"paradox-modding-tools/services/internal/jomini"
 	"paradox-modding-tools/services/internal/schema"
 	"paradox-modding-tools/services/internal/texture"
@@ -38,7 +34,7 @@ var blendModes = map[string]string{
 // layers is a widget's textures by index in the list: its own, then each modify_texture in order as the shader
 // applies them: an alphamultiply masks the texture, a mask scales every overlay after it, any other is an overlay at
 // its alpha; one written visible = no is not laid on. None for a widget with no texture of its own.
-func (resolver *resolver) layers(widget *widget) []int {
+func (resolver *guiResolver) layers(widget *widget) []int {
 	own, isTextured := resolver.textureOf(widget)
 	if !isTextured {
 		return []int{}
@@ -71,21 +67,20 @@ func (resolver *resolver) layers(widget *widget) []int {
 }
 
 // textureIndex is a texture's index in the list, listed the first time it is drawn.
-func (resolver *resolver) textureIndex(texture Texture) int {
-	key := fmt.Sprintf("%#v", texture)
-	i, isKnown := resolver.textureIndexes[key]
+func (resolver *guiResolver) textureIndex(texture Texture) int {
+	ordinal, isKnown := resolver.textureIndexes[texture]
 	if !isKnown {
-		i = len(resolver.list.Textures)
-		resolver.textureIndexes[key] = i
+		ordinal = len(resolver.list.Textures)
+		resolver.textureIndexes[texture] = ordinal
 		resolver.list.Textures = append(resolver.list.Textures, texture)
 	}
-	return i
+	return ordinal
 }
 
 // textureOf is the texture a widget (or a modify_texture read as one) draws: its file's route and size with the
 // defaults, read once a render, then its sprite words; a binding draws the file pictureOf finds. False for none, a
 // file nothing holds listed.
-func (resolver *resolver) textureOf(holder *widget) (Texture, bool) {
+func (resolver *guiResolver) textureOf(holder *widget) (Texture, bool) {
 	path, has := holder.scalar("texture")
 	if !has {
 		return Texture{}, false
@@ -95,17 +90,6 @@ func (resolver *resolver) textureOf(holder *widget) (Texture, bool) {
 			return Texture{}, false
 		}
 	}
-	base, isFound := resolver.fileTexture(path)
-	if !isFound {
-		return Texture{}, false
-	}
-	resolver.sprite(&holder.block, &base)
-	return base, true
-}
-
-// fileTexture is the texture a file draws with the defaults: its route and size, read once a render. False for a
-// path nothing holds, listed.
-func (resolver *resolver) fileTexture(path string) (Texture, bool) {
 	base, isKnown := resolver.pathTextures[path]
 	if !isKnown {
 		if file, hasFile := index.FileAt(resolver.ws.Indexes(), path); hasFile {
@@ -122,20 +106,21 @@ func (resolver *resolver) fileTexture(path string) (Texture, bool) {
 		resolver.addMissing("texture", path)
 		return Texture{}, false
 	}
+	resolver.sprite(&holder.properties, &base)
 	return base, true
 }
 
-// sprite applies a block's sprite words to its texture: density; the frame of a sheet, cut by the route
+// sprite applies the sprite keys properties write to a texture: density; the frame of a sheet, cut by the route
 // (&frame=x,y,width,height) so the texture is the frame; border; tiling; mirror; fit; tint; blend. A blend the page
 // cannot draw is listed and drawn normal.
-func (resolver *resolver) sprite(block *block, texture *Texture) {
-	if density, has := block.numbers("texture_density"); has && density[0] > 0 {
+func (resolver *guiResolver) sprite(properties *properties, texture *Texture) {
+	if density, has := properties.numbers("texture_density"); has && density[0] > 0 {
 		texture.Density = density[0]
 	}
-	if width, height, isCut := cellOf(block, *texture); isCut {
+	if width, height, isCut := cellOf(properties, *texture); isCut {
 		frame := 0
 		for _, key := range []string{"frame", "upframe"} {
-			if numbers, has := block.numbers(key); has {
+			if numbers, has := properties.numbers(key); has {
 				frame = max(int(numbers[0])-1, 0)
 				break
 			}
@@ -144,22 +129,22 @@ func (resolver *resolver) sprite(block *block, texture *Texture) {
 		texture.URL += fmt.Sprintf("&frame=%d,%d,%d,%d", frame%columns*width, frame/columns*height, width, height)
 		texture.Width, texture.Height = width, height
 	}
-	texture.Border = borderOf(block)
-	if choices, has := block.choices("spritetype"); has {
+	texture.Border = borderOf(properties)
+	if choices, has := properties.choices("spritetype"); has {
 		texture.IsTiled = slices.Contains(choices, "corneredtiled")
 	}
-	if choices, has := block.choices("mirror"); has {
+	if choices, has := properties.choices("mirror"); has {
 		texture.IsMirrored = slices.Contains(choices, "horizontal") || slices.Contains(choices, yes)
 	}
-	if choices, has := block.choices("fittype"); has {
+	if choices, has := properties.choices("fittype"); has {
 		texture.Fit = choices[0]
 	}
 	for _, key := range []string{colorKey, "tintcolor"} {
-		if tint, has := resolver.tintOf(block, key); has {
+		if tint, has := resolver.tintOf(properties, key); has {
 			texture.Tint, texture.TintAlpha = tint.Hex(), tint.A
 		}
 	}
-	if choices, has := block.choices("blend_mode"); has {
+	if choices, has := properties.choices("blend_mode"); has {
 		if blend, isKnown := blendModes[choices[0]]; isKnown {
 			texture.Blend = blend
 		} else {
@@ -168,13 +153,13 @@ func (resolver *resolver) sprite(block *block, texture *Texture) {
 	}
 }
 
-// cellOf is the size in the image's pixels of the frames a block cuts its sheet into: its framesize, in the screen's
+// cellOf is the size in the image's pixels of the frames properties cut a sheet into: its framesize, in the screen's
 // pixels, times the density, else the image over its frame_grid's columns and rows; false for neither, or a frame
 // larger than the image.
-func cellOf(block *block, texture Texture) (int, int, bool) {
+func cellOf(properties *properties, texture Texture) (int, int, bool) {
 	var width, height int
-	cell, isSized := block.numbers("framesize")
-	grid, isGrid := block.numbers("frame_grid")
+	cell, isSized := properties.numbers("framesize")
+	grid, isGrid := properties.numbers("frame_grid")
 	switch {
 	case isSized && len(cell) == 2:
 		width, height = int(cell[0]*texture.Density), int(cell[1]*texture.Density)
@@ -186,9 +171,9 @@ func cellOf(block *block, texture Texture) (int, int, bool) {
 
 // borderOf is a sprite's insets top, right, bottom and left: spriteborder as one value for every side or a
 // horizontal and a vertical, a side's own key over it.
-func borderOf(block *block) [4]int {
+func borderOf(properties *properties) [4]int {
 	var border [4]int
-	if sides, has := block.numbers("spriteborder"); has {
+	if sides, has := properties.numbers("spriteborder"); has {
 		switch len(sides) {
 		case 1:
 			border = [4]int{int(sides[0]), int(sides[0]), int(sides[0]), int(sides[0])}
@@ -197,7 +182,7 @@ func borderOf(block *block) [4]int {
 		}
 	}
 	for i, key := range []string{"spriteborder_top", "spriteborder_right", "spriteborder_bottom", "spriteborder_left"} {
-		if side, has := block.numbers(key); has {
+		if side, has := properties.numbers(key); has {
 			border[i] = int(side[0])
 		}
 	}
@@ -205,13 +190,13 @@ func borderOf(block *block) [4]int {
 }
 
 // tintOf is a key's last color: a color block, or an answered call naming an entry that is one; false for none.
-func (resolver *resolver) tintOf(block *block, key string) (game.RGBA, bool) {
-	last, has := block.last(key)
+func (resolver *guiResolver) tintOf(properties *properties, key string) (game.RGBA, bool) {
+	last, has := properties.last(key)
 	if !has {
 		return game.RGBA{}, false
 	}
 	value := last.assignment.Value
-	if text, _ := block.scalar(key); text != "" {
+	if text, _ := properties.scalar(key); text != "" {
 		if define, isAnswered := resolver.answered(text); isAnswered {
 			value = define.assignment.Value
 		}
@@ -224,30 +209,30 @@ func (resolver *resolver) tintOf(block *block, key string) (game.RGBA, bool) {
 // pictureOf is the file a texture binding draws, from what the scan holds: the entry a quoted key names, in the call
 // or in the widget's data context, pictured by its GUIPictureKeys field (else the key itself) as written or under an
 // icon folder; "" where no key is quoted or no file is found.
-func (resolver *resolver) pictureOf(widget *widget, binding string) string {
+func (resolver *guiResolver) pictureOf(widget *widget, binding string) string {
 	install := resolver.ws.Install
 	steps := jomini.ParseCall(binding, 0)
 	if len(steps) == 0 {
 		return ""
 	}
-	typeName, key := install.Schema.CallLeadsTo(steps[:len(steps)-1], ""), literalKey(steps)
+	dataType, key := install.Schema.CallLeadsTo(steps[:len(steps)-1], ""), literalKey(steps)
 	context := jomini.ParseCall(widget.dataContext, 0)
-	if key == "" && len(context) > 0 && install.Schema.CallLeadsTo(context, "") == typeName {
+	if key == "" && len(context) > 0 && install.Schema.CallLeadsTo(context, "") == dataType {
 		key = literalKey(context)
 	}
 	if key == "" {
 		return ""
 	}
-	memoKey := typeName + "|" + key
+	memoKey := dataType + "|" + key
 	if picture, isKnown := resolver.pictures[memoKey]; isKnown {
 		return picture
 	}
 	path := key
-	if database := resolver.databaseOf(typeName); database != "" {
-		if entry, isDefined := resolver.entryBlock(database, key); isDefined {
+	if database := resolver.databaseOf(dataType); database != "" {
+		if entry, isDefined := resolver.entryProperties(database, key); isDefined {
 			for _, pictureKey := range game.GUIPictureKeys {
-				if named, has := entry.scalar(pictureKey); has {
-					path = named
+				if file, has := entry.scalar(pictureKey); has {
+					path = file
 					break
 				}
 			}
@@ -255,7 +240,7 @@ func (resolver *resolver) pictureOf(widget *widget, binding string) string {
 	}
 	path = strings.TrimSuffix(path, ".dds") + ".dds"
 	folders := resolver.folders()
-	own := strings.ToUpper(schema.SnakeCase(typeName)) + game.GUIIconPathSuffix
+	own := strings.ToUpper(schema.SnakeCase(dataType)) + game.GUIIconPathSuffix
 	candidates := []string{path}
 	if folder, has := folders[own]; has {
 		candidates = append(candidates, folder+"/"+path)
@@ -278,9 +263,9 @@ func (resolver *resolver) pictureOf(widget *widget, binding string) string {
 
 // databaseOf is the database a data type's entries are in: the one the link to its scope type names, or the game
 // concepts for a global call; "" for none.
-func (resolver *resolver) databaseOf(typeName string) string {
+func (resolver *guiResolver) databaseOf(dataType string) string {
 	install := resolver.ws.Install
-	switch typeName {
+	switch dataType {
 	case "":
 		return ""
 	case game.GlobalType:
@@ -290,7 +275,7 @@ func (resolver *resolver) databaseOf(typeName string) string {
 		}
 		return concepts[0]
 	}
-	scope := schema.SnakeCase(typeName)
+	scope := schema.SnakeCase(dataType)
 	for _, prefix := range slices.Sorted(maps.Keys(install.Schema.Prefixes)) {
 		if link := install.Schema.Commands[prefix]; link != nil && link.Target == scope {
 			return install.Schema.Prefixes[prefix]
@@ -300,13 +285,13 @@ func (resolver *resolver) databaseOf(typeName string) string {
 }
 
 // iconFolders are the folders the icon path defines name, by define.
-func (resolver *resolver) iconFolders() map[string]string {
+func (resolver *guiResolver) iconFolders() map[string]string {
 	folders := map[string]string{}
-	for _, id := range index.Names(resolver.ws.Indexes(), game.GUIAnswered["GetDefine"]) {
+	for _, id := range index.Names(resolver.ws.Indexes(), game.DefinesDatabase) {
 		if !strings.HasSuffix(id, game.GUIIconPathSuffix) {
 			continue
 		}
-		define, isDefined := resolver.definition(schema.Occurrence{Database: game.GUIAnswered["GetDefine"], ID: id})
+		define, isDefined := resolver.definition(schema.Occurrence{Database: game.DefinesDatabase, ID: id})
 		if !isDefined {
 			continue
 		}
@@ -327,23 +312,4 @@ func literalKey(steps []jomini.CallStep) string {
 		}
 	}
 	return ""
-}
-
-// urlOf is the route's URL for a file, made once a render.
-func (resolver *resolver) urlOf(file inventory.File) string {
-	if route, isKnown := resolver.urls[file.Path]; isKnown {
-		return route
-	}
-	route := routeOf(file.Path)
-	resolver.urls[file.Path] = route
-	return route
-}
-
-// routeOf is the route's URL for a file, with when it changed.
-func routeOf(path string) string {
-	version := "0"
-	if stat, err := os.Stat(path); err == nil {
-		version = strconv.FormatInt(stat.ModTime().UnixMilli(), 10)
-	}
-	return FileRoute + "?path=" + url.QueryEscape(path) + "&v=" + version
 }

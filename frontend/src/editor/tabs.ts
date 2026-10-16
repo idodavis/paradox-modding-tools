@@ -7,8 +7,7 @@ export type View = "code" | "split" | "visual";
 
 /** A kind of file with views, found by its extension or the folder it sits in: what the settings call it, what its
  * code and visual views are called, the one it opens in unless the IDE settings say another, whether it can be split,
- * the name of its panel ("" for none), and what its picture's toolbar offers: a window's resolution and states, or
- * a coat's field alone. */
+ * the name of its panel ("" for none), and what its Visual view draws: a GUI entry or a coat of arms. */
 export type ViewRow = {
   ext?: string;
   folder?: string;
@@ -18,7 +17,7 @@ export type ViewRow = {
   first: View;
   split: boolean;
   panel: string;
-  toolbar?: "window" | "field";
+  drawing?: "gui" | "coat";
 };
 
 /** A diff tab's kind: a file's changes (its staged copy against it), its staged changes (the last commit against
@@ -39,7 +38,7 @@ export const VIEW_ROWS: ViewRow[] = [
     first: "split",
     split: true,
     panel: "Widgets",
-    toolbar: "window",
+    drawing: "gui",
   },
   {
     folder: "common/coat_of_arms/coat_of_arms",
@@ -49,7 +48,7 @@ export const VIEW_ROWS: ViewRow[] = [
     first: "split",
     split: true,
     panel: "Layers",
-    toolbar: "field",
+    drawing: "coat",
   },
 ];
 

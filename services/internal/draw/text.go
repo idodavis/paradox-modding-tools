@@ -42,11 +42,12 @@ var textKeys = []string{textKey, rawTextKey, fontKey, "fontsize", "fontcolor", "
 
 // text is a widget's text, the later written of text and raw_text, as runs in its font at its size and color, in its
 // default format, each face the runs use listed; nil for none, or for no font size or no font file, which is listed.
-func (resolver *resolver) text(widget *widget) *Text {
+func (resolver *guiResolver) text(widget *widget) *Text {
 	key := ""
 	for _, statement := range widget.statements {
-		if written := strings.ToLower(statement.assignment.Key.Text); written == textKey || written == rawTextKey {
-			key = written
+		statementKey := strings.ToLower(statement.assignment.Key.Text)
+		if statementKey == textKey || statementKey == rawTextKey {
+			key = statementKey
 		}
 	}
 	value, has := widget.scalar(key)
@@ -95,7 +96,7 @@ func textStatements(widget *widget) []statement {
 
 // runsOf turns a text's markup into runs over a style: a format applied, an icon's texture, a $key$'s text, a [call]
 // as a concept's name or as a value the game fills.
-func (resolver *resolver) runsOf(value string, base Run, depth int) []Run {
+func (resolver *guiResolver) runsOf(value string, base Run, depth int) []Run {
 	var runs []Run
 	for _, segment := range loc.Segments(value) {
 		run := base
@@ -126,7 +127,7 @@ func (resolver *resolver) runsOf(value string, base Run, depth int) []Run {
 
 // locText is a key's loc entry in the workspace's language, else the value as written; a missing key is listed unless
 // the text is raw.
-func (resolver *resolver) locText(value string, isRaw bool) string {
+func (resolver *guiResolver) locText(value string, isRaw bool) string {
 	if !loc.LooksLikeKey(value) || len(jomini.Calls(value, 0)) > 0 {
 		return value
 	}
@@ -140,7 +141,7 @@ func (resolver *resolver) locText(value string, isRaw bool) string {
 }
 
 // conceptText is the text a concept link shows: what the link writes, else the concept's title; false for none.
-func (resolver *resolver) conceptText(call string) (string, bool) {
+func (resolver *guiResolver) conceptText(call string) (string, bool) {
 	steps, database := jomini.ParseCall(call, 0), resolver.databaseOf(game.GlobalType)
 	if len(steps) == 0 || database == "" {
 		return "", false
@@ -162,7 +163,7 @@ func (resolver *resolver) conceptText(call string) (string, bool) {
 
 // format applies a format's ;-joined words to a style: a color, bold, italic, a plain word, or a named format's
 // words in turn, matched without regard to case; a format no entry defines is listed.
-func (resolver *resolver) format(text string, base Run, depth int) Run {
+func (resolver *guiResolver) format(text string, base Run, depth int) Run {
 	for piece := range strings.SplitSeq(text, ";") {
 		key, value, _ := strings.Cut(strings.TrimSpace(piece), ":")
 		key = strings.ToLower(key)
@@ -175,13 +176,13 @@ func (resolver *resolver) format(text string, base Run, depth int) Run {
 			base.IsItalic = true
 		case key == "" || slices.Contains(plainKeys, key):
 		default:
-			entry, isDefined := resolver.entryBlock(formatDatabase, resolver.formats()[key])
+			entry, isDefined := resolver.entryProperties(formatDatabase, resolver.formats()[key])
 			if !isDefined || depth >= maxNesting {
 				resolver.addMissing("format", key)
 				continue
 			}
-			named, _ := entry.scalar("format")
-			base = resolver.format(named, base, depth+1)
+			inner, _ := entry.scalar("format")
+			base = resolver.format(inner, base, depth+1)
 		}
 	}
 	return base
@@ -206,10 +207,10 @@ func formatColor(value, fallback string) string {
 }
 
 // iconURL is the URL of a text icon's texture; "" where no entry or file has it, which is listed.
-func (resolver *resolver) iconURL(id string) string {
-	if entry, isDefined := resolver.entryBlock(textIconDatabase, id); isDefined {
+func (resolver *guiResolver) iconURL(id string) string {
+	if entry, isDefined := resolver.entryProperties(textIconDatabase, id); isDefined {
 		if iconsize, has := entry.last("iconsize"); has {
-			path, _ := blockOf(iconsize).scalar("texture")
+			path, _ := propertiesOf(iconsize).scalar("texture")
 			if file, hasFile := index.FileAt(resolver.ws.Indexes(), path); hasFile {
 				return resolver.urlOf(file)
 			}
@@ -219,18 +220,18 @@ func (resolver *resolver) iconURL(id string) string {
 	return ""
 }
 
-// entryBlock is the winning entry of an id in a database as a block; false for none.
-func (resolver *resolver) entryBlock(database, id string) (*block, bool) {
+// entryProperties is the winning entry of an id in a database, as properties; false for none.
+func (resolver *guiResolver) entryProperties(database, id string) (*properties, bool) {
 	definition, isDefined := resolver.definition(schema.Occurrence{Database: database, ID: id})
 	if !isDefined {
 		return nil, false
 	}
-	return blockOf(definition), true
+	return propertiesOf(definition), true
 }
 
 // fontOf is the face a widget's text is drawn in for a style: its font, else the textbox type's, else the install's
 // first; the first of its files for the workspace's language, listed for the page; nil, listed, where there is none.
-func (resolver *resolver) fontOf(widget *widget, fontStyle string) *Font {
+func (resolver *guiResolver) fontOf(widget *widget, fontStyle string) *Font {
 	id, hasFont := widget.scalar(fontKey)
 	if !hasFont {
 		id, hasFont = resolver.textbox().scalar(fontKey)
@@ -248,7 +249,7 @@ func (resolver *resolver) fontOf(widget *widget, fontStyle string) *Font {
 		return font
 	}
 	var font *Font
-	if entry, isDefined := resolver.entryBlock(fontDatabase, id); isDefined {
+	if entry, isDefined := resolver.entryProperties(fontDatabase, id); isDefined {
 		files, style := resolver.fontFiles(entry, fontStyle)
 		for _, rel := range files {
 			if file, hasFile := index.FileAt(resolver.ws.Indexes(), rel); hasFile {
@@ -268,11 +269,11 @@ func (resolver *resolver) fontOf(widget *widget, fontStyle string) *Font {
 
 // fontFiles are the files a font entry draws a style with, and the style taken (regular where it has none for the
 // style): the fontfiles group for the workspace's language, else the base language's.
-func (resolver *resolver) fontFiles(entry *block, fontStyle string) (files []string, style string) {
+func (resolver *guiResolver) fontFiles(entry *properties, fontStyle string) (files []string, style string) {
 	byStyle := map[string]string{}
 	for _, statement := range entry.statements {
 		if strings.EqualFold(statement.assignment.Key.Text, "fontstyle") {
-			fontstyle := blockOf(statement)
+			fontstyle := propertiesOf(statement)
 			key, _ := fontstyle.scalar("style")
 			byStyle[strings.ToLower(key)], _ = fontstyle.scalar("fontfiles")
 		}
@@ -281,22 +282,22 @@ func (resolver *resolver) fontFiles(entry *block, fontStyle string) (files []str
 	if byStyle[style] == "" {
 		style = regularStyle
 	}
-	groups, isDefined := resolver.entryBlock(fontFileDatabase, byStyle[style])
+	groups, isDefined := resolver.entryProperties(fontFileDatabase, byStyle[style])
 	if !isDefined {
 		return nil, style
 	}
 	for _, statement := range groups.statements {
-		group := blockOf(statement)
+		group := propertiesOf(statement)
 		languages, hasLanguages := group.last("languages")
 		paths, hasPaths := group.last("files")
 		if !strings.EqualFold(statement.assignment.Key.Text, "group") || !hasLanguages || !hasPaths {
 			continue
 		}
 		switch {
-		case slices.Contains(languages.words(), "l_"+resolver.ws.Language):
-			return paths.words(), style
-		case files == nil && slices.Contains(languages.words(), "l_"+game.BaseLanguage):
-			files = paths.words()
+		case slices.Contains(languages.scalars(), "l_"+resolver.ws.Language):
+			return paths.scalars(), style
+		case files == nil && slices.Contains(languages.scalars(), "l_"+game.BaseLanguage):
+			files = paths.scalars()
 		}
 	}
 	return files, style

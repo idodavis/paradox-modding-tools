@@ -126,9 +126,12 @@ var GUIOpeningStates = struct {
 // only as `no` for a widget a script shows later (a search box's autocomplete list, a tooltip's expansion).
 var GUIHiddenKeys = []string{"visible", "visible_at_creation"}
 
+// DefinesDatabase is the database of the game's defines, which GetDefine reads and a coat's frames name.
+const DefinesDatabase = "defines.define"
+
 // GUIAnswered are the data calls the preview answers from the index: the database whose entry the call's last
 // argument names.
-var GUIAnswered = map[string]string{"GetDefine": "defines.define"}
+var GUIAnswered = map[string]string{"GetDefine": DefinesDatabase}
 
 // GUIBooleans are the data functions a binding combines conditions with, by name less the count of their arguments.
 var GUIBooleans = map[string]string{"And": "and", "Or": "or", "Nor": "nor", "Not": "not"}

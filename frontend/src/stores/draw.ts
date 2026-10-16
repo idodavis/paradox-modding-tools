@@ -1,27 +1,36 @@
 /**
  * The Visual view's client state, shared by a file's picture, its panel and its code beside the picture: its
  * settings, kept in the app's settings and set from the toolbar or the IDE settings' Visual view tab, one record per
- * file of what each of them marks and asks, the list drawn for the file's entry, one query for all of them, and a
- * coat's edits, each one change of the file's text through its model.
+ * file of what each of them marks and asks, what is drawn for the file's entry (a GUI list or a coat), one query for
+ * all of them, and a coat's edits, each one change of the file's text through its model.
  */
 import { computed, shallowReactive, shallowRef, toValue, type MaybeRefOrGetter } from "vue";
 import { defineStore } from "pinia";
-import { useQuery, useQueryCache } from "@pinia/colada";
-import { CoatFile } from "@services/drawservice";
+import { useQuery } from "@pinia/colada";
+import { Clipboard } from "@wailsio/runtime";
 import { ReadText, WriteText } from "@services/fileservice";
-import type { Location, Range } from "@services/internal/lsp";
+import type { Widget } from "@services/internal/draw";
+import type { Location, Position, Range, Symbol } from "@services/internal/lsp";
 import { pathKey } from "../composables/useIdeRoots";
-import { editText, openFile, openText, replaceText, showText, textAt } from "../editor/models";
+import { editText, openFile, openText, redoText, replaceText, showText, textAt, undoText } from "../editor/models";
+import { viewsOf } from "../editor/tabs";
 import { fileName } from "../lib/format";
-import { drawKeys, drawQuery } from "../queries";
+import { drawQuery, redraw } from "../queries";
 import { useEditorStore } from "./editor";
 import { useSettingsStore } from "./settings";
 
-/** A file's Visual view for the session: the entry drawn and its database; the frame a coat is cut to ("" its
- * field); the element selected and the one under the pointer; the elements hidden; the value each group of conditions
- * is drawn at, by call, and the groups closed until opened; where the view last put the caret, which then selects
- * nothing anew; what the caret is on in the code; and each element's rects read back from the picture, in its pixels,
- * one per drawn copy. */
+/** What every drawn thing has, a GUI widget or a coat layer: where it sits in the tree, how it is named on the way
+ * down, and where it is written. */
+export type DrawElement = Pick<
+  Widget,
+  "parent" | "key" | "type" | "name" | "label" | "path" | "ancestors" | "location"
+>;
+
+/** A file's Visual view for the session: the entry drawn and its database; the frame a coat is cut to, by its label
+ * ("" or "field" none); the element selected and the one under the pointer; the elements hidden; the value each group
+ * of conditions is drawn at, by call, and the groups closed until opened; where the view last put the caret, which
+ * then selects nothing anew; what the caret is on in the code; and each element's rects read back from the picture,
+ * in its pixels, one per drawn copy. */
 export type DrawFile = {
   entry: string;
   database: string;
@@ -38,6 +47,38 @@ export type DrawFile = {
 
 /** The database a coat of arms is an entry of. */
 export const COATS = "coat_of_arms/coat_of_arms";
+
+/** Each database whose entries the Visual view draws: its group's heading, an entry's kind, its icon, and the group's
+ * place among the groups. */
+export const ENTRY_GROUPS: Record<string, { label: string; kind: string; icon: string; order: number }> = {
+  "gui.widget": { label: "Windows", kind: "Window", icon: "i-lucide-app-window", order: 0 },
+  "gui.type": { label: "Types", kind: "Type", icon: "i-lucide-shapes", order: 1 },
+  "gui.local_type": { label: "Types", kind: "Type", icon: "i-lucide-shapes", order: 1 },
+  "gui.template": { label: "Templates", kind: "Template", icon: "i-lucide-layers", order: 2 },
+  "gui.local_template": { label: "Templates", kind: "Template", icon: "i-lucide-layers", order: 2 },
+  "gui.texticon": { label: "Text icons", kind: "Text icon", icon: "i-lucide-image", order: 3 },
+  "gui.format": { label: "Formats", kind: "Format", icon: "i-lucide-type", order: 4 },
+  [COATS]: { label: "Coats", kind: "Coat", icon: "i-lucide-shield", order: 0 },
+};
+
+/** The entries of a file the Visual view draws, from its symbols, each once, in the file's order. */
+export function entriesOf(symbols: Symbol[]): Symbol[] {
+  const keys = new Set<string>();
+  return symbols.filter((symbol) => {
+    const key = `${symbol.database}|${symbol.name}`;
+    const isNew = symbol.database in ENTRY_GROUPS && !keys.has(key);
+    keys.add(key);
+    return isNew;
+  });
+}
+
+/** Whether a position comes at or before another, by line and byte column. */
+export const isAtOrBefore = (first: Position, second: Position) =>
+  first.line < second.line || (first.line === second.line && first.character <= second.character);
+
+/** The entry a position of the file is in: the last drawn entry that starts at or before it; undefined for none. */
+export const entryAt = (entries: Symbol[], line: number, character: number): Symbol | undefined =>
+  entries.findLast(({ location: { range } }) => isAtOrBefore(range.start, { line, character }));
 
 /** What the new coat dialog writes: a coat of its own, the game's copy pasted, or a read-only coat's copy. */
 export type CoatDialog = { mode: "new" | "paste" | "copy"; id: string; text: string; mod: string };
@@ -127,6 +168,17 @@ export const useDrawStore = defineStore("draw", () => {
     record.hidden = hidden;
   }
 
+  /** Draws another entry of a file, with nothing selected or hidden and its states at their first values. */
+  function pickEntry(path: string, entry: Pick<Symbol, "database" | "name">): void {
+    Object.assign(file(path), {
+      entry: entry.name,
+      database: entry.database,
+      hidden: new Set<number>(),
+      states: new Map<string, string>(),
+      selection: -1,
+    });
+  }
+
   /** Draws a file's group of conditions at a value. */
   function setState(path: string, group: string, value: string): void {
     const record = file(path);
@@ -150,18 +202,18 @@ export const useDrawStore = defineStore("draw", () => {
   // the new coat dialog, open while it holds what it writes
   const coatDialog = shallowRef<CoatDialog | null>(null);
 
-  const queryCache = useQueryCache();
   // the files whose last coat edit is not drawn again yet: every range drawn of them is the text's before it
   const editing = new Set<string>();
 
-  /** Makes a coat edit of a file and waits until the backend has it and its list and properties are read again; an
-   * edit moves every range after it, so one asked meanwhile is dropped rather than written at a range gone stale. */
+  /** Makes a coat edit of a file and waits until the backend has it and what it draws is read again (its elements'
+   * properties are read with each render); an edit moves every range after it, so one asked meanwhile is dropped
+   * rather than written at a range gone stale. */
   async function edit(path: string, write: () => Promise<unknown>): Promise<void> {
     if (editing.has(path)) return;
     editing.add(path);
     try {
       await write();
-      await Promise.all([drawKeys.list, drawKeys.properties].map((key) => queryCache.invalidateQueries({ key })));
+      await redraw();
     } finally {
       editing.delete(path);
     }
@@ -169,7 +221,7 @@ export const useDrawStore = defineStore("draw", () => {
 
   /** Writes what a location holds anew: a property's value, or a coat's whole entry. */
   function rewrite(path: string, location: Location, text: string): Promise<void> {
-    return edit(path, () => replaceText(path, location.range, text));
+    return edit(path, () => replaceText(path, [{ range: location.range, text }]));
   }
 
   /** The whitespace a location's first line starts with, and the step its file indents by. */
@@ -180,24 +232,36 @@ export const useDrawStore = defineStore("draw", () => {
     return { indent, step: indent.includes(" ") && !indent.includes("\t") ? "    " : "\t" };
   }
 
-  /** Adds a block after a sibling, on a line of its own indented as the sibling's first line: on one line where the
-   * sibling is, else a line each, the inner ones a step further. */
+  /** The whole lines a location is written on where nothing else is written on them; undefined where something is. */
+  function wholeLines(path: string, location: Location): Range | undefined {
+    const { start, end } = location.range;
+    const before = textAt(path, { start: { line: start.line, character: 0 }, end: start }) ?? "";
+    const after = textAt(path, { start: end, end: { line: end.line + 1, character: 0 } }) ?? "";
+    if (before.trim() || after.trim()) return undefined;
+    return { start: { line: start.line, character: 0 }, end: { line: end.line + 1, character: 0 } };
+  }
+
+  /** A block's lines as written at an indent: its first and last there, each between a step further in; a block given
+   * as one line is that line. */
+  function blockText(lines: string[], indent: string, step: string): string {
+    return lines.map((line, i) => (i === 0 || i === lines.length - 1 ? line : step + line)).join(`\n${indent}`);
+  }
+
+  /** Adds a block after a sibling, on a line of its own indented as the sibling's first line, laid out as its lines are
+   * given. */
   function addAfter(path: string, sibling: Location, lines: string[]): Promise<void> {
     return edit(path, () => {
       const { indent, step } = indentOf(path, sibling);
-      const { start, end } = sibling.range;
-      const text =
-        start.line === end.line
-          ? lines.join(" ")
-          : lines.map((line, i) => (i === 0 || i === lines.length - 1 ? line : step + line)).join(`\n${indent}`);
-      return replaceText(path, { start: end, end }, `\n${indent}${text}`);
+      const { end } = sibling.range;
+      return replaceText(path, [{ range: { start: end, end }, text: `\n${indent}${blockText(lines, indent, step)}` }]);
     });
   }
 
-  /** Adds a line as the last of a holder's block: before its closing brace, a space from what precedes it, where the
-   * holder is one line, else on a line of its own before the brace's, a step further in than the holder; nothing
-   * where the holder ends in no brace (an alias names another coat). */
-  function addInside(path: string, holder: Location, line: string): Promise<void> {
+  /** Adds a block as the last of a holder's: where the holder is written over lines, on a line of its own before its
+   * closing brace's, a step further in than the holder and laid out as its lines are given; where the holder is one
+   * line, its lines joined before the brace, a space from what precedes it; nothing where the holder ends in no brace
+   * (an alias names another coat). */
+  function addInside(path: string, holder: Location, lines: string[]): Promise<void> {
     return edit(path, () => {
       const block = textAt(path, holder.range) ?? "";
       if (!block.endsWith("}")) return Promise.resolve();
@@ -205,46 +269,86 @@ export const useDrawStore = defineStore("draw", () => {
       const { start, end } = holder.range;
       if (start.line !== end.line) {
         const lineStart = { line: end.line, character: 0 };
-        return replaceText(path, { start: lineStart, end: lineStart }, `${indent}${step}${line}\n`);
+        const text = `${indent}${step}${blockText(lines, indent + step, step)}\n`;
+        return replaceText(path, [{ range: { start: lineStart, end: lineStart }, text }]);
       }
       const brace = { line: end.line, character: end.character - 1 };
       const gap = /\s$/.test(block.slice(0, -1)) ? "" : " ";
-      return replaceText(path, { start: brace, end: brace }, `${gap}${line} `);
+      return replaceText(path, [{ range: { start: brace, end: brace }, text: `${gap}${lines.join(" ")} ` }]);
     });
   }
 
   /** Removes what a location writes, its whole lines where nothing else is written on them. */
   function removeBlock(path: string, location: Location): Promise<void> {
+    return edit(path, () => replaceText(path, [{ range: wholeLines(path, location) ?? location.range, text: "" }]));
+  }
+
+  /** Moves a block before or after a sibling's, as one change: its whole lines put at the start of the sibling's first
+   * line or after its last, where both are written alone on their lines, else the block put a space from the
+   * sibling. */
+  function moveBlock(path: string, block: Location, sibling: Location, isAfter: boolean): Promise<void> {
     return edit(path, () => {
-      const { start, end } = location.range;
-      const before = textAt(path, { start: { line: start.line, character: 0 }, end: start }) ?? "";
-      const after = textAt(path, { start: end, end: { line: end.line + 1, character: 0 } }) ?? "";
-      const isAlone = !before.trim() && !after.trim();
-      const range: Range = isAlone
-        ? { start: { line: start.line, character: 0 }, end: { line: end.line + 1, character: 0 } }
-        : location.range;
-      return replaceText(path, range, "");
+      const [source, target] = [wholeLines(path, block), wholeLines(path, sibling)];
+      if (source && target) {
+        const point = isAfter ? target.end : target.start;
+        const text = textAt(path, source) ?? "";
+        return replaceText(path, [
+          { range: source, text: "" },
+          { range: { start: point, end: point }, text },
+        ]);
+      }
+      const point = isAfter ? sibling.range.end : sibling.range.start;
+      const text = textAt(path, block.range) ?? "";
+      return replaceText(path, [
+        { range: block.range, text: "" },
+        { range: { start: point, end: point }, text: isAfter ? ` ${text}` : `${text} ` },
+      ]);
     });
+  }
+
+  /** A file's history as the picture and the panel step it: its text's, which Ctrl Z and Ctrl Y step in its code. */
+  const historyOf = (path: string) => ({
+    undo: () => edit(path, () => undoText(path)),
+    redo: () => edit(path, () => redoText(path)),
+  });
+
+  /** Copies a coat as the game's designer pastes it: its entry as written. */
+  function copyCoat(coat: DrawElement): void {
+    const text = textAt(coat.location.path, coat.location.range);
+    if (text) void Clipboard.SetText(text);
+  }
+
+  /** Replaces a file's coat with the game designer's copy, as one change it can undo; what nothing draws is listed. */
+  async function pasteCoat(path: string, coat: DrawElement): Promise<void> {
+    const text = await Clipboard.Text();
+    if (text.trim()) await rewrite(path, coat.location, coatEntry(file(path).entry, text));
+  }
+
+  /** Opens the new coat dialog on a copy of a file's coat, to write into a mod. */
+  function copyToMod(path: string, coat: DrawElement): void {
+    const text = textAt(coat.location.path, coat.location.range);
+    if (text) coatDialog.value = { mode: "copy", id: file(path).entry, text, mod: "" };
   }
 
   /** Writes a coat into a mod's coat file (the last that defines coats, else a new one Go names), as an edit of its
    * model left unsaved, and shows it beside its code; a file the editor refuses to read is never written over. */
-  async function addCoat(workspaceId: string, modId: string, id: string, entry: string): Promise<void> {
-    const path = await CoatFile(workspaceId, modId);
+  async function addCoat(path: string, id: string, entry: string): Promise<void> {
     const open = openText(path);
     if (open === undefined) {
       const disk = await ReadText(path);
-      if (disk.reject) throw new Error(`${fileName(path)}: ${disk.reject}`);
+      // a file that is not there is made (its folders too); one there that the editor refuses is never written over
       if (disk.missing) await WriteText(path, "", true, false);
+      else if (disk.reject) throw new Error(`${fileName(path)}: ${disk.reject}`);
       await showText(path, `${disk.missing ? "" : `${disk.text.trimEnd()}\n\n`}${entry}\n`);
     } else {
       openFile(path, { text: open, bom: false });
       editText(path, (text) => `${text.trimEnd()}\n\n${entry}\n`);
     }
+    // the caret on the new coat's last line, so the code beside the picture draws it, not the coat the caret was in
     const editor = useEditorStore();
-    editor.open(path);
-    editor.setView(path, "split");
     Object.assign(file(path), { entry: id, database: COATS, selection: -1 });
+    editor.open(path, { line: (openText(path) ?? "").trimEnd().split(/\r?\n/).length - 1, col: 0 });
+    editor.setView(path, "split");
   }
 
   return {
@@ -254,6 +358,7 @@ export const useDrawStore = defineStore("draw", () => {
     bounds,
     file,
     toggleHidden,
+    pickEntry,
     setState,
     goTo,
     coatDialog,
@@ -261,25 +366,35 @@ export const useDrawStore = defineStore("draw", () => {
     addAfter,
     addInside,
     removeBlock,
+    moveBlock,
+    historyOf,
+    copyCoat,
+    pasteCoat,
+    copyToMod,
     addCoat,
   };
 });
 
-/** A file's record and the list drawn for its entry, which the pane, the panel and the code read alike. */
+/** A file's record and what is drawn for its entry, a GUI list or a coat as its kind draws, which the pane, the panel
+ * and the code read alike: its elements (the list's widgets or the coat's layers) and what is missing either way. */
 export function useDraw(workspaceId: MaybeRefOrGetter<string>, path: MaybeRefOrGetter<string>) {
   const store = useDrawStore();
   const file = computed(() => store.file(toValue(path)));
+  const drawing = computed(() => viewsOf(toValue(path))?.drawing ?? "gui");
   const request = computed(() => ({
     path: toValue(path),
     id: file.value.entry,
     database: file.value.database,
   }));
   const { data, error, asyncStatus, refetch } = useQuery(() =>
-    drawQuery({ id: toValue(workspaceId), request: request.value }),
+    drawQuery({ id: toValue(workspaceId), request: request.value, drawing: drawing.value }),
   );
   const list = computed(() => data.value?.list ?? null);
-  const elements = computed(() => list.value?.elements ?? []);
-  const drawing = computed(() => asyncStatus.value === "loading");
+  const coat = computed(() => data.value?.coat ?? null);
+  const elements = computed<DrawElement[]>(() => list.value?.elements ?? coat.value?.layers ?? []);
+  const missing = computed(() => list.value?.missing ?? coat.value?.missing ?? []);
+  const isDrawing = computed(() => asyncStatus.value === "loading");
   const renderedMs = computed(() => data.value?.renderedMs ?? 0);
-  return { file, request, list, elements, drawing, renderedMs, error, refetch };
+  const render = computed(() => data.value?.render ?? 0);
+  return { file, request, drawing, list, coat, elements, missing, isDrawing, renderedMs, render, error, refetch };
 }

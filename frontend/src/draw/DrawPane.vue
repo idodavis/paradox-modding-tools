@@ -10,15 +10,28 @@ import { useQuery } from "@pinia/colada";
 import { Clipboard } from "@wailsio/runtime";
 import type { ContextMenuItem, SelectMenuItem } from "@nuxt/ui";
 import { WidgetRole } from "@services/internal/game";
+import { ReadText } from "@services/fileservice";
 import { Definition } from "@services/ideservice";
 import { pathKey } from "../composables/useIdeRoots";
-import { symbolsQuery } from "../queries";
-import { RESOLUTIONS, useDraw, useDrawStore } from "../stores/draw";
+import { openFile, openText } from "../editor/models";
+import { viewsOf } from "../editor/tabs";
+import { framesQuery, propertiesQuery, symbolsQuery } from "../queries";
+import { COATS, RESOLUTIONS, useDraw, useDrawStore } from "../stores/draw";
 import { useEditorStore } from "../stores/editor";
 import WidgetMarks from "./WidgetMarks.vue";
-import { Picture, quote } from "./picture";
+import { centerOf, Picture, quote } from "./picture";
 import Viewport from "./Viewport.vue";
-import { choicesOf, hiddenOf, pageGroups, sideGroups, stateOf, typeIcon } from "./widgets";
+import {
+  choicesOf,
+  coatNumber,
+  coatOf,
+  hiddenOf,
+  isEditable,
+  pageGroups,
+  sideGroups,
+  stateOf,
+  typeIcon,
+} from "./widgets";
 
 const { workspaceId, path } = defineProps<{ workspaceId: string; path: string }>();
 
@@ -31,6 +44,7 @@ const ENTRY_GROUPS: Record<string, { label: string; icon: string; order: number 
   "gui.local_template": { label: "Templates", icon: "i-lucide-layers", order: 2 },
   "gui.texticon": { label: "Text icons", icon: "i-lucide-image", order: 3 },
   "gui.format": { label: "Formats", icon: "i-lucide-type", order: 4 },
+  [COATS]: { label: "Coats", icon: "i-lucide-shield", order: 0 },
 };
 
 /** The roles whose element is its widget's to the pointer: a skin, and the label a button's text is drawn in. */
@@ -38,7 +52,7 @@ const PARTS_OF_WIDGET = new Set<string>([WidgetRole.RoleSkin, WidgetRole.RoleLab
 
 const store = useDrawStore();
 const editor = useEditorStore();
-const { file, list, elements, drawing, renderedMs, error, refetch } = useDraw(
+const { file, request, list, elements, drawing, renderedMs, error, refetch } = useDraw(
   () => workspaceId,
   () => path,
 );
@@ -46,6 +60,25 @@ const viewport = useTemplateRef("viewport");
 const scene = useTemplateRef("scene");
 const root = useTemplateRef("root");
 const zoom = computed(() => viewport.value?.zoom ?? 1);
+// what the toolbar offers: a window's resolution and states, or a coat's field and the frames its game cuts it to
+const isWindow = computed(() => viewsOf(path)?.toolbar === "window");
+// a coat is read and edited through its file's model, which the code beside the picture opens; the picture alone
+// opens it too
+watch(
+  [() => path, isWindow],
+  async () => {
+    if (isWindow.value || openText(path) !== undefined) return;
+    const text = await ReadText(path);
+    if (!text.reject && openText(path) === undefined) openFile(path, text);
+  },
+  { immediate: true },
+);
+const { data: frames } = useQuery(() => framesQuery({ id: isWindow.value ? "" : workspaceId }));
+const frameItems = computed(() => [
+  { label: "Field", value: "" },
+  ...(frames.value ?? []).map((one) => ({ label: one.id, value: one.id })),
+]);
+const frameMask = computed(() => frames.value?.find((one) => one.id === file.value.frame)?.url ?? "");
 const selection = computed({ get: () => file.value.selection, set: (one: number) => (file.value.selection = one) });
 const hover = computed({ get: () => file.value.hover, set: (one: number) => (file.value.hover = one) });
 
@@ -145,10 +178,13 @@ useEventListener(document.fonts, "loadingdone", measureRects);
 /** An element's first rect; undefined for none drawn. */
 const rectOf = (element: number): DOMRect | undefined => file.value.rects.get(element)?.[0];
 
-// an entry drawn alone is the extent of everything it draws, moved so what hangs above or left of it is on the
-// scene; a window is drawn on its screen
+// an entry drawn alone is the extent of everything it draws, but what a widget that clips holds, moved so what hangs
+// above or left of it is on the scene; a window is drawn on its screen
 const extent = computed<DOMRect>(() => {
-  const rects = [...file.value.rects.values()].flat().filter((rect) => rect.width && rect.height);
+  const isClipped = (index: number) => elements.value[index]?.ancestors?.some((one) => elements.value[one]?.clips);
+  const rects = [...file.value.rects]
+    .flatMap(([index, drawn]) => (isClipped(index) ? [] : drawn))
+    .filter((rect) => rect.width && rect.height);
   if (!list.value?.isAlone || !rects.length) return new DOMRect(0, 0, 0, 0);
   const left = Math.min(...rects.map((rect) => rect.left));
   const top = Math.min(...rects.map((rect) => rect.top));
@@ -429,8 +465,53 @@ const menu = computed<ContextMenuItem[][]>(() => {
 // how many widgets are drawn under the pointer: the menu opens wherever there is one
 const hitCount = shallowRef(0);
 
+// a press on the selected instance drags it, its node moved under the pointer, its position written on release
+const { data: selected } = useQuery(() =>
+  propertiesQuery({
+    id: workspaceId,
+    request: request.value,
+    element: elements.value[selection.value]?.type === "instance" ? selection.value : -1,
+  }),
+);
+let drag: { x: number; y: number; node: HTMLElement } | null = null;
+
+/** Starts dragging the selected instance where the press is on it, so the camera does not pan; one the coat does not
+ * write itself (an inherited layer, an alias's target, a game's file) stays where it is. */
+function startDrag(event: PointerEvent): void {
+  const element = elements.value[selection.value];
+  const node = root.value?.querySelector<HTMLElement>(`[data-element="${selection.value}"]`);
+  const isOwn = element?.type === "instance" && isEditable(path, file.value.entry, elements.value, element.location);
+  if (!isOwn || !node || !hitsUnder(event).includes(selection.value)) return;
+  event.stopPropagation();
+  (event.currentTarget as HTMLElement).setPointerCapture(event.pointerId);
+  drag = { x: event.clientX, y: event.clientY, node };
+}
+
+/** Writes the dragged instance's position where it was released, as fractions of its coat's box: its value where it
+ * writes one, else added to its block, else an instance block added to its emblem. */
+function endDrag(event: PointerEvent): void {
+  if (!drag) return;
+  drag.node.style.translate = "";
+  const element = elements.value[selection.value];
+  const box = rectOf(coatOf(elements.value, selection.value) ?? 0);
+  const center = element && centerOf(element);
+  const [dx, dy] = [(event.clientX - drag.x) / zoom.value, (event.clientY - drag.y) / zoom.value];
+  drag = null;
+  if (!element || !center || !box?.width || Math.hypot(dx, dy) < 2) return;
+  const [x, y] = center;
+  const value = `{ ${coatNumber(x + dx / box.width)} ${coatNumber(y + dy / box.height)} }`;
+  const property = selected.value?.find((one) => one.key.toLowerCase() === "position");
+  if (property) void store.rewrite(path, property.valueLocation, value);
+  else if (element.key === "instance") void store.addInside(path, element.location, `position = ${value}`);
+  else void store.addInside(path, element.location, `instance = { position = ${value} }`);
+}
+
 /** Follows the pointer over the elements: the one a click there would select, which the marks outline. */
 function track(event: PointerEvent): void {
+  if (drag) {
+    drag.node.style.translate = `${(event.clientX - drag.x) / zoom.value}px ${(event.clientY - drag.y) / zoom.value}px`;
+    return;
+  }
   const hits = hitsUnder(event);
   hitCount.value = hits.length;
   hover.value = target(hits);
@@ -464,7 +545,22 @@ onScopeDispose(() => (file.value.hover = -1));
           </template>
         </USelectMenu>
       </span>
-      <USelect v-model="store.width" :items="RESOLUTIONS" icon="i-lucide-monitor" size="sm" class="w-36 shrink-0" />
+      <USelect
+        v-if="isWindow"
+        v-model="store.width"
+        :items="RESOLUTIONS"
+        icon="i-lucide-monitor"
+        size="sm"
+        class="w-36 shrink-0"
+      />
+      <USelect
+        v-else-if="frameItems.length > 1"
+        v-model="file.frame"
+        :items="frameItems"
+        icon="i-lucide-shield"
+        size="sm"
+        class="w-36 shrink-0"
+      />
       <USeparator orientation="vertical" class="mx-1 h-4" />
       <UTooltip text="Outline every widget's bounds">
         <UButton
@@ -479,7 +575,7 @@ onScopeDispose(() => (file.value.hover = -1));
         />
       </UTooltip>
       <!-- the window's conditions: each group drawn at one of its values, its first unless another is chosen -->
-      <UPopover v-if="states.length" :content="{ side: 'bottom', align: 'start' }">
+      <UPopover v-if="isWindow && states.length" :content="{ side: 'bottom', align: 'start' }">
         <UButton
           :label="`States ${states.length}`"
           icon="i-lucide-braces"
@@ -510,7 +606,14 @@ onScopeDispose(() => (file.value.hover = -1));
       </UPopover>
     </div>
     <div class="relative flex min-h-0 flex-1 flex-col">
-      <Viewport ref="viewport" :width="sceneWidth" :height="sceneHeight" :focus="windowRect" @floor="deselect">
+      <Viewport
+        ref="viewport"
+        :width="sceneWidth"
+        :height="sceneHeight"
+        :focus="windowRect"
+        :fit-limit="isWindow ? 1 : 16"
+        @floor="deselect"
+      >
         <UContextMenu :items="menu" :disabled="!hitCount" :ui="{ content: 'w-80' }">
           <div
             ref="scene"
@@ -519,7 +622,9 @@ onScopeDispose(() => (file.value.hover = -1));
             @click="pick"
             @contextmenu="openMenu"
             @keydown="onKey"
+            @pointerdown="startDrag"
             @pointermove="track"
+            @pointerup="endDrag"
             @pointerleave="
               hitCount = 0;
               hover = -1;
@@ -544,6 +649,7 @@ onScopeDispose(() => (file.value.hover = -1));
                 :rows="store.rows"
                 :width="screen[0]"
                 :height="screen[1]"
+                :mask="frameMask"
               />
               <WidgetMarks
                 :file="file"

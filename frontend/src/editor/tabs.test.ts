@@ -12,12 +12,15 @@ describe("tab keys", () => {
   it("knows which files have views, a split and a panel, and which are images", () => {
     expect(viewsOf("gui/window_character.gui")).toEqual({
       ext: "gui",
+      label: "GUI",
       code: "Code",
       visual: "Visual",
       first: "split",
       split: true,
       panel: "Widgets",
+      toolbar: "window",
     });
+    expect(viewsOf("C:\\eu5\\main_menu\\common\\coat_of_arms\\coat_of_arms\\x.txt")?.panel).toBe("Layers");
     expect(viewsOf("readme.md")?.split).toBe(false);
     expect(viewsOf("logo.SVG")?.first).toBe("visual");
     expect(viewsOf("events/x.txt")).toBeUndefined();

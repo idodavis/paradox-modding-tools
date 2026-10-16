@@ -1,15 +1,20 @@
-// draw.go is what the visual editors draw: the request, the list an entry resolves into, and the two calls that
-// answer it from one resolve kept between them.
+// draw.go is what the visual editors draw: the request, the list an entry resolves into, the two calls that answer it
+// from one resolve kept between them, and the names the pickers list: a database's entries, a folder's textures.
 
 package draw
 
 import (
 	"fmt"
+	"path"
 	"strings"
 	"sync"
 
 	"paradox-modding-tools/services/internal/game"
+	"paradox-modding-tools/services/internal/index"
+	"paradox-modding-tools/services/internal/inventory"
+	"paradox-modding-tools/services/internal/jomini"
 	"paradox-modding-tools/services/internal/lsp"
+	"paradox-modding-tools/services/internal/schema"
 	"paradox-modding-tools/services/internal/workspace"
 )
 
@@ -27,13 +32,14 @@ type Request struct {
 // List is one render of an entry: the widgets the game lays it out in, its elements in pre-order, the textures they
 // draw and the fonts they use, each listed once, the calls they are shown on, and what nothing found.
 type List struct {
-	IsAlone  bool      `json:"isAlone"` // a type, template, text icon or format drawn by itself, not a window
-	Holders  []Element `json:"holders"` // outermost first, each of its type row and properties alone
-	Elements []Element `json:"elements"`
-	Textures []Texture `json:"textures"`
-	Groups   []Group   `json:"groups"`
-	Fonts    []Font    `json:"fonts"`
-	Missing  []Absent  `json:"missing"`
+	IsAlone      bool      `json:"isAlone"`      // a type, template, text icon, format or coat drawn alone, not a window
+	DepthInFront bool      `json:"depthInFront"` // a coat's: a larger depth in front, which a reorder writes depths by
+	Holders      []Element `json:"holders"`      // outermost first, each of its type row and properties alone
+	Elements     []Element `json:"elements"`
+	Textures     []Texture `json:"textures"`
+	Groups       []Group   `json:"groups"`
+	Fonts        []Font    `json:"fonts"`
+	Missing      []Absent  `json:"missing"`
 }
 
 // Element is one widget of the entry: where it is written and how it is named, how its type draws, and what it is
@@ -67,21 +73,25 @@ type Element struct {
 }
 
 // Texture is what an element paints from a file: its size in the image's pixels over its density, its border in
-// the screen's, its frame, tiling, mirror, fit, tint and blend, and the texture that masks it.
+// the screen's, its frame, tiling, mirror, fit, tint and blend, the texture that masks it, and how its pixels are
+// colored.
 type Texture struct {
-	URL        string  `json:"url"`
-	Width      int     `json:"width"`
-	Height     int     `json:"height"`
-	Density    float64 `json:"density"`
-	Border     [4]int  `json:"border"` // top, right, bottom, left
-	IsTiled    bool    `json:"isTiled"`
-	IsMirrored bool    `json:"isMirrored"`
-	Fit        string  `json:"fit"`
-	Tint       string  `json:"tint"`      // the color the image is multiplied by, opaque; "" none
-	TintAlpha  float64 `json:"tintAlpha"` // what the tint multiplies the image's alpha by; 1 none
-	Blend      string  `json:"blend"`     // a CSS blend mode
-	Alpha      float64 `json:"alpha"`
-	Mask       int     `json:"mask"` // the list's texture whose brightness masks this one; -1 none
+	URL        string   `json:"url"`
+	Width      int      `json:"width"`
+	Height     int      `json:"height"`
+	Density    float64  `json:"density"`
+	Border     [4]int   `json:"border"` // top, right, bottom, left
+	IsTiled    bool     `json:"isTiled"`
+	IsMirrored bool     `json:"isMirrored"`
+	Fit        string   `json:"fit"`
+	Tint       string   `json:"tint"`      // the color the image is multiplied by, opaque; "" none
+	TintAlpha  float64  `json:"tintAlpha"` // what the tint multiplies the image's alpha by; 1 none
+	Blend      string   `json:"blend"`     // a CSS blend mode
+	Alpha      float64  `json:"alpha"`
+	Mask       int      `json:"mask"`    // the list's texture whose brightness masks this one; -1 none
+	Recolor    string   `json:"recolor"` // how the page colors it, a key of the page's recolor rows; "" as its pixels are
+	Colors     []string `json:"colors"`  // the slots the recolor reads as CSS, slot n at n, "" the shader's fallback
+	Regions    []int    `json:"regions"` // for a mask texture: the pattern's regions kept
 }
 
 // Text is an element's text as runs in a font at a size.
@@ -123,19 +133,28 @@ type Group struct {
 	Values []string `json:"values"`
 }
 
-// Property is one property of an element as written, with the type or template that wrote it ("" the element) and
-// where.
+// Property is one property of an element as written, with the type or template that wrote it ("" the element),
+// where, and where its value is, which an edit replaces.
 type Property struct {
-	Key      string       `json:"key"`
-	Value    string       `json:"value"`
-	Writer   string       `json:"writer"`
-	Location lsp.Location `json:"location"`
+	Key           string       `json:"key"`
+	Value         string       `json:"value"`
+	Writer        string       `json:"writer"`
+	Location      lsp.Location `json:"location"`
+	ValueLocation lsp.Location `json:"valueLocation"`
 }
 
 // Absent is a thing the game's files did not give: the status line's sentence and the element that asked (-1 none).
 type Absent struct {
 	Text    string `json:"text"`
 	Element int    `json:"element"`
+}
+
+// Name is a thing a picker lists: an entry of a database by its id and the color its block is as CSS, or a texture
+// file by its name and its route ("" for none).
+type Name struct {
+	ID    string `json:"id"`
+	Color string `json:"color"`
+	URL   string `json:"url"`
 }
 
 // Render is the last resolve of an entry, kept while the session's records and the request are the same.
@@ -181,10 +200,69 @@ func (render *Render) Properties(ws *workspace.Session, request Request, element
 		last, _ := widget.last(key)
 		properties = append(properties, Property{
 			Key: last.assignment.Key.Text, Value: last.text(), Writer: last.writer,
-			Location: lsp.Locate(ws, last.path, last.span()),
+			Location: lsp.Locate(ws, last.path, last.span()), ValueLocation: lsp.Locate(ws, last.path, last.valueSpan()),
 		})
 	}
 	return properties, nil
+}
+
+// Names are the entries a database defines across the load order, each once, with the color the winner's block is.
+// The caller holds the workspace's read lock.
+func Names(ws *workspace.Session, database string) []Name {
+	parses := workspace.Parses{}
+	names := []Name{}
+	for _, id := range index.Names(ws.Indexes(), database) {
+		defs := index.Lookup(ws.Indexes(), schema.Defines, database, id)
+		if len(defs) == 0 {
+			continue
+		}
+		name := Name{ID: id}
+		winner, _, _, _ := ws.Winner(defs)
+		if _, definition := ws.Statement(parses, winner); definition != nil {
+			name.Color = cssOf(jomini.ValueOf(definition))
+		}
+		names = append(names, name)
+	}
+	return names
+}
+
+// Frames are the frames the workspace's game cuts its coats to, each its label and its mask's route; one whose mask
+// no origin holds is left out. The caller holds the workspace's read lock.
+func Frames(ws *workspace.Session) []Name {
+	frames := []Name{}
+	for _, frame := range game.CoatFrames[ws.Game.ID] {
+		if file, isListed := index.FileAt(ws.Indexes(), frame.Mask); isListed {
+			frames = append(frames, Name{ID: frame.Label, URL: routeOf(file.Path)})
+		}
+	}
+	return frames
+}
+
+// Textures are the images a coat texture key's folder holds across the load order, each name once, a later origin's
+// over an earlier's. The caller holds the workspace's read lock.
+func Textures(ws *workspace.Session, key string) []Name {
+	folder, isKnown := game.CoatTextureFolders[key]
+	names := []Name{}
+	if !isKnown {
+		return names
+	}
+	byFile := map[string]int{}
+	for _, scanned := range ws.Indexes() {
+		for _, file := range scanned.Files {
+			dir, base := path.Split(file.Rel)
+			if file.Format != inventory.Image || !strings.EqualFold(strings.TrimSuffix(dir, "/"), folder) {
+				continue
+			}
+			texture := Name{ID: base, URL: routeOf(file.Path)}
+			if i, isListed := byFile[strings.ToLower(base)]; isListed {
+				names[i] = texture
+				continue
+			}
+			byFile[strings.ToLower(base)] = len(names)
+			names = append(names, texture)
+		}
+	}
+	return names
 }
 
 // resolver is the request's resolve: the last where the request and the session's records are the same, else anew.

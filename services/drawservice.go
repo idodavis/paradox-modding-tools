@@ -1,5 +1,5 @@
-// drawservice.go is the visual editors' service: the open workspace, the last render kept across requests, and its two
-// calls, each under the workspace's read lock.
+// drawservice.go is the visual editors' service: the open workspace, the last render kept across requests, and its
+// calls, each under the workspace's read lock: a list, an element's properties, the pickers' names, a new coat's file.
 
 package services
 
@@ -36,4 +36,48 @@ func (s *DrawService) Properties(workspaceID string, request draw.Request, eleme
 	ws.RLock()
 	defer ws.RUnlock()
 	return s.render.Properties(ws, request, element)
+}
+
+// Names are a database's entries with their colors, as the Layers panel's pickers list them.
+func (s *DrawService) Names(workspaceID, database string) ([]draw.Name, error) {
+	ws, err := s.workspaces.openWorkspace(workspaceID)
+	if err != nil {
+		return nil, err
+	}
+	ws.RLock()
+	defer ws.RUnlock()
+	return draw.Names(ws, database), nil
+}
+
+// CoatFile is the file a mod's new coat of arms is written in.
+func (s *DrawService) CoatFile(workspaceID, modID string) (string, error) {
+	ws, err := s.workspaces.openWorkspace(workspaceID)
+	if err != nil {
+		return "", err
+	}
+	ws.RLock()
+	defer ws.RUnlock()
+	return draw.CoatFile(ws, modID)
+}
+
+// Frames are the frames the game cuts its coats to, as the coat toolbar's Frame picker lists them.
+func (s *DrawService) Frames(workspaceID string) ([]draw.Name, error) {
+	ws, err := s.workspaces.openWorkspace(workspaceID)
+	if err != nil {
+		return nil, err
+	}
+	ws.RLock()
+	defer ws.RUnlock()
+	return draw.Frames(ws), nil
+}
+
+// Textures are the images a coat texture key's folder holds, as the Layers panel's tile picker lists them.
+func (s *DrawService) Textures(workspaceID, key string) ([]draw.Name, error) {
+	ws, err := s.workspaces.openWorkspace(workspaceID)
+	if err != nil {
+		return nil, err
+	}
+	ws.RLock()
+	defer ws.RUnlock()
+	return draw.Textures(ws, key), nil
 }

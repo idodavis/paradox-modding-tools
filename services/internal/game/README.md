@@ -6,6 +6,7 @@ The only game-aware package: what is true of each game, and the language rules o
 |---|---|
 | `lang-rules.go` | the language rules of Paradox script as tables, and each game's file `Layout` |
 | `gui-rules.go` | what a game does with a GUI file beyond its syntax, as tables the visual editors read |
+| `coa-rules.go` | what a game does with a coat of arms beyond its syntax: the databases it reads, where each game keeps its coats and their textures, the field's file, which way depth orders its layers, the texture that shades it and the frames its windows cut it to |
 | `game.go` | each game's identity (`GameInfo`), install and version detection, user-data and dump folders, Steam library paths |
 | `colors.go` | a color block's numbers read into one color by its `Colors` row (`ColorOf`, `RGBA`), and a color written back in a block's form (`PartsOf`) |
 
@@ -55,6 +56,22 @@ the CK3 wiki's Interface page, the game's shaders, or vanilla observed in the ap
 | `GUIAnswered` | the data calls the preview answers from the index (`GetDefine`), and the database each reads |
 | `GUIBooleans` | the data functions a binding combines conditions with |
 | `GUIPictureKeys`, `GUIIconPathSuffix` | the keys an entry names its picture by, and the ending of the defines that name icon folders |
+
+## The coat of arms rules (`coa-rules.go`)
+
+What a game does with a coat of arms beyond its syntax, which `draw`'s `coat.go` reads; what the page applies to the
+pixels (how each texture kind is colored, which channel each mask region is, which way a rotation turns) is
+`frontend/src/draw/recolor.ts`'s, each fact in one of the two.
+
+| table | says |
+|---|---|
+| `CoatDatabases` | the databases a coat reads: its own, and the named colors its slots name |
+| `CoatFolders` | the folder each game keeps its coats in, from its stages' folder: where vanilla's are and a mod's new ones go (EU5's under `main_menu/`) |
+| `CoatFieldFile` | the file whose first atlas' `tile_size` is the field a coat is drawn on |
+| `CoatTextureFolders` | the folder each texture key's files are under (`pattern`, `colored_emblem`, `textured_emblem`) |
+| `CoatDepthInFront` | which way `depth` orders a coat's layers: false, a larger depth draws behind (observed) |
+| `CoatShading` | the texture a game shades every coat with (CK3's cloth); a game not listed shades none |
+| `CoatFrames` (`CoatFrame`) | the frames a game's windows cut its coats to, each the mask its GUI names (CK3's title and dynasty) |
 
 ## Games (`game.go`)
 

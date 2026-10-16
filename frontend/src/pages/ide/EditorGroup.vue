@@ -27,7 +27,7 @@ import { isMain, useWindowsStore, windowName, windowPart } from "../../stores/wi
 import { fileName } from "../../lib/format";
 import UnsavedChangesModal from "../../ui/UnsavedChangesModal.vue";
 import DrawPane from "../../draw/DrawPane.vue";
-import GuiDetail from "../../draw/GuiDetail.vue";
+import DrawDetail from "../../draw/DrawDetail.vue";
 import { iconOf } from "./fileKinds";
 import CodeEditor from "./CodeEditor.vue";
 import GitDiff from "./GitDiff.vue";
@@ -479,7 +479,7 @@ const sides = computed(() => [
         </div>
       </template>
       <template #pane>
-        <GuiDetail v-if="pane === 'detail'" :workspace-id="workspaceId" :path="active" class="min-w-0 flex-1" />
+        <DrawDetail v-if="pane === 'detail'" :workspace-id="workspaceId" :path="active" class="min-w-0 flex-1" />
         <WikiPane v-else-if="pane === 'wiki'" :workspace-id="workspaceId" class="min-w-0 flex-1" />
       </template>
     </USplitter>

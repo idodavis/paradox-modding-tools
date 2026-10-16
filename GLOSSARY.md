@@ -79,7 +79,16 @@ does, measured against real installs, is in [GAME-SYNTAX.md](GAME-SYNTAX.md); ho
 | group | a call widgets are shown on, with the values its facts are written with; the page draws each at one value, and a side group, whose widgets all lie outside the window, closed until opened | `draw.Group`, `draw.Condition`, `frontend/src/draw/widgets.ts` |
 | holder | a widget a window is laid out in, not drawn: the widgets around the one place the install writes it, or the layer the engine puts it in (EU5's lateral views) | `draw.List.Holders`, `game.GUIHolders` |
 | slot | a key whose block is a widget no type is named after: a skin (`background`), chrome (a scroll bar), an attachment (a tooltip), or the widget a scroll or zoom area holds (`scrollwidget`, `zoomwidget`) | `game.WidgetSlots` |
-| panel | the Widgets panel beside a GUI file's editor, under its group's tabs and path: where the selected widget sits, whether it is shown for the session, the binding it is shown on with each group it reads and that group's state, and its properties by writer | `frontend/src/draw/GuiDetail.vue` |
+| panel | the panel beside a drawn file's editor, under its group's tabs and path, named by its kind's row: a GUI file's Widgets (where the selected widget sits, whether it is shown for the session, the binding it is shown on with each group it reads and that group's state, and its properties by writer) or a coat's Layers (the coat's layers as a tree, each with its eye, and the selected layer's properties edited in place) | `frontend/src/draw/DrawDetail.vue` |
+| coat | a coat of arms: an entry of `coat_of_arms/coat_of_arms` drawn alone on its field, the root of its layers (element type `coat`) | `draw/coat.go`, `game.CoatDatabases` |
+| field | the box a coat is drawn on, the first atlas' tile of `options/atlases.txt`; the holder of a coat's list (element type `field`) | `game.CoatFieldFile`, `draw.resolveField` |
+| pattern | a coat's background texture, colored by its slots (element type `pattern`) | `draw.resolvePattern` |
+| emblem | a `colored_emblem` or `textured_emblem`: a texture, its colors and mask; one element per run of its instances in paint order (element type `emblem`) | `draw.resolveEmblem` |
+| instance | one place an emblem is drawn at: position, scale, rotation and depth (element type `instance`) | `draw.placement` |
+| sub | a coat drawn inside another, its `parent` coat's statements under its own, placed by its instance's offset and scale (element type `sub`) | `draw.resolveSub` |
+| recolor | how the page colors a coat's texture as its shader does: a pattern's or a colored emblem's slots, a mask's regions, the cloth's shading or grain | `draw.Texture.Recolor`, `frontend/src/draw/recolor.ts` |
+| region | one of a pattern's three color areas a `mask` keeps of an emblem, each its channel less the later ones | `draw.Texture.Regions`, `recolor.ts`' `REGIONS` |
+| frame | a shape a game's windows cut a coat to (CK3's title shield, a dynasty's), the mask its GUI names | `game.CoatFrames` |
 | writer | the type or template that writes a property of an element; "" the element's own block | `draw.Property.Writer` |
 | absent | a thing the game's files did not give a render: its sentence and the element that asked for it | `draw.Absent` |
 | code link | a GUI file's code beside its picture: the picture's marks in the code, and the code's pointer and caret in the picture | `frontend/src/draw/CodeLink.vue` |

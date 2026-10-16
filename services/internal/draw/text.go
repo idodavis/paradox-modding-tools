@@ -35,7 +35,7 @@ const maxNesting = 10
 const boundText = "[…]"
 
 // plainKeys are the words of a format the preview draws as plain text.
-var plainKeys = []string{"size", "glow_color", "glow_offset", "shadow", "underline", fontKey, "tooltip"}
+var plainKeys = []string{sizeKey, "glow_color", "glow_offset", "shadow", "underline", fontKey, "tooltip"}
 
 // textKeys are the keys a widget's text is written with, which a label takes from its button.
 var textKeys = []string{textKey, rawTextKey, fontKey, "fontsize", "fontcolor", "default_format"}

@@ -8,7 +8,7 @@ import { computed, shallowRef } from "vue";
 import { useQuery } from "@pinia/colada";
 import { createReusableTemplate, watchDebounced } from "@vueuse/core";
 import { codesQuery } from "../../queries";
-import { VIEW_ROWS, viewItems, type ViewRow } from "../../editor/tabs";
+import { VIEW_ROWS, viewItems, viewSettings, type ViewRow } from "../../editor/tabs";
 import { RESOLUTIONS, useDrawStore } from "../../stores/draw";
 import { useEditorStore } from "../../stores/editor";
 import { switchesOf, useSettingsStore } from "../../stores/settings";
@@ -64,10 +64,10 @@ watchDebounced(font, (name) => settings.set("ui.editorFont", name?.trim() ?? "")
 
 // the kinds of file with views (tabs.ts), each with its own names for them: the Editor tab sets the view a kind with no
 // panel opens in; the Visual view tab sets it for a kind with a panel, and whether its panel opens with the picture
-const OPENS = VIEW_ROWS.filter((row) => row.ext && !row.panel);
-const VISUAL_ROWS = VIEW_ROWS.filter((row) => row.ext && row.panel);
-const viewKey = (row: ViewRow) => `ide.view.${row.ext}`;
-const panelKey = (row: ViewRow) => `ide.panel.${row.ext}`;
+const OPENS = VIEW_ROWS.filter((row) => !row.panel);
+const VISUAL_ROWS = VIEW_ROWS.filter((row) => row.panel);
+const viewKey = (row: ViewRow) => viewSettings(row).view;
+const panelKey = (row: ViewRow) => viewSettings(row).panel;
 // the field that sets the view a kind opens in, written once for both tabs
 const [DefineViewField, ViewField] = createReusableTemplate<{ row: ViewRow }>();
 
@@ -107,7 +107,7 @@ function resetTab(): void {
 <template>
   <DefineViewField v-slot="{ row }">
     <UFormField
-      :label="`${row.ext?.toUpperCase()} files open in`"
+      :label="`${row.label} files open in`"
       description="A tab's own switch still changes it"
       orientation="horizontal"
     >
@@ -198,7 +198,7 @@ function resetTab(): void {
               >
                 <USwitch :model-value="settings.on(row.key)" @update:model-value="settings.setOn(row.key, $event)" />
               </UFormField>
-              <ViewField v-for="row in OPENS" :key="row.ext" :row="row" />
+              <ViewField v-for="row in OPENS" :key="row.label" :row="row" />
               <UFormField
                 label="Indentation"
                 description="For new lines; a file keeps its own"
@@ -302,7 +302,7 @@ function resetTab(): void {
           </template>
           <template #visual>
             <div class="divide-y divide-default">
-              <template v-for="row in VISUAL_ROWS" :key="row.ext">
+              <template v-for="row in VISUAL_ROWS" :key="row.label">
                 <ViewField :row="row" />
                 <UFormField
                   :label="`Open the ${row.panel} panel with the picture`"

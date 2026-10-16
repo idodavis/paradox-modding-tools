@@ -45,6 +45,14 @@ every one of those widgets at once. Later it plays that state, a click pressing 
 as part of one foundation for what a window decides while it runs (its state, hovers, tooltips and animations) rather
 than as a feature of its own, so that it covers every window that keeps state.
 
+## Entries of any file
+
+Today the Visual view picks the entry it draws from a select in its toolbar. Next, an Entries tab beside Source
+control in the [IDE]({{< relref "/pages/ide" >}}) lists a GUI or coat of arms file's entries, searchable, each coat
+with a picture of it; a click draws it. Later the same tab lists the entries of any script file, its events,
+decisions, traits and the rest, grouped by kind, each with its name in your language from its localization; a click
+opens it in the code.
+
 ## Map / title editor
 
 **CK3 political layer first.**

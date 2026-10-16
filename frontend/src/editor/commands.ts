@@ -1,13 +1,15 @@
 /**
  * The IDE's palette commands, set in the commands store when the editor installs: the compares, Open the event under
- * the cursor, Format, Save, the splits, the views and panel of a kind of file that has them, Find in files and the Wiki
- * pane.
+ * the cursor, Format, Save, the splits, the views and panel of a kind of file that has them, Find in files, the Wiki
+ * pane, and a new coat of arms, plain or pasted from the game.
  */
 import type { RouteLocationRaw, Router } from "vue-router";
+import { Clipboard } from "@wailsio/runtime";
 import { Hover } from "@services/ideservice";
 import { useCompare } from "../composables/useCompare";
 import { useIdeRoots } from "../composables/useIdeRoots";
 import { useCommandsStore, type CommandItem } from "../stores/commands";
+import { useDrawStore } from "../stores/draw";
 import { useEditorStore } from "../stores/editor";
 import { useGitStore } from "../stores/git";
 import { useWorkspaceStore } from "../stores/workspace";
@@ -20,6 +22,7 @@ export function installIdeCommands(router: Router): void {
   const editor = useEditorStore();
   const workspace = useWorkspaceStore();
   const git = useGitStore();
+  const draw = useDrawStore();
   const { locate } = useIdeRoots(() => workspace.activeWorkspaceId);
   const compare = useCompare(() => workspace.activeWorkspaceId);
 
@@ -208,6 +211,18 @@ export function installIdeCommands(router: Router): void {
         icon: "i-lucide-book-open",
         kbds: ["Ctrl Shift W"],
         onSelect: run(() => (editor.wikiOpen = !editor.wikiOpen)),
+      },
+      {
+        label: "New coat of arms",
+        prefix: "Coat of arms:",
+        icon: "i-lucide-shield-plus",
+        onSelect: run(() => (draw.coatDialog = { mode: "new", id: "", text: "", mod: "" })),
+      },
+      {
+        label: "Paste a coat from the game",
+        prefix: "Coat of arms:",
+        icon: "i-lucide-clipboard-paste",
+        onSelect: run(async () => (draw.coatDialog = { mode: "paste", id: "", text: await Clipboard.Text(), mod: "" })),
       },
     ];
   };

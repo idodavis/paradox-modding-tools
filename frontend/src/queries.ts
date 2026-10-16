@@ -6,7 +6,7 @@
  */
 import { defineQueryOptions } from "@pinia/colada";
 import { GetVersion } from "@services/appservice";
-import { List, Properties } from "@services/drawservice";
+import { Frames, List, Names, Properties, Textures } from "@services/drawservice";
 import { LastRunCrashed } from "@services/logservice";
 import { ReadImageFacts, ReadText } from "@services/fileservice";
 import { GetEventDetail, GetEventGraph, SearchRoots } from "@services/eventgraphservice";
@@ -52,10 +52,12 @@ export const releaseKeys = {
 
 export const wikiKeys = { all: ["wiki"] as const };
 
-/** A GUI file's drawn list and an element's properties; a file's change reads them again. */
+/** A file's drawn list and an element's properties, which a file's change reads again; and what the coat pickers list
+ * (a database's names, a folder's textures, the frames), which a file changed on disk reads again. */
 export const drawKeys = {
   list: ["draw"] as const,
   properties: ["draw-properties"] as const,
+  names: ["draw-names"] as const,
 };
 
 /** The names a file defines, which the command palette and the Visual view's entry picker list; an edit changes them. */
@@ -330,6 +332,27 @@ export const propertiesQuery = defineQueryOptions(
     enabled: useWorkspaceStore().isOpen(id) && !!request.path && !!request.id && element >= 0,
   }),
 );
+
+/** A database's entries with their colors, which the Layers panel's color picker lists. */
+export const namesQuery = defineQueryOptions(({ id, database }: { id: string; database: string }) => ({
+  key: [...drawKeys.names, id, "database", database],
+  query: async () => (await Names(id, database)) ?? [],
+  enabled: useWorkspaceStore().isOpen(id) && !!database,
+}));
+
+/** The images a coat texture key's folder holds, which the Layers panel's tile picker lists. */
+export const texturesQuery = defineQueryOptions(({ id, key }: { id: string; key: string }) => ({
+  key: [...drawKeys.names, id, "textures", key],
+  query: async () => (await Textures(id, key)) ?? [],
+  enabled: useWorkspaceStore().isOpen(id) && !!key,
+}));
+
+/** The frames the workspace's game cuts its coats to, which the coat toolbar's Frame picker lists. */
+export const framesQuery = defineQueryOptions(({ id }: { id: string }) => ({
+  key: [...drawKeys.names, id, "frames"],
+  query: async () => (await Frames(id)) ?? [],
+  enabled: useWorkspaceStore().isOpen(id),
+}));
 
 export const codesQuery = defineQueryOptions({
   key: ["ide", "codes"],

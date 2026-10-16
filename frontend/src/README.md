@@ -21,12 +21,15 @@ Each page is a folder under `pages/` (`library/`, `wizard/`, `settings/`, `healt
 `ide/`) holding the page and the components only it uses. The app's frame (top bar, status bar, command palette) is
 `app/`, with the router, the events' refreshes and the page catalogue (`pages.ts`); the editor's modules are `editor/`;
 a component two or more pages use is in `ui/`; the visual editors, which the IDE shows beside the code, are `draw/`:
-the tables of what a holding and a property mean in CSS and the picture built from them (`picture.ts`), reading a list
-and what a window's states show (`widgets.ts`), the pane (`DrawPane.vue`), the marks over the picture from each
-widget's rect (`WidgetMarks.vue`), the panel (`GuiDetail.vue`), the code beside the picture (`CodeLink.vue`) and the
-camera (`Viewport.vue`), over the store `stores/draw.ts`. `stores/`, `composables/` and `lib/` stay flat; the root holds
-`main.ts` and `queries.ts`. The page uses `Map.groupBy` and the `Set` methods (`union`, `difference`), which set the
-Linux floor at WebKitGTK 2.44 (Safari 17.4).
+the tables of what a holding and a property mean in CSS and the picture built from them (`picture.ts`), how a coat's
+shaders color its textures, the one pixel computation the page makes (`recolor.ts`), reading a list and what a
+window's states show (`widgets.ts`), the pane (`DrawPane.vue`), the marks over the picture from each widget's rect
+(`WidgetMarks.vue`), the panel (`DrawDetail.vue`: a GUI file's Widgets, a coat's Layers tree with its layers edited in
+place, one property's input in `CoatField.vue`), the new coat dialog the palette and the explorer open
+(`CoatDialog.vue`), the code beside the picture (`CodeLink.vue`) and the camera (`Viewport.vue`), over the store
+`stores/draw.ts`, which also holds a coat's edits, each one change of its file's model. `stores/`, `composables/`
+and `lib/` stay flat; the root holds `main.ts` and `queries.ts`. The page uses `Map.groupBy` and the `Set` methods
+(`union`, `difference`), which set the Linux floor at WebKitGTK 2.44 (Safari 17.4).
 
 A page imports from `stores/`, `queries.ts`, `lib/`, `composables/`, `ui/` and itself, never another page's folder and
 never the frame's components. `editor/` is imported only by `pages/ide/` and the stores; `ui/`, `composables/` and

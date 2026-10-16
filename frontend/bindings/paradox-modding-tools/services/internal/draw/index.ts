@@ -8,6 +8,7 @@ export type {
     Font,
     Group,
     List,
+    Name,
     Property,
     Request,
     Run,

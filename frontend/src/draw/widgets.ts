@@ -1,13 +1,24 @@
 /**
- * Reading a drawn list: a type's icon, the hidden set closed over children, and what a window's states show: each
- * group of conditions drawn at one value, a column's pages after the first and the side windows closed until opened.
+ * Reading a drawn list: a type's icon, the hidden set closed over children, where a coat may be edited, and what a
+ * window's states show: each group of conditions drawn at one value, a column's pages after the first and the side
+ * windows closed until opened.
  */
 import type { Condition, Element as DrawElement, Group, List as DrawList } from "@services/internal/draw";
 import { Holding } from "@services/internal/game";
+import type { Location, Position } from "@services/internal/lsp";
+import { pathKey } from "../composables/useIdeRoots";
+import { isReadOnly } from "../editor/models";
 import type { DrawFile } from "../stores/draw";
 
-/** The icon of each type: what it shows, or how it holds its children; any other type is a plain box. */
+/** The icon of each type: what it shows, or how it holds its children; any other type is a plain box. A coat's layers
+ * by what each is. */
 const TYPE_ICONS: Record<string, string> = {
+  field: "i-lucide-frame",
+  coat: "i-lucide-shield",
+  sub: "i-lucide-shield-half",
+  pattern: "i-lucide-grid-2x2",
+  emblem: "i-lucide-sticker",
+  instance: "i-lucide-copy",
   window: "i-lucide-app-window",
   textbox: "i-lucide-type",
   ubertextbox: "i-lucide-type",
@@ -35,6 +46,25 @@ export const NO_STATE = "*none";
 
 /** A type's icon. */
 export const typeIcon = (type: string): string => TYPE_ICONS[type] ?? "i-lucide-square-dashed";
+
+/** The coat or sub a coat's element is drawn in, the nearest; undefined for an element of no coat. */
+export const coatOf = (elements: DrawElement[], index: number): number | undefined =>
+  elements[index]?.ancestors?.findLast((one) => elements[one]?.type === "coat" || elements[one]?.type === "sub");
+
+/** A number as vanilla writes a coat's: at most two decimals. */
+export const coatNumber = (value: number): string => String(Math.round(value * 100) / 100);
+
+/** Whether a coat edit may write at a location: inside the coat's own entry (the first element, written as the
+ * entry's id, so never an alias's target) in the open file, which is no game file; never a parent coat's statements,
+ * here or in another file. */
+export function isEditable(path: string, entry: string, elements: DrawElement[], location: Location): boolean {
+  const coat = elements[0];
+  if (!coat || coat.key !== entry || isReadOnly(path)) return false;
+  const isHere = (one: Location) => pathKey(one.path) === pathKey(path);
+  const isBefore = (a: Position, b: Position) => a.line < b.line || (a.line === b.line && a.character <= b.character);
+  const [own, inner] = [coat.location.range, location.range];
+  return isHere(coat.location) && isHere(location) && isBefore(own.start, inner.start) && isBefore(inner.end, own.end);
+}
 
 /** The elements a set hides with everything under them; parents are listed before their children. */
 export function withDescendants(elements: DrawElement[], hidden: Set<number>): Set<number> {

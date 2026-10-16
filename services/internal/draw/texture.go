@@ -72,10 +72,11 @@ func (resolver *resolver) layers(widget *widget) []int {
 
 // textureIndex is a texture's index in the list, listed the first time it is drawn.
 func (resolver *resolver) textureIndex(texture Texture) int {
-	i, isKnown := resolver.textureIndexes[texture]
+	key := fmt.Sprintf("%#v", texture)
+	i, isKnown := resolver.textureIndexes[key]
 	if !isKnown {
 		i = len(resolver.list.Textures)
-		resolver.textureIndexes[texture] = i
+		resolver.textureIndexes[key] = i
 		resolver.list.Textures = append(resolver.list.Textures, texture)
 	}
 	return i
@@ -94,6 +95,17 @@ func (resolver *resolver) textureOf(holder *widget) (Texture, bool) {
 			return Texture{}, false
 		}
 	}
+	base, isFound := resolver.fileTexture(path)
+	if !isFound {
+		return Texture{}, false
+	}
+	resolver.sprite(&holder.block, &base)
+	return base, true
+}
+
+// fileTexture is the texture a file draws with the defaults: its route and size, read once a render. False for a
+// path nothing holds, listed.
+func (resolver *resolver) fileTexture(path string) (Texture, bool) {
 	base, isKnown := resolver.pathTextures[path]
 	if !isKnown {
 		if file, hasFile := index.FileAt(resolver.ws.Indexes(), path); hasFile {
@@ -110,7 +122,6 @@ func (resolver *resolver) textureOf(holder *widget) (Texture, bool) {
 		resolver.addMissing("texture", path)
 		return Texture{}, false
 	}
-	resolver.sprite(&holder.block, &base)
 	return base, true
 }
 
@@ -318,16 +329,21 @@ func literalKey(steps []jomini.CallStep) string {
 	return ""
 }
 
-// urlOf is the route's URL for a file, with when it changed, made once a render.
+// urlOf is the route's URL for a file, made once a render.
 func (resolver *resolver) urlOf(file inventory.File) string {
 	if route, isKnown := resolver.urls[file.Path]; isKnown {
 		return route
 	}
-	version := "0"
-	if stat, err := os.Stat(file.Path); err == nil {
-		version = strconv.FormatInt(stat.ModTime().UnixMilli(), 10)
-	}
-	route := FileRoute + "?path=" + url.QueryEscape(file.Path) + "&v=" + version
+	route := routeOf(file.Path)
 	resolver.urls[file.Path] = route
 	return route
+}
+
+// routeOf is the route's URL for a file, with when it changed.
+func routeOf(path string) string {
+	version := "0"
+	if stat, err := os.Stat(path); err == nil {
+		version = strconv.FormatInt(stat.ModTime().UnixMilli(), 10)
+	}
+	return FileRoute + "?path=" + url.QueryEscape(path) + "&v=" + version
 }

@@ -1,8 +1,8 @@
 # draw
 
-**A preview of a mod's GUI entries with the game's own textures, fonts and localization, where nothing about the
-game's state is simulated and nothing is asked.** Every widget is drawn unless its file says `visible = no` or
-`visible_at_creation = no` (`game.GUIHiddenKeys`); what only
+**A preview of a mod's GUI entries and coats of arms with the game's own textures, fonts and localization, where
+nothing about the game's state is simulated and nothing is asked.** Every widget is drawn unless its file says
+`visible = no` or `visible_at_creation = no` (`game.GUIHiddenKeys`); what only
 the game would know, a binding, is drawn as written, but for a texture whose file the scan finds. A vanilla window is a
 stress test of the preview, never a promise of fidelity.
 
@@ -10,8 +10,10 @@ The preview translates; three engines think. The index resolves the script. The 
 cut, scaled and masked. The browser lays out, breaks lines, slices, masks and blends. Everything the preview decides
 that none of the three does is a row in a table with its source beside it: the CK3 wiki's Interface page, a shader
 file, or vanilla observed in the app. The rows are `game/gui-rules.go` (how each built-in type draws, the roles of a
-widget's blocks, where a window is laid out, the state it opens in, the calls the preview answers) and
-`frontend/src/draw/picture.ts` (what a holding and a property mean in CSS).
+widget's blocks, where a window is laid out, the state it opens in, the calls the preview answers), `game/coa-rules.go`
+(what a coat reads, where each game keeps its coats and textures, its field, which way depth orders it, its shading
+and frames), `frontend/src/draw/picture.ts` (what a holding and a property mean in CSS) and
+`frontend/src/draw/recolor.ts` (how a coat's shaders color its textures).
 
 Read `draw.go` first: `Render.List` is the whole of a render.
 
@@ -24,6 +26,7 @@ Read `draw.go` first: `Render.List` is the whole of a render.
 | `resolve.go` | an entry resolved into a tree of widgets, each an element: the type chain, templates and blocks under the overrides in force, the opening state, the children, the holders |
 | `text.go` | a widget's text as runs, and the fonts that draw them |
 | `texture.go` | a widget's textures, read as the sprite shader reads them, and the file a texture binding draws |
+| `coat.go` | a coat of arms resolved into elements on its field, every texture carrying how its shader colors it, and the file a mod's new coat is written in |
 | `draw_test.go` | the fixture tests and the three-install gate (`PMT_VANILLA_GATE`) |
 
 ## The list
@@ -40,7 +43,10 @@ data model's item), its type's row stamped for the workspace's game (`Type`, `Ho
 `DropsHidden`), every property as written (`Properties`, the last written of each key, a call `GUIAnswered` names
 replaced by the entry's value), its textures and its text, and what it is shown on (`IsHidden`, `Condition`).
 
-`Render.Properties` answers the panel from the same resolve: each property's last value, who wrote it and where.
+`Render.Properties` answers the panel from the same resolve: each property's last value, who wrote it, where, and
+where its value is, which an edit replaces. `Names` and `Textures` list what the coat pickers offer (a database's
+entries with their colors, a texture folder's images across the load order), `Frames` the frames the game cuts a coat
+to, and `CoatFile` the file a mod's new coat goes into.
 
 ## Resolving
 
@@ -73,6 +79,31 @@ as `[…]`. Its font is the face the `font.font` entry names for the style and l
 A window is drawn on the screen. A window made from a type `GUIHolders` names is drawn in that window. A type or
 template drawn alone is drawn in the widgets around the one place the install writes it (`index.RefsTo`), each an
 element of its type row and properties alone; none where it is written nowhere, in several places, or in a block.
+
+## Coats
+
+A coat entry (`entryRows`' coat row routes it to `resolveCoat`) is drawn alone on its field, the holder: the first
+atlas' tile of `options/atlases.txt` (230 × 230 in CK3, 3:2 in Vic3 and EU5). Under the coat (`coat`), its pattern
+(`pattern`), then each emblem's instances in paint order: by `depth`, a larger one behind (`CoatDepthInFront`), the
+written order among equals; consecutive instances of one emblem share one `emblem` element, so an emblem whose
+instances interleave with another's is listed once a run. Each `instance` draws the emblem's texture; each `sub` is a
+coat under the root, its parent's statements under its own (a parent's placements left out, its emblems too where the
+sub writes any), once for each of its instances. Every element fills its holder, a box the field's size; the page
+moves, sizes and turns an instance or a sub in it as the coat shader moves an emblem's quad. An entry written as
+another coat's id draws that coat, read-only. A color slot is a named color, a color block, or the coat's slot an
+emblem names (`color1 = color2`); a slot an emblem does not write is its coat's. A value a list picks is listed.
+
+The pixels are the page's one computation (`recolor.ts`): a pattern blends from a transparent fallback toward its
+slots by red, green and blue; a colored emblem starts at slot 1, blends to slots 2 and 3 by green and red and takes a
+full overlay of its blue, the coat shaders' `GetOverlay`, which chooses its formula by the blue (CSS's hard-light, not
+the sprite's overlay); a mask keeps the pattern's regions, each region's channel less the later ones, in the field's
+coordinates (the emblem element's mask); CK3's cloth (`CoatShading`) is overlaid on the coat at a fifth and thins each
+emblem by its green. A coat is edited through its file's model, never through Go: the panel writes a property's value
+over its `ValueLocation`, adds an instance or an emblem after the last of its kind, removes one, writes `depth` to
+reorder; a drag writes an instance's position; Paste replaces the coat with the game designer's copy. Only the coat's
+own entry in a mod's file is written (`widgets.ts`' `isEditable`: never a parent's statements or an alias's target),
+and each edit waits until the file is drawn again before the next is taken (`stores/draw.ts`' `edit`), since an edit
+moves every range after it.
 
 ## Accepted as different from the game
 

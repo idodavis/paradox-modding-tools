@@ -1,0 +1,9 @@
+def coat_of_arms/coat_of_arms "v_coat_base" mode="" 0-11 @0:0 local=false named=false
+def coat_of_arms/coat_of_arms "v_coat_sub" mode="" 418-428 @18:0 local=false named=false
+def coat_of_arms/coat_of_arms "v_coat_alias" mode="" 602-614 @28:0 local=false named=false
+ref named_colors "v_red" called="" 53-60 @2:10 from=0 trigger=false
+ref named_colors "v_white" called="" 71-80 @3:10 from=0 trigger=false
+ref named_colors "v_blue" called="" 91-97 @4:10 from=0 trigger=false
+ref named_colors "v_blue" called="" 470-478 @20:10 from=1 trigger=false
+ref coat_of_arms/coat_of_arms "v_coat_base" called="" 499-512 @22:11 from=1 trigger=false
+ref coat_of_arms/coat_of_arms "v_coat_base" called="" 617-628 @28:15 from=2 trigger=false

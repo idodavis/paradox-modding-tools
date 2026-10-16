@@ -17,7 +17,7 @@ import type { Diagnostic } from "@services/internal/lsp";
 import type { PanelResults } from "@services/models";
 import { pathKey } from "../composables/useIdeRoots";
 import { saveFile } from "../editor/models";
-import { IMAGES, tabOf, viewItems, viewsOf, type View } from "../editor/tabs";
+import { IMAGES, tabOf, viewItems, viewSettings, viewsOf, type View } from "../editor/tabs";
 import { useSettingsStore } from "./settings";
 import { useWindowsStore, holdsFiles, isMain, windowName } from "./windows";
 import { useWorkspaceStore } from "./workspace";
@@ -132,11 +132,11 @@ export const useEditorStore = defineStore("editor", () => {
     return { errors, warnings: all.length - errors };
   });
 
-  /** A file's view: the one set for it, else what the IDE settings say its kind opens in (`ide.view.<ext>`), else
+  /** A file's view: the one set for it, else what the IDE settings say its kind opens in (viewSettings), else
    * what its kind opens in, else code, or visual for an image. */
   function viewOf(path: string): View {
     const row = viewsOf(path);
-    const chosen = row && useSettingsStore().values[`ide.view.${row.ext}`];
+    const chosen = row && useSettingsStore().values[viewSettings(row).view];
     const fits = chosen === "code" || chosen === "visual" || (chosen === "split" && row?.split);
     return views.value.get(path) ?? (fits ? chosen : row?.first) ?? (IMAGES.test(path) ? "visual" : "code");
   }
@@ -169,10 +169,11 @@ export const useEditorStore = defineStore("editor", () => {
   }
 
   /** Whether a file's panel is open: as it was toggled, else, where its kind opens its panel with the picture
-   * (`ide.panel.<ext>`, on unless turned off), while the file is drawn (Visual or Split). */
+   * (viewSettings, on unless turned off), while the file is drawn (Visual or Split). */
   function panelOpen(file: string): boolean {
     const path = backendPath(file);
-    const isWithPicture = useSettingsStore().on(`ide.panel.${viewsOf(path)?.ext}`, true);
+    const row = viewsOf(path);
+    const isWithPicture = !row || useSettingsStore().on(viewSettings(row).panel, true);
     return panels.value.get(path) ?? (isWithPicture && viewOf(path) !== "code");
   }
 

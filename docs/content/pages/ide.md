@@ -53,11 +53,12 @@ Above the editor, the path to the file and, at the caret, the blocks it is in.
 
 A file with views switches them at the end of the tab strip, and **Ctrl Shift V** cycles through them: a Markdown file's
 **Raw** and **Rich** (Raw is its text, Rich the same editor as Publish's description), and a GUI file's (**.gui**)
-**Code**, **Split** and **Visual**. The strip ends with the switch of the pane beside the editor: a GUI file's
-**Widgets** panel and, in the group at the top right, the **Wiki** pane, the one shown tinted; click it again to close
-it. The pane opens beside the editor, under the group's tabs and path; the Widgets panel is open while the file is
-drawn (Visual or Split) until you close it. A GUI file opens in Split; the IDE settings' Visual view tab picks what it
-opens in and whether its Widgets panel opens with the picture, and the Editor tab what Markdown and SVG files open in.
+or a coat of arms file's (`common/coat_of_arms/coat_of_arms`, EU5's under `main_menu`) **Code**, **Split** and
+**Visual**. The strip ends with the switch of the pane beside the editor: a GUI file's **Widgets** panel, a coat of
+arms file's **Layers** panel and, in the group at the top right, the **Wiki** pane, the one shown tinted; click it
+again to close it. The pane opens beside the editor, under the group's tabs and path; the panel is open while the file
+is drawn (Visual or Split) until you close it. Both kinds open in Split; the IDE settings' Visual view tab picks what
+each opens in and whether its panel opens with the picture, and the Editor tab what Markdown and SVG files open in.
 
 The sidebar folds to a strip of its tabs when you click the open tab's icon again or drag it shut, and a strip icon
 opens it again. A single click on a file in the explorer opens it in a preview tab, in italics, which the next single
@@ -150,6 +151,33 @@ The editor is [Monaco](https://microsoft.github.io/monaco-editor/), the editor o
 **Ctrl H**), folding, the minimap, indent guides, colored bracket pairs, multiple cursors, and the line at the top
 that names the block you are in. The IDE settings turn the minimap, folding, guides, bracket colors and shown
 whitespace on or off, and pick the editor's font and line height.
+
+### Coats of arms
+
+A coat of arms file's Visual view draws each coat as the game's shaders color it: its pattern in its colors, each
+emblem's instances moved, sized, turned and flipped where they write it, masked to the pattern's regions where they
+write a mask, the later drawn over the earlier and a larger `depth` behind a smaller, each `sub` drawn from its parent
+coat with its own colors over the parent's, and in Crusader Kings III the cloth the game shades every coat with. The
+picker lists the file's coats; a coat written as another's name draws that coat. The toolbar's **Frame** cuts the coat
+to a shape the game's windows use (Crusader Kings III's title shield and dynasty frame, as your mods leave them); a flag
+of Victoria 3 or Europa Universalis V is its field. A value the game picks from a list is not drawn and is said under
+the floor.
+
+The **Layers** panel lists the coat, its pattern, each emblem with its instances and each sub, an eye on each to hide it
+until the app closes; pointing at a row outlines its layer, a click selects it, as clicking it in the picture does.
+Under it the selected layer's properties, edited where they are written: a texture from tiles of its folder drawn in
+the layer's colors, a color from the game's named colors with their swatches, a position, scale or offset as two
+numbers, a rotation or depth as one, a mask as its three regions. The buttons beside the layer add an instance to an
+emblem or an emblem to the coat, after the last of its kind and written as the file writes its others, remove it, or
+draw an instance in front of the next or behind the one before. Drag the selected instance in the picture to move it.
+Every edit is a change of the file's text, as typing is: **Ctrl Z** undoes it, **Ctrl S** saves it, and source control
+sees it. A game's own file is drawn but never changed; **Edit a copy** writes its coat into one of your mods under the
+same name, where it replaces the game's.
+
+**Copy** puts the coat's script on the clipboard for the game's coat of arms designer, and **Paste** replaces the coat
+with the script the designer copies. From anywhere, the command palette's **New coat of arms** and **Paste a coat from
+the game**, or **New coat of arms** on a coat of arms folder in the explorer, ask for a mod and a name and write the
+coat into that mod's last coat of arms file, or a new one in the folder its game keeps them in, then show it.
 
 ### Language features
 
@@ -266,8 +294,8 @@ a pull or push that needs one fails with git's message, so set up your credentia
 ## Wiki
 
 The Wiki pane opens beside the editor of the main window's top-right group, under its tabs and path, from the
-**Wiki** button that ends that group's tab strip; a GUI file's Widgets panel takes its place there while the panel is
-open. It shows the community wiki's pages for the file you are editing, as tabs ("Suggested for event
+**Wiki** button that ends that group's tab strip; a drawn file's panel (Widgets, Layers) takes its place there while
+the panel is open. It shows the community wiki's pages for the file you are editing, as tabs ("Suggested for event
 files"), and the page's contents beside it (drag their edge to resize them; the button beside them hides them). Its
 search keeps the pages it finds and marks its words in the page, as Patch Notes' find does: **Enter** and **Shift
 Enter** for the next and previous match, and **Ctrl F**, outside the editor, puts the cursor in it. It follows the

@@ -50,10 +50,12 @@ type WidgetType struct {
 	DropsHidden []string
 }
 
-// The words the rows share: the plain widget type, and the game a row holds in alone.
+// The words the rows share: the plain widget type, and the games a row holds in alone.
 const (
 	plainWidget = "widget"
+	ck3         = "ck3"
 	vic3        = "vic3"
+	eu5         = "eu5"
 )
 
 // WidgetSlots are the keys whose block is a widget no type names, lower-cased (the wiki's background, tooltipwidget,

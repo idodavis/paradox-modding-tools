@@ -131,11 +131,17 @@ func (block *block) color(key string) (string, bool) {
 	if !has {
 		return "", false
 	}
-	tag, parts, isColor := jomini.ColorParts(last.assignment.Value)
+	css := cssOf(last.assignment.Value)
+	return css, css != ""
+}
+
+// cssOf is a value's color as CSS, a color block read by its tag's row; "" for a value that is no color.
+func cssOf(value jomini.Value) string {
+	tag, parts, isColor := jomini.ColorParts(value)
 	if color, isKnown := game.ColorOf(tag, parts); isColor && isKnown {
-		return color.CSS(), true
+		return color.CSS()
 	}
-	return "", false
+	return ""
 }
 
 // words are a statement's value as words with its file's constants put in: a scalar, a block's values, or the x and
@@ -177,8 +183,19 @@ func (statement statement) text() string {
 
 // span is where a statement is written, as the editor counts.
 func (statement statement) span() lsp.Range {
-	lines := statement.parsed.Lines()
-	return lsp.Range{
-		Start: lines.PositionAt(statement.assignment.Range.Start), End: lines.PositionAt(statement.assignment.Range.End),
+	return statement.rangeOf(statement.assignment.Range)
+}
+
+// valueSpan is where a statement's value is written, as the editor counts; its whole span where it has none.
+func (statement statement) valueSpan() lsp.Range {
+	if statement.assignment.Value == nil {
+		return statement.span()
 	}
+	return statement.rangeOf(statement.assignment.Value.NodeRange())
+}
+
+// rangeOf is a byte range of the statement's file as the editor counts.
+func (statement statement) rangeOf(span jomini.Range) lsp.Range {
+	lines := statement.parsed.Lines()
+	return lsp.Range{Start: lines.PositionAt(span.Start), End: lines.PositionAt(span.End)}
 }

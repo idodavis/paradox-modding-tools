@@ -1,0 +1,1507 @@
+0:0 v_coat_base
+  {
+   "word": "v_coat_base",
+   "key": "v_coat_base",
+   "head": "coat of arm",
+   "sites": [
+    {
+     "path": "<fixtures>/ck3/game/common/coat_of_arms/coat_of_arms/v_coats.txt",
+     "origin": "vanilla",
+     "rel": "common/coat_of_arms/coat_of_arms/v_coats.txt",
+     "range": {
+      "start": {
+       "line": 0,
+       "character": 0
+      },
+      "end": {
+       "line": 0,
+       "character": 0
+      }
+     }
+    }
+   ],
+   "winner": 0,
+   "range": {
+    "start": {
+     "line": 0,
+     "character": 0
+    },
+    "end": {
+     "line": 0,
+     "character": 11
+    }
+   }
+  }
+1:1 pattern
+  {
+   "word": "pattern",
+   "key": "pattern",
+   "head": "in coat of arms",
+   "writes": [
+    "text"
+   ],
+   "winner": -1,
+   "within": [
+    "v_coat_base"
+   ],
+   "range": {
+    "start": {
+     "line": 1,
+     "character": 1
+    },
+    "end": {
+     "line": 1,
+     "character": 8
+    }
+   }
+  }
+1:12 v_pattern.dds
+  {
+   "word": "",
+   "winner": -1,
+   "within": [
+    "v_coat_base"
+   ],
+   "range": {
+    "start": {
+     "line": 1,
+     "character": 11
+    },
+    "end": {
+     "line": 1,
+     "character": 26
+    }
+   }
+  }
+2:1 color1
+  {
+   "word": "color1",
+   "key": "color1",
+   "head": "in coat of arms",
+   "writes": [
+    "named color"
+   ],
+   "winner": -1,
+   "within": [
+    "v_coat_base"
+   ],
+   "range": {
+    "start": {
+     "line": 2,
+     "character": 1
+    },
+    "end": {
+     "line": 2,
+     "character": 7
+    }
+   }
+  }
+2:11 v_red
+  {
+   "word": "v_red",
+   "key": "color1",
+   "head": "named color",
+   "sites": [
+    {
+     "path": "<fixtures>/ck3/game/common/named_colors/v_colors.txt",
+     "origin": "vanilla",
+     "rel": "common/named_colors/v_colors.txt",
+     "range": {
+      "start": {
+       "line": 1,
+       "character": 1
+      },
+      "end": {
+       "line": 1,
+       "character": 1
+      }
+     }
+    }
+   ],
+   "winner": 0,
+   "within": [
+    "v_coat_base"
+   ],
+   "range": {
+    "start": {
+     "line": 2,
+     "character": 10
+    },
+    "end": {
+     "line": 2,
+     "character": 17
+    }
+   }
+  }
+3:1 color2
+  {
+   "word": "color2",
+   "key": "color2",
+   "head": "in coat of arms",
+   "writes": [
+    "named color"
+   ],
+   "winner": -1,
+   "within": [
+    "v_coat_base"
+   ],
+   "range": {
+    "start": {
+     "line": 3,
+     "character": 1
+    },
+    "end": {
+     "line": 3,
+     "character": 7
+    }
+   }
+  }
+3:11 v_white
+  {
+   "word": "v_white",
+   "key": "color2",
+   "head": "named color",
+   "sites": [
+    {
+     "path": "<fixtures>/ck3/game/common/named_colors/v_colors.txt",
+     "origin": "vanilla",
+     "rel": "common/named_colors/v_colors.txt",
+     "range": {
+      "start": {
+       "line": 2,
+       "character": 1
+      },
+      "end": {
+       "line": 2,
+       "character": 1
+      }
+     }
+    }
+   ],
+   "winner": 0,
+   "within": [
+    "v_coat_base"
+   ],
+   "range": {
+    "start": {
+     "line": 3,
+     "character": 10
+    },
+    "end": {
+     "line": 3,
+     "character": 19
+    }
+   }
+  }
+4:1 color3
+  {
+   "word": "color3",
+   "key": "color3",
+   "head": "in coat of arms",
+   "writes": [
+    "named color"
+   ],
+   "winner": -1,
+   "within": [
+    "v_coat_base"
+   ],
+   "range": {
+    "start": {
+     "line": 4,
+     "character": 1
+    },
+    "end": {
+     "line": 4,
+     "character": 7
+    }
+   }
+  }
+4:10 v_blue
+  {
+   "word": "v_blue",
+   "key": "color3",
+   "head": "named color",
+   "sites": [
+    {
+     "path": "<fixtures>/ck3/game/common/named_colors/v_colors.txt",
+     "origin": "vanilla",
+     "rel": "common/named_colors/v_colors.txt",
+     "range": {
+      "start": {
+       "line": 3,
+       "character": 1
+      },
+      "end": {
+       "line": 3,
+       "character": 1
+      }
+     }
+    }
+   ],
+   "winner": 0,
+   "within": [
+    "v_coat_base"
+   ],
+   "range": {
+    "start": {
+     "line": 4,
+     "character": 10
+    },
+    "end": {
+     "line": 4,
+     "character": 16
+    }
+   }
+  }
+5:1 colored_emblem
+  {
+   "word": "colored_emblem",
+   "key": "colored_emblem",
+   "head": "in coat of arms",
+   "writes": [
+    "a block"
+   ],
+   "winner": -1,
+   "within": [
+    "v_coat_base"
+   ],
+   "range": {
+    "start": {
+     "line": 5,
+     "character": 1
+    },
+    "end": {
+     "line": 5,
+     "character": 15
+    }
+   }
+  }
+6:2 texture
+  {
+   "word": "texture",
+   "key": "texture",
+   "head": "in `colored_emblem`",
+   "writes": [
+    "text"
+   ],
+   "winner": -1,
+   "within": [
+    "v_coat_base",
+    "colored_emblem"
+   ],
+   "range": {
+    "start": {
+     "line": 6,
+     "character": 2
+    },
+    "end": {
+     "line": 6,
+     "character": 9
+    }
+   }
+  }
+6:13 v_emblem.dds
+  {
+   "word": "",
+   "winner": -1,
+   "within": [
+    "v_coat_base",
+    "colored_emblem"
+   ],
+   "range": {
+    "start": {
+     "line": 6,
+     "character": 12
+    },
+    "end": {
+     "line": 6,
+     "character": 26
+    }
+   }
+  }
+7:2 color1
+  {
+   "word": "color1",
+   "key": "color1",
+   "head": "in `colored_emblem`",
+   "writes": [
+    "one of color2"
+   ],
+   "winner": -1,
+   "within": [
+    "v_coat_base",
+    "colored_emblem"
+   ],
+   "range": {
+    "start": {
+     "line": 7,
+     "character": 2
+    },
+    "end": {
+     "line": 7,
+     "character": 8
+    }
+   }
+  }
+7:11 color2
+  {
+   "word": "",
+   "winner": -1,
+   "within": [
+    "v_coat_base",
+    "colored_emblem"
+   ],
+   "range": {
+    "start": {
+     "line": 7,
+     "character": 11
+    },
+    "end": {
+     "line": 7,
+     "character": 17
+    }
+   }
+  }
+8:2 mask
+  {
+   "word": "mask",
+   "key": "mask",
+   "head": "in `colored_emblem`",
+   "writes": [
+    "a number",
+    "a block"
+   ],
+   "winner": -1,
+   "within": [
+    "v_coat_base",
+    "colored_emblem"
+   ],
+   "range": {
+    "start": {
+     "line": 8,
+     "character": 2
+    },
+    "end": {
+     "line": 8,
+     "character": 6
+    }
+   }
+  }
+8:11 1
+  {
+   "word": "",
+   "winner": -1,
+   "within": [
+    "v_coat_base",
+    "colored_emblem",
+    "mask"
+   ],
+   "range": {
+    "start": {
+     "line": 8,
+     "character": 11
+    },
+    "end": {
+     "line": 8,
+     "character": 12
+    }
+   }
+  }
+9:2 instance
+  {
+   "word": "instance",
+   "key": "instance",
+   "head": "in `colored_emblem`",
+   "writes": [
+    "a block"
+   ],
+   "winner": -1,
+   "within": [
+    "v_coat_base",
+    "colored_emblem"
+   ],
+   "range": {
+    "start": {
+     "line": 9,
+     "character": 2
+    },
+    "end": {
+     "line": 9,
+     "character": 10
+    }
+   }
+  }
+9:15 position
+  {
+   "word": "position",
+   "key": "position",
+   "head": "in `instance`",
+   "writes": [
+    "a number",
+    "a block"
+   ],
+   "winner": -1,
+   "within": [
+    "v_coat_base",
+    "colored_emblem",
+    "instance"
+   ],
+   "range": {
+    "start": {
+     "line": 9,
+     "character": 15
+    },
+    "end": {
+     "line": 9,
+     "character": 23
+    }
+   }
+  }
+9:28 0.25
+  {
+   "word": "",
+   "winner": -1,
+   "within": [
+    "v_coat_base",
+    "colored_emblem",
+    "instance",
+    "position"
+   ],
+   "range": {
+    "start": {
+     "line": 9,
+     "character": 28
+    },
+    "end": {
+     "line": 9,
+     "character": 32
+    }
+   }
+  }
+9:33 0.25
+  {
+   "word": "",
+   "winner": -1,
+   "within": [
+    "v_coat_base",
+    "colored_emblem",
+    "instance",
+    "position"
+   ],
+   "range": {
+    "start": {
+     "line": 9,
+     "character": 33
+    },
+    "end": {
+     "line": 9,
+     "character": 37
+    }
+   }
+  }
+9:40 scale
+  {
+   "word": "scale",
+   "key": "scale",
+   "head": "in `instance`",
+   "writes": [
+    "a number",
+    "a block"
+   ],
+   "winner": -1,
+   "within": [
+    "v_coat_base",
+    "colored_emblem",
+    "instance"
+   ],
+   "range": {
+    "start": {
+     "line": 9,
+     "character": 40
+    },
+    "end": {
+     "line": 9,
+     "character": 45
+    }
+   }
+  }
+9:50 0.5
+  {
+   "word": "",
+   "winner": -1,
+   "within": [
+    "v_coat_base",
+    "colored_emblem",
+    "instance",
+    "scale"
+   ],
+   "range": {
+    "start": {
+     "line": 9,
+     "character": 50
+    },
+    "end": {
+     "line": 9,
+     "character": 53
+    }
+   }
+  }
+9:54 0.5
+  {
+   "word": "",
+   "winner": -1,
+   "within": [
+    "v_coat_base",
+    "colored_emblem",
+    "instance",
+    "scale"
+   ],
+   "range": {
+    "start": {
+     "line": 9,
+     "character": 54
+    },
+    "end": {
+     "line": 9,
+     "character": 57
+    }
+   }
+  }
+9:60 depth
+  {
+   "word": "depth",
+   "key": "depth",
+   "head": "in `instance`",
+   "writes": [
+    "a number"
+   ],
+   "winner": -1,
+   "within": [
+    "v_coat_base",
+    "colored_emblem",
+    "instance"
+   ],
+   "range": {
+    "start": {
+     "line": 9,
+     "character": 60
+    },
+    "end": {
+     "line": 9,
+     "character": 65
+    }
+   }
+  }
+9:68 1.01
+  {
+   "word": "",
+   "winner": -1,
+   "within": [
+    "v_coat_base",
+    "colored_emblem",
+    "instance"
+   ],
+   "range": {
+    "start": {
+     "line": 9,
+     "character": 68
+    },
+    "end": {
+     "line": 9,
+     "character": 72
+    }
+   }
+  }
+10:2 instance
+  {
+   "word": "instance",
+   "key": "instance",
+   "head": "in `colored_emblem`",
+   "writes": [
+    "a block"
+   ],
+   "winner": -1,
+   "within": [
+    "v_coat_base",
+    "colored_emblem"
+   ],
+   "range": {
+    "start": {
+     "line": 10,
+     "character": 2
+    },
+    "end": {
+     "line": 10,
+     "character": 10
+    }
+   }
+  }
+10:15 position
+  {
+   "word": "position",
+   "key": "position",
+   "head": "in `instance`",
+   "writes": [
+    "a number",
+    "a block"
+   ],
+   "winner": -1,
+   "within": [
+    "v_coat_base",
+    "colored_emblem",
+    "instance"
+   ],
+   "range": {
+    "start": {
+     "line": 10,
+     "character": 15
+    },
+    "end": {
+     "line": 10,
+     "character": 23
+    }
+   }
+  }
+10:28 0.75
+  {
+   "word": "",
+   "winner": -1,
+   "within": [
+    "v_coat_base",
+    "colored_emblem",
+    "instance",
+    "position"
+   ],
+   "range": {
+    "start": {
+     "line": 10,
+     "character": 28
+    },
+    "end": {
+     "line": 10,
+     "character": 32
+    }
+   }
+  }
+10:33 0.75
+  {
+   "word": "",
+   "winner": -1,
+   "within": [
+    "v_coat_base",
+    "colored_emblem",
+    "instance",
+    "position"
+   ],
+   "range": {
+    "start": {
+     "line": 10,
+     "character": 33
+    },
+    "end": {
+     "line": 10,
+     "character": 37
+    }
+   }
+  }
+10:40 scale
+  {
+   "word": "scale",
+   "key": "scale",
+   "head": "in `instance`",
+   "writes": [
+    "a number",
+    "a block"
+   ],
+   "winner": -1,
+   "within": [
+    "v_coat_base",
+    "colored_emblem",
+    "instance"
+   ],
+   "range": {
+    "start": {
+     "line": 10,
+     "character": 40
+    },
+    "end": {
+     "line": 10,
+     "character": 45
+    }
+   }
+  }
+10:50 -0.5
+  {
+   "word": "",
+   "winner": -1,
+   "within": [
+    "v_coat_base",
+    "colored_emblem",
+    "instance",
+    "scale"
+   ],
+   "range": {
+    "start": {
+     "line": 10,
+     "character": 50
+    },
+    "end": {
+     "line": 10,
+     "character": 54
+    }
+   }
+  }
+10:55 0.5
+  {
+   "word": "",
+   "winner": -1,
+   "within": [
+    "v_coat_base",
+    "colored_emblem",
+    "instance",
+    "scale"
+   ],
+   "range": {
+    "start": {
+     "line": 10,
+     "character": 55
+    },
+    "end": {
+     "line": 10,
+     "character": 58
+    }
+   }
+  }
+10:61 rotation
+  {
+   "word": "rotation",
+   "key": "rotation",
+   "head": "in `instance`",
+   "writes": [
+    "a number"
+   ],
+   "winner": -1,
+   "within": [
+    "v_coat_base",
+    "colored_emblem",
+    "instance"
+   ],
+   "range": {
+    "start": {
+     "line": 10,
+     "character": 61
+    },
+    "end": {
+     "line": 10,
+     "character": 69
+    }
+   }
+  }
+10:72 45
+  {
+   "word": "",
+   "winner": -1,
+   "within": [
+    "v_coat_base",
+    "colored_emblem",
+    "instance"
+   ],
+   "range": {
+    "start": {
+     "line": 10,
+     "character": 72
+    },
+    "end": {
+     "line": 10,
+     "character": 74
+    }
+   }
+  }
+12:1 textured_emblem
+  {
+   "word": "textured_emblem",
+   "key": "textured_emblem",
+   "head": "in coat of arms",
+   "writes": [
+    "a block"
+   ],
+   "winner": -1,
+   "within": [
+    "v_coat_base"
+   ],
+   "range": {
+    "start": {
+     "line": 12,
+     "character": 1
+    },
+    "end": {
+     "line": 12,
+     "character": 16
+    }
+   }
+  }
+13:2 texture
+  {
+   "word": "texture",
+   "key": "texture",
+   "head": "in `textured_emblem`",
+   "writes": [
+    "text"
+   ],
+   "winner": -1,
+   "within": [
+    "v_coat_base",
+    "textured_emblem"
+   ],
+   "range": {
+    "start": {
+     "line": 13,
+     "character": 2
+    },
+    "end": {
+     "line": 13,
+     "character": 9
+    }
+   }
+  }
+13:13 v_textured.dds
+  {
+   "word": "",
+   "winner": -1,
+   "within": [
+    "v_coat_base",
+    "textured_emblem"
+   ],
+   "range": {
+    "start": {
+     "line": 13,
+     "character": 12
+    },
+    "end": {
+     "line": 13,
+     "character": 28
+    }
+   }
+  }
+14:2 instance
+  {
+   "word": "instance",
+   "key": "instance",
+   "head": "in `textured_emblem`",
+   "writes": [
+    "a block"
+   ],
+   "winner": -1,
+   "within": [
+    "v_coat_base",
+    "textured_emblem"
+   ],
+   "range": {
+    "start": {
+     "line": 14,
+     "character": 2
+    },
+    "end": {
+     "line": 14,
+     "character": 10
+    }
+   }
+  }
+14:15 depth
+  {
+   "word": "depth",
+   "key": "depth",
+   "head": "in `instance`",
+   "writes": [
+    "a number"
+   ],
+   "winner": -1,
+   "within": [
+    "v_coat_base",
+    "textured_emblem",
+    "instance"
+   ],
+   "range": {
+    "start": {
+     "line": 14,
+     "character": 15
+    },
+    "end": {
+     "line": 14,
+     "character": 20
+    }
+   }
+  }
+14:23 0.5
+  {
+   "word": "",
+   "winner": -1,
+   "within": [
+    "v_coat_base",
+    "textured_emblem",
+    "instance"
+   ],
+   "range": {
+    "start": {
+     "line": 14,
+     "character": 23
+    },
+    "end": {
+     "line": 14,
+     "character": 26
+    }
+   }
+  }
+18:0 v_coat_sub
+  {
+   "word": "v_coat_sub",
+   "key": "v_coat_sub",
+   "head": "coat of arm",
+   "sites": [
+    {
+     "path": "<fixtures>/ck3/game/common/coat_of_arms/coat_of_arms/v_coats.txt",
+     "origin": "vanilla",
+     "rel": "common/coat_of_arms/coat_of_arms/v_coats.txt",
+     "range": {
+      "start": {
+       "line": 18,
+       "character": 0
+      },
+      "end": {
+       "line": 18,
+       "character": 0
+      }
+     }
+    }
+   ],
+   "winner": 0,
+   "range": {
+    "start": {
+     "line": 18,
+     "character": 0
+    },
+    "end": {
+     "line": 18,
+     "character": 10
+    }
+   }
+  }
+19:1 pattern
+  {
+   "word": "pattern",
+   "key": "pattern",
+   "head": "in coat of arms",
+   "writes": [
+    "text"
+   ],
+   "winner": -1,
+   "within": [
+    "v_coat_sub"
+   ],
+   "range": {
+    "start": {
+     "line": 19,
+     "character": 1
+    },
+    "end": {
+     "line": 19,
+     "character": 8
+    }
+   }
+  }
+19:12 v_pattern.dds
+  {
+   "word": "",
+   "winner": -1,
+   "within": [
+    "v_coat_sub"
+   ],
+   "range": {
+    "start": {
+     "line": 19,
+     "character": 11
+    },
+    "end": {
+     "line": 19,
+     "character": 26
+    }
+   }
+  }
+20:1 color1
+  {
+   "word": "color1",
+   "key": "color1",
+   "head": "in coat of arms",
+   "writes": [
+    "named color"
+   ],
+   "winner": -1,
+   "within": [
+    "v_coat_sub"
+   ],
+   "range": {
+    "start": {
+     "line": 20,
+     "character": 1
+    },
+    "end": {
+     "line": 20,
+     "character": 7
+    }
+   }
+  }
+20:11 v_blue
+  {
+   "word": "v_blue",
+   "key": "color1",
+   "head": "named color",
+   "sites": [
+    {
+     "path": "<fixtures>/ck3/game/common/named_colors/v_colors.txt",
+     "origin": "vanilla",
+     "rel": "common/named_colors/v_colors.txt",
+     "range": {
+      "start": {
+       "line": 3,
+       "character": 1
+      },
+      "end": {
+       "line": 3,
+       "character": 1
+      }
+     }
+    }
+   ],
+   "winner": 0,
+   "within": [
+    "v_coat_sub"
+   ],
+   "range": {
+    "start": {
+     "line": 20,
+     "character": 10
+    },
+    "end": {
+     "line": 20,
+     "character": 18
+    }
+   }
+  }
+21:1 sub
+  {
+   "word": "sub",
+   "key": "sub",
+   "head": "in coat of arms",
+   "writes": [
+    "a block"
+   ],
+   "winner": -1,
+   "within": [
+    "v_coat_sub"
+   ],
+   "range": {
+    "start": {
+     "line": 21,
+     "character": 1
+    },
+    "end": {
+     "line": 21,
+     "character": 4
+    }
+   }
+  }
+22:2 parent
+  {
+   "word": "parent",
+   "key": "parent",
+   "head": "in `sub`",
+   "writes": [
+    "coat of arm"
+   ],
+   "winner": -1,
+   "within": [
+    "v_coat_sub",
+    "sub"
+   ],
+   "range": {
+    "start": {
+     "line": 22,
+     "character": 2
+    },
+    "end": {
+     "line": 22,
+     "character": 8
+    }
+   }
+  }
+22:12 v_coat_base
+  {
+   "word": "v_coat_base",
+   "key": "parent",
+   "head": "coat of arm",
+   "sites": [
+    {
+     "path": "<fixtures>/ck3/game/common/coat_of_arms/coat_of_arms/v_coats.txt",
+     "origin": "vanilla",
+     "rel": "common/coat_of_arms/coat_of_arms/v_coats.txt",
+     "range": {
+      "start": {
+       "line": 0,
+       "character": 0
+      },
+      "end": {
+       "line": 0,
+       "character": 0
+      }
+     }
+    }
+   ],
+   "winner": 0,
+   "within": [
+    "v_coat_sub",
+    "sub"
+   ],
+   "range": {
+    "start": {
+     "line": 22,
+     "character": 11
+    },
+    "end": {
+     "line": 22,
+     "character": 24
+    }
+   }
+  }
+23:2 color2
+  {
+   "word": "color2",
+   "key": "color2",
+   "head": "in `sub`",
+   "writes": [
+    "a number",
+    "a block"
+   ],
+   "winner": -1,
+   "color": "#00ff00",
+   "within": [
+    "v_coat_sub",
+    "sub"
+   ],
+   "range": {
+    "start": {
+     "line": 23,
+     "character": 2
+    },
+    "end": {
+     "line": 23,
+     "character": 8
+    }
+   }
+  }
+23:11 rgb
+  {
+   "word": "",
+   "winner": -1,
+   "within": [
+    "v_coat_sub",
+    "sub"
+   ],
+   "range": {
+    "start": {
+     "line": 23,
+     "character": 11
+    },
+    "end": {
+     "line": 23,
+     "character": 11
+    }
+   }
+  }
+23:17 0
+  {
+   "word": "",
+   "winner": -1,
+   "within": [
+    "v_coat_sub",
+    "sub",
+    "color2"
+   ],
+   "range": {
+    "start": {
+     "line": 23,
+     "character": 17
+    },
+    "end": {
+     "line": 23,
+     "character": 18
+    }
+   }
+  }
+23:19 255
+  {
+   "word": "",
+   "winner": -1,
+   "within": [
+    "v_coat_sub",
+    "sub",
+    "color2"
+   ],
+   "range": {
+    "start": {
+     "line": 23,
+     "character": 19
+    },
+    "end": {
+     "line": 23,
+     "character": 22
+    }
+   }
+  }
+23:23 0
+  {
+   "word": "",
+   "winner": -1,
+   "within": [
+    "v_coat_sub",
+    "sub",
+    "color2"
+   ],
+   "range": {
+    "start": {
+     "line": 23,
+     "character": 23
+    },
+    "end": {
+     "line": 23,
+     "character": 24
+    }
+   }
+  }
+24:2 instance
+  {
+   "word": "instance",
+   "key": "instance",
+   "head": "in `sub`",
+   "writes": [
+    "a block"
+   ],
+   "winner": -1,
+   "within": [
+    "v_coat_sub",
+    "sub"
+   ],
+   "range": {
+    "start": {
+     "line": 24,
+     "character": 2
+    },
+    "end": {
+     "line": 24,
+     "character": 10
+    }
+   }
+  }
+24:15 offset
+  {
+   "word": "offset",
+   "key": "offset",
+   "head": "in `instance`",
+   "writes": [
+    "a number",
+    "a block"
+   ],
+   "winner": -1,
+   "within": [
+    "v_coat_sub",
+    "sub",
+    "instance"
+   ],
+   "range": {
+    "start": {
+     "line": 24,
+     "character": 15
+    },
+    "end": {
+     "line": 24,
+     "character": 21
+    }
+   }
+  }
+24:26 0.5
+  {
+   "word": "",
+   "winner": -1,
+   "within": [
+    "v_coat_sub",
+    "sub",
+    "instance",
+    "offset"
+   ],
+   "range": {
+    "start": {
+     "line": 24,
+     "character": 26
+    },
+    "end": {
+     "line": 24,
+     "character": 29
+    }
+   }
+  }
+24:30 0
+  {
+   "word": "",
+   "winner": -1,
+   "within": [
+    "v_coat_sub",
+    "sub",
+    "instance",
+    "offset"
+   ],
+   "range": {
+    "start": {
+     "line": 24,
+     "character": 30
+    },
+    "end": {
+     "line": 24,
+     "character": 31
+    }
+   }
+  }
+24:34 scale
+  {
+   "word": "scale",
+   "key": "scale",
+   "head": "in `instance`",
+   "writes": [
+    "a number",
+    "a block"
+   ],
+   "winner": -1,
+   "within": [
+    "v_coat_sub",
+    "sub",
+    "instance"
+   ],
+   "range": {
+    "start": {
+     "line": 24,
+     "character": 34
+    },
+    "end": {
+     "line": 24,
+     "character": 39
+    }
+   }
+  }
+24:44 0.5
+  {
+   "word": "",
+   "winner": -1,
+   "within": [
+    "v_coat_sub",
+    "sub",
+    "instance",
+    "scale"
+   ],
+   "range": {
+    "start": {
+     "line": 24,
+     "character": 44
+    },
+    "end": {
+     "line": 24,
+     "character": 47
+    }
+   }
+  }
+24:48 0.5
+  {
+   "word": "",
+   "winner": -1,
+   "within": [
+    "v_coat_sub",
+    "sub",
+    "instance",
+    "scale"
+   ],
+   "range": {
+    "start": {
+     "line": 24,
+     "character": 48
+    },
+    "end": {
+     "line": 24,
+     "character": 51
+    }
+   }
+  }
+28:0 v_coat_alias
+  {
+   "word": "v_coat_alias",
+   "key": "v_coat_alias",
+   "head": "coat of arm",
+   "sites": [
+    {
+     "path": "<fixtures>/ck3/game/common/coat_of_arms/coat_of_arms/v_coats.txt",
+     "origin": "vanilla",
+     "rel": "common/coat_of_arms/coat_of_arms/v_coats.txt",
+     "range": {
+      "start": {
+       "line": 28,
+       "character": 0
+      },
+      "end": {
+       "line": 28,
+       "character": 0
+      }
+     }
+    }
+   ],
+   "winner": 0,
+   "range": {
+    "start": {
+     "line": 28,
+     "character": 0
+    },
+    "end": {
+     "line": 28,
+     "character": 12
+    }
+   }
+  }
+28:15 v_coat_base
+  {
+   "word": "v_coat_base",
+   "key": "v_coat_alias",
+   "head": "coat of arm",
+   "sites": [
+    {
+     "path": "<fixtures>/ck3/game/common/coat_of_arms/coat_of_arms/v_coats.txt",
+     "origin": "vanilla",
+     "rel": "common/coat_of_arms/coat_of_arms/v_coats.txt",
+     "range": {
+      "start": {
+       "line": 0,
+       "character": 0
+      },
+      "end": {
+       "line": 0,
+       "character": 0
+      }
+     }
+    }
+   ],
+   "winner": 0,
+   "range": {
+    "start": {
+     "line": 28,
+     "character": 15
+    },
+    "end": {
+     "line": 28,
+     "character": 26
+    }
+   }
+  }

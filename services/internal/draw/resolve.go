@@ -35,7 +35,7 @@ type resolver struct {
 	folders func() map[string]string // the icon folders by define
 	formats func() map[string]string // each format's id by its lower-cased id
 
-	textureIndexes map[Texture]int
+	textureIndexes map[string]int // by the texture in Go's syntax
 	groupIndexes   map[string]int
 	definitions    map[string]statement // by "caller|database|id"; no assignment for none
 	fonts          map[string]*Font     // by "id/style"; nil for none
@@ -63,10 +63,12 @@ type child struct {
 	isItem bool
 }
 
-// entryRow is how a database's entries are drawn: alone, and as what script with the id put in ("" as written).
+// entryRow is how a database's entries are drawn: alone, as what script with the id put in ("" as written), and by
+// what resolve of their own (nil a widget's).
 type entryRow struct {
 	isAlone bool
 	script  string
+	resolve func(*resolver, child)
 }
 
 // The words the resolver reads, and the deepest types, templates and blocks nest before a cycle is assumed.
@@ -75,6 +77,7 @@ const (
 	no             = "no"
 	usingKey       = "using"
 	stateKey       = "state"
+	sizeKey        = "size"
 	windowDatabase = "gui.widget"
 	maxDepth       = 40
 )
@@ -87,13 +90,14 @@ var (
 
 // entryRows is how the entries of each database are drawn.
 var entryRows = map[string]entryRow{
-	windowDatabase:       {},
-	"gui.type":           {isAlone: true, script: "%s = { }"},
-	"gui.local_type":     {isAlone: true, script: "%s = { }"},
-	"gui.template":       {isAlone: true, script: "widget = { using = %s }"},
-	"gui.local_template": {isAlone: true, script: "widget = { using = %s }"},
-	"gui.format":         {isAlone: true, script: `textbox = { text = "#%s Sample text#!" }`},
-	textIconDatabase:     {isAlone: true},
+	windowDatabase:           {},
+	"gui.type":               {isAlone: true, script: "%s = { }"},
+	"gui.local_type":         {isAlone: true, script: "%s = { }"},
+	"gui.template":           {isAlone: true, script: "widget = { using = %s }"},
+	"gui.local_template":     {isAlone: true, script: "widget = { using = %s }"},
+	"gui.format":             {isAlone: true, script: `textbox = { text = "#%s Sample text#!" }`},
+	textIconDatabase:         {isAlone: true},
+	game.CoatDatabases.Coats: {isAlone: true, resolve: resolveCoat},
 }
 
 // missingTexts is the status line's sentence for each thing not found; %s is what was asked for.
@@ -102,7 +106,9 @@ var missingTexts = map[string]string{
 	"cycle": "Type cycle: %s", "templatecycle": "Template cycle: %s",
 	"texture": "Texture not found: %s", fontKey: "Font not found: %s", "fontsize": "Font size missing: %s",
 	"format": "Text format not found: %s", "texticon": "Text icon not found: %s", "loc": "Localization key not found: %s",
-	"blend": "Blend mode not drawn: %s",
+	"blend":   "Blend mode not drawn: %s",
+	fieldType: "Field size not found in %s", "list": "Picked from a list, not drawn: %s", "parent": "Parent coat not found: %s",
+	"color": "Named color not found: %s",
 }
 
 // widgetCaller is the word a widget key naming a type resolves by.
@@ -120,7 +126,7 @@ func newResolver(ws *workspace.Session, request Request) (*resolver, error) {
 			Holders: []Element{}, Elements: []Element{}, Textures: []Texture{}, Groups: []Group{}, Fonts: []Font{},
 			Missing: []Absent{},
 		},
-		textureIndexes: map[Texture]int{}, groupIndexes: map[string]int{}, definitions: map[string]statement{},
+		textureIndexes: map[string]int{}, groupIndexes: map[string]int{}, definitions: map[string]statement{},
 		fonts: map[string]*Font{}, pictures: map[string]string{}, pathTextures: map[string]Texture{},
 		urls: map[string]string{},
 	}
@@ -139,6 +145,11 @@ func newResolver(ws *workspace.Session, request Request) (*resolver, error) {
 	entry, err := resolver.entry(request)
 	if err != nil {
 		return nil, err
+	}
+	if resolve := entryRows[resolver.request.Database].resolve; resolve != nil {
+		resolve(resolver, entry)
+		resolver.element = -1
+		return resolver, nil
 	}
 	resolver.resolveWidget(nil, entry)
 	resolver.list.Elements[0].IsHidden = false
@@ -182,7 +193,7 @@ func (resolver *resolver) entry(request Request) (child, error) {
 			resolver.list.IsAlone, resolver.request.Database = row.isAlone, occurrence.Database
 			assignment := definition
 			switch {
-			case !row.isAlone:
+			case !row.isAlone, row.resolve != nil:
 			case row.script != "":
 				script := jomini.Parse(fmt.Sprintf(row.script, request.ID))
 				assignment = jomini.Fields(&jomini.Block{Statements: script.Root.Statements})[0]
@@ -201,7 +212,8 @@ func (resolver *resolver) entry(request Request) (child, error) {
 			return child{statement: statement{assignment: assignment, parsed: parsed, path: request.Path}}, nil
 		}
 	}
-	return child{}, fmt.Errorf("%s holds no window, type, template, text icon or format %q", request.Path, request.ID)
+	return child{}, fmt.Errorf("%s holds no window, type, template, text icon, format or coat of arms %q", request.Path,
+		request.ID)
 }
 
 // resolveWidget resolves a child under a parent (nil for the entry): its element listed before its descendants, its
@@ -232,7 +244,8 @@ func (resolver *resolver) resolveWidget(parent *widget, child child) *widget {
 	if text, has := widget.scalar(game.FileTypes[".gui"].ContextKey); has && isBinding(text) {
 		widget.dataContext = text
 	}
-	resolver.identify(widget)
+	id, _ := widget.scalar("name")
+	resolver.identify(widget, id)
 	resolver.resolveChildren(widget)
 	resolver.describe(widget)
 	return widget
@@ -240,9 +253,9 @@ func (resolver *resolver) resolveWidget(parent *widget, child child) *widget {
 
 // identify fills how a widget's element is named and where it is written, before its children are, which name it in
 // their paths; the root is named for the request.
-func (resolver *resolver) identify(widget *widget) {
+func (resolver *resolver) identify(widget *widget, id string) {
 	element := &resolver.list.Elements[widget.element]
-	element.Name, _ = widget.scalar("name")
+	element.Name = id
 	element.Label = element.Key
 	if element.Parent < 0 {
 		element.Name = resolver.request.ID
@@ -292,8 +305,14 @@ func (resolver *resolver) drawnBy(widget *widget, element *Element) {
 	element.Clips, element.Fills, element.CentersText = row.Clips || isYes(scissor), row.Fills, row.CentersText
 	element.DropsHidden = !isNo(ignore) &&
 		(slices.Contains(row.DropsHidden, resolver.ws.Game.ID) || isYes(ignore) && row.Holds != game.HoldsGrid)
-	element.Properties = map[string]string{}
-	for _, statement := range widget.statements {
+	element.Properties = resolver.propertiesOf(widget.statements)
+}
+
+// propertiesOf is every property statements write, by lower-cased key, the last written, its words as written, a
+// call the preview answers replaced by the entry's value.
+func (resolver *resolver) propertiesOf(statements []statement) map[string]string {
+	properties := map[string]string{}
+	for _, statement := range statements {
 		words := statement.words()
 		if len(words) == 0 {
 			continue
@@ -302,8 +321,9 @@ func (resolver *resolver) drawnBy(widget *widget, element *Element) {
 		if define, isAnswered := resolver.answered(text); isAnswered {
 			text = strings.TrimSuffix(strings.Join(define.words(), " "), ";")
 		}
-		element.Properties[strings.ToLower(statement.assignment.Key.Text)] = text
+		properties[strings.ToLower(statement.assignment.Key.Text)] = text
 	}
+	return properties
 }
 
 // condition reads a visible binding into what the widget is shown on: a boolean over its unquoted arguments, or a

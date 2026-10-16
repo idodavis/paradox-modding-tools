@@ -291,6 +291,22 @@ export function editText(path: string, edit: (text: string) => string): void {
   if (text !== file.model.getValue()) change(file.model, [{ range: file.model.getFullModelRange(), text }]);
 }
 
+/** An open file's text at a backend range; undefined where no editor holds it. */
+export function textAt(path: string, range: ByteRange): string | undefined {
+  const file = files.get(fileUri(path).toString());
+  return file?.model.getValueInRange(toRange(file.model, range));
+}
+
+/** An open file's text at a backend range replaced, as one change it can undo, and sent to the backend at once; the
+ * same text changes nothing, and a game file is never changed. Resolves once the backend has the text. */
+export function replaceText(path: string, range: ByteRange, text: string): Promise<unknown> {
+  const file = files.get(fileUri(path).toString());
+  if (!file?.open || isReadOnly(file.path)) return Promise.resolve();
+  const editorRange = toRange(file.model, range);
+  if (file.model.getValueInRange(editorRange) !== text) change(file.model, [{ range: editorRange, text }]);
+  return flush(file);
+}
+
 /** The text of a tab's file when it differs from the file saved; undefined when it does not, or no model holds it. */
 export function unsavedText(tab: string): string | undefined {
   const file = files.get(fileUri(tabOf(tab).file).toString());

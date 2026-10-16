@@ -26,7 +26,7 @@ const (
 	ck3          = "ck3"
 	layoutWindow = "v_layout_window"
 	buttonType   = "button"
-	sizeKey      = "size"
+	coatBase     = "v_coat_base"
 )
 
 // fixture is a session over the ck3 fixture install, scanned once under an empty home so the schema is the shipped
@@ -335,17 +335,98 @@ func TestBindingsAsWritten(t *testing.T) {
 	}
 }
 
+// typesOf are a list's element types in order.
+func typesOf(list *List) string {
+	var types []string
+	for _, element := range list.Elements {
+		types = append(types, element.Type)
+	}
+	return strings.Join(types, " ")
+}
+
+func TestResolveCoat(t *testing.T) {
+	ws, _ := fixture(t)
+	path, _ := filepath.Abs(filepath.Join("..", "testdata", ck3, "game", "common", "coat_of_arms", "coat_of_arms", "v_coats.txt"))
+	render := &Render{}
+	coat := func(id string) *List {
+		list, err := render.List(ws, Request{Path: path, ID: id})
+		if err != nil {
+			t.Fatal(err)
+		}
+		return list
+	}
+	base := coat(coatBase)
+	if got := typesOf(base); got != "coat pattern emblem instance emblem instance emblem instance" || len(base.Missing) != 0 {
+		t.Errorf("the coat, its pattern, then each run of an emblem's instances back to front by depth: %s, %+v", got, base.Missing)
+	}
+	if field := base.Holders[0]; field.Type != "field" || field.Properties[sizeKey] != "230 230" || !base.IsAlone {
+		t.Errorf("the coat is drawn alone on the first atlas' tile: %+v", base.Holders)
+	}
+	white, blue := "rgba(255, 255, 255, 1)", base.Textures[base.Elements[1].Textures[0]].Colors[3]
+	if pattern := base.Textures[base.Elements[1].Textures[0]]; pattern.Recolor != patternKey ||
+		fmt.Sprint(pattern.Colors[:3]) != "[ rgba(255, 0, 0, 1) "+white+"]" || blue == "" {
+		t.Errorf("the pattern is colored by the coat's named colors: %+v", pattern)
+	}
+	emblem, rotated := base.Elements[2], base.Elements[7]
+	if regions := base.Textures[emblem.Textures[0]]; regions.Recolor != recolorRegions || fmt.Sprint(regions.Regions) != "[1]" || !emblem.Fills ||
+		base.Textures[emblem.Textures[1]].Recolor != recolorGrain {
+		t.Errorf("a masked emblem fills the field, masked by its pattern's regions and the shading's grain: %+v", emblem)
+	}
+	if colors := base.Textures[rotated.Textures[0]].Colors; fmt.Sprint(colors[1:4]) != fmt.Sprint([]string{white, white, blue}) {
+		t.Errorf("color1 = color2 is the coat's second slot, an unwritten slot the coat's: %v", colors)
+	}
+	if rotated.Label != "instance 2" || rotated.Properties["rotation"] != "45" || rotated.Properties["scale"] != "-0.5 0.5" {
+		t.Errorf("an instance carries its properties as written, named by its number: %+v", rotated)
+	}
+	sub := coat("v_coat_sub")
+	if got := typesOf(sub); got != "coat pattern sub pattern emblem instance emblem instance emblem instance" {
+		t.Errorf("a sub is a coat under the root, its parent's layers its own: %s", got)
+	}
+	if placed := sub.Elements[2]; placed.Label != "sub "+coatBase || placed.Properties["offset"] != "0.5 0" || !placed.Fills {
+		t.Errorf("a sub fills the field, carrying its instance's place, named for its parent: %+v", placed)
+	}
+	rows, err := render.Properties(ws, Request{Path: path, ID: "v_coat_sub"}, 3)
+	if err != nil || len(rows) == 0 || rows[0].Key != patternKey || rows[0].Writer != coatBase ||
+		rows[0].ValueLocation.Range.Start.Character != 11 {
+		t.Errorf("the sub's pattern is its parent's, written by the parent, its value's place kept: %+v %v", rows, err)
+	}
+	if colors := sub.Textures[sub.Elements[3].Textures[0]].Colors; colors[2] != "rgba(0, 255, 0, 1)" {
+		t.Errorf("the sub's color is over its parent's: %v", colors)
+	}
+	if alias := coat("v_coat_alias"); typesOf(alias) != typesOf(base) || alias.Elements[0].Key != coatBase ||
+		alias.Elements[0].Name != "v_coat_alias" {
+		t.Errorf("a coat written as another's id draws that coat: %+v", alias.Elements)
+	}
+}
+
+func TestCoatNames(t *testing.T) {
+	ws, dir := fixture(t)
+	names := Names(ws, game.CoatDatabases.Colors)
+	if red := slices.IndexFunc(names, func(name Name) bool { return name.ID == "v_red" }); red < 0 || names[red].Color != "rgba(255, 0, 0, 1)" {
+		t.Errorf("a named color is listed with its CSS: %+v", names)
+	}
+	if textures := Textures(ws, patternKey); len(textures) != 1 || textures[0].ID != "v_pattern.dds" ||
+		!strings.Contains(textures[0].URL, "v_pattern.dds") {
+		t.Errorf("a key's folder lists its images: %+v", textures)
+	}
+	if file, err := CoatFile(ws, "mod"); err != nil || filepath.Dir(file) != filepath.Join(dir, "common", "coat_of_arms", "coat_of_arms") {
+		t.Errorf("a mod with no coat file writes a new one in its game's coat folder: %s %v", file, err)
+	}
+}
+
 // TestInstallsResolve is the gate: a named window of each of the three installs resolves with every type and
-// template it names found, its fonts listed, something drawn, and a render timed; what else is missing is logged. It
-// runs only with PMT_VANILLA_GATE=1 and the three PMT_TEST_INSTALL_ variables.
+// template it names found, its fonts listed, something drawn, and a render timed; what else is missing is logged; a
+// named coat of arms resolves with nothing missing but what a list picks. It runs only with PMT_VANILLA_GATE=1 and
+// the three PMT_TEST_INSTALL_ variables.
 func TestInstallsResolve(t *testing.T) {
 	if testing.Short() || os.Getenv("PMT_VANILLA_GATE") == "" {
 		t.Skip("resolves windows of the three installs; set PMT_VANILLA_GATE=1")
 	}
-	for _, tt := range []struct{ id, env, path, entry string }{
-		{ck3, "PMT_TEST_INSTALL_CK3", "gui/window_character.gui", "character_window"},
-		{"vic3", "PMT_TEST_INSTALL_VIC3", "gui/politics_panel.gui", "politics_panel"},
-		{"eu5", "PMT_TEST_INSTALL_EU5", "gui/eventwindow.gui", "event_window"},
+	coats := "common/coat_of_arms/coat_of_arms/"
+	for _, tt := range []struct{ id, env, path, entry, coatPath, coat string }{
+		{ck3, "PMT_TEST_INSTALL_CK3", "gui/window_character.gui", "character_window", coats + "01_landed_titles.txt", "k_papal_state"},
+		{"vic3", "PMT_TEST_INSTALL_VIC3", "gui/politics_panel.gui", "politics_panel", coats + "02_countries.txt", "AUS_absolute_monarchy"},
+		{"eu5", "PMT_TEST_INSTALL_EU5", "gui/eventwindow.gui", "event_window", coats + "pre_scripted_countries.txt", "ABW"},
 	} {
 		dir := os.Getenv(tt.env)
 		if dir == "" {
@@ -386,6 +467,23 @@ func TestInstallsResolve(t *testing.T) {
 		t.Logf("%s missing by cause: %v", tt.id, causes)
 		if len(list.Fonts) == 0 {
 			t.Errorf("%s: the texts' fonts are listed", tt.id)
+		}
+		coatResolves(t, ws, tt.coatPath, tt.coat)
+	}
+}
+
+// coatResolves checks that an install's coat of arms resolves with nothing missing but what a list picks.
+func coatResolves(t *testing.T, ws *workspace.Session, path, id string) {
+	t.Helper()
+	file, _ := index.FileAt(ws.Indexes(), path)
+	coat, err := (&Render{}).List(ws, Request{Path: file.Path, ID: id, Database: game.CoatDatabases.Coats})
+	if err != nil {
+		t.Fatal(err)
+	}
+	t.Logf("%s: %s", id, typesOf(coat))
+	for _, missing := range coat.Missing {
+		if !strings.HasPrefix(missing.Text, "Picked from a list") {
+			t.Errorf("%s: %s", id, missing.Text)
 		}
 	}
 }

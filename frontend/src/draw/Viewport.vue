@@ -13,11 +13,14 @@ const {
   width,
   height,
   focus = null,
+  fitLimit = 1,
 } = defineProps<{
   width: number;
   height: number;
   /** The part of the content Fit shows, in its pixels; all of it where none. */
   focus?: DOMRect | null;
+  /** The largest zoom Fit shows the content at: a window its own size at most, a small picture larger. */
+  fitLimit?: number;
 }>();
 
 const emit = defineEmits<{ /** A click on the floor around the content. */ floor: [] }>();
@@ -43,14 +46,18 @@ const contentStyle = computed(() => ({
 // where there is none; null once moved
 const fitBox = shallowRef<DOMRect | null | undefined>(undefined);
 
-/** Shows a box of the content whole in the middle of the pane, never past its own size, and keeps it so until the
+/** Shows a box of the content whole in the middle of the pane, never past the fit limit, and keeps it so until the
  * user moves the camera: the zoom that fits it, and the pan that puts its middle on the content's. Without a box it
  * fits the focus, else all of the content, as they are when it fits. */
 function fitTo(box?: DOMRect): void {
   fitBox.value = box;
   const area = box ?? focus ?? new DOMRect(0, 0, width, height);
   if (!camera || !area.width || !area.height) return;
-  const scale = Math.min(1, (paneSize.width.value - 32) / area.width, (paneSize.height.value - 32) / area.height);
+  const scale = Math.min(
+    fitLimit,
+    (paneSize.width.value - 32) / area.width,
+    (paneSize.height.value - 32) / area.height,
+  );
   camera.zoom(scale, { animate: false });
   camera.pan(width / 2 - (area.x + area.width / 2), height / 2 - (area.y + area.height / 2), { animate: false });
 }

@@ -940,11 +940,14 @@ and `ApplyModifyTextures`; the coat of arms headers are under `jomini/gfx/FX/coa
 `alpha` (CK3 writes one 341 times, Vic3 95, EU5 310), in its `blend_mode`: add, overlay, multiply, colordodge, lighten,
 darken and normal all keep the widget's texture's alpha, so an overlay never reaches outside the texture's shape;
 `alphamultiply` (CK3 920, Vic3 260, EU5 398) scales that alpha by its own; `mask` (CK3 22, all shimmer effects) draws
-nothing and scales every overlay after it. The game's overlay chooses its formula by the base color, which is CSS's
-`overlay`. A coat of arms is colored as its headers say: a pattern blends from a fallback color toward color 1 by its
-red, color 2 by its green and color 3 by its blue, then takes a 20% overlay of the mask texture's blue; a colored emblem
-starts at color 1, blends to color 2 by its green and color 3 by its red, then takes a full overlay of its own blue.
-Neither is a CSS filter: the products of channels and the overlay need the pixels computed.
+nothing and scales every overlay after it. The sprite's overlay (`pdxgui_sprite_base.fxh`, `Overlay(Base, Blend)`)
+chooses its formula by the base color, which is CSS's `overlay`. A coat of arms is colored as its headers say: a pattern
+blends from a fallback color toward color 1 by its red, color 2 by its green and color 3 by its blue; a colored emblem
+starts at color 1, blends to color 2 by its green and color 3 by its red, then takes a full overlay of its own blue. The
+coats' overlay is `GetOverlay` (`clausewitz/gfx/FX/cw/utility.fxh`, the same in all three games), which flips the two
+and so chooses by the overlay's value: CSS's `hard-light` with the overlay on top. CK3 alone shades both afterwards with
+a separate cloth texture (section 24). Neither is a CSS filter: the products of channels and the overlay need the pixels
+computed.
 
 ```
 grep -n -A45 'float4 Blend( float4 Base' "<install>/clausewitz/gfx/FX/cw/pdxgui_sprite_base.fxh"
@@ -1076,4 +1079,74 @@ for g in "Crusader Kings III/game/common" "Victoria 3/game/common" "Europa Unive
   cat "$g/named_colors"/*.txt | grep -cE '^\s*\w+\s*=\s*\{\s*-?[0-9.]'                # untagged
 done
 grep -rhoE --include=*.txt '\bposition\s*=\s*\{\s*-?[0-9.]+\s+-?[0-9.]+\s+-?[0-9.]+' "<game>" | wc -l
+```
+
+## 24. A coat of arms, measured
+
+The three games write one coat language: `pattern`, `color1` to `color5`, `colored_emblem` and `textured_emblem` with a
+`texture`, colors, a `mask` and `instance`s of `position`, `scale`, `rotation` and `depth`, and `sub` with a `parent`,
+its `instance`s an `offset` and a `scale`. Counted in each folder's files (the key at any depth; CK3, Vic3, EU5):
+`instance` 10,236, 9,280, 17,303; a `rotation` other than 0 1,067, 127, 94; `mask` 161, 42, 499; `depth` 468, 0, 0;
+`sub` 0, 295, 1,330. EU5 keeps its coats under `main_menu/` (`game.CoatFolders`).
+
+**Which way depth draws.** A larger `depth` draws behind. CK3's designer writes depths into its exports, and they read
+only that way: `h_eastern_roman_empire`'s eagle is 6.01, two shields at one place 5.01 and 4.01, its letters 3.01 down
+to unwritten, and only larger-behind shows the letters on the shields; the game draws `k_bosporan_kingdom`'s red eagle
+(1.01) over its white escutcheon (2.01). Equal depths keep the written order, the later in front (the game's
+`k_papal_state`: the silver key, written second, over the gold). Of the 262 CK3 coats that write a depth, 178 paint in
+another order than written, and 7 interleave one emblem's instances with another's (`d_samarra`: a sabre at 2.01, the
+frame at 1.01, the other sabre unwritten).
+
+**Which way rotation turns.** A positive `rotation` turns clockwise. `ce_key_st_peter.dds` is an upright key with its
+bit on the left; `k_papal_state` writes the gold key at `-40`, and the game draws it leaning left, its bit outward. The
+shader turns the unit quad in the field's own units before it scales it (`coat_of_arms_textured_emblem.fxh`'s vertex
+shader), so a turned instance with an uneven scale, or any on a 3:2 field (Vic3, EU5), is sheared as a box turned after
+sizing is not.
+
+**Where an instance is.** `position` is its center as fractions of the field, `scale` its size, a negative one a flip of
+that axis; unwritten, an instance is at the field's middle at full size (CK3 569, Vic3 43, EU5 4 instances write no
+position, all centered frames: the wiki's `{ 0 0 }` would put them on the corner). A `sub`'s `offset` is its top-left
+corner and `scale` its size (Vic3's `AUS_absolute_monarchy`: `scale { 0.45 0.45 }` at `offset { 0.275 0.05 }`,
+centered).
+
+**What a mask keeps.** `mask = { n }` keeps an emblem where the pattern's region n is: region 1, 2, 3 is red, green,
+blue, each less the later channels (red less green and blue, green less blue), the emblem's alpha times their sum,
+sampled at the field's place under each pixel. Patterns are cumulative, so the subtraction matters:
+`pattern_vertical_split_01` is red everywhere and green on its right half, and `mask = { 1 }` keeps its left half.
+
+**What a pattern starts from.** Every pattern is red everywhere with alpha 255, so the shader's fallback color never
+shows, but in Vic3's `pattern_shield_heater`, black outside its shield and used by subs: the fallback is transparent,
+the blend carrying the slots' alpha, and the pattern's own alpha is unused.
+
+**What a sub inherits.** Every vanilla sub writes a `parent` (Vic3 295, EU5 1,330) and beside it only colors (Vic3 13
+subs, EU5 168) and its `instance`s; no parent writes a parent or subs of its own, and no coat writes a top-level
+`parent`. An emblem's `color1 = color2` names its coat's slot (Vic3 1,601 times, EU5 14,276), so a sub's colors reach
+its parent's emblems (EU5's `ABW`). The wiki's further rules (a coat-level `parent`, emblems inherited all or nothing)
+are never exercised by vanilla.
+
+**Color 3.** The colored emblem shader blends to color 3 by red, and vanilla writes `color3` under a `colored_emblem`
+1,031, 464 and 2,209 times: the wiki's "currently unavailable" is out of date.
+
+**CK3's cloth.** CK3 replaces jomini's coat shaders with its own (`game/gfx/FX/coat_of_arms/`): the pattern and every
+emblem take a 20% overlay (`GetOverlay`, the flipped one) of `gfx/coat_of_arms/coa_mask_texture.dds`'s blue, and each
+emblem's alpha is multiplied by twice its green. Vic3 and EU5 draw their coats flat.
+
+**The field and its frames.** The field is the first atlas' `tile_size`: CK3 230 × 230, Vic3 384 × 256, EU5 192 × 128.
+CK3's windows cut a coat with a mask its GUI names, `coat_of_arms/title_mask.dds` (a shield, 13 uses) or
+`frames/dynasty_mask.dds`; others are bindings the game picks (a realm's by government, a house's by culture). A mod can
+replace them (The Fallen Eagle's are plain squares).
+
+**Lists and aliases.** A value can be `list "x"`, a template list's pick (CK3 2,397 such values in 4,129 coats, Vic3 667
+in 1,817, EU5 2,528 in 5,076); CK3 writes 527 coats as another coat's id (`b_vaticano = k_papal_state`).
+
+```
+D="<install>/game/common/coat_of_arms/coat_of_arms"   # EU5: <install>/game/main_menu/common/coat_of_arms/coat_of_arms
+cat "$D"/*.txt | grep -o 'rotation\s*=\s*-\?[0-9.]*' | grep -vc '= *0$\|= *0\.0$'
+for k in instance mask depth sub; do cat "$D"/*.txt | grep -o "$k\s*=" | wc -l; done
+grep -n -B12 -A40 '^h_eastern_roman_empire' "$D"/01_landed_titles.txt
+grep -rn -A10 'Pattern( VS_OUTPUT_COA_ATLAS Input, float4 PatternTex )' "<install>/jomini/gfx/FX/coat_of_arms/"
+grep -rn -B3 -A12 'USE_PATTERN_MASK' "<install>/jomini/gfx/FX/coat_of_arms/coat_of_arms_textured_emblem.fxh"
+grep -rn 'GetOverlay\|MaskTex' "<CK3>/game/gfx/FX/coat_of_arms/"
+grep -n -A2 '^atlas' "<install>/game/common/coat_of_arms/options/atlases.txt"
+grep -rhoE 'coat_of_arms_mask\s*=\s*"[^"]+"' "<CK3>/game/gui" | sort | uniq -c | sort -rn
 ```

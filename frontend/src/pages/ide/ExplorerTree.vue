@@ -26,6 +26,7 @@ import { BINARY_EXTENSIONS, TREE_ICONS } from "./fileKinds";
 import { Close, Show } from "@services/windowservice";
 import { useWindowsStore } from "../../stores/windows";
 import { GIT_LETTERS, useGitStore } from "../../stores/git";
+import { useDrawStore } from "../../stores/draw";
 import { useEditorStore } from "../../stores/editor";
 import { useSettingsStore } from "../../stores/settings";
 import { useWorkspaceStore } from "../../stores/workspace";
@@ -327,6 +328,9 @@ const menu = computed<ContextMenuItem[][]>(() => {
   const views = file ? viewsOf(locate(file, roots)?.rel ?? file) : undefined;
   // a mod's own folder in no repository is made one, and source control shown
   const bare = root ? git.bare.find((mod) => pathKey(mod.path) === pathKey(diskPath(path))) : undefined;
+  // a folder of coats of arms (a file in it would be drawn with the Layers panel) offers a new coat for its mod
+  const coatsMod =
+    viewsOf(`${dir}x.txt`)?.panel === "Layers" ? rootOf(path.slice(0, path.indexOf("/") + 1))?.origin : "";
   return [
     file
       ? [
@@ -364,6 +368,15 @@ const menu = computed<ContextMenuItem[][]>(() => {
             icon: "i-lucide-folder-plus",
             onSelect: () => (afterClose = () => create({ dir, isFolder: true })),
           },
+          ...(coatsMod
+            ? [
+                {
+                  label: "New coat of arms",
+                  icon: "i-lucide-shield-plus",
+                  onSelect: () => (useDrawStore().coatDialog = { mode: "new", id: "", text: "", mod: coatsMod }),
+                },
+              ]
+            : []),
         ]
       : [],
     writable.value

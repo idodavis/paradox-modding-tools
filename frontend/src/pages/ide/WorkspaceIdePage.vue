@@ -28,6 +28,7 @@ import { tabOf } from "../../editor/tabs";
 import { useSettingsStore } from "../../stores/settings";
 import { Close, Show } from "@services/windowservice";
 import { holdsFiles, isMain, useWindowsStore, windowName, windowPart } from "../../stores/windows";
+import CoatDialog from "../../draw/CoatDialog.vue";
 import EditorLayout from "./EditorLayout.vue";
 import ExplorerTree from "./ExplorerTree.vue";
 import IdePanel from "./IdePanel.vue";
@@ -505,4 +506,5 @@ function showProblems(): void {
     <span>{{ kind }}</span>
     <span v-if="file && !file.reject">{{ file.legacy ? "Windows-1252" : file.bom ? "UTF-8 BOM" : "UTF-8" }}</span>
   </StatusFacts>
+  <CoatDialog />
 </template>

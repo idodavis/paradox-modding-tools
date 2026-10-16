@@ -33,7 +33,7 @@ export function subscribeEvents(): void {
     scans.clear();
     void queryCache.invalidateQueries({ key: workspaceKeys.open(id) });
     void queryCache.invalidateQueries({ key: workspaceKeys.state(id) });
-    for (const key of drawn) void queryCache.invalidateQueries({ key });
+    for (const key of [...drawn, drawKeys.names]) void queryCache.invalidateQueries({ key });
     if (holdsFiles && editor.editingWorkspaceId === id) resendOpenFiles();
   });
   // the open workspace closed (its inputs changed, or another opened): its state is read again, and its pages'
@@ -62,10 +62,10 @@ export function subscribeEvents(): void {
     if (section === "settings" || !section) void settings.load();
   });
   // a file changed on disk is read again; source control reads its repository and the windows drawn are drawn again
-  // once a burst of changes is over, any file being a template or texture of a window
+  // once a burst of changes is over, any file being a template or texture of a window, as are the pickers' names
   const gitChanged = useDebounceFn(() => git.refresh(), 500);
   const drawChanged = useDebounceFn(() => {
-    for (const key of drawn) void queryCache.invalidateQueries({ key });
+    for (const key of [...drawn, drawKeys.names]) void queryCache.invalidateQueries({ key });
   }, 300);
   Events.On("fs:changed", ({ data }) => {
     void queryCache.invalidateQueries({ key: fileKeys.text(data.path) });

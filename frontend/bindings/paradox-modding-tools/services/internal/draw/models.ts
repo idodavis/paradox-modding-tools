@@ -116,9 +116,14 @@ export interface Group {
  */
 export interface List {
     /**
-     * a type, template, text icon or format drawn by itself, not a window
+     * a type, template, text icon, format or coat drawn alone, not a window
      */
     "isAlone": boolean;
+
+    /**
+     * a coat's: a larger depth in front, which a reorder writes depths by
+     */
+    "depthInFront": boolean;
 
     /**
      * outermost first, each of its type row and properties alone
@@ -132,14 +137,25 @@ export interface List {
 }
 
 /**
- * Property is one property of an element as written, with the type or template that wrote it ("" the element) and
- * where.
+ * Name is a thing a picker lists: an entry of a database by its id and the color its block is as CSS, or a texture
+ * file by its name and its route ("" for none).
+ */
+export interface Name {
+    "id": string;
+    "color": string;
+    "url": string;
+}
+
+/**
+ * Property is one property of an element as written, with the type or template that wrote it ("" the element),
+ * where, and where its value is, which an edit replaces.
  */
 export interface Property {
     "key": string;
     "value": string;
     "writer": string;
     "location": lsp$0.Location;
+    "valueLocation": lsp$0.Location;
 }
 
 /**
@@ -176,7 +192,8 @@ export interface Text {
 
 /**
  * Texture is what an element paints from a file: its size in the image's pixels over its density, its border in
- * the screen's, its frame, tiling, mirror, fit, tint and blend, and the texture that masks it.
+ * the screen's, its frame, tiling, mirror, fit, tint and blend, the texture that masks it, and how its pixels are
+ * colored.
  */
 export interface Texture {
     "url": string;
@@ -212,4 +229,19 @@ export interface Texture {
      * the list's texture whose brightness masks this one; -1 none
      */
     "mask": number;
+
+    /**
+     * how the page colors it, a key of the page's recolor rows; "" as its pixels are
+     */
+    "recolor": string;
+
+    /**
+     * the slots the recolor reads as CSS, slot n at n, "" the shader's fallback
+     */
+    "colors": string[] | null;
+
+    /**
+     * for a mask texture: the pattern's regions kept
+     */
+    "regions": number[] | null;
 }

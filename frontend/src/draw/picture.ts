@@ -572,7 +572,7 @@ function runNodes(text: Text): VNode[] {
           {
             key: i,
             style: {
-              color: run.call ? "var(--syn-ref)" : run.color || undefined,
+              color: run.call ? "var(--syn-scope)" : run.color || undefined,
               fontWeight: run.isBold ? 700 : undefined,
               fontStyle: run.isItalic ? "italic" : undefined,
             },

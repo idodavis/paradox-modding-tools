@@ -40,7 +40,7 @@ type DirEntry struct {
 }
 
 // CreateDir creates a directory (parents created as needed).
-func (s *FileService) CreateDir(fullPath string) error {
+func (fil *FileService) CreateDir(fullPath string) error {
 	fullPath = filepath.Clean(filepath.FromSlash(fullPath))
 	if fullPath == "." {
 		return errors.New("path is required")
@@ -49,7 +49,7 @@ func (s *FileService) CreateDir(fullPath string) error {
 }
 
 // RenamePath renames or moves a file or directory.
-func (s *FileService) RenamePath(oldPath, newPath string) error {
+func (fil *FileService) RenamePath(oldPath, newPath string) error {
 	oldPath = filepath.Clean(filepath.FromSlash(oldPath))
 	newPath = filepath.Clean(filepath.FromSlash(newPath))
 	if oldPath == "." || newPath == "." {
@@ -60,7 +60,7 @@ func (s *FileService) RenamePath(oldPath, newPath string) error {
 
 // TrashPath moves a file or directory into PMT's trash, where an undo of the delete finds it, and returns where it
 // went. The trash is emptied when the app starts.
-func (s *FileService) TrashPath(fullPath string) (string, error) {
+func (fil *FileService) TrashPath(fullPath string) (string, error) {
 	fullPath = filepath.Clean(filepath.FromSlash(fullPath))
 	app, err := appdata.Dir()
 	if fullPath == "." || err != nil {
@@ -71,7 +71,7 @@ func (s *FileService) TrashPath(fullPath string) (string, error) {
 }
 
 // ServiceStartup empties the last run's trash: a delete is undone within the run that made it. Wails calls it.
-func (s *FileService) ServiceStartup(context.Context, application.ServiceOptions) error {
+func (fil *FileService) ServiceStartup(context.Context, application.ServiceOptions) error {
 	if app, err := appdata.Dir(); err == nil {
 		_ = os.RemoveAll(filepath.Join(app, "trash"))
 	}
@@ -106,7 +106,7 @@ func move(source, target string) error {
 }
 
 // DeletePath removes a file or directory recursively.
-func (s *FileService) DeletePath(fullPath string) error {
+func (fil *FileService) DeletePath(fullPath string) error {
 	fullPath = filepath.Clean(filepath.FromSlash(fullPath))
 	if fullPath == "." {
 		return errors.New("path is required")
@@ -123,7 +123,7 @@ type PathStat struct {
 }
 
 // StatPath returns metadata for a path (Exists=false when missing, no error).
-func (s *FileService) StatPath(fullPath string) (PathStat, error) {
+func (fil *FileService) StatPath(fullPath string) (PathStat, error) {
 	fullPath = filepath.Clean(filepath.FromSlash(fullPath))
 	info, err := os.Stat(fullPath)
 	if err != nil {
@@ -208,7 +208,7 @@ type ImageFacts struct {
 }
 
 // ReadImageFacts is an image file's facts, which its pixels at FileRoute do not carry.
-func (s *FileService) ReadImageFacts(fullPath string) (ImageFacts, error) {
+func (fil *FileService) ReadImageFacts(fullPath string) (ImageFacts, error) {
 	fullPath = filepath.Clean(filepath.FromSlash(fullPath))
 	stat, err := os.Stat(fullPath)
 	if err != nil {
@@ -293,7 +293,7 @@ func framePart(img image.Image, frame string) image.Image {
 }
 
 // ReadText is a file as the editor reads it.
-func (s *FileService) ReadText(fullPath string) (FileText, error) {
+func (fil *FileService) ReadText(fullPath string) (FileText, error) {
 	data, missing, reject, err := readCapped(fullPath)
 	switch {
 	case err != nil:
@@ -308,7 +308,7 @@ func (s *FileService) ReadText(fullPath string) (FileText, error) {
 
 // WriteText is the editor's save: the text in the file's own encoding (inventory.EncodeText), through appdata.Write, so
 // a failed save never leaves half a file.
-func (s *FileService) WriteText(fullPath, text string, bom, legacy bool) error {
+func (fil *FileService) WriteText(fullPath, text string, bom, legacy bool) error {
 	data, err := inventory.EncodeText(text, bom, legacy)
 	if err != nil {
 		return err
@@ -318,7 +318,7 @@ func (s *FileService) WriteText(fullPath, text string, bom, legacy bool) error {
 
 // ListDirectory lists immediate children of dirPath (non-recursive).
 // showAll lists every name; otherwise skip dotfiles except .metadata.
-func (s *FileService) ListDirectory(dirPath string, showAll bool) ([]DirEntry, error) {
+func (fil *FileService) ListDirectory(dirPath string, showAll bool) ([]DirEntry, error) {
 	dirPath = filepath.Clean(filepath.FromSlash(dirPath))
 	entries, err := os.ReadDir(dirPath)
 	if err != nil {

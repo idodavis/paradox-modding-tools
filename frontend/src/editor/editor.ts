@@ -14,7 +14,7 @@ import { useSettingsStore } from "../stores/settings";
 import { installIdeCommands } from "./commands";
 import { installConflicts } from "./conflicts";
 import { bytesAt, flushed, installModels, pathOf, workspaceId } from "./models";
-import { cardSaysSomething, installProviders } from "./providers";
+import { cardSaysSomething, categoryAt, installProviders } from "./providers";
 
 let installed = false;
 
@@ -92,7 +92,12 @@ export function createEditor(host: HTMLElement, model: monaco.editor.ITextModel)
     glyphMargin: false,
     renderLineHighlight: "all",
   });
-  const hover = shallowRef<{ card: Inspect | null; problems: monaco.editor.IMarker[]; anchor: DOMRect } | null>(null);
+  const hover = shallowRef<{
+    card: Inspect | null;
+    problems: monaco.editor.IMarker[];
+    anchor: DOMRect;
+    category?: string;
+  } | null>(null);
   let showTimer: number | undefined;
   let hideTimer: number | undefined;
   let hoveredPosition: monaco.IPosition | null = null;
@@ -135,7 +140,10 @@ export function createEditor(host: HTMLElement, model: monaco.editor.ITextModel)
       Math.max(end.left - start.left, 1),
       start.height,
     );
-    hover.value = (card && cardSaysSomething(card)) || problems.length ? { card, problems, anchor } : null;
+    hover.value =
+      (card && cardSaysSomething(card)) || problems.length
+        ? { card, problems, anchor, category: categoryAt(model, position) }
+        : null;
   }
 
   // the card shows when the pointer rests on a word for half a second, and goes when it leaves the word; a card

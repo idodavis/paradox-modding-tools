@@ -1150,3 +1150,113 @@ grep -rn 'GetOverlay\|MaskTex' "<CK3>/game/gfx/FX/coat_of_arms/"
 grep -n -A2 '^atlas' "<install>/game/common/coat_of_arms/options/atlases.txt"
 grep -rhoE 'coat_of_arms_mask\s*=\s*"[^"]+"' "<CK3>/game/gui" | sort | uniq -c | sort -rn
 ```
+
+
+## 25. The language's operators, measured
+
+The editor colors a key of the language itself (`and`, `if`, `limit`, `hidden_effect`, `save_scope_as`) as an
+operator (`game.Constructs`, each construct with its class). Which keys are the language's, and not a field some
+database names, is measured here: every key the three installs write, counted by the parser over each install's roots
+(the files under 4 MB; a grep reads a few comments and strings more), and whether the game's own dumps declare it as a
+trigger or an effect.
+
+| key | CK3 | Vic3 | EU5 | declared by the dumps |
+|---|---|---|---|---|
+| `AND` | 10,307 | 5,494 | 1,436 | all three |
+| `OR` | 36,515 | 10,652 | 6,185 | all three |
+| `NOT` | 34,922 | 9,629 | 7,897 | all three |
+| `NOR` | 9,836 | 1,630 | 594 | all three |
+| `NAND` | 736 | 198 | 87 | all three |
+| `all_false` | 0 | 1 | 0 | all three |
+| `any_false` | 0 | 1 | 0 | all three |
+| `all_true` | 0 | 0 | 0 | none |
+| `any_true` | 0 | 0 | 0 | none |
+| `if` | 58,325 | 11,716 | 8,924 | all three |
+| `else_if` | 14,335 | 2,320 | 1,115 | all three |
+| `else` | 9,604 | 1,359 | 2,044 | all three |
+| `trigger_if` | 8,570 | 538 | 685 | all three |
+| `trigger_else_if` | 980 | 65 | 51 | all three |
+| `trigger_else` | 3,454 | 66 | 263 | all three |
+| `limit` | 98,157 | 19,627 | 16,447 | none |
+| `alternative_limit` | 1,431 | 13 | 0 | none |
+| `switch` | 796 | 1 | 68 | all three |
+| `calc_true_if` | 241 | 4 | 5 | all three |
+| `while` | 209 | 22 | 73 | all three |
+| `break` | 0 | 0 | 29 | none |
+| `random` | 1,849 | 7 | 69 | all three |
+| `random_list` | 3,558 | 432 | 472 | all three |
+| `hidden_effect` | 6,649 | 623 | 1,787 | all three |
+| `show_as_tooltip` | 3,841 | 361 | 497 | all three |
+| `custom_tooltip` | 14,799 | 3,818 | 5,756 | all three |
+| `custom_description` | 1,795 | 15 | 313 | all three |
+| `custom_label` | 7 | 4 | 0 | all three |
+| `save_scope_as` | 31,815 | 5,858 | 11,265 | all three |
+| `save_temporary_scope_as` | 4,065 | 360 | 291 | all three |
+| `save_scope_value_as` | 5,514 | 0 | 13 | all three |
+| `save_temporary_scope_value_as` | 194 | 7 | 44 | all three |
+| `add_to_temporary_list` | 468 | 2 | 7 | all three |
+| `add_to_list` | 3,506 | 0 | 547 | all three |
+| `exists` | 37,003 | 6,618 | 3,917 | all three |
+| `always` | 4,191 | 992 | 1,032 | all three |
+| `trigger` | 80,979 | 21,164 | 58,994 | none |
+| `modifier` | 60,040 | 2,514 | 6,915 | Vic3, EU5 |
+| `factor` | 11,878 | 160 | 1,337 | none |
+| `weight` | 9,159 | 3,171 | 1,100 | none |
+| `chance` | 1,921 | 147 | 371 | none |
+| `first_valid` | 6,671 | 397 | 297 | none |
+| `random_valid` | 1,865 | 54 | 11 | none |
+| `triggered_desc` | 21,591 | 1,129 | 749 | none |
+
+**The dumps declare the language's operators as commands.** Every key the engine has a construct for, but `limit`
+and `alternative_limit`, is declared by all three games, as a trigger, an effect or both; those two are written
+everywhere (98,157, 19,627 and 16,447 `limit`) and declared nowhere. A key the table shows written 0 times and
+declared by none (`all_true`, `any_true`) is no construct. `break` is declared by none, never written by CK3 or Vic3,
+and EU5 writes it 29 times as a scripted relation's category field (`break = CATEGORY_ECONOMY_ACTIONS`): a field, not
+an operator. The keys below `always` (`trigger`, `modifier`, `factor`, `weight`, `chance`, `first_valid`,
+`random_valid`, `triggered_desc`) are the keys a branch, an event or a description reads by position, not operators;
+`modifier` is declared by Vic3 and EU5 as a command that scopes to a modifier type.
+
+**The case is the writer's.** The games write `AND`, `OR`, `NOT`, `NOR` and `NAND` in upper case 92,316,
+27,603 and 16,199 times (CK3, Vic3, EU5) and in lower case 49, 62 and 674, so a construct's key is lower-case and
+`game.ClassOf` lower-cases a key.
+
+**`yes` and `no` are links.** Every game's dumps declare both as a link to `boolean`, which Vic3 and EU5 declare a
+scope type that evaluates triggers and executes effects (`Schema.RunsScript`) and CK3 does not. A key or value that
+leads to a scope script runs in is colored a scope, so `game.Bools` keeps `yes` and `no` the grammar's literals.
+
+**A list iterator's prefix is not an operator by itself.** CK3 has 30 scripted triggers and effects named with the
+prefixes (`any_valid_candidacy_trigger`, `random_dummy_gender_effect`), Vic3 8, and fields share them (`random_events`,
+`random_traits_list`, `random_seed`); the key is an iterator only where the walker reads it as a declared command or a
+call to a scripted list.
+
+```
+for key in AND OR NOT NOR NAND and or not nor nand limit alternative_limit break; do
+  echo "$key $(grep -rhoE "\b$key\s*=" "<install>/game" --include=*.txt | wc -l)"
+done
+grep -rhoE 'break\s*=\s*\w+' "<EU5>/game" --include=*.txt | sort | uniq -c | sort -rn | head -3
+# CK3's dumps: a declared command is a line "<command> - <blurb>"; limit has none
+for key in and if hidden_effect limit alternative_limit; do
+  echo "$key $(grep -c "^$key - " "<documents>/Paradox Interactive/Crusader Kings III/logs/triggers.log") $(grep -c "^$key - " "<documents>/Paradox Interactive/Crusader Kings III/logs/effects.log")"
+done
+```
+
+## 26. An event is an id of a namespace its file declares
+
+An events file declares its namespaces (`namespace = x`) and its events are top keys `x.N`, N a number. Measured
+2026-10-16: every event of the three installs and of the dev mods has a namespace its own file declares (CK3 10,256
+ids, Vic3 2,249, EU5 7,440; CK3 mods 12,580, Vic3 mods 3,743; no file writes an event and no namespace), so the
+entry detector makes an event of a top key by its file's namespaces (the events row's `NamespaceKey`), not by the
+id's shape.
+
+The shape alone is wrong once: Vic3's `events/1848.txt` declares `namespace = 1848`, and its 9 events (`1848.1` to
+`1848.12`) read as numbers by shape (`jomini.IsEventID`: a namespace that is a number is none). A value elsewhere
+that names an event by shape (`100 = x.N` in an on_action's weighted list) is still read by `IsEventID`: a value names
+an event no file defines as readily as one that exists, and that is the reference worth reporting; Vic3's
+`100 = 1848.1` in `common/on_actions` is not read.
+
+```
+grep -rhoE $'^(\xEF\xBB\xBF)?namespace\s*=\s*[0-9]+' "<Vic3>/game/events"            # namespace = 1848, after a BOM
+grep -cE '^[0-9]+\.[0-9]+\s*=\s*\{' "<Vic3>/game/events/1848.txt"                       # 9
+grep -rLE 'namespace\s*=' "<install>/game/events" --include=*.txt | tr '\n' '\0' |
+  xargs -0 -r grep -lE '^[A-Za-z0-9_-]+\.[0-9]+\s*=\s*\{' | wc -l                       # 0 on all three
+```

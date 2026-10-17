@@ -135,7 +135,7 @@ property a click away from its own line. With nothing selected, the panel says h
 
 Nothing the game would decide at runtime is simulated, and nothing asks you to answer it: a widget whose `visible` is a
 binding is drawn in the state **States** picks (hide it to see the window without it), and a binding in a text is a
-value the game fills, drawn `[…]` in the code's binding color, so it widens nothing; the panel's properties show it as
+value the game fills, drawn `[…]` in the code's scope color, so it widens nothing; the panel's properties show it as
 written. A game
 concept's link is drawn as the game shows it: the concept's name (`[faith|E]`), or the text a `Concept('x', 'text')`
 link writes. A texture that is a binding draws the file the scan
@@ -153,6 +153,21 @@ The editor is [Monaco](https://microsoft.github.io/monaco-editor/), the editor o
 **Ctrl H**), folding, the minimap, indent guides, colored bracket pairs, multiple cursors, and the line at the top
 that names the block you are in. The IDE settings turn the minimap, folding, guides, bracket colors and shown
 whitespace on or off, and pick the editor's font and line height.
+
+### Syntax colors
+
+Code is colored by what it is, in ten colors that every theme sets for itself. The shape of the text colors it at once:
+a **block** key (one that opens a block, and the keyword before a name in `scripted_trigger x = {`, `type` and
+`template`), a **field** (a key taking a value), a **string**, a **number**, a **literal** (`yes`, `no`, `none`,
+dates), a **comment** (slanted), a saved scope written `scope:x` or `event_target:x`, and a **variable** (`var:x`,
+`@constants`, `$PARAMETERS$`). Once the game's files are read, the editor colors over those the keys, values and names
+only the files tell: an **entry** where it is defined and every name that leads to one (a trait, an event, a call to a
+scripted effect), an **operator** (a key of the language itself: `AND`, `if`, `limit`, `hidden_effect`,
+`save_scope_as`, the `every_` and `any_` lists), a **scope** (a link such as `liege`, `root`, `c:WAL`, and a saved
+scope) and a **variable** a command names or a call passes. A name that matches nothing (a misspelled trait) stays the
+text's own color, which is how a typo shows. Both sides of a diff are colored as the file's tab is, and the badge on
+a hover card takes the color of the code under the pointer. Localization is colored by its shape alone. Code shown
+outside an editor (in a card, Health, the graph and the wiki) is colored by shape alone, at once.
 
 ### Coats of arms
 
@@ -240,6 +255,7 @@ in [Health]({{< relref "/pages/health" >}})). The checks, each on or off in the 
 | `loc-header-mismatch` | a localization file whose header names another language than its name |
 | `wrong-localization-folder` | a folder spelled `localisation`, which the game never reads |
 | `unknown-event` | an event id no event defines |
+| `undeclared-namespace` | an event whose namespace its file does not declare (`namespace = x` before `x.1`), which the game does not load |
 | `wrong-declared-value` | a word outside the words the key takes |
 | `missing-file` | a path that exists nowhere in the install or the mods (off by default) |
 | `missing-key` | a key the game's docs say every entry writes, left out (off by default) |

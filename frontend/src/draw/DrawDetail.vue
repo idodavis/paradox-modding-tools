@@ -215,7 +215,7 @@ function linkText(location: Location): string {
         class="mx-3 mt-2.5 w-auto shrink-0 px-2.5 py-2"
         :ui="{
           title: 'text-11.5 font-normal text-toned',
-          description: 'mt-1 font-mono text-11.5 break-all text-(--syn-ref) opacity-100',
+          description: 'mt-1 font-mono text-11.5 break-all text-(--syn-scope) opacity-100',
           actions: 'mt-1.5 w-full flex-col items-stretch gap-1',
         }"
       >

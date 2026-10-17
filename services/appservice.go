@@ -193,12 +193,12 @@ func (config *ConfigFile) workspace(id string) (ws *Workspace, inst *GameInstall
 }
 
 // GetVersion returns the app version string.
-func (s *AppService) GetVersion() string {
-	return s.version
+func (app *AppService) GetVersion() string {
+	return app.version
 }
 
 // CheckForUpdates triggers the Wails updater.
-func (s *AppService) CheckForUpdates() {
+func (*AppService) CheckForUpdates() {
 	app := application.Get()
 	if app == nil {
 		return
@@ -209,9 +209,9 @@ func (s *AppService) CheckForUpdates() {
 }
 
 // GetSettings loads the settings as a map of "namespace.key" to value.
-func (s *AppService) GetSettings() map[string]string {
+func (app *AppService) GetSettings() map[string]string {
 	out := map[string]string{}
-	s.config.read(func(cfg *Config) {
+	app.config.read(func(cfg *Config) {
 		for namespace, values := range cfg.Settings {
 			for key, value := range values {
 				out[namespace+"."+key] = value
@@ -222,8 +222,8 @@ func (s *AppService) GetSettings() map[string]string {
 }
 
 // SaveSettings writes settings keyed "namespace.key"; a key with no namespace is skipped.
-func (s *AppService) SaveSettings(settings map[string]string) error {
-	return s.config.mutate("settings", func(cfg *Config) error {
+func (app *AppService) SaveSettings(settings map[string]string) error {
+	return app.config.mutate("settings", func(cfg *Config) error {
 		for qualified, value := range settings {
 			namespace, key, ok := strings.Cut(qualified, ".")
 			if !ok {
@@ -240,8 +240,8 @@ func (s *AppService) SaveSettings(settings map[string]string) error {
 
 // ResetData forgets every install and workspace, deletes the caches, and closes the open workspace.
 // Mod and game folders stay.
-func (s *AppService) ResetData() error {
-	if err := s.config.mutate("", func(cfg *Config) error {
+func (app *AppService) ResetData() error {
+	if err := app.config.mutate("", func(cfg *Config) error {
 		cfg.Installs, cfg.Workspaces = nil, nil
 		return nil
 	}); err != nil {
@@ -254,8 +254,8 @@ func (s *AppService) ResetData() error {
 	if err := os.RemoveAll(dir); err != nil {
 		return fmt.Errorf("wipe cache: %w", err)
 	}
-	s.wikis.ForgetAll()
-	s.workspaces.slot.Close("")
+	app.wikis.ForgetAll()
+	app.workspaces.slot.Close("")
 	return nil
 }
 

@@ -150,12 +150,14 @@ var KindWords = []struct {
 	Word string
 }{{KindEffect, "effect"}, {KindTrigger, "trigger"}, {KindLink, "event target"}}
 
-// Construct is a key the language itself gives a fixed shape to, which no dump declares: inside one command's
-// block (Command; "" any), within a holder of one shape (Within; ShapeUnknown any), a key by its written form (Key:
-// <number>, <any>, a name) or by its prefix (Prefix), read as a call that iterates the scripted list the rest of
-// the key names. Holds is the shape its block holds, ShapeEnclosing the holder's; Scope how its block's scope
-// follows; Caller the word its calls resolve by, "" the shape's own; Leaf marks a description's leaf, read at
-// the position the description belongs to and counted nowhere. The first row that fits wins.
+// Construct is a key of the language itself: one it gives a fixed shape to, or one of its operators, which the
+// dumps declare as commands. A row fits inside one command's block (Command; "" any), within a holder of one shape
+// (Within; ShapeUnknown any), a key by its written form (Key: <number>, <any>, a name, lower-case) or by its prefix
+// (Prefix), read as a call that iterates the scripted list the rest of the key names. Holds is the shape its block
+// holds, ShapeEnclosing the holder's, ShapeUnknown the shape the key's rule gives; Scope how its block's scope
+// follows; Caller the word its calls resolve by, "" the shape's own; Leaf marks a description's leaf, read at the
+// position the description belongs to and counted nowhere; Class is the operator it is, ClassNone for none. The
+// first row that fits wins.
 type Construct struct {
 	Command string
 	Within  Shape
@@ -165,7 +167,23 @@ type Construct struct {
 	Scope   ScopeVerb
 	Caller  string
 	Leaf    bool
+	Class   Class
 }
+
+// Class is what one of the language's operators does.
+type Class uint8
+
+// The classes.
+const (
+	ClassNone        Class = iota
+	ClassLogical           // combines conditions, or is a fixed one: AND, OR, NOT, always
+	ClassConditional       // runs or holds its block on a condition: if, limit, switch
+	ClassFlow              // repeats or picks at random: while, random, random_list
+	ClassList              // runs its block for the scopes of a list: every_, any_, random_, ordered_
+	ClassMath              // computes a script value: add, multiply, min
+	ClassDisplay           // shapes what a tooltip or description shows: hidden_effect, custom_tooltip, first_valid
+	ClassSaving            // saves a scope, value or list by name, or tests one is there: save_scope_as, exists
+)
 
 // AnyKey is the written form every key of a block reads at (switch's cases).
 const AnyKey = "<any>"
@@ -180,45 +198,79 @@ const (
 )
 
 // Constructs are random_list's weighted branches, switch's cases, the list iterators, a dynamic description's
-// markers, trigger and leaf, a value block's operators, and a widget's blocks.
+// markers, trigger and leaf, a value block's operators, a widget's blocks, then the language's operators the dumps
+// declare as commands, which name no shape: the walker reads those as the dumps declare them.
 var Constructs = []Construct{
 	{Command: "random_list", Key: "<number>", Holds: ShapeEffects, Caller: AnyCall},
 	{Command: "switch", Key: AnyKey, Holds: ShapeEnclosing},
-	{Prefix: true, Key: "every_", Holds: ShapeEffects, Scope: ScopeUnknown},
-	{Prefix: true, Key: "random_", Holds: ShapeEffects, Scope: ScopeUnknown},
-	{Prefix: true, Key: "ordered_", Holds: ShapeEffects, Scope: ScopeUnknown},
-	{Prefix: true, Key: "any_", Holds: ShapeTriggers, Scope: ScopeUnknown},
-	{Within: ShapeDescription, Key: descFirstValid, Holds: ShapeDescription},
-	{Within: ShapeDescription, Key: descRandomValid, Holds: ShapeDescription},
-	{Within: ShapeDescription, Key: descTriggered, Holds: ShapeDescription},
+	{Prefix: true, Key: "every_", Holds: ShapeEffects, Scope: ScopeUnknown, Class: ClassList},
+	{Prefix: true, Key: "random_", Holds: ShapeEffects, Scope: ScopeUnknown, Class: ClassList},
+	{Prefix: true, Key: "ordered_", Holds: ShapeEffects, Scope: ScopeUnknown, Class: ClassList},
+	{Prefix: true, Key: "any_", Holds: ShapeTriggers, Scope: ScopeUnknown, Class: ClassList},
+	{Within: ShapeDescription, Key: descFirstValid, Holds: ShapeDescription, Class: ClassDisplay},
+	{Within: ShapeDescription, Key: descRandomValid, Holds: ShapeDescription, Class: ClassDisplay},
+	{Within: ShapeDescription, Key: descTriggered, Holds: ShapeDescription, Class: ClassDisplay},
 	{Within: ShapeDescription, Key: descTrigger, Holds: ShapeTriggers},
 	{Within: ShapeDescription, Key: descLeaf, Leaf: true},
-	{Within: ShapeValue, Key: "value", Holds: ShapeValue},
-	{Within: ShapeValue, Key: "add", Holds: ShapeValue},
-	{Within: ShapeValue, Key: "subtract", Holds: ShapeValue},
-	{Within: ShapeValue, Key: "multiply", Holds: ShapeValue},
-	{Within: ShapeValue, Key: "divide", Holds: ShapeValue},
-	{Within: ShapeValue, Key: "modulo", Holds: ShapeValue},
-	{Within: ShapeValue, Key: "min", Holds: ShapeValue},
-	{Within: ShapeValue, Key: "max", Holds: ShapeValue},
-	{Within: ShapeValue, Key: "round", Holds: ShapeValue},
-	{Within: ShapeValue, Key: "round_to", Holds: ShapeValue},
-	{Within: ShapeValue, Key: "ceiling", Holds: ShapeValue},
-	{Within: ShapeValue, Key: "floor", Holds: ShapeValue},
-	{Within: ShapeValue, Key: "fixed_range", Holds: ShapeValue},
-	{Within: ShapeValue, Key: "integer_range", Holds: ShapeValue},
-	{Within: ShapeValue, Key: "abs", Holds: ShapeValue},
+	{Within: ShapeValue, Key: "value", Holds: ShapeValue, Class: ClassMath},
+	{Within: ShapeValue, Key: "add", Holds: ShapeValue, Class: ClassMath},
+	{Within: ShapeValue, Key: "subtract", Holds: ShapeValue, Class: ClassMath},
+	{Within: ShapeValue, Key: "multiply", Holds: ShapeValue, Class: ClassMath},
+	{Within: ShapeValue, Key: "divide", Holds: ShapeValue, Class: ClassMath},
+	{Within: ShapeValue, Key: "modulo", Holds: ShapeValue, Class: ClassMath},
+	{Within: ShapeValue, Key: "min", Holds: ShapeValue, Class: ClassMath},
+	{Within: ShapeValue, Key: "max", Holds: ShapeValue, Class: ClassMath},
+	{Within: ShapeValue, Key: "round", Holds: ShapeValue, Class: ClassMath},
+	{Within: ShapeValue, Key: "round_to", Holds: ShapeValue, Class: ClassMath},
+	{Within: ShapeValue, Key: "ceiling", Holds: ShapeValue, Class: ClassMath},
+	{Within: ShapeValue, Key: "floor", Holds: ShapeValue, Class: ClassMath},
+	{Within: ShapeValue, Key: "fixed_range", Holds: ShapeValue, Class: ClassMath},
+	{Within: ShapeValue, Key: "integer_range", Holds: ShapeValue, Class: ClassMath},
+	{Within: ShapeValue, Key: "abs", Holds: ShapeValue, Class: ClassMath},
 	{Within: ShapeValue, Key: descLeaf, Holds: ShapeArguments},
 	{Within: ShapeValue, Key: "format", Holds: ShapeArguments},
-	{Within: ShapeValue, Key: "save_temporary_value_as", Holds: ShapeArguments},
+	{Within: ShapeValue, Key: "save_temporary_value_as", Holds: ShapeArguments, Class: ClassSaving},
 	{Within: ShapeWidget, Key: AnyKey, Holds: ShapeWidget},
+	{Key: "and", Class: ClassLogical},
+	{Key: "or", Class: ClassLogical},
+	{Key: "not", Class: ClassLogical},
+	{Key: "nor", Class: ClassLogical},
+	{Key: "nand", Class: ClassLogical},
+	{Key: "all_false", Class: ClassLogical},
+	{Key: "any_false", Class: ClassLogical},
+	{Key: "always", Class: ClassLogical},
+	{Key: "if", Class: ClassConditional},
+	{Key: "else_if", Class: ClassConditional},
+	{Key: "else", Class: ClassConditional},
+	{Key: "trigger_if", Class: ClassConditional},
+	{Key: "trigger_else_if", Class: ClassConditional},
+	{Key: "trigger_else", Class: ClassConditional},
+	{Key: "limit", Class: ClassConditional},
+	{Key: "alternative_limit", Class: ClassConditional},
+	{Key: "switch", Class: ClassConditional},
+	{Key: "calc_true_if", Class: ClassConditional},
+	{Key: "while", Class: ClassFlow},
+	{Key: "random", Class: ClassFlow},
+	{Key: "random_list", Class: ClassFlow},
+	{Key: "hidden_effect", Class: ClassDisplay},
+	{Key: "show_as_tooltip", Class: ClassDisplay},
+	{Key: "custom_tooltip", Class: ClassDisplay},
+	{Key: "custom_description", Class: ClassDisplay},
+	{Key: "custom_label", Class: ClassDisplay},
+	{Key: "save_scope_as", Class: ClassSaving},
+	{Key: "save_temporary_scope_as", Class: ClassSaving},
+	{Key: "save_scope_value_as", Class: ClassSaving},
+	{Key: "save_temporary_scope_value_as", Class: ClassSaving},
+	{Key: "add_to_list", Class: ClassSaving},
+	{Key: "add_to_temporary_list", Class: ClassSaving},
+	{Key: "exists", Class: ClassSaving},
 }
 
 // ConstructOf returns the first construct row that fits a key written in a block of a shape inside a command's
 // block, by the key's position name; a prefix row never fits here (the walker reads it for a call).
-func ConstructOf(within Shape, command, key string) (Construct, bool) {
+func ConstructOf(shape Shape, command, key string) (Construct, bool) {
 	for _, row := range Constructs {
-		fitsHolder := (row.Command == "" || row.Command == command) && (row.Within == ShapeUnknown || row.Within == within)
+		fitsHolder := (row.Command == "" || row.Command == command) && (row.Within == ShapeUnknown || row.Within == shape)
 		if fitsHolder && !row.Prefix && (row.Key == key || row.Key == AnyKey) {
 			return row, true
 		}
@@ -241,11 +293,26 @@ func ListIterator(key string) (Construct, bool) {
 	return Construct{}, false
 }
 
-// ---- Names: what a written word names: the name commands, the saved-scope database and the list iterators; the
-// rules themselves are the schema's (schema/occurrences.go).
+// ClassOf returns the class of the operator a key is by its written form where it is written, the key in lower case
+// since the games write AND and and alike: the class of the first construct that fits it. A list iterator's prefix
+// is no class by itself (a scripted trigger may be named any_x): lsp's tokens read it where the walker reads a call.
+func ClassOf(shape Shape, command, key string) Class {
+	construct, _ := ConstructOf(shape, command, strings.ToLower(key))
+	return construct.Class
+}
 
-// SavedScopes is the database of saved scope names (save_scope_as).
-const SavedScopes = "scope"
+// ---- Names: what a written word names: the name commands, the saved-scope and variable databases and the list
+// iterators; the rules themselves are the schema's (schema/occurrences.go).
+
+// The databases of the names script saves and reads back by a link: saved scopes (save_scope_as, scope:x) and
+// variables, on a scope (set_variable, var:x), for the effect being run (set_local_variable, local_var:x) or for the
+// game (set_global_variable, global_var:x).
+const (
+	SavedScopes     = "scope"
+	Variables       = "var"
+	LocalVariables  = "local_var"
+	GlobalVariables = "global_var"
+)
 
 // ScopeLink is a link that leads by where script stands, not by a declared target: to the scope the entry runs in,
 // the scope before this one, this one again, or one saved by name (scope:x).
@@ -277,34 +344,34 @@ var NameCommands = map[string]NameCommand{
 	"save_temporary_scope_value_as/name":   {SavedScopes, true},
 	"save_opinion_value_as/name":           {SavedScopes, true},
 	"save_temporary_opinion_value_as/name": {SavedScopes, true},
-	"set_variable":                         {"var", true},
-	"set_variable/name":                    {"var", true},
-	"add_to_variable_list/name":            {"var", true},
-	"has_variable":                         {"var", false},
-	"set_local_variable":                   {"local_var", true},
-	"set_local_variable/name":              {"local_var", true},
-	"add_to_local_variable_list/name":      {"local_var", true},
-	"has_local_variable":                   {"local_var", false},
-	"set_global_variable":                  {"global_var", true},
-	"set_global_variable/name":             {"global_var", true},
-	"add_to_global_variable_list/name":     {"global_var", true},
-	"has_global_variable":                  {"global_var", false},
+	"set_variable":                         {Variables, true},
+	"set_variable/name":                    {Variables, true},
+	"add_to_variable_list/name":            {Variables, true},
+	"has_variable":                         {Variables, false},
+	"set_local_variable":                   {LocalVariables, true},
+	"set_local_variable/name":              {LocalVariables, true},
+	"add_to_local_variable_list/name":      {LocalVariables, true},
+	"has_local_variable":                   {LocalVariables, false},
+	"set_global_variable":                  {GlobalVariables, true},
+	"set_global_variable/name":             {GlobalVariables, true},
+	"add_to_global_variable_list/name":     {GlobalVariables, true},
+	"has_global_variable":                  {GlobalVariables, false},
 
 	// the commands that read a variable or variable list, and the keys a list iterator takes one by
-	"variable": {"var", false}, "change_variable/name": {"var", false}, "clamp_variable/name": {"var", false},
-	"round_variable/name": {"var", false}, "remove_variable": {"var", false}, "has_variable_list": {"var", false},
-	"clear_variable_list": {"var", false}, "is_target_in_variable_list/name": {"var", false},
-	"variable_list_size/name": {"var", false}, "remove_list_variable/name": {"var", false},
-	"local_variable": {"local_var", false}, "change_local_variable/name": {"local_var", false},
-	"clamp_local_variable/name": {"local_var", false}, "round_local_variable/name": {"local_var", false},
-	"remove_local_variable": {"local_var", false}, "has_local_variable_list": {"local_var", false},
-	"clear_local_variable_list": {"local_var", false}, "is_target_in_local_variable_list/name": {"local_var", false},
-	"local_variable_list_size/name": {"local_var", false}, "remove_list_local_variable/name": {"local_var", false},
-	"global_variable": {"global_var", false}, "change_global_variable/name": {"global_var", false},
-	"clamp_global_variable/name": {"global_var", false}, "round_global_variable/name": {"global_var", false},
-	"remove_global_variable": {"global_var", false}, "has_global_variable_list": {"global_var", false},
-	"clear_global_variable_list": {"global_var", false}, "is_target_in_global_variable_list/name": {"global_var", false},
-	"global_variable_list_size/name": {"global_var", false}, "remove_list_global_variable/name": {"global_var", false},
+	"variable": {Variables, false}, "change_variable/name": {Variables, false}, "clamp_variable/name": {Variables, false},
+	"round_variable/name": {Variables, false}, "remove_variable": {Variables, false}, "has_variable_list": {Variables, false},
+	"clear_variable_list": {Variables, false}, "is_target_in_variable_list/name": {Variables, false},
+	"variable_list_size/name": {Variables, false}, "remove_list_variable/name": {Variables, false},
+	"local_variable": {LocalVariables, false}, "change_local_variable/name": {LocalVariables, false},
+	"clamp_local_variable/name": {LocalVariables, false}, "round_local_variable/name": {LocalVariables, false},
+	"remove_local_variable": {LocalVariables, false}, "has_local_variable_list": {LocalVariables, false},
+	"clear_local_variable_list": {LocalVariables, false}, "is_target_in_local_variable_list/name": {LocalVariables, false},
+	"local_variable_list_size/name": {LocalVariables, false}, "remove_list_local_variable/name": {LocalVariables, false},
+	"global_variable": {GlobalVariables, false}, "change_global_variable/name": {GlobalVariables, false},
+	"clamp_global_variable/name": {GlobalVariables, false}, "round_global_variable/name": {GlobalVariables, false},
+	"remove_global_variable": {GlobalVariables, false}, "has_global_variable_list": {GlobalVariables, false},
+	"clear_global_variable_list": {GlobalVariables, false}, "is_target_in_global_variable_list/name": {GlobalVariables, false},
+	"global_variable_list_size/name": {GlobalVariables, false}, "remove_list_global_variable/name": {GlobalVariables, false},
 }
 
 // ---- Descriptions.
@@ -497,21 +564,22 @@ type Descriptor struct {
 	Path     string // the folder or file its entries are written in; "" for a nested or a file type's database
 	Parent   string // nested: the folder or file whose entries hold its keys
 	// nested: the key path from the holding entry to its keys: "" the entry's own block, options, **/parameters, */*/*
-	Within     string
-	Identity   Identity
-	NameKey    string   // IdentityByField: the key whose value names the entry
-	Wrappers   []string // keys at the top that only wrap entries: their blocks hold top statements
-	Keyword    string   // the word that declares an entry inline in any file (scripted_effect x = { })
-	Purpose    Purpose
-	Of         string   // PurposeHistory: the database whose entries its own set up; "" its own files'
-	Dated      bool     // a number key in an entry's own block is a date written short (999, 1077.1)
-	Body       Shape    // what an entry's block holds; ShapeUnknown: its own fields
-	Callers    []string // scripted: the words a call by an entry's name resolves by
-	Parameters bool     // scripted: a call passes parameters
-	Local      bool     // its entries answer only in the file that declares them
-	Refs       []Ref    // positions in an entry (key/<number>) whose words name an entry of a database
-	Names      []string // keys whose values in an entry also name this database's entries (trait groups)
-	LocPrefix  string   // what the loc key of an entry's name puts before the entry's name; "" the name is the key
+	Within       string
+	Identity     Identity
+	NameKey      string   // IdentityByField: the key whose value names the entry
+	NamespaceKey string   // the key a file declares a namespace x by: its entries are its top keys x.N, N a number
+	Wrappers     []string // keys at the top that only wrap entries: their blocks hold top statements
+	Keyword      string   // the word that declares an entry inline in any file (scripted_effect x = { })
+	Purpose      Purpose
+	Of           string   // PurposeHistory: the database whose entries its own set up; "" its own files'
+	Dated        bool     // a number key in an entry's own block is a date written short (999, 1077.1)
+	Body         Shape    // what an entry's block holds; ShapeUnknown: its own fields
+	Callers      []string // scripted: the words a call by an entry's name resolves by
+	Parameters   bool     // scripted: a call passes parameters
+	Local        bool     // its entries answer only in the file that declares them
+	Refs         []Ref    // positions in an entry (key/<number>) whose words name an entry of a database
+	Names        []string // keys whose values in an entry also name this database's entries (trait groups)
+	LocPrefix    string   // what the loc key of an entry's name puts before the entry's name; "" the name is the key
 }
 
 // Layout is how one game's script files lay out their entries.
@@ -613,7 +681,7 @@ var shared = []Descriptor{
 	folder("common/scripted_modifiers", Descriptor{Callers: []string{callValue}, Parameters: true}),
 	folder("common/script_values", Descriptor{Callers: []string{callTrigger, callValue}, Body: ShapeValue}),
 	folder("common/scripted_lists", Descriptor{Purpose: PurposeLists}),
-	folder("events", Descriptor{Purpose: PurposeEvents}),
+	folder("events", Descriptor{Purpose: PurposeEvents, NamespaceKey: "namespace"}),
 	folder("common/genes", Descriptor{Wrappers: []string{"color_genes", "special_genes", "morph_genes", "accessory_genes",
 		"decal_atlases", "age_presets"}}),
 	folder("common/named_colors", Descriptor{Wrappers: []string{"colors"}}),

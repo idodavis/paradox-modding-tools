@@ -24,17 +24,17 @@ type SearchService struct{}
 func NewSearchService() *SearchService { return &SearchService{} }
 
 // TextSearch greps the workspace's folders, sending each file's hits as it finds them.
-func (s *SearchService) TextSearch(ctx context.Context, query pages.TextSearchQuery) (pages.TextSearchResult, error) {
+func (sch *SearchService) TextSearch(ctx context.Context, query pages.TextSearchQuery) (pages.TextSearchResult, error) {
 	return pages.TextSearch(ctx, query, func(hits pages.TextSearchHits) { emit(EventSearchHits, hits) })
 }
 
 // Replace writes every match of a text search as the replacement, in the files on disk and the ones the editor
 // holds.
-func (s *SearchService) Replace(ctx context.Context, query pages.TextReplaceQuery) (pages.TextReplaceResult, error) {
+func (sch *SearchService) Replace(ctx context.Context, query pages.TextReplaceQuery) (pages.TextReplaceResult, error) {
 	return pages.Replace(ctx, query)
 }
 
 // FileSearch lists the files under the workspace's folders whose path holds a pattern.
-func (s *SearchService) FileSearch(ctx context.Context, query pages.FileSearchQuery) pages.FileSearchResult {
+func (sch *SearchService) FileSearch(ctx context.Context, query pages.FileSearchQuery) pages.FileSearchResult {
 	return pages.FileSearch(ctx, query)
 }

@@ -16,7 +16,14 @@ const {
   card,
   problems = [],
   size = "full",
-} = defineProps<{ card: Inspect | null; problems?: monaco.editor.IMarker[]; size?: "full" | "compact" }>();
+  category = "",
+} = defineProps<{
+  card: Inspect | null;
+  problems?: monaco.editor.IMarker[];
+  size?: "full" | "compact";
+  // the category the code under the card is colored in, which its head's badge takes
+  category?: string;
+}>();
 
 const store = useWorkspaceStore();
 const editor = useEditorStore();
@@ -90,6 +97,14 @@ const facts = computed(() => {
   ].filter((fact): fact is [string, string] => !!fact[1]);
 });
 const color = computed(() => (/^#[0-9a-f]{6}$/i.test(card?.color ?? "") ? card?.color : ""));
+// the head's badge in the code's color (its category's --syn- token), soft as the theme's soft fills; else the info color
+const headStyle = computed(
+  () =>
+    category && {
+      color: `var(--syn-${category})`,
+      background: `color-mix(in srgb, var(--syn-${category}) 16%, transparent)`,
+    },
+);
 // a word that says nothing of itself shows only its problems
 const identified = computed(() => !!(card?.head || card?.word || card?.key));
 const KEYS = [
@@ -124,7 +139,7 @@ function open(site: Location): void {
     <template v-if="card">
       <div v-if="identified" class="flex flex-col gap-1" :class="look.section">
         <div class="flex min-w-0 items-center gap-2">
-          <UBadge v-if="card.head" :label="card.head" color="info" size="sm" />
+          <UBadge v-if="card.head" :label="card.head" color="info" size="sm" :style="headStyle" />
           <span class="min-w-0 font-mono text-13 font-semibold break-all text-highlighted">{{
             card.word || card.key
           }}</span>

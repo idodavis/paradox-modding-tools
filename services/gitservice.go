@@ -118,13 +118,13 @@ var hideConsole = func(*exec.Cmd) {}
 // logged (a command that changes something) what it printed. git never asks for a password here, writes its
 // messages in English, and takes no optional lock: a status rewriting the index would wake the file watcher,
 // which reads the repository again, for ever.
-func (s *GitService) run(root, stdin string, logged bool, args ...string) (string, error) {
+func (git *GitService) run(root, stdin string, logged bool, args ...string) (string, error) {
 	// git -C "" runs where PMT runs
 	if root == "" {
 		return "", errors.New("no folder to run git in")
 	}
-	s.mu.Lock()
-	defer s.mu.Unlock()
+	git.mu.Lock()
+	defer git.mu.Unlock()
 	cmd := exec.Command("git", append([]string{"-C", root}, args...)...)
 	cmd.Env = append(os.Environ(), "GIT_TERMINAL_PROMPT=0", "LC_ALL=C", "GIT_OPTIONAL_LOCKS=0")
 	cmd.Stdin = strings.NewReader(stdin)
@@ -145,21 +145,21 @@ func (s *GitService) run(root, stdin string, logged bool, args ...string) (strin
 }
 
 // Available says whether git is on this machine's PATH.
-func (s *GitService) Available() bool {
+func (git *GitService) Available() bool {
 	_, err := exec.LookPath("git")
 	return err == nil
 }
 
 // Repositories returns each repository holding one of the workspace's mods, once, named after the
 // first mod in it; none when git is missing.
-func (s *GitService) Repositories(workspaceID string) ([]GitRepository, error) {
-	ws, _, err := s.config.workspace(workspaceID)
-	if err != nil || !s.Available() {
+func (git *GitService) Repositories(workspaceID string) ([]GitRepository, error) {
+	ws, _, err := git.config.workspace(workspaceID)
+	if err != nil || !git.Available() {
 		return nil, nil
 	}
 	var out []GitRepository
 	for _, mod := range ws.Mods {
-		top, err := s.run(mod.Path, "", false, "rev-parse", "--show-toplevel")
+		top, err := git.run(mod.Path, "", false, "rev-parse", "--show-toplevel")
 		if err != nil || mod.IsBroken {
 			continue
 		}
@@ -175,8 +175,8 @@ func (s *GitService) Repositories(workspaceID string) ([]GitRepository, error) {
 }
 
 // Init makes a mod's folder a repository, its first branch named as git's config says.
-func (s *GitService) Init(folder string) error {
-	_, err := s.run(folder, "", true, "init")
+func (git *GitService) Init(folder string) error {
+	_, err := git.run(folder, "", true, "init")
 	return err
 }
 
@@ -194,8 +194,8 @@ var letters = map[byte]string{'A': "A", 'M': "M", 'D': "D", 'R': "R", 'C': "A", 
 
 // Status returns the branch, how far it is from its upstream, the staged, changed and conflicted files,
 // and what .gitignore matches (porcelain v2).
-func (s *GitService) Status(root string) (*GitStatus, error) {
-	out, err := s.run(root, "", false, "status", "--porcelain=v2", "--branch", "-z", "--untracked-files=all", "--ignored=matching")
+func (git *GitService) Status(root string) (*GitStatus, error) {
+	out, err := git.run(root, "", false, "status", "--porcelain=v2", "--branch", "-z", "--untracked-files=all", "--ignored=matching")
 	if err != nil {
 		return nil, err
 	}
@@ -266,15 +266,15 @@ func (status *GitStatus) readBranch(entry string) {
 
 // Log returns the newest commits of HEAD's history and its upstream's, at most count, each before its
 // parents (the graph's order); none before the first commit.
-func (s *GitService) Log(root string, count int) ([]GitCommit, error) {
-	if _, err := s.run(root, "", false, "rev-parse", "--verify", "-q", "HEAD"); err != nil {
+func (git *GitService) Log(root string, count int) ([]GitCommit, error) {
+	if _, err := git.run(root, "", false, "rev-parse", "--verify", "-q", "HEAD"); err != nil {
 		return []GitCommit{}, nil
 	}
 	args := []string{"log", "--topo-order", "-n", strconv.Itoa(count), "--format=%H%x1f%h%x1f%s%x1f%cI%x1f%D%x1f%P%x1e", "HEAD"}
-	if _, err := s.run(root, "", false, "rev-parse", "--verify", "-q", "@{upstream}"); err == nil {
+	if _, err := git.run(root, "", false, "rev-parse", "--verify", "-q", "@{upstream}"); err == nil {
 		args = append(args, "@{upstream}")
 	}
-	out, err := s.run(root, "", false, args...)
+	out, err := git.run(root, "", false, args...)
 	if err != nil {
 		return nil, err
 	}
@@ -301,12 +301,12 @@ func (s *GitService) Log(root string, count int) ([]GitCommit, error) {
 
 // CommitFiles returns the files a commit changed against its first parent (a merge's too); a first commit's
 // are all added.
-func (s *GitService) CommitFiles(root, hash string) ([]GitChange, error) {
+func (git *GitService) CommitFiles(root, hash string) ([]GitChange, error) {
 	args := []string{"diff-tree", "-r", "-z", "-M", "--name-status", "--no-commit-id", "--root", hash}
-	if _, err := s.run(root, "", false, "rev-parse", "--verify", "-q", hash+"^1"); err == nil {
+	if _, err := git.run(root, "", false, "rev-parse", "--verify", "-q", hash+"^1"); err == nil {
 		args = []string{"diff", "-z", "-M", "--name-status", hash + "^1", hash}
 	}
-	out, err := s.run(root, "", false, args...)
+	out, err := git.run(root, "", false, args...)
 	if err != nil {
 		return nil, err
 	}
@@ -326,16 +326,16 @@ func (s *GitService) CommitFiles(root, hash string) ([]GitChange, error) {
 }
 
 // Show returns a file's text at a revision, or staged when rev is ""; empty when the file is not there.
-func (s *GitService) Show(root, rev, file string) (*FileText, error) {
+func (git *GitService) Show(root, rev, file string) (*FileText, error) {
 	rel, err := filepath.Rel(root, file)
 	if err != nil {
 		return nil, err
 	}
 	object := rev + ":" + filepath.ToSlash(rel)
-	if _, err := s.run(root, "", false, "cat-file", "-e", object); err != nil {
+	if _, err := git.run(root, "", false, "cat-file", "-e", object); err != nil {
 		return &FileText{}, nil
 	}
-	out, err := s.run(root, "", false, "show", object)
+	out, err := git.run(root, "", false, "show", object)
 	if err != nil {
 		return nil, err
 	}
@@ -344,20 +344,20 @@ func (s *GitService) Show(root, rev, file string) (*FileText, error) {
 }
 
 // Stage stages files, their removal included.
-func (s *GitService) Stage(root string, files []string) error {
-	_, err := s.run(root, "", true, append([]string{"add", "--"}, files...)...)
+func (git *GitService) Stage(root string, files []string) error {
+	_, err := git.run(root, "", true, append([]string{"add", "--"}, files...)...)
 	return err
 }
 
 // Unstage takes files out of the next commit; their changes stay in the working tree.
-func (s *GitService) Unstage(root string, files []string) error {
-	_, err := s.run(root, "", true, append([]string{"restore", "--staged", "--"}, files...)...)
+func (git *GitService) Unstage(root string, files []string) error {
+	_, err := git.run(root, "", true, append([]string{"restore", "--staged", "--"}, files...)...)
 	return err
 }
 
 // Discard throws away files' unstaged changes; a file git does not track is deleted.
-func (s *GitService) Discard(root string, files []string) error {
-	tracked, err := s.run(root, "", false, append([]string{"ls-files", "-z", "--"}, files...)...)
+func (git *GitService) Discard(root string, files []string) error {
+	tracked, err := git.run(root, "", false, append([]string{"ls-files", "-z", "--"}, files...)...)
 	if err != nil {
 		return err
 	}
@@ -376,13 +376,13 @@ func (s *GitService) Discard(root string, files []string) error {
 	if len(restore) == 0 {
 		return nil
 	}
-	_, err = s.run(root, "", true, append([]string{"restore", "--"}, restore...)...)
+	_, err = git.run(root, "", true, append([]string{"restore", "--"}, restore...)...)
 	return err
 }
 
 // StageText makes text a file's staged copy, as one block of it is staged or unstaged: the frontend
 // sends the staged copy with the block applied. git's filters for the path apply (line endings).
-func (s *GitService) StageText(root, file, text string, bom, legacy bool) error {
+func (git *GitService) StageText(root, file, text string, bom, legacy bool) error {
 	rel, err := filepath.Rel(root, file)
 	if err != nil {
 		return err
@@ -392,33 +392,33 @@ func (s *GitService) StageText(root, file, text string, bom, legacy bool) error 
 	if err != nil {
 		return err
 	}
-	hash, err := s.run(root, string(data), false, "hash-object", "-w", "--stdin", "--path="+rel)
+	hash, err := git.run(root, string(data), false, "hash-object", "-w", "--stdin", "--path="+rel)
 	if err != nil {
 		return err
 	}
 	// a file staged before keeps its mode (an executable bit); a new one is a plain file
 	mode := "100644"
-	if staged, err := s.run(root, "", false, "ls-files", "-s", "--", rel); err == nil && len(staged) > 6 {
+	if staged, err := git.run(root, "", false, "ls-files", "-s", "--", rel); err == nil && len(staged) > 6 {
 		mode = staged[:6]
 	}
-	_, err = s.run(root, "", true, "update-index", "--add", "--cacheinfo", mode+","+strings.TrimSpace(hash)+","+rel)
+	_, err = git.run(root, "", true, "update-index", "--add", "--cacheinfo", mode+","+strings.TrimSpace(hash)+","+rel)
 	return err
 }
 
 // Commit commits what is staged; amend replaces the last commit instead.
-func (s *GitService) Commit(root, message string, amend bool) error {
+func (git *GitService) Commit(root, message string, amend bool) error {
 	args := []string{"commit", "-F", "-"}
 	if amend {
 		args = append(args, "--amend")
 	}
-	_, err := s.run(root, message, true, args...)
+	_, err := git.run(root, message, true, args...)
 	return err
 }
 
 // Branches returns the local and remote branches and the tags, each with its last commit's date, a
 // local branch with how far it is from its upstream.
-func (s *GitService) Branches(root string) (*GitBranches, error) {
-	out, err := s.run(root, "", false, "for-each-ref", "--sort=-creatordate",
+func (git *GitService) Branches(root string) (*GitBranches, error) {
+	out, err := git.run(root, "", false, "for-each-ref", "--sort=-creatordate",
 		"--format=%(refname)%1f%(refname:short)%1f%(upstream:short)%1f%(upstream:track,nobracket)%1f%(creatordate:iso-strict)%1f%(HEAD)",
 		"refs/heads", "refs/remotes", "refs/tags")
 	if err != nil {
@@ -459,7 +459,7 @@ func trackCounts(track string) (ahead, behind int) {
 
 // Checkout switches to a branch, a remote branch (as a local one tracking it), a tag or a commit; with
 // branch, it creates that branch at ref (HEAD when ref is "") and switches to it.
-func (s *GitService) Checkout(root, ref, branch string) error {
+func (git *GitService) Checkout(root, ref, branch string) error {
 	args := []string{"checkout", ref}
 	if branch != "" {
 		args = []string{"checkout", "-b", branch}
@@ -467,43 +467,43 @@ func (s *GitService) Checkout(root, ref, branch string) error {
 			args = append(args, ref)
 		}
 	}
-	_, err := s.run(root, "", true, args...)
+	_, err := git.run(root, "", true, args...)
 	return err
 }
 
 // DeleteBranch deletes a local branch; force deletes one whose commits are merged nowhere.
-func (s *GitService) DeleteBranch(root, branch string, force bool) error {
+func (git *GitService) DeleteBranch(root, branch string, force bool) error {
 	flag := "-d"
 	if force {
 		flag = "-D"
 	}
-	_, err := s.run(root, "", true, "branch", flag, branch)
+	_, err := git.run(root, "", true, "branch", flag, branch)
 	return err
 }
 
 // Fetch fetches every remote, dropping the branches they deleted.
-func (s *GitService) Fetch(root string) error {
-	_, err := s.run(root, "", true, "fetch", "--all", "--prune")
+func (git *GitService) Fetch(root string) error {
+	_, err := git.run(root, "", true, "fetch", "--all", "--prune")
 	return err
 }
 
 // Pull pulls the upstream, or a remote's branch when both are given.
-func (s *GitService) Pull(root, remote, branch string) error {
+func (git *GitService) Pull(root, remote, branch string) error {
 	args := []string{"pull"}
 	if remote != "" && branch != "" {
 		args = append(args, remote, branch)
 	}
-	_, err := s.run(root, "", true, args...)
+	_, err := git.run(root, "", true, args...)
 	return err
 }
 
 // Push pushes the branch to its upstream; a branch with none goes to the first remote and tracks it.
-func (s *GitService) Push(root string) error {
-	if _, err := s.run(root, "", false, "rev-parse", "--abbrev-ref", "@{upstream}"); err == nil {
-		_, err := s.run(root, "", true, "push")
+func (git *GitService) Push(root string) error {
+	if _, err := git.run(root, "", false, "rev-parse", "--abbrev-ref", "@{upstream}"); err == nil {
+		_, err := git.run(root, "", true, "push")
 		return err
 	}
-	remotes, err := s.run(root, "", false, "remote")
+	remotes, err := git.run(root, "", false, "remote")
 	if err != nil {
 		return err
 	}
@@ -511,13 +511,13 @@ func (s *GitService) Push(root string) error {
 	if remote == "" {
 		return errors.New("this repository has no remote to push to")
 	}
-	_, err = s.run(root, "", true, "push", "--set-upstream", remote, "HEAD")
+	_, err = git.run(root, "", true, "push", "--set-upstream", remote, "HEAD")
 	return err
 }
 
 // Remotes returns the repository's remotes, each with the address it fetches from.
-func (s *GitService) Remotes(root string) ([]GitRemote, error) {
-	out, err := s.run(root, "", false, "remote", "-v")
+func (git *GitService) Remotes(root string) ([]GitRemote, error) {
+	out, err := git.run(root, "", false, "remote", "-v")
 	if err != nil {
 		return nil, err
 	}
@@ -533,25 +533,25 @@ func (s *GitService) Remotes(root string) ([]GitRemote, error) {
 }
 
 // AddRemote adds a remote by its name and address: Publish asks for one where the repository has none.
-func (s *GitService) AddRemote(root, name, url string) error {
-	_, err := s.run(root, "", true, "remote", "add", "--", name, url)
+func (git *GitService) AddRemote(root, name, url string) error {
+	_, err := git.run(root, "", true, "remote", "add", "--", name, url)
 	return err
 }
 
 // SetRemoteURL changes the address a remote fetches from and pushes to.
-func (s *GitService) SetRemoteURL(root, name, url string) error {
-	_, err := s.run(root, "", true, "remote", "set-url", "--", name, url)
+func (git *GitService) SetRemoteURL(root, name, url string) error {
+	_, err := git.run(root, "", true, "remote", "set-url", "--", name, url)
 	return err
 }
 
 // RemoveRemote removes a remote, with its remote branches and their settings.
-func (s *GitService) RemoveRemote(root, name string) error {
-	_, err := s.run(root, "", true, "remote", "remove", "--", name)
+func (git *GitService) RemoveRemote(root, name string) error {
+	_, err := git.run(root, "", true, "remote", "remove", "--", name)
 	return err
 }
 
 // Merge merges a branch, tag or commit into the current branch; conflicts are left in the files.
-func (s *GitService) Merge(root, ref string) error {
-	_, err := s.run(root, "", true, "merge", ref)
+func (git *GitService) Merge(root, ref string) error {
+	_, err := git.run(root, "", true, "merge", ref)
 	return err
 }

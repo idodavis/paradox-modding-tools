@@ -120,7 +120,7 @@ func HoldClose(window *application.WebviewWindow) {
 }
 
 // QuitAnswer is the main window's answer to its close: quit, or stay, its next close asking again.
-func (s *WindowService) QuitAnswer(quit bool) {
+func (win *WindowService) QuitAnswer(quit bool) {
 	if quit {
 		application.Get().Quit()
 		return
@@ -131,7 +131,7 @@ func (s *WindowService) QuitAnswer(quit bool) {
 }
 
 // Show brings the window with a name to the front.
-func (s *WindowService) Show(name string) {
+func (win *WindowService) Show(name string) {
 	if window, ok := application.Get().Window.GetByName(name); ok {
 		window.Show()
 		window.Focus()
@@ -139,17 +139,17 @@ func (s *WindowService) Show(name string) {
 }
 
 // Close closes the window with a name; another than the main window hands its tabs back first.
-func (s *WindowService) Close(name string) {
+func (win *WindowService) Close(name string) {
 	if window, ok := application.Get().Window.GetByName(name); ok {
 		window.Close()
 	}
 }
 
 // Open shows the window with a name, made the first time at a route (a hash route: /workspace/<id>/graph).
-func (s *WindowService) Open(route, name, title string) {
+func (win *WindowService) Open(route, name, title string) {
 	app := application.Get()
 	if _, ok := app.Window.GetByName(name); ok {
-		s.Show(name)
+		win.Show(name)
 		return
 	}
 	window := app.Window.NewWithOptions(application.WebviewWindowOptions{

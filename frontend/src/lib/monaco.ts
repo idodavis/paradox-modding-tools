@@ -1,15 +1,21 @@
 /**
  * Monaco's setup, run when the module loads: its worker, the Paradox languages and Markdown, the services a peek
- * reaches files through, and the PMT theme on the page's tokens, one Monaco theme per page theme.
+ * reaches files through, and the PMT theme on the page's tokens, one Monaco theme per page theme. The theme colors the
+ * grammars' tokens and the engine's alike, Monaco matching a semantic token to the same rules by its type.
  */
 import * as monaco from "monaco-editor/editor/editor.api";
 import "monaco-editor/features/register.all";
+// the one editor feature register.all leaves out: asking a provider for a model's semantic tokens, the engine's colors
+import "monaco-editor/editor/contrib/semanticTokens/browser/documentSemanticTokens";
 // Markdown, the one language of Monaco's own a mod has (its Workshop description, readme)
 import "monaco-editor/languages/definitions/markdown/register";
 import EditorWorker from "monaco-editor/editor/editor.worker?worker";
-import { LANGUAGES, PAIRS, TOKENS } from "./grammars";
+import { CATEGORIES, LANGUAGES, PAIRS } from "./grammars";
 
 export { monaco };
+
+/** Fired once the editors take another page theme, so what is colored by the theme is asked again. */
+export const themeChanged = new monaco.Emitter<void>();
 
 self.MonacoEnvironment = { getWorker: () => new EditorWorker() };
 
@@ -23,11 +29,13 @@ export const hooks: {
   folderLabel: () => undefined,
 };
 
-// Monaco makes its services once, with the first editor: this one, so the files it reaches are read on demand
+// Monaco makes its services once, with the first editor: this one, so the files it reaches are read on demand; its
+// options are every editor's and diff's from then on, so the engine's colors show (Monaco's standalone themes leave
+// semantic highlighting off)
 monaco.editor
   .create(
     document.createElement("div"),
-    {},
+    { "semanticHighlighting.enabled": true },
     {
       textModelService: {
         async createModelReference(uri: monaco.Uri) {
@@ -109,11 +117,13 @@ function followTheme(): void {
       inherit: true,
       rules: [
         { token: "", foreground: token("fg-1") },
-        ...Object.entries(TOKENS).map(([kind, { color, italic }]) => ({
-          token: kind,
-          foreground: token(color),
+        ...Object.entries(CATEGORIES).map(([category, { italic }]) => ({
+          token: category,
+          foreground: token(`syn-${category}`),
           fontStyle: italic ? "italic" : "",
         })),
+        // Monaco's own Markdown grammar marks its headings and list markers "keyword"
+        { token: "keyword", foreground: token("syn-block") },
       ],
       colors: {
         "editor.background": token("bg-0"),
@@ -133,9 +143,9 @@ function followTheme(): void {
         "editorIndentGuide.background1": token("line-1"),
         "editorIndentGuide.activeBackground1": token("line-2"),
         "editorWhitespace.foreground": token("line-2"),
-        "editorBracketHighlight.foreground1": token("syn-kw"),
-        "editorBracketHighlight.foreground2": token("syn-fn"),
-        "editorBracketHighlight.foreground3": token("syn-num"),
+        "editorBracketHighlight.foreground1": token("syn-block"),
+        "editorBracketHighlight.foreground2": token("syn-entry"),
+        "editorBracketHighlight.foreground3": token("syn-number"),
         "editorBracketMatch.background": `${accent}26`,
         "editorBracketMatch.border": `${accent}80`,
         "editorError.foreground": red,
@@ -202,7 +212,10 @@ function followTheme(): void {
 }
 
 followTheme();
-new MutationObserver(followTheme).observe(document.documentElement, {
+new MutationObserver(() => {
+  followTheme();
+  themeChanged.fire();
+}).observe(document.documentElement, {
   attributes: true,
   attributeFilter: ["data-theme"],
 });

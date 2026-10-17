@@ -3,7 +3,7 @@
  * change redraws nothing, and a compare of two texts. The compare's split or unified choice is kept here.
  */
 import { useLocalStorage } from "@vueuse/core";
-import { TOKENS } from "./grammars";
+import { CATEGORIES } from "./grammars";
 import { languageOf, monaco } from "./monaco";
 
 /** Every compare's split or unified view, one choice kept on this computer, and the tabs that pick it. */
@@ -22,11 +22,11 @@ export function codeLines(text: string, name: string): CodeToken[][] {
   return monaco.editor.tokenize(text, languageOf(name)).map((tokens, i) => {
     const line = lines[i] ?? "";
     return tokens.map((token, j) => {
-      const style = TOKENS[token.type] ?? TOKENS[token.type.slice(0, token.type.lastIndexOf("."))];
+      const category = CATEGORIES[token.type];
       return {
         content: line.slice(token.offset, tokens[j + 1]?.offset),
-        color: style && `var(--${style.color})`,
-        italic: style?.italic,
+        color: category && `var(--syn-${token.type})`,
+        italic: category?.italic,
       };
     });
   });
@@ -45,7 +45,7 @@ export function locTokens(value: string): CodeToken[] {
       Math.max(prefix.length - offset, 0),
       Math.max(prefix.length + value.length - offset, 0),
     );
-    if (content) out.push({ ...token, content, color: token.color === "var(--syn-str)" ? undefined : token.color });
+    if (content) out.push({ ...token, content, color: token.color === "var(--syn-string)" ? undefined : token.color });
     offset += token.content.length;
   }
   return out;

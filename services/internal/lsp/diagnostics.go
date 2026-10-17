@@ -49,6 +49,7 @@ var Codes = []Code{
 	{"wrong-localization-folder", "a localization folder spelled localisation, which the game never reads", true},
 	{"missing-file", "a path that exists nowhere in the install or the mods", false},
 	{"unknown-event", "an event id no event defines", true},
+	{"undeclared-namespace", "an event whose namespace its file does not declare, which the game does not load", true},
 	{"wrong-declared-value", "a word outside the words the key takes", true},
 	{"missing-key", "a key the game's docs say every entry writes, left out", false},
 }
@@ -148,11 +149,25 @@ func (judge *judge) statement(at step) {
 		judge.variableRead(at, &assign.Key)
 		judge.wrongScope(at, assign)
 		judge.missingKey(at, assign)
+		judge.undeclaredNamespace(at, assign)
 	}
 	if scalar, isScalar := jomini.ValueOf(at.statement).(*jomini.Scalar); isScalar {
 		judge.variableRead(at, scalar)
 		judge.wrongValue(at, scalar)
 	}
+}
+
+// undeclaredNamespace finds a block written outside any entry of an events file under a key shaped as an event id: no
+// event, since the file declares no namespace of its id (undeclared-namespace), which the game does not load either.
+func (judge *judge) undeclaredNamespace(at step, assign *jomini.Assignment) {
+	row := judge.file.ws.Install.Schema.DatabaseAt(judge.file.place.Rel)
+	if at.context.Entry >= 0 || row == nil || row.Descriptor.NamespaceKey == "" || jomini.ChildBlock(at.statement) == nil ||
+		!jomini.IsEventID(assign.Key.Text) {
+		return
+	}
+	namespace, _, _ := strings.Cut(assign.Key.Text, ".")
+	judge.report(assign.Key.Range, 2, "undeclared-namespace",
+		fmt.Sprintf("this file declares no %s = %s, so the game does not load %s", row.Descriptor.NamespaceKey, namespace, assign.Key.Text))
 }
 
 // variableRead finds a variable read in a scope that stores none (wrong-scope: a command written in

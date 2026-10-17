@@ -49,14 +49,17 @@ let readOnlyRule: (path: string) => boolean = () => false;
 const files = new Map<string, File>();
 // the paths the backend's places spell, for files opened from them
 const backendPaths = new Map<string, string>();
+// the file each version model is of (versionModel)
+const versions = new WeakMap<monaco.editor.ITextModel, string>();
 // a peek's file rows say whose they are: the origin's name and the folder in it, and a dot in the origin's color,
 // which Monaco has no hook for, matched by the full path each row announces (themes.css draws it)
 const folders = new Map<string, { origin: string; dir: string }>();
 const dotted = new Set<string>();
 const dotSheet = new CSSStyleSheet();
 
-/** Asked again when the session is built again: a date's era after it, where the mods declare a calendar. */
-export const hintsChanged = new monaco.Emitter<void>();
+/** Fired once the session is built again, so what is drawn from the backend for every open file, its hints and its
+ * colors, is asked again. */
+export const sessionBuilt = new monaco.Emitter<void>();
 
 /** Fired with a file's path once the backend has an edit of its text, so what is drawn from it is read again. */
 export const textEdited = new monaco.Emitter<string>();
@@ -85,6 +88,17 @@ export const pathOf = (model: monaco.editor.ITextModel): string => pathAt(model.
 
 /** The backend's name for a path, where a place named it before a model was made for it. */
 export const backendPathAt = (uri: monaco.Uri): string | undefined => backendPaths.get(uri.toString());
+
+/** A model of another text of a file, a version of it a diff shows (the last commit's, the staged copy): the view's
+ * own, in the file's language, colored by the engine as the file is (providers.ts). */
+export function versionModel(path: string, text: string, format?: string): monaco.editor.ITextModel {
+  const model = monaco.editor.createModel(text, languageOf(path, format));
+  versions.set(model, path);
+  return model;
+}
+
+/** The file a version model is of. */
+export const versionOf = (model: monaco.editor.ITextModel): string | undefined => versions.get(model);
 
 /** A backend range in the model's columns, 1-based; a file no model holds keeps its byte columns. */
 export function toRange(model: monaco.editor.ITextModel | null, range: ByteRange): monaco.Range {
@@ -343,10 +357,10 @@ export async function showText(path: string, text: string): Promise<void> {
 }
 
 /** The session was built again (its inputs changed, a calendar among them): each open file's text is sent to it
- * again, its problems read again, and the era hints asked again. */
+ * again, its problems read again, and its hints and colors asked again. */
 export function resendOpenFiles(): void {
   for (const file of files.values()) if (file.open) send(file);
-  hintsChanged.fire();
+  sessionBuilt.fire();
 }
 
 /** Start keeping the files: the models a peek or a definition reaches are made on demand, a file no tab shows lets its

@@ -15,6 +15,38 @@ import * as schema$0 from "../schema/models.js";
 import * as texture$0 from "../texture/models.js";
 
 /**
+ * Category is what a key, value or name is colored as; each is a category of the grammars (lib/grammars.ts).
+ */
+export enum Category {
+    /**
+     * The Go zero value for the underlying type of the enum.
+     */
+    $zero = "",
+
+    /**
+     * The categories the engine colors.
+     *
+     * an entry's name where it is defined, or a reference that resolves to one
+     */
+    CategoryEntry = "entry",
+
+    /**
+     * a key that is one of the language's operators: a construct with a class
+     */
+    CategoryOperator = "operator",
+
+    /**
+     * a link to a scope script runs in, or a saved scope
+     */
+    CategoryScope = "scope",
+
+    /**
+     * a variable, or a scripted entry's parameter
+     */
+    CategoryVariable = "variable",
+};
+
+/**
  * Code is one check, for the settings: what it finds, and whether it runs by default.
  */
 export interface Code {
@@ -261,6 +293,16 @@ export interface Symbol {
 export interface TextEdit {
     "range": Range;
     "newText": string;
+}
+
+/**
+ * Token is one key, value or name the engine colors: its 0-based line, its byte column and length, and its category.
+ */
+export interface Token {
+    "line": number;
+    "col": number;
+    "length": number;
+    "category": Category;
 }
 
 /**

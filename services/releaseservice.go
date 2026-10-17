@@ -138,8 +138,8 @@ type snapshotPage struct {
 }
 
 // UploadFiles walks a mod as its upload copy does, by its saved ignore text.
-func (s *ReleaseService) UploadFiles(workspaceID, modID string) (*UploadFiles, error) {
-	_, mod, err := findMod(s.config, workspaceID, modID)
+func (rls *ReleaseService) UploadFiles(workspaceID, modID string) (*UploadFiles, error) {
+	_, mod, err := findMod(rls.config, workspaceID, modID)
 	if err != nil {
 		return nil, err
 	}
@@ -162,8 +162,8 @@ func init() { application.RegisterEvent[steam.Progress](EventSteamProgress) }
 
 // SteamStatus says why Steam cannot take an upload for a workspace's game now (not running, no account that owns
 // the game signed in, offline); nil when it can. It starts Steam's API in the publish's child, as an upload does.
-func (s *ReleaseService) SteamStatus(workspaceID string) error {
-	library, appID, err := s.steamLibrary(workspaceID)
+func (rls *ReleaseService) SteamStatus(workspaceID string) error {
+	library, appID, err := rls.steamLibrary(workspaceID)
 	if err != nil {
 		return err
 	}
@@ -172,8 +172,8 @@ func (s *ReleaseService) SteamStatus(workspaceID string) error {
 }
 
 // ExportZip writes a workspace mod's upload copy (its ignore text applied) as a zip at dest, for Paradox Mods.
-func (s *ReleaseService) ExportZip(workspaceID, modID, dest string) error {
-	_, mod, err := findMod(s.config, workspaceID, modID)
+func (rls *ReleaseService) ExportZip(workspaceID, modID, dest string) error {
+	_, mod, err := findMod(rls.config, workspaceID, modID)
 	if err != nil {
 		return err
 	}
@@ -181,17 +181,17 @@ func (s *ReleaseService) ExportZip(workspaceID, modID, dest string) error {
 }
 
 // LoadListing reads a workspace mod's descriptor and description, writing nothing.
-func (s *ReleaseService) LoadListing(workspaceID, modID string) (*Listing, error) {
-	ws, mod, err := findMod(s.config, workspaceID, modID)
+func (rls *ReleaseService) LoadListing(workspaceID, modID string) (*Listing, error) {
+	ws, mod, err := findMod(rls.config, workspaceID, modID)
 	if err != nil {
 		return nil, err
 	}
-	return s.loadFrom(ws, mod)
+	return rls.loadFrom(ws, mod)
 }
 
 // ListingSummary reads a mod's Workshop id, listing image and description source, writing nothing.
-func (s *ReleaseService) ListingSummary(workspaceID, modID string) (*ListingSummary, error) {
-	ws, mod, err := findMod(s.config, workspaceID, modID)
+func (rls *ReleaseService) ListingSummary(workspaceID, modID string) (*ListingSummary, error) {
+	ws, mod, err := findMod(rls.config, workspaceID, modID)
 	if err != nil {
 		return nil, err
 	}
@@ -204,8 +204,8 @@ func (s *ReleaseService) ListingSummary(workspaceID, modID string) (*ListingSumm
 
 // SaveListing writes the descriptor, the description to its source's file where the mod has one,
 // and the changelog.
-func (s *ReleaseService) SaveListing(in Listing) error {
-	ws, mod, err := findMod(s.config, in.WorkspaceID, in.ModID)
+func (rls *ReleaseService) SaveListing(in Listing) error {
+	ws, mod, err := findMod(rls.config, in.WorkspaceID, in.ModID)
 	if err != nil {
 		return err
 	}
@@ -248,8 +248,8 @@ func writeDescription(mod *WorkspaceMod, in Listing) error {
 
 // CreateDescriptionFile writes the mod's missing description file from its name and short
 // description, in its source's markup.
-func (s *ReleaseService) CreateDescriptionFile(workspaceID, modID string) error {
-	ws, mod, err := findMod(s.config, workspaceID, modID)
+func (rls *ReleaseService) CreateDescriptionFile(workspaceID, modID string) error {
+	ws, mod, err := findMod(rls.config, workspaceID, modID)
 	if err != nil {
 		return err
 	}
@@ -266,8 +266,8 @@ func (s *ReleaseService) CreateDescriptionFile(workspaceID, modID string) error 
 
 // SetListingLink writes the descriptor's Workshop id and, where thumbnailRel names one, its picture,
 // and nothing else of the listing; it returns the summary they make.
-func (s *ReleaseService) SetListingLink(workspaceID, modID, remoteFileID, thumbnailRel string) (*ListingSummary, error) {
-	ws, mod, err := findMod(s.config, workspaceID, modID)
+func (rls *ReleaseService) SetListingLink(workspaceID, modID, remoteFileID, thumbnailRel string) (*ListingSummary, error) {
+	ws, mod, err := findMod(rls.config, workspaceID, modID)
 	if err != nil {
 		return nil, err
 	}
@@ -283,7 +283,7 @@ func (s *ReleaseService) SetListingLink(workspaceID, modID, remoteFileID, thumbn
 }
 
 // Convert maps listing markup: the text as BBCode where markup is "bbcode", else as Markdown.
-func (s *ReleaseService) Convert(text, markup string) steam.Converted {
+func (rls *ReleaseService) Convert(text, markup string) steam.Converted {
 	if markup == "bbcode" {
 		return steam.MarkdownToBBCode(text)
 	}
@@ -291,8 +291,8 @@ func (s *ReleaseService) Convert(text, markup string) steam.Converted {
 }
 
 // editWorkshop applies one edit to the mod's Workshop extras.
-func (s *ReleaseService) editWorkshop(workspaceID, modID string, edit func(modRoot string) error) error {
-	_, mod, err := findMod(s.config, workspaceID, modID)
+func (rls *ReleaseService) editWorkshop(workspaceID, modID string, edit func(modRoot string) error) error {
+	_, mod, err := findMod(rls.config, workspaceID, modID)
 	if err != nil {
 		return err
 	}
@@ -300,41 +300,41 @@ func (s *ReleaseService) editWorkshop(workspaceID, modID string, edit func(modRo
 }
 
 // AddWorkshopPreview copies an image into workshop/previews (Steam extra cap).
-func (s *ReleaseService) AddWorkshopPreview(workspaceID, modID, srcPath string) error {
-	return s.editWorkshop(workspaceID, modID, func(modRoot string) error {
+func (rls *ReleaseService) AddWorkshopPreview(workspaceID, modID, srcPath string) error {
+	return rls.editWorkshop(workspaceID, modID, func(modRoot string) error {
 		return steam.AddPreview(modRoot, srcPath)
 	})
 }
 
 // RemoveWorkshopPreview deletes one extra image under workshop/previews.
-func (s *ReleaseService) RemoveWorkshopPreview(workspaceID, modID, rel string) error {
-	return s.editWorkshop(workspaceID, modID, func(modRoot string) error {
+func (rls *ReleaseService) RemoveWorkshopPreview(workspaceID, modID, rel string) error {
+	return rls.editWorkshop(workspaceID, modID, func(modRoot string) error {
 		return steam.RemovePreview(modRoot, rel)
 	})
 }
 
 // AddWorkshopVideo appends a YouTube id from a watch/embed/youtu.be URL or raw id.
-func (s *ReleaseService) AddWorkshopVideo(workspaceID, modID, urlOrID string) error {
-	return s.editWorkshop(workspaceID, modID, func(modRoot string) error {
+func (rls *ReleaseService) AddWorkshopVideo(workspaceID, modID, urlOrID string) error {
+	return rls.editWorkshop(workspaceID, modID, func(modRoot string) error {
 		return steam.AddVideo(modRoot, urlOrID)
 	})
 }
 
 // RemoveWorkshopVideo drops one YouTube id from workshop/previews/videos.txt.
-func (s *ReleaseService) RemoveWorkshopVideo(workspaceID, modID, id string) error {
-	return s.editWorkshop(workspaceID, modID, func(modRoot string) error {
+func (rls *ReleaseService) RemoveWorkshopVideo(workspaceID, modID, id string) error {
+	return rls.editWorkshop(workspaceID, modID, func(modRoot string) error {
 		return steam.RemoveVideo(modRoot, id)
 	})
 }
 
 // PublishSteam publishes the mod, as the workspace has it saved, to the Workshop, saves the item's
 // id, and keeps what it sent as the item's snapshot.
-func (s *ReleaseService) PublishSteam(workspaceID, modID string) (*PublishResult, error) {
-	ws, mod, err := findMod(s.config, workspaceID, modID)
+func (rls *ReleaseService) PublishSteam(workspaceID, modID string) (*PublishResult, error) {
+	ws, mod, err := findMod(rls.config, workspaceID, modID)
 	if err != nil {
 		return nil, err
 	}
-	listing, err := s.loadFrom(ws, mod)
+	listing, err := rls.loadFrom(ws, mod)
 	if err != nil {
 		return nil, err
 	}
@@ -343,7 +343,7 @@ func (s *ReleaseService) PublishSteam(workspaceID, modID string) (*PublishResult
 	if _, rel := description(mod); sent && !exists(filepath.Join(mod.Path, filepath.FromSlash(rel))) {
 		return nil, fmt.Errorf("the description file %s is missing: create it, or keep Steam's own text", rel)
 	}
-	library, appID, err := s.steamLibrary(ws.ID)
+	library, appID, err := rls.steamLibrary(ws.ID)
 	if err != nil {
 		return nil, err
 	}
@@ -373,7 +373,7 @@ func (s *ReleaseService) PublishSteam(workspaceID, modID string) (*PublishResult
 	if err := keepSnapshot(work, resp.PublishedFileID, uploadedPage(listing, text, sent, resp.PublishedFileID)); err != nil {
 		slog.Warn("workshop snapshot not kept", "id", resp.PublishedFileID, "error", err)
 	}
-	if _, err := s.SetListingLink(workspaceID, modID, resp.PublishedFileID, listing.ThumbnailRel); err != nil {
+	if _, err := rls.SetListingLink(workspaceID, modID, resp.PublishedFileID, listing.ThumbnailRel); err != nil {
 		return nil, fmt.Errorf("save the workshop id after publish: %w", err)
 	}
 	slog.Info("workshop publish done", "mod", listing.Name, "id", resp.PublishedFileID, "legalAgreement", resp.NeedsLegalAgreement)
@@ -415,12 +415,12 @@ func uploadedPage(listing *Listing, text string, sent bool, item string) snapsho
 }
 
 // CompareWithSteam compares the mod with Steam's copy by its snapshot alone: it never downloads.
-func (s *ReleaseService) CompareWithSteam(workspaceID, modID string) (*SteamCompare, error) {
-	ws, mod, err := findMod(s.config, workspaceID, modID)
+func (rls *ReleaseService) CompareWithSteam(workspaceID, modID string) (*SteamCompare, error) {
+	ws, mod, err := findMod(rls.config, workspaceID, modID)
 	if err != nil {
 		return nil, err
 	}
-	listing, err := s.loadFrom(ws, mod)
+	listing, err := rls.loadFrom(ws, mod)
 	if err != nil {
 		return nil, err
 	}
@@ -496,12 +496,12 @@ func countChanges(rows []ListingChange) int {
 }
 
 // DownloadFromSteam replaces the mod's snapshot with Steam's own copy of the item, then compares.
-func (s *ReleaseService) DownloadFromSteam(workspaceID, modID string) (*SteamCompare, error) {
-	ws, mod, err := findMod(s.config, workspaceID, modID)
+func (rls *ReleaseService) DownloadFromSteam(workspaceID, modID string) (*SteamCompare, error) {
+	ws, mod, err := findMod(rls.config, workspaceID, modID)
 	if err != nil {
 		return nil, err
 	}
-	item, resp, err := s.fetchItem(ws, mod, true)
+	item, resp, err := rls.fetchItem(ws, mod, true)
 	if err != nil {
 		return nil, err
 	}
@@ -520,17 +520,17 @@ func (s *ReleaseService) DownloadFromSteam(workspaceID, modID string) (*SteamCom
 	if err := keepSnapshot(work, item, page); err != nil {
 		return nil, err
 	}
-	return s.CompareWithSteam(workspaceID, modID)
+	return rls.CompareWithSteam(workspaceID, modID)
 }
 
 // ImportSteamExtras brings the extra images and videos the mod's Workshop item has and the mod lacks into
 // its workshop folder, so an upload keeps them.
-func (s *ReleaseService) ImportSteamExtras(workspaceID, modID string) error {
-	ws, mod, err := findMod(s.config, workspaceID, modID)
+func (rls *ReleaseService) ImportSteamExtras(workspaceID, modID string) error {
+	ws, mod, err := findMod(rls.config, workspaceID, modID)
 	if err != nil {
 		return err
 	}
-	_, resp, err := s.fetchItem(ws, mod, false)
+	_, resp, err := rls.fetchItem(ws, mod, false)
 	if err != nil {
 		return err
 	}
@@ -539,7 +539,7 @@ func (s *ReleaseService) ImportSteamExtras(workspaceID, modID string) error {
 
 // fetchItem asks Steam for the mod's Workshop item: its page, and with files its files downloaded; it
 // returns the item's id.
-func (s *ReleaseService) fetchItem(ws *Workspace, mod *WorkspaceMod, files bool) (string, steam.Response, error) {
+func (rls *ReleaseService) fetchItem(ws *Workspace, mod *WorkspaceMod, files bool) (string, steam.Response, error) {
 	fields, err := modfiles.LoadDescriptor(ws.GameID, mod.Path)
 	if err != nil {
 		return "", steam.Response{}, err
@@ -547,7 +547,7 @@ func (s *ReleaseService) fetchItem(ws *Workspace, mod *WorkspaceMod, files bool)
 	if fields.RemoteFileID == "" {
 		return "", steam.Response{}, fmt.Errorf("%s is not on the Workshop", mod.Name)
 	}
-	library, appID, err := s.steamLibrary(ws.ID)
+	library, appID, err := rls.steamLibrary(ws.ID)
 	if err != nil {
 		return "", steam.Response{}, err
 	}
@@ -557,8 +557,8 @@ func (s *ReleaseService) fetchItem(ws *Workspace, mod *WorkspaceMod, files bool)
 
 // steamLibrary is where the workspace's install keeps Steam's library, which the publishing child
 // loads, and the game's app id.
-func (s *ReleaseService) steamLibrary(workspaceID string) (string, uint32, error) {
-	ws, inst, err := s.config.workspace(workspaceID)
+func (rls *ReleaseService) steamLibrary(workspaceID string) (string, uint32, error) {
+	ws, inst, err := rls.config.workspace(workspaceID)
 	if err != nil {
 		return "", 0, err
 	}
@@ -575,7 +575,7 @@ func (s *ReleaseService) steamLibrary(workspaceID string) (string, uint32, error
 }
 
 // loadFrom reads a mod's listing: its descriptor, its description in its source's file, its changelog and its previews.
-func (s *ReleaseService) loadFrom(ws *Workspace, mod *WorkspaceMod) (*Listing, error) {
+func (rls *ReleaseService) loadFrom(ws *Workspace, mod *WorkspaceMod) (*Listing, error) {
 	root := mod.Path
 	fields, err := modfiles.LoadDescriptor(ws.GameID, root)
 	if err != nil {

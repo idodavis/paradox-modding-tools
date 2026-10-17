@@ -295,7 +295,7 @@ function writeRich(markdown: string | undefined): void {
         @mouseenter="view?.holdHover(true)"
         @mouseleave="view?.holdHover(false)"
       >
-        <HoverCard :card="hover.card" :problems="hover.problems" />
+        <HoverCard :card="hover.card" :problems="hover.problems" :category="hover.category" />
       </div>
     </template>
   </UPopover>

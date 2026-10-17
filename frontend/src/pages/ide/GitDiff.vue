@@ -8,10 +8,10 @@
 import { computed, onBeforeUnmount, shallowRef, useTemplateRef, watch } from "vue";
 import { useQuery } from "@pinia/colada";
 import { Stage, StageText, Unstage } from "@services/gitservice";
-import { openFile } from "../../editor/models";
+import { openFile, versionModel } from "../../editor/models";
 import { useIdeRoots } from "../../composables/useIdeRoots";
 import { compareStyle, diffView } from "../../lib/codeView";
-import { languageOf, monaco } from "../../lib/monaco";
+import { monaco } from "../../lib/monaco";
 import CompareStyle from "../../ui/CompareStyle.vue";
 import { capital } from "../../lib/format";
 import { gitTextQuery, textQuery } from "../../queries";
@@ -77,7 +77,7 @@ watch(
       view.value = diffView(el, settings.codeFont, style.value === "split", false);
       const live = diff.value === "changes" && !deleted.value;
       view.value.view.updateOptions({ readOnly: !live, renderMarginRevertIcon: live, glyphMargin: blockwise.value });
-      const make = (value: string) => monaco.editor.createModel(value, languageOf(file.value, leftSide.format));
+      const make = (value: string) => versionModel(file.value, value, leftSide.format);
       const original = make(leftSide.text);
       const modified = live ? openFile(file.value, { text, bom: now?.bom ?? false, legacy: now?.legacy }) : make(text);
       own = live ? [original] : [original, modified];

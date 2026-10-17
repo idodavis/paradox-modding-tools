@@ -140,7 +140,7 @@ func (walk *fileWalk) entryAt(context Context, statements []jomini.Statement, i 
 	case context.top && block != nil && fileType.WidgetKey != "":
 		return walk.entry(ext+".widget", nameIn(block, fileType.WidgetKey), span), false, true
 	case context.top && walk.database != nil:
-		return walk.identified(key, block, span)
+		return walk.identified(key, block, span, statements[:i])
 	case context.Entry >= 0 && context.Database != nil:
 		return walk.nestedEntry(context, statement, span)
 	}
@@ -164,8 +164,9 @@ func (walk *fileWalk) declaring(context Context, word, next jomini.Statement) (s
 }
 
 // identified is the entry a top statement is by the file's database's identity: named nothing, by the value of
-// its name key up to a (, or by its own key (an event id where the database is the events').
-func (walk *fileWalk) identified(key string, block *jomini.Block, span jomini.Range) (entry Occurrence, nested, isEntry bool) {
+// its name key up to a (, or by its own key (where the database's row names a namespace key, an id whose namespace a
+// statement before it declares: an event).
+func (walk *fileWalk) identified(key string, block *jomini.Block, span jomini.Range, before []jomini.Statement) (entry Occurrence, nested, isEntry bool) {
 	row := walk.database.Descriptor
 	switch row.Identity {
 	case game.IdentityNone:
@@ -176,8 +177,19 @@ func (walk *fileWalk) identified(key string, block *jomini.Block, span jomini.Ra
 		return walk.entry(walk.own, name, span), false, name != ""
 	}
 	_, name := game.Get(walk.schema.Game).Mode(key)
-	isEvent := row.Purpose != game.PurposeEvents || jomini.IsEventID(name)
-	return walk.entry(walk.own, key, span), false, key != "" && isEvent
+	return walk.entry(walk.own, key, span), false,
+		key != "" && (row.NamespaceKey == "" || declaresNamespace(before, row.NamespaceKey, name))
+}
+
+// declaresNamespace reports whether a statement before an id declares its namespace (namespace = x before x.N, N a
+// number): Vic3's 1848.1 is an event of its file's namespace = 1848, though its shape alone reads as a number.
+func declaresNamespace(before []jomini.Statement, namespaceKey, id string) bool {
+	namespace, number, _ := strings.Cut(id, ".")
+	return jomini.IsDigits(number) && slices.ContainsFunc(before, func(statement jomini.Statement) bool {
+		assign, isAssign := statement.(*jomini.Assignment)
+		scalar, isScalar := jomini.ValueOf(statement).(*jomini.Scalar)
+		return isAssign && isScalar && assign.Key.Text == namespaceKey && scalar.Text == namespace
+	})
 }
 
 // nestedEntry is the entry a statement inside an entry is, by the first nested descriptor whose key path from

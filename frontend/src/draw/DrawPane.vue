@@ -521,7 +521,7 @@ onScopeDispose(() => (file.value.hover = -1));
               another.
             </p>
             <div v-for="row in states" :key="row.group" class="flex items-center gap-2 rounded px-1 hover:bg-elevated">
-              <span class="min-w-0 grow truncate font-mono text-(--syn-ref)" :title="row.group">{{ row.group }}</span>
+              <span class="min-w-0 grow truncate font-mono text-(--syn-scope)" :title="row.group">{{ row.group }}</span>
               <USelect
                 :model-value="row.value"
                 :items="row.items"

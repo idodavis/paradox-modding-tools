@@ -37,12 +37,16 @@
   --blue: #6fb7f0;
   --green: #5ccb8f;
   --purple: #b19cf5;
-  --syn-kw: #6fb7f0;
-  --syn-str: #5ccb8f;
-  --syn-num: #f0a04b;
-  --syn-fn: #b19cf5;
-  --syn-ref: #4cd3a6;
-  --syn-com: #7f8a98;
+  --syn-entry: #b19cf5;
+  --syn-operator: #f286c4;
+  --syn-block: #6fb7f0;
+  --syn-field: #acd2f1;
+  --syn-scope: #62d3e8;
+  --syn-variable: #f0716b;
+  --syn-string: #5ccb8f;
+  --syn-number: #f0a04b;
+  --syn-literal: #e8c96a;
+  --syn-comment: #7f8a98;
   --ol: 0.76;
   --oc: 0.174;
   --shadow: 0 8px 24px rgba(0, 0, 0, 0.45), 0 0 0 1px var(--line-2);
@@ -68,12 +72,16 @@
   --blue: #2568b8;
   --green: #1f8a4c;
   --purple: #6b4fd1;
-  --syn-kw: #2568b8;
-  --syn-str: #1f8a4c;
-  --syn-num: #b8650e;
-  --syn-fn: #6b4fd1;
-  --syn-ref: #138a66;
-  --syn-com: #6b7684;
+  --syn-entry: #6b4fd1;
+  --syn-operator: #b0307a;
+  --syn-block: #2568b8;
+  --syn-field: #204470;
+  --syn-scope: #0e7f9a;
+  --syn-variable: #c4372f;
+  --syn-string: #1f8a4c;
+  --syn-number: #b8650e;
+  --syn-literal: #8a6500;
+  --syn-comment: #6b7684;
   --ol: 0.56;
   --oc: 0.121;
   --shadow: 0 8px 24px rgba(20, 30, 50, 0.16), 0 0 0 1px var(--line-2);
@@ -325,12 +333,12 @@ a:hover { text-decoration: underline; }
 
 /* highlighted code (Hugo's chroma classes) in the page's syntax tokens */
 .chroma { background: none; color: var(--fg-1); }
-.chroma :is(.k, .kc, .kd, .kn, .kp, .kr, .kt, .nt, .ow) { color: var(--syn-kw); }
-.chroma :is(.s, .sa, .sb, .sc, .s1, .s2, .se, .sh, .si, .sx) { color: var(--syn-str); }
-.chroma :is(.m, .mb, .mf, .mh, .mi, .il, .mo) { color: var(--syn-num); }
-.chroma :is(.nf, .fm, .nc, .nd, .nn) { color: var(--syn-fn); }
-.chroma :is(.nv, .vc, .vg, .vi, .no, .nb, .bp, .na) { color: var(--syn-ref); }
-.chroma :is(.c, .c1, .ch, .cm, .cp, .cpf, .cs) { color: var(--syn-com); font-style: italic; }
+.chroma :is(.k, .kc, .kd, .kn, .kp, .kr, .kt, .nt, .ow) { color: var(--syn-block); }
+.chroma :is(.s, .sa, .sb, .sc, .s1, .s2, .se, .sh, .si, .sx) { color: var(--syn-string); }
+.chroma :is(.m, .mb, .mf, .mh, .mi, .il, .mo) { color: var(--syn-number); }
+.chroma :is(.nf, .fm, .nc, .nd, .nn) { color: var(--syn-entry); }
+.chroma :is(.nv, .vc, .vg, .vi, .no, .nb, .bp, .na) { color: var(--syn-scope); }
+.chroma :is(.c, .c1, .ch, .cm, .cp, .cpf, .cs) { color: var(--syn-comment); font-style: italic; }
 .chroma :is(.o, .p) { color: var(--fg-2); }
 
 .callout {

@@ -67,8 +67,8 @@ func OpenWiki() (*wiki.Client, error) {
 
 // Guide returns the Guide pane's tabs for the active file: each page's title, address and headings, its text
 // fetched apart (GuidePage) for the one tab shown. A path under no root gives an empty guide, not an error.
-func (s *WikiService) Guide(workspaceID, path string) (*wiki.Guide, error) {
-	ws, err := s.workspaces.openWorkspace(workspaceID)
+func (wik *WikiService) Guide(workspaceID, path string) (*wiki.Guide, error) {
+	ws, err := wik.workspaces.openWorkspace(workspaceID)
 	if err != nil {
 		return nil, err
 	}
@@ -82,7 +82,7 @@ func (s *WikiService) Guide(workspaceID, path string) (*wiki.Guide, error) {
 	if place.Database != nil {
 		database, kind = place.Database.Name, game.KindName(place.Database.Name)
 	}
-	pages := s.wikis.PagesFor(ws.Game.ID, cmp.Or(database, strings.TrimPrefix(filepath.Ext(place.Rel), ".")), place.Rel)
+	pages := wik.wikis.PagesFor(ws.Game.ID, cmp.Or(database, strings.TrimPrefix(filepath.Ext(place.Rel), ".")), place.Rel)
 	for i := range pages {
 		pages[i].HTML = ""
 	}
@@ -90,21 +90,21 @@ func (s *WikiService) Guide(workspaceID, path string) (*wiki.Guide, error) {
 }
 
 // GuidePage returns one guide page whole, by its title; nil where the wiki has none so named.
-func (s *WikiService) GuidePage(gameID, title string) *wiki.Page {
-	return s.wikis.GuidePage(gameID, title)
+func (wik *WikiService) GuidePage(gameID, title string) *wiki.Page {
+	return wik.wikis.GuidePage(gameID, title)
 }
 
 // ServiceStartup refreshes, in the background, the wiki pages of every installed game, so the
 // guides are current without a click, and tells the frontend each page fetched and each game done;
 // Wails calls it.
-func (s *WikiService) ServiceStartup(ctx context.Context, _ application.ServiceOptions) error {
+func (wik *WikiService) ServiceStartup(ctx context.Context, _ application.ServiceOptions) error {
 	games := map[string]bool{}
-	s.config.read(func(cfg *Config) {
+	wik.config.read(func(cfg *Config) {
 		for _, inst := range cfg.Installs {
 			games[inst.GameID] = true
 		}
 	})
-	go refreshWikis(ctx, s.wikis, games)
+	go refreshWikis(ctx, wik.wikis, games)
 	return nil
 }
 
@@ -123,11 +123,11 @@ func refreshWikis(ctx context.Context, wikis *wiki.Client, games map[string]bool
 }
 
 // Patches returns the Patch Notes version list, newest first.
-func (s *WikiService) Patches(gameID string) wiki.PatchList {
-	return s.wikis.Patches(gameID)
+func (wik *WikiService) Patches(gameID string) wiki.PatchList {
+	return wik.wikis.Patches(gameID)
 }
 
 // PatchPage returns one patch notes body by title or version label.
-func (s *WikiService) PatchPage(gameID, version string) *wiki.Page {
-	return s.wikis.PatchByVersion(gameID, version)
+func (wik *WikiService) PatchPage(gameID, version string) *wiki.Page {
+	return wik.wikis.PatchByVersion(gameID, version)
 }

@@ -92,11 +92,11 @@ const sharedVia = computed(() => {
 
 // what it reads: each database's names once, with how often and where first
 const READ_COLORS: Record<string, string> = {
-  scope: "var(--syn-ref)",
-  localization: "var(--syn-str)",
-  scripted_effects: "var(--syn-fn)",
-  scripted_triggers: "var(--syn-fn)",
-  script_values: "var(--syn-num)",
+  scope: "var(--syn-scope)",
+  localization: "var(--syn-string)",
+  scripted_effects: "var(--syn-entry)",
+  scripted_triggers: "var(--syn-entry)",
+  script_values: "var(--syn-number)",
 };
 const reads = computed(() =>
   (detail.refs ?? []).map((group) => {
@@ -110,7 +110,7 @@ const reads = computed(() =>
       ...group,
       uses: group.refs?.length ?? 0,
       names: [...names.values()],
-      color: READ_COLORS[group.database] ?? "var(--syn-kw)",
+      color: READ_COLORS[group.database] ?? "var(--syn-block)",
     };
   }),
 );
@@ -269,7 +269,7 @@ function open(path: string, line: number): void {
                 >
                   <UIcon name="i-lucide-user-round" class="size-6 text-dimmed" />
                   <span class="text-dimmed">{{ section.key.replace(/_[a-z]+$/, "").replaceAll("_", " ") }}</span>
-                  <span class="max-w-full truncate font-mono text-(--syn-ref)">{{ section.portrait }}</span>
+                  <span class="max-w-full truncate font-mono text-(--syn-scope)">{{ section.portrait }}</span>
                   <span v-if="section.when" class="text-(--orange)">only if …</span>
                 </div>
               </div>

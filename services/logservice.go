@@ -88,7 +88,7 @@ func OpenLog(version string) (*LogFile, error) {
 }
 
 // Log writes a line the frontend reports; level is debug, info, warn or error.
-func (s *LogService) Log(level, msg string, attrs map[string]string) {
+func (lgs *LogService) Log(level, msg string, attrs map[string]string) {
 	var severity slog.Level
 	if err := severity.UnmarshalText([]byte(level)); err != nil {
 		severity = slog.LevelInfo
@@ -97,26 +97,26 @@ func (s *LogService) Log(level, msg string, attrs map[string]string) {
 	for _, key := range slices.Sorted(maps.Keys(attrs)) {
 		args = append(args, key, attrs[key])
 	}
-	s.Logger.Log(context.Background(), severity, msg, args...)
+	lgs.Logger.Log(context.Background(), severity, msg, args...)
 }
 
 // LastRunCrashed reports whether the run before this one ended without closing.
-func (s *LogService) LastRunCrashed() bool {
-	return s.logFile.crashed
+func (lgs *LogService) LastRunCrashed() bool {
+	return lgs.logFile.crashed
 }
 
 // CopyDiagnostics puts the report for a bug report on the clipboard.
-func (s *LogService) CopyDiagnostics() error {
-	if app := application.Get(); app == nil || !app.Clipboard.SetText(s.diagnostics()) {
+func (lgs *LogService) CopyDiagnostics() error {
+	if app := application.Get(); app == nil || !app.Clipboard.SetText(lgs.diagnostics()) {
 		return errors.New("the clipboard took nothing")
 	}
 	return nil
 }
 
 // ServiceShutdown writes the session's end and closes the file.
-func (s *LogService) ServiceShutdown() error {
-	s.Logger.Info("session end")
-	return s.logFile.file.Close()
+func (lgs *LogService) ServiceShutdown() error {
+	lgs.Logger.Info("session end")
+	return lgs.logFile.file.Close()
 }
 
 // lastScan is the scan lines of the log from the last scan's start on; none where the log holds no scan.
@@ -133,9 +133,9 @@ func lastScan(lines []string) []string {
 
 // diagnostics is the report: the app's version, the OS, each install with its version, the last
 // scan's stage times, and the log's last 200 lines.
-func (s *LogService) diagnostics() string {
+func (lgs *LogService) diagnostics() string {
 	var out strings.Builder
-	fmt.Fprintf(&out, "Paradox Modding Tools %s\n", s.logFile.version)
+	fmt.Fprintf(&out, "Paradox Modding Tools %s\n", lgs.logFile.version)
 	system := runtime.GOOS + "/" + runtime.GOARCH
 	if app := application.Get(); app != nil {
 		env := app.Env.Info()
@@ -149,14 +149,14 @@ func (s *LogService) diagnostics() string {
 	}
 	fmt.Fprintf(&out, "OS: %s\n", system)
 	var installs []GameInstall
-	if s.config != nil {
-		s.config.read(func(cfg *Config) { installs = slices.Clone(cfg.Installs) })
+	if lgs.config != nil {
+		lgs.config.read(func(cfg *Config) { installs = slices.Clone(cfg.Installs) })
 	}
 	for _, install := range installs {
 		fmt.Fprintf(&out, "Install: %s %s, version %s\n", install.GameID, install.Name, game.LoadGameVersion(install.GameID, install.Path))
 	}
 
-	raw, _ := os.ReadFile(s.logFile.file.Name())
+	raw, _ := os.ReadFile(lgs.logFile.file.Name())
 	lines := strings.Split(strings.TrimRight(string(raw), "\n"), "\n")
 	if scan := lastScan(lines); len(scan) > 0 {
 		fmt.Fprintf(&out, "\nLast scan:\n%s\n", strings.Join(scan, "\n"))

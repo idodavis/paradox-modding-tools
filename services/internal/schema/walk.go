@@ -274,7 +274,7 @@ func (schema *Schema) EntryContext(database *Database, id string) Context {
 // an on_action in the scope the dumps declare for it by name. That scope is the root; nothing is saved yet.
 func (schema *Schema) EntryScope(database *Database, id string) Scope {
 	scope := Scope{Named: map[string]string{}}
-	if this := database.Entry.Scope.Value; schema.runsScript(this) {
+	if this := database.Entry.Scope.Value; schema.RunsScript(this) {
 		scope.This, scope.Reason = this, "every "+game.KindName(database.Name)+" runs in it"
 	}
 	if action := schema.OnActions[id]; database.Descriptor.Purpose == game.PurposeOnActions && action.Scope != "" {
@@ -284,9 +284,9 @@ func (schema *Schema) EntryScope(database *Database, id string) Scope {
 	return scope
 }
 
-// runsScript reports whether a scope type the dumps declare evaluates triggers or executes effects.
-func (schema *Schema) runsScript(scope string) bool {
-	state := schema.Scopes[scope]
+// RunsScript reports whether a scope type the dumps declare evaluates triggers or executes effects.
+func (schema *Schema) RunsScript(scopeType string) bool {
+	state := schema.Scopes[scopeType]
 	return state.Triggers || state.Effects
 }
 
@@ -409,16 +409,18 @@ func (schema *Schema) keyFacts(context Context, assign *jomini.Assignment, creat
 // block's.
 func (schema *Schema) blockOf(context, inner Context, facts KeyFacts, row game.KeyRuleRow) Context {
 	key, verb := facts.Key, row.Scope
-	construct, found := game.ConstructOf(context.Shape, context.Command, positionName(key))
+	construct, isConstruct := game.ConstructOf(context.Shape, context.Command, positionName(key))
+	// a construct that names no shape (an operator the dumps declare) leaves the block to the key's rule
+	isConstruct = isConstruct && (construct.Leaf || construct.Holds != game.ShapeUnknown)
 	iterates := inner.Call == key && inner.Rule != game.KeyRuleKnownCall && facts.Block != nil &&
 		schema.Lists != "" && context.Caller != "" && context.Caller != game.AnyCall
 	if list, isList := game.ListIterator(key); iterates && isList {
-		construct, found, inner.List = list, true, strings.TrimPrefix(key, list.Key)
+		construct, isConstruct, inner.List = list, true, strings.TrimPrefix(key, list.Key)
 	}
 	switch {
-	case found && construct.Leaf:
+	case isConstruct && construct.Leaf:
 		inner.At, inner.Leaf = context.Bound, true
-	case found && row.At == game.AtNone:
+	case isConstruct && row.At == game.AtNone:
 		inner.At = facts.Child
 		if facts.Create && context.At != nil {
 			inner.At = context.At.EnsureChild(key)
@@ -436,11 +438,11 @@ func (schema *Schema) blockOf(context, inner Context, facts KeyFacts, row game.K
 		inner.Shape = game.ShapeArguments
 	}
 	switch {
-	case found && construct.Leaf:
+	case isConstruct && construct.Leaf:
 		inner.Shape = game.ShapeDescription // a leaf written as a block holds the description again
-	case found && construct.Holds == game.ShapeEnclosing:
+	case isConstruct && construct.Holds == game.ShapeEnclosing:
 		inner.Shape, inner.Caller, verb = context.Shape, construct.Caller, construct.Scope
-	case found:
+	case isConstruct:
 		inner.Shape, inner.Caller, verb = construct.Holds, construct.Caller, construct.Scope
 	}
 	if facts.Block != nil && inner.Position() != nil && isDescription(facts.Block) {
@@ -542,7 +544,7 @@ func (schema *Schema) scopeOf(context, inner Context, facts KeyFacts, verb game.
 	}
 	switch {
 	case position != nil && position.Scope.Source != SourceNone:
-		if this := position.Scope.Value; schema.runsScript(this) {
+		if this := position.Scope.Value; schema.RunsScript(this) {
 			return Scope{This: this, Root: this, Named: from.Named, Reason: key + " is declared to run in it"}
 		}
 		return from.forget("where " + key + " runs is not declared")
@@ -585,7 +587,7 @@ func (schema *Schema) Follow(from Scope, chain string) Scope {
 			}
 		default:
 			at.This = ""
-			if link != nil && schema.runsScript(link.Target) {
+			if link != nil && schema.RunsScript(link.Target) {
 				at.This = link.Target
 			}
 		}
@@ -605,7 +607,7 @@ func (schema *Schema) commandScope(from Scope, command *Command, key string) Sco
 	iterates := holds == game.ShapeTriggers || holds == game.ShapeEffects
 	_, leads := schema.Scopes[command.Target]
 	switch {
-	case iterates && leads && !command.Lists && !schema.runsScript(command.Target):
+	case iterates && leads && !command.Lists && !schema.RunsScript(command.Target):
 		return from.enter("", key+" leads to "+command.Target+", which runs no script")
 	case iterates && leads && !command.Lists:
 		return from.enter(command.Target, key+" leads to it")

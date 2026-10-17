@@ -67,7 +67,7 @@ These apply to every workspace and survive **Reset all PMT data**.
 
 - **Theme**: seven families, each dark and light: **PMT**, **Catppuccin** (Mocha and Latte), **One**, **Pierre Soft**,
   **Crusader Kings**, **Europa Universalis** and **Victoria**. **Match the workspace's game** shows a CK3, EU5 or
-  Vic3 workspace in its game's family; picking a family turns it off. The pages and the editor change together.
+  Vic3 workspace in its game's family; picking a family turns it off. The pages and the editor change together, the code's ten syntax colors with them.
 - **Light and dark**: the sun and moon in the top bar switch them; **Follow Windows** follows the system instead.
 - **Interface scale**: 80 to 150%, every page. The editor's and the explorer's text sizes are in the IDE settings.
 - **Pages**: which pages show in the top bar and the command palette. With none, the IDE stays.

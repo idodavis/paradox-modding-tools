@@ -95,15 +95,15 @@ type FSChanged struct {
 // Game installs.
 
 // ListGames returns the supported-game table and vanilla origin token.
-func (s *WorkspaceService) ListGames() game.GameList {
+func (wsp *WorkspaceService) ListGames() game.GameList {
 	return game.GameList{OriginVanilla: game.OriginVanilla, Games: game.All()}
 }
 
 // ListGameInstalls returns a game's installs, each with its scan time.
-func (s *WorkspaceService) ListGameInstalls(gameID string) ([]GameInstall, error) {
+func (wsp *WorkspaceService) ListGameInstalls(gameID string) ([]GameInstall, error) {
 	var out []GameInstall
 	languages := map[string]string{} // by install id: the language of the first workspace on it
-	s.config.read(func(cfg *Config) {
+	wsp.config.read(func(cfg *Config) {
 		for _, inst := range cfg.Installs {
 			if inst.GameID == gameID {
 				out = append(out, inst)
@@ -118,19 +118,19 @@ func (s *WorkspaceService) ListGameInstalls(gameID string) ([]GameInstall, error
 
 	// a cache file's time and the version per install, so the config lock is back before any of it
 	for i := range out {
-		out[i].ScannedAt = s.scannedAt(&out[i], languages[out[i].ID])
+		out[i].ScannedAt = wsp.scannedAt(&out[i], languages[out[i].ID])
 		out[i].VersionDetected = game.LoadGameVersion(out[i].GameID, out[i].Path)
 	}
 	return out, nil
 }
 
 // FindGameInstalls returns Steam-detected installs for a game.
-func (s *WorkspaceService) FindGameInstalls(gameID string) []game.DetectedInstall {
+func (wsp *WorkspaceService) FindGameInstalls(gameID string) []game.DetectedInstall {
 	return game.FindInstalls(gameID)
 }
 
 // AddGameInstall adds a new game installation, with the version it holds now.
-func (s *WorkspaceService) AddGameInstall(gameID, name, path string) (*GameInstall, error) {
+func (wsp *WorkspaceService) AddGameInstall(gameID, name, path string) (*GameInstall, error) {
 	if game.Get(gameID) == nil {
 		return nil, fmt.Errorf("unknown game %s", gameID)
 	}
@@ -138,7 +138,7 @@ func (s *WorkspaceService) AddGameInstall(gameID, name, path string) (*GameInsta
 		return nil, fmt.Errorf("invalid path: %w", err)
 	}
 	inst := GameInstall{ID: uuid.New().String(), GameID: gameID, Name: name, Path: path}
-	err := s.config.mutate("installs", func(cfg *Config) error {
+	err := wsp.config.mutate("installs", func(cfg *Config) error {
 		cfg.Installs = append(cfg.Installs, inst)
 		return nil
 	})
@@ -150,13 +150,13 @@ func (s *WorkspaceService) AddGameInstall(gameID, name, path string) (*GameInsta
 }
 
 // UpdateGameInstall changes an install's path.
-func (s *WorkspaceService) UpdateGameInstall(id, path string) error {
+func (wsp *WorkspaceService) UpdateGameInstall(id, path string) error {
 	if path != "" {
 		if _, err := os.Stat(path); err != nil {
 			return fmt.Errorf("invalid path: %w", err)
 		}
 	}
-	err := s.config.mutate("installs", func(cfg *Config) error {
+	err := wsp.config.mutate("installs", func(cfg *Config) error {
 		inst := findInstall(cfg, id)
 		if inst == nil {
 			return errors.New("install not found")
@@ -171,10 +171,10 @@ func (s *WorkspaceService) UpdateGameInstall(id, path string) error {
 }
 
 // DeleteGameInstall removes an install if no workspace uses it.
-func (s *WorkspaceService) DeleteGameInstall(id string) error {
+func (wsp *WorkspaceService) DeleteGameInstall(id string) error {
 	var inUse []string
 	var install GameInstall
-	s.config.read(func(cfg *Config) {
+	wsp.config.read(func(cfg *Config) {
 		for _, ws := range cfg.Workspaces {
 			if ws.InstallID == id {
 				inUse = append(inUse, ws.Name)
@@ -192,7 +192,7 @@ func (s *WorkspaceService) DeleteGameInstall(id string) error {
 			return err
 		}
 	}
-	return s.config.mutate("installs", func(cfg *Config) error {
+	return wsp.config.mutate("installs", func(cfg *Config) error {
 		cfg.Installs = slices.DeleteFunc(cfg.Installs, func(inst GameInstall) bool { return inst.ID == id })
 		return nil
 	})
@@ -201,9 +201,9 @@ func (s *WorkspaceService) DeleteGameInstall(id string) error {
 // Workspaces.
 
 // ListWorkspaces returns every workspace, its mods in load order.
-func (s *WorkspaceService) ListWorkspaces() []Workspace {
+func (wsp *WorkspaceService) ListWorkspaces() []Workspace {
 	var out []Workspace
-	s.config.read(func(cfg *Config) {
+	wsp.config.read(func(cfg *Config) {
 		for _, ws := range cfg.Workspaces {
 			out = append(out, cloneWorkspace(ws))
 		}
@@ -230,7 +230,7 @@ func markDisk(ws *Workspace) {
 }
 
 // CreateWorkspace creates a new workspace.
-func (s *WorkspaceService) CreateWorkspace(
+func (wsp *WorkspaceService) CreateWorkspace(
 	gameID, name, installID string,
 ) (*Workspace, error) {
 	if game.Get(gameID) == nil {
@@ -241,7 +241,7 @@ func (s *WorkspaceService) CreateWorkspace(
 		ID: id, GameID: gameID, Name: name, InstallID: installID,
 		HideExplorerBinaries: true,
 	}
-	err := s.config.mutate("workspaces", func(cfg *Config) error {
+	err := wsp.config.mutate("workspaces", func(cfg *Config) error {
 		cfg.Workspaces = append(cfg.Workspaces, ws)
 		return nil
 	})
@@ -253,8 +253,8 @@ func (s *WorkspaceService) CreateWorkspace(
 
 // UpdateWorkspace updates workspace fields; the open workspace follows a different install by itself (the next
 // request finds its fingerprint stale).
-func (s *WorkspaceService) UpdateWorkspace(id, name, installID string) error {
-	return s.mutateWorkspace(id, func(ws *Workspace) error {
+func (wsp *WorkspaceService) UpdateWorkspace(id, name, installID string) error {
+	return wsp.mutateWorkspace(id, func(ws *Workspace) error {
 		ws.Name, ws.InstallID = name, installID
 		return nil
 	})
@@ -270,14 +270,14 @@ var legalDefaultTools = map[string]bool{
 }
 
 // UpdateWorkspacePrefs sets the IDE reset, default landing page, explorer hiding, and game color.
-func (s *WorkspaceService) UpdateWorkspacePrefs(
+func (wsp *WorkspaceService) UpdateWorkspacePrefs(
 	workspaceID string, resetIdeOnOpen bool, defaultTool, gameColor string,
 	hideExplorerBinaries bool,
 ) error {
 	if !legalDefaultTools[defaultTool] {
 		return errors.New("invalid default tool")
 	}
-	return s.mutateWorkspace(workspaceID, func(ws *Workspace) error {
+	return wsp.mutateWorkspace(workspaceID, func(ws *Workspace) error {
 		ws.ResetIdeOnOpen = resetIdeOnOpen
 		ws.DefaultTool = defaultTool
 		ws.GameColor = gameColor
@@ -287,16 +287,16 @@ func (s *WorkspaceService) UpdateWorkspacePrefs(
 }
 
 // SetWorkspaceLocLang sets the default loc language; the open workspace is built again with it.
-func (s *WorkspaceService) SetWorkspaceLocLang(id, lang string) error {
-	return s.mutateWorkspace(id, func(ws *Workspace) error {
+func (wsp *WorkspaceService) SetWorkspaceLocLang(id, lang string) error {
+	return wsp.mutateWorkspace(id, func(ws *Workspace) error {
 		ws.DefaultLocLang = lang
 		return nil
 	})
 }
 
 // DeleteWorkspace removes a workspace from PMT. Mod folders on disk stay.
-func (s *WorkspaceService) DeleteWorkspace(id string) error {
-	err := s.config.mutate("workspaces", func(cfg *Config) error {
+func (wsp *WorkspaceService) DeleteWorkspace(id string) error {
+	err := wsp.config.mutate("workspaces", func(cfg *Config) error {
 		count := len(cfg.Workspaces)
 		cfg.Workspaces = slices.DeleteFunc(cfg.Workspaces, func(ws Workspace) bool { return ws.ID == id })
 		if len(cfg.Workspaces) == count {
@@ -307,14 +307,14 @@ func (s *WorkspaceService) DeleteWorkspace(id string) error {
 	if err != nil {
 		return err
 	}
-	s.slot.Close(id)
+	wsp.slot.Close(id)
 	return nil
 }
 
 // mutateWorkspace changes one workspace of the config under its lock and saves; errNoWorkspace where none has the
 // id.
-func (s *WorkspaceService) mutateWorkspace(workspaceID string, fn func(*Workspace) error) error {
-	return s.config.mutate("workspaces", func(cfg *Config) error {
+func (wsp *WorkspaceService) mutateWorkspace(workspaceID string, fn func(*Workspace) error) error {
+	return wsp.config.mutate("workspaces", func(cfg *Config) error {
 		ws := findWorkspace(cfg, workspaceID)
 		if ws == nil {
 			return errNoWorkspace
@@ -326,17 +326,17 @@ func (s *WorkspaceService) mutateWorkspace(workspaceID string, fn func(*Workspac
 // Mods in a workspace.
 
 // DefaultModParent is UserDataDir/<game>/mod, or "".
-func (s *WorkspaceService) DefaultModParent(gameID string) string {
+func (wsp *WorkspaceService) DefaultModParent(gameID string) string {
 	return modfiles.DefaultModParent(gameID)
 }
 
 // ModFolder is the folder CreateMod makes for a mod named name under parentDir.
-func (s *WorkspaceService) ModFolder(parentDir, name string) string {
+func (wsp *WorkspaceService) ModFolder(parentDir, name string) string {
 	return filepath.Join(parentDir, modfiles.Slug(name))
 }
 
 // CreateMod writes a new mod skeleton under parentDir and returns its path.
-func (s *WorkspaceService) CreateMod(
+func (wsp *WorkspaceService) CreateMod(
 	gameID, parentDir, name, locLang, supportedVersion, description, thumbnailSrc string,
 ) (string, error) {
 	// Create refuses an unknown game or an empty name
@@ -347,7 +347,7 @@ func (s *WorkspaceService) CreateMod(
 	if parentDir == "" {
 		return "", errors.New("parent folder is required")
 	}
-	root := s.ModFolder(parentDir, name)
+	root := wsp.ModFolder(parentDir, name)
 	if err := modfiles.Create(modfiles.NewModOpts{
 		GameID: gameID, Root: root, Name: name, SupportedVersion: supportedVersion,
 		LocLang: locLang, ThumbnailSrc: thumbnailSrc,
@@ -359,8 +359,8 @@ func (s *WorkspaceService) CreateMod(
 
 // AddWorkspaceMod adds a mod to a workspace: a folder holding its game's descriptor, named by it (else
 // by the folder), with the thumbnail where its game keeps one, last in load order.
-func (s *WorkspaceService) AddWorkspaceMod(workspaceID, path string) (*WorkspaceMod, error) {
-	gameID, err := s.modFolderOf(workspaceID, path)
+func (wsp *WorkspaceService) AddWorkspaceMod(workspaceID, path string) (*WorkspaceMod, error) {
+	gameID, err := wsp.modFolderOf(workspaceID, path)
 	if err != nil {
 		return nil, err
 	}
@@ -372,7 +372,7 @@ func (s *WorkspaceService) AddWorkspaceMod(workspaceID, path string) (*Workspace
 	if rel, known := modfiles.Thumbnail(gameID, path, fields.Picture); known {
 		mod.Thumbnail = filepath.Join(path, filepath.FromSlash(rel))
 	}
-	err = s.mutateWorkspace(workspaceID, func(ws *Workspace) error {
+	err = wsp.mutateWorkspace(workspaceID, func(ws *Workspace) error {
 		// after the last one, whatever gaps removals left
 		for _, other := range ws.Mods {
 			mod.SortOrder = max(mod.SortOrder, other.SortOrder+1)
@@ -389,8 +389,8 @@ func (s *WorkspaceService) AddWorkspaceMod(workspaceID, path string) (*Workspace
 
 // modFolderOf is the game of a workspace whose mod may live at path: a folder holding the game's
 // descriptor.
-func (s *WorkspaceService) modFolderOf(workspaceID, path string) (string, error) {
-	ws, _, err := s.config.workspace(workspaceID)
+func (wsp *WorkspaceService) modFolderOf(workspaceID, path string) (string, error) {
+	ws, _, err := wsp.config.workspace(workspaceID)
 	if err != nil {
 		return "", err
 	}
@@ -406,18 +406,18 @@ func (s *WorkspaceService) modFolderOf(workspaceID, path string) (string, error)
 
 // SetWorkspaceModPath points a mod at another folder, one holding its game's descriptor; the
 // open workspace is built again from it.
-func (s *WorkspaceService) SetWorkspaceModPath(workspaceID, modID, path string) error {
-	if _, err := s.modFolderOf(workspaceID, path); err != nil {
+func (wsp *WorkspaceService) SetWorkspaceModPath(workspaceID, modID, path string) error {
+	if _, err := wsp.modFolderOf(workspaceID, path); err != nil {
 		return err
 	}
-	return s.mutateMod(workspaceID, modID, func(mod *WorkspaceMod) error {
+	return wsp.mutateMod(workspaceID, modID, func(mod *WorkspaceMod) error {
 		mod.Path = path
 		return nil
 	})
 }
 
 // OpenFolder shows a folder in the system's file manager.
-func (s *WorkspaceService) OpenFolder(path string) error {
+func (wsp *WorkspaceService) OpenFolder(path string) error {
 	return application.Get().Env.OpenFileManager(path, false)
 }
 
@@ -425,23 +425,23 @@ func (s *WorkspaceService) OpenFolder(path string) error {
 
 // Open is the workspace opened, its index built once however many callers ask at once, and its state; opening a
 // workspace closes the one open before it.
-func (s *WorkspaceService) Open(workspaceID string) (*WorkspaceState, error) {
-	if _, err := s.openWorkspace(workspaceID); err != nil {
+func (wsp *WorkspaceService) Open(workspaceID string) (*WorkspaceState, error) {
+	if _, err := wsp.openWorkspace(workspaceID); err != nil {
 		return nil, err
 	}
-	return s.State(workspaceID), nil
+	return wsp.State(workspaceID), nil
 }
 
 // openWorkspace is the workspace's index, opened when it is not: what Open and every page RPC call. The caller
 // whose call built it tells the frontend and logs its name, so the log says whether a page read reaches Go before
 // Open.
-func (s *WorkspaceService) openWorkspace(workspaceID string) (*workspace.Session, error) {
-	request, err := s.request(workspaceID)
+func (wsp *WorkspaceService) openWorkspace(workspaceID string) (*workspace.Session, error) {
+	request, err := wsp.request(workspaceID)
 	if err != nil {
 		return nil, err
 	}
 	caller, _, _, _ := runtime.Caller(1)
-	ws, built, err := s.slot.Open(context.Background(), request)
+	ws, built, err := wsp.slot.Open(context.Background(), request)
 	switch {
 	case built && err != nil:
 		emit(EventWorkspaceFailed, workspaceID)
@@ -455,8 +455,8 @@ func (s *WorkspaceService) openWorkspace(workspaceID string) (*workspace.Session
 // request is what a workspace is opened from, as the config says now. Its fingerprint is the inputs an edit could
 // change: the install and its folder, the language, each mod's id, folder and calendar in load order; a change needs
 // no close of its own, the next request finds the open workspace stale. Its callbacks tell the frontend.
-func (s *WorkspaceService) request(workspaceID string) (workspace.Request, error) {
-	entry, inst, err := s.config.workspace(workspaceID)
+func (wsp *WorkspaceService) request(workspaceID string) (workspace.Request, error) {
+	entry, inst, err := wsp.config.workspace(workspaceID)
 	if err != nil {
 		return workspace.Request{}, err
 	}
@@ -471,9 +471,9 @@ func (s *WorkspaceService) request(workspaceID string) (workspace.Request, error
 	}
 	return workspace.Request{
 		ID: workspaceID, Game: inst.GameID, Dir: inst.Path, Language: entry.DefaultLocLang, Mods: mods,
-		App: s.version, Fingerprint: fingerprint,
+		App: wsp.version, Fingerprint: fingerprint,
 		Wiki: func(databases []string) (map[string][]string, time.Time, error) {
-			return s.wikis.ScriptExamples(inst.GameID, databases)
+			return wsp.wikis.ScriptExamples(inst.GameID, databases)
 		},
 		Progress: func(percent int, stage string) {
 			emit(EventInstallScanning, ScanProgress{InstallID: inst.ID, Percent: percent, Stage: stage})
@@ -487,8 +487,8 @@ func (s *WorkspaceService) request(workspaceID string) (workspace.Request, error
 }
 
 // scannedAt is when an install was built, in RFC 3339, read in a language; "" when it never was.
-func (s *WorkspaceService) scannedAt(inst *GameInstall, language string) string {
-	scanTime := s.slot.ScannedAt(workspace.Request{Game: inst.GameID, Dir: inst.Path, Language: language, App: s.version})
+func (wsp *WorkspaceService) scannedAt(inst *GameInstall, language string) string {
+	scanTime := wsp.slot.ScannedAt(workspace.Request{Game: inst.GameID, Dir: inst.Path, Language: language, App: wsp.version})
 	if scanTime.IsZero() {
 		return ""
 	}
@@ -497,22 +497,22 @@ func (s *WorkspaceService) scannedAt(inst *GameInstall, language string) string 
 
 // State is what the pages show of a workspace, without opening it: its install and when it was scanned, and when
 // it is open, whose dumps its schema read and the version the scan replaced.
-func (s *WorkspaceService) State(workspaceID string) *WorkspaceState {
+func (wsp *WorkspaceService) State(workspaceID string) *WorkspaceState {
 	state := &WorkspaceState{}
-	entry, inst, _ := s.config.workspace(workspaceID)
+	entry, inst, _ := wsp.config.workspace(workspaceID)
 	if entry != nil {
 		state.InstallID = entry.InstallID
 	}
-	request, err := s.request(workspaceID)
+	request, err := wsp.request(workspaceID)
 	if inst == nil || err != nil {
 		return state
 	}
 	state.GameVersion = game.LoadGameVersion(inst.GameID, inst.Path)
 	_, statErr := os.Stat(inst.Path)
 	state.InstallOk = statErr == nil
-	state.ScannedAt = s.scannedAt(inst, entry.DefaultLocLang)
+	state.ScannedAt = wsp.scannedAt(inst, entry.DefaultLocLang)
 	state.DumpFolders = game.DumpDirs(inst.GameID, inst.Path)
-	if ws := s.slot.Current(workspaceID, request.Fingerprint); ws != nil {
+	if ws := wsp.slot.Current(workspaceID, request.Fingerprint); ws != nil {
 		ws.RLock()
 		dumps := ws.Install.Schema.Sources[schema.SourceDumps]
 		state.Open, state.DumpsFrom, state.DumpsStale = true, dumps.Origin, dumps.Stale
@@ -527,8 +527,8 @@ func (s *WorkspaceService) State(workspaceID string) *WorkspaceState {
 }
 
 // UpdateWorkspaceMod updates a mod's name, color, thumbnail and upload exclusions.
-func (s *WorkspaceService) UpdateWorkspaceMod(workspaceID, modID, name, color, thumbnail, workshopIgnore string) error {
-	return s.mutateMod(workspaceID, modID, func(mod *WorkspaceMod) error {
+func (wsp *WorkspaceService) UpdateWorkspaceMod(workspaceID, modID, name, color, thumbnail, workshopIgnore string) error {
+	return wsp.mutateMod(workspaceID, modID, func(mod *WorkspaceMod) error {
 		mod.Name = cmp.Or(name, mod.Name)
 		mod.Color, mod.Thumbnail, mod.WorkshopIgnore = color, thumbnail, workshopIgnore
 		return nil
@@ -538,8 +538,8 @@ func (s *WorkspaceService) UpdateWorkspaceMod(workspaceID, modID, name, color, t
 // SetModListingImage makes src the mod's listing image: copied in where its game keeps one, named in
 // its descriptor (its Workshop id as it is) and made the workspace's picture of the mod. It returns the
 // image's path.
-func (s *WorkspaceService) SetModListingImage(workspaceID, modID, src string) (string, error) {
-	ws, mod, err := findMod(s.config, workspaceID, modID)
+func (wsp *WorkspaceService) SetModListingImage(workspaceID, modID, src string) (string, error) {
+	ws, mod, err := findMod(wsp.config, workspaceID, modID)
 	if err != nil {
 		return "", err
 	}
@@ -556,7 +556,7 @@ func (s *WorkspaceService) SetModListingImage(workspaceID, modID, src string) (s
 		return "", err
 	}
 	image := filepath.Join(mod.Path, filepath.FromSlash(rel))
-	return image, s.mutateMod(workspaceID, modID, func(mod *WorkspaceMod) error {
+	return image, wsp.mutateMod(workspaceID, modID, func(mod *WorkspaceMod) error {
 		mod.Thumbnail = image
 		return nil
 	})
@@ -564,8 +564,8 @@ func (s *WorkspaceService) SetModListingImage(workspaceID, modID, src string) (s
 
 // SetWorkspaceModDescription sets where a mod's Workshop description comes from: a Markdown or a
 // BBCode file at rel ("" for the default name), or Steam's own text.
-func (s *WorkspaceService) SetWorkspaceModDescription(workspaceID, modID, source, rel string) error {
-	return s.mutateMod(workspaceID, modID, func(mod *WorkspaceMod) error {
+func (wsp *WorkspaceService) SetWorkspaceModDescription(workspaceID, modID, source, rel string) error {
+	return wsp.mutateMod(workspaceID, modID, func(mod *WorkspaceMod) error {
 		rel, err := steam.DescriptionRel(mod.Path, rel)
 		if err != nil {
 			return err
@@ -585,11 +585,11 @@ func (s *WorkspaceService) SetWorkspaceModDescription(workspaceID, modID, source
 }
 
 // SetWorkspaceModSlot gives a mod one of the color slots and clears its hand-picked color.
-func (s *WorkspaceService) SetWorkspaceModSlot(workspaceID, modID string, slot int) error {
+func (wsp *WorkspaceService) SetWorkspaceModSlot(workspaceID, modID string, slot int) error {
 	if slot < 1 || slot > modSlots {
 		return fmt.Errorf("slot %d is not between 1 and %d", slot, modSlots)
 	}
-	return s.mutateMod(workspaceID, modID, func(mod *WorkspaceMod) error {
+	return wsp.mutateMod(workspaceID, modID, func(mod *WorkspaceMod) error {
 		mod.Slot, mod.Color = slot, ""
 		return nil
 	})
@@ -614,8 +614,8 @@ func freeSlot(mods []WorkspaceMod) int {
 
 // SetWorkspaceModCalendar declares the eras a mod's dates are written in: names trimmed, unnamed
 // eras dropped; an empty list clears it, leaving every date as written.
-func (s *WorkspaceService) SetWorkspaceModCalendar(workspaceID, modID string, eras workspace.Calendar) error {
-	err := s.mutateMod(workspaceID, modID, func(mod *WorkspaceMod) error {
+func (wsp *WorkspaceService) SetWorkspaceModCalendar(workspaceID, modID string, eras workspace.Calendar) error {
+	err := wsp.mutateMod(workspaceID, modID, func(mod *WorkspaceMod) error {
 		mod.Eras = nil
 		for _, era := range eras {
 			if era.Name = strings.TrimSpace(era.Name); era.Name != "" {
@@ -628,8 +628,8 @@ func (s *WorkspaceService) SetWorkspaceModCalendar(workspaceID, modID string, er
 }
 
 // ReorderWorkspaceMods writes SortOrder from the given id list.
-func (s *WorkspaceService) ReorderWorkspaceMods(workspaceID string, modIDs []string) error {
-	return s.mutateWorkspace(workspaceID, func(ws *Workspace) error {
+func (wsp *WorkspaceService) ReorderWorkspaceMods(workspaceID string, modIDs []string) error {
+	return wsp.mutateWorkspace(workspaceID, func(ws *Workspace) error {
 		if len(modIDs) != len(ws.Mods) {
 			return errors.New("mod id set incomplete")
 		}
@@ -653,8 +653,8 @@ func (s *WorkspaceService) ReorderWorkspaceMods(workspaceID string, modIDs []str
 }
 
 // RemoveWorkspaceMod detaches a mod from a workspace.
-func (s *WorkspaceService) RemoveWorkspaceMod(workspaceID, modID string) error {
-	return s.mutateWorkspace(workspaceID, func(ws *Workspace) error {
+func (wsp *WorkspaceService) RemoveWorkspaceMod(workspaceID, modID string) error {
+	return wsp.mutateWorkspace(workspaceID, func(ws *Workspace) error {
 		count := len(ws.Mods)
 		ws.Mods = slices.DeleteFunc(ws.Mods, func(mod WorkspaceMod) bool { return mod.ID == modID })
 		if len(ws.Mods) == count {
@@ -665,8 +665,8 @@ func (s *WorkspaceService) RemoveWorkspaceMod(workspaceID, modID string) error {
 }
 
 // ExportWorkshopIgnore writes the saved ignore text to .workshop-ignore in the mod root.
-func (s *WorkspaceService) ExportWorkshopIgnore(workspaceID, modID string) error {
-	_, mod, err := findMod(s.config, workspaceID, modID)
+func (wsp *WorkspaceService) ExportWorkshopIgnore(workspaceID, modID string) error {
+	_, mod, err := findMod(wsp.config, workspaceID, modID)
 	if err != nil {
 		return err
 	}
@@ -674,9 +674,9 @@ func (s *WorkspaceService) ExportWorkshopIgnore(workspaceID, modID string) error
 }
 
 // ImportWorkshopIgnore reads .workshop-ignore into workspace config and returns the text.
-func (s *WorkspaceService) ImportWorkshopIgnore(workspaceID, modID string) (string, error) {
+func (wsp *WorkspaceService) ImportWorkshopIgnore(workspaceID, modID string) (string, error) {
 	var text string
-	err := s.mutateMod(workspaceID, modID, func(mod *WorkspaceMod) error {
+	err := wsp.mutateMod(workspaceID, modID, func(mod *WorkspaceMod) error {
 		raw, err := os.ReadFile(filepath.Join(mod.Path, steam.IgnoreFile))
 		if err != nil {
 			return err
@@ -688,8 +688,8 @@ func (s *WorkspaceService) ImportWorkshopIgnore(workspaceID, modID string) (stri
 }
 
 // mutateMod changes one mod of a workspace the same way; errNoMod where the workspace has none of the id.
-func (s *WorkspaceService) mutateMod(workspaceID, modID string, fn func(*WorkspaceMod) error) error {
-	return s.mutateWorkspace(workspaceID, func(ws *Workspace) error {
+func (wsp *WorkspaceService) mutateMod(workspaceID, modID string, fn func(*WorkspaceMod) error) error {
+	return wsp.mutateWorkspace(workspaceID, func(ws *Workspace) error {
 		mod, err := ws.mod(modID)
 		if err != nil {
 			return err
@@ -719,9 +719,9 @@ type IdeRoots struct {
 }
 
 // GetIdeRoots returns the game and mod folders for the IDE.
-func (s *WorkspaceService) GetIdeRoots(workspaceID string) (*IdeRoots, error) {
+func (wsp *WorkspaceService) GetIdeRoots(workspaceID string) (*IdeRoots, error) {
 	// one read, so the workspace and the install it names cannot disagree
-	ws, inst, err := s.config.workspace(workspaceID)
+	ws, inst, err := wsp.config.workspace(workspaceID)
 	if err != nil {
 		return nil, err
 	}

@@ -18,18 +18,18 @@ func NewHealthService(workspaces *WorkspaceService) *HealthService {
 
 // GetHealth is the workspace's health report: its contests and overrides in the load order asked for, what each
 // mod depends on, the names nothing defines, each language's gaps and the editor's other findings.
-func (s *HealthService) GetHealth(workspaceID string, params pages.HealthParams) (*pages.HealthReport, error) {
-	ws, err := s.workspaces.openWorkspace(workspaceID)
+func (hlt *HealthService) GetHealth(workspaceID string, params pages.HealthParams) (*pages.HealthReport, error) {
+	ws, err := hlt.workspaces.openWorkspace(workspaceID)
 	if err != nil {
 		return nil, err
 	}
-	findings := s.findings.Current(ws)
+	findings := hlt.findings.Current(ws)
 	return pages.Health(ws, params, findings), nil
 }
 
 // GetLines is the source a pane shows at each place: a definition's statement, or a reference's line.
-func (s *HealthService) GetLines(workspaceID string, places []pages.SourceAt) ([][]string, error) {
-	ws, err := s.workspaces.openWorkspace(workspaceID)
+func (hlt *HealthService) GetLines(workspaceID string, places []pages.SourceAt) ([][]string, error) {
+	ws, err := hlt.workspaces.openWorkspace(workspaceID)
 	if err != nil {
 		return nil, err
 	}
@@ -37,8 +37,8 @@ func (s *HealthService) GetLines(workspaceID string, places []pages.SourceAt) ([
 }
 
 // LocReaders is everything that reads one localization key.
-func (s *HealthService) LocReaders(workspaceID, key string) ([]pages.Cited, error) {
-	ws, err := s.workspaces.openWorkspace(workspaceID)
+func (hlt *HealthService) LocReaders(workspaceID, key string) ([]pages.Cited, error) {
+	ws, err := hlt.workspaces.openWorkspace(workspaceID)
 	if err != nil {
 		return nil, err
 	}

@@ -39,6 +39,7 @@ does, measured against real installs, is in [GAME-SYNTAX.md](GAME-SYNTAX.md); ho
 |---|---|---|
 | database | all entries of one type: one per script folder of the install, named by the folder's path without `common/` | `schema.Database` |
 | entry | one thing a database holds, with a name; the entry detector decides where one is written | `schema/entries.go` |
+| namespace | what an events file declares (`namespace = x`) before its events: an event is a top key `x.N`, N a number, of a namespace its file declares, however numeric `x` is (Vic3's `1848.1`) | `game.Descriptor.NamespaceKey`, `schema/entries.go`' `declaresNamespace` |
 | nested database | a database whose entries are written inside another database's entry | `game.Descriptor` (`Parent`, `Within`) |
 | history database | a database whose entries are the start state of other databases' entries; it defines none of its own | `game.PurposeHistory` |
 | script-made name | a name a command creates while script runs, in a database no folder holds | `game.NameCommands` |
@@ -49,9 +50,13 @@ does, measured against real installs, is in [GAME-SYNTAX.md](GAME-SYNTAX.md); ho
 | data call | a `[…]` expression in GUI or localization | `jomini.ParseCall` |
 | data function | one function of a data type, written `Type.Function`; each step of a binding refers to one | `game.DataFunction` |
 | position | a place in a database's entry or in a command's arguments; keys collapse only by written form (`<number>`, `<date>`, `<prefix:>`) | `schema.Position` |
+| block | a `{ }` and the statements written in it; also a category: the color of a key that opens a block, of the first key of a keyword pair at a line's start (`scripted_trigger x = {`, `type x = button {`) and of a loc file's language line | `jomini.Block`; `--syn-block` |
 | shape | what a block holds: fields, triggers, effects, arguments, value, description, setup or widget | `game.Shape` |
 | key rule | one way a key can be read; a block tries its rules in order and the first that fits wins | `game.KeyRule` |
-| construct | a key the language gives a fixed shape to and no dump declares: a random_list's branches, a switch's cases, the list iterators | `game.Construct` |
+| construct | a key of the language itself, one row of `game.Constructs`: a key it gives a fixed shape to and no dump declares (a random_list's branches, a switch's cases, the list iterators), or one of its operators the dumps declare as commands, each with its class | `game.Construct` |
+| class | what one of the language's operators does: logical, conditional, flow, list, math, display or saving | `game.Class` |
+| category | what the editor colors code as: entry, operator, block, field, scope, variable, string, number, literal or comment; each is a page token `--syn-<category>` in every theme | `CATEGORIES` (`lib/grammars.ts`), `lsp.Category` |
+| token | a key, value or name the engine colors over its grammar's colors, with its category: entry, operator, scope or variable | `lsp.Token` |
 | value type | what a position's value is: number, date, bool, text, a database's name | `schema.ValueType` |
 | command | an effect, trigger or link the dumps declare | `schema.Command` |
 | call | a key that is no command or link, naming an entry of a database whose descriptor says it is called there: a scripted effect, a scripted trigger, a script value | `game.Descriptor` (`Callers`) |
@@ -83,7 +88,7 @@ does, measured against real installs, is in [GAME-SYNTAX.md](GAME-SYNTAX.md); ho
 | slot | a key whose block is a widget no type is named after: a skin (`background`), chrome (a scroll bar), an attachment (a tooltip), or the widget a scroll or zoom area holds (`scrollwidget`, `zoomwidget`) | `game.WidgetSlots` |
 | panel | the panel beside a drawn file's editor, under its group's tabs and path, named by its kind's row: a GUI file's Widgets (where the selected widget sits, whether it is shown for the session, the binding it is shown on with each group it reads and that group's state, and its properties by writer) or a coat's Layers (a row per statement the coat writes, each with its eye, a drop moving it in the file, and the selected row's card edited in place) | `frontend/src/draw/DrawDetail.vue`, `frontend/src/draw/CoatLayers.vue` |
 | coat | a coat of arms: an entry of `coat_of_arms/coat_of_arms` drawn alone on its field, its layers under its own (layer type `coat`) | `draw.Coat`, `game.CoatDatabases` |
-| field | the box a coat is drawn on, the first atlas' tile of `options/atlases.txt` | `Coat.Width`, `Coat.Height`, `game.CoatFieldFile` |
+| field | the box a coat is drawn on, the first atlas' tile of `options/atlases.txt`; also a category: the color of a key that takes a value (`title = x`, `age > 16`) | `Coat.Width`, `Coat.Height`, `game.CoatFieldFile`; `--syn-field` |
 | pattern | a coat's background texture, colored by its slots (layer type `pattern`) | `draw.resolvePattern` |
 | emblem | a `colored_emblem` or `textured_emblem`: a texture, its colors and mask; one layer per run of its instances in paint order (layer type `emblem`) | `draw.resolveEmblem` |
 | instance | one place an emblem is drawn at: position, scale, rotation and depth (layer type `instance`), or one place a sub is: its offset and scale | `draw.instancesOf`, coat.ts' `PLACEMENT` |

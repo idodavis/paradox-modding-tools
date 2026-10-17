@@ -170,6 +170,21 @@ export function SignatureHelp(workspaceID: string, path: string, line: number, c
 }
 
 /**
+ * TextTokens is the keys, values and names the engine colors in another text of a file, a version of it a diff shows,
+ * from lsp.TextTokens.
+ */
+export function TextTokens(workspaceID: string, path: string, text: string): $CancellablePromise<lsp$0.Token[] | null> {
+    return $Call.ByID(433113334, workspaceID, path, text);
+}
+
+/**
+ * Tokens is the keys, values and names of a file the engine colors over its grammar's colors, from lsp.Tokens.
+ */
+export function Tokens(workspaceID: string, path: string): $CancellablePromise<lsp$0.Token[] | null> {
+    return $Call.ByID(1635891017, workspaceID, path);
+}
+
+/**
  * WorkspaceSymbols is the definitions across the workspace that match a query, from lsp.WorkspaceSymbols.
  */
 export function WorkspaceSymbols(workspaceID: string, query: string): $CancellablePromise<lsp$0.Symbol[] | null> {

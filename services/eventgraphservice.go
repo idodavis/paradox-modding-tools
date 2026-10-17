@@ -15,8 +15,8 @@ func NewEventGraphService(workspaces *WorkspaceService) *EventGraphService {
 }
 
 // SearchRoots is the events and on_actions the game fires, and what fires one, whose id holds the query.
-func (s *EventGraphService) SearchRoots(workspaceID, query string) (*pages.Roots, error) {
-	ws, err := s.workspaces.openWorkspace(workspaceID)
+func (evg *EventGraphService) SearchRoots(workspaceID, query string) (*pages.Roots, error) {
+	ws, err := evg.workspaces.openWorkspace(workspaceID)
 	if err != nil {
 		return nil, err
 	}
@@ -24,8 +24,8 @@ func (s *EventGraphService) SearchRoots(workspaceID, query string) (*pages.Roots
 }
 
 // GetEventGraph is the graph around a root, as the page's numbers draw it.
-func (s *EventGraphService) GetEventGraph(workspaceID string, params pages.Params) (*pages.EventGraph, error) {
-	ws, err := s.workspaces.openWorkspace(workspaceID)
+func (evg *EventGraphService) GetEventGraph(workspaceID string, params pages.Params) (*pages.EventGraph, error) {
+	ws, err := evg.workspaces.openWorkspace(workspaceID)
 	if err != nil {
 		return nil, err
 	}
@@ -33,8 +33,8 @@ func (s *EventGraphService) GetEventGraph(workspaceID string, params pages.Param
 }
 
 // GetEventDetail is one definition opened: where it is, its keys, its options, what it fires and what fires it.
-func (s *EventGraphService) GetEventDetail(workspaceID, id string) (*pages.Detail, error) {
-	ws, err := s.workspaces.openWorkspace(workspaceID)
+func (evg *EventGraphService) GetEventDetail(workspaceID, id string) (*pages.Detail, error) {
+	ws, err := evg.workspaces.openWorkspace(workspaceID)
 	if err != nil {
 		return nil, err
 	}

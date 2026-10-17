@@ -10,10 +10,10 @@ defineProps<{ theme: ThemeId }>();
 
 const SAMPLE = [
   "sunset_invasion.0001 = {",
-  "    type = character_event",
-  "    title = sir.0001.t",
+  "    trigger = { is_adult = yes }",
   "    # envoys arrive",
-  "    add_gold = 50",
+  "    scope:envoy = { add_gold = 50 }",
+  "    title = sir.0001.t",
 ];
 </script>
 

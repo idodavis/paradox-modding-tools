@@ -1,16 +1,32 @@
 # loc
 
-Parses the localization dialect the games write (not real YAML): entries with their keys, versions and texts, the
-`$key$` interpolations inside a text, and the language of a file. It knows no game.
+Reads and writes the localization dialect the games use (not real YAML): a file's entries with their keys, versions and
+texts, the language a file is in, and the markup inside a text. It knows no game, and every offset is a UTF-8 byte
+index.
 
 | file | holds |
 |---|---|
-| `loc.go` | `Parse`, a line-by-line scanner that never panics and returns entries with typed errors; `Interpolations`; a text's markup read into the stretches that share one formatting (`Segments`; a format's last word may carry an argument after a colon, `#tooltip:[Character.GetTooltipTag],key text#!`); the game concepts a data call may name and whether it marks them (`Concepts`, which the index's references and draw's texts read); the language of a file from its header, name or path (`LanguageFromFilename`, `LanguageFromRel`); `Stub`, a new file's contents |
+| `parse.go` | the file: `Parse`, a line-by-line scanner that never panics and returns the header's language, the entries and typed errors, with the line index it built (`Result.Lines`); `Language`, the one rule for the language a file is in; `File`, the bytes of a new file; `LooksLikeKey`, the one test of whether a word may be a key |
+| `markup.go` | the text: `Segments`, the one reader of a value's markup, and what is written over it or beside it: `Plain` (what a player reads), `Interpolations` (the keys a value reuses) and `Concepts` (the game concepts a data call may name, and whether it marks them) |
 
 ## Decisions
 
-- **Lines come from `jomini`'s line index,** so an offset here and an offset in script are counted the same way.
-- **Interpolations are loc's own reader.** A localization reference is `$key|filter$` with `.`, `-` and `'` allowed in
-  the key, which is wider than script's `$NAME$` (`jomini`), so the two readers stay apart.
-- **A header names the language** (`l_english:`). A file whose name disagrees with its header is reported by `lsp`, not
-  decided here.
+- **One line index per text.** `Parse` builds `jomini`'s line index and keeps it on the `Result`; whoever turns an
+  offset into a line asks the result, so an offset here and an offset in script are counted the same way.
+- **One rule for the language.** `Language(header, rel)` is the header's, else the one the file name (the last part of
+  `rel`) ends with (`events_l_english.yml`, `.yml` only: no game reads another extension), else the one the folder
+  `rel` names (`localization/english/`), in lower case. A header is "" where a caller has none, and `lsp` asks for the
+  name's language alone by passing the bare name, which has no folder. A header that disagrees with its file's name is
+  reported by `lsp`, not decided here.
+- **One key rule.** A key is a run of letters, digits and `_ . - '` (`keyExtra`, wider than script's `$NAME$` in
+  `jomini`): `Parse` reads an entry's key by it, `markupAt` a `$key$`, and `LooksLikeKey` tests a word by it, rejecting
+  the keywords (`yes`, `root`, ...) a script value may also be.
+- **One reader of the markup.** `Segments` reads `$key$`, `[call]`, `#format` (its last word may carry an argument
+  after a colon, `#tooltip:[Character.GetTooltipTag],key text#!`), `@icon!` and `\n`, through `markupAt`; every segment
+  keeps its span of the value. `Plain` is written over the segments, and `Concepts` holds the `|E` rule once.
+  `Interpolations` is not: a key is a key wherever it is written, inside a call's argument and a format's argument
+  too, which the segments hold whole, so it asks `markupAt` at each `$`.
+- **A `[` no `]` closes is text,** as the game reads it, and the markup after it is read as ever; it is marked
+  `IsOpen`, because completion types inside such a call (`lsp`'s `partialAt` takes the last one).
+- **Errors are `jomini`'s type.** The codes `loc` raises (`ErrNoHeader`, `ErrBadEntry`, `ErrTabIndent`,
+  `ErrUnterminatedValue`, `ErrContentBeforeHeader`) are prefixed by `lsp` where it reports them.

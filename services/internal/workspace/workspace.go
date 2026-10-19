@@ -16,7 +16,6 @@ import (
 	"sync"
 	"sync/atomic"
 
-	"paradox-modding-tools/services/internal/appdata"
 	"paradox-modding-tools/services/internal/game"
 	"paradox-modding-tools/services/internal/index"
 	"paradox-modding-tools/services/internal/inventory"
@@ -88,10 +87,11 @@ func (ws *Session) Winner(defs []index.At) (winner index.At, adds, orphans []ind
 
 // Text is a file's text: the open buffer's, else the disk's.
 func (ws *Session) Text(path string) (string, error) {
-	if buffer := ws.buffers[appdata.PathKey(path)]; buffer != nil {
+	if buffer := ws.buffers[inventory.PathKey(path)]; buffer != nil {
 		return buffer.text, nil
 	}
-	return inventory.File{Path: path}.Text()
+	text, err := inventory.File{Path: path}.Text()
+	return text.Content, err
 }
 
 // Parses is the parses one request made, by path: a file the request reads again is not parsed again.
@@ -100,7 +100,7 @@ type Parses map[string]*jomini.Result
 // Parsed is the parse of a file's text: an open buffer's, made once per text, else the one parses holds, else the
 // disk's, which parses then holds.
 func (ws *Session) Parsed(parses Parses, path string) (*jomini.Result, string, error) {
-	if buffer := ws.buffers[appdata.PathKey(path)]; buffer != nil {
+	if buffer := ws.buffers[inventory.PathKey(path)]; buffer != nil {
 		return &buffer.parsed, buffer.text, nil
 	}
 	if held := parses[path]; held != nil {
@@ -120,7 +120,7 @@ func (ws *Session) Parsed(parses Parses, path string) (*jomini.Result, string, e
 func (ws *Session) DidChange(path, text string) {
 	ws.mu.Lock()
 	defer ws.mu.Unlock()
-	key := appdata.PathKey(path)
+	key := inventory.PathKey(path)
 	open := ws.buffers[key]
 	if open == nil {
 		file, _, _ := ws.Locate(path)
@@ -139,13 +139,13 @@ func (ws *Session) DidClose(path string) {
 	text, err := inventory.File{Path: filepath.Clean(path)}.Text()
 	ws.mu.Lock()
 	defer ws.mu.Unlock()
-	key := appdata.PathKey(path)
+	key := inventory.PathKey(path)
 	open := ws.buffers[key]
 	if open == nil {
 		return
 	}
 	delete(ws.buffers, key)
-	ws.reindex(open.file, text, err)
+	ws.reindex(open.file, text.Content, err)
 }
 
 // DidSave reads the saved file and indexes it again.
@@ -155,7 +155,7 @@ func (ws *Session) DidSave(path string) {
 	ws.mu.Lock()
 	defer ws.mu.Unlock()
 	if file, _, known := ws.Locate(path); known {
-		ws.reindex(file, text, err)
+		ws.reindex(file, text.Content, err)
 	}
 }
 
@@ -163,7 +163,7 @@ func (ws *Session) DidSave(path string) {
 // holds it and the index reads its format; any other file is only listed or forgotten. An unreadable file keeps
 // its records, since on Windows a save often hits a sharing violation; only a file that is gone loses them.
 func (ws *Session) DiskChanged(path string) {
-	key := appdata.PathKey(path)
+	key := inventory.PathKey(path)
 	ws.mu.RLock()
 	file, _, known := ws.Locate(path)
 	isOpen := ws.buffers[key] != nil
@@ -171,7 +171,8 @@ func (ws *Session) DiskChanged(path string) {
 	if !known || isOpen {
 		return
 	}
-	text, err := "", error(nil)
+	var text inventory.Text
+	var err error
 	if indexable(file.Format) {
 		text, err = file.Text()
 	} else {
@@ -180,7 +181,7 @@ func (ws *Session) DiskChanged(path string) {
 	ws.mu.Lock()
 	defer ws.mu.Unlock()
 	if ws.buffers[key] == nil {
-		ws.reindex(file, text, err)
+		ws.reindex(file, text.Content, err)
 	}
 }
 

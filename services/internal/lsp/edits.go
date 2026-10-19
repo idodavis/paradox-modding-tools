@@ -8,9 +8,7 @@
 package lsp
 
 import (
-	"bytes"
 	"fmt"
-	"os"
 	"path/filepath"
 	"strings"
 
@@ -133,7 +131,7 @@ func CodeActions(ws *workspace.Session, path string, line, col int) ([]CodeActio
 	}
 	var out []CodeAction
 	if file.place.Format == inventory.Loc {
-		if raw, err := os.ReadFile(path); err == nil && !bytes.HasPrefix(raw, []byte(jomini.BOM)) && !strings.HasPrefix(file.text, jomini.BOM) {
+		if disk, err := inventory.LoadText(path); err == nil && !disk.BOM && !strings.HasPrefix(file.text, jomini.BOM) {
 			out = append(out, CodeAction{Title: "Add UTF-8 BOM", Edit: WorkspaceEdit{Changes: map[string][]TextEdit{path: {{NewText: jomini.BOM}}}}})
 		}
 		return out, nil
@@ -166,7 +164,7 @@ func (file *openFile) keyFile() (string, Position, bool) {
 		return "", Position{}, false
 	}
 	for _, at := range ws.Workspace.Files {
-		if at.Origin == mod.ID && at.Format == inventory.Loc && loc.LanguageFromRel(at.Rel) == ws.Language {
+		if at.Origin == mod.ID && at.Format == inventory.Loc && loc.Language("", at.Rel) == ws.Language {
 			if text, err := ws.Text(at.Path); err == nil {
 				return at.Path, jomini.NewLineIndex(text).PositionAt(len(text)), text != "" && !strings.HasSuffix(text, "\n")
 			}

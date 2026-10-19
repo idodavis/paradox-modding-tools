@@ -332,7 +332,7 @@ func (schema *Schema) Enter(context Context, statement, previous jomini.Statemen
 // writtenInPlace reports whether a key holds a parameter ($ACTOR$, $TARGET$.liege) or is a data call written
 // with arguments (name(…)).
 func writtenInPlace(key string) bool {
-	if len(jomini.Interpolations(key)) > 0 {
+	if len(jomini.Parameters(key)) > 0 {
 		return true
 	}
 	return strings.Contains(key, "(") && slices.ContainsFunc(jomini.ParseCall(key, 0), func(part jomini.CallStep) bool {

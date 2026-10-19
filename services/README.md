@@ -13,10 +13,10 @@ under the engine knows about the editor, the pages, the services or the Workshop
 |---|---|---|
 | leaves | [`game`](internal/game/README.md) | What is true of each game: its identity, its language rules as rows, its file layout, where it installs and keeps its data. The only package that tells the games apart. |
 | | [`jomini`](internal/jomini/README.md) | Parse Paradox script text into a syntax tree, and read the shapes of its words (names, dates, numbers, `prefix:name`, `$NAME$`, `[data.calls]`). Knows no game and no file. |
-| | [`loc`](internal/loc/README.md) | Parse the localization dialect: entries, `$key$`, the language of a file. |
-| | [`appdata`](internal/appdata/README.md) | PMT's own files on this machine: the app and cache folders, the atomic write, the stored form of a cache. |
-| files | [`inventory`](internal/inventory/README.md) | Every file of an install, a mod or a dump folder: the roots that mirror the game layout, each file's format and origin, its text read with the right encoding, the walk, the ordered worker pool. |
-| | [`texture`](internal/texture/README.md) | Decode a DDS or TGA to pixels and read an image's header. |
+| | [`loc`](internal/loc/README.md) | Parse the localization dialect: a file's entries with their line index, the one rule for a file's language, the markup of a text (`Segments`: `$key$`, `[call]`, `#format`, `@icon!`), the plain text a player reads, and the writer of a loc file. |
+| | [`appdata`](internal/appdata/README.md) | PMT's own files on this machine: the app and cache folders, the atomic write, the app's JSON files, the stored form of a cache. |
+| files | [`inventory`](internal/inventory/README.md) | Every file of an install, a mod or a dump folder: the roots that mirror the game layout, each file's format and origin, its text read and written with the encoding it was stored in, how paths are compared and joined, the walk, the ignore rules, the ordered worker pool. |
+| | [`texture`](internal/texture/README.md) | Decode a DDS or TGA to pixels, read an image's header, and resolve a path written in script to the image it names. |
 | | [`modfiles`](internal/modfiles/README.md) | A mod's own Paradox files: its descriptor, its thumbnail, the skeleton of a new mod. |
 | | [`wiki`](internal/wiki/README.md) | The community wiki: fetch pages, sanitize them, store them, look up the pages for a file or a topic, and give the engine the script examples a page holds. |
 | | [`steam`](internal/steam/README.md) | The Workshop: publish and download through the game's own Steam library in a second process, the files a mod keeps for its page, its description format, the upload's file set, the compare with Steam. |
@@ -149,7 +149,7 @@ row's second column is rewritten as its part lands.
 | What scope does this run in? | `scopeOf`, `Follow`, `commandScope`, `EntryScope`, `RunsScript` | the block's record (the walk); judging for a scripted entry's scope from its callers |
 | What does a block hold (its shape)? | `blockOf`, `holdsOf`, `commandShape` | the block's record (the walk's `blockOf`) |
 | What does a value take, and is this one valid? | `ValuePosition` + claims | the claim on the value's record; one matcher of a value to a type, used by the verdict that a value has the type its key takes, and by completion |
-| Is this word shaped as a name, an event id, a number, a date, `prefix:name`, a constant, a `$PARAM$`? | `jomini` names.go | `jomini`, one function per shape a key or a value is written in |
+| Is this word shaped as a name, an event id, a number, a date, `prefix:name`, a constant, a `$PARAM$`? | `jomini` shapes.go | `jomini`, one function per shape a key or a value is written in |
 | Which case does a lookup use? | no one place: each table matches case its own way | each table's one lookup, which matches case by the game's rule for that table, measured |
 | Is this block a color, and which color? | `blockColor`, `game.ColorOf` | one function over `jomini.ColorParts` and `game.ColorOf`: whether a block is a color, and which |
 | What does a data call's step name, and what type does it lead to? | `CallLeadsTo`, `CallStep` | `schema`'s typing of a data call (`CallLeadsTo`, `TypeDatabase`), the datacontext honored |
@@ -157,28 +157,28 @@ row's second column is rewritten as its part lands.
 | Is this a date, and what does it mean? | `dateFact` | `jomini.ParseDate` |
 | What category/color is this word in the editor? | `lsp.Tokens` (4 categories) plus the editor's grammars (10) | the category on the key's or value's record; the grammars paint shapes only |
 | What is under the cursor, and what block/entry holds it? | `walkTo`, `scalarAt`, `blockAt`, `within` | the file's records, searched by range |
-| What markup does a localization text hold: `$key$`, `[call]`, `#format`, `@icon!`, `\n`? | `loc.Segments` | `loc`'s segments of a value |
-| Which value does a block give a key: the first or the last written, in which case? | `jomini.ScalarOf` (the first, case-sensitive) | one `jomini` function, by the game's rule (measured) |
+| What markup does a localization text hold: `$key$`, `[call]`, `#format`, `@icon!`, `\n`? | `loc.Segments`; `Plain`, `Interpolations` and `Concepts` read it | `loc`'s segments of a value |
+| Which value does a block give a key: the first or the last written, in which case? | `jomini.KeyValue`, by the `Match` the caller passes | one `jomini` function, by the game's rule (measured) |
 | Which statement does a comment belong to? | `jomini.Attach` | `jomini.Attach`; the docs parser its own |
 | Does this name resolve, and to which definitions? | `index.Resolve` | `index.Resolve` |
 | Which definition does the game keep; is the name contested? | `index.Winner` | `index.Winner`, over one `game` row per database: which definition it keeps and by which order, its entry modes, its merges, its override priority |
 | Where is this name used? | `uses` | the index's uses of a name |
 | Where is a definition's statement, and its text? | `Session.Statement` | the entry's record (its statement's range); its tree from the file's one parse, its text flattened by one function |
 | Is this an event; what does it fire, what fires it? | `workspace.Fires`/`FiredBy` | an event is a record of the events database, by its declared namespace; `index` `Fires` and `FiredBy` of the kept definitions |
-| Loc: does the key exist, its text, the entry's title, the file's language? | `Session.Loc`, `Session.Title` | `workspace` `Loc` and `Title`; `loc`'s one rule for a file's language |
+| Loc: does the key exist, its text, the entry's title, the file's language? | `Session.Loc`, `Session.Title`; `loc.Language` for the file's language | `workspace` `Loc` and `Title`; `loc`'s one rule for a file's language |
 | What is a database's entry called on screen? | `game.KindName` | `game.KindName`, renamed for what it holds |
 | Which database by folder, purpose or word? | `schema.folder`, `DatabaseNamed` | `schema`'s one rule from a folder, a purpose, a written name or a class name to a database |
 | Where is this file: its root, origin, rel and database; is it loaded? | `Session.Locate`, `PlaceOf` | `workspace.Locate` (the place) |
-| The key two paths are compared by | `appdata.PathKey` | `appdata.PathKey`, carried on every place |
+| The key two paths are compared by | `inventory.PathKey` | `appdata.PathKey`, carried on every place |
 | Which file wins at a path; who ships the same path? | `index.Loaded` | `index.Loaded` |
 | What is wrong with a file, and on which card does a finding go? | `lsp.Diagnose` | `lsp.Diagnose` over the records' failed verdicts and the parse errors; one Go table of each code's card; the frontend's one formatter per code |
 | What kind is this file: format, editor language, view, icon, image, binary? | `inventory.Classify` | `inventory.Classify`; how a file is shown, the frontend's one table keyed by Go's format and database |
 | Is this file read only? | `IdeRoot.ReadOnly` | `workspace.Locate` (the place's read only) |
-| What is a file's text (encoding, BOM, line ends), and how is text written back? | `inventory.DecodeText`, `EncodeText` | `inventory`'s reader and writer of a file's text; `appdata`'s pair for the app's own JSON |
-| Where do a text's lines break, and what is a position: line, byte column, UTF-16 column? | `jomini.NewLineIndex`; `editor/columns.ts` | the line index on the parse (Go); `editor/columns.ts` (the frontend) |
-| Which files are under a folder: dot folders, links, ignored and binary files? | `inventory.Walk` | `inventory.Walk`, with one matcher of ignore patterns |
-| What safe file or folder name does a new thing get? | `modfiles.Slug` | one function for every file or folder name PMT makes |
-| Is this file an image, of which format and size? | `texture.Info` | `texture` |
+| What is a file's text (encoding, BOM, line ends), and how is text written back? | `inventory.LoadText` and `SaveText` (`TextOf` and `Text.Bytes` for bytes that never touch the disk); `appdata.LoadJSON` and `SaveJSON` for the app's own files | `inventory`'s reader and writer of a file's text; `appdata`'s pair for the app's own JSON |
+| Where do a text's lines break, and what is a position: line, byte column, UTF-16 column? | the line index kept on `jomini.Result` and `loc.Result` (`Lines`, `LineText`); `editor/columns.ts` | the line index on the parse (Go); `editor/columns.ts` (the frontend) |
+| Which files are under a folder: dot folders, links, ignored and binary files? | `inventory.Walk` over `Children`, one hidden-name rule; `IgnoreRules` and `Rules.Covers` for Steam and search | `inventory.Walk`, with one matcher of ignore patterns |
+| What safe file or folder name does a new thing get? | `inventory.FileName` | one function for every file or folder name PMT makes |
+| Is this file an image, of which format and size? | `texture.Info` (one header read, shared with `Decode`); `texture.Resolve` for a written path | `texture` |
 | What does a mod's descriptor say (listing fields, thumbnail, ignore rules); is a folder a mod? | `modfiles.LoadDescriptor` | `modfiles`: the descriptor loaded once a request; the ignore text in the config, the file only for Export and Import |
 | What is a mod's state on Steam, and what will an upload change? | `SteamCompare`, `ListingSummary`, `sentDescription` | the release package's one payload per question (on Steam, its version, what an upload changes and sends), one field per fact; one frontend formatter per sentence |
 | What is the install's state: found, scanned when, which version? | `WorkspaceState`, `GameInstall` | one field per fact (when the install was scanned, its version) on the workspace's state; one formatter for the install line |
@@ -190,9 +190,9 @@ row's second column is rewritten as its part lands.
 | What do Health's cards count, and which card does a word belong to? | Go's `HealthReport` | `pages`: Health's cards, counts and each finding's card |
 | Walk a file with the schema | `schema.WalkFile` | `schema.WalkFile`, once per file text; a game file at scan: one counting pass, then one walk for its records, after a pass over the declaring files' top statements |
 | Walk or descend a parse tree without the schema | `jomini.Walk` | `jomini.Walk` for what needs the parse alone (folding); everything else uses the records |
-| Read and parse a file's text | `Session.Parsed` | `workspace.Parsed`, one parse per text, through the one text reader |
+| Read and parse a file's text | `Session.Parsed`, through `inventory.LoadText` and one `jomini.Parse` that keeps its tokens | `workspace.Parsed`, one parse per text, through the one text reader |
 | Logic inside the Wails services | no one place: release listing and compare, git parsing, settings and places sit in the services | none: each service a shell over its package |
-| Split script text into tokens | the `jomini` lexer and parser | `jomini`; the docs parser's tokenizer |
+| Split script text into tokens | the `jomini` lexer, once per parse (the tokens kept on the `Result`); the docs parser's tokenizer | `jomini`; the docs parser's tokenizer |
 | Convert between Markdown, BBCode, HTML and text | steam's `bbcode.go` | `steam`'s converters for Markdown and BBCode; one HTML-to-text in `wiki` |
 | Fetch over HTTP and keep a cache | the wiki client | one HTTP client (user agent, throttle, size cap) for the wiki and Steam; one cache folder with one cleanup; the wiki's memory copy is the cache |
 | Compare two version strings | wiki's `versionParts` | one function that orders two versions |

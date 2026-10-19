@@ -15,10 +15,10 @@ import (
 
 	"paradox-modding-tools/services/internal/game"
 	"paradox-modding-tools/services/internal/index"
-	"paradox-modding-tools/services/internal/inventory"
 	"paradox-modding-tools/services/internal/jomini"
 	"paradox-modding-tools/services/internal/lsp"
 	"paradox-modding-tools/services/internal/schema"
+	"paradox-modding-tools/services/internal/texture"
 	"paradox-modding-tools/services/internal/workspace"
 )
 
@@ -323,13 +323,21 @@ func (resolver *resolver) addMissing(cause, text string) {
 }
 
 // urlOf is the route's URL for a file, made once a render.
-func (resolver *resolver) urlOf(file inventory.File) string {
-	if route, isKnown := resolver.urls[file.Path]; isKnown {
+func (resolver *resolver) urlOf(path string) string {
+	if route, isKnown := resolver.urls[path]; isKnown {
 		return route
 	}
-	route := routeOf(file.Path)
-	resolver.urls[file.Path] = route
+	route := routeOf(path)
+	resolver.urls[path] = route
 	return route
+}
+
+// fileOf is the file a path written in a GUI file names, from what the scan holds (texture.Resolve).
+func (resolver *resolver) fileOf(guiPath string) (string, bool) {
+	return texture.Resolve(guiPath, func(rel string) (string, bool) {
+		file, isListed := index.FileAt(resolver.ws.Indexes(), rel)
+		return file.Path, isListed
+	})
 }
 
 // routeOf is the route's URL for a file, with when it changed.

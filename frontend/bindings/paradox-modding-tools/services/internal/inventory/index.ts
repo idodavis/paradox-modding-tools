@@ -6,5 +6,6 @@ export {
 } from "./models.js";
 
 export type {
+    Child,
     File
 } from "./models.js";

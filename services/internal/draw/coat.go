@@ -89,7 +89,7 @@ const (
 	textureKey  = "texture"
 	coatType    = "coat"
 	emblemType  = "emblem"
-	listPick    = "list" // a value the game picks from a template list
+	listPick    = "list" // the tag of a value the game picks from a template list
 )
 
 // emblemKeys are the keys an emblem is written with, each a key of game.CoatTextureFolders.
@@ -255,9 +255,9 @@ func (resolver *coatResolver) coatColors(coat *properties, base []string) []stri
 		switch {
 		case isColor:
 			colors[slot] = color
-		case !isScalar:
-		case resolver.isPicked(key, scalar):
+		case resolver.isPicked(key, coat):
 			colors[slot] = ""
+		case !isScalar:
 		case slices.Contains(slotKeys, strings.ToLower(scalar)):
 			baseSlot := slices.Index(slotKeys, strings.ToLower(scalar)) + 1
 			colors[slot] = ""
@@ -289,7 +289,7 @@ func (resolver *resolver) entryColor(id string) string {
 func (resolver *coatResolver) resolvePattern(holder int, coat *properties, colors []string) {
 	statement, has := coat.last(patternKey)
 	file, _ := coat.scalar(patternKey)
-	if !has || file == "" || resolver.isPicked(patternKey, file) {
+	if !has || resolver.isPicked(patternKey, coat) || file == "" {
 		return
 	}
 	layer := resolver.addLayer(holder, statement, patternKey, file)
@@ -344,7 +344,7 @@ func (resolver *coatResolver) resolveEmblem(holder int, emblem statement, run []
 	resolver.layerProperties[layer].add(slices.DeleteFunc(slices.Clone(own.statements), isLayer)...)
 	if regions, has := own.numbers(maskKey); has {
 		pattern, _ := resolver.layerProperties[holder].scalar(patternKey)
-		if pattern != "" && !strings.EqualFold(pattern, listPick) {
+		if pattern != "" {
 			resolver.coat.Layers[layer].Mask = resolver.textureURL(coatPath(patternKey, pattern))
 		}
 		for _, region := range regions {
@@ -354,7 +354,7 @@ func (resolver *coatResolver) resolveEmblem(holder int, emblem statement, run []
 	key := strings.ToLower(emblem.assignment.Key.Text)
 	emblemColors := resolver.coatColors(own, colors)
 	resolver.coat.Layers[layer].Colors = emblemColors
-	isPicked := resolver.isPicked(textureKey, file)
+	isPicked := resolver.isPicked(textureKey, own)
 	for _, instance := range run {
 		statement, instanceProperties := emblem, &properties{}
 		if instance.statement != nil {
@@ -394,12 +394,18 @@ func (resolver *coatResolver) textureURL(path string) string {
 		resolver.addMissing("texture", path)
 		return ""
 	}
-	return resolver.urlOf(file)
+	return resolver.urlOf(file.Path)
 }
 
-// isPicked reports whether a key's value is what a list picks, which the game decides and the preview cannot, listed.
-func (resolver *coatResolver) isPicked(key, value string) bool {
-	if !strings.EqualFold(value, listPick) {
+// isPicked reports whether a key's last value is what a list picks (`color1 = list "normal_colors"`), which the game
+// decides and the preview cannot, listed.
+func (resolver *coatResolver) isPicked(key string, properties *properties) bool {
+	last, has := properties.last(key)
+	if !has {
+		return false
+	}
+	tagged, isTagged := last.assignment.Value.(*jomini.TaggedBlock)
+	if !isTagged || !strings.EqualFold(tagged.Tag.Text, listPick) {
 		return false
 	}
 	resolver.addMissing("list", key)
@@ -479,7 +485,7 @@ func CoatFile(ws *workspace.Session, modID string) (CoatTarget, error) {
 	}
 	if target == "" {
 		stem := notAlphanumeric.ReplaceAllString(strings.ToLower(filepath.Base(mod.Dir)), "_")
-		target = filepath.Join(mod.Dir, filepath.FromSlash(folder), strings.Trim(stem, "_")+"_coats.txt")
+		target = inventory.Join(mod.Dir, path.Join(folder, strings.Trim(stem, "_")+"_coats.txt"))
 	}
 	rel, err := filepath.Rel(mod.Dir, target)
 	if err != nil {

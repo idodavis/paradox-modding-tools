@@ -12,6 +12,10 @@ import { Call as $Call, CancellablePromise as $CancellablePromise } from "@wails
 
 // eslint-disable-next-line @typescript-eslint/ban-ts-comment
 // @ts-ignore: Unused imports
+import * as inventory$0 from "./internal/inventory/models.js";
+
+// eslint-disable-next-line @typescript-eslint/ban-ts-comment
+// @ts-ignore: Unused imports
 import * as $models from "./models.js";
 
 /**
@@ -30,9 +34,9 @@ export function DeletePath(fullPath: string): $CancellablePromise<void> {
 
 /**
  * ListDirectory lists immediate children of dirPath (non-recursive).
- * showAll lists every name; otherwise skip dotfiles except .metadata.
+ * showAll lists every name; otherwise the names the walk leaves out are left out too (inventory.Hidden).
  */
-export function ListDirectory(dirPath: string, showAll: boolean): $CancellablePromise<$models.DirEntry[] | null> {
+export function ListDirectory(dirPath: string, showAll: boolean): $CancellablePromise<inventory$0.Child[] | null> {
     return $Call.ByID(2302512980, dirPath, showAll);
 }
 
@@ -73,8 +77,8 @@ export function TrashPath(fullPath: string): $CancellablePromise<string> {
 }
 
 /**
- * WriteText is the editor's save: the text in the file's own encoding (inventory.EncodeText), through appdata.Write, so
- * a failed save never leaves half a file.
+ * WriteText is the editor's save: the text in the file's own encoding (inventory.SaveText), so a failed save never
+ * leaves half a file.
  */
 export function WriteText(fullPath: string, text: string, bom: boolean, legacy: boolean): $CancellablePromise<void> {
     return $Call.ByID(2180260259, fullPath, text, bom, legacy);

@@ -7,10 +7,7 @@ package wiki
 import (
 	"cmp"
 	"context"
-	"encoding/json"
 	"fmt"
-	"io"
-	"os"
 	"path/filepath"
 	"regexp"
 	"strings"
@@ -189,12 +186,8 @@ func (client *Client) load(gameID string) (*Sidecar, error) {
 	if cached != nil {
 		return cached, nil
 	}
-	raw, err := os.ReadFile(client.SidecarPath(gameID))
-	if err != nil {
-		return nil, err
-	}
 	var sidecar Sidecar
-	if err := json.Unmarshal(raw, &sidecar); err != nil {
+	if err := appdata.LoadJSON(client.SidecarPath(gameID), &sidecar); err != nil {
 		return nil, err
 	}
 	client.memMu.Lock()
@@ -205,10 +198,7 @@ func (client *Client) load(gameID string) (*Sidecar, error) {
 
 // save writes gameID's sidecar whole and keeps it in memory.
 func (client *Client) save(gameID string, sidecar *Sidecar) error {
-	err := appdata.Write(client.SidecarPath(gameID), func(out io.Writer) error {
-		return json.NewEncoder(out).Encode(sidecar)
-	})
-	if err != nil {
+	if err := appdata.SaveJSON(client.SidecarPath(gameID), sidecar); err != nil {
 		return err
 	}
 	client.memMu.Lock()

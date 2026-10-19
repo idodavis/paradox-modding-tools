@@ -44,7 +44,7 @@ asks that place. What the app does stays the same, apart from the additions list
 app working, `task check` passing, and the same measurements taken on Crusader Kings III, Victoria 3 and Europa
 Universalis V, so a layer that makes any of them worse does not count as done.
 
-- [ ] **Layer 0, the baseline.** The measurements every later layer is compared with. Every dependency moves to its
+- [x] **Layer 0, the baseline.** The measurements every later layer is compared with. Every dependency moves to its
   latest release (Wails, Go, the frontend libraries, the build actions). The docs site is removed in favor of the
   README, CONTRIBUTING.md and this page, and the glossary and syntax notes leave the repository. The latest patch
   notes of each game are read for what they change for modders.

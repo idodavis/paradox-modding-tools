@@ -6,9 +6,8 @@
 package lsp
 
 import (
-	"bytes"
 	"fmt"
-	"os"
+	"path"
 	"slices"
 	"strings"
 
@@ -86,7 +85,7 @@ func Diagnose(ws *workspace.Session, path string, enabled map[string]bool) ([]Di
 			enabled[code.Code] = code.Default
 		}
 	}
-	judge := &judge{file: file, enabled: enabled, ignored: ignores(file.text), positions: map[jomini.Range]*schema.Position{}}
+	judge := &judge{file: file, enabled: enabled, ignored: ignores(file.text, file.parsed.Lines()), positions: map[jomini.Range]*schema.Position{}}
 	if file.place.Format == inventory.Loc {
 		judge.locFile()
 	} else {
@@ -112,14 +111,15 @@ func (judge *judge) report(span jomini.Range, severity int, code, message string
 // ignores reads every `# pmt:ignore code, code` comment of a text: its codes, split on commas and
 // blanks, apply to its own line and the line below, unless that line has a comment of its own. No
 // codes turn every check off.
-func ignores(text string) map[int][]string {
+func ignores(text string, lines *jomini.LineIndex) map[int][]string {
 	ignored := map[int][]string{}
-	for number, line := range strings.Split(text, "\n") {
+	for number := range lines.LineCount() {
+		line := lines.LineText(text, number)
 		mark := strings.Index(line, "pmt:ignore")
 		if mark < 0 || !strings.Contains(line[:mark], "#") {
 			continue
 		}
-		codes := strings.FieldsFunc(line[mark+len("pmt:ignore"):], func(char rune) bool { return strings.ContainsRune(", \t\r", char) })
+		codes := strings.FieldsFunc(line[mark+len("pmt:ignore"):], func(char rune) bool { return strings.ContainsRune(", \t", char) })
 		ignored[number], ignored[number+1] = codes, codes
 	}
 	return ignored
@@ -243,7 +243,7 @@ func (judge *judge) wrongValue(at step, scalar *jomini.Scalar) {
 	judge.positions[scalar.Range] = position
 	_, isConstant := jomini.Constant(text)
 	claim := position.Value.Value
-	if _, isChoice := slices.BinarySearch(claim.Choices, text); isConstant || len(jomini.Interpolations(text)) > 0 || isChoice {
+	if _, isChoice := slices.BinarySearch(claim.Choices, text); isConstant || len(jomini.Parameters(text)) > 0 || isChoice {
 		return
 	}
 	code, wrong := "wrong-value-type", false
@@ -383,7 +383,8 @@ func (judge *judge) locFile() {
 	for _, parseError := range parsed.Errors {
 		judge.report(parseError.Range, 1, "loc-"+string(parseError.Code), parseError.Message)
 	}
-	language := loc.LanguageFromFilename(file.place.Rel)
+	// the name alone: a bare name has no folder for the language rule to read
+	language := loc.Language("", path.Base(file.place.Rel))
 	if language != "" && parsed.Language != "" && !strings.EqualFold(language, parsed.Language) {
 		message := fmt.Sprintf("the file is named for %s but its header says l_%s", language, parsed.Language)
 		judge.report(jomini.Range{}, 2, "loc-header-mismatch", message)
@@ -394,8 +395,8 @@ func (judge *judge) locFile() {
 			judge.report(jomini.Range{}, 2, "wrong-localization-folder", fmt.Sprintf("the game reads %s, not %s", right, wrong))
 		}
 	}
-	raw, err := os.ReadFile(file.path)
-	if !strings.HasPrefix(file.text, jomini.BOM) && (err != nil || !bytes.HasPrefix(raw, []byte(jomini.BOM))) {
+	disk, err := inventory.LoadText(file.path)
+	if !strings.HasPrefix(file.text, jomini.BOM) && (err != nil || !disk.BOM) {
 		judge.report(jomini.Range{}, 2, "missing-bom", "the game reads a localization file only with a UTF-8 byte order mark")
 	}
 }

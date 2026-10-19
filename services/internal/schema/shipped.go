@@ -12,6 +12,7 @@ import (
 	"strconv"
 
 	"paradox-modding-tools/services/internal/appdata"
+	"paradox-modding-tools/services/internal/inventory"
 )
 
 // shippedFiles holds the shipped schemas, kept in their own folder beside the code.
@@ -25,9 +26,10 @@ const shippedDir = "shipped"
 // numbers matches the digit runs the newest shipped file is picked by.
 var numbers = regexp.MustCompile(`\d+`)
 
-// ShippedName returns the shipped file of a game version: <game>-<version>.gob.gz, by appdata.SafeName.
+// ShippedName returns the shipped file of a game version: <game>-<version>.gob.gz, the version as inventory.FileName
+// writes it.
 func ShippedName(game, version string) string {
-	return appdata.SafeName(game+"-"+version) + ".gob.gz"
+	return game + "-" + inventory.FileName(version) + ".gob.gz"
 }
 
 // LoadShipped returns a game's shipped schema: the file of the exact version with exact true, else the

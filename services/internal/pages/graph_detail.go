@@ -161,7 +161,7 @@ func (text eventText) sections(block *jomini.Block) ([]Section, []Option) {
 			})
 			section.Value = oneLine(text.parsed, statements)
 			section.Parts = text.parts(inner)
-			if character := jomini.ScalarOf(inner, game.EventPortraits.Character); portrait && character != nil {
+			if character := jomini.KeyValue(inner, game.EventPortraits.Character, jomini.Match{}); portrait && character != nil {
 				section.Portrait = character.Text
 			}
 			if section.Key == "option" {
@@ -254,7 +254,7 @@ func (text eventText) versions(statement jomini.Statement) []Version {
 		}
 	case shape.Triggered:
 		if block := jomini.BlockOf(assign.Value); block != nil {
-			if scalar := jomini.ScalarOf(block, shape.Leaf); scalar != nil {
+			if scalar := jomini.KeyValue(block, shape.Leaf, jomini.Match{}); scalar != nil {
 				when, _ := text.trigger(block)
 				return []Version{text.version(scalar, when)}
 			}
@@ -289,7 +289,7 @@ func (text eventText) blockName(field *jomini.Assignment) (Version, bool) {
 	if inner == nil {
 		return Version{}, false
 	}
-	label := jomini.ScalarOf(inner, "text")
+	label := jomini.KeyValue(inner, "text", jomini.Match{})
 	if label == nil {
 		return Version{}, false
 	}

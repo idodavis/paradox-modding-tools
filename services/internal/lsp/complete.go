@@ -14,6 +14,7 @@ import (
 	"paradox-modding-tools/services/internal/index"
 	"paradox-modding-tools/services/internal/inventory"
 	"paradox-modding-tools/services/internal/jomini"
+	"paradox-modding-tools/services/internal/loc"
 	"paradox-modding-tools/services/internal/schema"
 	"paradox-modding-tools/services/internal/workspace"
 )
@@ -67,26 +68,30 @@ func Complete(ws *workspace.Session, path string, line, col int) (*Completion, e
 	return file.complete(file.parsed.Lines().OffsetAt(line, col), "").list(), nil
 }
 
-// partialAt finds the text being typed at an offset: the step of a data call, else the name the
-// cursor is in, walked back over a prefixed name (trait:br). It is false in a file that is no
+// partialAt finds the text being typed at an offset: the step of a data call, else the word the
+// cursor touches, a prefixed name (trait:br) whole. It is false in a comment, and in a file that is no
 // script under a root, outside a data call.
 func (file *openFile) partialAt(offset int) (partial, bool) {
+	isComment := slices.ContainsFunc(file.parsed.Comments, func(comment jomini.Comment) bool {
+		return comment.Range.Start < offset && offset <= comment.Range.End
+	})
+	if isComment {
+		return partial{}, false
+	}
 	lines := file.parsed.Lines()
 	lineStart := lines.OffsetAt(lines.PositionAt(offset).Line, 0)
-	lineText := file.text[lineStart:offset]
-	if bracket := strings.LastIndex(lineText, "["); bracket >= 0 && !strings.Contains(lineText[bracket:], "]") {
-		start := lineStart + bracket + strings.LastIndexAny(lineText[bracket:], "[.") + 1
-		return partial{start: start, end: offset, call: file.text[lineStart+bracket : start]}, true
+	for _, segment := range slices.Backward(loc.Segments(file.text[lineStart:offset])) {
+		if segment.IsOpen {
+			bracket := lineStart + segment.Range.Start
+			start := bracket + strings.LastIndexAny(file.text[bracket:offset], "[.") + 1
+			return partial{start: start, end: offset, call: file.text[bracket:start]}, true
+		}
 	}
 	if file.place.Format != inventory.Script || file.place.Rel == "" {
 		return partial{}, false
 	}
-	_, start, end := file.parsed.TokenAt(offset)
-	start, end = min(start, offset), max(end, offset)
-	for start > 0 && (isNameByte(file.text[start-1]) || file.text[start-1] == ':') {
-		start--
-	}
-	return partial{start: start, end: end}, true
+	start, end := file.parsed.TokenAt(offset)
+	return partial{start: min(start, offset), end: max(end, offset)}, true
 }
 
 // complete gathers the items for the text typed at an offset, or for a label an item offered
@@ -363,12 +368,6 @@ func snippet(name string, position *schema.Position) string {
 		return name + " = $0"
 	}
 	return ""
-}
-
-// isNameByte reports a byte a name is written with: a letter, a digit, or one of _ . @ $.
-func isNameByte(char byte) bool {
-	return char == '_' || char == '.' || char == '@' || char == '$' ||
-		char >= 'a' && char <= 'z' || char >= 'A' && char <= 'Z' || char >= '0' && char <= '9'
 }
 
 // Resolve is the card of what an item's label names, read again from the place the item was offered

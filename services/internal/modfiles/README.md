@@ -5,7 +5,7 @@ where that game keeps it, and the skeleton written for a new mod.
 
 | file | holds |
 |---|---|
-| `modfiles.go` | `LoadDescriptor` and `WriteDescriptor`; `Thumbnail` and `CopyThumbnail`; `Create`, `Slug`, `DefaultModParent`; `ListingFields`, the fields both descriptor kinds share |
+| `modfiles.go` | `LoadDescriptor` and `WriteDescriptor`; `Thumbnail` and `CopyThumbnail`; `Create`, `DefaultModParent`; `ListingFields`, the fields both descriptor kinds share |
 
 ## Decisions
 

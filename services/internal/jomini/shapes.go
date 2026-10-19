@@ -1,5 +1,5 @@
-// names.go reads one written word the same way in every Jomini game: the name shapes, numbers and
-// dates, and the prefix:name, @constant and $NAME$ spellings.
+// shapes.go reads one written word the same way in every Jomini game: each shape the language has is one function
+// that says what it matches, a name, an event id, a number, a date, `prefix:name`, `$PARAMETER$` and `@constant`.
 
 package jomini
 
@@ -10,73 +10,32 @@ import (
 	"unicode/utf8"
 )
 
-// IsDefName and IsEventID run on every key, so they are hand-written rather than regexes and
-// allocate nothing; TestNameShapes pins each to its regex. Non-ASCII letters and digits count, as
-// the games and mods use them; ASCII costs one comparison.
-
-// IsDefName reports a definition key: the ASCII shape
-// `^[A-Za-z0-9_][A-Za-z0-9_.-]*$`, widened to any Unicode letter or digit.
-func IsDefName(name string) bool {
-	if name == "" {
-		return false
-	}
-	for i := 0; i < len(name); {
-		char := name[i]
-		if char < utf8.RuneSelf {
-			if !isAlnumUnder(char) && (i == 0 || char != '.' && char != '-') {
-				return false
-			}
-			i++
-			continue
-		}
-		decoded, size := utf8.DecodeRuneInString(name[i:])
-		if !unicode.IsLetter(decoded) && !unicode.IsDigit(decoded) {
-			return false
-		}
-		i += size
-	}
-	return true
-}
-
-// IsEventID reports `namespace.1234`: the ASCII shape `^[A-Za-z0-9_-]+\.\d+$` with a namespace
-// that is no number (1.5 is none), widened the same way as IsDefName. The number after the dot
-// stays ASCII digits: it is an engine-assigned index, not a name.
-func IsEventID(name string) bool {
-	dot := strings.LastIndexByte(name, '.')
-	if dot <= 0 || dot == len(name)-1 || strings.Trim(name[:dot], "0123456789-") == "" {
-		return false
-	}
-	for i := 0; i < dot; {
-		char := name[i]
-		if char < utf8.RuneSelf {
-			if !isAlnumUnder(char) && char != '-' {
-				return false
-			}
-			i++
-			continue
-		}
-		decoded, size := utf8.DecodeRuneInString(name[i:dot])
-		if !unicode.IsLetter(decoded) && !unicode.IsDigit(decoded) {
-			return false
-		}
-		i += size
-	}
-	for i := dot + 1; i < len(name); i++ {
-		if char := name[i]; char < '0' || char > '9' {
-			return false
-		}
-	}
-	return true
-}
-
-// isAlnumUnder reports an ASCII letter, a digit or an underscore.
-func isAlnumUnder(char byte) bool {
-	return char == '_' || (char >= 'a' && char <= 'z') || (char >= 'A' && char <= 'Z') ||
-		(char >= '0' && char <= '9')
-}
-
 // LiteralKind is what a scalar is when it is not a name.
 type LiteralKind uint8
+
+// Prefixed is a word written prefix:name, split.
+type Prefixed struct {
+	Prefix string // character, title, scope, define
+	Name   string // 186004, k_france, target, NGame
+	Key    string // the key after a bar: define:NGame|START_DATE
+	Chain  string // what follows the first dot: scope:target.culture -> culture
+}
+
+// Span is one $NAME$ inside a word or a string, by byte offset into it; Start is the first
+// dollar and End is past the last.
+type Span struct {
+	Name       string
+	Start, End int
+}
+
+// inlineMath reads an inline expression's tokens in turn: sums of products of numbers, constants and brackets.
+type inlineMath struct {
+	result *Result
+	tokens []string
+	next   int
+	place  int
+	depth  int
+}
 
 // What a scalar is when it is not a name.
 const (
@@ -84,6 +43,39 @@ const (
 	LitNumber              // an integer or decimal, signed or not
 	LitDate                // Y.M.D, optionally Y.M.D.H
 )
+
+// maxConstantDepth is how deep constants name one another before a cycle is assumed.
+const maxConstantDepth = 8
+
+// IsIdentifier reports a name: letters and digits of any script and underscores, with dots and hyphens allowed after
+// the first character. It runs on every key, so it is hand-written rather than a regex and allocates nothing.
+func IsIdentifier(text string) bool {
+	return text != "" && text[0] != '.' && text[0] != '-' && identifierEnd(text, ".-") == len(text)
+}
+
+// IsEventID reports `namespace.1234`: a namespace of letters, digits, underscores and hyphens that is no number (1.5
+// is none), a dot, and digits. The number after the dot stays ASCII digits: it is an engine-assigned index, not a
+// name.
+func IsEventID(text string) bool {
+	dot := strings.LastIndexByte(text, '.')
+	if dot <= 0 || !IsDigits(text[dot+1:]) {
+		return false
+	}
+	namespace := text[:dot]
+	return strings.Trim(namespace, "0123456789-") != "" && identifierEnd(namespace, "-") == len(namespace)
+}
+
+// identifierEnd is how many bytes of text, from its start, are identifier characters, the letters and digits of any
+// script and the underscore, or one of joiners.
+func identifierEnd(text, joiners string) int {
+	for i, char := range text {
+		isIdentifier := char == '_' || unicode.IsLetter(char) || unicode.IsDigit(char)
+		if !isIdentifier && !strings.ContainsRune(joiners, char) {
+			return i
+		}
+	}
+	return len(text)
+}
 
 // Literal reads a scalar: a date through ParseDate, a number by its characters, else a name. A
 // number is digits with at most one dot and a leading sign, which is all script writes;
@@ -143,14 +135,6 @@ func IsDigits(text string) bool {
 	return text != ""
 }
 
-// Prefixed is a word written prefix:name, split.
-type Prefixed struct {
-	Prefix string // character, title, scope, define
-	Name   string // 186004, k_france, target, NGame
-	Key    string // the key after a bar: define:NGame|START_DATE
-	Chain  string // what follows the first dot: scope:target.culture -> culture
-}
-
 // SplitPrefixed splits a word written prefix:name. It refuses a word whose prefix is not one plain
 // lower-case identifier (root.var:x is a scope path, INJECT:x an entry mode), and a colon
 // followed by a slash (event:/SFX/x is a sound's name, file:/x a file, C:/x a path).
@@ -161,20 +145,15 @@ func SplitPrefixed(text string) (Prefixed, bool) {
 	}
 
 	// the prefix: a letter, then letters, digits and underscores, with at least one lower-case letter
-	prefix, lower := text[:colon], false
-	for i, char := range prefix {
-		if !unicode.IsLetter(char) && char != '_' && (i == 0 || !unicode.IsDigit(char)) || i == 0 && char == '_' {
-			return Prefixed{}, false
-		}
-		lower = lower || unicode.IsLower(char)
-	}
-	if !lower {
+	prefix := text[:colon]
+	first, _ := utf8.DecodeRuneInString(prefix)
+	if !unicode.IsLetter(first) || identifierEnd(prefix, "") != len(prefix) || strings.IndexFunc(prefix, unicode.IsLower) < 0 {
 		return Prefixed{}, false
 	}
 
 	// the name runs to a bar, a dot or the end
 	rest := text[colon+1:]
-	end := nameEnd(rest)
+	end := identifierEnd(rest, "-")
 	if end == 0 {
 		return Prefixed{}, false
 	}
@@ -183,7 +162,7 @@ func SplitPrefixed(text string) (Prefixed, bool) {
 
 	// a key after a bar, then a chain after a dot
 	if strings.HasPrefix(rest, "|") {
-		end = nameEnd(rest[1:])
+		end = identifierEnd(rest[1:], "-")
 		if end == 0 {
 			return Prefixed{}, false
 		}
@@ -198,21 +177,6 @@ func SplitPrefixed(text string) (Prefixed, bool) {
 	return prefixed, true
 }
 
-// nameEnd is how many bytes of name are a name: letters, digits, underscores and hyphens.
-func nameEnd(name string) int {
-	for i := 0; i < len(name); {
-		char, size := utf8.DecodeRuneInString(name[i:])
-		if !unicode.IsLetter(char) && !unicode.IsDigit(char) && char != '_' && char != '-' {
-			return i
-		}
-		i += size
-	}
-	return len(name)
-}
-
-// maxConstantDepth is how deep constants name one another before a cycle is assumed.
-const maxConstantDepth = 8
-
 // Constant is the name in @name. An inline expression, @[ … ], is a constant with no name.
 func Constant(text string) (name string, ok bool) {
 	if len(text) < 2 || text[0] != '@' {
@@ -222,6 +186,29 @@ func Constant(text string) (name string, ok bool) {
 		return "", true
 	}
 	return text[1:], true
+}
+
+// Parameters is every $NAME$ in text, in order. A dollar with no partner, and two dollars
+// with nothing between, are not parameters.
+func Parameters(text string) []Span {
+	var spans []Span
+	for i := 0; i < len(text); {
+		open := strings.IndexByte(text[i:], '$')
+		if open < 0 {
+			break
+		}
+		open += i
+
+		// the name is identifier characters up to the closing dollar
+		end := open + 1 + identifierEnd(text[open+1:], "")
+		if end > open+1 && end < len(text) && text[end] == '$' {
+			spans = append(spans, Span{Name: text[open+1 : end], Start: open, End: end + 1})
+			i = end + 1
+			continue
+		}
+		i = open + 1
+	}
+	return spans
 }
 
 // ConstantAt is the value a file gives a constant (@panel_width) at a place in it, and where the declaration's key
@@ -253,27 +240,27 @@ func (result *Result) ConstantAt(name string, place int) (value string, at int, 
 // Evaluated is a word written at a place with its file's constants put in: @name the constant's value, @[ expression ]
 // the number its arithmetic (+ - * / and brackets) over numbers and the file's constants makes; the word as written
 // where it is no constant, names one the file does not give there, or computes anything else (a data call).
-func (result *Result) Evaluated(word string, place int) string {
-	if value, ok := result.evaluate(word, place, 0); ok {
+func (result *Result) Evaluated(text string, place int) string {
+	if value, ok := result.evaluate(text, place, 0); ok {
 		return value
 	}
-	return word
+	return text
 }
 
 // evaluate is a constant word's value at a place, the constants it names followed as deep as maxConstantDepth.
-func (result *Result) evaluate(word string, place, depth int) (string, bool) {
-	name, isConstant := Constant(word)
+func (result *Result) evaluate(text string, place, depth int) (string, bool) {
+	name, isConstant := Constant(text)
 	if result == nil || !isConstant || depth > maxConstantDepth {
 		return "", false
 	}
 	if name != "" {
-		value, _, declared := result.ConstantAt(word, place)
+		value, _, declared := result.ConstantAt(text, place)
 		if _, nested := Constant(value); declared && nested {
 			return result.evaluate(value, place, depth+1)
 		}
 		return value, declared
 	}
-	math := &inlineMath{result: result, place: place, depth: depth, tokens: mathTokens(strings.TrimSuffix(word[2:], "]"))}
+	math := &inlineMath{result: result, place: place, depth: depth, tokens: mathTokens(strings.TrimSuffix(text[2:], "]"))}
 	number, ok := math.sum()
 	if !ok || math.next < len(math.tokens) {
 		return "", false
@@ -281,34 +268,20 @@ func (result *Result) evaluate(word string, place, depth int) (string, bool) {
 	return strconv.FormatFloat(number, 'f', -1, 64), true
 }
 
-// inlineMath reads an inline expression's tokens in turn: sums of products of numbers, constants and brackets.
-type inlineMath struct {
-	result *Result
-	tokens []string
-	next   int
-	place  int
-	depth  int
-}
-
-// mathTokens are an inline expression's numbers and names, each a run of word characters, and its operators and
-// brackets, each one character.
+// mathTokens are an inline expression's numbers and names, each a run of identifier characters and dots, and its
+// operators and brackets, each one character; blanks separate tokens and are none.
 func mathTokens(text string) []string {
 	var tokens []string
-	start := -1
-	for i, char := range text {
-		word := char == '_' || char == '.' || unicode.IsLetter(char) || unicode.IsDigit(char)
-		if word && start < 0 {
-			start = i
+	for pos := 0; pos < len(text); {
+		char, size := utf8.DecodeRuneInString(text[pos:])
+		if length := identifierEnd(text[pos:], "."); length > 0 {
+			size = length
+		} else if unicode.IsSpace(char) {
+			pos += size
+			continue
 		}
-		if !word && start >= 0 {
-			tokens, start = append(tokens, text[start:i]), -1
-		}
-		if !word && !unicode.IsSpace(char) {
-			tokens = append(tokens, string(char))
-		}
-	}
-	if start >= 0 {
-		tokens = append(tokens, text[start:])
+		tokens = append(tokens, text[pos:pos+size])
+		pos += size
 	}
 	return tokens
 }
@@ -370,37 +343,4 @@ func (math *inlineMath) factor() (float64, bool) {
 	value, ok := math.result.evaluate("@"+token, math.place, math.depth+1)
 	number, err := strconv.ParseFloat(value, 64)
 	return number, ok && err == nil
-}
-
-// Span is one $NAME$ inside a word or a string, by byte offset into it; Start is the first
-// dollar and End is past the last.
-type Span struct {
-	Name       string
-	Start, End int
-}
-
-// Interpolations is every $NAME$ in text, in order. A dollar with no partner, and two dollars
-// with nothing between, are not parameters.
-func Interpolations(text string) []Span {
-	var spans []Span
-	for i := 0; i < len(text); {
-		open := strings.IndexByte(text[i:], '$')
-		if open < 0 {
-			break
-		}
-		open += i
-
-		// the name is word characters up to the closing dollar
-		j := open + 1
-		for j < len(text) && isAlnumUnder(text[j]) {
-			j++
-		}
-		if j > open+1 && j < len(text) && text[j] == '$' {
-			spans = append(spans, Span{Name: text[open+1 : j], Start: open, End: j + 1})
-			i = j + 1
-			continue
-		}
-		i = open + 1
-	}
-	return spans
 }

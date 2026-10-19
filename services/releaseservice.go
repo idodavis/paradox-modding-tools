@@ -6,7 +6,6 @@ package services
 
 import (
 	"cmp"
-	"encoding/json"
 	"errors"
 	"fmt"
 	"log/slog"
@@ -20,6 +19,7 @@ import (
 
 	"paradox-modding-tools/services/internal/appdata"
 	"paradox-modding-tools/services/internal/game"
+	"paradox-modding-tools/services/internal/inventory"
 	"paradox-modding-tools/services/internal/modfiles"
 	"paradox-modding-tools/services/internal/steam"
 
@@ -146,7 +146,7 @@ func (rls *ReleaseService) UploadFiles(workspaceID, modID string) (*UploadFiles,
 	sent, skipped := steam.UploadFiles(mod.Path, mod.WorkshopIgnore)
 	files := &UploadFiles{Left: append([]string{}, skipped...)}
 	for _, rel := range sent {
-		if info, err := os.Stat(filepath.Join(mod.Path, filepath.FromSlash(rel))); err == nil {
+		if info, err := os.Stat(inventory.Join(mod.Path, rel)); err == nil {
 			files.Count++
 			files.Bytes += info.Size()
 		}
@@ -222,9 +222,9 @@ func (rls *ReleaseService) SaveListing(in Listing) error {
 		return err
 	}
 	// the changelog holds the latest change note; no note, no file
-	changelog := filepath.Join(root, filepath.FromSlash(steam.ChangelogName))
+	changelog := inventory.Join(root, steam.ChangelogName)
 	if in.ChangeNote != "" {
-		return appdata.WriteBytes(changelog, []byte(in.ChangeNote))
+		return saveContent(changelog, in.ChangeNote)
 	}
 	if err := os.Remove(changelog); err != nil && !os.IsNotExist(err) {
 		return err
@@ -235,15 +235,21 @@ func (rls *ReleaseService) SaveListing(in Listing) error {
 // writeDescription writes the listing's description to the file of its source, where the mod has that file.
 func writeDescription(mod *WorkspaceMod, in Listing) error {
 	source, rel := description(mod)
-	file := filepath.Join(mod.Path, filepath.FromSlash(rel))
+	file := inventory.Join(mod.Path, rel)
 	if rel == "" || !exists(file) {
 		return nil
 	}
-	text := in.ReadmeMd
 	if source == steam.FromBBCode {
-		text = in.ReadmeBbcode
+		return saveContent(file, in.ReadmeBbcode)
 	}
-	return appdata.WriteBytes(file, []byte(text))
+	return saveContent(file, in.ReadmeMd)
+}
+
+// saveContent writes content to the file at path, which keeps its byte order mark and its encoding where it is there.
+func saveContent(path, content string) error {
+	text, _ := inventory.LoadText(path)
+	text.Content = content
+	return inventory.SaveText(path, text)
 }
 
 // CreateDescriptionFile writes the mod's missing description file from its name and short
@@ -340,7 +346,7 @@ func (rls *ReleaseService) PublishSteam(workspaceID, modID string) (*PublishResu
 	}
 	slog.Info("workshop publish start", "mod", listing.Name, "id", listing.RemoteFileID)
 	text, sent := sentDescription(mod, listing)
-	if _, rel := description(mod); sent && !exists(filepath.Join(mod.Path, filepath.FromSlash(rel))) {
+	if _, rel := description(mod); sent && !exists(inventory.Join(mod.Path, rel)) {
 		return nil, fmt.Errorf("the description file %s is missing: create it, or keep Steam's own text", rel)
 	}
 	library, appID, err := rls.steamLibrary(ws.ID)
@@ -389,7 +395,7 @@ func stagedPreview(stage string, listing *Listing) string {
 	if listing.ThumbnailRel == "" {
 		return ""
 	}
-	staged := filepath.Join(stage, filepath.FromSlash(listing.ThumbnailRel))
+	staged := inventory.Join(stage, listing.ThumbnailRel)
 	if !exists(staged) {
 		return ""
 	}
@@ -584,17 +590,16 @@ func (rls *ReleaseService) loadFrom(ws *Workspace, mod *WorkspaceMod) (*Listing,
 	fields.Name = cmp.Or(fields.Name, mod.Name)
 	summary := summarize(ws.GameID, mod, fields)
 	// a description file that is not there reads as no text
-	text := ""
+	text := inventory.Text{}
 	if summary.DescRel != "" {
-		raw, _ := os.ReadFile(filepath.Join(root, filepath.FromSlash(summary.DescRel)))
-		text = string(raw)
+		text, _ = inventory.LoadText(inventory.Join(root, summary.DescRel))
 	}
-	markdown, bbcode := text, ""
+	markdown, bbcode := text.Content, ""
 	if summary.DescSource == steam.FromBBCode {
-		markdown, bbcode = "", text
+		markdown, bbcode = "", text.Content
 	}
 	// a changelog that is not there reads as no note
-	note, _ := os.ReadFile(filepath.Join(root, filepath.FromSlash(steam.ChangelogName)))
+	note, _ := inventory.LoadText(inventory.Join(root, steam.ChangelogName))
 	workshopURL := ""
 	if fields.RemoteFileID != "" {
 		workshopURL = steamWorkshopURL + fields.RemoteFileID
@@ -610,7 +615,7 @@ func (rls *ReleaseService) loadFrom(ws *Workspace, mod *WorkspaceMod) (*Listing,
 		ThumbnailRel: summary.ThumbnailRel, ThumbnailAbs: summary.ThumbnailAbs,
 		Previews: steam.ScanPreviews(root), RemoteFileID: fields.RemoteFileID,
 		ShortDescription: fields.ShortDescription,
-		ReadmeMd:         markdown, ReadmeBbcode: bbcode, ChangeNote: string(note),
+		ReadmeMd:         markdown, ReadmeBbcode: bbcode, ChangeNote: note.Content,
 		DescMdRel: cmp.Or(mod.DescMdRel, steam.DescMdName), DescBbRel: cmp.Or(mod.DescBbRel, steam.DescBbName),
 		WorkshopURL: workshopURL,
 		Descriptor:  game.DescriptorFile(ws.GameID), Saved: saved, LegalURL: steamLegalURL,
@@ -622,10 +627,10 @@ func (rls *ReleaseService) loadFrom(ws *Workspace, mod *WorkspaceMod) (*Listing,
 func summarize(gameID string, mod *WorkspaceMod, fields modfiles.ListingFields) *ListingSummary {
 	summary := &ListingSummary{RemoteFileID: fields.RemoteFileID}
 	if rel, known := modfiles.Thumbnail(gameID, mod.Path, fields.Picture); known {
-		summary.ThumbnailRel, summary.ThumbnailAbs = rel, filepath.Join(mod.Path, filepath.FromSlash(rel))
+		summary.ThumbnailRel, summary.ThumbnailAbs = rel, inventory.Join(mod.Path, rel)
 	}
 	summary.DescSource, summary.DescRel = description(mod)
-	summary.DescExists = summary.DescRel != "" && exists(filepath.Join(mod.Path, filepath.FromSlash(summary.DescRel)))
+	summary.DescExists = summary.DescRel != "" && exists(inventory.Join(mod.Path, summary.DescRel))
 	if dir, page := loadSnapshot(fields.RemoteFileID); page != nil {
 		theirs, _ := modfiles.LoadDescriptor(gameID, filepath.Join(dir, "files"))
 		summary.SteamVersion = theirs.Version
@@ -645,7 +650,7 @@ func description(mod *WorkspaceMod) (source, rel string) {
 		return mod.DescSource, files[mod.DescSource]
 	}
 	for _, source := range []string{steam.FromMarkdown, steam.FromBBCode} {
-		if exists(filepath.Join(mod.Path, filepath.FromSlash(files[source]))) {
+		if exists(inventory.Join(mod.Path, files[source])) {
 			return source, files[source]
 		}
 	}
@@ -697,11 +702,7 @@ func keepSnapshot(work, item string, page snapshotPage) error {
 	if err != nil {
 		return err
 	}
-	data, err := json.Marshal(page)
-	if err != nil {
-		return err
-	}
-	if err := os.WriteFile(filepath.Join(work, "listing.json"), data, 0o644); err != nil {
+	if err := appdata.SaveJSON(filepath.Join(work, "listing.json"), page); err != nil {
 		return err
 	}
 	if err := os.RemoveAll(dir); err != nil {
@@ -716,9 +717,8 @@ func loadSnapshot(item string) (string, *snapshotPage) {
 	if err != nil {
 		return "", nil
 	}
-	raw, err := os.ReadFile(filepath.Join(dir, "listing.json"))
 	var page snapshotPage
-	if err != nil || json.Unmarshal(raw, &page) != nil {
+	if appdata.LoadJSON(filepath.Join(dir, "listing.json"), &page) != nil {
 		return "", nil
 	}
 	return dir, &page

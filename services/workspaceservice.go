@@ -20,9 +20,9 @@ import (
 
 	"github.com/wailsapp/wails/v3/pkg/application"
 
-	"paradox-modding-tools/services/internal/appdata"
 	"paradox-modding-tools/services/internal/game"
 	"paradox-modding-tools/services/internal/index"
+	"paradox-modding-tools/services/internal/inventory"
 	"paradox-modding-tools/services/internal/modfiles"
 	"paradox-modding-tools/services/internal/schema"
 	"paradox-modding-tools/services/internal/steam"
@@ -223,8 +223,8 @@ func markDisk(ws *Workspace) {
 		_, err := os.Stat(mod.Path)
 		mod.IsBroken = err != nil
 		mod.Folder = mod.Path
-		if rel, err := filepath.Rel(userData, mod.Path); userData != "" && err == nil && filepath.IsLocal(rel) {
-			mod.Folder = rel
+		if rel, inside := inventory.RelOf(userData, mod.Path); userData != "" && inside {
+			mod.Folder = filepath.FromSlash(rel)
 		}
 	}
 }
@@ -332,7 +332,7 @@ func (wsp *WorkspaceService) DefaultModParent(gameID string) string {
 
 // ModFolder is the folder CreateMod makes for a mod named name under parentDir.
 func (wsp *WorkspaceService) ModFolder(parentDir, name string) string {
-	return filepath.Join(parentDir, modfiles.Slug(name))
+	return filepath.Join(parentDir, modfiles.FolderName(name))
 }
 
 // CreateMod writes a new mod skeleton under parentDir and returns its path.
@@ -370,7 +370,7 @@ func (wsp *WorkspaceService) AddWorkspaceMod(workspaceID, path string) (*Workspa
 	}
 	mod := WorkspaceMod{ID: uuid.New().String(), Name: cmp.Or(fields.Name, filepath.Base(path)), Path: path}
 	if rel, known := modfiles.Thumbnail(gameID, path, fields.Picture); known {
-		mod.Thumbnail = filepath.Join(path, filepath.FromSlash(rel))
+		mod.Thumbnail = inventory.Join(path, rel)
 	}
 	err = wsp.mutateWorkspace(workspaceID, func(ws *Workspace) error {
 		// after the last one, whatever gaps removals left
@@ -518,7 +518,7 @@ func (wsp *WorkspaceService) State(workspaceID string) *WorkspaceState {
 		state.Open, state.DumpsFrom, state.DumpsStale = true, dumps.Origin, dumps.Stale
 		// the version the scan read, and the one it replaced where the game was updated since
 		state.GameVersion = ws.Install.Schema.Version
-		if previous := ws.Install.Previous; previous != "" && previous != appdata.SafeName(state.GameVersion) {
+		if previous := ws.Install.Previous; previous != "" && previous != inventory.FileName(state.GameVersion) {
 			state.UpdatedFrom = previous
 		}
 		ws.RUnlock()
@@ -555,7 +555,7 @@ func (wsp *WorkspaceService) SetModListingImage(workspaceID, modID, src string) 
 	if err := modfiles.WriteDescriptor(ws.GameID, mod.Path, fields); err != nil {
 		return "", err
 	}
-	image := filepath.Join(mod.Path, filepath.FromSlash(rel))
+	image := inventory.Join(mod.Path, rel)
 	return image, wsp.mutateMod(workspaceID, modID, func(mod *WorkspaceMod) error {
 		mod.Thumbnail = image
 		return nil
@@ -670,21 +670,21 @@ func (wsp *WorkspaceService) ExportWorkshopIgnore(workspaceID, modID string) err
 	if err != nil {
 		return err
 	}
-	return appdata.WriteBytes(filepath.Join(mod.Path, steam.IgnoreFile), []byte(mod.WorkshopIgnore))
+	return inventory.SaveText(filepath.Join(mod.Path, steam.IgnoreFile), inventory.Text{Content: mod.WorkshopIgnore})
 }
 
 // ImportWorkshopIgnore reads .workshop-ignore into workspace config and returns the text.
 func (wsp *WorkspaceService) ImportWorkshopIgnore(workspaceID, modID string) (string, error) {
-	var text string
+	var content string
 	err := wsp.mutateMod(workspaceID, modID, func(mod *WorkspaceMod) error {
-		raw, err := os.ReadFile(filepath.Join(mod.Path, steam.IgnoreFile))
+		text, err := inventory.LoadText(filepath.Join(mod.Path, steam.IgnoreFile))
 		if err != nil {
 			return err
 		}
-		text, mod.WorkshopIgnore = string(raw), string(raw)
+		content, mod.WorkshopIgnore = text.Content, text.Content
 		return nil
 	})
-	return text, err
+	return content, err
 }
 
 // mutateMod changes one mod of a workspace the same way; errNoMod where the workspace has none of the id.

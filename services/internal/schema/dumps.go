@@ -189,14 +189,14 @@ func (schema *Schema) parseDumps(files []inventory.File) (writtenAt time.Time) {
 	for _, kind := range dumpLabels {
 		for _, fileName := range kind.files {
 			file, found := byName[fileName]
-			content, err := file.Text()
+			text, err := file.Text()
 			if !found || err != nil {
 				continue
 			}
 			if info, err := os.Stat(file.Path); err == nil && (writtenAt.IsZero() || info.ModTime().Before(writtenAt)) {
 				writtenAt = info.ModTime()
 			}
-			for _, e := range splitEntries(kind.entry, kind.labels, content) {
+			for _, e := range splitEntries(kind.entry, kind.labels, text.Content) {
 				switch kind.record {
 				case recordScope:
 					schema.parseScope(e)
@@ -409,7 +409,7 @@ func (schema *Schema) parseModifier(entry dumpEntry) {
 		return
 	}
 	pattern := ""
-	if spans := jomini.Interpolations(entry.name); len(spans) > 0 {
+	if spans := jomini.Parameters(entry.name); len(spans) > 0 {
 		pattern = entry.name
 		for _, span := range slices.Backward(spans) {
 			pattern = pattern[:span.Start] + "*" + pattern[span.End:]

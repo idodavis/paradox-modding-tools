@@ -62,7 +62,7 @@ func (walk *fileWalk) tableEntries(file inventory.File) []Occurrence {
 		return nil
 	}
 	offset := 0
-	for line := range strings.SplitAfterSeq(text, "\n") {
+	for line := range strings.SplitAfterSeq(text.Content, "\n") {
 		if name := strings.TrimSpace(cut(strings.TrimSpace(line))); name != "" {
 			start := offset + strings.Index(line, name)
 			walk.entries = append(walk.entries, walk.entry(walk.own, name, jomini.Range{Start: start, End: start + len(name)}))
@@ -207,7 +207,7 @@ func (walk *fileWalk) nestedEntry(context Context, statement jomini.Statement, s
 				return walk.entry(row.Database, written.Key.Text, span), nested, true
 			}
 		case *jomini.ValueStmt:
-			if scalar, isScalar := written.Value.(*jomini.Scalar); isScalar && jomini.IsDefName(scalar.Text) {
+			if scalar, isScalar := written.Value.(*jomini.Scalar); isScalar && jomini.IsIdentifier(scalar.Text) {
 				return walk.entry(row.Database, scalar.Text, span), nested, true
 			}
 		}

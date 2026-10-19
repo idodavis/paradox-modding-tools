@@ -31,7 +31,6 @@ export {
 };
 
 export type {
-    DirEntry,
     FSChanged,
     FileText,
     GameInstall,

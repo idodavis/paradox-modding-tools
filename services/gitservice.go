@@ -164,7 +164,7 @@ func (git *GitService) Repositories(workspaceID string) ([]GitRepository, error)
 			continue
 		}
 		root := filepath.Clean(filepath.FromSlash(strings.TrimSpace(top)))
-		i := slices.IndexFunc(out, func(repo GitRepository) bool { return strings.EqualFold(repo.Root, root) })
+		i := slices.IndexFunc(out, func(repo GitRepository) bool { return inventory.PathKey(repo.Root) == inventory.PathKey(root) })
 		if i < 0 {
 			out = append(out, GitRepository{Root: root, Name: mod.Name, Origin: mod.ID})
 			i = len(out) - 1
@@ -186,7 +186,7 @@ func change(root, rel, letter string) GitChange {
 	if folder == "." {
 		folder = ""
 	}
-	return GitChange{Path: filepath.Join(root, filepath.FromSlash(rel)), Name: path.Base(rel), Folder: folder, Letter: letter}
+	return GitChange{Path: inventory.Join(root, rel), Name: path.Base(rel), Folder: folder, Letter: letter}
 }
 
 // letters turns porcelain's status letters into the view's: C (copied) shows as A, T (type change) as M.
@@ -231,7 +231,7 @@ func parseStatus(root, out string) *GitStatus {
 		case strings.HasPrefix(entry, "? "):
 			status.Changes = append(status.Changes, change(root, entry[2:], "U"))
 		case strings.HasPrefix(entry, "! "):
-			ignored := filepath.Join(root, filepath.FromSlash(entry[2:]))
+			ignored := inventory.Join(root, entry[2:])
 			if strings.HasSuffix(entry, "/") {
 				ignored += string(filepath.Separator)
 			}
@@ -339,8 +339,9 @@ func (git *GitService) Show(root, rev, file string) (*FileText, error) {
 	if err != nil {
 		return nil, err
 	}
-	text := textOf([]byte(out), file, rel)
-	return &text, nil
+	text, err := inventory.TextOf([]byte(out))
+	revisionText, err := fileText(text, err, file, rel)
+	return &revisionText, err
 }
 
 // Stage stages files, their removal included.
@@ -363,7 +364,7 @@ func (git *GitService) Discard(root string, files []string) error {
 	}
 	known := map[string]bool{}
 	for _, rel := range strings.Split(tracked, "\x00") {
-		known[filepath.Join(root, filepath.FromSlash(rel))] = true
+		known[inventory.Join(root, rel)] = true
 	}
 	var restore []string
 	for _, file := range files {
@@ -388,7 +389,7 @@ func (git *GitService) StageText(root, file, text string, bom, legacy bool) erro
 		return err
 	}
 	rel = filepath.ToSlash(rel)
-	data, err := inventory.EncodeText(text, bom, legacy)
+	data, err := inventory.Text{Content: text, BOM: bom, Legacy: legacy}.Bytes()
 	if err != nil {
 		return err
 	}

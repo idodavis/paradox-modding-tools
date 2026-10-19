@@ -31,6 +31,7 @@ import (
 	"time"
 
 	"paradox-modding-tools/services/internal/game"
+	"paradox-modding-tools/services/internal/inventory"
 )
 
 // serveArg is the argument that makes this executable the publishing child.
@@ -94,7 +95,7 @@ func Library(info *game.GameInfo, installPath string) (string, error) {
 	if !ok {
 		return "", fmt.Errorf("%s has no %s build, so publish it from Windows", info.ShortName, runtime.GOOS)
 	}
-	library := filepath.Join(installPath, filepath.FromSlash(rel))
+	library := inventory.Join(installPath, rel)
 	if _, err := os.Stat(library); err != nil {
 		return "", fmt.Errorf("steam's library is not at %s", library)
 	}

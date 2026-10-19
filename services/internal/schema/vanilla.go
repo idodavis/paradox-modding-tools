@@ -148,7 +148,7 @@ func parseScript(file inventory.File) jomini.Result {
 	if err != nil {
 		return jomini.Parse("")
 	}
-	return jomini.Parse(text)
+	return jomini.Parse(text.Content)
 }
 
 // countFile walks one vanilla file and records at each position how often and in what forms vanilla writes
@@ -237,9 +237,11 @@ func countValue(value jomini.Value, position *Position) {
 			}
 			position.Vanilla.Values[strings.Clone(written.Text)]++
 		}
-	case *jomini.Block, *jomini.TaggedBlock:
-		position.Vanilla.Blocks++
-		position.Vanilla.Writes |= WritesBlock
+	default:
+		if jomini.BlockOf(value) != nil {
+			position.Vanilla.Blocks++
+			position.Vanilla.Writes |= WritesBlock
+		}
 	}
 }
 
@@ -247,7 +249,8 @@ func countValue(value jomini.Value, position *Position) {
 // swatches read it (Vanilla.WritesColors): a tagged color block marks its form; a word may name one (a named color,
 // a list of them, another slot: a coat of arms writes color1 = "red", list "x" and color2); a number, a yes, a date or
 // any other block counts against the position (a map's lighting writes sun_direction beside its colors, and numbers).
-// The words listed in a block are its contents, so a color's own numbers count for nothing here.
+// The words listed in a block are its contents, so a color's own numbers count for nothing here. A tag written with a
+// text (list "x") names a color as its tag does.
 func countColor(value jomini.Value, position *Position) {
 	if position == nil {
 		return
@@ -259,7 +262,11 @@ func countColor(value jomini.Value, position *Position) {
 		}
 		return
 	}
-	if scalar, isScalar := value.(*jomini.Scalar); isScalar && writesOf(scalar)&(WritesIdent|WritesString) != 0 {
+	scalar, isScalar := value.(*jomini.Scalar)
+	if tagged, isTagged := value.(*jomini.TaggedBlock); isTagged && jomini.BlockOf(value) == nil {
+		scalar, isScalar = &tagged.Tag, true
+	}
+	if isScalar && writesOf(scalar)&(WritesIdent|WritesString) != 0 {
 		return
 	}
 	position.Vanilla.NotColors++
@@ -367,7 +374,7 @@ func (typing *typing) visit(position *Position, inGUI bool) {
 	var words []string
 	for word := range position.Vanilla.Values {
 		switch {
-		case len(jomini.Interpolations(word)) > 0:
+		case len(jomini.Parameters(word)) > 0:
 		case typing.s.Link(strings.ToLower(word)) == nil:
 			words = append(words, word)
 		default:

@@ -245,11 +245,10 @@ func (file *openFile) locRef(offset int) (ref *schema.Occurrence, steps []jomini
 // dataCallAt is the data call step at an offset of a text that starts at start: the steps up to it;
 // nil where the offset is in no [ … ] step.
 func dataCallAt(text string, start, offset int) []jomini.CallStep {
-	for _, segment := range jomini.Calls(text, start) {
-		steps := jomini.ParseCall(text[segment.Start-start:segment.End-start], segment.Start)
-		for i, step := range steps {
+	for _, call := range jomini.DataCalls(text, start) {
+		for i, step := range call.Steps {
 			if covers(step.Range, offset) {
-				return steps[:i+1]
+				return call.Steps[:i+1]
 			}
 		}
 	}

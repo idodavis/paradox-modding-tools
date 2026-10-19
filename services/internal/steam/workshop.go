@@ -22,10 +22,7 @@ import (
 	"strings"
 	"time"
 
-	"github.com/bmatcuk/doublestar/v4"
-
 	"paradox-modding-tools/services/internal/appdata"
-	"paradox-modding-tools/services/internal/game"
 	"paradox-modding-tools/services/internal/inventory"
 	"paradox-modding-tools/services/internal/modfiles"
 )
@@ -76,7 +73,7 @@ type Preview struct {
 // NewDescription writes the description file rel, missing until now, for a mod called name: its
 // name as a heading, then description, in the markup of source.
 func NewDescription(root, rel, source, name, description string) error {
-	file := filepath.Join(root, filepath.FromSlash(rel))
+	file := inventory.Join(root, rel)
 	if _, err := os.Stat(file); err == nil {
 		return fmt.Errorf("%s already exists", rel)
 	}
@@ -85,7 +82,7 @@ func NewDescription(root, rel, source, name, description string) error {
 	if source == FromBBCode {
 		text = "[b]" + name + "[/b]\n\n" + body + "\n"
 	}
-	return appdata.WriteBytes(file, []byte(text))
+	return inventory.SaveText(file, inventory.Text{Content: text})
 }
 
 // DescriptionRel is a chosen description file as the workspace stores it: relative to the mod
@@ -97,20 +94,17 @@ func DescriptionRel(root, choice string) (string, error) {
 	}
 	abs := choice
 	if !filepath.IsAbs(abs) {
-		abs = filepath.Join(root, filepath.FromSlash(choice))
+		abs = inventory.Join(root, choice)
 	}
 	if info, err := os.Stat(abs); err == nil && info.IsDir() {
 		return "", fmt.Errorf("description path is a directory")
 	}
-	rel, err := filepath.Rel(root, abs)
-	if err != nil {
-		return "", err
-	}
-	if !filepath.IsLocal(rel) {
+	rel, inside := inventory.RelOf(root, abs)
+	if !inside {
 		return "", fmt.Errorf("description file must be inside the mod folder")
 	}
-	if slash := filepath.ToSlash(rel); slash != DescMdName && slash != DescBbName {
-		return slash, nil
+	if rel != DescMdName && rel != DescBbName {
+		return rel, nil
 	}
 	return "", nil
 }
@@ -118,7 +112,7 @@ func DescriptionRel(root, choice string) (string, error) {
 // ScanPreviews lists the extra images in workshop/previews, then the ids in its videos.txt.
 func ScanPreviews(root string) []Preview {
 	out := []Preview{}
-	entries, err := os.ReadDir(filepath.Join(root, filepath.FromSlash(previewDir)))
+	entries, err := os.ReadDir(inventory.Join(root, previewDir))
 	if err == nil {
 		var names []string
 		for _, entry := range entries {
@@ -129,7 +123,7 @@ func ScanPreviews(root string) []Preview {
 		slices.Sort(names)
 		for _, name := range names {
 			rel := previewDir + "/" + name
-			out = append(out, Preview{Rel: rel, Abs: filepath.Join(root, filepath.FromSlash(rel)), Kind: kindImage})
+			out = append(out, Preview{Rel: rel, Abs: inventory.Join(root, rel), Kind: kindImage})
 		}
 	}
 	for _, id := range readVideoIDs(root) {
@@ -186,7 +180,7 @@ func SaveExtras(modRoot string, extras []Extra) error {
 		if err := atExtrasCap(modRoot); err != nil {
 			return err
 		}
-		if err := saveImage(filepath.Join(modRoot, filepath.FromSlash(previewDir)), extra); err != nil {
+		if err := saveImage(inventory.Join(modRoot, previewDir), extra); err != nil {
 			return err
 		}
 	}
@@ -238,7 +232,7 @@ func AddPreview(modRoot, srcPath string) error {
 	if !slices.Contains(previewExts, ext) {
 		return fmt.Errorf("unsupported preview type %s", ext)
 	}
-	dest, err := uniquePreviewDest(filepath.Join(modRoot, filepath.FromSlash(previewDir)), srcPath)
+	dest, err := uniquePreviewDest(inventory.Join(modRoot, previewDir), srcPath)
 	if err != nil {
 		return err
 	}
@@ -254,7 +248,7 @@ func RemovePreview(modRoot, rel string) error {
 	if path.Dir(rel) != previewDir || !slices.Contains(previewExts, strings.ToLower(path.Ext(rel))) {
 		return fmt.Errorf("not a workshop preview")
 	}
-	if err := os.Remove(filepath.Join(modRoot, filepath.FromSlash(rel))); err != nil && !os.IsNotExist(err) {
+	if err := os.Remove(inventory.Join(modRoot, rel)); err != nil && !os.IsNotExist(err) {
 		return fmt.Errorf("remove preview: %w", err)
 	}
 	return nil
@@ -348,16 +342,15 @@ func parseYouTubeID(urlOrID string) (string, error) {
 // the way the engine does, following linked folders and junctions, because Steam receives real
 // files and mods are often linked from elsewhere.
 func UploadFiles(root, extraIgnore string) (sent, skipped []string) {
-	gitignore, _ := os.ReadFile(filepath.Join(root, ".gitignore"))
-	patterns := strings.Split(string(gitignore)+"\n"+extraIgnore, "\n")
+	gitignore, _ := inventory.LoadText(filepath.Join(root, ".gitignore"))
+	rules := inventory.IgnoreRules(gitignore.Content + "\n" + extraIgnore)
 	_ = inventory.Walk(root, func(file string) error {
-		rel, err := filepath.Rel(root, file)
-		if err != nil {
-			return nil
-		}
-		if rel = filepath.ToSlash(rel); ignored(rel, patterns) {
+		rel, inside := inventory.RelOf(root, file)
+		switch {
+		case !inside:
+		case ignored(rel, rules):
 			skipped = append(skipped, rel)
-		} else {
+		default:
 			sent = append(sent, rel)
 		}
 		return nil
@@ -370,11 +363,11 @@ func UploadFiles(root, extraIgnore string) (sent, skipped []string) {
 func CopyMod(src, dest, extraIgnore string) error {
 	sent, _ := UploadFiles(src, extraIgnore)
 	for _, rel := range sent {
-		data, err := os.ReadFile(filepath.Join(src, filepath.FromSlash(rel)))
+		data, err := os.ReadFile(inventory.Join(src, rel))
 		if err != nil {
 			return err
 		}
-		target := filepath.Join(dest, filepath.FromSlash(rel))
+		target := inventory.Join(dest, rel)
 		if err := os.MkdirAll(filepath.Dir(target), 0o755); err != nil {
 			return err
 		}
@@ -392,7 +385,7 @@ func ZipMod(src, dest, extraIgnore string) error {
 	return appdata.Write(dest, func(out io.Writer) error {
 		archive := zip.NewWriter(out)
 		for _, rel := range sent {
-			data, err := os.ReadFile(filepath.Join(src, filepath.FromSlash(rel)))
+			data, err := os.ReadFile(inventory.Join(src, rel))
 			if err != nil {
 				return err
 			}
@@ -413,7 +406,7 @@ func ZipMod(src, dest, extraIgnore string) error {
 type FileChange struct {
 	Rel    string `json:"rel"`
 	Status string `json:"status"`
-	// no line diff: a NUL in its first 512 bytes on either side, as the editor's reads judge
+	// no line diff: a side the editor would not open as text (inventory.LoadText)
 	Binary       bool   `json:"binary"`
 	Steam        string `json:"steam"`     // its path in Steam's copy, which a new file lacks
 	Workspace    string `json:"workspace"` // its path in the mod, which a removed file lacks
@@ -447,23 +440,6 @@ func LineCounts(oldText, newText string) (added, removed int) {
 // Changes is what an upload of the mod at root changes in the copy of it Steam has at steamRoot, by
 // path.
 func Changes(steamRoot, root, extraIgnore string) []FileChange {
-	contents := func(dir, rel string) []byte {
-		data, _ := os.ReadFile(filepath.Join(dir, filepath.FromSlash(rel)))
-		return data
-	}
-	changeOf := func(rel, status string, theirs, ours []byte) FileChange {
-		change := FileChange{Rel: rel, Status: status, Binary: inventory.Binary(theirs) || inventory.Binary(ours)}
-		if status != "A" {
-			change.Steam = filepath.Join(steamRoot, filepath.FromSlash(rel))
-		}
-		if status != "D" {
-			change.Workspace = filepath.Join(root, filepath.FromSlash(rel))
-		}
-		if !change.Binary {
-			change.LinesAdded, change.LinesRemoved = LineCounts(string(theirs), string(ours))
-		}
-		return change
-	}
 	steamRels, _ := UploadFiles(steamRoot, "")
 	gone := map[string]bool{}
 	for _, rel := range steamRels {
@@ -472,41 +448,59 @@ func Changes(steamRoot, root, extraIgnore string) []FileChange {
 	modRels, _ := UploadFiles(root, extraIgnore)
 	changes := []FileChange{}
 	for _, rel := range modRels {
-		ours, theirs, status := contents(root, rel), []byte(nil), "A"
+		status := "A"
 		if gone[rel] {
 			delete(gone, rel)
-			if theirs = contents(steamRoot, rel); bytes.Equal(ours, theirs) {
-				continue
-			}
 			status = "M"
 		}
-		changes = append(changes, changeOf(rel, status, theirs, ours))
+		if change, isChanged := changeOf(steamRoot, root, rel, status); isChanged {
+			changes = append(changes, change)
+		}
 	}
 	for rel := range gone {
-		changes = append(changes, changeOf(rel, "D", contents(steamRoot, rel), nil))
+		change, _ := changeOf(steamRoot, root, rel, "D")
+		changes = append(changes, change)
 	}
 	slices.SortFunc(changes, func(first, second FileChange) int { return strings.Compare(first.Rel, second.Rel) })
 	return changes
 }
 
-// ignored reports a file the upload leaves out: a .gitignore, the Workshop page's extras in
-// workshop/previews (Steam takes them as the page's gallery), anything under a dot-named folder
-// but a top-level .metadata, or a match of the ignore rules on the file or any folder above it,
-// which no later rule can take back.
-func ignored(rel string, patterns []string) bool {
-	parts := strings.Split(rel, "/")
-	if parts[len(parts)-1] == ".gitignore" || strings.HasPrefix(rel, previewDir+"/") {
-		return true
+// changeOf is what an upload does to one file and whether it changes it: each side's text is loaded once, a side
+// that is no text (inventory.LoadText refuses it) makes the file binary, and a file on both sides that holds the same
+// text, or the same bytes where a side is binary, is no change.
+func changeOf(steamRoot, root, rel, status string) (FileChange, bool) {
+	change := FileChange{Rel: rel, Status: status}
+	var theirs, ours inventory.Text
+	var theirsErr, oursErr error
+	if status != "A" {
+		change.Steam = inventory.Join(steamRoot, rel)
+		theirs, theirsErr = inventory.LoadText(change.Steam)
 	}
-	for depth, part := range parts {
-		if strings.HasPrefix(part, ".") && (depth != 0 || part != game.MetadataDir) {
-			return true
-		}
-		if ignoreMatch(strings.Join(parts[:depth+1], "/"), depth < len(parts)-1, patterns) {
-			return true
-		}
+	if status != "D" {
+		change.Workspace = inventory.Join(root, rel)
+		ours, oursErr = inventory.LoadText(change.Workspace)
 	}
-	return false
+	switch change.Binary = theirsErr != nil || oursErr != nil; {
+	case change.Binary:
+		return change, status != "M" || !sameBytes(change.Steam, change.Workspace)
+	case status == "M" && theirs == ours:
+		return change, false
+	}
+	change.LinesAdded, change.LinesRemoved = LineCounts(theirs.Content, ours.Content)
+	return change, true
+}
+
+// sameBytes is whether two files hold the same bytes, for the files that are no text.
+func sameBytes(first, second string) bool {
+	firstData, firstErr := os.ReadFile(first)
+	secondData, secondErr := os.ReadFile(second)
+	return firstErr == nil && secondErr == nil && bytes.Equal(firstData, secondData)
+}
+
+// ignored reports a file the upload leaves out: the Workshop page's extras in workshop/previews (Steam takes them as
+// the page's gallery), or one the ignore rules cover.
+func ignored(rel string, rules inventory.Rules) bool {
+	return strings.HasPrefix(rel, previewDir+"/") || rules.Covers(rel)
 }
 
 // uniquePreviewDest is src's name inside dir, numbered where that name is taken.
@@ -529,12 +523,12 @@ func uniquePreviewDest(dir, src string) (string, error) {
 
 // readVideoIDs is the YouTube ids in the mod's videos.txt, one a line, skipping any line that is not an id.
 func readVideoIDs(root string) []string {
-	raw, err := os.ReadFile(filepath.Join(root, filepath.FromSlash(videosRel)))
+	text, err := inventory.LoadText(inventory.Join(root, videosRel))
 	if err != nil {
 		return nil
 	}
 	var ids []string
-	for line := range strings.SplitSeq(string(raw), "\n") {
+	for line := range strings.SplitSeq(text.Content, "\n") {
 		if id := strings.TrimSpace(line); youtubeID.MatchString(id) {
 			ids = append(ids, id)
 		}
@@ -548,41 +542,5 @@ func writeVideoIDs(root string, ids []string) error {
 	if body != "" {
 		body += "\n"
 	}
-	return appdata.WriteBytes(filepath.Join(root, filepath.FromSlash(videosRel)), []byte(body))
-}
-
-// ignoreMatch is whether the ignore rules, in order, leave rel out: the last rule that matches it
-// decides, and a rule that starts with ! takes a match back. Blank lines and # comments are no rule.
-func ignoreMatch(rel string, isDir bool, patterns []string) bool {
-	matched := false
-	for _, raw := range patterns {
-		line := strings.TrimSpace(raw)
-		if line == "" || strings.HasPrefix(line, "#") {
-			continue
-		}
-		negated := strings.HasPrefix(line, "!")
-		if negated {
-			line = strings.TrimSpace(line[1:])
-		}
-		if matchGitPattern(line, rel, isDir) {
-			matched = !negated
-		}
-	}
-	return matched
-}
-
-// matchGitPattern is whether one ignore rule matches rel: a trailing / matches folders only, a leading / anchors it to
-// the mod's root, any other rule matches at any depth; ** spans folders (doublestar, as search's globs).
-func matchGitPattern(pattern, rel string, isDir bool) bool {
-	if strings.HasSuffix(pattern, "/") && !isDir {
-		return false
-	}
-	pattern = strings.TrimSuffix(pattern, "/")
-	if rest, anchored := strings.CutPrefix(pattern, "/"); anchored {
-		pattern = rest
-	} else if pattern != "" {
-		pattern = "**/" + pattern
-	}
-	matched, err := doublestar.Match(pattern, rel)
-	return pattern != "" && err == nil && matched
+	return inventory.SaveText(inventory.Join(root, videosRel), inventory.Text{Content: body})
 }

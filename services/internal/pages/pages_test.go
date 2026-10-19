@@ -628,7 +628,7 @@ func TestFolderGlobs(t *testing.T) {
 	} {
 		globs := folderGlobs(row.glob)
 		for rel, want := range row.kept {
-			if got := pathMatchesGlobs(rel, globs); got != want {
+			if got := globs.keeps(rel); got != want {
 				t.Errorf("%s: %s kept %v, want %v", row.name, rel, got, want)
 			}
 		}
@@ -650,7 +650,7 @@ func TestWholeFileTest(t *testing.T) {
 		{"a regular expression tests nothing", TextSearchQuery{Pattern: "x+", IsRegexp: true}, "no match here", true},
 		{"a non-ASCII literal", TextSearchQuery{Pattern: "é"}, "É", true},
 	} {
-		if got := wholeFileTest(row.query)([]byte(row.data)); got != row.holds {
+		if got := wholeFileTest(row.query)(row.data); got != row.holds {
 			t.Errorf("%s: holds %v, want %v", row.name, got, row.holds)
 		}
 	}

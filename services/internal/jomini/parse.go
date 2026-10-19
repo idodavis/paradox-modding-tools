@@ -6,11 +6,6 @@
 // UTF-8 byte index (UTF-16 is only the frontend's, at the Monaco boundary).
 package jomini
 
-// nodeSlab is how many nodes one allocation covers. 512 Scalars is ~20 KB —
-// large enough that the allocation count collapses, small enough that a
-// one-statement file does not hold a big buffer alive.
-const nodeSlab = 512
-
 // parser holds recursive-descent state over a token stream. Comments are skipped
 // transparently and recorded as they are passed.
 type parser struct {
@@ -30,21 +25,24 @@ type parser struct {
 	tagged  []TaggedBlock
 }
 
-// Parse parses script text into a CST. It never panics and always returns a
-// usable (possibly empty) tree plus any recovered structural errors.
+// nodeSlab is how many nodes one allocation covers. 512 Scalars is ~20 KB —
+// large enough that the allocation count collapses, small enough that a
+// one-statement file does not hold a big buffer alive.
+const nodeSlab = 512
+
+// Parse parses script text into a CST: one lex and one parse, whose tokens and line index the Result keeps. It never
+// panics and always returns a usable (possibly empty) tree plus any recovered structural errors.
 func Parse(src string) Result {
-	index := NewLineIndex(src)
-	toks := tokenize(src)
-	parser := &parser{text: src, tokens: toks}
+	tokens := tokenize(src)
+	parser := &parser{text: src, tokens: tokens}
 	root := parser.parse()
-	// the tokens are not kept: LineIndents and TokenAt tokenize again
-	putTokens(toks)
 	return Result{
 		Root:     root,
 		Errors:   parser.errors,
 		Comments: parser.comments,
 		Src:      src,
-		lines:    index,
+		tokens:   tokens,
+		lines:    NewLineIndex(src),
 	}
 }
 
@@ -94,25 +92,25 @@ func (parser *parser) peek() token {
 // none follows; it leaves the cursor on the next token.
 func (parser *parser) peekAhead() token {
 	parser.skipComments()
-	j := parser.pos + 1
-	for j < len(parser.tokens) && parser.tokens[j].kind == tokComment {
-		j++
+	ahead := parser.pos + 1
+	for ahead < len(parser.tokens) && parser.tokens[ahead].kind == tokComment {
+		ahead++
 	}
-	if j >= len(parser.tokens) {
+	if ahead >= len(parser.tokens) {
 		return parser.tokens[len(parser.tokens)-1]
 	}
-	return parser.tokens[j]
+	return parser.tokens[ahead]
 }
 
 // advance consumes the next token that is no comment and returns it; at the end-of-input token the
 // cursor stays where it is.
 func (parser *parser) advance() token {
 	parser.skipComments()
-	text := parser.tokens[parser.pos]
+	next := parser.tokens[parser.pos]
 	if parser.pos < len(parser.tokens)-1 {
 		parser.pos++
 	}
-	return text
+	return next
 }
 
 // atEOF reports whether only the end-of-input token is left, comments passed over.
@@ -154,13 +152,14 @@ func (parser *parser) parseStatement() Statement {
 }
 
 // assignment builds the Assignment of a key, its operator token and its value, and records a missing
-// value where an operator has none. A GUI-style `key { ... }` has the zero token, which has no
-// operator text and no end of its own.
+// value where an operator has none. A GUI-style `key { ... }` has the zero token, which has no operator
+// text and no end of its own.
 func (parser *parser) assignment(key *Scalar, op token, value Value) Statement {
+	operator := parser.text[op.start:op.end]
 	if value == nil {
 		parser.errors = append(parser.errors, ParseError{
 			Code:    ErrMissingValue,
-			Message: "Missing value after '" + op.value + "'.",
+			Message: "Missing value after '" + operator + "'.",
 			Range:   Range{Start: op.start, End: op.end},
 		})
 	}
@@ -168,7 +167,9 @@ func (parser *parser) assignment(key *Scalar, op token, value Value) Statement {
 	if value != nil {
 		end = value.NodeRange().End
 	}
-	return slabAlloc(&parser.assigns, Assignment{Key: *key, Op: op.value, Value: value, Range: Range{Start: key.Range.Start, End: end}})
+	return slabAlloc(&parser.assigns, Assignment{
+		Key: *key, Op: operator, Value: value, Range: Range{Start: key.Range.Start, End: end},
+	})
 }
 
 // parseValueAfterOperator consumes the value after an operator: a scalar, a block, a tagged block,
@@ -176,32 +177,39 @@ func (parser *parser) assignment(key *Scalar, op token, value Value) Statement {
 // follows.
 func (parser *parser) parseValueAfterOperator() Value {
 	tok := parser.peek()
-
-	if tok.kind == tokLBrace {
+	switch tok.kind {
+	case tokLBrace:
 		return parser.parseBlock()
-	}
-
-	// A comparison operator used as a value (list/any triggers).
-	if tok.kind == tokOp {
+	case tokOp:
+		// A comparison operator used as a value (list/any triggers).
 		op := parser.advance()
-		return slabAlloc(&parser.scalars, Scalar{Text: parser.text[op.start:op.end], Quoted: false, Range: Range{Start: op.start, End: op.end}})
-	}
-
-	if tok.kind == tokWord || tok.kind == tokString {
+		return slabAlloc(&parser.scalars, Scalar{Text: parser.text[op.start:op.end], Range: Range{Start: op.start, End: op.end}})
+	case tokWord, tokString:
 		// `key =\n nextKey = ...`: if this scalar is immediately followed by an
 		// operator, it is the next statement's key, not this value.
 		if parser.peekAhead().kind == tokOp {
 			return nil
 		}
 		scalar := parser.makeScalar(parser.advance())
-		if parser.peek().kind == tokLBrace {
+		switch next := parser.peek(); {
+		case next.kind == tokLBrace:
 			block := parser.parseBlock()
 			return slabAlloc(&parser.tagged, TaggedBlock{Tag: *scalar, Block: *block, Range: Range{Start: scalar.Range.Start, End: block.Range.End}})
+		case next.kind == tokString && !scalar.Quoted && parser.peekAhead().kind != tokOp:
+			return parser.parseTaggedText(scalar)
 		}
 		return scalar
 	}
-
 	return nil
+}
+
+// parseTaggedText consumes the quoted text after a tag, `list "x"`, into a tagged value with no braces: its Block
+// holds the text as its one statement and has no brace offsets.
+func (parser *parser) parseTaggedText(tag *Scalar) Value {
+	text := parser.makeScalar(parser.advance())
+	statement := slabAlloc(&parser.values, ValueStmt{Value: text, Range: text.Range})
+	block := Block{Statements: []Statement{statement}, Range: text.Range, OpenBrace: -1, CloseBrace: -1}
+	return slabAlloc(&parser.tagged, TaggedBlock{Tag: *tag, Block: block, Range: Range{Start: tag.Range.Start, End: text.Range.End}})
 }
 
 // parseBlock consumes `{` statement* `}` from the opening brace to just past the closing one. On
@@ -250,18 +258,16 @@ func (parser *parser) parseBlock() *Block {
 // record a diagnostic and take everything after the opening quote.
 func (parser *parser) makeScalar(tok token) *Scalar {
 	if tok.kind == tokString {
-		var inner string
+		textEnd := tok.end - 1
 		if tok.unterminated {
 			parser.errors = append(parser.errors, ParseError{
 				Code:    ErrUnterminatedString,
 				Message: "Unterminated string: it runs to the end of the file.",
 				Range:   Range{Start: tok.start, End: tok.end},
 			})
-			inner = parser.text[tok.start+1 : tok.end]
-		} else {
-			inner = parser.text[tok.start+1 : tok.end-1]
+			textEnd = tok.end
 		}
-		return slabAlloc(&parser.scalars, Scalar{Text: inner, Quoted: true, Range: Range{Start: tok.start, End: tok.end}})
+		return slabAlloc(&parser.scalars, Scalar{Text: parser.text[tok.start+1 : textEnd], Quoted: true, Range: Range{Start: tok.start, End: tok.end}})
 	}
 	return slabAlloc(&parser.scalars, Scalar{Text: parser.text[tok.start:tok.end], Quoted: false, Range: Range{Start: tok.start, End: tok.end}})
 }

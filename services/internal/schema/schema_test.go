@@ -36,14 +36,14 @@ func fixtureSchema(t *testing.T, id string) *Schema {
 		if file.Format != inventory.Loc {
 			continue
 		}
-		if named := loc.LanguageFromRel(file.Rel); named != "" && named != game.BaseLanguage {
+		if named := loc.Language("", file.Rel); named != "" && named != game.BaseLanguage {
 			continue
 		}
 		text, err := file.Text()
 		if err != nil {
 			t.Fatal(err)
 		}
-		for _, entry := range loc.Parse(text).Entries {
+		for _, entry := range loc.Parse(text.Content).Entries {
 			locKeys[entry.Key] = true
 		}
 	}
@@ -87,7 +87,7 @@ func fixtureFile(t *testing.T, id, rel string) (inventory.File, *jomini.Result) 
 		if err != nil {
 			t.Fatal(err)
 		}
-		parsed := jomini.Parse(text)
+		parsed := jomini.Parse(text.Content)
 		return file, &parsed
 	}
 	t.Fatalf("no fixture file %s in %s", rel, id)

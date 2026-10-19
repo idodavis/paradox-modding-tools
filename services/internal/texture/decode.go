@@ -15,8 +15,6 @@ import (
 	_ "image/png"
 	"math/bits"
 	"os"
-	"path/filepath"
-	"strings"
 )
 
 // blockFormat is a block-compressed format: the bytes of each 4×4 block, and its decoder.
@@ -132,40 +130,34 @@ func Decode(path string) (image.Image, error) {
 	if err != nil {
 		return nil, err
 	}
-	switch {
-	case bytes.HasPrefix(data, []byte("DDS ")):
-		return decodeDDS(data)
-	case strings.EqualFold(filepath.Ext(path), ".tga"):
-		return decodeTGA(data)
+	head, err := parseHeader(bytes.NewReader(data), path)
+	if err != nil {
+		return nil, err
+	}
+	switch head.container {
+	case ddsContainer:
+		return decodeDDS(data, head)
+	case tgaContainer:
+		return decodeTGA(data, head)
 	}
 	img, _, err := image.Decode(bytes.NewReader(data))
 	return img, err
 }
 
 // decodeDDS decodes a DDS's first face at the first mip level within MaxSide.
-func decodeDDS(data []byte) (image.Image, error) {
-	info, err := ddsInfo(bytes.NewReader(data))
-	if err != nil {
-		return nil, err
-	}
-	offset := 128
-	if string(data[84:88]) == "DX10" {
-		offset = 148
-	}
-	depth, masks := ddsChannels(info, data, offset == 148)
-
-	block, compressed := ddsBlocks[info.Format]
-	if !compressed && (depth == 0 || depth%8 != 0 || depth > 32 || masks == [4]uint32{}) {
-		return nil, fmt.Errorf("DDS %s is not shown", info.Format)
+func decodeDDS(data []byte, head header) (image.Image, error) {
+	block, compressed := ddsBlocks[head.Format]
+	if !compressed && (head.depth == 0 || head.depth%8 != 0 || head.depth > 32 || head.masks == [4]uint32{}) {
+		return nil, fmt.Errorf("DDS %s is not shown", head.Format)
 	}
 	size := func(width, height int) int {
 		if compressed {
 			return max(1, (width+3)/4) * max(1, (height+3)/4) * block.size
 		}
-		return width * height * depth / 8
+		return width * height * head.depth / 8
 	}
-	width, height := info.Width, info.Height
-	for level := 1; level < info.Mips && max(width, height) > MaxSide; level++ {
+	offset, width, height := head.offset, head.Width, head.Height
+	for level := 1; level < head.Mips && max(width, height) > MaxSide; level++ {
 		offset += size(width, height)
 		width, height = max(1, width/2), max(1, height/2)
 	}
@@ -177,33 +169,9 @@ func decodeDDS(data []byte) (image.Image, error) {
 	if compressed {
 		drawBlocks(img, data[offset:], block)
 	} else {
-		drawUncompressed(img, data[offset:], depth, masks)
+		drawUncompressed(img, data[offset:], head.depth, head.masks)
 	}
 	return img, nil
-}
-
-// ddsChannels is an uncompressed surface's bits a pixel and its channel masks (red, green, blue, alpha), read from
-// the header in data: alpha only where its flags say so and a luminance's grey in all three; a DX10 surface's by its
-// byte order.
-func ddsChannels(info Facts, data []byte, dx10 bool) (depth int, masks [4]uint32) {
-	const hasAlpha, alphaOnly, luminance = 0x1, 0x2, 0x20000
-	u32 := func(offset int) uint32 { return binary.LittleEndian.Uint32(data[offset:]) }
-	flags := u32(80)
-	depth, masks = int(u32(88)), [4]uint32{u32(92), u32(96), u32(100), u32(104)}
-	switch {
-	case dx10 && strings.HasPrefix(info.Format, "RGBA8"):
-		depth, masks = 32, [4]uint32{0xff, 0xff00, 0xff0000, 0xff000000}
-	case dx10 && strings.HasPrefix(info.Format, "BGRA8"):
-		depth, masks = 32, [4]uint32{0xff0000, 0xff00, 0xff, 0xff000000}
-	case dx10:
-		depth = 0
-	case flags&luminance != 0:
-		masks[1], masks[2] = masks[0], masks[0]
-	}
-	if !dx10 && flags&(hasAlpha|alphaOnly) == 0 {
-		masks[3] = 0
-	}
-	return depth, masks
 }
 
 // drawUncompressed fills img from an uncompressed surface of depth bits a pixel, each channel under its mask.
@@ -438,26 +406,22 @@ func (bitReader *bitReader) take(count int) int {
 }
 
 // decodeTGA decodes a true-color (24 or 32 bits) or grey (8 bits) TGA, raw or run-length, from either origin.
-func decodeTGA(data []byte) (image.Image, error) {
-	if len(data) < 18 {
-		return nil, errors.New("not a TGA file")
+func decodeTGA(data []byte, head header) (image.Image, error) {
+	depth, width, height := head.depth, head.Width, head.Height
+	grey := head.imageType == 3 || head.imageType == 11
+	if head.isColorMapped || head.imageType != 2 && head.imageType != 3 && head.imageType != 10 && head.imageType != 11 || grey && depth != 8 || !grey && depth != 24 && depth != 32 {
+		return nil, fmt.Errorf("TGA type %d at %d bits is not shown", head.imageType, depth)
 	}
-	kind, depth, desc := data[2], int(data[16]), data[17]
-	width, height := int(binary.LittleEndian.Uint16(data[12:])), int(binary.LittleEndian.Uint16(data[14:]))
-	grey := kind == 3 || kind == 11
-	if data[1] != 0 || kind != 2 && kind != 3 && kind != 10 && kind != 11 || grey && depth != 8 || !grey && depth != 24 && depth != 32 {
-		return nil, fmt.Errorf("TGA type %d at %d bits is not shown", kind, depth)
-	}
-	step, src := depth/8, data[min(18+int(data[0]), len(data)):]
+	step, src := depth/8, data[min(head.offset, len(data)):]
 	pixels := src
-	if kind >= 10 {
+	if head.imageType >= 10 {
 		// packets: a count, then that many pixels, or one pixel repeated that many times
 		pixels = make([]byte, 0, width*height*step)
 		for len(pixels) < width*height*step && len(src) > 0 {
-			head := int(src[0])
-			count := head&0x7f + 1
+			packet := int(src[0])
+			count := packet&0x7f + 1
 			src = src[1:]
-			if head&0x80 == 0 {
+			if packet&0x80 == 0 {
 				count = min(count*step, len(src))
 				pixels, src = append(pixels, src[:count]...), src[count:]
 				continue
@@ -477,7 +441,7 @@ func decodeTGA(data []byte) (image.Image, error) {
 	img := image.NewNRGBA(image.Rect(0, 0, width, height))
 	for i := range width * height {
 		column, row, pixel := i%width, i/width, pixels[i*step:]
-		if desc&0x20 == 0 {
+		if head.descriptor&0x20 == 0 {
 			row = height - 1 - row // its first row is the bottom one
 		}
 		rgba := color.NRGBA{pixel[0], pixel[0], pixel[0], 255}

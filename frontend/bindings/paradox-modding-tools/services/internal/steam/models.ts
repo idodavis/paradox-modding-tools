@@ -18,7 +18,7 @@ export interface FileChange {
     "status": string;
 
     /**
-     * no line diff: a NUL in its first 512 bytes on either side, as the editor's reads judge
+     * no line diff: a side the editor would not open as text (inventory.LoadText)
      */
     "binary": boolean;
 

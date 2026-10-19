@@ -1,14 +1,15 @@
-// inventory.go is the files of an install or a mod: the format table, the walk over a root, and the scan's worker pool.
+// inventory.go is the files of an install or a mod: the format table, the roots and the files under them, the walk,
+// and the scan's worker pool.
 
 // Package inventory knows every file of a game install or a mod: which folders mirror the game
 // layout, what each file is relative to, where it came from, and which reader its format needs.
-// It reads a file's text for one purpose only, to tell the prose a game ships beside its script
-// from the script itself (`prose`); it interprets nothing else. One format table serves every
-// game: an extension it does not list is Unknown, kept in the inventory as such, so a new kind of
-// file is seen rather than guessed at.
+// It also owns what every reader of a file shares: the file's text and how it was stored (text.go), how paths are
+// compared and joined (paths.go), the ignore rules a folder is filtered by (ignore.go) and the one rule for a name
+// made from a user's text (filenames.go). One format table serves every game: an extension it does not list is
+// Unknown, kept in the inventory as such, so a new kind of file is seen rather than guessed at.
 // The walk follows symlinks and Windows junctions (mods are often linked folders), keeps every path
-// spelled under its root, refuses a link back to an ancestor, and reads folders in name order so
-// two walks of one tree agree.
+// spelled under its root, refuses a link back to an ancestor, hides the names a dot starts (but .metadata), and reads
+// folders in name order so two walks of one tree agree.
 package inventory
 
 import (
@@ -23,6 +24,9 @@ import (
 	"strings"
 
 	"golang.org/x/sync/errgroup"
+
+	"paradox-modding-tools/services/internal/game"
+	"paradox-modding-tools/services/internal/jomini"
 )
 
 // Format is which reader a file needs.
@@ -36,24 +40,36 @@ type File struct {
 	Format Format `json:"format"`
 }
 
+// Child is one item of a folder: its name, and whether it is a folder (a link or a junction counts as what it leads to).
+type Child struct {
+	Name  string      `json:"name"`
+	IsDir bool        `json:"isDir"`
+	info  os.FileInfo // what os.Stat says of an item that is not a regular file; Walk refuses a link back to a folder above
+}
+
 // The formats, by the reader each needs.
 const (
-	Unknown Format = iota // an extension the table does not list
-	Script                // Jomini script: the tree
-	Loc                   // localization entries
-	Table                 // lines of ; separated columns
-	List                  // sound/GUIDs.txt: one name per line
-	JSON                  // a decoded value
-	Prose                 // the prose a game ships beside its script
-	Image                 // header facts, read on demand
-	Skipped               // a path and nothing more
+	Unknown    Format = iota // an extension the table does not list
+	Script                   // Jomini script: the tree
+	Loc                      // localization entries
+	Table                    // lines of ; separated columns
+	List                     // sound/GUIDs.txt: one name per line
+	JSON                     // a decoded value
+	Prose                    // the prose a game ships beside its script
+	Image                    // header facts, read on demand
+	Skipped                  // a path and nothing more
+	Descriptor               // a mod's .mod descriptor: modfiles reads it
+	Binary                   // bytes the app never reads as text: a mesh, a sound bank, a font, an archive
 )
 
-// BinaryHead is how many of a file's first bytes Binary reads.
-const BinaryHead = 8000
+// HoldsText reports whether a file of the format may hold text: every format but an image and the binary ones, so
+// search and Replace never open a mesh, a bank or a font; a skipped text (a shader, a log) is still read.
+func (format Format) HoldsText() bool {
+	return format != Image && format != Binary
+}
 
-// MaxTextBytes is the largest text file the editor opens or a search reads.
-const MaxTextBytes = 8 << 20
+// BinaryHead is how many of a file's first bytes IsBinary reads.
+const BinaryHead = 8000
 
 // formats is the format table, by lower-case extension, for every game.
 var formats = map[string]Format{
@@ -72,13 +88,14 @@ var formats = map[string]Format{
 	".csv":  Table,
 	".json": JSON,
 	".info": Prose, ".md": Prose,
+	".mod": Descriptor,
 	".dds": Image, ".png": Image, ".jpg": Image, ".jpeg": Image, ".tga": Image,
 
 	// binary, or text nothing here reads: named in script by path, never opened
-	".mesh": Skipped, ".anim": Skipped, ".bank": Skipped, ".bnk": Skipped, ".wem": Skipped, ".bk2": Skipped, ".ogg": Skipped,
-	".wav": Skipped, ".mp3": Skipped, ".flac": Skipped, ".ttf": Skipped, ".otf": Skipped, ".fnt": Skipped, ".dat": Skipped,
-	".bin": Skipped, ".bmp": Skipped, ".cur": Skipped, ".ani": Skipped, ".shader": Skipped, ".fxh": Skipped, ".swatch": Skipped,
-	".splnet": Skipped, ".svg": Skipped, ".ico": Skipped,
+	".mesh": Binary, ".anim": Binary, ".bank": Binary, ".bnk": Binary, ".wem": Binary, ".bk2": Binary, ".ogg": Binary,
+	".wav": Binary, ".mp3": Binary, ".flac": Binary, ".ttf": Binary, ".otf": Binary, ".fnt": Skipped, ".dat": Binary,
+	".bin": Binary, ".bmp": Binary, ".cur": Binary, ".ani": Binary, ".shader": Skipped, ".fxh": Skipped, ".swatch": Binary,
+	".splnet": Binary, ".svg": Skipped, ".ico": Binary,
 
 	// the games' console dumps: listed so the dump folders inventory them
 	".log": Skipped,
@@ -110,16 +127,21 @@ var documentation = map[string]bool{"readme": true, "info": true, "example": tru
 func Files(origin string, roots []string) []File {
 	var files []File
 	for _, root := range roots {
+		// the path keys, each with its trailing separator, of the longer roots (a DLC folder is one under this root): a
+		// file whose key starts with one belongs to that root
+		var inner []string
+		for _, other := range roots {
+			if len(other) > len(root) {
+				inner = append(inner, PathKey(other)+string(filepath.Separator))
+			}
+		}
+
 		_ = Walk(root, func(abs string) error {
-			owned := slices.ContainsFunc(roots, func(other string) bool {
-				return len(other) > len(root) && strings.HasPrefix(abs, other+string(filepath.Separator))
-			})
-			rel, err := filepath.Rel(root, abs)
-			if owned || err != nil {
+			key := PathKey(abs)
+			rel, inside := RelOf(root, abs)
+			if !inside || slices.ContainsFunc(inner, func(prefix string) bool { return strings.HasPrefix(key, prefix) }) {
 				return nil
 			}
-
-			rel = filepath.ToSlash(rel)
 			if _, skip := ignored[strings.ToLower(path.Ext(rel))]; !skip {
 				files = append(files, File{Path: abs, Rel: rel, Origin: origin, Format: Classify(abs, rel)})
 			}
@@ -202,16 +224,17 @@ func Classify(abs, rel string) Format {
 	return format
 }
 
-// prose reports a text file of up to a megabyte whose comment and sentence lines outnumber its
-// script lines. A sentence: three words or more, no brace, no operator second.
+// prose reports a text file whose comment and sentence lines outnumber its script lines. A sentence: three words or
+// more, no brace, no operator second.
 func prose(abs string) bool {
-	raw, err := os.ReadFile(abs)
-	if err != nil || len(raw) > 1<<20 {
+	text, err := LoadText(abs)
+	if err != nil {
 		return false
 	}
-	text, _, _ := DecodeText(raw)
 	script, comment := 0, 0
-	for line := range strings.SplitSeq(text, "\n") {
+	lines := jomini.NewLineIndex(text.Content)
+	for n := range lines.LineCount() {
+		line := lines.LineText(text.Content, n)
 		words := strings.Fields(line)
 		switch trimmed := strings.TrimSpace(line); {
 		case trimmed == "":
@@ -226,8 +249,9 @@ func prose(abs string) bool {
 	return comment >= script
 }
 
-// Walk calls visit with the path of every file under root, following links and junctions and never entering .git. An
-// error from visit stops the walk and is returned; filepath.SkipAll stops it quietly.
+// Walk calls visit with the path of every file under root, following links and junctions and leaving out every name
+// Hidden says, files and folders alike. An error from visit stops the walk and is returned; filepath.SkipAll stops it
+// quietly.
 func Walk(root string, visit func(path string) error) error {
 	info, err := os.Stat(root)
 	if err != nil {
@@ -239,41 +263,61 @@ func Walk(root string, visit func(path string) error) error {
 	return nil
 }
 
-// walk reads one folder; ancestors is the folders above it, which a link may not lead back to.
+// walk visits one folder's files and enters its folders; ancestors is the folders above it, which a link may not lead
+// back to.
 func walk(dir string, ancestors []os.FileInfo, visit func(path string) error) error {
-	entries, err := os.ReadDir(dir)
+	children, err := Children(dir)
 	if err != nil {
 		return nil
 	}
 
-	for _, entry := range entries {
-		path := filepath.Join(dir, entry.Name())
-		if entry.Type().IsRegular() {
+	for _, child := range children {
+		path := filepath.Join(dir, child.Name)
+		switch {
+		case Hidden(child.Name):
+		case !child.IsDir:
 			if err := visit(path); err != nil {
 				return err
 			}
-			continue
-		}
-
-		// a folder, a link or a junction: Stat follows it
-		info, err := os.Stat(path)
-		if err != nil {
-			continue
-		}
-		if !info.IsDir() {
-			if err := visit(path); err != nil {
+		case slices.ContainsFunc(ancestors, func(ancestor os.FileInfo) bool { return os.SameFile(ancestor, child.info) }):
+		default:
+			if err := walk(path, append(ancestors, child.info), visit); err != nil {
 				return err
 			}
-			continue
-		}
-		if entry.Name() == ".git" || slices.ContainsFunc(ancestors, func(ancestor os.FileInfo) bool { return os.SameFile(ancestor, info) }) {
-			continue
-		}
-		if err := walk(path, append(ancestors, info), visit); err != nil {
-			return err
 		}
 	}
 	return nil
+}
+
+// Hidden is whether a name is one the walk and the explorer leave out unless asked for everything: it starts with a
+// dot, but is not game.MetadataDir, where an EU5 mod keeps its descriptor. A mod's .git, .vscode and .idea are no
+// content of it.
+func Hidden(name string) bool {
+	return strings.HasPrefix(name, ".") && name != game.MetadataDir
+}
+
+// Children is every item of the folder dir in name order, each link followed once; a link that leads nowhere is left
+// out.
+func Children(dir string) ([]Child, error) {
+	entries, err := os.ReadDir(dir)
+	if err != nil {
+		return nil, err
+	}
+
+	children := make([]Child, 0, len(entries))
+	for _, entry := range entries {
+		child := Child{Name: entry.Name()}
+		if !entry.Type().IsRegular() {
+			// a folder, a link or a junction: Stat follows it
+			info, err := os.Stat(filepath.Join(dir, child.Name))
+			if err != nil {
+				continue
+			}
+			child.IsDir, child.info = info.IsDir(), info
+		}
+		children = append(children, child)
+	}
+	return children, nil
 }
 
 // Ordered is the scan's worker pool: it runs work over files on a worker per CPU, a bounded window ahead, and calls
@@ -309,21 +353,10 @@ func Ordered[T any](ctx context.Context, files []File, work func(File) T, keep f
 
 // String is a format's name, as the editor reads it to pick a file's language.
 func (format Format) String() string {
-	return [...]string{"unknown", "script", "loc", "table", "list", "json", "info", "image", "opaque"}[format]
+	return [...]string{"unknown", "script", "loc", "table", "list", "json", "info", "image", "opaque", "descriptor", "binary"}[format]
 }
 
-// Text reads the file as the engine reads it: DecodeText's text with every CR dropped, so a CRLF file and an
-// editor's LF buffer share offsets.
-func (file File) Text() (string, error) {
-	raw, err := os.ReadFile(file.Path)
-	if err != nil {
-		return "", err
-	}
-	text, _, _ := DecodeText(raw)
-	return strings.ReplaceAll(text, "\r", ""), nil
-}
-
-// Binary is whether a file's first bytes are binary: a NUL among the first BinaryHead, git's own test.
-func Binary(head []byte) bool {
+// IsBinary reports whether a file's first bytes are binary: a NUL among the first BinaryHead, git's own test.
+func IsBinary(head []byte) bool {
 	return bytes.IndexByte(head[:min(len(head), BinaryHead)], 0) >= 0
 }

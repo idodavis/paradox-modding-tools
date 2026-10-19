@@ -145,14 +145,14 @@ func cssOf(value jomini.Value) string {
 }
 
 // scalars are a statement's value with its file's constants put in: a scalar, a block's values, or the x and y a
-// block writes as keys.
+// block writes as keys; a tagged value (rgb { }, list "x") is none.
 func (statement statement) scalars() []string {
 	var scalars []string
 	switch value := statement.assignment.Value.(type) {
 	case *jomini.Scalar:
 		scalars = []string{value.Text}
 	case *jomini.Block:
-		if across, down := jomini.ScalarOf(value, "x"), jomini.ScalarOf(value, "y"); across != nil && down != nil {
+		if across, down := jomini.KeyValue(value, "x", jomini.Match{}), jomini.KeyValue(value, "y", jomini.Match{}); across != nil && down != nil {
 			scalars = []string{across.Text, down.Text}
 			break
 		}

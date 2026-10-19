@@ -5,7 +5,6 @@
 package index
 
 import (
-	"cmp"
 	"context"
 	"slices"
 	"strings"
@@ -42,7 +41,7 @@ func (index *Index) collectFiles(ctx context.Context, s *schema.Schema, withLoc 
 	done := 0
 	return inventory.Ordered(ctx, files, func(file inventory.File) collected {
 		text, _ := file.Text()
-		return collectFile(s, file, text)
+		return collectFile(s, file, text.Content)
 	}, func(file inventory.File, records collected) {
 		if len(records.occurrences) > 0 {
 			index.add(file.Path, records)
@@ -85,7 +84,7 @@ func Collect(s *schema.Schema, file inventory.File, parsed *jomini.Result, visit
 			lines = parsed.Lines()
 		} else {
 			text, _ := file.Text()
-			lines = jomini.NewLineIndex(text)
+			lines = jomini.NewLineIndex(text.Content)
 		}
 		for n := range c.occurrences {
 			at := lines.PositionAt(c.occurrences[n].Range.Start)
@@ -131,7 +130,7 @@ func scopePair(written, scope string) [2]string {
 // its concepts a game concept (conceptReferences): each a reference in no entry.
 func collectLoc(gameID string, file inventory.File, text string, languages []string) collected {
 	parsed := loc.Parse(text)
-	language := strings.ToLower(cmp.Or(parsed.Language, loc.LanguageFromRel(file.Rel)))
+	language := loc.Language(parsed.Language, file.Rel)
 	if len(languages) > 0 && !slices.Contains(languages, language) {
 		return collected{}
 	}
@@ -141,7 +140,7 @@ func collectLoc(gameID string, file inventory.File, text string, languages []str
 			concepts = row.Database
 		}
 	}
-	records, lines := collected{language: language}, jomini.NewLineIndex(text)
+	records, lines := collected{language: language}, parsed.Lines()
 	refer := func(database, name string, span jomini.Range) {
 		at := lines.PositionAt(span.Start)
 		records.occurrences = append(records.occurrences, schema.Occurrence{
@@ -168,12 +167,8 @@ func collectLoc(gameID string, file inventory.File, text string, languages []str
 func conceptReferences(
 	text string, entry loc.Entry, concepts string, refer func(database, name string, span jomini.Range),
 ) {
-	for _, call := range jomini.Calls(entry.Value, entry.ValueRange.Start) {
-		steps := jomini.ParseCall(text[call.Start:call.End], call.Start)
-		if len(steps) == 0 {
-			continue
-		}
-		for _, concept := range loc.Concepts(steps, text[steps[0].Range.End:call.End]) {
+	for _, call := range jomini.DataCalls(entry.Value, entry.ValueRange.Start) {
+		for _, concept := range loc.Concepts(call, text) {
 			if concept.IsMarked {
 				refer(concepts, concept.Name, concept.Span)
 			}

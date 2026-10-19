@@ -167,7 +167,7 @@ func (walk *fireWalk) fireSite(firing fireRef) (block, command, args string) {
 	}
 	if last > 0 {
 		block = keyOf(chain[0])
-		if value := jomini.ScalarOf(jomini.ChildBlock(chain[0]), "name"); value != nil {
+		if value := jomini.KeyValue(jomini.ChildBlock(chain[0]), "name", jomini.Match{}); value != nil {
 			block += " " + value.Text[strings.LastIndex(value.Text, ".")+1:]
 		}
 	}

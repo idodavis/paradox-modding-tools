@@ -7,10 +7,8 @@ package services
 import (
 	"cmp"
 	"context"
-	"encoding/json"
 	"errors"
 	"fmt"
-	"io"
 	"log/slog"
 	"os"
 	"path/filepath"
@@ -122,12 +120,9 @@ func OpenConfig() (*ConfigFile, error) {
 // openConfigFile loads one config.json; the tests give it a temporary path.
 func openConfigFile(path string) *ConfigFile {
 	config := &ConfigFile{path: path, cfg: Config{Settings: map[string]map[string]string{}}}
-	raw, err := os.ReadFile(path)
+	err := appdata.LoadJSON(path, &config.cfg)
 	if errors.Is(err, os.ErrNotExist) {
 		return config
-	}
-	if err == nil {
-		err = json.Unmarshal(raw, &config.cfg)
 	}
 	if err != nil {
 		// an antivirus hold, a permission blip or OneDrive mid-sync: starting empty would read as a
@@ -168,7 +163,7 @@ func (config *ConfigFile) mutate(section string, fn func(*Config) error) error {
 
 // save writes config.json; the caller holds the lock, or has the ConfigFile to itself.
 func (config *ConfigFile) save() error {
-	return appdata.Write(config.path, func(out io.Writer) error { return json.NewEncoder(out).Encode(&config.cfg) })
+	return appdata.SaveJSON(config.path, &config.cfg)
 }
 
 // workspace is a copy of a workspace and of the install it is on (nil where none is listed), from one read;

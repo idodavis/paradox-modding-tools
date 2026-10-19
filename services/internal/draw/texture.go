@@ -92,8 +92,8 @@ func (resolver *guiResolver) textureOf(holder *widget) (Texture, bool) {
 	}
 	base, isKnown := resolver.pathTextures[path]
 	if !isKnown {
-		if file, hasFile := index.FileAt(resolver.ws.Indexes(), path); hasFile {
-			if facts, err := texture.Info(file.Path); err == nil {
+		if file, hasFile := resolver.fileOf(path); hasFile {
+			if facts, err := texture.Info(file); err == nil {
 				base = Texture{
 					URL: resolver.urlOf(file), Width: facts.Width, Height: facts.Height, Density: 1, TintAlpha: 1, Blend: blendNormal,
 					Alpha: 1, Mask: -1,
@@ -238,7 +238,6 @@ func (resolver *guiResolver) pictureOf(widget *widget, binding string) string {
 			}
 		}
 	}
-	path = strings.TrimSuffix(path, ".dds") + ".dds"
 	folders := resolver.folders()
 	own := strings.ToUpper(schema.SnakeCase(dataType)) + game.GUIIconPathSuffix
 	candidates := []string{path}
@@ -252,7 +251,7 @@ func (resolver *guiResolver) pictureOf(widget *widget, binding string) string {
 	}
 	picture := ""
 	for _, candidate := range candidates {
-		if _, hasFile := index.FileAt(resolver.ws.Indexes(), candidate); hasFile {
+		if _, hasFile := resolver.fileOf(candidate); hasFile {
 			picture = candidate
 			break
 		}

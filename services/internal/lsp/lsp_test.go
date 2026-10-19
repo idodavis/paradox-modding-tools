@@ -129,7 +129,7 @@ func dumpHovers(t *testing.T, ws *workspace.Session, file inventory.File) string
 	}
 	var out strings.Builder
 	any := false
-	for number, line := range strings.Split(text, "\n") {
+	for number, line := range strings.Split(text.Content, "\n") {
 		for _, at := range token.FindAllStringIndex(line, -1) {
 			card, err := Hover(ws, file.Path, number, at[0])
 			switch {

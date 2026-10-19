@@ -63,7 +63,9 @@ type Block struct {
 	CloseBrace int
 }
 
-// TaggedBlock is a scalar tag immediately followed by a block, e.g. `rgb { 255 0 0 }`.
+// TaggedBlock is a scalar tag immediately followed by a block, e.g. `rgb { 255 0 0 }`, or by one quoted text, e.g.
+// `list "x"`: that one has no braces (its Block's OpenBrace is -1), holds the text as its one statement, and is no
+// block to BlockOf.
 type TaggedBlock struct {
 	Tag   Scalar
 	Block Block
@@ -104,13 +106,22 @@ type LineIndex struct {
 }
 
 // Result is an immutable parse result. Src is the exact text that was parsed;
-// all node offsets are byte indices into it.
+// all node offsets are byte indices into it. It keeps the parse's tokens and line
+// index, so nothing reads the text again to tokenize it or to find its lines.
 type Result struct {
 	Root     *Root
 	Errors   []ParseError
 	Comments []Comment
 	Src      string
+	tokens   []token
 	lines    *LineIndex
+}
+
+// Match is how KeyValue chooses among a block's writes of a key: Last takes the last one written rather than the
+// first, and FoldCase takes keys that differ only in case for one key.
+type Match struct {
+	Last     bool
+	FoldCase bool
 }
 
 // The structural errors the parser recovers from, each reported where it is found.
@@ -121,7 +132,7 @@ const (
 	ErrMissingValue       ErrorCode = "missing-value"       // `key =` with nothing after
 )
 
-// NewLineIndex builds a LineIndex over text. \r\n and lone \r both break a line.
+// NewLineIndex builds a LineIndex over text. \n, \r\n and a lone \r each break a line.
 func NewLineIndex(text string) *LineIndex {
 	starts := []int{0}
 	for i := 0; i < len(text); i++ {
@@ -130,11 +141,9 @@ func NewLineIndex(text string) *LineIndex {
 			starts = append(starts, i+1)
 		case '\r':
 			if i+1 < len(text) && text[i+1] == '\n' {
-				starts = append(starts, i+2)
 				i++
-			} else {
-				starts = append(starts, i+1)
 			}
+			starts = append(starts, i+1)
 		}
 	}
 	return &LineIndex{lineStarts: starts, length: len(text)}
@@ -145,12 +154,7 @@ func (index *LineIndex) LineCount() int { return len(index.lineStarts) }
 
 // PositionAt converts a byte offset to a 0-based (line, byte-column) position.
 func (index *LineIndex) PositionAt(offset int) Position {
-	if offset < 0 {
-		offset = 0
-	}
-	if offset > index.length {
-		offset = index.length
-	}
+	offset = min(max(offset, 0), index.length)
 	// Greatest lineStart <= offset.
 	line := max(sort.Search(len(index.lineStarts), func(i int) bool {
 		return index.lineStarts[i] > offset
@@ -167,24 +171,29 @@ func (index *LineIndex) OffsetAt(line, col int) int {
 	if line >= len(index.lineStarts) {
 		return index.length
 	}
-	start := index.lineStarts[line]
-	nextStart := index.length
-	if line+1 < len(index.lineStarts) {
-		nextStart = index.lineStarts[line+1]
-	}
-	if col < 0 {
-		col = 0
-	}
-	offset := min(min(start+col, nextStart), index.length)
-	return offset
+	return min(index.lineStarts[line]+max(col, 0), index.nextLineStart(line))
 }
 
-// Lines returns the LineIndex for Src (built at parse time).
-func (result Result) Lines() *LineIndex {
-	if result.lines != nil {
-		return result.lines
+// LineText returns the text of a 0-based line of text, the one this index was built over, without its line ending;
+// "" for a line the text does not have.
+func (index *LineIndex) LineText(text string, line int) string {
+	if line < 0 || line >= len(index.lineStarts) {
+		return ""
 	}
-	return NewLineIndex(result.Src)
+	return strings.TrimRight(text[index.lineStarts[line]:index.nextLineStart(line)], "\r\n")
+}
+
+// nextLineStart is the offset where the line after a 0-based line starts: the end of the text for the last line.
+func (index *LineIndex) nextLineStart(line int) int {
+	if line+1 < len(index.lineStarts) {
+		return index.lineStarts[line+1]
+	}
+	return index.length
+}
+
+// Lines returns the parse's LineIndex, built once by Parse.
+func (result Result) Lines() *LineIndex {
+	return result.lines
 }
 
 // Flat is the source a range covers on one line: its runs of space folded to one, its comments left out.
@@ -198,77 +207,67 @@ func (result Result) Flat(span Range) string {
 	return strings.Join(strings.Fields(string(text)), " ")
 }
 
-// LineIndents is brace-depth indent per line. It tokenizes Src: a Result does
-// not keep its tokens, because only the two editor-time readers here ever want
-// them and a scan would otherwise carry one buffer per open file.
+// LineIndents is each line's brace depth, from the parse's tokens: the depth before the line, less the closing braces
+// that lead it.
 func (result Result) LineIndents() []int {
-	toks := tokenize(result.Src)
-	defer putTokens(toks)
-	return lineIndentsFrom(result.Src, toks)
+	lines := result.Lines()
+	indents := make([]int, lines.LineCount())
+	depth, next := 0, 0
+	for line := range indents {
+		lineEnd := lines.nextLineStart(line)
+		lineDepth, leading, isLeading := depth, 0, true
+		for ; next < len(result.tokens) && result.tokens[next].start < lineEnd; next++ {
+			switch result.tokens[next].kind {
+			case tokLBrace:
+				depth++
+				isLeading = false
+			case tokRBrace:
+				depth = max(depth-1, 0)
+				if isLeading {
+					leading++
+				}
+			default:
+				isLeading = false
+			}
+		}
+		indents[line] = max(lineDepth-leading, 0)
+	}
+	return indents
 }
 
-// TokenAt returns the identifier covering off (UTF-8 bytes). Comments yield
-// an empty word. Src is tokenized on the fly; see LineIndents.
-func (result Result) TokenAt(off int) (word string, start, end int) {
-	src := result.Src
-	if off < 0 {
-		off = 0
-	}
-	if off > len(src) {
-		off = len(src)
-	}
-	start, end = off, off
-	var toks []token
-	if src != "" {
-		toks = tokenize(src)
-		defer putTokens(toks)
-	}
-	for _, tok := range toks {
-		if tok.kind == tokEOF || off < tok.start || off > tok.end {
+// TokenAt is the start and end of the word an offset touches: the bare word, or the run of word characters of a
+// quoted text, that holds the offset or ends at it. Both are the offset where only a comment, an operator, a brace, a
+// quote or a blank is there.
+func (result Result) TokenAt(offset int) (start, end int) {
+	offset = min(max(offset, 0), len(result.Src))
+	tokens := result.tokens[:len(result.tokens)-1]
+	first := sort.Search(len(tokens), func(i int) bool { return tokens[i].end > offset })
+	for _, i := range []int{first, first - 1} {
+		if i < 0 || i >= len(tokens) || offset < tokens[i].start || offset > tokens[i].end {
 			continue
 		}
-		if tok.kind == tokComment {
-			return "", off, off
-		}
-		if off == tok.end && tok.start != tok.end {
-			continue
-		}
-		switch tok.kind {
+		switch tok := tokens[i]; tok.kind {
 		case tokWord:
-			return src[tok.start:tok.end], tok.start, tok.end
+			return tok.start, tok.end
 		case tokString:
-			return identAt(src, off, tok.start, tok.end)
+			textStart, textEnd := tok.start+1, tok.end-1
+			if tok.unterminated {
+				textEnd = tok.end
+			}
+			if offset < textStart || offset > textEnd {
+				continue
+			}
+			start, end = offset, offset
+			for start > textStart && !isWordTerminator(result.Src[start-1]) {
+				start--
+			}
+			for end < textEnd && !isWordTerminator(result.Src[end]) {
+				end++
+			}
+			return start, end
 		}
 	}
-	return identAt(src, off, 0, len(src))
-}
-
-// identAt returns the identifier touching off within src[lo:hi], with its start and end; the
-// identifier is empty where none touches off.
-func identAt(src string, off, lo, hi int) (string, int, int) {
-	if off < lo {
-		off = lo
-	}
-	if off > hi {
-		off = hi
-	}
-	start, end := off, off
-	for start > lo && isIdentByte(src[start-1]) {
-		start--
-	}
-	for end < hi && end < len(src) && isIdentByte(src[end]) {
-		end++
-	}
-	if start == end {
-		return "", start, end
-	}
-	return src[start:end], start, end
-}
-
-// isIdentByte reports the bytes an identifier is made of: letters, digits, `_`, `.` and `-`.
-func isIdentByte(char byte) bool {
-	return char == '_' || char == '.' || char == '-' ||
-		(char >= 'A' && char <= 'Z') || (char >= 'a' && char <= 'z') || (char >= '0' && char <= '9')
+	return offset, offset
 }
 
 // AssignmentAt is the assignment whose key, or the tag of whose value, starts at a line and column of Src (a name a
@@ -298,7 +297,8 @@ func (result Result) AssignmentAt(line, col int) Statement {
 }
 
 // Attach gives each statement the comments that belong to it, and the comments that belong to none.
-// Loose comments keep source order.
+// Loose comments keep source order. The docs reader attaches its own, differently: it gives a trailing comment to the
+// first statement on its line where this gives it to the outermost, and it drops headings.
 func (result Result) Attach() (attached map[Statement][]Comment, loose []Comment) {
 	lines := result.Lines()
 
@@ -369,12 +369,16 @@ func ValueOf(statement Statement) Value {
 	return nil
 }
 
-// BlockOf returns the Block a value owns (plain or tagged), or nil.
+// BlockOf returns the Block a value owns (plain or tagged), or nil: a scalar owns none, nor does a tag written with
+// a text (`list "x"`) rather than a block.
 func BlockOf(value Value) *Block {
 	switch block := value.(type) {
 	case *Block:
 		return block
 	case *TaggedBlock:
+		if block.Block.OpenBrace < 0 {
+			return nil
+		}
 		return &block.Block
 	default:
 		return nil
@@ -400,15 +404,23 @@ func Fields(block *Block) []*Assignment {
 	return fields
 }
 
-// ScalarOf is the one-word value the first assignment of a key in a block writes; nil where the block writes none,
-// or a block.
-func ScalarOf(block *Block, key string) *Scalar {
+// KeyValue is the one-word value a block gives a key: the first of the key's assignments that writes a word, or the
+// last when match.Last, a key that differs only in case counting as the key when match.FoldCase; nil where the block
+// writes none, or only blocks.
+func KeyValue(block *Block, key string, match Match) *Scalar {
+	var value *Scalar
 	for _, field := range Fields(block) {
-		if scalar, isScalar := field.Value.(*Scalar); isScalar && field.Key.Text == key {
-			return scalar
+		scalar, isScalar := field.Value.(*Scalar)
+		isKey := field.Key.Text == key || match.FoldCase && strings.EqualFold(field.Key.Text, key)
+		if !isScalar || !isKey {
+			continue
+		}
+		value = scalar
+		if !match.Last {
+			break
 		}
 	}
-	return nil
+	return value
 }
 
 // ColorParts reads a color block: the tag written before it ("" for none) and the numbers it holds. A block holding

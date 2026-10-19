@@ -1,12 +1,20 @@
-// datacall.go reads a data call, `[Root.GetCountry.GetName]`, into its steps and their arguments.
+// datacall.go reads a data call, `[Root.GetCountry.GetName]`, into its steps and their arguments and casts.
 
 package jomini
 
 import "strings"
 
-// CallStep is one step of a data call: a name, then its arguments when it has parentheses.
+// Call is one data call of a text: the span of its brackets and the steps read inside them.
+type Call struct {
+	Range
+	Steps []CallStep
+}
+
+// CallStep is one step of a data call: a name, then its arguments when it has parentheses. A cast literal,
+// `(int32)3`, is one step of its own: Name is its value and Cast its type.
 type CallStep struct {
 	Name  string
+	Cast  string
 	Args  []CallArg
 	Range Range
 }
@@ -16,6 +24,17 @@ type CallArg struct {
 	Text   string
 	Quoted bool
 	Range  Range
+}
+
+// DataCalls is every data call of a text, each split into its steps; offset is where the text starts, which every
+// range is shifted by.
+func DataCalls(text string, offset int) []Call {
+	var calls []Call
+	for _, span := range Calls(text, offset) {
+		steps := ParseCall(text[span.Start-offset:span.End-offset], span.Start)
+		calls = append(calls, Call{Range: span, Steps: steps})
+	}
+	return calls
 }
 
 // Calls is every [ … ] segment of text, brackets included, nested brackets kept inside their
@@ -47,35 +66,34 @@ func Calls(text string, offset int) []Range {
 
 // Cast reads a cast literal, '(int32)3' or (CFixedPoint)0, into its type and value; false for any other text.
 func Cast(text string) (typ, value string, ok bool) {
-	text = strings.TrimSuffix(strings.TrimPrefix(text, "'"), "'")
-	rest, opened := strings.CutPrefix(text, "(")
-	typ, value, closed := strings.Cut(rest, ")")
-	if !opened || !closed || typ == "" || value == "" {
+	rest, opened := strings.CutPrefix(strings.TrimSuffix(strings.TrimPrefix(text, "'"), "'"), "(")
+	if !opened {
 		return "", "", false
 	}
-	for i := range len(typ) {
-		if !isAlnumUnder(typ[i]) {
-			return "", "", false
-		}
+	typ, value, closed := strings.Cut(rest, ")")
+	if !closed || typ == "" || value == "" || identifierEnd(typ, "") != len(typ) {
+		return "", "", false
 	}
 	return typ, value, true
 }
 
 // ParseCall reads one data call, with or without its brackets, into its steps; what does not parse
 // ends the steps, so a half-typed call gives the steps before it. The call ends at a | outside
-// parentheses and quotes: [glory|E] is the step glory, written with the format E.
+// parentheses and quotes: [glory|E] is the step glory, written with the format E. A cast literal is no call but one
+// step of its own, so an argument written as one reads as it is: [(int32)1|E] is the step 1 cast to int32.
 func ParseCall(text string, offset int) []CallStep {
 	if strings.HasPrefix(text, "[") {
 		text, offset = text[1:], offset+1
 	}
 	text = strings.TrimSuffix(text, "]")
-	var steps []CallStep
 	pos := skipBlanks(text, 0)
+	if step, isCast := castStep(text[pos:], offset+pos); isCast {
+		return []CallStep{step}
+	}
+	var steps []CallStep
 	for {
 		start := pos
-		for pos < len(text) && isAlnumUnder(text[pos]) {
-			pos++
-		}
+		pos += identifierEnd(text[pos:], "")
 		if pos == start {
 			return steps
 		}
@@ -96,6 +114,25 @@ func ParseCall(text string, offset int) []CallStep {
 		}
 		pos = skipBlanks(text, pos+1)
 	}
+}
+
+// castStep reads text, which starts at offset, as a cast literal that only a format after a | outside quotes follows,
+// into the one step it is: Name its value, Cast its type; false for any other text.
+func castStep(text string, offset int) (CallStep, bool) {
+	end := 0
+	for end < len(text) && text[end] != '|' {
+		if text[end] == '\'' || text[end] == '"' {
+			end = pastQuote(text, end)
+		} else {
+			end++
+		}
+	}
+	literal := strings.TrimRight(text[:min(end, len(text))], " \t")
+	typ, value, isCast := Cast(literal)
+	if !isCast {
+		return CallStep{}, false
+	}
+	return CallStep{Name: value, Cast: typ, Range: Range{Start: offset, End: offset + len(literal)}}, true
 }
 
 // callArgs reads a step's arguments from just after its ( to past its ); closed is false when the

@@ -1,6 +1,6 @@
 // jomini_test.go covers the parser/lexer: assignments, GUI templates, error
 // recovery, tagged blocks, byte-offset decoding, the line index and the walk;
-// and the name shapes, literals, cites and interpolations of the shared grammar.
+// and the name shapes, literals, cites and parameters of the shared grammar.
 
 package jomini
 
@@ -11,8 +11,8 @@ import (
 )
 
 var (
-	defNameRe = regexp.MustCompile(`^[\p{L}\p{Nd}_][\p{L}\p{Nd}_.-]*$`)
-	eventIDRe = regexp.MustCompile(`^[\p{L}\p{Nd}_-]*[\p{L}_][\p{L}\p{Nd}_-]*\.\d+$`)
+	identifierRe = regexp.MustCompile(`^[\p{L}\p{Nd}_][\p{L}\p{Nd}_.-]*$`)
+	eventIDRe    = regexp.MustCompile(`^[\p{L}\p{Nd}_-]*[\p{L}_][\p{L}\p{Nd}_-]*\.\d+$`)
 )
 
 // The words the fixtures repeat.
@@ -205,7 +205,7 @@ func TestNameShapes(t *testing.T) {
 		"add_gold", "any_trait_in_category", "PRICE", "SCORE_VAR",
 		"e.1", "e.01", "e.1a", "1.e", "a.b.1", "a-b.1", "a_b.12345",
 
-		// Shipped non-ASCII. See the comment above IsDefName.
+		// Shipped non-ASCII. See the comment above IsIdentifier.
 		"mon_general_petar_vukotić", "Linnéa", "RU_GL_КР_DEFAULT",
 		"bpm_je_propaganda_of_the_deed_бомбометр",
 		"gaudi_pavellons_güell_global_var", "religión",
@@ -216,8 +216,8 @@ func TestNameShapes(t *testing.T) {
 	}
 	for _, input := range inputs {
 		t.Run("q_"+input, func(t *testing.T) {
-			if got, want := IsDefName(input), defNameRe.MatchString(input); got != want {
-				t.Errorf("IsDefName(%q) = %v, pattern says %v", input, got, want)
+			if got, want := IsIdentifier(input), identifierRe.MatchString(input); got != want {
+				t.Errorf("IsIdentifier(%q) = %v, pattern says %v", input, got, want)
 			}
 			if got, want := IsEventID(input), eventIDRe.MatchString(input); got != want {
 				t.Errorf("IsEventID(%q) = %v, pattern says %v", input, got, want)
@@ -236,8 +236,8 @@ func TestNameShapes(t *testing.T) {
 		{"gaudi_pavellons_güell_global_var", true},        // CK3 mod global var
 		{"country_event·", false},                         // U+00B7 is punctuation: this mod typo must stay rejected
 	} {
-		if got := IsDefName(testCase.name); got != testCase.want {
-			t.Errorf("IsDefName(%q) = %v, want %v", testCase.name, got, testCase.want)
+		if got := IsIdentifier(testCase.name); got != testCase.want {
+			t.Errorf("IsIdentifier(%q) = %v, want %v", testCase.name, got, testCase.want)
 		}
 	}
 }
@@ -363,7 +363,7 @@ func TestSplitPrefixed(t *testing.T) {
 	}
 }
 
-func TestInterpolations(t *testing.T) {
+func TestParameters(t *testing.T) {
 	for _, testCase := range []struct {
 		text string
 		want []Span
@@ -383,8 +383,8 @@ func TestInterpolations(t *testing.T) {
 		{"100$ and 200$", nil},
 		{"$A$$B$", []Span{{"A", 0, 3}, {"B", 3, 6}}},
 	} {
-		if got := Interpolations(testCase.text); !reflect.DeepEqual(got, testCase.want) {
-			t.Errorf("Interpolations(%q) = %+v; want %+v", testCase.text, got, testCase.want)
+		if got := Parameters(testCase.text); !reflect.DeepEqual(got, testCase.want) {
+			t.Errorf("Parameters(%q) = %+v; want %+v", testCase.text, got, testCase.want)
 		}
 	}
 }

@@ -9,7 +9,6 @@ import (
 	"fmt"
 	"image"
 	"image/png"
-	"io"
 	"net/http"
 	"net/url"
 	"os"
@@ -26,18 +25,10 @@ import (
 	"paradox-modding-tools/services/internal/draw"
 	"paradox-modding-tools/services/internal/inventory"
 	"paradox-modding-tools/services/internal/texture"
-
-	"paradox-modding-tools/services/internal/game"
 )
 
 // FileService provides filesystem helpers for the IDE workbench.
 type FileService struct{}
-
-// DirEntry is one immediate child of a directory (for lazy file trees).
-type DirEntry struct {
-	Name  string `json:"name"`
-	IsDir bool   `json:"isDir"`
-}
 
 // CreateDir creates a directory (parents created as needed).
 func (fil *FileService) CreateDir(fullPath string) error {
@@ -149,41 +140,22 @@ type FileText struct {
 	Reject  string `json:"reject,omitempty"`
 }
 
-// textOf is a file's bytes as a FileText, decoded as the engine decodes them (inventory.DecodeText) and
-// classified at path (rel: its path in its root, or the whole path where it has none); binary is refused.
-func textOf(data []byte, path, rel string) FileText {
-	if inventory.Binary(data) {
-		return FileText{Binary: true, Reject: "binary file: the editor opens script, localization and other text files only"}
-	}
-	text, bom, legacy := inventory.DecodeText(data)
-	return FileText{Text: text, BOM: bom, Legacy: legacy, Format: inventory.Classify(path, filepath.ToSlash(rel)).String()}
-}
-
-// readCapped is a file's bytes, or missing where it is not there, or why it is refused (too large to hold in
-// memory, on every read, image or not).
-func readCapped(fullPath string) (data []byte, missing bool, reject string, err error) {
-	file, err := os.Open(filepath.Clean(fullPath))
-	if errors.Is(err, os.ErrNotExist) {
-		return nil, true, "", nil
-	}
-	if err != nil {
-		return nil, false, "", fmt.Errorf("read file: %w", err)
-	}
-	defer func() { _ = file.Close() }()
-	info, err := file.Stat()
+// fileText is a text, or why the engine gave none (inventory.LoadText, inventory.TextOf), as a FileText classified at
+// path (rel: its path in its root, or the whole path where it has none): a file not there is Missing, and a binary or
+// too large one is Rejected; any other failure is the error.
+func fileText(text inventory.Text, err error, path, rel string) (FileText, error) {
 	switch {
+	case errors.Is(err, os.ErrNotExist):
+		return FileText{Missing: true, Reject: "the file is not there"}, nil
+	case errors.Is(err, inventory.ErrBinary):
+		return FileText{Binary: true, Reject: err.Error()}, nil
+	case errors.Is(err, inventory.ErrTooLarge):
+		return FileText{Reject: err.Error()}, nil
 	case err != nil:
-		return nil, false, "", fmt.Errorf("stat file: %w", err)
-	case info.IsDir():
-		return nil, false, "", errors.New("read file: is a directory")
-	case info.Size() > inventory.MaxTextBytes:
-		return nil, false, fmt.Sprintf("file too large to open (%d bytes, max %d)", info.Size(), inventory.MaxTextBytes), nil
+		return FileText{}, fmt.Errorf("read file: %w", err)
 	}
-	data, err = io.ReadAll(file)
-	if err != nil {
-		return nil, false, "", fmt.Errorf("read file: %w", err)
-	}
-	return data, false, "", nil
+	format := inventory.Classify(path, filepath.ToSlash(rel)).String()
+	return FileText{Text: text.Content, BOM: text.BOM, Legacy: text.Legacy, Format: format}, nil
 }
 
 // FileRoute is where the page reads an image or font file, on Wails' asset server: ?path= its absolute path.
@@ -192,9 +164,9 @@ const FileRoute = draw.FileRoute
 // maxImageBytes is the largest image file shown; the games' map data runs past it.
 const maxImageBytes = 64 << 20
 
-// fileTypes is the files FileRoute serves, by extension: the images and the fonts a window draws with.
-var fileTypes = map[string]bool{".png": true, ".jpg": true, ".jpeg": true, ".gif": true, ".webp": true, ".bmp": true,
-	".ico": true, ".svg": true, ".dds": true, ".tga": true, ".ttf": true, ".otf": true}
+// browserFiles are the extensions FileRoute serves beside the images texture reads a header of: the images a browser
+// draws that texture reads none of, and the fonts a window draws with.
+var browserFiles = map[string]bool{".gif": true, ".webp": true, ".bmp": true, ".ico": true, ".svg": true, ".ttf": true, ".otf": true}
 
 // ImageFacts is an image file's header (none where Go reads no header of its kind: SVG, WebP, BMP, ICO), its format as
 // the page names it, its size, and its URL at FileRoute, which names when the file changed so a changed file is read
@@ -219,22 +191,14 @@ func (fil *FileService) ReadImageFacts(fullPath string) (ImageFacts, error) {
 		facts.Reject = fmt.Sprintf("larger than %d MB: not shown", maxImageBytes>>20)
 	}
 	facts.Info, _ = texture.Info(fullPath)
-	ext := strings.ToUpper(strings.TrimPrefix(filepath.Ext(fullPath), "."))
-	switch format := facts.Info.Format; {
-	case ext == "DDS" && format != "png":
-		facts.Label = strings.TrimSpace("DDS " + format)
-	case strings.HasPrefix(format, "TGA"):
-		facts.Label = format
-	default:
-		facts.Label = strings.ToUpper(cmp.Or(format, ext))
-	}
+	facts.Label = cmp.Or(facts.Info.Label(), strings.ToUpper(strings.TrimPrefix(filepath.Ext(fullPath), ".")))
 	return facts, nil
 }
 
-// ServeFiles answers FileRoute ahead of the page's assets (Wails' asset server takes it as its middleware): a DDS or
-// TGA decoded and sent as a PNG, as is a frame of any image (&frame=x,y,width,height, a sheet's part a widget draws);
-// any other image or font file as it is, which the webview draws and caches itself. Each is read again only when the
-// file changed.
+// ServeFiles answers FileRoute ahead of the page's assets (Wails' asset server takes it as its middleware): an image
+// whose header says a browser cannot draw it (a DDS or a TGA, whatever its name) decoded and sent as a PNG, as is a
+// frame of any image (&frame=x,y,width,height, a sheet's part a widget draws); any other image or font file as it is,
+// which the webview draws and caches itself. Each is read again only when the file changed.
 func ServeFiles(next http.Handler) http.Handler {
 	return http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 		if r.URL.Path != FileRoute {
@@ -242,10 +206,14 @@ func ServeFiles(next http.Handler) http.Handler {
 			return
 		}
 		path := filepath.Clean(r.URL.Query().Get("path"))
-		ext := strings.ToLower(filepath.Ext(path))
 		stat, err := os.Stat(path)
+		if err != nil || stat.IsDir() {
+			http.NotFound(w, r)
+			return
+		}
+		facts, infoErr := texture.Info(path)
 		switch {
-		case err != nil || stat.IsDir() || !fileTypes[ext]:
+		case infoErr != nil && !browserFiles[strings.ToLower(filepath.Ext(path))]:
 			http.NotFound(w, r)
 			return
 		case stat.Size() > maxImageBytes:
@@ -254,7 +222,7 @@ func ServeFiles(next http.Handler) http.Handler {
 		}
 		w.Header().Set("Cache-Control", "no-cache")
 		frame := r.URL.Query().Get("frame")
-		if ext != ".dds" && ext != ".tga" && frame == "" {
+		if !facts.NeedsDecoding() && frame == "" {
 			http.ServeFile(w, r, path)
 			return
 		}
@@ -294,54 +262,28 @@ func framePart(img image.Image, frame string) image.Image {
 
 // ReadText is a file as the editor reads it.
 func (fil *FileService) ReadText(fullPath string) (FileText, error) {
-	data, missing, reject, err := readCapped(fullPath)
-	switch {
-	case err != nil:
-		return FileText{}, err
-	case missing:
-		return FileText{Missing: true, Reject: "the file is not there"}, nil
-	case reject != "":
-		return FileText{Reject: reject}, nil
-	}
-	return textOf(data, fullPath, fullPath), nil
+	fullPath = filepath.Clean(fullPath)
+	text, err := inventory.LoadText(fullPath)
+	return fileText(text, err, fullPath, fullPath)
 }
 
-// WriteText is the editor's save: the text in the file's own encoding (inventory.EncodeText), through appdata.Write, so
-// a failed save never leaves half a file.
+// WriteText is the editor's save: the text in the file's own encoding (inventory.SaveText), so a failed save never
+// leaves half a file.
 func (fil *FileService) WriteText(fullPath, text string, bom, legacy bool) error {
-	data, err := inventory.EncodeText(text, bom, legacy)
-	if err != nil {
-		return err
-	}
-	return appdata.WriteBytes(filepath.Clean(fullPath), data)
+	return inventory.SaveText(filepath.Clean(fullPath), inventory.Text{Content: text, BOM: bom, Legacy: legacy})
 }
 
 // ListDirectory lists immediate children of dirPath (non-recursive).
-// showAll lists every name; otherwise skip dotfiles except .metadata.
-func (fil *FileService) ListDirectory(dirPath string, showAll bool) ([]DirEntry, error) {
-	dirPath = filepath.Clean(filepath.FromSlash(dirPath))
-	entries, err := os.ReadDir(dirPath)
+// showAll lists every name; otherwise the names the walk leaves out are left out too (inventory.Hidden).
+func (fil *FileService) ListDirectory(dirPath string, showAll bool) ([]inventory.Child, error) {
+	children, err := inventory.Children(filepath.Clean(filepath.FromSlash(dirPath)))
 	if err != nil {
 		return nil, fmt.Errorf("list directory: %w", err)
 	}
-	out := make([]DirEntry, 0, len(entries))
-	for _, entry := range entries {
-		name := entry.Name()
-		if name == "." || name == ".." {
-			continue
-		}
-		if !showAll && strings.HasPrefix(name, ".") && name != game.MetadataDir {
-			continue
-		}
-		// a link or a junction is a folder when what it leads to is one
-		isDir := entry.IsDir()
-		if !isDir && !entry.Type().IsRegular() {
-			info, err := os.Stat(filepath.Join(dirPath, name))
-			isDir = err == nil && info.IsDir()
-		}
-		out = append(out, DirEntry{Name: name, IsDir: isDir})
+	if !showAll {
+		children = slices.DeleteFunc(children, func(child inventory.Child) bool { return inventory.Hidden(child.Name) })
 	}
-	slices.SortFunc(out, func(first, second DirEntry) int {
+	slices.SortFunc(children, func(first, second inventory.Child) int {
 		if first.IsDir != second.IsDir {
 			if first.IsDir {
 				return -1
@@ -350,5 +292,5 @@ func (fil *FileService) ListDirectory(dirPath string, showAll bool) ([]DirEntry,
 		}
 		return strings.Compare(strings.ToLower(first.Name), strings.ToLower(second.Name))
 	})
-	return out, nil
+	return children, nil
 }

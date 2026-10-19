@@ -47,13 +47,10 @@ func TestParseEntries(t *testing.T) {
 	}
 }
 
-// TestParseBOM pins that a leading byte order mark is noted and the ranges stay in the original text.
+// TestParseBOM pins that a leading byte order mark is skipped and the ranges stay in the original text.
 func TestParseBOM(t *testing.T) {
 	src := string(rune(0xFEFF)) + "l_english:\n k:0 \"Hi\"\n"
 	result := Parse(src)
-	if !result.HadBOM {
-		t.Fatal("HadBOM")
-	}
 	if result.Language != fixtureLanguage || len(result.Entries) != 1 {
 		t.Fatalf("parsed %+v", result)
 	}
@@ -109,27 +106,28 @@ func TestParseErrors(t *testing.T) {
 	}
 }
 
-// TestLanguageFromName pins the language a file name gives, and the folder where the name gives none.
-func TestLanguageFromName(t *testing.T) {
+// TestLanguage pins the language a file name gives, and the folder where the name gives none.
+func TestLanguage(t *testing.T) {
 	cases := map[string]string{
-		"events_l_english.yml":   fixtureLanguage,
-		"foo_l_french.yml":       "french",
-		"bar_l_SimpChinese.yaml": "simpchinese",
-		"x_l_simp_chinese.yml":   "simp_chinese",
-		"x_l_braz_por.yml":       "braz_por",
-		"tool_l_english.yml":     fixtureLanguage,
-		"descriptor.mod":         "",
-		"noconvention.yml":       "",
+		"events_l_english.yml":  fixtureLanguage,
+		"foo_l_french.yml":      "french",
+		"bar_l_SimpChinese.yml": "simpchinese",
+		"bar_l_english.yaml":    "",
+		"x_l_simp_chinese.yml":  "simp_chinese",
+		"x_l_braz_por.yml":      "braz_por",
+		"tool_l_english.yml":    fixtureLanguage,
+		"descriptor.mod":        "",
+		"noconvention.yml":      "",
 	}
 	for name, want := range cases {
-		if got := LanguageFromFilename(name); got != want {
-			t.Errorf("LanguageFromFilename(%q) = %q want %q", name, got, want)
+		if got := Language("", name); got != want {
+			t.Errorf("Language(%q) = %q want %q", name, got, want)
 		}
 	}
-	if got := LanguageFromRel("localization/german/notes.yml"); got != "german" {
+	if got := Language("", "localization/german/notes.yml"); got != "german" {
 		t.Errorf("a rel's folder names the language where the filename does not: %q", got)
 	}
-	if got := LanguageFromRel("localization/languages.yml"); got != "" {
+	if got := Language("", "localization/languages.yml"); got != "" {
 		t.Errorf("a file straight under localization is in no language: %q", got)
 	}
 }
@@ -167,29 +165,46 @@ func TestLooksLikeKey(t *testing.T) {
 	}
 }
 
+// TestSegments pins the segments a value reads into: their formats, texts, icons, keys, calls, spans and open brackets.
 func TestSegments(t *testing.T) {
 	got := Segments("#bold Hello#! $NAME$ @gold! [GetName] line\\nbreak #high;italic x#!")
 	want := []Segment{
-		{Text: "Hello", Bold: true},
-		{Text: " "},
-		{Key: "NAME"},
-		{Text: " "},
-		{Icon: "gold"},
-		{Text: " "},
-		{Call: "GetName"},
-		{Text: " line"},
-		{Text: "\n"},
-		{Text: "break "},
-		{Text: "x", Format: "high", Italic: true},
+		{Range: Range{Start: 6, End: 11}, Text: "Hello", Bold: true},
+		{Range: Range{Start: 13, End: 14}, Text: " "},
+		{Range: Range{Start: 14, End: 20}, Key: "NAME"},
+		{Range: Range{Start: 20, End: 21}, Text: " "},
+		{Range: Range{Start: 21, End: 27}, Icon: "gold"},
+		{Range: Range{Start: 27, End: 28}, Text: " "},
+		{Range: Range{Start: 28, End: 37}, Call: "GetName"},
+		{Range: Range{Start: 37, End: 42}, Text: " line"},
+		{Range: Range{Start: 42, End: 44}, Text: "\n"},
+		{Range: Range{Start: 44, End: 50}, Text: "break "},
+		{Range: Range{Start: 63, End: 64}, Text: "x", Format: "high", Italic: true},
 	}
 	if !reflect.DeepEqual(got, want) {
 		t.Errorf("segments:\n got %+v\nwant %+v", got, want)
 	}
 	for text, want := range map[string][]Segment{
-		"a # b @ c $ d [e":         {{Text: "a # b @ c $ d [e"}},
-		"[a[b]c] $k|f$":            {{Call: "a[b]c"}, {Text: " "}, {Key: "k"}},
-		"#low;bold a #x b#! c#! d": {{Text: "a ", Bold: true, Format: "low"}, {Text: "b", Bold: true, Format: "x"}, {Text: " c", Bold: true, Format: "low"}, {Text: " d"}},
-		"[concept|E] and":          {{Call: "concept|E"}, {Text: " and"}},
+		"a # b @ c $ d [e": {
+			{Range: Range{Start: 0, End: 14}, Text: "a # b @ c $ d "},
+			{Range: Range{Start: 14, End: 15}, Text: "[", IsOpen: true},
+			{Range: Range{Start: 15, End: 16}, Text: "e"},
+		},
+		"[a[b]c] $k|f$": {
+			{Range: Range{Start: 0, End: 7}, Call: "a[b]c"},
+			{Range: Range{Start: 7, End: 8}, Text: " "},
+			{Range: Range{Start: 8, End: 13}, Key: "k"},
+		},
+		"#low;bold a #x b#! c#! d": {
+			{Range: Range{Start: 10, End: 12}, Text: "a ", Bold: true, Format: "low"},
+			{Range: Range{Start: 15, End: 16}, Text: "b", Bold: true, Format: "x"},
+			{Range: Range{Start: 18, End: 20}, Text: " c", Bold: true, Format: "low"},
+			{Range: Range{Start: 22, End: 24}, Text: " d"},
+		},
+		"[concept|E] and": {
+			{Range: Range{Start: 0, End: 11}, Call: "concept|E"},
+			{Range: Range{Start: 11, End: 15}, Text: " and"},
+		},
 	} {
 		if got := Segments(text); !reflect.DeepEqual(got, want) {
 			t.Errorf("%q:\n got %+v\nwant %+v", text, got, want)

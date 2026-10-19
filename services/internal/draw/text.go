@@ -111,7 +111,7 @@ func (resolver *guiResolver) runsOf(value string, base Run, depth int) []Run {
 		case segment.Key != "" && depth < maxNesting:
 			runs = append(runs, resolver.runsOf(resolver.locText(segment.Key, false), run, depth+1)...)
 		case segment.Call != "":
-			if text, isConcept := resolver.conceptText(segment.Call); isConcept && depth < maxNesting {
+			if text, isConcept := resolver.conceptText(value[segment.Range.Start:segment.Range.End]); isConcept && depth < maxNesting {
 				runs = append(runs, resolver.runsOf(text, run, depth+1)...)
 				continue
 			}
@@ -140,13 +140,14 @@ func (resolver *guiResolver) locText(value string, isRaw bool) string {
 	return value
 }
 
-// conceptText is the text a concept link shows: what the link writes, else the concept's title; false for none.
+// conceptText is the text a concept link (a data call written with its brackets) shows: what the link writes, else
+// the concept's title; false for none.
 func (resolver *guiResolver) conceptText(call string) (string, bool) {
-	steps, database := jomini.ParseCall(call, 0), resolver.databaseOf(game.GlobalType)
-	if len(steps) == 0 || database == "" {
+	calls, database := jomini.DataCalls(call, 0), resolver.databaseOf(game.GlobalType)
+	if len(calls) == 0 || database == "" {
 		return "", false
 	}
-	for _, concept := range loc.Concepts(steps, call[steps[0].Range.End:]) {
+	for _, concept := range loc.Concepts(calls[0], call) {
 		winner, isDefined := resolver.winner(schema.Occurrence{Database: database, ID: concept.Name})
 		if !isDefined {
 			continue
@@ -211,7 +212,7 @@ func (resolver *guiResolver) iconURL(id string) string {
 	if entry, isDefined := resolver.entryProperties(textIconDatabase, id); isDefined {
 		if iconsize, has := entry.last("iconsize"); has {
 			path, _ := propertiesOf(iconsize).scalar("texture")
-			if file, hasFile := index.FileAt(resolver.ws.Indexes(), path); hasFile {
+			if file, hasFile := resolver.fileOf(path); hasFile {
 				return resolver.urlOf(file)
 			}
 		}
@@ -253,7 +254,7 @@ func (resolver *guiResolver) fontOf(widget *widget, fontStyle string) *Font {
 		files, style := resolver.fontFiles(entry, fontStyle)
 		for _, rel := range files {
 			if file, hasFile := index.FileAt(resolver.ws.Indexes(), rel); hasFile {
-				font = &Font{Name: id, Style: style, URL: resolver.urlOf(file)}
+				font = &Font{Name: id, Style: style, URL: resolver.urlOf(file.Path)}
 				break
 			}
 		}

@@ -74,7 +74,7 @@ func writeTree(t *testing.T, root string, files map[string]string) {
 }
 
 // dirNames is the names of a directory listing, as a set.
-func dirNames(entries []DirEntry) map[string]bool {
+func dirNames(entries []inventory.Child) map[string]bool {
 	out := map[string]bool{}
 	for _, entry := range entries {
 		out[entry.Name] = true

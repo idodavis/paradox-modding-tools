@@ -11,7 +11,6 @@ import (
 	"slices"
 	"strings"
 
-	"paradox-modding-tools/services/internal/appdata"
 	"paradox-modding-tools/services/internal/inventory"
 	"paradox-modding-tools/services/internal/jomini"
 	"paradox-modding-tools/services/internal/schema"
@@ -132,7 +131,7 @@ func (table *table) ordinal(word string) int {
 func (index *Index) PlaceFiles() {
 	index.order, index.rels = make(map[string]int, len(index.Files)), make(map[string]int, len(index.Files))
 	for pos, file := range index.Files {
-		index.order[appdata.PathKey(file.Path)] = pos
+		index.order[inventory.PathKey(file.Path)] = pos
 		index.rels[strings.ToLower(file.Rel)] = pos
 	}
 }
@@ -161,7 +160,7 @@ func (index *Index) add(path string, file collected) {
 	if index.postings == nil {
 		index.Rebuild()
 	}
-	pos := index.order[appdata.PathKey(path)]
+	pos := index.order[inventory.PathKey(path)]
 	stored, texts := make([]Occurrence, 0, len(file.occurrences)), 0
 	language := uint8(index.Languages.ordinal(file.language))
 	for _, found := range file.occurrences {
@@ -189,7 +188,7 @@ func (index *Index) add(path string, file collected) {
 
 // Drop removes a file's occurrences and their listings.
 func (index *Index) Drop(path string) {
-	pos, listed := index.order[appdata.PathKey(path)]
+	pos, listed := index.order[inventory.PathKey(path)]
 	if !listed || len(index.Occurrences) <= pos {
 		return
 	}
@@ -204,10 +203,10 @@ func (index *Index) Drop(path string) {
 	index.Occurrences[pos], index.Texts[pos] = nil, nil
 }
 
-// At is the file listed at a path, by its appdata.PathKey (on Windows, whatever the case it is
+// At is the file listed at a path, by its inventory.PathKey (on Windows, whatever the case it is
 // spelled in).
 func (index *Index) At(path string) (inventory.File, bool) {
-	pos, listed := index.order[appdata.PathKey(path)]
+	pos, listed := index.order[inventory.PathKey(path)]
 	if !listed {
 		return inventory.File{}, false
 	}
@@ -216,7 +215,7 @@ func (index *Index) At(path string) (inventory.File, bool) {
 
 // InFile is every occurrence of the file at a path, in the file's order; none for a path not listed.
 func (index *Index) InFile(path string) (matches []At) {
-	pos, listed := index.order[appdata.PathKey(path)]
+	pos, listed := index.order[inventory.PathKey(path)]
 	if !listed || len(index.Occurrences) <= pos {
 		return nil
 	}
@@ -229,10 +228,10 @@ func (index *Index) InFile(path string) (matches []At) {
 // Forget removes a deleted file, or every file under a deleted folder, from the index: their
 // occurrences and their places in Files, so they no longer hide files at their Rels.
 func (index *Index) Forget(path string) {
-	path = appdata.PathKey(path)
+	path = inventory.PathKey(path)
 	listed := len(index.Files)
 	for pos := len(index.Files) - 1; pos >= 0; pos-- {
-		key := appdata.PathKey(index.Files[pos].Path)
+		key := inventory.PathKey(index.Files[pos].Path)
 		if key == path || strings.HasPrefix(key, path+string(filepath.Separator)) {
 			index.Files = slices.Delete(index.Files, pos, pos+1)
 			index.Occurrences = slices.Delete(index.Occurrences, pos, pos+1)

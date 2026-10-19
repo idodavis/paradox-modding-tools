@@ -153,7 +153,7 @@ func Rename(ws *workspace.Session, path string, line, col int, name string) (Wor
 	if ref == nil {
 		return edit, fmt.Errorf("nothing here to rename")
 	}
-	if !jomini.IsDefName(name) {
+	if !jomini.IsIdentifier(name) {
 		return edit, fmt.Errorf("%q is not a name the game reads", name)
 	}
 	origins := map[string]bool{}
@@ -173,24 +173,22 @@ func Rename(ws *workspace.Session, path string, line, col int, name string) (Wor
 	case len(origins) > 1:
 		return edit, fmt.Errorf("more than one mod defines %s", ref.ID)
 	}
-	texts := map[string][]string{}
+	parses := workspace.Parses{}
 	for _, site := range file.uses(*ref) {
 		if site.Origin == game.OriginVanilla {
 			return edit, fmt.Errorf("the game's %s uses %s, and its files never change", site.Rel, ref.ID)
 		}
-		if texts[site.Path] == nil {
-			text, err := ws.Text(site.Path)
-			if err != nil {
-				return edit, err
-			}
-			texts[site.Path] = strings.Split(text, "\n")
+		parsed, text, err := ws.Parsed(parses, site.Path)
+		if err != nil {
+			return edit, err
 		}
-		at, lines := site.Range.Start, texts[site.Path]
-		if at.Line >= len(lines) || !strings.HasPrefix(lines[at.Line][min(at.Character, len(lines[at.Line])):], ref.ID) {
-			return edit, fmt.Errorf("%s:%d does not read %s where it is used; rename it by hand", site.Rel, at.Line+1, ref.ID)
+		start := site.Range.Start
+		lineText := parsed.Lines().LineText(text, start.Line)
+		if !strings.HasPrefix(lineText[min(start.Character, len(lineText)):], ref.ID) {
+			return edit, fmt.Errorf("%s:%d does not read %s where it is used; rename it by hand", site.Rel, start.Line+1, ref.ID)
 		}
-		end := Position{Line: at.Line, Character: at.Character + len(ref.ID)}
-		edit.Changes[site.Path] = append(edit.Changes[site.Path], TextEdit{Range: Range{Start: at, End: end}, NewText: name})
+		end := Position{Line: start.Line, Character: start.Character + len(ref.ID)}
+		edit.Changes[site.Path] = append(edit.Changes[site.Path], TextEdit{Range: Range{Start: start, End: end}, NewText: name})
 	}
 	return edit, nil
 }

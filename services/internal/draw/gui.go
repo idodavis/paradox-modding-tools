@@ -256,11 +256,11 @@ func (resolver *guiResolver) entryWidget(definition statement, row entryRow) chi
 	default:
 		assignment = &jomini.Assignment{Key: jomini.Scalar{Text: "icon"}, Value: &jomini.Block{}, Range: definition.assignment.Range}
 		for _, field := range jomini.Fields(jomini.ChildBlock(definition.assignment)) {
-			if strings.EqualFold(field.Key.Text, "iconsize") && jomini.ScalarOf(jomini.BlockOf(field.Value), "texture") != nil {
+			if strings.EqualFold(field.Key.Text, "iconsize") && jomini.KeyValue(jomini.BlockOf(field.Value), "texture", jomini.Match{}) != nil {
 				assignment.Value = field.Value
 			}
 		}
-		if jomini.ScalarOf(jomini.BlockOf(assignment.Value), "texture") == nil {
+		if jomini.KeyValue(jomini.BlockOf(assignment.Value), "texture", jomini.Match{}) == nil {
 			resolver.addMissing("texticon", resolver.request.ID)
 		}
 	}

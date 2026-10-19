@@ -57,22 +57,22 @@ func TestInfo(t *testing.T) {
 		want Facts
 		bad  bool
 	}{
-		{"dxt5.dds", dds(256, 128, 9, 0x4, "DXT5", 0, 0), Facts{256, 128, "DXT5", 9}, false},
-		{"bc7.dds", dds(1024, 1024, 11, 0x4, "DX10", 0, 98), Facts{1024, 1024, "BC7", 11}, false},
-		{"bc7_srgb.dds", dds(60, 60, 1, 0x4, "DX10", 0, 99), Facts{60, 60, "BC7 sRGB", 1}, false},
-		{"odd.dds", dds(8, 8, 0, 0x4, "DX10", 0, 1234), Facts{8, 8, "DXGI 1234", 0}, false},
-		{"rgba.dds", dds(256, 256, 0, 0x41, "", 32, 0), Facts{256, 256, "RGBA8", 0}, false},
-		{"rgb.dds", dds(256, 256, 0, 0x40, "", 24, 0), Facts{256, 256, "RGB8", 0}, false},
-		{"rgbx.dds", dds(4, 4, 0, 0x40, "", 32, 0), Facts{4, 4, "RGBX8", 0}, false},
-		{"lum.dds", dds(16, 16, 0, 0x20000, "", 8, 0), Facts{16, 16, "8-bit", 0}, false},
-		{"half.dds", dds(64, 64, 1, 0x4, "q\x00\x00\x00", 0, 0), Facts{64, 64, "RGBA16F", 1}, false},
-		{"numbered.dds", dds(64, 64, 1, 0x4, "\x15\x00\x00\x00", 0, 0), Facts{64, 64, "D3DFMT 21", 1}, false},
+		{"dxt5.dds", dds(256, 128, 9, 0x4, "DXT5", 0, 0), Facts{256, 128, "DXT5", 9, ddsContainer}, false},
+		{"bc7.dds", dds(1024, 1024, 11, 0x4, "DX10", 0, 98), Facts{1024, 1024, "BC7", 11, ddsContainer}, false},
+		{"bc7_srgb.dds", dds(60, 60, 1, 0x4, "DX10", 0, 99), Facts{60, 60, "BC7 sRGB", 1, ddsContainer}, false},
+		{"odd.dds", dds(8, 8, 0, 0x4, "DX10", 0, 1234), Facts{8, 8, "DXGI 1234", 0, ddsContainer}, false},
+		{"rgba.dds", dds(256, 256, 0, 0x41, "", 32, 0), Facts{256, 256, "RGBA8", 0, ddsContainer}, false},
+		{"rgb.dds", dds(256, 256, 0, 0x40, "", 24, 0), Facts{256, 256, "RGB8", 0, ddsContainer}, false},
+		{"rgbx.dds", dds(4, 4, 0, 0x40, "", 32, 0), Facts{4, 4, "RGBX8", 0, ddsContainer}, false},
+		{"lum.dds", dds(16, 16, 0, 0x20000, "", 8, 0), Facts{16, 16, "8-bit", 0, ddsContainer}, false},
+		{"half.dds", dds(64, 64, 1, 0x4, "q\x00\x00\x00", 0, 0), Facts{64, 64, "RGBA16F", 1, ddsContainer}, false},
+		{"numbered.dds", dds(64, 64, 1, 0x4, "\x15\x00\x00\x00", 0, 0), Facts{64, 64, "D3DFMT 21", 1, ddsContainer}, false},
 
 		// the games ship a PNG named .dds: the file's own magic decides
-		{"really_png.dds", pngBytes.Bytes(), Facts{3, 2, "png", 0}, false},
-		{"x.PNG", pngBytes.Bytes(), Facts{3, 2, "png", 0}, false},
-		{"x.jpg", jpgBytes.Bytes(), Facts{3, 2, "jpeg", 0}, false},
-		{"x.tga", tga, Facts{64, 32, "TGA 32-bit", 0}, false},
+		{"really_png.dds", pngBytes.Bytes(), Facts{3, 2, "png", 0, standardContainer}, false},
+		{"x.PNG", pngBytes.Bytes(), Facts{3, 2, "png", 0, standardContainer}, false},
+		{"x.jpg", jpgBytes.Bytes(), Facts{3, 2, "jpeg", 0, standardContainer}, false},
+		{"x.tga", tga, Facts{64, 32, "TGA 32-bit", 0, tgaContainer}, false},
 
 		{"short.dds", []byte("DDS "), Facts{}, true},
 		{"empty.dds", nil, Facts{}, true},

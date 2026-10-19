@@ -4,24 +4,19 @@
 package pages
 
 import (
-	"bytes"
 	"context"
 	"fmt"
-	"io"
-	"os"
 	"path/filepath"
 	"regexp"
 	"runtime"
-	"slices"
 	"strings"
 	"sync"
 	"unicode/utf8"
 
-	"github.com/bmatcuk/doublestar/v4"
 	"golang.org/x/sync/errgroup"
 
-	"paradox-modding-tools/services/internal/appdata"
 	"paradox-modding-tools/services/internal/inventory"
+	"paradox-modding-tools/services/internal/jomini"
 )
 
 // TextSearchQuery is a Find-in-Files request from the workbench.
@@ -105,7 +100,7 @@ type FileSearchResult struct {
 // test, the cap, where a file's hits go) and what they count together (the hits sent, whether the cap was hit).
 type grep struct {
 	re      *regexp.Regexp
-	holds   func(data []byte) bool
+	holds   func(text string) bool
 	maxHits int
 	send    func(hits []TextSearchHit)
 
@@ -120,14 +115,14 @@ type replacer struct {
 	re       *regexp.Regexp
 	isRegexp bool
 	text     string
-	open     map[string]string // the editor's files by appdata.PathKey: their path
+	open     map[string]string // the editor's files by inventory.PathKey: their path
 	out      TextReplaceResult
 }
 
-// globSet is a folder's filters as patterns for doublestar: the paths to keep and the paths to drop.
+// globSet is a folder's filters as ignore rules: the paths to keep and the paths to drop.
 type globSet struct {
-	includes []string
-	excludes []string
+	includes inventory.Rules
+	excludes inventory.Rules
 }
 
 // maxResults is the most hits a search sends, whatever the page asks for.
@@ -182,7 +177,7 @@ func Replace(ctx context.Context, query TextReplaceQuery) (TextReplaceResult, er
 		out: TextReplaceResult{Texts: map[string]string{}},
 	}
 	for path := range query.Open {
-		replace.open[appdata.PathKey(path)] = path
+		replace.open[inventory.PathKey(path)] = path
 	}
 	for _, folder := range query.Search.Folders {
 		root := folderPath(folder)
@@ -233,19 +228,19 @@ func FileSearch(ctx context.Context, query FileSearchQuery) FileSearchResult {
 // wholeFileTest is the first look at a file for a plain query, in the whole of it, in any case where case is
 // ignored (an ASCII one compared in place, any other in a lower-cased copy); most files fail that, and only one
 // that holds it is matched line by line. A regular expression is tested by nothing: every file is matched.
-func wholeFileTest(query TextSearchQuery) func(data []byte) bool {
-	literal := []byte(query.Pattern)
-	switch ascii := utf8.RuneCount(literal) == len(literal); {
+func wholeFileTest(query TextSearchQuery) func(text string) bool {
+	literal := query.Pattern
+	switch ascii := utf8.RuneCountInString(literal) == len(literal); {
 	case query.IsRegexp:
-		return func([]byte) bool { return true }
+		return func(string) bool { return true }
 	case query.IsCaseSensitive:
-		return func(data []byte) bool { return bytes.Contains(data, literal) }
+		return func(text string) bool { return strings.Contains(text, literal) }
 	case ascii:
-		literal = bytes.ToLower(literal)
-		return func(data []byte) bool { return containsFold(data, literal) }
+		literal = strings.ToLower(literal)
+		return func(text string) bool { return containsFold(text, literal) }
 	}
-	literal = bytes.ToLower(literal)
-	return func(data []byte) bool { return bytes.Contains(bytes.ToLower(data), literal) }
+	literal = strings.ToLower(literal)
+	return func(text string) bool { return strings.Contains(strings.ToLower(text), literal) }
 }
 
 // compileSearch is the query's pattern as an expression: quoted unless it is a regular expression, held to whole
@@ -273,34 +268,32 @@ func folderPath(folder TextSearchFolder) string {
 	return path
 }
 
-// folderGlobs is a folder's filters as rg reads them: a glob with no ** matches at any depth, and a leading "!"
-// makes an include an exclude.
+// folderGlobs is a folder's filters as ignore rules, one rule a glob: a leading "!" makes an include an exclude.
 func folderGlobs(folder TextSearchFolder) globSet {
-	var globs globSet
-	add := func(glob string, exclude bool) {
-		glob = strings.TrimSpace(glob)
-		if rest, negated := strings.CutPrefix(glob, "!"); negated {
-			glob, exclude = strings.TrimSpace(rest), true
-		}
-		if glob == "" {
-			return
-		}
-		if !strings.Contains(glob, "**") {
-			glob = "**/" + strings.TrimPrefix(glob, "/")
-		}
-		if exclude {
-			globs.excludes = append(globs.excludes, glob)
-		} else {
-			globs.includes = append(globs.includes, glob)
-		}
-	}
+	var includes, excludes []string
 	for _, include := range folder.Includes {
-		add(include, false)
+		if rest, negated := strings.CutPrefix(strings.TrimSpace(include), "!"); negated {
+			excludes = append(excludes, rest)
+		} else {
+			includes = append(includes, include)
+		}
 	}
 	for _, exclude := range folder.Excludes {
-		add(exclude, true)
+		excludes = append(excludes, strings.TrimPrefix(strings.TrimSpace(exclude), "!"))
 	}
-	return globs
+	return globSet{
+		includes: inventory.IgnoreRules(strings.Join(includes, "\n")),
+		excludes: inventory.IgnoreRules(strings.Join(excludes, "\n")),
+	}
+}
+
+// keeps is whether the filters keep a file at rel under the folder: no exclude covers it, and with includes, one does
+// (a rule that matches a folder covers every file under it).
+func (globs globSet) keeps(rel string) bool {
+	if globs.excludes.Covers(rel) {
+		return false
+	}
+	return len(globs.includes) == 0 || globs.includes.Covers(rel)
 }
 
 // folder greps the files under root, sending each one's hits as it is done, at most the search's maxHits in all,
@@ -309,7 +302,7 @@ func (grep *grep) folder(ctx context.Context, root, origin string, globs globSet
 	ctx, cancel := context.WithCancel(ctx)
 	defer cancel()
 
-	// a worker per core, each with its own read buffer for the whole search, greps the files the walk hands it
+	// a worker per core greps the files the walk hands it
 	var group errgroup.Group
 	files := make(chan [2]string)
 	for range runtime.NumCPU() {
@@ -321,8 +314,8 @@ func (grep *grep) folder(ctx context.Context, root, origin string, globs globSet
 
 	// only a cancel ends the walk early, and the caller's ctx already says so
 	_ = searchFiles(ctx, root, globs, func(path, rel string) error {
-		// an image the format table names is never opened
-		if inventory.Classify(path, filepath.ToSlash(rel)) == inventory.Image {
+		// a file whose format holds no text (an image, a bank, a model) is never opened
+		if !inventory.Classify(path, rel).HoldsText() {
 			return nil
 		}
 		select {
@@ -339,18 +332,17 @@ func (grep *grep) folder(ctx context.Context, root, origin string, globs globSet
 	return count, stopped
 }
 
-// worker greps the files it is handed, one buffer kept across them, and sends each file's hits as it is done, as
-// many as the cap leaves; the hit that passes the cap cancels the search.
+// worker greps the files it is handed and sends each file's hits as it is done, as many as the cap leaves; the hit
+// that passes the cap cancels the search.
 func (grep *grep) worker(ctx context.Context, cancel context.CancelFunc, files <-chan [2]string, origin string) {
-	var buf []byte
 	for file := range files {
 		if ctx.Err() != nil {
 			continue
 		}
 		path, rel := file[0], file[1]
-		hits := grep.file(path, &buf)
+		hits := grep.file(path)
 		for i := range hits {
-			hits[i].Rel, hits[i].Origin = filepath.ToSlash(rel), origin
+			hits[i].Rel, hits[i].Origin = rel, origin
 		}
 		grep.mu.Lock()
 		kept := hits[:min(len(hits), grep.maxHits-grep.found)]
@@ -366,29 +358,21 @@ func (grep *grep) worker(ctx context.Context, cancel context.CancelFunc, files <
 	}
 }
 
-// file is path's matches, the file read into buf, which keeps what it grew to for the next file.
-func (grep *grep) file(path string, buf *[]byte) []TextSearchHit {
-	data := searchable(path, *buf)
-	if data != nil {
-		*buf = data[:0]
-	}
-	if data == nil || !grep.holds(data) {
+// file is path's matches; none for a file that is not text (inventory.LoadText).
+func (grep *grep) file(path string) []TextSearchHit {
+	loaded, err := inventory.LoadText(path)
+	if err != nil || !grep.holds(loaded.Content) {
 		return nil
 	}
-	text := string(data)
+	text := loaded.Content
+	lines := jomini.NewLineIndex(text)
 	var hits []TextSearchHit
-	lineNo := 0
-	for len(text) > 0 {
-		line, rest, hadNL := strings.Cut(text, "\n")
-		if !hadNL {
-			rest = ""
-		}
-		line = strings.TrimRight(line, "\r")
+	// the empty line after a last line ending is none: it starts at the end of the text
+	for lineNo := 0; lines.OffsetAt(lineNo, 0) < len(text); lineNo++ {
+		line := lines.LineText(text, lineNo)
 		for _, loc := range grep.re.FindAllStringIndex(line, -1) {
 			hits = append(hits, TextSearchHit{Path: path, Line: lineNo, Col: loc[0], End: loc[1], Preview: line})
 		}
-		lineNo++
-		text = rest
 	}
 	return hits
 }
@@ -397,19 +381,21 @@ func (grep *grep) file(path string, buf *[]byte) []TextSearchHit {
 // writing each changed file whole.
 func (replacer *replacer) disk(ctx context.Context, root string, globs globSet) error {
 	return searchFiles(ctx, root, globs, func(path, rel string) error {
-		_, isOpen := replacer.open[appdata.PathKey(path)]
-		if isOpen || inventory.Classify(path, filepath.ToSlash(rel)) == inventory.Image {
+		_, isOpen := replacer.open[inventory.PathKey(path)]
+		if isOpen || !inventory.Classify(path, rel).HoldsText() {
 			return nil
 		}
-		data := searchable(path, nil)
-		if data == nil {
+		text, err := inventory.LoadText(path)
+		if err != nil {
 			return nil
 		}
-		text, replaced := replaceLines(string(data), replacer.re, replacer.isRegexp, replacer.text)
+		content, replaced := replaceLines(text.Content, replacer.re, replacer.isRegexp, replacer.text)
 		if replaced == 0 {
 			return nil
 		}
-		if err := appdata.WriteBytes(path, []byte(text)); err != nil {
+		// the file is written as it was read: its byte order mark, and Windows-1252 where it was that
+		text.Content = content
+		if err := inventory.SaveText(path, text); err != nil {
 			return err
 		}
 		replacer.out.Replaced += replaced
@@ -422,8 +408,7 @@ func (replacer *replacer) disk(ctx context.Context, root string, globs globSet) 
 // off the editor's list so no later folder meets it again.
 func (replacer *replacer) openFiles(root string, globs globSet, texts map[string]string) {
 	for key, path := range replacer.open {
-		rel, err := filepath.Rel(root, path)
-		if err != nil || !filepath.IsLocal(rel) || !pathMatchesGlobs(rel, globs) {
+		if rel, inside := inventory.RelOf(root, path); !inside || !globs.keeps(rel) {
 			continue
 		}
 		if text, replaced := replaceLines(texts[path], replacer.re, replacer.isRegexp, replacer.text); replaced > 0 {
@@ -436,27 +421,25 @@ func (replacer *replacer) openFiles(root string, globs globSet, texts map[string
 }
 
 // replaceLines is a text with every match of the search replaced, a line at a time as the search matches (a line's
-// CR kept), and how many it replaced.
+// ending kept), and how many it replaced.
 func replaceLines(text string, re *regexp.Regexp, isRegexp bool, replacement string) (string, int) {
-	lines, replaced := strings.Split(text, "\n"), 0
-	for i, line := range lines {
-		body, cr := strings.CutSuffix(line, "\r")
+	lines, replaced := jomini.NewLineIndex(text), 0
+	var replacedText strings.Builder
+	for line := range lines.LineCount() {
+		start, body := lines.OffsetAt(line, 0), lines.LineText(text, line)
+		ending := text[start+len(body) : lines.OffsetAt(line+1, 0)]
 		matches := len(re.FindAllStringIndex(body, -1))
-		if matches == 0 {
-			continue
-		}
 		replaced += matches
-		if isRegexp {
+		switch {
+		case matches == 0:
+		case isRegexp:
 			body = re.ReplaceAllString(body, replacement)
-		} else {
+		default:
 			body = re.ReplaceAllLiteralString(body, replacement)
 		}
-		if cr {
-			body += "\r"
-		}
-		lines[i] = body
+		replacedText.WriteString(body + ending)
 	}
-	return strings.Join(lines, "\n"), replaced
+	return replacedText.String(), replaced
 }
 
 // capResults is the most hits a query gets: what it asks for, or the cap where it asks for none or more.
@@ -467,78 +450,33 @@ func capResults(requested int) int {
 	return requested
 }
 
-// searchable is a file's bytes as a search reads them, read into buf (grown as needed; nil for a new one); none
-// where it can't be read, is empty, is over the size cap or is binary.
-func searchable(path string, buf []byte) []byte {
-	file, err := os.Open(path)
-	if err != nil {
-		return nil
-	}
-	defer func() { _ = file.Close() }()
-	info, err := file.Stat()
-	if err != nil || info.Size() == 0 || info.Size() > inventory.MaxTextBytes {
-		return nil
-	}
-	// a NUL in the head marks the file binary and the rest is never read, which keeps a mod's meshes
-	// and images out of the search without listing extensions
-	size, probe := int(info.Size()), min(inventory.BinaryHead, int(info.Size()))
-	head := slices.Grow(buf[:0], probe)[:probe]
-	if _, err := io.ReadFull(file, head); err != nil || inventory.Binary(head) {
-		return nil
-	}
-	data := slices.Grow(head, size-probe)[:size]
-	if _, err := io.ReadFull(file, data[probe:]); err != nil {
-		return nil
-	}
-	return data
-}
-
-// containsFold is whether data holds lit in any case, lit lower-cased ASCII, compared in place.
-func containsFold(data, lit []byte) bool {
-	cases := string(lit[0]) + strings.ToUpper(string(lit[0]))
-	for len(data) >= len(lit) {
-		i := bytes.IndexAny(data, cases)
-		if i < 0 || len(data)-i < len(lit) {
+// containsFold is whether text holds lit in any case, lit lower-cased ASCII, compared in place.
+func containsFold(text, lit string) bool {
+	cases := lit[:1] + strings.ToUpper(lit[:1])
+	for len(text) >= len(lit) {
+		i := strings.IndexAny(text, cases)
+		if i < 0 || len(text)-i < len(lit) {
 			return false
 		}
-		if bytes.EqualFold(data[i:i+len(lit)], lit) {
+		if strings.EqualFold(text[i:i+len(lit)], lit) {
 			return true
 		}
-		data = data[i+1:]
+		text = text[i+1:]
 	}
 	return false
 }
 
 // searchFiles visits each file under root that the folder's globs keep, by the engine's walk (linked folders
-// followed, .git never entered); visit returning filepath.SkipAll stops it, and so does a canceled ctx.
+// followed, dot names, files and folders, left out); visit returning filepath.SkipAll stops it, and so does a canceled
+// ctx.
 func searchFiles(ctx context.Context, root string, globs globSet, visit func(path, rel string) error) error {
 	return inventory.Walk(root, func(path string) error {
 		if err := ctx.Err(); err != nil {
 			return err
 		}
-		if rel, err := filepath.Rel(root, path); err == nil && pathMatchesGlobs(rel, globs) {
+		if rel, inside := inventory.RelOf(root, path); inside && globs.keeps(rel) {
 			return visit(path, rel)
 		}
 		return nil
 	})
-}
-
-// pathMatchesGlobs is whether a path from the folder's root is kept: no exclude matches it, and with includes, one
-// matches it.
-func pathMatchesGlobs(rel string, globs globSet) bool {
-	rel = filepath.ToSlash(rel)
-	for _, exclude := range globs.excludes {
-		if matches, _ := doublestar.Match(exclude, rel); matches {
-			return false
-		}
-	}
-	if len(globs.includes) == 0 {
-		return true
-	}
-	for _, include := range globs.includes {
-		if matches, _ := doublestar.Match(include, rel); matches {
-			return true
-		}
-	}
-	return false
 }

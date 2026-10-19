@@ -71,8 +71,7 @@ func (ws *Session) Locate(path string) (inventory.File, *Mod, bool) {
 	}
 	under := func(roots []string, origin string) (inventory.File, bool) {
 		for _, root := range roots {
-			if rel, err := filepath.Rel(root, path); err == nil && filepath.IsLocal(rel) {
-				rel = filepath.ToSlash(rel)
+			if rel, inside := inventory.RelOf(root, path); inside {
 				return inventory.File{Path: path, Rel: rel, Origin: origin, Format: inventory.Classify(path, rel)}, true
 			}
 		}

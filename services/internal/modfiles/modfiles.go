@@ -8,7 +8,6 @@
 package modfiles
 
 import (
-	"bytes"
 	"cmp"
 	"encoding/json"
 	"fmt"
@@ -17,10 +16,10 @@ import (
 	"path/filepath"
 	"slices"
 	"strings"
-	"unicode"
 
 	"paradox-modding-tools/services/internal/appdata"
 	"paradox-modding-tools/services/internal/game"
+	"paradox-modding-tools/services/internal/inventory"
 	"paradox-modding-tools/services/internal/jomini"
 	"paradox-modding-tools/services/internal/loc"
 )
@@ -78,7 +77,7 @@ var ThumbnailExts = []string{".png", ".gif", ".jpg", ".jpeg"}
 // LoadDescriptor loads the mod's descriptor: descriptor.mod or metadata.json, per its game. A missing one loads as
 // no fields.
 func LoadDescriptor(gameID, root string) (ListingFields, error) {
-	raw, err := os.ReadFile(game.DescriptorPath(gameID, root))
+	text, err := inventory.LoadText(game.DescriptorPath(gameID, root))
 	if os.IsNotExist(err) {
 		return ListingFields{}, nil
 	}
@@ -86,12 +85,12 @@ func LoadDescriptor(gameID, root string) (ListingFields, error) {
 		return ListingFields{}, err
 	}
 	if info := game.Get(gameID); info != nil && info.ModDescriptor == game.MetadataDescriptor {
-		fields, err := readMetadataJSON(raw)
-		id, _ := os.ReadFile(filepath.Join(root, filepath.FromSlash(steamItemRel)))
-		fields.RemoteFileID = strings.TrimSpace(string(id))
+		fields, err := readMetadataJSON(text.Content)
+		steamItem, _ := inventory.LoadText(inventory.Join(root, steamItemRel))
+		fields.RemoteFileID = strings.TrimSpace(steamItem.Content)
 		return fields, err
 	}
-	return loadDescriptorMod(string(raw)), nil
+	return loadDescriptorMod(text.Content), nil
 }
 
 // loadDescriptorMod reads a descriptor.mod's listing fields from its top-level statements: a key a listing field
@@ -140,11 +139,10 @@ func modField(key string) (listingField, bool) {
 	return listingField{}, false
 }
 
-// readMetadataJSON reads a metadata.json's listing fields; a leading byte-order mark, common in EU5 mods, is dropped
-// first, as encoding/json rejects it.
-func readMetadataJSON(raw []byte) (ListingFields, error) {
+// readMetadataJSON reads a metadata.json's listing fields.
+func readMetadataJSON(content string) (ListingFields, error) {
 	var metadata map[string]any
-	if err := json.Unmarshal(bytes.TrimPrefix(raw, []byte(jomini.BOM)), &metadata); err != nil {
+	if err := json.Unmarshal([]byte(content), &metadata); err != nil {
 		return ListingFields{}, err
 	}
 	var fields ListingFields
@@ -174,26 +172,26 @@ func firstString(metadata map[string]any, keys ...string) string {
 	return ""
 }
 
-// WriteDescriptor patches the known keys and keeps the rest of the file as written.
+// WriteDescriptor patches the known keys and keeps the rest of the file as written, its byte-order mark and encoding
+// too.
 func WriteDescriptor(gameID, root string, fields ListingFields) error {
 	descriptor := game.DescriptorPath(gameID, root)
-	raw, err := os.ReadFile(descriptor)
+	text, err := inventory.LoadText(descriptor)
 	if err != nil && !os.IsNotExist(err) {
 		return err
 	}
 	// a descriptor that is not there yet is patched from nothing
-	var next []byte
 	if info := game.Get(gameID); info != nil && info.ModDescriptor == game.MetadataDescriptor {
-		if next, err = patchMetadataJSON(raw, fields); err != nil {
+		if text.Content, err = patchMetadataJSON(text.Content, fields); err != nil {
 			return err
 		}
 		if err := writeSteamItem(root, fields.RemoteFileID); err != nil {
 			return err
 		}
 	} else {
-		next = []byte(patchDescriptorMod(string(raw), fields))
+		text.Content = patchDescriptorMod(text.Content, fields)
 	}
-	return appdata.WriteBytes(descriptor, next)
+	return inventory.SaveText(descriptor, text)
 }
 
 // patchDescriptorMod writes the listing fields into a descriptor.mod by the range of each statement it changes, so
@@ -269,13 +267,12 @@ func tagsBlock(tags []string) string {
 	return block + "\n}"
 }
 
-// patchMetadataJSON writes the listing fields into a metadata.json, keeping its byte-order mark.
-func patchMetadataJSON(raw []byte, fields ListingFields) ([]byte, error) {
+// patchMetadataJSON writes the listing fields into a metadata.json's content.
+func patchMetadataJSON(content string, fields ListingFields) (string, error) {
 	metadata := map[string]any{}
-	body, marked := bytes.CutPrefix(raw, []byte(jomini.BOM))
-	if len(body) > 0 {
-		if err := json.Unmarshal(body, &metadata); err != nil {
-			return nil, err
+	if content != "" {
+		if err := json.Unmarshal([]byte(content), &metadata); err != nil {
+			return "", err
 		}
 	}
 	for _, field := range listingFields {
@@ -301,25 +298,19 @@ func patchMetadataJSON(raw []byte, fields ListingFields) ([]byte, error) {
 		metadata["tags"] = tags
 	}
 	out, err := json.MarshalIndent(metadata, "", "  ")
-	if err != nil {
-		return nil, err
-	}
-	if marked {
-		out = append([]byte(jomini.BOM), out...)
-	}
-	return append(out, '\n'), nil
+	return string(out) + "\n", err
 }
 
 // writeSteamItem keeps a metadata.json mod's Workshop id in steamItemRel; no id, no file.
 func writeSteamItem(root, id string) error {
-	file := filepath.Join(root, filepath.FromSlash(steamItemRel))
+	file := inventory.Join(root, steamItemRel)
 	if id = strings.TrimSpace(id); id == "" {
 		if err := os.Remove(file); err != nil && !os.IsNotExist(err) {
 			return err
 		}
 		return nil
 	}
-	return appdata.WriteBytes(file, []byte(id+"\n"))
+	return inventory.SaveText(file, inventory.Text{Content: id + "\n"})
 }
 
 // Thumbnail is the mod's listing image relative to its root: thumbnail.<ext> where its game or the mod keeps one,
@@ -336,10 +327,11 @@ func Thumbnail(gameID, root, picture string) (string, bool) {
 		candidates = append(candidates, path.Clean(filepath.ToSlash(picture)), path.Join(game.MetadataDir, filepath.ToSlash(picture)))
 	}
 	for _, rel := range candidates {
-		if !filepath.IsLocal(filepath.FromSlash(rel)) {
+		file := inventory.Join(root, rel)
+		if _, inside := inventory.RelOf(root, file); !inside {
 			continue
 		}
-		if _, err := os.Stat(filepath.Join(root, filepath.FromSlash(rel))); err == nil {
+		if _, err := os.Stat(file); err == nil {
 			return rel, true
 		}
 	}
@@ -372,12 +364,12 @@ func CopyThumbnail(gameID, root, src string) (string, error) {
 	if known {
 		rel = strings.TrimSuffix(existing, path.Ext(existing)) + ext
 	}
-	if err := appdata.CopyFile(src, filepath.Join(root, filepath.FromSlash(rel))); err != nil {
+	if err := appdata.CopyFile(src, inventory.Join(root, rel)); err != nil {
 		return "", err
 	}
 	// a new extension: the superseded file goes, so there are never two to choose between
 	if known && rel != existing {
-		_ = os.Remove(filepath.Join(root, filepath.FromSlash(existing)))
+		_ = os.Remove(inventory.Join(root, existing))
 	}
 	return rel, nil
 }
@@ -391,22 +383,10 @@ func DefaultModParent(gameID string) string {
 	return filepath.Join(userData, "mod")
 }
 
-// Slug is a filesystem-safe folder name from a display name.
-func Slug(name string) string {
-	var slug strings.Builder
-	pendingUnderscore := false
-	for _, char := range strings.ToLower(strings.TrimSpace(name)) {
-		if unicode.IsLetter(char) || unicode.IsDigit(char) {
-			slug.WriteRune(char)
-			pendingUnderscore = false
-			continue
-		}
-		if !pendingUnderscore {
-			slug.WriteByte('_')
-			pendingUnderscore = true
-		}
-	}
-	return cmp.Or(strings.Trim(slug.String(), "_"), "mod")
+// FolderName is the folder name of a mod called name, which also names its metadata id and its localization stub:
+// inventory.FileName of it, and "mod" for a name that leaves nothing.
+func FolderName(name string) string {
+	return cmp.Or(inventory.FileName(name), "mod")
 }
 
 // Create creates root with a descriptor, each of the game's ModFolders empty but for a loc stub in the localization
@@ -443,14 +423,14 @@ func Create(opts NewModOpts) error {
 		fields.SupportedVersion = ""
 	}
 	if info.ModDescriptor == game.MetadataDescriptor {
-		fields.Version, fields.ID = "1.0.0", Slug(name)
+		fields.Version, fields.ID = "1.0.0", FolderName(name)
 	}
 	if err := WriteDescriptor(opts.GameID, root, fields); err != nil {
 		return err
 	}
 	language, locDir := cmp.Or(strings.TrimSpace(opts.LocLang), game.BaseLanguage), ""
 	for _, folder := range info.ModFolders {
-		dir := filepath.Join(root, filepath.FromSlash(folder))
+		dir := inventory.Join(root, folder)
 		if strings.HasSuffix("/"+folder, "/localization") {
 			dir = filepath.Join(dir, language)
 			locDir = dir
@@ -462,6 +442,6 @@ func Create(opts NewModOpts) error {
 	if locDir == "" {
 		return nil
 	}
-	locName := Slug(name) + "_l_" + language + ".yml"
-	return appdata.WriteBytes(filepath.Join(locDir, locName), loc.Stub(language))
+	locName := FolderName(name) + "_l_" + language + ".yml"
+	return appdata.WriteBytes(filepath.Join(locDir, locName), loc.File(language, nil))
 }

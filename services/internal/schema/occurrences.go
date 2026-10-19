@@ -102,9 +102,8 @@ func (walk *fileWalk) callOccurrences(occurrences []Occurrence, scalar *jomini.S
 	}
 	start := scalar.TextStart()
 	dataType := walk.dataContext(block, scalar)
-	for _, segment := range jomini.Calls(scalar.Text, start) {
-		steps := jomini.ParseCall(scalar.Text[segment.Start-start:segment.End-start], segment.Start)
-		occurrences = walk.stepOccurrences(occurrences, steps, dataType)
+	for _, call := range jomini.DataCalls(scalar.Text, start) {
+		occurrences = walk.stepOccurrences(occurrences, call.Steps, dataType)
 	}
 	return occurrences
 }
@@ -149,8 +148,8 @@ func (walk *fileWalk) dataContext(block *jomini.Block, held *jomini.Scalar) stri
 			continue
 		}
 		start := scalar.TextStart()
-		if calls := jomini.Calls(scalar.Text, start); len(calls) > 0 {
-			return walk.schema.CallLeadsTo(jomini.ParseCall(scalar.Text[calls[0].Start-start:calls[0].End-start], calls[0].Start), "")
+		if calls := jomini.DataCalls(scalar.Text, start); len(calls) > 0 {
+			return walk.schema.CallLeadsTo(calls[0].Steps, "")
 		}
 	}
 	return ""
@@ -206,7 +205,7 @@ func (walk *fileWalk) facts(context, inner Context, statement jomini.Statement, 
 		facts.atEntry = facts.database != nil && context.At == facts.database.Entry
 	}
 	_, constant := jomini.Constant(scalar.Text)
-	facts.named = scalar.Text != "" && !constant && len(jomini.Interpolations(scalar.Text)) == 0
+	facts.named = scalar.Text != "" && !constant && len(jomini.Parameters(scalar.Text)) == 0
 	inEntry := context.Database != nil
 	facts.reads = isKey && !facts.isEntry && inEntry || !isKey && (facts.isEntry || inEntry) && facts.named
 	if facts.position = ValuePosition(statement, context, inner); facts.position != nil {
@@ -340,7 +339,7 @@ func (walk *fileWalk) parameterDefinitions(occurrences []Occurrence, scalar *jom
 		return occurrences
 	}
 	start := scalar.TextStart()
-	for _, span := range jomini.Interpolations(scalar.Text) {
+	for _, span := range jomini.Parameters(scalar.Text) {
 		name := facts.entryID + ":" + span.Name
 		if !walk.defined[name] {
 			walk.defined[name] = true

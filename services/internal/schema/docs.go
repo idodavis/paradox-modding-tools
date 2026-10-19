@@ -172,7 +172,8 @@ var keyWord = regexp.MustCompile(`^-?[\w@$](?:[\w.:@$/|-]*[\w$])?$`)
 // indentation closes that block first. A comment trailing a line belongs to the first statement starting on it; a
 // whole-line comment under a trailing comment, in its column, continues it; a run of whole-line comments on
 // consecutive lines leads the statement on the next line; a heading or an empty comment keeps a run together but
-// says nothing.
+// says nothing. These are the rules of jomini's Attach, which gives a trailing comment to the outermost statement
+// starting on its line where this gives it to the first, and which keeps headings.
 func parseDocScript(lines []string) *DocNode {
 	parse := &docParse{root: &DocNode{}, runLine: -2, trailLine: -2}
 	parse.blocks = []docBlock{{node: parse.root}}
@@ -497,10 +498,10 @@ func (schema *Schema) parseDocs(ctx context.Context, input Input) (docs []doc, e
 			continue
 		}
 		text, err := file.Text()
-		if err != nil || len(text) > 1<<20 {
+		if err != nil {
 			continue
 		}
-		lines := strings.Split(text, "\n")
+		lines := docLines(text.Content)
 		if strings.EqualFold(path.Ext(file.Rel), ".md") {
 			for n, line := range lines {
 				if strings.HasPrefix(line, "#") {
@@ -521,6 +522,16 @@ func (schema *Schema) parseDocs(ctx context.Context, input Input) (docs []doc, e
 		noteFields(document.tree, schema.Databases[document.database].Fields)
 	}
 	return docs, nil
+}
+
+// docLines is a text split into its lines as the line index ends them, none keeping its ending.
+func docLines(text string) []string {
+	lines := jomini.NewLineIndex(text)
+	texts := make([]string, lines.LineCount())
+	for number := range texts {
+		texts[number] = lines.LineText(text, number)
+	}
+	return texts
 }
 
 // parseWiki is the wiki's script examples, asked for by the names of the databases declared so far and parsed
@@ -547,7 +558,7 @@ func (schema *Schema) parseWiki(ctx context.Context, input Input) (docs []doc, e
 			continue
 		}
 		for _, text := range examples[name] {
-			docs = append(docs, doc{name, parseDocScript(strings.Split(text, "\n")), SourceWiki})
+			docs = append(docs, doc{name, parseDocScript(docLines(text)), SourceWiki})
 		}
 	}
 	return docs, nil

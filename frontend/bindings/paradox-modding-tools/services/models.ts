@@ -18,14 +18,6 @@ import * as texture$0 from "./internal/texture/models.js";
 import * as workspace$0 from "./internal/workspace/models.js";
 
 /**
- * DirEntry is one immediate child of a directory (for lazy file trees).
- */
-export interface DirEntry {
-    "name": string;
-    "isDir": boolean;
-}
-
-/**
  * FSChanged is one path under a mod that changed on disk; Deleted when it is gone.
  */
 export interface FSChanged {

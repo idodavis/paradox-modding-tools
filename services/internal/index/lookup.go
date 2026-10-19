@@ -8,7 +8,6 @@ import (
 	"slices"
 	"strings"
 
-	"paradox-modding-tools/services/internal/appdata"
 	"paradox-modding-tools/services/internal/game"
 	"paradox-modding-tools/services/internal/inventory"
 	"paradox-modding-tools/services/internal/schema"
@@ -57,7 +56,7 @@ func FileAt(indexes []*Index, rel string) (inventory.File, bool) {
 // Loaded is the file listed at a path of the indexes and whether the game loads it: it is hidden by
 // a later file at its Rel, in its index or a later one, or by a later index's Replaced.
 func Loaded(indexes []*Index, path string) (inventory.File, bool) {
-	path = appdata.PathKey(path)
+	path = inventory.PathKey(path)
 	for rank, index := range indexes {
 		pos, listed := index.order[path]
 		if !listed {

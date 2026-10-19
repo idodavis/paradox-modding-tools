@@ -113,14 +113,14 @@ func localizationOf(ctx context.Context, req Request, input *schema.Input) (map[
 		if file.Format != inventory.Loc {
 			continue
 		}
-		if named := loc.LanguageFromRel(file.Rel); named == "" || slices.Contains(languages, named) {
+		if named := loc.Language("", file.Rel); named == "" || slices.Contains(languages, named) {
 			locs = append(locs, file)
 		}
 	}
 	input.LocKeys = map[string]bool{}
 	err := inventory.Ordered(ctx, locs, func(file inventory.File) collected {
 		text, _ := file.Text()
-		return collectLoc(req.Game, file, text, languages)
+		return collectLoc(req.Game, file, text.Content, languages)
 	}, func(file inventory.File, kept collected) {
 		if len(kept.occurrences) > 0 {
 			localized[file.Path] = kept

@@ -1,30 +1,31 @@
-// appdata.go is the folders, the write every other file here goes through, and the stored form.
+// appdata.go is the folders, the write every other file here goes through, the app's JSON files and the stored form.
 
 // Package appdata is this machine's files: the app's own folders, the write that keeps a reader from
-// seeing half a file, the form a cache or shipped file is stored in, and the names fit for them.
-// Nothing here understands the script language.
+// seeing half a file, the one load-and-write pair of the app's JSON files, and the form a cache or shipped
+// file is stored in. Nothing here understands the script language.
 package appdata
 
 import (
+	"bytes"
 	"compress/gzip"
 	"encoding/gob"
+	"encoding/json"
 	"errors"
 	"fmt"
 	"io"
 	"os"
 	"path/filepath"
 	"regexp"
-	"runtime"
-	"strings"
 	"sync"
+
+	"paradox-modding-tools/services/internal/jomini"
 )
 
 // writing is the temporary files a Write of this process is filling; tempPattern matches the names CreateTemp gives
-// them; unsafeName is what SafeName replaces.
+// them.
 var (
 	writing     sync.Map
 	tempPattern = regexp.MustCompile(`^\..+\.pmt\d+$`)
-	unsafeName  = regexp.MustCompile(`[^A-Za-z0-9._-]`)
 )
 
 // Dir is the app's own folder under the user's config directory, made if missing.
@@ -45,16 +46,6 @@ func CacheDir() (string, error) {
 	}
 	dir := filepath.Join(app, "cache")
 	return dir, os.MkdirAll(dir, 0o755)
-}
-
-// PathKey is the key a file on this machine is known by: its path cleaned, and on Windows, where the file system
-// ignores case, lower-cased; elsewhere two paths that differ only by case are two files.
-func PathKey(path string) string {
-	path = filepath.Clean(path)
-	if runtime.GOOS == "windows" {
-		return strings.ToLower(path)
-	}
-	return path
 }
 
 // Write builds path's new contents through fill in a temporary file beside it, then puts that file
@@ -136,6 +127,22 @@ func IsLeftoverTemp(path string) bool {
 	return tempPattern.MatchString(filepath.Base(path)) && !filling
 }
 
+// LoadJSON decodes the JSON file at path into value, a pointer; a leading byte order mark is dropped, as
+// encoding/json rejects it. A file that is not there is the error os.ReadFile gives, which errors.Is knows as
+// os.ErrNotExist.
+func LoadJSON(path string, value any) error {
+	data, err := os.ReadFile(path)
+	if err != nil {
+		return err
+	}
+	return json.Unmarshal(bytes.TrimPrefix(data, []byte(jomini.BOM)), value)
+}
+
+// SaveJSON writes value to path as JSON, whole or not at all (Write).
+func SaveJSON(path string, value any) error {
+	return Write(path, func(out io.Writer) error { return json.NewEncoder(out).Encode(value) })
+}
+
 // Encode writes value to out as gob inside gzip, the form of the install cache and the shipped
 // schemas.
 func Encode(out io.Writer, value any) error {
@@ -154,10 +161,4 @@ func Decode(source io.Reader, value any) error {
 	}
 	defer func() { _ = unzip.Close() }()
 	return gob.NewDecoder(unzip).Decode(value)
-}
-
-// SafeName is a name fit for a file name, each character outside [A-Za-z0-9._-] turned into "_":
-// "build 24187685" is build_24187685. The shipped schemas and the install cache are named by it.
-func SafeName(name string) string {
-	return unsafeName.ReplaceAllString(name, "_")
 }

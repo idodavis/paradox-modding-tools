@@ -90,7 +90,7 @@ const windows = computed(() =>
         <UButton label="Copy diagnostics" icon="i-lucide-clipboard-copy" @click="copyDiagnostics()" />
       </template>
     </UModal>
-    <UTooltip text="Check for updates">
+    <UTooltip text="Check for updates (downloads beside the app; keep it in a folder you can write to)">
       <button type="button" :class="ITEM" :disabled="checking" @click="checkForUpdates()">
         {{ version }}
       </button>

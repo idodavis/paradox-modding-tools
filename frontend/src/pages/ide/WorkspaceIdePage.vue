@@ -113,17 +113,17 @@ const STRIP = 36;
 const panes = computed(() => [
   ...(isMain || own.value.length
     ? [
-      {
-        id: "sidebar",
-        slot: "sidebar",
-        order: 1,
-        sizeUnit: "px" as const,
-        defaultSize: 264,
-        minSize: 170,
-        collapsible: isMain,
-        collapsedSize: STRIP,
-      },
-    ]
+        {
+          id: "sidebar",
+          slot: "sidebar",
+          order: 1,
+          sizeUnit: "px" as const,
+          defaultSize: 264,
+          minSize: 170,
+          collapsible: isMain,
+          collapsedSize: STRIP,
+        },
+      ]
     : []),
   ...(windowPart !== "panel" ? [{ id: "editors", slot: "editors", order: 2, minSize: 33 }] : []),
 ]);
@@ -145,16 +145,16 @@ const explorerPanes = computed(() => [
     : gameOpen.value
       ? [{ id: "game", slot: "game", order: 2, sizeUnit: "px" as const, minSize: 120 }]
       : [
-        {
-          id: "game-folded",
-          slot: "game",
-          order: 2,
-          sizeUnit: "px" as const,
-          defaultSize: 33,
-          minSize: 33,
-          maxSize: 33,
-        },
-      ]),
+          {
+            id: "game-folded",
+            slot: "game",
+            order: 2,
+            sizeUnit: "px" as const,
+            defaultSize: 33,
+            minSize: 33,
+            maxSize: 33,
+          },
+        ]),
 ]);
 
 // the IDE's keys while it is the page shown, in the editor too
@@ -166,13 +166,13 @@ defineShortcuts(
   computed(() =>
     visible.value
       ? {
-        meta_shift_w: key(() => editor.toggleWiki()),
-        meta_shift_f: key(() => editor.openSidebar("search")),
-        meta_shift_e: key(() => editor.openSidebar("explorer")),
-        meta_j: key(() => (editor.panel = editor.panel ? "" : "problems")),
-        "meta_\\": key(() => editor.split("right")),
-        meta_shift_v: key(() => editor.cycleView(editor.activeTab)),
-      }
+          meta_shift_w: key(() => editor.toggleWiki()),
+          meta_shift_f: key(() => editor.openSidebar("search")),
+          meta_shift_e: key(() => editor.openSidebar("explorer")),
+          meta_j: key(() => (editor.panel = editor.panel ? "" : "problems")),
+          "meta_\\": key(() => editor.split("right")),
+          meta_shift_v: key(() => editor.cycleView(editor.activeTab)),
+        }
       : {},
   ),
 );
@@ -265,39 +265,78 @@ function showProblems(): void {
 <template>
   <div class="nokey flex h-full min-h-0">
     <IdePanel v-if="windowPart === 'panel'" :workspace-id="id" />
-    <USplitter ref="splitter" :items="panes" auto-save-id="pmt.ide" class="min-w-0 flex-1"
-      @collapse="(index: number) => onFold(index, false)" @expand="(index: number) => onFold(index, true)"
-      @dragging="onDragging">
+    <USplitter
+      ref="splitter"
+      :items="panes"
+      auto-save-id="pmt.ide"
+      class="min-w-0 flex-1"
+      @collapse="(index: number) => onFold(index, false)"
+      @expand="(index: number) => onFold(index, true)"
+      @dragging="onDragging"
+    >
       <template #sidebar>
-        <aside v-if="isMain && !editor.sidebarOpen"
-          class="flex min-h-0 w-9 flex-1 flex-col items-center gap-0.5 border-e border-default bg-muted py-1.5">
+        <aside
+          v-if="isMain && !editor.sidebarOpen"
+          class="flex min-h-0 w-9 flex-1 flex-col items-center gap-0.5 border-e border-default bg-muted py-1.5"
+        >
           <UTooltip v-for="one in SIDEBAR_TABS" :key="one.tab" :text="one.label" :content="{ side: 'right' }">
-            <UButton :icon="one.icon" square variant="ghost" color="neutral" :ui="{ leadingIcon: 'size-4.5' }"
-              :aria-label="one.label" @click="clickSidebar(one.tab)" />
+            <UButton
+              :icon="one.icon"
+              square
+              variant="ghost"
+              color="neutral"
+              :ui="{ leadingIcon: 'size-4.5' }"
+              :aria-label="one.label"
+              @click="clickSidebar(one.tab)"
+            />
           </UTooltip>
           <span class="grow" />
           <IdeSettingsCard />
         </aside>
-        <aside v-else-if="isMain"
-          class="flex min-h-0 min-w-0 flex-1 flex-col border-e border-default bg-muted text-(length:--ide-ui-font)">
+        <aside
+          v-else-if="isMain"
+          class="flex min-h-0 min-w-0 flex-1 flex-col border-e border-default bg-muted text-(length:--ide-ui-font)"
+        >
           <div class="flex h-9 shrink-0 items-center gap-0.5 border-b border-default px-1.5">
-            <UButton v-for="one in SIDEBAR_TABS" :key="one.tab" :icon="one.icon" square
-              :ui="{ leadingIcon: 'size-4.5' }" :aria-label="one.label"
+            <UButton
+              v-for="one in SIDEBAR_TABS"
+              :key="one.tab"
+              :icon="one.icon"
+              square
+              :ui="{ leadingIcon: 'size-4.5' }"
+              :aria-label="one.label"
               :color="editor.sidebar === one.tab ? 'primary' : 'neutral'"
-              :variant="editor.sidebar === one.tab ? 'soft' : 'ghost'" @click="clickSidebar(one.tab)" />
+              :variant="editor.sidebar === one.tab ? 'soft' : 'ghost'"
+              @click="clickSidebar(one.tab)"
+            />
             <span class="grow" />
             <template v-if="editor.sidebar === 'git' && git.repo">
               <UTooltip text="Fetch">
-                <UButton icon="i-lucide-cloud-download" variant="ghost" square aria-label="Fetch"
-                  @click="git.run(Fetch)" />
+                <UButton
+                  icon="i-lucide-cloud-download"
+                  variant="ghost"
+                  square
+                  aria-label="Fetch"
+                  @click="git.run(Fetch)"
+                />
               </UTooltip>
               <UTooltip text="Pull">
-                <UButton icon="i-lucide-arrow-down-to-line" variant="ghost" square aria-label="Pull"
-                  @click="git.run((root) => Pull(root, '', ''))" />
+                <UButton
+                  icon="i-lucide-arrow-down-to-line"
+                  variant="ghost"
+                  square
+                  aria-label="Pull"
+                  @click="git.run((root) => Pull(root, '', ''))"
+                />
               </UTooltip>
               <UTooltip text="Push">
-                <UButton icon="i-lucide-arrow-up-from-line" variant="ghost" square aria-label="Push"
-                  @click="git.run(Push)" />
+                <UButton
+                  icon="i-lucide-arrow-up-from-line"
+                  variant="ghost"
+                  square
+                  aria-label="Push"
+                  @click="git.run(Push)"
+                />
               </UTooltip>
               <UDropdownMenu :items="gitMore">
                 <UButton icon="i-lucide-ellipsis" variant="ghost" square aria-label="More source control actions" />
@@ -305,58 +344,101 @@ function showProblems(): void {
               <USeparator orientation="vertical" class="mx-0.5 h-4" />
             </template>
             <UTooltip v-if="editor.sidebar === 'explorer'" text="Collapse all">
-              <UButton icon="i-lucide-chevrons-down-up" variant="ghost" square :ui="{ leadingIcon: 'size-4.5' }"
-                aria-label="Collapse all" @click="collapseAll" />
+              <UButton
+                icon="i-lucide-chevrons-down-up"
+                variant="ghost"
+                square
+                :ui="{ leadingIcon: 'size-4.5' }"
+                aria-label="Collapse all"
+                @click="collapseAll"
+              />
             </UTooltip>
             <IdeSettingsCard />
           </div>
-          <USplitter v-show="editor.sidebar === 'explorer'" :items="explorerPanes" orientation="vertical"
-            :disabled="!gameOpen" auto-save-id="pmt.ide.explorer" class="min-h-0 flex-1 py-1">
+          <USplitter
+            v-show="editor.sidebar === 'explorer'"
+            :items="explorerPanes"
+            orientation="vertical"
+            :disabled="!gameOpen"
+            auto-save-id="pmt.ide.explorer"
+            class="min-h-0 flex-1 py-1"
+          >
             <template #mods>
               <div class="flex min-h-0 min-w-0 flex-1 flex-col">
                 <div
-                  class="flex h-7 shrink-0 items-center gap-1 ps-2.5 pe-1 text-11 font-semibold whitespace-nowrap text-toned">
+                  class="flex h-7 shrink-0 items-center gap-1 ps-2.5 pe-1 text-11 font-semibold whitespace-nowrap text-toned"
+                >
                   Workspace<span class="ms-1 font-normal text-dimmed">{{ plural(mods.length, "mod") }}</span>
                   <span class="grow" />
                   <UTooltip text="Add a mod">
-                    <UButton icon="i-lucide-plus" variant="ghost" size="xs" square aria-label="Add a mod"
-                      @click="addMod" />
+                    <UButton
+                      icon="i-lucide-plus"
+                      variant="ghost"
+                      size="xs"
+                      square
+                      aria-label="Add a mod"
+                      @click="addMod"
+                    />
                   </UTooltip>
                 </div>
-                <ExplorerTree ref="modTree" :workspace-id="id" :roots="mods" :hide-binaries="hideBinaries"
-                  @compare="compare.files" />
+                <ExplorerTree
+                  ref="modTree"
+                  :workspace-id="id"
+                  :roots="mods"
+                  :hide-binaries="hideBinaries"
+                  @compare="compare.files"
+                />
               </div>
             </template>
             <template #game>
               <div class="flex min-h-0 min-w-0 flex-1 flex-col">
                 <div class="flex h-8 shrink-0 items-center border-t border-default pe-1">
-                  <button type="button"
+                  <button
+                    type="button"
                     class="flex h-8 flex-1 cursor-pointer items-center gap-1 ps-1.5 text-11 font-semibold text-toned hover:text-highlighted"
-                    :aria-expanded="gameOpen" @click="gameOpen = !gameOpen">
+                    :aria-expanded="gameOpen"
+                    @click="gameOpen = !gameOpen"
+                  >
                     <UIcon :name="gameOpen ? 'i-lucide-chevron-down' : 'i-lucide-chevron-right'" class="size-3.5" />Game
                     files
                   </button>
                   <UTooltip v-if="!windows.otherWindows.has('game')" text="Open in its own window">
-                    <UButton icon="i-lucide-app-window" variant="ghost" size="xs" square
-                      aria-label="Open in its own window" @click="
+                    <UButton
+                      icon="i-lucide-app-window"
+                      variant="ghost"
+                      size="xs"
+                      square
+                      aria-label="Open in its own window"
+                      @click="
                         windows.openFolderWindow(
                           'game',
                           'Game files',
                           game.map((root) => root.path),
                         )
-                        " />
+                      "
+                    />
                   </UTooltip>
                 </div>
-                <div v-if="windows.otherWindows.has('game')" v-show="gameOpen"
-                  class="flex flex-col gap-2 px-3 py-1.5 text-12 text-dimmed">
+                <div
+                  v-if="windows.otherWindows.has('game')"
+                  v-show="gameOpen"
+                  class="flex flex-col gap-2 px-3 py-1.5 text-12 text-dimmed"
+                >
                   In its own window.
                   <div class="flex gap-1.5">
                     <UButton label="Bring back" size="xs" variant="soft" @click="Close('game')" />
                     <UButton label="Show window" size="xs" variant="ghost" @click="Show('game')" />
                   </div>
                 </div>
-                <ExplorerTree v-else v-show="gameOpen" ref="gameTree" :workspace-id="id" :roots="game"
-                  :hide-binaries="hideBinaries" @compare="compare.files" />
+                <ExplorerTree
+                  v-else
+                  v-show="gameOpen"
+                  ref="gameTree"
+                  :workspace-id="id"
+                  :roots="game"
+                  :hide-binaries="hideBinaries"
+                  @compare="compare.files"
+                />
               </div>
             </template>
           </USplitter>
@@ -364,8 +446,10 @@ function showProblems(): void {
           <SourceControlView v-if="editor.sidebar === 'git'" />
           <FileEntries v-if="editor.sidebar === 'entries'" :workspace-id="id" :path="editor.activeFile" />
         </aside>
-        <aside v-else
-          class="flex min-h-0 min-w-0 flex-1 flex-col border-e border-default bg-muted py-1 text-(length:--ide-ui-font)">
+        <aside
+          v-else
+          class="flex min-h-0 min-w-0 flex-1 flex-col border-e border-default bg-muted py-1 text-(length:--ide-ui-font)"
+        >
           <ExplorerTree :workspace-id="id" :roots="own" :hide-binaries="hideBinaries" @compare="compare.files" />
         </aside>
       </template>
@@ -386,20 +470,28 @@ function showProblems(): void {
     </USplitter>
   </div>
   <StatusFacts v-if="windowPart !== 'panel'">
-    <button class="flex h-6 items-center gap-1 text-error" :aria-label="plural(editor.problemCounts.errors, 'error')"
-      @click="showProblems">
+    <button
+      class="flex h-6 items-center gap-1 text-error"
+      :aria-label="plural(editor.problemCounts.errors, 'error')"
+      @click="showProblems"
+    >
       <UIcon name="i-lucide-circle-x" class="size-3" />{{ editor.problemCounts.errors }}
     </button>
-    <button class="flex h-6 items-center gap-1 text-warning"
-      :aria-label="plural(editor.problemCounts.warnings, 'warning')" @click="showProblems">
+    <button
+      class="flex h-6 items-center gap-1 text-warning"
+      :aria-label="plural(editor.problemCounts.warnings, 'warning')"
+      @click="showProblems"
+    >
       <UIcon name="i-lucide-triangle-alert" class="size-3" />{{ editor.problemCounts.warnings }}
     </button>
-    <button v-if="git.status" class="flex h-6 items-center gap-1 hover:text-highlighted"
-      @click="editor.sidebar = 'git'">
+    <button
+      v-if="git.status"
+      class="flex h-6 items-center gap-1 hover:text-highlighted"
+      @click="editor.sidebar = 'git'"
+    >
       <UIcon name="i-lucide-git-branch" class="size-3" />{{ git.status.branch || git.status.commit }}
       <template v-if="git.status.upstream">
-        <UIcon name="i-lucide-arrow-down-up" class="size-3" />{{ git.status.ahead }} up,
-        {{ git.status.behind }} down
+        <UIcon name="i-lucide-arrow-down-up" class="size-3" />{{ git.status.ahead }} up, {{ git.status.behind }} down
       </template>
     </button>
   </StatusFacts>

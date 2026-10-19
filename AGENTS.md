@@ -1,10 +1,7 @@
 # Agent notes
 
-Humans: the user guide is **https://idodavis.github.io/paradox-modding-tools/** (source `docs/`). Do not treat this file
-as the manual. The backend's map is [services/README.md](services/README.md) and each package under
-`services/internal/` has a README with its design; the frontend's shape and conventions are
-[frontend/src/README.md](frontend/src/README.md); the terms are [GLOSSARY.md](GLOSSARY.md); what each game's script
-does, measured, is [GAME-SYNTAX.md](GAME-SYNTAX.md).
+The backend's map is [services/README.md](services/README.md), the frontend's is
+[frontend/src/README.md](frontend/src/README.md), and each package's README holds its design and its terms.
 
 ## Learned User Preferences
 
@@ -77,12 +74,12 @@ Each rule says what checks it; "review" means nothing does, so the author and th
   and no flag that switches a reader's behavior for a second caller. (review)
 - **Cuts delete a representation:** a type, a pass over the data, a cache, a function. Moving and lightly altering is not
   cutting, and two clear functions that share a skeleton are never merged into one with a mode flag. (review)
-- **Names.** One identifier per thing everywhere (GLOSSARY.md). A parameter, a field or a local is named for its type or
-  for what it holds, never for how a call reads as a sentence: no preposition (`in`, `at`, `from`), no sentence word
-  (`found`, `written`, `said`, `made`, `left`, `taken`), no letter outside a loop counter. An exported field says what
-  it holds (`Count`, `Target`), not which way it points. A receiver is its type's word, a Wails service's its name in
-  three letters (`ide`, `git`, `wsp`), never `s`; a local holding an `*index.Index` is `index`. No new identifier is
-  built on `read`, `name`, `form` or `word`. American spelling (`color`).
+- **Names.** One identifier per thing everywhere (each package's README). A parameter, a field or a local is named for
+  its type or for what it holds, never for how a call reads as a sentence: no preposition (`in`, `at`, `from`), no
+  sentence word (`found`, `written`, `said`, `made`, `left`, `taken`), no letter outside a loop counter. An exported
+  field says what it holds (`Count`, `Target`), not which way it points. A receiver is its type's word, a Wails
+  service's its name in three letters (`ide`, `git`, `wsp`), never `s`; a local holding an `*index.Index` is `index`. No
+  new identifier is built on `read`, `name`, `form` or `word`. American spelling (`color`).
   (golangci-lint `revive` for receivers and exported names, `misspell` for spelling; the rest review)
 - **Comments.** Every exported name and every function has a doc comment: a sentence with a verb that says what it does,
   and why where there is a reason. No history, plan, stage, ruling, date or person. A comment line fits in 120
@@ -99,13 +96,12 @@ Each rule says what checks it; "review" means nothing does, so the author and th
 
 ## Product / stack
 
-- Terminology: [GLOSSARY.md](GLOSSARY.md). Measured per-game syntax facts, with reproductions: [GAME-SYNTAX.md](GAME-SYNTAX.md) — read it before changing the schema stage or the entry detector.
-- Paradox Modding Tools is a Wails **v3.0.0-beta.28** desktop app (Go **1.27.1** backend, Vue 3 + Nuxt UI + Pinia + Colada frontend) for Paradox modders, licensed under GPL-3.0-or-later.
+- Paradox Modding Tools is a Wails desktop app at the versions `go.mod` names (a Go backend, a Vue 3 + Nuxt UI + Pinia + Colada frontend) for Paradox modders, licensed under GPL-3.0-or-later.
 - **Supported OS:** Windows and Linux (traditional desktop distros, GTK4 + WebKitGTK 6). **macOS is not supported** — do not add Mac downloads, Mac user docs, or a macOS issue-template option. Leave the Wails `darwin` Taskfile in the tree; do not advertise it.
 - Product is workspace-centric: Library, IDE, Event Graph, **Health** (FIOS/LIOS + depends/dangling + loc coverage), Patch Notes (wiki notes **only**), Publish (Steam + Paradox Mods copy, and a compare with Steam), Settings. CK3, Vic3, EU5 (partial). No Merge (mod merging), Inventory, or Patcher/Impact services; compares are views (`CompareFiles`, `GitDiff`), and git's merge is GitService's.
 - GUI preview is a future feature; `.gui` is the same Jomini CST as `.txt`, not a third parser.
 - Releases: per-platform **zips** on GitHub (`paradox-modding-tools-{windows-amd64,linux-amd64}.zip` + sibling `SHA256SUMS`; Windows on ARM runs the amd64 zip under emulation). In-app updater is `github.New` (`ChecksumAsset: "SHA256SUMS"`) — do not set `Prerelease: true`. Workshop publish runs in a second copy of the app itself (`steam-publish`), which loads the game's own copy of Steam's library where `GameInfo.SteamLibrary` says the install keeps it; PMT ships nothing of Steam's.
-- Local develop/build: Taskfile (`task dev`, `task build`) with `wails3` v3.0.0-beta.28. Windows `CGO_ENABLED=0`. Linux `CGO_ENABLED=1` (WebKit). `task test:race` (`go test -short -race ./...`) works on Windows.
+- Local develop/build: Taskfile (`task dev`, `task build`) with `wails3` at the version `go.mod` names. Windows `CGO_ENABLED=0`. Linux `CGO_ENABLED=1` (WebKit). `task test:race` (`go test -short -race ./...`) works on Windows.
 
 ## Commands
 
@@ -113,7 +109,8 @@ Each rule says what checks it; "review" means nothing does, so the author and th
 - `task build VERSION=…` — platform Taskfile → `bin/`.
 - `task common:generate:bindings` after Go DTO/service changes. Never hand-edit `frontend/bindings/**`.
 - `task check` — everything a commit must pass, Go and frontend.
-- Docs-only `docs/**` pushes deploy Pages (Hugo in `docs/`, `.github/workflows/pages.yml`). Preview: `hugo server` in `docs/` (plain Hugo, not Extended). Non-docs `master` pushes cut a full release (`.github/workflows/release.yml`); first floor **v0.4.0**, then patch bumps.
+- Every `main` push that changes more than Markdown cuts a release (`.github/workflows/release.yml`); first floor
+  **v0.4.0**, then patch bumps.
 
 ## Learned Workspace Facts
 

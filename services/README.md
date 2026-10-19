@@ -132,6 +132,68 @@ Each package has one test file, `<package>_test.go`; the fixtures are small inst
 
 ## Further reading
 
-[`GLOSSARY.md`](../GLOSSARY.md) holds the terms and [`GAME-SYNTAX.md`](../GAME-SYNTAX.md) what each game's script
-does, measured. The frontend's shape and conventions are [`frontend/src/README.md`](../frontend/src/README.md).
-Building and running the app: [`docs/content/develop.md`](../docs/content/develop.md).
+The frontend's shape and conventions are [`frontend/src/README.md`](../frontend/src/README.md). Building and running
+the app: [`CONTRIBUTING.md`](../CONTRIBUTING.md).
+
+## Who answers what
+
+Each question the backend answers is to have one owner. The second column is who answers it today (some questions
+have no single answerer yet); the third is the one owner it will have once the overhaul in progress reaches it. A
+row's second column is rewritten as its part lands.
+
+| question | owner today | owner after the ReArchitecture |
+|---|---|---|
+| What does this word name: a definition or a reference, which database, or a call by which word? | `occurrencesOf` and 9 helpers in `schema` | the key's or value's record (`schema.WalkFile`); judging (`index`) for what a reference resolves to |
+| Which command, link or operator is this key, and by which rule is it read? | `Enter`, `keyEnter`, `keyFacts`, `fits` | the walk's reading of a key (`Schema.Enter`); its record says which command, link, operator, construct or field |
+| Is this statement an entry, of which database, under what name? | `entryAt` and 11 helpers | the entry's record (the walk's `entryAt`) |
+| What scope does this run in? | `scopeOf`, `Follow`, `commandScope`, `EntryScope`, `RunsScript` | the block's record (the walk); judging for a scripted entry's scope from its callers |
+| What does a block hold (its shape)? | `blockOf`, `holdsOf`, `commandShape` | the block's record (the walk's `blockOf`) |
+| What does a value take, and is this one valid? | `ValuePosition` + claims | the claim on the value's record; one matcher of a value to a type, used by the verdict that a value has the type its key takes, and by completion |
+| Is this word shaped as a name, an event id, a number, a date, `prefix:name`, a constant, a `$PARAM$`? | `jomini` names.go | `jomini`, one function per shape a key or a value is written in |
+| Which case does a lookup use? | no one place: each table matches case its own way | each table's one lookup, which matches case by the game's rule for that table, measured |
+| Is this block a color, and which color? | `blockColor`, `game.ColorOf` | one function over `jomini.ColorParts` and `game.ColorOf`: whether a block is a color, and which |
+| What does a data call's step name, and what type does it lead to? | `CallLeadsTo`, `CallStep` | `schema`'s typing of a data call (`CallLeadsTo`, `TypeDatabase`), the datacontext honored |
+| Is this a parameter of a scripted entry? | the walk's `parameterDefinitions` | the key's or value's record (the walk's parameters of a scripted entry) |
+| Is this a date, and what does it mean? | `dateFact` | `jomini.ParseDate` |
+| What category/color is this word in the editor? | `lsp.Tokens` (4 categories) plus the editor's grammars (10) | the category on the key's or value's record; the grammars paint shapes only |
+| What is under the cursor, and what block/entry holds it? | `walkTo`, `scalarAt`, `blockAt`, `within` | the file's records, searched by range |
+| What markup does a localization text hold: `$key$`, `[call]`, `#format`, `@icon!`, `\n`? | `loc.Segments` | `loc`'s segments of a value |
+| Which value does a block give a key: the first or the last written, in which case? | `jomini.ScalarOf` (the first, case-sensitive) | one `jomini` function, by the game's rule (measured) |
+| Which statement does a comment belong to? | `jomini.Attach` | `jomini.Attach`; the docs parser its own |
+| Does this name resolve, and to which definitions? | `index.Resolve` | `index.Resolve` |
+| Which definition does the game keep; is the name contested? | `index.Winner` | `index.Winner`, over one `game` row per database: which definition it keeps and by which order, its entry modes, its merges, its override priority |
+| Where is this name used? | `uses` | the index's uses of a name |
+| Where is a definition's statement, and its text? | `Session.Statement` | the entry's record (its statement's range); its tree from the file's one parse, its text flattened by one function |
+| Is this an event; what does it fire, what fires it? | `workspace.Fires`/`FiredBy` | an event is a record of the events database, by its declared namespace; `index` `Fires` and `FiredBy` of the kept definitions |
+| Loc: does the key exist, its text, the entry's title, the file's language? | `Session.Loc`, `Session.Title` | `workspace` `Loc` and `Title`; `loc`'s one rule for a file's language |
+| What is a database's entry called on screen? | `game.KindName` | `game.KindName`, renamed for what it holds |
+| Which database by folder, purpose or word? | `schema.folder`, `DatabaseNamed` | `schema`'s one rule from a folder, a purpose, a written name or a class name to a database |
+| Where is this file: its root, origin, rel and database; is it loaded? | `Session.Locate`, `PlaceOf` | `workspace.Locate` (the place) |
+| The key two paths are compared by | `appdata.PathKey` | `appdata.PathKey`, carried on every place |
+| Which file wins at a path; who ships the same path? | `index.Loaded` | `index.Loaded` |
+| What is wrong with a file, and on which card does a finding go? | `lsp.Diagnose` | `lsp.Diagnose` over the records' failed verdicts and the parse errors; one Go table of each code's card; the frontend's one formatter per code |
+| What kind is this file: format, editor language, view, icon, image, binary? | `inventory.Classify` | `inventory.Classify`; how a file is shown, the frontend's one table keyed by Go's format and database |
+| Is this file read only? | `IdeRoot.ReadOnly` | `workspace.Locate` (the place's read only) |
+| What is a file's text (encoding, BOM, line ends), and how is text written back? | `inventory.DecodeText`, `EncodeText` | `inventory`'s reader and writer of a file's text; `appdata`'s pair for the app's own JSON |
+| Where do a text's lines break, and what is a position: line, byte column, UTF-16 column? | `jomini.NewLineIndex`; `editor/columns.ts` | the line index on the parse (Go); `editor/columns.ts` (the frontend) |
+| Which files are under a folder: dot folders, links, ignored and binary files? | `inventory.Walk` | `inventory.Walk`, with one matcher of ignore patterns |
+| What safe file or folder name does a new thing get? | `modfiles.Slug` | one function for every file or folder name PMT makes |
+| Is this file an image, of which format and size? | `texture.Info` | `texture` |
+| What does a mod's descriptor say (listing fields, thumbnail, ignore rules); is a folder a mod? | `modfiles.LoadDescriptor` | `modfiles`: the descriptor loaded once a request; the ignore text in the config, the file only for Export and Import |
+| What is a mod's state on Steam, and what will an upload change? | `SteamCompare`, `ListingSummary`, `sentDescription` | the release package's one payload per question (on Steam, its version, what an upload changes and sends), one field per fact; one frontend formatter per sentence |
+| What is the install's state: found, scanned when, which version? | `WorkspaceState`, `GameInstall` | one field per fact (when the install was scanned, its version) on the workspace's state; one formatter for the install line |
+| Change a workspace or a mod: add, move, remove, reorder, recolor | `WorkspaceService` | one `WorkspaceService` method per change, each announcing its event; one frontend mutation per method |
+| Go to a workspace; which page does it open on? | `workspaceHomeRoute` | one function for a workspace's home route |
+| Which entries does a file draw, and which is drawn? | draw's `entryRows`/`windowDatabase`; the draw store's `ENTRY_GROUPS`/`entriesOf` | `draw`: the entries a file draws (a table sent once); the entry record at the caret |
+| Edit a drawn coat's script: add, move or remove a block, write a value | the draw store's text operations | `draw`: a coat's edits computed from its parse as text edits |
+| What does the event graph show: reach, steps, hidden kinds, defaults? | Go's graph; `useEventGraph` | `pages`: the event graph, its reach, steps, hidden databases and defaults |
+| What do Health's cards count, and which card does a word belong to? | Go's `HealthReport` | `pages`: Health's cards, counts and each finding's card |
+| Walk a file with the schema | `schema.WalkFile` | `schema.WalkFile`, once per file text; a game file at scan: one counting pass, then one walk for its records, after a pass over the declaring files' top statements |
+| Walk or descend a parse tree without the schema | `jomini.Walk` | `jomini.Walk` for what needs the parse alone (folding); everything else uses the records |
+| Read and parse a file's text | `Session.Parsed` | `workspace.Parsed`, one parse per text, through the one text reader |
+| Logic inside the Wails services | no one place: release listing and compare, git parsing, settings and places sit in the services | none: each service a shell over its package |
+| Split script text into tokens | the `jomini` lexer and parser | `jomini`; the docs parser's tokenizer |
+| Convert between Markdown, BBCode, HTML and text | steam's `bbcode.go` | `steam`'s converters for Markdown and BBCode; one HTML-to-text in `wiki` |
+| Fetch over HTTP and keep a cache | the wiki client | one HTTP client (user agent, throttle, size cap) for the wiki and Steam; one cache folder with one cleanup; the wiki's memory copy is the cache |
+| Compare two version strings | wiki's `versionParts` | one function that orders two versions |
+| Copy to the clipboard | no one place: the Wails clipboard and VueUse's | the Wails clipboard |

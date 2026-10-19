@@ -2,13 +2,13 @@
 
 # Paradox Modding Tools
 
-![Paradox Modding Tools — Alpha · CK3 · Vic3 · EU5](docs/static/assets/banner.png)
+![Paradox Modding Tools — Alpha · CK3 · Vic3 · EU5](banner.png)
 
 Desktop workspace for **Crusader Kings III**, **Victoria 3**, and **Europa Universalis V** (partial) modders. One workspace is one game install plus the mods you are editing: script-aware IDE, event graph, compatibility and loc health, wiki patch notes, and Steam Workshop / Paradox Mods publish.
 
 **Alpha.** Expect bugs. **Windows and Linux** (traditional desktop distros). **macOS is not supported.**
 
-[Download](https://github.com/idodavis/paradox-modding-tools/releases) · [Docs](https://idodavis.github.io/paradox-modding-tools/) · [License](LICENSE)
+[Download](https://github.com/idodavis/paradox-modding-tools/releases) · [Roadmap](ROADMAP.md) · [License](LICENSE)
 
 Unofficial. Not affiliated with Paradox Interactive. Licensed **GPL-3.0-or-later**.
 
@@ -41,7 +41,7 @@ Unofficial. Not affiliated with Paradox Interactive. Licensed **GPL-3.0-or-later
 | **Linux** amd64 | Debian/Ubuntu, Fedora/RHEL, Arch, openSUSE, Gentoo — GTK4 + WebKitGTK 6. |
 | **macOS** | **Not supported.** |
 
-Steam Deck, Flatpak, and AppImage are unsupported. See [limitations](https://idodavis.github.io/paradox-modding-tools/limitations/).
+Steam Deck, Flatpak, and AppImage are unsupported.
 
 ## Download
 
@@ -54,22 +54,18 @@ plus a `SHA256SUMS` sidecar. Extract and run. Steam Workshop publish uses the ga
 
 In the app, the **footer version button** checks for updates against those zips. Steam client must be running to publish to Workshop.
 
+Unzip the app into a folder you can write to (not Program Files): updates are downloaded beside it.
+
 Windows zips are **unsigned** (SmartScreen will warn).
 
 ## Develop locally
 
-**Windows and Linux only.** Details and distro packages: [docs/content/develop.md](docs/content/develop.md) (same content on [Pages](https://idodavis.github.io/paradox-modding-tools/develop/)).
+**Windows and Linux only.** The build steps and the distro packages are in [CONTRIBUTING.md](CONTRIBUTING.md).
 
 ### Prerequisites
 
-- **[Go](https://go.dev/dl/) 1.27.1** (`go.mod`)
-- **[Node.js](https://nodejs.org/)** `^20.19.0` or `>=22.12.0`, + npm
-- **[Task](https://taskfile.dev/installation/)** (Taskfile v3)
-- **Wails v3 CLI** pinned to the module:
-
-```bash
-go install github.com/wailsapp/wails/v3/cmd/wails3@v3.0.0-beta.28
-```
+You need Go, Node.js, Task and the Wails command line tool; [CONTRIBUTING.md](CONTRIBUTING.md) says which versions
+and how to install them.
 
 Windows builds use `CGO_ENABLED=0`. Linux needs GTK4 + WebKitGTK 6 **dev** packages (e.g. Debian/Ubuntu: `build-essential pkg-config libgtk-4-dev libwebkitgtk-6.0-dev`).
 
@@ -92,12 +88,10 @@ go test ./...
 | `main.go` | Wails entry, updater, single window |
 | `services/` | Wails services; `services/internal/` holds the packages in layers: the leaves (`game`, `jomini`, `loc`, `appdata`), the files (`inventory`, `texture`, `modfiles`, `wiki`, `steam`), the engine (`schema`, `index`) and the workspace (`workspace`, `lsp`, `pages`) |
 | `frontend/` | Vue 3 + Nuxt UI + Pinia + Pinia Colada; `monaco-editor`, `@pierre/trees`, Vue Flow |
-| `docs/` | User guide (GitHub Pages) |
 | `build/` | Wails Taskfiles and icons |
 
 How the backend fits together: [services/README.md](services/README.md). The frontend's conventions:
-[frontend/src/README.md](frontend/src/README.md). Terms: [GLOSSARY.md](GLOSSARY.md). Notes for coding agents:
-[AGENTS.md](AGENTS.md).
+[frontend/src/README.md](frontend/src/README.md). Notes for coding agents: [AGENTS.md](AGENTS.md).
 
 ## License
 

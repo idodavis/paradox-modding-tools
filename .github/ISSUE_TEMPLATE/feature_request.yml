@@ -6,8 +6,8 @@ body:
   - type: markdown
     attributes:
       value: |
-        Check the [roadmap](https://idodavis.github.io/paradox-modding-tools/roadmap/)
-        and [limitations](https://idodavis.github.io/paradox-modding-tools/limitations/)
+        Check the [roadmap](https://github.com/idodavis/paradox-modding-tools/blob/main/ROADMAP.md)
+        and the [supported systems](https://github.com/idodavis/paradox-modding-tools#supported-os)
         first.
 
   - type: textarea
@@ -43,7 +43,6 @@ body:
         - Settings
         - Appearance / themes
         - Language / scan / cache
-        - Docs site
         - Build / updater
         - Other
     validations:

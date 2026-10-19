@@ -7,7 +7,7 @@ body:
     attributes:
       value: |
         Thanks for the report. Fill this in so we can reproduce it.
-        User guide: https://idodavis.github.io/paradox-modding-tools/
+        Read README.md and ROADMAP.md first.
 
   - type: dropdown
     id: area
@@ -26,7 +26,6 @@ body:
         - Settings
         - Appearance / themes
         - Language / scan / cache
-        - Docs site
         - Build / updater
         - Other
     validations:

@@ -1,5 +1,0 @@
-{{/* Warning / note / important callout. First arg is the kind. */}}
-<aside class="callout callout-{{ .Get 0 }}">
-  <strong>{{ with .Get 0 }}{{ title . }}{{ end }}</strong>
-  <div>{{ .Inner | markdownify }}</div>
-</aside>

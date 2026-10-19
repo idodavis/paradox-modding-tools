@@ -1,9 +1,9 @@
-# Route issues to templates; point support at the Pages guide and Releases.
+# Route issues to templates; point support at the README and Releases.
 blank_issues_enabled: false
 contact_links:
-  - name: User guide
-    url: https://idodavis.github.io/paradox-modding-tools/
-    about: Install, concepts, and every page in the alpha
+  - name: README
+    url: https://github.com/idodavis/paradox-modding-tools
+    about: What the app does, how to install it, its roadmap
   - name: Download releases
     url: https://github.com/idodavis/paradox-modding-tools/releases
     about: Windows and Linux zips (macOS is not supported)

@@ -1,8 +1,0 @@
-{{- /* Search index: title, permalink, plain text excerpt. */ -}}
-{{- $pages := slice -}}
-{{- range .Site.Pages -}}
-  {{- if and .File (ne .Kind "taxonomy") -}}
-    {{- $pages = $pages | append (dict "title" .Title "permalink" .RelPermalink "text" (.Plain | truncate 400)) -}}
-  {{- end -}}
-{{- end -}}
-{{- $pages | jsonify -}}

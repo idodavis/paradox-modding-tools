@@ -1,12 +1,11 @@
-# Zip Windows/Linux builds on non-docs main pushes. Tag only after every matrix cell succeeds.
+# Zip Windows/Linux builds on main pushes that change more than Markdown. Tag only after every matrix cell succeeds.
 name: Build and Release
 
 on:
   push:
     branches: [main]
     paths-ignore:
-      - "docs/**"
-      - ".github/workflows/pages.yml"
+      - "**/*.md"
   workflow_dispatch:
     inputs:
       version:
@@ -119,7 +118,7 @@ jobs:
           cp LICENSE "${stage}/"
           printf '%s\n' \
             'Paradox Modding Tools' \
-            'https://idodavis.github.io/paradox-modding-tools/' \
+            'https://github.com/idodavis/paradox-modding-tools' \
             '' \
             'Extract this folder and run the binary.' \
             'Windows needs WebView2 (Windows 11 usually has it).' \

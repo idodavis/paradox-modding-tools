@@ -383,10 +383,10 @@ func DefaultModParent(gameID string) string {
 	return filepath.Join(userData, "mod")
 }
 
-// FolderName is the folder name of a mod called name, which also names its metadata id and its localization stub:
-// inventory.FileName of it, and "mod" for a name that leaves nothing.
-func FolderName(name string) string {
-	return cmp.Or(inventory.FileName(name), "mod")
+// Slug is the one slug of a mod called name: its folder, its metadata id and its localization stub; inventory.Slug of
+// it, and "mod" for a name that leaves nothing.
+func Slug(name string) string {
+	return cmp.Or(inventory.Slug(name), "mod")
 }
 
 // Create creates root with a descriptor, each of the game's ModFolders empty but for a loc stub in the localization
@@ -423,7 +423,7 @@ func Create(opts NewModOpts) error {
 		fields.SupportedVersion = ""
 	}
 	if info.ModDescriptor == game.MetadataDescriptor {
-		fields.Version, fields.ID = "1.0.0", FolderName(name)
+		fields.Version, fields.ID = "1.0.0", Slug(name)
 	}
 	if err := WriteDescriptor(opts.GameID, root, fields); err != nil {
 		return err
@@ -442,6 +442,6 @@ func Create(opts NewModOpts) error {
 	if locDir == "" {
 		return nil
 	}
-	locName := FolderName(name) + "_l_" + language + ".yml"
+	locName := Slug(name) + "_l_" + language + ".yml"
 	return appdata.WriteBytes(filepath.Join(locDir, locName), loc.File(language, nil))
 }

@@ -26,10 +26,10 @@ const shippedDir = "shipped"
 // numbers matches the digit runs the newest shipped file is picked by.
 var numbers = regexp.MustCompile(`\d+`)
 
-// ShippedName returns the shipped file of a game version: <game>-<version>.gob.gz, the version as inventory.FileName
+// ShippedName returns the shipped file of a game version: <game>-<version>.gob.gz, the version as inventory.Slug
 // writes it.
 func ShippedName(game, version string) string {
-	return game + "-" + inventory.FileName(version) + ".gob.gz"
+	return game + "-" + inventory.Slug(version) + ".gob.gz"
 }
 
 // LoadShipped returns a game's shipped schema: the file of the exact version with exact true, else the

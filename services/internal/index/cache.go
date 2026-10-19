@@ -70,7 +70,7 @@ func cachePath(req Request) (path, ofFolder string, err error) {
 	if err != nil {
 		return "", "", err
 	}
-	version, app := inventory.FileName(req.Version), inventory.FileName(req.App)
+	version, app := inventory.Slug(req.Version), inventory.Slug(req.App)
 	if req.App == "dev" {
 		if app, err = devKey(); err != nil {
 			return "", "", err
@@ -85,7 +85,7 @@ func cachePath(req Request) (path, ofFolder string, err error) {
 		}
 	}
 	folder := sha256.Sum256([]byte(filepath.Clean(req.Dir)))
-	ofFolder = filepath.Join(dir, fmt.Sprintf("install-%s-%x-", inventory.FileName(req.Game), folder[:6]))
+	ofFolder = filepath.Join(dir, fmt.Sprintf("install-%s-%x-", inventory.Slug(req.Game), folder[:6]))
 	return fmt.Sprintf("%s%s-%s-%x.gob.gz", ofFolder, version, app, state.Sum(nil)[:6]), ofFolder, nil
 }
 

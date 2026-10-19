@@ -48,7 +48,7 @@ Universalis V, so a layer that makes any of them worse does not count as done.
   latest release (Wails, Go, the frontend libraries, the build actions). The docs site is removed in favor of the
   README, CONTRIBUTING.md and this page, and the glossary and syntax notes leave the repository. The latest patch
   notes of each game are read for what they change for modders.
-- [ ] **Layer 1, text and files.** Reading script text, localization, files, paths and pictures, written once each:
+- [x] **Layer 1, text and files.** Reading script text, localization, files, paths and pictures, written once each:
   the shapes a word can have, the walk over a folder, how two paths are compared, DDS and TGA decoding, and the edits
   to localization files.
 - [ ] **Layer 2, game knowledge.** What is true of each game, as tables of facts: its folders, how it combines files,

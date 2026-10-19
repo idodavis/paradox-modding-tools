@@ -332,7 +332,7 @@ func (wsp *WorkspaceService) DefaultModParent(gameID string) string {
 
 // ModFolder is the folder CreateMod makes for a mod named name under parentDir.
 func (wsp *WorkspaceService) ModFolder(parentDir, name string) string {
-	return filepath.Join(parentDir, modfiles.FolderName(name))
+	return filepath.Join(parentDir, modfiles.Slug(name))
 }
 
 // CreateMod writes a new mod skeleton under parentDir and returns its path.
@@ -518,7 +518,7 @@ func (wsp *WorkspaceService) State(workspaceID string) *WorkspaceState {
 		state.Open, state.DumpsFrom, state.DumpsStale = true, dumps.Origin, dumps.Stale
 		// the version the scan read, and the one it replaced where the game was updated since
 		state.GameVersion = ws.Install.Schema.Version
-		if previous := ws.Install.Previous; previous != "" && previous != inventory.FileName(state.GameVersion) {
+		if previous := ws.Install.Previous; previous != "" && previous != inventory.Slug(state.GameVersion) {
 			state.UpdatedFrom = previous
 		}
 		ws.RUnlock()

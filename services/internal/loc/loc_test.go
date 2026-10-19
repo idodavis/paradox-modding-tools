@@ -211,3 +211,25 @@ func TestSegments(t *testing.T) {
 		}
 	}
 }
+
+// TestPlain checks what a player reads of a value: a key as its name, a concept link as the text it shows, a format's
+// words dropped, and every other markup kept as written.
+func TestPlain(t *testing.T) {
+	for _, testCase := range []struct{ value, want string }{
+		{"$key$", "key"},
+		{"$CHARACTER|U$", "CHARACTER"},
+		{"Owner is in [debt|E].", "Owner is in debt."},
+		{"[owner|e]", "owner"},
+		{"[Concept('concept_pops', 'Pops')|E]", "Pops"},
+		{"[Concept('concept_pops', '$concept_pops$')|E]", "concept_pops"},
+		{"#bold text#! more", "text more"},
+		{"#color:{1,0,0} red#! text", "red text"},
+		{"[a.b|E]", "[a.b|E]"},
+		{"[GetName]", "[GetName]"},
+		{"@gold! coins", "@gold! coins"},
+	} {
+		if got := Plain(testCase.value); got != testCase.want {
+			t.Errorf("Plain(%q) = %q, want %q", testCase.value, got, testCase.want)
+		}
+	}
+}

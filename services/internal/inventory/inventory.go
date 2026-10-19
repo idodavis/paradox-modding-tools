@@ -5,7 +5,7 @@
 // layout, what each file is relative to, where it came from, and which reader its format needs.
 // It also owns what every reader of a file shares: the file's text and how it was stored (text.go), how paths are
 // compared and joined (paths.go), the ignore rules a folder is filtered by (ignore.go) and the one rule for a name
-// made from a user's text (filenames.go). One format table serves every game: an extension it does not list is
+// made from a user's text (paths.go). One format table serves every game: an extension it does not list is
 // Unknown, kept in the inventory as such, so a new kind of file is seen rather than guessed at.
 // The walk follows symlinks and Windows junctions (mods are often linked folders), keeps every path
 // spelled under its root, refuses a link back to an ancestor, hides the names a dot starts (but .metadata), and reads

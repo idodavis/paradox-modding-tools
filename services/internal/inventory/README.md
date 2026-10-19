@@ -10,9 +10,8 @@ script from the script itself; it interprets nothing else.
 |---|---|
 | `inventory.go` | the format table; `Files`, `Roots`, `Classify`; `Walk`, `Hidden` and `Children`; `Ordered`, the scan's worker pool; `Binary` |
 | `text.go` | `Text`; `LoadText`, `File.Text` and `TextOf` (a file's bytes to its text); `SaveText` and `Text.Bytes` (back the way it was stored); `MaxTextBytes`, the cap |
-| `paths.go` | `PathKey`, the one key two paths are compared by; `Join` and `RelOf` |
+| `paths.go` | `PathKey`, the one key two paths are compared by; `Join` and `RelOf`; `Slug`, the one rule for a file or folder name made from a user's text |
 | `ignore.go` | `IgnoreRules`, `Rules.Covers` and `Rules.Matches`: the git form of an ignore file, for Steam's upload and a search's folders |
-| `filenames.go` | `FileName`, the one rule for a file or folder name made from a user's text |
 
 ## Decisions
 

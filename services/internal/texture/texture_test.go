@@ -9,7 +9,9 @@ import (
 	"image/png"
 	"os"
 	"path/filepath"
+	"runtime"
 	"slices"
+	"sync"
 	"testing"
 
 	"paradox-modding-tools/services/internal/inventory"
@@ -95,57 +97,74 @@ func TestInfo(t *testing.T) {
 }
 
 // TestInstallImagesHaveHeaders is the gate over the real installs: every non-empty image gives up its header. It
-// opens some sixty thousand images; set PMT_SOURCE_GATE=1 and the three PMT_TEST_INSTALL_ variables.
+// opens some sixty thousand images, as many at once as there are CPUs; set PMT_SOURCE_GATE=1 and the three
+// PMT_TEST_INSTALL_ variables.
 func TestInstallImagesHaveHeaders(t *testing.T) {
 	if testing.Short() || os.Getenv("PMT_SOURCE_GATE") == "" {
 		t.Skip("opens every image of three installs; set PMT_SOURCE_GATE=1")
 	}
-
 	for _, testCase := range []struct{ game, env string }{
 		{"ck3", "PMT_TEST_INSTALL_CK3"}, {"vic3", "PMT_TEST_INSTALL_VIC3"}, {"eu5", "PMT_TEST_INSTALL_EU5"},
 	} {
-		install := os.Getenv(testCase.env)
-		if install == "" {
+		if install := os.Getenv(testCase.env); install != "" {
+			installImagesHaveHeaders(t, testCase.game, install)
+		} else {
 			t.Errorf("%s is not set: the gate cannot clear a game it never walked", testCase.env)
+		}
+	}
+}
+
+// installImagesHaveHeaders reads every image's header under one install, as many at once as there are CPUs, and
+// fails the test for the images that give no facts, the first eight listed.
+func installImagesHaveHeaders(t *testing.T, game, install string) {
+	var images, bad, empty int
+	var examples []string
+	formats := map[string]int{}
+	var mutex sync.Mutex
+	var group sync.WaitGroup
+	slots := make(chan struct{}, runtime.NumCPU())
+	for _, file := range inventory.Files("vanilla", inventory.Roots(install)) {
+		if file.Format != inventory.Image {
 			continue
 		}
-
-		var images, bad, empty int
-		var examples []string
-		formats := map[string]int{}
-		for _, file := range inventory.Files("vanilla", inventory.Roots(install)) {
-			if file.Format != inventory.Image {
-				continue
-			}
-
+		slots <- struct{}{}
+		group.Go(func() {
+			defer func() { <-slots }()
 			// the games ship a handful of zero byte images, which have no header to read
-			if stat, err := os.Stat(file.Path); err == nil && stat.Size() == 0 {
-				empty++
-				continue
+			stat, err := os.Stat(file.Path)
+			isEmpty := err == nil && stat.Size() == 0
+			var facts Facts
+			if !isEmpty {
+				facts, err = Info(file.Path)
 			}
-			images++
-			info, err := Info(file.Path)
-			if err != nil || info.Width <= 0 || info.Height <= 0 {
-				bad++
+			mutex.Lock()
+			defer mutex.Unlock()
+			switch {
+			case isEmpty:
+				empty++
+			case err != nil || facts.Width <= 0 || facts.Height <= 0:
+				images, bad = images+1, bad+1
 				if len(examples) < 8 {
 					examples = append(examples, file.Rel)
 				}
-				continue
+			default:
+				images++
+				formats[facts.Format]++
 			}
-			formats[info.Format]++
-		}
-		if images == 0 {
-			t.Errorf("%s: no image under %s: is it the game's root folder?", testCase.game, install)
-			continue
-		}
-		names := make([]string, 0, len(formats))
-		for name := range formats {
-			names = append(names, name)
-		}
-		slices.SortFunc(names, func(first, second string) int { return cmp.Compare(formats[second], formats[first]) })
-		t.Logf("IMAGES %s: %d read, %d failed, %d empty files skipped; formats %v", testCase.game, images, bad, empty, names)
-		if bad > 0 {
-			t.Errorf("%s: %d of %d images gave no header facts, among them %v", testCase.game, bad, images, examples)
-		}
+		})
+	}
+	group.Wait()
+	if images == 0 {
+		t.Errorf("%s: no image under %s: is it the game's root folder?", game, install)
+		return
+	}
+	names := make([]string, 0, len(formats))
+	for name := range formats {
+		names = append(names, name)
+	}
+	slices.SortFunc(names, func(first, second string) int { return cmp.Compare(formats[second], formats[first]) })
+	t.Logf("IMAGES %s: %d read, %d failed, %d empty files skipped; formats %v", game, images, bad, empty, names)
+	if bad > 0 {
+		t.Errorf("%s: %d of %d images gave no header facts, among them %v", game, bad, images, examples)
 	}
 }

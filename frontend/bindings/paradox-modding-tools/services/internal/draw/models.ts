@@ -17,71 +17,128 @@ export interface Absent {
 }
 
 /**
- * Coat is one render of a coat of arms: the field it is drawn on (the first atlas' tile, else the pattern's image),
- * the cloth that shades it ("" none), its layers in pre-order, and what nothing found.
+ * Coat is one render of a coat of arms.
  */
 export interface Coat {
+    /**
+     * the field it is drawn on: the first atlas' tile, else the pattern's image
+     */
     "width": number;
     "height": number;
+
+    /**
+     * the cloth that shades it; "" none
+     */
     "shading": string;
+
+    /**
+     * in pre-order
+     */
     "layers": Layer[] | null;
+
+    /**
+     * what nothing found
+     */
     "missing": Absent[] | null;
 }
 
 /**
- * CoatTarget is the file a mod's new coat of arms is written in: its path, its path in the mod, and whether writing it
- * makes the file, and its folder, first.
+ * CoatTarget is the file a mod's new coat of arms is written in.
  */
 export interface CoatTarget {
     "path": string;
+
+    /**
+     * its path in the mod
+     */
     "rel": string;
+
+    /**
+     * writing it makes the file first
+     */
     "isNewFile": boolean;
+
+    /**
+     * writing it makes its folder first
+     */
     "isNewFolder": boolean;
 }
 
 /**
- * Condition is what a widget is shown on: a fact, one of the list's groups at a value, or a boolean over conditions.
+ * Condition is what a widget is shown on: a fact, or a boolean over conditions.
  */
 export interface Condition {
     /**
-     * "" a fact
+     * and, or, not...; "" a fact
      */
     "operator": string;
+
+    /**
+     * the conditions an operator combines
+     */
     "operands"?: Condition[] | null;
+
+    /**
+     * a fact: the list's group it reads
+     */
     "group": number;
+
+    /**
+     * a fact: the value the group is at
+     */
     "value"?: string;
 }
 
 /**
- * Font is one face the texts use: the game's font name, its style and its file.
+ * Font is one face the texts use.
  */
 export interface Font {
+    /**
+     * the game's font name
+     */
     "name": string;
     "style": string;
+
+    /**
+     * its file
+     */
     "url": string;
 }
 
 /**
- * Frame is a shape the game's windows cut a coat to: its label, its mask's route, and the origin of the mask that wins.
+ * Frame is a shape the game's windows cut a coat to.
  */
 export interface Frame {
     "label": string;
+
+    /**
+     * its mask's route
+     */
     "url": string;
+
+    /**
+     * the origin of the mask that wins
+     */
     "origin": string;
 }
 
 /**
- * Group is a call widgets are shown on, its last quoted argument blanked, and the values its facts are written with.
+ * Group is a call widgets are shown on.
  */
 export interface Group {
+    /**
+     * with its last quoted argument blanked
+     */
     "call": string;
+
+    /**
+     * the values its facts are written with
+     */
     "values": string[] | null;
 }
 
 /**
- * Layer is one layer of a coat: the element it is, the file it paints ("" none) and how its shader colors it (a key of
- * coat.ts' recolor rows, and its slots as CSS, "" the shader's fallback), an emblem's mask (its coat's pattern file,
- * "" none) and the regions it keeps, and every property as written, by lower-cased key.
+ * Layer is one layer of a coat.
  */
 export interface Layer {
     /**
@@ -107,17 +164,40 @@ export interface Layer {
     "path": string;
     "ancestors": number[] | null;
     "location": lsp$0.Location;
+
+    /**
+     * the file it paints; "" none
+     */
     "url": string;
+
+    /**
+     * how its shader colors it: a key of coat.ts' recolor rows
+     */
     "recolor": string;
+
+    /**
+     * its slots as CSS; "" the shader's fallback
+     */
     "colors": string[] | null;
+
+    /**
+     * an emblem's mask: its coat's pattern file; "" none
+     */
     "mask": string;
+
+    /**
+     * the mask's regions it keeps
+     */
     "regions": number[] | null;
+
+    /**
+     * every property as written, by lower-cased key
+     */
     "properties": { [_ in string]?: string } | null;
 }
 
 /**
- * List is one render of a GUI entry: the widgets the game lays it out in, its widgets in pre-order, the textures they
- * draw and the fonts they use, each listed once, the calls they are shown on, and what nothing found.
+ * List is one render of a GUI entry.
  */
 export interface List {
     /**
@@ -126,13 +206,33 @@ export interface List {
     "isAlone": boolean;
 
     /**
-     * outermost first, each of its type row and properties alone
+     * the widgets the game lays it out in, outermost first
      */
     "holders": Widget[] | null;
+
+    /**
+     * its widgets in pre-order
+     */
     "elements": Widget[] | null;
+
+    /**
+     * each listed once
+     */
     "textures": Texture[] | null;
+
+    /**
+     * the calls the widgets are shown on
+     */
     "groups": Group[] | null;
+
+    /**
+     * each listed once
+     */
     "fonts": Font[] | null;
+
+    /**
+     * what nothing found
+     */
     "missing": Absent[] | null;
 }
 
@@ -159,43 +259,73 @@ export interface Request {
 }
 
 /**
- * Run is one stretch of a text under one style: an icon drawn in place of text, or a data call drawn as a value.
+ * Run is one stretch of a text under one style.
  */
 export interface Run {
     "text": string;
     "isBold": boolean;
     "isItalic": boolean;
     "color": string;
+
+    /**
+     * an icon drawn in place of text; "" none
+     */
     "icon": string;
+
+    /**
+     * a data call drawn as a value; "" none
+     */
     "call": string;
 }
 
 /**
- * Text is a widget's text as runs in a font at a size.
+ * Text is a widget's text.
  */
 export interface Text {
+    /**
+     * the font's name
+     */
     "font": string;
     "size": number;
+
+    /**
+     * the default color of its runs
+     */
     "color": string;
     "runs": Run[] | null;
 }
 
 /**
- * Texture is what a widget paints from a file: its size in the image's pixels over its density, its border in the
- * screen's, its frame, tiling, mirror, fit, tint and blend, and the texture that masks it.
+ * Texture is what a widget paints from a file.
  */
 export interface Texture {
     "url": string;
+
+    /**
+     * in the image's pixels
+     */
     "width": number;
+
+    /**
+     * in the image's pixels
+     */
     "height": number;
+
+    /**
+     * the image's pixels per screen pixel
+     */
     "density": number;
 
     /**
-     * top, right, bottom, left
+     * in the screen's pixels: top, right, bottom, left
      */
     "border": number[];
     "isTiled": boolean;
     "isMirrored": boolean;
+
+    /**
+     * how the image fits its widget
+     */
     "fit": string;
 
     /**
@@ -221,8 +351,7 @@ export interface Texture {
 }
 
 /**
- * Widget is one widget of the entry: the element it is, how its type draws, and what it is drawn by: its properties
- * as written, its textures, its text and what it is shown on.
+ * Widget is one widget of the entry.
  */
 export interface Widget {
     /**
@@ -253,10 +382,30 @@ export interface Widget {
      * "" a child among its siblings
      */
     "role": game$0.WidgetRole;
+
+    /**
+     * an item of a data model
+     */
     "isItem": boolean;
+
+    /**
+     * how its type holds its children
+     */
     "holds": game$0.Holding;
+
+    /**
+     * its type clips them
+     */
     "clips": boolean;
+
+    /**
+     * its type fills its holder
+     */
     "fills": boolean;
+
+    /**
+     * its type centers its own text
+     */
     "centersText": boolean;
 
     /**
@@ -268,7 +417,15 @@ export interface Widget {
      * visible = no, or visible_at_creation = no
      */
     "isHidden": boolean;
+
+    /**
+     * the binding its visible is written as; "" none
+     */
     "visibleBinding": string;
+
+    /**
+     * what it is shown on
+     */
     "condition"?: Condition | null;
 
     /**
@@ -280,6 +437,10 @@ export interface Widget {
      * its own, then its overlays
      */
     "textures": number[] | null;
+
+    /**
+     * the binding its texture is written as; "" none
+     */
     "textureBinding": string;
     "text"?: Text | null;
 }

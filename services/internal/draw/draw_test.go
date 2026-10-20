@@ -30,7 +30,7 @@ const (
 	coatBase     = "v_coat_base"
 )
 
-// fixture is a session over the ck3 fixture install, scanned once under an empty home so the schema is the shipped
+// fixture returns a session over the ck3 fixture install, scanned once under an empty home so the schema is the shipped
 // one, with an empty mod folder per test.
 func fixture(t *testing.T) (*workspace.Session, string) {
 	t.Helper()
@@ -53,32 +53,32 @@ func fixture(t *testing.T) (*workspace.Session, string) {
 	if err := os.MkdirAll(filepath.Join(dir, "common"), 0o755); err != nil {
 		t.Fatal(err)
 	}
-	ws, err := workspace.Open(t.Context(), game.Get(ck3), install, []workspace.Mod{{ID: "mod", Dir: dir}}, "")
+	ws, err := workspace.Open(t.Context(), game.Lookup(ck3), install, []workspace.Mod{{ID: "mod", Dir: dir}}, "")
 	if err != nil {
 		t.Fatal(err)
 	}
 	return ws, dir
 }
 
-// request is an entry of the fixture's window file.
+// request returns the request for an entry of the fixture's window file.
 func request(id string) Request {
 	path, _ := filepath.Abs(filepath.Join("..", "testdata", ck3, "game", "gui", "v_window.gui"))
 	return Request{Path: path, ID: id}
 }
 
-// modRequest is a window of a mod file written for the test.
+// modRequest returns the request for a window of a mod file written for the test.
 func modRequest(ws *workspace.Session, dir, id, text string) Request {
 	path := filepath.Join(dir, "gui", id+".gui")
 	ws.DidChange(path, text)
 	return Request{Path: path, ID: id}
 }
 
-// named is the index of the widget with a name; -1 for none.
+// named returns the index of the widget with a name; -1 for none.
 func named(list *List, name string) int {
 	return slices.IndexFunc(list.Elements, func(widget Widget) bool { return widget.Name == name })
 }
 
-// childrenOf are the elements under a parent, in order.
+// childrenOf returns the elements under a parent, in order.
 func childrenOf(list *List, parent int) []int {
 	var children []int
 	for i, element := range list.Elements {
@@ -89,7 +89,7 @@ func childrenOf(list *List, parent int) []int {
 	return children
 }
 
-// widgetOf is a widget holding the fields a parsed statement's block writes.
+// widgetOf returns a widget holding the fields a parsed statement's block writes.
 func widgetOf(text string) *widget {
 	parsed := jomini.Parse(text)
 	widget := &widget{}
@@ -140,7 +140,7 @@ func TestResolveFixture(t *testing.T) {
 	}
 	box := childrenOf(list, 0)[0]
 	children := childrenOf(list, box)
-	if elements[box].Type != "vbox" || elements[box].Holds != game.HoldsColumn || !elements[box].DropsHidden || len(children) != 7 {
+	if elements[box].Type != "vbox" || elements[box].Holding != game.HoldsColumn || !elements[box].DropsHidden || len(children) != 7 {
 		t.Fatalf("v_box resolves to a vbox of seven children, holding a column: %+v, %d", elements[box], len(children))
 	}
 	if elements[box].Label != "v_box" || elements[box].Path != "window v_layout_window › v_box" ||
@@ -220,7 +220,7 @@ func TestPropertiesAsWritten(t *testing.T) {
 	if bar := list.Elements[named(list, "v_bar")]; bar.Role != game.RoleChrome || bar.Type != "scrollbar" || bar.Parent != named(list, "v_scroll") {
 		t.Errorf("a scroll bar is its area's chrome, a scrollbar: %+v", bar)
 	}
-	if scroll := list.Elements[named(list, "v_scroll")]; scroll.Holds != game.HoldsScroll || !scroll.Clips {
+	if scroll := list.Elements[named(list, "v_scroll")]; scroll.Holding != game.HoldsScroll || !scroll.Clips {
 		t.Errorf("a scroll area holds a scroll and clips: %+v", scroll)
 	}
 	if named(list, "v_tip") >= 0 {
@@ -336,7 +336,7 @@ func TestBindingsAsWritten(t *testing.T) {
 	}
 }
 
-// typesOf are a coat's layer types in order.
+// typesOf returns a coat's layer types in order.
 func typesOf(coat *Coat) string {
 	var types []string
 	for _, layer := range coat.Layers {
@@ -411,10 +411,8 @@ func TestCoatLists(t *testing.T) {
 	}
 }
 
-// TestInstallsResolve is the gate: a named window of each of the three installs resolves with every type and
-// template it names found, its fonts listed, something drawn, and a render timed; what else is missing is logged; a
-// named coat of arms resolves with nothing missing but what a list picks. It runs only with PMT_VANILLA_GATE=1 and
-// the three PMT_TEST_INSTALL_ variables.
+// TestInstallsResolve gates the real installs: a named window of each resolves with every type and template found, and
+// a named coat with nothing missing. It runs only with PMT_VANILLA_GATE=1 and the three PMT_TEST_INSTALL_ variables.
 func TestInstallsResolve(t *testing.T) {
 	if testing.Short() || os.Getenv("PMT_VANILLA_GATE") == "" {
 		t.Skip("resolves windows of the three installs; set PMT_VANILLA_GATE=1")
@@ -434,7 +432,7 @@ func TestInstallsResolve(t *testing.T) {
 		if err != nil {
 			t.Fatal(err)
 		}
-		ws, err := workspace.Open(t.Context(), game.Get(tt.id), install, nil, "")
+		ws, err := workspace.Open(t.Context(), game.Lookup(tt.id), install, nil, "")
 		if err != nil {
 			t.Fatal(err)
 		}

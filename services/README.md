@@ -25,7 +25,7 @@ under the engine knows about the editor, the pages, the services or the Workshop
 | workspace | [`workspace`](internal/workspace/README.md) | A workspace open in the editor: the install's schema and index, the mods' index over it, the open buffers, the watcher, one lock, and the one open at a time. |
 | | [`lsp`](internal/lsp/README.md) | The editor's requests over one open file: hover, completion, definition, references, symbols, diagnostics, edits, colors. |
 | | [`pages`](internal/pages/README.md) | The Go side of each page, answered from the open workspace: the Health report, the event graph and its detail, the text search. |
-| | [`draw`](internal/draw/README.md) | What the visual editors draw: a GUI entry resolved from the index into a list of widgets, each with its type's row (`game/gui-rules.go`), its properties as written, its textures, its text and what it is shown on, and a coat of arms into layers on its field (`game/coa-rules.go`), both over one element, which the page turns into a DOM the browser lays out; nothing about the game's state is simulated and nothing is measured in Go. One render memo (`Render`) keeps the last GUI entry. |
+| | [`draw`](internal/draw/README.md) | What the visual editors draw: a GUI entry resolved from the index into a list of widgets, each with its type's row (`game/gui.go`), its properties as written, its textures, its text and what it is shown on, and a coat of arms into layers on its field (`game/coat.go`), both over one element, which the page turns into a DOM the browser lays out; nothing about the game's state is simulated and nothing is measured in Go. One render memo (`Render`) keeps the last GUI entry. |
 
 The saved record of a workspace is `services.Workspace`; the open one is `workspace.Session`. `internal/testdata/` holds
 the fixture installs the tests read.
@@ -39,7 +39,7 @@ the fixture installs the tests read.
 - **Mods are never authorities.** They give definitions and references only.
 - **Durable.** A game update or a stale dump never brings false findings: features grow quieter, and the app says when
   its data is stale.
-- **The rules are data.** What Paradox script is lives in `internal/game/lang-rules.go`, a row each, never a branch for
+- **The rules are data.** What Paradox script is lives in `internal/game/databases.go` and `language.go`, a row each, never a branch for
   one case.
 - **Walk once, parse once.** A file is parsed once per text and walked by the one walker (`schema.WalkFile`).
 
@@ -105,13 +105,13 @@ dump or a new app build is another file and the next open scans again by itself.
 
 | To change | Edit |
 |---|---|
-| how a key reads in a kind of block, a scope rule, a name rule | a row in `internal/game/lang-rules.go` |
-| a game's folders, nested entries, entry modes | that game's `Layout` in `internal/game/lang-rules.go` |
-| a game's identity, install or dump folders | `internal/game/game.go` |
+| how a key reads in a kind of block, a scope rule, a name rule | a row in `internal/game/language.go` |
+| a game's folders, nested entries, entry modes | that game's rules (`ck3Rules`, `vic3Rules`, `eu5Rules`) in `internal/game/databases.go` |
+| a game's identity or dump folders | `internal/game/game.go`; where it is installed, `internal/game/install.go` |
 | what a doc or dump phrase means | `docPhrases` in `internal/schema/docs.go`; the dump labels in `internal/schema/dumps.go` |
 | a diagnostic | `internal/lsp/diagnostics.go` (`Codes`) |
 | what a hover card says | `internal/lsp/hover.go` (its facts), `internal/lsp/wording.go` (its words); drawn by `frontend/src/ui/HoverCard.vue` |
-| how a GUI window lays out | how each built-in type draws, `GUITypes` in `internal/game/gui-rules.go`, with the other GUI rows: which blocks are a widget's skin, chrome, attachment or held content (`WidgetSlots`), where a window is laid out (`GUIHolders`), the state it opens in (`GUIOpeningStates`), the calls the preview answers (`GUIAnswered`); what each property means in CSS, the `PROPERTIES` and `HOLDS` tables in `frontend/src/draw/picture.ts`, which the browser lays out |
+| how a GUI window lays out | how each built-in type draws, `GUITypes` in `internal/game/gui.go`, with the other GUI rows: which blocks are a widget's skin, chrome, attachment or held content (`WidgetSlots`), where a window is laid out (`GUIHolders`), the state it opens in (`GUIOpeningStates`), the calls the preview answers (`GUIAnswered`); what each property means in CSS, the `PROPERTIES` and `HOLDS` tables in `frontend/src/draw/picture.ts`, which the browser lays out |
 | a Health section | `internal/pages/health.go` (the cards and which code each lists) and `health_*.go`; its page is `frontend/src/pages/health/` and `frontend/src/composables/useHealth.ts` |
 | what the event graph or a search answers | `internal/pages/graph.go`, `graph_detail.go`, `search.go` |
 | a window event | declared in `windowservice.go`, answered where the table at the head of `frontend/src/stores/windows.ts` says |
@@ -146,13 +146,13 @@ row's second column is rewritten as its part lands.
 | What does this word name: a definition or a reference, which database, or a call by which word? | `occurrencesOf` and 9 helpers in `schema` | the key's or value's record (`schema.WalkFile`); judging (`index`) for what a reference resolves to |
 | Which command, link or operator is this key, and by which rule is it read? | `Enter`, `keyEnter`, `keyFacts`, `fits` | the walk's reading of a key (`Schema.Enter`); its record says which command, link, operator, construct or field |
 | Is this statement an entry, of which database, under what name? | `entryAt` and 11 helpers | the entry's record (the walk's `entryAt`) |
-| What scope does this run in? | `scopeOf`, `Follow`, `commandScope`, `EntryScope`, `RunsScript` | the block's record (the walk); judging for a scripted entry's scope from its callers |
+| What scope does this run in? | `scopeOf`, `Follow`, `commandScope`, `ResolveEntryScope`, `RunsScript` | the block's record (the walk); judging for a scripted entry's scope from its callers |
 | What does a block hold (its shape)? | `blockOf`, `holdsOf`, `commandShape` | the block's record (the walk's `blockOf`) |
 | What does a value take, and is this one valid? | `ValuePosition` + claims | the claim on the value's record; one matcher of a value to a type, used by the verdict that a value has the type its key takes, and by completion |
 | Is this word shaped as a name, an event id, a number, a date, `prefix:name`, a constant, a `$PARAM$`? | `jomini` shapes.go | `jomini`, one function per shape a key or a value is written in |
 | Which case does a lookup use? | no one place: each table matches case its own way | each table's one lookup, which matches case by the game's rule for that table, measured |
-| Is this block a color, and which color? | `blockColor`, `game.ColorOf` | one function over `jomini.ColorParts` and `game.ColorOf`: whether a block is a color, and which |
-| What does a data call's step name, and what type does it lead to? | `CallLeadsTo`, `CallStep` | `schema`'s typing of a data call (`CallLeadsTo`, `TypeDatabase`), the datacontext honored |
+| Is this block a color, and which color? | `blockColor`, `game.ParseColor` | one function over `jomini.ColorParts` and `game.ParseColor`: whether a block is a color, and which |
+| What does a data call's step name, and what type does it lead to? | `CallLeadsTo`, `CallStep` | `schema`'s typing of a data call (`CallLeadsTo`, `ResolveTypeDatabase`), the datacontext honored |
 | Is this a parameter of a scripted entry? | the walk's `parameterDefinitions` | the key's or value's record (the walk's parameters of a scripted entry) |
 | Is this a date, and what does it mean? | `dateFact` | `jomini.ParseDate` |
 | What category/color is this word in the editor? | `lsp.Tokens` (4 categories) plus the editor's grammars (10) | the category on the key's or value's record; the grammars paint shapes only |
@@ -166,8 +166,8 @@ row's second column is rewritten as its part lands.
 | Where is a definition's statement, and its text? | `Session.Statement` | the entry's record (its statement's range); its tree from the file's one parse, its text flattened by one function |
 | Is this an event; what does it fire, what fires it? | `workspace.Fires`/`FiredBy` | an event is a record of the events database, by its declared namespace; `index` `Fires` and `FiredBy` of the kept definitions |
 | Loc: does the key exist, its text, the entry's title, the file's language? | `Session.Loc`, `Session.Title`; `loc.Language` for the file's language | `workspace` `Loc` and `Title`; `loc`'s one rule for a file's language |
-| What is a database's entry called on screen? | `game.KindName` | `game.KindName`, renamed for what it holds |
-| Which database by folder, purpose or word? | `schema.folder`, `DatabaseNamed` | `schema`'s one rule from a folder, a purpose, a written name or a class name to a database |
+| What is a database's entry called on screen? | `game.DescribeEntry` | `game.DescribeEntry`, renamed for what it holds |
+| Which database by folder, by what it houses, or by word? | `schema.folder`, `FindHousingDatabase`, `ResolveNamedDatabase` | `schema`'s one rule from a folder, from what a database houses, from a written name or a class name to a database |
 | Where is this file: its root, origin, rel and database; is it loaded? | `Session.Locate`, `PlaceOf` | `workspace.Locate` (the place) |
 | The key two paths are compared by | `inventory.PathKey` | `appdata.PathKey`, carried on every place |
 | Which file wins at a path; who ships the same path? | `index.Loaded` | `index.Loaded` |

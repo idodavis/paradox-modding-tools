@@ -27,36 +27,35 @@ func init() {
 	application.RegisterEvent[WikiProgress](EventWikiProgress)
 }
 
-// WikiUpdated is one game's wiki refresh, done; Error says why it failed.
+// WikiUpdated is one game's wiki refresh, done.
 type WikiUpdated struct {
 	GameID string `json:"gameId"`
-	Error  string `json:"error,omitempty"`
+	Error  string `json:"error,omitempty"` // why it failed
 }
 
-// WikiProgress is one page a game's wiki refresh fetches: its stage (guides, patch notes), how many
-// of the stage's pages are done and how many it fetches.
+// WikiProgress is one page a game's wiki refresh fetches.
 type WikiProgress struct {
 	GameID string `json:"gameId"`
-	Stage  string `json:"stage"`
-	Done   int    `json:"done"`
-	Total  int    `json:"total"`
+	Stage  string `json:"stage"` // guides or patch notes
+	Done   int    `json:"done"`  // of the stage's pages
+	Total  int    `json:"total"` // the stage's pages in all
 }
 
 // WikiService serves the wiki guides and patch notes.
 type WikiService struct {
 	config     *ConfigFile
 	workspaces *WorkspaceService
-	wikis      *wiki.Client
+	wikis      *wiki.Client // the wiki pages, kept as sidecars
 }
 
-// NewWikiService is the wiki service over the config (the installed games it refreshes), the open workspace and the
-// wiki client.
+// NewWikiService returns the wiki service over the config (the installed games it refreshes), the open workspace and
+// the wiki client.
 func NewWikiService(config *ConfigFile, workspaces *WorkspaceService, wikis *wiki.Client) *WikiService {
 	return &WikiService{config: config, workspaces: workspaces, wikis: wikis}
 }
 
-// OpenWiki is the wiki client keeping its sidecars in the app's cache folder; main hands it to the services that use
-// it, since the wiki package is internal to this one.
+// OpenWiki returns the wiki client keeping its sidecars in the app's cache folder; main hands it to the services that
+// use it, since the wiki package is internal to this one.
 func OpenWiki() (*wiki.Client, error) {
 	dir, err := appdata.CacheDir()
 	if err != nil {
@@ -80,7 +79,7 @@ func (wik *WikiService) Guide(workspaceID, path string) (*wiki.Guide, error) {
 	}
 	database, kind := "", ""
 	if place.Database != nil {
-		database, kind = place.Database.Name, game.KindName(place.Database.Name)
+		database, kind = place.Database.Name, game.DescribeEntry(place.Database.Name, false)
 	}
 	pages := wik.wikis.PagesFor(ws.Game.ID, cmp.Or(database, strings.TrimPrefix(filepath.Ext(place.Rel), ".")), place.Rel)
 	for i := range pages {
@@ -94,9 +93,8 @@ func (wik *WikiService) GuidePage(gameID, title string) *wiki.Page {
 	return wik.wikis.GuidePage(gameID, title)
 }
 
-// ServiceStartup refreshes, in the background, the wiki pages of every installed game, so the
-// guides are current without a click, and tells the frontend each page fetched and each game done;
-// Wails calls it.
+// ServiceStartup refreshes the wiki pages of every installed game in the background, so the guides are current
+// without a click, and tells the frontend each page fetched and each game done; Wails calls it.
 func (wik *WikiService) ServiceStartup(ctx context.Context, _ application.ServiceOptions) error {
 	games := map[string]bool{}
 	wik.config.read(func(cfg *Config) {

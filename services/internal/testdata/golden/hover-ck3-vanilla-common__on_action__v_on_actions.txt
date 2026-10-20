@@ -421,6 +421,7 @@
    "word": "add",
    "key": "add",
    "head": "in `modifier`",
+   "prose": "Adds the number or script value given.",
    "takes": [
     "a number"
    ],
@@ -541,6 +542,11 @@
    "word": "v.1",
    "head": "event",
    "name": "Hello",
+   "scope": {
+    "this": "character",
+    "root": "character",
+    "reason": "every event runs in it unless it says otherwise"
+   },
    "sites": [
     {
      "path": "<fixtures>/ck3/game/events/v_events.txt",
@@ -628,6 +634,11 @@
    "key": "100",
    "head": "event",
    "name": "Two",
+   "scope": {
+    "this": "character",
+    "root": "character",
+    "reason": "every event runs in it unless it says otherwise"
+   },
    "sites": [
     {
      "path": "<fixtures>/ck3/game/events/v_events.txt",

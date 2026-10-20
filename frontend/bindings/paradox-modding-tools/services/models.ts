@@ -18,10 +18,14 @@ import * as texture$0 from "./internal/texture/models.js";
 import * as workspace$0 from "./internal/workspace/models.js";
 
 /**
- * FSChanged is one path under a mod that changed on disk; Deleted when it is gone.
+ * FSChanged is one path under a mod that changed on disk.
  */
 export interface FSChanged {
     "path": string;
+
+    /**
+     * it is gone
+     */
     "deleted": boolean;
 }
 
@@ -196,24 +200,43 @@ export interface GitStatus {
 }
 
 /**
- * IdeRoot is one folder in the workspace IDE multi-root set.
+ * IdeRoot is one folder of the IDE's roots.
  */
 export interface IdeRoot {
     "label": string;
     "path": string;
     "readOnly": boolean;
+
+    /**
+     * game, mod...
+     */
     "kind": string;
+
+    /**
+     * the origin its files carry
+     */
     "origin"?: string;
+
+    /**
+     * a mod's listing image
+     */
     "thumbnail"?: string;
 }
 
 /**
- * IdeRoots is the IDE boot DTO: its folders, and whether it starts with no tabs (the tabs themselves are kept on
- * this computer, in the frontend).
+ * IdeRoots is what the IDE starts from.
  */
 export interface IdeRoots {
     "roots": IdeRoot[] | null;
+
+    /**
+     * it starts with no tabs (they are kept in the frontend)
+     */
     "resetIdeOnOpen": boolean;
+
+    /**
+     * the explorer hides binary files
+     */
     "hideExplorerBinaries": boolean;
 }
 
@@ -240,14 +263,42 @@ export interface ImageFacts {
 export interface Listing {
     "workspaceId": string;
     "modId": string;
+
+    /**
+     * the mod's folder
+     */
     "root": string;
     "name": string;
+
+    /**
+     * the mod's own version
+     */
     "version": string;
+
+    /**
+     * the game version it supports
+     */
     "supportedVersion": string;
     "tags": string[] | null;
+
+    /**
+     * the listing image's path in the mod
+     */
     "thumbnailRel": string;
+
+    /**
+     * its path on disk
+     */
     "thumbnailAbs": string;
+
+    /**
+     * the extra images and videos
+     */
     "previews": steam$0.Preview[] | null;
+
+    /**
+     * the Workshop item
+     */
     "remoteFileId": string;
     "shortDescription": string;
 
@@ -261,8 +312,20 @@ export interface Listing {
      */
     "readmeBbcode": string;
     "changeNote": string;
+
+    /**
+     * the Markdown description file's path in the mod
+     */
     "descMdRel": string;
+
+    /**
+     * the BBCode description file's path in the mod
+     */
     "descBbRel": string;
+
+    /**
+     * the item's page
+     */
     "workshopUrl": string;
 
     /**
@@ -286,24 +349,36 @@ export interface Listing {
  */
 export interface ListingChange {
     "field": string;
+
+    /**
+     * as Steam has it
+     */
     "steam": string;
+
+    /**
+     * as an upload would send it
+     */
     "workspace": string;
     "changed": boolean;
 
     /**
-     * of a list field (the tags): what an upload adds
+     * a list field (the tags): what an upload adds
      */
     "added"?: string[] | null;
 
     /**
-     * and what it takes away
+     * what it takes away
      */
     "removed"?: string[] | null;
 
     /**
-     * the lines a change adds and removes (steam.LineCounts)
+     * the lines a change adds (steam.LineCounts)
      */
     "linesAdded": number;
+
+    /**
+     * the lines a change removes
+     */
     "linesRemoved": number;
 }
 
@@ -311,8 +386,19 @@ export interface ListingChange {
  * ListingSummary is a mod's listing as Settings shows it, read without writing.
  */
 export interface ListingSummary {
+    /**
+     * the Workshop item
+     */
     "remoteFileId": string;
+
+    /**
+     * the listing image's path in the mod
+     */
     "thumbnailRel": string;
+
+    /**
+     * its path on disk
+     */
     "thumbnailAbs": string;
 
     /**
@@ -324,6 +410,10 @@ export interface ListingSummary {
      * the source's file in the mod; "" for steam
      */
     "descRel": string;
+
+    /**
+     * the source's file is there
+     */
     "descExists": boolean;
 
     /**
@@ -358,7 +448,15 @@ export interface PathStat {
  */
 export interface PublishResult {
     "publishedFileId": string;
+
+    /**
+     * the upload must first accept the Workshop agreement
+     */
     "needsLegalAgreement": boolean;
+
+    /**
+     * where it is accepted
+     */
     "legalUrl"?: string;
 }
 
@@ -368,12 +466,16 @@ export interface PublishResult {
 export interface ScanProgress {
     "installId": string;
     "percent": number;
+
+    /**
+     * inventory, localization, schema, index or saving
+     */
     "stage": string;
 }
 
 /**
- * SteamCompare is a mod in the workspace against the copy Steam has: the snapshot PMT kept at its
- * last upload, or a download from Steam.
+ * SteamCompare is a mod in the workspace against the copy Steam has: the snapshot PMT kept at its last upload, or a
+ * download from Steam.
  */
 export interface SteamCompare {
     /**
@@ -401,7 +503,15 @@ export interface SteamCompare {
      * Steam's copy of the mod's files
      */
     "root": string;
+
+    /**
+     * the listing's fields
+     */
     "listing": ListingChange[] | null;
+
+    /**
+     * the mod's files
+     */
     "files": steam$0.FileChange[] | null;
 
     /**
@@ -410,8 +520,7 @@ export interface SteamCompare {
     "changes": number;
 
     /**
-     * Steam's extra images and videos the mod does not keep: an upload removes them when the mod keeps
-     * extras of its own, and leaves them when it keeps none
+     * Steam's extras the mod lacks; removed only where the mod keeps its own
      */
     "onlyOnSteam": string[] | null;
 }
@@ -437,21 +546,36 @@ export interface UploadFiles {
 }
 
 /**
- * WikiProgress is one page a game's wiki refresh fetches: its stage (guides, patch notes), how many
- * of the stage's pages are done and how many it fetches.
+ * WikiProgress is one page a game's wiki refresh fetches.
  */
 export interface WikiProgress {
     "gameId": string;
+
+    /**
+     * guides or patch notes
+     */
     "stage": string;
+
+    /**
+     * of the stage's pages
+     */
     "done": number;
+
+    /**
+     * the stage's pages in all
+     */
     "total": number;
 }
 
 /**
- * WikiUpdated is one game's wiki refresh, done; Error says why it failed.
+ * WikiUpdated is one game's wiki refresh, done.
  */
 export interface WikiUpdated {
     "gameId": string;
+
+    /**
+     * why it failed
+     */
     "error"?: string;
 }
 
@@ -569,11 +693,14 @@ export interface WorkspaceMod {
 }
 
 /**
- * WorkspaceState is what the pages show of a workspace: whether it is open, its install, and whose dumps the
- * schema read.
+ * WorkspaceState is what the pages show of a workspace.
  */
 export interface WorkspaceState {
     "installId": string;
+
+    /**
+     * the install's folder is there
+     */
     "installOk": boolean;
     "gameVersion": string;
 
@@ -586,6 +713,10 @@ export interface WorkspaceState {
      * the version this run's scan replaced, where it differs
      */
     "updatedFrom"?: string;
+
+    /**
+     * the workspace's index is built
+     */
     "open": boolean;
 
     /**

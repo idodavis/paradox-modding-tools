@@ -32,7 +32,7 @@ type Inspect struct {
 	Prose   string         `json:"prose,omitempty"`   // what the dumps or docs say of the word
 	Takes   []string       `json:"takes,omitempty"`   // a key or command: what a word there may be
 	Writes  []string       `json:"writes,omitempty"`  // a key nothing declares: what vanilla writes there
-	Scope   *schema.Scope  `json:"scope,omitempty"`   // where it runs: the scope, its root, the ones before, the saved scopes, and why; nil unknown
+	Scope   *schema.Scope  `json:"scope,omitempty"`   // where it runs; nil unknown
 	Leads   string         `json:"leads,omitempty"`   // the scope it leads to; "" none
 	Returns string         `json:"returns,omitempty"` // what a defined name's entries give: yes or no, a number
 	Sites   []Location     `json:"sites,omitempty"`   // where it is defined, in load order
@@ -48,19 +48,18 @@ type Inspect struct {
 	Range   Range          `json:"range"`
 }
 
-// subject is what the scalar under the cursor stands for: a reference the walk read in it, else its
-// key's position or command; with where the scalar is written and what the walker reads the key's
-// block as.
+// subject is what the scalar under the cursor stands for.
 type subject struct {
-	ref     *schema.Occurrence
-	key     *schema.Position
-	command *schema.Command
-	scope   schema.Scope
-	holds   game.Shape
+	occurrence *schema.Occurrence // the reference the walk read in it; nil for none
+	position   *schema.Position   // its key's position
+	command    *schema.Command    // its key's command
+	scope      schema.Scope       // where the scalar is written
+	shape      game.Shape         // what the walker reads the key's block as
+	keyword    game.Keyword       // the language's own row for the key, whose blurb a card shows in place of a dump's
 }
 
-// Hover is the card for the scalar at a position of a script or localization file: what it stands
-// for and each fact its written form adds; nil where the position holds nothing to say.
+// Hover returns the card for the scalar at a position of a script or localization file: what it stands for and each
+// fact its written form adds; nil where the position holds nothing to say.
 func Hover(ws *workspace.Session, path string, line, col int) (*Inspect, error) {
 	ws.RLock()
 	defer ws.RUnlock()
@@ -78,9 +77,8 @@ func Hover(ws *workspace.Session, path string, line, col int) (*Inspect, error) 
 	return file.scriptCard(offset), nil
 }
 
-// scriptCard is the card of a script file's offset: what the scalar stands for, then the facts its
-// written form adds, each a call; it is nil where the card would say nothing and the cursor is in
-// no entry.
+// scriptCard returns the card of a script file's offset: what the scalar stands for, then the facts its written form
+// adds; nil where the card would say nothing and the cursor is in no entry.
 func (file *openFile) scriptCard(offset int) *Inspect {
 	s := file.ws.Install.Schema
 	cursor := file.walkTo(offset)
@@ -106,7 +104,7 @@ func (file *openFile) scriptCard(offset int) *Inspect {
 	known := file.describe(card, subject)
 	if modifier, isModifier := modifierFact(s, scalar.Text); isKey && !known && isModifier {
 		card.Head, card.Prose = "modifier", modifier.Blurb
-		card.Stale = card.Stale || s.Sources[schema.SourceDumps].Stale
+		card.Stale = card.Stale || s.Sources[game.SourceDumps].Stale
 	}
 	if date, isDate := dateFact(scalar.Text, file.place.Calendar); isDate {
 		card.Date, card.Head = date, cmp.Or(card.Head, "date")
@@ -119,7 +117,7 @@ func (file *openFile) scriptCard(offset int) *Inspect {
 		innermost := cursor.chain[len(cursor.chain)-1]
 		position := schema.ValuePosition(innermost.statement, innermost.context, innermost.inner)
 		if color, isColor := blockColor(file, assign, position); isColor {
-			card.Color = color.Hex()
+			card.Color = color.ToHex()
 		}
 		if len(cursor.chain) > 1 {
 			holder := cursor.chain[len(cursor.chain)-2]
@@ -135,22 +133,21 @@ func (file *openFile) scriptCard(offset int) *Inspect {
 	return card
 }
 
-// subjectAt is what the scalar stands for, from the innermost statement: the reference the walk
-// read in it, the scope it is written in and, for a key, its position, its command and what its
-// block holds. A link chain (capital_county.holder) is read part by part: the part under the cursor
-// is the command, led to from the scope the parts before it end in.
+// subjectAt returns what the scalar stands for, from the innermost statement. A link chain (capital_county.holder) is
+// read part by part: the part under the cursor is the command, led to from the scope the parts before it end in.
 func (cursor cursor) subjectAt(scalar *jomini.Scalar, isKey bool, ref *schema.Occurrence) subject {
 	s := cursor.file.ws.Install.Schema
 	at := cursor.chain[len(cursor.chain)-1]
-	subject := subject{ref: ref, scope: at.context.Scope}
+	subject := subject{occurrence: ref, scope: at.context.Scope}
 	if !isKey {
 		return subject
 	}
-	subject.key, subject.command = at.inner.Position(), at.command(s)
+	subject.position, subject.command = at.inner.Position(), at.command(s)
+	subject.keyword = at.inner.Keyword
 	if jomini.ChildBlock(at.statement) != nil || at.inner.Shape == game.ShapeValue {
-		subject.holds = at.inner.Shape
+		subject.shape = at.inner.Shape
 	}
-	if ref != nil || subject.command == nil || subject.command.Kinds&game.KindLink == 0 {
+	if ref != nil || subject.command == nil || !slices.Contains(subject.command.Declared, game.DeclaredLink) {
 		return subject
 	}
 	start := scalar.Range.Start
@@ -168,22 +165,21 @@ func (cursor cursor) subjectAt(scalar *jomini.Scalar, isKey bool, ref *schema.Oc
 	return subject
 }
 
-// describe fills a card from what a scalar stands for: a reference's definitions, else a command's
-// or a key's claims; a stale source among those shown marks the card. It reports whether anything
-// is known.
+// describe fills a card from what a scalar stands for, marking it where a source shown is stale; it reports whether
+// anything is known.
 func (file *openFile) describe(card *Inspect, subject subject) bool {
 	s := file.ws.Install.Schema
-	mark := func(from schema.Source) {
+	mark := func(from game.Source) {
 		card.Stale = card.Stale || s.Sources[from].Stale
 	}
 	switch {
-	case subject.ref != nil && file.kindCard(card, *subject.ref):
+	case subject.occurrence != nil && file.kindCard(card, *subject.occurrence):
 		return true
-	case subject.ref != nil && file.cardForReference(card, subject, mark):
+	case subject.occurrence != nil && file.cardForReference(card, subject, mark):
 		return true
 	case subject.command != nil:
 		return file.cardForCommand(card, subject, mark)
-	case subject.key != nil:
+	case subject.position != nil:
 		return cardForPosition(card, subject, mark)
 	}
 	return false
@@ -203,7 +199,7 @@ func (file *openFile) kindCard(card *Inspect, ref schema.Occurrence) bool {
 	return true
 }
 
-// scopeCard is the record a card carries: nil where neither the scope nor its root is known.
+// scopeCard returns the record a card carries; nil where neither the scope nor its root is known.
 func scopeCard(scope schema.Scope) *schema.Scope {
 	if scope.This == "" && scope.Root == "" {
 		return nil
@@ -211,23 +207,21 @@ func scopeCard(scope schema.Scope) *schema.Scope {
 	return &scope
 }
 
-// cardForReference fills a reference's card: its database, its sites (the kept one and its adds),
-// its localized name, the comment its author leads it with, and what the dumps and docs say of its
-// database. subject.scope is where the reference is written, which a scripted entry runs in when
-// its database declares none.
-func (file *openFile) cardForReference(card *Inspect, subject subject, mark func(schema.Source)) bool {
-	ws, s, ref := file.ws, file.ws.Install.Schema, subject.ref
+// cardForReference fills a reference's card: database, sites, localized name, its author's comment and what the dumps
+// and docs say of its database; a scripted entry runs in the scope it is written in unless its database declares one.
+func (file *openFile) cardForReference(card *Inspect, subject subject, mark func(game.Source)) bool {
+	ws, s, ref := file.ws, file.ws.Install.Schema, subject.occurrence
 	defs, known := index.Resolve(s, ws.Indexes(), *ref, file.place.Path)
 	database := ref.Database
 	if len(defs) > 0 {
 		database = defs[0].Occurrence().Database
 	}
-	row := s.Databases[database]
-	inSchema := row != nil || database == game.Localization || database == game.File
+	declared := s.Databases[database]
+	inSchema := declared != nil || database == game.Localization || database == game.File
 	if unknown := !known && (ref.Caller != "" || !inSchema); unknown {
 		return false
 	}
-	card.Word, card.Head = ref.ID, game.KindName(database)
+	card.Word, card.Head = ref.ID, game.DescribeEntry(database, false)
 	if entry, name, _ := strings.Cut(ref.ID, ":"); database == schema.Parameter {
 		card.Word, card.Head = name, "parameter of "+entry
 	}
@@ -240,30 +234,30 @@ func (file *openFile) cardForReference(card *Inspect, subject subject, mark func
 		card.Sites = append(card.Sites, siteOf(ws, def))
 	}
 	winner, adds, _, _ := ws.Winner(defs)
-	if len(defs) > 0 && row != nil {
+	if len(defs) > 0 && declared != nil {
 		card.Winner = slices.Index(defs, winner)
 		for _, add := range adds {
 			card.Adds = append(card.Adds, slices.Index(defs, add))
 		}
 	}
-	if row != nil {
+	if declared != nil {
 		card.Name, card.Prose = loc.Plain(ws.Title(ref.ID, winner, "")), authorComment(ws, winner)
-		card.About = row.Entry.Blurb.Value
-		if source := row.Entry.Blurb.Source; source == schema.SourceDumps || source == schema.SourceDocs {
+		card.About = declared.Entry.Blurb.Value
+		if source := declared.Entry.Blurb.Source; source == game.SourceDumps || source == game.SourceDocs {
 			mark(source)
 		}
-		scope := s.EntryScope(row, ref.ID)
-		if scope.This == "" && len(row.Descriptor.Callers) > 0 {
+		scope := s.ResolveEntryScope(declared, ref.ID, nil)
+		if scope.This == "" && len(declared.Rule.CallerWords) > 0 {
 			scope = subject.scope
 		}
 		card.Scope = scopeCard(scope)
-		card.Returns = returnsText[row.Entry.Holds.Value]
-		mark(row.Entry.Scope.Source)
-		if action, isAction := s.OnActions[ref.ID]; isAction && row.Descriptor.Purpose == game.PurposeOnActions {
+		card.Returns = returnsText[declared.Entry.Shape.Value]
+		mark(declared.Entry.Scope.Source)
+		if action, isAction := s.OnActions[ref.ID]; isAction && declared.Rule.Houses == "on_actions" {
 			card.Prose = cmp.Or(action.Blurb, card.Prose)
-			mark(schema.SourceDumps)
+			mark(game.SourceDumps)
 		}
-		card.Graphed = row.Descriptor.Purpose == game.PurposeEvents || row.Descriptor.Purpose == game.PurposeOnActions
+		card.Graphed = declared.Rule.Houses == "events" || declared.Rule.Houses == "on_actions"
 	}
 	card.Graphed = card.Graphed || (len(defs) > 0 && len(ws.Fires(winner)) > 0)
 	return true
@@ -292,9 +286,8 @@ func (file *openFile) placeCard(card *Inspect, database, id string) {
 	}
 }
 
-// authorComment is the comment a mod's author leads a definition with: the comments attached to its
-// statement that end before it starts, each stripped of its #, joined by newlines; "" for the
-// game's own, a file under no origin or none.
+// authorComment returns the comment a mod's author leads a definition with, lines joined, without the #; "" for the
+// game's own files and for none.
 func authorComment(ws *workspace.Session, def index.At) string {
 	if origin := def.File().Origin; origin == game.OriginVanilla || origin == "" {
 		return ""
@@ -313,12 +306,11 @@ func authorComment(ws *workspace.Session, def index.At) string {
 	return strings.Join(lines, "\n")
 }
 
-// cardForCommand fills a declared command's card: what it is, what it takes, the scope it runs in
-// (the one it declares where the block's is unknown) and the scope it leads to. It reports whether
-// the card says anything.
-func (file *openFile) cardForCommand(card *Inspect, subject subject, mark func(schema.Source)) bool {
+// cardForCommand fills a declared command's card: what it is, takes, runs in and leads to; it reports whether the
+// card says anything.
+func (file *openFile) cardForCommand(card *Inspect, subject subject, mark func(game.Source)) bool {
 	s, command := file.ws.Install.Schema, subject.command
-	card.Head, card.Prose, card.Takes = kindText(command), command.Blurb, takesText(command.Args)
+	card.Head, card.Prose, card.Takes = kindText(command), cmp.Or(subject.keyword.Blurb, command.Blurb), takesText(command.Args)
 	scope := subject.scope
 	if scope.This == "" && len(command.Scopes) == 1 {
 		scope.This, scope.Reason = command.Scopes[0], "the one scope it runs in"
@@ -327,32 +319,31 @@ func (file *openFile) cardForCommand(card *Inspect, subject subject, mark func(s
 	if _, declared := s.Scopes[command.Target]; declared {
 		card.Leads = command.Target
 	}
-	mark(schema.SourceDumps)
-	return takesByEvidence(card, command.Args, subject.holds)
+	mark(game.SourceDumps)
+	return takesByEvidence(card, command.Args, subject.shape)
 }
 
-// cardForPosition fills a key's card from its position's claims: whether it is required, what it
-// takes, where it runs and leads, and the prose a declared source gives it. It reports whether the
-// card says anything.
-func cardForPosition(card *Inspect, subject subject, mark func(schema.Source)) bool {
-	key := subject.key
+// cardForPosition fills a key's card from its position's claims: whether it is required, what it takes, where it runs
+// and leads, and its prose; it reports whether the card says anything.
+func cardForPosition(card *Inspect, subject subject, mark func(game.Source)) bool {
+	key := subject.position
 	card.Need, card.Takes, card.Scope, card.Leads = requirementText(key), takesText(key), scopeCard(subject.scope), key.Scope.Value
-	if source := key.Blurb.Source; source == schema.SourceDumps || source == schema.SourceDocs {
+	if source := key.Blurb.Source; source == game.SourceDumps || source == game.SourceDocs {
 		card.Prose = key.Blurb.Value
 		mark(source)
 	}
-	for _, source := range []schema.Source{key.Value.Source, key.Holds.Source, key.Scope.Source, key.Required.Source, key.Default.Source} {
+	card.Prose = cmp.Or(subject.keyword.Blurb, card.Prose)
+	for _, source := range []game.Source{key.Value.Source, key.Shape.Source, key.Scope.Source, key.Required.Source, key.Default.Source} {
 		mark(source)
 	}
-	return takesByEvidence(card, key, subject.holds)
+	return takesByEvidence(card, key, subject.shape)
 }
 
-// takesByEvidence says what a key takes where no source declared it: what its block holds, else
-// what vanilla writes there, an inference that alone does not make the card known. It reports
-// whether the card now says something.
-func takesByEvidence(card *Inspect, position *schema.Position, holds game.Shape) bool {
-	if len(card.Takes) == 0 && blockHoldsText[holds] != "" {
-		card.Takes = []string{blockHoldsText[holds]}
+// takesByEvidence says what a key takes where no source declared it: what its block holds, else what vanilla writes
+// there. It reports whether the card now says anything.
+func takesByEvidence(card *Inspect, position *schema.Position, shape game.Shape) bool {
+	if len(card.Takes) == 0 && blockHoldsText[shape] != "" {
+		card.Takes = []string{blockHoldsText[shape]}
 	}
 	if len(card.Takes) == 0 {
 		card.Writes = vanillaWritesText(position)
@@ -360,8 +351,8 @@ func takesByEvidence(card *Inspect, position *schema.Position, holds game.Shape)
 	return card.Head != "" || card.Need != "" || card.Prose != "" || len(card.Takes) > 0 || card.Leads != ""
 }
 
-// modifierFact is the modifier the dumps list under a name, else the most specific $TYPE$ family
-// the name matches: the longest pattern, the first by name among equals.
+// modifierFact returns the modifier the dumps list under a name, else the most specific $TYPE$ family the name matches:
+// the longest pattern, the first by name among equals.
 func modifierFact(s *schema.Schema, name string) (schema.Modifier, bool) {
 	modifier, declared := s.Modifiers[name]
 	for _, family := range s.Modifiers {
@@ -375,9 +366,8 @@ func modifierFact(s *schema.Schema, name string) (schema.Modifier, bool) {
 	return modifier, declared || modifier.Pattern != ""
 }
 
-// dateFact writes a date out (January 1st, 8082 AD; year -221 is 221 BC), and in the mod's calendar
-// where one of its eras applies (82.1.1 A.C.). isDate says the text is a date at all; a date whose
-// month is out of range is one with no text.
+// dateFact writes a date out (January 1st, 8082 AD), and in the mod's calendar where one of its eras applies
+// (82.1.1 A.C.). isDate says the text is a date at all; one whose month is out of range has no text.
 func dateFact(text string, calendar workspace.Calendar) (date string, isDate bool) {
 	if jomini.Literal(text) != jomini.LitDate {
 		return "", false
@@ -413,11 +403,11 @@ func ordinal(number int) string {
 	return strconv.Itoa(number) + suffix
 }
 
-// weightFact is a numbered branch's share of its siblings' numbers, in percent, where the holder's
-// construct row gives numbered keys a weight (random_list's <number> branches); 0 elsewhere.
+// weightFact returns a numbered branch's share of its siblings' numbers, in percent, where the holder's keyword gives
+// numbered keys a weight (random_list's <number> branches); 0 elsewhere.
 func weightFact(branch *jomini.Assignment, holder *jomini.Block, context schema.Context) int {
-	construct, isConstruct := game.ConstructOf(context.Shape, context.Command, "<number>")
-	weighted := isConstruct && construct.Key == "<number>"
+	keyword, isKeyword := game.LookupKeyword(context.Shape, context.Command, "<number>")
+	weighted := isKeyword && keyword.Key == "<number>"
 	if holder == nil || !weighted || jomini.Literal(branch.Key.Text) != jomini.LitNumber {
 		return 0
 	}
@@ -449,18 +439,17 @@ func (cursor cursor) writtenInFact(card *Inspect) {
 	if holder.context.Entry >= 0 {
 		database = cursor.file.ws.Install.Schema.Databases[cursor.occurrences[holder.context.Entry].Database]
 	}
-	inEntry := database != nil && holder.inner.At == database.Entry
+	inEntry := database != nil && holder.inner.BlockPosition == database.Entry
 	assign, isAssign := holder.statement.(*jomini.Assignment)
 	switch {
 	case inEntry:
-		card.Head = "in " + heading(database.Name)
+		card.Head = "in " + game.DescribeEntry(database.Name, true)
 	case isAssign:
 		card.Head = "in `" + assign.Key.Text + "`"
 	}
 }
 
-// bareCard is a card with only the entry and blocks the cursor is in, which draws nothing; nil
-// outside an entry.
+// bareCard returns a card with only the entry and blocks the cursor is in, which draws nothing; nil outside an entry.
 func bareCard(within []string, span Range) *Inspect {
 	if len(within) == 0 {
 		return nil
@@ -476,15 +465,14 @@ func saysNothing(card *Inspect) bool {
 	return !texts && !lists && card.Weight == 0
 }
 
-// dataCallCard is the card of a data call's last step: a custom localization named by a quoted
-// argument, an entry of the functions or concepts databases, a function of the type the steps
-// before lead to, or a data type; nil where the step is none of them.
+// dataCallCard returns the card of a data call's last step: a custom localization named by a quoted argument, an entry
+// of the functions or concepts databases, a function, or a data type; nil where it is none of them.
 func (file *openFile) dataCallCard(steps []jomini.CallStep) *Inspect {
 	ws, s := file.ws, file.ws.Install.Schema
 	step := steps[len(steps)-1]
 	card := &Inspect{Word: step.Name, Range: file.span(step.Range), Winner: -1}
 	typeName := s.CallLeadsTo(steps[:len(steps)-1], "")
-	stale := s.Sources[schema.SourceDumps].Stale
+	stale := s.Sources[game.SourceDumps].Stale
 	for _, arg := range step.Args {
 		if custom, isCustom := s.CustomLoc[arg.Text]; arg.Quoted && isCustom {
 			card.Word, card.Head, card.Stale = arg.Text, "custom localization", stale
@@ -501,8 +489,8 @@ func (file *openFile) dataCallCard(steps []jomini.CallStep) *Inspect {
 		if len(index.Lookup(ws.Indexes(), schema.Defines, name, step.Name)) == 0 {
 			continue
 		}
-		reference := subject{ref: &schema.Occurrence{Database: name, ID: step.Name}}
-		if known = file.cardForReference(card, reference, func(schema.Source) {}); known {
+		reference := subject{occurrence: &schema.Occurrence{Database: name, ID: step.Name}}
+		if known = file.cardForReference(card, reference, func(game.Source) {}); known {
 			break
 		}
 	}
@@ -523,12 +511,12 @@ func (file *openFile) dataCallCard(steps []jomini.CallStep) *Inspect {
 
 // readInDataCalls reports whether a database holds the entries a data call names: functions and
 // concepts.
-func readInDataCalls(row game.Descriptor) bool {
-	return row.Purpose == game.PurposeFunctions || row.Purpose == game.PurposeConcepts
+func readInDataCalls(rule game.DatabaseRule) bool {
+	return rule.Houses == "functions" || rule.Houses == "concepts"
 }
 
-// locCard is the card in a localization file: a data call's step, a reference the line makes
-// ($key$, a concept) or the line's own key; nil where the offset names nothing that exists.
+// locCard returns the card in a localization file: a data call's step, a reference the line makes ($key$, a concept) or
+// the line's own key; nil where the offset names nothing that exists.
 func (file *openFile) locCard(offset int) *Inspect {
 	ws := file.ws
 	ref, steps := file.locRef(offset)
@@ -542,6 +530,6 @@ func (file *openFile) locCard(offset int) *Inspect {
 		return nil
 	}
 	card := &Inspect{Word: ref.ID, Range: file.span(ref.Range), Winner: -1}
-	file.cardForReference(card, subject{ref: ref}, func(schema.Source) {})
+	file.cardForReference(card, subject{occurrence: ref}, func(game.Source) {})
 	return card
 }

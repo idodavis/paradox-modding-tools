@@ -41,7 +41,7 @@ func main() {
 	if err != nil {
 		log.Fatal(err)
 	}
-	if s.Sources[schema.SourceDumps].Origin == "none" {
+	if s.Sources[game.SourceDumps].Origin == "none" {
 		log.Fatalf("no dump files found for %s: run the game's script_docs and data type dumps first", *gameID)
 	}
 	s.Databases = nil
@@ -60,7 +60,7 @@ func main() {
 // installAndVersion returns the install root of a game, the first Steam install found when dir is empty, and the
 // version read there; it exits when either is missing.
 func installAndVersion(gameID, dir string) (string, string) {
-	info := game.Get(gameID)
+	info := game.Lookup(gameID)
 	if info == nil {
 		log.Fatalf("unknown game %q: pass -game ck3, vic3 or eu5", gameID)
 	}

@@ -13,8 +13,8 @@ import (
 	"paradox-modding-tools/services/internal/schema"
 )
 
-// Lookup is every occurrence of a role of a name across the indexes, in the game's load order: the files
-// the game loads, by Rel, each file's in source order. A call is looked up with Database "".
+// Lookup returns every occurrence of a role of a name across the indexes in the game's load order (the files the game
+// loads, by Rel, each in source order); a call is looked up with Database "".
 func Lookup(indexes []*Index, role schema.Role, database, id string) (matches []At) {
 	for _, index := range indexes {
 		for _, at := range index.listed(role, database, id) {
@@ -30,7 +30,7 @@ func Lookup(indexes []*Index, role schema.Role, database, id string) (matches []
 	return matches
 }
 
-// listed is the index's own occurrences of a role of a name, in file order; none for a name it never met.
+// listed returns the index's own occurrences of a role of a name, in file order; none for a name it never met.
 func (index *Index) listed(role schema.Role, database, id string) []At {
 	databaseOrdinal, inDatabases := index.Databases.ordinals[database]
 	idOrdinal, inIDs := index.IDs.ordinals[id]
@@ -40,9 +40,8 @@ func (index *Index) listed(role schema.Role, database, id string) []At {
 	return index.postings[posting{role, uint16(databaseOrdinal), uint32(idOrdinal)}]
 }
 
-// FileAt is the file at a Rel across the indexes, read as the game reads a path: whatever its case, its
-// doubled slashes and a slash before it (Vic3 writes /gfx/interface/...); the last index's that lists it, at
-// its last place there.
+// FileAt returns the file at a Rel across the indexes, read as the game reads a path (any case, doubled slashes, a
+// leading slash); the last index's that lists it, at its last place there.
 func FileAt(indexes []*Index, rel string) (inventory.File, bool) {
 	key := strings.TrimPrefix(path.Clean("/"+strings.ToLower(rel)), "/")
 	for _, index := range slices.Backward(indexes) {
@@ -53,8 +52,8 @@ func FileAt(indexes []*Index, rel string) (inventory.File, bool) {
 	return inventory.File{}, false
 }
 
-// Loaded is the file listed at a path of the indexes and whether the game loads it: it is hidden by
-// a later file at its Rel, in its index or a later one, or by a later index's Replaced.
+// Loaded returns the file listed at a path of the indexes and whether the game loads it: a later file at its Rel, or
+// a later index's Replaced, hides it.
 func Loaded(indexes []*Index, path string) (inventory.File, bool) {
 	path = inventory.PathKey(path)
 	for rank, index := range indexes {
@@ -73,8 +72,8 @@ func Loaded(indexes []*Index, path string) (inventory.File, bool) {
 	return inventory.File{}, false
 }
 
-// RefsInside is the references written inside an entry's definition, in its file's order; none for a
-// definition that is no entry (a name script makes inside one).
+// RefsInside returns the references written inside an entry's definition, in its file's order; none for a definition
+// that is no entry (a name script makes inside one).
 func RefsInside(def At) (refs []At) {
 	if def.index == nil || def.Occurrence().Entry != def.occurrence {
 		return nil
@@ -87,7 +86,7 @@ func RefsInside(def At) (refs []At) {
 	return refs
 }
 
-// Names is every name defined in a database across the indexes, each once, the install's first.
+// Names returns every name defined in a database across the indexes, each once, the install's first.
 func Names(indexes []*Index, database string) (names []string) {
 	seen := map[string]bool{}
 	for _, index := range indexes {
@@ -101,10 +100,8 @@ func Names(indexes []*Index, database string) (names []string) {
 	return names
 }
 
-// Resolve is a reference's definitions, the reference given as the walk produced it (from is its file's path,
-// "" for none): a call's in the databases its calling word names; a scope saved from code, a loc key, a file
-// path or a built-in widget kind known with no definitions; else Lookup. A local definition answers only a
-// reference in its own file.
+// Resolve returns a reference's definitions (from is its file's path): a call's in the databases its caller names, else
+// Lookup's; a saved scope, loc key, file or widget kind is known with none. A local one answers its own file only.
 func Resolve(s *schema.Schema, indexes []*Index, ref schema.Occurrence, from string) (defs []At, known bool) {
 	switch {
 	case ref.Caller != "":
@@ -142,27 +139,26 @@ func RefsTo(s *schema.Schema, indexes []*Index, database, id string) []At {
 	return refs
 }
 
-// Winner applies the entry modes to a name's definitions in Lookup's order, plain then each mode's:
-// the winner, its adds, INJECT/REPLACE orphans with no target, and whether two mods contest it.
-func Winner(info *game.GameInfo, defs []At, origin func(path string) string) (winner At, adds, orphans []At, contested bool) {
-	// in a database of on_actions every plain definition after the first adds, as an inject does; a moded one
-	// follows its mode
-	merged := map[string]bool{}
-	for _, row := range info.Descriptors {
-		merged[row.Database] = row.Purpose == game.PurposeOnActions
+// Winner applies the entry modes to a name's definitions in Lookup's order and returns the winner, its adds, orphans
+// with no target and whether two mods contest it; the caller gives the database's precedence.
+func Winner(info *game.Game, defs []At, origin func(path string) string, precedence func(database string) game.Precedence,
+) (winner At, adds, orphans []At, contested bool) {
+	combines := make([]game.Precedence, len(defs))
+	for i, at := range defs {
+		combines[i] = precedence(at.Occurrence().Database)
 	}
-
 	found := false
 	for _, mode := range slices.Concat([]game.EntryMode{{}}, info.EntryModes) {
-		plain := mode.Word == ""
-		for _, at := range defs {
+		plain := mode.Prefix == ""
+		for i, at := range defs {
 			def := at.Occurrence()
-			if def.Mode != mode.Word {
+			if def.Mode != mode.Prefix {
 				continue
 			}
+			merged := len(combines[i].Adds) > 0
 
 			// a plain on_action, a name an entry gives (Named) and a local declaration take no place
-			contends := (plain && !merged[def.Database] || mode.Replaces) && !def.IsName && !def.Local
+			contends := (plain && !merged || mode.Replaces) && !def.IsName && !def.Local
 
 			// two mods contest when one takes, or tries to take, the other's place
 			if found && contends {
@@ -180,7 +176,7 @@ func Winner(info *game.GameInfo, defs []At, origin func(path string) string) (wi
 				} else if !mode.Optional {
 					orphans = append(orphans, at)
 				}
-			case plain && slices.Contains(info.Layout.FirstWins, def.Database):
+			case plain && combines[i].Keeps == "first":
 				// the earlier plain definition holds
 			case contends:
 				winner, adds = at, nil
@@ -192,22 +188,22 @@ func Winner(info *game.GameInfo, defs []At, origin func(path string) string) (wi
 	return winner, adds, orphans, contested
 }
 
-// Fires is whether a reference fires its target: an event or on_action outside a trigger.
+// Fires reports whether a reference fires its target: an event or on_action outside a trigger.
 func Fires(s *schema.Schema, ref schema.Occurrence) bool {
 	database := s.Databases[ref.Database]
-	return !ref.InTrigger && database != nil && (database.Descriptor.Purpose == game.PurposeEvents || database.Descriptor.Purpose == game.PurposeOnActions)
+	return !ref.InTrigger && database != nil && (database.Rule.Houses == "events" || database.Rule.Houses == "on_actions")
 }
 
-// Runs is whether a reference outside a trigger runs a scripted entry, so what it fires is fired
-// through it: a call, or a name of a database called in effects.
+// Runs reports whether a reference outside a trigger runs a scripted entry (a call, or a name of a database called in
+// effects), so what it fires is fired through it.
 func Runs(s *schema.Schema, ref schema.Occurrence) bool {
 	database := s.Databases[ref.Database]
-	return !ref.InTrigger && (ref.Caller != "" || database != nil && slices.Contains(database.Descriptor.Callers, game.Shapes[game.ShapeEffects].Caller))
+	return !ref.InTrigger && (ref.Caller != "" || database != nil && slices.Contains(database.Rule.CallerWords, game.Shapes[game.ShapeEffects].Caller))
 }
 
-// Scripted is whether a definition is a scripted entry, one a reference may run (Runs): of a
-// database some block calls.
+// Scripted reports whether a definition is a scripted entry a reference may run (Runs): one of a database some block
+// calls.
 func Scripted(s *schema.Schema, def schema.Occurrence) bool {
 	database := s.Databases[def.Database]
-	return database != nil && len(database.Descriptor.Callers) > 0
+	return database != nil && len(database.Rule.CallerWords) > 0
 }

@@ -23,7 +23,7 @@ import (
 // Guide is the WikiService.Guide payload: the open file's database and its Guide tabs.
 type Guide struct {
 	Database    string `json:"database"`
-	Kind        string `json:"kind"` // what one of its database is called (game.KindName)
+	Kind        string `json:"kind"` // what one of its database is called (game.DescribeEntry)
 	Pages       []Page `json:"pages"`
 	Attribution string `json:"attribution"`
 }
@@ -48,20 +48,19 @@ type PatchList struct {
 
 // Section is one heading of a page, for the TOC.
 type Section struct {
-	TocLevel int    `json:"tocLevel"`
-	Line     string `json:"line"`
-	Anchor   string `json:"anchor"`
+	TocLevel int    `json:"tocLevel"` // its depth
+	Line     string `json:"line"`     // its text
+	Anchor   string `json:"anchor"`   // its link target
 }
 
-// Page is one fetched page as the sidecar keeps it and the panes show it: its sanitized HTML and
-// headings, and for a patch note whether it has a Modding section.
+// Page is one fetched page as the sidecar keeps it and the panes show it.
 type Page struct {
 	Title    string    `json:"title"`
 	URL      string    `json:"url"`
-	Revid    int       `json:"revid"`
-	HTML     string    `json:"html"`
-	Sections []Section `json:"sections,omitempty"`
-	Modding  bool      `json:"modding,omitempty"`
+	Revid    int       `json:"revid"`              // the revision fetched
+	HTML     string    `json:"html"`               // sanitized
+	Sections []Section `json:"sections,omitempty"` // its headings
+	Modding  bool      `json:"modding,omitempty"`  // a patch note: it has a Modding section
 }
 
 // Sidecar is one game's wiki file: its guide pages and its patch notes.
@@ -70,18 +69,19 @@ type Sidecar struct {
 	Patches []Page `json:"patches"`
 }
 
-// hotfix is one hotfix of a .X page: the part of the page under a heading that names a version.
+// hotfix is one hotfix of a .X page: the part under a heading that names a version.
 type hotfix struct {
 	version  string
 	html     string
 	sections []Section
 }
 
-// patchVer is a parsed "Patch 1.16.2" / "Patch 1.16.X" title: the version as written, its minor version
-// (1.16), and whether it is a hotfix or, written X, a page of them.
+// patchVer is a parsed "Patch 1.16.2" or "Patch 1.16.X" title.
 type patchVer struct {
-	Label, Minor     string
-	Hotfix, Wildcard bool
+	Label    string // the version as written
+	Minor    string // its minor version (1.16)
+	Hotfix   bool   // a hotfix
+	Wildcard bool   // written X: a page of hotfixes
 }
 
 const (
@@ -162,7 +162,7 @@ func (client *Client) NamedPages(gameID, database, rel string) []Page {
 	return matches
 }
 
-// GuidePage is a guide page by its title; nil where the game's wiki has none so named.
+// GuidePage returns a guide page by its title; nil where the game's wiki has none so named.
 func (client *Client) GuidePage(gameID, title string) *Page {
 	sidecar, err := client.load(gameID)
 	if err != nil {
@@ -176,9 +176,9 @@ func (client *Client) GuidePage(gameID, title string) *Page {
 	return nil
 }
 
-// Attribution is the Guide / Patch Notes footer line.
+// Attribution returns the Guide / Patch Notes footer line.
 func Attribution(gameID string) string {
-	info := game.Get(gameID)
+	info := game.Lookup(gameID)
 	name := "Paradox"
 	if info != nil && info.ShortName != "" {
 		name = info.ShortName
@@ -232,8 +232,8 @@ func (client *Client) Patches(gameID string) PatchList {
 	return out
 }
 
-// patchEntry is one patch page's row of the version tree: its title, code name and release date, its version, the
-// version it is a hotfix of, and whether it has a Modding section.
+// patchEntry returns one patch page's row of the version tree: title, code name, release date, version, the version it
+// is a hotfix of, and whether it has a Modding section.
 func patchEntry(page Page) PatchEntry {
 	// judged from the headings kept, so a page fetched before the rule changed is judged by today's
 	entry := PatchEntry{Title: page.Title, Modding: hasModding(page.Sections)}
@@ -247,7 +247,7 @@ func patchEntry(page Page) PatchEntry {
 	return entry
 }
 
-// releaseLine is a note's name and release date, read from its opening text; empty where it gives none.
+// releaseLine returns a note's name and release date, read from its opening text; empty where it gives none.
 func releaseLine(pageHTML string) (name, released string) {
 	text := stdhtml.UnescapeString(tagRe.ReplaceAllString(pageHTML[:min(len(pageHTML), 2000)], " "))
 	if match := akaRe.FindStringSubmatch(text); match != nil {
@@ -259,7 +259,7 @@ func releaseLine(pageHTML string) (name, released string) {
 	return name, released
 }
 
-// hotfixes are a .X page's hotfixes, in the page's order; none when no heading names a version.
+// hotfixes returns a .X page's hotfixes, in the page's order; none when no heading names a version.
 func hotfixes(page Page) (fixes []hotfix) {
 	for i, section := range page.Sections {
 		if section.TocLevel != 2 || !versionRe.MatchString(section.Anchor) {
@@ -300,7 +300,7 @@ func parsePatchTitle(title string) (patchVer, bool) {
 	}, true
 }
 
-// versionParts is a version's numbers; a .X page's are its major and minor.
+// versionParts returns a version's numbers; a .X page's are its major and minor.
 func versionParts(label string) []int {
 	var parts []int
 	for part := range strings.SplitSeq(label, ".") {
@@ -342,9 +342,8 @@ func (client *Client) PatchByVersion(gameID, want string) *Page {
 	return fallback
 }
 
-// ScriptExamples returns the script examples the wiki's pages hold for each of the named databases: the text
-// of every <pre> block on the pages NamedPages picks for the database. The time is the sidecar's, zero when
-// the game has no sidecar. The engine reads these as a source in trust order; it never sees the HTML.
+// ScriptExamples returns the script examples the wiki's pages hold for each named database: the text of every <pre>
+// block on the pages NamedPages finds for it. The time is the sidecar's, zero when the game has none.
 func (client *Client) ScriptExamples(gameID string, databases []string) (map[string][]string, time.Time, error) {
 	info, err := os.Stat(client.SidecarPath(gameID))
 	if err != nil {
@@ -381,14 +380,13 @@ func preBlocks(pageHTML string) []string {
 	return blocks
 }
 
-// NormTitle is a page title as titles are compared: lower case, underscores as spaces, single
-// spaces.
+// NormTitle returns a page title as titles are compared: lower case, underscores as spaces, single spaces.
 func NormTitle(title string) string {
 	return strings.ToLower(strings.Join(strings.Fields(strings.ReplaceAll(title, "_", " ")), " "))
 }
 
-// Stem is what a page title or a database name is matched by: NormTitle without a trailing
-// "modding" and without a plural s.
+// Stem returns what a page title or a database name is matched by: NormTitle without a trailing "modding" and
+// without a plural s.
 func Stem(name string) string {
 	stem := strings.TrimSpace(strings.TrimSuffix(" "+NormTitle(name), " modding"))
 	return strings.TrimSuffix(stem, "s")

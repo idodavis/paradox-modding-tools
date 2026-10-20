@@ -18,13 +18,11 @@ import (
 	"paradox-modding-tools/services/internal/workspace"
 )
 
-// Findings is the editor's findings over every mod file of a session, found again only when the session's records
-// changed since; Changes never repeats across sessions, so one set serves. Diagnose takes the session's read lock
-// itself, so Current is called before the caller takes it.
+// Findings is the editor's findings over every mod file of a session, found again only when its records changed.
 type Findings struct {
 	mu      sync.Mutex
-	changes int64 // the session's Changes the findings were made at
-	byPath  map[string][]lsp.Diagnostic
+	changes int64                       // the session's Changes the findings were made at; never repeats across sessions
+	byPath  map[string][]lsp.Diagnostic // by file path
 }
 
 // The cards that list a finding by its code: the contests list a name defined twice at each site, the dangling rows
@@ -44,7 +42,7 @@ var shownBy = map[string]string{
 	"missing-file":         cardDangling,
 }
 
-// Current is the findings of every mod file by its path, found again where the records changed since the last.
+// Current returns the findings of every mod file by its path, found again where the records changed since the last.
 func (findings *Findings) Current(ws *workspace.Session) map[string][]lsp.Diagnostic {
 	ws.RLock()
 	changes, files := ws.Changes, slices.Clone(ws.Workspace.Files)
@@ -67,7 +65,7 @@ func (findings *Findings) Current(ws *workspace.Session) map[string][]lsp.Diagno
 	return findings.byPath
 }
 
-// dangling is each name a mod's loaded file writes that the editor's checks find nothing for, from their findings,
+// dangling returns each name a mod's loaded file writes that the editor's checks find nothing for, from their findings,
 // so a name dangles by the editor's rules.
 func dangling(ws *workspace.Session, findings map[string][]lsp.Diagnostic, sources *sourceIndex) []Dangling {
 	rows := map[[2]string]*Dangling{} // by database and name
@@ -86,7 +84,7 @@ func dangling(ws *workspace.Session, findings map[string][]lsp.Diagnostic, sourc
 			key := [2]string{ref.Database, ref.ID}
 			row := rows[key]
 			if row == nil {
-				row = &Dangling{Database: ref.Database, Kind: game.KindName(ref.Database), Name: ref.ID}
+				row = &Dangling{Database: ref.Database, Kind: game.DescribeEntry(ref.Database, false), Name: ref.ID}
 				rows[key] = row
 			}
 			// the last check to find the name is the one the row names
@@ -104,7 +102,7 @@ func dangling(ws *workspace.Session, findings map[string][]lsp.Diagnostic, sourc
 	return out
 }
 
-// problems is the findings no card above lists, each at its site: the contests list their own sites, and the
+// problems returns the findings no card above lists, each at its site: the contests list their own sites, and the
 // dangling rows the names nothing defines.
 func problems(ws *workspace.Session, report *HealthReport, findings map[string][]lsp.Diagnostic, sources *sourceIndex) []Problem {
 	type place struct {

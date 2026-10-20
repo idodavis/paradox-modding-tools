@@ -13,65 +13,61 @@ import (
 	"paradox-modding-tools/services/internal/jomini"
 )
 
-// Fire is the definition at the far end of a fire, its database, and the scripted entries between; where it starts
-// in the definition (the fire, or the scripted call that leads to it) and the definition's block it sits in there
-// (option a, immediate); and the statement that fires, as written, with its other fields (trigger_event; days = 30).
+// Fire is one definition fired by, or firing, another, with where in it the fire is written.
 type Fire struct {
-	Name     string `json:"name"`
-	Database string `json:"database"`
-	Kind     string `json:"kind"` // what one of its database is called (game.KindName)
-	Via      string `json:"via"`
+	Name     string `json:"name"`              // the definition at the far end
+	Database string `json:"database"`          // its database
+	Kind     string `json:"kind"`              // what one of its database is called (game.DescribeEntry)
+	Via      string `json:"via"`               // the scripted entries between, as a chain
 	Through  int    `json:"through,omitempty"` // how many scripted entries Via names
-	Path     string `json:"path"`
-	Rel      string `json:"rel"`
-	Origin   string `json:"origin"`
-	Line     int32  `json:"line"` // 0-based
-	Block    string `json:"block,omitempty"`
-	Command  string `json:"command,omitempty"`
-	Args     string `json:"args,omitempty"`
+	Path     string `json:"path"`              // where the fire starts: its file
+	Rel      string `json:"rel"`               // its file's path from its origin's root
+	Origin   string `json:"origin"`            // its file's origin
+	Line     int32  `json:"line"`              // 0-based
+	Block    string `json:"block,omitempty"`   // the definition's block it sits in (option a, immediate)
+	Command  string `json:"command,omitempty"` // the statement that fires, as written (trigger_event)
+	Args     string `json:"args,omitempty"`    // its other fields (days = 30)
 }
 
-// fireRef is a reference inside a definition: the definition and the reference, as the index recorded them.
+// fireRef is a reference inside a definition, as the index recorded them.
 type fireRef struct {
-	def, ref index.At
+	def index.At // the definition
+	ref index.At // the reference
 }
 
-// fireWalk is one walk over what fires what, out of or into one definition: the entries entered once, the files
-// parsed once on the way, and whether each fire is placed where it is written.
+// fireWalk is one walk over what fires what, out of or into one definition.
 type fireWalk struct {
 	ws     *Session
 	from   index.At
-	place  bool
-	seen   map[index.At]bool
-	parsed Parses
+	place  bool              // each fire is placed where it is written
+	seen   map[index.At]bool // the entries entered, each once
+	parsed Parses            // the files parsed on the way, each once
 	out    []Fire
 }
 
-// Fires is what a definition fires, in name order: events and on_actions only (index.Fires). A scripted entry it
-// runs (index.Runs) is followed to what it fires, and an entry already met on the way is not entered again.
+// Fires returns what a definition fires, in name order: events and on_actions only (index.Fires); a scripted entry it
+// runs (index.Runs) is followed to what it fires, and an entry met on the way is not entered again.
 func (ws *Session) Fires(from index.At) []Fire {
 	walk := ws.newFireWalk(from)
 	walk.follow(from, "", index.At{})
 	return byName(walk.out)
 }
 
-// FiredBy is Fires turned around, in name order: each definition holding a reference that fires or runs this one,
-// a scripted entry followed to what runs it, with the chain as Fires writes it; with place, each placed where it
-// starts in its definition, with the statement that fires this one (which parses its file).
+// FiredBy returns Fires turned around, in name order: each definition holding a reference that fires or runs this
+// one, a scripted entry followed to what runs it; with place, each placed where it is written (which parses its file).
 func (ws *Session) FiredBy(target index.At, place bool) []Fire {
 	walk := ws.newFireWalk(target)
 	walk.place = place
 	return byName(walk.callers(target, nil))
 }
 
-// newFireWalk is a walk out of or into from, with nothing entered and nothing parsed yet.
+// newFireWalk returns a walk out of or into from, with nothing entered and nothing parsed yet.
 func (ws *Session) newFireWalk(from index.At) *fireWalk {
 	return &fireWalk{ws: ws, from: from, seen: map[index.At]bool{from: true}, parsed: Parses{}}
 }
 
-// follow reads the references written in one definition; via is the entries entered to reach it, start the
-// reference in the walk's origin that leads there (the zero At: the reference itself). A scripted entry a reference
-// runs is followed once.
+// follow reads the references written in one definition; via is the entries entered to reach it and start the
+// reference in the walk's origin that leads there. A scripted entry a reference runs is followed once.
 func (walk *fireWalk) follow(def index.At, via string, start index.At) {
 	s, indexes := walk.ws.Install.Schema, walk.ws.Indexes()
 	for _, ref := range index.RefsInside(def) {
@@ -117,8 +113,8 @@ func (walk *fireWalk) callers(def index.At, firing *fireRef) (out []Fire) {
 	return out
 }
 
-// through is what fires a scripted entry, each fire's chain ending with the entry's name; an entry already met
-// is not entered again.
+// through returns what fires a scripted entry, each fire's chain ending with the entry's name; an entry already met is
+// not entered again.
 func (walk *fireWalk) through(caller index.At, name string, firing *fireRef) (out []Fire) {
 	if walk.seen[caller] {
 		return nil
@@ -132,7 +128,7 @@ func (walk *fireWalk) through(caller index.At, name string, firing *fireRef) (ou
 	return out
 }
 
-// locateFire is a fire placed: where origin's reference sits in its definition (its site and blocks), and what
+// locateFire returns a fire placed: where origin's reference sits in its definition (site and blocks), and what
 // firing, a reference in a definition, fires with.
 func (walk *fireWalk) locateFire(fire Fire, origin, firing fireRef) Fire {
 	file := origin.ref.File()
@@ -142,9 +138,8 @@ func (walk *fireWalk) locateFire(fire Fire, origin, firing fireRef) Fire {
 	return fire
 }
 
-// fireSite is where a reference sits in its definition: the definition's block it is in (with its name's last
-// part where it has one: option a), the statement that holds it, and that statement's other fields as written.
-// A list's weight (random_events' 100 = x) is an argument, and a block's id is its statement's.
+// fireSite returns where a reference sits in its definition: the block it is in, the statement that holds it and that
+// statement's other fields as written. A list's weight (random_events' 100 = x) is an argument.
 func (walk *fireWalk) fireSite(firing fireRef) (block, command, args string) {
 	parsed, _, _ := walk.ws.Parsed(walk.parsed, firing.ref.File().Path)
 	if parsed == nil {
@@ -183,8 +178,8 @@ func (walk *fireWalk) fireSite(firing fireRef) (block, command, args string) {
 	return block, command, args
 }
 
-// statementChain is the statements from a definition's block down to the one holding an offset, outer first;
-// empty where none holds it.
+// statementChain returns the statements from a definition's block down to the one holding an offset, outer first; empty
+// where none holds it.
 func statementChain(top jomini.Statement, offset int) []jomini.Statement {
 	var chain []jomini.Statement
 	for block := jomini.ChildBlock(top); block != nil; {
@@ -200,7 +195,7 @@ func statementChain(top jomini.Statement, offset int) []jomini.Statement {
 	return chain
 }
 
-// keyOf is an assignment's key text; "" for any other statement.
+// keyOf returns an assignment's key text; "" for any other statement.
 func keyOf(statement jomini.Statement) string {
 	if assign, isAssign := statement.(*jomini.Assignment); isAssign {
 		return assign.Key.Text
@@ -208,16 +203,16 @@ func keyOf(statement jomini.Statement) string {
 	return ""
 }
 
-// newFire is a fire at name through the chain via, written as Fires writes it.
+// newFire returns a fire at name through the chain via, written as Fires writes it.
 func newFire(name, database, via string) Fire {
-	fire := Fire{Name: name, Database: database, Kind: game.KindName(database), Via: via}
+	fire := Fire{Name: name, Database: database, Kind: game.DescribeEntry(database, false), Via: via}
 	if via != "" {
 		fire.Through = strings.Count(via, " → ") + 1
 	}
 	return fire
 }
 
-// byName is fires in name order, each name once.
+// byName returns fires in name order, each name once.
 func byName(fires []Fire) []Fire {
 	slices.SortStableFunc(fires, func(first, second Fire) int { return strings.Compare(first.Name, second.Name) })
 	return slices.CompactFunc(fires, func(first, second Fire) bool { return first.Name == second.Name })

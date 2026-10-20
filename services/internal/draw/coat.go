@@ -23,58 +23,53 @@ import (
 	"paradox-modding-tools/services/internal/workspace"
 )
 
-// Coat is one render of a coat of arms: the field it is drawn on (the first atlas' tile, else the pattern's image),
-// the cloth that shades it ("" none), its layers in pre-order, and what nothing found.
+// Coat is one render of a coat of arms.
 type Coat struct {
-	Width   int      `json:"width"`
+	Width   int      `json:"width"` // the field it is drawn on: the first atlas' tile, else the pattern's image
 	Height  int      `json:"height"`
-	Shading string   `json:"shading"`
-	Layers  []Layer  `json:"layers"`
-	Missing []Absent `json:"missing"`
+	Shading string   `json:"shading"` // the cloth that shades it; "" none
+	Layers  []Layer  `json:"layers"`  // in pre-order
+	Missing []Absent `json:"missing"` // what nothing found
 }
 
-// Layer is one layer of a coat: the element it is, the file it paints ("" none) and how its shader colors it (a key of
-// coat.ts' recolor rows, and its slots as CSS, "" the shader's fallback), an emblem's mask (its coat's pattern file,
-// "" none) and the regions it keeps, and every property as written, by lower-cased key.
+// Layer is one layer of a coat.
 type Layer struct {
 	Element
-	URL        string            `json:"url"`
-	Recolor    string            `json:"recolor"`
-	Colors     []string          `json:"colors"`
-	Mask       string            `json:"mask"`
-	Regions    []int             `json:"regions"`
-	Properties map[string]string `json:"properties"`
+	URL        string            `json:"url"`        // the file it paints; "" none
+	Recolor    string            `json:"recolor"`    // how its shader colors it: a key of coat.ts' recolor rows
+	Colors     []string          `json:"colors"`     // its slots as CSS; "" the shader's fallback
+	Mask       string            `json:"mask"`       // an emblem's mask: its coat's pattern file; "" none
+	Regions    []int             `json:"regions"`    // the mask's regions it keeps
+	Properties map[string]string `json:"properties"` // every property as written, by lower-cased key
 }
 
-// Frame is a shape the game's windows cut a coat to: its label, its mask's route, and the origin of the mask that wins.
+// Frame is a shape the game's windows cut a coat to.
 type Frame struct {
 	Label  string `json:"label"`
-	URL    string `json:"url"`
-	Origin string `json:"origin"`
+	URL    string `json:"url"`    // its mask's route
+	Origin string `json:"origin"` // the origin of the mask that wins
 }
 
-// CoatTarget is the file a mod's new coat of arms is written in: its path, its path in the mod, and whether writing it
-// makes the file, and its folder, first.
+// CoatTarget is the file a mod's new coat of arms is written in.
 type CoatTarget struct {
 	Path        string `json:"path"`
-	Rel         string `json:"rel"`
-	IsNewFile   bool   `json:"isNewFile"`
-	IsNewFolder bool   `json:"isNewFolder"`
+	Rel         string `json:"rel"`         // its path in the mod
+	IsNewFile   bool   `json:"isNewFile"`   // writing it makes the file first
+	IsNewFolder bool   `json:"isNewFolder"` // writing it makes its folder first
 }
 
-// coatResolver is one coat's resolve: the shared resolve, the coat it builds, and each layer's properties.
+// coatResolver is one coat's resolve.
 type coatResolver struct {
 	*resolver
-	coat            *Coat
+	coat            *Coat         // being built
 	layerProperties []*properties // by layer
 }
 
-// instance is one instance of a coat's emblems in paint order: its emblem, its statement (nil for the one an emblem
-// that writes none has), its number among its emblem's, and its depth.
+// instance is one instance of a coat's emblems in paint order.
 type instance struct {
-	emblem    int
-	statement *statement
-	number    int
+	emblem    int        // its emblem
+	statement *statement // nil for the one an emblem that writes none has
+	number    int        // among its emblem's
 	depth     float64
 }
 
@@ -110,7 +105,7 @@ func newCoatResolver(core *resolver) (*coatResolver, error) {
 	}
 	resolver := &coatResolver{resolver: core, coat: &Coat{Layers: []Layer{}}}
 	if shading, isShaded := game.CoatShading[resolver.ws.Game.ID]; isShaded {
-		resolver.coat.Shading = resolver.textureURL(shading)
+		resolver.coat.Shading = resolver.textureURL(shading.Texture)
 	}
 	coat := entry
 	if alias, isAlias := entry.assignment.Value.(*jomini.Scalar); isAlias {
@@ -133,9 +128,8 @@ func newCoatResolver(core *resolver) (*coatResolver, error) {
 	return resolver, nil
 }
 
-// coatProperties is what a coat writes as it applies: its parent's statements first, the parent's instances left out
-// and its emblems too where the coat writes any of its own (the wiki: emblems are inherited all or nothing), then its
-// own, the last of each key winning; a parent nothing defines, or one nested past maxDepth, is listed.
+// coatProperties returns what a coat writes as it applies: its parent's statements first (instances left out, and
+// emblems where it writes its own), then its own, the last of each key winning; a bad parent is listed.
 func (resolver *coatResolver) coatProperties(coat statement, depth int) *properties {
 	own := propertiesOf(coat)
 	parentID, hasParent := own.scalar(parentKey)
@@ -159,7 +153,7 @@ func (resolver *coatResolver) coatProperties(coat statement, depth int) *propert
 	return whole
 }
 
-// fieldSize is the field a coat is drawn on: the first atlas' tile_size, else, listed, the root's pattern's image
+// fieldSize returns the field a coat is drawn on: the first atlas' tile_size, else (listed) the root's pattern's image
 // where one draws.
 func (resolver *coatResolver) fieldSize() (int, int) {
 	resolver.element = -1
@@ -188,9 +182,8 @@ func (resolver *coatResolver) fieldSize() (int, int) {
 	return facts.Width, facts.Height
 }
 
-// resolveCoat resolves one coat, the root or a sub at one of its instances (nil for none): its layer, holding what it
-// writes but its emblems, instances and subs, then its pattern, its emblems' instances in paint order, and, for the
-// root, its subs.
+// resolveCoat resolves one coat, the root or a sub at one of its instances: its layer, its pattern, its emblems'
+// instances in paint order, and for the root its subs.
 func (resolver *coatResolver) resolveCoat(statement statement, coat *properties, parent int, instance *statement) {
 	layerType, id := coatType, ""
 	if parent >= 0 {
@@ -240,9 +233,8 @@ func (resolver *coatResolver) addLayer(parent int, statement statement, layerTyp
 	return resolver.element
 }
 
-// coatColors are a coat's or an emblem's color slots as CSS, the shader's fallback "" at 0: a scalar names a named
-// color, or the slot of the coat under it (colorN); a color block is read as one; a list's pick is listed; a slot it
-// does not write is the coat's under it ("" for none).
+// coatColors returns a coat's or an emblem's color slots as CSS (the shader's fallback "" at 0): a scalar names a named
+// color or the slot of the coat under it, a color block is read as one, and an unwritten slot is the coat's under it.
 func (resolver *coatResolver) coatColors(coat *properties, base []string) []string {
 	colors := make([]string, len(slotKeys)+1)
 	for ordinal, key := range slotKeys {
@@ -271,7 +263,7 @@ func (resolver *coatResolver) coatColors(coat *properties, base []string) []stri
 	return colors
 }
 
-// entryColor is the CSS of the named colors' entry an id names; "" for an id no entry defines as a color, listed.
+// entryColor returns the CSS of the named colors' entry an id names; "" for an id no entry defines as a color, listed.
 func (resolver *resolver) entryColor(id string) string {
 	definition, isDefined := resolver.definition(schema.Occurrence{Database: game.CoatDatabases.Colors, ID: id})
 	css := ""
@@ -304,9 +296,8 @@ func (resolver *coatResolver) resolvePattern(holder int, coat *properties, color
 	pattern.URL, pattern.Recolor, pattern.Colors = url, patternKey, colors
 }
 
-// instancesOf are a coat's emblems' instances in paint order, back to front: by depth, the larger behind unless
-// game.CoatDepthInFront, the written order among equals; an emblem that writes no instance has one. The emblems
-// come with them.
+// instancesOf returns a coat's emblems and their instances in paint order, back to front: by depth, the larger behind
+// unless game.CoatDepthInFront, then the written order; an emblem that writes no instance has one.
 func instancesOf(coat *properties) ([]instance, []statement) {
 	emblems := slices.DeleteFunc(slices.Clone(coat.statements), func(one statement) bool { return !isEmblem(one) })
 	var instances []instance
@@ -333,10 +324,8 @@ func instancesOf(coat *properties) ([]instance, []statement) {
 	return instances, emblems
 }
 
-// resolveEmblem lists a run of an emblem's instances under a coat: the emblem's layer, holding what it writes but its
-// instances, masked by its coat's pattern's regions where it writes a mask over a pattern of a file; and each
-// instance's layer under it, painting the emblem's file colored by the emblem's slots (the coat's where it writes
-// none), unless a list picks the file, which is listed.
+// resolveEmblem lists a run of an emblem's instances under a coat: the emblem's layer, masked by its coat's pattern
+// where it writes a mask, and each instance's layer painting its file in its slots; a list picking the file is listed.
 func (resolver *coatResolver) resolveEmblem(holder int, emblem statement, run []instance, colors []string) {
 	own := propertiesOf(emblem)
 	file, _ := own.scalar(textureKey)
@@ -387,7 +376,8 @@ func (resolver *coatResolver) resolveSub(holder int, sub statement) {
 	}
 }
 
-// textureURL is the route of a coat texture's file; "" for a path nothing holds, listed at the layer resolved now.
+// textureURL returns the route of a coat texture's file; "" for a path nothing holds, listed at the layer being
+// resolved.
 func (resolver *coatResolver) textureURL(path string) string {
 	file, isListed := index.FileAt(resolver.ws.Indexes(), path)
 	if !isListed {
@@ -412,7 +402,7 @@ func (resolver *coatResolver) isPicked(key string, properties *properties) bool 
 	return true
 }
 
-// Colors are the named colors a coat's slots can name, each id's CSS as the coat paints it ("" for one that is no
+// Colors returns the named colors a coat's slots can name, each id's CSS as the coat paints it ("" for one that is no
 // color). The caller holds the workspace's read lock.
 func Colors(ws *workspace.Session) map[string]string {
 	resolver := newResolver(ws, Request{})
@@ -423,7 +413,7 @@ func Colors(ws *workspace.Session) map[string]string {
 	return colors
 }
 
-// Textures are the images a coat texture key's folder holds across the load order, each route by its file name as
+// Textures returns the images a coat texture key's folder holds across the load order, each route by its file name as
 // written, a later origin's over an earlier's. The caller holds the workspace's read lock.
 func Textures(ws *workspace.Session, key string) map[string]string {
 	folder, isKnown := game.CoatTextureFolders[key]
@@ -442,9 +432,8 @@ func Textures(ws *workspace.Session, key string) map[string]string {
 	return textures
 }
 
-// Frames are the shapes the game's coat designer previews a coat in, in its order, each its mask's route and the
-// origin of the mask that wins: a file, or the frame a define names (its winning value, read as an entry is); one whose
-// mask the load order does not hold is left out. The caller holds the workspace's read lock.
+// Frames returns the shapes the game's coat designer previews a coat in, in its order, each with its mask's route and
+// the winning origin; one whose mask the load order lacks is left out. The caller holds the workspace's read lock.
 func Frames(ws *workspace.Session) []Frame {
 	resolver := newResolver(ws, Request{})
 	frames := []Frame{}
@@ -464,9 +453,8 @@ func Frames(ws *workspace.Session) []Frame {
 	return frames
 }
 
-// CoatFile is the file a mod's new coat of arms is written in: the last of the mod's files that defines coats, else
-// one named for the mod's folder in the folder its game keeps coats in (game.CoatFolders); with what writing it makes
-// first, so the page can say so before it writes. The caller holds the workspace's read lock.
+// CoatFile returns the file a mod's new coat of arms is written in (the mod's last coat file, else one named for it)
+// and what writing it makes first. The caller holds the workspace's read lock.
 func CoatFile(ws *workspace.Session, modID string) (CoatTarget, error) {
 	modIndex := slices.IndexFunc(ws.Mods, func(mod workspace.Mod) bool { return mod.ID == modID })
 	folder, hasFolder := game.CoatFolders[ws.Game.ID]
@@ -505,7 +493,7 @@ func exists(path string) bool {
 	return err == nil
 }
 
-// coatPath is the path of a coat texture's file, by the key that writes it.
+// coatPath returns the path of a coat texture's file, by the key that writes it.
 func coatPath(key, file string) string {
 	return game.CoatTextureFolders[key] + "/" + file
 }

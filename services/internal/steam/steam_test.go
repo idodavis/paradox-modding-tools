@@ -95,9 +95,8 @@ func TestEResultHint(t *testing.T) {
 	}
 }
 
-// TestInstallsBindSteam is the gate over the real installs: each game's copy of Steam's library
-// is where the game table says, and binds every function a publish calls, init included.
-// Nothing is called, so Steam need not run. Set PMT_TEST_INSTALL_*, each a game's root folder.
+// TestInstallsBindSteam gates the real installs: each game's copy of Steam's library is where the game table says and
+// binds every function a publish calls, without calling any. Set PMT_TEST_INSTALL_*, each a game's root folder.
 func TestInstallsBindSteam(t *testing.T) {
 	if testing.Short() {
 		t.Skip("real installs")
@@ -121,7 +120,7 @@ func TestInstallsBindSteam(t *testing.T) {
 			if dir == "" {
 				t.Skip("PMT_TEST_INSTALL_" + strings.ToUpper(id) + " is not set")
 			}
-			info := game.Get(id)
+			info := game.Lookup(id)
 			if _, ok := info.SteamLibrary[runtime.GOOS]; !ok {
 				t.Skipf("%s has no %s build", id, runtime.GOOS)
 			}
@@ -170,9 +169,8 @@ func TestParseYouTubeID(t *testing.T) {
 	}
 }
 
-// linkDir points link at target, by whatever mechanism this machine allows. os.Symlink to a
-// directory needs SeCreateSymbolicLink on Windows, which an ordinary account does not hold; a
-// junction needs no privilege and Go reports it as ModeSymlink, the case CopyMod handles.
+// linkDir points link at target by whatever mechanism this machine allows: a junction where an ordinary Windows account
+// lacks SeCreateSymbolicLink, which Go reports as ModeSymlink, the case CopyMod handles.
 func linkDir(t *testing.T, target, link string) {
 	t.Helper()
 	if err := os.Symlink(target, link); err == nil {

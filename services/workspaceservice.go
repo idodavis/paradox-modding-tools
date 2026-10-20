@@ -24,7 +24,6 @@ import (
 	"paradox-modding-tools/services/internal/index"
 	"paradox-modding-tools/services/internal/inventory"
 	"paradox-modding-tools/services/internal/modfiles"
-	"paradox-modding-tools/services/internal/schema"
 	"paradox-modding-tools/services/internal/steam"
 	"paradox-modding-tools/services/internal/wiki"
 	"paradox-modding-tools/services/internal/workspace"
@@ -33,26 +32,25 @@ import (
 // WorkspaceService manages workspaces, game installs and mods, and opens a workspace.
 type WorkspaceService struct {
 	config  *ConfigFile
-	version string
+	version string          // the app's version, which keys the scan cache
 	wikis   *wiki.Client    // the wiki's script examples are a scan's last source
 	slot    *workspace.Slot // the one open workspace
 }
 
-// NewWorkspaceService is the service over the config and the wiki client, scanning with index.Scan.
+// NewWorkspaceService returns the service over the config and the wiki client, scanning with index.Scan.
 func NewWorkspaceService(config *ConfigFile, version string, wikis *wiki.Client) *WorkspaceService {
 	slot := &workspace.Slot{Scan: index.Scan, Closed: func(id string) { emit(EventWorkspaceClosed, id) }}
 	return &WorkspaceService{config: config, version: version, wikis: wikis, slot: slot}
 }
 
-// WorkspaceState is what the pages show of a workspace: whether it is open, its install, and whose dumps the
-// schema read.
+// WorkspaceState is what the pages show of a workspace.
 type WorkspaceState struct {
 	InstallID   string `json:"installId"`
-	InstallOk   bool   `json:"installOk"`
+	InstallOk   bool   `json:"installOk"` // the install's folder is there
 	GameVersion string `json:"gameVersion"`
 	ScannedAt   string `json:"scannedAt,omitempty"`   // when the install was built, else its cache file written
 	UpdatedFrom string `json:"updatedFrom,omitempty"` // the version this run's scan replaced, where it differs
-	Open        bool   `json:"open"`
+	Open        bool   `json:"open"`                  // the workspace's index is built
 
 	DumpsFrom   string   `json:"dumpsFrom"`   // whose dumps the schema read: yours, shipped or none
 	DumpsStale  bool     `json:"dumpsStale"`  // they predate the install, or are another game version's
@@ -83,20 +81,20 @@ func init() {
 type ScanProgress struct {
 	InstallID string `json:"installId"`
 	Percent   int    `json:"percent"`
-	Stage     string `json:"stage"`
+	Stage     string `json:"stage"` // inventory, localization, schema, index or saving
 }
 
-// FSChanged is one path under a mod that changed on disk; Deleted when it is gone.
+// FSChanged is one path under a mod that changed on disk.
 type FSChanged struct {
 	Path    string `json:"path"`
-	Deleted bool   `json:"deleted"`
+	Deleted bool   `json:"deleted"` // it is gone
 }
 
 // Game installs.
 
 // ListGames returns the supported-game table and vanilla origin token.
 func (wsp *WorkspaceService) ListGames() game.GameList {
-	return game.GameList{OriginVanilla: game.OriginVanilla, Games: game.All()}
+	return game.GameList{OriginVanilla: game.OriginVanilla, Games: game.ListGames()}
 }
 
 // ListGameInstalls returns a game's installs, each with its scan time.
@@ -131,7 +129,7 @@ func (wsp *WorkspaceService) FindGameInstalls(gameID string) []game.DetectedInst
 
 // AddGameInstall adds a new game installation, with the version it holds now.
 func (wsp *WorkspaceService) AddGameInstall(gameID, name, path string) (*GameInstall, error) {
-	if game.Get(gameID) == nil {
+	if game.Lookup(gameID) == nil {
 		return nil, fmt.Errorf("unknown game %s", gameID)
 	}
 	if _, err := os.Stat(path); err != nil {
@@ -217,7 +215,7 @@ func (wsp *WorkspaceService) ListWorkspaces() []Workspace {
 // markDisk re-derives each mod's IsBroken and Folder from disk, a stat per mod, outside the config
 // lock; stored, they would go stale the moment a folder moves.
 func markDisk(ws *Workspace) {
-	userData := game.UserDataDir(ws.GameID, "")
+	userData := game.FindUserDataDir(ws.GameID, "")
 	for i := range ws.Mods {
 		mod := &ws.Mods[i]
 		_, err := os.Stat(mod.Path)
@@ -233,7 +231,7 @@ func markDisk(ws *Workspace) {
 func (wsp *WorkspaceService) CreateWorkspace(
 	gameID, name, installID string,
 ) (*Workspace, error) {
-	if game.Get(gameID) == nil {
+	if game.Lookup(gameID) == nil {
 		return nil, fmt.Errorf("unknown game %s", gameID)
 	}
 	id := uuid.New().String()
@@ -325,12 +323,12 @@ func (wsp *WorkspaceService) mutateWorkspace(workspaceID string, fn func(*Worksp
 
 // Mods in a workspace.
 
-// DefaultModParent is UserDataDir/<game>/mod, or "".
+// DefaultModParent returns FindUserDataDir/<game>/mod, or "".
 func (wsp *WorkspaceService) DefaultModParent(gameID string) string {
 	return modfiles.DefaultModParent(gameID)
 }
 
-// ModFolder is the folder CreateMod makes for a mod named name under parentDir.
+// ModFolder returns the folder CreateMod makes for a mod named name under parentDir.
 func (wsp *WorkspaceService) ModFolder(parentDir, name string) string {
 	return filepath.Join(parentDir, modfiles.Slug(name))
 }
@@ -387,8 +385,7 @@ func (wsp *WorkspaceService) AddWorkspaceMod(workspaceID, path string) (*Workspa
 	return &mod, nil
 }
 
-// modFolderOf is the game of a workspace whose mod may live at path: a folder holding the game's
-// descriptor.
+// modFolderOf returns the game of a workspace whose mod may live at path: a folder holding the game's descriptor.
 func (wsp *WorkspaceService) modFolderOf(workspaceID, path string) (string, error) {
 	ws, _, err := wsp.config.workspace(workspaceID)
 	if err != nil {
@@ -398,8 +395,8 @@ func (wsp *WorkspaceService) modFolderOf(workspaceID, path string) (string, erro
 	if info, err := os.Stat(path); err != nil || !info.IsDir() {
 		return "", fmt.Errorf("%s is not a folder", path)
 	}
-	if _, err := os.Stat(game.DescriptorPath(gameID, path)); err != nil {
-		return "", fmt.Errorf("%s has no %s, so it is not a mod", path, game.DescriptorFile(gameID))
+	if _, err := os.Stat(game.BuildDescriptorPath(gameID, path)); err != nil {
+		return "", fmt.Errorf("%s has no %s, so it is not a mod", path, game.ResolveDescriptorFile(gameID))
 	}
 	return gameID, nil
 }
@@ -423,7 +420,7 @@ func (wsp *WorkspaceService) OpenFolder(path string) error {
 
 // Opening a workspace.
 
-// Open is the workspace opened, its index built once however many callers ask at once, and its state; opening a
+// Open returns the workspace's state after opening it, building its index once however many callers ask; opening a
 // workspace closes the one open before it.
 func (wsp *WorkspaceService) Open(workspaceID string) (*WorkspaceState, error) {
 	if _, err := wsp.openWorkspace(workspaceID); err != nil {
@@ -432,9 +429,8 @@ func (wsp *WorkspaceService) Open(workspaceID string) (*WorkspaceState, error) {
 	return wsp.State(workspaceID), nil
 }
 
-// openWorkspace is the workspace's index, opened when it is not: what Open and every page RPC call. The caller
-// whose call built it tells the frontend and logs its name, so the log says whether a page read reaches Go before
-// Open.
+// openWorkspace returns the workspace's index, opened when it is not: what Open and every page RPC call. The caller
+// whose call built it tells the frontend and logs its name.
 func (wsp *WorkspaceService) openWorkspace(workspaceID string) (*workspace.Session, error) {
 	request, err := wsp.request(workspaceID)
 	if err != nil {
@@ -452,9 +448,8 @@ func (wsp *WorkspaceService) openWorkspace(workspaceID string) (*workspace.Sessi
 	return ws, err
 }
 
-// request is what a workspace is opened from, as the config says now. Its fingerprint is the inputs an edit could
-// change: the install and its folder, the language, each mod's id, folder and calendar in load order; a change needs
-// no close of its own, the next request finds the open workspace stale. Its callbacks tell the frontend.
+// request returns what a workspace is opened from, as the config says now; its fingerprint is the inputs an edit could
+// change, so the next request finds a stale open workspace.
 func (wsp *WorkspaceService) request(workspaceID string) (workspace.Request, error) {
 	entry, inst, err := wsp.config.workspace(workspaceID)
 	if err != nil {
@@ -486,7 +481,7 @@ func (wsp *WorkspaceService) request(workspaceID string) (workspace.Request, err
 	}, nil
 }
 
-// scannedAt is when an install was built, in RFC 3339, read in a language; "" when it never was.
+// scannedAt returns when an install was built, in RFC 3339, read in a language; "" when it never was.
 func (wsp *WorkspaceService) scannedAt(inst *GameInstall, language string) string {
 	scanTime := wsp.slot.ScannedAt(workspace.Request{Game: inst.GameID, Dir: inst.Path, Language: language, App: wsp.version})
 	if scanTime.IsZero() {
@@ -495,8 +490,8 @@ func (wsp *WorkspaceService) scannedAt(inst *GameInstall, language string) strin
 	return scanTime.Format(time.RFC3339)
 }
 
-// State is what the pages show of a workspace, without opening it: its install and when it was scanned, and when
-// it is open, whose dumps its schema read and the version the scan replaced.
+// State returns what the pages show of a workspace without opening it: its install, when it was scanned, whether it is
+// open, whose dumps its schema read and the version the scan replaced.
 func (wsp *WorkspaceService) State(workspaceID string) *WorkspaceState {
 	state := &WorkspaceState{}
 	entry, inst, _ := wsp.config.workspace(workspaceID)
@@ -511,10 +506,10 @@ func (wsp *WorkspaceService) State(workspaceID string) *WorkspaceState {
 	_, statErr := os.Stat(inst.Path)
 	state.InstallOk = statErr == nil
 	state.ScannedAt = wsp.scannedAt(inst, entry.DefaultLocLang)
-	state.DumpFolders = game.DumpDirs(inst.GameID, inst.Path)
+	state.DumpFolders = game.FindDumpDirs(inst.GameID, inst.Path)
 	if ws := wsp.slot.Current(workspaceID, request.Fingerprint); ws != nil {
 		ws.RLock()
-		dumps := ws.Install.Schema.Sources[schema.SourceDumps]
+		dumps := ws.Install.Schema.Sources[game.SourceDumps]
 		state.Open, state.DumpsFrom, state.DumpsStale = true, dumps.Origin, dumps.Stale
 		// the version the scan read, and the one it replaced where the game was updated since
 		state.GameVersion = ws.Install.Schema.Version
@@ -535,9 +530,8 @@ func (wsp *WorkspaceService) UpdateWorkspaceMod(workspaceID, modID, name, color,
 	})
 }
 
-// SetModListingImage makes src the mod's listing image: copied in where its game keeps one, named in
-// its descriptor (its Workshop id as it is) and made the workspace's picture of the mod. It returns the
-// image's path.
+// SetModListingImage copies src in as the mod's listing image where its game keeps one, names it in the descriptor and
+// makes it the workspace's picture of the mod. It returns the image's path.
 func (wsp *WorkspaceService) SetModListingImage(workspaceID, modID, src string) (string, error) {
 	ws, mod, err := findMod(wsp.config, workspaceID, modID)
 	if err != nil {
@@ -598,7 +592,7 @@ func (wsp *WorkspaceService) SetWorkspaceModSlot(workspaceID, modID string, slot
 // modSlots is how many color slots a workspace's mods share: eight hues at two lightnesses.
 const modSlots = 16
 
-// freeSlot is the lowest slot no mod in mods holds; with every slot held, slot 1 again.
+// freeSlot returns the lowest slot no mod in mods holds; with every slot held, slot 1 again.
 func freeSlot(mods []WorkspaceMod) int {
 	used := make([]bool, modSlots+1)
 	for _, mod := range mods {
@@ -700,22 +694,21 @@ func (wsp *WorkspaceService) mutateMod(workspaceID, modID string, fn func(*Works
 
 // What the IDE opens with.
 
-// IdeRoot is one folder in the workspace IDE multi-root set.
+// IdeRoot is one folder of the IDE's roots.
 type IdeRoot struct {
 	Label     string `json:"label"`
 	Path      string `json:"path"`
 	ReadOnly  bool   `json:"readOnly"`
-	Kind      string `json:"kind"`
-	Origin    string `json:"origin,omitempty"`
-	Thumbnail string `json:"thumbnail,omitempty"`
+	Kind      string `json:"kind"`                // game, mod...
+	Origin    string `json:"origin,omitempty"`    // the origin its files carry
+	Thumbnail string `json:"thumbnail,omitempty"` // a mod's listing image
 }
 
-// IdeRoots is the IDE boot DTO: its folders, and whether it starts with no tabs (the tabs themselves are kept on
-// this computer, in the frontend).
+// IdeRoots is what the IDE starts from.
 type IdeRoots struct {
 	Roots                []IdeRoot `json:"roots"`
-	ResetIdeOnOpen       bool      `json:"resetIdeOnOpen"`
-	HideExplorerBinaries bool      `json:"hideExplorerBinaries"`
+	ResetIdeOnOpen       bool      `json:"resetIdeOnOpen"`       // it starts with no tabs (they are kept in the frontend)
+	HideExplorerBinaries bool      `json:"hideExplorerBinaries"` // the explorer hides binary files
 }
 
 // GetIdeRoots returns the game and mod folders for the IDE.
@@ -735,7 +728,7 @@ func (wsp *WorkspaceService) GetIdeRoots(workspaceID string) (*IdeRoots, error) 
 			})
 		}
 	}
-	if info := game.Get(ws.GameID); inst != nil && info != nil {
+	if info := game.Lookup(ws.GameID); inst != nil && info != nil {
 		out.Roots = append(out.Roots, IdeRoot{
 			Label: info.Name, Path: filepath.Join(inst.Path, info.ScriptRoot),
 			ReadOnly: true, Kind: "game", Origin: game.OriginVanilla,

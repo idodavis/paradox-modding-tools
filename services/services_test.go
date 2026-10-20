@@ -73,7 +73,7 @@ func writeTree(t *testing.T, root string, files map[string]string) {
 	}
 }
 
-// dirNames is the names of a directory listing, as a set.
+// dirNames returns the names of a directory listing, as a set.
 func dirNames(entries []inventory.Child) map[string]bool {
 	out := map[string]bool{}
 	for _, entry := range entries {
@@ -82,7 +82,7 @@ func dirNames(entries []inventory.Child) map[string]bool {
 	return out
 }
 
-// fixtureService is a workspace service over a config holding the ck3 fixture install and one workspace with one
+// fixtureService returns a workspace service over a config holding the ck3 fixture install and one workspace with one
 // mod, scanning the fixture install once.
 func fixtureService(t *testing.T) *WorkspaceService {
 	t.Helper()
@@ -240,7 +240,7 @@ func logHome(t *testing.T) string {
 	return filepath.Join(dir, "pmt.log")
 }
 
-// openLog is the log service over a log opened for a test.
+// openLog returns the log service over a log opened for a test.
 func openLog(t *testing.T) *LogService {
 	t.Helper()
 	file, err := OpenLog("test")
@@ -336,7 +336,7 @@ func TestOpen(t *testing.T) {
 	}
 }
 
-// modsService is a workspace service over workspace "ws1" and a folder holding two mod folders, a and b.
+// modsService returns a workspace service over workspace "ws1" and a folder holding two mod folders, a and b.
 func modsService(t *testing.T) (svc *WorkspaceService, modDir string) {
 	t.Helper()
 	config := tempConfig(t, nil, Workspace{ID: "ws1", GameID: gameCK3, Name: "Test", InstallID: installOne})
@@ -346,7 +346,7 @@ func modsService(t *testing.T) (svc *WorkspaceService, modDir string) {
 	return svc, modDir
 }
 
-// modIDs is the ids of workspace "ws1"'s mods, in load order.
+// modIDs returns the ids of workspace "ws1"'s mods, in load order.
 func modIDs(t *testing.T, svc *WorkspaceService) []string {
 	t.Helper()
 	ws, _, err := svc.config.workspace("ws1")
@@ -388,7 +388,7 @@ func TestWorkspaceService_AddMods(t *testing.T) {
 	}
 }
 
-// TestWorkspaceService_ReorderRemoveMods covers a reorder, the list in load order, a removal, and a workspace's deletion.
+// TestWorkspaceService_ReorderRemoveMods covers a reorder, the load order, a removal and a workspace's deletion.
 func TestWorkspaceService_ReorderRemoveMods(t *testing.T) {
 	svc, modDir := modsService(t)
 	alpha, err := svc.AddWorkspaceMod("ws1", filepath.Join(modDir, "a"))
@@ -439,7 +439,7 @@ func TestWorkspaceService_ReorderRemoveMods(t *testing.T) {
 	}
 }
 
-// TestGetIdeRoots_OrderAndGameTitle covers the IDE's roots: the mod then the game by its title, and the workspace's prefs.
+// TestGetIdeRoots_OrderAndGameTitle covers the IDE's roots: the mod, then the game by its title, and the prefs.
 func TestGetIdeRoots_OrderAndGameTitle(t *testing.T) {
 	install := t.TempDir()
 	modDir := t.TempDir()
@@ -499,7 +499,7 @@ func TestAddWorkspaceModDiscoversTheThumbnail(t *testing.T) {
 			config := tempConfig(t, nil, Workspace{ID: "ws", GameID: testCase.game, Name: "T"})
 			svc := NewWorkspaceService(config, "test", wiki.New(t.TempDir()))
 			root, want := t.TempDir(), ""
-			writeTree(t, root, map[string]string{game.DescriptorFile(testCase.game): "{}"})
+			writeTree(t, root, map[string]string{game.ResolveDescriptorFile(testCase.game): "{}"})
 			if testCase.rel != "" {
 				want = filepath.Join(root, filepath.FromSlash(testCase.rel))
 				writeTree(t, root, map[string]string{testCase.rel: "img"})
@@ -524,10 +524,8 @@ const (
 
 var modPath = regexp.MustCompile(`(?m)^\s*path\s*=\s*"([^"]+)"`)
 
-// TestSweep is the scoreboard, not a gate: it asserts nothing, so a count that moves is news. Counts
-// are not targets, and the samples are budgets, since one editor request walks its file. It walks
-// every mod the folders PMT_TEST_MODS_<GAME> list (a game's Documents mod folder, whose .mod
-// descriptors say where each mod is), over the install PMT_TEST_INSTALL_<GAME>.
+// TestSweep reports a scoreboard, not a gate: it asserts nothing, so a count that moves is news. It walks every mod the
+// folders PMT_TEST_MODS_<GAME> list, over the install PMT_TEST_INSTALL_<GAME>.
 func TestSweep(t *testing.T) {
 	if os.Getenv("PMT_TEST_SWEEP") == "" {
 		t.Skip("walks every mod of a game's mod folder; set PMT_TEST_SWEEP=1")
@@ -537,7 +535,7 @@ func TestSweep(t *testing.T) {
 		if install == "" || mods == "" {
 			continue
 		}
-		user := game.UserDataDir(id, install)
+		user := game.FindUserDataDir(id, install)
 		started := time.Now()
 		scanned, err := index.Scan(t.Context(), index.Request{Game: id, Dir: install, Version: "sweep"})
 		if err != nil {
@@ -559,7 +557,7 @@ func TestSweep(t *testing.T) {
 			if !filepath.IsAbs(dir) {
 				dir = filepath.Join(user, dir)
 			}
-			ws, err := workspace.Open(t.Context(), game.Get(id), scanned, []workspace.Mod{{ID: "mod", Dir: dir}}, "")
+			ws, err := workspace.Open(t.Context(), game.Lookup(id), scanned, []workspace.Mod{{ID: "mod", Dir: dir}}, "")
 			if err != nil {
 				t.Logf("SWEEP %s %s: %v", id, filepath.Base(descriptor), err)
 				continue
@@ -645,7 +643,7 @@ func spread(files []inventory.File, n int) []inventory.File {
 	return out
 }
 
-// must is the value, failing the test on an error.
+// must returns the value, failing the test on an error.
 func must[T any](value T, err error) T {
 	if err != nil {
 		panic(err)

@@ -47,9 +47,9 @@ func TestUserDataDirLauncherSetting(t *testing.T) {
 			t.Fatal(err)
 		}
 		install := writeLauncher(t, string(raw))
-		got := UserDataDir("ck3", install)
+		got := FindUserDataDir("ck3", install)
 		if got != filepath.Clean(userData) {
-			t.Fatalf("UserDataDir = %q want %q", got, userData)
+			t.Fatalf("FindUserDataDir = %q want %q", got, userData)
 		}
 	})
 }
@@ -68,9 +68,9 @@ func TestUserDataDirLinux(t *testing.T) {
 		if err := os.MkdirAll(want, 0o755); err != nil {
 			t.Fatal(err)
 		}
-		got := UserDataDir("ck3", "")
+		got := FindUserDataDir("ck3", "")
 		if got != want {
-			t.Fatalf("UserDataDir = %q want %q", got, want)
+			t.Fatalf("FindUserDataDir = %q want %q", got, want)
 		}
 	})
 
@@ -89,14 +89,14 @@ func TestUserDataDirLinux(t *testing.T) {
 		if err := os.MkdirAll(want, 0o755); err != nil {
 			t.Fatal(err)
 		}
-		got := UserDataDir("ck3", "")
+		got := FindUserDataDir("ck3", "")
 		if got != want {
-			t.Fatalf("UserDataDir = %q want %q", got, want)
+			t.Fatalf("FindUserDataDir = %q want %q", got, want)
 		}
 	})
 }
 
-// steamLibraries resolves links before dedup: ~/.steam/steam usually links ~/.local/share/Steam.
+// findSteamLibraries resolves links before dedup: ~/.steam/steam usually links ~/.local/share/Steam.
 func TestSteamLibrariesLinkedRoots(t *testing.T) {
 	if runtime.GOOS == "windows" {
 		t.Skip("the ~/.steam/steam convention is Linux/macOS")
@@ -113,7 +113,7 @@ func TestSteamLibrariesLinkedRoots(t *testing.T) {
 	if err := os.Symlink(real, filepath.Join(home, ".steam", "steam")); err != nil {
 		t.Skipf("cannot symlink here: %v", err)
 	}
-	got := steamLibraries()
+	got := findSteamLibraries()
 	count := 0
 	for _, library := range got {
 		if library == real {
@@ -121,17 +121,17 @@ func TestSteamLibrariesLinkedRoots(t *testing.T) {
 		}
 	}
 	if count != 1 {
-		t.Fatalf("steamLibraries() = %v, want %q exactly once", got, real)
+		t.Fatalf("findSteamLibraries() = %v, want %q exactly once", got, real)
 	}
 }
 
-// InstallUpdatedAt must answer for every game, so the binaries decide, not
+// ReadInstallUpdatedAt must answer for every game, so the binaries decide, not
 // launcher/launcher-settings.json, which EU5 lacks and which lags the update on CK3.
 func TestInstallUpdatedAt(t *testing.T) {
-	if got := InstallUpdatedAt(""); !got.IsZero() {
+	if got := ReadInstallUpdatedAt(""); !got.IsZero() {
 		t.Errorf("empty path = %v, want zero", got)
 	}
-	if got := InstallUpdatedAt(filepath.Join(t.TempDir(), "nope")); !got.IsZero() {
+	if got := ReadInstallUpdatedAt(filepath.Join(t.TempDir(), "nope")); !got.IsZero() {
 		t.Errorf("missing install = %v, want zero", got)
 	}
 
@@ -162,9 +162,9 @@ func TestInstallUpdatedAt(t *testing.T) {
 	if err := os.Chtimes(exe, old, old); err != nil {
 		t.Fatal(err)
 	}
-	got := InstallUpdatedAt(root)
+	got := ReadInstallUpdatedAt(root)
 	if got.Sub(old).Abs() > time.Minute {
-		t.Fatalf("InstallUpdatedAt = %v, want the binary's %v", got, old)
+		t.Fatalf("ReadInstallUpdatedAt = %v, want the binary's %v", got, old)
 	}
 
 	// A downgrade rewrites the binaries, so the timestamp moves forward even
@@ -173,7 +173,7 @@ func TestInstallUpdatedAt(t *testing.T) {
 	if err := os.Chtimes(exe, now, now); err != nil {
 		t.Fatal(err)
 	}
-	if updated := InstallUpdatedAt(root); !updated.After(got) {
+	if updated := ReadInstallUpdatedAt(root); !updated.After(got) {
 		t.Errorf("rewriting the binary did not move the timestamp: %v then %v", got, updated)
 	}
 
@@ -182,7 +182,7 @@ func TestInstallUpdatedAt(t *testing.T) {
 	if err := os.WriteFile(filepath.Join(flat, "game.exe"), []byte("x"), 0o644); err != nil {
 		t.Fatal(err)
 	}
-	if InstallUpdatedAt(flat).IsZero() {
+	if ReadInstallUpdatedAt(flat).IsZero() {
 		t.Error("no binaries/ dir should fall back to the install root")
 	}
 }
@@ -193,8 +193,8 @@ func TestColorOf(t *testing.T) {
 	for i, want := range []string{"#ff0000", "#ff8000", "#00ffff", "#00ffff", "#ff8000", "", "#010203", ""} {
 		assign := parsed.Root.Statements[i].(*jomini.Assignment)
 		tag, parts, isColor := jomini.ColorParts(assign.Value)
-		color, known := ColorOf(tag, parts)
-		if got := color.Hex(); !isColor || !known {
+		color, known := ParseColor(tag, parts)
+		if got := color.ToHex(); !isColor || !known {
 			got = ""
 		} else if got != want {
 			t.Errorf("%s: %q, want %q", assign.Key.Text, got, want)

@@ -10,6 +10,11 @@
    "key": "v.1",
    "head": "event",
    "name": "Hello",
+   "scope": {
+    "this": "character",
+    "root": "character",
+    "reason": "every event runs in it unless it says otherwise"
+   },
    "sites": [
     {
      "path": "<fixtures>/ck3/game/events/v_events.txt",
@@ -48,6 +53,11 @@
    "writes": [
     "one of character_event"
    ],
+   "scope": {
+    "this": "character",
+    "root": "character",
+    "reason": "every event runs in it unless it says otherwise"
+   },
    "winner": -1,
    "within": [
     "v.1"
@@ -89,6 +99,11 @@
    "writes": [
     "a localization key"
    ],
+   "scope": {
+    "this": "character",
+    "root": "character",
+    "reason": "every event runs in it unless it says otherwise"
+   },
    "winner": -1,
    "within": [
     "v.1"
@@ -151,6 +166,11 @@
    "writes": [
     "a localization key"
    ],
+   "scope": {
+    "this": "character",
+    "root": "character",
+    "reason": "every event runs in it unless it says otherwise"
+   },
    "winner": -1,
    "within": [
     "v.1"
@@ -212,6 +232,11 @@
    "writes": [
     "event theme"
    ],
+   "scope": {
+    "this": "character",
+    "root": "character",
+    "reason": "every event runs in it unless it says otherwise"
+   },
    "winner": -1,
    "within": [
     "v.1"
@@ -273,6 +298,11 @@
    "takes": [
     "triggers"
    ],
+   "scope": {
+    "this": "character",
+    "root": "character",
+    "reason": "every event runs in it unless it says otherwise"
+   },
    "winner": -1,
    "within": [
     "v.1"
@@ -299,7 +329,8 @@
    ],
    "scope": {
     "this": "character",
-    "reason": "the one scope it runs in"
+    "root": "character",
+    "reason": "every event runs in it unless it says otherwise"
    },
    "winner": -1,
    "stale": true,
@@ -342,10 +373,15 @@
    "word": "exists",
    "key": "exists",
    "head": "trigger",
-   "prose": "Checks whether the specified scope target exists (check for not being the null object)",
+   "prose": "True when the scope named is there and is not nothing.",
    "writes": [
     "one of $TARGET$, scope:target, title:c_x, title:k_x"
    ],
+   "scope": {
+    "this": "character",
+    "root": "character",
+    "reason": "every event runs in it unless it says otherwise"
+   },
    "winner": -1,
    "stale": true,
    "within": [
@@ -390,6 +426,11 @@
    "key": "faith",
    "head": "event target",
    "prose": "Get faith of scoped character, province, title or great holy war",
+   "scope": {
+    "this": "character",
+    "root": "character",
+    "reason": "every event runs in it unless it says otherwise"
+   },
    "leads": "faith",
    "winner": -1,
    "stale": true,
@@ -432,10 +473,15 @@
    "word": "exists",
    "key": "exists",
    "head": "trigger",
-   "prose": "Checks whether the specified scope target exists (check for not being the null object)",
+   "prose": "True when the scope named is there and is not nothing.",
    "writes": [
     "one of $TARGET$, scope:target, title:c_x, title:k_x"
    ],
+   "scope": {
+    "this": "character",
+    "root": "character",
+    "reason": "every event runs in it unless it says otherwise"
+   },
    "winner": -1,
    "stale": true,
    "within": [
@@ -496,10 +542,15 @@
    "word": "exists",
    "key": "exists",
    "head": "trigger",
-   "prose": "Checks whether the specified scope target exists (check for not being the null object)",
+   "prose": "True when the scope named is there and is not nothing.",
    "writes": [
     "one of $TARGET$, scope:target, title:c_x, title:k_x"
    ],
+   "scope": {
+    "this": "character",
+    "root": "character",
+    "reason": "every event runs in it unless it says otherwise"
+   },
    "winner": -1,
    "stale": true,
    "within": [
@@ -566,7 +617,8 @@
    ],
    "scope": {
     "this": "character",
-    "reason": "the one scope it runs in"
+    "root": "character",
+    "reason": "every event runs in it unless it says otherwise"
    },
    "winner": -1,
    "stale": true,
@@ -647,6 +699,14 @@
    "takes": [
     "effects"
    ],
+   "scope": {
+    "this": "character",
+    "root": "character",
+    "named": {
+     "target": "character"
+    },
+    "reason": "every event runs in it unless it says otherwise"
+   },
    "winner": -1,
    "within": [
     "v.1"
@@ -674,10 +734,11 @@
    ],
    "scope": {
     "this": "character",
+    "root": "character",
     "named": {
-     "target": ""
+     "target": "character"
     },
-    "reason": "the one scope it runs in"
+    "reason": "every event runs in it unless it says otherwise"
    },
    "winner": -1,
    "stale": true,
@@ -724,6 +785,14 @@
    "takes": [
     "a block with days, name, value"
    ],
+   "scope": {
+    "this": "character",
+    "root": "character",
+    "named": {
+     "target": "character"
+    },
+    "reason": "every event runs in it unless it says otherwise"
+   },
    "winner": -1,
    "stale": true,
    "within": [
@@ -749,6 +818,14 @@
    "writes": [
     "one of seen"
    ],
+   "scope": {
+    "this": "character",
+    "root": "character",
+    "named": {
+     "target": "character"
+    },
+    "reason": "every event runs in it unless it says otherwise"
+   },
    "winner": -1,
    "within": [
     "v.1",
@@ -813,6 +890,14 @@
    "writes": [
     "a number"
    ],
+   "scope": {
+    "this": "character",
+    "root": "character",
+    "named": {
+     "target": "character"
+    },
+    "reason": "every event runs in it unless it says otherwise"
+   },
    "winner": -1,
    "within": [
     "v.1",
@@ -855,10 +940,18 @@
    "word": "save_scope_as",
    "key": "save_scope_as",
    "head": "effect",
-   "prose": "Saves the current scope as an arbitrarily-named target to be referenced later in the (unbroken) event chain",
+   "prose": "Remembers the current scope under a name for the rest of the event chain.",
    "takes": [
     "text"
    ],
+   "scope": {
+    "this": "character",
+    "root": "character",
+    "named": {
+     "target": "character"
+    },
+    "reason": "every event runs in it unless it says otherwise"
+   },
    "winner": -1,
    "stale": true,
    "within": [
@@ -906,6 +999,14 @@
    "takes": [
     "a block with days, delayed, id, months, on_action, saved_event_id, trigger_on_next_date, years"
    ],
+   "scope": {
+    "this": "character",
+    "root": "character",
+    "named": {
+     "target": "character"
+    },
+    "reason": "every event runs in it unless it says otherwise"
+   },
    "winner": -1,
    "stale": true,
    "within": [
@@ -929,6 +1030,11 @@
    "key": "trigger_event",
    "head": "event",
    "name": "Two",
+   "scope": {
+    "this": "character",
+    "root": "character",
+    "reason": "every event runs in it unless it says otherwise"
+   },
    "sites": [
     {
      "path": "<fixtures>/ck3/game/events/v_events.txt",
@@ -974,10 +1080,11 @@
    ],
    "scope": {
     "this": "character",
+    "root": "character",
     "named": {
-     "target": ""
+     "target": "character"
     },
-    "reason": "the one scope it runs in"
+    "reason": "every event runs in it unless it says otherwise"
    },
    "leads": "character",
    "winner": -1,
@@ -1009,11 +1116,12 @@
    ],
    "scope": {
     "this": "character",
+    "root": "character",
     "prev": [
-     ""
+     "character"
     ],
     "named": {
-     "target": ""
+     "target": "character"
     },
     "reason": "every_vassal leads to it"
    },
@@ -1066,10 +1174,11 @@
    ],
    "scope": {
     "this": "character",
+    "root": "character",
     "named": {
-     "target": ""
+     "target": "character"
     },
-    "reason": "the one scope it runs in"
+    "reason": "every event runs in it unless it says otherwise"
    },
    "leads": "landed_title",
    "winner": -1,
@@ -1100,11 +1209,12 @@
    ],
    "scope": {
     "this": "landed_title",
+    "root": "character",
     "prev": [
-     ""
+     "character"
     ],
     "named": {
-     "target": ""
+     "target": "character"
     },
     "reason": "capital_county leads to it"
    },
@@ -1155,6 +1265,15 @@
    "takes": [
     "effects"
    ],
+   "scope": {
+    "this": "character",
+    "root": "character",
+    "named": {
+     "own_dynasty": "dynasty",
+     "target": "character"
+    },
+    "reason": "every event runs in it unless it says otherwise"
+   },
    "leads": "dynasty",
    "winner": -1,
    "stale": true,
@@ -1178,18 +1297,19 @@
    "word": "save_scope_as",
    "key": "save_scope_as",
    "head": "effect",
-   "prose": "Saves the current scope as an arbitrarily-named target to be referenced later in the (unbroken) event chain",
+   "prose": "Remembers the current scope under a name for the rest of the event chain.",
    "takes": [
     "text"
    ],
    "scope": {
     "this": "dynasty",
+    "root": "character",
     "prev": [
-     ""
+     "character"
     ],
     "named": {
      "own_dynasty": "dynasty",
-     "target": ""
+     "target": "character"
     },
     "reason": "dynasty leads to it"
    },
@@ -1252,16 +1372,27 @@
   }
 24:2 dynasty:dynasty_1
   {
-   "word": "dynasty:dynasty_1",
+   "word": "dynasty_1",
    "key": "dynasty:dynasty_1",
-   "head": "event target",
-   "prose": "Link to dynasty scope of the given dynasty string",
-   "takes": [
-    "effects"
+   "head": "dynasty",
+   "sites": [
+    {
+     "path": "<fixtures>/ck3/game/common/dynasties/v.txt",
+     "origin": "vanilla",
+     "rel": "common/dynasties/v.txt",
+     "range": {
+      "start": {
+       "line": 0,
+       "character": 0
+      },
+      "end": {
+       "line": 0,
+       "character": 0
+      }
+     }
+    }
    ],
-   "leads": "dynasty",
-   "winner": -1,
-   "stale": true,
+   "winner": 0,
    "within": [
     "v.1",
     "immediate"
@@ -1282,19 +1413,20 @@
    "word": "save_scope_as",
    "key": "save_scope_as",
    "head": "effect",
-   "prose": "Saves the current scope as an arbitrarily-named target to be referenced later in the (unbroken) event chain",
+   "prose": "Remembers the current scope under a name for the rest of the event chain.",
    "takes": [
     "text"
    ],
    "scope": {
     "this": "dynasty",
+    "root": "character",
     "prev": [
-     ""
+     "character"
     ],
     "named": {
      "named_dynasty": "dynasty",
      "own_dynasty": "dynasty",
-     "target": ""
+     "target": "character"
     },
     "reason": "dynasty:dynasty_1 leads to it"
    },
@@ -1360,10 +1492,20 @@
    "word": "random_list",
    "key": "random_list",
    "head": "effect",
-   "prose": "a random list effect",
+   "prose": "Picks one branch at random; each branch's number is its weight.",
    "takes": [
     "a block with /u003cnumber/u003e, X1, X2"
    ],
+   "scope": {
+    "this": "character",
+    "root": "character",
+    "named": {
+     "named_dynasty": "dynasty",
+     "own_dynasty": "dynasty",
+     "target": "character"
+    },
+    "reason": "every event runs in it unless it says otherwise"
+   },
    "winner": -1,
    "stale": true,
    "within": [
@@ -1386,9 +1528,20 @@
    "word": "90",
    "key": "90",
    "head": "in `random_list`",
+   "prose": "One branch of a random list; its number is how likely it is.",
    "takes": [
     "effects"
    ],
+   "scope": {
+    "this": "character",
+    "root": "character",
+    "named": {
+     "named_dynasty": "dynasty",
+     "own_dynasty": "dynasty",
+     "target": "character"
+    },
+    "reason": "every event runs in it unless it says otherwise"
+   },
    "winner": -1,
    "weight": 90,
    "within": [
@@ -1416,6 +1569,16 @@
    "takes": [
     "a block with days, delayed, id, months, on_action, saved_event_id, trigger_on_next_date, years"
    ],
+   "scope": {
+    "this": "character",
+    "root": "character",
+    "named": {
+     "named_dynasty": "dynasty",
+     "own_dynasty": "dynasty",
+     "target": "character"
+    },
+    "reason": "every event runs in it unless it says otherwise"
+   },
    "winner": -1,
    "stale": true,
    "within": [
@@ -1441,6 +1604,11 @@
    "key": "trigger_event",
    "head": "event",
    "name": "Two",
+   "scope": {
+    "this": "character",
+    "root": "character",
+    "reason": "every event runs in it unless it says otherwise"
+   },
    "sites": [
     {
      "path": "<fixtures>/ck3/game/events/v_events.txt",
@@ -1482,9 +1650,20 @@
    "word": "10",
    "key": "10",
    "head": "in `random_list`",
+   "prose": "One branch of a random list; its number is how likely it is.",
    "takes": [
     "effects"
    ],
+   "scope": {
+    "this": "character",
+    "root": "character",
+    "named": {
+     "named_dynasty": "dynasty",
+     "own_dynasty": "dynasty",
+     "target": "character"
+    },
+    "reason": "every event runs in it unless it says otherwise"
+   },
    "winner": -1,
    "weight": 10,
    "within": [
@@ -1515,12 +1694,13 @@
    ],
    "scope": {
     "this": "character",
+    "root": "character",
     "named": {
      "named_dynasty": "dynasty",
      "own_dynasty": "dynasty",
-     "target": ""
+     "target": "character"
     },
-    "reason": "the one scope it runs in"
+    "reason": "every event runs in it unless it says otherwise"
    },
    "winner": -1,
    "stale": true,
@@ -1567,6 +1747,16 @@
    "word": "v_effect",
    "key": "v_effect",
    "head": "scripted effect",
+   "scope": {
+    "this": "character",
+    "root": "character",
+    "named": {
+     "named_dynasty": "dynasty",
+     "own_dynasty": "dynasty",
+     "target": "character"
+    },
+    "reason": "every event runs in it unless it says otherwise"
+   },
    "sites": [
     {
      "path": "<fixtures>/ck3/game/common/scripted_effects/v_effects.txt",
@@ -1670,12 +1860,13 @@
    ],
    "scope": {
     "this": "character",
+    "root": "character",
     "named": {
      "named_dynasty": "dynasty",
      "own_dynasty": "dynasty",
-     "target": ""
+     "target": "character"
     },
-    "reason": "the one scope it runs in"
+    "reason": "every event runs in it unless it says otherwise"
    },
    "winner": -1,
    "stale": true,
@@ -1724,12 +1915,13 @@
    ],
    "scope": {
     "this": "character",
+    "root": "character",
     "named": {
      "named_dynasty": "dynasty",
      "own_dynasty": "dynasty",
-     "target": ""
+     "target": "character"
     },
-    "reason": "the one scope it runs in"
+    "reason": "every event runs in it unless it says otherwise"
    },
    "winner": -1,
    "stale": true,
@@ -1756,6 +1948,16 @@
    "takes": [
     "defaults to send_interface_toast"
    ],
+   "scope": {
+    "this": "character",
+    "root": "character",
+    "named": {
+     "named_dynasty": "dynasty",
+     "own_dynasty": "dynasty",
+     "target": "character"
+    },
+    "reason": "every event runs in it unless it says otherwise"
+   },
    "winner": -1,
    "stale": true,
    "within": [
@@ -1805,6 +2007,16 @@
     "a localization key",
     "a block"
    ],
+   "scope": {
+    "this": "character",
+    "root": "character",
+    "named": {
+     "named_dynasty": "dynasty",
+     "own_dynasty": "dynasty",
+     "target": "character"
+    },
+    "reason": "every event runs in it unless it says otherwise"
+   },
    "winner": -1,
    "stale": true,
    "within": [
@@ -1871,6 +2083,16 @@
    "writes": [
     "one of custom"
    ],
+   "scope": {
+    "this": "character",
+    "root": "character",
+    "named": {
+     "named_dynasty": "dynasty",
+     "own_dynasty": "dynasty",
+     "target": "character"
+    },
+    "reason": "every event runs in it unless it says otherwise"
+   },
    "winner": -1,
    "within": [
     "v.1",
@@ -1920,12 +2142,13 @@
    ],
    "scope": {
     "this": "character",
+    "root": "character",
     "named": {
      "named_dynasty": "dynasty",
      "own_dynasty": "dynasty",
-     "target": ""
+     "target": "character"
     },
-    "reason": "the one scope it runs in"
+    "reason": "every event runs in it unless it says otherwise"
    },
    "winner": -1,
    "stale": true,
@@ -1976,12 +2199,13 @@
    ],
    "scope": {
     "this": "character",
+    "root": "character",
     "named": {
      "named_dynasty": "dynasty",
      "own_dynasty": "dynasty",
-     "target": ""
+     "target": "character"
     },
-    "reason": "the one scope it runs in"
+    "reason": "every event runs in it unless it says otherwise"
    },
    "winner": -1,
    "stale": true,
@@ -2010,6 +2234,16 @@
    "takes": [
     "a description"
    ],
+   "scope": {
+    "this": "character",
+    "root": "character",
+    "named": {
+     "named_dynasty": "dynasty",
+     "own_dynasty": "dynasty",
+     "target": "character"
+    },
+    "reason": "every event runs in it unless it says otherwise"
+   },
    "winner": -1,
    "stale": true,
    "within": [
@@ -2033,9 +2267,20 @@
    "word": "first_valid",
    "key": "first_valid",
    "head": "in `title`",
+   "prose": "Shows the first text inside it whose trigger holds.",
    "takes": [
     "a description"
    ],
+   "scope": {
+    "this": "character",
+    "root": "character",
+    "named": {
+     "named_dynasty": "dynasty",
+     "own_dynasty": "dynasty",
+     "target": "character"
+    },
+    "reason": "every event runs in it unless it says otherwise"
+   },
    "winner": -1,
    "within": [
     "v.1",
@@ -2059,9 +2304,20 @@
    "word": "triggered_desc",
    "key": "triggered_desc",
    "head": "in `first_valid`",
+   "prose": "A text shown only when its trigger holds.",
    "takes": [
     "a description"
    ],
+   "scope": {
+    "this": "character",
+    "root": "character",
+    "named": {
+     "named_dynasty": "dynasty",
+     "own_dynasty": "dynasty",
+     "target": "character"
+    },
+    "reason": "every event runs in it unless it says otherwise"
+   },
    "winner": -1,
    "within": [
     "v.1",
@@ -2086,9 +2342,20 @@
    "word": "trigger",
    "key": "trigger",
    "head": "in `triggered_desc`",
+   "prose": "The conditions that must hold for the block around it to count.",
    "takes": [
     "triggers"
    ],
+   "scope": {
+    "this": "character",
+    "root": "character",
+    "named": {
+     "named_dynasty": "dynasty",
+     "own_dynasty": "dynasty",
+     "target": "character"
+    },
+    "reason": "every event runs in it unless it says otherwise"
+   },
    "winner": -1,
    "within": [
     "v.1",
@@ -2120,12 +2387,13 @@
    ],
    "scope": {
     "this": "character",
+    "root": "character",
     "named": {
      "named_dynasty": "dynasty",
      "own_dynasty": "dynasty",
-     "target": ""
+     "target": "character"
     },
-    "reason": "the one scope it runs in"
+    "reason": "every event runs in it unless it says otherwise"
    },
    "winner": -1,
    "stale": true,
@@ -2179,11 +2447,21 @@
    "key": "desc",
    "head": "in `triggered_desc`",
    "need": "optional",
-   "prose": "optional, otherwise takes it from the message type",
+   "prose": "The text shown: a localization key, or a block that chooses one.",
    "writes": [
     "a localization key",
     "a block"
    ],
+   "scope": {
+    "this": "character",
+    "root": "character",
+    "named": {
+     "named_dynasty": "dynasty",
+     "own_dynasty": "dynasty",
+     "target": "character"
+    },
+    "reason": "every event runs in it unless it says otherwise"
+   },
    "winner": -1,
    "stale": true,
    "within": [
@@ -2259,12 +2537,13 @@
    ],
    "scope": {
     "this": "character",
+    "root": "character",
     "named": {
      "named_dynasty": "dynasty",
      "own_dynasty": "dynasty",
-     "target": ""
+     "target": "character"
     },
-    "reason": "the one scope it runs in"
+    "reason": "every event runs in it unless it says otherwise"
    },
    "winner": -1,
    "stale": true,
@@ -2293,6 +2572,16 @@
    "takes": [
     "a description"
    ],
+   "scope": {
+    "this": "character",
+    "root": "character",
+    "named": {
+     "named_dynasty": "dynasty",
+     "own_dynasty": "dynasty",
+     "target": "character"
+    },
+    "reason": "every event runs in it unless it says otherwise"
+   },
    "winner": -1,
    "stale": true,
    "within": [
@@ -2316,9 +2605,20 @@
    "word": "first_valid",
    "key": "first_valid",
    "head": "in `title`",
+   "prose": "Shows the first text inside it whose trigger holds.",
    "takes": [
     "a description"
    ],
+   "scope": {
+    "this": "character",
+    "root": "character",
+    "named": {
+     "named_dynasty": "dynasty",
+     "own_dynasty": "dynasty",
+     "target": "character"
+    },
+    "reason": "every event runs in it unless it says otherwise"
+   },
    "winner": -1,
    "within": [
     "v.1",
@@ -2343,11 +2643,21 @@
    "key": "desc",
    "head": "in `first_valid`",
    "need": "optional",
-   "prose": "optional, otherwise takes it from the message type",
+   "prose": "The text shown: a localization key, or a block that chooses one.",
    "writes": [
     "a localization key",
     "a block"
    ],
+   "scope": {
+    "this": "character",
+    "root": "character",
+    "named": {
+     "named_dynasty": "dynasty",
+     "own_dynasty": "dynasty",
+     "target": "character"
+    },
+    "reason": "every event runs in it unless it says otherwise"
+   },
    "winner": -1,
    "stale": true,
    "within": [
@@ -2421,12 +2731,13 @@
    ],
    "scope": {
     "this": "character",
+    "root": "character",
     "named": {
      "named_dynasty": "dynasty",
      "own_dynasty": "dynasty",
-     "target": ""
+     "target": "character"
     },
-    "reason": "the one scope it runs in"
+    "reason": "every event runs in it unless it says otherwise"
    },
    "winner": -1,
    "stale": true,
@@ -2453,6 +2764,16 @@
    "writes": [
     "opinion modifier"
    ],
+   "scope": {
+    "this": "character",
+    "root": "character",
+    "named": {
+     "named_dynasty": "dynasty",
+     "own_dynasty": "dynasty",
+     "target": "character"
+    },
+    "reason": "every event runs in it unless it says otherwise"
+   },
    "winner": -1,
    "within": [
     "v.1",
@@ -2501,6 +2822,16 @@
    "writes": [
     "one of root"
    ],
+   "scope": {
+    "this": "character",
+    "root": "character",
+    "named": {
+     "named_dynasty": "dynasty",
+     "own_dynasty": "dynasty",
+     "target": "character"
+    },
+    "reason": "every event runs in it unless it says otherwise"
+   },
    "winner": -1,
    "within": [
     "v.1",
@@ -2547,6 +2878,16 @@
    "takes": [
     "a block"
    ],
+   "scope": {
+    "this": "character",
+    "root": "character",
+    "named": {
+     "named_dynasty": "dynasty",
+     "own_dynasty": "dynasty",
+     "target": "character"
+    },
+    "reason": "every event runs in it unless it says otherwise"
+   },
    "winner": -1,
    "within": [
     "v.1"
@@ -2571,6 +2912,16 @@
    "writes": [
     "a localization key"
    ],
+   "scope": {
+    "this": "character",
+    "root": "character",
+    "named": {
+     "named_dynasty": "dynasty",
+     "own_dynasty": "dynasty",
+     "target": "character"
+    },
+    "reason": "every event runs in it unless it says otherwise"
+   },
    "winner": -1,
    "within": [
     "v.1",
@@ -2634,6 +2985,16 @@
    "takes": [
     "triggers"
    ],
+   "scope": {
+    "this": "character",
+    "root": "character",
+    "named": {
+     "named_dynasty": "dynasty",
+     "own_dynasty": "dynasty",
+     "target": "character"
+    },
+    "reason": "every event runs in it unless it says otherwise"
+   },
    "winner": -1,
    "within": [
     "v.1",
@@ -2661,12 +3022,13 @@
    ],
    "scope": {
     "this": "character",
+    "root": "character",
     "named": {
      "named_dynasty": "dynasty",
      "own_dynasty": "dynasty",
-     "target": ""
+     "target": "character"
     },
-    "reason": "the one scope it runs in"
+    "reason": "every event runs in it unless it says otherwise"
    },
    "winner": -1,
    "stale": true,
@@ -2715,6 +3077,16 @@
    "takes": [
     "a block with days, delayed, id, months, on_action, saved_event_id, trigger_on_next_date, years"
    ],
+   "scope": {
+    "this": "character",
+    "root": "character",
+    "named": {
+     "named_dynasty": "dynasty",
+     "own_dynasty": "dynasty",
+     "target": "character"
+    },
+    "reason": "every event runs in it unless it says otherwise"
+   },
    "winner": -1,
    "stale": true,
    "within": [
@@ -2738,6 +3110,11 @@
    "key": "trigger_event",
    "head": "event",
    "name": "Two",
+   "scope": {
+    "this": "character",
+    "root": "character",
+    "reason": "every event runs in it unless it says otherwise"
+   },
    "sites": [
     {
      "path": "<fixtures>/ck3/game/events/v_events.txt",
@@ -2784,12 +3161,13 @@
    ],
    "scope": {
     "this": "character",
+    "root": "character",
     "named": {
      "named_dynasty": "dynasty",
      "own_dynasty": "dynasty",
-     "target": ""
+     "target": "character"
     },
-    "reason": "the one scope it runs in"
+    "reason": "every event runs in it unless it says otherwise"
    },
    "winner": -1,
    "stale": true,
@@ -2835,6 +3213,16 @@
    "writes": [
     "a block"
    ],
+   "scope": {
+    "this": "character",
+    "root": "character",
+    "named": {
+     "named_dynasty": "dynasty",
+     "own_dynasty": "dynasty",
+     "target": "character"
+    },
+    "reason": "every event runs in it unless it says otherwise"
+   },
    "winner": -1,
    "within": [
     "v.1",
@@ -2859,6 +3247,16 @@
    "writes": [
     "a number"
    ],
+   "scope": {
+    "this": "character",
+    "root": "character",
+    "named": {
+     "named_dynasty": "dynasty",
+     "own_dynasty": "dynasty",
+     "target": "character"
+    },
+    "reason": "every event runs in it unless it says otherwise"
+   },
    "winner": -1,
    "within": [
     "v.1",
@@ -2904,6 +3302,16 @@
    "takes": [
     "effects"
    ],
+   "scope": {
+    "this": "character",
+    "root": "character",
+    "named": {
+     "named_dynasty": "dynasty",
+     "own_dynasty": "dynasty",
+     "target": "character"
+    },
+    "reason": "every event runs in it unless it says otherwise"
+   },
    "winner": -1,
    "within": [
     "v.1"
@@ -2931,12 +3339,13 @@
    ],
    "scope": {
     "this": "character",
+    "root": "character",
     "named": {
      "named_dynasty": "dynasty",
      "own_dynasty": "dynasty",
-     "target": ""
+     "target": "character"
     },
-    "reason": "the one scope it runs in"
+    "reason": "every event runs in it unless it says otherwise"
    },
    "winner": -1,
    "stale": true,
@@ -2983,6 +3392,16 @@
    "takes": [
     "a block"
    ],
+   "scope": {
+    "this": "character",
+    "root": "character",
+    "named": {
+     "named_dynasty": "dynasty",
+     "own_dynasty": "dynasty",
+     "target": "character"
+    },
+    "reason": "every event runs in it unless it says otherwise"
+   },
    "winner": -1,
    "within": [
     "v.1"
@@ -3007,6 +3426,16 @@
    "takes": [
     "a number"
    ],
+   "scope": {
+    "this": "character",
+    "root": "character",
+    "named": {
+     "named_dynasty": "dynasty",
+     "own_dynasty": "dynasty",
+     "target": "character"
+    },
+    "reason": "every event runs in it unless it says otherwise"
+   },
    "winner": -1,
    "within": [
     "v.1",
@@ -3048,6 +3477,11 @@
    "key": "v.2",
    "head": "event",
    "name": "Two",
+   "scope": {
+    "this": "character",
+    "root": "character",
+    "reason": "every event runs in it unless it says otherwise"
+   },
    "sites": [
     {
      "path": "<fixtures>/ck3/game/events/v_events.txt",
@@ -3086,6 +3520,11 @@
    "writes": [
     "one of character_event"
    ],
+   "scope": {
+    "this": "character",
+    "root": "character",
+    "reason": "every event runs in it unless it says otherwise"
+   },
    "winner": -1,
    "within": [
     "v.2"
@@ -3127,6 +3566,11 @@
    "writes": [
     "a localization key"
    ],
+   "scope": {
+    "this": "character",
+    "root": "character",
+    "reason": "every event runs in it unless it says otherwise"
+   },
    "winner": -1,
    "within": [
     "v.2"
@@ -3188,6 +3632,11 @@
    "writes": [
     "a block"
    ],
+   "scope": {
+    "this": "character",
+    "root": "character",
+    "reason": "every event runs in it unless it says otherwise"
+   },
    "winner": -1,
    "within": [
     "v.2"
@@ -3211,6 +3660,11 @@
    "writes": [
     "a localization key"
    ],
+   "scope": {
+    "this": "character",
+    "root": "character",
+    "reason": "every event runs in it unless it says otherwise"
+   },
    "winner": -1,
    "within": [
     "v.2",
@@ -3274,6 +3728,11 @@
    "takes": [
     "triggers"
    ],
+   "scope": {
+    "this": "character",
+    "root": "character",
+    "reason": "every event runs in it unless it says otherwise"
+   },
    "winner": -1,
    "within": [
     "v.2",
@@ -3301,7 +3760,8 @@
    ],
    "scope": {
     "this": "character",
-    "reason": "the one scope it runs in"
+    "root": "character",
+    "reason": "every event runs in it unless it says otherwise"
    },
    "winner": -1,
    "stale": true,
@@ -3350,6 +3810,11 @@
    "takes": [
     "a block"
    ],
+   "scope": {
+    "this": "character",
+    "root": "character",
+    "reason": "every event runs in it unless it says otherwise"
+   },
    "winner": -1,
    "within": [
     "v.2"
@@ -3374,6 +3839,11 @@
    "writes": [
     "a localization key"
    ],
+   "scope": {
+    "this": "character",
+    "root": "character",
+    "reason": "every event runs in it unless it says otherwise"
+   },
    "winner": -1,
    "within": [
     "v.2",
@@ -3438,6 +3908,11 @@
    "takes": [
     "a block"
    ],
+   "scope": {
+    "this": "character",
+    "root": "character",
+    "reason": "every event runs in it unless it says otherwise"
+   },
    "winner": -1,
    "within": [
     "v.2"
@@ -3461,6 +3936,11 @@
    "writes": [
     "a number"
    ],
+   "scope": {
+    "this": "character",
+    "root": "character",
+    "reason": "every event runs in it unless it says otherwise"
+   },
    "winner": -1,
    "within": [
     "v.2",

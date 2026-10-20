@@ -22,24 +22,23 @@ type Category string
 // The categories the engine colors.
 const (
 	CategoryEntry    Category = "entry"    // an entry's name where it is defined, or a reference that resolves to one
-	CategoryOperator Category = "operator" // a key that is one of the language's operators: a construct with a class
+	CategoryOperator Category = "operator" // a key that is one of the language's operators: a keyword with a class
 	CategoryScope    Category = "scope"    // a link to a scope script runs in, or a saved scope
 	CategoryVariable Category = "variable" // a variable, or a scripted entry's parameter
 )
 
-// Token is one key, value or name the engine colors: its 0-based line, its byte column and length, and its category.
+// Token is one key, value or name the engine colors.
 type Token struct {
-	Line     int      `json:"line"`
-	Col      int      `json:"col"`
-	Length   int      `json:"length"`
+	Line     int      `json:"line"`   // 0-based
+	Col      int      `json:"col"`    // the byte column
+	Length   int      `json:"length"` // in bytes
 	Category Category `json:"category"`
 }
 
-// coloring is how the names of a database are colored: their category ("" leaves a name to the grammar), and whether
-// a reference colors only where it resolves to a definition.
+// coloring is how the names of a database are colored.
 type coloring struct {
-	category Category
-	resolves bool
+	category Category // "" leaves a name to the grammar
+	resolves bool     // a reference colors only where it resolves to a definition
 }
 
 // databaseColorings are the databases whose names are not entries that must resolve: a saved scope and a variable are
@@ -55,22 +54,21 @@ var databaseColorings = map[string]coloring{
 	game.DataFunction:    {category: "", resolves: false},
 }
 
-// tokenSpan is a token's span of the file and its category; "" leaves the span to the grammar.
+// tokenSpan is a token's span of the file.
 type tokenSpan struct {
 	span     jomini.Range
-	category Category
+	category Category // "" leaves the span to the grammar
 }
 
-// painter is one file's walk as it colors: the keys read as operators or links, the values that are links to a
-// scope, and the quoted strings, which stay the grammar's.
+// painter is one file's walk as it colors.
 type painter struct {
 	file    *openFile
-	keys    []tokenSpan
-	values  []tokenSpan
-	strings []tokenSpan
+	keys    []tokenSpan // keys read as operators or links
+	values  []tokenSpan // values that are links to a scope
+	strings []tokenSpan // quoted strings, which stay the grammar's
 }
 
-// Tokens is the keys, values and names the engine colors in a file as the editor sees it (fileTokens).
+// Tokens returns the keys, values and names the engine colors in a file as the editor sees it (fileTokens).
 func Tokens(ws *workspace.Session, path string) ([]Token, error) {
 	ws.RLock()
 	defer ws.RUnlock()
@@ -81,8 +79,8 @@ func Tokens(ws *workspace.Session, path string) ([]Token, error) {
 	return fileTokens(file), nil
 }
 
-// TextTokens is the keys, values and names the engine colors in another text of a file, read where the file sits: a
-// version of it a diff shows, the last commit's or the staged copy (fileTokens).
+// TextTokens returns the keys, values and names the engine colors in another text of a file, read where the file sits:
+// a version a diff shows (fileTokens).
 func TextTokens(ws *workspace.Session, path, text string) []Token {
 	ws.RLock()
 	defer ws.RUnlock()
@@ -90,10 +88,8 @@ func TextTokens(ws *workspace.Session, path, text string) []Token {
 	return fileTokens(&openFile{ws: ws, path: path, text: text, parsed: &parsed, place: ws.PlaceOf(path)})
 }
 
-// fileTokens is the keys, values and names of a script or GUI file the engine colors, in the file's order, from one
-// walk; a localization file has none, its grammar coloring all of it by shape. The colors are layered, a span of a
-// layer kept only where it overlaps none before it: the quoted strings (left to the grammar), the keys (visit), each
-// occurrence by its name's database (categoryOf), the values that are links to a scope.
+// fileTokens returns the keys, values and names of a script or GUI file the engine colors, in file order, from one
+// walk; a localization file has none. Layers overlap by priority: strings, keys, occurrences, then scope links.
 func fileTokens(file *openFile) []Token {
 	if file.place.Format != inventory.Script {
 		return nil
@@ -113,9 +109,8 @@ func fileTokens(file *openFile) []Token {
 	return painter.tokens(tokenSpans)
 }
 
-// visit keeps a statement's key where it is one of the language's operators (game.ClassOf, listClass) or a link to a
-// scope script runs in (leadsToScope), its value where it is such a link, and its key or value where it is a quoted
-// string.
+// visit keeps a statement's key where it is one of the language's operators or a link to a scope script runs in, its
+// value where it is such a link, and its key or value where it is a quoted string.
 func (painter *painter) visit(statement jomini.Statement, context schema.Context, inner *schema.Context,
 	_ []schema.Occurrence) bool {
 	if assign, isAssign := statement.(*jomini.Assignment); isAssign {
@@ -123,9 +118,9 @@ func (painter *painter) visit(statement jomini.Statement, context schema.Context
 		switch {
 		case assign.Key.Quoted:
 			painter.strings = append(painter.strings, tokenSpan{span: assign.Key.Range})
-		case game.ClassOf(context.Shape, context.Command, key) != game.ClassNone || listClass(*inner, key) != game.ClassNone:
+		case game.ClassifyKey(context.Shape, context.Command, key) != "" || listClass(*inner, key) != "":
 			painter.keys = append(painter.keys, tokenSpan{span: assign.Key.Range, category: CategoryOperator})
-		case inner.Rule == game.KeyRuleLink && painter.leadsToScope(key):
+		case inner.KeyRule == game.KeyRuleLink && painter.leadsToScope(key):
 			painter.keys = append(painter.keys, tokenSpan{span: assign.Key.Range, category: CategoryScope})
 		}
 	}
@@ -140,15 +135,14 @@ func (painter *painter) visit(statement jomini.Statement, context schema.Context
 	return true
 }
 
-// listClass is the class of the list iterator a key is where the walker reads it as one: a command the dumps declare
-// or a call to a scripted list, written with an iterator's prefix (every_vassal, any_in_list); a scripted trigger or a
-// field named with the prefix (any_valid_candidacy_trigger, random_events) iterates nothing.
-func listClass(inner schema.Context, key string) game.Class {
-	construct, isList := game.ListIterator(strings.ToLower(key))
-	if !isList || inner.Rule != game.KeyRuleCommand && inner.List == "" {
-		return game.ClassNone
+// listClass returns the class of the list iterator a key is where the walker reads it as one (every_vassal,
+// any_in_list); a scripted trigger or a field named with the prefix (random_events) iterates nothing.
+func listClass(inner schema.Context, key string) string {
+	keyword, isList := game.MatchListIterator(strings.ToLower(key))
+	if !isList || inner.KeyRule != game.KeyRuleCommand && inner.List == "" {
+		return ""
 	}
-	return construct.Class
+	return keyword.Class
 }
 
 // oneLine reports whether a span starts and ends on one line, as every key, value and name does; a whole-file entry's
@@ -158,8 +152,8 @@ func (painter *painter) oneLine(span jomini.Range) bool {
 	return lines.PositionAt(span.Start).Line == lines.PositionAt(span.End).Line
 }
 
-// categoryOf is what an occurrence is colored as: its database's coloring (databaseColorings), else an entry that
-// must resolve; a reference that must resolve and resolves to nothing stays the grammar's.
+// categoryOf returns what an occurrence is colored as: its database's coloring, else an entry that must resolve; a
+// reference that resolves to nothing stays the grammar's.
 func (painter *painter) categoryOf(occurrence schema.Occurrence) Category {
 	ws := painter.file.ws
 	databaseColoring, isListed := databaseColorings[occurrence.Database]
@@ -174,10 +168,8 @@ func (painter *painter) categoryOf(occurrence schema.Occurrence) Category {
 	return databaseColoring.category
 }
 
-// leadsToScope reports whether a key's or a scalar's text is a link to a scope script runs in, whatever its case
-// (ROOT): where script stands (root, prev, this), or a scope type that evaluates triggers or executes effects. A
-// boolean of the language is the grammar's literal, though every game's dumps declare yes and no as links to a
-// boolean, a scope type in Vic3 and EU5; a flag (flag:x) leads to a scope that runs no script.
+// leadsToScope reports whether a text is a link to a scope script runs in, whatever its case (ROOT): root, prev, this,
+// or a scope type that runs script. yes and no are literals, though the dumps declare them as links; flag:x runs none.
 func (painter *painter) leadsToScope(text string) bool {
 	install := painter.file.ws.Install
 	lower := strings.ToLower(text)
@@ -185,8 +177,8 @@ func (painter *painter) leadsToScope(text string) bool {
 	return link != nil && !slices.Contains(game.Bools, lower) && (link.Target == "" || install.Schema.RunsScript(link.Target))
 }
 
-// layer is the token spans of a base sorted by where they start, with each of the next layer that overlaps neither a
-// span of the base nor one of its own layer taken before it.
+// layer returns the token spans of a base sorted by where they start, with each of the next layer that overlaps neither
+// a span of the base nor an earlier one of its own.
 func layer(base, next []tokenSpan) []tokenSpan {
 	compareStarts := func(first, second tokenSpan) int { return cmp.Compare(first.span.Start, second.span.Start) }
 	slices.SortFunc(next, compareStarts)
@@ -206,7 +198,7 @@ func layer(base, next []tokenSpan) []tokenSpan {
 	return tokenSpans
 }
 
-// tokens is the token spans that have a category, each on the line it starts on.
+// tokens returns the token spans that have a category, each on the line it starts on.
 func (painter *painter) tokens(tokenSpans []tokenSpan) []Token {
 	lines := painter.file.parsed.Lines()
 	tokens := make([]Token, 0, len(tokenSpans))

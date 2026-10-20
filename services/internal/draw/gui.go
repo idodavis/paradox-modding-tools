@@ -20,52 +20,49 @@ import (
 	"paradox-modding-tools/services/internal/schema"
 )
 
-// List is one render of a GUI entry: the widgets the game lays it out in, its widgets in pre-order, the textures they
-// draw and the fonts they use, each listed once, the calls they are shown on, and what nothing found.
+// List is one render of a GUI entry.
 type List struct {
-	IsAlone  bool      `json:"isAlone"` // a type, template, text icon or format drawn by itself, not a window
-	Holders  []Widget  `json:"holders"` // outermost first, each of its type row and properties alone
-	Elements []Widget  `json:"elements"`
-	Textures []Texture `json:"textures"`
-	Groups   []Group   `json:"groups"`
-	Fonts    []Font    `json:"fonts"`
-	Missing  []Absent  `json:"missing"`
+	IsAlone  bool      `json:"isAlone"`  // a type, template, text icon or format drawn by itself, not a window
+	Holders  []Widget  `json:"holders"`  // the widgets the game lays it out in, outermost first
+	Elements []Widget  `json:"elements"` // its widgets in pre-order
+	Textures []Texture `json:"textures"` // each listed once
+	Groups   []Group   `json:"groups"`   // the calls the widgets are shown on
+	Fonts    []Font    `json:"fonts"`    // each listed once
+	Missing  []Absent  `json:"missing"`  // what nothing found
 }
 
-// Widget is one widget of the entry: the element it is, how its type draws, and what it is drawn by: its properties
-// as written, its textures, its text and what it is shown on.
+// Widget is one widget of the entry.
 type Widget struct {
 	Element
 
-	Role   game.WidgetRole `json:"role"` // "" a child among its siblings
-	IsItem bool            `json:"isItem"`
+	Role   game.WidgetRole `json:"role"`   // "" a child among its siblings
+	IsItem bool            `json:"isItem"` // an item of a data model
 
-	Holds       game.Holding `json:"holds"`
-	Clips       bool         `json:"clips"`
-	Fills       bool         `json:"fills"`
-	CentersText bool         `json:"centersText"`
+	Holding     game.Holding `json:"holds"`       // how its type holds its children
+	Clips       bool         `json:"clips"`       // its type clips them
+	Fills       bool         `json:"fills"`       // its type fills its holder
+	CentersText bool         `json:"centersText"` // its type centers its own text
 	DropsHidden bool         `json:"dropsHidden"` // a hidden child of it takes no room
 
-	IsHidden       bool              `json:"isHidden"` // visible = no, or visible_at_creation = no
-	VisibleBinding string            `json:"visibleBinding"`
-	Condition      *Condition        `json:"condition,omitempty"`
-	Properties     map[string]string `json:"properties"` // by lower-cased key, the last written, as written
-	Textures       []int             `json:"textures"`   // its own, then its overlays
-	TextureBinding string            `json:"textureBinding"`
+	IsHidden       bool              `json:"isHidden"`            // visible = no, or visible_at_creation = no
+	VisibleBinding string            `json:"visibleBinding"`      // the binding its visible is written as; "" none
+	Condition      *Condition        `json:"condition,omitempty"` // what it is shown on
+	Properties     map[string]string `json:"properties"`          // by lower-cased key, the last written, as written
+	Textures       []int             `json:"textures"`            // its own, then its overlays
+	TextureBinding string            `json:"textureBinding"`      // the binding its texture is written as; "" none
 	Text           *Text             `json:"text,omitempty"`
 }
 
-// Texture is what a widget paints from a file: its size in the image's pixels over its density, its border in the
-// screen's, its frame, tiling, mirror, fit, tint and blend, and the texture that masks it.
+// Texture is what a widget paints from a file.
 type Texture struct {
 	URL        string  `json:"url"`
-	Width      int     `json:"width"`
-	Height     int     `json:"height"`
-	Density    float64 `json:"density"`
-	Border     [4]int  `json:"border"` // top, right, bottom, left
+	Width      int     `json:"width"`   // in the image's pixels
+	Height     int     `json:"height"`  // in the image's pixels
+	Density    float64 `json:"density"` // the image's pixels per screen pixel
+	Border     [4]int  `json:"border"`  // in the screen's pixels: top, right, bottom, left
 	IsTiled    bool    `json:"isTiled"`
 	IsMirrored bool    `json:"isMirrored"`
-	Fit        string  `json:"fit"`
+	Fit        string  `json:"fit"`       // how the image fits its widget
 	Tint       string  `json:"tint"`      // the color the image is multiplied by, opaque; "" none
 	TintAlpha  float64 `json:"tintAlpha"` // what the tint multiplies the image's alpha by; 1 none
 	Blend      string  `json:"blend"`     // a CSS blend mode
@@ -73,54 +70,53 @@ type Texture struct {
 	Mask       int     `json:"mask"` // the list's texture whose brightness masks this one; -1 none
 }
 
-// Text is a widget's text as runs in a font at a size.
+// Text is a widget's text.
 type Text struct {
-	Font  string `json:"font"`
+	Font  string `json:"font"` // the font's name
 	Size  int    `json:"size"`
-	Color string `json:"color"`
+	Color string `json:"color"` // the default color of its runs
 	Runs  []Run  `json:"runs"`
 }
 
-// Run is one stretch of a text under one style: an icon drawn in place of text, or a data call drawn as a value.
+// Run is one stretch of a text under one style.
 type Run struct {
 	Text     string `json:"text"`
 	IsBold   bool   `json:"isBold"`
 	IsItalic bool   `json:"isItalic"`
 	Color    string `json:"color"`
-	Icon     string `json:"icon"`
-	Call     string `json:"call"`
+	Icon     string `json:"icon"` // an icon drawn in place of text; "" none
+	Call     string `json:"call"` // a data call drawn as a value; "" none
 }
 
-// Font is one face the texts use: the game's font name, its style and its file.
+// Font is one face the texts use.
 type Font struct {
-	Name  string `json:"name"`
+	Name  string `json:"name"` // the game's font name
 	Style string `json:"style"`
-	URL   string `json:"url"`
+	URL   string `json:"url"` // its file
 }
 
-// Condition is what a widget is shown on: a fact, one of the list's groups at a value, or a boolean over conditions.
+// Condition is what a widget is shown on: a fact, or a boolean over conditions.
 type Condition struct {
-	Operator string      `json:"operator"` // "" a fact
-	Operands []Condition `json:"operands,omitempty"`
-	Group    int         `json:"group"`
-	Value    string      `json:"value,omitempty"`
+	Operator string      `json:"operator"`           // and, or, not...; "" a fact
+	Operands []Condition `json:"operands,omitempty"` // the conditions an operator combines
+	Group    int         `json:"group"`              // a fact: the list's group it reads
+	Value    string      `json:"value,omitempty"`    // a fact: the value the group is at
 }
 
-// Group is a call widgets are shown on, its last quoted argument blanked, and the values its facts are written with.
+// Group is a call widgets are shown on.
 type Group struct {
-	Call   string   `json:"call"`
-	Values []string `json:"values"`
+	Call   string   `json:"call"`   // with its last quoted argument blanked
+	Values []string `json:"values"` // the values its facts are written with
 }
 
-// guiResolver is one GUI entry's resolve: the shared resolve, the list being built, the widget of each element, and
-// what is read once a render.
+// guiResolver is one GUI entry's resolve.
 type guiResolver struct {
 	*resolver
-	list    *List
-	widgets []*widget // by element
-	textbox func() *widget
-	folders func() map[string]string // the icon folders by define
-	formats func() map[string]string // each format's id by its lower-cased id
+	list    *List                    // being built
+	widgets []*widget                // by element
+	textbox func() *widget           // the install's textbox type, read once a render
+	folders func() map[string]string // the icon folders by define, read once a render
+	formats func() map[string]string // each format's id by its lower-cased id, read once a render
 
 	textureIndexes map[Texture]int
 	groupIndexes   map[string]int
@@ -129,29 +125,28 @@ type guiResolver struct {
 	pathTextures   map[string]Texture // a path's texture with the defaults; URL "" for none
 }
 
-// widget is one resolved widget: its element, its built-in type, the statement that writes it, every statement that
-// applies to it in order, the children its blocks hold, the overrides in force and the data context it reads.
+// widget is one resolved widget.
 type widget struct {
-	properties
-	element     int
-	builtIn     string
-	block       statement
-	children    []child
-	overrides   map[string]statement
-	dataContext string
+	properties                       // every statement that applies to it, in order
+	element     int                  // its element's index in the list
+	builtIn     string               // its built-in type
+	block       statement            // the statement that writes it
+	children    []child              // the children its blocks hold
+	overrides   map[string]statement // the overrides in force
+	dataContext string               // the data context it reads
 }
 
-// child is a statement a widget's block holds as a widget: its role, and whether it is a data model's item.
+// child is a statement a widget's block holds as a widget.
 type child struct {
 	statement
 	role   game.WidgetRole
-	isItem bool
+	isItem bool // an item of a data model
 }
 
-// entryRow is how a database's entries are drawn: alone, and as what script with the id put in ("" as written).
+// entryRow is how a database's entries are drawn.
 type entryRow struct {
-	isAlone bool
-	script  string
+	isAlone bool   // drawn by itself, not in a window
+	script  string // the script drawn with the id put in; "" as written
 }
 
 // The words the resolver reads.
@@ -226,15 +221,18 @@ func newGUIResolver(core *resolver) (*guiResolver, error) {
 	return resolver, nil
 }
 
-// holders are the widgets the game lays an entry out in, outermost first: the window GUIHolders names for a type of
-// its chain, else, for an entry drawn alone, the widgets around the one place the install writes it.
+// holders returns the widgets the game lays an entry out in, outermost first: the window GUIHolders names for a type of
+// its chain, else, for an entry drawn alone, the widgets around the place the install writes it.
 func (resolver *guiResolver) holders(entry child) []Widget {
 	_, chain := resolver.typeChain(entry.assignment.Key.Text)
 	for _, link := range slices.Backward(chain) {
-		holder, hasHolder := game.GUIHolders[link.writer]
-		definition, isDefined := resolver.definition(schema.Occurrence{Database: windowDatabase, ID: holder})
-		if hasHolder && isDefined {
-			return []Widget{resolver.holderWidget(definition)}
+		for _, row := range game.GUIHolders {
+			if row.Type != link.writer || !slices.Contains(row.Games, resolver.ws.Game.ID) {
+				continue
+			}
+			if definition, isDefined := resolver.definition(schema.Occurrence{Database: windowDatabase, ID: row.Window}); isDefined {
+				return []Widget{resolver.holderWidget(definition)}
+			}
 		}
 	}
 	if !resolver.list.IsAlone {
@@ -243,8 +241,8 @@ func (resolver *guiResolver) holders(entry child) []Widget {
 	return resolver.placeChain(resolver.request.Database, resolver.request.ID, 0)
 }
 
-// entryWidget is the widget an entry is drawn as, by its database's row: a window as written, a type or template as
-// the script that names it, a text icon as its iconsize block drawn as an icon.
+// entryWidget returns the widget an entry is drawn as, by its database's row: a window as written, a type or template
+// as the script that names it, a text icon as its iconsize block drawn as an icon.
 func (resolver *guiResolver) entryWidget(definition statement, row entryRow) child {
 	assignment := definition.assignment
 	switch {
@@ -268,9 +266,8 @@ func (resolver *guiResolver) entryWidget(definition statement, row entryRow) chi
 	return child{statement: definition}
 }
 
-// resolveWidget resolves a child under a parent (nil for the entry): its element listed before its descendants, its
-// type and chain, the overrides scanned, templates and blocks applied, the opening state, its data context, its
-// children, then its element described.
+// resolveWidget resolves a child under a parent (nil for the entry): its element is listed before its descendants'; its
+// type, templates and blocks are applied, then its opening state, data context and children.
 func (resolver *guiResolver) resolveWidget(parent *widget, child child) *widget {
 	widget := &widget{element: len(resolver.list.Elements), block: child.statement, overrides: map[string]statement{}}
 	element := Widget{
@@ -295,7 +292,7 @@ func (resolver *guiResolver) resolveWidget(parent *widget, child child) *widget 
 		resolver.expand(widget, link, 0)
 	}
 	resolver.openingState(widget)
-	if text, has := widget.scalar(game.FileTypes[".gui"].ContextKey); has && isBinding(text) {
+	if text, has := widget.scalar(game.FindRuleByExtension(".gui").ContextKey); has && isBinding(text) {
 		widget.dataContext = text
 	}
 	id, _ := widget.scalar("name")
@@ -340,10 +337,10 @@ func (resolver *guiResolver) drawnBy(widget *widget, element *Widget) {
 	row := game.GUITypes[widget.builtIn]
 	scissor, _ := widget.scalar("scissor")
 	ignore, _ := widget.scalar("ignoreinvisible")
-	element.Type, element.Holds = widget.builtIn, cmp.Or(row.Holds, game.HoldsCell)
+	element.Type, element.Holding = widget.builtIn, cmp.Or(row.Holding, game.HoldsCell)
 	element.Clips, element.Fills, element.CentersText = row.Clips || isYes(scissor), row.Fills, row.CentersText
 	element.DropsHidden = !isNo(ignore) &&
-		(slices.Contains(row.DropsHidden, resolver.ws.Game.ID) || isYes(ignore) && row.Holds != game.HoldsGrid)
+		(slices.Contains(row.DropsHidden, resolver.ws.Game.ID) || isYes(ignore) && row.Holding != game.HoldsGrid)
 	element.Properties = resolver.propertyTexts(widget.statements)
 }
 
@@ -491,9 +488,8 @@ func (resolver *guiResolver) expand(widget *widget, statement statement, depth i
 	}
 }
 
-// apply does what one statement does to a widget: a block puts its statements in, or its override's where another
-// writer wrote one; a blockoverride and a using are their own; an item's or a label's widgets are held children;
-// a slot's block is a child of its role, an attachment left out; a widget key is a child; anything else applies.
+// apply does what one statement does to a widget: a block puts its statements in, or its override's; a blockoverride
+// and a using are their own; item and label widgets and slots are children; anything else applies.
 func (resolver *guiResolver) apply(widget *widget, statement statement, previous string, depth int) {
 	key := strings.ToLower(statement.assignment.Key.Text)
 	slot, isSlot := game.WidgetSlots[key]
@@ -533,7 +529,7 @@ func (resolver *guiResolver) isWidget(key string) bool {
 	return resolver.ws.Install.Schema.WidgetTypes[key]
 }
 
-// expanded is a widget that is no element, its statements applied under a holder's overrides and data context.
+// expanded returns a widget that is no element, its statements applied under a holder's overrides and data context.
 func (resolver *guiResolver) expanded(holder *widget, statements ...statement) *widget {
 	widget := &widget{element: -1, overrides: map[string]statement{}}
 	if holder != nil {
@@ -573,9 +569,8 @@ func (resolver *guiResolver) openingState(widget *widget) {
 	}
 }
 
-// placeChain is the widgets around the one place the install writes an entry of a type or template, outermost
-// first: its window and the widgets down to the place, or the chain of the one place a template is used; none where
-// it is written nowhere, in several places, or in a block or blockoverride.
+// placeChain returns the widgets around the one place the install writes an entry of a type or template, outermost
+// first; none where it is written nowhere, in several places, or in a block or blockoverride.
 func (resolver *guiResolver) placeChain(database, id string, depth int) []Widget {
 	refs := index.RefsTo(resolver.ws.Install.Schema, resolver.ws.Indexes(), database, id)
 	if len(refs) != 1 || depth > maxDepth || !slices.Contains(widgetDatabases, database) {
@@ -604,8 +599,8 @@ func (resolver *guiResolver) placeChain(database, id string, depth int) []Widget
 	return nil
 }
 
-// offsetHolders is the widgets inside a holder's block whose blocks hold a byte offset, outermost first, the one at
-// the offset left out; false where a block or blockoverride holds it.
+// offsetHolders returns the widgets inside a holder's block whose blocks hold a byte offset, outermost first, the one
+// at the offset left out; false where a block or blockoverride holds it.
 func (resolver *guiResolver) offsetHolders(holder statement, offset int) ([]Widget, bool) {
 	for previous, field := range fields(holder) {
 		span := field.assignment.Range
@@ -621,7 +616,7 @@ func (resolver *guiResolver) offsetHolders(holder statement, offset int) ([]Widg
 	return nil, true
 }
 
-// holderWidget is a widget the entry is laid out in, of its type row and properties alone.
+// holderWidget returns a widget the entry is laid out in, of its type row and properties alone.
 func (resolver *guiResolver) holderWidget(holder statement) Widget {
 	key := holder.assignment.Key.Text
 	builtIn, chain := resolver.typeChain(cmp.Or(game.WidgetSlots[strings.ToLower(key)].Type, key))
@@ -635,7 +630,7 @@ func (resolver *guiResolver) holderWidget(holder statement) Widget {
 	return element
 }
 
-// binding is the binding properties write a key as; "" where they write none or a literal.
+// binding returns the binding properties write a key as; "" where they write none or a literal.
 func binding(properties *properties, key string) string {
 	if text, _ := properties.scalar(key); isBinding(text) {
 		return text

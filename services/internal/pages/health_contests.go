@@ -18,14 +18,13 @@ import (
 	"paradox-modding-tools/services/internal/workspace"
 )
 
-// shippedFiles is each path, lower-cased, that files of the preview sit at in a folder the install ships files in,
-// with the files there in load order, and each file's entries (isEntry).
+// shippedFiles is the files of the preview at each path, lower-cased, in a folder the install ships files in.
 type shippedFiles struct {
-	byRel   map[string][]inventory.File
-	defines map[string][]index.At // by file path
+	byRel   map[string][]inventory.File // the files at a path, in load order
+	defines map[string][]index.At       // each file's entries, by file path
 }
 
-// contests is each name two origins define, by a load order: a contest where two mods contend for it, else one
+// contests returns each name two origins define, by a load order: a contest where two mods contend for it, else one
 // mod's override of another origin's; not in a database where the game repeats names.
 func contests(ws *workspace.Session, preview []*index.Index, sources *sourceIndex) (contested, overrides []Contest) {
 	for _, name := range contestedNames(ws) {
@@ -49,7 +48,7 @@ func contests(ws *workspace.Session, preview []*index.Index, sources *sourceInde
 	return contested, overrides
 }
 
-// contestedNames is each name, as its database and id, that a mod's file defines as an entry (isEntry) in a
+// contestedNames returns each name, as its database and id, that a mod's file defines as an entry (isEntry) in a
 // database the install does not repeat names in, in order.
 func contestedNames(ws *workspace.Session) [][2]string {
 	names := map[[2]string]bool{}
@@ -66,22 +65,21 @@ func contestedNames(ws *workspace.Session) [][2]string {
 	})
 }
 
-// isEntry is whether an occurrence is a definition the Contests and Overrides cards count: it names an entry of a
-// database a schema row names, and is neither local nor a name script makes (a parameter, a loc key, a file).
+// isEntry reports whether an occurrence is a definition the Contests and Overrides cards count: it names an entry of a
+// database the schema declares, and is neither local nor a name script makes (a parameter, a loc key, a file).
 func isEntry(ws *workspace.Session, occurrence schema.Occurrence) bool {
 	entry := occurrence.Role == schema.Defines && occurrence.ID != ""
 	return entry && ws.Install.Schema.Databases[occurrence.Database] != nil && !occurrence.Local && !occurrence.IsName
 }
 
-// contestRow is one contested name: its definitions' sites in the game's order, the winner among them, and the
-// rule that decided it: the load order's, or the entry mode of a definition added to the kept one or of the kept
-// one. It says whether two mods contend for the name.
+// contestRow returns one contested name: its definitions' sites in the game's order, the winner among them, and the
+// rule that decided it (the load order's, or an entry mode); betweenMods says whether two mods contend for it.
 func contestRow(ws *workspace.Session, name [2]string, defs []index.At, sources *sourceIndex) (row Contest, betweenMods bool) {
 	winner, adds, _, betweenMods := ws.Winner(defs)
 	database := name[0]
 	row = Contest{
-		Database: database, Kind: game.KindName(database), Name: name[1], Winner: slices.Index(defs, winner),
-		FirstWins: slices.Contains(ws.Game.Layout.FirstWins, database), Rule: "LIOS",
+		Database: database, Kind: game.DescribeEntry(database, false), Name: name[1], Winner: slices.Index(defs, winner),
+		FirstWins: ws.LookupPrecedence(database).Keeps == "first", Rule: "LIOS",
 	}
 	if row.FirstWins {
 		row.Rule = "FIOS"
@@ -100,11 +98,8 @@ func contestRow(ws *workspace.Session, name [2]string, defs []index.At, sources 
 	return row, betweenMods
 }
 
-// fileOverrides is each path a mod ships a file at that another origin ships too, by a load order: the game loads
-// one file of a path, so the loaded one replaces the others whole, a contest where two mods ship it, else an
-// override, and each site lists the entries its file defines, as contests counts them, and those the kept file
-// writes otherwise. Only a file in a folder the install ships files in is the game's: a mod's descriptor, readme,
-// thumbnail or editor settings are not.
+// fileOverrides returns each path in a folder the install ships files in that a mod ships along with another origin:
+// a contest where two mods do, else an override; each site lists the entries its file defines and writes otherwise.
 func fileOverrides(ws *workspace.Session, preview []*index.Index, sources *sourceIndex) (contested, overrides []Contest) {
 	shipped := shippedAt(ws, preview)
 	for _, rel := range slices.Sorted(maps.Keys(shipped.byRel)) {
@@ -131,7 +126,7 @@ func fileOverrides(ws *workspace.Session, preview []*index.Index, sources *sourc
 	return contested, overrides
 }
 
-// shippedAt is the preview's files at each path in a folder the install ships files in, with the entries each
+// shippedAt returns the preview's files at each path in a folder the install ships files in, with the entries each
 // defines.
 func shippedAt(ws *workspace.Session, preview []*index.Index) shippedFiles {
 	folders := map[string]bool{}
@@ -158,7 +153,7 @@ func shippedAt(ws *workspace.Session, preview []*index.Index) shippedFiles {
 	return shipped
 }
 
-// parse is the parse of a file that defines entries; nil for a file that defines none (an image is never parsed).
+// parse returns the parse of a file that defines entries; nil for a file that defines none (an image is never parsed).
 func (shipped shippedFiles) parse(ws *workspace.Session, file inventory.File) *jomini.Result {
 	if len(shipped.defines[file.Path]) == 0 {
 		return nil
@@ -170,10 +165,10 @@ func (shipped shippedFiles) parse(ws *workspace.Session, file inventory.File) *j
 	return parsed
 }
 
-// row is one path's contest: a site per file with the names it defines, and on each file but the kept one the
+// row returns one path's contest: a site per file with the names it defines, and on each file but the kept one the
 // names it writes otherwise than the kept file does; the kept file's site lists the names any other changes.
 func (shipped shippedFiles) row(ws *workspace.Session, files []inventory.File, kept int, sources *sourceIndex) Contest {
-	row := Contest{Database: game.File, Kind: game.KindName(game.File), Name: files[kept].Rel, Winner: kept, Rule: "LIOS"}
+	row := Contest{Database: game.File, Kind: game.DescribeEntry(game.File, false), Name: files[kept].Rel, Winner: kept, Rule: "LIOS"}
 	keptParse := shipped.parse(ws, files[kept])
 	keptDefs := map[string]index.At{}
 	for _, def := range shipped.defines[files[kept].Path] {
@@ -207,8 +202,8 @@ func (shipped shippedFiles) row(ws *workspace.Session, files []inventory.File, k
 	return row
 }
 
-// sameStatement is whether two statements are written alike: the same keys, operators and words, quoted or not,
-// in the same blocks. Comments are outside the tree and never count; a pair of other kinds is not alike.
+// sameStatement reports whether two statements are written alike: the same keys, operators and words in the same
+// blocks. Comments never count; a pair of other kinds is not alike.
 func sameStatement(first, second jomini.Node) bool {
 	switch first := first.(type) {
 	case *jomini.Assignment:

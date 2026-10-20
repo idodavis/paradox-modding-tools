@@ -1,4 +1,4 @@
-// colors.go reads the color blocks script writes by the Colors rows, and writes a color back in a block's own form.
+// colors.go reads the color blocks script writes and writes a color back in a block's own form.
 
 package game
 
@@ -11,22 +11,37 @@ import (
 	"strings"
 )
 
-// RGBA is a color, each part from 0 to 1.
-type RGBA struct {
-	R float64 `json:"r"`
-	G float64 `json:"g"`
-	B float64 `json:"b"`
-	A float64 `json:"a"`
+// Color is a way a color block is written.
+type Color struct {
+	Tag   string  // the tag before the block (rgb { 255 0 0 }); "" none
+	HSV   bool    // hue, saturation, value; else red, green, blue
+	Hex   bool    // one hex word, given as its bytes
+	Hue   float64 // what the hue is out of; 0 means 1
+	Parts float64 // what the other parts are out of; 0 means 1
 }
 
-// ColorOf is the color the numbers of a color block make by the Colors row of its tag, matched without regard to
-// case: false for a tag no row has and for fewer than three parts.
-func ColorOf(tag string, parts []float64) (RGBA, bool) {
-	row, known := colorRow(tag)
+// Colors are the ways script writes a color; a part of rgb or of no tag is out of 255, or of 1 where red, green and
+// blue are each at most 1, and a fourth part is its alpha.
+var Colors = []Color{
+	{Tag: "rgb"}, {Tag: ""}, {Tag: "hsv", HSV: true}, {Tag: "hsv360", HSV: true, Hue: 360, Parts: 100}, {Tag: "hex", Hex: true},
+}
+
+// RGBA is a color.
+type RGBA struct {
+	R float64 `json:"r"` // red, 0 to 1
+	G float64 `json:"g"` // green, 0 to 1
+	B float64 `json:"b"` // blue, 0 to 1
+	A float64 `json:"a"` // alpha, 0 to 1
+}
+
+// ParseColor returns the color a block's numbers make by its tag's Colors row, matched without regard to case; false
+// for a tag no row has and for fewer than three parts.
+func ParseColor(tag string, parts []float64) (RGBA, bool) {
+	row, known := lookupColorRow(tag)
 	if !known || len(parts) < 3 {
 		return RGBA{}, false
 	}
-	scale := scaleOf(row, parts)
+	scale := findScale(row, parts)
 	var red, green, blue float64
 	if row.HSV {
 		red, green, blue = hsvToRGB(parts[0]/cmp.Or(row.Hue, 1), parts[1]/scale, parts[2]/scale)
@@ -40,15 +55,14 @@ func ColorOf(tag string, parts []float64) (RGBA, bool) {
 	return RGBA{clamp(red), clamp(green), clamp(blue), clamp(alpha)}, true
 }
 
-// PartsOf is ColorOf's inverse: the parts that write a color in the form of a block written before, by its tag's row,
-// out of the scale its parts were in, with an alpha where it wrote one: a hex row's bytes as one 0x word, any other
-// row's parts with two decimals where they are out of 1 and whole otherwise.
-func PartsOf(tag string, parts []float64, color RGBA) ([]string, bool) {
-	row, known := colorRow(tag)
+// FormatColor returns the parts that write a color in the form of a block written before, in its scale and with an
+// alpha where it wrote one: a hex row as one 0x word, other rows with two decimals where out of 1, else whole.
+func FormatColor(tag string, parts []float64, color RGBA) ([]string, bool) {
+	row, known := lookupColorRow(tag)
 	if !known || len(parts) < 3 {
 		return nil, false
 	}
-	scale := scaleOf(row, parts)
+	scale := findScale(row, parts)
 	numbers := []float64{color.R * scale, color.G * scale, color.B * scale}
 	if row.HSV {
 		hue, saturation, value := rgbToHSV(color.R, color.G, color.B)
@@ -75,19 +89,19 @@ func PartsOf(tag string, parts []float64, color RGBA) ([]string, bool) {
 	return texts, true
 }
 
-// Hex is the color as #rrggbb, alpha left out.
-func (color RGBA) Hex() string {
-	return fmt.Sprintf("#%02x%02x%02x", byteOf(color.R), byteOf(color.G), byteOf(color.B))
+// ToHex returns the color as #rrggbb, alpha left out.
+func (color RGBA) ToHex() string {
+	return fmt.Sprintf("#%02x%02x%02x", toByte(color.R), toByte(color.G), toByte(color.B))
 }
 
-// CSS is the color as rgba(red, green, blue, alpha), the parts of red, green and blue out of 255 and alpha out of 1.
-func (color RGBA) CSS() string {
-	return fmt.Sprintf("rgba(%d, %d, %d, %s)", byteOf(color.R), byteOf(color.G), byteOf(color.B),
+// ToCSS returns the color as rgba(red, green, blue, alpha), the first three out of 255 and alpha out of 1.
+func (color RGBA) ToCSS() string {
+	return fmt.Sprintf("rgba(%d, %d, %d, %s)", toByte(color.R), toByte(color.G), toByte(color.B),
 		strconv.FormatFloat(color.A, 'f', -1, 64))
 }
 
-// colorRow is the Colors row of a tag, matched without regard to case.
-func colorRow(tag string) (Color, bool) {
+// lookupColorRow returns the Colors row of a tag, matched without regard to case.
+func lookupColorRow(tag string) (Color, bool) {
 	i := slices.IndexFunc(Colors, func(row Color) bool { return strings.EqualFold(row.Tag, tag) })
 	if i < 0 {
 		return Color{}, false
@@ -95,9 +109,9 @@ func colorRow(tag string) (Color, bool) {
 	return Colors[i], true
 }
 
-// scaleOf is what a block's parts are out of: a hsv row's own, else 255, or 1 where red, green and blue are each at
-// most 1 (a hex row's bytes always out of 255).
-func scaleOf(row Color, parts []float64) float64 {
+// findScale returns what a block's parts are out of: a hsv row's own, else 255, or 1 where red, green and blue are
+// each at most 1 (a hex row's bytes always out of 255).
+func findScale(row Color, parts []float64) float64 {
 	switch {
 	case row.HSV:
 		return cmp.Or(row.Parts, 1)
@@ -107,7 +121,7 @@ func scaleOf(row Color, parts []float64) float64 {
 	return 255
 }
 
-// hsvToRGB is the red, green and blue of a hue, saturation and value, each from 0 to 1.
+// hsvToRGB converts a hue, saturation and value to red, green and blue, each from 0 to 1.
 func hsvToRGB(hue, saturation, value float64) (red, green, blue float64) {
 	sector, fraction := int(hue*6)%6, hue*6-float64(int(hue*6))
 	bottom, falling, rising := value*(1-saturation), value*(1-fraction*saturation), value*(1-(1-fraction)*saturation)
@@ -126,7 +140,7 @@ func hsvToRGB(hue, saturation, value float64) (red, green, blue float64) {
 	return value, bottom, falling
 }
 
-// rgbToHSV is the hue, saturation and value of a red, green and blue, each from 0 to 1.
+// rgbToHSV converts red, green and blue to a hue, saturation and value, each from 0 to 1.
 func rgbToHSV(red, green, blue float64) (hue, saturation, value float64) {
 	value = max(red, green, blue)
 	chroma := value - min(red, green, blue)
@@ -145,8 +159,8 @@ func rgbToHSV(red, green, blue float64) (hue, saturation, value float64) {
 	return hue, saturation, value
 }
 
-// clamp is a part held to 0 through 1.
+// clamp clamps a part to 0 through 1.
 func clamp(part float64) float64 { return min(max(part, 0), 1) }
 
-// byteOf is a part from 0 to 1 as a byte, rounded.
-func byteOf(part float64) int { return int(part*255 + 0.5) }
+// toByte returns a part from 0 to 1 as a byte, rounded.
+func toByte(part float64) int { return int(part*255 + 0.5) }

@@ -19,13 +19,13 @@ import (
 	"paradox-modding-tools/services/internal/workspace"
 )
 
-// openFile is a file open in one request: its text, its parse and where it sits in the workspace.
+// openFile is a file open in one request.
 type openFile struct {
 	ws     *workspace.Session
 	path   string
 	text   string
-	parsed *jomini.Result
-	place  workspace.FilePlace
+	parsed *jomini.Result      // its parse
+	place  workspace.FilePlace // where it sits in the workspace
 }
 
 // open reads the file at a path as the request sees it: the editor's text where the file is open
@@ -46,27 +46,27 @@ func (file *openFile) span(span jomini.Range) Range {
 // Position and Range are the editor's: 0-based line and byte column.
 type Position = jomini.Position
 
-// Range is a span of the file.
+// Range is a span of a file.
 type Range struct {
 	Start Position `json:"start"`
-	End   Position `json:"end"`
+	End   Position `json:"end"` // exclusive
 }
 
 // Location is a place in a file of the workspace or the install.
 type Location struct {
 	Path   string `json:"path"`
 	Origin string `json:"origin"` // game.OriginVanilla or a mod's id
-	Rel    string `json:"rel"`
+	Rel    string `json:"rel"`    // its path from its origin's root
 	Range  Range  `json:"range"`
 }
 
-// Locate is the editor's location of a range of a file of the workspace or the install.
+// Locate returns the editor's location of a range of a file of the workspace or the install.
 func Locate(ws *workspace.Session, path string, span Range) Location {
 	file, _, _ := ws.Locate(path)
 	return Location{Path: path, Origin: file.Origin, Rel: file.Rel, Range: span}
 }
 
-// locate is Locate at a position.
+// locate returns Locate at a position.
 func locate(ws *workspace.Session, path string, at Position) Location {
 	return Locate(ws, path, Range{Start: at, End: at})
 }
@@ -76,22 +76,20 @@ func siteOf(ws *workspace.Session, def index.At) Location {
 	return locate(ws, def.File().Path, Position{Line: int(def.Occurrence().Line), Character: int(def.Occurrence().Col)})
 }
 
-// step is one statement of the chain under the cursor: the statement, the context it is written in
-// and the one its block reads in.
+// step is one statement of the chain under the cursor.
 type step struct {
 	statement jomini.Statement
-	context   schema.Context
-	inner     schema.Context
+	context   schema.Context // where it is written
+	inner     schema.Context // where its block reads
 }
 
-// command is the declared effect, trigger or link the step's key is, by the rule that read it; nil
-// for none.
+// command returns the declared effect, trigger or link the step's key is, by the rule that read it; nil for none.
 func (step step) command(s *schema.Schema) *schema.Command {
 	assign, isAssign := step.statement.(*jomini.Assignment)
 	if !isAssign {
 		return nil
 	}
-	switch step.inner.Rule {
+	switch step.inner.KeyRule {
 	case game.KeyRuleCommand:
 		return s.Commands[strings.ToLower(assign.Key.Text)]
 	case game.KeyRuleLink:
@@ -100,13 +98,12 @@ func (step step) command(s *schema.Schema) *schema.Command {
 	return nil
 }
 
-// cursor is the cursor's place in a script file, from one walk that stops past it: the statements
-// holding it, outer to inner, and the occurrences the walk read up to it.
+// cursor is the cursor's place in a script file, from one walk that stops past it.
 type cursor struct {
 	file        *openFile
-	chain       []step
-	occurrences []schema.Occurrence
-	offset      int
+	chain       []step              // the statements holding it, outer to inner
+	occurrences []schema.Occurrence // what the walk read up to it
+	offset      int                 // its byte offset
 }
 
 // walkTo walks the file up to an offset. A statement holds the offset when its span does, or when
@@ -129,8 +126,8 @@ func (file *openFile) walkTo(offset int) cursor {
 	return cursor
 }
 
-// blockAt is the index in the chain of the innermost statement whose block holds the cursor, -1 at
-// the file's top; that statement's inner context says how its block reads.
+// blockAt returns the index in the chain of the innermost statement whose block holds the cursor, -1 at the file's top;
+// its inner context says how its block reads.
 func (cursor cursor) blockAt() int {
 	holder := -1
 	for i, step := range cursor.chain {
@@ -142,9 +139,8 @@ func (cursor cursor) blockAt() int {
 	return holder
 }
 
-// within is the entry the cursor is in, then the keys of the blocks between it and the cursor; nil
-// outside an entry. The entry's own statement is its name, not a key; an entry with no name starts
-// with its first key.
+// within returns the entry the cursor is in, then the keys of the blocks between; nil outside an entry. The entry's
+// own statement is its name, not a key, and a nameless entry starts with its first key.
 func (cursor cursor) within() []string {
 	holder := cursor.blockAt()
 	if holder < 0 || cursor.chain[holder].context.Entry < 0 {
@@ -164,10 +160,8 @@ func (cursor cursor) within() []string {
 	return out
 }
 
-// scalarAt is the scalar under the cursor (the innermost statement's key or value; nil for none),
-// whether it is the key, and the definition or reference the walk read inside it ($NAME$ included):
-// of several references (a call's parameter and the call), the first that resolves, else the first;
-// a definition with a name is named as itself.
+// scalarAt returns the scalar under the cursor (the innermost statement's key or value; nil for none), whether it is
+// the key, and the definition or reference the walk read inside it: the first that resolves, else the first.
 func (cursor cursor) scalarAt() (scalar *jomini.Scalar, isKey bool, ref *schema.Occurrence) {
 	if len(cursor.chain) == 0 {
 		return nil, false, nil
@@ -214,8 +208,8 @@ func covers(span jomini.Range, offset int) bool {
 	return span.Start <= offset && offset <= span.End
 }
 
-// locRef is what an offset of a localization file names: a reference the scan read ($key$, a
-// concept), else the line's key; with neither, the data call steps it is in, if any.
+// locRef returns what an offset of a localization file names: a reference the scan read ($key$, a concept), else the
+// line's key; with neither, the data call steps it is in.
 func (file *openFile) locRef(offset int) (ref *schema.Occurrence, steps []jomini.CallStep) {
 	lines := file.parsed.Lines()
 	start := lines.OffsetAt(lines.PositionAt(offset).Line, 0)
@@ -242,8 +236,8 @@ func (file *openFile) locRef(offset int) (ref *schema.Occurrence, steps []jomini
 	return ref, nil
 }
 
-// dataCallAt is the data call step at an offset of a text that starts at start: the steps up to it;
-// nil where the offset is in no [ … ] step.
+// dataCallAt returns the data call steps up to an offset of a text that starts at start; nil where the offset is in no
+// [ … ] step.
 func dataCallAt(text string, start, offset int) []jomini.CallStep {
 	for _, call := range jomini.DataCalls(text, start) {
 		for i, step := range call.Steps {

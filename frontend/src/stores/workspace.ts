@@ -8,7 +8,7 @@ import { defineStore } from "pinia";
 import { useQuery } from "@pinia/colada";
 import { useLocalStorage } from "@vueuse/core";
 import { useRouter } from "vue-router";
-import type { GameInfo } from "@services/internal/game/models";
+import type { Game } from "@services/internal/game/models";
 import type { Workspace, WorkspaceMod, WorkspaceState } from "@services/models";
 import { UpdateWorkspacePrefs } from "@services/workspaceservice";
 import { isWorkspacePage } from "../app/pages";
@@ -55,7 +55,7 @@ export const useWorkspaceStore = defineStore("workspace", () => {
   const { data: gameList } = useQuery(gamesQuery);
   const { data: workspaces } = useQuery(workspacesQuery);
 
-  const games = computed(() => (gameList.value?.games ?? []).filter((g): g is GameInfo => !!g));
+  const games = computed(() => (gameList.value?.games ?? []).filter((g): g is Game => !!g));
   const originVanilla = computed(() => gameList.value?.originVanilla || "vanilla");
   const activeWorkspace = computed(() => workspaces.value?.find((w) => w.id === activeWorkspaceId.value));
   const workspaceMods = computed(() => activeWorkspace.value?.mods ?? []);
@@ -108,7 +108,7 @@ export const useWorkspaceStore = defineStore("workspace", () => {
     );
 
   /** A game's registry row. */
-  function game(id: string): GameInfo | undefined {
+  function game(id: string): Game | undefined {
     return games.value.find((g) => g.id === id);
   }
 

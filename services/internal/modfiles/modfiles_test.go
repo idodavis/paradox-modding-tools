@@ -29,7 +29,7 @@ const (
 func patchedDescriptor(t *testing.T, gameID, src string, edit func(*ListingFields)) (ListingFields, string) {
 	t.Helper()
 	root := t.TempDir()
-	path := game.DescriptorPath(gameID, root)
+	path := game.BuildDescriptorPath(gameID, root)
 	if err := os.MkdirAll(filepath.Dir(path), 0o755); err != nil {
 		t.Fatal(err)
 	}

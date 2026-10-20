@@ -22,18 +22,18 @@ import (
 	"paradox-modding-tools/services/internal/jomini"
 )
 
-// Mod is one mod of the workspace, in the playset's order.
+// Mod is one mod of the workspace.
 type Mod struct {
-	ID, Dir  string
-	Calendar Calendar
+	ID       string
+	Dir      string   // its folder
+	Calendar Calendar // its eras
 }
 
-// buffer is a file open in the editor: its text and that text's parse, made once when the text arrives so a
-// reader never writes.
+// buffer is a file open in the editor.
 type buffer struct {
 	file   inventory.File
-	text   string
-	parsed jomini.Result
+	text   string        // the editor's text
+	parsed jomini.Result // its parse, made once when the text arrives so a reader never writes
 }
 
 // changes numbers every build of and change to any session's records, so no value repeats.
@@ -41,19 +41,19 @@ var changes atomic.Int64
 
 // Session is one workspace: the install, the mods over it, and the open files.
 type Session struct {
-	Changes   int64 // the number of the last build of or change to the workspace's records
+	Changes   int64 // the number of the last build of or change to the records
 	mu        sync.RWMutex
-	Game      *game.GameInfo
+	Game      *game.Game
 	Install   *index.Install
-	Workspace *index.Index // the mods' files, in the playset's order
-	Mods      []Mod
-	Language  string
-	watcher   *Watcher
+	Workspace *index.Index       // the mods' files, in the playset's order
+	Mods      []Mod              // in the playset's order
+	Language  string             // the localization language beside english
+	watcher   *Watcher           // the mods' file watcher
 	buffers   map[string]*buffer // by lower-cased clean path
 }
 
 // Open builds the workspace's index over a scanned install.
-func Open(ctx context.Context, info *game.GameInfo, install *index.Install, mods []Mod, language string) (*Session, error) {
+func Open(ctx context.Context, info *game.Game, install *index.Install, mods []Mod, language string) (*Session, error) {
 	var scanned []index.Mod
 	for _, mod := range mods {
 		scanned = append(scanned, index.Mod{ID: mod.ID, Dir: mod.Dir})
@@ -64,16 +64,16 @@ func Open(ctx context.Context, info *game.GameInfo, install *index.Install, mods
 	}
 	return &Session{
 		Changes: changes.Add(1), Game: info, Install: install, Workspace: modsIndex, Mods: mods,
-		Language: cmp.Or(language, game.BaseLanguage), buffers: map[string]*buffer{},
+		Language: cmp.Or(language, info.BaseLanguage), buffers: map[string]*buffer{},
 	}, nil
 }
 
-// Indexes are the two indexes in load order: the install, then the workspace's mods over it.
+// Indexes returns the two indexes in load order: the install, then the workspace's mods over it.
 func (ws *Session) Indexes() []*index.Index {
 	return []*index.Index{ws.Install.Index, ws.Workspace}
 }
 
-// Winner is the definition the game keeps of several by the entry modes, its adds, the INJECT and REPLACE
+// Winner returns the definition the game keeps of several by the entry modes, its adds, the INJECT and REPLACE
 // definitions with no target, and whether two mods contest the name.
 func (ws *Session) Winner(defs []index.At) (winner index.At, adds, orphans []index.At, contested bool) {
 	return index.Winner(ws.Game, defs, func(path string) string {
@@ -82,10 +82,20 @@ func (ws *Session) Winner(defs []index.At) (winner index.At, adds, orphans []ind
 			return file.Origin
 		}
 		return game.OriginVanilla
-	})
+	}, ws.LookupPrecedence)
 }
 
-// Text is a file's text: the open buffer's, else the disk's.
+// LookupPrecedence returns how the definitions of a database combine in the open game: its rule's, else by the folder
+// the schema's rule for it declares.
+func (ws *Session) LookupPrecedence(database string) game.Precedence {
+	folder := ""
+	if declared := ws.Install.Schema.Databases[database]; declared != nil {
+		folder = declared.Rule.ResolveFolder()
+	}
+	return ws.Game.LookupPrecedence(database, folder)
+}
+
+// Text returns a file's text: the open buffer's, else the disk's.
 func (ws *Session) Text(path string) (string, error) {
 	if buffer := ws.buffers[inventory.PathKey(path)]; buffer != nil {
 		return buffer.text, nil
@@ -97,7 +107,7 @@ func (ws *Session) Text(path string) (string, error) {
 // Parses is the parses one request made, by path: a file the request reads again is not parsed again.
 type Parses map[string]*jomini.Result
 
-// Parsed is the parse of a file's text: an open buffer's, made once per text, else the one parses holds, else the
+// Parsed returns the parse of a file's text: an open buffer's, made once per text, else the one parses holds, else the
 // disk's, which parses then holds.
 func (ws *Session) Parsed(parses Parses, path string) (*jomini.Result, string, error) {
 	if buffer := ws.buffers[inventory.PathKey(path)]; buffer != nil {
@@ -159,9 +169,8 @@ func (ws *Session) DidSave(path string) {
 	}
 }
 
-// DiskChanged is a file changed on disk outside the editor: read again (outside the lock) only when no editor
-// holds it and the index reads its format; any other file is only listed or forgotten. An unreadable file keeps
-// its records, since on Windows a save often hits a sharing violation; only a file that is gone loses them.
+// DiskChanged takes a file changed on disk outside the editor: read again (outside the lock) only when no editor holds
+// it and the index reads its format. An unreadable file keeps its records; only one that is gone loses them.
 func (ws *Session) DiskChanged(path string) {
 	key := inventory.PathKey(path)
 	ws.mu.RLock()
@@ -202,7 +211,7 @@ func (ws *Session) reindex(file inventory.File, text string, err error) {
 	ws.Changes = changes.Add(1)
 }
 
-// indexable is whether the index reads a file of this format (its text, for records).
+// indexable reports whether the index reads a file of this format (its text, for records).
 func indexable(format inventory.Format) bool {
 	switch format {
 	case inventory.Script, inventory.Loc, inventory.Table, inventory.List:
@@ -211,7 +220,7 @@ func indexable(format inventory.Format) bool {
 	return false
 }
 
-// RLock is held by a reader for its whole request.
+// RLock takes the read lock, which a reader holds for its whole request.
 func (ws *Session) RLock() { ws.mu.RLock() }
 
 // RUnlock ends a reader's request.

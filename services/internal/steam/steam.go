@@ -39,18 +39,17 @@ const serveArg = "steam-publish"
 
 const publishTimeout = 15 * time.Minute
 
-// Request is one publish: the item's content and page, and the item to update (none creates one).
-// With Download, it is the item PublishedFileID downloaded instead, or with PageOnly only its page read.
+// Request is one publish, or with Download the download of an item, or with PageOnly the read of its page.
 type Request struct {
 	AppID           uint32   `json:"appId"`
-	Folder          string   `json:"folder"`
+	Folder          string   `json:"folder"` // the item's content
 	Title           string   `json:"title"`
 	Description     string   `json:"description"`
 	KeepDescription bool     `json:"keepDescription,omitempty"` // leave Steam's description as it is
-	Preview         string   `json:"preview"`
-	PublishedFileID string   `json:"publishedFileId"`
+	Preview         string   `json:"preview"`                   // the listing image
+	PublishedFileID string   `json:"publishedFileId"`           // the item to update; none creates one
 	ChangeNote      string   `json:"changeNote"`
-	ExtraPreviews   []string `json:"extraPreviews,omitempty"`
+	ExtraPreviews   []string `json:"extraPreviews,omitempty"` // extra images
 	ExtraVideos     []string `json:"extraVideos,omitempty"`
 	KeepExtras      bool     `json:"keepExtras,omitempty"` // leave Steam's extra images and videos as they are
 	Download        bool     `json:"download,omitempty"`
@@ -58,23 +57,22 @@ type Request struct {
 	Status          bool     `json:"status,omitempty"` // only whether Steam can take an upload now
 }
 
-// Progress is a publish's upload as Steam tells it: its stage in words, and the bytes done of the total.
+// Progress is a publish's upload as Steam tells it.
 type Progress struct {
-	Stage string `json:"stage"`
-	Done  uint64 `json:"done"`
-	Total uint64 `json:"total"`
+	Stage string `json:"stage"` // in words
+	Done  uint64 `json:"done"`  // bytes
+	Total uint64 `json:"total"` // bytes
 }
 
 // progressPrefix starts a progress line on the child's stderr; any other line there is what it said failing.
 const progressPrefix = "progress "
 
-// Response is what Steam answered. A download's names the folder Steam put the item in, and the
-// item's page as Steam has it.
+// Response is what Steam answered.
 type Response struct {
 	PublishedFileID     string  `json:"publishedFileId"`
 	NeedsLegalAgreement bool    `json:"needsLegalAgreement"`
-	Folder              string  `json:"folder,omitempty"`
-	Title               string  `json:"title,omitempty"`
+	Folder              string  `json:"folder,omitempty"` // a download: where Steam put the item
+	Title               string  `json:"title,omitempty"`  // the item's page as Steam has it
 	Description         string  `json:"description,omitempty"`
 	Updated             int64   `json:"updated,omitempty"` // Unix seconds
 	Extras              []Extra `json:"extras,omitempty"`
@@ -88,9 +86,9 @@ var eresultHints = map[int]string{
 		"shrink files in workshop/previews, wait a few minutes if you hit a rate limit, then publish again",
 }
 
-// Library is where the game's copy of Steam's library is in an install, or why this system
-// cannot publish for that game.
-func Library(info *game.GameInfo, installPath string) (string, error) {
+// Library returns where the game's copy of Steam's library is in an install, or why this system cannot publish for
+// that game.
+func Library(info *game.Game, installPath string) (string, error) {
 	rel, ok := info.SteamLibrary[runtime.GOOS]
 	if !ok {
 		return "", fmt.Errorf("%s has no %s build, so publish it from Windows", info.ShortName, runtime.GOOS)
@@ -102,9 +100,8 @@ func Library(info *game.GameInfo, installPath string) (string, error) {
 	return library, nil
 }
 
-// Run runs in the editor: it starts the child over library, hands it req on stdin and returns
-// the Response it writes, a known failure turned into advice; progress, when given, hears the
-// upload move.
+// Run starts the child over a library, hands it the request on stdin and returns the Response it writes, a known
+// failure turned into advice; progress, when given, hears the upload move.
 func Run(library string, req Request, progress func(Progress)) (Response, error) {
 	// Steam reads the app id from steam_appid.txt in the working directory
 	dir, err := os.MkdirTemp("", "pmt-steam-*")
@@ -176,7 +173,7 @@ func relayStderr(stderr io.Reader, progress func(Progress)) string {
 	return crashText.String()
 }
 
-// eresultHint is the advice for the EResult a failure names, "" where there is none.
+// eresultHint returns the advice for the EResult a failure names, "" where there is none.
 func eresultHint(failure string) string {
 	_, rest, ok := strings.Cut(failure, "EResult ")
 	if !ok {
@@ -189,9 +186,8 @@ func eresultHint(failure string) string {
 	return eresultHints[code]
 }
 
-// Serve is the child's whole life, and reports served false for any other run: it reads a Request
-// from stdin, publishes or downloads it through the library named after serveArg, writes the
-// Response to stdout, and returns the exit code.
+// Serve runs the child's whole life: it reads a Request from stdin, publishes or downloads it through the library named
+// after serveArg and writes the Response to stdout; served is false for any other run.
 func Serve() (exitCode int, served bool) {
 	if len(os.Args) < 2 || os.Args[1] != serveArg {
 		return 0, false

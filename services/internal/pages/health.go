@@ -26,26 +26,26 @@ type HealthParams struct {
 	Order []string `json:"order"` // mod ids in the order to judge; empty for the workspace's own
 }
 
-// HealthReport is the Health page: every row names its file by its number in Sources.
+// HealthReport is the Health page; every row names its file by its number in Sources.
 type HealthReport struct {
-	Sources   []inventory.File `json:"sources"`   // every file a row names, at the number it names it by
+	Sources   []inventory.File `json:"sources"`   // every file a row names, at its number
 	Contests  []Contest        `json:"contests"`  // names two or more mods define
 	Overrides []Contest        `json:"overrides"` // names one mod defines over, or adds to, another origin's
-	Depends   []Dependency     `json:"depends"`
-	Dangling  []Dangling       `json:"dangling"`
-	Loc       []Language       `json:"loc"`
-	Problems  []Problem        `json:"problems"` // what the editor's checks find that no card above shows
+	Depends   []Dependency     `json:"depends"`   // what each mod uses that another's definitions decide
+	Dangling  []Dangling       `json:"dangling"`  // names nothing defines
+	Loc       []Language       `json:"loc"`       // each language's localization gaps
+	Problems  []Problem        `json:"problems"`  // what the editor's checks find that no card above shows
 }
 
-// Contest is one name two origins define, its definitions in load order, with the game's rule.
+// Contest is one name two origins define.
 type Contest struct {
 	Database  string `json:"database"`
-	Kind      string `json:"kind"` // what one of its database is called (game.KindName)
+	Kind      string `json:"kind"` // what one of its database is called (game.DescribeEntry)
 	Name      string `json:"name"`
-	Winner    int    `json:"winner"` // the position in Sites of the definition the game keeps
-	FirstWins bool   `json:"firstWins"`
-	Rule      string `json:"rule"` // FIOS (first wins) or LIOS (last wins), or the deciding entry mode (REPLACE, INJECT)
-	Sites     []Site `json:"sites"`
+	Winner    int    `json:"winner"`    // the position in Sites of the definition the game keeps
+	FirstWins bool   `json:"firstWins"` // the game keeps the first definition
+	Rule      string `json:"rule"`      // FIOS (first wins), LIOS (last wins), or the deciding entry mode
+	Sites     []Site `json:"sites"`     // its definitions in load order
 }
 
 // Site is where a definition or a reference is written.
@@ -61,23 +61,21 @@ type Site struct {
 	Changed  []string `json:"changed,omitempty"`  // and those it and the kept file both define but write otherwise
 }
 
-// Dependency is one mod using a name another mod's definitions decide, and each place it does: it depends on the
-// other where only that mod defines the name, and is affected by it where the other's definition differs from the
-// one it hides, adds to it, or leaves it out.
+// Dependency is one mod using a name another mod's definitions decide.
 type Dependency struct {
-	From     string `json:"from"`
-	To       string `json:"to"`
-	Affected bool   `json:"affected"`
-	Sites    []Site `json:"sites"`
+	From     string `json:"from"`     // the mod that uses it
+	To       string `json:"to"`       // the mod that decides it
+	Affected bool   `json:"affected"` // the other's definition differs from the hidden one; else only it defines the name
+	Sites    []Site `json:"sites"`    // each place it is used
 }
 
-// Dangling is one name a mod writes that nothing defines, and where.
+// Dangling is one name a mod writes that nothing defines.
 type Dangling struct {
-	Code     string `json:"code"` // the check that found it: a code shownBy lists under the dangling card
+	Code     string `json:"code"` // the check that found it
 	Database string `json:"database"`
-	Kind     string `json:"kind"`
+	Kind     string `json:"kind"` // what one of its database is called
 	Name     string `json:"name"`
-	Sites    []Site `json:"sites"`
+	Sites    []Site `json:"sites"` // where it is written
 }
 
 // Language is one language's localization gaps.
@@ -86,28 +84,28 @@ type Language struct {
 	Untranslated []LocRow `json:"untranslated"` // keys a mod has in the workspace language but not in this one
 }
 
-// LocRow is one key and the file it is in.
+// LocRow is one untranslated key.
 type LocRow struct {
 	Key    string `json:"key"`
-	File   int    `json:"file"` // its number in Sources
-	Line   int    `json:"line"`
+	File   int    `json:"file"`   // the file it is in, by its number in Sources
+	Line   int    `json:"line"`   // 0-based
 	Target int    `json:"target"` // the mod's file in the missing language it goes in
 }
 
-// Problem is one finding of the editor's checks, at its site.
+// Problem is one finding of the editor's checks.
 type Problem struct {
 	Code     string `json:"code"`
 	Message  string `json:"message"`
-	Site     Site   `json:"site"`
+	Site     Site   `json:"site"`               // where it is
 	Language string `json:"language,omitempty"` // a localization file's language
 }
 
-// SourceAt is one place a pane shows the source of: a definition's statement, or a reference's line.
+// SourceAt is one place a pane shows the source of.
 type SourceAt struct {
 	Path       string `json:"path"`
-	Line       int    `json:"line"`
-	Col        int    `json:"col"`
-	Definition bool   `json:"definition"`
+	Line       int    `json:"line"`       // 0-based
+	Col        int    `json:"col"`        // 0-based
+	Definition bool   `json:"definition"` // a definition's statement; else a reference's line
 }
 
 // sourceIndex numbers the files a report's rows name, each once, in the order first named.
@@ -116,9 +114,8 @@ type sourceIndex struct {
 	numbers map[string]int // by path
 }
 
-// Health is the workspace's report: the contests and overrides in the load order asked for, what each mod depends
-// on, the names nothing defines, each language's gaps and the findings no card above lists. It takes the session's
-// read lock; findings is Findings.Current's, which takes it itself, so Current is called before.
+// Health returns the workspace's report in the load order asked for. It takes the session's read lock; findings is
+// Findings.Current's, which takes it itself, so Current is called before.
 func Health(ws *workspace.Session, params HealthParams, findings map[string][]lsp.Diagnostic) *HealthReport {
 	ws.RLock()
 	defer ws.RUnlock()
@@ -136,8 +133,8 @@ func Health(ws *workspace.Session, params HealthParams, findings map[string][]ls
 	return report
 }
 
-// Lines is the source a pane shows at each place: a definition's statement, its first ten lines and a "…" where it
-// runs on, or a reference's line. It takes the session's read lock.
+// Lines returns the source a pane shows at each place: a definition's statement, its first ten lines and a "…" where
+// it runs on, or a reference's line. It takes the session's read lock.
 func Lines(ws *workspace.Session, places []SourceAt) [][]string {
 	ws.RLock()
 	defer ws.RUnlock()
@@ -158,19 +155,19 @@ func Lines(ws *workspace.Session, places []SourceAt) [][]string {
 	return out
 }
 
-// LocReaders is everything that reads one localization key. It takes the session's read lock.
+// LocReaders returns everything that reads one localization key. It takes the session's read lock.
 func LocReaders(ws *workspace.Session, key string) []Cited {
 	ws.RLock()
 	defer ws.RUnlock()
 	var readers []Cited
 	for _, ref := range index.Lookup(ws.Indexes(), schema.Refers, game.Localization, key) {
 		occurrence := ref.Occurrence()
-		readers = append(readers, Cited{Name: occurrence.ID, Line: int(occurrence.Line), Col: int(occurrence.Col), At: ref.File()})
+		readers = append(readers, Cited{Name: occurrence.ID, Line: int(occurrence.Line), Col: int(occurrence.Col), File: ref.File()})
 	}
 	return readers
 }
 
-// index is a file's number in Sources, which it takes at the end of the list the first time a row names it.
+// index returns a file's number in Sources, which it takes at the end of the list the first time a row names it.
 func (sources *sourceIndex) index(file inventory.File) int {
 	if number, known := sources.numbers[file.Path]; known {
 		return number
@@ -181,7 +178,7 @@ func (sources *sourceIndex) index(file inventory.File) int {
 	return number
 }
 
-// previewOrder is the indexes in the order to judge: the workspace's files again, a mod's together, in that order.
+// previewOrder returns the indexes in the order to judge: the workspace's files again, a mod's together, in that order.
 func previewOrder(ws *workspace.Session, order []string) []*index.Index {
 	if len(order) == 0 {
 		return ws.Indexes()
@@ -195,7 +192,7 @@ func previewOrder(ws *workspace.Session, order []string) []*index.Index {
 	return []*index.Index{ws.Install.Index, &preview}
 }
 
-// loadedFiles is the workspace's files that have records and that the game loads.
+// loadedFiles returns the workspace's files that have records and that the game loads.
 func loadedFiles(ws *workspace.Session) []inventory.File {
 	var files []inventory.File
 	for _, file := range ws.Workspace.Files {

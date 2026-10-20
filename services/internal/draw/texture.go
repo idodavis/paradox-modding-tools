@@ -31,9 +31,8 @@ var blendModes = map[string]string{
 	blendMask: blendMask,
 }
 
-// layers is a widget's textures by index in the list: its own, then each modify_texture in order as the shader
-// applies them: an alphamultiply masks the texture, a mask scales every overlay after it, any other is an overlay at
-// its alpha; one written visible = no is not laid on. None for a widget with no texture of its own.
+// layers returns a widget's textures by index in the list: its own, then each modify_texture in the order the shader
+// applies them (a mask scales every overlay after it); one written visible = no is not laid on.
 func (resolver *guiResolver) layers(widget *widget) []int {
 	own, isTextured := resolver.textureOf(widget)
 	if !isTextured {
@@ -66,7 +65,7 @@ func (resolver *guiResolver) layers(widget *widget) []int {
 	return append([]int{resolver.textureIndex(own)}, overlays...)
 }
 
-// textureIndex is a texture's index in the list, listed the first time it is drawn.
+// textureIndex returns a texture's index in the list, listing it the first time it is drawn.
 func (resolver *guiResolver) textureIndex(texture Texture) int {
 	ordinal, isKnown := resolver.textureIndexes[texture]
 	if !isKnown {
@@ -77,9 +76,8 @@ func (resolver *guiResolver) textureIndex(texture Texture) int {
 	return ordinal
 }
 
-// textureOf is the texture a widget (or a modify_texture read as one) draws: its file's route and size with the
-// defaults, read once a render, then its sprite words; a binding draws the file pictureOf finds. False for none, a
-// file nothing holds listed.
+// textureOf returns the texture a widget (or a modify_texture) draws: its file's route and size with the defaults, then
+// its sprite words; a binding draws the file pictureOf finds. False for none; a file nothing holds is listed.
 func (resolver *guiResolver) textureOf(holder *widget) (Texture, bool) {
 	path, has := holder.scalar("texture")
 	if !has {
@@ -110,9 +108,8 @@ func (resolver *guiResolver) textureOf(holder *widget) (Texture, bool) {
 	return base, true
 }
 
-// sprite applies the sprite keys properties write to a texture: density; the frame of a sheet, cut by the route
-// (&frame=x,y,width,height) so the texture is the frame; border; tiling; mirror; fit; tint; blend. A blend the page
-// cannot draw is listed and drawn normal.
+// sprite applies the sprite keys a widget writes to a texture: density, the frame of a sheet, border, tiling, mirror,
+// fit, tint and blend; a blend the page cannot draw is listed and drawn normal.
 func (resolver *guiResolver) sprite(properties *properties, texture *Texture) {
 	if density, has := properties.numbers("texture_density"); has && density[0] > 0 {
 		texture.Density = density[0]
@@ -141,7 +138,7 @@ func (resolver *guiResolver) sprite(properties *properties, texture *Texture) {
 	}
 	for _, key := range []string{colorKey, "tintcolor"} {
 		if tint, has := resolver.tintOf(properties, key); has {
-			texture.Tint, texture.TintAlpha = tint.Hex(), tint.A
+			texture.Tint, texture.TintAlpha = tint.ToHex(), tint.A
 		}
 	}
 	if choices, has := properties.choices("blend_mode"); has {
@@ -153,9 +150,8 @@ func (resolver *guiResolver) sprite(properties *properties, texture *Texture) {
 	}
 }
 
-// cellOf is the size in the image's pixels of the frames properties cut a sheet into: its framesize, in the screen's
-// pixels, times the density, else the image over its frame_grid's columns and rows; false for neither, or a frame
-// larger than the image.
+// cellOf returns the size in the image's pixels of the frames a sheet is cut into: its framesize times the density,
+// else the image over its frame_grid; false for neither, or a frame larger than the image.
 func cellOf(properties *properties, texture Texture) (int, int, bool) {
 	var width, height int
 	cell, isSized := properties.numbers("framesize")
@@ -169,7 +165,7 @@ func cellOf(properties *properties, texture Texture) (int, int, bool) {
 	return width, height, width >= 1 && height >= 1 && width <= texture.Width && height <= texture.Height
 }
 
-// borderOf is a sprite's insets top, right, bottom and left: spriteborder as one value for every side or a
+// borderOf returns a sprite's insets top, right, bottom and left: spriteborder as one value for every side or a
 // horizontal and a vertical, a side's own key over it.
 func borderOf(properties *properties) [4]int {
 	var border [4]int
@@ -189,7 +185,7 @@ func borderOf(properties *properties) [4]int {
 	return border
 }
 
-// tintOf is a key's last color: a color block, or an answered call naming an entry that is one; false for none.
+// tintOf returns a key's last color: a color block, or an answered call naming an entry that is one; false for none.
 func (resolver *guiResolver) tintOf(properties *properties, key string) (game.RGBA, bool) {
 	last, has := properties.last(key)
 	if !has {
@@ -202,13 +198,12 @@ func (resolver *guiResolver) tintOf(properties *properties, key string) (game.RG
 		}
 	}
 	tag, parts, isColor := jomini.ColorParts(value)
-	color, isKnown := game.ColorOf(tag, parts)
+	color, isKnown := game.ParseColor(tag, parts)
 	return color, isColor && isKnown
 }
 
-// pictureOf is the file a texture binding draws, from what the scan holds: the entry a quoted key names, in the call
-// or in the widget's data context, pictured by its GUIPictureKeys field (else the key itself) as written or under an
-// icon folder; "" where no key is quoted or no file is found.
+// pictureOf returns the file a texture binding draws: the entry a quoted key names, in the call or the widget's data
+// context, pictured by its GUIPictureKeys field as written or under an icon folder; "" where none is found.
 func (resolver *guiResolver) pictureOf(widget *widget, binding string) string {
 	install := resolver.ws.Install
 	steps := jomini.ParseCall(binding, 0)
@@ -228,7 +223,7 @@ func (resolver *guiResolver) pictureOf(widget *widget, binding string) string {
 		return picture
 	}
 	path := key
-	if database := resolver.databaseOf(dataType); database != "" {
+	if database := resolver.ws.Install.Schema.ResolveTypeDatabase(dataType); database != "" {
 		if entry, isDefined := resolver.entryProperties(database, key); isDefined {
 			for _, pictureKey := range game.GUIPictureKeys {
 				if file, has := entry.scalar(pictureKey); has {
@@ -260,30 +255,7 @@ func (resolver *guiResolver) pictureOf(widget *widget, binding string) string {
 	return picture
 }
 
-// databaseOf is the database a data type's entries are in: the one the link to its scope type names, or the game
-// concepts for a global call; "" for none.
-func (resolver *guiResolver) databaseOf(dataType string) string {
-	install := resolver.ws.Install
-	switch dataType {
-	case "":
-		return ""
-	case game.GlobalType:
-		concepts := install.Schema.DatabasesWhere(func(row game.Descriptor) bool { return row.Purpose == game.PurposeConcepts })
-		if len(concepts) == 0 {
-			return ""
-		}
-		return concepts[0]
-	}
-	scope := schema.SnakeCase(dataType)
-	for _, prefix := range slices.Sorted(maps.Keys(install.Schema.Prefixes)) {
-		if link := install.Schema.Commands[prefix]; link != nil && link.Target == scope {
-			return install.Schema.Prefixes[prefix]
-		}
-	}
-	return ""
-}
-
-// iconFolders are the folders the icon path defines name, by define.
+// iconFolders returns the folders the icon path defines name, by define.
 func (resolver *guiResolver) iconFolders() map[string]string {
 	folders := map[string]string{}
 	for _, id := range index.Names(resolver.ws.Indexes(), game.DefinesDatabase) {
@@ -301,7 +273,7 @@ func (resolver *guiResolver) iconFolders() map[string]string {
 	return folders
 }
 
-// literalKey is the first quoted argument of a call; "" where it writes none.
+// literalKey returns the first quoted argument of a call; "" where it writes none.
 func literalKey(steps []jomini.CallStep) string {
 	for _, step := range steps {
 		for _, arg := range step.Args {

@@ -51,7 +51,7 @@ Universalis V, so a layer that makes any of them worse does not count as done.
 - [x] **Layer 1, text and files.** Reading script text, localization, files, paths and pictures, written once each:
   the shapes a word can have, the walk over a folder, how two paths are compared, DDS and TGA decoding, and the edits
   to localization files.
-- [ ] **Layer 2, game knowledge.** What is true of each game, as tables of facts: its folders, how it combines files,
+- [x] **Layer 2, game knowledge.** What is true of each game, as tables of facts: its folders, how it combines files,
   how a later definition replaces or adds to an earlier one, where it keeps its dumps, its error log and its
   executable. The readers of the game's dumps and docs, a count of how often the game's own files write each key, and
   a form for any kind of definition.

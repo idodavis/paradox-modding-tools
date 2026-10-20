@@ -16,10 +16,8 @@ import (
 	"paradox-modding-tools/services/internal/loc"
 )
 
-// fixtureSchema builds the schema of a fixture install exactly as index.Scan builds it for the goldens: the
-// install's files, the dump folders (empty for a fixture, so the shipped dump part stands in, marked stale),
-// the english localization keys, and no wiki examples. The home is emptied, as the goldens' generator does,
-// since the dump folders are found under the user's documents and not under the install.
+// fixtureSchema builds the schema of a fixture install exactly as index.Scan builds it for the goldens: its files, no
+// wiki examples, and an emptied home, so the shipped dump part stands in, marked stale.
 func fixtureSchema(t *testing.T, id string) *Schema {
 	t.Helper()
 	home := t.TempDir()
@@ -28,7 +26,7 @@ func fixtureSchema(t *testing.T, id string) *Schema {
 	}
 	root := filepath.Join("..", "testdata", id)
 	install := fixtureFiles(id)
-	dumps := inventory.Files("dumps", game.DumpDirs(id, root))
+	dumps := inventory.Files("dumps", game.FindDumpDirs(id, root))
 
 	// the keys of every english localization file, as the scan reads them before the schema stage
 	locKeys := map[string]bool{}
@@ -36,7 +34,7 @@ func fixtureSchema(t *testing.T, id string) *Schema {
 		if file.Format != inventory.Loc {
 			continue
 		}
-		if named := loc.Language("", file.Rel); named != "" && named != game.BaseLanguage {
+		if named := loc.Language("", file.Rel); named != "" && named != game.Lookup(id).BaseLanguage {
 			continue
 		}
 		text, err := file.Text()
@@ -48,16 +46,16 @@ func fixtureSchema(t *testing.T, id string) *Schema {
 		}
 	}
 
-	input := Input{Game: id, Version: "test", Install: install, Dumps: dumps, Updated: game.InstallUpdatedAt(root), LocKeys: locKeys}
+	input := Input{Game: id, Version: "test", Install: install, Dumps: dumps, Updated: game.ReadInstallUpdatedAt(root), LocKeys: locKeys}
 	if len(MissingDumps(dumps)) > 0 {
 		backup, exact, err := LoadShipped(id, "test")
 		if err != nil {
 			t.Fatal(err)
 		}
 		if backup != nil {
-			state := backup.Sources[SourceDumps]
+			state := backup.Sources[game.SourceDumps]
 			state.Origin, state.Stale = "shipped", !exact
-			backup.Sources[SourceDumps] = state
+			backup.Sources[game.SourceDumps] = state
 			input.Shipped = backup
 		}
 	}
@@ -101,6 +99,7 @@ const (
 	immediate  = "immediate"
 	trigger    = "trigger"
 	vEffect    = "v_effect"
+	character  = "character"
 )
 
 func TestGoldenSchema(t *testing.T) {
@@ -160,7 +159,7 @@ func dumpSchema(s *Schema) string {
 	}
 	sort.Ints(sources)
 	for _, source := range sources {
-		origin := s.Sources[Source(source)]
+		origin := s.Sources[game.Source(source)]
 		p("source %d from=%s", source, origin.Origin)
 	}
 
@@ -176,8 +175,8 @@ func dumpSchema(s *Schema) string {
 	p("\n## commands")
 	for _, name := range sortedKeys(s.Commands) {
 		command := s.Commands[name]
-		p("command %s kind=%d scopes=%v out=%q global=%t wild=%t lists=%t blurb=%s",
-			name, command.Kinds, command.Scopes, command.Target, command.Global, command.Wild, command.Lists, short(command.Blurb))
+		p("command %s kind=%v scopes=%v out=%q global=%t wild=%t lists=%t blurb=%s",
+			name, command.Declared, command.Scopes, command.Target, command.Global, command.Wild, command.Lists, short(command.Blurb))
 		if command.Args != nil {
 			dumpKey(&out, "  ", "", command.Args, 0)
 		}
@@ -229,9 +228,9 @@ func dumpKey(out *strings.Builder, indent, path string, key *Position, depth int
 	}
 	fmt.Fprintf(out, "%s%s value=%v/%d block=%d/%d scope=%q/%d required=%v/%d default=%q/%d blurb=%s/%d written=%d seen=in:%d,blocks:%d,forms:%d,values:%v\n",
 		indent, cmpPath(path),
-		key.Value.Value, key.Value.Source, key.Holds.Value, key.Holds.Source, key.Scope.Value, key.Scope.Source,
+		key.Value.Value, key.Value.Source, key.Shape.Value, key.Shape.Source, key.Scope.Value, key.Scope.Source,
 		key.Required.Value, key.Required.Source, key.Default.Value, key.Default.Source, short(key.Blurb.Value), key.Blurb.Source,
-		key.DeclaredBy, key.Vanilla.Count, key.Vanilla.Blocks, key.Vanilla.Writes, key.Vanilla.Values)
+		key.Source, key.Vanilla.Count, key.Vanilla.Blocks, key.Vanilla.Writes, key.Vanilla.Values)
 	for _, name := range sortedKeys(key.Children) {
 		dumpKey(out, indent, path+"/"+name, key.Children[name], depth+1)
 	}
@@ -253,7 +252,7 @@ func sortedKeys[V any](m map[string]V) []string {
 	return keys
 }
 
-// short is a long text as its length, its checksum and its first words.
+// short returns a long text as its length, its checksum and its first words.
 func short(text string) string {
 	if len(text) <= 40 {
 		return fmt.Sprintf("%q", text)
@@ -261,8 +260,7 @@ func short(text string) string {
 	return fmt.Sprintf("%d:%08x:%q", len(text), crc32.ChecksumIEEE([]byte(text)), text[:40])
 }
 
-// sum is a value as the length and checksum of its printed form: a big table whose changed rows show by
-// name.
+// sum returns a value as the length and checksum of its printed form: a big table whose changed rows show by name.
 func sum(value any) string {
 	text := fmt.Sprintf("%v", value)
 	return fmt.Sprintf("%d:%08x", len(text), crc32.ChecksumIEEE([]byte(text)))
@@ -277,13 +275,13 @@ type step struct {
 	occurrences []Occurrence
 }
 
-// commandOf is the declared command or link a step's key is, by the rule that read it; nil for none.
+// commandOf returns the declared command or link a step's key is, by the rule that read it; nil for none.
 func commandOf(s *Schema, at step) *Command {
 	assign, isAssign := at.statement.(*jomini.Assignment)
 	if !isAssign {
 		return nil
 	}
-	switch at.inner.Rule {
+	switch at.inner.KeyRule {
 	case game.KeyRuleCommand:
 		return s.Commands[strings.ToLower(assign.Key.Text)]
 	case game.KeyRuleLink:
@@ -292,7 +290,7 @@ func commandOf(s *Schema, at step) *Command {
 	return nil
 }
 
-// callerOf is the word a step's key resolves by when it is read as a call; "" when it is not.
+// callerOf returns the word a step's key resolves by when it is read as a call; "" when it is not.
 func callerOf(at step) string {
 	if assign, isAssign := at.statement.(*jomini.Assignment); isAssign && at.inner.Call == assign.Key.Text {
 		return at.context.Caller
@@ -334,9 +332,8 @@ func statementAt(t *testing.T, statements []jomini.Statement, path []string) jom
 	return nil
 }
 
-// snippetStep walks a snippet whose top statements are entries of a database and returns the step of its first
-// statement whose key is name.
-func snippetStep(s *Schema, database, snippet, name string, create bool) step {
+// snippetStep walks a snippet written as a file at rel and returns the step of its first statement whose key is name.
+func snippetStep(s *Schema, rel, snippet, name string, create bool) step {
 	parsed := jomini.Parse(snippet)
 	var result step
 	visit := func(statement jomini.Statement, context Context, inner *Context, occurrences []Occurrence) bool {
@@ -345,11 +342,7 @@ func snippetStep(s *Schema, database, snippet, name string, create bool) step {
 		}
 		return true
 	}
-	for _, statement := range parsed.Root.Statements {
-		if block := jomini.ChildBlock(statement); block != nil {
-			s.WalkBlock(s.EntryContext(s.Databases[database], ""), block.Statements, create, visit)
-		}
-	}
+	s.WalkFile(inventory.File{Rel: rel, Format: inventory.Script}, &parsed, create, visit)
 	return result
 }
 
@@ -380,30 +373,31 @@ func TestEnter(t *testing.T) {
 			game.KeyRuleObserved, s.Commands["send_interface_toast"].Args.Child("message_filter_type"), nil, ""},
 		{"a value operator", stepAt(t, s, values, "big_value", "add"),
 			game.KeyRuleOperator, s.Databases["script_values"].Entry.Child("add"), nil, ""},
-		{"a call where nothing is known", snippetStep(s, "scripted_triggers", "x = { nothing_declares_me = yes }", "nothing_declares_me", false),
+		{"a call where nothing is known",
+			snippetStep(s, "common/scripted_triggers/snippet.txt", "x = { nothing_declares_me = yes }", "nothing_declares_me", false),
 			game.KeyRuleCall, nil, nil, trigger},
 	}
 	for _, c := range cases {
 		inner, command, caller := c.step.inner, commandOf(s, c.step), callerOf(c.step)
-		if inner.Rule != c.rule || inner.Position() != c.position || command != c.command || caller != c.caller {
+		if inner.KeyRule != c.rule || inner.Position() != c.position || command != c.command || caller != c.caller {
 			t.Errorf("%s: rule %d position %p command %p caller %q; want %d %p %p %q",
-				c.name, inner.Rule, inner.Position(), command, caller, c.rule, c.position, c.command, c.caller)
+				c.name, inner.KeyRule, inner.Position(), command, caller, c.rule, c.position, c.command, c.caller)
 		}
 	}
 
 	declared := stepAt(t, s, events, v1, immediate, "send_interface_toast", "title").inner.Position()
-	if declared.DeclaredBy != SourceDumps {
-		t.Errorf("title is declared by %d, want the dumps", declared.DeclaredBy)
+	if declared.Source != game.SourceDumps {
+		t.Errorf("title is declared by %d, want the dumps", declared.Source)
 	}
 	observed := stepAt(t, s, events, v1, immediate, "send_interface_toast", "message_filter_type").inner.Position()
-	if observed.DeclaredBy != SourceNone || observed.Vanilla.Count != 1 {
-		t.Errorf("message_filter_type is declared by %d, written in %d blocks; want none, 1", observed.DeclaredBy, observed.Vanilla.Count)
+	if observed.Source != game.SourceNone || observed.Vanilla.Count != 1 {
+		t.Errorf("message_filter_type is declared by %d, written in %d blocks; want none, 1", observed.Source, observed.Vanilla.Count)
 	}
 
 	// a new position with no claim and no evidence holds an unknown block, whose parent writes no command
-	fresh := snippetStep(fixtureSchema(t, ck3), "events", "x = { fresh = { inner = 1 } }", "inner", true)
-	if fresh.inner.Rule != game.KeyRulePositionOrCall || fresh.inner.Call != "" {
-		t.Errorf("inner: rule %d call %q; want %d \"\"", fresh.inner.Rule, fresh.inner.Call, game.KeyRulePositionOrCall)
+	fresh := snippetStep(fixtureSchema(t, ck3), "events/snippet.txt", "namespace = x x.1 = { fresh = { inner = 1 } }", "inner", true)
+	if fresh.inner.KeyRule != game.KeyRulePositionOrCall || fresh.inner.Call != "" {
+		t.Errorf("inner: rule %d call %q; want %d \"\"", fresh.inner.KeyRule, fresh.inner.Call, game.KeyRulePositionOrCall)
 	}
 }
 
@@ -456,11 +450,11 @@ func TestBlockScope(t *testing.T) {
 		step step
 		want string
 	}{
-		{"an iterator leads to its target", stepAt(t, s, events, v1, immediate, "every_vassal"), "character"},
+		{"an iterator leads to its target", stepAt(t, s, events, v1, immediate, "every_vassal"), character},
 		{"a link leads where its last link does", stepAt(t, s, events, v1, immediate, "capital_county"), "landed_title"},
-		{"the events entry declares no scope", stepAt(t, s, events, v1, immediate, "add_gold"), ""},
-		{"a trigger in an unscoped block", stepAt(t, s, events, v1, trigger, "exists"), ""},
-		{"an on_action starts in its declared scope", stepAt(t, s, "common/on_action/v_on_actions.txt", "on_birth", "effect", "every_vassal"), "character"},
+		{"the events entry runs in its default scope", stepAt(t, s, events, v1, immediate, "add_gold"), character},
+		{"a trigger in the events entry", stepAt(t, s, events, v1, trigger, "exists"), character},
+		{"an on_action starts in its declared scope", stepAt(t, s, "common/on_action/v_on_actions.txt", "on_birth", "effect", "every_vassal"), character},
 	}
 	for _, c := range cases {
 		if got := c.step.inner.Scope.This; got != c.want {
@@ -470,8 +464,8 @@ func TestBlockScope(t *testing.T) {
 }
 
 func TestMayAccuse(t *testing.T) {
-	s := &Schema{Sources: map[Source]SourceState{SourceDocs: {Origin: "install"}, SourceDumps: {Origin: "yours", Stale: true}}}
-	number := func(source Source, in int, forms Writes) *Position {
+	s := &Schema{Sources: map[game.Source]SourceState{game.SourceDocs: {Origin: "install"}, game.SourceDumps: {Origin: "yours", Stale: true}}}
+	number := func(source game.Source, in int, forms Writes) *Position {
 		return &Position{Claims: Claims{Value: Claim[Expected]{Expected{Type: ValueNumber}, source}}, Vanilla: Vanilla{Count: in, Writes: forms}}
 	}
 	cases := []struct {
@@ -480,10 +474,10 @@ func TestMayAccuse(t *testing.T) {
 		position *Position
 		want     bool
 	}{
-		{"a docs claim where vanilla never writes", CheckValue, number(SourceDocs, 0, 0), false},
-		{"a docs claim vanilla agrees with", CheckValue, number(SourceDocs, 1, WritesNumber), true},
-		{"a docs claim vanilla contradicts", CheckValue, number(SourceDocs, 1, WritesNumber|WritesIdent), false},
-		{"vanilla never accuses", CheckValue, number(SourceVanilla, 1, WritesNumber), false},
+		{"a docs claim where vanilla never writes", CheckValue, number(game.SourceDocs, 0, 0), false},
+		{"a docs claim vanilla agrees with", CheckValue, number(game.SourceDocs, 1, WritesNumber), true},
+		{"a docs claim vanilla contradicts", CheckValue, number(game.SourceDocs, 1, WritesNumber|WritesIdent), false},
+		{"vanilla never accuses", CheckValue, number(game.SourceVanilla, 1, WritesNumber), false},
 		{"stale dumps never accuse", CheckCommand, &Position{}, false},
 	}
 	for _, c := range cases {

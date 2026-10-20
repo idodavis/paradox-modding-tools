@@ -5,6 +5,11 @@
    "word": "vv.1",
    "key": "vv.1",
    "head": "event",
+   "scope": {
+    "this": "country",
+    "root": "country",
+    "reason": "every event runs in it unless it says otherwise"
+   },
    "sites": [
     {
      "path": "<fixtures>/vic3/game/events/v_events.txt",
@@ -43,6 +48,11 @@
    "writes": [
     "one of country_event"
    ],
+   "scope": {
+    "this": "country",
+    "root": "country",
+    "reason": "its type says so"
+   },
    "winner": -1,
    "within": [
     "vv.1"
@@ -84,6 +94,11 @@
    "takes": [
     "triggers"
    ],
+   "scope": {
+    "this": "country",
+    "root": "country",
+    "reason": "its type says so"
+   },
    "winner": -1,
    "within": [
     "vv.1"
@@ -104,10 +119,15 @@
    "word": "NOT",
    "key": "NOT",
    "head": "trigger",
-   "prose": "negates content of trigger",
+   "prose": "True when what is inside it is false.",
    "takes": [
     "triggers"
    ],
+   "scope": {
+    "this": "country",
+    "root": "country",
+    "reason": "its type says so"
+   },
    "winner": -1,
    "stale": true,
    "within": [
@@ -134,6 +154,11 @@
    "takes": [
     "triggers"
    ],
+   "scope": {
+    "this": "country",
+    "root": "country",
+    "reason": "its type says so"
+   },
    "leads": "state",
    "winner": -1,
    "stale": true,
@@ -161,8 +186,9 @@
    "prose": "Scope to the owner country of object",
    "scope": {
     "this": "state",
+    "root": "country",
     "prev": [
-     ""
+     "country"
     ],
     "reason": "any_scope_state leads to it"
    },
@@ -215,6 +241,11 @@
    "takes": [
     "effects"
    ],
+   "scope": {
+    "this": "country",
+    "root": "country",
+    "reason": "its type says so"
+   },
    "winner": -1,
    "within": [
     "vv.1"
@@ -239,6 +270,11 @@
    "takes": [
     "effects"
    ],
+   "scope": {
+    "this": "country",
+    "root": "country",
+    "reason": "its type says so"
+   },
    "leads": "state",
    "winner": -1,
    "stale": true,
@@ -268,8 +304,9 @@
    ],
    "scope": {
     "this": "state",
+    "root": "country",
     "prev": [
-     ""
+     "country"
     ],
     "reason": "every_scope_state leads to it"
    },
@@ -299,8 +336,9 @@
    "prose": "Scope to pop's or character's culture",
    "scope": {
     "this": "state",
+    "root": "country",
     "prev": [
-     ""
+     "country"
     ],
     "reason": "every_scope_state leads to it"
    },
@@ -355,8 +393,9 @@
    ],
    "scope": {
     "this": "state",
+    "root": "country",
     "prev": [
-     ""
+     "country"
     ],
     "reason": "every_scope_state leads to it"
    },
@@ -408,6 +447,14 @@
    "takes": [
     "effects"
    ],
+   "scope": {
+    "this": "country",
+    "root": "country",
+    "named": {
+     "home_province": "province"
+    },
+    "reason": "its type says so"
+   },
    "leads": "province",
    "winner": -1,
    "stale": true,
@@ -431,14 +478,15 @@
    "word": "save_scope_as",
    "key": "save_scope_as",
    "head": "effect",
-   "prose": "Saves the current scope as an arbitrarily-named target to be referenced later in the (unbroken) event chain",
+   "prose": "Remembers the current scope under a name for the rest of the event chain.",
    "takes": [
     "text"
    ],
    "scope": {
     "this": "province",
+    "root": "country",
     "prev": [
-     ""
+     "country"
     ],
     "named": {
      "home_province": "province"
@@ -511,6 +559,15 @@
    "takes": [
     "effects"
    ],
+   "scope": {
+    "this": "country",
+    "root": "country",
+    "named": {
+     "away_province": "province",
+     "home_province": "province"
+    },
+    "reason": "its type says so"
+   },
    "leads": "province",
    "winner": -1,
    "stale": true,
@@ -534,14 +591,15 @@
    "word": "save_scope_as",
    "key": "save_scope_as",
    "head": "effect",
-   "prose": "Saves the current scope as an arbitrarily-named target to be referenced later in the (unbroken) event chain",
+   "prose": "Remembers the current scope under a name for the rest of the event chain.",
    "takes": [
     "text"
    ],
    "scope": {
     "this": "province",
+    "root": "country",
     "prev": [
-     ""
+     "country"
     ],
     "named": {
      "away_province": "province",
@@ -614,6 +672,15 @@
    "takes": [
     "effects"
    ],
+   "scope": {
+    "this": "country",
+    "root": "country",
+    "named": {
+     "away_province": "province",
+     "home_province": "province"
+    },
+    "reason": "its type says so"
+   },
    "winner": -1,
    "within": [
     "vv.1"
@@ -636,12 +703,13 @@
    "head": "event target",
    "prose": "Scope to the name (as a flag) of a script container",
    "scope": {
-    "this": "container",
+    "this": "country",
+    "root": "country",
     "named": {
      "away_province": "province",
      "home_province": "province"
     },
-    "reason": "the one scope it runs in"
+    "reason": "its type says so"
    },
    "leads": "flag",
    "winner": -1,
@@ -685,10 +753,19 @@
    "word": "if",
    "key": "if",
    "head": "effect",
-   "prose": "Executes enclosed effects if limit criteria are met",
+   "prose": "Runs what is inside it when its limit holds.",
    "takes": [
     "effects"
    ],
+   "scope": {
+    "this": "country",
+    "root": "country",
+    "named": {
+     "away_province": "province",
+     "home_province": "province"
+    },
+    "reason": "its type says so"
+   },
    "winner": -1,
    "stale": true,
    "within": [
@@ -711,9 +788,19 @@
    "word": "limit",
    "key": "limit",
    "head": "in `if`",
+   "prose": "The conditions an if, a list, a while or a trigger_if checks first.",
    "takes": [
     "triggers"
    ],
+   "scope": {
+    "this": "country",
+    "root": "country",
+    "named": {
+     "away_province": "province",
+     "home_province": "province"
+    },
+    "reason": "its type says so"
+   },
    "winner": -1,
    "stale": true,
    "within": [
@@ -743,11 +830,12 @@
    ],
    "scope": {
     "this": "country",
+    "root": "country",
     "named": {
      "away_province": "province",
      "home_province": "province"
     },
-    "reason": "the one scope it runs in"
+    "reason": "its type says so"
    },
    "winner": -1,
    "stale": true,
@@ -798,6 +886,15 @@
    "takes": [
     "a block with days, id, months, weeks, years"
    ],
+   "scope": {
+    "this": "country",
+    "root": "country",
+    "named": {
+     "away_province": "province",
+     "home_province": "province"
+    },
+    "reason": "its type says so"
+   },
    "winner": -1,
    "stale": true,
    "within": [
@@ -821,6 +918,11 @@
    "word": "vv.2",
    "key": "trigger_event",
    "head": "event",
+   "scope": {
+    "this": "country",
+    "root": "country",
+    "reason": "every event runs in it unless it says otherwise"
+   },
    "sites": [
     {
      "path": "<fixtures>/vic3/game/events/v_events.txt",
@@ -861,6 +963,11 @@
    "word": "vv.2",
    "key": "vv.2",
    "head": "event",
+   "scope": {
+    "this": "country",
+    "root": "country",
+    "reason": "every event runs in it unless it says otherwise"
+   },
    "sites": [
     {
      "path": "<fixtures>/vic3/game/events/v_events.txt",
@@ -899,6 +1006,11 @@
    "writes": [
     "one of country_event"
    ],
+   "scope": {
+    "this": "country",
+    "root": "country",
+    "reason": "its type says so"
+   },
    "winner": -1,
    "within": [
     "vv.2"
@@ -940,6 +1052,11 @@
    "takes": [
     "triggers"
    ],
+   "scope": {
+    "this": "country",
+    "root": "country",
+    "reason": "its type says so"
+   },
    "winner": -1,
    "within": [
     "vv.2"
@@ -966,7 +1083,8 @@
    ],
    "scope": {
     "this": "country",
-    "reason": "the one scope it runs in"
+    "root": "country",
+    "reason": "its type says so"
    },
    "winner": -1,
    "stale": true,

@@ -17,14 +17,17 @@ import (
 	"paradox-modding-tools/services/internal/schema"
 )
 
-// Request is one install's scan: Version is the game's, Language the localization kept
-// besides english. Progress hears inventory, localization, schema, index (per file read), saving.
+// Request is one install's scan.
 type Request struct {
-	Game, Dir, Version, Language string
-	App                          string // the app's version; "dev" keys the cache by the engine's code, "" never caches
-	Progress                     func(stage string, done, total int)
+	Game     string // the game's id
+	Dir      string // the install's folder
+	Version  string // the game's version
+	Language string // the localization kept besides english
+	App      string // the app's version; "dev" keys the cache by the engine's code, "" never caches
 
-	// Wiki gives the wiki's script examples by database and its sidecar's time; nil for none.
+	// Progress hears inventory, localization, schema, index (per file) and saving.
+	Progress func(stage string, done, total int)
+	// Wiki returns the wiki's script examples by database and its sidecar's time; nil for none.
 	Wiki func(databases []string) (map[string][]string, time.Time, error)
 }
 
@@ -32,12 +35,15 @@ type Request struct {
 type Install struct {
 	Schema   *schema.Schema
 	Index    *Index
-	Scanned  time.Time // when the install was built; a cache load keeps the original
-	Previous string    // the version of the older cache file this scan replaced; "" when none or loaded
+	Scanned  time.Time // when it was built; a cache load keeps the original
+	Previous string    // the version of the older cache file this scan replaced; "" none
 }
 
-// Mod is one mod of a workspace: its id and folder.
-type Mod struct{ ID, Dir string }
+// Mod is one mod of a workspace.
+type Mod struct {
+	ID  string
+	Dir string // its folder
+}
 
 // Scan gives an install's schema and index from the cache, else builds and caches them; a
 // cache that cannot be written returns the install with its error.
@@ -90,24 +96,23 @@ func inventoryOf(req Request) (roots []string, input schema.Input, err error) {
 	return roots, input, nil
 }
 
-// schemaInput is the schema stage's input: the files under the install's roots in load order, the
-// dump folders' files and when the install last changed.
+// schemaInput returns the schema stage's input: the files under the install's roots in load order, the dump folders'
+// files and when the install last changed.
 func schemaInput(req Request, roots []string) schema.Input {
 	return schema.Input{
 		Game:    req.Game,
 		Version: req.Version,
 		Install: inventory.Files(game.OriginVanilla, roots),
-		Dumps:   inventory.Files("dumps", game.DumpDirs(req.Game, req.Dir)),
-		Updated: game.InstallUpdatedAt(req.Dir),
+		Dumps:   inventory.Files("dumps", game.FindDumpDirs(req.Game, req.Dir)),
+		Updated: game.ReadInstallUpdatedAt(req.Dir),
 	}
 }
 
-// localizationOf reads the install's localization once, in english and the asked language: a file
-// whose path names another language is never read. Its keys go to the schema's input, and its
-// occurrences come back for the index.
+// localizationOf reads the install's localization once, in english and the asked language; a file whose path names
+// another language is never read. Its keys go to the schema's input and its occurrences come back for the index.
 func localizationOf(ctx context.Context, req Request, input *schema.Input) (map[string]collected, error) {
 	req.Progress("localization", 0, 1)
-	languages, localized := []string{game.BaseLanguage, strings.ToLower(req.Language)}, map[string]collected{}
+	languages, localized := []string{game.Lookup(req.Game).BaseLanguage, strings.ToLower(req.Language)}, map[string]collected{}
 	var locs []inventory.File
 	for _, file := range input.Install {
 		if file.Format != inventory.Loc {
@@ -118,9 +123,10 @@ func localizationOf(ctx context.Context, req Request, input *schema.Input) (map[
 		}
 	}
 	input.LocKeys = map[string]bool{}
+	concepts := schema.FindHousingDatabase(game.Lookup(req.Game).Rules, "concepts")
 	err := inventory.Ordered(ctx, locs, func(file inventory.File) collected {
 		text, _ := file.Text()
-		return collectLoc(req.Game, file, text.Content, languages)
+		return collectLoc(concepts, file, text.Content, languages)
 	}, func(file inventory.File, kept collected) {
 		if len(kept.occurrences) > 0 {
 			localized[file.Path] = kept
@@ -140,17 +146,17 @@ func schemaOf(ctx context.Context, req Request, input schema.Input) (*schema.Sch
 	req.Progress("schema", 0, 1)
 	if len(schema.MissingDumps(input.Dumps)) > 0 {
 		if backup, exact, _ := schema.LoadShipped(req.Game, req.Version); backup != nil {
-			srcState := backup.Sources[schema.SourceDumps]
+			srcState := backup.Sources[game.SourceDumps]
 			srcState.Origin, srcState.Stale = "shipped", !exact
-			backup.Sources[schema.SourceDumps] = srcState
+			backup.Sources[game.SourceDumps] = srcState
 			input.Shipped = backup
 		}
 	}
 	return schema.Build(ctx, input)
 }
 
-// BuildSchema is the dump part the generator ships, with the install's databases so dump claims
-// can name them; it refuses unless every dump file is there, so a partial backup never ships.
+// BuildSchema returns the dump part the generator ships, with the install's databases so dump claims can name them;
+// it refuses unless every dump file is there, so a partial backup never ships.
 func BuildSchema(ctx context.Context, req Request) (*schema.Schema, error) {
 	input := schemaInput(req, inventory.Roots(req.Dir))
 	if missing := schema.MissingDumps(input.Dumps); len(missing) > 0 {
@@ -163,7 +169,7 @@ func BuildSchema(ctx context.Context, req Request) (*schema.Schema, error) {
 // ScanMods indexes a workspace's mods, in playset order, over an install: one index of their files,
 // every localization language kept, with the folders their descriptors unload in Replaced.
 func ScanMods(ctx context.Context, install *Install, mods []Mod) (*Index, error) {
-	info := game.Get(install.Schema.Game)
+	info := game.Lookup(install.Schema.Game)
 	index := &Index{}
 	for _, mod := range mods {
 		roots := inventory.Roots(mod.Dir)
@@ -184,9 +190,8 @@ func ScanMods(ctx context.Context, install *Install, mods []Mod) (*Index, error)
 	return index, index.collectFiles(ctx, install.Schema, true, nil)
 }
 
-// Reindex walks one file again: its occurrences dropped and added back. A file not yet in Files goes
-// after its origin's last file, so it keeps that origin's place in load order. Every localization
-// language is kept.
+// Reindex walks one file again, dropping its occurrences and adding them back. A new file goes after its origin's
+// last file, keeping that origin's place in load order. Every localization language is kept.
 func (index *Index) Reindex(s *schema.Schema, file inventory.File, text string) {
 	if index.postings == nil {
 		index.Rebuild()

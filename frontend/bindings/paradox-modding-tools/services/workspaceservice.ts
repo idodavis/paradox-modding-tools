@@ -51,7 +51,7 @@ export function CreateWorkspace(gameID: string, name: string, installID: string)
 }
 
 /**
- * DefaultModParent is UserDataDir/<game>/mod, or "".
+ * DefaultModParent returns FindUserDataDir/<game>/mod, or "".
  */
 export function DefaultModParent(gameID: string): $CancellablePromise<string> {
     return $Call.ByID(1639189285, gameID);
@@ -121,14 +121,14 @@ export function ListWorkspaces(): $CancellablePromise<$models.Workspace[] | null
 }
 
 /**
- * ModFolder is the folder CreateMod makes for a mod named name under parentDir.
+ * ModFolder returns the folder CreateMod makes for a mod named name under parentDir.
  */
 export function ModFolder(parentDir: string, name: string): $CancellablePromise<string> {
     return $Call.ByID(491495046, parentDir, name);
 }
 
 /**
- * Open is the workspace opened, its index built once however many callers ask at once, and its state; opening a
+ * Open returns the workspace's state after opening it, building its index once however many callers ask; opening a
  * workspace closes the one open before it.
  */
 export function Open(workspaceID: string): $CancellablePromise<$models.WorkspaceState | null> {
@@ -157,9 +157,8 @@ export function ReorderWorkspaceMods(workspaceID: string, modIDs: string[] | nul
 }
 
 /**
- * SetModListingImage makes src the mod's listing image: copied in where its game keeps one, named in
- * its descriptor (its Workshop id as it is) and made the workspace's picture of the mod. It returns the
- * image's path.
+ * SetModListingImage copies src in as the mod's listing image where its game keeps one, names it in the descriptor and
+ * makes it the workspace's picture of the mod. It returns the image's path.
  */
 export function SetModListingImage(workspaceID: string, modID: string, src: string): $CancellablePromise<string> {
     return $Call.ByID(1721906755, workspaceID, modID, src);
@@ -204,8 +203,8 @@ export function SetWorkspaceModSlot(workspaceID: string, modID: string, slot: nu
 }
 
 /**
- * State is what the pages show of a workspace, without opening it: its install and when it was scanned, and when
- * it is open, whose dumps its schema read and the version the scan replaced.
+ * State returns what the pages show of a workspace without opening it: its install, when it was scanned, whether it is
+ * open, whose dumps its schema read and the version the scan replaced.
  */
 export function State(workspaceID: string): $CancellablePromise<$models.WorkspaceState | null> {
     return $Call.ByID(2783821127, workspaceID);

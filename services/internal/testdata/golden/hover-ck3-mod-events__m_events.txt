@@ -6,6 +6,11 @@
    "key": "m.1",
    "head": "event",
    "name": "Hello",
+   "scope": {
+    "this": "character",
+    "root": "character",
+    "reason": "every event runs in it unless it says otherwise"
+   },
    "sites": [
     {
      "path": "<fixtures>/mods/ck3/events/m_events.txt",
@@ -44,6 +49,11 @@
    "writes": [
     "one of character_event"
    ],
+   "scope": {
+    "this": "character",
+    "root": "character",
+    "reason": "every event runs in it unless it says otherwise"
+   },
    "winner": -1,
    "within": [
     "m.1"
@@ -85,6 +95,11 @@
    "writes": [
     "a localization key"
    ],
+   "scope": {
+    "this": "character",
+    "root": "character",
+    "reason": "every event runs in it unless it says otherwise"
+   },
    "winner": -1,
    "within": [
     "m.1"
@@ -146,6 +161,11 @@
    "takes": [
     "triggers"
    ],
+   "scope": {
+    "this": "character",
+    "root": "character",
+    "reason": "every event runs in it unless it says otherwise"
+   },
    "winner": -1,
    "within": [
     "m.1"
@@ -166,10 +186,15 @@
    "word": "NOT",
    "key": "NOT",
    "head": "trigger",
-   "prose": "negates content of trigger",
+   "prose": "True when what is inside it is false.",
    "takes": [
     "triggers"
    ],
+   "scope": {
+    "this": "character",
+    "root": "character",
+    "reason": "every event runs in it unless it says otherwise"
+   },
    "winner": -1,
    "stale": true,
    "within": [
@@ -198,7 +223,8 @@
    ],
    "scope": {
     "this": "character",
-    "reason": "the one scope it runs in"
+    "root": "character",
+    "reason": "every event runs in it unless it says otherwise"
    },
    "leads": "character",
    "winner": -1,
@@ -230,8 +256,9 @@
    ],
    "scope": {
     "this": "character",
+    "root": "character",
     "prev": [
-     ""
+     "character"
     ],
     "reason": "any_child leads to it"
    },
@@ -299,6 +326,11 @@
    "word": "v_rich_trigger",
    "key": "v_rich_trigger",
    "head": "scripted trigger",
+   "scope": {
+    "this": "character",
+    "root": "character",
+    "reason": "every event runs in it unless it says otherwise"
+   },
    "returns": "yes or no",
    "sites": [
     {
@@ -360,6 +392,14 @@
    "takes": [
     "effects"
    ],
+   "scope": {
+    "this": "character",
+    "root": "character",
+    "named": {
+     "mod_target": "character"
+    },
+    "reason": "every event runs in it unless it says otherwise"
+   },
    "winner": -1,
    "within": [
     "m.1"
@@ -384,6 +424,14 @@
    "takes": [
     "a block with days, delayed, id, months, on_action, saved_event_id, trigger_on_next_date, years"
    ],
+   "scope": {
+    "this": "character",
+    "root": "character",
+    "named": {
+     "mod_target": "character"
+    },
+    "reason": "every event runs in it unless it says otherwise"
+   },
    "winner": -1,
    "stale": true,
    "within": [
@@ -407,6 +455,11 @@
    "key": "trigger_event",
    "head": "event",
    "name": "Two",
+   "scope": {
+    "this": "character",
+    "root": "character",
+    "reason": "every event runs in it unless it says otherwise"
+   },
    "sites": [
     {
      "path": "<fixtures>/ck3/game/events/v_events.txt",
@@ -446,6 +499,14 @@
    "word": "v_effect",
    "key": "v_effect",
    "head": "scripted effect",
+   "scope": {
+    "this": "character",
+    "root": "character",
+    "named": {
+     "mod_target": "character"
+    },
+    "reason": "every event runs in it unless it says otherwise"
+   },
    "sites": [
     {
      "path": "<fixtures>/ck3/game/common/scripted_effects/v_effects.txt",
@@ -543,10 +604,18 @@
    "word": "save_scope_as",
    "key": "save_scope_as",
    "head": "effect",
-   "prose": "Saves the current scope as an arbitrarily-named target to be referenced later in the (unbroken) event chain",
+   "prose": "Remembers the current scope under a name for the rest of the event chain.",
    "takes": [
     "text"
    ],
+   "scope": {
+    "this": "character",
+    "root": "character",
+    "named": {
+     "mod_target": "character"
+    },
+    "reason": "every event runs in it unless it says otherwise"
+   },
    "winner": -1,
    "stale": true,
    "within": [
@@ -609,8 +678,18 @@
    "head": "effect",
    "prose": "Creates a character",
    "takes": [
+    "ethnicity",
     "a block with after_creation, age, culture, dynasty, dynasty_house, employer, ethnicities, ethnicity, faith, father, fertility, gender, gender_female_chance, health, location, mother, name, opposite_gender, random_culture, random_culture_in_group, random_faith, random_faith_in_religion, random_traits, random_traits_list, real_father, rite, save_event_target_as, save_temporary_event_target_as, template_character, trait"
    ],
+   "scope": {
+    "this": "character",
+    "root": "character",
+    "named": {
+     "made": "",
+     "mod_target": "character"
+    },
+    "reason": "every event runs in it unless it says otherwise"
+   },
    "winner": -1,
    "stale": true,
    "within": [
@@ -673,10 +752,19 @@
    "word": "save_scope_as",
    "key": "save_scope_as",
    "head": "effect",
-   "prose": "Saves the current scope as an arbitrarily-named target to be referenced later in the (unbroken) event chain",
+   "prose": "Remembers the current scope under a name for the rest of the event chain.",
    "takes": [
     "text"
    ],
+   "scope": {
+    "this": "character",
+    "root": "character",
+    "named": {
+     "made": "",
+     "mod_target": "character"
+    },
+    "reason": "every event runs in it unless it says otherwise"
+   },
    "winner": -1,
    "stale": true,
    "within": [
@@ -784,12 +872,13 @@
    ],
    "scope": {
     "this": "character",
+    "root": "character",
     "prev": [
-     ""
+     "character"
     ],
     "named": {
      "made": "",
-     "mod_target": ""
+     "mod_target": "character"
     },
     "reason": "the one scope it runs in"
    },
@@ -840,6 +929,15 @@
    "takes": [
     "a block"
    ],
+   "scope": {
+    "this": "character",
+    "root": "character",
+    "named": {
+     "made": "",
+     "mod_target": "character"
+    },
+    "reason": "every event runs in it unless it says otherwise"
+   },
    "winner": -1,
    "within": [
     "m.1"
@@ -864,6 +962,15 @@
    "writes": [
     "a localization key"
    ],
+   "scope": {
+    "this": "character",
+    "root": "character",
+    "named": {
+     "made": "",
+     "mod_target": "character"
+    },
+    "reason": "every event runs in it unless it says otherwise"
+   },
    "winner": -1,
    "within": [
     "m.1",
@@ -931,11 +1038,12 @@
    ],
    "scope": {
     "this": "character",
+    "root": "character",
     "named": {
      "made": "",
-     "mod_target": ""
+     "mod_target": "character"
     },
-    "reason": "the one scope it runs in"
+    "reason": "every event runs in it unless it says otherwise"
    },
    "winner": -1,
    "stale": true,
@@ -979,6 +1087,11 @@
    "key": "m.2",
    "head": "event",
    "name": "Two",
+   "scope": {
+    "this": "character",
+    "root": "character",
+    "reason": "every event runs in it unless it says otherwise"
+   },
    "sites": [
     {
      "path": "<fixtures>/mods/ck3/events/m_events.txt",
@@ -1017,6 +1130,11 @@
    "writes": [
     "one of character_event"
    ],
+   "scope": {
+    "this": "character",
+    "root": "character",
+    "reason": "every event runs in it unless it says otherwise"
+   },
    "winner": -1,
    "within": [
     "m.2"
@@ -1058,6 +1176,11 @@
    "writes": [
     "a localization key"
    ],
+   "scope": {
+    "this": "character",
+    "root": "character",
+    "reason": "every event runs in it unless it says otherwise"
+   },
    "winner": -1,
    "within": [
     "m.2"
@@ -1120,6 +1243,11 @@
    "takes": [
     "a block"
    ],
+   "scope": {
+    "this": "character",
+    "root": "character",
+    "reason": "every event runs in it unless it says otherwise"
+   },
    "winner": -1,
    "within": [
     "m.2"
@@ -1144,6 +1272,11 @@
    "writes": [
     "a localization key"
    ],
+   "scope": {
+    "this": "character",
+    "root": "character",
+    "reason": "every event runs in it unless it says otherwise"
+   },
    "winner": -1,
    "within": [
     "m.2",
@@ -1208,6 +1341,11 @@
    "takes": [
     "a block with days, delayed, id, months, on_action, saved_event_id, trigger_on_next_date, years"
    ],
+   "scope": {
+    "this": "character",
+    "root": "character",
+    "reason": "every event runs in it unless it says otherwise"
+   },
    "winner": -1,
    "stale": true,
    "within": [
@@ -1231,6 +1369,11 @@
    "key": "trigger_event",
    "head": "event",
    "name": "Hello",
+   "scope": {
+    "this": "character",
+    "root": "character",
+    "reason": "every event runs in it unless it says otherwise"
+   },
    "sites": [
     {
      "path": "<fixtures>/mods/ck3/events/m_events.txt",

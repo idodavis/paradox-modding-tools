@@ -6,6 +6,11 @@
    "key": "vsub.1",
    "head": "event",
    "name": "Hello",
+   "scope": {
+    "this": "character",
+    "root": "character",
+    "reason": "every event runs in it unless it says otherwise"
+   },
    "sites": [
     {
      "path": "<fixtures>/ck3/game/events/sub/v_sub_events.txt",
@@ -44,6 +49,11 @@
    "writes": [
     "one of character_event"
    ],
+   "scope": {
+    "this": "character",
+    "root": "character",
+    "reason": "every event runs in it unless it says otherwise"
+   },
    "winner": -1,
    "within": [
     "vsub.1"
@@ -85,6 +95,11 @@
    "writes": [
     "a localization key"
    ],
+   "scope": {
+    "this": "character",
+    "root": "character",
+    "reason": "every event runs in it unless it says otherwise"
+   },
    "winner": -1,
    "within": [
     "vsub.1"
@@ -147,6 +162,11 @@
    "takes": [
     "a block"
    ],
+   "scope": {
+    "this": "character",
+    "root": "character",
+    "reason": "every event runs in it unless it says otherwise"
+   },
    "winner": -1,
    "within": [
     "vsub.1"
@@ -171,6 +191,11 @@
    "writes": [
     "a localization key"
    ],
+   "scope": {
+    "this": "character",
+    "root": "character",
+    "reason": "every event runs in it unless it says otherwise"
+   },
    "winner": -1,
    "within": [
     "vsub.1",
@@ -238,7 +263,8 @@
    ],
    "scope": {
     "this": "character",
-    "reason": "the one scope it runs in"
+    "root": "character",
+    "reason": "every event runs in it unless it says otherwise"
    },
    "winner": -1,
    "stale": true,
@@ -282,6 +308,11 @@
    "key": "vsub.2",
    "head": "event",
    "name": "Two",
+   "scope": {
+    "this": "character",
+    "root": "character",
+    "reason": "every event runs in it unless it says otherwise"
+   },
    "sites": [
     {
      "path": "<fixtures>/ck3/game/events/sub/v_sub_events.txt",
@@ -320,6 +351,11 @@
    "writes": [
     "one of character_event"
    ],
+   "scope": {
+    "this": "character",
+    "root": "character",
+    "reason": "every event runs in it unless it says otherwise"
+   },
    "winner": -1,
    "within": [
     "vsub.2"
@@ -361,6 +397,11 @@
    "writes": [
     "a localization key"
    ],
+   "scope": {
+    "this": "character",
+    "root": "character",
+    "reason": "every event runs in it unless it says otherwise"
+   },
    "winner": -1,
    "within": [
     "vsub.2"
@@ -423,6 +464,11 @@
    "takes": [
     "a block"
    ],
+   "scope": {
+    "this": "character",
+    "root": "character",
+    "reason": "every event runs in it unless it says otherwise"
+   },
    "winner": -1,
    "within": [
     "vsub.2"
@@ -447,6 +493,11 @@
    "writes": [
     "a localization key"
    ],
+   "scope": {
+    "this": "character",
+    "root": "character",
+    "reason": "every event runs in it unless it says otherwise"
+   },
    "winner": -1,
    "within": [
     "vsub.2",
@@ -514,7 +565,8 @@
    ],
    "scope": {
     "this": "character",
-    "reason": "the one scope it runs in"
+    "root": "character",
+    "reason": "every event runs in it unless it says otherwise"
    },
    "winner": -1,
    "stale": true,

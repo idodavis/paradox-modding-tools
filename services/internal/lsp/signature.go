@@ -3,6 +3,7 @@
 package lsp
 
 import (
+	"slices"
 	"strings"
 
 	"paradox-modding-tools/services/internal/game"
@@ -11,16 +12,15 @@ import (
 	"paradox-modding-tools/services/internal/workspace"
 )
 
-// Signature is a command's arguments: the keys its block holds, and its blurb.
+// Signature is a command's arguments.
 type Signature struct {
-	Label      string   `json:"label"`
-	Parameters []string `json:"parameters"`
-	Docs       string   `json:"docs,omitempty"`
+	Label      string   `json:"label"`          // the command and its arguments
+	Parameters []string `json:"parameters"`     // the keys its block holds
+	Docs       string   `json:"docs,omitempty"` // its blurb
 }
 
-// SignatureHelp is the arguments of the command whose block holds the cursor: the keys a declared
-// source states its block holds, with the command's blurb; nil elsewhere. Only the block the cursor
-// is directly in counts: a key written in a command's block is no argument of a command above it.
+// SignatureHelp returns the arguments of the command whose block holds the cursor, from a declared source; nil
+// elsewhere. Only the block the cursor is directly in counts.
 func SignatureHelp(ws *workspace.Session, path string, line, col int) (*Signature, error) {
 	ws.RLock()
 	defer ws.RUnlock()
@@ -36,7 +36,7 @@ func SignatureHelp(ws *workspace.Session, path string, line, col int) (*Signatur
 	at := cursor.chain[holder]
 	assign, isAssign := at.statement.(*jomini.Assignment)
 	command := at.command(ws.Install.Schema)
-	if !isAssign || command == nil || command.Kinds&game.KindLink != 0 {
+	if !isAssign || command == nil || slices.Contains(command.Declared, game.DeclaredLink) {
 		return nil, nil
 	}
 	names, stated := positionKeys(command.Args)

@@ -13,19 +13,18 @@ import (
 	"paradox-modding-tools/services/internal/lsp"
 )
 
-// statement is one assignment that applies to a widget, with its file's parse and path, and the type or template
-// that wrote it ("" the widget's own block).
+// statement is one assignment that applies to a widget.
 type statement struct {
 	assignment *jomini.Assignment
-	parsed     *jomini.Result
-	path       string
-	writer     string
+	parsed     *jomini.Result // its file's parse
+	path       string         // its file
+	writer     string         // the type or template that wrote it; "" the widget's own block
 }
 
-// properties is the statements that apply to a widget in the order they apply, the last of each key at hand.
+// properties is the statements that apply to a widget.
 type properties struct {
-	statements []statement
-	byKey      map[string]statement
+	statements []statement          // in the order they apply
+	byKey      map[string]statement // the last of each key
 }
 
 // fields yields each assignment of a statement's block with the word written before it (block, blockoverride, "").
@@ -54,7 +53,7 @@ func fields(holder statement) iter.Seq2[string, statement] {
 	}
 }
 
-// propertiesOf is what a statement's block writes, as properties.
+// propertiesOf returns what a statement's block writes, as properties.
 func propertiesOf(holder statement) *properties {
 	properties := &properties{}
 	for _, field := range fields(holder) {
@@ -74,13 +73,13 @@ func (properties *properties) add(statements ...statement) {
 	}
 }
 
-// last is the statement that last wrote a key; false for none.
+// last returns the statement that last wrote a key; false for none.
 func (properties *properties) last(key string) (statement, bool) {
 	statement, has := properties.byKey[strings.ToLower(key)]
 	return statement, has
 }
 
-// scalar is the one word a key's last statement holds, its file's constants put in; false for none or a block.
+// scalar returns the one word a key's last statement holds, its file's constants put in; false for none or a block.
 func (properties *properties) scalar(key string) (string, bool) {
 	last, has := properties.last(key)
 	if !has {
@@ -93,7 +92,7 @@ func (properties *properties) scalar(key string) (string, bool) {
 	return last.parsed.Evaluated(value.Text, value.Range.Start), true
 }
 
-// numbers are the numbers a key's last value holds; false for none, or a value that is not numbers alone.
+// numbers returns the numbers a key's last value holds; false for none, or a value that is not numbers alone.
 func (properties *properties) numbers(key string) ([]float64, bool) {
 	last, has := properties.last(key)
 	if !has {
@@ -110,7 +109,7 @@ func (properties *properties) numbers(key string) ([]float64, bool) {
 	return numbers, len(numbers) > 0
 }
 
-// choices are the lower-cased words a key's last value names, split on | and space; false for none.
+// choices returns the lower-cased words a key's last value names, split on | and space; false for none.
 func (properties *properties) choices(key string) ([]string, bool) {
 	last, has := properties.last(key)
 	if !has {
@@ -125,7 +124,7 @@ func (properties *properties) choices(key string) ([]string, bool) {
 	return choices, len(choices) > 0
 }
 
-// color is a key's last color block as CSS; false for none.
+// color returns a key's last color block as CSS; false for none.
 func (properties *properties) color(key string) (string, bool) {
 	last, has := properties.last(key)
 	if !has {
@@ -135,17 +134,17 @@ func (properties *properties) color(key string) (string, bool) {
 	return css, css != ""
 }
 
-// cssOf is a value's color as CSS, a color block read by its tag's row; "" for a value that is no color.
+// cssOf returns a value's color as CSS, a color block read by its tag's row; "" for a value that is no color.
 func cssOf(value jomini.Value) string {
 	tag, parts, isColor := jomini.ColorParts(value)
-	if color, isKnown := game.ColorOf(tag, parts); isColor && isKnown {
-		return color.CSS()
+	if color, isKnown := game.ParseColor(tag, parts); isColor && isKnown {
+		return color.ToCSS()
 	}
 	return ""
 }
 
-// scalars are a statement's value with its file's constants put in: a scalar, a block's values, or the x and y a
-// block writes as keys; a tagged value (rgb { }, list "x") is none.
+// scalars returns a statement's value with its file's constants put in: a scalar, a block's values, or the x and y a
+// block writes as keys; a tagged value (rgb { }, list "x") gives none.
 func (statement statement) scalars() []string {
 	var scalars []string
 	switch value := statement.assignment.Value.(type) {
@@ -170,7 +169,7 @@ func (statement statement) scalars() []string {
 	return scalars
 }
 
-// text is a statement's value as written.
+// text returns a statement's value as written.
 func (statement statement) text() string {
 	if scalar, isScalar := statement.assignment.Value.(*jomini.Scalar); isScalar {
 		return scalar.Text
@@ -181,12 +180,12 @@ func (statement statement) text() string {
 	return statement.parsed.Flat(statement.assignment.Value.NodeRange())
 }
 
-// span is where a statement is written, as the editor counts.
+// span returns where a statement is written, as the editor counts.
 func (statement statement) span() lsp.Range {
 	return statement.rangeOf(statement.assignment.Range)
 }
 
-// valueSpan is where a statement's value is written, as the editor counts; its whole span where it has none.
+// valueSpan returns where a statement's value is written, as the editor counts; its whole span where it has none.
 func (statement statement) valueSpan() lsp.Range {
 	if statement.assignment.Value == nil {
 		return statement.span()
@@ -194,7 +193,7 @@ func (statement statement) valueSpan() lsp.Range {
 	return statement.rangeOf(statement.assignment.Value.NodeRange())
 }
 
-// rangeOf is a byte range of the statement's file as the editor counts.
+// rangeOf returns a byte range of the statement's file as the editor counts.
 func (statement statement) rangeOf(span jomini.Range) lsp.Range {
 	lines := statement.parsed.Lines()
 	return lsp.Range{Start: lines.PositionAt(span.Start), End: lines.PositionAt(span.End)}

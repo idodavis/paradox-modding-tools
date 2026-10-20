@@ -199,8 +199,8 @@ var scanned = sync.OnceValues(func() (*index.Install, error) {
 	return index.Scan(context.Background(), index.Request{Game: "ck3", Dir: dir, Version: "test"})
 })
 
-// openWorkspace is a session over the fixture install with the given mods, each a map of rel to text, written to
-// a temporary folder.
+// openWorkspace returns a session over the fixture install with the given mods, each a map of rel to text, written to a
+// temporary folder.
 func openWorkspace(t *testing.T, mods ...map[string]string) *workspace.Session {
 	t.Helper()
 	install, err := scanned()
@@ -213,15 +213,15 @@ func openWorkspace(t *testing.T, mods ...map[string]string) *workspace.Session {
 		writeTree(t, dir, files)
 		playset = append(playset, workspace.Mod{ID: "mod" + string(rune('a'+i)), Dir: dir})
 	}
-	ws, err := workspace.Open(t.Context(), game.Get("ck3"), install, playset, "")
+	ws, err := workspace.Open(t.Context(), game.Lookup("ck3"), install, playset, "")
 	if err != nil {
 		t.Fatal(err)
 	}
 	return ws
 }
 
-// healthWorkspace is a session over the fixture install with two mods: mod a defines and uses names, ships english
-// and french localization, and writes references that resolve, depend on mod b and dangle; mod b redefines some.
+// healthWorkspace returns a session over the fixture install with two mods: a defines and uses names, ships english and
+// french localization and writes references that resolve, depend on b and dangle; b redefines some.
 func healthWorkspace(t *testing.T) *workspace.Session {
 	t.Helper()
 	return openWorkspace(t,
@@ -237,12 +237,12 @@ func healthWorkspace(t *testing.T) *workspace.Session {
 		})
 }
 
-// healthOf is the report of a session in a load order, its findings made as the service makes them.
+// healthOf returns the report of a session in a load order, its findings made as the service makes them.
 func healthOf(ws *workspace.Session, params HealthParams) *HealthReport {
 	return Health(ws, params, (&Findings{}).Current(ws))
 }
 
-// linesAt is the source each site shows, a definition's statement or a reference's line.
+// linesAt returns the source each site shows, a definition's statement or a reference's line.
 func linesAt(ws *workspace.Session, health *HealthReport, sites []Site, definition bool) [][]string {
 	var places []SourceAt
 	for _, site := range sites {
@@ -251,7 +251,7 @@ func linesAt(ws *workspace.Session, health *HealthReport, sites []Site, definiti
 	return Lines(ws, places)
 }
 
-// contestNamed is the test of a contest by its name.
+// contestNamed returns the test of a contest by its name.
 func contestNamed(name string) func(Contest) bool {
 	return func(contest Contest) bool { return contest.Name == name }
 }
@@ -340,12 +340,12 @@ func TestHealthLocalization(t *testing.T) {
 	}
 
 	// what reads one key
-	if readers := LocReaders(ws, "a.1.t"); len(readers) != 1 || readers[0].At.Origin != modA {
+	if readers := LocReaders(ws, "a.1.t"); len(readers) != 1 || readers[0].File.Origin != modA {
 		t.Errorf("a key's readers: %+v", readers)
 	}
 }
 
-// ids is the ids of a graph's nodes, in order.
+// ids returns the ids of a graph's nodes, in order.
 func ids(graph *EventGraph) []string {
 	var out []string
 	for _, node := range graph.Nodes {
@@ -354,7 +354,7 @@ func ids(graph *EventGraph) []string {
 	return out
 }
 
-// edge is the edge a graph draws between two ids.
+// edge returns the edge a graph draws between two ids.
 func edge(graph *EventGraph, from, to string) (Edge, bool) {
 	i := slices.IndexFunc(graph.Edges, func(edge Edge) bool { return edge.From == from && edge.To == to })
 	if i < 0 {
@@ -363,8 +363,8 @@ func edge(graph *EventGraph, from, to string) (Edge, bool) {
 	return graph.Edges[i], true
 }
 
-// graphWorkspace is a session over the fixture install with one mod: a chain g.0 to g.6 and an event nothing
-// connects, a wide fan-out w.0, an event firing through a scripted effect, and an on_action firing g.3.
+// graphWorkspace returns a session over the fixture install with one mod: a chain g.0 to g.6, a lone event, a wide
+// fan-out w.0, an event firing through a scripted effect, and an on_action firing g.3.
 func graphWorkspace(t *testing.T) *workspace.Session {
 	t.Helper()
 	chain := "namespace = g\n"
@@ -519,7 +519,7 @@ func TestDetail(t *testing.T) {
 		"localization/english/m_l_english.yml": "\xEF\xBB\xBFl_english:\n v.1.a:0 \"Go\"\n",
 	})
 	detail := EventDetail(ws, macroRoot)
-	if detail.Reason != "" || detail.Kind != "event" || detail.At.Origin != modA {
+	if detail.Reason != "" || detail.Kind != "event" || detail.File.Origin != modA {
 		t.Fatalf("the header: %+v", detail)
 	}
 	if drawn := Graph(ws, Params{Root: macroRoot, Depth: 1, Fanout: 5, MaxNodes: 10}); len(drawn.Nodes) == 0 || drawn.Nodes[0].Title != "Hello" {
@@ -544,7 +544,7 @@ func TestDetail(t *testing.T) {
 	if len(detail.Options) != 1 || detail.Options[0].Names[0].Key != "v.1.a" || detail.Options[0].Names[0].Text != "Go" {
 		t.Errorf("the options: %+v", detail.Options)
 	}
-	if len(detail.Refs) == 0 || detail.Refs[0].Database != game.Localization || len(detail.Refs[0].Refs) != 3 || detail.Refs[0].Refs[1].Name != "v.1.desc" || detail.Refs[0].Refs[0].At.Origin != modA {
+	if len(detail.Refs) == 0 || detail.Refs[0].Database != game.Localization || len(detail.Refs[0].Refs) != 3 || detail.Refs[0].Refs[1].Name != "v.1.desc" || detail.Refs[0].Refs[0].File.Origin != modA {
 		t.Errorf("the block's references, by kind in the order written: %+v", detail.Refs)
 	}
 	if len(detail.Fires) != 1 || detail.Fires[0].Name != "v.2" {
@@ -561,7 +561,7 @@ func TestDetail(t *testing.T) {
 	}
 }
 
-// firstStatement is the first statement of a text.
+// firstStatement returns the first statement of a text.
 func firstStatement(text string) jomini.Statement {
 	return jomini.Parse(text).Root.Statements[0]
 }

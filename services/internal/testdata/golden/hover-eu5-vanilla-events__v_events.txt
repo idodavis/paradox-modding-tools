@@ -5,6 +5,11 @@
    "word": "ev.1",
    "key": "ev.1",
    "head": "event",
+   "scope": {
+    "this": "country",
+    "root": "country",
+    "reason": "every event runs in it unless it says otherwise"
+   },
    "sites": [
     {
      "path": "<fixtures>/eu5/game/in_game/events/v_events.txt",
@@ -43,6 +48,11 @@
    "writes": [
     "one of country_event"
    ],
+   "scope": {
+    "this": "country",
+    "root": "country",
+    "reason": "its type says so"
+   },
    "winner": -1,
    "within": [
     "ev.1"
@@ -84,6 +94,11 @@
    "takes": [
     "a block"
    ],
+   "scope": {
+    "this": "country",
+    "root": "country",
+    "reason": "its type says so"
+   },
    "winner": -1,
    "within": [
     "ev.1"
@@ -108,6 +123,11 @@
    "takes": [
     "triggers"
    ],
+   "scope": {
+    "this": "country",
+    "root": "country",
+    "reason": "its type says so"
+   },
    "winner": -1,
    "within": [
     "ev.1",

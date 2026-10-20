@@ -9,8 +9,8 @@ stress test of the preview, never a promise of fidelity.
 The preview translates; three engines think. The index resolves the script. The game's shaders say how a sprite is
 cut, scaled and masked. The browser lays out, breaks lines, slices, masks and blends. Everything the preview decides
 that none of the three does is a row in a table with its source beside it: the CK3 wiki's Interface page, a shader
-file, or vanilla observed in the app. The rows are `game/gui-rules.go` (how each built-in type draws, the roles of a
-widget's blocks, where a window is laid out, the state it opens in, the calls the preview answers), `game/coa-rules.go`
+file, or vanilla observed in the app. The rows are `game/gui.go` (how each built-in type draws, the roles of a
+widget's blocks, where a window is laid out, the state it opens in, the calls the preview answers), `game/coat.go`
 (what a coat reads, where each game keeps its coats and textures, its field, which way depth orders it, its shading
 and the frames its designer previews), `frontend/src/draw/picture.ts` (what a holding and a property mean in CSS)
 and `frontend/src/draw/coat.ts` (how a coat's shaders color its textures and where its keys place a layer).
@@ -45,7 +45,7 @@ pre-order, the widgets the game lays the entry out in (`Holders`), the textures 
 listed once, the calls they are shown on (`Groups`), and what nothing found (`Missing`). An entry is a window drawn as
 written, or a type, template, text icon or format drawn alone (`IsAlone`) as the script `entryRows` names it by. A
 `Widget` is its element, its role among its siblings (`WidgetSlots`: a skin, chrome, a label, a data model's item),
-its type's row stamped for the workspace's game (`Type`, `Holds`, `Clips`, `Fills`, `CentersText`, `DropsHidden`),
+its type's row stamped for the workspace's game (`Type`, `Holding`, `Clips`, `Fills`, `CentersText`, `DropsHidden`),
 every property as written (`Properties`, the last written of each key, a call `GUIAnswered` names replaced by the
 entry's value), its textures and its text, and what it is shown on (`IsHidden`, `Condition`). `Render` keeps the last
 GUI resolve for the panel.

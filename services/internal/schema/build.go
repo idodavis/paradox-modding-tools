@@ -1,5 +1,5 @@
-// build.go is the pipeline: Build makes one game version's schema, each source in turn. Declaring the databases
-// lives here.
+// build.go is the pipeline: Build makes one game version's schema, each source in turn. Declaring the databases,
+// and the one pick of the database that houses each special thing, live here.
 
 package schema
 
@@ -7,6 +7,7 @@ import (
 	"cmp"
 	"context"
 	"fmt"
+	"log/slog"
 	"maps"
 	"path"
 	"slices"
@@ -19,86 +20,83 @@ import (
 
 // Input is what the schema stage reads.
 type Input struct {
-	Game, Version string
-	Install       []inventory.File                                                 // the install's inventory, in load order
-	Dumps         []inventory.File                                                 // the dump folders' inventory
-	Wiki          func(databases []string) (map[string][]string, time.Time, error) // the wiki's script examples by database and its sidecar's time; nil for none
-	Updated       time.Time                                                        // game.InstallUpdatedAt
-	LocKeys       map[string]bool                                                  // the install's localization keys, english and the workspace language
-	DumpsOnly     bool                                                             // stop after the databases and dumps: the shipped schema's part
-	Shipped       *Schema                                                          // a shipped dump part, taken in place of reading the dump files
+	Game      string
+	Version   string
+	Install   []inventory.File // the install's inventory, in load order
+	Dumps     []inventory.File // the dump folders' inventory
+	Updated   time.Time        // when the install was last updated (game.ReadInstallUpdatedAt)
+	LocKeys   map[string]bool  // the install's localization keys, english and the workspace language
+	DumpsOnly bool             // stop after the databases and dumps: the shipped schema's part
+	Shipped   *Schema          // a shipped dump part, taken in place of reading the dump files
+
+	// Wiki returns the wiki's script examples by database and its sidecar's time; nil for none.
+	Wiki func(databases []string) (map[string][]string, time.Time, error)
 }
 
-// Build reads every source into the schema. A claim keeps its highest-ranked source (Claim.Set), so the steps
-// follow their data, not the ranks: the databases first, since every step reads them; the docs parsed before
-// vanilla, since the entry detector reads the keys they write; vanilla whole before its types are inferred; the
-// docs' claims merged after vanilla, since they merge only where vanilla writes. No two positions share a
-// subtree, since the cache writes a shared pointer once per reference (a ScriptedEntry names its database).
-// Every string written into a map or a position is cloned, so the schema never pins a file's text.
+// Build reads every source into the schema in the order its data needs: databases, docs, vanilla, inferred types,
+// then the docs' claims where vanilla writes. No two positions share a subtree, and every kept string is cloned.
 func Build(ctx context.Context, input Input) (*Schema, error) {
-	info := game.Get(input.Game)
+	info := game.Lookup(input.Game)
 	if info == nil {
 		return nil, fmt.Errorf("unknown game %q", input.Game)
 	}
-	s := &Schema{
-		Game: input.Game, Version: input.Version, Sources: map[Source]SourceState{}, Databases: map[string]*Database{},
+	schema := &Schema{
+		Game: input.Game, Version: input.Version, Sources: map[game.Source]SourceState{}, Databases: map[string]*Database{},
 	}
-	s.declareDatabases(input.Install, info) // 1: the registry's rows for the folders the install holds
-	s.dumpsOrShipped(input)                 // 2: the dumps parsed, or the shipped backup
+	schema.declareDatabases(input.Install, info) // 1: the registry's rows for the folders the install holds
+	schema.dumpsOrShipped(input)                 // 2: the dumps parsed, or the shipped backup
 	if input.DumpsOnly {
-		return s, nil
+		return schema, nil
 	}
-	s.stampConstructs()                  // 3: the constructs' shapes under the commands that hold them
-	docs, err := s.parseDocs(ctx, input) // 4: the docs and the wiki's examples parsed, every key they write noted
+	schema.stampKeywords()                    // 3: the keywords' shapes under the commands that hold them
+	docs, err := schema.parseDocs(ctx, input) // 4: the docs and the wiki's examples parsed, every key they write noted
 	if err != nil {
 		return nil, err
 	}
-	names, err := s.countVanilla(ctx, input.Install, info) // 5: what vanilla writes, counted
+	names, err := schema.countVanilla(ctx, input.Install, info) // 5: what vanilla writes, counted
 	if err != nil {
 		return nil, err
 	}
-	s.inferTypesAndPrefixes(names, input.LocKeys) // 6: a kind where nothing declares one; each prefix's database
-	s.mergeDocs(docs)                             // 7: the docs' claims, merged where vanilla writes
-	return s, nil
+	schema.inferTypesAndPrefixes(names, input.LocKeys) // 6: a kind where nothing declares one; each prefix's database
+	schema.mergeDocs(docs)                             // 7: the docs' claims, merged where vanilla writes
+	return schema, nil
 }
 
-// stampConstructs is each construct row that names a command claiming, for the registry, the shape the
-// key's block holds at the position under that command's arguments (random_list's <number> branches hold
-// effects, switch's <any> cases hold the enclosing shape), made if missing.
-func (schema *Schema) stampConstructs() {
-	for _, row := range game.Constructs {
+// stampKeywords claims for the registry the shape a keyword's block holds under its command's arguments (random_list's
+// <number> branches hold effects), making the position if missing.
+func (schema *Schema) stampKeywords() {
+	for _, row := range game.Keywords {
 		if command := schema.Commands[row.Command]; row.Command != "" && command != nil {
-			command.Args.EnsureChild(row.Key).Holds.Set(row.Holds, SourceRegistry)
+			command.Args.EnsureChild(row.Key).Shape.Set(row.Shape, game.SourceRegistry)
 		}
 	}
 }
 
-// declareDatabase makes a database. Its entry block is a fields block unless its descriptor's Body says what
-// the entry holds; each of the descriptor's Refs names the entries of its database, the database's own where it
-// says none.
-func (schema *Schema) declareDatabase(name string, row game.Descriptor) {
-	database := &Database{Name: name, Entry: &Position{}, Descriptor: row, Fields: map[string]bool{}}
-	database.Entry.Holds.Set(cmp.Or(row.Body, game.ShapeFields), SourceRegistry)
-	for _, ref := range row.Refs {
+// declareDatabase makes a database: its entry holds fields unless its rule's Shape says otherwise, and each of the
+// rule's References names entries of its database, or of the database itself where it names none.
+func (schema *Schema) declareDatabase(name string, rule game.DatabaseRule) {
+	database := &Database{Name: name, Entry: &Position{}, Rule: rule, Fields: map[string]bool{}}
+	database.Entry.Shape.Set(cmp.Or(rule.Shape, game.ShapeFields), game.SourceRegistry)
+	for _, reference := range rule.References {
 		position := database.Entry
-		for step := range strings.SplitSeq(ref.At, "/") {
+		for step := range strings.SplitSeq(reference.KeyPath, "/") {
 			position = position.EnsureChild(step)
 		}
-		position.Value.Set(Expected{Type: ValueReference, Database: cmp.Or(ref.Database, name)}, SourceRegistry)
+		position.Value.Set(Expected{Type: ValueReference, Database: cmp.Or(reference.Database, name)}, game.SourceRegistry)
 	}
 	schema.Databases[name] = database
 }
 
-// declareDatabases declares the databases the install's folders and the game's rows make, then the calls
-// that resolve in them. It comes first because every later step reads databases.
-func (schema *Schema) declareDatabases(install []inventory.File, info *game.GameInfo) {
+// declareDatabases declares the databases the install's folders and the game's rules make, the calls that resolve in
+// them, and the database that houses each special thing (events, lists...). It comes first: later steps read them.
+func (schema *Schema) declareDatabases(install []inventory.File, info *game.Game) {
 	// each script file's folder is a database; a file at the root belongs to none, and one whose file type
 	// names its own entries (.asset, .gui) makes its folder no database. Shallow folders first, so a common/
 	// subfolder finds its ancestor's database.
 	var scripts []string
 	for _, file := range install {
-		fileType, typed := game.FileTypes[strings.ToLower(path.Ext(file.Rel))]
-		if file.Format == inventory.Script && typed && fileType.NameKey == "" && fileType.Keywords == nil {
+		fileType := game.FindRuleByExtension(strings.ToLower(path.Ext(file.Rel)))
+		if file.Format == inventory.Script && fileType.Extension != "" && fileType.NameKey == "" && fileType.DeclaringKeys == nil {
 			scripts = append(scripts, file.Rel)
 		}
 	}
@@ -106,20 +104,30 @@ func (schema *Schema) declareDatabases(install []inventory.File, info *game.Game
 		return cmp.Compare(strings.Count(first, "/"), strings.Count(second, "/"))
 	})
 	for _, rel := range scripts {
-		if at, name := schema.folder(rel); at != "." && schema.Databases[name] == nil {
-			row, _ := info.At(at)
-			row.Database, row.Path = name, at
-			schema.declareDatabase(name, row)
+		if folder, name := schema.folder(rel); folder != "." && schema.Databases[name] == nil {
+			rule, _ := info.FindRule(folder)
+			rule.Name, rule.Path = name, folder
+			schema.declareDatabase(name, rule)
 		}
 	}
-	for _, row := range info.Descriptors {
+	folders := map[string]bool{} // every folder the install holds, and every file, as a rule's Path names them
+	for _, file := range install {
+		folders[file.Rel] = true
+		for dir := path.Dir(file.Rel); dir != "."; dir = path.Dir(dir) {
+			folders[dir] = true
+		}
+	}
+	for _, rule := range info.Rules {
 		switch {
-		case row.Parent != "" && row.Of != "":
-			schema.declareDatabase(row.Database, row) // a nested database that sets up entries defined elsewhere
-		case row.Path == "" && row.Parent == "":
-			extension, _, _ := strings.Cut(row.Database, ".") // a file type's own database (gui.type), with the type's Body
-			row.Body = game.FileTypes["."+extension].Body
-			schema.declareDatabase(row.Database, row)
+		case rule.Extension != "": // a file type's rule declares no database
+		case rule.ParentPath != "" && rule.Target != "":
+			schema.declareDatabase(rule.Name, rule) // a nested database that sets up entries defined elsewhere
+		case rule.Path == "" && rule.ParentPath == "":
+			extension, _, _ := strings.Cut(rule.Name, ".") // a file type's own database (gui.type)
+			rule.Shape = game.FindRuleByExtension("." + extension).Shape
+			schema.declareDatabase(rule.Name, rule)
+		case rule.Path != "" && rule.Name != "" && schema.Databases[rule.Name] == nil && folders[rule.Path]:
+			schema.declareDatabase(rule.Name, rule) // a folder with no script file (reader_export): its prose documents it
 		}
 	}
 
@@ -127,7 +135,7 @@ func (schema *Schema) declareDatabases(install []inventory.File, info *game.Game
 	// file type's own database answers only its own words)
 	schema.Callees = map[string][]string{}
 	for _, name := range slices.Sorted(maps.Keys(schema.Databases)) {
-		callers := schema.Databases[name].Descriptor.Callers
+		callers := schema.Databases[name].Rule.CallerWords
 		if len(callers) > 0 && !strings.Contains(name, ".") {
 			callers = append(slices.Clone(callers), game.AnyCall)
 		}
@@ -135,7 +143,34 @@ func (schema *Schema) declareDatabases(install []inventory.File, info *game.Game
 			schema.Callees[word] = append(schema.Callees[word], name)
 		}
 	}
-	schema.Lists = cmp.Or(schema.DatabasesWhere(func(row game.Descriptor) bool { return row.Purpose == game.PurposeLists })...)
-	schema.Events = cmp.Or(schema.DatabasesWhere(func(row game.Descriptor) bool { return row.Purpose == game.PurposeEvents })...)
-	schema.Functions = cmp.Or(schema.DatabasesWhere(func(row game.Descriptor) bool { return row.Purpose == game.PurposeFunctions })...)
+	schema.Lists = schema.findHousingDatabase("lists")
+	schema.Functions = schema.findHousingDatabase("functions")
+	schema.Events = schema.findHousingDatabase("events")
+	schema.Concepts = schema.findHousingDatabase("concepts")
+}
+
+// findHousingDatabase returns the database that houses a thing among the databases declared, by FindHousingDatabase.
+func (schema *Schema) findHousingDatabase(houses string) string {
+	rules := make([]game.DatabaseRule, 0, len(schema.Databases))
+	for _, database := range schema.Databases {
+		rules = append(rules, database.Rule)
+	}
+	return FindHousingDatabase(rules, houses)
+}
+
+// FindHousingDatabase returns the database that houses a thing (events, on_actions, lists...) among rules: the first
+// by name, "" where none. Two such databases are logged, and the first stands, so every reader finds the same one.
+func FindHousingDatabase(rules []game.DatabaseRule, houses string) string {
+	var names []string
+	for _, rule := range rules {
+		if rule.Houses == houses {
+			names = append(names, rule.Name)
+		}
+	}
+	slices.Sort(names)
+	names = slices.Compact(names)
+	if len(names) > 1 {
+		slog.Warn("a houses has several databases", "houses", houses, "databases", names)
+	}
+	return cmp.Or(names...)
 }

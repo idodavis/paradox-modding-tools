@@ -7,27 +7,33 @@
 export interface DetectedInstall {
     "gameId": string;
     "name": string;
+
+    /**
+     * the install folder
+     */
     "path": string;
+
+    /**
+     * "" where none is read
+     */
     "version": string;
 }
 
 /**
- * GameInfo is the static identity and convention set for one game. It carries no
- * derived data; the engine scans the install for that.
+ * Game is the static identity of one game and the rules of its script; the engine scans the install for the rest.
  */
-export interface GameInfo {
+export interface Game {
     "id": string;
     "name": string;
     "shortName": string;
 
     /**
-     * ModDescriptor is how a mod root is identified: "mod" (descriptor.mod) or
-     * MetadataDescriptor (.metadata/metadata.json).
+     * "mod" (descriptor.mod) or MetadataDescriptor
      */
     "descriptor"?: string;
 
     /**
-     * FirstWins is Layout.FirstWins as the sentence the Conflicts and Settings pages show.
+     * the pages' sentence on its first-wins databases
      */
     "firstWins"?: string;
 }
@@ -37,7 +43,7 @@ export interface GameInfo {
  */
 export interface GameList {
     "originVanilla": string;
-    "games": (GameInfo | null)[] | null;
+    "games": (Game | null)[] | null;
 }
 
 /**
@@ -61,17 +67,32 @@ export enum Holding {
 };
 
 /**
- * RGBA is a color, each part from 0 to 1.
+ * RGBA is a color.
  */
 export interface RGBA {
+    /**
+     * red, 0 to 1
+     */
     "r": number;
+
+    /**
+     * green, 0 to 1
+     */
     "g": number;
+
+    /**
+     * blue, 0 to 1
+     */
     "b": number;
+
+    /**
+     * alpha, 0 to 1
+     */
     "a": number;
 }
 
 /**
- * WidgetRole is what a widget-valued block is to the widget that writes it: a child ("") or one of the four below.
+ * WidgetRole is what a widget-valued block is to the widget that writes it; "" a child.
  */
 export enum WidgetRole {
     /**

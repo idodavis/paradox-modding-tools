@@ -8,41 +8,81 @@
 export type Calendar = Era[] | null;
 
 /**
- * Era is one era of a mod's calendar: its name and the year before its first (AGOT's A.C., 8000).
+ * Era is one era of a mod's calendar.
  */
 export interface Era {
+    /**
+     * A.C.
+     */
     "name": string;
+
+    /**
+     * the year before its first: 8000
+     */
     "offset": number;
 }
 
 /**
- * Fire is the definition at the far end of a fire, its database, and the scripted entries between; where it starts
- * in the definition (the fire, or the scripted call that leads to it) and the definition's block it sits in there
- * (option a, immediate); and the statement that fires, as written, with its other fields (trigger_event; days = 30).
+ * Fire is one definition fired by, or firing, another, with where in it the fire is written.
  */
 export interface Fire {
+    /**
+     * the definition at the far end
+     */
     "name": string;
+
+    /**
+     * its database
+     */
     "database": string;
 
     /**
-     * what one of its database is called (game.KindName)
+     * what one of its database is called (game.DescribeEntry)
      */
     "kind": string;
+
+    /**
+     * the scripted entries between, as a chain
+     */
     "via": string;
 
     /**
      * how many scripted entries Via names
      */
     "through"?: number;
+
+    /**
+     * where the fire starts: its file
+     */
     "path": string;
+
+    /**
+     * its file's path from its origin's root
+     */
     "rel": string;
+
+    /**
+     * its file's origin
+     */
     "origin": string;
 
     /**
      * 0-based
      */
     "line": number;
+
+    /**
+     * the definition's block it sits in (option a, immediate)
+     */
     "block"?: string;
+
+    /**
+     * the statement that fires, as written (trigger_event)
+     */
     "command"?: string;
+
+    /**
+     * its other fields (days = 30)
+     */
     "args"?: string;
 }

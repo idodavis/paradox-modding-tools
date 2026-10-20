@@ -24,15 +24,15 @@ import (
 type Diagnostic struct {
 	Range    Range  `json:"range"`
 	Severity int    `json:"severity"` // 1 error, 2 warning
-	Code     string `json:"code"`
+	Code     string `json:"code"`     // the check that found it
 	Message  string `json:"message"`
 }
 
-// Code is one check, for the settings: what it finds, and whether it runs by default.
+// Code is one check, as the settings list it.
 type Code struct {
 	Code    string `json:"code"`
-	Summary string `json:"summary"`
-	Default bool   `json:"default"`
+	Summary string `json:"summary"` // what it finds
+	Default bool   `json:"default"` // it runs by default
 }
 
 // Codes is every check a user may turn off. The parsers' errors are not among them: a file that
@@ -55,17 +55,15 @@ var Codes = []Code{
 
 // judge gathers the findings of one file.
 type judge struct {
-	file    *openFile
-	enabled map[string]bool
-	// by 0-based line: the codes a pmt:ignore comment turns off there; an empty list turns off all
-	ignored map[int][]string
-	// the position each value sits at, by its span
-	positions map[jomini.Range]*schema.Position
+	file      *openFile
+	enabled   map[string]bool                   // the checks that run
+	ignored   map[int][]string                  // by 0-based line, the codes a pmt:ignore comment turns off; empty all
+	positions map[jomini.Range]*schema.Position // the position each value sits at, by its span
 	out       []Diagnostic
 }
 
-// Diagnose is the findings of a mod's script or localization file, with the codes that are on; nil
-// enabled means each code's default. The install's files and other formats have none.
+// Diagnose returns the findings of a mod's script or localization file with the codes that are on (nil enabled: each
+// code's default); the install's files and other formats have none.
 func Diagnose(ws *workspace.Session, path string, enabled map[string]bool) ([]Diagnostic, error) {
 	ws.RLock()
 	defer ws.RUnlock()
@@ -108,9 +106,8 @@ func (judge *judge) report(span jomini.Range, severity int, code, message string
 	judge.out = append(judge.out, Diagnostic{Range: judge.file.span(span), Severity: severity, Code: code, Message: message})
 }
 
-// ignores reads every `# pmt:ignore code, code` comment of a text: its codes, split on commas and
-// blanks, apply to its own line and the line below, unless that line has a comment of its own. No
-// codes turn every check off.
+// ignores reads every `# pmt:ignore code, code` comment of a text: its codes apply to its own line and the line below,
+// unless that line has a comment of its own; no codes turn every check off.
 func ignores(text string, lines *jomini.LineIndex) map[int][]string {
 	ignored := map[int][]string{}
 	for number := range lines.LineCount() {
@@ -141,9 +138,8 @@ func (judge *judge) script() {
 	judge.definitions(occurrences)
 }
 
-// statement judges what one statement writes: its key by the scope it runs in and the variable it
-// reads, its block by the keys it leaves out, its value by the scope, the variable and the type it
-// reads.
+// statement judges one statement: its key by the scope and variable it reads, its block by the keys it leaves out,
+// its value by scope, variable and type.
 func (judge *judge) statement(at step) {
 	if assign, isAssign := at.statement.(*jomini.Assignment); isAssign {
 		judge.variableRead(at, &assign.Key)
@@ -160,14 +156,14 @@ func (judge *judge) statement(at step) {
 // undeclaredNamespace finds a block written outside any entry of an events file under a key shaped as an event id: no
 // event, since the file declares no namespace of its id (undeclared-namespace), which the game does not load either.
 func (judge *judge) undeclaredNamespace(at step, assign *jomini.Assignment) {
-	row := judge.file.ws.Install.Schema.DatabaseAt(judge.file.place.Rel)
-	if at.context.Entry >= 0 || row == nil || row.Descriptor.NamespaceKey == "" || jomini.ChildBlock(at.statement) == nil ||
+	database := judge.file.ws.Install.Schema.DatabaseAt(judge.file.place.Rel)
+	if at.context.Entry >= 0 || database == nil || database.Rule.NamespaceKey == "" || jomini.ChildBlock(at.statement) == nil ||
 		!jomini.IsEventID(assign.Key.Text) {
 		return
 	}
 	namespace, _, _ := strings.Cut(assign.Key.Text, ".")
 	judge.report(assign.Key.Range, 2, "undeclared-namespace",
-		fmt.Sprintf("this file declares no %s = %s, so the game does not load %s", row.Descriptor.NamespaceKey, namespace, assign.Key.Text))
+		fmt.Sprintf("this file declares no %s = %s, so the game does not load %s", database.Rule.NamespaceKey, namespace, assign.Key.Text))
 }
 
 // variableRead finds a variable read in a scope that stores none (wrong-scope: a command written in
@@ -208,13 +204,12 @@ func (judge *judge) wrongScope(at step, assign *jomini.Assignment) {
 	judge.report(assign.Key.Range, 2, "wrong-scope", message)
 }
 
-// missingKey finds the keys of an entry's block that the game's docs say every such block writes
-// and this one leaves out (missing-key: a key the game's docs say every entry writes, left out). A
-// key with a mode word adds to another entry and may leave keys out.
+// missingKey finds the keys the game's docs say every such block writes and this one leaves out (missing-key); a key
+// with a mode word adds to another entry and may leave keys out.
 func (judge *judge) missingKey(at step, assign *jomini.Assignment) {
 	ws := judge.file.ws
 	s, position, block := ws.Install.Schema, at.inner.Position(), jomini.BlockOf(assign.Value)
-	if mode, _ := ws.Game.Mode(assign.Key.Text); block == nil || position == nil || mode != "" {
+	if mode, _ := ws.Game.SplitMode(assign.Key.Text); block == nil || position == nil || mode != "" {
 		return
 	}
 	writes := map[string]bool{}
@@ -229,10 +224,8 @@ func (judge *judge) missingKey(at step, assign *jomini.Assignment) {
 	}
 }
 
-// wrongValue finds a value of another type than its key takes, or a word outside the words it takes
-// (wrong-value-type: a value of another type than the key takes; wrong-declared-value: a word
-// outside the words the key takes). It notes the position each value sits at, which unresolved
-// reads.
+// wrongValue finds a value of another type than its key takes (wrong-value-type) or a word outside the words it takes
+// (wrong-declared-value), and notes the position each value sits at for unresolved.
 func (judge *judge) wrongValue(at step, scalar *jomini.Scalar) {
 	ws := judge.file.ws
 	s, text := ws.Install.Schema, scalar.Text
@@ -266,10 +259,8 @@ func (judge *judge) wrongValue(at step, scalar *jomini.Scalar) {
 	}
 }
 
-// unresolved finds the names the file refers to that nothing defines: an event id no event defines
-// (unknown-event), a word naming an entry nothing defines (unresolved-ref) and a path that exists
-// nowhere (missing-file). Only a name written as the value of a key a declared source types is
-// judged.
+// unresolved finds the names the file refers to that nothing defines: an event id (unknown-event), an entry
+// (unresolved-ref) and a path (missing-file); only a value of a key a declared source types is judged.
 func (judge *judge) unresolved(occurrences []schema.Occurrence) {
 	ws := judge.file.ws
 	s := ws.Install.Schema
@@ -277,16 +268,16 @@ func (judge *judge) unresolved(occurrences []schema.Occurrence) {
 		if ref.Role != schema.Refers {
 			continue
 		}
-		position, row := judge.positions[ref.Range], s.Databases[ref.Database]
+		position, database := judge.positions[ref.Range], s.Databases[ref.Database]
 		text := strings.Trim(judge.file.text[ref.Range.Start:ref.Range.End], `"`)
-		linked := row != nil && strings.HasSuffix(text, ":"+ref.ID)
+		linked := database != nil && strings.HasSuffix(text, ":"+ref.ID)
 		typed := position != nil && s.MayAccuse(schema.CheckValue, position, nil)
 		isEvent := s.Events != "" && ref.Database == s.Events
 		var claim schema.Expected
 		if position != nil {
 			claim = position.Value.Value
 		}
-		unresolvedRef := fmt.Sprintf("nothing defines %s %s", game.KindName(ref.Database), ref.ID)
+		unresolvedRef := fmt.Sprintf("nothing defines %s %s", game.DescribeEntry(ref.Database, false), ref.ID)
 		code, message := "", ""
 		switch {
 		case isEvent && typed:
@@ -305,9 +296,8 @@ func (judge *judge) unresolved(occurrences []schema.Occurrence) {
 	}
 }
 
-// contradicted reports whether vanilla itself writes, at the position, a word of the same kind that
-// the workspace does not know (an event-shaped word, for an events database): a miss then proves
-// nothing.
+// contradicted reports whether vanilla itself writes, at the position, a word of the same kind that the workspace
+// does not know; a miss then proves nothing.
 func (judge *judge) contradicted(position *schema.Position, ref schema.Occurrence) bool {
 	if position == nil {
 		return false
@@ -328,8 +318,8 @@ func (judge *judge) contradicted(position *schema.Position, ref schema.Occurrenc
 func (judge *judge) definitions(occurrences []schema.Occurrence) {
 	ws := judge.file.ws
 	for _, def := range occurrences {
-		row := ws.Install.Schema.Databases[def.Database]
-		if def.Role != schema.Defines || def.ID == "" || row == nil {
+		database := ws.Install.Schema.Databases[def.Database]
+		if def.Role != schema.Defines || def.ID == "" || database == nil {
 			continue
 		}
 		loaded := index.Lookup(ws.Indexes(), schema.Defines, def.Database, def.ID)
@@ -337,7 +327,7 @@ func (judge *judge) definitions(occurrences []schema.Occurrence) {
 			return at.File().Path == judge.file.place.Path && at.Occurrence().Range == def.Range
 		})
 		if mine >= 0 && !judge.orphanMode(def, loaded, mine) {
-			judge.duplicate(def, row, loaded)
+			judge.duplicate(def, database, loaded)
 		}
 	}
 }
@@ -354,16 +344,15 @@ func (judge *judge) orphanMode(def schema.Occurrence, loaded []index.At, mine in
 	return true
 }
 
-// duplicate finds a name another mod's file defines too (duplicate-definition: a name the workspace
-// defines twice). The game's own files, on_actions, history and the names vanilla itself repeats
-// are not judged.
-func (judge *judge) duplicate(def schema.Occurrence, row *schema.Database, loaded []index.At) {
+// duplicate finds a name another mod's file defines too (duplicate-definition); the game's own files, on_actions,
+// history and the names vanilla itself repeats are not judged.
+func (judge *judge) duplicate(def schema.Occurrence, database *schema.Database, loaded []index.At) {
 	ws := judge.file.ws
 	contends := func(occurrence schema.Occurrence) bool {
 		return occurrence.Mode == "" && !occurrence.Local && !occurrence.IsName
 	}
-	purpose := row.Descriptor.Purpose
-	if !contends(def) || purpose == game.PurposeOnActions || purpose == game.PurposeHistory || ws.Install.Index.Repeated(def.Database) {
+	houses := database.Rule.Houses
+	if !contends(def) || houses == "on_actions" || houses == "history" || ws.Install.Index.Repeated(def.Database) {
 		return
 	}
 	for _, other := range loaded {
@@ -374,9 +363,8 @@ func (judge *judge) duplicate(def schema.Occurrence, row *schema.Database, loade
 	}
 }
 
-// locFile judges a localization file: the parser's errors, a header naming another language than
-// the file, a folder spelled as the game never reads it, and a missing UTF-8 byte order mark
-// (missing-bom, loc-header-mismatch, wrong-localization-folder).
+// locFile judges a localization file: the parser's errors, a header naming another language (loc-header-mismatch), a
+// folder the game never reads (wrong-localization-folder) and a missing byte order mark (missing-bom).
 func (judge *judge) locFile() {
 	file := judge.file
 	parsed := loc.Parse(file.text)

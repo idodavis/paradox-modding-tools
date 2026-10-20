@@ -37,15 +37,18 @@ linters:
       - frontend
     rules:
       # the registry's rows repeat a word as data: two rows naming one database are two facts
-      - path: internal/game/lang-rules\.go
+      - path: internal/game/(databases|language|coat|gui)\.go
         linters: [goconst]
+      # the databases' role and precedence words are plain words the rows and their readers share
+      - linters: [goconst]
+        text: 'string `(history|on_actions|events|lists|functions|concepts|first|last|key|field|file|column|nothing)`'
       # the format table's rows repeat a word as data
       - path: internal/inventory/inventory\.go
         linters: [goconst]
-      # the registry's rows repeat a word as data
-      - path: internal/game/game\.go
+      # the registry's rows and the OS words repeat as data
+      - path: internal/game/(game|install)\.go
         linters: [goconst]
-      # GameInfo and GameList are bound payload types, which keep their names
+      # GameList is a bound payload type, which keeps its name
       - path: internal/game/game\.go
         linters: [revive]
         text: "stutters"

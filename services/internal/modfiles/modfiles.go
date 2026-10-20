@@ -27,11 +27,11 @@ import (
 // ListingFields are the descriptor keys the Release page edits, and the folders the mod unloads.
 type ListingFields struct {
 	Name             string
-	Version          string
-	SupportedVersion string
+	Version          string // the mod's own version
+	SupportedVersion string // the game version it supports
 	Tags             []string
-	RemoteFileID     string
-	Picture          string
+	RemoteFileID     string // the Steam Workshop item
+	Picture          string // the listing image's file name
 	ShortDescription string
 	ID               string   // metadata.json only: written with a new mod, never cleared
 	ReplacePaths     []string // read, never written: replace_path lines, or game_custom_data.replace_paths
@@ -50,7 +50,12 @@ type listingField struct {
 
 // NewModOpts is what Create is asked to make.
 type NewModOpts struct {
-	GameID, Root, Name, SupportedVersion, LocLang, ThumbnailSrc string
+	GameID           string // the game's id
+	Root             string // the mod's folder
+	Name             string
+	SupportedVersion string // the game version it supports
+	LocLang          string // the localization language its folder is made for; "" the game's base
+	ThumbnailSrc     string // an image to copy in as the listing image; "" none
 }
 
 // steamItemRel is a metadata.json mod's Workshop id, what descriptor.mod keeps as remote_file_id: the format has no
@@ -77,14 +82,14 @@ var ThumbnailExts = []string{".png", ".gif", ".jpg", ".jpeg"}
 // LoadDescriptor loads the mod's descriptor: descriptor.mod or metadata.json, per its game. A missing one loads as
 // no fields.
 func LoadDescriptor(gameID, root string) (ListingFields, error) {
-	text, err := inventory.LoadText(game.DescriptorPath(gameID, root))
+	text, err := inventory.LoadText(game.BuildDescriptorPath(gameID, root))
 	if os.IsNotExist(err) {
 		return ListingFields{}, nil
 	}
 	if err != nil {
 		return ListingFields{}, err
 	}
-	if info := game.Get(gameID); info != nil && info.ModDescriptor == game.MetadataDescriptor {
+	if info := game.Lookup(gameID); info != nil && info.ModDescriptor == game.MetadataDescriptor {
 		fields, err := readMetadataJSON(text.Content)
 		steamItem, _ := inventory.LoadText(inventory.Join(root, steamItemRel))
 		fields.RemoteFileID = strings.TrimSpace(steamItem.Content)
@@ -129,7 +134,7 @@ func loadDescriptorMod(src string) ListingFields {
 	return fields
 }
 
-// modField is the listing field a descriptor.mod key spells.
+// modField returns the listing field a descriptor.mod key spells.
 func modField(key string) (listingField, bool) {
 	for _, field := range listingFields {
 		if field.mod != "" && field.mod == key {
@@ -162,7 +167,7 @@ func readMetadataJSON(content string) (ListingFields, error) {
 	return fields, nil
 }
 
-// firstString is the first of keys that holds a non-empty string.
+// firstString returns the first of keys that holds a non-empty string.
 func firstString(metadata map[string]any, keys ...string) string {
 	for _, key := range keys {
 		if text, ok := metadata[key].(string); ok && text != "" {
@@ -175,13 +180,13 @@ func firstString(metadata map[string]any, keys ...string) string {
 // WriteDescriptor patches the known keys and keeps the rest of the file as written, its byte-order mark and encoding
 // too.
 func WriteDescriptor(gameID, root string, fields ListingFields) error {
-	descriptor := game.DescriptorPath(gameID, root)
+	descriptor := game.BuildDescriptorPath(gameID, root)
 	text, err := inventory.LoadText(descriptor)
 	if err != nil && !os.IsNotExist(err) {
 		return err
 	}
 	// a descriptor that is not there yet is patched from nothing
-	if info := game.Get(gameID); info != nil && info.ModDescriptor == game.MetadataDescriptor {
+	if info := game.Lookup(gameID); info != nil && info.ModDescriptor == game.MetadataDescriptor {
 		if text.Content, err = patchMetadataJSON(text.Content, fields); err != nil {
 			return err
 		}
@@ -251,12 +256,12 @@ func patchDescriptorMod(src string, fields ListingFields) string {
 	return strings.TrimRight(patched.String(), "\n") + "\n"
 }
 
-// quoted is a value as a descriptor.mod writes it: trimmed, its inner quotes as apostrophes, in quotes.
+// quoted returns a value as a descriptor.mod writes it: trimmed, its inner quotes as apostrophes, in quotes.
 func quoted(text string) string {
 	return `"` + strings.ReplaceAll(strings.TrimSpace(text), `"`, `'`) + `"`
 }
 
-// tagsBlock is a descriptor.mod's tags statement: each non-empty tag on its own tab-indented line, in quotes.
+// tagsBlock returns a descriptor.mod's tags statement: each non-empty tag on its own tab-indented line, in quotes.
 func tagsBlock(tags []string) string {
 	block := "tags={"
 	for _, tag := range tags {
@@ -313,7 +318,7 @@ func writeSteamItem(root, id string) error {
 	return inventory.SaveText(file, inventory.Text{Content: id + "\n"})
 }
 
-// Thumbnail is the mod's listing image relative to its root: thumbnail.<ext> where its game or the mod keeps one,
+// Thumbnail returns the mod's listing image relative to its root: thumbnail.<ext> where its game or the mod keeps one,
 // else the file the descriptor's picture names beside it or in .metadata.
 func Thumbnail(gameID, root, picture string) (string, bool) {
 	var candidates []string
@@ -338,11 +343,11 @@ func Thumbnail(gameID, root, picture string) (string, bool) {
 	return "", false
 }
 
-// thumbnailDirs is where a new listing image goes, and every folder a mod may keep one in, the game's own first:
+// thumbnailDirs returns where a new listing image goes, and every folder a mod may keep one in, the game's own first:
 // mods follow no one convention, and some keep one in both places.
 func thumbnailDirs(gameID string) (convention string, dirs []string) {
 	// a game the registry does not know states no convention, so a thumbnail goes at the root
-	if info := game.Get(gameID); info != nil {
+	if info := game.Lookup(gameID); info != nil {
 		convention = info.ThumbnailDir
 	}
 	if convention != "" {
@@ -374,17 +379,17 @@ func CopyThumbnail(gameID, root, src string) (string, error) {
 	return rel, nil
 }
 
-// DefaultModParent is the game's user data folder's mod/, or "" where the game has none.
+// DefaultModParent returns the mod/ folder of the game's user data folder, or "" where the game has none.
 func DefaultModParent(gameID string) string {
-	userData := game.UserDataDir(gameID, "")
+	userData := game.FindUserDataDir(gameID, "")
 	if userData == "" {
 		return ""
 	}
 	return filepath.Join(userData, "mod")
 }
 
-// Slug is the one slug of a mod called name: its folder, its metadata id and its localization stub; inventory.Slug of
-// it, and "mod" for a name that leaves nothing.
+// Slug returns the one slug of a mod called name: its folder, its metadata id and its localization stub (inventory.Slug
+// of it, and "mod" for a name that leaves nothing).
 func Slug(name string) string {
 	return cmp.Or(inventory.Slug(name), "mod")
 }
@@ -392,7 +397,7 @@ func Slug(name string) string {
 // Create creates root with a descriptor, each of the game's ModFolders empty but for a loc stub in the localization
 // one's language folder, and the thumbnail when one is given.
 func Create(opts NewModOpts) error {
-	info := game.Get(opts.GameID)
+	info := game.Lookup(opts.GameID)
 	if info == nil {
 		return fmt.Errorf("unknown game %s", opts.GameID)
 	}
@@ -401,7 +406,7 @@ func Create(opts NewModOpts) error {
 		return fmt.Errorf("name is required")
 	}
 	root := opts.Root
-	descriptor := game.DescriptorPath(opts.GameID, root)
+	descriptor := game.BuildDescriptorPath(opts.GameID, root)
 	if _, err := os.Stat(descriptor); err == nil {
 		return fmt.Errorf("mod already exists: %s", descriptor)
 	}
@@ -428,7 +433,7 @@ func Create(opts NewModOpts) error {
 	if err := WriteDescriptor(opts.GameID, root, fields); err != nil {
 		return err
 	}
-	language, locDir := cmp.Or(strings.TrimSpace(opts.LocLang), game.BaseLanguage), ""
+	language, locDir := cmp.Or(strings.TrimSpace(opts.LocLang), info.BaseLanguage), ""
 	for _, folder := range info.ModFolders {
 		dir := inventory.Join(root, folder)
 		if strings.HasSuffix("/"+folder, "/localization") {

@@ -5,6 +5,11 @@
    "word": "vw.1",
    "key": "vw.1",
    "head": "event",
+   "scope": {
+    "this": "country",
+    "root": "country",
+    "reason": "every event runs in it unless it says otherwise"
+   },
    "sites": [
     {
      "path": "<fixtures>/vic3/game/events/v_more_events.txt",
@@ -43,6 +48,11 @@
    "writes": [
     "one of country_event"
    ],
+   "scope": {
+    "this": "country",
+    "root": "country",
+    "reason": "its type says so"
+   },
    "winner": -1,
    "within": [
     "vw.1"
@@ -84,6 +94,11 @@
    "takes": [
     "triggers"
    ],
+   "scope": {
+    "this": "country",
+    "root": "country",
+    "reason": "its type says so"
+   },
    "winner": -1,
    "within": [
     "vw.1"
@@ -110,7 +125,8 @@
    ],
    "scope": {
     "this": "country",
-    "reason": "the one scope it runs in"
+    "root": "country",
+    "reason": "its type says so"
    },
    "winner": -1,
    "stale": true,
@@ -153,6 +169,11 @@
    "word": "vw.2",
    "key": "vw.2",
    "head": "event",
+   "scope": {
+    "this": "country",
+    "root": "country",
+    "reason": "every event runs in it unless it says otherwise"
+   },
    "sites": [
     {
      "path": "<fixtures>/vic3/game/events/v_more_events.txt",
@@ -191,6 +212,11 @@
    "writes": [
     "one of country_event"
    ],
+   "scope": {
+    "this": "country",
+    "root": "country",
+    "reason": "its type says so"
+   },
    "winner": -1,
    "within": [
     "vw.2"
@@ -232,6 +258,11 @@
    "takes": [
     "triggers"
    ],
+   "scope": {
+    "this": "country",
+    "root": "country",
+    "reason": "its type says so"
+   },
    "winner": -1,
    "within": [
     "vw.2"
@@ -258,7 +289,8 @@
    ],
    "scope": {
     "this": "country",
-    "reason": "the one scope it runs in"
+    "root": "country",
+    "reason": "its type says so"
    },
    "winner": -1,
    "stale": true,

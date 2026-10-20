@@ -19,41 +19,43 @@ import (
 	"paradox-modding-tools/services/internal/index"
 )
 
-// Request is what a workspace is opened from: its id, the install's game, folder and language, the mods in load
-// order, the app's version (the cache's key), the fingerprint of these inputs as the caller's records say them
-// (another value builds again), and what to call: for a scan's examples, as the scan moves, when the install was
-// scanned or read from its cache, and when a file under a mod changed on disk.
+// Request is what a workspace is opened from.
 type Request struct {
-	ID          string
+	ID          string // the workspace's id
 	Game        string // the game's id in the registry
 	Dir         string // the install's folder
-	Language    string
-	Mods        []Mod
-	App         string
-	Fingerprint string
-	Wiki        func(databases []string) (map[string][]string, time.Time, error)
-	Progress    func(percent int, stage string)
-	Scanned     func()
-	Changed     func(path string)
+	Language    string // the localization language beside english
+	Mods        []Mod  // in load order
+	App         string // the app's version, which keys the cache
+	Fingerprint string // of these inputs as the caller's records say them; another value builds again
+
+	// Wiki returns the wiki's script examples by database and its sidecar's time.
+	Wiki func(databases []string) (map[string][]string, time.Time, error)
+	// Progress hears the scan move.
+	Progress func(percent int, stage string)
+	// Scanned is called when the install was scanned or read from its cache.
+	Scanned func()
+	// Changed is called when a file under a mod changed on disk.
+	Changed func(path string)
 }
 
-// Slot holds the one open workspace; an install's index is most of its memory, so opening another closes it. Scan
-// is index.Scan, or a stand-in in tests; Closed, when set, is told the id of every workspace closed.
+// Slot holds the one open workspace; an install's index is most of its memory, so opening another closes it.
 type Slot struct {
-	Scan   func(ctx context.Context, request index.Request) (*index.Install, error)
+	// Scan is index.Scan, or a stand-in in tests.
+	Scan func(ctx context.Context, request index.Request) (*index.Install, error)
+	// Closed is told the id of every workspace closed; may be nil.
 	Closed func(id string)
 
 	mu          sync.RWMutex
 	session     *Session
-	id          string
-	fingerprint string
-	building    singleflight.Group
-	scanned     sync.Map // install folder → time.Time: when its install was built, as this run last scanned or loaded it
+	id          string             // the open workspace's id
+	fingerprint string             // of the request it was opened from
+	building    singleflight.Group // one build per workspace however many callers ask
+	scanned     sync.Map           // install folder → when this run last scanned or loaded its install
 }
 
-// Open is the workspace the request names, its index built once however many callers ask at once, the one open
-// before it closed first so only one is ever open. built is true for the one caller whose call ran the build,
-// succeeded or failed, so that caller alone tells of it.
+// Open returns the workspace the request names, building its index once however many callers ask, after closing the
+// one open before it; built is true for the one caller whose call ran the build, so it alone tells of it.
 func (s *Slot) Open(ctx context.Context, request Request) (ws *Session, built bool, err error) {
 	if request.ID == "" {
 		return nil, false, errors.New("workspace id is required")
@@ -85,7 +87,7 @@ func (s *Slot) Open(ctx context.Context, request Request) (ws *Session, built bo
 	return result.(*Session), built, nil
 }
 
-// Current is the open workspace when it is the one named and still built from the inputs the fingerprint names; a
+// Current returns the open workspace when it is the one named and still built from the inputs the fingerprint names; a
 // stale one is closed, and the next Open builds it again.
 func (s *Slot) Current(id, fingerprint string) *Session {
 	s.mu.RLock()
@@ -126,8 +128,8 @@ func (s *Slot) release(ws *Session, id string) {
 	}
 }
 
-// ScannedAt is when the request's install was built: as this run built or loaded it, else by the time of its cache
-// file in the request's language; zero with neither.
+// ScannedAt returns when the request's install was built: as this run built or loaded it, else by its cache file's time
+// in the request's language; zero with neither.
 func (s *Slot) ScannedAt(request Request) time.Time {
 	if scanTime, ok := s.scanned.Load(request.Dir); ok {
 		return scanTime.(time.Time)
@@ -137,7 +139,7 @@ func (s *Slot) ScannedAt(request Request) time.Time {
 
 // build makes the workspace: the install from its cache, scanned if none, and the mods indexed over it, watched.
 func (s *Slot) build(ctx context.Context, request Request) (*Session, error) {
-	info := game.Get(request.Game)
+	info := game.Lookup(request.Game)
 	if info == nil {
 		return nil, fmt.Errorf("unknown game %s", request.Game)
 	}
@@ -158,8 +160,8 @@ func (s *Slot) build(ctx context.Context, request Request) (*Session, error) {
 	return ws, nil
 }
 
-// indexRequest is the scan of the request's install in its language: the version read from the install now, so a
-// game update is another cache file, the app's own version, and the wiki's examples.
+// indexRequest returns the scan of the request's install in its language: the version read from the install now (so a
+// game update is another cache file), the app's version and the wiki's examples.
 func (s *Slot) indexRequest(request Request) index.Request {
 	return index.Request{
 		Game: request.Game, Dir: request.Dir, Version: game.LoadGameVersion(request.Game, request.Dir),

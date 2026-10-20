@@ -8,7 +8,7 @@ export interface Guide {
     "database": string;
 
     /**
-     * what one of its database is called (game.KindName)
+     * what one of its database is called (game.DescribeEntry)
      */
     "kind": string;
     "pages": Page[] | null;
@@ -16,15 +16,30 @@ export interface Guide {
 }
 
 /**
- * Page is one fetched page as the sidecar keeps it and the panes show it: its sanitized HTML and
- * headings, and for a patch note whether it has a Modding section.
+ * Page is one fetched page as the sidecar keeps it and the panes show it.
  */
 export interface Page {
     "title": string;
     "url": string;
+
+    /**
+     * the revision fetched
+     */
     "revid": number;
+
+    /**
+     * sanitized
+     */
     "html": string;
+
+    /**
+     * its headings
+     */
     "sections"?: Section[] | null;
+
+    /**
+     * a patch note: it has a Modding section
+     */
     "modding"?: boolean;
 }
 
@@ -78,7 +93,18 @@ export interface PatchList {
  * Section is one heading of a page, for the TOC.
  */
 export interface Section {
+    /**
+     * its depth
+     */
     "tocLevel": number;
+
+    /**
+     * its text
+     */
     "line": string;
+
+    /**
+     * its link target
+     */
     "anchor": string;
 }

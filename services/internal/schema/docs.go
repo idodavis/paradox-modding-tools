@@ -1,6 +1,7 @@
-// docs.go is the documentation dialect: parseDocScript, the one reader of docscript that the install's docs, the
-// wiki's examples and the dumps' usages share; the docs and examples parsed to trees with every key they write
-// noted for the entry detector; their claims merged into the entry trees, after vanilla.
+// docs.go reads the prose the install ships beside its script and the wiki's examples, in the documentation
+// dialect: parseDocScript, the one reader of docscript that the docs, the examples and the dumps' usages share.
+// The docs and examples are parsed to trees with every key they write noted for the entry detector; their claims
+// are merged into the entry trees after vanilla.
 
 package schema
 
@@ -18,28 +19,27 @@ import (
 	"paradox-modding-tools/services/internal/jomini"
 )
 
-// DocNode is one statement of docscript with its prose: its key and value slot as written, the comments that
-// belong to it (above it, trailing it, or the rest of its line), and the statements of its block.
+// DocNode is one statement of docscript with its prose.
 type DocNode struct {
-	Key      string // the key as written; "" for a bare value (a list item, a placeholder line)
-	Value    string // the value slot as written: a <placeholder>, a word, alternatives, a "quoted text"; "" for none
-	Block    bool   // the statement opens a block
-	Prose    []string
-	Children []*DocNode
+	Key      string     // the key as written; "" for a bare value (a list item, a placeholder line)
+	Value    string     // the value slot as written (a <placeholder>, a word, alternatives, a "quoted text"); "" none
+	Block    bool       // the statement opens a block
+	Prose    []string   // the comments that belong to it: above it, trailing it, or the rest of its line
+	Children []*DocNode // the statements of its block
 }
 
-// doc is one doc or wiki example, parsed once, with the database it documents.
+// doc is one doc or wiki example, parsed once.
 type doc struct {
-	database string
-	tree     *DocNode // its Children are the top statements
-	source   Source
+	database string      // the database it documents
+	tree     *DocNode    // its Children are the top statements
+	source   game.Source // docs or wiki
 }
 
 // docToken is one token of a docscript line.
 type docToken struct {
-	kind docTokenKind
-	text string // a word, a <placeholder> or "quoted text" with its brackets or quotes, a (note)'s inside, a comment
-	col  int    // where it starts on the line
+	kind docTokenKind // word, placeholder, note, comment, brace...
+	text string       // a word; a <placeholder> or "quoted text" as written; a (note)'s inside; a comment
+	col  int          // where it starts on the line
 }
 
 // docTokenKind tells the tokens of a line apart.
@@ -56,62 +56,63 @@ const (
 	docComment
 )
 
-// docParse is one text being read into a tree: the open blocks, and the comments waiting for a statement.
+// docParse is one text being read into a tree.
 type docParse struct {
-	root      *DocNode
+	root      *DocNode   // the tree
 	blocks    []docBlock // the blocks open, the root first, innermost last
 	offside   bool       // the text leaves blocks open: a code line back at an open block's indentation closes it
 	run       []string   // the whole-line comments on consecutive lines so far, for the next statement
 	runLine   int        // the line the run ends on
 	trailing  *DocNode   // the statement whose trailing comment the next whole-line comment may continue
-	trailLine int
-	trailCol  int
+	trailLine int        // the line that trailing comment is on
+	trailCol  int        // the column it starts at
 }
 
-// docBlock is one open block: its node, and the indentation of the line that opened it.
+// docBlock is one open block.
 type docBlock struct {
-	node   *DocNode
-	indent int
+	node   *DocNode // the statement that opened it
+	indent int      // the indentation of its line
 }
 
-// docPhrase reads one claim from a comment's text or from a value as written: the kind of value or of block
-// the pattern names, else set, which writes what the match says. A phrase marked alone reads a text only when
-// no other phrase does; one that names nothing marks a text that claims nothing (a saved scope, a label, a line
-// leading into the next).
+// docPhrase reads one claim from a comment's text or a value as written; one that claims nothing marks a text that
+// says nothing (a saved scope, a label, a line leading into the next).
 type docPhrase struct {
-	pattern  *regexp.Regexp
-	fallback bool
-	kind     ValueType
-	block    game.Shape
-	claim    func(schema *Schema, claims *Claims, match []string, source Source)
+	pattern   *regexp.Regexp // what the text must match
+	fallback  bool           // read a text only when no other phrase does
+	valueType ValueType      // the kind of value the pattern names
+	shape     game.Shape     // the shape of block the pattern names
+
+	// claim writes what the match says.
+	claim func(schema *Schema, claims *Claims, match []string, source game.Source)
 }
 
-// docPhrases is the phrase table, in the order the phrases are tried.
+// docPhrases is the phrase table, in the order the phrases are tried. jomini keeps a comment's text as written
+// and reads no meaning from it; this table is how the docs' reader gets a claim out of one.
 var docPhrases = []docPhrase{
 	// default is x, defaults to x, (default = x), default: x, and default x when x is a value: one word
 	// that ends its clause
 	{pattern: regexp.MustCompile(`(?i)\bdefaults?(?: is| to| =|:) ['"\x60]?([^\s,;()'"\x60]+?)['"\x60]?` +
-		`(?:[,;)]|\.(?:\s|$)|\s+-\s|$)`), claim: func(_ *Schema, claims *Claims, match []string, source Source) {
+		`(?:[,;)]|\.(?:\s|$)|\s+-\s|$)`), claim: func(_ *Schema, claims *Claims, match []string, source game.Source) {
 		claims.Default.Set(match[1], source)
 	}},
 	{pattern: regexp.MustCompile(`(?i)\bdefault ((?:yes|no|none)\b|-?\d+(?:\.\d+)?|[A-Za-z]\w*(?:[._]\w+)+)` +
-		`(?:[,;)]|\.(?:\s|$)|\s+-\s|$)`), claim: func(_ *Schema, claims *Claims, match []string, source Source) {
+		`(?:[,;)]|\.(?:\s|$)|\s+-\s|$)`), claim: func(_ *Schema, claims *Claims, match []string, source game.Source) {
 		claims.Default.Set(match[1], source)
 	}},
-	{pattern: regexp.MustCompile(`(?i)\boptional\b`), claim: func(_ *Schema, claims *Claims, _ []string, source Source) {
+	{pattern: regexp.MustCompile(`(?i)\boptional\b`), claim: func(_ *Schema, claims *Claims, _ []string, source game.Source) {
 		claims.Required.Set(Requirement{Level: LevelOptional}, source)
 	}},
 	{pattern: regexp.MustCompile(`(?i)^required (?:if|when) (.+)`), claim: func(_ *Schema, claims *Claims, match []string,
-		source Source) {
+		source game.Source) {
 		claims.Required.Set(Requirement{Level: LevelConditional, Condition: match[1]}, source)
 	}},
 	{pattern: regexp.MustCompile(`(?i)^required(?:[.!]| field\b|$)|\bthis field is required\b`),
-		claim: func(_ *Schema, claims *Claims, _ []string, source Source) {
+		claim: func(_ *Schema, claims *Claims, _ []string, source game.Source) {
 			claims.Required.Set(Requirement{Level: LevelAlways}, source)
 		}},
 	// root = x: the root scope is the first word of x that is a scope the dumps declare
 	{pattern: regexp.MustCompile(`(?i)^root (?:=|-) (.+)`), claim: func(schema *Schema, claims *Claims, match []string,
-		source Source) {
+		source game.Source) {
 		for _, word := range strings.FieldsFunc(match[1], func(char rune) bool {
 			return !unicode.IsLetter(char) && !unicode.IsDigit(char) && char != '_'
 		}) {
@@ -129,29 +130,30 @@ var docPhrases = []docPhrase{
 	// type words opening the text or a parenthesis ("Localization key that …", ( bool, optional )), not one
 	// of a/b alternatives; text, name and scope only as the whole text: prose opens with them
 	{pattern: regexp.MustCompile(`(?:^"?|\(\s*)(?i:(?:scripted )?(?:int|integer|int32|int31|num|number|float|double|` +
-		`fixed[ _]point)|scripted? value|script_value|0\.0-1\.0)(?:[^\w/]|$)`), kind: ValueNumber},
-	{pattern: regexp.MustCompile(`(?:^"?|\(\s*)(?i:bool(?:ean)?|yes/no)(?:[^\w/]|$)`), kind: ValueBool},
-	{pattern: regexp.MustCompile(`(?:^"?|\(\s*)(?i:date)(?:[^\w/]|$)`), kind: ValueDate},
-	{pattern: regexp.MustCompile(`(?:^"?|\(\s*)(?i:string|name|text)(?:\s*\)|"?$)`), kind: ValueString},
-	{pattern: regexp.MustCompile(`(?:^"?|\(\s*)(?i:scope)(?:\s*\)|"?$)`), kind: ValueScope},
-	{pattern: regexp.MustCompile(`(?:^"?|\(\s*)(?i:loc key|localization[ _]key)(?:[^\w/]|$)`), kind: ValueLoc},
-	// event ID names the database whose registry row is Events; on action (name) the OnActions one
+		`fixed[ _]point)|scripted? value|script_value|0\.0-1\.0)(?:[^\w/]|$)`), valueType: ValueNumber},
+	{pattern: regexp.MustCompile(`(?:^"?|\(\s*)(?i:bool(?:ean)?|yes/no)(?:[^\w/]|$)`), valueType: ValueBool},
+	{pattern: regexp.MustCompile(`(?:^"?|\(\s*)(?i:date)(?:[^\w/]|$)`), valueType: ValueDate},
+	{pattern: regexp.MustCompile(`(?:^"?|\(\s*)(?i:string|name|text)(?:\s*\)|"?$)`), valueType: ValueString},
+	{pattern: regexp.MustCompile(`(?:^"?|\(\s*)(?i:scope)(?:\s*\)|"?$)`), valueType: ValueScope},
+	{pattern: regexp.MustCompile(`(?:^"?|\(\s*)(?i:loc key|localization[ _]key)(?:[^\w/]|$)`), valueType: ValueLoc},
+	// event ID names the events database; on action (name) the on_actions one
 	{pattern: regexp.MustCompile(`(?:^"?|\(\s*)(?i:(event[ _]id)|on[ _]action(?: name)?)(?:[^\w/]|$)`),
-		claim: func(schema *Schema, claims *Claims, match []string, source Source) {
-			for name, database := range schema.Databases {
-				purpose := database.Descriptor.Purpose
-				if match[1] != "" && purpose == game.PurposeEvents || match[1] == "" && purpose == game.PurposeOnActions {
-					claims.Value.Set(Expected{Type: ValueReference, Database: name}, source)
-				}
+		claim: func(schema *Schema, claims *Claims, match []string, source game.Source) {
+			database := schema.Events
+			if match[1] == "" {
+				database = schema.findHousingDatabase("on_actions")
+			}
+			if database != "" {
+				claims.Value.Set(Expected{Type: ValueReference, Database: database}, source)
 			}
 		}},
-	{pattern: regexp.MustCompile(`(?:^"?|\(\s*)(?i:triggers?)(?:[^\w/]|$)`), block: game.ShapeTriggers},
-	{pattern: regexp.MustCompile(`(?:^"?|\(\s*)(?i:effects?)(?:[^\w/]|$)`), block: game.ShapeEffects},
+	{pattern: regexp.MustCompile(`(?:^"?|\(\s*)(?i:triggers?)(?:[^\w/]|$)`), shape: game.ShapeTriggers},
+	{pattern: regexp.MustCompile(`(?:^"?|\(\s*)(?i:effects?)(?:[^\w/]|$)`), shape: game.ShapeEffects},
 	// "path/to/file": one quoted word with a slash
-	{pattern: regexp.MustCompile(`^"[^"\s<>]*/[^"\s<>]*"$`), kind: ValueFile},
+	{pattern: regexp.MustCompile(`^"[^"\s<>]*/[^"\s<>]*"$`), valueType: ValueFile},
 	// - item: blurb and item - blurb: one word per line
 	{pattern: regexp.MustCompile(`^(?:[-*]\s+([\w.]+):\s+[^\s<]|(?:[-*]\s+)?([\w.]+) - \S)`), fallback: true,
-		claim: func(_ *Schema, claims *Claims, match []string, source Source) {
+		claim: func(_ *Schema, claims *Claims, match []string, source game.Source) {
 			claims.Value.Value.Choices = append(claims.Value.Value.Choices, match[1]+match[2])
 			claims.Value.Source = source
 		}},
@@ -160,20 +162,126 @@ var docPhrases = []docPhrase{
 // alternatives matches a value written as alternatives (yes/no/all, num/all).
 var alternatives = regexp.MustCompile(`^[\w.]+(?:/[\w.]+)+$`)
 
+// exampleTail matches an example in a line of prose, from the sentence that opens with E.G., e.g. or Example to
+// the end of the line; its first group is what comes before it, up to the sentence's end.
+var exampleTail = regexp.MustCompile(`(?i)^(?:(.*?[.!?])\s+)?(?:e\.g\.|examples?\b).*$`)
+
 // keyWord matches a word that can be a statement's key: it starts with a word character, @ or $ (a - before
-// it allowed) and ends in one, with alternatives joined by / or | (days/months/years).
+// it allowed) and ends in one, with alternatives joined by / or | (days/months/years). It is the tokenizer's own
+// rule and differs from jomini.IsIdentifier, which allows a dot or a hyphen inside a name but no @, $, :, / or |.
 var keyWord = regexp.MustCompile(`^-?[\w@$](?:[\w.:@$/|-]*[\w$])?$`)
 
-// parseDocScript reads the lines of a doc, a wiki example or a dump usage into a tree. Each line is a
-// statement, a commented-out statement, a comment, prose, a brace, a heading or a fence; a statement's value
-// slot is one token (a <placeholder> to its matching >, a "quoted text", a word, alternatives), what follows it
-// on the line is its prose; braces build the tree, several statements on one line included, and blocks still
-// open at the end close there; in a text that leaves blocks open, a code line back at an open block's
-// indentation closes that block first. A comment trailing a line belongs to the first statement starting on it; a
-// whole-line comment under a trailing comment, in its column, continues it; a run of whole-line comments on
-// consecutive lines leads the statement on the next line; a heading or an empty comment keeps a run together but
-// says nothing. These are the rules of jomini's Attach, which gives a trailing comment to the outermost statement
-// starting on its line where this gives it to the first, and which keeps headings.
+// parseDocs parses each prose file of the install into the database it documents, then the wiki's examples, and notes
+// every key a tree writes in its database's Fields for the entry detector.
+func (schema *Schema) parseDocs(ctx context.Context, input Input) (docs []doc, err error) {
+	for _, file := range input.Install {
+		if err := ctx.Err(); err != nil {
+			return nil, err
+		}
+		if file.Format != inventory.Prose {
+			continue
+		}
+		database := schema.resolveDocDatabase(file.Rel)
+		if database == "" {
+			continue
+		}
+		text, err := file.Text()
+		if err != nil {
+			continue
+		}
+		lines := docLines(text.Content)
+		if strings.EqualFold(path.Ext(file.Rel), ".md") {
+			for number, line := range lines {
+				if strings.HasPrefix(line, "#") {
+					lines[number] = ""
+				}
+			}
+		}
+		docs = append(docs, doc{database, parseDocScript(lines), game.SourceDocs})
+	}
+	schema.Sources[game.SourceDocs] = SourceState{Origin: "install", WrittenAt: input.Updated}
+
+	wiki, err := schema.parseWiki(ctx, input)
+	if err != nil {
+		return nil, err
+	}
+	docs = append(docs, wiki...)
+	for _, document := range docs {
+		noteFields(document.tree, schema.Databases[document.database].Fields)
+	}
+	return docs, nil
+}
+
+// resolveDocDatabase returns the database a prose file documents: its folder's, or the one its stem names beside it
+// (history/_characters.info documents history/characters); "" for neither.
+func (schema *Schema) resolveDocDatabase(rel string) string {
+	folder, database := schema.folder(rel)
+	stem := strings.TrimPrefix(strings.TrimSuffix(path.Base(rel), path.Ext(rel)), "_")
+	if beside := game.DeriveDatabaseName(path.Join(path.Dir(rel), stem)); schema.Databases[beside] != nil {
+		folder, database = path.Dir(rel), beside
+	}
+	if schema.Databases[database] == nil || folder != path.Dir(rel) {
+		return ""
+	}
+	return database
+}
+
+// docLines returns a text split into its lines as the line index ends them, none keeping its ending.
+func docLines(text string) []string {
+	lines := jomini.NewLineIndex(text)
+	texts := make([]string, lines.LineCount())
+	for number := range texts {
+		texts[number] = lines.LineText(text, number)
+	}
+	return texts
+}
+
+// parseWiki parses the wiki's script examples for the databases declared so far; a history database takes none. The
+// wiki is never stale, since a sanitized page keeps no version label.
+func (schema *Schema) parseWiki(ctx context.Context, input Input) (docs []doc, err error) {
+	schema.Sources[game.SourceWiki] = SourceState{Origin: "none"}
+	if input.Wiki == nil {
+		return nil, nil
+	}
+	names := slices.Sorted(maps.Keys(schema.Databases))
+	examples, updated, err := input.Wiki(names)
+	if err != nil {
+		return nil, err
+	}
+	if !updated.IsZero() {
+		schema.Sources[game.SourceWiki] = SourceState{Origin: "yours", WrittenAt: updated}
+	}
+	for _, name := range names {
+		if err := ctx.Err(); err != nil {
+			return nil, err
+		}
+		if schema.Databases[name].Rule.Houses == "history" {
+			continue
+		}
+		for _, text := range examples[name] {
+			docs = append(docs, doc{name, parseDocScript(docLines(text)), game.SourceWiki})
+		}
+	}
+	return docs, nil
+}
+
+// noteFields records every key name a tree writes, at any depth, by its position name.
+func noteFields(node *DocNode, fields map[string]bool) {
+	for _, child := range node.Children {
+		for _, name := range keyNames(child.Key) {
+			fields[positionName(name)] = true
+		}
+		noteFields(child, fields)
+	}
+}
+
+// keyNames returns the names a docs key stands for: a/b/c and a|b|c name alternatives.
+func keyNames(key string) []string {
+	return strings.FieldsFunc(key, func(char rune) bool { return char == '/' || char == '|' })
+}
+
+// parseDocScript reads the lines of a doc, wiki example or dump usage into a tree, line by line: a line that is no
+// script is prose, braces build the tree, and a trailing comment belongs to the first statement on its line.
 func parseDocScript(lines []string) *DocNode {
 	parse := &docParse{root: &DocNode{}, runLine: -2, trailLine: -2}
 	parse.blocks = []docBlock{{node: parse.root}}
@@ -211,9 +319,8 @@ func opensWithPhrase(text string) bool {
 	})
 }
 
-// tokenizeDocLine splits a line into its tokens. A < followed by a non-blank and closed by a > on the line is a
-// placeholder; a ( or [ closed on the line is a note; a # opens the comment that is the rest of the line; a
-// bullet's - or * is left out, so - key: <placeholder> prose reads as the statement it documents.
+// tokenizeDocLine splits a line into tokens: a <placeholder> or (note) is one token, a # opens a comment to the line's
+// end, a bullet's - or * is dropped. Unlike jomini's lexer it reads prose, so a quote closes at the line's end.
 func tokenizeDocLine(line string) (tokens []docToken) {
 	closers := map[byte]byte{'(': ')', '[': ']'}
 	if bullet := strings.TrimLeft(line, " \t"); strings.HasPrefix(bullet, "- ") || strings.HasPrefix(bullet, "* ") {
@@ -303,7 +410,7 @@ func isFieldKey(tokens []docToken) bool {
 	return len(tokens) > 1 && len(key) < len(tokens[0].text) && keyWord.MatchString(key) && tokens[1].kind == docPlaceholder
 }
 
-// indentOf is the width of a line's leading blanks, a tab reaching the next multiple of four.
+// indentOf returns the width of a line's leading blanks, a tab reaching the next multiple of four.
 func indentOf(line string) (indent int) {
 	for _, char := range line[:len(line)-len(strings.TrimLeft(line, " \t"))] {
 		indent++
@@ -314,28 +421,29 @@ func indentOf(line string) (indent int) {
 	return indent
 }
 
-// comment keeps a whole-line comment: the continuation of the trailing comment above it in its column, else
-// part of the run leading the next statement. A heading (a text opening with # or written in capitals) and an
-// empty comment keep the run together but say nothing.
+// comment keeps a whole-line comment: the continuation of the trailing comment above it in its column, else part of
+// the run leading the next statement. A heading and an empty comment keep the run together but say nothing.
 func (parse *docParse) comment(line, col int, text string) {
-	said := strings.TrimSpace(strings.TrimLeft(text, "# \t"))
-	if strings.HasPrefix(strings.TrimLeft(text, " \t"), "#") || strings.ToUpper(said) == said && strings.ToLower(said) != said {
-		said = ""
+	prose := strings.TrimSpace(strings.TrimLeft(text, "# \t"))
+	heading := strings.HasPrefix(strings.TrimLeft(text, " \t"), "#") ||
+		strings.ToUpper(prose) == prose && strings.ToLower(prose) != prose ||
+		strings.HasPrefix(prose, "==") && strings.HasSuffix(prose, "==")
+	if heading {
+		prose = ""
 	}
 	if parse.trailing != nil && line == parse.trailLine+1 && col == parse.trailCol {
-		parse.trailing.Prose = append(parse.trailing.Prose, said)
+		parse.trailing.Prose = append(parse.trailing.Prose, prose)
 		parse.trailLine = line
 		return
 	}
 	if line != parse.runLine+1 {
 		parse.run = nil
 	}
-	parse.run, parse.runLine = append(parse.run, said), line
+	parse.run, parse.runLine = append(parse.run, prose), line
 }
 
-// statements reads one code line's tokens into the tree: each statement becomes a node of the innermost open
-// block, braces open and close blocks, a note or the words after a value or a closed block are the statement's
-// prose, and the line's comment and the run above lead its first statement.
+// statements reads one code line's tokens into the tree: each statement is a node of the innermost open block, braces
+// open and close blocks, and what follows a value or a closed block is the statement's prose.
 func (parse *docParse) statements(line, indent int, tokens []docToken) {
 	var first, previous *DocNode
 	if parse.offside {
@@ -400,9 +508,8 @@ func (parse *docParse) closeBlock() *DocNode {
 	return closed
 }
 
-// statement reads one statement from the front of tokens: a key before an operator or a brace with its value
-// slot, a <key=value> placeholder, a bullet's key: <placeholder>, or a bare value; nil when the tokens are prose
-// of the statement before, which takes them, or an alternative's separator. It returns how many tokens it took.
+// statement reads one statement from the front of tokens and returns it with how many tokens it took; nil when they are
+// the previous statement's prose or an alternative's separator.
 func (parse *docParse) statement(tokens []docToken, previous *DocNode) (*DocNode, int) {
 	first := tokens[0]
 	if key, value, cut := strings.Cut(strings.Trim(first.text, "<>"), "="); first.kind == docPlaceholder && cut {
@@ -445,10 +552,8 @@ func (parse *docParse) statement(tokens []docToken, previous *DocNode) (*DocNode
 	return parse.add(node), count
 }
 
-// wordsOf takes the words and the notes at the front of tokens, up to a brace, a placeholder or the comment; when
-// an operator follows them on the line, the last word is the next statement's key and is left (modifier = name
-// days/weeks/months/years = int), and a word standing for a block after the first (modifier = Y effects...) is a
-// value of its own. A dash leading the words introduces them (<name> - name of the flag).
+// wordsOf takes the words and notes at the front of tokens, up to a brace, a placeholder or the comment; when an
+// operator follows them, the last word is the next statement's key and is left (modifier = name days/weeks = int).
 func wordsOf(tokens []docToken) (words, notes []string, count int) {
 	for count < len(tokens) && (tokens[count].kind == docWord || tokens[count].kind == docQuoted || tokens[count].kind == docNote) &&
 		(count == 0 || !strings.Contains(tokens[count].text, "...")) {
@@ -476,137 +581,126 @@ func (parse *docParse) add(node *DocNode) *DocNode {
 	return node
 }
 
-// parseDocs is each prose file of the install, read into its own folder's database, or the folder
-// beside it that it is named after (history/_characters.info); one under a row above its folder is not read,
-// nor one over a megabyte. A Markdown heading (a # at the start of a .md line) is no comment. Then the wiki's
-// examples, by the declared names. Every key a tree writes is noted in its database's Fields, for the entry
-// detector. A sanitized wiki page keeps no version label, so the wiki is never stale.
-func (schema *Schema) parseDocs(ctx context.Context, input Input) (docs []doc, err error) {
-	for _, file := range input.Install {
-		if err := ctx.Err(); err != nil {
-			return nil, err
+// mergeDocs merges the docs' and wiki's claims into the databases they document, each statement's claims at the
+// position the walker reads its key at.
+func (schema *Schema) mergeDocs(docs []doc) {
+	for _, document := range docs {
+		context := schema.EntryContext(schema.Databases[document.database], "", nil)
+		for _, node := range document.tree.Children {
+			schema.mergeNode(node, context, document.source, true)
 		}
-		if file.Format != inventory.Prose {
+	}
+}
+
+// mergeNode merges one node at a context: a bare value's claims are the holder's, a key vanilla writes nowhere below
+// the holder is a template, and a command or link gets none. A doc never makes a position.
+func (schema *Schema) mergeNode(node *DocNode, context Context, source game.Source, top bool) {
+	if node.Key == "" {
+		if context.BlockPosition != nil && context.BlockPosition.Vanilla.Count > 0 {
+			context.BlockPosition.declare(schema.docClaims(node, source), source)
+		}
+		for _, child := range node.Children { // a block with no key ({ { name = x } }) reads in place
+			schema.mergeNode(child, context, source, false)
+		}
+		return
+	}
+	for _, name := range keyNames(node.Key) {
+		inner := schema.Enter(context, &jomini.Assignment{Key: jomini.Scalar{Text: name}}, nil, false)
+		isCommand := inner.KeyRule == game.KeyRuleCommand || inner.KeyRule == game.KeyRuleLink
+		switch {
+		case !isCommand && (context.BlockPosition == nil || !writtenBelow(context.BlockPosition, positionName(name))):
+			schema.mergeTemplate(node, context, source, top)
 			continue
+		case !isCommand && inner.Position() != nil && inner.Position().Vanilla.Count > 0:
+			inner.Position().declare(schema.docClaims(node, source), source)
 		}
-		at, name := schema.folder(file.Rel)
-		stem := strings.TrimPrefix(strings.TrimSuffix(path.Base(file.Rel), path.Ext(file.Rel)), "_")
-		if beside := game.NameOf(path.Join(path.Dir(file.Rel), stem)); schema.Databases[beside] != nil {
-			at, name = path.Dir(file.Rel), beside
+		for _, child := range node.Children {
+			schema.mergeNode(child, inner, source, false)
 		}
-		if schema.Databases[name] == nil || at != path.Dir(file.Rel) {
-			continue
+	}
+}
+
+// mergeTemplate merges a node whose key vanilla writes nowhere below (an example entry's name, a <key>): at the doc's
+// top its claims are the holder's, and its block merges in the holder's place or under each child that has one.
+func (schema *Schema) mergeTemplate(node *DocNode, context Context, source game.Source, top bool) {
+	if context.BlockPosition != nil && top && (node.Block || context.BlockPosition.Vanilla.Writes != WritesBlock) {
+		context.BlockPosition.declare(schema.docClaims(node, source), source)
+	}
+	holds := func(position *Position) bool {
+		return node.Block && slices.ContainsFunc(node.Children, func(child *DocNode) bool {
+			return child.Key != "" && position.Child(child.Key) != nil
+		})
+	}
+	if context.BlockPosition == nil || holds(context.BlockPosition) {
+		for _, child := range node.Children {
+			schema.mergeNode(child, context, source, false)
 		}
-		text, err := file.Text()
-		if err != nil {
-			continue
-		}
-		lines := docLines(text.Content)
-		if strings.EqualFold(path.Ext(file.Rel), ".md") {
-			for n, line := range lines {
-				if strings.HasPrefix(line, "#") {
-					lines[n] = ""
-				}
+		return
+	}
+	for _, below := range context.BlockPosition.Children {
+		if holds(below) {
+			context.BlockPosition = below
+			for _, child := range node.Children {
+				schema.mergeNode(child, context, source, false)
 			}
 		}
-		docs = append(docs, doc{name, parseDocScript(lines), SourceDocs})
 	}
-	schema.Sources[SourceDocs] = SourceState{Origin: "install", WrittenAt: input.Updated}
-
-	wiki, err := schema.parseWiki(ctx, input)
-	if err != nil {
-		return nil, err
-	}
-	docs = append(docs, wiki...)
-	for _, document := range docs {
-		noteFields(document.tree, schema.Databases[document.database].Fields)
-	}
-	return docs, nil
 }
 
-// docLines is a text split into its lines as the line index ends them, none keeping its ending.
-func docLines(text string) []string {
-	lines := jomini.NewLineIndex(text)
-	texts := make([]string, lines.LineCount())
-	for number := range texts {
-		texts[number] = lines.LineText(text, number)
-	}
-	return texts
-}
-
-// parseWiki is the wiki's script examples, asked for by the names of the databases declared so far and parsed
-// into their databases; a history database takes none. A sanitized wiki page keeps no version label, so the
-// wiki is never stale.
-func (schema *Schema) parseWiki(ctx context.Context, input Input) (docs []doc, err error) {
-	schema.Sources[SourceWiki] = SourceState{Origin: "none"}
-	if input.Wiki == nil {
-		return nil, nil
-	}
-	names := slices.Sorted(maps.Keys(schema.Databases))
-	examples, written, err := input.Wiki(names)
-	if err != nil {
-		return nil, err
-	}
-	if !written.IsZero() {
-		schema.Sources[SourceWiki] = SourceState{Origin: "yours", WrittenAt: written}
-	}
-	for _, name := range names {
-		if err := ctx.Err(); err != nil {
-			return nil, err
-		}
-		if schema.Databases[name].Descriptor.Purpose == game.PurposeHistory {
-			continue
-		}
-		for _, text := range examples[name] {
-			docs = append(docs, doc{name, parseDocScript(docLines(text)), SourceWiki})
+// writtenBelow reports whether vanilla writes a position of a name anywhere below one.
+func writtenBelow(position *Position, name string) bool {
+	for key, child := range position.Children {
+		if key == name && child.Vanilla.Count > 0 || writtenBelow(child, name) {
+			return true
 		}
 	}
-	return docs, nil
+	return false
 }
 
-// noteFields records every key name a tree writes, at any depth, by its position name.
-func noteFields(node *DocNode, fields map[string]bool) {
-	for _, child := range node.Children {
-		for _, name := range keyNames(child.Key) {
-			fields[positionName(name)] = true
-		}
-		noteFields(child, fields)
+// docClaims returns a doc node's claims by the tables; a block whose kind nothing names states only that the key takes
+// a block, and a literal states its kind (expiration_days = 3650).
+func (schema *Schema) docClaims(node *DocNode, source game.Source) Claims {
+	claims := schema.claimsOf(node, source)
+	if node.Block && claims.Shape.Source == game.SourceNone {
+		claims.Value.Set(Expected{Type: ValueBlock}, source)
 	}
+	if node.Value != "" && !strings.HasPrefix(node.Value, "<") && !strings.HasPrefix(node.Value, `"`) {
+		literals := map[Writes]ValueType{WritesNumber: ValueNumber, WritesBool: ValueBool, WritesDate: ValueDate}
+		if kind, literal := literals[writesOf(&jomini.Scalar{Text: node.Value})]; literal {
+			claims.Value.Set(Expected{Type: kind}, source)
+		}
+	}
+	return claims
 }
 
-// keyNames returns the names a docs key stands for: a/b/c and a|b|c name alternatives.
-func keyNames(key string) []string {
-	return strings.FieldsFunc(key, func(char rune) bool { return char == '/' || char == '|' })
-}
-
-// claimsOf collects one node's claims: its value slot (a placeholder's word through the phrase table, else the
-// database it names; any other value through the table, a quoted text with words left as a blurb), the block
-// placeholders its block lists (limit = { <display_triggers> }), then each line of its prose through the table,
-// what the table leaves of a line being blurb.
-func (schema *Schema) claimsOf(node *DocNode, source Source) (claims Claims) {
+// claimsOf collects one node's claims: its value slot and block placeholders through the phrase table, then each line
+// of its prose; what no phrase reads becomes the blurb, cut at the example it opens.
+func (schema *Schema) claimsOf(node *DocNode, source game.Source) (claims Claims) {
 	var blurb []string
 	if word, isPlaceholder := strings.CutPrefix(node.Value, "<"); isPlaceholder {
 		word = strings.TrimSuffix(word, ">")
-		named := schema.DatabaseNamed(word)
+		named := schema.ResolveNamedDatabase(word)
 		if schema.claimPhrases(&claims, word, source) == word && named != "" {
 			claims.Value.Set(Expected{Type: ValueReference, Database: named}, source)
 		}
 	} else if node.Value != "" {
 		rest := schema.claimPhrases(&claims, node.Value, source)
-		if text := strings.Trim(node.Value, `"`); isBlurb(rest) && strings.ContainsAny(text, " \t") {
+		if text := cutExample(strings.Trim(node.Value, `"`)); isBlurb(rest) && strings.ContainsAny(text, " \t") {
 			blurb = append(blurb, text)
 		}
 	}
 	for _, child := range node.Children {
 		if child.Key == "" && strings.HasPrefix(child.Value, "<") { // a block placeholder listed: { <display_triggers> }
-			var fromLastWord Claims
-			schema.claimPhrases(&fromLastWord, strings.TrimSuffix(child.Value[strings.LastIndexAny(child.Value, "<_ ")+1:], ">"), source)
-			claims.Holds.Set(fromLastWord.Holds.Value, fromLastWord.Holds.Source)
+			var placeholder Claims
+			schema.claimPhrases(&placeholder, strings.TrimSuffix(child.Value[strings.LastIndexAny(child.Value, "<_ ")+1:], ">"), source)
+			claims.Shape.Set(placeholder.Shape.Value, placeholder.Shape.Source)
 		}
 	}
-	for _, said := range node.Prose {
-		if rest := schema.claimPhrases(&claims, said, source); isBlurb(rest) {
-			blurb = append(blurb, said)
+	for _, prose := range node.Prose {
+		if rest := schema.claimPhrases(&claims, prose, source); isBlurb(rest) {
+			if text := cutExample(prose); text != "" {
+				blurb = append(blurb, text)
+			}
 		}
 	}
 	slices.Sort(claims.Value.Value.Choices)
@@ -617,10 +711,9 @@ func (schema *Schema) claimsOf(node *DocNode, source Source) (claims Claims) {
 	return claims
 }
 
-// claimPhrases writes into found every claim the phrase table reads from a text, and returns what is left for
-// a blurb: the text no phrase read; nothing when a phrase read it whole, a phrase marked it as claiming nothing,
-// or it was an a/b/c list, whose words became choices.
-func (schema *Schema) claimPhrases(claims *Claims, text string, source Source) (rest string) {
+// claimPhrases writes every claim the phrase table reads from a text and returns what is left for a blurb: nothing
+// when a phrase read it whole, marked it as claiming nothing, or it was an a/b/c list, whose words became choices.
+func (schema *Schema) claimPhrases(claims *Claims, text string, source game.Source) (rest string) {
 	rest, claimsNothing := text, false
 	for _, phrase := range docPhrases {
 		match := phrase.pattern.FindStringSubmatch(text)
@@ -629,10 +722,10 @@ func (schema *Schema) claimPhrases(claims *Claims, text string, source Source) (
 		}
 		rest = strings.Replace(rest, match[0], "", 1)
 		switch {
-		case phrase.kind != ValueUnknown:
-			claims.Value.Set(Expected{Type: phrase.kind}, source)
-		case phrase.block != game.ShapeUnknown:
-			claims.Holds.Set(phrase.block, source)
+		case phrase.valueType != ValueUnknown:
+			claims.Value.Set(Expected{Type: phrase.valueType}, source)
+		case phrase.shape != game.ShapeUnknown:
+			claims.Shape.Set(phrase.shape, source)
 		case phrase.claim != nil:
 			phrase.claim(schema, claims, match, source)
 		default:
@@ -657,97 +750,8 @@ func (schema *Schema) claimPhrases(claims *Claims, text string, source Source) (
 // isBlurb reports whether what the table left of a text still has words in it: prose, kept as a blurb.
 func isBlurb(rest string) bool { return strings.ContainsFunc(rest, unicode.IsLetter) }
 
-// mergeDocs is the docs' and wiki's claims merged into the databases they document, after vanilla.
-func (schema *Schema) mergeDocs(docs []doc) {
-	for _, document := range docs {
-		in := schema.EntryContext(schema.Databases[document.database], "")
-		for _, node := range document.tree.Children {
-			schema.mergeNode(node, in, document.source, true)
-		}
-	}
-}
-
-// mergeNode merges one node where its key reads at a context. A bare value's claims are the holder's. A key
-// vanilla writes nowhere below the holder is a template (mergeTemplate). A key read as a position vanilla writes
-// gets the node's claims, then its block merges where the walker reads that key's block; a key read as a command
-// or a link gets none, and its block merges where the walker reads it. A doc never makes a position.
-func (schema *Schema) mergeNode(node *DocNode, context Context, source Source, top bool) {
-	if node.Key == "" {
-		if context.At != nil && context.At.Vanilla.Count > 0 {
-			context.At.declare(schema.docClaims(node, source), source)
-		}
-		for _, child := range node.Children { // a block with no key ({ { name = x } }) reads in place
-			schema.mergeNode(child, context, source, false)
-		}
-		return
-	}
-	for _, name := range keyNames(node.Key) {
-		inner := schema.Enter(context, &jomini.Assignment{Key: jomini.Scalar{Text: name}}, nil, false)
-		isCommand := inner.Rule == game.KeyRuleCommand || inner.Rule == game.KeyRuleLink
-		switch {
-		case !isCommand && (context.At == nil || !writtenBelow(context.At, positionName(name))):
-			schema.mergeTemplate(node, context, source, top)
-			continue
-		case !isCommand && inner.Position() != nil && inner.Position().Vanilla.Count > 0:
-			inner.Position().declare(schema.docClaims(node, source), source)
-		}
-		for _, child := range node.Children {
-			schema.mergeNode(child, inner, source, false)
-		}
-	}
-}
-
-// mergeTemplate merges a node whose key vanilla writes nowhere below where it stands: an example entry's name,
-// a <key>. At the doc's top its claims are the holder's, where the holder is written as more than a block or the
-// node has one. Its block merges in the holder's place where the holder has a child the block writes, else
-// under each child of the holder that has one (my_phase_key = { }); else nowhere.
-func (schema *Schema) mergeTemplate(node *DocNode, context Context, source Source, top bool) {
-	if context.At != nil && top && (node.Block || context.At.Vanilla.Writes != WritesBlock) {
-		context.At.declare(schema.docClaims(node, source), source)
-	}
-	holds := func(position *Position) bool {
-		return node.Block && slices.ContainsFunc(node.Children, func(child *DocNode) bool {
-			return child.Key != "" && position.Child(child.Key) != nil
-		})
-	}
-	if context.At == nil || holds(context.At) {
-		for _, child := range node.Children {
-			schema.mergeNode(child, context, source, false)
-		}
-		return
-	}
-	for _, below := range context.At.Children {
-		if holds(below) {
-			context.At = below
-			for _, child := range node.Children {
-				schema.mergeNode(child, context, source, false)
-			}
-		}
-	}
-}
-
-// writtenBelow reports whether vanilla writes a position of a name anywhere below one.
-func writtenBelow(position *Position, name string) bool {
-	for key, child := range position.Children {
-		if key == name && child.Vanilla.Count > 0 || writtenBelow(child, name) {
-			return true
-		}
-	}
-	return false
-}
-
-// docClaims is a doc node's claims: its claims by the tables; a block whose kind nothing names states only that
-// the key takes a block; a literal states its kind (expiration_days = 3650).
-func (schema *Schema) docClaims(node *DocNode, source Source) Claims {
-	claims := schema.claimsOf(node, source)
-	if node.Block && claims.Holds.Source == SourceNone {
-		claims.Value.Set(Expected{Type: ValueBlock}, source)
-	}
-	if node.Value != "" && !strings.HasPrefix(node.Value, "<") && !strings.HasPrefix(node.Value, `"`) {
-		literals := map[Writes]ValueType{WritesNumber: ValueNumber, WritesBool: ValueBool, WritesDate: ValueDate}
-		if kind, literal := literals[writesOf(&jomini.Scalar{Text: node.Value})]; literal {
-			claims.Value.Set(Expected{Type: kind}, source)
-		}
-	}
-	return claims
+// cutExample returns a line of prose cut from the sentence that opens with E.G., e.g. or Example to its end: an example
+// shows how to write a key, so no blurb holds it.
+func cutExample(line string) string {
+	return strings.TrimSpace(exampleTail.ReplaceAllString(line, "$1"))
 }

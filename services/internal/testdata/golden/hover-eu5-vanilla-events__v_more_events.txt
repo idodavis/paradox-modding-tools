@@ -5,6 +5,11 @@
    "word": "vmore.1",
    "key": "vmore.1",
    "head": "event",
+   "scope": {
+    "this": "country",
+    "root": "country",
+    "reason": "every event runs in it unless it says otherwise"
+   },
    "sites": [
     {
      "path": "<fixtures>/eu5/game/in_game/events/v_more_events.txt",
@@ -43,6 +48,11 @@
    "writes": [
     "one of country_event"
    ],
+   "scope": {
+    "this": "country",
+    "root": "country",
+    "reason": "its type says so"
+   },
    "winner": -1,
    "within": [
     "vmore.1"
@@ -84,6 +94,11 @@
    "takes": [
     "triggers"
    ],
+   "scope": {
+    "this": "country",
+    "root": "country",
+    "reason": "its type says so"
+   },
    "winner": -1,
    "within": [
     "vmore.1"
@@ -104,10 +119,15 @@
    "word": "NOT",
    "key": "NOT",
    "head": "trigger",
-   "prose": "negates content of trigger",
+   "prose": "True when what is inside it is false.",
    "takes": [
     "triggers"
    ],
+   "scope": {
+    "this": "country",
+    "root": "country",
+    "reason": "its type says so"
+   },
    "winner": -1,
    "stale": true,
    "within": [
@@ -136,7 +156,8 @@
    ],
    "scope": {
     "this": "country",
-    "reason": "the one scope it runs in"
+    "root": "country",
+    "reason": "its type says so"
    },
    "leads": "location",
    "winner": -1,
@@ -162,14 +183,15 @@
    "word": "exists",
    "key": "exists",
    "head": "trigger",
-   "prose": "Checks whether the specified scope target exists (check for not being the null object)",
+   "prose": "True when the scope named is there and is not nothing.",
    "writes": [
     "a word"
    ],
    "scope": {
     "this": "location",
+    "root": "country",
     "prev": [
-     ""
+     "country"
     ],
     "reason": "any_owned_location leads to it"
    },
@@ -237,10 +259,15 @@
    "word": "exists",
    "key": "exists",
    "head": "trigger",
-   "prose": "Checks whether the specified scope target exists (check for not being the null object)",
+   "prose": "True when the scope named is there and is not nothing.",
    "writes": [
     "a word"
    ],
+   "scope": {
+    "this": "country",
+    "root": "country",
+    "reason": "its type says so"
+   },
    "winner": -1,
    "stale": true,
    "within": [
@@ -316,10 +343,15 @@
    "word": "exists",
    "key": "exists",
    "head": "trigger",
-   "prose": "Checks whether the specified scope target exists (check for not being the null object)",
+   "prose": "True when the scope named is there and is not nothing.",
    "writes": [
     "a word"
    ],
+   "scope": {
+    "this": "country",
+    "root": "country",
+    "reason": "its type says so"
+   },
    "winner": -1,
    "stale": true,
    "within": [
@@ -380,10 +412,15 @@
    "word": "exists",
    "key": "exists",
    "head": "trigger",
-   "prose": "Checks whether the specified scope target exists (check for not being the null object)",
+   "prose": "True when the scope named is there and is not nothing.",
    "writes": [
     "a word"
    ],
+   "scope": {
+    "this": "country",
+    "root": "country",
+    "reason": "its type says so"
+   },
    "winner": -1,
    "stale": true,
    "within": [
@@ -444,10 +481,15 @@
    "word": "exists",
    "key": "exists",
    "head": "trigger",
-   "prose": "Checks whether the specified scope target exists (check for not being the null object)",
+   "prose": "True when the scope named is there and is not nothing.",
    "writes": [
     "a word"
    ],
+   "scope": {
+    "this": "country",
+    "root": "country",
+    "reason": "its type says so"
+   },
    "winner": -1,
    "stale": true,
    "within": [
@@ -508,10 +550,15 @@
    "word": "exists",
    "key": "exists",
    "head": "trigger",
-   "prose": "Checks whether the specified scope target exists (check for not being the null object)",
+   "prose": "True when the scope named is there and is not nothing.",
    "writes": [
     "a word"
    ],
+   "scope": {
+    "this": "country",
+    "root": "country",
+    "reason": "its type says so"
+   },
    "winner": -1,
    "stale": true,
    "within": [
@@ -572,10 +619,15 @@
    "word": "exists",
    "key": "exists",
    "head": "trigger",
-   "prose": "Checks whether the specified scope target exists (check for not being the null object)",
+   "prose": "True when the scope named is there and is not nothing.",
    "writes": [
     "a word"
    ],
+   "scope": {
+    "this": "country",
+    "root": "country",
+    "reason": "its type says so"
+   },
    "winner": -1,
    "stale": true,
    "within": [
@@ -636,10 +688,15 @@
    "word": "exists",
    "key": "exists",
    "head": "trigger",
-   "prose": "Checks whether the specified scope target exists (check for not being the null object)",
+   "prose": "True when the scope named is there and is not nothing.",
    "writes": [
     "a word"
    ],
+   "scope": {
+    "this": "country",
+    "root": "country",
+    "reason": "its type says so"
+   },
    "winner": -1,
    "stale": true,
    "within": [
@@ -700,10 +757,15 @@
    "word": "exists",
    "key": "exists",
    "head": "trigger",
-   "prose": "Checks whether the specified scope target exists (check for not being the null object)",
+   "prose": "True when the scope named is there and is not nothing.",
    "writes": [
     "a word"
    ],
+   "scope": {
+    "this": "country",
+    "root": "country",
+    "reason": "its type says so"
+   },
    "winner": -1,
    "stale": true,
    "within": [
@@ -764,10 +826,15 @@
    "word": "exists",
    "key": "exists",
    "head": "trigger",
-   "prose": "Checks whether the specified scope target exists (check for not being the null object)",
+   "prose": "True when the scope named is there and is not nothing.",
    "writes": [
     "a word"
    ],
+   "scope": {
+    "this": "country",
+    "root": "country",
+    "reason": "its type says so"
+   },
    "winner": -1,
    "stale": true,
    "within": [
@@ -828,10 +895,15 @@
    "word": "exists",
    "key": "exists",
    "head": "trigger",
-   "prose": "Checks whether the specified scope target exists (check for not being the null object)",
+   "prose": "True when the scope named is there and is not nothing.",
    "writes": [
     "a word"
    ],
+   "scope": {
+    "this": "country",
+    "root": "country",
+    "reason": "its type says so"
+   },
    "winner": -1,
    "stale": true,
    "within": [
@@ -895,6 +967,11 @@
    "takes": [
     "effects"
    ],
+   "scope": {
+    "this": "country",
+    "root": "country",
+    "reason": "its type says so"
+   },
    "winner": -1,
    "within": [
     "vmore.1"
@@ -921,7 +998,8 @@
    ],
    "scope": {
     "this": "country",
-    "reason": "the one scope it runs in"
+    "root": "country",
+    "reason": "its type says so"
    },
    "leads": "location",
    "winner": -1,
@@ -952,8 +1030,9 @@
    ],
    "scope": {
     "this": "location",
+    "root": "country",
     "prev": [
-     ""
+     "country"
     ],
     "reason": "every_owned_location leads to it"
    },
@@ -1044,8 +1123,9 @@
    ],
    "scope": {
     "this": "country",
+    "root": "country",
     "prev": [
-     ""
+     "country"
     ],
     "reason": "c:FRA leads to it"
    },
@@ -1092,6 +1172,11 @@
    "word": "vmore.2",
    "key": "vmore.2",
    "head": "event",
+   "scope": {
+    "this": "country",
+    "root": "country",
+    "reason": "every event runs in it unless it says otherwise"
+   },
    "sites": [
     {
      "path": "<fixtures>/eu5/game/in_game/events/v_more_events.txt",
@@ -1130,6 +1215,11 @@
    "writes": [
     "one of country_event"
    ],
+   "scope": {
+    "this": "country",
+    "root": "country",
+    "reason": "its type says so"
+   },
    "winner": -1,
    "within": [
     "vmore.2"
@@ -1171,6 +1261,11 @@
    "takes": [
     "triggers"
    ],
+   "scope": {
+    "this": "country",
+    "root": "country",
+    "reason": "its type says so"
+   },
    "winner": -1,
    "within": [
     "vmore.2"
@@ -1197,7 +1292,8 @@
    ],
    "scope": {
     "this": "country",
-    "reason": "the one scope it runs in"
+    "root": "country",
+    "reason": "its type says so"
    },
    "winner": -1,
    "stale": true,

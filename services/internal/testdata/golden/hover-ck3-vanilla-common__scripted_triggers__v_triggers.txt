@@ -38,7 +38,7 @@
    "word": "exists",
    "key": "exists",
    "head": "trigger",
-   "prose": "Checks whether the specified scope target exists (check for not being the null object)",
+   "prose": "True when the scope named is there and is not nothing.",
    "writes": [
     "one of $TARGET$, scope:target, title:c_x, title:k_x"
    ],
@@ -135,7 +135,7 @@
    "word": "OR",
    "key": "OR",
    "head": "trigger",
-   "prose": "at least one entry inside trigger must be true",
+   "prose": "True when at least one thing inside it is true.",
    "takes": [
     "triggers"
    ],
@@ -229,7 +229,7 @@
    "word": "trigger_if",
    "key": "trigger_if",
    "head": "trigger",
-   "prose": "Evaluates the triggers if the display_triggers of the limit are met",
+   "prose": "Checks what is inside it only when its limit holds.",
    "takes": [
     "triggers"
    ],
@@ -255,6 +255,7 @@
    "word": "limit",
    "key": "limit",
    "head": "in `trigger_if`",
+   "prose": "The conditions an if, a list, a while or a trigger_if checks first.",
    "takes": [
     "triggers"
    ],
@@ -542,7 +543,7 @@
    "word": "NOT",
    "key": "NOT",
    "head": "trigger",
-   "prose": "negates content of trigger",
+   "prose": "True when what is inside it is false.",
    "takes": [
     "triggers"
    ],

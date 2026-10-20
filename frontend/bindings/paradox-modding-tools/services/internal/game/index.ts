@@ -8,7 +8,7 @@ export {
 
 export type {
     DetectedInstall,
-    GameInfo,
+    Game,
     GameList,
     RGBA
 } from "./models.js";

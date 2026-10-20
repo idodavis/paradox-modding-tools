@@ -27,7 +27,7 @@ var scanned = sync.OnceValues(func() (*index.Install, error) {
 	return index.Scan(context.Background(), index.Request{Game: "ck3", Dir: dir, Version: "test"})
 })
 
-// workspace is a session over the fixture install with the fixture mod copied to a temp dir.
+// workspace returns a session over the fixture install with the fixture mod copied to a temp dir.
 func workspace(t *testing.T) (*Session, string) {
 	t.Helper()
 	install, err := scanned()
@@ -38,14 +38,14 @@ func workspace(t *testing.T) (*Session, string) {
 	if err := os.CopyFS(dir, os.DirFS(filepath.Join("..", "testdata", "mods", "ck3"))); err != nil {
 		t.Fatal(err)
 	}
-	ws, err := Open(t.Context(), game.Get("ck3"), install, []Mod{{ID: fixtureMod, Dir: dir, Calendar: Calendar{{Name: "AC", Offset: 7782}}}}, "")
+	ws, err := Open(t.Context(), game.Lookup("ck3"), install, []Mod{{ID: fixtureMod, Dir: dir, Calendar: Calendar{{Name: "AC", Offset: 7782}}}}, "")
 	if err != nil {
 		t.Fatal(err)
 	}
 	return ws, dir
 }
 
-// defs is how many events of a name the session's indexes define.
+// defs returns how many events of a name the session's indexes define.
 func defs(ws *Session, name string) int {
 	return len(index.Lookup(ws.Indexes(), schema.Defines, "events", name))
 }
@@ -100,7 +100,7 @@ func TestEdits(t *testing.T) {
 	}
 }
 
-// TestQueries covers what the session knows: its language, mods and game, the winner of no definitions, and a key's entry.
+// TestQueries covers what the session knows: its language, mods and game, a winner of none and a key's entry.
 func TestQueries(t *testing.T) {
 	ws, dir := workspace(t)
 
@@ -134,7 +134,7 @@ func TestQueries(t *testing.T) {
 	}
 }
 
-// TestTextAndParse is a file's text and parse: the open buffer's, else the disk's, parsed once per text.
+// TestTextAndParse covers a file's text and parse: the open buffer's, else the disk's, parsed once per text.
 func TestTextAndParse(t *testing.T) {
 	ws, dir := workspace(t)
 	events := filepath.Join(dir, "events", "m_events.txt")
@@ -154,7 +154,7 @@ func TestTextAndParse(t *testing.T) {
 
 }
 
-// TestPlaceOf is how a path is placed: its origin, its rel, the database its folder defines and its mod's calendar.
+// TestPlaceOf covers how a path is placed: its origin, its rel, the database its folder defines and its mod's calendar.
 func TestPlaceOf(t *testing.T) {
 	ws, dir := workspace(t)
 	events := filepath.Join(dir, "events", "m_events.txt")
@@ -183,7 +183,7 @@ func TestPlaceOf(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	eu5Session, err := Open(t.Context(), game.Get("eu5"), install, nil, "")
+	eu5Session, err := Open(t.Context(), game.Lookup("eu5"), install, nil, "")
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -330,7 +330,7 @@ func openTogether(t *testing.T, request Request, ids []string) (told, open []str
 	return told, open
 }
 
-// fireNamed is the fire of a name among fires.
+// fireNamed returns the fire of a name among fires.
 func fireNamed(fires []Fire, name string) (Fire, bool) {
 	i := slices.IndexFunc(fires, func(fire Fire) bool { return fire.Name == name })
 	if i < 0 {

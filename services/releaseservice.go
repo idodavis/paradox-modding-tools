@@ -31,9 +31,8 @@ const (
 	steamWorkshopURL = "https://steamcommunity.com/sharedfiles/filedetails/?id="
 )
 
-// ServeSteamPublish runs this process as a Workshop publish when it was started as one, and reports
-// whether it was. main calls it first: a publish must start nothing else, not even the config or
-// the single-instance lock.
+// ServeSteamPublish runs this process as a Workshop publish when it was started as one, and reports whether it was.
+// main calls it first: a publish must start nothing else, not even the config or the single-instance lock.
 func ServeSteamPublish() (exitCode int, served bool) {
 	return steam.Serve()
 }
@@ -43,7 +42,7 @@ type ReleaseService struct {
 	config *ConfigFile
 }
 
-// NewReleaseService is the Release page's service over the config.
+// NewReleaseService returns the Release page's service over the config.
 func NewReleaseService(config *ConfigFile) *ReleaseService {
 	return &ReleaseService{config: config}
 }
@@ -52,43 +51,43 @@ func NewReleaseService(config *ConfigFile) *ReleaseService {
 type Listing struct {
 	WorkspaceID      string          `json:"workspaceId"`
 	ModID            string          `json:"modId"`
-	Root             string          `json:"root"`
+	Root             string          `json:"root"` // the mod's folder
 	Name             string          `json:"name"`
-	Version          string          `json:"version"`
-	SupportedVersion string          `json:"supportedVersion"`
+	Version          string          `json:"version"`          // the mod's own version
+	SupportedVersion string          `json:"supportedVersion"` // the game version it supports
 	Tags             []string        `json:"tags"`
-	ThumbnailRel     string          `json:"thumbnailRel"`
-	ThumbnailAbs     string          `json:"thumbnailAbs"`
-	Previews         []steam.Preview `json:"previews"`
-	RemoteFileID     string          `json:"remoteFileId"`
+	ThumbnailRel     string          `json:"thumbnailRel"` // the listing image's path in the mod
+	ThumbnailAbs     string          `json:"thumbnailAbs"` // its path on disk
+	Previews         []steam.Preview `json:"previews"`     // the extra images and videos
+	RemoteFileID     string          `json:"remoteFileId"` // the Workshop item
 	ShortDescription string          `json:"shortDescription"`
 	ReadmeMd         string          `json:"readmeMd"`     // the description, from a Markdown file
 	ReadmeBbcode     string          `json:"readmeBbcode"` // the description, from a BBCode file
 	ChangeNote       string          `json:"changeNote"`
-	DescMdRel        string          `json:"descMdRel"`
-	DescBbRel        string          `json:"descBbRel"`
-	WorkshopURL      string          `json:"workshopUrl"`
-	Descriptor       string          `json:"descriptor"` // the descriptor's path in the mod
-	Saved            string          `json:"saved"`      // when the descriptor was last written (RFC 3339)
-	LegalURL         string          `json:"legalUrl"`   // the Workshop agreement an upload accepts
+	DescMdRel        string          `json:"descMdRel"`   // the Markdown description file's path in the mod
+	DescBbRel        string          `json:"descBbRel"`   // the BBCode description file's path in the mod
+	WorkshopURL      string          `json:"workshopUrl"` // the item's page
+	Descriptor       string          `json:"descriptor"`  // the descriptor's path in the mod
+	Saved            string          `json:"saved"`       // when the descriptor was last written (RFC 3339)
+	LegalURL         string          `json:"legalUrl"`    // the Workshop agreement an upload accepts
 }
 
 // ListingSummary is a mod's listing as Settings shows it, read without writing.
 type ListingSummary struct {
-	RemoteFileID string `json:"remoteFileId"`
-	ThumbnailRel string `json:"thumbnailRel"`
-	ThumbnailAbs string `json:"thumbnailAbs"`
-	DescSource   string `json:"descSource"` // markdown, bbcode or steam
-	DescRel      string `json:"descRel"`    // the source's file in the mod; "" for steam
-	DescExists   bool   `json:"descExists"`
+	RemoteFileID string `json:"remoteFileId"`           // the Workshop item
+	ThumbnailRel string `json:"thumbnailRel"`           // the listing image's path in the mod
+	ThumbnailAbs string `json:"thumbnailAbs"`           // its path on disk
+	DescSource   string `json:"descSource"`             // markdown, bbcode or steam
+	DescRel      string `json:"descRel"`                // the source's file in the mod; "" for steam
+	DescExists   bool   `json:"descExists"`             // the source's file is there
 	SteamVersion string `json:"steamVersion,omitempty"` // the version in PMT's last copy of the item
 }
 
 // PublishResult is Steam's answer.
 type PublishResult struct {
 	PublishedFileID     string `json:"publishedFileId"`
-	NeedsLegalAgreement bool   `json:"needsLegalAgreement"`
-	LegalURL            string `json:"legalUrl,omitempty"`
+	NeedsLegalAgreement bool   `json:"needsLegalAgreement"` // the upload must first accept the Workshop agreement
+	LegalURL            string `json:"legalUrl,omitempty"`  // where it is accepted
 }
 
 // UploadFiles is what an upload of a mod sends and leaves out.
@@ -98,43 +97,42 @@ type UploadFiles struct {
 	Left  []string `json:"left"`  // the files left out, mod-relative with forward slashes
 }
 
-// SteamCompare is a mod in the workspace against the copy Steam has: the snapshot PMT kept at its
-// last upload, or a download from Steam.
+// SteamCompare is a mod in the workspace against the copy Steam has: the snapshot PMT kept at its last upload, or a
+// download from Steam.
 type SteamCompare struct {
 	Item       string             `json:"item"`       // the Workshop id; "" when the mod is not published
 	From       string             `json:"from"`       // "snapshot", "download", or "" with neither
 	Version    string             `json:"version"`    // the version in Steam's copy of the descriptor
 	UploadedAt string             `json:"uploadedAt"` // RFC 3339
 	Title      string             `json:"title"`
-	Root       string             `json:"root"` // Steam's copy of the mod's files
-	Listing    []ListingChange    `json:"listing"`
-	Files      []steam.FileChange `json:"files"`
+	Root       string             `json:"root"`    // Steam's copy of the mod's files
+	Listing    []ListingChange    `json:"listing"` // the listing's fields
+	Files      []steam.FileChange `json:"files"`   // the mod's files
 	Changes    int                `json:"changes"` // the listing fields and files an upload changes
-	// Steam's extra images and videos the mod does not keep: an upload removes them when the mod keeps
-	// extras of its own, and leaves them when it keeps none
-	OnlyOnSteam []string `json:"onlyOnSteam"`
+
+	OnlyOnSteam []string `json:"onlyOnSteam"` // Steam's extras the mod lacks; removed only where the mod keeps its own
 }
 
 // ListingChange is one field of the listing as Steam has it and as an upload would send it.
 type ListingChange struct {
 	Field     string   `json:"field"`
-	Steam     string   `json:"steam"`
-	Workspace string   `json:"workspace"`
+	Steam     string   `json:"steam"`     // as Steam has it
+	Workspace string   `json:"workspace"` // as an upload would send it
 	Changed   bool     `json:"changed"`
-	Added     []string `json:"added,omitempty"`   // of a list field (the tags): what an upload adds
-	Removed   []string `json:"removed,omitempty"` // and what it takes away
-	// the lines a change adds and removes (steam.LineCounts)
-	LinesAdded   int `json:"linesAdded"`
-	LinesRemoved int `json:"linesRemoved"`
+	Added     []string `json:"added,omitempty"`   // a list field (the tags): what an upload adds
+	Removed   []string `json:"removed,omitempty"` // what it takes away
+
+	LinesAdded   int `json:"linesAdded"`   // the lines a change adds (steam.LineCounts)
+	LinesRemoved int `json:"linesRemoved"` // the lines a change removes
 }
 
 // snapshotPage is a snapshot's listing.json: the item's page beside the files Steam has.
 type snapshotPage struct {
 	From        string        `json:"from"` // snapshot or download
 	Title       string        `json:"title"`
-	Description string        `json:"description"` // BBCode
-	At          string        `json:"at"`          // uploaded, or Steam's last update (RFC 3339)
-	Extras      []steam.Extra `json:"extras,omitempty"`
+	Description string        `json:"description"`      // BBCode
+	At          string        `json:"at"`               // uploaded, or Steam's last update (RFC 3339)
+	Extras      []steam.Extra `json:"extras,omitempty"` // the extra images and videos
 }
 
 // UploadFiles walks a mod as its upload copy does, by its saved ignore text.
@@ -390,7 +388,8 @@ func (rls *ReleaseService) PublishSteam(workspaceID, modID string) (*PublishResu
 	return result, nil
 }
 
-// stagedPreview is the listing image's file in the upload copy; "" where the listing has none or the copy lacks it.
+// stagedPreview returns the listing image's file in the upload copy; "" where the listing has none or the copy lacks
+// it.
 func stagedPreview(stage string, listing *Listing) string {
 	if listing.ThumbnailRel == "" {
 		return ""
@@ -402,8 +401,8 @@ func stagedPreview(stage string, listing *Listing) string {
 	return staged
 }
 
-// uploadedPage is the snapshot page of an upload: what it sent, and where the upload left Steam's own description
-// or extras as they were, what the last copy of the item says Steam had.
+// uploadedPage returns the snapshot page of an upload: what it sent, and where the upload left Steam's own text or
+// extras as they were, what the last copy of the item says Steam had.
 func uploadedPage(listing *Listing, text string, sent bool, item string) snapshotPage {
 	page := snapshotPage{
 		From: "snapshot", Title: listing.Name, Description: text, At: time.Now().UTC().Format(time.RFC3339),
@@ -473,7 +472,7 @@ func (rls *ReleaseService) CompareWithSteam(workspaceID, modID string) (*SteamCo
 	return out, nil
 }
 
-// extraLabels is the names the page's extra images and videos are listed by.
+// extraLabels returns the names the page's extra images and videos are listed by.
 func extraLabels(extras []steam.Extra) []string {
 	names := []string{}
 	for _, extra := range extras {
@@ -482,7 +481,7 @@ func extraLabels(extras []steam.Extra) []string {
 	return names
 }
 
-// without is the tags that others lack, in order.
+// without returns the tags that others lack, in order.
 func without(tags, others []string) []string {
 	return slices.DeleteFunc(slices.Clone(tags), func(tag string) bool { return slices.Contains(others, tag) })
 }
@@ -561,14 +560,14 @@ func (rls *ReleaseService) fetchItem(ws *Workspace, mod *WorkspaceMod, files boo
 	return fields.RemoteFileID, resp, err
 }
 
-// steamLibrary is where the workspace's install keeps Steam's library, which the publishing child
-// loads, and the game's app id.
+// steamLibrary returns where the workspace's install keeps Steam's library, which the publishing child loads, and the
+// game's app id.
 func (rls *ReleaseService) steamLibrary(workspaceID string) (string, uint32, error) {
 	ws, inst, err := rls.config.workspace(workspaceID)
 	if err != nil {
 		return "", 0, err
 	}
-	info := game.Get(ws.GameID)
+	info := game.Lookup(ws.GameID)
 	if info == nil || info.SteamAppID == 0 {
 		return "", 0, fmt.Errorf("no Steam App ID for game %s", ws.GameID)
 	}
@@ -605,7 +604,7 @@ func (rls *ReleaseService) loadFrom(ws *Workspace, mod *WorkspaceMod) (*Listing,
 		workshopURL = steamWorkshopURL + fields.RemoteFileID
 	}
 	saved := ""
-	if info, err := os.Stat(game.DescriptorPath(ws.GameID, root)); err == nil {
+	if info, err := os.Stat(game.BuildDescriptorPath(ws.GameID, root)); err == nil {
 		saved = info.ModTime().UTC().Format(time.RFC3339)
 	}
 	return &Listing{
@@ -618,12 +617,12 @@ func (rls *ReleaseService) loadFrom(ws *Workspace, mod *WorkspaceMod) (*Listing,
 		ReadmeMd:         markdown, ReadmeBbcode: bbcode, ChangeNote: note.Content,
 		DescMdRel: cmp.Or(mod.DescMdRel, steam.DescMdName), DescBbRel: cmp.Or(mod.DescBbRel, steam.DescBbName),
 		WorkshopURL: workshopURL,
-		Descriptor:  game.DescriptorFile(ws.GameID), Saved: saved, LegalURL: steamLegalURL,
+		Descriptor:  game.ResolveDescriptorFile(ws.GameID), Saved: saved, LegalURL: steamLegalURL,
 	}, nil
 }
 
-// summarize is what a mod's descriptor fields and folder say of its Workshop id, its listing image
-// and its description's file.
+// summarize returns what a mod's descriptor fields and folder say of its Workshop id, its listing image and its
+// description's file.
 func summarize(gameID string, mod *WorkspaceMod, fields modfiles.ListingFields) *ListingSummary {
 	summary := &ListingSummary{RemoteFileID: fields.RemoteFileID}
 	if rel, known := modfiles.Thumbnail(gameID, mod.Path, fields.Picture); known {
@@ -638,9 +637,8 @@ func summarize(gameID string, mod *WorkspaceMod, fields modfiles.ListingFields) 
 	return summary
 }
 
-// description is where the mod's Workshop description comes from, and its file relative to
-// the mod ("" for Steam's own text). With none chosen, it is the file the mod has, Markdown first,
-// else Steam's own text, so a mod with neither file has nothing written for it.
+// description returns where the mod's Workshop description comes from and its file in the mod ("" for Steam's own
+// text). With none chosen it is the file the mod has, Markdown first, else Steam's own text.
 func description(mod *WorkspaceMod) (source, rel string) {
 	files := map[string]string{
 		steam.FromMarkdown: cmp.Or(mod.DescMdRel, steam.DescMdName),
@@ -657,8 +655,7 @@ func description(mod *WorkspaceMod) (source, rel string) {
 	return steam.FromSteam, ""
 }
 
-// sentDescription is the BBCode an upload of the listing sends, or false where the upload leaves
-// Steam's own text.
+// sentDescription returns the BBCode an upload of the listing sends, or false where the upload leaves Steam's own text.
 func sentDescription(mod *WorkspaceMod, listing *Listing) (string, bool) {
 	switch source, _ := description(mod); source {
 	case steam.FromMarkdown:
@@ -669,7 +666,7 @@ func sentDescription(mod *WorkspaceMod, listing *Listing) (string, bool) {
 	return "", false
 }
 
-// newWork is a folder for one upload or download beside the snapshots, so that it can become one.
+// newWork returns a folder for one upload or download beside the snapshots, so that it can become one.
 func newWork() (string, error) {
 	cache, err := appdata.CacheDir()
 	if err != nil {
@@ -682,8 +679,8 @@ func newWork() (string, error) {
 	return os.MkdirTemp(dir, "work-")
 }
 
-// snapshotDir is where the Workshop item's snapshot is kept: the files Steam has under files/,
-// and listing.json beside them.
+// snapshotDir returns where the Workshop item's snapshot is kept: the files Steam has under files/, and listing.json
+// beside them.
 func snapshotDir(item string) (string, error) {
 	if _, err := strconv.ParseUint(item, 10, 64); err != nil {
 		return "", fmt.Errorf("not a workshop item id: %q", item)
@@ -711,7 +708,7 @@ func keepSnapshot(work, item string, page snapshotPage) error {
 	return os.Rename(work, dir)
 }
 
-// loadSnapshot is the item's snapshot folder and page, or no page when there is none.
+// loadSnapshot returns the item's snapshot folder and page, or no page when there is none.
 func loadSnapshot(item string) (string, *snapshotPage) {
 	dir, err := snapshotDir(item)
 	if err != nil {
@@ -724,7 +721,7 @@ func loadSnapshot(item string) (string, *snapshotPage) {
 	return dir, &page
 }
 
-// picture is the descriptor's picture for a listing image at rel: its file name, "" for none.
+// picture returns the descriptor's picture for a listing image at rel: its file name, "" for none.
 func picture(rel string) string {
 	if rel == "" {
 		return ""
@@ -732,13 +729,13 @@ func picture(rel string) string {
 	return path.Base(rel)
 }
 
-// exists is whether a file or folder is at the path.
+// exists reports whether a file or folder is at the path.
 func exists(file string) bool {
 	_, err := os.Stat(file)
 	return err == nil
 }
 
-// firstParagraph is the text's first non-empty paragraph, cut to a short description's 200 bytes.
+// firstParagraph returns the text's first non-empty paragraph, cut to a short description's 200 bytes.
 func firstParagraph(text string) string {
 	for paragraph := range strings.SplitSeq(strings.ReplaceAll(text, "\r\n", "\n"), "\n\n") {
 		if paragraph = strings.TrimSpace(paragraph); paragraph != "" {

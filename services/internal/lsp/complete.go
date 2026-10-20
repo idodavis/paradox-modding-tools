@@ -22,42 +22,40 @@ import (
 // maxComplete caps the list; a cut list is marked incomplete, so the editor asks again.
 const maxComplete = 80
 
-// Item is one completion: its text, what it is, what may follow, and its rank (0 stated or in
-// scope, 1 vanilla writes it, 2 a name, a link or a command for another scope, 3 a loc key; in a
-// data call 1 a function, 2 a type).
+// Item is one completion.
 type Item struct {
-	Label   string `json:"label"`
-	Head    string `json:"head"`
+	Label   string `json:"label"`             // the text
+	Head    string `json:"head"`              // what it is
 	Snippet string `json:"snippet,omitempty"` // the editor snippet a key writes: its block, or key = and a value
-	Rank    int    `json:"rank"`
-	Range   Range  `json:"range"`
+	// 0 stated or in scope, 1 vanilla's or a data function, 2 other names, links and types, 3 a loc key
+	Rank  int   `json:"rank"`
+	Range Range `json:"range"` // the text it replaces
 }
 
-// Completion is the list, and whether the cap cut it.
+// Completion is the list of items.
 type Completion struct {
 	Items      []Item `json:"items"`
-	Incomplete bool   `json:"incomplete"`
+	Incomplete bool   `json:"incomplete"` // the cap cut it
 }
 
-// completer gathers the items that start with the typed prefix, each once, and what each stands
-// for.
+// completer gathers the items that start with the typed prefix, each once.
 type completer struct {
 	file   *openFile
-	prefix string
-	at     Range
+	prefix string // the text typed
+	at     Range  // where it is
 	items  []Item
-	about  map[string]subject
+	about  map[string]subject // what each item stands for
 }
 
-// partial is the text being typed at the cursor: where it starts and ends, and in a data call the
-// call's text from its [ up to it ("" outside one).
+// partial is the text being typed at the cursor.
 type partial struct {
-	start, end int
-	call       string
+	start int    // where it starts
+	end   int    // where it ends
+	call  string // in a data call, its text from the [ up to it; "" outside one
 }
 
-// Complete is what may be written at a position of a script or localization file, the best first,
-// at most maxComplete of it.
+// Complete returns what may be written at a position of a script or localization file, the best first, at most
+// maxComplete of it.
 func Complete(ws *workspace.Session, path string, line, col int) (*Completion, error) {
 	ws.RLock()
 	defer ws.RUnlock()
@@ -68,9 +66,8 @@ func Complete(ws *workspace.Session, path string, line, col int) (*Completion, e
 	return file.complete(file.parsed.Lines().OffsetAt(line, col), "").list(), nil
 }
 
-// partialAt finds the text being typed at an offset: the step of a data call, else the word the
-// cursor touches, a prefixed name (trait:br) whole. It is false in a comment, and in a file that is no
-// script under a root, outside a data call.
+// partialAt finds the text being typed at an offset: the step of a data call, else the word the cursor touches, a
+// prefixed name (trait:br) whole. It is false in a comment, and outside a data call in a file that is no script.
 func (file *openFile) partialAt(offset int) (partial, bool) {
 	isComment := slices.ContainsFunc(file.parsed.Comments, func(comment jomini.Comment) bool {
 		return comment.Range.Start < offset && offset <= comment.Range.End
@@ -94,9 +91,8 @@ func (file *openFile) partialAt(offset int) (partial, bool) {
 	return partial{start: min(start, offset), end: max(end, offset)}, true
 }
 
-// complete gathers the items for the text typed at an offset, or for a label an item offered
-// (Resolve): at a value what the position takes, in a data call its next step, after a prefix its
-// names, else the block's keys.
+// complete gathers the items for the text typed at an offset, or for a label an item offered: what the position
+// takes at a value, the next step in a data call, the names after a prefix, else the block's keys.
 func (file *openFile) complete(offset int, label string) *completer {
 	completer := &completer{file: file, about: map[string]subject{}}
 	partial, isPartial := file.partialAt(offset)
@@ -122,8 +118,7 @@ func (file *openFile) complete(offset int, label string) *completer {
 	return completer
 }
 
-// list is the items best first (by rank, in the order they were added within one), cut at
-// maxComplete.
+// list returns the items best first (by rank, then the order added), cut at maxComplete.
 func (completer *completer) list() *Completion {
 	slices.SortStableFunc(completer.items, func(first, second Item) int { return cmp.Compare(first.Rank, second.Rank) })
 	cut := len(completer.items) > maxComplete
@@ -150,8 +145,8 @@ func (completer *completer) names(database, spelled string, rank int, more ...st
 		return
 	}
 	for _, name := range append(index.Names(completer.file.ws.Indexes(), database), more...) {
-		reference := subject{ref: &schema.Occurrence{Database: database, ID: name}}
-		completer.add(Item{Label: spelled + name, Head: game.KindName(database), Rank: rank}, reference)
+		reference := subject{occurrence: &schema.Occurrence{Database: database, ID: name}}
+		completer.add(Item{Label: spelled + name, Head: game.DescribeEntry(database, false), Rank: rank}, reference)
 	}
 }
 
@@ -175,9 +170,8 @@ func (completer *completer) prefixedNames() {
 	}
 }
 
-// keys offers what may be written as a key where the cursor is: at the file's top the file's
-// database's names; in a block its holder's arguments and words, then what its context reads
-// (operators, keys, commands and links) and the names its calls resolve in.
+// keys offers what may be written as a key: at the file's top its database's names; in a block its holder's arguments
+// and words, what its context reads (operators, keys, commands, links) and the names its calls resolve in.
 func (completer *completer) keys(cursor cursor) {
 	s := completer.file.ws.Install.Schema
 	holder := cursor.blockAt()
@@ -191,10 +185,10 @@ func (completer *completer) keys(cursor cursor) {
 	completer.parameters(cursor, at)
 	completer.values(at)
 	inner := at.inner
-	if inner.At == nil && len(completer.items) == 0 && holder > 0 {
+	if inner.BlockPosition == nil && len(completer.items) == 0 && holder > 0 {
 		inner = cursor.chain[holder-1].inner
 	}
-	if inner.At == nil {
+	if inner.BlockPosition == nil {
 		return
 	}
 	completer.operators(inner)
@@ -205,7 +199,7 @@ func (completer *completer) keys(cursor cursor) {
 	}
 	if inner.Caller == game.Shapes[game.ShapeWidget].Caller {
 		for _, widgetType := range slices.Sorted(maps.Keys(s.WidgetTypes)) {
-			typeCall := subject{ref: &schema.Occurrence{Role: schema.Refers, Caller: inner.Caller, ID: widgetType}}
+			typeCall := subject{occurrence: &schema.Occurrence{Role: schema.Refers, Caller: inner.Caller, ID: widgetType}}
 			completer.add(Item{Label: widgetType, Head: builtInHeading(inner.Caller), Rank: 2}, typeCall)
 		}
 	}
@@ -227,7 +221,7 @@ func (completer *completer) parameters(cursor cursor, at step) {
 	spelled := cursor.occurrences[call].ID + ":"
 	for _, name := range index.Names(completer.file.ws.Indexes(), schema.Parameter) {
 		if parameter, isParameter := strings.CutPrefix(name, spelled); isParameter {
-			completer.add(Item{Label: parameter, Head: heading(schema.Parameter)}, subject{ref: &schema.Occurrence{Database: schema.Parameter, ID: name}})
+			completer.add(Item{Label: parameter, Head: game.DescribeEntry(schema.Parameter, true)}, subject{occurrence: &schema.Occurrence{Database: schema.Parameter, ID: name}})
 		}
 	}
 }
@@ -236,17 +230,17 @@ func (completer *completer) parameters(cursor cursor, at step) {
 func (completer *completer) operators(inner schema.Context) {
 	s := completer.file.ws.Install.Schema
 	var names []string
-	for _, construct := range game.Constructs {
-		if construct.Within == game.ShapeValue {
-			names = append(names, construct.Key)
+	for _, keyword := range game.Keywords {
+		if keyword.Holder == game.ShapeValue {
+			names = append(names, keyword.Key)
 		}
 	}
 	slices.Sort(names)
 	for _, name := range slices.Compact(names) {
 		entered := s.Enter(inner, &jomini.Assignment{Key: jomini.Scalar{Text: name}}, nil, false)
-		if entered.Rule == game.KeyRuleOperator {
+		if entered.KeyRule == game.KeyRuleOperator {
 			position := entered.Position()
-			completer.add(Item{Label: name, Head: requirementText(position)}, subject{key: position, scope: inner.Scope})
+			completer.add(Item{Label: name, Head: requirementText(position)}, subject{position: position, scope: inner.Scope})
 		}
 	}
 }
@@ -255,19 +249,24 @@ func (completer *completer) operators(inner schema.Context) {
 // those vanilla writes; a key with no position of its own is a call to a scripted entry.
 func (completer *completer) blockKeys(inner schema.Context) {
 	s := completer.file.ws.Install.Schema
-	names, stated := positionKeys(inner.At)
+	names, stated := positionKeys(inner.BlockPosition)
 	for i, name := range names {
 		position := s.Enter(inner, &jomini.Assignment{Key: jomini.Scalar{Text: name}}, nil, false).Position()
 		rank := 1
 		if i < stated {
 			rank = 0
 		}
-		about := subject{key: position, scope: inner.Scope}
+		about := subject{position: position, scope: inner.Scope}
 		if position == nil {
-			about.ref = &schema.Occurrence{Caller: inner.Caller, ID: name}
+			about.occurrence = &schema.Occurrence{Caller: inner.Caller, ID: name}
 		}
 		completer.add(Item{Label: name, Head: requirementText(position), Snippet: snippet(name, position), Rank: rank}, about)
 	}
+}
+
+// isDeclaredAny reports whether the dumps declare a command as any of the words.
+func isDeclaredAny(command *schema.Command, words []string) bool {
+	return slices.ContainsFunc(command.Declared, func(word string) bool { return slices.Contains(words, word) })
 }
 
 // commands offers the effects, triggers and links the block allows (no effect inside a trigger):
@@ -276,19 +275,19 @@ func (completer *completer) commands(inner schema.Context) {
 	s := completer.file.ws.Install.Schema
 	allowed := game.Shapes[inner.Shape].Allows
 	if inner.InTrigger {
-		allowed &^= game.KindEffect
+		allowed = slices.DeleteFunc(slices.Clone(allowed), func(word string) bool { return word == game.DeclaredEffect })
 	}
-	if allowed == 0 {
+	if len(allowed) == 0 {
 		return
 	}
 	for _, name := range slices.Sorted(maps.Keys(s.Commands)) {
 		command := s.Commands[name]
-		if command.Kinds&(allowed|game.KindLink) == 0 || command.Wild {
+		if !isDeclaredAny(command, allowed) && !slices.Contains(command.Declared, game.DeclaredLink) || command.Wild {
 			continue
 		}
 		runsHere := inner.Scope.This == "" || len(command.Scopes) == 0 || slices.Contains(command.Scopes, inner.Scope.This)
 		rank := 2
-		if command.Kinds&allowed != 0 && runsHere {
+		if isDeclaredAny(command, allowed) && runsHere {
 			rank = 0
 		}
 		completer.add(Item{Label: name, Head: kindText(command), Snippet: snippet(name, command.Args), Rank: rank},
@@ -296,9 +295,8 @@ func (completer *completer) commands(inner schema.Context) {
 	}
 }
 
-// values offers what a statement's key takes: the words its position declares, those vanilla writes
-// there, the names of the database it refers to or the localization keys it names, and the names
-// its command makes or reads.
+// values offers what a statement's key takes: the words its position declares or vanilla writes there, the names of
+// the database it refers to or the localization keys it names, and the names its command makes or reads.
 func (completer *completer) values(at step) {
 	if _, isAssign := at.statement.(*jomini.Assignment); !isAssign {
 		return
@@ -324,17 +322,16 @@ func (completer *completer) values(at step) {
 		}
 		if claim.Type == schema.ValueLoc {
 			for _, key := range ws.LocKeys(completer.prefix, maxComplete+1) {
-				reference := subject{ref: &schema.Occurrence{Database: game.Localization, ID: key}}
-				completer.add(Item{Label: key, Head: heading(game.Localization), Rank: 3}, reference)
+				reference := subject{occurrence: &schema.Occurrence{Database: game.Localization, ID: key}}
+				completer.add(Item{Label: key, Head: game.DescribeEntry(game.Localization, true), Rank: 3}, reference)
 			}
 		}
 	}
 	completer.names(schema.StoredIn(at.context, at.statement), "", 2)
 }
 
-// dataCalls offers the next step of a data call: after a dot the functions of the type the steps
-// before lead to, else the global functions, the data types and the names of the functions and
-// concepts databases.
+// dataCalls offers the next step of a data call: after a dot the functions of the type reached, else the global
+// functions, the data types and the functions and concepts databases' names.
 func (completer *completer) dataCalls(call string) {
 	s := completer.file.ws.Install.Schema
 	if strings.HasSuffix(call, ".") {
@@ -355,23 +352,22 @@ func (completer *completer) dataCalls(call string) {
 	}
 }
 
-// snippet is the editor snippet a key writes: its block where a source declares it holds one or
-// vanilla writes only blocks there, key = and a value where a source declares its value or vanilla
-// writes one; "" for neither.
+// snippet returns the editor snippet a key writes: its block where it holds one, key = and a value where it takes
+// one; "" for neither.
 func snippet(name string, position *schema.Position) string {
 	switch {
 	case position == nil:
 		return ""
-	case position.Holds.Source != schema.SourceNone || position.Vanilla.Writes&^schema.WritesCommand == schema.WritesBlock:
+	case position.Shape.Source != game.SourceNone || position.Vanilla.Writes&^schema.WritesCommand == schema.WritesBlock:
 		return name + " = {\n\t$0\n}"
-	case position.Value.Source != schema.SourceNone || position.Vanilla.Writes&^(schema.WritesBlock|schema.WritesCommand) != 0:
+	case position.Value.Source != game.SourceNone || position.Vanilla.Writes&^(schema.WritesBlock|schema.WritesCommand) != 0:
 		return name + " = $0"
 	}
 	return ""
 }
 
-// Resolve is the card of what an item's label names, read again from the place the item was offered
-// at; nil where the label is not offered there or the card says nothing.
+// Resolve returns the card of what an item's label names, read from where the item was offered; nil where the label is
+// not offered there or the card says nothing.
 func Resolve(ws *workspace.Session, path string, item Item) (*Inspect, error) {
 	ws.RLock()
 	defer ws.RUnlock()

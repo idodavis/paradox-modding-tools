@@ -21,8 +21,7 @@ import (
 	"paradox-modding-tools/services/internal/schema"
 )
 
-// fromCache is the install a request's cache file holds, if it has a readable one; a request with no
-// app version never caches.
+// fromCache returns the install a request's cache file holds, if readable; a request with no app version never caches.
 func fromCache(req Request) (*Install, bool) {
 	if req.App == "" {
 		return nil, false
@@ -63,8 +62,8 @@ var devKey = sync.OnceValues(func() (string, error) {
 	return fmt.Sprintf("dev-%x", sum.Sum(nil)[:6]), nil
 })
 
-// cachePath is a request's cache file, install-<game>-<folder>-<version>-<app>-<state>.gob.gz, and
-// its prefix; the state hashes the language, install update time, dump names and dates.
+// cachePath returns a request's cache file, install-<game>-<folder>-<version>-<app>-<state>.gob.gz, and its prefix;
+// the state hashes the language, install update time, dump names and dates.
 func cachePath(req Request) (path, ofFolder string, err error) {
 	dir, err := appdata.CacheDir()
 	if err != nil {
@@ -77,8 +76,8 @@ func cachePath(req Request) (path, ofFolder string, err error) {
 		}
 	}
 	state := sha256.New()
-	_, _ = fmt.Fprintf(state, "%s|%d", req.Language, game.InstallUpdatedAt(req.Dir).UnixNano())
-	for _, file := range inventory.Files("dumps", game.DumpDirs(req.Game, req.Dir)) {
+	_, _ = fmt.Fprintf(state, "%s|%d", req.Language, game.ReadInstallUpdatedAt(req.Dir).UnixNano())
+	for _, file := range inventory.Files("dumps", game.FindDumpDirs(req.Game, req.Dir)) {
 		name := filepath.Base(file.Path)
 		if info, err := os.Stat(file.Path); err == nil && slices.Contains(schema.DumpFiles, name) {
 			_, _ = fmt.Fprintf(state, "|%s|%d", name, info.ModTime().UnixNano())
@@ -112,10 +111,8 @@ func forgetCaches(prefix, keep string) (version string, err error) {
 	return version, nil
 }
 
-// SaveInstall writes the install to its cache file whole, then deletes its install folder's older
-// cache files (Previous takes the first one's version) and every cache file no reader names
-// (neither install- nor wiki-), and the temporary files a run that ended mid-write left
-// (appdata.IsLeftoverTemp); a write in flight keeps its own.
+// SaveInstall writes the install to its cache file whole, then deletes its older cache files (Previous takes the first
+// one's version), unnamed cache files and interrupted runs' temporary files; a write in flight keeps its own.
 func SaveInstall(req Request, install *Install) error {
 	path, ofFolder, err := cachePath(req)
 	if err != nil {
@@ -136,7 +133,7 @@ func SaveInstall(req Request, install *Install) error {
 	return err
 }
 
-// CachedAt is when a request's cache file was written, by its file time; zero where there is none.
+// CachedAt returns when a request's cache file was written, by its file time; zero where there is none.
 func CachedAt(req Request) time.Time {
 	if path, _, err := cachePath(req); err == nil {
 		if info, err := os.Stat(path); err == nil {

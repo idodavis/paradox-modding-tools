@@ -74,6 +74,7 @@
    "word": "value",
    "key": "value",
    "head": "in script values",
+   "prose": "The number a script value starts from, or is set to.",
    "takes": [
     "a number"
    ],
@@ -115,6 +116,7 @@
    "word": "add",
    "key": "add",
    "head": "in script values",
+   "prose": "Adds the number or script value given.",
    "takes": [
     "a number"
    ],
@@ -176,7 +178,7 @@
    "word": "if",
    "key": "if",
    "head": "effect",
-   "prose": "Executes enclosed effects if limit criteria are met",
+   "prose": "Runs what is inside it when its limit holds.",
    "takes": [
     "effects"
    ],
@@ -201,6 +203,7 @@
    "word": "limit",
    "key": "limit",
    "head": "in `if`",
+   "prose": "The conditions an if, a list, a while or a trigger_if checks first.",
    "takes": [
     "triggers"
    ],
@@ -277,6 +280,7 @@
    "word": "multiply",
    "key": "multiply",
    "head": "in `if`",
+   "prose": "Multiplies by the number or script value given.",
    "takes": [
     "a number"
    ],
@@ -320,6 +324,7 @@
    "word": "min",
    "key": "min",
    "head": "in script values",
+   "prose": "Keeps the result at least the number given.",
    "takes": [
     "a number"
    ],

@@ -49,7 +49,7 @@ load order: a file is hidden by a later file at its `Rel`, or by a later index's
 rest sort by `Rel`, then by position in the file. `Names` is every name a database defines, for completion.
 `RefsInside` is the references written inside an entry's definition.
 
-**Resolution.** `Resolve` is the one resolver: a call looks in the databases its caller word names (`Descriptor.Callers`,
+**Resolution.** `Resolve` is the one resolver: a call looks in the databases its caller word names (`DatabaseRule.CallerWords`,
 `Schema.Callees`); a scope the game saves from code, a loc key or a file path is known with no
 definitions; a call by `widget` naming a built-in widget type (`Schema.WidgetTypes`) is known the same way; anything else is `Lookup`. A local definition answers only its own file. `RefsTo` is
 Resolve turned around: every reference to a name of a database, the calls into it included.

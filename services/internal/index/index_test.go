@@ -36,9 +36,8 @@ func emptyHome(t *testing.T) {
 	}
 }
 
-// fixtureInstall scans a fixture install as the goldens' generator does: an emptied home, so no
-// dump folder or wiki cache of this machine is read, and no cache written (App ""). The scan is
-// shared across tests.
+// fixtureInstall scans a fixture install as the goldens' generator does, with an emptied home and no cache written;
+// the scan is shared across tests.
 func fixtureInstall(t *testing.T, id string) *Install {
 	t.Helper()
 	emptyHome(t)
@@ -192,6 +191,18 @@ func TestResolve(t *testing.T) {
 	}
 }
 
+// combineOf returns the precedences of a game's databases as a session reads them, by the folder the schema's rule
+// declares for each; none without a schema.
+func combineOf(id string, s *schema.Schema) func(database string) game.Precedence {
+	return func(database string) game.Precedence {
+		folder := ""
+		if s != nil && s.Databases[database] != nil {
+			folder = s.Databases[database].Rule.ResolveFolder()
+		}
+		return game.Lookup(id).LookupPrecedence(database, folder)
+	}
+}
+
 func TestWinner(t *testing.T) {
 	type pair struct {
 		install *Install
@@ -210,7 +221,7 @@ func TestWinner(t *testing.T) {
 			}
 			return game.OriginVanilla
 		}
-		won, adds, orphans, _ := Winner(game.Get(id), defs, origin)
+		won, adds, orphans, _ := Winner(game.Lookup(id), defs, origin, combineOf(id, pairs[id].install.Schema))
 		return won, adds, orphans
 	}
 	lookup := func(id, database, name string) []At {
@@ -262,11 +273,11 @@ func TestWinnerByHand(t *testing.T) {
 	}
 	vanilla := func(string) string { return game.OriginVanilla }
 	plain := schema.Occurrence{Role: schema.Defines, Database: events, ID: "x"}
-	if won, _, _, _ := Winner(game.Get(vic3), made(plain, plain), vanilla); won.File().Path != "a" {
+	if won, _, _, _ := Winner(game.Lookup(vic3), made(plain, plain), vanilla, combineOf(vic3, nil)); won.File().Path != "a" {
 		t.Errorf("vic3 events: winner %q; want the first, events is first-wins", won.File().Path)
 	}
 	injected := schema.Occurrence{Role: schema.Defines, Database: events, ID: "x", Mode: "INJECT"}
-	if won, _, orphans, _ := Winner(game.Get("eu5"), made(injected), vanilla); won != (At{}) || len(orphans) != 1 {
+	if won, _, orphans, _ := Winner(game.Lookup("eu5"), made(injected), vanilla, combineOf("eu5", nil)); won != (At{}) || len(orphans) != 1 {
 		t.Errorf("eu5 a lone INJECT: winner %q, %d orphans; want none, one", won.File().Path, len(orphans))
 	}
 }

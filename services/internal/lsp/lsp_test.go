@@ -43,7 +43,7 @@ const (
 	codeWrongScope  = "wrong-scope"
 )
 
-// fixture is a session over one fixture install, scanned once, with an empty mod folder per test.
+// fixture returns a session over one fixture install, scanned once, with an empty mod folder per test.
 func fixture(t *testing.T, id string) (*workspace.Session, string) {
 	t.Helper()
 	scan, _ := installs.LoadOrStore(id, sync.OnceValues(func() (*index.Install, error) {
@@ -58,7 +58,7 @@ func fixture(t *testing.T, id string) (*workspace.Session, string) {
 	if err := os.MkdirAll(filepath.Join(dir, "common"), 0o755); err != nil {
 		t.Fatal(err)
 	}
-	ws, err := workspace.Open(t.Context(), game.Get(id), install, []workspace.Mod{{ID: fixtureMod, Dir: dir, Calendar: workspace.Calendar{{Name: "AC", Offset: 7782}}}}, "")
+	ws, err := workspace.Open(t.Context(), game.Lookup(id), install, []workspace.Mod{{ID: fixtureMod, Dir: dir, Calendar: workspace.Calendar{{Name: "AC", Offset: 7782}}}}, "")
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -75,10 +75,8 @@ func emptyHome(t *testing.T) {
 	}
 }
 
-// goldenInstall scans a fixture install as the goldens' generator does: under an empty home, so no
-// dump folder or wiki cache of this machine is read, from the fixtures' absolute path, and with no
-// cache written (App ""). It is its own scan, apart from fixture's: the dumps this machine holds
-// change what accuses, and the goldens were made without them.
+// goldenInstall scans a fixture install as the goldens' generator does: under an empty home and with no cache
+// written, apart from fixture's scan, since this machine's dumps change what accuses.
 func goldenInstall(t *testing.T, id string) *index.Install {
 	t.Helper()
 	emptyHome(t)
@@ -109,7 +107,7 @@ func goldenSession(t *testing.T, id string) *workspace.Session {
 	if id == ck3 {
 		mods[0].Calendar = workspace.Calendar{{Name: "AC", Offset: 7782}}
 	}
-	ws, err := workspace.Open(t.Context(), game.Get(id), install, mods, "")
+	ws, err := workspace.Open(t.Context(), game.Lookup(id), install, mods, "")
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -154,9 +152,8 @@ func dumpHovers(t *testing.T, ws *workspace.Session, file inventory.File) string
 	return out.String()
 }
 
-// TestHoverGoldens reproduces every hover golden: the card at every word of every fixture file,
-// printed as the goldens' generator prints it, byte for byte. A card that differs is read, never
-// regenerated here.
+// TestHoverGoldens reproduces every hover golden, the card at every word of every fixture file, byte for byte; a card
+// that differs is read, never regenerated here.
 func TestHoverGoldens(t *testing.T) {
 	root, err := filepath.Abs(filepath.Join("..", "testdata"))
 	if err != nil {
@@ -192,7 +189,7 @@ func TestHoverGoldens(t *testing.T) {
 	}
 }
 
-// firstDifference is the first line where two texts differ, with both versions.
+// firstDifference returns the first line where two texts differ, with both versions.
 func firstDifference(want, got string) string {
 	wantLines, gotLines := strings.Split(want, "\n"), strings.Split(got, "\n")
 	for i := range max(len(wantLines), len(gotLines)) {
@@ -217,7 +214,7 @@ func opened(ws *workspace.Session, dir, rel, text string) string {
 	return path
 }
 
-// aim is the line and column of a needle in a text, plus some columns in.
+// aim returns the line and column of a needle in a text, plus some columns in.
 func aim(t *testing.T, text, needle string, plus int) (int, int) {
 	t.Helper()
 	at := strings.Index(text, needle)
@@ -544,12 +541,8 @@ func TestDiagnoseInstallDefinitions(t *testing.T) {
 	}
 }
 
-// TestInstallsDiagnoseClean is the gate over the real installs: the game's own script, judged as a
-// mod's, must be clean, because every rule accuses only on what the game declares. A fixed sample
-// of each game's files (the first 400 under common and the first 250 events files, in name order)
-// is copied into a temporary mod and diagnosed with the default codes on. A finding is a wrong
-// rule, not a wrong game; parser errors are counted apart. It runs only with PMT_VANILLA_GATE=1 and
-// the three PMT_TEST_INSTALL_ variables.
+// TestInstallsDiagnoseClean gates the real installs: a sample of the game's own script, judged as a mod's, must be
+// clean. It runs only with PMT_VANILLA_GATE=1 and the three PMT_TEST_INSTALL_ variables.
 func TestInstallsDiagnoseClean(t *testing.T) {
 	if testing.Short() || os.Getenv("PMT_VANILLA_GATE") == "" {
 		t.Skip("diagnoses the three installs; set PMT_VANILLA_GATE=1")
@@ -593,7 +586,7 @@ func TestInstallsDiagnoseClean(t *testing.T) {
 				t.Fatal(err)
 			}
 		}
-		ws, err := workspace.Open(t.Context(), game.Get(testCase.id), install, []workspace.Mod{{ID: "sample", Dir: mod}}, "")
+		ws, err := workspace.Open(t.Context(), game.Lookup(testCase.id), install, []workspace.Mod{{ID: "sample", Dir: mod}}, "")
 		if err != nil {
 			t.Fatal(err)
 		}
@@ -927,7 +920,7 @@ func TestCardForCommand(t *testing.T) {
 	line, col := aim(t, text, "add_gold", 0)
 	card, _ := Hover(ws, path, line, col)
 	if card == nil || card.Head != "effect" || card.Scope == nil || card.Scope.This != "character" ||
-		card.Scope.Reason != "the one scope it runs in" || card.Prose != "adds gold to a character" ||
+		card.Scope.Reason != "every event runs in it unless it says otherwise" || card.Prose != "adds gold to a character" ||
 		!slices.Equal(card.Writes, []string{"a number", "script value"}) {
 		t.Errorf("an effect: %+v", card)
 	}

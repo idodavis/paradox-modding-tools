@@ -21,43 +21,43 @@ import (
 	"paradox-modding-tools/services/internal/workspace"
 )
 
-// Swatch is a color a file writes: the value that writes it and the color it makes.
+// Swatch is a color a file writes.
 type Swatch struct {
-	Range Range     `json:"range"`
-	Color game.RGBA `json:"color"`
+	Range Range     `json:"range"` // the value that writes it
+	Color game.RGBA `json:"color"` // the color it makes
 }
 
 // TextEdit replaces a range of a file with new text.
 type TextEdit struct {
-	Range   Range  `json:"range"`
-	NewText string `json:"newText"`
+	Range   Range  `json:"range"`   // the text replaced
+	NewText string `json:"newText"` // what replaces it
 }
 
-// WorkspaceEdit is edits by the path of the file each applies to.
+// WorkspaceEdit is a set of edits.
 type WorkspaceEdit struct {
-	Changes map[string][]TextEdit `json:"changes"`
+	Changes map[string][]TextEdit `json:"changes"` // by the path of the file each applies to
 }
 
 // CodeAction is one quick-fix.
 type CodeAction struct {
 	Title string        `json:"title"`
-	Edit  WorkspaceEdit `json:"edit"`
+	Edit  WorkspaceEdit `json:"edit"` // what applying it changes
 }
 
-// FoldingRange is one block's lines.
+// FoldingRange is the lines of one block.
 type FoldingRange struct {
-	StartLine int `json:"startLine"`
-	EndLine   int `json:"endLine"`
+	StartLine int `json:"startLine"` // 0-based
+	EndLine   int `json:"endLine"`   // 0-based
 }
 
 // InlayHint is text the editor draws after a position.
 type InlayHint struct {
-	Position Position `json:"position"`
-	Label    string   `json:"label"`
+	Position Position `json:"position"` // where it is drawn
+	Label    string   `json:"label"`    // the text
 }
 
-// Format is the edits that indent a script file with tabs by brace depth, or a localization file's
-// entries with one space. Only leading whitespace changes; other formats are left alone.
+// Format returns the edits that indent a script file with tabs by brace depth, or a localization file's entries with
+// one space; only leading whitespace changes, and other formats are left alone.
 func Format(ws *workspace.Session, path, unit string) ([]TextEdit, error) {
 	ws.RLock()
 	defer ws.RUnlock()
@@ -95,7 +95,7 @@ func Format(ws *workspace.Session, path, unit string) ([]TextEdit, error) {
 	return edits, nil
 }
 
-// Folding is one range per block of a script file, by the lines of its braces.
+// Folding returns one range per block of a script file, by the lines of its braces.
 func Folding(ws *workspace.Session, path string) ([]FoldingRange, error) {
 	ws.RLock()
 	defer ws.RUnlock()
@@ -119,9 +119,8 @@ func Folding(ws *workspace.Session, path string) ([]FoldingRange, error) {
 	return out, nil
 }
 
-// CodeActions is the quick-fixes at a position: a BOM for a localization file without one, and a
-// loc key no file defines for a word at a loc-key position, appended to the mod's file of the
-// language.
+// CodeActions returns the quick-fixes at a position: a byte order mark for a localization file without one, and a
+// loc key no file defines, appended to the mod's file of the language.
 func CodeActions(ws *workspace.Session, path string, line, col int) ([]CodeAction, error) {
 	ws.RLock()
 	defer ws.RUnlock()
@@ -155,8 +154,8 @@ func CodeActions(ws *workspace.Session, path string, line, col int) ([]CodeActio
 	return out, nil
 }
 
-// keyFile is the mod's localization file in the workspace's language a new key is appended to, the
-// position at its end, and whether its text lacks a final newline; "" where the mod has none.
+// keyFile returns the mod's localization file in the workspace's language that a new key is appended to, the position
+// at its end, and whether its text lacks a final newline; "" where the mod has none.
 func (file *openFile) keyFile() (string, Position, bool) {
 	ws := file.ws
 	_, mod, ok := ws.Locate(file.path)
@@ -173,8 +172,8 @@ func (file *openFile) keyFile() (string, Position, bool) {
 	return "", Position{}, false
 }
 
-// InlayHints is the era's date after every date of a file, where the mod declares a calendar and
-// one of its eras applies.
+// InlayHints returns the era's date after every date of a file, where the mod declares a calendar and one of its eras
+// applies.
 func InlayHints(ws *workspace.Session, path string) ([]InlayHint, error) {
 	ws.RLock()
 	defer ws.RUnlock()
@@ -212,10 +211,10 @@ func InlayHints(ws *workspace.Session, path string) ([]InlayHint, error) {
 }
 
 // geneDatabase is the database of the install's portrait genes, whose names a DNA writes as keys.
-var geneDatabase = game.NameOf("common/genes")
+var geneDatabase = game.DeriveDatabaseName("common/genes")
 
-// Colors is every color a file writes (blockColor), each a swatch before its block. The file's walk over the schema
-// gives each block its position; every block is tried, a file the schema reads nothing of too.
+// Colors returns every color a file writes (blockColor), each a swatch before its block; every block is tried, a file
+// the schema reads nothing of too.
 func Colors(ws *workspace.Session, path string) ([]Swatch, error) {
 	ws.RLock()
 	defer ws.RUnlock()
@@ -243,27 +242,24 @@ func Colors(ws *workspace.Session, path string) ([]Swatch, error) {
 	return swatches, nil
 }
 
-// blockColor is the color an assignment's block makes, the one rule hover and the swatches share: a tagged color block
-// (rgb { }, hsv { }) under any key; an untagged one at a position where vanilla writes only colors or words that name
-// them (a named color's entry, a coat of arms' color1: Vanilla.WritesColors), and under a key ending as its file type's
-// color keys do (color, fontcolor), but a key that names one of the install's genes (a DNA's hair_color holds two
-// pairs into a color map). The position is the block's in the schema; nil where it has none.
+// blockColor returns the color an assignment's block makes, by the rule hover and swatches share: a tagged block, an
+// untagged one where vanilla writes only colors, or under a color key unless it names a gene (hair_color).
 func blockColor(file *openFile, assign *jomini.Assignment, position *schema.Position) (game.RGBA, bool) {
 	tag, parts, isBlock := jomini.ColorParts(assign.Value)
-	color, known := game.ColorOf(tag, parts)
+	color, known := game.ParseColor(tag, parts)
 	if !isBlock || !known {
 		return color, false
 	}
 	if tag != "" || position != nil && position.Vanilla.WritesColors() {
 		return color, true
 	}
-	suffix := game.FileTypes[strings.ToLower(filepath.Ext(file.path))].ColorSuffix
+	suffix := game.FindRuleByExtension(strings.ToLower(filepath.Ext(file.path))).ColorSuffix
 	colorKey := suffix != "" && strings.HasSuffix(strings.ToLower(assign.Key.Text), suffix)
 	return color, colorKey && len(index.Lookup(file.ws.Indexes(), schema.Defines, geneDatabase, assign.Key.Text)) == 0
 }
 
-// Recolor is a color block written again with another color in its own form: its tag, then the parts game.PartsOf
-// writes.
+// Recolor returns a color block written again with another color in its own form: its tag, then the parts
+// game.FormatColor writes.
 func Recolor(block string, color game.RGBA) (string, error) {
 	var value jomini.Value
 	if statements := jomini.Parse("color = " + block).Root.Statements; len(statements) == 1 {
@@ -272,7 +268,7 @@ func Recolor(block string, color game.RGBA) (string, error) {
 		}
 	}
 	tag, parts, isBlock := jomini.ColorParts(value)
-	texts, known := game.PartsOf(tag, parts, color)
+	texts, known := game.FormatColor(tag, parts, color)
 	if !isBlock || !known {
 		return "", fmt.Errorf("%q is no color block", block)
 	}

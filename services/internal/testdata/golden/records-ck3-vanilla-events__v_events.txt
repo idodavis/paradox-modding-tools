@@ -12,6 +12,7 @@ ref landed_titles "k_x" called="" 215-224 @12:11 from=0 trigger=true
 ref landed_titles "c_x" called="" 236-245 @13:11 from=0 trigger=true
 ref traits "brave" called="" 260-265 @14:14 from=0 trigger=true
 ref events "v.2" called="" 385-388 @20:18 from=0 trigger=false
+ref dynasties "dynasty_1" called="" 510-527 @24:2 from=0 trigger=false
 ref events "v.2" called="" 608-611 @26:26 from=0 trigger=false
 ref  "v_effect" called="effect" 645-653 @29:2 from=0 trigger=false
 ref parameter "v_effect:AMOUNT" called="" 658-664 @29:15 from=0 trigger=false

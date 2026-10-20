@@ -32,56 +32,52 @@ type Params struct {
 type Node struct {
 	ID       string `json:"id"`
 	Database string `json:"database"`
-	Kind     string `json:"kind"` // what one of its database is called (game.KindName)
-	Title    string `json:"title,omitempty"`
-	Origin   string `json:"origin,omitempty"`
-	Root     bool   `json:"root,omitempty"`
-	Stub     string `json:"stub,omitempty"` // "more": fires hidden out of the node in its ID; "fired-by": callers hidden
+	Kind     string `json:"kind"`             // what one of its database is called (game.DescribeEntry)
+	Title    string `json:"title,omitempty"`  // its localized name
+	Origin   string `json:"origin,omitempty"` // the origin that defines it
+	Root     bool   `json:"root,omitempty"`   // the graph's root
+	Stub     string `json:"stub,omitempty"`   // "more": fires hidden out of it; "fired-by": callers hidden
 }
 
-// Edge is one fire drawn; Via names the scripted effects between, in the order they are entered, and Block the
-// block of its definition the fire sits in (option a, immediate).
+// Edge is one fire drawn.
 type Edge struct {
 	From  string `json:"from"`
 	To    string `json:"to"`
-	Via   string `json:"via"`
-	Block string `json:"block,omitempty"`
+	Via   string `json:"via"`             // the scripted effects between, in the order they are entered
+	Block string `json:"block,omitempty"` // the block of its definition the fire sits in (option a, immediate)
 }
 
-// EventGraph is the page's graph; Reason says why it is empty. Reach counts what the depth holds with no fan-out
-// or node cap (the definitions, and the scripted effects between when they are drawn), Kinds and Origins split it
-// by kind (game.KindName) and by the origin that defines each.
+// EventGraph is the page's graph.
 type EventGraph struct {
 	Nodes     []Node         `json:"nodes"`
 	Edges     []Edge         `json:"edges"`
-	Truncated bool           `json:"truncated"`
-	Reached   int            `json:"reached,omitempty"` // truncated: the hop the node cap cut
-	Reach     int            `json:"reach"`
-	Kinds     map[string]int `json:"kinds"`
-	Origins   map[string]int `json:"origins"`
-	Reason    string         `json:"reason,omitempty"`
+	Truncated bool           `json:"truncated"`         // the node cap cut it
+	Reached   int            `json:"reached,omitempty"` // when truncated, the hop the cap cut
+	Reach     int            `json:"reach"`             // what the depth holds with no fan-out or node cap
+	Kinds     map[string]int `json:"kinds"`             // Reach by kind (game.DescribeEntry)
+	Origins   map[string]int `json:"origins"`           // Reach by the origin that defines each
+	Reason    string         `json:"reason,omitempty"`  // why it is empty
 }
 
-// Roots is a root search's hits, grouped by database, and how many of each database the query holds.
+// Roots is a root search's result.
 type Roots struct {
-	Hits      []Node          `json:"hits"`
-	Databases []DatabaseCount `json:"databases"`
+	Hits      []Node          `json:"hits"`      // grouped by database
+	Databases []DatabaseCount `json:"databases"` // how many of each database the query holds
 }
 
-// DatabaseCount is one database and how many roots of it a search holds.
+// DatabaseCount is how many roots of a database a search holds.
 type DatabaseCount struct {
 	Database string `json:"database"`
 	Count    int    `json:"count"`
 }
 
-// grapher holds one graph as it is drawn: the session, the page's numbers, each definition found once, and the ids
-// drawn.
+// grapher holds one graph as it is drawn.
 type grapher struct {
 	ws     *workspace.Session
-	params Params
+	params Params // the page's numbers
 	out    *EventGraph
-	drawn  map[string]bool
-	defs   map[string]index.At
+	drawn  map[string]bool     // the ids drawn
+	defs   map[string]index.At // each definition found, once
 }
 
 // stubMore is the database every stub is drawn in, and the Stub of one standing for fires out of a node.
@@ -90,10 +86,8 @@ const stubMore = "more"
 // maxRootsPerDatabase is how many roots of one database a root search draws.
 const maxRootsPerDatabase = 8
 
-// Graph draws the definitions around a root: hop by hop over what they fire, each node's fan-out cut by the page's
-// number, the callers into the root as a stub until the page opens it, every fire between two drawn definitions,
-// the scripted effects drawn where the page shows them, and only the page's origins. It takes the session's read
-// lock.
+// Graph draws the definitions around a root, hop by hop over what they fire: each node's fan-out cut by the page's
+// number, the callers into the root a stub until opened, only the page's origins. It takes the session's read lock.
 func Graph(ws *workspace.Session, params Params) *EventGraph {
 	ws.RLock()
 	defer ws.RUnlock()
@@ -119,12 +113,12 @@ func Graph(ws *workspace.Session, params Params) *EventGraph {
 	return graph.out
 }
 
-// newGrapher is a graph with nothing drawn.
+// newGrapher returns a graph with nothing drawn.
 func newGrapher(ws *workspace.Session, params Params) *grapher {
 	return &grapher{ws: ws, params: params, out: &EventGraph{}, drawn: map[string]bool{}, defs: map[string]index.At{}}
 }
 
-// def is the definition the game keeps of an id, in whichever database defines it: one a fire names (an event, an
+// def returns the definition the game keeps of an id, in whichever database defines it, one a fire names (an event, an
 // on_action) before the others; the zero At where nothing does.
 func (grapher *grapher) def(id string) index.At {
 	if def, cached := grapher.defs[id]; cached {
@@ -148,7 +142,7 @@ func (grapher *grapher) node(id string, root bool) {
 	database := def.Occurrence().Database
 	grapher.drawn[id] = true
 	grapher.out.Nodes = append(grapher.out.Nodes, Node{
-		ID: id, Database: database, Kind: game.KindName(database), Title: grapher.ws.Title(id, def, ""),
+		ID: id, Database: database, Kind: game.DescribeEntry(database, false), Title: grapher.ws.Title(id, def, ""),
 		Origin: def.File().Origin, Root: root,
 	})
 }
@@ -166,9 +160,8 @@ func (grapher *grapher) hops() {
 	}
 }
 
-// hop draws what one node fires, and says which nodes it drew new, for the next hop: the fires past the fan-out
-// are a stub, a new node past the node cap marks the graph truncated at the next hop, and an edge is drawn to a
-// node drawn before as well.
+// hop draws what one node fires and returns the nodes it drew new, for the next hop: the fires past the fan-out are a
+// stub, and a new node past the node cap marks the graph truncated.
 func (grapher *grapher) hop(id string, hop int) (next []string) {
 	params := grapher.params
 	fires := followed(params, grapher.ws.Fires(grapher.def(id)))
@@ -191,7 +184,7 @@ func (grapher *grapher) hop(id string, hop int) (next []string) {
 	return next
 }
 
-// followed is the fires drawn, through a scripted effect only when the page follows them: every fire with Follow,
+// followed returns the fires drawn, through a scripted effect only when the page follows them: every fire with Follow,
 // else the ones with no scripted effect between.
 func followed(params Params, fires []workspace.Fire) []workspace.Fire {
 	if params.Follow {
@@ -206,14 +199,14 @@ func (grapher *grapher) moreStub(id string, hidden []workspace.Fire) {
 	grapher.out.Edges = append(grapher.out.Edges, Edge{From: id, To: "more:" + id})
 }
 
-// stubTitle is how many fires a stub hides, and of what kind where they are all of one database.
+// stubTitle returns how many fires a stub hides, and of what kind where they are all of one database.
 func stubTitle(hidden []workspace.Fire) string {
 	title := fmt.Sprintf("+%d more", len(hidden))
 	database := hidden[0].Database
 	if slices.ContainsFunc(hidden, func(fire workspace.Fire) bool { return fire.Database != database }) {
 		return title
 	}
-	title += " " + game.KindName(database)
+	title += " " + game.DescribeEntry(database, false)
 	if len(hidden) > 1 {
 		title += "s"
 	}
@@ -260,7 +253,7 @@ func (grapher *grapher) countOnce(id string, seen map[string]bool) {
 	seen[id] = true
 	def := grapher.def(id)
 	grapher.out.Reach++
-	grapher.out.Kinds[game.KindName(def.Occurrence().Database)]++
+	grapher.out.Kinds[game.DescribeEntry(def.Occurrence().Database, false)]++
 	grapher.out.Origins[def.File().Origin]++
 }
 
@@ -318,7 +311,7 @@ func (grapher *grapher) drawScripted() {
 	})
 }
 
-// chain is an edge as the edges between the scripted effects it passes through, the first with the edge's block,
+// chain returns an edge as the edges between the scripted effects it passes through, the first with the edge's block,
 // drawing each effect not drawn yet; an edge through none is itself.
 func (grapher *grapher) chain(edge Edge) []Edge {
 	var chain []Edge
@@ -335,9 +328,8 @@ func (grapher *grapher) chain(edge Edge) []Edge {
 	return append(chain, Edge{From: from, To: edge.To, Block: block})
 }
 
-// keepOrigins keeps the nodes one of the page's origins defines (the root, and a stub whose node stays, always)
-// and, for each node that goes, joins its edges in to its edges out, one edge per pair, so a chain through it stays
-// joined.
+// keepOrigins keeps the nodes one of the page's origins defines (the root and a stub whose node stays always stay)
+// and joins each dropped node's edges in to its edges out, so a chain through it stays joined.
 func (grapher *grapher) keepOrigins() {
 	kept := map[string]bool{}
 	var gone []string
@@ -356,8 +348,7 @@ func (grapher *grapher) keepOrigins() {
 	}
 }
 
-// keeps is whether a node stays: the root, a stub whose node stays (the nodes before it say), or a definition one
-// of the page's origins has.
+// keeps reports whether a node stays: the root, a stub whose node stays, or a definition one of the page's origins has.
 func (grapher *grapher) keeps(node Node, kept map[string]bool) bool {
 	if node.Root {
 		return true
@@ -369,8 +360,8 @@ func (grapher *grapher) keeps(node Node, kept map[string]bool) bool {
 	return grapher.definedBy(node.ID, grapher.params.Origins)
 }
 
-// definedBy is whether one of the origins defines the id, in the database the game's definition of it is in, in any
-// copy.
+// definedBy reports whether one of the origins defines the id, in any copy, in the database the game's definition of it
+// is in.
 func (grapher *grapher) definedBy(id string, origins []string) bool {
 	database := grapher.def(id).Occurrence().Database
 	return slices.ContainsFunc(index.Lookup(grapher.ws.Indexes(), schema.Defines, database, id), func(def index.At) bool {
@@ -406,7 +397,7 @@ func (grapher *grapher) splice(id string) {
 	grapher.out.Edges = rest
 }
 
-// SearchRoots is the fired events and on_actions, and what fires one but a scripted entry, whose id holds the
+// SearchRoots returns the fired events and on_actions, and what fires one but a scripted entry, whose id holds the
 // query: ids that start with it first, 8 of each database. It takes the session's read lock.
 func SearchRoots(ws *workspace.Session, query string) *Roots {
 	ws.RLock()

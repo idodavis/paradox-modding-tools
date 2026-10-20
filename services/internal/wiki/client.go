@@ -22,22 +22,21 @@ import (
 	"paradox-modding-tools/services/internal/game"
 )
 
-// Client is one wiki reader: the HTTP client the three wikis accept, the pause between calls, where the sidecars are
-// kept, the sidecars read into memory, and the lock that lets one refresh run at a time.
+// Client reads the three wikis and keeps their pages as sidecars.
 type Client struct {
 	http        *http.Client
 	interval    time.Duration // between two API calls; the tests set 0
 	apiOverride string        // the tests' server in place of each game's api.php
 	cacheDir    string        // the folder the sidecars are in (appdata.CacheDir)
 
-	callMu     sync.Mutex // guards lastCall
-	lastCall   time.Time
-	refreshing sync.Mutex // one refresh at a time
-	memMu      sync.Mutex // guards mem
-	mem        map[string]*Sidecar
+	callMu     sync.Mutex          // guards lastCall
+	lastCall   time.Time           // the last API call
+	refreshing sync.Mutex          // one refresh at a time
+	memMu      sync.Mutex          // guards mem
+	mem        map[string]*Sidecar // the sidecars read into memory, by game id
 }
 
-// mwMember is one article of a category as the API lists it: its title and its latest revision.
+// mwMember is one article of a category as the API lists it.
 type mwMember struct {
 	Title     string `json:"title"`
 	LastRevid int    `json:"lastrevid"`
@@ -49,14 +48,13 @@ const (
 	memberCap = 500       // the most articles a category listing returns
 )
 
-// New is a wiki reader keeping its sidecars in cacheDir.
+// New returns a wiki reader keeping its sidecars in cacheDir.
 func New(cacheDir string) *Client {
 	return &Client{http: newHTTP(), interval: time.Second, cacheDir: cacheDir, mem: map[string]*Sidecar{}}
 }
 
-// newHTTP returns an HTTP client over a fresh HTTP/1.1 transport. Fastly (paradoxwikis.com) returns
-// 403 54113 on Go's HTTP/2 fingerprint. Cloning DefaultTransport and clearing
-// TLSNextProto still offers h2 via ALPN and the connection EOFs.
+// newHTTP returns an HTTP client over a fresh HTTP/1.1 transport: Fastly (paradoxwikis.com) returns 403 54113 on Go's
+// HTTP/2 fingerprint, and cloning DefaultTransport with TLSNextProto cleared still offers h2 through ALPN.
 func newHTTP() *http.Client {
 	return &http.Client{
 		Timeout: 20 * time.Second,
@@ -71,12 +69,12 @@ func newHTTP() *http.Client {
 	}
 }
 
-// api is the api.php endpoint of a game's wiki: the client's override where one is set, "" for a game with none.
+// api returns the api.php endpoint of a game's wiki: the client's override where one is set, "" for a game with none.
 func (client *Client) api(gameID string) string {
 	if client.apiOverride != "" {
 		return client.apiOverride
 	}
-	info := game.Get(gameID)
+	info := game.Lookup(gameID)
 	if info == nil {
 		return ""
 	}
@@ -146,7 +144,7 @@ func (client *Client) apiGet(ctx context.Context, api string, vals url.Values, a
 	return json.Unmarshal(body, answer)
 }
 
-// clipBody is the start of an answer body on one line, for an error message.
+// clipBody returns the start of an answer body on one line, for an error message.
 func clipBody(body []byte) string {
 	text := strings.Join(strings.Fields(string(body)), " ")
 	if len(text) > 120 {

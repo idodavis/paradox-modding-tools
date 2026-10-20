@@ -9,23 +9,31 @@ import * as inventory$0 from "../inventory/models.js";
 import * as workspace$0 from "../workspace/models.js";
 
 /**
- * Cited is one name a block writes, and where.
+ * Cited is one name a block writes.
  */
 export interface Cited {
     "name": string;
+
+    /**
+     * 0-based
+     */
     "line": number;
+
+    /**
+     * 0-based
+     */
     "col": number;
     "at": inventory$0.File;
 }
 
 /**
- * Contest is one name two origins define, its definitions in load order, with the game's rule.
+ * Contest is one name two origins define.
  */
 export interface Contest {
     "database": string;
 
     /**
-     * what one of its database is called (game.KindName)
+     * what one of its database is called (game.DescribeEntry)
      */
     "kind": string;
     "name": string;
@@ -34,31 +42,47 @@ export interface Contest {
      * the position in Sites of the definition the game keeps
      */
     "winner": number;
+
+    /**
+     * the game keeps the first definition
+     */
     "firstWins": boolean;
 
     /**
-     * FIOS (first wins) or LIOS (last wins), or the deciding entry mode (REPLACE, INJECT)
+     * FIOS (first wins), LIOS (last wins), or the deciding entry mode
      */
     "rule": string;
+
+    /**
+     * its definitions in load order
+     */
     "sites": Site[] | null;
 }
 
 /**
- * Dangling is one name a mod writes that nothing defines, and where.
+ * Dangling is one name a mod writes that nothing defines.
  */
 export interface Dangling {
     /**
-     * the check that found it: a code shownBy lists under the dangling card
+     * the check that found it
      */
     "code": string;
     "database": string;
+
+    /**
+     * what one of its database is called
+     */
     "kind": string;
     "name": string;
+
+    /**
+     * where it is written
+     */
     "sites": Site[] | null;
 }
 
 /**
- * DatabaseCount is one database and how many roots of it a search holds.
+ * DatabaseCount is how many roots of a database a search holds.
  */
 export interface DatabaseCount {
     "database": string;
@@ -66,14 +90,27 @@ export interface DatabaseCount {
 }
 
 /**
- * Dependency is one mod using a name another mod's definitions decide, and each place it does: it depends on the
- * other where only that mod defines the name, and is affected by it where the other's definition differs from the
- * one it hides, adds to it, or leaves it out.
+ * Dependency is one mod using a name another mod's definitions decide.
  */
 export interface Dependency {
+    /**
+     * the mod that uses it
+     */
     "from": string;
+
+    /**
+     * the mod that decides it
+     */
     "to": string;
+
+    /**
+     * the other's definition differs from the hidden one; else only it defines the name
+     */
     "affected": boolean;
+
+    /**
+     * each place it is used
+     */
     "sites": Site[] | null;
 }
 
@@ -81,8 +118,15 @@ export interface Dependency {
  * Detail is one definition, opened.
  */
 export interface Detail {
+    /**
+     * what one of its database is called
+     */
     "kind": string;
     "name": string;
+
+    /**
+     * 0-based
+     */
     "line": number;
     "at": inventory$0.File;
 
@@ -90,11 +134,19 @@ export interface Detail {
      * the definition as its file writes it
      */
     "lines": string[] | null;
+
+    /**
+     * the keys at the top of its block
+     */
     "sections": Section[] | null;
+
+    /**
+     * an event's option blocks
+     */
     "options": Option[] | null;
 
     /**
-     * as the graph draws them: events and on_actions, through scripted effects
+     * as the graph draws them: events and on_actions
      */
     "fires": workspace$0.Fire[] | null;
 
@@ -111,33 +163,58 @@ export interface Detail {
 }
 
 /**
- * Edge is one fire drawn; Via names the scripted effects between, in the order they are entered, and Block the
- * block of its definition the fire sits in (option a, immediate).
+ * Edge is one fire drawn.
  */
 export interface Edge {
     "from": string;
     "to": string;
+
+    /**
+     * the scripted effects between, in the order they are entered
+     */
     "via": string;
+
+    /**
+     * the block of its definition the fire sits in (option a, immediate)
+     */
     "block"?: string;
 }
 
 /**
- * EventGraph is the page's graph; Reason says why it is empty. Reach counts what the depth holds with no fan-out
- * or node cap (the definitions, and the scripted effects between when they are drawn), Kinds and Origins split it
- * by kind (game.KindName) and by the origin that defines each.
+ * EventGraph is the page's graph.
  */
 export interface EventGraph {
     "nodes": Node[] | null;
     "edges": Edge[] | null;
+
+    /**
+     * the node cap cut it
+     */
     "truncated": boolean;
 
     /**
-     * truncated: the hop the node cap cut
+     * when truncated, the hop the cap cut
      */
     "reached"?: number;
+
+    /**
+     * what the depth holds with no fan-out or node cap
+     */
     "reach": number;
+
+    /**
+     * Reach by kind (game.DescribeEntry)
+     */
     "kinds": { [_ in string]?: number } | null;
+
+    /**
+     * Reach by the origin that defines each
+     */
     "origins": { [_ in string]?: number } | null;
+
+    /**
+     * why it is empty
+     */
     "reason"?: string;
 }
 
@@ -176,11 +253,11 @@ export interface HealthParams {
 }
 
 /**
- * HealthReport is the Health page: every row names its file by its number in Sources.
+ * HealthReport is the Health page; every row names its file by its number in Sources.
  */
 export interface HealthReport {
     /**
-     * every file a row names, at the number it names it by
+     * every file a row names, at its number
      */
     "sources": inventory$0.File[] | null;
 
@@ -193,8 +270,20 @@ export interface HealthReport {
      * names one mod defines over, or adds to, another origin's
      */
     "overrides": Contest[] | null;
+
+    /**
+     * what each mod uses that another's definitions decide
+     */
     "depends": Dependency[] | null;
+
+    /**
+     * names nothing defines
+     */
     "dangling": Dangling[] | null;
+
+    /**
+     * each language's localization gaps
+     */
     "loc": Language[] | null;
 
     /**
@@ -216,15 +305,19 @@ export interface Language {
 }
 
 /**
- * LocRow is one key and the file it is in.
+ * LocRow is one untranslated key.
  */
 export interface LocRow {
     "key": string;
 
     /**
-     * its number in Sources
+     * the file it is in, by its number in Sources
      */
     "file": number;
+
+    /**
+     * 0-based
+     */
     "line": number;
 
     /**
@@ -241,26 +334,48 @@ export interface Node {
     "database": string;
 
     /**
-     * what one of its database is called (game.KindName)
+     * what one of its database is called (game.DescribeEntry)
      */
     "kind": string;
+
+    /**
+     * its localized name
+     */
     "title"?: string;
+
+    /**
+     * the origin that defines it
+     */
     "origin"?: string;
+
+    /**
+     * the graph's root
+     */
     "root"?: boolean;
 
     /**
-     * "more": fires hidden out of the node in its ID; "fired-by": callers hidden
+     * "more": fires hidden out of it; "fired-by": callers hidden
      */
     "stub"?: string;
 }
 
 /**
- * Option is one option block of an event: its trigger on one line, every name it is written with (the first whose
- * trigger holds shows) and its flags.
+ * Option is one option block of an event.
  */
 export interface Option {
+    /**
+     * 0-based
+     */
     "line": number;
+
+    /**
+     * its trigger on one line
+     */
     "when"?: string;
+
+    /**
+     * every name it is written with; the first whose trigger holds shows
+     */
     "names"?: Version[] | null;
     "flags"?: string[] | null;
 }
@@ -311,11 +426,15 @@ export interface Params {
 }
 
 /**
- * Problem is one finding of the editor's checks, at its site.
+ * Problem is one finding of the editor's checks.
  */
 export interface Problem {
     "code": string;
     "message": string;
+
+    /**
+     * where it is
+     */
     "site": Site;
 
     /**
@@ -325,33 +444,47 @@ export interface Problem {
 }
 
 /**
- * RefGroup is the references of one database written in a block; loc keys are database localization, files file.
+ * RefGroup is the references of one database written in a block; loc keys are in localization, files in file.
  */
 export interface RefGroup {
     "database": string;
 
     /**
-     * what one of its database is called (game.KindName)
+     * what one of its database is called (game.DescribeEntry)
      */
     "kind": string;
     "refs": Cited[] | null;
 }
 
 /**
- * Roots is a root search's hits, grouped by database, and how many of each database the query holds.
+ * Roots is a root search's result.
  */
 export interface Roots {
+    /**
+     * grouped by database
+     */
     "hits": Node[] | null;
+
+    /**
+     * how many of each database the query holds
+     */
     "databases": DatabaseCount[] | null;
 }
 
 /**
- * Section is one key at the top of the definition's block: its value as written (a block as its statements on one
- * line, each inner block as { … }), and the text a one-word value has as a loc key.
+ * Section is one key at the top of the definition's block.
  */
 export interface Section {
     "key": string;
+
+    /**
+     * as written; a block on one line, inner blocks as { … }
+     */
     "value"?: string;
+
+    /**
+     * 0-based
+     */
     "line": number;
 
     /**
@@ -409,20 +542,34 @@ export interface Site {
 }
 
 /**
- * SourceAt is one place a pane shows the source of: a definition's statement, or a reference's line.
+ * SourceAt is one place a pane shows the source of.
  */
 export interface SourceAt {
     "path": string;
+
+    /**
+     * 0-based
+     */
     "line": number;
+
+    /**
+     * 0-based
+     */
     "col": number;
+
+    /**
+     * a definition's statement; else a reference's line
+     */
     "definition": boolean;
 }
 
 /**
- * TextPart is one part of a text, read in order: one of its versions shows, the first whose trigger holds, or one
- * of them at random.
+ * TextPart is one part of a text, read in order.
  */
 export interface TextPart {
+    /**
+     * one version shows at random; else the first whose trigger holds
+     */
     "random"?: boolean;
     "versions": Version[] | null;
 }
@@ -520,12 +667,26 @@ export interface TextSearchResult {
 }
 
 /**
- * Version is one text a part can show: its trigger on one line (none: it always can), its loc key and that key's
- * text, at its line.
+ * Version is one text a part can show.
  */
 export interface Version {
+    /**
+     * its trigger on one line; "" it always can
+     */
     "when"?: string;
+
+    /**
+     * its loc key
+     */
     "key": string;
+
+    /**
+     * that key's text
+     */
     "text"?: string;
+
+    /**
+     * 0-based
+     */
     "line": number;
 }

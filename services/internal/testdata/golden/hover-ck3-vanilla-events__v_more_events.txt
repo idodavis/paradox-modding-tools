@@ -89,6 +89,11 @@
    "key": "vmore.1",
    "head": "event",
    "name": "Hello",
+   "scope": {
+    "this": "character",
+    "root": "character",
+    "reason": "every event runs in it unless it says otherwise"
+   },
    "sites": [
     {
      "path": "<fixtures>/ck3/game/events/v_more_events.txt",
@@ -127,6 +132,11 @@
    "writes": [
     "one of character_event"
    ],
+   "scope": {
+    "this": "character",
+    "root": "character",
+    "reason": "every event runs in it unless it says otherwise"
+   },
    "winner": -1,
    "within": [
     "vmore.1"
@@ -168,6 +178,11 @@
    "writes": [
     "a localization key"
    ],
+   "scope": {
+    "this": "character",
+    "root": "character",
+    "reason": "every event runs in it unless it says otherwise"
+   },
    "winner": -1,
    "within": [
     "vmore.1"
@@ -229,6 +244,11 @@
    "takes": [
     "triggers"
    ],
+   "scope": {
+    "this": "character",
+    "root": "character",
+    "reason": "every event runs in it unless it says otherwise"
+   },
    "winner": -1,
    "within": [
     "vmore.1"
@@ -249,6 +269,11 @@
    "word": "v_inline_trigger",
    "key": "v_inline_trigger",
    "head": "scripted trigger",
+   "scope": {
+    "this": "character",
+    "root": "character",
+    "reason": "every event runs in it unless it says otherwise"
+   },
    "returns": "yes or no",
    "sites": [
     {
@@ -307,10 +332,15 @@
    "word": "NOT",
    "key": "NOT",
    "head": "trigger",
-   "prose": "negates content of trigger",
+   "prose": "True when what is inside it is false.",
    "takes": [
     "triggers"
    ],
+   "scope": {
+    "this": "character",
+    "root": "character",
+    "reason": "every event runs in it unless it says otherwise"
+   },
    "winner": -1,
    "stale": true,
    "within": [
@@ -333,6 +363,11 @@
    "word": "v_rule_trigger",
    "key": "v_rule_trigger",
    "head": "scripted trigger",
+   "scope": {
+    "this": "character",
+    "root": "character",
+    "reason": "every event runs in it unless it says otherwise"
+   },
    "returns": "yes or no",
    "sites": [
     {
@@ -399,7 +434,8 @@
    ],
    "scope": {
     "this": "character",
-    "reason": "the one scope it runs in"
+    "root": "character",
+    "reason": "every event runs in it unless it says otherwise"
    },
    "winner": -1,
    "stale": true,
@@ -467,7 +503,8 @@
    ],
    "scope": {
     "this": "character",
-    "reason": "the one scope it runs in"
+    "root": "character",
+    "reason": "every event runs in it unless it says otherwise"
    },
    "winner": -1,
    "stale": true,
@@ -548,6 +585,11 @@
    "takes": [
     "effects"
    ],
+   "scope": {
+    "this": "character",
+    "root": "character",
+    "reason": "every event runs in it unless it says otherwise"
+   },
    "winner": -1,
    "within": [
     "vmore.1"
@@ -568,6 +610,11 @@
    "word": "v_gift_effect",
    "key": "v_gift_effect",
    "head": "scripted effect",
+   "scope": {
+    "this": "character",
+    "root": "character",
+    "reason": "every event runs in it unless it says otherwise"
+   },
    "sites": [
     {
      "path": "<fixtures>/ck3/game/common/scripted_effects/v_effects.txt",
@@ -670,8 +717,9 @@
    ],
    "scope": {
     "this": "character",
+    "root": "character",
     "prev": [
-     ""
+     "character"
     ],
     "reason": "character:186004 leads to it"
    },
@@ -778,14 +826,15 @@
    "word": "save_scope_as",
    "key": "save_scope_as",
    "head": "effect",
-   "prose": "Saves the current scope as an arbitrarily-named target to be referenced later in the (unbroken) event chain",
+   "prose": "Remembers the current scope under a name for the rest of the event chain.",
    "takes": [
     "text"
    ],
    "scope": {
     "this": "culture",
+    "root": "character",
     "prev": [
-     ""
+     "character"
     ],
     "named": {
      "old_culture": "culture"
@@ -875,14 +924,15 @@
    "word": "save_scope_as",
    "key": "save_scope_as",
    "head": "effect",
-   "prose": "Saves the current scope as an arbitrarily-named target to be referenced later in the (unbroken) event chain",
+   "prose": "Remembers the current scope under a name for the rest of the event chain.",
    "takes": [
     "text"
    ],
    "scope": {
     "this": "landed_title",
+    "root": "character",
     "prev": [
-     ""
+     "character"
     ],
     "named": {
      "far_title": "landed_title",
@@ -990,14 +1040,15 @@
    "word": "save_scope_as",
    "key": "save_scope_as",
    "head": "effect",
-   "prose": "Saves the current scope as an arbitrarily-named target to be referenced later in the (unbroken) event chain",
+   "prose": "Remembers the current scope under a name for the rest of the event chain.",
    "takes": [
     "text"
    ],
    "scope": {
     "this": "landed_title",
+    "root": "character",
     "prev": [
-     ""
+     "character"
     ],
     "named": {
      "far_title": "landed_title",
@@ -1072,6 +1123,16 @@
    "takes": [
     "a block"
    ],
+   "scope": {
+    "this": "character",
+    "root": "character",
+    "named": {
+     "far_title": "landed_title",
+     "near_title": "landed_title",
+     "old_culture": "culture"
+    },
+    "reason": "every event runs in it unless it says otherwise"
+   },
    "winner": -1,
    "within": [
     "vmore.1"
@@ -1096,6 +1157,16 @@
    "writes": [
     "a localization key"
    ],
+   "scope": {
+    "this": "character",
+    "root": "character",
+    "named": {
+     "far_title": "landed_title",
+     "near_title": "landed_title",
+     "old_culture": "culture"
+    },
+    "reason": "every event runs in it unless it says otherwise"
+   },
    "winner": -1,
    "within": [
     "vmore.1",
@@ -1163,12 +1234,13 @@
    ],
    "scope": {
     "this": "character",
+    "root": "character",
     "named": {
      "far_title": "landed_title",
      "near_title": "landed_title",
      "old_culture": "culture"
     },
-    "reason": "the one scope it runs in"
+    "reason": "every event runs in it unless it says otherwise"
    },
    "winner": -1,
    "stale": true,
@@ -1212,6 +1284,11 @@
    "key": "vmore.2",
    "head": "event",
    "name": "Two",
+   "scope": {
+    "this": "character",
+    "root": "character",
+    "reason": "every event runs in it unless it says otherwise"
+   },
    "sites": [
     {
      "path": "<fixtures>/ck3/game/events/v_more_events.txt",
@@ -1250,6 +1327,11 @@
    "writes": [
     "one of character_event"
    ],
+   "scope": {
+    "this": "character",
+    "root": "character",
+    "reason": "every event runs in it unless it says otherwise"
+   },
    "winner": -1,
    "within": [
     "vmore.2"
@@ -1291,6 +1373,11 @@
    "writes": [
     "a localization key"
    ],
+   "scope": {
+    "this": "character",
+    "root": "character",
+    "reason": "every event runs in it unless it says otherwise"
+   },
    "winner": -1,
    "within": [
     "vmore.2"
@@ -1353,6 +1440,11 @@
    "takes": [
     "a block"
    ],
+   "scope": {
+    "this": "character",
+    "root": "character",
+    "reason": "every event runs in it unless it says otherwise"
+   },
    "winner": -1,
    "within": [
     "vmore.2"
@@ -1377,6 +1469,11 @@
    "writes": [
     "a localization key"
    ],
+   "scope": {
+    "this": "character",
+    "root": "character",
+    "reason": "every event runs in it unless it says otherwise"
+   },
    "winner": -1,
    "within": [
     "vmore.2",
@@ -1444,7 +1541,8 @@
    ],
    "scope": {
     "this": "character",
-    "reason": "the one scope it runs in"
+    "root": "character",
+    "reason": "every event runs in it unless it says otherwise"
    },
    "winner": -1,
    "stale": true,

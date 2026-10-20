@@ -16,14 +16,13 @@ import (
 	"paradox-modding-tools/services/internal/schema"
 )
 
-// collector is one file's occurrences as the walk fills them, the scope pairs it writes, and the visitor
-// they are handed to.
+// collector gathers one file's occurrences as the walk visits it.
 type collector struct {
 	schema      *schema.Schema
 	occurrences []schema.Occurrence
-	scoped      map[[2]string]bool
-	visit       schema.Visit
-	stopped     bool
+	scoped      map[[2]string]bool // the scope pairs written
+	visit       schema.Visit       // the caller's visitor; nil none
+	stopped     bool               // the visitor returned false
 }
 
 // collectFiles reads the files of Files that hold occurrences, localization in every language only when
@@ -65,15 +64,13 @@ func collectFile(s *schema.Schema, file inventory.File, text string) collected {
 		occurrences, scoped := Collect(s, file, nil, nil)
 		return collected{occurrences: occurrences, scoped: scoped}
 	case inventory.Loc:
-		return collectLoc(s.Game, file, text, nil)
+		return collectLoc(s.Concepts, file, text, nil)
 	}
 	return collected{}
 }
 
-// Collect walks a file with the schema and collects its occurrences: each entry a definition first, in
-// source order, then what the walk's statements name, each in its entry, each with its line and column; and
-// the scope each command, link or link-read word is written in. visit (nil for none) sees each statement;
-// returning false stops the walk. A table or sound list (parsed nil) is read for its lines.
+// Collect walks a file with the schema and returns its occurrences, each entry's definition first, and the scope each
+// command or link word is written in; visit, if given, sees each statement and may stop the walk.
 func Collect(s *schema.Schema, file inventory.File, parsed *jomini.Result, visit schema.Visit) ([]schema.Occurrence, map[[2]string]bool) {
 	c := &collector{schema: s, visit: visit, scoped: map[[2]string]bool{}}
 	entries := s.WalkFile(file, parsed, false, c.collect)
@@ -103,7 +100,7 @@ func (collector *collector) collect(statement jomini.Statement, context schema.C
 	collector.occurrences = append(collector.occurrences, occurrences...)
 	assign, isAssign := statement.(*jomini.Assignment)
 	scalar, isScalar := jomini.ValueOf(statement).(*jomini.Scalar)
-	isCommand := inner.Rule == game.KeyRuleCommand || inner.Rule == game.KeyRuleLink
+	isCommand := inner.KeyRule == game.KeyRuleCommand || inner.KeyRule == game.KeyRuleLink
 	if context.Scope.This != "" && isAssign && isCommand {
 		collector.scoped[scopePair(assign.Key.Text, context.Scope.This)] = true
 	}
@@ -116,29 +113,21 @@ func (collector *collector) collect(statement jomini.Statement, context schema.C
 	return !collector.stopped
 }
 
-// scopePair is a written command, link or link-read word and the scope it is read in, as
-// Index.Scoped keeps them: the first part's name before any colon, lower-case (scope:x.liege is
-// scope).
+// scopePair returns a written command, link or link-read word with the scope it is read in, as Index.Scoped keeps
+// them: the word's part before any colon, in lower case (scope:x.liege is scope).
 func scopePair(written, scope string) [2]string {
 	first, _, _ := strings.Cut(written, ".")
 	name, _, _ := strings.Cut(first, ":")
 	return [2]string{strings.ToLower(name), scope}
 }
 
-// collectLoc reads a localization file's entries, nothing when its language is not kept (languages
-// none: every one). A loc text is cloned so no occurrence pins the file; its $key$ names a loc key, and
-// its concepts a game concept (conceptReferences): each a reference in no entry.
-func collectLoc(gameID string, file inventory.File, text string, languages []string) collected {
+// collectLoc reads a localization file's entries, none when its language is not kept (no languages: every one); texts
+// are cloned so no occurrence pins the file, and $key$s and concepts become references in no entry.
+func collectLoc(concepts string, file inventory.File, text string, languages []string) collected {
 	parsed := loc.Parse(text)
 	language := loc.Language(parsed.Language, file.Rel)
 	if len(languages) > 0 && !slices.Contains(languages, language) {
 		return collected{}
-	}
-	concepts := ""
-	for _, row := range game.Get(gameID).Descriptors {
-		if row.Purpose == game.PurposeConcepts {
-			concepts = row.Database
-		}
 	}
 	records, lines := collected{language: language}, parsed.Lines()
 	refer := func(database, name string, span jomini.Range) {

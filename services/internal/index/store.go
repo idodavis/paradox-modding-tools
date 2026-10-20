@@ -20,7 +20,7 @@ import (
 type Flags uint8
 
 // The flags: written inside a trigger; a definition declared inline by a Keyword, seen only in its file; a
-// definition an entry's Names key gives its database rather than an entry of its own.
+// definition an entry's AliasKeys key gives its database rather than an entry of its own.
 const (
 	InTrigger Flags = 1 << iota
 	Local
@@ -91,9 +91,8 @@ type collected struct {
 	scoped      map[[2]string]bool
 }
 
-// Rebuild builds the tables' maps, the postings, the by-database lists and the repeated flags again from Files
-// and Occurrences, after a cache load or a Forget; add keeps them current. A file without occurrences keeps an
-// empty slot, so Occurrences stays parallel to Files.
+// Rebuild builds the tables' maps, postings, by-database lists and repeated flags again from Files and Occurrences,
+// after a cache load or a Forget; a file without occurrences keeps an empty slot.
 func (index *Index) Rebuild() {
 	index.PlaceFiles()
 	for _, table := range []*table{&index.Databases, &index.IDs, &index.Callers, &index.Modes, &index.Languages} {
@@ -203,8 +202,7 @@ func (index *Index) Drop(path string) {
 	index.Occurrences[pos], index.Texts[pos] = nil, nil
 }
 
-// At is the file listed at a path, by its inventory.PathKey (on Windows, whatever the case it is
-// spelled in).
+// At returns the file listed at a path, matched by its inventory.PathKey (any case on Windows).
 func (index *Index) At(path string) (inventory.File, bool) {
 	pos, listed := index.order[inventory.PathKey(path)]
 	if !listed {
@@ -213,7 +211,7 @@ func (index *Index) At(path string) (inventory.File, bool) {
 	return index.Files[pos], true
 }
 
-// InFile is every occurrence of the file at a path, in the file's order; none for a path not listed.
+// InFile returns every occurrence of the file at a path, in the file's order; none for a path not listed.
 func (index *Index) InFile(path string) (matches []At) {
 	pos, listed := index.order[inventory.PathKey(path)]
 	if !listed || len(index.Occurrences) <= pos {
@@ -243,14 +241,13 @@ func (index *Index) Forget(path string) {
 	}
 }
 
-// WritesInScope reports whether a file of the index writes a command, link or link-read word in a
-// scope: the install's pairs are vanilla's evidence, and wrong-scope accuses only a pair vanilla
-// never writes.
+// WritesInScope reports whether a file of the index writes a command, link or link-read word in a scope: the
+// install's pairs are vanilla's evidence, and wrong-scope accuses only a pair vanilla never writes.
 func (index *Index) WritesInScope(written, scope string) bool {
 	return index.Scoped[scopePair(written, scope)]
 }
 
-// LocKeys is every key a localization entry has, in no order.
+// LocKeys returns every key a localization entry has, in no order.
 func (index *Index) LocKeys() iter.Seq[string] {
 	return func(yield func(string) bool) {
 		for key, listed := range index.postings {
@@ -267,7 +264,7 @@ func (index *Index) Repeated(database string) bool {
 	return known && index.repeated[uint16(ordinal)]
 }
 
-// Occurrence is the occurrence as the walk produced it, its strings read back from the tables.
+// Occurrence returns the occurrence as the walk produced it, its strings read back from the tables.
 func (at At) Occurrence() schema.Occurrence {
 	index := at.index
 	if index == nil {
@@ -281,7 +278,7 @@ func (at At) Occurrence() schema.Occurrence {
 	}
 }
 
-// File is the file the occurrence is in.
+// File returns the file the occurrence is in.
 func (at At) File() inventory.File {
 	if at.index == nil {
 		return inventory.File{}
@@ -289,7 +286,7 @@ func (at At) File() inventory.File {
 	return at.index.Files[at.file]
 }
 
-// Entry is the definition of the entry the occurrence is in; false outside one. An entry's definition is its own.
+// Entry returns the definition of the entry the occurrence is in, false outside one; an entry's definition is its own.
 func (at At) Entry() (At, bool) {
 	if entry := at.Occurrence().Entry; entry >= 0 {
 		return At{at.index, at.file, entry}, true
@@ -297,7 +294,7 @@ func (at At) Entry() (At, bool) {
 	return At{}, false
 }
 
-// Text is a localization entry's text; "" for any other occurrence.
+// Text returns a localization entry's text; "" for any other occurrence.
 func (at At) Text() string {
 	if at.index == nil {
 		return ""
@@ -308,7 +305,7 @@ func (at At) Text() string {
 	return ""
 }
 
-// Language is a localization entry's language; "" for any other occurrence.
+// Language returns a localization entry's language; "" for any other occurrence.
 func (at At) Language() string {
 	if at.index == nil {
 		return ""

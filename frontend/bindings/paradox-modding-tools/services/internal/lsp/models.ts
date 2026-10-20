@@ -31,7 +31,7 @@ export enum Category {
     CategoryEntry = "entry",
 
     /**
-     * a key that is one of the language's operators: a construct with a class
+     * a key that is one of the language's operators: a keyword with a class
      */
     CategoryOperator = "operator",
 
@@ -47,11 +47,19 @@ export enum Category {
 };
 
 /**
- * Code is one check, for the settings: what it finds, and whether it runs by default.
+ * Code is one check, as the settings list it.
  */
 export interface Code {
     "code": string;
+
+    /**
+     * what it finds
+     */
     "summary": string;
+
+    /**
+     * it runs by default
+     */
     "default": boolean;
 }
 
@@ -60,14 +68,22 @@ export interface Code {
  */
 export interface CodeAction {
     "title": string;
+
+    /**
+     * what applying it changes
+     */
     "edit": WorkspaceEdit;
 }
 
 /**
- * Completion is the list, and whether the cap cut it.
+ * Completion is the list of items.
  */
 export interface Completion {
     "items": Item[] | null;
+
+    /**
+     * the cap cut it
+     */
     "incomplete": boolean;
 }
 
@@ -81,15 +97,26 @@ export interface Diagnostic {
      * 1 error, 2 warning
      */
     "severity": number;
+
+    /**
+     * the check that found it
+     */
     "code": string;
     "message": string;
 }
 
 /**
- * FoldingRange is one block's lines.
+ * FoldingRange is the lines of one block.
  */
 export interface FoldingRange {
+    /**
+     * 0-based
+     */
     "startLine": number;
+
+    /**
+     * 0-based
+     */
     "endLine": number;
 }
 
@@ -97,7 +124,14 @@ export interface FoldingRange {
  * InlayHint is text the editor draws after a position.
  */
 export interface InlayHint {
+    /**
+     * where it is drawn
+     */
     "position": Position;
+
+    /**
+     * the text
+     */
     "label": string;
 }
 
@@ -151,7 +185,7 @@ export interface Inspect {
     "writes"?: string[] | null;
 
     /**
-     * where it runs: the scope, its root, the ones before, the saved scopes, and why; nil unknown
+     * where it runs; nil unknown
      */
     "scope"?: schema$0.Scope | null;
 
@@ -218,19 +252,32 @@ export interface Inspect {
 }
 
 /**
- * Item is one completion: its text, what it is, what may follow, and its rank (0 stated or in
- * scope, 1 vanilla writes it, 2 a name, a link or a command for another scope, 3 a loc key; in a
- * data call 1 a function, 2 a type).
+ * Item is one completion.
  */
 export interface Item {
+    /**
+     * the text
+     */
     "label": string;
+
+    /**
+     * what it is
+     */
     "head": string;
 
     /**
      * the editor snippet a key writes: its block, or key = and a value
      */
     "snippet"?: string;
+
+    /**
+     * 0 stated or in scope, 1 vanilla's or a data function, 2 other names, links and types, 3 a loc key
+     */
     "rank": number;
+
+    /**
+     * the text it replaces
+     */
     "range": Range;
 }
 
@@ -244,6 +291,10 @@ export interface Location {
      * game.OriginVanilla or a mod's id
      */
     "origin": string;
+
+    /**
+     * its path from its origin's root
+     */
     "rel": string;
     "range": Range;
 }
@@ -254,27 +305,49 @@ export interface Location {
 export type Position = jomini$0.Position;
 
 /**
- * Range is a span of the file.
+ * Range is a span of a file.
  */
 export interface Range {
     "start": Position;
+
+    /**
+     * exclusive
+     */
     "end": Position;
 }
 
 /**
- * Signature is a command's arguments: the keys its block holds, and its blurb.
+ * Signature is a command's arguments.
  */
 export interface Signature {
+    /**
+     * the command and its arguments
+     */
     "label": string;
+
+    /**
+     * the keys its block holds
+     */
     "parameters": string[] | null;
+
+    /**
+     * its blurb
+     */
     "docs"?: string;
 }
 
 /**
- * Swatch is a color a file writes: the value that writes it and the color it makes.
+ * Swatch is a color a file writes.
  */
 export interface Swatch {
+    /**
+     * the value that writes it
+     */
     "range": Range;
+
+    /**
+     * the color it makes
+     */
     "color": game$0.RGBA;
 }
 
@@ -291,23 +364,44 @@ export interface Symbol {
  * TextEdit replaces a range of a file with new text.
  */
 export interface TextEdit {
+    /**
+     * the text replaced
+     */
     "range": Range;
+
+    /**
+     * what replaces it
+     */
     "newText": string;
 }
 
 /**
- * Token is one key, value or name the engine colors: its 0-based line, its byte column and length, and its category.
+ * Token is one key, value or name the engine colors.
  */
 export interface Token {
+    /**
+     * 0-based
+     */
     "line": number;
+
+    /**
+     * the byte column
+     */
     "col": number;
+
+    /**
+     * in bytes
+     */
     "length": number;
     "category": Category;
 }
 
 /**
- * WorkspaceEdit is edits by the path of the file each applies to.
+ * WorkspaceEdit is a set of edits.
  */
 export interface WorkspaceEdit {
+    /**
+     * by the path of the file each applies to
+     */
     "changes": { [_ in string]?: TextEdit[] | null } | null;
 }

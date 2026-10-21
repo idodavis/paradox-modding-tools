@@ -1,5 +1,0 @@
-/* Nuxt UI + Tailwind entry for Vue mode. */
-@import "tailwindcss";
-@import "@nuxt/ui";
-@import "./themes.css";
-@import "./article.css";

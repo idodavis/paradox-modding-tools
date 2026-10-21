@@ -1,6 +1,6 @@
 /**
  * Before every test file: this window's name in the page's URL (the tests are the main window), Nuxt UI's auto-imported
- * composables, the Wails runtime and the bound services as mocks, and `inApp`, which makes a store as main.ts does.
+ * the IDE's editor modules, the Wails runtime and the bound services as mocks, and `inApp`, which makes a store as main.ts does.
  */
 import { vi } from "vitest";
 import { createApp } from "vue";
@@ -30,7 +30,7 @@ vi.mock("@services/windowservice", () => ({
   QuitAnswer: vi.fn(() => Promise.resolve()),
 }));
 // the models need Monaco and the page; the stores reach them for a save and for a tab's unsaved text
-vi.mock("./src/editor/models", () => ({
+vi.mock("./src/pages/ide/editor/models", () => ({
   saveFile: vi.fn(),
   resendOpenFiles: vi.fn(),
   unsavedText: vi.fn(() => undefined),

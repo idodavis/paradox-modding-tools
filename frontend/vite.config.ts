@@ -415,6 +415,7 @@ export default defineConfig({
   resolve: {
     alias: {
       "@services": path.resolve(import.meta.dirname, "bindings/paradox-modding-tools/services"),
+      "@internal": path.resolve(import.meta.dirname, "bindings/paradox-modding-tools/internal"),
       "@assets": path.resolve(import.meta.dirname, "src/assets"),
     },
   },

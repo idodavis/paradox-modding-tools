@@ -7,36 +7,40 @@ import type { Events } from "@wailsio/runtime";
 
 // eslint-disable-next-line @typescript-eslint/ban-ts-comment
 // @ts-ignore: Unused imports
-import type * as services$0 from "../../../../../paradox-modding-tools/services/models.js";
+import type * as app$0 from "../../../../../paradox-modding-tools/services/app/models.js";
 // eslint-disable-next-line @typescript-eslint/ban-ts-comment
 // @ts-ignore: Unused imports
-import type * as pages$0 from "../../../../../paradox-modding-tools/services/internal/pages/models.js";
+import type * as search$0 from "../../../../../paradox-modding-tools/services/search/models.js";
 // eslint-disable-next-line @typescript-eslint/ban-ts-comment
 // @ts-ignore: Unused imports
-import type * as steam$0 from "../../../../../paradox-modding-tools/services/internal/steam/models.js";
+import type * as steam$0 from "../../../../../paradox-modding-tools/services/steam/models.js";
+// eslint-disable-next-line @typescript-eslint/ban-ts-comment
+// @ts-ignore: Unused imports
+import type * as wiki$0 from "../../../../../paradox-modding-tools/services/wiki/models.js";
+// eslint-disable-next-line @typescript-eslint/ban-ts-comment
+// @ts-ignore: Unused imports
+import type * as workspace$0 from "../../../../../paradox-modding-tools/services/workspace/models.js";
 
 declare module "@wailsio/runtime" {
     namespace Events {
         interface CustomEvents {
+            "app:update": app$0.Update;
             "config:changed": string;
-            "fs:changed": services$0.FSChanged;
-            "git:output": services$0.GitOutput;
+            "errorlog:changed": {};
+            "fs:changed": workspace$0.FileChange;
+            "game:exited": workspace$0.GameExit;
+            "git:changed": string;
+            "git:output": string;
             "install:scanned": string;
-            "install:scanning": services$0.ScanProgress;
-            "search:hits": pages$0.TextSearchHits;
+            "install:scanning": string;
+            "release:changed": string;
+            "search:hits": search$0.Hits;
             "steam:progress": steam$0.Progress;
-            "wiki:progress": services$0.WikiProgress;
-            "wiki:updated": services$0.WikiUpdated;
+            "wiki:progress": wiki$0.Progress;
+            "wiki:updated": {};
             "window:closed": string;
             "window:closing": string;
-            "window:opened": string;
-            "window:results": services$0.PanelResults;
-            "window:saved": string;
-            "window:show": services$0.WindowShow;
-            "window:state": services$0.WindowState;
-            "window:tab-requested": services$0.WindowTabRequest;
-            "window:tabs-handed": services$0.WindowTabs;
-            "workspace:closed": string;
+            "workspace:closed": {};
             "workspace:failed": string;
             "workspace:opened": string;
         }

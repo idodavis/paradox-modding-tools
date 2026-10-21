@@ -55,6 +55,9 @@ The owner has given each of these many times. They hold for every task, plan and
 - **Files the owner adds** without a path: ask where they are; never sweep home folders. Screenshots are of the preview
   pane only.
 - **Side windows, tools and widgets** open closed by default.
+- **Comments are written one way**, the owner's, set out under Code rules › Comments: plain English, what the thing
+  does and its special cases, parameters described in words. No agent, session or subagent deviates from it unless
+  the owner says so in that message.
 
 ## Code rules
 
@@ -81,10 +84,23 @@ Each rule says what checks it; "review" means nothing does, so the author and th
   service's its name in three letters (`ide`, `git`, `wsp`), never `s`; a local holding an `*index.Index` is `index`. No
   new identifier is built on `read`, `name`, `form` or `word`. American spelling (`color`).
   (golangci-lint `revive` for receivers and exported names, `misspell` for spelling; the rest review)
-- **Comments.** Every exported name and every function has a doc comment: a sentence with a verb that says what it does,
-  and why where there is a reason. No history, plan, stage, ruling, date or person. A comment line fits in 120
-  columns, a tab counting 2. A comment that restates the next line is deleted. (`revive`'s `exported` for the first;
-  the rest review)
+- **Comments.** Every exported name and every function has a doc comment written the way Go's own are, in plain
+  English: short sentences, one fact each, ordinary words, as you would say it to a colleague. It begins with the
+  name and says what the thing does or returns, then what happens in the special cases (not found, nil, "", -1,
+  the error). A parameter is described in words ("one layer of a coat", "the given role"); its name is never
+  dropped into a sentence as if it were a noun ("the layer at index layer", "the file at path"). A type's comment
+  says what an instance is, not its fields; a package's says in two sentences what it does; a Vue or TS header is
+  one or two plain sentences on what the file shows or does. Never the algorithm (that is a comment inside the
+  body), never who calls it, never a library inventory, and no history, plan, stage, ruling, date or person. A
+  comment line fits in 120 columns, a tab counting 2. A comment that restates the next line is deleted. The sample
+  is `services/draw/*.go` on the `rearchitecture` branch. Before and after, from it: "ResolveWindow resolves a
+  window of a file: its types and templates the ones the game keeps, block overrides applied, each property by the
+  last written" became "ResolveWindow resolves one window in a GUI file. It applies the window's type and
+  templates, looks up its texts and finds its textures. It returns an error if the file is not in the workspace or
+  does not define the window." This style is the owner's. No agent, session or subagent deviates from it unless
+  the owner says so in that message, and a subagent's prompt carries this rule verbatim. (`revive`'s `exported`
+  for the leading name; `.claude/hooks/comments.mjs` reports a parameter used as a noun and a line past 120
+  columns; the rest review)
 - **Files.** The header comment, the imports, the types, the constants and tables, the file's main function, then its
   helpers in the order they are called. A file is cut by topic, never by sub-topic. (review)
 - **Tests.** One test file per package, `<package>_test.go`; a test is named for what it tests; none is added unasked.

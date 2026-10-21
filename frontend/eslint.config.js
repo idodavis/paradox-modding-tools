@@ -2,14 +2,17 @@ import pluginVue from "eslint-plugin-vue";
 import { defineConfigWithVueTs, vueTsConfigs } from "@vue/eslint-config-typescript";
 import prettier from "@vue/eslint-config-prettier/skip-formatting";
 
-// The target shape's import rules: a page folder imports from stores/, queries.ts, lib/, composables/, ui/ and
-// itself, never another page or the frame's components; editor/ and draw/ are the IDE page's (the stores import the
-// editor too), and draw/ itself imports no page or frame module; ui/, composables/ and lib/ sit under every page; the
-// frame and the stores reach a page only through the router. The patterns are relative so a package's own "pages",
-// "editor" or "draw" folder never matches.
+// The tree's import rules, by page: a page folder imports from stores/, queries.ts, lib/, ui/ and itself (its own
+// subfolders included: pages/ide/editor, pages/ide/draw), never another page or the frame's components; ui/ and
+// lib/ sit under every page and import none; the frame and the stores reach a page only through the router, the
+// stores reading the IDE's editor modules alone. The patterns are relative and climb to the pages folder, so a page's
+// own subfolders never match.
 const imports = (files, patterns) => ({ files, rules: { "no-restricted-imports": ["error", { patterns }] } });
-const frame = { group: ["../../app/*.vue"], message: "a page never imports the frame's components" };
-const sibling = { group: ["../[a-z]*/*", "../[a-z]*/**"], message: "a page never imports another page's folder" };
+const frame = (up) => ({ group: [up + "../app/*.vue"], message: "a page never imports the frame's components" });
+const sibling = (up) => ({
+  group: [up + "[a-z]*/*", up + "[a-z]*/**"],
+  message: "a page never imports another page's folder",
+});
 
 export default defineConfigWithVueTs(
   { ignores: ["bindings/**", "dist/**", "auto-imports.d.ts", "components.d.ts"] },
@@ -22,34 +25,20 @@ export default defineConfigWithVueTs(
       "@typescript-eslint/no-non-null-assertion": "error",
     },
   },
-  // the pane's floor is a Viewport, one word that is no HTML element's
-  { files: ["src/draw/Viewport.vue"], rules: { "vue/multi-word-component-names": "off" } },
+  imports(["src/pages/*/*.{ts,vue}"], [frame("../"), sibling("../")]),
+  imports(["src/pages/*/*/*.{ts,vue}"], [frame("../../"), sibling("../../")]),
   imports(
-    ["src/pages/**/*.{ts,vue}"],
-    [
-      frame,
-      { group: ["../../editor/**"], message: "only pages/ide and the stores import the editor" },
-      { group: ["../../draw/**"], message: "only pages/ide imports draw" },
-      sibling,
-    ],
-  ),
-  imports(["src/pages/ide/**/*.{ts,vue}"], [frame, sibling]),
-  imports(
-    ["src/draw/**/*.{ts,vue}"],
-    [{ group: ["../pages/**", "../app/**", "!../app/pages"], message: "draw imports no page or frame module" }],
-  ),
-  imports(
-    ["src/ui/**/*.{ts,vue}", "src/composables/**", "src/lib/**"],
-    [
-      {
-        group: ["../pages/**", "../app/**", "!../app/pages", "../editor/**"],
-        message: "ui, composables and lib import no page, frame or editor module",
-      },
-    ],
+    ["src/ui/**/*.{ts,vue}", "src/lib/**"],
+    [{ group: ["../pages/**", "../app/**", "!../app/pages"], message: "ui and lib import no page or frame module" }],
   ),
   imports(
     ["src/stores/**", "src/app/**"],
-    [{ group: ["../pages/**"], message: "the frame and the stores reach a page only through the router" }],
+    [
+      {
+        group: ["../pages/**", "!../pages/ide/editor/**"],
+        message: "the frame and the stores reach a page only through the router",
+      },
+    ],
   ),
   prettier,
 );

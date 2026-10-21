@@ -57,7 +57,7 @@ export interface Mod {
 }
 
 /**
- * A Setting is one row of the catalogue: what a setting is, where it is shown and what it takes.
+ * A Setting is one row of the catalog: what a setting is, where it is shown and what it takes.
  */
 export interface Setting {
     /**
@@ -78,6 +78,12 @@ export interface Setting {
     "type": string;
     "default": string;
     "choices"?: string[] | null;
+
+    /**
+     * a number's range; both 0 when it has none
+     */
+    "min"?: number;
+    "max"?: number;
 
     /**
      * what the palette's search also matches

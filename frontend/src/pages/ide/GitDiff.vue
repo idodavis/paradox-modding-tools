@@ -1,5 +1,5 @@
 <!--
-  A diff tab: the file's live text against the chosen revision, with a gutter button per hunk that stages that block.
+  A diff tab: the file's live text against the chosen revision, with a button that stages the file.
 -->
 <script setup lang="ts">
 import type { TabTarget } from "./editor/tabs";

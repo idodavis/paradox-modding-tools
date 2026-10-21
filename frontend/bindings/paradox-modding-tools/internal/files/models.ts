@@ -10,6 +10,9 @@ export enum Encoding {
      */
     $zero = "",
 
+    /**
+     * The encodings a text file is stored in.
+     */
     EncodingUTF8 = "utf-8",
     EncodingUTF8BOM = "utf-8-bom",
     EncodingWindows1252 = "windows-1252",
@@ -48,7 +51,9 @@ export enum Format {
     $zero = "",
 
     /**
-     * .txt under the game's script folders
+     * The formats a file can have, each told by its extension and the folder it sits in.
+     *
+     * .txt
      */
     FormatScript = "script",
 
@@ -98,7 +103,7 @@ export enum Format {
     FormatShader = "shader",
 
     /**
-     * any other text: .info, .md, .json, .txt outside the script folders
+     * any other text: .info, .md, .json
      */
     FormatText = "text",
 

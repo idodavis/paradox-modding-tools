@@ -10,6 +10,5 @@ export type {
     Change,
     Commit,
     Ref,
-    Repository,
     Status
 } from "./models.js";

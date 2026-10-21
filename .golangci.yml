@@ -43,17 +43,16 @@ linters:
       - linters: [goconst]
         text: 'string `(history|on_actions|events|lists|functions|concepts|first|last|key|field|file|column|nothing)`'
       # the format table's rows repeat a word as data
-      - path: internal/inventory/inventory\.go
+      - path: internal/files/files\.go
         linters: [goconst]
       # the registry's rows and the OS words repeat as data
       - path: internal/game/(game|install)\.go
         linters: [goconst]
-      # GameList is a bound payload type, which keeps its name
-      - path: internal/game/game\.go
-        linters: [revive]
-        text: "stutters"
+      # the settings catalog's rows repeat their section, type and choice words as data
+      - path: services/app/config\.go
+        linters: [goconst]
       # the code table spells each code, and each report names its own
-      - path: internal/lsp/diagnostics\.go
+      - path: services/lsp/diagnostics\.go
         linters: [goconst]
 
 formatters:

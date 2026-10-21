@@ -1,6 +1,6 @@
 /**
  * The settings store: every value through the settings query, written through one mutation, and the theme put on
- * `<html>` from the settings and the system's preference. The catalogue is Go's; this store keeps no copy of a
+ * `<html>` from the settings and the system's preference. The catalog is Go's; this store keeps no copy of a
  * value. GAMES is the frontend's one table keyed by Go's game ids, holding each game's icon and theme family,
  * since icons and colors are the frontend's.
  */
@@ -18,7 +18,7 @@ export function gameIcon(id: string): string {
 export const THEME_FAMILIES: readonly { id: string; label: string }[] = [];
 
 export const useSettingsStore = defineStore("settings", () => {
-  /** A setting's value, or the catalogue's default when it was never set. */
+  /** A setting's value, or the catalog's default when it was never set. */
   const value = (key: string): string => {
     throw new Error("stub", { cause: key });
   };

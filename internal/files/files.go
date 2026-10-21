@@ -4,21 +4,22 @@
 package files
 
 import (
+	"io/fs"
+	"path"
+	"slices"
+	"strings"
+	"sync"
+
 	"github.com/bmatcuk/doublestar/v4"
 	"github.com/charlievieth/fastwalk"
-)
-
-// Walk is built on fastwalk and the ignore rules on doublestar.
-var (
-	_ = fastwalk.Walk
-	_ = doublestar.Match
 )
 
 // A Format says what kind of file a file is.
 type Format string
 
+// The formats a file can have, each told by its extension and the folder it sits in.
 const (
-	FormatScript       Format = "script"       // .txt under the game's script folders
+	FormatScript       Format = "script"       // .txt
 	FormatGUI          Format = "gui"          // .gui
 	FormatAsset        Format = "asset"        // .asset
 	FormatFont         Format = "font"         // .font
@@ -28,13 +29,50 @@ const (
 	FormatTable        Format = "table"        // .csv
 	FormatDescriptor   Format = "descriptor"   // .mod, metadata.json
 	FormatShader       Format = "shader"       // .fxh, .shader
-	FormatText         Format = "text"         // any other text: .info, .md, .json, .txt outside the script folders
+	FormatText         Format = "text"         // any other text: .info, .md, .json
 	FormatBinary       Format = "binary"       // anything the binary test flags
 )
 
 // Classify returns the format of a file from its path alone, by its extension and the folder it sits in under its
 // root.
-func Classify(rel string) Format { panic("stub") }
+func Classify(rel string) Format {
+	folder, base := path.Split(strings.ToLower(rel))
+	folders := strings.Split(folder, "/")
+	switch path.Ext(base) {
+	case ".yml":
+		if slices.Contains(folders, "localization") || slices.Contains(folders, "localisation") {
+			return FormatLocalization
+		}
+	case ".mod":
+		if folder == "" {
+			return FormatDescriptor
+		}
+	case ".json":
+		if base == "metadata.json" && path.Base(folder) == ".metadata" {
+			return FormatDescriptor
+		}
+	case ".txt":
+		return FormatScript
+	case ".gui":
+		return FormatGUI
+	case ".asset":
+		return FormatAsset
+	case ".font":
+		return FormatFont
+	case ".gfx":
+		return FormatGFX
+	case ".dds", ".png", ".tga":
+		return FormatImage
+	case ".csv":
+		return FormatTable
+	case ".fxh", ".shader", ".hlsl":
+		return FormatShader
+	case ".dll", ".exe", ".so", ".bin", ".ogg", ".wav", ".mp3", ".bk2", ".mesh", ".anim", ".pdx", ".ttf", ".otf",
+		".zip", ".pak":
+		return FormatBinary
+	}
+	return FormatText
+}
 
 // A Root is one folder laid out like the game's: the game's own folder, a DLC's or a mod's.
 type Root struct {
@@ -53,16 +91,53 @@ type File struct {
 
 // Walk lists every file under a root. It skips dot folders and anything the ignore rules cover, and it follows a
 // link once.
-func Walk(root Root, ignore *Ignore) ([]File, error) { panic("stub") }
+func Walk(root Root, ignore Ignore) ([]File, error) {
+	var mu sync.Mutex
+	var list []File
+	visitor := func(path string, entry fs.DirEntry, err error) error {
+		if err != nil {
+			return err
+		}
+		rel, ok := ToRel(root.Dir, path)
+		if !ok {
+			return nil
+		}
+		dir := entry.IsDir()
+		if entry.Type()&fs.ModeSymlink != 0 {
+			target, err := fastwalk.StatDirEntry(path, entry)
+			if err != nil {
+				return nil // a link that leads nowhere lists nothing
+			}
+			dir = target.IsDir()
+		}
+		hidden := dir && strings.HasPrefix(entry.Name(), ".") && entry.Name() != ".metadata"
+		switch {
+		case hidden || ignore.Match(rel, dir):
+			if dir {
+				return fastwalk.SkipDir
+			}
+		case !dir:
+			mu.Lock()
+			defer mu.Unlock()
+			list = append(list, File{Path: path, Key: ToKey(path), Rel: rel, Origin: root.Origin, Format: Classify(rel)})
+		}
+		return nil
+	}
+	if err := fastwalk.Walk(&fastwalk.Config{Follow: true}, root.Dir, visitor); err != nil {
+		return nil, err
+	}
+	slices.SortFunc(list, func(file, other File) int { return strings.Compare(file.Rel, other.Rel) })
+	return list, nil
+}
 
 // IsBinary reports whether the bytes are not text, which means a NUL byte in the first kilobyte.
-func IsBinary(bytes []byte) bool { panic("stub") }
-
-// An Ignore is a set of ignore rules with gitignore's meaning: anchoring, negation and a trailing slash for
-// folders.
-type Ignore struct {
-	patterns []pattern
+func IsBinary(bytes []byte) bool {
+	return slices.Contains(bytes[:min(len(bytes), 1024)], 0)
 }
+
+// An Ignore is a list of ignore rules with gitignore's meaning: anchoring, negation and a trailing slash for
+// folders. A nil Ignore has no rules.
+type Ignore []pattern
 
 // A pattern is one ignore rule: its glob and the three flags gitignore gives a rule.
 type pattern struct {
@@ -73,8 +148,51 @@ type pattern struct {
 }
 
 // ParseIgnore reads ignore rules from a text, one per line. Blank lines and `#` comments are skipped.
-func ParseIgnore(text string) *Ignore { panic("stub") }
+func ParseIgnore(text string) Ignore {
+	var ignore Ignore
+	for line := range strings.Lines(text) {
+		line = strings.TrimSpace(line)
+		if line == "" || strings.HasPrefix(line, "#") {
+			continue
+		}
+		rule := pattern{}
+		rule.glob, rule.negates = strings.CutPrefix(line, "!")
+		rule.glob, rule.dirOnly = strings.CutSuffix(rule.glob, "/")
+		rule.glob, rule.anchored = strings.CutPrefix(rule.glob, "/")
+		// gitignore anchors a rule with a slash anywhere inside it, not only one that starts with a slash.
+		rule.anchored = rule.anchored || strings.Contains(rule.glob, "/")
+		ignore = append(ignore, rule)
+	}
+	return ignore
+}
 
 // Match reports whether the rules cover a path. The path is relative to the root with forward slashes, and the
 // flag says whether it is a folder.
-func (ignore *Ignore) Match(rel string, dir bool) bool { panic("stub") }
+func (ignore Ignore) Match(rel string, dir bool) bool {
+	// A folder the rules cover takes everything inside it, so each folder above the path is judged first.
+	for folder := path.Dir(rel); folder != "."; folder = path.Dir(folder) {
+		if ignore.matchRel(folder, true) {
+			return true
+		}
+	}
+	return ignore.matchRel(rel, dir)
+}
+
+// matchRel reports whether the rules cover one path by itself, the last matching rule winning. A folder-only
+// rule never covers a file.
+func (ignore Ignore) matchRel(rel string, dir bool) bool {
+	result := false
+	for _, rule := range ignore {
+		if rule.dirOnly && !dir {
+			continue
+		}
+		subject := rel
+		if !rule.anchored {
+			subject = path.Base(rel)
+		}
+		if ok, _ := doublestar.Match(rule.glob, subject); ok {
+			result = !rule.negates
+		}
+	}
+	return result
+}

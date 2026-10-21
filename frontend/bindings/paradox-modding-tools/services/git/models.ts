@@ -64,13 +64,6 @@ export interface Ref {
 }
 
 /**
- * A Repository is one mod's repository: the folder that holds its .git.
- */
-export interface Repository {
-    "dir": string;
-}
-
-/**
  * A Status is a repository's state: its branch, its upstream and how far they differ, and its changes.
  */
 export interface Status {

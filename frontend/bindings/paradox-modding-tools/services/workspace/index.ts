@@ -11,7 +11,6 @@ export type {
     Descriptor,
     FileChange,
     FileText,
-    GameExit,
     Mod,
     Place,
     State

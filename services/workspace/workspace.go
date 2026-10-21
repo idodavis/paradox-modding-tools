@@ -21,7 +21,7 @@ const (
 	EventInstallScanning = "install:scanning" // an install's scan reports a stage; the data is the stage
 	EventInstallScanned  = "install:scanned"  // an install's scan finished; the data is the install's id
 	EventFileChanged     = "fs:changed"       // a file of the open workspace changed on disk; the data is a FileChange
-	EventGameExited      = "game:exited"      // the launched game exited; the data is a GameExit
+	EventGameExited      = "game:exited"      // the launched game exited; the data is true when the dumps are now fresher
 )
 
 func init() {
@@ -31,18 +31,13 @@ func init() {
 	application.RegisterEvent[string](EventInstallScanning)
 	application.RegisterEvent[string](EventInstallScanned)
 	application.RegisterEvent[FileChange](EventFileChanged)
-	application.RegisterEvent[GameExit](EventGameExited)
+	application.RegisterEvent[bool](EventGameExited)
 }
 
 // A FileChange is the data of the fs:changed event: the file's path and whether it was deleted.
 type FileChange struct {
 	Path    string `json:"path"`
 	Deleted bool   `json:"deleted"`
-}
-
-// A GameExit is the data of the game:exited event. It says whether the game wrote fresher dumps while it ran.
-type GameExit struct {
-	DumpsFresher bool `json:"dumpsFresher"` // the dumps are now fresher than the schema, so a rescan is offered
 }
 
 // Service is the workspace service. It keeps the records of games, installs, workspaces and mods, holds the one

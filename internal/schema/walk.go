@@ -88,5 +88,6 @@ func (schema *Schema) WalkTo(tree *jomini.Tree, file files.File, offset int, vis
 	panic("stub")
 }
 
-// DeclaresNamespace returns the event namespace a file declares, or "" if it declares none.
-func (schema *Schema) DeclaresNamespace(tree *jomini.Tree, file files.File) string { panic("stub") }
+// ListNamespaces returns the event namespaces a file declares, in the order it declares them. A file may declare
+// several; a file that declares none gives an empty list.
+func (schema *Schema) ListNamespaces(tree *jomini.Tree, file files.File) []string { panic("stub") }

@@ -9,6 +9,8 @@ defineProps<{
   label: string;
   help?: string;
   choices?: readonly string[];
+  min?: number;
+  max?: number;
   role?: string;
 }>();
 defineEmits<{ "update:value": [value: string] }>();

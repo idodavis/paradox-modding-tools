@@ -3,6 +3,7 @@ module paradox-modding-tools
 go 1.27.2
 
 require (
+	github.com/adrg/xdg v0.5.3
 	github.com/bmatcuk/doublestar/v4 v4.10.3
 	github.com/charlievieth/fastwalk v1.0.14
 	github.com/ebitengine/purego v0.11.2
@@ -19,7 +20,6 @@ require (
 )
 
 require (
-	github.com/adrg/xdg v0.5.3 // indirect
 	github.com/coder/websocket v1.8.15 // indirect
 	github.com/go-ole/go-ole v1.3.0 // indirect
 	github.com/godbus/dbus/v5 v5.2.4 // indirect

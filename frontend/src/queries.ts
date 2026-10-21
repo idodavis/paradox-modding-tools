@@ -43,8 +43,8 @@ export const keys = {
 
 // the app
 export const versionQuery = defineQueryOptions({ key: ["app", "version"], query: () => app.Version() });
-export const settingsCatalogueQuery = defineQueryOptions({
-  key: ["app", "catalogue"],
+export const settingsCatalogQuery = defineQueryOptions({
+  key: ["app", "catalog"],
   query: () => app.ListSettings(),
 });
 export const settingsQuery = defineQueryOptions({ key: keys.settings, query: () => app.ReadSettings() });

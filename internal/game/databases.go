@@ -113,8 +113,8 @@ const (
 // GlobalType is the data type a data call's first step is looked up on.
 const GlobalType = "Global"
 
-// EventNamespaceKey is the key an events file declares its namespace with. Its definitions are its top-level keys,
-// written as <namespace>.N.
+// EventNamespaceKey is the key an events file declares a namespace with; a file may declare several. Its
+// definitions are its top-level keys, written as <namespace>.N with a namespace the file declares.
 const EventNamespaceKey = "namespace"
 
 // EventPortraits says how an event's portraits are found: the endings of the keys that write one, and the key

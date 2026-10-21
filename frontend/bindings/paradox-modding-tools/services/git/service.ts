@@ -36,9 +36,9 @@ export function Discard(dir: string, paths: string[] | null): $CancellablePromis
 }
 
 /**
- * FindRepository returns the repository that holds a folder, or false if the folder is in none.
+ * FindRepository returns the root folder of the repository that holds a folder, or false if the folder is in none.
  */
-export function FindRepository(dir: string): $CancellablePromise<[$models.Repository, boolean]> {
+export function FindRepository(dir: string): $CancellablePromise<[string, boolean]> {
     return $Call.ByID(4021687549, dir);
 }
 
@@ -87,12 +87,12 @@ export function ReadStatus(dir: string): $CancellablePromise<$models.Status> {
 }
 
 /**
- * Run runs git in a repository with the given arguments and returns its standard output. Each line of output is
- * also sent as a git:output event as it arrives. A nonzero exit is an error that carries the text of standard
- * error.
+ * Run runs git in a folder with the given arguments and returns its standard output. Each line of standard
+ * error is also sent as a git:output event as it arrives. A nonzero exit is an error that carries the text of
+ * standard error.
  */
-export function Run(repository: $models.Repository, ...args: string[]): $CancellablePromise<string> {
-    return $Call.ByID(2670563755, repository, args);
+export function Run(dir: string, ...args: string[]): $CancellablePromise<string> {
+    return $Call.ByID(2670563755, dir, args);
 }
 
 /**
@@ -100,14 +100,6 @@ export function Run(repository: $models.Repository, ...args: string[]): $Cancell
  */
 export function Stage(dir: string, paths: string[] | null): $CancellablePromise<void> {
     return $Call.ByID(2959943780, dir, paths);
-}
-
-/**
- * StageText stages the given text as a file's content, so that one block of a diff can be staged on its own, and
- * emits git:changed.
- */
-export function StageText(dir: string, path: string, text: string): $CancellablePromise<void> {
-    return $Call.ByID(3385500051, dir, path, text);
 }
 
 /**

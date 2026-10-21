@@ -28,7 +28,7 @@ declare module "@wailsio/runtime" {
             "config:changed": string;
             "errorlog:changed": {};
             "fs:changed": workspace$0.FileChange;
-            "game:exited": workspace$0.GameExit;
+            "game:exited": boolean;
             "git:changed": string;
             "git:output": string;
             "install:scanned": string;

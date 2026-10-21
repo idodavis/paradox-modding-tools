@@ -63,16 +63,6 @@ export interface FileText {
 }
 
 /**
- * A GameExit is the data of the game:exited event. It says whether the game wrote fresher dumps while it ran.
- */
-export interface GameExit {
-    /**
-     * the dumps are now fresher than the schema, so a rescan is offered
-     */
-    "dumpsFresher": boolean;
-}
-
-/**
  * A Mod is one mod of the open workspace: its record in the config, together with its descriptor as read from its
  * folder.
  */

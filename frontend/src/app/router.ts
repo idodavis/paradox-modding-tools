@@ -1,5 +1,5 @@
 /**
- * The router: one route per page of the catalogue. A workspace's pages are children of one `/workspace/:id`
+ * The router: one route per page of the catalog. A workspace's pages are children of one `/workspace/:id`
  * route, pages load lazily, and the one guard sets the active workspace from the route.
  */
 import { createRouter, createWebHashHistory, type Router } from "vue-router";

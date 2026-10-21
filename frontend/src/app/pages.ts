@@ -1,5 +1,5 @@
 /**
- * The page catalogue: each route's name, title, icon and Help text, and for a workspace's pages its tab in the top
+ * The page catalog: each route's name, title, icon and Help text, and for a workspace's pages its tab in the top
  * bar. The router's typed route names come from here, and the Help text is the user's guide.
  */
 import type { RouteRecordInfo } from "vue-router";

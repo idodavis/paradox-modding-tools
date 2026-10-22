@@ -24,7 +24,9 @@ type WidgetSlot struct {
 type GUIRules struct {
 	Declares        []string          // the words before a top block that declare a definition of gui.<word>, or group them (types x { })
 	NameKeyOf       map[string]string // a block key at any depth, and the key whose value names its definition
-	WidgetKey       string            // every other top block is a definition of gui.widget named by this key
+	WidgetKey       string            // every other top block is a definition of WidgetDatabase named by this key
+	DatabasePrefix  string            // what a GUI database's name starts with, before the word that declares it
+	WidgetDatabase  string            // the database of every top block that no declaring word declares
 	TagCalls        string            // the word that calls the tag a block is written with
 	ContextKey      string            // the key whose value is the data call its block's bindings read in
 	References      []Reference       // what a widget's keys name, Database "" for any
@@ -48,11 +50,13 @@ const guiWidgetKey = "name"
 // centered label are observed. visible_at_creation is only ever written as no, for a widget a script shows later.
 // CK3's install writes a path_overrides.txt, and the CK3 and EU5 executables hold the name.
 var GUI = GUIRules{
-	Declares:   []string{"type", "local_type", "template", "local_template", "block", "layer"},
-	NameKeyOf:  map[string]string{"texticon": "icon", "format": "name"},
-	WidgetKey:  guiWidgetKey,
-	TagCalls:   "widget",
-	ContextKey: "datacontext",
+	Declares:       []string{"type", "local_type", "template", "local_template", "block", "layer"},
+	NameKeyOf:      map[string]string{"texticon": "icon", "format": "name"},
+	WidgetKey:      guiWidgetKey,
+	DatabasePrefix: "gui.",
+	WidgetDatabase: "gui.widget",
+	TagCalls:       "widget",
+	ContextKey:     "datacontext",
 	References: []Reference{
 		{KeyPath: "using", Target: "gui.template"}, {KeyPath: "layer", Target: "gui.layer"},
 		{KeyPath: "texture", Target: File}, {KeyPath: "font", Target: "font.font"},

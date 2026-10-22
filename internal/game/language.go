@@ -7,6 +7,8 @@ package game
 import (
 	"slices"
 	"strings"
+
+	"paradox-modding-tools/internal/jomini"
 )
 
 // A KeyRule says what it means for a key to fit one rule: where its block's fields come from, what decides the
@@ -38,17 +40,14 @@ type Keyword struct {
 	Blurb  string // the one line a hover card shows
 }
 
-// A SavedName is a command whose value makes or reads a name script keeps. A link of the same name reads it back.
-type SavedName struct {
-	Database string // the database of the names: SavedScopes, Variables, LocalVariables, GlobalVariables
-	Makes    bool   // it makes the name; else it reads one
-}
-
 // AnyCall is the Caller of a block that resolves a call in every callable.
 const AnyCall = "*"
 
 // AnyKey is the key that matches any key written in a block, such as switch's cases or a widget's blocks.
 const AnyKey = "<any>"
+
+// NumberKey is the key that matches a key written as a number or a date, such as random_list's branches.
+const NumberKey = "<number>"
 
 // The dumps' words for what declares a command, by the file that declares it. Command.Declared lists them in dump
 // order.
@@ -70,6 +69,40 @@ const (
 // descBlurb is the sentence shown for a description, which a value block's desc shares.
 const descBlurb = "The text shown: a localization key, or a block that chooses one."
 
+// ScopeLinks are the language's links to the scopes a walk holds at any place in a definition: the definition's
+// root, the scope before the last step, and the current one. The dumps declare them as links with no target.
+var ScopeLinks = struct{ Root, Previous, This string }{"root", "prev", "this"}
+
+// A DocType is what a term the docs write a field's type with means: the value type, the database a reference
+// names, and the shape of the block the field holds.
+type DocType struct {
+	Value    string // bool, number, date, text, reference, color, block, or unknown for a key or a block
+	Database string // the database a reference names; "" unknown
+	Shape    string // a Shapes key for a block; "" for none
+}
+
+// DocTypes are the words the games' own docs write a type with, as the installs' .info, .md and readme files
+// write them, each with what it means.
+var DocTypes = map[string]DocType{
+	"bool": {Value: "bool"}, "boolean": {Value: "bool"}, "yes/no": {Value: "bool"},
+	"int": {Value: "number"}, "integer": {Value: "number"}, "int32": {Value: "number"}, "number": {Value: "number"},
+	"float": {Value: "number"}, "decimal": {Value: "number"}, "fixed point": {Value: "number"}, "value": {Value: "number"},
+	"script value": {Value: "number"}, "scripted value": {Value: "number"}, "scripted value int32": {Value: "number"},
+	"date":   {Value: "date"},
+	"string": {Value: "text"}, "text": {Value: "text"}, "name": {Value: "text"}, "identifier": {Value: "text"},
+	"localization key": {Value: "reference", Database: Localization}, "loc key": {Value: "reference", Database: Localization},
+	"localisation key": {Value: "reference", Database: Localization},
+	"database key":     {Value: "reference"}, "key": {Value: "reference"}, "array of database keys": {Value: "reference"},
+	"string path": {Value: "reference", Database: File}, "path": {Value: "reference", Database: File},
+	"texture": {Value: "reference", Database: File}, "file": {Value: "reference", Database: File},
+	"color":   {Value: "color"},
+	"trigger": {Value: "block", Shape: "triggers"}, "triggers": {Value: "block", Shape: "triggers"},
+	"effect": {Value: "block", Shape: "effects"}, "effects": {Value: "block", Shape: "effects"},
+	"dynamic description": {Value: "unknown", Shape: "description"},
+	"modifier":            {Value: "block"}, "modifiers": {Value: "block"}, "block": {Value: "block"}, "mtth": {Value: "block"},
+	"scripted cost": {Value: "block"}, "cost": {Value: "block"}, "vector 2": {Value: "block"}, "vector2": {Value: "block"},
+}
+
 // KeyRules is the table of key rules by name. When the walk finds that a key fits a rule, the row says where the
 // block's fields come from, what decides its shape and how the scope follows.
 var KeyRules = map[string]KeyRule{
@@ -89,11 +122,11 @@ var KeyRules = map[string]KeyRule{
 // keys by the Keywords alone, and "enclosing" in a keyword or a claim means the holder's shape.
 var Shapes = map[string]ShapeRule{
 	"fields":    {Rules: []string{"field"}},
-	"triggers":  {Rules: []string{"known-call", "declared", "command", "link", "observed", "call"}, Caller: callTrigger, Allows: []string{DeclaredTrigger}},
-	"effects":   {Rules: []string{"known-call", "declared", "command", "link", "observed", "call"}, Caller: callEffect, Allows: []string{DeclaredEffect}},
-	"arguments": {Rules: []string{"known-call", "declared", "command", "observed", "call"}, Caller: AnyCall},
+	"triggers":  {Rules: []string{"known-call", "declared", "command", "observed", "link", "call"}, Caller: callTrigger, Allows: []string{DeclaredTrigger}},
+	"effects":   {Rules: []string{"known-call", "declared", "command", "observed", "link", "call"}, Caller: callEffect, Allows: []string{DeclaredEffect}},
+	"arguments": {Rules: []string{"known-call", "declared", "command", "observed", "link", "call"}, Caller: AnyCall, Allows: []string{DeclaredEffect, DeclaredTrigger}},
 	"value": {
-		Rules:  []string{"known-call", "declared", "command", "operator", "link", "observed", "call"},
+		Rules:  []string{"known-call", "declared", "command", "operator", "observed", "link", "call"},
 		Caller: callValue, Allows: []string{DeclaredEffect, DeclaredTrigger},
 	},
 	"unknown": {
@@ -150,12 +183,12 @@ var Keywords = []Keyword{
 	{Key: "all_false", Class: "logical", Blurb: "True only when nothing inside it is true (the same as NOR)."},
 	{Key: "any_false", Class: "logical", Blurb: "True when at least one thing inside it is false (the same as NAND)."},
 	{Key: "always", Class: "logical", Blurb: "True or false as written: always = yes is always true."},
-	{Key: "if", Class: "conditional", Blurb: "Runs what is inside it when its limit holds."},
-	{Key: "else_if", Class: "conditional", Blurb: "Runs when the if or else_if before it did not, and its own limit holds."},
-	{Key: "else", Class: "conditional", Blurb: "Runs when no if or else_if before it ran."},
-	{Key: "trigger_if", Class: "conditional", Blurb: "Checks what is inside it only when its limit holds."},
-	{Key: "trigger_else_if", Class: "conditional", Blurb: "Checks what is inside it when the trigger_if before it was skipped and its own limit holds."},
-	{Key: "trigger_else", Class: "conditional", Blurb: "Checks what is inside it when every trigger_if before it was skipped."},
+	{Key: "if", Shape: "enclosing", Class: "conditional", Blurb: "Runs what is inside it when its limit holds."},
+	{Key: "else_if", Shape: "enclosing", Class: "conditional", Blurb: "Runs when the if or else_if before it did not, and its own limit holds."},
+	{Key: "else", Shape: "enclosing", Class: "conditional", Blurb: "Runs when no if or else_if before it ran."},
+	{Key: "trigger_if", Shape: "enclosing", Class: "conditional", Blurb: "Checks what is inside it only when its limit holds."},
+	{Key: "trigger_else_if", Shape: "enclosing", Class: "conditional", Blurb: "Checks what is inside it when the trigger_if before it was skipped and its own limit holds."},
+	{Key: "trigger_else", Shape: "enclosing", Class: "conditional", Blurb: "Checks what is inside it when every trigger_if before it was skipped."},
 	{Key: "limit", Class: "conditional", Blurb: "The conditions an if, a list, a while or a trigger_if checks first."},
 	{Key: "alternative_limit", Class: "conditional", Blurb: "A second limit a list falls back to when its limit matches nothing."},
 	{Key: "switch", Class: "conditional", Blurb: "Reads one trigger and runs the case whose value matches, else the fallback."},
@@ -183,60 +216,68 @@ var DumpPhrases = struct {
 	NoScope  []string // scope names that name no scope
 }{"Iterate through", []string{"none", "all"}}
 
-// SavedNames lists the commands that make or read a saved scope or a variable, by command, or by command/key for
-// a key inside the command's block.
-var SavedNames = map[string]SavedName{
-	"save_scope_as":                        {SavedScopes, true},
-	"save_temporary_scope_as":              {SavedScopes, true},
-	"save_scope_value_as/name":             {SavedScopes, true},
-	"save_temporary_scope_value_as/name":   {SavedScopes, true},
-	"save_opinion_value_as/name":           {SavedScopes, true},
-	"save_temporary_opinion_value_as/name": {SavedScopes, true},
-	"set_variable":                         {Variables, true},
-	"set_variable/name":                    {Variables, true},
-	"add_to_variable_list/name":            {Variables, true},
-	"has_variable":                         {Variables, false},
-	"set_local_variable":                   {LocalVariables, true},
-	"set_local_variable/name":              {LocalVariables, true},
-	"add_to_local_variable_list/name":      {LocalVariables, true},
-	"has_local_variable":                   {LocalVariables, false},
-	"set_global_variable":                  {GlobalVariables, true},
-	"set_global_variable/name":             {GlobalVariables, true},
-	"add_to_global_variable_list/name":     {GlobalVariables, true},
-	"has_global_variable":                  {GlobalVariables, false},
-
-	// the commands that read a variable or variable list, and the keys a list iterator takes one by
-	"variable": {Variables, false}, "change_variable/name": {Variables, false}, "clamp_variable/name": {Variables, false},
-	"round_variable/name": {Variables, false}, "remove_variable": {Variables, false}, "has_variable_list": {Variables, false},
-	"clear_variable_list": {Variables, false}, "is_target_in_variable_list/name": {Variables, false},
-	"variable_list_size/name": {Variables, false}, "remove_list_variable/name": {Variables, false},
-	"local_variable": {LocalVariables, false}, "change_local_variable/name": {LocalVariables, false},
-	"clamp_local_variable/name": {LocalVariables, false}, "round_local_variable/name": {LocalVariables, false},
-	"remove_local_variable": {LocalVariables, false}, "has_local_variable_list": {LocalVariables, false},
-	"clear_local_variable_list": {LocalVariables, false}, "is_target_in_local_variable_list/name": {LocalVariables, false},
-	"local_variable_list_size/name": {LocalVariables, false}, "remove_list_local_variable/name": {LocalVariables, false},
-	"global_variable": {GlobalVariables, false}, "change_global_variable/name": {GlobalVariables, false},
-	"clamp_global_variable/name": {GlobalVariables, false}, "round_global_variable/name": {GlobalVariables, false},
-	"remove_global_variable": {GlobalVariables, false}, "has_global_variable_list": {GlobalVariables, false},
-	"clear_global_variable_list": {GlobalVariables, false}, "is_target_in_global_variable_list/name": {GlobalVariables, false},
-	"global_variable_list_size/name": {GlobalVariables, false}, "remove_list_global_variable/name": {GlobalVariables, false},
+// LinkMakers are, for each link of the dumps that reads a name back (scope:x, var:x, local_var:x, global_var:x),
+// the commands that make its names: a command whose value is the name, or command/key for the key in its block
+// that holds it. The dumps declare the links and the commands, but only their prose says which command makes the
+// name a link reads.
+var LinkMakers = map[string][]string{
+	SavedScopes: {
+		"save_scope_as", "save_temporary_scope_as", "save_scope_value_as/name", "save_temporary_scope_value_as/name",
+		"save_opinion_value_as/name", "save_temporary_opinion_value_as/name",
+	},
+	Variables: {
+		"set_variable", "set_variable/name", "set_dead_character_variable/name", "add_to_variable_list/name",
+		"add_to_variable_map/name",
+	},
+	LocalVariables: {
+		"set_local_variable", "set_local_variable/name", "add_to_local_variable_list/name", "add_to_local_variable_map/name",
+	},
+	GlobalVariables: {
+		"set_global_variable", "set_global_variable/name", "add_to_global_variable_list/name",
+		"add_to_global_variable_map/name",
+	},
 }
 
 // Bools are the words a yes-or-no value is written with.
 var Bools = []string{"yes", "no"}
 
 // LookupKeyword returns the first keyword that fits a key, given the shape of the block it is in and the command
-// that holds it: by the key alone, or by the command and the key. A prefix keyword never fits here. It returns
-// false if none fits.
+// that holds it: by the key alone, or by the command and the key. A key that is a number or a date also fits the
+// <number> form. A prefix keyword never fits here. It returns false if none fits.
 func LookupKeyword(shape, command, key string) (Keyword, bool) {
+	number := IsNumberKey(key)
 	for _, row := range Keywords {
-		fitsHolder := row.Holder == "" || row.Holder == shape
-		fitsKey := row.Key == key || row.Key == AnyKey || row.Key == command+"/"+key || row.Key == command+"/"+AnyKey
-		if fitsHolder && fitsKey && !strings.HasSuffix(row.Key, "*") {
+		if row.Holder != "" && row.Holder != shape || strings.HasSuffix(row.Key, "*") {
+			continue
+		}
+		holder, last, held := strings.Cut(row.Key, "/")
+		if !held {
+			last = row.Key
+		} else if holder != command {
+			continue
+		}
+		if last == key || last == AnyKey || number && last == NumberKey {
 			return row, true
 		}
 	}
 	return Keyword{}, false
+}
+
+// IsNumberKey reports whether a key is written as a number or a date, the keys that a <number> form stands for.
+func IsNumberKey(key string) bool {
+	_, date := jomini.ParseDate(key)
+	return date || jomini.IsNumber(key)
+}
+
+// LookupLinkMaker returns the link whose names a command makes, given the command or command/key for a key in its
+// block. It returns false if the command makes no name a link reads.
+func LookupLinkMaker(maker string) (string, bool) {
+	for link, makers := range LinkMakers {
+		if slices.Contains(makers, maker) {
+			return link, true
+		}
+	}
+	return "", false
 }
 
 // LookupDescriptionKeyword returns the keyword for a key inside a dynamic description: its text, a marker or its

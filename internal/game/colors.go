@@ -36,9 +36,14 @@ type RGBA struct {
 }
 
 // ParseColor returns the color that a block's numbers make, using the Colors row for its tag, matched without
-// regard to case. It returns false for a tag no row has and for fewer than three parts.
+// regard to case. A hex row's one number is the bytes of red, green, blue and alpha. It returns false for a tag no
+// row has and for fewer than three parts, a hex row's one number apart.
 func ParseColor(tag string, parts []float64) (RGBA, bool) {
 	row, known := lookupColorRow(tag)
+	if known && row.Hex && len(parts) == 1 {
+		word := uint32(parts[0])
+		return RGBA{float64(word>>24) / 255, float64(word>>16&0xff) / 255, float64(word>>8&0xff) / 255, float64(word&0xff) / 255}, true
+	}
 	if !known || len(parts) < 3 {
 		return RGBA{}, false
 	}

@@ -140,3 +140,40 @@ func parseArgument(text string, span Span, base int) (Argument, bool) {
 	}
 	return argument, true
 }
+
+// SubstituteCall returns a call that a data binding macro's text makes, with each step that is a parameter replaced
+// by the steps of the argument written for it, by the parameter's name, and the spans that are the macro's own
+// emptied.
+func SubstituteCall(call Call, given map[string]Argument) Call {
+	var steps []Step
+	for _, step := range call.Steps {
+		argument, replaced := given[step.Text]
+		switch {
+		case replaced && argument.Call != nil:
+			steps = append(steps, argument.Call.Steps...)
+		case replaced:
+			steps = append(steps, Step{Text: argument.Text, Span: argument.Span})
+		default:
+			step.Span = Span{}
+			for i, inner := range step.Arguments {
+				step.Arguments[i] = substituteArgument(inner, given)
+			}
+			steps = append(steps, step)
+		}
+	}
+	return Call{Steps: steps, Suffix: call.Suffix}
+}
+
+// substituteArgument returns an argument of a macro's call with the argument written for it in its place if it is a
+// parameter, else with the spans that are the macro's own emptied and the call inside it substituted.
+func substituteArgument(argument Argument, given map[string]Argument) Argument {
+	if value, ok := given[argument.Text]; ok && !argument.Quoted {
+		return value
+	}
+	argument.Span = Span{}
+	if argument.Call != nil {
+		call := SubstituteCall(*argument.Call, given)
+		argument.Call = &call
+	}
+	return argument
+}

@@ -29,7 +29,8 @@ type Position struct {
 	Column int `json:"column"`
 }
 
-// An Error is one parse error. Code is one of unclosed-block, unexpected-brace and unclosed-string.
+// An Error is one parse error. Code is one of unclosed-block, unexpected-brace and unclosed-string, or
+// malformed-line in a localization file.
 type Error struct {
 	Code    string `json:"code"`
 	Message string `json:"message"`

@@ -106,7 +106,7 @@ func countScalar(text string, offset int) int {
 	end := offset
 	for end < len(text) && !isScalarEnd(text, end) {
 		if text[end] == '[' {
-			end += countBrackets(text, end)
+			end += CountBrackets(text, end)
 			continue
 		}
 		end++
@@ -121,9 +121,9 @@ func isScalarEnd(text string, offset int) bool {
 	return ch <= ' ' || ch == '{' || ch == '}' || ch == '#' || ch == '=' || countOperator(text, offset) == 2
 }
 
-// countBrackets returns how many bytes the bracketed text starting at the given `[` runs, its matching `]`
+// CountBrackets returns how many bytes the bracketed text starting at the given `[` runs, its matching `]`
 // included. Without one on its line it runs to the line's end.
-func countBrackets(text string, offset int) int {
+func CountBrackets(text string, offset int) int {
 	depth := 0
 	for i := offset; i < len(text); i++ {
 		switch text[i] {

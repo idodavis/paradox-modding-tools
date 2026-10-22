@@ -4,8 +4,15 @@
 package schema
 
 import (
+	"maps"
+	"path"
+	"path/filepath"
+	"slices"
+	"strings"
 	"time"
+	"unicode"
 
+	"paradox-modding-tools/internal/files"
 	"paradox-modding-tools/internal/game"
 	"paradox-modding-tools/internal/jomini"
 )
@@ -18,11 +25,12 @@ type Claim[T any] struct {
 }
 
 // IsStated reports whether any source states the claim.
-func (claim Claim[T]) IsStated() bool { panic("stub") }
+func (claim Claim[T]) IsStated() bool { return claim.Source != game.SourceNone }
 
 // A ValueType says what kind of value a field takes.
 type ValueType string
 
+// The types a field's value can have.
 const (
 	ValueUnknown   ValueType = "unknown"
 	ValueBool      ValueType = "bool"
@@ -51,12 +59,13 @@ type Requirement struct {
 }
 
 // Vanilla is what the game's own files write at a field: how many times, how many of those as a block or as a
-// color, and each value with its count.
+// color, each value with its count, and each shape its blocks were written in with its count.
 type Vanilla struct {
 	Count  int
 	Blocks int
 	Colors int
 	Values map[string]int
+	Shapes map[string]int
 }
 
 // Claims holds every fact the sources state about one field.
@@ -115,6 +124,7 @@ type DataFunction struct {
 	Returns   string
 	Arguments []string
 	Blurb     string
+	Expansion string // a data binding macro's text, its parameters as Arguments names them; "" for a function the game has itself
 }
 
 // A DataType is one type of the data binding language, with its functions.
@@ -171,6 +181,7 @@ type Schema struct {
 	DataTypes           map[string]DataType
 	CustomLoc           map[string]CustomLoc
 	Prefixes            map[string]string // by link prefix: the database its names are in; "" for none
+	TypeDatabases       map[string]string // by the words of a data type: the database of its names; "" where several are
 	ScriptedDefinitions map[string]ScriptedDefinition
 	WidgetTypes         map[string]bool
 	Lists               string // the database of scripted lists, or "" if the game has none
@@ -179,41 +190,379 @@ type Schema struct {
 	Concepts            string // the database of game concepts, or "" if the game has none
 }
 
+// The origins of a source's data: the install, the shipped backup, or none.
+const (
+	originNone    = "none"
+	originInstall = "install"
+	originShipped = "shipped"
+)
+
 // Build makes the schema of a game version from an install. It reads the dumps, falls back to the shipped backup
 // for any dump file that is missing, reads the docs, and then counts what the game's own files write, parsing each
-// file with the given function.
+// file with the given function. Last, a key the docs explain in one place lends its blurb to the same key elsewhere
+// in its database.
 func Build(game *game.Game, installPath string, vanilla []string, parse func(path string) (*jomini.Tree, error)) (*Schema, error) {
-	panic("stub")
+	schema := newSchema(game, installPath)
+	folders := listFolders(game, vanilla)
+	schema.buildDatabases(game, folders)
+	if err := schema.buildDumps(game, installPath); err != nil {
+		return nil, err
+	}
+	if err := schema.buildDocs(installPath, folders); err != nil {
+		return nil, err
+	}
+	if err := schema.CountVanilla(vanilla, parse); err != nil {
+		return nil, err
+	}
+	schema.buildDocBlurbs()
+	return schema, nil
 }
 
-// LookupDatabase returns the database with the given name, or false if there is none.
-func (schema *Schema) LookupDatabase(name string) (*Database, bool) { panic("stub") }
+// newSchema returns a schema of the given game with the tables it builds itself empty; the dumps give the others.
+// The prefixes script saves names under are known from the start.
+func newSchema(row *game.Game, installPath string) *Schema {
+	return &Schema{
+		Game:      row.ID,
+		Version:   game.LoadGameVersion(row.ID, installPath),
+		Sources:   map[game.Source]SourceState{},
+		Databases: map[string]*Database{},
+		Callees:   map[string][]string{},
+		Commands:  map[string]*Command{},
+		Prefixes: map[string]string{
+			game.SavedScopes: game.SavedScopes, game.Variables: game.Variables,
+			game.LocalVariables: game.LocalVariables, game.GlobalVariables: game.GlobalVariables,
+		},
+		TypeDatabases:       map[string]string{},
+		ScriptedDefinitions: map[string]ScriptedDefinition{},
+		WidgetTypes:         map[string]bool{},
+	}
+}
+
+// listFolders returns the folder of each database the game's files make: the folder each script file belongs to,
+// and every folder or file a row names that the install has.
+func listFolders(row *game.Game, vanilla []string) []string {
+	folders := map[string]bool{}
+	var rels []string
+	for _, file := range vanilla {
+		rel, ok := trimScriptRoot(file)
+		if !ok {
+			continue
+		}
+		rel = trimStage(row, rel)
+		rels = append(rels, rel)
+		if files.Classify(rel) == files.FormatScript {
+			folders[findFolder(row, rel)] = true
+		}
+	}
+	for _, folder := range slices.Concat(slices.Collect(maps.Keys(game.Databases)), slices.Collect(maps.Keys(row.Databases))) {
+		if slices.ContainsFunc(rels, func(rel string) bool { return rel == folder || strings.HasPrefix(rel, folder+"/") }) {
+			folders[folder] = true
+		}
+	}
+	delete(folders, ".")
+	return slices.Sorted(maps.Keys(folders))
+}
+
+// trimScriptRoot returns the path of a file under one of an install's roots, relative to the root and with the
+// folder of a DLC cut off. It returns false for a path under no root.
+func trimScriptRoot(file string) (string, bool) {
+	slashed := filepath.ToSlash(file)
+	cut, width := -1, 0
+	for _, root := range game.InstallRoots {
+		marker := "/" + root + "/"
+		if at := strings.Index(slashed, marker); at >= 0 && (cut < 0 || at < cut) {
+			cut, width = at, len(marker)
+		}
+	}
+	if cut < 0 {
+		return "", false
+	}
+	rel := slashed[cut+width:]
+	if after, ok := strings.CutPrefix(rel, game.DLCFolder+"/"); ok {
+		_, rel, _ = strings.Cut(after, "/")
+	}
+	return rel, true
+}
+
+// trimStage returns a path with the stage folder cut off that opens it, for the games that keep their files under
+// stages. A path under no stage comes back as it is.
+func trimStage(row *game.Game, rel string) string {
+	if row == nil {
+		return rel
+	}
+	stage, rest, ok := strings.Cut(rel, "/")
+	if ok && slices.Contains(row.StageRoots, stage) {
+		return rest
+	}
+	return rel
+}
+
+// findFolder returns the folder of the database that a script file belongs to: the file itself if a row names it,
+// else the nearest folder above it that a row names, else the file's own folder.
+func findFolder(row *game.Game, rel string) string {
+	if _, ok := row.FindDatabase(rel); ok {
+		return rel
+	}
+	for dir := path.Dir(rel); dir != "."; dir = path.Dir(dir) {
+		if _, ok := row.FindDatabase(dir); ok {
+			return dir
+		}
+	}
+	return path.Dir(rel)
+}
+
+// buildDatabases builds the databases of the game: one for each given folder, one for each nesting, and the ones
+// GUI files declare. It names the database that houses the game's events, lists, data function macros or concepts
+// where one alone does, fills the widget types the game draws, and lists the databases each caller calls.
+func (schema *Schema) buildDatabases(row *game.Game, folders []string) {
+	for _, folder := range folders {
+		schema.buildDatabase(row, game.ToDatabase(folder), folder)
+	}
+	for _, nesting := range slices.Concat(row.Nestings, game.Nestings) {
+		if nesting.Database != "" {
+			schema.buildDatabase(row, game.ToDatabase(nesting.Parent)+"."+nesting.Database, "")
+		}
+	}
+	for _, declaring := range game.GUI.Declares {
+		schema.buildDatabase(row, game.GUI.DatabasePrefix+declaring, "")
+	}
+	schema.buildDatabase(row, game.GUI.WidgetDatabase, "")
+	housed := map[string][]string{}
+	for label, database := range schema.Databases {
+		housed[database.Row.Houses] = append(housed[database.Row.Houses], label)
+	}
+	houses := map[string]*string{"events": &schema.Events, "lists": &schema.Lists, "functions": &schema.Functions, "concepts": &schema.Concepts}
+	for purpose, house := range houses {
+		if len(housed[purpose]) == 1 {
+			*house = housed[purpose][0]
+		}
+	}
+	for _, widget := range slices.Concat(slices.Collect(maps.Keys(game.GUI.Types)), row.GUIUndeclared) {
+		schema.WidgetTypes[widget] = true
+	}
+	schema.listCallees()
+}
+
+// buildDatabase builds a database with the game's rows for it, unless the schema has it already: one a folder holds,
+// or, for no folder, one nested in another's. It records the database under the words a data type names it by,
+// where no other database has them.
+func (schema *Schema) buildDatabase(row *game.Game, label, folder string) {
+	if schema.Databases[label] != nil {
+		return
+	}
+	rule, _ := row.FindDatabase(folder)
+	schema.Databases[label] = &Database{
+		Name: label, Folder: folder, Definition: &Field{}, Row: rule, Callable: game.Callables[label],
+		Precedence: row.LookupPrecedence(label, folder), Documented: map[string]bool{},
+	}
+	phrase := game.DescribeDefinition(label, false)
+	if _, taken := schema.TypeDatabases[phrase]; taken {
+		label = ""
+	}
+	schema.TypeDatabases[phrase] = label
+}
+
+// listCallees lists, for each word a call is made with, the databases whose definitions it can call. game.AnyCall
+// lists them all.
+func (schema *Schema) listCallees() {
+	for label, callable := range game.Callables {
+		if schema.Databases[label] == nil {
+			continue
+		}
+		for _, caller := range callable.Callers {
+			schema.Callees[caller] = append(schema.Callees[caller], label)
+		}
+		if len(callable.Callers) > 0 {
+			schema.Callees[game.AnyCall] = append(schema.Callees[game.AnyCall], label)
+		}
+	}
+	for _, labels := range schema.Callees {
+		slices.Sort(labels)
+	}
+}
 
 // FindDatabase returns the database that a file belongs to, going by its relative path and the game's folder
 // rules. It returns false if no database claims the file.
-func (schema *Schema) FindDatabase(rel string) (*Database, bool) { panic("stub") }
+func (schema *Schema) FindDatabase(rel string) (*Database, bool) {
+	rel = trimStage(game.LookupGame(schema.Game), rel)
+	for folder := rel; folder != "."; folder = path.Dir(folder) {
+		if database, ok := schema.Databases[game.ToDatabase(folder)]; ok && database.Folder == folder {
+			return database, true
+		}
+	}
+	return nil, false
+}
 
 // FindDatabaseByClass returns the database that a class name in the dumps refers to, such as CTraitDatabase. It
 // returns false if there is none.
-func (schema *Schema) FindDatabaseByClass(class string) (*Database, bool) { panic("stub") }
-
-// FindDatabaseByHouses returns the one database that serves a purpose, such as events, lists or concepts. It
-// returns false if the game has none.
-func (schema *Schema) FindDatabaseByHouses(houses string) (*Database, bool) { panic("stub") }
-
-// LookupCommand returns the effect, trigger or link with the given name, or false if there is none.
-func (schema *Schema) LookupCommand(name string) (*Command, bool) { panic("stub") }
+func (schema *Schema) FindDatabaseByClass(class string) (*Database, bool) {
+	label, ok := schema.ResolveTypeDatabase(strings.TrimSuffix(strings.TrimPrefix(class, "C"), "Database"))
+	if folder, listed := game.ClassDatabases[class]; listed {
+		label, ok = game.ToDatabase(folder), true
+	}
+	database := schema.Databases[label]
+	return database, ok && database != nil
+}
 
 // ResolveLink returns the scope that a link leads to when followed from a given scope. It returns false if the
 // link is unknown or leads nowhere.
-func (schema *Schema) ResolveLink(link, scope string) (string, bool) { panic("stub") }
+func (schema *Schema) ResolveLink(link, scope string) (string, bool) {
+	command, ok := schema.Commands[link]
+	if !ok || !slices.Contains(command.Declared, game.DeclaredLink) || command.Target == "" {
+		return "", false
+	}
+	if scope != "" && len(command.Scopes) > 0 && !slices.Contains(command.Scopes, scope) {
+		return "", false
+	}
+	return command.Target, true
+}
 
 // ResolveCallTypes returns the type that each step of a data call leads to, starting from the block's data
 // context. A step no dump declares gets "", and the steps after it are left out.
-func (schema *Schema) ResolveCallTypes(call jomini.Call, datacontext string) []string { panic("stub") }
+func (schema *Schema) ResolveCallTypes(call jomini.Call, datacontext string) []string {
+	var types []string
+	current := datacontext
+	for i, step := range call.Steps {
+		function, ok := schema.DataTypes[current].Functions[step.Text]
+		if !ok && i == 0 {
+			function, ok = schema.DataTypes[game.GlobalType].Functions[step.Text]
+		}
+		if !ok {
+			return append(types, "")
+		}
+		current = function.Returns
+		types = append(types, current)
+	}
+	return types
+}
 
-// ResolveTypeDatabase returns the database that holds the names of a data type, or false if there is none.
-func (schema *Schema) ResolveTypeDatabase(dataType string) (string, bool) { panic("stub") }
+// ResolveTypeDatabase returns the database that holds the names of a data type: the one named in the singular by the
+// type's words. It returns false if none is, or several are.
+func (schema *Schema) ResolveTypeDatabase(dataType string) (string, bool) {
+	label := schema.TypeDatabases[toPhrase(dataType)]
+	return label, label != ""
+}
+
+// toPhrase returns the words of a text written in capitals and underscores, in lower case and apart by spaces.
+func toPhrase(text string) string {
+	var words strings.Builder
+	var previous rune
+	for _, r := range text {
+		if unicode.IsUpper(r) && (unicode.IsLower(previous) || unicode.IsDigit(previous)) {
+			words.WriteByte(' ')
+		}
+		if r == '_' {
+			r = ' '
+		}
+		words.WriteRune(unicode.ToLower(r))
+		previous = r
+	}
+	return words.String()
+}
 
 // MatchValue reports whether a written value fits what a field takes.
-func (schema *Schema) MatchValue(expected Expected, text string) bool { panic("stub") }
+func (schema *Schema) MatchValue(expected Expected, text string) bool {
+	unquoted := strings.Trim(text, `"`)
+	switch expected.Type {
+	case ValueBool:
+		return slices.Contains(game.Bools, text)
+	case ValueNumber:
+		return jomini.IsNumber(text)
+	case ValueDate:
+		_, ok := jomini.ParseDate(text)
+		return ok
+	case ValueChoice:
+		return schema.matchChoice(expected, unquoted)
+	case ValueReference:
+		return jomini.IsIdentifier(unquoted)
+	case ValueColor:
+		tree := jomini.Parse("color = " + text)
+		_, _, ok := jomini.ColorParts(tree, 0)
+		return len(tree.Statements) > 0 && ok
+	case ValueText:
+		return text != unquoted || jomini.IsIdentifier(text)
+	case ValueBlock:
+		return strings.Contains(text, "{")
+	case ValueCall:
+		_, ok := jomini.ParseCall(strings.TrimSuffix(strings.TrimPrefix(unquoted, "["), "]"), 0)
+		return ok && strings.HasPrefix(unquoted, "[")
+	}
+	return true
+}
+
+// matchChoice reports whether a text is one of the choices a field allows, without regard to case where the
+// choices' database matches names that way.
+func (schema *Schema) matchChoice(expected Expected, text string) bool {
+	database := schema.Databases[expected.Database]
+	folds := database != nil && (database.Row.FoldsCase || database.Callable.FoldsCase)
+	return slices.ContainsFunc(expected.Choices, func(choice string) bool {
+		return choice == text || folds && strings.EqualFold(choice, text)
+	})
+}
+
+// resolve sets the claim to a value when its source outranks the one that states it now, or when none does. A lower
+// source number is a higher rank.
+func (claim *Claim[T]) resolve(value T, source game.Source) {
+	if !claim.IsStated() || source < claim.Source {
+		*claim = Claim[T]{Value: value, Source: source}
+	}
+}
+
+// take states another claim's value where its source outranks this one's, or where this one states nothing.
+func (claim *Claim[T]) take(other Claim[T]) {
+	if other.IsStated() {
+		claim.resolve(other.Value, other.Source)
+	}
+}
+
+// take gives a field each claim of the given claims that it does not state, or that outranks its own.
+func (field *Field) take(other Claims) {
+	field.Value.take(other.Value)
+	field.Shape.take(other.Shape)
+	field.Scope.take(other.Scope)
+	field.Required.take(other.Required)
+	field.Default.take(other.Default)
+	field.Blurb.take(other.Blurb)
+}
+
+// walkField calls the function on each field under a field, with its key, in order of key, and goes on under it.
+func walkField(field *Field, visit func(key string, child *Field)) {
+	for _, key := range slices.Sorted(maps.Keys(field.Children)) {
+		child := field.Children[key]
+		visit(key, child)
+		walkField(child, visit)
+	}
+}
+
+// buildChild returns the child of a field at a key, building an empty one when there is none.
+func (field *Field) buildChild(key string) *Field {
+	if field.Children == nil {
+		field.Children = map[string]*Field{}
+	}
+	if field.Children[key] == nil {
+		field.Children[key] = &Field{}
+	}
+	return field.Children[key]
+}
+
+// findChild returns the child of a field written at a key, or nil if it has none. A nil field has none.
+func (field *Field) findChild(key string) *Field {
+	if field == nil {
+		return nil
+	}
+	return field.Children[key]
+}
+
+// findPatternChild returns the child of a field written at a key, else the one written for a number where the key
+// is one, else the one written for any key. It returns nil if there is none.
+func (field *Field) findPatternChild(key string) *Field {
+	if child := field.findChild(key); child != nil {
+		return child
+	}
+	if game.IsNumberKey(key) {
+		if child := field.findChild(game.NumberKey); child != nil {
+			return child
+		}
+	}
+	return field.findChild(game.AnyKey)
+}

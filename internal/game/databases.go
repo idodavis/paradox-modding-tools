@@ -34,6 +34,7 @@ type Nesting struct {
 	Parent   string // the folder or file whose definitions hold its keys
 	KeyPath  string // the key path from the holding definition to its keys; "" its own block; * any key, ** any depth
 	Database string // its own name after the parent's; "" the parent's own definitions (a title inside a title)
+	Keys     string // with Database "": the pattern a key fits to define one (path.Match); a key that does not is a field
 	Target   string // setup: the database whose definitions its own set up; "" none
 }
 
@@ -109,6 +110,9 @@ const (
 	File         = "file"
 	DataFunction = "datafunction"
 )
+
+// Constant is the database of the constants a file writes for itself as @name = value, local to the file.
+const Constant = "constant"
 
 // GlobalType is the data type a data call's first step is looked up on.
 const GlobalType = "Global"
@@ -197,6 +201,7 @@ var Databases = map[string]Database{
 	"common/scripted_effects":            {DeclaringKeys: []string{"scripted_effect"}},
 	"common/scripted_triggers":           {DeclaringKeys: []string{"scripted_trigger"}},
 	"common/scripted_lists":              {Houses: "lists"},
+	"common/defines":                     {}, // its subfolders (ai, graphic, jomini) write the same define groups
 	"common/genes":                       {WrapperKeys: []string{"color_genes", "special_genes", "morph_genes", "accessory_genes", "decal_atlases", "age_presets"}},
 	"common/named_colors":                {WrapperKeys: []string{"colors"}},
 	"data_binding":                       {NamedBy: "field", NameKey: "definition", Houses: "functions"},
@@ -284,6 +289,7 @@ var ck3Databases = map[string]Database{ // its .info files unless noted
 	"events":                   {Houses: "events", RunOrder: ck3EventOrder},
 	"common/decisions":         {RunOrder: []string{"is_shown", "is_valid", "cost", "cooldown", "effect"}},
 	"common/traits":            {AliasKeys: []string{"group", "group_equivalence"}},
+	"common/opinion_modifiers": {}, // the DLC subfolder writes the same blocks
 	"gfx/map/map_object_data":  {NamedBy: "nothing"},
 	"history/titles":           {Houses: "history", Target: "landed_titles"},
 	"history/provinces":        {Houses: "history", Target: "map_data/definition"},
@@ -300,7 +306,7 @@ var ck3Databases = map[string]Database{ // its .info files unless noted
 }
 
 var ck3Nestings = []Nesting{
-	{Parent: "common/landed_titles"}, // a title inside a title is a title
+	{Parent: "common/landed_titles", Keys: "[ekdcb]_*"}, // a title inside a title is a title; its key opens with its tier
 	{Parent: "common/activities/activity_types", KeyPath: "options", Database: "option_category"},
 	{Parent: "common/activities/activity_types", KeyPath: "phases", Database: "phase"},
 	{Parent: "common", KeyPath: "**/parameters", Database: "parameter"},
@@ -400,8 +406,9 @@ var eu5Databases = map[string]Database{ // observed in vanilla unless noted
 	"events":                               {Houses: "events", RunOrder: eventOrder},        // _events.info
 	"gfx/map/map_objects":                  {NamedBy: "nothing"},
 	"gfx/map/city_data":                    {NamedBy: "field", NameKey: "name"},
-	"common/game_concepts":                 {Houses: "concepts", FoldsCase: true}, // vanilla refers to a concept in either case
-	"setup/start":                          {Houses: "history"},
+	"common/game_concepts":                 {Houses: "concepts", FoldsCase: true},   // vanilla refers to a concept in either case
+	"setup/start":                          {Houses: "history", NamedBy: "nothing"}, // its top keys are the managers that hold the nestings
+	"gfx/unit_graphics/attachments":        {},                                      // its subfolders write the same attachment lists
 	"setup/templates":                      {NamedBy: "file"},
 	"map_data/location_templates.txt":      {Houses: "history", Target: "map_data/named_locations"},
 	"map_data/generated_locators_port.txt": {NamedBy: "nothing"},
@@ -475,6 +482,38 @@ func (game *Game) FindNestings(rel string) (rows []Nesting) {
 		}
 	}
 	return rows
+}
+
+// MatchKeyPath reports whether the keys that lead to a statement fit a key path: segments apart by slashes, each a
+// key, a glob such as *_parameters, <number>, * for any one key, or ** for any number of them.
+func MatchKeyPath(pattern string, keys []string) bool {
+	if pattern == "" {
+		return len(keys) == 0
+	}
+	return matchSegments(strings.Split(pattern, "/"), keys)
+}
+
+// matchSegments reports whether keys fit the segments of a key path.
+func matchSegments(segments, keys []string) bool {
+	if len(segments) == 0 {
+		return len(keys) == 0
+	}
+	if segments[0] == "**" {
+		for skip := 0; skip <= len(keys); skip++ {
+			if matchSegments(segments[1:], keys[skip:]) {
+				return true
+			}
+		}
+		return false
+	}
+	if len(keys) == 0 {
+		return false
+	}
+	fits, _ := path.Match(segments[0], keys[0])
+	if segments[0] == NumberKey {
+		fits = IsNumberKey(keys[0])
+	}
+	return fits && matchSegments(segments[1:], keys[1:])
 }
 
 // LookupPrecedence returns how a database's definitions combine: the game's own row, else the shared one, else the

@@ -1,5 +1,11 @@
 package schema
 
+import (
+	"maps"
+	"slices"
+	"strings"
+)
+
 // An Input is one input of the Form view: a key that a definition may write, what it takes, and the inputs inside
 // it when it holds a block.
 type Input struct {
@@ -15,4 +21,29 @@ type Input struct {
 
 // ListInputs returns the Form view's inputs for a database, from the field tree of its definitions. It returns
 // none for a database the schema cannot describe, so no form is offered where the engine would be guessing.
-func (schema *Schema) ListInputs(database string) []Input { panic("stub") }
+func (schema *Schema) ListInputs(database string) []Input {
+	row := schema.Databases[database]
+	if row == nil {
+		return nil
+	}
+	return listInputs(row.Definition)
+}
+
+// listInputs returns the inputs for the children of a field that a source gives a value or children of their own,
+// by key. A child written for a form rather than a key gives none.
+func listInputs(field *Field) []Input {
+	var inputs []Input
+	for _, key := range slices.Sorted(maps.Keys(field.Children)) {
+		child := field.Children[key]
+		if strings.HasPrefix(key, "<") || !child.Value.IsStated() && len(child.Children) == 0 {
+			continue
+		}
+		expected := child.Value.Value
+		inputs = append(inputs, Input{
+			Key: key, Type: expected.Type, Database: expected.Database, Choices: expected.Choices,
+			Required: child.Required.Value.Level == "always", Default: child.Default.Value, Blurb: child.Blurb.Value,
+			Inputs: listInputs(child),
+		})
+	}
+	return inputs
+}

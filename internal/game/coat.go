@@ -74,6 +74,7 @@ type CoatTemplate struct {
 type CoatRules struct {
 	Database          string                          // the database of coats
 	ColorsDatabase    string                          // the named colors its slots name
+	ListsDatabase     string                          // the template lists that a list "x" value names
 	FieldFile         string                          // the file whose first atlas' tile_size is the field a coat is drawn on
 	TextureFolders    map[string]string               // the folder each texture key's files are under
 	DepthFront        bool                            // a layer of a larger depth draws in front
@@ -102,6 +103,7 @@ const coatInstance = "instance = { position = { 0.5 0.5 } scale = { 0.5 0.5 } }"
 var Coat = CoatRules{
 	Database:       "coat_of_arms/coat_of_arms",
 	ColorsDatabase: "named_colors",
+	ListsDatabase:  "coat_of_arms/template_lists",
 	FieldFile:      "common/coat_of_arms/options/atlases.txt",
 	TextureFolders: map[string]string{
 		"pattern":         "gfx/coat_of_arms/patterns",

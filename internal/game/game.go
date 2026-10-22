@@ -103,6 +103,10 @@ const (
 // begins there.
 const ScriptRoot = "game"
 
+// InstallRoots are the folders under an install that the game mounts, in the order it mounts them. A relative
+// path begins under one of them.
+var InstallRoots = []string{"clausewitz", "jomini", ScriptRoot}
+
 // BaseLanguage is the language that every other language's coverage is measured against.
 const BaseLanguage = "english"
 

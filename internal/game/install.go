@@ -29,6 +29,9 @@ type launcherSettings struct {
 	GameDataPath string `json:"gameDataPath"` // the user-data folder, %USER_DOCUMENTS% allowed
 }
 
+// DLCFolder is the folder under the game folder that holds each DLC's own files, laid out as the game's are.
+const DLCFolder = "dlc"
+
 // The patterns that read Steam's library file, an app manifest and its build id.
 var (
 	vdfPathRe    = regexp.MustCompile(`"path"\s*"([^"]+)"`)

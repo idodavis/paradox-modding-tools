@@ -120,10 +120,11 @@ const MetadataDescriptor = "metadata"
 // MetadataDir is where such a game keeps the descriptor and, for EU5, the thumbnail.
 const MetadataDir = ".metadata"
 
-// The error log's file names and the launcher's settings file.
+// The error log's file names, the revision log every start writes, and the launcher's settings file.
 const (
 	errorLogRel     = "logs/error.log"
 	errorLogRotated = "logs/error.%d.log"
+	revisionLogRel  = "logs/code_revisions.log"
 	launcherFile    = "launcher/launcher-settings.json"
 )
 

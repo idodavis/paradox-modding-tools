@@ -1,5 +1,5 @@
 // install.go finds where a game is on this machine: its installs through Steam's libraries, their version and
-// age, the user-data and dump folders, and the mod descriptor file.
+// age, the user-data and dump folders, the mod descriptor file, and the program that starts the game.
 
 package game
 
@@ -24,19 +24,23 @@ type DetectedInstall struct {
 
 // launcherSettings is the part of launcher-settings.json the app reads.
 type launcherSettings struct {
-	RawVersion   string `json:"rawVersion"`   // the version as the game writes it (1.12.5)
-	Version      string `json:"version"`      // the version with its codename (1.13.11 (Chamomile))
-	GameDataPath string `json:"gameDataPath"` // the user-data folder, %USER_DOCUMENTS% allowed
+	RawVersion   string   `json:"rawVersion"`   // the version as the game writes it (1.12.5)
+	Version      string   `json:"version"`      // the version with its codename (1.13.11 (Chamomile))
+	GameDataPath string   `json:"gameDataPath"` // the user-data folder, %USER_DOCUMENTS% allowed
+	ExePath      string   `json:"exePath"`      // the game's executable, from the launcher settings' folder
+	ExeArgs      []string `json:"exeArgs"`      // the arguments the launcher starts it with
 }
 
 // DLCFolder is the folder under the game folder that holds each DLC's own files, laid out as the game's are.
 const DLCFolder = "dlc"
 
-// The patterns that read Steam's library file, an app manifest and its build id.
+// The patterns that read Steam's library file, an app manifest and its build id, and the game's release branch in
+// its revision log (release/1.20.1, u26q2/release/1.3.11).
 var (
 	vdfPathRe    = regexp.MustCompile(`"path"\s*"([^"]+)"`)
 	installDirRe = regexp.MustCompile(`"installdir"\s*"([^"]+)"`)
 	buildIDRe    = regexp.MustCompile(`"buildid"\s*"(\d+)"`)
+	gameBranchRe = regexp.MustCompile(`\]: game_branch: (?:\S+/)?release/(\S+)`)
 )
 
 // FindInstalls returns the installs of a game that Steam's libraries hold.
@@ -123,7 +127,9 @@ func listDefaultSteamRoots() []string {
 }
 
 // LoadGameVersion returns an install's version: the rawVersion in launcher-settings.json, else its version without
-// the codename, else for EU5 "build <id>" from the Steam manifest two folders up. It returns "" if none is found.
+// the codename, else the version the game wrote in its revision log when it last started, else "build <id>" from the
+// Steam manifest two folders up. The revision log is used only when that start came after the install's last
+// update. It returns "" if none is found.
 func LoadGameVersion(gameID, installPath string) string {
 	settings := loadLauncher(installPath)
 	if settings.RawVersion != "" {
@@ -131,6 +137,9 @@ func LoadGameVersion(gameID, installPath string) string {
 	}
 	version, _, _ := strings.Cut(settings.Version, " (")
 	if version = strings.TrimSpace(version); version != "" {
+		return version
+	}
+	if version := readLoggedVersion(gameID, installPath); version != "" {
 		return version
 	}
 
@@ -154,6 +163,26 @@ func loadLauncher(installPath string) (settings launcherSettings) {
 		_ = json.Unmarshal(data, &settings)
 	}
 	return settings
+}
+
+// readLoggedVersion returns the version a game wrote in its revision log at its last start: the part of its release
+// branch after release/. It returns "" when there is no log, when the log names no release, or when the install was
+// updated after the log was written, since the game has not run as the new version yet.
+func readLoggedVersion(gameID, installPath string) string {
+	user := FindUserDataDir(gameID, installPath)
+	if user == "" {
+		return ""
+	}
+	path := filepath.Join(user, filepath.FromSlash(revisionLogRel))
+	info, err := os.Stat(path)
+	if err != nil || info.ModTime().Before(ReadInstallUpdatedAt(installPath)) {
+		return ""
+	}
+	data, err := os.ReadFile(path)
+	if match := gameBranchRe.FindSubmatch(data); err == nil && match != nil {
+		return string(match[1])
+	}
+	return ""
 }
 
 // FindDumpDirs returns the folders the game's console dumps land in, or none if the game has no user-data folder.
@@ -257,6 +286,30 @@ func ResolveDescriptorFile(gameID string) string {
 		return MetadataDir + "/metadata.json"
 	}
 	return "descriptor.mod"
+}
+
+// ResolveProgram returns the executable that starts a game on this machine and the arguments to start it in debug
+// mode, from an install's folder. Where the game's row names the launcher settings, their executable and arguments
+// win over the row's; the row's debug flags always come last. It returns false when the game has no executable on
+// this operating system.
+func ResolveProgram(gameID, installPath string) (path string, args []string, ok bool) {
+	game := LookupGame(gameID)
+	if game == nil {
+		return "", nil, false
+	}
+	program := game.Program[runtime.GOOS]
+	if program.Executable != "" {
+		path = filepath.Join(installPath, filepath.FromSlash(program.Executable))
+	}
+	if program.Settings != "" {
+		settings := loadLauncher(installPath)
+		if settings.ExePath != "" {
+			folder := filepath.Dir(filepath.Join(installPath, filepath.FromSlash(program.Settings)))
+			path = filepath.Join(folder, filepath.FromSlash(settings.ExePath))
+		}
+		args = settings.ExeArgs
+	}
+	return path, append(args, program.DebugArgs...), path != ""
 }
 
 // ReadInstallUpdatedAt returns when an install was last updated: the newest file in its binaries folder, else among

@@ -89,8 +89,8 @@ type File struct {
 	Format Format `json:"format"`
 }
 
-// Walk lists every file under a root. It skips dot folders and anything the ignore rules cover, and it follows a
-// link once.
+// Walk lists every file under a root. It skips the folders IsHiddenDir names and anything the ignore rules cover,
+// and it follows a link once.
 func Walk(root Root, ignore Ignore) ([]File, error) {
 	var mu sync.Mutex
 	var list []File
@@ -110,9 +110,8 @@ func Walk(root Root, ignore Ignore) ([]File, error) {
 			}
 			dir = target.IsDir()
 		}
-		hidden := dir && strings.HasPrefix(entry.Name(), ".") && entry.Name() != ".metadata"
 		switch {
-		case hidden || ignore.Match(rel, dir):
+		case dir && IsHiddenDir(entry.Name()) || ignore.Match(rel, dir):
 			if dir {
 				return fastwalk.SkipDir
 			}
@@ -128,6 +127,12 @@ func Walk(root Root, ignore Ignore) ([]File, error) {
 	}
 	slices.SortFunc(list, func(file, other File) int { return strings.Compare(file.Rel, other.Rel) })
 	return list, nil
+}
+
+// IsHiddenDir reports whether a folder of the given name is one that nothing lists or watches: a dot folder, such as
+// .git, except .metadata, where Vic3 and EU5 keep a mod's descriptor.
+func IsHiddenDir(name string) bool {
+	return strings.HasPrefix(name, ".") && name != ".metadata"
 }
 
 // IsBinary reports whether the bytes are not text, which means a NUL byte in the first kilobyte.

@@ -94,17 +94,29 @@ export interface Mod {
 }
 
 /**
- * A Place says where a file sits in the workspace: its path and key, its root and origin, its path relative to the
- * root, its format, its database, whether it is read only and whether the game loads it. Every answer that names
- * a file carries one, so the frontend never works any of this out itself.
+ * A Place says where a file sits in the workspace: the file as its root lists it, together with that root, its
+ * database, whether it is read only and whether the game loads it. Every answer that names a file carries one, so
+ * the frontend never works any of this out itself.
  */
 export interface Place {
     "path": string;
+
+    /**
+     * the one key two paths are compared by: cleaned, lower-cased, forward slashes
+     */
     "key": string;
-    "root": string;
-    "origin": string;
+
+    /**
+     * from its root, forward slashes
+     */
     "rel": string;
+
+    /**
+     * its root's
+     */
+    "origin": string;
     "format": files$0.Format;
+    "root": string;
     "database": string;
 
     /**

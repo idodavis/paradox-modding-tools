@@ -16,7 +16,7 @@ import (
 // top-level keys name its definitions.
 type Database struct {
 	Houses        string   // beyond definitions: events, on_actions, decisions, lists, functions, concepts, history
-	NamedBy       string   // how a definition is named: "" its own key, field, file, column, nothing. Read by index.ScanFile.
+	NamedBy       string   // how a definition is named: "" its own key, field, file, column, nothing
 	NameKey       string   // NamedBy field: the key whose value names the definition
 	WrapperKeys   []string // keys at the top that only wrap definitions
 	DeclaringKeys []string // keys that declare a definition inline: scripted_effect x = { }

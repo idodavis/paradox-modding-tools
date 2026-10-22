@@ -17,7 +17,7 @@ wiki, the executable, a shader, "observed" in the app) is its trailing comment; 
 | `gui.go` | `GUI`, one literal: which words declare a GUI file's databases and what their names start with (`DatabasePrefix`, `WidgetDatabase`), which keys name its widgets, the slots, how each built-in `WidgetType` draws, the opening states, the hidden keys, the calls the Visual view answers, the picture keys |
 | `coat.go` | `Coat`, one literal: the databases a coat reads (coats, named colors, template lists), its texture folders, which way depth and rotation turn, how each texture kind is colored (`CoatRecolor`), the mask regions, the color slots, the placement keys, how a key is edited, what a new coat writes, the frame mask |
 | `colors.go` | the `Colors` rows, `ParseColor` and `EncodeColor` |
-| `install.go` | where a game is on this machine: its installs through Steam's library folders, its version, its user-data and dump folders, its descriptor file and when an install was last updated; `DLCFolder` |
+| `install.go` | where a game is on this machine: its installs through Steam's library folders, its version (the launcher's settings, else the revision log of the game's last start when that came after the install's last update, else Steam's build), its user-data and dump folders, its descriptor file, when an install was last updated, and the program that starts it in debug mode (`ResolveProgram`); `DLCFolder` |
 
 ## Lookups
 

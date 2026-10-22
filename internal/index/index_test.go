@@ -155,10 +155,14 @@ func TestListUsesFindsReferences(t *testing.T) {
 // tables, and answers the same lookups.
 func TestSaveIndexLoadsEqual(t *testing.T) {
 	_, scanned := scanFixture(t)
-	path := CachePath(t.TempDir(), "ck3", "1.0", time.Unix(1700000000, 0), "test")
-	if !strings.HasSuffix(path, "index-ck3-1.0-1700000000-test.gob") {
-		t.Errorf("cache path: %s", path)
+	dir := CachePath(t.TempDir(), "ck3", "1.0", time.Unix(1700000000, 0), "test")
+	if !strings.HasSuffix(filepath.ToSlash(dir), "ck3/1.0-1700000000-test") {
+		t.Errorf("cache folder: %s", dir)
 	}
+	if err := os.MkdirAll(dir, 0o755); err != nil {
+		t.Fatal(err)
+	}
+	path := filepath.Join(dir, "index.gob")
 	if err := SaveIndex(path, scanned); err != nil {
 		t.Fatal(err)
 	}

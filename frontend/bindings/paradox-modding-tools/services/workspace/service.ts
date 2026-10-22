@@ -49,7 +49,7 @@ export function Close(): $CancellablePromise<void> {
 }
 
 /**
- * Create makes a new file, or a folder when the flag is set, and emits fs:changed.
+ * Create makes a new file, or a folder when the flag is set. The watcher sends fs:changed for it.
  */
 export function Create(path: string, dir: boolean): $CancellablePromise<void> {
     return $Call.ByID(4164671313, path, dir);
@@ -70,8 +70,8 @@ export function CreateWorkspace(ws: app$0.Workspace): $CancellablePromise<app$0.
 }
 
 /**
- * Delete removes a file or a folder and emits fs:changed. Deleting a mod's root folder removes the mod from the
- * workspace as well.
+ * Delete removes a file or a folder, and the watcher sends fs:changed for it. Deleting a mod's root folder removes
+ * the mod from the workspace as well.
  */
 export function Delete(path: string): $CancellablePromise<void> {
     return $Call.ByID(2576914838, path);
@@ -150,8 +150,8 @@ export function Locate(path: string): $CancellablePromise<$models.Place> {
 
 /**
  * Open opens a workspace in the background, closing the one that was open before. The install:scanning event
- * reports each stage, and workspace:opened or workspace:failed ends it. A call to Session while a workspace is
- * opening waits for it.
+ * reports each stage, and workspace:opened or workspace:failed ends it. A call to Session, State or Close while a
+ * workspace is opening waits for it. Opening the workspace that is already open does nothing.
  */
 export function Open(workspaceID: string): $CancellablePromise<void> {
     return $Call.ByID(2144133549, workspaceID);
@@ -172,7 +172,7 @@ export function RemoveMod(workspaceID: string, modID: string): $CancellablePromi
 }
 
 /**
- * Rename moves a file or a folder and emits fs:changed.
+ * Rename moves a file or a folder. The watcher sends fs:changed for both paths.
  */
 export function Rename($from: string, to: string): $CancellablePromise<void> {
     return $Call.ByID(3575852159, $from, to);
@@ -186,7 +186,8 @@ export function ReorderMods(workspaceID: string, modIDs: string[] | null): $Canc
 }
 
 /**
- * RescanInstall drops an install's cache, so the next open scans it again.
+ * RescanInstall drops an install's caches, so its next open scans it again. When the open workspace uses the
+ * install, it is opened again at once.
  */
 export function RescanInstall(id: string): $CancellablePromise<void> {
     return $Call.ByID(1589603376, id);
@@ -214,7 +215,8 @@ export function UpdateWorkspace(ws: app$0.Workspace): $CancellablePromise<void> 
 }
 
 /**
- * Write writes a file's text in its encoding and emits fs:changed. The write is atomic.
+ * Write writes a file's text in its encoding. The write is atomic. The watcher sends fs:changed once the index
+ * has the new text.
  */
 export function Write(path: string, text: files$0.Text): $CancellablePromise<void> {
     return $Call.ByID(3195239336, path, text);

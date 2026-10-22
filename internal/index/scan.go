@@ -1,8 +1,11 @@
 package index
 
 import (
+	"errors"
 	"fmt"
+	"io/fs"
 	"maps"
+	"os"
 	"runtime"
 	"slices"
 	"strings"
@@ -52,37 +55,61 @@ func ScanMods(game *game.Game, schema *schema.Schema, install *Index, roots []fi
 	return index, nil
 }
 
-// ScanFile walks one file again after it changed and replaces its occurrences and postings. A nil tree means the
-// file was deleted, and its occurrences are dropped.
-func (index *Index) ScanFile(schema *schema.Schema, file files.File, tree *jomini.Tree) error {
-	position, known := index.FindFile(file.Path)
-	if known && position < index.countInstallFiles() {
-		return fmt.Errorf("%s is a file of the install", file.Path)
-	}
-	gone := tree == nil
-	if !known && gone {
-		return nil
-	}
-	if !known {
-		// a file gone before keeps its place, which a file of the same path takes again
-		slot := slices.IndexFunc(index.Files, func(other files.File) bool { return other.Key == file.Key })
-		if slot < 0 {
-			index.Files = append(index.Files, file)
-			index.Occurrences = append(index.Occurrences, nil)
-			index.Texts = append(index.Texts, nil)
-			slot = len(index.Files) - 1
+// ScanFiles walks the given files again after they changed, reading each from disk as the scan does, and then
+// builds the postings once for all of them. A file that no longer exists is dropped with its occurrences. It
+// returns an error, and changes nothing, if any of the files is the install's.
+func (index *Index) ScanFiles(schema *schema.Schema, changed []files.File) error {
+	installFiles := index.countInstallFiles()
+	for _, file := range changed {
+		if position, known := index.FindFile(file.Path); known && position < installFiles {
+			return fmt.Errorf("%s is a file of the install", file.Path)
 		}
-		position = int32(slot)
 	}
-	index.Occurrences[position], index.Texts[position] = nil, nil
-	if gone {
-		delete(index.byKey, file.Key)
-	} else {
-		index.buildFile(&sync.RWMutex{}, schema, position, tree)
-		index.byKey[file.Key] = position
+	var lock sync.RWMutex
+	for _, file := range changed {
+		position, known := index.FindFile(file.Path)
+		_, err := os.Stat(file.Path)
+		gone := errors.Is(err, fs.ErrNotExist)
+		if !known && gone {
+			continue
+		}
+		if !known {
+			// a file gone before keeps its place, which a file of the same path takes again
+			slot := slices.IndexFunc(index.Files, func(other files.File) bool { return other.Key == file.Key })
+			if slot < 0 {
+				index.Files = append(index.Files, file)
+				index.Occurrences = append(index.Occurrences, nil)
+				index.Texts = append(index.Texts, nil)
+				slot = len(index.Files) - 1
+			}
+			position = int32(slot)
+		}
+		index.Occurrences[position], index.Texts[position] = nil, nil
+		if gone {
+			delete(index.byKey, file.Key)
+		} else {
+			index.buildFile(&lock, schema, position, nil)
+			index.byKey[file.Key] = position
+		}
 	}
 	index.buildPostings()
 	return nil
+}
+
+// Clone returns a copy of an index that ScanFiles can change while the original is still being read. The copy has
+// its own lists of files, occurrences and texts, its own paths and its own tables, which are what ScanFiles writes;
+// it shares each file's occurrences and texts, the postings until ScanFiles builds new ones, and the install's index.
+func (index *Index) Clone() *Index {
+	next := *index
+	next.Files = slices.Clone(index.Files)
+	next.Occurrences = slices.Clone(index.Occurrences)
+	next.Texts = slices.Clone(index.Texts)
+	next.byKey = maps.Clone(index.byKey)
+	from := index.listTables()
+	for position, table := range next.listTables() {
+		*table = from[position].clone()
+	}
+	return &next
 }
 
 // scanRoots lists the files under the roots and builds the index of them, over the install's index when one is
@@ -113,7 +140,7 @@ func listFiles(roots []files.Root) ([]files.File, error) {
 		}
 		// a file under a root inside this one belongs to the inner root
 		listing = append(listing, lo.Filter(list, func(file files.File, _ int) bool {
-			owner, _ := findRoot(keys, file)
+			owner, _ := findRoot(keys, file.Key)
 			return owner == position
 		})...)
 	}
@@ -125,12 +152,12 @@ func listRootKeys(roots []files.Root) []string {
 	return lo.Map(roots, func(root files.Root, _ int) string { return files.ToKey(root.Dir) + "/" })
 }
 
-// findRoot returns the position of the innermost root that holds a file, given the keys of the roots' folders. It
-// returns false if no root holds the file.
-func findRoot(keys []string, file files.File) (int, bool) {
+// findRoot returns the position of the innermost root that holds a file, given the keys of the roots' folders and
+// the file's key. It returns false if no root holds the file.
+func findRoot(keys []string, fileKey string) (int, bool) {
 	position, length := -1, 0
 	for candidate, key := range keys {
-		if len(key) > length && strings.HasPrefix(file.Key, key) {
+		if len(key) > length && strings.HasPrefix(fileKey, key) {
 			position, length = candidate, len(key)
 		}
 	}
@@ -161,7 +188,7 @@ func newIndex(schema *schema.Schema, install *Index, roots []files.Root, listing
 	} else {
 		from := install.listTables()
 		for position, table := range index.listTables() {
-			*table = Table{Texts: slices.Clone(from[position].Texts), ordinals: maps.Clone(from[position].ordinals)}
+			*table = from[position].clone()
 		}
 	}
 	index.buildPaths()
@@ -185,12 +212,13 @@ func (index *Index) buildTables() {
 	}
 }
 
-// buildPaths fills the map that finds a file by its key.
+// buildPaths fills the map that finds a file by its key, and the keys of the roots' folders.
 func (index *Index) buildPaths() {
 	index.byKey = make(map[string]int32, len(index.Files))
 	for position, file := range index.Files {
 		index.byKey[file.Key] = int32(position)
 	}
+	index.rootKeys = listRootKeys(index.Roots)
 }
 
 // scanFiles builds the occurrences of every file of the index's own, in parallel on every core but two.

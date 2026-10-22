@@ -1,0 +1,10 @@
+{
+	"name": "Fixture Mod",
+	"id": "fixture.mod",
+	"version": "1.0.0",
+	"supported_game_version": "",
+	"short_description": "",
+	"tags": [],
+	"relationships": [],
+	"game_custom_data": { "multiplayer_synchronized": true, "replace_paths": [ "in_game/common/town_rights" ] }
+}

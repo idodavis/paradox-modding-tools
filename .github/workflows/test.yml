@@ -1,6 +1,6 @@
 # Gate every PR to main on the backend tests and the frontend typecheck. -race is the only thing
 # that catches a lock-discipline regression. The real-install tier needs the three games
-# installed, so the PMT_*_GATE gates and the sweep stay manual: `task test:gate`, `task test:sweep`.
+# installed, so its gates stay manual: `task test:gate`.
 name: Test
 
 on:
@@ -30,18 +30,16 @@ jobs:
       - name: gofmt
         run: |
           set -euo pipefail
-          out="$(gofmt -l services)"
+          out="$(gofmt -l main.go internal services)"
           if [ -n "${out}" ]; then
             echo "::error::gofmt needed on:"; echo "${out}"; exit 1
           fi
 
       - name: go vet
-        working-directory: services
         run: go vet ./...
 
       # -timeout 60s is the contract: move a test that needs longer, do not raise the number
       - name: go test -race
-        working-directory: services
         run: go test -short -race -timeout 60s ./...
 
   frontend:

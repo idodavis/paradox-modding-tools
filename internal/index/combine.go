@@ -54,15 +54,16 @@ func (index *Index) FindLoaded(rel string) (loaded files.File, hidden []files.Fi
 	// The path is looked for under each source's root, as it is and under each stage folder, so that a path shared by
 	// two stages is one path.
 	_, rel = schema.SplitStage(row, rel)
-	variants := []string{rel}
+	variants := []string{strings.ToLower(rel)}
 	for _, stage := range row.StageRoots {
-		variants = append(variants, stage+"/"+rel)
+		variants = append(variants, strings.ToLower(stage+"/"+rel))
 	}
 	replacer, _ := index.findReplacer(row, rel)
 	var kept []files.File
-	for source, root := range index.Roots {
+	// a file's key is its root's key followed by its path from the root in lower case
+	for source, rootKey := range index.rootKeys {
 		for _, variant := range variants {
-			position, ok := index.FindFile(files.Join(root.Dir, variant))
+			position, ok := index.byKey[rootKey+variant]
 			switch {
 			case !ok:
 			case source < replacer:
@@ -91,9 +92,8 @@ func (index *Index) listLoadOrder(sites []Site, byPlayset bool) []Site {
 	// Each site's place is worked out once: its root's position, or its file's path without its stage folder.
 	sources, rels := map[Site]int{}, map[Site]string{}
 	if byPlayset {
-		keys := listRootKeys(index.Roots)
 		for _, site := range sites {
-			sources[site], _ = findRoot(keys, index.File(site))
+			sources[site], _ = findRoot(index.rootKeys, index.File(site).Key)
 		}
 	} else {
 		row := game.LookupGame(index.Game)

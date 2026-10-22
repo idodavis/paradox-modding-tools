@@ -47,7 +47,7 @@ func main() {
 		log.Fatalf("log: %v", err)
 	}
 	// the workspace service holds the one open workspace; every other service reads it through its Session
-	wsp := &workspace.Service{Config: config}
+	wsp := &workspace.Service{Config: config, Build: version}
 	editor := &lsp.Service{Workspace: wsp}
 
 	pmt := application.New(application.Options{

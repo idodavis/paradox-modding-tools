@@ -120,12 +120,9 @@ func (app *Service) ListSettings() []Setting { return Catalog }
 // ReadSettings returns every setting's value by key, using the catalog's default for a setting that was never
 // set.
 func (app *Service) ReadSettings() map[string]string {
-	settings := app.Config.Config().Settings
 	return lo.SliceToMap(Catalog, func(setting Setting) (string, string) {
-		if value, ok := settings[setting.Key]; ok {
-			return setting.Key, value
-		}
-		return setting.Key, setting.Default
+		value, _ := app.Config.LookupSetting(setting.Key)
+		return setting.Key, value
 	})
 }
 

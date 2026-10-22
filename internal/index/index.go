@@ -5,6 +5,9 @@
 package index
 
 import (
+	"maps"
+	"slices"
+
 	"paradox-modding-tools/internal/files"
 	"paradox-modding-tools/internal/jomini"
 )
@@ -62,6 +65,11 @@ func (table *Table) Lookup(text string) (uint32, bool) {
 	return ordinal, ok
 }
 
+// clone returns a copy of a table that can be interned into without changing this one.
+func (table *Table) clone() Table {
+	return Table{Texts: slices.Clone(table.Texts), ordinals: maps.Clone(table.ordinals)}
+}
+
 // A Site points at one occurrence: the position of its file in Files and its position among that file's
 // occurrences. A mods' index lists the install's files first, so a site means the same file in both indexes.
 type Site struct {
@@ -97,6 +105,7 @@ type Index struct {
 	postings    map[Posting][]Site
 	counts      []int            // by database ordinal: how many definitions the index's own files hold
 	byKey       map[string]int32 // by a file's key: its position in Files
+	rootKeys    []string         // by root, as Roots lists them: its folder's key, ending in a slash
 }
 
 // Occurrence returns the occurrence a site points at.
@@ -120,6 +129,16 @@ func (index *Index) Text(site Site) string {
 func (index *Index) FindFile(path string) (int32, bool) {
 	position, ok := index.byKey[files.ToKey(path)]
 	return position, ok
+}
+
+// FindRoot returns the root that holds a path: the innermost one, since a DLC's folder is a root inside the game's.
+// A root's own folder is held by that root. It returns false if no root holds the path.
+func (index *Index) FindRoot(path string) (files.Root, bool) {
+	position, ok := findRoot(index.rootKeys, files.ToKey(path)+"/")
+	if !ok {
+		return files.Root{}, false
+	}
+	return index.Roots[position], true
 }
 
 // countInstallFiles returns how many of the files are the install's, which is where this index's own files begin.

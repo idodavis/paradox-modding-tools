@@ -77,8 +77,7 @@ tasks:
       - task: common:run:docker
 
   test:
-    summary: Fast backend tests. Skips the real-install tier.
-    dir: services
+    summary: Fast tests of the engine and the services. Skips the real-install tier.
     cmds:
       # -timeout 60s is the contract: a test that needs longer belongs behind an opt-in task, so
       # move the test, do not raise the number
@@ -87,10 +86,8 @@ tasks:
   test:race:
     summary: >
       What CI runs. The race detector is the only thing that can catch a
-      lock-discipline regression; the discipline is in
-      services/internal/workspace/README.md. Keep this identical to
-      .github/workflows/test.yml.
-    dir: services
+      lock-discipline regression, such as the open workspace's rescans
+      against its readers. Keep this identical to .github/workflows/test.yml.
     cmds:
       - go test -short -race -timeout 60s ./...
 
@@ -102,12 +99,15 @@ tasks:
 
   check:go:
     summary: gofmt, the three vets, staticcheck, golangci-lint and the short tests.
+    vars:
+      # the engine's packages that build without Wails, whose files for other systems need no cgo; index imports app
+      ENGINE: ./internal/files/... ./internal/game/... ./internal/jomini/... ./internal/loc/... ./internal/schema/... ./internal/texture/...
     cmds:
-      - test -z "$(gofmt -l main.go services)"
+      - test -z "$(gofmt -l main.go internal services)"
       # plain vet skips the files of other systems; these two cover them
       - go vet ./...
-      - GOOS=linux go vet ./services/internal/...
-      - GOOS=windows go vet ./services/internal/...
+      - GOOS=linux go vet {{.ENGINE}}
+      - GOOS=windows go vet {{.ENGINE}}
       - staticcheck ./...
       - golangci-lint run ./...
       - task: test
@@ -131,16 +131,11 @@ tasks:
 
   test:gate:
     summary: >
-      The real-install tier: the source and vanilla diagnostics gates over
-      CK3, Victoria 3 and EU5. Each of them skips under
-      -short and again when its own variable is unset, so dropping -short is
-      not what turns the tier on — these variables are. Set
+      The real-install tier: each package's gate over CK3, Victoria 3 and
+      EU5. A gate skips under -short and again when its game's variable is
+      unset, so these variables are what turn the tier on. Set
       PMT_TEST_INSTALL_{CK3,VIC3,EU5} to the three game roots; the console
       dumps are read from each game's Documents folder.
-    dir: services
-    env:
-      PMT_SOURCE_GATE: 1
-      PMT_VANILLA_GATE: 1
     cmds:
       # not 60s: each gate here scans three real installs
       - go test -count=1 -timeout 1800s ./...
@@ -150,17 +145,3 @@ tasks:
     cmds:
       - task: test:gate
       - task: check:types
-
-  test:sweep:
-    summary: >
-      The engine's scoreboard, not a gate: every mod a game's Documents mod
-      folder lists is opened over that install, and the health report, the
-      findings and the hover answer rate are printed. It asserts nothing, so a
-      count that moves is news and never a failure. Needs
-      PMT_TEST_INSTALL_<GAME> and PMT_TEST_MODS_<GAME>, and takes minutes per
-      game; PMT_TEST_SWEEP keeps it out of every other task.
-    dir: services
-    env:
-      PMT_TEST_SWEEP: 1
-    cmds:
-      - go test -count=1 -v -run TestSweep -timeout 60m .

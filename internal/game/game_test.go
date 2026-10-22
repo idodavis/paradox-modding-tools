@@ -29,7 +29,12 @@ func TestLoadGameVersion(t *testing.T) {
 		`{ "rawVersion": "1.12.5", "version": "Scythe v1.12.5" }`)); got != "1.12.5" {
 		t.Fatalf("version = %q want 1.12.5", got)
 	}
-	if got := LoadGameVersion("ck3", t.TempDir()); got != "" {
+	// the user-data folder is an empty one of the test's, so this machine's own revision log is not read
+	empty, err := json.Marshal(map[string]string{"gameDataPath": t.TempDir()})
+	if err != nil {
+		t.Fatal(err)
+	}
+	if got := LoadGameVersion("ck3", writeLauncher(t, string(empty))); got != "" {
 		t.Fatalf("missing file version = %q want empty", got)
 	}
 	if got := LoadGameVersion("ck3", writeLauncher(t,

@@ -23,7 +23,7 @@ Check that `wails3` is on your `PATH`: Go installs it into `$(go env GOPATH)/bin
 
 ## Windows
 
-The script parser (`services/internal/jomini`) is written in Go alone, and `task build` builds without C code
+The script parser (`internal/jomini`) is written in Go alone, and `task build` builds without C code
 (`CGO_ENABLED=0`), so a normal Windows build needs no C compiler. To run the app, Windows needs WebView2 (Windows 11
 usually has it).
 
@@ -110,19 +110,19 @@ Each Go package keeps its tests in one file, `<package>_test.go`.
 
 | Task | What it runs |
 |------|--------------|
-| `task test` | The fast tests (`go test -short -timeout 60s ./...` in `services/`) |
+| `task test` | The fast tests of the engine and the services (`go test -short -timeout 60s ./...` from the repository root) |
 | `task test:race` | The same tests under the race detector. This is what CI runs, and it works on Windows |
 | `task check` | Everything a commit must pass: gofmt, the vets, staticcheck, golangci-lint and the fast tests, then the frontend's type check, lint and tests. Needs staticcheck 0.8.2 or later (`go install honnef.co/go/tools/cmd/staticcheck@latest`): older ones cannot read this Go version's export data |
 | `task test:gate` | The tests over real installs of CK3, Victoria 3 and EU5. Set `PMT_TEST_INSTALL_CK3`, `PMT_TEST_INSTALL_VIC3` and `PMT_TEST_INSTALL_EU5` to each game's root folder (the one that holds `game/`); a game whose variable is unset is skipped |
 | `task test:full` | `test:gate`, then the frontend's type check: run it before a commit that touches the engine |
-| `task test:sweep` | A scoreboard, not a pass or fail: every mod in a game's Documents mod folder is opened over its install, and the findings and the hover answer rate are printed. It needs `PMT_TEST_INSTALL_<GAME>` and `PMT_TEST_MODS_<GAME>`, and it runs only when `PMT_TEST_SWEEP` is set, which the task does |
 
 ## Layout
 
 | Path | What it holds |
 |------|---------------|
 | `main.go` | The app's start: Wails, the updater (checked against `SHA256SUMS`) and the single main window |
-| `services/` | The Wails services, and `internal/` with the packages they use |
+| `internal/` | The engine: the script and localization parsers, files, textures, the games' tables, the schema and the index |
+| `services/` | The Wails services, one package each, which the frontend calls |
 | `frontend/` | Vue 3, Nuxt UI, Pinia and Pinia Colada; `monaco-editor` (the editor), `@pierre/trees` (the explorer), Vue Flow and dagre (the Event Graph) |
 | `build/` | The Wails Taskfiles, icons and the Windows version info |
 

@@ -115,7 +115,8 @@ beside the editor. The editor follows what the agent does.
 ## Other front ends: an MCP server, a command line tool and an LSP server
 
 After the ReArchitecture every question has one answer in one package, and the app's own screens are one way to ask
-it. Another front end is another way to ask the same questions, written over `services/internal` without changing it.
+it. Another front end is another way to ask the same questions, written over the engine in `internal/` without
+changing it.
 
 - **An MCP server**, so an agent can ask PMT for the problems in a file, where a name is defined, what is valid at a
   position and what Health finds, and check the Paradox script it writes against the game's own schema. MCP is the

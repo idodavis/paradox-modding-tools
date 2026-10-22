@@ -292,3 +292,18 @@ func (file *ConfigFile) Update(change func(config *Config)) error {
 	change(&file.config)
 	return SaveJSON(file.path, file.config)
 }
+
+// LookupSetting returns one setting's value: the one the user set, else the catalog's default. It returns false for a
+// key the catalog does not have.
+func (file *ConfigFile) LookupSetting(key string) (string, bool) {
+	setting, ok := lo.Find(Catalog, func(setting Setting) bool { return setting.Key == key })
+	if !ok {
+		return "", false
+	}
+	file.mu.RLock()
+	defer file.mu.RUnlock()
+	if value, ok := file.config.Settings[key]; ok {
+		return value, true
+	}
+	return setting.Default, true
+}

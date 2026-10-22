@@ -8,11 +8,11 @@ import (
 	"paradox-modding-tools/services/app"
 )
 
-// CachePath returns the path of an install's cache file. The name is built from everything the index depends on:
-// the game, the install's version, the dumps' time and the app's version, so a change to any of them means a
-// different file and a fresh scan.
+// CachePath returns the folder of an install's caches. It sits in a folder of the game's own, and its name is built
+// from everything the caches depend on: the install's version, the dumps' time and the app's version. So a change
+// to any of them means a different folder and a fresh scan, and the game's older caches are the folder's siblings.
 func CachePath(cacheDir, gameID, version string, dumpsAt time.Time, appVersion string) string {
-	return filepath.Join(cacheDir, fmt.Sprintf("index-%s-%s-%d-%s.gob", gameID, version, dumpsAt.Unix(), appVersion))
+	return filepath.Join(cacheDir, gameID, fmt.Sprintf("%s-%d-%s", version, dumpsAt.Unix(), appVersion))
 }
 
 // LoadIndex reads an install's index from its cache file, or returns false if there is none.

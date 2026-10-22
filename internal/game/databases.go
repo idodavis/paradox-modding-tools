@@ -15,7 +15,7 @@ import (
 // without common/ and without the file extension (see ToDatabase). A folder with no row is a database whose
 // top-level keys name its definitions.
 type Database struct {
-	Houses        string   // beyond plain definitions: events, on_actions, lists, functions, concepts, history. Read by schema.Build.
+	Houses        string   // beyond definitions: events, on_actions, decisions, lists, functions, concepts, history
 	NamedBy       string   // how a definition is named: "" its own key, field, file, column, nothing. Read by index.ScanFile.
 	NameKey       string   // NamedBy field: the key whose value names the definition
 	WrapperKeys   []string // keys at the top that only wrap definitions
@@ -165,6 +165,13 @@ var EntryModes = []EntryMode{
 	{Prefix: "INJECT"}, {Prefix: "REPLACE", Replaces: true},
 }
 
+// FireHouses are the Houses of the databases that fire and are fired: events, on_actions and decisions.
+var FireHouses = []string{"events", "on_actions", "decisions"}
+
+// TableSyntax is how a table file writes its rows, as CK3's map_data/definition.csv does: each row's columns split
+// by Separator, the first naming the row, and a line that opens with Comment a comment.
+var TableSyntax = struct{ Separator, Comment string }{";", "#"}
+
 // The words a scripted database is called by, from the blocks that hold its kind of definition.
 const (
 	callTrigger = "trigger"
@@ -287,7 +294,7 @@ var eu5Picture = Picture{ // observed in vanilla: no document names illustration
 var ck3Databases = map[string]Database{ // its .info files unless noted
 	"common/on_action":         {Houses: "on_actions", RunOrder: onActionOrder},
 	"events":                   {Houses: "events", RunOrder: ck3EventOrder},
-	"common/decisions":         {RunOrder: []string{"is_shown", "is_valid", "cost", "cooldown", "effect"}},
+	"common/decisions":         {Houses: "decisions", RunOrder: []string{"is_shown", "is_valid", "cost", "cooldown", "effect"}},
 	"common/traits":            {AliasKeys: []string{"group", "group_equivalence"}},
 	"common/opinion_modifiers": {}, // the DLC subfolder writes the same blocks
 	"gfx/map/map_object_data":  {NamedBy: "nothing"},
@@ -336,6 +343,7 @@ var ck3References = []Reference{ // an on_action's key paths name other on_actio
 var vic3Databases = map[string]Database{
 	"common/on_actions":       {Houses: "on_actions", RunOrder: onActionOrder}, // _on_actions.info
 	"events":                  {Houses: "events", RunOrder: eventOrder},        // the wiki
+	"common/decisions":        {Houses: "decisions"},                           // observed in vanilla
 	"gfx/map/map_object_data": {NamedBy: "nothing"},
 	"gfx/map/post_effects":    {NamedBy: "field", NameKey: "name", WrapperKeys: []string{"posteffect_volumes"}},
 	"common/history":          {Houses: "history", NamedBy: "nothing", Shape: "effects"}, // COUNTRIES = { … }: effects

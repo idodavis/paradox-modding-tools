@@ -12,6 +12,7 @@ import (
 // A Role says what an occurrence does with its name: defines it, refers to it or localizes it.
 type Role uint8
 
+// The roles an occurrence can have.
 const (
 	RoleDefines   Role = iota // it defines the name in its database
 	RoleRefers                // it refers to the name
@@ -42,13 +43,27 @@ type Table struct {
 }
 
 // Intern returns the ordinal of a text, adding the text to the table if it is new.
-func (table *Table) Intern(text string) uint32 { panic("stub") }
+func (table *Table) Intern(text string) uint32 {
+	if ordinal, ok := table.ordinals[text]; ok {
+		return ordinal
+	}
+	if table.ordinals == nil {
+		table.ordinals = map[string]uint32{}
+	}
+	ordinal := uint32(len(table.Texts))
+	table.Texts = append(table.Texts, text)
+	table.ordinals[text] = ordinal
+	return ordinal
+}
 
 // Lookup returns the ordinal of a text, or false if the text was never interned.
-func (table *Table) Lookup(text string) (uint32, bool) { panic("stub") }
+func (table *Table) Lookup(text string) (uint32, bool) {
+	ordinal, ok := table.ordinals[text]
+	return ordinal, ok
+}
 
 // A Site points at one occurrence: the position of its file in Files and its position among that file's
-// occurrences.
+// occurrences. A mods' index lists the install's files first, so a site means the same file in both indexes.
 type Site struct {
 	File       int32 `json:"file"`
 	Occurrence int32 `json:"occurrence"`
@@ -61,32 +76,57 @@ type Posting struct {
 	Name     uint32
 }
 
-// An Index is what a scan found in one list of files, with the postings that answer lookups by name.
+// An Index is what a scan found in one list of files, with the postings that answer lookups by name. A mods' index
+// stands on the install's: its files, roots and tables start as copies of the install's, so a file's position and
+// an ordinal mean the same in both, and its lookups read the install's postings beside its own.
 type Index struct {
+	Game        string // the game's id
 	Files       []files.File
-	Roots       []files.Root   // in load order; a file under one belongs to it
-	Replaced    []string       // the folders the mods replace with replace_path, as relative paths
-	Occurrences [][]Occurrence // per file, as Files lists them; a file's definitions first, in source order
+	Roots       []files.Root   // in load order; a file under two belongs to the inner one
+	Replaced    [][]string     // per root: its mod's replace_path folders as relative paths; empty for the game's
+	Occurrences [][]Occurrence // per file, as Files lists them; in source order, a definition before what it holds
 	Texts       [][]string     // per file: each message's text
+	Caseless    []string       // the databases whose names match without regard to case, stored in lower case
 	Databases   Table
 	Names       Table
 	Callers     Table
 	Modes       Table
 	Languages   Table
 	Scopes      Table
+	install     *Index // the install's index a mods' index stands on, whose postings it reads; nil for the install's own
 	postings    map[Posting][]Site
+	counts      []int            // by database ordinal: how many definitions the index's own files hold
 	byKey       map[string]int32 // by a file's key: its position in Files
-	byRel       map[string]int32 // by relative path: the last file in load order with that path
 }
 
 // Occurrence returns the occurrence a site points at.
-func (index *Index) Occurrence(site Site) Occurrence { panic("stub") }
+func (index *Index) Occurrence(site Site) Occurrence {
+	return index.Occurrences[site.File][site.Occurrence]
+}
 
 // File returns the file a site is in.
-func (index *Index) File(site Site) files.File { panic("stub") }
+func (index *Index) File(site Site) files.File { return index.Files[site.File] }
 
 // Text returns the message text stored at a site.
-func (index *Index) Text(site Site) string { panic("stub") }
+func (index *Index) Text(site Site) string {
+	texts := index.Texts[site.File]
+	if int(site.Occurrence) >= len(texts) {
+		return ""
+	}
+	return texts[site.Occurrence]
+}
 
 // FindFile returns the position in Files of the file with the given path, or false if the index has no such file.
-func (index *Index) FindFile(path string) (int32, bool) { panic("stub") }
+func (index *Index) FindFile(path string) (int32, bool) {
+	position, ok := index.byKey[files.ToKey(path)]
+	return position, ok
+}
+
+// countInstallFiles returns how many of the files are the install's, which is where this index's own files begin.
+// It is 0 for the install's own index.
+func (index *Index) countInstallFiles() int32 {
+	if index.install == nil {
+		return 0
+	}
+	return int32(len(index.install.Files))
+}

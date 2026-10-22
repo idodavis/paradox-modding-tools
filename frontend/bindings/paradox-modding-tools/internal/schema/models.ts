@@ -10,6 +10,9 @@ export enum Category {
      */
     $zero = "",
 
+    /**
+     * The categories a key or a value can have.
+     */
     CategoryNone = "",
 
     /**
@@ -119,6 +122,9 @@ export enum ValueType {
      */
     $zero = "",
 
+    /**
+     * The types a field's value can have.
+     */
     ValueUnknown = "unknown",
     ValueBool = "bool",
     ValueNumber = "number",

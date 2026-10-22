@@ -184,10 +184,12 @@ type Schema struct {
 	TypeDatabases       map[string]string // by the words of a data type: the database of its names; "" where several are
 	ScriptedDefinitions map[string]ScriptedDefinition
 	WidgetTypes         map[string]bool
-	Lists               string // the database of scripted lists, or "" if the game has none
-	Functions           string // the database of data function macros, or "" if the game has none
-	Events              string // the database of events, or "" if the game has none
-	Concepts            string // the database of game concepts, or "" if the game has none
+	Lists               string   // the database of scripted lists, or "" if the game has none
+	Functions           string   // the database of data function macros, or "" if the game has none
+	Events              string   // the database of events, or "" if the game has none
+	Concepts            string   // the database of game concepts, or "" if the game has none
+	Effects             string   // the database of scripted effects, or "" if the game has none
+	FireDatabases       []string // the databases that fire and are fired: those whose row houses a game.FireHouses word
 }
 
 // The origins of a source's data: the install, the shipped backup, or none.
@@ -248,7 +250,7 @@ func listFolders(row *game.Game, vanilla []string) []string {
 		if !ok {
 			continue
 		}
-		rel = trimStage(row, rel)
+		_, rel = SplitStage(row, rel)
 		rels = append(rels, rel)
 		if files.Classify(rel) == files.FormatScript {
 			folders[findFolder(row, rel)] = true
@@ -284,17 +286,17 @@ func trimScriptRoot(file string) (string, bool) {
 	return rel, true
 }
 
-// trimStage returns a path with the stage folder cut off that opens it, for the games that keep their files under
-// stages. A path under no stage comes back as it is.
-func trimStage(row *game.Game, rel string) string {
+// SplitStage splits a path into the stage folder that opens it and the rest, for the games that keep their files
+// under stages. A path under no stage, or a game with none, gives "" and the path as it is.
+func SplitStage(row *game.Game, rel string) (stage, rest string) {
 	if row == nil {
-		return rel
+		return "", rel
 	}
 	stage, rest, ok := strings.Cut(rel, "/")
 	if ok && slices.Contains(row.StageRoots, stage) {
-		return rest
+		return stage, rest
 	}
-	return rel
+	return "", rel
 }
 
 // findFolder returns the folder of the database that a script file belongs to: the file itself if a row names it,
@@ -330,6 +332,9 @@ func (schema *Schema) buildDatabases(row *game.Game, folders []string) {
 	housed := map[string][]string{}
 	for label, database := range schema.Databases {
 		housed[database.Row.Houses] = append(housed[database.Row.Houses], label)
+		if database.Callable.Shape == "effects" && (schema.Effects == "" || label < schema.Effects) {
+			schema.Effects = label
+		}
 	}
 	houses := map[string]*string{"events": &schema.Events, "lists": &schema.Lists, "functions": &schema.Functions, "concepts": &schema.Concepts}
 	for purpose, house := range houses {
@@ -337,6 +342,10 @@ func (schema *Schema) buildDatabases(row *game.Game, folders []string) {
 			*house = housed[purpose][0]
 		}
 	}
+	for _, house := range game.FireHouses {
+		schema.FireDatabases = append(schema.FireDatabases, housed[house]...)
+	}
+	slices.Sort(schema.FireDatabases)
 	for _, widget := range slices.Concat(slices.Collect(maps.Keys(game.GUI.Types)), row.GUIUndeclared) {
 		schema.WidgetTypes[widget] = true
 	}
@@ -384,7 +393,7 @@ func (schema *Schema) listCallees() {
 // FindDatabase returns the database that a file belongs to, going by its relative path and the game's folder
 // rules. It returns false if no database claims the file.
 func (schema *Schema) FindDatabase(rel string) (*Database, bool) {
-	rel = trimStage(game.LookupGame(schema.Game), rel)
+	_, rel = SplitStage(game.LookupGame(schema.Game), rel)
 	for folder := rel; folder != "."; folder = path.Dir(folder) {
 		if database, ok := schema.Databases[game.ToDatabase(folder)]; ok && database.Folder == folder {
 			return database, true
@@ -494,10 +503,15 @@ func (schema *Schema) MatchValue(expected Expected, text string) bool {
 // choices' database matches names that way.
 func (schema *Schema) matchChoice(expected Expected, text string) bool {
 	database := schema.Databases[expected.Database]
-	folds := database != nil && (database.Row.FoldsCase || database.Callable.FoldsCase)
+	folds := database != nil && database.IsCaseless()
 	return slices.ContainsFunc(expected.Choices, func(choice string) bool {
 		return choice == text || folds && strings.EqualFold(choice, text)
 	})
+}
+
+// IsCaseless reports whether the database's names match without regard to case.
+func (database *Database) IsCaseless() bool {
+	return database.Row.FoldsCase || database.Callable.FoldsCase
 }
 
 // resolve sets the claim to a value when its source outranks the one that states it now, or when none does. A lower

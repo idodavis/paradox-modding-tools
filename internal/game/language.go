@@ -73,6 +73,11 @@ const descBlurb = "The text shown: a localization key, or a block that chooses o
 // root, the scope before the last step, and the current one. The dumps declare them as links with no target.
 var ScopeLinks = struct{ Root, Previous, This string }{"root", "prev", "this"}
 
+// ConceptCalls are the two ways a data call in a localization text names a game concept. A Call step names the
+// concept its first quoted argument holds, as in [Concept('faith','Faiths')]. A call of one step with no arguments
+// and Format after its bar, in either case, names the concept its step is, as in [faith|E].
+var ConceptCalls = struct{ Call, Format string }{"Concept", "E"}
+
 // A DocType is what a term the docs write a field's type with means: the value type, the database a reference
 // names, and the shape of the block the field holds.
 type DocType struct {

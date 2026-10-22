@@ -186,7 +186,7 @@ func (schema *Schema) newWalker(tree *jomini.Tree, file files.File, visitor Visi
 		schema: schema, row: row, tree: tree, file: file, visitor: visitor, offset: offset,
 		declaring: map[string]*Database{}, inline: map[string]ScriptedDefinition{},
 	}
-	walker.rel = trimStage(row, file.Rel)
+	_, walker.rel = SplitStage(row, file.Rel)
 	walker.fileType = game.FileTypes[strings.ToLower(path.Ext(walker.rel))]
 	if file.Format == files.FormatScript || file.Format == files.FormatTable {
 		walker.database, _ = schema.FindDatabase(file.Rel)

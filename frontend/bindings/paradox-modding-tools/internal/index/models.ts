@@ -3,7 +3,7 @@
 
 /**
  * A Site points at one occurrence: the position of its file in Files and its position among that file's
- * occurrences.
+ * occurrences. A mods' index lists the install's files first, so a site means the same file in both indexes.
  */
 export interface Site {
     "file": number;

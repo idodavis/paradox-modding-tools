@@ -11,6 +11,7 @@ import (
 	"paradox-modding-tools/internal/files"
 	"paradox-modding-tools/internal/game"
 	"paradox-modding-tools/internal/schema"
+	"paradox-modding-tools/internal/texture"
 )
 
 // A Winner is the definition the game keeps when several share a name, and the reason it wins.
@@ -18,6 +19,12 @@ type Winner struct {
 	Site   Site   `json:"site"`
 	Reason string `json:"reason"` // order, mode, priority, merge, replace
 	Merged []Site `json:"merged,omitempty"`
+}
+
+// IsKept reports whether the game keeps a definition of the name this winner won: the winner itself, or one merged
+// into it.
+func (winner Winner) IsKept(site Site) bool {
+	return winner.Site == site || slices.Contains(winner.Merged, site)
 }
 
 // FindWinner decides which of several definitions of one name the game keeps, by the database's precedence: the
@@ -41,6 +48,62 @@ func (index *Index) FindWinner(sites []Site, precedence game.Precedence) (Winner
 		winner.Reason = "replace"
 	}
 	return winner, true
+}
+
+// FindKept returns the definition the game keeps of a name in a database, with the definitions merged into it. A
+// local definition never counts. It returns false if the schema has no such database, nothing defines the name, or
+// the game keeps none of its definitions.
+func (index *Index) FindKept(schema *schema.Schema, reference schema.Reference) (Winner, bool) {
+	return index.findKept(schema, reference, func(Site) bool { return false })
+}
+
+// FindKeptLocal is FindKept for a reference written in the given file: the local definitions of that file count too.
+func (index *Index) FindKeptLocal(schema *schema.Schema, reference schema.Reference, file int32) (Winner, bool) {
+	return index.findKept(schema, reference, func(site Site) bool { return site.File == file })
+}
+
+// findKept returns the definition the game keeps of a name in a database. A local definition counts where the given
+// function says it does.
+func (index *Index) findKept(schema *schema.Schema, reference schema.Reference, isVisible func(Site) bool) (Winner, bool) {
+	database, ok := schema.Databases[reference.Database]
+	if !ok {
+		return Winner{}, false
+	}
+	return index.FindWinner(index.listDefining(database.Name, reference.Name, isVisible), database.Precedence)
+}
+
+// ListKept returns the definition the game keeps of each name in a database, one for each name, in load order. A local
+// definition never counts. It is empty if the schema has no such database.
+func (index *Index) ListKept(schema *schema.Schema, database string) []Winner {
+	var kept []Winner
+	listed := map[string]bool{}
+	for _, site := range index.ListDefinitions(database) {
+		reference := index.ToReference(site)
+		if listed[reference.Name] {
+			continue
+		}
+		listed[reference.Name] = true
+		if winner, ok := index.FindKept(schema, reference); ok {
+			kept = append(kept, winner)
+		}
+	}
+	return kept
+}
+
+// ListImages returns the image files the game reads whose path, less its stage folder, starts with a folder, at any
+// depth below it. The folder is written with its closing slash, and "" gives every image. Letter case does not
+// matter.
+func (index *Index) ListImages(folder string) []files.File {
+	row := game.LookupGame(index.Game)
+	var images []files.File
+	for position, file := range index.Files {
+		_, rest := schema.SplitStage(row, file.Rel)
+		if file.Format == files.FormatImage && strings.HasPrefix(strings.ToLower(rest), strings.ToLower(folder)) &&
+			index.IsLoaded(int32(position)) {
+			images = append(images, file)
+		}
+	}
+	return images
 }
 
 // FindLoaded returns the file the game actually reads for a relative path: the last one in load order, except
@@ -77,6 +140,15 @@ func (index *Index) FindLoaded(rel string) (loaded files.File, hidden []files.Fi
 		return files.File{}, hidden, false
 	}
 	return kept[len(kept)-1], append(hidden, kept[:len(kept)-1]...), true
+}
+
+// ResolveTexture returns the file the game reads for a texture's path as script writes it, trying each image
+// extension the game accepts in place of the written one. It returns false if the game reads no such file.
+func (index *Index) ResolveTexture(rel string) (string, bool) {
+	return texture.Resolve(rel, func(candidate string) (string, bool) {
+		loaded, _, ok := index.FindLoaded(candidate)
+		return loaded.Path, ok
+	})
 }
 
 // IsLoaded reports whether the game reads a file at all.

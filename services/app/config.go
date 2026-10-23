@@ -1,5 +1,5 @@
 // Package app is the app's own service and its files on this machine: PMT's folders, config.json with the
-// catalog of settings, the JSON and gob files, and the atomic write.
+// catalog of settings, and the JSON and gob files.
 package app
 
 import (
@@ -17,6 +17,8 @@ import (
 
 	"github.com/adrg/xdg"
 	"github.com/samber/lo"
+
+	"paradox-modding-tools/internal/files"
 )
 
 // Dirs says where PMT keeps its files on this machine.
@@ -64,7 +66,7 @@ func SaveJSON(path string, value any) error {
 	if err != nil {
 		return err
 	}
-	return WriteAtomic(path, append(content, '\n'))
+	return files.WriteAtomic(path, append(content, '\n'))
 }
 
 // LoadGob reads a gob cache into a value. It returns false if the cache is missing or cannot be read.
@@ -86,26 +88,7 @@ func SaveGob(path string, value any) error {
 	if err := gob.NewEncoder(&buffer).Encode(value); err != nil {
 		return err
 	}
-	return WriteAtomic(path, buffer.Bytes())
-}
-
-// WriteAtomic writes bytes to a temporary file beside the target and renames it over, so a reader never sees a
-// partial file.
-func WriteAtomic(path string, bytes []byte) error {
-	temp, err := os.CreateTemp(filepath.Dir(path), filepath.Base(path)+".*")
-	if err != nil {
-		return err
-	}
-	_, err = temp.Write(bytes)
-	err = errors.Join(err, temp.Close())
-	if err == nil {
-		err = os.Rename(temp.Name(), path)
-	}
-	if err != nil {
-		// a failed write leaves nothing beside the target
-		_ = os.Remove(temp.Name())
-	}
-	return err
+	return files.WriteAtomic(path, buffer.Bytes())
 }
 
 // An Install is one game install PMT reads: its id, game and folder, and what the last scan found.
@@ -306,4 +289,11 @@ func (file *ConfigFile) LookupSetting(key string) (string, bool) {
 		return value, true
 	}
 	return setting.Default, true
+}
+
+// LookupMod returns a mod's record in a workspace as the config holds it now. It returns false if the workspace is
+// not recorded or does not have the mod.
+func (file *ConfigFile) LookupMod(workspaceID, modID string) (Mod, bool) {
+	workspace, _ := lo.Find(file.Config().Workspaces, func(workspace Workspace) bool { return workspace.ID == workspaceID })
+	return lo.Find(workspace.Mods, func(mod Mod) bool { return mod.ID == modID })
 }

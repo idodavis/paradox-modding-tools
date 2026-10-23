@@ -1,11 +1,11 @@
 package schema
 
 import (
+	"cmp"
 	"errors"
 	"maps"
 	"path"
 	"regexp"
-	"runtime"
 	"slices"
 	"strings"
 	"sync"
@@ -23,30 +23,33 @@ var parameterRe = regexp.MustCompile(`\$([A-Za-z0-9_]+)(?:\|[^$]*)?\$`)
 // every value written at it fits.
 var valueTests = []ValueType{ValueBool, ValueNumber, ValueDate, ValueCall, ValueText}
 
-// workers is how many files are parsed and walked at once: every core but two, which stay free for the rest of the
-// machine, and at least one.
-var workers = max(runtime.NumCPU()-2, 1)
+// exampleCount is how many places the count keeps for each command and data function.
+const exampleCount = 5
 
 // A declarer is the visitor of the walk over one file that declares what script and GUI files call by name. It
 // reads the definitions from the top statements alone and keeps what the file declares.
 type declarer struct {
 	schema   *Schema
 	scripted map[string]ScriptedDefinition // by the word that calls it and its name
-	widgets  []string                      // the widget types the file defines
+	widgets  []string                      // the widget types the file defines or builds on
 }
 
 // A counter is the visitor of one worker's counting walk. It counts what the files write at the fields of the
 // definitions, the names they define, and the names they write after prefixes. It counts into fields of its own,
-// one for each field, command or database the keys are written under, so the walk never sees the count.
+// one for each field, command or database the keys are written under, so the walk never sees the count. It also
+// keeps the first places each command and data function is written.
 type counter struct {
 	schema      *Schema
 	holders     []holder
+	path        string // the file being counted
 	colorSuffix string // the ending of the keys that hold an untagged color in the file being counted
 	fields      map[*Field]*Field
 	arguments   map[*Command]*Field
 	definitions map[string]*Field // by database
 	defined     map[string]map[string]bool
 	prefixed    map[string]map[string]int
+	examples    map[string][]Example       // by the name written: a command's, or a data function's as Type.Function
+	scopes      map[string]map[string]bool // by command: the scopes the game's own files run it in
 }
 
 // A holder is the field a statement's keys are counted into while the counter is inside the statement. It counts the
@@ -77,11 +80,12 @@ func (schema *Schema) CountVanilla(paths []string, parse func(path string) (*jom
 			declarer.build()
 		}
 	}
-	counters := make([]*counter, workers)
+	counters := make([]*counter, files.Workers)
 	for worker := range counters {
 		counters[worker] = &counter{
 			schema: schema, fields: map[*Field]*Field{}, arguments: map[*Command]*Field{},
 			definitions: map[string]*Field{}, defined: map[string]map[string]bool{}, prefixed: map[string]map[string]int{},
+			examples: map[string][]Example{}, scopes: map[string]map[string]bool{},
 		}
 	}
 	failures := eachTree(listing, parse, func(worker, index int, tree *jomini.Tree) {
@@ -110,7 +114,7 @@ func eachTree(listing []files.File, parse func(path string) (*jomini.Tree, error
 	failures := make([]error, len(listing))
 	var next atomic.Int64
 	var group sync.WaitGroup
-	for worker := range workers {
+	for worker := range files.Workers {
 		group.Go(func() {
 			for index := int(next.Add(1) - 1); index < len(listing); index = int(next.Add(1) - 1) {
 				tree, err := parse(listing[index].Path)
@@ -135,8 +139,7 @@ func (schema *Schema) listVanilla(paths []string) []files.File {
 		if !ok {
 			continue
 		}
-		switch format := files.Classify(rel); format {
-		case files.FormatScript, files.FormatGUI, files.FormatAsset, files.FormatFont:
+		if format := files.Classify(rel); format.IsScript() {
 			listing = append(listing, files.File{
 				Path: file, Key: files.ToKey(file), Rel: rel, Origin: game.OriginVanilla, Format: format,
 			})
@@ -177,17 +180,25 @@ func (declarer *declarer) Enter(tree *jomini.Tree, statement int32, context *Con
 	if context.Defines && context.Category == CategoryDefinition {
 		declarer.declare(*context.Definition, tree, statement)
 	}
-	return !context.Defines && tree.Statements[statement].Parent < 0
+	return !context.Defines && tree.Statements[statement].Parent == 0
 }
 
 // Leave does nothing.
 func (declarer *declarer) Leave(tree *jomini.Tree, statement int32, context *Context) {}
 
 // declare records a definition that is called by name: for each word that calls its database, the scripted
-// definition with the parameters its body writes, and the widget type it is, if a widget calls it.
+// definition with the parameters its body writes, and the widget type it is, if a widget calls it. The type a
+// widget type is built on is a widget type too, since it is either defined or built into the game.
 func (declarer *declarer) declare(definition Definition, tree *jomini.Tree, statement int32) {
 	database := declarer.schema.Databases[definition.Database]
-	if database == nil || definition.Local {
+	if database == nil {
+		return
+	}
+	base := tree.Unquoted(tree.Statements[statement].Tag)
+	if base != "" && slices.Contains(database.Callable.Callers, game.GUI.TagCalls) {
+		declarer.widgets = append(declarer.widgets, base)
+	}
+	if definition.Local {
 		return
 	}
 	scripted := makeScripted(database, tree, statement)
@@ -230,14 +241,15 @@ func makeScripted(database *Database, tree *jomini.Tree, statement int32) Script
 // written under that definition's fields. The file type says which keys hold an untagged color.
 func (counter *counter) resolveFile(file files.File) {
 	counter.holders = counter.holders[:0]
+	counter.path = file.Path
 	counter.colorSuffix = game.FileTypes[strings.ToLower(path.Ext(file.Rel))].ColorSuffix
 	if database, ok := counter.schema.FindDatabase(file.Rel); ok && database.Row.NamedBy == "file" {
 		counter.holders = append(counter.holders, holder{field: mirror(counter.definitions, database.Name)})
 	}
 }
 
-// Enter counts a statement: the name it defines, the names it writes after prefixes, and, when it is written under
-// a definition's fields, the field it is.
+// Enter counts a statement: the name it defines, the names it writes after prefixes, the place of a command it
+// writes, and, when it is written under a definition's fields, the field it is.
 func (counter *counter) Enter(tree *jomini.Tree, statement int32, context *Context) bool {
 	var parent holder
 	if last := len(counter.holders) - 1; last >= 0 {
@@ -245,6 +257,8 @@ func (counter *counter) Enter(tree *jomini.Tree, statement int32, context *Conte
 	}
 	counter.countDefinition(context)
 	counter.countPrefixes(tree, statement)
+	counter.countCommand(tree, statement, context)
+	counter.countCalls(tree, statement, context)
 	if parent.votes != nil {
 		parent.votes[counter.findVote(tree, statement, context)]++
 	}
@@ -360,6 +374,64 @@ func (counter *counter) countPrefixes(tree *jomini.Tree, statement int32) {
 	}
 }
 
+// countCommand keeps the place of a statement whose key is a command or a link the dumps declare, and the scope it
+// runs in there when that is known. A chain of links counts as its first link.
+func (counter *counter) countCommand(tree *jomini.Tree, statement int32, context *Context) {
+	if context.Category != CategoryCommand && context.Category != CategoryLink {
+		return
+	}
+	key := tree.Statements[statement].Key
+	name := tree.Unquoted(key)
+	if steps := jomini.SplitChain(name); context.Category == CategoryLink && len(steps) > 0 {
+		name = steps[0]
+	}
+	command := counter.schema.Commands[name]
+	if command == nil {
+		return
+	}
+	example := Example{Path: counter.path, Line: tree.Lines.ToPosition(key.Start).Line}
+	counter.examples[name] = keepExample(counter.examples[name], example)
+	if scope := context.ResolveCommandScope(command); scope != "" {
+		if counter.scopes[name] == nil {
+			counter.scopes[name] = map[string]bool{}
+		}
+		counter.scopes[name][scope] = true
+	}
+}
+
+// countCalls keeps the place of each data function that a statement's data call names, by the type that declares it.
+func (counter *counter) countCalls(tree *jomini.Tree, statement int32, context *Context) {
+	if context.ValueGroup != CategoryCall {
+		return
+	}
+	value := tree.Statements[statement].Value
+	call, ok := ParseCall(tree, value)
+	if !ok {
+		return
+	}
+	example := Example{Path: counter.path, Line: tree.Lines.ToPosition(value.Start).Line}
+	for i, owner := range counter.schema.listCallOwners(call, context.Datacontext) {
+		if owner != "" {
+			name := owner + "." + call.Steps[i].Text
+			counter.examples[name] = keepExample(counter.examples[name], example)
+		}
+	}
+}
+
+// keepExample adds a place to a list of places and returns the first exampleCount of them by path and then line.
+// A place already in the list is not added twice.
+func keepExample(examples []Example, example Example) []Example {
+	// The first by path rather than the first seen, so the places kept do not depend on which worker read which file.
+	position, found := slices.BinarySearchFunc(examples, example, func(kept, added Example) int {
+		return cmp.Or(strings.Compare(kept.Path, added.Path), cmp.Compare(kept.Line, added.Line))
+	})
+	if found || position == exampleCount {
+		return examples
+	}
+	examples = slices.Insert(examples, position, example)
+	return examples[:min(len(examples), exampleCount)]
+}
+
 // findVote returns what a key written in a block says the block holds: the kind of block that alone holds the word
 // it is, triggers for a trigger, effects for an effect, and fields for a key counted as a field. A key that says
 // nothing votes for "".
@@ -467,21 +539,44 @@ func (counter *counter) add(other *counter) {
 	for prefix, labels := range other.prefixed {
 		counter.prefixed[prefix] = addCounts(counter.prefixed[prefix], labels)
 	}
+	for name, examples := range other.examples {
+		for _, example := range examples {
+			counter.examples[name] = keepExample(counter.examples[name], example)
+		}
+	}
+	for name, scopes := range other.scopes {
+		if counter.scopes[name] == nil {
+			counter.scopes[name] = map[string]bool{}
+		}
+		maps.Copy(counter.scopes[name], scopes)
+	}
 }
 
 // resolveCounts gives the schema's fields what the count found: the fields counted under each field, command and
 // database, with the claims their counts support, and the prefixes resolved by the names defined. A database that
-// only the walk names, such as an asset file's entity or a GUI file's texticon, is made here.
+// only the walk names, such as an asset file's entity or a GUI file's texticon, is made here. Each command and data
+// function gets the places kept for it, and each command the scopes the game's files run it in.
 func (counter *counter) resolveCounts() {
 	row := game.LookupGame(counter.schema.Game)
 	for field, counted := range counter.fields {
 		field.add(counted)
+	}
+	for name, command := range counter.schema.Commands {
+		command.Examples = counter.examples[name]
+		command.VanillaScopes = slices.Sorted(maps.Keys(counter.scopes[name]))
+	}
+	for typeName, dataType := range counter.schema.DataTypes {
+		for name, function := range dataType.Functions {
+			function.Examples = counter.examples[typeName+"."+name]
+			dataType.Functions[name] = function
+		}
 	}
 	for command, counted := range counter.arguments {
 		command.makeArguments(game.SourceVanilla).add(counted)
 	}
 	for _, database := range slices.Sorted(maps.Keys(counter.defined)) {
 		counter.schema.buildDatabase(row, database, "")
+		counter.schema.Databases[database].Count = len(counter.defined[database])
 	}
 	for database, counted := range counter.definitions {
 		counter.schema.buildDatabase(row, database, "")
@@ -531,8 +626,9 @@ func (counter *counter) matchAll(valueType ValueType, values map[string]int) boo
 }
 
 // resolvePrefix names the database that the names written after a prefix are defined in: the one that defines more
-// than half of them, the first in order of name among equals, else none. The link's arguments record the names
-// counted.
+// than half of them. Where several define as many, it is the smallest of them, and the first by name among those as
+// small, as for a name written with no database. It names none where no database defines more than half. The link's
+// arguments record the names counted.
 func (counter *counter) resolvePrefix(prefix string, labels map[string]int) {
 	best, most := "", 0
 	for database, defined := range counter.defined {
@@ -542,7 +638,7 @@ func (counter *counter) resolvePrefix(prefix string, labels map[string]int) {
 				count++
 			}
 		}
-		if count > most || count == most && count > 0 && database < best {
+		if count > most || count == most && count > 0 && counter.schema.IsSmaller(database, best) {
 			best, most = database, count
 		}
 	}

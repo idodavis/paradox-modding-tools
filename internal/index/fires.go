@@ -6,13 +6,13 @@ import (
 	"paradox-modding-tools/internal/schema"
 )
 
-// A Fire is one firing: one definition fires another, with the delay written on it and the scripted effects the
-// firing passes through.
+// A Fire is one firing: one definition fires another, through the reference that names it and the scripted
+// effects the firing passes through.
 type Fire struct {
 	Source Site     `json:"source"`
 	Target Site     `json:"target"`
-	Days   string   `json:"days,omitempty"` // as written: a number or a range
-	Via    []string `json:"via,omitempty"`  // the scripted effects entered between them, in order
+	Use    Site     `json:"use"`           // the reference that names the target, beside which a delay is written
+	Via    []string `json:"via,omitempty"` // the scripted effects entered between them, in order
 }
 
 // ListFires returns what a definition fires: the events, on_actions and decisions it names in a firing position.
@@ -32,15 +32,14 @@ func (index *Index) ListFires(schema *schema.Schema, site Site, follow bool) []F
 		open[current] = true
 		defer delete(open, current)
 		for _, use := range index.listReferences(current) {
-			occurrence := index.Occurrence(use)
-			database, name := index.Databases.Texts[occurrence.Database], index.Names.Texts[occurrence.Name]
-			winner, ok := index.findKept(schema, use)
+			reference := index.ToReference(use)
+			winner, ok := index.FindKeptLocal(schema, reference, use.File)
 			switch {
 			case !ok:
-			case slices.Contains(targets, database):
-				fires = append(fires, Fire{Source: site, Target: winner.Site, Via: via})
-			case database == effects && follow && !open[winner.Site]:
-				walk(winner.Site, append(slices.Clone(via), name))
+			case slices.Contains(targets, reference.Database):
+				fires = append(fires, Fire{Source: site, Target: winner.Site, Use: use, Via: via})
+			case reference.Database == effects && follow && !open[winner.Site]:
+				walk(winner.Site, append(slices.Clone(via), reference.Name))
 			}
 		}
 	}
@@ -58,48 +57,39 @@ func (index *Index) ListFiredBy(schema *schema.Schema, site Site, follow bool) [
 	var fires []Fire
 	// The scripted effects on the way from the definition are open, so that effects calling each other end the walk.
 	open := map[Site]bool{}
-	var walk func(current Site, via []string)
-	walk = func(current Site, via []string) {
+	// The use passed down is the reference that names the fired definition, found at the first step.
+	var walk func(current Site, via []string, use Site)
+	walk = func(current Site, via []string, use Site) {
 		open[current] = true
 		defer delete(open, current)
 		// Only the definition the game keeps is called by name.
-		winner, ok := index.findKept(schema, current)
-		if !ok || winner.Site != current && !slices.Contains(winner.Merged, current) {
+		reference := index.ToReference(current)
+		if winner, ok := index.FindKeptLocal(schema, reference, current.File); !ok || !winner.IsKept(current) {
 			return
 		}
-		occurrence := index.Occurrence(current)
-		for _, use := range index.ListUses(index.Databases.Texts[occurrence.Database], index.Names.Texts[occurrence.Name]) {
-			parent, inside := index.FindDefinition(use)
+		for _, referrer := range index.ListUses(reference.Database, reference.Name) {
+			parent, inside := index.FindDefinition(referrer)
 			if !inside || open[parent] {
 				continue
 			}
-			holder := index.Occurrence(parent)
-			switch holderDatabase := index.Databases.Texts[holder.Database]; {
-			case slices.Contains(targets, holderDatabase):
-				fires = append(fires, Fire{Source: parent, Target: site, Via: via})
-			case holderDatabase == effects && follow:
-				walk(parent, slices.Insert(slices.Clone(via), 0, index.Names.Texts[holder.Name]))
+			fired := use
+			if current == site {
+				fired = referrer
+			}
+			holder := index.ToReference(parent)
+			switch {
+			case slices.Contains(targets, holder.Database):
+				// a firer the game drops fires nothing, and a merged one stands as the definition the game keeps
+				if winner, ok := index.FindKeptLocal(schema, holder, parent.File); ok && winner.IsKept(parent) {
+					fires = append(fires, Fire{Source: winner.Site, Target: site, Use: fired, Via: via})
+				}
+			case holder.Database == effects && follow:
+				walk(parent, slices.Insert(slices.Clone(via), 0, holder.Name), fired)
 			}
 		}
 	}
-	walk(site, nil)
+	walk(site, nil, Site{})
 	return fires
-}
-
-// findKept returns the definition the game keeps of the name that an occurrence is written with, in the database
-// the occurrence is written in. It returns false if the schema has no such database, the name is undefined, or
-// the game keeps none of its definitions.
-func (index *Index) findKept(schema *schema.Schema, site Site) (Winner, bool) {
-	occurrence := index.Occurrence(site)
-	database, ok := schema.Databases[index.Databases.Texts[occurrence.Database]]
-	if !ok {
-		return Winner{}, false
-	}
-	sites := index.listDefining(database.Name, index.Names.Texts[occurrence.Name], site.File)
-	if len(sites) == 0 {
-		return Winner{}, false
-	}
-	return index.FindWinner(sites, database.Precedence)
 }
 
 // listReferences returns the references that sit directly inside a definition.
@@ -108,7 +98,7 @@ func (index *Index) listReferences(definition Site) []Site {
 	occurrences := index.Occurrences[definition.File]
 	for position := definition.Occurrence + 1; int(position) < len(occurrences); position++ {
 		occurrence := occurrences[position]
-		if occurrence.Role == RoleRefers && occurrence.Parent == definition.Occurrence {
+		if occurrence.Role == RoleRefers && occurrence.Nested && occurrence.Parent == definition.Occurrence {
 			sites = append(sites, Site{File: definition.File, Occurrence: position})
 		}
 	}

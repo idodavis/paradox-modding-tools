@@ -87,7 +87,7 @@ func (lines Lines) LineSpan(line int) Span {
 // A Statement is one statement of the file: `key op value`, a bare value inside a list, or a block with or
 // without a tag. Each part is a span into the source, never a copied string.
 type Statement struct {
-	Parent int32 // -1 for a top-level statement
+	Parent int32 // the statement that holds it; 0, the file, for a top-level statement and for the file itself
 	Last   int32 // one past the last descendant, so the children are Statements[i+1:Last]
 	Span   Span  // the whole statement
 	Key    Span  // empty for a bare value
@@ -121,14 +121,11 @@ func (tree *Tree) Unquoted(span Span) string {
 	return strings.TrimSuffix(strings.TrimPrefix(tree.Text(span), `"`), `"`)
 }
 
-// Children yields the direct children of a statement in document order. Passing -1 yields the top-level
-// statements.
+// Children yields the direct children of a statement in document order. For the file, which is the first statement,
+// they are the top-level statements.
 func (tree *Tree) Children(statement int32) iter.Seq[int32] {
 	return func(yield func(int32) bool) {
-		child, last := int32(0), int32(len(tree.Statements))
-		if statement >= 0 {
-			child, last = statement+1, tree.Statements[statement].Last
-		}
+		child, last := statement+1, tree.Statements[statement].Last
 		for child < last {
 			if !yield(child) {
 				return
@@ -160,26 +157,55 @@ func (tree *Tree) FindComments(statement int32) []Span {
 	return comments
 }
 
-// FindStatement returns the innermost statement that covers the given byte offset, or -1 if no statement does.
+// FindStatement returns the innermost statement that covers the given byte offset. It returns 0, the file, if no
+// other statement does.
 func (tree *Tree) FindStatement(offset int) int32 {
 	// the statements are in pre-order, so the last one starting at or before the offset is the deepest candidate
-	statement := int32(sort.Search(len(tree.Statements), func(i int) bool {
-		return tree.Statements[i].Span.Start > offset
-	})) - 1
-	for statement >= 0 && !tree.Statements[statement].Span.Contains(offset) {
+	statement := int32(sort.Search(len(tree.Statements)-1, func(i int) bool {
+		return tree.Statements[i+1].Span.Start > offset
+	}))
+	for statement > 0 && !tree.Statements[statement].Span.Contains(offset) {
 		statement = tree.Statements[statement].Parent
 	}
 	return statement
 }
 
+// LookupStatement returns the statement that starts at the given byte offset. It returns false if none does.
+func (tree *Tree) LookupStatement(start int) (int32, bool) {
+	statement := tree.FindStatement(start)
+	return statement, statement > 0 && tree.Statements[statement].Span.Start == start
+}
+
 // FindChild returns the child of a statement whose key is the given text. If several children have that key, the
-// last one wins. It returns -1 if there is none.
-func (tree *Tree) FindChild(statement int32, key string) int32 {
-	match := int32(-1)
+// last one wins. It returns false if there is none.
+func (tree *Tree) FindChild(statement int32, key string) (int32, bool) {
+	match, ok := int32(0), false
 	for child := range tree.Children(statement) {
 		if tree.Text(tree.Statements[child].Key) == key {
-			match = child
+			match, ok = child, true
 		}
 	}
-	return match
+	return match, ok
+}
+
+// IsEqual reports whether a statement writes the same as a statement of another tree: the same keys, operators,
+// tags and values, nested the same way. Comments, spacing and quotes do not count.
+func (tree *Tree) IsEqual(statement int32, other *Tree, otherStatement int32) bool {
+	count := tree.Statements[statement].Last - statement
+	if other.Statements[otherStatement].Last-otherStatement != count {
+		return false
+	}
+	for offset := range count {
+		current, compared := tree.Statements[statement+offset], other.Statements[otherStatement+offset]
+		// the first statement's parent lies outside what is compared
+		if offset > 0 && current.Parent-statement != compared.Parent-otherStatement {
+			return false
+		}
+		if current.IsBlock() != compared.IsBlock() || tree.Unquoted(current.Key) != other.Unquoted(compared.Key) ||
+			tree.Text(current.Op) != other.Text(compared.Op) || tree.Text(current.Tag) != other.Text(compared.Tag) ||
+			tree.Unquoted(current.Value) != other.Unquoted(compared.Value) {
+			return false
+		}
+	}
+	return true
 }

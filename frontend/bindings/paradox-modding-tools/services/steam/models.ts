@@ -21,7 +21,7 @@ export interface Comparison {
 }
 
 /**
- * A DLC is one DLC of the game that an item may require.
+ * A DLC is one DLC of the game that an item may require, with the id Steam knows it by.
  */
 export interface DLC {
     "id": string;
@@ -49,6 +49,11 @@ export interface Listing {
     "description": string;
 
     /**
+     * the description as Steam and Paradox Mods take it
+     */
+    "bbcode": string;
+
+    /**
      * markdown, bbcode, steam
      */
     "source": string;
@@ -59,20 +64,11 @@ export interface Listing {
     "previews": Preview[] | null;
     "tags": string[] | null;
     "dlc": string[] | null;
-    "languages": { [_ in string]?: Localized } | null;
 
     /**
-     * private, friends, public, unlisted
+     * private, friends, public, unlisted; chosen at each upload
      */
     "visibility": string;
-}
-
-/**
- * A Localized is a title and a description in one language.
- */
-export interface Localized {
-    "title": string;
-    "description": string;
 }
 
 /**

@@ -67,23 +67,23 @@ func parseMarkup(text string, start, base int) []Segment {
 		}
 		markup, end = MarkupBreak, start+2
 	case '$':
-		closing := findMark(text, start, '$')
-		if closing < 0 || strings.HasPrefix(text[start+1:], "|") {
+		closing, ok := findMark(text, start, '$')
+		if !ok || strings.HasPrefix(text[start+1:], "|") {
 			return nil
 		}
 		inner, _, _ = strings.Cut(text[start+1:closing], "|")
 		markup, end = MarkupKey, closing+1
 	case '[':
-		end = findCall(text, start)
-		if end < 0 {
+		closing, ok := findCall(text, start)
+		if !ok {
 			return nil
 		}
-		markup, inner = MarkupCall, text[start+1:end-1]
+		markup, inner, end = MarkupCall, text[start+1:closing-1], closing
 	case '#':
 		return parseFormat(text, start, base)
 	case '@':
-		closing := findMark(text, start, '!')
-		if closing < 0 {
+		closing, ok := findMark(text, start, '!')
+		if !ok {
 			return nil
 		}
 		markup, inner, end = MarkupIcon, text[start+1:closing], closing+1
@@ -94,23 +94,23 @@ func parseMarkup(text string, start, base int) []Segment {
 }
 
 // findMark returns the offset of the given closing character, looking after the one at the given offset of a text.
-// It returns -1 if there is none, or if the characters between are empty or hold a space.
-func findMark(text string, start int, mark byte) int {
+// It returns false if there is none, or if the characters between are empty or hold a space.
+func findMark(text string, start int, mark byte) (int, bool) {
 	closing := strings.IndexByte(text[start+1:], mark)
 	if closing <= 0 || strings.IndexFunc(text[start+1:start+1+closing], unicode.IsSpace) >= 0 {
-		return -1
+		return 0, false
 	}
-	return start + 1 + closing
+	return start + 1 + closing, true
 }
 
-// findCall returns the offset just past the `]` that closes the `[` at the given offset of a text. It returns -1 if
-// the bracket is never closed on its line, or if nothing but white space is inside.
-func findCall(text string, start int) int {
+// findCall returns the offset just past the `]` that closes the `[` at the given offset of a text. It returns false
+// if the bracket is never closed on its line, or if nothing but white space is inside.
+func findCall(text string, start int) (int, bool) {
 	end := start + jomini.CountBrackets(text, start)
 	if end-start < 2 || text[end-1] != ']' || strings.TrimSpace(text[start+1:end-1]) == "" {
-		return -1
+		return 0, false
 	}
-	return end
+	return end, true
 }
 
 // parseFormat reads the format that starts with the `#` at the given offset of a text, or the end of a format if
@@ -144,11 +144,11 @@ func findFormat(text string, start int) int {
 		next := i + size
 		switch r {
 		case '[':
-			if end := findCall(text, i); end >= 0 {
+			if end, ok := findCall(text, i); ok {
 				next = end
 			}
 		case '$':
-			if closing := findMark(text, i, '$'); closing >= 0 {
+			if closing, ok := findMark(text, i, '$'); ok {
 				next = closing + 1
 			}
 		}

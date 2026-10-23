@@ -24,10 +24,10 @@ export interface Detail {
     "text": string;
     "fires": Edge[] | null;
     "firedBy": Edge[] | null;
-    "references": DetailReference[] | null;
+    "references": Node[] | null;
 
     /**
-     * the portrait positions written, as the game's row names them
+     * the characters the event's portraits show
      */
     "portraits": string[] | null;
 
@@ -36,17 +36,6 @@ export interface Detail {
      */
     "background": string;
     "inputs": schema$0.Input[] | null;
-}
-
-/**
- * A DetailReference is one name a definition refers to, with where that name is defined.
- */
-export interface DetailReference {
-    "database": string;
-    "name": string;
-    "site": index$0.Site;
-    "place": workspace$0.Place;
-    "line": number;
 }
 
 /**
@@ -112,6 +101,10 @@ export interface Node {
     "title": string;
     "site": index$0.Site;
     "place": workspace$0.Place;
+
+    /**
+     * counted from one
+     */
     "line": number;
 
     /**

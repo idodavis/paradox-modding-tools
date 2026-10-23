@@ -97,7 +97,8 @@ export function ListFolds(path: string): $CancellablePromise<$models.Fold[] | nu
 }
 
 /**
- * ListHints returns a file's inlay hints: each date in the file read in the mod's calendar.
+ * ListHints returns a file's inlay hints: each date in the file read in the mod's calendar. A value is a date only
+ * where its field expects one.
  */
 export function ListHints(path: string): $CancellablePromise<$models.Hint[] | null> {
     return $Call.ByID(1184030859, path);

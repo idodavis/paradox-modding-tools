@@ -21,7 +21,6 @@ import (
 	"paradox-modding-tools/internal/files"
 	"paradox-modding-tools/internal/game"
 	"paradox-modding-tools/internal/index"
-	"paradox-modding-tools/internal/schema"
 	"paradox-modding-tools/services/app"
 )
 
@@ -230,18 +229,19 @@ func TestListRootsPutsModsBeforeGame(t *testing.T) {
 // a mod replaces gives no message.
 func TestLookupTextPrefersReplaceFolder(t *testing.T) {
 	ws, dir := openFixture(t)
-	text, site, ok := ws.LookupText("v_key")
-	if !ok || text != "Replaced text" || ws.Mods.Load().File(site).Origin != fixtureModID {
+	mods := ws.Mods.Load()
+	text, site, ok := ws.LookupText(mods, "v_key")
+	if !ok || text != "Replaced text" || mods.File(site).Origin != fixtureModID {
 		t.Errorf("v_key: %q %v %v", text, site, ok)
 	}
-	if text, site, ok = ws.LookupText("v.1.t"); !ok || text != "Hello" || ws.Mods.Load().File(site).Origin != game.OriginVanilla {
+	if text, site, ok = ws.LookupText(mods, "v.1.t"); !ok || text != "Hello" || mods.File(site).Origin != game.OriginVanilla {
 		t.Errorf("v.1.t: %q %v %v", text, site, ok)
 	}
 	ws.Language = "french"
-	if text, _, ok = ws.LookupText("v_key"); !ok || text != "Replaced text" {
+	if text, _, ok = ws.LookupText(mods, "v_key"); !ok || text != "Replaced text" {
 		t.Errorf("v_key in French: %q %v", text, ok)
 	}
-	if _, _, ok = ws.LookupText("no_such_key"); ok {
+	if _, _, ok = ws.LookupText(mods, "no_such_key"); ok {
 		t.Error("a key nobody writes was found")
 	}
 	// a mod's file at the install file's path replaces it whole, so the install's messages are no longer loaded
@@ -255,23 +255,25 @@ func TestLookupTextPrefersReplaceFolder(t *testing.T) {
 	if err := ws.Rescan(replacing, false); err != nil {
 		t.Fatal(err)
 	}
-	if _, _, ok = ws.LookupText("v.1.t"); ok {
+	if _, _, ok = ws.LookupText(ws.Mods.Load(), "v.1.t"); ok {
 		t.Error("a message of a replaced file was found")
 	}
 }
 
-// TestLookupTitleUsesConceptPrefix checks that a definition's title is the message of its name, and a game concept's
-// the message of its name after the game's concept prefix.
-func TestLookupTitleUsesConceptPrefix(t *testing.T) {
+// TestLookupTitleReadsTitleKey checks that a definition's title is the message its title key names where it writes
+// one, else the message of its name, and a game concept's the message of its name after the concept prefix.
+func TestLookupTitleReadsTitleKey(t *testing.T) {
 	ws, _ := openFixture(t)
-	if title := ws.LookupTitle(schema.Definition{Database: "traits", Name: "brave"}); title != "Brave" {
-		t.Errorf("trait title %q", title)
-	}
-	if title := ws.LookupTitle(schema.Definition{Database: ws.Schema.Concepts, Name: "v_concept"}); title != "Fixture concept" {
-		t.Errorf("concept title %q", title)
-	}
-	if title := ws.LookupTitle(schema.Definition{Database: "traits", Name: "nobody"}); title != "" {
-		t.Errorf("title of no message %q", title)
+	mods := ws.Mods.Load()
+	for _, want := range []struct{ database, name, title string }{
+		{"traits", "brave", "Brave"},
+		{ws.Schema.Concepts, "v_concept", "Fixture concept"},
+		{ws.Schema.Events, "v.1", "Hello"}, // its title key names v.1.t
+		{"on_action", "on_birth", ""},      // no title key, and no message of its name
+	} {
+		if title := ws.LookupTitle(mods, findDefinition(t, mods, want.database, want.name)); title != want.title {
+			t.Errorf("title of %s %s: %q, want %q", want.database, want.name, title, want.title)
+		}
 	}
 }
 
@@ -279,7 +281,7 @@ func TestLookupTitleUsesConceptPrefix(t *testing.T) {
 func findDefinition(t *testing.T, mods *index.Index, database, name string) index.Site {
 	t.Helper()
 	for _, site := range mods.ListDefinitions(database) {
-		if mods.Names.Texts[mods.Occurrence(site).Name] == name {
+		if mods.ToReference(site).Name == name {
 			return site
 		}
 	}
@@ -293,8 +295,8 @@ func TestFindStatementFindsDefinition(t *testing.T) {
 	ws, dir := openFixture(t)
 	mods := ws.Mods.Load()
 	for _, name := range []string{"m.1", "v.1"} {
-		tree, statement, err := ws.FindStatement(findDefinition(t, mods, "events", name))
-		if err != nil || statement < 0 || tree.Text(tree.Statements[statement].Key) != name {
+		tree, statement, err := ws.FindStatement(mods, findDefinition(t, mods, "events", name))
+		if err != nil || tree.Text(tree.Statements[statement].Key) != name {
 			t.Errorf("%s: statement %d, %v", name, statement, err)
 		}
 	}
@@ -302,8 +304,8 @@ func TestFindStatementFindsDefinition(t *testing.T) {
 	if err := os.Remove(filepath.Join(dir, "common", "traits", "m_traits.txt")); err != nil {
 		t.Fatal(err)
 	}
-	if _, statement, err := ws.FindStatement(site); err == nil || statement != -1 {
-		t.Errorf("a missing file: statement %d, %v", statement, err)
+	if _, statement, err := ws.FindStatement(mods, site); err == nil {
+		t.Errorf("a missing file: statement %d, no error", statement)
 	}
 }
 

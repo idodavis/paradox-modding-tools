@@ -121,6 +121,10 @@ const GlobalType = "Global"
 // definitions are its top-level keys, written as <namespace>.N with a namespace the file declares.
 const EventNamespaceKey = "namespace"
 
+// TitleKey is the key a definition names its title's localization key with, as every game's events do
+// (title = <key>), and some of CK3's decisions.
+const TitleKey = "title"
+
 // EventPortraits says how an event's portraits are found: the endings of the keys that write one, and the key
 // inside each that names the character.
 var EventPortraits = struct {
@@ -167,6 +171,10 @@ var EntryModes = []EntryMode{
 
 // FireHouses are the Houses of the databases that fire and are fired: events, on_actions and decisions.
 var FireHouses = []string{"events", "on_actions", "decisions"}
+
+// EngineHouses are the Houses of the databases whose definitions the game uses by name itself: it fires on_actions,
+// offers decisions and reads the history files. Events are not among them, since script fires them.
+var EngineHouses = []string{"on_actions", "decisions", "history"}
 
 // TableSyntax is how a table file writes its rows, as CK3's map_data/definition.csv does: each row's columns split
 // by Separator, the first naming the row, and a line that opens with Comment a comment.
@@ -255,6 +263,7 @@ var FileTypes = map[string]FileType{
 var Precedences = map[string]Precedence{
 	"defines":        {Keeps: "merged"},
 	"defines.define": {Keeps: "merged"},
+	"gui.block":      {Keeps: "merged"}, // vanilla writes one label in many types: 359, 504, 712 labels
 }
 
 var ck3Picture = Picture{ // _events.info, _event_themes.info
@@ -331,8 +340,11 @@ var ck3Precedences = map[string]Precedence{
 			"father", "mother", "disallow_random_traits", "obscured", "birth",
 		},
 	},
-	"gui.type":     {Keeps: "first"}, // the executable
-	"gui.template": {Keeps: "first"}, // the executable
+	"gui.type":          {Keeps: "first"},  // the executable
+	"gui.template":      {Keeps: "first"},  // the executable
+	"common.parameter":  {Keeps: "merged"}, // many holders set one: vanilla sets 176 of 633 in several places
+	"history/provinces": {Keeps: "merged"}, // vanilla writes 21 provinces' history in two files
+	"province_terrain":  {Keeps: "merged"}, // 00_province_terrain.txt and 01_province_properties.txt
 }
 
 var ck3References = []Reference{ // an on_action's key paths name other on_actions

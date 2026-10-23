@@ -25,18 +25,20 @@ const (
 // An Occurrence is the stored form of one definition, reference or message, compact enough to keep for every file
 // of the game. Each string is stored as an ordinal into one of the index's tables.
 type Occurrence struct {
-	Span     jomini.Span
-	Line     int32
-	Database uint16 // into Index.Databases
-	Name     uint32 // into Index.Names
-	Caller   uint8  // into Index.Callers
-	Mode     uint8  // into Index.Modes; an entry mode's prefix
-	Priority int16  // CK3's override priority; 0 none
-	Language uint8  // into Index.Languages; a message's
-	Scope    uint8  // into Index.Scopes; a reference's scope, a definition's root; 0 unknown
-	Role     Role
-	Local    bool
-	Parent   int32 // the defining occurrence this one sits inside; -1 at the top of a file
+	Span      jomini.Span
+	Line      int32
+	Database  uint16 // into Index.Databases
+	Name      uint32 // into Index.Names
+	Caller    uint8  // into Index.Callers
+	Mode      uint8  // into Index.Modes; an entry mode's prefix
+	Priority  int16  // CK3's override priority; 0 none
+	Language  uint8  // into Index.Languages; a message's
+	Scope     uint8  // into Index.Scopes; a reference's scope, a definition's root; 0 unknown
+	Role      Role
+	Local     bool
+	Nested    bool  // whether it sits inside a definition, the one Parent names
+	Parent    int32 // the defining occurrence this one sits inside
+	Statement int32 // the statement that writes it; 0, the file, for a definition named by its file, a message or a row
 }
 
 // A Table interns texts, so that an occurrence stores a small ordinal instead of a string.
@@ -77,11 +79,10 @@ type Site struct {
 	Occurrence int32 `json:"occurrence"`
 }
 
-// A Posting is one key of the postings: a role, a database and a name.
+// A Posting is one group of the postings: the occurrences of one role in one database, by name.
 type Posting struct {
 	Role     Role
 	Database uint16
-	Name     uint32
 }
 
 // An Index is what a scan found in one list of files, with the postings that answer lookups by name. A mods' index
@@ -101,11 +102,10 @@ type Index struct {
 	Modes       Table
 	Languages   Table
 	Scopes      Table
-	install     *Index // the install's index a mods' index stands on, whose postings it reads; nil for the install's own
-	postings    map[Posting][]Site
-	counts      []int            // by database ordinal: how many definitions the index's own files hold
-	byKey       map[string]int32 // by a file's key: its position in Files
-	rootKeys    []string         // by root, as Roots lists them: its folder's key, ending in a slash
+	install     *Index                        // the install's index a mods' index stands on, whose postings it reads; nil for the install's own
+	postings    map[Posting]map[uint32][]Site // by a posting, then by a name's ordinal
+	byKey       map[string]int32              // by a file's key: its position in Files
+	rootKeys    []string                      // by root, as Roots lists them: its folder's key, ending in a slash
 }
 
 // Occurrence returns the occurrence a site points at.
@@ -115,6 +115,11 @@ func (index *Index) Occurrence(site Site) Occurrence {
 
 // File returns the file a site is in.
 func (index *Index) File(site Site) files.File { return index.Files[site.File] }
+
+// Language returns the language of the message at a site.
+func (index *Index) Language(site Site) string {
+	return index.Languages.Texts[index.Occurrence(site).Language]
+}
 
 // Text returns the message text stored at a site.
 func (index *Index) Text(site Site) string {
@@ -129,6 +134,25 @@ func (index *Index) Text(site Site) string {
 func (index *Index) FindFile(path string) (int32, bool) {
 	position, ok := index.byKey[files.ToKey(path)]
 	return position, ok
+}
+
+// IsListed reports whether a position in Files is still a listed file. It is not when the file was deleted after the
+// scan.
+func (index *Index) IsListed(position int32) bool {
+	listed, ok := index.byKey[index.Files[position].Key]
+	return ok && listed == position
+}
+
+// ListOwnFiles returns the positions in Files of the files this index scanned itself, in order: for a mods' index,
+// the mods' files, and for the install's, all of them. A file deleted since the scan is left out.
+func (index *Index) ListOwnFiles() []int32 {
+	var positions []int32
+	for position := index.countInstallFiles(); int(position) < len(index.Files); position++ {
+		if index.IsListed(position) {
+			positions = append(positions, position)
+		}
+	}
+	return positions
 }
 
 // FindRoot returns the root that holds a path: the innermost one, since a DLC's folder is a root inside the game's.

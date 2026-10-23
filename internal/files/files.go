@@ -6,6 +6,7 @@ package files
 import (
 	"io/fs"
 	"path"
+	"runtime"
 	"slices"
 	"strings"
 	"sync"
@@ -13,6 +14,10 @@ import (
 	"github.com/bmatcuk/doublestar/v4"
 	"github.com/charlievieth/fastwalk"
 )
+
+// Workers is how many goroutines a parallel pass over files runs: every core but two, which stay free for the rest of
+// the machine, and at least one.
+var Workers = max(runtime.NumCPU()-2, 1)
 
 // A Format says what kind of file a file is.
 type Format string
@@ -72,6 +77,12 @@ func Classify(rel string) Format {
 		return FormatBinary
 	}
 	return FormatText
+}
+
+// IsScript reports whether files of the format are written in the script language: .txt, .gui, .asset, .font and
+// .gfx files.
+func (format Format) IsScript() bool {
+	return slices.Contains([]Format{FormatScript, FormatGUI, FormatAsset, FormatFont, FormatGFX}, format)
 }
 
 // A Root is one folder laid out like the game's: the game's own folder, a DLC's or a mod's.

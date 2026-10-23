@@ -83,20 +83,24 @@ func (text Text) Encode() []byte {
 	return []byte(text.Text)
 }
 
-// WriteText writes a text to a file in its own encoding. The write is atomic: the file is replaced whole or not
-// at all.
+// WriteText writes a text to a file in its own encoding. The write is atomic, as WriteAtomic is.
 func WriteText(path string, text Text) error {
-	// The same atomic write is in app, since neither package imports the other.
-	tmp, err := os.CreateTemp(filepath.Dir(path), filepath.Base(path)+".*")
+	return WriteAtomic(path, text.Encode())
+}
+
+// WriteAtomic writes bytes to a file by writing a temporary file beside it and renaming that over it, so the file is
+// replaced whole or not at all. A failed write leaves no temporary file behind.
+func WriteAtomic(path string, bytes []byte) error {
+	temp, err := os.CreateTemp(filepath.Dir(path), filepath.Base(path)+".*")
 	if err != nil {
 		return err
 	}
-	_, err = tmp.Write(text.Encode())
-	if err = errors.Join(err, tmp.Close()); err == nil {
-		err = os.Rename(tmp.Name(), path)
+	_, err = temp.Write(bytes)
+	if err = errors.Join(err, temp.Close()); err == nil {
+		err = os.Rename(temp.Name(), path)
 	}
 	if err != nil {
-		return errors.Join(err, os.Remove(tmp.Name()))
+		return errors.Join(err, os.Remove(temp.Name()))
 	}
 	return nil
 }

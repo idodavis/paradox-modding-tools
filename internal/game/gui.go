@@ -38,6 +38,7 @@ type GUIRules struct {
 	HiddenKeys      []string              // the keys whose no hides a widget
 	Answered        map[string]string     // the data calls the Visual view answers from the index, each with the database its last argument names
 	Booleans        map[string]string     // the data functions a binding combines conditions with, by name without the argument count
+	Literals        map[string]bool       // a condition's plain values, in lower case, and whether each holds
 	IconPathFile    string                // the file in an icon folder that names the paths its icons are read from
 	PictureKeys     []string              // the keys a definition names its picture by; the first written wins
 	IconPathSuffix  string                // the ending of the defines that name a folder of icons
@@ -99,6 +100,7 @@ var GUI = GUIRules{
 	HiddenKeys:     []string{"visible", "visible_at_creation"},
 	Answered:       map[string]string{"GetDefine": "defines.define"},
 	Booleans:       map[string]string{"And": "and", "Or": "or", "Nor": "nor", "Not": "not"},
+	Literals:       map[string]bool{"yes": true, "true": true, "no": false, "false": false},
 	IconPathFile:   "path_overrides.txt",
 	PictureKeys:    []string{"icon", "texture"},
 	IconPathSuffix: "_ICON_PATH",

@@ -10,13 +10,13 @@ import (
 	"testing"
 )
 
-// outline writes one line per statement of the tree: its key, operator, tag and value as written, a block as
-// `{}`, indented two spaces per level of nesting.
+// outline writes one line per statement of the tree after the file, numbered from 0: its key, operator, tag and
+// value as written, a block as `{}`, indented two spaces per level of nesting.
 func outline(tree *Tree) []string {
 	var lines []string
-	for i, statement := range tree.Statements {
+	for i, statement := range tree.Statements[1:] {
 		depth := 0
-		for parent := statement.Parent; parent >= 0; parent = tree.Statements[parent].Parent {
+		for parent := statement.Parent; parent > 0; parent = tree.Statements[parent].Parent {
 			depth++
 		}
 		parts := []string{tree.Text(statement.Key), tree.Text(statement.Op), tree.Text(statement.Tag), tree.Text(statement.Value)}
@@ -83,8 +83,8 @@ func TestParseList(t *testing.T) {
 	if got := outline(tree); !slices.Equal(got, want) {
 		t.Fatalf("outline = %q, want %q", got, want)
 	}
-	if tree.Statements[0].IsBlock() || tree.Text(tree.Statements[0].Tag) != "list" || tree.Unquoted(tree.Statements[0].Value) != "faction_patterns_list" {
-		t.Errorf("list statement = %+v", tree.Statements[0])
+	if tree.Statements[1].IsBlock() || tree.Text(tree.Statements[1].Tag) != "list" || tree.Unquoted(tree.Statements[1].Value) != "faction_patterns_list" {
+		t.Errorf("list statement = %+v", tree.Statements[1])
 	}
 }
 
@@ -110,30 +110,30 @@ func TestParseErrors(t *testing.T) {
 		}
 	}
 	tree := Parse("a = {\n\tb = { c = 1 }\n")
-	if got := tree.Statements[0].Span; got != (Span{Start: 0, End: len(tree.Src)}) {
+	if got := tree.Statements[1].Span; got != (Span{Start: 0, End: len(tree.Src)}) {
 		t.Errorf("unclosed block's statement span = %+v, want to the text's end", got)
 	}
 }
 
 func TestParseNested(t *testing.T) {
 	tree := Parse("a = { b = { c = 1 d = 2 } e = 3 }\nf = 4")
-	wantLast := []int32{5, 4, 3, 4, 5, 6}
-	wantParent := []int32{-1, 0, 1, 1, 0, -1}
+	wantLast := []int32{7, 6, 5, 4, 5, 6, 7}
+	wantParent := []int32{0, 0, 1, 2, 2, 1, 0}
 	for i, statement := range tree.Statements {
 		if statement.Last != wantLast[i] || statement.Parent != wantParent[i] {
 			t.Errorf("statement %d: Last %d Parent %d, want %d %d", i, statement.Last, statement.Parent, wantLast[i], wantParent[i])
 		}
 	}
-	if got := slices.Collect(tree.Children(-1)); !slices.Equal(got, []int32{0, 5}) {
+	if got := slices.Collect(tree.Children(0)); !slices.Equal(got, []int32{1, 6}) {
 		t.Errorf("top children = %v", got)
 	}
-	if got := slices.Collect(tree.Children(0)); !slices.Equal(got, []int32{1, 4}) {
+	if got := slices.Collect(tree.Children(1)); !slices.Equal(got, []int32{2, 5}) {
 		t.Errorf("children of a = %v", got)
 	}
-	if got := slices.Collect(tree.Children(2)); len(got) != 0 {
+	if got := slices.Collect(tree.Children(3)); len(got) != 0 {
 		t.Errorf("children of c = %v", got)
 	}
-	if got := tree.Text(tree.Statements[1].Span); got != "b = { c = 1 d = 2 }" {
+	if got := tree.Text(tree.Statements[2].Span); got != "b = { c = 1 d = 2 }" {
 		t.Errorf("span of b = %q", got)
 	}
 }
@@ -151,13 +151,13 @@ func TestFindComments(t *testing.T) {
 		}
 		return texts
 	}
-	if got := comments(0); !slices.Equal(got, []string{"# near one", "# near two"}) {
+	if got := comments(1); !slices.Equal(got, []string{"# near one", "# near two"}) {
 		t.Errorf("comments above a = %q", got)
 	}
-	if got := comments(1); got != nil {
+	if got := comments(2); got != nil {
 		t.Errorf("comments above b = %q, want none", got)
 	}
-	if got := comments(2); got != nil {
+	if got := comments(3); got != nil {
 		t.Errorf("comments above c = %q, want none", got)
 	}
 }
@@ -169,15 +169,15 @@ func TestFindStatement(t *testing.T) {
 		offset int
 		want   int32
 	}{
-		{0, 0},
-		{6, 1},
-		{10, 1},
-		{11, 0},
-		{12, 0},
-		{13, -1},
-		{15, 2},
-		{len(text), -1},
-		{-1, -1},
+		{0, 1},
+		{6, 2},
+		{10, 2},
+		{11, 1},
+		{12, 1},
+		{13, 0},
+		{15, 3},
+		{len(text), 0},
+		{-1, 0},
 	}
 	for _, test := range tests {
 		if got := tree.FindStatement(test.offset); got != test.want {
@@ -188,14 +188,14 @@ func TestFindStatement(t *testing.T) {
 
 func TestFindChild(t *testing.T) {
 	tree := Parse("a = { b = 1 b = 2 c = 3 } b = 4")
-	if got := tree.FindChild(0, "b"); got != 2 {
-		t.Errorf("FindChild(a, b) = %d, want 2", got)
+	if got, ok := tree.FindChild(1, "b"); !ok || got != 3 {
+		t.Errorf("FindChild(a, b) = %d, %v, want 3, true", got, ok)
 	}
-	if got := tree.FindChild(0, "B"); got != -1 {
-		t.Errorf("FindChild(a, B) = %d, want -1", got)
+	if _, ok := tree.FindChild(1, "B"); ok {
+		t.Error("FindChild(a, B) found a child")
 	}
-	if got := tree.FindChild(-1, "b"); got != 4 {
-		t.Errorf("FindChild(top, b) = %d, want 4", got)
+	if got, ok := tree.FindChild(0, "b"); !ok || got != 5 {
+		t.Errorf("FindChild(file, b) = %d, %v, want 5, true", got, ok)
 	}
 }
 
@@ -398,7 +398,7 @@ func TestColorParts(t *testing.T) {
 		{"color = cmyk { 1 0 0 }", "", nil, false},
 	}
 	for _, test := range tests {
-		tag, parts, ok := ColorParts(Parse(test.text), 0)
+		tag, parts, ok := ColorParts(Parse(test.text), 1)
 		if tag != test.tag || !slices.Equal(parts, test.parts) || ok != test.ok {
 			t.Errorf("ColorParts(%q) = %q %v %v, want %q %v %v", test.text, tag, parts, ok, test.tag, test.parts, test.ok)
 		}
@@ -498,8 +498,8 @@ func TestIndentation(t *testing.T) {
 		{"", ""},
 	}
 	for _, test := range tests {
-		if got := Indentation(test.text); got != test.want {
-			t.Errorf("Indentation(%q) = %q, want %q", test.text, got, test.want)
+		if got := Parse(test.text).Indentation(); got != test.want {
+			t.Errorf("Indentation of %q = %q, want %q", test.text, got, test.want)
 		}
 	}
 }

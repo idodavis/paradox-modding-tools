@@ -93,6 +93,10 @@ export interface CardScope {
  */
 export interface CardSite {
     "place": workspace$0.Place;
+
+    /**
+     * counted from one
+     */
     "line": number;
     "kept": boolean;
 
@@ -118,7 +122,8 @@ export interface Code {
     "severity": number;
 
     /**
-     * the Health section: dangling, localization, script
+     * Section is the Health section: contests, overrides, dependencies, dangling, localization, script, unused or
+     * errorlog.
      */
     "section": string;
 
@@ -218,7 +223,8 @@ export interface Fold {
 }
 
 /**
- * A Hint is a text drawn inline beside the code, such as a date read in the mod's calendar.
+ * A Hint is a text drawn inline beside the code, such as a date read in the mod's calendar. Its line and column are
+ * Monaco's, counted from one, the column in UTF-16 code units.
  */
 export interface Hint {
     "line": number;
@@ -259,7 +265,11 @@ export interface Range {
 export interface Signature {
     "label": string;
     "parameters": string[] | null;
-    "active": number;
+
+    /**
+     * the parameter the position is on; absent if none
+     */
+    "active"?: number | null;
 }
 
 /**

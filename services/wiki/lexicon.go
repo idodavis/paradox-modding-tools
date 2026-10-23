@@ -1,6 +1,16 @@
 package wiki
 
-import "paradox-modding-tools/services/workspace"
+import (
+	"fmt"
+	"slices"
+	"strings"
+
+	"github.com/samber/lo"
+
+	"paradox-modding-tools/internal/game"
+	"paradox-modding-tools/internal/schema"
+	"paradox-modding-tools/services/workspace"
+)
 
 // A LexiconRow is one effect, trigger, link, scope or data function the game's dumps declare, with the dump's text
 // and example uses from the index.
@@ -17,8 +27,58 @@ type LexiconRow struct {
 // An Example is one place where the game's own files use a lexicon row's name.
 type Example struct {
 	Place workspace.Place `json:"place"`
-	Line  int             `json:"line"`
+	Line  int             `json:"line"` // counted from one
+}
+
+// declaredClasses are the lexicon classes of the commands the dumps declare, each with the word the dumps use for
+// what declares it.
+var declaredClasses = map[string]string{
+	"effect":  game.DeclaredEffect,
+	"trigger": game.DeclaredTrigger,
+	"link":    game.DeclaredLink,
 }
 
 // BuildLexicon returns the lexicon rows of one class, for the Wiki pane's Lexicon tab.
-func (wik *Service) BuildLexicon(class string) ([]LexiconRow, error) { panic("stub") }
+func (wik *Service) BuildLexicon(class string) ([]LexiconRow, error) {
+	ws, err := wik.Workspace.Session()
+	if err != nil {
+		return nil, err
+	}
+	var rows []LexiconRow
+	switch declared := declaredClasses[class]; {
+	case declared != "":
+		for name, command := range ws.Schema.Commands {
+			if slices.Contains(command.Declared, declared) {
+				rows = append(rows, LexiconRow{
+					Class: class, Name: name, Blurb: command.Blurb, Usage: command.Usage, Scopes: command.Scopes,
+					Target: command.Target, Examples: toExamples(ws, command.Examples),
+				})
+			}
+		}
+	case class == "scope":
+		for name := range ws.Schema.Scopes {
+			rows = append(rows, LexiconRow{Class: class, Name: name, Examples: []Example{}})
+		}
+	case class == "function":
+		for _, dataType := range ws.Schema.DataTypes {
+			for _, function := range dataType.Functions {
+				rows = append(rows, LexiconRow{
+					Class: class, Name: dataType.Name + "." + function.Name, Blurb: function.Blurb,
+					Target: function.Returns, Examples: toExamples(ws, function.Examples),
+				})
+			}
+		}
+	default:
+		return nil, fmt.Errorf("%q is not a lexicon class", class)
+	}
+	slices.SortFunc(rows, func(first, second LexiconRow) int { return strings.Compare(first.Name, second.Name) })
+	return rows, nil
+}
+
+// toExamples converts the places where the game's own files use a name into examples, each with its place in the
+// open workspace and its line counted from one.
+func toExamples(ws *workspace.Session, examples []schema.Example) []Example {
+	return lo.Map(examples, func(example schema.Example, _ int) Example {
+		return Example{Place: ws.Locate(example.Path), Line: example.Line + 1}
+	})
+}

@@ -92,21 +92,32 @@ func buildFixture(t *testing.T) (*Schema, string) {
 	return built, install
 }
 
-// walkFixture walks one file of the CK3 fixture install and returns what the walk offered.
-func walkFixture(t *testing.T, built *Schema, install, rel string, offset int) *recorder {
+// openFixture parses one file of the CK3 fixture install.
+func openFixture(t *testing.T, install, rel string) (*jomini.Tree, files.File) {
 	t.Helper()
 	path := filepath.Join(install, game.ScriptRoot, filepath.FromSlash(rel))
 	tree, err := parseFile(path)
 	if err != nil {
 		t.Fatal(err)
 	}
-	file := files.File{Path: path, Rel: rel, Origin: game.OriginVanilla, Format: files.Classify(rel)}
+	return tree, files.File{Path: path, Rel: rel, Origin: game.OriginVanilla, Format: files.Classify(rel)}
+}
+
+// walkFixture walks one file of the CK3 fixture install and returns what the walk offered.
+func walkFixture(t *testing.T, built *Schema, install, rel string) *recorder {
+	t.Helper()
+	tree, file := openFixture(t, install, rel)
 	seen := &recorder{}
-	if offset < 0 {
-		built.Walk(tree, file, seen)
-	} else {
-		built.WalkTo(tree, file, offset, seen)
-	}
+	built.Walk(tree, file, seen)
+	return seen
+}
+
+// walkFixtureTo walks one file of the CK3 fixture install to a byte offset and returns what the walk offered.
+func walkFixtureTo(t *testing.T, built *Schema, install, rel string, offset int) *recorder {
+	t.Helper()
+	tree, file := openFixture(t, install, rel)
+	seen := &recorder{}
+	built.WalkTo(tree, file, offset, seen)
 	return seen
 }
 
@@ -250,7 +261,7 @@ func TestBuildFixtureLearns(t *testing.T) {
 // saved scope and a keyword reached through the number form.
 func TestWalkEventsFixture(t *testing.T) {
 	built, install := buildFixture(t)
-	seen := walkFixture(t, built, install, "events/v_events.txt", -1)
+	seen := walkFixture(t, built, install, "events/v_events.txt")
 	if event := seen.find(t, "v.1", ""); !event.context.Defines || event.context.Definition.Database != "events" {
 		t.Errorf("v.1: %+v", event.context)
 	}
@@ -285,8 +296,8 @@ func TestWalkToKeepsSaved(t *testing.T) {
 		t.Fatal(err)
 	}
 	offset := strings.Index(string(text), "add_character_flag = seen_one")
-	whole := walkFixture(t, built, install, "events/v_events.txt", -1).find(t, "add_character_flag", "seen_one")
-	part := walkFixture(t, built, install, "events/v_events.txt", offset).find(t, "add_character_flag", "seen_one")
+	whole := walkFixture(t, built, install, "events/v_events.txt").find(t, "add_character_flag", "seen_one")
+	part := walkFixtureTo(t, built, install, "events/v_events.txt", offset).find(t, "add_character_flag", "seen_one")
 	if len(whole.context.Saved) == 0 || !slices.Equal(whole.context.Saved, part.context.Saved) {
 		t.Errorf("Walk %v, WalkTo %v", whole.context.Saved, part.context.Saved)
 	}
@@ -302,7 +313,7 @@ func TestResolveMacroReplacesParameters(t *testing.T) {
 	if !ok {
 		t.Fatal("call not parsed")
 	}
-	expanded := (&walker{schema: macros}).resolveMacro(call, "")
+	expanded := macros.ResolveMacro(call, "")
 	if len(expanded.Steps) != 1 || expanded.Steps[0].Text != "EqualTo_int32" {
 		t.Fatalf("steps: %+v", expanded.Steps)
 	}

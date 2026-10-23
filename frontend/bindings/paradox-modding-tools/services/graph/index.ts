@@ -8,7 +8,6 @@ export {
 
 export type {
     Detail,
-    DetailReference,
     Edge,
     Filter,
     Graph,

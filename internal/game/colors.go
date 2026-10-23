@@ -9,6 +9,8 @@ import (
 	"slices"
 	"strconv"
 	"strings"
+
+	"paradox-modding-tools/internal/jomini"
 )
 
 // A Color is one way script writes a color. ParseColor reads by it and EncodeColor writes back in it.
@@ -59,6 +61,16 @@ func ParseColor(tag string, parts []float64) (RGBA, bool) {
 		alpha = parts[3] / scale
 	}
 	return RGBA{clamp(red), clamp(green), clamp(blue), clamp(alpha)}, true
+}
+
+// ToColor returns the color a statement writes as a color block. It returns false if the statement is no color block
+// or its tag and parts make no color.
+func ToColor(tree *jomini.Tree, statement int32) (RGBA, bool) {
+	tag, parts, ok := jomini.ColorParts(tree, statement)
+	if !ok {
+		return RGBA{}, false
+	}
+	return ParseColor(tag, parts)
 }
 
 // EncodeColor returns the parts that write a color in the same form as a block written before: in its scale, and

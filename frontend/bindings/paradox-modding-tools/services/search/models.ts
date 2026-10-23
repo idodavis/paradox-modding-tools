@@ -3,19 +3,18 @@
 
 // eslint-disable-next-line @typescript-eslint/ban-ts-comment
 // @ts-ignore: Unused imports
-import * as jomini$0 from "../../internal/jomini/models.js";
+import * as lsp$0 from "../lsp/models.js";
 // eslint-disable-next-line @typescript-eslint/ban-ts-comment
 // @ts-ignore: Unused imports
 import * as workspace$0 from "../workspace/models.js";
 
 /**
- * A Hit is one match: the file, the line, and the line's text with the span of the match in it.
+ * A Hit is one match: the file, the match's range in Monaco's form, and the text of the line it is on. The range's
+ * columns also mark the match inside that text.
  */
 export interface Hit {
     "place": workspace$0.Place;
-    "line": number;
-    "column": number;
-    "span": jomini$0.Span;
+    "range": lsp$0.Range;
     "text": string;
 }
 

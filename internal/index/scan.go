@@ -6,7 +6,6 @@ import (
 	"io/fs"
 	"maps"
 	"os"
-	"runtime"
 	"slices"
 	"strings"
 	"sync"
@@ -140,8 +139,8 @@ func listFiles(roots []files.Root) ([]files.File, error) {
 		}
 		// a file under a root inside this one belongs to the inner root
 		listing = append(listing, lo.Filter(list, func(file files.File, _ int) bool {
-			owner, _ := findRoot(keys, file.Key)
-			return owner == position
+			owner, ok := findRoot(keys, file.Key)
+			return ok && owner == position
 		})...)
 	}
 	return listing, nil
@@ -155,13 +154,13 @@ func listRootKeys(roots []files.Root) []string {
 // findRoot returns the position of the innermost root that holds a file, given the keys of the roots' folders and
 // the file's key. It returns false if no root holds the file.
 func findRoot(keys []string, fileKey string) (int, bool) {
-	position, length := -1, 0
+	position, length, ok := 0, 0, false
 	for candidate, key := range keys {
 		if len(key) > length && strings.HasPrefix(fileKey, key) {
-			position, length = candidate, len(key)
+			position, length, ok = candidate, len(key), true
 		}
 	}
-	return position, position >= 0
+	return position, ok
 }
 
 // newIndex returns an index of the given files with nothing found yet. Over an install's index it starts with the
@@ -225,7 +224,7 @@ func (index *Index) buildPaths() {
 func (index *Index) scanFiles(schema *schema.Schema) {
 	var group errgroup.Group
 	var lock sync.RWMutex
-	group.SetLimit(max(runtime.NumCPU()-2, 1))
+	group.SetLimit(files.Workers)
 	for position := int(index.countInstallFiles()); position < len(index.Files); position++ {
 		group.Go(func() error {
 			index.buildFile(&lock, schema, int32(position), nil)
@@ -243,12 +242,12 @@ func (index *Index) buildFile(lock *sync.RWMutex, schema *schema.Schema, positio
 	tables := index.makeTables()
 	var occurrences []Occurrence
 	var texts []string
-	switch index.Files[position].Format {
-	case files.FormatLocalization:
+	switch format := index.Files[position].Format; {
+	case format == files.FormatLocalization:
 		occurrences, texts = tables.buildMessages(schema, position, index.readSource(position, tree))
-	case files.FormatTable:
+	case format == files.FormatTable:
 		occurrences = tables.buildRows(schema, position, index.readSource(position, tree))
-	case files.FormatScript, files.FormatGUI, files.FormatAsset, files.FormatFont, files.FormatGFX:
+	case format.IsScript():
 		if tree == nil {
 			tree = jomini.Parse(index.readSource(position, nil))
 		}
@@ -282,9 +281,10 @@ func (index *Index) makeTables() *Index {
 // Enter records the statement's definition and references.
 func (collector *collector) Enter(tree *jomini.Tree, statement int32, context *schema.Context) bool {
 	index := collector.index
-	parent := int32(-1)
-	if open := collector.definitions; len(open) > 0 {
-		parent = open[len(open)-1]
+	var parent int32
+	nested := len(collector.definitions) > 0
+	if nested {
+		parent = collector.definitions[len(collector.definitions)-1]
 	}
 	if definition := context.Definition; context.Defines {
 		occurrence := index.makeOccurrence(RoleDefines, definition.Database, definition.Name, definition.Span)
@@ -293,8 +293,9 @@ func (collector *collector) Enter(tree *jomini.Tree, statement int32, context *s
 		occurrence.Local = definition.Local
 		occurrence.Scope = uint8(index.Scopes.Intern(context.Root))
 		occurrence.Line = int32(tree.Lines.ToPosition(definition.Span.Start).Line)
-		occurrence.Parent = parent
-		parent = int32(len(collector.occurrences))
+		occurrence.Parent, occurrence.Nested = parent, nested
+		occurrence.Statement = definition.Statement
+		parent, nested = int32(len(collector.occurrences)), true
 		collector.occurrences = append(collector.occurrences, occurrence)
 		collector.definitions = append(collector.definitions, parent)
 	}
@@ -303,7 +304,8 @@ func (collector *collector) Enter(tree *jomini.Tree, statement int32, context *s
 		occurrence.Caller = uint8(index.Callers.Intern(reference.Caller))
 		occurrence.Scope = uint8(index.Scopes.Intern(context.Scope))
 		occurrence.Line = int32(tree.Lines.ToPosition(reference.Span.Start).Line)
-		occurrence.Parent = parent
+		occurrence.Parent, occurrence.Nested = parent, nested
+		occurrence.Statement = statement
 		collector.occurrences = append(collector.occurrences, occurrence)
 	}
 	return true
@@ -366,12 +368,12 @@ func internAll(lock *sync.RWMutex, table *Table, texts []string) []uint32 {
 	return ordinals
 }
 
-// makeOccurrence returns an occurrence of the given role, database and name written at the given span, at the top
-// of its file until its parent is set.
+// makeOccurrence returns an occurrence of the given role, database and name written at the given span. It sits
+// in no definition and in no statement until the caller says.
 func (index *Index) makeOccurrence(role Role, database, name string, span jomini.Span) Occurrence {
 	return Occurrence{
 		Span: span, Database: uint16(index.Databases.Intern(database)),
-		Name: index.Names.Intern(index.toCaseless(database, name)), Role: role, Parent: -1,
+		Name: index.Names.Intern(index.toCaseless(database, name)), Role: role,
 	}
 }
 
@@ -405,7 +407,7 @@ func (index *Index) buildMessages(schema *schema.Schema, position int32, source 
 		for _, reference := range listTextReferences(schema.Concepts, message) {
 			occurrence := index.makeOccurrence(RoleRefers, reference.Database, reference.Name, reference.Span)
 			occurrence.Line = int32(file.Lines.ToPosition(reference.Span.Start).Line)
-			occurrence.Parent = parent
+			occurrence.Parent, occurrence.Nested = parent, true
 			occurrences = append(occurrences, occurrence)
 			if keep {
 				texts = append(texts, "")

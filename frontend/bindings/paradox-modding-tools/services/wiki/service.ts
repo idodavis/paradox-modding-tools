@@ -3,7 +3,7 @@
 
 /**
  * Service is the wiki service behind the Wiki pane and the Patch Notes page. It makes one client for the open
- * workspace's game on first use.
+ * workspace's game on first use, and a new one when a workspace of another game opens.
  * @module
  */
 
@@ -54,7 +54,8 @@ export function ReadPage(title: string): $CancellablePromise<$models.Page> {
 
 /**
  * Refresh fetches the page listing and every page that is missing or stale. The wiki:progress event reports each
- * page and wiki:updated the end.
+ * page fetched and wiki:updated the end. It returns when the refresh ends, with an error if no workspace is open or
+ * the listing or a page could not be fetched.
  */
 export function Refresh(): $CancellablePromise<void> {
     return $Call.ByID(2930339879);

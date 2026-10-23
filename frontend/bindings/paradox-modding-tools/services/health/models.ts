@@ -3,7 +3,7 @@
 
 // eslint-disable-next-line @typescript-eslint/ban-ts-comment
 // @ts-ignore: Unused imports
-import * as jomini$0 from "../../internal/jomini/models.js";
+import * as lsp$0 from "../lsp/models.js";
 // eslint-disable-next-line @typescript-eslint/ban-ts-comment
 // @ts-ignore: Unused imports
 import * as workspace$0 from "../workspace/models.js";
@@ -24,22 +24,26 @@ export interface Finding {
     "section": string;
 
     /**
-     * an lsp.Codes id, or the section's own: contest, override, depends, affects, unused, game-error
+     * an lsp.Codes id
      */
     "code": string;
     "name": string;
+
+    /**
+     * the database's words, as the page shows them
+     */
     "database": string;
     "facts": { [_ in string]?: string } | null;
     "sites": FindingSite[] | null;
 }
 
 /**
- * A FindingSite is one place a finding points at, with whether the game keeps that definition and why.
+ * A FindingSite is one place a finding points at, with whether the game keeps that definition and why. The range of
+ * a definition covers its whole statement.
  */
 export interface FindingSite {
     "place": workspace$0.Place;
-    "line": number;
-    "span": jomini$0.Span;
+    "range": lsp$0.Range;
     "kept": boolean;
 
     /**
@@ -59,7 +63,7 @@ export interface Overview {
 }
 
 /**
- * A Report is everything the Health page shows for one load order.
+ * A Report is everything the Health page shows for one load order, except the game's error log.
  */
 export interface Report {
     "sections": Section[] | null;

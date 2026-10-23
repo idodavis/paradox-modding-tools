@@ -19,11 +19,12 @@ const (
 	tokenComment
 )
 
-// Parse reads a text into its tree. It never fails: a malformed text gives the statements it could read, and the
-// problems go into Tree.Errors with their spans. A tagged block such as `rgb { … }` or `list "x"` is one value
-// with a tag, `?=` is an operator like `=`, and a `#` comment runs to the end of its line.
+// Parse reads a text into its tree. Statement 0 is the file itself, and the top-level statements are its children.
+// It never fails: a malformed text gives the statements it could read, and the problems go into Tree.Errors with
+// their spans. A tagged block such as `rgb { … }` or `list "x"` is one value with a tag, `?=` is an operator like
+// `=`, and a `#` comment runs to the end of its line.
 func Parse(text string) *Tree {
-	tree := &Tree{Src: text, Lines: NewLines(text)}
+	tree := &Tree{Src: text, Lines: NewLines(text), Statements: []Statement{{Span: Span{End: len(text)}}}}
 	var tokens []token
 	for _, tok := range scan(text) {
 		if tok.class == tokenComment {
@@ -35,7 +36,8 @@ func Parse(text string) *Tree {
 		}
 		tokens = append(tokens, tok)
 	}
-	parseStatements(tree, tokens, 0, -1)
+	parseStatements(tree, tokens, 0, 0)
+	tree.Statements[0].Last = int32(len(tree.Statements))
 	return tree
 }
 
@@ -147,13 +149,13 @@ func isUnclosedString(scalar string) bool {
 }
 
 // parseStatements reads statements into the tree as children of the given parent until the tokens end or a
-// closing brace closes the parent. It returns the index of the token it stopped at. At the top, a closing brace
-// closes nothing: it is reported and skipped.
+// closing brace closes the parent. It returns the index of the token it stopped at. At the file's level, a closing
+// brace closes nothing: it is reported and skipped.
 func parseStatements(tree *Tree, tokens []token, cursor int, parent int32) int {
 	for cursor < len(tokens) {
 		switch tokens[cursor].class {
 		case tokenClose:
-			if parent >= 0 {
+			if parent > 0 {
 				return cursor
 			}
 			tree.Errors = append(tree.Errors, Error{Code: "unexpected-brace", Message: "} has no { to close", Span: tokens[cursor].span})

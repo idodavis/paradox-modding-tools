@@ -1,6 +1,7 @@
 package files
 
 import (
+	"os"
 	"path/filepath"
 	"strings"
 	"unicode"
@@ -64,4 +65,10 @@ func ToSlug(text string) string {
 // toSlash returns a path cleaned and with forward slashes, whichever platform's spelling it came in.
 func toSlash(path string) string {
 	return filepath.ToSlash(filepath.Clean(strings.ReplaceAll(path, `\`, "/")))
+}
+
+// IsFolder reports whether a path is a folder that exists.
+func IsFolder(path string) bool {
+	stat, err := os.Stat(path)
+	return err == nil && stat.IsDir()
 }

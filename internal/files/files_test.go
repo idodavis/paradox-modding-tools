@@ -253,3 +253,22 @@ func TestWalkInstalls(t *testing.T) {
 		})
 	}
 }
+
+// TestWriteAtomic fails a write by aiming it at a folder and checks that no temporary file is left beside it.
+func TestWriteAtomic(t *testing.T) {
+	dir := t.TempDir()
+	target := filepath.Join(dir, "target")
+	if err := os.Mkdir(target, 0o755); err != nil {
+		t.Fatal(err)
+	}
+	if err := WriteAtomic(target, []byte("text")); err == nil {
+		t.Fatal("a write over a folder passed")
+	}
+	entries, err := os.ReadDir(dir)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if len(entries) != 1 {
+		t.Fatalf("the folder holds %d entries after the failed write, want the target alone", len(entries))
+	}
+}

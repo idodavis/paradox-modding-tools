@@ -1,0 +1,399 @@
+package graph
+
+import (
+	"os"
+	"path/filepath"
+	"slices"
+	"strings"
+	"sync"
+	"testing"
+	"time"
+
+	"github.com/adrg/xdg"
+	"github.com/samber/lo"
+	"github.com/wailsapp/wails/v3/pkg/application"
+
+	"paradox-modding-tools/internal/game"
+	"paradox-modding-tools/services/app"
+	"paradox-modding-tools/services/workspace"
+)
+
+// The ids the tests give the fixture mods. The first is loaded first.
+const (
+	modA = "mod-a"
+	modB = "mod-b"
+	modC = "mod-c"
+)
+
+// The ids of the nodes the fixture mods' definitions make, and the delays written beside their firings.
+const (
+	eventD1     = "events:d.1"
+	eventD2     = "events:d.2"
+	eventD3     = "events:d.3"
+	eventD4     = "events:d.4"
+	eventD5     = "events:d.5"
+	eventB1     = "events:b.1"
+	effectFire  = "scripted_effects:d_fire_effect"
+	delayDays   = "days = 3"
+	delayMonths = "months = { 1 3 }"
+)
+
+// modAFiles are the files the first mod adds: events that fire each other with a delay, one of the second mod's
+// events, an event that fires through a scripted effect, on_actions that fire each other and an event, one with a
+// delay block, and a second definition of a vanilla on_action that the game merges with the first.
+var modAFiles = map[string]string{
+	filepath.Join("events", "d_events.txt"): `namespace = d
+
+d.1 = {
+	type = character_event
+	left_portrait = { character = root animation = happy }
+	right_icon = scope:target
+	immediate = {
+		trigger_event = { id = d.2 days = 3 }
+		trigger_event = b.1
+		trigger_event = { id = d.4 months = { 1 3 } }
+	}
+}
+d.2 = { type = character_event }
+d.3 = { type = character_event }
+d.4 = { type = character_event }
+d.5 = {
+	type = character_event
+	immediate = { d_fire_effect = yes }
+}
+`,
+	filepath.Join("common", "scripted_effects", "d_effects.txt"): `d_fire_effect = {
+	trigger_event = { id = d.2 days = 5 }
+}
+`,
+	filepath.Join("common", "on_action", "d_on_actions.txt"): `d_root = {
+	on_actions = { d_mid }
+}
+d_mid = {
+	events = { d.3 }
+}
+d_delayed = {
+	delay = { days = 7 }
+	events = { d.4 }
+}
+on_birth = {
+	events = { d.2 }
+}
+`,
+}
+
+// modBFiles are the files the second mod adds: an event that fires one of the first mod's.
+var modBFiles = map[string]string{
+	filepath.Join("events", "b_events.txt"): `namespace = b
+
+b.1 = {
+	type = character_event
+	immediate = { trigger_event = d.3 }
+}
+`,
+}
+
+// modCFiles are the files the third mod adds: a file with the path of a vanilla file, which replaces it, that
+// defines v.2 again and one event that fires it, but not v.1.
+var modCFiles = map[string]string{
+	filepath.Join("events", "v_events.txt"): `namespace = v
+namespace = vc
+
+vc.1 = {
+	type = character_event
+	immediate = { trigger_event = v.2 }
+}
+v.2 = { type = character_event }
+`,
+}
+
+// createApp makes the application the workspace service sends its events through, once for the whole test run.
+var createApp = sync.OnceFunc(func() { application.New(application.Options{}) })
+
+// resolveFixture returns the absolute path of a folder under internal/testdata.
+func resolveFixture(t *testing.T, parts ...string) string {
+	t.Helper()
+	dir, err := filepath.Abs(filepath.Join(append([]string{"..", "..", "internal", "testdata"}, parts...)...))
+	if err != nil {
+		t.Fatal(err)
+	}
+	return dir
+}
+
+// createMod copies the CK3 fixture mod into a temporary folder, writes the given files into it and returns its
+// record.
+func createMod(t *testing.T, id string, added map[string]string) app.Mod {
+	t.Helper()
+	dir := t.TempDir()
+	if err := os.CopyFS(dir, os.DirFS(resolveFixture(t, "mods", "ck3"))); err != nil {
+		t.Fatal(err)
+	}
+	for path, text := range added {
+		path = filepath.Join(dir, path)
+		if err := os.MkdirAll(filepath.Dir(path), 0o755); err != nil {
+			t.Fatal(err)
+		}
+		if err := os.WriteFile(path, []byte(text), 0o644); err != nil {
+			t.Fatal(err)
+		}
+	}
+	return app.Mod{ID: id, Dir: dir}
+}
+
+// openService opens a workspace on an install with the given mods, with a config and caches of its own, and returns
+// the graph service over it. The workspace closes when the test ends.
+func openService(t *testing.T, gameID, installPath string, mods ...app.Mod) *Service {
+	t.Helper()
+	createApp()
+	t.Cleanup(xdg.Reload)
+	for _, variable := range []string{"XDG_CONFIG_HOME", "XDG_CACHE_HOME", "XDG_STATE_HOME"} {
+		t.Setenv(variable, t.TempDir())
+	}
+	xdg.Reload()
+	config, err := app.OpenConfig()
+	if err != nil {
+		t.Fatal(err)
+	}
+	err = config.Update(func(records *app.Config) {
+		records.Installs = []app.Install{{ID: "i1", Game: gameID, Path: installPath}}
+		records.Workspaces = []app.Workspace{{ID: "w1", Name: "Test", Install: "i1", Mods: mods, Language: "english"}}
+	})
+	if err != nil {
+		t.Fatal(err)
+	}
+	wsp := &workspace.Service{Config: config, Build: "test"}
+	t.Cleanup(wsp.Close)
+	wsp.Open("w1")
+	if _, err := wsp.Session(); err != nil {
+		t.Fatal(err)
+	}
+	return &Service{Workspace: wsp}
+}
+
+// openFixture opens the CK3 fixture install with the first two fixture mods.
+func openFixture(t *testing.T) *Service {
+	t.Helper()
+	return openService(t, "ck3", resolveFixture(t, "ck3"), createMod(t, modA, modAFiles), createMod(t, modB, modBFiles))
+}
+
+// TestBuildGraphSplicesHiddenNodes checks that a graph goes forward and backward from its root with the steps signed
+// and the delay beside each firing read, and that with the filter hiding an origin, or a database, the node's edges
+// are joined into one that passes through it.
+func TestBuildGraphSplicesHiddenNodes(t *testing.T) {
+	gph := openFixture(t)
+	filter := gph.Defaults()
+	if !slices.Contains(filter.Databases, "events") || !slices.Contains(filter.Databases, "on_action") ||
+		!slices.Equal(filter.Origins, []string{game.OriginVanilla, modA, modB}) || filter.Depth != 3 ||
+		filter.Limit != 200 || !filter.Follow {
+		t.Fatalf("defaults %+v", filter)
+	}
+	whole, err := gph.BuildGraph(eventD1, filter)
+	if err != nil {
+		t.Fatal(err)
+	}
+	wantEdges := []Edge{
+		{From: eventD1, To: eventD2, Days: delayDays},
+		{From: eventD1, To: eventB1},
+		{From: eventD1, To: eventD4, Days: delayMonths},
+		{From: eventB1, To: eventD3},
+	}
+	if whole.Truncated || len(whole.Nodes) != 5 || !hasEdges(whole.Edges, wantEdges) {
+		t.Errorf("graph with every origin drawn: %d nodes, edges %+v", len(whole.Nodes), whole.Edges)
+	}
+	backward, err := gph.BuildGraph(eventD3, filter)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if position := slices.IndexFunc(backward.Nodes, func(node Node) bool { return node.ID == eventD1 }); position < 0 ||
+		backward.Nodes[position].Step != -2 {
+		t.Errorf("graph from the fired event: %+v", backward.Nodes)
+	}
+	filter.Origins = []string{game.OriginVanilla, modA}
+	short, err := gph.BuildGraph(eventD1, filter)
+	if err != nil {
+		t.Fatal(err)
+	}
+	wantEdges = []Edge{
+		{From: eventD1, To: eventD2, Days: delayDays},
+		{From: eventD1, To: eventD3, Via: []string{"b.1"}},
+		{From: eventD1, To: eventD4, Days: delayMonths},
+	}
+	if len(short.Nodes) != 4 || !hasEdges(short.Edges, wantEdges) {
+		t.Errorf("graph with the second mod hidden: %d nodes, edges %+v", len(short.Nodes), short.Edges)
+	}
+	filter = Filter{Databases: []string{"events"}, Origins: filter.Origins, Depth: 3, Limit: 200}
+	chain, err := gph.BuildGraph("on_action:d_root", filter)
+	if err != nil {
+		t.Fatal(err)
+	}
+	wantEdges = []Edge{{From: "on_action:d_root", To: eventD3, Via: []string{"d_mid"}}}
+	if len(chain.Nodes) != 2 || !hasEdges(chain.Edges, wantEdges) {
+		t.Errorf("graph with the on_actions hidden: %d nodes, edges %+v", len(chain.Nodes), chain.Edges)
+	}
+	filter.Databases = []string{"on_action", "events"}
+	delay, err := gph.BuildGraph("on_action:d_delayed", filter)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if wantEdges = []Edge{{From: "on_action:d_delayed", To: eventD4, Days: "days = 7"}}; !hasEdges(delay.Edges, wantEdges) {
+		t.Errorf("graph of the on_action with a delay block: %+v", delay.Edges)
+	}
+}
+
+// TestBuildGraphDrawsEffects checks that a scripted effect between two nodes is a node of its own while the filter
+// draws the effects, and is the label of the edge between them while it does not.
+func TestBuildGraphDrawsEffects(t *testing.T) {
+	gph := openFixture(t)
+	filter := gph.Defaults()
+	asNodes, err := gph.BuildGraph(eventD5, filter)
+	if err != nil {
+		t.Fatal(err)
+	}
+	wantEdges := []Edge{{From: eventD5, To: effectFire}, {From: effectFire, To: eventD2, Days: "days = 5"}}
+	if len(asNodes.Nodes) != 3 || !hasEdges(asNodes.Edges, wantEdges) {
+		t.Errorf("graph with the effects as nodes: %d nodes, edges %+v", len(asNodes.Nodes), asNodes.Edges)
+	}
+	filter.Databases = []string{"events"}
+	asLabels, err := gph.BuildGraph(eventD5, filter)
+	if err != nil {
+		t.Fatal(err)
+	}
+	wantEdges = []Edge{{From: eventD5, To: eventD2, Days: "days = 5", Via: []string{"d_fire_effect"}}}
+	if len(asLabels.Nodes) != 2 || !hasEdges(asLabels.Edges, wantEdges) {
+		t.Errorf("graph with the effects left out: %d nodes, edges %+v", len(asLabels.Nodes), asLabels.Edges)
+	}
+}
+
+// TestBuildGraphMergesDefinitions checks that a node whose database merges its definitions fires what each of them
+// fires: a vanilla on_action that a mod defines again fires the events of both.
+func TestBuildGraphMergesDefinitions(t *testing.T) {
+	gph := openFixture(t)
+	graph, err := gph.BuildGraph("on_action:on_birth", gph.Defaults())
+	if err != nil {
+		t.Fatal(err)
+	}
+	targets := lo.FilterMap(graph.Edges, func(edge Edge, _ int) (string, bool) {
+		return edge.To, edge.From == "on_action:on_birth"
+	})
+	slices.Sort(targets)
+	if want := []string{eventD2, "events:v.1", "events:v.2"}; !slices.Equal(targets, want) {
+		t.Errorf("on_birth fires %v, want %v", targets, want)
+	}
+}
+
+// TestBuildGraphSkipsReplacedFirer checks that a mod's file with the path of a vanilla file replaces it, so that an
+// event only vanilla's file defines is not drawn as a firer.
+func TestBuildGraphSkipsReplacedFirer(t *testing.T) {
+	gph := openService(t, "ck3", resolveFixture(t, "ck3"), createMod(t, modC, modCFiles))
+	graph, err := gph.BuildGraph("events:v.2", gph.Defaults())
+	if err != nil {
+		t.Fatal(err)
+	}
+	ids := lo.Map(graph.Nodes, func(node Node, _ int) string { return node.ID })
+	if !slices.Contains(ids, "events:vc.1") || slices.Contains(ids, "events:v.1") {
+		t.Errorf("the nodes around v.2: %v", ids)
+	}
+}
+
+// TestBuildDetailReadsDefinition checks the detail of an event: its text and title, what it fires and what fires it,
+// the names it refers to, its portraits and the inputs of its database, and that an id nothing defines is an error.
+func TestBuildDetailReadsDefinition(t *testing.T) {
+	gph := openFixture(t)
+	detail, err := gph.BuildDetail(eventD1)
+	if err != nil {
+		t.Fatal(err)
+	}
+	wantFires := []Edge{
+		{From: eventD1, To: eventD2, Days: delayDays},
+		{From: eventD1, To: eventB1},
+		{From: eventD1, To: eventD4, Days: delayMonths},
+	}
+	if detail.Node.ID != eventD1 || !hasEdges(detail.Fires, wantFires) || len(detail.FiredBy) != 0 ||
+		!slices.Equal(detail.Portraits, []string{"root", "scope:target"}) || len(detail.Inputs) == 0 {
+		t.Errorf("detail of d.1: %+v", detail)
+	}
+	if !slices.ContainsFunc(detail.References, func(reference Node) bool {
+		return reference.Database == "events" && reference.Name == "b.1" && reference.Place.Origin == modB
+	}) {
+		t.Errorf("references of d.1: %+v", detail.References)
+	}
+	vanilla, err := gph.BuildDetail("events:v.1")
+	if err != nil {
+		t.Fatal(err)
+	}
+	if vanilla.Text != "Desc" || vanilla.Node.Title != "Hello" || vanilla.Node.Line != 4 ||
+		!slices.ContainsFunc(vanilla.FiredBy, func(edge Edge) bool { return edge.From == "on_action:on_birth" }) {
+		t.Errorf("detail of v.1: text %q, title %q, line %d, fired by %+v",
+			vanilla.Text, vanilla.Node.Title, vanilla.Node.Line, vanilla.FiredBy)
+	}
+	if _, err := gph.BuildDetail("events:nowhere.1"); err == nil {
+		t.Error("the detail of a node nothing defines was built")
+	}
+}
+
+// TestBuildGraphOnInstalls builds the graph of each real install that PMT_TEST_INSTALL_<GAME> names, with no mods and
+// the page's defaults, from the on_actions that start a game and that fire each year, and prints each graph's size
+// and time, then the detail of each of its nodes. The numbers are read, not asserted; a detail that is an error fails.
+func TestBuildGraphOnInstalls(t *testing.T) {
+	roots := map[string][]string{
+		"ck3":  {"on_game_start", "random_yearly_playable_pulse"},
+		"vic3": {"on_yearly_pulse_country"},
+		"eu5":  {"on_game_start", "yearly_country_pulse"},
+	}
+	for _, gameID := range []string{"ck3", "vic3", "eu5"} {
+		t.Run(gameID, func(t *testing.T) {
+			variable := "PMT_TEST_INSTALL_" + strings.ToUpper(gameID)
+			install := os.Getenv(variable)
+			if install == "" {
+				t.Skipf("%s is not set", variable)
+			}
+			gph := openService(t, gameID, install)
+			filter := gph.Defaults()
+			for _, root := range roots[gameID] {
+				matches := gph.FindRoots(root, 1)
+				if len(matches) != 1 {
+					t.Fatalf("no root %s", root)
+				}
+				started := time.Now()
+				graph, err := gph.BuildGraph(matches[0].ID, filter)
+				if err != nil {
+					t.Fatal(err)
+				}
+				delays := lo.CountBy(graph.Edges, func(edge Edge) bool { return edge.Days != "" })
+				titles := lo.CountBy(graph.Nodes, func(node Node) bool { return node.Title != "" })
+				t.Logf("%s: %d nodes, %d edges, %d with a delay, %d with a title, truncated %v, %s", root,
+					len(graph.Nodes), len(graph.Edges), delays, titles, graph.Truncated, time.Since(started).Round(time.Millisecond))
+				logDetails(t, gph, root, graph)
+			}
+		})
+	}
+}
+
+// logDetails builds the detail of every node of a graph and prints how many have a text, how many references they
+// hold and how many have a background. A detail that is an error fails the test.
+func logDetails(t *testing.T, gph *Service, root string, graph Graph) {
+	t.Helper()
+	started := time.Now()
+	texts, references, backgrounds := 0, 0, 0
+	for _, node := range graph.Nodes {
+		detail, err := gph.BuildDetail(node.ID)
+		if err != nil {
+			t.Fatalf("detail of %s: %v", node.ID, err)
+		}
+		texts += lo.Ternary(detail.Text != "", 1, 0)
+		references += len(detail.References)
+		backgrounds += lo.Ternary(detail.Background != "", 1, 0)
+	}
+	t.Logf("%s: details of %d nodes, %d with a text, %d references, %d with a background, %s", root, len(graph.Nodes),
+		texts, references, backgrounds, time.Since(started).Round(time.Millisecond))
+}
+
+// hasEdges reports whether a list holds exactly the wanted edges, in any order.
+func hasEdges(got, want []Edge) bool {
+	keys := func(edges []Edge) []string {
+		list := lo.Map(edges, func(edge Edge, _ int) string { return toKey(edge) })
+		slices.Sort(list)
+		return list
+	}
+	return slices.Equal(keys(got), keys(want))
+}

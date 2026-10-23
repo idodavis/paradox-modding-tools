@@ -4,6 +4,7 @@
 package schema
 
 import (
+	"fmt"
 	"maps"
 	"path"
 	"path/filepath"
@@ -89,14 +90,24 @@ type Field struct {
 
 // A Command is one effect, trigger or link the dumps declare.
 type Command struct {
-	Declared  []string // what declares it: game.DeclaredEffect, DeclaredTrigger, DeclaredLink, in dump order
-	Scopes    []string // the scopes it runs in; empty for any
-	Target    string   // the scope a link leads to; "" for none
-	Arguments *Field   // the keys it takes, as fields
-	Blurb     string
-	Global    bool // a link that reads the same from any scope
-	Wild      bool // a link that is a pattern, so it is never matched by a written name
-	Lists     bool // it iterates a list and has no target, so the scope inside its block is unknown
+	Declared      []string // what declares it: game.DeclaredEffect, DeclaredTrigger, DeclaredLink, in dump order
+	Scopes        []string // the scopes it runs in; empty for any
+	Target        string   // the scope a link leads to; "" for none
+	Arguments     *Field   // the keys it takes, as fields
+	Blurb         string
+	Usage         string    // the dump's usage lines, the forms it is written in; "" if the dump gives none
+	Examples      []Example // the first places the game's own files write it, by path and then line
+	VanillaScopes []string  // the scopes the game's own files run it in, sorted
+	Global        bool      // a link that reads the same from any scope
+	Wild          bool      // a link that is a pattern, so it is never matched by a written name
+	Lists         bool      // it iterates a list and has no target, so the scope inside its block is unknown
+}
+
+// An Example is one place where the game's own files write a command or call a data function: the file's path and
+// the line, counted from zero.
+type Example struct {
+	Path string
+	Line int
 }
 
 // A Database is one database of the game: the field tree of its definitions and the game's rows that govern it.
@@ -108,6 +119,7 @@ type Database struct {
 	Callable   game.Callable   // the words that call its definitions; zero when nothing calls them
 	Precedence game.Precedence // how several definitions of one name combine
 	Documented map[string]bool // every key the docs mention for its definitions
+	Count      int             // the distinct names vanilla defines in it
 }
 
 // A ScopeType is one kind of scope the game runs script in, and what script can do there.
@@ -124,7 +136,10 @@ type DataFunction struct {
 	Returns   string
 	Arguments []string
 	Blurb     string
-	Expansion string // a data binding macro's text, its parameters as Arguments names them; "" for a function the game has itself
+	// Expansion is a data binding macro's text, its parameters as Arguments names them, or "" for a function the game
+	// has itself.
+	Expansion string
+	Examples  []Example // the first places the game's own files call it, by path and then line
 }
 
 // A DataType is one type of the data binding language, with its functions.
@@ -269,14 +284,14 @@ func listFolders(row *game.Game, vanilla []string) []string {
 // folder of a DLC cut off. It returns false for a path under no root.
 func trimScriptRoot(file string) (string, bool) {
 	slashed := filepath.ToSlash(file)
-	cut, width := -1, 0
+	cut, width := len(slashed), 0
 	for _, root := range game.InstallRoots {
 		marker := "/" + root + "/"
-		if at := strings.Index(slashed, marker); at >= 0 && (cut < 0 || at < cut) {
+		if at := strings.Index(slashed, marker); at >= 0 && at < cut {
 			cut, width = at, len(marker)
 		}
 	}
-	if cut < 0 {
+	if width == 0 {
 		return "", false
 	}
 	rel := slashed[cut+width:]
@@ -297,6 +312,15 @@ func SplitStage(row *game.Game, rel string) (stage, rest string) {
 		return stage, rest
 	}
 	return "", rel
+}
+
+// IsLocReplacement reports whether a file, given by its path from its root, sits in a folder whose localization
+// overrides every other file's in the given language.
+func IsLocReplacement(row *game.Game, rel, language string) bool {
+	_, rel = SplitStage(row, rel)
+	return slices.ContainsFunc(game.LocReplaceFolders, func(folder string) bool {
+		return strings.HasPrefix(rel, fmt.Sprintf(folder, language)+"/")
+	})
 }
 
 // findFolder returns the folder of the database that a script file belongs to: the file itself if a row names it,
@@ -413,6 +437,20 @@ func (schema *Schema) FindDatabaseByClass(class string) (*Database, bool) {
 	return database, ok && database != nil
 }
 
+// IsSmaller reports whether one database defines fewer names in vanilla than another, or as many and comes first
+// by name. A database that copies the names of several others, such as their icons, is larger than each one it
+// copies. A database the schema does not have counts as empty.
+func (schema *Schema) IsSmaller(database, other string) bool {
+	count := func(name string) int {
+		if found := schema.Databases[name]; found != nil {
+			return found.Count
+		}
+		return 0
+	}
+	size, otherSize := count(database), count(other)
+	return size < otherSize || size == otherSize && database < other
+}
+
 // ResolveLink returns the scope that a link leads to when followed from a given scope. It returns false if the
 // link is unknown or leads nowhere.
 func (schema *Schema) ResolveLink(link, scope string) (string, bool) {
@@ -429,20 +467,89 @@ func (schema *Schema) ResolveLink(link, scope string) (string, bool) {
 // ResolveCallTypes returns the type that each step of a data call leads to, starting from the block's data
 // context. A step no dump declares gets "", and the steps after it are left out.
 func (schema *Schema) ResolveCallTypes(call jomini.Call, datacontext string) []string {
-	var types []string
+	owners := schema.listCallOwners(call, datacontext)
+	types := make([]string, len(owners))
+	for i, owner := range owners {
+		types[i] = schema.DataTypes[owner].Functions[call.Steps[i].Text].Returns
+	}
+	return types
+}
+
+// listCallOwners returns, for each step of a data call, the data type that declares the function the step calls,
+// starting from the given data context. A step no dump declares gets "", and the steps after it are left out.
+func (schema *Schema) listCallOwners(call jomini.Call, datacontext string) []string {
+	var owners []string
 	current := datacontext
 	for i, step := range call.Steps {
 		function, ok := schema.DataTypes[current].Functions[step.Text]
+		// the first step is looked up on the global type when the data context has no such function
 		if !ok && i == 0 {
-			function, ok = schema.DataTypes[game.GlobalType].Functions[step.Text]
+			current = game.GlobalType
+			function, ok = schema.DataTypes[current].Functions[step.Text]
 		}
 		if !ok {
-			return append(types, "")
+			return append(owners, "")
 		}
+		owners = append(owners, current)
 		current = function.Returns
-		types = append(types, current)
 	}
-	return types
+	return owners
+}
+
+// ResolveMacro returns the call that a data call stands for. A call that opens with one of the game's data binding
+// macros is the macro's text with each parameter replaced by the argument written for it, followed by the rest of
+// the call. Any other call is itself. What the macro writes itself has no place in the file, so its spans are empty.
+func (schema *Schema) ResolveMacro(call jomini.Call, datacontext string) jomini.Call {
+	first := call.Steps[0]
+	function := schema.DataTypes[game.GlobalType].Functions[first.Text]
+	_, own := schema.DataTypes[datacontext].Functions[first.Text]
+	expansion, ok := jomini.ParseCall(function.Expansion, 0)
+	if own || !ok {
+		return call
+	}
+	given := map[string]jomini.Argument{}
+	for i, parameter := range function.Arguments {
+		if i < len(first.Arguments) {
+			given[parameter] = first.Arguments[i]
+		}
+	}
+	expanded := jomini.SubstituteCall(expansion, given)
+	expanded.Steps = append(expanded.Steps, call.Steps[1:]...)
+	expanded.Span, expanded.Suffix = call.Span, call.Suffix
+	return expanded
+}
+
+// ResolveDatacontext returns the data context type of a GUI block, from the data call its datacontext key writes and
+// the data context of the block that holds it. It returns "" if the dumps do not resolve the call.
+func (schema *Schema) ResolveDatacontext(call jomini.Call, datacontext string) string {
+	types := schema.ResolveCallTypes(schema.ResolveMacro(call, datacontext), datacontext)
+	if len(types) == 0 {
+		return ""
+	}
+	return types[len(types)-1]
+}
+
+// ListCallReferences returns the names that the quoted arguments of a data call refer to. A step the game answers
+// from a database names it; any other names the database that holds the type the step returns, else none.
+func (schema *Schema) ListCallReferences(call jomini.Call, datacontext string) []Reference {
+	var references []Reference
+	call = schema.ResolveMacro(call, datacontext)
+	types := schema.ResolveCallTypes(call, datacontext)
+	for i, step := range call.Steps {
+		database := game.GUI.Answered[step.Text]
+		if database == "" && i < len(types) && types[i] != "" {
+			database, _ = schema.ResolveTypeDatabase(types[i])
+		}
+		for _, argument := range step.Arguments {
+			if argument.Call != nil {
+				references = append(references, schema.ListCallReferences(*argument.Call, "")...)
+			}
+			if argument.Quoted && !argument.Span.IsEmpty() {
+				references = append(references, Reference{Database: database, Name: argument.Text, Span: argument.Span})
+			}
+		}
+	}
+	return references
 }
 
 // ResolveTypeDatabase returns the database that holds the names of a data type: the one named in the singular by the
@@ -486,15 +593,15 @@ func (schema *Schema) MatchValue(expected Expected, text string) bool {
 		return jomini.IsIdentifier(unquoted)
 	case ValueColor:
 		tree := jomini.Parse("color = " + text)
-		_, _, ok := jomini.ColorParts(tree, 0)
-		return len(tree.Statements) > 0 && ok
+		_, _, ok := jomini.ColorParts(tree, 1)
+		return len(tree.Statements) > 1 && ok
 	case ValueText:
 		return text != unquoted || jomini.IsIdentifier(text)
 	case ValueBlock:
 		return strings.Contains(text, "{")
 	case ValueCall:
-		_, ok := jomini.ParseCall(strings.TrimSuffix(strings.TrimPrefix(unquoted, "["), "]"), 0)
-		return ok && strings.HasPrefix(unquoted, "[")
+		_, ok := jomini.ParseBracketed(unquoted, 0)
+		return ok
 	}
 	return true
 }

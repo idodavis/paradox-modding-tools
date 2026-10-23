@@ -10,6 +10,10 @@ import * as workspace$0 from "../workspace/models.js";
  */
 export interface Example {
     "place": workspace$0.Place;
+
+    /**
+     * counted from one
+     */
     "line": number;
 }
 

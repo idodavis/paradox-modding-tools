@@ -12,6 +12,8 @@ import (
 	"strconv"
 	"strings"
 	"time"
+
+	"paradox-modding-tools/internal/files"
 )
 
 // A DetectedInstall is an install found under a Steam library, with its version.
@@ -61,7 +63,7 @@ func FindInstalls(gameID string) []DetectedInstall {
 			continue
 		}
 		path := filepath.Join(library, "steamapps", "common", string(match[1]))
-		if !dirExists(path) {
+		if !files.IsFolder(path) {
 			continue
 		}
 		out = append(out, DetectedInstall{
@@ -204,7 +206,7 @@ func FindDumpDirs(gameID, installPath string) []string {
 func FindUserDataDir(gameID, installPath string) string {
 	candidates := listUserDataCandidates(gameID, installPath)
 	for _, candidate := range candidates {
-		if dirExists(candidate) {
+		if files.IsFolder(candidate) {
 			return candidate
 		}
 	}
@@ -347,10 +349,4 @@ func findNewestFile(dir string) time.Time {
 		}
 	}
 	return newest
-}
-
-// dirExists reports whether a path is a folder.
-func dirExists(path string) bool {
-	stat, err := os.Stat(path)
-	return err == nil && stat.IsDir()
 }

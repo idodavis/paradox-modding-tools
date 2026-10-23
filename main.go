@@ -60,7 +60,7 @@ func main() {
 			application.NewServiceWithOptions(wsp, application.ServiceOptions{Route: "/files"}),
 			application.NewService(editor),
 			application.NewService(&draw.Service{Workspace: wsp}),
-			application.NewService(&health.Service{Workspace: wsp, Editor: editor}),
+			application.NewService(&health.Service{Workspace: wsp}),
 			application.NewService(&graph.Service{Workspace: wsp}),
 			application.NewService(&search.Service{Workspace: wsp}),
 			application.NewService(&wiki.Service{Config: config, Workspace: wsp}),

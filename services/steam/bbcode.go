@@ -1,13 +1,166 @@
 package steam
 
-import "github.com/yuin/goldmark/renderer"
+import (
+	"bufio"
+	"bytes"
+	"html"
+	"strings"
 
-// ToBBCode converts a Markdown description to Steam's BBCode.
-func ToBBCode(markdown string) string { panic("stub") }
+	"github.com/yuin/goldmark"
+	"github.com/yuin/goldmark/ast"
+	"github.com/yuin/goldmark/extension"
+	extast "github.com/yuin/goldmark/extension/ast"
+	"github.com/yuin/goldmark/renderer"
+	goldhtml "github.com/yuin/goldmark/renderer/html"
+	"github.com/yuin/goldmark/util"
+)
 
 // A bbcodeRenderer renders goldmark's syntax tree as BBCode: headings, emphasis, lists, links, images, code,
 // quotes and rules, each as Steam writes it.
 type bbcodeRenderer struct{}
 
+// converter reads Markdown with tables and strikethrough and writes it as BBCode.
+var converter = goldmark.New(
+	goldmark.WithExtensions(extension.Table, extension.Strikethrough),
+	goldmark.WithRenderer(renderer.NewRenderer(renderer.WithNodeRenderers(util.Prioritized(bbcodeRenderer{}, 1)))),
+)
+
+// bbcodeTags holds, for each kind of node that is written as a pair of tags, its rows of opening and closing tag.
+// The row is chosen by selectTags, and is the first where a kind has one. A node that holds children has them
+// written between the tags, and one that is written whole (a rule, a picture, an address, code) has its content
+// written between them instead. A link's opening tag is followed by its destination and a closing bracket. A kind
+// with no row writes nothing of its own, so raw HTML is dropped.
+var bbcodeTags = map[ast.NodeKind][][2]string{
+	ast.KindHeading:          {{"[h1]", "[/h1]\n\n"}, {"[h2]", "[/h2]\n\n"}, {"[h3]", "[/h3]\n\n"}},
+	ast.KindBlockquote:       {{"[quote]", "[/quote]\n\n"}},
+	ast.KindList:             {{"[list]\n", "[/list]\n\n"}, {"[olist]\n", "[/olist]\n\n"}, {"[list]\n", "[/list]\n"}, {"[olist]\n", "[/olist]\n"}},
+	ast.KindListItem:         {{"[*] ", ""}},
+	ast.KindParagraph:        {{"", "\n\n"}},
+	ast.KindTextBlock:        {{"", "\n"}},
+	ast.KindCodeSpan:         {{"[code]", "[/code]"}},
+	ast.KindEmphasis:         {{"[i]", "[/i]"}, {"[b]", "[/b]"}},
+	ast.KindLink:             {{"[url=", "[/url]"}},
+	extast.KindStrikethrough: {{"[strike]", "[/strike]"}},
+	extast.KindTable:         {{"[table]\n", "[/table]\n\n"}},
+	extast.KindTableHeader:   {{"[tr]", "[/tr]\n"}},
+	extast.KindTableRow:      {{"[tr]", "[/tr]\n"}},
+	extast.KindTableCell:     {{"[td]", "[/td]"}, {"[th]", "[/th]"}},
+	ast.KindThematicBreak:    {{"[hr][/hr]\n\n", ""}},
+	ast.KindImage:            {{"[img]", "[/img]"}},
+	ast.KindAutoLink:         {{"[url]", "[/url]"}},
+	ast.KindCodeBlock:        {{"[code]\n", "\n[/code]\n\n"}},
+	ast.KindFencedCodeBlock:  {{"[code]\n", "\n[/code]\n\n"}},
+}
+
+// toBBCode converts a Markdown description to Steam's BBCode.
+func toBBCode(markdown string) string {
+	var bbcode strings.Builder
+	// writing to a Builder never fails, and the renderers fail only when their writer does
+	_ = converter.Convert([]byte(markdown), &bbcode)
+	return strings.TrimSpace(bbcode.String())
+}
+
 // RegisterFuncs registers one render function per node kind goldmark produces.
-func (bbcodeRenderer) RegisterFuncs(registerer renderer.NodeRendererFuncRegisterer) { panic("stub") }
+func (bbcodeRenderer) RegisterFuncs(registerer renderer.NodeRendererFuncRegisterer) {
+	for kind := range bbcodeTags {
+		registerer.Register(kind, writeNode)
+	}
+	registerer.Register(ast.KindText, writeText)
+	registerer.Register(ast.KindString, writeText)
+}
+
+// writeNode writes the opening tag of a node as the walk enters it and the closing tag as it leaves. A node that is
+// written whole has its content between the tags, and its children are skipped.
+func writeNode(writer util.BufWriter, source []byte, node ast.Node, entering bool) (ast.WalkStatus, error) {
+	tags := bbcodeTags[node.Kind()][selectTags(node)]
+	if content, whole := resolveContent(node, source); whole {
+		if !entering {
+			return ast.WalkContinue, nil
+		}
+		_, err := writer.WriteString(tags[0] + content + tags[1])
+		return ast.WalkSkipChildren, err
+	}
+	tag := tags[1]
+	if entering {
+		tag = tags[0]
+		if link, ok := node.(*ast.Link); ok {
+			tag += string(link.Destination) + "]"
+		}
+	}
+	_, err := writer.WriteString(tag)
+	return ast.WalkContinue, err
+}
+
+// selectTags returns which row of its kind's tags a node is written with: a heading's level, whether a list is
+// ordered and whether it sits in another, an emphasis's strength and whether a cell is in the table's header.
+func selectTags(node ast.Node) int {
+	switch node := node.(type) {
+	case *ast.Heading:
+		return min(node.Level, 3) - 1
+	case *ast.List:
+		row := 0
+		if node.IsOrdered() {
+			row = 1
+		}
+		if node.Parent().Kind() == ast.KindListItem {
+			row += 2
+		}
+		return row
+	case *ast.Emphasis:
+		return min(node.Level, 2) - 1
+	case *extast.TableCell:
+		if node.Parent().Kind() == extast.KindTableHeader {
+			return 1
+		}
+	}
+	return 0
+}
+
+// resolveContent returns what a node that is written whole holds, and false for a node that is not: a picture's
+// and an address's links, and the lines of a block of code.
+func resolveContent(node ast.Node, source []byte) (content string, whole bool) {
+	switch node := node.(type) {
+	case *ast.ThematicBreak:
+		return "", true
+	case *ast.Image:
+		return string(node.Destination), true
+	case *ast.AutoLink:
+		return string(node.URL(source)), true
+	case *ast.CodeBlock, *ast.FencedCodeBlock:
+		return strings.TrimSuffix(string(node.Lines().Value(source)), "\n"), true
+	}
+	return "", false
+}
+
+// writeText writes the text of a node. Outside code, Markdown's backslash escapes and entity references are
+// resolved, as goldmark's HTML writer does. A line break inside a paragraph is written as a new line.
+func writeText(writer util.BufWriter, source []byte, node ast.Node, entering bool) (ast.WalkStatus, error) {
+	if !entering {
+		return ast.WalkContinue, nil
+	}
+	var err error
+	switch node := node.(type) {
+	case *ast.Text:
+		text := node.Segment.Value(source)
+		if node.Parent().Kind() != ast.KindCodeSpan {
+			text = resolveEscapes(text)
+		}
+		_, err = writer.Write(text)
+		if err == nil && (node.SoftLineBreak() || node.HardLineBreak()) {
+			err = writer.WriteByte('\n')
+		}
+	case *ast.String:
+		_, err = writer.Write(node.Value)
+	}
+	return ast.WalkContinue, err
+}
+
+// resolveEscapes returns Markdown text with its backslash escapes and entity references resolved to the characters
+// they stand for.
+func resolveEscapes(text []byte) []byte {
+	var resolved bytes.Buffer
+	writer := bufio.NewWriter(&resolved)
+	goldhtml.DefaultWriter.Write(writer, text)
+	_ = writer.Flush()
+	return []byte(html.UnescapeString(resolved.String()))
+}

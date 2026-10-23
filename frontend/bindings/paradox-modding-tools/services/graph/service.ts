@@ -32,8 +32,8 @@ export function BuildGraph(root: string, filter: $models.Filter): $CancellablePr
 }
 
 /**
- * Defaults returns the filter the page opens with: events, on_actions, decisions and scripted effects, every mod,
- * three steps deep, two hundred nodes, scripted effects followed.
+ * Defaults returns the filter the page opens with: events, on_actions, decisions and scripted effects, the game and
+ * every mod, three steps deep, two hundred nodes, scripted effects followed.
  */
 export function Defaults(): $CancellablePromise<$models.Filter> {
     return $Call.ByID(3340937252);

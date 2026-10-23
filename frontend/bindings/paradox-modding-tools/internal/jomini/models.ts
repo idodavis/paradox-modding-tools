@@ -9,11 +9,3 @@ export interface Date {
     "month": number;
     "day": number;
 }
-
-/**
- * A Span is a half-open range of byte offsets into a text: Start is the first byte and End is one past the last.
- */
-export interface Span {
-    "start": number;
-    "end": number;
-}

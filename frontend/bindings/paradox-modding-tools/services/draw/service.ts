@@ -20,11 +20,11 @@ import * as lsp$0 from "../lsp/models.js";
 import * as $models from "./models.js";
 
 /**
- * AddLayer inserts a new layer into a coat after the given layer, or first if the index is -1, and returns the
+ * AddLayer inserts a new layer into a coat at the given position among its layers, 0 being first, and returns the
  * edits that do it. The new layer is the game's template for that role.
  */
-export function AddLayer(path: string, coat: string, role: string, after: number): $CancellablePromise<lsp$0.Edit[] | null> {
-    return $Call.ByID(1704294882, path, coat, role, after);
+export function AddLayer(path: string, coat: string, role: string, position: number): $CancellablePromise<lsp$0.Edit[] | null> {
+    return $Call.ByID(1704294882, path, coat, role, position);
 }
 
 /**
@@ -35,12 +35,13 @@ export function CreateCoatFile(modID: string, name: string): $CancellablePromise
 }
 
 /**
- * EditProperty changes one property of a widget and returns the edits that make the change. If the widget
- * already sets the property, the edit replaces its value. Otherwise the edit adds the property at the end of the
- * widget's block.
+ * EditProperty changes one property of a block and returns the edits that make the change. The block is a widget's,
+ * a coat's, a layer's or an instance's, given by the file that writes it and its range, as the payload has them.
+ * If the block already sets the property, the edit replaces its value. Otherwise the edit adds the property at the
+ * end of the block. It returns an error if no block starts where the range does.
  */
-export function EditProperty(path: string, widget: number, key: string, value: string): $CancellablePromise<lsp$0.Edit[] | null> {
-    return $Call.ByID(4094060315, path, widget, key, value);
+export function EditProperty(path: string, block: lsp$0.Range, key: string, value: string): $CancellablePromise<lsp$0.Edit[] | null> {
+    return $Call.ByID(4094060315, path, block, key, value);
 }
 
 /**
@@ -97,8 +98,9 @@ export function RemoveLayer(path: string, coat: string, layer: number): $Cancell
 
 /**
  * ResolveCoat resolves one coat of arms in a file into its layers. When a layer's value is a `list "x"`, the
- * option drawn is the one picked for that layer and key, or the heaviest option in the list if nothing was picked.
- * It returns an error if the file is not in the workspace or does not define the coat.
+ * option drawn is the one picked for that list, by the ID of its group in the layer's lists, or the heaviest
+ * option in the list if nothing was picked. It returns an error if the file is not in the workspace or does not
+ * define the coat.
  */
 export function ResolveCoat(path: string, name: string, picks: { [_ in string]?: string } | null): $CancellablePromise<$models.Coat> {
     return $Call.ByID(1245723553, path, name, picks);
@@ -119,12 +121,4 @@ export function ResolveWindow(path: string, name: string): $CancellablePromise<$
  */
 export function Reveal(path: string, name: string, widget: number): $CancellablePromise<{ [_ in string]?: string } | null> {
     return $Call.ByID(3826975671, path, name, widget);
-}
-
-/**
- * SetLayerValue sets one key of a layer and returns the edits that do it. The key can be the texture, a color, or
- * an instance's position, scale, rotation or depth. If the layer does not set the key yet, the edit adds it.
- */
-export function SetLayerValue(path: string, coat: string, layer: number, key: string, value: string): $CancellablePromise<lsp$0.Edit[] | null> {
-    return $Call.ByID(4191070484, path, coat, layer, key, value);
 }

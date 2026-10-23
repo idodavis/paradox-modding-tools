@@ -215,8 +215,8 @@ export function UpdateWorkspace(ws: app$0.Workspace): $CancellablePromise<void> 
 }
 
 /**
- * Write writes a file's text in its encoding. The write is atomic. The watcher sends fs:changed once the index
- * has the new text.
+ * Write writes a file's text in its encoding, after making the folder the file sits in. The write is atomic. The
+ * watcher sends fs:changed once the index has the new text.
  */
 export function Write(path: string, text: files$0.Text): $CancellablePromise<void> {
     return $Call.ByID(3195239336, path, text);

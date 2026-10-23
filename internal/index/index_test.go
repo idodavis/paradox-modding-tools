@@ -124,14 +124,14 @@ func TestScanFixtureIndexesFiles(t *testing.T) {
 // TestResolveReferenceFindsDefinition checks that a reference to an event resolves to the event's definition, with
 // its database written and without, and that an unknown name resolves to nothing.
 func TestResolveReferenceFindsDefinition(t *testing.T) {
-	_, scanned := scanFixture(t)
+	built, scanned := scanFixture(t)
 	for _, database := range []string{"events", ""} {
-		sites := scanned.Resolve(schema.Reference{Database: database, Name: "v.2"}, 0)
+		sites := scanned.Resolve(built, schema.Reference{Database: database, Name: "v.2"})
 		if len(sites) != 1 || scanned.File(sites[0]).Rel != "events/v_events.txt" {
 			t.Errorf("v.2 in %q: %v", database, sites)
 		}
 	}
-	if sites := scanned.Resolve(schema.Reference{Database: "events", Name: "v.404"}, 0); len(sites) != 0 {
+	if sites := scanned.Resolve(built, schema.Reference{Database: "events", Name: "v.404"}); len(sites) != 0 {
 		t.Errorf("v.404: %v", sites)
 	}
 }
@@ -246,18 +246,20 @@ func scanFixtureMods(t *testing.T) (*schema.Schema, *Index, *Index) {
 // findDefinition returns the site of the definition with the given name in a database.
 func findDefinition(t *testing.T, index *Index, database, name string) Site {
 	t.Helper()
-	sites := index.Resolve(schema.Reference{Database: database, Name: name}, 0)
-	if len(sites) == 0 {
-		t.Fatalf("no %s %s", database, name)
+	for _, site := range index.ListDefinitions(database) {
+		if index.ToReference(site).Name == name {
+			return site
+		}
 	}
-	return sites[0]
+	t.Fatalf("no %s %s", database, name)
+	return Site{}
 }
 
 // TestFindWinnerKeepsByPrecedence checks the definition kept of a trait that the install and the mod both define:
 // the last or the first loaded by file name, the highest priority, and an entry mode.
 func TestFindWinnerKeepsByPrecedence(t *testing.T) {
-	_, install, mods := scanFixtureMods(t)
-	sites := mods.Resolve(schema.Reference{Database: "traits", Name: "brave"}, 0)
+	built, install, mods := scanFixtureMods(t)
+	sites := mods.Resolve(built, schema.Reference{Database: "traits", Name: "brave"})
 	if len(sites) != 2 || mods.File(sites[0]).Rel != "common/traits/v_traits.txt" ||
 		mods.File(sites[1]).Rel != "common/traits/m_traits.txt" {
 		t.Fatalf("brave is defined at %v", sites)

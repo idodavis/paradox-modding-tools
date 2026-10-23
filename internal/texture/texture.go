@@ -92,9 +92,10 @@ func Decode(file []byte) (image.Image, error) {
 }
 
 // Resolve finds the file that a path written in script names. It tries the path as written, then with each image
-// extension the game accepts in place of the written one. The lookup function says whether a relative path exists
-// in the workspace and where.
+// extension the game accepts in place of the written one. A leading slash is ignored. The lookup function says
+// whether a relative path exists in the workspace and where.
 func Resolve(written string, lookup func(rel string) (path string, ok bool)) (path string, ok bool) {
+	written = strings.TrimPrefix(written, "/")
 	if path, ok = lookup(written); ok {
 		return path, true
 	}

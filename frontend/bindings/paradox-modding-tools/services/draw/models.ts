@@ -6,21 +6,18 @@
 import * as game$0 from "../../internal/game/models.js";
 // eslint-disable-next-line @typescript-eslint/ban-ts-comment
 // @ts-ignore: Unused imports
-import * as jomini$0 from "../../internal/jomini/models.js";
+import * as lsp$0 from "../lsp/models.js";
 // eslint-disable-next-line @typescript-eslint/ban-ts-comment
 // @ts-ignore: Unused imports
 import * as workspace$0 from "../workspace/models.js";
 
 /**
- * A Coat is a coat of arms resolved for drawing: its layers, and its frame and mask after the game's override
- * settings are applied.
+ * A Coat is a coat of arms resolved for drawing, as its layers.
  */
 export interface Coat {
     "name": string;
     "layers": Layer[] | null;
-    "frame": string;
-    "mask": string;
-    "span": jomini$0.Span;
+    "range": lsp$0.Range;
     "place": workspace$0.Place;
 }
 
@@ -31,19 +28,23 @@ export interface Coat {
 export interface Drawable {
     "name": string;
     "database": string;
-    "span": jomini$0.Span;
-    "line": number;
+    "range": lsp$0.Range;
 }
 
 /**
- * A Group is one set of conditions the toolbar lets the user switch: the data call the conditions read, the
- * values it can take, and the value currently picked.
+ * A Group is one choice the page lets the user switch, with the values it can take and the one picked: the data
+ * call that a window's conditions read, or the template list a coat's value is drawn from.
  */
 export interface Group {
     "id": string;
     "label": string;
     "options": string[] | null;
     "picked": string;
+
+    /**
+     * the database whose definitions it offers; "" for any other group
+     */
+    "database"?: string;
 }
 
 /**
@@ -54,7 +55,7 @@ export interface Instance {
     "scale": number[];
     "rotation": number;
     "depth": number;
-    "span": jomini$0.Span;
+    "range": lsp$0.Range;
 }
 
 /**
@@ -63,7 +64,7 @@ export interface Instance {
  */
 export interface Layer {
     /**
-     * "pattern", "emblem" or "sub"
+     * the key as written: "pattern", "colored_emblem", "textured_emblem" or "sub"
      */
     "role": string;
 
@@ -77,15 +78,20 @@ export interface Layer {
      */
     "path": string;
     "mask": string;
-    "colors": string[] | null;
-    "instances": Instance[] | null;
-    "sub"?: Coat | null;
-    "span": jomini$0.Span;
 
     /**
-     * index of the layer's statement in the file's tree, used by the panel's edits
+     * the pattern's color regions an emblem shows in; none means all of them
      */
-    "statement": number;
+    "regions": number[] | null;
+    "colors": string[] | null;
+
+    /**
+     * the template lists its values are drawn from, each with its options
+     */
+    "lists": Group[] | null;
+    "instances": Instance[] | null;
+    "sub"?: Coat | null;
+    "range": lsp$0.Range;
 }
 
 /**
@@ -97,13 +103,24 @@ export interface NamedColor {
 }
 
 /**
+ * An Overlay is one texture laid over a widget's own, as a modify_texture block writes it.
+ */
+export interface Overlay {
+    /**
+     * the image file found for its texture; "" if none is found
+     */
+    "path": string;
+    "properties": Property[] | null;
+}
+
+/**
  * A Property is one property of a widget. It records the value as written and where it was written, because a
  * template or the widget's type can set a property instead of the widget itself.
  */
 export interface Property {
     "key": string;
     "value": string;
-    "span": jomini$0.Span;
+    "range": lsp$0.Range;
     "place": workspace$0.Place;
 
     /**
@@ -130,7 +147,7 @@ export interface Widget {
     "id": number;
 
     /**
-     * -1 means the window itself
+     * the widget that holds it; the window's own widget is 0, and so is its parent
      */
     "parent": number;
     "name": string;
@@ -152,7 +169,8 @@ export interface Widget {
      * by property key; the image file found for the written path
      */
     "textures": { [_ in string]?: string } | null;
-    "span": jomini$0.Span;
+    "overlays": Overlay[] | null;
+    "range": lsp$0.Range;
     "place": workspace$0.Place;
 }
 

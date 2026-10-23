@@ -11,7 +11,6 @@ export type {
     DLC,
     Details,
     Listing,
-    Localized,
     Preview,
     Progress,
     Rule,

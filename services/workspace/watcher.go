@@ -98,7 +98,7 @@ func (watcher *Watcher) run(change func(path string, deleted bool)) {
 
 // isHiddenFolder reports whether a path is a folder that nothing lists or watches.
 func isHiddenFolder(path string) bool {
-	return isFolder(path) && files.IsHiddenDir(filepath.Base(path))
+	return files.IsFolder(path) && files.IsHiddenDir(filepath.Base(path))
 }
 
 // Close stops the watcher.

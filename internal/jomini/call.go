@@ -31,6 +31,18 @@ type Argument struct {
 	Call   *Call  `json:"call,omitempty"`
 }
 
+// ParseBracketed reads a data call written between brackets, as a value writes one. The second argument is the
+// offset of the text's first byte in its file, so the spans come out in the file's offsets. It returns false if the
+// text does not open with [ and close with ], or if what is between them is not a call.
+func ParseBracketed(text string, base int) (Call, bool) {
+	inner, opens := strings.CutPrefix(text, "[")
+	inner, closes := strings.CutSuffix(inner, "]")
+	if !opens || !closes {
+		return Call{}, false
+	}
+	return ParseCall(inner, base+1)
+}
+
 // ParseCall reads the text of one data call, given without its brackets. The second argument is the offset of the
 // text's first byte in its file, so the spans come out in the file's offsets. It returns false if the text is not
 // a call.

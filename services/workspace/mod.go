@@ -153,7 +153,7 @@ func resolveDescriptor(row *game.Game, dir string) (file string, metadata bool) 
 func parseDescriptorScript(text string) Descriptor {
 	tree := jomini.Parse(text)
 	var descriptor Descriptor
-	for statement := range tree.Children(-1) {
+	for statement := range tree.Children(0) {
 		current := tree.Statements[statement]
 		value := tree.Unquoted(current.Value)
 		switch tree.Text(current.Key) {
@@ -225,7 +225,7 @@ func encodeDescriptorScript(existing string, descriptor Descriptor) string {
 		text.WriteString("}\n")
 	}
 	tree := jomini.Parse(existing)
-	for statement := range tree.Children(-1) {
+	for statement := range tree.Children(0) {
 		current := tree.Statements[statement]
 		if !slices.Contains(scriptKeys, tree.Text(current.Key)) {
 			text.WriteString(tree.Text(current.Span) + "\n")

@@ -31,13 +31,6 @@ export function CompareUpload(modID: string): $CancellablePromise<$models.Compar
 }
 
 /**
- * ConvertToBBCode converts Markdown to BBCode, for the Paradox Mods copy.
- */
-export function ConvertToBBCode(markdown: string): $CancellablePromise<string> {
-    return $Call.ByID(439498545, markdown);
-}
-
-/**
  * CreateDescriptionFile creates a mod's description file in the given source format, markdown or bbcode, if the
  * mod has none yet.
  */
@@ -46,7 +39,8 @@ export function CreateDescriptionFile(modID: string, source: string): $Cancellab
 }
 
 /**
- * ListDLC returns the DLCs the open workspace's install ships, from the descriptors in its dlc folder.
+ * ListDLC returns the DLCs the open workspace's install ships that Steam knows by an id, read from the descriptor in
+ * each DLC folder.
  */
 export function ListDLC(): $CancellablePromise<$models.DLC[] | null> {
     return $Call.ByID(2231577319);
@@ -67,19 +61,21 @@ export function ListTags(): $CancellablePromise<string[] | null> {
 }
 
 /**
- * ListUpload returns the files a mod's next upload sends: the mod's files except dotfiles, the metadata folder,
- * the previews and whatever the mod's exclusions cover.
+ * ListUpload returns the files a mod's next upload sends: the mod's files except dotfiles, dot folders other than
+ * .metadata, which holds Vic3's and EU5's descriptor, the previews and whatever the mod's exclusions cover.
  */
 export function ListUpload(modID: string): $CancellablePromise<$models.Upload> {
     return $Call.ByID(2971639899, modID);
 }
 
 /**
- * Publish uploads a mod to the Workshop in a second copy of the app. The steam:progress event reports until it
- * ends. For a mod with no item yet, the new item's id is written to the mod's record.
+ * Publish uploads a mod to the Workshop in a second copy of the app, with the visibility chosen for this upload:
+ * private, friends, public or unlisted, or "" to keep the item's own. The steam:progress event reports each stage,
+ * and it returns when the upload ends. For a mod with no item yet, the new item's id is written to the mod's
+ * record.
  */
-export function Publish(modID: string): $CancellablePromise<void> {
-    return $Call.ByID(2971821953, modID);
+export function Publish(modID: string, visibility: string): $CancellablePromise<void> {
+    return $Call.ByID(2971821953, modID, visibility);
 }
 
 /**

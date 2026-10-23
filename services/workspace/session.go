@@ -8,7 +8,6 @@ import (
 	"os"
 	"path/filepath"
 	"slices"
-	"strings"
 	"sync"
 	"sync/atomic"
 
@@ -47,12 +46,6 @@ type Session struct {
 	trees    *lru.Cache[string, *jomini.Tree]
 	watcher  *Watcher
 	caches   string // the folder the install's schema and index were loaded from or saved in
-}
-
-// A statementFinder is the walk's visitor that keeps the statement that writes one definition.
-type statementFinder struct {
-	span      jomini.Span
-	statement int32
 }
 
 // The names of the two caches in the caches' folder.
@@ -168,17 +161,11 @@ func (ws *Session) loadSchema(installPath string, progress func(stage string)) e
 func listInstallRoots(installPath string) []files.Root {
 	var roots []files.Root
 	for _, folder := range game.InstallRoots {
-		if dir := filepath.Join(installPath, folder); isFolder(dir) {
+		if dir := filepath.Join(installPath, folder); files.IsFolder(dir) {
 			roots = append(roots, files.Root{Dir: dir, Origin: game.OriginVanilla})
 		}
 	}
 	return roots
-}
-
-// isFolder reports whether a path is an existing folder.
-func isFolder(path string) bool {
-	stat, err := os.Stat(path)
-	return err == nil && stat.IsDir()
 }
 
 // parseFile reads a file and parses it as Paradox script.
@@ -237,26 +224,41 @@ func deleteOlderCaches(folder string) {
 // scanMods sets the session's mods from the workspace's records and scans them on top of the install. A mod whose
 // folder is missing is broken and is not scanned. A mod whose descriptor cannot be read is scanned with an empty one.
 func (ws *Session) scanMods(records []app.Mod, progress func(stage string)) error {
-	var roots []files.Root
-	var replaced [][]string
 	for _, record := range records {
 		mod := Mod{Mod: record}
-		if isFolder(record.Dir) {
+		if files.IsFolder(record.Dir) {
 			mod.Descriptor, _ = ReadDescriptor(ws.Game, record.Dir)
-			roots = append(roots, files.Root{Dir: record.Dir, Origin: record.ID})
-			replaced = append(replaced, mod.Descriptor.ReplacePaths)
 		} else {
 			mod.Broken = true
 		}
 		ws.Order = append(ws.Order, mod)
 	}
 	progress("mods")
-	mods, err := index.ScanMods(ws.Game, ws.Schema, ws.Install, roots, replaced)
+	mods, err := ws.ScanOrder(lo.Map(records, func(record app.Mod, _ int) string { return record.ID }))
 	if err != nil {
 		return err
 	}
 	ws.Mods.Store(mods)
 	return nil
+}
+
+// ScanOrder scans the workspace's mods on top of the install's index as if the game loaded them in the given
+// order, each mod named by its id. The session keeps its own index, so nothing changes for other readers. A broken
+// mod is left out. It returns an error if the ids do not name each of the workspace's mods once.
+func (ws *Session) ScanOrder(modIDs []string) (*index.Index, error) {
+	ordered, err := reorderMods(ws.Order, modIDs, func(mod Mod) string { return mod.ID })
+	if err != nil {
+		return nil, err
+	}
+	var roots []files.Root
+	var replaced [][]string
+	for _, mod := range ordered {
+		if !mod.Broken {
+			roots = append(roots, files.Root{Dir: mod.Dir, Origin: mod.ID})
+			replaced = append(replaced, mod.Descriptor.ReplacePaths)
+		}
+	}
+	return index.ScanMods(ws.Game, ws.Schema, ws.Install, roots, replaced)
 }
 
 // openWatcher starts the session's watcher over the mods' folders. Each change is scanned again, and then reported
@@ -325,37 +327,39 @@ func (ws *Session) CloseBuffer(path string) {
 	delete(ws.buffers, files.ToKey(path))
 }
 
+// LookupBuffer returns the editor's text for an open file. It returns false if the editor does not have the file
+// open.
+func (ws *Session) LookupBuffer(path string) (string, bool) {
+	ws.mu.RLock()
+	defer ws.mu.RUnlock()
+	buffer, open := ws.buffers[files.ToKey(path)]
+	if !open {
+		return "", false
+	}
+	return buffer.Text, true
+}
+
 // LookupText returns the text of a localization key in the session's language, falling back to the base language,
-// together with the message the game keeps: one in a replace folder first, else the first loaded. It returns false
-// if no message has the key.
-func (ws *Session) LookupText(key string) (text string, site index.Site, ok bool) {
-	mods := ws.Mods.Load()
+// together with the message the game keeps in the given index of the mods: one in a replace folder first, else the
+// first loaded. It returns false if no message has the key.
+func (ws *Session) LookupText(mods *index.Index, key string) (text string, site index.Site, ok bool) {
 	messages := mods.ListMessages(key)
 	for _, language := range []string{ws.Language, game.BaseLanguage} {
 		candidates := lo.Filter(messages, func(message index.Site, _ int) bool {
-			return mods.Languages.Texts[mods.Occurrence(message).Language] == language && mods.IsLoaded(message.File)
+			return mods.Language(message) == language && mods.IsLoaded(message.File)
 		})
 		if len(candidates) == 0 {
 			continue
 		}
 		site = candidates[0]
 		if position := slices.IndexFunc(candidates, func(candidate index.Site) bool {
-			return ws.isReplacement(mods.File(candidate).Rel, language)
+			return schema.IsLocReplacement(ws.Game, mods.File(candidate).Rel, language)
 		}); position >= 0 {
 			site = candidates[position]
 		}
 		return findText(mods, site, key, language), site, true
 	}
 	return "", index.Site{}, false
-}
-
-// isReplacement reports whether a file, given by its path from its root, sits in the folder whose messages override
-// every other file's in the given language.
-func (ws *Session) isReplacement(rel, language string) bool {
-	_, rel = schema.SplitStage(ws.Game, rel)
-	return lo.SomeBy(game.LocReplaceFolders, func(folder string) bool {
-		return strings.HasPrefix(rel, fmt.Sprintf(folder, language)+"/")
-	})
 }
 
 // findText returns the text of the message at a site, whose key and language are given. The install keeps the texts
@@ -378,42 +382,56 @@ func findText(mods *index.Index, site index.Site, key, language string) string {
 	return ""
 }
 
-// LookupTitle returns a definition's title: the text of the message whose key is the definition's name, or for a
-// game concept the game's concept prefix followed by the name. It returns "" if there is no such message.
-func (ws *Session) LookupTitle(definition schema.Definition) string {
-	key := definition.Name
-	if definition.Database == ws.Schema.Concepts {
+// LookupTitle returns the title of a definition in the given index of the mods. A definition that writes a title
+// key, as an event does, takes the text of the message that key names. Any other takes the message whose key is its
+// name, or for a game concept the game's concept prefix followed by its name. It returns "" if there is no such
+// message.
+func (ws *Session) LookupTitle(mods *index.Index, site index.Site) string {
+	if key, ok := ws.FindTitleKey(mods, site); ok {
+		if text, _, ok := ws.LookupText(mods, key); ok {
+			return text
+		}
+	}
+	reference := mods.ToReference(site)
+	key := reference.Name
+	if reference.Database == ws.Schema.Concepts {
 		key = ws.Game.ConceptPrefix + key
 	}
-	text, _, _ := ws.LookupText(key)
+	text, _, _ := ws.LookupText(mods, key)
 	return text
 }
 
-// FindStatement returns the tree of the file that holds a definition and the index of the statement that writes
-// it.
-func (ws *Session) FindStatement(site index.Site) (*jomini.Tree, int32, error) {
-	mods := ws.Mods.Load()
-	file := mods.File(site)
-	tree, err := ws.LoadTree(file.Path)
+// FindTitleKey returns the localization key a definition in the given index of the mods writes as its title, as it is
+// written. It returns false if the definition writes none or its statement is not found.
+func (ws *Session) FindTitleKey(mods *index.Index, site index.Site) (string, bool) {
+	tree, statement, err := ws.FindStatement(mods, site)
 	if err != nil {
-		return nil, -1, err
+		return "", false
 	}
-	finder := &statementFinder{span: mods.Occurrence(site).Span, statement: -1}
-	ws.Schema.WalkTo(tree, file, finder.span.Start, finder)
-	return tree, finder.statement, nil
+	child, ok := tree.FindChild(statement, game.TitleKey)
+	if !ok {
+		return "", false
+	}
+	return tree.Unquoted(tree.Statements[child].Value), true
 }
 
-// Enter keeps the statement of the definition that the walk reaches, once the definition's name is written at the
-// finder's span.
-func (finder *statementFinder) Enter(_ *jomini.Tree, _ int32, context *schema.Context) bool {
-	if context.Defines && context.Definition.Span == finder.span {
-		finder.statement = context.Definition.Statement
+// FindStatement returns the tree of the file that holds an occurrence in the given index of the mods, and the
+// statement that writes it. That is statement 0, the file, for a definition the file names, a message and a row. It
+// returns an error if the file cannot be read, or if the editor's text of the file no longer has a statement that
+// covers the occurrence.
+func (ws *Session) FindStatement(mods *index.Index, site index.Site) (*jomini.Tree, int32, error) {
+	path := mods.File(site).Path
+	tree, err := ws.LoadTree(path)
+	if err != nil {
+		return nil, 0, err
 	}
-	return true
+	occurrence := mods.Occurrence(site)
+	if statement := occurrence.Statement; int(statement) < len(tree.Statements) &&
+		tree.Statements[statement].Span.Contains(occurrence.Span.Start) {
+		return tree, statement, nil
+	}
+	return nil, 0, fmt.Errorf("%s has no statement where the index read one", path)
 }
-
-// Leave does nothing.
-func (finder *statementFinder) Leave(*jomini.Tree, int32, *schema.Context) {}
 
 // Rescan walks a changed mod file again, or drops it when the flag says it was deleted, in a new copy of the mods'
 // index that then takes the old one's place. A request that is still reading the old copy finishes on it.
@@ -445,11 +463,11 @@ func (ws *Session) Rescan(path string, deleted bool) error {
 func (ws *Session) listChanged(mods *index.Index, place Place, deleted bool) ([]files.File, error) {
 	switch {
 	case deleted:
-		return lo.Filter(mods.Files[len(ws.Install.Files):], func(file files.File, _ int) bool {
-			_, known := mods.FindFile(file.Path)
-			return known && (file.Key == place.Key || files.IsUnder(place.Path, file.Path))
+		return lo.FilterMap(mods.ListOwnFiles(), func(position int32, _ int) (files.File, bool) {
+			file := mods.Files[position]
+			return file, file.Key == place.Key || files.IsUnder(place.Path, file.Path)
 		}), nil
-	case isFolder(place.Path):
+	case files.IsFolder(place.Path):
 		listing, err := files.Walk(files.Root{Dir: place.Path}, nil)
 		return lo.Map(listing, func(file files.File, _ int) files.File { return ws.Locate(file.Path).File }), err
 	}

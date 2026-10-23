@@ -75,7 +75,7 @@ var bc6hModes = [32]struct {
 }
 
 // bc6hFields are the fields of each BC6H mode parsed from its row: for each, the endpoint it fills, the channel,
-// and the high and low bit of the field, in the order the block stores them. The mode field has endpoint -1.
+// and the high and low bit of the field, in the order the block stores them. The mode field is not among them.
 var bc6hFields = parseBC6HFields()
 
 // partitions2 and partitions3 say which subset each pixel of a block is in, by partition and then by pixel, for
@@ -287,19 +287,21 @@ func decodeBC6H(block []byte, pixels *[16][4]uint8, signed bool) {
 func readBC6HEndpoints(block []byte, mode int, signed bool) ([4][3]int, int) {
 	row := bc6hModes[mode]
 	var endpoints [4][3]int
-	position := 0
+	// the mode field comes first, 2 bits for the modes 0 and 1 and 5 bits for the rest
+	position := 2
+	if mode >= 2 {
+		position = 5
+	}
 	for _, field := range bc6hFields[mode] {
 		endpoint, channel, high, low := field[0], field[1], field[2], field[3]
 		count := max(high, low) - min(high, low) + 1
 		for i := range count {
-			if endpoint >= 0 {
-				// The first bit read lands at the field's low end, or at its high end when the field is reversed.
-				target := low + i
-				if high < low {
-					target = low - i
-				}
-				endpoints[endpoint][channel] |= int(readBits(block, position+i, 1)) << target
+			// The first bit read lands at the field's low end, or at its high end when the field is reversed.
+			target := low + i
+			if high < low {
+				target = low - i
 			}
+			endpoints[endpoint][channel] |= int(readBits(block, position+i, 1)) << target
 		}
 		position += count
 	}
@@ -506,7 +508,8 @@ func readBC7Endpoints(block []byte, position, mode int) ([6][4]uint8, int) {
 			position += width
 		}
 	}
-	pBits := [6]int{-1, -1, -1, -1, -1, -1}
+	var pBits [6]int
+	hasPBits := row.endpointPBits == 1 || row.sharedPBits == 1
 	for e := range count {
 		if row.endpointPBits == 1 {
 			pBits[e] = int(readBits(block, position+e, 1))
@@ -524,7 +527,7 @@ func readBC7Endpoints(block []byte, position, mode int) ([6][4]uint8, int) {
 				continue
 			}
 			value := values[e][c]
-			if pBits[e] >= 0 {
+			if hasPBits {
 				width, value = width+1, value<<1|pBits[e]
 			}
 			endpoints[e][c] = uint8(value<<(8-width) | value>>(2*width-8))
@@ -535,7 +538,7 @@ func readBC7Endpoints(block []byte, position, mode int) ([6][4]uint8, int) {
 
 // parseBC6HFields parses the field strings of every BC6H mode, such as "r0[9:0]" or "g2[4]", into the endpoint
 // and channel each fills and its high and low bit, equal for one bit and swapped when the field is stored
-// reversed. The mode field gets endpoint -1; a reserved mode gets no fields.
+// reversed. The mode field is left out, and a reserved mode gets no fields.
 func parseBC6HFields() [32][][4]int {
 	var modes [32][][4]int
 	for mode, row := range bc6hModes {
@@ -548,13 +551,13 @@ func parseBC6HFields() [32][][4]int {
 			if !ok {
 				second = first
 			}
+			if variable == "m" {
+				continue
+			}
 			high, _ := strconv.Atoi(first)
 			low, _ := strconv.Atoi(second)
-			parsed := [4]int{-1, 0, high, low}
-			if variable != "m" {
-				parsed[0], parsed[1] = int(variable[1]-'0'), strings.IndexByte("rgb", variable[0])
-			}
-			modes[mode] = append(modes[mode], parsed)
+			endpoint, channel := int(variable[1]-'0'), strings.IndexByte("rgb", variable[0])
+			modes[mode] = append(modes[mode], [4]int{endpoint, channel, high, low})
 		}
 	}
 	return modes

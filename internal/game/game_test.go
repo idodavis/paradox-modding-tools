@@ -197,7 +197,7 @@ func TestColorOf(t *testing.T) {
 		"e = hex { 0xff8000ff }\nf = rgb { 255 0 }\ng = { 1 2 3 }\nh = foo { 1 2 3 }\n")
 	wants := []string{"#ff0000", "#ff8000", "#00ffff", "#00ffff", "#ff8000", "", "#010203", ""}
 	i := 0
-	for statement := range tree.Children(-1) {
+	for statement := range tree.Children(0) {
 		want := wants[i]
 		i++
 		key := tree.Text(tree.Statements[statement].Key)

@@ -15,8 +15,8 @@ import * as search from "@services/search/service";
 import * as steam from "@services/steam/service";
 import * as wiki from "@services/wiki/service";
 import * as workspace from "@services/workspace/service";
-import type { Site } from "@internal/index/models";
 import type { Filter } from "@services/graph/models";
+import type { FindingSite } from "@services/health/models";
 
 /** The keys an event or a mutation refreshes. */
 /** The URL the files route serves a path at, for an image, a texture or a thumbnail. */
@@ -122,7 +122,11 @@ export const overviewQuery = defineQueryOptions({
   key: [...keys.health, "overview"],
   query: () => health.ListOverview(),
 });
-export const comparedQuery = defineQueryOptions(({ a, b }: { a: Site; b: Site }) => ({
+export const errorLogQuery = defineQueryOptions({
+  key: [...keys.health, "errorlog"],
+  query: () => health.ListErrorLog(),
+});
+export const comparedQuery = defineQueryOptions(({ a, b }: { a: FindingSite; b: FindingSite }) => ({
   key: [...keys.health, "compared", a, b],
   query: () => health.CompareStatements(a, b),
 }));

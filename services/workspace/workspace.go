@@ -220,7 +220,7 @@ func (wsp *Service) AddMod(workspaceID, dir string) (Mod, error) {
 	if err != nil {
 		return Mod{}, err
 	}
-	if !isFolder(dir) {
+	if !files.IsFolder(dir) {
 		return Mod{}, fmt.Errorf("%s is not a folder", dir)
 	}
 	record := app.Mod{ID: rand.Text(), Dir: dir}
@@ -275,22 +275,31 @@ func (wsp *Service) RemoveMod(workspaceID, modID string) error {
 // ReorderMods sets a workspace's load order.
 func (wsp *Service) ReorderMods(workspaceID string, modIDs []string) error {
 	return wsp.updateWorkspace(workspaceID, func(workspace *app.Workspace) error {
-		remaining := slices.Clone(workspace.Mods)
-		var ordered []app.Mod
-		for _, id := range modIDs {
-			position := slices.IndexFunc(remaining, func(mod app.Mod) bool { return mod.ID == id })
-			if position < 0 {
-				return fmt.Errorf("the mod %s is not in the workspace or is named twice", id)
-			}
-			ordered = append(ordered, remaining[position])
-			remaining = slices.Delete(remaining, position, position+1)
+		ordered, err := reorderMods(workspace.Mods, modIDs, func(mod app.Mod) string { return mod.ID })
+		if err == nil {
+			workspace.Mods = ordered
 		}
-		if len(remaining) > 0 {
-			return fmt.Errorf("the order leaves out %d of the workspace's mods", len(remaining))
-		}
-		workspace.Mods = ordered
-		return nil
+		return err
 	})
+}
+
+// reorderMods returns a workspace's mods in the order the given ids name them, each mod's id read by the given
+// function. It returns an error if an id names no mod or names one twice, or if the ids leave a mod out.
+func reorderMods[T any](mods []T, modIDs []string, id func(mod T) string) ([]T, error) {
+	remaining := slices.Clone(mods)
+	var ordered []T
+	for _, modID := range modIDs {
+		position := slices.IndexFunc(remaining, func(mod T) bool { return id(mod) == modID })
+		if position < 0 {
+			return nil, fmt.Errorf("the mod %s is not in the workspace or is named twice", modID)
+		}
+		ordered = append(ordered, remaining[position])
+		remaining = slices.Delete(remaining, position, position+1)
+	}
+	if len(remaining) > 0 {
+		return nil, fmt.Errorf("the order leaves out %d of the workspace's mods", len(remaining))
+	}
+	return ordered, nil
 }
 
 // UpdateMod replaces a mod's record: its color, calendar, Workshop item and exclusions.
@@ -402,9 +411,16 @@ func (wsp *Service) State() State {
 		return State{}
 	}
 	// a workspace recorded no more leaves the install empty
-	_, install, _, _ := findRecords(wsp.Config.Config(), session.ID)
+	record, install, _, _ := findRecords(wsp.Config.Config(), session.ID)
+	// the user may have edited a mod's record since the open, so each mod carries the record as the config holds it
+	mods := lo.Map(session.Order, func(mod Mod, _ int) Mod {
+		if position := slices.IndexFunc(record.Mods, func(other app.Mod) bool { return other.ID == mod.ID }); position >= 0 {
+			mod.Mod = record.Mods[position]
+		}
+		return mod
+	})
 	return State{
-		Open: true, ID: session.ID, Game: session.Game, Install: install, Mods: session.Order,
+		Open: true, ID: session.ID, Game: session.Game, Install: install, Mods: mods,
 		Language: session.Language, Dumps: session.Schema.Sources[game.SourceDumps], ScannedAt: install.ScannedAt,
 	}
 }
@@ -448,10 +464,13 @@ func (wsp *Service) Read(path string) (FileText, error) {
 	return FileText{Place: session.Locate(path), Text: text}, err
 }
 
-// Write writes a file's text in its encoding. The write is atomic. The watcher sends fs:changed once the index
-// has the new text.
+// Write writes a file's text in its encoding, after making the folder the file sits in. The write is atomic. The
+// watcher sends fs:changed once the index has the new text.
 func (wsp *Service) Write(path string, text files.Text) error {
 	if _, err := wsp.findWritable(path); err != nil {
+		return err
+	}
+	if err := os.MkdirAll(filepath.Dir(path), 0o755); err != nil {
 		return err
 	}
 	return files.WriteText(path, text)

@@ -13,6 +13,7 @@ export type {
     Instance,
     Layer,
     NamedColor,
+    Overlay,
     Property,
     States,
     Widget,

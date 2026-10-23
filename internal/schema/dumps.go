@@ -435,6 +435,7 @@ func (command *Command) build(dump DumpCommand) {
 	command.Target = cmp.Or(command.Target, dump.Target)
 	blurb, usage := cutUsage(dump.Description)
 	command.Blurb = cmp.Or(command.Blurb, blurb)
+	command.Usage = cmp.Or(command.Usage, usage)
 	if command.Arguments == nil {
 		command.Arguments = parseArguments(dump.Name, usage)
 	}
@@ -468,7 +469,7 @@ func cutUsage(description string) (blurb string, usage string) {
 func parseArguments(title, usage string) *Field {
 	tree := jomini.Parse(usage)
 	var field *Field
-	for statement := range tree.Children(-1) {
+	for statement := range tree.Children(0) {
 		if tree.Text(tree.Statements[statement].Key) == title && tree.Statements[statement].IsBlock() {
 			if field == nil {
 				field = &Field{Source: game.SourceDumps}

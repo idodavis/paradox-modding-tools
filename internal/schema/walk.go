@@ -35,7 +35,7 @@ type Definition struct {
 	Database  string      `json:"database"`
 	Name      string      `json:"name"`
 	Span      jomini.Span `json:"span"`      // the name as written
-	Statement int32       `json:"statement"` // the index of the statement in the file's tree
+	Statement int32       `json:"statement"` // the statement that writes it; 0, the file, if the file names it
 	Mode      string      `json:"mode"`      // an entry mode's prefix such as INJECT or REPLACE; "" for a plain definition
 	Priority  int         `json:"priority"`  // CK3's override priority; 0 when none is written
 	Local     bool        `json:"local"`     // visible only in its own file
@@ -71,9 +71,12 @@ type Context struct {
 	Shape       string      // what kind of block the statement holds, a game.Shapes key; "" if unknown
 	Conditional bool        // the statement is inside a trigger block, so a command here must be a trigger
 	Category    Category    // the key's color category
+	Command     *Command    // the command the key names; nil where the key matched none
+	Declaration string      // how the dumps declare that command where the key is in this block: a game.Declared word
 	ValueGroup  Category    // the value's color category
 	Caller      string      // the scripted definition that a call here is resolved through; "" if none
 	Datacontext string      // a GUI block's data context type; "" if none
+	Parent      *Context    // the context of the block that holds the statement, the file's own at the top
 }
 
 // A Visitor is called by the walk at each statement it enters and leaves.
@@ -94,7 +97,8 @@ type walker struct {
 	tree       *jomini.Tree
 	file       files.File
 	visitor    Visitor
-	offset     int // the byte offset the walker is restricted to; -1 for the whole file
+	restricted bool // whether the walk is restricted to the statements that cover offset
+	offset     int  // the byte offset the walk is restricted to
 	rel        string
 	database   *Database // the database of the file's folder; nil for a file of no folder
 	fileType   game.FileType
@@ -143,13 +147,15 @@ const (
 // schema and the game's rules say about it: the field, the scope, the shape, the definition and the references.
 // Nothing else in the app walks a file.
 func (schema *Schema) Walk(tree *jomini.Tree, file files.File, visitor Visitor) {
-	schema.newWalker(tree, file, visitor, -1).walkChildren(-1, 1, false)
+	schema.newWalker(tree, file, visitor).walkChildren(0, 1, false)
 }
 
 // WalkTo is Walk restricted to one position: it only enters statements that cover the given byte offset, so the
 // visitor sees the path to that place and nothing else.
 func (schema *Schema) WalkTo(tree *jomini.Tree, file files.File, offset int, visitor Visitor) {
-	schema.newWalker(tree, file, visitor, offset).walkChildren(-1, 1, false)
+	walker := schema.newWalker(tree, file, visitor)
+	walker.restricted, walker.offset = true, offset
+	walker.walkChildren(0, 1, false)
 }
 
 // ListNamespaces returns the event namespaces a file declares, in the order it declares them. A file may declare
@@ -167,7 +173,7 @@ func (schema *Schema) ListNamespaces(tree *jomini.Tree, file files.File) []strin
 // listNamespaces returns the top statements of a tree that declare an event namespace, in document order.
 func listNamespaces(tree *jomini.Tree) []int32 {
 	var statements []int32
-	for statement := range tree.Children(-1) {
+	for statement := range tree.Children(0) {
 		if tree.Text(tree.Statements[statement].Key) == game.EventNamespaceKey {
 			statements = append(statements, statement)
 		}
@@ -177,13 +183,13 @@ func listNamespaces(tree *jomini.Tree) []int32 {
 
 // newWalker returns the walker of one file. The file's own context holds the one definition of a file that its
 // database names by its own name. Only a file of the events database declares definitions inline.
-func (schema *Schema) newWalker(tree *jomini.Tree, file files.File, visitor Visitor, offset int) *walker {
+func (schema *Schema) newWalker(tree *jomini.Tree, file files.File, visitor Visitor) *walker {
 	row := game.LookupGame(schema.Game)
 	if row == nil {
 		row = &game.Game{}
 	}
 	walker := &walker{
-		schema: schema, row: row, tree: tree, file: file, visitor: visitor, offset: offset,
+		schema: schema, row: row, tree: tree, file: file, visitor: visitor,
 		declaring: map[string]*Database{}, inline: map[string]ScriptedDefinition{},
 	}
 	_, walker.rel = SplitStage(row, file.Rel)
@@ -202,7 +208,7 @@ func (schema *Schema) newWalker(tree *jomini.Tree, file files.File, visitor Visi
 				}
 			}
 		}
-		if database.Row.NamedBy == "file" && len(tree.Statements) > 0 {
+		if database.Row.NamedBy == "file" && len(tree.Statements) > 1 {
 			stem := strings.TrimSuffix(path.Base(walker.rel), path.Ext(walker.rel))
 			walker.resolveDefinition(root, Definition{Database: database.Name, Name: stem, Local: database.Callable.Local})
 		}
@@ -211,10 +217,10 @@ func (schema *Schema) newWalker(tree *jomini.Tree, file files.File, visitor Visi
 	return walker
 }
 
-// walkChildren walks the children of a statement one level down, or the top statements for -1. A word that
-// declares a definition, or calls one, applies to the statement after it. A walk to an offset still resolves the
-// statements before it, so that it knows what they saved, but does not offer them to the visitor; the walk of a
-// statement already silent is silent.
+// walkChildren walks the children of a statement one level down. Those of statement 0, the file, are the top
+// statements. A word that declares a definition, or calls one, applies to the statement after it. A walk to an offset
+// still resolves the statements before it, so that it knows what they saved, but does not offer them to the visitor;
+// the walk of a statement already silent is silent.
 func (walker *walker) walkChildren(parent int32, level int, silent bool) {
 	for len(walker.frames) <= level {
 		walker.frames = append(walker.frames, frame{context: &Context{}})
@@ -222,8 +228,8 @@ func (walker *walker) walkChildren(parent int32, level int, silent bool) {
 	pending := ""
 	for child := range walker.tree.Children(parent) {
 		statement := walker.tree.Statements[child]
-		offered := !silent && (walker.offset < 0 || statement.Span.Contains(walker.offset))
-		if offered || walker.offset >= 0 && statement.Span.End <= walker.offset {
+		offered := !silent && (!walker.restricted || statement.Span.Contains(walker.offset))
+		if offered || walker.restricted && statement.Span.End <= walker.offset {
 			walker.walkStatement(child, level, pending, offered)
 		}
 		pending = ""
@@ -260,7 +266,7 @@ func (walker *walker) walkStatement(statement int32, level int, pending string, 
 func (walker *walker) resolve(context *Context, statement int32, level int, pending string) {
 	parent := walker.frames[level-1].context
 	*context = Context{
-		Database: parent.Database, Definition: parent.Definition, Scope: parent.Scope, Root: parent.Root,
+		Parent: parent, Database: parent.Database, Definition: parent.Definition, Scope: parent.Scope, Root: parent.Root,
 		Previous: parent.Previous, Saved: walker.saved,
 		Conditional: parent.Shape == shapeTriggers || parent.Conditional && parent.Shape != shapeValue,
 		Datacontext: parent.Datacontext, References: context.References[:0],
@@ -304,7 +310,7 @@ func (walker *walker) resolveStatement(context *Context, statement int32, level 
 		case "nothing":
 			context.Database, context.Field, context.Shape = database.Name, database.Definition, walker.findDefinitionShape(database)
 		case "file":
-			context.Defines = statement == 0
+			context.Defines = statement == 1
 		}
 	}
 }
@@ -393,7 +399,7 @@ func (walker *walker) findChildValue(statement int32, key string) string {
 	if key == "" {
 		return ""
 	}
-	if child := walker.tree.FindChild(statement, key); child >= 0 {
+	if child, ok := walker.tree.FindChild(statement, key); ok {
 		return walker.tree.Unquoted(walker.tree.Statements[child].Value)
 	}
 	return ""
@@ -435,8 +441,8 @@ func (walker *walker) findScriptDefinition(statement int32, level int, pending s
 	case "nothing", "file", "column":
 		return Definition{}, false
 	case "field":
-		child := walker.tree.FindChild(statement, database.Row.NameKey)
-		if child < 0 {
+		child, ok := walker.tree.FindChild(statement, database.Row.NameKey)
+		if !ok {
 			return Definition{}, false
 		}
 		label, span = walker.tree.Unquoted(walker.tree.Statements[child].Value), walker.tree.Statements[child].Value
@@ -751,6 +757,7 @@ func (walker *walker) resolveMatch(context *Context, parent *Context, fit match,
 	context.Field = walker.resolveField(rule.Fields, parent, fit)
 	context.Shape = walker.resolveShape(rule.Shape, parent, context.Field, fit)
 	context.Category, context.Caller = fit.category, fit.caller
+	context.Command, context.Declaration = fit.command, fit.declaration
 	if keyword != nil {
 		if keyword.Shape == "enclosing" {
 			context.Shape = findShape(parent)
@@ -932,30 +939,24 @@ func (walker *walker) resolveSaved(context *Context, statement int32, level int)
 // resolveDatacontext sets the data context type of a GUI block from the data call its datacontext key writes, given
 // the type of the block that holds it. A call the dumps do not resolve leaves the type unknown.
 func (walker *walker) resolveDatacontext(context *Context, statement int32, outer string) {
-	child := walker.tree.FindChild(statement, game.GUI.ContextKey)
-	if child < 0 {
+	child, ok := walker.tree.FindChild(statement, game.GUI.ContextKey)
+	if !ok {
 		return
 	}
 	context.Datacontext = ""
-	if call, ok := walker.parseCall(walker.tree.Statements[child].Value); ok {
-		if types := walker.schema.ResolveCallTypes(walker.resolveMacro(call, outer), outer); len(types) > 0 {
-			context.Datacontext = types[len(types)-1]
-		}
+	if call, ok := ParseCall(walker.tree, walker.tree.Statements[child].Value); ok {
+		context.Datacontext = walker.schema.ResolveDatacontext(call, outer)
 	}
 }
 
-// parseCall parses the data call that a value writes between brackets, with its spans in the file's own offsets.
-// It returns false for a value that is no call.
-func (walker *walker) parseCall(span jomini.Span) (jomini.Call, bool) {
-	text := walker.tree.Text(span)
-	start := span.Start
+// ParseCall parses the data call that a value in a tree writes between brackets, its spans in the file's own
+// offsets. It returns false for a value that is no call.
+func ParseCall(tree *jomini.Tree, span jomini.Span) (jomini.Call, bool) {
+	text, start := tree.Text(span), span.Start
 	if strings.HasPrefix(text, `"`) {
 		text, start = strings.Trim(text, `"`), start+1
 	}
-	if !strings.HasPrefix(text, "[") || !strings.HasSuffix(text, "]") {
-		return jomini.Call{}, false
-	}
-	return jomini.ParseCall(text[1:len(text)-1], start+1)
+	return jomini.ParseBracketed(text, start)
 }
 
 // resolveValue resolves a scalar statement's value. A parameter or a constant is that, a constant naming the file's
@@ -980,9 +981,9 @@ func (walker *walker) resolveValue(context *Context, statement int32, level int)
 		}
 		return
 	default:
-		if call, ok := walker.parseCall(current.Value); ok {
+		if call, ok := ParseCall(walker.tree, current.Value); ok {
 			context.ValueGroup = CategoryCall
-			context.References = append(context.References, walker.listCallReferences(call, context.Datacontext)...)
+			context.References = append(context.References, walker.schema.ListCallReferences(call, context.Datacontext)...)
 			return
 		}
 		walker.resolveValueReferences(context, statement, level, text)
@@ -990,52 +991,6 @@ func (walker *walker) resolveValue(context *Context, statement int32, level int)
 	if len(context.References) > before {
 		context.ValueGroup = CategoryReference
 	}
-}
-
-// listCallReferences returns the names that the quoted arguments of a data call refer to. A step the game answers
-// from a database names it; any other names the database that holds the type the step returns, else none.
-func (walker *walker) listCallReferences(call jomini.Call, datacontext string) []Reference {
-	var references []Reference
-	call = walker.resolveMacro(call, datacontext)
-	types := walker.schema.ResolveCallTypes(call, datacontext)
-	for i, step := range call.Steps {
-		database := game.GUI.Answered[step.Text]
-		if database == "" && i < len(types) && types[i] != "" {
-			database, _ = walker.schema.ResolveTypeDatabase(types[i])
-		}
-		for _, argument := range step.Arguments {
-			if argument.Call != nil {
-				references = append(references, walker.listCallReferences(*argument.Call, "")...)
-			}
-			if argument.Quoted && !argument.Span.IsEmpty() {
-				references = append(references, Reference{Database: database, Name: argument.Text, Span: argument.Span})
-			}
-		}
-	}
-	return references
-}
-
-// resolveMacro returns the call that a data call stands for. A call that opens with one of the game's data binding
-// macros is the macro's text with each parameter replaced by the argument written for it, followed by the rest of
-// the call. Any other call is itself. What the macro writes itself has no place in the file, so its spans are empty.
-func (walker *walker) resolveMacro(call jomini.Call, datacontext string) jomini.Call {
-	first := call.Steps[0]
-	function := walker.schema.DataTypes[game.GlobalType].Functions[first.Text]
-	_, own := walker.schema.DataTypes[datacontext].Functions[first.Text]
-	expansion, ok := jomini.ParseCall(function.Expansion, 0)
-	if own || !ok {
-		return call
-	}
-	given := map[string]jomini.Argument{}
-	for i, parameter := range function.Arguments {
-		if i < len(first.Arguments) {
-			given[parameter] = first.Arguments[i]
-		}
-	}
-	expanded := jomini.SubstituteCall(expansion, given)
-	expanded.Steps = append(expanded.Steps, call.Steps[1:]...)
-	expanded.Span, expanded.Suffix = call.Span, call.Suffix
-	return expanded
 }
 
 // resolveValueReferences resolves the references that a plain value makes: the database its field says it names,
@@ -1130,4 +1085,17 @@ func (walker *walker) isLead(text string) bool {
 	}
 	return walker.file.Format == files.FormatGUI &&
 		(slices.Contains(game.GUI.Declares, text) || text != game.AnyCall && len(walker.schema.Callees[text]) > 0)
+}
+
+// ResolveCommandScope returns the scope that a command written at the statement runs in. For a link, or a command
+// that leads to another scope or iterates over a list, that is the scope before the one the context holds. It
+// returns "" if the scope is unknown.
+func (context *Context) ResolveCommandScope(command *Command) string {
+	if context.Category != CategoryLink && command.Target == "" && !command.Lists {
+		return context.Scope
+	}
+	if len(context.Previous) == 0 {
+		return ""
+	}
+	return context.Previous[0]
 }

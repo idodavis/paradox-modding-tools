@@ -2,7 +2,9 @@ package index
 
 import (
 	"cmp"
+	"maps"
 	"slices"
+	"strings"
 
 	"github.com/samber/lo"
 
@@ -10,47 +12,81 @@ import (
 	"paradox-modding-tools/internal/schema"
 )
 
-// Resolve returns the definitions that a reference names, in load order. A local definition never counts. The result
-// is empty if the name is undefined.
-func (index *Index) Resolve(schema *schema.Schema, reference schema.Reference) []Site {
-	return index.listResolved(schema, reference, func(Site) bool { return false })
+// Resolve returns the definitions that a reference names, in load order. A local definition never counts. A reference
+// with no database names the definitions of every database that defines its name: each database's in load order, the
+// databases by name. The result is empty if the name is undefined.
+func (index *Index) Resolve(reference schema.Reference) []Site {
+	return index.listResolved(reference, func(Site) bool { return false })
 }
 
-// ResolveLocal is Resolve for a reference written in the given file: the local definitions of that file count too.
-func (index *Index) ResolveLocal(schema *schema.Schema, reference schema.Reference, file int32) []Site {
-	return index.listResolved(schema, reference, func(site Site) bool { return site.File == file })
+// ResolveLocal is Resolve for a reference written in the given file: that file's local definitions count too. A file
+// the index does not list counts none.
+func (index *Index) ResolveLocal(reference schema.Reference, path string) []Site {
+	file, listed := index.FindFile(path)
+	return index.listResolved(reference, func(site Site) bool { return listed && site.File == file })
 }
 
-// listResolved returns the definitions that a reference names, in load order. A local definition counts where the
-// given function says it does.
-func (index *Index) listResolved(schema *schema.Schema, reference schema.Reference, isVisible func(Site) bool) []Site {
+// listResolved returns the definitions that a reference names, as Resolve orders them. A local definition counts where
+// the given function says it does.
+func (index *Index) listResolved(reference schema.Reference, isVisible func(Site) bool) []Site {
 	if reference.Database != "" {
-		return index.listDefining(reference.Database, reference.Name, isVisible)
+		return lo.FlatMap(ListCallees(reference), func(callee schema.Reference, _ int) []Site {
+			return index.listDefining(callee.Database, callee.Name, isVisible)
+		})
 	}
-	// Of the databases that define the name, the one meant is the smallest in vanilla, as the schema ranks them, so
-	// that neither the mods nor the order of the table decide.
-	var smallest []Site
-	smallestDatabase := ""
-	for _, database := range index.ListDatabases(reference.Name) {
-		sites := index.listDefining(database, reference.Name, isVisible)
-		if len(sites) > 0 && (smallest == nil || schema.IsSmaller(database, smallestDatabase)) {
-			smallest, smallestDatabase = sites, database
-		}
-	}
-	return smallest
+	databases := index.ListDatabases(reference.Name)
+	slices.Sort(databases)
+	return lo.FlatMap(databases, func(database string, _ int) []Site {
+		return index.listDefining(database, reference.Name, isVisible)
+	})
 }
 
 // ListDatabases returns the databases with a definition of a name, local ones included, in the order of the index's
 // table. A key of the localization database is defined by its messages. It is empty if nothing defines the name.
 func (index *Index) ListDatabases(name string) []string {
-	return lo.Filter(index.Databases.Texts, func(database string, _ int) bool {
-		return len(index.listPosting(toRole(database), database, name)) > 0
-	})
+	exact, hasExact := index.Names.Lookup(name)
+	lower, hasLower := index.Names.Lookup(strings.ToLower(name))
+	var databases []string
+	for ordinal, database := range index.Databases.Texts {
+		key, listed := exact, hasExact
+		if slices.Contains(index.Caseless, database) {
+			key, listed = lower, hasLower
+		}
+		posting := Posting{Role: toRole(database), Database: uint16(ordinal)}
+		for source := index; listed && source != nil; source = source.install {
+			if len(source.postings[posting][key]) > 0 {
+				databases = append(databases, database)
+				break
+			}
+		}
+	}
+	return databases
 }
 
-// ListUses returns every reference to a name in a database, in load order.
+// ListUses returns every reference to a name in a database, in load order. For a database that script calls by name,
+// the calls that may name any callable database count too.
 func (index *Index) ListUses(database, name string) []Site {
-	return index.listPosting(RoleRefers, database, name)
+	uses := index.listPosting(RoleRefers, database, name)
+	if len(game.Callables[database].Callers) == 0 {
+		return uses
+	}
+	return slices.SortedFunc(slices.Values(slices.Concat(uses, index.listPosting(RoleRefers, game.AnyCall, name))), compareSites)
+}
+
+// ListCallees returns the references that a reference stands for. A call that may name any callable database, one
+// written in game.AnyCall, stands for the name in each database whose definitions script calls by name, in the order
+// of their names. Any other reference stands for itself.
+func ListCallees(reference schema.Reference) []schema.Reference {
+	if reference.Database != game.AnyCall {
+		return []schema.Reference{reference}
+	}
+	var callees []schema.Reference
+	for _, database := range slices.Sorted(maps.Keys(game.Callables)) {
+		if len(game.Callables[database].Callers) > 0 {
+			callees = append(callees, schema.Reference{Database: database, Name: reference.Name, Span: reference.Span})
+		}
+	}
+	return callees
 }
 
 // ListDefinitions returns every definition in a database, in load order. The definitions of localization keys are
@@ -89,25 +125,11 @@ func (index *Index) ToReference(site Site) schema.Reference {
 	return schema.Reference{Database: index.Databases.Texts[occurrence.Database], Name: index.Names.Texts[occurrence.Name]}
 }
 
-// FindNearest returns the innermost occurrence in a file that covers the given byte offset, or false if none
-// does.
-func (index *Index) FindNearest(file int32, offset int) (Site, bool) {
-	nearest, length := Site{}, 0
-	ok := false
-	for position, occurrence := range index.Occurrences[file] {
-		width := occurrence.Span.End - occurrence.Span.Start
-		if occurrence.Span.Contains(offset) && (!ok || width <= length) {
-			nearest, length, ok = Site{File: file, Occurrence: int32(position)}, width, true
-		}
-	}
-	return nearest, ok
-}
-
-// CountDefinitions counts a file's definitions by database.
+// CountDefinitions counts a file's definitions by database. An alias is no definition of its own.
 func (index *Index) CountDefinitions(file int32) map[string]int {
 	counts := map[string]int{}
 	for _, occurrence := range index.Occurrences[file] {
-		if occurrence.Role == RoleDefines {
+		if occurrence.Role == RoleDefines && !occurrence.Alias {
 			counts[index.Databases.Texts[occurrence.Database]]++
 		}
 	}
@@ -135,7 +157,7 @@ func toRole(database string) Role {
 // empty where the index has none.
 func (index *Index) listPosting(role Role, database, name string) []Site {
 	databaseOrdinal, ok := index.Databases.Lookup(database)
-	nameOrdinal, known := index.Names.Lookup(index.toCaseless(database, name))
+	nameOrdinal, known := index.Names.Lookup(index.ToCaseless(database, name))
 	if !ok || !known {
 		return nil
 	}

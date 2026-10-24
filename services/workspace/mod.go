@@ -10,6 +10,7 @@ import (
 	"path/filepath"
 	"regexp"
 	"slices"
+	"strconv"
 	"strings"
 
 	"github.com/samber/lo"
@@ -24,6 +25,7 @@ import (
 // `.metadata/metadata.json`.
 type Descriptor struct {
 	Path             string   `json:"path"`
+	ID               string   `json:"id"` // the id metadata.json gives the mod; "" means none
 	Name             string   `json:"name"`
 	Version          string   `json:"version"`
 	SupportedVersion string   `json:"supportedVersion"`
@@ -31,10 +33,12 @@ type Descriptor struct {
 	ReplacePaths     []string `json:"replacePaths"` // folders whose earlier files the game does not load
 	Thumbnail        string   `json:"thumbnail"`    // the picture file the descriptor names, from the mod's folder
 	WorkshopID       string   `json:"workshopId"`
+	// Dependencies are the mods it needs: their ids in metadata.json, their names in a script descriptor. They are read
+	// and never written.
+	Dependencies []string `json:"dependencies"`
 }
 
-// A Mod is one mod of the open workspace: its record in the config, together with its descriptor as read from its
-// folder.
+// A Mod is one mod of the open workspace: the mod as the config records it, with its descriptor.
 type Mod struct {
 	app.Mod
 	Descriptor Descriptor `json:"descriptor"`
@@ -49,9 +53,10 @@ var scriptKeys = []string{
 // releaseVersion matches a game version that starts with a major and a minor release number.
 var releaseVersion = regexp.MustCompile(`^(\d+)\.(\d+)(?:\.|$)`)
 
-// ReadDescriptor reads a mod's descriptor from its folder, where the game's rule says it is.
-func ReadDescriptor(game *game.Game, dir string) (Descriptor, error) {
-	file, metadata := resolveDescriptor(game, dir)
+// ReadDescriptor reads the descriptor of the mod in the given folder, from the file the given game keeps it in. It
+// returns an error if the file cannot be read or is not a valid descriptor.
+func ReadDescriptor(row *game.Game, dir string) (Descriptor, error) {
+	file, metadata := resolveDescriptor(row, dir)
 	text, err := files.ReadText(file)
 	if err != nil {
 		return Descriptor{}, err
@@ -67,14 +72,15 @@ func ReadDescriptor(game *game.Game, dir string) (Descriptor, error) {
 	}
 	descriptor.Path = file
 	if descriptor.Thumbnail != "" {
-		descriptor.Thumbnail = path.Join(game.ThumbnailDir, descriptor.Thumbnail)
+		descriptor.Thumbnail = path.Join(row.ThumbnailDir, descriptor.Thumbnail)
 	}
 	return descriptor, nil
 }
 
-// WriteDescriptor writes a mod's descriptor back in the game's own form, keeping any fields it does not model.
-func WriteDescriptor(game *game.Game, dir string, descriptor Descriptor) error {
-	file, metadata := resolveDescriptor(game, dir)
+// WriteDescriptor writes the given descriptor for the mod in the given folder, in the format the given game uses. It
+// keeps the fields of the existing file that a Descriptor does not model, and makes the file if it is missing.
+func WriteDescriptor(row *game.Game, dir string, descriptor Descriptor) error {
+	file, metadata := resolveDescriptor(row, dir)
 	existing, err := files.ReadText(file)
 	if errors.Is(err, fs.ErrNotExist) {
 		err = nil
@@ -83,7 +89,7 @@ func WriteDescriptor(game *game.Game, dir string, descriptor Descriptor) error {
 		return err
 	}
 	existing.Encoding = cmp.Or(existing.Encoding, files.EncodingUTF8)
-	descriptor.Thumbnail = strings.TrimPrefix(descriptor.Thumbnail, path.Join(game.ThumbnailDir, "")+"/")
+	descriptor.Thumbnail = strings.TrimPrefix(descriptor.Thumbnail, path.Join(row.ThumbnailDir, "")+"/")
 	if metadata {
 		existing.Text, err = encodeDescriptorMetadata(existing.Text, descriptor)
 	} else {
@@ -92,41 +98,37 @@ func WriteDescriptor(game *game.Game, dir string, descriptor Descriptor) error {
 	if err != nil {
 		return err
 	}
-	if err := os.MkdirAll(filepath.Dir(file), 0o755); err != nil {
-		return err
-	}
 	return files.WriteText(file, existing)
 }
 
-// createModFolder creates a new mod on disk: its folder, its descriptor and the folders the game expects. The
-// descriptor names the mod, gives it version 1.0, and supports the given game version's major and minor release
-// (1.20.* for 1.20.1.2); a game version that is not a release number, such as a Steam build, supports none.
-func createModFolder(game *game.Game, dir, name, version string) (Descriptor, error) {
+// createModFolder makes a new mod in the given folder, with its descriptor and the folders the game expects. It returns
+// the mod's folder. The descriptor names the mod, gives it version 1.0 and supports the release of the given game
+// version. A game that lists mods by a launcher file gets that file beside the mod's folder. It returns an error if the
+// mod's folder exists already.
+func createModFolder(row *game.Game, dir, name, version string) (string, error) {
 	folder := resolveModFolder(dir, name)
 	if err := os.MkdirAll(dir, 0o755); err != nil {
-		return Descriptor{}, err
+		return "", err
 	}
 	if err := os.Mkdir(folder, 0o755); err != nil {
-		return Descriptor{}, err
+		return "", err
 	}
-	for _, rel := range game.ModFolders {
+	for _, rel := range row.ModFolders {
 		if err := os.MkdirAll(files.Join(folder, rel), 0o755); err != nil {
-			return Descriptor{}, err
+			return "", err
 		}
 	}
 	descriptor := Descriptor{Name: name, Version: "1.0", SupportedVersion: toSupportedVersion(version)}
-	if err := WriteDescriptor(game, folder, descriptor); err != nil {
-		return Descriptor{}, err
+	if err := WriteDescriptor(row, folder, descriptor); err != nil {
+		return "", err
 	}
-	file, metadata := resolveDescriptor(game, folder)
-	descriptor.Path = file
-	if metadata {
-		return descriptor, nil
+	if _, metadata := resolveDescriptor(row, folder); metadata {
+		return folder, nil
 	}
 	// the launcher lists a mod by a .mod file beside its folder, with the descriptor's keys and the folder's path
 	launcher := encodeDescriptorScript("", descriptor) + "path=" + toQuoted(filepath.ToSlash(folder)) + "\n"
 	err := files.WriteText(filepath.Join(dir, files.ToSlug(name)+".mod"), files.Text{Text: launcher, Encoding: files.EncodingUTF8})
-	return descriptor, err
+	return folder, err
 }
 
 // toSupportedVersion returns the release a mod supports for a game version: its major and minor numbers followed by
@@ -140,16 +142,36 @@ func toSupportedVersion(version string) string {
 	return match[1] + "." + match[2] + ".*"
 }
 
-// resolveModFolder returns the folder of the mod with the given name in the folder that holds the game's mods.
+// IsOlderRelease reports whether the release a mod supports is older than the release of a game version. Only the major
+// and minor numbers count, so 1.19.* is older than 1.20.1.2. It is false if either does not start with two numbers.
+func IsOlderRelease(supported, version string) bool {
+	older, hasOlder := toRelease(supported)
+	newer, hasNewer := toRelease(version)
+	return hasOlder && hasNewer && slices.Compare(older[:], newer[:]) < 0
+}
+
+// toRelease returns the major and minor numbers a version starts with. It returns false if it does not start with
+// two numbers.
+func toRelease(version string) ([2]int, bool) {
+	match := releaseVersion.FindStringSubmatch(version)
+	if match == nil {
+		return [2]int{}, false
+	}
+	major, _ := strconv.Atoi(match[1])
+	minor, _ := strconv.Atoi(match[2])
+	return [2]int{major, minor}, true
+}
+
+// resolveModFolder returns the folder for a new mod with the given name, inside the given folder of the game's mods.
 func resolveModFolder(dir, name string) string { return filepath.Join(dir, files.ToSlug(name)) }
 
 // resolveDescriptor returns the path of a mod's descriptor, and whether the game writes it as metadata.json rather
 // than as script.
 func resolveDescriptor(row *game.Game, dir string) (file string, metadata bool) {
-	return game.BuildDescriptorPath(row.ID, dir), row.ModDescriptor == game.MetadataDescriptor
+	return files.Join(dir, row.ModDescriptor), path.Ext(row.ModDescriptor) == ".json"
 }
 
-// parseDescriptorScript reads the descriptor of a game that writes it as script.
+// parseDescriptorScript returns the descriptor that a script text writes, for a game that writes it as script.
 func parseDescriptorScript(text string) Descriptor {
 	tree := jomini.Parse(text)
 	var descriptor Descriptor
@@ -170,34 +192,56 @@ func parseDescriptorScript(text string) Descriptor {
 		case "replace_path":
 			descriptor.ReplacePaths = append(descriptor.ReplacePaths, value)
 		case "tags":
-			for tag := range tree.Children(statement) {
-				descriptor.Tags = append(descriptor.Tags, tree.Unquoted(tree.Statements[tag].Value))
-			}
+			descriptor.Tags = append(descriptor.Tags, listBlockValues(tree, statement)...)
+		case "dependencies":
+			descriptor.Dependencies = append(descriptor.Dependencies, listBlockValues(tree, statement)...)
 		}
 	}
 	return descriptor
 }
 
-// decodeDescriptorMetadata reads the descriptor of a game that writes it as metadata.json. The file has no Workshop
-// item, so that field stays empty.
+// listBlockValues returns the values written in the block of a statement, without their quotes.
+func listBlockValues(tree *jomini.Tree, statement int32) []string {
+	var values []string
+	for child := range tree.Children(statement) {
+		values = append(values, tree.Unquoted(tree.Statements[child].Value))
+	}
+	return values
+}
+
+// decodeDescriptorMetadata returns the descriptor that a metadata.json text writes. Its dependencies are the mods the
+// file lists as dependencies; a dependency on anything else, such as a DLC, is left out. It returns an error if the
+// text is not JSON.
 func decodeDescriptorMetadata(text string) (Descriptor, error) {
 	var metadata struct {
+		ID               string   `json:"id"`
 		Name             string   `json:"name"`
 		Version          string   `json:"version"`
 		SupportedVersion string   `json:"supported_game_version"`
 		Tags             []string `json:"tags"`
 		Picture          string   `json:"picture"`
-		GameCustomData   struct {
+		Relationships    []struct {
+			Kind     string `json:"rel_type"`
+			ID       string `json:"id"`
+			Resource string `json:"resource_type"`
+		} `json:"relationships"`
+		GameCustomData struct {
 			ReplacePaths []string `json:"replace_paths"`
 		} `json:"game_custom_data"`
 	}
 	if err := json.Unmarshal([]byte(text), &metadata); err != nil {
 		return Descriptor{}, err
 	}
-	return Descriptor{
-		Name: metadata.Name, Version: metadata.Version, SupportedVersion: metadata.SupportedVersion,
+	descriptor := Descriptor{
+		ID: metadata.ID, Name: metadata.Name, Version: metadata.Version, SupportedVersion: metadata.SupportedVersion,
 		Tags: metadata.Tags, ReplacePaths: metadata.GameCustomData.ReplacePaths, Thumbnail: metadata.Picture,
-	}, nil
+	}
+	for _, relationship := range metadata.Relationships {
+		if relationship.Kind == "dependency" && relationship.Resource == "mod" {
+			descriptor.Dependencies = append(descriptor.Dependencies, relationship.ID)
+		}
+	}
+	return descriptor, nil
 }
 
 // encodeDescriptorScript returns the text of a descriptor written as script: the fields the descriptor models, then

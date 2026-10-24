@@ -1,12 +1,12 @@
 package lsp
 
 import (
-	"cmp"
 	"slices"
 	"strings"
 	"unicode"
 	"unicode/utf8"
 
+	"github.com/samber/lo"
 	"github.com/sergi/go-diff/diffmatchpatch"
 
 	"paradox-modding-tools/internal/index"
@@ -14,26 +14,26 @@ import (
 	"paradox-modding-tools/internal/schema"
 )
 
-// A Fix is one quick fix offered at a problem: its title and the edits that apply it, by file path.
+// A Fix is one quick fix for a problem. It carries the edits that apply it, grouped by file.
 type Fix struct {
 	Title string            `json:"title"`
 	Code  string            `json:"code"` // the diagnostic it fixes
 	Edits map[string][]Edit `json:"edits"`
 }
 
-// fixDistance is how many edits away a defined name is too far off to be offered as the fix for an unresolved
-// reference.
+// fixDistance is how many edits away a name may be and still be offered as the fix for an unresolved reference.
 const fixDistance = 3
 
-// Format formats a file and returns the edits that turn the old text into the new. It keeps the file's own
-// indentation, or uses the editor's settings when the file has none.
+// Format returns the edits that format a file's text. It keeps the file's own indentation, or else indents with the
+// given tab size, in spaces if the flag is set. It returns no edits for a file that is not script, does not parse, or
+// would change in more than its spacing.
 func (lsp *Service) Format(path string, tabSize int, insertSpaces bool) ([]Edit, error) {
 	ws, tree, err := lsp.loadTree(path)
 	if err != nil {
 		return nil, err
 	}
 	// a file that does not parse is left as it is
-	if !ws.Locate(path).Format.IsScript() || len(tree.Errors) > 0 {
+	if !ws.Locate(ws.Mods.Load(), path).Format.IsScript() || len(tree.Errors) > 0 {
 		return []Edit{}, nil
 	}
 	unit := tree.Indentation()
@@ -51,8 +51,7 @@ func (lsp *Service) Format(path string, tabSize int, insertSpaces bool) ([]Edit,
 	return ToEdits(tree.Src, tree.Lines, jomini.DiffEdits(tree.Src, text)), nil
 }
 
-// A piece is one run of a file's text that formatting keeps whole: a key, a tag or a value, an operator, a brace or a
-// comment. Its depth is how many blocks it is inside; a closing brace is outside the block it closes.
+// A piece is one run of a file's text that formatting keeps whole, such as a key, an operator, a brace or a comment.
 type piece struct {
 	span  jomini.Span
 	kind  pieceKind
@@ -71,8 +70,7 @@ const (
 	pieceComment
 )
 
-// listPieces returns the pieces of a tree in the order they are written: what each statement is made of, and the
-// comments.
+// listPieces returns the pieces of a tree in the order they are written, each with its depth in blocks.
 func listPieces(tree *jomini.Tree) []piece {
 	var pieces []piece
 	for _, statement := range tree.Statements {
@@ -89,6 +87,7 @@ func listPieces(tree *jomini.Tree) []piece {
 	pieces = slices.DeleteFunc(pieces, func(current piece) bool { return current.span.IsEmpty() })
 	slices.SortStableFunc(pieces, func(first, second piece) int { return first.span.Start - second.span.Start })
 	depth := 0
+	// a closing brace is outside the block it closes
 	for position := range pieces {
 		if pieces[position].kind == pieceClose {
 			depth--
@@ -101,10 +100,9 @@ func listPieces(tree *jomini.Tree) []piece {
 	return pieces
 }
 
-// encodeTree returns the text of a tree's pieces written again. Every line break stays where it is. Each line is
-// indented one unit for each block it is inside, and a piece on a line follows the one before it by a single space,
-// or by the spacing most of the file's operators have where an operator is next to it. Text between two pieces that
-// is not space stays as written.
+// encodeTree returns the text of a tree written again from its pieces. It keeps every line break and indents each line
+// with the given unit for each block it is inside. Two pieces on a line are one space apart, and an operator is spaced
+// as most of the file's operators are.
 func encodeTree(tree *jomini.Tree, pieces []piece, unit string) string {
 	gap := " "
 	tight, operators := 0, 0
@@ -148,8 +146,8 @@ func encodeTree(tree *jomini.Tree, pieces []piece, unit string) string {
 	return text.String()
 }
 
-// separatePieces returns the space between two pieces on one line: the given operator spacing next to an operator,
-// else one space.
+// separatePieces returns the space between two pieces on one line: the given spacing next to an operator, else one
+// space.
 func separatePieces(before, current piece, gap string) string {
 	if current.kind != pieceComment && (before.kind == pieceOperator || current.kind == pieceOperator) {
 		return gap
@@ -157,34 +155,31 @@ func separatePieces(before, current piece, gap string) string {
 	return " "
 }
 
-// ListFixes returns the quick fixes for the problems inside a range of a file, one per problem that has a fix.
-func (lsp *Service) ListFixes(path string, within Range) ([]Fix, error) {
+// ListFixes returns the quick fixes for the given problems of a file, one for each problem that has a fix.
+func (lsp *Service) ListFixes(path string, diagnostics []Diagnostic) ([]Fix, error) {
 	ws, tree, err := lsp.loadTree(path)
 	if err != nil {
 		return nil, err
 	}
-	mods, place := ws.Mods.Load(), ws.Locate(path)
-	diagnostics, err := DiagnoseFile(ws, mods, path)
-	if err != nil {
-		return nil, err
-	}
-	fixes := []Fix{}
-	for _, diagnostic := range lsp.listEnabled(diagnostics) {
-		if !isOverlapping(diagnostic.Range, within) {
-			continue
-		}
+	mods := ws.Mods.Load()
+	place := ws.Locate(mods, path)
+	walk := func(diagnostic Diagnostic) *hoverVisitor {
 		offset := ToOffset(tree.Src, tree.Lines, diagnostic.Range.StartLine, diagnostic.Range.StartColumn)
 		visitor := &hoverVisitor{offset: offset}
 		ws.Schema.WalkTo(tree, place.File, offset, visitor)
+		return visitor
+	}
+	fixes := []Fix{}
+	for _, diagnostic := range diagnostics {
 		var title string
 		var edits []Edit
 		switch diagnostic.Code {
 		case "unresolved-reference":
-			title, edits = buildReferenceFix(mods, visitor, diagnostic)
+			title, edits = buildReferenceFix(mods, walk(diagnostic), diagnostic)
 		case "missing-key":
-			title, edits = buildMissingFix(ws.Schema, tree, visitor, diagnostic)
+			title, edits = buildMissingFix(ws.Schema, tree, walk(diagnostic), diagnostic)
 		case "misplaced-mode":
-			title, edits = buildModeFix(tree, offset, diagnostic)
+			title, edits = buildModeFix(diagnostic)
 		}
 		if len(edits) > 0 {
 			fixes = append(fixes, Fix{Title: title, Code: diagnostic.Code, Edits: map[string][]Edit{path: edits}})
@@ -193,28 +188,25 @@ func (lsp *Service) ListFixes(path string, within Range) ([]Fix, error) {
 	return fixes, nil
 }
 
-// isOverlapping reports whether two ranges share a place, or touch.
-func isOverlapping(first, second Range) bool {
-	return cmp.Or(cmp.Compare(first.StartLine, second.EndLine), cmp.Compare(first.StartColumn, second.EndColumn)) <= 0 &&
-		cmp.Or(cmp.Compare(second.StartLine, first.EndLine), cmp.Compare(second.StartColumn, first.EndColumn)) <= 0
-}
-
-// buildReferenceFix returns the fix for a reference nothing defines: a change to the nearest name its database
-// defines, when one is fewer than fixDistance edits away. The edits are empty when there is none.
+// buildReferenceFix returns the fix for a reference nothing defines: a change to the nearest name its database defines.
+// The edits are empty if no name is near enough.
 func buildReferenceFix(mods *index.Index, visitor *hoverVisitor, diagnostic Diagnostic) (string, []Edit) {
 	best, nearest := fixDistance, ""
 	for _, reference := range visitor.context.References {
 		if reference.Span.Start != visitor.offset {
 			continue
 		}
-		for _, site := range mods.ListDefinitions(reference.Database) {
-			key := mods.ToReference(site).Name
+		name := mods.ToCaseless(reference.Database, reference.Name)
+		length := utf8.RuneCountInString(name)
+		keys := lo.Map(mods.ListDefinitions(reference.Database), func(site index.Site, _ int) string {
+			return mods.ToReference(site).Name
+		})
+		for _, key := range lo.Uniq(keys) {
 			// names that differ in length by the best distance so far or more are that far apart
-			if max(utf8.RuneCountInString(key)-utf8.RuneCountInString(reference.Name),
-				utf8.RuneCountInString(reference.Name)-utf8.RuneCountInString(key)) >= best {
+			if max(utf8.RuneCountInString(key)-length, length-utf8.RuneCountInString(key)) >= best {
 				continue
 			}
-			if distance := countEdits(reference.Name, key); distance > 0 && distance < best {
+			if distance := countEdits(name, key); distance > 0 && distance < best {
 				best, nearest = distance, key
 			}
 		}
@@ -232,7 +224,7 @@ func countEdits(first, second string) int {
 }
 
 // buildMissingFix returns the fix for a definition that lacks a key it must write: a line that adds the key with its
-// default, at the end of the definition's block. The edits are empty where the key's claim states no default.
+// default. The edits are empty if the key has no default.
 func buildMissingFix(schema *schema.Schema, tree *jomini.Tree, visitor *hoverVisitor, diagnostic Diagnostic) (string, []Edit) {
 	definition, key := visitor.context.Definition, diagnostic.Facts["key"]
 	if definition == nil || !tree.Statements[definition.Statement].IsBlock() {
@@ -247,9 +239,7 @@ func buildMissingFix(schema *schema.Schema, tree *jomini.Tree, visitor *hoverVis
 	return "Add " + statement, ToEdits(tree.Src, tree.Lines, []jomini.Edit{insertion})
 }
 
-// buildModeFix returns the fix for an entry mode that is out of place: the mode and its colon taken off the key. The
-// given offset is where the key starts.
-func buildModeFix(tree *jomini.Tree, offset int, diagnostic Diagnostic) (string, []Edit) {
-	span := jomini.Span{Start: offset, End: offset + len(diagnostic.Facts["mode"]) + 1}
-	return "Remove mode", []Edit{{Range: ToRange(tree.Src, tree.Lines, span), Text: ""}}
+// buildModeFix returns the fix for an entry mode that is out of place: it removes the mode and its colon.
+func buildModeFix(diagnostic Diagnostic) (string, []Edit) {
+	return "Remove mode", []Edit{{Range: diagnostic.Range, Text: ""}}
 }

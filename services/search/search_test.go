@@ -46,9 +46,9 @@ func writeFile(t *testing.T, dir, rel string, bytes []byte) {
 	}
 }
 
-// openService opens a workspace on the CK3 fixture install with a copy of the CK3 fixture mod, which the given
-// function may add files to first. It returns the search service over the workspace, the open session and the
-// folder of the mod's copy, and closes the workspace when the test ends.
+// openService opens a workspace on the CK3 fixture install with a copy of the fixture mod, after the given function
+// adds files to it. It returns the search service, the open session and the mod's folder. The workspace closes when the
+// test ends.
 func openService(t *testing.T, prepare func(dir string)) (*Service, *workspace.Session, string) {
 	t.Helper()
 	newApp()
@@ -67,11 +67,12 @@ func openService(t *testing.T, prepare func(dir string)) (*Service, *workspace.S
 	if err != nil {
 		t.Fatal(err)
 	}
-	err = config.Update(func(records *app.Config) {
+	err = config.Update("", func(records *app.Config) error {
 		records.Installs = []app.Install{{ID: "i1", Game: "ck3", Path: resolveFixture(t, "ck3")}}
 		records.Workspaces = []app.Workspace{{
 			ID: "w1", Name: "Test", Install: "i1", Mods: []app.Mod{{ID: fixtureModID, Dir: dir}}, Language: "english",
 		}}
+		return nil
 	})
 	if err != nil {
 		t.Fatal(err)
@@ -86,7 +87,7 @@ func openService(t *testing.T, prepare func(dir string)) (*Service, *workspace.S
 	return &Service{Workspace: wsp}, ws, dir
 }
 
-// listHits runs a search and returns the hits of the files it sent, waiting for the given number of files.
+// listHits runs a search and returns the hits of the given number of files it sent.
 func listHits(t *testing.T, ws *workspace.Session, query Query, fileCount int) []Hit {
 	t.Helper()
 	results := make(chan Hits, 64)
@@ -94,7 +95,11 @@ func listHits(t *testing.T, ws *workspace.Session, query Query, fileCount int) [
 		results <- event.Data.(Hits)
 	})
 	defer remove()
-	run(ws, ws.Mods.Load(), query, make(chan struct{}))
+	expression, err := parseQuery(query)
+	if err != nil {
+		t.Fatal(err)
+	}
+	run(ws, query, expression, make(chan struct{}))
 	var hits []Hit
 	for range fileCount {
 		select {
@@ -107,8 +112,8 @@ func listHits(t *testing.T, ws *workspace.Session, query Query, fileCount int) [
 	return hits
 }
 
-// TestRunFindsRegexAndWholeWordHits checks the ranges and lines of the hits of a whole-word search, which is not
-// case sensitive and counts a letter beyond ASCII as part of a word, and of a regular expression, which is.
+// TestRunFindsRegexAndWholeWordHits checks the ranges and lines of the hits of a whole-word search and of a regular
+// expression. The whole-word search ignores case and counts a letter beyond ASCII as part of a word.
 func TestRunFindsRegexAndWholeWordHits(t *testing.T) {
 	include := "search_a.txt"
 	_, ws, _ := openService(t, func(dir string) {
@@ -132,8 +137,7 @@ func TestRunFindsRegexAndWholeWordHits(t *testing.T) {
 	}
 }
 
-// TestRunSearchesOpenBufferText checks that a search reads the editor's text of an open file: the hit is a line
-// that the file on disk does not hold.
+// TestRunSearchesOpenBufferText checks that a search reads the editor's text of an open file.
 func TestRunSearchesOpenBufferText(t *testing.T) {
 	_, ws, dir := openService(t, func(dir string) {
 		writeFile(t, dir, "common/search_b.txt", []byte("on_disk = yes\n"))
@@ -145,8 +149,8 @@ func TestRunSearchesOpenBufferText(t *testing.T) {
 	}
 }
 
-// TestReplaceTextKeepsEncodingAndSkipsOpenFile checks that a Windows-1252 file is written back in its encoding,
-// that an open file is left as it is, and that the error counts it.
+// TestReplaceTextKeepsEncodingAndSkipsOpenFile checks that a Windows-1252 file keeps its encoding, that an open file is
+// left as it is, and that the error counts it.
 func TestReplaceTextKeepsEncodingAndSkipsOpenFile(t *testing.T) {
 	sch, ws, dir := openService(t, func(dir string) {
 		writeFile(t, dir, "common/closed.txt", []byte("caf\xe9 = 1\n"))
@@ -166,9 +170,8 @@ func TestReplaceTextKeepsEncodingAndSkipsOpenFile(t *testing.T) {
 	}
 }
 
-// TestReplaceTextCountsTheHitsShown checks that a replace changes what a search shows and nothing else: a regular
-// expression that matches empty text and one that spans two lines replace nothing, and an end of line ahead of a
-// CRLF is a match.
+// TestReplaceTextCountsTheHitsShown checks that a replace changes exactly what a search shows. An expression that
+// matches empty text or spans two lines replaces nothing, and an end of line before a CRLF is a match.
 func TestReplaceTextCountsTheHitsShown(t *testing.T) {
 	sch, ws, dir := openService(t, func(dir string) {
 		writeFile(t, dir, "common/empty.txt", []byte("ab\n"))
@@ -198,8 +201,8 @@ func TestReplaceTextCountsTheHitsShown(t *testing.T) {
 	}
 }
 
-// TestSearchFilesListsModsFirst checks that a path matches when it holds the characters in order, that the mods'
-// files come before the game's, and that the limit cuts the list.
+// TestSearchFilesListsModsFirst checks that a path matches if it holds the characters in order, that the mods' files
+// come first, and that the limit cuts the list.
 func TestSearchFilesListsModsFirst(t *testing.T) {
 	sch, _, _ := openService(t, func(string) {})
 	places := sch.SearchFiles("EVT", 1000)
@@ -220,8 +223,8 @@ func TestSearchFilesListsModsFirst(t *testing.T) {
 	}
 }
 
-// TestSearchLeavesOutDeletedFile checks that a file deleted from a mod, whose slot stays in the index, is neither
-// offered by the file search nor searched and replaced in.
+// TestSearchLeavesOutDeletedFile checks that a file deleted from a mod is neither offered by the file search nor
+// searched and replaced in.
 func TestSearchLeavesOutDeletedFile(t *testing.T) {
 	sch, ws, dir := openService(t, func(dir string) {
 		writeFile(t, dir, "common/gone.txt", []byte("needle = 1\n"))
@@ -236,7 +239,7 @@ func TestSearchLeavesOutDeletedFile(t *testing.T) {
 	if err := os.Remove(path); err != nil {
 		t.Fatal(err)
 	}
-	if err := ws.Rescan(path, true); err != nil {
+	if err := ws.Rescan([]workspace.FileChange{{Path: path, Deleted: true}}); err != nil {
 		t.Fatal(err)
 	}
 	if offered() {

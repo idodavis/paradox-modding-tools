@@ -18,14 +18,14 @@ import (
 	"paradox-modding-tools/services/workspace"
 )
 
-// The ids the tests give the fixture mods. The first is loaded first.
+// The ids of the fixture mods.
 const (
 	modA = "mod-a"
 	modB = "mod-b"
 	modC = "mod-c"
 )
 
-// The ids of the nodes the fixture mods' definitions make, and the delays written beside their firings.
+// The ids of the fixture mods' nodes and the delays written beside their firings.
 const (
 	eventD1     = "events:d.1"
 	eventD2     = "events:d.2"
@@ -38,9 +38,8 @@ const (
 	delayMonths = "months = { 1 3 }"
 )
 
-// modAFiles are the files the first mod adds: events that fire each other with a delay, one of the second mod's
-// events, an event that fires through a scripted effect, on_actions that fire each other and an event, one with a
-// delay block, and a second definition of a vanilla on_action that the game merges with the first.
+// modAFiles are the files the first mod adds: events and on_actions that fire each other, with and without delays, an
+// event that fires through a scripted effect, and a second definition of a vanilla on_action.
 var modAFiles = map[string]string{
 	filepath.Join("events", "d_events.txt"): `namespace = d
 
@@ -93,8 +92,8 @@ b.1 = {
 `,
 }
 
-// modCFiles are the files the third mod adds: a file with the path of a vanilla file, which replaces it, that
-// defines v.2 again and one event that fires it, but not v.1.
+// modCFiles are the files the third mod adds: a file that replaces a vanilla file and defines v.2 again, with an event
+// that fires it.
 var modCFiles = map[string]string{
 	filepath.Join("events", "v_events.txt"): `namespace = v
 namespace = vc
@@ -140,8 +139,8 @@ func createMod(t *testing.T, id string, added map[string]string) app.Mod {
 	return app.Mod{ID: id, Dir: dir}
 }
 
-// openService opens a workspace on an install with the given mods, with a config and caches of its own, and returns
-// the graph service over it. The workspace closes when the test ends.
+// openService opens a workspace on an install with the given mods and returns the graph service over it. The workspace
+// closes when the test ends.
 func openService(t *testing.T, gameID, installPath string, mods ...app.Mod) *Service {
 	t.Helper()
 	createApp()
@@ -154,9 +153,10 @@ func openService(t *testing.T, gameID, installPath string, mods ...app.Mod) *Ser
 	if err != nil {
 		t.Fatal(err)
 	}
-	err = config.Update(func(records *app.Config) {
+	err = config.Update("", func(records *app.Config) error {
 		records.Installs = []app.Install{{ID: "i1", Game: gameID, Path: installPath}}
 		records.Workspaces = []app.Workspace{{ID: "w1", Name: "Test", Install: "i1", Mods: mods, Language: "english"}}
+		return nil
 	})
 	if err != nil {
 		t.Fatal(err)
@@ -176,9 +176,8 @@ func openFixture(t *testing.T) *Service {
 	return openService(t, "ck3", resolveFixture(t, "ck3"), createMod(t, modA, modAFiles), createMod(t, modB, modBFiles))
 }
 
-// TestBuildGraphSplicesHiddenNodes checks that a graph goes forward and backward from its root with the steps signed
-// and the delay beside each firing read, and that with the filter hiding an origin, or a database, the node's edges
-// are joined into one that passes through it.
+// TestBuildGraphSplicesHiddenNodes checks that a graph goes forward and backward from its root, with signed steps and
+// the delay of each firing, and that a node hidden by origin or by database becomes one edge that passes through it.
 func TestBuildGraphSplicesHiddenNodes(t *testing.T) {
 	gph := openFixture(t)
 	filter := gph.Defaults()
@@ -240,8 +239,8 @@ func TestBuildGraphSplicesHiddenNodes(t *testing.T) {
 	}
 }
 
-// TestBuildGraphDrawsEffects checks that a scripted effect between two nodes is a node of its own while the filter
-// draws the effects, and is the label of the edge between them while it does not.
+// TestBuildGraphDrawsEffects checks that a scripted effect between two nodes is a node if the filter draws effects, and
+// is the label of the edge if it does not.
 func TestBuildGraphDrawsEffects(t *testing.T) {
 	gph := openFixture(t)
 	filter := gph.Defaults()
@@ -264,8 +263,8 @@ func TestBuildGraphDrawsEffects(t *testing.T) {
 	}
 }
 
-// TestBuildGraphMergesDefinitions checks that a node whose database merges its definitions fires what each of them
-// fires: a vanilla on_action that a mod defines again fires the events of both.
+// TestBuildGraphMergesDefinitions checks that a node whose database merges definitions fires what each fires: an
+// on_action that a mod defines again fires the events of both.
 func TestBuildGraphMergesDefinitions(t *testing.T) {
 	gph := openFixture(t)
 	graph, err := gph.BuildGraph("on_action:on_birth", gph.Defaults())
@@ -281,8 +280,7 @@ func TestBuildGraphMergesDefinitions(t *testing.T) {
 	}
 }
 
-// TestBuildGraphSkipsReplacedFirer checks that a mod's file with the path of a vanilla file replaces it, so that an
-// event only vanilla's file defines is not drawn as a firer.
+// TestBuildGraphSkipsReplacedFirer checks that an event only a replaced vanilla file defines is not drawn as a firer.
 func TestBuildGraphSkipsReplacedFirer(t *testing.T) {
 	gph := openService(t, "ck3", resolveFixture(t, "ck3"), createMod(t, modC, modCFiles))
 	graph, err := gph.BuildGraph("events:v.2", gph.Defaults())
@@ -295,8 +293,8 @@ func TestBuildGraphSkipsReplacedFirer(t *testing.T) {
 	}
 }
 
-// TestBuildDetailReadsDefinition checks the detail of an event: its text and title, what it fires and what fires it,
-// the names it refers to, its portraits and the inputs of its database, and that an id nothing defines is an error.
+// TestBuildDetailReadsDefinition checks the detail of an event: its text, what it fires and what fires it, its
+// references and portraits, and that an id nothing defines is an error.
 func TestBuildDetailReadsDefinition(t *testing.T) {
 	gph := openFixture(t)
 	detail, err := gph.BuildDetail(eventD1)
@@ -332,8 +330,7 @@ func TestBuildDetailReadsDefinition(t *testing.T) {
 }
 
 // TestBuildGraphOnInstalls builds the graph of each real install that PMT_TEST_INSTALL_<GAME> names, with no mods and
-// the page's defaults, from the on_actions that start a game and that fire each year, and prints each graph's size
-// and time, then the detail of each of its nodes. The numbers are read, not asserted; a detail that is an error fails.
+// the default filter, from the on_actions that start a game and that fire each year. It fails if a node has no detail.
 func TestBuildGraphOnInstalls(t *testing.T) {
 	roots := map[string][]string{
 		"ck3":  {"on_game_start", "random_yearly_playable_pulse"},
@@ -369,8 +366,8 @@ func TestBuildGraphOnInstalls(t *testing.T) {
 	}
 }
 
-// logDetails builds the detail of every node of a graph and prints how many have a text, how many references they
-// hold and how many have a background. A detail that is an error fails the test.
+// logDetails builds the detail of every node of a graph and logs what they hold. It fails the test if a detail is an
+// error.
 func logDetails(t *testing.T, gph *Service, root string, graph Graph) {
 	t.Helper()
 	started := time.Now()

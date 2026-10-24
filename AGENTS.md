@@ -54,6 +54,9 @@ The owner has given each of these many times. They hold for every task, plan and
 - **Before done**, the naming, code-style, refactoring and Vue best-practices skills run over every touched file.
 - **Files the owner adds** without a path: ask where they are; never sweep home folders. Screenshots are of the preview
   pane only.
+- **Files are edited directly**, with the Edit tool, or written whole with Write, however many files a change
+  touches; never through a script (Python, Node, PowerShell, `sed -i`, a heredoc or a redirect into a file). A
+  script may read, search and measure; the formatters and generators the project runs are not scripts.
 - **Side windows, tools and widgets** open closed by default.
 - **Comments are written one way**, the owner's, set out under Code rules › Comments: plain English, what the thing
   does and its special cases, parameters described in words. No agent, session or subagent deviates from it unless

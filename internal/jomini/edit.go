@@ -9,15 +9,14 @@ import (
 	"github.com/sergi/go-diff/diffmatchpatch"
 )
 
-// An Edit is one change to a text: the span it replaces and the text that goes there. Every edit the engine
-// produces is one of these, whether from a quick fix, a rename, the Visual view or Format, and the editor applies
-// them to its model.
+// An Edit is one change to a text. It replaces a span with a text, so an empty span inserts and an empty text
+// deletes.
 type Edit struct {
 	Span Span   `json:"span"`
 	Text string `json:"text"`
 }
 
-// ApplyEdits returns the text with the edits applied. The edits must not overlap.
+// ApplyEdits returns the text with the edits applied. It panics if two edits overlap.
 func ApplyEdits(text string, edits []Edit) string {
 	edits = slices.SortedStableFunc(slices.Values(edits), func(a, b Edit) int {
 		return cmp.Or(cmp.Compare(a.Span.Start, b.Span.Start), cmp.Compare(a.Span.End, b.Span.End))
@@ -39,7 +38,7 @@ func ApplyEdits(text string, edits []Edit) string {
 // DiffEdits returns the smallest set of edits that turns the first text into the second.
 func DiffEdits(before, after string) []Edit {
 	if !utf8.ValidString(before) || !utf8.ValidString(after) {
-		// the diff rewrites an invalid byte as U+FFFD and every later offset drifts, so the whole text is replaced
+		// The diff rewrites an invalid byte as U+FFFD and every later offset drifts, so the whole text is replaced.
 		return []Edit{{Span: Span{Start: 0, End: len(before)}, Text: after}}
 	}
 	var edits []Edit
@@ -66,8 +65,8 @@ func LineEnding(text string) string {
 	return "\n"
 }
 
-// Indentation returns the indentation unit a tree's text uses: the indentation of its first indented statement shared
-// out over the blocks that statement is inside. It returns "" if no statement is indented.
+// Indentation returns what the tree's text indents one level with, such as a tab or four spaces. It returns "" if no
+// statement is indented.
 func (tree *Tree) Indentation() string {
 	for statement := int32(1); int(statement) < len(tree.Statements); statement++ {
 		start := tree.Statements[statement].Span.Start
@@ -83,8 +82,8 @@ func (tree *Tree) Indentation() string {
 	return ""
 }
 
-// IndentLines returns lines joined by the line ending of the tree's text, each after the given indentation, and the
-// lines inside braces one unit deeper. The unit is the tree's own, or a tab if it has none.
+// IndentLines joins lines with the line ending of the tree's text, each after the given indentation. A line inside
+// braces goes one level deeper. A level is the tree's own indentation, or a tab if it has none.
 func (tree *Tree) IndentLines(lines []string, indent string) string {
 	unit, depth := cmp.Or(tree.Indentation(), "\t"), 0
 	indented := make([]string, len(lines))
@@ -99,9 +98,9 @@ func (tree *Tree) IndentLines(lines []string, indent string) string {
 	return strings.Join(indented, LineEnding(tree.Src))
 }
 
-// BuildInsertion returns the edit that adds lines as the last statements of a block. The lines go before the closing
-// brace on its own line, indented one unit deeper than the brace's line. If other text shares the brace's line, they
-// go on that line instead, a space apart from what is before them.
+// BuildInsertion returns the edit that adds lines as the last statements of the given block statement. The lines go
+// before the closing brace, each on its own line, one level deeper than the brace's line. If other text shares the
+// brace's line, they go on that line instead, a space apart from what is before them.
 func (tree *Tree) BuildInsertion(holder int32, lines []string) Edit {
 	closing := tree.Statements[holder].Block.End - 1
 	row := tree.Lines.LineSpan(tree.Lines.ToPosition(closing).Line)

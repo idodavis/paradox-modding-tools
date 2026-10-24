@@ -29,6 +29,11 @@ export interface Child {
  */
 export interface Descriptor {
     "path": string;
+
+    /**
+     * the id metadata.json gives the mod; "" means none
+     */
+    "id": string;
     "name": string;
     "version": string;
     "supportedVersion": string;
@@ -44,10 +49,17 @@ export interface Descriptor {
      */
     "thumbnail": string;
     "workshopId": string;
+
+    /**
+     * Dependencies are the mods it needs: their ids in metadata.json, their names in a script descriptor. They are read
+     * and never written.
+     */
+    "dependencies": string[] | null;
 }
 
 /**
- * A FileChange is the data of the fs:changed event: the file's path and whether it was deleted.
+ * A FileChange is one file of the open workspace that changed or was deleted on disk. It is the data of the fs:changed
+ * event.
  */
 export interface FileChange {
     "path": string;
@@ -63,8 +75,7 @@ export interface FileText {
 }
 
 /**
- * A Mod is one mod of the open workspace: its record in the config, together with its descriptor as read from its
- * folder.
+ * A Mod is one mod of the open workspace: the mod as the config records it, with its descriptor.
  */
 export interface Mod {
     "id": string;
@@ -94,9 +105,8 @@ export interface Mod {
 }
 
 /**
- * A Place says where a file sits in the workspace: the file as its root lists it, together with that root, its
- * database, whether it is read only and whether the game loads it. Every answer that names a file carries one, so
- * the frontend never works any of this out itself.
+ * A Place is where one file sits in the workspace: the file as its root lists it, with the root it is under and what
+ * the workspace knows about it. Every answer that names a file carries one.
  */
 export interface Place {
     "path": string;
@@ -131,8 +141,7 @@ export interface Place {
 }
 
 /**
- * State describes the open workspace: whether one is open, its game and install, its mods, its language and how
- * fresh its dumps are.
+ * A State is the open workspace as the frontend sees it. Open is false and the rest is empty while none is open.
  */
 export interface State {
     "open": boolean;
@@ -142,5 +151,4 @@ export interface State {
     "mods": Mod[] | null;
     "language": string;
     "dumps": schema$0.SourceState;
-    "scannedAt": string;
 }

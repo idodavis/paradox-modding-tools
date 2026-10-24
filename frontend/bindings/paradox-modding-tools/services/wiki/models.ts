@@ -44,19 +44,31 @@ export interface Note {
 }
 
 /**
- * A Page is one cached wiki page: its title and its sanitized HTML.
+ * A Page is one wiki page as the cache keeps it, its HTML sanitized.
  */
 export interface Page {
     "title": string;
     "html": string;
     "fetchedAt": string;
+
+    /**
+     * the page has a heading that holds the word Modding
+     */
+    "modding": boolean;
 }
 
 /**
- * A Progress is the data of the wiki:progress event: how many pages a refresh has fetched out of the total.
+ * A Progress is the data of the wiki:progress event.
  */
 export interface Progress {
+    /**
+     * the pages a refresh has fetched so far
+     */
     "done": number;
+
+    /**
+     * the pages it fetches in all
+     */
     "total": number;
 }
 

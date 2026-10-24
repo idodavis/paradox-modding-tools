@@ -4,6 +4,7 @@ import (
 	"fmt"
 	"net/http"
 	"net/http/httptest"
+	"net/url"
 	"os"
 	"path/filepath"
 	"slices"
@@ -49,9 +50,10 @@ func openService(t *testing.T) (*Service, *workspace.Session) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	err = config.Update(func(records *app.Config) {
+	err = config.Update("", func(records *app.Config) error {
 		records.Installs = []app.Install{{ID: "i1", Game: "ck3", Path: resolveFixture(t, "ck3")}}
 		records.Workspaces = []app.Workspace{{ID: "w1", Name: "Test", Install: "i1", Language: "english"}}
+		return nil
 	})
 	if err != nil {
 		t.Fatal(err)
@@ -63,13 +65,13 @@ func openService(t *testing.T) (*Service, *workspace.Session) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	return &Service{Config: config, Workspace: wsp}, ws
+	return &Service{Workspace: wsp}, ws
 }
 
 // keepPage caches a page with the given title and HTML in a client's folder, as a refresh would have.
 func keepPage(t *testing.T, client *Client, html, title string) {
 	t.Helper()
-	if err := client.save(client.resolvePath(title), Page{Title: title, HTML: html, FetchedAt: time.Now()}); err != nil {
+	if err := app.SaveJSON(client.resolvePath(title), Page{Title: title, HTML: html, FetchedAt: time.Now(), Modding: hasModding(html)}); err != nil {
 		t.Fatal(err)
 	}
 }
@@ -96,16 +98,8 @@ func TestSanitizeKeepsAndDropsElements(t *testing.T) {
 		`<ul><li>item</li></ul><ol><li>step</li></ol><img src="http://wiki.test/images/a.png" alt="Alt"/><hr/>` +
 		`<table><thead><tr><th>head</th></tr></thead><tbody><tr><td>cell</td></tr></tbody></table>` +
 		`<pre>code block</pre><span>wrapped</span>`
-	if got := Sanitize(input, "http://wiki.test"); got != want {
+	if got := Sanitize(input, &url.URL{Scheme: "http", Host: "wiki.test"}); got != want {
 		t.Errorf("Sanitize =\n%s\nwant\n%s", got, want)
-	}
-}
-
-// TestToTextBreaksBlocks checks that each block element of sanitized HTML ends its line.
-func TestToTextBreaksBlocks(t *testing.T) {
-	got := ToText("<h2>Title</h2><p>one <b>two</b></p><ul><li>three</li><li>four</li></ul>")
-	if want := "Title\none two\nthree\nfour"; got != want {
-		t.Errorf("ToText = %q, want %q", got, want)
 	}
 }
 
@@ -122,7 +116,7 @@ func TestFindPagesRanksTitles(t *testing.T) {
 		listing.Pages = append(listing.Pages, Summary{Title: title, Category: "Modding"})
 	}
 	client := wik.resolveClient(ws)
-	if err := client.save(client.resolveListing(), listing); err != nil {
+	if err := app.SaveJSON(client.resolveListing(), listing); err != nil {
 		t.Fatal(err)
 	}
 	tests := []struct {
@@ -150,15 +144,16 @@ func TestFindPagesRanksTitles(t *testing.T) {
 // TestListNotesOrdersNewestFirst checks the order of the patch notes, which puts a minor version's hotfix notes after
 // its numbered patches and 1.10 after 1.9, and marks the pages that have a Modding heading.
 func TestListNotesOrdersNewestFirst(t *testing.T) {
-	client := NewClient(t.TempDir(), &game.Game{ID: "test"})
+	wik, ws := openService(t)
+	client := wik.resolveClient(ws)
 	listing := Listing{Versions: []string{"1.9", "1.30", "1.30.X", "1.10"}, RefreshedAt: time.Now()}
-	if err := client.save(client.resolveListing(), listing); err != nil {
+	if err := app.SaveJSON(client.resolveListing(), listing); err != nil {
 		t.Fatal(err)
 	}
 	keepPage(t, client, `<h2><span id="Modding">Modding</span></h2><p>text</p>`, "Patch 1.9")
 	keepPage(t, client, `<h2>Balance</h2><p>some modding is mentioned in a paragraph</p>`, "Patch 1.30")
 	keepPage(t, client, `<h3>Modding changes</h3>`, "Patch 1.30.X")
-	notes, err := client.ListNotes()
+	notes, err := wik.ListNotes()
 	want := []Note{
 		{"1.30.X", "Patch 1.30.X", true}, {"1.30", "Patch 1.30", false}, {"1.10", "Patch 1.10", false},
 		{"1.9", "Patch 1.9", true},
@@ -170,7 +165,7 @@ func TestListNotesOrdersNewestFirst(t *testing.T) {
 
 // TestResolveClientFollowsGame checks that the service keeps one client for a game and makes another for the next.
 func TestResolveClientFollowsGame(t *testing.T) {
-	wik := &Service{Config: &app.ConfigFile{Dirs: app.Dirs{Cache: t.TempDir()}}}
+	wik := &Service{Workspace: &workspace.Service{Config: &app.ConfigFile{Dirs: app.Dirs{Cache: t.TempDir()}}}}
 	ck3 := &workspace.Session{Game: game.LookupGame("ck3")}
 	first := wik.resolveClient(ck3)
 	if wik.resolveClient(ck3) != first {
@@ -182,9 +177,8 @@ func TestResolveClientFollowsGame(t *testing.T) {
 	}
 }
 
-// TestClientRefreshesFromServer checks the client against a wiki that serves two pages of the modding category in two
-// answers, a patch category with two versions, the pages' HTML and a missing page. One page is already cached, so the
-// refresh fetches and reports three.
+// TestClientRefreshesFromServer checks the client against a wiki that serves the modding category in two answers, a
+// patch category, the pages' HTML and a missing page. A page that is already cached is not fetched again.
 func TestClientRefreshesFromServer(t *testing.T) {
 	server := httptest.NewServer(http.HandlerFunc(func(writer http.ResponseWriter, request *http.Request) {
 		query := request.URL.Query()
@@ -329,8 +323,7 @@ func checkFunctions(t *testing.T, wik *Service, ws *workspace.Session) {
 	}
 }
 
-// TestRefreshInstalls refreshes the real wiki of each game whose PMT_TEST_INSTALL_<GAME> is set and logs the time
-// and the count of pages read.
+// TestRefreshInstalls refreshes the real wiki of each game whose PMT_TEST_INSTALL_<GAME> is set.
 func TestRefreshInstalls(t *testing.T) {
 	for _, gameID := range []string{"ck3", "vic3", "eu5"} {
 		t.Run(gameID, func(t *testing.T) {

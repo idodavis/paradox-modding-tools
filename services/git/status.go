@@ -14,7 +14,7 @@ type Change struct {
 	Unstaged bool   `json:"unstaged"`       // the change is in the working tree
 }
 
-// A Status is a repository's state: its branch, its upstream and how far they differ, and its changes.
+// A Status is what git status reports for one repository.
 type Status struct {
 	Branch   string   `json:"branch"`   // "" when detached
 	Upstream string   `json:"upstream"` // "" when there is none
@@ -34,13 +34,9 @@ var statuses = []struct{ letters, status string }{
 	{"A", "added"}, {"D", "deleted"}, {"MT", "modified"}, {"RC", "renamed"},
 }
 
-// ReadStatus returns a repository's status.
+// ReadStatus returns a repository's status. The error is git's if the folder is in no repository.
 func (git *Service) ReadStatus(dir string) (Status, error) {
-	root, err := git.resolveRepository(dir)
-	if err != nil {
-		return Status{}, err
-	}
-	stdout, err := git.Run(root, "status", "--porcelain=v2", "-z", "--branch")
+	stdout, err := git.Run(dir, "status", "--porcelain=v2", "-z", "--branch")
 	if err != nil {
 		return Status{}, err
 	}
@@ -71,13 +67,10 @@ type Ref struct {
 	Current bool   `json:"current"`
 }
 
-// ListRefs returns a repository's branches, remote branches and tags.
+// ListRefs returns a repository's branches, remote branches and tags. The error is git's if the folder is in no
+// repository.
 func (git *Service) ListRefs(dir string) ([]Ref, error) {
-	root, err := git.resolveRepository(dir)
-	if err != nil {
-		return nil, err
-	}
-	stdout, err := git.Run(root, "for-each-ref", "--format=%(refname)%00%(objectname)%00%(HEAD)")
+	stdout, err := git.Run(dir, "for-each-ref", "--format=%(refname)%00%(objectname)%00%(HEAD)")
 	if err != nil {
 		return nil, err
 	}

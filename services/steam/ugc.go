@@ -29,7 +29,7 @@ type Progress struct {
 	Total int64  `json:"total"`
 }
 
-// A Client is the game's own copy of Steam's library, loaded in the second copy of the app.
+// A Client is a connection to the game's own copy of Steam's library, loaded in a second copy of the app.
 type Client struct {
 	ugc   uintptr // Steam's Workshop interface
 	utils uintptr // Steam's utilities interface, which answers when a call has finished
@@ -55,9 +55,8 @@ const (
 	stageDone       = "done"
 )
 
-// The call results Steam fills in, each with its callback id, its size and the offsets of the fields this reads. The
-// results and the details are packed to packBytes, so their sizes and the offsets after an 8-byte field follow it.
-// The result code is the first field of every call result.
+// The call results Steam fills in, each with its callback id, its size and the offsets of the fields that are read.
+// Sizes and offsets after an 8-byte field follow the packing. The result code is the first field of every result.
 const (
 	resultCode = 0
 
@@ -78,10 +77,10 @@ const (
 	queryCompletedBytes = 280
 )
 
-// SteamUGCDetails_t: its size, with room to spare, and the offsets of the fields this reads. The text fields come
-// before the first 8-byte field, the owner's id, so they sit at the same offsets in every packing.
+// The size of Steam's SteamUGCDetails_t, with room to spare, and the offsets of the fields that are read. The text
+// fields come before the owner's id, so their offsets do not depend on the packing.
 const (
-	detailsBytes       = 10 << 10 // the struct is a little under 9.8 KB
+	detailsBytes       = 10 << 10
 	detailsResult      = 8
 	detailsTitle       = 24
 	detailsTitleBytes  = 129
@@ -116,7 +115,7 @@ var api struct {
 	startUpdate         func(ugc uintptr, appID uint32, id uint64) uint64
 	setTitle            func(ugc uintptr, update uint64, text string) bool
 	setDescription      func(ugc uintptr, update uint64, text string) bool
-	setTags             func(ugc uintptr, update uint64, tags unsafe.Pointer, allowAdminTags bool) bool
+	setTags             func(ugc uintptr, update uint64, tags unsafe.Pointer) bool
 	setContent          func(ugc uintptr, update uint64, dir string) bool
 	setPreview          func(ugc uintptr, update uint64, file string) bool
 	addPreviewFile      func(ugc uintptr, update uint64, file string, previewType int32) bool
@@ -166,7 +165,7 @@ var bindings = map[string]any{
 }
 
 // Open loads Steam's library from the given path and initializes it for the game's app id. Steam must be running
-// and signed in.
+// and signed in. It returns an error if the library does not load or Steam does not start.
 func Open(libraryPath string, appID int) (*Client, error) {
 	handle, err := loadLibrary(libraryPath)
 	if err != nil {
@@ -187,7 +186,8 @@ func Open(libraryPath string, appID int) (*Client, error) {
 // Close shuts the library down.
 func (client *Client) Close() { api.shutdown() }
 
-// FetchDetails reads an item's details from Steam.
+// FetchDetails fetches an item's details from Steam. It returns an error if the text is not a Workshop item's id or
+// Steam has no details of the item.
 func (client *Client) FetchDetails(workshopID string) (Details, error) {
 	id, err := strconv.ParseUint(workshopID, 10, 64)
 	if err != nil {
@@ -215,7 +215,7 @@ func (client *Client) FetchDetails(workshopID string) (Details, error) {
 	return details, nil
 }
 
-// decodeDetails reads the fields of an item's details from the bytes Steam filled in.
+// decodeDetails decodes the item's details from the bytes Steam filled in. The subscribers are not among them.
 func decodeDetails(raw []byte) Details {
 	visibility := int(binary.LittleEndian.Uint32(raw[detailsVisibility:]))
 	tags := toText(raw[detailsTags : detailsTags+detailsTagsBytes])
@@ -237,7 +237,8 @@ func toText(field []byte) string {
 	return string(text)
 }
 
-// CreateItem creates a new Workshop item for the app and returns its id.
+// CreateItem creates a new Workshop item for the app and returns its id. It returns the id with an error if the Steam
+// user has not accepted the Workshop's legal agreement yet.
 func (client *Client) CreateItem() (string, error) {
 	call := api.createItem(client.ugc, uint32(client.appID), communityFileType)
 	result, err := client.fetchResult(call, createItemResultID, createItemResultBytes, nil)
@@ -254,7 +255,9 @@ func (client *Client) CreateItem() (string, error) {
 	return workshopID, nil
 }
 
-// Submit uploads a folder and a listing to an item, calling the progress function until Steam commits.
+// Submit uploads a folder and a listing to a Workshop item. It calls the given function with each step of the upload.
+// It returns an error if the text is not a Workshop item's id, Steam refuses a part of the update, or the Steam user
+// has not accepted the Workshop's legal agreement yet.
 func (client *Client) Submit(workshopID string, listing Listing, uploadDir string, progress func(Progress)) error {
 	id, err := strconv.ParseUint(workshopID, 10, 64)
 	if err != nil {
@@ -350,13 +353,13 @@ func (client *Client) setTexts(update uint64, listing Listing) error {
 	}
 	// Steam's array of strings is a pointer to the strings and their count
 	array := [2]uintptr{uintptr(unsafe.Pointer(unsafe.SliceData(pointers))), uintptr(len(pointers))}
-	errs = append(errs, toError(api.setTags(client.ugc, update, unsafe.Pointer(&array), false), "tags"))
+	errs = append(errs, toError(api.setTags(client.ugc, update, unsafe.Pointer(&array)), "tags"))
 	runtime.KeepAlive(pointers)
 	return errors.Join(errs...)
 }
 
-// setVisibility sets the visibility of an update to the given word. The empty word leaves the item's own. It
-// returns an error for any other word that is not a visibility.
+// setVisibility sets the visibility of an update. The empty text leaves the item's own. It returns an error for a
+// text that is no visibility.
 func (client *Client) setVisibility(update uint64, visibility string) error {
 	if err := toVisibilityError(visibility); err != nil || visibility == "" {
 		return err
@@ -420,9 +423,9 @@ func toVideoID(link string) string {
 	return link
 }
 
-// fetchResult waits for one of Steam's calls to finish and returns the bytes of its result, which the given
-// callback id and size describe. While it waits it runs Steam's callbacks and calls the given function, if any,
-// every poll. It returns an error if Steam started no call or says the call failed.
+// fetchResult waits for one of Steam's calls to finish and returns the bytes of its result, as the given callback id
+// and size describe them. While it waits it calls the given function, if any. It returns an error if Steam started
+// no call or says the call failed.
 func (client *Client) fetchResult(call uint64, callbackID, size int32, poll func()) ([]byte, error) {
 	if call == invalidCall {
 		return nil, errors.New("steam did not start the call")

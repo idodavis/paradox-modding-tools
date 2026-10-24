@@ -12,7 +12,7 @@ import { router } from "./app/router";
 import { subscribeEvents } from "./app/events";
 import { useSearchStore } from "./stores/search";
 import { setupMonaco } from "./pages/ide/editor/monaco";
-import "./styles/themes.css";
+import "./styles/nuxt-ui.css";
 
 const app = createApp(App);
 app.use(createPinia());

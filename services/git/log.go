@@ -20,20 +20,17 @@ type Commit struct {
 	Refs    []string  `json:"refs"` // the refs pointing here, decorated
 }
 
-// ListCommits returns the commits reachable from the given refs, newest first, up to the given limit.
+// ListCommits returns the commits reachable from the given refs, newest first, up to the given limit. With no refs
+// it starts from HEAD. It returns an empty list for a repository with no commit and for a folder in no repository.
 func (git *Service) ListCommits(dir string, limit int, refs []string) ([]Commit, error) {
-	root, err := git.resolveRepository(dir)
-	if err != nil {
-		return nil, err
-	}
 	// the closing "--" keeps a ref named like a file from being read as a path
 	args := slices.Concat([]string{
 		"log", fmt.Sprintf("--max-count=%d", limit), "--format=%H%x00%h%x00%P%x00%an%x00%aI%x00%s%x00%D%x1e",
 	}, refs, []string{"--"})
-	stdout, err := git.Run(root, args...)
+	stdout, err := git.Run(dir, args...)
 	if err != nil {
 		// a repository before its first commit has no log, which is not an error
-		if _, headErr := git.Run(root, "rev-parse", "--verify", "-q", "HEAD"); headErr != nil {
+		if _, headErr := git.Run(dir, "rev-parse", "--verify", "-q", "HEAD"); headErr != nil {
 			return []Commit{}, nil
 		}
 		return nil, err
@@ -52,13 +49,9 @@ func (git *Service) ListCommits(dir string, limit int, refs []string) ([]Commit,
 	return commits, nil
 }
 
-// ListCommitFiles returns the files one commit changed.
+// ListCommitFiles returns the files changed by the commit with the given hash. A renamed file carries its old path.
 func (git *Service) ListCommitFiles(dir, hash string) ([]Change, error) {
-	root, err := git.resolveRepository(dir)
-	if err != nil {
-		return nil, err
-	}
-	stdout, err := git.Run(root, "show", "--name-status", "--format=", "-z", hash)
+	stdout, err := git.Run(dir, "show", "--name-status", "--format=", "-z", hash)
 	if err != nil {
 		return nil, err
 	}

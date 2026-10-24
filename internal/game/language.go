@@ -1,6 +1,5 @@
-// language.go holds the script language's own rules: the shapes a block can hold and how a block of each shape
-// reads its keys, the keys the language gives a fixed shape to, its operators with the sentence a hover card
-// shows, and the words that name a scope, a variable or a yes-or-no.
+// language.go holds the script language's own rules: the shapes a block can hold and how each reads its keys, the
+// keywords with the sentence a hover card shows for each, and the words that name a scope, a variable or a yes-or-no.
 
 package game
 
@@ -11,39 +10,43 @@ import (
 	"paradox-modding-tools/internal/jomini"
 )
 
-// A KeyRule says what it means for a key to fit one rule: where its block's fields come from, what decides the
-// block's shape, and how the scope changes inside it. Whether the rule fits is the walk's test.
+// A KeyRule is what follows when a key fits one rule of the language. Whether the rule fits is the walk's test.
 type KeyRule struct {
-	Fields string // where the block's fields come from: child, callee, arguments, holder. Read by the walk alone.
-	Shape  string // what decides the shape it holds: claim, command, same, arguments. Read by the walk alone.
-	Scope  string // how its scope follows: stays, follows, unknown. Read by the walk alone.
+	Fields string // where the block's fields come from: child, callee, arguments or holder
+	Shape  string // what decides the shape it holds: claim, command, same or arguments
+	Scope  string // how its scope follows: stays, follows or unknown
 }
 
-// A ShapeRule says how a block of one shape reads its keys.
+// A ShapeRule is how a block of one shape reads its keys.
 type ShapeRule struct {
 	Rules  []string // the KeyRules tried in order; the first that fits wins
 	Caller string   // the word a call here resolves by; AnyCall every callable
 	Allows []string // the declared commands it holds; inside a trigger, never an effect
+	// Values is the database every value written in a block of this shape names; "" means none.
+	Values string
+	// Blocks is the shape of a block written in a block of this shape where its key gives none; "" means the key's rule
+	// decides.
+	Blocks string
 }
 
-// A Keyword is a key of the language itself: one it gives a fixed shape to, or one of its operators. Key is a key
-// path whose last step is the key as written in lower case and whose earlier steps are the commands that must
-// hold it; <number> and <any> match by form, and a trailing * makes it a prefix. The first row that fits a key
-// wins.
+// A Keyword is a key of the language itself: one it gives a fixed shape to, or one of its operators. The first row
+// that fits a key wins.
 type Keyword struct {
+	// Key is a key path. Its last step is the key as written in lower case, and its earlier steps are the commands
+	// that must hold it. <number> and <any> match by shape, and a trailing * makes it a prefix.
 	Key    string
-	Holder string // fits only in a block of this shape; "" any
-	Shape  string // what its block holds, a Shapes key; enclosing the holder's; "" what the key's rule gives
-	Caller string // the word its calls resolve by; "" the shape's own
-	Shows  string // a description marker: which of its texts it shows, first, random, leaf. Read by the walk.
-	Class  string // the operator class: logical, conditional, flow, display, saving, math, list; "" none
+	Holder string // fits only in a block of this shape; "" means any
+	Shape  string // what its block holds, a Shapes key; enclosing the holder's; "" means what the key's rule gives
+	Caller string // the word its calls resolve by; "" means the shape's own
+	Shows  string // a description marker: which of its texts it shows, first, random or leaf
+	Class  string // the operator class: logical, conditional, flow, display, saving, math, list; "" means none
 	Blurb  string // the one line a hover card shows
 }
 
 // AnyCall is the Caller of a block that resolves a call in every callable.
 const AnyCall = "*"
 
-// AnyKey is the key that matches any key written in a block, such as switch's cases or a widget's blocks.
+// AnyKey is the key that matches any key written in a block, such as switch's cases.
 const AnyKey = "<any>"
 
 // NumberKey is the key that matches a key written as a number or a date, such as random_list's branches.
@@ -73,17 +76,16 @@ const descBlurb = "The text shown: a localization key, or a block that chooses o
 // root, the scope before the last step, and the current one. The dumps declare them as links with no target.
 var ScopeLinks = struct{ Root, Previous, This string }{"root", "prev", "this"}
 
-// ConceptCalls are the two ways a data call in a localization text names a game concept. A Call step names the
-// concept its first quoted argument holds, as in [Concept('faith','Faiths')]. A call of one step with no arguments
-// and Format after its bar, in either case, names the concept its step is, as in [faith|E].
-var ConceptCalls = struct{ Call, Format string }{"Concept", "E"}
+// ConceptFormat is the format a data call in a localization text carries after its bar when its one step is the name
+// of a game concept, as in [faith|E]. It is written in either case.
+const ConceptFormat = "E"
 
-// A DocType is what a term the docs write a field's type with means: the value type, the database a reference
-// names, and the shape of the block the field holds.
+// A DocType is what a type word in the games' own docs stands for.
 type DocType struct {
 	Value    string // bool, number, date, text, reference, color, block, or unknown for a key or a block
-	Database string // the database a reference names; "" unknown
+	Database string // the database a reference names; "" means unknown
 	Shape    string // a Shapes key for a block; "" for none
+	Values   bool   // the term takes a script value
 }
 
 // DocTypes are the words the games' own docs write a type with, as the installs' .info, .md and readme files
@@ -91,10 +93,11 @@ type DocType struct {
 var DocTypes = map[string]DocType{
 	"bool": {Value: "bool"}, "boolean": {Value: "bool"}, "yes/no": {Value: "bool"},
 	"int": {Value: "number"}, "integer": {Value: "number"}, "int32": {Value: "number"}, "number": {Value: "number"},
-	"float": {Value: "number"}, "decimal": {Value: "number"}, "fixed point": {Value: "number"}, "value": {Value: "number"},
-	"script value": {Value: "number"}, "scripted value": {Value: "number"}, "scripted value int32": {Value: "number"},
-	"date":   {Value: "date"},
-	"string": {Value: "text"}, "text": {Value: "text"}, "name": {Value: "text"}, "identifier": {Value: "text"},
+	"float": {Value: "number"}, "decimal": {Value: "number"}, "fixed point": {Value: "number"}, "value": {Value: "number", Values: true},
+	"script value": {Value: "number", Values: true}, "scripted value": {Value: "number", Values: true},
+	"scripted value int32": {Value: "number"},
+	"date":                 {Value: "date"},
+	"string":               {Value: "text"}, "text": {Value: "text"}, "name": {Value: "text"}, "identifier": {Value: "text"},
 	"localization key": {Value: "reference", Database: Localization}, "loc key": {Value: "reference", Database: Localization},
 	"localisation key": {Value: "reference", Database: Localization},
 	"database key":     {Value: "reference"}, "key": {Value: "reference"}, "array of database keys": {Value: "reference"},
@@ -104,37 +107,60 @@ var DocTypes = map[string]DocType{
 	"trigger": {Value: "block", Shape: "triggers"}, "triggers": {Value: "block", Shape: "triggers"},
 	"effect": {Value: "block", Shape: "effects"}, "effects": {Value: "block", Shape: "effects"},
 	"dynamic description": {Value: "unknown", Shape: "description"},
-	"modifier":            {Value: "block"}, "modifiers": {Value: "block"}, "block": {Value: "block"}, "mtth": {Value: "block"},
+	"modifier":            {Value: "block", Shape: ShapeModifiers}, "modifiers": {Value: "block", Shape: ShapeModifiers},
+	"modifier(s)": {Value: "block", Shape: ShapeModifiers}, "block": {Value: "block"}, "mtth": {Value: "block"},
 	"scripted cost": {Value: "block"}, "cost": {Value: "block"}, "vector 2": {Value: "block"}, "vector2": {Value: "block"},
 }
 
-// KeyRules is the table of key rules by name. When the walk finds that a key fits a rule, the row says where the
-// block's fields come from, what decides its shape and how the scope follows.
+// KeyRules is the table of key rules by name.
 var KeyRules = map[string]KeyRule{
-	"known-call":    {Fields: "callee", Shape: "claim", Scope: "stays"},        // the name of a scripted definition vanilla defines
-	"declared":      {Fields: "child", Shape: "claim", Scope: "stays"},         // a key the dumps, docs or wiki declare at this place
-	"documented":    {Fields: "child", Shape: "claim", Scope: "stays"},         // a key the docs of the definition's database write
+	"known-call":    {Fields: "callee", Shape: "claim", Scope: "stays"},        // a scripted definition vanilla defines
+	"declared":      {Fields: "child", Shape: "claim", Scope: "stays"},         // a key the dumps, docs or wiki declare
+	"documented":    {Fields: "child", Shape: "claim", Scope: "stays"},         // a key the database's docs write
 	"command":       {Fields: "arguments", Shape: "command", Scope: "follows"}, // a trigger or effect the dumps declare
 	"operator":      {Fields: "child", Shape: "arguments", Scope: "stays"},     // a value block's operator (IsOperator)
-	"link":          {Fields: "holder", Shape: "same", Scope: "follows"},       // a link the dumps declare, by name or prefix
-	"observed":      {Fields: "child", Shape: "claim", Scope: "stays"},         // a key vanilla writes at this place
+	"link":          {Fields: "holder", Shape: "same", Scope: "follows"},       // a link the dumps declare
+	"modifier":      {Fields: "child", Shape: "claim", Scope: "stays"},         // a modifier the dumps declare
+	"modifier-type": {Fields: "child", Shape: "claim", Scope: "stays"},         // any other name: a modifier type
+	"observed":      {Fields: "child", Shape: "claim", Scope: "unknown"},       // a key vanilla writes: scope unknown
 	"field":         {Fields: "child", Shape: "claim", Scope: "stays"},         // the place's own field, known or not
-	"field-or-call": {Fields: "child", Shape: "claim", Scope: "stays"},         // the place's own field, and a call where vanilla writes commands here
-	"call":          {Fields: "child", Shape: "claim", Scope: "stays"},         // any other key: a call to a scripted definition
+	"field-or-call": {Fields: "child", Shape: "claim", Scope: "stays"},         // its own field, or a call vanilla writes
+	"call":          {Fields: "child", Shape: "claim", Scope: "stays"},         // any other key: a scripted call
 }
+
+// The shapes that Go code names. Each is the key of its row in Shapes.
+const (
+	ShapeUnknown   = "unknown"   // a block whose keys can be of any kind
+	ShapeFields    = "fields"    // a block of a definition's own fields
+	ShapeArguments = "arguments" // a block of what a command takes
+	ShapeTriggers  = "triggers"  // a block of triggers
+	ShapeEffects   = "effects"   // a block of effects
+	ShapeValue     = "value"     // a block that computes a number
+	ShapeWidget    = "widget"    // a block of a GUI widget's properties and children
+	ShapeModifiers = "modifiers" // a block of modifiers, each a name and a number
+)
 
 // Shapes is the table of shapes a block can hold, each with how it reads its keys. A description block reads its
 // keys by the Keywords alone, and "enclosing" in a keyword or a claim means the holder's shape.
 var Shapes = map[string]ShapeRule{
-	"fields":    {Rules: []string{"field"}},
-	"triggers":  {Rules: []string{"known-call", "declared", "command", "observed", "link", "call"}, Caller: callTrigger, Allows: []string{DeclaredTrigger}},
-	"effects":   {Rules: []string{"known-call", "declared", "command", "observed", "link", "call"}, Caller: callEffect, Allows: []string{DeclaredEffect}},
-	"arguments": {Rules: []string{"known-call", "declared", "command", "observed", "link", "call"}, Caller: AnyCall, Allows: []string{DeclaredEffect, DeclaredTrigger}},
-	"value": {
+	ShapeFields: {Rules: []string{"field"}},
+	ShapeTriggers: {
+		Rules:  []string{"known-call", "declared", "command", "observed", "link", "call"},
+		Caller: callTrigger, Allows: []string{DeclaredTrigger},
+	},
+	ShapeEffects: {
+		Rules:  []string{"known-call", "declared", "command", "observed", "link", "call"},
+		Caller: callEffect, Allows: []string{DeclaredEffect},
+	},
+	ShapeArguments: {
+		Rules:  []string{"known-call", "declared", "command", "observed", "link", "call"},
+		Caller: AnyCall, Allows: []string{DeclaredEffect, DeclaredTrigger},
+	},
+	ShapeValue: {
 		Rules:  []string{"known-call", "declared", "command", "operator", "observed", "link", "call"},
 		Caller: callValue, Allows: []string{DeclaredEffect, DeclaredTrigger},
 	},
-	"unknown": {
+	ShapeUnknown: {
 		Rules:  []string{"known-call", "declared", "command", "link", "field-or-call"},
 		Caller: AnyCall, Allows: []string{DeclaredEffect, DeclaredTrigger},
 	},
@@ -142,13 +168,15 @@ var Shapes = map[string]ShapeRule{
 		Rules:  []string{"declared", "documented", "known-call", "command", "observed", "link", "call"},
 		Caller: callEffect, Allows: []string{DeclaredEffect},
 	},
-	"widget":      {Rules: []string{"known-call", "field"}, Caller: "widget"},
-	"description": {},
+	ShapeWidget:    {Rules: []string{"known-call", "field", "call"}, Caller: guiTagCalls, Blocks: ShapeWidget},
+	ShapeModifiers: {Rules: []string{"modifier", "declared", "observed", "modifier-type"}},
+	// _events.info:313-318 writes a description's texts as localization keys
+	"description": {Values: Localization},
 }
 
 // Keywords lists the keys the language gives a fixed shape to (random_list's branches, switch's cases, the list
-// iterators, a description's markers, a value block's operators, a widget's blocks), followed by the operators the
-// dumps declare as commands, which name no shape and leave it to the key's rule.
+// iterators, a description's markers, a value block's operators), followed by the operators the dumps declare as
+// commands, which name no shape and leave it to the key's rule.
 var Keywords = []Keyword{
 	{Key: "random_list/<number>", Shape: "effects", Caller: AnyCall, Blurb: "One branch of a random list; its number is how likely it is."},
 	{Key: "switch/<any>", Shape: "enclosing", Blurb: "One case of a switch: runs when the trigger's value is this."},
@@ -162,6 +190,7 @@ var Keywords = []Keyword{
 	{Holder: "description", Key: "trigger", Shape: "triggers", Blurb: "The conditions that must hold for the block around it to count."},
 	{Holder: "description", Key: "desc", Shape: "description", Blurb: descBlurb}, // a scalar desc is the text itself
 	{Holder: "value", Key: "value", Shape: "value", Class: "math", Blurb: "The number a script value starts from, or is set to."},
+	{Holder: "arguments", Key: "value", Shape: "value", Class: "math", Blurb: "The number the command takes, or a script value that works it out."},
 	{Holder: "value", Key: "add", Shape: "value", Class: "math", Blurb: "Adds the number or script value given."},
 	{Holder: "value", Key: "subtract", Shape: "value", Class: "math", Blurb: "Subtracts the number or script value given."},
 	{Holder: "value", Key: "multiply", Shape: "value", Class: "math", Blurb: "Multiplies by the number or script value given."},
@@ -171,22 +200,33 @@ var Keywords = []Keyword{
 	{Holder: "value", Key: "max", Shape: "value", Class: "math", Blurb: "Keeps the result at most the number given."},
 	{Holder: "value", Key: "round", Shape: "value", Class: "math", Blurb: "Rounds the result to the nearest whole number."},
 	{Holder: "value", Key: "round_to", Shape: "value", Class: "math", Blurb: "Rounds the result to the nearest multiple of the number given."},
+	// _script_values.info:38
+	{Holder: "value", Key: "pow", Shape: "value", Class: "math", Blurb: "Raises the result to the power of the number given."},
 	{Holder: "value", Key: "ceiling", Shape: "value", Class: "math", Blurb: "Rounds the result up to a whole number."},
 	{Holder: "value", Key: "floor", Shape: "value", Class: "math", Blurb: "Rounds the result down to a whole number."},
 	{Holder: "value", Key: "fixed_range", Shape: "value", Class: "math", Blurb: "Keeps the result between the min and max inside it."},
 	{Holder: "value", Key: "integer_range", Shape: "value", Class: "math", Blurb: "Keeps the result a whole number between the min and max inside it."},
 	{Holder: "value", Key: "abs", Shape: "value", Class: "math", Blurb: "Drops the result's sign."},
-	{Holder: "value", Key: "desc", Shape: "arguments", Blurb: descBlurb},
-	{Holder: "value", Key: "format", Shape: "arguments", Blurb: "How a value is shown: its digits, a percent sign, a plus sign."},
+	// _script_values.info:48-49
+	{Holder: "value", Key: "desc", Shape: "description", Blurb: descBlurb},
+	{Holder: "value", Key: "format", Shape: "description", Blurb: "The text that lays out this block's line when the value is broken down."},
 	{Holder: "value", Key: "save_temporary_value_as", Shape: "arguments", Class: "saving", Blurb: "Remembers a value under a name until this script value ends."},
-	{Holder: "widget", Key: AnyKey, Shape: "widget"},
-	{Key: "and", Class: "logical", Blurb: "True only when everything inside it is true."},
-	{Key: "or", Class: "logical", Blurb: "True when at least one thing inside it is true."},
-	{Key: "not", Class: "logical", Blurb: "True when what is inside it is false."},
-	{Key: "nor", Class: "logical", Blurb: "True only when nothing inside it is true."},
-	{Key: "nand", Class: "logical", Blurb: "True unless everything inside it is true."},
-	{Key: "all_false", Class: "logical", Blurb: "True only when nothing inside it is true (the same as NOR)."},
-	{Key: "any_false", Class: "logical", Blurb: "True when at least one thing inside it is false (the same as NAND)."},
+	// a weight block: CK3 _scripted_modifiers.info:13-22, EU5 scripted_modifiers.info:8-22, Vic3 _on_actions.md:50-55
+	{Holder: "value", Key: "base", Shape: "value", Class: "math", Blurb: "The number a weight starts from."},
+	// the CK3 wiki's Weight modifier page
+	{Holder: "value", Key: "factor", Shape: "value", Class: "math", Blurb: "Multiplies the weight by the number given."},
+	{Holder: "value", Key: "modifier", Shape: "value", Blurb: "Changes the weight by its add or factor when the triggers inside it hold."},
+	// common/character_interactions/00_alliance.txt:648 writes a weight modifier's conditions in it
+	{Holder: "value", Key: "trigger", Shape: ShapeTriggers, Blurb: "The conditions that must hold for the modifier around it to apply."},
+	{Holder: "value", Key: "opinion_modifier", Shape: "arguments", Blurb: "Changes the weight by how much one character likes another."},
+	{Holder: "value", Key: "compare_modifier", Shape: "arguments", Blurb: "Changes the weight by how a value of one character compares with another's."},
+	{Key: "and", Shape: "triggers", Class: "logical", Blurb: "True only when everything inside it is true."},
+	{Key: "or", Shape: "triggers", Class: "logical", Blurb: "True when at least one thing inside it is true."},
+	{Key: "not", Shape: "triggers", Class: "logical", Blurb: "True when what is inside it is false."},
+	{Key: "nor", Shape: "triggers", Class: "logical", Blurb: "True only when nothing inside it is true."},
+	{Key: "nand", Shape: "triggers", Class: "logical", Blurb: "True unless everything inside it is true."},
+	{Key: "all_false", Shape: "triggers", Class: "logical", Blurb: "True only when nothing inside it is true (the same as NOR)."},
+	{Key: "any_false", Shape: "triggers", Class: "logical", Blurb: "True when at least one thing inside it is false (the same as NAND)."},
 	{Key: "always", Class: "logical", Blurb: "True or false as written: always = yes is always true."},
 	{Key: "if", Shape: "enclosing", Class: "conditional", Blurb: "Runs what is inside it when its limit holds."},
 	{Key: "else_if", Shape: "enclosing", Class: "conditional", Blurb: "Runs when the if or else_if before it did not, and its own limit holds."},
@@ -194,15 +234,15 @@ var Keywords = []Keyword{
 	{Key: "trigger_if", Shape: "enclosing", Class: "conditional", Blurb: "Checks what is inside it only when its limit holds."},
 	{Key: "trigger_else_if", Shape: "enclosing", Class: "conditional", Blurb: "Checks what is inside it when the trigger_if before it was skipped and its own limit holds."},
 	{Key: "trigger_else", Shape: "enclosing", Class: "conditional", Blurb: "Checks what is inside it when every trigger_if before it was skipped."},
-	{Key: "limit", Class: "conditional", Blurb: "The conditions an if, a list, a while or a trigger_if checks first."},
-	{Key: "alternative_limit", Class: "conditional", Blurb: "A second limit a list falls back to when its limit matches nothing."},
+	{Key: "limit", Shape: "triggers", Class: "conditional", Blurb: "The conditions an if, a list, a while or a trigger_if checks first."},
+	{Key: "alternative_limit", Shape: "triggers", Class: "conditional", Blurb: "A second limit a list falls back to when its limit matches nothing."},
 	{Key: "switch", Class: "conditional", Blurb: "Reads one trigger and runs the case whose value matches, else the fallback."},
-	{Key: "calc_true_if", Class: "conditional", Blurb: "True when at least amount of the triggers inside it are true."},
-	{Key: "while", Class: "flow", Blurb: "Repeats what is inside it while its limit holds, or count times."},
-	{Key: "random", Class: "flow", Blurb: "Runs what is inside it with the chance given, else nothing."},
+	{Key: "calc_true_if", Shape: "triggers", Class: "conditional", Blurb: "True when at least amount of the triggers inside it are true."},
+	{Key: "while", Shape: "effects", Class: "flow", Blurb: "Repeats what is inside it while its limit holds, or count times."},
+	{Key: "random", Shape: "effects", Class: "flow", Blurb: "Runs what is inside it with the chance given, else nothing."},
 	{Key: "random_list", Class: "flow", Blurb: "Picks one branch at random; each branch's number is its weight."},
-	{Key: "hidden_effect", Class: "display", Blurb: "Runs its effects without showing them in the tooltip."},
-	{Key: "show_as_tooltip", Class: "display", Blurb: "Shows its effects in the tooltip without running them."},
+	{Key: "hidden_effect", Shape: "effects", Class: "display", Blurb: "Runs its effects without showing them in the tooltip."},
+	{Key: "show_as_tooltip", Shape: "effects", Class: "display", Blurb: "Shows its effects in the tooltip without running them."},
 	{Key: "custom_tooltip", Class: "display", Blurb: "Shows a text of your own in place of the tooltip of what is inside."},
 	{Key: "custom_description", Class: "display", Blurb: "Shows a text of your own in place of the generated description."},
 	{Key: "custom_label", Class: "display", Blurb: "Shows a text of your own in the tooltip, with this scope as its subject."},
@@ -246,26 +286,62 @@ var LinkMakers = map[string][]string{
 // Bools are the words a yes-or-no value is written with.
 var Bools = []string{"yes", "no"}
 
-// LookupKeyword returns the first keyword that fits a key, given the shape of the block it is in and the command
-// that holds it: by the key alone, or by the command and the key. A key that is a number or a date also fits the
-// <number> form. A prefix keyword never fits here. It returns false if none fits.
-func LookupKeyword(shape, command, key string) (Keyword, bool) {
-	number := IsNumberKey(key)
-	for _, row := range Keywords {
-		if row.Holder != "" && row.Holder != shape || strings.HasSuffix(row.Key, "*") {
-			continue
-		}
-		holder, last, held := strings.Cut(row.Key, "/")
-		if !held {
-			last = row.Key
-		} else if holder != command {
-			continue
-		}
-		if last == key || last == AnyKey || number && last == NumberKey {
-			return row, true
+// keywordPositions holds where each keyword sits in Keywords, by the key it fits. A keyword written under a command
+// is held by its key without the command. A prefix keyword is not held.
+var keywordPositions = func() map[string][]int {
+	positions := map[string][]int{}
+	for position, row := range Keywords {
+		if !strings.HasSuffix(row.Key, "*") {
+			_, last, held := strings.Cut(row.Key, "/")
+			if !held {
+				last = row.Key
+			}
+			positions[last] = append(positions[last], position)
 		}
 	}
-	return Keyword{}, false
+	return positions
+}()
+
+// iteratorKeywords holds the keywords whose key is a prefix, such as any_*, in the order Keywords gives them.
+var iteratorKeywords = slices.DeleteFunc(slices.Clone(Keywords), func(row Keyword) bool { return !strings.HasSuffix(row.Key, "*") })
+
+// makerLinks holds, for each command that LinkMakers names, the link that reads the names the command makes.
+var makerLinks = func() map[string]string {
+	links := map[string]string{}
+	for link, makers := range LinkMakers {
+		for _, maker := range makers {
+			links[maker] = link
+		}
+	}
+	return links
+}()
+
+// LookupKeyword returns the first keyword that fits a key, given the shape of the block it is in and the command
+// that holds it: by the key alone, or by the command and the key. A key that is a number or a date also fits
+// <number>. A prefix keyword never fits here. It returns false if none fits.
+func LookupKeyword(shape, command, key string) (Keyword, bool) {
+	candidates := append(make([]string, 0, 3), key, AnyKey)
+	if IsNumberKey(key) {
+		candidates = append(candidates, NumberKey)
+	}
+	best, ok := 0, false
+	for _, candidate := range candidates {
+		for _, position := range keywordPositions[candidate] {
+			if ok && position > best {
+				break
+			}
+			row := Keywords[position]
+			holder, _, held := strings.Cut(row.Key, "/")
+			if (row.Holder == "" || row.Holder == shape) && (!held || holder == command) {
+				best, ok = position, true
+				break
+			}
+		}
+	}
+	if !ok {
+		return Keyword{}, false
+	}
+	return Keywords[best], true
 }
 
 // IsNumberKey reports whether a key is written as a number or a date, the keys that a <number> form stands for.
@@ -277,19 +353,8 @@ func IsNumberKey(key string) bool {
 // LookupLinkMaker returns the link whose names a command makes, given the command or command/key for a key in its
 // block. It returns false if the command makes no name a link reads.
 func LookupLinkMaker(maker string) (string, bool) {
-	for link, makers := range LinkMakers {
-		if slices.Contains(makers, maker) {
-			return link, true
-		}
-	}
-	return "", false
-}
-
-// LookupDescriptionKeyword returns the keyword for a key inside a dynamic description: its text, a marker or its
-// trigger, else the keyword of the same key in any block (and, or), else the zero keyword.
-func LookupDescriptionKeyword(key string) Keyword {
-	row, _ := LookupKeyword("description", "", key)
-	return row
+	link, ok := makerLinks[maker]
+	return link, ok
 }
 
 // ClassifyKey returns the operator class of a key, or "" if it is not an operator. Keys are matched in lower case
@@ -308,8 +373,8 @@ func IsOperator(key string) bool {
 // MatchListIterator returns the keyword whose prefix a key starts with: a call that iterates a scripted list, whose
 // block runs in the list's item scope. It returns false if the key starts with none.
 func MatchListIterator(key string) (Keyword, bool) {
-	for _, row := range Keywords {
-		if prefix, cut := strings.CutSuffix(row.Key, "*"); cut && strings.HasPrefix(key, prefix) {
+	for _, row := range iteratorKeywords {
+		if strings.HasPrefix(key, strings.TrimSuffix(row.Key, "*")) {
 			return row, true
 		}
 	}

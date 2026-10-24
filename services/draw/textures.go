@@ -18,15 +18,21 @@ import (
 // defineCall is the data call that reads a define, whose database lists the folders of the game's icons.
 const defineCall = "GetDefine"
 
-// resolveTexture finds the image file for a texture as a GUI or coat file writes it: a path under the game's gfx
-// folders, an icon name looked up in the given icon folders, or a texture binding, each found in the given index of
-// the mods. The icon folders are keyed by the define that names each; with none, an icon name finds nothing. It
-// returns "" if no file is found.
-func resolveTexture(ws *workspace.Session, mods *index.Index, folders map[string]string, written string) string {
-	if call, ok := jomini.ParseBracketed(written, 0); ok {
+// lookupDefineDatabase returns the database of the defines that the data call reading a define names: the one its
+// last argument names.
+func lookupDefineDatabase() string {
+	targets := game.GUI.CallTargets[defineCall]
+	return targets[len(targets)-1]
+}
+
+// resolveTexture returns the image file for a texture value as a GUI or coat file writes it: a path under the game's
+// gfx folders, an icon name looked up in the given icon folders, or a texture binding. The files are those of the
+// given index of the mods. The icon folders are keyed by the define that names each. It returns "" if no file is found.
+func resolveTexture(ws *workspace.Session, mods *index.Index, folders map[string]string, texture string) string {
+	if call, ok := jomini.ParseBracketed(texture, 0); ok {
 		return resolveBinding(ws, mods, folders, call)
 	}
-	return findFile(ws, mods, folders, written, "")
+	return findFile(ws, mods, folders, texture, "")
 }
 
 // resolveBinding returns the image file of a texture binding: the picture of the first definition that a quoted
@@ -53,15 +59,15 @@ func findPicture(ws *workspace.Session, mods *index.Index, folders map[string]st
 		return ""
 	}
 	for _, key := range game.GUI.PictureKeys {
-		if picture, ok := definition.tree.FindChild(definition.statement, key); ok && !definition.tree.Statements[picture].Value.IsEmpty() {
-			return findFile(ws, mods, folders, definition.tree.Unquoted(definition.tree.Statements[picture].Value), preferred)
+		if picture, ok := definition.tree.FindChildValue(definition.statement, key); ok && picture != "" {
+			return findFile(ws, mods, folders, picture, preferred)
 		}
 	}
 	return findFile(ws, mods, folders, reference.Name, preferred)
 }
 
-// findFile returns the image file that a written texture names: a path, else an icon name. The folder of the define
-// with the given name is searched first for an icon. It returns "" if neither names a file the game reads.
+// findFile returns the image file that a texture value names: a path, else an icon name. The folder of the preferred
+// define is searched first for an icon. It returns "" if neither names a file the game reads.
 func findFile(ws *workspace.Session, mods *index.Index, folders map[string]string, texture, preferred string) string {
 	if file, ok := mods.ResolveTexture(texture); ok {
 		return file
@@ -94,13 +100,13 @@ func findIcon(ws *workspace.Session, mods *index.Index, folders map[string]strin
 // findIconFolders returns the folder that each define the game keeps names as holding icons, with no slash at its end.
 func findIconFolders(ws *workspace.Session, mods *index.Index) map[string]string {
 	folders := map[string]string{}
-	for _, winner := range mods.ListKept(ws.Schema, game.GUI.Answered[defineCall]) {
-		name := mods.ToReference(winner.Site).Name
-		if !strings.HasSuffix(name, game.GUI.IconPathSuffix) {
+	for _, site := range mods.ListDefinitions(lookupDefineDatabase()) {
+		reference := mods.ToReference(site)
+		if _, listed := folders[reference.Name]; listed || !strings.HasSuffix(reference.Name, game.GUI.IconPathSuffix) {
 			continue
 		}
-		if define, ok := makeClause(ws, mods, winner); ok {
-			folders[name] = strings.TrimSuffix(define.tree.Unquoted(define.tree.Statements[define.statement].Value), "/")
+		if define, ok := findKeptClause(ws, mods, reference); ok {
+			folders[reference.Name] = strings.TrimSuffix(define.tree.Unquoted(define.tree.Statements[define.statement].Value), "/")
 		}
 	}
 	return folders

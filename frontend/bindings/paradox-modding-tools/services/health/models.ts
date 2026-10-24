@@ -9,7 +9,7 @@ import * as lsp$0 from "../lsp/models.js";
 import * as workspace$0 from "../workspace/models.js";
 
 /**
- * Compared is the texts of two statements, for the compare view to draw side by side.
+ * Compared holds the texts of two statements.
  */
 export interface Compared {
     "a": string;
@@ -17,8 +17,7 @@ export interface Compared {
 }
 
 /**
- * A Finding is one row of the Health page: its section, its code, the name and database it concerns, the facts
- * its message is written from, and the places it points at.
+ * A Finding is one row of the Health page: a problem, or a fact about the mods, with the places it points at.
  */
 export interface Finding {
     "section": string;
@@ -30,7 +29,7 @@ export interface Finding {
     "name": string;
 
     /**
-     * the database's words, as the page shows them
+     * what the database calls a definition
      */
     "database": string;
     "facts": { [_ in string]?: string } | null;
@@ -38,8 +37,7 @@ export interface Finding {
 }
 
 /**
- * A FindingSite is one place a finding points at, with whether the game keeps that definition and why. The range of
- * a definition covers its whole statement.
+ * A FindingSite is one place a finding points at, with whether the game keeps that definition and why.
  */
 export interface FindingSite {
     "place": workspace$0.Place;
@@ -63,7 +61,7 @@ export interface Overview {
 }
 
 /**
- * A Report is everything the Health page shows for one load order, except the game's error log.
+ * A Report is the sections and findings the Health page shows for one load order. It leaves out the game's error log.
  */
 export interface Report {
     "sections": Section[] | null;
@@ -71,11 +69,11 @@ export interface Report {
 }
 
 /**
- * A Section is one card of the Health page, with its count of findings.
+ * A Section is one card of the Health page, with how many findings it holds.
  */
 export interface Section {
     /**
-     * contests, overrides, dependencies, dangling, localization, script, unused, errorlog
+     * contests, overrides, dependencies, dangling, localization, script, errorlog
      */
     "id": string;
     "label": string;

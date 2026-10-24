@@ -1,6 +1,6 @@
 <!--
-  The findings of one section as a table. Each column sorts, a column with few values filters, and selecting a row
-  opens it.
+  The findings of one section as a table. Findings with the same code and name are grouped under one row. Each column
+  sorts, a column with few values filters, and selecting a row opens it.
 -->
 <script setup lang="ts">
 import type { Finding, Section } from "@services/health/models";

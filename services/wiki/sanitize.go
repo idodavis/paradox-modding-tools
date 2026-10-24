@@ -14,23 +14,21 @@ import (
 type element struct {
 	dropped    bool     // it goes with everything inside it
 	heading    bool     // it is a heading
-	after      string   // what ToText writes after it: a line break, or a space between table cells
 	attributes []string // the attributes it keeps
 }
 
-// anchor is the attributes of an element that may carry the target of a link inside the page. The element keeps the
-// id only when it is a heading or sits directly in one, where MediaWiki writes a heading's anchor.
+// anchor is the attributes that may carry the target of a link inside the page. A heading or an element directly in
+// one keeps them.
 var anchor = []string{"id"}
 
 // elements are the HTML elements a page may hold, by what a sanitized page does with each.
 var elements = map[atom.Atom]element{
-	atom.H1: {heading: true, after: "\n", attributes: anchor}, atom.H2: {heading: true, after: "\n", attributes: anchor},
-	atom.H3: {heading: true, after: "\n", attributes: anchor}, atom.H4: {heading: true, after: "\n", attributes: anchor},
-	atom.P: {after: "\n"}, atom.Ul: {after: "\n"}, atom.Ol: {after: "\n"}, atom.Li: {after: "\n"},
-	atom.Table: {after: "\n"}, atom.Thead: {}, atom.Tbody: {}, atom.Tr: {after: "\n"}, atom.Th: {after: " "},
-	atom.Td: {after: " "}, atom.Pre: {after: "\n"}, atom.Code: {}, atom.B: {}, atom.I: {}, atom.Strong: {}, atom.Em: {},
+	atom.H1: {heading: true, attributes: anchor}, atom.H2: {heading: true, attributes: anchor},
+	atom.H3: {heading: true, attributes: anchor}, atom.H4: {heading: true, attributes: anchor},
+	atom.P: {}, atom.Ul: {}, atom.Ol: {}, atom.Li: {}, atom.Table: {}, atom.Thead: {}, atom.Tbody: {}, atom.Tr: {},
+	atom.Th: {}, atom.Td: {}, atom.Pre: {}, atom.Code: {}, atom.B: {}, atom.I: {}, atom.Strong: {}, atom.Em: {},
 	atom.A: {attributes: []string{"href"}}, atom.Img: {attributes: []string{"src", "alt"}},
-	atom.Br: {after: "\n"}, atom.Hr: {after: "\n"}, atom.Div: {after: "\n"}, atom.Span: {attributes: anchor},
+	atom.Br: {}, atom.Hr: {}, atom.Div: {}, atom.Span: {attributes: anchor},
 	atom.Script: {dropped: true}, atom.Style: {dropped: true}, atom.Noscript: {dropped: true},
 	atom.Nav: {dropped: true}, atom.Head: {dropped: true},
 }
@@ -42,35 +40,20 @@ var droppedClasses = []string{"navbox", "mw-editsection"}
 // fragmentParent is the element a page's HTML is parsed as the content of.
 var fragmentParent = &html.Node{Type: html.ElementNode, Data: atom.Div.String(), DataAtom: atom.Div}
 
-// Sanitize strips a wiki page's HTML down to what the article pane shows: headings, paragraphs, lists, tables and
-// code. Its links and images are made absolute against the given origin, the wiki's address. Scripts, styles,
-// navigation and edit links are dropped.
-func Sanitize(text, origin string) string {
-	base, err := url.Parse(origin)
-	if err != nil {
-		return ""
-	}
+// Sanitize strips a wiki page's HTML down to what the article pane shows. Links and images are made absolute against
+// the given origin, the wiki's address. Scripts, styles, navigation and edit links are dropped. It returns "" if the
+// HTML cannot be parsed.
+func Sanitize(text string, origin *url.URL) string {
 	root, err := parseFragment(text)
 	if err != nil {
 		return ""
 	}
-	sanitize(root, base)
+	sanitize(root, origin)
 	var sanitized strings.Builder
 	for node := root.FirstChild; node != nil; node = node.NextSibling {
 		_ = html.Render(&sanitized, node)
 	}
 	return sanitized.String()
-}
-
-// ToText flattens sanitized HTML to plain text, for search and for the script examples a page holds.
-func ToText(text string) string {
-	root, err := parseFragment(text)
-	if err != nil {
-		return ""
-	}
-	var plain strings.Builder
-	writeText(&plain, root)
-	return strings.TrimSpace(plain.String())
 }
 
 // parseFragment parses a page's HTML into the children of one element. It returns an error if the HTML cannot be
@@ -172,16 +155,12 @@ func lookupAttribute(node *html.Node, key string) string {
 	return ""
 }
 
-// writeText writes the text of a node and of everything under it to the given builder, with what each element ends
-// with.
+// writeText writes the text of a node and of everything under it to the given builder.
 func writeText(plain *strings.Builder, node *html.Node) {
 	if node.Type == html.TextNode {
 		plain.WriteString(node.Data)
 	}
 	for child := node.FirstChild; child != nil; child = child.NextSibling {
 		writeText(plain, child)
-	}
-	if after := elements[node.DataAtom].after; after != "" && !strings.HasSuffix(plain.String(), after) {
-		plain.WriteString(after)
 	}
 }

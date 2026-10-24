@@ -19,7 +19,7 @@ import (
 	"paradox-modding-tools/services/workspace"
 )
 
-// A CardScope is the scope section of a hover card: this, root, the previous scopes and the saved ones.
+// A CardScope is the scope section of a hover card.
 type CardScope struct {
 	This     string         `json:"this"`
 	Root     string         `json:"root"`
@@ -42,10 +42,10 @@ type CardDate struct {
 	Month string      `json:"month"`
 }
 
-// A Card is a hover card. It holds facts for the frontend to lay out, never a sentence that combines them.
+// A Card is a hover card: the facts about a key or a value, for the page to lay out.
 type Card struct {
 	Title    string          `json:"title"`
-	What     string          `json:"what"`            // what it is: the database's singular, "effect", "trigger", "link", "keyword"
+	What     string          `json:"what"`            // what it is: the database's singular, "effect", "keyword"
 	Class    string          `json:"class,omitempty"` // an operator's class
 	Blurb    string          `json:"blurb,omitempty"`
 	Takes    schema.Expected `json:"takes"`           // what the key's value may be
@@ -53,60 +53,67 @@ type Card struct {
 	Leads    string          `json:"leads,omitempty"` // the scope a link or command leads to
 	Scope    *CardScope      `json:"scope,omitempty"`
 	Date     *CardDate       `json:"date,omitempty"`
-	Color    string          `json:"color,omitempty"` // a CSS color
+	Color    string          `json:"color,omitempty"`  // a CSS color
+	Number   *float64        `json:"number,omitempty"` // the number a constant stands for
 	Image    *texture.Header `json:"image,omitempty"`
 	Sites    []CardSite      `json:"sites,omitempty"`
 	Inferred bool            `json:"inferred"` // a fact was learned from the game's files
 	Range    Range           `json:"range"`    // what the card is about
 }
 
-// unknownShape is the shape of a block whose content no source describes.
-const unknownShape = "unknown"
-
-// declaredLabels holds what a card says a command is, for each way the dumps declare one.
+// declaredLabels holds what a card calls a command, for each way the game declares one.
 var declaredLabels = map[string]string{
 	game.DeclaredEffect: "effect", game.DeclaredTrigger: "trigger", game.DeclaredLink: "link",
 }
 
-// Hover returns the hover card for the key or value at a position in a file, or nil if the position is on
+// Hover returns the hover card for the key or value at a position in a file. It returns nil if the position is on
 // nothing.
 func (lsp *Service) Hover(path string, line, column int) (*Card, error) {
 	ws, tree, err := lsp.loadTree(path)
 	if err != nil {
 		return nil, err
 	}
-	place := ws.Locate(path)
+	mods := ws.Mods.Load()
+	place := ws.Locate(mods, path)
 	offset := ToOffset(tree.Src, tree.Lines, line, column)
 	if place.Format == files.FormatLocalization {
 		return describeLocalization(ws, tree, place, offset), nil
 	}
-	mods := ws.Mods.Load()
 	visitor := &hoverVisitor{offset: offset}
 	ws.Schema.WalkTo(tree, place.File, offset, visitor)
+	return lsp.describeHit(ws, tree, place, visitor), nil
+}
+
+// describeHit returns the hover card for what the given visitor found at the cursor in a script file. It returns nil if
+// the cursor is on nothing a card can describe.
+func (lsp *Service) describeHit(ws *workspace.Session, tree *jomini.Tree, place workspace.Place, visitor *hoverVisitor) *Card {
 	span, reference := findHit(tree, visitor)
 	if span.IsEmpty() {
-		return nil, nil
+		return nil
 	}
-	context := &visitor.context
+	mods, context := ws.Mods.Load(), &visitor.context
+	reference = resolveCall(mods, place, reference)
 	card := &Card{Title: tree.Unquoted(span), Range: ToRange(tree.Src, tree.Lines, span), Scope: describeScope(context)}
 	switch {
 	case reference.Database == game.Localization:
 		describeKey(ws, mods, card, reference.Name)
-		card.Sites = listSites(ws, mods, place, reference)
 	case reference.Name != "":
 		card.What, card.Leads = game.DescribeDefinition(reference.Database, false), findSaved(context, reference)
 		card.Sites, card.Image = listSites(ws, mods, place, reference), describeImage(mods, reference)
-	case tree.Statements[visitor.statement].Value.Contains(offset):
+		if reference.Database == game.Constant {
+			describeNumber(card, tree, reference.Span)
+		}
+	case tree.Statements[visitor.statement].Value.Contains(visitor.offset):
 		describeValue(card, ws, tree, visitor)
 		if date, ok := findDate(tree, visitor.statement, context); ok {
-			mod, _ := lsp.Workspace.Config.LookupMod(ws.ID, place.Origin)
+			mod, _ := lsp.Workspace.LookupMod(place.Origin)
 			card.Date = resolveDate(mod.Calendar, date)
 		}
 	case context.Category == schema.CategoryKeyword:
 		keyword := findKeyword(tree, visitor)
 		card.What, card.Class, card.Blurb = "keyword", keyword.Class, keyword.Blurb
 	case context.Category == schema.CategoryCommand || context.Category == schema.CategoryLink:
-		describeCommand(card, ws, context)
+		describeCommand(card, context)
 	case context.Category == schema.CategoryField:
 		describeField(card, context)
 	case context.Category == schema.CategoryParameter:
@@ -114,15 +121,15 @@ func (lsp *Service) Hover(path string, line, column int) (*Card, error) {
 	}
 	describeBlock(card, tree, visitor)
 	if card.What == "" && card.Date == nil && card.Color == "" {
-		return nil, nil
+		return nil
 	}
-	return card, nil
+	return card
 }
 
-// A hoverVisitor is the visitor behind Hover. It keeps the context of the innermost statement at the offset.
+// A hoverVisitor finds the innermost statement at an offset and its context.
 type hoverVisitor struct {
 	offset    int
-	statement int32 // the innermost statement at the offset; 0, the file, if there is none
+	statement int32 // 0, the file, if there is none
 	context   schema.Context
 }
 
@@ -135,24 +142,22 @@ func (visitor *hoverVisitor) Enter(tree *jomini.Tree, statement int32, context *
 	return true
 }
 
-// Leave does nothing: the card needs only the innermost statement's context.
+// Leave does nothing.
 func (visitor *hoverVisitor) Leave(tree *jomini.Tree, statement int32, context *schema.Context) {}
 
-// describeLocalization returns the hover card for a position in a localization file. Where the card is for a key,
-// it has the key's text and the places that define the key. The card is nil where the position is on nothing.
+// describeLocalization returns the hover card for a position in a localization file. A card for a key has the key's
+// text and the places that define it. It returns nil if the position is on nothing.
 func describeLocalization(ws *workspace.Session, tree *jomini.Tree, place workspace.Place, offset int) *Card {
 	card, reference := describeMessage(ws, tree, place, offset)
 	if card != nil && reference.Name != "" {
-		mods := ws.Mods.Load()
-		describeKey(ws, mods, card, reference.Name)
-		card.Sites = listSites(ws, mods, place, reference)
+		describeKey(ws, ws.Mods.Load(), card, reference.Name)
 	}
 	return card
 }
 
-// describeMessage describes what a position in a localization file is on: a message's key, a key written between
-// dollar signs in a text, or a step of a data call in a text. The card is nil for anything else. The name of the key
-// is returned too where the card is for one.
+// describeMessage returns the card for what a position in a localization file is on: a message's key, a key between
+// dollar signs in a text, or a step of a data call. It also returns the key's reference if the card is for a key. The
+// card is nil for anything else.
 func describeMessage(ws *workspace.Session, tree *jomini.Tree, place workspace.Place, offset int) (*Card, schema.Reference) {
 	file := loc.Parse(tree.Src, place.Path)
 	position := slices.IndexFunc(file.Messages, func(message loc.Message) bool { return message.Span.Contains(offset) })
@@ -170,7 +175,7 @@ func describeMessage(ws *workspace.Session, tree *jomini.Tree, place workspace.P
 		}
 		switch segment.Markup {
 		case loc.MarkupKey:
-			key, span = segment.Text, jomini.Span{Start: segment.Span.Start + 1, End: segment.Span.Start + 1 + len(segment.Text)}
+			key, span = segment.Text, segment.TextSpan
 		case loc.MarkupCall:
 			return describeCall(ws, tree, segment, offset), schema.Reference{}
 		default:
@@ -181,38 +186,30 @@ func describeMessage(ws *workspace.Session, tree *jomini.Tree, place workspace.P
 	return card, schema.Reference{Database: game.Localization, Name: key, Span: span}
 }
 
-// describeKey fills a card for a localization key: what it is and the text the game shows for it, found in the given
-// index of the mods. The text is empty where no message has the key.
+// describeKey fills a card for a localization key: the text the game shows for it and the messages that define it. The
+// text is empty and no message is kept if nothing defines the key.
 func describeKey(ws *workspace.Session, mods *index.Index, card *Card, key string) {
-	card.What = "localization key"
-	card.Blurb, _, _ = ws.LookupText(mods, key)
+	text, winner, ok := ws.LookupText(mods, key)
+	card.What, card.Blurb = "localization key", text
+	var kept *index.Winner
+	if ok {
+		kept = &winner
+	}
+	card.Sites = describeSites(ws, mods, mods.ListMessages(key), kept)
 }
 
-// describeCall describes the step of a data call that a localization text writes at an offset, or returns nil if the
-// offset is on no step.
+// describeCall returns the card for the step of a data call at the given offset. It returns nil if the offset is on no
+// step.
 func describeCall(ws *workspace.Session, tree *jomini.Tree, segment loc.Segment, offset int) *Card {
-	call, ok := jomini.ParseCall(segment.Text, segment.Span.Start+1)
+	call, ok := jomini.ParseCall(segment.Text, segment.TextSpan.Start)
 	position := slices.IndexFunc(call.Steps, func(step jomini.Step) bool { return step.Span.Contains(offset) })
 	if !ok || position < 0 {
 		return nil
 	}
 	card := &Card{}
-	describeFunction(card, tree, call.Steps[position], findFunction(ws.Schema, call, "", position))
+	function, _ := ws.Schema.FindFunction(call, "", position)
+	describeFunction(card, tree, call.Steps[position], function)
 	return card
-}
-
-// findFunction returns the function that one step of a data call calls. The given type is the one the call starts on,
-// and the first step falls back to the global type. It returns an empty function if the dumps declare none.
-func findFunction(schema *schema.Schema, call jomini.Call, datacontext string, position int) schema.DataFunction {
-	types := schema.ResolveCallTypes(call, datacontext)
-	if position > 0 && position <= len(types) {
-		datacontext = types[position-1]
-	}
-	function, known := schema.DataTypes[datacontext].Functions[call.Steps[position].Text]
-	if !known && position == 0 {
-		function = schema.DataTypes[game.GlobalType].Functions[call.Steps[position].Text]
-	}
-	return function
 }
 
 // describeFunction fills a card for one step of a data call: what the function returns and says.
@@ -221,15 +218,22 @@ func describeFunction(card *Card, tree *jomini.Tree, step jomini.Step, function 
 	card.Title, card.Range = step.Text, ToRange(tree.Src, tree.Lines, step.Span)
 }
 
-// listSites returns every definition a reference names, with whether the game keeps each and why, the kept ones
-// first. The given place is the file the reference is written in. It returns no site where nothing defines the name,
-// and none of them is kept where the schema has no database for the name.
+// listSites returns every definition a reference names as seen from the given file, with whether the game keeps each
+// and why. The kept ones come first. It returns none if nothing defines the name.
 func listSites(ws *workspace.Session, mods *index.Index, place workspace.Place, reference schema.Reference) []CardSite {
-	sites := resolve(ws, mods, reference, place.Path)
-	winner, kept := findKept(ws, mods, reference, place.Path)
+	var kept *index.Winner
+	if winner, ok := findKept(ws, mods, reference, place.Path); ok {
+		kept = &winner
+	}
+	return describeSites(ws, mods, mods.ResolveLocal(reference, place.Path), kept)
+}
+
+// describeSites returns the given definitions as the sites of a card, with whether the given winner keeps each and why.
+// The kept ones come first. None is kept if the winner is nil.
+func describeSites(ws *workspace.Session, mods *index.Index, sites []index.Site, winner *index.Winner) []CardSite {
 	cards := lo.Map(sites, func(site index.Site, _ int) CardSite {
-		card := CardSite{Place: ws.Locate(mods.File(site).Path), Line: int(mods.Occurrence(site).Line) + 1}
-		if card.Kept = kept && winner.IsKept(site); card.Kept {
+		card := CardSite{Place: ws.Locate(mods, mods.File(site).Path), Line: int(mods.Occurrence(site).Line) + 1}
+		if card.Kept = winner != nil && winner.IsKept(site); card.Kept {
 			card.Reason = winner.Reason
 		}
 		return card
@@ -238,39 +242,23 @@ func listSites(ws *workspace.Session, mods *index.Index, place workspace.Place, 
 	return slices.Concat(keeping, others)
 }
 
-// resolve returns the definitions a reference names, as the file at the given path sees them: the file's local
-// definitions count if the index lists the file.
-func resolve(ws *workspace.Session, mods *index.Index, reference schema.Reference, path string) []index.Site {
-	if file, ok := mods.FindFile(path); ok {
-		return mods.ResolveLocal(ws.Schema, reference, file)
-	}
-	return mods.Resolve(ws.Schema, reference)
-}
-
-// findKept returns the definition of a name that the game keeps, and why, as the file at the given path sees it. The
-// message of a localization key that the game shows is the one the session's language has, else the base language. It
-// returns false if the game keeps none.
+// findKept returns the definition of a reference that the game keeps, and why, as seen from the given file. It returns
+// false if the game keeps none.
 func findKept(ws *workspace.Session, mods *index.Index, reference schema.Reference, path string) (index.Winner, bool) {
-	if reference.Database != game.Localization {
-		if file, ok := mods.FindFile(path); ok {
-			return mods.FindKeptLocal(ws.Schema, reference, file)
-		}
-		return mods.FindKept(ws.Schema, reference)
+	if reference.Database == game.Localization {
+		_, winner, ok := ws.LookupText(mods, reference.Name)
+		return winner, ok
 	}
-	_, site, ok := ws.LookupText(mods, reference.Name)
+	database, ok := ws.Schema.Databases[reference.Database]
 	if !ok {
 		return index.Winner{}, false
 	}
-	reason := "order"
-	if language := mods.Language(site); schema.IsLocReplacement(ws.Game, mods.File(site).Rel, language) {
-		reason = "replace"
-	}
-	return index.Winner{Site: site, Reason: reason}, true
+	return mods.FindWinner(mods.ResolveLocal(reference, path), database.Precedence)
 }
 
-// findHit returns the span the offset is on in the visited statement: a name the statement defines or refers to, a
-// link of a key's chain, a key or a value. The name is returned too where the span is one. The span is empty where
-// the offset is on neither the key nor the value.
+// findHit returns the span the cursor is on in the visited statement: a name it defines or refers to, a link of a key's
+// chain, a key or a value. It also returns the name's reference if the span is one. The span is empty if the cursor is
+// on neither the key nor the value.
 func findHit(tree *jomini.Tree, visitor *hoverVisitor) (jomini.Span, schema.Reference) {
 	if visitor.statement == 0 {
 		return jomini.Span{}, schema.Reference{}
@@ -304,7 +292,7 @@ func findHit(tree *jomini.Tree, visitor *hoverVisitor) (jomini.Span, schema.Refe
 	return jomini.Span{}, schema.Reference{}
 }
 
-// describeScope returns the scope section of a card for a context, or nil where the walk knows no scope.
+// describeScope returns the scope section of a card for a context. It returns nil if the context has no scope.
 func describeScope(context *schema.Context) *CardScope {
 	if context.Scope == "" && context.Root == "" {
 		return nil
@@ -314,8 +302,8 @@ func describeScope(context *schema.Context) *CardScope {
 	}
 }
 
-// findSaved returns the type of the scope that a reference names, when the reference is to a scope the definition
-// saved before the statement. It returns "" otherwise.
+// findSaved returns the type of the scope a reference names, if the definition saved that scope earlier. It returns ""
+// otherwise.
 func findSaved(context *schema.Context, reference schema.Reference) string {
 	if reference.Database != game.SavedScopes {
 		return ""
@@ -328,8 +316,8 @@ func findSaved(context *schema.Context, reference schema.Reference) string {
 	return ""
 }
 
-// describeImage returns the header of the image file that a written path names, or nil if the reference is not to a
-// file or no loaded image file has the path.
+// describeImage returns the header of the image file a reference names. It returns nil if the reference is not to a
+// file or no loaded image has the path.
 func describeImage(mods *index.Index, reference schema.Reference) *texture.Header {
 	if reference.Database != game.File {
 		return nil
@@ -345,6 +333,14 @@ func describeImage(mods *index.Index, reference schema.Reference) *texture.Heade
 	return &header
 }
 
+// describeNumber gives a card the number that the text at the given span stands for. The card has none if the text is
+// no number.
+func describeNumber(card *Card, tree *jomini.Tree, span jomini.Span) {
+	if number, ok := tree.ResolveNumber(span); ok {
+		card.Number = &number
+	}
+}
+
 // describeValue fills a card for a value that is a parameter, a constant or a data call.
 func describeValue(card *Card, ws *workspace.Session, tree *jomini.Tree, visitor *hoverVisitor) {
 	switch visitor.context.ValueGroup {
@@ -352,18 +348,19 @@ func describeValue(card *Card, ws *workspace.Session, tree *jomini.Tree, visitor
 		card.What = "parameter"
 	case schema.CategoryConstant:
 		card.What = "constant"
+		describeNumber(card, tree, tree.Statements[visitor.statement].Value)
 	case schema.CategoryCall:
 		call, ok := schema.ParseCall(tree, tree.Statements[visitor.statement].Value)
 		position := slices.IndexFunc(call.Steps, func(step jomini.Step) bool { return step.Span.Contains(visitor.offset) })
 		if ok && position >= 0 {
-			function := findFunction(ws.Schema, call, visitor.context.Datacontext, position)
+			function, _ := ws.Schema.FindFunction(call, visitor.context.Datacontext, position)
 			describeFunction(card, tree, call.Steps[position], function)
 		}
 	}
 }
 
-// findDate returns the date that a statement writes as its value, where its field expects a date. It returns false
-// for any other value, so that a number such as 10.12 is no date.
+// findDate returns the date a statement writes as its value. It returns false unless the statement's field expects a
+// date.
 func findDate(tree *jomini.Tree, statement int32, context *schema.Context) (jomini.Date, bool) {
 	if context.Field == nil || context.Field.Value.Value.Type != schema.ValueDate {
 		return jomini.Date{}, false
@@ -371,8 +368,8 @@ func findDate(tree *jomini.Tree, statement int32, context *schema.Context) (jomi
 	return jomini.ParseDate(tree.Unquoted(tree.Statements[statement].Value))
 }
 
-// resolveDate reads a date in the calendar of a mod: the era whose year is the last one at or before the date's, and
-// the month's name as the mod gives it, else as the usual calendar names it.
+// resolveDate returns a date in the given calendar of a mod: the era it falls in and its month's name. The month has
+// the usual name if the calendar gives none.
 func resolveDate(calendar app.Calendar, date jomini.Date) *CardDate {
 	card := &CardDate{Date: date}
 	if date.Month >= 1 && date.Month <= 12 {
@@ -386,13 +383,10 @@ func resolveDate(calendar app.Calendar, date jomini.Date) *CardDate {
 	return card
 }
 
-// findKeyword returns the row of the language's keywords that the visited statement's key is, as it stands in the
-// block that holds it. It returns an empty row if the language has none for the key.
+// findKeyword returns the keyword of the language that the visited statement's key is. It returns an empty keyword if
+// the key is none.
 func findKeyword(tree *jomini.Tree, visitor *hoverVisitor) game.Keyword {
-	shape := unknownShape
-	if holder := visitor.context.Parent; holder != nil && holder.Shape != "" {
-		shape = holder.Shape
-	}
+	shape := cmp.Or(visitor.context.Parent.Shape, game.ShapeUnknown)
 	current := tree.Statements[visitor.statement]
 	holder := tree.Statements[current.Parent]
 	label := cmp.Or(tree.Unquoted(holder.Key), tree.Unquoted(holder.Tag))
@@ -400,34 +394,17 @@ func findKeyword(tree *jomini.Tree, visitor *hoverVisitor) game.Keyword {
 	return keyword
 }
 
-// describeCommand fills a card for an effect, a trigger or a link: what it is, what it does and the scope it leads
-// to. The command is the one the walk matched. A link written with a prefix is described by the prefix's command. A
-// key that no command answers to is a link.
-func describeCommand(card *Card, ws *workspace.Session, context *schema.Context) {
-	command, declaration := context.Command, context.Declaration
-	if command == nil {
-		key := card.Title
-		if prefix, _, ok := jomini.SplitPrefixed(key); ok {
-			key = prefix
-		}
-		command, declaration = findCommand(ws.Schema, key), game.DeclaredLink
-	}
-	card.What = declaredLabels[declaration]
-	if command != nil {
+// describeCommand fills a card for an effect, a trigger or a link: what it is, what it does and the scope it leads to.
+// The card has no blurb and leads nowhere if the game declares no command for it.
+func describeCommand(card *Card, context *schema.Context) {
+	card.What = declaredLabels[context.Declaration]
+	if command := context.Command; command != nil {
 		card.Blurb, card.Leads = command.Blurb, command.Target
 	}
 }
 
-// findCommand returns the command a key names, written in any case, or nil if the dumps declare none.
-func findCommand(schema *schema.Schema, key string) *schema.Command {
-	if command := schema.Commands[key]; command != nil {
-		return command
-	}
-	return schema.Commands[strings.ToLower(key)]
-}
-
-// describeField fills a card for a field of a definition: what it is, what it does and what it takes. The card says
-// what the field takes only where a source states it. It is marked inferred where the game's files are the source.
+// describeField fills a card for a field of a definition: what it does and what it takes. The card is marked inferred
+// if the game's files are the only source.
 func describeField(card *Card, context *schema.Context) {
 	field := context.Field
 	card.What, card.Blurb = "field", field.Blurb.Value
@@ -437,10 +414,9 @@ func describeField(card *Card, context *schema.Context) {
 	card.Inferred = field.Value.Source == game.SourceVanilla || field.Shape.Source == game.SourceVanilla
 }
 
-// describeBlock fills a card for a statement that holds a block: the shape of what the block holds and, for a color,
-// the color. A block of unknown shape holds nothing the card can name.
+// describeBlock fills a card for a statement that holds a block: what the block holds and, for a color, the color.
 func describeBlock(card *Card, tree *jomini.Tree, visitor *hoverVisitor) {
-	if tree.Statements[visitor.statement].IsBlock() && visitor.context.Shape != unknownShape {
+	if tree.Statements[visitor.statement].IsBlock() && visitor.context.Shape != game.ShapeUnknown {
 		card.Holds = visitor.context.Shape
 	}
 	if color, ok := game.ToColor(tree, visitor.statement); ok {

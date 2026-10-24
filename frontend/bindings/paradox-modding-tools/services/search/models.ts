@@ -9,8 +9,7 @@ import * as lsp$0 from "../lsp/models.js";
 import * as workspace$0 from "../workspace/models.js";
 
 /**
- * A Hit is one match: the file, the match's range in Monaco's form, and the text of the line it is on. The range's
- * columns also mark the match inside that text.
+ * A Hit is one match of a text search. Its range's columns also mark the match inside the text of its line.
  */
 export interface Hit {
     "place": workspace$0.Place;
@@ -19,8 +18,7 @@ export interface Hit {
 }
 
 /**
- * Hits is the data of the search:hits event: one file's hits, sent as soon as that file is done so the view fills
- * as the search runs.
+ * Hits holds the matches in one file. It is what the search:hits event carries.
  */
 export interface Hits {
     "place": workspace$0.Place;

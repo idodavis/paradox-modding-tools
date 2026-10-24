@@ -1,7 +1,5 @@
-// Package lsp is the editor's language service. Its methods answer what Monaco's providers ask about a file: hover
-// cards, completions, definitions, diagnostics, tokens, folds and the rest, each computed by a visitor on the
-// schema's walk. Every range is in Monaco's own form. The editor sends an open file's text through SetText, which
-// answers with the file's problems.
+// Package lsp is the editor's language service. It answers what the editor asks about a file: hover cards,
+// completions, definitions, diagnostics, tokens, folds and the rest. Every range is in the editor's own form.
 package lsp
 
 import (
@@ -20,7 +18,7 @@ type Service struct {
 }
 
 // A Range is a span as Monaco counts it: lines and columns from one, the column in UTF-16 code units, the end
-// exclusive. It is the only place UTF-16 exists; every other package uses byte offsets.
+// exclusive.
 type Range struct {
 	StartLine   int `json:"startLineNumber"`
 	StartColumn int `json:"startColumn"`
@@ -47,6 +45,11 @@ func ToRange(text string, lines jomini.Lines, span jomini.Span) Range {
 		StartLine: start.Line + 1, StartColumn: countUnits(text, lines, start) + 1,
 		EndLine: end.Line + 1, EndColumn: countUnits(text, lines, end) + 1,
 	}
+}
+
+// ToLineRange returns the empty range at the start of a line, counted from one.
+func ToLineRange(line int) Range {
+	return Range{StartLine: line, StartColumn: 1, EndLine: line, EndColumn: 1}
 }
 
 // ToOffset converts a line and a column as Monaco counts them to a byte offset in the text.
@@ -80,16 +83,14 @@ func countUnits(text string, lines jomini.Lines, position jomini.Position) int {
 	return units
 }
 
-// SetText gives the session an open file's text as the editor has it, and returns the file's problems: its parse
-// errors and every verdict that fails on it.
+// SetText gives the session the text the editor holds for an open file. It returns the file's problems.
 func (lsp *Service) SetText(path, text string) ([]Diagnostic, error) {
 	ws, err := lsp.Workspace.Session()
 	if err != nil {
 		return nil, err
 	}
 	ws.SetText(path, text)
-	diagnostics, err := DiagnoseFile(ws, ws.Mods.Load(), path)
-	return lsp.listEnabled(diagnostics), err
+	return lsp.Diagnose(path)
 }
 
 // CloseFile drops an open file's text from the session.
@@ -102,8 +103,8 @@ func (lsp *Service) CloseFile(path string) error {
 	return nil
 }
 
-// loadTree returns the open session and the tree of a file, the open text's where the editor has the file. It returns
-// the error of the session or of reading the file.
+// loadTree returns the open session and the tree of a file. It parses the editor's text if the file is open. It returns
+// an error if there is no session or the file cannot be read.
 func (lsp *Service) loadTree(path string) (*workspace.Session, *jomini.Tree, error) {
 	ws, err := lsp.Workspace.Session()
 	if err != nil {

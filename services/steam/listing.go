@@ -1,6 +1,5 @@
-// Package steam publishes mods to the Steam Workshop. It reads and writes a mod's listing, lists the files an
-// upload sends, converts the description to BBCode, compares an upload with Steam, and publishes through the
-// game's own copy of Steam's library in a second copy of the app.
+// Package steam publishes mods to the Steam Workshop. It keeps a mod's listing in the mod's own files and compares an
+// upload with Steam. It uploads from a second copy of the app, which loads the game's own copy of Steam's library.
 package steam
 
 import (
@@ -54,19 +53,18 @@ type Listing struct {
 	Visibility      string    `json:"visibility"` // private, friends, public, unlisted; chosen at each upload
 }
 
-// An Upload is the set of files a mod's next upload sends, with their total size and what the rules left out.
+// An Upload is the set of files a mod's next upload sends.
 type Upload struct {
 	Files    []files.File `json:"files"`
-	Bytes    int64        `json:"bytes"`
+	Bytes    int64        `json:"bytes"`    // the total size of the files
 	Excluded []string     `json:"excluded"` // the rels the rules left out
 }
 
-// A Snapshot records what the last upload sent: its files' hashes and its listing, so that the next compare knows
-// what changed.
+// A Snapshot is the record of what the last upload of an item sent. The next compare reads it to see what changed.
 type Snapshot struct {
 	WorkshopID string            `json:"workshopId"`
 	UploadedAt time.Time         `json:"uploadedAt"`
-	Files      map[string]string `json:"files"` // by relative path: the file's hash
+	Files      map[string]string `json:"files"` // the hash of each file, by rel
 	Listing    Listing           `json:"listing"`
 }
 
@@ -80,12 +78,12 @@ type Details struct {
 	Subscribers int       `json:"subscribers"`
 }
 
-// A Comparison says what the next upload changes against the last one, and how the listing differs from Steam's.
+// A Comparison is what the next upload changes against the last one, next to what Steam reports about the item.
 type Comparison struct {
-	Added   []string `json:"added"`
-	Changed []string `json:"changed"`
-	Removed []string `json:"removed"`
-	Listing []string `json:"listing"` // the listing's fields that differ: title, description, tags …
+	Added   []string `json:"added"`   // the rels of the files the last upload did not have
+	Changed []string `json:"changed"` // the rels of the files that differ from the last upload's
+	Removed []string `json:"removed"` // the rels of the files the last upload had and the next one lacks
+	Listing []string `json:"listing"` // the listing's fields that differ from the last upload's: title, description, tags …
 	Steam   *Details `json:"steam,omitempty"`
 }
 
@@ -118,19 +116,25 @@ var descriptionFiles = []struct{ source, rel string }{
 	{sourceBBCode, workshopDir + "/description.bbcode"},
 }
 
-// ReadListing reads a mod's listing from its descriptor and its workshop folder.
+// ReadListing reads a mod's listing from its descriptor and its workshop folder. The descriptor is read from the
+// mod's folder, so the listing is as the last write left it. It returns an error if the workspace has no such mod, a
+// file cannot be read or the descriptor's thumbnail is outside the mod's folder.
 func (stm *Service) ReadListing(modID string) (Listing, error) {
-	_, mod, err := stm.findMod(modID)
+	ws, mod, err := stm.findMod(modID)
+	if err != nil {
+		return Listing{}, err
+	}
+	descriptor, err := workspace.ReadDescriptor(ws.Game, mod.Dir)
 	if err != nil {
 		return Listing{}, err
 	}
 	listing := Listing{
-		WorkshopID: cmp.Or(mod.WorkshopID, mod.Descriptor.WorkshopID),
-		Title:      mod.Descriptor.Name,
+		WorkshopID: cmp.Or(mod.WorkshopID, descriptor.WorkshopID),
+		Title:      descriptor.Name,
 		Source:     sourceSteam,
-		Tags:       append([]string{}, mod.Descriptor.Tags...),
+		Tags:       append([]string{}, descriptor.Tags...),
 	}
-	if thumbnail := mod.Descriptor.Thumbnail; thumbnail != "" {
+	if thumbnail := descriptor.Thumbnail; thumbnail != "" {
 		if listing.Thumbnail = files.Join(mod.Dir, thumbnail); !files.IsUnder(mod.Dir, listing.Thumbnail) {
 			return Listing{}, fmt.Errorf("the thumbnail %s is outside the mod's folder", thumbnail)
 		}
@@ -201,7 +205,8 @@ func listVideos(dir string) ([]string, error) {
 	return strings.Fields(text.Text), nil
 }
 
-// WriteListing writes a mod's listing back to its files: the descriptor's fields and the workshop folder's.
+// WriteListing writes a mod's listing back to its files: the descriptor's fields and the workshop folder's. It writes
+// only the files whose text differs from the current listing's.
 func (stm *Service) WriteListing(modID string, listing Listing) error {
 	ws, mod, err := stm.findMod(modID)
 	if err != nil {
@@ -234,14 +239,18 @@ func (stm *Service) WriteListing(modID string, listing Listing) error {
 	return nil
 }
 
-// writeDescriptor writes the descriptor's fields of a listing when any of them differs from the current listing's.
-// It returns an error if the listing's thumbnail is outside the mod's folder.
-func writeDescriptor(game *game.Game, mod workspace.Mod, current, listing Listing) error {
+// writeDescriptor writes the descriptor's fields of a listing if any of them differs from the current listing's. It
+// reads the descriptor again first, so the fields the listing does not hold stay as they are. It returns an error if
+// the descriptor cannot be read or the listing's thumbnail is outside the mod's folder.
+func writeDescriptor(row *game.Game, mod workspace.Mod, current, listing Listing) error {
 	if listing.Title == current.Title && slices.Equal(listing.Tags, current.Tags) &&
 		listing.Thumbnail == current.Thumbnail && listing.WorkshopID == current.WorkshopID {
 		return nil
 	}
-	descriptor := mod.Descriptor
+	descriptor, err := workspace.ReadDescriptor(row, mod.Dir)
+	if err != nil {
+		return err
+	}
 	descriptor.Name, descriptor.Tags, descriptor.WorkshopID = listing.Title, listing.Tags, listing.WorkshopID
 	descriptor.Thumbnail = ""
 	if listing.Thumbnail != "" {
@@ -251,7 +260,7 @@ func writeDescriptor(game *game.Game, mod workspace.Mod, current, listing Listin
 		}
 		descriptor.Thumbnail = rel
 	}
-	return workspace.WriteDescriptor(game, mod.Dir, descriptor)
+	return workspace.WriteDescriptor(row, mod.Dir, descriptor)
 }
 
 // writeFile writes a text into a file inside a mod's folder in UTF-8. The write goes through the workspace, which
@@ -260,14 +269,15 @@ func (stm *Service) writeFile(file, text string) error {
 	return stm.Workspace.Write(file, files.Text{Text: text, Encoding: files.EncodingUTF8})
 }
 
-// ListUpload returns the files a mod's next upload sends: the mod's files except dotfiles, dot folders other than
-// .metadata, which holds Vic3's and EU5's descriptor, the previews and whatever the mod's exclusions cover.
+// ListUpload returns the files a mod's next upload sends: the mod's files except those the rules leave out and those
+// that the mod's .gitignore and its own exclusions cover. The rules keep the .metadata folder, which holds the
+// descriptor of Vic3 and EU5, though it starts with a dot.
 func (stm *Service) ListUpload(modID string) (Upload, error) {
 	_, mod, err := stm.findMod(modID)
 	if err != nil {
 		return Upload{}, err
 	}
-	walked, err := files.Walk(files.Root{Dir: mod.Dir, Origin: mod.ID}, nil)
+	walked, err := files.Walk(files.Root{Dir: mod.Dir, Origin: mod.ID})
 	if err != nil {
 		return Upload{}, err
 	}
@@ -295,13 +305,14 @@ func (stm *Service) ListUpload(modID string) (Upload, error) {
 	return upload, nil
 }
 
-// LoadSnapshot reads the snapshot of a Workshop item, or returns false if there is none.
+// LoadSnapshot loads the snapshot saved for a Workshop item. It returns false if there is none, or if the item has no
+// id.
 func LoadSnapshot(cacheDir, workshopID string) (Snapshot, bool) {
 	snapshot, err := app.LoadJSON[Snapshot](resolveSnapshotPath(cacheDir, workshopID))
 	return snapshot, err == nil && workshopID != "" && snapshot.WorkshopID == workshopID
 }
 
-// SaveSnapshot writes an upload's snapshot.
+// SaveSnapshot saves the snapshot of an upload under the id of its Workshop item.
 func SaveSnapshot(cacheDir string, snapshot Snapshot) error {
 	return app.SaveJSON(resolveSnapshotPath(cacheDir, snapshot.WorkshopID), snapshot)
 }
@@ -311,7 +322,9 @@ func resolveSnapshotPath(cacheDir, workshopID string) string {
 	return filepath.Join(cacheDir, "snapshot-"+workshopID+".json")
 }
 
-// Compare compares a listing and an upload with the last snapshot and with Steam's details.
+// Compare lists what an upload and a listing change against the snapshot of the last upload: the files added, changed
+// and removed, and the listing fields that differ. It carries the given Steam details beside them, nil if there are
+// none.
 func Compare(listing Listing, upload Upload, snapshot Snapshot, details *Details) Comparison {
 	hashes := buildHashes(upload.Files)
 	rels := slices.Sorted(maps.Keys(hashes))
@@ -357,8 +370,8 @@ func compareListing(listing, last Listing) []string {
 	return differing
 }
 
-// buildHashes returns the SHA-256 of each file by its rel, hashing in parallel on every core but two. A file that
-// cannot be read has the hash "".
+// buildHashes returns the SHA-256 of each of the given files by its rel. A file that cannot be
+// read has the hash "".
 func buildHashes(list []files.File) map[string]string {
 	hashes := make([]string, len(list))
 	var group errgroup.Group

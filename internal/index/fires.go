@@ -9,10 +9,10 @@ import (
 // A Fire is one firing: one definition fires another, through the reference that names it and the scripted
 // effects the firing passes through.
 type Fire struct {
-	Source Site     `json:"source"`
-	Target Site     `json:"target"`
-	Use    Site     `json:"use"`           // the reference that names the target, beside which a delay is written
-	Via    []string `json:"via,omitempty"` // the scripted effects entered between them, in order
+	Source Site   `json:"source"`
+	Target Site   `json:"target"`
+	Use    Site   `json:"use"`           // the reference that names the target, beside which a delay is written
+	Via    []Site `json:"via,omitempty"` // the scripted effects entered between them, in order
 }
 
 // ListFires returns what a definition fires: the events, on_actions and decisions it names in a firing position.
@@ -20,26 +20,31 @@ type Fire struct {
 // follows the scripted effects the definition calls.
 func (index *Index) ListFires(schema *schema.Schema, site Site, follow bool) []Fire {
 	targets, effects := schema.FireDatabases, schema.Effects
-	source := index.Databases.Texts[index.Occurrence(site).Database]
+	source := index.ToReference(site).Database
 	if !slices.Contains(targets, source) && source != effects {
 		return nil
 	}
 	var fires []Fire
 	// The scripted effects on the way from the definition are open, so that effects calling each other end the walk.
 	open := map[Site]bool{}
-	var walk func(current Site, via []string)
-	walk = func(current Site, via []string) {
+	var walk func(current Site, via []Site)
+	walk = func(current Site, via []Site) {
 		open[current] = true
 		defer delete(open, current)
 		for _, use := range index.listReferences(current) {
-			reference := index.ToReference(use)
-			winner, ok := index.FindKeptLocal(schema, reference, use.File)
-			switch {
-			case !ok:
-			case slices.Contains(targets, reference.Database):
-				fires = append(fires, Fire{Source: site, Target: winner.Site, Use: use, Via: via})
-			case reference.Database == effects && follow && !open[winner.Site]:
-				walk(winner.Site, append(slices.Clone(via), reference.Name))
+			for _, reference := range ListCallees(index.ToReference(use)) {
+				targeted := slices.Contains(targets, reference.Database)
+				if !targeted && (!follow || reference.Database != effects) {
+					continue
+				}
+				winner, ok := index.FindKeptLocal(schema, reference, use.File)
+				switch {
+				case !ok:
+				case targeted:
+					fires = append(fires, Fire{Source: site, Target: winner.Site, Use: use, Via: via})
+				case !open[winner.Site]:
+					walk(winner.Site, append(slices.Clone(via), winner.Site))
+				}
 			}
 		}
 	}
@@ -51,15 +56,15 @@ func (index *Index) ListFires(schema *schema.Schema, site Site, follow bool) []F
 // which databases fire, as for ListFires.
 func (index *Index) ListFiredBy(schema *schema.Schema, site Site, follow bool) []Fire {
 	targets, effects := schema.FireDatabases, schema.Effects
-	if !slices.Contains(targets, index.Databases.Texts[index.Occurrence(site).Database]) {
+	if !slices.Contains(targets, index.ToReference(site).Database) {
 		return nil
 	}
 	var fires []Fire
 	// The scripted effects on the way from the definition are open, so that effects calling each other end the walk.
 	open := map[Site]bool{}
 	// The use passed down is the reference that names the fired definition, found at the first step.
-	var walk func(current Site, via []string, use Site)
-	walk = func(current Site, via []string, use Site) {
+	var walk func(current Site, via []Site, use Site)
+	walk = func(current Site, via []Site, use Site) {
 		open[current] = true
 		defer delete(open, current)
 		// Only the definition the game keeps is called by name.
@@ -79,12 +84,12 @@ func (index *Index) ListFiredBy(schema *schema.Schema, site Site, follow bool) [
 			holder := index.ToReference(parent)
 			switch {
 			case slices.Contains(targets, holder.Database):
-				// a firer the game drops fires nothing, and a merged one stands as the definition the game keeps
+				// A firer the game drops fires nothing, and a merged one stands as the definition the game keeps.
 				if winner, ok := index.FindKeptLocal(schema, holder, parent.File); ok && winner.IsKept(parent) {
 					fires = append(fires, Fire{Source: winner.Site, Target: site, Use: fired, Via: via})
 				}
 			case holder.Database == effects && follow:
-				walk(parent, slices.Insert(slices.Clone(via), 0, holder.Name), fired)
+				walk(parent, slices.Insert(slices.Clone(via), 0, parent), fired)
 			}
 		}
 	}
@@ -92,13 +97,18 @@ func (index *Index) ListFiredBy(schema *schema.Schema, site Site, follow bool) [
 	return fires
 }
 
-// listReferences returns the references that sit directly inside a definition.
+// listReferences returns the references that sit directly inside a definition, in source order.
 func (index *Index) listReferences(definition Site) []Site {
 	var sites []Site
+	// A definition's references follow it without a break, so the list ends at the first occurrence that is not
+	// inside it.
 	occurrences := index.Occurrences[definition.File]
 	for position := definition.Occurrence + 1; int(position) < len(occurrences); position++ {
 		occurrence := occurrences[position]
-		if occurrence.Role == RoleRefers && occurrence.Nested && occurrence.Parent == definition.Occurrence {
+		if !occurrence.Nested || occurrence.Parent < definition.Occurrence {
+			break
+		}
+		if occurrence.Role == RoleRefers && occurrence.Parent == definition.Occurrence {
 			sites = append(sites, Site{File: definition.File, Occurrence: position})
 		}
 	}

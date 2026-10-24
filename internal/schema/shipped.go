@@ -8,9 +8,8 @@ import (
 
 //go:generate go run ./gen ck3 vic3 eu5
 
-// shipped holds a backup of what each game's dumps declare, one gob file per game, written by gen/main.go. It
-// stands in for a dump file an install lacks. It holds only what the dumps declare, never the game's own words and
-// never a built schema.
+// shipped holds a backup of what each game's dumps declare, one gob file per game. It stands in for a dump file an
+// install lacks. It never holds the game's own words or a built schema.
 //
 //go:embed shipped/*.gob
 var shipped embed.FS

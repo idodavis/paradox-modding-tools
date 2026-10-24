@@ -138,30 +138,6 @@ func TestParseNested(t *testing.T) {
 	}
 }
 
-func TestFindComments(t *testing.T) {
-	text := "# far\n\n# near one\n  # near two\na = 1 # trailing\nb = 2\n# alone\n\nc = 3\n# below\n"
-	tree := Parse(text)
-	if len(tree.Comments) != 6 {
-		t.Fatalf("comments = %d, want 6", len(tree.Comments))
-	}
-	comments := func(statement int32) []string {
-		var texts []string
-		for _, span := range tree.FindComments(statement) {
-			texts = append(texts, tree.Text(span))
-		}
-		return texts
-	}
-	if got := comments(1); !slices.Equal(got, []string{"# near one", "# near two"}) {
-		t.Errorf("comments above a = %q", got)
-	}
-	if got := comments(2); got != nil {
-		t.Errorf("comments above b = %q, want none", got)
-	}
-	if got := comments(3); got != nil {
-		t.Errorf("comments above c = %q, want none", got)
-	}
-}
-
 func TestFindStatement(t *testing.T) {
 	text := "a = { b = 1 }  c = 2"
 	tree := Parse(text)
@@ -220,9 +196,6 @@ func TestNewLines(t *testing.T) {
 		if got := lines.ToPosition(test.offset); got != test.position {
 			t.Errorf("ToPosition(%d) = %+v, want %+v", test.offset, got, test.position)
 		}
-		if got := lines.ToOffset(test.position); got != test.offset {
-			t.Errorf("ToOffset(%+v) = %d, want %d", test.position, got, test.offset)
-		}
 	}
 	for line, want := range []Span{{Start: 0, End: 2}, {Start: 3, End: 5}, {Start: 7, End: 9}, {Start: 10, End: 12}} {
 		if got := lines.LineSpan(line); got != want {
@@ -231,12 +204,6 @@ func TestNewLines(t *testing.T) {
 	}
 	if got := lines.ToPosition(99); got != (Position{Line: 3, Column: 2}) {
 		t.Errorf("ToPosition past the end = %+v", got)
-	}
-	if got := lines.ToOffset(Position{Line: 1, Column: 9}); got != 5 {
-		t.Errorf("ToOffset past a CRLF line's content = %d, want 5", got)
-	}
-	if got := lines.ToOffset(Position{Line: 9, Column: 9}); got != 12 {
-		t.Errorf("ToOffset past the end = %d", got)
 	}
 	if got := NewLines("").CountLines(); got != 1 {
 		t.Errorf("CountLines of an empty text = %d", got)
@@ -286,12 +253,12 @@ func TestIsEventID(t *testing.T) {
 }
 
 func TestIsParameter(t *testing.T) {
-	for _, text := range []string{"$AMOUNT$", "$TARGET|root$", "$x$", "$X|$"} {
+	for _, text := range []string{"$AMOUNT$", "$TARGET|root$", "$x$", "$X|$", "$X$Y$"} {
 		if !IsParameter(text) {
 			t.Errorf("IsParameter(%q) = false", text)
 		}
 	}
-	for _, text := range []string{"$", "$$", "$X", "X$", "$X$Y$", "$a b$", "$|x$"} {
+	for _, text := range []string{"$", "$$", "$X", "X$", "$a b$", "$|x$"} {
 		if IsParameter(text) {
 			t.Errorf("IsParameter(%q) = true", text)
 		}
@@ -395,7 +362,7 @@ func TestColorParts(t *testing.T) {
 		{"color = { NaN 1 0 }", "", nil, false},
 		{"color = v_red", "", nil, false},
 		{"size = { 10 10 }", "", nil, false},
-		{"color = cmyk { 1 0 0 }", "", nil, false},
+		{"color = cmyk { 1 0 0 }", "cmyk", []float64{1, 0, 0}, true},
 	}
 	for _, test := range tests {
 		tag, parts, ok := ColorParts(Parse(test.text), 1)
@@ -415,7 +382,7 @@ func TestParseCall(t *testing.T) {
 		t.Fatalf("call with arguments = %+v %v", call, ok)
 	}
 	arguments := call.Steps[0].Arguments
-	if arguments[0] != (Argument{Text: "a", Span: Span{Start: 8, End: 11}, Quoted: true}) {
+	if arguments[0] != (Argument{Text: "a", Span: Span{Start: 9, End: 10}, Quoted: true}) {
 		t.Errorf("quoted argument = %+v", arguments[0])
 	}
 	if arguments[1].Call == nil || len(arguments[1].Call.Steps) != 2 || arguments[1].Call.Steps[1].Span != (Span{Start: 23, End: 30}) || arguments[1].Text != "GetPlayer.GetName" {

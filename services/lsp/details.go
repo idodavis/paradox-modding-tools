@@ -10,6 +10,7 @@ import (
 	"github.com/samber/lo"
 
 	"paradox-modding-tools/internal/game"
+	"paradox-modding-tools/internal/index"
 	"paradox-modding-tools/internal/jomini"
 	"paradox-modding-tools/internal/schema"
 	"paradox-modding-tools/services/app"
@@ -30,7 +31,7 @@ type Hint struct {
 	Text   string `json:"text"`
 }
 
-// A ColorSite is one color written in a file and the color it makes.
+// A ColorSite is one color written in a file: where it is and the color it stands for.
 type ColorSite struct {
 	Range Range     `json:"range"`
 	Color game.RGBA `json:"color"`
@@ -54,9 +55,9 @@ func (lsp *Service) ListFolds(path string) ([]Fold, error) {
 		if !statement.IsBlock() {
 			continue
 		}
-		span := ToRange(tree.Src, tree.Lines, statement.Block)
-		if span.EndLine > span.StartLine {
-			folds = append(folds, Fold{Start: span.StartLine, End: span.EndLine})
+		start, end := tree.Lines.ToPosition(statement.Block.Start).Line, tree.Lines.ToPosition(statement.Block.End).Line
+		if end > start {
+			folds = append(folds, Fold{Start: start + 1, End: end + 1})
 		}
 	}
 	return folds, nil
@@ -69,8 +70,8 @@ func (lsp *Service) ListHints(path string) ([]Hint, error) {
 	if err != nil {
 		return nil, err
 	}
-	place := ws.Locate(path)
-	mod, _ := lsp.Workspace.Config.LookupMod(ws.ID, place.Origin)
+	place := ws.Locate(ws.Mods.Load(), path)
+	mod, _ := lsp.Workspace.LookupMod(place.Origin)
 	visitor := &hintsVisitor{calendar: mod.Calendar, hints: []Hint{}}
 	if place.Format.IsScript() {
 		ws.Schema.Walk(tree, place.File, visitor)
@@ -78,8 +79,7 @@ func (lsp *Service) ListHints(path string) ([]Hint, error) {
 	return visitor.hints, nil
 }
 
-// A hintsVisitor is the visitor behind ListHints. It records a hint after each date the file writes in a field that
-// expects one.
+// A hintsVisitor collects the hints of a file.
 type hintsVisitor struct {
 	calendar app.Calendar
 	hints    []Hint
@@ -96,7 +96,7 @@ func (visitor *hintsVisitor) Enter(tree *jomini.Tree, statement int32, context *
 	return true
 }
 
-// Leave does nothing: a hint is complete when its statement is entered.
+// Leave does nothing.
 func (visitor *hintsVisitor) Leave(tree *jomini.Tree, statement int32, context *schema.Context) {}
 
 // describeDate writes a date read in a mod's calendar as a short phrase: the day, the month's name, the year and the
@@ -125,24 +125,15 @@ func (lsp *Service) ListColorSites(path string) ([]ColorSite, error) {
 	sites := []ColorSite{}
 	for statement := int32(1); int(statement) < len(tree.Statements); statement++ {
 		if color, ok := game.ToColor(tree, statement); ok {
-			sites = append(sites, ColorSite{Range: ToRange(tree.Src, tree.Lines, findColorSpan(tree, statement)), Color: color})
+			span := tree.Statements[statement].ResolveValueSpan()
+			sites = append(sites, ColorSite{Range: ToRange(tree.Src, tree.Lines, span), Color: color})
 		}
 	}
 	return sites, nil
 }
 
-// findColorSpan returns the span of the color a statement writes: its tag, if it has one, and its block.
-func findColorSpan(tree *jomini.Tree, statement int32) jomini.Span {
-	current := tree.Statements[statement]
-	span := jomini.Span{Start: current.Block.Start, End: current.Block.End}
-	if !current.Tag.IsEmpty() {
-		span.Start = current.Tag.Start
-	}
-	return span
-}
-
-// PresentColor returns the text that writes a color back into a file in the same form as the block at the given
-// range, for the color picker.
+// PresentColor returns the text that writes a color back into a file, in the same form as the color written in the
+// given range. It returns an error if there is no color in the range or its form cannot be written.
 func (lsp *Service) PresentColor(path string, within Range, color game.RGBA) (string, error) {
 	_, tree, err := lsp.loadTree(path)
 	if err != nil {
@@ -169,12 +160,12 @@ func (lsp *Service) Signature(path string, line, column int) (*Signature, error)
 	}
 	offset := ToOffset(tree.Src, tree.Lines, line, column)
 	visitor := &hoverVisitor{offset: offset}
-	ws.Schema.WalkTo(tree, ws.Locate(path).File, offset, visitor)
+	ws.Schema.WalkTo(tree, ws.Locate(ws.Mods.Load(), path).File, offset, visitor)
 	call, callee, key, ok := findCall(ws, tree, visitor)
 	if !ok {
 		return nil, nil
 	}
-	parameters := lo.Filter(slices.Sorted(maps.Keys(callee.Parameters.Children)), func(key string, _ int) bool {
+	parameters := lo.Filter(slices.Sorted(maps.Keys(callee.Children)), func(key string, _ int) bool {
 		return !strings.HasPrefix(key, "<")
 	})
 	var active *int
@@ -187,21 +178,24 @@ func (lsp *Service) Signature(path string, line, column int) (*Signature, error)
 	return &Signature{Label: key + "(" + strings.Join(parameters, ", ") + ")", Parameters: parameters, Active: active}, nil
 }
 
-// findCall returns the statement of the call to a scripted definition whose block holds the visited position, with
-// the definition and the key it is called by. It looks at the visited statement and then at the blocks that hold it,
-// and returns false if the position is in no such call, or if the definition takes no parameters.
-func findCall(ws *workspace.Session, tree *jomini.Tree, visitor *hoverVisitor) (int32, schema.ScriptedDefinition, string, bool) {
-	for statement, context := visitor.statement, &visitor.context; statement > 0 && context != nil; {
+// findCall returns the call to a scripted definition that holds the visited position: its statement, the field that
+// lists the parameters the definition takes, and the key it is called by. It returns false if the position is in no
+// such call, or if the definition takes no parameters.
+func findCall(ws *workspace.Session, tree *jomini.Tree, visitor *hoverVisitor) (int32, *schema.Field, string, bool) {
+	for statement, context := visitor.statement, &visitor.context; statement > 0; {
 		current := tree.Statements[statement]
-		if current.IsBlock() && visitor.offset > current.Block.Start && visitor.offset < current.Block.End {
-			for _, reference := range context.References {
-				callee, known := ws.Schema.ScriptedDefinitions[reference.Caller+":"+reference.Name]
-				if known && reference.Span == current.Key && callee.Parameters != nil {
-					return statement, callee, reference.Name, true
+		if current.IsBlock() && visitor.offset > current.Block.Start && visitor.offset < current.Block.End &&
+			context.Category == schema.CategoryCall && context.Field != nil {
+			for _, reference := range lo.FlatMap(context.References, func(reference schema.Reference, _ int) []schema.Reference {
+				return index.ListCallees(reference)
+			}) {
+				if database := ws.Schema.Databases[reference.Database]; reference.Name == tree.Unquoted(current.Key) &&
+					database != nil && database.Callable.Parameters {
+					return statement, context.Field, reference.Name, true
 				}
 			}
 		}
 		statement, context = current.Parent, context.Parent
 	}
-	return 0, schema.ScriptedDefinition{}, "", false
+	return 0, nil, "", false
 }

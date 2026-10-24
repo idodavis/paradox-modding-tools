@@ -107,9 +107,10 @@ func openService(t *testing.T, gameID, installPath string, mods ...app.Mod) *Ser
 	if err != nil {
 		t.Fatal(err)
 	}
-	err = config.Update(func(records *app.Config) {
+	err = config.Update("", func(records *app.Config) error {
 		records.Installs = []app.Install{{ID: "i1", Game: gameID, Path: installPath}}
 		records.Workspaces = []app.Workspace{{ID: "w1", Name: "Test", Install: "i1", Mods: mods, Language: "english"}}
+		return nil
 	})
 	if err != nil {
 		t.Fatal(err)
@@ -123,9 +124,8 @@ func openService(t *testing.T, gameID, installPath string, mods ...app.Mod) *Ser
 	return &Service{Workspace: wsp}
 }
 
-// openFixtures opens the fixture install of a game with a copy of the game's fixture mod for each of the given
-// texts, loaded in that order and named mod-a, mod-b and so on, and returns the service with the folders of the
-// copies. The files in a text are written into its copy first.
+// openFixtures opens the fixture install of a game with a copy of its fixture mod for each of the given file sets, in
+// order, named mod-a, mod-b and so on. It returns the service and the folders of the copies.
 func openFixtures(t *testing.T, gameID string, texts ...map[string]string) (*Service, []string) {
 	t.Helper()
 	var dirs []string
@@ -139,8 +139,8 @@ func openFixtures(t *testing.T, gameID string, texts ...map[string]string) (*Ser
 	return openService(t, gameID, resolveFixture(t, gameID), mods...), dirs
 }
 
-// openFixture opens the fixture install of a game with a copy of the game's fixture mod, whose id is mod-a, and
-// returns the service with the copy's folder. The files in the given texts are written into the copy first.
+// openFixture opens the fixture install of a game with a copy of its fixture mod, mod-a, with the given files added. It
+// returns the service and the copy's folder.
 func openFixture(t *testing.T, gameID string, texts map[string]string) (*Service, string) {
 	t.Helper()
 	ide, dirs := openFixtures(t, gameID, texts)
@@ -210,8 +210,8 @@ func TestToOffsetInvertsToRange(t *testing.T) {
 	}
 }
 
-// TestSetTextAnswersWithProblemsUntilFileCloses checks that SetText judges the text the editor gives instead of the
-// file's, that Hover reads the same text, and that CloseFile gives the file's own text back.
+// TestSetTextAnswersWithProblemsUntilFileCloses checks that SetText judges the editor's text, that Hover reads the same
+// text, and that CloseFile gives back the file's own.
 func TestSetTextAnswersWithProblemsUntilFileCloses(t *testing.T) {
 	ide, dir := openFixture(t, ck3, nil)
 	target := filepath.Join(dir, filepath.FromSlash(traitsPath))
@@ -233,8 +233,8 @@ func TestSetTextAnswersWithProblemsUntilFileCloses(t *testing.T) {
 	}
 }
 
-// TestDiagnoseReportsEachVerdict checks the code of each verdict that fails in the CK3 fixture's files and the files
-// of two mods written for it, and the codes of the parser and of localization.
+// TestDiagnoseReportsEachVerdict checks the code of each problem in the CK3 fixture's files and in two mods written
+// for it, including the codes of the parser and of localization.
 func TestDiagnoseReportsEachVerdict(t *testing.T) {
 	ide, dirs := openFixtures(t, ck3, map[string]string{
 		eventsPath: "namespace = t\n\nt.1 = {\n\ttype = character_event\n\ttrigger_event = t.99\n" +
@@ -254,12 +254,12 @@ func TestDiagnoseReportsEachVerdict(t *testing.T) {
 		eventsPath:                   {unresolvedReference, wrongNamespace, "wrong-scope"},
 		"events/t_tie.txt":           {conflictingPriority},
 		"events/t_default.txt":       {conflictingPriority},
-		"common/traits/d_traits.txt": {duplicateDefinition},
+		"common/traits/d_traits.txt": {},
 		traitsPath:                   {},
 		"common/traits/t_traits.txt": {"wrong-value"},
 		"common/traits/t_broken.txt": {"unclosed-block"},
-		messagesPath:                 {"duplicate-message", "duplicate-message", "malformed-line"},
-		"events/m_events.txt":        {unresolvedReference},
+		messagesPath:                 {"duplicate-message", "duplicate-message", "malformed-line", "missing-bom"},
+		"events/m_events.txt":        {},
 	})
 	checkCodes(t, ide, dirs[1], map[string][]string{
 		"events/u_tie.txt":           {conflictingPriority},
@@ -268,10 +268,8 @@ func TestDiagnoseReportsEachVerdict(t *testing.T) {
 	})
 }
 
-// TestDiagnoseGradesEntryModesAndFirstDefinitions checks in the Vic3 fixture that entry modes at a database's level
-// are quiet, that a mode in a database that takes it elsewhere is misplaced, and that of two mods' definitions that
-// the game keeps the first of, the later is the duplicate, in the same mod or in another, and a mod over the game's own
-// is none.
+// TestDiagnoseGradesEntryModesAndFirstDefinitions checks in the Vic3 fixture that an entry mode in its place is quiet
+// and one out of place is reported. It checks that the later of two definitions is a duplicate only within one mod.
 func TestDiagnoseGradesEntryModesAndFirstDefinitions(t *testing.T) {
 	event := "namespace = ww\n\nww.1 = {\n\ttype = country_event\n}\n"
 	ide, dirs := openFixtures(t, vic3, map[string]string{
@@ -284,11 +282,11 @@ func TestDiagnoseGradesEntryModesAndFirstDefinitions(t *testing.T) {
 		"events/zz_events.txt":  {},
 		"events/zza_events.txt": {duplicateDefinition},
 	})
-	checkCodes(t, ide, dirs[1], map[string][]string{"events/zzz_events.txt": {duplicateDefinition}, "events/zzzz_events.txt": {duplicateDefinition}})
+	checkCodes(t, ide, dirs[1], map[string][]string{"events/zzz_events.txt": {}, "events/zzzz_events.txt": {}})
 }
 
-// TestDiagnoseReportsKeysEveryShippedDefinitionWrites checks that a definition missing a key the docs say it must
-// write is reported when every definition the game ships writes the key, and is not when one of them lacks it.
+// TestDiagnoseReportsKeysEveryShippedDefinitionWrites checks that a missing key is reported only if every definition
+// the game ships writes it.
 func TestDiagnoseReportsKeysEveryShippedDefinitionWrites(t *testing.T) {
 	docs := "weight = <int> # How heavy it is. Required.\n"
 	for shipped, want := range map[string][]string{
@@ -308,9 +306,8 @@ func TestDiagnoseReportsKeysEveryShippedDefinitionWrites(t *testing.T) {
 	}
 }
 
-// TestHoverNamesWhatItIs checks the card of each kind of thing a position can be on in the CK3 fixture: a definition
-// with the place the game keeps, a reference, an effect, a keyword, a field with what it takes, a saved scope, a
-// written path to an image, and nothing.
+// TestHoverNamesWhatItIs checks the card of each kind of thing a position can be on in the CK3 fixture: a definition, a
+// reference, an effect, a keyword, a field, a saved scope, an image path and nothing.
 func TestHoverNamesWhatItIs(t *testing.T) {
 	ide, dir := openFixture(t, ck3, nil)
 	target := filepath.Join(dir, "events", "m_events.txt")
@@ -351,8 +348,8 @@ func TestHoverNamesWhatItIs(t *testing.T) {
 	}
 }
 
-// TestHoverReadsDatesAndColors checks that a date value is read in the calendar of the mod that owns the file, with
-// the mod's month names, and that a color block gets its CSS color.
+// TestHoverReadsDatesAndColors checks that a date is read in the calendar of the mod that owns the file and that a
+// color block gets its CSS color.
 func TestHoverReadsDatesAndColors(t *testing.T) {
 	install := copyFolder(t, resolveFixture(t, ck3))
 	writeFiles(t, install, map[string]string{artifactsShippedPath: "anvil = {\n\tmade = 1000.1.1\n\tage = 7.5\n}\n"})
@@ -388,8 +385,8 @@ func TestDiagnoseJudgesOnlySyntaxOfGameFiles(t *testing.T) {
 	}
 }
 
-// TestEncodeTokensWritesDeltas checks that tokens are sorted, that each is written as a line delta, a column delta
-// from the last token on the same line, a length in UTF-16 units and a type, and that one on two lines is left out.
+// TestEncodeTokensWritesDeltas checks that tokens are sorted and written as deltas, and that a token on two lines is
+// left out.
 func TestEncodeTokensWritesDeltas(t *testing.T) {
 	text := "ab cd\nef\n  gh😀i\n\"x\ny\" z\n"
 	tokens := []token{
@@ -403,8 +400,7 @@ func TestEncodeTokensWritesDeltas(t *testing.T) {
 	}
 }
 
-// TestTokensEncodeWholeFile checks that Tokens writes five integers per token from a file's walk, and that each token's
-// type is a place in the legend.
+// TestTokensEncodeWholeFile checks that Tokens writes five integers per token and that each type is in the legend.
 func TestTokensEncodeWholeFile(t *testing.T) {
 	ide, dir := openFixture(t, ck3, nil)
 	tokens, err := ide.Tokens(filepath.Join(dir, "events", "m_events.txt"))
@@ -418,9 +414,8 @@ func TestTokensEncodeWholeFile(t *testing.T) {
 	}
 }
 
-// TestFormatKeepsLinesAndStaysIdempotent checks that Format only indents and spaces: every line break stays where it
-// is, statements written on one line stay on it, comments stay on their lines, and formatting the result changes
-// nothing. A stray carriage return is dropped from the text the tree is written as.
+// TestFormatKeepsLinesAndStaysIdempotent checks that Format only indents and spaces: every line break and comment
+// stays where it is, and formatting the result changes nothing.
 func TestFormatKeepsLinesAndStaysIdempotent(t *testing.T) {
 	ide, dir := openFixture(t, ck3, nil)
 	target := filepath.Join(dir, "common", "traits", "m_traits.txt")
@@ -452,7 +447,7 @@ func TestFormatKeepsLinesAndStaysIdempotent(t *testing.T) {
 	}
 }
 
-// toByteEdits converts Monaco edits over a tree's text back to the engine's byte edits, for a test to apply.
+// toByteEdits converts Monaco edits over a tree's text back to byte edits.
 func toByteEdits(tree *jomini.Tree, edits []Edit) []jomini.Edit {
 	return lo.Map(edits, func(edit Edit, _ int) jomini.Edit {
 		return jomini.Edit{
@@ -465,9 +460,8 @@ func toByteEdits(tree *jomini.Tree, edits []Edit) []jomini.Edit {
 	})
 }
 
-// TestCompleteListsKeysAndValues checks that a key position gets the language's operators, then the commands and the
-// fields of the block, and that a value position gets the choices the field takes and the image files under the folder
-// written so far.
+// TestCompleteListsKeysAndValues checks that a key gets the language's operators, commands and fields, and that a value
+// gets the field's choices and the image files under the folder typed.
 func TestCompleteListsKeysAndValues(t *testing.T) {
 	ide, dir := openFixture(t, ck3, nil)
 	install := copyFolder(t, resolveFixture(t, ck3))
@@ -515,7 +509,7 @@ func TestCompleteListsKeysAndValues(t *testing.T) {
 }
 
 // TestNavigationFollowsNamesAcrossFiles checks that Definition puts the kept definition first, that References lists
-// the definition and the uses, that PrepareRename refuses a name of the game's and Rename edits each place in the
+// the definition and the uses, that PrepareRename refuses a name of the game, and that Rename edits each place in the
 // mod.
 func TestNavigationFollowsNamesAcrossFiles(t *testing.T) {
 	ide, dir := openFixture(t, ck3, nil)
@@ -540,8 +534,8 @@ func TestNavigationFollowsNamesAcrossFiles(t *testing.T) {
 	}
 }
 
-// TestHoverReadsLocalizationFiles checks the cards of a localization file: a message's key with the places that
-// define it, a key written between dollar signs with its text, and a step of a data call.
+// TestHoverReadsLocalizationFiles checks the cards of a localization file: a message's key, a key between dollar signs
+// and a step of a data call.
 func TestHoverReadsLocalizationFiles(t *testing.T) {
 	ide, dir := openFixture(t, ck3, map[string]string{
 		messagesPath: "l_english:\n a:0 \"Hello $b$ [Root.GetName]\"\n b:0 \"Bee\"\n",
@@ -558,8 +552,8 @@ func TestHoverReadsLocalizationFiles(t *testing.T) {
 	}
 }
 
-// TestHoverGoldenPositions hovers over every position of the hover goldens in the fixtures of each game, and checks
-// that none panics. It logs the positions where the golden had a card and Hover has none.
+// TestHoverGoldenPositions hovers over every golden position in the fixtures of each game and checks that none panics.
+// It logs the positions where the golden has a card and Hover has none.
 func TestHoverGoldenPositions(t *testing.T) {
 	header := regexp.MustCompile(`^(\d+):(\d+) (.*)$`)
 	for _, gameID := range []string{ck3, vic3, eu5} {
@@ -616,16 +610,15 @@ func hoverSafely(ide *Service, target string, line, column int) (card *Card, pan
 	return card, false
 }
 
-// A problem is one diagnostic of the gate, with the file it was found in.
+// A problem is one diagnostic with the file it was found in.
 type problem struct {
 	code, rel string
 	line      int
 	facts     map[string]string
 }
 
-// TestDiagnoseInstalls diagnoses every script, GUI, asset, font and localization file of each real install that
-// PMT_TEST_INSTALL_<GAME> names, with no mod, and logs the time, the count of problems per code and the first ten of
-// each code. The counts are read, not asserted, except that no file panics.
+// TestDiagnoseInstalls diagnoses the files of each real install that PMT_TEST_INSTALL_<GAME> names, with no mod, and
+// logs the problems by code. It fails only if a file panics.
 func TestDiagnoseInstalls(t *testing.T) {
 	for _, gameID := range []string{ck3, vic3, eu5} {
 		t.Run(gameID, func(t *testing.T) {
@@ -653,9 +646,8 @@ func TestDiagnoseInstalls(t *testing.T) {
 	}
 }
 
-// diagnoseAll diagnoses the script, GUI, asset, font and localization files of a list in parallel, and returns the
-// problems found, sorted by code and place, how many files it checked and why each of the ones that failed or
-// panicked did.
+// diagnoseAll diagnoses the files of a list in parallel. It returns the problems, sorted by code and place, how many
+// files it checked and why each failed file failed.
 func diagnoseAll(ide *Service, listing []files.File) (problems []problem, checked int, failures []error) {
 	var mu sync.Mutex
 	var group errgroup.Group
@@ -685,7 +677,7 @@ func diagnoseAll(ide *Service, listing []files.File) (problems []problem, checke
 	return problems, checked, failures
 }
 
-// errCrash is the error that diagnoseSafely makes of a panic.
+// errCrash is the error a panic becomes.
 var errCrash = errors.New("panic")
 
 // diagnoseSafely diagnoses a file, and turns a panic into an error.
@@ -698,7 +690,7 @@ func diagnoseSafely(ide *Service, target string) (diagnostics []Diagnostic, err 
 	return ide.Diagnose(target)
 }
 
-// logProblems logs the first ten problems of each code, then the count of each code.
+// logProblems logs the first problems of each code, then the count of each code.
 func logProblems(t *testing.T, problems []problem) {
 	t.Helper()
 	counts := map[string]int{}

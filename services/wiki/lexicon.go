@@ -8,6 +8,7 @@ import (
 	"github.com/samber/lo"
 
 	"paradox-modding-tools/internal/game"
+	"paradox-modding-tools/internal/index"
 	"paradox-modding-tools/internal/schema"
 	"paradox-modding-tools/services/workspace"
 )
@@ -38,12 +39,14 @@ var declaredClasses = map[string]string{
 	"link":    game.DeclaredLink,
 }
 
-// BuildLexicon returns the lexicon rows of one class, for the Wiki pane's Lexicon tab.
+// BuildLexicon builds the lexicon rows of the given class: effect, trigger, link, scope or function. The rows are
+// sorted by name. It returns an error if no workspace is open or the class is none of those.
 func (wik *Service) BuildLexicon(class string) ([]LexiconRow, error) {
 	ws, err := wik.Workspace.Session()
 	if err != nil {
 		return nil, err
 	}
+	mods := ws.Mods.Load()
 	var rows []LexiconRow
 	switch declared := declaredClasses[class]; {
 	case declared != "":
@@ -51,7 +54,7 @@ func (wik *Service) BuildLexicon(class string) ([]LexiconRow, error) {
 			if slices.Contains(command.Declared, declared) {
 				rows = append(rows, LexiconRow{
 					Class: class, Name: name, Blurb: command.Blurb, Usage: command.Usage, Scopes: command.Scopes,
-					Target: command.Target, Examples: toExamples(ws, command.Examples),
+					Target: command.Target, Examples: toExamples(ws, mods, command.Examples),
 				})
 			}
 		}
@@ -64,7 +67,7 @@ func (wik *Service) BuildLexicon(class string) ([]LexiconRow, error) {
 			for _, function := range dataType.Functions {
 				rows = append(rows, LexiconRow{
 					Class: class, Name: dataType.Name + "." + function.Name, Blurb: function.Blurb,
-					Target: function.Returns, Examples: toExamples(ws, function.Examples),
+					Target: function.Returns, Examples: toExamples(ws, mods, function.Examples),
 				})
 			}
 		}
@@ -75,10 +78,10 @@ func (wik *Service) BuildLexicon(class string) ([]LexiconRow, error) {
 	return rows, nil
 }
 
-// toExamples converts the places where the game's own files use a name into examples, each with its place in the
-// open workspace and its line counted from one.
-func toExamples(ws *workspace.Session, examples []schema.Example) []Example {
+// toExamples converts each given place where the game's own files use a name to an example. Each carries its place in
+// the open workspace, as the given index of the mods holds it.
+func toExamples(ws *workspace.Session, mods *index.Index, examples []schema.Example) []Example {
 	return lo.Map(examples, func(example schema.Example, _ int) Example {
-		return Example{Place: ws.Locate(example.Path), Line: example.Line + 1}
+		return Example{Place: ws.Locate(mods, example.Path), Line: example.Line + 1}
 	})
 }

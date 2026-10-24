@@ -1,5 +1,5 @@
-// Package graph is the Event Graph page's service. It builds the graph of what fires what from one root, using the
-// index's fires, and the detail of one node. The graph has no coordinates; the page lays it out.
+// Package graph is the Event Graph page's service. It builds the graph of what fires what from one root, and the
+// detail of one node.
 package graph
 
 import (
@@ -16,7 +16,7 @@ import (
 	"paradox-modding-tools/services/workspace"
 )
 
-// Service is the Event Graph service.
+// Service is the Wails service behind the Event Graph. It finds the roots a search names and builds a graph from one.
 type Service struct {
 	Workspace *workspace.Service
 }
@@ -34,8 +34,7 @@ type Node struct {
 	Step     int             `json:"step"` // its distance from the root, negative for a firer
 }
 
-// An Edge is one firing the graph draws, from a firer to what it fires, with the delay as written and the scripted
-// effects that were spliced out of the line.
+// An Edge is one firing the graph draws, from a firer to what it fires.
 type Edge struct {
 	From string   `json:"from"`
 	To   string   `json:"to"`
@@ -53,7 +52,7 @@ type Filter struct {
 	Follow    bool     `json:"follow"`
 }
 
-// A Graph is the event graph from one root. It has no coordinates; the page lays it out.
+// A Graph is the event graph from one root. It has no coordinates.
 type Graph struct {
 	Root      string `json:"root"`
 	Nodes     []Node `json:"nodes"`
@@ -79,10 +78,9 @@ var delayKeys = []string{"days", "months", "years"}
 // delayBlock is the key of a block that holds a delay for every firing listed after it.
 const delayBlock = "delay"
 
-// BuildGraph builds the graph from a root node under a filter. It goes breadth-first forward over what the root
-// fires and backward over what fires it, to the filter's depth and through scripted effects when they are
-// followed, and stops at the node limit. A node the filter leaves out is spliced out: its incoming and outgoing
-// edges become one edge with the node's name added to Via.
+// BuildGraph builds the graph that reaches out from a root node under a filter. It follows what the root fires and what
+// fires it, up to the filter's depth and node limit. A node the filter hides is replaced by one edge, with the node's
+// name added to Via. It returns an error if the game keeps no definition of the root.
 func (gph *Service) BuildGraph(root string, filter Filter) (Graph, error) {
 	ws, err := gph.Workspace.Session()
 	if err != nil {
@@ -101,8 +99,8 @@ func (gph *Service) BuildGraph(root string, filter Filter) (Graph, error) {
 	return Graph{Root: root, Nodes: reach.nodes, Edges: lo.UniqBy(reach.edges, toKey), Truncated: reach.truncated}, nil
 }
 
-// resolveNode returns the definition the game keeps of the node an id names, `database:name`. It returns an error if
-// the game keeps none.
+// resolveNode returns the definition the game keeps of the node with the given id, `database:name`. It returns an error
+// if the game keeps none.
 func resolveNode(ws *workspace.Session, mods *index.Index, id string) (index.Site, error) {
 	database, name, _ := strings.Cut(id, ":")
 	if winner, ok := mods.FindKept(ws.Schema, schema.Reference{Database: database, Name: name}); ok {
@@ -120,7 +118,7 @@ func makeNode(ws *workspace.Session, mods *index.Index, site index.Site, step in
 		Name:     reference.Name,
 		Title:    ws.LookupTitle(mods, site),
 		Site:     site,
-		Place:    ws.Locate(mods.File(site).Path),
+		Place:    ws.Locate(mods, mods.File(site).Path),
 		Line:     toLine(mods, site),
 		Step:     step,
 	}
@@ -137,8 +135,8 @@ func toID(mods *index.Index, site index.Site) string {
 	return reference.Database + ":" + reference.Name
 }
 
-// expand adds what is further from the root, a step at a time to the filter's depth: what each node fires when
-// going forward, what fires each node when not.
+// expand adds the nodes further from the root, up to the filter's depth: what each node fires going forward, what fires
+// each node going backward.
 func (reach *reach) expand(root index.Site, forward bool) {
 	frontier := []index.Site{root}
 	for distance := 1; distance <= reach.filter.Depth && len(frontier) > 0; distance++ {
@@ -160,16 +158,14 @@ func (reach *reach) expand(root index.Site, forward bool) {
 	}
 }
 
-// listFires returns what a node fires. With the flag set it goes through the scripted effects the node calls. A
-// database that merges definitions fires what all of them do.
+// listFires returns what a node fires, including what the scripted effects it calls fire if the flag is set.
 func listFires(ws *workspace.Session, mods *index.Index, site index.Site, follow bool) []index.Fire {
 	return lo.FlatMap(listMerged(ws, mods, site), func(part index.Site, _ int) []index.Fire {
 		return mods.ListFires(ws.Schema, part, follow)
 	})
 }
 
-// listMerged returns the definitions that make up a node: all of those the game merges into its name, else the one
-// given.
+// listMerged returns the definitions that make up a node: all that the game merges under its name, else the given one.
 func listMerged(ws *workspace.Session, mods *index.Index, site index.Site) []index.Site {
 	if winner, ok := mods.FindKeptLocal(ws.Schema, mods.ToReference(site), site.File); ok && len(winner.Merged) > 0 {
 		return winner.Merged
@@ -177,9 +173,8 @@ func listMerged(ws *workspace.Session, mods *index.Index, site index.Site) []ind
 	return []index.Site{site}
 }
 
-// addFire puts a firing in the graph, with the nodes it needs, at the given step from the root. It returns the node
-// at the end of the firing that is farther from the root, and whether the graph did not have that node before.
-// Nothing past the node limit is added.
+// addFire puts a firing in the graph, with its nodes, at the given step from the root. It returns the node of the
+// firing that is farther from the root, and whether the graph is new to it. Nothing past the node limit is added.
 func (reach *reach) addFire(fire index.Fire, forward bool, step int) (index.Site, bool) {
 	path := reach.listPath(fire)
 	if !forward {
@@ -200,7 +195,7 @@ func (reach *reach) addFire(fire index.Fire, forward bool, step int) (index.Site
 			edge.Days = findDelay(reach.ws, reach.mods, fire.Use)
 		}
 		if len(path) == 2 {
-			edge.Via = fire.Via
+			edge.Via = listVia(reach.mods, fire)
 		}
 		reach.edges = append(reach.edges, edge)
 	}
@@ -208,25 +203,22 @@ func (reach *reach) addFire(fire index.Fire, forward bool, step int) (index.Site
 }
 
 // listPath returns the definitions a firing goes through, from the firer to what it fires. The scripted effects it
-// passes are between them when the filter draws the effects, else they are left to the edge.
+// passes are included if the filter draws them.
 func (reach *reach) listPath(fire index.Fire) []index.Site {
-	path := []index.Site{fire.Source}
-	effects := reach.ws.Schema.Effects
-	if !slices.Contains(reach.filter.Databases, effects) {
-		return append(path, fire.Target)
+	if !slices.Contains(reach.filter.Databases, reach.ws.Schema.Effects) {
+		return []index.Site{fire.Source, fire.Target}
 	}
-	for _, name := range fire.Via {
-		winner, ok := reach.mods.FindKeptLocal(reach.ws.Schema, schema.Reference{Database: effects, Name: name}, fire.Source.File)
-		if !ok {
-			return []index.Site{fire.Source, fire.Target}
-		}
-		path = append(path, winner.Site)
-	}
-	return append(path, fire.Target)
+	return slices.Concat([]index.Site{fire.Source}, fire.Via, []index.Site{fire.Target})
 }
 
-// add puts the node of a definition among the nodes, at the given step from the root. It returns false when the node
-// limit keeps it out, and true when the node is in.
+// listVia returns the names of the scripted effects a firing passes through, in order. It is empty if it passes
+// through none.
+func listVia(mods *index.Index, fire index.Fire) []string {
+	return lo.Map(fire.Via, func(site index.Site, _ int) string { return mods.ToReference(site).Name })
+}
+
+// add puts the node of a definition in the graph, at the given step from the root. It returns false if the node limit
+// keeps it out.
 func (reach *reach) add(site index.Site, step int) bool {
 	if reach.sites[site] {
 		return true
@@ -243,21 +235,21 @@ func (reach *reach) add(site index.Site, step int) bool {
 	return true
 }
 
-// isHidden reports whether the filter leaves out a definition's node: its database or its origin is not in the
+// isHidden reports whether the filter hides a definition's node, because its database or its origin is not in the
 // filter.
 func (reach *reach) isHidden(site index.Site) bool {
 	return !slices.Contains(reach.filter.Databases, reach.mods.ToReference(site).Database) ||
 		!slices.Contains(reach.filter.Origins, reach.mods.File(site).Origin)
 }
 
-// findDelay returns the delay written for a firing, as written: the days, months or years statement in the first
-// block, going up from the reference that fires, that holds one directly or in a delay block. It returns "" if none
-// is written.
+// findDelay returns the delay written for a firing, such as "days = 5". It returns "" if there is none.
 func findDelay(ws *workspace.Session, mods *index.Index, use index.Site) string {
 	tree, err := ws.LoadTree(mods.File(use).Path)
 	if err != nil {
 		return ""
 	}
+	// the delay is in the first block, going up from the reference that fires, that holds one directly or in a delay
+	// block
 	for statement := tree.FindStatement(mods.Occurrence(use).Span.Start); statement > 0; statement = tree.Statements[statement].Parent {
 		holders := []int32{statement}
 		if block, ok := tree.FindChild(statement, delayBlock); ok {
@@ -272,8 +264,7 @@ func findDelay(ws *workspace.Session, mods *index.Index, use index.Site) string 
 	return ""
 }
 
-// findDuration returns the days, months or years statement a block holds, as written. It returns "" if the block holds
-// none.
+// findDuration returns the days, months or years statement a block holds. It returns "" if there is none.
 func findDuration(tree *jomini.Tree, block int32) string {
 	for _, key := range delayKeys {
 		if child, ok := tree.FindChild(block, key); ok {
@@ -283,8 +274,8 @@ func findDuration(tree *jomini.Tree, block int32) string {
 	return ""
 }
 
-// splice takes the nodes the filter leaves out from the graph, each one's incoming and outgoing edges joined into one
-// edge that passes through the node. The root stays whatever the filter says.
+// splice removes the nodes the filter hides from the graph. The edges into and out of a node become one edge that
+// passes through it. The root is never removed.
 func (reach *reach) splice() {
 	hidden := lo.Filter(reach.nodes, func(node Node, _ int) bool {
 		return node.Step != 0 && reach.isHidden(node.Site)
@@ -313,27 +304,29 @@ func (reach *reach) splice() {
 	reach.nodes = lo.Without(reach.nodes, hidden...)
 }
 
-// toKey returns a text that is the same for two edges exactly when they are the same edge: they go between the same
-// nodes with the same delay and through the same scripted effects.
+// toKey returns a text that is the same for two edges exactly when they go between the same nodes with the same delay
+// and through the same scripted effects.
 func toKey(edge Edge) string {
 	return strings.Join(slices.Concat([]string{edge.From, edge.To, edge.Days}, edge.Via), "\x00")
 }
 
 // FindRoots returns the nodes a query names, up to the given limit: an exact id, a namespace as a prefix, or a
-// number within every namespace.
+// number within every namespace. It returns nil if no workspace is open.
 func (gph *Service) FindRoots(query string, limit int) []Node {
 	ws, err := gph.Workspace.Session()
 	if err != nil {
 		return nil
 	}
 	mods := ws.Mods.Load()
+	queryDatabase, queryName, _ := strings.Cut(query, ":")
+	id := schema.Reference{Database: queryDatabase, Name: queryName}
 	var nodes []Node
 	for _, database := range ws.Schema.FireDatabases {
 		for _, site := range mods.ListDefinitions(database) {
 			if len(nodes) >= limit {
 				return nodes
 			}
-			if matchRoot(query, mods, site) && isKept(ws, mods, site) {
+			if matchRoot(query, id, mods, site) && isKept(ws, mods, site) {
 				nodes = append(nodes, makeNode(ws, mods, site, 0))
 			}
 		}
@@ -341,24 +334,23 @@ func (gph *Service) FindRoots(query string, limit int) []Node {
 	return nodes
 }
 
-// matchRoot reports whether a definition is a root a query names: its id or its name is the query, its name is in
-// the namespace the query names, or its name ends with the number the query is.
-func matchRoot(query string, mods *index.Index, site index.Site) bool {
+// matchRoot reports whether a definition is a root the query names. Its id or name is the query, its name is in the
+// query's namespace, or its name ends with the query's number. The given reference is the query read as an id.
+func matchRoot(query string, id schema.Reference, mods *index.Index, site index.Site) bool {
 	reference := mods.ToReference(site)
-	return query == toID(mods, site) || query == reference.Name ||
+	return reference == id || query == reference.Name ||
 		strings.HasPrefix(reference.Name, query+".") ||
 		jomini.IsNumber(query) && strings.HasSuffix(reference.Name, "."+query)
 }
 
-// isKept reports whether a definition is the one the game keeps of its name. A name that several files define has
-// one such definition.
+// isKept reports whether a definition is the one the game keeps of its name.
 func isKept(ws *workspace.Session, mods *index.Index, site index.Site) bool {
 	winner, ok := mods.FindKeptLocal(ws.Schema, mods.ToReference(site), site.File)
 	return ok && winner.Site == site
 }
 
-// Defaults returns the filter the page opens with: events, on_actions, decisions and scripted effects, the game and
-// every mod, three steps deep, two hundred nodes, scripted effects followed.
+// Defaults returns the filter for a new graph. It draws the databases that fire and the scripted effects, from the game
+// and every mod. It returns an empty filter if no workspace is open.
 func (gph *Service) Defaults() Filter {
 	ws, err := gph.Workspace.Session()
 	if err != nil {

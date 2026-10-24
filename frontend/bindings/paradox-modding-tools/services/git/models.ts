@@ -64,7 +64,7 @@ export interface Ref {
 }
 
 /**
- * A Status is a repository's state: its branch, its upstream and how far they differ, and its changes.
+ * A Status is what git status reports for one repository.
  */
 export interface Status {
     /**

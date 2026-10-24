@@ -15,6 +15,7 @@ import * as search from "@services/search/service";
 import * as steam from "@services/steam/service";
 import * as wiki from "@services/wiki/service";
 import * as workspace from "@services/workspace/service";
+import type { Window as DrawnWindow } from "@services/draw/models";
 import type { Filter } from "@services/graph/models";
 import type { FindingSite } from "@services/health/models";
 
@@ -90,9 +91,9 @@ export const windowQuery = defineQueryOptions(({ path, name }: { path: string; n
   query: () => draw.ResolveWindow(path, name),
 }));
 export const statesQuery = defineQueryOptions(
-  ({ path, name, picks }: { path: string; name: string; picks: Record<string, string> }) => ({
-    key: [...keys.draw(path), "states", name, picks],
-    query: () => draw.EvaluateStates(path, name, picks),
+  ({ path, window, picks }: { path: string; window: DrawnWindow; picks: Record<string, string> }) => ({
+    key: [...keys.draw(path), "states", window.name, picks],
+    query: () => draw.EvaluateStates(window, picks),
   }),
 );
 export const coatQuery = defineQueryOptions(

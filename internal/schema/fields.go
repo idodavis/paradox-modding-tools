@@ -6,8 +6,7 @@ import (
 	"strings"
 )
 
-// An Input is one input of the Form view: a key that a definition may write, what it takes, and the inputs inside
-// it when it holds a block.
+// An Input is one input of the Form view, for a key that a definition may write.
 type Input struct {
 	Key      string    `json:"key"`
 	Type     ValueType `json:"type"`
@@ -29,8 +28,8 @@ func (schema *Schema) ListInputs(database string) []Input {
 	return listInputs(row.Definition)
 }
 
-// listInputs returns the inputs for the children of a field that a source gives a value or children of their own,
-// by key. A child written for a form rather than a key gives none.
+// listInputs returns the inputs for the children of a field, in key order. A child that no source gives a value or
+// children of its own gives none, and neither does a pattern such as <any> in place of a key.
 func listInputs(field *Field) []Input {
 	var inputs []Input
 	for _, key := range slices.Sorted(maps.Keys(field.Children)) {
@@ -41,7 +40,7 @@ func listInputs(field *Field) []Input {
 		expected := child.Value.Value
 		inputs = append(inputs, Input{
 			Key: key, Type: expected.Type, Database: expected.Database, Choices: expected.Choices,
-			Required: child.Required.Value.Level == "always", Default: child.Default.Value, Blurb: child.Blurb.Value,
+			Required: child.Required.Value == "always", Default: child.Default.Value, Blurb: child.Blurb.Value,
 			Inputs: listInputs(child),
 		})
 	}

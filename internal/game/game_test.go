@@ -195,7 +195,10 @@ func TestInstallUpdatedAt(t *testing.T) {
 func TestColorOf(t *testing.T) {
 	tree := jomini.Parse("a = rgb { 255 0 0 }\nb = rgb { 1 0.5 0 }\nc = hsv { 0.5 1 1 }\nd = hsv360 { 180 100 100 }\n" +
 		"e = hex { 0xff8000ff }\nf = rgb { 255 0 }\ng = { 1 2 3 }\nh = foo { 1 2 3 }\n")
-	wants := []string{"#ff0000", "#ff8000", "#00ffff", "#00ffff", "#ff8000", "", "#010203", ""}
+	wants := []string{
+		"rgba(255, 0, 0, 1)", "rgba(255, 128, 0, 1)", "rgba(0, 255, 255, 1)", "rgba(0, 255, 255, 1)", "rgba(255, 128, 0, 1)", "",
+		"rgba(1, 2, 3, 1)", "",
+	}
 	i := 0
 	for statement := range tree.Children(0) {
 		want := wants[i]
@@ -203,7 +206,7 @@ func TestColorOf(t *testing.T) {
 		key := tree.Text(tree.Statements[statement].Key)
 		tag, parts, isColor := jomini.ColorParts(tree, statement)
 		color, known := ParseColor(tag, parts)
-		if got := color.ToHex(); !isColor || !known {
+		if got := color.ToCSS(); !isColor || !known {
 			got = ""
 		} else if got != want {
 			t.Errorf("%s: %q, want %q", key, got, want)

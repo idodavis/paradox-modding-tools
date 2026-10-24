@@ -12,8 +12,7 @@ import (
 	"paradox-modding-tools/services/workspace"
 )
 
-// A Detail is everything the detail panel shows for one node: its text, what it fires and what fires it, what it
-// refers to, its portraits, its background picture, and the Form view's inputs for its database.
+// A Detail is what the page shows about one node: its text, its firings, its references and its pictures.
 type Detail struct {
 	Node       Node           `json:"node"`
 	Text       string         `json:"text"` // the event's localized description
@@ -57,8 +56,8 @@ func (gph *Service) BuildDetail(id string) (Detail, error) {
 	}, nil
 }
 
-// findDescription returns the localization key of a definition's description: the value of its desc key, or for a
-// description that is a block, the first desc inside it that has a value. It returns "" if there is none.
+// findDescription returns the localization key of a definition's description. If the description is a block, it is the
+// first desc inside it that has a value. It returns "" if there is none.
 func findDescription(tree *jomini.Tree, statement int32) string {
 	child, ok := tree.FindChild(statement, descriptionKey)
 	if !ok {
@@ -75,28 +74,30 @@ func findDescription(tree *jomini.Tree, statement int32) string {
 // makeEdges returns the edges of some firings, each edge once.
 func makeEdges(ws *workspace.Session, mods *index.Index, fires []index.Fire) []Edge {
 	return lo.UniqBy(lo.Map(fires, func(fire index.Fire, _ int) Edge {
-		return Edge{From: toID(mods, fire.Source), To: toID(mods, fire.Target), Days: findDelay(ws, mods, fire.Use), Via: fire.Via}
+		return Edge{From: toID(mods, fire.Source), To: toID(mods, fire.Target), Days: findDelay(ws, mods, fire.Use), Via: listVia(mods, fire)}
 	}), toKey)
 }
 
-// listReferences returns the nodes of the definitions a node's definitions refer to, each name once. Every definition
-// of the node counts where the database merges them. A name that is undefined, or that the game keeps no definition of,
-// is left out.
+// listReferences returns the nodes that a node's definitions refer to, each name once. A name the game keeps no
+// definition of is left out.
 func listReferences(ws *workspace.Session, mods *index.Index, site index.Site) []Node {
 	references := []Node{}
+	seen := map[schema.Reference]bool{}
 	for _, part := range listMerged(ws, mods, site) {
 		occurrences := mods.Occurrences[part.File]
 		for position := part.Occurrence + 1; int(position) < len(occurrences) && isInside(occurrences, position, part.Occurrence); position++ {
 			if occurrences[position].Role != index.RoleRefers {
 				continue
 			}
-			reference := mods.ToReference(index.Site{File: part.File, Occurrence: position})
-			if winner, ok := mods.FindKeptLocal(ws.Schema, reference, part.File); ok {
-				references = append(references, makeNode(ws, mods, winner.Site, 0))
+			for _, reference := range index.ListCallees(mods.ToReference(index.Site{File: part.File, Occurrence: position})) {
+				if winner, ok := mods.FindKeptLocal(ws.Schema, reference, part.File); ok && !seen[reference] {
+					seen[reference] = true
+					references = append(references, makeNode(ws, mods, winner.Site, 0))
+				}
 			}
 		}
 	}
-	return lo.UniqBy(references, func(node Node) string { return node.ID })
+	return references
 }
 
 // isInside reports whether an occurrence is inside a definition.
@@ -109,8 +110,7 @@ func isInside(occurrences []index.Occurrence, position, definition int32) bool {
 	return false
 }
 
-// listPortraits returns the characters an event's portraits show. A portrait written as a block gives the character it
-// names; one written as a value gives that value. It returns an empty list if the event shows none.
+// listPortraits returns the characters an event's portraits show. It returns an empty list if the event shows none.
 func listPortraits(tree *jomini.Tree, statement int32) []string {
 	portraits := []string{}
 	for child := range tree.Children(statement) {
@@ -129,8 +129,7 @@ func listPortraits(tree *jomini.Tree, statement int32) []string {
 	return portraits
 }
 
-// findBackground returns the path of the picture an event leads to: the file it writes outright, else the file of the
-// first of the game's chains that ends in one the game reads. It returns "" if there is none.
+// findBackground returns the path of the picture an event shows as its background. It returns "" if there is none.
 func findBackground(ws *workspace.Session, mods *index.Index, tree *jomini.Tree, statement int32) string {
 	picture := ws.Game.Events.Picture
 	if path, ok := mods.ResolveTexture(lo.FirstOr(listValues(tree, statement, picture.FileKey), "")); ok {
@@ -145,9 +144,9 @@ func findBackground(ws *workspace.Session, mods *index.Index, tree *jomini.Tree,
 	return ""
 }
 
-// resolveChain returns the path of the picture a chain of definitions ends in, from the values its first hop starts
-// with. A file that the game does not read is replaced by the file of the definition the chain names as its
-// fallback. It returns "" if a hop finds no definition or no file is read.
+// resolveChain returns the path of the picture a chain of definitions ends in, starting from the given values. It uses
+// the chain's fallback if the game does not read the final file. It returns "" if a hop finds no definition or no
+// file is read.
 func resolveChain(ws *workspace.Session, mods *index.Index, chain game.PictureChain, values []string) string {
 	var tree *jomini.Tree
 	var statement int32
@@ -180,9 +179,7 @@ func resolveChain(ws *workspace.Session, mods *index.Index, chain game.PictureCh
 	return path
 }
 
-// findHop returns the definition a hop leads to from the values its key was written with. Without a match key it is
-// the kept definition that the first value names. With one it is the first kept definition in the hop's database that
-// holds every value at that key. It returns false if there is none.
+// findHop returns the definition a hop leads to from the given values. It returns false if there is none.
 func findHop(ws *workspace.Session, mods *index.Index, step game.PictureStep, values []string) (index.Site, bool) {
 	if len(values) == 0 {
 		return index.Site{}, false
@@ -200,8 +197,8 @@ func findHop(ws *workspace.Session, mods *index.Index, step game.PictureStep, va
 	return index.Site{}, false
 }
 
-// listValues returns the values written at a key path in a definition: the value of a scalar, or the values inside a
-// block. The path is keys joined by slashes. It returns nil if the path is empty or the key is not written.
+// listValues returns the values written at a key path in a definition. The path is keys joined by slashes. It returns
+// nil if the path is empty or the key is not written.
 func listValues(tree *jomini.Tree, statement int32, path string) []string {
 	if path == "" {
 		return nil

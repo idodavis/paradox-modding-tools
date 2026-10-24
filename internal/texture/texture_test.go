@@ -377,7 +377,7 @@ func comparePixels(t *testing.T, name string, decoded image.Image, pixels [][4]u
 func TestDecodeDDS(t *testing.T) {
 	for _, row := range ddsCases {
 		file := encodeDDS(row.header, row.format, row.data)
-		if header, ok := DecodeHeader(file); !ok || header != row.header {
+		if header, ok := decodeHeader(file); !ok || header != row.header {
 			t.Errorf("%s: header %+v %v, want %+v", row.name, header, ok, row.header)
 		}
 		decoded, err := Decode(file)
@@ -392,7 +392,7 @@ func TestDecodeDDS(t *testing.T) {
 func TestDecodeTGA(t *testing.T) {
 	for _, row := range tgaCases {
 		want := Header{Format: "tga", Width: row.width, Height: row.height, Mipmaps: 1}
-		if header, ok := DecodeHeader(row.file); !ok || header != want {
+		if header, ok := decodeHeader(row.file); !ok || header != want {
 			t.Errorf("%s: header %+v %v, want %+v", row.name, header, ok, want)
 		}
 		decoded, err := Decode(row.file)
@@ -415,7 +415,7 @@ func TestDecodeFixtures(t *testing.T) {
 		if err != nil {
 			return err
 		}
-		if header, ok := DecodeHeader(file); !ok || header != fixtureHeader {
+		if header, ok := decodeHeader(file); !ok || header != fixtureHeader {
 			t.Errorf("%s: header %+v %v", path, header, ok)
 		}
 		decoded, err := Decode(file)
@@ -433,7 +433,7 @@ func TestDecodeFixtures(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	if header, ok := DecodeHeader(file); !ok || header != (Header{"png", 2, 2, 1, ""}) {
+	if header, ok := decodeHeader(file); !ok || header != (Header{"png", 2, 2, 1, ""}) {
 		t.Errorf("%s: header %+v %v", png, header, ok)
 	}
 	decoded, err := Decode(file)
@@ -445,7 +445,7 @@ func TestDecodeFixtures(t *testing.T) {
 
 func TestDecodeHeader(t *testing.T) {
 	for _, row := range headerCases {
-		if header, ok := DecodeHeader(row.bytes); ok != row.ok || header != row.header {
+		if header, ok := decodeHeader(row.bytes); ok != row.ok || header != row.header {
 			t.Errorf("%s: %+v %v, want %+v %v", row.name, header, ok, row.header, row.ok)
 		}
 	}
@@ -559,7 +559,7 @@ func decodeFile(path string) (bool, error) {
 	}
 	decoded, err := Decode(file)
 	if err != nil {
-		_, known := DecodeHeader(file)
+		_, known := decodeHeader(file)
 		return known, err
 	}
 	header, err := ReadHeader(path)

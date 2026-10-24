@@ -9,28 +9,26 @@ import (
 	"paradox-modding-tools/internal/schema"
 )
 
-// A Legend is Monaco's semantic tokens legend: the token types, one per color category, in index order.
+// A Legend is the list of token types and modifiers that the semantic tokens are encoded against.
 type Legend struct {
 	Types     []string `json:"tokenTypes"`
 	Modifiers []string `json:"tokenModifiers"`
 }
 
-// legend holds the color categories a token can have, in the order the schema declares them. A token's type is its
-// category's place here.
+// legend holds the color categories a token can have. A token's type is its category's place here.
 var legend = []schema.Category{
 	schema.CategoryKeyword, schema.CategoryCommand, schema.CategoryLink, schema.CategoryField, schema.CategoryDefinition,
 	schema.CategoryReference, schema.CategoryParameter, schema.CategoryConstant, schema.CategoryCall,
 }
 
-// Tokens returns the semantic tokens of a file: the color category of every key and value the walk decided,
-// encoded as Monaco wants, five integers per token (the line and column deltas, the length, the type's index in
-// the legend and the modifiers). The grammar in the editor colors shapes; these color meaning on top.
+// Tokens returns the semantic tokens of a file: the color category of every key and value, encoded as Monaco wants.
+// It returns none for a file that is not script.
 func (lsp *Service) Tokens(path string) ([]uint32, error) {
 	ws, tree, err := lsp.loadTree(path)
 	if err != nil {
 		return nil, err
 	}
-	visitor, place := &tokensVisitor{}, ws.Locate(path)
+	visitor, place := &tokensVisitor{}, ws.Locate(ws.Mods.Load(), path)
 	if place.Format.IsScript() {
 		ws.Schema.Walk(tree, place.File, visitor)
 	}
@@ -43,7 +41,7 @@ func (lsp *Service) ListLegend() Legend {
 	return Legend{Types: types, Modifiers: []string{}}
 }
 
-// A tokensVisitor is the visitor behind Tokens. It records the category of each key and value with its span.
+// A tokensVisitor collects the colored spans of a file.
 type tokensVisitor struct {
 	tokens []token
 }
@@ -62,10 +60,11 @@ func (visitor *tokensVisitor) Enter(tree *jomini.Tree, statement int32, context 
 	return true
 }
 
-// Leave does nothing: a token is complete when its statement is entered.
+// Leave does nothing.
 func (visitor *tokensVisitor) Leave(tree *jomini.Tree, statement int32, context *schema.Context) {}
 
-// encodeTokens turns the recorded spans and categories into Monaco's delta-encoded stream.
+// encodeTokens returns the given tokens as five integers each: the line and column deltas, the length, the type's place
+// in the legend and the modifiers. It leaves out a token Monaco cannot draw.
 func encodeTokens(text string, lines jomini.Lines, tokens []token) []uint32 {
 	// a span with no text or no category in the legend is left out
 	tokens = lo.Filter(tokens, func(current token, _ int) bool {

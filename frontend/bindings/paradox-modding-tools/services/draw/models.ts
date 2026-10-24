@@ -12,6 +12,21 @@ import * as lsp$0 from "../lsp/models.js";
 import * as workspace$0 from "../workspace/models.js";
 
 /**
+ * A Blend is a texture channel that weights a blend toward a color.
+ */
+export interface Blend {
+    /**
+     * the channel that weights the blend
+     */
+    "channel": string;
+
+    /**
+     * the color blended in, as CSS
+     */
+    "color": string;
+}
+
+/**
  * A Coat is a coat of arms resolved for drawing, as its layers.
  */
 export interface Coat {
@@ -19,26 +34,47 @@ export interface Coat {
     "layers": Layer[] | null;
     "range": lsp$0.Range;
     "place": workspace$0.Place;
+
+    /**
+     * Width and Height are the size of its field in pixels; 0 for a sub-coat or where the game gives none.
+     */
+    "width": number;
+    "height": number;
+
+    /**
+     * Shading is nil where the game shades no coat.
+     */
+    "shading": Shading | null;
 }
 
 /**
- * A Drawable is something in a GUI or coat file that the view can draw: a window, a type, a template or a coat,
- * and where it starts in the file.
+ * A Frame is one shape that the game's coat designer previews a coat in.
  */
-export interface Drawable {
-    "name": string;
-    "database": string;
-    "range": lsp$0.Range;
+export interface Frame {
+    "label": string;
+
+    /**
+     * where the shape's mask file is
+     */
+    "place": workspace$0.Place;
 }
 
 /**
- * A Group is one choice the page lets the user switch, with the values it can take and the one picked: the data
- * call that a window's conditions read, or the template list a coat's value is drawn from.
+ * A Group is one choice the page lets the user switch. It is either a data call that a window's conditions read, or
+ * a template list that a coat's value is drawn from.
  */
 export interface Group {
     "id": string;
     "label": string;
+
+    /**
+     * the values it can take
+     */
     "options": string[] | null;
+
+    /**
+     * the value it has now
+     */
     "picked": string;
 
     /**
@@ -53,23 +89,26 @@ export interface Group {
 export interface Instance {
     "position": number[];
     "scale": number[];
+
+    /**
+     * in degrees, clockwise
+     */
     "rotation": number;
     "depth": number;
     "range": lsp$0.Range;
 }
 
 /**
- * A Layer is one layer of a coat: the pattern, an emblem or a sub-coat. It carries the image file found for its
- * texture, its mask, and its colors as CSS.
+ * A Layer is one layer of a coat: the pattern, an emblem or a sub-coat.
  */
 export interface Layer {
     /**
-     * the key as written: "pattern", "colored_emblem", "textured_emblem" or "sub"
+     * Role is the key as written: "pattern", "colored_emblem", "textured_emblem" or "sub".
      */
     "role": string;
 
     /**
-     * as written; "missing:x" when `list "x"` names a list that does not exist
+     * Texture is as written; "missing:x" when `list "x"` names a list that does not exist.
      */
     "texture": string;
 
@@ -77,25 +116,52 @@ export interface Layer {
      * the image file for the texture
      */
     "path": string;
+
+    /**
+     * the image file of the pattern whose regions an emblem shows in
+     */
     "mask": string;
 
     /**
      * the pattern's color regions an emblem shows in; none means all of them
      */
     "regions": number[] | null;
+
+    /**
+     * the pattern channel of each of those regions; none without a mask
+     */
+    "maskChannels": string[] | null;
+
+    /**
+     * CSS colors, the fallback first and then one for each slot of the game
+     */
     "colors": string[] | null;
+
+    /**
+     * how the game colors its texture; nil where it keeps its pixels
+     */
+    "recolor": Recolor | null;
 
     /**
      * the template lists its values are drawn from, each with its options
      */
     "lists": Group[] | null;
+
+    /**
+     * Inputs is how the panel edits each key the layer writes, by key.
+     */
+    "inputs": { [_ in string]?: string } | null;
+
+    /**
+     * Instances are in the order they draw, a later one over an earlier.
+     */
     "instances": Instance[] | null;
     "sub"?: Coat | null;
     "range": lsp$0.Range;
 }
 
 /**
- * A NamedColor is one of the game's named colors, with its CSS value for the color picker.
+ * A NamedColor is one of the game's named colors, for the color picker.
  */
 export interface NamedColor {
     "name": string;
@@ -107,51 +173,109 @@ export interface NamedColor {
  */
 export interface Overlay {
     /**
-     * the image file found for its texture; "" if none is found
+     * the image file for its texture; "" if there is none
      */
     "path": string;
     "properties": Property[] | null;
 }
 
 /**
- * A Property is one property of a widget. It records the value as written and where it was written, because a
- * template or the widget's type can set a property instead of the widget itself.
+ * A Property is one property of a widget, with the place where it is written. That place can be a template or the
+ * widget's type instead of the widget itself.
  */
 export interface Property {
     "key": string;
+
+    /**
+     * Value is what the game reads. A constant or an expression is worked out, and a GetDefine call is replaced by the
+     * value of its define. The same holds for each value inside a block. Any other value is as written.
+     */
     "value": string;
     "range": lsp$0.Range;
     "place": workspace$0.Place;
 
     /**
-     * "widget", "template" or "type"; "missing" if the source was not found
+     * "widget", "template" or "type"; "missing" if no file defines the source
      */
     "origin": string;
 }
 
 /**
- * States describes one way of drawing a window: the groups the toolbar offers with their current picks, and the
- * widgets those picks hide.
+ * A Recolor is how the game colors the texture of a layer, with the layer's colors as CSS.
+ */
+export interface Recolor {
+    /**
+     * the color it starts from
+     */
+    "start": string;
+
+    /**
+     * the blends toward a color, in order
+     */
+    "blends": Blend[] | null;
+
+    /**
+     * the channel overlaid on the result
+     */
+    "overlay": game$0.CoatStrength;
+
+    /**
+     * the channel that is its alpha; "" means the blends' own
+     */
+    "alpha": string;
+}
+
+/**
+ * A Shading is the texture that shades the cloth of a coat, with how it lies over the coat and its emblems.
+ */
+export interface Shading {
+    /**
+     * the image file of the texture
+     */
+    "path": string;
+
+    /**
+     * the channel overlaid on each coat and sub
+     */
+    "overlay": game$0.CoatStrength;
+
+    /**
+     * the channel times a factor over each emblem's alpha
+     */
+    "grain": game$0.CoatStrength;
+}
+
+/**
+ * States is one way of drawing a window, as the page's toolbar sets it.
  */
 export interface States {
+    /**
+     * what the toolbar offers, each with its current pick
+     */
     "groups": Group[] | null;
+
+    /**
+     * the IDs of the widgets that the picks hide
+     */
     "hidden": number[] | null;
 }
 
 /**
- * A Widget is one element of a resolved window with everything needed to draw it: the game's row for its type,
- * its properties after its type and templates are applied, and its texts and textures looked up. Go does not
- * measure or lay out anything; the page does.
+ * A Widget is one element of a resolved window, with everything needed to draw it. The page lays it out.
  */
 export interface Widget {
     "id": number;
 
     /**
-     * the widget that holds it; the window's own widget is 0, and so is its parent
+     * Parent is the widget that holds it; the window's own widget is 0, and so is its parent.
      */
     "parent": number;
     "name": string;
     "type": string;
+
+    /**
+     * the game's row for its type
+     */
     "row": game$0.WidgetType;
 
     /**
@@ -166,7 +290,7 @@ export interface Widget {
     "texts": { [_ in string]?: string } | null;
 
     /**
-     * by property key; the image file found for the written path
+     * by property key; the image file for the property's path
      */
     "textures": { [_ in string]?: string } | null;
     "overlays": Overlay[] | null;
@@ -175,12 +299,16 @@ export interface Widget {
 }
 
 /**
- * A Window is a GUI window resolved for drawing: its widgets in document order, the game windows that contain it,
- * and the data context its bindings read.
+ * A Window is one GUI window resolved for drawing. Its widgets are in document order, and its holders are the game
+ * windows that contain it.
  */
 export interface Window {
     "name": string;
     "widgets": Widget[] | null;
     "holders": string[] | null;
+
+    /**
+     * the data context its bindings read
+     */
     "datacontext": string;
 }

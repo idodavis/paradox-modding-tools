@@ -13,34 +13,27 @@ import (
 	"paradox-modding-tools/internal/schema"
 )
 
-// A Completion is one candidate the completion list shows: the text to insert, how it ranks, and what the item
-// shows.
+// A Completion is one candidate in the completion list.
 type Completion struct {
 	Label    string          `json:"label"`
 	Insert   string          `json:"insert"`           // the text inserted; the label where equal
 	Category schema.Category `json:"category"`         // what it is, for the icon and the color
 	Detail   string          `json:"detail,omitempty"` // the database's singular, the command's class
 	Blurb    string          `json:"blurb,omitempty"`  // the one line shown beside it
-	Rank     int             `json:"rank"`             // how often vanilla writes it in this holder, for the order
+	Rank     int             `json:"rank"`             // how often the game writes it there, for the order
 	Snippet  bool            `json:"snippet"`          // Insert is a snippet with placeholders
 }
 
-// blockClasses are the operator classes whose keys always hold a block.
-var blockClasses = []string{"logical", "conditional", "flow", "display"}
-
-// fixedShapes are the shapes of blocks that take their own keys and none of the language's operators.
-var fixedShapes = []string{"fields", "widget", "setup", "description"}
-
-// Complete returns the completion candidates at a position in a file. In a key position they are the operators
-// first, then the commands and fields the block takes, ranked by how often the game's own files write each one
-// there. In a value position they come from the field's expected type: its choices, the names the game loads, or
-// the texture files a path could name. Every candidate is sent; Monaco filters by what was typed.
+// Complete returns the completion candidates at a position in a file. At a key they are the language's operators,
+// then the commands and fields the block takes. At a value they are the field's choices, the names the game loads or
+// the image files a path could name. It returns an empty list for a file that is not script.
 func (lsp *Service) Complete(path string, line, column int) ([]Completion, error) {
 	ws, tree, err := lsp.loadTree(path)
 	if err != nil {
 		return nil, err
 	}
-	place := ws.Locate(path)
+	mods := ws.Mods.Load()
+	place := ws.Locate(mods, path)
 	if !place.Format.IsScript() {
 		return []Completion{}, nil
 	}
@@ -53,7 +46,7 @@ func (lsp *Service) Complete(path string, line, column int) ([]Completion, error
 		if !current.Value.IsEmpty() && offset >= current.Value.Start {
 			typed = tree.Src[current.Value.Start:offset]
 		}
-		return listValues(ws.Mods.Load(), visitor.context.Field, typed), nil
+		return listValues(mods, ws.Game, visitor.context.Field, typed), nil
 	}
 	visitor := &completeVisitor{offset: offset}
 	ws.Schema.WalkTo(tree, place.File, offset, visitor)
@@ -63,16 +56,16 @@ func (lsp *Service) Complete(path string, line, column int) ([]Completion, error
 	return listKeys(ws.Schema, &visitor.context), nil
 }
 
-// findValue returns the statement that an offset writes the value of: one with an operator before the offset on the
-// same line, and either no value or a value that the offset is in or at the end of. It returns false if the offset
-// writes no value.
+// findValue returns the statement whose value the given offset is writing. That is a statement with an operator before
+// the offset on the same line and no value yet, or a value the offset is inside or at the end of. It returns false if
+// the offset is not writing a value.
 func findValue(tree *jomini.Tree, offset int) (int32, bool) {
-	// the last written byte before the offset decides which statement the offset follows
-	written := strings.TrimRight(tree.Src[:offset], " \t")
-	if written == "" {
+	// the last byte before the offset that is not a space decides which statement the offset follows
+	prefix := strings.TrimRight(tree.Src[:offset], " \t")
+	if prefix == "" {
 		return 0, false
 	}
-	statement := tree.FindStatement(len(written) - 1)
+	statement := tree.FindStatement(len(prefix) - 1)
 	current := tree.Statements[statement]
 	if current.IsBlock() || current.Op.IsEmpty() || offset < current.Op.End || strings.Contains(tree.Src[current.Op.End:offset], "\n") ||
 		!current.Value.IsEmpty() && offset > current.Value.End {
@@ -81,10 +74,10 @@ func findValue(tree *jomini.Tree, offset int) (int32, bool) {
 	return statement, true
 }
 
-// listValues returns the values a field's value may be: its choices, yes and no, the names of a database that a file
-// the game loads defines, or the image files under the folder written so far. The text typed so far is given as it
-// stands, with a quote it may begin with. It returns none where the field states no value.
-func listValues(mods *index.Index, field *schema.Field, typed string) []Completion {
+// listValues returns the values a field may take: its choices, yes and no, the loaded names of a database, or the
+// image files under the folder typed so far. The given text is what is typed, with the quote it may begin with. It
+// returns an empty list if the field states no value.
+func listValues(mods *index.Index, row *game.Game, field *schema.Field, typed string) []Completion {
 	if field == nil || !field.Value.IsStated() {
 		return []Completion{}
 	}
@@ -102,8 +95,8 @@ func listValues(mods *index.Index, field *schema.Field, typed string) []Completi
 	case expected.Type == schema.ValueReference && expected.Database == game.File:
 		for _, file := range mods.ListImages(typed[:strings.LastIndex(typed, "/")+1]) {
 			// script writes a path without the stage folder it sits in
-			_, written := schema.SplitStage(game.LookupGame(mods.Game), file.Rel)
-			values = append(values, Completion{Label: written, Insert: written, Category: schema.CategoryReference})
+			_, rel := schema.SplitStage(row, file.Rel)
+			values = append(values, Completion{Label: rel, Insert: rel, Category: schema.CategoryReference})
 		}
 	case expected.Type == schema.ValueReference:
 		for _, site := range mods.ListDefinitions(expected.Database) {
@@ -118,13 +111,13 @@ func listValues(mods *index.Index, field *schema.Field, typed string) []Completi
 	return lo.UniqBy(values, func(candidate Completion) string { return candidate.Label })
 }
 
-// A completeVisitor is the visitor behind Complete. It keeps the context of the block that holds the offset.
+// A completeVisitor finds the context of the innermost block that holds an offset.
 type completeVisitor struct {
 	offset  int
 	context schema.Context
 }
 
-// Enter keeps the context of the innermost block covering the offset.
+// Enter keeps the context of the block if it holds the offset.
 func (visitor *completeVisitor) Enter(tree *jomini.Tree, statement int32, context *schema.Context) bool {
 	if block := tree.Statements[statement].Block; visitor.offset > block.Start && visitor.offset < block.End {
 		visitor.context = *context
@@ -132,20 +125,19 @@ func (visitor *completeVisitor) Enter(tree *jomini.Tree, statement int32, contex
 	return true
 }
 
-// Leave does nothing: completion needs only the holding block's context.
+// Leave does nothing.
 func (visitor *completeVisitor) Leave(tree *jomini.Tree, statement int32, context *schema.Context) {}
 
-// listKeys returns the keys a block takes: the operators of the language that fit its shape, then the commands its
-// shape admits, then the keys of its field. Where one key comes up twice, the first kind keeps it.
+// listKeys returns the keys a block takes: the language's operators that fit it, then its commands, then its fields.
+// A key listed twice is kept once, as the first kind.
 func listKeys(schema *schema.Schema, holder *schema.Context) []Completion {
 	fields := listFields(holder)
 	top := lo.MaxBy(fields, func(first, second Completion) bool { return first.Rank > second.Rank }).Rank
-	candidates := slices.Concat(listOperators(holder.Shape, top+1), listCommands(schema.Commands, holder), fields)
+	candidates := slices.Concat(listOperators(schema.Commands, holder, top+1), listCommands(schema.Commands, holder), fields)
 	return lo.UniqBy(candidates, func(candidate Completion) string { return candidate.Label })
 }
 
-// listFields returns the keys of a holder's field, in alphabetical order, each ranked by how often the game's own
-// files write it there. It returns none where the walk knows no field.
+// listFields returns the keys of a block's field in alphabetical order. It returns nil if the block has no field.
 func listFields(holder *schema.Context) []Completion {
 	if holder.Field == nil {
 		return nil
@@ -156,26 +148,28 @@ func listFields(holder *schema.Context) []Completion {
 		if strings.HasPrefix(key, "<") {
 			continue
 		}
-		block := field.Value.Value.Type == schema.ValueBlock || len(field.Children) > 0 ||
-			field.Vanilla.Blocks > 0 && field.Vanilla.Blocks == field.Vanilla.Count
 		fields = append(fields, makeKey(Completion{
 			Label: key, Category: schema.CategoryField, Detail: string(field.Value.Value.Type), Blurb: field.Blurb.Value,
 			Rank: field.Vanilla.Count,
-		}, block))
+		}, isBlockField(field)))
 	}
 	return fields
 }
 
-// listOperators returns the keys of the language that fit a block of a shape, each with the given rank. A block of a
-// fixed shape takes none, and effects have no place in a block of triggers.
-func listOperators(shape string, rank int) []Completion {
+// listOperators returns the keys of the language that fit a block, each with the given rank. A key that is written
+// with a block is inserted with one.
+func listOperators(commands map[string]*schema.Command, holder *schema.Context, rank int) []Completion {
 	operators := []Completion{}
 	for _, keyword := range game.Keywords {
-		if (keyword.Holder != shape && (keyword.Holder != "" || slices.Contains(fixedShapes, shape))) ||
-			strings.ContainsAny(keyword.Key, "/*<") || shape == "triggers" && (keyword.Class == "flow" || keyword.Class == "saving") {
+		command := commands[keyword.Key]
+		if strings.ContainsAny(keyword.Key, "/*<") || !isOperatorFit(keyword, command, holder) {
 			continue
 		}
-		block := keyword.Shape != "" || slices.Contains(blockClasses, keyword.Class) && keyword.Key != "always"
+		var claim *schema.Field
+		if holder.Field != nil {
+			claim = holder.Field.Children[keyword.Key]
+		}
+		block := isBlockShape(keyword.Shape) || isBlockField(claim) || command != nil && isBlockCommand(command)
 		operators = append(operators, makeKey(Completion{
 			Label: keyword.Key, Category: schema.CategoryKeyword, Detail: keyword.Class, Blurb: keyword.Blurb, Rank: rank,
 		}, block))
@@ -183,29 +177,55 @@ func listOperators(shape string, rank int) []Completion {
 	return operators
 }
 
-// listCommands returns the commands that a block's shape admits, in alphabetical order. A block inside triggers takes
-// triggers only.
+// isBlockShape reports whether the given shape can only be written as a block. A value or unknown shape may be plain.
+func isBlockShape(shape string) bool {
+	return shape != "" && shape != game.ShapeValue && shape != game.ShapeUnknown
+}
+
+// isBlockField reports whether a field is written as a block. It is false for a nil field.
+func isBlockField(field *schema.Field) bool {
+	return field != nil && (field.Value.Value.Type == schema.ValueBlock || len(field.Children) > 0 ||
+		field.Shape.IsStated() && isBlockShape(field.Shape.Value) ||
+		field.Vanilla.Blocks > 0 && field.Vanilla.Blocks == field.Vanilla.Count)
+}
+
+// isOperatorFit reports whether a keyword of the language, with the command of its key, fits the block of the given
+// context.
+func isOperatorFit(keyword game.Keyword, command *schema.Command, holder *schema.Context) bool {
+	switch {
+	case keyword.Holder != "":
+		return keyword.Holder == holder.Shape
+	case command != nil:
+		_, ok := holder.FindDeclaration(command)
+		return ok
+	}
+	return len(game.Shapes[holder.Shape].Allows) > 0
+}
+
+// listCommands returns the commands a block takes, in alphabetical order.
 func listCommands(commands map[string]*schema.Command, holder *schema.Context) []Completion {
 	var candidates []Completion
-	allowed := game.Shapes[holder.Shape].Allows
 	for _, key := range slices.Sorted(maps.Keys(commands)) {
 		command := commands[key]
-		position := slices.IndexFunc(command.Declared, func(declared string) bool {
-			return slices.Contains(allowed, declared) && (declared != game.DeclaredEffect || !holder.Conditional)
-		})
-		if position < 0 || command.Wild {
+		declaration, ok := holder.FindDeclaration(command)
+		if !ok || command.Wild {
 			continue
 		}
-		block := command.Arguments != nil || command.Target != "" || command.Lists
 		candidates = append(candidates, makeKey(Completion{
-			Label: key, Category: schema.CategoryCommand, Detail: declaredLabels[command.Declared[position]], Blurb: command.Blurb,
-		}, block))
+			Label: key, Category: schema.CategoryCommand, Detail: declaredLabels[declaration], Blurb: command.Blurb,
+		}, isBlockCommand(command)))
 	}
 	return candidates
 }
 
-// makeKey returns the given candidate for a key with its insert text: the key with an equals sign after it, or with
-// a block to fill in where the key holds one.
+// isBlockCommand reports whether a command is written with a block: it takes block arguments, leads to a scope or
+// walks a list.
+func isBlockCommand(command *schema.Command) bool {
+	return isBlockField(command.Arguments) || command.Target != "" || command.Lists
+}
+
+// makeKey returns the given candidate with its insert text set: the key and an equals sign, followed by an empty block
+// if the flag is set.
 func makeKey(candidate Completion, block bool) Completion {
 	candidate.Insert = candidate.Label + " = "
 	if block {

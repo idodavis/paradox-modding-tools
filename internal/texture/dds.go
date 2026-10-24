@@ -45,15 +45,9 @@ var dxgiMasks = map[uint32][5]uint32{
 	93: {32, 0xff0000, 0xff00, 0xff, 0},          // B8G8R8X8_UNORM_SRGB
 }
 
-// decodeDDS decodes the first mipmap of a DDS to RGBA. It handles BC1 to BC7 and uncompressed data.
-func decodeDDS(bytes []byte) (image.Image, error) {
-	header, ok := decodeDDSHeader(bytes)
-	if !ok {
-		if len(bytes) < 128 || (string(bytes[84:88]) == "DX10" && len(bytes) < 148) {
-			return nil, errTruncated
-		}
-		return nil, fmt.Errorf("DDS %s is not supported", describeDDSFormat(bytes))
-	}
+// decodeDDS decodes the first mipmap of a DDS with the given header to RGBA. It handles BC1 to BC7 and uncompressed
+// data.
+func decodeDDS(bytes []byte, header Header) (image.Image, error) {
 	data := bytes[128:]
 	dxgi, dx10 := lookupDXGI(bytes)
 	if dx10 {
@@ -82,7 +76,8 @@ func decodeDDS(bytes []byte) (image.Image, error) {
 	return decodeMasked(data, header, depth, masks)
 }
 
-// decodeDDSHeader reads a DDS header, the DX10 extension included.
+// decodeDDSHeader decodes a DDS header, the DX10 extension included. It returns false if the bytes are not a DDS
+// that PMT decodes.
 func decodeDDSHeader(bytes []byte) (Header, bool) {
 	if !hasMagic(bytes, ddsMagic) || len(bytes) < 128 || binary.LittleEndian.Uint32(bytes[4:]) != 124 {
 		return Header{}, false
@@ -151,9 +146,9 @@ func describeDDSFormat(bytes []byte) string {
 	return fmt.Sprintf("pixel format of %d bits per pixel", binary.LittleEndian.Uint32(bytes[88:]))
 }
 
-// decodeBlocks decodes a block-compressed image one 4 by 4 block at a time through the given block decoder, each
-// block of the given bytes. A block's pixels past the right or bottom edge are dropped. It returns an error if
-// the data ends before the last block.
+// decodeBlocks decodes a block-compressed image one 4 by 4 block at a time, each block through the given decoder.
+// The block size is in bytes. A block's pixels past the right or bottom edge are dropped. It returns an error if the
+// data ends before the last block.
 func decodeBlocks(
 	data []byte, header Header, blockBytes int, decodeBlock func(block []byte, pixels *[16][4]uint8),
 ) (image.Image, error) {

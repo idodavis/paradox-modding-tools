@@ -18,8 +18,7 @@ type Summary struct {
 	Category string `json:"category"`
 }
 
-// A Listing is what the wiki has for one game: its modding pages and its patch versions. It is refreshed when the
-// app starts.
+// A Listing is what the wiki has for one game: its modding pages and its patch versions.
 type Listing struct {
 	Pages       []Summary `json:"pages"`
 	Versions    []string  `json:"versions"`
@@ -40,14 +39,15 @@ const (
 // as "Patch 1.20.X", and holds the version.
 var patchTitle = regexp.MustCompile(`^` + patchPrefix + `(\d+(?:\.\d+)*(?:\.X)?)$`)
 
-// Refresh fetches the listing and every page it names that is missing or stale, calling the progress function
-// after each page.
+// Refresh fetches the listing and every page it names that is missing or stale, calling the given function after each
+// page. It returns an error if the listing cannot be fetched or cached. A page that cannot be fetched does not stop
+// the others, and the errors of such pages are joined and returned.
 func (client *Client) Refresh(progress func(done, total int)) error {
 	listing, err := client.fetchListing()
 	if err != nil {
 		return err
 	}
-	if err := client.save(client.resolveListing(), listing); err != nil {
+	if err := app.SaveJSON(client.resolveListing(), listing); err != nil {
 		return err
 	}
 	stale := client.listStale(listing)
@@ -124,7 +124,7 @@ func (client *Client) listCategory(category string) ([]string, error) {
 	}
 }
 
-// listStale returns the titles of the pages of a listing that are not cached or were fetched more than a week ago.
+// listStale returns the titles of the pages of a listing that are not cached or whose cached copy is too old.
 func (client *Client) listStale(listing Listing) []string {
 	titles := lo.Map(listing.Pages, func(summary Summary, _ int) string { return summary.Title })
 	titles = append(titles, lo.Map(listing.Versions, func(version string, _ int) string {

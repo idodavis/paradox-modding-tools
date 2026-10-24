@@ -26,14 +26,14 @@ type Step struct {
 // An Argument is one argument of a step: a quoted text, a number or a nested call.
 type Argument struct {
 	Text   string `json:"text"`
-	Span   Span   `json:"span"`
+	Span   Span   `json:"span"` // where the text is written, a quoted text without its quotes
 	Quoted bool   `json:"quoted"`
 	Call   *Call  `json:"call,omitempty"`
 }
 
-// ParseBracketed reads a data call written between brackets, as a value writes one. The second argument is the
-// offset of the text's first byte in its file, so the spans come out in the file's offsets. It returns false if the
-// text does not open with [ and close with ], or if what is between them is not a call.
+// ParseBracketed parses a data call written between brackets, as a value writes one. The offset is where the text's
+// first byte sits in its file, so the spans come out in the file's offsets. It returns false if the text does not
+// open with [ and close with ], or if what is between them is not a call.
 func ParseBracketed(text string, base int) (Call, bool) {
 	inner, opens := strings.CutPrefix(text, "[")
 	inner, closes := strings.CutSuffix(inner, "]")
@@ -43,9 +43,8 @@ func ParseBracketed(text string, base int) (Call, bool) {
 	return ParseCall(inner, base+1)
 }
 
-// ParseCall reads the text of one data call, given without its brackets. The second argument is the offset of the
-// text's first byte in its file, so the spans come out in the file's offsets. It returns false if the text is not
-// a call.
+// ParseCall parses the text of one data call, given without its brackets. The offset is where the text's first byte
+// sits in its file, so the spans come out in the file's offsets. It returns false if the text is not a call.
 func ParseCall(text string, base int) (Call, bool) {
 	cursor := countSpaces(text, 0)
 	call := Call{Span: Span{Start: base + cursor}}
@@ -78,8 +77,8 @@ func countSpaces(text string, offset int) int {
 	return len(text[offset:]) - len(strings.TrimLeftFunc(text[offset:], unicode.IsSpace))
 }
 
-// parseStep reads one step at the given offset: a cast in parentheses if one is written, the step's name, and its
-// argument list if one follows. It returns the step and the offset after it, or false where no name starts there.
+// parseStep parses one step at the given offset. It reads a cast in parentheses, then the name, then the argument list
+// if one follows. It returns the step and the offset after it, or false if no name starts there.
 func parseStep(text string, base, cursor int) (Step, int, bool) {
 	var step Step
 	if cursor < len(text) && text[cursor] == '(' {
@@ -105,9 +104,9 @@ func parseStep(text string, base, cursor int) (Step, int, bool) {
 	return step, end, true
 }
 
-// splitArguments splits the argument list at the given `(` into the span of each argument's text, commas and
-// parentheses inside nested parentheses or single quotes kept, and returns the offset after the list's `)`. A list
-// never closed runs to the text's end.
+// splitArguments splits the argument list that opens at the given `(` into one span per argument. A comma inside
+// nested parentheses or single quotes does not split. It returns the offset after the closing `)`, or the text's end
+// if the list is never closed.
 func splitArguments(text string, cursor int) ([]Span, int) {
 	var spans []Span
 	depth, quoted, start := 0, false, cursor+1
@@ -131,8 +130,8 @@ func splitArguments(text string, cursor int) ([]Span, int) {
 	return append(spans, Span{Start: start, End: len(text)}), len(text)
 }
 
-// parseArgument reads one argument from the given span of the text, the white space around it dropped: a text in
-// single quotes, a number, or a nested call. It returns false where the span holds only white space.
+// parseArgument parses the argument in the given span of the text, without the white space around it. It is a text in
+// single quotes, a number or a nested call. It returns false if the span holds only white space.
 func parseArgument(text string, span Span, base int) (Argument, bool) {
 	start := span.Start + countSpaces(text[:span.End], span.Start)
 	raw := strings.TrimRightFunc(text[start:span.End], unicode.IsSpace)
@@ -144,6 +143,7 @@ func parseArgument(text string, span Span, base int) (Argument, bool) {
 	switch {
 	case quoted:
 		argument.Text, argument.Quoted = raw[1:len(raw)-1], true
+		argument.Span = Span{Start: argument.Span.Start + 1, End: argument.Span.End - 1}
 	case IsNumber(raw):
 	default:
 		if call, ok := ParseCall(raw, base+start); ok {
@@ -153,9 +153,9 @@ func parseArgument(text string, span Span, base int) (Argument, bool) {
 	return argument, true
 }
 
-// SubstituteCall returns a call that a data binding macro's text makes, with each step that is a parameter replaced
-// by the steps of the argument written for it, by the parameter's name, and the spans that are the macro's own
-// emptied.
+// SubstituteCall returns a macro's call with its parameters filled in. The map holds the argument for each parameter
+// name. A step named like a parameter is replaced by that argument's steps. The spans the macro wrote itself are
+// emptied, since they lie in another file.
 func SubstituteCall(call Call, given map[string]Argument) Call {
 	var steps []Step
 	for _, step := range call.Steps {
@@ -176,8 +176,8 @@ func SubstituteCall(call Call, given map[string]Argument) Call {
 	return Call{Steps: steps, Suffix: call.Suffix}
 }
 
-// substituteArgument returns an argument of a macro's call with the argument written for it in its place if it is a
-// parameter, else with the spans that are the macro's own emptied and the call inside it substituted.
+// substituteArgument fills in one argument of a macro's call. An unquoted parameter's name gives the argument
+// written for it. Any other argument loses its span, and the call inside it is filled in the same way.
 func substituteArgument(argument Argument, given map[string]Argument) Argument {
 	if value, ok := given[argument.Text]; ok && !argument.Quoted {
 		return value

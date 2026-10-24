@@ -100,8 +100,8 @@ tasks:
   check:go:
     summary: gofmt, the three vets, staticcheck, golangci-lint and the short tests.
     vars:
-      # the engine's packages that build without Wails, whose files for other systems need no cgo; index imports app
-      ENGINE: ./internal/files/... ./internal/game/... ./internal/jomini/... ./internal/loc/... ./internal/schema/... ./internal/texture/...
+      # the engine's packages that build without Wails, whose files for other systems need no cgo
+      ENGINE: ./internal/files/... ./internal/game/... ./internal/jomini/... ./internal/loc/... ./internal/schema/... ./internal/texture/... ./internal/index/...
     cmds:
       - test -z "$(gofmt -l main.go internal services)"
       # plain vet skips the files of other systems; these two cover them

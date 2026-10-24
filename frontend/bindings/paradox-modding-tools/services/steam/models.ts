@@ -6,15 +6,26 @@
 import * as files$0 from "../../internal/files/models.js";
 
 /**
- * A Comparison says what the next upload changes against the last one, and how the listing differs from Steam's.
+ * A Comparison is what the next upload changes against the last one, next to what Steam reports about the item.
  */
 export interface Comparison {
+    /**
+     * the rels of the files the last upload did not have
+     */
     "added": string[] | null;
+
+    /**
+     * the rels of the files that differ from the last upload's
+     */
     "changed": string[] | null;
+
+    /**
+     * the rels of the files the last upload had and the next one lacks
+     */
     "removed": string[] | null;
 
     /**
-     * the listing's fields that differ: title, description, tags …
+     * the listing's fields that differ from the last upload's: title, description, tags …
      */
     "listing": string[] | null;
     "steam"?: Details | null;
@@ -110,10 +121,14 @@ export interface Rule {
 }
 
 /**
- * An Upload is the set of files a mod's next upload sends, with their total size and what the rules left out.
+ * An Upload is the set of files a mod's next upload sends.
  */
 export interface Upload {
     "files": files$0.File[] | null;
+
+    /**
+     * the total size of the files
+     */
     "bytes": number;
 
     /**

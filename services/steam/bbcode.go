@@ -15,8 +15,7 @@ import (
 	"github.com/yuin/goldmark/util"
 )
 
-// A bbcodeRenderer renders goldmark's syntax tree as BBCode: headings, emphasis, lists, links, images, code,
-// quotes and rules, each as Steam writes it.
+// A bbcodeRenderer renders goldmark's syntax tree as BBCode, the way Steam writes it.
 type bbcodeRenderer struct{}
 
 // converter reads Markdown with tables and strikethrough and writes it as BBCode.
@@ -25,11 +24,9 @@ var converter = goldmark.New(
 	goldmark.WithRenderer(renderer.NewRenderer(renderer.WithNodeRenderers(util.Prioritized(bbcodeRenderer{}, 1)))),
 )
 
-// bbcodeTags holds, for each kind of node that is written as a pair of tags, its rows of opening and closing tag.
-// The row is chosen by selectTags, and is the first where a kind has one. A node that holds children has them
-// written between the tags, and one that is written whole (a rule, a picture, an address, code) has its content
-// written between them instead. A link's opening tag is followed by its destination and a closing bracket. A kind
-// with no row writes nothing of its own, so raw HTML is dropped.
+// bbcodeTags holds, for each kind of node written as a pair of tags, its rows of opening and closing tag. A node takes
+// the row that selectTags picks. A link's opening tag is followed by its destination and a closing bracket. A kind with
+// no row writes nothing, so raw HTML is dropped.
 var bbcodeTags = map[ast.NodeKind][][2]string{
 	ast.KindHeading:          {{"[h1]", "[/h1]\n\n"}, {"[h2]", "[/h2]\n\n"}, {"[h3]", "[/h3]\n\n"}},
 	ast.KindBlockquote:       {{"[quote]", "[/quote]\n\n"}},

@@ -76,9 +76,10 @@ func openService(t *testing.T, install string, mods ...app.Mod) *Service {
 	if err != nil {
 		t.Fatal(err)
 	}
-	err = config.Update(func(records *app.Config) {
+	err = config.Update("", func(records *app.Config) error {
 		records.Installs = []app.Install{{ID: "i1", Game: "ck3", Path: install}}
 		records.Workspaces = []app.Workspace{{ID: "w1", Name: "Test", Install: "i1", Mods: mods, Language: "english"}}
+		return nil
 	})
 	if err != nil {
 		t.Fatal(err)
@@ -89,7 +90,7 @@ func openService(t *testing.T, install string, mods ...app.Mod) *Service {
 	if _, err := wsp.Session(); err != nil {
 		t.Fatal(err)
 	}
-	return &Service{Config: config, Workspace: wsp}
+	return &Service{Workspace: wsp}
 }
 
 // TestReadListingReadsWorkshopFolder checks that a listing holds the descriptor's title, the description file's

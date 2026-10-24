@@ -14,7 +14,7 @@ export interface Calendar {
 }
 
 /**
- * An Era is one era of a mod's calendar: its name and the year it starts.
+ * An Era is one era of a mod's calendar.
  */
 export interface Era {
     "name": string;
@@ -22,7 +22,7 @@ export interface Era {
 }
 
 /**
- * An Install is one game install PMT reads: its id, game and folder, and what the last scan found.
+ * An Install is one game install that PMT has recorded.
  */
 export interface Install {
     "id": string;
@@ -33,7 +33,7 @@ export interface Install {
 }
 
 /**
- * A Mod is one mod of a workspace: its folder and what the user set about it.
+ * A Mod is one mod that a workspace records.
  */
 export interface Mod {
     "id": string;
@@ -57,7 +57,7 @@ export interface Mod {
 }
 
 /**
- * A Setting is one row of the catalog: what a setting is, where it is shown and what it takes.
+ * A Setting is one row of the catalog of settings.
  */
 export interface Setting {
     /**
@@ -92,8 +92,7 @@ export interface Setting {
 }
 
 /**
- * An Update says which version was found and whether it is newer than this one. It is the data of the app:update
- * event.
+ * An Update is the result of a check for a newer version of the app. It is the data of the app:update event.
  */
 export interface Update {
     "version": string;
@@ -102,7 +101,7 @@ export interface Update {
 }
 
 /**
- * A Workspace is one workspace: an install and the mods loaded with it, in load order.
+ * A Workspace is one recorded workspace: a game install and the mods loaded with it, in load order.
  */
 export interface Workspace {
     "id": string;

@@ -3,24 +3,29 @@ package workspace
 import (
 	"errors"
 	"io/fs"
+	"maps"
 	"os"
 	"path/filepath"
+	"slices"
 	"time"
 
 	"github.com/fsnotify/fsnotify"
+	"github.com/samber/lo"
 
 	"paradox-modding-tools/internal/files"
 )
 
-// A Watcher watches the mods' folders and reports each changed or deleted file once, after a short quiet period.
+// A Watcher watches folders for files that change or are deleted. It reports the files of a burst of changes
+// together.
 type Watcher struct {
 	watcher *fsnotify.Watcher
 	done    chan struct{} // closed when the loop that reports the changes has ended
 }
 
-// startWatcher starts watching the given folders and calls the given function for each file that changes or is
-// deleted, once per quiet period.
-func startWatcher(dirs []string, change func(path string, deleted bool)) (*Watcher, error) {
+// startWatcher starts watching the given folders and any folder made under them. It calls the given function with
+// the files that change or are deleted in each burst. A file saved twice in a burst is reported once. It returns an
+// error if a folder cannot be watched.
+func startWatcher(dirs []string, change func(changes []FileChange)) (*Watcher, error) {
 	notifier, err := fsnotify.NewWatcher()
 	if err != nil {
 		return nil, err
@@ -51,17 +56,13 @@ func addFolders(notifier *fsnotify.Watcher, dir string) error {
 	})
 }
 
-// run takes the notifier's events until the notifier is closed. It holds back each path for 200 ms after its last
-// event, so a save that writes twice is reported once, and a file counts as deleted when it no longer exists then.
-func (watcher *Watcher) run(change func(path string, deleted bool)) {
-	timers := map[string]*time.Timer{}
-	quiet := make(chan string)
+// run reports the changes the watcher sees to the given function until the watcher is closed.
+func (watcher *Watcher) run(change func(changes []FileChange)) {
 	defer close(watcher.done)
-	defer func() {
-		for _, timer := range timers {
-			timer.Stop()
-		}
-	}()
+	// the first event of a burst starts a timer that later events do not reset; when it ends, every path the burst
+	// touched is reported together, and a file counts as deleted if it no longer exists then
+	pending := map[string]bool{} // the paths the burst touched
+	var batch <-chan time.Time   // ends the burst; nil while none is pending, and a nil channel never fires
 	for {
 		select {
 		case event, ok := <-watcher.watcher.Events:
@@ -75,23 +76,22 @@ func (watcher *Watcher) run(change func(path string, deleted bool)) {
 				// a folder made later is watched from its first event on; one that cannot be watched is left
 				_ = addFolders(watcher.watcher, event.Name)
 			}
-			if timer, ok := timers[event.Name]; ok {
-				timer.Stop()
+			if len(pending) == 0 {
+				batch = time.After(200 * time.Millisecond)
 			}
-			timers[event.Name] = time.AfterFunc(200*time.Millisecond, func() {
-				select {
-				case quiet <- event.Name:
-				case <-watcher.done:
-				}
-			})
+			pending[event.Name] = true
 		case _, ok := <-watcher.watcher.Errors:
 			if !ok {
 				return
 			}
-		case path := <-quiet:
-			delete(timers, path)
-			_, err := os.Stat(path)
-			change(path, errors.Is(err, fs.ErrNotExist))
+		case <-batch:
+			changes := lo.Map(slices.Sorted(maps.Keys(pending)), func(path string, _ int) FileChange {
+				_, err := os.Stat(path)
+				return FileChange{Path: path, Deleted: errors.Is(err, fs.ErrNotExist)}
+			})
+			clear(pending)
+			batch = nil
+			change(changes)
 		}
 	}
 }
@@ -101,7 +101,7 @@ func isHiddenFolder(path string) bool {
 	return files.IsFolder(path) && files.IsHiddenDir(filepath.Base(path))
 }
 
-// Close stops the watcher.
+// Close stops the watcher. It returns once no report is under way.
 func (watcher *Watcher) Close() {
 	_ = watcher.watcher.Close()
 	<-watcher.done

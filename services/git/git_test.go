@@ -1,15 +1,18 @@
 package git
 
 import (
-	"context"
 	"os"
 	"path/filepath"
 	"slices"
 	"strings"
+	"sync"
 	"testing"
 
 	"github.com/wailsapp/wails/v3/pkg/application"
 )
+
+// createApp makes the Wails app the service sends its events through, once for all the tests.
+var createApp = sync.OnceFunc(func() { application.New(application.Options{}) })
 
 // The fixture's branch and the file the tests change.
 const (
@@ -129,13 +132,13 @@ func TestListCommits(t *testing.T) {
 // config, and returns the service and the repository's folder. The test is skipped when git is not installed.
 func createRepository(t *testing.T) (*Service, string) {
 	t.Helper()
-	if _, err := FindGit(); err != nil {
+	if _, err := findGit(); err != nil {
 		t.Skip(err)
 	}
 	t.Setenv("GIT_CONFIG_GLOBAL", os.DevNull)
 	t.Setenv("GIT_CONFIG_SYSTEM", os.DevNull)
+	createApp()
 	git := &Service{}
-	must(t, git.ServiceStartup(context.Background(), application.ServiceOptions{}))
 	dir := t.TempDir()
 	_, err := git.Run(dir, "init", "-q", "-b", branch)
 	must(t, err)

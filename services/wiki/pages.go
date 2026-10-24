@@ -22,9 +22,9 @@ type Note struct {
 // errNoListing is the error of a call that needs the listing before a refresh has kept one.
 var errNoListing = errors.New("the wiki's listing has not been fetched yet")
 
-// FindPages returns the wiki pages that belong to a file: the pages whose title contains the name of the file's
-// database or format, exact matches first, then plurals, then any that contain it. A game's row names the page
-// only when that rule finds nothing.
+// FindPages returns the wiki pages that belong to a file: those whose title contains the name of the file's database
+// or format. The database's own page comes first, then its plural, then the pages that hold either, then the format's
+// page. It returns an error if no workspace is open or a refresh has not fetched the wiki's listing yet.
 func (wik *Service) FindPages(path string) ([]Summary, error) {
 	ws, err := wik.Workspace.Session()
 	if err != nil {
@@ -34,7 +34,7 @@ func (wik *Service) FindPages(path string) ([]Summary, error) {
 	if !ok {
 		return nil, errNoListing
 	}
-	place := ws.Locate(path)
+	place := ws.Locate(ws.Mods.Load(), path)
 	singular := strings.ToLower(game.DescribeDefinition(place.Database, false))
 	plural := strings.ToLower(game.DescribeDefinition(place.Database, true))
 	format := strings.ToLower(string(place.Format))
@@ -62,26 +62,6 @@ func (wik *Service) FindPages(path string) ([]Summary, error) {
 		return cmp.Compare(rank(first.Title), rank(second.Title))
 	})
 	return pages, nil
-}
-
-// ListNotes returns the patch notes the listing knows, newest first.
-func (client *Client) ListNotes() ([]Note, error) {
-	listing, ok := client.LoadListing()
-	if !ok {
-		return nil, errNoListing
-	}
-	versions := slices.Clone(listing.Versions)
-	slices.SortFunc(versions, func(first, second string) int { return compareVersions(second, first) })
-	return lo.Map(versions, func(version string, _ int) Note {
-		title := resolvePatch(version)
-		page, ok := client.LoadPage(title)
-		return Note{Version: version, Title: title, Modding: ok && hasModding(page.HTML)}
-	}), nil
-}
-
-// ReadNote returns the patch notes page of a version.
-func (client *Client) ReadNote(version string) (Page, error) {
-	return client.resolvePage(resolvePatch(version))
 }
 
 // compareVersions orders two patch versions as semver does, except that a minor version's hotfix notes, "1.20.X",

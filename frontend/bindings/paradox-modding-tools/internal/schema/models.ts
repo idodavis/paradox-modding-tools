@@ -62,17 +62,21 @@ export enum Category {
 };
 
 /**
- * Expected says what a field's value must be: its type, the database a reference names, or the choices allowed.
+ * Expected is what a field's value must be.
  */
 export interface Expected {
     "type": ValueType;
     "database"?: string;
     "choices"?: string[] | null;
+
+    /**
+     * a number written as a script value too, as a docs' type term says
+     */
+    "values"?: boolean;
 }
 
 /**
- * An Input is one input of the Form view: a key that a definition may write, what it takes, and the inputs inside
- * it when it holds a block.
+ * An Input is one input of the Form view, for a key that a definition may write.
  */
 export interface Input {
     "key": string;
@@ -102,7 +106,7 @@ export interface Saved {
  */
 export interface SourceState {
     /**
-     * yours, install, shipped, none
+     * install, shipped, none
      */
     "origin": string;
     "writtenAt": string;

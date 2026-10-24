@@ -16,24 +16,23 @@ import (
 	"paradox-modding-tools/services/workspace"
 )
 
-// A Group is one choice the page lets the user switch, with the values it can take and the one picked: the data
-// call that a window's conditions read, or the template list a coat's value is drawn from.
+// A Group is one choice the page lets the user switch. It is either a data call that a window's conditions read, or
+// a template list that a coat's value is drawn from.
 type Group struct {
 	ID       string   `json:"id"`
 	Label    string   `json:"label"`
-	Options  []string `json:"options"`
-	Picked   string   `json:"picked"`
+	Options  []string `json:"options"`            // the values it can take
+	Picked   string   `json:"picked"`             // the value it has now
 	Database string   `json:"database,omitempty"` // the database whose definitions it offers; "" for any other group
 }
 
-// States describes one way of drawing a window: the groups the toolbar offers with their current picks, and the
-// widgets those picks hide.
+// States is one way of drawing a window, as the page's toolbar sets it.
 type States struct {
-	Groups []Group `json:"groups"`
-	Hidden []int32 `json:"hidden"`
+	Groups []Group `json:"groups"` // what the toolbar offers, each with its current pick
+	Hidden []int32 `json:"hidden"` // the IDs of the widgets that the picks hide
 }
 
-// An evaluator works out whether conditions hold under the values that groups are at, or the values they have to be at.
+// An evaluator works out whether conditions hold under the values of the groups, or which values would make them hold.
 type evaluator struct {
 	schema      *schema.Schema
 	datacontext string
@@ -58,35 +57,27 @@ const (
 // the definition itself has.
 var skippedShapes = []string{"effects", "triggers"}
 
-// EvaluateStates works out which widgets of a window are hidden under the given picks, where each pick maps a
-// group's ID to the value chosen for it. A group with no pick takes its first option. Nothing about the game is
-// simulated: a condition that reads a group with no value is unknown and hides nothing.
-func (drw *Service) EvaluateStates(path, name string, picks map[string]string) (States, error) {
+// EvaluateStates works out which widgets of a resolved window are hidden under the given picks. A pick is the value
+// chosen for the ID of a group. A group with no pick takes its first option. A condition that reads a group with no
+// value hides nothing. It returns an error if no workspace is open.
+func (drw *Service) EvaluateStates(window Window, picks map[string]string) (States, error) {
 	ws, err := drw.Workspace.Session()
 	if err != nil {
 		return States{}, err
 	}
-	mods := ws.Mods.Load()
-	window, err := resolveWindow(ws, mods, path, name)
-	if err != nil {
-		return States{}, err
-	}
-	return evaluate(ws, mods, window, picks), nil
+	return evaluate(ws, window, listDatacontexts(ws.Schema, window), picks), nil
 }
 
-// Reveal returns the picks that make a hidden widget visible, or nil if its conditions contradict each other.
-func (drw *Service) Reveal(path, name string, widget int32) (map[string]string, error) {
+// Reveal returns the picks that make a hidden widget of a resolved window visible. It returns nil if the conditions of
+// the widget and the widgets that hold it contradict each other, or if the widget stays hidden anyway. It returns an
+// error if no workspace is open or the window has no widget with the given ID.
+func (drw *Service) Reveal(window Window, widget int32) (map[string]string, error) {
 	ws, err := drw.Workspace.Session()
-	if err != nil {
-		return nil, err
-	}
-	mods := ws.Mods.Load()
-	window, err := resolveWindow(ws, mods, path, name)
 	if err != nil {
 		return nil, err
 	}
 	if widget < 0 || int(widget) >= len(window.Widgets) {
-		return nil, fmt.Errorf("the window %q has no widget %d", name, widget)
+		return nil, fmt.Errorf("the window %q has no widget %d", window.Name, widget)
 	}
 	datacontexts := listDatacontexts(ws.Schema, window)
 	revealer := &evaluator{schema: ws.Schema, required: map[string]string{}}
@@ -98,7 +89,7 @@ func (drw *Service) Reveal(path, name string, widget int32) (map[string]string, 
 			}
 		}
 	}
-	states := evaluate(ws, mods, window, revealer.required)
+	states := evaluate(ws, window, datacontexts, revealer.required)
 	for id := widget; id > 0; id = window.Widgets[id].Parent {
 		if slices.Contains(states.Hidden, id) {
 			return nil, nil
@@ -109,10 +100,10 @@ func (drw *Service) Reveal(path, name string, widget int32) (map[string]string, 
 	return picks, nil
 }
 
-// evaluate works out the states of an already resolved window under the given picks. A group that reads a kind of
-// definition offers the definitions in the given index of the mods.
-func evaluate(ws *workspace.Session, mods *index.Index, window Window, picks map[string]string) States {
-	datacontexts := listDatacontexts(ws.Schema, window)
+// evaluate works out the states of an already resolved window under the given picks, with the data context of each
+// of its widgets. A group that reads a database offers the definitions that the open workspace's mods keep in it.
+func evaluate(ws *workspace.Session, window Window, datacontexts []string, picks map[string]string) States {
+	mods := ws.Mods.Load()
 	groups, kept := listGroups(ws, mods, window, datacontexts)
 	values := map[string]string{}
 	for position := range groups {
@@ -127,7 +118,10 @@ func evaluate(ws *workspace.Session, mods *index.Index, window Window, picks map
 	}
 	evaluator := &evaluator{schema: ws.Schema, values: values, decided: decided}
 	hidden := []int32{}
-	for _, widget := range window.Widgets[1:] {
+	for _, widget := range window.Widgets {
+		if widget.ID == 0 {
+			continue
+		}
 		evaluator.datacontext = datacontexts[widget.ID]
 		falsified := lo.SomeBy(listConditions(widget), func(condition string) bool {
 			value, known := evaluator.evaluateCondition(condition)
@@ -165,8 +159,8 @@ func listConditions(widget Widget) []string {
 }
 
 // listGroups returns the groups that the conditions of a window read, in the order they are first read, and the
-// definitions the game keeps in each database a group leads to. A group offers the values the window asks of it. A
-// group that leads to a database then offers its definitions, and any other every value and none.
+// definitions the game keeps in each database a group leads to. A group that leads to a database offers its
+// definitions. Any other group offers the values the window asks of it, and every value and none.
 func listGroups(ws *workspace.Session, mods *index.Index, window Window, datacontexts []string) ([]Group, map[string][]index.Winner) {
 	var groups []Group
 	kept := map[string][]index.Winner{}
@@ -208,10 +202,10 @@ func listGroups(ws *workspace.Session, mods *index.Index, window Window, datacon
 	return groups, kept
 }
 
-// listFacts returns the calls that a condition reads, which are the ones that are not a boolean function: it looks
-// through the operands of And, Or and the rest. A call that is a macro past the deepest allowed reads nothing.
+// listFacts returns the calls that a condition reads. A boolean function reads its operands, so it looks through And,
+// Or and the rest, and any other call reads itself. A macro that expands into itself reads nothing.
 func listFacts(schema *schema.Schema, call jomini.Call, datacontext string) []jomini.Call {
-	call = resolveCall(schema, call, datacontext)
+	call = schema.ResolveMacro(call, datacontext)
 	if len(call.Steps) == 0 {
 		return nil
 	}
@@ -223,22 +217,8 @@ func listFacts(schema *schema.Schema, call jomini.Call, datacontext string) []jo
 	return []jomini.Call{call}
 }
 
-// resolveCall returns the call that a data call stands for, where macros that open the result are expanded in turn.
-// A macro that is still one after the deepest allowed is a cycle, which leaves an empty call.
-func resolveCall(schema *schema.Schema, call jomini.Call, datacontext string) jomini.Call {
-	for range maxDepth + 1 {
-		next := schema.ResolveMacro(call, datacontext)
-		if toCallText(next) == toCallText(call) {
-			return call
-		}
-		call = next
-	}
-	return jomini.Call{}
-}
-
-// splitBoolean returns what a call that is a boolean function combines: whether it needs all its operands or just one
-// of them, whether it flips the result, and its operands. The call is not a boolean function if the last result is
-// false. A function counts for any number of operands: And3 is And.
+// splitBoolean returns what a boolean function combines: whether it needs all its operands or just one, whether it
+// flips the result, and its operands. The last result is false if the call is no boolean function. And3 counts as And.
 func splitBoolean(call jomini.Call) (conjunction, negated bool, operands []jomini.Call, ok bool) {
 	if len(call.Steps) != 1 {
 		return false, false, nil, false
@@ -263,7 +243,7 @@ func splitBoolean(call jomini.Call) (conjunction, negated bool, operands []jomin
 
 // splitFact splits a call into the group it reads, the value it asks of the group and the step that holds the value.
 // The group is the call's text with its last quoted argument blanked, and the value is that argument. A call with no
-// quoted argument is its own group, asks for no value and has no step, and the last result is false.
+// quoted argument is its own group with no value and no step, and the last result is false.
 func splitFact(call jomini.Call) (group, value string, step int, quoted bool) {
 	blank := 0
 	for position, each := range call.Steps {
@@ -304,13 +284,14 @@ func toBlankedText(call jomini.Call, step, argument int) string {
 	return toCallText(jomini.Call{Steps: steps})
 }
 
-// resolveDecided returns, for each group that a chosen definition decides, whether each of its values holds. A group
-// with a database at one of its definitions decides the groups on the same object whose values are all written in some
-// definition of that database: a value holds where the chosen definition writes it, and fails where it does not. The
-// given map holds the definitions the game keeps in each database, as listGroups lists them.
+// resolveDecided returns, for each group that a picked definition decides, whether each of its values holds. A group
+// that leads to a database decides the other groups on the same object when all their values are written in some
+// definition of that database. A value holds if the picked definition writes it. The given map holds the definitions
+// the game keeps in each database.
 func resolveDecided(ws *workspace.Session, mods *index.Index, groups []Group, kept map[string][]index.Winner) map[string]map[string]bool {
 	decided := map[string]map[string]bool{}
 	scanned := map[string]map[string]map[string]bool{}
+	texts := map[string]map[string]bool{} // by database: the texts that any of its definitions writes
 	for _, chosen := range groups {
 		database, object := chosen.Database, toObject(chosen.ID)
 		siblings := lo.Filter(groups, func(other Group, _ int) bool {
@@ -321,15 +302,17 @@ func resolveDecided(ws *workspace.Session, mods *index.Index, groups []Group, ke
 		}
 		if _, ok := scanned[database]; !ok {
 			scanned[database] = scanDefinitions(ws, mods, kept[database])
+			texts[database] = map[string]bool{}
+			for _, definition := range scanned[database] {
+				maps.Copy(texts[database], definition)
+			}
 		}
 		if _, defined := scanned[database][chosen.Picked]; !defined {
 			continue
 		}
 		for _, sibling := range siblings {
 			values := listValues(sibling)
-			if lo.EveryBy(values, func(value string) bool {
-				return lo.SomeBy(lo.Values(scanned[database]), func(texts map[string]bool) bool { return texts[value] })
-			}) {
+			if lo.EveryBy(values, func(value string) bool { return texts[database][value] }) {
 				decided[sibling.ID] = lo.SliceToMap(values, func(value string) (string, bool) {
 					return value, scanned[database][chosen.Picked][value]
 				})
@@ -375,7 +358,7 @@ func scanDefinitions(ws *workspace.Session, mods *index.Index, winners []index.W
 }
 
 // Enter gathers the texts of a statement inside one of the definitions to scan. It skips the script blocks of the
-// definition, and leaves the rest of the file's statements alone.
+// definition by returning false, and leaves the rest of the file's statements alone.
 func (scanner *scanner) Enter(tree *jomini.Tree, statement int32, context *schema.Context) bool {
 	if context.Definition == nil {
 		return true
@@ -414,11 +397,11 @@ func (evaluator *evaluator) evaluateCondition(condition string) (value, known bo
 }
 
 // evaluateCall works out whether a call holds under the values of the groups. A fact holds when its group is at its
-// value or at every value, and fails when the group is at none. A group a chosen definition decides holds where the
-// definition writes the value. A boolean function combines its operands, and is unknown when the known operands do
-// not decide it.
+// value or at every value, and fails when the group is at none. A group a picked definition decides holds where the
+// definition writes the value. A boolean function combines its operands. It is unknown when the known operands do not
+// decide it.
 func (evaluator *evaluator) evaluateCall(call jomini.Call) (value, known bool) {
-	call = resolveCall(evaluator.schema, call, evaluator.datacontext)
+	call = evaluator.schema.ResolveMacro(call, evaluator.datacontext)
 	if len(call.Steps) == 0 {
 		return false, false
 	}
@@ -454,7 +437,7 @@ func (evaluator *evaluator) evaluateCall(call jomini.Call) (value, known bool) {
 	return value != negated, true
 }
 
-// revealCondition adds to the required values the ones that make a condition hold, or fail when the flag is false. It
+// revealCondition adds to the required values the ones that make a condition give the wanted result: hold or fail. It
 // returns false if a group is already required to be at another value, which means the conditions contradict. A
 // condition that is no data call asks for nothing.
 func (evaluator *evaluator) revealCondition(condition string, holds bool) bool {
@@ -465,11 +448,11 @@ func (evaluator *evaluator) revealCondition(condition string, holds bool) bool {
 	return !ok || evaluator.revealCall(call, holds)
 }
 
-// revealCall adds the values that make a call hold, or fail when the flag is false. A fact is required at its value,
-// or at none to fail. A boolean function needs all its operands, or just the first, by what it combines and the result
-// wanted: And needs all to hold and one to fail, Or the reverse, and Not and Nor flip the result they ask of them.
+// revealCall adds the values that make a call give the wanted result: hold or fail. A fact is required at its value,
+// or at none to fail. A boolean function needs all its operands or just the first: And needs all to hold and one to
+// fail, Or the reverse, and Not and Nor flip the result they ask of their operands.
 func (evaluator *evaluator) revealCall(call jomini.Call, holds bool) bool {
-	call = resolveCall(evaluator.schema, call, evaluator.datacontext)
+	call = evaluator.schema.ResolveMacro(call, evaluator.datacontext)
 	if len(call.Steps) == 0 {
 		return true
 	}

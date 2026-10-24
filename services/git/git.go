@@ -4,7 +4,6 @@ package git
 
 import (
 	"bufio"
-	"context"
 	"errors"
 	"fmt"
 	"io"
@@ -17,6 +16,8 @@ import (
 
 	"github.com/samber/lo"
 	"github.com/wailsapp/wails/v3/pkg/application"
+
+	"paradox-modding-tools/internal/files"
 )
 
 // The events the git service sends.
@@ -25,22 +26,14 @@ const (
 	EventChanged = "git:changed" // a repository's state changed by a command PMT ran; the data is its folder
 )
 
+// init registers the git events with the application.
 func init() {
 	application.RegisterEvent[string](EventOutput)
 	application.RegisterEvent[string](EventChanged)
 }
 
-// Service is the git service. It keeps the path of the git executable found at startup.
-type Service struct {
-	git string // the git executable's path
-}
-
-// ServiceStartup finds git on this machine. It never fails: when git is not installed, it keeps that error and
-// every method returns it.
-func (git *Service) ServiceStartup(ctx context.Context, options application.ServiceOptions) error {
-	git.git, _ = FindGit() // FindGit keeps the error, which Run returns while the path is empty
-	return nil
-}
+// Service is the git service. It runs the git installed on this machine, which it finds on the PATH on first use.
+type Service struct{}
 
 // findGit is the one lookup of git on the PATH, made on the first call and kept.
 var findGit = sync.OnceValues(func() (string, error) {
@@ -51,23 +44,16 @@ var findGit = sync.OnceValues(func() (string, error) {
 	return path, nil
 })
 
-// FindGit looks git up on the PATH. It returns an error if git is not installed.
-func FindGit() (string, error) { return findGit() }
-
 // Run runs git in a folder with the given arguments and returns its standard output. Each line of standard
 // error is also sent as a git:output event as it arrives. A nonzero exit is an error that carries the text of
-// standard error.
+// standard error, and so is git not being installed.
 func (git *Service) Run(dir string, args ...string) (string, error) {
-	// an empty path means startup found no git, or never ran; FindGit answers both with what it kept
-	path := git.git
-	if path == "" {
-		var err error
-		if path, err = FindGit(); err != nil {
-			return "", err
-		}
+	path, err := findGit()
+	if err != nil {
+		return "", err
 	}
 	cmd := exec.Command(path, slices.Concat([]string{"-C", dir}, args)...)
-	// English messages, since the package reads them; no index lock from a read, so a stage is never blocked
+	// English messages, since the package reads them; and a read never takes the index lock
 	cmd.Env = append(os.Environ(), "GIT_TERMINAL_PROMPT=0", "LC_ALL=C", "GIT_OPTIONAL_LOCKS=0")
 	var stdout, stderr strings.Builder
 	cmd.Stdout = &stdout
@@ -94,14 +80,11 @@ func (git *Service) FindRepository(dir string) (string, bool) {
 	return root, err == nil
 }
 
-// ReadFile returns a file's text at a revision, as `git show <revision>:<path>` prints it. The revision `:0`
-// reads the staged version.
+// ReadFile returns a file's text at a revision, as `git show <revision>:<path>` prints it, decoded as the files on disk
+// are. The path is from the repository's root. The revision `:0` reads the staged version.
 func (git *Service) ReadFile(dir, revision, path string) (string, error) {
-	root, err := git.resolveRepository(dir)
-	if err != nil {
-		return "", err
-	}
-	return git.Run(root, "show", revision+":"+filepath.ToSlash(path))
+	stdout, err := git.Run(dir, "show", revision+":"+filepath.ToSlash(path))
+	return files.DecodeText([]byte(stdout)).Text, err
 }
 
 // Stage stages the given files and emits git:changed.
@@ -114,7 +97,8 @@ func (git *Service) Unstage(dir string, paths []string) error {
 	return git.apply(dir, slices.Concat([]string{"reset", "-q", "--"}, paths)...)
 }
 
-// Discard throws away the working changes of the given files and emits git:changed.
+// Discard throws away the working changes of the given files and emits git:changed. A file git does not track is
+// deleted.
 func (git *Service) Discard(dir string, paths []string) error {
 	root, err := git.resolveRepository(dir)
 	if err != nil {
@@ -137,7 +121,7 @@ func (git *Service) Discard(dir string, paths []string) error {
 			return err
 		}
 	}
-	emit(EventChanged, root)
+	application.Get().Event.Emit(EventChanged, root)
 	return nil
 }
 
@@ -146,18 +130,18 @@ func (git *Service) CreateCommit(dir, message string) error {
 	return git.apply(dir, "commit", "-m", message)
 }
 
-// CreateBranch creates a branch, switches to it, and emits git:changed.
+// CreateBranch creates a branch with the given name, switches to it and emits git:changed.
 func (git *Service) CreateBranch(dir, name string) error {
 	return git.apply(dir, "switch", "-c", name)
 }
 
-// SwitchBranch switches to a branch and emits git:changed.
+// SwitchBranch switches to the given branch and emits git:changed.
 func (git *Service) SwitchBranch(dir, name string) error {
 	return git.apply(dir, "switch", name)
 }
 
-// Merge merges a branch into the current one and emits git:changed. A conflict leaves the markers in the files
-// for the editor to resolve.
+// Merge merges the given branch into the current one and emits git:changed. A conflict is not an error. It leaves
+// the markers in the files for the editor to resolve.
 func (git *Service) Merge(dir, name string) error {
 	root, err := git.resolveRepository(dir)
 	if err != nil {
@@ -168,28 +152,22 @@ func (git *Service) Merge(dir, name string) error {
 	if err != nil && !strings.Contains(stdout, "CONFLICT") {
 		return err
 	}
-	emit(EventChanged, root)
+	application.Get().Event.Emit(EventChanged, root)
 	return nil
 }
 
-// emitLines sends each line a stream prints as a git:output event as it arrives. An empty line is not sent.
+// emitLines sends each line of a stream as a git:output event as it arrives. It does not send an empty line. It
+// returns when the stream ends.
 func emitLines(stream io.Reader) {
 	reader := bufio.NewReader(stream)
 	for {
 		line, err := reader.ReadString('\n')
 		if line = strings.TrimRight(line, "\r\n"); line != "" {
-			emit(EventOutput, line)
+			application.Get().Event.Emit(EventOutput, line)
 		}
 		if err != nil {
 			return
 		}
-	}
-}
-
-// emit sends an event with its text. Outside the running app, as in a test, there is nobody to send it to.
-func emit(event, text string) {
-	if pmt := application.Get(); pmt != nil {
-		pmt.Event.Emit(event, text)
 	}
 }
 
@@ -212,6 +190,6 @@ func (git *Service) apply(dir string, args ...string) error {
 	if _, err := git.Run(root, args...); err != nil {
 		return err
 	}
-	emit(EventChanged, root)
+	application.Get().Event.Emit(EventChanged, root)
 	return nil
 }

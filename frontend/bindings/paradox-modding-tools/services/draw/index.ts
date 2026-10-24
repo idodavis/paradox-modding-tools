@@ -7,14 +7,17 @@ export {
 };
 
 export type {
+    Blend,
     Coat,
-    Drawable,
+    Frame,
     Group,
     Instance,
     Layer,
     NamedColor,
     Overlay,
     Property,
+    Recolor,
+    Shading,
     States,
     Widget,
     Window

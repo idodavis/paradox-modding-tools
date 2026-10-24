@@ -24,21 +24,48 @@ import (
 type Instance struct {
 	Position [2]float64 `json:"position"`
 	Scale    [2]float64 `json:"scale"`
-	Rotation float64    `json:"rotation"`
+	Rotation float64    `json:"rotation"` // in degrees, clockwise
 	Depth    float64    `json:"depth"`
 	Range    lsp.Range  `json:"range"`
 }
 
-// A Layer is one layer of a coat: the pattern, an emblem or a sub-coat. It carries the image file found for its
-// texture, its mask, and its colors as CSS.
+// A Blend is a texture channel that weights a blend toward a color.
+type Blend struct {
+	Channel string `json:"channel"` // the channel that weights the blend
+	Color   string `json:"color"`   // the color blended in, as CSS
+}
+
+// A Recolor is how the game colors the texture of a layer, with the layer's colors as CSS.
+type Recolor struct {
+	Start   string            `json:"start"`   // the color it starts from
+	Blends  []Blend           `json:"blends"`  // the blends toward a color, in order
+	Overlay game.CoatStrength `json:"overlay"` // the channel overlaid on the result
+	Alpha   string            `json:"alpha"`   // the channel that is its alpha; "" means the blends' own
+}
+
+// A Shading is the texture that shades the cloth of a coat, with how it lies over the coat and its emblems.
+type Shading struct {
+	Path    string            `json:"path"`    // the image file of the texture
+	Overlay game.CoatStrength `json:"overlay"` // the channel overlaid on each coat and sub
+	Grain   game.CoatStrength `json:"grain"`   // the channel times a factor over each emblem's alpha
+}
+
+// A Layer is one layer of a coat: the pattern, an emblem or a sub-coat.
 type Layer struct {
-	Role      string     `json:"role"`    // the key as written: "pattern", "colored_emblem", "textured_emblem" or "sub"
-	Texture   string     `json:"texture"` // as written; "missing:x" when `list "x"` names a list that does not exist
-	Path      string     `json:"path"`    // the image file for the texture
-	Mask      string     `json:"mask"`
-	Regions   []int      `json:"regions"` // the pattern's color regions an emblem shows in; none means all of them
-	Colors    []string   `json:"colors"`
-	Lists     []Group    `json:"lists"` // the template lists its values are drawn from, each with its options
+	// Role is the key as written: "pattern", "colored_emblem", "textured_emblem" or "sub".
+	Role string `json:"role"`
+	// Texture is as written; "missing:x" when `list "x"` names a list that does not exist.
+	Texture      string   `json:"texture"`
+	Path         string   `json:"path"`         // the image file for the texture
+	Mask         string   `json:"mask"`         // the image file of the pattern whose regions an emblem shows in
+	Regions      []int    `json:"regions"`      // the pattern's color regions an emblem shows in; none means all of them
+	MaskChannels []string `json:"maskChannels"` // the pattern channel of each of those regions; none without a mask
+	Colors       []string `json:"colors"`       // CSS colors, the fallback first and then one for each slot of the game
+	Recolor      *Recolor `json:"recolor"`      // how the game colors its texture; nil where it keeps its pixels
+	Lists        []Group  `json:"lists"`        // the template lists its values are drawn from, each with its options
+	// Inputs is how the panel edits each key the layer writes, by key.
+	Inputs map[string]string `json:"inputs"`
+	// Instances are in the order they draw, a later one over an earlier.
 	Instances []Instance `json:"instances"`
 	Sub       *Coat      `json:"sub,omitempty"`
 	Range     lsp.Range  `json:"range"`
@@ -50,23 +77,33 @@ type Coat struct {
 	Layers []Layer         `json:"layers"`
 	Range  lsp.Range       `json:"range"`
 	Place  workspace.Place `json:"place"`
+	// Width and Height are the size of its field in pixels; 0 for a sub-coat or where the game gives none.
+	Width  int `json:"width"`
+	Height int `json:"height"`
+	// Shading is nil where the game shades no coat.
+	Shading *Shading `json:"shading"`
 }
 
-// A NamedColor is one of the game's named colors, with its CSS value for the color picker.
+// A Frame is one shape that the game's coat designer previews a coat in.
+type Frame struct {
+	Label string          `json:"label"`
+	Place workspace.Place `json:"place"` // where the shape's mask file is
+}
+
+// A NamedColor is one of the game's named colors, for the color picker.
 type NamedColor struct {
 	Name string `json:"name"`
 	CSS  string `json:"css"`
 }
 
-// A coatResolver makes the layers of one coat and finds the clause of each.
+// A coatResolver makes the layers of one coat, with the option picked for each of its lists.
 type coatResolver struct {
 	ws         *workspace.Session
 	mods       *index.Index
 	places     map[string]workspace.Place // by path
-	picks      map[string]string
-	definition clause            // the coat asked for
-	sources    []clause          // the clause of each of its layers, in the order of its layers
-	colors     map[string]string // the CSS of the named colors looked up, by name
+	picks      map[string]string          // the option picked for a list, by the ID of its group
+	definition clause                     // the coat asked for
+	colors     map[string]string          // the CSS of the named colors looked up, by name
 }
 
 // The words a coat of arms is written with, the parts of a placement, and the start of what a list that is not there
@@ -78,7 +115,7 @@ const (
 	parentKey   = "parent"
 	textureKey  = "texture"
 	maskKey     = "mask"
-	depthKey    = "depth"
+	tileSizeKey = "tile_size"
 	listTag     = "list"
 	noParent    = "none"
 	missingList = "missing:"
@@ -89,10 +126,9 @@ const (
 	partDepth   = "depth"
 )
 
-// ResolveCoat resolves one coat of arms in a file into its layers. When a layer's value is a `list "x"`, the
-// option drawn is the one picked for that list, by the ID of its group in the layer's lists, or the heaviest
-// option in the list if nothing was picked. It returns an error if the file is not in the workspace or does not
-// define the coat.
+// ResolveCoat resolves one coat of arms in a file into its layers. A layer whose value is a template list draws the
+// option the given picks hold for that list, else the list's heaviest option. A pick is the option chosen for the ID
+// of a group. It returns an error if the file is not in the workspace or does not define the coat.
 func (drw *Service) ResolveCoat(path, name string, picks map[string]string) (Coat, error) {
 	resolver, err := drw.findCoat(path, name, picks)
 	if err != nil {
@@ -127,14 +163,16 @@ func (drw *Service) findCoat(path, name string, picks map[string]string) (*coatR
 	}, nil
 }
 
-// resolveCoat resolves the coat asked for: its layers, from its own statements and its parent's. A coat written as
-// the name of another is that coat. An alias that no coat answers, or that passes through too many, has no layers.
+// resolveCoat resolves the coat asked for into its layers, from its own statements and its parent's. A coat written as
+// the name of another is that coat. A name that no coat answers has no layers.
 func (resolver *coatResolver) resolveCoat() Coat {
 	definition := resolver.definition
 	coat := Coat{
 		Name: definition.tree.Unquoted(definition.tree.Statements[definition.statement].Key), Layers: []Layer{},
-		Range: toRange(definition), Place: locate(resolver.ws, resolver.places, definition.path),
+		Range: toRange(definition), Place: locate(resolver.ws, resolver.mods, resolver.places, definition.path),
+		Shading: makeShading(resolver.ws, resolver.mods),
 	}
+	coat.Width, coat.Height = findFieldSize(resolver.ws, resolver.mods)
 	root := definition
 	for range maxDepth {
 		current := root.tree.Statements[root.statement]
@@ -151,8 +189,42 @@ func (resolver *coatResolver) resolveCoat() Coat {
 	return coat
 }
 
-// listCoatFields returns the statements that apply to a coat, in the order they apply: its parent's first, leaving out
-// the parent's instances and, where the coat writes emblems of its own, the parent's emblems, then the coat's own. The
+// makeShading returns the shading the game lays over its coats. It returns nil if the game shades none or no file has
+// the shading's texture.
+func makeShading(ws *workspace.Session, mods *index.Index) *Shading {
+	shade := ws.Game.CoatShade
+	texture := resolveTexture(ws, mods, nil, shade.Texture)
+	if texture == "" {
+		return nil
+	}
+	return &Shading{Path: texture, Overlay: shade.Overlay, Grain: shade.Grain}
+}
+
+// findFieldSize returns the width and the height in pixels of the field a coat is drawn on: the tile size of the first
+// atlas the game lists. It returns 0 and 0 if the game lists none.
+func findFieldSize(ws *workspace.Session, mods *index.Index) (width, height int) {
+	loaded, _, ok := mods.FindLoaded(game.Coat.FieldFile)
+	if !ok {
+		return 0, 0
+	}
+	tree, err := ws.LoadTree(loaded.Path)
+	if err != nil {
+		return 0, 0
+	}
+	for statement := range tree.Children(0) {
+		size, ok := findField(listChildren(clause{tree: tree, path: loaded.Path, statement: statement}), tileSizeKey)
+		if !ok {
+			continue
+		}
+		if numbers := listNumbers(size); len(numbers) > 0 {
+			return int(numbers[0]), int(numbers[min(1, len(numbers)-1)])
+		}
+	}
+	return 0, 0
+}
+
+// listCoatFields returns the statements that apply to a coat, in the order they apply: its parent's first, then its
+// own. The parent's instances are left out, and so are its emblems where the coat writes emblems of its own. The given
 // depth is how many parents lie between the coat and the one asked for.
 func (resolver *coatResolver) listCoatFields(coat clause, depth int) []clause {
 	own := listChildren(coat)
@@ -203,39 +275,104 @@ func isEmblem(field clause) bool {
 	return hasFolder && key != patternKey
 }
 
-// resolveLayers returns the layers of a coat from its statements: the pattern, then each emblem and, for the coat
-// asked for and not one inside it, each sub. The depth is how many coats lie between the coat and the one asked for.
-func (resolver *coatResolver) resolveLayers(fields []clause, depth int) []Layer {
-	colors, lists := resolver.resolveColors(fields, nil)
-	layers := []Layer{}
-	sources := []clause{}
-	patternFile := ""
+// listLayerFields returns the statements that write the layers of a coat, in the order the layers draw: the pattern,
+// each emblem and, for the coat asked for only, each sub. The given depth is how many coats lie between the coat and
+// the one asked for.
+func listLayerFields(fields []clause, depth int) []clause {
+	var layers []clause
 	if pattern, ok := findField(fields, patternKey); ok {
-		layer := resolver.resolvePattern(pattern, colors, lists)
-		patternFile = layer.Path
-		layers = append(layers, layer)
-		sources = append(sources, pattern)
+		layers = append(layers, pattern)
 	}
 	for _, field := range fields {
 		if isEmblem(field) {
-			layers = append(layers, resolver.resolveEmblem(field, colors, patternFile))
-			sources = append(sources, field)
+			layers = append(layers, field)
 		}
 	}
 	for _, field := range fields {
 		if key, _, _ := splitField(field); key == subKey && depth == 0 {
-			layers = append(layers, resolver.resolveSub(field))
-			sources = append(sources, field)
+			layers = append(layers, field)
 		}
-	}
-	if depth == 0 {
-		resolver.sources = sources
 	}
 	return layers
 }
 
-// resolvePattern returns the layer of a coat's pattern, painted in the coat's colors. The lists of the coat's colors
-// are its own.
+// resolveLayers returns the layers of a coat from its statements, in drawing order. The given depth is how many coats
+// lie between the coat and the one asked for.
+func (resolver *coatResolver) resolveLayers(fields []clause, depth int) []Layer {
+	colors, lists := resolver.resolveColors(fields, nil)
+	layers := []Layer{}
+	patternFile := ""
+	for _, field := range listLayerFields(fields, depth) {
+		var layer Layer
+		key, _, _ := splitField(field)
+		switch key {
+		case patternKey:
+			layer = resolver.resolvePattern(field, colors, lists)
+			patternFile = layer.Path
+		case subKey:
+			layer = resolver.resolveSub(field)
+		default:
+			layer = resolver.resolveEmblem(field, colors, patternFile)
+		}
+		layer.Recolor, layer.Inputs = makeRecolor(key, layer.Colors), listInputs(field)
+		layer.MaskChannels = listMaskChannels(layer)
+		layers = append(layers, layer)
+	}
+	return layers
+}
+
+// makeRecolor returns how the game colors the texture of a layer with the given key, from the layer's colors. It
+// returns nil if the game keeps the pixels of such a texture.
+func makeRecolor(key string, colors []string) *Recolor {
+	row, ok := game.Coat.Recolors[key]
+	if !ok {
+		return nil
+	}
+	return &Recolor{
+		Start: lo.NthOr(colors, row.Start, ""),
+		Blends: lo.Map(row.Lerps, func(lerp game.CoatLerp, _ int) Blend {
+			return Blend{Channel: lerp.Channel, Color: lo.NthOr(colors, lerp.Slot, "")}
+		}),
+		Overlay: row.Overlay, Alpha: row.Shape,
+	}
+}
+
+// listMaskChannels returns the pattern channel of each region a layer shows in, all of them if it names none. It
+// returns none for a layer with no mask.
+func listMaskChannels(layer Layer) []string {
+	if layer.Mask == "" {
+		return []string{}
+	}
+	if len(layer.Regions) == 0 {
+		return slices.Clone(game.Coat.Regions)
+	}
+	return lo.FilterMap(layer.Regions, func(region, _ int) (string, bool) {
+		return lo.NthOr(game.Coat.Regions, region-1, ""), region >= 1 && region <= len(game.Coat.Regions)
+	})
+}
+
+// listInputs returns how the panel edits each key a layer writes, including the keys inside the layer and its
+// instances. A key the game gives no input is left out.
+func listInputs(layer clause) map[string]string {
+	keys := []clause{layer}
+	for _, held := range listChildren(layer) {
+		keys = append(keys, held)
+		if key, _, _ := splitField(held); key == instanceKey {
+			keys = append(keys, listChildren(held)...)
+		}
+	}
+	inputs := map[string]string{}
+	for _, field := range keys {
+		key, _, _ := splitField(field)
+		if input, ok := game.Coat.Inputs[key]; ok {
+			inputs[key] = input
+		}
+	}
+	return inputs
+}
+
+// resolvePattern returns the layer of a coat's pattern, painted in the coat's colors. Its lists are the ones its
+// texture and the coat's colors are drawn from.
 func (resolver *coatResolver) resolvePattern(field clause, colors []string, lists []Group) Layer {
 	texture, own := resolver.resolveValue(field)
 	return Layer{
@@ -245,8 +382,8 @@ func (resolver *coatResolver) resolvePattern(field clause, colors []string, list
 	}
 }
 
-// resolveEmblem returns the layer of an emblem: its texture, its colors over the coat's, its mask where it writes
-// one, which is the file of the coat's pattern with the regions it shows in, and its instances.
+// resolveEmblem returns the layer of an emblem: its texture, its colors over the coat's, its mask and its instances.
+// The mask is the coat's pattern file, with the regions the emblem shows in.
 func (resolver *coatResolver) resolveEmblem(field clause, colors []string, patternFile string) Layer {
 	children := listChildren(field)
 	key, _, _ := splitField(field)
@@ -275,7 +412,7 @@ func (resolver *coatResolver) resolveSub(field clause) Layer {
 	_, parent, _ := splitField(parentField)
 	sub := Coat{
 		Name: parent, Layers: resolver.resolveLayers(resolver.listCoatFields(field, 0), 1), Range: toRange(field),
-		Place: locate(resolver.ws, resolver.places, field.path),
+		Place: locate(resolver.ws, resolver.mods, resolver.places, field.path),
 	}
 	return Layer{
 		Role: field.tree.Unquoted(field.tree.Statements[field.statement].Key), Texture: parent, Colors: []string{}, Lists: []Group{},
@@ -284,8 +421,7 @@ func (resolver *coatResolver) resolveSub(field clause) Layer {
 }
 
 // resolveValue returns the text a statement of a coat writes as its value, and the list it draws from. A value written
-// as `list "x"` is the option of the list that is picked for it, or else the heaviest one; it is "missing:x" if no
-// list has the name.
+// as a list is the option picked for that list, else its heaviest option. It is "missing:x" if no list is named x.
 func (resolver *coatResolver) resolveValue(field clause) (string, []Group) {
 	key, value, tag := splitField(field)
 	if tag != listTag {
@@ -340,8 +476,8 @@ func (resolver *coatResolver) resolveColors(fields []clause, base []string) ([]s
 // resolveColor returns the CSS of the color a statement writes: a color block, the name of a named color, or the name
 // of a slot, which is the base's color in it. It also returns the list the color is drawn from.
 func (resolver *coatResolver) resolveColor(field clause, base []string) (string, []Group) {
-	if color, ok := game.ToColor(field.tree, field.statement); ok {
-		return color.ToCSS(), nil
+	if css := makeColor(field); css != "" {
+		return css, nil
 	}
 	label, lists := resolver.resolveValue(field)
 	if position := slices.IndexFunc(game.Coat.Slots, func(slot game.CoatSlot) bool {
@@ -351,7 +487,7 @@ func (resolver *coatResolver) resolveColor(field clause, base []string) (string,
 	}
 	css, ok := resolver.colors[label]
 	if !ok {
-		if definition, found := findKeptClause(resolver.ws, resolver.mods, schema.Reference{Database: game.Coat.ColorsDatabase, Name: label}); found {
+		if definition, ok := findKeptClause(resolver.ws, resolver.mods, schema.Reference{Database: game.Coat.ColorsDatabase, Name: label}); ok {
 			css = makeColor(definition)
 		}
 		resolver.colors[label] = css
@@ -369,8 +505,9 @@ func makeColor(definition clause) string {
 	return color.ToCSS()
 }
 
-// resolveInstances returns the instances the given statements write, in the given row of the game's placements. Where
-// they write none, it returns the one default instance the game draws, which has no range.
+// resolveInstances returns the instances the given statements write, in the given row of the game's placements, in the
+// order they draw. A larger depth draws behind, so it comes first. Where they write none, it returns the one default
+// instance the game draws, which has no range.
 func (resolver *coatResolver) resolveInstances(children []clause, row string) []Instance {
 	instances := []Instance{}
 	for _, field := range children {
@@ -381,6 +518,9 @@ func (resolver *coatResolver) resolveInstances(children []clause, row string) []
 	if len(instances) == 0 {
 		instances = append(instances, resolver.resolveInstance(clause{statement: absentStatement}, row))
 	}
+	slices.SortStableFunc(instances, func(first, second Instance) int {
+		return cmp.Compare(second.Depth, first.Depth)
+	})
 	return instances
 }
 
@@ -396,14 +536,13 @@ func (resolver *coatResolver) resolveInstance(field clause, row string) Instance
 	instance.Range = toRange(field)
 	for _, child := range listChildren(field) {
 		key, _, _ := splitField(child)
-		part := lo.Ternary(key == depthKey, partDepth, game.Coat.Placement[row][key].Part)
-		setPlacement(&instance, part, listNumbers(child))
+		setPlacement(&instance, game.Coat.Placement[row][key].Part, listNumbers(child))
 	}
 	return instance
 }
 
-// setPlacement sets the part of an instance that the given part of a placement moves, sizes or turns, to the numbers
-// written. A part of no kind, or no numbers, set nothing.
+// setPlacement sets the part of an instance that the given part of a placement moves, sizes or turns, to the given
+// numbers. A turn is set in degrees clockwise. An unknown part, or no numbers, sets nothing.
 func setPlacement(instance *Instance, part string, numbers []float64) {
 	if len(numbers) == 0 {
 		return
@@ -421,22 +560,23 @@ func setPlacement(instance *Instance, part string, numbers []float64) {
 	}
 }
 
-// listNumbers returns the numbers a statement writes: its value, the values inside its block, or the x and y inside
-// it. It returns none if a value is no number.
+// listNumbers returns the numbers a statement writes: its value and the bare values inside its block, each as the
+// file stands for it. It returns none if a value is no number.
 func listNumbers(field clause) []float64 {
-	var texts []string
-	if _, value, _ := splitField(field); value != "" {
-		texts = append(texts, value)
-	}
-	for _, child := range listChildren(field) {
-		if key, value, _ := splitField(child); key == "" || key == "x" || key == "y" {
-			texts = append(texts, value)
+	current := field.tree.Statements[field.statement]
+	spans := []jomini.Span{current.Value}
+	for statement := range field.tree.Children(field.statement) {
+		if inner := field.tree.Statements[statement]; inner.IsListed() {
+			spans = append(spans, inner.Value)
 		}
 	}
 	var numbers []float64
-	for _, text := range texts {
-		number, err := strconv.ParseFloat(text, 64)
-		if err != nil {
+	for _, span := range spans {
+		if span.IsEmpty() {
+			continue
+		}
+		number, ok := field.tree.ResolveNumber(span)
+		if !ok {
 			return nil
 		}
 		numbers = append(numbers, number)
@@ -444,7 +584,7 @@ func listNumbers(field clause) []float64 {
 	return numbers
 }
 
-// ListColors returns the game's named colors for the color picker.
+// ListColors returns the game's named colors, for the color picker. It returns an empty list if no workspace is open.
 func (drw *Service) ListColors() []NamedColor {
 	ws, err := drw.Workspace.Session()
 	if err != nil {
@@ -462,30 +602,48 @@ func (drw *Service) ListColors() []NamedColor {
 	return colors
 }
 
-// ListTextures returns the texture files that a layer with the given role can use, from the game's coat folders.
+// ListTextures returns the texture files that a layer with the given role can use, from the game's coat folders. It
+// returns an empty list if no workspace is open or the game's coats have no folder for the role.
 func (drw *Service) ListTextures(role string) []string {
 	ws, err := drw.Workspace.Session()
 	if err != nil {
 		return []string{}
 	}
-	return listImages(ws, ws.Mods.Load(), game.Coat.TextureFolders[role], "")
+	return listImages(ws, ws.Mods.Load(), game.Coat.TextureFolders[role])
 }
 
-// ListFrames returns the frame files the game ships, for the Frame menu.
-func (drw *Service) ListFrames() []string {
+// ListFrames returns the shapes the game's coat designer previews a coat in, in the designer's order, each with where
+// its mask is. A frame is left out if its define is not defined or the game loads no file at its mask's path. It is
+// empty if no workspace is open or the game has no designer.
+func (drw *Service) ListFrames() []Frame {
+	frames := []Frame{}
 	ws, err := drw.Workspace.Session()
 	if err != nil {
-		return []string{}
+		return frames
 	}
-	return listImages(ws, ws.Mods.Load(), path.Dir(game.Coat.FrameMask), strings.TrimPrefix(path.Base(game.Coat.FrameMask), "%s"))
+	mods := ws.Mods.Load()
+	for _, row := range ws.Game.CoatFrames {
+		mask := row.Mask
+		if row.Define != "" {
+			define, ok := findKeptClause(ws, mods, schema.Reference{Database: lookupDefineDatabase(), Name: row.Define})
+			if !ok {
+				continue
+			}
+			mask = fmt.Sprintf(game.Coat.FrameMask, define.tree.Unquoted(define.tree.Statements[define.statement].Value))
+		}
+		if file, ok := mods.ResolveTexture(mask); ok {
+			frames = append(frames, Frame{Label: row.Label, Place: ws.Locate(mods, file)})
+		}
+	}
+	return frames
 }
 
-// listImages returns the paths from their roots of the image files the game reads in a folder whose names end as given,
-// sorted. No folder has none.
-func listImages(ws *workspace.Session, mods *index.Index, folder, ending string) []string {
+// listImages returns the paths of the image files the game reads directly in a folder, each relative to its
+// root, sorted. It returns an empty list if the folder has none.
+func listImages(ws *workspace.Session, mods *index.Index, folder string) []string {
 	paths := []string{}
 	for _, file := range mods.ListImages(folder + "/") {
-		if _, rest := schema.SplitStage(ws.Game, file.Rel); path.Dir(rest) == folder && strings.HasSuffix(rest, ending) {
+		if _, rest := schema.SplitStage(ws.Game, file.Rel); path.Dir(rest) == folder {
 			paths = append(paths, file.Rel)
 		}
 	}
@@ -494,29 +652,32 @@ func listImages(ws *workspace.Session, mods *index.Index, folder, ending string)
 }
 
 // AddLayer inserts a new layer into a coat at the given position among its layers, 0 being first, and returns the
-// edits that do it. The new layer is the game's template for that role.
+// edits that do it. The new layer is the game's template for the given role. It returns an error if the file does not
+// define the coat, the coat is written as the name of another, or a pattern is added to a coat that has one. It also
+// returns an error if the game has no template for the role or nothing to start the layer from, or if the layer before
+// the position does not exist or comes from a parent coat.
 func (drw *Service) AddLayer(path, coat, role string, position int) ([]lsp.Edit, error) {
 	resolver, err := drw.findCoat(path, coat, nil)
 	if err != nil {
 		return nil, err
 	}
-	resolver.resolveCoat()
 	definition := resolver.definition
 	tree := definition.tree
 	if !tree.Statements[definition.statement].IsBlock() {
 		return nil, fmt.Errorf("the coat %q is written as the name of another coat", coat)
 	}
-	if role == patternKey && slices.ContainsFunc(resolver.sources, isPattern) {
+	layers := resolver.listLayers()
+	if role == patternKey && slices.ContainsFunc(layers, isPattern) {
 		return nil, fmt.Errorf("the coat %q has a pattern already", coat)
 	}
-	lines, err := makeLayerLines(resolver.ws, resolver.mods, role)
+	lines, err := makeLayerLines(resolver.ws, resolver.mods, role, coat)
 	if err != nil {
 		return nil, err
 	}
 	var edit jomini.Edit
-	switch own := resolver.listOwn(); {
+	switch own := resolver.listOwn(layers); {
 	case position > 0:
-		layer, err := resolver.findLayer(position - 1)
+		layer, err := resolver.findLayer(layers, position-1)
 		if err != nil {
 			return nil, err
 		}
@@ -538,30 +699,49 @@ func isPattern(field clause) bool {
 	return key == patternKey
 }
 
-// makeLayerLines returns the lines of the game's template for a layer with the given role. It returns an error for a
-// role the template has no layer for, or a game with no texture to start one with.
-func makeLayerLines(ws *workspace.Session, mods *index.Index, role string) ([]string, error) {
-	template := game.Coat.Template
-	switch {
-	case role == patternKey:
+// makeLayerLines returns the lines of the game's template for a layer with the given role. The layer starts from the
+// first texture of the role, or for a sub from the first coat other than the given one. It returns an error for a role
+// the template has no layer for, or a game with nothing to start one from.
+func makeLayerLines(ws *workspace.Session, mods *index.Index, role, coat string) ([]string, error) {
+	if role == patternKey {
 		pattern, err := findTemplatePattern(ws, mods)
 		return []string{fmt.Sprintf("%s = %q", patternKey, pattern)}, err
-	case role == lo.FirstOr(strings.Fields(lo.FirstOr(template.EmblemLines, "")), ""):
-		textures := listImages(ws, mods, game.Coat.TextureFolders[role], "")
-		if len(textures) == 0 {
-			return nil, fmt.Errorf("the game has no %s texture to start a layer with", role)
-		}
-		return lo.Map(template.EmblemLines, func(line string, _ int) string {
-			return strings.ReplaceAll(line, "%s", path.Base(textures[0]))
-		}), nil
 	}
-	return nil, fmt.Errorf("the game has no template for a layer with the role %q", role)
+	lines, ok := game.Coat.Template.Layers[role]
+	if !ok {
+		return nil, fmt.Errorf("the game has no template for a layer with the role %q", role)
+	}
+	fill, err := findTemplateFill(ws, mods, role, coat)
+	if err != nil {
+		return nil, err
+	}
+	return lo.Map(lines, func(line string, _ int) string { return strings.ReplaceAll(line, "%s", fill) }), nil
+}
+
+// findTemplateFill returns what a new layer with the given role starts from: for a sub, the first coat by name other
+// than the given one, else the first texture file of the role. It returns an error if the game has none.
+func findTemplateFill(ws *workspace.Session, mods *index.Index, role, coat string) (string, error) {
+	if role == subKey {
+		names := lo.FilterMap(mods.ListKept(ws.Schema, game.Coat.Database), func(winner index.Winner, _ int) (string, bool) {
+			name := mods.ToReference(winner.Site).Name
+			return name, !strings.EqualFold(name, coat)
+		})
+		if len(names) == 0 {
+			return "", fmt.Errorf("the game has no other coat to start a sub with")
+		}
+		return slices.Min(names), nil
+	}
+	textures := listImages(ws, mods, game.Coat.TextureFolders[role])
+	if len(textures) == 0 {
+		return "", fmt.Errorf("the game has no %s texture to start a layer with", role)
+	}
+	return path.Base(textures[0]), nil
 }
 
 // findTemplatePattern returns the file of the pattern a new coat starts with: the first pattern whose name starts as
 // the game's template says, else the first. It returns an error if the game has no pattern.
 func findTemplatePattern(ws *workspace.Session, mods *index.Index) (string, error) {
-	names := lo.Map(listImages(ws, mods, game.Coat.TextureFolders[patternKey], ""), func(rel string, _ int) string {
+	names := lo.Map(listImages(ws, mods, game.Coat.TextureFolders[patternKey]), func(rel string, _ int) string {
 		return path.Base(rel)
 	})
 	if len(names) == 0 {
@@ -570,16 +750,22 @@ func findTemplatePattern(ws *workspace.Session, mods *index.Index) (string, erro
 	return lo.FindOrElse(names, names[0], func(each string) bool { return strings.HasPrefix(each, game.Coat.Template.Pattern) }), nil
 }
 
-// findLayer returns the clause of a layer of the coat asked for. It returns an error for a layer that does not exist,
-// or that the coat has from a parent, in its file or another.
-func (resolver *coatResolver) findLayer(layer int) (clause, error) {
-	if layer < 0 || layer >= len(resolver.sources) {
+// listLayers returns the statements that write the layers of the coat asked for, in the order the layers draw, the
+// ones it has from its parents included.
+func (resolver *coatResolver) listLayers() []clause {
+	return listLayerFields(resolver.listCoatFields(resolver.definition, 0), 0)
+}
+
+// findLayer returns the statement of one of the given layers of the coat asked for. It returns an error for a layer
+// that does not exist, or that the coat has from a parent, in its file or another.
+func (resolver *coatResolver) findLayer(layers []clause, layer int) (clause, error) {
+	if layer < 0 || layer >= len(layers) {
 		return clause{}, fmt.Errorf("the coat has no layer %d", layer)
 	}
-	if !resolver.isOwn(resolver.sources[layer]) {
-		return clause{}, fmt.Errorf("the layer %d comes from a parent coat, in %q", layer, resolver.sources[layer].path)
+	if !resolver.isOwn(layers[layer]) {
+		return clause{}, fmt.Errorf("the layer %d comes from a parent coat, in %q", layer, layers[layer].path)
 	}
-	return resolver.sources[layer], nil
+	return layers[layer], nil
 }
 
 // isOwn reports whether a layer is written in the block of the coat asked for.
@@ -587,27 +773,30 @@ func (resolver *coatResolver) isOwn(layer clause) bool {
 	return layer.path == resolver.definition.path && layer.tree.Statements[layer.statement].Parent == resolver.definition.statement
 }
 
-// listOwn returns the statements of the layers that the coat writes in its own block, in the order they are written.
-func (resolver *coatResolver) listOwn() []int32 {
-	own := lo.FilterMap(resolver.sources, func(source clause, _ int) (int32, bool) {
-		return source.statement, resolver.isOwn(source)
+// listOwn returns the statements of the given layers that the coat writes in its own block, in the order they are
+// written.
+func (resolver *coatResolver) listOwn(layers []clause) []int32 {
+	own := lo.FilterMap(layers, func(layer clause, _ int) (int32, bool) {
+		return layer.statement, resolver.isOwn(layer)
 	})
 	slices.Sort(own)
 	return own
 }
 
-// MoveLayer moves one layer of a coat to a new position and returns the edits that do it.
+// MoveLayer moves one layer of a coat to another position among its layers and returns the edits that do it. It
+// returns no edits if both positions are the same. It returns an error if either position has no layer or has a layer
+// that comes from a parent coat.
 func (drw *Service) MoveLayer(path, coat string, from, to int) ([]lsp.Edit, error) {
 	resolver, err := drw.findCoat(path, coat, nil)
 	if err != nil {
 		return nil, err
 	}
-	resolver.resolveCoat()
-	moved, err := resolver.findLayer(from)
+	layers := resolver.listLayers()
+	moved, err := resolver.findLayer(layers, from)
 	if err != nil {
 		return nil, err
 	}
-	target, err := resolver.findLayer(to)
+	target, err := resolver.findLayer(layers, to)
 	if err != nil || from == to {
 		return []lsp.Edit{}, err
 	}
@@ -623,14 +812,14 @@ func (drw *Service) MoveLayer(path, coat string, from, to int) ([]lsp.Edit, erro
 	return lsp.ToEdits(tree.Src, tree.Lines, edits), nil
 }
 
-// RemoveLayer deletes one layer of a coat, including its line, and returns the edits that do it.
+// RemoveLayer deletes one layer of a coat, including its line, and returns the edits that do it. It returns an error
+// if the position has no layer or has a layer that comes from a parent coat.
 func (drw *Service) RemoveLayer(path, coat string, layer int) ([]lsp.Edit, error) {
 	resolver, err := drw.findCoat(path, coat, nil)
 	if err != nil {
 		return nil, err
 	}
-	resolver.resolveCoat()
-	removed, err := resolver.findLayer(layer)
+	removed, err := resolver.findLayer(resolver.listLayers(), layer)
 	if err != nil {
 		return nil, err
 	}
@@ -639,13 +828,15 @@ func (drw *Service) RemoveLayer(path, coat string, layer int) ([]lsp.Edit, error
 	return lsp.ToEdits(tree.Src, tree.Lines, []jomini.Edit{edit}), nil
 }
 
-// CreateCoatFile writes a new coat of arms file into a mod, from the game's coat template, and returns its path.
+// CreateCoatFile writes a new coat of arms file into the given mod from the game's coat template and returns its path.
+// The coat is named after the given text as a slug. It returns an error if the workspace has no such mod, the game
+// keeps coats of arms in no folder, the text has no slug, the file exists already or the game has no pattern.
 func (drw *Service) CreateCoatFile(modID, name string) (string, error) {
 	ws, err := drw.Workspace.Session()
 	if err != nil {
 		return "", err
 	}
-	mod, ok := drw.Workspace.Config.LookupMod(ws.ID, modID)
+	mod, ok := drw.Workspace.LookupMod(modID)
 	slug := files.ToSlug(name)
 	if !ok || ws.Game.CoatFolder == "" || slug == "" {
 		return "", fmt.Errorf("the open workspace has no mod %q that can hold a coat of arms named %q", modID, name)

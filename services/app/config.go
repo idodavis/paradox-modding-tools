@@ -1,10 +1,8 @@
-// Package app is the app's own service and its files on this machine: PMT's folders, config.json with the
-// catalog of settings, and the JSON and gob files.
+// Package app is the app's own service: its version, updates, settings, log and windows. It also holds PMT's folders
+// on this machine and config.json, which every other service reads and writes.
 package app
 
 import (
-	"bytes"
-	"encoding/gob"
 	"encoding/json"
 	"errors"
 	"io/fs"
@@ -17,11 +15,12 @@ import (
 
 	"github.com/adrg/xdg"
 	"github.com/samber/lo"
+	"github.com/wailsapp/wails/v3/pkg/application"
 
 	"paradox-modding-tools/internal/files"
 )
 
-// Dirs says where PMT keeps its files on this machine.
+// Dirs is the three folders PMT keeps its files in on this machine.
 type Dirs struct {
 	App   string // config.json
 	Cache string // the schema and index caches, the wiki's pages, the Steam snapshots
@@ -44,7 +43,8 @@ func ResolveDirs() (Dirs, error) {
 	return dirs, nil
 }
 
-// LoadJSON reads a JSON file into a value. A missing file gives the zero value and no error.
+// LoadJSON reads a JSON file into a value. A missing file gives the zero value and no error. A file that is not valid
+// JSON for the value is an error.
 func LoadJSON[T any](path string) (T, error) {
 	var value T
 	content, err := os.ReadFile(path)
@@ -60,7 +60,7 @@ func LoadJSON[T any](path string) (T, error) {
 	return value, nil
 }
 
-// SaveJSON writes a value as indented JSON, atomically.
+// SaveJSON writes a value to a file as indented JSON. The file is replaced whole, so a failed write leaves the old one.
 func SaveJSON(path string, value any) error {
 	content, err := json.MarshalIndent(value, "", "  ")
 	if err != nil {
@@ -69,29 +69,7 @@ func SaveJSON(path string, value any) error {
 	return files.WriteAtomic(path, append(content, '\n'))
 }
 
-// LoadGob reads a gob cache into a value. It returns false if the cache is missing or cannot be read.
-func LoadGob[T any](path string) (T, bool) {
-	var value T
-	content, err := os.ReadFile(path)
-	if err != nil {
-		return value, false
-	}
-	if err := gob.NewDecoder(bytes.NewReader(content)).Decode(&value); err != nil {
-		return *new(T), false
-	}
-	return value, true
-}
-
-// SaveGob writes a value as a gob cache, atomically.
-func SaveGob(path string, value any) error {
-	var buffer bytes.Buffer
-	if err := gob.NewEncoder(&buffer).Encode(value); err != nil {
-		return err
-	}
-	return files.WriteAtomic(path, buffer.Bytes())
-}
-
-// An Install is one game install PMT reads: its id, game and folder, and what the last scan found.
+// An Install is one game install that PMT has recorded.
 type Install struct {
 	ID        string    `json:"id"`
 	Game      string    `json:"game"`
@@ -100,7 +78,7 @@ type Install struct {
 	ScannedAt time.Time `json:"scannedAt"`
 }
 
-// An Era is one era of a mod's calendar: its name and the year it starts.
+// An Era is one era of a mod's calendar.
 type Era struct {
 	Name string `json:"name"`
 	Year int    `json:"year"`
@@ -112,7 +90,7 @@ type Calendar struct {
 	Months []string `json:"months,omitempty"` // twelve names, or none for the game's
 }
 
-// A Mod is one mod of a workspace: its folder and what the user set about it.
+// A Mod is one mod that a workspace records.
 type Mod struct {
 	ID         string   `json:"id"`
 	Dir        string   `json:"dir"`
@@ -122,7 +100,7 @@ type Mod struct {
 	Ignore     string   `json:"ignore"`     // the upload exclusions, one pattern per line
 }
 
-// A Workspace is one workspace: an install and the mods loaded with it, in load order.
+// A Workspace is one recorded workspace: a game install and the mods loaded with it, in load order.
 type Workspace struct {
 	ID       string `json:"id"`
 	Name     string `json:"name"`
@@ -132,14 +110,14 @@ type Workspace struct {
 	HomePage string `json:"homePage"` // the page it opens on
 }
 
-// Config is the content of config.json: the installs, the workspaces and the settings' values by key.
+// Config is the content of config.json.
 type Config struct {
 	Installs   []Install         `json:"installs"`
 	Workspaces []Workspace       `json:"workspaces"`
 	Settings   map[string]string `json:"settings"`
 }
 
-// A Setting is one row of the catalog: what a setting is, where it is shown and what it takes.
+// A Setting is one row of the catalog of settings.
 type Setting struct {
 	Key     string   `json:"key"` // `<area>.<noun>`
 	Label   string   `json:"label"`
@@ -225,9 +203,8 @@ var Catalog = []Setting{
 		Words:   "gui preview screen size"},
 }
 
-// A ConfigFile holds config.json for every service: one lock, one copy, one writer. A missing file means a first
-// run. Any other failure to read it makes the config empty and read-only, so a passing fault never overwrites the
-// real file.
+// A ConfigFile is config.json held in memory for every service. A missing file means a first run. A file that cannot be
+// read gives an empty, read-only config, so the real file is never overwritten.
 type ConfigFile struct {
 	Dirs     Dirs // the folders PMT keeps its files in, resolved once with the config
 	path     string
@@ -236,20 +213,20 @@ type ConfigFile struct {
 	readOnly bool
 }
 
-// openConfig loads config.json from the app folder.
-func openConfig(dirs Dirs) (*ConfigFile, error) {
+// openConfig loads config.json from the app folder. A file that cannot be read gives an empty, read-only config.
+func openConfig(dirs Dirs) *ConfigFile {
 	file := &ConfigFile{Dirs: dirs, path: filepath.Join(dirs.App, "config.json")}
 	config, err := LoadJSON[Config](file.path)
-	// a config that cannot be read stays empty and is never written back, so the real file survives the fault
+	// a config that cannot be read stays empty and is never written back
 	file.config, file.readOnly = config, err != nil
-	return file, nil
+	return file
 }
 
 // Config returns a copy of the config as it stands.
 func (file *ConfigFile) Config() Config {
 	file.mu.RLock()
 	defer file.mu.RUnlock()
-	// the copy shares no slice or map with the file's own, so an Update never shows through it
+	// the copy shares no slice or map with the file's own
 	config := file.config
 	config.Installs = slices.Clone(config.Installs)
 	config.Workspaces = lo.Map(config.Workspaces, func(workspace Workspace, _ int) Workspace {
@@ -264,16 +241,23 @@ func (file *ConfigFile) Config() Config {
 	return config
 }
 
-// Update applies a change to the config under the lock and saves it. It returns the write's error, or an error
-// when the config is read-only.
-func (file *ConfigFile) Update(change func(config *Config)) error {
+// Update changes the config, saves it and emits config:changed with the given section, "" meaning all of them. If the
+// change returns an error, nothing is saved or emitted and Update returns that error. It also returns an error if the
+// config is read-only or cannot be saved.
+func (file *ConfigFile) Update(section string, change func(config *Config) error) error {
 	file.mu.Lock()
 	defer file.mu.Unlock()
 	if file.readOnly {
 		return errors.New("config.json could not be read when the app started, so it is not written")
 	}
-	change(&file.config)
-	return SaveJSON(file.path, file.config)
+	if err := change(&file.config); err != nil {
+		return err
+	}
+	if err := SaveJSON(file.path, file.config); err != nil {
+		return err
+	}
+	application.Get().Event.Emit(EventConfigChanged, section)
+	return nil
 }
 
 // LookupSetting returns one setting's value: the one the user set, else the catalog's default. It returns false for a
@@ -289,11 +273,4 @@ func (file *ConfigFile) LookupSetting(key string) (string, bool) {
 		return value, true
 	}
 	return setting.Default, true
-}
-
-// LookupMod returns a mod's record in a workspace as the config holds it now. It returns false if the workspace is
-// not recorded or does not have the mod.
-func (file *ConfigFile) LookupMod(workspaceID, modID string) (Mod, bool) {
-	workspace, _ := lo.Find(file.Config().Workspaces, func(workspace Workspace) bool { return workspace.ID == workspaceID })
-	return lo.Find(workspace.Mods, func(mod Mod) bool { return mod.ID == modID })
 }

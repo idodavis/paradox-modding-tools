@@ -250,8 +250,8 @@ var anchors3b = [64]uint8{
 }
 
 // decodeBC6H decodes one BC6H block in any of its fourteen modes, each channel's half float clamped to 0 to 1
-// and scaled to a byte, with alpha 255. A block in a reserved mode decodes to black. It takes whether the format
-// is the signed one, which changes how the endpoints are read and scaled.
+// and scaled to a byte, with alpha 255. A block in a reserved mode decodes to black. The flag says whether the
+// format is the signed one.
 func decodeBC6H(block []byte, pixels *[16][4]uint8, signed bool) {
 	mode := int(block[0] & 3)
 	if mode >= 2 {
@@ -281,13 +281,12 @@ func decodeBC6H(block []byte, pixels *[16][4]uint8, signed bool) {
 	}
 }
 
-// readBC6HEndpoints reads the endpoints of a BC6H block as the mode's fields lay them out, sign-extends what the
-// mode or the signed format stores signed, and adds the first endpoint to the others when the mode stores them
-// as deltas. It returns the endpoints, by endpoint and then by channel, and the bit position after the fields.
+// readBC6HEndpoints reads the endpoints of a BC6H block as the mode's fields lay them out. It returns the endpoints,
+// by endpoint and then by channel, and the bit position after the fields.
 func readBC6HEndpoints(block []byte, mode int, signed bool) ([4][3]int, int) {
 	row := bc6hModes[mode]
 	var endpoints [4][3]int
-	// the mode field comes first, 2 bits for the modes 0 and 1 and 5 bits for the rest
+	// The mode field comes first, 2 bits for the modes 0 and 1 and 5 bits for the rest.
 	position := 2
 	if mode >= 2 {
 		position = 5
@@ -305,6 +304,8 @@ func readBC6HEndpoints(block []byte, mode int, signed bool) ([4][3]int, int) {
 		}
 		position += count
 	}
+	// What the mode or the signed format stores signed is sign-extended, and a mode that stores the other endpoints
+	// as deltas has the first endpoint added to them.
 	for c := range 3 {
 		if signed {
 			endpoints[0][c] = toSigned(endpoints[0][c], row.endpointBits)

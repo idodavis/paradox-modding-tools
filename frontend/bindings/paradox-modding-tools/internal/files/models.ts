@@ -42,7 +42,7 @@ export interface File {
 }
 
 /**
- * A Format says what kind of file a file is.
+ * A Format is the class of a file: script, image, localization and so on.
  */
 export enum Format {
     /**
@@ -114,7 +114,7 @@ export enum Format {
 };
 
 /**
- * A Root is one folder laid out like the game's: the game's own folder, a DLC's or a mod's.
+ * A Root is one folder laid out like the game's own: the game's folder, a DLC's or a mod's.
  */
 export interface Root {
     "dir": string;
@@ -126,7 +126,7 @@ export interface Root {
 }
 
 /**
- * A Text is a file's text together with the encoding it was stored in, so it can be written back the same way.
+ * A Text is the text of a file. It remembers how the file was stored, so it can be written back the same way.
  */
 export interface Text {
     "text": string;

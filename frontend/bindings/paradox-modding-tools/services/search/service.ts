@@ -19,26 +19,25 @@ import * as workspace$0 from "../workspace/models.js";
 import * as $models from "./models.js";
 
 /**
- * ReplaceText replaces every match of a query in the mods' files and returns how many it replaced. Each file is
- * written back in its own encoding, and the watcher sends fs:changed for it. A file open in the editor is skipped,
- * since the editor replaces in it; the error says how many were skipped.
+ * ReplaceText replaces every match of a query in the mods' files and returns how many it replaced. Each file keeps its
+ * encoding. A file open in the editor is skipped, and the error says how many were.
  */
 export function ReplaceText(query: $models.Query, replacement: string): $CancellablePromise<number> {
     return $Call.ByID(3204296503, query, replacement);
 }
 
 /**
- * SearchFiles returns the files whose path contains the query's characters in order, the mods' files first, up
- * to the given limit.
+ * SearchFiles returns the files whose path contains the query's characters in order, the mods' files first, up to the
+ * given limit.
  */
 export function SearchFiles(query: string, limit: number): $CancellablePromise<workspace$0.Place[] | null> {
     return $Call.ByID(2092092931, query, limit);
 }
 
 /**
- * SearchText runs a text search over the files the query names, reading an open file's text from the editor. It
- * sends each file's hits as a search:hits event as that file is done, and returns when the search ends or a newer
- * search stops it. Starting a new search stops the last.
+ * SearchText runs a text search over the files the query names. It sends each file's hits as a search:hits event, and
+ * returns when the search ends or a newer search stops it. It returns an error if the query is empty or is a regular
+ * expression that does not parse.
  */
 export function SearchText(query: $models.Query): $CancellablePromise<void> {
     return $Call.ByID(3197255683, query);

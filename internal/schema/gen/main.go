@@ -1,6 +1,5 @@
 // Command gen writes the shipped backup of each game's dumps. For each game id on the command line it reads the
-// dumps of the install that PMT_TEST_INSTALL_<GAME> names and writes schema/shipped/<game>.gob. It runs through
-// `go generate` in the schema package.
+// dumps of the install that PMT_TEST_INSTALL_<GAME> names and writes shipped/<game>.gob in the current folder.
 package main
 
 import (
@@ -16,6 +15,8 @@ import (
 	"paradox-modding-tools/internal/schema"
 )
 
+// main writes the backup of every game named on the command line. It stops with a message if a game is unknown, its
+// install variable is not set or its install has no dumps.
 func main() {
 	for _, id := range os.Args[1:] {
 		install := os.Getenv("PMT_TEST_INSTALL_" + strings.ToUpper(id))

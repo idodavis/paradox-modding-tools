@@ -1,5 +1,5 @@
-// Package wiki reads the community wiki for the open workspace's game. It fetches pages, strips them down to their
-// article, caches them, finds the pages that belong to a file, and lists the patch notes.
+// Package wiki reads the community wiki for the open workspace's game. It fetches and caches the pages, finds the
+// ones that belong to a file, lists the patch notes and builds the lexicon of the game's commands.
 package wiki
 
 import (
@@ -9,7 +9,6 @@ import (
 	"io"
 	"net/http"
 	"net/url"
-	"os"
 	"path/filepath"
 	"time"
 
@@ -20,11 +19,12 @@ import (
 	"paradox-modding-tools/services/app"
 )
 
-// A Page is one cached wiki page: its title and its sanitized HTML.
+// A Page is one wiki page as the cache keeps it, its HTML sanitized.
 type Page struct {
 	Title     string    `json:"title"`
 	HTML      string    `json:"html"`
 	FetchedAt time.Time `json:"fetchedAt"`
+	Modding   bool      `json:"modding"` // the page has a heading that holds the word Modding
 }
 
 // A Client fetches one game's wiki, rate limited, and caches each page in the cache folder.
@@ -44,17 +44,18 @@ const (
 	userAgent         = "paradox-modding-tools (+https://github.com/idodavis/paradox-modding-tools)"
 )
 
-// NewClient makes a client for a game's wiki that caches in the given folder.
-func NewClient(cacheDir string, game *game.Game) *Client {
+// NewClient returns a client for a game's wiki that caches its pages in the given folder.
+func NewClient(cacheDir string, row *game.Game) *Client {
 	return &Client{
-		game:    game,
+		game:    row,
 		http:    &http.Client{Timeout: requestTimeout},
 		limiter: rate.NewLimiter(requestsPerSecond, 1),
-		dir:     filepath.Join(cacheDir, "wiki", game.ID),
+		dir:     filepath.Join(cacheDir, "wiki", row.ID),
 	}
 }
 
-// FetchPage fetches a page through the wiki's API, sanitizes it and caches it.
+// FetchPage fetches a page through the wiki's API, sanitizes it and caches it. It returns an error if the request
+// fails, the wiki has no such page or the page cannot be cached.
 func (client *Client) FetchPage(title string) (Page, error) {
 	params := url.Values{"action": {"parse"}, "page": {title}, "prop": {"text"}}
 	var response struct {
@@ -77,9 +78,9 @@ func (client *Client) FetchPage(title string) (Page, error) {
 	if err != nil {
 		return Page{}, fmt.Errorf("wiki page %q: %w", title, err)
 	}
-	origin := url.URL{Scheme: api.Scheme, Host: api.Host}
-	page := Page{Title: response.Parse.Title, HTML: Sanitize(response.Parse.Text, origin.String()), FetchedAt: time.Now()}
-	if err := client.save(client.resolvePath(title), page); err != nil {
+	sanitized := Sanitize(response.Parse.Text, &url.URL{Scheme: api.Scheme, Host: api.Host})
+	page := Page{Title: response.Parse.Title, HTML: sanitized, FetchedAt: time.Now(), Modding: hasModding(sanitized)}
+	if err := app.SaveJSON(client.resolvePath(title), page); err != nil {
 		return Page{}, fmt.Errorf("wiki page %q: %w", title, err)
 	}
 	return page, nil
@@ -114,15 +115,6 @@ func (client *Client) fetch(params url.Values, target any) error {
 		return fmt.Errorf("the wiki answered %s", response.Status)
 	}
 	return json.NewDecoder(io.LimitReader(response.Body, maxBytes)).Decode(target)
-}
-
-// save writes a value as JSON to the given file, making the client's folder first. It returns an error if the folder
-// or the file cannot be written.
-func (client *Client) save(path string, value any) error {
-	if err := os.MkdirAll(client.dir, 0o755); err != nil {
-		return err
-	}
-	return app.SaveJSON(path, value)
 }
 
 // resolvePath returns the file a page is cached in.

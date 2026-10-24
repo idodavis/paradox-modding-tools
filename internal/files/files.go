@@ -1,6 +1,5 @@
-// Package files lists and reads the files of an install, a mod or a dump folder. It walks a folder, tells what
-// format each file is, reads and writes a file's text in the encoding it was stored in, compares and joins paths,
-// and applies ignore rules. It knows nothing about any particular game.
+// Package files lists the files of an install, a mod or a dump folder and tells what format each one is. It reads and
+// writes a file's text in its own encoding, compares and joins paths, and applies ignore rules.
 package files
 
 import (
@@ -19,7 +18,7 @@ import (
 // the machine, and at least one.
 var Workers = max(runtime.NumCPU()-2, 1)
 
-// A Format says what kind of file a file is.
+// A Format is the class of a file: script, image, localization and so on.
 type Format string
 
 // The formats a file can have, each told by its extension and the folder it sits in.
@@ -38,14 +37,19 @@ const (
 	FormatBinary       Format = "binary"       // anything the binary test flags
 )
 
-// Classify returns the format of a file from its path alone, by its extension and the folder it sits in under its
-// root.
+// Classify returns the format of a file from its path under its root. It looks at the extension and the folder only.
+// It returns FormatText for an extension it does not know, and for script written directly in a root, which the games
+// never read.
 func Classify(rel string) Format {
 	folder, base := path.Split(strings.ToLower(rel))
-	folders := strings.Split(folder, "/")
-	switch path.Ext(base) {
+	ext := path.Ext(base)
+	if folder == "" && slices.Contains([]string{".txt", ".gui", ".asset", ".font", ".gfx"}, ext) {
+		return FormatText
+	}
+	switch ext {
 	case ".yml":
-		if slices.Contains(folders, "localization") || slices.Contains(folders, "localisation") {
+		folders := strings.Split(folder, "/")
+		if slices.Contains(folders, "localization") {
 			return FormatLocalization
 		}
 	case ".mod":
@@ -85,7 +89,12 @@ func (format Format) IsScript() bool {
 	return slices.Contains([]Format{FormatScript, FormatGUI, FormatAsset, FormatFont, FormatGFX}, format)
 }
 
-// A Root is one folder laid out like the game's: the game's own folder, a DLC's or a mod's.
+// IsText reports whether files of the format are text: every format but images and binaries.
+func (format Format) IsText() bool {
+	return format != FormatImage && format != FormatBinary
+}
+
+// A Root is one folder laid out like the game's own: the game's folder, a DLC's or a mod's.
 type Root struct {
 	Dir    string `json:"dir"`
 	Origin string `json:"origin"` // game.OriginVanilla or a mod's id
@@ -100,9 +109,9 @@ type File struct {
 	Format Format `json:"format"`
 }
 
-// Walk lists every file under a root. It skips the folders IsHiddenDir names and anything the ignore rules cover,
-// and it follows a link once.
-func Walk(root Root, ignore Ignore) ([]File, error) {
+// Walk lists every file under a root, sorted by relative path. It skips the folders IsHiddenDir reports and follows
+// a link to a folder once. A link that leads nowhere lists nothing.
+func Walk(root Root) ([]File, error) {
 	var mu sync.Mutex
 	var list []File
 	visitor := func(path string, entry fs.DirEntry, err error) error {
@@ -117,15 +126,13 @@ func Walk(root Root, ignore Ignore) ([]File, error) {
 		if entry.Type()&fs.ModeSymlink != 0 {
 			target, err := fastwalk.StatDirEntry(path, entry)
 			if err != nil {
-				return nil // a link that leads nowhere lists nothing
+				return nil
 			}
 			dir = target.IsDir()
 		}
 		switch {
-		case dir && IsHiddenDir(entry.Name()) || ignore.Match(rel, dir):
-			if dir {
-				return fastwalk.SkipDir
-			}
+		case dir && IsHiddenDir(entry.Name()):
+			return fastwalk.SkipDir
 		case !dir:
 			mu.Lock()
 			defer mu.Unlock()
@@ -163,7 +170,7 @@ type pattern struct {
 	anchored bool
 }
 
-// ParseIgnore reads ignore rules from a text, one per line. Blank lines and `#` comments are skipped.
+// ParseIgnore parses the ignore rules in a text, one per line. It skips blank lines and lines that start with `#`.
 func ParseIgnore(text string) Ignore {
 	var ignore Ignore
 	for line := range strings.Lines(text) {

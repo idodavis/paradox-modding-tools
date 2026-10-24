@@ -2,18 +2,14 @@ package texture
 
 import (
 	"encoding/binary"
-	"errors"
 	"fmt"
 	"image"
 	"slices"
 )
 
-// decodeTGA decodes a TGA to RGBA. It handles raw and run-length encoded data from 8 to 32 bits per pixel.
-func decodeTGA(bytes []byte) (image.Image, error) {
-	header, ok := decodeTGAHeader(bytes)
-	if !ok {
-		return nil, errors.New("not a TGA")
-	}
+// decodeTGA decodes a TGA with the given header to RGBA. It handles raw and run-length encoded data from 8 to 32
+// bits per pixel.
+func decodeTGA(bytes []byte, header Header) (image.Image, error) {
 	imageType, descriptor := bytes[2], bytes[17]
 	size := (int(bytes[16]) + 7) / 8
 	palette, offset, err := readTGAPalette(bytes, 18+int(bytes[0]))
@@ -43,7 +39,7 @@ func decodeTGA(bytes []byte) (image.Image, error) {
 	return nrgba, nil
 }
 
-// decodeTGAHeader reads a TGA header. A TGA has no magic bytes, so it is recognized by a consistent header: a known
+// decodeTGAHeader decodes a TGA header. A TGA has no magic bytes, so it is recognized by a consistent header: a known
 // image type and pixel depth and a nonzero size. It returns false if the bytes are not a TGA.
 func decodeTGAHeader(bytes []byte) (Header, bool) {
 	if len(bytes) < 18 {

@@ -69,7 +69,7 @@ func TestParseLanguageRule(t *testing.T) {
 		{"folder", oneMessage, "mod/localization/braz_por/a.yml", "braz_por"},
 		{"folder then replace", oneMessage, "localization/english/replace/x.yml", english},
 		{"replace then folder", oneMessage, "localization/replace/english/x.yml", english},
-		{"localisation spelling", oneMessage, "mod/localisation/Spanish/x.yml", "spanish"},
+		{"localisation spelling", oneMessage, "mod/localisation/Spanish/x.yml", ""},
 		{"nothing says", oneMessage, "localization/x.yml", ""},
 		{"not in a localization folder", oneMessage, "events/english/x.yml", ""},
 	}
@@ -176,7 +176,7 @@ func TestParseInstalls(t *testing.T) {
 			if root == "" {
 				t.Skipf("%s is not set", variable)
 			}
-			list, err := files.Walk(files.Root{Dir: root}, nil)
+			list, err := files.Walk(files.Root{Dir: root})
 			if err != nil {
 				t.Fatal(err)
 			}

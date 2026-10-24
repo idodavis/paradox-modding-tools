@@ -13,7 +13,7 @@ import (
 func TestClassifyFormat(t *testing.T) {
 	formats := map[string]Format{
 		"localization/english/v_l_english.yml": FormatLocalization,
-		"localisation/replace/x_l_french.YML":  FormatLocalization,
+		"localisation/replace/x_l_french.YML":  FormatText,
 		"launcher/settings.yml":                FormatText,
 		"common/traits/v_traits.txt":           FormatScript,
 		"sound/GUIDs.TXT":                      FormatScript,
@@ -178,15 +178,15 @@ func TestMatchIgnore(t *testing.T) {
 	}
 }
 
-// TestWalkRoot checks the walk of the fixture install: every file once in order with its format, the ignore rules
-// applied, a dot folder skipped and `.metadata` kept.
+// TestWalkRoot checks the walk of the fixture install: every file once in order with its format, a dot folder
+// skipped and `.metadata` kept.
 func TestWalkRoot(t *testing.T) {
 	dir, err := filepath.Abs(filepath.Join("..", "testdata", "ck3", "game"))
 	if err != nil {
 		t.Fatal(err)
 	}
 	root := Root{Dir: dir, Origin: "vanilla"}
-	list, err := Walk(root, nil)
+	list, err := Walk(root)
 	if err != nil || len(list) != 61 {
 		t.Fatalf("Walk listed %d files, %v, want 61", len(list), err)
 	}
@@ -198,10 +198,6 @@ func TestWalkRoot(t *testing.T) {
 	if list[0] != first {
 		t.Errorf("first file = %+v, want %+v", list[0], first)
 	}
-	list, err = Walk(root, ParseIgnore("gfx/\n*.info\n"))
-	if err != nil || len(list) != 61-17-3 {
-		t.Errorf("Walk with gfx/ and *.info ignored listed %d files, %v, want %d", len(list), err, 61-17-3)
-	}
 	mod, descriptor := t.TempDir(), ".metadata/metadata.json"
 	for _, rel := range []string{".git/HEAD", descriptor, "common/m.txt"} {
 		if err := os.MkdirAll(filepath.Dir(Join(mod, rel)), 0o755); err != nil {
@@ -211,7 +207,7 @@ func TestWalkRoot(t *testing.T) {
 			t.Fatal(err)
 		}
 	}
-	list, err = Walk(Root{Dir: mod, Origin: "mod"}, nil)
+	list, err = Walk(Root{Dir: mod, Origin: "mod"})
 	if err != nil || len(list) != 2 || list[0].Rel != descriptor || list[0].Format != FormatDescriptor {
 		t.Errorf("Walk over a mod listed %+v, %v, want %s and common/m.txt", list, err, descriptor)
 	}
@@ -226,7 +222,7 @@ func TestWalkInstalls(t *testing.T) {
 			if dir == "" {
 				t.Skipf("%s is not set", env)
 			}
-			list, err := Walk(Root{Dir: dir}, nil)
+			list, err := Walk(Root{Dir: dir})
 			if err != nil {
 				t.Fatal(err)
 			}

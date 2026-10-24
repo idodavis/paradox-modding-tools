@@ -6,11 +6,11 @@ import (
 
 	"paradox-modding-tools/internal/files"
 	"paradox-modding-tools/internal/game"
+	"paradox-modding-tools/internal/index"
 )
 
-// A Place says where a file sits in the workspace: the file as its root lists it, together with that root, its
-// database, whether it is read only and whether the game loads it. Every answer that names a file carries one, so
-// the frontend never works any of this out itself.
+// A Place is where one file sits in the workspace: the file as its root lists it, with the root it is under and what
+// the workspace knows about it. Every answer that names a file carries one.
 type Place struct {
 	files.File
 	Root     string `json:"root"`
@@ -19,10 +19,9 @@ type Place struct {
 	Loaded   bool   `json:"loaded"`   // the game reads it
 }
 
-// Locate returns where a file sits in the workspace. The root is the mod's or the game's folder that holds it; a
-// file of the game is read only; whether the game loads it comes from the index.
-func (ws *Session) Locate(path string) Place {
-	mods := ws.Mods.Load()
+// Locate returns the place of the file with the given path, as the given index of the mods lists its files. A path
+// under none of the roots gives a place with only the path and its key set. A file of the game is read only.
+func (ws *Session) Locate(mods *index.Index, path string) Place {
 	place := Place{File: files.File{Path: path, Key: files.ToKey(path)}}
 	root, ok := mods.FindRoot(path)
 	if !ok {
@@ -42,7 +41,8 @@ func (ws *Session) Locate(path string) Place {
 	return place
 }
 
-// ListRoots returns the folders the explorer shows at the top: the mods in load order, then the game's.
+// ListRoots returns the folders the workspace's files are listed from: the mods' in load order, then the game's own
+// folder. The install's other folders are left out.
 func (ws *Session) ListRoots() []files.Root {
 	roots := slices.Clone(ws.Mods.Load().Roots[len(ws.Install.Roots):])
 	if position := slices.IndexFunc(ws.Install.Roots, func(root files.Root) bool {

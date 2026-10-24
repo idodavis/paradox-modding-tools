@@ -14,7 +14,6 @@ import (
 	"github.com/wailsapp/wails/v3/pkg/application"
 
 	"paradox-modding-tools/internal/files"
-	"paradox-modding-tools/services/app"
 	"paradox-modding-tools/services/workspace"
 )
 
@@ -24,15 +23,14 @@ const (
 	EventListingChanged = "release:changed" // a mod's listing files were written; the data is the mod's id
 )
 
+// init registers the types of the events' data with Wails.
 func init() {
 	application.RegisterEvent[Progress](EventProgress)
 	application.RegisterEvent[string](EventListingChanged)
 }
 
-// Service is the Workshop service behind the Publish page: a mod's listing, the files its next upload sends, the
-// compare with Steam, and publishing itself.
+// Service is the Wails service that publishes mods to the Steam Workshop.
 type Service struct {
-	Config    *app.ConfigFile // the cache folder and the mods' records
 	Workspace *workspace.Service
 }
 
@@ -49,24 +47,24 @@ func ServePublish(args []string) (exitCode int, served bool) {
 	return 0, false
 }
 
-// findMod returns the open workspace and one of its mods. The mod's record is read from the config and its
-// descriptor from its folder, so both are as the last write left them. It returns an error if no workspace is open,
-// the workspace does not have the mod, or the mod's descriptor cannot be read.
+// findMod returns the open workspace and one of its mods, with the record the config holds now. Nothing is read from
+// the mod's folder, so its descriptor is the one the workspace read when it opened. It returns an error if no
+// workspace is open or the workspace does not have the mod.
 func (stm *Service) findMod(modID string) (*workspace.Session, workspace.Mod, error) {
 	ws, err := stm.Workspace.Session()
 	if err != nil {
 		return nil, workspace.Mod{}, err
 	}
-	modRecord, ok := stm.Config.LookupMod(ws.ID, modID)
+	mod, ok := stm.Workspace.LookupMod(modID)
 	if !ok {
 		return nil, workspace.Mod{}, fmt.Errorf("the mod %s is not in the open workspace", modID)
 	}
-	descriptor, err := workspace.ReadDescriptor(ws.Game, modRecord.Dir)
-	return ws, workspace.Mod{Mod: modRecord, Descriptor: descriptor}, err
+	return ws, mod, nil
 }
 
-// CreateDescriptionFile creates a mod's description file in the given source format, markdown or bbcode, if the
-// mod has none yet.
+// CreateDescriptionFile creates a mod's description file in the given source format, markdown or bbcode. It does
+// nothing if the mod has a description file already. It returns an error if the source is neither format or the
+// workspace has no such mod.
 func (stm *Service) CreateDescriptionFile(modID, source string) error {
 	rel := ""
 	for _, row := range descriptionFiles {
@@ -98,7 +96,8 @@ func (stm *Service) CreateDescriptionFile(modID, source string) error {
 }
 
 // AddPreview adds a preview to a mod: a picture is copied into the mod's previews folder, a video is recorded by
-// its URL.
+// its URL. It returns an error if the preview has no known type, the folder has a picture of that name already or the
+// video is listed already.
 func (stm *Service) AddPreview(modID string, preview Preview) error {
 	if err := toPreviewTypeError(preview.Type); err != nil {
 		return err
@@ -145,7 +144,8 @@ func (stm *Service) addVideo(dir, url string) error {
 	return stm.writeVideos(dir, append(urls, url))
 }
 
-// RemovePreview deletes a preview from the mod's previews folder and its listing.
+// RemovePreview deletes a picture from a mod's previews folder, or removes a video from its list. It returns an error
+// if the preview has no known type or is not there.
 func (stm *Service) RemovePreview(modID string, preview Preview) error {
 	if err := toPreviewTypeError(preview.Type); err != nil {
 		return err
@@ -167,7 +167,7 @@ func (stm *Service) RemovePreview(modID string, preview Preview) error {
 }
 
 // deletePicture deletes a picture from the previews folder of a mod's folder. It returns an error if the picture
-// is not there.
+// is outside that folder or does not exist.
 func (stm *Service) deletePicture(dir, picture string) error {
 	if !files.IsUnder(files.Join(dir, previewsDir), picture) {
 		return fmt.Errorf("%s is not in the mod's previews folder", picture)
@@ -204,7 +204,8 @@ func (stm *Service) writeVideos(dir string, urls []string) error {
 	return stm.writeFile(files.Join(dir, videosFile), strings.Join(urls, "\n")+"\n")
 }
 
-// CompareUpload compares what a mod's next upload would send with the last upload and with what Steam has.
+// CompareUpload compares what a mod's next upload would send with the last upload and with what Steam has. Steam's
+// details are nil if the mod has no item yet or the second copy cannot read them.
 func (stm *Service) CompareUpload(modID string) (Comparison, error) {
 	ws, _, err := stm.findMod(modID)
 	if err != nil {
@@ -218,7 +219,7 @@ func (stm *Service) CompareUpload(modID string) (Comparison, error) {
 	if err != nil {
 		return Comparison{}, err
 	}
-	snapshot, _ := LoadSnapshot(stm.Config.Dirs.Cache, listing.WorkshopID)
+	snapshot, _ := LoadSnapshot(stm.Workspace.Config.Dirs.Cache, listing.WorkshopID)
 	var details *Details
 	if params, err := stm.buildParams(ws); err == nil && listing.WorkshopID != "" {
 		params.WorkshopID = listing.WorkshopID
@@ -227,10 +228,10 @@ func (stm *Service) CompareUpload(modID string) (Comparison, error) {
 	return Compare(listing, upload, snapshot, details), nil
 }
 
-// Publish uploads a mod to the Workshop in a second copy of the app, with the visibility chosen for this upload:
-// private, friends, public or unlisted, or "" to keep the item's own. The steam:progress event reports each stage,
-// and it returns when the upload ends. For a mod with no item yet, the new item's id is written to the mod's
-// record.
+// Publish uploads a mod to the Workshop in a second copy of the app. The visibility is private, friends, public or
+// unlisted, or "" to keep the item's own. The steam:progress event reports each stage. For a mod with no item yet, the
+// new item's id is saved in the mod's record, even if the upload then fails. It returns an error if the visibility is
+// none of those or the upload fails.
 func (stm *Service) Publish(modID, visibility string) error {
 	if err := toVisibilityError(visibility); err != nil {
 		return err
@@ -255,7 +256,7 @@ func (stm *Service) Publish(modID, visibility string) error {
 	if err != nil {
 		return err
 	}
-	if params.UploadDir, err = createUploadDir(stm.Config.Dirs.Cache, upload); err != nil {
+	if params.UploadDir, err = createUploadDir(stm.Workspace.Config.Dirs.Cache, upload); err != nil {
 		return err
 	}
 	defer func() { _ = os.RemoveAll(params.UploadDir) }()
@@ -283,8 +284,8 @@ func (stm *Service) buildParams(ws *workspace.Session) (Params, error) {
 	}, nil
 }
 
-// createUploadDir copies the files of an upload set into a new folder under the given one, so that Steam is sent
-// those files and no others. It returns the new folder's path, and removes the folder if the copy fails.
+// createUploadDir copies the files of an upload into a new folder under the given one, so that Steam is sent those
+// files and no others. It returns the new folder's path, and removes the folder if the copy fails.
 func createUploadDir(cacheDir string, upload Upload) (string, error) {
 	dir, err := os.MkdirTemp(cacheDir, "upload-")
 	if err != nil {

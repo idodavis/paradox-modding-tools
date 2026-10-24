@@ -42,11 +42,11 @@ var Rules = []Rule{
 	{Pattern: ".*", Reason: "Files that start with a dot belong to the author's tools, not to the game."},
 	{Pattern: gitignoreFile, Reason: "What the mod's own .gitignore names stays out too."},
 	{Pattern: previewsDir + "/", Reason: "Steam takes the previews as the page's gallery."},
-	{Pattern: "", Reason: "What the mod's own exclusions name stays out too."}, // the patterns are the mod's record's
+	{Pattern: "", Reason: "What the mod's own exclusions name stays out too."}, // stands for the patterns in the mod's record
 }
 
 // ListDLC returns the DLCs the open workspace's install ships that Steam knows by an id, read from the descriptor in
-// each DLC folder.
+// each DLC folder. It returns an error if no workspace is open or a descriptor cannot be read.
 func (stm *Service) ListDLC() ([]DLC, error) {
 	ws, err := stm.Workspace.Session()
 	if err != nil {
@@ -68,9 +68,9 @@ func (stm *Service) ListDLC() ([]DLC, error) {
 	return dlcs, nil
 }
 
-// loadDLC reads the DLC that a folder holds from its descriptor. The id is the descriptor's Steam id; it is "" when
-// the folder has no descriptor or the id is missing or 0. The name is the script's, or for a JSON descriptor the
-// text of its localization key in the session's language, found in the given index of the mods, else its own name.
+// loadDLC loads the DLC that a folder holds from its descriptor. The id is the descriptor's Steam id, or "" if the
+// folder has no descriptor or the id is missing or 0. The name is the descriptor's, else the folder's. A JSON
+// descriptor's name is looked up in the given index of the mods.
 func loadDLC(ws *workspace.Session, mods *index.Index, dir string) (DLC, error) {
 	entries, err := os.ReadDir(dir)
 	if err != nil {
@@ -104,13 +104,9 @@ func loadDLC(ws *workspace.Session, mods *index.Index, dir string) (DLC, error) 
 // script has none.
 func decodeDLCScript(text string) (steamID, name string) {
 	tree := jomini.Parse(text)
-	value := func(key string) string {
-		if statement, ok := tree.FindChild(0, key); ok {
-			return tree.Unquoted(tree.Statements[statement].Value)
-		}
-		return ""
-	}
-	return value("steam_id"), value("name")
+	steamID, _ = tree.FindChildValue(0, "steam_id")
+	name, _ = tree.FindChildValue(0, "name")
+	return steamID, name
 }
 
 // decodeDLCJSON returns the Steam id and the name in the text of a DLC's JSON descriptor. The name is the text of
@@ -131,7 +127,8 @@ func decodeDLCJSON(ws *workspace.Session, mods *index.Index, text string) (steam
 	return descriptor.SteamID.String(), name, nil
 }
 
-// ListTags returns the Workshop tags the game's items may carry.
+// ListTags returns the Workshop tags that the descriptors of the open workspace's mods carry, each once and sorted. It
+// returns an empty list if no workspace is open.
 func (stm *Service) ListTags() []string {
 	ws, err := stm.Workspace.Session()
 	if err != nil {

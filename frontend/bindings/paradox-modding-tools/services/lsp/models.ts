@@ -18,13 +18,13 @@ import * as texture$0 from "../../internal/texture/models.js";
 import * as workspace$0 from "../workspace/models.js";
 
 /**
- * A Card is a hover card. It holds facts for the frontend to lay out, never a sentence that combines them.
+ * A Card is a hover card: the facts about a key or a value, for the page to lay out.
  */
 export interface Card {
     "title": string;
 
     /**
-     * what it is: the database's singular, "effect", "trigger", "link", "keyword"
+     * what it is: the database's singular, "effect", "keyword"
      */
     "what": string;
 
@@ -55,6 +55,11 @@ export interface Card {
      * a CSS color
      */
     "color"?: string;
+
+    /**
+     * the number a constant stands for
+     */
+    "number"?: number | null;
     "image"?: texture$0.Header | null;
     "sites"?: CardSite[] | null;
 
@@ -79,7 +84,7 @@ export interface CardDate {
 }
 
 /**
- * A CardScope is the scope section of a hover card: this, root, the previous scopes and the saved ones.
+ * A CardScope is the scope section of a hover card.
  */
 export interface CardScope {
     "this": string;
@@ -107,8 +112,7 @@ export interface CardSite {
 }
 
 /**
- * A Code is one kind of problem: its id, its severity, the Health section it is listed under, and its message,
- * which is a template filled from a diagnostic's facts.
+ * A Code is one kind of problem. Its message is a template that the facts of a diagnostic fill.
  */
 export interface Code {
     /**
@@ -122,8 +126,7 @@ export interface Code {
     "severity": number;
 
     /**
-     * Section is the Health section: contests, overrides, dependencies, dangling, localization, script, unused or
-     * errorlog.
+     * Section is the Health section: contests, overrides, dependencies, dangling, localization, script or errorlog.
      */
     "section": string;
 
@@ -139,7 +142,7 @@ export interface Code {
 }
 
 /**
- * A ColorSite is one color written in a file and the color it makes.
+ * A ColorSite is one color written in a file: where it is and the color it stands for.
  */
 export interface ColorSite {
     "range": Range;
@@ -147,8 +150,7 @@ export interface ColorSite {
 }
 
 /**
- * A Completion is one candidate the completion list shows: the text to insert, how it ranks, and what the item
- * shows.
+ * A Completion is one candidate in the completion list.
  */
 export interface Completion {
     "label": string;
@@ -174,7 +176,7 @@ export interface Completion {
     "blurb"?: string;
 
     /**
-     * how often vanilla writes it in this holder, for the order
+     * how often the game writes it there, for the order
      */
     "rank": number;
 
@@ -185,7 +187,7 @@ export interface Completion {
 }
 
 /**
- * A Diagnostic is one problem found in a file: its code, where it is, and the facts its message is written from.
+ * A Diagnostic is one problem found in a file. Its code names the kind, and its facts fill the code's message.
  */
 export interface Diagnostic {
     "code": string;
@@ -202,7 +204,7 @@ export interface Edit {
 }
 
 /**
- * A Fix is one quick fix offered at a problem: its title and the edits that apply it, by file path.
+ * A Fix is one quick fix for a problem. It carries the edits that apply it, grouped by file.
  */
 export interface Fix {
     "title": string;
@@ -233,7 +235,7 @@ export interface Hint {
 }
 
 /**
- * A Legend is Monaco's semantic tokens legend: the token types, one per color category, in index order.
+ * A Legend is the list of token types and modifiers that the semantic tokens are encoded against.
  */
 export interface Legend {
     "tokenTypes": string[] | null;
@@ -250,7 +252,7 @@ export interface Location {
 
 /**
  * A Range is a span as Monaco counts it: lines and columns from one, the column in UTF-16 code units, the end
- * exclusive. It is the only place UTF-16 exists; every other package uses byte offsets.
+ * exclusive.
  */
 export interface Range {
     "startLineNumber": number;

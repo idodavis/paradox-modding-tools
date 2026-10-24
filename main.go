@@ -1,6 +1,6 @@
-// Package main is the entry point of Paradox Modding Tools. It opens the config and the log, makes each service,
-// wires them with the updater and the main window into the Wails application, and runs it. Started with
-// --steam-publish, it is the second copy of the app that publishes to the Workshop.
+// Package main is the entry point of Paradox Modding Tools. It opens the config and the log, makes the services and
+// runs the Wails application with the updater and the main window. Started with --steam-publish, it runs as the
+// second copy of the app that publishes to the Workshop.
 package main
 
 import (
@@ -27,6 +27,8 @@ import (
 )
 
 // assets is the built frontend, embedded so the app ships as one file.
+//
+//go:embed all:frontend/dist
 var assets embed.FS
 
 // version is the app's version, set by the build. It is "dev" in a dev run.
@@ -46,7 +48,7 @@ func main() {
 	if err != nil {
 		log.Fatalf("log: %v", err)
 	}
-	// the workspace service holds the one open workspace; every other service reads it through its Session
+	// the other services ask the workspace service for the open workspace
 	wsp := &workspace.Service{Config: config, Build: version}
 	editor := &lsp.Service{Workspace: wsp}
 
@@ -63,16 +65,16 @@ func main() {
 			application.NewService(&health.Service{Workspace: wsp}),
 			application.NewService(&graph.Service{Workspace: wsp}),
 			application.NewService(&search.Service{Workspace: wsp}),
-			application.NewService(&wiki.Service{Config: config, Workspace: wsp}),
+			application.NewService(&wiki.Service{Workspace: wsp}),
 			application.NewService(&git.Service{}),
-			application.NewService(&steam.Service{Config: config, Workspace: wsp}),
+			application.NewService(&steam.Service{Workspace: wsp}),
 		},
 		Assets: application.AssetOptions{
 			Handler: application.BundledAssetFileServer(assets),
-			// a line per file the page loads would push everything else out of pmt.log's tail
+			// a log line per loaded file would fill pmt.log
 			DisableLogging: true,
 		},
-		// one instance per user: each reads config.json once and rewrites it whole on every change
+		// two copies would overwrite each other's config.json
 		SingleInstance: &application.SingleInstanceOptions{
 			UniqueID: "com.idodavis.paradox-modding-tools",
 			OnSecondInstanceLaunch: func(application.SecondInstanceData) {

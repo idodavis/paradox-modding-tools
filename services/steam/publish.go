@@ -16,10 +16,10 @@ import (
 	"paradox-modding-tools/services/app"
 )
 
-// Params is everything the publishing process needs: the game, the mod's upload folder, the item and the listing.
+// Params is everything a second copy of the app needs to upload a mod or to read an item's details.
 type Params struct {
 	Game        string  `json:"game"`
-	LibraryPath string  `json:"libraryPath"`
+	LibraryPath string  `json:"libraryPath"` // the game's copy of Steam's library
 	AppID       int     `json:"appId"`
 	UploadDir   string  `json:"uploadDir"`
 	WorkshopID  string  `json:"workshopId"` // "" creates the item
@@ -32,9 +32,9 @@ const (
 	detailsFlag = "--steam-details"
 )
 
-// StartPublish starts a second copy of the app as the publishing process, hands it the parameters on standard
-// input, and reports its progress lines until it exits. It returns the item's id, which the process creates when
-// the parameters name none.
+// StartPublish starts a second copy of the app to upload a mod, hands it the given parameters and passes each step of
+// its progress to the given function. It returns the item's id, which the copy creates if the parameters name none.
+// The id is returned even if the upload fails after the item is created.
 func StartPublish(executable string, params Params, progress func(Progress)) (workshopID string, err error) {
 	err = startProcess(executable, publishFlag, params, func(line string) {
 		var step Progress
@@ -102,9 +102,9 @@ func startProcess(executable, argument string, input any, onLine func(line strin
 	return scanErr
 }
 
-// RunPublish is the main function of the publishing process. It reads the parameters, opens Steam's library,
-// creates the item if none is named, submits the upload, and writes progress as JSON lines. It returns the exit
-// code.
+// RunPublish is the work of the second copy that uploads a mod. It creates the item if the parameters name none,
+// uploads the mod and saves a snapshot of the upload. It prints the progress as JSON lines and the item's id as the
+// last line, and returns the exit code.
 func RunPublish() int {
 	client, params, err := openClient()
 	if err != nil {
@@ -131,7 +131,7 @@ func RunPublish() int {
 	if err != nil {
 		return toExitCode(err)
 	}
-	uploaded, err := files.Walk(files.Root{Dir: params.UploadDir}, nil)
+	uploaded, err := files.Walk(files.Root{Dir: params.UploadDir})
 	if err != nil {
 		return toExitCode(err)
 	}
@@ -139,9 +139,8 @@ func RunPublish() int {
 	return toExitCode(SaveSnapshot(dirs.Cache, snapshot))
 }
 
-// runDetails is the main function of the process that reads an item's details. It reads the parameters, opens
-// Steam's library and prints the details of the item the parameters name as one JSON line. It returns the exit
-// code.
+// runDetails is the work of the second copy that reads an item's details. It reads the parameters from standard
+// input and prints the details of the item they name as one JSON line. It returns the exit code.
 func runDetails() int {
 	client, params, err := openClient()
 	if err != nil {
@@ -155,7 +154,8 @@ func runDetails() int {
 	return toExitCode(json.NewEncoder(os.Stdout).Encode(details))
 }
 
-// openClient reads the parameters from standard input and opens Steam's library as they say.
+// openClient reads the parameters from standard input and opens Steam's library as they say. It returns an error if
+// the parameters do not arrive or the library does not open.
 func openClient() (*Client, Params, error) {
 	var params Params
 	if err := json.NewDecoder(os.Stdin).Decode(&params); err != nil {
@@ -165,7 +165,7 @@ func openClient() (*Client, Params, error) {
 	return client, params, err
 }
 
-// toExitCode returns the exit code for an error: 0 for none, and 1 for any, after printing it on standard error.
+// toExitCode returns the exit code for an error: 0 for none, and 1 for any, which it prints on standard error first.
 func toExitCode(err error) int {
 	if err == nil {
 		return 0

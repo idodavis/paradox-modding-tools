@@ -28,9 +28,9 @@ func (winner Winner) IsKept(site Site) bool {
 }
 
 // FindWinner decides which of several definitions of one name the game keeps, by the database's precedence: the
-// first or the last loaded, the highest override priority, the entry modes in the game's order, or all of them
-// merged. It returns false if the game keeps none of them: each is dropped by a replace_path, or only entry modes
-// with nothing to act on are written.
+// first or the last loaded, the highest override priority, the entry modes in load order, or all of them merged. It
+// returns false if the game keeps none of them: each is dropped by a replace_path, or only entry modes with nothing
+// to act on are written.
 func (index *Index) FindWinner(sites []Site, precedence game.Precedence) (Winner, bool) {
 	ordered := index.listLoadOrder(sites, precedence.ByPlayset)
 	ideal, hasIdeal := index.resolveWinner(ordered, precedence)
@@ -95,10 +95,10 @@ func (index *Index) ListKept(schema *schema.Schema, database string) []Winner {
 // matter.
 func (index *Index) ListImages(folder string) []files.File {
 	row := game.LookupGame(index.Game)
+	folder = strings.ToLower(folder)
 	var images []files.File
 	for position, file := range index.Files {
-		_, rest := schema.SplitStage(row, file.Rel)
-		if file.Format == files.FormatImage && strings.HasPrefix(strings.ToLower(rest), strings.ToLower(folder)) &&
+		if file.Format == files.FormatImage && strings.HasPrefix(toRelKey(row, file.Rel), folder) &&
 			index.IsLoaded(int32(position)) {
 			images = append(images, file)
 		}
@@ -111,35 +111,31 @@ func (index *Index) ListImages(folder string) []files.File {
 // hides. It returns false if no file at that path is read; the files dropped are then the hidden ones.
 func (index *Index) FindLoaded(rel string) (loaded files.File, hidden []files.File, ok bool) {
 	row := game.LookupGame(index.Game)
-	if row == nil {
-		row = &game.Game{}
-	}
-	// The path is looked for under each source's root, as it is and under each stage folder, so that a path shared by
-	// two stages is one path.
-	_, rel = schema.SplitStage(row, rel)
-	variants := []string{strings.ToLower(rel)}
-	for _, stage := range row.StageRoots {
-		variants = append(variants, strings.ToLower(stage+"/"+rel))
-	}
-	replacer, _ := index.findReplacer(row, rel)
+	key := toRelKey(row, rel)
+	replacer, _ := index.findReplacer(row, key)
 	var kept []files.File
-	// a file's key is its root's key followed by its path from the root in lower case
-	for source, rootKey := range index.rootKeys {
-		for _, variant := range variants {
-			position, ok := index.byKey[rootKey+variant]
-			switch {
-			case !ok:
-			case source < replacer:
-				hidden = append(hidden, index.Files[position])
-			default:
-				kept = append(kept, index.Files[position])
-			}
+	for _, position := range index.byRel[key] {
+		file := index.Files[position]
+		source, _ := findRoot(index.rootKeys, file.Key)
+		switch {
+		case !index.IsListed(position):
+		case source < replacer:
+			hidden = append(hidden, file)
+		default:
+			kept = append(kept, file)
 		}
 	}
 	if len(kept) == 0 {
 		return files.File{}, hidden, false
 	}
 	return kept[len(kept)-1], append(hidden, kept[:len(kept)-1]...), true
+}
+
+// toRelKey returns the key of the group a relative path belongs to: the path in lower case, less its stage folder,
+// so that a path shared by two stages is one path.
+func toRelKey(row *game.Game, rel string) string {
+	_, rest := schema.SplitStage(row, strings.ToLower(rel))
+	return rest
 }
 
 // ResolveTexture returns the file the game reads for a texture's path as script writes it, trying each image
@@ -153,7 +149,7 @@ func (index *Index) ResolveTexture(rel string) (string, bool) {
 
 // IsLoaded reports whether the game reads a file at all.
 func (index *Index) IsLoaded(file int32) bool {
-	current := index.File(Site{File: file})
+	current := index.Files[file]
 	loaded, _, ok := index.FindLoaded(current.Rel)
 	return ok && loaded.Key == current.Key
 }
@@ -231,26 +227,23 @@ func (index *Index) resolveWinner(ordered []Site, precedence game.Precedence) (W
 	return winner, true
 }
 
-// resolveModes decides among the definitions of a database that takes entry modes. It returns false if there is no
+// resolveModes decides among the definitions of a database that takes entry modes, in load order. A plain definition
+// replaces what came before it. An entry mode acts on what came before it: one that replaces takes its place, one that
+// adds joins it, and one with nothing to act on does nothing unless it creates. It returns false if there is no
 // definition for the modes to act on and none of them creates one.
 func (index *Index) resolveModes(ordered []Site, precedence game.Precedence) (Winner, bool) {
-	// The first plain definition is the one the modes act on, each in the game's order of modes and then of files.
-	// A mode that replaces takes its place, one that adds joins it, and one with nothing to act on does nothing
-	// unless it creates.
-	withModes, plain := lo.FilterReject(ordered, func(site Site, _ int) bool { return index.Occurrence(site).Mode != 0 })
-	positions := map[Site]int{}
-	withModes = slices.DeleteFunc(withModes, func(site Site) bool {
+	var winner Winner
+	defined := false
+	for _, site := range ordered {
+		if index.Occurrence(site).Mode == 0 {
+			winner, defined = Winner{Site: site, Merged: []Site{site}, Reason: "order"}, true
+			continue
+		}
 		position, known := index.findMode(site)
-		positions[site] = position
-		return !known
-	})
-	slices.SortStableFunc(withModes, func(a, b Site) int { return cmp.Compare(positions[a], positions[b]) })
-	winner, defined := Winner{Reason: "order"}, len(plain) > 0
-	if defined {
-		winner.Site, winner.Merged = plain[0], []Site{plain[0]}
-	}
-	for _, site := range withModes {
-		mode := game.EntryModes[positions[site]]
+		if !known {
+			continue
+		}
+		mode := game.EntryModes[position]
 		// Where injecting acts as replacing, the mode that only injects replaces.
 		replaces := mode.Replaces || precedence.ReplaceOnly && !mode.Optional && !mode.Creates
 		switch {

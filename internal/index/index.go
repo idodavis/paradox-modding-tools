@@ -1,7 +1,6 @@
 // Package index records what a scan found in the files of an install or a workspace's mods: every definition,
-// reference and localization message, with the postings that answer lookups by name. It also decides which file
-// and which definition the game keeps when several compete, lists what fires what, and caches an install's index
-// on disk. It interprets no text itself; the walk and the loc parser did that.
+// reference and localization message, with lookups by name. It decides which file and which definition the game
+// keeps when several compete, lists what fires what, and loads an install's index from its cache.
 package index
 
 import (
@@ -12,7 +11,7 @@ import (
 	"paradox-modding-tools/internal/jomini"
 )
 
-// A Role says what an occurrence does with its name: defines it, refers to it or localizes it.
+// A Role is what an occurrence does with its name: defines it, refers to it or localizes it.
 type Role uint8
 
 // The roles an occurrence can have.
@@ -29,13 +28,12 @@ type Occurrence struct {
 	Line      int32
 	Database  uint16 // into Index.Databases
 	Name      uint32 // into Index.Names
-	Caller    uint8  // into Index.Callers
 	Mode      uint8  // into Index.Modes; an entry mode's prefix
-	Priority  int16  // CK3's override priority; 0 none
+	Priority  int16  // CK3's override priority; 0 means none
 	Language  uint8  // into Index.Languages; a message's
-	Scope     uint8  // into Index.Scopes; a reference's scope, a definition's root; 0 unknown
 	Role      Role
 	Local     bool
+	Alias     bool  // whether it is a second name of the definition it sits in, not a definition of its own
 	Nested    bool  // whether it sits inside a definition, the one Parent names
 	Parent    int32 // the defining occurrence this one sits inside
 	Statement int32 // the statement that writes it; 0, the file, for a definition named by its file, a message or a row
@@ -72,14 +70,14 @@ func (table *Table) clone() Table {
 	return Table{Texts: slices.Clone(table.Texts), ordinals: maps.Clone(table.ordinals)}
 }
 
-// A Site points at one occurrence: the position of its file in Files and its position among that file's
-// occurrences. A mods' index lists the install's files first, so a site means the same file in both indexes.
+// A Site is a handle to one occurrence. A mods' index lists the install's files first, so a site means the same file
+// in both indexes.
 type Site struct {
 	File       int32 `json:"file"`
 	Occurrence int32 `json:"occurrence"`
 }
 
-// A Posting is one group of the postings: the occurrences of one role in one database, by name.
+// A Posting names one group of occurrences: those of one role in one database.
 type Posting struct {
 	Role     Role
 	Database uint16
@@ -98,14 +96,17 @@ type Index struct {
 	Caseless    []string       // the databases whose names match without regard to case, stored in lower case
 	Databases   Table
 	Names       Table
-	Callers     Table
 	Modes       Table
 	Languages   Table
-	Scopes      Table
-	install     *Index                        // the install's index a mods' index stands on, whose postings it reads; nil for the install's own
-	postings    map[Posting]map[uint32][]Site // by a posting, then by a name's ordinal
-	byKey       map[string]int32              // by a file's key: its position in Files
-	rootKeys    []string                      // by root, as Roots lists them: its folder's key, ending in a slash
+	// install is the install's index that a mods' index stands on, whose postings it reads. It is nil for the
+	// install's own.
+	install  *Index
+	postings map[Posting]map[uint32][]Site // by a posting, then by a name's ordinal
+	byKey    map[string]int32              // by a file's key: its position in Files
+	// byRel holds the positions of the files that share a path from a root, in load order. The path is in lower case
+	// and has no stage folder.
+	byRel    map[string][]int32
+	rootKeys []string // by root, as Roots lists them: its folder's key, ending in a slash
 }
 
 // Occurrence returns the occurrence a site points at.
@@ -121,7 +122,7 @@ func (index *Index) Language(site Site) string {
 	return index.Languages.Texts[index.Occurrence(site).Language]
 }
 
-// Text returns the message text stored at a site.
+// Text returns the message text stored at a site. It returns "" if the index keeps no text there.
 func (index *Index) Text(site Site) string {
 	texts := index.Texts[site.File]
 	if int(site.Occurrence) >= len(texts) {

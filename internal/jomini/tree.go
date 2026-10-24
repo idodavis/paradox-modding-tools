@@ -1,16 +1,14 @@
 // Package jomini parses Paradox script, GUI and asset files into a flat tree and tells what shape a written key
-// or value has. It knows nothing about any game: what a key means is the schema's job, and where a file lives is
-// the files package's.
+// or value has. It knows nothing about any game.
 package jomini
 
 import (
 	"iter"
-	"slices"
 	"sort"
 	"strings"
 )
 
-// A Span is a half-open range of byte offsets into a text: Start is the first byte and End is one past the last.
+// A Span is a half-open range of bytes in a text. It includes its first byte and not the byte at its end.
 type Span struct {
 	Start int `json:"start"`
 	End   int `json:"end"`
@@ -22,24 +20,23 @@ func (span Span) IsEmpty() bool { return span.Start == span.End }
 // Contains reports whether the given byte offset lies inside the span.
 func (span Span) Contains(offset int) bool { return span.Start <= offset && offset < span.End }
 
-// A Position is a line and a column, both counted from zero, the column in UTF-8 bytes. Only lsp.Range counts in
-// UTF-16.
+// A Position is a place in a text, as a line and a column. Both count from zero, and the column counts UTF-8 bytes.
 type Position struct {
 	Line   int `json:"line"`
 	Column int `json:"column"`
 }
 
-// An Error is one parse error. Code is one of unclosed-block, unexpected-brace and unclosed-string, or
-// malformed-line in a localization file.
+// An Error is one error a parse found in a text, with the span it covers.
 type Error struct {
+	// Code is unclosed-block, unexpected-brace, unclosed-string or missing-value from a script parse. The loc parser's
+	// codes are malformed-line, loc-content-before-header and loc-unterminated-value.
 	Code    string `json:"code"`
 	Message string `json:"message"`
 	Span    Span   `json:"span"`
 }
 
-// Lines is the line index of a text. It records where each line starts, so a byte offset converts to a line and
-// column and back. A line ends at \n, \r\n or a lone \r. The tree and the loc file each carry one; nothing else
-// builds one.
+// Lines is the line index of a text. It records where each line starts, so a byte offset converts to a line and a
+// column. A line ends at \n, \r\n or a lone \r.
 type Lines struct {
 	starts []int
 	ends   []int
@@ -73,13 +70,7 @@ func (lines Lines) ToPosition(offset int) Position {
 	return Position{Line: line, Column: offset - lines.starts[line]}
 }
 
-// ToOffset converts a line and column to a byte offset, clamped to the line.
-func (lines Lines) ToOffset(position Position) int {
-	line := min(max(position.Line, 0), len(lines.starts)-1)
-	return min(lines.starts[line]+max(position.Column, 0), lines.ends[line])
-}
-
-// LineSpan returns the span of the given line without its line ending.
+// LineSpan returns the span of the given line, counted from zero, without its line ending.
 func (lines Lines) LineSpan(line int) Span {
 	return Span{Start: lines.starts[line], End: lines.ends[line]}
 }
@@ -100,11 +91,23 @@ type Statement struct {
 // IsBlock reports whether the statement's value is a block.
 func (statement Statement) IsBlock() bool { return !statement.Block.IsEmpty() }
 
-// IsListed reports whether the statement is a bare value with no key.
-func (statement Statement) IsListed() bool { return statement.Key.IsEmpty() }
+// IsListed reports whether a statement is a bare value with no key, such as one name in a list. A bare block is
+// not one.
+func (statement Statement) IsListed() bool { return statement.Key.IsEmpty() && !statement.IsBlock() }
 
-// A Tree is the parse of one text. Statements are in document order, and a block's children sit right after it
-// in the slice. The tree also keeps the comments, the parse errors and the line index.
+// ResolveValueSpan returns the span of what a statement writes after its operator: its tag, value and block. It is
+// empty for a statement that writes none of them.
+func (statement Statement) ResolveValueSpan() Span {
+	for _, part := range []Span{statement.Tag, statement.Value, statement.Block} {
+		if !part.IsEmpty() {
+			return Span{Start: part.Start, End: max(statement.Value.End, statement.Block.End)}
+		}
+	}
+	return Span{}
+}
+
+// A Tree is the parse of one text. Its statements are in document order, and a block's children sit right after it.
+// It also keeps the text's comments, parse errors and line index.
 type Tree struct {
 	Src        string
 	Statements []Statement
@@ -117,8 +120,19 @@ type Tree struct {
 func (tree *Tree) Text(span Span) string { return tree.Src[span.Start:span.End] }
 
 // Unquoted returns the source text the given span covers, with its surrounding quotes removed if it has any.
-func (tree *Tree) Unquoted(span Span) string {
-	return strings.TrimSuffix(strings.TrimPrefix(tree.Text(span), `"`), `"`)
+func (tree *Tree) Unquoted(span Span) string { return tree.Text(tree.UnquotedSpan(span)) }
+
+// UnquotedSpan returns the given span without its surrounding quotes, if it has any. A span of one quote gives an
+// empty span.
+func (tree *Tree) UnquotedSpan(span Span) Span {
+	text := tree.Text(span)
+	if strings.HasPrefix(text, `"`) {
+		span.Start++
+	}
+	if strings.HasSuffix(text, `"`) && span.End > span.Start {
+		span.End--
+	}
+	return span
 }
 
 // Children yields the direct children of a statement in document order. For the file, which is the first statement,
@@ -135,32 +149,10 @@ func (tree *Tree) Children(statement int32) iter.Seq[int32] {
 	}
 }
 
-// FindComments returns the comment lines directly above a statement, nearest last. A blank line or another
-// statement in between ends the run, so there may be none.
-func (tree *Tree) FindComments(statement int32) []Span {
-	start := tree.Statements[statement].Span.Start
-	line := tree.Lines.ToPosition(start).Line
-	first := sort.Search(len(tree.Comments), func(i int) bool { return tree.Comments[i].Start >= start })
-	var comments []Span
-	for i := first - 1; i >= 0; i-- {
-		span := tree.Comments[i]
-		commentLine := tree.Lines.ToPosition(span.Start).Line
-		// the comment must sit on the line just above the last one taken, with nothing but spaces before it
-		lead := tree.Src[tree.Lines.ToOffset(Position{Line: commentLine}):span.Start]
-		if commentLine != line-1 || strings.TrimSpace(lead) != "" {
-			break
-		}
-		comments = append(comments, span)
-		line = commentLine
-	}
-	slices.Reverse(comments)
-	return comments
-}
-
 // FindStatement returns the innermost statement that covers the given byte offset. It returns 0, the file, if no
 // other statement does.
 func (tree *Tree) FindStatement(offset int) int32 {
-	// the statements are in pre-order, so the last one starting at or before the offset is the deepest candidate
+	// The statements are in pre-order, so the last one starting at or before the offset is the deepest candidate.
 	statement := int32(sort.Search(len(tree.Statements)-1, func(i int) bool {
 		return tree.Statements[i+1].Span.Start > offset
 	}))
@@ -188,6 +180,19 @@ func (tree *Tree) FindChild(statement int32, key string) (int32, bool) {
 	return match, ok
 }
 
+// FindChildValue returns the unquoted value of a statement's child with the given key. Where several children have the
+// key, the last one counts. It returns false if there is none or the key is empty.
+func (tree *Tree) FindChildValue(statement int32, key string) (string, bool) {
+	if key == "" {
+		return "", false
+	}
+	child, ok := tree.FindChild(statement, key)
+	if !ok {
+		return "", false
+	}
+	return tree.Unquoted(tree.Statements[child].Value), true
+}
+
 // IsEqual reports whether a statement writes the same as a statement of another tree: the same keys, operators,
 // tags and values, nested the same way. Comments, spacing and quotes do not count.
 func (tree *Tree) IsEqual(statement int32, other *Tree, otherStatement int32) bool {
@@ -197,7 +202,7 @@ func (tree *Tree) IsEqual(statement int32, other *Tree, otherStatement int32) bo
 	}
 	for offset := range count {
 		current, compared := tree.Statements[statement+offset], other.Statements[otherStatement+offset]
-		// the first statement's parent lies outside what is compared
+		// The first statement's parent lies outside what is compared.
 		if offset > 0 && current.Parent-statement != compared.Parent-otherStatement {
 			return false
 		}

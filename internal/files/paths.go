@@ -39,7 +39,8 @@ func IsUnder(root, path string) bool {
 	return ok
 }
 
-// ToSlug turns a user's text into a file or folder name: lower case, ASCII only, words joined by `_`.
+// ToSlug turns a user's text into a file or folder name: lower case, ASCII only, words joined by `_`. It returns ""
+// if the text has no letter or digit.
 func ToSlug(text string) string {
 	// A letter outside ASCII is folded to its plain form first: decomposed, then its marks removed.
 	text, _, _ = transform.String(transform.Chain(norm.NFD, runes.Remove(runes.In(unicode.Mn))), text)

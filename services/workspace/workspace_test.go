@@ -17,6 +17,7 @@ import (
 	"time"
 
 	"github.com/adrg/xdg"
+	"github.com/wailsapp/wails/v3/pkg/application"
 
 	"paradox-modding-tools/internal/files"
 	"paradox-modding-tools/internal/game"
@@ -33,6 +34,9 @@ const (
 
 // fixtureModID is the id the tests give the fixture mod.
 const fixtureModID = "mod-a"
+
+// createApp makes the Wails app that a config's update emits its event through, once for all the tests.
+var createApp = sync.OnceFunc(func() { application.New(application.Options{}) })
 
 // warmStages are the stages an open reports when both caches are there: only the mods are scanned.
 var warmStages = []string{"mods"}
@@ -61,6 +65,7 @@ func copyMod(t *testing.T, gameID string) string {
 // with the given mods. The workspace's language is English.
 func openConfig(t *testing.T, gameID, installPath string, mods ...app.Mod) *app.ConfigFile {
 	t.Helper()
+	createApp()
 	// the folders PMT uses come from the XDG variables, read again now and once more when the test ends
 	t.Cleanup(xdg.Reload)
 	for _, variable := range []string{"XDG_CONFIG_HOME", "XDG_CACHE_HOME", "XDG_STATE_HOME"} {
@@ -71,9 +76,10 @@ func openConfig(t *testing.T, gameID, installPath string, mods ...app.Mod) *app.
 	if err != nil {
 		t.Fatal(err)
 	}
-	err = config.Update(func(records *app.Config) {
+	err = config.Update("", func(records *app.Config) error {
 		records.Installs = []app.Install{{ID: "i1", Game: gameID, Path: installPath}}
 		records.Workspaces = []app.Workspace{{ID: "w1", Name: "Test", Install: "i1", Mods: mods, Language: "english"}}
+		return nil
 	})
 	if err != nil {
 		t.Fatal(err)
@@ -94,11 +100,12 @@ func listOpenStages(t *testing.T, config *app.ConfigFile) (*Session, []string, [
 		}
 	}
 	opening := time.Now()
-	ws, err := Open(config, "test", "w1", func(next string) {
+	wsp := &Service{Config: config, Build: "test"}
+	ws, err := wsp.openSession("w1", func(next string) {
 		finish()
 		stage, started = next, time.Now()
 		stages = append(stages, next)
-	}, func(string, bool) {})
+	}, func([]FileChange) {})
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -132,11 +139,12 @@ func TestOpenLoadsCachesOnSecondOpen(t *testing.T) {
 		t.Fatal(err)
 	}
 	ws, stages, _ := listOpenStages(t, config)
-	if want := []string{"schema", "listing", "indexing", "postings", "mods"}; !slices.Equal(stages, want) {
+	if want := []string{"listing", "schema", "indexing", "postings", "mods"}; !slices.Equal(stages, want) {
 		t.Errorf("first open stages: %v, want %v", stages, want)
 	}
 	// the folder is built from the session's own version and dumps, as the install record update builds it
-	folder := index.CachePath(config.Dirs.Cache, ck3, ws.Schema.Version, ws.Schema.Sources[game.SourceDumps].WrittenAt, "test")
+	dumpsAt := ws.Schema.Dumps.WrittenAt.Unix()
+	folder := filepath.Join(config.Dirs.Cache, ck3, fmt.Sprintf("%s-%d-test", ws.Schema.Version, dumpsAt))
 	for _, name := range []string{schemaFile, indexFile} {
 		if _, err := os.Stat(filepath.Join(folder, name)); err != nil {
 			t.Errorf("no cache: %v", err)
@@ -169,23 +177,29 @@ func TestOpenLoadsCachesOnSecondOpen(t *testing.T) {
 // TestOpenFailsOnUnknownRecords checks that a workspace, an install or a game that is not recorded is an error.
 func TestOpenFailsOnUnknownRecords(t *testing.T) {
 	config := openConfig(t, ck3, resolveFixture(t, ck3))
-	if _, err := Open(config, "test", "w2", func(string) {}, func(string, bool) {}); err == nil {
+	wsp := &Service{Config: config, Build: "test"}
+	if _, err := wsp.openSession("w2", func(string) {}, func([]FileChange) {}); err == nil {
 		t.Error("an unknown workspace opened")
 	}
-	if err := config.Update(func(records *app.Config) { records.Workspaces[0].Install = "i2" }); err != nil {
-		t.Fatal(err)
-	}
-	if _, err := Open(config, "test", "w1", func(string) {}, func(string, bool) {}); err == nil {
-		t.Error("a workspace on an unknown install opened")
-	}
-	err := config.Update(func(records *app.Config) {
-		records.Workspaces[0].Install = "i1"
-		records.Installs[0].Game = "hoi4"
+	err := config.Update("", func(records *app.Config) error {
+		records.Workspaces[0].Install = "i2"
+		return nil
 	})
 	if err != nil {
 		t.Fatal(err)
 	}
-	if _, err := Open(config, "test", "w1", func(string) {}, func(string, bool) {}); err == nil {
+	if _, err := wsp.openSession("w1", func(string) {}, func([]FileChange) {}); err == nil {
+		t.Error("a workspace on an unknown install opened")
+	}
+	err = config.Update("", func(records *app.Config) error {
+		records.Workspaces[0].Install = "i1"
+		records.Installs[0].Game = "hoi4"
+		return nil
+	})
+	if err != nil {
+		t.Fatal(err)
+	}
+	if _, err := wsp.openSession("w1", func(string) {}, func([]FileChange) {}); err == nil {
 		t.Error("an unknown game opened")
 	}
 }
@@ -194,19 +208,19 @@ func TestOpenFailsOnUnknownRecords(t *testing.T) {
 // hold and of a path outside every root.
 func TestLocateSaysWhereFileSits(t *testing.T) {
 	ws, dir := openFixture(t)
-	events := ws.Locate(filepath.Join(dir, "events", "m_events.txt"))
+	events := ws.Locate(ws.Mods.Load(), filepath.Join(dir, "events", "m_events.txt"))
 	if events.Rel != "events/m_events.txt" || events.Origin != fixtureModID || events.Root != dir || events.ReadOnly ||
 		events.Database != "events" || events.Format != files.FormatScript || !events.Loaded {
 		t.Errorf("a mod's file: %+v", events.File)
 	}
-	vanilla := ws.Locate(filepath.Join(resolveFixture(t, ck3), "game", "events", "v_events.txt"))
+	vanilla := ws.Locate(ws.Mods.Load(), filepath.Join(resolveFixture(t, ck3), "game", "events", "v_events.txt"))
 	if vanilla.Rel != "events/v_events.txt" || vanilla.Origin != game.OriginVanilla || !vanilla.ReadOnly || !vanilla.Loaded {
 		t.Errorf("a game's file: %+v", vanilla)
 	}
-	if fresh := ws.Locate(filepath.Join(dir, "events", "m_fresh.txt")); fresh.Root != dir || fresh.Loaded {
+	if fresh := ws.Locate(ws.Mods.Load(), filepath.Join(dir, "events", "m_fresh.txt")); fresh.Root != dir || fresh.Loaded {
 		t.Errorf("a file the index lacks: %+v", fresh)
 	}
-	if outside := ws.Locate(filepath.Join(t.TempDir(), "x.txt")); outside.Root != "" || outside.Rel != "" || outside.Key == "" {
+	if outside := ws.Locate(ws.Mods.Load(), filepath.Join(t.TempDir(), "x.txt")); outside.Root != "" || outside.Rel != "" || outside.Key == "" {
 		t.Errorf("a path outside the roots: %+v", outside)
 	}
 }
@@ -230,12 +244,12 @@ func TestListRootsPutsModsBeforeGame(t *testing.T) {
 func TestLookupTextPrefersReplaceFolder(t *testing.T) {
 	ws, dir := openFixture(t)
 	mods := ws.Mods.Load()
-	text, site, ok := ws.LookupText(mods, "v_key")
-	if !ok || text != "Replaced text" || mods.File(site).Origin != fixtureModID {
-		t.Errorf("v_key: %q %v %v", text, site, ok)
+	text, winner, ok := ws.LookupText(mods, "v_key")
+	if !ok || text != "Replaced text" || mods.File(winner.Site).Origin != fixtureModID {
+		t.Errorf("v_key: %q %v %v", text, winner, ok)
 	}
-	if text, site, ok = ws.LookupText(mods, "v.1.t"); !ok || text != "Hello" || mods.File(site).Origin != game.OriginVanilla {
-		t.Errorf("v.1.t: %q %v %v", text, site, ok)
+	if text, winner, ok = ws.LookupText(mods, "v.1.t"); !ok || text != "Hello" || mods.File(winner.Site).Origin != game.OriginVanilla {
+		t.Errorf("v.1.t: %q %v %v", text, winner, ok)
 	}
 	ws.Language = "french"
 	if text, _, ok = ws.LookupText(mods, "v_key"); !ok || text != "Replaced text" {
@@ -252,7 +266,7 @@ func TestLookupTextPrefersReplaceFolder(t *testing.T) {
 	if err := os.WriteFile(replacing, []byte("l_english:\n other:0 \"Other\"\n"), 0o644); err != nil {
 		t.Fatal(err)
 	}
-	if err := ws.Rescan(replacing, false); err != nil {
+	if err := ws.Rescan([]FileChange{{Path: replacing}}); err != nil {
 		t.Fatal(err)
 	}
 	if _, _, ok = ws.LookupText(ws.Mods.Load(), "v.1.t"); ok {
@@ -332,9 +346,9 @@ func TestLoadTreeUsesBufferThenCache(t *testing.T) {
 	}
 }
 
-// TestRescanFollowsDisk checks that a new file and a folder copied into a mod each give a new mods' index, that the one
-// a request holds stays as it was, that the folder is indexed whole without its hidden folders, and that a file of the
-// install changes nothing.
+// TestRescanFollowsDisk checks that a new file and a folder copied into a mod each give a new mods' index, and that the
+// copy a reader holds does not change. It also checks that the folder is indexed without its hidden folders, and that
+// a change to a file of the install does nothing.
 func TestRescanFollowsDisk(t *testing.T) {
 	ws, dir := openFixture(t)
 	before := ws.Mods.Load()
@@ -342,7 +356,7 @@ func TestRescanFollowsDisk(t *testing.T) {
 	if err := os.WriteFile(fresh, []byte("namespace = m\n\nm.9 = { type = character_event }\n"), 0o644); err != nil {
 		t.Fatal(err)
 	}
-	if err := ws.Rescan(fresh, false); err != nil {
+	if err := ws.Rescan([]FileChange{{Path: fresh}}); err != nil {
 		t.Fatal(err)
 	}
 	after := ws.Mods.Load()
@@ -352,7 +366,7 @@ func TestRescanFollowsDisk(t *testing.T) {
 	if _, ok := before.FindFile(fresh); ok {
 		t.Error("the index a request holds changed")
 	}
-	if !ws.Locate(fresh).Loaded {
+	if !ws.Locate(ws.Mods.Load(), fresh).Loaded {
 		t.Error("a new file is not loaded")
 	}
 	copied := filepath.Join(dir, "events", "copied")
@@ -364,7 +378,7 @@ func TestRescanFollowsDisk(t *testing.T) {
 			t.Fatal(err)
 		}
 	}
-	if err := ws.Rescan(copied, false); err != nil {
+	if err := ws.Rescan([]FileChange{{Path: copied}}); err != nil {
 		t.Fatal(err)
 	}
 	if _, ok := ws.Mods.Load().FindFile(filepath.Join(copied, "deep", "m_copied.txt")); !ok {
@@ -374,7 +388,7 @@ func TestRescanFollowsDisk(t *testing.T) {
 		t.Error("a file in a hidden folder was indexed")
 	}
 	after = ws.Mods.Load()
-	if err := ws.Rescan(filepath.Join(resolveFixture(t, ck3), "game", "events", "v_events.txt"), false); err != nil ||
+	if err := ws.Rescan([]FileChange{{Path: filepath.Join(resolveFixture(t, ck3), "game", "events", "v_events.txt")}}); err != nil ||
 		ws.Mods.Load() != after {
 		t.Errorf("a file of the install changed the index: %v", err)
 	}
@@ -389,14 +403,14 @@ func TestRescanDropsDeletedFiles(t *testing.T) {
 	if err := os.WriteFile(fresh, []byte("namespace = m\n\nm.9 = { type = character_event }\n"), 0o644); err != nil {
 		t.Fatal(err)
 	}
-	if err := ws.Rescan(fresh, false); err != nil {
+	if err := ws.Rescan([]FileChange{{Path: fresh}}); err != nil {
 		t.Fatal(err)
 	}
 	traits := filepath.Join(dir, "common", "traits")
 	if err := os.RemoveAll(traits); err != nil {
 		t.Fatal(err)
 	}
-	if err := ws.Rescan(traits, true); err != nil {
+	if err := ws.Rescan([]FileChange{{Path: traits, Deleted: true}}); err != nil {
 		t.Fatal(err)
 	}
 	if _, ok := ws.Mods.Load().FindFile(filepath.Join(traits, "m_traits.txt")); ok {
@@ -405,7 +419,7 @@ func TestRescanDropsDeletedFiles(t *testing.T) {
 	if err := os.Remove(fresh); err != nil {
 		t.Fatal(err)
 	}
-	if err := ws.Rescan(fresh, true); err != nil {
+	if err := ws.Rescan([]FileChange{{Path: fresh, Deleted: true}}); err != nil {
 		t.Fatal(err)
 	}
 	if _, ok := ws.Mods.Load().FindFile(fresh); ok {
@@ -424,7 +438,7 @@ func TestReadDescriptorReadsEachGamesFixture(t *testing.T) {
 	for gameID, descriptor := range want {
 		dir := resolveFixture(t, "mods", gameID)
 		descriptor.Name = "Fixture Mod"
-		descriptor.Path = game.BuildDescriptorPath(gameID, dir)
+		descriptor.Path = files.Join(dir, game.LookupGame(gameID).ModDescriptor)
 		got, err := ReadDescriptor(game.LookupGame(gameID), dir)
 		if err != nil || got.Path != descriptor.Path || got.Name != descriptor.Name || got.Version != descriptor.Version ||
 			got.SupportedVersion != descriptor.SupportedVersion || !slices.Equal(got.ReplacePaths, descriptor.ReplacePaths) ||
@@ -443,10 +457,12 @@ func watchReports(t *testing.T, dir string) func() map[string][]bool {
 	t.Helper()
 	var mu sync.Mutex
 	reports := map[string][]bool{}
-	watcher, err := startWatcher([]string{dir}, func(path string, deleted bool) {
+	watcher, err := startWatcher([]string{dir}, func(changes []FileChange) {
 		mu.Lock()
 		defer mu.Unlock()
-		reports[path] = append(reports[path], deleted)
+		for _, change := range changes {
+			reports[change.Path] = append(reports[change.Path], change.Deleted)
+		}
 	})
 	if err != nil {
 		t.Fatal(err)
@@ -537,10 +553,10 @@ func TestWriteDescriptorKeepsOtherFields(t *testing.T) {
 		row := game.LookupGame(gameID)
 		dir := copyMod(t, gameID)
 		want := changed
-		want.Path = game.BuildDescriptorPath(gameID, dir)
+		want.Path = files.Join(dir, row.ModDescriptor)
 		want.Thumbnail = path.Join(row.ThumbnailDir, changed.Thumbnail)
 		if gameID != ck3 {
-			want.WorkshopID = ""
+			want.WorkshopID, want.ID = "", "fixture.mod"
 		}
 		if gameID == ck3 {
 			// a key the descriptor does not model, written by hand
@@ -569,26 +585,24 @@ func TestWriteDescriptorKeepsOtherFields(t *testing.T) {
 // TestCreateModFolderMakesSkeleton checks that a new mod gets its folder, the game's folders and a descriptor with
 // version 1.0 and the supported release of the game version, that CK3 also gets the launcher's file beside the
 // folder, and that an existing folder is an error.
-// that an existing folder is an error.
 func TestCreateModFolderMakesSkeleton(t *testing.T) {
 	versions := map[string]string{ck3: "1.20.1.2", eu5: "build 12345"}
 	supported := map[string]string{ck3: "1.20.*", eu5: ""}
 	for _, gameID := range []string{ck3, eu5} {
 		row := game.LookupGame(gameID)
 		holder := filepath.Join(t.TempDir(), "mod")
-		descriptor, err := createModFolder(row, holder, "My New Mod", versions[gameID])
+		made, err := createModFolder(row, holder, "My New Mod", versions[gameID])
 		folder := filepath.Join(holder, "my_new_mod")
-		if err != nil || descriptor.Name != "My New Mod" || descriptor.Version != "1.0" ||
-			descriptor.SupportedVersion != supported[gameID] || descriptor.Path != game.BuildDescriptorPath(gameID, folder) {
-			t.Fatalf("%s: %+v, %v", gameID, descriptor, err)
+		if err != nil || made != folder {
+			t.Fatalf("%s: %q, %v", gameID, made, err)
 		}
 		for _, rel := range row.ModFolders {
 			if stat, err := os.Stat(files.Join(folder, rel)); err != nil || !stat.IsDir() {
 				t.Errorf("%s: no folder %s", gameID, rel)
 			}
 		}
-		if read, err := ReadDescriptor(row, folder); err != nil || read.Name != "My New Mod" ||
-			read.SupportedVersion != supported[gameID] {
+		if read, err := ReadDescriptor(row, folder); err != nil || read.Name != "My New Mod" || read.Version != "1.0" ||
+			read.SupportedVersion != supported[gameID] || read.Path != files.Join(folder, row.ModDescriptor) {
 			t.Errorf("%s: descriptor %+v, %v", gameID, read, err)
 		}
 		launcher, err := os.ReadFile(filepath.Join(holder, "my_new_mod.mod"))
@@ -631,7 +645,10 @@ func TestServiceReadsOpenWorkspace(t *testing.T) {
 	if children, err = wsp.ListFolder(fonts); err != nil || len(children) != 2 {
 		t.Errorf("fonts with binaries hidden: %+v, %v", children, err)
 	}
-	err = config.Update(func(records *app.Config) { records.Settings = map[string]string{"ide.hideBinaries": "false"} })
+	err = config.Update("", func(records *app.Config) error {
+		records.Settings = map[string]string{"ide.hideBinaries": "false"}
+		return nil
+	})
 	if children, _ = wsp.ListFolder(fonts); err != nil || len(children) != 3 {
 		t.Errorf("fonts with binaries shown: %+v, %v", children, err)
 	}
@@ -700,8 +717,8 @@ func TestReorderModsRefusesRepeatedMod(t *testing.T) {
 	}
 }
 
-// TestResolveSlotFindsFreeSlot checks that a new mod gets the first color slot no mod has, and that when all sixteen
-// are taken the slot follows the mods' count around the sixteen.
+// TestResolveSlotFindsFreeSlot checks that a new mod gets the first color slot no mod has, and that when every slot is
+// taken the slot follows the mods' count around.
 func TestResolveSlotFindsFreeSlot(t *testing.T) {
 	var mods []app.Mod
 	for number := 1; number <= 16; number++ {
@@ -723,8 +740,7 @@ func TestResolveSlotFindsFreeSlot(t *testing.T) {
 }
 
 // TestOpenInstalls opens each real install that PMT_TEST_INSTALL_<GAME> names with that game's fixture mod, first
-// with no caches and then from them, and prints each stage's time, the install index's roots in order and both
-// indexes' file counts. The counts are read, not asserted, except that the second open scans only the mods.
+// with no caches and then from them. It checks that the second open scans only the mods.
 func TestOpenInstalls(t *testing.T) {
 	for _, gameID := range []string{ck3, vic3, eu5} {
 		t.Run(gameID, func(t *testing.T) {

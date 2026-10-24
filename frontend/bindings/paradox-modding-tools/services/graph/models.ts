@@ -12,8 +12,7 @@ import * as schema$0 from "../../internal/schema/models.js";
 import * as workspace$0 from "../workspace/models.js";
 
 /**
- * A Detail is everything the detail panel shows for one node: its text, what it fires and what fires it, what it
- * refers to, its portraits, its background picture, and the Form view's inputs for its database.
+ * A Detail is what the page shows about one node: its text, its firings, its references and its pictures.
  */
 export interface Detail {
     "node": Node;
@@ -39,8 +38,7 @@ export interface Detail {
 }
 
 /**
- * An Edge is one firing the graph draws, from a firer to what it fires, with the delay as written and the scripted
- * effects that were spliced out of the line.
+ * An Edge is one firing the graph draws, from a firer to what it fires.
  */
 export interface Edge {
     "from": string;
@@ -70,7 +68,7 @@ export interface Filter {
 }
 
 /**
- * A Graph is the event graph from one root. It has no coordinates; the page lays it out.
+ * A Graph is the event graph from one root. It has no coordinates.
  */
 export interface Graph {
     "root": string;

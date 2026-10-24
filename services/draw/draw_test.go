@@ -258,9 +258,10 @@ func openService(t *testing.T, gameID, installPath string, mods ...app.Mod) *Ser
 	if err != nil {
 		t.Fatal(err)
 	}
-	err = config.Update(func(records *app.Config) {
+	err = config.Update("", func(records *app.Config) error {
 		records.Installs = []app.Install{{ID: "i1", Game: gameID, Path: installPath}}
 		records.Workspaces = []app.Workspace{{ID: "w1", Name: "Test", Install: "i1", Mods: mods, Language: "english"}}
+		return nil
 	})
 	if err != nil {
 		t.Fatal(err)
@@ -484,7 +485,7 @@ func TestResolveWindowMarksMissingTemplate(t *testing.T) {
 		t.Fatal(err)
 	}
 	missing := lo.Filter(window.Widgets[0].Properties, func(property Property, _ int) bool { return property.Origin == originMissing })
-	if len(missing) != 1 || missing[0].Key != usingKey || missing[0].Value != "d_nowhere" {
+	if len(missing) != 1 || missing[0].Key != game.GUI.TemplateCalls || missing[0].Value != "d_nowhere" {
 		t.Errorf("missing properties %+v", missing)
 	}
 	inner := findWidget(t, window, "d_inner")
@@ -537,7 +538,7 @@ func TestEvaluateStatesHidesByPick(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	states, err := drw.EvaluateStates(modFile, windowName, nil)
+	states, err := drw.EvaluateStates(window, nil)
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -560,7 +561,7 @@ func TestEvaluateStatesHidesByPick(t *testing.T) {
 	if got, want := names(states.Hidden), []string{"d_not", "d_outer", "d_off", "d_child", "d_trait_b"}; !slices.Equal(got, want) {
 		t.Errorf("hidden by the first options: %v, want %v", got, want)
 	}
-	flipped, err := drw.EvaluateStates(modFile, windowName, map[string]string{groupAlive: pickNone, groupFlag: flagB, groupTrait: traitBold})
+	flipped, err := drw.EvaluateStates(window, map[string]string{groupAlive: pickNone, groupFlag: flagB, groupTrait: traitBold})
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -579,7 +580,7 @@ func TestRevealPicksShowWidget(t *testing.T) {
 		t.Fatal(err)
 	}
 	reveal := func(name string) map[string]string {
-		picks, err := drw.Reveal(modFile, windowName, findWidget(t, window, name).ID)
+		picks, err := drw.Reveal(window, findWidget(t, window, name).ID)
 		if err != nil {
 			t.Fatal(err)
 		}
@@ -602,9 +603,9 @@ func TestRevealPicksShowWidget(t *testing.T) {
 	}
 }
 
-// TestResolveCoatReadsLayersParentsAndLists checks a coat's pattern, emblem, sub and colors, the instances with the
-// game's defaults, a coat that has a parent, one that is the name of another, and the options of a template list: the
-// heaviest drawn outside a special selection, the first of equal weights, a pick, and a list that has no definition.
+// TestResolveCoatReadsLayersParentsAndLists checks a coat's pattern, emblem, sub, colors and instances, a coat with a
+// parent, and one that is the name of another. It also checks the option a template list draws: the heaviest, the first
+// of equal weights, a pick, and none for a list with no definition.
 func TestResolveCoatReadsLayersParentsAndLists(t *testing.T) {
 	drw, _, modDir := openFixture(t)
 	coatFile := filepath.Join(modDir, modCoatPath)
@@ -616,7 +617,7 @@ func TestResolveCoatReadsLayersParentsAndLists(t *testing.T) {
 		t.Fatalf("coat %+v", coat)
 	}
 	pattern, emblem := coat.Layers[0], coat.Layers[1]
-	wantColors := []string{game.Coat.Fallback, cssRed, cssBlue, ""}
+	wantColors := []string{game.Coat.Fallback, cssRed, cssBlue, "", "", ""}
 	if pattern.Role != patternKey || pattern.Texture != patternFile || !strings.HasSuffix(filepath.ToSlash(pattern.Path), "patterns/v_pattern.dds") ||
 		!slices.Equal(pattern.Colors, wantColors) {
 		t.Errorf("pattern %+v", pattern)
@@ -667,9 +668,9 @@ func TestResolveCoatReadsLayersParentsAndLists(t *testing.T) {
 	}
 }
 
-// TestEditPropertyReplacesOrAddsKey checks that an edit of a key in a widget's block, a coat's, a layer's and an
-// instance's, applied to the file and parsed again, replaces the whole value where the block writes the key and adds
-// the key in the file's indentation where it does not, and that a range where no block starts is an error.
+// TestEditPropertyReplacesOrAddsKey checks that an edit of a key in a widget's, coat's, layer's or instance's block
+// replaces the whole value where the block writes the key, and adds the key in the file's indentation where it does
+// not. It also checks that a range where no block starts is an error.
 func TestEditPropertyReplacesOrAddsKey(t *testing.T) {
 	drw, _, modDir := openFixture(t)
 	modFile, coatFile := filepath.Join(modDir, modWindowPath), filepath.Join(modDir, modCoatPath)
@@ -704,7 +705,7 @@ func TestEditPropertyReplacesOrAddsKey(t *testing.T) {
 	if got := retextured.Unquoted(retextured.Statements[lo.Must(retextured.FindChild(block, textureKey))].Value); got != "v_textured.dds" {
 		t.Errorf("texture after the edit: %s", got)
 	}
-	deeper, _ := edit(drw.EditProperty(coatFile, instance.Range, depthKey, "5"))
+	deeper, _ := edit(drw.EditProperty(coatFile, instance.Range, "depth", "5"))
 	if !strings.Contains(deeper, "rotation = 45 depth = 5 }") {
 		t.Errorf("depth after the edit: %s", deeper)
 	}
@@ -761,9 +762,8 @@ func errOf(_ []lsp.Edit, err error) error {
 }
 
 // TestResolveWindowsOnInstalls resolves every window of each real install that PMT_TEST_INSTALL_<GAME> names, with no
-// mods, and evaluates its states. It prints the windows, the errors, the types and templates nothing defines by name
-// and the files that use them, the widgets, the texts and textures found and not found, the groups and the time. The
-// numbers are read, not asserted; a window that fails to resolve fails the test.
+// mods, and evaluates its states. It prints the totals and the types and templates nothing defines. A window that fails
+// to resolve fails the test.
 func TestResolveWindowsOnInstalls(t *testing.T) {
 	for _, gameID := range installGames {
 		t.Run(gameID, func(t *testing.T) {
@@ -790,8 +790,7 @@ func TestResolveWindowsOnInstalls(t *testing.T) {
 }
 
 // TestResolveCoatsOnInstalls resolves every coat of each real install that PMT_TEST_INSTALL_<GAME> names, with no
-// mods. It prints the coats, the errors, the layers, the instances, the subs, the textures found and not found, and the
-// lists that name no list. The numbers are read, not asserted; a coat that fails to resolve fails the test.
+// mods. It prints the totals. A coat that fails to resolve fails the test.
 func TestResolveCoatsOnInstalls(t *testing.T) {
 	for _, gameID := range installGames {
 		t.Run(gameID, func(t *testing.T) {
@@ -844,7 +843,7 @@ func (totals *gateTotals) add(t *testing.T, drw *Service, path string) {
 		if drawable.Database != game.GUI.WidgetDatabase {
 			continue
 		}
-		window, err := resolveWindow(ws, mods, path, drawable.Name)
+		window, err := drw.ResolveWindow(path, drawable.Name)
 		if err != nil {
 			totals.errors++
 			t.Errorf("%s %s: %v", path, drawable.Name, err)
@@ -855,8 +854,9 @@ func (totals *gateTotals) add(t *testing.T, drw *Service, path string) {
 		for _, widget := range window.Widgets {
 			totals.count(ws, mods, path, widget)
 		}
-		states := evaluate(ws, mods, window, nil)
-		_, kept := listGroups(ws, mods, window, listDatacontexts(ws.Schema, window))
+		datacontexts := listDatacontexts(ws.Schema, window)
+		states := evaluate(ws, window, datacontexts, nil)
+		_, kept := listGroups(ws, mods, window, datacontexts)
 		totals.groups += len(states.Groups)
 		totals.hidden += len(states.Hidden)
 		totals.databases += lo.CountBy(states.Groups, func(group Group) bool { return group.Database != "" })
@@ -865,8 +865,8 @@ func (totals *gateTotals) add(t *testing.T, drw *Service, path string) {
 }
 
 // count adds a widget's missing types and templates, texts and textures to the totals. A picture written as a path or
-// an icon name is a texture to find, a picture written as a data call is one only the running game answers, and a data
-// call that led to a texture is one found. A text is found where a message in the given index of the mods has its key.
+// an icon name is a texture to find. A picture written as a data call is one only the running game answers. A text is
+// found where a message in the given index of the mods has its key.
 func (totals *gateTotals) count(ws *workspace.Session, mods *index.Index, path string, widget Widget) {
 	for _, property := range widget.Properties {
 		_, textured := widget.Textures[property.Key]
@@ -888,8 +888,7 @@ func (totals *gateTotals) count(ws *workspace.Session, mods *index.Index, path s
 	}
 }
 
-// log prints the totals: the counts, then each missing type or template by name with how often and in which files it
-// is missing.
+// log prints the totals, then each missing type or template with the files that use it.
 func (totals *gateTotals) log(t *testing.T, elapsed time.Duration) {
 	t.Helper()
 	t.Logf("%d windows, %d errors, %d widgets, %d groups (%d lead to a database, %d decided by a definition), %d hidden by the "+

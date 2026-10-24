@@ -20,58 +20,23 @@ func parseFile(path string) (*jomini.Tree, error) {
 	return jomini.Parse(text.Text), err
 }
 
-// listRoots returns the roots a scan of an install is given: the install's folders in the order the game mounts
-// them, then each folder of the game's dlc folder.
-func listRoots(t *testing.T, install string) []files.Root {
-	t.Helper()
-	var roots []files.Root
-	for _, root := range game.InstallRoots {
-		if _, err := os.Stat(filepath.Join(install, root)); err == nil {
-			roots = append(roots, files.Root{Dir: filepath.Join(install, root), Origin: game.OriginVanilla})
-		}
-	}
-	dlcs := filepath.Join(install, game.ScriptRoot, game.DLCFolder)
-	entries, err := os.ReadDir(dlcs)
-	if err != nil && !os.IsNotExist(err) {
-		t.Fatal(err)
-	}
-	for _, entry := range entries {
-		if entry.IsDir() {
-			roots = append(roots, files.Root{Dir: filepath.Join(dlcs, entry.Name()), Origin: game.OriginVanilla})
-		}
-	}
-	return roots
-}
-
 // scanInstall builds the schema of an install, scans the install with it, and returns both and the scan's time.
 func scanInstall(t *testing.T, gameID, install string) (*schema.Schema, *Index, time.Duration) {
 	t.Helper()
-	// The schema learns from each file once: the install's own roots hold the DLC folders, which are roots only to the
-	// scan.
-	var paths []string
-	for _, root := range game.InstallRoots {
-		dir := filepath.Join(install, root)
-		if _, err := os.Stat(dir); err != nil {
-			continue
-		}
-		listing, err := files.Walk(files.Root{Dir: dir, Origin: game.OriginVanilla}, nil)
-		if err != nil {
-			t.Fatal(err)
-		}
-		for _, file := range listing {
-			paths = append(paths, file.Path)
-		}
+	roots, err := game.ListInstallRoots(install)
+	if err != nil {
+		t.Fatal(err)
 	}
-	roots := listRoots(t, install)
-	built, err := schema.Build(game.LookupGame(gameID), install, paths, parseFile)
+	listing, err := ListFiles(roots)
+	if err != nil {
+		t.Fatal(err)
+	}
+	built, err := schema.Build(game.LookupGame(gameID), install, listing, parseFile)
 	if err != nil {
 		t.Fatal(err)
 	}
 	start := time.Now()
-	scanned, err := Scan(game.LookupGame(gameID), built, roots, func(string) {})
-	if err != nil {
-		t.Fatal(err)
-	}
+	scanned := Scan(built, roots, listing, func(string) {})
 	return built, scanned, time.Since(start)
 }
 
@@ -124,14 +89,14 @@ func TestScanFixtureIndexesFiles(t *testing.T) {
 // TestResolveReferenceFindsDefinition checks that a reference to an event resolves to the event's definition, with
 // its database written and without, and that an unknown name resolves to nothing.
 func TestResolveReferenceFindsDefinition(t *testing.T) {
-	built, scanned := scanFixture(t)
+	_, scanned := scanFixture(t)
 	for _, database := range []string{"events", ""} {
-		sites := scanned.Resolve(built, schema.Reference{Database: database, Name: "v.2"})
+		sites := scanned.Resolve(schema.Reference{Database: database, Name: "v.2"})
 		if len(sites) != 1 || scanned.File(sites[0]).Rel != "events/v_events.txt" {
 			t.Errorf("v.2 in %q: %v", database, sites)
 		}
 	}
-	if sites := scanned.Resolve(built, schema.Reference{Database: "events", Name: "v.404"}); len(sites) != 0 {
+	if sites := scanned.Resolve(schema.Reference{Database: "events", Name: "v.404"}); len(sites) != 0 {
 		t.Errorf("v.404: %v", sites)
 	}
 }
@@ -151,19 +116,12 @@ func TestListUsesFindsReferences(t *testing.T) {
 	}
 }
 
-// TestSaveIndexLoadsEqual checks that an index saved and loaded again has the same files, occurrences, texts and
-// tables, and answers the same lookups.
-func TestSaveIndexLoadsEqual(t *testing.T) {
+// TestLoadIndexLoadsSavedIndexEqual checks that an index saved and loaded again has the same files, occurrences,
+// texts and tables, and answers the same lookups.
+func TestLoadIndexLoadsSavedIndexEqual(t *testing.T) {
 	_, scanned := scanFixture(t)
-	dir := CachePath(t.TempDir(), "ck3", "1.0", time.Unix(1700000000, 0), "test")
-	if !strings.HasSuffix(filepath.ToSlash(dir), "ck3/1.0-1700000000-test") {
-		t.Errorf("cache folder: %s", dir)
-	}
-	if err := os.MkdirAll(dir, 0o755); err != nil {
-		t.Fatal(err)
-	}
-	path := filepath.Join(dir, "index.gob")
-	if err := SaveIndex(path, scanned); err != nil {
+	path := filepath.Join(t.TempDir(), "ck3", "index.gob")
+	if err := files.SaveGob(path, scanned); err != nil {
 		t.Fatal(err)
 	}
 	loaded, ok := LoadIndex(path)
@@ -209,7 +167,7 @@ func TestScanInstalls(t *testing.T) {
 				elapsed.Round(time.Millisecond), roles[RoleDefines], roles[RoleRefers], roles[RoleLocalizes])
 			path := filepath.Join(t.TempDir(), "index.gob")
 			start := time.Now()
-			if err := SaveIndex(path, scanned); err != nil {
+			if err := files.SaveGob(path, scanned); err != nil {
 				t.Fatal(err)
 			}
 			saved := time.Since(start)
@@ -236,7 +194,7 @@ func scanFixtureMods(t *testing.T) (*schema.Schema, *Index, *Index) {
 		t.Fatal(err)
 	}
 	roots := []files.Root{{Dir: dir, Origin: "fixture-mod"}}
-	mods, err := ScanMods(game.LookupGame("ck3"), built, install, roots, [][]string{{"common/opinion_modifiers"}})
+	mods, err := ScanMods(built, install, roots, [][]string{{"common/opinion_modifiers"}})
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -246,20 +204,18 @@ func scanFixtureMods(t *testing.T) (*schema.Schema, *Index, *Index) {
 // findDefinition returns the site of the definition with the given name in a database.
 func findDefinition(t *testing.T, index *Index, database, name string) Site {
 	t.Helper()
-	for _, site := range index.ListDefinitions(database) {
-		if index.ToReference(site).Name == name {
-			return site
-		}
+	sites := index.Resolve(schema.Reference{Database: database, Name: name})
+	if len(sites) == 0 {
+		t.Fatalf("no %s %s", database, name)
 	}
-	t.Fatalf("no %s %s", database, name)
-	return Site{}
+	return sites[0]
 }
 
 // TestFindWinnerKeepsByPrecedence checks the definition kept of a trait that the install and the mod both define:
 // the last or the first loaded by file name, the highest priority, and an entry mode.
 func TestFindWinnerKeepsByPrecedence(t *testing.T) {
-	built, install, mods := scanFixtureMods(t)
-	sites := mods.Resolve(built, schema.Reference{Database: "traits", Name: "brave"})
+	_, install, mods := scanFixtureMods(t)
+	sites := mods.Resolve(schema.Reference{Database: "traits", Name: "brave"})
 	if len(sites) != 2 || mods.File(sites[0]).Rel != "common/traits/v_traits.txt" ||
 		mods.File(sites[1]).Rel != "common/traits/m_traits.txt" {
 		t.Fatalf("brave is defined at %v", sites)
@@ -284,12 +240,13 @@ func TestFindWinnerKeepsByPrecedence(t *testing.T) {
 	}
 	mods.Occurrences[modded.File][modded.Occurrence].Mode = uint8(mods.Modes.Intern("INJECT"))
 	modes := game.Precedence{Keeps: "first", Modes: "entry"}
+	// the mod's file loads before the install's, so the install's plain definition replaces what a mode acted on
 	injected, ok := mods.FindWinner(sites, modes)
-	if !ok || injected.Site != vanilla || injected.Reason != "mode" || len(injected.Merged) != 2 {
+	if !ok || injected.Site != vanilla || injected.Reason != last.Reason || len(injected.Merged) != 1 {
 		t.Errorf("inject: %+v %v", injected, ok)
 	}
 	mods.Occurrences[modded.File][modded.Occurrence].Mode = uint8(mods.Modes.Intern("REPLACE"))
-	if replaced, ok := mods.FindWinner(sites, modes); !ok || replaced.Site != modded || replaced.Reason != "mode" {
+	if replaced, ok := mods.FindWinner(sites, modes); !ok || replaced.Site != vanilla || replaced.Reason != last.Reason {
 		t.Errorf("replace: %+v %v", replaced, ok)
 	}
 }

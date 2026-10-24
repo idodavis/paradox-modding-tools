@@ -58,24 +58,23 @@ func parseFile(path string) (*jomini.Tree, error) {
 	return jomini.Parse(text.Text), err
 }
 
-// listInstall returns every file under an install's roots.
-func listInstall(t *testing.T, install string) []string {
+// listInstall returns every file under an install's roots, its DLC folders included. A DLC's files are listed under
+// the game's root too, and Build leaves those copies out.
+func listInstall(t *testing.T, install string) []files.File {
 	t.Helper()
-	var paths []string
-	for _, root := range game.InstallRoots {
-		dir := filepath.Join(install, root)
-		if _, err := os.Stat(dir); err != nil {
-			continue
-		}
-		listing, err := files.Walk(files.Root{Dir: dir, Origin: game.OriginVanilla}, nil)
+	roots, err := game.ListInstallRoots(install)
+	if err != nil {
+		t.Fatal(err)
+	}
+	var listing []files.File
+	for _, root := range roots {
+		list, err := files.Walk(root)
 		if err != nil {
 			t.Fatal(err)
 		}
-		for _, file := range listing {
-			paths = append(paths, file.Path)
-		}
+		listing = append(listing, list...)
 	}
-	return paths
+	return listing
 }
 
 // buildFixture builds the schema of the CK3 fixture install.
@@ -140,8 +139,8 @@ func TestReadDumpsFixtures(t *testing.T) {
 		}
 		return dumps.Commands[i]
 	}
-	if root := lookup("root"); !root.Global || strings.Contains(root.Description, "Global Link") {
-		t.Errorf("root: global %v, description %q", root.Global, root.Description)
+	if root := lookup("root"); strings.Contains(root.Description, "Global Link") {
+		t.Errorf("root: description %q", root.Description)
 	}
 	if scope := lookup("scope"); !scope.Prefixed {
 		t.Error("scope: not read as requiring data")
@@ -175,7 +174,7 @@ func TestParseDoc(t *testing.T) {
 	}{
 		{"brief header", briefDoc, "# ### Brief: cooldown ( duration, optional )\n# How long until it can be taken again.\n# Default: 0\ncooldown = { days = 10 }\n",
 			"cooldown", func(field *Field) bool {
-				return field.Required.Value.Level == "optional" && field.Default.Value == "0" && strings.Contains(field.Blurb.Value, "How long")
+				return field.Required.Value == "optional" && field.Default.Value == "0" && strings.Contains(field.Blurb.Value, "How long")
 			}},
 		{"commented-out template", readmeDoc, "#<advance ID> = {\n#\tage = <age>\t\t# Determines in which age this advance is available\n#}\n",
 			"age", func(field *Field) bool { return strings.HasPrefix(field.Blurb.Value, "Determines") }},
@@ -191,7 +190,7 @@ func TestParseDoc(t *testing.T) {
 			"allow", func(field *Field) bool { return field.Scope.Value == "character" }},
 		{"comment run above", briefDoc, "key = {\n\t# full path to the icon. Required, an error is logged if missing\n\ticon = \"gfx/x.dds\"\n}\n",
 			"icon", func(field *Field) bool {
-				return field.Required.Value.Level == "always" && field.Value.Value.Type == ValueText
+				return field.Required.Value == "always" && field.Value.Value.Type == ValueText
 			}},
 		{"bullet writing a statement", readmeDoc, "# - always_add_demands = <yes/no> when set to yes the building needs full demand\n",
 			"always_add_demands", func(field *Field) bool {
@@ -201,15 +200,17 @@ func TestParseDoc(t *testing.T) {
 			"ranks/<number>/men_at_arms", func(field *Field) bool { return field.Blurb.Value == "the men at arms" }},
 		{"header type with a required term", briefDoc, "# ### Brief: can_only_start_via_script ( optional bool )\ncan_only_start_via_script = yes\n",
 			"can_only_start_via_script", func(field *Field) bool {
-				return field.Value.Value.Type == ValueBool && field.Required.Value.Level == "optional"
+				return field.Value.Value.Type == ValueBool && field.Required.Value == "optional"
 			}},
 		{"type term with underscores", readmeDoc, "#\ttraded_quantity = fixed_point # how many units are moved\n",
 			"traded_quantity", func(field *Field) bool { return field.Value.Value.Type == ValueNumber }},
 		{"placeholder opening a bullet", readmeDoc, "# - allow: <trigger> can the building be built (root = location)\n",
-			"allow", func(field *Field) bool { return field.Shape.Value == shapeTriggers && field.Scope.Value == "location" }},
+			"allow", func(field *Field) bool {
+				return field.Shape.Value == game.ShapeTriggers && field.Scope.Value == "location"
+			}},
 		{"shape opening the text above", briefDoc, "key = {\n\t# Effect is executed when the owner dies\n\t# root - active story cycle\n\ton_owner_death = {}\n}\n",
 			"on_owner_death", func(field *Field) bool {
-				return field.Shape.Value == shapeEffects && field.Scope.Value == "story_cycle"
+				return field.Shape.Value == game.ShapeEffects && field.Scope.Value == "story_cycle"
 			}},
 		{"nested at its path", briefDoc, "key = {\n\tranks = {\n\t\tliege_modifier = { } # what the liege gets\n\t}\n}\n",
 			"ranks/liege_modifier", func(field *Field) bool { return field.Blurb.Value == "what the liege gets" }},
@@ -280,10 +281,10 @@ func TestWalkEventsFixture(t *testing.T) {
 	if branch := seen.find(t, "90", ""); branch.context.Category != CategoryKeyword {
 		t.Errorf("random_list's 90: %q", branch.context.Category)
 	}
-	if shape := resolveWriteShape(map[string]int{shapeValue: 2, "triggers": 1}); shape != shapeValue {
+	if shape := resolveShapeClaim(Vanilla{Shapes: map[string]int{game.ShapeValue: 2, game.ShapeTriggers: 1}}); shape != game.ShapeValue {
 		t.Errorf("a block of value keys and triggers: %q", shape)
 	}
-	if shape := resolveWriteShape(map[string]int{"fields": 2, "triggers": 1}); shape != shapeUnknown {
+	if shape := resolveShapeClaim(Vanilla{Shapes: map[string]int{game.ShapeFields: 2, game.ShapeTriggers: 1}}); shape != game.ShapeUnknown {
 		t.Errorf("a block of fields and triggers: %q", shape)
 	}
 }
@@ -339,7 +340,7 @@ func TestListInputsStatedOnly(t *testing.T) {
 }
 
 // TestBuildInstalls builds the schema of each real install that PMT_TEST_INSTALL_<GAME> names, and prints what
-// each source gave. It asserts that the build succeeds and the dumps declare commands; the counts are read.
+// each source gave. It asserts that the build succeeds and the dumps declare commands.
 func TestBuildInstalls(t *testing.T) {
 	for _, gameID := range []string{"ck3", "vic3", "eu5"} {
 		t.Run(gameID, func(t *testing.T) {

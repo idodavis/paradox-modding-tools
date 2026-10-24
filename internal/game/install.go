@@ -18,10 +18,9 @@ import (
 
 // A DetectedInstall is an install found under a Steam library, with its version.
 type DetectedInstall struct {
-	GameID  string `json:"gameId"`
 	Name    string `json:"name"`
 	Path    string `json:"path"`    // the install folder
-	Version string `json:"version"` // "" where none is read
+	Version string `json:"version"` // "" means none was found
 }
 
 // launcherSettings is the part of launcher-settings.json the app reads.
@@ -45,7 +44,7 @@ var (
 	gameBranchRe = regexp.MustCompile(`\]: game_branch: (?:\S+/)?release/(\S+)`)
 )
 
-// FindInstalls returns the installs of a game that Steam's libraries hold.
+// FindInstalls returns the installs of a game that Steam's libraries hold. It returns nil for an unknown game.
 func FindInstalls(gameID string) []DetectedInstall {
 	game := LookupGame(gameID)
 	if game == nil {
@@ -128,10 +127,9 @@ func listDefaultSteamRoots() []string {
 	}
 }
 
-// LoadGameVersion returns an install's version: the rawVersion in launcher-settings.json, else its version without
-// the codename, else the version the game wrote in its revision log when it last started, else "build <id>" from the
-// Steam manifest two folders up. The revision log is used only when that start came after the install's last
-// update. It returns "" if none is found.
+// LoadGameVersion returns an install's version. The launcher settings come first, then the game's revision log, then
+// the Steam manifest, which gives "build <id>". The revision log counts only when the game started after the
+// install's last update. It returns "" if none of them says.
 func LoadGameVersion(gameID, installPath string) string {
 	settings := loadLauncher(installPath)
 	if settings.RawVersion != "" {
@@ -161,7 +159,7 @@ func loadLauncher(installPath string) (settings launcherSettings) {
 	if installPath == "" {
 		return settings
 	}
-	if data, err := os.ReadFile(filepath.Join(installPath, filepath.FromSlash(launcherFile))); err == nil {
+	if data, err := os.ReadFile(files.Join(installPath, launcherFile)); err == nil {
 		_ = json.Unmarshal(data, &settings)
 	}
 	return settings
@@ -175,7 +173,7 @@ func readLoggedVersion(gameID, installPath string) string {
 	if user == "" {
 		return ""
 	}
-	path := filepath.Join(user, filepath.FromSlash(revisionLogRel))
+	path := files.Join(user, revisionLogRel)
 	info, err := os.Stat(path)
 	if err != nil || info.ModTime().Before(ReadInstallUpdatedAt(installPath)) {
 		return ""
@@ -187,22 +185,44 @@ func readLoggedVersion(gameID, installPath string) string {
 	return ""
 }
 
-// FindDumpDirs returns the folders the game's console dumps land in, or none if the game has no user-data folder.
+// ListInstallRoots returns the folders of an install that the game reads, in the order it mounts them: the install's
+// own folders that exist, then the folder of each DLC. It returns an error if the DLC folder exists and cannot be
+// read.
+func ListInstallRoots(installPath string) ([]files.Root, error) {
+	var roots []files.Root
+	for _, folder := range InstallRoots {
+		if dir := filepath.Join(installPath, folder); files.IsFolder(dir) {
+			roots = append(roots, files.Root{Dir: dir, Origin: OriginVanilla})
+		}
+	}
+	dlcFolder := filepath.Join(installPath, ScriptRoot, DLCFolder)
+	dlcs, err := os.ReadDir(dlcFolder)
+	if err != nil && !os.IsNotExist(err) {
+		return nil, err
+	}
+	for _, dlc := range dlcs {
+		if dlc.IsDir() {
+			roots = append(roots, files.Root{Dir: filepath.Join(dlcFolder, dlc.Name()), Origin: OriginVanilla})
+		}
+	}
+	return roots, nil
+}
+
+// FindDumpDirs returns the folders the game's console dumps land in. It returns nil for an unknown game.
 func FindDumpDirs(gameID, installPath string) []string {
-	game := LookupGame(gameID)
 	user := FindUserDataDir(gameID, installPath)
-	if game == nil || user == "" {
+	if user == "" {
 		return nil
 	}
 	var dirs []string
 	for _, dir := range DumpFolders {
-		dirs = append(dirs, filepath.Join(user, filepath.FromSlash(dir)))
+		dirs = append(dirs, files.Join(user, dir))
 	}
 	return dirs
 }
 
 // FindUserDataDir returns the game's user-data folder: the first candidate that exists, or else the most likely
-// one.
+// one. It returns "" for an unknown game.
 func FindUserDataDir(gameID, installPath string) string {
 	candidates := listUserDataCandidates(gameID, installPath)
 	for _, candidate := range candidates {
@@ -277,19 +297,6 @@ func expandGameDataPath(path string) string {
 	return filepath.Clean(filepath.FromSlash(path))
 }
 
-// BuildDescriptorPath returns the path of a game's descriptor file under a mod root.
-func BuildDescriptorPath(gameID, root string) string {
-	return filepath.Join(root, filepath.FromSlash(ResolveDescriptorFile(gameID)))
-}
-
-// ResolveDescriptorFile returns the descriptor file's path relative to the mod root, with forward slashes.
-func ResolveDescriptorFile(gameID string) string {
-	if game := LookupGame(gameID); game != nil && game.ModDescriptor == MetadataDescriptor {
-		return MetadataDir + "/metadata.json"
-	}
-	return "descriptor.mod"
-}
-
 // ResolveProgram returns the executable that starts a game on this machine and the arguments to start it in debug
 // mode, from an install's folder. Where the game's row names the launcher settings, their executable and arguments
 // win over the row's; the row's debug flags always come last. It returns false when the game has no executable on
@@ -301,13 +308,13 @@ func ResolveProgram(gameID, installPath string) (path string, args []string, ok 
 	}
 	program := game.Program[runtime.GOOS]
 	if program.Executable != "" {
-		path = filepath.Join(installPath, filepath.FromSlash(program.Executable))
+		path = files.Join(installPath, program.Executable)
 	}
 	if program.Settings != "" {
 		settings := loadLauncher(installPath)
 		if settings.ExePath != "" {
-			folder := filepath.Dir(filepath.Join(installPath, filepath.FromSlash(program.Settings)))
-			path = filepath.Join(folder, filepath.FromSlash(settings.ExePath))
+			folder := filepath.Dir(files.Join(installPath, program.Settings))
+			path = files.Join(folder, settings.ExePath)
 		}
 		args = settings.ExeArgs
 	}

@@ -27,48 +27,49 @@ export function CloseFile(path: string): $CancellablePromise<void> {
 }
 
 /**
- * Complete returns the completion candidates at a position in a file. In a key position they are the operators
- * first, then the commands and fields the block takes, ranked by how often the game's own files write each one
- * there. In a value position they come from the field's expected type: its choices, the names the game loads, or
- * the texture files a path could name. Every candidate is sent; Monaco filters by what was typed.
+ * Complete returns the completion candidates at a position in a file. At a key they are the language's operators,
+ * then the commands and fields the block takes. At a value they are the field's choices, the names the game loads or
+ * the image files a path could name. It returns an empty list for a file that is not script.
  */
 export function Complete(path: string, line: number, column: number): $CancellablePromise<$models.Completion[] | null> {
     return $Call.ByID(2419173360, path, line, column);
 }
 
 /**
- * Definition returns where the name at a position is defined, the definition the game keeps first. For a written
- * file path it returns the file itself.
+ * Definition returns where the name at a position is defined, with the definition the game keeps first. For an image
+ * path it returns the image file. It returns an empty list if the position is on no name.
  */
 export function Definition(path: string, line: number, column: number): $CancellablePromise<$models.Location[] | null> {
     return $Call.ByID(3801469422, path, line, column);
 }
 
 /**
- * Diagnose returns a file's problems: its parse errors and every verdict that fails on it, judged against the
- * index for what other files say. It reads the open text if the editor has the file, else the file on disk.
+ * Diagnose returns the problems of a file, judged against the open workspace. It leaves out the checks the user turned
+ * off in the settings.
  */
 export function Diagnose(path: string): $CancellablePromise<$models.Diagnostic[] | null> {
     return $Call.ByID(3833762539, path);
 }
 
 /**
- * FindSymbols returns the definitions whose name contains the query, the mods' first, up to the given limit.
+ * FindSymbols returns the definitions whose name contains the query, the mods' first, up to the given limit. It returns
+ * an empty list for an empty query.
  */
 export function FindSymbols(query: string, limit: number): $CancellablePromise<$models.WorkspaceSymbol[] | null> {
     return $Call.ByID(3280846261, query, limit);
 }
 
 /**
- * Format formats a file and returns the edits that turn the old text into the new. It keeps the file's own
- * indentation, or uses the editor's settings when the file has none.
+ * Format returns the edits that format a file's text. It keeps the file's own indentation, or else indents with the
+ * given tab size, in spaces if the flag is set. It returns no edits for a file that is not script, does not parse, or
+ * would change in more than its spacing.
  */
 export function Format(path: string, tabSize: number, insertSpaces: boolean): $CancellablePromise<$models.Edit[] | null> {
     return $Call.ByID(331973468, path, tabSize, insertSpaces);
 }
 
 /**
- * Hover returns the hover card for the key or value at a position in a file, or nil if the position is on
+ * Hover returns the hover card for the key or value at a position in a file. It returns nil if the position is on
  * nothing.
  */
 export function Hover(path: string, line: number, column: number): $CancellablePromise<$models.Card | null> {
@@ -83,10 +84,10 @@ export function ListColorSites(path: string): $CancellablePromise<$models.ColorS
 }
 
 /**
- * ListFixes returns the quick fixes for the problems inside a range of a file, one per problem that has a fix.
+ * ListFixes returns the quick fixes for the given problems of a file, one for each problem that has a fix.
  */
-export function ListFixes(path: string, within: $models.Range): $CancellablePromise<$models.Fix[] | null> {
-    return $Call.ByID(1404606734, path, within);
+export function ListFixes(path: string, diagnostics: $models.Diagnostic[] | null): $CancellablePromise<$models.Fix[] | null> {
+    return $Call.ByID(1404606734, path, diagnostics);
 }
 
 /**
@@ -119,39 +120,39 @@ export function ListSymbols(path: string): $CancellablePromise<$models.Symbol[] 
 }
 
 /**
- * PrepareRename returns the range of the name at a position, or nil if the position is not on a name that a mod
- * defines.
+ * PrepareRename returns the range of the name at a position. It returns nil if the position is on no name, if the
+ * game defines the name too, or if no mod defines it.
  */
 export function PrepareRename(path: string, line: number, column: number): $CancellablePromise<$models.Range | null> {
     return $Call.ByID(2522429872, path, line, column);
 }
 
 /**
- * PresentColor returns the text that writes a color back into a file in the same form as the block at the given
- * range, for the color picker.
+ * PresentColor returns the text that writes a color back into a file, in the same form as the color written in the
+ * given range. It returns an error if there is no color in the range or its form cannot be written.
  */
 export function PresentColor(path: string, within: $models.Range, color: game$0.RGBA): $CancellablePromise<string> {
     return $Call.ByID(3581946373, path, within, color);
 }
 
 /**
- * References returns every use of the name at a position.
+ * References returns where the name at a position is defined and where it is used. It returns an empty list if the
+ * position is on no name.
  */
 export function References(path: string, line: number, column: number): $CancellablePromise<$models.Location[] | null> {
     return $Call.ByID(2236984049, path, line, column);
 }
 
 /**
- * Rename returns the edits that give the name at a position a new name, grouped by the path of each mod file that
- * defines or uses it.
+ * Rename returns the edits that give the name at a position a new name, grouped by the mod file they change. It returns
+ * an error if the new name is empty, or if the name has no database and more than one database defines it.
  */
 export function Rename(path: string, line: number, column: number, name: string): $CancellablePromise<{ [_ in string]?: $models.Edit[] | null } | null> {
     return $Call.ByID(4199671945, path, line, column, name);
 }
 
 /**
- * SetText gives the session an open file's text as the editor has it, and returns the file's problems: its parse
- * errors and every verdict that fails on it.
+ * SetText gives the session the text the editor holds for an open file. It returns the file's problems.
  */
 export function SetText(path: string, text: string): $CancellablePromise<$models.Diagnostic[] | null> {
     return $Call.ByID(2776350530, path, text);
@@ -166,9 +167,8 @@ export function Signature(path: string, line: number, column: number): $Cancella
 }
 
 /**
- * Tokens returns the semantic tokens of a file: the color category of every key and value the walk decided,
- * encoded as Monaco wants, five integers per token (the line and column deltas, the length, the type's index in
- * the legend and the modifiers). The grammar in the editor colors shapes; these color meaning on top.
+ * Tokens returns the semantic tokens of a file: the color category of every key and value, encoded as Monaco wants.
+ * It returns none for a file that is not script.
  */
 export function Tokens(path: string): $CancellablePromise<number[] | null> {
     return $Call.ByID(1531108025, path);

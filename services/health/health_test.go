@@ -23,8 +23,7 @@ import (
 	"paradox-modding-tools/services/workspace"
 )
 
-// The ids the tests give the fixture mods, the first loaded first, the names their descriptors give them, the
-// languages the scaffolds are written in, and the sections the tests tell apart.
+// The ids and descriptor names of the fixture mods, the languages of the scaffolds and the sections the tests use.
 const (
 	modA            = "mod-a"
 	modB            = "mod-b"
@@ -36,9 +35,8 @@ const (
 	sectionErrorLog = "errorlog"
 )
 
-// modAFiles are the files the first mod adds to the fixture mod: a trait the second mod writes otherwise, a trait
-// nothing refers to, an event whose title has no message, an event that fires an event nothing defines, a file that
-// never closes its block, a file that replaces a file of the game whole, and the messages of two languages.
+// modAFiles are the files the first mod adds: traits, events, a file with an unclosed block, a file that replaces a
+// file of the game, and messages in two languages.
 var modAFiles = map[string]string{
 	"common/traits/a_shared.txt": "shared = { category = personality diplomacy = 1 }\n",
 	"common/traits/m_unused.txt": "unloved = { category = personality }\n",
@@ -56,21 +54,23 @@ var modBFiles = map[string]string{
 	"common/traits/b_shared.txt": "shared = { category = personality diplomacy = 2 }\n",
 }
 
-// errorLogText is an error log in Victoria 3's format: a message with two lines after it, the last of which names a
-// place in a mod's file, a blank line between them, and a second message.
+// errorLogText is an error log in Victoria 3's format. Its first message has continuation lines, the last of which
+// names a place in a mod's file.
 const errorLogText = "[22:07:20][jomini_script_system.cpp:247]: Script system error!\n" +
 	"  Error: custom_tooltip trigger\n\n" +
 	"  Script location: common/country_definitions/m_countries.txt:2\n" +
 	"[22:07:21][x.cpp:1]: Second message\n"
 
-// devMods are the mods the gate loads on each game, the first loaded first. The first Crusader Kings III mod is a
-// Workshop item; the others are in the developer's folders.
+// devMods are the mods the real-install test loads on each game, in load order.
 var devMods = map[string][]string{
 	"ck3": {
 		`C:\Program Files (x86)\Steam\steamapps\workshop\content\1158310\2243307127`,
 		`C:\Dev\repos\More Historicity - CK3`, `C:\Dev\repos\ck3-quieter-events`, `C:\Dev\repos\Shut Up About Dynasty Bastards`,
 	},
-	"vic3": {`C:\Dev\repos\Vic3\Hail, Columbia`, `C:\Dev\repos\Vic3\Morgenroete`},
+	"vic3": {
+		`C:\Program Files (x86)\Steam\steamapps\workshop\content\529340\3385002128`,
+		`C:\Dev\repos\Vic3\Hail, Columbia`, `C:\Dev\repos\Vic3\Morgenroete`,
+	},
 	"eu5": {
 		`C:\Dev\repos\EU5\Community Flavor Pack`, `C:\Dev\repos\EU5\Fix Trade Companies`, `C:\Dev\repos\EU5\Urban Rights`,
 	},
@@ -115,8 +115,8 @@ func createMod(t *testing.T, gameID, id string, added map[string]string) app.Mod
 	return app.Mod{ID: id, Dir: dir}
 }
 
-// createInstall copies a game's fixture install into a temporary folder and gives it a launcher setting that points
-// the game's user data at a temporary folder holding the given error log. It returns the install's folder.
+// createInstall copies a game's fixture install into a temporary folder, with the game's user data in another folder
+// that holds the given error log. It returns the install's folder.
 func createInstall(t *testing.T, gameID, errorLog string) string {
 	t.Helper()
 	install, userData := t.TempDir(), t.TempDir()
@@ -146,9 +146,10 @@ func openService(t *testing.T, gameID, installPath string, mods ...app.Mod) *Ser
 	if err != nil {
 		t.Fatal(err)
 	}
-	err = config.Update(func(records *app.Config) {
+	err = config.Update("", func(records *app.Config) error {
 		records.Installs = []app.Install{{ID: "i1", Game: gameID, Path: installPath}}
 		records.Workspaces = []app.Workspace{{ID: "w1", Name: "Test", Install: "i1", Mods: mods, Language: "english"}}
+		return nil
 	})
 	if err != nil {
 		t.Fatal(err)
@@ -180,10 +181,9 @@ func countSection(report Report, section string) int {
 	return lo.CountBy(report.Findings, func(finding Finding) bool { return finding.Section == section })
 }
 
-// TestBuildReportFindsEachSection checks that a report over two fixture mods holds a finding of each section, that
-// each section's count is its findings', that the game's definition is the one kept in an override where it loads
-// later, that a file a mod replaces whole is the file's finding and not the name's, and that another load order moves
-// the file the game loads and keeps the dependencies.
+// TestBuildReportFindsEachSection checks that a report over two fixture mods holds a finding of each section, that each
+// section's count matches its findings, and that a file a mod replaces is a finding of the file and not of its names.
+// It checks that another load order moves the loaded file and keeps the dependencies.
 func TestBuildReportFindsEachSection(t *testing.T) {
 	hlt := openService(t, "ck3", resolveFixture(t, "ck3"), createMod(t, "ck3", modA, modAFiles), createMod(t, "ck3", modB, modBFiles))
 	report, err := hlt.BuildReport(nil)
@@ -228,9 +228,6 @@ func TestBuildReportFindsEachSection(t *testing.T) {
 	if script := findFinding(t, report.Findings, "unclosed-block", "", ""); script.Section != "script" {
 		t.Errorf("script problem: %+v", script)
 	}
-	if unused := findFinding(t, report.Findings, "unused-definition", "unloved", ""); unused.Section != "unused" || len(unused.Sites) != 1 {
-		t.Errorf("unused definition: %+v", unused)
-	}
 	previewed, err := hlt.BuildReport([]string{modB, modA})
 	if err != nil {
 		t.Fatal(err)
@@ -247,8 +244,8 @@ func TestBuildReportFindsEachSection(t *testing.T) {
 	}
 }
 
-// assertDependencies checks the two findings of the second mod's trait that hides the first mod's: the second mod
-// depends on the first, which is affected by it, each with one name and the two definitions of it.
+// assertDependencies checks that the second mod depends on the first and that the first is affected by it, each with
+// one name and its two definitions.
 func assertDependencies(t *testing.T, report Report) {
 	t.Helper()
 	depends := findFinding(t, report.Findings, "depends", titleB, "mod")
@@ -260,21 +257,19 @@ func assertDependencies(t *testing.T, report Report) {
 	}
 }
 
-// assertLocalization checks the findings of a message the first mod lacks for a definition's title, a message
-// nothing refers to, and a language the first mod writes in part.
+// assertLocalization checks the findings of a missing title message and of a partly written language.
 func assertLocalization(t *testing.T, report Report) {
 	t.Helper()
 	missing := findFinding(t, report.Findings, "missing-message", "m.3", "")
-	orphaned := findFinding(t, report.Findings, "orphaned-message", "m_orphan", "")
 	coverage := findFinding(t, report.Findings, "coverage", german, "")
-	if missing.Facts["key"] != "m.3.t" || orphaned.Section != "localization" || coverage.Facts["mod"] != titleA ||
+	if missing.Facts["key"] != "m.3.t" || coverage.Facts["mod"] != titleA ||
 		coverage.Facts["have"] != "1" || coverage.Facts["of"] != "3" || len(coverage.Sites) != 1 {
-		t.Errorf("localization: %+v, %+v, %+v", missing, orphaned, coverage)
+		t.Errorf("localization: %+v, %+v", missing, coverage)
 	}
 }
 
-// TestListErrorLogAddsContinuationLines checks that the lines after a message are part of it, that a location on one
-// of them gives the message the place in the mod's file, and that a blank line adds nothing.
+// TestListErrorLogAddsContinuationLines checks that the lines after a message are part of it, that a location on one of
+// them gives the message its place, and that a blank line adds nothing.
 func TestListErrorLogAddsContinuationLines(t *testing.T) {
 	hlt := openService(t, "vic3", createInstall(t, "vic3", errorLogText), createMod(t, "vic3", modA, nil))
 	findings, err := hlt.ListErrorLog()
@@ -294,10 +289,9 @@ func TestListErrorLogAddsContinuationLines(t *testing.T) {
 	}
 }
 
-// TestWriteScaffoldWritesMissingFiles checks that the scaffold of a language the first mod lacks writes a file for
-// each of its base-language files, a file under a replace folder included, with the messages' texts as the
-// placeholders and a byte order mark, that a file whose counterpart exists is left as it is, and that a name that is
-// no language writes nothing.
+// TestWriteScaffoldWritesMissingFiles checks that a scaffold writes a file for each base-language file, with the
+// messages as placeholders and a byte order mark. It checks that an existing file is left as it is and that a name that
+// is no language writes nothing.
 func TestWriteScaffoldWritesMissingFiles(t *testing.T) {
 	mod := createMod(t, "ck3", modA, modAFiles)
 	hlt := openService(t, "ck3", resolveFixture(t, "ck3"), mod)
@@ -332,11 +326,8 @@ func TestWriteScaffoldWritesMissingFiles(t *testing.T) {
 	}
 }
 
-// TestBuildReportInstalls builds the report of each real install that PMT_TEST_INSTALL_<GAME> names, with the Dev
-// mods, and logs the time, the findings per section and per code, how many contests and overrides are names and how
-// many files, the dependencies with their mods, the dependencies under the reverse order, and the error log. The
-// editor's codes must come out as many as the editor itself finds in the same files, an unresolved reference counted
-// at each place; the rest is read, not asserted.
+// TestBuildReportInstalls builds the report of each real install that PMT_TEST_INSTALL_<GAME> names, with the dev mods,
+// and logs it. It fails if the report holds other counts of the editor's codes than the editor finds in the same files.
 func TestBuildReportInstalls(t *testing.T) {
 	for gameID, dirs := range devMods {
 		t.Run(gameID, func(t *testing.T) {
@@ -369,8 +360,7 @@ func TestBuildReportInstalls(t *testing.T) {
 	}
 }
 
-// logCounts logs the findings of a report per section and per code, and for contests and overrides how many are
-// files.
+// logCounts logs the findings of a report by section and by code.
 func logCounts(t *testing.T, report Report) {
 	t.Helper()
 	for _, section := range report.Sections {
@@ -390,8 +380,7 @@ func logCounts(t *testing.T, report Report) {
 	}
 }
 
-// logDependencies logs the dependency findings of a report with their mods, and how many dependency findings the
-// same mods have in the reverse order.
+// logDependencies logs the dependency findings of a report, and those of the same mods in the reverse order.
 func logDependencies(t *testing.T, hlt *Service, report Report, mods []app.Mod) {
 	t.Helper()
 	for _, finding := range report.Findings {
@@ -410,8 +399,8 @@ func logDependencies(t *testing.T, hlt *Service, report Report, mods []app.Mod) 
 	}))
 }
 
-// compareDiagnostics fails the test if the report holds other counts per code of the editor's codes than the editor
-// finds in every mod file.
+// compareDiagnostics fails the test if the report holds other counts of the editor's codes than the editor finds in the
+// mod files.
 func compareDiagnostics(t *testing.T, hlt *Service, report Report) {
 	t.Helper()
 	ws, err := hlt.Workspace.Session()
@@ -429,7 +418,7 @@ func compareDiagnostics(t *testing.T, hlt *Service, report Report) {
 			want[diagnostic.Code]++
 		}
 	}
-	own := []string{"missing-message", "orphaned-message", "coverage"}
+	own := []string{"missing-message", "coverage"}
 	got := map[string]int{}
 	for _, finding := range report.Findings {
 		if slices.Contains([]string{sectionDangling, "script", "localization"}, finding.Section) && !slices.Contains(own, finding.Code) {

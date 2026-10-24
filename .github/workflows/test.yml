@@ -1,4 +1,4 @@
-# Gate every PR to main on the backend tests and the frontend typecheck. -race is the only thing
+# Gate every PR to main on a full build, the backend tests and the frontend typecheck. -race is the only thing
 # that catches a lock-discipline regression. The real-install tier needs the three games
 # installed, so its gates stay manual: `task test:gate`.
 name: Test
@@ -18,7 +18,7 @@ concurrency:
 
 jobs:
   backend:
-    name: Go tests (race)
+    name: Build and Go tests (race)
     runs-on: ubuntu-latest
     steps:
       - uses: actions/checkout@v7
@@ -26,6 +26,29 @@ jobs:
       - uses: actions/setup-go@v7
         with:
           go-version: "1.27.2"
+
+      - uses: actions/setup-node@v7
+        with:
+          node-version: "24"
+          cache: npm
+          cache-dependency-path: frontend/package-lock.json
+
+      - name: Linux GTK4 / WebKitGTK 6
+        run: |
+          sudo apt-get update
+          sudo apt-get install -y build-essential pkg-config libgtk-4-dev libwebkitgtk-6.0-dev
+
+      - name: Install Wails CLI
+        run: |
+          go install "github.com/wailsapp/wails/v3/cmd/wails3@$(go list -m -f '{{.Version}}' github.com/wailsapp/wails/v3)"
+          echo "$(go env GOPATH)/bin" >> "$GITHUB_PATH"
+
+      # the full build a release makes: the frontend, the bindings and the app
+      - name: Build
+        run: |
+          set -euo pipefail
+          wails3 task linux:build
+          test -f bin/paradox-modding-tools
 
       - name: gofmt
         run: |

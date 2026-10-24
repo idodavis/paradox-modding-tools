@@ -24,9 +24,10 @@ import (
 	"paradox-modding-tools/services/workspace"
 )
 
-// EventHits is sent with one file's hits as a text search finds them; the data is a Hits.
+// EventHits is sent with one file's hits as a text search finds them. It carries a Hits.
 const EventHits = "search:hits"
 
+// init registers the search event with the application.
 func init() { application.RegisterEvent[Hits](EventHits) }
 
 // Service is the search service. It runs one search at a time; starting a new one stops the last.
@@ -53,45 +54,43 @@ type Query struct {
 	Origins   []string `json:"origins"` // the mods and the game searched; empty for the mods
 }
 
-// A Hit is one match: the file, the match's range in Monaco's form, and the text of the line it is on. The range's
-// columns also mark the match inside that text.
+// A Hit is one match of a text search. Its range's columns also mark the match inside the text of its line.
 type Hit struct {
 	Place workspace.Place `json:"place"`
 	Range lsp.Range       `json:"range"`
 	Text  string          `json:"text"`
 }
 
-// Hits is the data of the search:hits event: one file's hits, sent as soon as that file is done so the view fills
-// as the search runs.
+// Hits holds the matches in one file. It is what the search:hits event carries.
 type Hits struct {
 	Place workspace.Place `json:"place"`
 	Hits  []Hit           `json:"hits"`
 }
 
-// SearchText runs a text search over the files the query names, reading an open file's text from the editor. It
-// sends each file's hits as a search:hits event as that file is done, and returns when the search ends or a newer
-// search stops it. Starting a new search stops the last.
+// SearchText runs a text search over the files the query names. It sends each file's hits as a search:hits event, and
+// returns when the search ends or a newer search stops it. It returns an error if the query is empty or is a regular
+// expression that does not parse.
 func (sch *Service) SearchText(query Query) error {
 	sch.setStop(nil)
 	ws, err := sch.Workspace.Session()
 	if err != nil {
 		return err
 	}
-	if _, err := parseQuery(query); err != nil {
+	expression, err := parseQuery(query)
+	if err != nil {
 		return err
 	}
 	stop := make(chan struct{})
 	sch.setStop(stop)
-	run(ws, ws.Mods.Load(), query, stop)
+	run(ws, query, expression, stop)
 	return nil
 }
 
 // StopSearch ends the running search, if any.
 func (sch *Service) StopSearch() { sch.setStop(nil) }
 
-// ReplaceText replaces every match of a query in the mods' files and returns how many it replaced. Each file is
-// written back in its own encoding, and the watcher sends fs:changed for it. A file open in the editor is skipped,
-// since the editor replaces in it; the error says how many were skipped.
+// ReplaceText replaces every match of a query in the mods' files and returns how many it replaced. Each file keeps its
+// encoding. A file open in the editor is skipped, and the error says how many were.
 func (sch *Service) ReplaceText(query Query, replacement string) (int, error) {
 	ws, err := sch.Workspace.Session()
 	if err != nil {
@@ -129,8 +128,8 @@ func (sch *Service) ReplaceText(query Query, replacement string) (int, error) {
 	return count, failure
 }
 
-// SearchFiles returns the files whose path contains the query's characters in order, the mods' files first, up
-// to the given limit.
+// SearchFiles returns the files whose path contains the query's characters in order, the mods' files first, up to the
+// given limit.
 func (sch *Service) SearchFiles(query string, limit int) []workspace.Place {
 	ws, err := sch.Workspace.Session()
 	if err != nil {
@@ -144,27 +143,25 @@ func (sch *Service) SearchFiles(query string, limit int) []workspace.Place {
 			return places
 		}
 		if file := mods.Files[position]; isSubsequence(strings.ToLower(file.Rel), characters) {
-			places = append(places, ws.Locate(file.Path))
+			places = append(places, ws.Locate(mods, file.Path))
 		}
 	}
 	return places
 }
 
-// run runs one text search over the files of the given index of the mods until it finishes or the stop channel
-// closes, sending each file's hits as it goes. An open file is searched in the editor's text.
-func run(ws *workspace.Session, mods *index.Index, query Query, stop <-chan struct{}) {
-	expression, err := parseQuery(query)
-	if err != nil {
-		return
-	}
+// run runs one text search with the given expression over the files the query names, sending each file's hits. It
+// returns when the search finishes or the given channel closes.
+func run(ws *workspace.Session, query Query, expression *regexp.Regexp, stop <-chan struct{}) {
 	var group errgroup.Group
 	group.SetLimit(files.Workers)
+	mods := ws.Mods.Load()
 	for _, file := range listFiles(mods, query) {
 		if isClosed(stop) {
 			break
 		}
 		group.Go(func() error {
-			if hits := findHits(ws, file, expression, query.WholeWord); len(hits) > 0 && !isClosed(stop) {
+			place := ws.Locate(mods, file.Path)
+			if hits := findHits(ws, place, expression, query.WholeWord); len(hits) > 0 && !isClosed(stop) {
 				application.Get().Event.Emit(EventHits, Hits{Place: hits[0].Place, Hits: hits})
 			}
 			return nil
@@ -173,8 +170,8 @@ func run(ws *workspace.Session, mods *index.Index, query Query, stop <-chan stru
 	_ = group.Wait()
 }
 
-// setStop closes the stop channel of the running search. When none runs, there is nothing to close. It keeps the
-// given channel in its place, nil when none runs next.
+// setStop ends the running search, if any, and keeps the given channel as the one that ends the next. A nil channel
+// means no search runs.
 func (sch *Service) setStop(stop chan struct{}) {
 	sch.mu.Lock()
 	defer sch.mu.Unlock()
@@ -200,9 +197,8 @@ func parseQuery(query Query) (*regexp.Regexp, error) {
 	return regexp.Compile(expression)
 }
 
-// listFiles returns the files a query names. These are the files of its origins, or of the mods when it names
-// none. Only text files are kept, and then those the include and exclude globs let through. A file the index no
-// longer knows is left out.
+// listFiles returns the text files a query names: those of its origins, or of the mods if it names none, that its
+// include and exclude globs let through.
 func listFiles(mods *index.Index, query Query) []files.File {
 	include, exclude := parseGlobs(query.Include), parseGlobs(query.Exclude)
 	return lo.Filter(mods.Files, func(file files.File, position int) bool {
@@ -210,18 +206,15 @@ func listFiles(mods *index.Index, query Query) []files.File {
 		if len(query.Origins) > 0 {
 			searched = slices.Contains(query.Origins, file.Origin)
 		}
-		if !mods.IsListed(int32(position)) || !searched {
-			return false
-		}
-		if file.Format == files.FormatImage || file.Format == files.FormatBinary {
+		if !mods.IsListed(int32(position)) || !searched || !file.Format.IsText() {
 			return false
 		}
 		return (include == nil || include.Match(file.Rel, false)) && !exclude.Match(file.Rel, false)
 	})
 }
 
-// parseGlobs returns the rules of a list of glob patterns. The patterns are separated by commas outside braces and
-// by line breaks, so "*.{txt,yml}" is one pattern.
+// parseGlobs returns the rules of a list of glob patterns, separated by commas outside braces and by line breaks. So
+// "*.{txt,yml}" is one pattern.
 func parseGlobs(text string) files.Ignore {
 	var rules strings.Builder
 	depth := 0
@@ -239,9 +232,8 @@ func parseGlobs(text string) files.Ignore {
 	return files.ParseIgnore(rules.String())
 }
 
-// findMatches returns the matches of an expression in a text, line by line. A match never spans two lines and is
-// never empty. With the whole-word flag, a match counts only if it stands apart from the letters around it. Each
-// match is a list of byte offsets in the text, as the expression's own submatch indexes are.
+// findMatches returns the matches of an expression in a text, line by line, each as byte offsets. A match never spans
+// two lines and is never empty. With the whole-word flag, a match must stand apart from the letters around it.
 func findMatches(text string, lines jomini.Lines, expression *regexp.Regexp, wholeWord bool) [][]int {
 	var matches [][]int
 	for line := range lines.CountLines() {
@@ -263,7 +255,7 @@ func findMatches(text string, lines jomini.Lines, expression *regexp.Regexp, who
 }
 
 // isWholeWord reports whether the characters on each side of a match in a line are neither letters, digits nor an
-// underscore. The start and the end of the line count as neither.
+// underscore. The start and end of the line count as neither.
 func isWholeWord(content string, start, end int) bool {
 	inWord := func(character rune) bool {
 		return unicode.IsLetter(character) || unicode.IsDigit(character) || character == '_'
@@ -273,9 +265,8 @@ func isWholeWord(content string, start, end int) bool {
 	return !inWord(before) && !inWord(after)
 }
 
-// replaceFile replaces every match of an expression in a file on disk and returns how many it replaced. The file
-// is written back in its own encoding, and not at all if nothing matched. It returns an error if the file cannot be
-// read or written.
+// replaceFile replaces every match of an expression in a file and returns how many it replaced. The file keeps its
+// encoding and is not written if nothing matched. It returns an error if the file cannot be read or written.
 func (sch *Service) replaceFile(
 	path string, expression *regexp.Regexp, wholeWord bool, replacement string,
 ) (int, error) {
@@ -312,13 +303,12 @@ func isSubsequence(text string, characters []rune) bool {
 	return len(characters) == 0
 }
 
-// findHits returns the hits of an expression in one file, in order. It searches the editor's text if the file is
-// open there and the file on disk if not. A match never spans two lines, and an empty match is not a hit. It
-// returns nothing for a file that cannot be read.
-func findHits(ws *workspace.Session, file files.File, expression *regexp.Regexp, wholeWord bool) []Hit {
-	source, open := ws.LookupBuffer(file.Path)
+// findHits returns the hits of an expression in the file at the given place, in order. It searches the editor's text if
+// the file is open. It returns none for a file that cannot be read.
+func findHits(ws *workspace.Session, place workspace.Place, expression *regexp.Regexp, wholeWord bool) []Hit {
+	source, open := ws.LookupBuffer(place.Path)
 	if !open {
-		text, err := files.ReadText(file.Path)
+		text, err := files.ReadText(place.Path)
 		if err != nil {
 			return nil
 		}
@@ -329,7 +319,6 @@ func findHits(ws *workspace.Session, file files.File, expression *regexp.Regexp,
 	if len(matches) == 0 {
 		return nil
 	}
-	place := ws.Locate(file.Path)
 	return lo.Map(matches, func(match []int, _ int) Hit {
 		line := lines.LineSpan(lines.ToPosition(match[0]).Line)
 		return Hit{

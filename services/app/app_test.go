@@ -5,7 +5,10 @@ import (
 	"path/filepath"
 	"reflect"
 	"regexp"
+	"sync"
 	"testing"
+
+	"github.com/wailsapp/wails/v3/pkg/application"
 )
 
 // TestLoadJSON reads a file that is not there and gets the zero value without an error.
@@ -38,32 +41,34 @@ func TestSaveJSON(t *testing.T) {
 
 // TestOpenConfig opens a missing config.json as a writable first run and an unreadable one as read-only.
 func TestOpenConfig(t *testing.T) {
-	file, err := openConfig(Dirs{App: t.TempDir()})
-	if err != nil || file.readOnly {
-		t.Fatalf("a first run gave read-only %v, %v", file.readOnly, err)
+	file := openConfig(Dirs{App: t.TempDir()})
+	if file.readOnly {
+		t.Fatal("a first run gave a read-only config")
 	}
 	// a folder named config.json cannot be read as a file
 	dirs := Dirs{App: t.TempDir()}
 	if err := os.Mkdir(filepath.Join(dirs.App, "config.json"), 0o755); err != nil {
 		t.Fatal(err)
 	}
-	file, err = openConfig(dirs)
-	if err != nil || !file.readOnly {
-		t.Fatalf("an unreadable file gave read-only %v, %v", file.readOnly, err)
+	file = openConfig(dirs)
+	if !file.readOnly {
+		t.Fatal("an unreadable file gave a writable config")
 	}
-	if err := file.Update(func(*Config) {}); err == nil {
+	if err := file.Update("", func(*Config) error { return nil }); err == nil {
 		t.Fatal("a read-only config was written")
 	}
 }
 
+// createApp makes the Wails app that a config's update emits its event through, once for all the tests.
+var createApp = sync.OnceFunc(func() { application.New(application.Options{}) })
+
 // TestUpdateConfig changes the config and finds the change in the file and in the next copy.
 func TestUpdateConfig(t *testing.T) {
-	file, err := openConfig(Dirs{App: t.TempDir()})
-	if err != nil {
-		t.Fatal(err)
-	}
-	err = file.Update(func(config *Config) {
+	createApp()
+	file := openConfig(Dirs{App: t.TempDir()})
+	err := file.Update("workspaces", func(config *Config) error {
 		config.Workspaces = append(config.Workspaces, Workspace{ID: "w1", Name: "Mine"})
+		return nil
 	})
 	if err != nil {
 		t.Fatal(err)

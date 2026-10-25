@@ -2,30 +2,38 @@
 <script setup lang="ts">
 import { computed, onBeforeUnmount, onMounted, shallowRef, useTemplateRef, watch } from "vue";
 import { useRouter } from "vue-router";
-import { useMutation } from "@pinia/colada";
+import { useMutation, useQuery } from "@pinia/colada";
 import { useEventBus } from "@vueuse/core";
 import { Clipboard } from "@wailsio/runtime";
 import { editor, KeyCode, KeyMod, Range } from "monaco-editor/editor/editor.api";
 import type { ContextMenuItem } from "@nuxt/ui";
 
+import type { Edge } from "@services/graph/models";
 import * as lsp from "@services/lsp/service";
-import type { Fix } from "@services/lsp/models";
+import type { Card, Fix, Location } from "@services/lsp/models";
 
-import { COMMANDS } from "../../app/commands";
-import { loadQuery, placeQuery } from "../../queries";
+import { COMMANDS, compareWithFile, compareWithGame, findGameCopy } from "../../app/commands";
+import { copiesQuery, detailQuery, fileQuery, loadQuery, placeQuery, wikiPagesQuery } from "../../queries";
 import { useEditorStore } from "../../stores/editor";
 import { useSearchStore } from "../../stores/search";
+import { useWindowsStore } from "../../stores/windows";
 import { useWorkspaceStore } from "../../stores/workspace";
 import { decorate } from "./editor/conflicts";
 import { attachHover } from "./editor/hover";
 import { applyEdits, openModel, type Model } from "./editor/models";
 import { editorOptions } from "./editor/monaco";
+import { CLASSES } from "./WikiPane.vue";
 
 const { model, active } = defineProps<{ model: Model; active: boolean }>();
 
+/** How many lines the caret must move in one go for the history to keep the place it left. */
+const JUMP_LINES = 10;
+
 const router = useRouter();
 const editorStore = useEditorStore();
+const windows = useWindowsStore();
 const workspace = useWorkspaceStore();
+const toast = useToast();
 const commands = useEventBus<string>("pmt.command");
 const host = useTemplateRef("host");
 const view = shallowRef<editor.IStandaloneCodeEditor>();
@@ -50,10 +58,33 @@ const { mutate: findAll } = useMutation({
       lsp.Hover(model.place.path, caret.lineNumber, caret.column),
       lsp.References(model.place.path, caret.lineNumber, caret.column),
     ]);
-    useSearchStore().showReferences(`References to ${hovered?.title ?? "the name"}`, locations ?? []);
-    commands.emit("editor.findInFiles");
+    listReferences(`References to ${hovered?.title ?? "the name"}`, locations ?? []);
   },
 });
+// the places that fire a name the Event Graph draws, from the name's detail there
+const { mutate: findFirers } = useMutation({
+  mutation: async (subject: Card) => {
+    const detail = await loadQuery(detailQuery(subject.node ?? ""));
+    const locations = await Promise.all((detail?.firedBy ?? []).map((edge) => locateFiring(edge, subject.title)));
+    listReferences(`What fires ${subject.title}`, locations);
+  },
+});
+// a command looks up its lexicon entry, and a definition the first wiki page of the file it is defined in
+const { mutate: lookUp } = useMutation({
+  mutation: async (subject: Card) => {
+    if (CLASSES.some((one) => one.value === subject.what)) return { class: subject.what, name: subject.title };
+    const path = subject.sites?.[0]?.place.path;
+    const title = path ? (await loadQuery(wikiPagesQuery(path)))?.[0]?.title : undefined;
+    return title ? { title } : undefined;
+  },
+  onSuccess: (lookup, subject) => {
+    if (lookup) windows.lookUp(lookup);
+    else toast.add({ title: `The wiki has no page for ${subject.title}` });
+  },
+});
+// the menu offers the compare with the game's copy only for a mod's file the game has too
+const { data: copies } = useQuery(() => ({ ...copiesQuery(model.place.path), enabled: !model.place.readOnly }));
+const gameCopy = computed(() => findGameCopy(model.place, copies.value));
 const { mutate: applyFix } = useMutation({
   mutation: async (fix: Fix) => {
     for (const [path, edits] of Object.entries(fix.edits ?? {})) {
@@ -70,7 +101,11 @@ onMounted(() => {
   const caret = { lineNumber: model.caret.line, column: model.caret.column };
   codeEditor.setPosition(caret);
   codeEditor.revealPositionInCenterIfOutsideViewport(caret);
-  codeEditor.onDidChangeCursorPosition(({ position: caret }) => {
+  codeEditor.onDidChangeCursorPosition(({ position: caret, reason, source }) => {
+    // the user moving the caret far in one go is a jump the history keeps; a move the app makes is kept by its jump
+    const far = Math.abs(caret.lineNumber - model.caret.line) > JUMP_LINES;
+    if (active && far && reason === editor.CursorChangeReason.Explicit && source !== "api")
+      editorStore.record({ place: model.place, position: caret });
     // eslint-disable-next-line vue/no-mutating-props -- the model is state shared by every group that shows the file
     model.caret = { line: caret.lineNumber, column: caret.column };
   });
@@ -111,6 +146,32 @@ async function showInHealth(): Promise<void> {
   await router.push({ name: "health", params: { id: workspace.activeId() }, query: { name: card.value?.title } });
 }
 
+/**
+ * Lists places in the sidebar's references under the given heading, which every window's list shows, and shows the
+ * main window's sidebar search.
+ */
+function listReferences(heading: string, locations: Location[]): void {
+  useSearchStore().showReferences(heading, locations);
+  windows.sendCommand("editor.findInFiles", "main");
+}
+
+/**
+ * Finds the place of a firing as a reference: its line's text, with the given name marked where the line holds it. A
+ * file that cannot be read gives the line no text.
+ */
+async function locateFiring(edge: Edge, name: string): Promise<Location> {
+  const file = await loadQuery(fileQuery(edge.place.path)).catch(() => undefined);
+  const text = file?.text.text.split(/\r?\n/)[edge.line - 1] ?? "";
+  const index = text.indexOf(name);
+  // a line that names a scripted effect which fires the name, not the name itself, is marked nowhere
+  const [start, end] = index < 0 ? [1, 1] : [index + 1, index + 1 + name.length];
+  return {
+    place: edge.place,
+    range: { startLineNumber: edge.line, startColumn: start, endLineNumber: edge.line, endColumn: end },
+    text,
+  };
+}
+
 /** Runs one of Monaco's own actions in this editor. */
 function run(action: string): void {
   view.value?.focus();
@@ -147,6 +208,9 @@ const groups = computed<ContextMenuItem[][]>(() => [
       ],
     },
     { label: "Find all references", kbds: ["Shift Alt F12"], onSelect: () => findAll() },
+    ...(card.value?.node
+      ? [{ label: "Find what fires this", onSelect: () => card.value && findFirers(card.value) }]
+      : []),
     { label: "Rename", kbds: ["F2"], disabled: model.place.readOnly, onSelect: () => run("editor.action.rename") },
   ],
   [
@@ -157,6 +221,13 @@ const groups = computed<ContextMenuItem[][]>(() => [
       onSelect: (event) => void COMMANDS.find((command) => command.id === "editor.openGraph")?.onSelect?.(event),
     },
     { label: "Show in Health", disabled: !card.value, onSelect: () => void showInHealth() },
+    { label: "Look up in the wiki", disabled: !card.value, onSelect: () => card.value && lookUp(card.value) },
+  ],
+  [
+    ...(gameCopy.value
+      ? [{ label: "Compare with the game's copy", onSelect: () => compareWithGame(model.place) }]
+      : []),
+    { label: "Compare with another file…", onSelect: () => compareWithFile(model.place) },
   ],
   [
     {

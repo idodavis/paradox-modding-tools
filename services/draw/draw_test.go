@@ -1,6 +1,7 @@
 package draw
 
 import (
+	"maps"
 	"os"
 	"path/filepath"
 	"slices"
@@ -14,8 +15,8 @@ import (
 
 	"paradox-modding-tools/internal/files"
 	"paradox-modding-tools/internal/game"
-	"paradox-modding-tools/internal/index"
 	"paradox-modding-tools/internal/jomini"
+	"paradox-modding-tools/internal/loc"
 	"paradox-modding-tools/services/app"
 	"paradox-modding-tools/services/lsp"
 	"paradox-modding-tools/services/workspace"
@@ -28,7 +29,7 @@ const (
 	typeLabel   = "v_label"
 	groupFlagA  = "GetVariableSystem.Exists('d_a')"
 	groupFlagB  = "GetVariableSystem.Exists('d_b')"
-	groupAlive  = "GetPlayer.IsAlive"
+	groupAlive  = "GetPlayer.IsIndependentRuler"
 	groupBrave  = "GetTrait('brave').IsValid"
 	groupBold   = "GetTrait('bold').IsValid"
 	halfAlpha   = "0.5"
@@ -99,17 +100,17 @@ window = {
 	using = d_nowhere
 	widget = {
 		name = "d_both"
-		visible = "[And2(GetVariableSystem.Exists('d_a'), GetPlayer.IsAlive)]"
+		visible = "[And2(GetVariableSystem.Exists('d_a'), GetPlayer.IsIndependentRuler)]"
 	}
 	widget = {
 		name = "d_not"
-		visible = "[Not( GetPlayer.IsAlive )]"
+		visible = "[Not( GetPlayer.IsIndependentRuler )]"
 		visible_at_creation = no
 	}
 	widget = {
 		name = "d_outer"
 		visible = "[GetVariableSystem.Exists('d_b')]"
-		icon = { name = "d_inner" using = d_tint visible = "[GetPlayer.IsAlive]" }
+		icon = { name = "d_inner" using = d_tint visible = "[GetPlayer.IsIndependentRuler]" }
 	}
 	widget = { name = "d_off" visible = no }
 	widget = {
@@ -122,7 +123,7 @@ window = {
 	widget = {
 		name = "d_choice"
 		alpha = "[Select_float( GetVariableSystem.Exists('d_a'), '(float)1.0', '(float)0.5' )]"
-		size = "[Select_CVector2f( GetPlayer.IsAlive, '(CVector2f)10,20', '(CVector2f)30,40' )]"
+		size = "[Select_CVector2f( GetPlayer.IsIndependentRuler, '(CVector2f)10,20', '(CVector2f)30,40' )]"
 	}
 }
 window = {
@@ -150,7 +151,7 @@ window = {
 }
 window = {
 	name = "d_text_window"
-	textbox = { name = "d_raw" text = "no_such_key" raw_text = "Plain $v_key$ text" visible = "[GetPlayer.IsAlive]" }
+	textbox = { name = "d_raw" text = "no_such_key" raw_text = "Plain $v_key$ text" visible = "[GetPlayer.IsIndependentRuler]" }
 	textbox = { name = "d_unknown" text = "no_such_key" }
 }
 window = {
@@ -378,23 +379,32 @@ func TestResolveWindowAppliesTypesTemplatesAndOverrides(t *testing.T) {
 		box.Row.Holding != "column" || !slices.Equal(inside, want) {
 		t.Errorf("box: type %s, holding %s, children %v", box.Type, box.Row.Holding, inside)
 	}
-	size := findProperty(box.Properties, "size")
+	size := findProperty(window.listProperties(box), "size")
 	if size.Value != "{ 100 20 }" || size.Origin != originTemplate || window.Places[size.Place].Rel != "gui/v_window.gui" {
 		t.Errorf("box size %+v", size)
 	}
 	button := window.Widgets[2]
-	size, texture := findProperty(button.Properties, "size"), findProperty(button.Properties, "texture")
+	size, texture := findProperty(window.listProperties(button), "size"), findProperty(window.listProperties(button), "texture")
 	if size.Value != "{ 50 20 }" || size.Origin != originWidget || texture.Origin != originType || texture.Value != "v_frame.dds" ||
 		size.Range.StartLine != 42 {
 		t.Errorf("overriding button size %+v, texture %+v", size, texture)
 	}
-	if findProperty(window.Widgets[3].Properties, "layoutpolicy_vertical").Value != "expanding" {
-		t.Errorf("second overriding button %+v", window.Widgets[3].Properties)
+	if findProperty(window.listProperties(window.Widgets[3]), "layoutpolicy_vertical").Value != "expanding" {
+		t.Errorf("second overriding button %+v", slices.Collect(window.listProperties(window.Widgets[3])))
 	}
 	icon := window.Widgets[5]
+	var overlay Overlay
+	if len(icon.Overlays) == 1 {
+		overlay = window.Overlays[icon.Overlays[0]]
+	}
+	framesize := ""
+	for _, position := range overlay.Properties {
+		if property := window.Properties[position]; property.Key == "framesize" {
+			framesize = property.Value
+		}
+	}
 	if file := filepath.ToSlash(icon.Textures["texture"]); !strings.HasSuffix(file, "gfx/interface/v_frame.dds") ||
-		len(icon.Overlays) != 1 || !strings.HasSuffix(filepath.ToSlash(icon.Overlays[0].Path), "gfx/interface/v_bg.dds") ||
-		findProperty(icon.Overlays[0].Properties, "framesize").Value != "{ 2 2 }" {
+		!strings.HasSuffix(filepath.ToSlash(overlay.Path), "gfx/interface/v_bg.dds") || framesize != "{ 2 2 }" {
 		t.Errorf("icon textures %v, overlays %+v", icon.Textures, icon.Overlays)
 	}
 	if item := window.Widgets[7]; item.Type != typeLabel || item.Parent != 6 {
@@ -443,7 +453,7 @@ func TestResolveWindowOrdersChildrenAndOpensStates(t *testing.T) {
 	if file := filepath.ToSlash(findWidget(t, window, "d_slash").Textures["texture"]); !strings.HasSuffix(file, "gfx/interface/v_bg.dds") {
 		t.Errorf("texture written with a leading slash: %q", file)
 	}
-	if alpha := findProperty(findWidget(t, window, "d_state").Properties, "alpha"); alpha.Value != halfAlpha || alpha.Origin != originWidget {
+	if alpha := findProperty(window.listProperties(findWidget(t, window, "d_state")), "alpha"); alpha.Value != halfAlpha || alpha.Origin != originWidget {
 		t.Errorf("alpha after the opening state: %+v", alpha)
 	}
 }
@@ -457,8 +467,8 @@ func TestResolveWindowDrawsTypesAndTemplatesAlone(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	if findProperty(twin.Widgets[0].Properties, "alpha").Value != "0.25" {
-		t.Errorf("the window of the same name as a type: %+v", twin.Widgets[0].Properties)
+	if findProperty(twin.listProperties(twin.Widgets[0]), "alpha").Value != "0.25" {
+		t.Errorf("the window of the same name as a type: %+v", slices.Collect(twin.listProperties(twin.Widgets[0])))
 	}
 	holder, err := drw.ResolveWindow(modFile, "d_holder")
 	if err != nil {
@@ -471,7 +481,7 @@ func TestResolveWindowDrawsTypesAndTemplatesAlone(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	alpha := findProperty(tint.Widgets[0].Properties, "alpha")
+	alpha := findProperty(tint.listProperties(tint.Widgets[0]), "alpha")
 	if alpha.Value != halfAlpha || alpha.Origin != originTemplate || tint.Widgets[0].Type != typeWidget {
 		t.Errorf("a template drawn alone: %+v", tint.Widgets[0])
 	}
@@ -486,13 +496,15 @@ func TestResolveWindowMarksMissingTemplate(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	missing := lo.Filter(window.Widgets[0].Properties, func(property Property, _ int) bool { return property.Origin == originMissing })
+	missing := lo.Filter(slices.Collect(window.listProperties(window.Widgets[0])), func(property Property, _ int) bool {
+		return property.Origin == originMissing
+	})
 	if len(missing) != 1 || missing[0].Key != game.GUI.TemplateCalls || missing[0].Value != "d_nowhere" {
 		t.Errorf("missing properties %+v", missing)
 	}
 	inner := findWidget(t, window, "d_inner")
-	if alpha := findProperty(inner.Properties, "alpha"); alpha.Value != halfAlpha || alpha.Origin != originTemplate {
-		t.Errorf("properties of the widget that uses a template: %+v", inner.Properties)
+	if alpha := findProperty(window.listProperties(inner), "alpha"); alpha.Value != halfAlpha || alpha.Origin != originTemplate {
+		t.Errorf("properties of the widget that uses a template: %+v", slices.Collect(window.listProperties(inner)))
 	}
 	if _, err := drw.ResolveWindow(modFile, "nowhere"); err == nil {
 		t.Error("a window the file does not define was resolved")
@@ -500,32 +512,35 @@ func TestResolveWindowMarksMissingTemplate(t *testing.T) {
 }
 
 // TestResolveWindowShowsTextsAndBindings checks that a localization key shows its text, a data call inside a text shows
-// as […], a text that names no message shows as written, a raw text is read, and no other property has a text.
+// sample text, a text that names no message shows as written, a raw text is read, and no other property has a text.
 func TestResolveWindowShowsTextsAndBindings(t *testing.T) {
 	drw, installFile, modDir := openFixture(t)
 	window, err := drw.ResolveWindow(installFile, "v_concepts")
 	if err != nil {
 		t.Fatal(err)
 	}
-	if got := window.Widgets[1].Texts["text"]; got != "[…] rules" {
-		t.Errorf("text with a call inside: %q", got)
+	isSample := func(segment loc.Segment) bool {
+		return segment.Markup == loc.MarkupCall && segment.Text != "" && !strings.Contains(segment.Text, "[")
+	}
+	if got := window.Widgets[1].Texts["text"]; len(got) != 2 || !isSample(got[0]) || loc.ToPlain(got) != " rules" {
+		t.Errorf("text with a call inside: %+v", got)
 	}
 	button, err := drw.ResolveWindow(installFile, "v_other_window")
 	if err != nil {
 		t.Fatal(err)
 	}
-	if got := button.Widgets[1].Texts["text"]; got != "[…]" {
-		t.Errorf("text a type gives a widget: %q", got)
+	if got := button.Widgets[1].Texts["text"]; len(got) != 1 || !isSample(got[0]) {
+		t.Errorf("text a type gives a widget: %+v", got)
 	}
 	texts, err := drw.ResolveWindow(filepath.Join(modDir, modWindowPath), "d_text_window")
 	if err != nil {
 		t.Fatal(err)
 	}
 	raw := findWidget(t, texts, "d_raw")
-	if raw.Texts["raw_text"] != "Plain Replaced text text" || len(raw.Texts) != 1 {
+	if loc.ToPlain(raw.Texts["raw_text"]) != "Plain Replaced text text" || len(raw.Texts) != 1 {
 		t.Errorf("raw text %v", raw.Texts)
 	}
-	if unknown := findWidget(t, texts, "d_unknown"); unknown.Texts["text"] != "no_such_key" {
+	if unknown := findWidget(t, texts, "d_unknown"); loc.ToPlain(unknown.Texts["text"]) != "no_such_key" {
 		t.Errorf("text with no message %v", unknown.Texts)
 	}
 }
@@ -547,17 +562,22 @@ func TestEvaluateStatesHidesByPick(t *testing.T) {
 	}
 	yesOrNo := []string{pickEvery, pickNone}
 	wantGroups := []Group{
-		{ID: groupFlagA, Subject: "Variable system", Label: "exists d_a", Options: yesOrNo, Picked: pickNone},
-		{ID: groupAlive, Subject: "Player", Label: "is alive", Options: yesOrNo, Picked: pickNone},
-		{ID: groupFlagB, Subject: "Variable system", Label: "exists d_b", Options: yesOrNo, Picked: pickNone},
-		{ID: groupBrave, Subject: "Trait", Key: "brave", Label: "is valid", Options: yesOrNo, Picked: pickEvery},
-		{ID: groupBold, Subject: "Trait", Key: "bold", Label: "is valid", Options: yesOrNo, Picked: pickEvery},
+		{ID: groupFlagA, Subject: "Variable system", Label: "exists d_a", Options: yesOrNo},
+		{ID: groupAlive, Subject: "Player", Label: "is independent ruler", Options: yesOrNo},
+		{ID: groupFlagB, Subject: "Variable system", Label: "exists d_b", Options: yesOrNo},
+		{ID: groupBrave, Subject: "Trait", Key: "brave", Label: "is valid", Options: yesOrNo},
+		{ID: groupBold, Subject: "Trait", Key: "bold", Label: "is valid", Options: yesOrNo},
 	}
-	if !slices.EqualFunc(states.Groups, wantGroups, func(got, want Group) bool {
+	if !slices.EqualFunc(window.Groups, wantGroups, func(got, want Group) bool {
 		return got.ID == want.ID && got.Subject == want.Subject && got.Key == want.Key && got.Label == want.Label &&
-			got.Picked == want.Picked && slices.Equal(got.Options, want.Options)
+			slices.Equal(got.Options, want.Options)
 	}) {
-		t.Errorf("groups %+v", states.Groups)
+		t.Errorf("groups %+v", window.Groups)
+	}
+	wantValues := map[string]string{groupFlagA: pickNone, groupAlive: pickNone, groupFlagB: pickNone, groupBrave: pickEvery,
+		groupBold: pickEvery}
+	if !maps.Equal(states.Values, wantValues) {
+		t.Errorf("values %v", states.Values)
 	}
 	names := func(hidden []int32) []string {
 		return lo.Map(hidden, func(id int32, _ int) string { return window.Widgets[id].Name })
@@ -567,7 +587,9 @@ func TestEvaluateStatesHidesByPick(t *testing.T) {
 		t.Errorf("hidden as the window opens: %v, want %v", got, want)
 	}
 	chosen := []Choice{{Key: "alpha", Value: "0.5"}, {Key: "size", Value: "30 40"}}
-	if got := states.Choices[findWidget(t, window, "d_choice").ID]; !slices.Equal(got, chosen) {
+	if got := states.Choices[findWidget(t, window, "d_choice").ID]; !slices.EqualFunc(got, chosen, func(got, want Choice) bool {
+		return got.Key == want.Key && got.Value == want.Value
+	}) {
 		t.Errorf("choices as the window opens: %+v, want %+v", got, chosen)
 	}
 	flipped, err := drw.EvaluateStates(modFile, windowName, map[string]string{groupFlagB: pickEvery, groupBrave: pickNone})
@@ -846,7 +868,6 @@ func (totals *gateTotals) add(t *testing.T, drw *Service, path string) {
 		t.Fatalf("%s: %v", path, err)
 	}
 	ws, _ := drw.Workspace.Session()
-	mods := ws.Mods.Load()
 	for _, drawable := range drawables {
 		if drawable.Database != game.GUI.WidgetDatabase {
 			continue
@@ -860,19 +881,20 @@ func (totals *gateTotals) add(t *testing.T, drw *Service, path string) {
 		totals.windows++
 		totals.widgets += len(window.Widgets)
 		for _, widget := range window.Widgets {
-			totals.count(ws, mods, path, widget)
+			totals.count(ws, &window, path, widget)
 		}
-		states := evaluate(ws, window, nil)
-		totals.groups += len(states.Groups)
+		states, _ := drw.EvaluateStates(path, drawable.Name, nil)
+		totals.groups += len(window.Groups)
 		totals.hidden += len(states.Hidden)
 	}
 }
 
-// count adds a widget's missing types and templates, texts and textures to the totals. A picture written as a path or
-// an icon name is a texture to find. A picture written as a data call is one only the running game answers. A text is
-// found where a message in the given index of the mods has its key.
-func (totals *gateTotals) count(ws *workspace.Session, mods *index.Index, path string, widget Widget) {
-	for _, property := range widget.Properties {
+// count adds the missing types and templates, texts and textures of one of a window's widgets to the totals. A picture
+// written as a path or an icon name is a texture to find. A picture written as a data call is one only the running
+// game answers. A text is found where a message in the index the file is drawn from has its key.
+func (totals *gateTotals) count(ws *workspace.Session, window *Window, path string, widget Widget) {
+	mods := resolveIndex(ws, path)
+	for property := range window.listProperties(widget) {
 		_, textured := widget.Textures[property.Key]
 		switch {
 		case property.Origin == originMissing:

@@ -81,20 +81,6 @@ export interface Expected {
 }
 
 /**
- * An Input is one input of the Form view, for a key that a definition may write.
- */
-export interface Input {
-    "key": string;
-    "type": ValueType;
-    "database"?: string;
-    "choices"?: string[] | null;
-    "required": boolean;
-    "default"?: string;
-    "blurb"?: string;
-    "inputs"?: Input[] | null;
-}
-
-/**
  * A SourceState says where one source's data came from and how fresh it is.
  */
 export interface SourceState {
@@ -108,6 +94,11 @@ export interface SourceState {
      * older than the install
      */
     "stale": boolean;
+
+    /**
+     * the install's folders its files were read from; none for the shipped backup
+     */
+    "folders": string[] | null;
 }
 
 /**

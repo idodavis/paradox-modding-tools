@@ -4,7 +4,6 @@
   give, outlines the widget under the pointer in the picture, and scrolls to a selection.
 -->
 <script setup lang="ts">
-import { useQuery } from "@pinia/colada";
 import { refDebounced } from "@vueuse/core";
 import { editor as monacoEditor, MarkerSeverity, Range } from "monaco-editor";
 import type { IDisposable, IPosition, IRange } from "monaco-editor";
@@ -13,9 +12,7 @@ import { computed, onBeforeUnmount, onMounted, shallowRef, useTemplateRef, watch
 import type { Widget } from "@services/draw/models";
 import type { Place } from "@services/workspace/models";
 
-import { drawablesQuery } from "../../../queries";
 import { useDrawStore } from "../../../stores/draw";
-import { useWorkspaceStore } from "../../../stores/workspace";
 import type { Model } from "../editor/models";
 
 const { model, blocks, boxes, hidden, missing, name } = defineProps<{
@@ -35,11 +32,8 @@ const { model, blocks, boxes, hidden, missing, name } = defineProps<{
 const MISSING = "pmt.draw";
 
 const draw = useDrawStore();
-const workspace = useWorkspaceStore();
 const mark = useTemplateRef("mark");
 const file = computed(() => draw.file(model.place.path));
-
-const { data: drawables } = useQuery(() => ({ ...drawablesQuery(model.place.path), enabled: workspace.isOpen() }));
 
 const own = computed(() => blocks.filter(({ place }) => place.key === model.place.key));
 // one eye hides every widget whose block starts on its line
@@ -212,14 +206,12 @@ function selectCaret(): void {
   if (id !== undefined && id !== file.value.selected) draw.select(model.place.path, id);
 }
 
-watch(caret, (position) => {
-  const drawable = drawables.value?.findLast(({ range }) => Range.containsPosition(range, position));
-  if (drawable && drawable.name !== name) {
-    draw.draw(model.place.path, drawable.name);
-    isSwitching = true;
-  } else selectCaret();
-});
-// the widget at the caret is selected once the blocks of the new drawable arrive
+watch(caret, selectCaret);
+watch(
+  () => name,
+  () => (isSwitching = true),
+);
+// the widget at the caret is selected once the blocks of a newly drawn drawable arrive
 watch(own, () => {
   if (!isSwitching || !own.value.length) return;
   isSwitching = false;

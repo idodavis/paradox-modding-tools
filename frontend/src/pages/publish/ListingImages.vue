@@ -3,7 +3,7 @@
 import { computed, shallowRef } from "vue";
 import { useMutation, useQuery } from "@pinia/colada";
 
-import { bytes } from "../../lib/format";
+import { describePicture } from "../../lib/format";
 import { fileUrl, headerQuery } from "../../queries";
 import FileSelector from "../../ui/FileSelector.vue";
 import * as steam from "@services/steam/service";
@@ -58,9 +58,7 @@ function addVideo(): void {
         <span class="max-w-full truncate font-mono text-12 text-toned" :title="listing.thumbnail">{{
           listing.thumbnail || "None yet"
         }}</span>
-        <span v-if="header" class="text-11 text-dimmed">
-          {{ header.width }} by {{ header.height }}, {{ bytes(header.bytes) }}
-        </span>
+        <span v-if="header" class="text-11 text-dimmed">{{ describePicture(header) }}</span>
         <FileSelector
           :path="listing.thumbnail"
           :filter="IMAGES"

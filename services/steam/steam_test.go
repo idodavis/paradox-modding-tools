@@ -145,10 +145,10 @@ func TestReadListingReadsWorkshopFolder(t *testing.T) {
 func TestWriteListingRoundTripsListing(t *testing.T) {
 	dir := copyFixture(t, "mods", "ck3")
 	stm := openService(t, resolveFixture(t, "ck3"), app.Mod{ID: fixtureModID, Dir: dir})
-	if err := stm.CreateDescriptionFile(fixtureModID, "html"); err == nil {
+	if err := stm.SetDescriptionSource(fixtureModID, "html", ""); err == nil {
 		t.Error("a description in html was accepted")
 	}
-	if err := stm.CreateDescriptionFile(fixtureModID, sourceMarkdown); err != nil {
+	if err := stm.SetDescriptionSource(fixtureModID, sourceMarkdown, ""); err != nil {
 		t.Fatal(err)
 	}
 	listing, err := stm.ReadListing(fixtureModID)
@@ -213,7 +213,7 @@ func TestListUploadSplitsFilesByRules(t *testing.T) {
 }
 
 // TestCompareReportsChanges checks that a file only the upload has is added, one with another hash is changed, one
-// only the snapshot has is removed, and a listing field that differs is named.
+// only the snapshot has is removed, a listing field that differs is named, and the upload's status says so.
 func TestCompareReportsChanges(t *testing.T) {
 	dir := t.TempDir()
 	writeFiles(t, dir, map[string]string{sameRel: "1", changedRel: "2", extraRel: "3"})
@@ -224,20 +224,23 @@ func TestCompareReportsChanges(t *testing.T) {
 	}}
 	hashes := buildHashes(upload.Files)
 	snapshot := Snapshot{
-		Files:   map[string]string{sameRel: hashes[sameRel], changedRel: "old", "gone.txt": "x"},
-		Listing: Listing{Title: "Old", Tags: []string{"a"}},
+		WorkshopID: "1",
+		Files:      map[string]string{sameRel: hashes[sameRel], changedRel: "old", "gone.txt": "x"},
+		Listing:    Listing{Title: "Old", Tags: []string{"a"}},
 	}
-	listing := Listing{Title: "New", Tags: []string{"a"}, Description: "text"}
+	listing := Listing{WorkshopID: "1", Title: "New", Tags: []string{"a"}, Description: "text"}
 	got := Compare(listing, upload, snapshot, &Details{Title: "On Steam"})
 	want := Comparison{
 		Added: []string{extraRel}, Changed: []string{changedRel}, Removed: []string{"gone.txt"},
 		Listing: []string{"title", "description"}, Last: snapshot.Listing, Steam: &Details{Title: "On Steam"},
+		Status: statusChanged,
 	}
 	if !reflect.DeepEqual(got, want) {
 		t.Errorf("got %+v, want %+v", got, want)
 	}
-	if first := Compare(listing, upload, Snapshot{}, nil); len(first.Added) != 3 || len(first.Changed) != 0 || len(first.Removed) != 0 {
-		t.Errorf("with no snapshot got %+v, want every file added", first)
+	first := Compare(listing, upload, Snapshot{}, nil)
+	if len(first.Added) != 3 || len(first.Changed) != 0 || len(first.Removed) != 0 || first.Status != statusUnknown {
+		t.Errorf("with no snapshot got %+v, want every file added and the status unknown", first)
 	}
 }
 

@@ -25,6 +25,7 @@ import (
 // A collector is the scan's visitor. It turns the definition and the references of each statement into
 // occurrences.
 type collector struct {
+	schema      *schema.Schema
 	index       *Index
 	file        int32
 	occurrences []Occurrence
@@ -292,7 +293,7 @@ func (index *Index) buildFile(lock *sync.RWMutex, schema *schema.Schema, positio
 	case format == files.FormatTable:
 		occurrences = tables.buildRows(schema, position, index.readSource(position))
 	case format.IsScript():
-		visitor := &collector{index: tables, file: position}
+		visitor := &collector{schema: schema, index: tables, file: position}
 		schema.Walk(jomini.Parse(index.readSource(position)), index.Files[position], visitor)
 		occurrences = visitor.occurrences
 	default:
@@ -338,7 +339,7 @@ func (collector *collector) Enter(tree *jomini.Tree, statement int32, context *s
 	for _, reference := range context.References {
 		occurrence := index.makeOccurrence(RoleRefers, reference.Database, reference.Name, reference.Span)
 		occurrence.Line = int32(tree.Lines.ToPosition(reference.Span.Start).Line)
-		occurrence.Parent, occurrence.Nested = parent, nested
+		occurrence.Parent, occurrence.Nested, occurrence.Firing = parent, nested, collector.isFiring(context, reference)
 		occurrence.Statement = statement
 		collector.occurrences = append(collector.occurrences, occurrence)
 	}

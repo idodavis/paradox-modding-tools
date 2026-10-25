@@ -57,6 +57,14 @@ export const useSettingsStore = defineStore("settings", () => {
   /** Writes a setting. The config:changed event then refreshes the query. */
   const write = (key: string, value: string): void => mutate({ key, value });
 
+  /** Puts an item in a setting that lists items with commas, or takes it out. An item put in goes last, once. */
+  const writeItem = (key: string, item: string, listed: boolean): void => {
+    const items = value(key)
+      .split(",")
+      .filter((one) => one && one !== item);
+    write(key, (listed ? [...items, item] : items).join(","));
+  };
+
   /** The theme in force: the family and whether dark, from the settings and the system. */
   const theme = (): { family: string; dark: boolean } => {
     const game =
@@ -67,11 +75,22 @@ export const useSettingsStore = defineStore("settings", () => {
     };
   };
 
-  /** The editor's font, text size and line height, as every code view draws its text. */
-  const codeFont = (): { fontFamily: string; fontSize: number; lineHeight: number } => ({
+  /**
+   * How every code view sets its code, under Monaco's option keys: the font, text size and line height, the padding
+   * above the first line in pixels, and how many digits the line numbers keep room for.
+   */
+  const codeFont = (): {
+    fontFamily: string;
+    fontSize: number;
+    lineHeight: number;
+    padding: { top: number };
+    lineNumbersMinChars: number;
+  } => ({
     fontFamily: `"${value("ide.font").replaceAll('"', "")}", "Geist Mono", monospace`,
     fontSize: Number(value("ide.editorTextSize")),
     lineHeight: value("ide.lineHeight") === "roomy" ? 1.6 : 1.35,
+    padding: { top: 6 },
+    lineNumbersMinChars: 4,
   });
 
   // the one place the theme and the scale reach the page; nothing is drawn over the page's own until they are read
@@ -85,5 +104,5 @@ export const useSettingsStore = defineStore("settings", () => {
     root.style.setProperty("--ide-ui-font", `${value("ide.panelTextSize")}px`);
   });
 
-  return { value, write, theme, codeFont };
+  return { value, write, writeItem, theme, codeFont };
 });

@@ -82,32 +82,32 @@ export interface RGBA {
  */
 export interface WidgetType {
     /**
-     * how it holds its children: row, column, flow, grid or scroll; "" means by their anchors
+     * Holding is how it holds its children: row, column, flow, grid or scroll; "" means by their anchors.
      */
-    "Holding": string;
+    "holding"?: string;
 
     /**
      * it clips them
      */
-    "Clips": boolean;
+    "clips"?: boolean;
 
     /**
      * it fills its holder
      */
-    "Fills": boolean;
+    "fills"?: boolean;
 
     /**
      * its own text is centered
      */
-    "CentersText": boolean;
+    "centersText"?: boolean;
 
     /**
      * a hidden child of it takes no room
      */
-    "DropsHidden": boolean;
+    "dropsHidden"?: boolean;
 
     /**
      * a hidden child of it keeps its room whatever the widget writes
      */
-    "KeepsHidden": boolean;
+    "keepsHidden"?: boolean;
 }

@@ -83,10 +83,23 @@ type Game struct {
 	// coat of arms as a shield or a flag.
 	Placeholders  []Placeholder `json:"-"`
 	Illustrations Illustrations `json:"-"`
+	// CoatColorForm is the form PMT writes a new color of a coat of arms' layer in, the one the game's own coats use.
+	// The game reads any color form.
+	CoatColorForm ColorForm `json:"-"`
+	// FiringFields is the key paths of its databases' own fields where a name fires the event, on_action or decision
+	// it names, as it would in effect script.
+	FiringFields []Reference `json:"-"`
+	// DecisionEffects is the effects that run the decision they name, as its dumps declare them. With none, no effect
+	// fires a decision.
+	DecisionEffects []string `json:"-"`
 
 	GUIHolders     map[string]string `json:"-"` // the window a window made from a type is laid out in, by the type
 	GUIUndeclared  []string          `json:"-"` // the widget types it draws though no file of its install declares them
 	GUIDropsHidden []string          `json:"-"` // the types beyond GUI.Types in which a hidden child takes no room
+	// GUISuffixStems is, by the stem of the defines for a kind and a field of its pictures (GUI.FolderDefineSuffix), the
+	// stem its suffix define is written under instead, where the game names it so.
+	GUISuffixStems map[string]string `json:"-"`
+	GUITiers       TierFrames        `json:"-"` // how it draws a title's tier from a sheet of cells; zero for none
 	CoatFolder     string            `json:"-"` // where it keeps its coats, from the folder holding its stages
 	CoatShade      CoatShade         `json:"-"` // how it shades every coat; the zero value shades none
 	CoatFrames     []CoatFrame       `json:"-"` // the frames its coat designer previews, in order
@@ -158,16 +171,29 @@ var games = map[string]*Game{
 		Precedences:   ck3Precedences,
 		Events:        Events{ScopeKey: "scope", DefaultScope: "character", Picture: ck3Picture}, // _events.info
 		ConceptPrefix: "game_concept_",
+		// effects.log: "execute_decision - Execute the specified decision for the scoped character"
+		DecisionEffects: []string{"execute_decision"},
 		Placeholders: []Placeholder{
 			{Shape: "crowned-ruler", Kinds: []string{"portrait texture"}, Runtime: true},
 			{Shape: "shield", Kinds: []string{"coat of arms"}, Runtime: true},
 		},
 		// gfx/interface/illustrations/scripted_illustrations/_scripted_illustrations.info
 		Illustrations: Illustrations{FolderKey: "folder", Folder: "gfx/interface/illustrations", TriggerKey: "trigger"},
+		CoatColorForm: ColorForm{Tag: "rgb", Example: []float64{255, 255, 255}},
+		FiringFields:  ck3FiringFields,
 		GUIUndeclared: []string{"zoomarea", "text_occluder"},
-		CoatFolder:    "common/coat_of_arms/coat_of_arms",
-		CoatShade:     ck3CoatShade,
-		CoatFrames:    ck3CoatFrames,
+		// common/defines/graphic/00_graphics.txt:812-813: GOVERNMENT_TYPE_REALM_MASK_PATH with
+		// GOVERNMENT_TYPE_REALM_FRAME_MASK_SUFFIX
+		GUISuffixStems: map[string]string{"GOVERNMENT_TYPE_REALM_MASK": "GOVERNMENT_TYPE_REALM_FRAME_MASK"},
+		// gui/map_icon_layer.gui:4820-4856 asks cell 3 for a count, 4 for a duke and from 5 for a king or an emperor;
+		// common/defines/00_defines.txt:358 counts seven tiers, Unlanded to Hegemon, and gfx/interface/coat_of_arms'
+		// topframe_62.dds and crown_strip_62.dds are seven cells wide
+		GUITiers: TierFrames{
+			Function: "GetTierFrame", Tiers: []string{"unlanded", "baron", "count", "duke", "king", "emperor", "hegemon"},
+		},
+		CoatFolder: "common/coat_of_arms/coat_of_arms",
+		CoatShade:  ck3CoatShade,
+		CoatFrames: ck3CoatFrames,
 	},
 	vic3: {
 		ID:            vic3,
@@ -196,6 +222,8 @@ var games = map[string]*Game{
 			{Shape: "top-hat", Kinds: []string{"portrait texture"}, Runtime: true},
 			{Shape: "flag", Kinds: []string{"coat of arms"}, Runtime: true},
 		},
+		CoatColorForm:  ColorForm{Tag: tagHSV360, Example: []float64{360, 100, 100}},
+		FiringFields:   vic3FiringFields,
 		GUIUndeclared:  []string{"overlappingitembox", "treemapchart", "portrait_button", "axis"},
 		GUIDropsHidden: []string{"flowcontainer"},
 		CoatFolder:     "common/coat_of_arms/coat_of_arms",
@@ -231,6 +259,7 @@ var games = map[string]*Game{
 			{Shape: "flag", Kinds: []string{"coat of arms"}, Runtime: true},
 		},
 		GUIHolders:    map[string]string{"lateralview": "lateralview_left_layer"},
+		CoatColorForm: ColorForm{Tag: tagHSV360, Example: []float64{360, 100, 100}},
 		GUIUndeclared: []string{"axis", "plotline", "screen_grab", "newsfeed_carousel"},
 		CoatFolder:    "main_menu/common/coat_of_arms/coat_of_arms",
 	},

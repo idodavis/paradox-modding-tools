@@ -5,7 +5,7 @@ import { useMutation, useQuery, useQueryCache } from "@pinia/colada";
 import { refAutoReset } from "@vueuse/core";
 import { Browser, Clipboard, Dialogs, Events } from "@wailsio/runtime";
 
-import { bytes, plural, steamSentences, uploadSentences } from "../../lib/format";
+import { bytes, describePicture, plural, steamSentences, uploadSentences } from "../../lib/format";
 import {
   dlcQuery,
   headerQuery,
@@ -94,7 +94,7 @@ const checks = computed<Check[]>(() => {
   const thumbnail = header.value
     ? {
         ok: header.value.bytes < THUMBNAIL_BYTES,
-        text: `Thumbnail ${header.value.width} by ${header.value.height}, ${bytes(header.value.bytes)}`,
+        text: `Thumbnail ${describePicture(header.value)}`,
       }
     : { ok: false, text: "No thumbnail" };
   return [

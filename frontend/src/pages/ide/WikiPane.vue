@@ -1,15 +1,30 @@
-<!-- The Wiki pane: the pages for the active file, the article, and the Lexicon tab. -->
+<!--
+  The Wiki pane: the pages for the active file, a search of the game's wiki, the article, and the Lexicon tab. It sits
+  beside the editors or in a window of its own, and shows the page or lexicon entry the editor looks up.
+-->
+<script lang="ts">
+/** The lexicon's classes, in the order its tabs show them. */
+export const CLASSES = [
+  { label: "Effects", value: "effect" },
+  { label: "Triggers", value: "trigger" },
+  { label: "Links", value: "link" },
+  { label: "Scopes", value: "scope" },
+  { label: "Functions", value: "function" },
+];
+</script>
+
 <script setup lang="ts">
 import { computed, shallowRef, useTemplateRef, watch } from "vue";
 import { useQuery } from "@pinia/colada";
-import { useLocalStorage } from "@vueuse/core";
+import { refDebounced, useEventBus, useLocalStorage } from "@vueuse/core";
 import { Browser } from "@wailsio/runtime";
 import type { DropdownMenuItem } from "@nuxt/ui";
 
 import type { Place } from "@services/workspace/models";
 
-import { lexiconQuery, wikiPageQuery, wikiPagesQuery } from "../../queries";
+import { lexiconQuery, stateQuery, wikiPageQuery, wikiPagesQuery, wikiSearchQuery } from "../../queries";
 import { useSettingsStore } from "../../stores/settings";
+import { THIS_WINDOW, useWindowsStore, type WikiLookup } from "../../stores/windows";
 import { useWorkspaceStore } from "../../stores/workspace";
 import ScriptSnippet from "../../ui/ScriptSnippet.vue";
 import SourceLink from "../../ui/SourceLink.vue";
@@ -25,16 +40,11 @@ const TABS = [
   { label: "Pages", value: "pages" },
   { label: "Lexicon", value: "lexicon" },
 ];
-const CLASSES = [
-  { label: "Effects", value: "effect" },
-  { label: "Triggers", value: "trigger" },
-  { label: "Links", value: "link" },
-  { label: "Scopes", value: "scope" },
-  { label: "Functions", value: "function" },
-];
 
 const settings = useSettingsStore();
+const windows = useWindowsStore();
 const workspace = useWorkspaceStore();
+const { data: state } = useQuery(stateQuery);
 const wiki = useLocalStorage("pmt.ide.wiki", false);
 const view = shallowRef("pages");
 const title = shallowRef("");
@@ -79,6 +89,31 @@ function follow(event: MouseEvent): void {
   const link = event.target instanceof Element ? event.target.closest("a") : null;
   if (link?.dataset.page) title.value = link.dataset.page;
 }
+
+// a look-up from the editor shows its page, or its lexicon entry with the lexicon filtered to its name
+useEventBus<WikiLookup>("pmt.wiki").on((lookup) => {
+  if ("title" in lookup) {
+    view.value = "pages";
+    title.value = lookup.title;
+    return;
+  }
+  view.value = "lexicon";
+  lexiconClass.value = lookup.class;
+  filter.value = lookup.name;
+});
+
+// the search finds the game's wiki pages by their titles, then by their text; the page picked is shown here
+const term = shallowRef("");
+const search = refDebounced(term, 200);
+const {
+  data: hits,
+  error: searchError,
+  isLoading,
+} = useQuery(() => ({
+  ...wikiSearchQuery(search.value),
+  enabled: workspace.isOpen() && !!search.value.trim(),
+  placeholderData: (previous) => (search.value ? previous : undefined),
+}));
 
 const { data: rows } = useQuery(() => ({
   ...lexiconQuery(lexiconClass.value),
@@ -125,13 +160,23 @@ function jump(index: number): void {
         @update:model-value="view = String($event)"
       />
       <span class="grow" />
+      <UTooltip v-if="THIS_WINDOW !== 'wiki'" text="Open in its own window">
+        <UButton
+          icon="i-lucide-app-window"
+          variant="ghost"
+          size="sm"
+          square
+          aria-label="Open in its own window"
+          @click="windows.popOut({ wiki: true })"
+        />
+      </UTooltip>
       <UButton
         icon="i-lucide-x"
         variant="ghost"
         size="sm"
         square
-        aria-label="Close the Wiki pane"
-        @click="wiki = false"
+        :aria-label="THIS_WINDOW === 'wiki' ? 'Back into the main window' : 'Close the Wiki pane'"
+        @click="THIS_WINDOW === 'wiki' ? windows.dockBack() : (wiki = false)"
       />
     </div>
     <template v-if="view === 'pages'">
@@ -161,6 +206,25 @@ function jump(index: number): void {
             class="me-1 self-center"
           />
         </UDropdownMenu>
+      </div>
+      <!-- the field keeps no value: the page picked shows in the article below, as a link followed does -->
+      <div class="shrink-0 border-b border-default px-3 pt-2.5 pb-2">
+        <UInputMenu
+          v-model:search-term="term"
+          model-value=""
+          :items="hits ?? []"
+          ignore-filter
+          :loading="isLoading"
+          :placeholder="`Search the ${state?.game?.name ?? 'game'} wiki`"
+          icon="i-lucide-search"
+          value-key="title"
+          label-key="title"
+          size="sm"
+          class="w-full"
+          @update:model-value="(next) => next && (title = next)"
+        >
+          <template v-if="searchError" #empty>{{ searchError.message }}</template>
+        </UInputMenu>
       </div>
       <template v-if="article">
         <div class="flex min-h-0 flex-1 flex-col" @click="follow">
@@ -222,7 +286,7 @@ function jump(index: number): void {
               v-if="item.usage"
               :text="item.usage"
               language="paradox-script"
-              class="rounded-md border border-default bg-(--bg-0) px-2.5 py-1.5"
+              class="rounded-md border border-default px-2.5 pb-1.5"
             />
             <div v-if="item.examples?.length" class="flex flex-col items-start gap-0.5">
               <SourceLink

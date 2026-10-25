@@ -21,10 +21,13 @@ type Color struct {
 	Parts float64 // what the other parts are out of; 0 means 1
 }
 
+// tagHSV360 is the tag of a color written as a hue out of 360, then a saturation and a value out of 100.
+const tagHSV360 = "hsv360"
+
 // Colors lists the ways script writes a color. A part of rgb, or of a block with no tag, is out of 255, or out of
 // 1 when red, green and blue are each at most 1. A fourth part is the alpha.
 var Colors = []Color{
-	{Tag: "rgb"}, {Tag: ""}, {Tag: "hsv", HSV: true}, {Tag: "hsv360", HSV: true, Hue: 360, Parts: 100}, {Tag: "hex", Hex: true},
+	{Tag: "rgb"}, {Tag: ""}, {Tag: "hsv", HSV: true}, {Tag: tagHSV360, HSV: true, Hue: 360, Parts: 100}, {Tag: "hex", Hex: true},
 }
 
 // An RGBA is a color as red, green, blue and alpha channels, each from 0 to 1.
@@ -33,6 +36,13 @@ type RGBA struct {
 	G float64 `json:"g"` // green, 0 to 1
 	B float64 `json:"b"` // blue, 0 to 1
 	A float64 `json:"a"` // alpha, 0 to 1
+}
+
+// A ColorForm is how a color is written that a block does not write yet: the tag before the block, and the numbers of
+// an example, which give the scale and whether an alpha is written.
+type ColorForm struct {
+	Tag     string
+	Example []float64
 }
 
 // ParseColor returns the color that a block's tag and numbers write. The tag must match a row of Colors exactly. A

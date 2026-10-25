@@ -36,10 +36,11 @@ const {
   name = "",
 } = defineProps<{ id: string; section?: string; row?: string; name?: string }>();
 
+/** The bands of cards, by the group Go gives each section, with each band's title and hint. */
 const GROUPS = [
-  { title: "Load order", hint: "Changes when you reorder mods", sections: ["contests", "overrides", "dependencies"] },
-  { title: "Problems in the mods", hint: "Fixed in the files", sections: ["dangling", "localization", "script"] },
-  { title: "Beyond the files", hint: "The game's log and each mod's contents", sections: ["errorlog", "overview"] },
+  { id: "load order", title: "Load order", hint: "Changes when you reorder mods" },
+  { id: "files", title: "Problems in the mods", hint: "Fixed in the files" },
+  { id: "beyond", title: "Beyond the files", hint: "The game's log and each mod's contents" },
 ];
 /** The dot of each card, by Go's section id. */
 const DOTS: Record<string, string> = {
@@ -106,7 +107,9 @@ const rows = computed(() =>
         name ? finding.name === name : finding.section === current.value?.id,
       ),
 );
-const title = computed((): Section => current.value ?? { id: "", label: name, note: "", count: 0, tallies: null });
+const title = computed(
+  (): Section => current.value ?? { id: "", group: "", label: name, note: "", count: 0, tallies: null },
+);
 const open = computed(() => (row ? rows.value[Number(row)] : undefined));
 
 const { data: overview } = useQuery(() => ({
@@ -184,7 +187,7 @@ function openRow(index: number): void {
     </div>
 
     <div class="flex items-stretch gap-6">
-      <template v-for="(group, position) in GROUPS" :key="group.title">
+      <template v-for="(group, position) in GROUPS" :key="group.id">
         <USeparator v-if="position" orientation="vertical" class="h-auto" />
         <div class="flex min-w-0 flex-1 flex-col gap-2">
           <div class="flex items-baseline gap-2.5 whitespace-nowrap">
@@ -193,7 +196,7 @@ function openRow(index: number): void {
           </div>
           <div class="grid grid-cols-3 gap-2.5">
             <button
-              v-for="card in cards.filter((entry) => group.sections.includes(entry.id))"
+              v-for="card in cards.filter((entry) => entry.group === group.id)"
               :key="card.id"
               type="button"
               class="flex min-w-0 flex-col gap-1 rounded-lg border px-3.5 py-3 text-left"

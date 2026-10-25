@@ -15,7 +15,8 @@ import { Call as $Call, CancellablePromise as $CancellablePromise } from "@wails
 import * as $models from "./models.js";
 
 /**
- * BuildDetail returns the detail of the node with the given id, from its kept definition.
+ * BuildDetail returns the detail of the node with the given id, read from the definition the game keeps of it. It
+ * returns an error if no workspace is open, if the game keeps no definition of the node, or if its file cannot be read.
  */
 export function BuildDetail(id: string): $CancellablePromise<$models.Detail> {
     return $Call.ByID(2519543259, id);
@@ -31,9 +32,9 @@ export function BuildGraph(root: string, filter: $models.Filter): $CancellablePr
 }
 
 /**
- * Defaults returns the filter for a new graph. It draws the databases that fire and the scripted effects, from the game
- * and every mod, six firings of a node before the rest are folded, with every fold closed. It returns an empty filter
- * if no workspace is open.
+ * Defaults returns the filter for a new graph. It draws every kind the filter picks among, from the game and every
+ * mod, six firings of a node before the rest are folded, with every fold closed. It returns an empty filter if no
+ * workspace is open.
  */
 export function Defaults(): $CancellablePromise<$models.Filter> {
     return $Call.ByID(3340937252);

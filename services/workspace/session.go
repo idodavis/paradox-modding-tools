@@ -3,6 +3,7 @@
 package workspace
 
 import (
+	"cmp"
 	"errors"
 	"fmt"
 	"os"
@@ -70,7 +71,7 @@ func (wsp *Service) openSession(workspaceID string, progress func(stage string, 
 		ID: workspaceID, Game: row, InstallPath: install.Path, Language: record.Language,
 		buffers: map[string]*jomini.Tree{}, trees: trees, caches: folder,
 	}
-	if err := ws.loadInstall(install.Path, progress); err != nil {
+	if err := ws.loadInstall(install.Path, resolveVersion(install), progress); err != nil {
 		return nil, err
 	}
 	deleteOlderCaches(folder)
@@ -115,13 +116,18 @@ func resolveCaches(cacheDir string, row *game.Game, install app.Install, build s
 	if err != nil {
 		return "", err
 	}
-	version := game.LoadGameVersion(row.ID, install.Path)
-	return filepath.Join(cacheDir, row.ID, fmt.Sprintf("%s-%d-%s", version, dumpsAt.Unix(), build)), nil
+	return filepath.Join(cacheDir, row.ID, fmt.Sprintf("%s-%d-%s", resolveVersion(install), dumpsAt.Unix(), build)), nil
+}
+
+// resolveVersion returns an install's version: the one its files say, else the one its record holds, such as a version
+// typed when the install was added.
+func resolveVersion(install app.Install) string {
+	return cmp.Or(game.LoadGameVersion(install.Game, install.Path), install.Version)
 }
 
 // loadInstall sets the session's schema and install index from the caches' folder. It builds what a cache lacks and
-// saves it there.
-func (ws *Session) loadInstall(installPath string, progress func(stage string, percent int)) error {
+// saves it there, a new schema under the given version of the install.
+func (ws *Session) loadInstall(installPath, version string, progress func(stage string, percent int)) error {
 	schemaCache, indexCache := filepath.Join(ws.caches, schemaFile), filepath.Join(ws.caches, indexFile)
 	language, hasSchema := files.LoadGob[*schema.Schema](schemaCache)
 	install, hasInstall := index.LoadIndex(indexCache)
@@ -143,6 +149,7 @@ func (ws *Session) loadInstall(installPath string, progress func(stage string, p
 		if language, err = schema.Build(ws.Game, installPath, listing, parseFile); err != nil {
 			return err
 		}
+		language.Version = version
 		if err = files.SaveGob(schemaCache, language); err != nil {
 			return err
 		}

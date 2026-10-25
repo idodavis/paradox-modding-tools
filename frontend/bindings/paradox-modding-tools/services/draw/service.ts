@@ -3,7 +3,8 @@
 
 /**
  * Service is the Wails service behind the Visual view. A method that changes an existing file does not write it. It
- * returns edits, which the editor applies to its own model, so there is only ever one copy of the text.
+ * returns edits, which the editor applies to its own model, so there is only ever one copy of the text. It keeps the
+ * window it resolved last, which a change of that window's states starts from.
  * @module
  */
 
@@ -94,9 +95,8 @@ export function ListColors(): $CancellablePromise<$models.NamedColor[] | null> {
 
 /**
  * ListDrawables lists what a file defines that the view can draw: a window, a type, a template or a coat, nested ones
- * included. The entry the game's GUI rules show first (game.GUI.ShownFirst) comes first, as the one the view shows
- * unless asked for another, wherever the file writes it; the rest follow in document order. A file that is not a GUI
- * file or a coat file has nothing to draw.
+ * included. The entry the view opens on comes first, as findFirstDrawn finds it, wherever the file writes it; the rest
+ * follow in document order. A file that is not a GUI file or a coat file has nothing to draw.
  */
 export function ListDrawables(path: string): $CancellablePromise<lsp$0.Symbol[] | null> {
     return $Call.ByID(1197751465, path);
@@ -112,12 +112,13 @@ export function ListFrames(): $CancellablePromise<$models.Image[] | null> {
 }
 
 /**
- * ListPictures lists the pictures that a picture binding may draw, as a widget's Pictures says where: each image that
- * the named definition writes, labeled by its file, or, for a list with no name, what the binding shows of each
- * definition of the database, labeled by the definition. It returns an error if no workspace is open.
+ * ListPictures lists the pictures that a picture binding of a widget in the given file may draw, as the widget's
+ * Pictures says where: each image that the named definition writes, labeled by its file, or, for a list with no name,
+ * what the binding shows of each definition of the database, labeled by the definition. It returns an error if no
+ * workspace is open.
  */
-export function ListPictures(list: $models.PictureList): $CancellablePromise<$models.Picture[] | null> {
-    return $Call.ByID(2369529877, list);
+export function ListPictures(path: string, list: $models.PictureList): $CancellablePromise<$models.Picture[] | null> {
+    return $Call.ByID(2369529877, path, list);
 }
 
 /**
@@ -158,9 +159,11 @@ export function ResolveCoat(path: string, name: string, picks: { [_ in string]?:
 /**
  * ResolveWindow resolves one window in a GUI file. It applies the window's type and templates, looks up its
  * texts and finds its textures. A window wins over a type or a template of the same name. A file the game does not
- * read, because another file at its path replaces it, is drawn as if the game read it instead. It returns an error if
- * the file is not in the workspace or does not define the window. A type or template that cannot be found becomes a
- * Property with Origin "missing", so the page can flag it.
+ * read, because another file at its path replaces it, is drawn as if the game read it instead. A list that reads a
+ * database gets its rows, as many as the workspace's rows setting says. The window is kept as the one that a change of
+ * its states starts from. It returns an error if no workspace is open, or if the file is not in the workspace or does
+ * not define the window. A type or template that cannot be found becomes a Property with Origin "missing", so the
+ * page can flag it.
  */
 export function ResolveWindow(path: string, name: string): $CancellablePromise<$models.Window> {
     return $Call.ByID(1436219022, path, name);

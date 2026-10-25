@@ -4,6 +4,7 @@ import (
 	"bufio"
 	"bytes"
 	"html"
+	"regexp"
 	"strings"
 
 	"github.com/yuin/goldmark"
@@ -48,6 +49,34 @@ var bbcodeTags = map[ast.NodeKind][][2]string{
 	ast.KindCodeBlock:        {{"[code]\n", "\n[/code]\n\n"}},
 	ast.KindFencedCodeBlock:  {{"[code]\n", "\n[/code]\n\n"}},
 }
+
+// steamElements are the BBCode tags Steam draws, by name, each with the HTML element it is drawn as and whether that
+// element is a block, which stands on lines of its own.
+var steamElements = map[string]struct {
+	element string
+	block   bool
+}{
+	"h1": {"h1", true}, "h2": {"h2", true}, "h3": {"h3", true}, "quote": {"blockquote", true}, "hr": {"hr", true},
+	"list": {"ul", true}, "olist": {"ol", true}, "*": {"li", true}, "table": {"table", true}, "tr": {"tr", true},
+	"th": {"th", false}, "td": {"td", false}, "b": {"b", false}, "i": {"i", false}, "u": {"u", false},
+	"strike": {"s", false}, "spoiler": {"mark", false}, "url": {"a", false},
+}
+
+// steamLiterals are the BBCode tags whose content Steam shows as written, with no tag read in it, each with the HTML
+// written before and after the content: text kept as it is, a block of code, and a picture, whose content is its
+// address. A block of code drops the line breaks beside its tags.
+var steamLiterals = []struct {
+	pattern *regexp.Regexp
+	html    [2]string
+}{
+	{regexp.MustCompile(`(?is)\[noparse\](.*?)\[/noparse\]`), [2]string{"", ""}},
+	{regexp.MustCompile(`(?is)(?:\r?\n)?\[code\](?:\r?\n)?(.*?)(?:\r?\n)?\[/code\](?:\r?\n)?`), [2]string{"<pre>", "</pre>"}},
+	{regexp.MustCompile(`(?is)\[img\](.*?)\[/img\]`), [2]string{`<img alt="" src="`, `">`}},
+}
+
+// bbcodeTag matches one BBCode tag with a line break on either side of it: the slash of a closing tag, the tag's name
+// and its argument after an equals sign or a space.
+var bbcodeTag = regexp.MustCompile(`(?i)(\r?\n)?\[(/?)([a-z0-9*]+)(?:[= ]([^\]]*))?\](\r?\n)?`)
 
 // ToBBCode converts a Markdown text to Steam's BBCode.
 func (stm *Service) ToBBCode(markdown string) string {
@@ -160,4 +189,40 @@ func resolveEscapes(text []byte) []byte {
 	goldhtml.DefaultWriter.Write(writer, text)
 	_ = writer.Flush()
 	return []byte(html.UnescapeString(resolved.String()))
+}
+
+// ToHTML returns a BBCode text as the HTML that Steam draws it as. The text is escaped, so the HTML holds no element
+// but those of Steam's tags. A tag Steam does not draw stays as text, and each line break is a break. A tag left open
+// is closed where the browser closes it.
+func (stm *Service) ToHTML(bbcode string) string {
+	text := html.EscapeString(bbcode)
+	for _, literal := range steamLiterals {
+		text = literal.pattern.ReplaceAllStringFunc(text, func(match string) string {
+			content := literal.pattern.FindStringSubmatch(match)[1]
+			// a bracket in the content becomes its entity, so no tag is read in it below
+			return literal.html[0] + strings.ReplaceAll(content, "[", "&#91;") + literal.html[1]
+		})
+	}
+	text = bbcodeTag.ReplaceAllStringFunc(text, drawTag)
+	return strings.NewReplacer("\r\n", "<br>", "\n", "<br>").Replace(text)
+}
+
+// drawTag returns the HTML that one BBCode tag is drawn as, with the line breaks beside it. A tag's argument, such as
+// a link's address, becomes its element's title. A block drops the line breaks. A tag Steam does not draw is returned
+// as it is.
+func drawTag(tag string) string {
+	parts := bbcodeTag.FindStringSubmatch(tag)
+	row, ok := steamElements[strings.ToLower(parts[3])]
+	if !ok {
+		return tag
+	}
+	element := "<" + parts[2] + row.element
+	if parts[4] != "" && parts[2] == "" {
+		element += ` title="` + parts[4] + `"`
+	}
+	element += ">"
+	if row.block {
+		return element
+	}
+	return parts[1] + element + parts[5]
 }

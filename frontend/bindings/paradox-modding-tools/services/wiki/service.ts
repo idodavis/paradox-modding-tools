@@ -65,3 +65,13 @@ export function ReadPage(title: string): $CancellablePromise<$models.Page> {
 export function Refresh(): $CancellablePromise<void> {
     return $Call.ByID(2930339879);
 }
+
+/**
+ * SearchPages returns the wiki's modding pages that hold the given text, letter case aside. The pages whose title
+ * holds it come first, then those whose text holds it, each in the listing's order. A page that is not cached yet is
+ * searched by its title alone, and an empty text matches every page. It returns an error if no workspace is open or
+ * a refresh has not fetched the wiki's listing yet.
+ */
+export function SearchPages(term: string): $CancellablePromise<$models.Summary[] | null> {
+    return $Call.ByID(217338472, term);
+}

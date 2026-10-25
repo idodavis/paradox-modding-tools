@@ -12,13 +12,15 @@ import (
 	"paradox-modding-tools/internal/game"
 	"paradox-modding-tools/internal/index"
 	"paradox-modding-tools/internal/jomini"
+	"paradox-modding-tools/internal/loc"
 	"paradox-modding-tools/internal/schema"
 	"paradox-modding-tools/services/workspace"
 )
 
-// A Symbol is one definition in a file as the outline shows it, with the symbols nested inside it.
+// A Symbol is one entry of a file: a definition, with the symbols nested inside it, or a localization key.
 type Symbol struct {
 	Name      string          `json:"name"`
+	Title     string          `json:"title"` // the text the game shows for it in the workspace's language; "" if none
 	Database  string          `json:"database"`
 	What      string          `json:"what"`      // what a definition of its database is called, such as "window"
 	Range     Range           `json:"range"`     // the whole statement
@@ -174,31 +176,53 @@ func (lsp *Service) Rename(path string, line, column int, name string) (map[stri
 	return edits, nil
 }
 
-// ListSymbols returns a file's definitions for the outline, nested as they are written.
+// ListSymbols returns a file's definitions, nested as they are written, or a localization file's keys.
 func (lsp *Service) ListSymbols(path string) ([]Symbol, error) {
 	ws, err := lsp.Workspace.Session()
 	if err != nil {
 		return nil, err
 	}
-	return ListFileSymbols(ws, path)
+	return ListFileSymbols(ws, ws.Mods.Load(), path)
 }
 
-// ListFileSymbols returns the definitions of a file in the given session, nested as they are written. It returns none
-// for a file that is not script, and an error if the file cannot be read.
-func ListFileSymbols(ws *workspace.Session, path string) ([]Symbol, error) {
+// ListFileSymbols returns the definitions of a file in the given session, nested as they are written, or the keys of
+// a localization file. Each has its title in the session's language, as the given index finds it. It returns none for
+// a file that is neither script nor localization, and an error if the file cannot be read.
+func ListFileSymbols(ws *workspace.Session, mods *index.Index, path string) ([]Symbol, error) {
 	tree, err := ws.LoadTree(path)
 	if err != nil {
 		return nil, err
 	}
-	visitor, place := &symbolsVisitor{symbols: []Symbol{}}, ws.Locate(ws.Mods.Load(), path)
+	place := ws.Locate(mods, path)
+	if place.Format == files.FormatLocalization {
+		return listMessages(ws, mods, tree, path), nil
+	}
+	visitor := &symbolsVisitor{ws: ws, mods: mods, path: path, symbols: []Symbol{}}
 	if place.Format.IsScript() {
 		ws.Schema.Walk(tree, place.File, visitor)
 	}
 	return visitor.symbols, nil
 }
 
+// listMessages returns the messages of a localization file as symbols: each one's key, with its text in the session's
+// language.
+func listMessages(ws *workspace.Session, mods *index.Index, tree *jomini.Tree, path string) []Symbol {
+	return lo.Map(loc.Parse(tree.Src, path).Messages, func(message loc.Message, _ int) Symbol {
+		text, _, _ := ws.LookupText(mods, message.Key)
+		return Symbol{
+			Name: message.Key, Title: text, Database: game.Localization,
+			What: game.DescribeDefinition(game.Localization, false), Category: schema.CategoryDefinition,
+			Range:     ToRange(tree.Src, tree.Lines, message.Span),
+			NameRange: ToRange(tree.Src, tree.Lines, message.KeySpan),
+		}
+	})
+}
+
 // A symbolsVisitor builds the outline of a file.
 type symbolsVisitor struct {
+	ws         *workspace.Session
+	mods       *index.Index
+	path       string
 	symbols    []Symbol
 	open       []int   // the position of each open symbol among its siblings, outermost first
 	statements []int32 // the statement of each open symbol
@@ -209,13 +233,8 @@ func (visitor *symbolsVisitor) Enter(tree *jomini.Tree, statement int32, context
 	if !context.Defines || context.Definition.Database == game.Constant {
 		return true
 	}
-	definition := context.Definition
-	symbol := Symbol{
-		Name: definition.Name, Database: definition.Database, What: game.DescribeDefinition(definition.Database, false),
-		Category:  schema.CategoryDefinition,
-		Range:     ToRange(tree.Src, tree.Lines, tree.Statements[statement].Span),
-		NameRange: ToRange(tree.Src, tree.Lines, definition.Span),
-	}
+	definition := *context.Definition
+	symbol := makeSymbol(tree, statement, definition, lookupTitle(visitor.ws, visitor.mods, visitor.path, definition))
 	siblings := &visitor.symbols
 	for _, position := range visitor.open {
 		siblings = &(*siblings)[position].Children
@@ -223,6 +242,29 @@ func (visitor *symbolsVisitor) Enter(tree *jomini.Tree, statement int32, context
 	*siblings = append(*siblings, symbol)
 	visitor.open, visitor.statements = append(visitor.open, len(*siblings)-1), append(visitor.statements, statement)
 	return true
+}
+
+// makeSymbol returns the symbol of a definition that a statement of a tree writes, with the given title.
+func makeSymbol(tree *jomini.Tree, statement int32, definition schema.Definition, title string) Symbol {
+	return Symbol{
+		Name: definition.Name, Title: title, Database: definition.Database,
+		What: game.DescribeDefinition(definition.Database, false), Category: schema.CategoryDefinition,
+		Range:     ToRange(tree.Src, tree.Lines, tree.Statements[statement].Span),
+		NameRange: ToRange(tree.Src, tree.Lines, definition.Span),
+	}
+}
+
+// lookupTitle returns the text the game shows for a definition in the session's language, as the given index of the
+// mods lists the definition in the given file. It returns "" if there is no such text, or if the index does not list
+// the definition in that file, as for one the file has only since it was last saved.
+func lookupTitle(ws *workspace.Session, mods *index.Index, path string, definition schema.Definition) string {
+	file, listed := mods.FindFile(path)
+	sites := mods.ResolveLocal(schema.Reference{Database: definition.Database, Name: definition.Name}, path)
+	site, ok := lo.Find(sites, func(site index.Site) bool { return listed && site.File == file })
+	if !ok {
+		return ""
+	}
+	return ws.LookupTitle(mods, site)
 }
 
 // Leave closes the symbol of the statement, if it opened one.

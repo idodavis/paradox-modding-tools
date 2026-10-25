@@ -280,29 +280,6 @@ export interface Hint {
 }
 
 /**
- * Inputs is the Form view of one definition: the inputs its database offers, with the values the definition writes.
- */
-export interface Inputs {
-    "database": string;
-
-    /**
-     * the definition's whole statement
-     */
-    "range": Range;
-    "inputs": schema$0.Input[] | null;
-
-    /**
-     * by key path, a.b for b inside a; only the keys the definition writes
-     */
-    "values": { [_ in string]?: string } | null;
-
-    /**
-     * by key path: each block the definition writes, for an edit inside it
-     */
-    "blocks": { [_ in string]?: Range } | null;
-}
-
-/**
  * A Legend is the list of token types and modifiers that the semantic tokens are encoded against.
  */
 export interface Legend {
@@ -348,10 +325,15 @@ export interface Signature {
 }
 
 /**
- * A Symbol is one definition in a file as the outline shows it, with the symbols nested inside it.
+ * A Symbol is one entry of a file: a definition, with the symbols nested inside it, or a localization key.
  */
 export interface Symbol {
     "name": string;
+
+    /**
+     * the text the game shows for it in the workspace's language; "" if none
+     */
+    "title": string;
     "database": string;
 
     /**

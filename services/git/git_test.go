@@ -73,21 +73,21 @@ func TestReadFile(t *testing.T) {
 	}
 }
 
-// TestListRefs lists the branches after a second one is created, the new one current.
+// TestListRefs lists the branches after a second one is created, the new one current, each with its commit's date.
 func TestListRefs(t *testing.T) {
 	git, dir := createRepository(t)
 	writeFile(t, dir, file, "one\n")
 	must(t, git.Stage(dir, []string{file}))
 	must(t, git.CreateCommit(dir, "first"))
 	must(t, git.CreateBranch(dir, "feature"))
-	hash, err := git.Run(dir, "rev-parse", "HEAD")
+	commits, err := git.ListCommits(dir, 1, nil)
 	must(t, err)
-	hash = strings.TrimSpace(hash)
+	head := commits[0]
 	refs, err := git.ListRefs(dir)
 	must(t, err)
 	want := []Ref{
-		{Name: "feature", Type: "branch", Hash: hash, Current: true},
-		{Name: branch, Type: "branch", Hash: hash},
+		{Name: "feature", Type: "branch", Hash: head.Hash, Date: head.Date, Current: true},
+		{Name: branch, Type: "branch", Hash: head.Hash, Date: head.Date},
 	}
 	if !slices.Equal(refs, want) {
 		t.Fatalf("refs %+v, want %+v", refs, want)

@@ -68,9 +68,11 @@ func (hlt *Service) ServiceShutdown() error {
 	return nil
 }
 
-// A Section is one card of the Health page, with how many findings it holds.
+// A Section is one card of the Health page, in its group, with how many findings it holds.
 type Section struct {
-	ID      string  `json:"id"` // contests, overrides, dependencies, dangling, localization, script, errorlog, overview
+	ID string `json:"id"` // contests, overrides, dependencies, dangling, localization, script, errorlog, overview
+	// Group is the band of the Health page the card sits in: load order, files or beyond.
+	Group   string  `json:"group"`
 	Label   string  `json:"label"`
 	Note    string  `json:"note"`
 	Count   int     `json:"count"`
@@ -86,17 +88,18 @@ type Tally struct {
 
 // Sections lists every Health section in the page's order.
 var Sections = []Section{
-	{ID: "contests", Label: "Contests", Note: "Names and files that two or more mods define, of which the game keeps one.",
-		Tally: true},
-	{ID: "overrides", Label: "Overrides", Note: "Names and files that a mod defines over the game's own."},
-	{ID: "dependencies", Label: "Dependencies and versions",
+	{ID: "contests", Group: "load order", Label: "Contests",
+		Note: "Names and files that two or more mods define, of which the game keeps one.", Tally: true},
+	{ID: "overrides", Group: "load order", Label: "Overrides",
+		Note: "Names and files that a mod defines over the game's own."},
+	{ID: "dependencies", Group: "load order", Label: "Dependencies and versions",
 		Note: "Mods that change what other mods define, mods a descriptor needs, and mods made for an older game version."},
-	{ID: "dangling", Label: "Dangling references", Note: "Names that script writes and nothing defines."},
-	{ID: "localization", Label: "Localization", Note: "Missing and untranslated messages, and lines the game cannot read.",
-		Tally: true},
-	{ID: "script", Label: "Script", Note: "Problems the editor finds in the mods' script files."},
-	{ID: "errorlog", Label: "Game errors", Note: "What the game wrote to its error log."},
-	{ID: "overview", Label: "Mod overview", Note: "What each mod defines, by database."},
+	{ID: "dangling", Group: "files", Label: "Dangling references", Note: "Names that script writes and nothing defines."},
+	{ID: "localization", Group: "files", Label: "Localization",
+		Note: "Missing and untranslated messages, and lines the game cannot read.", Tally: true},
+	{ID: "script", Group: "files", Label: "Script", Note: "Problems the editor finds in the mods' script files."},
+	{ID: "errorlog", Group: "beyond", Label: "Game errors", Note: "What the game wrote to its error log."},
+	{ID: "overview", Group: "beyond", Label: "Mod overview", Note: "What each mod defines, by database."},
 }
 
 // A FindingSite is one place a finding points at, with whether the game keeps that definition and why.

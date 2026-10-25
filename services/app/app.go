@@ -41,6 +41,9 @@ func init() {
 // mainWindow is the name of the main window, whose close quits the app.
 const mainWindow = "main"
 
+// DevBuild is the version of a build run from the source, which no release has.
+const DevBuild = "dev"
+
 // Service is the Wails service for the app itself: its version and updates, its settings, its log and its windows.
 type Service struct {
 	Config       *ConfigFile // config.json, which carries PMT's folders
@@ -218,8 +221,12 @@ func (app *Service) WriteSetting(workspaceID, key, value string) error {
 	})
 }
 
-// CrashedLastRun reports whether the last run ended without a clean shutdown. It is false on the first run.
+// CrashedLastRun reports whether the last run ended without a clean shutdown. It is false on the first run, and in a
+// dev build, which is stopped without a clean shutdown each time it is rebuilt.
 func (app *Service) CrashedLastRun() bool {
+	if app.Build == DevBuild {
+		return false
+	}
 	mark, err := os.ReadFile(resolveMark(app.Config.Dirs))
 	if err != nil {
 		return false

@@ -1,14 +1,16 @@
 <!--
-  The detail of a graph node: its type, properties, texts, portraits and options, what it fires and what fires it, its
-  references, and its script as written.
+  The detail of a graph node, in tabs: its type, properties, texts, portraits and options; each of its texts with its
+  key; what it fires, what fires it and what it reads; and its script as written.
 -->
 <script setup lang="ts">
 import { computed, shallowRef, watch } from "vue";
 import { useQuery } from "@pinia/colada";
 import { createReusableTemplate, useClipboard } from "@vueuse/core";
-import { capitalize, groupBy } from "es-toolkit";
+import { capitalize, groupBy, xor } from "es-toolkit";
 import { useRoute, useRouter } from "vue-router";
 import type { Edge, Version } from "@services/graph/models";
+import type { Place } from "@services/workspace/models";
+import { plural } from "../../lib/format";
 import { findPlaceholder } from "../../lib/placeholders";
 import { detailQuery, fileUrl } from "../../queries";
 import { useEditorStore } from "../../stores/editor";
@@ -22,9 +24,14 @@ import { lookupLook } from "./layout";
 const { id } = defineProps<{ id: string }>();
 const emit = defineEmits<{ close: [] }>();
 
-/** How many fires, and how many firers, are listed before the rest fold. */
-const FIRES = 6;
-const FIRED_BY = 8;
+/**
+ * The two lists of firings: what the node fires and what fires it, by the detail's key, the end of an edge each row
+ * names, and how many rows show before the rest fold.
+ */
+const FIRINGS = [
+  { title: "Fires", key: "fires", end: "to", fold: 6 },
+  { title: "Fired by", key: "firedBy", end: "from", fold: 8 },
+] as const;
 
 const route = useRoute();
 const router = useRouter();
@@ -35,23 +42,17 @@ const { copy, copied } = useClipboard();
 const { data: detail, error } = useQuery(() => ({ ...detailQuery(id), enabled: workspace.isOpen() }));
 const silhouette = computed(() => findPlaceholder(detail.value?.silhouette ?? ""));
 const look = computed(() => lookupLook(detail.value?.node.database ?? ""));
-const tabs = computed(() => [
-  { label: capitalize(detail.value?.node.what ?? ""), slot: "main" },
-  { label: "Links", slot: "links" },
-  { label: "Script", slot: "script" },
-]);
 
 // the version each stepper shows, by its id; each starts at the first
 const indexes = shallowRef<Record<string, number>>({});
-const allFires = shallowRef(false);
-const allFiredBy = shallowRef(false);
+// the lists of firings shown whole, by their key
+const full = shallowRef<string[]>([]);
 const [DefineStepper, Stepper] = createReusableTemplate<{ current: ReturnType<typeof buildCurrent> }>();
 const [DefineQuote, Quote] = createReusableTemplate<{
-  current: ReturnType<typeof buildCurrent>;
+  current: Partial<Version> & { index?: number };
   random?: boolean;
   title?: boolean;
 }>();
-const [DefineKinds, Kinds] = createReusableTemplate<{ edges: Edge[]; end: "from" | "to" }>();
 
 const sections = computed(() => detail.value?.sections ?? []);
 const type = computed(() => sections.value.find((section) => section.key === "type")?.value ?? detail.value?.node.what);
@@ -74,9 +75,22 @@ const properties = computed(() =>
       (section.when || !section.value.includes("{ … }")),
   ),
 );
-const fires = computed(() => (allFires.value ? detail.value?.fires : detail.value?.fires?.slice(0, FIRES)) ?? []);
-const firedBy = computed(
-  () => (allFiredBy.value ? detail.value?.firedBy : detail.value?.firedBy?.slice(0, FIRED_BY)) ?? [],
+// every text the node shows, its sections' and then its options', and how many the detail's language lacks
+const versions = computed(() =>
+  [...sections.value, ...(detail.value?.options ?? [])].flatMap((section) => section.texts ?? []),
+);
+const missingCount = computed(() => versions.value.filter((version) => version.missing).length);
+const tabs = computed(() => [
+  { label: capitalize(detail.value?.node.what ?? ""), slot: "main" },
+  { label: "Text", slot: "text", badge: versions.value.length || undefined },
+  { label: "Links", slot: "links" },
+  { label: "Script", slot: "script" },
+]);
+const firings = computed(() =>
+  FIRINGS.map((list) => {
+    const edges = detail.value?.[list.key] ?? [];
+    return { ...list, edges, rows: full.value.includes(list.key) ? edges : edges.slice(0, list.fold) };
+  }),
 );
 const references = computed(() => Object.entries(groupBy(detail.value?.references ?? [], (node) => node.what)));
 
@@ -84,7 +98,7 @@ watch(
   () => id,
   () => {
     indexes.value = {};
-    allFires.value = allFiredBy.value = false;
+    full.value = [];
   },
 );
 
@@ -119,17 +133,9 @@ function setRoot(root: string): void {
   void router.replace({ query: { root } });
 }
 
-/** Shows the node's file at a line. */
-function show(line: number): void {
-  if (detail.value) editor.show(detail.value.node.place, { lineNumber: line, column: 1 }, "graph");
-}
-
-/** Shows the node's file in the Form view. The view is set only when the file opened in this window. */
-function showForm(): void {
-  if (!detail.value) return;
-  show(detail.value.node.line);
-  const tab = editor.activeTab();
-  if (tab && editor.placeOf(tab.id)?.key === detail.value.node.place.key) editor.setView(tab.id, "form");
+/** Shows a file at a line. */
+function show(place: Place, line: number): void {
+  editor.show(place, { lineNumber: line, column: 1 }, "graph");
 }
 </script>
 
@@ -156,8 +162,11 @@ function showForm(): void {
             :disabled="route.query.root === id"
             @click="setRoot(id)"
           />
-          <UButton label="Open in IDE" icon="i-lucide-external-link" @click="show(detail.node.line)" />
-          <UButton label="Edit as a form" icon="i-lucide-square-pen" @click="showForm" />
+          <UButton
+            label="Open in IDE"
+            icon="i-lucide-external-link"
+            @click="show(detail.node.place, detail.node.line)"
+          />
           <UButton
             icon="i-lucide-x"
             variant="ghost"
@@ -172,6 +181,22 @@ function showForm(): void {
         }}</span>
         <SourceLink :place="detail.node.place" :line="detail.node.line" class="self-start" />
       </div>
+      <DefineQuote v-slot="{ current, random, title }">
+        <p
+          v-if="current.text || !current.missing"
+          class="whitespace-pre-line"
+          :class="title ? 'text-center text-18 leading-6 font-semibold text-highlighted' : 'text-13 text-highlighted'"
+        >
+          {{ current.text || "No text" }}
+        </p>
+        <p v-if="current.missing" class="text-12 text-warning" :class="{ 'text-center': title }">
+          Missing in {{ detail.language }}
+        </p>
+        <p v-if="current.when || (current.index && !random)" class="truncate text-11 text-dimmed" :title="current.when">
+          when <code v-if="current.when" class="font-mono text-muted">{{ current.when }}</code
+          ><template v-else>none before it applies</template>
+        </p>
+      </DefineQuote>
       <UTabs
         :items="tabs"
         variant="link"
@@ -200,27 +225,18 @@ function showForm(): void {
               />
             </span>
           </DefineStepper>
-          <DefineQuote v-slot="{ current, random, title }">
-            <p
-              class="whitespace-pre-line"
-              :class="
-                title ? 'text-center text-18 leading-6 font-semibold text-highlighted' : 'text-13 text-highlighted'
-              "
-            >
-              {{ current.text || "No text" }}
-            </p>
-            <p
-              v-if="current.when || (current.index && !random)"
-              class="truncate text-11 text-dimmed"
-              :title="current.when"
-            >
-              when <code v-if="current.when" class="font-mono text-muted">{{ current.when }}</code
-              ><template v-else>none before it applies</template>
-            </p>
-          </DefineQuote>
           <div class="flex flex-col gap-2.5 px-4 py-3.5">
             <div class="flex flex-col gap-1">
-              <span class="text-11 text-muted">{{ capitalize((type ?? "").replaceAll("_", " ")) }}</span>
+              <span class="flex items-center gap-2 text-11 text-muted">
+                {{ capitalize((type ?? "").replaceAll("_", " ")) }}
+                <UBadge
+                  v-if="missingCount"
+                  :label="plural(missingCount, 'missing text')"
+                  color="warning"
+                  variant="subtle"
+                  size="sm"
+                />
+              </span>
               <p
                 v-for="section in properties"
                 :key="section.line"
@@ -289,7 +305,7 @@ function showForm(): void {
                       color="neutral"
                       size="xs"
                       class="min-w-0 p-0 font-mono text-dimmed"
-                      @click="show(option.current.line ?? option.line)"
+                      @click="show(detail.node.place, option.current.line ?? option.line)"
                     />
                     <UBadge v-for="flag in option.flags" :key="flag" :label="flag" size="sm" />
                     <span class="grow" />
@@ -300,101 +316,110 @@ function showForm(): void {
             </section>
           </div>
         </template>
-        <template #links>
-          <DefineKinds v-slot="{ edges, end }">
-            <span
-              v-for="kind in countKinds(edges, end)"
-              :key="kind.what"
-              class="flex items-center gap-1 text-11 font-normal text-muted"
-            >
-              <span class="size-1.5 rounded-full" :style="{ background: kind.color }" />{{ kind.what }}
-              <span class="text-dimmed">{{ kind.count }}</span>
-            </span>
-          </DefineKinds>
-          <div class="flex flex-col gap-4 pb-4">
-            <section v-if="detail.fires?.length">
-              <SectionHead title="Fires" :count="detail.fires.length">
-                <Kinds :edges="detail.fires" end="to" />
-              </SectionHead>
-              <ul class="flex flex-col px-2 pt-1.5">
-                <li
-                  v-for="(edge, position) in fires"
-                  :key="position"
-                  class="flex h-7 items-center gap-2 rounded-chip px-2 even:bg-accented/40"
-                  :title="edge.via?.length ? `Through ${edge.via.join(', ')}` : 'Directly'"
-                >
-                  <UIcon
-                    :name="lookupLook(findLinked(edge, 'to')?.database ?? '').icon"
-                    class="size-3.5 shrink-0"
-                    :style="{ color: lookupLook(findLinked(edge, 'to')?.database ?? '').color }"
-                  />
-                  <UButton
-                    :label="findLinked(edge, 'to')?.name ?? edge.to"
-                    variant="link"
-                    color="neutral"
-                    size="xs"
-                    class="min-w-0 p-0 font-mono text-highlighted"
-                    :ui="{ label: 'truncate' }"
-                    @click="setRoot(edge.to)"
-                  />
-                  <SourceLink :place="edge.place" :line="edge.line" class="min-w-0 shrink" />
-                  <span class="grow" />
-                  <span v-if="edge.via?.length" class="truncate text-11 text-dimmed"
-                    >via {{ edge.via.join(", ") }}</span
-                  >
-                  <UBadge v-if="edge.days" :label="edge.days" size="sm" />
-                </li>
-              </ul>
+        <template #text>
+          <ul v-if="versions.length" class="flex flex-col divide-y divide-default px-4 py-1.5">
+            <li v-for="(version, position) in versions" :key="position" class="flex flex-col gap-0.5 py-2">
               <UButton
-                v-if="detail.fires.length > FIRES"
-                :label="allFires ? 'Fewer' : `Show ${detail.fires.length - FIRES} more`"
+                :label="version.key"
                 variant="link"
+                color="neutral"
                 size="xs"
-                class="px-4"
-                @click="allFires = !allFires"
+                class="min-w-0 self-start p-0 font-mono text-dimmed"
+                :ui="{ label: 'truncate' }"
+                @click="show(detail.node.place, version.line)"
               />
-            </section>
-            <section v-if="detail.firedBy?.length">
-              <SectionHead title="Fired by" :count="detail.firedBy.length">
-                <Kinds :edges="detail.firedBy" end="from" />
-              </SectionHead>
-              <div class="flex flex-wrap gap-1 px-4 pt-2.5">
-                <UTooltip
-                  v-for="(edge, position) in firedBy"
-                  :key="position"
-                  :text="`${edge.place.rel}:${edge.line}${edge.via?.length ? `, through ${edge.via.join(', ')}` : ''}`"
-                >
-                  <UButton
-                    :label="findLinked(edge, 'from')?.name ?? edge.from"
-                    variant="outline"
-                    size="xs"
-                    class="font-mono"
-                    @click="setRoot(edge.from)"
-                  />
-                </UTooltip>
+              <Quote :current="version" />
+            </li>
+          </ul>
+          <p v-else class="px-4 py-3.5 text-12 text-dimmed">It shows no text.</p>
+        </template>
+        <template #links>
+          <div class="flex flex-col gap-4 pb-4">
+            <template v-for="list in firings" :key="list.key">
+              <section v-if="list.edges.length">
+                <SectionHead :title="list.title" :count="list.edges.length">
+                  <span
+                    v-for="kind in countKinds(list.edges, list.end)"
+                    :key="kind.what"
+                    class="flex items-center gap-1 text-11 font-normal text-muted"
+                  >
+                    <span class="size-1.5 rounded-full" :style="{ background: kind.color }" />{{ kind.what }}
+                    <span class="text-dimmed">{{ kind.count }}</span>
+                  </span>
+                </SectionHead>
+                <ul class="flex flex-col px-2 pt-1.5">
+                  <li
+                    v-for="(edge, position) in list.rows"
+                    :key="position"
+                    class="flex h-7 items-center gap-2 rounded-chip px-2 even:bg-accented/40"
+                    :title="edge.via?.length ? `Through ${edge.via.join(', ')}` : 'Directly'"
+                  >
+                    <UIcon
+                      :name="lookupLook(findLinked(edge, list.end)?.database ?? '').icon"
+                      class="size-3.5 shrink-0"
+                      :style="{ color: lookupLook(findLinked(edge, list.end)?.database ?? '').color }"
+                    />
+                    <UButton
+                      :label="findLinked(edge, list.end)?.name ?? edge[list.end]"
+                      variant="link"
+                      color="neutral"
+                      size="xs"
+                      class="min-w-0 p-0 font-mono text-highlighted"
+                      :ui="{ label: 'truncate' }"
+                      @click="setRoot(edge[list.end])"
+                    />
+                    <SourceLink :place="edge.place" :line="edge.line" class="min-w-0 shrink" />
+                    <span class="grow" />
+                    <span v-if="edge.via?.length" class="truncate text-11 text-dimmed"
+                      >via {{ edge.via.join(", ") }}</span
+                    >
+                    <UBadge v-if="edge.days" :label="edge.days" size="sm" />
+                  </li>
+                </ul>
                 <UButton
-                  v-if="detail.firedBy.length > FIRED_BY"
-                  :label="allFiredBy ? 'Fewer' : `Show ${detail.firedBy.length - FIRED_BY} more`"
+                  v-if="list.edges.length > list.fold"
+                  :label="full.includes(list.key) ? 'Fewer' : `Show ${list.edges.length - list.fold} more`"
                   variant="link"
                   size="xs"
-                  @click="allFiredBy = !allFiredBy"
+                  class="px-4"
+                  @click="full = xor(full, [list.key])"
                 />
-              </div>
-            </section>
-            <section v-for="[what, nodes] in references" :key="what">
-              <SectionHead :title="`References: ${what}`" :count="nodes.length" />
-              <ul class="flex flex-col gap-1 px-4 pt-2.5">
-                <li v-for="node in nodes" :key="node.id" class="flex min-w-0 items-center gap-2">
-                  <span class="shrink-0 font-mono text-12 text-highlighted">{{ node.name }}</span>
-                  <SourceLink :place="node.place" :line="node.line" />
-                </li>
-              </ul>
+              </section>
+            </template>
+            <section v-if="references.length || versions.length">
+              <SectionHead title="Reads" :count="(detail.references?.length ?? 0) + versions.length" />
+              <dl class="grid grid-cols-[6.5rem_minmax(0,1fr)] items-baseline gap-x-2 gap-y-1 px-4 pt-2.5">
+                <template v-for="[what, nodes] in references" :key="what">
+                  <dt class="truncate text-11 text-muted">{{ what }}</dt>
+                  <dd class="flex flex-wrap gap-x-2">
+                    <UTooltip v-for="node in nodes" :key="node.id" :text="`${node.place.rel}:${node.line}`">
+                      <UButton
+                        :label="node.name"
+                        variant="link"
+                        color="neutral"
+                        size="xs"
+                        class="p-0 font-mono text-highlighted"
+                        @click="show(node.place, node.line)"
+                      />
+                    </UTooltip>
+                  </dd>
+                </template>
+                <template v-if="versions.length">
+                  <dt class="text-11 text-muted">texts</dt>
+                  <dd class="text-12 text-toned">
+                    {{ versions.length
+                    }}<span v-if="missingCount" class="text-warning"
+                      >, {{ missingCount }} missing in {{ detail.language }}</span
+                    >
+                  </dd>
+                </template>
+              </dl>
             </section>
           </div>
         </template>
         <template #script>
           <div class="px-4 py-3.5">
-            <div class="overflow-hidden rounded-lg border border-default bg-(--bg-0)">
+            <div class="overflow-hidden rounded-lg border border-default">
               <div
                 class="flex h-8 items-center gap-2 border-b border-default bg-elevated px-2.5 text-12 whitespace-nowrap"
               >
@@ -415,10 +440,10 @@ function showForm(): void {
                   size="xs"
                   square
                   aria-label="Open in IDE"
-                  @click="show(detail.node.line)"
+                  @click="show(detail.node.place, detail.node.line)"
                 />
               </div>
-              <ScriptSnippet :text="detail.source" language="paradox-script" class="py-1.5" />
+              <ScriptSnippet :text="detail.source" :line="detail.node.line" language="paradox-script" class="pb-1.5" />
             </div>
           </div>
         </template>

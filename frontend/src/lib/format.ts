@@ -5,7 +5,9 @@
 import { formatTimeAgo, type UseTimeAgoMessages } from "@vueuse/core";
 
 import type { SourceState } from "@internal/schema/models";
+import type { Header } from "@internal/texture/models";
 import type { Comparison, Details } from "@services/steam/models";
+import type { State } from "@services/workspace/models";
 
 const PLURALS = new Intl.PluralRules("en");
 const LISTS = new Intl.ListFormat("en-GB");
@@ -51,7 +53,9 @@ const LANGUAGES: Readonly<Record<string, string>> = {
   japanese: "Japanese",
 };
 
-/** The given localization languages as a select's items, each named in English, or by its folder when it has no name. */
+/**
+ * The given localization languages as a select's items, each named in English, or by its folder when it has no name.
+ */
 export function describeLanguages(languages: readonly string[] | null | undefined): { label: string; value: string }[] {
   return (languages ?? []).map((value) => ({ label: LANGUAGES[value] ?? value, value }));
 }
@@ -77,6 +81,15 @@ export function day(date: Date | string): string {
   return Number.isNaN(parsed.getTime()) ? "" : DAYS.format(parsed);
 }
 
+/**
+ * How long ago a time was, in the given wording: "4 min ago" when short, "4 minutes ago" or "last week" when long. It
+ * is an empty string for a time that does not parse and for one Go never set, which it writes as the year 1.
+ */
+export function describeAge(time: Date | string, wording: "short" | "long"): string {
+  const parsed = new Date(time);
+  return parsed.getFullYear() > 1 ? formatTimeAgo(parsed, wording === "short" ? { messages: AGO } : {}) : "";
+}
+
 /** "1.2 MB". A size under a megabyte is in kilobytes, however small. */
 export function bytes(count: number): string {
   const megabytes = count >= 1048576;
@@ -85,6 +98,11 @@ export function bytes(count: number): string {
     unit: megabytes ? "megabyte" : "kilobyte",
     maximumFractionDigits: 1,
   }).format(count / (megabytes ? 1048576 : 1024));
+}
+
+/** A picture's size from its header: "512 by 512, 184 KB". */
+export function describePicture(header: Header): string {
+  return `${header.width} by ${header.height}, ${bytes(header.bytes)}`;
 }
 
 /**
@@ -97,10 +115,9 @@ export function diagnosticMessage(template: string, facts: Record<string, string
 
 /** The install line: "CK3 1.20.1, scanned 4 min ago". An install never scanned says "not scanned". */
 export function installLine(game: string, version: string, scannedAt: string): string {
-  const scanned = new Date(scannedAt);
-  // Go writes a time never set as the year 1
-  const ago = scanned.getFullYear() > 1 ? `scanned ${formatTimeAgo(scanned, { messages: AGO })}` : "not scanned";
-  return [[game, version].filter(Boolean).join(" "), ago].filter(Boolean).join(", ");
+  const age = describeAge(scannedAt, "short");
+  const scanned = age ? `scanned ${age}` : "not scanned";
+  return [[game, version].filter(Boolean).join(" "), scanned].filter(Boolean).join(", ");
 }
 
 /**
@@ -112,6 +129,16 @@ export function describeDumps(dumps: SourceState): { current: boolean; label: st
   if (dumps.origin === "install") return { current: false, label: "script_docs older than the game" };
   if (dumps.origin === "shipped") return { current: false, label: "Using PMT's copy of script_docs" };
   return { current: false, label: "No script_docs" };
+}
+
+/** What the open workspace's schema declares: "612 effects, 981 triggers, 44 scope types". */
+export function describeLexicon(state: State): string {
+  const counts = [
+    plural(state.effects, "effect"),
+    plural(state.triggers, "trigger"),
+    plural(state.scopes, "scope type"),
+  ];
+  return counts.join(", ");
 }
 
 /** An item's state on Steam as sentences: its visibility, subscribers and last update. None when there is no item. */

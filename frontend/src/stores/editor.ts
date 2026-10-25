@@ -1,7 +1,8 @@
 /**
  * The editor store: the layout of groups in rows and columns with their tabs, kept per workspace in local storage,
- * the active group and tab, the view each tab shows, and the one function that shows a place. The files' texts
- * are the models'; this store holds no text, no problem and no caret. The panes' sizes belong to the splitters.
+ * the active group and tab, the view each tab shows, the files selected in the explorer, the history of the places
+ * the user jumped between, and the one function that shows a place. The files' texts are the models'; this store
+ * holds no text, no problem and no caret but the history's. The panes' sizes belong to the splitters.
  */
 import { defineStore } from "pinia";
 import { useMutation, useQuery } from "@pinia/colada";
@@ -20,7 +21,7 @@ import { THIS_WINDOW, useWindowsStore } from "./windows";
 import { useWorkspaceStore } from "./workspace";
 
 /** The views a tab can show. VIEWS says which ones a format allows. */
-export type View = "code" | "visual" | "form" | "image" | "split";
+export type View = "code" | "visual" | "image" | "split";
 
 /** One tab: its id (see pages/ide/editor/tabs.ts), whether it is the preview tab, and its view. */
 export type Tab = { id: string; preview: boolean; view: View };
@@ -32,6 +33,12 @@ export type Layout = { rows: { columns: Group[] }[] };
 
 /** A workspace's saved layout: the groups, the active group, and the path of each file a tab holds. */
 type SavedLayout = { layout: Layout; active: string; paths: Record<string, string> };
+
+/** One place the user was in: a file and a caret position in it. */
+type Visit = { place: Place; position: IPosition };
+
+/** How many places the history keeps. */
+const HISTORY = 50;
 
 export const useEditorStore = defineStore("editor", () => {
   const workspace = useWorkspaceStore();
@@ -51,6 +58,11 @@ export const useEditorStore = defineStore("editor", () => {
   const tracking = shallowRef(false);
   // the position a file was shown at, which the active group's editor of that file moves its caret to once
   const request = shallowRef<{ key: string; position: IPosition } | null>(null);
+  // the files the explorer's last selection holds, for the compare of two
+  const selection = shallowRef<Place[]>([]);
+  // the places the user jumped between, the oldest first, and the index of the one the user is at
+  const visits = shallowRef<Visit[]>([]);
+  const current = shallowRef(-1);
 
   const { mutate: openPlace } = useMutation({
     mutation: async (request: { place: Place; position?: IPosition; created: boolean }) => {
@@ -112,6 +124,9 @@ export const useEditorStore = defineStore("editor", () => {
     tracking.value = false;
     for (const key of places.keys()) closeModel(key);
     places.clear();
+    selection.value = [];
+    visits.value = [];
+    current.value = -1;
     state.value = makeLayout();
     activeId.value = state.value.rows[0]?.columns[0]?.id ?? "";
     if (!id || THIS_WINDOW !== "main") return;
@@ -128,12 +143,17 @@ export const useEditorStore = defineStore("editor", () => {
     tracking.value = true;
   }
 
-  /** Remembers a file's place and opens its model. A position, when given, is asked of the file's editor. */
+  /**
+   * Remembers a file's place and opens its model. A position, when given, becomes the model's caret, which the Form
+   * view shows the entry at, and is asked of the file's editor.
+   */
   async function openFile(place: Place, position?: IPosition): Promise<void> {
     places.set(place.key, place);
     if (!VIEWS[place.format].views.includes("code")) return;
-    await openModel(place);
-    if (position) request.value = { key: place.key, position };
+    const model = await openModel(place);
+    if (!position) return;
+    model.caret = { line: position.lineNumber, column: position.column };
+    request.value = { key: place.key, position };
   }
 
   /** Lists all the groups, row by row. */
@@ -146,9 +166,12 @@ export const useEditorStore = defineStore("editor", () => {
     return listGroups().flatMap((group) => group.tabs);
   }
 
-  /** The tab with the given id and the group holding it, the active group's first. It is null when none holds it. */
-  function find(tabId: string): { group: Group; index: number } | null {
-    for (const group of [activeGroup(), ...listGroups()]) {
+  /**
+   * The tab with the given id and the group holding it, looked for in the given group first, the active group unless
+   * one is given. It is null when none holds it.
+   */
+  function find(tabId: string, first = activeGroup()): { group: Group; index: number } | null {
+    for (const group of [first, ...listGroups()]) {
       const index = group?.tabs.findIndex((tab) => tab.id === tabId) ?? -1;
       if (group && index >= 0) return { group, index };
     }
@@ -226,12 +249,18 @@ export const useEditorStore = defineStore("editor", () => {
     return tab ? placeOf(tab.id) : null;
   };
 
-  /** Opens a tab of a place, a diff tab among them: the group holding it shows it, or the active group takes it in. */
-  const open = (tabId: string, place: Place): void => {
+  /**
+   * Opens a tab of a place, a diff tab among them, and makes its group the active one. The tab is looked for in the
+   * given group first, the active group unless one is given, then in the others; a tab no group holds goes into the
+   * first. The history keeps the switch, from where the user was before it.
+   */
+  const open = (tabId: string, place: Place, groupId?: string): void => {
     places.set(place.key, place);
-    const home = find(tabId);
-    const group = home?.group ?? activeGroup();
+    const preferred = listGroups().find((one) => one.id === groupId) ?? activeGroup();
+    const home = find(tabId, preferred);
+    const group = home?.group ?? preferred;
     if (!group) return;
+    record(locate(place));
     if (!home) add(group, { id: tabId, preview: false, view: "code" });
     group.active = tabId;
     activeId.value = group.id;
@@ -240,12 +269,13 @@ export const useEditorStore = defineStore("editor", () => {
   /**
    * Shows a place. It opens the file in the view the request calls for: the explorer's single click opens a
    * preview tab, a definition opens the code view at its position, and a coat opens the Visual view. The file
-   * opens in this window, or in the window that already holds it. The main window shows the IDE first.
+   * opens in this window, or in the window that already holds it. The main window shows the IDE first. The history
+   * keeps the jump, unless the history is what shows the place.
    */
   const show = (
     place: Place,
     position?: IPosition,
-    source: "explorer" | "navigate" | "palette" | "graph" | "health" = "navigate",
+    source: "explorer" | "navigate" | "palette" | "graph" | "health" | "history" = "navigate",
   ): void => {
     const windows = useWindowsStore();
     const holder = windows.holderOf({ file: place.key });
@@ -255,6 +285,7 @@ export const useEditorStore = defineStore("editor", () => {
     }
     const group = activeGroup();
     if (!group) return;
+    if (source !== "history") record(position ? { place, position } : locate(place));
     const page = router.currentRoute.value.name;
     if (THIS_WINDOW === "main" && page && page !== "workspace-ide") {
       void router.push({ name: "workspace-ide", params: { id: workspace.activeId() } });
@@ -278,6 +309,58 @@ export const useEditorStore = defineStore("editor", () => {
   const clearRequest = (): void => {
     request.value = null;
   };
+
+  /** The files selected in the explorer, in the order the tree lists them. A folder selected is left out. */
+  const listSelection = (): Place[] => selection.value;
+
+  /** Keeps the files the explorer has selected. */
+  const selectFiles = (files: Place[]): void => {
+    selection.value = files;
+  };
+
+  /**
+   * Records a jump to a place in the history. The place the user leaves is kept before it, and the places ahead of
+   * the one the user is at are dropped, as a browser drops them.
+   */
+  const record = (target: Visit | undefined): void => {
+    if (!target) return;
+    const here = locate();
+    const kept = visits.value.slice(0, current.value + 1);
+    // the place the user arrived at in a file becomes where the user is in it now
+    if (here && kept.at(-1)?.place.key === here.place.key) kept.pop();
+    for (const visit of here ? [here, target] : [target]) if (!isSame(kept.at(-1), visit)) kept.push(visit);
+    visits.value = kept.slice(-HISTORY);
+    current.value = visits.value.length - 1;
+  };
+
+  /**
+   * Goes the given number of places through the history: -1 back, 1 forward. A place whose file has closed opens it
+   * again. Past either end it does nothing.
+   */
+  const go = (steps: number): void => {
+    const here = locate();
+    // where the user is now is kept, so going the other way comes back to it; a place no jump led to is a jump
+    if (here && visits.value[current.value]?.place.key === here.place.key) {
+      visits.value = visits.value.with(current.value, here);
+    } else if (here) {
+      record(here);
+    }
+    const target = visits.value[current.value + steps];
+    if (!target) return;
+    current.value += steps;
+    show(target.place, target.position, "history");
+  };
+
+  /** A visit to a file at its caret: the active tab's file unless one is given. It is undefined when there is none. */
+  function locate(place = activeFile()): Visit | undefined {
+    const caret = place && findModel(place.key)?.caret;
+    return place ? { place, position: { lineNumber: caret?.line ?? 1, column: caret?.column ?? 1 } } : undefined;
+  }
+
+  /** Whether a visit is to the same line of the same file as another. */
+  function isSame(visit: Visit | undefined, other: Visit): boolean {
+    return !!visit && visit.place.key === other.place.key && visit.position.lineNumber === other.position.lineNumber;
+  }
 
   /** Makes the given group the active one. A group the layout lacks changes nothing. */
   const activate = (groupId: string): void => {
@@ -362,13 +445,15 @@ export const useEditorStore = defineStore("editor", () => {
       for (const tab of group.tabs) {
         const target = parseTab(tab.id);
         if (target.key !== key) continue;
-        const id = target.tab === "file" ? `file:${place.key}` : diffTab(target.side, place.key, target.hash);
+        const id =
+          target.tab === "file" ? `file:${place.key}` : diffTab(target.side, target.root, place.key, target.hash);
         if (group.active === tab.id) group.active = id;
         tab.id = id;
       }
     }
     places.delete(key);
     places.set(place.key, place);
+    visits.value = visits.value.map((visit) => (visit.place.key === key ? { ...visit, place } : visit));
     renameModel(key, place);
   }
 
@@ -398,6 +483,10 @@ export const useEditorStore = defineStore("editor", () => {
     open,
     findRequest,
     clearRequest,
+    listSelection,
+    selectFiles,
+    record,
+    go,
     activate,
     pin,
     close,

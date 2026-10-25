@@ -1,6 +1,7 @@
 package graph
 
 import (
+	"cmp"
 	"slices"
 	"strings"
 
@@ -17,6 +18,7 @@ import (
 type Detail struct {
 	Node       Node            `json:"node"`
 	Text       string          `json:"text"`     // the event's localized description
+	Language   string          `json:"language"` // the workspace's language, or the base language if it has none
 	Source     string          `json:"source"`   // the definition as written
 	Sections   []Section       `json:"sections"` // the keys at the top of the definition, except its options
 	Options    []Section       `json:"options"`  // the definition's option blocks
@@ -42,10 +44,11 @@ type Section struct {
 
 // A Version is one text a key can show, with the trigger that decides it.
 type Version struct {
-	Key  string `json:"key"` // its localization key
-	Text string `json:"text"`
-	When string `json:"when,omitempty"` // its trigger on one line; "" if it always can
-	Line int    `json:"line"`           // counted from one
+	Key     string `json:"key"` // its localization key
+	Text    string `json:"text"`
+	Missing bool   `json:"missing,omitempty"` // the detail's language has no message with its key
+	When    string `json:"when,omitempty"`    // its trigger on one line; "" if it always can
+	Line    int    `json:"line"`              // counted from one
 }
 
 // The keys of an event that its sections read for their texts, their trigger and their split into options.
@@ -57,7 +60,12 @@ const (
 	triggerKey     = "trigger"
 )
 
-// BuildDetail returns the detail of the node with the given id, from its kept definition.
+// textKeys are the keys at the top of a definition whose value is always a localization key. Each is shown as a text
+// even when no message has its key.
+var textKeys = []string{game.TitleKey, descriptionKey}
+
+// BuildDetail returns the detail of the node with the given id, read from the definition the game keeps of it. It
+// returns an error if no workspace is open, if the game keeps no definition of the node, or if its file cannot be read.
 func (gph *Service) BuildDetail(id string) (Detail, error) {
 	ws, err := gph.Workspace.Session()
 	if err != nil {
@@ -82,6 +90,7 @@ func (gph *Service) BuildDetail(id string) (Detail, error) {
 	return Detail{
 		Node:       node,
 		Text:       text,
+		Language:   resolveLanguage(ws),
 		Source:     tree.Text(tree.Statements[statement].Span),
 		Sections:   sections,
 		Options:    options,
@@ -110,13 +119,15 @@ func findDescription(tree *jomini.Tree, statement int32) string {
 	return ""
 }
 
-// makeSection returns the section of one statement at the top of a definition. A block also gets its own trigger, the
-// texts it can show and, for an option, the keys it writes as yes.
+// makeSection returns the section of one statement at the top of a definition. A key whose value has a message gets
+// its text, and so does a title or a description that has none. A block also gets its own trigger, the texts it can
+// show and, for an option, the keys it writes as yes.
 func makeSection(ws *workspace.Session, mods *index.Index, tree *jomini.Tree, statement int32) Section {
 	current := tree.Statements[statement]
 	section := Section{Key: tree.Text(current.Key), Value: tree.Unquoted(current.Value), Line: toSourceLine(tree, current.Key)}
 	if !current.IsBlock() {
-		if version, ok := makeVersion(ws, mods, tree, statement); ok && version.Text != "" {
+		version, ok := makeVersion(ws, mods, tree, statement)
+		if ok && (version.Text != "" || slices.Contains(textKeys, section.Key)) {
 			section.Texts = []Version{version}
 		}
 		return section
@@ -180,11 +191,12 @@ func listVersions(ws *workspace.Session, mods *index.Index, tree *jomini.Tree, s
 }
 
 // makeVersion returns the text a statement shows. The statement is a key whose value is a localization key, or a block
-// that writes one as its desc or text. It returns false if the statement writes none.
+// that writes one as its desc or text. The text is missing if the detail's language has no message with the key; it is
+// then the base language's, or "" if that has none either. It returns false if the statement writes no key.
 func makeVersion(ws *workspace.Session, mods *index.Index, tree *jomini.Tree, statement int32) (Version, bool) {
 	label := statement
 	if tree.Statements[statement].IsBlock() {
-		// 0 is the file, which has no value
+		// a desc or text that is not found leaves 0, the file, which has no value
 		label, _ = tree.FindChild(statement, descriptionKey)
 		if label == 0 {
 			label, _ = tree.FindChild(statement, labelKey)
@@ -195,8 +207,16 @@ func makeVersion(ws *workspace.Session, mods *index.Index, tree *jomini.Tree, st
 		return Version{}, false
 	}
 	key := tree.Unquoted(value)
-	text, _, _ := ws.LookupText(mods, key)
-	return Version{Key: key, Text: text, Line: toSourceLine(tree, tree.Statements[label].Key)}, true
+	text, winner, ok := ws.LookupText(mods, key)
+	// a key that is no identifier is shown as written, so it misses nothing
+	missing := jomini.IsIdentifier(key) && (!ok || mods.Language(winner.Site) != resolveLanguage(ws))
+	return Version{Key: key, Text: text, Missing: missing, Line: toSourceLine(tree, tree.Statements[label].Key)}, true
+}
+
+// resolveLanguage returns the language the detail shows its texts in: the workspace's own, or the game's base language
+// if the workspace has none.
+func resolveLanguage(ws *workspace.Session) string {
+	return cmp.Or(ws.Language, game.BaseLanguage)
 }
 
 // toSourceLine returns the line of a span in a tree, counted from one.
@@ -237,8 +257,9 @@ func listLinked(ws *workspace.Session, mods *index.Index, fires, firedBy []index
 	return linked
 }
 
-// listReferences returns the nodes that a node's definitions refer to, each name once. A name the game keeps no
-// definition of is left out.
+// listReferences returns the nodes that a node's definitions refer to, each name once, in the order first written. A
+// saved scope or a variable is a node at the place it is first read. Any other name the game keeps no definition of is
+// left out.
 func listReferences(ws *workspace.Session, mods *index.Index, site index.Site) []Node {
 	references := []Node{}
 	seen := map[schema.Reference]bool{}
@@ -248,10 +269,14 @@ func listReferences(ws *workspace.Session, mods *index.Index, site index.Site) [
 			if occurrences[position].Role != index.RoleRefers {
 				continue
 			}
-			for _, reference := range index.ListCallees(mods.ToReference(index.Site{File: part.File, Occurrence: position})) {
-				if winner, ok := mods.FindKeptLocal(ws.Schema, reference, part.File); ok && !seen[reference] {
+			use := index.Site{File: part.File, Occurrence: position}
+			for _, reference := range index.ListCallees(mods.ToReference(use)) {
+				if seen[reference] {
+					continue
+				}
+				if node, ok := findReference(ws, mods, reference, use); ok {
 					seen[reference] = true
-					references = append(references, makeNode(ws, mods, winner.Site, 0))
+					references = append(references, node)
 				}
 			}
 		}
@@ -267,6 +292,20 @@ func isInside(occurrences []index.Occurrence, position, definition int32) bool {
 		}
 	}
 	return false
+}
+
+// findReference returns the node of a name that a definition reads at the given site. For a saved scope or a variable
+// it is the place the name is read, and for any other name the definition the game keeps of it. It returns false if
+// the game keeps none.
+func findReference(ws *workspace.Session, mods *index.Index, reference schema.Reference, use index.Site) (Node, bool) {
+	if _, saved := game.LinkMakers[reference.Database]; saved {
+		return makeNode(ws, mods, use, 0), true
+	}
+	winner, ok := mods.FindKeptLocal(ws.Schema, reference, use.File)
+	if !ok {
+		return Node{}, false
+	}
+	return makeNode(ws, mods, winner.Site, 0), true
 }
 
 // listPortraits returns the characters an event's portraits show. It returns an empty list if the event shows none.

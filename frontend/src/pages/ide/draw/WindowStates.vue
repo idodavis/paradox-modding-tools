@@ -42,7 +42,9 @@ const { data: states } = useQuery(() => ({
   ...statesQuery({ path, name: window.name, picks: store.picks }),
   enabled: workspace.isOpen(),
 }));
-const groups = computed(() => states.value?.groups ?? []);
+const groups = computed(() => window.groups ?? []);
+// the value each group is at, by group
+const values = computed(() => states.value?.values ?? {});
 const hidden = computed(() => new Set(states.value?.hidden ?? []));
 const changes = computed(() => groups.value.filter((group) => group.id in store.picks).map(({ id }) => id));
 
@@ -54,7 +56,7 @@ const chain = computed(() => {
 });
 const way = computed(() =>
   chain.value.flatMap((id) => {
-    const conditions = states.value?.conditions?.[`${id}`];
+    const conditions = window.conditions?.[`${id}`];
     const reads = groups.value.filter((group) => group.readers?.includes(id));
     return conditions ? [{ widget: widgets.value[id], conditions, reads, met: !hidden.value.has(id) }] : [];
   }),
@@ -209,7 +211,7 @@ function listChoices(group: Group): { label: string; value: string }[][] {
 
 /** Whether a group of one value holds: it is at that value or at every value. */
 function isOn(group: Group): boolean {
-  return group.picked !== NONE;
+  return values.value[group.id] !== NONE;
 }
 
 /** Picks a group of one value on or off. */
@@ -234,14 +236,14 @@ function outline(group: Group | null): void {
         v-for="value in listValues(group)"
         :key="value"
         :label="toCaption(group, value)"
-        :color="group.picked === value ? 'primary' : 'neutral'"
-        :variant="group.picked === value ? 'soft' : 'outline'"
+        :color="values[group.id] === value ? 'primary' : 'neutral'"
+        :variant="values[group.id] === value ? 'soft' : 'outline'"
         @click="store.pick({ [group.id]: value })"
       />
     </UFieldGroup>
     <USelectMenu
       v-else-if="listValues(group).length > 1"
-      :model-value="group.picked"
+      :model-value="values[group.id]"
       :items="listChoices(group)"
       value-key="value"
       size="xs"
@@ -293,7 +295,7 @@ function outline(group: Group | null): void {
           :key="ordinal"
           :text="condition"
           language="paradox-gui"
-          class="mb-1 text-11.5"
+          class="mb-1"
         />
         <div
           v-for="group in step.reads"

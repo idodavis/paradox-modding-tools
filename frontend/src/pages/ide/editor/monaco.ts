@@ -1,7 +1,7 @@
 /**
- * Monaco's setup, done once: the Paradox languages with their grammars, the providers over the editor service,
- * one theme per page theme made when that theme comes into force, with its token colors read from the theme's
- * `--syn-<category>` variables, and the editor options the settings give.
+ * Monaco's setup, done once: the Paradox languages with their grammars, the providers over the editor service and the
+ * editor options the settings give. Each page theme gets a Monaco theme when it comes into force, its token colors
+ * read from the theme's `--syn-<category>` variables.
  */
 import { useEventBus } from "@vueuse/core";
 import Color from "colorjs.io";
@@ -14,6 +14,7 @@ import { watch } from "vue";
 
 import type { editor, languages } from "monaco-editor";
 import { legendQuery, loadQuery, placeQuery } from "../../../queries";
+import { useEditorStore } from "../../../stores/editor";
 import { useSettingsStore } from "../../../stores/settings";
 import { registerConflicts } from "./conflicts";
 import { LOCALIZATION, SCRIPT } from "./grammars";
@@ -74,7 +75,7 @@ const defined = new Set<string>();
 
 /**
  * Sets Monaco up, once, before the first editor: its worker, the text model and label services, the languages, the
- * palette's keys inside an editor, the providers and the conflict links.
+ * palette's and the history's keys inside an editor, the providers and the conflict links.
  */
 export function setupMonaco(): void {
   self.MonacoEnvironment = { getWorker: () => new EditorWorker() };
@@ -103,11 +104,15 @@ export function setupMonaco(): void {
   const bus = useEventBus<string>("pmt.command");
   monaco.editor.registerCommand("pmt.palette", () => bus.emit("palette.open"));
   monaco.editor.registerCommand("pmt.files", () => bus.emit("editor.goToFile"));
+  monaco.editor.registerCommand("pmt.back", () => useEditorStore().go(-1));
+  monaco.editor.registerCommand("pmt.forward", () => useEditorStore().go(1));
   monaco.editor.addKeybindingRules([
     { keybinding: monaco.KeyMod.CtrlCmd | monaco.KeyCode.KeyK, command: "pmt.palette" },
     { keybinding: monaco.KeyMod.CtrlCmd | monaco.KeyMod.Shift | monaco.KeyCode.KeyP, command: "pmt.palette" },
     { keybinding: monaco.KeyCode.F1, command: "pmt.palette" },
     { keybinding: monaco.KeyMod.CtrlCmd | monaco.KeyCode.KeyP, command: "pmt.files" },
+    { keybinding: monaco.KeyMod.Alt | monaco.KeyCode.LeftArrow, command: "pmt.back" },
+    { keybinding: monaco.KeyMod.Alt | monaco.KeyCode.RightArrow, command: "pmt.forward" },
   ]);
   document.fonts.addEventListener("loadingdone", () => monaco.editor.remeasureFonts());
   registerConflicts();
@@ -135,7 +140,7 @@ export function applyTheme(family: string, dark: boolean): string {
   return id;
 }
 
-/** The editor options from the settings: text size, indentation, the checks. */
+/** The editor options from the settings: the code font, the indentation and the features they turn on or off. */
 export function editorOptions(): editor.IStandaloneEditorConstructionOptions {
   const settings = useSettingsStore();
   const on = (key: string) => settings.value(key) === "true";
@@ -152,8 +157,6 @@ export function editorOptions(): editor.IStandaloneEditorConstructionOptions {
     suggest: { showIcons: false, preview: true },
     unicodeHighlight: { ambiguousCharacters: false, invisibleCharacters: false },
     scrollBeyondLastLine: false,
-    padding: { top: 6 },
-    lineNumbersMinChars: 4,
     glyphMargin: false,
     renderLineHighlight: "all",
     wordWrap: on("ide.wordWrap") ? "on" : "off",

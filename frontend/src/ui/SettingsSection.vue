@@ -4,7 +4,7 @@ import { computed } from "vue";
 import { useQuery } from "@pinia/colada";
 import { range } from "es-toolkit";
 
-import { TOOL_CHOICES, WORKSPACE_TOOLS } from "../app/pages";
+import { TOOL_CHOICES } from "../app/pages";
 import { codesQuery, settingsCatalogQuery } from "../queries";
 import { useSettingsStore } from "../stores/settings";
 import ValueField from "./ValueField.vue";
@@ -25,16 +25,6 @@ const rows = computed(() => catalog.value?.filter((row) => row.section === secti
 /** classifyControl returns the control that edits a setting of the given type. A type with no control is text. */
 function classifyControl(type: string) {
   return CONTROLS.find((control) => control === type) ?? "text";
-}
-
-/** writePages saves the given pages in the order the top bar lists them. */
-function writePages(tools: string[]): void {
-  settings.write("appearance.pages", WORKSPACE_TOOLS.filter((tool) => tools.includes(tool)).join(","));
-}
-
-/** writeCheck turns the check with the given id on or off. */
-function writeCheck(id: string, on: boolean): void {
-  settings.write("ide.checks", (on ? off.value.filter((one) => one !== id) : [...off.value, id]).join(","));
 }
 
 /** describeScales returns one tab for each size of the interface the given setting allows, ten percent apart. */
@@ -64,7 +54,7 @@ function describeScales(row: Setting) {
           :model-value="settings.value(row.key).split(',')"
           :items="TOOL_CHOICES"
           orientation="horizontal"
-          @update:model-value="writePages"
+          @update:model-value="settings.write(row.key, $event.join(','))"
         />
       </UFormField>
       <UFormField v-else-if="row.key === 'ide.checks'" :label="row.label" :description="row.help" class="ps-3.5 pt-3">
@@ -76,7 +66,7 @@ function describeScales(row: Setting) {
             :value="String(!off.includes(code.id))"
             :label="code.label"
             :help="code.id"
-            @update:value="writeCheck(code.id, $event === 'true')"
+            @update:value="settings.writeItem('ide.checks', code.id, $event !== 'true')"
           />
         </div>
       </UFormField>

@@ -20,6 +20,11 @@ export interface Detail {
     "text": string;
 
     /**
+     * the workspace's language, or the base language if it has none
+     */
+    "language": string;
+
+    /**
      * the definition as written
      */
     "source": string;
@@ -101,7 +106,7 @@ export interface Filter {
     "fanout": number;
 
     /**
-     * the folds opened
+     * the folds opened, and the nodes the depth stopped at that are opened
      */
     "expand": string[] | null;
     "follow": boolean;
@@ -129,16 +134,12 @@ export interface Graph {
      * how many nodes the reach found before the limit cut it
      */
     "total": number;
-
-    /**
-     * the depth stopped it: a node at its last step fires more or is fired by more
-     */
-    "deep": boolean;
 }
 
 /**
- * A Node is one node of the event graph: the kept definition of an event, an on_action, a decision or a scripted
- * effect, with where it is written, or a fold that stands for the firings of one node past the fan-out.
+ * A Node is one node of the event graph: the kept definition of an event, an on_action, a decision, a scripted
+ * effect or any other entry that fires one, with where it is written, or a fold that stands for the firings of one
+ * node past the fan-out.
  */
 export interface Node {
     /**
@@ -179,6 +180,11 @@ export interface Node {
      * the firings a fold stands for; 0 for a definition
      */
     "count": number;
+
+    /**
+     * the depth stopped at it, and it links further to a next step
+     */
+    "deep": boolean;
 }
 
 /**
@@ -223,6 +229,11 @@ export interface Version {
      */
     "key": string;
     "text": string;
+
+    /**
+     * the detail's language has no message with its key
+     */
+    "missing"?: boolean;
 
     /**
      * its trigger on one line; "" if it always can

@@ -1,6 +1,6 @@
 <!--
-  The top bar: the workspace switcher, the workspace's page tabs, and the palette, light and dark, and Settings
-  buttons.
+  The top bar: the workspace switcher, the workspace's page tabs, and the palette, new window, light and dark, and
+  Settings buttons.
 -->
 <script setup lang="ts">
 import type { ContextMenuItem, DropdownMenuItem } from "@nuxt/ui";
@@ -52,6 +52,10 @@ const compact = computed(
 const holder = (name: WorkspaceTool) => windows.holderOf({ page: name });
 /** Whether a page is shown in a window of its own. */
 const popped = (name: WorkspaceTool) => !!holder(name) && holder(name) !== THIS_WINDOW;
+/** Whether a page can open in a window of its own. The IDE stays in the main window. */
+const canPopOut = (name: WorkspaceTool) => name !== "workspace-ide";
+// the page shown here, when it can open in a window of its own
+const page = computed(() => tools.value.find((tool) => tool === route.name && canPopOut(tool)));
 
 /** The classes of a page's tab, marked when its page is the one shown. */
 function tabClass(on: boolean): string[] {
@@ -73,7 +77,7 @@ function closePage(name: WorkspaceTool): void {
 
 /** The context menu of a tab: the IDE stays in the main window, a page opens in a window of its own. */
 function tabMenu(name: WorkspaceTool): ContextMenuItem[] {
-  if (name === "workspace-ide") return [];
+  if (!canPopOut(name)) return [];
   if (!popped(name))
     return [{ label: "Open in a new window", icon: "i-lucide-app-window", onSelect: () => popOut(name) }];
   return [
@@ -169,7 +173,7 @@ for (const event of ["install:scanned", "workspace:opened", "workspace:failed"] 
     </UDropdownMenu>
 
     <nav v-if="active" class="ms-1 flex h-11 min-w-0 items-center gap-0.5">
-      <UContextMenu v-for="name in tools" :key="name" :items="tabMenu(name)" :disabled="name === 'workspace-ide'">
+      <UContextMenu v-for="name in tools" :key="name" :items="tabMenu(name)" :disabled="!canPopOut(name)">
         <button
           v-if="popped(name)"
           type="button"
@@ -219,6 +223,16 @@ for (const event of ["install:scanned", "workspace:opened", "workspace:failed"] 
           square
           aria-label="Search and commands"
           @click="bus.emit('palette.open')"
+        />
+      </UTooltip>
+      <UTooltip v-if="page" text="Open this page in a new window">
+        <UButton
+          icon="i-lucide-app-window"
+          variant="ghost"
+          size="sm"
+          square
+          aria-label="Open this page in a new window"
+          @click="popOut(page)"
         />
       </UTooltip>
       <UTooltip :text="mode.label">

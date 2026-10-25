@@ -1,7 +1,6 @@
 /**
- * The hover card over an editor. Monaco's own hover is off. When the pointer rests on a word, the card of the word and
- * the problems on it show above it, as VS Code's do, until the pointer moves away. The lines below stay free to hover
- * and right-click.
+ * The hover card over an editor, in place of Monaco's own. When the pointer rests on a word, the card of the word and
+ * the problems on it show above it until the pointer moves away, so the lines below stay free to hover and right-click.
  */
 import UPopover from "@nuxt/ui/components/Popover.vue";
 import { useDebounceFn } from "@vueuse/core";

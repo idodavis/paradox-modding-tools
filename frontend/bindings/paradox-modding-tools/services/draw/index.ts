@@ -21,6 +21,7 @@ export type {
     PictureList,
     Property,
     Recolor,
+    Row,
     Shading,
     States,
     Widget,

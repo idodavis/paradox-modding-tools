@@ -11,10 +11,12 @@ import (
 	"io"
 	"io/fs"
 	"maps"
+	"net/url"
 	"os"
 	"path"
 	"path/filepath"
 	"slices"
+	"strconv"
 	"strings"
 	"time"
 
@@ -69,7 +71,7 @@ type Snapshot struct {
 	UploadedAt time.Time         `json:"uploadedAt"`
 	Files      map[string]string `json:"files"` // the hash of each file, by rel
 	Listing    Listing           `json:"listing"`
-	Dir        string            `json:"dir"`        // the folder holding the files: a copy of the upload, or Steam's own
+	Dir        string            `json:"dir"`        // PMT's one copy of the files: the upload's, or Steam's downloaded
 	Downloaded bool              `json:"downloaded"` // the files are Steam's copy of the item rather than an upload's
 }
 
@@ -93,6 +95,7 @@ type Comparison struct {
 	UploadedAt time.Time `json:"uploadedAt"`
 	Downloaded bool      `json:"downloaded"` // the last upload's files are Steam's copy, downloaded
 	Steam      *Details  `json:"steam,omitempty"`
+	Status     string    `json:"status"` // the next upload against the item: new, unknown, same or changed
 }
 
 // The sources a description may be kept in, and the types of preview.
@@ -102,6 +105,14 @@ const (
 	sourceSteam    = "steam"
 	previewImage   = "image"
 	previewVideo   = "video"
+)
+
+// The states of a mod's next upload against its Workshop item.
+const (
+	statusNew     = "new"     // the mod has no item yet
+	statusUnknown = "unknown" // there is no copy of the last upload to compare with
+	statusSame    = "same"    // the next upload sends what the last one did
+	statusChanged = "changed" // the next upload changes files or the listing
 )
 
 // The files a mod keeps for its Workshop page, from the mod's folder, and the file that names what the mod's
@@ -121,6 +132,9 @@ const maxPreviews = 10
 
 // previewTypes are the types a preview may have.
 var previewTypes = []string{previewImage, previewVideo}
+
+// descriptionSources are the sources a description may come from.
+var descriptionSources = []string{sourceMarkdown, sourceBBCode, sourceSteam}
 
 // contentExtensions are the extensions of a gallery's pictures by their content type.
 var contentExtensions = map[string]string{"image/png": ".png", "image/jpeg": ".jpg", "image/gif": ".gif", "image/webp": ".webp"}
@@ -149,20 +163,16 @@ func (stm *Service) ReadListing(modID string) (Listing, error) {
 		Version:          descriptor.Version,
 		SupportedVersion: descriptor.SupportedVersion,
 		Thumbnail:        cmp.Or(descriptor.Thumbnail, mod.Thumbnail),
-		Source:           sourceSteam,
 		Tags:             append([]string{}, descriptor.Tags...),
 	}
-	for _, row := range descriptionFiles {
-		file := files.Join(mod.Dir, row.rel)
-		text, err := files.ReadText(file)
-		if errors.Is(err, fs.ErrNotExist) {
-			continue
-		}
-		if err != nil {
+	// a chosen file the mod lacks reads as no text, and the first write makes it
+	listing.Source, listing.DescriptionPath = findDescription(mod)
+	if listing.DescriptionPath != "" {
+		text, err := files.ReadText(listing.DescriptionPath)
+		if err != nil && !errors.Is(err, fs.ErrNotExist) {
 			return Listing{}, err
 		}
-		listing.Source, listing.Description, listing.DescriptionPath = row.source, text.Text, file
-		break
+		listing.Description = text.Text
 	}
 	// Steam and Paradox Mods take BBCode, so a Markdown description is converted and any other is sent as written
 	listing.BBCode = listing.Description
@@ -183,6 +193,27 @@ func (stm *Service) ReadListing(modID string) (Listing, error) {
 	listing.DLC = strings.Fields(dlc.Text)
 	listing.Previews, err = listPreviews(mod.Dir)
 	return listing, err
+}
+
+// findDescription returns where a mod's description comes from: its source and the full path of its file, "" for
+// Steam's own text. A chosen Markdown or BBCode source is kept in the chosen file, else in the source's own. A mod
+// that chose no source takes the first description file it has, else Steam's own text.
+func findDescription(mod workspace.Mod) (source, file string) {
+	for _, row := range descriptionFiles {
+		switch {
+		case mod.DescriptionSource == row.source:
+			return row.source, files.Join(mod.Dir, cmp.Or(mod.DescriptionFile, row.rel))
+		case mod.DescriptionSource == "" && isFile(files.Join(mod.Dir, row.rel)):
+			return row.source, files.Join(mod.Dir, row.rel)
+		}
+	}
+	return sourceSteam, ""
+}
+
+// isFile reports whether the given path names a file, rather than a folder or nothing.
+func isFile(file string) bool {
+	stat, err := os.Stat(file)
+	return err == nil && !stat.IsDir()
 }
 
 // listPreviews returns the gallery of a mod: its pictures in the order of their names, then its videos in the
@@ -219,7 +250,8 @@ func listVideos(dir string) ([]string, error) {
 }
 
 // WriteListing writes a mod's listing back to its files: the descriptor's fields and the workshop folder's. It writes
-// only the files whose text differs from the current listing's.
+// only the files whose text differs from the current listing's. A new Workshop id is written into the mod's record
+// too, and "" takes it out of both.
 func (stm *Service) WriteListing(modID string, listing Listing) error {
 	ws, mod, err := stm.findMod(modID)
 	if err != nil {
@@ -243,6 +275,12 @@ func (stm *Service) WriteListing(modID string, listing Listing) error {
 	}
 	if err := writeDescriptor(ws.Game, mod, current, listing); err != nil {
 		return err
+	}
+	if listing.WorkshopID != current.WorkshopID {
+		mod.WorkshopID = listing.WorkshopID
+		if err := stm.Workspace.UpdateMod(ws.ID, mod.Mod); err != nil {
+			return err
+		}
 	}
 	texts := []struct {
 		file, text string
@@ -287,6 +325,58 @@ func writeDescriptor(row *game.Game, mod workspace.Mod, current, listing Listing
 // refuses a path outside the mods.
 func (stm *Service) writeFile(file, text string) error {
 	return stm.Workspace.Write(file, files.Text{Text: text, Encoding: files.EncodingUTF8})
+}
+
+// LinkItem links a mod to an existing Workshop item, named by its id or by the address of its Workshop page. The id
+// is written into the mod's descriptor and its record. An empty text unlinks the mod, taking the id out of both. The
+// item linked before loses PMT's kept copy, unless another mod still links it. It returns an error if the text names
+// no Workshop item.
+func (stm *Service) LinkItem(modID, item string) error {
+	workshopID, err := toWorkshopID(item)
+	if err != nil {
+		return err
+	}
+	listing, err := stm.ReadListing(modID)
+	if err != nil {
+		return err
+	}
+	previous := listing.WorkshopID
+	listing.WorkshopID = workshopID
+	if err := stm.WriteListing(modID, listing); err != nil {
+		return err
+	}
+	return stm.removeItemCopy(previous)
+}
+
+// removeItemCopy deletes PMT's kept copy of a Workshop item's files and the item's snapshot, unless a mod of any
+// workspace still links the item in its record. An empty id has nothing to delete.
+func (stm *Service) removeItemCopy(workshopID string) error {
+	mods := lo.FlatMap(stm.Workspace.Config.Config().Workspaces, func(ws app.Workspace, _ int) []app.Mod { return ws.Mods })
+	if workshopID == "" || slices.ContainsFunc(mods, func(mod app.Mod) bool { return mod.WorkshopID == workshopID }) {
+		return nil
+	}
+	cacheDir := stm.Workspace.Config.Dirs.Cache
+	return errors.Join(
+		removeCacheDir(cacheDir, resolveSnapshotDir(cacheDir, workshopID)),
+		removeCacheDir(cacheDir, resolveSnapshotPath(cacheDir, workshopID)),
+	)
+}
+
+// toWorkshopID returns the id of the Workshop item that a text names: the id itself, or the address of the item's
+// page. It returns "" for an empty text, and an error for a text that names no item.
+func toWorkshopID(item string) (string, error) {
+	text := strings.TrimSpace(item)
+	if page, err := url.Parse(text); err == nil && page.Query().Has("id") {
+		text = page.Query().Get("id")
+	}
+	if text == "" {
+		return "", nil
+	}
+	id, err := toItemID(text)
+	if err != nil {
+		return "", err
+	}
+	return strconv.FormatUint(id, 10), nil
 }
 
 // ListUpload returns the files a mod's next upload sends: the mod's files except those the rules leave out and those
@@ -393,18 +483,19 @@ func resolveSnapshotPath(cacheDir, workshopID string) string {
 	return filepath.Join(cacheDir, "snapshot-"+workshopID+".json")
 }
 
-// resolveSnapshotDir returns the folder that keeps a copy of the files the last upload of a Workshop item sent.
+// resolveSnapshotDir returns the folder that keeps PMT's one copy of a Workshop item's files: those the last upload
+// sent, or Steam's once downloaded.
 func resolveSnapshotDir(cacheDir, workshopID string) string {
 	return filepath.Join(cacheDir, "snapshot-"+workshopID)
 }
 
 // Compare lists what an upload and a listing change against the snapshot of the last upload: the files added, changed
-// and removed, and the listing fields that differ. It carries the given Steam details beside them, nil if there are
-// none.
+// and removed, the listing fields that differ, and the upload's status. It carries the given Steam details beside
+// them, nil if there are none.
 func Compare(listing Listing, upload Upload, snapshot Snapshot, details *Details) Comparison {
 	hashes := buildHashes(upload.Files)
 	rels := slices.Sorted(maps.Keys(hashes))
-	return Comparison{
+	comparison := Comparison{
 		Added: lo.Filter(rels, func(rel string, _ int) bool {
 			_, ok := snapshot.Files[rel]
 			return !ok
@@ -423,6 +514,22 @@ func Compare(listing Listing, upload Upload, snapshot Snapshot, details *Details
 		Downloaded: snapshot.Downloaded,
 		Steam:      details,
 	}
+	comparison.Status = toStatus(listing, snapshot, comparison)
+	return comparison
+}
+
+// toStatus returns the status of a mod's next upload: new if the listing names no item, unknown if there is no
+// snapshot of the item, same if the comparison finds nothing changed, and changed if it finds anything.
+func toStatus(listing Listing, snapshot Snapshot, comparison Comparison) string {
+	switch {
+	case listing.WorkshopID == "":
+		return statusNew
+	case snapshot.WorkshopID == "":
+		return statusUnknown
+	case len(comparison.Added)+len(comparison.Changed)+len(comparison.Removed)+len(comparison.Listing) == 0:
+		return statusSame
+	}
+	return statusChanged
 }
 
 // compareListing returns the names of the fields in which a listing differs from the last one sent, in the order

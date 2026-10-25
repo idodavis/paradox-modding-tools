@@ -10,7 +10,6 @@ import * as gitApi from "@services/git/service";
 
 import { commitsQuery, fileQuery, gitFileQuery, gitStatusQuery } from "../../queries";
 import { useEditorStore } from "../../stores/editor";
-import { useGitStore } from "../../stores/git";
 import CompareView from "../../ui/CompareView.vue";
 import OriginChip from "../../ui/OriginChip.vue";
 import { applyEdits, findModel } from "./editor/models";
@@ -19,16 +18,14 @@ import { diffTab, VIEWS, type TabTarget } from "./editor/tabs";
 const { tab } = defineProps<{ tab: Extract<TabTarget, { tab: "diff" }> }>();
 
 const editor = useEditorStore();
-const git = useGitStore();
-const dir = computed(() => git.repository());
-const place = computed(() => editor.placeOf(diffTab(tab.side, tab.key, tab.hash)));
+const place = computed(() => editor.placeOf(diffTab(tab.side, tab.root, tab.key, tab.hash)));
 const added = shallowRef(0);
 const removed = shallowRef(0);
 
-const { data: status } = useQuery(() => ({ ...gitStatusQuery(dir.value), enabled: !!dir.value }));
+const { data: status } = useQuery(() => ({ ...gitStatusQuery(tab.root), enabled: !!tab.root }));
 const { data: log } = useQuery(() => ({
-  ...commitsQuery({ dir: dir.value, refs: [], limit: 1 }),
-  enabled: !!dir.value,
+  ...commitsQuery({ dir: tab.root, refs: [], limit: 1 }),
+  enabled: !!tab.root,
 }));
 const entry = computed(() => status.value?.changes?.find((one) => one.place.key === tab.key));
 const gitPath = computed(() => entry.value?.path ?? place.value?.rel ?? "");
@@ -45,12 +42,12 @@ const sides = computed(() => {
 });
 
 const { data: left } = useQuery(() => ({
-  ...gitFileQuery({ dir: dir.value, revision: sides.value.revisions[0] ?? "", path: gitPath.value }),
-  enabled: !!dir.value && !!place.value,
+  ...gitFileQuery({ dir: tab.root, revision: sides.value.revisions[0] ?? "", path: gitPath.value }),
+  enabled: !!tab.root && !!place.value,
 }));
 const { data: revised } = useQuery(() => ({
-  ...gitFileQuery({ dir: dir.value, revision: sides.value.revisions[1] ?? "", path: gitPath.value }),
-  enabled: !!dir.value && !!place.value && tab.side !== "changes",
+  ...gitFileQuery({ dir: tab.root, revision: sides.value.revisions[1] ?? "", path: gitPath.value }),
+  enabled: !!tab.root && !!place.value && tab.side !== "changes",
 }));
 const { data: file, error: unreadable } = useQuery(() => ({
   ...fileQuery(place.value?.path ?? ""),
@@ -75,7 +72,7 @@ const action = computed(() => {
   return tab.side === "staged" ? { label: "Unstage file", icon: "i-lucide-minus", call: gitApi.Unstage } : null;
 });
 const { mutate: change } = useMutation({
-  mutation: (call: typeof gitApi.Stage) => call(dir.value, [gitPath.value]),
+  mutation: (call: typeof gitApi.Stage) => call(tab.root, [gitPath.value]),
 });
 
 /** Puts the staged copy's text in the file's editor in place of its changes, unsaved and undoable. */

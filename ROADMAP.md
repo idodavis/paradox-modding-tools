@@ -22,8 +22,6 @@ timeline
         Agent chat and tab completion : One chat panel : Tab completions
     section Visual editing and new tools
         Play : Window state : Preview values : Event simulator
-        Map editor : CK3 provinces and titles
-        Dynasty tree : CK3 characters, houses and dynasties
         Image to DDS : Mip chains : Batch conversion
     section The IDE and workspaces
         Entries of any file : Events, decisions, traits
@@ -33,6 +31,13 @@ timeline
         Legacy Workshop import : A listing made outside PMT
         Game log reader : Errors and likely culprits
         Game coverage : Deeper EU5, more languages
+    section Long term
+        Forms : Any entry edited without script
+        Visual GUI and coat editor : Widgets added and moved on the picture
+        Model viewer : The games' 3D models
+        Map editor : CK3 provinces and titles
+        Title editor : CK3 landed titles
+        Dynasty viewer : CK3 characters, houses and dynasties
 ```
 
 ## The ReArchitecture
@@ -53,8 +58,7 @@ Universalis V, so a layer that makes any of them worse does not count as done.
   to localization files.
 - [x] **Layer 2, game knowledge.** What is true of each game, as tables of facts: its folders, how it combines files,
   how a later definition replaces or adds to an earlier one, where it keeps its dumps, its error log and its
-  executable. The readers of the game's dumps and docs, a count of how often the game's own files write each key, and
-  a form for any kind of definition.
+  executable. The readers of the game's dumps and docs, and a count of how often the game's own files write each key.
 - [ ] **Layer 3, what the app knows of a file, and everything that reads it.** One pass over a file notes what each
   key and value is: what it names, what it may hold, where it runs. The checks then turn that into problems, such as
   an unknown name or a value of the wrong type. Hover, completion, diagnostics, Health, the event graph and the Visual
@@ -78,10 +82,8 @@ What the layers add for people who use the app:
 - More from Health: definitions nothing refers to (a hint, never an error), localization keys nothing uses, a card
   of each mod's definitions by kind, and a button that writes a language's missing localization files with the source
   text as a placeholder.
-- A form for any kind of definition (a trait, a culture, a decision), drawn from what the game's own files declare,
-  beside the code in the IDE and in the event graph's detail.
-- In the Visual view, a panel that writes a widget's property into the `.gui` text (Ctrl Z steps back through it) and a
-  reference screenshot drawn under the picture. The window's states move from the toolbar into the panel, which lists
+- In the Visual view, a panel that writes a widget's property into the `.gui` text (Ctrl Z steps back through it). The
+  window's states move from the toolbar into the panel, which lists
   only the states that change what is drawn and has a Show it button for a hidden widget; a coat of arms' template
   lists are drawn at their heaviest option and changed in a Picks tab.
 - In the event graph, an event's background picture in its detail (CK3 from `override_background` or `theme`, EU5
@@ -156,23 +158,6 @@ Two things sit on top of it:
   shows text or a number you give it, or one read from a save game.
 - **An event simulator** that steps through an event, its options and what each one fires, over those values.
 
-## Map editor
-
-CK3's political layer first.
-
-- Read `provinces.png` (one color per province), `definition.csv` and the `landed_titles` tree.
-- Go builds the picture of the provinces; the page draws it as the canvas with an inspector beside it.
-- Write the edits as `zz_pmt_map*.txt` plus localization (UTF-8 with a BOM) into a mod of the workspace.
-
-The game's own `-mapeditor` still owns baking the heightmap, locators and splines. Victoria 3's `state_regions` and
-EU5's locations come later, on the same idea.
-
-## Dynasty tree
-
-A second graph beside the Event Graph, made with the same machinery and read from the index: CK3's characters,
-houses and dynasties as the game's history files define them. It is CK3's alone, and measured on CK3's install before
-it is built.
-
 ## Image to DDS
 
 Today PMT only reads DDS and TGA pictures. This adds the other direction: turn a picture into the DDS the games read,
@@ -215,6 +200,49 @@ beyond errors.
 
 Deeper extract rules and wiki coverage for EU5. More localization languages in hover without a full rescan (today
 an install's cache is kept per language).
+
+## Long term
+
+After the release and the phases above. Each of these is designed from scratch when its turn comes.
+
+### Forms
+
+A form for any entry, such as a trait, a culture or a decision, so it can be edited without writing script. A first
+version was built and taken out before the release to be rethought: it offered only the fields the game's own files
+declare, and a block of triggers or effects had nothing in it to edit.
+
+### A visual editor for GUI windows and coats of arms
+
+Today the Visual view draws a window or a coat of arms, writes a widget's properties and a coat's layers into the
+text, and moves a coat's emblem by dragging it. The editor goes further: widgets added, moved and resized on the
+picture, and a coat of arms built up on the picture in the same way.
+
+### Model viewer
+
+The games' 3D models shown in the app, by bringing in PDX Model Viewer, a viewer the community has already written in
+Go for Crusader Kings III at least.
+
+### Map editor
+
+CK3's political layer first.
+
+- Read `provinces.png` (one color per province), `definition.csv` and the `landed_titles` tree.
+- Go builds the picture of the provinces; the page draws it as the canvas with an inspector beside it.
+- Write the edits as `zz_pmt_map*.txt` plus localization (UTF-8 with a BOM) into a mod of the workspace.
+
+The game's own `-mapeditor` still owns baking the heightmap, locators and splines. Victoria 3's `state_regions` and
+EU5's locations come later, on the same idea.
+
+### Title editor
+
+CK3's landed titles, from empires down to baronies, edited as the tree they form, beside the map editor that reads
+the same tree.
+
+### Dynasty viewer
+
+A second graph beside the Event Graph, made with the same machinery and read from the index: CK3's characters,
+houses and dynasties as the game's history files define them. It is CK3's alone, and measured on CK3's install before
+it is built.
 
 ## Done
 

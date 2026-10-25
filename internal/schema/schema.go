@@ -163,13 +163,14 @@ type ScriptedDefinition struct {
 type SourceState struct {
 	Origin    string    `json:"origin"` // install, shipped, none
 	WrittenAt time.Time `json:"writtenAt"`
-	Stale     bool      `json:"stale"` // older than the install
+	Stale     bool      `json:"stale"`   // older than the install
+	Folders   []string  `json:"folders"` // the install's folders its files were read from; none for the shipped backup
 }
 
 // A Schema is the language of one game version, as built from the dumps, the docs and the game's own files.
 type Schema struct {
 	Game                string
-	Version             string
+	Version             string // the install's version; Build leaves it "", as only the install's record may know it
 	Dumps               SourceState
 	Databases           map[string]*Database
 	Callees             map[string][]string // by caller: the databases a call through it resolves in
@@ -190,7 +191,7 @@ type Schema struct {
 	ModifierTypes       string   // the database of modifier types, or "" if the game has none
 	Effects             string   // the database of scripted effects, or "" if the game has none
 	Values              string   // the database of script values: the callable whose definitions hold a value; "" if none
-	FireDatabases       []string // the databases that fire and are fired: those whose row houses a game.FireHouses word
+	FireDatabases       []string // the databases that are fired: those whose row houses a game.FireHouses word
 }
 
 // The origins of a source's data: the install, the shipped backup, or none.
@@ -202,13 +203,13 @@ const (
 
 // Build returns the schema of a game version. It reads the dumps and docs of the given install and counts what the
 // game's own files write, parsing each file of the given listing with the given function. A dump file the install
-// lacks comes from the shipped backup. Files directly in the DLC folder are left out. It returns an error if a dump or
-// a doc cannot be read, or if no file can be parsed.
+// lacks comes from the shipped backup. Files under the DLC folder are left out. The schema's version is left "". It
+// returns an error if a dump or a doc cannot be read, or if no file can be parsed.
 func Build(row *game.Game, installPath string, listing []files.File, parse func(path string) (*jomini.Tree, error)) (*Schema, error) {
 	listing = slices.DeleteFunc(slices.Clone(listing), func(file files.File) bool {
 		return strings.HasPrefix(file.Rel, game.DLCFolder+"/")
 	})
-	schema := newSchema(row, installPath)
+	schema := newSchema(row)
 	folders := listFolders(row, listing)
 	// Dumps first, then docs, then the game's own files. Last, a blurb the docs give a key is shared with the same key
 	// elsewhere in its database.
@@ -227,10 +228,9 @@ func Build(row *game.Game, installPath string, listing []files.File, parse func(
 }
 
 // newSchema returns an empty schema of the given game. Only the prefixes that script saves names under are filled.
-func newSchema(row *game.Game, installPath string) *Schema {
+func newSchema(row *game.Game) *Schema {
 	return &Schema{
 		Game:      row.ID,
-		Version:   game.LoadGameVersion(row.ID, installPath),
 		Databases: map[string]*Database{},
 		Callees:   map[string][]string{},
 		Commands:  map[string]*Command{},
@@ -357,7 +357,8 @@ func (schema *Schema) buildDatabases(row *game.Game, folders []string) {
 
 // buildDatabase builds the database with the given label and row. It does nothing if the schema has that database
 // already. It also records the keys that declare the database's definitions inline and the words a data type names it
-// by. If two databases have the same words, the words name neither.
+// by. If two databases have the same words, the one whose own name is those words takes them, as isNamedExactly
+// says, and else the words name neither.
 func (schema *Schema) buildDatabase(row *game.Game, label, folder string, rule game.Database) {
 	if schema.Databases[label] != nil {
 		return
@@ -370,10 +371,19 @@ func (schema *Schema) buildDatabase(row *game.Game, label, folder string, rule g
 		schema.InlineDatabases[key] = label
 	}
 	phrase := game.DescribeDefinition(label, false)
-	if _, ok := schema.TypeDatabases[phrase]; ok {
+	if named, ok := schema.TypeDatabases[phrase]; ok && !isNamedExactly(label, phrase) {
 		label = ""
+		if isNamedExactly(named, phrase) {
+			label = named
+		}
 	}
 	schema.TypeDatabases[phrase] = label
+}
+
+// isNamedExactly reports whether a database's own name is the given words of a data type, with an underscore for each
+// space: the database institution for the words "institution", where setup/start.institution has them too.
+func isNamedExactly(label, phrase string) bool {
+	return label == strings.ReplaceAll(phrase, " ", "_")
 }
 
 // listCallees lists, for each word a call is made with, the databases whose definitions it can call. game.AnyCall
@@ -620,7 +630,7 @@ func (schema *Schema) ResolveTypeDatabase(dataType string) (string, bool) {
 	return label, label != ""
 }
 
-// ToPhrase returns a CamelCase or snake_case text as lower-case words apart by spaces.
+// ToPhrase returns a CamelCase or snake_case text as lower-case words separated by spaces.
 func ToPhrase(text string) string {
 	var words strings.Builder
 	var previous rune
@@ -693,7 +703,8 @@ func (claim *Claim[T]) take(other Claim[T]) {
 	}
 }
 
-// take gives a field each claim of the given claims that it does not state, or that outranks its own.
+// take gives a field each claim of the given claims that it does not state, or that outranks its own. It leaves Keys
+// alone, since only the game's own files state it.
 func (field *Field) take(other Claims) {
 	field.Value.take(other.Value)
 	field.Shape.take(other.Shape)

@@ -1,11 +1,11 @@
 <!--
-  The IDE page: the sidebar, the editor layout, the bottom panel and the Wiki pane in collapsible panes. Their sizes
-  and folds belong to the splitter, not to the store. A window that holds one part of the IDE shows that part alone.
+  The IDE page: the sidebar, the editor layout, the bottom panel and the Wiki pane, in panes the splitter sizes and
+  folds. A window that holds one part of the IDE shows that part alone.
 -->
 <script setup lang="ts">
-import { computed, nextTick, onActivated, onDeactivated, shallowRef, useTemplateRef, watch } from "vue";
+import { computed, nextTick, onActivated, onDeactivated, reactive, shallowRef, useTemplateRef, watch } from "vue";
 import { useMutation, useQuery } from "@pinia/colada";
-import { useEventBus, useLocalStorage } from "@vueuse/core";
+import { createReusableTemplate, useEventBus, useEventListener, useLocalStorage } from "@vueuse/core";
 import { Dialogs } from "@wailsio/runtime";
 import type { SplitterItem } from "@nuxt/ui";
 
@@ -83,6 +83,9 @@ const ENCODINGS: Record<string, string> = {
   "utf-8-bom": "UTF-8 BOM",
   "windows-1252": "Windows-1252",
 };
+/** The mouse's back and forward buttons, by the number a mouse event gives each. */
+const MOUSE_BACK = 3;
+const MOUSE_FORWARD = 4;
 
 const editor = useEditorStore();
 const git = useGitStore();
@@ -96,6 +99,9 @@ const panel = useLocalStorage("pmt.ide.panel", "");
 const wiki = useLocalStorage("pmt.ide.wiki", false);
 const gameOpen = useLocalStorage("pmt.ide.gameOpen", true);
 const settingsOpen = shallowRef(false);
+// which trees show their filter box, held while the app runs and never saved
+const filtering = reactive({ mods: false, game: false, own: false });
+const [DefineFilterButton, FilterButton] = createReusableTemplate<{ tree: keyof typeof filtering }>();
 const settingsTab = shallowRef<string | number>("editor");
 const visible = shallowRef(true);
 const splitter = useTemplateRef("splitter");
@@ -110,6 +116,7 @@ commands.on((command) => {
   if (command === "editor.toggleWiki") wiki.value = !wiki.value;
   if (command === "draw.newCoat") void coatDialog.open();
   if (command === "ide.settings") settingsOpen.value = true;
+  if (command === "explorer.reveal") void revealFile();
 });
 onActivated(() => (visible.value = true));
 onDeactivated(() => (visible.value = false));
@@ -123,11 +130,18 @@ defineShortcuts(
       : {},
   ),
 );
+// the mouse's back and forward buttons walk the IDE's history, not the page's
+useEventListener(document, "mouseup", (event) => {
+  if (!visible.value || (event.button !== MOUSE_BACK && event.button !== MOUSE_FORWARD)) return;
+  event.preventDefault();
+  editor.go(event.button === MOUSE_BACK ? -1 : 1);
+});
 
-// a window of its own holds one part of the IDE: the editors, the game's files, one folder or the panel
+// a window of its own holds one part of the IDE: the editors, the game's files, one folder, the panel or the Wiki pane
 const part = THIS_WINDOW.split(":")[0];
 const layout = computed(() => {
   if (part === "panel") return "panel";
+  if (part === "wiki") return "wiki";
   if (part === "editor") return "editor";
   return part === "game" || part === "files" ? "files" : "full";
 });
@@ -169,8 +183,11 @@ const panes = computed<SplitterItem[]>(() => [
         },
       ]
     : []),
-  ...(layout.value === "files" ? [] : [{ id: "editors", slot: "editors", order: 2, minSize: 33 }]),
-  ...(layout.value === "full" && wiki.value
+  ...(layout.value === "files" || layout.value === "wiki"
+    ? []
+    : [{ id: "editors", slot: "editors", order: 2, minSize: 33 }]),
+  // while the Wiki pane is in a window of its own, the main window's is away; it comes back when that window closes
+  ...((layout.value === "full" && wiki.value && !windowNames.value?.includes("wiki")) || layout.value === "wiki"
     ? [{ id: "wiki", slot: "wiki", order: 3, sizeUnit: PIXELS, defaultSize: 440, minSize: 320 }]
     : []),
 ]);
@@ -222,8 +239,8 @@ const problems = computed(() => {
 });
 
 const { data: status } = useQuery(() => ({
-  ...gitStatusQuery(git.repository()),
-  enabled: !!git.repository(),
+  ...gitStatusQuery(git.findRoot(editor.activeFile())),
+  enabled: !!git.findRoot(editor.activeFile()),
 }));
 const { data: indentation } = useQuery(() => ({
   ...indentationQuery(editor.activeFile()?.path ?? ""),
@@ -304,10 +321,29 @@ function resetSettings(): void {
   for (const row of catalog.value ?? []) if (row.section === settingsTab.value) settings.write(row.key, row.default);
 }
 
+/** Shows or hides a tree's filter box. Showing the box of the game's files unfolds them. */
+function toggleFilter(tree: keyof typeof filtering): void {
+  filtering[tree] = !filtering[tree];
+  if (tree === "game" && filtering.game) gameOpen.value = true;
+}
+
+/** Shows the panel on Problems, or closes it when it shows Problems already. */
+function toggleProblems(): void {
+  panel.value = panel.value === "problems" ? "" : "problems";
+}
+
 /** Folds every folder of both explorers. */
 function collapseAll(): void {
   modTree.value?.collapseAll();
   gameTree.value?.collapseAll();
+}
+
+/** Shows the explorer, with the game's files unfolded for a file of the game, and selects the active file in it. */
+async function revealFile(): Promise<void> {
+  showSidebar("explorer");
+  if (editor.activeFile()?.readOnly) gameOpen.value = true;
+  await nextTick();
+  await Promise.all([modTree.value?.reveal(), gameTree.value?.reveal()]);
 }
 
 /** Names a place for a compare: its origin and its path in it. */
@@ -316,6 +352,20 @@ const describePlace = (place: Place) => `${workspace.originName(place.origin)} Â
 
 <template>
   <div class="flex h-full min-h-0">
+    <DefineFilterButton v-slot="{ tree }">
+      <UTooltip text="Filter files">
+        <UButton
+          icon="i-lucide-list-filter"
+          variant="ghost"
+          size="xs"
+          square
+          :color="filtering[tree] ? 'primary' : 'neutral'"
+          aria-label="Filter files"
+          :aria-pressed="filtering[tree]"
+          @click="toggleFilter(tree)"
+        />
+      </UTooltip>
+    </DefineFilterButton>
     <USplitter ref="splitter" :items="panes" auto-save-id="pmt.ide.panes" class="min-w-0 flex-1">
       <template #sidebar="{ collapsed, collapse }">
         <aside
@@ -358,8 +408,8 @@ const describePlace = (place: Place) => `${workspace.originName(place.origin)} Â
               @click="settingsOpen = true"
             />
           </div>
-          <!-- the explorer only turns invisible behind another view: its splitter sizes its panes in pixels from its own
-               height, which an element taken out of the layout does not have -->
+          <!-- the explorer only turns invisible behind another view: its splitter sizes its panes in pixels from its
+               own height, which an element taken out of the layout does not have -->
           <div v-if="!collapsed" class="relative flex min-h-0 flex-1 flex-col">
             <USplitter
               :items="explorerPanes"
@@ -376,6 +426,7 @@ const describePlace = (place: Place) => `${workspace.originName(place.origin)} Â
                   >
                     Workspace<span class="ms-1 font-normal text-dimmed">{{ plural(mods.length, "mod") }}</span>
                     <span class="grow" />
+                    <FilterButton tree="mods" />
                     <UTooltip text="Add a mod">
                       <UButton
                         icon="i-lucide-plus"
@@ -387,7 +438,7 @@ const describePlace = (place: Place) => `${workspace.originName(place.origin)} Â
                       />
                     </UTooltip>
                   </div>
-                  <ExplorerTree ref="modTree" :roots="mods" @open="show" />
+                  <ExplorerTree ref="modTree" v-model:filtering="filtering.mods" :roots="mods" @open="show" />
                 </div>
               </template>
               <template #game>
@@ -404,6 +455,7 @@ const describePlace = (place: Place) => `${workspace.originName(place.origin)} Â
                         class="size-3.5"
                       />Game files
                     </button>
+                    <FilterButton v-if="!windowNames?.includes('game')" tree="game" />
                     <UTooltip text="Open in its own window">
                       <UButton
                         icon="i-lucide-app-window"
@@ -426,7 +478,14 @@ const describePlace = (place: Place) => `${workspace.originName(place.origin)} Â
                       <UButton label="Show window" size="xs" variant="ghost" @click="showGame()" />
                     </div>
                   </div>
-                  <ExplorerTree v-else v-show="gameOpen" ref="gameTree" :roots="game" @open="show" />
+                  <ExplorerTree
+                    v-else
+                    v-show="gameOpen"
+                    ref="gameTree"
+                    v-model:filtering="filtering.game"
+                    :roots="game"
+                    @open="show"
+                  />
                 </div>
               </template>
             </USplitter>
@@ -435,8 +494,15 @@ const describePlace = (place: Place) => `${workspace.originName(place.origin)} Â
             <EntriesView v-if="sidebar === 'entries'" />
           </div>
         </aside>
-        <aside v-else class="flex min-h-0 min-w-0 flex-1 flex-col border-e border-default bg-muted py-1">
-          <ExplorerTree :roots="own" @open="show" />
+        <aside v-else class="flex min-h-0 min-w-0 flex-1 flex-col border-e border-default bg-muted pb-1">
+          <div
+            class="flex h-7 shrink-0 items-center gap-1 ps-2.5 pe-1 text-11 font-semibold whitespace-nowrap text-toned"
+          >
+            {{ part === "game" ? "Game files" : folderPlace?.name }}
+            <span class="grow" />
+            <FilterButton tree="own" />
+          </div>
+          <ExplorerTree v-model:filtering="filtering.own" :roots="own" @open="show" />
         </aside>
       </template>
       <template #editors>
@@ -498,14 +564,18 @@ const describePlace = (place: Place) => `${workspace.originName(place.origin)} Â
         </USplitter>
       </template>
       <template #wiki>
-        <WikiPane :place="editor.activeFile()" class="min-w-0 flex-1" />
+        <!-- in a window of its own, the Wiki pane follows the main window's active file -->
+        <WikiPane
+          :place="layout === 'wiki' ? windows.findActive('main') : editor.activeFile()"
+          class="min-w-0 flex-1"
+        />
       </template>
     </USplitter>
-    <Teleport v-if="layout !== 'panel' && visible" defer to="#status-start">
-      <button class="flex items-center gap-1 text-error" @click="panel = 'problems'">
+    <Teleport v-if="!['panel', 'wiki'].includes(layout) && visible" defer to="#status-start">
+      <button class="flex items-center gap-1 text-error" @click="toggleProblems">
         <UIcon name="i-lucide-circle-x" class="size-3" />{{ problems.errors }}
       </button>
-      <button class="flex items-center gap-1 text-warning" @click="panel = 'problems'">
+      <button class="flex items-center gap-1 text-warning" @click="toggleProblems">
         <UIcon name="i-lucide-triangle-alert" class="size-3" />{{ problems.warnings }}
       </button>
       <button v-if="status" class="flex items-center gap-1 hover:text-highlighted" @click="showSidebar('git')">
@@ -515,7 +585,7 @@ const describePlace = (place: Place) => `${workspace.originName(place.origin)} Â
         </template>
       </button>
     </Teleport>
-    <Teleport v-if="layout !== 'panel' && visible" defer to="#status-end">
+    <Teleport v-if="!['panel', 'wiki'].includes(layout) && visible" defer to="#status-end">
       <span v-if="diff">{{ COMPARES[diff] }}</span>
       <template v-else-if="open">
         <span>Ln {{ open.caret.line }}, Col {{ open.caret.column }}</span>

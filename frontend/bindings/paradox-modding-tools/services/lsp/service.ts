@@ -114,14 +114,6 @@ export function ListHints(path: string): $CancellablePromise<$models.Hint[] | nu
 }
 
 /**
- * ListInputs returns the Form view of the innermost definition at a position, or else of the first one on its line.
- * It returns an error if there is none.
- */
-export function ListInputs(path: string, line: number, column: number): $CancellablePromise<$models.Inputs> {
-    return $Call.ByID(775050286, path, line, column);
-}
-
-/**
  * ListLegend returns the legend the tokens are encoded against.
  */
 export function ListLegend(): $CancellablePromise<$models.Legend> {
@@ -129,7 +121,7 @@ export function ListLegend(): $CancellablePromise<$models.Legend> {
 }
 
 /**
- * ListSymbols returns a file's definitions for the outline, nested as they are written.
+ * ListSymbols returns a file's definitions, nested as they are written, or a localization file's keys.
  */
 export function ListSymbols(path: string): $CancellablePromise<$models.Symbol[] | null> {
     return $Call.ByID(1323311336, path);
@@ -144,8 +136,10 @@ export function PrepareRename(path: string, line: number, column: number): $Canc
 }
 
 /**
- * PresentColor returns the text that writes a color back into a file, in the same form as the color written in the
- * given range. It returns an error if there is no color in the range or its form cannot be written.
+ * PresentColor returns the text that writes a color into a file, in the same form as the color written in the given
+ * range: the same tag and scale, with an alpha only if that color has one. A range that holds no color, such as a
+ * coat's layer that does not write the color yet, gets it in the form the game's own coats write their colors in
+ * (game.Game.CoatColorForm). It returns an error if the form cannot be written.
  */
 export function PresentColor(path: string, within: $models.Range, color: game$0.RGBA): $CancellablePromise<string> {
     return $Call.ByID(3581946373, path, within, color);

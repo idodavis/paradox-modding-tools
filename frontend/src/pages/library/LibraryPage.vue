@@ -7,7 +7,7 @@ import { Events } from "@wailsio/runtime";
 import type { DropdownMenuItem } from "@nuxt/ui";
 
 import { homeRoute, listShownTools } from "../../app/pages";
-import { describeDumps, installLine, plural } from "../../lib/format";
+import { describeDumps, describeLexicon, installLine, plural } from "../../lib/format";
 import { gamesQuery, installsQuery, modsQuery, reportQuery, stateQuery, workspacesQuery } from "../../queries";
 import { gameIcon } from "../../stores/settings";
 import { useWorkspaceStore } from "../../stores/workspace";
@@ -54,7 +54,7 @@ const rows = computed(() =>
         install,
         game,
         active: record.id === store.activeId(),
-        line: install ? installLine(game?.shortName ?? install.game, install.version, install.scannedAt) : "",
+        line: install ? installLine(install.name, install.version, install.scannedAt) : "",
       };
     })
     .sort((a, b) => Number(b.active) - Number(a.active)),
@@ -69,6 +69,13 @@ const summary = computed(
   () => `${plural(rows.value.length, "workspace")} across ${plural(groups.value.length, "game")}.`,
 );
 const dumps = computed(() => (store.isOpen() && state.value ? describeDumps(state.value.dumps) : undefined));
+// the folders are left out when no dump folder holds a dump, as when PMT's copy is read
+const lexicon = computed(() => {
+  if (!state.value) return "";
+  const count = state.value.dumps.folders?.length ?? 0;
+  const folders = count ? `, from ${plural(count, "dump folder")}` : "";
+  return `${describeLexicon(state.value)}${folders}.`;
+});
 const counts = computed(() => report.value?.sections?.filter((section) => COUNTED.includes(section.id)) ?? []);
 
 const { mutate: launch } = useMutation({ mutation: () => workspace.Launch() });
@@ -201,7 +208,7 @@ function describeMenu(record: Workspace, leading: DropdownMenuItem[]): DropdownM
               />
               {{ dumps.label }}
             </button>
-            <span v-else class="text-12 text-dimmed">Read when the workspace opens.</span>
+            <span class="text-12 text-dimmed">{{ dumps ? lexicon : "Read when the workspace opens." }}</span>
           </div>
           <div class="flex min-w-0 flex-col gap-2">
             <span class="text-12 font-medium text-toned">Health</span>

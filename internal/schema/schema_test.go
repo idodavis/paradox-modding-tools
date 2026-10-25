@@ -324,21 +324,6 @@ func TestResolveMacroReplacesParameters(t *testing.T) {
 	}
 }
 
-// TestListInputsStatedOnly checks that the Form view offers the keys a source states, never a form.
-func TestListInputsStatedOnly(t *testing.T) {
-	definition := &Field{}
-	definition.buildChild("stated").Value.resolve(Expected{Type: ValueBool}, game.SourceDocs)
-	definition.buildChild("unstated")
-	definition.buildChild("<number>").Value.resolve(Expected{Type: ValueNumber}, game.SourceVanilla)
-	inputs := (&Schema{Databases: map[string]*Database{"x": {Definition: definition}}}).ListInputs("x")
-	if len(inputs) != 1 || inputs[0].Key != "stated" || inputs[0].Type != ValueBool {
-		t.Errorf("inputs: %+v", inputs)
-	}
-	if (&Schema{Databases: map[string]*Database{}}).ListInputs("missing") != nil {
-		t.Error("a missing database has inputs")
-	}
-}
-
 // TestBuildInstalls builds the schema of each real install that PMT_TEST_INSTALL_<GAME> names, and prints what
 // each source gave. It asserts that the build succeeds and the dumps declare commands.
 func TestBuildInstalls(t *testing.T) {

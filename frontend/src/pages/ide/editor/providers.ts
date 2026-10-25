@@ -1,9 +1,7 @@
 /**
- * Monaco's language providers over the editor service, registered once for the Paradox languages: one
- * registration per feature, each calling the service with the model's path and Monaco's own position and handing
- * the answer to Monaco as it is, since Go answers in Monaco's ranges. Diagnostics are not a provider: they come
- * back from SetText and become the model's markers. The hover card is not a provider either, since the app draws
- * it. The files of each definition and reference found are kept, so a peek can show whose files they are.
+ * Monaco's language providers over the editor service for the Paradox languages, one registration per feature, each
+ * handing the service's answer to Monaco as it is, since Go answers in Monaco's ranges. The files of each definition
+ * and reference found are kept, so a peek can show whose files they are.
  */
 import * as monaco from "monaco-editor/editor/editor.api";
 import type { languages } from "monaco-editor";
@@ -36,8 +34,8 @@ export const labelService = {
 };
 
 /**
- * Registers every provider for the given languages, and the sheet of the dots in a peek. Called once, after the
- * languages themselves are registered.
+ * Registers every provider for the given languages, which must be registered already, and the sheet of the dots in a
+ * peek.
  */
 export function registerProviders(languageIds: string[], legend: languages.SemanticTokensLegend): void {
   const selector = languageIds.map((language) => ({ language, scheme: "file" }));
@@ -173,8 +171,10 @@ function registerDecoration(selector: languages.LanguageFilter[], legend: langua
   });
   monaco.languages.registerInlayHintsProvider(selector, {
     provideInlayHints: async (model) => ({
+      // Monaco's own padding is a few pixels, so an em space sets the date further apart from the code
       hints: ((await lsp.ListHints(model.uri.fsPath)) ?? []).map((hint) => ({
-        label: hint.text,
+        label: `\u{2003}${hint.text}`,
+        paddingLeft: true,
         position: { lineNumber: hint.line, column: hint.column },
       })),
       dispose: () => undefined,

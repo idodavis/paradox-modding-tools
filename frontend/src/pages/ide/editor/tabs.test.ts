@@ -7,21 +7,28 @@ describe("tab ids", () => {
     expect(parseTab("file:c:/mod/a.txt")).toEqual({ tab: "file", key: "c:/mod/a.txt" });
   });
 
-  it("reads a diff tab's side, key and commit", () => {
-    expect(parseTab("diff:staged:c:/mod/a.txt")).toEqual({ tab: "diff", side: "staged", key: "c:/mod/a.txt" });
-    expect(parseTab("diff:commit@abc123:c:/mod/a.txt")).toEqual({
+  it("reads a diff tab's side, repository, key and commit", () => {
+    expect(parseTab("diff:staged:C%3A%2Fmod:c:/mod/a.txt")).toEqual({
+      tab: "diff",
+      side: "staged",
+      root: "C:/mod",
+      key: "c:/mod/a.txt",
+    });
+    expect(parseTab("diff:commit@abc123:C%3A%2Fmod:c:/mod/a.txt")).toEqual({
       tab: "diff",
       side: "commit",
+      root: "C:/mod",
       key: "c:/mod/a.txt",
       hash: "abc123",
     });
   });
 
   it("makes the id parseTab reads back", () => {
-    expect(diffTab("changes", "c:/mod/a.txt")).toBe("diff:changes:c:/mod/a.txt");
-    expect(parseTab(diffTab("commit", "c:/mod/a.txt", "abc123"))).toEqual({
+    expect(diffTab("changes", "C:/mod", "c:/mod/a.txt")).toBe("diff:changes:C%3A%2Fmod:c:/mod/a.txt");
+    expect(parseTab(diffTab("commit", "C:/mod", "c:/mod/a.txt", "abc123"))).toEqual({
       tab: "diff",
       side: "commit",
+      root: "C:/mod",
       key: "c:/mod/a.txt",
       hash: "abc123",
     });

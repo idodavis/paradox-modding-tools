@@ -154,6 +154,15 @@ var ClassDatabases = map[string]string{
 	"CTravelPointOfInterestTypeDatabase": "travel/point_of_interest_types",
 }
 
+// definitionWords are the words for a name that script saves, in the singular and the plural, by its database, whose
+// name is no words of its own.
+var definitionWords = map[string]struct{ One, Many string }{
+	SavedScopes:     {"saved scope", "saved scopes"},
+	Variables:       {"variable", "variables"},
+	LocalVariables:  {"local variable", "local variables"},
+	GlobalVariables: {"global variable", "global variables"},
+}
+
 // plurals turns a folder's last word into the singular. The first ending that fits wins.
 var plurals = []struct{ Plural, One string }{
 	{"arms", "arms"}, {"goods", "goods"}, // the same in the singular
@@ -410,6 +419,21 @@ var ck3References = []Reference{
 	{Database: "traits", KeyPath: "icon/**/desc", Target: File, Folder: "gfx/interface/icons/traits"},
 }
 
+// ck3FiringFields are the CK3 fields that fire the events, on_actions and decisions they name, though the schema
+// reads them as a definition's own fields.
+var ck3FiringFields = []Reference{
+	// common/council_tasks/00_chancellor_tasks.txt:150
+	{Database: "council_tasks", KeyPath: "monthly_on_action"},
+	// common/schemes/scheme_types/coerce_contribution_scheme.txt:143
+	{Database: "schemes/scheme_types", KeyPath: "on_monthly/**"},
+	// common/defines/00_defines.txt:1813-1816: "Default event to run when a player province is infected"
+	{Database: "defines.define", KeyPath: "DEFAULT_HOLDER_INFECTION_EVENT"},
+	{Database: "defines.define", KeyPath: "DEFAULT_LIEGE_INFECTION_EVENT"},
+	{Database: "defines.define", KeyPath: "DEFAULT_REALM_INFECTION_EVENT"},
+	// common/puppets/actions/puppet_actions.txt:26
+	{Database: "puppets/actions", KeyPath: "decision"},
+}
+
 var vic3References = []Reference{
 	{Database: "events", KeyPath: "title", Target: Localization},
 	{Database: "events", KeyPath: "desc", Target: Localization},
@@ -419,6 +443,23 @@ var vic3References = []Reference{
 	{Database: "flag_definitions", KeyPath: "flag_definition/coa", Target: Coat.Database},
 	{Database: "flag_definitions", KeyPath: "flag_definition/coa_with_overlord_canton", Target: Coat.Database},
 	{Database: "flag_definitions", KeyPath: "flag_definition/subject_canton", Target: Coat.Database},
+}
+
+// vic3FiringFields are the Victoria 3 fields that fire the events they name, though the schema reads them as a
+// definition's own fields. common/journal_entries/journal_entries.md:354-375 says each pulse is an on_action.
+var vic3FiringFields = []Reference{
+	// common/journal_entries/journal_entries.md:357
+	{Database: "journal_entries", KeyPath: "on_weekly_pulse/random_events/<number>"},
+	// common/journal_entries/00_belle_epoque.txt:215
+	{Database: "journal_entries", KeyPath: "on_weekly_pulse/events"},
+	// common/journal_entries/00_acw_entries.txt:61
+	{Database: "journal_entries", KeyPath: "on_monthly_pulse/random_events/<number>"},
+	// common/journal_entries/00_acw_entries.txt:120
+	{Database: "journal_entries", KeyPath: "on_monthly_pulse/events"},
+	// common/journal_entries/00_acw_entries.txt:68
+	{Database: "journal_entries", KeyPath: "on_yearly_pulse/random_events/<number>"},
+	// common/journal_entries/journal_entries.md:373-375
+	{Database: "journal_entries", KeyPath: "on_yearly_pulse/events"},
 }
 
 var vic3ModeFolders = ModeFolders{ // the wiki's Mod compatibility list
@@ -634,8 +675,13 @@ func (game *Game) SplitMode(key string) (mode, name string) {
 
 // DescribeDefinition returns what a definition of a database is called, in the singular or the plural: "scripted
 // effect" or "scripted effects" for scripted_effects. A nested database is called by its own name: "dialect" for
-// languages.dialect.
+// languages.dialect. A name that script saves is called by its words in definitionWords: "saved scope" for scope.
 func DescribeDefinition(database string, plural bool) string {
+	if words, ok := definitionWords[database]; ok && plural {
+		return words.Many
+	} else if ok {
+		return words.One
+	}
 	last := database[strings.LastIndexAny(database, "/.")+1:]
 	if !plural {
 		for _, ending := range plurals {

@@ -30,8 +30,8 @@ import (
 //go:embed all:frontend/dist
 var assets embed.FS
 
-// version is the app's version, set by the build. It is "dev" in a dev run.
-var version = "dev"
+// version is the app's version, set by the build. It is app.DevBuild in a dev run.
+var version = app.DevBuild
 
 // main runs the publishing process when the app was started as one. Otherwise it opens the config and the log,
 // makes the services and runs the app.

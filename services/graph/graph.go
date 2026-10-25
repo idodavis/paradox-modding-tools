@@ -22,8 +22,9 @@ type Service struct {
 	Workspace *workspace.Service
 }
 
-// A Node is one node of the event graph: the kept definition of an event, an on_action, a decision or a scripted
-// effect, with where it is written, or a fold that stands for the firings of one node past the fan-out.
+// A Node is one node of the event graph: the kept definition of an event, an on_action, a decision, a scripted
+// effect or any other entry that fires one, with where it is written, or a fold that stands for the firings of one
+// node past the fan-out.
 type Node struct {
 	ID       string          `json:"id"` // database:name; more:<id> or more-in:<id> for a fold
 	Database string          `json:"database"`
@@ -36,6 +37,7 @@ type Node struct {
 	Step     int             `json:"step"`   // its distance from the root, negative for a firer
 	Parent   string          `json:"parent"` // the drawn node one step nearer the root; "" for the root
 	Count    int             `json:"count"`  // the firings a fold stands for; 0 for a definition
+	Deep     bool            `json:"deep"`   // the depth stopped at it, and it links further to a next step
 }
 
 // An Edge is one firing the graph draws, from a firer to what it fires.
@@ -55,7 +57,7 @@ type Filter struct {
 	Depth     int               `json:"depth"`
 	Limit     int               `json:"limit"`
 	Fanout    int               `json:"fanout"` // the firings of one node drawn before the rest fold; 0 folds none
-	Expand    []string          `json:"expand"` // the folds opened
+	Expand    []string          `json:"expand"` // the folds opened, and the nodes the depth stopped at that are opened
 	Follow    bool              `json:"follow"`
 	Labels    map[string]string `json:"labels,omitempty"` // what each database's definitions are called
 }
@@ -67,7 +69,6 @@ type Graph struct {
 	Edges     []Edge `json:"edges"`
 	Truncated bool   `json:"truncated"` // the limit cut it
 	Total     int    `json:"total"`     // how many nodes the reach found before the limit cut it
-	Deep      bool   `json:"deep"`      // the depth stopped it: a node at its last step fires more or is fired by more
 }
 
 // A reach holds one graph while it is built from its root.
@@ -80,7 +81,6 @@ type reach struct {
 	edges  []Edge
 	count  int                 // how many of the nodes the filter draws
 	cut    map[index.Site]bool // the nodes the limit kept out
-	deep   bool                // a node at the last step the depth allows links further
 }
 
 // delayKeys are the keys that write a delay.
@@ -109,7 +109,7 @@ func (gph *Service) BuildGraph(root string, filter Filter) (Graph, error) {
 	reach.splice()
 	return Graph{
 		Root: root, Nodes: reach.nodes, Edges: lo.UniqBy(reach.edges, toKey),
-		Truncated: len(reach.cut) > 0, Total: reach.count + len(reach.cut), Deep: reach.deep,
+		Truncated: len(reach.cut) > 0, Total: reach.count + len(reach.cut),
 	}, nil
 }
 
@@ -147,14 +147,23 @@ func toLine(mods *index.Index, site index.Site) int {
 // toID returns the id of the node of a definition: its database and its name.
 func toID(mods *index.Index, site index.Site) string { return mods.ToReference(site).ToID() }
 
-// expand adds the nodes further from the root, up to the filter's depth: what each node fires going forward, what fires
-// each node going backward.
+// expand adds the nodes further from the root: what each node fires going forward, what fires each node going
+// backward. It stops at the filter's depth, but goes on from a node there that the filter opens: the node itself, or
+// for a node the filter hides, the nearest drawn node before it. A node it stops at that links further is marked deep.
 func (reach *reach) expand(root index.Site, forward bool) {
 	frontier := []index.Site{root}
-	for distance := 1; distance <= reach.filter.Depth && len(frontier) > 0; distance++ {
+	for distance := 1; len(frontier) > 0; distance++ {
+		if distance > reach.filter.Depth {
+			parents := toParents(reach.listHidden())
+			var rest []index.Site
+			frontier, rest = lo.FilterReject(frontier, func(site index.Site, _ int) bool {
+				return slices.Contains(reach.filter.Expand, findDrawn(parents, toID(reach.mods, site)))
+			})
+			reach.markDeep(rest, forward)
+		}
+		step := lo.Ternary(forward, distance, -distance)
 		var next []index.Site
 		for _, site := range frontier {
-			step := lo.Ternary(forward, distance, -distance)
 			for _, fire := range reach.fold(site, reach.listLinks(site, forward), forward, step) {
 				if end, isNew := reach.addFire(fire, forward, step); isNew {
 					next = append(next, end)
@@ -163,9 +172,38 @@ func (reach *reach) expand(root index.Site, forward bool) {
 		}
 		frontier = next
 	}
-	reach.deep = reach.deep || slices.ContainsFunc(frontier, func(site index.Site) bool {
-		return len(reach.listLinks(site, forward)) > 0
+}
+
+// listHidden returns the nodes the filter hides. The root and the folds are never hidden.
+func (reach *reach) listHidden() []Node {
+	return lo.Filter(reach.nodes, func(node Node, _ int) bool {
+		return node.Step != 0 && node.Count == 0 && reach.isHidden(node.Site)
 	})
+}
+
+// toParents returns the parent of each of the given nodes, by the node's id.
+func toParents(nodes []Node) map[string]string {
+	return lo.SliceToMap(nodes, func(node Node) (string, string) { return node.ID, node.Parent })
+}
+
+// findDrawn returns the id of the nearest drawn node at or before the node with the given id. It goes up through the
+// hidden nodes, whose parents are given by id.
+func findDrawn(parents map[string]string, id string) string {
+	for next, ok := parents[id]; ok; next, ok = parents[id] {
+		id = next
+	}
+	return id
+}
+
+// markDeep marks as deep each of the given nodes that links further: one that fires more going forward, or that more
+// fires going backward.
+func (reach *reach) markDeep(sites []index.Site, forward bool) {
+	for _, site := range sites {
+		position := slices.IndexFunc(reach.nodes, func(node Node) bool { return node.Count == 0 && node.Site == site })
+		if position >= 0 && len(reach.listLinks(site, forward)) > 0 {
+			reach.nodes[position].Deep = true
+		}
+	}
 }
 
 // listLinks returns what a node fires going forward, or what fires it going backward.
@@ -277,11 +315,23 @@ func (reach *reach) add(site index.Site, step int, parent index.Site) bool {
 	return true
 }
 
-// isHidden reports whether the filter hides a definition's node, because its database or its origin is not in the
-// filter.
+// isHidden reports whether the filter hides a definition's node: its origin is not in the filter, or its database is
+// one of the kinds the filter picks among and is not in it. A firer of any other database is drawn whatever the
+// filter's databases.
 func (reach *reach) isHidden(site index.Site) bool {
-	return !slices.Contains(reach.filter.Databases, reach.mods.ToReference(site).Database) ||
-		!slices.Contains(reach.filter.Origins, reach.mods.File(site).Origin)
+	database := reach.mods.ToReference(site).Database
+	picked := slices.Contains(reach.filter.Databases, database) || !slices.Contains(listKinds(reach.ws.Schema), database)
+	return !picked || !slices.Contains(reach.filter.Origins, reach.mods.File(site).Origin)
+}
+
+// listKinds returns the databases whose nodes the filter picks among: the events, on_actions and decisions, and the
+// scripted effects.
+func listKinds(schema *schema.Schema) []string {
+	kinds := slices.Clone(schema.FireDatabases)
+	if schema.Effects != "" {
+		kinds = append(kinds, schema.Effects)
+	}
+	return kinds
 }
 
 // findDelay returns the delay written for a firing, such as "days = 5". It returns "" if there is none.
@@ -320,9 +370,7 @@ func findDuration(tree *jomini.Tree, block int32) string {
 // passes through it, and a node whose parent is removed takes the nearest drawn one. The root and the folds are never
 // removed.
 func (reach *reach) splice() {
-	hidden := lo.Filter(reach.nodes, func(node Node, _ int) bool {
-		return node.Step != 0 && node.Count == 0 && reach.isHidden(node.Site)
-	})
+	hidden := reach.listHidden()
 	for _, node := range hidden {
 		var rest, incoming, outgoing []Edge
 		for _, edge := range reach.edges {
@@ -345,13 +393,24 @@ func (reach *reach) splice() {
 		reach.edges = rest
 	}
 	reach.nodes = lo.Without(reach.nodes, hidden...)
-	parents := lo.SliceToMap(hidden, func(node Node) (string, string) { return node.ID, node.Parent })
+	parents := toParents(hidden)
+	reach.passDeep(hidden, parents)
 	for position := range reach.nodes {
-		parent := reach.nodes[position].Parent
-		for next, ok := parents[parent]; ok; next, ok = parents[parent] {
-			parent = next
+		reach.nodes[position].Parent = findDrawn(parents, reach.nodes[position].Parent)
+	}
+}
+
+// passDeep gives the deep mark of each of the given hidden nodes to the nearest drawn node before it, so that opening
+// that node goes on past the hidden one. The parents are the hidden nodes', by id.
+func (reach *reach) passDeep(hidden []Node, parents map[string]string) {
+	for _, node := range hidden {
+		if !node.Deep {
+			continue
 		}
-		reach.nodes[position].Parent = parent
+		drawn := findDrawn(parents, node.Parent)
+		if position := slices.IndexFunc(reach.nodes, func(other Node) bool { return other.ID == drawn }); position >= 0 {
+			reach.nodes[position].Deep = true
+		}
 	}
 }
 
@@ -412,18 +471,15 @@ func isKept(ws *workspace.Session, mods *index.Index, site index.Site) bool {
 	return ok && winner.Site == site
 }
 
-// Defaults returns the filter for a new graph. It draws the databases that fire and the scripted effects, from the game
-// and every mod, six firings of a node before the rest are folded, with every fold closed. It returns an empty filter
-// if no workspace is open.
+// Defaults returns the filter for a new graph. It draws every kind the filter picks among, from the game and every
+// mod, six firings of a node before the rest are folded, with every fold closed. It returns an empty filter if no
+// workspace is open.
 func (gph *Service) Defaults() Filter {
 	ws, err := gph.Workspace.Session()
 	if err != nil {
 		return Filter{}
 	}
-	databases := slices.Clone(ws.Schema.FireDatabases)
-	if ws.Schema.Effects != "" {
-		databases = append(databases, ws.Schema.Effects)
-	}
+	databases := listKinds(ws.Schema)
 	origins := []string{game.OriginVanilla}
 	for _, mod := range ws.Order {
 		origins = append(origins, mod.ID)

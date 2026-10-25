@@ -1,14 +1,16 @@
 <!--
-  The file explorer: the roots and their folders, with search, rename, drag and drop, git marks and the context menu.
-  A folder's listing is fetched when it expands, and a double click pins a preview tab.
+  The file explorer: the roots in the workspace's load order and their folders, with rename, drag and drop, git marks,
+  the context menu, and a box, shown on asking, that filters the tree to the paths holding its text, in folders opened
+  or not. A folder's listing is fetched when it expands, and a double click pins a preview tab.
 -->
 <script setup lang="ts">
 import { computed, onBeforeUnmount, onMounted, shallowRef, useTemplateRef, watch } from "vue";
 import { useMutation, useQuery, useQueryCache } from "@pinia/colada";
-import { useDebounceFn, useEventBus, useLocalStorage } from "@vueuse/core";
+import { useDebounceFn, useEventBus, useLocalStorage, watchDebounced } from "@vueuse/core";
 import { Clipboard, Events } from "@wailsio/runtime";
 import {
   FileTree,
+  preparePresortedFileTreeInput,
   type FileTreeDensityKeyword,
   type FileTreeDirectoryHandle,
   type GitStatus,
@@ -22,8 +24,16 @@ import * as gitApi from "@services/git/service";
 import * as service from "@services/workspace/service";
 import type { Child, FileChange, Place } from "@services/workspace/models";
 
-import { COMMANDS, trashFile } from "../../app/commands";
-import { folderQuery, gitStatusQuery, loadQuery, repositoryQuery, stateQuery, workspacesQuery } from "../../queries";
+import { COMMANDS, compare, trashFile } from "../../app/commands";
+import {
+  fileSearchQuery,
+  folderQuery,
+  gitStatusQuery,
+  loadQuery,
+  repositoryQuery,
+  stateQuery,
+  workspacesQuery,
+} from "../../queries";
 import { useEditorStore } from "../../stores/editor";
 import { useSettingsStore } from "../../stores/settings";
 import { useWindowsStore } from "../../stores/windows";
@@ -32,7 +42,9 @@ import { VIEWS } from "./editor/tabs";
 
 const { roots } = defineProps<{ roots: Root[] }>();
 const emit = defineEmits<{ open: [place: Place, preview: boolean] }>();
-defineExpose({ collapseAll });
+// whether the filter box shows; hiding it clears the filter, so a hidden box hides no row
+const filtering = defineModel<boolean>("filtering", { default: false });
+defineExpose({ collapseAll, reveal });
 
 /** The mark each status git reports gets in the tree. */
 const GIT_MARKS: Record<string, GitStatus> = {
@@ -52,6 +64,8 @@ const SPRITE = `<svg xmlns="http://www.w3.org/2000/svg" width="0" height="0" sty
       `<symbol id="pmt-${format}" viewBox="0 0 800 800"><image href="${icon}" width="800" height="800"/></symbol>`,
   )
   .join("")}</svg>`;
+/** How many files the filter asks the file search for. The search lists the mods' files before the game's. */
+const FILTER_HITS = 500;
 
 /** A rename or a move done in the explorer. */
 type Move = { from: string; to: string };
@@ -62,11 +76,11 @@ const windows = useWindowsStore();
 const workspace = useWorkspaceStore();
 const queryCache = useQueryCache();
 const commandBus = useEventBus<string>("pmt.command");
-const compare = useEventBus<{ left: Place; right: Place }>("pmt.compare");
 const compareWith = useLocalStorage<Place | null>("pmt.ide.compare", null);
 const host = useTemplateRef("host");
 const view = shallowRef<FileTree>();
 const menu = shallowRef<ContextMenuItem[][]>([]);
+const filter = shallowRef("");
 
 // every row of the tree is a path with its root's label first and a slash after each folder
 const disks = new Map<string, string>(); // a row's path on disk
@@ -111,10 +125,13 @@ onBeforeUnmount(() => {
   view.value?.cleanUp();
 });
 watch(shape, mount);
-watch(
-  () => editor.activeFile()?.key,
-  () => void follow(),
-);
+watch(() => editor.activeFile()?.key, follow);
+watchDebounced(filter, (query) => void filterRows(query), { debounce: 200 });
+watch(filtering, (shown) => {
+  if (shown) return;
+  filter.value = "";
+  void filterRows("");
+});
 
 /** Whether a setting that is a switch is on. */
 function on(key: string): boolean {
@@ -129,7 +146,8 @@ function mount(): void {
   if (!host.value || !roots.length) return;
   roots.forEach((root, index) => disks.set(`${labels.value[index]}/`, root.dir));
   const tree = new FileTree({
-    paths: [...disks.keys()],
+    // the roots stay in the order they come, the workspace's load order; what a root holds the tree sorts itself
+    preparedInput: preparePresortedFileTreeInput([...disks.keys()]),
     initialExpansion: "closed",
     icons: { set: "complete", spriteSheet: SPRITE },
     density: settings.value("ide.density") as FileTreeDensityKeyword,
@@ -159,7 +177,8 @@ function mount(): void {
   if (shadow) shadow.adoptedStyleSheets = [...shadow.adoptedStyleSheets, ignoredSheet];
   view.value = tree;
   void markGit();
-  void follow();
+  follow();
+  void filterRows(filter.value);
 }
 
 /** Builds the styles of the root rows: a bar in the origin's color at the start, and the name in it if asked. */
@@ -290,11 +309,15 @@ async function markGit(): Promise<void> {
   ignoredSheet.replaceSync(dimmed.length ? `${dimmed.join(",")} { color: var(--fg-3); }` : "");
 }
 
-/** Opens a file the user selected as a preview tab. A folder or the file already shown opens nothing. */
+/**
+ * Keeps the files the user selected, and opens a file selected alone as a preview tab. A folder or the file already
+ * shown opens nothing.
+ */
 function select(paths: readonly string[]): void {
-  const [only] = paths;
-  const place = only && paths.length === 1 && !only.endsWith("/") ? places.get(only) : undefined;
-  if (place && place.key !== editor.activeFile()?.key) emit("open", place, true);
+  const files = paths.flatMap((path) => (path.endsWith("/") ? [] : (places.get(path) ?? [])));
+  editor.selectFiles(files);
+  const [place] = files;
+  if (paths.length === 1 && place && place.key !== editor.activeFile()?.key) emit("open", place, true);
 }
 
 /** Pins the selected file's tab. */
@@ -304,23 +327,48 @@ function pin(): void {
   if (place) emit("open", place, false);
 }
 
-/** Opens the folders down to the active file and selects it, when the explorer follows the active file. */
-async function follow(): Promise<void> {
+/** Reveals the active file in the tree, when the explorer follows the active file. */
+function follow(): void {
+  if (on("ide.followFile")) void reveal();
+}
+
+/** Opens the folders down to the active file and selects it. A file under none of the tree's roots changes nothing. */
+async function reveal(): Promise<void> {
   const place = editor.activeFile();
+  const folders = place ? await loadFolders(place) : [];
   const tree = view.value;
-  const index = place ? roots.findIndex((root) => root.dir === place.root) : -1;
-  if (!place || !tree || index < 0 || !on("ide.followFile")) return;
-  const parts = place.rel.split("/");
-  const folders = parts
-    .slice(0, -1)
-    .reduce<string[]>((rows, part) => [...rows, `${rows.at(-1)}${part}/`], [`${labels.value[index]}/`]);
-  for (const folder of folders) {
-    await load(folder);
-    findHandle(folder)?.expand();
-  }
-  const row = `${folders.at(-1)}${parts.at(-1)}`;
+  if (!place || !tree || !folders.length) return;
+  folders.forEach((folder) => findHandle(folder)?.expand());
+  const row = `${folders.at(-1)}${place.rel.split("/").at(-1)}`;
   tree.getItem(row)?.select();
   tree.scrollToPath(row, { focus: false, offset: "nearest" });
+}
+
+/**
+ * Lists the folders down to a file, so the tree holds the file's row, and returns their rows, the root's first. A file
+ * under none of the tree's roots gives none.
+ */
+async function loadFolders(place: Place): Promise<string[]> {
+  const index = roots.findIndex((root) => root.dir === place.root);
+  if (index < 0) return [];
+  const folders = place.rel
+    .split("/")
+    .slice(0, -1)
+    .reduce<string[]>((rows, part) => [...rows, `${rows.at(-1)}${part}/`], [`${labels.value[index]}/`]);
+  for (const folder of folders) await load(folder);
+  return folders;
+}
+
+/**
+ * Shows only the rows whose path holds the query. The file search finds the files first and their folders are listed,
+ * so a file in a folder not opened yet shows too. An empty query shows every row again.
+ */
+async function filterRows(query: string): Promise<void> {
+  const text = query.trim();
+  const hits = text ? await loadQuery(fileSearchQuery({ query: text, limit: FILTER_HITS })) : [];
+  await Promise.all((hits ?? []).map(loadFolders));
+  // a query typed since this one began is filtered by its own call
+  if (filter.value.trim() === text) view.value?.setSearch(text || null);
 }
 
 /** Folds every folder of the tree. */
@@ -438,7 +486,6 @@ function buildMenu(row: string): ContextMenuItem[][] {
   const file = row.endsWith("/") ? undefined : place;
   const dir = disks.get(row) ?? "";
   const holder = windows.holderOf({ folder: dir });
-  const selected = (view.value?.getSelectedPaths() ?? []).flatMap((path) => places.get(path) ?? []);
   const open: ContextMenuItem[] = file
     ? [
         {
@@ -502,16 +549,12 @@ function buildMenu(row: string): ContextMenuItem[][] {
         {
           label: "Compare with selected",
           disabled: !compareWith.value || compareWith.value.key === file.key,
-          onSelect: () => compareWith.value && compare.emit({ left: compareWith.value, right: file }),
+          onSelect: () => compareWith.value && compare(compareWith.value, file),
         },
-        ...(selected.length === 2
-          ? [
-              {
-                label: "Compare the two selected",
-                onSelect: () => selected[0] && selected[1] && compare.emit({ left: selected[0], right: selected[1] }),
-              },
-            ]
-          : []),
+        ...COMMANDS.filter((command) => command.id === "compare.selected" && command.when()).map((command) => ({
+          label: "Compare the two selected",
+          onSelect: command.onSelect,
+        })),
       ]
     : [];
   return [open, coat, init, commands, comparisons].filter((group) => group.length);
@@ -538,33 +581,38 @@ function resume(event: Event): void {
 </script>
 
 <template>
-  <!-- the menu's trigger takes its child's ref, so the tree's element is the one inside it -->
-  <UContextMenu :items="menu" :content="{ onCloseAutoFocus: resume }">
-    <div class="flex min-h-0 flex-1 flex-col">
-      <div
-        ref="host"
-        class="min-h-0 flex-1"
-        :style="{
-          '--trees-bg-override': 'var(--bg-2)',
-          '--trees-fg-override': 'color-mix(in oklab, var(--fg-2), var(--fg-1) 35%)',
-          '--trees-fg-muted-override': 'var(--fg-3)',
-          '--trees-selected-bg-override': 'var(--bg-4)',
-          '--trees-selected-fg-override': 'var(--fg-1)',
-          '--trees-accent-override': 'var(--accent)',
-          '--trees-border-color-override': 'var(--line-1)',
-          '--trees-focus-ring-color-override': 'var(--accent)',
-          '--trees-font-family-override': 'var(--font-sans)',
-          '--trees-font-size-override': 'var(--ide-ui-font)',
-          '--trees-status-added-override': 'var(--green)',
-          '--trees-status-untracked-override': 'var(--green)',
-          '--trees-status-modified-override': 'var(--orange)',
-          '--trees-status-deleted-override': 'var(--red)',
-          '--trees-status-renamed-override': 'var(--blue)',
-        }"
-        @contextmenu.capture="pick"
-        @keydown="step"
-        @dblclick="pin"
-      />
+  <div class="flex min-h-0 flex-1 flex-col">
+    <div v-if="filtering" class="shrink-0 px-2 pt-1 pb-1.5" @keydown.esc="filtering = false">
+      <UInput v-model="filter" placeholder="Filter files" icon="i-lucide-search" size="xs" autofocus class="w-full" />
     </div>
-  </UContextMenu>
+    <!-- the menu's trigger takes its child's ref, so the tree's element is the one inside it -->
+    <UContextMenu :items="menu" :content="{ onCloseAutoFocus: resume }">
+      <div class="flex min-h-0 flex-1 flex-col">
+        <div
+          ref="host"
+          class="min-h-0 flex-1"
+          :style="{
+            '--trees-bg-override': 'var(--bg-2)',
+            '--trees-fg-override': 'color-mix(in oklab, var(--fg-2), var(--fg-1) 35%)',
+            '--trees-fg-muted-override': 'var(--fg-3)',
+            '--trees-selected-bg-override': 'var(--bg-4)',
+            '--trees-selected-fg-override': 'var(--fg-1)',
+            '--trees-accent-override': 'var(--accent)',
+            '--trees-border-color-override': 'var(--line-1)',
+            '--trees-focus-ring-color-override': 'var(--accent)',
+            '--trees-font-family-override': 'var(--font-sans)',
+            '--trees-font-size-override': 'var(--ide-ui-font)',
+            '--trees-status-added-override': 'var(--green)',
+            '--trees-status-untracked-override': 'var(--green)',
+            '--trees-status-modified-override': 'var(--orange)',
+            '--trees-status-deleted-override': 'var(--red)',
+            '--trees-status-renamed-override': 'var(--blue)',
+          }"
+          @contextmenu.capture="pick"
+          @keydown="step"
+          @dblclick="pin"
+        />
+      </div>
+    </UContextMenu>
+  </div>
 </template>

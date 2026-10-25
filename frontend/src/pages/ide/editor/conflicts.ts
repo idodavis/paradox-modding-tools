@@ -5,6 +5,7 @@
 import * as monaco from "monaco-editor/editor/editor.api";
 
 import { useEditorStore } from "../../../stores/editor";
+import { useGitStore } from "../../../stores/git";
 import { applyEdits, type Model } from "./models";
 import { diffTab } from "./tabs";
 
@@ -49,7 +50,10 @@ export function registerConflicts(): void {
     const conflict = block?.conflicts.find((candidate) => candidate.start === line);
     if (!block || !conflict) return;
     if (side !== "compare") resolve(block.model, conflict, side);
-    else useEditorStore().open(diffTab("conflict", block.model.place.key), block.model.place);
+    else {
+      const { place } = block.model;
+      useEditorStore().open(diffTab("conflict", useGitStore().findRoot(place), place.key), place);
+    }
   });
 }
 

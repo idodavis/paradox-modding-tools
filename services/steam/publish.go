@@ -11,6 +11,7 @@ import (
 	"os/exec"
 	"strconv"
 	"strings"
+	"sync"
 	"time"
 
 	"paradox-modding-tools/internal/files"
@@ -35,6 +36,9 @@ const (
 	downloadFlag = "--steam-download"
 	previewsFlag = "--steam-previews"
 )
+
+// copyTurn is held while a second copy of the app runs, so that callers never start several copies at once.
+var copyTurn sync.Mutex
 
 // copyWork is the work of a second copy by the flag it was started with. Each prints its answer on standard output.
 var copyWork = map[string]func(client *Client, params Params) error{
@@ -82,9 +86,12 @@ func fetchDetails(params Params) *Details {
 }
 
 // startCopy starts a second copy of the app with the given flag, writes the parameters to it as JSON and calls the
-// given function, if any, with each line it prints. It returns an error if the copy cannot start or exits with a
-// nonzero code; that error is what the copy printed on standard error, or its exit status.
+// given function, if any, with each line it prints. One copy runs at a time: a call waits until the copy before it
+// has exited. It returns an error if the copy cannot start or exits with a nonzero code; that error is what the copy
+// printed on standard error, or its exit status.
 func startCopy(flag string, params Params, onLine func(line string)) error {
+	copyTurn.Lock()
+	defer copyTurn.Unlock()
 	executable, err := os.Executable()
 	if err != nil {
 		return err
@@ -136,9 +143,10 @@ func runCopy(work func(client *Client, params Params) error) int {
 	return toExitCode(work(client, params))
 }
 
-// publish uploads a mod, creating its item if the parameters name none, and saves a snapshot of the upload, whose
-// folder of files it keeps for the next compare. It prints the progress as JSON lines, then the item's id, even after
-// an error, so the next upload goes to that item.
+// publish uploads a mod, creating its item if the parameters name none, and saves a snapshot of the upload. The
+// uploaded files become the item's one kept copy for the next compare, in place of any copy kept before, uploaded or
+// downloaded. It prints the progress as JSON lines, then the item's id, even after an error, so the next upload goes
+// to that item.
 func publish(client *Client, params Params) (err error) {
 	workshopID := params.WorkshopID
 	defer func() {
@@ -159,14 +167,14 @@ func publish(client *Client, params Params) (err error) {
 	if err != nil {
 		return err
 	}
-	kept := resolveSnapshotDir(dirs.Cache, workshopID)
-	if err := errors.Join(os.RemoveAll(kept), os.Rename(params.UploadDir, kept)); err != nil {
-		return err
-	}
-	return saveFolderSnapshot(Snapshot{WorkshopID: workshopID, UploadedAt: time.Now(), Listing: params.Listing, Dir: kept})
+	return keepSnapshot(dirs.Cache, params.UploadDir, Snapshot{
+		WorkshopID: workshopID, UploadedAt: time.Now(), Listing: params.Listing,
+	})
 }
 
-// download has Steam download an item and saves the files as the item's snapshot, with its title and description.
+// download has Steam download an item, copies its files into PMT's cache folder and saves them as the item's
+// snapshot, with its title and description. The copy replaces any copy kept before, uploaded or downloaded, once it is
+// whole; a failed download or copy leaves the one before as it was. Steam's own folder of the item is not changed.
 func download(client *Client, params Params) error {
 	details, err := client.FetchDetails(params.WorkshopID)
 	if err != nil {
@@ -176,24 +184,38 @@ func download(client *Client, params Params) error {
 	if err != nil {
 		return err
 	}
-	listing := Listing{WorkshopID: params.WorkshopID, Title: details.Title, Description: details.Description}
-	return saveFolderSnapshot(Snapshot{
-		WorkshopID: params.WorkshopID, UploadedAt: details.UpdatedAt, Listing: listing, Dir: folder, Downloaded: true,
-	})
-}
-
-// saveFolderSnapshot saves an item's snapshot with the hashes of the files its folder holds.
-func saveFolderSnapshot(snapshot Snapshot) error {
 	dirs, err := app.ResolveDirs()
 	if err != nil {
 		return err
 	}
-	uploaded, err := files.Walk(files.Root{Dir: snapshot.Dir})
+	walked, err := files.Walk(files.Root{Dir: folder})
 	if err != nil {
 		return err
 	}
-	snapshot.Files = buildHashes(uploaded)
-	return SaveSnapshot(dirs.Cache, snapshot)
+	dir, err := copyFiles(dirs.Cache, walked)
+	if err != nil {
+		return err
+	}
+	listing := Listing{WorkshopID: params.WorkshopID, Title: details.Title, Description: details.Description}
+	return keepSnapshot(dirs.Cache, dir, Snapshot{
+		WorkshopID: params.WorkshopID, UploadedAt: details.UpdatedAt, Listing: listing, Downloaded: true,
+	})
+}
+
+// keepSnapshot keeps the files of the given folder as an item's one kept copy, in place of the copy kept before, and
+// saves the item's snapshot with their hashes. The folder is moved, so it must be in PMT's cache folder. If the move
+// fails, the folder is deleted.
+func keepSnapshot(cacheDir, dir string, snapshot Snapshot) error {
+	snapshot.Dir = resolveSnapshotDir(cacheDir, snapshot.WorkshopID)
+	if err := errors.Join(removeCacheDir(cacheDir, snapshot.Dir), os.Rename(dir, snapshot.Dir)); err != nil {
+		return errors.Join(err, removeCacheDir(cacheDir, dir))
+	}
+	walked, err := files.Walk(files.Root{Dir: snapshot.Dir})
+	if err != nil {
+		return err
+	}
+	snapshot.Files = buildHashes(walked)
+	return SaveSnapshot(cacheDir, snapshot)
 }
 
 // printJSON prints a value on standard output as one JSON line. It returns the given error instead if there is one.

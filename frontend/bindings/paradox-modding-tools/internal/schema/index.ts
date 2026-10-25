@@ -8,6 +8,5 @@ export {
 
 export type {
     Expected,
-    Input,
     SourceState
 } from "./models.js";

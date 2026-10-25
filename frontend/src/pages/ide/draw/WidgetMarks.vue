@@ -7,7 +7,7 @@ import { computed } from "vue";
 
 import type { Window } from "@services/draw/models";
 
-import { applyProperties, TYPE_ICONS } from "./picture";
+import { applyProperties, listProperties, TYPE_ICONS } from "./picture";
 
 const props = defineProps<{
   rects: Map<number, DOMRect>;
@@ -18,6 +18,8 @@ const props = defineProps<{
   window: Window;
   /** The key of the property on the caret's line, or "". */
   property: string;
+  /** Whether the window lay wholly off the screen and is drawn at the screen's edge it passed. */
+  isPlaced: boolean;
 }>();
 
 const SIDES = ["top", "right", "bottom", "left"];
@@ -57,7 +59,7 @@ const outlines = computed(() => props.outlined.flatMap((id) => props.rects.get(i
 const badges = computed(() =>
   (props.window.widgets ?? []).flatMap(({ id, properties }) => {
     const rect = props.rects.get(id);
-    return rect && properties?.some(({ origin }) => origin === "missing") ? [rect] : [];
+    return rect && listProperties(props.window, properties).some(({ origin }) => origin === "missing") ? [rect] : [];
   }),
 );
 
@@ -67,7 +69,8 @@ const guide = computed(() => {
   const shape = GUIDES[props.property];
   if (!widget || !rect || !shape) return null;
   const style = document.createElement("div").style;
-  applyProperties(widget.properties, style);
+  const properties = listProperties(props.window, widget.properties);
+  applyProperties(properties, style);
   if (shape === "margin") {
     return { shape, rect, widths: SIDES.map((side) => parseFloat(style.getPropertyValue(`--margin-${side}`)) || 0) };
   }
@@ -78,7 +81,7 @@ const guide = computed(() => {
     shape,
     from: [holder.x + at("parent", "x") * holder.width, holder.y + at("parent", "y") * holder.height],
     to: [rect.x + own("x") * rect.width, rect.y + own("y") * rect.height],
-    word: widget.properties?.findLast(({ key }) => key.toLowerCase() === props.property)?.value ?? "",
+    word: properties.findLast(({ key }) => key.toLowerCase() === props.property)?.value ?? "",
   };
 });
 </script>
@@ -123,6 +126,7 @@ const guide = computed(() => {
           {{ mark.widget.type }} {{ mark.widget.name }}
         </template>
         <span class="opacity-70">{{ Math.round(mark.rect.width) }} × {{ Math.round(mark.rect.height) }}</span>
+        <span v-if="isPlaced && mark.widget?.id === 0" class="opacity-70">· placed at the screen's edge</span>
       </span>
     </template>
     <span

@@ -30,11 +30,12 @@ import * as app$0 from "../app/models.js";
 import * as $models from "./models.js";
 
 /**
- * AddInstall records an install of the game with the given id in the given folder, reads its version and emits
- * config:changed for the installs.
+ * AddInstall records an install of the game with the given id in the given folder, under the given name and version,
+ * and emits config:changed for the installs. An install with no name is named after its game, and one with no version
+ * gets the version its files say. It returns an error if the game is not supported.
  */
-export function AddInstall(gameID: string, path: string): $CancellablePromise<app$0.Install> {
-    return $Call.ByID(2027404299, gameID, path);
+export function AddInstall(gameID: string, path: string, name: string, version: string): $CancellablePromise<app$0.Install> {
+    return $Call.ByID(2027404299, gameID, path, name, version);
 }
 
 /**
@@ -163,6 +164,15 @@ export function ListMods(): $CancellablePromise<{ [_ in string]?: $models.Mod[] 
 }
 
 /**
+ * ListReadyInstalls returns the ids of the recorded installs whose schema and index caches are saved for the install's
+ * version and dumps, so their next open scans nothing. An install whose game is not supported, or whose dumps cannot
+ * be listed, is left out.
+ */
+export function ListReadyInstalls(): $CancellablePromise<string[] | null> {
+    return $Call.ByID(1067958076);
+}
+
+/**
  * ListRoots returns the folders the open workspace's files are listed from: the mods' in load order, then the game's.
  * It returns none if no workspace is open.
  */
@@ -279,8 +289,8 @@ export function State(): $CancellablePromise<$models.State> {
 }
 
 /**
- * UpdateInstall moves an install's record to another folder and reads its version again. If the open workspace uses
- * the install, that workspace is opened again at once. It returns an error if the install is not recorded or the
+ * UpdateInstall moves an install's record to another folder and resolves its version again. If the open workspace
+ * uses the install, that workspace is opened again at once. It returns an error if the install is not recorded or the
  * folder does not exist.
  */
 export function UpdateInstall(id: string, path: string): $CancellablePromise<void> {

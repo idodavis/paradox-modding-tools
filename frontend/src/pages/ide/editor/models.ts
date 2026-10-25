@@ -1,8 +1,7 @@
 /**
- * The models: one copy of each open file in this window, as a Monaco text model with its place, its encoding,
- * whether it is unsaved and its caret. Every group that shows the file shares it, and stores and components read
- * these as reactive views without keeping a copy. The problems SetText returns become the model's markers, and
- * fs:changed reloads a model the user has not edited.
+ * The models: one copy of each open file in this window, around a Monaco text model that every group showing the file
+ * shares and that stores and components read without keeping a copy. The problems Go finds in a model's text become
+ * its markers, and a change on disk reloads a model the user has not edited.
  */
 import { useQueryCache } from "@pinia/colada";
 import { useDebounceFn } from "@vueuse/core";
@@ -111,7 +110,10 @@ export async function syncText(model: Model): Promise<Diagnostic[]> {
   return (await debounced()) ?? [];
 }
 
-/** Writes a model's text to disk in its encoding and clears unsaved. The other open models are judged again. */
+/**
+ * Writes a model's text to disk in its encoding and marks it saved, unless it was edited meanwhile. The other open
+ * models are checked again.
+ */
 export async function save(model: Model): Promise<void> {
   const text = model.model.getValue();
   const version = model.model.getAlternativeVersionId();
@@ -180,7 +182,8 @@ export function unsavedModels(): Model[] {
 
 /**
  * Reads a file and makes its model, shared from then on. A draft Go still holds for the file, such as edits a reload
- * dropped from the page, comes back as the model's text, unsaved. A model closed while it loads is closed when it lands.
+ * dropped from the page, comes back as the model's text, unsaved. A model closed while it loads is closed when it
+ * lands.
  */
 async function load(place: Place): Promise<Model> {
   const cache = useQueryCache();
@@ -265,7 +268,7 @@ async function setMarkers(model: Model, diagnostics: Diagnostic[]): Promise<void
 
 /**
  * Lists the problems Go found in the files of the given tabs, each file once, with each problem's code. A problem whose
- * code the app does not know is left out. The Problems panel lists these and its badge counts them.
+ * code the app does not know is left out, and so is a file with no problems.
  */
 export function listOpenProblems(
   tabs: { id: string }[],

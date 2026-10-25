@@ -49,9 +49,6 @@
   --text-28--font-weight: 600;
   --text-28--letter-spacing: -0.02em;
   /* badges and keys */
-  /* code: 12.5px over 20px */
-  --text-code: 0.78125rem;
-  --text-code--line-height: 1.25rem;
   --text-tiny: 0.65625rem;
   --text-tiny--line-height: 1;
   --radius-chip: 0.3125rem;

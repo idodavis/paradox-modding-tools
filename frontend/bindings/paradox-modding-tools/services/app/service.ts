@@ -47,7 +47,8 @@ export function CloseWindow(name: string): $CancellablePromise<void> {
 }
 
 /**
- * CrashedLastRun reports whether the last run ended without a clean shutdown. It is false on the first run.
+ * CrashedLastRun reports whether the last run ended without a clean shutdown. It is false on the first run, and in a
+ * dev build, which is stopped without a clean shutdown each time it is rebuilt.
  */
 export function CrashedLastRun(): $CancellablePromise<boolean> {
     return $Call.ByID(190852328);

@@ -13,6 +13,7 @@ import { computed, shallowRef, useTemplateRef, watch } from "vue";
 import type { ComputedRef, ShallowRef } from "vue";
 
 import * as draw from "@services/draw/service";
+import * as lsp from "@services/lsp/service";
 import type { Coat, Instance, Layer } from "@services/draw/models";
 import type { Edit } from "@services/lsp/models";
 
@@ -25,7 +26,8 @@ import { applyEdits, syncText } from "../editor/models";
 import type { Model } from "../editor/models";
 import ChoiceGallery from "./ChoiceGallery.vue";
 import type { GalleryChoice } from "./ChoiceGallery.vue";
-import { drawTile, isOwn } from "./coat";
+import { drawTile, isOwn, parseHex, toRgba } from "./coat";
+import type { Rgba } from "./coat";
 
 const { model, coat } = defineProps<{ model: Model; coat: Coat }>();
 
@@ -147,24 +149,36 @@ function writeQuoted(key: string, text: string): void {
   writeLayer(key, `"${text}"`);
 }
 
-/** Writes a color as the game writes a custom one: red, green and blue out of 255. */
+/** Writes a color picked as #rrggbb in one slot of the selected layer, as a custom color. */
 function writeColor(key: string, hex: string): void {
-  const [red, green, blue] = [1, 3, 5].map((start) => parseInt(hex.slice(start, start + 2), 16));
-  writeLayer(key, `rgb { ${red} ${green} ${blue} }`);
+  const layer = current.value?.layer;
+  if (!layer) return;
+  edit(async () =>
+    draw.EditProperty(model.place.path, findBlock(layer), key, await presentColor(layer, parseHex(hex))),
+  );
 }
 
-/** Converts a layer's color in a slot to how a coat writes it: the game's color by name, else its numbers. */
-function toCoatColor(layer: Layer, key: string): string {
+/**
+ * Converts a layer's color in a slot to how a coat writes it: the game's color by name, else a custom color. It is ""
+ * for a slot with no color.
+ */
+async function toCoatColor(layer: Layer, key: string): Promise<string> {
   const name = findColorName(layer, key);
-  if (name) return `"${name}"`;
-  const [red, green, blue] = (findColor(layer, key).match(/\d+(\.\d+)?/g) ?? []).map(Number);
-  return red === undefined ? "" : `rgb { ${red} ${green} ${blue} }`;
+  const color = findColor(layer, key);
+  if (name || !color) return name && `"${name}"`;
+  return presentColor(layer, toRgba(color));
+}
+
+/** Writes a custom color as the editor service writes a color that a layer's block does not write yet. */
+function presentColor(layer: Layer, [r, g, b, a]: Rgba): Promise<string> {
+  return lsp.PresentColor(model.place.path, findBlock(layer), { r, g, b, a });
 }
 
 /** Copies a layer's colors, each slot's as the coat writes it, for pasting onto other layers. */
-function copyColors(layer: Layer): void {
-  const keys = Object.entries(layer.inputs ?? {}).filter(([, input]) => input === "color");
-  store.colors = Object.fromEntries(keys.map(([key]) => [key, toCoatColor(layer, key)]).filter(([, text]) => text));
+async function copyColors(layer: Layer): Promise<void> {
+  const keys = Object.entries(layer.inputs ?? {}).flatMap(([key, input]) => (input === "color" ? [key] : []));
+  const texts = await Promise.all(keys.map((key) => toCoatColor(layer, key)));
+  store.colors = Object.fromEntries(keys.flatMap((key, position) => (texts[position] ? [[key, texts[position]]] : [])));
 }
 
 /** Pastes the copied colors onto the given layers, slot by slot, where a layer has that slot. */
@@ -549,7 +563,7 @@ sort(useTemplateRef<HTMLElement>("subList"), subs);
           kind="choice"
           label=""
           :choices="list.options ?? []"
-          :value="list.picked"
+          :value="list.picked ?? ''"
           class="min-w-0 grow"
           @update:value="(option) => store.pick({ [list.id]: option })"
         />

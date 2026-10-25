@@ -100,8 +100,9 @@ function describeSite(site: FindingSite): string {
         <ScriptSnippet
           v-else-if="sources?.[index]"
           :text="sources[index]"
+          :line="site.range.startLineNumber"
           language="paradox-script"
-          class="px-2.5 py-1.5"
+          class="pb-1.5"
           :class="{ 'opacity-70': hasKept && !site.kept }"
         />
       </div>

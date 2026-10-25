@@ -27,6 +27,7 @@ export interface Era {
 export interface Install {
     "id": string;
     "game": string;
+    "name": string;
     "path": string;
     "version": string;
     "scannedAt": string;
@@ -54,6 +55,17 @@ export interface Mod {
      * the upload exclusions, one pattern per line
      */
     "ignore": string;
+
+    /**
+     * DescriptionSource is where the Workshop description comes from: markdown, bbcode or steam, Steam's own text.
+     * "" takes the first description file the mod has, else Steam's own text.
+     */
+    "descriptionSource": string;
+
+    /**
+     * DescriptionFile is the path of the description's file from the mod's folder, or "" for its source's own file.
+     */
+    "descriptionFile": string;
 }
 
 /**

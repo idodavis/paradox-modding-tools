@@ -67,44 +67,52 @@ func (stm *Service) findMod(modID string) (*workspace.Session, workspace.Mod, er
 	return ws, mod, nil
 }
 
-// CreateDescriptionFile creates a mod's description file in the given source format, markdown or bbcode. It does
-// nothing if the mod has a description file already. It returns an error if the source is neither format or the
-// workspace has no such mod.
-func (stm *Service) CreateDescriptionFile(modID, source string) error {
-	rel := ""
-	for _, row := range descriptionFiles {
-		if row.source == source {
-			rel = row.rel
-		}
+// SetDescriptionSource sets where a mod's Workshop description comes from: markdown or bbcode, kept in the given
+// file, or steam, Steam's own text, which uploads leave as it is. The file is a path inside the mod's folder, or ""
+// for the source's own file in the workshop folder. A Markdown or BBCode file the mod lacks is made empty. It returns
+// an error if the source is none of the three or the file is outside the mod's folder.
+func (stm *Service) SetDescriptionSource(modID, source, file string) error {
+	if err := toChoiceError(source, descriptionSources, "source of a description"); err != nil {
+		return err
 	}
-	if rel == "" {
-		return fmt.Errorf("%q is not a source of a description: use %s or %s", source, sourceMarkdown, sourceBBCode)
-	}
-	_, mod, err := stm.findMod(modID)
+	ws, mod, err := stm.findMod(modID)
 	if err != nil {
 		return err
 	}
-	for _, row := range descriptionFiles {
-		_, err := os.Stat(files.Join(mod.Dir, row.rel))
-		if err == nil {
-			return nil
-		}
-		if !errors.Is(err, fs.ErrNotExist) {
+	rel, ok := "", true
+	if file != "" {
+		rel, ok = files.ToRel(mod.Dir, file)
+	}
+	if !ok {
+		return fmt.Errorf("%s is not in the mod's folder", file)
+	}
+	mod.DescriptionSource, mod.DescriptionFile = source, rel
+	if err := stm.Workspace.UpdateMod(ws.ID, mod.Mod); err != nil {
+		return err
+	}
+	if _, target := findDescription(mod); target != "" && !isFile(target) {
+		if err := stm.writeFile(target, ""); err != nil {
 			return err
 		}
 	}
-	if err := stm.writeFile(files.Join(mod.Dir, rel), ""); err != nil {
-		return err
-	}
 	application.Get().Event.Emit(EventListingChanged, modID)
 	return nil
+}
+
+// toChoiceError returns an error unless the given text is one of the given choices. The error says what kind of
+// value the text should have been, in the given words, and lists the choices.
+func toChoiceError(text string, choices []string, kind string) error {
+	if slices.Contains(choices, text) {
+		return nil
+	}
+	return fmt.Errorf("%q is not a %s: use %s", text, kind, strings.Join(choices, " or "))
 }
 
 // AddPreview adds a preview to a mod: a picture is copied into the mod's previews folder, a video is recorded by
 // its URL. It returns an error if the preview has no known type, the folder has a picture of that name already or the
 // video is listed already.
 func (stm *Service) AddPreview(modID string, preview Preview) error {
-	if err := toPreviewTypeError(preview.Type); err != nil {
+	if err := toChoiceError(preview.Type, previewTypes, "type of preview"); err != nil {
 		return err
 	}
 	_, mod, err := stm.findMod(modID)
@@ -157,7 +165,7 @@ func (stm *Service) addVideo(dir, url string) error {
 // RemovePreview deletes a picture from a mod's previews folder, or removes a video from its list. It returns an error
 // if the preview has no known type or is not there.
 func (stm *Service) RemovePreview(modID string, preview Preview) error {
-	if err := toPreviewTypeError(preview.Type); err != nil {
+	if err := toChoiceError(preview.Type, previewTypes, "type of preview"); err != nil {
 		return err
 	}
 	_, mod, err := stm.findMod(modID)
@@ -200,14 +208,6 @@ func (stm *Service) deleteVideo(dir, url string) error {
 		return fmt.Errorf("the mod has no video %s", url)
 	}
 	return stm.writeVideos(dir, slices.DeleteFunc(urls, func(listed string) bool { return listed == url }))
-}
-
-// toPreviewTypeError returns an error unless the given text is a type of preview.
-func toPreviewTypeError(previewType string) error {
-	if slices.Contains(previewTypes, previewType) {
-		return nil
-	}
-	return fmt.Errorf("%q is not a type of preview: use %s", previewType, strings.Join(previewTypes, " or "))
 }
 
 // writeVideos writes the list of a mod's gallery videos, one URL per line.
@@ -389,13 +389,13 @@ func (stm *Service) buildItemParams(modID string) (Params, error) {
 
 // Publish uploads a mod to the Workshop in a second copy of the app. The visibility is private, friends, public or
 // unlisted, or "" to keep the item's own. The steam:progress event reports each stage. For a mod with no item yet, the
-// new item's id is saved in the mod's record, even if the upload then fails. It returns an error if the visibility is
-// none of those or the upload fails.
+// new item's id is saved in the mod's descriptor and its record, even if the upload then fails. It returns an error if
+// the visibility is none of those or the upload fails.
 func (stm *Service) Publish(modID, visibility string) error {
 	if err := toVisibilityError(visibility); err != nil {
 		return err
 	}
-	ws, mod, err := stm.findMod(modID)
+	ws, _, err := stm.findMod(modID)
 	if err != nil {
 		return err
 	}
@@ -411,17 +411,18 @@ func (stm *Service) Publish(modID, visibility string) error {
 	if err != nil {
 		return err
 	}
-	if params.UploadDir, err = createUploadDir(stm.Workspace.Config.Dirs.Cache, upload); err != nil {
+	// Steam is sent a copy of the upload's files, so that it gets those and no others
+	cacheDir := stm.Workspace.Config.Dirs.Cache
+	if params.UploadDir, err = copyFiles(cacheDir, upload.Files); err != nil {
 		return err
 	}
-	defer func() { _ = os.RemoveAll(params.UploadDir) }()
+	defer func() { _ = removeCacheDir(cacheDir, params.UploadDir) }()
 	listing.Visibility = visibility
 	params.WorkshopID, params.Listing = listing.WorkshopID, listing
 	pmt := application.Get()
 	workshopID, err := StartPublish(params, func(step Progress) { pmt.Event.Emit(EventProgress, step) })
 	if workshopID != "" && listing.WorkshopID == "" {
-		mod.WorkshopID = workshopID
-		err = errors.Join(err, stm.Workspace.UpdateMod(ws.ID, mod.Mod))
+		err = errors.Join(err, stm.LinkItem(modID, workshopID))
 	}
 	return err
 }
@@ -439,14 +440,14 @@ func (stm *Service) buildParams(ws *workspace.Session) (Params, error) {
 	}, nil
 }
 
-// createUploadDir copies the files of an upload into a new folder under the given one, so that Steam is sent those
-// files and no others. It returns the new folder's path, and removes the folder if the copy fails.
-func createUploadDir(cacheDir string, upload Upload) (string, error) {
-	dir, err := os.MkdirTemp(cacheDir, "upload-")
+// copyFiles copies the given files into a new folder in PMT's cache folder, each at its path from its own folder, and
+// returns the new folder. It deletes the new folder if a copy fails.
+func copyFiles(cacheDir string, list []files.File) (string, error) {
+	dir, err := os.MkdirTemp(cacheDir, "copy-")
 	if err != nil {
 		return "", err
 	}
-	for _, file := range upload.Files {
+	for _, file := range list {
 		target := files.Join(dir, file.Rel)
 		content, err := os.ReadFile(file.Path)
 		if err == nil {
@@ -456,10 +457,19 @@ func createUploadDir(cacheDir string, upload Upload) (string, error) {
 			err = os.WriteFile(target, content, 0o644)
 		}
 		if err != nil {
-			return "", errors.Join(err, os.RemoveAll(dir))
+			return "", errors.Join(err, removeCacheDir(cacheDir, dir))
 		}
 	}
 	return dir, nil
+}
+
+// removeCacheDir deletes a folder in PMT's cache folder with everything in it, or a file there. A path that is not
+// there is no error. It refuses a path outside the cache folder.
+func removeCacheDir(cacheDir, dir string) error {
+	if !files.IsUnder(cacheDir, dir) {
+		return fmt.Errorf("%s is not in PMT's cache folder, so it is not deleted", dir)
+	}
+	return os.RemoveAll(dir)
 }
 
 // ListRules returns the rules that say what an upload leaves out.

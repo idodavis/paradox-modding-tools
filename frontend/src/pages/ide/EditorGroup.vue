@@ -1,11 +1,11 @@
 <!--
   One editor group: its tab strip, with tabs dragged between groups and windows, and the active tab's view: code,
-  image, visual, form, split or a diff.
+  image, visual, split or a diff.
 -->
 <script setup lang="ts">
 import { computed, shallowRef, useTemplateRef, watch } from "vue";
 import { useMutation, useQuery } from "@pinia/colada";
-import { useEventBus, useLocalStorage, watchDebounced } from "@vueuse/core";
+import { useLocalStorage, watchDebounced } from "@vueuse/core";
 import { insertNodeAt, removeNode, useSortable } from "@vueuse/integrations/useSortable";
 import { Clipboard } from "@wailsio/runtime";
 import type { ContextMenuItem, DropdownMenuItem } from "@nuxt/ui";
@@ -13,7 +13,9 @@ import type { ContextMenuItem, DropdownMenuItem } from "@nuxt/ui";
 import * as lsp from "@services/lsp/service";
 import type { Place } from "@services/workspace/models";
 
-import { copiesQuery, drawablesQuery, loadQuery } from "../../queries";
+import { COMMANDS, compare, compareWithGame, findGameCopy } from "../../app/commands";
+import { list } from "../../lib/format";
+import { copiesQuery, drawablesQuery } from "../../queries";
 import { useEditorStore, type Group, type Tab, type View } from "../../stores/editor";
 import { THIS_WINDOW, useWindowsStore } from "../../stores/windows";
 import { useWorkspaceStore } from "../../stores/workspace";
@@ -21,7 +23,6 @@ import ConfirmModal from "../../ui/ConfirmModal.vue";
 import OriginChip from "../../ui/OriginChip.vue";
 import CodeEditor from "./CodeEditor.vue";
 import DrawPane from "./draw/DrawPane.vue";
-import FormView from "./FormView.vue";
 import GitDiff from "./GitDiff.vue";
 import ImageView from "./ImageView.vue";
 import { findModel, save, unsavedModels, type Model } from "./editor/models";
@@ -40,15 +41,15 @@ const ZONES: Record<Zone, string> = {
   down: "inset-x-0 bottom-0 h-1/2",
   middle: "inset-0",
 };
+/** The command that shows the active file in the explorer. */
+const REVEAL = COMMANDS.find((command) => command.id === "explorer.reveal");
 
 const editor = useEditorStore();
 const windows = useWindowsStore();
 const workspace = useWorkspaceStore();
-const compare = useEventBus<{ left: Place; right: Place }>("pmt.compare");
 const compareWith = useLocalStorage<Place | null>("pmt.ide.compare", null);
 const wiki = useLocalStorage("pmt.ide.wiki", false);
 const confirm = useOverlay().create(ConfirmModal);
-const toast = useToast();
 const strip = useTemplateRef("strip");
 // the tabs as the strip draws them: sortable moves them, and the store hears of it when the drag ends
 const order = shallowRef<Tab[]>([]);
@@ -81,11 +82,21 @@ const { mutate: locateCaret, data: card } = useMutation({
 });
 const crumbs = computed(() => [...(place.value?.rel.split("/") ?? []), ...(card.value?.within ?? [])]);
 const folders = computed(() => (place.value?.rel.split("/").length ?? 1) - 1);
+// a file of the game that a mod replaces shows the mod's name; a mod file's copies, which the cache may hold, do not
 const { data: copies } = useQuery(() => ({
   ...copiesQuery(place.value?.path ?? ""),
   enabled: !!place.value?.readOnly && target.value?.tab === "file",
 }));
-const replacement = computed(() => (copies.value && copies.value.length > 1 ? copies.value.at(-1) : undefined));
+const replacement = computed(() =>
+  place.value?.readOnly && copies.value && copies.value.length > 1 ? copies.value.at(-1) : undefined,
+);
+// the file of the tab whose menu is open, with the game's copy of it, read when the menu opens
+const menuPlace = shallowRef<Place | null>(null);
+const { data: menuCopies } = useQuery(() => ({
+  ...copiesQuery(menuPlace.value?.path ?? ""),
+  enabled: !!menuPlace.value && !menuPlace.value.readOnly,
+}));
+const menuGameCopy = computed(() => menuPlace.value && findGameCopy(menuPlace.value, menuCopies.value));
 
 watch(
   () => group.tabs,
@@ -121,13 +132,6 @@ defineShortcuts(computed(() => (active ? { meta_shift_v: { handler: cycleViews, 
 
 const { mutate: saveModel } = useMutation({ mutation: (open: Model) => save(open) });
 const { mutate: saveAll } = useMutation({ mutation: () => Promise.all(unsavedModels().map(save)) });
-const { mutate: compareWithGame } = useMutation({
-  mutation: async (mine: Place) => ({ left: (await loadQuery(copiesQuery(mine.path)))?.[0], right: mine }),
-  onSuccess: ({ left, right }) => {
-    if (left?.readOnly) compare.emit({ left, right });
-    else toast.add({ title: `The game has no ${right.rel}` });
-  },
-});
 
 /** Describes a tab for the strip: its label, its icon and what marks it. */
 function describe(tab: Tab) {
@@ -162,32 +166,52 @@ function cycleViews(): void {
 
 /** Shows a tab of this group, which makes the group the active one. */
 function select(row: Row): void {
-  editor.activate(group.id);
-  if (row.tabPlace) editor.open(row.tab.id, row.tabPlace);
+  if (row.tabPlace) editor.open(row.tab.id, row.tabPlace, group.id);
+  else editor.activate(group.id);
 }
 
-/** Closes a tab, after asking when it is the last tab of a file that has changes that are not saved. */
-async function close(row: Row): Promise<void> {
-  const copies = editor
+/**
+ * Makes this group the active one when the pointer goes down in it. On a tab it waits for the click to show the tab,
+ * so the history keeps the place the user leaves in the group active before.
+ */
+function activateGroup(event: PointerEvent): void {
+  if (!(event.target instanceof Element && event.target.closest("[data-tab]"))) editor.activate(group.id);
+}
+
+/**
+ * Closes the given tabs of this group. When that leaves a file with changes that are not saved in no tab, it asks
+ * first, once for all of them, and saying no closes none.
+ */
+async function closeTabs(tabs: Tab[]): Promise<void> {
+  const unsaved = listUnsaved(tabs);
+  const body = `${list(unsaved)} ${unsaved.length > 1 ? "have" : "has"} changes that are not saved.`;
+  const question = { title: "Close without saving?", body, confirm: "Close", destructive: true };
+  if (unsaved.length && !(await confirm.open(question))) return;
+  editor.activate(group.id);
+  for (const tab of [...tabs]) editor.close(tab.id);
+}
+
+/** Lists the paths of the files with changes that are not saved that no tab but the given ones shows. */
+function listUnsaved(tabs: Tab[]): string[] {
+  const others = editor
     .layout()
-    .rows.flatMap((one) => one.columns.flatMap((other) => other.tabs))
-    .filter((other) => parseTab(other.id).key === row.parsed.key).length;
-  const body = `${row.path} has changes that are not saved.`;
-  if (
-    row.unsaved &&
-    copies < 2 &&
-    !(await confirm.open({ title: "Close without saving?", body, confirm: "Close", destructive: true }))
-  )
-    return;
-  editor.activate(group.id);
-  editor.close(row.tab.id);
+    .rows.flatMap((row) => row.columns.flatMap((one) => one.tabs))
+    .filter((tab) => !tabs.includes(tab))
+    .map((tab) => parseTab(tab.id).key);
+  return [...new Set(tabs.map((tab) => parseTab(tab.id).key))].flatMap((key) => {
+    const open = findModel(key);
+    return open?.unsaved && !others.includes(key) ? [open.place.rel] : [];
+  });
 }
 
-/** Closes the tabs of this group except the given one. A tab with changes that are not saved stays. */
-function closeOthers(keep?: string): void {
-  editor.activate(group.id);
-  for (const tab of group.tabs.filter((one) => one.id !== keep && !findModel(parseTab(one.id).key)?.unsaved))
-    editor.close(tab.id);
+/** Lists the tabs of this group that hold no changes that are not saved. */
+function listSaved(): Tab[] {
+  return group.tabs.filter((tab) => !findModel(parseTab(tab.id).key)?.unsaved);
+}
+
+/** Lists the tabs of this group other than the given one. */
+function listOthers(keep: string | null): Tab[] {
+  return group.tabs.filter((tab) => tab.id !== keep);
 }
 
 /** Splits the group at a tab, which shows in the new group too. */
@@ -269,9 +293,14 @@ function buildMenu(row: Row): ContextMenuItem[][] {
       { label: "Save all", disabled: !unsavedModels().length, onSelect: () => saveAll() },
     ],
     [
-      { label: "Close", onSelect: () => void close(row) },
-      { label: "Close the others", onSelect: () => closeOthers(row.tab.id) },
-      { label: "Close all", onSelect: () => closeOthers() },
+      { label: "Close", onSelect: () => void closeTabs([row.tab]) },
+      { label: "Close the others", onSelect: () => void closeTabs(listOthers(row.tab.id)) },
+      {
+        label: "Close tabs to the right",
+        onSelect: () => void closeTabs(group.tabs.slice(group.tabs.findIndex((tab) => tab.id === row.tab.id) + 1)),
+      },
+      { label: "Close saved", onSelect: () => void closeTabs(listSaved()) },
+      { label: "Close all", onSelect: () => void closeTabs(group.tabs) },
     ],
     [
       { label: "Split right", icon: "i-lucide-columns-2", kbds: ["Ctrl \\"], onSelect: () => split(row, "row") },
@@ -280,14 +309,15 @@ function buildMenu(row: Row): ContextMenuItem[][] {
     [
       {
         label: "Compare with the game's copy",
-        disabled: !mine || mine.readOnly || row.parsed.tab !== "file",
+        // the game's copy read for this tab's file, which the menu opening asked for
+        disabled: row.parsed.tab !== "file" || menuPlace.value?.key !== mine?.key || !menuGameCopy.value,
         onSelect: () => mine && compareWithGame(mine),
       },
       { label: "Select for compare", disabled: !mine, onSelect: () => (compareWith.value = mine ?? null) },
       {
         label: compareWith.value ? `Compare with ${compareWith.value.rel}` : "Compare with selected",
         disabled: !mine || !compareWith.value || compareWith.value.key === mine.key,
-        onSelect: () => mine && compareWith.value && compare.emit({ left: compareWith.value, right: mine }),
+        onSelect: () => mine && compareWith.value && compare(compareWith.value, mine),
       },
     ],
     [
@@ -306,20 +336,30 @@ function buildMenu(row: Row): ContextMenuItem[][] {
             },
           ]),
     ],
-    [{ label: "Copy path", onSelect: () => void Clipboard.SetText(mine?.path ?? row.path) }],
+    [
+      { label: "Copy path", onSelect: () => void Clipboard.SetText(mine?.path ?? row.path) },
+      {
+        label: "Reveal in explorer",
+        disabled: !REVEAL?.when(),
+        onSelect: (event) => {
+          select(row);
+          REVEAL?.onSelect?.(event);
+        },
+      },
+    ],
   ];
 }
 
 const actions = computed<DropdownMenuItem[]>(() => [
-  { label: "Close the others", onSelect: () => closeOthers(group.active ?? undefined) },
-  { label: "Close all", onSelect: () => closeOthers() },
+  { label: "Close the others", onSelect: () => void closeTabs(listOthers(group.active)) },
+  { label: "Close all", onSelect: () => void closeTabs(group.tabs) },
 ]);
 </script>
 
 <template>
   <section
     class="flex min-h-0 min-w-0 flex-1 flex-col"
-    @pointerdown="editor.activate(group.id)"
+    @pointerdown="activateGroup"
     @focusin="editor.activate(group.id)"
     @dragenter.capture="enter"
     @dragleave="leave"
@@ -334,7 +374,13 @@ const actions = computed<DropdownMenuItem[]>(() => [
         @drop="drop"
         @dragend="dropOutside"
       >
-        <UContextMenu v-for="row in rows" :key="row.tab.id" :items="buildMenu(row)" :ui="{ content: 'w-64' }">
+        <UContextMenu
+          v-for="row in rows"
+          :key="row.tab.id"
+          :items="buildMenu(row)"
+          :ui="{ content: 'w-64' }"
+          @update:open="(open) => open && (menuPlace = row.tabPlace)"
+        >
           <div
             :data-tab="row.tab.id"
             class="group relative flex h-8.75 shrink-0 cursor-pointer items-center gap-1.75 border-e border-default ps-3 pe-1.5 text-12 whitespace-nowrap"
@@ -346,7 +392,7 @@ const actions = computed<DropdownMenuItem[]>(() => [
             :title="row.path"
             @click="select(row)"
             @dblclick="editor.pin(row.tab.id)"
-            @auxclick.middle="close(row)"
+            @auxclick.middle="closeTabs([row.tab])"
           >
             <UIcon v-if="row.parsed.tab === 'diff'" name="i-lucide-git-compare" class="size-3.5 shrink-0 text-dimmed" />
             <img v-else-if="row.icon" :src="row.icon" alt="" class="size-3.5 shrink-0" />
@@ -369,7 +415,7 @@ const actions = computed<DropdownMenuItem[]>(() => [
                       ? ''
                       : 'invisible group-hover:visible'
                 "
-                @click.stop="close(row)"
+                @click.stop="closeTabs([row.tab])"
               />
             </span>
           </div>
@@ -423,7 +469,7 @@ const actions = computed<DropdownMenuItem[]>(() => [
       <template v-if="replacement">
         Replaced by <OriginChip :origin="replacement.origin" dot />
         <span class="text-toned">{{ workspace.originName(replacement.origin) }}</span>
-        <UButton label="Compare" variant="ghost" size="xs" @click="compare.emit({ left: place, right: replacement })" />
+        <UButton label="Compare" variant="ghost" size="xs" @click="compare(place, replacement)" />
       </template>
       <UTooltip v-if="viewItems.length > 1" text="Cycle the views" :kbds="['Ctrl Shift V']">
         <UTabs
@@ -447,7 +493,6 @@ const actions = computed<DropdownMenuItem[]>(() => [
             :model="model"
             :split="view === 'split'"
           />
-          <FormView v-else-if="view === 'form'" :key="place.key" :model="model" :database="place.database" />
           <CodeEditor v-else :key="place.key" :model="model" :active="active" />
         </template>
       </template>

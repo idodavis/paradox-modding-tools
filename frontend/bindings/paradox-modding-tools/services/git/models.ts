@@ -69,6 +69,12 @@ export interface Ref {
      */
     "type": string;
     "hash": string;
+
+    /**
+     * Date is when the commit it points to was made, or when an annotated tag was. It is the zero time for a ref to
+     * an object with no date, such as a tag of a tree.
+     */
+    "date": string;
     "current": boolean;
 }
 

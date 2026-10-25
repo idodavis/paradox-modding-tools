@@ -152,7 +152,7 @@ func (drw *Service) findCoat(path, name string, picks map[string]string) (*coatR
 	if err != nil {
 		return nil, err
 	}
-	mods := ws.Mods.Load()
+	mods := resolveIndex(ws, path)
 	file, ok := mods.FindFile(path)
 	if !ok {
 		return nil, fmt.Errorf("the file %q is not in the workspace", path)
@@ -535,8 +535,8 @@ func (resolver *coatResolver) resolveColor(field clause, base, baseNames []strin
 	return css, label, lists
 }
 
-// makeColor returns the CSS of the color that the given definition of a named color writes, or "" if it is not a
-// color.
+// makeColor returns the CSS of the color that a clause writes as a color block, such as a named color's definition. It
+// returns "" if the clause writes no color.
 func makeColor(definition clause) string {
 	color, ok := game.ToColor(definition.tree, definition.statement)
 	if !ok {

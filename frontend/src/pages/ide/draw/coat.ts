@@ -11,7 +11,8 @@ import type { CoatStrength } from "@internal/game/models";
 
 import { fileUrl } from "../../../queries";
 
-type Rgba = [number, number, number, number];
+/** A color as red, green, blue and alpha, each out of one. */
+export type Rgba = [number, number, number, number];
 
 /** The channels of a pixel in the order its bytes are. A region keeps the channels before the alpha. */
 const CHANNELS = "rgba";
@@ -104,7 +105,9 @@ function findSize(coat: Coat, size: number): { width: number; height: number } {
   return { width: Math.round(coat.width * scale) || size, height: Math.round(coat.height * scale) || size };
 }
 
-/** Builds a coat's layers in the order it draws them on a canvas the size of its field, the cloth's shading over them. */
+/**
+ * Builds a coat's layers in the order it draws them on a canvas the size of its field, the cloth's shading over them.
+ */
 async function buildCoat(
   coat: Coat,
   shading: Shading | null,
@@ -310,7 +313,13 @@ function writeColor(pixels: ImageData, offset: number, color: Rgba): void {
 }
 
 /** Converts a color Go writes as CSS, rgba(red, green, blue, alpha), to four numbers out of one. "" is clear. */
-function toRgba(css: string): Rgba {
+export function toRgba(css: string): Rgba {
   const [red = 0, green = 0, blue = 0, alpha = 1] = (/\(([^)]*)\)/.exec(css)?.[1] ?? "").split(",").map(Number);
   return css ? [red / 255, green / 255, blue / 255, alpha] : [0, 0, 0, 0];
+}
+
+/** Converts a color picked as #rrggbb to four numbers out of one, opaque. */
+export function parseHex(hex: string): Rgba {
+  const [red, green, blue] = [1, 3, 5].map((start) => parseInt(hex.slice(start, start + 2), 16) / 255);
+  return [red, green, blue, 1];
 }

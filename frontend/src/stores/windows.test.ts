@@ -49,9 +49,9 @@ describe("the windows", () => {
 
   it("finds the window that holds a file, a folder or a page", () => {
     const { windows } = stores();
-    announce({ name: "editor:1", files: ["a"], folders: [], page: null });
-    announce({ name: "files:/mod/sub", files: [], folders: ["/mod/sub"], page: null });
-    announce({ name: "page:health", files: [], folders: [], page: "health" });
+    announce({ name: "editor:1", files: ["a"], folders: [], page: null, active: null });
+    announce({ name: "files:/mod/sub", files: [], folders: ["/mod/sub"], page: null, active: null });
+    announce({ name: "page:health", files: [], folders: [], page: "health", active: null });
     expect(windows.holderOf({ file: "a" })).toBe("editor:1");
     expect(windows.holderOf({ folder: "/mod/sub" })).toBe("files:/mod/sub");
     expect(windows.holderOf({ page: "health" })).toBe("page:health");
@@ -79,7 +79,7 @@ describe("the windows", () => {
 
   it("forgets a window once it has closed", () => {
     const { windows } = stores();
-    announce({ name: "editor:1", files: ["a"], folders: [], page: null });
+    announce({ name: "editor:1", files: ["a"], folders: [], page: null, active: null });
     handlerOf("window:closed")({ data: "editor:1" });
     expect(windows.holderOf({ file: "a" })).toBe("");
   });

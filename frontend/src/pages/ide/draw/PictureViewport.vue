@@ -3,12 +3,17 @@
   asked the backdrop and an export to PNG. Its pane around the picture takes focus, so the page can listen there for
   clicks and keys off the picture too.
 -->
+<script lang="ts">
+/** How far a press must move on the screen, in pixels, to be a drag rather than a click. */
+export const DRAG = 4;
+</script>
+
 <script setup lang="ts">
 import Panzoom, { type PanzoomObject } from "@panzoom/panzoom";
 import { useMutation } from "@pinia/colada";
 import { useDebounceFn, useResizeObserver } from "@vueuse/core";
 import { Dialogs } from "@wailsio/runtime";
-import { computed, onBeforeUnmount, onMounted, shallowRef, useTemplateRef, watch } from "vue";
+import { computed, onBeforeUnmount, onMounted, shallowRef, useTemplateRef } from "vue";
 
 import * as draw from "@services/draw/service";
 
@@ -16,9 +21,8 @@ import { useDrawStore } from "../../../stores/draw";
 
 const MIN_ZOOM = 0.02;
 const MAX_ZOOM = 32;
-// the room left around a fitted box, and how far a press must move to be a drag rather than a click
+// the room left around a fitted box
 const MARGIN = 32;
-const DRAG = 4;
 const CHECKS = "repeating-conic-gradient(var(--bg-0) 0 25%, var(--bg-4) 0 50%) 0 0 / 16px 16px";
 // the backdrops a coat or an image can sit on, with what each paints; any other is a color
 const BACKDROPS = [
@@ -28,13 +32,10 @@ const BACKDROPS = [
 ];
 
 const {
-  focus = null,
   backdrop = false,
   snapshot = null,
   title = "picture",
 } = defineProps<{
-  /** The part of the picture Fit shows, in its pixels. Without one, Fit shows all of it. */
-  focus?: DOMRect | null;
   /** Whether the picture sits on the backdrop chosen in the bar, rather than on checks. */
   backdrop?: boolean;
   /** Makes the PNG that Export writes, or null when there is nothing to export. With none, there is no Export. */
@@ -69,7 +70,7 @@ const { mutate: exportPng, isLoading: isExporting } = useMutation({
 
 let camera: PanzoomObject | null = null;
 const zoom = shallowRef(1);
-// undefined fits the focus or the whole picture, null means the user has moved the camera
+// undefined fits the whole picture, null means the user has moved the camera
 const fitBox = shallowRef<DOMRect | null | undefined>(undefined);
 let isPanning = false;
 let hasDragged = false;
@@ -78,10 +79,6 @@ let pressPan = { x: 0, y: 0 };
 useResizeObserver([pane, content], () => {
   if (fitBox.value !== null) fit(fitBox.value);
 });
-watch(
-  () => focus,
-  () => fitBox.value !== null && fit(fitBox.value),
-);
 
 // a layer keeps the scale it was painted at, so the picture leaves its layer for a frame to be painted sharp
 const sharpen = useDebounceFn(() => {
@@ -91,12 +88,15 @@ const sharpen = useDebounceFn(() => {
   requestAnimationFrame(() => requestAnimationFrame(() => layer.style.removeProperty("will-change")));
 }, 250);
 
-/** Shows a box of the picture whole in the middle of the pane, no larger than it is. With no box it shows the focus. */
+/**
+ * Shows a box of the picture whole in the middle of the pane, no larger than it is. With no box it shows all of the
+ * picture, and keeps showing it as the picture and the pane change size. A box with no size is not shown.
+ */
 function fit(box?: DOMRect): void {
   const room = pane.value;
   const picture = content.value;
   if (!camera || !room || !picture?.offsetWidth || !picture.offsetHeight) return;
-  const area = box ?? focus ?? new DOMRect(0, 0, picture.offsetWidth, picture.offsetHeight);
+  const area = box ?? new DOMRect(0, 0, picture.offsetWidth, picture.offsetHeight);
   if (!area.width || !area.height) return;
   const scale = Math.min(1, (room.clientWidth - MARGIN) / area.width, (room.clientHeight - MARGIN) / area.height);
   camera.zoom(scale, { animate: false });

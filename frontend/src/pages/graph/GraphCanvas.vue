@@ -35,6 +35,7 @@ const LEGEND = [
   { label: "Event", sample: "h-3 w-5.5 rounded-xs border border-accented bg-elevated" },
   { label: "On action", sample: "h-2.5 w-5 rounded-full border border-accented bg-muted" },
   { label: "Effect or trigger", sample: "h-2.5 w-5 rounded-full border border-accented" },
+  { label: "Other entry", sample: "h-2.5 w-5 rounded-full border border-(--fg-3)" },
   { label: "Root", sample: "h-2.5 w-5 rounded-full border border-primary" },
   { label: "Selected path", sample: "h-0.5 w-3.5 bg-secondary" },
 ];

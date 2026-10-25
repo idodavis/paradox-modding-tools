@@ -30,6 +30,8 @@ func main() {
 		if len(dumps.Commands) == 0 || len(dumps.DataTypes) == 0 {
 			log.Fatalf("%s: the install's dumps are missing; run script_docs and dump_data_types in the game", id)
 		}
+		// the folders are this machine's, which the backup does not carry
+		dumps.Folders = nil
 		var encoded bytes.Buffer
 		if err := gob.NewEncoder(&encoded).Encode(dumps); err != nil {
 			log.Fatal(err)

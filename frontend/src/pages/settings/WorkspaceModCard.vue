@@ -1,12 +1,22 @@
-<!-- One mod's card in Settings: its folder, thumbnail, color, calendar, Workshop item and upload exclusions. -->
+<!-- One mod's card in Settings: its name, folder, thumbnail, color, calendar, Workshop item and upload exclusions. -->
 <script setup lang="ts">
 import { computed, shallowRef } from "vue";
 import { useMutation, useQuery } from "@pinia/colada";
 
-import { diagnosticMessage } from "../../lib/format";
-import { codesQuery, listingQuery, reportQuery, rulesQuery, stateQuery, workspacesQuery } from "../../queries";
+import { describePicture, diagnosticMessage, plural } from "../../lib/format";
+import {
+  codesQuery,
+  headerQuery,
+  listingQuery,
+  reportQuery,
+  rulesQuery,
+  stateQuery,
+  uploadQuery,
+  workspacesQuery,
+} from "../../queries";
 import { useWorkspaceStore } from "../../stores/workspace";
 import ConfirmModal from "../../ui/ConfirmModal.vue";
+import DescriptionSource from "../../ui/DescriptionSource.vue";
 import FileSelector from "../../ui/FileSelector.vue";
 import ModAvatar from "../../ui/ModAvatar.vue";
 import OriginChip from "../../ui/OriginChip.vue";
@@ -25,6 +35,8 @@ const { workspaceId, mod } = defineProps<{ workspaceId: string; mod: Mod }>();
 const store = useWorkspaceStore();
 const confirm = useOverlay().create(ConfirmModal);
 const newEra = shallowRef<Era>({ name: "", year: 0 });
+// the Workshop item being typed, as its id or its page's address
+const item = shallowRef("");
 let lastUpdate: Promise<void> | undefined;
 
 const { data: state } = useQuery(stateQuery);
@@ -32,6 +44,8 @@ const { data: workspaces } = useQuery(workspacesQuery);
 const { data: codes } = useQuery(codesQuery);
 const { data: rules } = useQuery(rulesQuery);
 const { data: listing } = useQuery(() => ({ ...listingQuery(mod.id), enabled: store.isOpen() }));
+const { data: upload } = useQuery(() => ({ ...uploadQuery(mod.id), enabled: store.isOpen() && !mod.broken }));
+const { data: header } = useQuery(() => ({ ...headerQuery(mod.thumbnail), enabled: !!mod.thumbnail }));
 const { data: report } = useQuery(() => ({
   ...reportQuery((state.value?.mods ?? []).map((one) => one.id)),
   enabled: store.isOpen(),
@@ -49,6 +63,13 @@ const { mutate: update } = useMutation({
     lastUpdate = workspace.UpdateMod(workspaceId, { ...(latest ?? mod), ...changes });
     return lastUpdate;
   },
+});
+const { mutate: rename } = useMutation({
+  mutation: async (title: string) => listing.value && steam.WriteListing(mod.id, { ...listing.value, title }),
+});
+const { mutate: link, isLoading: linking } = useMutation({
+  mutation: (text: string) => steam.LinkItem(mod.id, text),
+  onSuccess: () => (item.value = ""),
 });
 const { mutate: removeMod } = useMutation({ mutation: () => workspace.RemoveMod(workspaceId, mod.id) });
 const { mutate: showFolder } = useMutation({ mutation: () => app.ShowFolder(mod.dir) });
@@ -113,8 +134,19 @@ function updateMonth(index: number, text: string): void {
     <div class="grid grid-cols-1 @2xl:grid-cols-2">
       <div class="flex flex-col border-b border-default @2xl:border-e @2xl:border-b-0">
         <section class="flex flex-col gap-3 border-b border-default px-5 py-4">
-          <h3 class="text-13 font-semibold">Folder</h3>
-          <FileSelector :path="mod.dir" :filter="[]" folder @update:path="update({ dir: $event })" />
+          <h3 class="text-13 font-semibold">Identity</h3>
+          <UFormField label="Name">
+            <UInput
+              :model-value="listing?.title"
+              :model-modifiers="{ lazy: true }"
+              :disabled="!listing"
+              class="w-full"
+              @update:model-value="rename(`${$event}`)"
+            />
+          </UFormField>
+          <UFormField label="Folder">
+            <FileSelector :path="mod.dir" :filter="[]" folder @update:path="update({ dir: $event })" />
+          </UFormField>
         </section>
 
         <section class="flex flex-col gap-3 border-b border-default px-5 py-4">
@@ -154,6 +186,7 @@ function updateMonth(index: number, text: string): void {
             <ModAvatar :mod="mod" size="3xl" />
             <div class="flex min-w-0 flex-col items-start gap-1.5">
               <span class="truncate font-mono text-12 text-toned">{{ mod.thumbnail || "No thumbnail" }}</span>
+              <span v-if="header" class="text-12 text-dimmed">{{ describePicture(header) }}</span>
               <UButton label="Change in Publish" :to="{ name: 'release', params: { id: workspaceId } }" />
             </div>
           </div>
@@ -223,13 +256,22 @@ function updateMonth(index: number, text: string): void {
               :to="{ name: 'release', params: { id: workspaceId } }"
             />
           </div>
-          <div class="flex gap-2">
-            <UInput :model-value="mod.workshopId" readonly placeholder="Not published" class="grow font-mono" />
-            <UButton label="Unlink" variant="ghost" :disabled="!mod.workshopId" @click="update({ workshopId: '' })" />
-          </div>
-          <p v-if="listing?.descriptionPath" class="text-12 text-dimmed">
-            The description comes from {{ listing.descriptionPath }}.
-          </p>
+          <UFormField label="Workshop item">
+            <div v-if="listing?.workshopId" class="flex gap-2">
+              <UInput :model-value="listing.workshopId" readonly class="grow font-mono" />
+              <UButton label="Unlink" color="error" variant="ghost" :loading="linking" @click="link('')" />
+            </div>
+            <form v-else class="flex gap-2" @submit.prevent="link(item)">
+              <UInput v-model="item" placeholder="The item's id or its Workshop address" class="grow font-mono" />
+              <UButton type="submit" label="Link" :disabled="!listing || !item.trim()" :loading="linking" />
+            </form>
+          </UFormField>
+          <UFormField label="Description">
+            <span v-if="listing?.descriptionPath" class="block truncate font-mono text-12 text-toned">
+              {{ listing.descriptionPath }}
+            </span>
+            <DescriptionSource v-if="!mod.broken" :mod-id="mod.id" />
+          </UFormField>
         </section>
 
         <section class="flex flex-col gap-2 border-b border-default px-5 py-4">
@@ -257,13 +299,15 @@ function updateMonth(index: number, text: string): void {
         <section class="flex flex-col gap-3 px-5 py-4">
           <h3 class="flex items-baseline gap-2.5 text-13 font-semibold">
             Upload exclusions
-            <span class="text-12 font-normal text-dimmed">Gitignore patterns, one per line</span>
+            <span v-if="upload" class="text-12 font-normal text-dimmed">
+              {{ plural(upload.excluded?.length ?? 0, "file") }} left out of uploads
+            </span>
           </h3>
           <UTextarea
             :model-value="mod.ignore"
             :model-modifiers="{ lazy: true }"
             :rows="6"
-            placeholder="gfx/source/**"
+            placeholder="Gitignore patterns, one per line, such as gfx/source/**"
             class="w-full font-mono"
             @update:model-value="update({ ignore: `${$event}` })"
           />

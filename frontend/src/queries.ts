@@ -68,6 +68,10 @@ export const gamesQuery = defineQueryOptions({
   query: () => workspace.ListGames(),
 });
 export const installsQuery = defineQueryOptions({ key: keys.installs, query: () => workspace.ListInstalls() });
+export const readyInstallsQuery = defineQueryOptions({
+  key: [...keys.installs, "ready"],
+  query: () => workspace.ListReadyInstalls(),
+});
 export const detectedInstallsQuery = defineQueryOptions((gameId: string) => ({
   key: ["workspace", "detected", gameId],
   query: () => workspace.DetectInstalls(gameId),
@@ -141,9 +145,9 @@ export const texturesQuery = defineQueryOptions((role: string) => ({
   query: () => draw.ListTextures(role),
 }));
 export const framesQuery = defineQueryOptions({ key: ["draw", "frames"], query: () => draw.ListFrames() });
-export const picturesQuery = defineQueryOptions((list: PictureList) => ({
-  key: ["draw", "pictures", list.database, list.name, list.type, list.field, list.argument, list.folder],
-  query: () => draw.ListPictures(list),
+export const picturesQuery = defineQueryOptions(({ path, list }: { path: string; list: PictureList }) => ({
+  key: ["draw", "pictures", path, list.database, list.name, list.type, list.field, list.argument, list.folder],
+  query: () => draw.ListPictures(path, list),
 }));
 
 // Health
@@ -183,9 +187,10 @@ export const indentationQuery = defineQueryOptions((path: string) => ({
   key: [...keys.file(path), "indentation"],
   query: () => lsp.DescribeIndentation(path),
 }));
-export const inputsQuery = defineQueryOptions(({ path, line }: { path: string; line: number }) => ({
-  key: [...keys.file(path), "inputs", line],
-  query: () => lsp.ListInputs(path, line, 1),
+// a file's entries are read again with the Visual view's reads, each time the editor sends Go the file's text
+export const outlineQuery = defineQueryOptions((path: string) => ({
+  key: [...keys.draw(path), "outline"],
+  query: () => lsp.ListSymbols(path),
 }));
 export const symbolsQuery = defineQueryOptions((query: string) => ({
   key: ["lsp", "symbols", query],
@@ -211,9 +216,9 @@ export const graphDefaultsQuery = defineQueryOptions({
 });
 
 // search
-export const fileSearchQuery = defineQueryOptions((query: string) => ({
-  key: ["search", "files", query],
-  query: () => search.SearchFiles(query, 50),
+export const fileSearchQuery = defineQueryOptions(({ query, limit }: { query: string; limit: number }) => ({
+  key: ["search", "files", query, limit],
+  query: () => search.SearchFiles(query, limit),
 }));
 
 // the wiki
@@ -224,6 +229,10 @@ export const wikiPagesQuery = defineQueryOptions((path: string) => ({
 export const wikiPageQuery = defineQueryOptions((title: string) => ({
   key: [...keys.wiki, "page", title],
   query: () => wiki.ReadPage(title),
+}));
+export const wikiSearchQuery = defineQueryOptions((term: string) => ({
+  key: [...keys.wiki, "search", term],
+  query: () => wiki.SearchPages(term),
 }));
 export const notesQuery = defineQueryOptions({ key: [...keys.wiki, "notes"], query: () => wiki.ListNotes() });
 export const noteQuery = defineQueryOptions((version: string) => ({
@@ -289,4 +298,8 @@ export const steamStatusQuery = defineQueryOptions({ key: ["release", "steam"], 
 export const bbcodeQuery = defineQueryOptions((markdown: string) => ({
   key: ["release", "bbcode", markdown],
   query: () => steam.ToBBCode(markdown),
+}));
+export const htmlQuery = defineQueryOptions((bbcode: string) => ({
+  key: ["release", "html", bbcode],
+  query: () => steam.ToHTML(bbcode),
 }));

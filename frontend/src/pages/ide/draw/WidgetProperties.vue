@@ -16,7 +16,7 @@ import { useWorkspaceStore } from "../../../stores/workspace";
 import { applyEdits, openModel } from "../editor/models";
 import ChoiceGallery from "./ChoiceGallery.vue";
 import type { GalleryChoice } from "./ChoiceGallery.vue";
-import { TYPE_ICONS } from "./picture";
+import { listProperties, TYPE_ICONS } from "./picture";
 
 const { path, window } = defineProps<{ path: string; window: Window }>();
 
@@ -57,13 +57,15 @@ const { data: states } = useQuery(() => ({
   enabled: workspace.isOpen() && !!widget.value?.pictures,
 }));
 const pictureGroup = computed(() =>
-  states.value?.groups?.find((group) => group.pictures && group.readers?.includes(widget.value?.id ?? -1)),
+  window.groups?.find((group) => group.pictures && group.readers?.includes(widget.value?.id ?? -1)),
 );
 const { data: pictures } = useQuery(() => ({
-  ...picturesQuery(widget.value?.pictures ?? NO_PICTURES),
+  ...picturesQuery({ path, list: widget.value?.pictures ?? NO_PICTURES }),
   enabled: workspace.isOpen() && !!widget.value?.pictures,
 }));
-const picture = computed(() => pictureGroup.value?.picked || widget.value?.pictures?.shown || "");
+const picture = computed(
+  () => states.value?.values?.[pictureGroup.value?.id ?? ""] || widget.value?.pictures?.shown || "",
+);
 const pictureChoices = computed<GalleryChoice[]>(() => {
   const listed = (pictures.value ?? []).map(({ label, path: file, value }) => ({ value, label, path: file }));
   const key = widget.value?.pictures?.key ?? "";
@@ -73,8 +75,9 @@ const pictureChoices = computed<GalleryChoice[]>(() => {
 
 const filter = shallowRef("");
 const scope = shallowRef<"all" | "here">("all");
+const properties = computed(() => listProperties(window, widget.value?.properties ?? null));
 const rows = computed(() =>
-  (widget.value?.properties ?? [])
+  properties.value
     .map((property, ordinal) => ({ property, ordinal }))
     .filter(({ property }) => scope.value === "all" || property.origin === "widget")
     .filter(({ property }) => `${property.key} ${property.value}`.toLowerCase().includes(filter.value.toLowerCase())),
@@ -194,13 +197,13 @@ function toFileLabel(file: string): string {
       <UInput v-model="filter" icon="i-lucide-search" size="sm" placeholder="Filter properties" class="grow" />
       <UFieldGroup size="sm">
         <UButton
-          :label="`All ${widget.properties?.length ?? 0}`"
+          :label="`All ${properties.length}`"
           color="neutral"
           :variant="scope === 'all' ? 'soft' : 'outline'"
           @click="scope = 'all'"
         />
         <UButton
-          :label="`Written here ${(widget.properties ?? []).filter(({ origin }) => origin === 'widget').length}`"
+          :label="`Written here ${properties.filter(({ origin }) => origin === 'widget').length}`"
           color="neutral"
           :variant="scope === 'here' ? 'soft' : 'outline'"
           @click="scope = 'here'"

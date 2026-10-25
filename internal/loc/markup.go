@@ -28,6 +28,9 @@ type Segment struct {
 	Text     string      `json:"text"` // the piece without its markers: the key, the call, the format's name, the icon
 	Span     jomini.Span `json:"span"`
 	TextSpan jomini.Span `json:"textSpan"` // the span of Text inside the markers; empty where there is no text
+	// Kind is the kind of value a data call shows where Text holds a sample of it: number or text. It is "" for any
+	// other piece and for a call as written.
+	Kind string `json:"kind"`
 }
 
 // Segments splits a message's text into its pieces. The offset is where the text's first byte sits in its file, so

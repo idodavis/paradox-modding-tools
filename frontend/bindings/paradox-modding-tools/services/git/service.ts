@@ -59,8 +59,8 @@ export function ListCommits(dir: string, limit: number, refs: string[] | null): 
 }
 
 /**
- * ListRefs returns a repository's branches, remote branches and tags. The error is git's if the folder is in no
- * repository.
+ * ListRefs returns a repository's branches, remote branches and tags, each with the date of its commit. The error is
+ * git's if the folder is in no repository.
  */
 export function ListRefs(dir: string): $CancellablePromise<$models.Ref[] | null> {
     return $Call.ByID(135811164, dir);

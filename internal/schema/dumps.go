@@ -39,6 +39,7 @@ type Dumps struct {
 	OnActions map[string]OnAction
 	DataTypes map[string]DataType
 	WrittenAt time.Time // the oldest dump file's time
+	Folders   []string  // the folders the dump files were read from, each once
 }
 
 // yes is the term the dumps write for true.
@@ -86,8 +87,9 @@ func FindDumpsAt(dirs []string) (time.Time, error) {
 	return oldest, nil
 }
 
-// ReadDumps reads every dump file under the given folders. A missing file is left out, so the caller can fill it from
-// the shipped backup. It returns an error only for a file that exists and cannot be read.
+// ReadDumps reads every dump file under the given folders, and notes each folder a file was read from. A missing file
+// is left out, so the caller can fill it from the shipped backup. It returns an error only for a file that exists and
+// cannot be read.
 func ReadDumps(dirs []string) (*Dumps, error) {
 	dumpsAt, err := FindDumpsAt(dirs)
 	if err != nil {
@@ -98,11 +100,21 @@ func ReadDumps(dirs []string) (*Dumps, error) {
 		OnActions: map[string]OnAction{}, DataTypes: map[string]DataType{}, WrittenAt: dumpsAt,
 	}
 	for _, file := range dumpFiles {
-		text, err := loadDump(dirs, file)
+		path, _, err := findDump(dirs, file)
 		if err != nil {
 			return nil, err
 		}
-		dumps.parseFile(file, text)
+		if path == "" {
+			continue
+		}
+		text, err := files.ReadText(path)
+		if err != nil {
+			return nil, err
+		}
+		dumps.parseFile(file, text.Text)
+		if dir := filepath.Dir(path); !slices.Contains(dumps.Folders, dir) {
+			dumps.Folders = append(dumps.Folders, dir)
+		}
 	}
 	return dumps, nil
 }
@@ -122,17 +134,6 @@ func findDump(dirs []string, file string) (string, time.Time, error) {
 		return path, stat.ModTime(), nil
 	}
 	return "", time.Time{}, nil
-}
-
-// loadDump loads the text of the first file of the given base name that one of the folders holds. The text is ""
-// when no folder holds the file.
-func loadDump(dirs []string, file string) (string, error) {
-	path, _, err := findDump(dirs, file)
-	if path == "" || err != nil {
-		return "", err
-	}
-	text, err := files.ReadText(path)
-	return text.Text, err
 }
 
 // parseFile parses the text of one dump file into the dumps, by the file's base name.
@@ -364,7 +365,7 @@ func (schema *Schema) buildDumps(row *game.Game, installPath string) error {
 	}
 	backup, hasBackup := LoadShipped(row.ID)
 	filled := hasBackup && dumps.resolveMissing(backup)
-	state := SourceState{Origin: originNone, WrittenAt: dumps.WrittenAt}
+	state := SourceState{Origin: originNone, WrittenAt: dumps.WrittenAt, Folders: dumps.Folders}
 	switch {
 	case !dumps.WrittenAt.IsZero():
 		state.Origin = originInstall

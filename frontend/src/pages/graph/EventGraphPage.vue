@@ -6,7 +6,7 @@
 import { computed, onDeactivated, shallowRef, useTemplateRef, watch } from "vue";
 import { useQuery } from "@pinia/colada";
 import { refDebounced, useElementSize, useFullscreen, useLocalStorage } from "@vueuse/core";
-import { groupBy, xor } from "es-toolkit";
+import { groupBy, union, xor } from "es-toolkit";
 import { useRouter } from "vue-router";
 import type { Filter } from "@services/graph/models";
 import { plural } from "../../lib/format";
@@ -94,7 +94,7 @@ const facts = computed(() => [
     ? [
         {
           label: "Drawn",
-          value: `${count.value}${graph.value.truncated ? ", stopped at the node limit" : ""}${graph.value.deep ? ", the depth limit" : ""}`,
+          value: `${count.value}${graph.value.truncated ? ", stopped at the node limit" : ""}${graph.value.nodes?.some((node) => node.deep) ? ", the depth limit" : ""}`,
         },
       ]
     : []),
@@ -150,10 +150,11 @@ function draw(next: string): void {
   void router.replace({ query: { root: next } });
 }
 
-/** Selects the node with the given id. A fold is opened instead. */
+/** Selects the node with the given id. A fold is opened instead, and a node the depth stopped at is opened as well. */
 function select(nodeId: string): void {
-  if (!graph.value?.nodes?.find((node) => node.id === nodeId)?.count) selected.value = nodeId;
-  else update({ expand: [...(filter.value?.expand ?? []), nodeId] });
+  const node = graph.value?.nodes?.find((candidate) => candidate.id === nodeId);
+  if (!node?.count) selected.value = nodeId;
+  if (node?.count || node?.deep) update({ expand: union(filter.value?.expand ?? [], [nodeId]) });
 }
 
 /** Changes parts of the filter. Nothing changes until Go's defaults have arrived. */
@@ -293,7 +294,7 @@ function setNumber(key: "depth" | "limit", value: number | null | undefined): vo
           </div>
         </template>
       </UPopover>
-      <UTooltip text="Walk into scripted effects and triggers to find the events they fire">
+      <UTooltip text="Walk into scripted effects to find the events they fire">
         <UButton
           label="Follow macros"
           :icon="filter?.follow ? 'i-lucide-check' : undefined"
@@ -320,7 +321,7 @@ function setNumber(key: "depth" | "limit", value: number | null | undefined): vo
         <template #trailing><UKbd value="Esc" /></template>
       </UButton>
       <template v-else>
-        <UTooltip text="Fold every group you opened back into N more">
+        <UTooltip text="Fold back every group and every dashed node you opened">
           <UButton label="Collapse all" icon="i-lucide-fold-vertical" @click="update({ expand: [] })" />
         </UTooltip>
         <UButton icon="i-lucide-maximize-2" square aria-label="Full screen" @click="toggleFullscreen()" />

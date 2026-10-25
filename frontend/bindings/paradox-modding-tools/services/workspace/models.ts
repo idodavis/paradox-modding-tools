@@ -102,6 +102,17 @@ export interface Mod {
      * the upload exclusions, one pattern per line
      */
     "ignore": string;
+
+    /**
+     * DescriptionSource is where the Workshop description comes from: markdown, bbcode or steam, Steam's own text.
+     * "" takes the first description file the mod has, else Steam's own text.
+     */
+    "descriptionSource": string;
+
+    /**
+     * DescriptionFile is the path of the description's file from the mod's folder, or "" for its source's own file.
+     */
+    "descriptionFile": string;
     "descriptor": Descriptor;
 
     /**
@@ -186,4 +197,19 @@ export interface State {
     "mods": Mod[] | null;
     "language": string;
     "dumps": schema$0.SourceState;
+
+    /**
+     * how many effects the schema declares
+     */
+    "effects": number;
+
+    /**
+     * how many triggers the schema declares
+     */
+    "triggers": number;
+
+    /**
+     * how many scope types the schema declares
+     */
+    "scopes": number;
 }

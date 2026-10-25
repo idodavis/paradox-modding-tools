@@ -1,70 +1,67 @@
 /**
- * The git store: the selected repository, which defaults to the active file's mod or else the first mod that is a
- * repository, and the output lines git printed. The repository's state itself comes from the git queries.
+ * The git store: the git repositories of the workspace's mods, each its root with the mods it holds, in load order,
+ * and the lines git printed. For the session it also keeps the repository picked for the Graph, the folded sections
+ * and the commit box to focus. What a repository holds comes from the git queries.
  */
 import { defineStore } from "pinia";
 import { useQuery } from "@pinia/colada";
 import { Events } from "@wailsio/runtime";
-import { computed, shallowRef, watch } from "vue";
+import { groupBy } from "es-toolkit";
+import { computed, reactive, shallowRef, watch } from "vue";
 
+import type { Mod, Place } from "@services/workspace/models";
 import { loadQuery, repositoryQuery, stateQuery } from "../queries";
-import { useEditorStore } from "./editor";
 
 // the lines kept, the newest last
 const OUTPUT_LINES = 300;
 
 export const useGitStore = defineStore("git", () => {
-  const editor = useEditorStore();
   const { data: state } = useQuery(stateQuery);
-  // the repository the user picked, and the one the active file or the mods lead to
-  const selection = shallowRef("");
-  const fallback = shallowRef("");
+  /** Each repository of the workspace's mods: its root and the mods in it, in the load order of their first mod. */
+  const repositories = shallowRef<{ root: string; mods: Mod[] }[]>([]);
+  /** The root of the repository picked in the Graph's header, or "" until one is picked. */
+  const graphRoot = shallowRef("");
+  /** The roots of the repositories whose sections are folded. */
+  const folded = reactive(new Set<string>());
+  /** The root of the repository whose commit box takes the focus next, or "" when none is waiting. */
+  const commitTarget = shallowRef("");
   const lines = shallowRef<string[]>([]);
+  // a mod whose folder is missing has no repository to look for
+  const mods = computed(() => (state.value?.mods ?? []).filter((mod) => !mod.broken));
 
-  // the folders to look for a repository in, the best first: the active file's mod, then the workspace's mods
-  const folders = computed(() =>
-    [editor.activeFile()?.root, ...(state.value?.mods ?? []).filter((mod) => !mod.broken).map((mod) => mod.dir)].filter(
-      (dir): dir is string => !!dir,
-    ),
-  );
-
-  watch(
-    folders,
-    async (dirs, _previous, onCleanup) => {
-      let stale = false;
-      onCleanup(() => (stale = true));
-      for (const dir of dirs) {
-        const [root, isRepository] = (await loadQuery(repositoryQuery(dir))) ?? ["", false];
-        if (stale) return;
-        if (isRepository) {
-          fallback.value = root;
-          return;
-        }
-      }
-      fallback.value = "";
-    },
-    { immediate: true },
-  );
-  // a file of another mod shows that mod's repository again, whichever was picked
-  watch(
-    () => editor.activeFile()?.root,
-    () => (selection.value = ""),
-  );
+  watch(mods, listRepositories, { immediate: true });
 
   Events.On("git:output", ({ data }) => {
     lines.value = [...lines.value.slice(1 - OUTPUT_LINES), data];
   });
 
-  /** The selected repository's folder, or "" when none is selected. */
-  const repository = (): string => selection.value || fallback.value;
+  /**
+   * Looks for the repository of each of the workspace's mods again. Mods in the same repository share it, and a mod
+   * in none is left out.
+   */
+  async function listRepositories(): Promise<void> {
+    const order = mods.value;
+    const rows = await Promise.all(
+      order.map(async (mod) => {
+        const [root, isRepository] = (await loadQuery(repositoryQuery(mod.dir))) ?? ["", false];
+        return isRepository ? [{ mod, root }] : [];
+      }),
+    );
+    // the mods changed while git was asked, and the look for the new ones replaces this one
+    if (order !== mods.value) return;
+    const roots = groupBy(rows.flat(), (row) => row.root);
+    repositories.value = Object.entries(roots).map(([root, members]) => ({
+      root,
+      mods: members.map((row) => row.mod),
+    }));
+  }
 
-  /** Selects a repository by its folder. */
-  const select = (dir: string): void => {
-    selection.value = dir;
-  };
+  /** The root of the repository that holds a file's mod, or "" when the file is in no mod with a repository. */
+  const findRoot = (place: Place | null | undefined): string =>
+    repositories.value.find((one) => one.mods.some((mod) => mod.id === place?.origin))?.root ?? "";
 
   /** The lines git printed, newest last, from git:output. */
   const output = (): readonly string[] => lines.value;
 
-  return { repository, select, output };
+  return { repositories, graphRoot, folded, commitTarget, listRepositories, findRoot, output };
 });

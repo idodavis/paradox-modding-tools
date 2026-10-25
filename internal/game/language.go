@@ -43,6 +43,8 @@ type Keyword struct {
 	Blurb  string // the one line a hover card shows
 	// Weighted marks a keyword whose branches are weights: a branch's key is a number, and its chance is its share.
 	Weighted bool
+	// Preview marks a keyword whose block is shown in the tooltip and never run.
+	Preview bool
 }
 
 // AnyCall is the Caller of a block that resolves a call in every callable.
@@ -245,7 +247,7 @@ var Keywords = []Keyword{
 	{Key: "random", Shape: "effects", Class: "flow", Blurb: "Runs what is inside it with the chance given, else nothing."},
 	{Key: "random_list", Class: "flow", Blurb: "Picks one branch at random; each branch's number is its weight."},
 	{Key: "hidden_effect", Shape: "effects", Class: "display", Blurb: "Runs its effects without showing them in the tooltip."},
-	{Key: "show_as_tooltip", Shape: "effects", Class: "display", Blurb: "Shows its effects in the tooltip without running them."},
+	{Key: "show_as_tooltip", Shape: "effects", Class: "display", Blurb: "Shows its effects in the tooltip without running them.", Preview: true},
 	{Key: "custom_tooltip", Class: "display", Blurb: "Shows a text of your own in place of the tooltip of what is inside."},
 	{Key: "custom_description", Class: "display", Blurb: "Shows a text of your own in place of the generated description."},
 	{Key: "custom_label", Class: "display", Blurb: "Shows a text of your own in the tooltip, with this scope as its subject."},

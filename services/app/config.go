@@ -82,6 +82,7 @@ func SaveJSON(path string, value any) error {
 type Install struct {
 	ID        string    `json:"id"`
 	Game      string    `json:"game"`
+	Name      string    `json:"name"`
 	Path      string    `json:"path"`
 	Version   string    `json:"version"`
 	ScannedAt time.Time `json:"scannedAt"`
@@ -107,6 +108,11 @@ type Mod struct {
 	Calendar   Calendar `json:"calendar"`
 	WorkshopID string   `json:"workshopId"` // "" unpublished
 	Ignore     string   `json:"ignore"`     // the upload exclusions, one pattern per line
+	// DescriptionSource is where the Workshop description comes from: markdown, bbcode or steam, Steam's own text.
+	// "" takes the first description file the mod has, else Steam's own text.
+	DescriptionSource string `json:"descriptionSource"`
+	// DescriptionFile is the path of the description's file from the mod's folder, or "" for its source's own file.
+	DescriptionFile string `json:"descriptionFile"`
 }
 
 // A Workspace is one recorded workspace: a game install and the mods loaded with it, in load order.
@@ -277,21 +283,24 @@ var Catalog = []Setting{
 		Section: "visual", Workspace: true, Type: "number", Default: "3", Min: 1, Max: 20,
 		Help:  "How many times the Visual view draws the item of a data model.",
 		Words: "gui preview list repeat items"},
+	// A resolution of the Visual view is a size a game lays its interface out in: the screen divided by the GUI
+	// scale. The default is the size the game designs for. CK3 and Vic3 scale their main menu's 1920 by 1080 art to
+	// fit the screen (frontend_main.gui). EU5's files declare no size.
 	{Key: "draw.resolution.ck3", Label: "Resolution, CK3",
 		Section: "visual", Workspace: true, Type: "choice", Default: "1920x1080",
-		Choices: []string{"1920x1080", "2560x1440", "3840x2160"},
-		Help:    "The screen size the Visual view draws CK3's windows at.",
-		Words:   "gui preview screen size"},
+		Choices: []string{"1920x1080", "2560x1080", "1920x1200"},
+		Help:    "CK3's interface size: the screen divided by the GUI scale. 2560x1080 is ultrawide, 1920x1200 is 16:10.",
+		Words:   "gui preview screen size ultrawide aspect"},
 	{Key: "draw.resolution.vic3", Label: "Resolution, Vic3",
 		Section: "visual", Workspace: true, Type: "choice", Default: "1920x1080",
-		Choices: []string{"1920x1080", "2560x1440", "3840x2160"},
-		Help:    "The screen size the Visual view draws Vic3's windows at.",
-		Words:   "gui preview screen size"},
+		Choices: []string{"1920x1080", "2560x1080", "1920x1200"},
+		Help:    "Vic3's interface size: the screen divided by the GUI scale. 2560x1080 is ultrawide, 1920x1200 is 16:10.",
+		Words:   "gui preview screen size ultrawide aspect"},
 	{Key: "draw.resolution.eu5", Label: "Resolution, EU5",
 		Section: "visual", Workspace: true, Type: "choice", Default: "1920x1080",
-		Choices: []string{"1920x1080", "2560x1440", "3840x2160"},
-		Help:    "The screen size the Visual view draws EU5's windows at.",
-		Words:   "gui preview screen size"},
+		Choices: []string{"1920x1080", "2560x1080", "1920x1200"},
+		Help:    "EU5's interface size: the screen divided by the GUI scale. 2560x1080 is ultrawide, 1920x1200 is 16:10.",
+		Words:   "gui preview screen size ultrawide aspect"},
 }
 
 // A ConfigFile is config.json held in memory for every service. A missing file means a first run. A file that cannot be

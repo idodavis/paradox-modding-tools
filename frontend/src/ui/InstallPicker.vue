@@ -1,11 +1,11 @@
-<!-- The installs of one game: the added ones to pick, move or delete, and a way to add another. -->
+<!-- The installs of one game: the added ones with their scan, to pick, move or delete, and a way to add another. -->
 <script setup lang="ts">
 import { computed, shallowRef } from "vue";
 import { useMutation, useQuery } from "@pinia/colada";
 import { Dialogs } from "@wailsio/runtime";
 
-import { installLine } from "../lib/format";
-import { detectedInstallsQuery, gamesQuery, installsQuery } from "../queries";
+import { describeLexicon, installLine, toSentence } from "../lib/format";
+import { detectedInstallsQuery, installsQuery, readyInstallsQuery, stateQuery } from "../queries";
 import ConfirmModal from "./ConfirmModal.vue";
 import FileSelector from "./FileSelector.vue";
 import * as workspace from "@services/workspace/service";
@@ -15,25 +15,40 @@ const { gameId } = defineProps<{ gameId: string }>();
 
 const confirm = useOverlay().create(ConfirmModal);
 const folder = shallowRef("");
+const title = shallowRef("");
+const version = shallowRef("");
 
-const { data: games } = useQuery(gamesQuery);
 const { data: allInstalls } = useQuery(installsQuery);
+const { data: ready } = useQuery(readyInstallsQuery);
+const { data: state } = useQuery(stateQuery);
 const { data: detected } = useQuery(() => ({ ...detectedInstallsQuery(gameId), enabled: !!gameId }));
 const installs = computed(() => allInstalls.value?.filter((install) => install.game === gameId) ?? []);
-const items = computed(() => {
-  const shortName = games.value?.find((game) => game?.id === gameId)?.shortName ?? gameId;
-  return installs.value.map((install) => ({
+const items = computed(() =>
+  installs.value.map((install) => ({
     value: install.id,
-    label: installLine(shortName, install.version, install.scannedAt),
+    label: install.name,
     description: install.path,
-  }));
+    ready: isReady(install.id),
+  })),
+);
+// the picked install's version and scan; the counts are known only for the install of the open workspace
+const scanLine = computed(() => {
+  const install = installs.value.find((one) => one.id === installId.value);
+  if (!install) return "";
+  const line = `${toSentence(installLine("", install.version, install.scannedAt))}.`;
+  const open = state.value?.open && state.value.install.id === install.id ? state.value : undefined;
+  return open ? `${line} ${describeLexicon(open)}.` : line;
 });
 
+// Go fills an empty name with the game's and an empty version with the one the install's files say
 const { mutate: addInstall, isLoading: adding } = useMutation({
-  mutation: (path: string) => workspace.AddInstall(gameId, path),
+  mutation: (install: { path: string; name: string; version: string }) =>
+    workspace.AddInstall(gameId, install.path, install.name, install.version),
   onSuccess: (install) => {
     installId.value = install.id;
     folder.value = "";
+    title.value = "";
+    version.value = "";
   },
 });
 const { mutate: deleteInstall } = useMutation({ mutation: (id: string) => workspace.DeleteInstall(id) });
@@ -43,6 +58,11 @@ const { mutate: updateInstall } = useMutation({
     if (path) await workspace.UpdateInstall(id, path);
   },
 });
+
+/** isReady says whether an install's caches are saved, so its next open scans nothing. */
+function isReady(id: string): boolean {
+  return !!ready.value?.includes(id);
+}
 
 /** removeInstall asks before an install's record is deleted. Go refuses while a workspace uses the install. */
 async function removeInstall(id: string): Promise<void> {
@@ -71,6 +91,8 @@ async function removeInstall(id: string): Promise<void> {
         <template #label="{ item }">
           <span class="flex items-center gap-2">
             <span class="truncate text-13 font-medium">{{ item.label }}</span>
+            <UBadge v-if="item.ready" label="Cache ready" color="success" />
+            <UBadge v-else label="Not scanned" />
             <span class="grow" />
             <span @click.prevent>
               <UDropdownMenu
@@ -94,6 +116,9 @@ async function removeInstall(id: string): Promise<void> {
         </template>
       </URadioGroup>
       <p v-else class="text-12 text-dimmed">No installs added yet. Add one on the right.</p>
+      <span v-if="scanLine" class="flex items-center gap-1.5 text-12 text-toned">
+        <UIcon v-if="isReady(installId)" name="i-lucide-check" class="size-3.5 shrink-0 text-success" />{{ scanLine }}
+      </span>
     </div>
 
     <div class="flex min-w-0 flex-col gap-2.5">
@@ -106,11 +131,22 @@ async function removeInstall(id: string): Promise<void> {
             <span class="truncate font-mono text-12 text-dimmed">{{ install.path }}</span>
           </div>
           <UBadge v-if="installs.some((one) => one.path === install.path)" label="Added" />
-          <UButton v-else label="Add" :loading="adding" @click="addInstall(install.path)" />
+          <UButton
+            v-else
+            label="Add"
+            :loading="adding"
+            @click="addInstall({ path: install.path, name: install.name, version: install.version })"
+          />
         </div>
       </div>
       <UFormField label="Another folder">
         <FileSelector v-model:path="folder" folder :filter="[]" />
+      </UFormField>
+      <UFormField label="Name">
+        <UInput v-model="title" placeholder="Shown in the Library and the added installs" class="w-full" />
+      </UFormField>
+      <UFormField label="Version">
+        <UInput v-model="version" placeholder="Read from the install when left empty" class="w-full" />
       </UFormField>
       <div class="flex justify-end">
         <UButton
@@ -118,7 +154,7 @@ async function removeInstall(id: string): Promise<void> {
           icon="i-lucide-plus"
           :disabled="!folder"
           :loading="adding"
-          @click="addInstall(folder)"
+          @click="addInstall({ path: folder, name: title.trim(), version: version.trim() })"
         />
       </div>
     </div>

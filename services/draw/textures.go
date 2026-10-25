@@ -1,10 +1,12 @@
-// textures.go finds what a value shows: the image file that a path, an icon name or a data binding leads to, and the
-// shape drawn where none does. One library answers each, from the game's definitions, icon folders and defines.
+// textures.go finds what a value shows: the image file that a path, an icon name or a data binding leads to, the
+// shape drawn where none does, and the color that a binding of a definition's color leads to. One library answers
+// each, from the game's definitions, icon folders and defines.
 
 package draw
 
 import (
 	"bytes"
+	"cmp"
 	"image/png"
 	"maps"
 	"os"
@@ -15,6 +17,7 @@ import (
 
 	"github.com/samber/lo"
 
+	"paradox-modding-tools/internal/files"
 	"paradox-modding-tools/internal/game"
 	"paradox-modding-tools/internal/index"
 	"paradox-modding-tools/internal/jomini"
@@ -24,13 +27,15 @@ import (
 )
 
 // A library finds the pictures that the definitions of a session show. It keeps what it looks up as it first needs it:
-// the game's icon folders, the defines it has read, and the first definition of each list that shows a picture.
+// the game's icon folders, the defines it has read, and the first definition of each list that shows a picture or
+// writes a color.
 type library struct {
 	ws      *workspace.Session
 	mods    *index.Index
 	folders map[string]string      // the icon folders of the game, by the define that names each
 	defines map[string]string      // the defines read so far, by name; "" for one the game lacks
 	firsts  map[PictureList]string // the first definition that shows a list's picture, by the list; "" for none
+	colors  map[PictureList]string // the color of the first definition that writes a list's color; "" for none
 }
 
 // defineCall is the data call that reads a define, whose database lists the folders of the game's icons.
@@ -70,7 +75,7 @@ func (library *library) resolveBinding(call jomini.Call) string {
 			return file
 		}
 	}
-	return ""
+	return library.findLevelPicture(list)
 }
 
 // makePictureList returns what a picture binding under a key reads, as the list of the pictures it may draw, with the
@@ -105,8 +110,8 @@ func (library *library) makePictureList(key string, call jomini.Call) (PictureLi
 // name one, with the field the rest name. The longest parts are tried first, and at least one is left for the field.
 // Parts name an icon folder whose subfolders hold the image a quoted argument names
 // (GetGraphicalCultureTexture('top_header_bg') reads gfx/interface/graphical_cultures/<culture>/top_header_bg), else a
-// kind with a database, as resolveKind says, of which a quoted argument names a definition. It returns false where no
-// parts name a kind.
+// kind of level whose folder the defines name (GetPrestigeLevelTexture), else a kind with a database, as resolveKind
+// says, of which a quoted argument names a definition. It returns false where no parts name a kind.
 func (library *library) findKind(parts []string, object, argument string) (PictureList, bool) {
 	for end := len(parts) - 1; end > 0; end-- {
 		kind, field := strings.Join(parts[:end], " "), strings.Join(parts[end:], "_")
@@ -114,6 +119,9 @@ func (library *library) findKind(parts []string, object, argument string) (Pictu
 		list := PictureList{Type: kind, Field: field, Argument: argument, Folder: library.listIconFolders()[define]}
 		if define != "" && argument != "" && len(library.listFolderObjects(list)) > 0 {
 			return list, true
+		}
+		if library.findLevelFolder(kind) != "" {
+			return PictureList{Type: kind, Field: field}, true
 		}
 		kind, database, ok := library.resolveKind(parts[:end], object)
 		if !ok {
@@ -146,6 +154,42 @@ func (library *library) resolveKind(parts []string, object string) (kind, databa
 		return game.DescribeDefinition(targets[0], false), targets[0], true
 	}
 	return "", "", false
+}
+
+// findLevelFolder returns the folder that the defines name for the pictures of a kind of level
+// (game.GUI.Levels), PRESTIGE_LEVEL_PATH for a prestige level. It returns "" where the kind is no level or the game has
+// no such define.
+func (library *library) findLevelFolder(kind string) string {
+	words := strings.Fields(schema.ToPhrase(kind))
+	if len(words) < 2 || words[len(words)-1] != game.GUI.Levels.Word {
+		return ""
+	}
+	return strings.TrimSuffix(library.lookupDefine(toDefineWords(kind)+game.GUI.FolderDefineSuffix), "/")
+}
+
+// findLevelPicture returns the picture of a list that reads a kind of level: the first file in the folder of the
+// kind, in name order, that starts with the game's prefix and the kind's words before its last (icon_prestige_00 for
+// a prestige level). It returns "" where the list is of no level, or the folder has no such file.
+func (library *library) findLevelPicture(list PictureList) string {
+	folder := library.findLevelFolder(list.Type)
+	if folder == "" {
+		return ""
+	}
+	words := strings.Fields(schema.ToPhrase(list.Type))
+	prefix := game.GUI.Levels.Prefix + strings.Join(words[:len(words)-1], "_") + "_"
+	var candidates []files.File
+	for _, image := range library.mods.ListImages(folder + "/") {
+		rel := strings.ToLower(filepath.ToSlash(image.Rel))
+		if path.Dir(rel) == strings.ToLower(folder) && strings.HasPrefix(path.Base(rel), prefix) {
+			candidates = append(candidates, image)
+		}
+	}
+	if len(candidates) == 0 {
+		return ""
+	}
+	return slices.MinFunc(candidates, func(first, second files.File) int {
+		return cmp.Compare(strings.ToLower(first.Rel), strings.ToLower(second.Rel))
+	}).Path
 }
 
 // listFolderObjects returns the subfolders of a list's folder that hold the image its argument names, one per object,
@@ -226,15 +270,17 @@ func (library *library) findDefinedPicture(list PictureList, name string) (strin
 
 // listPictureDefines returns what the defines for a list's kind and field say of its pictures: <KIND>_<FIELD>_PATH,
 // the folder they are in, and <KIND>_<FIELD>_PREFIX and _SUFFIX, the start and the end of each file's name (CK3's
-// GOVERNMENT_TYPE_REALM_FRAME_SUFFIX, EU5's GOODS_ICON_PREFIX). Each is "" where the game has no such define, and all
-// are for a list that reads no field.
+// GOVERNMENT_TYPE_REALM_FRAME_SUFFIX, EU5's GOODS_ICON_PREFIX). A suffix the game writes under another stem is read
+// there (Game.GUISuffixStems). Each is "" where the game has no such define, and all are for a list that reads no
+// field.
 func (library *library) listPictureDefines(list PictureList) (folder, prefix, suffix string) {
 	if list.Field == "" {
 		return "", "", ""
 	}
 	stem := toDefineWords(list.Type) + "_" + strings.ToUpper(list.Field)
+	suffixStem := cmp.Or(library.ws.Game.GUISuffixStems[stem], stem)
 	return library.lookupDefine(stem + game.GUI.FolderDefineSuffix), library.lookupDefine(stem + game.GUI.PrefixDefineSuffix),
-		library.lookupDefine(stem + game.GUI.NameDefineSuffix)
+		library.lookupDefine(suffixStem + game.GUI.NameDefineSuffix)
 }
 
 // findPicture returns the image file of a definition: the first of the game's picture keys that its block writes, else
@@ -309,10 +355,15 @@ func (library *library) pickPicture(list PictureList, picked string) Choice {
 // database's definitions write the field the binding reads, the defines for the kind and the field say where its
 // pictures are, or the kind has an icon folder.
 func (library *library) canShowMany(list PictureList) bool {
-	database := library.ws.Schema.Databases[list.Database]
-	hasField := database != nil && database.Definition != nil && database.Definition.Children[list.Field] != nil
 	folder, prefix, suffix := library.listPictureDefines(list)
-	return hasField || library.findIconDefine(list.Type) != "" || folder+prefix+suffix != ""
+	return library.writesField(list) || library.findIconDefine(list.Type) != "" || folder+prefix+suffix != ""
+}
+
+// writesField reports whether the definitions of a list's database write the field its binding reads, as the game's
+// own files show.
+func (library *library) writesField(list PictureList) bool {
+	database := library.ws.Schema.Databases[list.Database]
+	return database != nil && database.Definition != nil && database.Definition.Children[list.Field] != nil
 }
 
 // lookupDefine returns the value of the define with the given name, as the game reads it, or "" if the game has none.
@@ -456,29 +507,48 @@ func toDefineWords(kind string) string {
 	return strings.ToUpper(strings.ReplaceAll(schema.ToPhrase(kind), " ", "_"))
 }
 
-// resolveBindings gives a widget the files that its pictures' bindings lead to, read through the data contexts the
-// widget reads in: [Trait.GetIcon] in a widget that reads [GetTrait('brave')] draws brave's icon, as
-// resolveListedPicture finds. No file is looked for a picture that only the running game draws, such as a portrait. A
-// picture that leads to no file gives its widget the shape of what it is of, as describePicture says, unless the
-// widget is a background, which only dresses its holder.
-func (resolver *resolver) resolveBindings(widget *Widget, context context) {
-	for _, property := range widget.Properties {
-		isPicture := property.Key == game.GUI.PortraitKey || property.Key == game.GUI.CoatKey ||
-			slices.Contains(game.GUI.PictureKeys, property.Key)
-		if !isPicture || property.Value == "" || widget.Textures[property.Key] != "" {
-			continue
-		}
+// resolveBindings gives one of a window's widgets what its data bindings lead to, read through the data contexts the
+// widget reads in: [Trait.GetIcon] in a widget that reads [GetTrait('brave')] draws brave's icon. A picture gets its
+// file, as resolvePicture finds it, and so does a mask that cuts the widget's picture to its shape
+// (game.GUI.MaskKeys), with no placeholder. A binding that returns a color (game.GUI.ColorType) gets the color of a
+// definition, as findColor finds it. Each data call in the widget's texts gets its sample, as sampleText makes it.
+func (resolver *resolver) resolveBindings(window *Window, widget *Widget, context context) {
+	schema := resolver.ws.Schema
+	for property := range window.listProperties(*widget) {
 		call, isCall := jomini.ParseBracketed(property.Value, 0)
 		if isCall {
-			call = context.reach(resolver.ws.Schema.ResolveMacro(call, context.latest))
+			call = context.expand(schema, call)
 		}
-		placeholder := resolver.ws.Game.FindPlaceholder(resolver.describePicture(property, call))
-		if isCall && !placeholder.Runtime {
+		isPicture := property.Key == game.GUI.PortraitKey || property.Key == game.GUI.CoatKey ||
+			slices.Contains(game.GUI.PictureKeys, property.Key)
+		function, _ := schema.FindFunction(call, "", len(call.Steps)-1)
+		switch {
+		case isPicture && property.Value != "" && widget.Textures[property.Key] == "":
+			resolver.resolvePicture(widget, property, call)
+		case slices.Contains(game.GUI.MaskKeys, property.Key) && len(call.Steps) > 0 && widget.Textures[property.Key] == "":
 			resolver.resolveListedPicture(widget, property.Key, call)
+		case function.Returns == game.GUI.ColorType:
+			if color := resolver.library.findColor(call); color != "" {
+				widget.Colors[property.Key] = color
+			}
 		}
-		if widget.Textures[property.Key] == "" && widget.Role != "skin" && widget.Placeholder == "" {
-			widget.Placeholder = placeholder.Shape
-		}
+	}
+	for key, text := range widget.Texts {
+		widget.Texts[key] = resolver.library.sampleText(text, context, window.listProperties(*widget))
+	}
+}
+
+// resolvePicture gives a widget the file that one of its pictures leads to, as resolveListedPicture finds it. The
+// binding is the zero call for a picture written as a path. No file is looked for a picture that only the running game
+// draws, such as a portrait. A picture that leads to no file gives its widget the shape of what it is of, as
+// describePicture says, unless the widget is a background, which only dresses its holder.
+func (resolver *resolver) resolvePicture(widget *Widget, property Property, call jomini.Call) {
+	placeholder := resolver.ws.Game.FindPlaceholder(resolver.describePicture(property, call))
+	if len(call.Steps) > 0 && !placeholder.Runtime {
+		resolver.resolveListedPicture(widget, property.Key, call)
+	}
+	if widget.Textures[property.Key] == "" && widget.Role != "skin" && widget.Placeholder == "" {
+		widget.Placeholder = placeholder.Shape
 	}
 }
 
@@ -529,7 +599,8 @@ func (resolver *resolver) resolveListedPicture(widget *Widget, key string, call 
 			return
 		}
 	}
-	if file, _ := library.findDefinedPicture(list, ""); file != "" {
+	file, _ := library.findDefinedPicture(list, "")
+	if file = cmp.Or(file, library.findLevelPicture(list)); file != "" {
 		widget.Textures[key] = file
 	}
 }
@@ -571,4 +642,64 @@ func listDefinitionImages(ws *workspace.Session, mods *index.Index, definition c
 		}
 	}
 	return lo.Uniq(append(images, conditional...))
+}
+
+// findColor returns the CSS color that a binding of a definition's color leads to. It is the color that the field the
+// binding reads (GetColor reads color) writes in the definition it names, else in the first definition of its kind
+// that writes one, as findFirstColor finds it. A binding that names a definition of its kind never takes another's
+// color. It returns "" if no definition writes one.
+func (library *library) findColor(call jomini.Call) string {
+	list, references := library.makePictureList("", call)
+	if list.Field == "" {
+		return ""
+	}
+	for _, reference := range references {
+		if color := library.findFieldColor(list, reference); color != "" {
+			return color
+		}
+	}
+	if slices.ContainsFunc(references, func(reference schema.Reference) bool { return reference.Database == list.Database }) {
+		return ""
+	}
+	return library.findFirstColor(list)
+}
+
+// findFirstColor returns the CSS color that the first definition of a list's database to write one writes in the
+// field the list reads, as listObjects lists them. It returns "" where the database's definitions never write the
+// field, as writesField says, or none of them writes a color there.
+func (library *library) findFirstColor(list PictureList) string {
+	if library.colors == nil {
+		library.colors = map[PictureList]string{}
+	}
+	color, known := library.colors[list]
+	if known || !library.writesField(list) {
+		return color
+	}
+	for _, reference := range library.listObjects(list) {
+		if color = library.findFieldColor(list, reference); color != "" {
+			break
+		}
+	}
+	library.colors[list] = color
+	return color
+}
+
+// findFieldColor returns the CSS color that one definition writes in the field a list reads: a color block, or the
+// name of a definition that is one, such as a named color. It returns "" if the game keeps no such definition or its
+// field is no color.
+func (library *library) findFieldColor(list PictureList, reference schema.Reference) string {
+	definition, ok := findKeptClause(library.ws, library.mods, reference)
+	if !ok {
+		return ""
+	}
+	field, ok := definition.tree.FindChild(definition.statement, list.Field)
+	if !ok {
+		return ""
+	}
+	if color := makeColor(clause{tree: definition.tree, statement: field}); color != "" {
+		return color
+	}
+	reference = schema.Reference{Name: definition.tree.Unquoted(definition.tree.Statements[field].Value)}
+	definition, ok = findKeptClause(library.ws, library.mods, reference)
+	return lo.Ternary(ok, makeColor(definition), "")
 }

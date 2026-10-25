@@ -1,14 +1,14 @@
 <!--
-  The next upload beside the last one: the listing's fields and the files an upload changes, each marked added,
-  changed or removed, and the one picked drawn as Steam has it beside the workspace's. Steam's side is the copy PMT
-  kept at the last upload, or Steam's own once downloaded.
+  The next upload beside the last one: the listing's fields, each marked same or changed, and the files an upload
+  changes, each marked added, changed or removed; the one picked is drawn as Steam has it beside the workspace's.
+  Steam's side is the copy PMT kept at the last upload, or Steam's own once downloaded.
 -->
 <script setup lang="ts">
 import { computed, shallowRef } from "vue";
 import { useQuery } from "@pinia/colada";
 
 import { day, plural, steamSentences } from "../../lib/format";
-import { comparedFileQuery } from "../../queries";
+import { comparedFileQuery, uploadQuery } from "../../queries";
 import CompareView from "../../ui/CompareView.vue";
 import type { Comparison, Listing } from "@services/steam/models";
 
@@ -28,26 +28,51 @@ const FIELDS: Record<string, { label: string; text: (one: Listing) => string }> 
   visibility: { label: "Visibility", text: (one) => one.visibility },
 };
 const STATUS = { added: "A", changed: "M", removed: "D" } as const;
-const STATUS_COLORS = { A: "text-success", M: "text-warning", D: "text-error" };
+const STATUS_COLORS = { "=": "text-dimmed", A: "text-success", M: "text-warning", D: "text-error" };
 const PANES = [
   { slot: "list", sizeUnit: "px" as const, defaultSize: 330, minSize: 240, maxSize: 560 },
   { slot: "compare" },
 ];
 
 const picked = shallowRef("");
-const rows = computed(() => [
-  ...(comparison.listing ?? []).map((field) => ({
+const { data: upload } = useQuery(() => uploadQuery(modId));
+const fieldRows = computed(() =>
+  Object.entries(FIELDS).map(([field, { label }]) => ({
     id: `field:${field}`,
-    label: FIELDS[field]?.label ?? field,
-    mark: "M" as const,
+    label,
+    mark: comparison.listing?.includes(field) ? ("M" as const) : ("=" as const),
     field,
   })),
-  ...(["added", "changed", "removed"] as const).flatMap((status) =>
-    (comparison[status] ?? []).map((rel) => ({ id: `file:${rel}`, label: rel, mark: STATUS[status], rel })),
+);
+const fileRows = computed(() =>
+  (["added", "changed", "removed"] as const).flatMap((status) =>
+    (comparison[status] ?? []).map((rel) => ({
+      id: `file:${rel}`,
+      label: rel,
+      mark: STATUS[status],
+      rel,
+    })),
   ),
+);
+const changes = computed(() => (comparison.listing?.length ?? 0) + fileRows.value.length);
+const groups = computed(() => [
+  {
+    label: "Listing",
+    summary: `${comparison.listing?.length ?? 0} of ${fieldRows.value.length} changed`,
+    rows: fieldRows.value,
+  },
+  {
+    label: "Files",
+    summary: `${fileRows.value.length} changed of ${upload.value?.files?.length ?? 0}`,
+    rows: fileRows.value,
+  },
 ]);
-const current = computed(() => rows.value.find((row) => row.id === picked.value) ?? rows.value[0]);
-const kept = computed(() => new Date(comparison.uploadedAt).getFullYear() > 1);
+const rows = computed(() => [...fieldRows.value, ...fileRows.value]);
+// the first change is drawn until a row is picked
+const current = computed(
+  () => rows.value.find((row) => row.id === picked.value) ?? rows.value.find((row) => row.mark !== "="),
+);
+const kept = computed(() => comparison.status === "same" || comparison.status === "changed");
 const { data: file } = useQuery(() => ({
   ...comparedFileQuery({ modId, rel: current.value && "rel" in current.value ? current.value.rel : "" }),
   enabled: !!current.value && "rel" in current.value,
@@ -74,7 +99,7 @@ const steamSide = computed(() =>
         <UBadge :label="`Steam v${comparison.last.version}`" color="info" size="sm" />
         <UIcon name="i-lucide-chevron-right" class="size-3.5" />
         <UBadge :label="`Workspace v${listing.version}`" color="success" size="sm" />
-        <span class="ms-2">{{ plural(rows.length, "difference") }}</span>
+        <span class="ms-2">{{ plural(changes, "difference") }}</span>
       </template>
       <span class="grow" />
       <span v-for="sentence in steamSentences(comparison.steam ?? null)" :key="sentence">{{ sentence }}</span>
@@ -83,7 +108,9 @@ const steamSide = computed(() =>
       PMT keeps a copy of what it uploads, and has none for this mod. Download Steam's copy to compare with it; Steam
       must be running.
     </p>
-    <p v-else-if="!rows.length" class="text-13 text-dimmed">Nothing differs: the next upload sends what Steam has.</p>
+    <p v-else-if="comparison.status === 'same'" class="text-13 text-dimmed">
+      Nothing differs: the next upload sends what Steam has.
+    </p>
     <USplitter
       v-else
       :items="PANES"
@@ -93,19 +120,28 @@ const steamSide = computed(() =>
       <template #list>
         <section class="flex min-h-0 min-w-0 flex-1 flex-col border-e border-default bg-muted">
           <div class="min-h-0 grow overflow-y-auto py-1.5">
-            <button
-              v-for="row in rows"
-              :key="row.id"
-              type="button"
-              class="flex h-7 w-full items-center gap-2 ps-3 pe-2.5 text-start text-12 text-toned hover:bg-elevated"
-              :class="{ 'bg-(--accent-soft) text-highlighted': row.id === current?.id }"
-              @click="picked = row.id"
-            >
-              <b class="w-3.5 shrink-0 text-center font-mono font-medium" :class="STATUS_COLORS[row.mark]">{{
-                row.mark
-              }}</b>
-              <span class="truncate" :class="{ 'font-mono': 'rel' in row }">{{ row.label }}</span>
-            </button>
+            <template v-for="(group, index) in groups" :key="group.label">
+              <div
+                class="flex h-7.5 items-center gap-2 px-3 text-11 font-semibold whitespace-nowrap text-toned"
+                :class="{ 'mt-2 border-t border-default pt-1': index }"
+              >
+                {{ group.label }}
+                <span class="font-normal text-dimmed">{{ group.summary }}</span>
+              </div>
+              <button
+                v-for="row in group.rows"
+                :key="row.id"
+                type="button"
+                class="flex h-7 w-full items-center gap-2 ps-3 pe-2.5 text-start text-12 text-toned hover:bg-elevated"
+                :class="{ 'bg-(--accent-soft) text-highlighted': row.id === current?.id }"
+                @click="picked = row.id"
+              >
+                <b class="w-3.5 shrink-0 text-center font-mono font-medium" :class="STATUS_COLORS[row.mark]">{{
+                  row.mark
+                }}</b>
+                <span class="truncate" :class="{ 'font-mono': 'rel' in row }">{{ row.label }}</span>
+              </button>
+            </template>
           </div>
           <p class="shrink-0 border-t border-default px-3 py-2.5 text-12 text-dimmed">{{ steamSide }}</p>
         </section>

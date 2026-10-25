@@ -1,4 +1,4 @@
-<!-- The Settings page: one section per part of the catalog, the mods' cards, and the appearance preview. -->
+<!-- The Settings page: a section per part of the catalog, the mods' cards, the theme preview and the shortcuts. -->
 <script setup lang="ts">
 import { computed, shallowRef, useTemplateRef, watch } from "vue";
 import { useRouter } from "vue-router";
@@ -6,6 +6,7 @@ import { useMutation, useQuery } from "@pinia/colada";
 import { useSortable } from "@vueuse/integrations/useSortable";
 import type { TabsItem } from "@nuxt/ui";
 
+import { COMMANDS } from "../../app/commands";
 import { TOOL_CHOICES } from "../../app/pages";
 import { describeDumps, describeLanguages } from "../../lib/format";
 import { languagesQuery, settingsCatalogQuery, stateQuery, workspacesQuery } from "../../queries";
@@ -40,9 +41,14 @@ const GROUPS = [
     label: "App",
     mark: "i-lucide-monitor",
     sub: "Every workspace on this computer",
-    sections: [{ value: "appearance", label: "Appearance" }],
+    sections: [
+      { value: "appearance", label: "Appearance" },
+      { value: "shortcuts", label: "Keyboard shortcuts" },
+    ],
   },
 ];
+/** The commands that have a keyboard shortcut, in the command table's order. */
+const SHORTCUTS = COMMANDS.filter((command) => command.kbds?.length);
 const HEADING = {
   ui: {
     trigger:
@@ -494,6 +500,29 @@ async function remove(): Promise<void> {
             <UButton label="Reset all to automatic" size="sm" :disabled="!custom" @click="resetColors()" />
           </div>
         </section>
+      </div>
+    </template>
+
+    <template #shortcuts>
+      <div class="flex h-full flex-col gap-4 overflow-y-auto px-8 py-6">
+        <div class="flex flex-col gap-0.5">
+          <h1 class="text-20">Keyboard shortcuts</h1>
+          <p class="text-13 text-dimmed">Every command with a shortcut. A shortcut works where its command applies.</p>
+        </div>
+        <div class="divide-y divide-default">
+          <div v-for="command in SHORTCUTS" :key="command.id" class="flex h-9 items-center gap-2.5 text-13">
+            <UIcon v-if="command.icon" :name="command.icon" class="size-4 shrink-0 text-dimmed" />
+            <span v-if="command.prefix" class="text-dimmed">{{ command.prefix }}</span>
+            <span class="min-w-0 grow truncate">{{ command.label }}</span>
+            <span class="flex shrink-0 gap-0.5">
+              <UKbd
+                v-for="(key, index) in command.kbds"
+                :key="index"
+                v-bind="typeof key === 'string' ? { value: key } : key"
+              />
+            </span>
+          </div>
+        </div>
       </div>
     </template>
   </UTabs>

@@ -77,6 +77,34 @@ func (wik *Service) FindPages(path string) ([]Summary, error) {
 	return pages, nil
 }
 
+// SearchPages returns the wiki's modding pages that hold the given text, letter case aside. The pages whose title
+// holds it come first, then those whose text holds it, each in the listing's order. A page that is not cached yet is
+// searched by its title alone, and an empty text matches every page. It returns an error if no workspace is open or
+// a refresh has not fetched the wiki's listing yet.
+func (wik *Service) SearchPages(term string) ([]Summary, error) {
+	ws, err := wik.Workspace.Session()
+	if err != nil {
+		return nil, err
+	}
+	client := wik.resolveClient(ws)
+	listing, ok := client.LoadListing()
+	if !ok {
+		return nil, errNoListing
+	}
+	term = strings.ToLower(term)
+	pages, rest := lo.FilterReject(listing.Pages, func(summary Summary, _ int) bool {
+		return strings.Contains(strings.ToLower(summary.Title), term)
+	})
+	return append(pages, lo.Filter(rest, func(summary Summary, _ int) bool {
+		page, ok := client.LoadPage(summary.Title)
+		if !ok {
+			return false
+		}
+		root, err := parseFragment(page.HTML)
+		return err == nil && strings.Contains(strings.ToLower(textOf(root)), term)
+	})...), nil
+}
+
 // resolveParent returns the version a hotfix belongs to: its major and minor numbers. It returns "" for a release.
 func resolveParent(version string) string {
 	minor := strings.TrimPrefix(semver.MajorMinor("v"+strings.TrimSuffix(version, ".X")), "v")

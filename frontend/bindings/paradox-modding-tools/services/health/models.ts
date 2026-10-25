@@ -104,13 +104,18 @@ export interface Report {
 }
 
 /**
- * A Section is one card of the Health page, with how many findings it holds.
+ * A Section is one card of the Health page, in its group, with how many findings it holds.
  */
 export interface Section {
     /**
      * contests, overrides, dependencies, dangling, localization, script, errorlog, overview
      */
     "id": string;
+
+    /**
+     * Group is the band of the Health page the card sits in: load order, files or beyond.
+     */
+    "group": string;
     "label": string;
     "note": string;
     "count": number;

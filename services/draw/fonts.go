@@ -22,14 +22,14 @@ type Font struct {
 	Path  string `json:"path"`
 }
 
-// findFonts returns every style of each font that the given widgets name, each with its file. A font the game does
-// not define, and a style whose file the workspace does not have, are left out.
-func findFonts(ws *workspace.Session, mods *index.Index, widgets []Widget) []Font {
+// findFonts returns every style of each font that the widgets of a window name, and of the font a text with none of
+// its own is drawn in (Window.TextFont), each with its file. A font the game does not define, and a style whose file
+// the workspace does not have, are left out.
+func findFonts(ws *workspace.Session, mods *index.Index, window *Window) []Font {
 	rules := game.GUI.Fonts
-	labels := lo.Uniq(lo.FilterMap(widgets, func(widget Widget, _ int) (string, bool) {
-		value := findProperty(widget.Properties, rules.Key).Value
-		return value, value != ""
-	}))
+	labels := lo.Uniq(lo.Compact(append(lo.Map(window.Widgets, func(widget Widget, _ int) string {
+		return findProperty(window.listProperties(widget), rules.Key).Value
+	}), window.TextFont)))
 	fonts := []Font{}
 	for _, label := range labels {
 		definition, ok := findKeptClause(ws, mods, schema.Reference{Database: rules.Database, Name: label})

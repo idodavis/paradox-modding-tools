@@ -57,6 +57,9 @@ type State struct {
 	Mods         []Mod              `json:"mods"`
 	Language     string             `json:"language"`
 	Dumps        schema.SourceState `json:"dumps"`
+	Effects      int                `json:"effects"`  // how many effects the schema declares
+	Triggers     int                `json:"triggers"` // how many triggers the schema declares
+	Scopes       int                `json:"scopes"`   // how many scope types the schema declares
 }
 
 // A Scanning is the data of the install:scanning event: a stage of the scan and the percent of its files done.
@@ -118,15 +121,42 @@ func (wsp *Service) ListGames() []*game.Game { return game.ListGames() }
 // ListInstalls returns every recorded install.
 func (wsp *Service) ListInstalls() []app.Install { return wsp.Config.Config().Installs }
 
+// ListReadyInstalls returns the ids of the recorded installs whose schema and index caches are saved for the install's
+// version and dumps, so their next open scans nothing. An install whose game is not supported, or whose dumps cannot
+// be listed, is left out.
+func (wsp *Service) ListReadyInstalls() []string {
+	return lo.FilterMap(wsp.Config.Config().Installs, func(install app.Install, _ int) (string, bool) {
+		row := game.LookupGame(install.Game)
+		if row == nil {
+			return "", false
+		}
+		folder, err := resolveCaches(wsp.Config.Dirs.Cache, row, install, wsp.Build)
+		if err != nil {
+			return "", false
+		}
+		_, schemaErr := os.Stat(filepath.Join(folder, schemaFile))
+		_, indexErr := os.Stat(filepath.Join(folder, indexFile))
+		return install.ID, schemaErr == nil && indexErr == nil
+	})
+}
+
 // DetectInstalls finds a game's installs on this machine.
 func (wsp *Service) DetectInstalls(gameID string) []game.DetectedInstall {
 	return game.FindInstalls(gameID)
 }
 
-// AddInstall records an install of the game with the given id in the given folder, reads its version and emits
-// config:changed for the installs.
-func (wsp *Service) AddInstall(gameID, path string) (app.Install, error) {
-	install := app.Install{ID: rand.Text(), Game: gameID, Path: path, Version: game.LoadGameVersion(gameID, path)}
+// AddInstall records an install of the game with the given id in the given folder, under the given name and version,
+// and emits config:changed for the installs. An install with no name is named after its game, and one with no version
+// gets the version its files say. It returns an error if the game is not supported.
+func (wsp *Service) AddInstall(gameID, path, name, version string) (app.Install, error) {
+	row := game.LookupGame(gameID)
+	if row == nil {
+		return app.Install{}, fmt.Errorf("the game %s is not supported", gameID)
+	}
+	install := app.Install{
+		ID: rand.Text(), Game: gameID, Name: cmp.Or(name, row.Name), Path: path,
+		Version: cmp.Or(version, game.LoadGameVersion(gameID, path)),
+	}
 	err := wsp.Config.Update("installs", func(records *app.Config) error {
 		records.Installs = append(records.Installs, install)
 		return nil
@@ -134,8 +164,8 @@ func (wsp *Service) AddInstall(gameID, path string) (app.Install, error) {
 	return install, err
 }
 
-// UpdateInstall moves an install's record to another folder and reads its version again. If the open workspace uses
-// the install, that workspace is opened again at once. It returns an error if the install is not recorded or the
+// UpdateInstall moves an install's record to another folder and resolves its version again. If the open workspace
+// uses the install, that workspace is opened again at once. It returns an error if the install is not recorded or the
 // folder does not exist.
 func (wsp *Service) UpdateInstall(id, path string) error {
 	if !files.IsFolder(path) {
@@ -147,7 +177,8 @@ func (wsp *Service) UpdateInstall(id, path string) error {
 			return fmt.Errorf("the install %s is not recorded", id)
 		}
 		install := &records.Installs[position]
-		install.Path, install.Version = path, game.LoadGameVersion(install.Game, path)
+		install.Path = path
+		install.Version = resolveVersion(*install)
 		return nil
 	})
 	if err == nil {
@@ -382,7 +413,7 @@ func (wsp *Service) CreateMod(workspaceID, dir, name, language string) (Mod, err
 	if err != nil {
 		return Mod{}, err
 	}
-	folder, err := createModFolder(row, resolveModDir(row, install, dir), name, game.LoadGameVersion(row.ID, install.Path))
+	folder, err := createModFolder(row, resolveModDir(row, install, dir), name, resolveVersion(install))
 	if err != nil {
 		return Mod{}, err
 	}
@@ -500,8 +531,9 @@ func (wsp *Service) Open(workspaceID string) {
 	}()
 }
 
-// updateInstall records the open session's version and index cache time on its install. It emits config:changed for
-// the installs when the record changes, and install:scanned when the scan time changes.
+// updateInstall records the version and the index cache's time of the open session's install. The version is the one
+// the install's files say; where they say none, the recorded one stays. It emits config:changed for the installs when
+// the record changes, and install:scanned when the scan time changes.
 func (wsp *Service) updateInstall(session *Session) error {
 	_, install, _, err := findRecords(wsp.Config.Config(), session.ID)
 	if err != nil {
@@ -511,7 +543,7 @@ func (wsp *Service) updateInstall(session *Session) error {
 	if err != nil {
 		return err
 	}
-	version, scannedAt := session.Schema.Version, stat.ModTime()
+	version, scannedAt := resolveVersion(install), stat.ModTime()
 	if install.Version != version {
 		session.updatedFrom = install.Version
 	}
@@ -582,7 +614,20 @@ func (wsp *Service) State() State {
 	return State{
 		Open: true, ID: session.ID, Game: session.Game, Install: install, InstallFound: files.IsFolder(install.Path),
 		UpdatedFrom: session.updatedFrom, Mods: mods, Language: session.Language, Dumps: session.Schema.Dumps,
+		Effects:  countDeclared(session.Schema, game.DeclaredEffect),
+		Triggers: countDeclared(session.Schema, game.DeclaredTrigger), Scopes: len(session.Schema.Scopes),
 	}
+}
+
+// countDeclared returns how many commands of a schema the given dump declares, such as the effects.
+func countDeclared(language *schema.Schema, declaration string) int {
+	count := 0
+	for _, command := range language.Commands {
+		if slices.Contains(command.Declared, declaration) {
+			count++
+		}
+	}
+	return count
 }
 
 // LookupMod returns the mod of the open workspace with the given id, as State gives it. It returns false if no

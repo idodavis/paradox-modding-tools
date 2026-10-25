@@ -4,6 +4,7 @@ import (
 	"path/filepath"
 	"strconv"
 	"strings"
+	"time"
 
 	"github.com/samber/lo"
 
@@ -80,25 +81,30 @@ func (git *Service) ReadStatus(dir string) (Status, error) {
 
 // A Ref is one branch, remote branch or tag.
 type Ref struct {
-	Name    string `json:"name"`
-	Type    string `json:"type"` // branch, remote, tag
-	Hash    string `json:"hash"`
-	Current bool   `json:"current"`
+	Name string `json:"name"`
+	Type string `json:"type"` // branch, remote, tag
+	Hash string `json:"hash"`
+	// Date is when the commit it points to was made, or when an annotated tag was. It is the zero time for a ref to
+	// an object with no date, such as a tag of a tree.
+	Date    time.Time `json:"date"`
+	Current bool      `json:"current"`
 }
 
-// ListRefs returns a repository's branches, remote branches and tags. The error is git's if the folder is in no
-// repository.
+// ListRefs returns a repository's branches, remote branches and tags, each with the date of its commit. The error is
+// git's if the folder is in no repository.
 func (git *Service) ListRefs(dir string) ([]Ref, error) {
-	stdout, err := git.Run(dir, "for-each-ref", "--format=%(refname)%00%(objectname)%00%(HEAD)")
+	stdout, err := git.Run(dir, "for-each-ref",
+		"--format=%(refname)%00%(objectname)%00%(creatordate:iso-strict)%00%(HEAD)")
 	if err != nil {
 		return nil, err
 	}
 	refs := []Ref{}
 	for line := range strings.Lines(stdout) {
 		fields := strings.Split(strings.TrimSuffix(line, "\n"), "\x00")
+		date, _ := time.Parse(time.RFC3339, fields[2])
 		for prefix, refType := range refTypes {
 			if name, ok := strings.CutPrefix(fields[0], prefix); ok {
-				refs = append(refs, Ref{Name: name, Type: refType, Hash: fields[1], Current: fields[2] == "*"})
+				refs = append(refs, Ref{Name: name, Type: refType, Hash: fields[1], Date: date, Current: fields[3] == "*"})
 			}
 		}
 	}

@@ -33,7 +33,7 @@ const { data: modDir } = useQuery(() => ({
 const { mutate: create, isLoading: creating } = useMutation({
   mutation: async () => {
     const mod = await workspace.CreateMod(workspaceId, folder.value, title.value.trim(), language.value ?? "");
-    if (description.value) await steam.CreateDescriptionFile(mod.id, "markdown");
+    if (description.value) await steam.SetDescriptionSource(mod.id, "markdown", "");
     if (description.value || thumbnail.value) {
       const listing = await steam.ReadListing(mod.id);
       await steam.WriteListing(mod.id, {

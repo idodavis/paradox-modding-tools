@@ -40,6 +40,11 @@ export interface Comparison {
      */
     "downloaded": boolean;
     "steam"?: Details | null;
+
+    /**
+     * the next upload against the item: new, unknown, same or changed
+     */
+    "status": string;
 }
 
 /**

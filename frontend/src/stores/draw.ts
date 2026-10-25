@@ -1,9 +1,10 @@
 /**
  * The draw store: what the Visual view remembers for the session, one record per file: the drawn drawable, the
  * selected and hovered widgets, the widgets outlined for a state, the widgets hidden for the session, the layers
- * checked for an action on several and the panel's tab, and the colors copied from a layer. The picks are kept per
- * workspace between sessions, shared by every window that asks the same thing, and so are the coat frame and the
- * backdrop. What Go answers (the window, the states, the coat) is read through queries and never stored here.
+ * checked for an action on several and the panel's tab, and the colors copied from a layer. Whether the panel is
+ * open is one choice for every file of the open workspace. The picks are kept per workspace between sessions,
+ * shared by every window that asks the same thing, and so are the coat frame and the backdrop. What Go answers (the
+ * window, the states, the coat) is read through queries and never stored here.
  */
 import { useLocalStorage } from "@vueuse/core";
 import { Range } from "monaco-editor";
@@ -40,6 +41,8 @@ export const useDrawStore = defineStore("draw", () => {
   const backdrop = useLocalStorage("pmt.draw.backdrop", "dark");
   /** The colors copied from a layer, each as a coat writes it, by the key of its slot. */
   const colors = shallowRef<Record<string, string>>({});
+  /** Whether the panel beside the picture is open. It starts closed, and closes again when another workspace opens. */
+  const isPanelOpen = shallowRef(false);
   // by workspace: the value picked for each group, by the group's ID
   const saved = useLocalStorage<Record<string, Record<string, string>>>("pmt.draw.picks", {});
   /** The open workspace's picks, by the ID of each group. */
@@ -47,7 +50,10 @@ export const useDrawStore = defineStore("draw", () => {
 
   watch(
     () => workspace.activeId(),
-    () => files.clear(),
+    () => {
+      files.clear();
+      isPanelOpen.value = false;
+    },
   );
 
   /** A file's record. The record is made on the first ask, and changing it changes what every reader sees. */
@@ -132,6 +138,7 @@ export const useDrawStore = defineStore("draw", () => {
     frame,
     backdrop,
     colors,
+    isPanelOpen,
     picks,
     file,
     select,

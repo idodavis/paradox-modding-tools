@@ -6,6 +6,9 @@
 import * as game$0 from "../../internal/game/models.js";
 // eslint-disable-next-line @typescript-eslint/ban-ts-comment
 // @ts-ignore: Unused imports
+import * as loc$0 from "../../internal/loc/models.js";
+// eslint-disable-next-line @typescript-eslint/ban-ts-comment
+// @ts-ignore: Unused imports
 import * as lsp$0 from "../lsp/models.js";
 // eslint-disable-next-line @typescript-eslint/ban-ts-comment
 // @ts-ignore: Unused imports
@@ -27,14 +30,16 @@ export interface Blend {
 }
 
 /**
- * A Choice is the value that the picks give one property of a widget, with the text or the image file it leads to
- * where its key writes a text or names a picture.
+ * A Choice is the value that the picks give one property of a widget, with what it leads to: the text where its key
+ * writes a text, the image file where it names a picture, and the CSS color where it binds a definition's color. The
+ * text is as Widget.Texts holds one.
  */
 export interface Choice {
     "key": string;
     "value": string;
-    "text"?: string;
+    "text"?: loc$0.Segment[] | null;
     "texture"?: string;
+    "color"?: string;
 }
 
 /**
@@ -125,9 +130,10 @@ export interface Group {
     "captions"?: { [_ in string]?: string } | null;
 
     /**
-     * the value it has now
+     * Picked is the option a coat's list draws now. A window's group leaves it empty, since its value is the states'
+     * (States.Values).
      */
-    "picked": string;
+    "picked"?: string;
 
     /**
      * a press of a widget of the window sets it
@@ -290,7 +296,11 @@ export interface Overlay {
      * the image file for its texture; "" if there is none
      */
     "path": string;
-    "properties": Property[] | null;
+
+    /**
+     * the positions of its properties among its window's properties
+     */
+    "properties": number[] | null;
 }
 
 /**
@@ -391,6 +401,15 @@ export interface Recolor {
 }
 
 /**
+ * A Row is one row that a data model's list draws for one definition of the database its widgets read: the
+ * definition, and the values it gives the properties of the widgets in the row, by widget.
+ */
+export interface Row {
+    "definition": string;
+    "choices": { [_ in `${number}`]?: Choice[] | null } | null;
+}
+
+/**
  * A Shading is the texture that shades the cloth of a coat, with how it lies over the coat and its emblems.
  */
 export interface Shading {
@@ -415,9 +434,10 @@ export interface Shading {
  */
 export interface States {
     /**
-     * what the panel offers, each with its value
+     * Values is, by group, the value each of the window's groups is at. A list of pictures or a tier that no pick sets
+     * is left out.
      */
-    "groups": Group[] | null;
+    "values": { [_ in string]?: string } | null;
 
     /**
      * the IDs of the widgets that the values hide
@@ -429,11 +449,6 @@ export interface States {
      * decides none is left out.
      */
     "applies": { [_ in string]?: number[] | null } | null;
-
-    /**
-     * Conditions is, by widget, the conditions it is shown on, as written. A widget shown on none is left out.
-     */
-    "conditions": { [_ in `${number}`]?: string[] | null } | null;
 
     /**
      * Choices is, by widget, the values that the values of the groups give its properties. A widget given none is
@@ -461,6 +476,12 @@ export interface Widget {
     "row": game$0.WidgetType;
 
     /**
+     * Builtin is the engine's type that its type comes down to through the chain of types it is made on, such as
+     * widget, hbox or icon.
+     */
+    "builtin": string;
+
+    /**
      * TypeDefined is true when a file defines its type, which can then be opened; a built-in type is not defined.
      */
     "typeDefined": boolean;
@@ -479,17 +500,28 @@ export interface Widget {
      * it is an item of a data model
      */
     "item": boolean;
-    "properties": Property[] | null;
 
     /**
-     * by property key; a data binding shows as […]
+     * Properties is the positions of its properties among its window's properties: the last written of each key, in
+     * the order the keys are first written.
      */
-    "texts": { [_ in string]?: string } | null;
+    "properties": number[] | null;
+
+    /**
+     * Texts is, by property key, the plain text and the data calls of each text it shows. A data call's text is
+     * sample text of the kind the call returns, as sampleCall makes it.
+     */
+    "texts": { [_ in string]?: loc$0.Segment[] | null } | null;
 
     /**
      * by property key; the image file for the property's path
      */
     "textures": { [_ in string]?: string } | null;
+
+    /**
+     * Colors is, by property key, the CSS color that a binding of a definition's color leads to, as findColor finds it.
+     */
+    "colors": { [_ in string]?: string } | null;
 
     /**
      * Placeholder is the shape among the page's placeholders that it draws where its picture has no file, by what the
@@ -502,7 +534,11 @@ export interface Widget {
      * binding as written. It draws the first of them; nil means no list.
      */
     "pictures"?: PictureList | null;
-    "overlays": Overlay[] | null;
+
+    /**
+     * the positions of the textures laid over its own among its window's overlays
+     */
+    "overlays": number[] | null;
     "range": lsp$0.Range;
 
     /**
@@ -534,4 +570,40 @@ export interface Window {
      * every style of the fonts its widgets name
      */
     "fonts": Font[] | null;
+
+    /**
+     * Rows is, by the item of a data model, the rows its list draws, one for each of the first definitions of the
+     * database its widgets read. An item whose widgets read none is left out.
+     */
+    "rows": { [_ in `${number}`]?: Row[] | null } | null;
+
+    /**
+     * Conditions is, by widget, the conditions it is shown on, as written. A widget shown on none is left out.
+     */
+    "conditions": { [_ in `${number}`]?: string[] | null } | null;
+
+    /**
+     * Groups is what the panel lets the user switch: the groups its widgets' conditions read, its lists of pictures,
+     * then its tiers. The value each is at is the states' (States.Values).
+     */
+    "groups": Group[] | null;
+
+    /**
+     * TextFont and TextSize are the font and the size, as written, that the game's own type of a text writes
+     * (game.GUI.Fonts.TextType), which a text with neither of its own is drawn in. Each is "" where that type writes
+     * none.
+     */
+    "textFont": string;
+    "textSize": string;
+
+    /**
+     * Properties is the properties of its widgets, its holders and their overlays, each once. A widget and an overlay
+     * hold the positions of their own.
+     */
+    "properties": Property[] | null;
+
+    /**
+     * Overlays is the textures laid over its widgets' own, each once. A widget holds the positions of its own.
+     */
+    "overlays": Overlay[] | null;
 }

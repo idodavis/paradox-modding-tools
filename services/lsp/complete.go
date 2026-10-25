@@ -1,6 +1,7 @@
 package lsp
 
 import (
+	"cmp"
 	"maps"
 	"slices"
 	"strings"
@@ -128,13 +129,19 @@ func (visitor *completeVisitor) Enter(tree *jomini.Tree, statement int32, contex
 // Leave does nothing.
 func (visitor *completeVisitor) Leave(tree *jomini.Tree, statement int32, context *schema.Context) {}
 
-// listKeys returns the keys a block takes: the language's operators that fit it, then its commands, then its fields.
-// A key listed twice is kept once, as the first kind.
+// listKeys returns the keys a block takes: the language's operators that fit it, then its commands, then its fields,
+// each kind ranked above the next. A key listed twice is kept once, as the first kind.
 func listKeys(schema *schema.Schema, holder *schema.Context) []Completion {
 	fields := listFields(holder)
-	top := lo.MaxBy(fields, func(first, second Completion) bool { return first.Rank > second.Rank }).Rank
-	candidates := slices.Concat(listOperators(schema.Commands, holder, top+1), listCommands(schema.Commands, holder), fields)
+	commands := listCommands(schema.Commands, holder, findTopRank(fields)+1)
+	operators := listOperators(schema.Commands, holder, findTopRank(commands)+1)
+	candidates := slices.Concat(operators, commands, fields)
 	return lo.UniqBy(candidates, func(candidate Completion) string { return candidate.Label })
+}
+
+// findTopRank returns the highest rank among some candidates, or 0 if there are none.
+func findTopRank(candidates []Completion) int {
+	return lo.MaxBy(candidates, func(first, second Completion) bool { return first.Rank > second.Rank }).Rank
 }
 
 // listFields returns the keys of a block's field in alphabetical order. It returns nil if the block has no field.
@@ -156,25 +163,29 @@ func listFields(holder *schema.Context) []Completion {
 	return fields
 }
 
-// listOperators returns the keys of the language that fit a block, each with the given rank. A key that is written
-// with a block is inserted with one.
-func listOperators(commands map[string]*schema.Command, holder *schema.Context, rank int) []Completion {
-	operators := []Completion{}
-	for _, keyword := range game.Keywords {
+// listOperators returns the keys of the language that fit a block, ranked above the given floor. They come grouped
+// by class, the classes in the order they first come in game.Keywords and each class's keys in the table's order. A
+// key that is written with a block is inserted with one.
+func listOperators(commands map[string]*schema.Command, holder *schema.Context, floor int) []Completion {
+	fitting := lo.Filter(game.Keywords, func(keyword game.Keyword, _ int) bool {
+		return !strings.ContainsAny(keyword.Key, "/*<") && isOperatorFit(keyword, commands[keyword.Key], holder)
+	})
+	classes := lo.Uniq(lo.Map(fitting, func(keyword game.Keyword, _ int) string { return keyword.Class }))
+	slices.SortStableFunc(fitting, func(first, second game.Keyword) int {
+		return cmp.Compare(slices.Index(classes, first.Class), slices.Index(classes, second.Class))
+	})
+	return lo.Map(fitting, func(keyword game.Keyword, position int) Completion {
 		command := commands[keyword.Key]
-		if strings.ContainsAny(keyword.Key, "/*<") || !isOperatorFit(keyword, command, holder) {
-			continue
-		}
 		var claim *schema.Field
 		if holder.Field != nil {
 			claim = holder.Field.Children[keyword.Key]
 		}
 		block := isBlockShape(keyword.Shape) || isBlockField(claim) || command != nil && isBlockCommand(command)
-		operators = append(operators, makeKey(Completion{
-			Label: keyword.Key, Category: schema.CategoryKeyword, Detail: keyword.Class, Blurb: keyword.Blurb, Rank: rank,
-		}, block))
-	}
-	return operators
+		return makeKey(Completion{
+			Label: keyword.Key, Category: schema.CategoryKeyword, Detail: keyword.Class, Blurb: keyword.Blurb,
+			Rank: floor + len(fitting) - 1 - position,
+		}, block)
+	})
 }
 
 // isBlockShape reports whether the given shape can only be written as a block. A value or unknown shape may be plain.
@@ -202,8 +213,9 @@ func isOperatorFit(keyword game.Keyword, command *schema.Command, holder *schema
 	return len(game.Shapes[holder.Shape].Allows) > 0
 }
 
-// listCommands returns the commands a block takes, in alphabetical order.
-func listCommands(commands map[string]*schema.Command, holder *schema.Context) []Completion {
+// listCommands returns the commands a block takes, in alphabetical order. Each is ranked above the given floor by how
+// often the game writes it in the block's field.
+func listCommands(commands map[string]*schema.Command, holder *schema.Context, floor int) []Completion {
 	var candidates []Completion
 	for _, key := range slices.Sorted(maps.Keys(commands)) {
 		command := commands[key]
@@ -211,8 +223,13 @@ func listCommands(commands map[string]*schema.Command, holder *schema.Context) [
 		if !ok || command.Wild {
 			continue
 		}
+		rank := floor
+		if holder.Field != nil && holder.Field.Children[key] != nil {
+			rank += holder.Field.Children[key].Vanilla.Count
+		}
 		candidates = append(candidates, makeKey(Completion{
 			Label: key, Category: schema.CategoryCommand, Detail: declaredLabels[declaration], Blurb: command.Blurb,
+			Rank: rank,
 		}, isBlockCommand(command)))
 	}
 	return candidates

@@ -3,12 +3,11 @@
 import { computed, shallowRef, useTemplateRef, watch } from "vue";
 import { useEventListener, useLocalStorage } from "@vueuse/core";
 import { Browser } from "@wailsio/runtime";
-import { editor } from "monaco-editor/editor/editor.api";
 
 import type { Page } from "@services/wiki/models";
 
-import { useSettingsStore } from "../stores/settings";
 import FindBox from "./FindBox.vue";
+import ScriptSnippet from "./ScriptSnippet.vue";
 
 const { page } = defineProps<{ page: Page }>();
 
@@ -21,7 +20,6 @@ const LEVELS: Record<number, string> = {
 };
 const MARKED = ["bg-(--accent-soft)", "rounded-sm", "ring-1", "ring-primary"];
 
-const settings = useSettingsStore();
 const body = useTemplateRef("body");
 const content = useTemplateRef("content");
 const contents = useTemplateRef("contents");
@@ -30,7 +28,9 @@ const contentsHidden = useLocalStorage("pmt.wiki.contentsHidden", false);
 const headings = shallowRef<HTMLElement[]>([]);
 const blocks = shallowRef<HTMLElement[]>([]);
 const active = shallowRef(-1);
-const texts = computed(() => blocks.value.map((block) => block.textContent ?? ""));
+const texts = shallowRef<string[]>([]);
+// the article's code blocks, each with its text, which a snippet draws inside it
+const codeBlocks = shallowRef<{ pre: HTMLElement; text: string }[]>([]);
 const panes = computed(() => [
   ...(headings.value.length && !contentsHidden.value
     ? [{ id: "toc", slot: "toc", order: 1, sizeUnit: "px" as const, defaultSize: 180, minSize: 160, maxSize: 320 }]
@@ -45,17 +45,15 @@ watch(
     const root = content.value;
     if (!root) return;
     clear();
-    root.querySelectorAll("pre").forEach((pre) => void paint(pre));
     headings.value = [...root.querySelectorAll<HTMLElement>("h1, h2, h3, h4")];
     blocks.value = [...root.querySelectorAll<HTMLElement>(BLOCKS)].filter((block) => !block.querySelector(BLOCKS));
+    texts.value = blocks.value.map((block) => block.textContent ?? "");
+    codeBlocks.value = [...root.querySelectorAll("pre")].map((pre) => ({ pre, text: pre.textContent ?? "" }));
+    // the snippets take the place of the code blocks' own text, which find has kept
+    for (const { pre } of codeBlocks.value) pre.replaceChildren();
     body.value?.scrollTo({ top: 0 });
     active.value = -1;
   },
-  { flush: "post" },
-);
-watch(
-  () => settings.theme(),
-  () => content.value?.querySelectorAll("pre").forEach((pre) => void paint(pre)),
   { flush: "post" },
 );
 useEventListener(body, "scroll", markActive, { passive: true });
@@ -63,12 +61,6 @@ useEventListener(body, "scroll", markActive, { passive: true });
 watch(active, (index) =>
   contents.value?.querySelector(`[data-heading="${index}"]`)?.scrollIntoView({ block: "nearest" }),
 );
-
-/** Colors a code block as script. */
-async function paint(pre: HTMLElement): Promise<void> {
-  pre.innerHTML = await editor.colorize(pre.textContent ?? "", "paradox-script", {});
-  pre.classList.add("code");
-}
 
 /** Marks the last heading that has scrolled past the top of the article. */
 function markActive(): void {
@@ -163,6 +155,13 @@ function follow(event: MouseEvent): void {
         <div ref="body" class="min-h-0 min-w-0 flex-1 overflow-x-hidden overflow-y-auto px-3.5 py-3 wrap-break-word">
           <!-- eslint-disable-next-line vue/no-v-html -- sanitized by Go -->
           <div ref="content" class="art max-w-none" @click="follow" v-html="page.html" />
+          <Teleport v-for="(codeBlock, index) in codeBlocks" :key="index" :to="codeBlock.pre">
+            <ScriptSnippet
+              :text="codeBlock.text"
+              language="paradox-script"
+              class="my-3 rounded-lg border border-default px-3 pb-1.5"
+            />
+          </Teleport>
         </div>
       </template>
     </USplitter>

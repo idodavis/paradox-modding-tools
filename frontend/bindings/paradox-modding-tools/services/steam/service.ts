@@ -41,15 +41,6 @@ export function CompareUpload(modID: string): $CancellablePromise<$models.Compar
 }
 
 /**
- * CreateDescriptionFile creates a mod's description file in the given source format, markdown or bbcode. It does
- * nothing if the mod has a description file already. It returns an error if the source is neither format or the
- * workspace has no such mod.
- */
-export function CreateDescriptionFile(modID: string, source: string): $CancellablePromise<void> {
-    return $Call.ByID(1084234134, modID, source);
-}
-
-/**
  * DescribeSteam returns why Steam cannot take an upload for the open workspace's game now, or "" if it can.
  */
 export function DescribeSteam(): $CancellablePromise<string> {
@@ -70,6 +61,16 @@ export function FetchItem(modID: string): $CancellablePromise<$models.Comparison
  */
 export function FetchPreviews(modID: string): $CancellablePromise<void> {
     return $Call.ByID(502807331, modID);
+}
+
+/**
+ * LinkItem links a mod to an existing Workshop item, named by its id or by the address of its Workshop page. The id
+ * is written into the mod's descriptor and its record. An empty text unlinks the mod, taking the id out of both. The
+ * item linked before loses PMT's kept copy, unless another mod still links it. It returns an error if the text names
+ * no Workshop item.
+ */
+export function LinkItem(modID: string, item: string): $CancellablePromise<void> {
+    return $Call.ByID(3880710777, modID, item);
 }
 
 /**
@@ -107,8 +108,8 @@ export function ListUpload(modID: string): $CancellablePromise<$models.Upload> {
 /**
  * Publish uploads a mod to the Workshop in a second copy of the app. The visibility is private, friends, public or
  * unlisted, or "" to keep the item's own. The steam:progress event reports each stage. For a mod with no item yet, the
- * new item's id is saved in the mod's record, even if the upload then fails. It returns an error if the visibility is
- * none of those or the upload fails.
+ * new item's id is saved in the mod's descriptor and its record, even if the upload then fails. It returns an error if
+ * the visibility is none of those or the upload fails.
  */
 export function Publish(modID: string, visibility: string): $CancellablePromise<void> {
     return $Call.ByID(2971821953, modID, visibility);
@@ -139,10 +140,29 @@ export function RemovePreview(modID: string, preview: $models.Preview): $Cancell
 }
 
 /**
+ * SetDescriptionSource sets where a mod's Workshop description comes from: markdown or bbcode, kept in the given
+ * file, or steam, Steam's own text, which uploads leave as it is. The file is a path inside the mod's folder, or ""
+ * for the source's own file in the workshop folder. A Markdown or BBCode file the mod lacks is made empty. It returns
+ * an error if the source is none of the three or the file is outside the mod's folder.
+ */
+export function SetDescriptionSource(modID: string, source: string, file: string): $CancellablePromise<void> {
+    return $Call.ByID(2031061721, modID, source, file);
+}
+
+/**
  * ToBBCode converts a Markdown text to Steam's BBCode.
  */
 export function ToBBCode(markdown: string): $CancellablePromise<string> {
     return $Call.ByID(4261456446, markdown);
+}
+
+/**
+ * ToHTML returns a BBCode text as the HTML that Steam draws it as. The text is escaped, so the HTML holds no element
+ * but those of Steam's tags. A tag Steam does not draw stays as text, and each line break is a break. A tag left open
+ * is closed where the browser closes it.
+ */
+export function ToHTML(bbcode: string): $CancellablePromise<string> {
+    return $Call.ByID(1647860818, bbcode);
 }
 
 /**
@@ -154,7 +174,8 @@ export function WriteIgnore(modID: string): $CancellablePromise<void> {
 
 /**
  * WriteListing writes a mod's listing back to its files: the descriptor's fields and the workshop folder's. It writes
- * only the files whose text differs from the current listing's.
+ * only the files whose text differs from the current listing's. A new Workshop id is written into the mod's record
+ * too, and "" takes it out of both.
  */
 export function WriteListing(modID: string, listing: $models.Listing): $CancellablePromise<void> {
     return $Call.ByID(4064273359, modID, listing);

@@ -5,11 +5,13 @@
  *
  * The protocol, each message a row:
  * | message        | from → to        | carries                                   |
- * | state          | any → all        | the window's name and what it holds       |
+ * | state          | any → all        | its name, what it holds, its active file  |
  * | tab-requested  | any → the holder | a tab's id the asker wants                |
  * | tab-handed     | holder → asker   | the tab with its unsaved text             |
  * | show           | any → one        | a place to show                           |
  * | page           | any → the main   | a route to show                           |
+ * | wiki           | any → the Wiki pane's | a page or lexicon entry to look up   |
+ * | command        | any → one        | a command for its IDE page to carry out   |
  * | results        | the searcher → all | one file's search hits                  |
  * | closing        | the closer → all | its tabs handed back before it closes     |
  *
@@ -17,9 +19,9 @@
  */
 import { defineStore } from "pinia";
 import { useMutation, useQueryCache } from "@pinia/colada";
-import { until, useBroadcastChannel, useEventListener } from "@vueuse/core";
+import { until, useBroadcastChannel, useEventBus, useEventListener, useLocalStorage } from "@vueuse/core";
 import { Events } from "@wailsio/runtime";
-import { computed, shallowReactive, watch } from "vue";
+import { computed, nextTick, shallowReactive, watch } from "vue";
 import { useRouter } from "vue-router";
 
 import * as app from "@services/app/service";
@@ -31,11 +33,20 @@ import { keys } from "../queries";
 import { useEditorStore, type Tab } from "./editor";
 import { useWorkspaceStore } from "./workspace";
 
-/** A window's name from its URL: `main`, or `page:<route>`, `editor:<n>`, `game`, `files:<folder>`, `panel`. */
+/** A window's name from its URL: `main`, or `page:<route>`, `editor:<n>`, `game`, `files:<folder>`, `panel`, `wiki`. */
 export type WindowName = string;
 
 /** What a window holds, announced on the shared channel. */
-export type WindowState = { name: WindowName; files: string[]; folders: string[]; page: string | null };
+export type WindowState = {
+  name: WindowName;
+  files: string[];
+  folders: string[];
+  page: string | null;
+  active: Place | null; // the place its active tab shows
+};
+
+/** What the editor looks up in the wiki: a page by its title, or a lexicon entry by its class and name. */
+export type WikiLookup = { title: string } | { class: string; name: string };
 
 /** A tab on its way to another window: the tab, its file's place and the unsaved text if any. */
 type HandedTab = { tab: Tab; place: Place; text: string | null };
@@ -46,6 +57,8 @@ type Message =
   | { type: "tab-handed"; from: WindowName; tabs: HandedTab[] }
   | { type: "show"; place: Place }
   | { type: "page"; path: string }
+  | { type: "wiki"; lookup: WikiLookup }
+  | { type: "command"; command: string }
   | { type: "closing"; from: WindowName; tabs: HandedTab[] };
 
 type Channel = ReturnType<typeof useBroadcastChannel<Message, Message>>;
@@ -63,6 +76,9 @@ export const useWindowsStore = defineStore("windows", () => {
   const shared = useBroadcastChannel<Message, Message>({ name: "pmt.windows" });
   const own = useBroadcastChannel<Message, Message>({ name: `pmt.window.${THIS_WINDOW}` });
   const links = new Map<WindowName, Channel>();
+  const commandBus = useEventBus<string>("pmt.command");
+  const wikiBus = useEventBus<WikiLookup>("pmt.wiki");
+  const wiki = useLocalStorage("pmt.ide.wiki", false);
   // ends when the last batch of handed tabs is open
   let received: Promise<void> = Promise.resolve();
 
@@ -100,13 +116,17 @@ export const useWindowsStore = defineStore("windows", () => {
     onSuccess: () => cache.invalidateQueries({ key: keys.windows }),
   });
 
-  /** What this window holds, as the others see it. */
-  const state = computed<WindowState>(() => ({
-    name: THIS_WINDOW,
-    files: [...new Set(editor.listTabs().map((tab) => parseTab(tab.id).key))],
-    folders: THIS_WINDOW.startsWith("files:") ? [THIS_WINDOW.slice("files:".length)] : [],
-    page: THIS_WINDOW.startsWith("page:") ? THIS_WINDOW.slice("page:".length) : null,
-  }));
+  /** What this window holds, as the others see it. The active file goes as a copy, since a message carries no proxy. */
+  const state = computed<WindowState>(() => {
+    const active = editor.activeFile();
+    return {
+      name: THIS_WINDOW,
+      files: [...new Set(editor.listTabs().map((tab) => parseTab(tab.id).key))],
+      folders: THIS_WINDOW.startsWith("files:") ? [THIS_WINDOW.slice("files:".length)] : [],
+      page: THIS_WINDOW.startsWith("page:") ? THIS_WINDOW.slice("page:".length) : null,
+      active: active ? { ...active } : null,
+    };
+  });
 
   watch(state, sendState, { immediate: true });
   useEventListener(shared.channel, "message", ({ data }: MessageEvent<Message>) => {
@@ -118,6 +138,8 @@ export const useWindowsStore = defineStore("windows", () => {
     else if (data.type === "tab-requested") sendTab(data.tab, data.from);
     else if (data.type === "show") editor.show(data.place);
     else if (data.type === "page") void router.push(data.path);
+    else if (data.type === "wiki") void showLookup(data.lookup);
+    else if (data.type === "command") void runCommand(data.command);
   });
   // the first close of a window waits for its tabs to go back to the main window
   Events.On("window:closing", ({ data }) => {
@@ -187,6 +209,20 @@ export const useWindowsStore = defineStore("windows", () => {
     }
   }
 
+  /** Shows the IDE page and opens its Wiki pane, then has the pane show a look-up. */
+  async function showLookup(lookup: WikiLookup): Promise<void> {
+    await showIde();
+    wiki.value = true;
+    await nextTick();
+    wikiBus.emit(lookup);
+  }
+
+  /** Shows the IDE page, then has it carry out a command. */
+  async function runCommand(command: string): Promise<void> {
+    await showIde();
+    commandBus.emit(command);
+  }
+
   /** Resolves the next editor window's name: the lowest number no window has. */
   function resolveEditor(): WindowName {
     let number = 1;
@@ -205,8 +241,8 @@ export const useWindowsStore = defineStore("windows", () => {
   };
 
   /**
-   * Opens a window on a page, an editor group, one tab, a folder, the panel or the game's files, or brings it to the
-   * front if it is open. A group's or a tab's tabs go to the new window.
+   * Opens a window on a page, an editor group, one tab, a folder, the panel, the Wiki pane or the game's files, or
+   * brings it to the front if it is open. A group's or a tab's tabs go to the new window.
    */
   const popOut = (what: {
     page?: string;
@@ -214,6 +250,7 @@ export const useWindowsStore = defineStore("windows", () => {
     tab?: string;
     folder?: string;
     panel?: true;
+    wiki?: true;
     game?: true;
   }): void => {
     let target: WindowName = "game";
@@ -221,6 +258,7 @@ export const useWindowsStore = defineStore("windows", () => {
     else if (what.group || what.tab) target = resolveEditor();
     else if (what.folder) target = `files:${what.folder}`;
     else if (what.panel) target = "panel";
+    else if (what.wiki) target = "wiki";
     if (others.has(target)) {
       showWindow(target);
       return;
@@ -259,5 +297,50 @@ export const useWindowsStore = defineStore("windows", () => {
     showWindow("main");
   };
 
-  return { holderOf, popOut, dockBack, requestTab, showElsewhere, openPage, closeOther };
+  /** The place the given window's active tab shows, as it last said, or null when it shows none or is not open. */
+  const findActive = (name: WindowName): Place | null => others.get(name)?.active ?? null;
+
+  /** Shows a look-up in the Wiki pane: in the pane's own window when it has one, else in the main window. */
+  const lookUp = (lookup: WikiLookup): void => {
+    const holder = others.has("wiki") ? "wiki" : "main";
+    if (holder === THIS_WINDOW) {
+      void showLookup(lookup);
+      return;
+    }
+    link(holder).post({ type: "wiki", lookup });
+    showWindow(holder);
+  };
+
+  /**
+   * Has a window's IDE page carry out a command, this window's unless another is given. The window shows its IDE page
+   * first, and another window comes to the front.
+   */
+  const sendCommand = (command: string, name: WindowName = THIS_WINDOW): void => {
+    if (name === THIS_WINDOW) {
+      void runCommand(command);
+      return;
+    }
+    link(name).post({ type: "command", command });
+    showWindow(name);
+  };
+
+  /** Shows the IDE page of the active workspace in this window, and waits for it to draw. */
+  const showIde = async (): Promise<void> => {
+    await router.push({ name: "workspace-ide", params: { id: workspace.activeId() } });
+    await nextTick();
+  };
+
+  return {
+    holderOf,
+    popOut,
+    dockBack,
+    requestTab,
+    showElsewhere,
+    openPage,
+    findActive,
+    closeOther,
+    lookUp,
+    sendCommand,
+    showIde,
+  };
 });

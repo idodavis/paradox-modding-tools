@@ -35,6 +35,7 @@ type Occurrence struct {
 	Local     bool
 	Alias     bool  // whether it is a second name of the definition it sits in, not a definition of its own
 	Nested    bool  // whether it sits inside a definition, the one Parent names
+	Firing    bool  // whether a reference fires the event, on_action or decision it names
 	Parent    int32 // the defining occurrence this one sits inside
 	Statement int32 // the statement that writes it; 0, the file, for a definition named by its file, a message or a row
 }

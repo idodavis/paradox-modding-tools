@@ -3,13 +3,568 @@
   A folder's listing is fetched when it expands, and a double click pins a preview tab.
 -->
 <script setup lang="ts">
-import type { Root } from "@internal/files/models";
-import type { Place } from "@services/workspace/models";
+import { computed, onBeforeUnmount, onMounted, shallowRef, useTemplateRef, watch } from "vue";
+import { useMutation, useQuery, useQueryCache } from "@pinia/colada";
+import { useDebounceFn, useEventBus, useLocalStorage } from "@vueuse/core";
+import { Clipboard, Events } from "@wailsio/runtime";
+import {
+  FileTree,
+  type FileTreeDensityKeyword,
+  type FileTreeDirectoryHandle,
+  type GitStatus,
+  type GitStatusEntry,
+} from "@pierre/trees";
+import type { ContextMenuItem } from "@nuxt/ui";
 
-defineProps<{ roots: Root[] }>();
-defineEmits<{ open: [place: Place, preview: boolean] }>();
+import type { Root } from "@internal/files/models";
+import * as app from "@services/app/service";
+import * as gitApi from "@services/git/service";
+import * as service from "@services/workspace/service";
+import type { Child, FileChange, Place } from "@services/workspace/models";
+
+import { COMMANDS, trashFile } from "../../app/commands";
+import { folderQuery, gitStatusQuery, loadQuery, repositoryQuery, stateQuery, workspacesQuery } from "../../queries";
+import { useEditorStore } from "../../stores/editor";
+import { useSettingsStore } from "../../stores/settings";
+import { useWindowsStore } from "../../stores/windows";
+import { useWorkspaceStore } from "../../stores/workspace";
+import { VIEWS } from "./editor/tabs";
+
+const { roots } = defineProps<{ roots: Root[] }>();
+const emit = defineEmits<{ open: [place: Place, preview: boolean] }>();
+defineExpose({ collapseAll });
+
+/** The mark each status git reports gets in the tree. */
+const GIT_MARKS: Record<string, GitStatus> = {
+  modified: "modified",
+  added: "added",
+  deleted: "deleted",
+  renamed: "renamed",
+  untracked: "untracked",
+  conflict: "modified",
+};
+const SPRITE = `<svg xmlns="http://www.w3.org/2000/svg" width="0" height="0" style="position: absolute">${Object.entries(
+  VIEWS,
+)
+  .filter(([, { icon }]) => icon)
+  .map(
+    ([format, { icon }]) =>
+      `<symbol id="pmt-${format}" viewBox="0 0 800 800"><image href="${icon}" width="800" height="800"/></symbol>`,
+  )
+  .join("")}</svg>`;
+
+/** A rename or a move done in the explorer. */
+type Move = { from: string; to: string };
+
+const editor = useEditorStore();
+const settings = useSettingsStore();
+const windows = useWindowsStore();
+const workspace = useWorkspaceStore();
+const queryCache = useQueryCache();
+const commandBus = useEventBus<string>("pmt.command");
+const compare = useEventBus<{ left: Place; right: Place }>("pmt.compare");
+const compareWith = useLocalStorage<Place | null>("pmt.ide.compare", null);
+const host = useTemplateRef("host");
+const view = shallowRef<FileTree>();
+const menu = shallowRef<ContextMenuItem[][]>([]);
+
+// every row of the tree is a path with its root's label first and a slash after each folder
+const disks = new Map<string, string>(); // a row's path on disk
+const places = new Map<string, Place>(); // a row's place, for the rows a folder listing gave
+const members = new Map<string, Set<string>>(); // a folder row's rows
+const listings = new Map<string, Promise<void>>(); // a folder row's listing, started when it expanded
+const drafts = new Map<string, () => void>(); // a new row's way to stop watching for its rename to be cancelled
+const icons: Record<string, { name: string; viewBox: string }> = {}; // a file's icon by its name
+const ignoredSheet = new CSSStyleSheet(); // the rows git ignores, dimmed
+const history = { done: [] as Move[], undone: [] as Move[] };
+let afterClose: (() => void) | undefined;
+
+const { data: state } = useQuery(stateQuery);
+const { data: workspaces } = useQuery(workspacesQuery);
+const writableOrigins = computed(() => new Set((state.value?.mods ?? []).map((mod) => mod.id)));
+const labels = computed(() => {
+  const counts = new Map<string, number>();
+  return roots.map((root) => {
+    const label = workspace.originName(root.origin);
+    const count = (counts.get(label) ?? 0) + 1;
+    counts.set(label, count);
+    return count > 1 ? `${label} (${count})` : label;
+  });
+});
+const writable = computed(() => roots.some((root) => writableOrigins.value.has(root.origin)));
+const shape = computed(() =>
+  [
+    roots.map((root) => root.dir).join("|"),
+    labels.value.join("|"),
+    writable.value,
+    on("ide.stickyFolders"),
+    on("ide.rootColors"),
+    settings.value("ide.density"),
+    workspaces.value?.find((one) => one.id === workspace.activeId())?.showBinaries,
+  ].join("\n"),
+);
+
+const stops = [Events.On("fs:changed", ({ data }) => changed(data)), Events.On("git:changed", () => void markGit())];
+onMounted(mount);
+onBeforeUnmount(() => {
+  stops.forEach((stop) => stop());
+  view.value?.cleanUp();
+});
+watch(shape, mount);
+watch(
+  () => editor.activeFile()?.key,
+  () => void follow(),
+);
+
+/** Whether a setting that is a switch is on. */
+function on(key: string): boolean {
+  return settings.value(key) === "true";
+}
+
+/** Builds the tree of the roots, with nothing listed yet. */
+function mount(): void {
+  view.value?.cleanUp();
+  [disks, places, members, listings, drafts].forEach((map) => map.clear());
+  Object.keys(icons).forEach((name) => delete icons[name]);
+  if (!host.value || !roots.length) return;
+  roots.forEach((root, index) => disks.set(`${labels.value[index]}/`, root.dir));
+  const tree = new FileTree({
+    paths: [...disks.keys()],
+    initialExpansion: "closed",
+    icons: { set: "complete", spriteSheet: SPRITE },
+    density: settings.value("ide.density") as FileTreeDensityKeyword,
+    stickyFolders: on("ide.stickyFolders"),
+    unsafeCSS: buildStyles(),
+    renderRowDecoration: ({ item }) =>
+      isRoot(item.path) && !isWritable(item.path) ? { icon: "file-tree-icon-lock", title: "Read only" } : null,
+    onSelectionChange: select,
+    renaming: writable.value && {
+      canRename: ({ path }) => isWritable(path) && !isRoot(path),
+      onRename: ({ sourcePath, destinationPath }) => rename({ source: sourcePath, destination: destinationPath }),
+    },
+    dragAndDrop: writable.value && {
+      canDrop: ({ target: drop }) => drop.kind === "directory" && isWritable(drop.directoryPath ?? ""),
+      onDropComplete: ({ draggedPaths, target: drop }) => {
+        for (const path of draggedPaths)
+          rename({
+            source: path,
+            destination: `${drop.directoryPath}${takeName(path)}${path.endsWith("/") ? "/" : ""}`,
+          });
+      },
+    },
+  });
+  tree.subscribe(loadExpanded);
+  tree.render({ containerWrapper: host.value });
+  const shadow = host.value.querySelector("*")?.shadowRoot;
+  if (shadow) shadow.adoptedStyleSheets = [...shadow.adoptedStyleSheets, ignoredSheet];
+  view.value = tree;
+  void markGit();
+  void follow();
+}
+
+/** Builds the styles of the root rows: a bar in the origin's color at the start, and the name in it if asked. */
+function buildStyles(): string {
+  return roots
+    .map((root, index) => {
+      const row = CSS.escape(`${labels.value[index]}/`);
+      const color = workspace.originColor(root.origin);
+      const text = on("ide.rootColors") ? `color: ${color};` : "";
+      return `[data-item-path="${row}"] { font-weight: 600; ${text} border-radius: 0; box-shadow: inset 3px 0 0 ${color}; }`;
+    })
+    .join("\n");
+}
+
+/** The index of the root a row is under. */
+const rootIndex = (row: string) => labels.value.indexOf(row.slice(0, row.indexOf("/")));
+const isRoot = (row: string) => row.indexOf("/") === row.length - 1;
+const isWritable = (row: string) => writableOrigins.value.has(roots[rootIndex(row)]?.origin ?? "");
+
+/** Finds the folder a row is in. */
+function findParent(row: string): string {
+  return row.slice(0, row.replace(/\/$/, "").lastIndexOf("/") + 1);
+}
+
+/** Finds a row's folder: the row itself for a folder, else the folder it is in. */
+function findFolder(row: string): string {
+  return row.endsWith("/") ? row : findParent(row);
+}
+
+/** Takes the last part of a row. */
+function takeName(row: string): string {
+  return row.replace(/\/$/, "").split("/").at(-1) ?? "";
+}
+
+/** Finds the handle of a folder row in the tree. It is undefined for a file or a row the tree lacks. */
+function findHandle(row: string): FileTreeDirectoryHandle | undefined {
+  const item = view.value?.getItem(row);
+  return item && "expand" in item ? item : undefined;
+}
+
+/** Lists every folder that has been expanded and not listed yet. */
+function loadExpanded(): void {
+  for (const row of disks.keys())
+    if (row.endsWith("/") && !listings.has(row) && findHandle(row)?.isExpanded()) void load(row);
+}
+
+/** Lists a folder row once and puts its rows in the tree. */
+function load(row: string): Promise<void> {
+  let listing = listings.get(row);
+  if (!listing) {
+    listing = list(disks.get(row) ?? "").then((children) => apply(row, children));
+    listings.set(row, listing);
+  }
+  return listing;
+}
+
+/** Lists a folder from Go. */
+async function list(dir: string): Promise<Child[]> {
+  const { data } = await queryCache.fetch(queryCache.ensure(folderQuery(dir)));
+  return data ?? [];
+}
+
+/** Makes a folder row hold the listed rows, adding the new ones and removing those that are gone. */
+function apply(row: string, children: Child[]): void {
+  const next = new Set<string>();
+  for (const child of children) {
+    const path = `${row}${child.name}${child.dir ? "/" : ""}`;
+    next.add(path);
+    disks.set(path, child.place.path);
+    places.set(path, child.place);
+    if (!child.dir && VIEWS[child.place.format].icon)
+      icons[child.name] = { name: `pmt-${child.place.format}`, viewBox: "0 0 800 800" };
+  }
+  const tree = view.value;
+  const gone = [...(members.get(row) ?? [])].filter((path) => !next.has(path) && tree?.getItem(path));
+  const added = [...next].filter((path) => !tree?.getItem(path));
+  tree?.batch([
+    ...gone.map((path) => ({ type: "remove" as const, path, recursive: true })),
+    ...added.map((path) => ({ type: "add" as const, path })),
+  ]);
+  tree?.setIcons({ set: "complete", spriteSheet: SPRITE, byFileName: icons });
+  members.set(row, next);
+}
+
+/** Forgets a row and the rows under it, which the tree has moved or removed. */
+function forget(row: string): void {
+  for (const map of [disks, places, members, listings])
+    for (const path of [...map.keys()]) if (path.startsWith(row)) map.delete(path);
+}
+
+const refresh = useDebounceFn(() => {
+  const rows = [...pending];
+  pending.clear();
+  rows.forEach((row) => void list(disks.get(row) ?? "").then((children) => apply(row, children)));
+}, 150);
+const pending = new Set<string>();
+
+/** Lists again the folders that hold a changed path. */
+function changed(change: FileChange): void {
+  for (const row of listings.keys()) if (change.path.startsWith(disks.get(row) ?? "\0")) pending.add(row);
+  void refresh();
+}
+
+/** Marks the rows git reports as changed, for each mod that is a repository. */
+async function markGit(): Promise<void> {
+  const tree = view.value;
+  if (!tree) return;
+  const marks: GitStatusEntry[] = [];
+  const dimmed: string[] = [];
+  for (const [index, root] of roots.entries()) {
+    if (!writableOrigins.value.has(root.origin)) continue;
+    const [, found] = (await loadQuery(repositoryQuery(root.dir))) ?? ["", false];
+    if (!found) continue;
+    const { data } = await queryCache.fetch(queryCache.ensure(gitStatusQuery(root.dir)));
+    for (const change of data?.changes ?? [])
+      marks.push({
+        path: `${labels.value[index]}/${change.place.rel}`,
+        status: GIT_MARKS[change.status] ?? "modified",
+      });
+    const base = root.dir.replaceAll("\\", "/").replace(/\/$/, "");
+    for (const path of (data?.ignored ?? []).map((one) => one.replaceAll("\\", "/"))) {
+      if (!path.toLowerCase().startsWith(`${base.toLowerCase()}/`)) continue;
+      const row = `${labels.value[index]}${path.slice(base.length)}`;
+      dimmed.push(`[data-item-path${path.endsWith("/") ? "^" : ""}="${row.replaceAll('"', '\\"')}"]`);
+    }
+  }
+  tree.setGitStatus(marks);
+  ignoredSheet.replaceSync(dimmed.length ? `${dimmed.join(",")} { color: var(--fg-3); }` : "");
+}
+
+/** Opens a file the user selected as a preview tab. A folder or the file already shown opens nothing. */
+function select(paths: readonly string[]): void {
+  const [only] = paths;
+  const place = only && paths.length === 1 && !only.endsWith("/") ? places.get(only) : undefined;
+  if (place && place.key !== editor.activeFile()?.key) emit("open", place, true);
+}
+
+/** Pins the selected file's tab. */
+function pin(): void {
+  const [only] = view.value?.getSelectedPaths() ?? [];
+  const place = only && !only.endsWith("/") ? places.get(only) : undefined;
+  if (place) emit("open", place, false);
+}
+
+/** Opens the folders down to the active file and selects it, when the explorer follows the active file. */
+async function follow(): Promise<void> {
+  const place = editor.activeFile();
+  const tree = view.value;
+  const index = place ? roots.findIndex((root) => root.dir === place.root) : -1;
+  if (!place || !tree || index < 0 || !on("ide.followFile")) return;
+  const parts = place.rel.split("/");
+  const folders = parts
+    .slice(0, -1)
+    .reduce<string[]>((rows, part) => [...rows, `${rows.at(-1)}${part}/`], [`${labels.value[index]}/`]);
+  for (const folder of folders) {
+    await load(folder);
+    findHandle(folder)?.expand();
+  }
+  const row = `${folders.at(-1)}${parts.at(-1)}`;
+  tree.getItem(row)?.select();
+  tree.scrollToPath(row, { focus: false, offset: "nearest" });
+}
+
+/** Folds every folder of the tree. */
+function collapseAll(): void {
+  for (const row of disks.keys()) findHandle(row)?.collapse();
+}
+
+// the tree has moved the row already; a move Go refuses puts it back
+const { mutate: rename } = useMutation({
+  mutation: async ({ source, destination }: { source: string; destination: string }): Promise<Move> => {
+    const move = {
+      from: disks.get(source) ?? "",
+      to: `${disks.get(findParent(destination)) ?? ""}/${takeName(destination)}`,
+    };
+    await editor.rename(move.from, move.to);
+    return move;
+  },
+  onSuccess: (move, { source }) => {
+    drafts.get(source)?.();
+    drafts.delete(source);
+    history.done.push(move);
+    history.undone = [];
+    forget(source);
+  },
+  onError: (_error, { source, destination }) => view.value?.move(destination, source),
+});
+
+const { mutate: initialize } = useMutation({
+  mutation: (dir: string) => gitApi.Run(dir, "init"),
+  onSettled: () => queryCache.invalidateQueries({ key: ["git"] }),
+});
+
+const { mutate: replay } = useMutation({
+  mutation: async (back: boolean) => {
+    const move = (back ? history.done : history.undone).pop();
+    if (!move) return;
+    await (back ? editor.rename(move.to, move.from) : editor.rename(move.from, move.to));
+    (back ? history.undone : history.done).push(move);
+  },
+});
+
+/** Steps the history back for Ctrl Z, and forward for Ctrl Y or Ctrl Shift Z. A key typed in an input is left alone. */
+function step(event: KeyboardEvent): void {
+  const key = event.key.toLowerCase();
+  const typing = event
+    .composedPath()
+    .some((node) => node instanceof HTMLInputElement || node instanceof HTMLTextAreaElement);
+  if (!event.ctrlKey || typing || (key !== "z" && key !== "y")) return;
+  event.preventDefault();
+  replay(key === "z" && !event.shiftKey);
+}
+
+/** Makes a new file or folder in a folder row and asks for its name in the tree. */
+const { mutate: create } = useMutation({
+  mutation: async ({ folder, dir }: { folder: string; dir: boolean }) => {
+    await load(folder);
+    const occupied = (label: string) =>
+      view.value?.getItem(`${folder}${label}`) ?? view.value?.getItem(`${folder}${label}/`);
+    let label = dir ? "new_folder" : "new_file.txt";
+    for (let count = 2; occupied(label); count++) label = dir ? `new_folder_${count}` : `new_file_${count}.txt`;
+    const row = `${folder}${label}${dir ? "/" : ""}`;
+    const path = `${disks.get(folder)}/${label}`;
+    await service.Create(path, dir);
+    disks.set(row, path);
+    return row;
+  },
+  onSuccess: (row) => {
+    const tree = view.value;
+    if (!tree) return;
+    tree.add(row);
+    // a name left empty or cancelled takes the new row away, and the file with it
+    const stop = tree.onMutation("remove", (event) => {
+      if (event.path !== row) return;
+      stop();
+      remove(row);
+    });
+    drafts.set(row, stop);
+    tree.startRenaming(row, { removeIfCanceled: true });
+  },
+});
+
+/**
+ * Moves a row to PMT's trash once the user agrees, and offers to bring it back. A mod's root leaves the workspace. A
+ * row made a moment ago and left unnamed goes without a question.
+ */
+const { mutate: remove } = useMutation({
+  mutation: async (row: string) => {
+    const path = disks.get(row) ?? "";
+    if (!drafts.has(row)) return trashFile(path, path, isRoot(row) ? " The mod also leaves this workspace." : "");
+    await service.Delete(path);
+    return true;
+  },
+  onSuccess: (deleted, row) => {
+    drafts.get(row)?.();
+    drafts.delete(row);
+    if (!deleted) return;
+    if (view.value?.getItem(row)) view.value.remove(row, { recursive: true });
+    forget(row);
+  },
+});
+
+// what the menu's rows of the command table do to the row clicked, and whether they change the files
+const ACTIONS: Record<string, { writes: boolean; run: (row: string) => void }> = {
+  "file.new": { writes: true, run: (row) => (afterClose = () => create({ folder: findFolder(row), dir: false })) },
+  "file.newFolder": { writes: true, run: (row) => (afterClose = () => create({ folder: findFolder(row), dir: true })) },
+  "file.rename": { writes: true, run: (row) => (afterClose = () => view.value?.startRenaming(row)) },
+  "file.delete": { writes: true, run: (row) => remove(row) },
+  "file.copyPath": { writes: false, run: (row) => void Clipboard.SetText(disks.get(row) ?? "") },
+  "file.reveal": { writes: false, run: (row) => void app.ShowFolder(disks.get(row) ?? "") },
+};
+
+/** Builds the menu of a row. It is built when the menu opens, so it reads the selection as it is then. */
+function buildMenu(row: string): ContextMenuItem[][] {
+  const place = places.get(row);
+  const file = row.endsWith("/") ? undefined : place;
+  const dir = disks.get(row) ?? "";
+  const holder = windows.holderOf({ folder: dir });
+  const selected = (view.value?.getSelectedPaths() ?? []).flatMap((path) => places.get(path) ?? []);
+  const open: ContextMenuItem[] = file
+    ? [
+        {
+          label: "Open to the side",
+          icon: "i-lucide-columns-2",
+          onSelect: () => {
+            editor.show(file);
+            editor.split("row");
+          },
+        },
+        {
+          label: "Open in a new window",
+          icon: "i-lucide-app-window",
+          onSelect: () => {
+            editor.show(file);
+            windows.popOut({ tab: `file:${file.key}` });
+          },
+        },
+        ...(VIEWS[file.format].views.includes("visual")
+          ? [
+              {
+                label: "Open as Visual",
+                icon: "i-lucide-eye",
+                onSelect: () => {
+                  editor.show(file);
+                  editor.setView(`file:${file.key}`, "visual");
+                },
+              },
+            ]
+          : []),
+      ]
+    : holder
+      ? [{ label: "Close the window", icon: "i-lucide-panel-top-close", onSelect: () => windows.closeOther(holder) }]
+      : [
+          {
+            label: "Open in a new window",
+            icon: "i-lucide-app-window",
+            onSelect: () => windows.popOut({ folder: dir }),
+          },
+        ];
+  const commands = COMMANDS.flatMap((command) => {
+    const action = ACTIONS[command.id];
+    if (!action || (action.writes && !isWritable(row))) return [];
+    const disabled = command.id === "file.rename" && isRoot(row);
+    const label = command.id === "file.delete" && isRoot(row) ? "Delete the mod's folder" : command.label;
+    return [{ label, icon: command.icon, kbds: command.kbds, disabled, onSelect: () => action.run(row) }];
+  });
+  const coat: ContextMenuItem[] =
+    !file && place?.database.startsWith("coat_of_arms") && isWritable(row)
+      ? [{ label: "New coat of arms", icon: "i-lucide-shield-plus", onSelect: () => commandBus.emit("draw.newCoat") }]
+      : [];
+  // a mod's root that git has no repository for offers one
+  const repository = queryCache.getQueryData(repositoryQuery(dir).key);
+  const init: ContextMenuItem[] =
+    isRoot(row) && isWritable(row) && repository && !repository[1]
+      ? [{ label: "Initialize a git repository", icon: "i-lucide-git-branch-plus", onSelect: () => initialize(dir) }]
+      : [];
+  const comparisons = file
+    ? [
+        { label: "Select for compare", onSelect: () => (compareWith.value = file) },
+        {
+          label: "Compare with selected",
+          disabled: !compareWith.value || compareWith.value.key === file.key,
+          onSelect: () => compareWith.value && compare.emit({ left: compareWith.value, right: file }),
+        },
+        ...(selected.length === 2
+          ? [
+              {
+                label: "Compare the two selected",
+                onSelect: () => selected[0] && selected[1] && compare.emit({ left: selected[0], right: selected[1] }),
+              },
+            ]
+          : []),
+      ]
+    : [];
+  return [open, coat, init, commands, comparisons].filter((group) => group.length);
+}
+
+/** Finds the row under a right click and builds its menu. Off a row there is no menu. */
+function pick(event: MouseEvent): void {
+  const element = event
+    .composedPath()
+    .find((one): one is HTMLElement => one instanceof HTMLElement && one.dataset.itemPath !== undefined);
+  menu.value = element?.dataset.itemPath ? buildMenu(element.dataset.itemPath) : [];
+  if (element) return;
+  event.preventDefault();
+  event.stopPropagation();
+}
+
+/** Starts what the menu chose to do in a row, which needs the keyboard the menu held until it closed. */
+function resume(event: Event): void {
+  if (!afterClose) return;
+  event.preventDefault();
+  afterClose();
+  afterClose = undefined;
+}
 </script>
 
 <template>
-  <div />
+  <!-- the menu's trigger takes its child's ref, so the tree's element is the one inside it -->
+  <UContextMenu :items="menu" :content="{ onCloseAutoFocus: resume }">
+    <div class="flex min-h-0 flex-1 flex-col">
+      <div
+        ref="host"
+        class="min-h-0 flex-1"
+        :style="{
+          '--trees-bg-override': 'var(--bg-2)',
+          '--trees-fg-override': 'color-mix(in oklab, var(--fg-2), var(--fg-1) 35%)',
+          '--trees-fg-muted-override': 'var(--fg-3)',
+          '--trees-selected-bg-override': 'var(--bg-4)',
+          '--trees-selected-fg-override': 'var(--fg-1)',
+          '--trees-accent-override': 'var(--accent)',
+          '--trees-border-color-override': 'var(--line-1)',
+          '--trees-focus-ring-color-override': 'var(--accent)',
+          '--trees-font-family-override': 'var(--font-sans)',
+          '--trees-font-size-override': 'var(--ide-ui-font)',
+          '--trees-status-added-override': 'var(--green)',
+          '--trees-status-untracked-override': 'var(--green)',
+          '--trees-status-modified-override': 'var(--orange)',
+          '--trees-status-deleted-override': 'var(--red)',
+          '--trees-status-renamed-override': 'var(--blue)',
+        }"
+        @contextmenu.capture="pick"
+        @keydown="step"
+        @dblclick="pin"
+      />
+    </div>
+  </UContextMenu>
 </template>

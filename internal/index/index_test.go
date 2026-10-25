@@ -36,7 +36,7 @@ func scanInstall(t *testing.T, gameID, install string) (*schema.Schema, *Index, 
 		t.Fatal(err)
 	}
 	start := time.Now()
-	scanned := Scan(built, roots, listing, func(string) {})
+	scanned := Scan(built, roots, listing, func(string, int) {})
 	return built, scanned, time.Since(start)
 }
 

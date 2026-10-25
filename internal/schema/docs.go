@@ -437,7 +437,7 @@ func findDocType(text string) (string, bool) {
 	}
 	for length := len(words); length > 0; length-- {
 		phrase := strings.Join(words[:length], " ")
-		if row, ok := game.DocTypes[toPhrase(phrase)]; ok {
+		if row, ok := game.DocTypes[ToPhrase(phrase)]; ok {
 			return phrase, row.Shape != "" || row.Value == string(ValueBool) || row.Database != ""
 		}
 	}
@@ -465,7 +465,7 @@ func resolveType(field *Field, text string) {
 // resolveDocType gives a field the claims that a type term means: the shape of its block, and its value type with the
 // database a reference names. The given source states them. An unknown term makes no claim.
 func resolveDocType(field *Field, term string, source game.Source) {
-	row := game.DocTypes[toPhrase(term)]
+	row := game.DocTypes[ToPhrase(term)]
 	if row.Shape != "" {
 		field.Shape.resolve(row.Shape, source)
 	}
@@ -507,7 +507,7 @@ func (reader *docReader) resolveScope(field *Field, phrase string) {
 func resolveValue(field *Field, value string) {
 	inner, placeholder := strings.CutPrefix(value, "<")
 	inner = strings.ToLower(strings.TrimSuffix(inner, ">"))
-	_, known := game.DocTypes[toPhrase(inner)]
+	_, known := game.DocTypes[ToPhrase(inner)]
 	_, date := jomini.ParseDate(value)
 	switch {
 	case value == "":
@@ -516,7 +516,7 @@ func resolveValue(field *Field, value string) {
 	case alternatives.MatchString(inner):
 		// Alternatives such as number/scripted name types, not values, so they state no choices.
 		parts := strings.FieldsFunc(inner, func(r rune) bool { return r == '/' || r == '|' })
-		if !slices.ContainsFunc(parts, func(part string) bool { _, ok := game.DocTypes[toPhrase(part)]; return ok }) {
+		if !slices.ContainsFunc(parts, func(part string) bool { _, ok := game.DocTypes[ToPhrase(part)]; return ok }) {
 			resolveChoices(field, parts)
 		}
 	case placeholder || known:

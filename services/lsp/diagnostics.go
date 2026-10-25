@@ -111,7 +111,7 @@ func (lsp *Service) Diagnose(path string) ([]Diagnostic, error) {
 		return nil, err
 	}
 	diagnostics, err := DiagnoseFile(ws, ws.Mods.Load(), path)
-	return lsp.listEnabled(diagnostics), err
+	return lsp.listEnabled(ws.ID, diagnostics), err
 }
 
 // DescribeReference returns the facts that say which name a problem is about: the name and what its database calls a
@@ -153,9 +153,9 @@ func DiagnoseFile(ws *workspace.Session, mods *index.Index, path string) ([]Diag
 	return diagnostics, nil
 }
 
-// listEnabled returns the given diagnostics without those of the checks the user turned off.
-func (lsp *Service) listEnabled(diagnostics []Diagnostic) []Diagnostic {
-	setting, _ := lsp.Workspace.Config.LookupSetting("ide.checks")
+// listEnabled returns the given diagnostics without those of the checks the user turned off in the given workspace.
+func (lsp *Service) listEnabled(workspaceID string, diagnostics []Diagnostic) []Diagnostic {
+	setting, _ := lsp.Workspace.Config.LookupSetting(workspaceID, "ide.checks")
 	disabled := lo.Map(strings.Split(setting, ","), func(id string, _ int) string { return strings.TrimSpace(id) })
 	return slices.DeleteFunc(diagnostics, func(diagnostic Diagnostic) bool {
 		return slices.Contains(disabled, diagnostic.Code)

@@ -7,7 +7,6 @@ import (
 	"sync"
 	"testing"
 
-	"github.com/adrg/xdg"
 	"github.com/wailsapp/wails/v3/pkg/application"
 
 	"paradox-modding-tools/internal/files"
@@ -67,11 +66,9 @@ func writeFiles(t *testing.T, dir string, texts map[string]string) {
 func openService(t *testing.T, install string, mods ...app.Mod) *Service {
 	t.Helper()
 	appOnce.Do(func() { application.New(application.Options{}) })
-	t.Cleanup(xdg.Reload)
-	for _, variable := range []string{"XDG_CONFIG_HOME", "XDG_CACHE_HOME", "XDG_STATE_HOME"} {
+	for _, variable := range []string{"APPDATA", "LOCALAPPDATA", "XDG_CONFIG_HOME", "XDG_CACHE_HOME"} {
 		t.Setenv(variable, t.TempDir())
 	}
-	xdg.Reload()
 	config, err := app.OpenConfig()
 	if err != nil {
 		t.Fatal(err)
@@ -133,7 +130,7 @@ func TestReadListingReadsWorkshopFolder(t *testing.T) {
 	want := []Preview{
 		{Path: files.Join(dir, "workshop/previews/a.png"), Type: previewImage, Order: 0},
 		{Path: files.Join(dir, "workshop/previews/b.png"), Type: previewImage, Order: 1},
-		{Type: previewVideo, URL: "https://youtu.be/abc", Order: 2},
+		{Type: previewVideo, URL: "https://youtu.be/abc", Video: "abc", Order: 2},
 	}
 	if !reflect.DeepEqual(listing.Previews, want) {
 		t.Errorf("got previews %+v, want %+v", listing.Previews, want)
@@ -234,7 +231,7 @@ func TestCompareReportsChanges(t *testing.T) {
 	got := Compare(listing, upload, snapshot, &Details{Title: "On Steam"})
 	want := Comparison{
 		Added: []string{extraRel}, Changed: []string{changedRel}, Removed: []string{"gone.txt"},
-		Listing: []string{"title", "description"}, Steam: &Details{Title: "On Steam"},
+		Listing: []string{"title", "description"}, Last: snapshot.Listing, Steam: &Details{Title: "On Steam"},
 	}
 	if !reflect.DeepEqual(got, want) {
 		t.Errorf("got %+v, want %+v", got, want)
@@ -261,7 +258,7 @@ func TestToBBCodeConvertsConstructs(t *testing.T) {
 		"[list]\n[*] one\n[*] two\n[list]\n[*] nested\n[/list]\n[/list]\n\n[olist]\n[*] first\n[*] second\n[/olist]\n\n" +
 		"[quote]quoted\n\n[/quote]\n\n[hr][/hr]\n\n[code]\nfn(\\*)\n[/code]\n\n" +
 		"[table]\n[tr][th]a[/th][th]b[/th][/tr]\n[tr][td]1[/td][td]2[/td][/tr]\n[/table]\n\nlast line"
-	if got := toBBCode(markdown); got != want {
+	if got := new(Service).ToBBCode(markdown); got != want {
 		t.Errorf("got\n%q\nwant\n%q", got, want)
 	}
 }

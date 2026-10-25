@@ -79,6 +79,13 @@ type Game struct {
 	EntryModes    []EntryMode           `json:"-"` // the entry modes, in the order the game runs them
 	ModeFolders   ModeFolders           `json:"-"`
 	ConceptPrefix string                `json:"-"` // a concept's loc key prefix; "" means none
+	// Portrait is the silhouette of one of its characters, from its period, that PMT draws where a portrait would be:
+	// the name of its file among the page's placeholders.
+	Portrait string `json:"portrait"`
+	// Placeholders is what PMT draws where the picture of an object has no file, by the object's data type: the name
+	// of a file among the page's placeholders.
+	Placeholders  map[string]string `json:"-"`
+	Illustrations Illustrations     `json:"-"`
 
 	GUIHolders     map[string]string `json:"-"` // the window a window made from a type is laid out in, by the type
 	GUIUndeclared  []string          `json:"-"` // the widget types it draws though no file of its install declares them
@@ -111,6 +118,9 @@ const OriginVanilla = "vanilla"
 
 // MetadataDir is where a game whose mods are described by a metadata.json file keeps it and, for EU5, the thumbnail.
 const MetadataDir = ".metadata"
+
+// PictureExtensions are the extensions a mod's pictures may have: its thumbnail and the pictures of its gallery.
+var PictureExtensions = []string{".png", ".gif", ".jpg", ".jpeg", ".webp"}
 
 // The error log's file names, the revision log every start writes, and the launcher's settings file.
 const (
@@ -151,6 +161,11 @@ var games = map[string]*Game{
 		Precedences:   ck3Precedences,
 		Events:        Events{ScopeKey: "scope", DefaultScope: "character", Picture: ck3Picture}, // _events.info
 		ConceptPrefix: "game_concept_",
+		Portrait:      "crowned-ruler",
+		// the dumps' data types of a coat and of a faith
+		Placeholders: map[string]string{"CoatOfArms": "shield", "Faith": "faith", "Rite": "faith", "Religion": "faith"},
+		// gfx/interface/illustrations/scripted_illustrations/_scripted_illustrations.info
+		Illustrations: Illustrations{FolderKey: "folder", Folder: "gfx/interface/illustrations", TriggerKey: "trigger"},
 		GUIUndeclared: []string{"zoomarea", "text_occluder"},
 		CoatFolder:    "common/coat_of_arms/coat_of_arms",
 		CoatShade:     ck3CoatShade,
@@ -179,6 +194,8 @@ var games = map[string]*Game{
 		Events:         Events{TypeKey: "type", TypeSuffix: "_event", DefaultScope: "country", Picture: vic3Picture},
 		EntryModes:     EntryModes,
 		ModeFolders:    vic3ModeFolders,
+		Portrait:       "top-hat",
+		Placeholders:   map[string]string{"CoatOfArms": "flag", "Religion": "faith"},
 		GUIUndeclared:  []string{"overlappingitembox", "treemapchart", "portrait_button", "axis"},
 		GUIDropsHidden: []string{"flowcontainer"},
 		CoatFolder:     "common/coat_of_arms/coat_of_arms",
@@ -209,6 +226,10 @@ var games = map[string]*Game{
 		EntryModes:    EntryModes,
 		ModeFolders:   eu5ModeFolders,
 		ConceptPrefix: "game_concept_",
+		Portrait:      "plumed-hat",
+		Placeholders: map[string]string{
+			"CoatOfArms": "flag", "CoatOfArmsWrapper": "flag", "Religion": "faith", "ReligiousSchool": "faith",
+		},
 		GUIHolders:    map[string]string{"lateralview": "lateralview_left_layer"},
 		GUIUndeclared: []string{"axis", "plotline", "screen_grab", "newsfeed_carousel"},
 		CoatFolder:    "main_menu/common/coat_of_arms/coat_of_arms",

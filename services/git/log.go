@@ -67,6 +67,11 @@ func (git *Service) ListCommitFiles(dir, hash string) ([]Change, error) {
 		}
 		changes = append(changes, change)
 	}
+	root, err := git.resolveRepository(dir)
+	if err != nil {
+		return nil, err
+	}
+	git.locateChanges(root, changes)
 	return changes, nil
 }
 

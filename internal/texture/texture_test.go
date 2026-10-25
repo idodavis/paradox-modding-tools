@@ -380,7 +380,7 @@ func TestDecodeDDS(t *testing.T) {
 		if header, ok := decodeHeader(file); !ok || header != row.header {
 			t.Errorf("%s: header %+v %v, want %+v", row.name, header, ok, row.header)
 		}
-		decoded, err := Decode(file)
+		decoded, err := Decode(file, 0)
 		if err != nil {
 			t.Errorf("%s: %v", row.name, err)
 			continue
@@ -395,7 +395,7 @@ func TestDecodeTGA(t *testing.T) {
 		if header, ok := decodeHeader(row.file); !ok || header != want {
 			t.Errorf("%s: header %+v %v, want %+v", row.name, header, ok, want)
 		}
-		decoded, err := Decode(row.file)
+		decoded, err := Decode(row.file, 0)
 		if err != nil {
 			t.Errorf("%s: %v", row.name, err)
 			continue
@@ -418,7 +418,7 @@ func TestDecodeFixtures(t *testing.T) {
 		if header, ok := decodeHeader(file); !ok || header != fixtureHeader {
 			t.Errorf("%s: header %+v %v", path, header, ok)
 		}
-		decoded, err := Decode(file)
+		decoded, err := Decode(file, 0)
 		if err != nil {
 			return err
 		}
@@ -433,10 +433,10 @@ func TestDecodeFixtures(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	if header, ok := decodeHeader(file); !ok || header != (Header{"png", 2, 2, 1, ""}) {
+	if header, ok := decodeHeader(file); !ok || header != (Header{"png", 2, 2, 1, "", 0}) {
 		t.Errorf("%s: header %+v %v", png, header, ok)
 	}
-	decoded, err := Decode(file)
+	decoded, err := Decode(file, 0)
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -453,7 +453,7 @@ func TestDecodeHeader(t *testing.T) {
 
 func TestDecodeErrors(t *testing.T) {
 	for _, row := range decodeCases {
-		decoded, err := Decode(row.bytes)
+		decoded, err := Decode(row.bytes, 0)
 		if err == nil || !strings.Contains(err.Error(), row.words) {
 			t.Errorf("%s: %v %v, want an error saying %q", row.name, decoded, err, row.words)
 		}
@@ -461,12 +461,18 @@ func TestDecodeErrors(t *testing.T) {
 }
 
 func TestReadHeader(t *testing.T) {
-	header, err := ReadHeader(filepath.Join(fixtures, "interface", "v_bg.dds"))
-	if err != nil || header != fixtureHeader {
+	dds := filepath.Join(fixtures, "interface", "v_bg.dds")
+	stat, _ := os.Stat(dds)
+	header, err := ReadHeader(dds)
+	want := fixtureHeader
+	want.Bytes = stat.Size()
+	if err != nil || header != want {
 		t.Errorf("v_bg.dds: %+v %v", header, err)
 	}
-	header, err = ReadHeader(filepath.Join(fixtures, "interface", "illustrations", "v_illustration.png"))
-	if err != nil || header != (Header{"png", 2, 2, 1, ""}) {
+	png := filepath.Join(fixtures, "interface", "illustrations", "v_illustration.png")
+	stat, _ = os.Stat(png)
+	header, err = ReadHeader(png)
+	if err != nil || header != (Header{"png", 2, 2, 1, "", stat.Size()}) {
 		t.Errorf("v_illustration.png: %+v %v", header, err)
 	}
 	if _, err = ReadHeader("../testdata/mods/ck3/gfx/interface/icons/traits/bold.dds"); err == nil {
@@ -557,7 +563,7 @@ func decodeFile(path string) (bool, error) {
 	if err != nil {
 		return true, err
 	}
-	decoded, err := Decode(file)
+	decoded, err := Decode(file, 0)
 	if err != nil {
 		_, known := decodeHeader(file)
 		return known, err

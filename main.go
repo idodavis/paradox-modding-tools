@@ -9,7 +9,6 @@ import (
 	"os"
 
 	"github.com/wailsapp/wails/v3/pkg/application"
-	"github.com/wailsapp/wails/v3/pkg/events"
 	logservice "github.com/wailsapp/wails/v3/pkg/services/log"
 	"github.com/wailsapp/wails/v3/pkg/updater"
 	"github.com/wailsapp/wails/v3/pkg/updater/providers/github"
@@ -51,13 +50,14 @@ func main() {
 	// the other services ask the workspace service for the open workspace
 	wsp := &workspace.Service{Config: config, Build: version}
 	editor := &lsp.Service{Workspace: wsp}
+	appService := &app.Service{Config: config, Build: version}
 
 	pmt := application.New(application.Options{
 		Name:        "paradox-modding-tools",
 		Description: "Desktop tools for Paradox Interactive game modding",
 		Logger:      logger,
 		Services: []application.Service{
-			application.NewService(&app.Service{Config: config, Build: version}),
+			application.NewService(appService),
 			application.NewService(logservice.New()),
 			application.NewServiceWithOptions(wsp, application.ServiceOptions{Route: "/files"}),
 			application.NewService(editor),
@@ -66,7 +66,7 @@ func main() {
 			application.NewService(&graph.Service{Workspace: wsp}),
 			application.NewService(&search.Service{Workspace: wsp}),
 			application.NewService(&wiki.Service{Workspace: wsp}),
-			application.NewService(&git.Service{}),
+			application.NewService(&git.Service{Workspace: wsp}),
 			application.NewService(&steam.Service{Workspace: wsp}),
 		},
 		Assets: application.AssetOptions{
@@ -86,7 +86,7 @@ func main() {
 		},
 	})
 	initUpdater(pmt)
-	openMainWindow(pmt)
+	appService.OpenMainWindow()
 
 	if err := pmt.Run(); err != nil {
 		log.Fatalf("app.Run: %v", err)
@@ -108,16 +108,4 @@ func initUpdater(pmt *application.App) {
 	}); err != nil {
 		log.Fatalf("updater.Init: %v", err)
 	}
-}
-
-// openMainWindow opens the main window, named main, the only one whose close quits the app.
-func openMainWindow(pmt *application.App) {
-	window := pmt.Window.NewWithOptions(application.WebviewWindowOptions{
-		Name:   "main",
-		Title:  "Paradox Modding Tools",
-		Width:  1400,
-		Height: 900,
-		URL:    "/",
-	})
-	window.OnWindowEvent(events.Common.WindowClosing, func(*application.WindowEvent) { pmt.Quit() })
 }

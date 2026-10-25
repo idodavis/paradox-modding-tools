@@ -22,22 +22,60 @@ type WidgetSlot struct {
 	Type string // the built-in type the block is drawn as; "" means the block's own
 }
 
+// A VariableSystem is the GUI's own variables: the data type that holds them, the functions that ask them and the
+// functions a click runs on them. Each function takes the variable's name first.
+type VariableSystem struct {
+	Type         string // the data type the variables are reached through
+	Exists       string // holds while a variable is set
+	HasValue     string // holds while a variable is set to the given value
+	UnsetOrValue string // holds while a variable is unset or set to the given value
+	Set          string // sets a variable, to the given value or to none
+	Clear        string // unsets a variable
+	Toggle       string // sets a variable that is unset and unsets one that is set
+}
+
+// FontRules is how a font file lays out the files of a font. A font has a block for each of its styles, which names a
+// definition of files. That definition has groups of languages, each with the files those languages read, the font's
+// own file first.
+type FontRules struct {
+	Key           string // the key of a widget that names its font
+	Database      string // the database of fonts
+	StyleKey      string // the key of a font's block for one of its styles
+	StyleWords    string // the key in that block of the style's words, such as bold|italic
+	FilesKey      string // the key in that block that names the definition of the style's files
+	FilesDatabase string // the database of those definitions
+	GroupKey      string // the key of a definition's block for a group of languages
+	LanguagesKey  string // the key in a group of its languages
+	PathsKey      string // the key in a group of its files
+}
+
+// Illustrations is where the pictures are that a definition names by a path below a folder: the key that names the
+// folder, and the folder where the definition names none. A picture written in a block with the trigger key is drawn
+// only where its condition holds; the others are the fallback.
+type Illustrations struct {
+	FolderKey  string
+	Folder     string
+	TriggerKey string
+}
+
 // GUIRules is the rules for GUI files beyond their syntax. GUI is its one row.
 type GUIRules struct {
 	// Declares is the words before a top block that declare a definition of gui.<word>, or group definitions
 	// (types x { }).
-	Declares       []string
-	NameKeyOf      map[string]string // a block key at any depth, and the key whose value names its definition
-	WidgetKey      string            // every other top block is a definition of WidgetDatabase named by this key
-	DatabasePrefix string            // what a GUI database's name starts with, before the word that declares it
-	WidgetDatabase string            // the database of every top block that no declaring word declares
-	TagCalls       string            // the word that calls the tag a block is written with
-	TemplateCalls  string            // the word that calls a template
-	BlockCalls     string            // the word that calls the block a template or type leaves for a widget to replace
-	ContextKey     string            // the key whose value is the data call its block's bindings read in
-	References     []Reference       // what a widget's keys name, Database "" for any
-	TextFormats    string            // the database a text's #format names
-	TextIcons      string            // the database an icon in a text, @icon!, names
+	Declares  []string
+	NameKeyOf map[string]string // a block key at any depth, and the key whose value names its definition
+	// WidgetKey is the key that names every other top block, a definition of WidgetDatabase. The file's only block
+	// written under a key that writes none is named after the file.
+	WidgetKey      string
+	DatabasePrefix string      // what a GUI database's name starts with, before the word that declares it
+	WidgetDatabase string      // the database of every top block that no declaring word declares
+	TagCalls       string      // the word that calls the tag a block is written with
+	TemplateCalls  string      // the word that calls a template
+	BlockCalls     string      // the word that calls the block a template or type leaves for a widget to replace
+	ContextKey     string      // the key whose value is the data call its block's bindings read in
+	References     []Reference // what a widget's keys name, Database "" for any
+	TextFormats    string      // the database a text's #format names
+	TextIcons      string      // the database an icon in a text, @icon!, names
 	Slots          map[string]WidgetSlot
 	// Types is the row of each built-in widget type. Any other type holds its children by their anchors and keeps a
 	// hidden child's room.
@@ -45,8 +83,29 @@ type GUIRules struct {
 	OpeningStates   []string          // the states run by name as a window opens
 	OpeningTriggers map[string]string // the states run as a window opens by a key's value
 	StateKeys       []string          // the keys of a state that are its own rather than end values
-	HiddenKeys      []string          // the keys whose no hides a widget
-	DropsHiddenKey  string            // the key whose yes makes a hidden child of a widget take no room
+	OpeningCalls    string            // the key of a state whose calls run as the state starts
+	// RepeatedKeys is the keys a widget keeps every value of, in the order written, each adding to the ones before.
+	RepeatedKeys []string
+	// TextKeys is the keys that write a widget's one text, localized or as written. The last one written wins.
+	TextKeys []string
+	// SelectPrefix is the start of the name of the data functions that give their second argument where their first
+	// holds, else their third: Select_float, Select_CString and the rest.
+	SelectPrefix string
+	ClickKeys    []string // the keys whose calls run as a widget is clicked
+	// DownKey is the key whose condition holds while a button is drawn down. Two or more buttons of one type side by
+	// side, each written with it, are a strip of tabs.
+	DownKey       string
+	CheckedKey    string // the key whose condition holds while a box is drawn checked
+	ValidFunction string // the data function that asks whether an object exists
+	Variables     VariableSystem
+	PortraitKey   string // the key whose binding draws a character's portrait
+	CoatKey       string // the key whose binding draws a coat of arms
+	Fonts         FontRules
+	Getters       []string // the words a data function that only reaches an object starts with
+	// HiddenKeys is the keys whose no hides a widget. The first one a widget writes decides: visible_at_creation only
+	// says how a widget starts until its visible condition is read.
+	HiddenKeys     []string
+	DropsHiddenKey string // the key whose yes makes a hidden child of a widget take no room
 	// CallTargets is the data functions whose quoted arguments are names, by function: the database each argument's
 	// names are in, in order, and "" for one that is no name.
 	CallTargets map[string][]string
@@ -56,11 +115,20 @@ type GUIRules struct {
 	IconPathFile   string          // the file in an icon folder that names the paths its icons are read from
 	PictureKeys    []string        // the keys a definition names its picture by, tried in this order
 	IconPathSuffix string          // the ending of the defines that name a folder of icons
+	// FolderDefineSuffix and NameDefineSuffix end the defines that say where a data function finds its pictures,
+	// after the kind of object and the field it reads: the folder, and the ending of each file's name.
+	FolderDefineSuffix string
+	NameDefineSuffix   string
+	// ShownFirst is the database whose first definition in a GUI file is the one the file shows first, wherever the
+	// file writes it: its main window, which CK3 writes at the top and EU5 after its types.
+	ShownFirst string
 }
 
 // The words that call a type, a template and a block override, which GUI and the callable databases both name,
-// and the key that names a widget.
+// the key that names a widget, and the key that names a widget's font with the database of fonts.
 const (
+	guiFontKey       = "font"
+	guiFontDatabase  = "font.font"
 	guiWidgetKey     = "name"
 	guiTagCalls      = "widget"
 	guiTemplateCalls = "using"
@@ -80,7 +148,7 @@ var GUI = GUIRules{
 	ContextKey:     "datacontext",
 	References: []Reference{
 		{KeyPath: guiTemplateCalls, Target: "gui.template"}, {KeyPath: "layer", Target: "gui.layer"},
-		{KeyPath: "texture", Target: File}, {KeyPath: "font", Target: "font.font"},
+		{KeyPath: "texture", Target: File}, {KeyPath: guiFontKey, Target: guiFontDatabase},
 		{KeyPath: "text", Target: Localization}, {KeyPath: "title", Target: Localization},
 	},
 	TextFormats: "gui.format",   // gui/preload/textformatting.gui:6-7
@@ -119,6 +187,25 @@ var GUI = GUIRules{
 		"restart_on_show", "skip_initial_animation", "trigger_when", "start_sound", "end_sound", "sstart_sound",
 		"animation_speed", "loopinterval",
 	},
+	OpeningCalls:  "on_start",
+	RepeatedKeys:  []string{"datacontext", "onclick", "on_start"},
+	TextKeys:      []string{"text", "raw_text"}, // the wiki: raw_text is a text that is not localized
+	SelectPrefix:  "Select_",                    // the dumps' global functions Select_float( Arg0, Arg1, Arg2 ) and the rest
+	ClickKeys:     []string{"onclick"},
+	DownKey:       "down",
+	CheckedKey:    "checked",
+	ValidFunction: "IsValid",
+	Variables: VariableSystem{ // EU5's data_types_uncategorized.txt declares NotExistOrHasValue( Arg0, Arg1 )
+		Type: "VariableSystem", Exists: "Exists", HasValue: "HasValue", UnsetOrValue: "NotExistOrHasValue", Set: "Set",
+		Clear: "Clear", Toggle: "Toggle",
+	},
+	PortraitKey: "portrait_texture",
+	CoatKey:     "coat_of_arms", // CK3 gui/shared/coat_of_arms.gui
+	Fonts: FontRules{ // CK3 and Vic3 fonts/fonts.font, EU5 in_game/fonts/in_game_fonts.font
+		Key: guiFontKey, Database: guiFontDatabase, StyleKey: "fontstyle", StyleWords: "style", FilesKey: "fontfiles",
+		FilesDatabase: "font.fontfiles", GroupKey: "group", LanguagesKey: "languages", PathsKey: "files",
+	},
+	Getters:        []string{"Get", "Access"},
 	HiddenKeys:     []string{"visible", "visible_at_creation"},
 	DropsHiddenKey: "ignoreinvisible",
 	CallTargets: map[string][]string{
@@ -135,4 +222,9 @@ var GUI = GUIRules{
 	IconPathFile:   "path_overrides.txt",
 	PictureKeys:    []string{"icon", "texture"},
 	IconPathSuffix: "_ICON_PATH",
+	// CK3 common/defines/graphic/00_graphics.txt:814-817, GOVERNMENT_TYPE_REALM_FRAME_PATH and _SUFFIX
+	FolderDefineSuffix: "_PATH",
+	NameDefineSuffix:   "_SUFFIX",
+	// a file's first entry is a window in 88% of CK3's GUI files with one, 57% of Vic3's and 52% of EU5's
+	ShownFirst: "gui.widget",
 }

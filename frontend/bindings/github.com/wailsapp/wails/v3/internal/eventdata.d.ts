@@ -32,12 +32,12 @@ declare module "@wailsio/runtime" {
             "git:changed": string;
             "git:output": string;
             "install:scanned": string;
-            "install:scanning": string;
+            "install:scanning": workspace$0.Scanning;
             "release:changed": string;
             "search:hits": search$0.Hits;
             "steam:progress": steam$0.Progress;
             "wiki:progress": wiki$0.Progress;
-            "wiki:updated": {};
+            "wiki:updated": string;
             "window:closed": string;
             "window:closing": string;
             "workspace:closed": {};

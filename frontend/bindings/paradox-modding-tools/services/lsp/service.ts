@@ -44,6 +44,14 @@ export function Definition(path: string, line: number, column: number): $Cancell
 }
 
 /**
+ * DescribeIndentation returns what a file indents one level with, in words: "Tabs" or "4 spaces". It returns "" if the
+ * file indents nothing.
+ */
+export function DescribeIndentation(path: string): $CancellablePromise<string> {
+    return $Call.ByID(1536803193, path);
+}
+
+/**
  * Diagnose returns the problems of a file, judged against the open workspace. It leaves out the checks the user turned
  * off in the settings.
  */
@@ -52,8 +60,8 @@ export function Diagnose(path: string): $CancellablePromise<$models.Diagnostic[]
 }
 
 /**
- * FindSymbols returns the definitions whose name contains the query, the mods' first, up to the given limit. It returns
- * an empty list for an empty query.
+ * FindSymbols returns the definitions whose name contains the query, the mods' first, and then the localization keys
+ * that do, up to the given limit. It returns an empty list for an empty query.
  */
 export function FindSymbols(query: string, limit: number): $CancellablePromise<$models.WorkspaceSymbol[] | null> {
     return $Call.ByID(3280846261, query, limit);
@@ -106,6 +114,14 @@ export function ListHints(path: string): $CancellablePromise<$models.Hint[] | nu
 }
 
 /**
+ * ListInputs returns the Form view of the innermost definition at a position, or else of the first one on its line.
+ * It returns an error if there is none.
+ */
+export function ListInputs(path: string, line: number, column: number): $CancellablePromise<$models.Inputs> {
+    return $Call.ByID(775050286, path, line, column);
+}
+
+/**
  * ListLegend returns the legend the tokens are encoded against.
  */
 export function ListLegend(): $CancellablePromise<$models.Legend> {
@@ -136,8 +152,8 @@ export function PresentColor(path: string, within: $models.Range, color: game$0.
 }
 
 /**
- * References returns where the name at a position is defined and where it is used. It returns an empty list if the
- * position is on no name.
+ * References returns where the name at a position is defined and where it is used. A localization key's translations
+ * are left out. It returns an empty list if the position is on no name.
  */
 export function References(path: string, line: number, column: number): $CancellablePromise<$models.Location[] | null> {
     return $Call.ByID(2236984049, path, line, column);

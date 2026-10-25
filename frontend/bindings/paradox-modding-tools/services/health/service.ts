@@ -58,10 +58,25 @@ export function ListOverview(): $CancellablePromise<$models.Overview[] | null> {
 }
 
 /**
+ * ListReaders returns every place in script and localization that reads a localization key.
+ */
+export function ListReaders(key: string): $CancellablePromise<$models.FindingSite[] | null> {
+    return $Call.ByID(3956762482, key);
+}
+
+/**
  * ListSections returns every Health section.
  */
 export function ListSections(): $CancellablePromise<$models.Section[] | null> {
     return $Call.ByID(3035553106);
+}
+
+/**
+ * ListSources returns the first ten lines of each finding site's range, an open file's from the editor's text. It
+ * returns an error if a file cannot be read.
+ */
+export function ListSources(sites: $models.FindingSite[] | null): $CancellablePromise<string[] | null> {
+    return $Call.ByID(888397980, sites);
 }
 
 /**

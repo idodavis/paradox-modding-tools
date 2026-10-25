@@ -13,7 +13,6 @@ import (
 	"testing"
 	"time"
 
-	"github.com/adrg/xdg"
 	"github.com/wailsapp/wails/v3/pkg/application"
 	"golang.org/x/time/rate"
 
@@ -41,11 +40,9 @@ func openService(t *testing.T) (*Service, *workspace.Session) {
 	t.Helper()
 	newApp()
 	// the folders PMT uses come from the XDG variables, read again now and once more when the test ends
-	t.Cleanup(xdg.Reload)
-	for _, variable := range []string{"XDG_CONFIG_HOME", "XDG_CACHE_HOME", "XDG_STATE_HOME"} {
+	for _, variable := range []string{"APPDATA", "LOCALAPPDATA", "XDG_CONFIG_HOME", "XDG_CACHE_HOME"} {
 		t.Setenv(variable, t.TempDir())
 	}
-	xdg.Reload()
 	config, err := app.OpenConfig()
 	if err != nil {
 		t.Fatal(err)
@@ -77,10 +74,11 @@ func keepPage(t *testing.T, client *Client, html, title string) {
 }
 
 // TestSanitizeKeepsAndDropsElements checks each kept element, each dropped one, the attributes that survive, an anchor
-// on a heading's span and a relative link made absolute.
+// on a heading's span, a relative link made absolute, the dropped sections and the folded table.
 func TestSanitizeKeepsAndDropsElements(t *testing.T) {
 	input := `<script>alert(1)</script><style>p{}</style><noscript>none</noscript><nav>menu</nav>` +
 		`<div class="navbox"><p>navigation</p></div><div id="toc"><ul><li>contents</li></ul></div><!-- comment -->` +
+		`<table class="infobox"><tr><td>box</td></tr></table><p>cited<sup id="cite_ref-1">[1]</sup><sup></sup></p>` +
 		`<h1 id="one" class="x">One</h1>` +
 		`<h2 id="two"><span class="mw-headline" id="Two">Two</span><span class="mw-editsection">[edit]</span></h2>` +
 		`<h3 id="three">Three</h3><h4>Four</h4>` +
@@ -89,15 +87,18 @@ func TestSanitizeKeepsAndDropsElements(t *testing.T) {
 		`<p><a href="/wiki/Foo" title="t">relative</a> <a href="#Two">inside</a> <a href="http://example.com/x">web</a> ` +
 		`<a href="javascript:alert(2)">script</a> <a href="mailto:a@b.c">mail</a></p>` +
 		`<ul><li>item</li></ul><ol><li>step</li></ol><img src="/images/a.png" alt="Alt" width="5"><hr>` +
-		`<table><thead><tr><th>head</th></tr></thead><tbody><tr><td>cell</td></tr></tbody></table>` +
-		`<pre>code block</pre><section><span id="stray">wrapped</span></section>`
-	want := `<h1 id="one">One</h1><h2 id="two"><span id="Two">Two</span></h2><h3 id="three">Three</h3><h4>Four</h4>` +
-		`<div><p>Text <b>b</b> <i>i</i> <strong>s</strong> <em>e</em> <code>c</code><br/>after</p></div>` +
-		`<p><a href="http://wiki.test/wiki/Foo">relative</a> <a href="#Two">inside</a> ` +
+		`<table><thead><tr><th>head</th></tr></thead><tbody><tr><td colspan="2" style="x">cell</td></tr></tbody></table>` +
+		`<table><tr><td>1</td></tr><tr><td>2</td></tr><tr><td>3</td></tr></table>` +
+		`<pre>code block</pre><section><span id="stray">wrapped</span></section>` +
+		`<h2>References</h2><p>gone</p><h3>Under it</h3><p>gone too</p><h2>Last</h2><p>kept</p>`
+	want := `<p>cited</p><h1 id="one">One</h1><h2 id="two"><span id="Two">Two</span></h2><h3 id="three">Three</h3>` +
+		`<h4>Four</h4><p>Text <b>b</b> <i>i</i> <strong>s</strong> <em>e</em> <code>c</code><br/>after</p>` +
+		`<p><a data-page="Foo" href="http://wiki.test/wiki/Foo">relative</a> <a href="#Two">inside</a> ` +
 		`<a href="http://example.com/x">web</a> <a>script</a> <a>mail</a></p>` +
-		`<ul><li>item</li></ul><ol><li>step</li></ol><img src="http://wiki.test/images/a.png" alt="Alt"/><hr/>` +
-		`<table><thead><tr><th>head</th></tr></thead><tbody><tr><td>cell</td></tr></tbody></table>` +
-		`<pre>code block</pre><span>wrapped</span>`
+		`<ul><li>item</li></ul><ol><li>step</li></ol><hr/>` +
+		`<table><thead><tr><th>head</th></tr></thead><tbody><tr><td colspan="2">cell</td></tr></tbody></table>` +
+		`<details><summary>Table, 3 rows</summary><table><tbody><tr><td>1</td></tr><tr><td>2</td></tr>` +
+		`<tr><td>3</td></tr></tbody></table></details><pre>code block</pre><span>wrapped</span><h2>Last</h2><p>kept</p>`
 	if got := Sanitize(input, &url.URL{Scheme: "http", Host: "wiki.test"}); got != want {
 		t.Errorf("Sanitize =\n%s\nwant\n%s", got, want)
 	}
@@ -141,22 +142,24 @@ func TestFindPagesRanksTitles(t *testing.T) {
 	}
 }
 
-// TestListNotesOrdersNewestFirst checks the order of the patch notes, which puts a minor version's hotfix notes after
-// its numbered patches and 1.10 after 1.9, and marks the pages that have a Modding heading.
+// TestListNotesOrdersNewestFirst checks the order of the patch notes, newest first, which lists a minor version's
+// hotfix notes after its release and 1.10 before 1.9, and marks the pages that have a Modding heading.
 func TestListNotesOrdersNewestFirst(t *testing.T) {
 	wik, ws := openService(t)
 	client := wik.resolveClient(ws)
-	listing := Listing{Versions: []string{"1.9", "1.30", "1.30.X", "1.10"}, RefreshedAt: time.Now()}
+	const minor = "1.30"
+	listing := Listing{Versions: []string{"1.9", minor, "1.30.X", "1.10"}, RefreshedAt: time.Now()}
 	if err := app.SaveJSON(client.resolveListing(), listing); err != nil {
 		t.Fatal(err)
 	}
 	keepPage(t, client, `<h2><span id="Modding">Modding</span></h2><p>text</p>`, "Patch 1.9")
-	keepPage(t, client, `<h2>Balance</h2><p>some modding is mentioned in a paragraph</p>`, "Patch 1.30")
+	keepPage(t, client, `<h2>Balance</h2><p>some modding is mentioned in a <b>paragraph</b>, released on 2026-09-30</p>`,
+		"Patch 1.30")
 	keepPage(t, client, `<h3>Modding changes</h3>`, "Patch 1.30.X")
 	notes, err := wik.ListNotes()
 	want := []Note{
-		{"1.30.X", "Patch 1.30.X", true}, {"1.30", "Patch 1.30", false}, {"1.10", "Patch 1.10", false},
-		{"1.9", "Patch 1.9", true},
+		{minor, "", "2026-09-30", "Patch 1.30", false}, {"1.30.X", minor, "", "Patch 1.30.X", true},
+		{"1.10", "", "", "Patch 1.10", false}, {"1.9", "", "", "Patch 1.9", true},
 	}
 	if err != nil || !slices.Equal(notes, want) {
 		t.Errorf("ListNotes = %+v, %v, want %+v", notes, err, want)
@@ -221,7 +224,7 @@ func TestClientRefreshesFromServer(t *testing.T) {
 	if page, ok := client.LoadPage("Traits"); !ok || page.HTML != "<p>kept</p>" {
 		t.Errorf("a fresh page was fetched again: %+v, %v", page, ok)
 	}
-	want := `<h2>Modding</h2><p>Decisions</p><a href="` + server.URL + `/wiki/Foo">link</a>`
+	want := `<h2>Modding</h2><p>Decisions</p><a data-page="Foo" href="` + server.URL + `/wiki/Foo">link</a>`
 	if page, ok := client.LoadPage("Decisions"); !ok || page.HTML != want {
 		t.Errorf("page = %+v, %v, want %s", page, ok, want)
 	}

@@ -399,17 +399,14 @@ func (schema *Schema) FindDatabase(rel string) (*Database, bool) {
 	return nil, false
 }
 
-// FindDatabaseByClass returns the database that a class in the dumps refers to, such as CTraitDatabase. A trailing
-// Type is ignored if the rest names none, as in CDecisionTypeDatabase. It returns false if there is no such database.
+// FindDatabaseByClass returns the database that a class in the dumps refers to, such as CTraitDatabase or
+// CDecisionTypeDatabase. It returns false if there is no such database.
 func (schema *Schema) FindDatabaseByClass(class string) (*Database, bool) {
 	words := strings.TrimPrefix(class, "C")
 	if lower := strings.ToLower(words); strings.HasSuffix(lower, "database") {
 		words = words[:len(words)-len("database")]
 	}
 	label, ok := schema.ResolveTypeDatabase(words)
-	if !ok {
-		label, ok = schema.ResolveTypeDatabase(strings.TrimSuffix(words, "Type"))
-	}
 	if folder, listed := game.ClassDatabases[class]; listed {
 		label, ok = game.ToDatabase(folder), true
 	}
@@ -476,27 +473,36 @@ func (schema *Schema) ResolveLink(link, scope string) (string, bool) {
 }
 
 // ResolveCallTypes returns the type that each step of a data call leads to, starting from the block's data
-// context. A step no dump declares gets "", and the steps after it are left out.
+// context. A first step that names a data type leads to that type. A step no dump declares gets "", and the steps
+// after it are left out.
 func (schema *Schema) ResolveCallTypes(call jomini.Call, datacontext string) []string {
 	owners := schema.listCallOwners(call, datacontext)
 	types := make([]string, len(owners))
 	for i, owner := range owners {
-		types[i] = schema.DataTypes[owner].Functions[call.Steps[i].Text].Returns
+		types[i] = owner
+		if function, ok := schema.DataTypes[owner].Functions[call.Steps[i].Text]; ok {
+			types[i] = function.Returns
+		}
 	}
 	return types
 }
 
 // listCallOwners returns, for each step of a data call, the data type that declares the function the step calls,
-// starting from the given data context. A step no dump declares gets "", and the steps after it are left out.
+// starting from the given data context. The first step may also be a function of the global type, or name a data
+// type, which reads the object of that type in scope and is its own owner. A step no dump declares gets "", and the
+// steps after it are left out.
 func (schema *Schema) listCallOwners(call jomini.Call, datacontext string) []string {
 	var owners []string
 	current := datacontext
 	for i, step := range call.Steps {
 		function, ok := schema.DataTypes[current].Functions[step.Text]
-		// The first step may be a function of the global type.
 		if !ok && i == 0 {
 			current = game.GlobalType
 			function, ok = schema.DataTypes[current].Functions[step.Text]
+			if _, named := schema.DataTypes[step.Text]; !ok && named {
+				owners, current = append(owners, step.Text), step.Text
+				continue
+			}
 		}
 		if !ok {
 			return append(owners, "")
@@ -508,14 +514,15 @@ func (schema *Schema) listCallOwners(call jomini.Call, datacontext string) []str
 }
 
 // FindFunction returns the data function that one step of a data call calls, starting from the given data context.
-// The first step falls back to the global type. It returns false if the dumps declare none, or if a step before it is
-// unknown.
+// The first step falls back to the global type. It returns false if the dumps declare none, if a step before it is
+// unknown, or if the step names a data type rather than calling a function.
 func (schema *Schema) FindFunction(call jomini.Call, datacontext string, step int) (DataFunction, bool) {
 	owners := schema.listCallOwners(call, datacontext)
 	if step < 0 || step >= len(owners) || owners[step] == "" {
 		return DataFunction{}, false
 	}
-	return schema.DataTypes[owners[step]].Functions[call.Steps[step].Text], true
+	function, ok := schema.DataTypes[owners[step]].Functions[call.Steps[step].Text]
+	return function, ok
 }
 
 // ResolveMacro returns the call that a data call stands for. A call that opens with one of the game's data binding
@@ -594,14 +601,19 @@ func (schema *Schema) ListCallReferences(call jomini.Call, datacontext string) [
 }
 
 // ResolveTypeDatabase returns the database that holds the names of a data type: the one named in the singular by the
-// type's words. It returns false if none is, or several are.
+// type's words, else, for a type whose last word is Type, by the words before it (GovernmentType, governments). It
+// returns false if none is, or several are.
 func (schema *Schema) ResolveTypeDatabase(dataType string) (string, bool) {
-	label := schema.TypeDatabases[toPhrase(dataType)]
+	phrase := ToPhrase(dataType)
+	label, ok := schema.TypeDatabases[phrase]
+	if stem, isTyped := strings.CutSuffix(phrase, " type"); !ok && isTyped {
+		label = schema.TypeDatabases[stem]
+	}
 	return label, label != ""
 }
 
-// toPhrase returns a CamelCase or snake_case text as lower-case words apart by spaces.
-func toPhrase(text string) string {
+// ToPhrase returns a CamelCase or snake_case text as lower-case words apart by spaces.
+func ToPhrase(text string) string {
 	var words strings.Builder
 	var previous rune
 	for _, r := range text {

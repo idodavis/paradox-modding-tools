@@ -6,6 +6,9 @@ import { defineConfig } from "vitest/config";
 export default defineConfig({
   test: { include: ["src/**/*.test.ts"], environment: "node", setupFiles: ["vitest.setup.ts"] },
   resolve: {
-    alias: { "@services": path.resolve(import.meta.dirname, "bindings/paradox-modding-tools/services") },
+    alias: {
+      "@services": path.resolve(import.meta.dirname, "bindings/paradox-modding-tools/services"),
+      "@internal": path.resolve(import.meta.dirname, "bindings/paradox-modding-tools/internal"),
+    },
   },
 });

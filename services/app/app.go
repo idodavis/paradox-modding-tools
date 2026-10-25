@@ -1,13 +1,20 @@
 package app
 
 import (
+	"cmp"
 	"context"
+	"encoding/json"
 	"errors"
 	"fmt"
 	"log/slog"
+	"net/http"
 	"os"
 	"path/filepath"
+	"runtime"
+	"slices"
 	"strconv"
+	"strings"
+	"sync/atomic"
 	"time"
 
 	"github.com/samber/lo"
@@ -31,14 +38,20 @@ func init() {
 	application.RegisterEvent[string](EventWindowClosed)
 }
 
+// mainWindow is the name of the main window, whose close quits the app.
+const mainWindow = "main"
+
 // Service is the Wails service for the app itself: its version and updates, its settings, its log and its windows.
 type Service struct {
-	Config *ConfigFile // config.json, which carries PMT's folders
-	Build  string      // the version the build set
+	Config       *ConfigFile // config.json, which carries PMT's folders
+	Build        string      // the version the build set
+	mainClosable atomic.Bool // the frontend let the main window close
 }
 
-// ServiceStartup writes a mark saying the app is running, which CrashedLastRun reads on the next start.
+// ServiceStartup empties the trash and writes a mark saying the app is running, which CrashedLastRun reads on the
+// next start.
 func (app *Service) ServiceStartup(ctx context.Context, options application.ServiceOptions) error {
+	_ = os.RemoveAll(app.Config.Dirs.Trash)
 	mark := resolveMark(app.Config.Dirs)
 	_, err := os.Stat(mark)
 	// a mark still there means the last run never shut down
@@ -52,8 +65,17 @@ func (app *Service) ServiceShutdown() error { return os.Remove(resolveMark(app.C
 type Update struct {
 	Version   string `json:"version"`
 	Available bool   `json:"available"`
-	Notes     string `json:"notes"`
 }
+
+// A Release is one published version of the app, with its notes as the Markdown they are written in.
+type Release struct {
+	Version string    `json:"version"`
+	Date    time.Time `json:"date"`
+	Notes   string    `json:"notes"`
+}
+
+// releasesURL is where GitHub lists the app's releases, the newest first.
+const releasesURL = "https://api.github.com/repos/idodavis/paradox-modding-tools/releases"
 
 // OpenConfig finds PMT's folders on this machine and loads config.json. It returns an error if a folder cannot be
 // made.
@@ -93,7 +115,7 @@ func (app *Service) CheckUpdate() (Update, error) {
 	if err != nil || release == nil {
 		return Update{}, err
 	}
-	update := Update{Version: release.Version, Available: true, Notes: release.Notes}
+	update := Update{Version: release.Version, Available: true}
 	application.Get().Event.Emit(EventAppUpdate, update)
 	return update, nil
 }
@@ -115,26 +137,83 @@ func (app *Service) ApplyUpdate() error {
 	return updater.Restart(context.Background())
 }
 
+// ListReleases returns the app's published releases from the newest down to the one running, each with its notes. A
+// build that is no release, such as a dev build, gets the newest only. Drafts and prereleases are left out. It returns
+// an error if GitHub cannot be reached or answers with an error.
+func (app *Service) ListReleases() ([]Release, error) {
+	ctx, cancel := context.WithTimeout(context.Background(), 15*time.Second)
+	defer cancel()
+	request, err := http.NewRequestWithContext(ctx, http.MethodGet, releasesURL, nil)
+	if err != nil {
+		return nil, err
+	}
+	request.Header.Set("Accept", "application/vnd.github+json")
+	response, err := http.DefaultClient.Do(request)
+	if err != nil {
+		return nil, err
+	}
+	defer func() { _ = response.Body.Close() }()
+	if response.StatusCode != http.StatusOK {
+		return nil, fmt.Errorf("GitHub answered %s", response.Status)
+	}
+	var listed []struct {
+		Tag        string    `json:"tag_name"`
+		Body       string    `json:"body"`
+		Published  time.Time `json:"published_at"`
+		Draft      bool      `json:"draft"`
+		Prerelease bool      `json:"prerelease"`
+	}
+	if err := json.NewDecoder(response.Body).Decode(&listed); err != nil {
+		return nil, err
+	}
+	running := strings.TrimPrefix(app.Build, "v")
+	var releases []Release
+	for _, published := range listed {
+		if published.Draft || published.Prerelease {
+			continue
+		}
+		version := strings.TrimPrefix(published.Tag, "v")
+		releases = append(releases, Release{Version: version, Date: published.Published, Notes: published.Body})
+		if version == running {
+			return releases, nil
+		}
+	}
+	return releases[:min(len(releases), 1)], nil
+}
+
 // ListSettings returns the settings catalog.
 func (app *Service) ListSettings() []Setting { return Catalog }
 
-// ReadSettings returns every setting's value by key, using the catalog's default for a setting that was never
-// set.
-func (app *Service) ReadSettings() map[string]string {
+// ReadSettings returns every setting's value by key in the given workspace, using the catalog's default for a setting
+// that was never set.
+func (app *Service) ReadSettings(workspaceID string) map[string]string {
 	return lo.SliceToMap(Catalog, func(setting Setting) (string, string) {
-		value, _ := app.Config.LookupSetting(setting.Key)
+		value, _ := app.Config.LookupSetting(workspaceID, setting.Key)
 		return setting.Key, value
 	})
 }
 
-// WriteSetting sets one setting to the given value and emits config:changed for the settings. It returns an error if
-// the config is read-only or cannot be saved.
-func (app *Service) WriteSetting(key, value string) error {
+// WriteSetting sets one setting to the given value, in the given workspace's record for a setting kept per workspace,
+// and emits config:changed for the settings. It returns an error if the catalog has no such setting, the workspace is
+// not recorded, or the config is read-only or cannot be saved.
+func (app *Service) WriteSetting(workspaceID, key, value string) error {
+	setting, ok := lo.Find(Catalog, func(setting Setting) bool { return setting.Key == key })
+	if !ok {
+		return fmt.Errorf("the catalog has no setting %q", key)
+	}
 	return app.Config.Update("settings", func(config *Config) error {
-		if config.Settings == nil {
-			config.Settings = map[string]string{}
+		values := &config.Settings
+		if setting.Workspace {
+			position := slices.IndexFunc(config.Workspaces, func(record Workspace) bool { return record.ID == workspaceID })
+			if position < 0 {
+				return fmt.Errorf("the workspace %s is not recorded", workspaceID)
+			}
+			values = &config.Workspaces[position].Settings
 		}
-		config.Settings[key] = value
+		if *values == nil {
+			*values = map[string]string{}
+		}
+		(*values)[key] = value
 		return nil
 	})
 }
@@ -151,6 +230,60 @@ func (app *Service) CrashedLastRun() bool {
 
 // LogPath returns the path of pmt.log.
 func (app *Service) LogPath() string { return resolveLog(app.Config.Dirs) }
+
+// BuildDiagnostics returns what a bug report needs: the version, the system, the installs and the end of pmt.log.
+func (app *Service) BuildDiagnostics() string {
+	var report strings.Builder
+	system := runtime.GOOS + "/" + runtime.GOARCH
+	env := application.Get().Env.Info()
+	if env.OSInfo != nil {
+		// Windows 11 still names itself Windows 10 in the registry; its branding says 11
+		system = fmt.Sprintf("%s %s, %s", cmp.Or(env.OSInfo.Branding, env.OSInfo.Name), env.OSInfo.Version, system)
+	}
+	if webview, ok := env.PlatformInfo["WebView2"]; ok {
+		system += fmt.Sprintf(", WebView2 %v", webview)
+	}
+	fmt.Fprintf(&report, "Paradox Modding Tools %s\nSystem: %s\n", app.Build, system)
+	for _, install := range app.Config.Config().Installs {
+		fmt.Fprintf(&report, "Install: %s, version %s\n", install.Game, install.Version)
+	}
+	text, _ := os.ReadFile(resolveLog(app.Config.Dirs))
+	lines := strings.Split(strings.TrimRight(string(text), "\n"), "\n")
+	fmt.Fprintf(&report, "\npmt.log, its last 200 lines:\n%s\n", strings.Join(lines[max(0, len(lines)-200):], "\n"))
+	return report.String()
+}
+
+// ShowFolder opens a folder in the system's file manager, or a file's folder with the file selected. It returns an
+// error if the path does not exist.
+func (app *Service) ShowFolder(path string) error {
+	stat, err := os.Stat(path)
+	if err != nil {
+		return err
+	}
+	return application.Get().Env.OpenFileManager(path, !stat.IsDir())
+}
+
+// OpenMainWindow opens the main window. Its close is held and sent to the frontend as window:closing, until
+// CloseWindow lets it through and the app quits.
+//
+//wails:ignore
+func (app *Service) OpenMainWindow() {
+	pmt := application.Get()
+	window := pmt.Window.NewWithOptions(application.WebviewWindowOptions{
+		Name:   mainWindow,
+		Title:  "Paradox Modding Tools",
+		Width:  1400,
+		Height: 900,
+		URL:    "/",
+	})
+	window.RegisterHook(events.Common.WindowClosing, func(event *application.WindowEvent) {
+		if !app.mainClosable.Load() {
+			event.Cancel()
+			pmt.Event.Emit(EventWindowClosing, mainWindow)
+		}
+	})
+	window.OnWindowEvent(events.Common.WindowClosing, func(*application.WindowEvent) { pmt.Quit() })
+}
 
 // OpenWindow opens a new window with the given name on a page of the app. It returns an error if a window already
 // has the name.
@@ -185,11 +318,15 @@ func (app *Service) ShowWindow(name string) error {
 }
 
 // CloseWindow closes the window with the given name. A window opened by OpenWindow first gets a window:closing event.
-// It closes when the frontend closes it again, or when a timer ends. It returns an error if no window has the name.
+// It closes when the frontend closes it again, or when a timer ends. The main window's close quits the app. It returns
+// an error if no window has the name.
 func (app *Service) CloseWindow(name string) error {
 	window, err := lookupWindow(name)
 	if err != nil {
 		return err
+	}
+	if name == mainWindow {
+		app.mainClosable.Store(true)
 	}
 	window.Close()
 	return nil

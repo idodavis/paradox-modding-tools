@@ -25,9 +25,20 @@ export interface Comparison {
     "removed": string[] | null;
 
     /**
-     * the listing's fields that differ from the last upload's: title, description, tags …
+     * the listing's fields that differ from the last upload's: title, description …
      */
     "listing": string[] | null;
+
+    /**
+     * the last upload's listing
+     */
+    "last": Listing;
+    "uploadedAt": string;
+
+    /**
+     * the last upload's files are Steam's copy, downloaded
+     */
+    "downloaded": boolean;
     "steam"?: Details | null;
 }
 
@@ -57,6 +68,8 @@ export interface Details {
 export interface Listing {
     "workshopId": string;
     "title": string;
+    "version": string;
+    "supportedVersion": string;
     "description": string;
 
     /**
@@ -97,6 +110,11 @@ export interface Preview {
      * a video's
      */
     "url": string;
+
+    /**
+     * a video's id
+     */
+    "video": string;
     "order": number;
 }
 

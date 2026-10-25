@@ -39,6 +39,16 @@ export interface LexiconRow {
  */
 export interface Note {
     "version": string;
+
+    /**
+     * the version a hotfix belongs to, such as 1.14 for 1.14.2; "" for a release
+     */
+    "parent": string;
+
+    /**
+     * the release date as the note writes it; "" if it gives none
+     */
+    "released": string;
     "title": string;
     "modding": boolean;
 }
@@ -48,6 +58,11 @@ export interface Note {
  */
 export interface Page {
     "title": string;
+
+    /**
+     * the page on the wiki
+     */
+    "url": string;
     "html": string;
     "fetchedAt": string;
 

@@ -11,5 +11,7 @@ export type {
     Edge,
     Filter,
     Graph,
-    Node
+    Node,
+    Section,
+    Version
 } from "./models.js";

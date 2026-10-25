@@ -9,7 +9,6 @@ import (
 	"testing"
 	"time"
 
-	"github.com/adrg/xdg"
 	"github.com/wailsapp/wails/v3/pkg/application"
 
 	"paradox-modding-tools/internal/files"
@@ -58,11 +57,9 @@ func openService(t *testing.T, prepare func(dir string)) (*Service, *workspace.S
 	}
 	prepare(dir)
 	// the folders PMT uses come from the XDG variables, read again now and once more when the test ends
-	t.Cleanup(xdg.Reload)
-	for _, variable := range []string{"XDG_CONFIG_HOME", "XDG_CACHE_HOME", "XDG_STATE_HOME"} {
+	for _, variable := range []string{"APPDATA", "LOCALAPPDATA", "XDG_CONFIG_HOME", "XDG_CACHE_HOME"} {
 		t.Setenv(variable, t.TempDir())
 	}
-	xdg.Reload()
 	config, err := app.OpenConfig()
 	if err != nil {
 		t.Fatal(err)

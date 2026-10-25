@@ -32,15 +32,17 @@ export function BuildGraph(root: string, filter: $models.Filter): $CancellablePr
 
 /**
  * Defaults returns the filter for a new graph. It draws the databases that fire and the scripted effects, from the game
- * and every mod. It returns an empty filter if no workspace is open.
+ * and every mod, six firings of a node before the rest are folded, with every fold closed. It returns an empty filter
+ * if no workspace is open.
  */
 export function Defaults(): $CancellablePromise<$models.Filter> {
     return $Call.ByID(3340937252);
 }
 
 /**
- * FindRoots returns the nodes a query names, up to the given limit: an exact id, a namespace as a prefix, or a
- * number within every namespace. It returns nil if no workspace is open.
+ * FindRoots returns up to the given limit of the nodes whose name holds the query, ignoring case. The name equal to
+ * the query comes first, then the names that start with it, then the rest, each in name order. It returns nil if no
+ * workspace is open.
  */
 export function FindRoots(query: string, limit: number): $CancellablePromise<$models.Node[] | null> {
     return $Call.ByID(455229330, query, limit);

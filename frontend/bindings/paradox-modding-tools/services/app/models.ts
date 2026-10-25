@@ -57,6 +57,15 @@ export interface Mod {
 }
 
 /**
+ * A Release is one published version of the app, with its notes as the Markdown they are written in.
+ */
+export interface Release {
+    "version": string;
+    "date": string;
+    "notes": string;
+}
+
+/**
  * A Setting is one row of the catalog of settings.
  */
 export interface Setting {
@@ -68,9 +77,14 @@ export interface Setting {
     "help": string;
 
     /**
-     * general, install, mods, appearance, ide
+     * appearance; the IDE's editor, language, checks, explorer, visual, wiki
      */
     "section": string;
+
+    /**
+     * it is kept per workspace, as the IDE's settings are
+     */
+    "workspace": boolean;
 
     /**
      * switch, choice, number, text
@@ -97,7 +111,6 @@ export interface Setting {
 export interface Update {
     "version": string;
     "available": boolean;
-    "notes": string;
 }
 
 /**
@@ -118,4 +131,24 @@ export interface Workspace {
      * the page it opens on
      */
     "homePage": string;
+
+    /**
+     * the color of the game's files, as a slot or a CSS color; "" for its own
+     */
+    "gameColor": string;
+
+    /**
+     * the IDE opens with no tabs rather than those left open
+     */
+    "resetTabs": boolean;
+
+    /**
+     * the explorer lists images, fonts and other binary files
+     */
+    "showBinaries": boolean;
+
+    /**
+     * Settings holds the values the user set of the settings kept per workspace, by key.
+     */
+    "settings": { [_ in string]?: string } | null;
 }

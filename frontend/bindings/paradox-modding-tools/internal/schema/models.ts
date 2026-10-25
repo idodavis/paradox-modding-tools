@@ -90,18 +90,6 @@ export interface Input {
 }
 
 /**
- * A Saved is one scope that the definition saved before the current statement, with the type it holds.
- */
-export interface Saved {
-    "name": string;
-
-    /**
-     * "" if unknown
-     */
-    "type": string;
-}
-
-/**
  * A SourceState says where one source's data came from and how fresh it is.
  */
 export interface SourceState {

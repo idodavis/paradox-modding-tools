@@ -645,21 +645,25 @@ func (counter *counter) resolveCounts() {
 	}
 }
 
-// resolveClaims gives a field the claims its counts support. A shape or a value that a source has stated is kept. The
-// value is a reference if one database defines every value written and none is a number, a date or a yes-or-no word.
-// Otherwise a field always written as a block is a block, or a color if every block was one. A field written only as
-// scalars gets the first type in valueTests that all its values fit.
+// resolveClaims gives a field the claims its counts support. A shape or a value that a source has stated is kept, but
+// a stated reference with no database, as the docs' "key", and a stated block take the reference vanilla shows: the
+// block lists its values, as a culture's traditions do. The value is a reference if one database defines every value
+// written and none is a number, a date or a yes-or-no word. Otherwise a field always written as a block is a block,
+// or a color if every block was one. A field written only as scalars gets the first type in valueTests that all its
+// values fit.
 func (counter *counter) resolveClaims(field *Field) {
 	vanilla := field.Vanilla
 	if shape := resolveShapeClaim(vanilla); shape != "" {
 		field.Shape.resolve(shape, game.SourceVanilla)
 	}
-	if field.Value.IsStated() {
+	stated := field.Value.Value
+	open := stated.Type == ValueReference && stated.Database == "" || stated.Type == ValueBlock
+	if field.Value.IsStated() && !open {
 		return
 	}
 	literal := slices.ContainsFunc(slices.Collect(maps.Keys(vanilla.Values)), counter.isLiteral)
 	if database, ok := counter.resolveDatabase(vanilla.Values); ok && !literal {
-		field.Value.resolve(Expected{Type: ValueReference, Database: database}, game.SourceVanilla)
+		field.Value = Claim[Expected]{Value: Expected{Type: ValueReference, Database: database}, Source: game.SourceVanilla}
 		return
 	}
 	switch {

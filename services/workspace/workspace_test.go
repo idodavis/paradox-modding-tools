@@ -16,7 +16,6 @@ import (
 	"testing"
 	"time"
 
-	"github.com/adrg/xdg"
 	"github.com/wailsapp/wails/v3/pkg/application"
 
 	"paradox-modding-tools/internal/files"
@@ -67,11 +66,9 @@ func openConfig(t *testing.T, gameID, installPath string, mods ...app.Mod) *app.
 	t.Helper()
 	createApp()
 	// the folders PMT uses come from the XDG variables, read again now and once more when the test ends
-	t.Cleanup(xdg.Reload)
-	for _, variable := range []string{"XDG_CONFIG_HOME", "XDG_CACHE_HOME", "XDG_STATE_HOME"} {
+	for _, variable := range []string{"APPDATA", "LOCALAPPDATA", "XDG_CONFIG_HOME", "XDG_CACHE_HOME"} {
 		t.Setenv(variable, t.TempDir())
 	}
-	xdg.Reload()
 	config, err := app.OpenConfig()
 	if err != nil {
 		t.Fatal(err)
@@ -101,7 +98,10 @@ func listOpenStages(t *testing.T, config *app.ConfigFile) (*Session, []string, [
 	}
 	opening := time.Now()
 	wsp := &Service{Config: config, Build: "test"}
-	ws, err := wsp.openSession("w1", func(next string) {
+	ws, err := wsp.openSession("w1", func(next string, percent int) {
+		if percent > 0 {
+			return
+		}
 		finish()
 		stage, started = next, time.Now()
 		stages = append(stages, next)
@@ -178,7 +178,7 @@ func TestOpenLoadsCachesOnSecondOpen(t *testing.T) {
 func TestOpenFailsOnUnknownRecords(t *testing.T) {
 	config := openConfig(t, ck3, resolveFixture(t, ck3))
 	wsp := &Service{Config: config, Build: "test"}
-	if _, err := wsp.openSession("w2", func(string) {}, func([]FileChange) {}); err == nil {
+	if _, err := wsp.openSession("w2", func(string, int) {}, func([]FileChange) {}); err == nil {
 		t.Error("an unknown workspace opened")
 	}
 	err := config.Update("", func(records *app.Config) error {
@@ -188,7 +188,7 @@ func TestOpenFailsOnUnknownRecords(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	if _, err := wsp.openSession("w1", func(string) {}, func([]FileChange) {}); err == nil {
+	if _, err := wsp.openSession("w1", func(string, int) {}, func([]FileChange) {}); err == nil {
 		t.Error("a workspace on an unknown install opened")
 	}
 	err = config.Update("", func(records *app.Config) error {
@@ -199,7 +199,7 @@ func TestOpenFailsOnUnknownRecords(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	if _, err := wsp.openSession("w1", func(string) {}, func([]FileChange) {}); err == nil {
+	if _, err := wsp.openSession("w1", func(string, int) {}, func([]FileChange) {}); err == nil {
 		t.Error("an unknown game opened")
 	}
 }
@@ -547,14 +547,14 @@ func TestStartWatcherSkipsHiddenFolders(t *testing.T) {
 func TestWriteDescriptorKeepsOtherFields(t *testing.T) {
 	changed := Descriptor{
 		Name: "Changed", Version: "2.0", SupportedVersion: "1.*", Tags: []string{"Gameplay", "Quoted tag"},
-		ReplacePaths: []string{"common/traits", "events"}, WorkshopID: "123", Thumbnail: "thumb.png",
+		ReplacePaths: []string{"common/traits", "events"}, WorkshopID: "123",
 	}
 	for gameID, kept := range map[string]string{ck3: "replace_path", vic3: `"multiplayer_synchronized": true`, eu5: `"id": "fixture.mod"`} {
 		row := game.LookupGame(gameID)
 		dir := copyMod(t, gameID)
+		changed.Thumbnail = files.Join(dir, path.Join(row.ThumbnailDir, "thumb.png"))
 		want := changed
 		want.Path = files.Join(dir, row.ModDescriptor)
-		want.Thumbnail = path.Join(row.ThumbnailDir, changed.Thumbnail)
 		if gameID != ck3 {
 			want.WorkshopID, want.ID = "", "fixture.mod"
 		}
@@ -646,7 +646,7 @@ func TestServiceReadsOpenWorkspace(t *testing.T) {
 		t.Errorf("fonts with binaries hidden: %+v, %v", children, err)
 	}
 	err = config.Update("", func(records *app.Config) error {
-		records.Settings = map[string]string{"ide.hideBinaries": "false"}
+		records.Workspaces[0].ShowBinaries = true
 		return nil
 	})
 	if children, _ = wsp.ListFolder(fonts); err != nil || len(children) != 3 {
@@ -682,13 +682,15 @@ func TestServiceRefusesGameFiles(t *testing.T) {
 	mod := ws.Order[0].Dir
 	vanilla := filepath.Join(resolveFixture(t, ck3), "game", "events", "v_events.txt")
 	mine := filepath.Join(mod, "events", "m_events.txt")
+	_, deleteErr := wsp.Delete(vanilla)
+	_, deleteRootErr := wsp.Delete(filepath.Join(resolveFixture(t, ck3), "game"))
 	refusals := map[string]error{
 		"Write":         wsp.Write(vanilla, files.Text{}),
 		"Create":        wsp.Create(filepath.Join(filepath.Dir(vanilla), "new.txt"), false),
 		"Rename from":   wsp.Rename(vanilla, filepath.Join(mod, "moved.txt")),
 		"Rename to":     wsp.Rename(mine, filepath.Join(filepath.Dir(vanilla), "moved.txt")),
-		"Delete":        wsp.Delete(vanilla),
-		"Delete a root": wsp.Delete(filepath.Join(resolveFixture(t, ck3), "game")),
+		"Delete":        deleteErr,
+		"Delete a root": deleteRootErr,
 	}
 	for method, err := range refusals {
 		if err == nil || !strings.Contains(err.Error(), "game's own files") {

@@ -1,6 +1,7 @@
 package graph
 
 import (
+	"slices"
 	"strings"
 
 	"github.com/samber/lo"
@@ -12,20 +13,48 @@ import (
 	"paradox-modding-tools/services/workspace"
 )
 
-// A Detail is what the page shows about one node: its text, its firings, its references and its pictures.
+// A Detail is what the page shows about one node: its text, its keys, its firings, its references and its pictures.
 type Detail struct {
-	Node       Node           `json:"node"`
-	Text       string         `json:"text"` // the event's localized description
-	Fires      []Edge         `json:"fires"`
-	FiredBy    []Edge         `json:"firedBy"`
-	References []Node         `json:"references"`
-	Portraits  []string       `json:"portraits"`  // the characters the event's portraits show
-	Background string         `json:"background"` // the path of the picture found; "" if there is none
-	Inputs     []schema.Input `json:"inputs"`
+	Node       Node            `json:"node"`
+	Text       string          `json:"text"`     // the event's localized description
+	Source     string          `json:"source"`   // the definition as written
+	Sections   []Section       `json:"sections"` // the keys at the top of the definition, except its options
+	Options    []Section       `json:"options"`  // the definition's option blocks
+	Fires      []Edge          `json:"fires"`
+	FiredBy    []Edge          `json:"firedBy"`
+	Linked     map[string]Node `json:"linked"` // the node at the other end of each of those firings, by its id
+	References []Node          `json:"references"`
+	Portraits  []string        `json:"portraits"`  // the characters the event's portraits show
+	Background string          `json:"background"` // the path of the picture found; "" if there is none
 }
 
-// descriptionKey is the key an event writes its description with.
-const descriptionKey = "desc"
+// A Section is one key at the top of a definition, as the page shows it.
+type Section struct {
+	Key    string    `json:"key"`
+	Value  string    `json:"value"`            // a scalar as written, or a block on one line with inner blocks as { … }
+	Line   int       `json:"line"`             // counted from one
+	When   string    `json:"when,omitempty"`   // the block's own trigger on one line
+	Random bool      `json:"random,omitempty"` // one of the texts shows at random, else the first whose trigger holds
+	Texts  []Version `json:"texts,omitempty"`
+	Flags  []string  `json:"flags,omitempty"` // an option's keys written as yes
+}
+
+// A Version is one text a key can show, with the trigger that decides it.
+type Version struct {
+	Key  string `json:"key"` // its localization key
+	Text string `json:"text"`
+	When string `json:"when,omitempty"` // its trigger on one line; "" if it always can
+	Line int    `json:"line"`           // counted from one
+}
+
+// The keys of an event that its sections read for their texts, their trigger and their split into options.
+const (
+	descriptionKey = "desc"
+	nameKey        = "name"
+	labelKey       = "text"
+	optionKey      = "option"
+	triggerKey     = "trigger"
+)
 
 // BuildDetail returns the detail of the node with the given id, from its kept definition.
 func (gph *Service) BuildDetail(id string) (Detail, error) {
@@ -44,15 +73,23 @@ func (gph *Service) BuildDetail(id string) (Detail, error) {
 	}
 	node := makeNode(ws, mods, site, 0)
 	text, _, _ := ws.LookupText(mods, findDescription(tree, statement))
+	sections := lo.Map(slices.Collect(tree.Children(statement)), func(child int32, _ int) Section {
+		return makeSection(ws, mods, tree, child)
+	})
+	sections, options := lo.FilterReject(sections, func(section Section, _ int) bool { return section.Key != optionKey })
+	fires, firedBy := listFires(ws, mods, site, true), mods.ListFiredBy(ws.Schema, site, true)
 	return Detail{
 		Node:       node,
 		Text:       text,
-		Fires:      makeEdges(ws, mods, listFires(ws, mods, site, true)),
-		FiredBy:    makeEdges(ws, mods, mods.ListFiredBy(ws.Schema, site, true)),
+		Source:     tree.Text(tree.Statements[statement].Span),
+		Sections:   sections,
+		Options:    options,
+		Fires:      makeEdges(ws, mods, fires),
+		FiredBy:    makeEdges(ws, mods, firedBy),
+		Linked:     listLinked(ws, mods, fires, firedBy),
 		References: listReferences(ws, mods, site),
 		Portraits:  listPortraits(tree, statement),
 		Background: findBackground(ws, mods, tree, statement),
-		Inputs:     ws.Schema.ListInputs(node.Database),
 	}, nil
 }
 
@@ -71,11 +108,131 @@ func findDescription(tree *jomini.Tree, statement int32) string {
 	return ""
 }
 
+// makeSection returns the section of one statement at the top of a definition. A block also gets its own trigger, the
+// texts it can show and, for an option, the keys it writes as yes.
+func makeSection(ws *workspace.Session, mods *index.Index, tree *jomini.Tree, statement int32) Section {
+	current := tree.Statements[statement]
+	section := Section{Key: tree.Text(current.Key), Value: tree.Unquoted(current.Value), Line: toSourceLine(tree, current.Key)}
+	if !current.IsBlock() {
+		if version, ok := makeVersion(ws, mods, tree, statement); ok && version.Text != "" {
+			section.Texts = []Version{version}
+		}
+		return section
+	}
+	section.Value = makeValue(tree, statement)
+	section.When = findTrigger(tree, statement)
+	section.Texts, section.Random = listVersions(ws, mods, tree, statement)
+	if section.Key == optionKey {
+		section.Flags = lo.FilterMap(slices.Collect(tree.Children(statement)), func(child int32, _ int) (string, bool) {
+			flag := tree.Statements[child]
+			return tree.Text(flag.Key), tree.Text(flag.Value) == game.Bools[0]
+		})
+	}
+	return section
+}
+
+// makeValue returns a block's statements on one line. A statement that is a block is its head and { … }, and the
+// block's own trigger is left out.
+func makeValue(tree *jomini.Tree, statement int32) string {
+	parts := []string{"{"}
+	for child := range tree.Children(statement) {
+		current := tree.Statements[child]
+		switch {
+		case !current.IsBlock():
+			parts = append(parts, toOneLine(tree.Text(current.Span)))
+		case tree.Text(current.Key) != triggerKey:
+			parts = append(parts, toOneLine(tree.Text(jomini.Span{Start: current.Span.Start, End: current.Block.Start}))+" { … }")
+		}
+	}
+	return strings.Join(append(parts, "}"), " ")
+}
+
+// findTrigger returns the trigger block a statement holds, on one line. It returns "" if there is none.
+func findTrigger(tree *jomini.Tree, statement int32) string {
+	trigger, ok := tree.FindChild(statement, triggerKey)
+	if !ok || !tree.Statements[trigger].IsBlock() {
+		return ""
+	}
+	return toOneLine(strings.TrimSuffix(strings.TrimPrefix(tree.Text(tree.Statements[trigger].Block), "{"), "}"))
+}
+
+// listVersions returns the texts a block can show in the order it writes them, and whether they show at random. A text
+// is a desc or a name, or a block with its own trigger that holds one. A first_valid or random_valid block holds more.
+func listVersions(ws *workspace.Session, mods *index.Index, tree *jomini.Tree, statement int32) (versions []Version, random bool) {
+	for child := range tree.Children(statement) {
+		key := tree.Text(tree.Statements[child].Key)
+		row, _ := game.LookupKeyword(game.ShapeDescription, "", key)
+		switch {
+		case row.Shows == "leaf" || key == descriptionKey || key == nameKey:
+			if version, ok := makeVersion(ws, mods, tree, child); ok {
+				version.When = findTrigger(tree, child)
+				versions = append(versions, version)
+			}
+		case row.Shows != "":
+			inner, innerRandom := listVersions(ws, mods, tree, child)
+			versions = append(versions, inner...)
+			random = random || innerRandom || row.Shows == "random"
+		}
+	}
+	return versions, random
+}
+
+// makeVersion returns the text a statement shows. The statement is a key whose value is a localization key, or a block
+// that writes one as its desc or text. It returns false if the statement writes none.
+func makeVersion(ws *workspace.Session, mods *index.Index, tree *jomini.Tree, statement int32) (Version, bool) {
+	label := statement
+	if tree.Statements[statement].IsBlock() {
+		// 0 is the file, which has no value
+		label, _ = tree.FindChild(statement, descriptionKey)
+		if label == 0 {
+			label, _ = tree.FindChild(statement, labelKey)
+		}
+	}
+	value := tree.Statements[label].Value
+	if value.IsEmpty() {
+		return Version{}, false
+	}
+	key := tree.Unquoted(value)
+	text, _, _ := ws.LookupText(mods, key)
+	return Version{Key: key, Text: text, Line: toSourceLine(tree, tree.Statements[label].Key)}, true
+}
+
+// toSourceLine returns the line of a span in a tree, counted from one.
+func toSourceLine(tree *jomini.Tree, span jomini.Span) int {
+	return tree.Lines.ToPosition(span.Start).Line + 1
+}
+
+// toOneLine returns a text with every run of white space made one space.
+func toOneLine(text string) string {
+	return strings.Join(strings.Fields(text), " ")
+}
+
+// makeEdge returns the edge of one firing, with where its reference is written.
+func makeEdge(ws *workspace.Session, mods *index.Index, fire index.Fire) Edge {
+	return Edge{
+		From: toID(mods, fire.Source), To: toID(mods, fire.Target), Days: findDelay(ws, mods, fire.Use), Via: listVia(mods, fire),
+		Place: ws.Locate(mods, mods.File(fire.Use).Path), Line: toLine(mods, fire.Use),
+	}
+}
+
 // makeEdges returns the edges of some firings, each edge once.
 func makeEdges(ws *workspace.Session, mods *index.Index, fires []index.Fire) []Edge {
-	return lo.UniqBy(lo.Map(fires, func(fire index.Fire, _ int) Edge {
-		return Edge{From: toID(mods, fire.Source), To: toID(mods, fire.Target), Days: findDelay(ws, mods, fire.Use), Via: listVia(mods, fire)}
-	}), toKey)
+	return lo.UniqBy(lo.Map(fires, func(fire index.Fire, _ int) Edge { return makeEdge(ws, mods, fire) }), toKey)
+}
+
+// listLinked returns the nodes at the other end of a node's firings, by id: the targets of what it fires and the
+// sources of what fires it.
+func listLinked(ws *workspace.Session, mods *index.Index, fires, firedBy []index.Fire) map[string]Node {
+	linked := map[string]Node{}
+	for _, fire := range fires {
+		node := makeNode(ws, mods, fire.Target, 0)
+		linked[node.ID] = node
+	}
+	for _, fire := range firedBy {
+		node := makeNode(ws, mods, fire.Source, 0)
+		linked[node.ID] = node
+	}
+	return linked
 }
 
 // listReferences returns the nodes that a node's definitions refer to, each name once. A name the game keeps no

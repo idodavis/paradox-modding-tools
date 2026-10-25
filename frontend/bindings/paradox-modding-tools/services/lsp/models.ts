@@ -40,15 +40,60 @@ export interface Card {
     "takes": schema$0.Expected;
 
     /**
-     * what its block holds: the shape's word
+     * whether a field is required: optional, always or conditional
+     */
+    "need"?: string;
+
+    /**
+     * what the database says of its definitions
+     */
+    "about"?: string;
+
+    /**
+     * the values the game writes most for a field nothing declares, up to eight
+     */
+    "writes"?: string[] | null;
+
+    /**
+     * what a call of a scripted definition gives
+     */
+    "returns"?: string;
+
+    /**
+     * what its block holds, in words
      */
     "holds"?: string;
 
     /**
-     * the scope a link or command leads to
+     * the scope its block runs in, for a command or link that switches
      */
     "leads"?: string;
-    "scope"?: CardScope | null;
+
+    /**
+     * the scope its value must be, for a command or link with no block
+     */
+    "target"?: string;
+
+    /**
+     * a fact comes from dumps older than the install
+     */
+    "stale"?: boolean;
+
+    /**
+     * a branch of a random list: its percent of the branches' numbers
+     */
+    "weight"?: number;
+
+    /**
+     * the event graph's id of the name; "" if the graph does not draw it
+     */
+    "node"?: string;
+
+    /**
+     * the definition the position is in, then the blocks inside it
+     */
+    "within"?: string[] | null;
+    "scopes"?: CardScope[] | null;
     "date"?: CardDate | null;
 
     /**
@@ -84,13 +129,13 @@ export interface CardDate {
 }
 
 /**
- * A CardScope is the scope section of a hover card.
+ * A CardScope is one scope that script can name where a statement is written: the link that names it, such as root or
+ * scope:target, the type the game gives it, and what it is.
  */
 export interface CardScope {
-    "this": string;
-    "root": string;
-    "previous": string[] | null;
-    "saved": schema$0.Saved[] | null;
+    "link": string;
+    "type": string;
+    "about": string;
 }
 
 /**
@@ -235,6 +280,29 @@ export interface Hint {
 }
 
 /**
+ * Inputs is the Form view of one definition: the inputs its database offers, with the values the definition writes.
+ */
+export interface Inputs {
+    "database": string;
+
+    /**
+     * the definition's whole statement
+     */
+    "range": Range;
+    "inputs": schema$0.Input[] | null;
+
+    /**
+     * by key path, a.b for b inside a; only the keys the definition writes
+     */
+    "values": { [_ in string]?: string } | null;
+
+    /**
+     * by key path: each block the definition writes, for an edit inside it
+     */
+    "blocks": { [_ in string]?: Range } | null;
+}
+
+/**
  * A Legend is the list of token types and modifiers that the semantic tokens are encoded against.
  */
 export interface Legend {
@@ -248,6 +316,11 @@ export interface Legend {
 export interface Location {
     "place": workspace$0.Place;
     "range": Range;
+
+    /**
+     * the text of the line, "" where the file cannot be read
+     */
+    "text": string;
 }
 
 /**
@@ -280,6 +353,11 @@ export interface Signature {
 export interface Symbol {
     "name": string;
     "database": string;
+
+    /**
+     * what a definition of its database is called, such as "window"
+     */
+    "what": string;
 
     /**
      * the whole statement

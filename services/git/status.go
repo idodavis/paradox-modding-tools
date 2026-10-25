@@ -1,8 +1,13 @@
 package git
 
 import (
+	"path/filepath"
 	"strconv"
 	"strings"
+
+	"github.com/samber/lo"
+
+	"paradox-modding-tools/services/workspace"
 )
 
 // A Change is one changed file as git status reports it.
@@ -12,6 +17,8 @@ type Change struct {
 	Status   string `json:"status"`         // modified, added, deleted, renamed, untracked, conflict
 	Staged   bool   `json:"staged"`         // the change is in the index
 	Unstaged bool   `json:"unstaged"`       // the change is in the working tree
+	// Place is where the file is in the open workspace; it is empty while none is open.
+	Place workspace.Place `json:"place"`
 }
 
 // A Status is what git status reports for one repository.
@@ -21,13 +28,15 @@ type Status struct {
 	Ahead    int      `json:"ahead"`
 	Behind   int      `json:"behind"`
 	Changes  []Change `json:"changes"`
+	// Ignored is the files and folders git ignores, each as a full path; a folder stands for everything in it.
+	Ignored []string `json:"ignored"`
 }
 
 // refTypes is the type of a ref by the prefix of its full name.
 var refTypes = map[string]string{"refs/heads/": "branch", "refs/remotes/": "remote", "refs/tags/": "tag"}
 
 // fieldCounts is the count of fields before the path, which may hold spaces, in each status record.
-var fieldCounts = map[byte]int{'1': 8, '2': 9, 'u': 10, '?': 1}
+var fieldCounts = map[byte]int{'1': 8, '2': 9, 'u': 10, '?': 1, '!': 1}
 
 // statuses is the word for what was done to a file, by the letters git prints for it.
 var statuses = []struct{ letters, status string }{
@@ -36,11 +45,11 @@ var statuses = []struct{ letters, status string }{
 
 // ReadStatus returns a repository's status. The error is git's if the folder is in no repository.
 func (git *Service) ReadStatus(dir string) (Status, error) {
-	stdout, err := git.Run(dir, "status", "--porcelain=v2", "-z", "--branch")
+	stdout, err := git.Run(dir, "status", "--porcelain=v2", "-z", "--branch", "--ignored")
 	if err != nil {
 		return Status{}, err
 	}
-	status := Status{Changes: []Change{}}
+	status := Status{Changes: []Change{}, Ignored: []string{}}
 	records := splitRecords(stdout)
 	for i := 0; i < len(records); i++ {
 		record := records[i]
@@ -54,8 +63,18 @@ func (git *Service) ReadStatus(dir string) (Status, error) {
 			i++ // a rename's original path is the record after it
 			change.From = records[i]
 			status.Changes = append(status.Changes, change)
+		case '!':
+			status.Ignored = append(status.Ignored, record[2:])
 		}
 	}
+	root, err := git.resolveRepository(dir)
+	if err != nil {
+		return Status{}, err
+	}
+	git.locateChanges(root, status.Changes)
+	status.Ignored = lo.Map(status.Ignored, func(path string, _ int) string {
+		return filepath.Join(root, strings.TrimSuffix(path, "/"))
+	})
 	return status, nil
 }
 

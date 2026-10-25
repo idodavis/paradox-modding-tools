@@ -30,7 +30,7 @@ type Occurrence struct {
 	Name      uint32 // into Index.Names
 	Mode      uint8  // into Index.Modes; an entry mode's prefix
 	Priority  int16  // CK3's override priority; 0 means none
-	Language  uint8  // into Index.Languages; a message's
+	Language  uint8  // into Index.Languages; a localization file's
 	Role      Role
 	Local     bool
 	Alias     bool  // whether it is a second name of the definition it sits in, not a definition of its own
@@ -117,7 +117,7 @@ func (index *Index) Occurrence(site Site) Occurrence {
 // File returns the file a site is in.
 func (index *Index) File(site Site) files.File { return index.Files[site.File] }
 
-// Language returns the language of the message at a site.
+// Language returns the language of the localization file a site is in, for a message and for a use in its text.
 func (index *Index) Language(site Site) string {
 	return index.Languages.Texts[index.Occurrence(site).Language]
 }

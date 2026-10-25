@@ -32,8 +32,23 @@ export interface Finding {
      * what the database calls a definition
      */
     "database": string;
+
+    /**
+     * what it is about: a dependency's mod, else its last kept site's origin
+     */
+    "origin": string;
     "facts": { [_ in string]?: string } | null;
     "sites": FindingSite[] | null;
+
+    /**
+     * the names the replaced sites define that the kept file does not
+     */
+    "removed"?: string[] | null;
+
+    /**
+     * Comparable is true when the kept statement and the ones it replaces can be shown side by side.
+     */
+    "comparable": boolean;
 }
 
 /**
@@ -45,27 +60,47 @@ export interface FindingSite {
     "kept": boolean;
 
     /**
-     * order, mode, priority, merge, replace
+     * the winner's: order, mode, priority, merge, replace; or merged
      */
     "reason"?: string;
+
+    /**
+     * the names a whole-file site defines
+     */
+    "defines"?: string[] | null;
+
+    /**
+     * the names a replaced site defines that the kept file does not
+     */
+    "removed"?: string[] | null;
 }
 
 /**
- * An Overview counts one mod's definitions by database, its files and its messages.
+ * An Overview is what one mod holds, counted.
  */
 export interface Overview {
     "mod": string;
+
+    /**
+     * by what a database's definitions are called; two called the same share one
+     */
     "counts": { [_ in string]?: number } | null;
     "files": number;
     "messages": number;
 }
 
 /**
- * A Report is the sections and findings the Health page shows for one load order. It leaves out the game's error log.
+ * A Report is the sections and findings the Health page shows for one load order. The game's error log is counted in
+ * its section and in the total, and listed by ListErrorLog.
  */
 export interface Report {
     "sections": Section[] | null;
     "findings": Finding[] | null;
+
+    /**
+     * the findings of every section but the overview
+     */
+    "total": number;
 }
 
 /**
@@ -73,10 +108,23 @@ export interface Report {
  */
 export interface Section {
     /**
-     * contests, overrides, dependencies, dangling, localization, script, errorlog
+     * contests, overrides, dependencies, dangling, localization, script, errorlog, overview
      */
     "id": string;
     "label": string;
     "note": string;
+    "count": number;
+
+    /**
+     * none for a section counted only as a whole
+     */
+    "tallies": Tally[] | null;
+}
+
+/**
+ * A Tally is how many of one section's findings are of one kind.
+ */
+export interface Tally {
+    "kind": string;
     "count": number;
 }

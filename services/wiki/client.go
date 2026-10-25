@@ -10,6 +10,7 @@ import (
 	"net/http"
 	"net/url"
 	"path/filepath"
+	"strings"
 	"time"
 
 	"golang.org/x/time/rate"
@@ -22,6 +23,7 @@ import (
 // A Page is one wiki page as the cache keeps it, its HTML sanitized.
 type Page struct {
 	Title     string    `json:"title"`
+	URL       string    `json:"url"` // the page on the wiki
 	HTML      string    `json:"html"`
 	FetchedAt time.Time `json:"fetchedAt"`
 	Modding   bool      `json:"modding"` // the page has a heading that holds the word Modding
@@ -78,8 +80,12 @@ func (client *Client) FetchPage(title string) (Page, error) {
 	if err != nil {
 		return Page{}, fmt.Errorf("wiki page %q: %w", title, err)
 	}
-	sanitized := Sanitize(response.Parse.Text, &url.URL{Scheme: api.Scheme, Host: api.Host})
-	page := Page{Title: response.Parse.Title, HTML: sanitized, FetchedAt: time.Now(), Modding: hasModding(sanitized)}
+	origin := &url.URL{Scheme: api.Scheme, Host: api.Host}
+	sanitized := Sanitize(response.Parse.Text, origin)
+	page := Page{
+		Title: response.Parse.Title, URL: origin.JoinPath(strings.ReplaceAll(response.Parse.Title, " ", "_")).String(),
+		HTML: sanitized, FetchedAt: time.Now(), Modding: hasModding(sanitized),
+	}
 	if err := app.SaveJSON(client.resolvePath(title), page); err != nil {
 		return Page{}, fmt.Errorf("wiki page %q: %w", title, err)
 	}

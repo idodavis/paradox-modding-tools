@@ -323,8 +323,8 @@ func (dumps *Dumps) parseModifiers(text string) {
 }
 
 // parseDataTypes parses the types and functions of one data types dump. A function written on a type belongs to that
-// type, and a global one belongs to game.GlobalType. A macro keeps its text. A function written for several arities
-// keeps the first.
+// type, and a global one belongs to game.GlobalType. A function that returns its own object (game.SelfFunctions)
+// returns its type. A macro keeps its text. A function written for several arities keeps the first.
 func (dumps *Dumps) parseDataTypes(text string) {
 	for head, body := range parseSections(text, false) {
 		parts := signature.FindStringSubmatch(head)
@@ -341,9 +341,13 @@ func (dumps *Dumps) parseDataTypes(text string) {
 		if dataType.Functions == nil {
 			dataType = DataType{Name: owner, Functions: map[string]DataFunction{}}
 		}
+		returns := pairs["Return type"]
+		if slices.Contains(game.SelfFunctions, label) && owner != game.GlobalType {
+			returns = owner
+		}
 		if _, exists := dataType.Functions[label]; definition != "Type" && label != "" && !exists {
 			dataType.Functions[label] = DataFunction{
-				Name: label, Returns: pairs["Return type"], Arguments: splitList(parts[2]), Blurb: pairs["Description"],
+				Name: label, Returns: returns, Arguments: splitList(parts[2]), Blurb: pairs["Description"],
 				Expansion: pairs["Macro replacement"],
 			}
 		}
@@ -514,7 +518,7 @@ func buildArguments(tree *jomini.Tree, statement int32, field *Field) {
 				argument := field.buildChild(part)
 				argument.Source = game.SourceDumps
 				term := strings.TrimSuffix(strings.TrimPrefix(tree.Text(inner.Value), "<"), ">")
-				_, known := game.DocTypes[toPhrase(term)]
+				_, known := game.DocTypes[ToPhrase(term)]
 				switch {
 				case inner.IsBlock():
 					buildArguments(tree, child, argument)

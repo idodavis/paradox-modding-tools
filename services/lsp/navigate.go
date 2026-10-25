@@ -20,6 +20,7 @@ import (
 type Symbol struct {
 	Name      string          `json:"name"`
 	Database  string          `json:"database"`
+	What      string          `json:"what"`      // what a definition of its database is called, such as "window"
 	Range     Range           `json:"range"`     // the whole statement
 	NameRange Range           `json:"nameRange"` // the name alone
 	Children  []Symbol        `json:"children,omitempty"`
@@ -89,8 +90,8 @@ func resolveCall(mods *index.Index, place workspace.Place, reference schema.Refe
 	return reference
 }
 
-// References returns where the name at a position is defined and where it is used. It returns an empty list if the
-// position is on no name.
+// References returns where the name at a position is defined and where it is used. A localization key's translations
+// are left out. It returns an empty list if the position is on no name.
 func (lsp *Service) References(path string, line, column int) ([]Location, error) {
 	ws, tree, err := lsp.loadTree(path)
 	if err != nil {
@@ -102,8 +103,9 @@ func (lsp *Service) References(path string, line, column int) ([]Location, error
 	if reference.Name == "" {
 		return []Location{}, nil
 	}
-	return lo.Map(listOccurrences(mods, place, reference), func(site index.Site, _ int) Location {
-		return locate(ws, ws.Locate(mods, mods.File(site).Path), int(mods.Occurrence(site).Line)+1)
+	occurrences := dropTranslations(ws, mods, place, listOccurrences(mods, place, reference))
+	return lo.Map(occurrences, func(site index.Site, _ int) Location {
+		return locateOccurrence(ws, mods, site)
 	}), nil
 }
 
@@ -206,7 +208,8 @@ func (visitor *symbolsVisitor) Enter(tree *jomini.Tree, statement int32, context
 	}
 	definition := context.Definition
 	symbol := Symbol{
-		Name: definition.Name, Database: definition.Database, Category: schema.CategoryDefinition,
+		Name: definition.Name, Database: definition.Database, What: game.DescribeDefinition(definition.Database, false),
+		Category:  schema.CategoryDefinition,
 		Range:     ToRange(tree.Src, tree.Lines, tree.Statements[statement].Span),
 		NameRange: ToRange(tree.Src, tree.Lines, definition.Span),
 	}
@@ -226,8 +229,8 @@ func (visitor *symbolsVisitor) Leave(tree *jomini.Tree, statement int32, context
 	}
 }
 
-// FindSymbols returns the definitions whose name contains the query, the mods' first, up to the given limit. It returns
-// an empty list for an empty query.
+// FindSymbols returns the definitions whose name contains the query, the mods' first, and then the localization keys
+// that do, up to the given limit. It returns an empty list for an empty query.
 func (lsp *Service) FindSymbols(query string, limit int) ([]WorkspaceSymbol, error) {
 	ws, err := lsp.Workspace.Session()
 	if err != nil {
@@ -239,24 +242,40 @@ func (lsp *Service) FindSymbols(query string, limit int) ([]WorkspaceSymbol, err
 	if lower == "" || limit <= 0 {
 		return symbols, nil
 	}
-	// the mods' files are searched first
-	for _, position := range slices.Concat(mods.ListOwnFiles(), ws.Install.ListOwnFiles()) {
-		for number, occurrence := range mods.Occurrences[position] {
-			if occurrence.Role != index.RoleDefines || !strings.Contains(strings.ToLower(mods.Names.Texts[occurrence.Name]), lower) {
-				continue
-			}
-			site := index.Site{File: position, Occurrence: int32(number)}
-			reference := mods.ToReference(site)
-			symbols = append(symbols, WorkspaceSymbol{
-				Name: reference.Name, Database: reference.Database,
-				Location: locate(ws, ws.Locate(mods, mods.File(site).Path), int(occurrence.Line)+1), Category: schema.CategoryDefinition,
-			})
-			if len(symbols) == limit {
-				return symbols, nil
+	// the mods' files are searched first, and a key is listed once, not once for each language
+	for _, role := range []index.Role{index.RoleDefines, index.RoleLocalizes} {
+		listed := map[string]bool{}
+		for _, position := range slices.Concat(mods.ListOwnFiles(), ws.Install.ListOwnFiles()) {
+			for number, occurrence := range mods.Occurrences[position] {
+				name := mods.Names.Texts[occurrence.Name]
+				if occurrence.Role != role || !strings.Contains(strings.ToLower(name), lower) || role == index.RoleLocalizes && listed[name] {
+					continue
+				}
+				listed[name] = true
+				site := index.Site{File: position, Occurrence: int32(number)}
+				reference := mods.ToReference(site)
+				symbols = append(symbols, WorkspaceSymbol{
+					Name: reference.Name, Database: reference.Database,
+					Location: locateOccurrence(ws, mods, site), Category: schema.CategoryDefinition,
+				})
+				if len(symbols) == limit {
+					return symbols, nil
+				}
 			}
 		}
 	}
 	return symbols, nil
+}
+
+// locateOccurrence returns the location of an occurrence: the range of its name, with the text of its line. The range
+// is empty if the file cannot be read.
+func locateOccurrence(ws *workspace.Session, mods *index.Index, site index.Site) Location {
+	occurrence := mods.Occurrence(site)
+	location := locate(ws, ws.Locate(mods, mods.File(site).Path), int(occurrence.Line)+1)
+	if tree, err := ws.LoadTree(location.Place.Path); err == nil {
+		location.Range = ToRange(tree.Src, tree.Lines, occurrence.Span)
+	}
+	return location
 }
 
 // locate returns the location of a line in a file. The range is empty if the file cannot be read or has no such line.
@@ -265,5 +284,6 @@ func locate(ws *workspace.Session, place workspace.Place, line int) Location {
 	if err != nil || line < 1 || line > tree.Lines.CountLines() {
 		return Location{Place: place}
 	}
-	return Location{Place: place, Range: ToRange(tree.Src, tree.Lines, tree.Lines.LineSpan(line-1))}
+	span := tree.Lines.LineSpan(line - 1)
+	return Location{Place: place, Range: ToRange(tree.Src, tree.Lines, span), Text: tree.Src[span.Start:span.End]}
 }

@@ -17,4 +17,9 @@ export interface Header {
      * BC1 to BC7, or "" for uncompressed
      */
     "compression": string;
+
+    /**
+     * the file's size
+     */
+    "bytes": number;
 }

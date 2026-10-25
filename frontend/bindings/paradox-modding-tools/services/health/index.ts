@@ -12,5 +12,6 @@ export type {
     FindingSite,
     Overview,
     Report,
-    Section
+    Section,
+    Tally
 } from "./models.js";

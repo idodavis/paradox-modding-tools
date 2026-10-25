@@ -9,7 +9,6 @@ import (
 	"testing"
 	"time"
 
-	"github.com/adrg/xdg"
 	"github.com/samber/lo"
 	"github.com/wailsapp/wails/v3/pkg/application"
 
@@ -27,13 +26,12 @@ const (
 	typeButton  = "v_button"
 	typeWidget  = "widget"
 	typeLabel   = "v_label"
-	groupFlag   = "GetVariableSystem.Exists('')"
+	groupFlagA  = "GetVariableSystem.Exists('d_a')"
+	groupFlagB  = "GetVariableSystem.Exists('d_b')"
 	groupAlive  = "GetPlayer.IsAlive"
-	groupTrait  = "GetTrait('').IsValid"
-	flagA       = "d_a"
-	flagB       = "d_b"
+	groupBrave  = "GetTrait('brave').IsValid"
+	groupBold   = "GetTrait('bold').IsValid"
 	halfAlpha   = "0.5"
-	traitBold   = "bold"
 	cssRed      = "rgba(255, 0, 0, 1)"
 	cssBlue     = "rgba(0, 0, 255, 1)"
 	cssGreen    = "rgba(0, 255, 0, 1)"
@@ -106,6 +104,7 @@ window = {
 	widget = {
 		name = "d_not"
 		visible = "[Not( GetPlayer.IsAlive )]"
+		visible_at_creation = no
 	}
 	widget = {
 		name = "d_outer"
@@ -116,10 +115,15 @@ window = {
 	widget = {
 		name = "d_parent"
 		visible = "[GetVariableSystem.Exists('d_a')]"
-		widget = { name = "d_child" visible = "[GetVariableSystem.Exists('d_b')]" }
+		widget = { name = "d_child" visible = "[Not( GetVariableSystem.Exists('d_a') )]" }
 	}
 	widget = { name = "d_trait_a" visible = "[GetTrait('brave').IsValid]" }
 	widget = { name = "d_trait_b" visible = "[GetTrait('bold').IsValid]" }
+	widget = {
+		name = "d_choice"
+		alpha = "[Select_float( GetVariableSystem.Exists('d_a'), '(float)1.0', '(float)0.5' )]"
+		size = "[Select_CVector2f( GetPlayer.IsAlive, '(CVector2f)10,20', '(CVector2f)30,40' )]"
+	}
 }
 window = {
 	name = "d_override_window"
@@ -132,7 +136,7 @@ window = {
 	name = "d_order_window"
 	widget = {
 		name = "d_item_holder"
-		item = { widget = { name = "d_item" } }
+		item = { widget = { name = "d_item" } block "d_row" { widget = { name = "d_row_item" } } }
 		widget = { name = "d_plain" }
 		buttontext = { widget = { name = "d_label" } }
 		tooltipwidget = { widget = { name = "d_tip" } }
@@ -146,7 +150,7 @@ window = {
 }
 window = {
 	name = "d_text_window"
-	textbox = { name = "d_raw" raw_text = "Plain $v_key$ text" visible = "[GetPlayer.IsAlive]" }
+	textbox = { name = "d_raw" text = "no_such_key" raw_text = "Plain $v_key$ text" visible = "[GetPlayer.IsAlive]" }
 	textbox = { name = "d_unknown" text = "no_such_key" }
 }
 window = {
@@ -249,11 +253,9 @@ func writeFiles(t *testing.T, dir string, added map[string]string) {
 func openService(t *testing.T, gameID, installPath string, mods ...app.Mod) *Service {
 	t.Helper()
 	createApp()
-	t.Cleanup(xdg.Reload)
-	for _, variable := range []string{"XDG_CONFIG_HOME", "XDG_CACHE_HOME", "XDG_STATE_HOME"} {
+	for _, variable := range []string{"APPDATA", "LOCALAPPDATA", "XDG_CONFIG_HOME", "XDG_CACHE_HOME"} {
 		t.Setenv(variable, t.TempDir())
 	}
-	xdg.Reload()
 	config, err := app.OpenConfig()
 	if err != nil {
 		t.Fatal(err)
@@ -377,7 +379,7 @@ func TestResolveWindowAppliesTypesTemplatesAndOverrides(t *testing.T) {
 		t.Errorf("box: type %s, holding %s, children %v", box.Type, box.Row.Holding, inside)
 	}
 	size := findProperty(box.Properties, "size")
-	if size.Value != "{ 100 20 }" || size.Origin != originTemplate || size.Place.Rel != "gui/v_window.gui" {
+	if size.Value != "{ 100 20 }" || size.Origin != originTemplate || window.Places[size.Place].Rel != "gui/v_window.gui" {
 		t.Errorf("box size %+v", size)
 	}
 	button := window.Widgets[2]
@@ -432,7 +434,7 @@ func TestResolveWindowOrdersChildrenAndOpensStates(t *testing.T) {
 		t.Fatal(err)
 	}
 	holder := findWidget(t, window, "d_item_holder")
-	if got, want := listChildNames(window, holder.ID), []string{"d_label", "d_plain", "d_slash", "d_state", "d_item"}; !slices.Equal(got, want) {
+	if got, want := listChildNames(window, holder.ID), []string{"d_label", "d_plain", "d_slash", "d_state", "d_item", "d_row_item"}; !slices.Equal(got, want) {
 		t.Errorf("children %v, want %v", got, want)
 	}
 	if label := findWidget(t, window, "d_label"); label.Role != roleLabel {
@@ -529,8 +531,9 @@ func TestResolveWindowShowsTextsAndBindings(t *testing.T) {
 }
 
 // TestEvaluateStatesHidesByPick checks that the groups of a window's conditions are read through And and Not, that a
-// group that leads to a database offers its definitions, that the first option is picked where nothing is, and that a
-// pick changes which widgets are hidden.
+// GUI variable and an object named by a quoted argument are each a group of their own, that the window opens with
+// every group at none but a check that an object exists, that a pick changes which widgets are hidden, and that a
+// choice between two values gives the one its condition chooses.
 func TestEvaluateStatesHidesByPick(t *testing.T) {
 	drw, _, modDir := openFixture(t)
 	modFile := filepath.Join(modDir, modWindowPath)
@@ -538,30 +541,36 @@ func TestEvaluateStatesHidesByPick(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	states, err := drw.EvaluateStates(window, nil)
+	states, err := drw.EvaluateStates(modFile, windowName, nil)
 	if err != nil {
 		t.Fatal(err)
 	}
+	yesOrNo := []string{pickEvery, pickNone}
 	wantGroups := []Group{
-		{ID: groupFlag, Label: "GetVariableSystem.Exists(…)", Options: []string{flagA, flagB, pickEvery, pickNone}, Picked: flagA},
-		{ID: groupAlive, Label: groupAlive, Options: []string{pickEvery, pickNone}, Picked: pickEvery},
+		{ID: groupFlagA, Subject: "Variable system", Label: "exists d_a", Options: yesOrNo, Picked: pickNone},
+		{ID: groupAlive, Subject: "Player", Label: "is alive", Options: yesOrNo, Picked: pickNone},
+		{ID: groupFlagB, Subject: "Variable system", Label: "exists d_b", Options: yesOrNo, Picked: pickNone},
+		{ID: groupBrave, Subject: "Trait", Key: "brave", Label: "is valid", Options: yesOrNo, Picked: pickEvery},
+		{ID: groupBold, Subject: "Trait", Key: "bold", Label: "is valid", Options: yesOrNo, Picked: pickEvery},
 	}
-	if len(states.Groups) != 3 || !slices.EqualFunc(states.Groups[:2], wantGroups, func(got, want Group) bool {
-		return got.ID == want.ID && got.Label == want.Label && got.Picked == want.Picked && slices.Equal(got.Options, want.Options)
+	if !slices.EqualFunc(states.Groups, wantGroups, func(got, want Group) bool {
+		return got.ID == want.ID && got.Subject == want.Subject && got.Key == want.Key && got.Label == want.Label &&
+			got.Picked == want.Picked && slices.Equal(got.Options, want.Options)
 	}) {
 		t.Errorf("groups %+v", states.Groups)
-	}
-	if trait := states.Groups[2]; trait.ID != groupTrait || trait.Picked != "brave" || trait.Options[0] != "brave" ||
-		trait.Options[1] != traitBold || !slices.Contains(trait.Options, "craven") || slices.Contains(trait.Options, pickNone) {
-		t.Errorf("the group that leads to the traits: %+v", trait)
 	}
 	names := func(hidden []int32) []string {
 		return lo.Map(hidden, func(id int32, _ int) string { return window.Widgets[id].Name })
 	}
-	if got, want := names(states.Hidden), []string{"d_not", "d_outer", "d_off", "d_child", "d_trait_b"}; !slices.Equal(got, want) {
-		t.Errorf("hidden by the first options: %v, want %v", got, want)
+	want := []string{"d_both", "d_outer", "d_inner", "d_off", "d_parent"}
+	if got := names(states.Hidden); !slices.Equal(got, want) {
+		t.Errorf("hidden as the window opens: %v, want %v", got, want)
 	}
-	flipped, err := drw.EvaluateStates(window, map[string]string{groupAlive: pickNone, groupFlag: flagB, groupTrait: traitBold})
+	chosen := []Choice{{Key: "alpha", Value: "0.5"}, {Key: "size", Value: "30 40"}}
+	if got := states.Choices[findWidget(t, window, "d_choice").ID]; !slices.Equal(got, chosen) {
+		t.Errorf("choices as the window opens: %+v, want %+v", got, chosen)
+	}
+	flipped, err := drw.EvaluateStates(modFile, windowName, map[string]string{groupFlagB: pickEvery, groupBrave: pickNone})
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -579,26 +588,26 @@ func TestRevealPicksShowWidget(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	reveal := func(name string) map[string]string {
-		picks, err := drw.Reveal(window, findWidget(t, window, name).ID)
+	reveal := func(name string, picks map[string]string) map[string]string {
+		required, err := drw.Reveal(modFile, windowName, picks, findWidget(t, window, name).ID)
 		if err != nil {
 			t.Fatal(err)
 		}
-		return picks
+		return required
 	}
-	if got := reveal("d_inner"); got[groupFlag] != flagB || got[groupAlive] != pickEvery {
+	if got := reveal("d_inner", nil); got[groupFlagB] != pickEvery || got[groupAlive] != pickEvery {
 		t.Errorf("picks that reveal the inner widget: %v", got)
 	}
-	if got := reveal("d_not"); got[groupAlive] != pickNone || got[groupFlag] != flagA {
+	if got := reveal("d_not", map[string]string{groupAlive: pickEvery}); got[groupAlive] != pickNone || len(got) != 1 {
 		t.Errorf("picks that reveal the widget under Not: %v", got)
 	}
-	if got := reveal("d_trait_b"); got[groupTrait] != traitBold {
+	if got := reveal("d_trait_b", map[string]string{groupBold: pickNone}); got[groupBold] != pickEvery {
 		t.Errorf("picks that reveal the second trait: %v", got)
 	}
-	if got := reveal("d_child"); got != nil {
+	if got := reveal("d_child", nil); got != nil {
 		t.Errorf("picks for conditions that contradict: %v", got)
 	}
-	if got := reveal("d_off"); got != nil {
+	if got := reveal("d_off", nil); got != nil {
 		t.Errorf("picks for a widget that is never visible: %v", got)
 	}
 }
@@ -687,7 +696,7 @@ func TestEditPropertyReplacesOrAddsKey(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	edited, _ := makeEditor(t, string(windowText))(drw.EditProperty(widget.Place.Path, widget.Range, "visible", "no"))
+	edited, _ := makeEditor(t, string(windowText))(drw.EditProperty(window.Places[widget.Place].Path, widget.Range, "visible", "no"))
 	if !strings.Contains(edited, `name = "d_trait_a" visible = no }`) {
 		t.Errorf("value replaced in a block on one line: %s", edited)
 	}
@@ -723,7 +732,7 @@ func TestEditPropertyReplacesOrAddsKey(t *testing.T) {
 }
 
 // TestEditCoatLayers checks that each edit of a coat's layers, applied to the file and parsed again, leaves the coat
-// as the edit says, and that a layer a coat inherits, a second pattern and a coat written as another's name are errors.
+// as the edit says, and that a second pattern and a coat written as another's name are errors.
 func TestEditCoatLayers(t *testing.T) {
 	drw, coatFile, text := openCoatFile(t)
 	edit := makeEditor(t, text)
@@ -731,7 +740,8 @@ func TestEditCoatLayers(t *testing.T) {
 	if got := listKeys(added, coatParent); !slices.Equal(got, []string{patternKey, emblemKey, slotOne, slotTwo, emblemKey}) {
 		t.Errorf("keys after adding an emblem: %v", got)
 	}
-	_, removed := edit(drw.RemoveLayer(coatFile, coatParent, 1))
+	emblem := lo.Must(drw.ResolveCoat(coatFile, coatParent, nil)).Layers[1]
+	_, removed := edit(drw.RemoveBlock(coatFile, emblem.Range))
 	if got := listKeys(removed, coatParent); !slices.Equal(got, []string{patternKey, slotOne, slotTwo}) {
 		t.Errorf("keys after removing the emblem: %v", got)
 	}
@@ -744,11 +754,9 @@ func TestEditCoatLayers(t *testing.T) {
 		t.Errorf("keys after moving the pattern last: %v", got)
 	}
 	for name, err := range map[string]error{
-		"a second pattern":        errOf(drw.AddLayer(coatFile, coatParent, patternKey, 0)),
-		"a layer after nothing":   errOf(drw.AddLayer(coatFile, coatParent, emblemKey, 9)),
-		"a layer of an alias":     errOf(drw.AddLayer(coatFile, "d_alias", emblemKey, 0)),
-		"a layer of the parent":   errOf(drw.RemoveLayer(coatFile, "d_child", 0)),
-		"a layer that is missing": errOf(drw.RemoveLayer(coatFile, coatParent, 9)),
+		"a second pattern":      errOf(drw.AddLayer(coatFile, coatParent, patternKey, 0)),
+		"a layer after nothing": errOf(drw.AddLayer(coatFile, coatParent, emblemKey, 9)),
+		"a layer of an alias":   errOf(drw.AddLayer(coatFile, "d_alias", emblemKey, 0)),
 	} {
 		if err == nil {
 			t.Errorf("%s was edited", name)
@@ -822,7 +830,7 @@ func TestResolveCoatsOnInstalls(t *testing.T) {
 
 // A gateTotals counts what a gate found over the windows of an install.
 type gateTotals struct {
-	windows, errors, widgets, groups, hidden, databases, decided  int
+	windows, errors, widgets, groups, hidden                      int
 	texts, textsMissing, paths, pathsMissing, calls, callsMissing int
 	missing                                                       map[string][]string
 }
@@ -854,13 +862,9 @@ func (totals *gateTotals) add(t *testing.T, drw *Service, path string) {
 		for _, widget := range window.Widgets {
 			totals.count(ws, mods, path, widget)
 		}
-		datacontexts := listDatacontexts(ws.Schema, window)
-		states := evaluate(ws, window, datacontexts, nil)
-		_, kept := listGroups(ws, mods, window, datacontexts)
+		states := evaluate(ws, window, nil)
 		totals.groups += len(states.Groups)
 		totals.hidden += len(states.Hidden)
-		totals.databases += lo.CountBy(states.Groups, func(group Group) bool { return group.Database != "" })
-		totals.decided += len(resolveDecided(ws, mods, states.Groups, kept))
 	}
 }
 
@@ -891,9 +895,8 @@ func (totals *gateTotals) count(ws *workspace.Session, mods *index.Index, path s
 // log prints the totals, then each missing type or template with the files that use it.
 func (totals *gateTotals) log(t *testing.T, elapsed time.Duration) {
 	t.Helper()
-	t.Logf("%d windows, %d errors, %d widgets, %d groups (%d lead to a database, %d decided by a definition), %d hidden by the "+
-		"first picks, %s", totals.windows, totals.errors, totals.widgets, totals.groups, totals.databases, totals.decided,
-		totals.hidden, elapsed.Round(time.Millisecond))
+	t.Logf("%d windows, %d errors, %d widgets, %d groups, %d hidden as the windows open, %s", totals.windows, totals.errors,
+		totals.widgets, totals.groups, totals.hidden, elapsed.Round(time.Millisecond))
 	t.Logf("texts: %d found, %d not found; paths and icon names: %d found, %d not found; data calls: %d found, %d not found",
 		totals.texts-totals.textsMissing, totals.textsMissing, totals.paths-totals.pathsMissing, totals.pathsMissing,
 		totals.calls-totals.callsMissing, totals.callsMissing)

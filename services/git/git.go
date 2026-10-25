@@ -18,6 +18,7 @@ import (
 	"github.com/wailsapp/wails/v3/pkg/application"
 
 	"paradox-modding-tools/internal/files"
+	"paradox-modding-tools/services/workspace"
 )
 
 // The events the git service sends.
@@ -33,7 +34,9 @@ func init() {
 }
 
 // Service is the git service. It runs the git installed on this machine, which it finds on the PATH on first use.
-type Service struct{}
+type Service struct {
+	Workspace *workspace.Service
+}
 
 // findGit is the one lookup of git on the PATH, made on the first call and kept.
 var findGit = sync.OnceValues(func() (string, error) {
@@ -178,6 +181,19 @@ func (git *Service) resolveRepository(dir string) (string, error) {
 		return "", err
 	}
 	return filepath.Clean(filepath.FromSlash(strings.TrimSpace(root))), nil
+}
+
+// locateChanges gives each change the place of its file in the open workspace, from the root folder of the
+// repository, which git writes a change's path from. The changes keep an empty place if no workspace is open.
+func (git *Service) locateChanges(root string, changes []Change) {
+	session, err := git.Workspace.Session()
+	if err != nil {
+		return
+	}
+	mods := session.Mods.Load()
+	for position := range changes {
+		changes[position].Place = session.Locate(mods, filepath.Join(root, changes[position].Path))
+	}
 }
 
 // apply runs a command that changes a repository and emits git:changed with the repository's folder. The error is

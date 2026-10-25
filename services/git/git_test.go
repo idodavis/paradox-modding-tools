@@ -9,6 +9,8 @@ import (
 	"testing"
 
 	"github.com/wailsapp/wails/v3/pkg/application"
+
+	"paradox-modding-tools/services/workspace"
 )
 
 // createApp makes the Wails app the service sends its events through, once for all the tests.
@@ -138,7 +140,7 @@ func createRepository(t *testing.T) (*Service, string) {
 	t.Setenv("GIT_CONFIG_GLOBAL", os.DevNull)
 	t.Setenv("GIT_CONFIG_SYSTEM", os.DevNull)
 	createApp()
-	git := &Service{}
+	git := &Service{Workspace: &workspace.Service{}}
 	dir := t.TempDir()
 	_, err := git.Run(dir, "init", "-q", "-b", branch)
 	must(t, err)

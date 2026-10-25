@@ -54,6 +54,9 @@ type Reference struct {
 	Inferred bool `json:"inferred,omitempty"`
 }
 
+// ToID returns the id the pages give a referenced name: its database and its name.
+func (reference Reference) ToID() string { return reference.Database + ":" + reference.Name }
+
 // A Saved is one scope that the definition saved before the current statement, with the type it holds.
 type Saved struct {
 	Name string `json:"name"`
@@ -106,6 +109,7 @@ type walker struct {
 	restricted bool // whether the walk is restricted to the statements that cover offset
 	offset     int  // the byte offset the walk is restricted to
 	rel        string
+	stem       string    // the file's name without its folder and extension
 	database   *Database // the database of the file's folder; nil for a file of no folder
 	fileType   game.FileType
 	nestings   []game.Nesting
@@ -188,6 +192,7 @@ func (schema *Schema) newWalker(tree *jomini.Tree, file files.File, visitor Visi
 		schema: schema, row: row, tree: tree, file: file, visitor: visitor, inline: map[string]ScriptedDefinition{},
 	}
 	_, walker.rel = SplitStage(row, file.Rel)
+	walker.stem = strings.TrimSuffix(path.Base(walker.rel), path.Ext(walker.rel))
 	walker.fileType = game.FileTypes[strings.ToLower(path.Ext(walker.rel))]
 	if file.Format == files.FormatScript || file.Format == files.FormatTable {
 		walker.database, _ = schema.FindDatabase(file.Rel)
@@ -200,8 +205,7 @@ func (schema *Schema) newWalker(tree *jomini.Tree, file files.File, visitor Visi
 			walker.declaring = schema.InlineDatabases
 		}
 		if database.Row.NamedBy == "file" && len(tree.Statements) > 1 {
-			stem := strings.TrimSuffix(path.Base(walker.rel), path.Ext(walker.rel))
-			walker.resolveDefinition(root, Definition{Database: database.Name, Name: stem, Local: database.Callable.Local})
+			walker.resolveDefinition(root, Definition{Database: database.Name, Name: walker.stem, Local: database.Callable.Local})
 		}
 	}
 	walker.frames = []frame{{context: root, wraps: true}}
@@ -523,21 +527,40 @@ func (walker *walker) findPriority(database *Database, statement int32) int {
 }
 
 // findGUIDefinition returns the definition that a statement of a GUI file makes. It is the one that the word before
-// the statement declares, a block named by one of its keys, or a window at the top of the file named by its name.
+// the statement declares, one that the statement's key declares with its name as the block's tag (template = name { }),
+// a block named by one of its keys, or a window at the top of the file.
 func (walker *walker) findGUIDefinition(statement int32, level int, pending string) (Definition, bool) {
 	current := walker.tree.Statements[statement]
 	label, span := walker.frames[level].label, walker.frames[level].span
 	switch nameKey := game.GUI.NameKeyOf[label]; {
 	case slices.Contains(game.GUI.Declares, pending) && label != "":
 		return walker.makeGUIDefinition(game.GUI.DatabasePrefix+pending, label, span, statement)
+	case slices.Contains(game.GUI.Declares, label) && !current.Tag.IsEmpty():
+		return walker.makeGUIDefinition(game.GUI.DatabasePrefix+label, walker.tree.Text(current.Tag), current.Tag, statement)
 	case nameKey != "":
 		value, _ := walker.tree.FindChildValue(statement, nameKey)
 		return walker.makeGUIDefinition(game.GUI.DatabasePrefix+label, value, span, statement)
 	case level == 1 && !current.Key.IsEmpty() && current.IsBlock():
-		value, _ := walker.tree.FindChildValue(statement, game.GUI.WidgetKey)
-		return walker.makeGUIDefinition(game.GUI.WidgetDatabase, value, span, statement)
+		return walker.makeGUIDefinition(game.GUI.WidgetDatabase, walker.findWindowLabel(statement), span, statement)
 	}
 	return Definition{}, false
+}
+
+// findWindowLabel returns what names a window at the top of a GUI file: the value of its name key. A window that writes
+// none takes its file's name if it is the only block the file writes under a key, as EU5's
+// panels/disaster/war_of_the_roses.gui is the panel of the disaster war_of_the_roses. It returns "" for any other
+// window with no name.
+func (walker *walker) findWindowLabel(statement int32) string {
+	if value, _ := walker.tree.FindChildValue(statement, game.GUI.WidgetKey); value != "" {
+		return value
+	}
+	for child := range walker.tree.Children(0) {
+		current := walker.tree.Statements[child]
+		if child != statement && !current.Key.IsEmpty() && current.IsBlock() {
+			return ""
+		}
+	}
+	return walker.stem
 }
 
 // makeGUIDefinition returns a definition in a GUI database. If the database answers only in its own file, the

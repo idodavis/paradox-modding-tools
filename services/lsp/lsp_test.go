@@ -17,7 +17,6 @@ import (
 	"testing"
 	"time"
 
-	"github.com/adrg/xdg"
 	"github.com/samber/lo"
 	"github.com/wailsapp/wails/v3/pkg/application"
 	"golang.org/x/sync/errgroup"
@@ -98,11 +97,9 @@ func openService(t *testing.T, gameID, installPath string, mods ...app.Mod) *Ser
 	t.Helper()
 	startApp.Do(func() { application.New(application.Options{}) })
 	// the folders PMT uses come from the XDG variables, read again now and once more when the test ends
-	t.Cleanup(xdg.Reload)
-	for _, variable := range []string{"XDG_CONFIG_HOME", "XDG_CACHE_HOME", "XDG_STATE_HOME"} {
+	for _, variable := range []string{"APPDATA", "LOCALAPPDATA", "XDG_CONFIG_HOME", "XDG_CACHE_HOME"} {
 		t.Setenv(variable, t.TempDir())
 	}
-	xdg.Reload()
 	config, err := app.OpenConfig()
 	if err != nil {
 		t.Fatal(err)
@@ -327,7 +324,8 @@ func TestHoverNamesWhatItIs(t *testing.T) {
 		card.Sites[0].Place.Origin != game.OriginVanilla || !card.Sites[0].Place.ReadOnly {
 		t.Errorf("a reference: %+v", card)
 	}
-	if card := hover(14, 5); card == nil || card.What != "effect" || card.Scope == nil || card.Scope.This != "character" {
+	if card := hover(14, 5); card == nil || card.What != "effect" || len(card.Scopes) == 0 ||
+		card.Scopes[0].Link != "this" || card.Scopes[0].Type != "character" {
 		t.Errorf("an effect: %+v", card)
 	}
 	if card := hover(13, 5); card == nil || card.What != "keyword" || card.Class != "saving" || card.Blurb == "" {

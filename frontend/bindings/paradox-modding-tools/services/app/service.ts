@@ -23,6 +23,13 @@ export function ApplyUpdate(): $CancellablePromise<void> {
 }
 
 /**
+ * BuildDiagnostics returns what a bug report needs: the version, the system, the installs and the end of pmt.log.
+ */
+export function BuildDiagnostics(): $CancellablePromise<string> {
+    return $Call.ByID(906498763);
+}
+
+/**
  * CheckUpdate asks the project's GitHub releases whether a newer version exists, and emits app:update if one does.
  * It returns an empty Update if none does.
  */
@@ -32,7 +39,8 @@ export function CheckUpdate(): $CancellablePromise<$models.Update> {
 
 /**
  * CloseWindow closes the window with the given name. A window opened by OpenWindow first gets a window:closing event.
- * It closes when the frontend closes it again, or when a timer ends. It returns an error if no window has the name.
+ * It closes when the frontend closes it again, or when a timer ends. The main window's close quits the app. It returns
+ * an error if no window has the name.
  */
 export function CloseWindow(name: string): $CancellablePromise<void> {
     return $Call.ByID(2841874473, name);
@@ -43,6 +51,15 @@ export function CloseWindow(name: string): $CancellablePromise<void> {
  */
 export function CrashedLastRun(): $CancellablePromise<boolean> {
     return $Call.ByID(190852328);
+}
+
+/**
+ * ListReleases returns the app's published releases from the newest down to the one running, each with its notes. A
+ * build that is no release, such as a dev build, gets the newest only. Drafts and prereleases are left out. It returns
+ * an error if GitHub cannot be reached or answers with an error.
+ */
+export function ListReleases(): $CancellablePromise<$models.Release[] | null> {
+    return $Call.ByID(449327985);
 }
 
 /**
@@ -75,11 +92,19 @@ export function OpenWindow(name: string, url: string): $CancellablePromise<void>
 }
 
 /**
- * ReadSettings returns every setting's value by key, using the catalog's default for a setting that was never
- * set.
+ * ReadSettings returns every setting's value by key in the given workspace, using the catalog's default for a setting
+ * that was never set.
  */
-export function ReadSettings(): $CancellablePromise<{ [_ in string]?: string } | null> {
-    return $Call.ByID(3577250346);
+export function ReadSettings(workspaceID: string): $CancellablePromise<{ [_ in string]?: string } | null> {
+    return $Call.ByID(3577250346, workspaceID);
+}
+
+/**
+ * ShowFolder opens a folder in the system's file manager, or a file's folder with the file selected. It returns an
+ * error if the path does not exist.
+ */
+export function ShowFolder(path: string): $CancellablePromise<void> {
+    return $Call.ByID(172836870, path);
 }
 
 /**
@@ -97,9 +122,10 @@ export function Version(): $CancellablePromise<string> {
 }
 
 /**
- * WriteSetting sets one setting to the given value and emits config:changed for the settings. It returns an error if
- * the config is read-only or cannot be saved.
+ * WriteSetting sets one setting to the given value, in the given workspace's record for a setting kept per workspace,
+ * and emits config:changed for the settings. It returns an error if the catalog has no such setting, the workspace is
+ * not recorded, or the config is read-only or cannot be saved.
  */
-export function WriteSetting(key: string, value: string): $CancellablePromise<void> {
-    return $Call.ByID(512932610, key, value);
+export function WriteSetting(workspaceID: string, key: string, value: string): $CancellablePromise<void> {
+    return $Call.ByID(512932610, workspaceID, key, value);
 }

@@ -35,7 +35,7 @@ export default defineConfigWithVueTs(
     ["src/stores/**", "src/app/**"],
     [
       {
-        group: ["../pages/**", "!../pages/ide/editor/**"],
+        regex: "^\\.\\./pages/(?!ide/editor/)",
         message: "the frame and the stores reach a page only through the router",
       },
     ],

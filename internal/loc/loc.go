@@ -170,9 +170,14 @@ func findLanguageFolder(folders []string) (int, bool) {
 // its version and its quoted text, in the layout the game reads.
 func Encode(language string, messages []Message) string {
 	var text strings.Builder
-	fmt.Fprintf(&text, "l_%s:\n", language)
+	fmt.Fprintf(&text, "%s:\n", ToLanguageKey(language))
 	for _, message := range messages {
 		fmt.Fprintf(&text, " %s:%d \"%s\"\n", message.Key, message.Version, message.Text)
 	}
 	return text.String()
+}
+
+// ToLanguageKey returns the word the game writes a language as: its name after l_, as in l_english.
+func ToLanguageKey(language string) string {
+	return "l_" + language
 }

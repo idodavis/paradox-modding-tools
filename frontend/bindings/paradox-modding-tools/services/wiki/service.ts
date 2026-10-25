@@ -17,7 +17,8 @@ import * as $models from "./models.js";
 
 /**
  * BuildLexicon builds the lexicon rows of the given class: effect, trigger, link, scope or function. The rows are
- * sorted by name. It returns an error if no workspace is open or the class is none of those.
+ * sorted by name, letter case aside, so each first letter is one run. It returns an error if no workspace is open or
+ * the class is none of those.
  */
 export function BuildLexicon($class: string): $CancellablePromise<$models.LexiconRow[] | null> {
     return $Call.ByID(2321752544, $class);
@@ -58,8 +59,8 @@ export function ReadPage(title: string): $CancellablePromise<$models.Page> {
 
 /**
  * Refresh fetches the page listing and every page that is missing or stale. The wiki:progress event reports each
- * page fetched and wiki:updated the end. It returns when the refresh ends, with an error if no workspace is open or
- * the listing or a page could not be fetched.
+ * page fetched and wiki:updated the end, with the error's text if there was one. It returns when the refresh ends,
+ * with an error if no workspace is open or the listing or a page could not be fetched.
  */
 export function Refresh(): $CancellablePromise<void> {
     return $Call.ByID(2930339879);

@@ -119,6 +119,10 @@ const Constant = "constant"
 // GlobalType is the data type a data call's first step is looked up on.
 const GlobalType = "Global"
 
+// SelfFunctions are the data functions that return the object they are called on, which the dumps declare as
+// returning [unregistered]: EU5's Goods.Self, CK3's GovernmentType.AccessSelf.
+var SelfFunctions = []string{"Self", "AccessSelf"}
+
 // EventNamespaceKey is the key an events file declares a namespace with; a file may declare several. Its
 // definitions are its top-level keys, written as <namespace>.N with a namespace the file declares.
 const EventNamespaceKey = "namespace"
@@ -487,10 +491,12 @@ var eu5Nestings = []Nesting{ // the start setup's managers each set up the datab
 	{Parent: "common/gods", KeyPath: "omens", Database: "omen"},
 	{Parent: "common/building_types", KeyPath: "unique_production_methods", Database: "unique_production_method"},
 	{Parent: "common/game_concepts", KeyPath: "alias"}, // an alias is a concept
-	{Parent: "map_data/definitions.txt", Database: "sub_continent"},
-	{Parent: "map_data/definitions.txt", KeyPath: "*", Database: "region"},
-	{Parent: "map_data/definitions.txt", KeyPath: "*/*", Database: "area"},
-	{Parent: "map_data/definitions.txt", KeyPath: "*/*/*", Database: "province"},
+	// map_data/definitions.txt:1-5, europe > western_europe > scandinavian_region > svealand_area > uppland_province
+	{Parent: "map_data/definitions.txt", Database: "continent"},
+	{Parent: "map_data/definitions.txt", KeyPath: "*", Database: "sub_continent"},
+	{Parent: "map_data/definitions.txt", KeyPath: "*/*", Database: "region"},
+	{Parent: "map_data/definitions.txt", KeyPath: "*/*/*", Database: "area"},
+	{Parent: "map_data/definitions.txt", KeyPath: "*/*/*/*", Database: "province"},
 	{Parent: "setup/start", KeyPath: "character_db", Database: "character"},
 	{Parent: "setup/start", KeyPath: "dynasty_manager", Database: "dynasty"},
 	{Parent: "setup/start", KeyPath: "countries/countries", Database: "country", Target: "setup/countries"},

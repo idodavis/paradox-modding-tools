@@ -41,10 +41,13 @@ const (
 	resultOK               = 1              // the result code of a call that worked
 	communityFileType      = 0              // the file type of a mod's item
 	imagePreviewType       = 0              // the type of preview that is a picture
+	videoPreviewType       = 1              // the type of preview that is a YouTube video
 	subscriptionsStatistic = 0              // the statistic that counts an item's subscribers
 	invalidHandle          = math.MaxUint64 // what an update or a query handle is when Steam made none
 	invalidCall            = 0              // what a call is when Steam started none
 	pollInterval           = 100 * time.Millisecond
+	downloadTimeout        = 10 * time.Minute
+	watchLink              = "https://www.youtube.com/watch?v=" // a video's link, before its id
 )
 
 // The stages of an upload that a Progress names.
@@ -106,6 +109,8 @@ var updateStages = []string{"", stagePreparing, stagePreparing, stageUploading, 
 var api struct {
 	ugcInterface        func() uintptr
 	utilsInterface      func() uintptr
+	userInterface       func() uintptr
+	isLoggedOn          func(user uintptr) bool
 	initialize          func() bool
 	shutdown            func()
 	runCallbacks        func()
@@ -131,37 +136,52 @@ var api struct {
 	getQueryResult      func(ugc uintptr, query uint64, index uint32, details unsafe.Pointer) bool
 	getStatistic        func(ugc uintptr, query uint64, index uint32, statistic int32, value *uint64) bool
 	releaseQuery        func(ugc uintptr, query uint64) bool
+	setLongDescription  func(ugc uintptr, query uint64, enable bool) bool
+	setPreviewsReturned func(ugc uintptr, query uint64, enable bool) bool
+	countPreviews       func(ugc uintptr, query uint64, index uint32) uint32
+	getPreview          func(ugc uintptr, query uint64, index, preview uint32, address *byte, addressBytes uint32,
+		name *byte, nameBytes uint32, previewType *int32) bool
+	downloadItem func(ugc uintptr, id uint64, highPriority bool) bool
+	getInstall   func(ugc uintptr, id uint64, size *uint64, folder *byte, folderBytes uint32, stamp *uint32) bool
 }
 
 // bindings are the names of Steam's functions and the field of api that each one is bound to.
 var bindings = map[string]any{
-	"SteamAPI_SteamUGC_v016":                          &api.ugcInterface,
-	"SteamAPI_SteamUtils_v010":                        &api.utilsInterface,
-	"SteamAPI_Init":                                   &api.initialize,
-	"SteamAPI_Shutdown":                               &api.shutdown,
-	"SteamAPI_RunCallbacks":                           &api.runCallbacks,
-	"SteamAPI_ISteamUtils_IsAPICallCompleted":         &api.isCompleted,
-	"SteamAPI_ISteamUtils_GetAPICallResult":           &api.getResult,
-	"SteamAPI_ISteamUGC_CreateItem":                   &api.createItem,
-	"SteamAPI_ISteamUGC_StartItemUpdate":              &api.startUpdate,
-	"SteamAPI_ISteamUGC_SetItemTitle":                 &api.setTitle,
-	"SteamAPI_ISteamUGC_SetItemDescription":           &api.setDescription,
-	"SteamAPI_ISteamUGC_SetItemTags":                  &api.setTags,
-	"SteamAPI_ISteamUGC_SetItemContent":               &api.setContent,
-	"SteamAPI_ISteamUGC_SetItemPreview":               &api.setPreview,
-	"SteamAPI_ISteamUGC_AddItemPreviewFile":           &api.addPreviewFile,
-	"SteamAPI_ISteamUGC_AddItemPreviewVideo":          &api.addPreviewVideo,
-	"SteamAPI_ISteamUGC_RemoveItemPreview":            &api.removePreview,
-	"SteamAPI_ISteamUGC_SetItemVisibility":            &api.setVisibility,
-	"SteamAPI_ISteamUGC_SubmitItemUpdate":             &api.submit,
-	"SteamAPI_ISteamUGC_GetItemUpdateProgress":        &api.getProgress,
-	"SteamAPI_ISteamUGC_AddAppDependency":             &api.addAppDependency,
-	"SteamAPI_ISteamUGC_RemoveAppDependency":          &api.removeAppDependency,
-	"SteamAPI_ISteamUGC_CreateQueryUGCDetailsRequest": &api.createQuery,
-	"SteamAPI_ISteamUGC_SendQueryUGCRequest":          &api.sendQuery,
-	"SteamAPI_ISteamUGC_GetQueryUGCResult":            &api.getQueryResult,
-	"SteamAPI_ISteamUGC_GetQueryUGCStatistic":         &api.getStatistic,
-	"SteamAPI_ISteamUGC_ReleaseQueryUGCRequest":       &api.releaseQuery,
+	"SteamAPI_SteamUGC_v016":                              &api.ugcInterface,
+	"SteamAPI_SteamUtils_v010":                            &api.utilsInterface,
+	"SteamAPI_SteamUser_v021":                             &api.userInterface,
+	"SteamAPI_ISteamUser_BLoggedOn":                       &api.isLoggedOn,
+	"SteamAPI_Init":                                       &api.initialize,
+	"SteamAPI_Shutdown":                                   &api.shutdown,
+	"SteamAPI_RunCallbacks":                               &api.runCallbacks,
+	"SteamAPI_ISteamUtils_IsAPICallCompleted":             &api.isCompleted,
+	"SteamAPI_ISteamUtils_GetAPICallResult":               &api.getResult,
+	"SteamAPI_ISteamUGC_CreateItem":                       &api.createItem,
+	"SteamAPI_ISteamUGC_StartItemUpdate":                  &api.startUpdate,
+	"SteamAPI_ISteamUGC_SetItemTitle":                     &api.setTitle,
+	"SteamAPI_ISteamUGC_SetItemDescription":               &api.setDescription,
+	"SteamAPI_ISteamUGC_SetItemTags":                      &api.setTags,
+	"SteamAPI_ISteamUGC_SetItemContent":                   &api.setContent,
+	"SteamAPI_ISteamUGC_SetItemPreview":                   &api.setPreview,
+	"SteamAPI_ISteamUGC_AddItemPreviewFile":               &api.addPreviewFile,
+	"SteamAPI_ISteamUGC_AddItemPreviewVideo":              &api.addPreviewVideo,
+	"SteamAPI_ISteamUGC_RemoveItemPreview":                &api.removePreview,
+	"SteamAPI_ISteamUGC_SetItemVisibility":                &api.setVisibility,
+	"SteamAPI_ISteamUGC_SubmitItemUpdate":                 &api.submit,
+	"SteamAPI_ISteamUGC_GetItemUpdateProgress":            &api.getProgress,
+	"SteamAPI_ISteamUGC_AddAppDependency":                 &api.addAppDependency,
+	"SteamAPI_ISteamUGC_RemoveAppDependency":              &api.removeAppDependency,
+	"SteamAPI_ISteamUGC_CreateQueryUGCDetailsRequest":     &api.createQuery,
+	"SteamAPI_ISteamUGC_SendQueryUGCRequest":              &api.sendQuery,
+	"SteamAPI_ISteamUGC_GetQueryUGCResult":                &api.getQueryResult,
+	"SteamAPI_ISteamUGC_GetQueryUGCStatistic":             &api.getStatistic,
+	"SteamAPI_ISteamUGC_ReleaseQueryUGCRequest":           &api.releaseQuery,
+	"SteamAPI_ISteamUGC_SetReturnLongDescription":         &api.setLongDescription,
+	"SteamAPI_ISteamUGC_SetReturnAdditionalPreviews":      &api.setPreviewsReturned,
+	"SteamAPI_ISteamUGC_GetQueryUGCNumAdditionalPreviews": &api.countPreviews,
+	"SteamAPI_ISteamUGC_GetQueryUGCAdditionalPreview":     &api.getPreview,
+	"SteamAPI_ISteamUGC_DownloadItem":                     &api.downloadItem,
+	"SteamAPI_ISteamUGC_GetItemInstallInfo":               &api.getInstall,
 }
 
 // Open loads Steam's library from the given path and initializes it for the game's app id. Steam must be running
@@ -186,21 +206,49 @@ func Open(libraryPath string, appID int) (*Client, error) {
 // Close shuts the library down.
 func (client *Client) Close() { api.shutdown() }
 
-// FetchDetails fetches an item's details from Steam. It returns an error if the text is not a Workshop item's id or
-// Steam has no details of the item.
-func (client *Client) FetchDetails(workshopID string) (Details, error) {
+// isOnline reports whether a Steam user is logged on.
+func (client *Client) isOnline() bool {
+	user := api.userInterface()
+	return user != 0 && api.isLoggedOn(user)
+}
+
+// toItemID returns a Workshop item's number. It returns an error if the id is not a number.
+func toItemID(workshopID string) (uint64, error) {
 	id, err := strconv.ParseUint(workshopID, 10, 64)
 	if err != nil {
-		return Details{}, fmt.Errorf("%q is not a Workshop item's id", workshopID)
+		return 0, fmt.Errorf("%q is not a Workshop item's id", workshopID)
+	}
+	return id, nil
+}
+
+// fetchQuery asks Steam for one item's page, with its whole description and its previews. The caller releases the
+// query. It returns an error if the id is not a number or Steam does not answer.
+func (client *Client) fetchQuery(workshopID string) (uint64, error) {
+	id, err := toItemID(workshopID)
+	if err != nil {
+		return 0, err
 	}
 	query := api.createQuery(client.ugc, &id, 1)
 	if query == invalidHandle {
-		return Details{}, errors.New("steam did not start the query")
+		return 0, errors.New("steam did not start the query")
 	}
-	defer api.releaseQuery(client.ugc, query)
+	api.setLongDescription(client.ugc, query, true)
+	api.setPreviewsReturned(client.ugc, query, true)
 	if _, err := client.fetchResult(api.sendQuery(client.ugc, query), queryCompletedID, queryCompletedBytes, nil); err != nil {
+		api.releaseQuery(client.ugc, query)
+		return 0, err
+	}
+	return query, nil
+}
+
+// FetchDetails fetches an item's details from Steam. It returns an error if the text is not a Workshop item's id or
+// Steam has no details of the item.
+func (client *Client) FetchDetails(workshopID string) (Details, error) {
+	query, err := client.fetchQuery(workshopID)
+	if err != nil {
 		return Details{}, err
 	}
+	defer api.releaseQuery(client.ugc, query)
 	raw := make([]byte, detailsBytes)
 	if !api.getQueryResult(client.ugc, query, 0, unsafe.Pointer(&raw[0])) {
 		return Details{}, fmt.Errorf("steam has no details of the item %s", workshopID)
@@ -213,6 +261,54 @@ func (client *Client) FetchDetails(workshopID string) (Details, error) {
 	api.getStatistic(client.ugc, query, 0, subscriptionsStatistic, &subscribers)
 	details.Subscribers = int(subscribers)
 	return details, nil
+}
+
+// fetchPreviews fetches an item's additional previews: each picture's address and file name, each video's link. It
+// returns an error if the id is not a number or Steam does not answer.
+func (client *Client) fetchPreviews(workshopID string) ([]Preview, error) {
+	query, err := client.fetchQuery(workshopID)
+	if err != nil {
+		return nil, err
+	}
+	defer api.releaseQuery(client.ugc, query)
+	previews := []Preview{}
+	for index := range api.countPreviews(client.ugc, query, 0) {
+		var address, name [1024]byte
+		var previewType int32
+		if !api.getPreview(client.ugc, query, 0, index, &address[0], uint32(len(address)), &name[0], uint32(len(name)), &previewType) {
+			continue
+		}
+		switch previewType {
+		case imagePreviewType:
+			previews = append(previews, Preview{Type: previewImage, URL: toText(address[:]), Path: toText(name[:])})
+		case videoPreviewType:
+			id := toText(address[:])
+			previews = append(previews, Preview{Type: previewVideo, URL: watchLink + id, Video: id})
+		}
+	}
+	return previews, nil
+}
+
+// fetchFolder has Steam download an item and returns the folder it lands in, once that copy is as new as the given
+// update. It returns an error if the id is not a number or Steam refuses or does not finish the download.
+func (client *Client) fetchFolder(workshopID string, updatedAt time.Time) (string, error) {
+	id, err := toItemID(workshopID)
+	if err != nil {
+		return "", err
+	}
+	if !api.downloadItem(client.ugc, id, true) {
+		return "", errors.New("steam refused to download the item")
+	}
+	folder := make([]byte, 1024)
+	for deadline := time.Now().Add(downloadTimeout); time.Now().Before(deadline); time.Sleep(pollInterval) {
+		api.runCallbacks()
+		var size uint64
+		var stamp uint32
+		if api.getInstall(client.ugc, id, &size, &folder[0], uint32(len(folder)), &stamp) && int64(stamp) >= updatedAt.Unix() {
+			return toText(folder), nil
+		}
+	}
+	return "", errors.New("steam did not finish downloading the item")
 }
 
 // decodeDetails decodes the item's details from the bytes Steam filled in. The subscribers are not among them.
@@ -259,9 +355,9 @@ func (client *Client) CreateItem() (string, error) {
 // It returns an error if the text is not a Workshop item's id, Steam refuses a part of the update, or the Steam user
 // has not accepted the Workshop's legal agreement yet.
 func (client *Client) Submit(workshopID string, listing Listing, uploadDir string, progress func(Progress)) error {
-	id, err := strconv.ParseUint(workshopID, 10, 64)
+	id, err := toItemID(workshopID)
 	if err != nil {
-		return fmt.Errorf("%q is not a Workshop item's id", workshopID)
+		return err
 	}
 	dirs, err := app.ResolveDirs()
 	if err != nil {

@@ -4,6 +4,7 @@ import (
 	"cmp"
 	"encoding/json"
 	"errors"
+	"fmt"
 	"io/fs"
 	"os"
 	"path"
@@ -18,6 +19,7 @@ import (
 	"paradox-modding-tools/internal/files"
 	"paradox-modding-tools/internal/game"
 	"paradox-modding-tools/internal/jomini"
+	"paradox-modding-tools/internal/loc"
 	"paradox-modding-tools/services/app"
 )
 
@@ -31,19 +33,23 @@ type Descriptor struct {
 	SupportedVersion string   `json:"supportedVersion"`
 	Tags             []string `json:"tags"`
 	ReplacePaths     []string `json:"replacePaths"` // folders whose earlier files the game does not load
-	Thumbnail        string   `json:"thumbnail"`    // the picture file the descriptor names, from the mod's folder
+	Thumbnail        string   `json:"thumbnail"`    // the full path of the picture file the descriptor names
 	WorkshopID       string   `json:"workshopId"`
 	// Dependencies are the mods it needs: their ids in metadata.json, their names in a script descriptor. They are read
 	// and never written.
 	Dependencies []string `json:"dependencies"`
 }
 
-// A Mod is one mod of the open workspace: the mod as the config records it, with its descriptor.
+// A Mod is one mod of a workspace: the mod as the config records it, with its descriptor.
 type Mod struct {
 	app.Mod
 	Descriptor Descriptor `json:"descriptor"`
-	Broken     bool       `json:"broken"` // its folder is missing
+	Broken     bool       `json:"broken"`    // its folder is missing
+	Thumbnail  string     `json:"thumbnail"` // the full path of the picture shown for it; "" when it has none
 }
+
+// thumbnailName is the name, before its extension, of the picture file a mod keeps without its descriptor naming it.
+const thumbnailName = "thumbnail"
 
 // scriptKeys are the keys of a script descriptor that a Descriptor models.
 var scriptKeys = []string{
@@ -53,8 +59,9 @@ var scriptKeys = []string{
 // releaseVersion matches a game version that starts with a major and a minor release number.
 var releaseVersion = regexp.MustCompile(`^(\d+)\.(\d+)(?:\.|$)`)
 
-// ReadDescriptor reads the descriptor of the mod in the given folder, from the file the given game keeps it in. It
-// returns an error if the file cannot be read or is not a valid descriptor.
+// ReadDescriptor reads the descriptor of the mod in the given folder, from the file the given game keeps it in. Its
+// thumbnail is the full path of the picture, by the given game's rule. It returns an error if the file cannot be read
+// or is not a valid descriptor.
 func ReadDescriptor(row *game.Game, dir string) (Descriptor, error) {
 	file, metadata := resolveDescriptor(row, dir)
 	text, err := files.ReadText(file)
@@ -72,13 +79,36 @@ func ReadDescriptor(row *game.Game, dir string) (Descriptor, error) {
 	}
 	descriptor.Path = file
 	if descriptor.Thumbnail != "" {
-		descriptor.Thumbnail = path.Join(row.ThumbnailDir, descriptor.Thumbnail)
+		descriptor.Thumbnail = files.Join(dir, path.Join(row.ThumbnailDir, descriptor.Thumbnail))
 	}
 	return descriptor, nil
 }
 
+// findThumbnail returns the full path of the picture shown for the mod in the given folder. It is a thumbnail file of
+// any picture type in the folder where the given game keeps one, then in the mod's own folder; a game that keeps it in
+// the mod's folder looks in .metadata second. Mods follow no one convention, so both places are looked in. Without such
+// a file it is the picture the descriptor names. It returns "" if none of these files exists.
+func findThumbnail(row *game.Game, dir, named string) string {
+	folders := []string{row.ThumbnailDir, ""}
+	if row.ThumbnailDir == "" {
+		folders = []string{"", game.MetadataDir}
+	}
+	var candidates []string
+	for _, folder := range folders {
+		for _, extension := range game.PictureExtensions {
+			candidates = append(candidates, files.Join(dir, path.Join(folder, thumbnailName+extension)))
+		}
+	}
+	found, _ := lo.Find(append(candidates, named), func(file string) bool {
+		_, err := os.Stat(file)
+		return file != "" && err == nil
+	})
+	return found
+}
+
 // WriteDescriptor writes the given descriptor for the mod in the given folder, in the format the given game uses. It
-// keeps the fields of the existing file that a Descriptor does not model, and makes the file if it is missing.
+// keeps the fields of the existing file that a Descriptor does not model, and makes the file if it is missing. It
+// writes the thumbnail relative to the mod's folder, and returns an error if the picture is outside it.
 func WriteDescriptor(row *game.Game, dir string, descriptor Descriptor) error {
 	file, metadata := resolveDescriptor(row, dir)
 	existing, err := files.ReadText(file)
@@ -89,7 +119,13 @@ func WriteDescriptor(row *game.Game, dir string, descriptor Descriptor) error {
 		return err
 	}
 	existing.Encoding = cmp.Or(existing.Encoding, files.EncodingUTF8)
-	descriptor.Thumbnail = strings.TrimPrefix(descriptor.Thumbnail, path.Join(row.ThumbnailDir, "")+"/")
+	if descriptor.Thumbnail != "" {
+		rel, ok := files.ToRel(dir, descriptor.Thumbnail)
+		if !ok {
+			return fmt.Errorf("the thumbnail %s is outside the mod's folder", descriptor.Thumbnail)
+		}
+		descriptor.Thumbnail = strings.TrimPrefix(rel, path.Join(row.ThumbnailDir, "")+"/")
+	}
 	if metadata {
 		existing.Text, err = encodeDescriptorMetadata(existing.Text, descriptor)
 	} else {
@@ -129,6 +165,24 @@ func createModFolder(row *game.Game, dir, name, version string) (string, error) 
 	launcher := encodeDescriptorScript("", descriptor) + "path=" + toQuoted(filepath.ToSlash(folder)) + "\n"
 	err := files.WriteText(filepath.Join(dir, files.ToSlug(name)+".mod"), files.Text{Text: launcher, Encoding: files.EncodingUTF8})
 	return folder, err
+}
+
+// createLocalization writes a new mod's localization file, holding only its header, in a language's folder, the base
+// language's when it is "". A game with no localization folder gets none.
+func createLocalization(row *game.Game, folder, name, language string) error {
+	language = cmp.Or(language, game.BaseLanguage)
+	rel, ok := findLocalizationFolder(row)
+	if !ok {
+		return nil
+	}
+	file := files.Join(folder, path.Join(rel, language, files.ToSlug(name)+"_l_"+language+".yml"))
+	return files.WriteText(file, files.Text{Text: loc.Encode(language, nil), Encoding: files.EncodingUTF8BOM})
+}
+
+// findLocalizationFolder returns the folder a game keeps its localization in, from a mod's or the game's root. It
+// returns false for a game with none.
+func findLocalizationFolder(row *game.Game) (string, bool) {
+	return lo.Find(row.ModFolders, func(rel string) bool { return path.Base(rel) == game.Localization })
 }
 
 // toSupportedVersion returns the release a mod supports for a game version: its major and minor numbers followed by

@@ -21,13 +21,15 @@ var fourCCs = map[string]uint32{
 	"DXT1": 70, "DXT3": 73, "DXT5": 76, "ATI1": 79, "BC4U": 79, "ATI2": 82, "BC5U": 82,
 }
 
-// dxgiCompressions are the block compressions, each by the DXGI formats from its typeless one to its last variant.
+// dxgiCompressions are the block compressions, each by the DXGI formats from its typeless one to its last variant,
+// with the bytes of one of its 4 by 4 blocks.
 var dxgiCompressions = []struct {
 	first, last uint32
 	compression string
+	blockBytes  int
 }{
-	{70, 72, "BC1"}, {73, 75, "BC2"}, {76, 78, "BC3"}, {79, 81, "BC4"}, {82, 84, "BC5"},
-	{94, 96, "BC6H"}, {97, 99, "BC7"},
+	{70, 72, "BC1", 8}, {73, 75, "BC2", 16}, {76, 78, "BC3", 16}, {79, 81, "BC4", 8}, {82, 84, "BC5", 16},
+	{94, 96, "BC6H", 16}, {97, 99, "BC7", 16},
 }
 
 // dxgiMasks are the uncompressed DXGI formats PMT decodes, each as its bits per pixel and then its red, green,
@@ -45,35 +47,64 @@ var dxgiMasks = map[uint32][5]uint32{
 	93: {32, 0xff0000, 0xff00, 0xff, 0},          // B8G8R8X8_UNORM_SRGB
 }
 
-// decodeDDS decodes the first mipmap of a DDS with the given header to RGBA. It handles BC1 to BC7 and uncompressed
-// data.
-func decodeDDS(bytes []byte, header Header) (image.Image, error) {
+// decodeDDS decodes one mip level of a DDS with the given header to RGBA. It handles BC1 to BC7 and uncompressed data.
+// It returns an error if the data ends before the level's last pixel.
+func decodeDDS(bytes []byte, header Header, level int) (image.Image, error) {
 	data := bytes[128:]
 	dxgi, dx10 := lookupDXGI(bytes)
 	if dx10 {
 		data = bytes[148:]
 	}
+	depth, masks := resolveDDSMasks(bytes)
+	blockBytes := findBlockBytes(header.Compression)
+	for range level {
+		size := countLevelBytes(header, blockBytes, depth)
+		if len(data) < size {
+			return nil, errTruncated
+		}
+		data = data[size:]
+		header.Width, header.Height = max(1, header.Width/2), max(1, header.Height/2)
+	}
 	switch header.Compression {
 	case "BC1":
-		return decodeBlocks(data, header, 8, decodeBC1)
+		return decodeBlocks(data, header, blockBytes, decodeBC1)
 	case "BC2":
-		return decodeBlocks(data, header, 16, decodeBC2)
+		return decodeBlocks(data, header, blockBytes, decodeBC2)
 	case "BC3":
-		return decodeBlocks(data, header, 16, decodeBC3)
+		return decodeBlocks(data, header, blockBytes, decodeBC3)
 	case "BC4":
-		return decodeBlocks(data, header, 8, decodeBC4)
+		return decodeBlocks(data, header, blockBytes, decodeBC4)
 	case "BC5":
-		return decodeBlocks(data, header, 16, decodeBC5)
+		return decodeBlocks(data, header, blockBytes, decodeBC5)
 	case "BC6H":
 		signed := dxgi == 96
-		return decodeBlocks(data, header, 16, func(block []byte, pixels *[16][4]uint8) {
+		return decodeBlocks(data, header, blockBytes, func(block []byte, pixels *[16][4]uint8) {
 			decodeBC6H(block, pixels, signed)
 		})
 	case "BC7":
-		return decodeBlocks(data, header, 16, decodeBC7)
+		return decodeBlocks(data, header, blockBytes, decodeBC7)
 	}
-	depth, masks := resolveDDSMasks(bytes)
 	return decodeMasked(data, header, depth, masks)
+}
+
+// findBlockBytes returns the bytes of one 4 by 4 block of a block compression. It returns 0 for "", which is no
+// compression.
+func findBlockBytes(compression string) int {
+	for _, row := range dxgiCompressions {
+		if row.compression == compression {
+			return row.blockBytes
+		}
+	}
+	return 0
+}
+
+// countLevelBytes returns the bytes of one mip level of the header's size: its 4 by 4 blocks of the given bytes each,
+// or, with no compression, its pixels of the given bits each.
+func countLevelBytes(header Header, blockBytes, depth int) int {
+	if blockBytes > 0 {
+		return (header.Width + 3) / 4 * ((header.Height + 3) / 4) * blockBytes
+	}
+	return header.Width * header.Height * depth / 8
 }
 
 // decodeDDSHeader decodes a DDS header, the DX10 extension included. It returns false if the bytes are not a DDS

@@ -30,6 +30,7 @@ type Range struct {
 type Location struct {
 	Place workspace.Place `json:"place"`
 	Range Range           `json:"range"`
+	Text  string          `json:"text"` // the text of the line, "" where the file cannot be read
 }
 
 // An Edit is one change to a file's text: the range replaced and the text that replaces it.

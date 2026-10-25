@@ -44,6 +44,15 @@ type Signature struct {
 	Active     *int     `json:"active,omitempty"` // the parameter the position is on; absent if none
 }
 
+// Inputs is the Form view of one definition: the inputs its database offers, with the values the definition writes.
+type Inputs struct {
+	Database string            `json:"database"`
+	Range    Range             `json:"range"` // the definition's whole statement
+	Inputs   []schema.Input    `json:"inputs"`
+	Values   map[string]string `json:"values"` // by key path, a.b for b inside a; only the keys the definition writes
+	Blocks   map[string]Range  `json:"blocks"` // by key path: each block the definition writes, for an edit inside it
+}
+
 // ListFolds returns a file's foldable regions: every block that spans more than one line.
 func (lsp *Service) ListFolds(path string) ([]Fold, error) {
 	_, tree, err := lsp.loadTree(path)
@@ -176,6 +185,75 @@ func (lsp *Service) Signature(path string, line, column int) (*Signature, error)
 		}
 	}
 	return &Signature{Label: key + "(" + strings.Join(parameters, ", ") + ")", Parameters: parameters, Active: active}, nil
+}
+
+// ListInputs returns the Form view of the innermost definition at a position, or else of the first one on its line.
+// It returns an error if there is none.
+func (lsp *Service) ListInputs(path string, line, column int) (Inputs, error) {
+	ws, tree, err := lsp.loadTree(path)
+	if err != nil {
+		return Inputs{}, err
+	}
+	place := ws.Locate(ws.Mods.Load(), path)
+	visitor := &definitionFinder{offset: ToOffset(tree.Src, tree.Lines, line, column), line: line - 1}
+	if place.Format.IsScript() {
+		ws.Schema.Walk(tree, place.File, visitor)
+	}
+	if visitor.database == "" {
+		return Inputs{}, fmt.Errorf("no definition is at line %d of %s", line, path)
+	}
+	inputs := Inputs{
+		Database: visitor.database, Range: ToRange(tree.Src, tree.Lines, tree.Statements[visitor.statement].Span),
+		Inputs: append([]schema.Input{}, ws.Schema.ListInputs(visitor.database)...),
+		Values: map[string]string{}, Blocks: map[string]Range{},
+	}
+	listPaths(tree, visitor.statement, "", &inputs)
+	return inputs, nil
+}
+
+// A definitionFinder finds the definition that the Form view shows at a position.
+type definitionFinder struct {
+	offset    int    // the position's byte offset
+	line      int    // the position's line, counted from zero
+	statement int32  // the definition found so far
+	database  string // its database; "" while none is found
+	covers    bool   // whether the definition found covers the offset
+}
+
+// Enter takes a definition that covers the offset, the innermost winning, or else the first one on the line.
+func (visitor *definitionFinder) Enter(tree *jomini.Tree, statement int32, context *schema.Context) bool {
+	if !context.Defines || context.Definition.Alias || context.Definition.Database == game.Constant {
+		return true
+	}
+	span := tree.Statements[statement].Span
+	switch {
+	case span.Contains(visitor.offset):
+		visitor.statement, visitor.database, visitor.covers = statement, context.Definition.Database, true
+	case !visitor.covers && visitor.database == "" && tree.Lines.ToPosition(span.Start).Line == visitor.line:
+		visitor.statement, visitor.database = statement, context.Definition.Database
+	}
+	return true
+}
+
+// Leave does nothing.
+func (visitor *definitionFinder) Leave(tree *jomini.Tree, statement int32, context *schema.Context) {}
+
+// listPaths records each value and block range a statement's children write, by key path. A key written twice keeps
+// the last.
+func listPaths(tree *jomini.Tree, holder int32, prefix string, inputs *Inputs) {
+	for child := range tree.Children(holder) {
+		current := tree.Statements[child]
+		if current.Key.IsEmpty() {
+			continue
+		}
+		key := prefix + tree.Unquoted(current.Key)
+		if !current.IsBlock() {
+			inputs.Values[key] = tree.Text(current.Value)
+			continue
+		}
+		inputs.Blocks[key] = ToRange(tree.Src, tree.Lines, current.Span)
+		listPaths(tree, child, key+".", inputs)
+	}
 }
 
 // findCall returns the call to a scripted definition that holds the visited position: its statement, the field that

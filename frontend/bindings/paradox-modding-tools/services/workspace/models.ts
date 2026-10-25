@@ -45,7 +45,7 @@ export interface Descriptor {
     "replacePaths": string[] | null;
 
     /**
-     * the picture file the descriptor names, from the mod's folder
+     * the full path of the picture file the descriptor names
      */
     "thumbnail": string;
     "workshopId": string;
@@ -72,10 +72,16 @@ export interface FileChange {
 export interface FileText {
     "place": Place;
     "text": files$0.Text;
+
+    /**
+     * Draft is the text the editor last sent for the file where it differs from the disk's, such as edits that a
+     * reloaded page has not saved; "" where it holds none.
+     */
+    "draft": string;
 }
 
 /**
- * A Mod is one mod of the open workspace: the mod as the config records it, with its descriptor.
+ * A Mod is one mod of a workspace: the mod as the config records it, with its descriptor.
  */
 export interface Mod {
     "id": string;
@@ -102,6 +108,11 @@ export interface Mod {
      * its folder is missing
      */
     "broken": boolean;
+
+    /**
+     * the full path of the picture shown for it; "" when it has none
+     */
+    "thumbnail": string;
 }
 
 /**
@@ -126,6 +137,12 @@ export interface Place {
      */
     "origin": string;
     "format": files$0.Format;
+    "name": string;
+
+    /**
+     * "" for a file at its root
+     */
+    "folder": string;
     "root": string;
     "database": string;
 
@@ -141,6 +158,14 @@ export interface Place {
 }
 
 /**
+ * A Scanning is the data of the install:scanning event: a stage of the scan and the percent of its files done.
+ */
+export interface Scanning {
+    "stage": string;
+    "percent": number;
+}
+
+/**
  * A State is the open workspace as the frontend sees it. Open is false and the rest is empty while none is open.
  */
 export interface State {
@@ -148,6 +173,16 @@ export interface State {
     "id": string;
     "game": game$0.Game | null;
     "install": app$0.Install;
+
+    /**
+     * the install's folder exists
+     */
+    "installFound": boolean;
+
+    /**
+     * the install's version before the open found a new one
+     */
+    "updatedFrom": string;
     "mods": Mod[] | null;
     "language": string;
     "dumps": schema$0.SourceState;

@@ -6,13 +6,10 @@
 import * as index$0 from "../../internal/index/models.js";
 // eslint-disable-next-line @typescript-eslint/ban-ts-comment
 // @ts-ignore: Unused imports
-import * as schema$0 from "../../internal/schema/models.js";
-// eslint-disable-next-line @typescript-eslint/ban-ts-comment
-// @ts-ignore: Unused imports
 import * as workspace$0 from "../workspace/models.js";
 
 /**
- * A Detail is what the page shows about one node: its text, its firings, its references and its pictures.
+ * A Detail is what the page shows about one node: its text, its keys, its firings, its references and its pictures.
  */
 export interface Detail {
     "node": Node;
@@ -21,8 +18,28 @@ export interface Detail {
      * the event's localized description
      */
     "text": string;
+
+    /**
+     * the definition as written
+     */
+    "source": string;
+
+    /**
+     * the keys at the top of the definition, except its options
+     */
+    "sections": Section[] | null;
+
+    /**
+     * the definition's option blocks
+     */
+    "options": Section[] | null;
     "fires": Edge[] | null;
     "firedBy": Edge[] | null;
+
+    /**
+     * the node at the other end of each of those firings, by its id
+     */
+    "linked": { [_ in string]?: Node } | null;
     "references": Node[] | null;
 
     /**
@@ -34,7 +51,6 @@ export interface Detail {
      * the path of the picture found; "" if there is none
      */
     "background": string;
-    "inputs": schema$0.Input[] | null;
 }
 
 /**
@@ -53,18 +69,42 @@ export interface Edge {
      * the scripted effects passed through, when they are not drawn as nodes
      */
     "via"?: string[] | null;
+
+    /**
+     * where the firing is written
+     */
+    "place": workspace$0.Place;
+
+    /**
+     * counted from one
+     */
+    "line": number;
 }
 
 /**
- * A Filter says what the graph shows: which databases and origins are drawn, how deep and how many nodes, and
- * whether a firing through a scripted effect is followed.
+ * A Filter says what the graph shows and how far it reaches from its root.
  */
 export interface Filter {
     "databases": string[] | null;
     "origins": string[] | null;
     "depth": number;
     "limit": number;
+
+    /**
+     * the firings of one node drawn before the rest fold; 0 folds none
+     */
+    "fanout": number;
+
+    /**
+     * the folds opened
+     */
+    "expand": string[] | null;
     "follow": boolean;
+
+    /**
+     * what each database's definitions are called
+     */
+    "labels"?: { [_ in string]?: string } | null;
 }
 
 /**
@@ -79,19 +119,34 @@ export interface Graph {
      * the limit cut it
      */
     "truncated": boolean;
+
+    /**
+     * how many nodes the reach found before the limit cut it
+     */
+    "total": number;
+
+    /**
+     * the depth stopped it: a node at its last step fires more or is fired by more
+     */
+    "deep": boolean;
 }
 
 /**
  * A Node is one node of the event graph: the kept definition of an event, an on_action, a decision or a scripted
- * effect, with where it is written.
+ * effect, with where it is written, or a fold that stands for the firings of one node past the fan-out.
  */
 export interface Node {
     /**
-     * database:name
+     * database:name; more:<id> or more-in:<id> for a fold
      */
     "id": string;
     "database": string;
     "name": string;
+
+    /**
+     * what a definition of its database is called, such as "scripted effect"
+     */
+    "what": string;
 
     /**
      * its localized title; "" if it has none
@@ -109,4 +164,68 @@ export interface Node {
      * its distance from the root, negative for a firer
      */
     "step": number;
+
+    /**
+     * the drawn node one step nearer the root; "" for the root
+     */
+    "parent": string;
+
+    /**
+     * the firings a fold stands for; 0 for a definition
+     */
+    "count": number;
+}
+
+/**
+ * A Section is one key at the top of a definition, as the page shows it.
+ */
+export interface Section {
+    "key": string;
+
+    /**
+     * a scalar as written, or a block on one line with inner blocks as { … }
+     */
+    "value": string;
+
+    /**
+     * counted from one
+     */
+    "line": number;
+
+    /**
+     * the block's own trigger on one line
+     */
+    "when"?: string;
+
+    /**
+     * one of the texts shows at random, else the first whose trigger holds
+     */
+    "random"?: boolean;
+    "texts"?: Version[] | null;
+
+    /**
+     * an option's keys written as yes
+     */
+    "flags"?: string[] | null;
+}
+
+/**
+ * A Version is one text a key can show, with the trigger that decides it.
+ */
+export interface Version {
+    /**
+     * its localization key
+     */
+    "key": string;
+    "text": string;
+
+    /**
+     * its trigger on one line; "" if it always can
+     */
+    "when"?: string;
+
+    /**
+     * counted from one
+     */
+    "line": number;
 }

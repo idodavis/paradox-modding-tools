@@ -1,0 +1,14 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 800 800" width="800" height="800">
+  <defs>
+    <linearGradient id="pmt" gradientUnits="userSpaceOnUse" x1="120" y1="680" x2="700" y2="100">
+    <stop offset="0.00" stop-color="#CA8A04"/>
+    <stop offset="0.50" stop-color="#FACC15"/>
+    <stop offset="1.00" stop-color="#FEF08A"/>
+    </linearGradient>
+  </defs>
+  <g fill="none" stroke="url(#pmt)" stroke-width="48" stroke-linecap="round" stroke-linejoin="round">
+    <path d="M135 650 L285 170 L435 650 M185 500 H385"/>
+    <circle cx="570" cy="535" r="105"/>
+    <path d="M675 420 V650"/>
+  </g>
+</svg>

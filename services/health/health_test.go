@@ -12,7 +12,6 @@ import (
 	"testing"
 	"time"
 
-	"github.com/adrg/xdg"
 	"github.com/samber/lo"
 	"github.com/wailsapp/wails/v3/pkg/application"
 
@@ -137,11 +136,9 @@ func createInstall(t *testing.T, gameID, errorLog string) string {
 func openService(t *testing.T, gameID, installPath string, mods ...app.Mod) *Service {
 	t.Helper()
 	createApp()
-	t.Cleanup(xdg.Reload)
-	for _, variable := range []string{"XDG_CONFIG_HOME", "XDG_CACHE_HOME", "XDG_STATE_HOME"} {
+	for _, variable := range []string{"APPDATA", "LOCALAPPDATA", "XDG_CONFIG_HOME", "XDG_CACHE_HOME"} {
 		t.Setenv(variable, t.TempDir())
 	}
-	xdg.Reload()
 	config, err := app.OpenConfig()
 	if err != nil {
 		t.Fatal(err)
@@ -181,6 +178,25 @@ func countSection(report Report, section string) int {
 	return lo.CountBy(report.Findings, func(finding Finding) bool { return finding.Section == section })
 }
 
+// assertSectionCounts checks that each section of a report over the two fixture mods counts its findings, that the
+// error log's counts the game's log and the overview's the two mods, and that no other section is empty.
+func assertSectionCounts(t *testing.T, hlt *Service, report Report) {
+	t.Helper()
+	errorLog, _ := hlt.ListErrorLog()
+	for _, section := range report.Sections {
+		want := countSection(report, section.ID)
+		switch section.ID {
+		case sectionErrorLog:
+			want = len(errorLog)
+		case "overview":
+			want = 2
+		}
+		if section.Count != want || (section.Count == 0 && section.ID != sectionErrorLog) {
+			t.Errorf("section %s has the count %d", section.ID, section.Count)
+		}
+	}
+}
+
 // TestBuildReportFindsEachSection checks that a report over two fixture mods holds a finding of each section, that each
 // section's count matches its findings, and that a file a mod replaces is a finding of the file and not of its names.
 // It checks that another load order moves the loaded file and keeps the dependencies.
@@ -190,19 +206,15 @@ func TestBuildReportFindsEachSection(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	for _, section := range report.Sections {
-		if section.Count != countSection(report, section.ID) || (section.Count == 0) != (section.ID == sectionErrorLog) {
-			t.Errorf("section %s has the count %d", section.ID, section.Count)
-		}
-	}
+	assertSectionCounts(t, hlt, report)
 	contest := findFinding(t, report.Findings, "contest", "shared", "trait")
 	if contest.Section != "contests" || contest.Facts["rule"] != "LIOS" || len(contest.Sites) != 2 ||
-		contest.Sites[0].Kept || !contest.Sites[1].Kept || contest.Sites[1].Reason != "order" || contest.Sites[1].Place.Origin != modB {
+		!contest.Sites[0].Kept || contest.Sites[1].Kept || contest.Sites[0].Reason != "order" || contest.Sites[0].Place.Origin != modB {
 		t.Errorf("contest of shared: %+v", contest)
 	}
 	shipped := findFinding(t, report.Findings, "contest", "common/traits/m_traits.txt", game.File)
-	if shipped.Facts["rule"] != "LIOS" || len(shipped.Sites) != 2 || shipped.Sites[0].Kept || !shipped.Sites[1].Kept ||
-		shipped.Sites[1].Place.Origin != modB || shipped.Sites[1].Range.StartLine != 1 {
+	if shipped.Facts["rule"] != "LIOS" || len(shipped.Sites) != 2 || !shipped.Sites[0].Kept || shipped.Sites[1].Kept ||
+		shipped.Sites[0].Place.Origin != modB || shipped.Sites[0].Range.StartLine != 1 {
 		t.Errorf("contest of the file m_traits.txt: %+v", shipped)
 	}
 	if lo.ContainsBy(report.Findings, func(finding Finding) bool { return finding.Name == "descriptor.mod" }) {
@@ -215,7 +227,7 @@ func TestBuildReportFindsEachSection(t *testing.T) {
 		t.Errorf("override of brave: %+v", override)
 	}
 	replaced := findFinding(t, report.Findings, "override", "events/v_events.txt", game.File)
-	if replaced.Facts["kept"] != "the mod's" || len(replaced.Sites) != 2 || replaced.Sites[0].Kept || !replaced.Sites[1].Kept ||
+	if replaced.Facts["kept"] != "the mod's" || len(replaced.Sites) != 2 || !replaced.Sites[0].Kept || replaced.Sites[1].Kept ||
 		lo.ContainsBy(report.Findings, func(finding Finding) bool { return finding.Code == "override" && finding.Name == "v.1" }) {
 		t.Errorf("override of the file v_events.txt: %+v", replaced)
 	}
@@ -233,7 +245,7 @@ func TestBuildReportFindsEachSection(t *testing.T) {
 		t.Fatal(err)
 	}
 	kept := findFinding(t, previewed.Findings, "contest", "common/traits/m_traits.txt", game.File).Sites
-	if len(kept) != 2 || !kept[1].Kept || kept[1].Place.Origin != modA {
+	if len(kept) != 2 || !kept[0].Kept || kept[0].Place.Origin != modA {
 		t.Errorf("contest of the file m_traits.txt with the first mod loaded last: %+v", kept)
 	}
 	if got, want := countSection(previewed, "dependencies"), countSection(report, "dependencies"); got != want || want != 2 {

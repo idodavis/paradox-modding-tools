@@ -35,11 +35,11 @@ export function SearchFiles(query: string, limit: number): $CancellablePromise<w
 }
 
 /**
- * SearchText runs a text search over the files the query names. It sends each file's hits as a search:hits event, and
- * returns when the search ends or a newer search stops it. It returns an error if the query is empty or is a regular
- * expression that does not parse.
+ * SearchText runs a text search over the files the query names. It sends each file's hits as a search:hits event, at
+ * most maxHits in all, and returns when the search ends or a newer search stops it. It returns whether the search
+ * stopped at maxHits. It returns an error if the query is empty or is a regular expression that does not parse.
  */
-export function SearchText(query: $models.Query): $CancellablePromise<void> {
+export function SearchText(query: $models.Query): $CancellablePromise<boolean> {
     return $Call.ByID(3197255683, query);
 }
 

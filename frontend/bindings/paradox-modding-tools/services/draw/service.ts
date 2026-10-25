@@ -41,12 +41,21 @@ export function AddLayer(path: string, coat: string, role: string, position: num
 }
 
 /**
- * CreateCoatFile writes a new coat of arms file into the given mod from the game's coat template and returns its path.
- * The coat is named after the given text as a slug. It returns an error if the workspace has no such mod, the game
- * keeps coats of arms in no folder, the text has no slug, the file exists already or the game has no pattern.
+ * CopyCoat copies a coat that a file defines into the given mod, as a new coat of arms file with the coat's own name,
+ * and returns its path. It returns an error if the file does not define the coat, or as CreateCoatFile does.
  */
-export function CreateCoatFile(modID: string, name: string): $CancellablePromise<string> {
-    return $Call.ByID(3933983011, modID, name);
+export function CopyCoat(path: string, name: string, modID: string): $CancellablePromise<string> {
+    return $Call.ByID(943421932, path, name, modID);
+}
+
+/**
+ * CreateCoatFile writes a new coat of arms file into the given mod and returns its path. The coat is named after the
+ * given text as a slug, and holds the given script, as the game's coat designer copies it, or the game's coat template
+ * when the script is "". It returns an error if the workspace has no such mod, the game keeps coats of arms in no
+ * folder, the text has no slug, the file exists already or the game has no pattern.
+ */
+export function CreateCoatFile(modID: string, name: string, script: string): $CancellablePromise<string> {
+    return $Call.ByID(3933983011, modID, name, script);
 }
 
 /**
@@ -60,12 +69,20 @@ export function EditProperty(path: string, block: lsp$0.Range, key: string, valu
 }
 
 /**
- * EvaluateStates works out which widgets of a resolved window are hidden under the given picks. A pick is the value
- * chosen for the ID of a group. A group with no pick takes its first option. A condition that reads a group with no
- * value hides nothing. It returns an error if no workspace is open.
+ * EvaluateStates works out which widgets of one window in a GUI file are hidden. Each group is at the value the window
+ * opens with, unless the given picks pick another: a pick is the value chosen for the ID of a group. It returns an
+ * error if no workspace is open, or if the file is not in the workspace or does not define the window.
  */
-export function EvaluateStates(window: $models.Window, picks: { [_ in string]?: string } | null): $CancellablePromise<$models.States> {
-    return $Call.ByID(3372888275, window, picks);
+export function EvaluateStates(path: string, name: string, picks: { [_ in string]?: string } | null): $CancellablePromise<$models.States> {
+    return $Call.ByID(3372888275, path, name, picks);
+}
+
+/**
+ * ExportPNG writes a PNG that the page made, such as a coat as drawn or one mip level of an image, to the given file,
+ * which the user chose. It returns an error if the data is not a PNG or the file cannot be written.
+ */
+export function ExportPNG(target: string, data: string | null): $CancellablePromise<void> {
+    return $Call.ByID(732861063, target, data);
 }
 
 /**
@@ -76,8 +93,10 @@ export function ListColors(): $CancellablePromise<$models.NamedColor[] | null> {
 }
 
 /**
- * ListDrawables lists what a file defines that the view can draw, in document order: a window, a type, a template or a
- * coat, nested ones included. A file that is not a GUI file or a coat file has nothing to draw.
+ * ListDrawables lists what a file defines that the view can draw: a window, a type, a template or a coat, nested ones
+ * included. The entry the game's GUI rules show first (game.GUI.ShownFirst) comes first, as the one the view shows
+ * unless asked for another, wherever the file writes it; the rest follow in document order. A file that is not a GUI
+ * file or a coat file has nothing to draw.
  */
 export function ListDrawables(path: string): $CancellablePromise<lsp$0.Symbol[] | null> {
     return $Call.ByID(1197751465, path);
@@ -88,15 +107,25 @@ export function ListDrawables(path: string): $CancellablePromise<lsp$0.Symbol[] 
  * its mask is. A frame is left out if its define is not defined or the game loads no file at its mask's path. It is
  * empty if no workspace is open or the game has no designer.
  */
-export function ListFrames(): $CancellablePromise<$models.Frame[] | null> {
+export function ListFrames(): $CancellablePromise<$models.Image[] | null> {
     return $Call.ByID(1929556180);
 }
 
 /**
- * ListTextures returns the texture files that a layer with the given role can use, from the game's coat folders. It
- * returns an empty list if no workspace is open or the game's coats have no folder for the role.
+ * ListPictures lists the pictures that a picture binding may draw, as a widget's Pictures says where: each image that
+ * the named definition writes, labeled by its file, or, for a list with no name, what the binding shows of each
+ * definition of the database, labeled by the definition. It returns an error if no workspace is open.
  */
-export function ListTextures(role: string): $CancellablePromise<string[] | null> {
+export function ListPictures(list: $models.PictureList): $CancellablePromise<$models.Picture[] | null> {
+    return $Call.ByID(2369529877, list);
+}
+
+/**
+ * ListTextures returns the texture files that a layer with the given role can use, from the game's coat folders. Each
+ * is labeled with the name a coat writes for it. It returns an empty list if no workspace is open or the game's coats
+ * have no folder for the role.
+ */
+export function ListTextures(role: string): $CancellablePromise<$models.Image[] | null> {
     return $Call.ByID(3076933526, role);
 }
 
@@ -110,11 +139,11 @@ export function MoveLayer(path: string, coat: string, $from: number, to: number)
 }
 
 /**
- * RemoveLayer deletes one layer of a coat, including its line, and returns the edits that do it. It returns an error
- * if the position has no layer or has a layer that comes from a parent coat.
+ * RemoveBlock deletes one layer or instance of a coat, including its line, and returns the edits that do it. It
+ * returns an error if the file is not in the workspace or no statement starts where the range does.
  */
-export function RemoveLayer(path: string, coat: string, layer: number): $CancellablePromise<lsp$0.Edit[] | null> {
-    return $Call.ByID(2518686219, path, coat, layer);
+export function RemoveBlock(path: string, block: lsp$0.Range): $CancellablePromise<lsp$0.Edit[] | null> {
+    return $Call.ByID(1657945347, path, block);
 }
 
 /**
@@ -128,7 +157,8 @@ export function ResolveCoat(path: string, name: string, picks: { [_ in string]?:
 
 /**
  * ResolveWindow resolves one window in a GUI file. It applies the window's type and templates, looks up its
- * texts and finds its textures. A window wins over a type or a template of the same name. It returns an error if
+ * texts and finds its textures. A window wins over a type or a template of the same name. A file the game does not
+ * read, because another file at its path replaces it, is drawn as if the game read it instead. It returns an error if
  * the file is not in the workspace or does not define the window. A type or template that cannot be found becomes a
  * Property with Origin "missing", so the page can flag it.
  */
@@ -137,10 +167,12 @@ export function ResolveWindow(path: string, name: string): $CancellablePromise<$
 }
 
 /**
- * Reveal returns the picks that make a hidden widget of a resolved window visible. It returns nil if the conditions of
- * the widget and the widgets that hold it contradict each other, or if the widget stays hidden anyway. It returns an
- * error if no workspace is open or the window has no widget with the given ID.
+ * Reveal returns the picks that make a hidden widget of one window in a GUI file visible under the given picks. Each
+ * condition on the way down to the widget that hides it is set to values that make it hold, and every other pick
+ * stays as it is. It returns nil if those conditions contradict each other, or if the widget stays hidden anyway. It
+ * returns an error if no workspace is open, the file does not define the window, or the window has no widget with
+ * the given ID.
  */
-export function Reveal(window: $models.Window, widget: number): $CancellablePromise<{ [_ in string]?: string } | null> {
-    return $Call.ByID(3826975671, window, widget);
+export function Reveal(path: string, name: string, picks: { [_ in string]?: string } | null, widget: number): $CancellablePromise<{ [_ in string]?: string } | null> {
+    return $Call.ByID(3826975671, path, name, picks, widget);
 }

@@ -70,29 +70,43 @@ func (hlt *Service) ServiceShutdown() error {
 
 // A Section is one card of the Health page, with how many findings it holds.
 type Section struct {
-	ID    string `json:"id"` // contests, overrides, dependencies, dangling, localization, script, errorlog
-	Label string `json:"label"`
-	Note  string `json:"note"`
+	ID      string  `json:"id"` // contests, overrides, dependencies, dangling, localization, script, errorlog, overview
+	Label   string  `json:"label"`
+	Note    string  `json:"note"`
+	Count   int     `json:"count"`
+	Tally   bool    `json:"-"`       // its findings are counted by kind
+	Tallies []Tally `json:"tallies"` // none for a section counted only as a whole
+}
+
+// A Tally is how many of one section's findings are of one kind.
+type Tally struct {
+	Kind  string `json:"kind"`
 	Count int    `json:"count"`
 }
 
 // Sections lists every Health section in the page's order.
 var Sections = []Section{
-	{ID: "contests", Label: "Contests", Note: "Names and files that two or more mods define, of which the game keeps one."},
+	{ID: "contests", Label: "Contests", Note: "Names and files that two or more mods define, of which the game keeps one.",
+		Tally: true},
 	{ID: "overrides", Label: "Overrides", Note: "Names and files that a mod defines over the game's own."},
-	{ID: "dependencies", Label: "Dependencies", Note: "Mods whose definitions change what other mods define."},
+	{ID: "dependencies", Label: "Dependencies and versions",
+		Note: "Mods that change what other mods define, mods a descriptor needs, and mods made for an older game version."},
 	{ID: "dangling", Label: "Dangling references", Note: "Names that script writes and nothing defines."},
-	{ID: "localization", Label: "Localization", Note: "Missing and untranslated messages, and lines the game cannot read."},
+	{ID: "localization", Label: "Localization", Note: "Missing and untranslated messages, and lines the game cannot read.",
+		Tally: true},
 	{ID: "script", Label: "Script", Note: "Problems the editor finds in the mods' script files."},
 	{ID: "errorlog", Label: "Game errors", Note: "What the game wrote to its error log."},
+	{ID: "overview", Label: "Mod overview", Note: "What each mod defines, by database."},
 }
 
 // A FindingSite is one place a finding points at, with whether the game keeps that definition and why.
 type FindingSite struct {
-	Place  workspace.Place `json:"place"`
-	Range  lsp.Range       `json:"range"`
-	Kept   bool            `json:"kept"`
-	Reason string          `json:"reason,omitempty"` // order, mode, priority, merge, replace
+	Place   workspace.Place `json:"place"`
+	Range   lsp.Range       `json:"range"`
+	Kept    bool            `json:"kept"`
+	Reason  string          `json:"reason,omitempty"`  // the winner's: order, mode, priority, merge, replace; or merged
+	Defines []string        `json:"defines,omitempty"` // the names a whole-file site defines
+	Removed []string        `json:"removed,omitempty"` // the names a replaced site defines that the kept file does not
 }
 
 // A Finding is one row of the Health page: a problem, or a fact about the mods, with the places it points at.
@@ -101,20 +115,26 @@ type Finding struct {
 	Code     string            `json:"code"` // an lsp.Codes id
 	Name     string            `json:"name"`
 	Database string            `json:"database"` // what the database calls a definition
+	Origin   string            `json:"origin"`   // what it is about: a dependency's mod, else its last kept site's origin
 	Facts    map[string]string `json:"facts"`
 	Sites    []FindingSite     `json:"sites"`
+	Removed  []string          `json:"removed,omitempty"` // the names the replaced sites define that the kept file does not
+	// Comparable is true when the kept statement and the ones it replaces can be shown side by side.
+	Comparable bool `json:"comparable"`
 }
 
-// A Report is the sections and findings the Health page shows for one load order. It leaves out the game's error log.
+// A Report is the sections and findings the Health page shows for one load order. The game's error log is counted in
+// its section and in the total, and listed by ListErrorLog.
 type Report struct {
 	Sections []Section `json:"sections"`
 	Findings []Finding `json:"findings"`
+	Total    int       `json:"total"` // the findings of every section but the overview
 }
 
-// An Overview counts one mod's definitions by database, its files and its messages.
+// An Overview is what one mod holds, counted.
 type Overview struct {
 	Mod      string         `json:"mod"`
-	Counts   map[string]int `json:"counts"`
+	Counts   map[string]int `json:"counts"` // by what a database's definitions are called; two called the same share one
 	Files    int            `json:"files"`
 	Messages int            `json:"messages"`
 }
@@ -127,6 +147,9 @@ type Compared struct {
 
 // modDatabase is the database a finding names a mod in.
 const modDatabase = "mod"
+
+// mergedReason is the reason of a kept site that is not the winner but joins it, as an injection or a merge does.
+const mergedReason = "merged"
 
 // ruleLabels are the words a contest names its rule with, by the reason the winner has or what the database keeps.
 var ruleLabels = map[string]string{"last": "LIOS", "first": "FIOS", "highest": "priority", "mode": "mode"}
@@ -172,11 +195,42 @@ func (hlt *Service) BuildReport(order []string) (Report, error) {
 	group.Wait()
 	findings := slices.Concat(results...)
 	sections := slices.Clone(Sections)
+	// a game with no error log, or one that cannot be read, counts none
+	errorLog, _ := hlt.ListErrorLog()
 	counts := lo.CountValuesBy(findings, func(finding Finding) string { return finding.Section })
+	counts["errorlog"], counts["overview"] = len(errorLog), len(ws.Order)
 	for position := range sections {
 		sections[position].Count = counts[sections[position].ID]
+		if sections[position].Tally {
+			sections[position].Tallies = tallyFindings(findings, sections[position].ID)
+		}
 	}
-	return Report{Sections: sections, Findings: findings}, nil
+	return Report{Sections: sections, Findings: findings, Total: len(findings) + len(errorLog)}, nil
+}
+
+// tallyFindings counts the findings of the section with the given id by kind: a finding's rule, else its code's label.
+// The kinds are in the order they first appear.
+func tallyFindings(findings []Finding, sectionID string) []Tally {
+	var tallies []Tally
+	for _, finding := range findings {
+		if finding.Section != sectionID {
+			continue
+		}
+		kind := cmp.Or(finding.Facts["rule"], lookupCode(finding.Code).Label)
+		position := slices.IndexFunc(tallies, func(tally Tally) bool { return tally.Kind == kind })
+		if position < 0 {
+			position = len(tallies)
+			tallies = append(tallies, Tally{Kind: kind})
+		}
+		tallies[position].Count++
+	}
+	return tallies
+}
+
+// lookupCode returns the code with the given id. An id no code has gives the zero code.
+func lookupCode(id string) lsp.Code {
+	code, _ := lo.Find(lsp.Codes, func(code lsp.Code) bool { return code.ID == id })
+	return code
 }
 
 // ListSections returns every Health section.
@@ -201,7 +255,7 @@ func (hlt *Service) ListOverview() ([]Overview, error) {
 			}
 			overview.Files++
 			for database, count := range mods.CountDefinitions(position) {
-				overview.Counts[database] += count
+				overview.Counts[game.DescribeDefinition(database, true)] += count
 			}
 			overview.Messages += lo.CountBy(mods.Occurrences[position], func(occurrence index.Occurrence) bool {
 				return occurrence.Role == index.RoleLocalizes
@@ -224,6 +278,40 @@ func (hlt *Service) CompareStatements(a, b FindingSite) (Compared, error) {
 	}
 	second, err := findStatementText(ws, b)
 	return Compared{A: first, B: second}, err
+}
+
+// ListSources returns the first ten lines of each finding site's range, an open file's from the editor's text. It
+// returns an error if a file cannot be read.
+func (hlt *Service) ListSources(sites []FindingSite) ([]string, error) {
+	ws, err := hlt.Workspace.Session()
+	if err != nil {
+		return nil, err
+	}
+	sources := make([]string, len(sites))
+	for position, site := range sites {
+		tree, err := ws.LoadTree(site.Place.Path)
+		if err != nil {
+			return nil, err
+		}
+		last := tree.Lines.CountLines() - 1
+		first := min(max(site.Range.StartLine-1, 0), last)
+		start := tree.Lines.LineSpan(first)
+		end := tree.Lines.LineSpan(min(max(site.Range.EndLine-1, first), last, first+9))
+		sources[position] = tree.Src[start.Start:end.End]
+	}
+	return sources, nil
+}
+
+// ListReaders returns every place in script and localization that reads a localization key.
+func (hlt *Service) ListReaders(key string) ([]FindingSite, error) {
+	ws, err := hlt.Workspace.Session()
+	if err != nil {
+		return nil, err
+	}
+	mods := ws.Mods.Load()
+	return lo.Map(mods.ListUses(game.Localization, key), func(site index.Site, _ int) FindingSite {
+		return makeSite(ws, mods, site)
+	}), nil
 }
 
 // findStatementText returns the text of the statement at a finding site. It returns an error if the file cannot be read
@@ -368,7 +456,9 @@ func listContests(ws *workspace.Session, mods *index.Index, defined []schema.Ref
 		}
 		facts := lsp.DescribeReference(reference)
 		facts["rule"] = cmp.Or(ruleLabels[winner.Reason], ruleLabels[ws.Schema.Databases[reference.Database].Precedence.Keeps])
-		findings = append(findings, makeFinding("contest", facts, makeSites(ws, mods, sites, winner)))
+		finding := makeFinding("contest", facts, makeSites(ws, mods, sites, winner))
+		finding.Comparable = true
+		findings = append(findings, finding)
 	}
 	return findings
 }
@@ -415,19 +505,49 @@ func findLoadedDefinitions(ws *workspace.Session, mods *index.Index, reference s
 }
 
 // makeFinding returns a finding of the code with the given id, in the code's section. Its name and database come from
-// the given facts.
+// the given facts. Its sites are the kept ones first, the rest in the order given. Its origin is the last kept site's,
+// or the first site's when none is kept.
 func makeFinding(id string, facts map[string]string, sites []FindingSite) Finding {
-	code, _ := lo.Find(lsp.Codes, func(code lsp.Code) bool { return code.ID == id })
-	return Finding{Section: code.Section, Code: id, Name: facts["name"], Database: facts["database"], Facts: facts, Sites: sites}
+	kept, replaced := lo.FilterReject(sites, func(site FindingSite, _ int) bool { return site.Kept })
+	sites = slices.Concat(kept, replaced)
+	origin := ""
+	switch {
+	case len(kept) > 0:
+		origin = kept[len(kept)-1].Place.Origin
+	case len(sites) > 0:
+		origin = sites[0].Place.Origin
+	}
+	return Finding{
+		Section: lookupCode(id).Section, Code: id, Name: facts["name"], Database: facts["database"], Origin: origin,
+		Facts: facts, Sites: sites, Removed: listRemoved(sites),
+	}
 }
 
-// makeSites returns the finding sites of the given definitions of one name. Each one the winner keeps is marked kept,
-// with the winner's reason.
+// listRemoved gives each whole-file site the game does not keep the names it defines that the kept one does not. It
+// returns those names across the sites, each once.
+func listRemoved(sites []FindingSite) []string {
+	kept := lo.FlatMap(sites, func(site FindingSite, _ int) []string { return lo.Ternary(site.Kept, site.Defines, nil) })
+	var removed []string
+	for position := range sites {
+		if !sites[position].Kept {
+			sites[position].Removed, _ = lo.Difference(sites[position].Defines, kept)
+			removed = append(removed, sites[position].Removed...)
+		}
+	}
+	return lo.Uniq(removed)
+}
+
+// makeSites returns the finding sites of the given definitions of one name. Each kept one is marked kept: the winner
+// with the winner's reason, one merged into it with "merged".
 func makeSites(ws *workspace.Session, mods *index.Index, definitions []index.Site, winner index.Winner) []FindingSite {
 	return lo.Map(definitions, func(definition index.Site, _ int) FindingSite {
 		site := makeSite(ws, mods, definition)
-		if site.Kept = winner.IsKept(definition); site.Kept {
+		site.Kept = winner.IsKept(definition)
+		switch {
+		case definition == winner.Site:
 			site.Reason = winner.Reason
+		case site.Kept:
+			site.Reason = mergedReason
 		}
 		return site
 	})
@@ -505,11 +625,15 @@ func makeFileSites(ws *workspace.Session, mods *index.Index, path string) []Find
 	})
 }
 
-// makeFileSite returns the finding site of a file, at its first line. The file is kept if the game loads it.
+// makeFileSite returns the finding site of a file, at its first line, with the names it defines. The file is kept if
+// the game loads it.
 func makeFileSite(ws *workspace.Session, mods *index.Index, position int32) FindingSite {
 	return FindingSite{
 		Place: ws.Locate(mods, mods.Files[position].Path), Range: lsp.ToLineRange(1),
 		Kept: mods.IsLoaded(position),
+		Defines: lo.FilterMap(mods.Occurrences[position], func(occurrence index.Occurrence, _ int) (string, bool) {
+			return mods.Names.Texts[occurrence.Name], occurrence.Role == index.RoleDefines && !occurrence.Alias
+		}),
 	}
 }
 
@@ -603,7 +727,9 @@ func makeDependencies(ws *workspace.Session, pair [2]string) []Finding {
 	depends := lsp.DescribeReference(schema.Reference{Database: modDatabase, Name: keeper})
 	affects := lsp.DescribeReference(schema.Reference{Database: modDatabase, Name: other})
 	depends["other"], affects["other"] = other, keeper
-	return []Finding{makeFinding("depends", depends, nil), makeFinding("affects", affects, nil)}
+	findings := []Finding{makeFinding("depends", depends, nil), makeFinding("affects", affects, nil)}
+	findings[0].Origin, findings[1].Origin = pair[0], pair[1]
+	return findings
 }
 
 // describeMod returns the name of a mod: the one its descriptor gives, else its folder's.

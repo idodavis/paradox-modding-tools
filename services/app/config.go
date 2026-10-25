@@ -13,28 +13,37 @@ import (
 	"sync"
 	"time"
 
-	"github.com/adrg/xdg"
 	"github.com/samber/lo"
 	"github.com/wailsapp/wails/v3/pkg/application"
 
 	"paradox-modding-tools/internal/files"
 )
 
-// Dirs is the three folders PMT keeps its files in on this machine.
+// Dirs is the folders PMT keeps its files in on this machine.
 type Dirs struct {
 	App   string // config.json
 	Cache string // the schema and index caches, the wiki's pages, the Steam snapshots
 	Log   string // pmt.log
+	Trash string // deleted files, emptied at each start
 }
 
-// ResolveDirs finds PMT's folders by the platform's conventions and creates any that are missing.
+// ResolveDirs finds PMT's folders and creates any that are missing but the trash. config.json goes in the user's
+// config folder, and the log, the caches and the trash in the user's cache folder, each as the system places them.
+// It returns an error if the system has no such folders.
 func ResolveDirs() (Dirs, error) {
 	const folder = "paradox-modding-tools"
-	dirs := Dirs{
-		App:   filepath.Join(xdg.ConfigHome, folder),
-		Cache: filepath.Join(xdg.CacheHome, folder),
-		Log:   filepath.Join(xdg.StateHome, folder),
+	config, err := os.UserConfigDir()
+	if err != nil {
+		return Dirs{}, err
 	}
+	cache, err := os.UserCacheDir()
+	if err != nil {
+		return Dirs{}, err
+	}
+	// the log is open while the app runs, so it sits beside the cache folder, which a reset empties
+	dirs := Dirs{App: filepath.Join(config, folder), Log: filepath.Join(cache, folder)}
+	dirs.Cache = filepath.Join(dirs.Log, "cache")
+	dirs.Trash = filepath.Join(dirs.Cache, "trash")
 	for _, dir := range []string{dirs.App, dirs.Cache, dirs.Log} {
 		if err := os.MkdirAll(dir, 0o755); err != nil {
 			return Dirs{}, err
@@ -102,12 +111,17 @@ type Mod struct {
 
 // A Workspace is one recorded workspace: a game install and the mods loaded with it, in load order.
 type Workspace struct {
-	ID       string `json:"id"`
-	Name     string `json:"name"`
-	Install  string `json:"install"`
-	Mods     []Mod  `json:"mods"`
-	Language string `json:"language"` // the localization language beside the game's base language
-	HomePage string `json:"homePage"` // the page it opens on
+	ID           string `json:"id"`
+	Name         string `json:"name"`
+	Install      string `json:"install"`
+	Mods         []Mod  `json:"mods"`
+	Language     string `json:"language"`     // the localization language beside the game's base language
+	HomePage     string `json:"homePage"`     // the page it opens on
+	GameColor    string `json:"gameColor"`    // the color of the game's files, as a slot or a CSS color; "" for its own
+	ResetTabs    bool   `json:"resetTabs"`    // the IDE opens with no tabs rather than those left open
+	ShowBinaries bool   `json:"showBinaries"` // the explorer lists images, fonts and other binary files
+	// Settings holds the values the user set of the settings kept per workspace, by key.
+	Settings map[string]string `json:"settings"`
 }
 
 // Config is the content of config.json.
@@ -119,28 +133,21 @@ type Config struct {
 
 // A Setting is one row of the catalog of settings.
 type Setting struct {
-	Key     string   `json:"key"` // `<area>.<noun>`
-	Label   string   `json:"label"`
-	Help    string   `json:"help"`
-	Section string   `json:"section"` // general, install, mods, appearance, ide
-	Type    string   `json:"type"`    // switch, choice, number, text
-	Default string   `json:"default"`
-	Choices []string `json:"choices,omitempty"`
-	Min     int      `json:"min,omitempty"` // a number's range; both 0 when it has none
-	Max     int      `json:"max,omitempty"`
-	Words   string   `json:"words"` // what the palette's search also matches
+	Key       string   `json:"key"` // `<area>.<noun>`
+	Label     string   `json:"label"`
+	Help      string   `json:"help"`
+	Section   string   `json:"section"`   // appearance; the IDE's editor, language, checks, explorer, visual, wiki
+	Workspace bool     `json:"workspace"` // it is kept per workspace, as the IDE's settings are
+	Type      string   `json:"type"`      // switch, choice, number, text
+	Default   string   `json:"default"`
+	Choices   []string `json:"choices,omitempty"`
+	Min       int      `json:"min,omitempty"` // a number's range; both 0 when it has none
+	Max       int      `json:"max,omitempty"`
+	Words     string   `json:"words"` // what the palette's search also matches
 }
 
 // Catalog lists every setting.
 var Catalog = []Setting{
-	{Key: "ide.reopenTabs", Label: "Reopen the IDE's tabs",
-		Section: "general", Type: "switch", Default: "true",
-		Help:  "Opens the tabs that were open when the workspace was last closed.",
-		Words: "tabs restore session startup"},
-	{Key: "ide.hideBinaries", Label: "Hide binaries in the explorer",
-		Section: "general", Type: "switch", Default: "true",
-		Help:  "Leaves images, fonts and other binary files out of the explorer's tree.",
-		Words: "explorer images dds binary files"},
 	{Key: "appearance.theme", Label: "Theme",
 		Section: "appearance", Type: "choice", Default: "pmt",
 		Choices: []string{"pmt", "catppuccin", "one", "pierre", "ck3", "eu5", "vic3"},
@@ -167,37 +174,121 @@ var Catalog = []Setting{
 		Help:  "The pages the sidebar offers, in order, separated by commas.",
 		Words: "sidebar navigation hide"},
 	{Key: "ide.editorTextSize", Label: "Editor text size",
-		Section: "ide", Type: "number", Default: "13", Min: 10, Max: 24,
+		Section: "editor", Workspace: true, Type: "number", Default: "14", Min: 10, Max: 24,
 		Help:  "The size of the editor's text in pixels.",
 		Words: "font zoom"},
 	{Key: "ide.panelTextSize", Label: "Explorer and panel text size",
-		Section: "ide", Type: "number", Default: "12", Min: 10, Max: 20,
+		Section: "explorer", Workspace: true, Type: "number", Default: "13", Min: 10, Max: 20,
 		Help:  "The size of the text in the explorer and the panels in pixels.",
 		Words: "font sidebar"},
-	{Key: "ide.indentation", Label: "Indentation where a file has none",
-		Section: "ide", Type: "number", Default: "4", Min: 1, Max: 8,
-		Help:  "The number of spaces an indent takes in a file whose own indentation cannot be told.",
+	{Key: "ide.font", Label: "Editor font",
+		Section: "editor", Workspace: true, Type: "text", Default: "Geist Mono",
+		Help:  "Any font installed on this computer, by name.",
+		Words: "typeface monospace"},
+	{Key: "ide.lineHeight", Label: "Line height",
+		Section: "editor", Workspace: true, Type: "choice", Default: "compact", Choices: []string{"compact", "roomy"},
+		Help:  "The room between the editor's lines.",
+		Words: "spacing lines"},
+	{Key: "ide.density", Label: "Row density",
+		Section: "explorer", Workspace: true, Type: "choice", Default: "default", Choices: []string{"compact", "default", "relaxed"},
+		Help:  "Compact fits more rows; relaxed is easier to hit.",
+		Words: "explorer tree rows spacing"},
+	{Key: "ide.indentWith", Label: "Indent with",
+		Section: "editor", Workspace: true, Type: "choice", Default: "tabs", Choices: []string{"tabs", "spaces"},
+		Help:  "What a new line is indented with where a file has no indentation of its own.",
 		Words: "tab spaces indent"},
-	{Key: "ide.checks", Label: "Checks turned off",
-		Section: "ide", Type: "text", Default: "",
-		Help:  "The ids of the checks the editor skips, separated by commas.",
+	{Key: "ide.indentation", Label: "Indent size",
+		Section: "editor", Workspace: true, Type: "number", Default: "4", Min: 1, Max: 8,
+		Help:  "The spaces an indent takes, and the width of a tab.",
+		Words: "tab spaces indent"},
+	{Key: "ide.checks", Label: "Checks",
+		Section: "checks", Workspace: true, Type: "text", Default: "",
+		Help:  "The checks the editor runs, kept as the ids of those turned off. Health's counts do not change.",
 		Words: "diagnostics problems lint ignore"},
-	{Key: "ide.wikiToast", Label: "Wiki suggestion toast",
-		Section: "ide", Type: "switch", Default: "true",
+	{Key: "ide.wikiToast", Label: "Suggestion toast",
+		Section: "wiki", Workspace: true, Type: "switch", Default: "true",
 		Help:  "Shows a toast when the wiki has a page for what you are editing.",
 		Words: "wiki notification popup"},
-	{Key: "draw.resolution.ck3", Label: "Visual view resolution, CK3",
-		Section: "ide", Type: "choice", Default: "1920x1080",
+	{Key: "ide.wordWrap", Label: "Word wrap",
+		Section: "editor", Workspace: true, Type: "switch", Default: "false",
+		Help:  "Long lines wrap at the editor's edge.",
+		Words: "lines wrapping"},
+	{Key: "ide.closeBrackets", Label: "Close brackets and quotes",
+		Section: "editor", Workspace: true, Type: "switch", Default: "true",
+		Help:  "Typing { adds the }.",
+		Words: "braces pairs auto"},
+	{Key: "ide.minimap", Label: "Minimap",
+		Section: "editor", Workspace: true, Type: "switch", Default: "true",
+		Help:  "The whole file in small at the editor's right edge.",
+		Words: "overview scroll"},
+	{Key: "ide.indentGuides", Label: "Indent guides",
+		Section: "editor", Workspace: true, Type: "switch", Default: "true",
+		Help:  "A line down each block's indentation.",
+		Words: "indentation lines"},
+	{Key: "ide.bracketColors", Label: "Bracket pair colors",
+		Section: "editor", Workspace: true, Type: "switch", Default: "true",
+		Help:  "Each depth of { } in its own color.",
+		Words: "braces rainbow"},
+	{Key: "ide.whitespace", Label: "Show spaces and tabs",
+		Section: "editor", Workspace: true, Type: "switch", Default: "false",
+		Help:  "Off: only in the selection.",
+		Words: "whitespace invisible characters"},
+	{Key: "ide.folding", Label: "Folding",
+		Section: "editor", Workspace: true, Type: "switch", Default: "true",
+		Help:  "A block's arrow in the gutter hides its lines.",
+		Words: "collapse fold gutter"},
+	{Key: "ide.hover", Label: "Hover cards",
+		Section: "language", Workspace: true, Type: "switch", Default: "true",
+		Help:  "What a word is, when the pointer rests on it.",
+		Words: "tooltip documentation"},
+	{Key: "ide.complete", Label: "Completion list while typing",
+		Section: "language", Workspace: true, Type: "switch", Default: "true",
+		Help:  "Off: only Ctrl Space opens it.",
+		Words: "autocomplete suggestions intellisense"},
+	{Key: "ide.predict", Label: "Predicted text",
+		Section: "language", Workspace: true, Type: "switch", Default: "true",
+		Help:  "The likeliest completion in grey; Tab takes it.",
+		Words: "inline ghost suggestion"},
+	{Key: "ide.signature", Label: "Signature help",
+		Section: "language", Workspace: true, Type: "switch", Default: "true",
+		Help:  "What an effect or macro takes, while you fill it in.",
+		Words: "parameters arguments"},
+	{Key: "ide.stickyFolders", Label: "Sticky folders",
+		Section: "explorer", Workspace: true, Type: "switch", Default: "true",
+		Help:  "A folder's name stays on top while you scroll its files.",
+		Words: "explorer scroll"},
+	{Key: "ide.gameFiles", Label: "Game files section",
+		Section: "explorer", Workspace: true, Type: "switch", Default: "true",
+		Help:  "The game's files, read only, under the mods.",
+		Words: "explorer vanilla"},
+	{Key: "ide.rootColors", Label: "Color each top folder",
+		Section: "explorer", Workspace: true, Type: "switch", Default: "true",
+		Help:  "A mod's or the game's folder in its color, as well as its bar.",
+		Words: "explorer mod colors"},
+	{Key: "ide.followFile", Label: "Follow the open file",
+		Section: "explorer", Workspace: true, Type: "switch", Default: "true",
+		Help:  "The explorer selects the file you switch to.",
+		Words: "explorer reveal select"},
+	{Key: "ide.wikiFollow", Label: "Wiki follows the open file",
+		Section: "wiki", Workspace: true, Type: "switch", Default: "true",
+		Help:  "Suggests pages for the file you are editing.",
+		Words: "wiki pages suggestions"},
+	{Key: "draw.rows", Label: "Rows per list",
+		Section: "visual", Workspace: true, Type: "number", Default: "3", Min: 1, Max: 20,
+		Help:  "How many times the Visual view draws the item of a data model.",
+		Words: "gui preview list repeat items"},
+	{Key: "draw.resolution.ck3", Label: "Resolution, CK3",
+		Section: "visual", Workspace: true, Type: "choice", Default: "1920x1080",
 		Choices: []string{"1920x1080", "2560x1440", "3840x2160"},
 		Help:    "The screen size the Visual view draws CK3's windows at.",
 		Words:   "gui preview screen size"},
-	{Key: "draw.resolution.vic3", Label: "Visual view resolution, Vic3",
-		Section: "ide", Type: "choice", Default: "1920x1080",
+	{Key: "draw.resolution.vic3", Label: "Resolution, Vic3",
+		Section: "visual", Workspace: true, Type: "choice", Default: "1920x1080",
 		Choices: []string{"1920x1080", "2560x1440", "3840x2160"},
 		Help:    "The screen size the Visual view draws Vic3's windows at.",
 		Words:   "gui preview screen size"},
-	{Key: "draw.resolution.eu5", Label: "Visual view resolution, EU5",
-		Section: "ide", Type: "choice", Default: "1920x1080",
+	{Key: "draw.resolution.eu5", Label: "Resolution, EU5",
+		Section: "visual", Workspace: true, Type: "choice", Default: "1920x1080",
 		Choices: []string{"1920x1080", "2560x1440", "3840x2160"},
 		Help:    "The screen size the Visual view draws EU5's windows at.",
 		Words:   "gui preview screen size"},
@@ -260,16 +351,22 @@ func (file *ConfigFile) Update(section string, change func(config *Config) error
 	return nil
 }
 
-// LookupSetting returns one setting's value: the one the user set, else the catalog's default. It returns false for a
+// LookupSetting returns one setting's value in the given workspace: for a setting kept per workspace the workspace's
+// own, else the one the user set for the app, and the catalog's default when it was never set. It returns false for a
 // key the catalog does not have.
-func (file *ConfigFile) LookupSetting(key string) (string, bool) {
+func (file *ConfigFile) LookupSetting(workspaceID, key string) (string, bool) {
 	setting, ok := lo.Find(Catalog, func(setting Setting) bool { return setting.Key == key })
 	if !ok {
 		return "", false
 	}
 	file.mu.RLock()
 	defer file.mu.RUnlock()
-	if value, ok := file.config.Settings[key]; ok {
+	values := file.config.Settings
+	if setting.Workspace {
+		record, _ := lo.Find(file.config.Workspaces, func(record Workspace) bool { return record.ID == workspaceID })
+		values = record.Settings
+	}
+	if value, ok := values[key]; ok {
 		return value, true
 	}
 	return setting.Default, true

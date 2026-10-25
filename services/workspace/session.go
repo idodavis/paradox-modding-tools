@@ -34,6 +34,7 @@ type Session struct {
 	Mods        atomic.Pointer[index.Index] // on top of Install; a rescan replaces it whole
 	Order       []Mod                       // in load order
 	Language    string                      // the localization language shown beside the game's base language
+	updatedFrom string                      // the install's recorded version when the open found another
 	mu          sync.RWMutex                // over the buffers and the trees, and one rescan at a time
 	buffers     map[string]*jomini.Tree     // the editor's open files, by the path's key
 	trees       *lru.Cache[string, *jomini.Tree]
@@ -48,10 +49,11 @@ const (
 )
 
 // openSession opens the workspace with the given id. It loads the install's schema and index from the caches or scans
-// them, scans the mods on top and starts the watcher. The given progress function is called at each stage of the scan.
-// The given change function is called with each batch of files that change. It returns an error if the workspace, its
-// install or the install's game is not recorded or not supported, or if a scan fails.
-func (wsp *Service) openSession(workspaceID string, progress func(stage string), change func(changes []FileChange)) (*Session, error) {
+// them, scans the mods on top and starts the watcher. The given progress function is called at each stage of the scan,
+// with the percent of the stage's files done where the stage counts them, else 0. The given change function is called
+// with each batch of files that change. It returns an error if the workspace, its install or the install's game is
+// not recorded or not supported, or if a scan fails.
+func (wsp *Service) openSession(workspaceID string, progress func(stage string, percent int), change func(changes []FileChange)) (*Session, error) {
 	record, install, row, err := findRecords(wsp.Config.Config(), workspaceID)
 	if err != nil {
 		return nil, err
@@ -119,7 +121,7 @@ func resolveCaches(cacheDir string, row *game.Game, install app.Install, build s
 
 // loadInstall sets the session's schema and install index from the caches' folder. It builds what a cache lacks and
 // saves it there.
-func (ws *Session) loadInstall(installPath string, progress func(stage string)) error {
+func (ws *Session) loadInstall(installPath string, progress func(stage string, percent int)) error {
 	schemaCache, indexCache := filepath.Join(ws.caches, schemaFile), filepath.Join(ws.caches, indexFile)
 	language, hasSchema := files.LoadGob[*schema.Schema](schemaCache)
 	install, hasInstall := index.LoadIndex(indexCache)
@@ -127,7 +129,7 @@ func (ws *Session) loadInstall(installPath string, progress func(stage string)) 
 		ws.Schema, ws.Install = language, install
 		return nil
 	}
-	progress("listing")
+	progress("listing", 0)
 	roots, err := game.ListInstallRoots(installPath)
 	if err != nil {
 		return err
@@ -137,7 +139,7 @@ func (ws *Session) loadInstall(installPath string, progress func(stage string)) 
 		return err
 	}
 	if !hasSchema {
-		progress("schema")
+		progress("schema", 0)
 		if language, err = schema.Build(ws.Game, installPath, listing, parseFile); err != nil {
 			return err
 		}
@@ -181,23 +183,30 @@ func deleteOlderCaches(folder string) {
 
 // scanMods sets the session's mods from the workspace's records and scans them on top of the install. A mod whose
 // folder is missing is broken and is not scanned. A mod whose descriptor cannot be read is scanned with an empty one.
-func (ws *Session) scanMods(records []app.Mod, progress func(stage string)) error {
+func (ws *Session) scanMods(records []app.Mod, progress func(stage string, percent int)) error {
 	for _, record := range records {
-		mod := Mod{Mod: record}
-		if files.IsFolder(record.Dir) {
-			mod.Descriptor, _ = ReadDescriptor(ws.Game, record.Dir)
-		} else {
-			mod.Broken = true
-		}
-		ws.Order = append(ws.Order, mod)
+		ws.Order = append(ws.Order, readMod(ws.Game, record))
 	}
-	progress("mods")
+	progress("mods", 0)
 	mods, err := ws.ScanOrder(lo.Map(records, func(record app.Mod, _ int) string { return record.ID }))
 	if err != nil {
 		return err
 	}
 	ws.Mods.Store(mods)
 	return nil
+}
+
+// readMod returns a recorded mod with its descriptor and thumbnail, read by the given game's rule. A mod whose folder
+// is missing is broken, and one whose descriptor cannot be read has an empty one.
+func readMod(row *game.Game, record app.Mod) Mod {
+	mod := Mod{Mod: record}
+	if files.IsFolder(record.Dir) {
+		mod.Descriptor, _ = ReadDescriptor(row, record.Dir)
+		mod.Thumbnail = findThumbnail(row, record.Dir, mod.Descriptor.Thumbnail)
+	} else {
+		mod.Broken = true
+	}
+	return mod
 }
 
 // ScanOrder scans the workspace's mods on top of the install's index as if the game loaded them in the given

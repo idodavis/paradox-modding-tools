@@ -8,13 +8,17 @@ export {
 
 export type {
     Blend,
+    Choice,
     Coat,
-    Frame,
+    Font,
     Group,
+    Image,
     Instance,
     Layer,
     NamedColor,
     Overlay,
+    Picture,
+    PictureList,
     Property,
     Recolor,
     Shading,

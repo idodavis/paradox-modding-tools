@@ -27,6 +27,17 @@ export interface Blend {
 }
 
 /**
+ * A Choice is the value that the picks give one property of a widget, with the text or the image file it leads to
+ * where its key writes a text or names a picture.
+ */
+export interface Choice {
+    "key": string;
+    "value": string;
+    "text"?: string;
+    "texture"?: string;
+}
+
+/**
  * A Coat is a coat of arms resolved for drawing, as its layers.
  */
 export interface Coat {
@@ -45,18 +56,29 @@ export interface Coat {
      * Shading is nil where the game shades no coat.
      */
     "shading": Shading | null;
+
+    /**
+     * the pattern's color regions, each one an emblem can show in
+     */
+    "regions": number[] | null;
+
+    /**
+     * the keys that write the color slots, slot 1 first
+     */
+    "slots": string[] | null;
 }
 
 /**
- * A Frame is one shape that the game's coat designer previews a coat in.
+ * A Font is one style of a font that a window's texts are written in, with the file the game reads it from.
  */
-export interface Frame {
-    "label": string;
+export interface Font {
+    "name": string;
 
     /**
-     * where the shape's mask file is
+     * the style's words: regular, bold, italic or bold|italic
      */
-    "place": workspace$0.Place;
+    "style": string;
+    "path": string;
 }
 
 /**
@@ -64,13 +86,43 @@ export interface Frame {
  * a template list that a coat's value is drawn from.
  */
 export interface Group {
+    /**
+     * ID is the group's call. A call that reads the object of a data context is written from the window down to that
+     * object, so the same call about two objects is two groups.
+     */
     "id": string;
+
+    /**
+     * Subject is the kind of object it asks about, in words, such as Character or Relation; Game for a call of one
+     * step, and "" for a coat's list.
+     */
+    "subject"?: string;
+
+    /**
+     * the key that picks its object out of its kind, such as a relation's lover
+     */
+    "key"?: string;
+
+    /**
+     * what it asks, in words
+     */
     "label": string;
 
     /**
-     * the values it can take
+     * Exists is true when it asks whether an object further on than its subject exists, which its label names.
+     */
+    "exists"?: boolean;
+
+    /**
+     * Options is the values it can take: the values the window asks of it, then every value at once where it has
+     * none or several, then none.
      */
     "options": string[] | null;
+
+    /**
+     * by value: the text of the widget whose press sets it
+     */
+    "captions"?: { [_ in string]?: string } | null;
 
     /**
      * the value it has now
@@ -78,9 +130,41 @@ export interface Group {
     "picked": string;
 
     /**
-     * the database whose definitions it offers; "" for any other group
+     * a press of a widget of the window sets it
      */
-    "database"?: string;
+    "clickable"?: boolean;
+
+    /**
+     * how many widgets that draw something it shows or hides
+     */
+    "reach"?: number;
+
+    /**
+     * the data model item whose rows alone read it; 0 where the window does
+     */
+    "item"?: number;
+
+    /**
+     * the widgets whose own condition reads it
+     */
+    "readers"?: number[] | null;
+
+    /**
+     * Pictures is where the pictures it picks among are listed, for a group of a picture binding; nil otherwise.
+     */
+    "pictures"?: PictureList | null;
+}
+
+/**
+ * An Image is one image file the panel offers, with its label.
+ */
+export interface Image {
+    "label": string;
+
+    /**
+     * where the image file is
+     */
+    "place": workspace$0.Place;
 }
 
 /**
@@ -95,6 +179,11 @@ export interface Instance {
      */
     "rotation": number;
     "depth": number;
+
+    /**
+     * its place among every instance of its coat in the order they draw, from 0
+     */
+    "rank": number;
     "range": lsp$0.Range;
 }
 
@@ -118,9 +207,24 @@ export interface Layer {
     "path": string;
 
     /**
+     * the layer is an emblem, colored or textured
+     */
+    "emblem": boolean;
+
+    /**
+     * the parent coat that writes the layer; "" for the coat's own
+     */
+    "writer": string;
+
+    /**
      * the image file of the pattern whose regions an emblem shows in
      */
     "mask": string;
+
+    /**
+     * where the emblem's mask is written; zero where it writes none
+     */
+    "maskRange": lsp$0.Range;
 
     /**
      * the pattern's color regions an emblem shows in; none means all of them
@@ -138,6 +242,11 @@ export interface Layer {
     "colors": string[] | null;
 
     /**
+     * the named color of each of those, "" for one written as numbers
+     */
+    "colorNames": string[] | null;
+
+    /**
      * how the game colors its texture; nil where it keeps its pixels
      */
     "recolor": Recolor | null;
@@ -148,16 +257,21 @@ export interface Layer {
     "lists": Group[] | null;
 
     /**
-     * Inputs is how the panel edits each key the layer writes, by key.
+     * Inputs is how the panel edits each key the layer's role may write, by key.
      */
     "inputs": { [_ in string]?: string } | null;
 
     /**
-     * Instances are in the order they draw, a later one over an earlier.
+     * Instances are in the order written. Each one's Rank says when the coat draws it.
      */
     "instances": Instance[] | null;
     "sub"?: Coat | null;
     "range": lsp$0.Range;
+
+    /**
+     * the file the layer is written in
+     */
+    "place": workspace$0.Place;
 }
 
 /**
@@ -180,6 +294,48 @@ export interface Overlay {
 }
 
 /**
+ * A Picture is one picture that a picture binding may draw: its image file, labeled by its file or its definition, and
+ * the value that picking it sets: its file, or its definition's name.
+ */
+export interface Picture {
+    "label": string;
+    "path": string;
+    "value": string;
+}
+
+/**
+ * A PictureList is where the pictures are listed that a picture binding may draw: the images that one definition
+ * writes, or, where Name is "", what the binding shows of each definition of a database, which a pick of one sets.
+ */
+export interface PictureList {
+    /**
+     * the key of the property whose binding draws them
+     */
+    "key": string;
+    "database": string;
+    "name": string;
+
+    /**
+     * Type is the kind of object the binding reads, as its data type or its words; Field is the field it reads of one
+     * (realm_frame), and Argument the argument it passes as written (62), each "" for none.
+     */
+    "type": string;
+    "field": string;
+    "argument": string;
+
+    /**
+     * Folder is, for a kind whose objects are the subfolders of its icon folder rather than definitions, that folder:
+     * each subfolder holds the object's images, named by the argument (graphical_cultures/european_gfx).
+     */
+    "folder": string;
+
+    /**
+     * what it draws with nothing picked: a definition's or a folder's name, or a file
+     */
+    "shown": string;
+}
+
+/**
  * A Property is one property of a widget, with the place where it is written. That place can be a template or the
  * widget's type instead of the widget itself.
  */
@@ -192,12 +348,21 @@ export interface Property {
      */
     "value": string;
     "range": lsp$0.Range;
-    "place": workspace$0.Place;
+
+    /**
+     * the position of the file it is written in among its window's places
+     */
+    "place": number;
 
     /**
      * "widget", "template" or "type"; "missing" if no file defines the source
      */
     "origin": string;
+
+    /**
+     * the type or template whose block it is written in; "" for no such block
+     */
+    "writer": string;
 }
 
 /**
@@ -246,18 +411,35 @@ export interface Shading {
 }
 
 /**
- * States is one way of drawing a window, as the page's toolbar sets it.
+ * States is one way of drawing a window: as it opens, changed by the picks.
  */
 export interface States {
     /**
-     * what the toolbar offers, each with its current pick
+     * what the panel offers, each with its value
      */
     "groups": Group[] | null;
 
     /**
-     * the IDs of the widgets that the picks hide
+     * the IDs of the widgets that the values hide
      */
     "hidden": number[] | null;
+
+    /**
+     * Applies is, by group, the widgets whose own condition its value decides, under no hidden widget. A group that
+     * decides none is left out.
+     */
+    "applies": { [_ in string]?: number[] | null } | null;
+
+    /**
+     * Conditions is, by widget, the conditions it is shown on, as written. A widget shown on none is left out.
+     */
+    "conditions": { [_ in `${number}`]?: string[] | null } | null;
+
+    /**
+     * Choices is, by widget, the values that the values of the groups give its properties. A widget given none is
+     * left out.
+     */
+    "choices": { [_ in `${number}`]?: Choice[] | null } | null;
 }
 
 /**
@@ -279,9 +461,24 @@ export interface Widget {
     "row": game$0.WidgetType;
 
     /**
+     * TypeDefined is true when a file defines its type, which can then be opened; a built-in type is not defined.
+     */
+    "typeDefined": boolean;
+
+    /**
+     * the key of the slot it fills, such as scrollbar_vertical; "" for none
+     */
+    "slot": string;
+
+    /**
      * the slot it fills in its holder, or "" for a plain child
      */
     "role": string;
+
+    /**
+     * it is an item of a data model
+     */
+    "item": boolean;
     "properties": Property[] | null;
 
     /**
@@ -293,22 +490,48 @@ export interface Widget {
      * by property key; the image file for the property's path
      */
     "textures": { [_ in string]?: string } | null;
+
+    /**
+     * Placeholder is the file among the page's placeholders that it draws where its picture has no file: the game's
+     * silhouette for a portrait, else the game's placeholder for what the picture is of. It is "" for none.
+     */
+    "placeholder": string;
+
+    /**
+     * Pictures is where the pictures are listed that its picture binding may draw, where no file is found for the
+     * binding as written. It draws the first of them; nil means no list.
+     */
+    "pictures"?: PictureList | null;
     "overlays": Overlay[] | null;
     "range": lsp$0.Range;
-    "place": workspace$0.Place;
+
+    /**
+     * the position of the file it is written in among its window's places
+     */
+    "place": number;
 }
 
 /**
  * A Window is one GUI window resolved for drawing. Its widgets are in document order, and its holders are the game
- * windows that contain it.
+ * windows that contain it, outermost first, each its own widget alone.
  */
 export interface Window {
     "name": string;
     "widgets": Widget[] | null;
-    "holders": string[] | null;
+    "holders": Widget[] | null;
 
     /**
      * the data context its bindings read
      */
     "datacontext": string;
+
+    /**
+     * Places is the places of the files that its widgets and holders are written in, each once.
+     */
+    "places": workspace$0.Place[] | null;
+
+    /**
+     * every style of the fonts its widgets name
+     */
+    "fonts": Font[] | null;
 }

@@ -34,27 +34,38 @@ type Property struct {
 	Key string `json:"key"`
 	// Value is what the game reads. A constant or an expression is worked out, and a GetDefine call is replaced by the
 	// value of its define. The same holds for each value inside a block. Any other value is as written.
-	Value  string          `json:"value"`
-	Range  lsp.Range       `json:"range"`
-	Place  workspace.Place `json:"place"`
-	Origin string          `json:"origin"` // "widget", "template" or "type"; "missing" if no file defines the source
+	Value  string    `json:"value"`
+	Range  lsp.Range `json:"range"`
+	Place  int32     `json:"place"`  // the position of the file it is written in among its window's places
+	Origin string    `json:"origin"` // "widget", "template" or "type"; "missing" if no file defines the source
+	Writer string    `json:"writer"` // the type or template whose block it is written in; "" for no such block
 }
 
 // A Widget is one element of a resolved window, with everything needed to draw it. The page lays it out.
 type Widget struct {
 	ID int32 `json:"id"`
 	// Parent is the widget that holds it; the window's own widget is 0, and so is its parent.
-	Parent     int32             `json:"parent"`
-	Name       string            `json:"name"`
-	Type       string            `json:"type"`
-	Row        game.WidgetType   `json:"row"`  // the game's row for its type
-	Role       string            `json:"role"` // the slot it fills in its holder, or "" for a plain child
-	Properties []Property        `json:"properties"`
-	Texts      map[string]string `json:"texts"`    // by property key; a data binding shows as […]
-	Textures   map[string]string `json:"textures"` // by property key; the image file for the property's path
-	Overlays   []Overlay         `json:"overlays"`
-	Range      lsp.Range         `json:"range"`
-	Place      workspace.Place   `json:"place"`
+	Parent int32           `json:"parent"`
+	Name   string          `json:"name"`
+	Type   string          `json:"type"`
+	Row    game.WidgetType `json:"row"` // the game's row for its type
+	// TypeDefined is true when a file defines its type, which can then be opened; a built-in type is not defined.
+	TypeDefined bool              `json:"typeDefined"`
+	Slot        string            `json:"slot"` // the key of the slot it fills, such as scrollbar_vertical; "" for none
+	Role        string            `json:"role"` // the slot it fills in its holder, or "" for a plain child
+	Item        bool              `json:"item"` // it is an item of a data model
+	Properties  []Property        `json:"properties"`
+	Texts       map[string]string `json:"texts"`    // by property key; a data binding shows as […]
+	Textures    map[string]string `json:"textures"` // by property key; the image file for the property's path
+	// Placeholder is the file among the page's placeholders that it draws where its picture has no file: the game's
+	// silhouette for a portrait, else the game's placeholder for what the picture is of. It is "" for none.
+	Placeholder string `json:"placeholder"`
+	// Pictures is where the pictures are listed that its picture binding may draw, where no file is found for the
+	// binding as written. It draws the first of them; nil means no list.
+	Pictures *PictureList `json:"pictures,omitempty"`
+	Overlays []Overlay    `json:"overlays"`
+	Range    lsp.Range    `json:"range"`
+	Place    int32        `json:"place"` // the position of the file it is written in among its window's places
 }
 
 // An Overlay is one texture laid over a widget's own, as a modify_texture block writes it.
@@ -64,12 +75,15 @@ type Overlay struct {
 }
 
 // A Window is one GUI window resolved for drawing. Its widgets are in document order, and its holders are the game
-// windows that contain it.
+// windows that contain it, outermost first, each its own widget alone.
 type Window struct {
 	Name        string   `json:"name"`
 	Widgets     []Widget `json:"widgets"`
-	Holders     []string `json:"holders"`
+	Holders     []Widget `json:"holders"`
 	Datacontext string   `json:"datacontext"` // the data context its bindings read
+	// Places is the places of the files that its widgets and holders are written in, each once.
+	Places []workspace.Place `json:"places"`
+	Fonts  []Font            `json:"fonts"` // every style of the fonts its widgets name
 }
 
 // A clause is one statement of a file, with the type or template that wrote it where it is part of a widget.
@@ -102,12 +116,20 @@ type gathering struct {
 type resolver struct {
 	ws          *workspace.Session
 	mods        *index.Index
-	places      map[string]workspace.Place // by path
-	definitions map[string]clause          // the definition of a type or template, by its caller, its label and its file
+	file        int32             // the file being drawn, by its position in the index
+	isRead      bool              // the game reads the file being drawn, rather than another file at its path
+	places      *placeList        // shared with the resolvers of the window's holders
+	definitions map[string]clause // the definition of a type or template, by its caller, its label and its file
 	ancestors   []clause
-	folders     map[string]string // the icon folders of the game, by the define that names each
+	library     *library // what the definitions show, shared with the resolvers of the window's holders
 	gathered    gathering
 	widgets     []Widget
+}
+
+// A placeList is the places of the files that one window is written in, each located once, in the order first met.
+type placeList struct {
+	places    []workspace.Place
+	positions map[string]int32 // by path
 }
 
 // The words a GUI file is written with, the roles of a slot, the origins of a property, and the deepest that types,
@@ -131,8 +153,10 @@ const (
 	absentStatement int32 = 0
 )
 
-// ListDrawables lists what a file defines that the view can draw, in document order: a window, a type, a template or a
-// coat, nested ones included. A file that is not a GUI file or a coat file has nothing to draw.
+// ListDrawables lists what a file defines that the view can draw: a window, a type, a template or a coat, nested ones
+// included. The entry the game's GUI rules show first (game.GUI.ShownFirst) comes first, as the one the view shows
+// unless asked for another, wherever the file writes it; the rest follow in document order. A file that is not a GUI
+// file or a coat file has nothing to draw.
 func (drw *Service) ListDrawables(path string) ([]lsp.Symbol, error) {
 	ws, err := drw.Workspace.Session()
 	if err != nil {
@@ -142,7 +166,11 @@ func (drw *Service) ListDrawables(path string) ([]lsp.Symbol, error) {
 	if err != nil {
 		return nil, err
 	}
-	return listDrawn(ws.Schema, symbols), nil
+	drawn := listDrawn(ws.Schema, symbols)
+	if main := slices.IndexFunc(drawn, func(symbol lsp.Symbol) bool { return symbol.Database == game.GUI.ShownFirst }); main > 0 {
+		drawn = slices.Concat(drawn[main:main+1], drawn[:main], drawn[main+1:])
+	}
+	return drawn, nil
 }
 
 // listDrawn returns the symbols the view can draw among the given ones and the symbols nested in them, each without
@@ -178,7 +206,8 @@ func listCallers(schema *schema.Schema, database string) []string {
 }
 
 // ResolveWindow resolves one window in a GUI file. It applies the window's type and templates, looks up its
-// texts and finds its textures. A window wins over a type or a template of the same name. It returns an error if
+// texts and finds its textures. A window wins over a type or a template of the same name. A file the game does not
+// read, because another file at its path replaces it, is drawn as if the game read it instead. It returns an error if
 // the file is not in the workspace or does not define the window. A type or template that cannot be found becomes a
 // Property with Origin "missing", so the page can flag it.
 func (drw *Service) ResolveWindow(path, name string) (Window, error) {
@@ -187,6 +216,18 @@ func (drw *Service) ResolveWindow(path, name string) (Window, error) {
 		return Window{}, err
 	}
 	mods := ws.Mods.Load()
+	file, _ := mods.FindFile(path)
+	resolver := &resolver{ws: ws, mods: mods, file: file, isRead: mods.IsLoaded(file),
+		places: &placeList{positions: map[string]int32{}}, definitions: map[string]clause{},
+		library: &library{ws: ws, mods: mods}}
+	window, err := resolver.resolveWindow(path, name)
+	window.Places, window.Fonts = resolver.places.places, findFonts(ws, mods, window.Widgets)
+	return window, err
+}
+
+// resolveWindow resolves a window that a file defines, as ResolveWindow does, but leaves its places to the caller.
+func (resolver *resolver) resolveWindow(path, name string) (Window, error) {
+	ws, mods := resolver.ws, resolver.mods
 	file, ok := mods.FindFile(path)
 	if !ok {
 		return Window{}, fmt.Errorf("the file %q is not in the workspace", path)
@@ -202,21 +243,23 @@ func (drw *Service) ResolveWindow(path, name string) (Window, error) {
 	if !ok {
 		return Window{}, fmt.Errorf("the file %q does not define the window %q", path, name)
 	}
-	resolver := &resolver{ws: ws, mods: mods, places: map[string]workspace.Place{}, definitions: map[string]clause{},
-		folders: findIconFolders(ws, mods)}
 	root, key := resolver.findRoot(definition, mods.ToReference(site).Database, name)
 	resolver.buildWidget(child{clause: root}, 0, key)
 	widgets := resolver.widgets
 	widgets[0].Name = name
 	if root.statement == absentStatement {
-		widgets[0].Range, widgets[0].Place = toRange(definition), locate(resolver.ws, resolver.mods, resolver.places, path)
+		widgets[0].Range, widgets[0].Place = toRange(definition), resolver.places.locate(ws, mods, path)
 	}
-	return Window{
+	window := Window{
 		Name:        name,
 		Widgets:     widgets,
 		Holders:     resolver.findHolders(key, root),
 		Datacontext: findProperty(widgets[0].Properties, game.GUI.ContextKey).Value,
-	}, nil
+	}
+	for id, context := range listContexts(ws.Schema, window) {
+		resolver.resolveBindings(&window.Widgets[id], context)
+	}
+	return window, nil
 }
 
 // findDrawn returns the first definition of the given label in a file, among the databases the given function
@@ -248,15 +291,16 @@ func (resolver *resolver) findRoot(definition clause, database, label string) (r
 	return definition, key
 }
 
-// locate returns where a file sits in the given index of the mods. The given map keeps each place, so a file is
-// located once.
-func locate(ws *workspace.Session, mods *index.Index, places map[string]workspace.Place, path string) workspace.Place {
-	place, ok := places[path]
+// locate returns the position in the list of the place of a file, located in the given index of the mods the first
+// time the file is met.
+func (list *placeList) locate(ws *workspace.Session, mods *index.Index, path string) int32 {
+	position, ok := list.positions[path]
 	if !ok {
-		place = ws.Locate(mods, path)
-		places[path] = place
+		position = int32(len(list.places))
+		list.places = append(list.places, ws.Locate(mods, path))
+		list.positions[path] = position
 	}
-	return place
+	return position
 }
 
 // buildWidget makes the widget that a clause writes, then the widgets inside it. The given key is the clause's type;
@@ -267,10 +311,13 @@ func (resolver *resolver) buildWidget(own child, parent int32, key string) {
 	if own.statement != absentStatement {
 		key = cmp.Or(key, own.tree.Unquoted(own.tree.Statements[own.statement].Key))
 	}
-	applied := cmp.Or(game.GUI.Slots[strings.ToLower(key)].Type, key)
+	slotKey := strings.ToLower(key)
+	slot, slotted := game.GUI.Slots[slotKey]
+	applied := cmp.Or(slot.Type, key)
 	id := int32(len(resolver.widgets))
 	resolver.widgets = append(resolver.widgets, Widget{
-		ID: id, Parent: parent, Type: applied, Role: own.role, Place: locate(resolver.ws, resolver.mods, resolver.places, own.path), Range: toRange(own.clause),
+		ID: id, Parent: parent, Type: applied, Slot: lo.Ternary(slotted, slotKey, ""), Role: own.role,
+		Item: own.item, Place: resolver.places.locate(resolver.ws, resolver.mods, own.path), Range: toRange(own.clause),
 	})
 	outer, outerAncestors := resolver.gathered, resolver.ancestors
 	resolver.gathered = gathering{overrides: map[string]clause{}}
@@ -280,6 +327,7 @@ func (resolver *resolver) buildWidget(own child, parent int32, key string) {
 	}
 	defer func() { resolver.gathered, resolver.ancestors = outer, outerAncestors }()
 	builtin, chain := resolver.listTypes(applied, own.clause)
+	resolver.widgets[id].TypeDefined = len(chain) > 0
 	links := slices.Concat(chain, []clause{own.clause})
 	resolver.listOverrides(links)
 	var properties []Property
@@ -343,7 +391,7 @@ func (resolver *resolver) findDeclared(owner clause, caller, label string) claus
 			continue
 		}
 		sites := resolver.mods.ResolveLocal(schema.Reference{Database: database, Name: label}, owner.path)
-		if kept, ok := resolver.mods.FindWinner(sites, resolver.ws.Schema.Databases[database].Precedence); ok {
+		if kept, ok := resolver.findWinner(sites, resolver.ws.Schema.Databases[database].Precedence); ok {
 			if definition, loaded := makeClause(resolver.ws, resolver.mods, kept); loaded {
 				return definition
 			}
@@ -351,6 +399,23 @@ func (resolver *resolver) findDeclared(owner clause, caller, label string) claus
 		exists = exists || len(sites) > 0
 	}
 	return clause{statement: absentStatement, dropped: exists}
+}
+
+// findWinner returns the definition the game keeps among the given ones, as it would if it read the file being drawn.
+// Where it reads another file at that file's path instead, the other file's definitions are left out and the first
+// definition of the file being drawn is kept. It returns false if the game keeps none of them.
+func (resolver *resolver) findWinner(sites []index.Site, precedence game.Precedence) (index.Winner, bool) {
+	mods := resolver.mods
+	if resolver.isRead {
+		return mods.FindWinner(sites, precedence)
+	}
+	if site, ok := lo.Find(sites, func(site index.Site) bool { return site.File == resolver.file }); ok {
+		return index.Winner{Site: site}, true
+	}
+	replacer, _, _ := mods.FindLoaded(mods.Files[resolver.file].Rel)
+	return mods.FindWinner(lo.Reject(sites, func(site index.Site, _ int) bool {
+		return mods.File(site).Key == replacer.Key
+	}), precedence)
 }
 
 // isBuiltin reports whether a type is one the engine draws without a file defining it. A type that files define but the
@@ -362,7 +427,7 @@ func (resolver *resolver) isBuiltin(owner clause, label string) bool {
 
 // makeMissing returns the property that marks a type or template the game does not define, used by a clause.
 func (resolver *resolver) makeMissing(key, value string, source clause) Property {
-	return Property{Key: key, Value: value, Origin: originMissing, Place: locate(resolver.ws, resolver.mods, resolver.places, source.path), Range: toRange(source)}
+	return Property{Key: key, Value: value, Origin: originMissing, Place: resolver.places.locate(resolver.ws, resolver.mods, source.path), Range: toRange(source)}
 }
 
 // listOverrides notes the blocks that the given clauses replace, a later clause over an earlier one.
@@ -446,10 +511,10 @@ func (resolver *resolver) resolveBlock(holder clause, depth int) []Property {
 		slot, slotted := game.GUI.Slots[strings.ToLower(key)]
 		switch {
 		case lead == blockLead:
-			properties = append(properties, resolver.resolveLabeled(field, depth)...)
+			properties = append(properties, resolver.resolveBlock(resolver.findReplacement(field), depth+1)...)
 		case lead == game.GUI.BlockCalls:
 		case current.IsBlock() && (key == itemKey || slot.Role == roleLabel):
-			resolver.gatherInner(field, slot)
+			resolver.gatherInner(field, slot, depth)
 		case current.IsBlock() && slotted:
 			if slot.Role != roleAttachment {
 				resolver.gathered.children = append(resolver.gathered.children, child{clause: field, role: slot.Role})
@@ -470,29 +535,39 @@ func (resolver *resolver) resolveBlock(holder clause, depth int) []Property {
 	return properties
 }
 
-// resolveLabeled returns the properties of a labeled block that a clause holds. They are those of the block the widget
-// replaces it with, unless the same type or template wrote both, else of the block as written.
-func (resolver *resolver) resolveLabeled(field clause, depth int) []Property {
+// findReplacement returns the block that the widget replaces a labeled block with, unless the same type or template
+// wrote both. It returns the labeled block as written otherwise.
+func (resolver *resolver) findReplacement(field clause) clause {
 	override, ok := resolver.gathered.overrides[field.tree.Unquoted(field.tree.Statements[field.statement].Tag)]
 	if ok && override.writer != field.writer {
-		field = override
+		return override
 	}
-	return resolver.resolveBlock(field, depth+1)
+	return field
 }
 
 // gatherInner gathers the widgets written inside a label or an item as children of the widget. A label replaces the
-// one gathered before it.
-func (resolver *resolver) gatherInner(field clause, slot game.WidgetSlot) {
+// one gathered before it. The given depth is how many types, templates and labeled blocks lie between the field and
+// its widget.
+func (resolver *resolver) gatherInner(field clause, slot game.WidgetSlot, depth int) {
 	if slot.Role == roleLabel {
 		resolver.gathered.children = slices.DeleteFunc(resolver.gathered.children, func(held child) bool {
 			return held.role == roleLabel
 		})
 	}
-	for statement := range field.tree.Children(field.statement) {
-		current := field.tree.Statements[statement]
-		inner := clause{tree: field.tree, path: field.path, statement: statement, writer: field.writer}
-		if current.IsBlock() && resolver.isWidget(inner, field.tree.Unquoted(current.Key)) {
-			resolver.gathered.children = append(resolver.gathered.children, child{clause: inner, role: slot.Role, item: slot.Role == ""})
+	resolver.gatherWidgets(field, slot.Role, depth)
+}
+
+// gatherWidgets gathers the widgets written in a block as children of the widget in the given role, those in its
+// templates and labeled blocks too, each labeled block as the widget replaces it. A child with no role is an item of a
+// data model.
+func (resolver *resolver) gatherWidgets(holder clause, role string, depth int) {
+	for lead, inner := range resolver.listFields(holder, depth) {
+		current := inner.tree.Statements[inner.statement]
+		switch {
+		case lead == blockLead:
+			resolver.gatherWidgets(resolver.findReplacement(inner), role, depth+1)
+		case current.IsBlock() && resolver.isWidget(inner, inner.tree.Unquoted(current.Key)):
+			resolver.gathered.children = append(resolver.gathered.children, child{clause: inner, role: role, item: role == ""})
 		}
 	}
 }
@@ -527,7 +602,7 @@ func (resolver *resolver) makeOverlay(field clause, depth int) Overlay {
 		}
 	}
 	properties = resolveProperties(properties)
-	return Overlay{Path: resolveTexture(resolver.ws, resolver.mods, resolver.folders, findProperty(properties, textureKey).Value), Properties: properties}
+	return Overlay{Path: resolver.library.resolveTexture(findProperty(properties, textureKey).Value), Properties: properties}
 }
 
 // makeProperty returns the property that a field writes. A block's value is its text, with its tag.
@@ -541,7 +616,7 @@ func (resolver *resolver) makeProperty(field clause) Property {
 	}
 	return Property{
 		Key: cmp.Or(field.tree.Unquoted(current.Key), field.tree.Unquoted(current.Tag)), Value: value, Origin: field.origin,
-		Place: locate(resolver.ws, resolver.mods, resolver.places, field.path), Range: toRange(field),
+		Place: resolver.places.locate(resolver.ws, resolver.mods, field.path), Range: toRange(field), Writer: field.writer,
 	}
 }
 
@@ -571,12 +646,8 @@ func (resolver *resolver) resolveSpan(tree *jomini.Tree, span jomini.Span) (stri
 		return "", false
 	}
 	arguments := call.Steps[0].Arguments
-	reference := schema.Reference{Database: lookupDefineDatabase(), Name: arguments[len(arguments)-1].Text}
-	define, ok := findKeptClause(resolver.ws, resolver.mods, reference)
-	if !ok {
-		return "", false
-	}
-	return define.tree.Unquoted(define.tree.Statements[define.statement].ResolveValueSpan()), true
+	value := resolver.library.lookupDefine(arguments[len(arguments)-1].Text)
+	return value, value != ""
 }
 
 // resolveAlone returns the properties that a template drawn on its own gives its widget. A clause that is not the
@@ -593,14 +664,16 @@ func (resolver *resolver) resolveAlone(own clause) []Property {
 }
 
 // resolveOpening returns the properties that the states a widget opens in give it: the end values of the states, which
-// the widget has as its own. The keys that a state has for itself are left out.
+// the widget has as its own, and the calls the states run as they start. The other keys that a state has for itself
+// are left out.
 func (resolver *resolver) resolveOpening() []Property {
 	var properties []Property
 	for _, state := range resolver.gathered.states {
 		for lead, field := range resolver.listFields(state, 0) {
 			current := field.tree.Statements[field.statement]
-			own := slices.ContainsFunc(game.GUI.StateKeys, func(key string) bool {
-				return strings.EqualFold(key, field.tree.Unquoted(current.Key))
+			key := field.tree.Unquoted(current.Key)
+			own := !strings.EqualFold(key, game.GUI.OpeningCalls) && slices.ContainsFunc(game.GUI.StateKeys, func(stateKey string) bool {
+				return strings.EqualFold(stateKey, key)
 			})
 			if lead == "" && !own && !current.IsBlock() {
 				properties = append(properties, resolver.makeProperty(field))
@@ -639,19 +712,33 @@ func (resolver *resolver) isDropping(row game.WidgetType, builtin, ignore string
 func (resolver *resolver) resolvePictures(properties []Property) (texts, textures map[string]string) {
 	texts, textures = map[string]string{}, map[string]string{}
 	for _, property := range properties {
-		switch {
-		case property.Origin == originMissing:
-		case slices.Contains(game.GUI.PictureKeys, property.Key):
-			if path := resolveTexture(resolver.ws, resolver.mods, resolver.folders, property.Value); path != "" {
-				textures[property.Key] = path
-			}
-		case isLocalized(property.Key) && property.Value != "":
-			texts[property.Key] = resolveText(resolver.ws, resolver.mods, property.Value)
-		case property.Key == rawTextKey && property.Value != "":
-			texts[property.Key] = toPlainText(resolver.ws, resolver.mods, property.Value)
+		if property.Origin == originMissing {
+			continue
+		}
+		text, texture := resolver.library.resolveValue(property.Key, property.Value)
+		if text != "" {
+			texts[property.Key] = text
+		}
+		if texture != "" {
+			textures[property.Key] = texture
 		}
 	}
 	return texts, textures
+}
+
+// resolveValue returns what the value of a key leads to: the text it shows where the key writes a text, else the
+// image file it names where the key names a picture. Both are "" where it leads to neither.
+func (library *library) resolveValue(key, value string) (text, texture string) {
+	switch {
+	case value == "":
+	case slices.Contains(game.GUI.PictureKeys, key):
+		texture = library.resolveTexture(value)
+	case isLocalized(key):
+		text = resolveText(library.ws, library.mods, value)
+	case key == rawTextKey:
+		text = toPlainText(library.ws, library.mods, value)
+	}
+	return text, texture
 }
 
 // isLocalized reports whether the value of a key is a localization key.
@@ -703,18 +790,25 @@ func (resolver *resolver) applyTexts(holder, label int32) {
 	}
 }
 
-// findHolders returns the game window that a window of the given type is laid out in: the one the game names for the
-// last type of its chain that has one, if the install defines it. It returns none otherwise.
-func (resolver *resolver) findHolders(key string, root clause) []string {
+// findHolders returns the game window that a window of the given type is laid out in, as its own widget: the one the
+// game names for the last type of its chain that has one, if the install defines it. It returns none otherwise.
+func (resolver *resolver) findHolders(key string, root clause) []Widget {
 	_, chain := resolver.listTypes(key, root)
 	for _, link := range slices.Backward(chain) {
-		holder, ok := resolver.ws.Game.GUIHolders[link.writer]
-		reference := schema.Reference{Database: game.GUI.WidgetDatabase, Name: holder}
-		if _, defined := resolver.mods.FindKept(resolver.ws.Schema, reference); ok && defined {
-			return []string{holder}
+		name, ok := resolver.ws.Game.GUIHolders[link.writer]
+		reference := schema.Reference{Database: game.GUI.WidgetDatabase, Name: name}
+		winner, defined := resolver.mods.FindKept(resolver.ws.Schema, reference)
+		if !ok || !defined {
+			continue
+		}
+		// the holder's own resolver shares the places, the definitions and the library
+		other := *resolver
+		other.ancestors, other.gathered, other.widgets = nil, gathering{}, nil
+		if holder, err := other.resolveWindow(resolver.mods.Files[winner.Site.File].Path, name); err == nil {
+			return []Widget{holder.Widgets[0]}
 		}
 	}
-	return []string{}
+	return []Widget{}
 }
 
 // EditProperty sets one property of a block and returns the edits that do it. The block is a widget, a coat, a layer
@@ -750,6 +844,16 @@ func (drw *Service) AddInstance(path string, layer lsp.Range) ([]lsp.Edit, error
 // findBlock returns the tree of a file and the block that starts where the given range does. It returns an error if
 // the file is not in the workspace or no block starts there.
 func (drw *Service) findBlock(path string, block lsp.Range) (*jomini.Tree, int32, error) {
+	tree, statement, err := drw.findStatement(path, block)
+	if err == nil && !tree.Statements[statement].IsBlock() {
+		err = fmt.Errorf("the statement at line %d, column %d of %q is no block", block.StartLine, block.StartColumn, path)
+	}
+	return tree, statement, err
+}
+
+// findStatement returns the tree of a file and the statement that starts where the given range does. It returns an
+// error if the file is not in the workspace or no statement starts there.
+func (drw *Service) findStatement(path string, block lsp.Range) (*jomini.Tree, int32, error) {
 	ws, err := drw.Workspace.Session()
 	if err != nil {
 		return nil, 0, err
@@ -760,8 +864,8 @@ func (drw *Service) findBlock(path string, block lsp.Range) (*jomini.Tree, int32
 	}
 	offset := lsp.ToOffset(tree.Src, tree.Lines, block.StartLine, block.StartColumn)
 	statement, ok := tree.LookupStatement(offset)
-	if !ok || !tree.Statements[statement].IsBlock() {
-		return nil, 0, fmt.Errorf("no block starts at line %d, column %d of %q", block.StartLine, block.StartColumn, path)
+	if !ok {
+		return nil, 0, fmt.Errorf("no statement starts at line %d, column %d of %q", block.StartLine, block.StartColumn, path)
 	}
 	return tree, statement, nil
 }
@@ -800,11 +904,23 @@ func resolveSegments(ws *workspace.Session, mods *index.Index, segments []loc.Se
 // counts. It returns false if the schema has no such database, nothing defines the name, or the game keeps none of its
 // definitions.
 func findKeptClause(ws *workspace.Session, mods *index.Index, reference schema.Reference) (clause, bool) {
-	kept, ok := mods.FindKept(ws.Schema, reference)
+	kept, ok := mods.FindKept(ws.Schema, resolveReference(mods, reference))
 	if !ok {
 		return clause{}, false
 	}
 	return makeClause(ws, mods, kept)
+}
+
+// resolveReference returns a reference with its database: one given with none is in the one database that defines its
+// name. Any other reference is returned as it is.
+func resolveReference(mods *index.Index, reference schema.Reference) schema.Reference {
+	if reference.Database != "" {
+		return reference
+	}
+	if databases := mods.ListDatabases(reference.Name); len(databases) == 1 {
+		reference.Database = databases[0]
+	}
+	return reference
 }
 
 // makeClause returns the clause of a definition the game keeps. It returns false if its file cannot be read or no
@@ -823,14 +939,18 @@ func findProperty(properties []Property, key string) Property {
 }
 
 // resolveProperties returns the properties with the last written of each key, in the order the keys are first written.
-// Keys match without regard to case. A missing type or template is kept with each name it was written for.
+// Keys match without regard to case. A missing type or template is kept with each name it was written for, and a key
+// the game repeats with each value it is written with. The keys of a widget's text count as one key.
 func resolveProperties(properties []Property) []Property {
 	resolved := []Property{}
 	positions := map[string]int{}
 	for _, property := range properties {
 		key := strings.ToLower(property.Key)
-		if property.Origin == originMissing {
+		switch {
+		case property.Origin == originMissing || slices.Contains(game.GUI.RepeatedKeys, key):
 			key = property.Origin + key + property.Value
+		case slices.Contains(game.GUI.TextKeys, key):
+			key = game.GUI.TextKeys[0]
 		}
 		if position, ok := positions[key]; ok {
 			resolved[position] = property

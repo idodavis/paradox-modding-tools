@@ -27,6 +27,9 @@ import (
 // EventHits is sent with one file's hits as a text search finds them. It carries a Hits.
 const EventHits = "search:hits"
 
+// maxHits is the most hits a text search sends. A search that reaches it stops there.
+const maxHits = 10000
+
 // init registers the search event with the application.
 func init() { application.RegisterEvent[Hits](EventHits) }
 
@@ -67,23 +70,28 @@ type Hits struct {
 	Hits  []Hit           `json:"hits"`
 }
 
-// SearchText runs a text search over the files the query names. It sends each file's hits as a search:hits event, and
-// returns when the search ends or a newer search stops it. It returns an error if the query is empty or is a regular
-// expression that does not parse.
-func (sch *Service) SearchText(query Query) error {
+// A tally is the count of the hits one text search has sent, which stops at maxHits.
+type tally struct {
+	mu    sync.Mutex
+	count int
+}
+
+// SearchText runs a text search over the files the query names. It sends each file's hits as a search:hits event, at
+// most maxHits in all, and returns when the search ends or a newer search stops it. It returns whether the search
+// stopped at maxHits. It returns an error if the query is empty or is a regular expression that does not parse.
+func (sch *Service) SearchText(query Query) (bool, error) {
 	sch.setStop(nil)
 	ws, err := sch.Workspace.Session()
 	if err != nil {
-		return err
+		return false, err
 	}
 	expression, err := parseQuery(query)
 	if err != nil {
-		return err
+		return false, err
 	}
 	stop := make(chan struct{})
 	sch.setStop(stop)
-	run(ws, query, expression, stop)
-	return nil
+	return run(ws, query, expression, stop), nil
 }
 
 // StopSearch ends the running search, if any.
@@ -150,24 +158,93 @@ func (sch *Service) SearchFiles(query string, limit int) []workspace.Place {
 }
 
 // run runs one text search with the given expression over the files the query names, sending each file's hits. It
-// returns when the search finishes or the given channel closes.
-func run(ws *workspace.Session, query Query, expression *regexp.Regexp, stop <-chan struct{}) {
+// returns when the search finishes, has sent maxHits or the given channel closes, and reports whether it sent maxHits.
+func run(ws *workspace.Session, query Query, expression *regexp.Regexp, stop <-chan struct{}) bool {
 	var group errgroup.Group
 	group.SetLimit(files.Workers)
 	mods := ws.Mods.Load()
+	holds := makeTest(query)
+	sent := &tally{}
 	for _, file := range listFiles(mods, query) {
-		if isClosed(stop) {
+		if isClosed(stop) || sent.isFull() {
 			break
 		}
 		group.Go(func() error {
-			place := ws.Locate(mods, file.Path)
-			if hits := findHits(ws, place, expression, query.WholeWord); len(hits) > 0 && !isClosed(stop) {
-				application.Get().Event.Emit(EventHits, Hits{Place: hits[0].Place, Hits: hits})
+			source, ok := readSource(ws, file.Path)
+			if !ok || !holds(source) {
+				return nil
+			}
+			if hits := findHits(source, expression, query.WholeWord); len(hits) > 0 && !isClosed(stop) {
+				sent.send(ws.Locate(mods, file.Path), hits)
 			}
 			return nil
 		})
 	}
 	_ = group.Wait()
+	return sent.isFull()
+}
+
+// makeTest returns the quick test a file's whole text must pass before it is searched line by line: it holds a plain
+// query's text, in any case unless the query matches case. A regular expression is matched in every file.
+func makeTest(query Query) func(text string) bool {
+	lower := strings.ToLower(query.Text)
+	switch {
+	case query.Regex:
+		return func(string) bool { return true }
+	case query.MatchCase:
+		return func(text string) bool { return strings.Contains(text, query.Text) }
+	case utf8.RuneCountInString(lower) != len(lower):
+		return func(text string) bool { return strings.Contains(strings.ToLower(text), lower) }
+	}
+	return func(text string) bool { return containsFold(text, lower) }
+}
+
+// containsFold reports whether a text holds a piece of lower-case ASCII in any case, without copying the text.
+func containsFold(text, piece string) bool {
+	first := piece[:1] + strings.ToUpper(piece[:1])
+	for len(text) >= len(piece) {
+		index := strings.IndexAny(text, first)
+		if index < 0 || len(text)-index < len(piece) {
+			return false
+		}
+		if strings.EqualFold(text[index:index+len(piece)], piece) {
+			return true
+		}
+		text = text[index+1:]
+	}
+	return false
+}
+
+// readSource returns a file's text: the editor's where the file is open, else the one on disk. It returns false if the
+// file cannot be read.
+func readSource(ws *workspace.Session, path string) (string, bool) {
+	if source, open := ws.LookupBuffer(path); open {
+		return source, true
+	}
+	text, err := files.ReadText(path)
+	return text.Text, err == nil
+}
+
+// send sends one file's hits at the given place as a search:hits event, as many as maxHits leaves room for.
+func (tally *tally) send(place workspace.Place, hits []Hit) {
+	tally.mu.Lock()
+	defer tally.mu.Unlock()
+	hits = hits[:min(len(hits), maxHits-tally.count)]
+	if len(hits) == 0 {
+		return
+	}
+	tally.count += len(hits)
+	for index := range hits {
+		hits[index].Place = place
+	}
+	application.Get().Event.Emit(EventHits, Hits{Place: place, Hits: hits})
+}
+
+// isFull reports whether the search has sent maxHits.
+func (tally *tally) isFull() bool {
+	tally.mu.Lock()
+	defer tally.mu.Unlock()
+	return tally.count >= maxHits
 }
 
 // setStop ends the running search, if any, and keeps the given channel as the one that ends the next. A nil channel
@@ -303,26 +380,12 @@ func isSubsequence(text string, characters []rune) bool {
 	return len(characters) == 0
 }
 
-// findHits returns the hits of an expression in the file at the given place, in order. It searches the editor's text if
-// the file is open. It returns none for a file that cannot be read.
-func findHits(ws *workspace.Session, place workspace.Place, expression *regexp.Regexp, wholeWord bool) []Hit {
-	source, open := ws.LookupBuffer(place.Path)
-	if !open {
-		text, err := files.ReadText(place.Path)
-		if err != nil {
-			return nil
-		}
-		source = text.Text
-	}
+// findHits returns the hits of an expression in a file's text, in order, without their place.
+func findHits(source string, expression *regexp.Regexp, wholeWord bool) []Hit {
 	lines := jomini.NewLines(source)
-	matches := findMatches(source, lines, expression, wholeWord)
-	if len(matches) == 0 {
-		return nil
-	}
-	return lo.Map(matches, func(match []int, _ int) Hit {
+	return lo.Map(findMatches(source, lines, expression, wholeWord), func(match []int, _ int) Hit {
 		line := lines.LineSpan(lines.ToPosition(match[0]).Line)
 		return Hit{
-			Place: place,
 			Range: lsp.ToRange(source, lines, jomini.Span{Start: match[0], End: match[1]}),
 			Text:  source[line.Start:line.End],
 		}

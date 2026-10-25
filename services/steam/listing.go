@@ -3,11 +3,11 @@
 package steam
 
 import (
+	"archive/zip"
 	"cmp"
 	"crypto/sha256"
 	"encoding/hex"
 	"errors"
-	"fmt"
 	"io"
 	"io/fs"
 	"maps"
@@ -31,26 +31,29 @@ import (
 // A Preview is one picture or video in the Workshop page's gallery.
 type Preview struct {
 	Path  string `json:"path"`
-	Type  string `json:"type"` // image, video
-	URL   string `json:"url"`  // a video's
+	Type  string `json:"type"`  // image, video
+	URL   string `json:"url"`   // a video's
+	Video string `json:"video"` // a video's id
 	Order int    `json:"order"`
 }
 
 // A Listing is what a mod's Workshop page shows, as the mod's own files hold it.
 type Listing struct {
-	WorkshopID      string    `json:"workshopId"`
-	Title           string    `json:"title"`
-	Description     string    `json:"description"`
-	BBCode          string    `json:"bbcode"` // the description as Steam and Paradox Mods take it
-	Source          string    `json:"source"` // markdown, bbcode, steam
-	DescriptionPath string    `json:"descriptionPath"`
-	Changelog       string    `json:"changelog"`
-	ChangelogPath   string    `json:"changelogPath"`
-	Thumbnail       string    `json:"thumbnail"`
-	Previews        []Preview `json:"previews"`
-	Tags            []string  `json:"tags"`
-	DLC             []string  `json:"dlc"`
-	Visibility      string    `json:"visibility"` // private, friends, public, unlisted; chosen at each upload
+	WorkshopID       string    `json:"workshopId"`
+	Title            string    `json:"title"`
+	Version          string    `json:"version"`
+	SupportedVersion string    `json:"supportedVersion"`
+	Description      string    `json:"description"`
+	BBCode           string    `json:"bbcode"` // the description as Steam and Paradox Mods take it
+	Source           string    `json:"source"` // markdown, bbcode, steam
+	DescriptionPath  string    `json:"descriptionPath"`
+	Changelog        string    `json:"changelog"`
+	ChangelogPath    string    `json:"changelogPath"`
+	Thumbnail        string    `json:"thumbnail"`
+	Previews         []Preview `json:"previews"`
+	Tags             []string  `json:"tags"`
+	DLC              []string  `json:"dlc"`
+	Visibility       string    `json:"visibility"` // private, friends, public, unlisted; chosen at each upload
 }
 
 // An Upload is the set of files a mod's next upload sends.
@@ -66,6 +69,8 @@ type Snapshot struct {
 	UploadedAt time.Time         `json:"uploadedAt"`
 	Files      map[string]string `json:"files"` // the hash of each file, by rel
 	Listing    Listing           `json:"listing"`
+	Dir        string            `json:"dir"`        // the folder holding the files: a copy of the upload, or Steam's own
+	Downloaded bool              `json:"downloaded"` // the files are Steam's copy of the item rather than an upload's
 }
 
 // Details is what Steam reports about an item.
@@ -80,11 +85,14 @@ type Details struct {
 
 // A Comparison is what the next upload changes against the last one, next to what Steam reports about the item.
 type Comparison struct {
-	Added   []string `json:"added"`   // the rels of the files the last upload did not have
-	Changed []string `json:"changed"` // the rels of the files that differ from the last upload's
-	Removed []string `json:"removed"` // the rels of the files the last upload had and the next one lacks
-	Listing []string `json:"listing"` // the listing's fields that differ from the last upload's: title, description, tags …
-	Steam   *Details `json:"steam,omitempty"`
+	Added      []string  `json:"added"`   // the rels of the files the last upload did not have
+	Changed    []string  `json:"changed"` // the rels of the files that differ from the last upload's
+	Removed    []string  `json:"removed"` // the rels of the files the last upload had and the next one lacks
+	Listing    []string  `json:"listing"` // the listing's fields that differ from the last upload's: title, description …
+	Last       Listing   `json:"last"`    // the last upload's listing
+	UploadedAt time.Time `json:"uploadedAt"`
+	Downloaded bool      `json:"downloaded"` // the last upload's files are Steam's copy, downloaded
+	Steam      *Details  `json:"steam,omitempty"`
 }
 
 // The sources a description may be kept in, and the types of preview.
@@ -105,10 +113,17 @@ const (
 	changelogFile = workshopDir + "/changelog.bbcode"
 	dlcFile       = workshopDir + "/dlc.txt"
 	gitignoreFile = ".gitignore"
+	ignoreFile    = ".workshop-ignore"
 )
+
+// maxPreviews is the most pictures and videos Steam takes in an item's gallery.
+const maxPreviews = 10
 
 // previewTypes are the types a preview may have.
 var previewTypes = []string{previewImage, previewVideo}
+
+// contentExtensions are the extensions of a gallery's pictures by their content type.
+var contentExtensions = map[string]string{"image/png": ".png", "image/jpeg": ".jpg", "image/gif": ".gif", "image/webp": ".webp"}
 
 // descriptionFiles are the files a description may be kept in, in the order they are tried.
 var descriptionFiles = []struct{ source, rel string }{
@@ -117,8 +132,8 @@ var descriptionFiles = []struct{ source, rel string }{
 }
 
 // ReadListing reads a mod's listing from its descriptor and its workshop folder. The descriptor is read from the
-// mod's folder, so the listing is as the last write left it. It returns an error if the workspace has no such mod, a
-// file cannot be read or the descriptor's thumbnail is outside the mod's folder.
+// mod's folder, so the listing is as the last write left it. It returns an error if the workspace has no such mod or a
+// file cannot be read.
 func (stm *Service) ReadListing(modID string) (Listing, error) {
 	ws, mod, err := stm.findMod(modID)
 	if err != nil {
@@ -129,15 +144,13 @@ func (stm *Service) ReadListing(modID string) (Listing, error) {
 		return Listing{}, err
 	}
 	listing := Listing{
-		WorkshopID: cmp.Or(mod.WorkshopID, descriptor.WorkshopID),
-		Title:      descriptor.Name,
-		Source:     sourceSteam,
-		Tags:       append([]string{}, descriptor.Tags...),
-	}
-	if thumbnail := descriptor.Thumbnail; thumbnail != "" {
-		if listing.Thumbnail = files.Join(mod.Dir, thumbnail); !files.IsUnder(mod.Dir, listing.Thumbnail) {
-			return Listing{}, fmt.Errorf("the thumbnail %s is outside the mod's folder", thumbnail)
-		}
+		WorkshopID:       cmp.Or(mod.WorkshopID, descriptor.WorkshopID),
+		Title:            descriptor.Name,
+		Version:          descriptor.Version,
+		SupportedVersion: descriptor.SupportedVersion,
+		Thumbnail:        cmp.Or(descriptor.Thumbnail, mod.Thumbnail),
+		Source:           sourceSteam,
+		Tags:             append([]string{}, descriptor.Tags...),
 	}
 	for _, row := range descriptionFiles {
 		file := files.Join(mod.Dir, row.rel)
@@ -154,7 +167,7 @@ func (stm *Service) ReadListing(modID string) (Listing, error) {
 	// Steam and Paradox Mods take BBCode, so a Markdown description is converted and any other is sent as written
 	listing.BBCode = listing.Description
 	if listing.Source == sourceMarkdown {
-		listing.BBCode = toBBCode(listing.Description)
+		listing.BBCode = stm.ToBBCode(listing.Description)
 	}
 	changelog := files.Join(mod.Dir, changelogFile)
 	text, err := files.ReadText(changelog)
@@ -188,7 +201,7 @@ func listPreviews(dir string) ([]Preview, error) {
 	}
 	urls, err := listVideos(dir)
 	for _, url := range urls {
-		previews = append(previews, Preview{Type: previewVideo, URL: url})
+		previews = append(previews, Preview{Type: previewVideo, URL: url, Video: toVideoID(url)})
 	}
 	for position := range previews {
 		previews[position].Order = position
@@ -216,6 +229,18 @@ func (stm *Service) WriteListing(modID string, listing Listing) error {
 	if err != nil {
 		return err
 	}
+	// a thumbnail picked from elsewhere is copied into the folder the game keeps it in
+	if listing.Thumbnail != "" && !files.IsUnder(mod.Dir, listing.Thumbnail) {
+		content, err := os.ReadFile(listing.Thumbnail)
+		if err != nil {
+			return err
+		}
+		thumbnail := files.Join(mod.Dir, path.Join(cmp.Or(ws.Game.ThumbnailDir, workshopDir), filepath.Base(listing.Thumbnail)))
+		if err := stm.writeFile(thumbnail, string(content)); err != nil {
+			return err
+		}
+		listing.Thumbnail = thumbnail
+	}
 	if err := writeDescriptor(ws.Game, mod, current, listing); err != nil {
 		return err
 	}
@@ -241,9 +266,10 @@ func (stm *Service) WriteListing(modID string, listing Listing) error {
 
 // writeDescriptor writes the descriptor's fields of a listing if any of them differs from the current listing's. It
 // reads the descriptor again first, so the fields the listing does not hold stay as they are. It returns an error if
-// the descriptor cannot be read or the listing's thumbnail is outside the mod's folder.
+// the descriptor cannot be read or written.
 func writeDescriptor(row *game.Game, mod workspace.Mod, current, listing Listing) error {
-	if listing.Title == current.Title && slices.Equal(listing.Tags, current.Tags) &&
+	if listing.Title == current.Title && listing.Version == current.Version &&
+		listing.SupportedVersion == current.SupportedVersion && slices.Equal(listing.Tags, current.Tags) &&
 		listing.Thumbnail == current.Thumbnail && listing.WorkshopID == current.WorkshopID {
 		return nil
 	}
@@ -252,14 +278,8 @@ func writeDescriptor(row *game.Game, mod workspace.Mod, current, listing Listing
 		return err
 	}
 	descriptor.Name, descriptor.Tags, descriptor.WorkshopID = listing.Title, listing.Tags, listing.WorkshopID
-	descriptor.Thumbnail = ""
-	if listing.Thumbnail != "" {
-		rel, ok := files.ToRel(mod.Dir, listing.Thumbnail)
-		if !ok {
-			return fmt.Errorf("the thumbnail %s is outside the mod's folder", listing.Thumbnail)
-		}
-		descriptor.Thumbnail = rel
-	}
+	descriptor.Version, descriptor.SupportedVersion, descriptor.Thumbnail =
+		listing.Version, listing.SupportedVersion, listing.Thumbnail
 	return workspace.WriteDescriptor(row, mod.Dir, descriptor)
 }
 
@@ -305,6 +325,57 @@ func (stm *Service) ListUpload(modID string) (Upload, error) {
 	return upload, nil
 }
 
+// WriteZip writes the files of a mod's next upload as a zip at the given path. A zip it fails to write is removed.
+func (stm *Service) WriteZip(modID, path string) error {
+	upload, err := stm.ListUpload(modID)
+	if err != nil {
+		return err
+	}
+	zipFile, err := os.Create(path)
+	if err != nil {
+		return err
+	}
+	archive := zip.NewWriter(zipFile)
+	for _, file := range upload.Files {
+		var content []byte
+		var entry io.Writer
+		if content, err = os.ReadFile(file.Path); err == nil {
+			if entry, err = archive.Create(file.Rel); err == nil {
+				_, err = entry.Write(content)
+			}
+		}
+		if err != nil {
+			break
+		}
+	}
+	if err = errors.Join(err, archive.Close(), zipFile.Close()); err != nil {
+		return errors.Join(err, os.Remove(path))
+	}
+	return nil
+}
+
+// WriteIgnore writes a mod's upload exclusions to the .workshop-ignore file in its folder.
+func (stm *Service) WriteIgnore(modID string) error {
+	_, mod, err := stm.findMod(modID)
+	if err != nil {
+		return err
+	}
+	return stm.writeFile(files.Join(mod.Dir, ignoreFile), mod.Ignore)
+}
+
+// ReadIgnore returns the text of the .workshop-ignore file in a mod's folder, or "" if there is none.
+func (stm *Service) ReadIgnore(modID string) (string, error) {
+	_, mod, err := stm.findMod(modID)
+	if err != nil {
+		return "", err
+	}
+	text, err := files.ReadText(files.Join(mod.Dir, ignoreFile))
+	if errors.Is(err, fs.ErrNotExist) {
+		return "", nil
+	}
+	return text.Text, err
+}
+
 // LoadSnapshot loads the snapshot saved for a Workshop item. It returns false if there is none, or if the item has no
 // id.
 func LoadSnapshot(cacheDir, workshopID string) (Snapshot, bool) {
@@ -320,6 +391,11 @@ func SaveSnapshot(cacheDir string, snapshot Snapshot) error {
 // resolveSnapshotPath returns the path of the file that keeps the snapshot of a Workshop item.
 func resolveSnapshotPath(cacheDir, workshopID string) string {
 	return filepath.Join(cacheDir, "snapshot-"+workshopID+".json")
+}
+
+// resolveSnapshotDir returns the folder that keeps a copy of the files the last upload of a Workshop item sent.
+func resolveSnapshotDir(cacheDir, workshopID string) string {
+	return filepath.Join(cacheDir, "snapshot-"+workshopID)
 }
 
 // Compare lists what an upload and a listing change against the snapshot of the last upload: the files added, changed
@@ -341,8 +417,11 @@ func Compare(listing Listing, upload Upload, snapshot Snapshot, details *Details
 			_, ok := hashes[rel]
 			return !ok
 		}),
-		Listing: compareListing(listing, snapshot.Listing),
-		Steam:   details,
+		Listing:    compareListing(listing, snapshot.Listing),
+		Last:       snapshot.Listing,
+		UploadedAt: snapshot.UploadedAt,
+		Downloaded: snapshot.Downloaded,
+		Steam:      details,
 	}
 }
 

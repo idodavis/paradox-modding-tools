@@ -10,6 +10,7 @@ import (
 	"slices"
 	"strings"
 	"sync"
+	"sync/atomic"
 
 	"github.com/samber/lo"
 	"golang.org/x/sync/errgroup"
@@ -32,12 +33,12 @@ type collector struct {
 
 // Scan builds the index of an install's files, in parallel. The roots are the game's, then each DLC's, in load
 // order, and the listing is the files under them, as ListFiles returns. The progress function is called with the
-// name of each stage.
-func Scan(schema *schema.Schema, roots []files.Root, listing []files.File, progress func(stage string)) *Index {
+// name of each stage, and again with the percent of the files done while the files are indexed.
+func Scan(schema *schema.Schema, roots []files.Root, listing []files.File, progress func(stage string, percent int)) *Index {
 	index := newIndex(schema, nil, roots, listing)
-	progress("indexing")
-	index.scanFiles(schema)
-	progress("postings")
+	progress("indexing", 0)
+	index.scanFiles(schema, func(percent int) { progress("indexing", percent) })
+	progress("postings", 0)
 	index.buildPostings()
 	return index
 }
@@ -64,7 +65,7 @@ func ScanMods(schema *schema.Schema, install *Index, roots []files.Root, replace
 		return nil, err
 	}
 	index := newIndex(schema, install, roots, listing)
-	index.scanFiles(schema)
+	index.scanFiles(schema, func(int) {})
 	index.buildPostings()
 	index.Replaced = slices.Concat(make([][]string, len(install.Roots)), replaced)
 	return index, nil
@@ -256,14 +257,21 @@ func (index *Index) classifyStage(row *game.Game, position int32) int {
 	return 1 + slices.Index(row.StageRoots, stage)
 }
 
-// scanFiles builds the occurrences of every file of the index's own, in parallel on every core but two.
-func (index *Index) scanFiles(schema *schema.Schema) {
+// scanFiles builds the occurrences of every file of the index's own, in parallel on every core but two. The progress
+// function is called with each whole percent of the files that is done.
+func (index *Index) scanFiles(schema *schema.Schema, progress func(percent int)) {
 	var group errgroup.Group
 	var lock sync.RWMutex
+	var done atomic.Int64
+	first := int(index.countInstallFiles())
+	total := int64(len(index.Files) - first)
 	group.SetLimit(files.Workers)
-	for position := int(index.countInstallFiles()); position < len(index.Files); position++ {
+	for position := first; position < len(index.Files); position++ {
 		group.Go(func() error {
 			index.buildFile(&lock, schema, int32(position))
+			if count := done.Add(1); count*100/total > (count-1)*100/total {
+				progress(int(count * 100 / total))
+			}
 			return nil
 		})
 	}
@@ -428,7 +436,7 @@ func (index *Index) buildMessages(schema *schema.Schema, position int32, source 
 		for _, reference := range listTextReferences(schema, message) {
 			occurrence := index.makeOccurrence(RoleRefers, reference.Database, reference.Name, reference.Span)
 			occurrence.Line = int32(file.Lines.ToPosition(reference.Span.Start).Line)
-			occurrence.Parent, occurrence.Nested = parent, true
+			occurrence.Parent, occurrence.Nested, occurrence.Language = parent, true, language
 			occurrences = append(occurrences, occurrence)
 			if keep {
 				texts = append(texts, "")

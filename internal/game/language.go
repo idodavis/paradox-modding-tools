@@ -41,6 +41,8 @@ type Keyword struct {
 	Shows  string // a description marker: which of its texts it shows, first, random or leaf
 	Class  string // the operator class: logical, conditional, flow, display, saving, math, list; "" means none
 	Blurb  string // the one line a hover card shows
+	// Weighted marks a keyword whose branches are weights: a branch's key is a number, and its chance is its share.
+	Weighted bool
 }
 
 // AnyCall is the Caller of a block that resolves a call in every callable.
@@ -130,14 +132,15 @@ var KeyRules = map[string]KeyRule{
 
 // The shapes that Go code names. Each is the key of its row in Shapes.
 const (
-	ShapeUnknown   = "unknown"   // a block whose keys can be of any kind
-	ShapeFields    = "fields"    // a block of a definition's own fields
-	ShapeArguments = "arguments" // a block of what a command takes
-	ShapeTriggers  = "triggers"  // a block of triggers
-	ShapeEffects   = "effects"   // a block of effects
-	ShapeValue     = "value"     // a block that computes a number
-	ShapeWidget    = "widget"    // a block of a GUI widget's properties and children
-	ShapeModifiers = "modifiers" // a block of modifiers, each a name and a number
+	ShapeUnknown     = "unknown"     // a block whose keys can be of any kind
+	ShapeFields      = "fields"      // a block of a definition's own fields
+	ShapeArguments   = "arguments"   // a block of what a command takes
+	ShapeTriggers    = "triggers"    // a block of triggers
+	ShapeEffects     = "effects"     // a block of effects
+	ShapeValue       = "value"       // a block that computes a number
+	ShapeWidget      = "widget"      // a block of a GUI widget's properties and children
+	ShapeModifiers   = "modifiers"   // a block of modifiers, each a name and a number
+	ShapeDescription = "description" // a block that writes a text with its trigger
 )
 
 // Shapes is the table of shapes a block can hold, each with how it reads its keys. A description block reads its
@@ -178,7 +181,7 @@ var Shapes = map[string]ShapeRule{
 // iterators, a description's markers, a value block's operators), followed by the operators the dumps declare as
 // commands, which name no shape and leave it to the key's rule.
 var Keywords = []Keyword{
-	{Key: "random_list/<number>", Shape: "effects", Caller: AnyCall, Blurb: "One branch of a random list; its number is how likely it is."},
+	{Key: "random_list/<number>", Shape: "effects", Caller: AnyCall, Weighted: true, Blurb: "One branch of a random list; its number is how likely it is."},
 	{Key: "switch/<any>", Shape: "enclosing", Blurb: "One case of a switch: runs when the trigger's value is this."},
 	{Key: "every_*", Shape: "effects", Class: "list", Blurb: "Runs the effects inside it on every item of the list named after every_."},
 	{Key: "random_*", Shape: "effects", Class: "list", Blurb: "Runs the effects inside it on one random item of the list."},

@@ -1,6 +1,7 @@
 package wiki
 
 import (
+	"cmp"
 	"fmt"
 	"slices"
 	"strings"
@@ -40,7 +41,8 @@ var declaredClasses = map[string]string{
 }
 
 // BuildLexicon builds the lexicon rows of the given class: effect, trigger, link, scope or function. The rows are
-// sorted by name. It returns an error if no workspace is open or the class is none of those.
+// sorted by name, letter case aside, so each first letter is one run. It returns an error if no workspace is open or
+// the class is none of those.
 func (wik *Service) BuildLexicon(class string) ([]LexiconRow, error) {
 	ws, err := wik.Workspace.Session()
 	if err != nil {
@@ -74,7 +76,9 @@ func (wik *Service) BuildLexicon(class string) ([]LexiconRow, error) {
 	default:
 		return nil, fmt.Errorf("%q is not a lexicon class", class)
 	}
-	slices.SortFunc(rows, func(first, second LexiconRow) int { return strings.Compare(first.Name, second.Name) })
+	slices.SortFunc(rows, func(first, second LexiconRow) int {
+		return cmp.Or(strings.Compare(strings.ToLower(first.Name), strings.ToLower(second.Name)), strings.Compare(first.Name, second.Name))
+	})
 	return rows, nil
 }
 

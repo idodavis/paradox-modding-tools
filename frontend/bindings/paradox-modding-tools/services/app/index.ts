@@ -11,6 +11,7 @@ export type {
     Era,
     Install,
     Mod,
+    Release,
     Setting,
     Update,
     Workspace

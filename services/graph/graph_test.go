@@ -9,7 +9,6 @@ import (
 	"testing"
 	"time"
 
-	"github.com/adrg/xdg"
 	"github.com/samber/lo"
 	"github.com/wailsapp/wails/v3/pkg/application"
 
@@ -144,11 +143,9 @@ func createMod(t *testing.T, id string, added map[string]string) app.Mod {
 func openService(t *testing.T, gameID, installPath string, mods ...app.Mod) *Service {
 	t.Helper()
 	createApp()
-	t.Cleanup(xdg.Reload)
-	for _, variable := range []string{"XDG_CONFIG_HOME", "XDG_CACHE_HOME", "XDG_STATE_HOME"} {
+	for _, variable := range []string{"APPDATA", "LOCALAPPDATA", "XDG_CONFIG_HOME", "XDG_CACHE_HOME"} {
 		t.Setenv(variable, t.TempDir())
 	}
-	xdg.Reload()
 	config, err := app.OpenConfig()
 	if err != nil {
 		t.Fatal(err)
@@ -307,7 +304,7 @@ func TestBuildDetailReadsDefinition(t *testing.T) {
 		{From: eventD1, To: eventD4, Days: delayMonths},
 	}
 	if detail.Node.ID != eventD1 || !hasEdges(detail.Fires, wantFires) || len(detail.FiredBy) != 0 ||
-		!slices.Equal(detail.Portraits, []string{"root", "scope:target"}) || len(detail.Inputs) == 0 {
+		!slices.Equal(detail.Portraits, []string{"root", "scope:target"}) {
 		t.Errorf("detail of d.1: %+v", detail)
 	}
 	if !slices.ContainsFunc(detail.References, func(reference Node) bool {

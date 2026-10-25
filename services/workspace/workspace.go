@@ -1,17 +1,23 @@
 package workspace
 
 import (
+	"cmp"
 	"crypto/rand"
 	"errors"
 	"fmt"
+	"image"
 	"image/png"
 	"net/http"
+	"net/url"
 	"os"
 	"os/exec"
 	"path/filepath"
 	"slices"
+	"strconv"
 	"strings"
 	"sync"
+	"syscall"
+	"time"
 
 	"github.com/samber/lo"
 	"github.com/wailsapp/wails/v3/pkg/application"
@@ -42,19 +48,30 @@ type Service struct {
 
 // A State is the open workspace as the frontend sees it. Open is false and the rest is empty while none is open.
 type State struct {
-	Open     bool               `json:"open"`
-	ID       string             `json:"id"`
-	Game     *game.Game         `json:"game"`
-	Install  app.Install        `json:"install"`
-	Mods     []Mod              `json:"mods"`
-	Language string             `json:"language"`
-	Dumps    schema.SourceState `json:"dumps"`
+	Open         bool               `json:"open"`
+	ID           string             `json:"id"`
+	Game         *game.Game         `json:"game"`
+	Install      app.Install        `json:"install"`
+	InstallFound bool               `json:"installFound"` // the install's folder exists
+	UpdatedFrom  string             `json:"updatedFrom"`  // the install's version before the open found a new one
+	Mods         []Mod              `json:"mods"`
+	Language     string             `json:"language"`
+	Dumps        schema.SourceState `json:"dumps"`
+}
+
+// A Scanning is the data of the install:scanning event: a stage of the scan and the percent of its files done.
+type Scanning struct {
+	Stage   string `json:"stage"`
+	Percent int    `json:"percent"`
 }
 
 // A FileText is a file's text in its encoding, together with where the file sits in the workspace.
 type FileText struct {
 	Place Place      `json:"place"`
 	Text  files.Text `json:"text"`
+	// Draft is the text the editor last sent for the file where it differs from the disk's, such as edits that a
+	// reloaded page has not saved; "" where it holds none.
+	Draft string `json:"draft"`
 }
 
 // A Child is one entry in a folder listing.
@@ -69,18 +86,21 @@ const (
 	EventOpened          = "workspace:opened" // a workspace is open with its index built; the data is its id
 	EventFailed          = "workspace:failed" // a workspace could not be opened; the data is the error's text
 	EventClosed          = "workspace:closed" // the open workspace closed
-	EventInstallScanning = "install:scanning" // an install's scan reports a stage; the data is the stage
+	EventInstallScanning = "install:scanning" // an install's scan reports a stage; the data is a Scanning
 	EventInstallScanned  = "install:scanned"  // an install's scan finished; the data is the install's id
 	EventFileChanged     = "fs:changed"       // a file of the open workspace changed on disk; the data is a FileChange
 	EventGameExited      = "game:exited"      // the launched game exited; the data is true when the dumps are now fresher
 )
+
+// slotCount is how many color slots a mod can have.
+const slotCount = 16
 
 // init registers the workspace events with the application.
 func init() {
 	application.RegisterEvent[string](EventOpened)
 	application.RegisterEvent[string](EventFailed)
 	application.RegisterEvent[struct{}](EventClosed)
-	application.RegisterEvent[string](EventInstallScanning)
+	application.RegisterEvent[Scanning](EventInstallScanning)
 	application.RegisterEvent[string](EventInstallScanned)
 	application.RegisterEvent[FileChange](EventFileChanged)
 	application.RegisterEvent[bool](EventGameExited)
@@ -114,6 +134,46 @@ func (wsp *Service) AddInstall(gameID, path string) (app.Install, error) {
 	return install, err
 }
 
+// UpdateInstall moves an install's record to another folder and reads its version again. If the open workspace uses
+// the install, that workspace is opened again at once. It returns an error if the install is not recorded or the
+// folder does not exist.
+func (wsp *Service) UpdateInstall(id, path string) error {
+	if !files.IsFolder(path) {
+		return fmt.Errorf("%s is not a folder", path)
+	}
+	err := wsp.Config.Update("installs", func(records *app.Config) error {
+		position := slices.IndexFunc(records.Installs, func(install app.Install) bool { return install.ID == id })
+		if position < 0 {
+			return fmt.Errorf("the install %s is not recorded", id)
+		}
+		install := &records.Installs[position]
+		install.Path, install.Version = path, game.LoadGameVersion(install.Game, path)
+		return nil
+	})
+	if err == nil {
+		wsp.reopen(func(record app.Workspace) bool { return record.Install == id })
+	}
+	return err
+}
+
+// ListLanguages returns the localization languages of an install: the folders its localization folder holds. It
+// returns an error if the install is not recorded.
+func (wsp *Service) ListLanguages(installID string) ([]string, error) {
+	install, row, err := findInstall(wsp.Config.Config(), installID)
+	if err != nil {
+		return nil, err
+	}
+	rel, _ := findLocalizationFolder(row)
+	entries, _ := os.ReadDir(filepath.Join(install.Path, game.ScriptRoot, filepath.FromSlash(rel)))
+	languages := []string{}
+	for _, entry := range entries {
+		if entry.IsDir() {
+			languages = append(languages, entry.Name())
+		}
+	}
+	return languages, nil
+}
+
 // DeleteInstall removes the record of the install with the given id. It returns an error while a workspace uses the
 // install.
 func (wsp *Service) DeleteInstall(id string) error {
@@ -139,22 +199,27 @@ func (wsp *Service) RescanInstall(id string) error {
 	if err != nil {
 		return err
 	}
-	wsp.mu.Lock()
-	reopen := ""
-	if wsp.session != nil {
-		if record, _, _, err := findRecords(records, wsp.session.ID); err == nil && record.Install == id {
-			reopen = record.ID
-		}
-	}
-	wsp.mu.Unlock()
 	if err := os.RemoveAll(folder); err != nil {
 		return err
 	}
-	if reopen != "" {
-		wsp.Close()
-		wsp.Open(reopen)
-	}
+	wsp.reopen(func(record app.Workspace) bool { return record.Install == id })
 	return nil
+}
+
+// reopen opens the open workspace again if its record passes the given test.
+func (wsp *Service) reopen(matches func(record app.Workspace) bool) {
+	wsp.mu.Lock()
+	workspaceID := ""
+	if wsp.session != nil {
+		if record, _, _, err := findRecords(wsp.Config.Config(), wsp.session.ID); err == nil && matches(record) {
+			workspaceID = record.ID
+		}
+	}
+	wsp.mu.Unlock()
+	if workspaceID != "" {
+		wsp.Close()
+		wsp.Open(workspaceID)
+	}
 }
 
 // ResetData closes the open workspace, then removes every workspace, install record and cache. Mods, game files and
@@ -208,19 +273,46 @@ func (wsp *Service) UpdateWorkspace(ws app.Workspace) error {
 }
 
 // updateWorkspace changes the record of the workspace with the given id and emits config:changed for the workspaces.
-// It returns an error if the workspace is not recorded or the change fails.
+// When the change alters what the open workspace was opened from, that workspace is opened again. It returns an error
+// if the workspace is not recorded or the change fails.
 func (wsp *Service) updateWorkspace(workspaceID string, change func(record *app.Workspace) error) error {
-	return wsp.Config.Update("workspaces", func(records *app.Config) error {
+	reopens := false
+	err := wsp.Config.Update("workspaces", func(records *app.Config) error {
 		position := slices.IndexFunc(records.Workspaces, func(record app.Workspace) bool { return record.ID == workspaceID })
 		if position < 0 {
 			return fmt.Errorf("the workspace %s is not recorded", workspaceID)
 		}
-		return change(&records.Workspaces[position])
+		key := makeOpenKey(records.Workspaces[position])
+		if err := change(&records.Workspaces[position]); err != nil {
+			return err
+		}
+		reopens = makeOpenKey(records.Workspaces[position]) != key
+		return nil
 	})
+	if err == nil && reopens {
+		wsp.reopen(func(record app.Workspace) bool { return record.ID == workspaceID })
+	}
+	return err
 }
 
-// DeleteWorkspace removes the record of the workspace with the given id. The mod folders on disk stay.
+// makeOpenKey returns, as one string, what opening a workspace reads from its record: its install, its language, and
+// its mods' ids and folders in load order.
+func makeOpenKey(record app.Workspace) string {
+	parts := []string{record.Install, record.Language}
+	for _, mod := range record.Mods {
+		parts = append(parts, mod.ID, mod.Dir)
+	}
+	return strings.Join(parts, "\x00")
+}
+
+// DeleteWorkspace removes the record of the workspace with the given id, closing it first if it is open. The mod
+// folders on disk stay.
 func (wsp *Service) DeleteWorkspace(id string) error {
+	wsp.mu.Lock()
+	if wsp.session != nil && wsp.session.ID == id {
+		wsp.closeSession()
+	}
+	wsp.mu.Unlock()
 	return wsp.Config.Update("workspaces", func(records *app.Config) error {
 		records.Workspaces = slices.DeleteFunc(records.Workspaces, func(record app.Workspace) bool { return record.ID == id })
 		return nil
@@ -249,35 +341,69 @@ func (wsp *Service) AddMod(workspaceID, dir string) (Mod, error) {
 	if err != nil {
 		return Mod{}, err
 	}
-	descriptor, _ := ReadDescriptor(row, dir)
-	return Mod{Mod: record, Descriptor: descriptor}, nil
+	return readMod(row, record), nil
+}
+
+// ListMods returns the mods of every recorded workspace by the workspace's id, each in load order with its
+// descriptor, whether or not the workspace is open. A workspace whose install is not recorded is left out.
+func (wsp *Service) ListMods() map[string][]Mod {
+	records := wsp.Config.Config()
+	mods := map[string][]Mod{}
+	for _, record := range records.Workspaces {
+		if _, row, err := findInstall(records, record.Install); err == nil {
+			mods[record.ID] = lo.Map(record.Mods, func(mod app.Mod, _ int) Mod { return readMod(row, mod) })
+		}
+	}
+	return mods
 }
 
 // resolveSlot returns the color slot for a new mod: the first that no mod has. If every slot is in use, it is the slot
 // at the mods' count, wrapping around.
 func resolveSlot(mods []app.Mod) string {
-	for number := 1; number <= 16; number++ {
-		slot := fmt.Sprintf("o%d", number)
+	for position := range slotCount {
+		slot := makeSlot(position)
 		if !lo.ContainsBy(mods, func(mod app.Mod) bool { return mod.Color == slot }) {
 			return slot
 		}
 	}
-	return fmt.Sprintf("o%d", len(mods)%16+1)
+	return makeSlot(len(mods))
 }
 
-// CreateMod makes a new mod with the given name in the game's mod folder of the user's data, and adds it to a
-// workspace. It returns an error if the workspace is not recorded or the mod's folder exists already.
-func (wsp *Service) CreateMod(workspaceID, name string) (Mod, error) {
+// makeSlot returns the color slot of the given position in a load order, wrapping around after the last slot.
+func makeSlot(position int) string {
+	return fmt.Sprintf("o%d", position%slotCount+1)
+}
+
+// CreateMod makes a new mod in a folder, the game's mod folder when it is "", with a localization file in a language,
+// the base language when it is "", and adds it to a workspace. It returns an error if the workspace is not recorded
+// or the mod's folder exists already.
+func (wsp *Service) CreateMod(workspaceID, dir, name, language string) (Mod, error) {
 	_, install, row, err := findRecords(wsp.Config.Config(), workspaceID)
 	if err != nil {
 		return Mod{}, err
 	}
-	holder := filepath.Join(game.FindUserDataDir(row.ID, install.Path), "mod")
-	folder, err := createModFolder(row, holder, name, game.LoadGameVersion(row.ID, install.Path))
+	folder, err := createModFolder(row, resolveModDir(row, install, dir), name, game.LoadGameVersion(row.ID, install.Path))
 	if err != nil {
 		return Mod{}, err
 	}
+	if err := createLocalization(row, folder, name, language); err != nil {
+		return Mod{}, err
+	}
 	return wsp.AddMod(workspaceID, folder)
+}
+
+// ResolveModFolder returns the folder CreateMod would make, or with no name the folder it would make it in.
+func (wsp *Service) ResolveModFolder(workspaceID, dir, name string) (string, error) {
+	_, install, row, err := findRecords(wsp.Config.Config(), workspaceID)
+	if err != nil {
+		return "", err
+	}
+	return resolveModFolder(resolveModDir(row, install, dir), name), nil
+}
+
+// resolveModDir returns the folder a new mod is made in: the given one, else the game's mod folder.
+func resolveModDir(row *game.Game, install app.Install, dir string) string {
+	return cmp.Or(dir, filepath.Join(game.FindUserDataDir(row.ID, install.Path), "mod"))
 }
 
 // RemoveMod takes the mod with the given id out of a workspace. Its folder stays.
@@ -319,6 +445,18 @@ func reorderMods[T any](mods []T, modIDs []string, id func(mod T) string) ([]T, 
 	return ordered, nil
 }
 
+// ResetColors gives each mod of a workspace the color slot of its place in the load order and clears the color of the
+// game.
+func (wsp *Service) ResetColors(workspaceID string) error {
+	return wsp.updateWorkspace(workspaceID, func(workspace *app.Workspace) error {
+		workspace.GameColor = ""
+		for position := range workspace.Mods {
+			workspace.Mods[position].Color = makeSlot(position)
+		}
+		return nil
+	})
+}
+
 // UpdateMod replaces a mod's record in a workspace. A mod the workspace does not have is ignored.
 func (wsp *Service) UpdateMod(workspaceID string, mod app.Mod) error {
 	return wsp.updateWorkspace(workspaceID, func(workspace *app.Workspace) error {
@@ -343,7 +481,9 @@ func (wsp *Service) Open(workspaceID string) {
 		defer wsp.mu.Unlock()
 		pmt := application.Get()
 		session, err := wsp.openSession(workspaceID,
-			func(stage string) { pmt.Event.Emit(EventInstallScanning, stage) },
+			func(stage string, percent int) {
+				pmt.Event.Emit(EventInstallScanning, Scanning{Stage: stage, Percent: percent})
+			},
 			func(changes []FileChange) {
 				for _, change := range changes {
 					pmt.Event.Emit(EventFileChanged, change)
@@ -372,6 +512,9 @@ func (wsp *Service) updateInstall(session *Session) error {
 		return err
 	}
 	version, scannedAt := session.Schema.Version, stat.ModTime()
+	if install.Version != version {
+		session.updatedFrom = install.Version
+	}
 	scanned := !install.ScannedAt.Equal(scannedAt)
 	if install.Version == version && !scanned {
 		return nil
@@ -437,8 +580,8 @@ func (wsp *Service) State() State {
 		return mod
 	})
 	return State{
-		Open: true, ID: session.ID, Game: session.Game, Install: install, Mods: mods,
-		Language: session.Language, Dumps: session.Schema.Dumps,
+		Open: true, ID: session.ID, Game: session.Game, Install: install, InstallFound: files.IsFolder(install.Path),
+		UpdatedFrom: session.updatedFrom, Mods: mods, Language: session.Language, Dumps: session.Schema.Dumps,
 	}
 }
 
@@ -475,15 +618,31 @@ func (wsp *Service) Launch() error {
 	return nil
 }
 
-// Read returns the text of the file with the given path and where the file sits in the workspace. It returns an error
-// if no workspace is open or the file cannot be read.
+// Read returns the text of the file with the given path, where the file sits in the workspace, and the editor's draft
+// of it where one differs from the disk. It returns an error if no workspace is open or the file cannot be read.
 func (wsp *Service) Read(path string) (FileText, error) {
 	session, err := wsp.Session()
 	if err != nil {
 		return FileText{}, err
 	}
 	text, err := files.ReadText(path)
-	return FileText{Place: session.Locate(session.Mods.Load(), path), Text: text}, err
+	draft, open := session.LookupBuffer(path)
+	if !open || draft == text.Text {
+		draft = ""
+	}
+	return FileText{Place: session.Locate(session.Mods.Load(), path), Text: text, Draft: draft}, err
+}
+
+// ReadHeader returns an image file's header. It returns an error if the file is not an image in the open workspace.
+func (wsp *Service) ReadHeader(path string) (texture.Header, error) {
+	session, err := wsp.Session()
+	if err != nil {
+		return texture.Header{}, err
+	}
+	if _, ok := session.Mods.Load().FindRoot(path); !ok {
+		return texture.Header{}, fmt.Errorf("%s is outside the workspace", path)
+	}
+	return texture.ReadHeader(path)
 }
 
 // Write writes a file's text in its encoding and makes the file's folder if it is missing. The old file is replaced
@@ -515,8 +674,8 @@ func (wsp *Service) findWritable(paths ...string) (*Session, error) {
 	return session, nil
 }
 
-// ListFolder lists the entries of a folder with the place of each, folders first. Binary files are left out when the
-// setting hides them. It returns an error if no workspace is open or the folder cannot be read.
+// ListFolder lists the entries of a folder with the place of each, folders first. Binary files are left out unless the
+// open workspace shows them. It returns an error if no workspace is open or the folder cannot be read.
 func (wsp *Service) ListFolder(dir string) ([]Child, error) {
 	session, err := wsp.Session()
 	if err != nil {
@@ -526,11 +685,11 @@ func (wsp *Service) ListFolder(dir string) ([]Child, error) {
 	if err != nil {
 		return nil, err
 	}
-	hide, _ := wsp.Config.LookupSetting("ide.hideBinaries")
+	record, _, _, _ := findRecords(wsp.Config.Config(), session.ID)
 	mods := session.Mods.Load()
 	children := lo.FilterMap(entries, func(entry os.DirEntry, _ int) (Child, bool) {
 		place := session.Locate(mods, filepath.Join(dir, entry.Name()))
-		return Child{Name: entry.Name(), Dir: entry.IsDir(), Place: place}, entry.IsDir() || hide != "true" || place.Format.IsText()
+		return Child{Name: entry.Name(), Dir: entry.IsDir(), Place: place}, entry.IsDir() || record.ShowBinaries || place.Format.IsText()
 	})
 	slices.SortStableFunc(children, func(a, b Child) int {
 		switch {
@@ -585,20 +744,60 @@ func (wsp *Service) Rename(from, to string) error {
 	return os.Rename(from, to)
 }
 
-// Delete removes a file or a folder, and the watcher sends fs:changed for it. Deleting a mod's root folder removes
-// the mod from the workspace as well.
-func (wsp *Service) Delete(path string) error {
+// Delete moves a file or a folder into PMT's trash and returns where it went, for Restore. Deleting a mod's root
+// folder removes the mod from the workspace too.
+func (wsp *Service) Delete(path string) (string, error) {
 	session, err := wsp.findWritable(path)
+	if err != nil {
+		return "", err
+	}
+	trashed := filepath.Join(wsp.Config.Dirs.Trash, strconv.FormatInt(time.Now().UnixNano(), 10), filepath.Base(path))
+	if err := move(path, trashed); err != nil {
+		return "", err
+	}
+	if mod, ok := lo.Find(session.Order, func(mod Mod) bool { return files.ToKey(mod.Dir) == files.ToKey(path) }); ok {
+		return trashed, wsp.RemoveMod(session.ID, mod.ID)
+	}
+	return trashed, nil
+}
+
+// Restore moves a file or a folder back from PMT's trash. It returns an error if the trashed path is not in the trash,
+// or the path it goes back to is outside the mods or exists already.
+func (wsp *Service) Restore(trashed, path string) error {
+	if !files.IsUnder(wsp.Config.Dirs.Trash, trashed) {
+		return fmt.Errorf("%s is not in the trash", trashed)
+	}
+	if _, err := wsp.findWritable(path); err != nil {
+		return err
+	}
+	if _, err := os.Lstat(path); err == nil {
+		return fmt.Errorf("%s exists already", path)
+	}
+	return move(trashed, path)
+}
+
+// move moves a file or a folder, making the folder it goes into. Across drives, where a rename fails, it copies and
+// then deletes the original.
+func move(source, target string) error {
+	if err := os.MkdirAll(filepath.Dir(target), 0o755); err != nil {
+		return err
+	}
+	err := os.Rename(source, target)
+	if err == nil || !errors.Is(err, syscall.EXDEV) && filepath.VolumeName(source) == filepath.VolumeName(target) {
+		return err
+	}
+	if files.IsFolder(source) {
+		err = os.CopyFS(target, os.DirFS(source))
+	} else {
+		var content []byte
+		if content, err = os.ReadFile(source); err == nil {
+			err = os.WriteFile(target, content, 0o644)
+		}
+	}
 	if err != nil {
 		return err
 	}
-	if err := os.RemoveAll(path); err != nil {
-		return err
-	}
-	if mod, ok := lo.Find(session.Order, func(mod Mod) bool { return files.ToKey(mod.Dir) == files.ToKey(path) }); ok {
-		return wsp.RemoveMod(session.ID, mod.ID)
-	}
-	return nil
+	return os.RemoveAll(source)
 }
 
 // Locate returns the place of a file in the open workspace. It returns an empty place if none is open.
@@ -610,21 +809,19 @@ func (wsp *Service) Locate(path string) Place {
 	return session.Locate(session.Mods.Load(), path)
 }
 
-// ServeHTTP serves the file that the path of a request names. A DDS or TGA image is decoded to PNG first, since the
-// browser cannot show it. A path outside the workspace's roots is refused, and so is any request while no workspace is
-// open.
+// ServeHTTP serves the file that the path of a request names, whether or not a workspace is open. A DDS or TGA image
+// is decoded to PNG first, since the browser cannot show it, and so is an image cut to one frame of a sprite sheet or
+// one of a DDS's smaller mip levels, which the level in the request names. A path outside every recorded install and
+// mod folder is refused.
 func (wsp *Service) ServeHTTP(w http.ResponseWriter, r *http.Request) {
-	path := r.URL.Query().Get("path")
-	session, err := wsp.Session()
-	if err != nil {
-		http.Error(w, err.Error(), http.StatusServiceUnavailable)
+	query := r.URL.Query()
+	path := query.Get("path")
+	if !isRecorded(wsp.Config.Config(), path) {
+		http.Error(w, "the path is outside every recorded install and mod", http.StatusForbidden)
 		return
 	}
-	if _, ok := session.Mods.Load().FindRoot(path); !ok {
-		http.Error(w, "the path is outside the workspace", http.StatusForbidden)
-		return
-	}
-	if ext := strings.ToLower(filepath.Ext(path)); ext != ".dds" && ext != ".tga" {
+	isCut := query.Has("framesize") || query.Has("framegrid") || query.Has("level")
+	if ext := strings.ToLower(filepath.Ext(path)); ext != ".dds" && ext != ".tga" && !isCut {
 		http.ServeFile(w, r, path)
 		return
 	}
@@ -633,11 +830,54 @@ func (wsp *Service) ServeHTTP(w http.ResponseWriter, r *http.Request) {
 		http.Error(w, err.Error(), http.StatusNotFound)
 		return
 	}
-	picture, err := texture.Decode(bytes)
+	level, _ := strconv.Atoi(query.Get("level"))
+	picture, err := texture.Decode(bytes, level)
 	if err != nil {
 		http.Error(w, err.Error(), http.StatusUnprocessableEntity)
 		return
 	}
 	w.Header().Set("Content-Type", "image/png")
-	_ = png.Encode(w, picture)
+	_ = png.Encode(w, cutFrame(picture, query))
+}
+
+// cutFrame returns the one frame of a sprite sheet that a query names, counted from 1 across and then down. A frame's
+// size is the framesize times the density, in the image's pixels, or the image cut into the framegrid's columns and
+// rows. It returns the whole image if the query names no frame size or one larger than the image. A frame past the end
+// of the sheet is its last.
+func cutFrame(picture image.Image, query url.Values) image.Image {
+	bounds := picture.Bounds()
+	var width, height, columns, rows float64
+	if _, err := fmt.Sscan(query.Get("framesize"), &width, &height); err == nil {
+		density, err := strconv.ParseFloat(query.Get("density"), 64)
+		if err != nil || density <= 0 {
+			density = 1
+		}
+		width, height = width*density, height*density
+	} else if _, err := fmt.Sscan(query.Get("framegrid"), &columns, &rows); err == nil && columns >= 1 && rows >= 1 {
+		width, height = float64(bounds.Dx())/columns, float64(bounds.Dy())/rows
+	}
+	size := image.Pt(int(width), int(height))
+	sheet, ok := picture.(interface {
+		SubImage(image.Rectangle) image.Image
+	})
+	if !ok || size.X < 1 || size.Y < 1 || size.X > bounds.Dx() || size.Y > bounds.Dy() {
+		return picture
+	}
+	frame, _ := strconv.Atoi(query.Get("frame"))
+	across := bounds.Dx() / size.X
+	position := min(max(frame, 1), across*(bounds.Dy()/size.Y)) - 1
+	corner := bounds.Min.Add(image.Pt(position%across*size.X, position/across*size.Y))
+	return sheet.SubImage(image.Rectangle{Min: corner, Max: corner.Add(size)})
+}
+
+// isRecorded reports whether a path is inside the folder of a recorded install or of a mod that a workspace records.
+func isRecorded(records app.Config, path string) bool {
+	dirs := lo.Map(records.Installs, func(install app.Install, _ int) string { return install.Path })
+	for _, record := range records.Workspaces {
+		dirs = append(dirs, lo.Map(record.Mods, func(mod app.Mod, _ int) string { return mod.Dir })...)
+	}
+	return lo.ContainsBy(dirs, func(dir string) bool {
+		_, inside := files.ToRel(dir, path)
+		return inside
+	})
 }

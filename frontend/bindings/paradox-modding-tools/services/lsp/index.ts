@@ -19,6 +19,7 @@ export type {
     Fix,
     Fold,
     Hint,
+    Inputs,
     Legend,
     Location,
     Range,

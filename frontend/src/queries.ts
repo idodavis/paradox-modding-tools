@@ -3,7 +3,7 @@
  * no event refreshes; a query that an event or a mutation refreshes has a key factory here. Monaco's per-position
  * reads go through the providers, not here.
  */
-import { defineQueryOptions } from "@pinia/colada";
+import { defineQueryOptions, useQueryCache, type UseQueryOptions } from "@pinia/colada";
 
 import * as app from "@services/app/service";
 import * as draw from "@services/draw/service";
@@ -15,16 +15,22 @@ import * as search from "@services/search/service";
 import * as steam from "@services/steam/service";
 import * as wiki from "@services/wiki/service";
 import * as workspace from "@services/workspace/service";
-import type { Window as DrawnWindow } from "@services/draw/models";
+import type { Coat, PictureList, States } from "@services/draw/models";
 import type { Filter } from "@services/graph/models";
 import type { FindingSite } from "@services/health/models";
 
-/** The keys an event or a mutation refreshes. */
 /** The URL the files route serves a path at, for an image, a texture or a thumbnail. */
 export function fileUrl(path: string): string {
-  throw new Error("stub", { cause: path });
+  return `/files?path=${encodeURIComponent(path)}`;
 }
 
+/** Reads a query outside a component: the cached answer if it is fresh, else Go's. It throws if Go's read fails. */
+export async function loadQuery<T>(options: UseQueryOptions<T>): Promise<T | undefined> {
+  const cache = useQueryCache();
+  return (await cache.refresh(cache.ensure(options))).data;
+}
+
+/** The keys an event or a mutation refreshes. */
 export const keys = {
   settings: ["app", "settings"] as const,
   windows: ["app", "windows"] as const,
@@ -48,9 +54,13 @@ export const settingsCatalogQuery = defineQueryOptions({
   key: ["app", "catalog"],
   query: () => app.ListSettings(),
 });
-export const settingsQuery = defineQueryOptions({ key: keys.settings, query: () => app.ReadSettings() });
+export const settingsQuery = defineQueryOptions((workspaceId: string) => ({
+  key: [...keys.settings, workspaceId],
+  query: () => app.ReadSettings(workspaceId),
+}));
 export const updateQuery = defineQueryOptions({ key: ["app", "update"], query: () => app.CheckUpdate() });
 export const windowsQuery = defineQueryOptions({ key: keys.windows, query: () => app.ListWindows() });
+export const crashedQuery = defineQueryOptions({ key: ["app", "crashed"], query: () => app.CrashedLastRun() });
 
 // the workspace and its files
 export const gamesQuery = defineQueryOptions({
@@ -66,7 +76,13 @@ export const workspacesQuery = defineQueryOptions({
   key: keys.workspaces,
   query: () => workspace.ListWorkspaces(),
 });
+export const modsQuery = defineQueryOptions({ key: [...keys.workspaces, "mods"], query: () => workspace.ListMods() });
+export const releasesQuery = defineQueryOptions({ key: ["app", "releases"], query: () => app.ListReleases() });
 export const stateQuery = defineQueryOptions({ key: keys.state, query: () => workspace.State() });
+export const languagesQuery = defineQueryOptions((installId: string) => ({
+  key: [...keys.installs, installId, "languages"],
+  query: () => workspace.ListLanguages(installId),
+}));
 export const fileQuery = defineQueryOptions((path: string) => ({
   key: keys.file(path),
   query: () => workspace.Read(path),
@@ -80,6 +96,20 @@ export const placeQuery = defineQueryOptions((path: string) => ({
   key: ["place", path],
   query: () => workspace.Locate(path),
 }));
+export const headerQuery = defineQueryOptions((path: string) => ({
+  key: [...keys.file(path), "header"],
+  query: () => workspace.ReadHeader(path),
+}));
+export const copiesQuery = defineQueryOptions((path: string) => ({
+  key: [...keys.file(path), "copies"],
+  query: () => workspace.ListCopies(path),
+}));
+export const modFolderQuery = defineQueryOptions(
+  ({ workspaceId, dir, name }: { workspaceId: string; dir: string; name: string }) => ({
+    key: ["workspace", "mod-folder", workspaceId, dir, name],
+    query: () => workspace.ResolveModFolder(workspaceId, dir, name),
+  }),
+);
 
 // the Visual view
 export const drawablesQuery = defineQueryOptions((path: string) => ({
@@ -90,16 +120,19 @@ export const windowQuery = defineQueryOptions(({ path, name }: { path: string; n
   key: [...keys.draw(path), "window", name],
   query: () => draw.ResolveWindow(path, name),
 }));
+// a new pick keeps the last answer shown until its own arrives, so the picture and the panel never blank
 export const statesQuery = defineQueryOptions(
-  ({ path, window, picks }: { path: string; window: DrawnWindow; picks: Record<string, string> }) => ({
-    key: [...keys.draw(path), "states", window.name, picks],
-    query: () => draw.EvaluateStates(window, picks),
+  ({ path, name, picks }: { path: string; name: string; picks: Record<string, string> }) => ({
+    key: [...keys.draw(path), "states", name, picks],
+    query: () => draw.EvaluateStates(path, name, picks),
+    placeholderData: (previous: States | undefined) => previous,
   }),
 );
 export const coatQuery = defineQueryOptions(
   ({ path, name, picks }: { path: string; name: string; picks: Record<string, string> }) => ({
     key: [...keys.draw(path), "coat", name, picks],
     query: () => draw.ResolveCoat(path, name, picks),
+    placeholderData: (previous: Coat | undefined) => previous,
   }),
 );
 export const colorsQuery = defineQueryOptions({ key: ["draw", "colors"], query: () => draw.ListColors() });
@@ -108,6 +141,10 @@ export const texturesQuery = defineQueryOptions((role: string) => ({
   query: () => draw.ListTextures(role),
 }));
 export const framesQuery = defineQueryOptions({ key: ["draw", "frames"], query: () => draw.ListFrames() });
+export const picturesQuery = defineQueryOptions((list: PictureList) => ({
+  key: ["draw", "pictures", list.database, list.name, list.type, list.field, list.argument, list.folder],
+  query: () => draw.ListPictures(list),
+}));
 
 // Health
 export const reportQuery = defineQueryOptions((order: string[]) => ({
@@ -131,9 +168,29 @@ export const comparedQuery = defineQueryOptions(({ a, b }: { a: FindingSite; b: 
   key: [...keys.health, "compared", a, b],
   query: () => health.CompareStatements(a, b),
 }));
+export const sourcesQuery = defineQueryOptions((sites: FindingSite[]) => ({
+  key: [...keys.health, "sources", sites],
+  query: () => health.ListSources(sites),
+}));
+export const readersQuery = defineQueryOptions((key: string) => ({
+  key: [...keys.health, "readers", key],
+  query: () => health.ListReaders(key),
+}));
 
 // the editor
 export const legendQuery = defineQueryOptions({ key: ["lsp", "legend"], query: () => lsp.ListLegend() });
+export const indentationQuery = defineQueryOptions((path: string) => ({
+  key: [...keys.file(path), "indentation"],
+  query: () => lsp.DescribeIndentation(path),
+}));
+export const inputsQuery = defineQueryOptions(({ path, line }: { path: string; line: number }) => ({
+  key: [...keys.file(path), "inputs", line],
+  query: () => lsp.ListInputs(path, line, 1),
+}));
+export const symbolsQuery = defineQueryOptions((query: string) => ({
+  key: ["lsp", "symbols", query],
+  query: () => lsp.FindSymbols(query, 50),
+}));
 
 // the Event Graph
 export const graphQuery = defineQueryOptions(({ root, filter }: { root: string; filter: Filter }) => ({
@@ -191,10 +248,12 @@ export const refsQuery = defineQueryOptions((dir: string) => ({
   key: [...keys.git(dir), "refs"],
   query: () => git.ListRefs(dir),
 }));
-export const commitsQuery = defineQueryOptions(({ dir, refs }: { dir: string; refs: string[] }) => ({
-  key: [...keys.git(dir), "commits", refs],
-  query: () => git.ListCommits(dir, 200, refs),
-}));
+export const commitsQuery = defineQueryOptions(
+  ({ dir, refs, limit }: { dir: string; refs: string[]; limit: number }) => ({
+    key: [...keys.git(dir), "commits", refs, limit],
+    query: () => git.ListCommits(dir, limit, refs),
+  }),
+);
 export const commitFilesQuery = defineQueryOptions(({ dir, hash }: { dir: string; hash: string }) => ({
   key: [...keys.git(dir), "commit", hash],
   query: () => git.ListCommitFiles(dir, hash),
@@ -219,6 +278,15 @@ export const comparisonQuery = defineQueryOptions((modId: string) => ({
   key: [...keys.release(modId), "comparison"],
   query: () => steam.CompareUpload(modId),
 }));
+export const comparedFileQuery = defineQueryOptions(({ modId, rel }: { modId: string; rel: string }) => ({
+  key: [...keys.release(modId), "file", rel],
+  query: () => steam.CompareFile(modId, rel),
+}));
 export const dlcQuery = defineQueryOptions({ key: ["release", "dlc"], query: () => steam.ListDLC() });
 export const tagsQuery = defineQueryOptions({ key: ["release", "tags"], query: () => steam.ListTags() });
 export const rulesQuery = defineQueryOptions({ key: ["release", "rules"], query: () => steam.ListRules() });
+export const steamStatusQuery = defineQueryOptions({ key: ["release", "steam"], query: () => steam.DescribeSteam() });
+export const bbcodeQuery = defineQueryOptions((markdown: string) => ({
+  key: ["release", "bbcode", markdown],
+  query: () => steam.ToBBCode(markdown),
+}));

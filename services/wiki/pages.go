@@ -3,6 +3,8 @@ package wiki
 import (
 	"cmp"
 	"errors"
+	"html"
+	"regexp"
 	"slices"
 	"strings"
 
@@ -14,10 +16,21 @@ import (
 
 // A Note is one patch's notes page: its version and whether the page has a Modding section.
 type Note struct {
-	Version string `json:"version"`
-	Title   string `json:"title"`
-	Modding bool   `json:"modding"`
+	Version  string `json:"version"`
+	Parent   string `json:"parent"`   // the version a hotfix belongs to, such as 1.14 for 1.14.2; "" for a release
+	Released string `json:"released"` // the release date as the note writes it; "" if it gives none
+	Title    string `json:"title"`
+	Modding  bool   `json:"modding"`
 }
+
+// releasePattern matches the release date in the first sentence of a patch note, such as "released on 2026-09-30".
+var releasePattern = regexp.MustCompile(`released on (?:the )?(\d{4}-\d{2}-\d{2})`)
+
+// tagPattern matches one HTML tag.
+var tagPattern = regexp.MustCompile(`<[^>]+>`)
+
+// releaseSpan is how many bytes of a note's HTML are searched for its release date.
+const releaseSpan = 2000
 
 // errNoListing is the error of a call that needs the listing before a refresh has kept one.
 var errNoListing = errors.New("the wiki's listing has not been fetched yet")
@@ -64,8 +77,20 @@ func (wik *Service) FindPages(path string) ([]Summary, error) {
 	return pages, nil
 }
 
+// resolveParent returns the version a hotfix belongs to: its major and minor numbers. It returns "" for a release.
+func resolveParent(version string) string {
+	minor := strings.TrimPrefix(semver.MajorMinor("v"+strings.TrimSuffix(version, ".X")), "v")
+	return lo.Ternary(minor == version, "", minor)
+}
+
+// resolveReleased returns the release date that a patch note's HTML gives in its opening text, or "" if it gives none.
+func resolveReleased(text string) string {
+	text = html.UnescapeString(tagPattern.ReplaceAllString(text[:min(len(text), releaseSpan)], " "))
+	return lo.NthOr(releasePattern.FindStringSubmatch(text), 1, "")
+}
+
 // compareVersions orders two patch versions as semver does, except that a minor version's hotfix notes, "1.20.X",
-// come after every numbered patch of that minor version.
+// come before every numbered patch of that minor version, so a list newest first shows them after the release.
 func compareVersions(first, second string) int {
 	hotfixFirst, hotfixSecond := strings.HasSuffix(first, ".X"), strings.HasSuffix(second, ".X")
 	first, second = strings.TrimSuffix(first, ".X"), strings.TrimSuffix(second, ".X")
@@ -73,7 +98,7 @@ func compareVersions(first, second string) int {
 		return minors
 	}
 	if hotfixFirst != hotfixSecond {
-		return lo.Ternary(hotfixFirst, 1, -1)
+		return lo.Ternary(hotfixFirst, -1, 1)
 	}
 	return semver.Compare("v"+first, "v"+second)
 }
@@ -85,12 +110,7 @@ func hasModding(text string) bool {
 		return false
 	}
 	for node := range root.Descendants() {
-		if !elements[node.DataAtom].heading {
-			continue
-		}
-		var heading strings.Builder
-		writeText(&heading, node)
-		if strings.Contains(heading.String(), "Modding") {
+		if elements[node.DataAtom].heading && strings.Contains(textOf(node), "Modding") {
 			return true
 		}
 	}

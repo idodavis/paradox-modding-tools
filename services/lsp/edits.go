@@ -2,6 +2,7 @@ package lsp
 
 import (
 	"slices"
+	"strconv"
 	"strings"
 	"unicode"
 	"unicode/utf8"
@@ -49,6 +50,23 @@ func (lsp *Service) Format(path string, tabSize int, insertSpaces bool) ([]Edit,
 		return []Edit{}, nil
 	}
 	return ToEdits(tree.Src, tree.Lines, jomini.DiffEdits(tree.Src, text)), nil
+}
+
+// DescribeIndentation returns what a file indents one level with, in words: "Tabs" or "4 spaces". It returns "" if the
+// file indents nothing.
+func (lsp *Service) DescribeIndentation(path string) (string, error) {
+	_, tree, err := lsp.loadTree(path)
+	if err != nil {
+		return "", err
+	}
+	switch unit := tree.Indentation(); {
+	case unit == "":
+		return "", nil
+	case unit[0] == '\t':
+		return "Tabs", nil
+	default:
+		return strconv.Itoa(len(unit)) + " spaces", nil
+	}
 }
 
 // A piece is one run of a file's text that formatting keeps whole, such as a key, an operator, a brace or a comment.

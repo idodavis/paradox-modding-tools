@@ -13,5 +13,6 @@ export type {
     FileText,
     Mod,
     Place,
+    Scanning,
     State
 } from "./models.js";

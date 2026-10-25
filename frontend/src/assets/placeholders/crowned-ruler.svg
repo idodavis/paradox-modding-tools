@@ -1,0 +1,22 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 -40 200 280" preserveAspectRatio="xMidYMax meet">
+  <defs>
+    <mask id="cut">
+      <rect width="200" height="240" fill="#fff" />
+      <path d="M70 60H130M52 173q48 16 96 0M100 184v56" stroke="#000" stroke-width="3" fill="none" />
+      <circle cx="100" cy="178" r="7" fill="#000" />
+      <circle cx="100" cy="178" r="3.5" fill="#fff" />
+    </mask>
+  </defs>
+  <g mask="url(#cut)">
+    <path d="M69 66 67 38l16 14 17-26 17 26 16-14-2 28z" />
+    <circle cx="67" cy="36" r="4" />
+    <circle cx="100" cy="24" r="4.5" />
+    <circle cx="133" cy="36" r="4" />
+    <ellipse cx="100" cy="96" rx="30" ry="36" />
+    <path d="M70 80c-8 20-6 48 4 66l10-4c-8-18-8-42-6-60zM130 80c8 20 6 48-4 66l-10-4c8-18 8-42 6-60z" />
+    <path d="M76 112c2 28 14 44 24 46 10-2 22-18 24-46-10 12-38 12-48 0z" />
+    <rect x="88" y="126" width="24" height="32" />
+    <ellipse cx="100" cy="166" rx="50" ry="15" />
+    <path d="M6 240c4-36 30-62 64-72h60c34 10 60 36 64 72z" />
+  </g>
+</svg>

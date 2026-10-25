@@ -20,6 +20,9 @@ import * as files$0 from "../../internal/files/models.js";
 import * as game$0 from "../../internal/game/models.js";
 // eslint-disable-next-line @typescript-eslint/ban-ts-comment
 // @ts-ignore: Unused imports
+import * as texture$0 from "../../internal/texture/models.js";
+// eslint-disable-next-line @typescript-eslint/ban-ts-comment
+// @ts-ignore: Unused imports
 import * as app$0 from "../app/models.js";
 
 // eslint-disable-next-line @typescript-eslint/ban-ts-comment
@@ -58,11 +61,12 @@ export function Create(path: string, dir: boolean): $CancellablePromise<void> {
 }
 
 /**
- * CreateMod makes a new mod with the given name in the game's mod folder of the user's data, and adds it to a
- * workspace. It returns an error if the workspace is not recorded or the mod's folder exists already.
+ * CreateMod makes a new mod in a folder, the game's mod folder when it is "", with a localization file in a language,
+ * the base language when it is "", and adds it to a workspace. It returns an error if the workspace is not recorded
+ * or the mod's folder exists already.
  */
-export function CreateMod(workspaceID: string, name: string): $CancellablePromise<$models.Mod> {
-    return $Call.ByID(186126879, workspaceID, name);
+export function CreateMod(workspaceID: string, dir: string, name: string, language: string): $CancellablePromise<$models.Mod> {
+    return $Call.ByID(186126879, workspaceID, dir, name, language);
 }
 
 /**
@@ -74,10 +78,10 @@ export function CreateWorkspace(ws: app$0.Workspace): $CancellablePromise<app$0.
 }
 
 /**
- * Delete removes a file or a folder, and the watcher sends fs:changed for it. Deleting a mod's root folder removes
- * the mod from the workspace as well.
+ * Delete moves a file or a folder into PMT's trash and returns where it went, for Restore. Deleting a mod's root
+ * folder removes the mod from the workspace too.
  */
-export function Delete(path: string): $CancellablePromise<void> {
+export function Delete(path: string): $CancellablePromise<string> {
     return $Call.ByID(2576914838, path);
 }
 
@@ -90,7 +94,8 @@ export function DeleteInstall(id: string): $CancellablePromise<void> {
 }
 
 /**
- * DeleteWorkspace removes the record of the workspace with the given id. The mod folders on disk stay.
+ * DeleteWorkspace removes the record of the workspace with the given id, closing it first if it is open. The mod
+ * folders on disk stay.
  */
 export function DeleteWorkspace(id: string): $CancellablePromise<void> {
     return $Call.ByID(2766637015, id);
@@ -112,8 +117,16 @@ export function Launch(): $CancellablePromise<void> {
 }
 
 /**
- * ListFolder lists the entries of a folder with the place of each, folders first. Binary files are left out when the
- * setting hides them. It returns an error if no workspace is open or the folder cannot be read.
+ * ListCopies returns every copy of a file in load order, the given one too, the game's first. The game reads the last,
+ * unless a replace_path drops them all. It returns none for a file under no root or while no workspace is open.
+ */
+export function ListCopies(path: string): $CancellablePromise<$models.Place[] | null> {
+    return $Call.ByID(26420408, path);
+}
+
+/**
+ * ListFolder lists the entries of a folder with the place of each, folders first. Binary files are left out unless the
+ * open workspace shows them. It returns an error if no workspace is open or the folder cannot be read.
  */
 export function ListFolder(dir: string): $CancellablePromise<$models.Child[] | null> {
     return $Call.ByID(434589381, dir);
@@ -131,6 +144,22 @@ export function ListGames(): $CancellablePromise<(game$0.Game | null)[] | null> 
  */
 export function ListInstalls(): $CancellablePromise<app$0.Install[] | null> {
     return $Call.ByID(924143505);
+}
+
+/**
+ * ListLanguages returns the localization languages of an install: the folders its localization folder holds. It
+ * returns an error if the install is not recorded.
+ */
+export function ListLanguages(installID: string): $CancellablePromise<string[] | null> {
+    return $Call.ByID(1853271504, installID);
+}
+
+/**
+ * ListMods returns the mods of every recorded workspace by the workspace's id, each in load order with its
+ * descriptor, whether or not the workspace is open. A workspace whose install is not recorded is left out.
+ */
+export function ListMods(): $CancellablePromise<{ [_ in string]?: $models.Mod[] | null } | null> {
+    return $Call.ByID(4166687960);
 }
 
 /**
@@ -165,11 +194,18 @@ export function Open(workspaceID: string): $CancellablePromise<void> {
 }
 
 /**
- * Read returns the text of the file with the given path and where the file sits in the workspace. It returns an error
- * if no workspace is open or the file cannot be read.
+ * Read returns the text of the file with the given path, where the file sits in the workspace, and the editor's draft
+ * of it where one differs from the disk. It returns an error if no workspace is open or the file cannot be read.
  */
 export function Read(path: string): $CancellablePromise<$models.FileText> {
     return $Call.ByID(3746079041, path);
+}
+
+/**
+ * ReadHeader returns an image file's header. It returns an error if the file is not an image in the open workspace.
+ */
+export function ReadHeader(path: string): $CancellablePromise<texture$0.Header> {
+    return $Call.ByID(815431044, path);
 }
 
 /**
@@ -205,6 +241,14 @@ export function RescanInstall(id: string): $CancellablePromise<void> {
 }
 
 /**
+ * ResetColors gives each mod of a workspace the color slot of its place in the load order and clears the color of the
+ * game.
+ */
+export function ResetColors(workspaceID: string): $CancellablePromise<void> {
+    return $Call.ByID(2241225824, workspaceID);
+}
+
+/**
  * ResetData closes the open workspace, then removes every workspace, install record and cache. Mods, game files and
  * the settings stay. It returns an error if the records cannot be written or a cache cannot be deleted.
  */
@@ -213,10 +257,34 @@ export function ResetData(): $CancellablePromise<void> {
 }
 
 /**
+ * ResolveModFolder returns the folder CreateMod would make, or with no name the folder it would make it in.
+ */
+export function ResolveModFolder(workspaceID: string, dir: string, name: string): $CancellablePromise<string> {
+    return $Call.ByID(3355031669, workspaceID, dir, name);
+}
+
+/**
+ * Restore moves a file or a folder back from PMT's trash. It returns an error if the trashed path is not in the trash,
+ * or the path it goes back to is outside the mods or exists already.
+ */
+export function Restore(trashed: string, path: string): $CancellablePromise<void> {
+    return $Call.ByID(4110228885, trashed, path);
+}
+
+/**
  * State returns the state of the open workspace, with Open false when there is none.
  */
 export function State(): $CancellablePromise<$models.State> {
     return $Call.ByID(450725618);
+}
+
+/**
+ * UpdateInstall moves an install's record to another folder and reads its version again. If the open workspace uses
+ * the install, that workspace is opened again at once. It returns an error if the install is not recorded or the
+ * folder does not exist.
+ */
+export function UpdateInstall(id: string, path: string): $CancellablePromise<void> {
+    return $Call.ByID(2552603427, id, path);
 }
 
 /**

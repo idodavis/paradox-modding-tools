@@ -49,8 +49,8 @@ var bbcodeTags = map[ast.NodeKind][][2]string{
 	ast.KindFencedCodeBlock:  {{"[code]\n", "\n[/code]\n\n"}},
 }
 
-// toBBCode converts a Markdown description to Steam's BBCode.
-func toBBCode(markdown string) string {
+// ToBBCode converts a Markdown text to Steam's BBCode.
+func (stm *Service) ToBBCode(markdown string) string {
 	var bbcode strings.Builder
 	// writing to a Builder never fails, and the renderers fail only when their writer does
 	_ = converter.Convert([]byte(markdown), &bbcode)

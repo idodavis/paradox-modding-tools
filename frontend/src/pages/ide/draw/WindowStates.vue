@@ -63,13 +63,19 @@ const isHidden = computed(() => chain.value.some((id) => hidden.value.has(id)));
 
 const search = shallowRef("");
 const query = refDebounced(search, 150);
+// whether the boxes hold only the states changed from the window's opening, wherever they apply
+const changedOnly = shallowRef(false);
 // the groups that change what is drawn under the selection, or anywhere with none, that the search finds, by reach; a
 // list of pictures is picked in Properties
 const candidates = computed(() => {
   const selected = file.value.selected ?? 0;
   const needle = query.value.toLowerCase();
+  const applies = (group: Group) =>
+    changedOnly.value && changes.value.length
+      ? group.id in store.picks
+      : (states.value?.applies?.[group.id] ?? []).some((id) => isUnder(id, selected));
   return groups.value
-    .filter((group) => !group.pictures && (states.value?.applies?.[group.id] ?? []).some((id) => isUnder(id, selected)))
+    .filter((group) => !group.pictures && applies(group))
     .filter((group) =>
       [group.subject, group.key, group.label, group.id].some((text) => text?.toLowerCase().includes(needle)),
     )
@@ -316,7 +322,15 @@ function outline(group: Group | null): void {
     </section>
     <div class="mx-3 mt-3 mb-2 flex items-center gap-2">
       <UInput v-model="search" icon="i-lucide-search" size="sm" placeholder="Find a state" class="grow" />
-      <UBadge v-if="changes.length" :label="`${changes.length} changed`" variant="subtle" size="md" />
+      <UButton
+        v-if="changes.length"
+        :label="`${changes.length} changed`"
+        icon="i-lucide-list-filter"
+        :color="changedOnly ? 'primary' : 'neutral'"
+        :variant="changedOnly ? 'soft' : 'outline'"
+        size="sm"
+        @click="changedOnly = !changedOnly"
+      />
       <UButton
         label="Reset"
         icon="i-lucide-rotate-ccw"

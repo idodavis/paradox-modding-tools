@@ -1,8 +1,13 @@
 // gui.go holds the rules for GUI files that every game shares: the words that declare databases, the keys that name
-// widgets, how each built-in type draws, and how a definition names its picture. What differs by game is on the
-// game's row.
+// widgets, how each built-in type draws, how a definition names its picture, and the shapes drawn where a picture has
+// no file. What differs by game is on the game's row.
 
 package game
+
+import (
+	"slices"
+	"strings"
+)
 
 // A WidgetType is how a built-in widget type lays its children out and draws its own text.
 type WidgetType struct {
@@ -47,6 +52,14 @@ type FontRules struct {
 	GroupKey      string // the key of a definition's block for a group of languages
 	LanguagesKey  string // the key in a group of its languages
 	PathsKey      string // the key in a group of its files
+}
+
+// A Placeholder is a shape PMT draws where a picture has no file, for the kinds of object it stands for. The shape is
+// a file among the page's placeholders, and the page tints each in a color of its own.
+type Placeholder struct {
+	Shape   string
+	Kinds   []string // the kinds as keys, data types and data functions write them, in lower-case words ("coat of arms")
+	Runtime bool     // only the running game draws its pictures, from what it holds, so no file is looked for
 }
 
 // Illustrations is where the pictures are that a definition names by a path below a folder: the key that names the
@@ -115,10 +128,14 @@ type GUIRules struct {
 	IconPathFile   string          // the file in an icon folder that names the paths its icons are read from
 	PictureKeys    []string        // the keys a definition names its picture by, tried in this order
 	IconPathSuffix string          // the ending of the defines that name a folder of icons
-	// FolderDefineSuffix and NameDefineSuffix end the defines that say where a data function finds its pictures,
-	// after the kind of object and the field it reads: the folder, and the ending of each file's name.
+	// FolderDefineSuffix, PrefixDefineSuffix and NameDefineSuffix end the defines that say where a data function finds
+	// its pictures, after the kind of object and the field it reads: the folder, the start of each file's name and its
+	// ending.
 	FolderDefineSuffix string
+	PrefixDefineSuffix string
 	NameDefineSuffix   string
+	// DefaultPicture is the name in such a folder of the picture drawn for a definition with none of its own.
+	DefaultPicture string
 	// ShownFirst is the database whose first definition in a GUI file is the one the file shows first, wherever the
 	// file writes it: its main window, which CK3 writes at the top and EU5 after its types.
 	ShownFirst string
@@ -222,9 +239,50 @@ var GUI = GUIRules{
 	IconPathFile:   "path_overrides.txt",
 	PictureKeys:    []string{"icon", "texture"},
 	IconPathSuffix: "_ICON_PATH",
-	// CK3 common/defines/graphic/00_graphics.txt:814-817, GOVERNMENT_TYPE_REALM_FRAME_PATH and _SUFFIX
+	// CK3 common/defines/graphic/00_graphics.txt:814-817, GOVERNMENT_TYPE_REALM_FRAME_PATH and _SUFFIX; EU5
+	// loading_screen/common/defines/graphic/00_graphics.txt:836, GOODS_ICON_PREFIX
 	FolderDefineSuffix: "_PATH",
+	PrefixDefineSuffix: "_PREFIX",
 	NameDefineSuffix:   "_SUFFIX",
+	// CK3 gfx/interface/icons/realm_frames/_default_62_frame.dds, which feudal_government, with no frames of its own,
+	// draws in the game
+	DefaultPicture: "_default",
 	// a file's first entry is a window in 88% of CK3's GUI files with one, 57% of Vic3's and 52% of EU5's
 	ShownFirst: "gui.widget",
+}
+
+// Placeholders are the shapes every game draws where a picture has no file, tried in order after the game's own. The
+// last is the plain icon, which stands for any picture of no listed kind.
+var Placeholders = []Placeholder{
+	{Shape: "illustration", Kinds: []string{"illustration", "image", "picture"}},
+	{Shape: "flag", Kinds: []string{"flag"}},
+	{Shape: "faith", Kinds: []string{"faith", "religion", "religious", "rite", "tenet", "doctrine"}},
+	{Shape: "goods", Kinds: []string{"goods", "resource"}},
+	{Shape: "action", Kinds: []string{"action", "actions", "interaction", "task"}},
+	{Shape: "military", Kinds: []string{"unit", "formation", "battle", "war", "military"}},
+	{Shape: "building", Kinds: []string{"building", "holding", "domicile", "construction", "great project"}},
+	{Shape: "trait", Kinds: []string{"trait", "perk", "role", "tradition", "pillar"}},
+	{Shape: "modifier", Kinds: []string{"modifier"}},
+	{Shape: "concept", Kinds: []string{"concept", "encyclopedia", "article"}},
+	{Shape: "rank", Kinds: []string{"rank", "level", "status"}},
+	{Shape: "map", Kinds: []string{"map", "terrain", "strait", "location"}},
+	{Shape: "message", Kinds: []string{"message", "alert", "notification"}},
+	{Shape: "icon"},
+}
+
+// FindPlaceholder returns the placeholder of a picture, given a phrase that says what the picture is of: the first
+// placeholder, the game's own first, one of whose kinds the phrase holds as whole words. It returns the plain icon
+// where the phrase holds none.
+func (game *Game) FindPlaceholder(phrase string) Placeholder {
+	padded := " " + phrase + " "
+	all := slices.Concat(game.Placeholders, Placeholders)
+	for _, placeholder := range all {
+		isNamed := slices.ContainsFunc(placeholder.Kinds, func(kind string) bool {
+			return strings.Contains(padded, " "+kind+" ")
+		})
+		if isNamed {
+			return placeholder
+		}
+	}
+	return all[len(all)-1]
 }

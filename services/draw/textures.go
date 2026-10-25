@@ -1,5 +1,5 @@
-// textures.go finds what a value shows: the image file that a path, an icon name or a data binding leads to. One
-// library answers each, from the game's definitions, icon folders and defines.
+// textures.go finds what a value shows: the image file that a path, an icon name or a data binding leads to, and the
+// shape drawn where none does. One library answers each, from the game's definitions, icon folders and defines.
 
 package draw
 
@@ -73,84 +73,79 @@ func (library *library) resolveBinding(call jomini.Call) string {
 	return ""
 }
 
-// makePictureList returns what a data binding under a key reads, as the list of the pictures it may draw: the kind of
-// object it reads, the database of that kind, the field it reads and the argument it passes. A binding of two steps or
-// more reads its last step of the object the step before leads to: [GovernmentType.GetRealmFrame('(int32)62')] reads
-// realm_frame of a government with the argument 62. A binding of one step named for a kind and a field reads that
-// field of the object its quoted argument names: [GetConceptTexture('tax_base')] reads texture of the concept
-// tax_base. It also returns the definitions the binding names, the object first where it names one.
+// makePictureList returns what a picture binding under a key reads, as the list of the pictures it may draw, with the
+// definitions it names, the object first where it names one. Its last step reads a field of the object the step
+// before leads to, passing its quoted argument as written: [GovernmentType.GetRealmFrame('(int32)62')] reads
+// realm_frame of a government with the argument 62. Where the step's first words name a kind of object instead, as
+// findKind says, it reads the rest of its words of a definition of that kind, which its quoted argument names:
+// [GetConceptTexture('tax_base')] reads texture of the concept tax_base, and [GetGoodsIcon(Goods.Self)] reads icon of
+// a goods.
 func (library *library) makePictureList(key string, call jomini.Call) (PictureList, []schema.Reference) {
 	last := call.Steps[len(call.Steps)-1]
 	references := library.ws.Schema.ListCallReferences(call, "")
-	list := PictureList{Key: key, Type: findObjectType(library.ws.Schema, call), Field: toField(last.Text)}
+	object := findObjectType(library.ws.Schema, call)
+	argument := ""
 	if len(last.Arguments) > 0 && last.Arguments[0].Quoted {
-		list.Argument = toWrittenValue(last.Arguments[0].Text)
+		argument = last.Arguments[0].Text
 	}
-	if split, ok := library.splitFunction(last); list.Type == "" && len(call.Steps) == 1 && ok {
-		split.Key = key
-		if argument := last.Arguments[0]; argument.Quoted {
-			references = append([]schema.Reference{{Database: split.Database, Name: argument.Text}}, references...)
+	parts := strings.Fields(schema.ToPhrase(trimGetter(last.Text)))
+	if list, ok := library.findKind(parts, object, argument); ok {
+		list.Key = key
+		if argument != "" && list.Folder == "" {
+			references = append([]schema.Reference{{Database: list.Database, Name: argument}}, references...)
 		}
-		return split, references
+		return list, references
 	}
-	list.Database, _ = library.ws.Schema.ResolveTypeDatabase(list.Type)
+	list := PictureList{Key: key, Type: object, Field: toField(last.Text), Argument: toWrittenValue(argument)}
+	list.Database, _ = library.ws.Schema.ResolveTypeDatabase(object)
 	return list, references
 }
 
-// splitFunction splits the name of a data function into a kind of object and the field it reads of one, by its first
-// argument. A data call there gives the kind by its type, whose words or whose database's begin the name:
-// GetGoodsIcon(Goods.Self) reads icon of a goods. A quoted name there must name a definition of the kind's database,
-// the kind tried longest first and, where it names no type's database, looked up among the functions whose quoted
-// arguments are names: GetConceptTexture('tax_base') reads texture of a concept. It returns the list's kind, database
-// and field, and false where no split fits.
-func (library *library) splitFunction(step jomini.Step) (PictureList, bool) {
-	words := strings.Fields(schema.ToPhrase(trimGetter(step.Text)))
-	if len(step.Arguments) == 0 || len(words) < 2 {
-		return PictureList{}, false
-	}
-	if argument := step.Arguments[0].Call; argument != nil {
-		return library.splitByType(words, *argument)
-	}
-	if !step.Arguments[0].Quoted {
-		return PictureList{}, false
-	}
-	if list, ok := library.splitByFolder(words, step.Arguments[0].Text); ok {
-		return list, true
-	}
-	for end := len(words) - 1; end > 0; end-- {
-		kind := strings.Join(words[:end], " ")
-		database, ok := library.ws.Schema.ResolveTypeDatabase(kind)
-		if targets := game.GUI.CallTargets[toCamel(words[:end])]; !ok && len(targets) > 0 {
-			database, ok = targets[0], true
+// findKind returns the kind whose field a data function reads, where the first parts of its name after the getter
+// name one, with the field the rest name. The longest parts are tried first, and at least one is left for the field.
+// Parts name an icon folder whose subfolders hold the image a quoted argument names
+// (GetGraphicalCultureTexture('top_header_bg') reads gfx/interface/graphical_cultures/<culture>/top_header_bg), else a
+// kind with a database, as resolveKind says, of which a quoted argument names a definition. It returns false where no
+// parts name a kind.
+func (library *library) findKind(parts []string, object, argument string) (PictureList, bool) {
+	for end := len(parts) - 1; end > 0; end-- {
+		kind, field := strings.Join(parts[:end], " "), strings.Join(parts[end:], "_")
+		define := library.findIconDefine(kind)
+		list := PictureList{Type: kind, Field: field, Argument: argument, Folder: library.listIconFolders()[define]}
+		if define != "" && argument != "" && len(library.listFolderObjects(list)) > 0 {
+			return list, true
 		}
-		_, defined := findKeptClause(library.ws, library.mods, schema.Reference{Database: database, Name: step.Arguments[0].Text})
-		if ok && defined {
-			kind = game.DescribeDefinition(database, false)
-			return PictureList{Type: kind, Database: database, Field: strings.Join(words[end:], "_")}, true
+		kind, database, ok := library.resolveKind(parts[:end], object)
+		if !ok {
+			continue
+		}
+		_, isDefined := findKeptClause(library.ws, library.mods, schema.Reference{Database: database, Name: argument})
+		if argument == "" || isDefined {
+			return PictureList{Type: kind, Database: database, Field: field}, true
 		}
 	}
 	return PictureList{}, false
 }
 
-// splitByFolder splits the words of a data function's name by an icon folder whose define, in the singular, names the
-// kind they begin with, where that folder's subfolders hold the image the function's quoted argument names:
-// GetGraphicalCultureTexture('top_header_bg') reads a graphical culture's top_header_bg, in
-// gfx/interface/graphical_cultures/<culture>. It returns false where no such folder holds the image.
-func (library *library) splitByFolder(words []string, argument string) (PictureList, bool) {
-	folders := library.listIconFolders()
-	for _, define := range slices.Sorted(maps.Keys(folders)) {
-		folder, stem := folders[define], strings.TrimSuffix(define, game.GUI.IconPathSuffix)
-		kind := game.DescribeDefinition(strings.ToLower(stem), false)
-		length := len(strings.Fields(kind))
-		if length >= len(words) || strings.Join(words[:length], " ") != kind {
-			continue
-		}
-		list := PictureList{Type: kind, Field: strings.Join(words[length:], "_"), Argument: argument, Folder: folder}
-		if len(library.listFolderObjects(list)) > 0 {
-			return list, true
+// resolveKind returns the kind that some parts of a data function's name name, with the database of its definitions:
+// the kind that the type the function is read of and the parts name together (Location and rank are a location rank),
+// else the one the parts name, else the kind of the names that the function the parts make takes (Concept takes game
+// concepts). It returns false where none is.
+func (library *library) resolveKind(parts []string, object string) (kind, database string, ok bool) {
+	phrase := strings.Join(parts, " ")
+	kinds := []string{phrase}
+	if object != "" {
+		kinds = []string{schema.ToPhrase(object) + " " + phrase, phrase}
+	}
+	for _, kind := range kinds {
+		if database, ok := library.ws.Schema.ResolveTypeDatabase(kind); ok {
+			return kind, database, true
 		}
 	}
-	return PictureList{}, false
+	if targets := game.GUI.CallTargets[toCamel(parts)]; len(targets) > 0 {
+		return game.DescribeDefinition(targets[0], false), targets[0], true
+	}
+	return "", "", false
 }
 
 // listFolderObjects returns the subfolders of a list's folder that hold the image its argument names, one per object,
@@ -170,36 +165,12 @@ func (library *library) listFolderObjects(list PictureList) []string {
 	return slices.Compact(objects)
 }
 
-// splitByType splits the words of a data function's name by the type of the data call it is given: the words that
-// begin the name and are the type's, or the singular of the type's database, either without a last word type, are the
-// kind, and the rest the field (GetBuildingIcon(Building.GetType) reads icon of a building type). It returns false where
-// the call's type reaches no database or no such words begin the name.
-func (library *library) splitByType(words []string, argument jomini.Call) (PictureList, bool) {
-	types := library.ws.Schema.ResolveCallTypes(argument, "")
-	if len(types) < len(argument.Steps) {
-		return PictureList{}, false
-	}
-	dataType := types[len(argument.Steps)-1]
-	database, ok := library.ws.Schema.ResolveTypeDatabase(dataType)
-	if !ok {
-		return PictureList{}, false
-	}
-	phrase, singular := schema.ToPhrase(dataType), game.DescribeDefinition(database, false)
-	kinds := []string{phrase, singular, strings.TrimSuffix(phrase, " type"), strings.TrimSuffix(singular, " type")}
-	for _, kind := range lo.Uniq(kinds) {
-		length := len(strings.Fields(kind))
-		if length < len(words) && strings.Join(words[:length], " ") == kind {
-			return PictureList{Type: dataType, Database: database, Field: strings.Join(words[length:], "_")}, true
-		}
-	}
-	return PictureList{}, false
-}
-
 // findShown returns the image file that a list's binding shows of one definition, or of one folder for a list whose
-// objects are folders, where it is the image the argument names. For a definition it is tried in this order: the field of
-// the definition that the binding reads (GetIcon reads icon); the folder that a define names for the kind and the field,
-// as findFolderPicture says; the definition's picture by the game's picture keys, else its name as an icon; the one
-// image it writes, where it writes exactly one. It returns "" if none is found.
+// objects are folders, where it is the image the argument names. For a definition it is tried in this order: the
+// field of the definition that the binding reads (GetIcon reads icon); the file that the defines for the kind and the
+// field name, as findDefinedPicture says; the definition's picture by the game's picture keys, else its name as an
+// icon where the defines name no folder for the picture; the one image it writes, where it writes exactly one. It
+// returns "" if none is found.
 func (library *library) findShown(list PictureList, reference schema.Reference) string {
 	if list.Folder != "" {
 		file, _ := library.mods.ResolveTexture(list.Folder + "/" + reference.Name + "/" + list.Argument)
@@ -214,10 +185,12 @@ func (library *library) findShown(list PictureList, reference schema.Reference) 
 			return file
 		}
 	}
-	if file := library.findFolderPicture(list, reference.Name); file != "" {
+	file, isFolder := library.findDefinedPicture(list, reference.Name)
+	if file != "" {
 		return file
 	}
-	if file := library.findPicture(definition, reference.Name, toDefineWords(list.Type)+game.GUI.IconPathSuffix); file != "" {
+	icon := lo.Ternary(isFolder, "", reference.Name)
+	if file := library.findPicture(definition, icon, library.findIconDefine(list.Type)); file != "" {
 		return file
 	}
 	if images := listDefinitionImages(library.ws, library.mods, definition); len(images) == 1 {
@@ -226,32 +199,54 @@ func (library *library) findShown(list PictureList, reference schema.Reference) 
 	return ""
 }
 
-// findFolderPicture returns the picture of a definition in the folder that a define names for a list's kind and field:
-// <KIND>_<FIELD>_PATH, the file named by the definition's name, the list's argument and the <KIND>_<FIELD>_SUFFIX
-// define, the first two joined by an underscore (gfx/interface/icons/realm_frames/feudal_government_62_frame.dds). It
-// returns "" if the game has no such define or no such file.
-func (library *library) findFolderPicture(list PictureList, name string) string {
-	stem := toDefineWords(list.Type) + "_" + strings.ToUpper(list.Field)
-	folder := library.lookupDefine(stem + game.GUI.FolderDefineSuffix)
-	if folder == "" || list.Field == "" {
-		return ""
+// findDefinedPicture returns the picture of a definition that the defines for a list's kind and field name, as
+// listPictureDefines says: the file named by the prefix, the definition's name and the list's argument joined by an
+// underscore, then the suffix. It is in the folder the defines name, where a definition with no file of its own takes
+// the folder's default (realm_frames/_default_62_frame for feudal_government), else among the icon folders
+// (icon_goods_wheat). The last result is true where the defines name a folder. It returns "" where the defines give
+// none of the three, or no such file is.
+func (library *library) findDefinedPicture(list PictureList, name string) (string, bool) {
+	folder, prefix, suffix := library.listPictureDefines(list)
+	toFile := func(owner string) string {
+		return prefix + strings.Join(lo.Compact([]string{owner, list.Argument}), "_") + suffix
 	}
-	parts := lo.Compact([]string{name, list.Argument})
-	file, _ := library.mods.ResolveTexture(strings.TrimSuffix(folder, "/") + "/" + strings.Join(parts, "_") +
-		library.lookupDefine(stem+game.GUI.NameDefineSuffix))
-	return file
+	if folder == "" {
+		if prefix == "" && suffix == "" {
+			return "", false
+		}
+		return library.findIcon(toFile(name), ""), false
+	}
+	for _, owner := range []string{name, game.GUI.DefaultPicture} {
+		if file, ok := library.mods.ResolveTexture(strings.TrimSuffix(folder, "/") + "/" + toFile(owner)); ok {
+			return file, true
+		}
+	}
+	return "", true
+}
+
+// listPictureDefines returns what the defines for a list's kind and field say of its pictures: <KIND>_<FIELD>_PATH,
+// the folder they are in, and <KIND>_<FIELD>_PREFIX and _SUFFIX, the start and the end of each file's name (CK3's
+// GOVERNMENT_TYPE_REALM_FRAME_SUFFIX, EU5's GOODS_ICON_PREFIX). Each is "" where the game has no such define, and all
+// are for a list that reads no field.
+func (library *library) listPictureDefines(list PictureList) (folder, prefix, suffix string) {
+	if list.Field == "" {
+		return "", "", ""
+	}
+	stem := toDefineWords(list.Type) + "_" + strings.ToUpper(list.Field)
+	return library.lookupDefine(stem + game.GUI.FolderDefineSuffix), library.lookupDefine(stem + game.GUI.PrefixDefineSuffix),
+		library.lookupDefine(stem + game.GUI.NameDefineSuffix)
 }
 
 // findPicture returns the image file of a definition: the first of the game's picture keys that its block writes, else
-// its name, found as a path or an icon name. The folder of the preferred define is searched first for an icon. It
-// returns "" if neither leads to a file.
-func (library *library) findPicture(definition clause, name, preferred string) string {
+// the given icon name, found as a path or an icon name. The folder of the preferred define is searched first for an
+// icon. It returns "" if neither leads to a file; an empty icon name leads to none.
+func (library *library) findPicture(definition clause, icon, preferred string) string {
 	for _, key := range game.GUI.PictureKeys {
 		if picture, ok := definition.tree.FindChildValue(definition.statement, key); ok && picture != "" {
 			return library.findFile(picture, preferred)
 		}
 	}
-	return library.findFile(name, preferred)
+	return library.findFile(icon, preferred)
 }
 
 // findFirstShown returns the first object a list picks among that the list's binding shows a picture of, with that
@@ -311,15 +306,13 @@ func (library *library) pickPicture(list PictureList, picked string) Choice {
 }
 
 // canShowMany reports whether more than the first definition of a list's database may show the list's picture: the
-// database's definitions write the field the binding reads, a define names a folder for the kind and the field, or the
-// kind has an icon folder.
+// database's definitions write the field the binding reads, the defines for the kind and the field say where its
+// pictures are, or the kind has an icon folder.
 func (library *library) canShowMany(list PictureList) bool {
 	database := library.ws.Schema.Databases[list.Database]
 	hasField := database != nil && database.Definition != nil && database.Definition.Children[list.Field] != nil
-	stem := toDefineWords(list.Type)
-	_, hasIcons := library.listIconFolders()[stem+game.GUI.IconPathSuffix]
-	hasFolder := list.Field != "" && library.lookupDefine(stem+"_"+strings.ToUpper(list.Field)+game.GUI.FolderDefineSuffix) != ""
-	return hasField || hasFolder || hasIcons
+	folder, prefix, suffix := library.listPictureDefines(list)
+	return hasField || library.findIconDefine(list.Type) != "" || folder+prefix+suffix != ""
 }
 
 // lookupDefine returns the value of the define with the given name, as the game reads it, or "" if the game has none.
@@ -338,9 +331,9 @@ func (library *library) lookupDefine(name string) string {
 	return value
 }
 
-// findFile returns the image file that a texture value names: a path, else an icon name or a path below an icon folder
-// (modifier_types/is_appointed_as_heir). The folder of the preferred define is searched first for an icon. It returns ""
-// if neither names a file the game reads.
+// findFile returns the image file that a texture value names: a path, else an icon name or a path below an icon
+// folder (modifier_types/is_appointed_as_heir). The folder of the preferred define is searched first for an icon. It
+// returns "" if neither names a file the game reads.
 func (library *library) findFile(written, preferred string) string {
 	if file, ok := library.mods.ResolveTexture(written); ok {
 		return file
@@ -366,6 +359,20 @@ func (library *library) findIcon(icon, preferred string) string {
 		}
 		if file := library.findOverride(folders[define], stem); file != "" {
 			return file
+		}
+	}
+	return ""
+}
+
+// findIconDefine returns the define that names the icon folder of a kind of object, which it writes in the singular or
+// the plural: GRAPHICAL_CULTURES_ICON_PATH for a graphical culture. It returns "" where no define does.
+func (library *library) findIconDefine(kind string) string {
+	folders := library.listIconFolders()
+	phrase := schema.ToPhrase(kind)
+	for _, define := range slices.Sorted(maps.Keys(folders)) {
+		stem := strings.ToLower(strings.TrimSuffix(define, game.GUI.IconPathSuffix))
+		if game.DescribeDefinition(stem, false) == phrase {
+			return define
 		}
 	}
 	return ""
@@ -439,8 +446,8 @@ func trimGetter(function string) string {
 
 // toCamel joins lower-case words into the camel case a data function's name is written in: game concept is
 // GameConcept.
-func toCamel(words []string) string {
-	return strings.Join(lo.Map(words, func(word string, _ int) string { return lo.Capitalize(word) }), "")
+func toCamel(parts []string) string {
+	return strings.Join(lo.Map(parts, func(part string, _ int) string { return lo.Capitalize(part) }), "")
 }
 
 // toDefineWords returns a kind of object as the defines write it: GovernmentType and government type are
@@ -449,38 +456,49 @@ func toDefineWords(kind string) string {
 	return strings.ToUpper(strings.ReplaceAll(schema.ToPhrase(kind), " ", "_"))
 }
 
-// resolveBindings gives a widget the textures of its picture bindings that name no definition as written, read
-// through the data contexts the widget reads in: [Trait.GetIcon] in a widget that reads [GetTrait('brave')] draws
-// brave's icon. A portrait with no file draws the game's silhouette, and a picture binding that still leads to no
-// file draws the game's placeholder for the data type of its object, if the game has one, else what
-// resolveListedPicture finds.
+// resolveBindings gives a widget the files that its pictures' bindings lead to, read through the data contexts the
+// widget reads in: [Trait.GetIcon] in a widget that reads [GetTrait('brave')] draws brave's icon, as
+// resolveListedPicture finds. No file is looked for a picture that only the running game draws, such as a portrait. A
+// picture that leads to no file gives its widget the shape of what it is of, as describePicture says, unless the
+// widget is a background, which only dresses its holder.
 func (resolver *resolver) resolveBindings(widget *Widget, context context) {
 	for _, property := range widget.Properties {
-		call, isCall := jomini.ParseBracketed(property.Value, 0)
-		_, hasTexture := widget.Textures[property.Key]
-		isPicture := property.Key == game.GUI.CoatKey || slices.Contains(game.GUI.PictureKeys, property.Key)
-		if hasTexture || !isCall && property.Key != game.GUI.PortraitKey {
+		isPicture := property.Key == game.GUI.PortraitKey || property.Key == game.GUI.CoatKey ||
+			slices.Contains(game.GUI.PictureKeys, property.Key)
+		if !isPicture || property.Value == "" || widget.Textures[property.Key] != "" {
 			continue
 		}
-		call = context.reach(resolver.ws.Schema.ResolveMacro(call, context.latest))
-		placeholder, hasPlaceholder := resolver.ws.Game.Placeholders[findObjectType(resolver.ws.Schema, call)]
-		switch {
-		case property.Key == game.GUI.PortraitKey:
-			widget.Placeholder = resolver.ws.Game.Portrait
-		case !isPicture:
-		case hasPlaceholder:
-			widget.Placeholder = placeholder
-		default:
+		call, isCall := jomini.ParseBracketed(property.Value, 0)
+		if isCall {
+			call = context.reach(resolver.ws.Schema.ResolveMacro(call, context.latest))
+		}
+		placeholder := resolver.ws.Game.FindPlaceholder(resolver.describePicture(property, call))
+		if isCall && !placeholder.Runtime {
 			resolver.resolveListedPicture(widget, property.Key, call)
 		}
+		if widget.Textures[property.Key] == "" && widget.Role != "skin" && widget.Placeholder == "" {
+			widget.Placeholder = placeholder.Shape
+		}
 	}
+}
+
+// describePicture returns the phrase that says what a picture is of, which its placeholder is chosen by: its key, the
+// object its binding's last step reads, and that step without the getter (Location.GetRankIcon under texture is
+// texture location rank icon). A picture written as a path gives the path's folders and name. The binding is the zero
+// call for a path.
+func (resolver *resolver) describePicture(property Property, call jomini.Call) string {
+	if len(call.Steps) == 0 {
+		return schema.ToPhrase(property.Key + " " + strings.NewReplacer("/", " ", ".", " ").Replace(property.Value))
+	}
+	object, last := findObjectType(resolver.ws.Schema, call), trimGetter(call.Steps[len(call.Steps)-1].Text)
+	return schema.ToPhrase(property.Key + " " + object + " " + last)
 }
 
 // resolveListedPicture gives a widget the picture that a binding under the given key draws, and where the pictures it
 // may draw are listed: what the binding shows of a definition it names; else the images of the first definition it
 // names that writes several, listed to pick among; else, where it names no object of its kind, what it shows of the
-// first definition of that kind that shows one, those definitions listed to pick among. A widget given a list already
-// keeps it.
+// first definition of that kind that shows one, those definitions listed to pick among; else the default picture of
+// the folder the defines name for the kind and the field (disasters/_default). A widget given a list already keeps it.
 func (resolver *resolver) resolveListedPicture(widget *Widget, key string, call jomini.Call) {
 	ws, mods, library := resolver.ws, resolver.mods, resolver.library
 	list, references := library.makePictureList(key, call)
@@ -503,13 +521,16 @@ func (resolver *resolver) resolveListedPicture(widget *Widget, key string, call 
 			return
 		}
 	}
-	if list.Database == "" && list.Folder == "" {
-		return
+	if list.Database != "" || list.Folder != "" {
+		if name, file := library.findFirstShown(list); file != "" {
+			widget.Textures[key] = file
+			list.Shown = name
+			widget.Pictures = &list
+			return
+		}
 	}
-	if name, file := library.findFirstShown(list); file != "" {
+	if file, _ := library.findDefinedPicture(list, ""); file != "" {
 		widget.Textures[key] = file
-		list.Shown = name
-		widget.Pictures = &list
 	}
 }
 

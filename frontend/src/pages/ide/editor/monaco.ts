@@ -18,7 +18,7 @@ import { useSettingsStore } from "../../../stores/settings";
 import { registerConflicts } from "./conflicts";
 import { LOCALIZATION, SCRIPT } from "./grammars";
 import { openModel, setupModels } from "./models";
-import { registerProviders } from "./providers";
+import { labelService, registerProviders } from "./providers";
 
 // each language with its grammar and its characters of a word
 const LANGUAGES = [
@@ -73,12 +73,12 @@ const SYNTAX: Record<string, string> = {
 const defined = new Set<string>();
 
 /**
- * Sets Monaco up, once, before the first editor: its worker and the text model service, the languages, the palette's
- * keys inside an editor, the providers and the conflict links.
+ * Sets Monaco up, once, before the first editor: its worker, the text model and label services, the languages, the
+ * palette's keys inside an editor, the providers and the conflict links.
  */
 export function setupMonaco(): void {
   self.MonacoEnvironment = { getWorker: () => new EditorWorker() };
-  // Monaco takes its services from the first editor made, so a throwaway one carries the text model service
+  // Monaco takes its services from the first editor made, so a throwaway one carries the app's own
   monaco.editor
     .create(
       document.createElement("div"),
@@ -91,6 +91,7 @@ export function setupMonaco(): void {
             return { object: { textEditorModel: (await openModel(place)).model }, dispose: () => undefined };
           },
         },
+        labelService,
       },
     )
     .dispose();

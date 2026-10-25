@@ -642,7 +642,7 @@
   }
 }
 
-/* a peek's file rows (ide/monacoEditor.ts): a dot in their origin's color before the name */
+/* a peek's file rows (ide/editor/providers.ts): a dot in their origin's color before the name */
 .monaco-editor .reference-file .label-name::before {
   content: "";
   display: inline-block;

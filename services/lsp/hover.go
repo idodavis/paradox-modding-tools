@@ -114,7 +114,7 @@ func (lsp *Service) describeHit(ws *workspace.Session, tree *jomini.Tree, place 
 		return nil
 	}
 	mods, context := ws.Mods.Load(), &visitor.context
-	reference = resolveCall(mods, place, reference)
+	reference = resolveHit(mods, place, reference, context.References)
 	card := &Card{
 		Title: tree.Unquoted(span), Range: ToRange(tree.Src, tree.Lines, span), Scopes: listScopes(context),
 		Within: visitor.within,
@@ -124,7 +124,8 @@ func (lsp *Service) describeHit(ws *workspace.Session, tree *jomini.Tree, place 
 		describeKey(ws, place, card, reference)
 	case reference.Name != "":
 		card.What = game.DescribeDefinition(reference.Database, false)
-		card.Sites, card.Image = listSites(ws, mods, place, reference), describeImage(mods, reference)
+		card.Sites, card.Image, card.Color = listSites(ws, mods, place, reference), describeImage(mods, reference),
+			findDefinedColor(ws, mods, place, reference)
 		if slices.Contains(ws.Schema.FireDatabases, reference.Database) {
 			card.Node = reference.ToID()
 		}
@@ -393,6 +394,23 @@ func describeImage(mods *index.Index, reference schema.Reference) *texture.Heade
 		return nil
 	}
 	return &header
+}
+
+// findDefinedColor returns the CSS color that the definition the game keeps of a reference writes as its block, as a
+// named color does, seen from the given file. It returns "" if the game keeps none or its block is no color.
+func findDefinedColor(ws *workspace.Session, mods *index.Index, place workspace.Place, reference schema.Reference) string {
+	winner, ok := findKept(ws, mods, reference, place.Path)
+	if !ok {
+		return ""
+	}
+	tree, statement, err := ws.FindStatement(mods, winner.Site)
+	if err != nil {
+		return ""
+	}
+	if color, ok := game.ToColor(tree, statement); ok {
+		return color.ToCSS()
+	}
+	return ""
 }
 
 // describeNumber gives a card the number that the text at the given span stands for. The card has none if the text is

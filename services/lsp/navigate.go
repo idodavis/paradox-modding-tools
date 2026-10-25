@@ -70,23 +70,26 @@ func findReference(ws *workspace.Session, tree *jomini.Tree, place workspace.Pla
 	visitor := &hoverVisitor{offset: offset}
 	ws.Schema.WalkTo(tree, place.File, offset, visitor)
 	span, reference := findHit(tree, visitor)
-	return span, resolveCall(ws.Mods.Load(), place, reference)
+	return span, resolveHit(ws.Mods.Load(), place, reference, visitor.context.References)
 }
 
-// resolveCall returns the given reference with the database of a call filled in. A call may name any callable database,
-// so the first one that defines the name is used. The database stays empty if none does. Any other reference is
-// returned as it is.
-func resolveCall(mods *index.Index, place workspace.Place, reference schema.Reference) schema.Reference {
-	if reference.Database != game.AnyCall {
-		return reference
+// resolveHit returns the reference that the name under the cursor makes, of the given references written at its span:
+// the first whose database defines the name, as seen from the given file, as a value that may be a language or a
+// dialect is either. A call that may name any callable database stands for one reference per callable database. If
+// none defines the name, the given reference is returned, with no database for a call.
+func resolveHit(mods *index.Index, place workspace.Place, reference schema.Reference, references []schema.Reference) schema.Reference {
+	candidates := lo.Filter(references, func(other schema.Reference, _ int) bool { return other.Span == reference.Span })
+	if reference.Database == game.AnyCall {
+		candidates = index.ListCallees(reference)
 	}
-	callees := index.ListCallees(reference)
-	if position := slices.IndexFunc(callees, func(callee schema.Reference) bool {
-		return len(mods.ResolveLocal(callee, place.Path)) > 0
+	if position := slices.IndexFunc(candidates, func(candidate schema.Reference) bool {
+		return len(mods.ResolveLocal(candidate, place.Path)) > 0
 	}); position >= 0 {
-		return callees[position]
+		return candidates[position]
 	}
-	reference.Database = ""
+	if reference.Database == game.AnyCall {
+		reference.Database = ""
+	}
 	return reference
 }
 

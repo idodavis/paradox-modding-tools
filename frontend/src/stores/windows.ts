@@ -103,7 +103,7 @@ export const useWindowsStore = defineStore("windows", () => {
   /** What this window holds, as the others see it. */
   const state = computed<WindowState>(() => ({
     name: THIS_WINDOW,
-    files: [...new Set(listTabs().map((tab) => parseTab(tab.id).key))],
+    files: [...new Set(editor.listTabs().map((tab) => parseTab(tab.id).key))],
     folders: THIS_WINDOW.startsWith("files:") ? [THIS_WINDOW.slice("files:".length)] : [],
     page: THIS_WINDOW.startsWith("page:") ? THIS_WINDOW.slice("page:".length) : null,
   }));
@@ -123,7 +123,7 @@ export const useWindowsStore = defineStore("windows", () => {
   Events.On("window:closing", ({ data }) => {
     if (data !== THIS_WINDOW) return;
     if (THIS_WINDOW !== "main") {
-      const mine = listTabs();
+      const mine = editor.listTabs();
       shared.post({ type: "closing", from: THIS_WINDOW, tabs: mine.flatMap(toHanded) });
       mine.forEach((tab) => editor.close(tab.id));
     }
@@ -139,11 +139,6 @@ export const useWindowsStore = defineStore("windows", () => {
     const channel = links.get(name) ?? useBroadcastChannel<Message, Message>({ name: `pmt.window.${name}` });
     links.set(name, channel);
     return channel;
-  }
-
-  /** Lists every tab of every group in this window. */
-  function listTabs(): Tab[] {
-    return editor.layout().rows.flatMap((row) => row.columns.flatMap((group) => group.tabs));
   }
 
   /** Sends the other windows what this window holds. */
@@ -171,7 +166,7 @@ export const useWindowsStore = defineStore("windows", () => {
 
   /** Sends the asking window a tab of this one, and closes it here. */
   function sendTab(tabId: string, asker: WindowName): void {
-    const tab = listTabs().find((other) => other.id === tabId);
+    const tab = editor.listTabs().find((other) => other.id === tabId);
     if (!tab) return;
     link(asker).post({ type: "tab-handed", from: THIS_WINDOW, tabs: toHanded(tab) });
     editor.close(tab.id);
@@ -237,7 +232,7 @@ export const useWindowsStore = defineStore("windows", () => {
       .rows.flatMap((row) => row.columns)
       .find((candidate) => candidate.id === what.group);
     const url = `/?window=${encodeURIComponent(target)}${route.href}`;
-    const tabs = what.tab ? listTabs().filter((tab) => tab.id === what.tab) : (group?.tabs ?? []);
+    const tabs = what.tab ? editor.listTabs().filter((tab) => tab.id === what.tab) : (group?.tabs ?? []);
     open({ name: target, url, tabs: tabs.flatMap(toHanded) });
   };
 

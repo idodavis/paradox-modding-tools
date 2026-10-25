@@ -57,8 +57,8 @@ type Widget struct {
 	Properties  []Property        `json:"properties"`
 	Texts       map[string]string `json:"texts"`    // by property key; a data binding shows as […]
 	Textures    map[string]string `json:"textures"` // by property key; the image file for the property's path
-	// Placeholder is the file among the page's placeholders that it draws where its picture has no file: the game's
-	// silhouette for a portrait, else the game's placeholder for what the picture is of. It is "" for none.
+	// Placeholder is the shape among the page's placeholders that it draws where its picture has no file, by what the
+	// picture is of, as game.FindPlaceholder says. It is "" for a widget with a picture, a background or no picture.
 	Placeholder string `json:"placeholder"`
 	// Pictures is where the pictures are listed that its picture binding may draw, where no file is found for the
 	// binding as written. It draws the first of them; nil means no list.

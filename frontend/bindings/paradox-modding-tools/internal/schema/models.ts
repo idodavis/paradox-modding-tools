@@ -73,6 +73,11 @@ export interface Expected {
      * a number written as a script value too, as a docs' type term says
      */
     "values"?: boolean;
+
+    /**
+     * a name of a database nested in Database too, as a language's dialect
+     */
+    "nested"?: boolean;
 }
 
 /**

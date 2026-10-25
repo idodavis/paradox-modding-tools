@@ -50,12 +50,6 @@ export interface Game {
      * the descriptor file's path from the mod's root
      */
     "descriptor"?: string;
-
-    /**
-     * Portrait is the silhouette of one of its characters, from its period, that PMT draws where a portrait would be:
-     * the name of its file among the page's placeholders.
-     */
-    "portrait": string;
 }
 
 /**

@@ -48,6 +48,11 @@ export interface Detail {
     "portraits": string[] | null;
 
     /**
+     * the shape among the page's placeholders each portrait is drawn as
+     */
+    "silhouette": string;
+
+    /**
      * the path of the picture found; "" if there is none
      */
     "background": string;

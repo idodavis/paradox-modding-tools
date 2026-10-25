@@ -3,11 +3,10 @@
   and folds belong to the splitter, not to the store. A window that holds one part of the IDE shows that part alone.
 -->
 <script setup lang="ts">
-import { computed, onActivated, onBeforeUnmount, onDeactivated, shallowRef, useTemplateRef, watch } from "vue";
+import { computed, nextTick, onActivated, onDeactivated, shallowRef, useTemplateRef, watch } from "vue";
 import { useMutation, useQuery } from "@pinia/colada";
 import { useEventBus, useLocalStorage } from "@vueuse/core";
 import { Dialogs } from "@wailsio/runtime";
-import { editor as monacoEditor, MarkerSeverity } from "monaco-editor/editor/editor.api";
 import type { SplitterItem } from "@nuxt/ui";
 
 import * as app from "@services/app/service";
@@ -16,6 +15,7 @@ import type { Place } from "@services/workspace/models";
 
 import { plural } from "../../lib/format";
 import {
+  codesQuery,
   fileQuery,
   gitStatusQuery,
   indentationQuery,
@@ -41,7 +41,7 @@ import IdePanel from "./IdePanel.vue";
 import SearchView from "./SearchView.vue";
 import SourceControlView from "./SourceControlView.vue";
 import WikiPane from "./WikiPane.vue";
-import { findModel } from "./editor/models";
+import { findModel, listOpenProblems } from "./editor/models";
 import { parseTab, VIEWS } from "./editor/tabs";
 
 const { id } = defineProps<{ id: string }>();
@@ -177,9 +177,23 @@ const panes = computed<SplitterItem[]>(() => [
 const editorPanes = computed<SplitterItem[]>(() => [
   ...(layout.value === "panel" ? [] : [{ id: "code", slot: "code", order: 1, minSize: 50 }]),
   ...(layout.value === "panel" || panel.value
-    ? [{ id: "panel", slot: "panel", order: 2, sizeUnit: PIXELS, defaultSize: 200, minSize: 120 }]
+    ? [
+        {
+          id: "panel",
+          slot: "panel",
+          order: 2,
+          sizeUnit: PIXELS,
+          defaultSize: 200,
+          minSize: 120,
+          collapsible: layout.value === "full",
+          collapsedSize: 0,
+        },
+      ]
     : []),
 ]);
+// the panel dragged closed turns off, and turned on again it opens at the size it had
+const editorSplitter = useTemplateRef("editorSplitter");
+watch(panel, (tab) => tab && void nextTick(() => editorSplitter.value?.panelsRef.at(-1)?.expand()));
 const explorerPanes = computed<SplitterItem[]>(() => [
   {
     id: "mods",
@@ -195,16 +209,15 @@ const explorerPanes = computed<SplitterItem[]>(() => [
 ]);
 const panelTab = computed(() => PANEL.find((tab) => tab.value === panel.value)?.value ?? "problems");
 
-// the problems of the open files are Monaco's markers
-const markersChanged = shallowRef(0);
-const subscription = monacoEditor.onDidChangeMarkers(() => markersChanged.value++);
-onBeforeUnmount(() => subscription.dispose());
+// the counts are of the problems the panel lists: those Go found in the files open in tabs
+const { data: codes } = useQuery(codesQuery);
 const problems = computed(() => {
-  void markersChanged.value;
-  const markers = monacoEditor.getModelMarkers({});
+  const severities = listOpenProblems(editor.listTabs(), codes.value ?? []).flatMap((file) =>
+    file.problems.map(({ code }) => code.severity),
+  );
   return {
-    errors: markers.filter((marker) => marker.severity === MarkerSeverity.Error).length,
-    warnings: markers.filter((marker) => marker.severity === MarkerSeverity.Warning).length,
+    errors: severities.filter((severity) => severity === 1).length,
+    warnings: severities.filter((severity) => severity === 2).length,
   };
 });
 
@@ -427,7 +440,14 @@ const describePlace = (place: Place) => `${workspace.originName(place.origin)} Â
         </aside>
       </template>
       <template #editors>
-        <USplitter :items="editorPanes" orientation="vertical" auto-save-id="pmt.ide.editors" class="min-w-0 flex-1">
+        <USplitter
+          ref="editorSplitter"
+          :items="editorPanes"
+          orientation="vertical"
+          auto-save-id="pmt.ide.editors"
+          class="min-w-0 flex-1"
+          @collapse="(index) => editorPanes[index]?.id === 'panel' && (panel = '')"
+        >
           <template #code>
             <div class="flex min-h-0 min-w-0 flex-1">
               <EditorLayout />

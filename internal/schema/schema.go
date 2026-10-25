@@ -49,6 +49,7 @@ type Expected struct {
 	Database string    `json:"database,omitempty"`
 	Choices  []string  `json:"choices,omitempty"`
 	Values   bool      `json:"values,omitempty"` // a number written as a script value too, as a docs' type term says
+	Nested   bool      `json:"nested,omitempty"` // a name of a database nested in Database too, as a language's dialect
 }
 
 // Vanilla is what the game's own files write at a field.
@@ -70,6 +71,7 @@ type Claims struct {
 	Required Claim[string] // optional, always or conditional
 	Default  Claim[string]
 	Blurb    Claim[string]
+	Keys     Claim[string] // the database whose definitions its block's keys name, as a culture's opinions name cultures
 }
 
 // A Field is one key that may be written in a definition, with what it takes and the fields that may be written
@@ -105,7 +107,8 @@ type Example struct {
 // A Database is one database of the game: the field tree of its definitions and the game's rows that govern it.
 type Database struct {
 	Name       string
-	Folder     string // the folder or file its definitions are written in; "" for a nested database
+	Folder     string   // the folder or file its definitions are written in; "" for a nested database
+	Nested     []string // the databases whose definitions are keys inside its own
 	Definition *Field
 	Row        game.Database   // where its definitions are written and how each is named
 	Callable   game.Callable   // the words that call its definitions; zero when nothing calls them
@@ -310,8 +313,13 @@ func (schema *Schema) buildDatabases(row *game.Game, folders []string) {
 		schema.buildDatabase(row, game.ToDatabase(folder), folder, rule)
 	}
 	for _, nesting := range slices.Concat(row.Nestings, game.Nestings) {
-		if nesting.Database != "" {
-			schema.buildDatabase(row, game.ToDatabase(nesting.Parent)+"."+nesting.Database, "", game.Database{Target: nesting.Target})
+		if nesting.Database == "" {
+			continue
+		}
+		label := game.ToDatabase(nesting.Parent) + "." + nesting.Database
+		schema.buildDatabase(row, label, "", game.Database{Target: nesting.Target})
+		if parent := schema.Databases[game.ToDatabase(nesting.Parent)]; parent != nil && !slices.Contains(parent.Nested, label) {
+			parent.Nested = append(parent.Nested, label)
 		}
 	}
 	for _, declaring := range game.GUI.Declares {

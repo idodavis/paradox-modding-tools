@@ -26,7 +26,7 @@ const files = computed(() => {
     const count = hits?.length ?? 0;
     const open = lineCount < OPEN_HITS !== flips.value.has(place.key);
     if (open) lineCount += count;
-    const folder = [workspace.originName(place.origin), place.folder].filter(Boolean).join(" › ");
+    const folder = workspace.describeFolder(place);
     return { place, count, lines: open ? (hits ?? []).map(describe) : [], open, folder };
   });
 });

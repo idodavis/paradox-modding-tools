@@ -1,6 +1,6 @@
 /**
  * The workspace store: the active workspace id, kept in local storage, and the facts of the open workspace that
- * every page reads: whether it is open, and each origin's name and color.
+ * every page reads: whether it is open, each origin's name and color, and a file's folder as lists show it.
  */
 import { defineStore } from "pinia";
 import { useMutation, useQuery } from "@pinia/colada";
@@ -9,6 +9,7 @@ import { Events } from "@wailsio/runtime";
 
 import * as workspace from "@services/workspace/service";
 import type { Workspace } from "@services/app/models";
+import type { Place } from "@services/workspace/models";
 import { gamesQuery, installsQuery, modsQuery, stateQuery, workspacesQuery } from "../queries";
 import ConfirmModal from "../ui/ConfirmModal.vue";
 
@@ -59,6 +60,9 @@ export const useWorkspaceStore = defineStore("workspace", () => {
     return games.value?.find((game) => game?.id === install?.game)?.name ?? origin;
   };
 
+  /** The folder of a file as a list of files shows it: its origin's name, then the folder in it unless at the root. */
+  const describeFolder = (place: Place): string => [originName(place.origin), place.folder].filter(Boolean).join(" › ");
+
   /**
    * An origin's color as CSS: a slot as its variable, a custom color as it is. The game's files take the active
    * workspace's game color. An origin with no color gets the game's own. The second parameter is the mod's color
@@ -97,5 +101,5 @@ export const useWorkspaceStore = defineStore("workspace", () => {
     return confirmed === true;
   }
 
-  return { activeId, isOpen, originName, originColor, isCustom, open, remove };
+  return { activeId, isOpen, originName, describeFolder, originColor, isCustom, open, remove };
 });

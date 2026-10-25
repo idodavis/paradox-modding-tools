@@ -67,11 +67,6 @@ const FILL = { size: "100% 100%", position: "0 0" };
 /** The custom properties sent with an image's path, from which Go cuts one frame out of a sprite sheet. */
 const CUTS = ["frame", "framesize", "framegrid", "density"];
 
-/** The glyph that stands for a picture no file leads to and no placeholder of the game's stands for. */
-const GLYPH = `<svg viewBox="0 0 24 24" width="48" height="48" fill="none" stroke="currentColor" stroke-width="2"
-  stroke-linecap="round" stroke-linejoin="round" style="max-width:100%;max-height:100%"><rect width="18" height="18"
-  x="3" y="3" rx="2"/><circle cx="9" cy="9" r="2"/><path d="m21 15-3.086-3.086a2 2 0 0 0-2.828 0L6 21"/></svg>`;
-
 /** The icon of a widget's type: what it shows, or how it holds its children. Any other type is a plain box. */
 export const TYPE_ICONS: Record<string, string> = {
   window: "i-lucide-app-window",
@@ -164,7 +159,7 @@ export const PROPERTIES: Readonly<
   maxhorizontalslots: makeWikiRow(makeCount("grid-template-columns")),
   maxverticalslots: makeWikiRow(makeCount("grid-template-rows")),
   flipdirection: makeWikiRow(makeChoice({ yes: { "grid-auto-flow": "column" } })),
-  autoresizescrollarea: makeWikiRow(makeChoice({ yes: { overflow: "visible", contain: "none" } })),
+  autoresizescrollarea: makeWikiRow(makeChoice({ yes: { contain: "none" } })),
   align: makeWikiRow(makeAnchor("--align")),
   autoresize: makeWikiRow(makeChoice({ yes: { width: "max-content", height: "max-content" } })),
   multiline: makeWikiRow(makeChoice({ yes: { [`${TEXT}white-space`]: "pre-wrap" } })),
@@ -175,8 +170,6 @@ export const PROPERTIES: Readonly<
   },
   fontsize: { apply: makeLength(`${TEXT}font-size`), source: GAME_FILES },
   fontcolor: { apply: makeColor(`${TEXT}color`), source: GAME_FILES },
-  texture: { apply: (_value, style) => style.setProperty("--pictured", "1"), source: WIKI },
-  icon: { apply: (_value, style) => style.setProperty("--pictured", "1"), source: WIKI },
   gfxtype: {
     apply: makeChoice({ linegfx: { "--line": "1" } }),
     source: "observed: a line draws its texture along its points, which only the running game has",
@@ -330,13 +323,14 @@ function buildWidget(scene: Scene, widget: Widget, holder: Widget | null): HTMLE
 
 /**
  * Gives a widget the values the states choose for its properties, each in place of the choice its property writes,
- * with the texts and image files they lead to.
+ * with the texts and image files they lead to. An image file chosen for its picture takes the place of its placeholder.
  */
 function applyChoices(widget: Widget, choices: Choice[]): Widget {
   if (!choices.length) return widget;
   const values = new Map(choices.map((choice) => [choice.key, choice.value]));
   const toRecord = (field: "text" | "texture") =>
     Object.fromEntries(choices.flatMap((choice) => (choice[field] ? [[choice.key, choice[field]]] : [])));
+  const textures = toRecord("texture");
   return {
     ...widget,
     properties: (widget.properties ?? []).map((property) => ({
@@ -344,7 +338,8 @@ function applyChoices(widget: Widget, choices: Choice[]): Widget {
       value: values.get(property.key) ?? property.value,
     })),
     texts: { ...widget.texts, ...toRecord("text") },
-    textures: { ...widget.textures, ...toRecord("texture") },
+    textures: { ...widget.textures, ...textures },
+    placeholder: Object.keys(textures).length ? "" : widget.placeholder,
   };
 }
 
@@ -449,9 +444,8 @@ function applyBox(children: HTMLElement[], along: "x" | "y"): void {
 }
 
 /**
- * Builds a widget's textures, its placeholder and its text. A picture that no file leads to draws the game's
- * placeholder for it where Go names one, else the glyph; a background, which only dresses its holder, draws nothing
- * then, so no glyph sits over what the window holds. A line draws no picture.
+ * Builds a widget's textures, the placeholder Go names for a picture of it that has no file, over them, and its text.
+ * A portrait's silhouette sits over its transparent texture this way. A line draws no picture.
  */
 function buildPictures(widget: Widget, element: HTMLElement): HTMLElement[] {
   const isLine = findVariable(element, "--line") !== "";
@@ -462,10 +456,8 @@ function buildPictures(widget: Widget, element: HTMLElement): HTMLElement[] {
     pictures.push(buildTextures(own, widget.overlays ?? [], element.style));
     // the wiki: a widget with a texture and no size is the texture's size
     if (!findVariable(element, "width") && !findVariable(element, "height")) pictures.push(buildSizer(own));
-  } else if (findVariable(element, "--pictured") && !widget.placeholder && !isLine && widget.role !== "skin") {
-    pictures.push(buildGlyph());
   }
-  if (widget.placeholder) pictures.push(buildPlaceholder(widget.placeholder));
+  if (widget.placeholder && !isLine) pictures.push(buildPlaceholder(widget.placeholder));
   const text = buildText(widget, element);
   return text ? [...pictures, text] : pictures;
 }
@@ -617,26 +609,10 @@ function isSliced(sprite: Sprite): boolean {
   return sprite.border.some(Boolean);
 }
 
-/** Builds the glyph over a widget that stands for a picture the game supplies through a binding, or no file has. */
-function buildGlyph(): HTMLElement {
+/** Builds the placeholder of the given shape over a widget whose picture has no file. Its file says how it lies there. */
+function buildPlaceholder(shape: string): HTMLElement {
   const holder = document.createElement("div");
-  holder.style.cssText = "position: absolute; inset: 0; display: grid; place-items: center; color: var(--link)";
-  holder.innerHTML = GLYPH;
-  return holder;
-}
-
-/**
- * Builds the placeholder in the given file over a widget whose picture only the running game draws, in the glyph's
- * color. The file says how the placeholder lies in the widget.
- */
-function buildPlaceholder(file: string): HTMLElement {
-  const holder = document.createElement("div");
-  applyCss(holder.style, {
-    position: "absolute",
-    inset: "0",
-    background: "var(--link)",
-    mask: `${findPlaceholder(file)} 0 0 / 100% 100% no-repeat`,
-  });
+  applyCss(holder.style, { position: "absolute", inset: "0", ...findPlaceholder(shape) });
   return holder;
 }
 

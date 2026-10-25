@@ -25,6 +25,7 @@ type Detail struct {
 	Linked     map[string]Node `json:"linked"` // the node at the other end of each of those firings, by its id
 	References []Node          `json:"references"`
 	Portraits  []string        `json:"portraits"`  // the characters the event's portraits show
+	Silhouette string          `json:"silhouette"` // the shape among the page's placeholders each portrait is drawn as
 	Background string          `json:"background"` // the path of the picture found; "" if there is none
 }
 
@@ -89,6 +90,7 @@ func (gph *Service) BuildDetail(id string) (Detail, error) {
 		Linked:     listLinked(ws, mods, fires, firedBy),
 		References: listReferences(ws, mods, site),
 		Portraits:  listPortraits(tree, statement),
+		Silhouette: ws.Game.FindPlaceholder(schema.ToPhrase(game.GUI.PortraitKey)).Shape,
 		Background: findBackground(ws, mods, tree, statement),
 	}, nil
 }

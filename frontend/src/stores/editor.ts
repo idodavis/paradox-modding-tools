@@ -141,6 +141,11 @@ export const useEditorStore = defineStore("editor", () => {
     return state.value.rows.flatMap((row) => row.columns);
   }
 
+  /** Lists every open tab, group by group. */
+  function listTabs(): Tab[] {
+    return listGroups().flatMap((group) => group.tabs);
+  }
+
   /** The tab with the given id and the group holding it, the active group's first. It is null when none holds it. */
   function find(tabId: string): { group: Group; index: number } | null {
     for (const group of [activeGroup(), ...listGroups()]) {
@@ -384,6 +389,7 @@ export const useEditorStore = defineStore("editor", () => {
 
   return {
     layout,
+    listTabs,
     activeGroup,
     activeTab,
     activeFile,

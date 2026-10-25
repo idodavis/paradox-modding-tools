@@ -46,11 +46,14 @@ export function attachHover(codeEditor: editor.IStandaloneCodeEditor): () => voi
     clearTimeout(timer);
     timer = setTimeout(() => onCard || (hover.value = null), 300);
   };
-  /** Finds the card of a word and the problems on it and shows them, unless the pointer has moved on meanwhile. */
+  /**
+   * Finds the card of a word and the problems on it and shows them, unless the pointer has moved on meanwhile. A card
+   * the pointer is on is never replaced.
+   */
   const findCard = useDebounceFn(async (word: editor.IWordAtPosition, lineNumber: number) => {
     const model = codeEditor.getModel();
     const card = model && (await lsp.Hover(model.uri.fsPath, lineNumber, word.startColumn));
-    if (!model || target?.lineNumber !== lineNumber || target.column !== word.startColumn) return;
+    if (!model || onCard || target?.lineNumber !== lineNumber || target.column !== word.startColumn) return;
     const span = card?.range ?? new monaco.Range(lineNumber, word.startColumn, lineNumber, word.endColumn);
     const problems = monaco.editor
       .getModelMarkers({ resource: model.uri })
@@ -120,8 +123,10 @@ function attachCard(
       {
         open: !!hover.value,
         reference,
+        // flush on the word, so the pointer crosses no other line on its way to the card
         content: {
           side: "top",
+          sideOffset: 0,
           align: "start",
           onOpenAutoFocus: (event: Event) => event.preventDefault(),
           onCloseAutoFocus: (event: Event) => event.preventDefault(),

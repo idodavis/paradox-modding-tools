@@ -272,7 +272,9 @@ func (counter *counter) Enter(tree *jomini.Tree, statement int32, context *Conte
 		valueField.Vanilla.Values = addCounts(valueField.Vanilla.Values, map[string]int{tree.Text(current.Value): 1})
 	}
 	switch {
-	case field != nil:
+	// a color block's numbers are its parts, not values of its field, so a field written as a named color or a color
+	// block names the named colors
+	case field != nil && (!block || !counter.isColor(tree, statement, tree.Text(current.Key))):
 		next.field = field
 	case context.Defines && context.Category == CategoryDefinition && context.Definition.Mode == "":
 		next = counter.makeDefinitionHolder(context.Database)
@@ -646,24 +648,28 @@ func (counter *counter) resolveCounts() {
 }
 
 // resolveClaims gives a field the claims its counts support. A shape or a value that a source has stated is kept, but
-// a stated reference with no database, as the docs' "key", and a stated block take the reference vanilla shows: the
-// block lists its values, as a culture's traditions do. The value is a reference if one database defines every value
-// written and none is a number, a date or a yes-or-no word. Otherwise a field always written as a block is a block,
-// or a color if every block was one. A field written only as scalars gets the first type in valueTests that all its
-// values fit.
+// a stated reference with no database (the docs' "key") takes the reference vanilla shows, and a stated block or text
+// takes it where it is not to the game concepts, whose names are common words: a block lists its values, as a
+// culture's traditions do, and a text names one, as a title's capital does. The value is a reference if one database
+// defines every value written and none is a number, a date or a yes-or-no word. Otherwise a field always written as a
+// block is a block, or a color if every block was one. A field written only as scalars gets the first type in
+// valueTests that all its values fit.
 func (counter *counter) resolveClaims(field *Field) {
 	vanilla := field.Vanilla
 	if shape := resolveShapeClaim(vanilla); shape != "" {
 		field.Shape.resolve(shape, game.SourceVanilla)
 	}
+	counter.resolveKeys(field)
 	stated := field.Value.Value
-	open := stated.Type == ValueReference && stated.Database == "" || stated.Type == ValueBlock
+	open := stated.Type == ValueReference && stated.Database == "" || stated.Type == ValueBlock || stated.Type == ValueText
 	if field.Value.IsStated() && !open {
 		return
 	}
 	literal := slices.ContainsFunc(slices.Collect(maps.Keys(vanilla.Values)), counter.isLiteral)
-	if database, ok := counter.resolveDatabase(vanilla.Values); ok && !literal {
-		field.Value = Claim[Expected]{Value: Expected{Type: ValueReference, Database: database}, Source: game.SourceVanilla}
+	expected, ok := counter.resolveReference(vanilla.Values)
+	concept := expected.Database == counter.schema.Concepts
+	if ok && !literal && (!field.Value.IsStated() || stated.Type == ValueReference || !concept) {
+		field.Value = Claim[Expected]{Value: expected, Source: game.SourceVanilla}
 		return
 	}
 	switch {
@@ -680,6 +686,41 @@ func (counter *counter) resolveClaims(field *Field) {
 			}
 		}
 	}
+}
+
+// resolveKeys gives a field the claim that its block's keys name definitions where every key vanilla writes there is a
+// definition of one database, as a culture's opinions name cultures. Those keys' fields become the one field of any
+// key. A key a source declares stays as it is. A game concept, a message, a GUI database (whose formats and blocks are
+// called by common words such as value) or a database and its nested ones name no keys, and a block that runs
+// commands has keys its shape reads.
+func (counter *counter) resolveKeys(field *Field) {
+	if len(game.Shapes[field.Shape.Value].Allows) > 0 {
+		return
+	}
+	keys := map[string]int{}
+	for key, child := range field.Children {
+		if child.Source == game.SourceVanilla && key != game.AnyKey && key != game.NumberKey {
+			keys[key] = child.Vanilla.Count
+		}
+	}
+	expected, ok := counter.resolveReference(keys)
+	if !ok || expected.Nested || counter.isText(expected) || strings.HasPrefix(expected.Database, game.GUI.DatabasePrefix) {
+		return
+	}
+	merged := field.buildChild(game.AnyKey)
+	if merged.Source == game.SourceNone {
+		merged.Source = game.SourceVanilla
+	}
+	for key := range keys {
+		merged.add(field.Children[key])
+		delete(field.Children, key)
+	}
+	field.Keys.resolve(expected.Database, game.SourceVanilla)
+}
+
+// isText reports whether a reference is to text rather than to definitions: to the game concepts or the messages.
+func (counter *counter) isText(expected Expected) bool {
+	return expected.Database == counter.schema.Concepts || expected.Database == game.Localization
 }
 
 // resolveShapeClaim returns the shape that the blocks of a field were written in. If they call scripted definitions,
@@ -733,8 +774,8 @@ func (counter *counter) matchAll(valueType ValueType, values map[string]int) boo
 // resolvePrefix sets the database that defines every name written after the prefix. It sets none if no database does,
 // or more than one does. The link's arguments record the names counted.
 func (counter *counter) resolvePrefix(prefix string, labels map[string]int) {
-	database, ok := counter.resolveDatabase(labels)
-	counter.schema.Prefixes[prefix] = database
+	expected, ok := counter.resolveReference(labels)
+	counter.schema.Prefixes[prefix] = expected.Database
 	command := counter.schema.Commands[prefix]
 	if command == nil {
 		return
@@ -745,40 +786,62 @@ func (counter *counter) resolvePrefix(prefix string, labels map[string]int) {
 		arguments.Vanilla.Count += count
 	}
 	if ok {
-		arguments.Value.resolve(Expected{Type: ValueReference, Database: database}, game.SourceVanilla)
+		arguments.Value.resolve(expected, game.SourceVanilla)
 	}
 }
 
-// resolveDatabase returns the one database that defines every given value. A value that holds a parameter is left
-// out. A database named for another that defines them too does not count apart from it. A game concept or a message
-// key is text, not a definition: the concepts database counts only if no other database defines every value, and the
-// localization counts only if neither does. It returns false if there are no values, if no database defines them all
-// or if more than one does.
-func (counter *counter) resolveDatabase(values map[string]int) (string, bool) {
+// resolveReference returns the reference that every given value makes: to the one database that defines them all. A
+// value that holds a parameter is left out. A database named for another that defines them too does not count apart
+// from it. Where no database defines them all, a database and those nested in it may, as a language and its dialects
+// do, and the reference names the nested ones too. A game concept or a message key is text, not a definition: the
+// concepts database counts only if nothing else defines every value, and the localization only if the concepts do not
+// either. It returns false if there are no values, if nothing defines them all or if more than one does.
+func (counter *counter) resolveReference(values map[string]int) (Expected, bool) {
 	named := maps.Clone(values)
 	maps.DeleteFunc(named, func(value string, _ int) bool { return jomini.IsParameter(value) })
 	if len(named) == 0 {
-		return "", false
+		return Expected{}, false
 	}
 	var matched []string
 	for database, names := range counter.defined {
-		if hasAll(names, named) {
+		if hasAll(named, names) {
 			matched = append(matched, database)
 		}
 	}
 	databases := slices.DeleteFunc(slices.Clone(matched), func(database string) bool {
 		return database == counter.schema.Concepts || counter.isNamedFor(database, matched)
 	})
+	nested := false
+	if len(databases) == 0 {
+		databases = counter.listFamilies(named)
+		nested = len(databases) > 0
+	}
 	if len(databases) == 0 && slices.Contains(matched, counter.schema.Concepts) {
 		databases = append(databases, counter.schema.Concepts)
 	}
-	if len(databases) == 0 && hasAll(counter.messages, named) {
+	if len(databases) == 0 && hasAll(named, counter.messages) {
 		databases = append(databases, game.Localization)
 	}
 	if len(databases) != 1 {
-		return "", false
+		return Expected{}, false
 	}
-	return databases[0], true
+	return Expected{Type: ValueReference, Database: databases[0], Nested: nested}, true
+}
+
+// listFamilies returns the databases that define every given value together with the databases nested in them, as a
+// language and its dialects do.
+func (counter *counter) listFamilies(values map[string]int) []string {
+	var families []string
+	for label, database := range counter.schema.Databases {
+		members := []map[string]bool{counter.defined[label]}
+		for _, nested := range database.Nested {
+			members = append(members, counter.defined[nested])
+		}
+		if len(database.Nested) > 0 && hasAll(values, members...) {
+			families = append(families, label)
+		}
+	}
+	return families
 }
 
 // isNamedFor reports whether the definitions of a database are named for those of one of the given others. That is so
@@ -798,10 +861,10 @@ func (counter *counter) isLiteral(value string) bool {
 	})
 }
 
-// hasAll reports whether every given value is one of the names.
-func hasAll(names map[string]bool, values map[string]int) bool {
+// hasAll reports whether every given value is held by at least one of the given sets.
+func hasAll(values map[string]int, sets ...map[string]bool) bool {
 	for value := range values {
-		if !names[value] {
+		if !slices.ContainsFunc(sets, func(set map[string]bool) bool { return set[value] }) {
 			return false
 		}
 	}

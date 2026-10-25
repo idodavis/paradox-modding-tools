@@ -10,7 +10,7 @@ import { capitalize, groupBy } from "es-toolkit";
 import { useRoute, useRouter } from "vue-router";
 import type { Edge, Version } from "@services/graph/models";
 import { findPlaceholder } from "../../lib/placeholders";
-import { detailQuery, fileUrl, stateQuery } from "../../queries";
+import { detailQuery, fileUrl } from "../../queries";
 import { useEditorStore } from "../../stores/editor";
 import { useWorkspaceStore } from "../../stores/workspace";
 import OriginChip from "../../ui/OriginChip.vue";
@@ -33,8 +33,7 @@ const workspace = useWorkspaceStore();
 const { copy, copied } = useClipboard();
 
 const { data: detail, error } = useQuery(() => ({ ...detailQuery(id), enabled: workspace.isOpen() }));
-const { data: state } = useQuery(() => ({ ...stateQuery, enabled: workspace.isOpen() }));
-const silhouette = computed(() => findPlaceholder(state.value?.game?.portrait ?? ""));
+const silhouette = computed(() => findPlaceholder(detail.value?.silhouette ?? ""));
 const look = computed(() => lookupLook(detail.value?.node.database ?? ""));
 const tabs = computed(() => [
   { label: capitalize(detail.value?.node.what ?? ""), slot: "main" },
@@ -267,7 +266,7 @@ function showForm(): void {
                     :key="portrait"
                     class="flex max-w-full min-w-22 flex-col items-center gap-0.5 rounded-md border border-accented bg-muted px-2 py-1.5 text-11"
                   >
-                    <div class="h-16 w-14 bg-(--link)" :style="{ mask: `${silhouette} 0 0 / 100% 100% no-repeat` }" />
+                    <div class="h-16 w-14" :style="silhouette" />
                     <span class="max-w-full truncate font-mono text-(--syn-scope)">{{ portrait }}</span>
                   </div>
                 </div>

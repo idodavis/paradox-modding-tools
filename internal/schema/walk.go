@@ -689,11 +689,15 @@ func findShape(context *Context) string {
 	return cmp.Or(context.Shape, game.ShapeUnknown)
 }
 
-// findMatch returns the first rule of the block's shape that the key fits. It returns the empty match if none does.
+// findMatch returns the first rule of the block's shape that the key fits. A field's key in a block whose keys name
+// definitions also refers to one. It returns the empty match if no rule fits.
 func (walker *walker) findMatch(parent *Context, key string) match {
 	for _, rule := range game.Shapes[findShape(parent)].Rules {
 		if fit, ok := walker.matchRule(rule, parent, key); ok {
 			fit.rule = rule
+			if fit.category == CategoryField && fit.database == "" && parent.Field != nil {
+				fit.database = parent.Field.Keys.Value
+			}
 			return fit
 		}
 	}
@@ -1122,7 +1126,8 @@ func (walker *walker) resolveValue(context *Context, statement int32, level int)
 }
 
 // resolveValueReferences resolves the references that a plain value makes. The databases it may name are: the one its
-// field names, unless the value is a link; the one the game's rows give for its key path, else the one its shape
+// field names, with the databases nested in it where the field says so, unless the value is a link; the one the game's
+// rows give for its key path, else the one its shape
 // gives; a coat's template list; the events of a script file; a script value; and the databases of the prefixes it is
 // written with. If a row puts a file in a folder and the value names none, the folder is added. A database named
 // twice is referred to once. The reference is inferred only if the field's claim alone makes it. The index resolves
@@ -1139,6 +1144,10 @@ func (walker *walker) resolveValueReferences(context *Context, statement int32, 
 	}
 	if claim != "" {
 		databases = append(databases, claim)
+	}
+	// a field whose values are a database's or its nested databases', as a language's or a dialect's, may name either
+	if database := walker.schema.Databases[claim]; database != nil && context.Field.Value.Value.Nested {
+		databases = append(databases, database.Nested...)
 	}
 	placed, folder := "", ""
 	if database, where, ok := walker.findValueDatabase(context, statement, level); ok {

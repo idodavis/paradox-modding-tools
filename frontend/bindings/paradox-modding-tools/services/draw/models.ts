@@ -492,8 +492,8 @@ export interface Widget {
     "textures": { [_ in string]?: string } | null;
 
     /**
-     * Placeholder is the file among the page's placeholders that it draws where its picture has no file: the game's
-     * silhouette for a portrait, else the game's placeholder for what the picture is of. It is "" for none.
+     * Placeholder is the shape among the page's placeholders that it draws where its picture has no file, by what the
+     * picture is of, as game.FindPlaceholder says. It is "" for a widget with a picture, a background or no picture.
      */
     "placeholder": string;
 

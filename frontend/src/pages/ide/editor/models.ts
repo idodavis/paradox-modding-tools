@@ -8,9 +8,9 @@ import { useQueryCache } from "@pinia/colada";
 import { useDebounceFn } from "@vueuse/core";
 import { Events } from "@wailsio/runtime";
 import * as monaco from "monaco-editor/editor/editor.api";
-import { shallowReactive } from "vue";
+import { shallowReactive, shallowRef } from "vue";
 
-import type { Diagnostic, Edit } from "@services/lsp/models";
+import type { Code, Diagnostic, Edit } from "@services/lsp/models";
 import type { Place } from "@services/workspace/models";
 import type { Encoding, Text } from "@internal/files/models";
 import * as lsp from "@services/lsp/service";
@@ -18,7 +18,7 @@ import * as workspace from "@services/workspace/service";
 import { diagnosticMessage, list, plural } from "../../../lib/format";
 import { codesQuery, fileQuery, keys, loadQuery, placeQuery } from "../../../queries";
 import ConfirmModal from "../../../ui/ConfirmModal.vue";
-import { VIEWS } from "./tabs";
+import { parseTab, VIEWS } from "./tabs";
 
 /** One open file in this window: its Monaco model, its place and its encoding, shared by every tab that shows it. */
 export type Model = {
@@ -40,6 +40,8 @@ const SEVERITIES: Record<number, monaco.MarkerSeverity> = {
 };
 
 const models = shallowReactive(new Map<string, Model>());
+// counts each change of a model's problems, so whatever lists them lists them again
+const problemsChanged = shallowRef(0);
 const opening = new Map<string, Promise<Model>>();
 // the keys closed while their model was loading
 const doomed = new Set<string>();
@@ -248,6 +250,7 @@ async function setMarkers(model: Model, diagnostics: Diagnostic[]): Promise<void
   const codes = (await loadQuery(codesQuery)) ?? [];
   if (model.model.isDisposed()) return;
   model.problems = diagnostics;
+  problemsChanged.value++;
   const markers = diagnostics.map((diagnostic) => {
     const code = codes.find((row) => row.id === diagnostic.code);
     return {
@@ -258,6 +261,25 @@ async function setMarkers(model: Model, diagnostics: Diagnostic[]): Promise<void
     };
   });
   monaco.editor.setModelMarkers(model.model, "pmt", markers);
+}
+
+/**
+ * Lists the problems Go found in the files of the given tabs, each file once, with each problem's code. A problem whose
+ * code the app does not know is left out. The Problems panel lists these and its badge counts them.
+ */
+export function listOpenProblems(
+  tabs: { id: string }[],
+  codes: Code[],
+): { place: Place; problems: { code: Code; problem: Diagnostic }[] }[] {
+  void problemsChanged.value;
+  return [...new Set(tabs.map((tab) => parseTab(tab.id).key))].flatMap((key) => {
+    const model = models.get(key);
+    const problems = (model?.problems ?? []).flatMap((problem) => {
+      const code = codes.find((one) => one.id === problem.code);
+      return code ? [{ code, problem }] : [];
+    });
+    return model && problems.length ? [{ place: model.place, problems }] : [];
+  });
 }
 
 /** Brings a file changed on disk into its model: at once if the user has not edited it, else after they choose. */

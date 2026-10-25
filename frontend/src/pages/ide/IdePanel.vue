@@ -15,8 +15,7 @@ import { useWorkspaceStore } from "../../stores/workspace";
 import OriginChip from "../../ui/OriginChip.vue";
 import ProblemRow from "../../ui/ProblemRow.vue";
 import SearchHits from "./SearchHits.vue";
-import { findModel } from "./editor/models";
-import { parseTab } from "./editor/tabs";
+import { listOpenProblems } from "./editor/models";
 
 defineProps<{ tab: "problems" | "search" | "output" }>();
 
@@ -33,22 +32,11 @@ const output = useTemplateRef("output");
 const { data: codes } = useQuery(codesQuery);
 const rows = computed<Row[]>(() => {
   const needle = filter.value.trim().toLowerCase();
-  const keys = new Set(
-    editor
-      .layout()
-      .rows.flatMap((row) => row.columns.flatMap((group) => group.tabs))
-      .map((tab) => parseTab(tab.id).key),
-  );
-  return [...keys].flatMap((key) => {
-    const model = findModel(key);
-    if (!model) return [];
-    const problems = model.problems.flatMap((problem) => {
-      const code = codes.value?.find((one) => one.id === problem.code);
-      if (!code) return [];
-      const text = `${diagnosticMessage(code.message, problem.facts ?? {})} ${code.id} ${model.place.rel}`;
-      return text.toLowerCase().includes(needle) ? [{ place: model.place, code, problem }] : [];
-    });
-    return problems.length ? [{ place: model.place, count: problems.length }, ...problems] : [];
+  return listOpenProblems(editor.listTabs(), codes.value ?? []).flatMap(({ place, problems }) => {
+    const shown = problems.filter(({ code, problem }) =>
+      `${diagnosticMessage(code.message, problem.facts ?? {})} ${code.id} ${place.rel}`.toLowerCase().includes(needle),
+    );
+    return shown.length ? [{ place, count: shown.length }, ...shown.map((one) => ({ place, ...one }))] : [];
   });
 });
 

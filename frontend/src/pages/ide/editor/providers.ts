@@ -3,20 +3,45 @@
  * registration per feature, each calling the service with the model's path and Monaco's own position and handing
  * the answer to Monaco as it is, since Go answers in Monaco's ranges. Diagnostics are not a provider: they come
  * back from SetText and become the model's markers. The hover card is not a provider either, since the app draws
- * it.
+ * it. The files of each definition and reference found are kept, so a peek can show whose files they are.
  */
 import * as monaco from "monaco-editor/editor/editor.api";
 import type { languages } from "monaco-editor";
 
 import * as lsp from "@services/lsp/service";
 import type { Completion, Edit, Location, Symbol } from "@services/lsp/models";
+import type { Place } from "@services/workspace/models";
 import { loadQuery, placeQuery } from "../../../queries";
 import { useEditorStore } from "../../../stores/editor";
+import { useWorkspaceStore } from "../../../stores/workspace";
 import { openModel, findModel } from "./models";
 
-/** Registers every provider for the given languages. Called once, after the languages themselves are registered. */
+// the place of a file in each folder that definitions or references were found in, by the folder's address
+const folders = new Map<string, Place>();
+// the rule that colors the dot before each such file's name in a peek, by the file's path, and their sheet
+const dots = new Map<string, string>();
+const dotSheet = new CSSStyleSheet();
+
+/**
+ * Monaco's labels of files and folders. A peek names the folder of a definition or reference by its origin, as a list
+ * of files does. Any other folder or file is named by its path.
+ */
+export const labelService = {
+  getUriLabel: (uri: monaco.Uri): string => {
+    const place = folders.get(uri.toString());
+    if (place) return useWorkspaceStore().describeFolder(place);
+    return uri.scheme === "file" ? uri.fsPath : uri.path;
+  },
+  getUriBasenameLabel: (uri: monaco.Uri): string => uri.path.slice(uri.path.lastIndexOf("/") + 1),
+};
+
+/**
+ * Registers every provider for the given languages, and the sheet of the dots in a peek. Called once, after the
+ * languages themselves are registered.
+ */
 export function registerProviders(languageIds: string[], legend: languages.SemanticTokensLegend): void {
   const selector = languageIds.map((language) => ({ language, scheme: "file" }));
+  document.adoptedStyleSheets = [...document.adoptedStyleSheets, dotSheet];
   registerNavigation(selector);
   registerCompletion(selector);
   registerWriting(selector);
@@ -202,9 +227,25 @@ async function show(resource: monaco.Uri, selection?: monaco.IRange | monaco.IPo
   useEditorStore().show(place, position);
 }
 
-/** Turns Go's locations into Monaco's. */
+/** Turns Go's locations into Monaco's, and keeps each file's place for a peek of them. */
 function toLocations(locations: Location[] | null): languages.Location[] {
-  return (locations ?? []).map(({ place, range }) => ({ uri: monaco.Uri.file(place.path), range }));
+  const found = (locations ?? []).map(({ place, range }) => ({ uri: markPlace(place), range }));
+  dotSheet.replaceSync([...dots.values()].join("\n"));
+  return found;
+}
+
+/**
+ * Keeps the place of a file a peek may list, and returns the file's address. The peek names the file's folder by its
+ * place, and the dot before the file's name takes its origin's color. Monaco gives a peek's rows no hook of their own,
+ * so the dot's rule finds the row by the full path its label ends with.
+ */
+function markPlace(place: Place): monaco.Uri {
+  const uri = monaco.Uri.file(place.path);
+  folders.set(monaco.Uri.joinPath(uri, "..").toString(), place);
+  const label = JSON.stringify(`full path ${uri.fsPath}`);
+  const color = useWorkspaceStore().originColor(place.origin);
+  dots.set(uri.fsPath, `.monaco-list-row[aria-label$=${label}] { --origin: ${color}; }`);
+  return uri;
 }
 
 /** Turns Go's edits by path into a workspace edit. The files they change are opened first, so Monaco can edit them. */

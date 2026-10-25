@@ -633,9 +633,10 @@ func (game *Game) SplitMode(key string) (mode, name string) {
 }
 
 // DescribeDefinition returns what a definition of a database is called, in the singular or the plural: "scripted
-// effect" or "scripted effects" for scripted_effects.
+// effect" or "scripted effects" for scripted_effects. A nested database is called by its own name: "dialect" for
+// languages.dialect.
 func DescribeDefinition(database string, plural bool) string {
-	last := database[strings.LastIndexByte(database, '/')+1:]
+	last := database[strings.LastIndexAny(database, "/.")+1:]
 	if !plural {
 		for _, ending := range plurals {
 			if stem, cut := strings.CutSuffix(last, ending.Plural); cut {
@@ -644,5 +645,5 @@ func DescribeDefinition(database string, plural bool) string {
 			}
 		}
 	}
-	return strings.NewReplacer("_", " ", ".", " ").Replace(last)
+	return strings.ReplaceAll(last, "_", " ")
 }

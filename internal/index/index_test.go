@@ -222,11 +222,11 @@ func TestFindWinnerKeepsByPrecedence(t *testing.T) {
 	}
 	vanilla, modded := sites[0], sites[1]
 	last, ok := mods.FindWinner(sites, game.Precedence{Keeps: "last"})
-	if !ok || last.Site != vanilla || last.Reason != "order" {
+	if !ok || last.Site != vanilla || last.Reason != "last" {
 		t.Errorf("last: %+v %v", last, ok)
 	}
 	first, ok := mods.FindWinner(sites, game.Precedence{Keeps: "first"})
-	if !ok || first.Site != modded || first.Reason != "order" {
+	if !ok || first.Site != modded || first.Reason != "first" {
 		t.Errorf("first: %+v %v", first, ok)
 	}
 	mods.Occurrences[modded.File][modded.Occurrence].Priority = 5
@@ -240,13 +240,13 @@ func TestFindWinnerKeepsByPrecedence(t *testing.T) {
 	}
 	mods.Occurrences[modded.File][modded.Occurrence].Mode = uint8(mods.Modes.Intern("INJECT"))
 	modes := game.Precedence{Keeps: "first", Modes: "entry"}
-	// the mod's file loads before the install's, so the install's plain definition replaces what a mode acted on
+	// the mod's file loads before the install's, but its mode acts after the install's plain definition
 	injected, ok := mods.FindWinner(sites, modes)
-	if !ok || injected.Site != vanilla || injected.Reason != last.Reason || len(injected.Merged) != 1 {
+	if !ok || injected.Site != vanilla || injected.Reason != "first" || len(injected.Merged) != 2 {
 		t.Errorf("inject: %+v %v", injected, ok)
 	}
 	mods.Occurrences[modded.File][modded.Occurrence].Mode = uint8(mods.Modes.Intern("REPLACE"))
-	if replaced, ok := mods.FindWinner(sites, modes); !ok || replaced.Site != vanilla || replaced.Reason != last.Reason {
+	if replaced, ok := mods.FindWinner(sites, modes); !ok || replaced.Site != modded || replaced.Reason != "mode" {
 		t.Errorf("replace: %+v %v", replaced, ok)
 	}
 }

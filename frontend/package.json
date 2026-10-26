@@ -21,6 +21,7 @@
     "@pierre/trees": "1.0.0-beta.6",
     "@pinia/colada": "^1.4.8",
     "@tailwindcss/vite": "^4.3.3",
+    "@tiptap/extension-table": "3.31.4",
     "@vue-flow/core": "^1.48.2",
     "@vue-flow/minimap": "^1.5.4",
     "@vueuse/core": "^15.0.0",

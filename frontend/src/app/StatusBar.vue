@@ -11,11 +11,12 @@ import { useRoute } from "vue-router";
 import * as app from "@services/app/service";
 import { day } from "../lib/format";
 import { crashedQuery, releasesQuery, stateQuery, updateQuery, versionQuery, windowsQuery } from "../queries";
-import { THIS_WINDOW } from "../stores/windows";
+import { THIS_WINDOW, useWindowsStore } from "../stores/windows";
 import { PAGES } from "./pages";
 
 const route = useRoute();
 const toast = useToast();
+const windows = useWindowsStore();
 
 const page = computed(() => (route.name ? PAGES[route.name] : undefined));
 const { data: state } = useQuery(stateQuery);
@@ -25,7 +26,6 @@ const { data: releases, refetch: refetchReleases } = useQuery({ ...releasesQuery
 const { data: crashed } = useQuery(crashedQuery);
 const { data: names } = useQuery(windowsQuery);
 const { mutate: applyUpdate } = useMutation({ mutation: () => app.ApplyUpdate() });
-const { mutate: showWindow } = useMutation({ mutation: (name: string) => app.ShowWindow(name) });
 const { mutate: copyDiagnostics } = useMutation({
   mutation: async () => {
     await Clipboard.SetText(await app.BuildDiagnostics());
@@ -50,7 +50,7 @@ onScopeDispose(
 const others = computed(() =>
   (names.value ?? [])
     .filter((name) => name !== THIS_WINDOW)
-    .map((name) => ({ label: describeWindow(name), onSelect: () => showWindow(name) })),
+    .map((name) => ({ label: describeWindow(name), onSelect: () => windows.showWindow(name) })),
 );
 
 // what the main window toasts once: a run that ended unclean, a game updated, and an install without script_docs
@@ -91,14 +91,14 @@ watch(
   { immediate: true },
 );
 
-/** Shows a toast that stays until it is closed, unless the same one was shown before. */
+/** showToast shows a toast that stays until it is closed, unless the same one was shown before. */
 function showToast(key: string, options: Partial<ToastProps>): void {
   if (toasted.has(key)) return;
   toasted.add(key);
   toast.add({ ...options, duration: 0 });
 }
 
-/** Describes a window for the menu: what it shows. */
+/** describeWindow returns what a window shows, for the menu. */
 function describeWindow(name: string): string {
   const [kind = "", rest = ""] = name.split(/:(.*)/s);
   if (kind === "page") return Object.entries(PAGES).find(([key]) => key === rest)?.[1].title ?? rest;

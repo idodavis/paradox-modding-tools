@@ -6,53 +6,75 @@
 import * as files$0 from "../../internal/files/models.js";
 
 /**
- * A Comparison is what the next upload changes against the last one, next to what Steam reports about the item.
+ * A ChangeNote is one draft of a change note.
+ */
+export interface ChangeNote {
+    /**
+     * git, or the name of the changelog file
+     */
+    "source": string;
+    "text": string;
+
+    /**
+     * the number of commits it is drafted from
+     */
+    "count": number;
+
+    /**
+     * the time of the upload it starts after, or zero for every commit
+     */
+    "since": string;
+}
+
+/**
+ * A Comparison is what the next upload changes against what Steam has of the item.
  */
 export interface Comparison {
-    /**
-     * the rels of the files the last upload did not have
-     */
-    "added": string[] | null;
+    "page": Difference[] | null;
 
     /**
-     * the rels of the files that differ from the last upload's
+     * the version first, then each file by its path
      */
-    "changed": string[] | null;
+    "files": Difference[] | null;
 
     /**
-     * the rels of the files the last upload had and the next one lacks
+     * when Steam was last asked for the item
      */
-    "removed": string[] | null;
-
-    /**
-     * the listing's fields that differ from the last upload's: title, description …
-     */
-    "listing": string[] | null;
-
-    /**
-     * the last upload's listing
-     */
-    "last": Listing;
-    "uploadedAt": string;
-
-    /**
-     * the last upload's files are Steam's copy, downloaded
-     */
-    "downloaded": boolean;
+    "checkedAt": string;
     "steam"?: Details | null;
 
     /**
-     * the next upload against the item: new, unknown, same or changed
+     * why Steam's side is missing, or ""
+     */
+    "reason": string;
+
+    /**
+     * new, same, changed, or unknown when Steam could not be asked
      */
     "status": string;
 }
 
 /**
- * A DLC is one DLC of the game that an item may require, with the id Steam knows it by.
+ * A DLC is one of the game's DLCs that an item may require.
  */
 export interface DLC {
     "id": string;
     "name": string;
+}
+
+/**
+ * A Dependency is one mod that a listing's mod depends on.
+ */
+export interface Dependency {
+    /**
+     * as the descriptor names it
+     */
+    "name": string;
+
+    /**
+     * the Workshop id of the workspace mod it names, or ""
+     */
+    "workshopId": string;
 }
 
 /**
@@ -65,39 +87,99 @@ export interface Details {
     "visibility": string;
     "tags": string[] | null;
     "subscribers": number;
+    "previews": Preview[] | null;
+
+    /**
+     * nil when Steam's library cannot read them
+     */
+    "dlc": string[] | null;
+
+    /**
+     * how many DLC it requires, which may be more than DLC holds
+     */
+    "dlcCount": number;
+
+    /**
+     * the Workshop ids of the items it requires, or nil as for DLC
+     */
+    "dependencies": string[] | null;
 }
 
 /**
- * A Listing is what a mod's Workshop page shows, as the mod's own files hold it.
+ * A Difference is one thing the next upload changes on Steam.
+ */
+export interface Difference {
+    /**
+     * title, description, tags, previews, dlc, dependencies, version or file
+     */
+    "field": string;
+    "rel"?: string;
+
+    /**
+     * added, changed or removed
+     */
+    "status": string;
+    "before"?: string;
+    "after"?: string;
+
+    /**
+     * the tags, pictures, DLC or items the upload adds
+     */
+    "added"?: string[] | null;
+
+    /**
+     * those it takes away
+     */
+    "removed"?: string[] | null;
+
+    /**
+     * the lines the upload adds, or paragraphs for the description
+     */
+    "gained": number;
+    "lost": number;
+}
+
+/**
+ * A Listing is one of a mod's Workshop pages, as the mod's own files hold it.
  */
 export interface Listing {
+    /**
+     * "" for the mod's own listing, else the game version of an older one
+     */
+    "key": string;
     "workshopId": string;
     "title": string;
     "version": string;
     "supportedVersion": string;
+
+    /**
+     * BBCode
+     */
     "description": string;
 
     /**
-     * the description as Steam and Paradox Mods take it
+     * BBCode, the next upload's change note
      */
-    "bbcode": string;
-
-    /**
-     * markdown, bbcode, steam
-     */
-    "source": string;
-    "descriptionPath": string;
     "changelog": string;
-    "changelogPath": string;
     "thumbnail": string;
     "previews": Preview[] | null;
-    "tags": string[] | null;
-    "dlc": string[] | null;
 
     /**
-     * private, friends, public, unlisted; chosen at each upload
+     * the category tags
      */
-    "visibility": string;
+    "tags": string[] | null;
+
+    /**
+     * the version tag the supported version picks, or "" for none
+     */
+    "versionTag": string;
+    "dlc": string[] | null;
+    "dependencies": Dependency[] | null;
+
+    /**
+     * the zip of an older listing, or "" for the mod's folder
+     */
+    "source": string;
 }
 
 /**
@@ -107,28 +189,32 @@ export interface Preview {
     "path": string;
 
     /**
-     * image, video
+     * image or video
      */
     "type": string;
 
     /**
-     * a video's
+     * the address of a video
      */
     "url": string;
 
     /**
-     * a video's id
+     * the id of a video
      */
     "video": string;
-    "order": number;
+
+    /**
+     * the size of a picture, up to 1 MB on Steam
+     */
+    "bytes": number;
 }
 
 /**
- * A Progress is one step of an upload, the data of the steam:progress event.
+ * A Progress is one step of an upload, as the steam:progress event reports it.
  */
 export interface Progress {
     /**
-     * preparing, uploading, committing, done
+     * preparing, uploading, committing or done
      */
     "stage": string;
     "done": number;
@@ -144,7 +230,22 @@ export interface Rule {
 }
 
 /**
- * An Upload is the set of files a mod's next upload sends.
+ * Tags is the set of Workshop tags a listing may carry.
+ */
+export interface Tags {
+    /**
+     * Steam's category tags, with those the workspace's mods carry
+     */
+    "categories": string[] | null;
+
+    /**
+     * Steam's version tags
+     */
+    "versions": string[] | null;
+}
+
+/**
+ * An Upload is the files that a mod's next upload sends.
  */
 export interface Upload {
     "files": files$0.File[] | null;
@@ -155,7 +256,7 @@ export interface Upload {
     "bytes": number;
 
     /**
-     * the rels the rules left out
+     * the paths that the rules leave out
      */
     "excluded": string[] | null;
 }

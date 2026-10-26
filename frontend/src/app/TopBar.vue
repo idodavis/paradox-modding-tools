@@ -4,14 +4,13 @@
 -->
 <script setup lang="ts">
 import type { ContextMenuItem, DropdownMenuItem } from "@nuxt/ui";
-import { useMutation, useQuery } from "@pinia/colada";
+import { useQuery } from "@pinia/colada";
 import { useElementSize, useEventBus } from "@vueuse/core";
 import { Events } from "@wailsio/runtime";
 import { computed, onScopeDispose, shallowRef, useTemplateRef } from "vue";
 import { useRoute, useRouter } from "vue-router";
 
 import logoIcon from "@assets/PMT-Logo-Icon.svg?url";
-import * as app from "@services/app/service";
 import { installLine } from "../lib/format";
 import { gamesQuery, installsQuery, stateQuery, workspacesQuery } from "../queries";
 import { gameIcon, useSettingsStore } from "../stores/settings";
@@ -30,8 +29,6 @@ const { data: workspaces } = useQuery(workspacesQuery);
 const { data: games } = useQuery(gamesQuery);
 const { data: installs } = useQuery(installsQuery);
 const { data: state } = useQuery(stateQuery);
-const { mutate: showWindow } = useMutation({ mutation: (name: string) => app.ShowWindow(name) });
-const { mutate: closeWindow } = useMutation({ mutation: (name: string) => app.CloseWindow(name) });
 
 const TAB = "flex h-11 items-center gap-1.5 px-2.5 -mb-px border-b-2 text-13 font-medium whitespace-nowrap";
 
@@ -57,40 +54,40 @@ const canPopOut = (name: WorkspaceTool) => name !== "workspace-ide";
 // the page shown here, when it can open in a window of its own
 const page = computed(() => tools.value.find((tool) => tool === route.name && canPopOut(tool)));
 
-/** The classes of a page's tab, marked when its page is the one shown. */
+/** tabClass returns the classes of a page's tab, marked when its page is the one shown. */
 function tabClass(on: boolean): string[] {
   return [TAB, on ? "border-primary text-highlighted" : "border-transparent text-toned hover:text-highlighted"];
 }
 
-/** Opens a page in a window of its own, and shows another page here if it was the one shown. */
+/** popOut opens a page in a window of its own, and shows another page here if it was the one shown. */
 function popOut(name: WorkspaceTool): void {
   windows.popOut({ page: name });
   const next = tools.value.find((tool) => tool !== name && !popped(tool));
   if (route.name === name && next) void router.push({ name: next, params: { id: workspace.activeId() } });
 }
 
-/** Closes a page's window and shows the page here again. */
+/** closePage closes a page's window and shows the page here again. */
 function closePage(name: WorkspaceTool): void {
-  closeWindow(holder(name));
+  windows.closeOther(holder(name));
   void router.push({ name, params: { id: workspace.activeId() } });
 }
 
-/** The context menu of a tab: the IDE stays in the main window, a page opens in a window of its own. */
+/** tabMenu returns a tab's context menu: the IDE stays in the main window, a page opens in a window of its own. */
 function tabMenu(name: WorkspaceTool): ContextMenuItem[] {
   if (!canPopOut(name)) return [];
   if (!popped(name))
     return [{ label: "Open in a new window", icon: "i-lucide-app-window", onSelect: () => popOut(name) }];
   return [
-    { label: "Show window", icon: "i-lucide-app-window", onSelect: () => showWindow(holder(name)) },
+    { label: "Show window", icon: "i-lucide-app-window", onSelect: () => windows.showWindow(holder(name)) },
     { label: "Back into the main window", icon: "i-lucide-panel-top-close", onSelect: () => closePage(name) },
   ];
 }
 
-/** Resolves a workspace's link from the switcher: the page open now, where it is one of a workspace's. */
+/** resolveLink returns a workspace's link in the switcher: the page open now, where it is one of a workspace's. */
 function resolveLink(id: string) {
   const name = route.name;
   if (name && isWorkspacePage(name)) return { name, params: { id } };
-  return homeRoute(id, workspaces.value?.find((record) => record.id === id)?.homePage ?? "", tools.value);
+  return homeRoute(id, workspaces.value?.find((record) => record.id === id)?.homePage ?? "");
 }
 
 /** The switcher's menu: each game's workspaces, then New workspace. */
@@ -120,7 +117,7 @@ const mode = computed(() =>
     : { label: "Switch to dark", icon: "i-lucide-moon" },
 );
 
-/** Writes the theme's other colors, dark or light, which stops following the system's. */
+/** writeDark writes the theme's other colors, dark or light, which stops following the system's. */
 function writeDark(): void {
   settings.write("appearance.followSystem", "false");
   settings.write("appearance.dark", String(!settings.theme().dark));
@@ -179,7 +176,7 @@ for (const event of ["install:scanned", "workspace:opened", "workspace:failed"] 
           type="button"
           :class="tabClass(false)"
           :aria-label="`${PAGES[name].title}, in its own window`"
-          @click="showWindow(holder(name))"
+          @click="windows.showWindow(holder(name))"
         >
           <UIcon :name="PAGES[name].icon" class="size-4" />
           <span v-if="!compact">{{ PAGES[name].title }}</span>

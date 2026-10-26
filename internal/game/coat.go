@@ -156,28 +156,29 @@ var ck3CoatShade = CoatShade{ // game/gfx/FX/coat_of_arms
 	Grain:   CoatStrength{Channel: "g", Strength: 2},
 }
 
-// ck3CoatFrames are the frames of gui/shared/coa_designer.gui, without the unit's 3D banner. The override defines are
-// in common/defines/graphic/00_graphics.txt.
+// ck3CoatFrames are the frames of gui/shared/coa_designer.gui, without the unit's 3D banner. Each define is named in
+// full, as common/defines/graphic/00_graphics.txt:309,319 write them in NCoatOfArms.
 var ck3CoatFrames = []CoatFrame{
 	{
-		Label: "Dynasty", Define: "DEFAULT_DYNASTY_COA_FRAME_NAME",
+		Label: "Dynasty", Define: "NCoatOfArms|DEFAULT_DYNASTY_COA_FRAME_NAME",
 		Override: CoatOverride{
-			Frame: "OVERRIDE_DYNASTY_COA_FRAME_NAME", Offset: "OVERRIDE_DYNASTY_COA_FRAME_OFFSET",
-			Scale: "OVERRIDE_DYNASTY_COA_FRAME_SCALE",
+			Frame: "NCoatOfArms|OVERRIDE_DYNASTY_COA_FRAME_NAME", Offset: "NCoatOfArms|OVERRIDE_DYNASTY_COA_FRAME_OFFSET",
+			Scale: "NCoatOfArms|OVERRIDE_DYNASTY_COA_FRAME_SCALE",
 		},
 	},
 	{
-		Label: "House", Define: "DEFAULT_HOUSE_COA_FRAME_NAME",
+		Label: "House", Define: "NCoatOfArms|DEFAULT_HOUSE_COA_FRAME_NAME",
 		Override: CoatOverride{
-			Frame: "OVERRIDE_HOUSE_COA_FRAME_NAME", Offset: "OVERRIDE_HOUSE_COA_FRAME_OFFSET",
-			Scale: "OVERRIDE_HOUSE_COA_FRAME_SCALE",
+			Frame: "NCoatOfArms|OVERRIDE_HOUSE_COA_FRAME_NAME", Offset: "NCoatOfArms|OVERRIDE_HOUSE_COA_FRAME_OFFSET",
+			Scale: "NCoatOfArms|OVERRIDE_HOUSE_COA_FRAME_SCALE",
 		},
 	},
 	{Label: "Title", Mask: "gfx/interface/coat_of_arms/title_mask.dds"},
 	{
 		Label: "Realm", Mask: "gfx/interface/icons/realm_frames/_default_mask.dds",
 		Override: CoatOverride{
-			Enabled: "OVERRIDE_REALM_MASK_ENABLED", Offset: "OVERRIDE_REALM_MASK_OFFSET", Scale: "OVERRIDE_REALM_MASK_SCALE",
+			Enabled: "NCoatOfArms|OVERRIDE_REALM_MASK_ENABLED", Offset: "NCoatOfArms|OVERRIDE_REALM_MASK_OFFSET",
+			Scale: "NCoatOfArms|OVERRIDE_REALM_MASK_SCALE",
 		},
 	},
 }

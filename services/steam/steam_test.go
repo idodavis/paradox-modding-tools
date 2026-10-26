@@ -17,9 +17,10 @@ import (
 // The names the tests use more than once.
 const (
 	fixtureModID   = "mod-a"
-	descriptionRel = "workshop/description.md"
+	descriptionRel = ".workshop/description.bbcode"
 	changedRel     = "changed.txt"
 	extraRel       = "extra.txt"
+	goneRel        = "gone.txt"
 	sameRel        = "same.txt"
 )
 
@@ -36,8 +37,7 @@ func resolveFixture(t *testing.T, parts ...string) string {
 	return dir
 }
 
-// copyFixture copies a folder under internal/testdata into a temporary folder, so that a test may change its files,
-// and returns the copy.
+// copyFixture copies a folder under internal/testdata into a temporary folder and returns the copy.
 func copyFixture(t *testing.T, parts ...string) string {
 	t.Helper()
 	dir := t.TempDir()
@@ -61,8 +61,8 @@ func writeFiles(t *testing.T, dir string, texts map[string]string) {
 	}
 }
 
-// openService opens a workspace of the CK3 install at the given path with the given mods, in folders PMT keeps its
-// files in under the test's own, and returns the Workshop service over it.
+// openService opens a workspace of a CK3 install with some mods and returns the Workshop service over it. PMT keeps
+// its files in the test's own folders.
 func openService(t *testing.T, install string, mods ...app.Mod) *Service {
 	t.Helper()
 	appOnce.Do(func() { application.New(application.Options{}) })
@@ -81,6 +81,11 @@ func openService(t *testing.T, install string, mods ...app.Mod) *Service {
 	if err != nil {
 		t.Fatal(err)
 	}
+	// Steam's tags are kept already, so no read of a listing fetches them
+	kept := Tags{Categories: []string{"Balance"}, Versions: []string{}}
+	if err := app.SaveJSON(resolveTagsPath(config.Dirs.Cache, 1158310), kept); err != nil {
+		t.Fatal(err)
+	}
 	wsp := &workspace.Service{Config: config, Build: "test"}
 	wsp.Open("w1")
 	t.Cleanup(wsp.Close)
@@ -90,47 +95,43 @@ func openService(t *testing.T, install string, mods ...app.Mod) *Service {
 	return &Service{Workspace: wsp}
 }
 
-// TestReadListingReadsWorkshopFolder checks that a listing holds the descriptor's title, the description file's
-// source and text, the changelog, the previews in order, the DLC ids, and the empty parts as empty.
+// TestReadListingReadsWorkshopFolder checks that a listing holds what its descriptor and .workshop folder say, with
+// empty parts for missing files.
 func TestReadListingReadsWorkshopFolder(t *testing.T) {
 	dir := copyFixture(t, "mods", "ck3")
 	stm := openService(t, resolveFixture(t, "ck3"), app.Mod{ID: fixtureModID, Dir: dir, WorkshopID: "1234"})
-	empty, err := stm.ReadListing(fixtureModID)
+	empty, err := stm.ReadListing(fixtureModID, "")
 	if err != nil {
 		t.Fatal(err)
 	}
-	if empty.Source != sourceSteam || empty.Description != "" || empty.DescriptionPath != "" {
-		t.Errorf("got source %q with description %q at %q", empty.Source, empty.Description, empty.DescriptionPath)
+	if empty.Description != "" || empty.Changelog != "" {
+		t.Errorf("got description %q and changelog %q", empty.Description, empty.Changelog)
 	}
 	if empty.Previews == nil || empty.Tags == nil || empty.DLC == nil {
 		t.Errorf("got a nil part in %+v, want empty ones", empty)
 	}
 	writeFiles(t, dir, map[string]string{
-		descriptionRel:                 "# Fixture\n",
-		"workshop/changelog.bbcode":    "[b]Fixed[/b]",
-		"workshop/previews/b.png":      "b",
-		"workshop/previews/a.png":      "a",
-		"workshop/previews/videos.txt": "https://youtu.be/abc\n",
-		"workshop/dlc.txt":             "1303183\n2071470\n",
+		descriptionRel:                  "[h1]Fixture[/h1]\n",
+		".workshop/changelog.bbcode":    "[b]Fixed[/b]",
+		".workshop/previews/b.png":      "b",
+		".workshop/previews/a.png":      "a",
+		".workshop/previews/videos.txt": "https://youtu.be/abc\n",
+		".workshop/dlc.txt":             "1303183\n2071470\n",
 	})
-	listing, err := stm.ReadListing(fixtureModID)
+	listing, err := stm.ReadListing(fixtureModID, "")
 	if err != nil {
 		t.Fatal(err)
 	}
-	if listing.WorkshopID != "1234" || listing.Title != "Fixture Mod" || listing.Visibility != "" {
-		t.Errorf("got item %q titled %q with visibility %q", listing.WorkshopID, listing.Title, listing.Visibility)
+	if listing.WorkshopID != "1234" || listing.Title != "Fixture Mod" {
+		t.Errorf("got item %q titled %q", listing.WorkshopID, listing.Title)
 	}
-	if listing.Source != sourceMarkdown || listing.Description != "# Fixture\n" ||
-		listing.DescriptionPath != files.Join(dir, descriptionRel) {
-		t.Errorf("got description %q from %q at %q", listing.Description, listing.Source, listing.DescriptionPath)
-	}
-	if listing.Changelog != "[b]Fixed[/b]" || listing.ChangelogPath != files.Join(dir, changelogFile) {
-		t.Errorf("got changelog %q at %q", listing.Changelog, listing.ChangelogPath)
+	if listing.Description != "[h1]Fixture[/h1]\n" || listing.Changelog != "[b]Fixed[/b]" {
+		t.Errorf("got description %q and changelog %q", listing.Description, listing.Changelog)
 	}
 	want := []Preview{
-		{Path: files.Join(dir, "workshop/previews/a.png"), Type: previewImage, Order: 0},
-		{Path: files.Join(dir, "workshop/previews/b.png"), Type: previewImage, Order: 1},
-		{Type: previewVideo, URL: "https://youtu.be/abc", Video: "abc", Order: 2},
+		{Path: files.Join(dir, ".workshop/previews/a.png"), Type: previewImage, Bytes: 1},
+		{Path: files.Join(dir, ".workshop/previews/b.png"), Type: previewImage, Bytes: 1},
+		{Type: previewVideo, URL: "https://youtu.be/abc", Video: "abc"},
 	}
 	if !reflect.DeepEqual(listing.Previews, want) {
 		t.Errorf("got previews %+v, want %+v", listing.Previews, want)
@@ -140,38 +141,30 @@ func TestReadListingReadsWorkshopFolder(t *testing.T) {
 	}
 }
 
-// TestWriteListingRoundTripsListing checks that a listing written through the service is what the next read returns:
-// the descriptor's fields, the description in the file made for it and as BBCode, the changelog and the DLC ids.
+// TestWriteListingRoundTripsListing checks that the next read of a listing returns what was written.
 func TestWriteListingRoundTripsListing(t *testing.T) {
 	dir := copyFixture(t, "mods", "ck3")
 	stm := openService(t, resolveFixture(t, "ck3"), app.Mod{ID: fixtureModID, Dir: dir})
-	if err := stm.SetDescriptionSource(fixtureModID, "html", ""); err == nil {
-		t.Error("a description in html was accepted")
-	}
-	if err := stm.SetDescriptionSource(fixtureModID, sourceMarkdown, ""); err != nil {
-		t.Fatal(err)
-	}
-	listing, err := stm.ReadListing(fixtureModID)
+	listing, err := stm.ReadListing(fixtureModID, "")
 	if err != nil {
 		t.Fatal(err)
 	}
-	listing.Title, listing.Tags, listing.WorkshopID = "Renamed", []string{"Balance", "Historical"}, "99"
-	listing.Description, listing.Changelog, listing.DLC = "# New\n", "[b]New[/b]", []string{"1303183"}
-	if err := stm.WriteListing(fixtureModID, listing); err != nil {
+	listing.Title, listing.Tags = "Renamed", []string{"Balance", "Historical"}
+	listing.Description, listing.Changelog, listing.DLC = "[h1]New[/h1]\n", "[b]New[/b]", []string{"1303183"}
+	if err := stm.WriteListing(fixtureModID, "", listing); err != nil {
 		t.Fatal(err)
 	}
-	got, err := stm.ReadListing(fixtureModID)
+	got, err := stm.ReadListing(fixtureModID, "")
 	if err != nil {
 		t.Fatal(err)
 	}
-	listing.ChangelogPath, listing.BBCode = files.Join(dir, changelogFile), "[h1]New[/h1]"
 	if !reflect.DeepEqual(got, listing) {
 		t.Errorf("got %+v, want %+v", got, listing)
 	}
 }
 
-// TestListUploadSplitsFilesByRules checks the upload set against every rule: dotfiles, the .gitignore and what it
-// names, the previews and the mod's exclusions, with the .metadata folder sent.
+// TestListUploadSplitsFilesByRules checks that an upload leaves out what the rules, the .gitignore and the mod's
+// exclusions cover. The .metadata folder is sent.
 func TestListUploadSplitsFilesByRules(t *testing.T) {
 	dir := copyFixture(t, "mods", "ck3")
 	writeFiles(t, dir, map[string]string{
@@ -180,18 +173,18 @@ func TestListUploadSplitsFilesByRules(t *testing.T) {
 		"notes.log":                   "",
 		".git/config":                 "",
 		".metadata/metadata.json":     "{}",
-		"workshop/previews/p.png":     "p",
+		".workshop/previews/p.png":    "p",
 		descriptionRel:                "text",
 		"secret/key.txt":              "",
 		"art/logo.psd":                "",
 		"common/mod_things/extra.txt": "x",
 	})
 	stm := openService(t, resolveFixture(t, "ck3"), app.Mod{ID: fixtureModID, Dir: dir, Ignore: "secret/\n*.psd\n"})
-	upload, err := stm.ListUpload(fixtureModID)
+	upload, err := stm.ListUpload(fixtureModID, "")
 	if err != nil {
 		t.Fatal(err)
 	}
-	wantExcluded := []string{".gitignore", ".hidden", "art/logo.psd", "notes.log", "secret/key.txt", "workshop/previews/p.png"}
+	wantExcluded := []string{".gitignore", ".hidden", "art/logo.psd", "notes.log", "secret/key.txt"}
 	if !reflect.DeepEqual(upload.Excluded, wantExcluded) {
 		t.Errorf("got excluded %v, want %v", upload.Excluded, wantExcluded)
 	}
@@ -199,76 +192,65 @@ func TestListUploadSplitsFilesByRules(t *testing.T) {
 	for _, file := range upload.Files {
 		sent[file.Rel] = true
 	}
-	for _, rel := range []string{".metadata/metadata.json", "descriptor.mod", descriptionRel, "common/mod_things/extra.txt"} {
+	for _, rel := range []string{".metadata/metadata.json", "descriptor.mod", "common/mod_things/extra.txt"} {
 		if !sent[rel] {
 			t.Errorf("%s is not in the upload", rel)
 		}
 	}
-	if sent[".git/config"] {
-		t.Error(".git/config is in the upload")
+	for _, rel := range []string{".git/config", descriptionRel, ".workshop/previews/p.png"} {
+		if sent[rel] {
+			t.Errorf("%s is in the upload", rel)
+		}
 	}
 	if upload.Bytes <= 0 {
 		t.Errorf("got %d bytes", upload.Bytes)
 	}
 }
 
-// TestCompareReportsChanges checks that a file only the upload has is added, one with another hash is changed, one
-// only the snapshot has is removed, a listing field that differs is named, and the upload's status says so.
+// TestCompareReportsChanges checks that a comparison lists a changed version and the added, changed and removed files.
 func TestCompareReportsChanges(t *testing.T) {
-	dir := t.TempDir()
-	writeFiles(t, dir, map[string]string{sameRel: "1", changedRel: "2", extraRel: "3"})
+	dir := copyFixture(t, "mods", "ck3")
+	stm := openService(t, resolveFixture(t, "ck3"), app.Mod{ID: fixtureModID, Dir: dir})
+	ws, mod, err := stm.findMod(fixtureModID)
+	if err != nil {
+		t.Fatal(err)
+	}
+	writeFiles(t, dir, map[string]string{sameRel: "1", changedRel: "2\n", extraRel: "3"})
 	upload := Upload{Files: []files.File{
 		{Path: filepath.Join(dir, sameRel), Rel: sameRel},
 		{Path: filepath.Join(dir, changedRel), Rel: changedRel},
 		{Path: filepath.Join(dir, extraRel), Rel: extraRel},
 	}}
 	hashes := buildHashes(upload.Files)
-	snapshot := Snapshot{
+	steamDir := resolveSnapshotDir(stm.Workspace.Config.Dirs.Cache, "1")
+	writeFiles(t, steamDir, map[string]string{"descriptor.mod": "version=\"0.9\"\n", changedRel: "old\n", goneRel: "x"})
+	err = SaveSnapshot(stm.Workspace.Config.Dirs.Cache, Snapshot{
 		WorkshopID: "1",
-		Files:      map[string]string{sameRel: hashes[sameRel], changedRel: "old", "gone.txt": "x"},
-		Listing:    Listing{Title: "Old", Tags: []string{"a"}},
+		Files:      map[string]string{sameRel: hashes[sameRel], changedRel: "old", goneRel: "x"},
+	})
+	if err != nil {
+		t.Fatal(err)
 	}
-	listing := Listing{WorkshopID: "1", Title: "New", Tags: []string{"a"}, Description: "text"}
-	got := Compare(listing, upload, snapshot, &Details{Title: "On Steam"})
-	want := Comparison{
-		Added: []string{extraRel}, Changed: []string{changedRel}, Removed: []string{"gone.txt"},
-		Listing: []string{"title", "description"}, Last: snapshot.Listing, Steam: &Details{Title: "On Steam"},
-		Status: statusChanged,
+	got, err := stm.compareFiles(ws.Game, mod, Listing{WorkshopID: "1", Version: "1.0"}, upload)
+	if err != nil {
+		t.Fatal(err)
+	}
+	want := []Difference{
+		{Field: "version", Status: "changed", Before: "0.9", After: "1.0"},
+		{Field: "file", Rel: changedRel, Status: "changed", Gained: 1, Lost: 1},
+		{Field: "file", Rel: extraRel, Status: "added", Gained: 1},
+		{Field: "file", Rel: goneRel, Status: "removed", Lost: 1},
 	}
 	if !reflect.DeepEqual(got, want) {
 		t.Errorf("got %+v, want %+v", got, want)
 	}
-	first := Compare(listing, upload, Snapshot{}, nil)
-	if len(first.Added) != 3 || len(first.Changed) != 0 || len(first.Removed) != 0 || first.Status != statusUnknown {
-		t.Errorf("with no snapshot got %+v, want every file added and the status unknown", first)
+	if status := toStatus(Comparison{Files: got}); status != statusChanged {
+		t.Errorf("got the status %q, want %q", status, statusChanged)
 	}
 }
 
-// TestToBBCodeConvertsConstructs checks every construct of the conversion on one text, with escapes and entities
-// resolved outside code and kept inside it.
-func TestToBBCodeConvertsConstructs(t *testing.T) {
-	markdown := "# Title\n\n## Sub\n\n### Third\n\n#### Fourth\n\n" +
-		"Some *italic*, **bold**, ~~struck~~ and `co\\*de` with a [link](https://example.com/x) and " +
-		"![pic](https://example.com/p.png).\n\n" +
-		"Escaped \\*stars\\* and &amp; &copy; entities.\n\n" +
-		"- one\n- two\n  - nested\n\n1. first\n2. second\n\n" +
-		"> quoted\n\n---\n\n```\nfn(\\*)\n```\n\n" +
-		"| a | b |\n|---|---|\n| 1 | 2 |\n\n<div>raw</div>\n\nlast <b>line</b>"
-	want := "[h1]Title[/h1]\n\n[h2]Sub[/h2]\n\n[h3]Third[/h3]\n\n[h3]Fourth[/h3]\n\n" +
-		"Some [i]italic[/i], [b]bold[/b], [strike]struck[/strike] and [code]co\\*de[/code] with a " +
-		"[url=https://example.com/x]link[/url] and [img]https://example.com/p.png[/img].\n\n" +
-		"Escaped *stars* and & \u00a9 entities.\n\n" +
-		"[list]\n[*] one\n[*] two\n[list]\n[*] nested\n[/list]\n[/list]\n\n[olist]\n[*] first\n[*] second\n[/olist]\n\n" +
-		"[quote]quoted\n\n[/quote]\n\n[hr][/hr]\n\n[code]\nfn(\\*)\n[/code]\n\n" +
-		"[table]\n[tr][th]a[/th][th]b[/th][/tr]\n[tr][td]1[/td][td]2[/td][/tr]\n[/table]\n\nlast line"
-	if got := new(Service).ToBBCode(markdown); got != want {
-		t.Errorf("got\n%q\nwant\n%q", got, want)
-	}
-}
-
-// TestListDLCReadsDescriptors checks that a DLC folder is read from its .dlc or else its .dlc.json, with the Steam
-// id of the descriptor and the name from the script or from the localization key, and that one with no id or the id
-// 0 is left out.
+// TestListDLCReadsDescriptors checks that each DLC is read from its .dlc or .dlc.json file, and that one with no Steam
+// id is left out.
 func TestListDLCReadsDescriptors(t *testing.T) {
 	install := copyFixture(t, "ck3")
 	writeFiles(t, install, map[string]string{

@@ -4,6 +4,7 @@ import (
 	"bufio"
 	"bytes"
 	"cmp"
+	"context"
 	"encoding/json"
 	"errors"
 	"fmt"
@@ -12,20 +13,21 @@ import (
 	"strconv"
 	"strings"
 	"sync"
-	"time"
 
 	"paradox-modding-tools/internal/files"
 	"paradox-modding-tools/services/app"
 )
 
-// Params is everything a second copy of the app needs to upload a mod or to work on an item.
+// Params is what a second copy of the app needs to upload a mod or work on an item.
 type Params struct {
-	Game        string  `json:"game"`
 	LibraryPath string  `json:"libraryPath"` // the game's copy of Steam's library
 	AppID       int     `json:"appId"`
 	UploadDir   string  `json:"uploadDir"`
 	WorkshopID  string  `json:"workshopId"` // "" creates the item
 	Listing     Listing `json:"listing"`
+	Visibility  string  `json:"visibility"` // private, friends, public or unlisted; "" keeps the item's own
+	// ModWorkshopIDs are the Workshop ids of the workspace's mods. An upload removes no other required item.
+	ModWorkshopIDs []string `json:"modWorkshopIds"`
 }
 
 // The arguments that start the app as a second copy, one per kind of work.
@@ -34,18 +36,16 @@ const (
 	detailsFlag  = "--steam-details"
 	statusFlag   = "--steam-status"
 	downloadFlag = "--steam-download"
-	previewsFlag = "--steam-previews"
 )
 
-// copyTurn is held while a second copy of the app runs, so that callers never start several copies at once.
+// copyTurn lets only one second copy of the app run at a time.
 var copyTurn sync.Mutex
 
-// copyWork is the work of a second copy by the flag it was started with. Each prints its answer on standard output.
+// copyWork maps each flag to the work a second copy does. Each work prints its answer on standard output.
 var copyWork = map[string]func(client *Client, params Params) error{
 	publishFlag:  publish,
 	downloadFlag: download,
 	detailsFlag:  func(client *Client, params Params) error { return printJSON(client.FetchDetails(params.WorkshopID)) },
-	previewsFlag: func(client *Client, params Params) error { return printJSON(client.fetchPreviews(params.WorkshopID)) },
 	statusFlag: func(client *Client, _ Params) error {
 		if !client.isOnline() {
 			return errors.New("steam is running but offline: go online to upload")
@@ -54,49 +54,39 @@ var copyWork = map[string]func(client *Client, params Params) error{
 	},
 }
 
-// StartPublish starts a second copy of the app to upload a mod and passes each step of its progress to the given
-// function. It returns the item's id, which the copy creates if the parameters name none, even if the upload fails
-// after that.
-func StartPublish(params Params, progress func(Progress)) (workshopID string, err error) {
-	err = startCopy(publishFlag, params, func(line string) {
+// StartPublish starts a second copy of the app to upload a mod. It reports each step of the upload, and the id of an
+// item it creates as soon as Steam makes it. A canceled context ends the copy. It returns an error if the copy fails.
+func StartPublish(ctx context.Context, params Params, progress func(Progress), link func(workshopID string)) error {
+	return startCopy(ctx, publishFlag, params, func(line string) {
 		var step Progress
 		if _, err := strconv.ParseUint(line, 10, 64); err == nil {
-			workshopID = line
+			link(line)
 		} else if json.Unmarshal([]byte(line), &step) == nil {
 			progress(step)
 		}
 	})
-	return workshopID, err
 }
 
-// fetchDetails returns an item's details, read from Steam by a second copy of the app. It returns nil if the copy
-// fails, as it does when Steam is not running.
-func fetchDetails(params Params) *Details {
-	var details *Details
-	err := startCopy(detailsFlag, params, func(line string) {
-		var reported Details
-		if json.Unmarshal([]byte(line), &reported) == nil {
-			details = &reported
-		}
+// fetchDetails reads an item's details from Steam through a second copy of the app. It returns an error if Steam is
+// not running or does not find the item.
+func fetchDetails(params Params) (Details, error) {
+	var details Details
+	err := startCopy(context.Background(), detailsFlag, params, func(line string) {
+		_ = json.Unmarshal([]byte(line), &details)
 	})
-	if err != nil {
-		return nil
-	}
-	return details
+	return details, err
 }
 
-// startCopy starts a second copy of the app with the given flag, writes the parameters to it as JSON and calls the
-// given function, if any, with each line it prints. One copy runs at a time: a call waits until the copy before it
-// has exited. It returns an error if the copy cannot start or exits with a nonzero code; that error is what the copy
-// printed on standard error, or its exit status.
-func startCopy(flag string, params Params, onLine func(line string)) error {
+// startCopy starts a second copy of the app for one kind of work and hands each line it prints to a function, if any.
+// One copy runs at a time. A canceled context kills the copy. It returns an error if the copy cannot start or fails.
+func startCopy(ctx context.Context, flag string, params Params, onLine func(line string)) error {
 	copyTurn.Lock()
 	defer copyTurn.Unlock()
 	executable, err := os.Executable()
 	if err != nil {
 		return err
 	}
-	command := exec.Command(executable, flag)
+	command := exec.CommandContext(ctx, executable, flag)
 	var stderr bytes.Buffer
 	command.Stderr = &stderr
 	stdin, err := command.StdinPipe()
@@ -123,13 +113,23 @@ func startCopy(flag string, params Params, onLine func(line string)) error {
 	}
 	scanErr := lines.Err()
 	if err := command.Wait(); err != nil {
-		return errors.Join(scanErr, errors.New(cmp.Or(strings.TrimSpace(stderr.String()), err.Error())))
+		return errors.Join(scanErr, errors.New(cmp.Or(decodeCopyError(stderr.String()), err.Error())))
 	}
 	return scanErr
 }
 
-// runCopy is a second copy's run: it reads the parameters from standard input, opens Steam's library and does the
-// given work. It returns the exit code.
+// decodeCopyError returns the error a second copy printed last on standard error. It returns the whole output if the
+// copy crashed, and "" if it printed nothing.
+func decodeCopyError(output string) string {
+	text := strings.TrimSpace(output)
+	var message string
+	if json.Unmarshal([]byte(text[strings.LastIndex(text, "\n")+1:]), &message) == nil {
+		return message
+	}
+	return text
+}
+
+// runCopy does a second copy's work with the parameters on standard input and returns the exit code.
 func runCopy(work func(client *Client, params Params) error) int {
 	var params Params
 	if err := json.NewDecoder(os.Stdin).Decode(&params); err != nil {
@@ -143,38 +143,26 @@ func runCopy(work func(client *Client, params Params) error) int {
 	return toExitCode(work(client, params))
 }
 
-// publish uploads a mod, creating its item if the parameters name none, and saves a snapshot of the upload. The
-// uploaded files become the item's one kept copy for the next compare, in place of any copy kept before, uploaded or
-// downloaded. It prints the progress as JSON lines, then the item's id, even after an error, so the next upload goes
-// to that item.
-func publish(client *Client, params Params) (err error) {
+// publish uploads a mod, creating its item if it has none. It prints a created item's id at once, even on an error,
+// then the progress as JSON lines. It returns an error if the item cannot be created or the upload fails.
+func publish(client *Client, params Params) error {
 	workshopID := params.WorkshopID
-	defer func() {
-		if workshopID != "" {
-			fmt.Println(workshopID)
-		}
-	}()
 	if workshopID == "" {
-		if workshopID, err = client.CreateItem(); err != nil {
+		created, err := client.CreateItem()
+		if created != "" {
+			fmt.Println(created)
+		}
+		if err != nil {
 			return err
 		}
+		workshopID = created
 	}
 	lines := json.NewEncoder(os.Stdout)
-	if err := client.Submit(workshopID, params.Listing, params.UploadDir, func(step Progress) { _ = lines.Encode(step) }); err != nil {
-		return err
-	}
-	dirs, err := app.ResolveDirs()
-	if err != nil {
-		return err
-	}
-	return keepSnapshot(dirs.Cache, params.UploadDir, Snapshot{
-		WorkshopID: workshopID, UploadedAt: time.Now(), Listing: params.Listing,
-	})
+	return client.Submit(workshopID, params, func(step Progress) { _ = lines.Encode(step) })
 }
 
-// download has Steam download an item, copies its files into PMT's cache folder and saves them as the item's
-// snapshot, with its title and description. The copy replaces any copy kept before, uploaded or downloaded, once it is
-// whole; a failed download or copy leaves the one before as it was. Steam's own folder of the item is not changed.
+// download has Steam download an item and keeps a copy of its files in PMT's cache as the item's snapshot. A failed
+// download leaves the copy kept before as it was.
 func download(client *Client, params Params) error {
 	details, err := client.FetchDetails(params.WorkshopID)
 	if err != nil {
@@ -196,21 +184,17 @@ func download(client *Client, params Params) error {
 	if err != nil {
 		return err
 	}
-	listing := Listing{WorkshopID: params.WorkshopID, Title: details.Title, Description: details.Description}
-	return keepSnapshot(dirs.Cache, dir, Snapshot{
-		WorkshopID: params.WorkshopID, UploadedAt: details.UpdatedAt, Listing: listing, Downloaded: true,
-	})
+	return keepSnapshot(dirs.Cache, dir, Snapshot{WorkshopID: params.WorkshopID, UpdatedAt: details.UpdatedAt})
 }
 
-// keepSnapshot keeps the files of the given folder as an item's one kept copy, in place of the copy kept before, and
-// saves the item's snapshot with their hashes. The folder is moved, so it must be in PMT's cache folder. If the move
-// fails, the folder is deleted.
+// keepSnapshot moves a folder in PMT's cache into place as an item's kept copy and saves the item's snapshot. If the
+// move fails, the folder is deleted.
 func keepSnapshot(cacheDir, dir string, snapshot Snapshot) error {
-	snapshot.Dir = resolveSnapshotDir(cacheDir, snapshot.WorkshopID)
-	if err := errors.Join(removeCacheDir(cacheDir, snapshot.Dir), os.Rename(dir, snapshot.Dir)); err != nil {
-		return errors.Join(err, removeCacheDir(cacheDir, dir))
+	kept := resolveSnapshotDir(cacheDir, snapshot.WorkshopID)
+	if err := moveCacheDir(cacheDir, dir, kept); err != nil {
+		return err
 	}
-	walked, err := files.Walk(files.Root{Dir: snapshot.Dir})
+	walked, err := files.Walk(files.Root{Dir: kept})
 	if err != nil {
 		return err
 	}
@@ -218,7 +202,7 @@ func keepSnapshot(cacheDir, dir string, snapshot Snapshot) error {
 	return SaveSnapshot(cacheDir, snapshot)
 }
 
-// printJSON prints a value on standard output as one JSON line. It returns the given error instead if there is one.
+// printJSON prints a value on standard output as one JSON line. It returns the error instead, if there is one.
 func printJSON[T any](value T, err error) error {
 	if err != nil {
 		return err
@@ -226,11 +210,12 @@ func printJSON[T any](value T, err error) error {
 	return json.NewEncoder(os.Stdout).Encode(value)
 }
 
-// toExitCode returns the exit code for an error: 0 for none, and 1 for any, which it prints on standard error first.
+// toExitCode prints an error on standard error as one JSON line and returns 1. It returns 0 for no error.
 func toExitCode(err error) int {
 	if err == nil {
 		return 0
 	}
-	fmt.Fprintln(os.Stderr, err)
+	message, _ := json.Marshal(err.Error())
+	fmt.Fprintln(os.Stderr, string(message))
 	return 1
 }

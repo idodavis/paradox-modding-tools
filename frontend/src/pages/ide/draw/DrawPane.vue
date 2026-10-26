@@ -25,13 +25,12 @@ import {
   fileUrl,
   framesQuery,
   settingsCatalogQuery,
-  stateQuery,
   statesQuery,
   windowQuery,
 } from "../../../queries";
 import { useDrawStore } from "../../../stores/draw";
 import { useSettingsStore } from "../../../stores/settings";
-import { useWorkspaceStore } from "../../../stores/workspace";
+import { useWorkspaceStore, VANILLA } from "../../../stores/workspace";
 import CodeEditor from "../CodeEditor.vue";
 import { applyEdits } from "../editor/models";
 import type { Model } from "../editor/models";
@@ -98,7 +97,6 @@ const isPlaced = shallowRef(false);
 const renderedMs = shallowRef(0);
 const drag = shallowRef<Drag | null>(null);
 
-const { data: state } = useQuery(() => ({ ...stateQuery, enabled: workspace.isOpen() }));
 const { data: catalog } = useQuery(() => ({ ...settingsCatalogQuery, enabled: workspace.isOpen() }));
 const { data: frames } = useQuery(() => ({ ...framesQuery, enabled: workspace.isOpen() }));
 const { data: drawables } = useQuery(() => ({
@@ -106,9 +104,9 @@ const { data: drawables } = useQuery(() => ({
   enabled: workspace.isOpen(),
 }));
 
-const resolutionKey = computed(() => `draw.resolution.${state.value?.game?.id ?? ""}`);
-const resolution = computed(() => settings.value(resolutionKey.value));
-const resolutions = computed(() => catalog.value?.find(({ key }) => key === resolutionKey.value)?.choices ?? []);
+const resolutionKey = "draw.resolution";
+const resolution = computed(() => settings.value(resolutionKey));
+const resolutions = computed(() => catalog.value?.find(({ key }) => key === resolutionKey)?.choices ?? []);
 const screen = computed(() => {
   const [width = 0, height = 0] = resolution.value.split("x").map(Number);
   return { width, height };
@@ -237,7 +235,7 @@ const lists = computed(() => [
 const frameOptions = computed(() => [
   { label: "Field", value: "Field" },
   ...(frames.value ?? []).map(({ label, place }) => ({
-    label: place.origin === "vanilla" ? label : `${label} · ${workspace.originName(place.origin)}`,
+    label: place.origin === VANILLA ? label : `${label} · ${workspace.originName(place.origin)}`,
     value: label,
   })),
 ]);

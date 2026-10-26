@@ -21,11 +21,11 @@ import { LOCALIZATION, SCRIPT } from "./grammars";
 import { openModel, setupModels } from "./models";
 import { labelService, registerProviders } from "./providers";
 
-// each language with its grammar and its characters of a word
-const LANGUAGES = [
-  { id: "paradox-script", grammar: SCRIPT, word: /[\w.:@$-]+/ },
-  { id: "paradox-gui", grammar: SCRIPT, word: /[\w.:@$-]+/ },
-  { id: "paradox-localization", grammar: LOCALIZATION, word: /[\w$.-]+/ },
+/** LANGUAGES holds each Paradox language with its name, its grammar and its characters of a word. */
+export const LANGUAGES = [
+  { id: "paradox-script", label: "Paradox Script", grammar: SCRIPT, word: /[\w.:@$-]+/ },
+  { id: "paradox-gui", label: "Paradox GUI", grammar: SCRIPT, word: /[\w.:@$-]+/ },
+  { id: "paradox-localization", label: "Paradox localization", grammar: LOCALIZATION, word: /[\w$.-]+/ },
 ];
 // the pairs typed together, and what every language shares of its configuration
 const PAIRS = [
@@ -143,7 +143,6 @@ export function applyTheme(family: string, dark: boolean): string {
 /** The editor options from the settings: the code font, the indentation and the features they turn on or off. */
 export function editorOptions(): editor.IStandaloneEditorConstructionOptions {
   const settings = useSettingsStore();
-  const on = (key: string) => settings.value(key) === "true";
   return {
     ...settings.codeFont(),
     tabSize: Number(settings.value("ide.indentation")),
@@ -159,17 +158,17 @@ export function editorOptions(): editor.IStandaloneEditorConstructionOptions {
     scrollBeyondLastLine: false,
     glyphMargin: false,
     renderLineHighlight: "all",
-    wordWrap: on("ide.wordWrap") ? "on" : "off",
-    autoClosingBrackets: on("ide.closeBrackets") ? "languageDefined" : "never",
-    autoClosingQuotes: on("ide.closeBrackets") ? "languageDefined" : "never",
-    quickSuggestions: on("ide.complete") ? { other: true, comments: false, strings: true } : false,
-    inlineSuggest: { enabled: on("ide.predict") },
-    parameterHints: { enabled: on("ide.signature") },
-    minimap: { enabled: on("ide.minimap") },
-    folding: on("ide.folding"),
-    guides: { indentation: on("ide.indentGuides"), bracketPairs: false },
-    bracketPairColorization: { enabled: on("ide.bracketColors") },
-    renderWhitespace: on("ide.whitespace") ? "all" : "selection",
+    wordWrap: settings.isOn("ide.wordWrap") ? "on" : "off",
+    autoClosingBrackets: settings.isOn("ide.closeBrackets") ? "languageDefined" : "never",
+    autoClosingQuotes: settings.isOn("ide.closeBrackets") ? "languageDefined" : "never",
+    quickSuggestions: settings.isOn("ide.complete") ? { other: true, comments: false, strings: true } : false,
+    inlineSuggest: { enabled: settings.isOn("ide.predict") },
+    parameterHints: { enabled: settings.isOn("ide.signature") },
+    minimap: { enabled: settings.isOn("ide.minimap") },
+    folding: settings.isOn("ide.folding"),
+    guides: { indentation: settings.isOn("ide.indentGuides"), bracketPairs: false },
+    bracketPairColorization: { enabled: settings.isOn("ide.bracketColors") },
+    renderWhitespace: settings.isOn("ide.whitespace") ? "all" : "selection",
   };
 }
 

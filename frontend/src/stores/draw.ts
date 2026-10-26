@@ -14,6 +14,7 @@ import { computed, reactive, shallowRef, toRaw, watch } from "vue";
 
 import type { Place } from "@services/workspace/models";
 
+import { fileTab } from "../pages/ide/editor/tabs";
 import { useEditorStore } from "./editor";
 import { useWorkspaceStore } from "./workspace";
 
@@ -130,7 +131,7 @@ export const useDrawStore = defineStore("draw", () => {
   /** Puts the caret where something is written. A file shown only as the picture is shown with its code beside it. */
   const showCode = (place: Place, range: IRange): void => {
     const tab = editor.activeTab();
-    if (tab?.id === `file:${place.key}` && tab.view === "visual") editor.setView(tab.id, "split");
+    if (tab?.id === fileTab(place.key) && tab.view === "visual") editor.setView(tab.id, "split");
     editor.show(place, Range.getStartPosition(range));
   };
 

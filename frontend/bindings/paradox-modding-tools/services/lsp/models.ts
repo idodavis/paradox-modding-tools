@@ -151,37 +151,42 @@ export interface CardSite {
     "kept": boolean;
 
     /**
-     * order, mode, priority, merge, replace
+     * as index.ResolveSite gives it; unsettled where no source says
      */
     "reason"?: string;
 }
 
 /**
- * A Code is one kind of problem. Its message is a template that the facts of a diagnostic fill.
+ * A Code is one kind of problem.
  */
 export interface Code {
     /**
-     * kebab: unresolved-reference, duplicate-definition, wrong-scope …
+     * the code's name in kebab case, such as wrong-scope
      */
     "id": string;
 
     /**
-     * 1 error, 2 warning, 3 information, 4 hint
+     * compatibility, health or log
      */
-    "severity": number;
+    "question": string;
 
     /**
-     * Section is the Health section: contests, overrides, dependencies, dangling, localization, script or errorlog.
+     * serious, warning or info, or "" for the game log
      */
-    "section": string;
+    "level": string;
 
     /**
-     * the code's title on Health
+     * such as syntax or localization, or "" for the log
+     */
+    "topic": string;
+
+    /**
+     * the code's title
      */
     "label": string;
 
     /**
-     * with {name}, {database}, {scope}, {expected} filled from the facts
+     * a template the facts fill, such as {name}
      */
     "message": string;
 }
@@ -232,7 +237,7 @@ export interface Completion {
 }
 
 /**
- * A Diagnostic is one problem found in a file. Its code names the kind, and its facts fill the code's message.
+ * A Diagnostic is one problem found in a file.
  */
 export interface Diagnostic {
     "code": string;

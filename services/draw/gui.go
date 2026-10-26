@@ -27,9 +27,8 @@ import (
 	"paradox-modding-tools/services/workspace"
 )
 
-// Service is the Wails service behind the Visual view. A method that changes an existing file does not write it. It
-// returns edits, which the editor applies to its own model, so there is only ever one copy of the text. It keeps the
-// window it resolved last, which a change of that window's states starts from.
+// Service is the Wails service behind the Visual view. It returns edits instead of writing files, and keeps the last
+// window it resolved.
 type Service struct {
 	Workspace *workspace.Service
 	mu        sync.Mutex // over the opening
@@ -109,9 +108,7 @@ type Window struct {
 	// Groups is what the panel lets the user switch: the groups its widgets' conditions read, its lists of pictures,
 	// then its tiers. The value each is at is the states' (States.Values).
 	Groups []Group `json:"groups"`
-	// TextFont and TextSize are the font and the size, as written, that the game's own type of a text writes
-	// (game.GUI.Fonts.TextType), which a text with neither of its own is drawn in. Each is "" where that type writes
-	// none.
+	// TextFont and TextSize are the font and size of a text that sets neither, or "" if the game sets none.
 	TextFont string `json:"textFont"`
 	TextSize string `json:"textSize"`
 	// Properties is the properties of its widgets, its holders and their overlays, each once. A widget and an overlay
@@ -180,9 +177,7 @@ type propertyList struct {
 	overlayPositions map[string]int32
 }
 
-// The words a GUI file is written with, the roles of a slot, the origins of a property, the kinds of what a data call
-// in a text shows (game.GUI.CallKinds), and the deepest that types, templates and labeled blocks nest before they count
-// as a cycle.
+// The words of a GUI file, the slot roles, the property origins, the data call kinds and the deepest nesting.
 const (
 	typeKey        = "type"
 	stateKey       = "state"
@@ -218,9 +213,8 @@ var loremSentences = []string{
 	"Excepteur sint occaecat cupidatat non proident, sunt in culpa qui officia.",
 }
 
-// ListDrawables lists what a file defines that the view can draw: a window, a type, a template or a coat, nested ones
-// included. The entry the view opens on comes first, as findFirstDrawn finds it, wherever the file writes it; the rest
-// follow in document order. A file that is not a GUI file or a coat file has nothing to draw.
+// ListDrawables lists the windows, types, templates and coats a file defines, the one the view opens on first. It
+// lists none for a file that is not a GUI or coat file.
 func (drw *Service) ListDrawables(path string) ([]lsp.Symbol, error) {
 	ws, err := drw.Workspace.Session()
 	if err != nil {
@@ -237,9 +231,7 @@ func (drw *Service) ListDrawables(path string) ([]lsp.Symbol, error) {
 	return drawn, nil
 }
 
-// findFirstDrawn returns the position among a GUI file's drawables of the one the view opens on: the one named as the
-// file, else its first window (game.GUI.ShownFirst), else its first type or template that draws something, as
-// drawsSomething says. It returns 0 where none of them does, and for a file of coats.
+// findFirstDrawn returns the position of the drawable a GUI file opens on, or 0 if none draws anything.
 func findFirstDrawn(ws *workspace.Session, path string, drawn []lsp.Symbol) int {
 	stem := strings.TrimSuffix(filepath.Base(path), filepath.Ext(path))
 	if named := slices.IndexFunc(drawn, func(symbol lsp.Symbol) bool { return strings.EqualFold(symbol.Name, stem) }); named >= 0 {
@@ -299,13 +291,8 @@ func listCallers(schema *schema.Schema, database string) []string {
 	return row.Callable.Callers
 }
 
-// ResolveWindow resolves one window in a GUI file. It applies the window's type and templates, looks up its
-// texts and finds its textures. A window wins over a type or a template of the same name. A file the game does not
-// read, because another file at its path replaces it, is drawn as if the game read it instead. A list that reads a
-// database gets its rows, as many as the workspace's rows setting says. The window is kept as the one that a change of
-// its states starts from. It returns an error if no workspace is open, or if the file is not in the workspace or does
-// not define the window. A type or template that cannot be found becomes a Property with Origin "missing", so the
-// page can flag it.
+// ResolveWindow resolves one window in a GUI file. It applies the window's type and templates, looks up its texts and
+// finds its textures. It returns an error if the file is not in the workspace or does not define the window.
 func (drw *Service) ResolveWindow(path, name string) (Window, error) {
 	ws, err := drw.Workspace.Session()
 	if err != nil {
@@ -327,9 +314,7 @@ func (drw *Service) lookupRows(ws *workspace.Session) int {
 	return count
 }
 
-// resolveIndex returns the index that a file is drawn from. A file of the game is drawn from the game's own index,
-// so that its types, templates, pictures, colors and texts are the game's, as the game draws it with no mod loaded.
-// Any other file is drawn from the mods' index, on top of the game's.
+// resolveIndex returns the index a file is drawn from: the game's own for a game file, else the mods'.
 func resolveIndex(ws *workspace.Session, path string) *index.Index {
 	mods := ws.Mods.Load()
 	if root, ok := mods.FindRoot(path); ok && root.Origin == game.OriginVanilla {
@@ -338,10 +323,8 @@ func resolveIndex(ws *workspace.Session, path string) *index.Index {
 	return mods
 }
 
-// findWindow returns the open workspace and the opening of one window of a GUI file: the one the service keeps, where
-// it is of that window and neither the file's index nor the rows setting has changed since, else the window resolved
-// again, as resolveOpening does. It returns an error if no workspace is open, or if the file is not in the workspace
-// or does not define the window.
+// findWindow returns the open workspace and a window of a GUI file, the kept one if nothing changed. It returns an
+// error if no workspace is open, or the file is not in it or does not define the window.
 func (drw *Service) findWindow(path, name string) (*workspace.Session, opening, error) {
 	ws, err := drw.Workspace.Session()
 	if err != nil {
@@ -358,9 +341,8 @@ func (drw *Service) findWindow(path, name string) (*workspace.Session, opening, 
 	return ws, opened, err
 }
 
-// resolveOpening resolves one window of a GUI file without its rows, and keeps it, opened at the values it opens with,
-// as the one that a change of its states starts from. It returns an error if the file is not in the workspace or does
-// not define the window.
+// resolveOpening resolves a window of a GUI file without its rows and keeps it. It returns an error if the file is not
+// in the workspace or does not define the window.
 func (drw *Service) resolveOpening(ws *workspace.Session, path, name string) (opening, error) {
 	mods := resolveIndex(ws, path)
 	resolver := makeResolver(ws, mods, path)
@@ -386,9 +368,7 @@ func (drw *Service) resolveOpening(ws *workspace.Session, path, name string) (op
 	return opened, nil
 }
 
-// findTextFont returns the font and the size, as written, that the game's own type of a text writes
-// (game.GUI.Fonts.TextType), with its templates applied. Each is "" where the type writes none, or where the game
-// defines no such type.
+// findTextFont returns the font and size of the game's text type. Each is "" if the game sets none.
 func (resolver *resolver) findTextFont() (font, size string) {
 	rules := game.GUI.Fonts
 	definition, ok := resolver.findCalled(clause{statement: absentStatement}, game.GUI.TagCalls, rules.TextType)
@@ -528,9 +508,7 @@ func (list *placeList) locate(ws *workspace.Session, mods *index.Index, path str
 	return position
 }
 
-// buildWidget makes the widget that a clause writes, then the widgets inside it. The given key is the clause's type;
-// "" takes the clause's own key. The widget's properties come from its type, its templates and its own block, the last
-// written of each key.
+// buildWidget makes the widget that a clause writes, then the widgets inside it. An empty type takes the clause's key.
 func (resolver *resolver) buildWidget(own child, parent int32, key string) {
 	own.origin = originWidget
 	if own.statement != absentStatement {
@@ -568,9 +546,8 @@ func (resolver *resolver) buildWidget(own child, parent int32, key string) {
 	resolver.resolveChildren(id)
 }
 
-// listTypes returns the built-in type that a type is made on, and the definitions it passes through, base first. A
-// type that no file defines is a built-in, or missing if the schema has no such widget. A chain that is too deep is a
-// cycle and marks the first type missing. The given clause says which file's local definitions count.
+// listTypes returns the built-in type that a type is made on, and the definitions in between, base first. An unknown
+// type or a cycle is marked missing.
 func (resolver *resolver) listTypes(label string, owner clause) (string, []clause) {
 	builtin := label
 	var chain []clause
@@ -606,9 +583,8 @@ func (resolver *resolver) findCalled(owner clause, caller, label string) (clause
 	return definition, definition.statement != absentStatement
 }
 
-// findDeclared returns the clause of the definition that a caller's databases keep of a label, local ones first. Its
-// statement is absentStatement if the game keeps no definition. It is dropped if files define the label but the game
-// keeps none of those definitions.
+// findDeclared returns the definition the game keeps of a label, local ones first. Its statement is absentStatement
+// if the game keeps none.
 func (resolver *resolver) findDeclared(owner clause, caller, label string) clause {
 	exists := false
 	for _, declared := range slices.Backward(game.GUI.Declares) {
@@ -627,9 +603,8 @@ func (resolver *resolver) findDeclared(owner clause, caller, label string) claus
 	return clause{statement: absentStatement, dropped: exists}
 }
 
-// findWinner returns the definition the game keeps among the given ones, as it would if it read the file being drawn.
-// Where it reads another file at that file's path instead, the other file's definitions are left out and the first
-// definition of the file being drawn is kept. It returns false if the game keeps none of them.
+// findWinner returns the definition the game keeps, as if it read the file being drawn. It returns false if it keeps
+// none.
 func (resolver *resolver) findWinner(sites []index.Site, precedence game.Precedence) (index.Winner, bool) {
 	mods := resolver.mods
 	if resolver.isRead {
@@ -670,9 +645,8 @@ func (resolver *resolver) listOverrides(links []clause) {
 	}
 }
 
-// listFields yields each field of a clause with the bare value written just before it, in the order the game applies
-// them. A using is replaced by the fields of its template. A template that no file defines, or one nested too deep,
-// is marked missing.
+// listFields yields each field of a clause and the bare value before it, in the order the game applies them. A using
+// yields its template's fields.
 func (resolver *resolver) listFields(holder clause, depth int) iter.Seq2[string, clause] {
 	return func(yield func(string, clause) bool) {
 		if depth > maxDepth {
@@ -713,9 +687,8 @@ func (resolver *resolver) listTemplate(using clause, depth int, yield func(strin
 	return true
 }
 
-// findLead returns what a statement among its siblings is where it is a labeled block, block or blockoverride, in
-// lower case: the bare value written just before it, as in blockoverride "x" { }, or the key it is written under, as
-// in blockoverride = "x" { }. Either way the label is the statement's tag. It returns "" for any other statement.
+// findLead returns the lower-case word that opens a labeled block, block or blockoverride. It returns "" for any other
+// statement.
 func findLead(tree *jomini.Tree, siblings []int32, position int) string {
 	current := tree.Statements[siblings[position]]
 	if key := strings.ToLower(tree.Unquoted(current.Key)); tree.Unquoted(current.Tag) != "" &&
@@ -732,9 +705,7 @@ func findLead(tree *jomini.Tree, siblings []int32, position int) string {
 	return ""
 }
 
-// resolveBlock returns the properties that a clause gives its widget, and gathers the widgets it holds, the states it
-// opens in and the textures it overlays. A labeled block is read as written, or as the widget replaces it. The given
-// depth is how many types, templates and labeled blocks lie between the clause and its widget.
+// resolveBlock returns the properties a clause gives its widget, and gathers its children, states and overlays.
 func (resolver *resolver) resolveBlock(holder clause, depth int) []Property {
 	var properties []Property
 	for lead, field := range resolver.listFields(holder, depth) {
@@ -775,9 +746,7 @@ func (resolver *resolver) findReplacement(field clause) clause {
 	return field
 }
 
-// gatherInner gathers the widgets written inside a label or an item as children of the widget. A label replaces the
-// one gathered before it. The given depth is how many types, templates and labeled blocks lie between the field and
-// its widget.
+// gatherInner gathers the widgets inside a label or an item as children. A label replaces the one before it.
 func (resolver *resolver) gatherInner(field clause, slot game.WidgetSlot, depth int) {
 	if slot.Role == roleLabel {
 		resolver.gathered.children = slices.DeleteFunc(resolver.gathered.children, func(held child) bool {
@@ -787,9 +756,8 @@ func (resolver *resolver) gatherInner(field clause, slot game.WidgetSlot, depth 
 	resolver.gatherWidgets(field, slot.Role, depth)
 }
 
-// gatherWidgets gathers the widgets written in a block as children of the widget in the given role, those in its
-// templates and labeled blocks too, each labeled block as the widget replaces it. A child with no role is an item of a
-// data model.
+// gatherWidgets gathers the widgets in a block and its templates as children in a role. A child with no role is an
+// item of a data model.
 func (resolver *resolver) gatherWidgets(holder clause, role string, depth int) {
 	for lead, inner := range resolver.listFields(holder, depth) {
 		current := inner.tree.Statements[inner.statement]
@@ -846,9 +814,7 @@ func (resolver *resolver) findStateName(state clause) string {
 	return ""
 }
 
-// listStateFields yields each field of a state that writes a value, in the order the game applies them: a template's
-// fields in the place of its using, and a labeled block's own fields in its place, or the ones the widget replaces it
-// with.
+// listStateFields yields each field of a state that writes a value, in the order the game applies them.
 func (resolver *resolver) listStateFields(state clause) iter.Seq[clause] {
 	return func(yield func(clause) bool) {
 		for lead, field := range resolver.listFields(state, 0) {
@@ -922,8 +888,10 @@ func (resolver *resolver) resolveSpan(tree *jomini.Tree, span jomini.Span) (stri
 	if !ok || len(call.Steps) != 1 || call.Steps[0].Text != defineCall || len(call.Steps[0].Arguments) == 0 {
 		return "", false
 	}
+	// GetDefine('NAI', 'X') names the define X of the group NAI
 	arguments := call.Steps[0].Arguments
-	value := resolver.library.lookupDefine(arguments[len(arguments)-1].Text)
+	group := lo.Ternary(len(arguments) > 1, arguments[0].Text, "")
+	value := resolver.library.lookupDefine(group, arguments[len(arguments)-1].Text)
 	return value, value != ""
 }
 
@@ -940,11 +908,8 @@ func (resolver *resolver) resolveAlone(own clause) []Property {
 	return resolver.resolveBlock(template, 1)
 }
 
-// resolveOpening returns the properties that a widget of the given name has once the animation it opens with has run.
-// It starts from the states it opens in, as isOpening says, and the ones its holders' opening runs on it by its name.
-// Each state gives the widget its end values and the calls it runs as it starts, as runState says, and is followed by
-// the states it leads to. A state that takes the widget off the screen (isLeaving) is left out, with all that would
-// follow it, so the widget opens as it shows before it leaves. Each state runs once, so a loop of states ends.
+// resolveOpening returns the properties a widget has once its opening animation has run. A state that takes it off
+// the screen is left out, with what follows it.
 func (resolver *resolver) resolveOpening(name string) []Property {
 	states, queue := map[string]clause{}, []clause{}
 	for _, state := range resolver.gathered.states {
@@ -974,10 +939,7 @@ func (resolver *resolver) resolveOpening(name string) []Property {
 	return properties
 }
 
-// runState returns what one state of a widget gives the widget as it runs: its end values, which the widget has as its
-// own, and the calls it runs as it starts (game.GUI.OpeningCalls), as properties; and the states of the widget it
-// leads to, among the given states by their names. Those are the one its next key names, and the ones its calls run
-// by name, as triggerStates finds them. The other keys that a state has for itself are left out.
+// runState returns the end values and opening calls a state gives its widget, and the states it leads to.
 func (resolver *resolver) runState(state clause, states map[string]clause) (properties []Property, after []clause) {
 	for field := range resolver.listStateFields(state) {
 		key, value, _ := splitField(field)
@@ -996,10 +958,7 @@ func (resolver *resolver) runState(state clause, states map[string]clause) (prop
 	return properties, after
 }
 
-// triggerStates returns the states of a widget, among the given states by their names, that a call a state runs runs
-// by name (game.GUI.Animation.Trigger). A state it runs on a child that it finds by the child's name
-// (game.GUI.Animation.FindChild) is noted for the widgets under it of that name, which open with it. It returns none
-// for any other call.
+// triggerStates returns the states that a call in a state triggers by name. It returns none for any other call.
 func (resolver *resolver) triggerStates(source string, states map[string]clause) []clause {
 	rules := game.GUI.Animation
 	call, ok := jomini.ParseBracketed(source, 0)
@@ -1067,9 +1026,8 @@ func (resolver *resolver) resolvePictures(properties []Property) (map[string][]l
 	return texts, textures
 }
 
-// resolveValue returns what the value of a key leads to: the text it shows where the key writes a text, else the
-// image file it names where the key names a picture or a coat of arms' mask. The text is none and the file "" where it
-// leads to neither.
+// resolveValue returns the text a key's value shows or the image file it names. Both are empty if it leads to
+// neither.
 func (library *library) resolveValue(key, value string) (text []loc.Segment, texture string) {
 	switch {
 	case value == "":
@@ -1153,10 +1111,8 @@ func (resolver *resolver) findHolders(key string, root clause) []Widget {
 	return []Widget{}
 }
 
-// EditProperty sets one property of a block and returns the edits that do it. The block is a widget, a coat, a layer
-// or an instance, located by the given file and range. If the block already sets the property, the edit replaces its
-// value. Otherwise the edit adds the property at the end of the block. It returns an error if the file is not in the
-// workspace or no block starts where the range does.
+// EditProperty returns the edits that set one property of a block. It returns an error if the file is not in the
+// workspace or no block starts at the given range.
 func (drw *Service) EditProperty(path string, block lsp.Range, key, value string) ([]lsp.Edit, error) {
 	tree, statement, err := drw.findBlock(path, block)
 	if err != nil {
@@ -1165,10 +1121,8 @@ func (drw *Service) EditProperty(path string, block lsp.Range, key, value string
 	return lsp.ToEdits(tree.Src, tree.Lines, []jomini.Edit{makeSetting(tree, statement, key, value)}), nil
 }
 
-// AddInstance adds one placement to a layer of a coat and returns the edits that do it. The placement is the game's
-// template for one in the layer's role, written as the layer's last statement. It returns an error if the file is not
-// in the workspace, no block starts where the range does, or the game places no layer with the role of that block, as
-// with a pattern.
+// AddInstance returns the edits that add a placement to a layer of a coat. It returns an error if the file is not in
+// the workspace, no block starts at the given range, or the layer takes no placement.
 func (drw *Service) AddInstance(path string, layer lsp.Range) ([]lsp.Edit, error) {
 	tree, statement, err := drw.findBlock(path, layer)
 	if err != nil {
@@ -1219,9 +1173,7 @@ func resolveText(ws *workspace.Session, mods *index.Index, value string) []loc.S
 	return resolveSegments(ws, mods, loc.Segments(lo.Ternary(ok, text, value), 0), 0)
 }
 
-// resolveSegments returns what a player reads in the segments of a text, as plain segments and data calls. Each $key$
-// is replaced by what the message it names in the given index of the mods reads, and each break by a newline. A data
-// call stays as written. The rest of the markup is dropped, and so is a key that names no message.
+// resolveSegments returns what a player reads in a text: each $key$ as its message and each break as a newline.
 func resolveSegments(ws *workspace.Session, mods *index.Index, segments []loc.Segment, depth int) []loc.Segment {
 	return lo.FlatMap(segments, func(segment loc.Segment, _ int) []loc.Segment {
 		switch segment.Markup {
@@ -1237,10 +1189,7 @@ func resolveSegments(ws *workspace.Session, mods *index.Index, segments []loc.Se
 	})
 }
 
-// sampleText returns the segments of a text with each data call given its sample and the sample's kind, as sampleCall
-// makes them. Each call is read in the given context, and the properties are those of the widget that shows the text.
-// A sample that follows text or another sample with no space between them starts with one, since the game's own
-// functions bring their spacing; one at the start of the text, or after a space or an opening bracket, has none.
+// sampleText returns a text's segments with each data call replaced by its sample.
 func (library *library) sampleText(segments []loc.Segment, context context, properties iter.Seq[Property]) []loc.Segment {
 	segments = slices.Clone(segments)
 	for position, segment := range segments {
@@ -1257,13 +1206,7 @@ func (library *library) sampleText(segments []loc.Segment, context context, prop
 	return segments
 }
 
-// sampleCall returns the sample text that a data call in a text shows, given the call's text between its brackets,
-// with the kind of the sample. The kind is that of what the call's last function returns (game.GUI.CallKinds). A
-// number is digits shaped by the call's format codes, as sampleNumber makes them. A date is one in the game's own
-// form, as sampleDate makes it. A text is lorem words, as many as the widget's box holds: two or three on one line, a
-// sentence or two where the box has several lines and resizes to fit them, and a paragraph where it has several lines
-// and a fixed size. A call whose last function the dumps do not declare shows two words of text. The same call always
-// shows the same sample.
+// sampleCall returns the sample text of a data call and its kind. The same call always shows the same sample.
 func (library *library) sampleCall(source string, context context, properties iter.Seq[Property]) (sample, kind string) {
 	hash := fnv.New32a()
 	_, _ = hash.Write([]byte(source))
@@ -1287,9 +1230,7 @@ func (library *library) sampleCall(source string, context context, properties it
 	return sampleSentences(seed, len(loremSentences)), kind
 }
 
-// sampleNumber returns the digits of a sample number shaped by the given format codes. A digit among them is how many
-// decimals the number has, none where there is none. game.GUI.PercentCode makes it a percent, and game.GUI.SignCode
-// shows its plus sign. The given seed picks the number.
+// sampleNumber returns a sample number, picked by a seed and shaped by format codes.
 func sampleNumber(seed uint32, codes string) string {
 	decimals := 0
 	if position := strings.IndexFunc(codes, unicode.IsDigit); position >= 0 {
@@ -1314,9 +1255,7 @@ func isDate(function schema.DataFunction) bool {
 	})
 }
 
-// sampleDate returns a sample date in the form the game writes one (game.GUI.DateForm), with its words in the
-// workspace's language. The given seed picks the day, the month and the year. A form or a month that the
-// localization lacks is written as its key.
+// sampleDate returns a sample date, picked by a seed, in the game's form and the workspace's language.
 func (library *library) sampleDate(seed uint32) string {
 	form := game.GUI.DateForm
 	month := form.Months[seed%uint32(len(form.Months))]
@@ -1362,9 +1301,8 @@ func isOn(properties iter.Seq[Property], key string) bool {
 	return game.GUI.Literals[strings.ToLower(findProperty(properties, key).Value)]
 }
 
-// findKeptClause returns the clause of the definition the game keeps of a name in a database. A local definition never
-// counts. It returns false if the schema has no such database, nothing defines the name, or the game keeps none of its
-// definitions.
+// findKeptClause returns the definition the game keeps of a name in a database, local ones aside. It returns false if
+// there is none.
 func findKeptClause(ws *workspace.Session, mods *index.Index, reference schema.Reference) (clause, bool) {
 	kept, ok := mods.FindKept(ws.Schema, resolveReference(mods, reference))
 	if !ok {
@@ -1406,9 +1344,7 @@ func findProperty(properties iter.Seq[Property], key string) Property {
 	return Property{}
 }
 
-// resolveProperties returns the properties with the last written of each key, in the order the keys are first written.
-// Keys match without regard to case. A missing type or template is kept with each name it was written for, and a key
-// the game repeats with each value it is written with. The keys of a widget's text count as one key.
+// resolveProperties returns the last written property of each key, in the order the keys are first written.
 func resolveProperties(properties []Property) []Property {
 	resolved := []Property{}
 	positions := map[string]int{}
@@ -1439,9 +1375,7 @@ func toRange(field clause) lsp.Range {
 	return lsp.ToRange(field.tree.Src, field.tree.Lines, span)
 }
 
-// makeSetting returns the edit that sets a key of a block to a value. It replaces the whole value where the block
-// writes the key, else it adds the key as the block's last statement. The key matches without quotes or case, and the
-// last statement that has it counts.
+// makeSetting returns the edit that sets a key of a block, replacing its value or adding it as the last statement.
 func makeSetting(tree *jomini.Tree, holder int32, key, value string) jomini.Edit {
 	setting, ok := int32(0), false
 	for child := range tree.Children(holder) {

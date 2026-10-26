@@ -1,6 +1,4 @@
-/**
- * Vite config: Vue, Nuxt UI, Wails, Tailwind.
- */
+/** vite.config.ts builds the frontend and sets Nuxt UI's look to the app's theme. */
 import { defineConfig } from "vite";
 import vue from "@vitejs/plugin-vue";
 import ui from "@nuxt/ui/vite";
@@ -8,8 +6,7 @@ import wails from "@wailsio/runtime/plugins/vite";
 import tailwindcss from "@tailwindcss/vite";
 import path from "path";
 
-// Nuxt UI set to pmt.css's controls, the blocks DESIGN.md lists: 28px small and 32px default controls,
-// 28px menu rows, 30px table rows. The colors come from the tokens in styles/themes.css.
+// field sizes the app's inputs: 28px small, 32px default
 const field = {
   sizes: {
     sm: {
@@ -34,7 +31,7 @@ const field = {
     { leading: true, size: "md", class: "ps-8" },
     { trailing: true, size: "sm", class: "pe-7.5" },
     { trailing: true, size: "md", class: "pe-8" },
-    // above the md breakpoint Nuxt UI sets its own text size; keep the field's
+    // Nuxt UI changes the text size above md; the field keeps its own
     { fixed: false, size: "sm", class: "md:text-12" },
     { fixed: false, size: "md", class: "md:text-13" },
   ],
@@ -53,7 +50,7 @@ const menu = {
     itemTrailingIcon: "size-3.5",
   },
 };
-// a step's 22px circle: outlined, green when done, the accent when current
+// step draws a stepper's circle: green when done, the accent when current
 const step = {
   trigger: [
     "size-5.5 text-11 font-medium ring ring-inset ring-accented bg-transparent text-dimmed",
@@ -71,7 +68,7 @@ const listbox = {
   },
   compoundVariants: field.compoundVariants,
 };
-// the dropdown and context menus: an item under the pointer or open on the accent's soft fill
+// contextual styles the dropdown and context menus
 const contextual = {
   slots: menu.slots,
   variants: {
@@ -87,16 +84,13 @@ export default defineConfig({
     vue(),
     ui({
       colorMode: true,
-      // our components are imported where they are used; only Nuxt UI's are resolved by name
+      // only Nuxt UI's components are resolved by name
       components: { dirs: [] },
       theme: {
         colors: ["primary", "secondary", "success", "info", "warning", "error", "purple"],
       },
       ui: {
-        // a pane's resize handle takes no room: a 2px line on the border between two panes, the accent on hover and
-        // while dragging, grabbed on a strip 4px into each pane over the panes' own layers (Monaco's scrollbar is at
-        // z-index 11), since a press that lands in a pane is taken there (Monaco, the floor's camera) before reka,
-        // which listens on the body, hears it
+        // a pane's resize handle is a 2px line, grabbed on a wider strip above the panes' own layers
         splitter: {
           slots: {
             handle:
@@ -115,7 +109,7 @@ export default defineConfig({
             },
           },
         },
-        // the type scale and the radii of themes.css, so merged classes keep them
+        // themes.css's text sizes and radii, so merged classes keep them
         tv: {
           twMergeConfig: {
             extend: {
@@ -164,11 +158,11 @@ export default defineConfig({
         inputMenu: listbox,
         dropdownMenu: contextual,
         contextMenu: contextual,
-        // its content keeps inside the rounded corners, a footer's fill included
+        // content stays inside the rounded corners
         popover: { slots: { content: "overflow-hidden bg-elevated rounded-xl ring-0 shadow-(--shadow)" } },
-        // a toast floats as a menu does: the theme's shadow, whose outline replaces the ring
+        // a toast has a menu's shadow in place of the ring
         toast: { slots: { root: "ring-0 shadow-(--shadow)" } },
-        // a dialog is the boards' .pop: bg-3, 12px corners, the theme's shadow
+        // a dialog has 12px corners and the theme's shadow
         modal: {
           slots: { content: "bg-elevated" },
           variants: { fullscreen: { false: { content: "rounded-xl ring-0 shadow-(--shadow)" } } },
@@ -192,7 +186,7 @@ export default defineConfig({
           slots: { base: "bg-(--bg-0)", indicator: "text-(--accent-ink)" },
           variants: { size: { md: { base: "size-4", icon: "size-3", container: "h-4.5" } } },
         },
-        // the CommandPalette board: a 46px search, .mh group labels, 32px .ci rows in the accent's soft fill
+        // the command palette: a 46px search and 32px rows
         commandPalette: {
           slots: {
             label: "font-medium text-dimmed",
@@ -216,8 +210,7 @@ export default defineConfig({
             { active: false, class: { item: "data-highlighted:not-data-disabled:before:bg-(--accent-soft)" } },
           ],
         },
-        // the boards' .f: a .label over its control, 5px apart, hints in the quiet 11px; horizontal is a setting's
-        // row, its name and hint with the control at the end
+        // a field's label sits over its control; horizontal is a settings row with the control at the end
         formField: {
           slots: {
             label: "text-12 font-medium text-toned",
@@ -238,7 +231,7 @@ export default defineConfig({
             },
           },
         },
-        // a detail column's sections: a 32px head at 12px 600 over the rule
+        // a detail column's sections, each under a 32px head
         accordion: {
           slots: {
             trigger: "h-8 ps-3 pe-2 py-0 gap-1.5 text-12 font-semibold text-toned rounded-none",
@@ -246,8 +239,7 @@ export default defineConfig({
             body: "pb-1 text-12",
           },
         },
-        // a 22px row at 12px, the picked one on the accent's soft fill with a 2px accent bar; the rows are never cut, a deep
-        // one scrolls the panel
+        // 22px rows; the picked one has the accent's fill and a 2px bar, and a deep row scrolls the panel
         tree: {
           slots: {
             itemWithChildren: "ps-1 -ms-px",
@@ -272,17 +264,17 @@ export default defineConfig({
             },
           ],
         },
-        // a description wraps where Steam's will: Steam's text column is 639px at 14/20 on every window width
-        // (its .workshopItemDescription, 655px with 8px sides, measured 2026-10-05); headings and bold at 600
+        // a description wraps where Steam's does, in a 639px column at 14/20
         editor: {
           slots: {
             base: [
               "mx-auto w-159.75 max-w-full px-0 py-4 sm:px-0 *:my-2.5 text-14 text-toned [&_p]:leading-5 [&_li]:leading-5 [&_strong]:font-semibold",
               "[&_:is(h1,h2,h3,h4,h5,h6)]:font-semibold [&_h1]:text-20 [&_h2]:text-18 [&_h3]:text-16 [&_:is(h4,h5,h6)]:text-13",
+              "[&_table]:w-full [&_table]:border-collapse [&_:is(th,td)]:border [&_:is(th,td)]:border-default [&_:is(th,td)]:px-2.5 [&_:is(th,td)]:py-1.5 [&_:is(th,td)]:align-top [&_th]:bg-elevated [&_th]:text-start [&_th]:font-semibold [&_th]:text-highlighted [&_.selectedCell]:bg-primary/15",
             ],
           },
         },
-        // horizontal is the Wizard's .step, vertical the Publish rail's .stp
+        // horizontal in the Wizard, vertical in the Publish rail
         stepper: {
           compoundVariants: [
             {
@@ -303,7 +295,7 @@ export default defineConfig({
               class: {
                 ...step,
                 header: "w-full gap-1.5",
-                // each step a card, the whole of it the step's button: the circle's hit area stretched over it
+                // each step is a card that is wholly its button
                 item: [
                   "items-center gap-2.5 rounded-md px-2.5 py-2.25 ring ring-inset ring-default hover:bg-elevated/60",
                   "data-[state=active]:bg-elevated data-[state=active]:ring-accented",
@@ -322,7 +314,7 @@ export default defineConfig({
             },
           ],
         },
-        // a card is the boards' .opt: 6px corners on bg-2, the accent's soft fill when picked
+        // a card option takes the accent's fill when picked
         radioGroup: {
           compoundVariants: [
             { variant: "card", class: { item: "rounded-md bg-muted px-3 py-2.5 gap-2.5" } },
@@ -337,7 +329,7 @@ export default defineConfig({
           slots: { trigger: "font-medium", leadingIcon: "size-3.5" },
           variants: {
             size: { md: { trigger: "px-2.5 py-0 text-12 gap-1.5", leadingIcon: "size-3.5" } },
-            // pill is pmt.css's .seg, link its .ptabs
+            // pill is a segmented control, link a row of page tabs
             variant: {
               pill: {
                 list: "h-7 p-0.5 gap-0.5 rounded-md bg-muted ring ring-inset ring-default",
@@ -352,7 +344,7 @@ export default defineConfig({
               variant: "pill",
               class: { indicator: "inset-y-0.5 bg-accented", trigger: "data-[state=active]:text-highlighted" },
             },
-            // a seg is as wide as its buttons; the orientation would stretch it across its row
+            // a pill list is as wide as its buttons
             { orientation: "horizontal", variant: "pill", class: { root: "items-start", list: "w-fit" } },
             { variant: "link", class: { indicator: "bg-primary", trigger: "data-[state=active]:text-highlighted" } },
           ],
@@ -368,7 +360,7 @@ export default defineConfig({
           },
           compoundVariants: [
             { color: "neutral", variant: "soft", class: "bg-accented text-toned" },
-            // pmt.css's soft fills, written out so Tailwind finds each class
+            // each color's soft fill, written out so Tailwind finds the class
             { color: "primary", variant: "soft", class: "bg-(--accent-soft) text-primary" },
             { color: "secondary", variant: "soft", class: "bg-(--link-soft) text-secondary" },
             { color: "success", variant: "soft", class: "bg-(--green-soft) text-success" },
@@ -411,6 +403,8 @@ export default defineConfig({
       "@nuxt/ui > prosemirror-view",
       "@nuxt/ui > prosemirror-gapcursor",
     ],
+    // Nuxt UI loads Tiptap unbundled; the table extension must share that copy
+    exclude: ["@tiptap/extension-table"],
   },
   resolve: {
     alias: {

@@ -55,17 +55,6 @@ export interface Mod {
      * the upload exclusions, one pattern per line
      */
     "ignore": string;
-
-    /**
-     * DescriptionSource is where the Workshop description comes from: markdown, bbcode or steam, Steam's own text.
-     * "" takes the first description file the mod has, else Steam's own text.
-     */
-    "descriptionSource": string;
-
-    /**
-     * DescriptionFile is the path of the description's file from the mod's folder, or "" for its source's own file.
-     */
-    "descriptionFile": string;
 }
 
 /**
@@ -89,12 +78,12 @@ export interface Setting {
     "help": string;
 
     /**
-     * appearance; the IDE's editor, language, checks, explorer, visual, wiki
+     * appearance, or an IDE area: editor, language, checks, explorer, visual, wiki
      */
     "section": string;
 
     /**
-     * it is kept per workspace, as the IDE's settings are
+     * it is kept per workspace
      */
     "workspace": boolean;
 
@@ -126,7 +115,7 @@ export interface Update {
 }
 
 /**
- * A Workspace is one recorded workspace: a game install and the mods loaded with it, in load order.
+ * A Workspace is one recorded workspace, a game install and the mods loaded with it.
  */
 export interface Workspace {
     "id": string;
@@ -160,7 +149,12 @@ export interface Workspace {
     "showBinaries": boolean;
 
     /**
-     * Settings holds the values the user set of the settings kept per workspace, by key.
+     * Settings holds the user's values of the per-workspace settings, by key.
      */
     "settings": { [_ in string]?: string } | null;
+
+    /**
+     * IgnoredPairs holds the sorted pairs of mods whose conflicts the workspace ignores.
+     */
+    "ignoredPairs": string[][] | null;
 }

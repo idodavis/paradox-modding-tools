@@ -97,6 +97,8 @@ reads the texture of the concept `tax_base`). A definition's picture is, in orde
 file the defines for its kind and field name (`<KIND>_<FIELD>_PATH`, `_PREFIX` and `_SUFFIX`, with a folder's
 `_default`), its picture by the game's picture keys or its name as an icon, and the one image it writes. A suffix
 define the game writes under another stem is read there (`game.Game.GUISuffixStems`), as CK3 writes its realm mask's.
+A define is named by its group and key. The defines that say where pictures are sit in the game's `GUIDefineGroup`
+(CK3's and EU5's `NGameIcons`, as in `NGameIcons|TRAIT_ICON_PATH`), and `GetDefine('NGroup', 'KEY')` names both.
 
 A mask, a coat of arms' or the widget's own (`game.GUI.MaskKeys`), written as a path or as a binding, is found as a
 picture is, with no placeholder of its own; it is no texture of the widget's, and the page cuts the placeholder to its
@@ -161,10 +163,11 @@ far the object is reached: an object exists or a list has items (`game.GUI.Openi
 their legitimacy and sits on a council they may change as in `council-window.png`. A name joins the sample only where a
 screenshot shows that it holds. A test of what the window shows holds and the test of its absence fails, so the two
 arms of a yes/no pair never draw together. Then what its opening states' calls set, and the first widget of each strip
-of tabs pressed. A `DataModelHasItems` call (`game.GUI.ModelHas`) is worked out from the rows, as `IsDataModelEmpty` is. A press runs the widget's clicks: a call such as `SelectTab('x')`
-selects `x` of the group on the same object, and a call to the GUI's variable system sets, clears or toggles a
-variable. A property written as a choice between two values, a function named with `game.GUI.SelectPrefix` such as
-`Select_float(cond, a, b)`, takes the value its condition gives, as a `Choice`.
+of tabs pressed. A `DataModelHasItems` call (`game.GUI.ModelHas`) is worked out from the rows, as `IsDataModelEmpty`
+is. A press runs the widget's clicks: a call such as `SelectTab('x')` selects `x` of the group on the same object,
+and a call to the GUI's variable system sets, clears or toggles a variable. A property written as a choice between two
+values, a function named with `game.GUI.SelectPrefix` such as `Select_float(cond, a, b)`, takes the value its
+condition gives, as a `Choice`.
 
 **The variable query.** `game.GUI.Variables` names the functions of the GUI's own variable system, each taking the
 variable's name first, and a variable's name stays part of its group. `UnsetOrValue`, EU5's

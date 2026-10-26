@@ -6,6 +6,7 @@
 import { refDebounced } from "@vueuse/core";
 import { computed, shallowRef } from "vue";
 
+import { matchQuery } from "../../../lib/format";
 import { fileUrl } from "../../../queries";
 
 /** One choice: its value, its name, and the image file or the color that shows it. */
@@ -52,9 +53,7 @@ const isOpen = shallowRef(false);
 const search = shallowRef("");
 const query = refDebounced(search, 150);
 const current = computed(() => choices.find((choice) => choice.value === value));
-const matches = computed(() =>
-  choices.filter((choice) => choice.label.toLowerCase().includes(query.value.toLowerCase())),
-);
+const matches = computed(() => choices.filter((choice) => matchQuery(query.value, choice.label)));
 const caption = computed(() => {
   const index = choices.findIndex((choice) => choice.value === value);
   return index < 0 ? title : `${title}, ${index + 1} of ${choices.length}`;

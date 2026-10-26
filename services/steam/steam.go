@@ -2,11 +2,10 @@ package steam
 
 import (
 	"cmp"
-	"encoding/json"
+	"context"
 	"errors"
 	"fmt"
 	"io"
-	"io/fs"
 	"net/http"
 	"os"
 	"path"
@@ -14,23 +13,26 @@ import (
 	"runtime"
 	"slices"
 	"strings"
+	"sync"
 	"time"
 
 	"github.com/samber/lo"
 	"github.com/wailsapp/wails/v3/pkg/application"
+	"golang.org/x/sync/singleflight"
 
 	"paradox-modding-tools/internal/files"
 	"paradox-modding-tools/internal/game"
+	"paradox-modding-tools/services/git"
 	"paradox-modding-tools/services/workspace"
 )
 
 // The events the Workshop service sends.
 const (
-	EventProgress       = "steam:progress"  // an upload's progress; the data is a Progress
-	EventListingChanged = "release:changed" // a mod's listing files were written; the data is the mod's id
+	EventProgress       = "steam:progress"  // the progress of an upload, as a Progress
+	EventListingChanged = "release:changed" // a mod's listing files were written, with the mod's id
 )
 
-// init registers the types of the events' data with Wails.
+// init registers the type of each event's data with Wails.
 func init() {
 	application.RegisterEvent[Progress](EventProgress)
 	application.RegisterEvent[string](EventListingChanged)
@@ -38,11 +40,17 @@ func init() {
 
 // Service is the Wails service that publishes mods to the Steam Workshop.
 type Service struct {
-	Workspace *workspace.Service
+	Workspace  *workspace.Service    // the open workspace
+	Git        *git.Service          // reads a mod's commits for a change note's draft
+	flight     singleflight.Group    // runs one ask of Steam per item, and one fetch of tags per game, at a time
+	mu         sync.Mutex            // guards the maps below
+	answers    map[string]Comparison // Steam's side of each item, by Workshop id
+	hashes     map[string]string     // the hash of each hashed file, by its path, size and time
+	lines      map[string]Difference // a file's added and removed lines, by the hashes of its two copies
+	tagFetches map[int]bool          // the app ids of the games whose tags were fetched in this run
 }
 
-// ServePublish does a second copy's work if the app was started as one, by the flag it was started with. It reports
-// whether it did and the exit code to exit with.
+// ServePublish does a second copy's work if the app was started as one. It returns the exit code and whether it did.
 func ServePublish(args []string) (exitCode int, served bool) {
 	for flag, work := range copyWork {
 		if slices.Contains(args, flag) {
@@ -52,9 +60,8 @@ func ServePublish(args []string) (exitCode int, served bool) {
 	return 0, false
 }
 
-// findMod returns the open workspace and one of its mods, with the record the config holds now. Nothing is read from
-// the mod's folder, so its descriptor is the one the workspace read when it opened. It returns an error if no
-// workspace is open or the workspace does not have the mod.
+// findMod returns the open workspace and one of its mods. The mod's descriptor is the one read when the workspace
+// opened. It returns an error if no workspace is open or it does not have the mod.
 func (stm *Service) findMod(modID string) (*workspace.Session, workspace.Mod, error) {
 	ws, err := stm.Workspace.Session()
 	if err != nil {
@@ -67,40 +74,7 @@ func (stm *Service) findMod(modID string) (*workspace.Session, workspace.Mod, er
 	return ws, mod, nil
 }
 
-// SetDescriptionSource sets where a mod's Workshop description comes from: markdown or bbcode, kept in the given
-// file, or steam, Steam's own text, which uploads leave as it is. The file is a path inside the mod's folder, or ""
-// for the source's own file in the workshop folder. A Markdown or BBCode file the mod lacks is made empty. It returns
-// an error if the source is none of the three or the file is outside the mod's folder.
-func (stm *Service) SetDescriptionSource(modID, source, file string) error {
-	if err := toChoiceError(source, descriptionSources, "source of a description"); err != nil {
-		return err
-	}
-	ws, mod, err := stm.findMod(modID)
-	if err != nil {
-		return err
-	}
-	rel, ok := "", true
-	if file != "" {
-		rel, ok = files.ToRel(mod.Dir, file)
-	}
-	if !ok {
-		return fmt.Errorf("%s is not in the mod's folder", file)
-	}
-	mod.DescriptionSource, mod.DescriptionFile = source, rel
-	if err := stm.Workspace.UpdateMod(ws.ID, mod.Mod); err != nil {
-		return err
-	}
-	if _, target := findDescription(mod); target != "" && !isFile(target) {
-		if err := stm.writeFile(target, ""); err != nil {
-			return err
-		}
-	}
-	application.Get().Event.Emit(EventListingChanged, modID)
-	return nil
-}
-
-// toChoiceError returns an error unless the given text is one of the given choices. The error says what kind of
-// value the text should have been, in the given words, and lists the choices.
+// toChoiceError returns an error that lists the choices, unless a text is one of them.
 func toChoiceError(text string, choices []string, kind string) error {
 	if slices.Contains(choices, text) {
 		return nil
@@ -108,31 +82,40 @@ func toChoiceError(text string, choices []string, kind string) error {
 	return fmt.Errorf("%q is not a %s: use %s", text, kind, strings.Join(choices, " or "))
 }
 
-// AddPreview adds a preview to a mod: a picture is copied into the mod's previews folder, a video is recorded by
-// its URL. It returns an error if the preview has no known type, the folder has a picture of that name already or the
-// video is listed already.
-func (stm *Service) AddPreview(modID string, preview Preview) error {
-	if err := toChoiceError(preview.Type, previewTypes, "type of preview"); err != nil {
-		return err
-	}
+// changeListing runs a change on the folder of one of a mod's listings, then tells the page that the listing changed.
+// It returns the change's error, or an error if the workspace has no such mod or listing.
+func (stm *Service) changeListing(modID, key string, change func(dir string) error) error {
 	_, mod, err := stm.findMod(modID)
 	if err != nil {
 		return err
 	}
-	if preview.Type == previewImage {
-		err = stm.copyPicture(mod.Dir, preview.Path)
-	} else {
-		err = stm.addVideo(mod.Dir, preview.URL)
-	}
+	dir, err := findListingDir(mod.Dir, key)
 	if err != nil {
+		return err
+	}
+	if err := change(dir); err != nil {
 		return err
 	}
 	application.Get().Event.Emit(EventListingChanged, modID)
 	return nil
 }
 
-// copyPicture copies a picture into the previews folder of a mod's folder, keeping its file name. It returns an
-// error if the folder has a picture of that name.
+// AddPreview adds a picture or a video to the gallery of one of a mod's listings. It returns an error if the preview's
+// type is unknown, the mod has no such listing, or the gallery has the preview already.
+func (stm *Service) AddPreview(modID, key string, preview Preview) error {
+	if err := toChoiceError(preview.Type, previewTypes, "type of preview"); err != nil {
+		return err
+	}
+	return stm.changeListing(modID, key, func(dir string) error {
+		if preview.Type == previewImage {
+			return stm.copyPicture(dir, preview.Path)
+		}
+		return stm.addVideo(dir, preview.URL)
+	})
+}
+
+// copyPicture copies a picture into a listing's previews folder. It returns an error if the folder has a picture of
+// that name.
 func (stm *Service) copyPicture(dir, picture string) error {
 	content, err := os.ReadFile(picture)
 	if err != nil {
@@ -141,54 +124,45 @@ func (stm *Service) copyPicture(dir, picture string) error {
 	return stm.writePicture(dir, path.Join(previewsDir, filepath.Base(picture)), content)
 }
 
-// writePicture writes a picture into a mod's folder. It returns an error if there is a file at that path already.
+// writePicture writes a picture into a listing's folder. It returns an error if the file exists already.
 func (stm *Service) writePicture(dir, rel string, content []byte) error {
 	target := files.Join(dir, rel)
 	if _, err := os.Stat(target); err == nil {
-		return fmt.Errorf("the mod has %s already", rel)
+		return fmt.Errorf("the listing has %s already", rel)
 	}
 	return stm.writeFile(target, string(content))
 }
 
-// addVideo adds a video to the list of a mod's gallery videos. It returns an error if the list has the URL.
+// addVideo adds a video to a listing's gallery. It returns an error if the gallery has it already.
 func (stm *Service) addVideo(dir, url string) error {
 	urls, err := listVideos(dir)
 	if err != nil {
 		return err
 	}
 	if slices.Contains(urls, url) {
-		return fmt.Errorf("the mod has the video %s already", url)
+		return fmt.Errorf("the listing has the video %s already", url)
 	}
 	return stm.writeVideos(dir, append(urls, url))
 }
 
-// RemovePreview deletes a picture from a mod's previews folder, or removes a video from its list. It returns an error
-// if the preview has no known type or is not there.
-func (stm *Service) RemovePreview(modID string, preview Preview) error {
+// RemovePreview removes a picture or a video from the gallery of one of a mod's listings. It returns an error if the
+// preview's type is unknown, the mod has no such listing, or the gallery does not have the preview.
+func (stm *Service) RemovePreview(modID, key string, preview Preview) error {
 	if err := toChoiceError(preview.Type, previewTypes, "type of preview"); err != nil {
 		return err
 	}
-	_, mod, err := stm.findMod(modID)
-	if err != nil {
-		return err
-	}
-	if preview.Type == previewImage {
-		err = stm.deletePicture(mod.Dir, preview.Path)
-	} else {
-		err = stm.deleteVideo(mod.Dir, preview.URL)
-	}
-	if err != nil {
-		return err
-	}
-	application.Get().Event.Emit(EventListingChanged, modID)
-	return nil
+	return stm.changeListing(modID, key, func(dir string) error {
+		if preview.Type == previewImage {
+			return stm.deletePicture(dir, preview.Path)
+		}
+		return stm.deleteVideo(dir, preview.URL)
+	})
 }
 
-// deletePicture deletes a picture from the previews folder of a mod's folder. It returns an error if the picture
-// is outside that folder or does not exist.
+// deletePicture deletes a picture from a listing's previews folder. It returns an error if the picture is not there.
 func (stm *Service) deletePicture(dir, picture string) error {
 	if !files.IsUnder(files.Join(dir, previewsDir), picture) {
-		return fmt.Errorf("%s is not in the mod's previews folder", picture)
+		return fmt.Errorf("%s is not in the listing's previews folder", picture)
 	}
 	if _, err := os.Stat(picture); err != nil {
 		return err
@@ -197,72 +171,118 @@ func (stm *Service) deletePicture(dir, picture string) error {
 	return err
 }
 
-// deleteVideo deletes a video from the list of a mod's gallery videos. It returns an error if the list does not
-// have the URL.
+// deleteVideo removes a video from a listing's gallery. It returns an error if the gallery does not have it.
 func (stm *Service) deleteVideo(dir, url string) error {
 	urls, err := listVideos(dir)
 	if err != nil {
 		return err
 	}
 	if !slices.Contains(urls, url) {
-		return fmt.Errorf("the mod has no video %s", url)
+		return fmt.Errorf("the listing has no video %s", url)
 	}
 	return stm.writeVideos(dir, slices.DeleteFunc(urls, func(listed string) bool { return listed == url }))
 }
 
-// writeVideos writes the list of a mod's gallery videos, one URL per line.
+// writeVideos writes the list of a listing's gallery videos.
 func (stm *Service) writeVideos(dir string, urls []string) error {
 	return stm.writeFile(files.Join(dir, videosFile), strings.Join(urls, "\n")+"\n")
 }
 
-// CompareUpload compares what a mod's next upload would send with the last upload and with what Steam has. Steam's
-// details are nil if the mod has no item yet or the second copy cannot read them.
-func (stm *Service) CompareUpload(modID string) (Comparison, error) {
-	ws, _, err := stm.findMod(modID)
+// FetchPreviews copies the gallery of a listing's Workshop item into the listing, adding what it lacks. It returns an
+// error if the listing has no item, Steam cannot be asked or a download fails.
+func (stm *Service) FetchPreviews(modID, key string) error {
+	params, err := stm.buildItemParams(modID, key)
 	if err != nil {
-		return Comparison{}, err
+		return err
 	}
-	listing, err := stm.ReadListing(modID)
+	details, err := fetchDetails(params)
 	if err != nil {
-		return Comparison{}, err
+		return err
 	}
-	upload, err := stm.ListUpload(modID)
-	if err != nil {
-		return Comparison{}, err
-	}
-	snapshot, _ := LoadSnapshot(stm.Workspace.Config.Dirs.Cache, listing.WorkshopID)
-	var details *Details
-	if params, err := stm.buildParams(ws); err == nil && listing.WorkshopID != "" {
-		params.WorkshopID = listing.WorkshopID
-		details = fetchDetails(params)
-	}
-	return Compare(listing, upload, snapshot, details), nil
+	return stm.changeListing(modID, key, func(dir string) error { return stm.addPreviews(dir, details.Previews) })
 }
 
-// CompareFile returns a file of a mod's upload as the last upload sent it and as the mod has it now, in that order,
-// by its path from the mod's folder. A side without the file is "". It returns an error if the workspace has no such
-// mod or a file cannot be read.
-func (stm *Service) CompareFile(modID, rel string) ([]string, error) {
-	_, mod, err := stm.findMod(modID)
+// addPreviews adds to a listing's gallery the previews from Steam that it lacks. It returns an error if a download
+// fails.
+func (stm *Service) addPreviews(dir string, fetched []Preview) error {
+	have, err := listPreviews(dir)
 	if err != nil {
-		return nil, err
+		return err
 	}
-	snapshot, _ := LoadSnapshot(stm.Workspace.Config.Dirs.Cache, cmp.Or(mod.WorkshopID, mod.Descriptor.WorkshopID))
-	sides := []string{"", ""}
-	for position, dir := range []string{snapshot.Dir, mod.Dir} {
-		if dir == "" {
+	held := lo.SliceToMap(have, func(preview Preview) (string, bool) { return toLabel(preview), true })
+	for _, preview := range fetched {
+		if held[toLabel(preview)] {
 			continue
 		}
-		text, err := files.ReadText(files.Join(dir, rel))
-		if errors.Is(err, fs.ErrNotExist) {
-			continue
+		if preview.Type == previewVideo {
+			err = stm.addVideo(dir, preview.URL)
+		} else {
+			err = stm.fetchPicture(dir, preview)
 		}
 		if err != nil {
-			return nil, err
+			return err
 		}
-		sides[position] = text.Text
 	}
-	return sides, nil
+	return nil
+}
+
+// toLabel returns what tells one preview from another. That is a video's watch link, or a picture's file name without
+// its extension.
+func toLabel(preview Preview) string {
+	if preview.Type == previewVideo {
+		return watchLink + toVideoID(preview.URL)
+	}
+	name := filepath.Base(preview.Path)
+	return strings.TrimSuffix(name, filepath.Ext(name))
+}
+
+// fetchPicture downloads one of Steam's gallery pictures into a listing's folder. It returns an error if the download
+// fails or the picture is there already.
+func (stm *Service) fetchPicture(dir string, preview Preview) error {
+	content, contentType, err := fetchURL(preview.URL, time.Minute)
+	if err != nil {
+		return err
+	}
+	name := filepath.Base(preview.Path)
+	if !slices.Contains(game.PictureExtensions, strings.ToLower(filepath.Ext(name))) {
+		name += cmp.Or(contentExtensions[contentType], ".png")
+	}
+	return stm.writePicture(dir, path.Join(previewsDir, name), content)
+}
+
+// fetchURL downloads an address within the given time. It returns the body and its content type. It returns an error
+// if the download fails or the answer is not 200.
+func fetchURL(address string, timeout time.Duration) (body []byte, contentType string, err error) {
+	client := http.Client{Timeout: timeout}
+	response, err := client.Get(address)
+	if err != nil {
+		return nil, "", err
+	}
+	defer func() { _ = response.Body.Close() }()
+	if response.StatusCode != http.StatusOK {
+		return nil, "", fmt.Errorf("%s answered %s", address, response.Status)
+	}
+	body, err = io.ReadAll(response.Body)
+	return body, response.Header.Get("Content-Type"), err
+}
+
+// buildItemParams returns a second copy's parameters for the Workshop item of one of a mod's listings. It returns an
+// error if the listing has no item or the game has no Steam library on this system.
+func (stm *Service) buildItemParams(modID, key string) (Params, error) {
+	ws, err := stm.Workspace.Session()
+	if err != nil {
+		return Params{}, err
+	}
+	listing, err := stm.ReadListing(modID, key)
+	if err != nil {
+		return Params{}, err
+	}
+	if listing.WorkshopID == "" {
+		return Params{}, fmt.Errorf("the listing of the mod %s has no Workshop item", modID)
+	}
+	params, err := stm.buildParams(ws)
+	params.WorkshopID = listing.WorkshopID
+	return params, err
 }
 
 // DescribeSteam returns why Steam cannot take an upload for the open workspace's game now, or "" if it can.
@@ -275,135 +295,29 @@ func (stm *Service) DescribeSteam() string {
 	if err != nil {
 		return err.Error()
 	}
-	if err := startCopy(statusFlag, params, nil); err != nil {
+	if err := startCopy(context.Background(), statusFlag, params, nil); err != nil {
 		return err.Error()
 	}
 	return ""
 }
 
-// FetchItem downloads a mod's Workshop item as the mod's snapshot and returns the next upload compared with it. It
-// returns an error if the mod has no item or the download fails.
-func (stm *Service) FetchItem(modID string) (Comparison, error) {
-	params, err := stm.buildItemParams(modID)
-	if err != nil {
-		return Comparison{}, err
-	}
-	if err := startCopy(downloadFlag, params, nil); err != nil {
-		return Comparison{}, err
-	}
-	return stm.CompareUpload(modID)
-}
-
-// FetchPreviews copies the pictures and videos of a mod's Workshop item that the mod lacks into its gallery. It
-// returns an error if the mod has no item, a download fails or the gallery would pass what Steam takes.
-func (stm *Service) FetchPreviews(modID string) error {
-	params, err := stm.buildItemParams(modID)
-	if err != nil {
-		return err
-	}
-	var fetched []Preview
-	err = startCopy(previewsFlag, params, func(line string) { _ = json.Unmarshal([]byte(line), &fetched) })
-	if err != nil {
-		return err
-	}
-	_, mod, err := stm.findMod(modID)
-	if err != nil {
-		return err
-	}
-	have, err := listPreviews(mod.Dir)
-	if err != nil {
-		return err
-	}
-	held := lo.SliceToMap(have, func(preview Preview) (string, bool) { return toLabel(preview), true })
-	count := len(have)
-	for _, preview := range fetched {
-		if held[toLabel(preview)] {
-			continue
-		}
-		switch {
-		case preview.Type == previewVideo:
-			err = stm.addVideo(mod.Dir, preview.URL)
-		case count >= maxPreviews:
-			err = fmt.Errorf("the gallery holds %d previews already, which is all Steam takes", maxPreviews)
-		default:
-			err = stm.fetchPicture(mod.Dir, preview)
-		}
-		if err != nil {
+// Publish uploads a mod's listing to the Workshop. An empty visibility keeps the item's own. It returns an error if
+// the upload fails or is canceled.
+func (stm *Service) Publish(ctx context.Context, modID, key, visibility string) error {
+	if visibility != "" {
+		if err := toChoiceError(visibility, visibilities, "visibility"); err != nil {
 			return err
 		}
-		count++
 	}
-	application.Get().Event.Emit(EventListingChanged, modID)
-	return nil
-}
-
-// toLabel returns what tells one preview of a gallery from another: a picture's file name or a video's id.
-func toLabel(preview Preview) string {
-	if preview.Type == previewVideo {
-		return previewVideo + ":" + toVideoID(preview.URL)
-	}
-	return previewImage + ":" + filepath.Base(preview.Path)
-}
-
-// fetchPicture downloads one of Steam's gallery pictures into a mod's previews folder, under Steam's file name. A name
-// with no picture extension gets the one of the content Steam serves, else .png.
-func (stm *Service) fetchPicture(dir string, preview Preview) error {
-	client := http.Client{Timeout: time.Minute}
-	response, err := client.Get(preview.URL)
+	ws, mod, err := stm.findMod(modID)
 	if err != nil {
 		return err
 	}
-	defer func() { _ = response.Body.Close() }()
-	if response.StatusCode != http.StatusOK {
-		return fmt.Errorf("%s answered %s", preview.URL, response.Status)
-	}
-	content, err := io.ReadAll(response.Body)
+	listing, err := stm.ReadListing(modID, key)
 	if err != nil {
 		return err
 	}
-	name := filepath.Base(preview.Path)
-	if !slices.Contains(game.PictureExtensions, strings.ToLower(filepath.Ext(name))) {
-		name += cmp.Or(contentExtensions[response.Header.Get("Content-Type")], ".png")
-	}
-	return stm.writePicture(dir, path.Join(previewsDir, name), content)
-}
-
-// buildItemParams returns a second copy's parameters for a mod's Workshop item. It returns an error if the mod has no
-// item or the game has no Steam library on this system.
-func (stm *Service) buildItemParams(modID string) (Params, error) {
-	ws, _, err := stm.findMod(modID)
-	if err != nil {
-		return Params{}, err
-	}
-	listing, err := stm.ReadListing(modID)
-	if err != nil {
-		return Params{}, err
-	}
-	if listing.WorkshopID == "" {
-		return Params{}, fmt.Errorf("the mod %s has no Workshop item", modID)
-	}
-	params, err := stm.buildParams(ws)
-	params.WorkshopID = listing.WorkshopID
-	return params, err
-}
-
-// Publish uploads a mod to the Workshop in a second copy of the app. The visibility is private, friends, public or
-// unlisted, or "" to keep the item's own. The steam:progress event reports each stage. For a mod with no item yet, the
-// new item's id is saved in the mod's descriptor and its record, even if the upload then fails. It returns an error if
-// the visibility is none of those or the upload fails.
-func (stm *Service) Publish(modID, visibility string) error {
-	if err := toVisibilityError(visibility); err != nil {
-		return err
-	}
-	ws, _, err := stm.findMod(modID)
-	if err != nil {
-		return err
-	}
-	listing, err := stm.ReadListing(modID)
-	if err != nil {
-		return err
-	}
-	upload, err := stm.ListUpload(modID)
+	upload, err := stm.buildUpload(ws, mod, listing)
 	if err != nil {
 		return err
 	}
@@ -411,37 +325,57 @@ func (stm *Service) Publish(modID, visibility string) error {
 	if err != nil {
 		return err
 	}
-	// Steam is sent a copy of the upload's files, so that it gets those and no others
+	// Steam gets copies of the upload's files and pictures, and no others
 	cacheDir := stm.Workspace.Config.Dirs.Cache
+	pictures, err := os.MkdirTemp(cacheDir, "pictures-")
+	if err != nil {
+		return err
+	}
+	defer func() { _ = removeCacheDir(cacheDir, pictures) }()
+	if listing, err = resolvePictures(pictures, listing); err != nil {
+		return err
+	}
 	if params.UploadDir, err = copyFiles(cacheDir, upload.Files); err != nil {
 		return err
 	}
 	defer func() { _ = removeCacheDir(cacheDir, params.UploadDir) }()
-	listing.Visibility = visibility
-	params.WorkshopID, params.Listing = listing.WorkshopID, listing
+	params.WorkshopID, params.Listing, params.Visibility = listing.WorkshopID, listing, visibility
+	params.ModWorkshopIDs = stm.listModWorkshopIDs()
 	pmt := application.Get()
-	workshopID, err := StartPublish(params, func(step Progress) { pmt.Event.Emit(EventProgress, step) })
-	if workshopID != "" && listing.WorkshopID == "" {
-		err = errors.Join(err, stm.LinkItem(modID, workshopID))
+	var linkErr error
+	err = StartPublish(ctx, params, func(step Progress) { pmt.Event.Emit(EventProgress, step) }, func(workshopID string) {
+		linkErr = stm.LinkItem(modID, key, workshopID)
+	})
+	// Steam's item may have changed, so the next comparison asks Steam again
+	stm.removeAnswer(listing.WorkshopID)
+	if err != nil && ctx.Err() != nil {
+		err = errors.New("the upload was stopped: Steam may already have applied part of it")
 	}
-	return err
+	return errors.Join(err, linkErr)
 }
 
-// buildParams returns the parameters of a second copy that name the open workspace's game: its id, its app id and
-// the path of the game's copy of Steam's library in the workspace's install. It returns an error if the game has no
-// such library on this operating system.
+// listModWorkshopIDs returns the Workshop ids of the open workspace's mods.
+func (stm *Service) listModWorkshopIDs() []string {
+	return lo.FilterMap(stm.Workspace.State().Mods, func(mod workspace.Mod, _ int) (string, bool) {
+		workshopID := mod.ResolveWorkshopID()
+		return workshopID, workshopID != ""
+	})
+}
+
+// buildParams returns a second copy's parameters for the open workspace's game. It returns an error if the game has
+// no Steam library on this operating system.
 func (stm *Service) buildParams(ws *workspace.Session) (Params, error) {
 	library, ok := ws.Game.SteamLibrary[runtime.GOOS]
 	if !ok {
 		return Params{}, fmt.Errorf("%s has no Steam library on %s", ws.Game.Name, runtime.GOOS)
 	}
 	return Params{
-		Game: ws.Game.ID, AppID: ws.Game.SteamAppID, LibraryPath: files.Join(stm.Workspace.State().Install.Path, library),
+		AppID: ws.Game.SteamAppID, LibraryPath: files.Join(ws.InstallPath, library),
 	}, nil
 }
 
-// copyFiles copies the given files into a new folder in PMT's cache folder, each at its path from its own folder, and
-// returns the new folder. It deletes the new folder if a copy fails.
+// copyFiles copies files into a fresh folder in PMT's cache, each at its path from its own folder, and returns it. It
+// deletes the folder if a copy fails.
 func copyFiles(cacheDir string, list []files.File) (string, error) {
 	dir, err := os.MkdirTemp(cacheDir, "copy-")
 	if err != nil {
@@ -463,13 +397,22 @@ func copyFiles(cacheDir string, list []files.File) (string, error) {
 	return dir, nil
 }
 
-// removeCacheDir deletes a folder in PMT's cache folder with everything in it, or a file there. A path that is not
-// there is no error. It refuses a path outside the cache folder.
+// removeCacheDir deletes a file or a folder in PMT's cache. A missing one is no error. It returns an error and deletes
+// nothing for a path outside the cache.
 func removeCacheDir(cacheDir, dir string) error {
 	if !files.IsUnder(cacheDir, dir) {
 		return fmt.Errorf("%s is not in PMT's cache folder, so it is not deleted", dir)
 	}
 	return os.RemoveAll(dir)
+}
+
+// moveCacheDir replaces a folder in PMT's cache with a filled one, moved into its place. If the move fails, the filled
+// folder is deleted.
+func moveCacheDir(cacheDir, filled, kept string) error {
+	if err := errors.Join(removeCacheDir(cacheDir, kept), os.Rename(filled, kept)); err != nil {
+		return errors.Join(err, removeCacheDir(cacheDir, filled))
+	}
+	return nil
 }
 
 // ListRules returns the rules that say what an upload leaves out.

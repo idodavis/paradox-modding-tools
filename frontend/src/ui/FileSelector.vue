@@ -2,6 +2,11 @@
   A file or folder picker: the chosen path in a field, with a button that opens the system dialog. A caller can
   replace both with a button of its own.
 -->
+<script lang="ts">
+/** IMAGES lists the picture files a picker for a thumbnail or a picture takes. */
+export const IMAGES = ["*.png", "*.jpg", "*.jpeg", "*.gif", "*.webp"];
+</script>
+
 <script setup lang="ts">
 import { Dialogs } from "@wailsio/runtime";
 

@@ -1,13 +1,11 @@
 <!-- A page's facts, shown in the status bar while the page is open. -->
 <script setup lang="ts">
-import { onActivated, onDeactivated, shallowRef } from "vue";
+import { useShown } from "../app/pages";
 
 defineProps<{ facts: { label: string; value: string }[] }>();
 
 // a kept-alive page stays mounted behind the others, so its facts leave with it
-const visible = shallowRef(true);
-onActivated(() => (visible.value = true));
-onDeactivated(() => (visible.value = false));
+const visible = useShown();
 </script>
 
 <template>

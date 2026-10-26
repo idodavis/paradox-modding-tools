@@ -31,6 +31,8 @@ type Session struct {
 	Game        *game.Game
 	InstallPath string // the install's folder, which holds the game's folders
 	Schema      *schema.Schema
+	Effects     int // how many of the schema's commands are declared as effects
+	Triggers    int // how many are declared as triggers
 	Install     *index.Index
 	Mods        atomic.Pointer[index.Index] // on top of Install; a rescan replaces it whole
 	Order       []Mod                       // in load order
@@ -49,11 +51,8 @@ const (
 	indexFile  = "index.gob"
 )
 
-// openSession opens the workspace with the given id. It loads the install's schema and index from the caches or scans
-// them, scans the mods on top and starts the watcher. The given progress function is called at each stage of the scan,
-// with the percent of the stage's files done where the stage counts them, else 0. The given change function is called
-// with each batch of files that change. It returns an error if the workspace, its install or the install's game is
-// not recorded or not supported, or if a scan fails.
+// openSession opens a workspace: it loads or scans the install, scans the mods and starts the watcher. It returns an
+// error if the workspace or its install is not recorded, or a scan fails.
 func (wsp *Service) openSession(workspaceID string, progress func(stage string, percent int), change func(changes []FileChange)) (*Session, error) {
 	record, install, row, err := findRecords(wsp.Config.Config(), workspaceID)
 	if err != nil {
@@ -74,6 +73,7 @@ func (wsp *Service) openSession(workspaceID string, progress func(stage string, 
 	if err := ws.loadInstall(install.Path, resolveVersion(install), progress); err != nil {
 		return nil, err
 	}
+	ws.Effects, ws.Triggers = countDeclared(ws.Schema, game.DeclaredEffect), countDeclared(ws.Schema, game.DeclaredTrigger)
 	deleteOlderCaches(folder)
 	if err := ws.scanMods(record.Mods, progress); err != nil {
 		return nil, err
@@ -216,9 +216,8 @@ func readMod(row *game.Game, record app.Mod) Mod {
 	return mod
 }
 
-// ScanOrder scans the workspace's mods on top of the install's index as if the game loaded them in the given
-// order, each mod named by its id. The session keeps its own index, so nothing changes for other readers. A broken
-// mod is left out. It returns an error if the ids do not name each of the workspace's mods once.
+// ScanOrder returns an index of the mods scanned in another load order. It returns an error if the ids do not name
+// each mod once.
 func (ws *Session) ScanOrder(modIDs []string) (*index.Index, error) {
 	ordered, err := reorderMods(ws.Order, modIDs, func(mod Mod) string { return mod.ID })
 	if err != nil {
@@ -313,9 +312,8 @@ func (ws *Session) LookupBuffer(path string) (string, bool) {
 	return tree.Src, true
 }
 
-// LookupText returns the text of a localization key in the session's language, else in the base language, together
-// with the message the game keeps, as the given index of the mods lists it. A message in a replace folder wins, for the
-// reason "replace". Otherwise the first loaded wins, for the reason "order". It returns false if no message has it.
+// LookupText returns a localization key's text and the message the game keeps. It returns false if no message has
+// the key.
 func (ws *Session) LookupText(mods *index.Index, key string) (text string, winner index.Winner, ok bool) {
 	messages := mods.ListMessages(key)
 	for _, language := range []string{ws.Language, game.BaseLanguage} {
@@ -325,11 +323,18 @@ func (ws *Session) LookupText(mods *index.Index, key string) (text string, winne
 		if len(candidates) == 0 {
 			continue
 		}
-		winner = index.Winner{Site: candidates[0], Reason: "order"}
-		if position := slices.IndexFunc(candidates, func(candidate index.Site) bool {
-			return schema.IsLocReplacement(ws.Game, mods.File(candidate).Rel, language)
-		}); position >= 0 {
-			winner = index.Winner{Site: candidates[position], Reason: "replace"}
+		// every form of the replace folder ranks before a file outside one
+		outside := len(ws.Game.LocReplaceFolders)
+		rank := func(candidate index.Site) int {
+			position, replaces := schema.FindLocReplacement(ws.Game, mods.File(candidate).Rel, language)
+			return lo.Ternary(replaces, position, outside)
+		}
+		winner = index.Winner{Site: slices.MinFunc(candidates, func(a, b index.Site) int { return cmp.Compare(rank(a), rank(b)) })}
+		switch {
+		case lo.CountBy(candidates, func(candidate index.Site) bool { return rank(candidate) == rank(winner.Site) }) > 1:
+			winner.Reason = index.Unsettled
+		case rank(winner.Site) < outside:
+			winner.Reason = "replace-folder"
 		}
 		return ws.findText(mods, winner.Site, language), winner, true
 	}
@@ -359,9 +364,7 @@ func (ws *Session) findText(mods *index.Index, site index.Site, language string)
 	return message.Text
 }
 
-// LookupTitle returns the title of a definition, as the given index of the mods lists it. It is the text of the message
-// that the definition's title key names, as an event has. Any other definition has the message named like it, or for a
-// game concept the concept prefix and its name. It returns "" if there is no such message.
+// LookupTitle returns the title of a definition, or "" if it has none.
 func (ws *Session) LookupTitle(mods *index.Index, site index.Site) string {
 	if key, ok := ws.FindTitleKey(mods, site); ok {
 		if text, _, ok := ws.LookupText(mods, key); ok {
@@ -387,9 +390,8 @@ func (ws *Session) FindTitleKey(mods *index.Index, site index.Site) (string, boo
 	return tree.FindChildValue(statement, game.TitleKey)
 }
 
-// FindStatement returns the tree of the file that holds a site, as the given index of the mods lists it, and the
-// statement that writes it. The statement is 0, the file itself, for a definition the file names, a message and a row.
-// It returns an error if the file cannot be read or no longer has a statement at the site.
+// FindStatement returns the tree of a site's file and the statement that writes it. It returns an error if the file
+// cannot be read or has no statement there.
 func (ws *Session) FindStatement(mods *index.Index, site index.Site) (*jomini.Tree, int32, error) {
 	path := mods.File(site).Path
 	tree, err := ws.LoadTree(path)
@@ -404,9 +406,8 @@ func (ws *Session) FindStatement(mods *index.Index, site index.Site) (*jomini.Tr
 	return nil, 0, fmt.Errorf("%s has no statement where the index read one", path)
 }
 
-// Rescan brings the mods' index up to date with the given batch of file changes. It scans the changed files again and
-// drops the deleted ones. A change to a file of the game or to a path under no root is skipped. A change that cannot
-// be listed does not stop the others, and its error is returned.
+// Rescan brings the mods' index up to date with a batch of file changes. It returns the error of a change it cannot
+// read, after the others.
 func (ws *Session) Rescan(changes []FileChange) error {
 	ws.mu.Lock()
 	defer ws.mu.Unlock()

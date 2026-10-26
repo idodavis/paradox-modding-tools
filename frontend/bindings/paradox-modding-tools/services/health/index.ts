@@ -7,11 +7,12 @@ export {
 };
 
 export type {
+    Change,
     Compared,
     Finding,
     FindingSite,
+    GameLog,
     Overview,
     Report,
-    Section,
-    Tally
+    Snippet
 } from "./models.js";

@@ -15,16 +15,14 @@ import (
 	"paradox-modding-tools/internal/files"
 )
 
-// A Watcher watches folders for files that change or are deleted. It reports the files of a burst of changes
-// together.
+// A Watcher watches folders for files that change or are deleted.
 type Watcher struct {
 	watcher *fsnotify.Watcher
-	done    chan struct{} // closed when the loop that reports the changes has ended
+	done    chan struct{} // closed when run ends
 }
 
-// startWatcher starts watching the given folders and any folder made under them. It calls the given function with
-// the files that change or are deleted in each burst. A file saved twice in a burst is reported once. It returns an
-// error if a folder cannot be watched.
+// startWatcher watches folders and any folder made under them. It reports the files changed in each burst together.
+// It returns an error if a folder cannot be watched.
 func startWatcher(dirs []string, change func(changes []FileChange)) (*Watcher, error) {
 	notifier, err := fsnotify.NewWatcher()
 	if err != nil {
@@ -40,8 +38,7 @@ func startWatcher(dirs []string, change func(changes []FileChange)) (*Watcher, e
 	return watcher, nil
 }
 
-// addFolders makes a notifier watch a folder and every folder under it, except the hidden ones. A path that is not a
-// folder adds nothing.
+// addFolders makes a notifier watch a folder and every folder under it but the hidden ones. A file adds nothing.
 func addFolders(notifier *fsnotify.Watcher, dir string) error {
 	return filepath.WalkDir(dir, func(path string, entry fs.DirEntry, err error) error {
 		switch {
@@ -56,13 +53,12 @@ func addFolders(notifier *fsnotify.Watcher, dir string) error {
 	})
 }
 
-// run reports the changes the watcher sees to the given function until the watcher is closed.
+// run reports the changes the watcher sees until it is closed.
 func (watcher *Watcher) run(change func(changes []FileChange)) {
 	defer close(watcher.done)
-	// the first event of a burst starts a timer that later events do not reset; when it ends, every path the burst
-	// touched is reported together, and a file counts as deleted if it no longer exists then
+	// a burst's first event starts a timer that later events do not reset. A file gone when it fires counts as deleted
 	pending := map[string]bool{} // the paths the burst touched
-	var batch <-chan time.Time   // ends the burst; nil while none is pending, and a nil channel never fires
+	var batch <-chan time.Time   // fires when the burst ends; nil while none is pending
 	for {
 		select {
 		case event, ok := <-watcher.watcher.Events:
@@ -73,7 +69,7 @@ func (watcher *Watcher) run(change func(changes []FileChange)) {
 				continue
 			}
 			if event.Has(fsnotify.Create) {
-				// a folder made later is watched from its first event on; one that cannot be watched is left
+				// a folder made later is watched from its first event; one that cannot be watched is skipped
 				_ = addFolders(watcher.watcher, event.Name)
 			}
 			if len(pending) == 0 {
@@ -105,4 +101,24 @@ func isHiddenFolder(path string) bool {
 func (watcher *Watcher) Close() {
 	_ = watcher.watcher.Close()
 	<-watcher.done
+}
+
+// Move runs a function that moves a file or a folder, and returns its error. It stops watching the folders being
+// moved while the move runs, and watches them again if the move fails. A nil watcher only runs the move.
+func (watcher *Watcher) Move(source string, move func() error) error {
+	if watcher == nil {
+		return move()
+	}
+	// Windows refuses to move a folder while a folder inside it is watched
+	for _, dir := range watcher.watcher.WatchList() {
+		if files.ToKey(dir) == files.ToKey(source) || files.IsUnder(source, dir) {
+			_ = watcher.watcher.Remove(dir)
+		}
+	}
+	err := move()
+	if err != nil {
+		// a folder that cannot be watched again is skipped
+		_ = addFolders(watcher.watcher, source)
+	}
+	return err
 }

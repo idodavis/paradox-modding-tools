@@ -15,17 +15,29 @@ import { useSearchStore } from "./stores/search";
 import { setupMonaco } from "./pages/ide/editor/monaco";
 import "./styles/nuxt-ui.css";
 
-/** Writes an error to pmt.log with the place it came from. */
+/** writeLog writes an error to pmt.log with the place it came from. */
 function writeLog(error: unknown, source: string): void {
   const failure = error instanceof Error ? error : new Error(String(error));
   void logError(failure.message, "source", source, "stack", failure.stack ?? "");
 }
 
+/**
+ * isCancelled reports whether an error is a cancelled system dialog. Its promise rejects, which only ends the action
+ * that asked, so it is no error to show or log.
+ */
+function isCancelled(error: unknown): boolean {
+  return String((error as { message?: unknown } | null | undefined)?.message).includes("cancelled by user");
+}
+
 window.addEventListener("error", (event) => writeLog(event.error ?? event.message, "window"));
-window.addEventListener("unhandledrejection", (event) => writeLog(event.reason, "promise"));
+window.addEventListener("unhandledrejection", (event) => {
+  if (isCancelled(event.reason)) event.preventDefault();
+  else writeLog(event.reason, "promise");
+});
 
 const app = createApp(App);
 app.config.errorHandler = (error, _instance, info) => {
+  if (isCancelled(error)) return;
   console.error(error);
   writeLog(error, info);
 };
@@ -36,6 +48,7 @@ app.use(PiniaColada, {
   mutationOptions: {
     /** The one place a failed mutation is reported: a toast and a log line. */
     onError: (error: unknown) => {
+      if (isCancelled(error)) return;
       toast.add({ title: error instanceof Error ? error.message : String(error), color: "error" });
       writeLog(error, "mutation");
     },

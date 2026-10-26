@@ -201,10 +201,8 @@ const (
 	originShipped = "shipped"
 )
 
-// Build returns the schema of a game version. It reads the dumps and docs of the given install and counts what the
-// game's own files write, parsing each file of the given listing with the given function. A dump file the install
-// lacks comes from the shipped backup. Files under the DLC folder are left out. The schema's version is left "". It
-// returns an error if a dump or a doc cannot be read, or if no file can be parsed.
+// Build returns the schema of a game version, from an install's dumps, docs and own files. It returns an error if a
+// dump or a doc cannot be read, or no file can be parsed.
 func Build(row *game.Game, installPath string, listing []files.File, parse func(path string) (*jomini.Tree, error)) (*Schema, error) {
 	listing = slices.DeleteFunc(slices.Clone(listing), func(file files.File) bool {
 		return strings.HasPrefix(file.Rel, game.DLCFolder+"/")
@@ -281,13 +279,14 @@ func SplitStage(row *game.Game, rel string) (stage, rest string) {
 	return "", rel
 }
 
-// IsLocReplacement reports whether a file, given by its path from its root, sits in a folder whose localization
-// overrides every other file's in the given language.
-func IsLocReplacement(row *game.Game, rel, language string) bool {
+// FindLocReplacement returns the rank of the localization replace folder a file is in, the lowest winning. It returns
+// false if the file is in none.
+func FindLocReplacement(row *game.Game, rel, language string) (int, bool) {
 	_, rel = SplitStage(row, rel)
-	return slices.ContainsFunc(game.LocReplaceFolders, func(folder string) bool {
+	rank := slices.IndexFunc(row.LocReplaceFolders, func(folder string) bool {
 		return strings.HasPrefix(rel, fmt.Sprintf(folder, language)+"/")
 	})
+	return rank, rank >= 0
 }
 
 // findFolder returns the folder of the database that a script file belongs to: the file itself if a row names it,
@@ -304,9 +303,7 @@ func findFolder(row *game.Game, rel string) string {
 	return path.Dir(rel)
 }
 
-// buildDatabases builds the databases of the game: one for each given folder, one for each nesting and those the GUI
-// files declare. It then sets the schema's names for the databases that hold events, lists, concepts, modifier types,
-// scripted effects and script values, the link prefixes, the databases that fire, the widget types and the callees.
+// buildDatabases builds the game's databases, one for each folder and nesting, and those the GUI files declare.
 func (schema *Schema) buildDatabases(row *game.Game, folders []string) {
 	for _, folder := range folders {
 		rule, _ := row.FindDatabase(folder)
@@ -355,10 +352,7 @@ func (schema *Schema) buildDatabases(row *game.Game, folders []string) {
 	schema.listCallees()
 }
 
-// buildDatabase builds the database with the given label and row. It does nothing if the schema has that database
-// already. It also records the keys that declare the database's definitions inline and the words a data type names it
-// by. If two databases have the same words, the one whose own name is those words takes them, as isNamedExactly
-// says, and else the words name neither.
+// buildDatabase builds one database from its row. It does nothing if the schema has it already.
 func (schema *Schema) buildDatabase(row *game.Game, label, folder string, rule game.Database) {
 	if schema.Databases[label] != nil {
 		return
@@ -442,19 +436,18 @@ func (schema *Schema) FindCommand(key string) (*Command, bool) {
 	return command, ok
 }
 
-// findList returns the command for a key such as every_country_in_<region>, which iterates over one definition of a
-// database. It also returns the database and the definition's name. The dumps declare such a list only for the game's
-// own definitions, so the command is the one declared for the first of those. It returns a nil command for any other
-// key.
+// findList returns the plain list's command for a key such as every_country_in_<region>, with the database and the
+// name it iterates over. It returns a nil command for any other key.
 func (schema *Schema) findList(key string) (command *Command, database, name string) {
 	head, name, ok := strings.Cut(key, "_in_")
 	if !ok {
 		return nil, "", ""
 	}
+	list := strings.ToLower(head)
 	for _, candidate := range schema.Databases {
 		for _, alias := range listAliases(candidate) {
-			if command, ok := schema.Commands[strings.ToLower(head)+"_in_"+alias]; ok {
-				return command, candidate.Name, name
+			if _, ok := schema.Commands[list+"_in_"+alias]; ok {
+				return schema.Commands[list], candidate.Name, name
 			}
 		}
 	}
@@ -490,9 +483,8 @@ func (schema *Schema) ResolveLink(link, scope string) (string, bool) {
 	return command.Target, true
 }
 
-// ResolveCallTypes returns the type that each step of a data call leads to, starting from the block's data
-// context. A first step that names a data type leads to that type. A step no dump declares gets "", and the steps
-// after it are left out.
+// ResolveCallTypes returns the type each step of a data call leads to. It stops at a step no dump declares, which
+// gets "".
 func (schema *Schema) ResolveCallTypes(call jomini.Call, datacontext string) []string {
 	owners := schema.listCallOwners(call, datacontext)
 	types := make([]string, len(owners))
@@ -505,10 +497,8 @@ func (schema *Schema) ResolveCallTypes(call jomini.Call, datacontext string) []s
 	return types
 }
 
-// listCallOwners returns, for each step of a data call, the data type that declares the function the step calls,
-// starting from the given data context. The first step may also be a function of the global type, or name a data
-// type, which reads the object of that type in scope and is its own owner. A step no dump declares gets "", and the
-// steps after it are left out.
+// listCallOwners returns the data type that declares each step of a data call. It stops at a step no dump declares,
+// which gets "".
 func (schema *Schema) listCallOwners(call jomini.Call, datacontext string) []string {
 	var owners []string
 	current := datacontext
@@ -531,9 +521,7 @@ func (schema *Schema) listCallOwners(call jomini.Call, datacontext string) []str
 	return owners
 }
 
-// FindFunction returns the data function that one step of a data call calls, starting from the given data context.
-// The first step falls back to the global type. It returns false if the dumps declare none, if a step before it is
-// unknown, or if the step names a data type rather than calling a function.
+// FindFunction returns the data function one step of a data call calls. It returns false if the dumps declare none.
 func (schema *Schema) FindFunction(call jomini.Call, datacontext string, step int) (DataFunction, bool) {
 	owners := schema.listCallOwners(call, datacontext)
 	if step < 0 || step >= len(owners) || owners[step] == "" {
@@ -543,10 +531,8 @@ func (schema *Schema) FindFunction(call jomini.Call, datacontext string, step in
 	return function, ok
 }
 
-// ResolveMacro returns the call that a data call stands for. A call that opens with one of the game's data binding
-// macros becomes the macro's text, with the arguments filled in, followed by the rest of the call. The result is
-// expanded again while it opens with a macro. A macro that expands into itself gives an empty call. Any other call is
-// returned as it is. Spans the macro wrote itself are empty.
+// ResolveMacro returns a data call with its data binding macros expanded. A macro that expands into itself gives an
+// empty call.
 func (schema *Schema) ResolveMacro(call jomini.Call, datacontext string) jomini.Call {
 	expanded := map[string]bool{}
 	for len(call.Steps) > 0 {
@@ -585,9 +571,7 @@ func (schema *Schema) ResolveDatacontext(call jomini.Call, datacontext string) s
 	return types[len(types)-1]
 }
 
-// ListCallReferences returns the names that the quoted arguments of a data call refer to, with the database of each.
-// For a step in game.GUI.CallTargets the database comes from that row, and is none for an argument the row skips. For
-// any other step it is the database that holds the type the step returns, if there is one.
+// ListCallReferences returns the names a data call's quoted arguments refer to, with the database of each.
 func (schema *Schema) ListCallReferences(call jomini.Call, datacontext string) []Reference {
 	var references []Reference
 	call = schema.ResolveMacro(call, datacontext)
@@ -609,18 +593,55 @@ func (schema *Schema) ListCallReferences(call jomini.Call, datacontext string) [
 			if argument.Call != nil {
 				references = append(references, schema.ListCallReferences(*argument.Call, "")...)
 			}
+			reference := Reference{Database: database, Name: argument.Text, Span: argument.Span}
+			// A nested definition's holder is the argument before it, as in GetDefine('NAI', 'X').
+			if listed && position > 0 {
+				reference.Name = schema.JoinNested(database, step.Arguments[position-1].Text, argument.Text)
+			}
 			// An argument at a position the row leaves empty is no name.
 			if argument.Quoted && !argument.Span.IsEmpty() && (!listed || database != "") {
-				references = append(references, Reference{Database: database, Name: argument.Text, Span: argument.Span})
+				references = append(references, reference)
 			}
 		}
 	}
 	return references
 }
 
-// ResolveTypeDatabase returns the database that holds the names of a data type: the one named in the singular by the
-// type's words, else, for a type whose last word is Type, by the words before it (GovernmentType, governments). It
-// returns false if none is, or several are.
+// JoinNested returns the name of a nested definition from its holder's name and its key, such as NAI|X. Without a
+// separator or a holder it is the key.
+func (schema *Schema) JoinNested(database, holder, key string) string {
+	separator := schema.findSeparator(database)
+	if separator == "" || holder == "" {
+		return key
+	}
+	return holder + separator + key
+}
+
+// SplitNested returns the key of a definition's name in a nested database: the part after the holding database's
+// separator, X for NAI|X. Any other name is its own key.
+func (schema *Schema) SplitNested(database, nested string) string {
+	separator := schema.findSeparator(database)
+	if _, key, ok := strings.Cut(nested, separator); ok && separator != "" {
+		return key
+	}
+	return nested
+}
+
+// findSeparator returns the separator that the database holding a nested database writes. It returns "" if the
+// database is not nested, or its holder writes none.
+func (schema *Schema) findSeparator(database string) string {
+	dot := strings.LastIndex(database, ".")
+	if dot < 0 {
+		return ""
+	}
+	if holder := schema.Databases[database[:dot]]; holder != nil {
+		return holder.Row.Separator
+	}
+	return ""
+}
+
+// ResolveTypeDatabase returns the database that holds a data type's names, such as governments for GovernmentType. It
+// returns false if there is not exactly one.
 func (schema *Schema) ResolveTypeDatabase(dataType string) (string, bool) {
 	phrase := ToPhrase(dataType)
 	label, ok := schema.TypeDatabases[phrase]

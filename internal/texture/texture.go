@@ -8,6 +8,7 @@ import (
 	"errors"
 	"fmt"
 	"image"
+	"image/jpeg"
 	"image/png"
 	"io"
 	"os"
@@ -18,7 +19,7 @@ import (
 
 // A Header is what an image file says about itself before its pixels.
 type Header struct {
-	Format      string `json:"format"` // dds, tga, png
+	Format      string `json:"format"` // dds, tga, png, jpeg
 	Width       int    `json:"width"`
 	Height      int    `json:"height"`
 	Mipmaps     int    `json:"mipmaps"`
@@ -26,10 +27,11 @@ type Header struct {
 	Bytes       int64  `json:"bytes"`       // the file's size
 }
 
-// The magic bytes that open a DDS and a PNG.
+// The magic bytes that open a DDS, a PNG and a JPEG.
 const (
-	ddsMagic = "DDS "
-	pngMagic = "\x89PNG\r\n\x1a\n"
+	ddsMagic  = "DDS "
+	pngMagic  = "\x89PNG\r\n\x1a\n"
+	jpegMagic = "\xff\xd8\xff"
 )
 
 // sideLimit is the most pixels an image may have on a side, Direct3D's limit on a texture. A header past it is
@@ -42,8 +44,8 @@ var extensions = []string{".dds", ".png", ".tga"}
 // errTruncated is the error for an image whose data ends before its last pixel.
 var errTruncated = errors.New("the image data ends before its last pixel")
 
-// ReadHeader reads an image file's header and size without decoding its pixels. It returns an error if the file
-// cannot be read or is not a DDS, TGA or PNG.
+// ReadHeader reads an image file's header and size without decoding its pixels. The file's bytes say which format it
+// is, whatever its extension. It returns an error if the file cannot be read or is not a DDS, TGA, PNG or JPEG.
 func ReadHeader(path string) (Header, error) {
 	file, err := os.Open(path)
 	if err != nil {
@@ -60,11 +62,24 @@ func ReadHeader(path string) (Header, error) {
 		return Header{}, err
 	}
 	header, ok := decodeHeader(head[:count])
+	if !ok && hasMagic(head[:count], jpegMagic) {
+		header, ok = decodeJPEGHeader(file)
+	}
 	if !ok {
-		return Header{}, fmt.Errorf("%s: not a DDS, TGA or PNG", path)
+		return Header{}, fmt.Errorf("%s: not a DDS, TGA, PNG or JPEG", path)
 	}
 	header.Bytes = stat.Size()
 	return header, nil
+}
+
+// decodeJPEGHeader decodes the header of a JPEG file. A JPEG keeps its size past its first bytes, so it reads from the
+// start of the file. It returns false if the file is not a JPEG that can be read.
+func decodeJPEGHeader(file io.ReadSeeker) (Header, bool) {
+	if _, err := file.Seek(0, io.SeekStart); err != nil {
+		return Header{}, false
+	}
+	config, err := jpeg.DecodeConfig(file)
+	return Header{Format: "jpeg", Width: config.Width, Height: config.Height, Mipmaps: 1}, err == nil
 }
 
 // decodeHeader decodes the header from the first bytes of an image. It returns false if the bytes are not an image
@@ -83,10 +98,8 @@ func decodeHeader(file []byte) (Header, bool) {
 	return decodeTGAHeader(file)
 }
 
-// Decode decodes one mip level of an image's bytes to pixels: 0 is the whole image, and each level after it is half
-// the size of the one before. The bytes say which format it is: DDS, TGA or PNG, and only a DDS has more than one
-// level. It returns an error for an unknown or unsupported format, for an image whose data ends early, for one past
-// the size limit and for a level the image does not have.
+// Decode decodes one mip level of an image to pixels, 0 being the whole image. It returns an error if the image or
+// the level cannot be read.
 func Decode(file []byte, level int) (image.Image, error) {
 	header, ok := decodeHeader(file)
 	switch {
@@ -109,9 +122,8 @@ func Decode(file []byte, level int) (image.Image, error) {
 	return nil, errors.New("not a DDS, TGA or PNG")
 }
 
-// Resolve finds the file that a path written in script names. It tries the path as written, then with each image
-// extension the game accepts in place of the written one. A leading slash is ignored. The lookup function says
-// whether a relative path exists in the workspace and where. It returns false if none of the paths exists.
+// Resolve finds the file a path in script names, trying each image extension the game accepts. It returns false if
+// none exists.
 func Resolve(written string, lookup func(rel string) (path string, ok bool)) (path string, ok bool) {
 	written = strings.TrimPrefix(written, "/")
 	if path, ok = lookup(written); ok {

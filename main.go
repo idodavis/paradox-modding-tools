@@ -1,6 +1,5 @@
-// Package main is the entry point of Paradox Modding Tools. It opens the config and the log, makes the services and
-// runs the Wails application with the updater and the main window. Started with --steam-publish, it runs as the
-// second copy of the app that publishes to the Workshop.
+// Package main starts Paradox Modding Tools. Started with --steam-publish, it runs as the copy of the app that
+// publishes to the Workshop.
 package main
 
 import (
@@ -33,8 +32,7 @@ var assets embed.FS
 // version is the app's version, set by the build. It is app.DevBuild in a dev run.
 var version = app.DevBuild
 
-// main runs the publishing process when the app was started as one. Otherwise it opens the config and the log,
-// makes the services and runs the app.
+// main runs the app, or the Workshop publisher when started as one.
 func main() {
 	if exitCode, served := steam.ServePublish(os.Args[1:]); served {
 		os.Exit(exitCode)
@@ -47,10 +45,9 @@ func main() {
 	if err != nil {
 		log.Fatalf("log: %v", err)
 	}
-	// the other services ask the workspace service for the open workspace
 	wsp := &workspace.Service{Config: config, Build: version}
-	editor := &lsp.Service{Workspace: wsp}
 	appService := &app.Service{Config: config, Build: version}
+	gitService := &git.Service{Workspace: wsp}
 
 	pmt := application.New(application.Options{
 		Name:        "paradox-modding-tools",
@@ -60,14 +57,14 @@ func main() {
 			application.NewService(appService),
 			application.NewService(logservice.New()),
 			application.NewServiceWithOptions(wsp, application.ServiceOptions{Route: "/files"}),
-			application.NewService(editor),
+			application.NewService(&lsp.Service{Workspace: wsp}),
 			application.NewService(&draw.Service{Workspace: wsp}),
 			application.NewService(&health.Service{Workspace: wsp}),
 			application.NewService(&graph.Service{Workspace: wsp}),
 			application.NewService(&search.Service{Workspace: wsp}),
 			application.NewService(&wiki.Service{Workspace: wsp}),
-			application.NewService(&git.Service{Workspace: wsp}),
-			application.NewService(&steam.Service{Workspace: wsp}),
+			application.NewService(gitService),
+			application.NewService(&steam.Service{Workspace: wsp, Git: gitService}),
 		},
 		Assets: application.AssetOptions{
 			Handler: application.BundledAssetFileServer(assets),

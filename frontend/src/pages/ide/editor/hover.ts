@@ -18,11 +18,12 @@ import {
 import * as lsp from "@services/lsp/service";
 import type { Card } from "@services/lsp/models";
 import type { editor } from "monaco-editor";
-import HoverCard from "../../../ui/HoverCard.vue";
+import HoverCard, { type HoverProblem } from "../../../ui/HoverCard.vue";
 import { useSettingsStore } from "../../../stores/settings";
+import { SEVERITIES } from "./models";
 
 /** A card on show: the facts of a word, the problems on it, and the rectangle of the word in the page. */
-type Hover = { card: Card | null; problems: editor.IMarker[]; anchor: DOMRect };
+type Hover = { card: Card | null; problems: HoverProblem[]; anchor: DOMRect };
 
 /** Shows a hover card over the word the pointer rests on in an editor. It returns the function that detaches it. */
 export function attachHover(codeEditor: editor.IStandaloneCodeEditor): () => void {
@@ -54,9 +55,17 @@ export function attachHover(codeEditor: editor.IStandaloneCodeEditor): () => voi
     const card = model && (await lsp.Hover(model.uri.fsPath, lineNumber, word.startColumn));
     if (!model || onCard || target?.lineNumber !== lineNumber || target.column !== word.startColumn) return;
     const span = card?.range ?? new monaco.Range(lineNumber, word.startColumn, lineNumber, word.endColumn);
+    // a marker's message has its facts filled in already, and its severity says the level
     const problems = monaco.editor
       .getModelMarkers({ resource: model.uri })
-      .filter((marker) => monaco.Range.areIntersectingOrTouching(marker, span));
+      .filter((marker) => monaco.Range.areIntersectingOrTouching(marker, span))
+      .map((marker) => ({
+        id: typeof marker.code === "string" ? marker.code : (marker.code?.value ?? ""),
+        level: Object.keys(SEVERITIES).find((level) => SEVERITIES[level] === marker.severity) ?? "info",
+        message: marker.message,
+        line: marker.startLineNumber,
+        column: marker.startColumn,
+      }));
     const start = codeEditor.getScrolledVisiblePosition({ lineNumber, column: word.startColumn });
     const end = codeEditor.getScrolledVisiblePosition({ lineNumber, column: word.endColumn });
     const box = codeEditor.getDomNode()?.getBoundingClientRect();
@@ -79,7 +88,7 @@ export function attachHover(codeEditor: editor.IStandaloneCodeEditor): () => voi
       }
       target = position && word ? { lineNumber: position.lineNumber, column: word.startColumn } : null;
       closeCardLater();
-      if (position && word && settings.value("ide.hover") === "true") void findCard(word, position.lineNumber);
+      if (position && word && settings.isOn("ide.hover")) void findCard(word, position.lineNumber);
     }),
     codeEditor.onMouseDown(closeCard),
     codeEditor.onContextMenu(closeCard),

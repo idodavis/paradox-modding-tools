@@ -1,26 +1,24 @@
-<!-- The Library page: the workspaces as cards, the active one first, with New workspace, New mod and Launch. -->
+<!-- The Library page shows the workspaces as cards, the active one first. -->
 <script setup lang="ts">
-import { computed, onActivated, onDeactivated, onScopeDispose, shallowRef } from "vue";
+import { computed, onScopeDispose, shallowRef } from "vue";
 import { useRouter } from "vue-router";
 import { useMutation, useQuery } from "@pinia/colada";
 import { Events } from "@wailsio/runtime";
 import type { DropdownMenuItem } from "@nuxt/ui";
 
-import { homeRoute, listShownTools } from "../../app/pages";
-import { describeDumps, describeLexicon, installLine, plural } from "../../lib/format";
+import { homeRoute, useShown } from "../../app/pages";
+import { countLevels, describeDumps, describeLexicon, installLine, plural } from "../../lib/format";
 import { gamesQuery, installsQuery, modsQuery, reportQuery, stateQuery, workspacesQuery } from "../../queries";
 import { gameIcon } from "../../stores/settings";
-import { useWorkspaceStore } from "../../stores/workspace";
+import { useWorkspaceStore, VANILLA } from "../../stores/workspace";
 import CreateModForm from "../../ui/CreateModForm.vue";
+import LevelCounts from "../../ui/LevelCounts.vue";
 import ModAvatar from "../../ui/ModAvatar.vue";
 import OriginChip from "../../ui/OriginChip.vue";
 import ScriptDocsGuide from "../../ui/ScriptDocsGuide.vue";
 import StatusFacts from "../../ui/StatusFacts.vue";
 import * as workspace from "@services/workspace/service";
 import type { Workspace } from "@services/app/models";
-
-// the Health cards the active workspace's panel counts
-const COUNTED = ["contests", "dangling", "localization"];
 
 const router = useRouter();
 const toast = useToast();
@@ -29,21 +27,15 @@ const creatingMod = shallowRef(false);
 const guiding = shallowRef(false);
 const resetting = shallowRef(false);
 const confirmation = shallowRef("");
-const visible = shallowRef(true);
-onActivated(() => (visible.value = true));
-onDeactivated(() => (visible.value = false));
+const visible = useShown();
 
 const { data: workspaces, isPending } = useQuery(workspacesQuery);
 const { data: installs } = useQuery(installsQuery);
 const { data: games } = useQuery(gamesQuery);
 const { data: mods } = useQuery(modsQuery);
 const { data: state } = useQuery(stateQuery);
-const { data: report } = useQuery(() => ({
-  ...reportQuery((state.value?.mods ?? []).map((mod) => mod.id)),
-  enabled: store.isOpen(),
-}));
+const { data: report } = useQuery(() => ({ ...reportQuery(store.listModIds()), enabled: store.isOpen() }));
 
-const visibleTools = computed(listShownTools);
 const rows = computed(() =>
   (workspaces.value ?? [])
     .map((record) => {
@@ -69,14 +61,13 @@ const summary = computed(
   () => `${plural(rows.value.length, "workspace")} across ${plural(groups.value.length, "game")}.`,
 );
 const dumps = computed(() => (store.isOpen() && state.value ? describeDumps(state.value.dumps) : undefined));
-// the folders are left out when no dump folder holds a dump, as when PMT's copy is read
+// The dump folders are left out when there are none, as when PMT reads its own copy.
 const lexicon = computed(() => {
   if (!state.value) return "";
   const count = state.value.dumps.folders?.length ?? 0;
   const folders = count ? `, from ${plural(count, "dump folder")}` : "";
   return `${describeLexicon(state.value)}${folders}.`;
 });
-const counts = computed(() => report.value?.sections?.filter((section) => COUNTED.includes(section.id)) ?? []);
 
 const { mutate: launch } = useMutation({ mutation: () => workspace.Launch() });
 const { mutate: rescan } = useMutation({ mutation: (id: string) => workspace.RescanInstall(id) });
@@ -102,18 +93,18 @@ onScopeDispose(
   }),
 );
 
-/** open goes to the page the workspace opens on. The router makes the workspace the active one. */
+/** open goes to a workspace's home page. The workspace becomes the active one. */
 function open(record: Workspace): void {
-  void router.push(homeRoute(record.id, record.homePage, visibleTools.value));
+  void router.push(homeRoute(record.id, record.homePage));
 }
 
-/** openModDialog opens the new mod dialog for the active workspace. With none open it goes to the wizard instead. */
+/** openModDialog opens the new mod dialog, or the wizard if no workspace is open. */
 function openModDialog(): void {
   if (state.value?.open) creatingMod.value = true;
   else void router.push({ name: "wizard" });
 }
 
-/** describeMenu returns the entries of a workspace's menu: the given ones, then Remove. */
+/** describeMenu returns a workspace's menu, with Remove after the other entries. */
 function describeMenu(record: Workspace, leading: DropdownMenuItem[]): DropdownMenuItem[] {
   return [
     ...leading,
@@ -123,8 +114,8 @@ function describeMenu(record: Workspace, leading: DropdownMenuItem[]): DropdownM
 </script>
 
 <template>
-  <div class="flex h-full justify-center overflow-y-auto px-6 py-8">
-    <div class="flex w-280 max-w-full flex-col gap-7">
+  <div class="flex h-full justify-center overflow-y-auto px-6 py-6">
+    <div class="flex w-280 max-w-full flex-col gap-6 self-start">
       <div class="flex items-center gap-4">
         <div class="flex min-w-0 flex-col gap-0.5">
           <h1 class="text-20">Workspaces</h1>
@@ -189,7 +180,7 @@ function describeMenu(record: Workspace, leading: DropdownMenuItem[]): DropdownM
           <div class="flex min-w-0 flex-col gap-2">
             <span class="text-12 font-medium text-toned">Load order</span>
             <div class="flex flex-wrap gap-1.5">
-              <OriginChip origin="vanilla" />
+              <OriginChip :origin="VANILLA" />
               <OriginChip v-for="mod in mods?.[active.record.id] ?? []" :key="mod.id" :origin="mod.id" />
             </div>
           </div>
@@ -212,14 +203,9 @@ function describeMenu(record: Workspace, leading: DropdownMenuItem[]): DropdownM
           </div>
           <div class="flex min-w-0 flex-col gap-2">
             <span class="text-12 font-medium text-toned">Health</span>
-            <template v-if="counts.length">
-              <div class="flex items-center gap-3.5 text-12">
-                <span v-for="section in counts" :key="section.id" class="flex items-baseline gap-1">
-                  <span class="font-semibold tabular-nums">{{ section.count }}</span>
-                  <span class="text-dimmed">{{ section.label }}</span>
-                </span>
-              </div>
-              <span class="text-12 text-dimmed">From the last scan. Counts refresh when files change.</span>
+            <template v-if="report">
+              <LevelCounts :levels="countLevels(report.findings ?? [])" />
+              <span class="text-12 text-dimmed">From the last scan.</span>
             </template>
             <span v-else class="text-12 text-dimmed">Counted once the workspace is open.</span>
           </div>
@@ -227,7 +213,7 @@ function describeMenu(record: Workspace, leading: DropdownMenuItem[]): DropdownM
       </section>
 
       <section v-for="group in groups" :key="group.game?.id ?? ''" class="flex flex-col gap-3">
-        <div class="flex items-center gap-2.5 pt-2">
+        <div class="flex items-center gap-2.5">
           <img v-if="group.game" :src="gameIcon(group.game.id)" :alt="group.game.name" class="size-4.5 rounded-sm" />
           <span class="text-13 font-semibold">{{ group.game?.name ?? "No game" }}</span>
           <span class="text-12 text-dimmed">{{ plural(group.rows.length, "workspace") }}</span>
@@ -283,20 +269,7 @@ function describeMenu(record: Workspace, leading: DropdownMenuItem[]): DropdownM
         </div>
       </section>
 
-      <UModal
-        v-model:open="creatingMod"
-        title="Create a mod"
-        description="A descriptor, the game's mod folders, readmes and a localization file."
-        :ui="{ content: 'h-128' }"
-      >
-        <template #body>
-          <CreateModForm :workspace-id="state?.id ?? ''" @created="creatingMod = false" />
-        </template>
-        <template #footer="{ close }">
-          <span class="grow" />
-          <UButton label="Cancel" @click="close" />
-        </template>
-      </UModal>
+      <CreateModForm v-model:open="creatingMod" :workspace-id="state?.id ?? ''" />
       <ScriptDocsGuide v-model:open="guiding" :game="state?.game?.id ?? ''" />
     </div>
 

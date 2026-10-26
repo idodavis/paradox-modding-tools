@@ -1,19 +1,21 @@
-<!-- The hover card: the facts of a word in sections, with the problems on it. A site in it opens that place. -->
+<!-- The card shown when the pointer rests on a word in the editor, with the word's facts and problems. -->
+<script lang="ts">
+/** A HoverProblem is one problem the editor marks on the word. */
+export type HoverProblem = { id: string; level: string; message: string; line: number; column: number };
+</script>
+
 <script setup lang="ts">
 import { computed } from "vue";
-import { useQuery } from "@pinia/colada";
 import { useLocalStorage } from "@vueuse/core";
-import { MarkerSeverity, type editor } from "monaco-editor/editor/editor.api";
 
 import { ValueType } from "@internal/schema/models";
-import type { Card, Code } from "@services/lsp/models";
+import type { Card } from "@services/lsp/models";
 
 import { REASONS } from "../lib/format";
-import { codesQuery } from "../queries";
 import ProblemRow from "./ProblemRow.vue";
 import SourceLink from "./SourceLink.vue";
 
-const { card, problems } = defineProps<{ card: Card | null; problems: editor.IMarker[] }>();
+const { card, problems } = defineProps<{ card: Card | null; problems: HoverProblem[] }>();
 
 const SITES_SHOWN = 4;
 const KEYS = [
@@ -22,10 +24,10 @@ const KEYS = [
   ["Shift F12", "references"],
 ];
 
-const { data: codes } = useQuery(codesQuery);
-// the scopes start closed, and stay as the reader last left them from one card to the next
+// the scopes start closed and stay as the reader last left them
 const scopesOpen = useLocalStorage("pmt.ide.scopes", false);
 
+// what the word takes, such as its type and its choices
 const takes = computed(() => {
   const expected = card?.takes;
   if (!expected) return "";
@@ -39,6 +41,7 @@ const takes = computed(() => {
     .filter(Boolean)
     .join(" ");
 });
+// the label and value of each fact the card holds
 const rows = computed(() => {
   const stamp = card?.date;
   const header = card?.image;
@@ -59,32 +62,25 @@ const rows = computed(() => {
   return all.filter((row): row is [string, string] => !!row[1]);
 });
 const sites = computed(() => (card?.sites ?? []).slice(0, SITES_SHOWN));
-// a marker's message has its facts filled already, so a row takes it for the code's own
-const problemRows = computed(() => {
-  const known = new Map((codes.value ?? []).map((code) => [code.id, code]));
-  return problems.map((marker): { code: Code; line: number; column: number } => {
-    const id = typeof marker.code === "string" ? marker.code : (marker.code?.value ?? "");
-    const severity = marker.severity === MarkerSeverity.Error ? 1 : 2;
-    return {
-      code: { id, severity, section: "", label: "", ...known.get(id), message: marker.message },
-      line: marker.startLineNumber,
-      column: marker.startColumn,
-    };
-  });
-});
 </script>
 
 <template>
   <div class="flex w-max max-w-198 flex-col divide-y divide-default overflow-hidden">
-    <div v-if="problemRows.length" class="flex flex-col py-1">
+    <div v-if="problems.length" class="flex flex-col py-1">
       <ProblemRow
-        v-for="(problem, index) in problemRows"
+        v-for="(problem, index) in problems"
         :key="index"
-        :code="problem.code"
-        :facts="{}"
-        :line="problem.line"
-        :column="problem.column"
-      />
+        dense
+        plain
+        :level="problem.level"
+        :message="problem.message"
+        :detail="problem.id"
+        mono
+      >
+        <template #trailing>
+          <span class="shrink-0 font-mono text-11 text-dimmed">{{ problem.line }}:{{ problem.column }}</span>
+        </template>
+      </ProblemRow>
     </div>
     <template v-if="card">
       <div class="flex flex-col gap-1 px-3.5 py-2.5">
@@ -114,7 +110,7 @@ const problemRows = computed(() => {
         <p v-if="card.blurb" class="text-12 whitespace-pre-line text-toned">{{ card.blurb }}</p>
         <p v-if="card.about" class="text-11 text-dimmed">{{ card.about }}</p>
       </div>
-      <!-- the scopes are a panel of their own, tinted with the editor's scope color -->
+      <!-- the scopes, tinted with the editor's scope color -->
       <div v-if="card.scopes?.length" class="px-3 py-2">
         <UCollapsible
           v-model:open="scopesOpen"
@@ -147,7 +143,7 @@ const problemRows = computed(() => {
         <div v-for="site in sites" :key="`${site.place.key}:${site.line}`" class="flex min-w-0 items-center gap-2">
           <SourceLink :place="site.place" :line="site.line" />
           <UBadge v-if="site.kept" label="Kept" color="success" size="sm" />
-          <UBadge v-if="site.kept && site.reason" :label="REASONS[site.reason] ?? site.reason" size="sm" />
+          <UBadge v-if="site.reason" :label="REASONS[site.reason] ?? site.reason" size="sm" />
         </div>
         <span v-if="(card.sites?.length ?? 0) > SITES_SHOWN" class="text-11 text-dimmed"
           >+{{ (card.sites?.length ?? 0) - SITES_SHOWN }} more</span

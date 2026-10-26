@@ -24,8 +24,22 @@ export interface Child {
 }
 
 /**
- * A Descriptor is a mod's own description as its game writes it: CK3's `.mod` file, or Vic3's and EU5's
- * `.metadata/metadata.json`.
+ * A Dependency is one mod a descriptor says its mod needs.
+ */
+export interface Dependency {
+    /**
+     * the mod's id or name, as the descriptor writes it
+     */
+    "id": string;
+
+    /**
+     * the title metadata.json gives it; "" where the descriptor gives none
+     */
+    "title": string;
+}
+
+/**
+ * A Descriptor is a mod's own description, read from its game's descriptor file.
  */
 export interface Descriptor {
     "path": string;
@@ -51,15 +65,13 @@ export interface Descriptor {
     "workshopId": string;
 
     /**
-     * Dependencies are the mods it needs: their ids in metadata.json, their names in a script descriptor. They are read
-     * and never written.
+     * Dependencies are the mods it needs. They are read and never written.
      */
-    "dependencies": string[] | null;
+    "dependencies": Dependency[] | null;
 }
 
 /**
- * A FileChange is one file of the open workspace that changed or was deleted on disk. It is the data of the fs:changed
- * event.
+ * A FileChange is a file of the open workspace that changed or was deleted on disk. The fs:changed event carries it.
  */
 export interface FileChange {
     "path": string;
@@ -67,21 +79,20 @@ export interface FileChange {
 }
 
 /**
- * A FileText is a file's text in its encoding, together with where the file sits in the workspace.
+ * A FileText is a file's text with its place in the workspace.
  */
 export interface FileText {
     "place": Place;
     "text": files$0.Text;
 
     /**
-     * Draft is the text the editor last sent for the file where it differs from the disk's, such as edits that a
-     * reloaded page has not saved; "" where it holds none.
+     * Draft is the editor's unsaved text of the file. It is "" if there is none or it matches the disk.
      */
     "draft": string;
 }
 
 /**
- * A Mod is one mod of a workspace: the mod as the config records it, with its descriptor.
+ * A Mod is one mod of a workspace, with its descriptor.
  */
 export interface Mod {
     "id": string;
@@ -102,17 +113,6 @@ export interface Mod {
      * the upload exclusions, one pattern per line
      */
     "ignore": string;
-
-    /**
-     * DescriptionSource is where the Workshop description comes from: markdown, bbcode or steam, Steam's own text.
-     * "" takes the first description file the mod has, else Steam's own text.
-     */
-    "descriptionSource": string;
-
-    /**
-     * DescriptionFile is the path of the description's file from the mod's folder, or "" for its source's own file.
-     */
-    "descriptionFile": string;
     "descriptor": Descriptor;
 
     /**
@@ -169,7 +169,7 @@ export interface Place {
 }
 
 /**
- * A Scanning is the data of the install:scanning event: a stage of the scan and the percent of its files done.
+ * A Scanning is how far an install's scan has come. The install:scanning event carries it.
  */
 export interface Scanning {
     "stage": string;
@@ -177,7 +177,7 @@ export interface Scanning {
 }
 
 /**
- * A State is the open workspace as the frontend sees it. Open is false and the rest is empty while none is open.
+ * A State is a summary of the open workspace. It is empty while no workspace is open.
  */
 export interface State {
     "open": boolean;
@@ -191,7 +191,7 @@ export interface State {
     "installFound": boolean;
 
     /**
-     * the install's version before the open found a new one
+     * the recorded version, if opening found a different one
      */
     "updatedFrom": string;
     "mods": Mod[] | null;

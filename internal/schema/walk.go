@@ -91,9 +91,7 @@ type Context struct {
 	Parent      *Context // the context of the block that holds the statement, the file's own at the top
 }
 
-// A Visitor is called by the walk at each statement it enters and leaves. A file that is one definition is entered
-// first as statement 0, the file, with the definition's context, and left last. Statement 0 has no key, value or
-// block of its own.
+// A Visitor is told of each statement the walk enters and leaves. Statement 0 is the file itself.
 type Visitor interface {
 	// Enter is called when the walk reaches a statement, with its context. Returning false skips the statement's
 	// children.
@@ -227,11 +225,7 @@ func (walker *walker) walkFile() {
 	}
 }
 
-// walkChildren walks the children of a statement, one level down. The children of statement 0, the file, are the top
-// statements. A word that declares or calls a definition applies to the statement after it. A walk to an offset still
-// resolves the statements before it, to learn what they saved, but does not offer them to the visitor. A silent walk
-// offers nothing. If the definition has a run order, each block starts from the scopes saved by the blocks that run
-// before it.
+// walkChildren walks the children of a statement, one level down. A silent walk tells the visitor nothing.
 func (walker *walker) walkChildren(parent int32, level int, silent bool) {
 	for len(walker.frames) <= level {
 		walker.frames = append(walker.frames, frame{context: &Context{}})
@@ -254,11 +248,8 @@ func (walker *walker) walkChildren(parent int32, level int, silent bool) {
 	}
 }
 
-// walkRunOrder walks the children of a definition silently, in the order that its database says they run. The keys
-// the database lists come first, and the rest keep their written order. It walks every child, even in a walk to an
-// offset. It returns the scopes saved before each child, by statement, so that the walk in written order can start
-// each child from them. It returns nil and walks nothing if the statement is not a definition with a run order, or
-// if the walk is already silent.
+// walkRunOrder walks a definition's children silently in the order they run, and returns the scopes saved before each.
+// It returns nil if the definition has no run order or the walk is silent.
 func (walker *walker) walkRunOrder(parent int32, level int, silent bool) map[int32][]Saved {
 	context := walker.frames[level-1].context
 	database := walker.schema.Databases[context.Database]
@@ -305,10 +296,7 @@ func (walker *walker) walkStatement(statement int32, level int, pending string, 
 	walker.visitor.Leave(walker.tree, statement, context)
 }
 
-// resolve fills the context of a statement from the context of the block that holds it. The context gets the
-// definition that the statement makes, or else the rule that its key fits. It then resolves what the value refers
-// to. A statement is in a trigger block when it is below a block of triggers, until a value block begins. It is in a
-// preview when it is below a block that is shown and never run.
+// resolve fills the context of a statement from the context of the block that holds it.
 func (walker *walker) resolve(context *Context, statement int32, level int, pending string) {
 	parent := walker.frames[level-1].context
 	*context = Context{
@@ -335,10 +323,7 @@ func (walker *walker) resolve(context *Context, statement int32, level int, pend
 	walker.resolveValue(context, statement, level)
 }
 
-// resolveStatement fills the context of a statement that defines nothing. A keyed statement follows the rule its key
-// fits. A block with no key takes the shape and field of the block that holds it. A value with no key belongs to the
-// field of the block that holds it. At the top of a file whose database names nothing, a block is a definition's
-// block with no name.
+// resolveStatement fills the context of a statement that defines nothing.
 func (walker *walker) resolveStatement(context *Context, statement int32, level int, pending string) {
 	parent := walker.frames[level-1].context
 	current := walker.tree.Statements[statement]
@@ -386,9 +371,7 @@ func (walker *walker) findLabel(current jomini.Statement) (string, jomini.Span) 
 	return walker.tree.Text(span), span
 }
 
-// resolveDefinition makes the context of the statement that defines the given definition. Its block holds the fields
-// of the definition's database, in the shape the database gives, and its scope starts at the definition's root. The
-// context keeps its parent.
+// resolveDefinition fills the context of the statement that makes a definition.
 func (walker *walker) resolveDefinition(context *Context, definition Definition) {
 	database := walker.schema.Databases[definition.Database]
 	*context = Context{
@@ -403,9 +386,7 @@ func (walker *walker) resolveDefinition(context *Context, definition Definition)
 	walker.saved = nil
 }
 
-// findDefinitionShape returns the shape of a definition's block in the given database. It is the shape of the
-// callable, else of the row, else of the file type, else the shape named like the first word that calls it, else
-// fields.
+// findDefinitionShape returns the shape of a definition's block in a database, or fields if nothing says.
 func (walker *walker) findDefinitionShape(database *Database) string {
 	if database == nil {
 		return cmp.Or(walker.fileType.Shape, game.ShapeFields)
@@ -419,9 +400,7 @@ func (walker *walker) findDefinitionShape(database *Database) string {
 	return cmp.Or(shape, game.ShapeFields)
 }
 
-// findRootScope returns the scope that a definition's script starts in. An event writes its own scope, else the
-// game's default holds. An on_action has the scope the dumps give. Any other definition has the scope its database's
-// docs give. It returns "" if nothing says.
+// findRootScope returns the scope a definition's script starts in, or "" if nothing says.
 func (walker *walker) findRootScope(database *Database, definition Definition) string {
 	if database == nil {
 		return ""
@@ -462,10 +441,7 @@ func (walker *walker) findDefinition(statement int32, level int, pending string)
 	return walker.findScriptDefinition(statement, level, pending)
 }
 
-// findScriptDefinition returns the definition that a statement of a script file makes, by how the file's database
-// names its definitions. Only a statement written where definitions are written makes one. A table file's rows make
-// none. A name declared inline is local to its file. A definition named by a call takes the first step of the call
-// that its name key writes. It returns false if the statement defines nothing.
+// findScriptDefinition returns the definition a statement of a script file makes. It returns false if it makes none.
 func (walker *walker) findScriptDefinition(statement int32, level int, pending string) (Definition, bool) {
 	label, span := walker.frames[level].label, walker.frames[level].span
 	if owner := walker.schema.Databases[walker.declaring[pending]]; owner != nil && label != "" {
@@ -480,13 +456,13 @@ func (walker *walker) findScriptDefinition(statement int32, level int, pending s
 	case "nothing", "file", "column":
 		return Definition{}, false
 	case "field":
-		name, ok := walker.findNameSpan(statement, database)
+		name, ok := walker.findNameSpan(statement, database.Row.NameKey)
 		if !ok {
 			return Definition{}, false
 		}
 		span, label = name, walker.tree.Text(name)
 	case "call":
-		name, ok := walker.findNameSpan(statement, database)
+		name, ok := walker.findNameSpan(statement, database.Row.NameKey)
 		call, parsed := jomini.ParseCall(walker.tree.Text(name), name.Start)
 		if !ok || !parsed {
 			return Definition{}, false
@@ -507,10 +483,10 @@ func (walker *walker) findScriptDefinition(statement int32, level int, pending s
 	}, true
 }
 
-// findNameSpan returns the span of the value of the key that names a definition, without quotes. It returns false if
-// the definition writes no such key.
-func (walker *walker) findNameSpan(statement int32, database *Database) (jomini.Span, bool) {
-	child, ok := walker.tree.FindChild(statement, database.Row.NameKey)
+// findNameSpan returns the span of the value of the given key in a statement's block, without quotes. It returns false
+// if the block writes no such key.
+func (walker *walker) findNameSpan(statement int32, nameKey string) (jomini.Span, bool) {
+	child, ok := walker.tree.FindChild(statement, nameKey)
 	return walker.tree.UnquotedSpan(walker.tree.Statements[child].Value), ok
 }
 
@@ -531,9 +507,7 @@ func (walker *walker) findPriority(database *Database, statement int32) int {
 	return priority
 }
 
-// findGUIDefinition returns the definition that a statement of a GUI file makes. It is the one that the word before
-// the statement declares, one that the statement's key declares with its name as the block's tag (template = name { }),
-// a block named by one of its keys, or a window at the top of the file.
+// findGUIDefinition returns the definition a statement of a GUI file makes. It returns false if it makes none.
 func (walker *walker) findGUIDefinition(statement int32, level int, pending string) (Definition, bool) {
 	current := walker.tree.Statements[statement]
 	label, span := walker.frames[level].label, walker.frames[level].span
@@ -551,10 +525,8 @@ func (walker *walker) findGUIDefinition(statement int32, level int, pending stri
 	return Definition{}, false
 }
 
-// findWindowLabel returns what names a window at the top of a GUI file: the value of its name key. A window that writes
-// none takes its file's name if it is the only block the file writes under a key, as EU5's
-// panels/disaster/war_of_the_roses.gui is the panel of the disaster war_of_the_roses. It returns "" for any other
-// window with no name.
+// findWindowLabel returns the name of a window at the top of a GUI file, else its file's name if it is the file's
+// only window. It returns "" otherwise.
 func (walker *walker) findWindowLabel(statement int32) string {
 	if value, _ := walker.tree.FindChildValue(statement, game.GUI.WidgetKey); value != "" {
 		return value
@@ -595,9 +567,7 @@ func (walker *walker) findAssetDefinition(statement int32, level int) (Definitio
 	return Definition{Database: database, Name: label, Span: span, Statement: statement}, label != ""
 }
 
-// findNested returns the definition that a statement makes in a database nested in another. The name is the
-// statement's key, the tag of a block with none, or a value written alone. It returns false if the statement is not
-// written under the key path of a nesting, or if the docs describe its key as a field.
+// findNested returns the definition a statement makes in a nested database. It returns false if it makes none.
 func (walker *walker) findNested(statement int32, level int) (Definition, bool) {
 	current := walker.tree.Statements[statement]
 	label, span := walker.frames[level].label, walker.frames[level].span
@@ -620,7 +590,18 @@ func (walker *walker) findNested(statement int32, level int) (Definition, bool) 
 		if nesting.KeyPath == "" && !walker.isNested(label, nesting, same) {
 			continue
 		}
-		return Definition{Database: database, Name: label, Span: span, Statement: statement}, true
+		definition := Definition{Database: database, Name: label, Span: span, Statement: statement}
+		if nesting.NameKey != "" {
+			name, ok := walker.findNameSpan(statement, nesting.NameKey)
+			if !ok {
+				continue
+			}
+			definition.Name, definition.Span = walker.tree.Text(name), name
+		}
+		if holder := walker.frames[level-1].context.Definition; holder != nil {
+			definition.Name = walker.schema.JoinNested(database, holder.Name, definition.Name)
+		}
+		return definition, true
 	}
 	return Definition{}, false
 }
@@ -636,14 +617,13 @@ func (walker *walker) findNestedDatabase(nesting game.Nesting) (string, bool) {
 	return walker.database.Name, true
 }
 
-// isNested reports whether a key in a definition's own block defines a nested definition of a nesting. It does not if
-// the docs describe the key as a field. In the holder's own database it does only if the key fits the nesting's keys.
+// isNested reports whether a key in a definition's block defines a nested definition rather than a field.
 func (walker *walker) isNested(key string, nesting game.Nesting, same bool) bool {
 	if walker.database != nil && walker.database.Documented[key] {
 		return false
 	}
 	fits, _ := path.Match(nesting.Keys, key)
-	return !same || fits
+	return fits || !same && nesting.Keys == ""
 }
 
 // resolveKey fills the context of a keyed statement from the first rule that its key fits in the block that holds it.
@@ -772,9 +752,8 @@ func (walker *walker) matchCall(parent *Context, key string) (match, bool) {
 	return match{category: CategoryCall, caller: parent.findCaller()}, jomini.IsIdentifier(key) && !jomini.IsEventID(key)
 }
 
-// findCallee returns the scripted definition that a key calls through the given word, and the word it was found
-// through. A definition the file declared itself comes first, then one the game defines. The word game.AnyCall tries
-// every word. It returns false if no definition has the name.
+// findCallee returns the scripted definition a key calls, and the word it was found through. It returns false if
+// there is none.
 func (walker *walker) findCallee(caller, key string) (ScriptedDefinition, string, bool) {
 	if scripted, ok := walker.inline[key]; ok {
 		callers := walker.schema.Databases[scripted.Database].Callable.Callers
@@ -810,9 +789,7 @@ func (walker *walker) lookupCallee(caller, key string) (ScriptedDefinition, bool
 	return callee, ok && database != nil && database.Callable.FoldsCase
 }
 
-// matchCommand returns the command that a key names, as written or in lower case. For a key that iterates a list over
-// a definition named by an alias, it returns the command of that list. It returns false unless the block's shape
-// holds commands of the kind the command is declared as. A block inside triggers holds no effect.
+// matchCommand returns the command a key names. It returns false if the block does not take that command.
 func (walker *walker) matchCommand(parent *Context, key string) (match, bool) {
 	command, ok := walker.schema.FindCommand(key)
 	fit := match{category: CategoryCommand, command: command}
@@ -826,9 +803,7 @@ func (walker *walker) matchCommand(parent *Context, key string) (match, bool) {
 	return fit, ok
 }
 
-// isLink reports whether a key starts with a scope link. That is a link the dumps declare, or a prefix that takes a
-// name after a colon. Case does not matter, as the games write ROOT and root alike. A wild link is a pattern, so its
-// own name is no link.
+// isLink reports whether a key starts with a scope link, ignoring case.
 func (walker *walker) isLink(key string) bool {
 	first := strings.ToLower(jomini.SplitChain(key)[0])
 	if command := walker.schema.Commands[first]; command != nil && !command.Wild && slices.Contains(command.Declared, game.DeclaredLink) {
@@ -852,11 +827,7 @@ func (walker *walker) findLinkCommand(key string) *Command {
 	return walker.schema.Commands[first]
 }
 
-// resolveMatch sets the context of a keyed statement from the rule its key fit. It sets the field the block's keys
-// come from, the shape of the block, the scope inside it and the key's category. If the rule gives no shape, the
-// block takes the shape its parent gives to blocks written in it. A keyword of the language gets the keyword category
-// and adjusts the shape and the caller, and a keyword whose block is never run makes that block a preview. An
-// iterator gives the shape of its block.
+// resolveMatch sets the context of a keyed statement from the rule its key fits.
 func (walker *walker) resolveMatch(context *Context, parent *Context, fit match, keyword *game.Keyword) {
 	rule := game.KeyRules[fit.rule]
 	context.Field = walker.resolveField(rule.Fields, parent, fit)
@@ -929,9 +900,7 @@ func (walker *walker) resolveShape(decider string, parent *Context, field *Field
 	return ""
 }
 
-// resolveScope sets the scope inside a block, as the key rule says. A command or a link that leads to a scope where
-// script runs moves the scope there and pushes the scope it leaves onto the previous ones. A command that iterates a
-// list with no target moves to an unknown scope. Any other block keeps the scope if its shape is known.
+// resolveScope sets the scope inside a block, as its key's rule says.
 func (walker *walker) resolveScope(context *Context, parent *Context, rule game.KeyRule, fit match) {
 	moves := fit.iterator != nil || rule.Scope == "follows" &&
 		(fit.category == CategoryLink || fit.command != nil && (fit.command.Target != "" || fit.command.Lists))
@@ -949,10 +918,7 @@ func (walker *walker) resolveScope(context *Context, parent *Context, rule game.
 	}
 }
 
-// resolveCallReferences resolves the references that a key makes by the rule it fit. The key may name a database
-// itself, or write prefixed names after a link, or call a scripted definition. Otherwise the key is a name in each
-// database that its caller calls, or in game.AnyCall once if the caller calls every database. A key that starts the
-// iterator of a scripted list names that list.
+// resolveCallReferences resolves the references a key makes by the rule it fits.
 func (walker *walker) resolveCallReferences(context *Context, fit match, key string, span jomini.Span) {
 	switch {
 	case fit.database != "":
@@ -977,10 +943,7 @@ func (walker *walker) resolveCallReferences(context *Context, fit match, key str
 	}
 }
 
-// resolveChain returns the scope that a chain of links leads to, starting in the scope of the block that holds it.
-// The language's own words lead to the definition's root, the previous scope and the current one. Case does not
-// matter. At the first link that no dump declares, or that cannot be followed from the scope it is in, the chain
-// stops and the result is unknown.
+// resolveChain returns the scope a chain of links leads to. It is unknown if a link cannot be followed.
 func (walker *walker) resolveChain(chain string, parent *Context) string {
 	scope := parent.Scope
 	for _, rawLink := range jomini.SplitChain(chain) {
@@ -1017,9 +980,9 @@ func (walker *walker) resolveChain(chain string, parent *Context) string {
 // findSavedType returns the type of the scope that the definition saved last under the given name. It returns "" if
 // it saved none.
 func (walker *walker) findSavedType(label string) string {
-	for i := len(walker.saved) - 1; i >= 0; i-- {
-		if walker.saved[i].Name == label {
-			return walker.saved[i].Type
+	for _, saved := range slices.Backward(walker.saved) {
+		if saved.Name == label {
+			return saved.Type
 		}
 	}
 	return ""
@@ -1093,9 +1056,7 @@ func ParseCall(tree *jomini.Tree, span jomini.Span) (jomini.Call, bool) {
 	return jomini.ParseBracketed(text, start)
 }
 
-// resolveValue resolves the value of a scalar statement. A parameter is a parameter. A constant refers to the file's
-// own constant, and an expression refers to each constant it uses. A data call refers to the names its quoted
-// arguments hold. Any other value refers to the names that its field, the game's rows and its prefixes give.
+// resolveValue resolves what the value of a scalar statement refers to.
 func (walker *walker) resolveValue(context *Context, statement int32, level int) {
 	current := walker.tree.Statements[statement]
 	if current.IsBlock() || current.Value.IsEmpty() {
@@ -1132,13 +1093,8 @@ func (walker *walker) resolveValue(context *Context, statement int32, level int)
 	}
 }
 
-// resolveValueReferences resolves the references that a plain value makes. A value that is not a link names the
-// database its field names, and the databases nested in it where the field says so. It may also name the database
-// the game's rows give for its key path, else the one its shape gives. It may name a coat's template list, the events
-// of a script file, a script value and the databases of the prefixes it is written with. If a row puts a file in a
-// folder and the value names none, the folder is added. A database named twice is referred to once. The reference is
-// inferred only if the field's claim alone makes it. A value that holds a parameter or a bracket makes none. The
-// index resolves which event an id names and whether its namespace is declared.
+// resolveValueReferences resolves the references a plain value makes. A value with a parameter or a bracket makes
+// none.
 func (walker *walker) resolveValueReferences(context *Context, statement int32, level int, span jomini.Span) {
 	text := walker.tree.Text(span)
 	if text == "" || strings.ContainsAny(text, "[$") {
@@ -1158,7 +1114,7 @@ func (walker *walker) resolveValueReferences(context *Context, statement int32, 
 		databases = append(databases, database.Nested...)
 	}
 	placed, folder := "", ""
-	if database, where, ok := walker.findValueDatabase(context, statement, level); ok {
+	if database, where, ok := walker.findValueDatabase(context, level); ok {
 		databases, placed, folder = append(databases, database), database, where
 	}
 	// A value with a space is literal text, since a message key has none.
@@ -1189,10 +1145,7 @@ func (walker *walker) resolveValueReferences(context *Context, statement int32, 
 	context.References = append(context.References, walker.listPrefixed(text, span.Start)...)
 }
 
-// findScriptValue returns the reference that a value makes to a script value. The script value is the last link of a
-// chain of links that is no event id, or a value written at a math operator of a value block, or at a field that a
-// source declared takes a script value. It must be an identifier that is no command, no link and no yes-or-no word.
-// It returns false for any other value, and for a game without script values.
+// findScriptValue returns the reference a value makes to a script value. It returns false if it makes none.
 func (walker *walker) findScriptValue(context *Context, level int, span jomini.Span) (Reference, bool) {
 	text := walker.tree.Text(span)
 	links := jomini.SplitChain(text)
@@ -1211,11 +1164,9 @@ func (walker *walker) findScriptValue(context *Context, level int, span jomini.S
 	return Reference{Database: walker.schema.Values, Name: last, Span: jomini.Span{Start: start, End: span.End}}, true
 }
 
-// findValueDatabase returns the database that the value of a statement names, by where it is written. That is a key
-// path that the game's rows give for the definition's database, a key its database says also names its definitions
-// (unless the statement defines that name itself), or a key that a GUI file says names a template, a texture, a font
-// or a text. It also returns the folder that the row puts a file in when the value names none, or "".
-func (walker *walker) findValueDatabase(context *Context, statement int32, level int) (string, string, bool) {
+// findValueDatabase returns the database a statement's value names by where it is written, and the folder of a file
+// it names, or "". It returns false if it names none.
+func (walker *walker) findValueDatabase(context *Context, level int) (string, string, bool) {
 	key := walker.frames[level].label
 	keys := walker.frames[level-1].path
 	if key != "" {
@@ -1237,22 +1188,40 @@ func (walker *walker) findValueDatabase(context *Context, statement int32, level
 	return "", "", false
 }
 
-// listPrefixed returns a reference for each name that a chain of links writes after a prefix that has a database. A
-// name ends at the database's separator. The offset is where the chain starts in the file.
+// listPrefixed returns the references a chain of links makes after prefixes that have a database.
 func (walker *walker) listPrefixed(chain string, base int) []Reference {
 	var references []Reference
 	offset := 0
 	for _, link := range jomini.SplitChain(chain) {
 		if prefix, label, ok := jomini.SplitPrefixed(link); ok {
 			if database, exists := walker.schema.Prefixes[prefix]; exists && database != "" {
-				if owner := walker.schema.Databases[database]; owner != nil && owner.Row.Separator != "" {
-					label, _, _ = strings.Cut(label, owner.Row.Separator)
-				}
-				start := base + offset + len(prefix) + 1
-				references = append(references, Reference{Database: database, Name: label, Span: jomini.Span{Start: start, End: start + len(label)}})
+				references = append(references, walker.listLabelReferences(database, label, base+offset+len(prefix)+1)...)
 			}
 		}
 		offset += len(link) + 1
+	}
+	return references
+}
+
+// listLabelReferences returns the references a prefixed link's label makes, such as the group NAI and the define
+// NAI|X for define:NAI|X.
+func (walker *walker) listLabelReferences(database, label string, start int) []Reference {
+	owner := walker.schema.Databases[database]
+	if owner == nil || owner.Row.Separator == "" {
+		return []Reference{{Database: database, Name: label, Span: jomini.Span{Start: start, End: start + len(label)}}}
+	}
+	holder, rest, _ := strings.Cut(label, owner.Row.Separator)
+	references := []Reference{{Database: database, Name: holder, Span: jomini.Span{Start: start, End: start + len(holder)}}}
+	key, _, _ := strings.Cut(rest, owner.Row.Separator)
+	if key == "" {
+		return references
+	}
+	keyStart := start + len(holder) + len(owner.Row.Separator)
+	for _, nested := range owner.Nested {
+		references = append(references, Reference{
+			Database: nested, Name: walker.schema.JoinNested(nested, holder, key),
+			Span: jomini.Span{Start: keyStart, End: keyStart + len(key)},
+		})
 	}
 	return references
 }
@@ -1269,9 +1238,7 @@ func (walker *walker) buildPaths(level int, label string, begins bool) {
 	}
 }
 
-// isLead reports whether a value written alone is a word that makes the statement after it a definition or a call.
-// Such a word is one that a database declares its definitions with. In a GUI file it is also one that declares or
-// calls definitions.
+// isLead reports whether a value written alone makes the statement after it a definition or a call.
 func (walker *walker) isLead(text string) bool {
 	if walker.declaring[text] != "" {
 		return true
@@ -1280,9 +1247,8 @@ func (walker *walker) isLead(text string) bool {
 		(slices.Contains(game.GUI.Declares, text) || text != game.AnyCall && len(walker.schema.Callees[text]) > 0)
 }
 
-// FindDeclaration returns how the dumps declare a command written in the block that this context holds. It is the
-// first declaration that the block's shape allows. An effect never counts inside a trigger block. It returns false
-// if the block takes the command under no declaration.
+// FindDeclaration returns how the dumps declare a command in this context's block. It returns false if the block does
+// not take it.
 func (context *Context) FindDeclaration(command *Command) (string, bool) {
 	allowed := game.Shapes[findShape(context)].Allows
 	for _, declaration := range command.Declared {

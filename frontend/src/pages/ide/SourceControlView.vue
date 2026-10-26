@@ -4,11 +4,10 @@
 -->
 <script setup lang="ts">
 import { computed, shallowRef, useTemplateRef, watch } from "vue";
-import { useMutation, useQuery, useQueryCache } from "@pinia/colada";
+import { useQuery } from "@pinia/colada";
 import { createReusableTemplate, useInfiniteScroll, useLocalStorage } from "@vueuse/core";
 import type { DropdownMenuItem } from "@nuxt/ui";
 
-import * as gitApi from "@services/git/service";
 import type { Change, Commit } from "@services/git/models";
 
 import { commitFilesQuery, commitsQuery, gitStatusQuery, refsQuery, stateQuery } from "../../queries";
@@ -49,7 +48,6 @@ const LANE_COLORS = [
 const git = useGitStore();
 const editor = useEditorStore();
 const workspace = useWorkspaceStore();
-const queryCache = useQueryCache();
 const [DefineLane, Lane] = createReusableTemplate<{ entry: Entry }>();
 
 const { data: state } = useQuery(stateQuery);
@@ -126,22 +124,18 @@ const entries = computed<Entry[]>(() =>
   ]),
 );
 
-const { mutate: initialize } = useMutation({
-  mutation: (folder: string) => gitApi.Run(folder, "init"),
-  onSuccess: async () => {
-    await queryCache.invalidateQueries({ key: ["git"] });
-    await git.listRepositories();
-  },
-});
 const initializeMenu = computed<DropdownMenuItem[]>(() =>
   bare.value.map((mod) => ({
     label: `Initialize ${workspace.originName(mod.id)}`,
     origin: mod.id,
-    onSelect: () => initialize(mod.dir),
+    onSelect: () => git.initialize(mod.dir),
   })),
 );
 
-/** Gives each commit its lane and the lanes that touch its row. A lane waits for the commit its line leads to. */
+/**
+ * buildGraph gives each commit its lane and the lanes that touch its row. A lane waits for the commit its line leads
+ * to.
+ */
 function buildGraph(log: readonly Commit[]): GraphRow[] {
   const lanes: string[] = [];
   const freeLane = () => (lanes.includes("") ? lanes.indexOf("") : lanes.length);
@@ -169,7 +163,10 @@ const laneX = (lane: number) => LANE_WIDTH / 2 + 2 + lane * LANE_WIDTH;
 /** The color of a lane. The colors repeat after the last. */
 const laneColor = (lane: number) => LANE_COLORS[lane % LANE_COLORS.length];
 
-/** The lines of a graph row, each in its lane's color: lanes passing, joining, going on and leaving for a merge. */
+/**
+ * buildLines returns the lines of a graph row, each in its lane's color: lanes passing, joining, going on and leaving
+ * for a merge.
+ */
 function buildLines(row: GraphRow): { path: string; lane: number }[] {
   const middle = ROW_HEIGHT / 2;
   const dot = laneX(row.lane);
@@ -185,7 +182,10 @@ function buildLines(row: GraphRow): { path: string; lane: number }[] {
   ];
 }
 
-/** Describes the refs at a commit as chips: a branch in the accent, a remote branch in the info color, a tag plain. */
+/**
+ * describeRefs returns the refs at a commit as chips: a branch in the accent, a remote branch in the info color, a
+ * tag plain.
+ */
 function describeRefs(one: Commit): { label: string; color: "primary" | "info" | "neutral" }[] {
   const remoteNames = new Set((refs.value ?? []).filter((ref) => ref.type === "remote").map((ref) => ref.name));
   return (one.refs ?? [])
@@ -234,7 +234,7 @@ function describeRefs(one: Commit): { label: string; color: "primary" | "info" |
       <div v-for="mod in bare" :key="mod.id" class="flex items-center gap-2">
         <OriginChip :origin="mod.id" dot />
         <span class="min-w-0 grow truncate">{{ workspace.originName(mod.id) }}</span>
-        <UButton label="Initialize" icon="i-lucide-git-branch-plus" size="xs" @click="initialize(mod.dir)" />
+        <UButton label="Initialize" icon="i-lucide-git-branch-plus" size="xs" @click="git.initialize(mod.dir)" />
       </div>
     </div>
     <USplitter

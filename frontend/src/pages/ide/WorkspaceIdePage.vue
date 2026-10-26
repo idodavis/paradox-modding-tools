@@ -1,28 +1,26 @@
 <!--
-  The IDE page: the sidebar, the editor layout, the bottom panel and the Wiki pane, in panes the splitter sizes and
-  folds. A window that holds one part of the IDE shows that part alone.
+  The IDE page, with the sidebar, the editors, the bottom panel and the Wiki pane. A window of its own shows one part
+  alone.
 -->
 <script setup lang="ts">
-import { computed, nextTick, onActivated, onDeactivated, reactive, shallowRef, useTemplateRef, watch } from "vue";
+import { computed, nextTick, reactive, shallowRef, useTemplateRef, watch } from "vue";
 import { useMutation, useQuery } from "@pinia/colada";
 import { createReusableTemplate, useEventBus, useEventListener, useLocalStorage } from "@vueuse/core";
-import { Dialogs } from "@wailsio/runtime";
 import type { SplitterItem } from "@nuxt/ui";
 
-import * as app from "@services/app/service";
 import * as workspaceApi from "@services/workspace/service";
 import type { Place } from "@services/workspace/models";
 
-import { plural } from "../../lib/format";
+import { useShown } from "../../app/pages";
+import { countLevels, plural } from "../../lib/format";
 import {
   codesQuery,
-  fileQuery,
   gitStatusQuery,
   indentationQuery,
   placeQuery,
+  reportQuery,
   rootsQuery,
   settingsCatalogQuery,
-  stateQuery,
   wikiPagesQuery,
   windowsQuery,
 } from "../../queries";
@@ -30,18 +28,21 @@ import { useEditorStore } from "../../stores/editor";
 import { useGitStore } from "../../stores/git";
 import { useSettingsStore } from "../../stores/settings";
 import { THIS_WINDOW, useWindowsStore } from "../../stores/windows";
-import { useWorkspaceStore } from "../../stores/workspace";
-import CompareView from "../../ui/CompareView.vue";
+import { useWorkspaceStore, VANILLA } from "../../stores/workspace";
+import FileSelector from "../../ui/FileSelector.vue";
+import { EDITOR_LANGUAGES } from "../../ui/ScriptSnippet.vue";
 import SettingsSection from "../../ui/SettingsSection.vue";
 import CoatDialog from "./draw/CoatDialog.vue";
 import EditorLayout from "./EditorLayout.vue";
 import EntriesView from "./EntriesView.vue";
 import ExplorerTree from "./ExplorerTree.vue";
-import IdePanel from "./IdePanel.vue";
+import FileCompare from "./FileCompare.vue";
+import IdePanel, { listPanelProblems } from "./IdePanel.vue";
 import SearchView from "./SearchView.vue";
 import SourceControlView from "./SourceControlView.vue";
 import WikiPane from "./WikiPane.vue";
-import { findModel, listOpenProblems } from "./editor/models";
+import { LANGUAGES } from "./editor/monaco";
+import { findModel } from "./editor/models";
 import { parseTab, VIEWS } from "./editor/tabs";
 
 const { id } = defineProps<{ id: string }>();
@@ -53,7 +54,7 @@ const SIDEBAR = [
   { value: "git", icon: "i-lucide-git-compare", label: "Source control" },
   { value: "entries", icon: "i-lucide-shapes", label: "Entries" },
 ];
-/** The tabs of the IDE's settings, by the catalog's section of each. */
+/** The tabs of the IDE's settings, one for each section of the catalog. */
 const SETTINGS_TABS = [
   { value: "editor", label: "Editor" },
   { value: "explorer", label: "Explorer" },
@@ -73,17 +74,12 @@ const COMPARES = {
   conflict: "Comparing a conflict's two sides",
   commit: "Comparing a commit with its parent",
 };
-const FORMATS: Record<string, string> = {
-  script: "Paradox Script",
-  gui: "Paradox GUI",
-  localization: "Paradox localization",
-};
 const ENCODINGS: Record<string, string> = {
   "utf-8": "UTF-8",
   "utf-8-bom": "UTF-8 BOM",
   "windows-1252": "Windows-1252",
 };
-/** The mouse's back and forward buttons, by the number a mouse event gives each. */
+/** The numbers a mouse event gives the back and forward buttons. */
 const MOUSE_BACK = 3;
 const MOUSE_FORWARD = 4;
 
@@ -99,11 +95,11 @@ const panel = useLocalStorage("pmt.ide.panel", "");
 const wiki = useLocalStorage("pmt.ide.wiki", false);
 const gameOpen = useLocalStorage("pmt.ide.gameOpen", true);
 const settingsOpen = shallowRef(false);
-// which trees show their filter box, held while the app runs and never saved
+/** Which trees show their filter box. It is never saved. */
 const filtering = reactive({ mods: false, game: false, own: false });
 const [DefineFilterButton, FilterButton] = createReusableTemplate<{ tree: keyof typeof filtering }>();
 const settingsTab = shallowRef<string | number>("editor");
-const visible = shallowRef(true);
+const visible = useShown();
 const splitter = useTemplateRef("splitter");
 const modTree = useTemplateRef("modTree");
 const gameTree = useTemplateRef("gameTree");
@@ -118,8 +114,6 @@ commands.on((command) => {
   if (command === "ide.settings") settingsOpen.value = true;
   if (command === "explorer.reveal") void revealFile();
 });
-onActivated(() => (visible.value = true));
-onDeactivated(() => (visible.value = false));
 defineShortcuts(
   computed(() =>
     visible.value
@@ -137,7 +131,7 @@ useEventListener(document, "mouseup", (event) => {
   editor.go(event.button === MOUSE_BACK ? -1 : 1);
 });
 
-// a window of its own holds one part of the IDE: the editors, the game's files, one folder, the panel or the Wiki pane
+/** The part of the IDE this window holds. */
 const part = THIS_WINDOW.split(":")[0];
 const layout = computed(() => {
   if (part === "panel") return "panel";
@@ -148,24 +142,18 @@ const layout = computed(() => {
 
 const { data: roots } = useQuery(() => ({ ...rootsQuery, enabled: workspace.isOpen() }));
 const { data: catalog } = useQuery(settingsCatalogQuery);
-const { data: state } = useQuery(stateQuery);
 const { data: windowNames } = useQuery(windowsQuery);
-const { mutate: closeGame } = useMutation({ mutation: () => app.CloseWindow("game") });
-const { mutate: showGame } = useMutation({ mutation: () => app.ShowWindow("game") });
 const { data: folderPlace } = useQuery(() => ({
   ...placeQuery(THIS_WINDOW.slice("files:".length)),
   enabled: part === "files",
 }));
-const modOrigins = computed(() => new Set((state.value?.mods ?? []).map((mod) => mod.id)));
-const mods = computed(() => (roots.value ?? []).filter((root) => modOrigins.value.has(root.origin)));
-const game = computed(() => (roots.value ?? []).filter((root) => !modOrigins.value.has(root.origin)));
-// the setting alone decides, not the roots: they are read again on a switch of workspace, and a pane the splitter
-// gets back while the explorer is hidden is given no room
-const gameShown = computed(() => settings.value("ide.gameFiles") === "true");
+const mods = computed(() => (roots.value ?? []).filter((root) => root.origin !== VANILLA));
+const game = computed(() => (roots.value ?? []).filter((root) => root.origin === VANILLA));
+// the setting alone decides, as a pane the roots bring back while the explorer is hidden gets no room
+const gameShown = computed(() => settings.isOn("ide.gameFiles"));
 const own = computed(() => {
   if (part === "game") return game.value;
-  const dir = THIS_WINDOW.slice("files:".length);
-  return folderPlace.value ? [{ dir, origin: folderPlace.value.origin }] : [];
+  return folderPlace.value ? [{ dir: folderPlace.value.path, origin: folderPlace.value.origin }] : [];
 });
 
 const panes = computed<SplitterItem[]>(() => [
@@ -186,7 +174,7 @@ const panes = computed<SplitterItem[]>(() => [
   ...(layout.value === "files" || layout.value === "wiki"
     ? []
     : [{ id: "editors", slot: "editors", order: 2, minSize: 33 }]),
-  // while the Wiki pane is in a window of its own, the main window's is away; it comes back when that window closes
+  // the Wiki pane leaves the main window while it has a window of its own
   ...((layout.value === "full" && wiki.value && !windowNames.value?.includes("wiki")) || layout.value === "wiki"
     ? [{ id: "wiki", slot: "wiki", order: 3, sizeUnit: PIXELS, defaultSize: 440, minSize: 320 }]
     : []),
@@ -208,7 +196,7 @@ const editorPanes = computed<SplitterItem[]>(() => [
       ]
     : []),
 ]);
-// the panel dragged closed turns off, and turned on again it opens at the size it had
+// the panel opens again at the size it had when it was dragged closed
 const editorSplitter = useTemplateRef("editorSplitter");
 watch(panel, (tab) => tab && void nextTick(() => editorSplitter.value?.panelsRef.at(-1)?.expand()));
 const explorerPanes = computed<SplitterItem[]>(() => [
@@ -226,17 +214,12 @@ const explorerPanes = computed<SplitterItem[]>(() => [
 ]);
 const panelTab = computed(() => PANEL.find((tab) => tab.value === panel.value)?.value ?? "problems");
 
-// the counts are of the problems the panel lists: those Go found in the files open in tabs
+// the status bar counts the panel's problems. It only reads Health's report, as building one checks every mod
 const { data: codes } = useQuery(codesQuery);
-const problems = computed(() => {
-  const severities = listOpenProblems(editor.listTabs(), codes.value ?? []).flatMap((file) =>
-    file.problems.map(({ code }) => code.severity),
-  );
-  return {
-    errors: severities.filter((severity) => severity === 1).length,
-    warnings: severities.filter((severity) => severity === 2).length,
-  };
-});
+const { data: report } = useQuery(() => ({ ...reportQuery(workspace.listModIds()), enabled: false }));
+const problems = computed(() =>
+  countLevels(listPanelProblems(codes.value ?? [], report.value?.findings ?? []).flatMap((file) => file.problems)),
+);
 
 const { data: status } = useQuery(() => ({
   ...gitStatusQuery(git.findRoot(editor.activeFile())),
@@ -250,23 +233,17 @@ const open = computed(() => {
   const active = editor.activeFile();
   return active ? findModel(active.key) : null;
 });
+const languageName = computed(
+  () => LANGUAGES.find((one) => one.id === EDITOR_LANGUAGES[open.value?.place.format ?? ""])?.label ?? "Plain text",
+);
 const diff = computed(() => {
   const target = parseTab(editor.activeTab()?.id ?? "");
   return target.tab === "diff" ? target.side : null;
 });
-const left = useQuery(() => ({
-  ...fileQuery(comparing.value?.left.path ?? ""),
-  enabled: !!comparing.value,
-}));
-const right = useQuery(() => ({
-  ...fileQuery(comparing.value?.right.path ?? ""),
-  enabled: !!comparing.value,
-}));
 
-// while the Wiki pane is closed and the setting asks for it, a kind of file the wiki has pages for is suggested once;
-// a query turned off still hands back the pages it holds, so the toast asks the same
+// while the Wiki pane is closed, a kind of file the wiki has pages for is suggested once
 const suggestions = new Set<string>();
-const isSuggesting = computed(() => !wiki.value && settings.value("ide.wikiToast") === "true");
+const isSuggesting = computed(() => !wiki.value && settings.isOn("ide.wikiToast"));
 const { data: pages } = useQuery(() => ({
   ...wikiPagesQuery(editor.activeFile()?.path ?? ""),
   enabled: !!editor.activeFile() && workspace.isOpen() && isSuggesting.value,
@@ -274,6 +251,7 @@ const { data: pages } = useQuery(() => ({
 watch(pages, (summaries) => {
   const active = editor.activeFile();
   const kind = active ? `${active.format}:${active.database}` : "";
+  // a query turned off still hands back its pages
   if (!summaries?.length || !kind || suggestions.has(kind) || !isSuggesting.value) return;
   suggestions.add(kind);
   toast.add({
@@ -286,68 +264,60 @@ watch(
   () => suggestions.clear(),
 );
 
-const { mutate: addMod } = useMutation({
-  mutation: async () => {
-    const dir = await Dialogs.OpenFile({ CanChooseFiles: false, CanChooseDirectories: true });
-    if (dir) await workspaceApi.AddMod(id, dir);
-  },
-});
+const { mutate: addMod } = useMutation({ mutation: (dir: string) => workspaceApi.AddMod(id, dir) });
 
-/** Shows a file the explorer opened. A single click opens a preview tab and a double click pins the tab. */
+/** show opens a place from the explorer, in a preview tab or a pinned one. */
 function show(place: Place, preview: boolean): void {
   editor.show(place, undefined, preview ? "explorer" : "navigate");
 }
 
-/** Puts the panel in a window of its own. */
+/** popOutPanel puts the panel in a window of its own. */
 function popOutPanel(): void {
   windows.popOut({ panel: true });
   panel.value = "";
 }
 
-/** Shows a sidebar tab, unfolding the sidebar if it is folded. */
+/** showSidebar shows a sidebar tab, unfolding the sidebar if it is folded. */
 function showSidebar(value: string): void {
   sidebar.value = value;
   splitter.value?.panelsRef[0]?.expand();
 }
 
-/** Chooses a sidebar tab, or folds the sidebar when its open tab is chosen again. */
+/** choose shows a sidebar tab, or folds the sidebar when its open tab is chosen again. */
 function choose(value: string, collapsed: boolean, collapse: () => void): void {
   if (!collapsed && sidebar.value === value) collapse();
   else showSidebar(value);
 }
 
-/** Puts every setting of the open settings tab back to its default for this workspace. */
+/** resetSettings puts every setting of the open settings tab back to its default for this workspace. */
 function resetSettings(): void {
   for (const row of catalog.value ?? []) if (row.section === settingsTab.value) settings.write(row.key, row.default);
 }
 
-/** Shows or hides a tree's filter box. Showing the box of the game's files unfolds them. */
+/** toggleFilter shows or hides a tree's filter box. Showing the game files' box unfolds them. */
 function toggleFilter(tree: keyof typeof filtering): void {
   filtering[tree] = !filtering[tree];
   if (tree === "game" && filtering.game) gameOpen.value = true;
 }
 
-/** Shows the panel on Problems, or closes it when it shows Problems already. */
+/** toggleProblems shows the panel on Problems, or closes it if it shows Problems already. */
 function toggleProblems(): void {
   panel.value = panel.value === "problems" ? "" : "problems";
 }
 
-/** Folds every folder of both explorers. */
+/** collapseAll folds every folder of both explorers. */
 function collapseAll(): void {
   modTree.value?.collapseAll();
   gameTree.value?.collapseAll();
 }
 
-/** Shows the explorer, with the game's files unfolded for a file of the game, and selects the active file in it. */
+/** revealFile selects the active file in the explorer. It unfolds the game's files for a file of the game. */
 async function revealFile(): Promise<void> {
   showSidebar("explorer");
   if (editor.activeFile()?.readOnly) gameOpen.value = true;
   await nextTick();
   await Promise.all([modTree.value?.reveal(), gameTree.value?.reveal()]);
 }
-
-/** Names a place for a compare: its origin and its path in it. */
-const describePlace = (place: Place) => `${workspace.originName(place.origin)} Â· ${place.rel}`;
 </script>
 
 <template>
@@ -408,8 +378,7 @@ const describePlace = (place: Place) => `${workspace.originName(place.origin)} Â
               @click="settingsOpen = true"
             />
           </div>
-          <!-- the explorer only turns invisible behind another view: its splitter sizes its panes in pixels from its
-               own height, which an element taken out of the layout does not have -->
+          <!-- the explorer turns invisible, not hidden, behind another view, so its splitter keeps its height -->
           <div v-if="!collapsed" class="relative flex min-h-0 flex-1 flex-col">
             <USplitter
               :items="explorerPanes"
@@ -427,16 +396,20 @@ const describePlace = (place: Place) => `${workspace.originName(place.origin)} Â
                     Workspace<span class="ms-1 font-normal text-dimmed">{{ plural(mods.length, "mod") }}</span>
                     <span class="grow" />
                     <FilterButton tree="mods" />
-                    <UTooltip text="Add a mod">
-                      <UButton
-                        icon="i-lucide-plus"
-                        variant="ghost"
-                        size="xs"
-                        square
-                        aria-label="Add a mod"
-                        @click="addMod()"
-                      />
-                    </UTooltip>
+                    <FileSelector path="" folder :filter="[]" @update:path="addMod">
+                      <template #default="{ browse }">
+                        <UTooltip text="Add a mod">
+                          <UButton
+                            icon="i-lucide-plus"
+                            variant="ghost"
+                            size="xs"
+                            square
+                            aria-label="Add a mod"
+                            @click="browse"
+                          />
+                        </UTooltip>
+                      </template>
+                    </FileSelector>
                   </div>
                   <ExplorerTree ref="modTree" v-model:filtering="filtering.mods" :roots="mods" @open="show" />
                 </div>
@@ -474,8 +447,8 @@ const describePlace = (place: Place) => `${workspace.originName(place.origin)} Â
                   >
                     In its own window.
                     <div class="flex gap-1.5">
-                      <UButton label="Bring back" size="xs" variant="soft" @click="closeGame()" />
-                      <UButton label="Show window" size="xs" variant="ghost" @click="showGame()" />
+                      <UButton label="Bring back" size="xs" variant="soft" @click="windows.closeOther('game')" />
+                      <UButton label="Show window" size="xs" variant="ghost" @click="windows.showWindow('game')" />
                     </div>
                   </div>
                   <ExplorerTree
@@ -532,8 +505,8 @@ const describePlace = (place: Place) => `${workspace.originName(place.origin)} Â
                 >
                   <template #trailing="{ item }">
                     <template v-if="item.value === 'problems'">
-                      <UBadge v-if="problems.errors" :label="String(problems.errors)" color="error" size="sm" />
-                      <UBadge v-if="problems.warnings" :label="String(problems.warnings)" color="warning" size="sm" />
+                      <UBadge v-if="problems.serious" :label="String(problems.serious)" color="error" size="sm" />
+                      <UBadge v-if="problems.warning" :label="String(problems.warning)" color="warning" size="sm" />
                     </template>
                   </template>
                 </UTabs>
@@ -573,10 +546,10 @@ const describePlace = (place: Place) => `${workspace.originName(place.origin)} Â
     </USplitter>
     <Teleport v-if="!['panel', 'wiki'].includes(layout) && visible" defer to="#status-start">
       <button class="flex items-center gap-1 text-error" @click="toggleProblems">
-        <UIcon name="i-lucide-circle-x" class="size-3" />{{ problems.errors }}
+        <UIcon name="i-lucide-circle-x" class="size-3" />{{ problems.serious }}
       </button>
       <button class="flex items-center gap-1 text-warning" @click="toggleProblems">
-        <UIcon name="i-lucide-triangle-alert" class="size-3" />{{ problems.warnings }}
+        <UIcon name="i-lucide-triangle-alert" class="size-3" />{{ problems.warning }}
       </button>
       <button v-if="status" class="flex items-center gap-1 hover:text-highlighted" @click="showSidebar('git')">
         <UIcon name="i-lucide-git-branch" class="size-3" />{{ status.branch || "detached HEAD" }}
@@ -590,28 +563,13 @@ const describePlace = (place: Place) => `${workspace.originName(place.origin)} Â
       <template v-else-if="open">
         <span>Ln {{ open.caret.line }}, Col {{ open.caret.column }}</span>
         <span v-if="indentation">{{ indentation }}</span>
-        <span>{{ FORMATS[open.place.format] ?? "Plain text" }}</span>
+        <span>{{ languageName }}</span>
         <span>{{ ENCODINGS[open.encoding] ?? open.encoding }}</span>
       </template>
     </Teleport>
     <UModal :open="!!comparing" title="Compare" fullscreen @update:open="comparing = undefined">
       <template #body>
-        <div class="flex h-full min-h-0 flex-col overflow-hidden rounded-lg border border-default">
-          <p v-if="left.isPending.value || right.isPending.value" class="p-4 text-12 text-dimmed">
-            Reading the two filesâ€¦
-          </p>
-          <p v-else-if="comparing && (left.error.value || right.error.value)" class="p-4 text-12 text-dimmed">
-            {{ describePlace(left.error.value ? comparing.left : comparing.right) }} could not be read.
-          </p>
-          <CompareView
-            v-else-if="comparing && left.data.value && right.data.value"
-            :left="left.data.value.text.text"
-            :right="right.data.value.text.text"
-            :language="VIEWS[comparing.right.format].language"
-            :left-label="describePlace(comparing.left)"
-            :right-label="describePlace(comparing.right)"
-          />
-        </div>
+        <FileCompare v-if="comparing" :left="comparing.left" :right="comparing.right" />
       </template>
     </UModal>
     <UModal

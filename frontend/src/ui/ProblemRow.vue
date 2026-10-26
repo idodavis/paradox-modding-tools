@@ -1,38 +1,80 @@
-<!-- One problem: its message, its severity and its line and column. -->
+<!-- Shows one problem as a row with its level's mark, its message and a second line. -->
 <script setup lang="ts">
 import { computed } from "vue";
 
-import type { Code } from "@services/lsp/models";
+import { LEVELS } from "../lib/format";
 
-import { diagnosticMessage } from "../lib/format";
-
-const { code, facts } = defineProps<{
-  code: Code;
-  facts: Record<string, string | undefined>;
-  line: number;
-  column: number;
+const {
+  level = "",
+  message,
+  detail = "",
+  check = "",
+  mono = false,
+  dense = false,
+  selected = false,
+  plain = false,
+} = defineProps<{
+  /** The problem's level. "" shows no mark. */
+  level?: string;
+  message: string;
+  /** The second line, after the message when dense. */
+  detail?: string;
+  /** The name of the check that found it, shown as a chip. */
+  check?: string;
+  /** The second line is a path, in the mono font. */
+  mono?: boolean;
+  dense?: boolean;
+  selected?: boolean;
+  /** The row is plain text, not a button. */
+  plain?: boolean;
 }>();
-defineEmits<{ open: [] }>();
+const emit = defineEmits<{ open: [] }>();
 
-/** The icon and the color of each severity Go sends: 1 error, 2 warning, 3 information, 4 hint. */
-const SEVERITIES: Record<number, { icon: string; color: string }> = {
-  1: { icon: "i-lucide-circle-x", color: "text-error" },
-  2: { icon: "i-lucide-triangle-alert", color: "text-warning" },
-  3: { icon: "i-lucide-info", color: "text-info" },
-  4: { icon: "i-lucide-lightbulb", color: "text-dimmed" },
-};
-const severity = computed(() => SEVERITIES[code.severity] ?? SEVERITIES[1]);
+const mark = computed(() => LEVELS[level]);
+// a path shortens in its folders so its file name stays whole; any other second line is all "folder"
+const folder = computed(() => (mono ? detail.slice(0, Math.max(detail.lastIndexOf("/"), 0)) : detail));
+const file = computed(() => detail.slice(folder.value.length));
 </script>
 
 <template>
-  <button
-    type="button"
-    class="flex h-6 w-full items-center gap-2 px-3 text-start text-12 whitespace-nowrap text-toned hover:bg-accented"
-    @click="$emit('open')"
+  <div
+    :role="plain ? undefined : 'button'"
+    :tabindex="plain ? undefined : 0"
+    class="flex w-full text-start text-toned"
+    :class="[
+      dense ? 'h-6 items-center gap-2 px-3 text-12 whitespace-nowrap' : 'items-start gap-2.5 px-3 py-2',
+      plain ? 'cursor-default' : 'cursor-pointer hover:bg-accented',
+      { 'bg-(--accent-soft) shadow-[inset_2px_0_0_var(--accent)]': selected },
+    ]"
+    @click="emit('open')"
+    @keydown.enter.self="emit('open')"
+    @keydown.space.self.prevent="emit('open')"
   >
-    <UIcon :name="severity?.icon" class="size-3.5 shrink-0" :class="severity?.color" />
-    <span class="min-w-0 grow truncate">{{ diagnosticMessage(code.message, facts) }}</span>
-    <span class="shrink-0 font-mono text-11 text-dimmed">{{ code.id }}</span>
-    <span class="shrink-0 font-mono text-11 text-dimmed">{{ line }}:{{ column }}</span>
-  </button>
+    <slot name="leading" />
+    <UIcon
+      v-if="mark"
+      :name="mark.icon"
+      class="size-3.5 shrink-0"
+      :class="{ 'mt-0.75': !dense }"
+      :style="{ color: `var(--ui-${mark.color})` }"
+    />
+    <span class="flex min-w-0 grow" :class="dense ? 'items-center gap-2' : 'flex-col'">
+      <span :title="message" :class="dense ? 'min-w-0 truncate' : 'line-clamp-2 text-13 break-words text-highlighted'">
+        {{ message }}
+      </span>
+      <span v-if="detail || check" class="flex min-w-0 items-center gap-1.5">
+        <UBadge v-if="check" :label="check" color="neutral" variant="subtle" size="sm" class="shrink-0" />
+        <span
+          v-if="detail"
+          :title="detail"
+          class="flex min-w-0 text-dimmed"
+          :class="mono ? 'font-mono text-11' : 'text-12'"
+        >
+          <span class="truncate">{{ folder }}</span>
+          <span class="max-w-full shrink-0 truncate">{{ file }}</span>
+        </span>
+      </span>
+    </span>
+    <slot name="trailing" />
+  </div>
 </template>

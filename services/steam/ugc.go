@@ -18,13 +18,11 @@ import (
 
 	"github.com/ebitengine/purego"
 	"github.com/samber/lo"
-
-	"paradox-modding-tools/services/app"
 )
 
-// A Progress is one step of an upload, the data of the steam:progress event.
+// A Progress is one step of an upload, as the steam:progress event reports it.
 type Progress struct {
-	Stage string `json:"stage"` // preparing, uploading, committing, done
+	Stage string `json:"stage"` // preparing, uploading, committing or done
 	Done  int64  `json:"done"`
 	Total int64  `json:"total"`
 }
@@ -32,13 +30,14 @@ type Progress struct {
 // A Client is a connection to the game's own copy of Steam's library, loaded in a second copy of the app.
 type Client struct {
 	ugc   uintptr // Steam's Workshop interface
-	utils uintptr // Steam's utilities interface, which answers when a call has finished
+	utils uintptr // Steam's utilities interface, for the results of calls
 	appID int
 }
 
 // Steam's own numbers, as its Workshop headers give them.
 const (
 	resultOK               = 1              // the result code of a call that worked
+	resultNotFound         = 9              // the result code of an item Steam does not find
 	communityFileType      = 0              // the file type of a mod's item
 	imagePreviewType       = 0              // the type of preview that is a picture
 	videoPreviewType       = 1              // the type of preview that is a YouTube video
@@ -47,7 +46,7 @@ const (
 	invalidCall            = 0              // what a call is when Steam started none
 	pollInterval           = 100 * time.Millisecond
 	downloadTimeout        = 10 * time.Minute
-	watchLink              = "https://www.youtube.com/watch?v=" // a video's link, before its id
+	watchLink              = "https://www.youtube.com/watch?v=" // the link to watch a video, before its id
 )
 
 // The stages of an upload that a Progress names.
@@ -58,30 +57,40 @@ const (
 	stageDone       = "done"
 )
 
-// The call results Steam fills in, each with its callback id, its size and the offsets of the fields that are read.
-// Sizes and offsets after an 8-byte field follow the packing. The result code is the first field of every result.
+// The call results Steam fills in, each with its callback id, its size and the offsets of the fields read. Sizes and
+// offsets after an 8-byte field follow the packing.
 const (
 	resultCode = 0
 
 	createItemResultID        = 3403 // CreateItemResult_t
 	createItemResultBytes     = 2*packBytes + 8
-	createItemResultFile      = packBytes     // the new item's id
+	createItemResultFile      = packBytes     // the id of the item created
 	createItemResultAgreement = packBytes + 8 // whether the user must accept the Workshop's agreement
 
 	submitItemUpdateResultID        = 3404 // SubmitItemUpdateResult_t
 	submitItemUpdateResultBytes     = 16
 	submitItemUpdateResultAgreement = 4
 
+	addDependencyResultID    = 3412 // AddUGCDependencyResult_t
+	removeDependencyResultID = 3413 // RemoveUGCDependencyResult_t
+	dependencyResultBytes    = packBytes + 16
+
 	addAppDependencyResultID    = 3414 // AddAppDependencyResult_t
 	removeAppDependencyResultID = 3415 // RemoveAppDependencyResult_t
 	appDependencyResultBytes    = 2*packBytes + 8
+
+	appDependenciesResultID    = 3416 // GetAppDependenciesResult_t
+	appDependenciesResultBytes = packBytes + 144
+	appDependenciesResultApps  = packBytes + 8   // the app ids, room for 32
+	appDependenciesResultCount = packBytes + 136 // how many of them it holds
+	appDependenciesResultTotal = packBytes + 140 // how many the item requires, which may be more
+	appDependenciesMax         = 32
 
 	queryCompletedID    = 3401 // SteamUGCQueryCompleted_t
 	queryCompletedBytes = 280
 )
 
-// The size of Steam's SteamUGCDetails_t, with room to spare, and the offsets of the fields that are read. The text
-// fields come before the owner's id, so their offsets do not depend on the packing.
+// The size of Steam's SteamUGCDetails_t, with room to spare, and the offsets of the fields read.
 const (
 	detailsBytes       = 10 << 10
 	detailsResult      = 8
@@ -94,6 +103,8 @@ const (
 	detailsVisibility  = detailsOwner + 20
 	detailsTags        = detailsOwner + 27
 	detailsTagsBytes   = 1025
+	detailsFile        = (detailsTags + detailsTagsBytes + packBytes - 1) / packBytes * packBytes
+	detailsChildren    = detailsFile + 2*8 + 260 + 2*4 + 256 + 3*4
 )
 
 // errAgreement is the error for a user who has not accepted the Workshop's legal agreement.
@@ -105,7 +116,7 @@ var visibilities = []string{"public", "friends", "private", "unlisted"}
 // updateStages are the stages that Steam's update statuses fall into, indexed by the status. Status 0 is no job.
 var updateStages = []string{"", stagePreparing, stagePreparing, stageUploading, stageUploading, stageCommitting}
 
-// api holds Steam's functions, which purego binds to the loaded library once.
+// api holds Steam's functions, each bound to the loaded library once.
 var api struct {
 	ugcInterface        func() uintptr
 	utilsInterface      func() uintptr
@@ -131,6 +142,9 @@ var api struct {
 	getProgress         func(ugc uintptr, update uint64, done, total *uint64) int32
 	addAppDependency    func(ugc uintptr, id uint64, appID uint32) uint64
 	removeAppDependency func(ugc uintptr, id uint64, appID uint32) uint64
+	getAppDependencies  func(ugc uintptr, id uint64) uint64
+	addDependency       func(ugc uintptr, parent, child uint64) uint64
+	removeDependency    func(ugc uintptr, parent, child uint64) uint64
 	createQuery         func(ugc uintptr, ids *uint64, count uint32) uint64
 	sendQuery           func(ugc uintptr, query uint64) uint64
 	getQueryResult      func(ugc uintptr, query uint64, index uint32, details unsafe.Pointer) bool
@@ -138,14 +152,16 @@ var api struct {
 	releaseQuery        func(ugc uintptr, query uint64) bool
 	setLongDescription  func(ugc uintptr, query uint64, enable bool) bool
 	setPreviewsReturned func(ugc uintptr, query uint64, enable bool) bool
+	setChildrenReturned func(ugc uintptr, query uint64, enable bool) bool
 	countPreviews       func(ugc uintptr, query uint64, index uint32) uint32
 	getPreview          func(ugc uintptr, query uint64, index, preview uint32, address *byte, addressBytes uint32,
 		name *byte, nameBytes uint32, previewType *int32) bool
+	getChildren  func(ugc uintptr, query uint64, index uint32, ids *uint64, count uint32) bool
 	downloadItem func(ugc uintptr, id uint64, highPriority bool) bool
 	getInstall   func(ugc uintptr, id uint64, size *uint64, folder *byte, folderBytes uint32, stamp *uint32) bool
 }
 
-// bindings are the names of Steam's functions and the field of api that each one is bound to.
+// bindings maps the name of each of Steam's functions to its field of api.
 var bindings = map[string]any{
 	"SteamAPI_SteamUGC_v016":                              &api.ugcInterface,
 	"SteamAPI_SteamUtils_v010":                            &api.utilsInterface,
@@ -184,8 +200,18 @@ var bindings = map[string]any{
 	"SteamAPI_ISteamUGC_GetItemInstallInfo":               &api.getInstall,
 }
 
-// Open loads Steam's library from the given path and initializes it for the game's app id. Steam must be running
-// and signed in. It returns an error if the library does not load or Steam does not start.
+// optionalBindings maps the functions that a library may lack to their fields of api. A missing one stays nil, and an
+// upload then leaves the DLC and the required items as they are.
+var optionalBindings = map[string]any{
+	"SteamAPI_ISteamUGC_GetAppDependencies":  &api.getAppDependencies,
+	"SteamAPI_ISteamUGC_AddDependency":       &api.addDependency,
+	"SteamAPI_ISteamUGC_RemoveDependency":    &api.removeDependency,
+	"SteamAPI_ISteamUGC_SetReturnChildren":   &api.setChildrenReturned,
+	"SteamAPI_ISteamUGC_GetQueryUGCChildren": &api.getChildren,
+}
+
+// Open loads Steam's library and starts it for a game. It returns an error if the library does not load or lacks a
+// function, or if Steam is not running and signed in.
 func Open(libraryPath string, appID int) (*Client, error) {
 	handle, err := loadLibrary(libraryPath)
 	if err != nil {
@@ -195,12 +221,28 @@ func Open(libraryPath string, appID int) (*Client, error) {
 		return nil, err
 	}
 	for name, function := range bindings {
-		purego.RegisterLibFunc(function, handle, name)
+		if err := lookupFunction(handle, name, function); err != nil {
+			return nil, err
+		}
+	}
+	for name, function := range optionalBindings {
+		_ = lookupFunction(handle, name, function)
 	}
 	if !api.initialize() {
-		return nil, errors.New("steam did not start: it must be running with a signed-in user who owns the game")
+		return nil, errors.New("steam is not running, or no user who owns the game is signed in to it")
 	}
 	return &Client{ugc: api.ugcInterface(), utils: api.utilsInterface(), appID: appID}, nil
+}
+
+// lookupFunction binds a field of api to a function of the loaded library. It returns an error if the library does not
+// export the function.
+func lookupFunction(handle uintptr, name string, function any) error {
+	symbol, err := findSymbol(handle, name)
+	if err != nil {
+		return fmt.Errorf("steam's library has no %s: %w", name, err)
+	}
+	purego.RegisterFunc(function, symbol)
+	return nil
 }
 
 // Close shuts the library down.
@@ -212,7 +254,7 @@ func (client *Client) isOnline() bool {
 	return user != 0 && api.isLoggedOn(user)
 }
 
-// toItemID returns a Workshop item's number. It returns an error if the id is not a number.
+// toItemID returns a Workshop id as a number. It returns an error if the id is not a number.
 func toItemID(workshopID string) (uint64, error) {
 	id, err := strconv.ParseUint(workshopID, 10, 64)
 	if err != nil {
@@ -221,19 +263,18 @@ func toItemID(workshopID string) (uint64, error) {
 	return id, nil
 }
 
-// fetchQuery asks Steam for one item's page, with its whole description and its previews. The caller releases the
-// query. It returns an error if the id is not a number or Steam does not answer.
-func (client *Client) fetchQuery(workshopID string) (uint64, error) {
-	id, err := toItemID(workshopID)
-	if err != nil {
-		return 0, err
-	}
+// fetchQuery asks Steam for an item's page and returns the query's handle, which must be released. It returns an error
+// if Steam does not answer.
+func (client *Client) fetchQuery(id uint64) (uint64, error) {
 	query := api.createQuery(client.ugc, &id, 1)
 	if query == invalidHandle {
 		return 0, errors.New("steam did not start the query")
 	}
 	api.setLongDescription(client.ugc, query, true)
 	api.setPreviewsReturned(client.ugc, query, true)
+	if api.setChildrenReturned != nil {
+		api.setChildrenReturned(client.ugc, query, true)
+	}
 	if _, err := client.fetchResult(api.sendQuery(client.ugc, query), queryCompletedID, queryCompletedBytes, nil); err != nil {
 		api.releaseQuery(client.ugc, query)
 		return 0, err
@@ -241,10 +282,14 @@ func (client *Client) fetchQuery(workshopID string) (uint64, error) {
 	return query, nil
 }
 
-// FetchDetails fetches an item's details from Steam. It returns an error if the text is not a Workshop item's id or
-// Steam has no details of the item.
+// FetchDetails fetches an item's details from Steam. It returns an error if the id is not a Workshop id, or Steam does
+// not find the item or fails a call.
 func (client *Client) FetchDetails(workshopID string) (Details, error) {
-	query, err := client.fetchQuery(workshopID)
+	id, err := toItemID(workshopID)
+	if err != nil {
+		return Details{}, err
+	}
+	query, err := client.fetchQuery(id)
 	if err != nil {
 		return Details{}, err
 	}
@@ -260,22 +305,20 @@ func (client *Client) FetchDetails(workshopID string) (Details, error) {
 	var subscribers uint64
 	api.getStatistic(client.ugc, query, 0, subscriptionsStatistic, &subscribers)
 	details.Subscribers = int(subscribers)
-	return details, nil
+	details.Previews = client.listQueryPreviews(query)
+	details.Dependencies = client.listChildren(query, raw)
+	details.DLC, details.DLCCount, err = client.fetchDLC(id)
+	return details, err
 }
 
-// fetchPreviews fetches an item's additional previews: each picture's address and file name, each video's link. It
-// returns an error if the id is not a number or Steam does not answer.
-func (client *Client) fetchPreviews(workshopID string) ([]Preview, error) {
-	query, err := client.fetchQuery(workshopID)
-	if err != nil {
-		return nil, err
-	}
-	defer api.releaseQuery(client.ugc, query)
+// listQueryPreviews returns the gallery of the item that an answered query is for.
+func (client *Client) listQueryPreviews(query uint64) []Preview {
 	previews := []Preview{}
 	for index := range api.countPreviews(client.ugc, query, 0) {
 		var address, name [1024]byte
 		var previewType int32
-		if !api.getPreview(client.ugc, query, 0, index, &address[0], uint32(len(address)), &name[0], uint32(len(name)), &previewType) {
+		addressBytes, nameBytes := uint32(len(address)), uint32(len(name))
+		if !api.getPreview(client.ugc, query, 0, index, &address[0], addressBytes, &name[0], nameBytes, &previewType) {
 			continue
 		}
 		switch previewType {
@@ -286,11 +329,54 @@ func (client *Client) fetchPreviews(workshopID string) ([]Preview, error) {
 			previews = append(previews, Preview{Type: previewVideo, URL: watchLink + id, Video: id})
 		}
 	}
-	return previews, nil
+	return previews
 }
 
-// fetchFolder has Steam download an item and returns the folder it lands in, once that copy is as new as the given
-// update. It returns an error if the id is not a number or Steam refuses or does not finish the download.
+// listChildren returns the Workshop ids of the items that a queried item requires. It returns nil if Steam's library
+// cannot read or change them.
+func (client *Client) listChildren(query uint64, raw []byte) []string {
+	if !canChangeDependencies() {
+		return nil
+	}
+	count := binary.LittleEndian.Uint32(raw[detailsChildren:])
+	ids := make([]uint64, count)
+	if count > 0 && !api.getChildren(client.ugc, query, 0, &ids[0], count) {
+		return nil
+	}
+	return lo.Map(ids, func(id uint64, _ int) string { return strconv.FormatUint(id, 10) })
+}
+
+// canChangeDependencies reports whether Steam's library can both read the items an item requires and change them.
+func canChangeDependencies() bool {
+	return api.setChildrenReturned != nil && api.getChildren != nil && api.addDependency != nil &&
+		api.removeDependency != nil
+}
+
+// fetchDLC returns the app ids of up to 32 DLCs that an item requires, and how many it requires in all. It returns nil
+// if Steam's library cannot read them, and an error if Steam fails the call.
+func (client *Client) fetchDLC(id uint64) ([]string, int, error) {
+	if api.getAppDependencies == nil {
+		return nil, 0, nil
+	}
+	call := api.getAppDependencies(client.ugc, id)
+	result, err := client.fetchResult(call, appDependenciesResultID, appDependenciesResultBytes, nil)
+	if err == nil {
+		err = toResultError(result, resultCode)
+	}
+	if err != nil {
+		return nil, 0, err
+	}
+	dlc := make([]string, min(binary.LittleEndian.Uint32(result[appDependenciesResultCount:]), appDependenciesMax))
+	for position := range dlc {
+		appID := binary.LittleEndian.Uint32(result[appDependenciesResultApps+4*position:])
+		dlc[position] = strconv.FormatUint(uint64(appID), 10)
+	}
+	total := int(binary.LittleEndian.Uint32(result[appDependenciesResultTotal:]))
+	return dlc, max(total, len(dlc)), nil
+}
+
+// fetchFolder has Steam download an item and returns its folder once the copy is up to date. It returns an error if the
+// id is not a number, or Steam refuses or does not finish the download.
 func (client *Client) fetchFolder(workshopID string, updatedAt time.Time) (string, error) {
 	id, err := toItemID(workshopID)
 	if err != nil {
@@ -311,7 +397,7 @@ func (client *Client) fetchFolder(workshopID string, updatedAt time.Time) (strin
 	return "", errors.New("steam did not finish downloading the item")
 }
 
-// decodeDetails decodes the item's details from the bytes Steam filled in. The subscribers are not among them.
+// decodeDetails decodes an item's page from the bytes Steam filled in.
 func decodeDetails(raw []byte) Details {
 	visibility := int(binary.LittleEndian.Uint32(raw[detailsVisibility:]))
 	tags := toText(raw[detailsTags : detailsTags+detailsTagsBytes])
@@ -333,8 +419,8 @@ func toText(field []byte) string {
 	return string(text)
 }
 
-// CreateItem creates a new Workshop item for the app and returns its id. It returns the id with an error if the Steam
-// user has not accepted the Workshop's legal agreement yet.
+// CreateItem creates a Workshop item for the app and returns its id. It returns the id with an error if the Steam user
+// has not accepted the Workshop's legal agreement yet.
 func (client *Client) CreateItem() (string, error) {
 	call := api.createItem(client.ugc, uint32(client.appID), communityFileType)
 	result, err := client.fetchResult(call, createItemResultID, createItemResultBytes, nil)
@@ -351,21 +437,26 @@ func (client *Client) CreateItem() (string, error) {
 	return workshopID, nil
 }
 
-// Submit uploads a folder and a listing to a Workshop item. It calls the given function with each step of the upload.
-// It returns an error if the text is not a Workshop item's id, Steam refuses a part of the update, or the Steam user
-// has not accepted the Workshop's legal agreement yet.
-func (client *Client) Submit(workshopID string, listing Listing, uploadDir string, progress func(Progress)) error {
+// Submit uploads a folder and a listing to a Workshop item, reporting each step. It returns an error if Steam refuses
+// a part.
+func (client *Client) Submit(workshopID string, params Params, progress func(Progress)) error {
 	id, err := toItemID(workshopID)
 	if err != nil {
 		return err
 	}
-	dirs, err := app.ResolveDirs()
-	if err != nil {
-		return err
-	}
-	last, _ := LoadSnapshot(dirs.Cache, workshopID)
 	progress(Progress{Stage: stagePreparing})
-	if err := client.setDependencies(id, listing.DLC, last.Listing.DLC); err != nil {
+	// Steam may not answer a query for an item it just made, which has nothing yet
+	details := Details{Previews: []Preview{}, DLC: []string{}}
+	if canChangeDependencies() {
+		details.Dependencies = []string{}
+	}
+	if params.WorkshopID != "" {
+		if details, err = client.FetchDetails(workshopID); err != nil {
+			return err
+		}
+	}
+	listing := params.Listing
+	if err := client.setDependencies(id, listing, details, params.ModWorkshopIDs); err != nil {
 		return err
 	}
 	update := api.startUpdate(client.ugc, uint32(client.appID), id)
@@ -374,8 +465,8 @@ func (client *Client) Submit(workshopID string, listing Listing, uploadDir strin
 	}
 	err = errors.Join(
 		client.setTexts(update, listing),
-		client.setVisibility(update, listing.Visibility),
-		client.setFiles(update, listing, last.Listing.Previews, uploadDir),
+		client.setVisibility(update, params.Visibility),
+		client.setFiles(update, listing, details.Previews, params.UploadDir),
 	)
 	if err != nil {
 		return err
@@ -402,27 +493,77 @@ func (client *Client) Submit(workshopID string, listing Listing, uploadDir strin
 	return nil
 }
 
-// setDependencies makes the DLCs an item requires the given ones, by adding those the previous list did not have
-// and removing those it had that the given list drops.
-func (client *Client) setDependencies(id uint64, dlc, previous []string) error {
-	added, removed := lo.Difference(dlc, previous)
-	return errors.Join(
-		client.changeDependencies(id, added, api.addAppDependency, addAppDependencyResultID),
-		client.changeDependencies(id, removed, api.removeAppDependency, removeAppDependencyResultID),
-	)
+// setDependencies sets the DLC and the items that an item requires to the listing's. What Steam's library cannot read
+// is left as it is. It returns an error if Steam fails a change.
+func (client *Client) setDependencies(id uint64, listing Listing, details Details, modIDs []string) error {
+	var errs []error
+	if details.DLC != nil {
+		added, removed := diffDLC(listing.DLC, details)
+		errs = append(errs,
+			client.applyChanges(removed, func(dlc uint64) uint64 {
+				return api.removeAppDependency(client.ugc, id, uint32(dlc))
+			}, removeAppDependencyResultID, appDependencyResultBytes),
+			client.applyChanges(added, func(dlc uint64) uint64 {
+				return api.addAppDependency(client.ugc, id, uint32(dlc))
+			}, addAppDependencyResultID, appDependencyResultBytes),
+		)
+	}
+	if details.Dependencies != nil {
+		added, removed := diffRequired(listing.Dependencies, details.Dependencies, modIDs)
+		errs = append(errs,
+			client.applyChanges(removed, func(child uint64) uint64 {
+				return api.removeDependency(client.ugc, id, child)
+			}, removeDependencyResultID, dependencyResultBytes),
+			client.applyChanges(added, func(child uint64) uint64 {
+				return api.addDependency(client.ugc, id, child)
+			}, addDependencyResultID, dependencyResultBytes),
+		)
+	}
+	return errors.Join(errs...)
 }
 
-// changeDependencies calls one of Steam's functions that changes the DLCs an item requires, once for each of the
-// given DLC ids, and waits for each call to end.
-func (client *Client) changeDependencies(
-	id uint64, dlc []string, change func(ugc uintptr, id uint64, appID uint32) uint64, callbackID int32,
-) error {
-	for _, dlcID := range dlc {
-		appID, err := strconv.ParseUint(dlcID, 10, 32)
-		if err != nil {
-			return fmt.Errorf("%q is not a DLC's id", dlcID)
+// diffTags returns the tags that an upload adds to an item and the ones it removes. Two tags that differ only in case
+// are the same tag, as they are to Steam, which keeps a tag in the case it already knows.
+func diffTags(sent, steam []string) (added, removed []string) {
+	missing := func(tags []string) func(string, int) bool {
+		return func(tag string, _ int) bool {
+			return !slices.ContainsFunc(tags, func(one string) bool { return strings.EqualFold(one, tag) })
 		}
-		result, err := client.fetchResult(change(client.ugc, id, uint32(appID)), callbackID, appDependencyResultBytes, nil)
+	}
+	return lo.Filter(sent, missing(steam)), lo.Filter(steam, missing(sent))
+}
+
+// diffDLC returns the DLCs that an upload adds to an item and the ones it removes. It removes none if Steam reported
+// only some of the item's DLCs.
+func diffDLC(dlc []string, details Details) (added, removed []string) {
+	added, removed = lo.Difference(dlc, details.DLC)
+	if details.DLCCount > len(details.DLC) {
+		removed = nil
+	}
+	return added, removed
+}
+
+// diffRequired returns the items that an upload adds to an item's required items and the ones it removes. It removes
+// only the workspace's own mods.
+func diffRequired(dependencies []Dependency, steam, modIDs []string) (added, removed []string) {
+	added, removed = lo.Difference(listRequired(dependencies), steam)
+	return added, lo.Intersect(removed, modIDs)
+}
+
+// diffLabels returns the labels of the previews that an upload adds to Steam's gallery and the ones it removes.
+func diffLabels(previews, steam []Preview) (added, removed []string) {
+	return lo.Difference(listLabels(previews), listLabels(steam))
+}
+
+// applyChanges calls one of Steam's functions that change what an item requires, once per id, and waits for each
+// result. It returns an error if an id is not a number or Steam fails a call.
+func (client *Client) applyChanges(ids []string, change func(id uint64) uint64, callbackID, size int32) error {
+	for _, text := range ids {
+		value, err := strconv.ParseUint(text, 10, 64)
+		if err != nil {
+			return fmt.Errorf("%q is not a Steam id", text)
+		}
+		result, err := client.fetchResult(change(value), callbackID, size, nil)
 		if err == nil {
 			err = toResultError(result, resultCode)
 		}
@@ -433,15 +574,16 @@ func (client *Client) changeDependencies(
 	return nil
 }
 
-// setTexts sets the title, the description and the tags of an update. A listing whose source is Steam's own sends
-// no description.
+// setTexts sets the title, the description and the tags of an update. An empty description keeps Steam's own. It
+// returns an error if Steam refuses a text.
 func (client *Client) setTexts(update uint64, listing Listing) error {
 	errs := []error{toError(api.setTitle(client.ugc, update, listing.Title), "title")}
-	if listing.Source != sourceSteam {
-		errs = append(errs, toError(api.setDescription(client.ugc, update, listing.BBCode), "description"))
+	if listing.Description != "" {
+		errs = append(errs, toError(api.setDescription(client.ugc, update, listing.Description), "description"))
 	}
-	pointers := make([]*byte, len(listing.Tags))
-	for position, tag := range listing.Tags {
+	tags := toSentTags(listing)
+	pointers := make([]*byte, len(tags))
+	for position, tag := range tags {
 		var err error
 		if pointers[position], err = syscall.BytePtrFromString(tag); err != nil {
 			return fmt.Errorf("the tag %q is not text Steam takes: %w", tag, err)
@@ -454,35 +596,26 @@ func (client *Client) setTexts(update uint64, listing Listing) error {
 	return errors.Join(errs...)
 }
 
-// setVisibility sets the visibility of an update. The empty text leaves the item's own. It returns an error for a
-// text that is no visibility.
+// setVisibility sets the visibility of an update. An empty one keeps the item's own. Steam refuses an unknown one.
 func (client *Client) setVisibility(update uint64, visibility string) error {
-	if err := toVisibilityError(visibility); err != nil || visibility == "" {
-		return err
+	if visibility == "" {
+		return nil
 	}
 	number := slices.Index(visibilities, visibility)
 	return toError(api.setVisibility(client.ugc, update, int32(number)), "visibility")
 }
 
-// toVisibilityError returns an error unless the given text is a visibility or is empty.
-func toVisibilityError(visibility string) error {
-	if visibility == "" || slices.Contains(visibilities, visibility) {
-		return nil
-	}
-	return fmt.Errorf("%q is not a visibility: use %s", visibility, strings.Join(visibilities, ", "))
-}
-
-// setFiles sets the content folder, the thumbnail and the gallery of an update. When the listing's gallery differs
-// from the previous one, the previous previews are removed, the last first, and the listing's are added.
+// setFiles sets the content folder, the thumbnail and the gallery of an update. A changed gallery replaces all of
+// Steam's previews. It returns an error if Steam refuses a part.
 func (client *Client) setFiles(update uint64, listing Listing, previous []Preview, uploadDir string) error {
 	errs := []error{toError(api.setContent(client.ugc, update, uploadDir), "content folder")}
 	if listing.Thumbnail != "" {
 		errs = append(errs, toError(api.setPreview(client.ugc, update, listing.Thumbnail), "thumbnail"))
 	}
-	if slices.Equal(listing.Previews, previous) {
+	if added, removed := diffLabels(listing.Previews, previous); len(added)+len(removed) == 0 {
 		return errors.Join(errs...)
 	}
-	for index := len(previous) - 1; index >= 0; index-- {
+	for index := range slices.Backward(previous) {
 		errs = append(errs, toError(api.removePreview(client.ugc, update, uint32(index)), "removal of a preview"))
 	}
 	for _, preview := range listing.Previews {
@@ -503,8 +636,7 @@ func toError(ok bool, part string) error {
 	return fmt.Errorf("steam refused the %s", part)
 }
 
-// toVideoID returns the id of a video from its URL, which is what Steam takes for a gallery video. A text that is
-// not a URL of a video is returned as it is.
+// toVideoID returns the id of a video from its address. A text that is not a video's address is returned as it is.
 func toVideoID(link string) string {
 	parsed, err := url.Parse(link)
 	if err != nil {
@@ -519,9 +651,8 @@ func toVideoID(link string) string {
 	return link
 }
 
-// fetchResult waits for one of Steam's calls to finish and returns the bytes of its result, as the given callback id
-// and size describe them. While it waits it calls the given function, if any. It returns an error if Steam started
-// no call or says the call failed.
+// fetchResult waits for one of Steam's calls to finish and returns its result. While it waits it calls a function, if
+// any. It returns an error if Steam started no call or the call failed.
 func (client *Client) fetchResult(call uint64, callbackID, size int32, poll func()) ([]byte, error) {
 	if call == invalidCall {
 		return nil, errors.New("steam did not start the call")
@@ -549,10 +680,15 @@ func (client *Client) fetchResult(call uint64, callbackID, size int32, poll func
 	return result, nil
 }
 
-// toResultError returns an error unless the result code at the given offset of a result says it worked.
+// toResultError returns an error unless a result's code says the call worked. An item Steam does not find gets an
+// error of its own.
 func toResultError(result []byte, offset int) error {
-	if code := binary.LittleEndian.Uint32(result[offset:]); code != resultOK {
+	switch code := binary.LittleEndian.Uint32(result[offset:]); code {
+	case resultOK:
+		return nil
+	case resultNotFound:
+		return errors.New("steam does not find the item on the Workshop")
+	default:
 		return fmt.Errorf("steam answered with the result code %d", code)
 	}
-	return nil
 }

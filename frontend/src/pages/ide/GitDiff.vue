@@ -1,6 +1,5 @@
 <!--
-  A diff tab: the file's live text against the chosen revision, with buttons that stage the file, unstage it or throw
-  its changes away.
+  A diff tab that compares a file's text with a revision. Its buttons stage, unstage or discard the file's changes.
 -->
 <script setup lang="ts">
 import { computed, shallowRef, watchEffect } from "vue";
@@ -12,13 +11,14 @@ import { commitsQuery, fileQuery, gitFileQuery, gitStatusQuery } from "../../que
 import { useEditorStore } from "../../stores/editor";
 import CompareView from "../../ui/CompareView.vue";
 import OriginChip from "../../ui/OriginChip.vue";
+import { EDITOR_LANGUAGES } from "../../ui/ScriptSnippet.vue";
 import { applyEdits, findModel } from "./editor/models";
-import { diffTab, VIEWS, type TabTarget } from "./editor/tabs";
+import { fileTab, type TabTarget } from "./editor/tabs";
 
 const { tab } = defineProps<{ tab: Extract<TabTarget, { tab: "diff" }> }>();
 
 const editor = useEditorStore();
-const place = computed(() => editor.placeOf(diffTab(tab.side, tab.root, tab.key, tab.hash)));
+const place = computed(() => editor.placeOf(fileTab(tab.key)));
 const added = shallowRef(0);
 const removed = shallowRef(0);
 
@@ -34,8 +34,16 @@ const sides = computed(() => {
   const staged = entry.value?.staged;
   const short = tab.hash?.slice(0, 7);
   return {
-    changes: { revisions: [":0", ""], labels: [staged ? "Staged" : last, "Working tree"] },
-    staged: { revisions: ["HEAD", ":0"], labels: [last, "Staged"] },
+    changes: {
+      revisions: [":0", ""],
+      labels: [staged ? "Staged" : last, "Working tree"],
+      action: { label: "Stage file", icon: "i-lucide-plus", call: gitApi.Stage },
+    },
+    staged: {
+      revisions: ["HEAD", ":0"],
+      labels: [last, "Staged"],
+      action: { label: "Unstage file", icon: "i-lucide-minus", call: gitApi.Unstage },
+    },
     conflict: { revisions: [":2", ":3"], labels: ["Current (HEAD)", "Incoming"] },
     commit: { revisions: [`${tab.hash}^`, tab.hash ?? ""], labels: [`Before ${short}`, `Commit ${short}`] },
   }[tab.side];
@@ -67,15 +75,11 @@ watchEffect((onCleanup) => {
 });
 const right = computed(() => (tab.side === "changes" ? working.value : (revised.value ?? "")));
 
-const action = computed(() => {
-  if (tab.side === "changes") return { label: "Stage file", icon: "i-lucide-plus", call: gitApi.Stage };
-  return tab.side === "staged" ? { label: "Unstage file", icon: "i-lucide-minus", call: gitApi.Unstage } : null;
-});
 const { mutate: change } = useMutation({
   mutation: (call: typeof gitApi.Stage) => call(tab.root, [gitPath.value]),
 });
 
-/** Puts the staged copy's text in the file's editor in place of its changes, unsaved and undoable. */
+/** discard throws the file's changes away in its editor. The edit is unsaved and can be undone. */
 function discard(): void {
   const model = findModel(tab.key);
   if (model && left.value !== undefined)
@@ -87,7 +91,7 @@ function discard(): void {
   <CompareView
     :left="left ?? ''"
     :right="right"
-    :language="place ? VIEWS[place.format].language : 'plaintext'"
+    :language="place ? EDITOR_LANGUAGES[place.format] : 'plaintext'"
     :left-label="sides.labels[0] ?? ''"
     :right-label="sides.labels[1] ?? ''"
     @changes="(plus, minus) => ((added = plus), (removed = minus))"
@@ -100,12 +104,12 @@ function discard(): void {
       <UBadge :label="`+${added}`" color="success" size="sm" />
       <UBadge :label="`-${removed}`" color="error" size="sm" />
       <UButton
-        v-if="action"
-        :label="action.label"
-        :icon="action.icon"
+        v-if="sides.action"
+        :label="sides.action.label"
+        :icon="sides.action.icon"
         variant="ghost"
         size="xs"
-        @click="change(action.call)"
+        @click="change(sides.action.call)"
       />
       <UButton
         v-if="tab.side === 'changes' && !unreadable"

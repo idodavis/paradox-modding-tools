@@ -1,25 +1,24 @@
 /**
- * The models: one copy of each open file in this window, around a Monaco text model that every group showing the file
- * shares and that stores and components read without keeping a copy. The problems Go finds in a model's text become
- * its markers, and a change on disk reloads a model the user has not edited.
+ * The open files of this window, each a model around a Monaco text model that its tabs share. A model shows Go's
+ * problems as markers and follows its file on disk.
  */
 import { useQueryCache } from "@pinia/colada";
 import { useDebounceFn } from "@vueuse/core";
 import { Events } from "@wailsio/runtime";
 import * as monaco from "monaco-editor/editor/editor.api";
-import { shallowReactive, shallowRef } from "vue";
+import { shallowReactive } from "vue";
 
-import type { Code, Diagnostic, Edit } from "@services/lsp/models";
+import type { Diagnostic, Edit } from "@services/lsp/models";
 import type { Place } from "@services/workspace/models";
 import type { Encoding, Text } from "@internal/files/models";
 import * as lsp from "@services/lsp/service";
 import * as workspace from "@services/workspace/service";
-import { diagnosticMessage, list, plural } from "../../../lib/format";
+import { describeFinding, list, plural } from "../../../lib/format";
 import { codesQuery, fileQuery, keys, loadQuery, placeQuery } from "../../../queries";
 import ConfirmModal from "../../../ui/ConfirmModal.vue";
-import { parseTab, VIEWS } from "./tabs";
+import { EDITOR_LANGUAGES } from "../../../ui/ScriptSnippet.vue";
 
-/** One open file in this window: its Monaco model, its place and its encoding, shared by every tab that shows it. */
+/** A Model is one open file in this window, shared by every tab that shows it. */
 export type Model = {
   uri: string;
   place: Place;
@@ -30,29 +29,27 @@ export type Model = {
   problems: Diagnostic[];
 };
 
-// a code's severity as Go counts it (1 error, 2 warning, 3 information, 4 hint) and as Monaco does
-const SEVERITIES: Record<number, monaco.MarkerSeverity> = {
-  1: monaco.MarkerSeverity.Error,
-  2: monaco.MarkerSeverity.Warning,
-  3: monaco.MarkerSeverity.Info,
-  4: monaco.MarkerSeverity.Hint,
+/** SEVERITIES holds the Monaco severity of each level. */
+export const SEVERITIES: Record<string, monaco.MarkerSeverity> = {
+  serious: monaco.MarkerSeverity.Error,
+  warning: monaco.MarkerSeverity.Warning,
+  info: monaco.MarkerSeverity.Info,
 };
 
 const models = shallowReactive(new Map<string, Model>());
-// counts each change of a model's problems, so whatever lists them lists them again
-const problemsChanged = shallowRef(0);
+/** The loads under way, by file key. */
 const opening = new Map<string, Promise<Model>>();
-// the keys closed while their model was loading
+/** The keys closed while their model was loading. */
 const doomed = new Set<string>();
-// what each model last agreed with on disk: the version of its text and the text itself
+/** The version and text each model last agreed with on disk. */
 const disk = new Map<string, { version: number; text: string }>();
+/** The debounced send of each model's text to Go, by file key. */
 const syncs = new Map<string, () => Promise<Diagnostic[]>>();
 const confirm = useOverlay().create(ConfirmModal);
 
 /**
- * Starts following the disk, the workspace and the settings. A file changed on disk is brought into its model, with
- * the given toast asking first when the model has unsaved text. A workspace opened again is sent the texts again, and
- * a change of the settings checks every model again.
+ * setupModels keeps the models in step with the disk, the workspace and the settings. A toast asks before a change on
+ * disk replaces unsaved text.
  */
 export function setupModels(toast: ReturnType<typeof useToast>): void {
   Events.On("fs:changed", ({ data }) => {
@@ -67,7 +64,7 @@ export function setupModels(toast: ReturnType<typeof useToast>): void {
   });
 }
 
-/** Opens a file's model, loading its text if needed. Every caller gets the same model. */
+/** openModel returns a file's model, loading its text if needed. A file has one model. */
 export function openModel(place: Place): Promise<Model> {
   const model = models.get(place.key);
   if (model) return Promise.resolve(model);
@@ -80,12 +77,12 @@ export function openModel(place: Place): Promise<Model> {
   return pending;
 }
 
-/** The open model of a file, if any. */
+/** findModel returns a file's open model, or null if it has none. */
 export function findModel(key: string): Model | null {
   return models.get(key) ?? null;
 }
 
-/** Applies the editor service's edits to a model as one undoable edit. */
+/** applyEdits applies edits to a model as one undoable step. An empty list does nothing. */
 export function applyEdits(model: Model, edits: Edit[]): void {
   if (!edits.length) return;
   model.model.pushStackElement();
@@ -98,8 +95,8 @@ export function applyEdits(model: Model, edits: Edit[]): void {
 }
 
 /**
- * Sends a model's text to Go after an edit, debounced, and sets the problems that come back as its markers. A call
- * that a later one replaces answers with no problems.
+ * syncText sends a model's text to Go once the edits pause, and returns the problems found. A call that a later call
+ * replaces returns none.
  */
 export async function syncText(model: Model): Promise<Diagnostic[]> {
   let debounced = syncs.get(model.place.key);
@@ -111,8 +108,8 @@ export async function syncText(model: Model): Promise<Diagnostic[]> {
 }
 
 /**
- * Writes a model's text to disk in its encoding and marks it saved, unless it was edited meanwhile. The other open
- * models are checked again.
+ * save writes a model's text to disk and marks it saved, unless it was edited meanwhile. The other models are checked
+ * again.
  */
 export async function save(model: Model): Promise<void> {
   const text = model.model.getValue();
@@ -123,10 +120,7 @@ export async function save(model: Model): Promise<void> {
   await Promise.all([...models.values()].filter((other) => other !== model).map(diagnose));
 }
 
-/**
- * Closes a model and has Go drop the file's text. A model still loading is closed when it lands. A file with no
- * model changes nothing.
- */
+/** closeModel closes a file's model and has Go drop its text. A model still loading closes when it lands. */
 export function closeModel(key: string): void {
   const model = models.get(key);
   if (!model) {
@@ -138,8 +132,8 @@ export function closeModel(key: string): void {
 }
 
 /**
- * Moves a model to the place its file was renamed to. It keeps its text, its caret and whether it is unsaved, but it
- * is a new Monaco model, since a model's address cannot change. A file with no model changes nothing.
+ * renameModel moves a file's model to the file's new place. It keeps its text, caret and unsaved state in a new
+ * Monaco model.
  */
 export function renameModel(key: string, place: Place): void {
   const old = models.get(key);
@@ -147,18 +141,19 @@ export function renameModel(key: string, place: Place): void {
   if (!old) return;
   const text = old.model.getValue();
   closeModel(key);
-  const uri = monaco.Uri.file(place.path);
-  const next = monaco.editor.getModel(uri) ?? monaco.editor.createModel(text, VIEWS[place.format].language, uri);
-  const version = old.unsaved ? 0 : next.getAlternativeVersionId();
-  const model = buildModel(place, next, old.encoding, { version, text: previous?.text ?? text });
-  Object.assign(model, { unsaved: old.unsaved, caret: old.caret });
+  const model = buildModel(place, {
+    text,
+    disk: previous?.text ?? text,
+    encoding: old.encoding,
+    unsaved: old.unsaved,
+  });
+  model.caret = old.caret;
   void (model.unsaved ? syncText(model) : diagnose(model));
 }
 
 /**
- * Asks whether to save the unsaved models before something drops them, named by the given action such as "Closing
- * PMT". Save writes them all and Don't save leaves them, and both return true. Cancel returns false. It returns true
- * at once when no model is unsaved.
+ * saveUnsaved asks whether to save the unsaved models before an action such as "Closing PMT" drops them. It returns
+ * false if the user cancels.
  */
 export async function saveUnsaved(going: string): Promise<boolean> {
   const unsaved = unsavedModels();
@@ -175,51 +170,45 @@ export async function saveUnsaved(going: string): Promise<boolean> {
   return choice !== false;
 }
 
-/** The models with unsaved text. */
+/** unsavedModels lists the models with unsaved text. */
 export function unsavedModels(): Model[] {
   return [...models.values()].filter((model) => model.unsaved);
 }
 
-/**
- * Reads a file and makes its model, shared from then on. A draft Go still holds for the file, such as edits a reload
- * dropped from the page, comes back as the model's text, unsaved. A model closed while it loads is closed when it
- * lands.
- */
+/** load reads a file and makes its model. A draft Go still holds comes back as unsaved text. */
 async function load(place: Place): Promise<Model> {
   const cache = useQueryCache();
   const { data: file } = await cache.fetch(cache.ensure(fileQuery(place.path)));
   if (!file) throw new Error(`${place.path} could not be read`);
-  const uri = monaco.Uri.file(place.path);
-  const text =
-    monaco.editor.getModel(uri) ??
-    monaco.editor.createModel(file.draft || file.text.text, VIEWS[place.format].language, uri);
-  const model = buildModel(place, text, file.text.encoding, {
-    version: file.draft ? -1 : text.getAlternativeVersionId(),
-    text: file.text.text,
+  const model = buildModel(place, {
+    text: file.draft || file.text.text,
+    disk: file.text.text,
+    encoding: file.text.encoding,
+    unsaved: !!file.draft,
   });
-  model.unsaved = !!file.draft;
   if (doomed.delete(place.key)) closeModel(place.key);
   else void diagnose(model);
   return model;
 }
 
-/** Makes the model of a file around a Monaco text model and the disk's version of it, and keeps it up to date. */
-function buildModel(
-  place: Place,
-  text: monaco.editor.ITextModel,
-  encoding: Encoding,
-  snapshot: { version: number; text: string },
-): Model {
+/**
+ * buildModel makes a file's model and keeps it up to date. It takes the Monaco text model the file's address has, or
+ * makes one in the file's language from the start text. An unsaved model matches no version of the disk.
+ */
+function buildModel(place: Place, start: { text: string; disk: string; encoding: Encoding; unsaved: boolean }): Model {
+  const uri = monaco.Uri.file(place.path);
+  const text =
+    monaco.editor.getModel(uri) ?? monaco.editor.createModel(start.text, EDITOR_LANGUAGES[place.format], uri);
   const model = shallowReactive<Model>({
-    uri: text.uri.toString(),
+    uri: uri.toString(),
     place,
     model: text,
-    encoding,
-    unsaved: false,
+    encoding: start.encoding,
+    unsaved: start.unsaved,
     caret: { line: 1, column: 1 },
     problems: [],
   });
-  disk.set(place.key, snapshot);
+  disk.set(place.key, { version: start.unsaved ? -1 : text.getAlternativeVersionId(), text: start.disk });
   text.onDidChangeContent(() => {
     model.unsaved = text.getAlternativeVersionId() !== disk.get(place.key)?.version;
     void syncText(model);
@@ -233,59 +222,37 @@ function buildModel(
   return model;
 }
 
-/** Sends the model's text to Go and sets the problems that come back as its markers. */
+/** sendText sends a model's text to Go and shows the problems found as its markers. */
 async function sendText(model: Model): Promise<Diagnostic[]> {
   if (model.model.isDisposed()) return [];
   const diagnostics = (await lsp.SetText(model.place.path, model.model.getValue())) ?? [];
   await setMarkers(model, diagnostics);
-  // the pictures drawn from the file are drawn again from the new text
+  // the file's pictures are drawn again from the new text
   void useQueryCache().invalidateQueries({ key: keys.draw(model.place.path) });
   return diagnostics;
 }
 
-/** Asks Go for a file's problems as it is now and sets them as the model's markers. */
+/** diagnose asks Go for a model's problems and shows them as its markers. */
 async function diagnose(model: Model): Promise<void> {
   await setMarkers(model, (await lsp.Diagnose(model.place.path)) ?? []);
 }
 
-/** Keeps the problems found in a model and sets them as its markers, each worded from its code's template. */
+/** setMarkers keeps a model's problems and shows them as its markers. */
 async function setMarkers(model: Model, diagnostics: Diagnostic[]): Promise<void> {
   const codes = (await loadQuery(codesQuery)) ?? [];
   if (model.model.isDisposed()) return;
   model.problems = diagnostics;
-  problemsChanged.value++;
-  const markers = diagnostics.map((diagnostic) => {
-    const code = codes.find((row) => row.id === diagnostic.code);
-    return {
-      ...diagnostic.range,
-      severity: SEVERITIES[code?.severity ?? 3] ?? monaco.MarkerSeverity.Info,
-      message: code ? diagnosticMessage(code.message, diagnostic.facts ?? {}) : diagnostic.code,
-      code: diagnostic.code,
-    };
-  });
+  const markers = diagnostics.map((diagnostic) => ({
+    ...diagnostic.range,
+    severity:
+      SEVERITIES[codes.find((row) => row.id === diagnostic.code)?.level ?? "info"] ?? monaco.MarkerSeverity.Info,
+    message: describeFinding(diagnostic, codes),
+    code: diagnostic.code,
+  }));
   monaco.editor.setModelMarkers(model.model, "pmt", markers);
 }
 
-/**
- * Lists the problems Go found in the files of the given tabs, each file once, with each problem's code. A problem whose
- * code the app does not know is left out, and so is a file with no problems.
- */
-export function listOpenProblems(
-  tabs: { id: string }[],
-  codes: Code[],
-): { place: Place; problems: { code: Code; problem: Diagnostic }[] }[] {
-  void problemsChanged.value;
-  return [...new Set(tabs.map((tab) => parseTab(tab.id).key))].flatMap((key) => {
-    const model = models.get(key);
-    const problems = (model?.problems ?? []).flatMap((problem) => {
-      const code = codes.find((one) => one.id === problem.code);
-      return code ? [{ code, problem }] : [];
-    });
-    return model && problems.length ? [{ place: model.place, problems }] : [];
-  });
-}
-
-/** Brings a file changed on disk into its model: at once if the user has not edited it, else after they choose. */
+/** applyChange brings a change on disk into its file's model. A toast asks first if the model has unsaved text. */
 async function applyChange(path: string, toast: ReturnType<typeof useToast>): Promise<void> {
   const place = await loadQuery(placeQuery(path));
   const model = place && models.get(place.key);
@@ -311,7 +278,7 @@ async function applyChange(path: string, toast: ReturnType<typeof useToast>): Pr
   });
 }
 
-/** Puts a text read from disk in a model as one undoable edit, and takes it as what the model agrees with. */
+/** setText puts text from disk in a model as one undoable edit. The model then matches the disk. */
 function setText(model: Model, text: Text): void {
   applyEdits(model, [{ range: model.model.getFullModelRange(), text: text.text }]);
   model.encoding = text.encoding;

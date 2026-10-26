@@ -9,7 +9,7 @@ import { computed, shallowRef, watch } from "vue";
 import * as draw from "@services/draw/service";
 import type { PictureList, Property, Widget, Window } from "@services/draw/models";
 
-import { toSentence } from "../../../lib/format";
+import { matchQuery, toSentence } from "../../../lib/format";
 import { picturesQuery, statesQuery } from "../../../queries";
 import { useDrawStore } from "../../../stores/draw";
 import { useWorkspaceStore } from "../../../stores/workspace";
@@ -80,7 +80,7 @@ const rows = computed(() =>
   properties.value
     .map((property, ordinal) => ({ property, ordinal }))
     .filter(({ property }) => scope.value === "all" || property.origin === "widget")
-    .filter(({ property }) => `${property.key} ${property.value}`.toLowerCase().includes(filter.value.toLowerCase())),
+    .filter(({ property }) => matchQuery(filter.value, property.key, property.value)),
 );
 const openRow = shallowRef<number | null>(null);
 const draft = shallowRef("");

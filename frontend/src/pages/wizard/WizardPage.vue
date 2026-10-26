@@ -1,4 +1,4 @@
-<!-- The new workspace wizard: the game, the install, the mods and their load order, and the name, one step each. -->
+<!-- This wizard creates a workspace from a game install, its mods in load order and a name. -->
 <script setup lang="ts">
 import { computed, shallowRef, useTemplateRef } from "vue";
 import { useRouter } from "vue-router";
@@ -17,7 +17,7 @@ import * as workspace from "@services/workspace/service";
 
 const STEPS = ["Game", "Install", "Mods", "Details"];
 
-// "New workspace for this game" names the game, so the wizard starts at its install
+// The route may name the game. The wizard then starts at its install.
 const { game: routeGame = "" } = defineProps<{ game?: string }>();
 
 const router = useRouter();
@@ -26,7 +26,7 @@ const step = shallowRef(routeGame ? 1 : 0);
 const selectedGame = shallowRef(routeGame);
 const selectedInstall = shallowRef("");
 const newMod = shallowRef("");
-// a mod is an existing folder, or a title for a mod made once the workspace exists
+// Each mod is an existing folder, or a title for a mod made with the workspace.
 const mods = shallowRef<{ id: string; dir: string; title: string }[]>([]);
 const title = shallowRef("");
 const language = shallowRef<string>();
@@ -56,7 +56,7 @@ const steps = computed<StepperItem[]>(() =>
     disabled: index > 1 && !installId.value,
   })),
 );
-// a step goes on once what it asks for is set; the mods step asks for nothing
+// A step goes on once what it asks for is set. The mods step asks for nothing.
 const blocked = computed(() => [!gameId.value, !installId.value, false, !title.value.trim()][step.value]);
 
 useSortable(useTemplateRef<HTMLElement>("list"), mods, { handle: ".mod-handle", animation: 150, watchElement: true });
@@ -68,6 +68,7 @@ const { mutate: create, isLoading: creating } = useMutation({
       name: title.value.trim(),
       install: installId.value,
       mods: [],
+      ignoredPairs: [],
       language: language.value ?? "",
       homePage: "",
       gameColor: "",
@@ -75,7 +76,7 @@ const { mutate: create, isLoading: creating } = useMutation({
       showBinaries: false,
       settings: null,
     });
-    // in load order: each mod is added after the one before it
+    // The mods are added one at a time, in load order.
     for (const mod of mods.value) {
       if (mod.dir) await workspace.AddMod(record.id, mod.dir);
       else await workspace.CreateMod(record.id, "", mod.title, language.value ?? "");
@@ -88,20 +89,20 @@ const { mutate: create, isLoading: creating } = useMutation({
   },
 });
 
-/** addFolder adds an existing mod folder to the load order. A folder that is in it already adds nothing. */
+/** addFolder adds a mod folder to the load order, unless it is there already. */
 function addFolder(dir: string): void {
   if (!mods.value.some((mod) => mod.dir === dir))
     mods.value = [...mods.value, { id: crypto.randomUUID(), dir, title: "" }];
 }
 
-/** addNewMod adds a mod to make, with the typed title. A blank title adds nothing. */
+/** addNewMod adds a mod to create, with the typed title. A blank title adds nothing. */
 function addNewMod(): void {
   const text = newMod.value.trim();
   newMod.value = "";
   if (text) mods.value = [...mods.value, { id: crypto.randomUUID(), dir: "", title: text }];
 }
 
-/** setStep shows the step with the given number. It ignores a value that is not a number. */
+/** setStep shows one step of the wizard. It ignores a value that is not a number. */
 function setStep(index: string | number | undefined): void {
   if (typeof index === "number") step.value = index;
 }

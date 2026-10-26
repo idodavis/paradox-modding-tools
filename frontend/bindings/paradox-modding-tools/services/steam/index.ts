@@ -7,12 +7,16 @@ export {
 };
 
 export type {
+    ChangeNote,
     Comparison,
     DLC,
+    Dependency,
     Details,
+    Difference,
     Listing,
     Preview,
     Progress,
     Rule,
+    Tags,
     Upload
 } from "./models.js";

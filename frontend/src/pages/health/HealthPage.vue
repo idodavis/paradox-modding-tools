@@ -1,71 +1,89 @@
 <!--
-  The Health page: the section cards with their counts, the load order, the table of the picked section, and the
-  detail beside it.
+  The Health page. A rail switches between the summary and the views of the mods together, of each mod and of the
+  game's log.
 -->
 <script setup lang="ts">
-import { computed, onActivated, shallowRef, watch } from "vue";
+import { computed, onActivated, onDeactivated, shallowRef, watch } from "vue";
 import { useMutation, useQuery, useQueryCache } from "@pinia/colada";
-import { isEqual } from "es-toolkit";
+import { useLocalStorage } from "@vueuse/core";
+import { groupBy, isEqual } from "es-toolkit";
 import { useRouter } from "vue-router";
-import type { TableColumn } from "@nuxt/ui";
-import { WriteScaffold } from "@services/health/service";
-import type { Overview, Section } from "@services/health/models";
+import type { SplitterItem } from "@nuxt/ui";
 import { ReorderMods } from "@services/workspace/service";
-import { describeLanguages, plural } from "../../lib/format";
+import type { Finding } from "@services/health/models";
+import type { Mod } from "@services/workspace/models";
 import {
-  errorLogQuery,
-  graphDefaultsQuery,
-  keys,
-  languagesQuery,
-  overviewQuery,
-  reportQuery,
-  stateQuery,
-} from "../../queries";
+  countLevels,
+  countLines,
+  describeCount,
+  describeLogLine,
+  findOwner,
+  listProblems,
+  plural,
+} from "../../lib/format";
+import { useShown } from "../../app/pages";
+import { errorLogQuery, keys, overviewQuery, reportQuery, stateQuery } from "../../queries";
 import { useWorkspaceStore } from "../../stores/workspace";
-import LoadOrder from "../../ui/LoadOrder.vue";
-import OriginChip from "../../ui/OriginChip.vue";
-import SectionHead from "../../ui/SectionHead.vue";
-import StatusFacts from "../../ui/StatusFacts.vue";
-import HealthDetail from "./HealthDetail.vue";
-import HealthTable from "./HealthTable.vue";
+import LevelCounts from "../../ui/LevelCounts.vue";
+import ModAvatar from "../../ui/ModAvatar.vue";
+import HealthCompatibility from "./HealthCompatibility.vue";
+import HealthLog from "./HealthLog.vue";
+import HealthMod from "./HealthMod.vue";
+import HealthSummary from "./HealthSummary.vue";
 
 const {
   id,
-  section = "",
+  view = "",
+  mod = "",
   row = "",
   name = "",
-} = defineProps<{ id: string; section?: string; row?: string; name?: string }>();
+  code = "",
+} = defineProps<{
+  id: string;
+  /** The view shown, or "" for the first one that matches the name or check. */
+  view?: string;
+  /** The mod the mod view shows. */
+  mod?: string;
+  /** The open row's index. */
+  row?: string;
+  /** A name to filter the rows to. */
+  name?: string;
+  /** A check to filter the rows to. */
+  code?: string;
+}>();
 
-/** The bands of cards, by the group Go gives each section, with each band's title and hint. */
-const GROUPS = [
-  { id: "load order", title: "Load order", hint: "Changes when you reorder mods" },
-  { id: "files", title: "Problems in the mods", hint: "Fixed in the files" },
-  { id: "beyond", title: "Beyond the files", hint: "The game's log and each mod's contents" },
-];
-/** The dot of each card, by Go's section id. */
-const DOTS: Record<string, string> = {
-  contests: "var(--orange)",
-  overrides: "var(--blue)",
-  dependencies: "var(--fg-3)",
-  dangling: "var(--red)",
-  localization: "color-mix(in oklab, var(--orange), var(--accent))",
-  script: "var(--orange)",
-  errorlog: "var(--red)",
-  overview: "var(--fg-3)",
+/** A RailRow is one row of the rail, a view or one mod's view. */
+type RailRow = {
+  view: string;
+  label: string;
+  icon?: string;
+  mod?: Mod;
+  levels?: Record<string, number>;
+  count?: number;
 };
-// the table's share of the split, in percent, either pane taking up to four fifths; the splitter keeps it
-const PANES = [{ slot: "table", defaultSize: 65, minSize: 20, maxSize: 80 }, { slot: "detail" }];
+
+/** The rail's pane, wide enough for a long mod name and its counts. */
+const RAIL = {
+  id: "rail",
+  slot: "rail",
+  order: 1,
+  sizeUnit: "px" as const,
+  defaultSize: 410,
+  minSize: 200,
+  maxSize: 520,
+};
+/** The view's pane. The summary has no other. */
+const VIEW = { id: "view", slot: "view", order: 2 };
 
 const router = useRouter();
-const toast = useToast();
-const cache = useQueryCache();
 const workspace = useWorkspaceStore();
+const cache = useQueryCache();
 
 const { data: state } = useQuery(stateQuery);
 const mods = computed(() => state.value?.mods ?? []);
-const ids = computed(() => mods.value.map((mod) => mod.id));
+const ids = computed(() => mods.value.map((one) => one.id));
 
-// the load order dragged to preview; none dragged is the workspace's own
+/** The load order dragged to preview, or [] for the workspace's own. */
 const preview = shallowRef<string[]>([]);
 const order = computed({
   get: () => (preview.value.length ? preview.value : ids.value),
@@ -73,61 +91,73 @@ const order = computed({
 });
 const dirty = computed(() => !isEqual(order.value, ids.value));
 
-const {
-  data: report,
-  error,
-  isLoading: reportLoading,
-  refetch,
-} = useQuery(() => ({
+const { data: report, error } = useQuery(() => ({
   ...reportQuery(order.value),
   enabled: workspace.isOpen() && !!state.value,
 }));
+const { data: gameLog, error: logError } = useQuery(() => ({ ...errorLogQuery, enabled: workspace.isOpen() }));
+const visible = useShown();
+// the mods' files may have changed while the page was away
 onActivated(() => {
-  if (report.value) void refetch();
+  if (report.value) void cache.invalidateQueries({ key: keys.health });
 });
-const { data: defaults } = useQuery(() => ({ ...graphDefaultsQuery, enabled: workspace.isOpen() }));
-const { data: languages } = useQuery(() => ({
-  ...languagesQuery(state.value?.install.id ?? ""),
-  enabled: !!state.value?.install.id,
-}));
-const { data: errorLog, isLoading: logLoading } = useQuery(() => ({
-  ...errorLogQuery,
-  enabled: workspace.isOpen(),
-}));
+// a row another page opens counts in the workspace's own order
+onDeactivated(() => (preview.value = []));
+/** When the report was made. */
+const checkedAt = computed(() => {
+  void report.value;
+  return new Date(cache.get(reportQuery(order.value).key)?.when ?? Date.now());
+});
 
-const cards = computed(() => report.value?.sections ?? []);
-const current = computed(() =>
-  name ? undefined : (cards.value.find((card) => card.id === section) ?? cards.value[0]),
+const findings = computed(() => report.value?.findings ?? []);
+const compatibility = computed(() => findings.value.filter((finding) => finding.question === "compatibility"));
+/** Each mod's coverage findings. Its list of problems leaves them out. */
+const languages = computed(() =>
+  groupBy(
+    findings.value.filter((finding) => finding.question === "health" && finding.code === "coverage"),
+    findOwner,
+  ),
 );
-// a name from the editor lists every finding that names it, in any section
-const rows = computed(() =>
-  current.value?.id === "errorlog"
-    ? (errorLog.value ?? [])
-    : (report.value?.findings ?? []).filter((finding) =>
-        name ? finding.name === name : finding.section === current.value?.id,
-      ),
+const problems = computed(() => listProblems(findings.value));
+const logRows = computed(() => gameLog.value?.findings ?? []);
+const yours = computed(() => countLines(logRows.value.filter((finding) => finding.origin)));
+const game = computed(() => countLines(logRows.value.filter((finding) => !finding.origin)));
+const compatibilityLevels = computed(() => countLevels(compatibility.value));
+const healthLevels = computed(() => countLevels(Object.values(problems.value).flat()));
+/** The level counts of each mod, zero for a mod with no problem. */
+const modLevels = computed(() =>
+  Object.fromEntries(mods.value.map((one) => [one.id, countLevels(problems.value[one.id] ?? [])])),
 );
-const title = computed(
-  (): Section => current.value ?? { id: "", group: "", label: name, note: "", count: 0, tallies: null },
+
+/** The name or check asked for. It opens the first view with a row for it. */
+const wanted = computed(() => name || code);
+const landing = computed(() => {
+  if (!wanted.value) return { view: "summary", mod: "" };
+  if (compatibility.value.some(matchFinding)) return { view: "compatibility", mod: "" };
+  const owner = mods.value.find((one) => problems.value[one.id]?.some(matchFinding));
+  if (owner) return { view: "mod", mod: owner.id };
+  return { view: logRows.value.some(matchLogRow) ? "log" : "summary", mod: "" };
+});
+const shown = computed(() => view || landing.value.view);
+/** The rail's width in pixels, kept between visits. */
+const railWidth = useLocalStorage("pmt.health.rail", RAIL.defaultSize);
+/** The splitter's panes. The rail takes its kept width when it appears, not while it is dragged. */
+const panes = shallowRef<SplitterItem[]>([VIEW]);
+watch(
+  () => shown.value === "summary",
+  (summary) => (panes.value = summary ? [VIEW] : [{ ...RAIL, defaultSize: railWidth.value }, VIEW]),
+  { immediate: true },
 );
-const open = computed(() => (row ? rows.value[Number(row)] : undefined));
+const current = computed(() => mods.value.find((one) => one.id === (mod || landing.value.mod)) ?? mods.value[0]);
+const filter = shallowRef(wanted.value);
+watch(wanted, (next) => (filter.value = next));
+const opened = computed(() => (row ? Number(row) : -1));
 
 const { data: overview } = useQuery(() => ({
   ...overviewQuery,
-  enabled: workspace.isOpen() && current.value?.id === "overview",
+  enabled: workspace.isOpen() && shown.value === "mod",
 }));
-const overviewColumns = computed((): TableColumn<Overview>[] => [
-  { id: "mod", header: "Mod", accessorFn: (entry) => workspace.originName(entry.mod) },
-  { accessorKey: "files", header: "Files" },
-  { accessorKey: "messages", header: "Messages" },
-  ...[...new Set((overview.value ?? []).flatMap((entry) => Object.keys(entry.counts ?? {})))]
-    .sort()
-    .map((database) => ({
-      id: database,
-      header: defaults.value?.labels?.[database] ?? database,
-      accessorFn: (entry: Overview) => entry.counts?.[database] ?? 0,
-    })),
-]);
+const currentOverview = computed(() => overview.value?.find((one) => one.mod === current.value?.id));
 
 const { mutate: reorder, isLoading: saving } = useMutation({
   mutation: (next: string[]) => ReorderMods(id, next),
@@ -136,149 +166,192 @@ const { mutate: reorder, isLoading: saving } = useMutation({
   },
 });
 
-const scaffoldMod = shallowRef<string>();
-const scaffoldLanguage = shallowRef<string>();
-const { mutate: writeScaffold, isLoading: scaffolding } = useMutation({
-  mutation: (target: { mod: string; language: string }) => WriteScaffold(target.mod, target.language),
-  onSuccess: (paths) => {
-    toast.add({ title: `Wrote ${plural(paths?.length ?? 0, "file")}` });
-    void cache.invalidateQueries({ key: keys.health });
-  },
-});
-
 watch([() => id, () => ids.value.join()], () => {
   preview.value = [];
-  scaffoldMod.value = undefined;
-  scaffoldLanguage.value = undefined;
+});
+// a row's index points at another finding in another order's report
+watch(order, (next, previous) => {
+  if (visible.value && row && !isEqual(next, previous))
+    void router.replace({ query: { ...router.currentRoute.value.query, row: undefined } });
 });
 
-const facts = computed(() => [
-  ...(report.value ? [{ label: plural(report.value.total, "finding"), value: "" }] : []),
-  { label: "Preview order", value: dirty.value ? "differs from the workspace" : "matches the workspace" },
+const rail = computed((): { title: string; rows: RailRow[] }[] => [
+  { title: "", rows: [{ view: "summary", label: "Summary", icon: "i-lucide-gauge" }] },
+  {
+    title: "Compatibility",
+    rows: [
+      {
+        view: "compatibility",
+        label: `The ${plural(mods.value.length, "mod")} together`,
+        icon: "i-lucide-git-merge",
+        levels: compatibilityLevels.value,
+      },
+    ],
+  },
+  {
+    title: "Mods",
+    rows: mods.value.map((one) => ({
+      view: "mod",
+      mod: one,
+      label: one.descriptor.name,
+      levels: modLevels.value[one.id],
+    })),
+  },
+  {
+    title: "Game log",
+    rows: [{ view: "log", label: "error.log", icon: "i-lucide-terminal", count: yours.value }],
+  },
 ]);
 
-/** Shows the section with the given id, with no row open. */
-function openSection(sectionId: string): void {
-  void router.replace({ query: { section: sectionId } });
+/** matchFinding reports whether a finding has the name or check asked for. */
+function matchFinding(finding: Finding): boolean {
+  return name ? finding.name === name : finding.code === code;
 }
 
-/** Opens the row with the given index. */
+/** matchLogRow reports whether a log row mentions the name or has the check asked for. */
+function matchLogRow(finding: Finding): boolean {
+  return name ? describeLogLine(finding).includes(name) : finding.code === code;
+}
+
+/** isShown reports whether a row of the rail is the view shown. */
+function isShown(railRow: RailRow): boolean {
+  return railRow.view === shown.value && (!railRow.mod || railRow.mod.id === current.value?.id);
+}
+
+/** show shows a view, with a mod and a row open in it if given. It clears the filter. */
+function show(next: string, modId?: string, index?: number): void {
+  filter.value = "";
+  void router.replace({
+    query: { view: next, mod: modId, row: index === undefined ? undefined : String(index) },
+  });
+}
+
+/** keepRailWidth keeps the rail's width from the panes' sizes. The summary has no rail. */
+function keepRailWidth(sizes: number[]): void {
+  if (sizes.length === 2 && sizes[0]) railWidth.value = Math.round(sizes[0]);
+}
+
+/** openRow opens a row of the view shown. */
 function openRow(index: number): void {
-  void router.replace({ query: { section: current.value?.id, row: String(index), name: name || undefined } });
+  void router.replace({
+    query: {
+      view: shown.value,
+      mod: shown.value === "mod" ? current.value?.id : undefined,
+      row: String(index),
+      name: name || undefined,
+      code: code || undefined,
+    },
+  });
 }
 </script>
 
 <template>
-  <div class="flex h-full min-h-0 flex-col gap-4 overflow-hidden px-6 pt-4.5">
-    <UAlert v-if="error" color="error" variant="subtle" :description="error.message" />
-
-    <div class="flex items-center gap-2">
-      <span class="me-1.5 shrink-0 text-12 font-medium whitespace-nowrap text-muted">Load order</span>
-      <LoadOrder v-model:order="order" :mods="mods" editable class="min-w-0" />
-      <span class="ms-2 shrink-0 text-12 whitespace-nowrap text-dimmed">Drag to preview another order.</span>
-      <span class="grow" />
-      <UButton
-        label="Save as workspace order"
-        class="shrink-0"
-        :disabled="!dirty"
-        :loading="saving"
-        @click="reorder(order)"
-      />
-    </div>
-
-    <div class="flex items-stretch gap-6">
-      <template v-for="(group, position) in GROUPS" :key="group.id">
-        <USeparator v-if="position" orientation="vertical" class="h-auto" />
-        <div class="flex min-w-0 flex-1 flex-col gap-2">
-          <div class="flex items-baseline gap-2.5 whitespace-nowrap">
-            <span class="text-13 font-semibold">{{ group.title }}</span>
-            <span class="text-12 text-dimmed">{{ group.hint }}</span>
-          </div>
-          <div class="grid grid-cols-3 gap-2.5">
+  <div class="flex h-full min-h-0 flex-col overflow-hidden">
+    <UAlert
+      v-if="error"
+      color="error"
+      variant="subtle"
+      title="Health could not check the mods. Reopen the workspace from the Library to try again."
+      :description="error.message"
+      class="m-4 shrink-0"
+    />
+    <UAlert
+      v-if="logError && shown !== 'log'"
+      color="error"
+      variant="subtle"
+      title="The game's log could not be read. Run the game once to write it."
+      :description="logError.message"
+      class="mx-4 mb-4 shrink-0"
+    />
+    <USplitter :items="panes" class="min-h-0 grow" @layout="keepRailWidth">
+      <template #rail>
+        <nav class="flex min-w-0 grow flex-col gap-0.5 overflow-y-auto border-e border-default bg-muted p-2">
+          <template v-for="group in rail" :key="group.title">
+            <span v-if="group.title" class="px-2 pt-3 pb-1 text-11 font-semibold tracking-wide text-dimmed uppercase">
+              {{ group.title }}
+            </span>
             <button
-              v-for="card in cards.filter((entry) => entry.group === group.id)"
-              :key="card.id"
+              v-for="railRow in group.rows"
+              :key="railRow.mod?.id ?? railRow.view"
               type="button"
-              class="flex min-w-0 flex-col gap-1 rounded-lg border px-3.5 py-3 text-left"
-              :class="
-                current?.id === card.id
-                  ? 'border-primary bg-elevated ring-2 ring-(--accent-soft)'
-                  : 'border-default bg-muted'
-              "
-              @click="openSection(card.id)"
+              class="flex items-center gap-2.5 rounded-md px-2 py-1.5 text-start text-12 hover:bg-accented"
+              :class="isShown(railRow) ? 'bg-elevated text-highlighted' : 'text-toned'"
+              @click="show(railRow.view, railRow.mod?.id)"
             >
-              <span class="flex items-center gap-1.5 text-12 font-medium whitespace-nowrap text-muted">
-                <span
-                  class="shrink-0 rounded-full"
-                  :class="position ? 'size-2' : 'size-1.5'"
-                  :style="{ background: DOTS[card.id] }"
-                />{{ card.label }}
+              <ModAvatar v-if="railRow.mod" :mod="railRow.mod" size="2xs" />
+              <span
+                v-else-if="railRow.icon"
+                class="flex size-6.5 shrink-0 items-center justify-center rounded-md border border-default bg-elevated"
+              >
+                <UIcon :name="railRow.icon" class="size-3.5 text-toned" />
               </span>
-              <span class="text-28 tabular-nums">{{ card.count }}</span>
-              <span class="truncate text-11 leading-3.75 text-dimmed">
-                {{ card.tallies?.map((tally) => `${tally.count} ${tally.kind}`).join(", ") || card.note }}
+              <span class="min-w-0 grow truncate font-medium">{{ railRow.label }}</span>
+              <LevelCounts v-if="railRow.levels" :levels="railRow.levels" />
+              <span v-else-if="railRow.count !== undefined" class="shrink-0 text-11 text-toned tabular-nums">
+                {{ describeCount(railRow.count) }}
               </span>
             </button>
-          </div>
-        </div>
+          </template>
+        </nav>
       </template>
-    </div>
-
-    <div v-if="current?.id === 'localization'" class="flex items-center gap-2">
-      <span class="text-12 font-medium whitespace-nowrap text-muted">Write the files a mod lacks</span>
-      <USelect
-        :model-value="scaffoldMod ?? ids[0]"
-        :items="ids.map((mod) => ({ label: workspace.originName(mod), value: mod }))"
-        size="sm"
-        class="w-48"
-        @update:model-value="scaffoldMod = $event"
-      />
-      <USelect
-        :model-value="scaffoldLanguage ?? state?.language"
-        :items="describeLanguages(languages)"
-        size="sm"
-        class="w-36"
-        @update:model-value="scaffoldLanguage = $event"
-      />
-      <UButton
-        label="Write scaffold"
-        :loading="scaffolding"
-        @click="writeScaffold({ mod: scaffoldMod ?? ids[0], language: scaffoldLanguage ?? state?.language ?? '' })"
-      />
-    </div>
-
-    <section
-      v-if="current?.id === 'overview'"
-      class="flex min-h-0 grow flex-col overflow-hidden rounded-t-lg border border-b-0 border-default bg-muted"
-    >
-      <SectionHead :title="current.label" :subtitle="current.note" :count="overview?.length" />
-      <UTable :data="overview ?? []" :columns="overviewColumns" sticky empty="No mods." class="min-h-0 flex-1">
-        <template #mod-cell="{ row: entry }"><OriginChip :origin="entry.original.mod" /></template>
-      </UTable>
-    </section>
-    <USplitter
-      v-else-if="current || name"
-      :items="PANES"
-      auto-save-id="pmt.health"
-      class="min-h-0 grow overflow-hidden rounded-t-lg border border-b-0 border-default"
-    >
-      <template #table>
-        <HealthTable
-          :key="title.label"
-          :findings="rows"
-          :section="title"
-          :opened="row ? Number(row) : -1"
-          :loading="reportLoading || logLoading"
-          class="min-w-0 flex-1 border-e border-default"
-          @open="openRow"
-        />
-      </template>
-      <template #detail>
-        <HealthDetail v-if="open" :finding="open" />
-        <p v-else class="p-4 text-12 text-dimmed">Select a row.</p>
+      <template #view>
+        <section class="min-w-0 grow">
+          <HealthLog
+            v-if="shown === 'log'"
+            v-model:filter="filter"
+            :log="gameLog"
+            :error="logError"
+            :mods="mods"
+            :health="problems"
+            :yours="yours"
+            :game="game"
+            :opened="opened"
+            @open="openRow"
+            @fix="(modId, index) => show('mod', modId, index)"
+          />
+          <p v-else-if="!report" class="p-6 text-12 text-dimmed">Checking the mods.</p>
+          <HealthSummary
+            v-else-if="shown === 'summary'"
+            :mods="mods"
+            :compatibility="compatibility"
+            :health="problems"
+            :log="gameLog"
+            :checked-at="checkedAt"
+            :compatibility-levels="compatibilityLevels"
+            :health-levels="healthLevels"
+            :mod-levels="modLevels"
+            :yours="yours"
+            :game="game"
+            @open="show"
+          />
+          <HealthCompatibility
+            v-else-if="shown === 'compatibility'"
+            v-model:order="order"
+            v-model:filter="filter"
+            :findings="compatibility"
+            :changes="report.changes ?? []"
+            :mods="mods"
+            :opened="opened"
+            :dirty="dirty"
+            :saving="saving"
+            @open="openRow"
+            @save="reorder(order)"
+          />
+          <HealthMod
+            v-else-if="current"
+            :key="current.id"
+            v-model:filter="filter"
+            :mod="current"
+            :findings="problems[current.id] ?? []"
+            :languages="languages[current.id] ?? []"
+            :overview="currentOverview"
+            :log="logRows"
+            :opened="opened"
+            @open="openRow"
+            @log="(index) => show('log', undefined, index)"
+          />
+        </section>
       </template>
     </USplitter>
-
-    <StatusFacts :facts="facts" />
   </div>
 </template>

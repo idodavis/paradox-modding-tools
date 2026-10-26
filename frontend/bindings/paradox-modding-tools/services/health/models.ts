@@ -9,7 +9,28 @@ import * as lsp$0 from "../lsp/models.js";
 import * as workspace$0 from "../workspace/models.js";
 
 /**
- * Compared holds the texts of two statements.
+ * A Change is one name whose kept copy moves to another mod in a previewed load order.
+ */
+export interface Change {
+    /**
+     * what the database calls a definition
+     */
+    "database": string;
+    "name": string;
+
+    /**
+     * the mod whose copy the workspace's order keeps
+     */
+    "before": string;
+
+    /**
+     * the mod whose copy the previewed order keeps
+     */
+    "after": string;
+}
+
+/**
+ * Compared is the texts of two statements.
  */
 export interface Compared {
     "a": string;
@@ -17,15 +38,23 @@ export interface Compared {
 }
 
 /**
- * A Finding is one row of the Health page: a problem, or a fact about the mods, with the places it points at.
+ * A Finding is one problem, or one fact about the mods.
  */
 export interface Finding {
-    "section": string;
-
     /**
      * an lsp.Codes id
      */
     "code": string;
+
+    /**
+     * the code's question, or "compatibility" if the sites lie in two mods
+     */
+    "question": string;
+
+    /**
+     * the code's level, or a contest's own
+     */
+    "level": string;
     "name": string;
 
     /**
@@ -34,14 +63,19 @@ export interface Finding {
     "database": string;
 
     /**
-     * what it is about: a dependency's mod, else its last kept site's origin
+     * Origin is the mod the finding is about, or "" for the game's own log row.
      */
     "origin": string;
+
+    /**
+     * the mods it concerns, in load order
+     */
+    "mods": string[] | null;
     "facts": { [_ in string]?: string } | null;
     "sites": FindingSite[] | null;
 
     /**
-     * the names the replaced sites define that the kept file does not
+     * Removed holds the names the replaced sites define that the kept file does not.
      */
     "removed"?: string[] | null;
 
@@ -49,10 +83,25 @@ export interface Finding {
      * Comparable is true when the kept statement and the ones it replaces can be shown side by side.
      */
     "comparable": boolean;
+
+    /**
+     * a load order that fixes a contest
+     */
+    "order"?: string[] | null;
+
+    /**
+     * a game log row's repeats, else 1
+     */
+    "count": number;
+
+    /**
+     * Pairs are each two workspace mods the finding sets against each other, in load order, which can be ignored.
+     */
+    "pairs": string[][] | null;
 }
 
 /**
- * A FindingSite is one place a finding points at, with whether the game keeps that definition and why.
+ * A FindingSite is one place a finding points at.
  */
 export interface FindingSite {
     "place": workspace$0.Place;
@@ -60,7 +109,7 @@ export interface FindingSite {
     "kept": boolean;
 
     /**
-     * the winner's: order, mode, priority, merge, replace; or merged
+     * why the game keeps it, or unsettled where no source says
      */
     "reason"?: string;
 
@@ -70,9 +119,36 @@ export interface FindingSite {
     "defines"?: string[] | null;
 
     /**
-     * the names a replaced site defines that the kept file does not
+     * the names it defines that the kept file does not
      */
     "removed"?: string[] | null;
+}
+
+/**
+ * A GameLog is what the game's last run wrote to its error log, folded into rows.
+ */
+export interface GameLog {
+    "findings": Finding[] | null;
+
+    /**
+     * the log file's full path
+     */
+    "path": string;
+
+    /**
+     * when the game last wrote it, or zero if there is no log
+     */
+    "writtenAt": string;
+
+    /**
+     * Unloaded holds the workspace's mods the run that wrote the log did not read, by id. Their rows stay the game's.
+     */
+    "unloaded": string[] | null;
+
+    /**
+     * Copies holds, by mod id, the folder of another copy of a workspace mod that the run read in its place.
+     */
+    "copies": { [_ in string]?: string } | null;
 }
 
 /**
@@ -82,7 +158,7 @@ export interface Overview {
     "mod": string;
 
     /**
-     * by what a database's definitions are called; two called the same share one
+     * definitions, by what a database calls them
      */
     "counts": { [_ in string]?: number } | null;
     "files": number;
@@ -90,46 +166,25 @@ export interface Overview {
 }
 
 /**
- * A Report is the sections and findings the Health page shows for one load order. The game's error log is counted in
- * its section and in the total, and listed by ListErrorLog.
+ * A Report is the findings for one load order, and what that order changes.
  */
 export interface Report {
-    "sections": Section[] | null;
     "findings": Finding[] | null;
 
     /**
-     * the findings of every section but the overview
+     * none for the workspace's own order
      */
-    "total": number;
+    "changes": Change[] | null;
 }
 
 /**
- * A Section is one card of the Health page, in its group, with how many findings it holds.
+ * A Snippet is the code around one finding site.
  */
-export interface Section {
-    /**
-     * contests, overrides, dependencies, dangling, localization, script, errorlog, overview
-     */
-    "id": string;
+export interface Snippet {
+    "text": string;
 
     /**
-     * Group is the band of the Health page the card sits in: load order, files or beyond.
+     * the line it begins at, counted from one
      */
-    "group": string;
-    "label": string;
-    "note": string;
-    "count": number;
-
-    /**
-     * none for a section counted only as a whole
-     */
-    "tallies": Tally[] | null;
-}
-
-/**
- * A Tally is how many of one section's findings are of one kind.
- */
-export interface Tally {
-    "kind": string;
-    "count": number;
+    "line": number;
 }

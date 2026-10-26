@@ -15,14 +15,17 @@ coordinates; the page lays it out with dagre and draws it with Vue Flow.
 
 ## Nodes and edges
 
-A `Node` is the definition the game keeps of an event, an on_action, a decision or a scripted effect, with where it is
-written, its title and its step from the root, a firer's step negative. A firer of any other database is a node too,
-such as a character interaction, labeled by its database's word as the others are. Nothing fires it, so it has no
-firers of its own; drawn as the root, it shows what it fires. Its id is `database:name`. A node is made of every
-definition the game merges under its name, so its firings are theirs together. A fold is a node too, with the id
-`more:<id>` or `more-in:<id>`: it stands for the firings of one node past the filter's fan-out, and `Count` says how
-many. An `Edge` is one firing the graph draws, from a firer to what it fires, with the delay written for it (`days`,
-`months` or `years`, beside the firing or in a `delay` block before it) and where the firing is written.
+A `Node` is an event, an on_action, a decision or a scripted effect, with where it is written, its title and its step
+from the root, a firer's step negative. A firer of any other database is a node too, such as a character interaction,
+labeled by its database's word as the others are. Nothing fires it, so it has no firers of its own; drawn as the root,
+it shows what it fires. Its id is `database:name`, and a name has one node, which counts once toward the limit. A node
+is made of every copy of its name that acts (`index.ListActing`): the one the game keeps and those it merges into it,
+or, where no source says which copy the game keeps, every copy in a file the game reads. Its firings are theirs
+together. It is shown at the copy the game keeps, or, where no source says which, at the first copy the graph meets.
+A fold is a node too, with the id `more:<id>` or `more-in:<id>`: it stands for the firings of one node past the
+filter's fan-out, and `Count` says how many. An `Edge` is one firing the graph draws, from a firer to what it fires,
+with the delay written for it (`days`, `months` or `years`, beside the firing or in a `delay` block before it) and
+where the firing is written.
 
 ## The reach
 

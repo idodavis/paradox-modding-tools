@@ -8,6 +8,7 @@ export {
 
 export type {
     Child,
+    Dependency,
     Descriptor,
     FileChange,
     FileText,

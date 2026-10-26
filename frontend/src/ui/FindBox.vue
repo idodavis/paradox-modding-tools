@@ -6,6 +6,8 @@
 import { computed, useId, useTemplateRef, watch } from "vue";
 import { useCycleList } from "@vueuse/core";
 
+import { matchQuery } from "../lib/format";
+
 const term = defineModel<string>("term", { default: "" });
 const { texts } = defineProps<{ texts: readonly string[] }>();
 const emit = defineEmits<{ hit: [index: number]; close: [] }>();
@@ -14,10 +16,9 @@ const input = useTemplateRef("input");
 const id = useId();
 
 // the indexes of the texts that hold the term, in order
-const hits = computed(() => {
-  const needle = term.value.trim().toLowerCase();
-  return needle ? texts.flatMap((text, index) => (text.toLowerCase().includes(needle) ? [index] : [])) : [];
-});
+const hits = computed(() =>
+  term.value.trim() ? texts.flatMap((text, index) => (matchQuery(term.value, text) ? [index] : [])) : [],
+);
 const { state, index, go, next, prev } = useCycleList(hits);
 
 watch(hits, (indexes) => {
@@ -25,7 +26,7 @@ watch(hits, (indexes) => {
   if (indexes.length) emit("hit", indexes[0]);
 });
 
-/** Moves to the next hit, or the previous one for a negative step, and tells the holder. */
+/** step moves to the next hit, or the previous one for a negative step, and tells the holder. */
 function step(by: number): void {
   if (!hits.value.length) return;
   if (by > 0) next();

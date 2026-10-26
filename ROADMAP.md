@@ -76,7 +76,7 @@ What the layers add for people who use the app:
 
 - Completion ranked by how often the game's own files use a word in that place, and completion and go to definition
   for file paths such as textures.
-- The game's `error.log` read as problems, in a Health card and as marks in the editor, while the game runs.
+- The game's `error.log` read as problems, in a Health card and as marks in the editor, while a workspace is open.
 - Launching the game with its debug switch from the app, and an offer to rescan when the game has written fresher
   dumps than the app knows.
 - More from Health: definitions nothing refers to (a hint, never an error), localization keys nothing uses, a card

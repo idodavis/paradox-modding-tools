@@ -60,17 +60,29 @@ file is read as the editor holds it.
 
 ## Diagnostics
 
-A `Diagnostic` is a code, a range and its facts. `Codes` is the one table of every code: its id, its severity, the
-Health section it counts in, its label and its message, a template that the facts fill. A sentence about a problem is
-written once, there. `DiagnoseFile` returns a file's problems in a session against a given index, and a file of the
-game has its parse errors only. `Diagnose` is the same against the open session, with the checks the user turned off
-(`ide.checks`) left out. `DescribeReference` gives the facts that name what a problem is about.
+A `Diagnostic` is a code, a range and its facts. `Codes` is the one table of every code: its id, the question Health
+asks it under (`compatibility`, `health` or `log`), its level (`serious`, `warning` or `info`), its topic (syntax,
+references, values, localization, definitions or descriptor), its label and its message, a template that the facts
+fill. The game log has no level and no topic, since the game writes none. A sentence about a problem is written once,
+there, and the editor's markers and Health's rows both read the level from it. `DiagnoseFile` returns a file's problems
+in a session against a given index, and a file of the game has its parse errors only. `Diagnose` is the same against
+the open session, with the checks the user turned off (`ide.checks`) left out. `DescribeReference` gives the facts
+that name what a problem is about.
 
 A check accuses only on firm ground. A reference is judged dangling only where its database is known and holds no names
 made as the script runs, and where the claim that makes it is not inferred from the game's files alone. A name the
-game's own files use too is never dangling. A key is unknown, or a value of the wrong type, only
+game's own files use is never dangling, unless it is defined and every definition lies in a file the game does not
+read (`isKnown`). A key is unknown, or a value of the wrong type, only
 where a source that can accuse describes the block and the game's own files never write otherwise. The parse errors and
 the localization codes come from `jomini` and `loc` under the same table.
+
+A name others share is judged by what the game keeps (`index.FindWinner`). A copy with the same override priority as
+another loaded copy is `conflicting-priority`, which the game logs as an error. A plain copy that its own mod's other
+copy wins over is `duplicate-definition`, put on the copy the game drops; never in a database whose copies all stay,
+nor where no source says which copy the game keeps. A localization key outside a replace folder is
+`duplicate-message` against its own mod's other copies, and against the game's only where the game logs that as an
+error (`game.Game.LogsRepeatedKey`). EU5's stages count as one folder for both checks. A hover card's sites are kept
+or not, and why, as `index.ResolveSite` says: where no source says which copy the game keeps, none is kept.
 
 ## Terms
 
@@ -84,7 +96,7 @@ the localization codes come from `jomini` and `loc` under the same table.
 - **Completion**: one candidate in the completion list.
 - **Symbol**: one entry of a file's outline.
 - **WorkspaceSymbol**: one definition found by the symbol search across the workspace.
-- **Code**: one kind of problem, with its severity, its Health section and its message.
+- **Code**: one kind of problem, with its question, its level, its topic and its message.
 - **Diagnostic**: one problem found in a file: its code, its range and its facts.
 - **Legend**: the token types and modifiers the semantic tokens are encoded against.
 - **Fix**: one quick fix, with its edits grouped by file.

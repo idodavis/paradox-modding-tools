@@ -29,7 +29,8 @@ type Status struct {
 	Ahead    int      `json:"ahead"`
 	Behind   int      `json:"behind"`
 	Changes  []Change `json:"changes"`
-	// Ignored is the files and folders git ignores, each as a full path; a folder stands for everything in it.
+	// Ignored is the files and folders git ignores, each as a full path; a folder ends with a separator and stands for
+	// everything in it.
 	Ignored []string `json:"ignored"`
 }
 
@@ -74,7 +75,11 @@ func (git *Service) ReadStatus(dir string) (Status, error) {
 	}
 	git.locateChanges(root, status.Changes)
 	status.Ignored = lo.Map(status.Ignored, func(path string, _ int) string {
-		return filepath.Join(root, strings.TrimSuffix(path, "/"))
+		full := filepath.Join(root, path)
+		if strings.HasSuffix(path, "/") {
+			full += string(filepath.Separator)
+		}
+		return full
 	})
 	return status, nil
 }

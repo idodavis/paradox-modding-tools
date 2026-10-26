@@ -22,6 +22,7 @@ import type { DropdownMenuItem } from "@nuxt/ui";
 
 import type { Place } from "@services/workspace/models";
 
+import { matchQuery } from "../../lib/format";
 import { lexiconQuery, stateQuery, wikiPageQuery, wikiPagesQuery, wikiSearchQuery } from "../../queries";
 import { useSettingsStore } from "../../stores/settings";
 import { THIS_WINDOW, useWindowsStore, type WikiLookup } from "../../stores/windows";
@@ -55,7 +56,7 @@ const file = shallowRef<Place | null>(null);
 watch(
   () => props.place,
   (open) => {
-    if (open && (!file.value || settings.value("ide.wikiFollow") === "true")) file.value = open;
+    if (open && (!file.value || settings.isOn("ide.wikiFollow"))) file.value = open;
   },
   { immediate: true },
 );
@@ -84,7 +85,7 @@ const more = computed<DropdownMenuItem[]>(() =>
   })),
 );
 
-/** Shows the page a link in the article is to, when it is to one. */
+/** follow shows the page a link in the article is to, when it is to one. */
 function follow(event: MouseEvent): void {
   const link = event.target instanceof Element ? event.target.closest("a") : null;
   if (link?.dataset.page) title.value = link.dataset.page;
@@ -119,10 +120,7 @@ const { data: rows } = useQuery(() => ({
   ...lexiconQuery(lexiconClass.value),
   enabled: workspace.isOpen() && view.value === "lexicon",
 }));
-const visible = computed(() => {
-  const needle = filter.value.trim().toLowerCase();
-  return (rows.value ?? []).filter((row) => !needle || `${row.name} ${row.blurb}`.toLowerCase().includes(needle));
-});
+const visible = computed(() => (rows.value ?? []).filter((row) => matchQuery(filter.value, row.name, row.blurb)));
 
 // the letter index beside the list: each first letter with the first row it begins, and the letter at the top of view
 const list = useTemplateRef("list");
@@ -134,7 +132,9 @@ const letters = computed(() =>
 );
 const topLetter = shallowRef("");
 
-/** Marks the letter of the first row in view. The rows drawn above the view to scroll smoothly are skipped. */
+/**
+ * markLetter marks the letter of the first row in view. The rows drawn above the view to scroll smoothly are skipped.
+ */
 function markLetter(): void {
   const virtualizer = list.value?.virtualizer;
   const top = virtualizer?.scrollOffset ?? 0;
@@ -142,7 +142,7 @@ function markLetter(): void {
   topLetter.value = visible.value[first]?.name.charAt(0).toUpperCase() ?? "";
 }
 
-/** Scrolls the list to the first row that begins with a letter. */
+/** jump scrolls the list to the first row that begins with a letter. */
 function jump(index: number): void {
   list.value?.virtualizer?.scrollToIndex(index, { align: "start" });
 }

@@ -1,201 +1,203 @@
 package steam
 
 import (
-	"bufio"
-	"bytes"
-	"html"
+	"cmp"
+	"fmt"
 	"regexp"
+	"slices"
 	"strings"
 
-	"github.com/yuin/goldmark"
-	"github.com/yuin/goldmark/ast"
-	"github.com/yuin/goldmark/extension"
-	extast "github.com/yuin/goldmark/extension/ast"
-	"github.com/yuin/goldmark/renderer"
-	goldhtml "github.com/yuin/goldmark/renderer/html"
-	"github.com/yuin/goldmark/util"
+	"golang.org/x/net/html"
+	"golang.org/x/net/html/atom"
 )
 
-// A bbcodeRenderer renders goldmark's syntax tree as BBCode, the way Steam writes it.
-type bbcodeRenderer struct{}
-
-// converter reads Markdown with tables and strikethrough and writes it as BBCode.
-var converter = goldmark.New(
-	goldmark.WithExtensions(extension.Table, extension.Strikethrough),
-	goldmark.WithRenderer(renderer.NewRenderer(renderer.WithNodeRenderers(util.Prioritized(bbcodeRenderer{}, 1)))),
-)
-
-// bbcodeTags holds, for each kind of node written as a pair of tags, its rows of opening and closing tag. A node takes
-// the row that selectTags picks. A link's opening tag is followed by its destination and a closing bracket. A kind with
-// no row writes nothing, so raw HTML is dropped.
-var bbcodeTags = map[ast.NodeKind][][2]string{
-	ast.KindHeading:          {{"[h1]", "[/h1]\n\n"}, {"[h2]", "[/h2]\n\n"}, {"[h3]", "[/h3]\n\n"}},
-	ast.KindBlockquote:       {{"[quote]", "[/quote]\n\n"}},
-	ast.KindList:             {{"[list]\n", "[/list]\n\n"}, {"[olist]\n", "[/olist]\n\n"}, {"[list]\n", "[/list]\n"}, {"[olist]\n", "[/olist]\n"}},
-	ast.KindListItem:         {{"[*] ", ""}},
-	ast.KindParagraph:        {{"", "\n\n"}},
-	ast.KindTextBlock:        {{"", "\n"}},
-	ast.KindCodeSpan:         {{"[code]", "[/code]"}},
-	ast.KindEmphasis:         {{"[i]", "[/i]"}, {"[b]", "[/b]"}},
-	ast.KindLink:             {{"[url=", "[/url]"}},
-	extast.KindStrikethrough: {{"[strike]", "[/strike]"}},
-	extast.KindTable:         {{"[table]\n", "[/table]\n\n"}},
-	extast.KindTableHeader:   {{"[tr]", "[/tr]\n"}},
-	extast.KindTableRow:      {{"[tr]", "[/tr]\n"}},
-	extast.KindTableCell:     {{"[td]", "[/td]"}, {"[th]", "[/th]"}},
-	ast.KindThematicBreak:    {{"[hr][/hr]\n\n", ""}},
-	ast.KindImage:            {{"[img]", "[/img]"}},
-	ast.KindAutoLink:         {{"[url]", "[/url]"}},
-	ast.KindCodeBlock:        {{"[code]\n", "\n[/code]\n\n"}},
-	ast.KindFencedCodeBlock:  {{"[code]\n", "\n[/code]\n\n"}},
-}
-
-// steamElements are the BBCode tags Steam draws, by name, each with the HTML element it is drawn as and whether that
-// element is a block, which stands on lines of its own.
+// steamElements are the BBCode tags Steam draws, with the HTML element each is drawn as.
 var steamElements = map[string]struct {
 	element string
-	block   bool
+	block   bool     // stands on lines of its own
+	address bool     // its argument is a link's address
+	aliases []string // the other elements the editor writes for it
 }{
-	"h1": {"h1", true}, "h2": {"h2", true}, "h3": {"h3", true}, "quote": {"blockquote", true}, "hr": {"hr", true},
-	"list": {"ul", true}, "olist": {"ol", true}, "*": {"li", true}, "table": {"table", true}, "tr": {"tr", true},
-	"th": {"th", false}, "td": {"td", false}, "b": {"b", false}, "i": {"i", false}, "u": {"u", false},
-	"strike": {"s", false}, "spoiler": {"mark", false}, "url": {"a", false},
+	"h1": {"h1", true, false, nil}, "h2": {"h2", true, false, nil}, "h3": {"h3", true, false, nil},
+	"quote": {"blockquote", true, false, nil}, "hr": {"hr", true, false, nil}, "list": {"ul", true, false, nil},
+	"olist": {"ol", true, false, nil}, "*": {"li", true, false, nil}, "table": {"table", true, false, nil},
+	"tr": {"tr", true, false, nil}, "th": {"th", true, false, nil}, "td": {"td", true, false, nil},
+	"b": {"b", false, false, []string{"strong"}}, "i": {"i", false, false, []string{"em"}}, "u": {"u", false, false, nil},
+	"strike": {"s", false, false, []string{"del", "strike"}}, "spoiler": {"mark", false, false, nil},
+	"url": {"a", false, true, nil},
 }
 
-// steamLiterals are the BBCode tags whose content Steam shows as written, with no tag read in it, each with the HTML
-// written before and after the content: text kept as it is, a block of code, and a picture, whose content is its
-// address. A block of code drops the line breaks beside its tags.
+// steamLiterals are the BBCode tags whose content Steam shows as written, with no tag read inside.
 var steamLiterals = []struct {
+	tag     string
+	element string // "" for noparse, which has none
+	block   bool
 	pattern *regexp.Regexp
 	html    [2]string
 }{
-	{regexp.MustCompile(`(?is)\[noparse\](.*?)\[/noparse\]`), [2]string{"", ""}},
-	{regexp.MustCompile(`(?is)(?:\r?\n)?\[code\](?:\r?\n)?(.*?)(?:\r?\n)?\[/code\](?:\r?\n)?`), [2]string{"<pre>", "</pre>"}},
-	{regexp.MustCompile(`(?is)\[img\](.*?)\[/img\]`), [2]string{`<img alt="" src="`, `">`}},
+	{"noparse", "", false, regexp.MustCompile(`(?is)\[noparse\](.*?)\[/noparse\]`), [2]string{"", ""}},
+	{"code", "pre", true, regexp.MustCompile(`(?is)(?:\r?\n)?\[code\](?:\r?\n)?(.*?)(?:\r?\n)?\[/code\](?:\r?\n)?`),
+		[2]string{"<pre>", "</pre>"}},
+	{"img", "img", false, regexp.MustCompile(`(?is)\[img\](.*?)\[/img\]`), [2]string{`<img alt="" src="`, `">`}},
 }
 
-// bbcodeTag matches one BBCode tag with a line break on either side of it: the slash of a closing tag, the tag's name
-// and its argument after an equals sign or a space.
-var bbcodeTag = regexp.MustCompile(`(?i)(\r?\n)?\[(/?)([a-z0-9*]+)(?:[= ]([^\]]*))?\](\r?\n)?`)
+// bbcodeTag matches one BBCode tag, opening or closing, with its argument.
+var bbcodeTag = regexp.MustCompile(`(?i)\[(/?)([a-z0-9*]+)(?:[= ]([^\]]*))?\]`)
 
-// ToBBCode converts a Markdown text to Steam's BBCode.
-func (stm *Service) ToBBCode(markdown string) string {
+// listEnds are the tags that end a list item, which has no closing tag.
+var listEnds = []string{"*", "/list", "/olist"}
+
+// webAddress matches a web page's address, the only kind of link ToHTML draws.
+var webAddress = regexp.MustCompile(`(?i)^https?://`)
+
+// ToBBCode returns the visual editor's HTML as Steam's BBCode. A tag typed as text is kept in noparse, so Steam shows
+// it as written. It returns "" if the HTML cannot be read.
+func (stm *Service) ToBBCode(markup string) string {
+	document, err := html.Parse(strings.NewReader(markup))
+	if err != nil {
+		return ""
+	}
 	var bbcode strings.Builder
-	// writing to a Builder never fails, and the renderers fail only when their writer does
-	_ = converter.Convert([]byte(markdown), &bbcode)
-	return strings.TrimSpace(bbcode.String())
+	writeChildren(&bbcode, document)
+	return strings.TrimRight(bbcode.String(), "\n")
 }
 
-// RegisterFuncs registers one render function per node kind goldmark produces.
-func (bbcodeRenderer) RegisterFuncs(registerer renderer.NodeRendererFuncRegisterer) {
-	for kind := range bbcodeTags {
-		registerer.Register(kind, writeNode)
+// writeChildren writes the children of an HTML node as BBCode.
+func writeChildren(bbcode *strings.Builder, parent *html.Node) {
+	for node := range parent.ChildNodes() {
+		writeNode(bbcode, node)
 	}
-	registerer.Register(ast.KindText, writeText)
-	registerer.Register(ast.KindString, writeText)
 }
 
-// writeNode writes the opening tag of a node as the walk enters it and the closing tag as it leaves. A node that is
-// written whole has its content between the tags, and its children are skipped.
-func writeNode(writer util.BufWriter, source []byte, node ast.Node, entering bool) (ast.WalkStatus, error) {
-	tags := bbcodeTags[node.Kind()][selectTags(node)]
-	if content, whole := resolveContent(node, source); whole {
-		if !entering {
-			return ast.WalkContinue, nil
+// writeNode writes one HTML node as BBCode. An HTML comment writes nothing, and so does an empty paragraph that is
+// alone in its parent, such as an empty table cell's.
+func writeNode(bbcode *strings.Builder, node *html.Node) {
+	switch {
+	case node.Type == html.TextNode:
+		writeText(bbcode, node.Data)
+	case node.Type != html.ElementNode:
+		// a comment or a doctype writes nothing
+	case node.DataAtom == atom.Br:
+		bbcode.WriteString("\n")
+	case node.DataAtom == atom.P:
+		if node.PrevSibling != nil {
+			writeBreak(bbcode)
 		}
-		_, err := writer.WriteString(tags[0] + content + tags[1])
-		return ast.WalkSkipChildren, err
-	}
-	tag := tags[1]
-	if entering {
-		tag = tags[0]
-		if link, ok := node.(*ast.Link); ok {
-			tag += string(link.Destination) + "]"
+		// an empty paragraph between others is a blank line
+		if node.FirstChild == nil && (node.PrevSibling != nil || node.NextSibling != nil) {
+			bbcode.WriteString("\n")
 		}
+		writeChildren(bbcode, node)
+	default:
+		writeElement(bbcode, node)
 	}
-	_, err := writer.WriteString(tag)
-	return ast.WalkContinue, err
 }
 
-// selectTags returns which row of its kind's tags a node is written with: a heading's level, whether a list is
-// ordered and whether it sits in another, an emphasis's strength and whether a cell is in the table's header.
-func selectTags(node ast.Node) int {
-	switch node := node.(type) {
-	case *ast.Heading:
-		return min(node.Level, 3) - 1
-	case *ast.List:
-		row := 0
-		if node.IsOrdered() {
-			row = 1
+// writeText writes text as BBCode, with each tag Steam would draw in it kept in noparse.
+func writeText(bbcode *strings.Builder, text string) {
+	bbcode.WriteString(bbcodeTag.ReplaceAllStringFunc(text, func(match string) string {
+		if !isDrawnTag(strings.ToLower(bbcodeTag.FindStringSubmatch(match)[2])) {
+			return match
 		}
-		if node.Parent().Kind() == ast.KindListItem {
-			row += 2
-		}
-		return row
-	case *ast.Emphasis:
-		return min(node.Level, 2) - 1
-	case *extast.TableCell:
-		if node.Parent().Kind() == extast.KindTableHeader {
-			return 1
-		}
-	}
-	return 0
+		return "[noparse]" + match + "[/noparse]"
+	}))
 }
 
-// resolveContent returns what a node that is written whole holds, and false for a node that is not: a picture's
-// and an address's links, and the lines of a block of code.
-func resolveContent(node ast.Node, source []byte) (content string, whole bool) {
-	switch node := node.(type) {
-	case *ast.ThematicBreak:
-		return "", true
-	case *ast.Image:
-		return string(node.Destination), true
-	case *ast.AutoLink:
-		return string(node.URL(source)), true
-	case *ast.CodeBlock, *ast.FencedCodeBlock:
-		return strings.TrimSuffix(string(node.Lines().Value(source)), "\n"), true
+// isDrawnTag reports whether Steam draws a BBCode tag, named in lower case.
+func isDrawnTag(name string) bool {
+	if _, ok := steamElements[name]; ok {
+		return true
 	}
-	return "", false
-}
-
-// writeText writes the text of a node. Outside code, Markdown's backslash escapes and entity references are
-// resolved, as goldmark's HTML writer does. A line break inside a paragraph is written as a new line.
-func writeText(writer util.BufWriter, source []byte, node ast.Node, entering bool) (ast.WalkStatus, error) {
-	if !entering {
-		return ast.WalkContinue, nil
-	}
-	var err error
-	switch node := node.(type) {
-	case *ast.Text:
-		text := node.Segment.Value(source)
-		if node.Parent().Kind() != ast.KindCodeSpan {
-			text = resolveEscapes(text)
+	for _, row := range steamLiterals {
+		if row.tag == name {
+			return true
 		}
-		_, err = writer.Write(text)
-		if err == nil && (node.SoftLineBreak() || node.HardLineBreak()) {
-			err = writer.WriteByte('\n')
-		}
-	case *ast.String:
-		_, err = writer.Write(node.Value)
 	}
-	return ast.WalkContinue, err
+	return false
 }
 
-// resolveEscapes returns Markdown text with its backslash escapes and entity references resolved to the characters
-// they stand for.
-func resolveEscapes(text []byte) []byte {
-	var resolved bytes.Buffer
-	writer := bufio.NewWriter(&resolved)
-	goldhtml.DefaultWriter.Write(writer, text)
-	_ = writer.Flush()
-	return []byte(html.UnescapeString(resolved.String()))
+// writeBreak ends the BBCode's current line, unless no line is open.
+func writeBreak(bbcode *strings.Builder) {
+	if text := bbcode.String(); text != "" && !strings.HasSuffix(text, "\n") {
+		bbcode.WriteString("\n")
+	}
 }
 
-// ToHTML returns a BBCode text as the HTML that Steam draws it as. The text is escaped, so the HTML holds no element
-// but those of Steam's tags. A tag Steam does not draw stays as text, and each line break is a break. A tag left open
-// is closed where the browser closes it.
+// writeElement writes an HTML element as the BBCode tag it is drawn for, with its contents. An element with no tag
+// writes its contents alone.
+func writeElement(bbcode *strings.Builder, node *html.Node) {
+	tag, block, literal, ok := lookupTag(node.Data)
+	if !ok {
+		writeChildren(bbcode, node)
+		return
+	}
+	if block {
+		writeBreak(bbcode)
+	}
+	fmt.Fprintf(bbcode, "[%s", tag)
+	if argument := cmp.Or(lookupAttribute(node, "href"), lookupAttribute(node, "title")); argument != "" && !literal {
+		fmt.Fprintf(bbcode, "=%s", argument)
+	}
+	bbcode.WriteString("]")
+	switch {
+	case node.DataAtom == atom.Img:
+		bbcode.WriteString(lookupAttribute(node, "src"))
+	case literal:
+		if block {
+			bbcode.WriteString("\n")
+		}
+		for descendant := range node.Descendants() {
+			switch {
+			case descendant.Type == html.TextNode:
+				bbcode.WriteString(descendant.Data)
+			case descendant.DataAtom == atom.Br:
+				bbcode.WriteString("\n")
+			}
+		}
+		if block {
+			bbcode.WriteString("\n")
+		}
+	default:
+		writeChildren(bbcode, node)
+	}
+	if tag != "*" {
+		fmt.Fprintf(bbcode, "[/%s]", tag)
+	}
+	if block {
+		bbcode.WriteString("\n")
+	}
+}
+
+// lookupTag returns the BBCode tag drawn as an HTML element, and whether it is a block or a literal. It returns false
+// if there is none.
+func lookupTag(element string) (tag string, block, literal, ok bool) {
+	for name, row := range steamElements {
+		if row.element == element || slices.Contains(row.aliases, element) {
+			return name, row.block, false, true
+		}
+	}
+	for _, row := range steamLiterals {
+		if row.element == element {
+			return row.tag, row.block, true, true
+		}
+	}
+	return "", false, false, false
+}
+
+// lookupAttribute returns the value of one of an HTML element's attributes, or "" if it has none.
+func lookupAttribute(node *html.Node, key string) string {
+	for _, attribute := range node.Attr {
+		if attribute.Key == key {
+			return attribute.Val
+		}
+	}
+	return ""
+}
+
+// ToHTML returns BBCode as the HTML Steam draws it as. Only Steam's tags become elements, and a link only to a web
+// page. BBCode that ToBBCode wrote comes back as the HTML it came from.
 func (stm *Service) ToHTML(bbcode string) string {
-	text := html.EscapeString(bbcode)
+	text := html.EscapeString(strings.ReplaceAll(bbcode, "\r\n", "\n"))
 	for _, literal := range steamLiterals {
 		text = literal.pattern.ReplaceAllStringFunc(text, func(match string) string {
 			content := literal.pattern.FindStringSubmatch(match)[1]
@@ -203,26 +205,55 @@ func (stm *Service) ToHTML(bbcode string) string {
 			return literal.html[0] + strings.ReplaceAll(content, "[", "&#91;") + literal.html[1]
 		})
 	}
-	text = bbcodeTag.ReplaceAllStringFunc(text, drawTag)
-	return strings.NewReplacer("\r\n", "<br>", "\n", "<br>").Replace(text)
+	var drawn strings.Builder
+	// where the text not drawn yet starts, and whether the last tag drawn closed a block
+	start, closed := 0, false
+	for _, match := range bbcodeTag.FindAllStringSubmatchIndex(text, -1) {
+		parts := bbcodeTag.FindStringSubmatch(text[match[0]:match[1]])
+		name := parts[1] + strings.ToLower(parts[2])
+		row, ok := steamElements[strings.ToLower(parts[2])]
+		drawn.WriteString(trimBreaks(text[start:match[0]], closed, name, ok && row.block))
+		drawn.WriteString(drawTag(parts))
+		start, closed = match[1], ok && row.block && parts[1] != ""
+	}
+	drawn.WriteString(trimBreaks(text[start:], closed, "", false))
+	return strings.ReplaceAll(drawn.String(), "\n", "<br>")
 }
 
-// drawTag returns the HTML that one BBCode tag is drawn as, with the line breaks beside it. A tag's argument, such as
-// a link's address, becomes its element's title. A block drops the line breaks. A tag Steam does not draw is returned
-// as it is.
-func drawTag(tag string) string {
-	parts := bbcodeTag.FindStringSubmatch(tag)
-	row, ok := steamElements[strings.ToLower(parts[3])]
+// trimBreaks returns the text between two tags without the line breaks that ToBBCode writes beside a block.
+func trimBreaks(text string, closed bool, next string, block bool) string {
+	trimmed := text
+	if closed {
+		trimmed = strings.TrimPrefix(trimmed, "\n")
+	}
+	if !block || !strings.HasSuffix(trimmed, "\n") {
+		return trimmed
+	}
+	// the line before the break is blank when the break is the one left after a block's or follows another break
+	blank := strings.HasSuffix(trimmed, "\n\n") || (trimmed == "\n" && text != trimmed)
+	if slices.Contains(listEnds, next) || (!strings.HasPrefix(next, "/") && !blank) {
+		return strings.TrimSuffix(trimmed, "\n")
+	}
+	return trimmed
+}
+
+// drawTag returns the HTML of one BBCode tag. A link to anything but a web page draws nothing, so its text shows
+// alone. A tag Steam does not draw is returned as written.
+func drawTag(parts []string) string {
+	row, ok := steamElements[strings.ToLower(parts[2])]
 	if !ok {
-		return tag
+		return parts[0]
 	}
-	element := "<" + parts[2] + row.element
-	if parts[4] != "" && parts[2] == "" {
-		element += ` title="` + parts[4] + `"`
+	switch argument := parts[3]; {
+	case parts[1] != "":
+		// a closing tag takes no argument; one left over from a link drawn as text alone is ignored by the browser
+		return "</" + row.element + ">"
+	case row.address && !webAddress.MatchString(argument):
+		return ""
+	case row.address:
+		return "<" + row.element + ` href="` + argument + `">`
+	case argument != "":
+		return "<" + row.element + ` title="` + argument + `">`
 	}
-	element += ">"
-	if row.block {
-		return element
-	}
-	return parts[1] + element + parts[5]
+	return "<" + row.element + ">"
 }

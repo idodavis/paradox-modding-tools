@@ -1,13 +1,13 @@
-/**
- * The page catalog: each route's name, title, icon and Help text, and for a workspace's pages its tab in the top
- * bar. The router's typed route names come from here, and the Help text is the user's guide.
- */
+/** The catalog of the app's pages and the top bar's tabs. */
+import { onActivated, onDeactivated, shallowRef, type ShallowRef } from "vue";
 import type { RouteRecordInfo } from "vue-router";
 
 import { useSettingsStore } from "../stores/settings";
 
-export type Page = { title: string; help: readonly string[]; icon?: string; workspace?: true; tab?: true };
+/** A Page is one page of the catalog. */
+export type Page = { title: string; help: readonly string[]; icon?: string; workspace?: true };
 
+/** PAGES holds every page of the app by its route name. */
 export const PAGES = {
   library: {
     title: "Library",
@@ -31,11 +31,10 @@ export const PAGES = {
     title: "IDE",
     icon: "i-lucide-code",
     workspace: true,
-    tab: true,
     help: [
       "The explorer shows this workspace's mods in load order, then the game's files, which are read only; edit in a mod folder. The filter button in each tree's header shows a box that filters that tree's files by path, in folders you have not opened too; pressing it again or Escape hides the box and clears the filter. Ctrl P finds a file by its path, Ctrl Shift F searches the files' text and can replace it.",
       "A single click opens a file in a preview tab that the next single click replaces; a double click or an edit keeps it. Drag a tab to another group, or out to a window of its own. A tab's right-click menu closes the others, the tabs to its right, the saved ones or all of them, asking once before it drops changes not saved; Reveal in explorer selects its file in the explorer. The open tabs come back when you reopen the workspace, unless you turn that off in Settings.",
-      "Rest the pointer on a key or a value for what it is and where it is defined. Ctrl click goes to a definition, F2 renames a name in every mod file, and completion offers what fits the block you are in. Problems show as squiggles and with quick fixes. The Problems panel (Ctrl J) lists them for the open files, then what the load order decides about those files, from Health.",
+      "Rest the pointer on a key or a value for what it is and where it is defined. Ctrl click goes to a definition, F2 renames a name in every mod file, and completion offers what fits the block you are in. Problems show as squiggles and with quick fixes. The Problems panel (Ctrl J) lists them for the open files, then Health's compatibility findings about those files.",
       "The editor's right-click menu also finds what fires an event, an on_action, a decision or a scripted effect, listed in the sidebar's search; looks the name up in the Wiki pane, as a lexicon entry or its file's page; and compares a mod's file with the game's copy or with another file you pick. Ctrl Shift D compares the active file with its last commit.",
       "Alt Left and Alt Right, or the mouse's back and forward buttons, go back and forward through the places you jumped between: a definition, a search hit, a file opened, a tab switched to, or a move of the caret of more than ten lines. Each window keeps its own last 50.",
       "Ctrl K opens the palette: type > for the commands and settings, the ones you ran last first. Enter flips a switch, a page shown or a check at once; a setting with a value opens where it is set. Compare this mod with Steam opens Publish's compare for the active file's mod.",
@@ -50,7 +49,6 @@ export const PAGES = {
     title: "Event Graph",
     icon: "i-lucide-git-branch",
     workspace: true,
-    tab: true,
     help: [
       "Type an id, a namespace or a number in Root to see what that event, on_action, decision or scripted effect fires and what fires it, left to right by step.",
       "Any entry that fires an event, such as a character interaction, shows before it with the rest of what fires it, whatever kinds Filters picks.",
@@ -64,19 +62,19 @@ export const PAGES = {
     title: "Health",
     icon: "i-lucide-activity",
     workspace: true,
-    tab: true,
     help: [
-      "The cards count what is worth a look: contests between mods for the same definition, mods overriding the game, mods that need or change another mod, dangling references, localization issues and script issues. Pick a card for its table.",
-      "Drag the load order's chips to preview another order without saving it. Save as workspace order saves it, as Settings does.",
-      "A row opens beside the table with each place it is written; Compare sets two statements side by side. The error log card follows the game's own log while it runs.",
-      "Translation scaffold writes a language's missing localization files, with the source text as the placeholder.",
+      "The summary has three panels, one for each question: Compatibility, how the mods touch the same things; Mods, whether each mod is sound on its own; and Game log, what the game's last run logged. Each lists its serious rows first. Open a panel for its view; the rail on the left switches between them, and its edge drags to make it wider.",
+      "Every row is serious, a warning or info. Serious means a mod's change is lost, a dependency is missing, or the game's choice is not documented. A warning is something the game copes with. Info is only how things are, and is folded until you open it.",
+      "Within a level, rows are grouped by the check that found them, each with its count; a level with several checks opens folded, so it reads as its list of checks. Each row's chip names its check, and the checks menu keeps only the checks you pick.",
+      "Compatibility shows the load order. How the game picks a copy, at its top, says for this workspace's game which copy the game keeps and what the load order can change. Drag the order's chips to preview another order without saving it; the page then lists the names that change hands, Save as workspace order keeps it, and Back to the workspace order drops it. A row opens beside the list with each copy, whether the game uses it and why, and Compare the two puts them side by side. Where the load order decides a conflict and another order would fix it, Try this order previews it. A row's menu can ignore the conflicts between two mods; Stop ignoring brings them back.",
+      "A mod's view counts what it holds, filters its problems by topic, and shows each language's share of its localization keys. Write the missing files makes the localization files a language lacks, with the source text as the placeholder. A problem the game also logged says so.",
+      "The game log lists the lines from your mods apart from the game's own, by mod or by message, with repeats folded. Each line says why it is a mod's. Open error.log opens the log in the IDE as it was when you opened it; the tab does not follow the game's later writes. Live means the list follows the log while the workspace is open.",
     ],
   },
   "patch-notes": {
     title: "Patch Notes",
     icon: "i-lucide-newspaper",
     workspace: true,
-    tab: true,
     help: [
       "The game's patch notes from its wiki, read when PMT starts and kept, for the game this workspace uses.",
       "Pick a version to read its notes; a dot marks a note with a Modding section. Ctrl F finds in the note shown.",
@@ -86,14 +84,13 @@ export const PAGES = {
     title: "Publish",
     icon: "i-lucide-upload",
     workspace: true,
-    tab: true,
     help: [
-      "Publish edits the mod's own files: its descriptor, and in workshop/ its description file and changelog. Nothing is written until you save, except the thumbnail, screenshots and videos, which save at once.",
-      "One language is published, the mod's primary one, so the name and the description are written once. The description comes from Markdown (workshop/description.md, converted to BBCode when you upload), BBCode (workshop/description.bbcode, uploaded as written), another file in the mod as either, or Steam's own text, which uploads leave as it is. Change source picks one at any time, here or on the mod's card in Settings. Steam preview draws the text as Steam shows it, and a field that differs from Steam's says what Steam has.",
-      "Tags are picked from those the workspace's mods already carry, and a new one can be typed. The DLC the item requires are ticked at the review.",
-      "Uploads leave out dotfiles but .metadata, .gitignore and what it names, workshop/previews (Steam takes those as the page's gallery), and the mod's upload exclusions in Settings. PMT keeps a copy of each upload, so the rail says whether each mod's next upload changes anything, and Compare shows what changes.",
-      "Steam must be running and signed in as the item's owner. A mod is linked to an existing Workshop item, or unlinked, on its card in Settings. A new item stays private until you make it public on its Workshop page. Do not load a local copy and a Workshop subscription of the same mod together.",
-      "Paradox Mods has no API: copy the description as BBCode and paste it in the Paradox Launcher's Upload Mod.",
+      "Publish shows the mod's Workshop page as players see it. Click the name, tags, requirements, pictures or description to change them. Every change is saved in the mod's files as soon as you stop typing, so there is nothing to save.",
+      "The description is written as it looks on Steam, or as BBCode with the BBCode switch. It is kept as BBCode in the mod's .workshop folder, and Steam gets it as written. A description the visual editor cannot hold without losing markup opens as BBCode.",
+      "The rail on the right is this update: its version, the game version it is for, and its change note. It lists what the upload changes on Steam. Click a change to see it beside Steam's copy. Files never uploaded in the menu holds the files an upload leaves out.",
+      "Steam must be running and signed in as the item's owner. A new item stays private until you make it public on its Workshop page. Do not load a local copy and a Workshop subscription of the same mod together.",
+      "A mod can have a separate Workshop item for an older game version. Pick it from the mod's name at the top, or add one from the same menu.",
+      "Paradox Mods has no API: use Copy for Paradox Mods in the description's BBCode view and paste it in the Paradox Launcher's Upload Mod.",
     ],
   },
   "workspace-settings": {
@@ -103,16 +100,16 @@ export const PAGES = {
     help: [
       "General: the workspace's name, its localization language, the page it opens on, and the IDE's tabs and explorer.",
       "Game install: the install this workspace reads, and how to make the game print its script_docs.",
-      "Mods and load order: drag to reorder; for most kinds the last mod to define an object wins. Colors stay with the mod, not its position. Each mod's calendar, Workshop link and upload exclusions are on its card. Changes save as you make them.",
-      "Appearance applies to every workspace: the theme, light and dark, matching the game's theme, the interface scale and the pages shown. The IDE's settings, such as text sizes and the Visual view's resolutions, are on their own card.",
+      "Mods and load order: drag to reorder. When two mods ship a file at the same path, the game reads the one lower in the order; Health's Compatibility view explains how each game picks between copies. Colors stay with the mod, not its position. Each mod's calendar, Workshop link and upload exclusions are on its card. Changes save as you make them.",
+      "Appearance applies to every workspace: the theme, light and dark, matching the game's theme, the interface scale and the pages shown. The IDE's settings, such as text sizes and the Visual view's resolution, are on their own card.",
     ],
   },
 } as const satisfies Record<string, Page>;
 
+/** A PageName is the route name of a page. */
 export type PageName = keyof typeof PAGES;
+/** A WorkspacePage is the route name of a page that takes a workspace's id. */
 export type WorkspacePage = { [N in PageName]: (typeof PAGES)[N] extends { workspace: true } ? N : never }[PageName];
-export type WorkspaceTool = { [N in PageName]: (typeof PAGES)[N] extends { tab: true } ? N : never }[PageName];
-
 declare module "vue-router" {
   interface TypesConfig {
     RouteNamedMap: {
@@ -123,34 +120,52 @@ declare module "vue-router" {
   }
 }
 
-/** Whether a route is one of a workspace's pages, which take its id. */
+/** isWorkspacePage reports whether a route is one of a workspace's pages. */
 export function isWorkspacePage(name: PageName): name is WorkspacePage {
   return "workspace" in PAGES[name];
 }
 
-/** The top bar's tabs, in order. */
-export const WORKSPACE_TOOLS: readonly WorkspaceTool[] = [
+/** WORKSPACE_TOOLS holds the workspace pages that have a tab in the top bar, in order. */
+export const WORKSPACE_TOOLS = [
   "workspace-ide",
   "event-graph",
   "health",
   "patch-notes",
   "release",
-];
+] as const satisfies readonly WorkspacePage[];
 
-/** The top bar's tabs as the choices of a select. */
+/** A WorkspaceTool is the route name of a workspace page that has a tab in the top bar. */
+export type WorkspaceTool = (typeof WORKSPACE_TOOLS)[number];
+
+/** TOOL_CHOICES holds the top bar's tabs as the choices of a select. */
 export const TOOL_CHOICES: { label: string; value: string }[] = WORKSPACE_TOOLS.map((tool) => ({
   label: PAGES[tool].title,
   value: tool,
 }));
 
-/** Lists the top bar's tabs the settings show, in order. */
+/** listShownTools returns the top bar's tabs that the settings show, in order. */
 export function listShownTools(): WorkspaceTool[] {
   const pages = useSettingsStore().value("appearance.pages").split(",");
   return WORKSPACE_TOOLS.filter((tool) => pages.includes(tool));
 }
 
-/** The page a workspace opens on: its home page if that is shown, else the first page shown. */
-export function homeRoute(workspaceId: string, homePage: string, visible: readonly WorkspaceTool[]) {
+/**
+ * useShown returns whether the kept-alive page that calls it is the one shown. A page stays mounted behind the others,
+ * so the flag is false from the time it is deactivated until it is activated again.
+ */
+export function useShown(): Readonly<ShallowRef<boolean>> {
+  const shown = shallowRef(true);
+  onActivated(() => (shown.value = true));
+  onDeactivated(() => (shown.value = false));
+  return shown;
+}
+
+/**
+ * homeRoute returns the route a workspace opens on. It is the home page if shown, else the first shown page, else the
+ * IDE when no page is shown.
+ */
+export function homeRoute(workspaceId: string, homePage: string) {
+  const visible = listShownTools();
   const name = visible.find((tool) => tool === homePage) ?? visible[0] ?? "workspace-ide";
   return { name, params: { id: workspaceId } };
 }

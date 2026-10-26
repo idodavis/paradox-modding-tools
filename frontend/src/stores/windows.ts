@@ -89,6 +89,7 @@ export const useWindowsStore = defineStore("windows", () => {
       return work;
     },
   });
+  /** showWindow shows another window and brings it to the front. */
   const { mutate: showWindow } = useMutation({ mutation: (name: WindowName) => app.ShowWindow(name) });
   // closing another window makes it hand its tabs back to this one first
   const { mutate: closeOther } = useMutation({ mutation: (name: WindowName) => app.CloseWindow(name) });
@@ -338,6 +339,7 @@ export const useWindowsStore = defineStore("windows", () => {
     showElsewhere,
     openPage,
     findActive,
+    showWindow,
     closeOther,
     lookUp,
     sendCommand,

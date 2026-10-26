@@ -11,9 +11,9 @@ holds the `*Service` and asks it for the session at each call.
 |---|---|
 | `workspace.go` | `FileChange`, `Service`, `State`, `Scanning`, `FileText`, `Child`; the events; the installs (`ListGames`, `ListInstalls`, `ListReadyInstalls`, `DetectInstalls`, `AddInstall`, `UpdateInstall`, `ListLanguages`, `DeleteInstall`, `RescanInstall`); `ResetData`; the workspaces (`ListWorkspaces`, `CreateWorkspace`, `UpdateWorkspace`, `DeleteWorkspace`); the mods (`AddMod`, `ListMods`, `CreateMod`, `ResolveModFolder`, `RemoveMod`, `ReorderMods`, `ResetColors`, `UpdateMod`); `Open`, `Session`, `Close`, `State`, `LookupMod`; `Launch`; the files (`Read`, `ReadHeader`, `Write`, `ListFolder`, `ListRoots`, `Create`, `Rename`, `Delete`, `Restore`, `Locate`); `ServeHTTP` |
 | `session.go` | the package comment; `Session`; the open: the install's caches, the mods' scan and the watcher; `ScanOrder`; `Close`; the trees and buffers (`LoadTree`, `SetText`, `CloseBuffer`, `LookupBuffer`); the texts (`LookupText`, `LookupTitle`, `FindTitleKey`); `FindStatement`; `Rescan` |
-| `mod.go` | `Descriptor` and `Mod`; `ReadDescriptor`, `WriteDescriptor`; a new mod's skeleton and its localization file; the thumbnail; `IsOlderRelease` |
+| `mod.go` | `Descriptor`, `Dependency` and `Mod`; `ReadDescriptor`, `WriteDescriptor`; `FindMod` (the mod a descriptor's dependency names, by its id or its name); `Mod.ResolveWorkshopID` (the record's Workshop id, else the descriptor's); a new mod's skeleton and its localization file; the thumbnail; `IsOlderRelease` |
 | `locate.go` | `Place`, `Session.Locate`, `ListCopies`, `Session.ListRoots` |
-| `watcher.go` | `Watcher`: the folders it watches, and the bursts of changes it reports together |
+| `watcher.go` | `Watcher`: the folders it watches, the bursts of changes it reports together, and `Move` |
 
 ## The one open session
 
@@ -48,10 +48,13 @@ parses the file. `LookupBuffer` gives the editor's text of an open file.
 through it too. A broken mod, whose folder is missing, is left out.
 
 `LookupText` returns a localization key's text in the session's language, else in the base language, with the message
-the game keeps: one in a replace folder wins, else the first loaded. The install keeps only the base language's texts,
-so a game file's text in another language is read from its file when asked. `LookupTitle` returns the text a
-definition is shown by: its title key's message, else the message named like it, and for a game concept the message
-of the game's concept prefix and its name. `FindStatement` returns the tree and the statement of a site.
+the game keeps: one in a replace folder wins, for the reason `replace-folder`, in the game's form of the folder that
+wins first (`LocReplaceFolders`). Where several messages share the best place, in one form of the folder or outside
+it, which the game shows is not documented, so the first loaded comes back with the reason `unsettled`. The install
+keeps only the base language's texts, so a game file's text in another language is read from its file when asked.
+`LookupTitle` returns the text a definition is shown by: its title key's message, else the message named like it, and
+for a game concept the message of the game's concept prefix and its name. `FindStatement` returns the tree and the
+statement of a site.
 
 ## Places
 
@@ -78,11 +81,16 @@ burst starts a timer that later events do not reset. When it ends, every path th
 deleted where it no longer exists. The session scans the batch again through `index.Index.ScanFiles`, then emits
 `fs:changed` for each path. The watcher judges nothing.
 
+`Rename` and `Delete` move through `Watcher.Move`. It stops watching the folders under the source while the move runs,
+since Windows refuses to move a folder while a folder inside it is watched, and watches them again if the move fails.
+A renamed folder is watched again from its first event.
+
 ## Mods and their descriptors
 
 A `Mod` is the config's record (`app.Mod`) with its `Descriptor`, its thumbnail, and whether it is broken. A
 `Descriptor` is the mod's own description as its game writes it: CK3's `.mod` file, or Vic3's and EU5's
-`.metadata/metadata.json`, as the game's `ModDescriptor` row says. `ReadDescriptor` reads either form.
+`.metadata/metadata.json`, as the game's `ModDescriptor` row says. `ReadDescriptor` reads either form; metadata.json
+also gives each `Dependency` its title, its relationship's `display_name`, beside its id.
 `WriteDescriptor` writes it back and keeps the fields a `Descriptor` does not model. A mod's thumbnail is a thumbnail
 picture where the game keeps one, else the picture the descriptor names.
 

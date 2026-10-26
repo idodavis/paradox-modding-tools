@@ -6,7 +6,7 @@
  */
 export interface Header {
     /**
-     * dds, tga, png
+     * dds, tga, png, jpeg
      */
     "format": string;
     "width": number;

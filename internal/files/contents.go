@@ -6,6 +6,7 @@ import (
 	"errors"
 	"fmt"
 	"io"
+	"io/fs"
 	"os"
 	"path/filepath"
 	"strings"
@@ -59,6 +60,15 @@ func ReadText(path string) (Text, error) {
 		return Text{}, fmt.Errorf("%s is binary", path)
 	}
 	return DecodeText(content), nil
+}
+
+// LoadText reads a file into its text as ReadText does. A missing file gives empty text and no error.
+func LoadText(path string) (Text, error) {
+	text, err := ReadText(path)
+	if errors.Is(err, fs.ErrNotExist) {
+		return Text{}, nil
+	}
+	return text, err
 }
 
 // DecodeText decodes bytes already in memory. A byte order mark means UTF-8 with one. Without it, valid UTF-8 is

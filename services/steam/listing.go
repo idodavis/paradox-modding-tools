@@ -1,5 +1,5 @@
-// Package steam publishes mods to the Steam Workshop. It keeps a mod's listing in the mod's own files and compares an
-// upload with Steam. It uploads from a second copy of the app, which loads the game's own copy of Steam's library.
+// Package steam publishes mods to the Steam Workshop. It keeps each mod's listings in the mod's own files and compares
+// them with Steam.
 package steam
 
 import (
@@ -7,22 +7,25 @@ import (
 	"cmp"
 	"crypto/sha256"
 	"encoding/hex"
+	"encoding/json"
 	"errors"
+	"fmt"
 	"io"
 	"io/fs"
-	"maps"
 	"net/url"
 	"os"
 	"path"
 	"path/filepath"
+	"reflect"
+	"regexp"
 	"slices"
 	"strconv"
 	"strings"
-	"time"
+	"sync"
 
 	"github.com/samber/lo"
 	"github.com/wailsapp/wails/v3/pkg/application"
-	"golang.org/x/sync/errgroup"
+	"golang.org/x/mod/semver"
 
 	"paradox-modding-tools/internal/files"
 	"paradox-modding-tools/internal/game"
@@ -33,191 +36,186 @@ import (
 // A Preview is one picture or video in the Workshop page's gallery.
 type Preview struct {
 	Path  string `json:"path"`
-	Type  string `json:"type"`  // image, video
-	URL   string `json:"url"`   // a video's
-	Video string `json:"video"` // a video's id
-	Order int    `json:"order"`
+	Type  string `json:"type"`  // image or video
+	URL   string `json:"url"`   // the address of a video
+	Video string `json:"video"` // the id of a video
+	Bytes int64  `json:"bytes"` // the size of a picture, up to 1 MB on Steam
 }
 
-// A Listing is what a mod's Workshop page shows, as the mod's own files hold it.
+// A Dependency is one mod that a listing's mod depends on.
+type Dependency struct {
+	Name       string `json:"name"`       // as the descriptor names it
+	WorkshopID string `json:"workshopId"` // the Workshop id of the workspace mod it names, or ""
+}
+
+// A Listing is one of a mod's Workshop pages, as the mod's own files hold it.
 type Listing struct {
-	WorkshopID       string    `json:"workshopId"`
-	Title            string    `json:"title"`
-	Version          string    `json:"version"`
-	SupportedVersion string    `json:"supportedVersion"`
-	Description      string    `json:"description"`
-	BBCode           string    `json:"bbcode"` // the description as Steam and Paradox Mods take it
-	Source           string    `json:"source"` // markdown, bbcode, steam
-	DescriptionPath  string    `json:"descriptionPath"`
-	Changelog        string    `json:"changelog"`
-	ChangelogPath    string    `json:"changelogPath"`
-	Thumbnail        string    `json:"thumbnail"`
-	Previews         []Preview `json:"previews"`
-	Tags             []string  `json:"tags"`
-	DLC              []string  `json:"dlc"`
-	Visibility       string    `json:"visibility"` // private, friends, public, unlisted; chosen at each upload
+	Key              string       `json:"key"` // "" for the mod's own listing, else the game version of an older one
+	WorkshopID       string       `json:"workshopId"`
+	Title            string       `json:"title"`
+	Version          string       `json:"version"`
+	SupportedVersion string       `json:"supportedVersion"`
+	Description      string       `json:"description"` // BBCode
+	Changelog        string       `json:"changelog"`   // BBCode, the next upload's change note
+	Thumbnail        string       `json:"thumbnail"`
+	Previews         []Preview    `json:"previews"`
+	Tags             []string     `json:"tags"`       // the category tags
+	VersionTag       string       `json:"versionTag"` // the version tag the supported version picks, or "" for none
+	DLC              []string     `json:"dlc"`
+	Dependencies     []Dependency `json:"dependencies"`
+	Source           string       `json:"source"` // the zip of an older listing, or "" for the mod's folder
 }
 
-// An Upload is the set of files a mod's next upload sends.
+// An Upload is the files that a mod's next upload sends.
 type Upload struct {
 	Files    []files.File `json:"files"`
 	Bytes    int64        `json:"bytes"`    // the total size of the files
-	Excluded []string     `json:"excluded"` // the rels the rules left out
+	Excluded []string     `json:"excluded"` // the paths that the rules leave out
 }
 
-// A Snapshot is the record of what the last upload of an item sent. The next compare reads it to see what changed.
-type Snapshot struct {
-	WorkshopID string            `json:"workshopId"`
-	UploadedAt time.Time         `json:"uploadedAt"`
-	Files      map[string]string `json:"files"` // the hash of each file, by rel
-	Listing    Listing           `json:"listing"`
-	Dir        string            `json:"dir"`        // PMT's one copy of the files: the upload's, or Steam's downloaded
-	Downloaded bool              `json:"downloaded"` // the files are Steam's copy of the item rather than an upload's
-}
-
-// Details is what Steam reports about an item.
-type Details struct {
-	Title       string    `json:"title"`
-	Description string    `json:"description"`
-	UpdatedAt   time.Time `json:"updatedAt"`
-	Visibility  string    `json:"visibility"`
-	Tags        []string  `json:"tags"`
-	Subscribers int       `json:"subscribers"`
-}
-
-// A Comparison is what the next upload changes against the last one, next to what Steam reports about the item.
-type Comparison struct {
-	Added      []string  `json:"added"`   // the rels of the files the last upload did not have
-	Changed    []string  `json:"changed"` // the rels of the files that differ from the last upload's
-	Removed    []string  `json:"removed"` // the rels of the files the last upload had and the next one lacks
-	Listing    []string  `json:"listing"` // the listing's fields that differ from the last upload's: title, description …
-	Last       Listing   `json:"last"`    // the last upload's listing
-	UploadedAt time.Time `json:"uploadedAt"`
-	Downloaded bool      `json:"downloaded"` // the last upload's files are Steam's copy, downloaded
-	Steam      *Details  `json:"steam,omitempty"`
-	Status     string    `json:"status"` // the next upload against the item: new, unknown, same or changed
-}
-
-// The sources a description may be kept in, and the types of preview.
+// The types of preview.
 const (
-	sourceMarkdown = "markdown"
-	sourceBBCode   = "bbcode"
-	sourceSteam    = "steam"
-	previewImage   = "image"
-	previewVideo   = "video"
+	previewImage = "image"
+	previewVideo = "video"
 )
 
-// The states of a mod's next upload against its Workshop item.
+// The files of a listing's page. They are in the mod's .workshop folder, or in a folder inside it for an older listing.
 const (
-	statusNew     = "new"     // the mod has no item yet
-	statusUnknown = "unknown" // there is no copy of the last upload to compare with
-	statusSame    = "same"    // the next upload sends what the last one did
-	statusChanged = "changed" // the next upload changes files or the listing
+	workshopDir     = ".workshop"
+	descriptionFile = "description.bbcode"
+	changelogFile   = "changelog.bbcode"
+	dlcFile         = "dlc.txt"
+	previewsDir     = "previews"
+	videosFile      = previewsDir + "/videos.txt"
+	listingFile     = "listing.json" // an older listing's own fields
 )
 
-// The files a mod keeps for its Workshop page, from the mod's folder, and the file that names what the mod's
-// repository leaves out.
+// The files in a mod's folder that list what git and the uploads leave out.
 const (
-	workshopDir   = "workshop"
-	previewsDir   = workshopDir + "/previews"
-	videosFile    = previewsDir + "/videos.txt"
-	changelogFile = workshopDir + "/changelog.bbcode"
-	dlcFile       = workshopDir + "/dlc.txt"
 	gitignoreFile = ".gitignore"
 	ignoreFile    = ".workshop-ignore"
 )
 
-// maxPreviews is the most pictures and videos Steam takes in an item's gallery.
-const maxPreviews = 10
-
 // previewTypes are the types a preview may have.
 var previewTypes = []string{previewImage, previewVideo}
 
-// descriptionSources are the sources a description may come from.
-var descriptionSources = []string{sourceMarkdown, sourceBBCode, sourceSteam}
-
-// contentExtensions are the extensions of a gallery's pictures by their content type.
+// contentExtensions maps the content type of a picture to its file extension.
 var contentExtensions = map[string]string{"image/png": ".png", "image/jpeg": ".jpg", "image/gif": ".gif", "image/webp": ".webp"}
 
-// descriptionFiles are the files a description may be kept in, in the order they are tried.
-var descriptionFiles = []struct{ source, rel string }{
-	{sourceMarkdown, workshopDir + "/description.md"},
-	{sourceBBCode, workshopDir + "/description.bbcode"},
-}
+// listingVersion matches the game version of an older listing, such as 1.19, 1.19.2 or 1.19.*.
+var listingVersion = regexp.MustCompile(`^\d+\.\d+(\.\d+){0,2}(\.\*)?$`)
 
-// ReadListing reads a mod's listing from its descriptor and its workshop folder. The descriptor is read from the
-// mod's folder, so the listing is as the last write left it. It returns an error if the workspace has no such mod or a
-// file cannot be read.
-func (stm *Service) ReadListing(modID string) (Listing, error) {
+// extractTurn keeps two extractions of a listing's zip from running at once.
+var extractTurn sync.Mutex
+
+// ReadListing returns one of a mod's listings. The mod's own listing comes from its descriptor, and an older one from
+// its listing.json. It returns an error if the workspace has no such mod or listing, or a file cannot be read.
+func (stm *Service) ReadListing(modID, key string) (Listing, error) {
 	ws, mod, err := stm.findMod(modID)
 	if err != nil {
 		return Listing{}, err
 	}
-	descriptor, err := workspace.ReadDescriptor(ws.Game, mod.Dir)
+	dir, err := findListingDir(mod.Dir, key)
 	if err != nil {
 		return Listing{}, err
 	}
-	listing := Listing{
-		WorkshopID:       cmp.Or(mod.WorkshopID, descriptor.WorkshopID),
+	listing, err := loadRecord(ws.Game, mod, dir, key)
+	if err != nil {
+		return Listing{}, err
+	}
+	versions := stm.listVersionTags(ws.Game.SteamAppID)
+	listing.Tags = toCategoryTags(versions, listing.Tags)
+	listing.VersionTag = resolveVersionTag(versions, listing.SupportedVersion)
+	listing.Dependencies = resolveDependencies(stm.Workspace.State().Mods, mod.Descriptor.Dependencies)
+	return loadPage(dir, listing)
+}
+
+// resolveListingDir returns the folder that holds the page files of one of a mod's listings.
+func resolveListingDir(modDir, key string) string {
+	return files.Join(modDir, path.Join(workshopDir, key))
+}
+
+// findListingDir returns the folder that holds the page files of one of a mod's listings. It returns an error if the
+// mod has no such older listing.
+func findListingDir(modDir, key string) (string, error) {
+	dir := resolveListingDir(modDir, key)
+	if key != "" && !files.IsFolder(dir) {
+		return "", fmt.Errorf("the mod has no listing for game %s", key)
+	}
+	return dir, nil
+}
+
+// loadRecord returns the fields of a listing that its descriptor or its listing.json holds. An older listing's paths
+// come back as full paths. It returns an error if the file cannot be read.
+func loadRecord(row *game.Game, mod workspace.Mod, dir, key string) (Listing, error) {
+	if key != "" {
+		listing, err := app.LoadJSON[Listing](filepath.Join(dir, listingFile))
+		listing = toRecord(listing)
+		listing.Key = key
+		for _, file := range []*string{&listing.Thumbnail, &listing.Source} {
+			if *file != "" && !filepath.IsAbs(*file) {
+				*file = files.Join(mod.Dir, *file)
+			}
+		}
+		return listing, err
+	}
+	descriptor, err := workspace.ReadDescriptor(row, mod.Dir)
+	if err != nil {
+		return Listing{}, err
+	}
+	mod.Descriptor = descriptor
+	return toRecord(Listing{
+		WorkshopID:       mod.ResolveWorkshopID(),
 		Title:            descriptor.Name,
 		Version:          descriptor.Version,
 		SupportedVersion: descriptor.SupportedVersion,
 		Thumbnail:        cmp.Or(descriptor.Thumbnail, mod.Thumbnail),
-		Tags:             append([]string{}, descriptor.Tags...),
+		Tags:             descriptor.Tags,
+	}), nil
+}
+
+// toRecord returns a copy of a listing with only the fields that its descriptor or its listing.json holds.
+func toRecord(listing Listing) Listing {
+	return Listing{
+		WorkshopID:       listing.WorkshopID,
+		Title:            listing.Title,
+		Version:          listing.Version,
+		SupportedVersion: listing.SupportedVersion,
+		Thumbnail:        listing.Thumbnail,
+		Tags:             append([]string{}, listing.Tags...),
+		Source:           listing.Source,
 	}
-	// a chosen file the mod lacks reads as no text, and the first write makes it
-	listing.Source, listing.DescriptionPath = findDescription(mod)
-	if listing.DescriptionPath != "" {
-		text, err := files.ReadText(listing.DescriptionPath)
-		if err != nil && !errors.Is(err, fs.ErrNotExist) {
+}
+
+// resolveDependencies returns a descriptor's dependencies, each with the Workshop id of the workspace mod it names.
+func resolveDependencies(mods []workspace.Mod, dependencies []workspace.Dependency) []Dependency {
+	return lo.Map(dependencies, func(dependency workspace.Dependency, _ int) Dependency {
+		mod, _ := workspace.FindMod(mods, dependency)
+		return Dependency{Name: dependency.ID, WorkshopID: mod.ResolveWorkshopID()}
+	})
+}
+
+// loadPage returns a listing with its page files read from its folder. A missing file reads as no text. It returns an
+// error if a file cannot be read.
+func loadPage(dir string, listing Listing) (Listing, error) {
+	texts := map[string]*string{descriptionFile: &listing.Description, changelogFile: &listing.Changelog}
+	for file, text := range texts {
+		content, err := files.LoadText(files.Join(dir, file))
+		if err != nil {
 			return Listing{}, err
 		}
-		listing.Description = text.Text
+		*text = content.Text
 	}
-	// Steam and Paradox Mods take BBCode, so a Markdown description is converted and any other is sent as written
-	listing.BBCode = listing.Description
-	if listing.Source == sourceMarkdown {
-		listing.BBCode = stm.ToBBCode(listing.Description)
-	}
-	changelog := files.Join(mod.Dir, changelogFile)
-	text, err := files.ReadText(changelog)
-	if err == nil {
-		listing.Changelog, listing.ChangelogPath = text.Text, changelog
-	} else if !errors.Is(err, fs.ErrNotExist) {
-		return Listing{}, err
-	}
-	dlc, err := files.ReadText(files.Join(mod.Dir, dlcFile))
-	if err != nil && !errors.Is(err, fs.ErrNotExist) {
+	dlc, err := files.LoadText(files.Join(dir, dlcFile))
+	if err != nil {
 		return Listing{}, err
 	}
 	listing.DLC = strings.Fields(dlc.Text)
-	listing.Previews, err = listPreviews(mod.Dir)
+	listing.Previews, err = listPreviews(dir)
 	return listing, err
 }
 
-// findDescription returns where a mod's description comes from: its source and the full path of its file, "" for
-// Steam's own text. A chosen Markdown or BBCode source is kept in the chosen file, else in the source's own. A mod
-// that chose no source takes the first description file it has, else Steam's own text.
-func findDescription(mod workspace.Mod) (source, file string) {
-	for _, row := range descriptionFiles {
-		switch {
-		case mod.DescriptionSource == row.source:
-			return row.source, files.Join(mod.Dir, cmp.Or(mod.DescriptionFile, row.rel))
-		case mod.DescriptionSource == "" && isFile(files.Join(mod.Dir, row.rel)):
-			return row.source, files.Join(mod.Dir, row.rel)
-		}
-	}
-	return sourceSteam, ""
-}
-
-// isFile reports whether the given path names a file, rather than a folder or nothing.
-func isFile(file string) bool {
-	stat, err := os.Stat(file)
-	return err == nil && !stat.IsDir()
-}
-
-// listPreviews returns the gallery of a mod: its pictures in the order of their names, then its videos in the
-// order of the list that names them.
+// listPreviews returns the gallery in a listing's folder, pictures first and then videos.
 func listPreviews(dir string) ([]Preview, error) {
 	entries, err := os.ReadDir(files.Join(dir, previewsDir))
 	if err != nil && !errors.Is(err, fs.ErrNotExist) {
@@ -226,135 +224,296 @@ func listPreviews(dir string) ([]Preview, error) {
 	previews := []Preview{}
 	for _, entry := range entries {
 		rel := path.Join(previewsDir, entry.Name())
-		if !entry.IsDir() && rel != videosFile {
-			previews = append(previews, Preview{Path: files.Join(dir, rel), Type: previewImage})
+		if entry.IsDir() || rel == videosFile {
+			continue
 		}
+		stat, err := entry.Info()
+		if err != nil {
+			return nil, err
+		}
+		previews = append(previews, Preview{Path: files.Join(dir, rel), Type: previewImage, Bytes: stat.Size()})
 	}
 	urls, err := listVideos(dir)
 	for _, url := range urls {
 		previews = append(previews, Preview{Type: previewVideo, URL: url, Video: toVideoID(url)})
 	}
-	for position := range previews {
-		previews[position].Order = position
-	}
 	return previews, err
 }
 
-// listVideos returns the URLs of a mod's gallery videos, one per line of its list. A mod with no list has none.
+// listVideos returns the addresses of the videos in a listing's gallery. A folder with no list of videos has none.
 func listVideos(dir string) ([]string, error) {
-	text, err := files.ReadText(files.Join(dir, videosFile))
-	if err != nil && !errors.Is(err, fs.ErrNotExist) {
-		return nil, err
-	}
-	return strings.Fields(text.Text), nil
+	text, err := files.LoadText(files.Join(dir, videosFile))
+	return strings.Fields(text.Text), err
 }
 
-// WriteListing writes a mod's listing back to its files: the descriptor's fields and the workshop folder's. It writes
-// only the files whose text differs from the current listing's. A new Workshop id is written into the mod's record
-// too, and "" takes it out of both.
-func (stm *Service) WriteListing(modID string, listing Listing) error {
+// WriteListing writes the changed parts of a mod's listing, but its gallery and Workshop id. It returns an error if
+// there is no such mod or listing, or a file cannot be written.
+func (stm *Service) WriteListing(modID, key string, listing Listing) error {
 	ws, mod, err := stm.findMod(modID)
 	if err != nil {
 		return err
 	}
-	current, err := stm.ReadListing(modID)
+	current, err := stm.ReadListing(modID, key)
 	if err != nil {
 		return err
 	}
-	// a thumbnail picked from elsewhere is copied into the folder the game keeps it in
-	if listing.Thumbnail != "" && !files.IsUnder(mod.Dir, listing.Thumbnail) {
-		content, err := os.ReadFile(listing.Thumbnail)
-		if err != nil {
-			return err
-		}
-		thumbnail := files.Join(mod.Dir, path.Join(cmp.Or(ws.Game.ThumbnailDir, workshopDir), filepath.Base(listing.Thumbnail)))
-		if err := stm.writeFile(thumbnail, string(content)); err != nil {
-			return err
-		}
-		listing.Thumbnail = thumbnail
-	}
-	if err := writeDescriptor(ws.Game, mod, current, listing); err != nil {
+	listing.WorkshopID = current.WorkshopID
+	if err := stm.writeChanges(ws, mod, current, listing); err != nil {
 		return err
-	}
-	if listing.WorkshopID != current.WorkshopID {
-		mod.WorkshopID = listing.WorkshopID
-		if err := stm.Workspace.UpdateMod(ws.ID, mod.Mod); err != nil {
-			return err
-		}
-	}
-	texts := []struct {
-		file, text string
-		differs    bool
-	}{
-		{current.DescriptionPath, listing.Description, listing.Description != current.Description},
-		{files.Join(mod.Dir, changelogFile), listing.Changelog, listing.Changelog != current.Changelog},
-		{files.Join(mod.Dir, dlcFile), strings.Join(listing.DLC, "\n") + "\n", !slices.Equal(listing.DLC, current.DLC)},
-	}
-	for _, row := range texts {
-		if !row.differs || row.file == "" {
-			continue
-		}
-		if err := stm.writeFile(row.file, row.text); err != nil {
-			return err
-		}
 	}
 	application.Get().Event.Emit(EventListingChanged, modID)
 	return nil
 }
 
-// writeDescriptor writes the descriptor's fields of a listing if any of them differs from the current listing's. It
-// reads the descriptor again first, so the fields the listing does not hold stay as they are. It returns an error if
-// the descriptor cannot be read or written.
-func writeDescriptor(row *game.Game, mod workspace.Mod, current, listing Listing) error {
-	if listing.Title == current.Title && listing.Version == current.Version &&
-		listing.SupportedVersion == current.SupportedVersion && slices.Equal(listing.Tags, current.Tags) &&
-		listing.Thumbnail == current.Thumbnail && listing.WorkshopID == current.WorkshopID {
+// writeChanges writes the files of a listing whose text differs from the current listing's. A thumbnail from outside
+// the mod is copied into it first. It returns an error if a file cannot be read or written.
+func (stm *Service) writeChanges(ws *workspace.Session, mod workspace.Mod, current, listing Listing) error {
+	listing.Key = current.Key
+	dir := resolveListingDir(mod.Dir, listing.Key)
+	if listing.Thumbnail != "" && !files.IsUnder(mod.Dir, listing.Thumbnail) {
+		content, err := os.ReadFile(listing.Thumbnail)
+		if err != nil {
+			return err
+		}
+		folder := lo.Ternary(listing.Key == "", files.Join(mod.Dir, ws.Game.ThumbnailDir), dir)
+		thumbnail := filepath.Join(folder, filepath.Base(listing.Thumbnail))
+		if err := stm.writeFile(thumbnail, string(content)); err != nil {
+			return err
+		}
+		listing.Thumbnail = thumbnail
+	}
+	if err := stm.writeRecord(ws, mod, current, listing); err != nil {
+		return err
+	}
+	texts := []struct {
+		file, text string
+		differs    bool
+	}{
+		{descriptionFile, listing.Description, listing.Description != current.Description},
+		{changelogFile, listing.Changelog, listing.Changelog != current.Changelog},
+		{dlcFile, strings.Join(listing.DLC, "\n") + "\n", !slices.Equal(listing.DLC, current.DLC)},
+	}
+	for _, row := range texts {
+		if !row.differs {
+			continue
+		}
+		if err := stm.writeFile(files.Join(dir, row.file), row.text); err != nil {
+			return err
+		}
+	}
+	return nil
+}
+
+// writeRecord writes a listing's record to its descriptor or listing.json if it changed. It returns an error if a
+// file cannot be written.
+func (stm *Service) writeRecord(ws *workspace.Session, mod workspace.Mod, current, listing Listing) error {
+	if reflect.DeepEqual(toRecord(listing), toRecord(current)) {
 		return nil
 	}
-	descriptor, err := workspace.ReadDescriptor(row, mod.Dir)
+	if listing.Key != "" {
+		record := toRecord(listing)
+		for _, file := range []*string{&record.Thumbnail, &record.Source} {
+			if rel, ok := files.ToRel(mod.Dir, *file); ok {
+				*file = rel
+			}
+		}
+		content, err := json.MarshalIndent(record, "", "  ")
+		if err != nil {
+			return err
+		}
+		return stm.writeFile(files.Join(resolveListingDir(mod.Dir, listing.Key), listingFile), string(content)+"\n")
+	}
+	descriptor, err := workspace.ReadDescriptor(ws.Game, mod.Dir)
 	if err != nil {
 		return err
 	}
-	descriptor.Name, descriptor.Tags, descriptor.WorkshopID = listing.Title, listing.Tags, listing.WorkshopID
+	listing.VersionTag = resolveVersionTag(stm.listVersionTags(ws.Game.SteamAppID), listing.SupportedVersion)
+	descriptor.Name, descriptor.Tags, descriptor.WorkshopID = listing.Title, toSentTags(listing), listing.WorkshopID
 	descriptor.Version, descriptor.SupportedVersion, descriptor.Thumbnail =
 		listing.Version, listing.SupportedVersion, listing.Thumbnail
-	return workspace.WriteDescriptor(row, mod.Dir, descriptor)
+	if err := workspace.WriteDescriptor(ws.Game, mod.Dir, descriptor); err != nil {
+		return err
+	}
+	if listing.WorkshopID == current.WorkshopID {
+		return nil
+	}
+	mod.WorkshopID = listing.WorkshopID
+	return stm.Workspace.UpdateMod(ws.ID, mod.Mod)
 }
 
-// writeFile writes a text into a file inside a mod's folder in UTF-8. The write goes through the workspace, which
-// refuses a path outside the mods.
+// toSentTags returns the tags an upload of a listing sends, with the version tag last.
+func toSentTags(listing Listing) []string {
+	if listing.VersionTag == "" {
+		return listing.Tags
+	}
+	return append(slices.Clip(listing.Tags), listing.VersionTag)
+}
+
+// writeFile writes a text in UTF-8 to a file in a mod's folder. It returns an error for a file outside the mods.
 func (stm *Service) writeFile(file, text string) error {
 	return stm.Workspace.Write(file, files.Text{Text: text, Encoding: files.EncodingUTF8})
 }
 
-// LinkItem links a mod to an existing Workshop item, named by its id or by the address of its Workshop page. The id
-// is written into the mod's descriptor and its record. An empty text unlinks the mod, taking the id out of both. The
-// item linked before loses PMT's kept copy, unless another mod still links it. It returns an error if the text names
-// no Workshop item.
-func (stm *Service) LinkItem(modID, item string) error {
+// ListListings returns a mod's listings, its own first and then the older ones, newest game version first. It returns
+// an error if the workspace has no such mod or a listing cannot be read.
+func (stm *Service) ListListings(modID string) ([]Listing, error) {
+	_, mod, err := stm.findMod(modID)
+	if err != nil {
+		return nil, err
+	}
+	entries, err := os.ReadDir(files.Join(mod.Dir, workshopDir))
+	if err != nil && !errors.Is(err, fs.ErrNotExist) {
+		return nil, err
+	}
+	// a folder that holds a listing.json is an older listing
+	keys := lo.FilterMap(entries, func(entry os.DirEntry, _ int) (string, bool) {
+		_, err := os.Stat(filepath.Join(resolveListingDir(mod.Dir, entry.Name()), listingFile))
+		return entry.Name(), entry.IsDir() && err == nil
+	})
+	slices.SortFunc(keys, func(first, second string) int { return semver.Compare("v"+second, "v"+first) })
+	listings := []Listing{}
+	for _, key := range append([]string{""}, keys...) {
+		listing, err := stm.ReadListing(modID, key)
+		if err != nil {
+			return nil, err
+		}
+		listings = append(listings, listing)
+	}
+	return listings, nil
+}
+
+// CreateListing makes an older listing of a mod for a game version from a zip. It returns an error if the version is
+// not valid or taken, or the zip holds no descriptor.
+func (stm *Service) CreateListing(modID, supportedVersion, zip string) (Listing, error) {
+	ws, mod, err := stm.findMod(modID)
+	if err != nil {
+		return Listing{}, err
+	}
+	key, supported, err := resolveListingVersion(mod.Dir, supportedVersion)
+	if err != nil {
+		return Listing{}, err
+	}
+	own, err := stm.ReadListing(modID, "")
+	if err != nil {
+		return Listing{}, err
+	}
+	_, descriptor, err := loadZip(ws.Game, stm.Workspace.Config.Dirs.Cache, mod.ID+"/"+key, zip)
+	if err != nil {
+		return Listing{}, err
+	}
+	return stm.createListing(ws, mod, Listing{
+		Key: key, Title: own.Title + " (" + key + ")", Version: descriptor.Version, SupportedVersion: supported,
+		Tags: own.Tags, Thumbnail: own.Thumbnail, Description: own.Description, DLC: own.DLC, Source: zip,
+	})
+}
+
+// resolveListingVersion returns the key and supported version of an older listing, such as 1.19.* for 1.19. It returns
+// an error if the version is not valid or taken.
+func resolveListingVersion(modDir, version string) (key, supported string, err error) {
+	supported = strings.TrimSpace(version)
+	if !listingVersion.MatchString(supported) {
+		return "", "", fmt.Errorf("%q is not a game version: write one such as 1.19 or 1.19.2", version)
+	}
+	if strings.Count(supported, ".") == 1 {
+		supported += ".*"
+	}
+	key = strings.TrimSuffix(supported, ".*")
+	if files.IsFolder(resolveListingDir(modDir, key)) {
+		return "", "", fmt.Errorf("the mod has a listing for game %s already", key)
+	}
+	return key, supported, nil
+}
+
+// createListing writes an older listing of a mod, downloads its gallery and returns it as stored. It returns an error
+// if a file cannot be written or a picture cannot be downloaded.
+func (stm *Service) createListing(ws *workspace.Session, mod workspace.Mod, listing Listing) (Listing, error) {
+	if err := stm.writeChanges(ws, mod, Listing{Key: listing.Key}, listing); err != nil {
+		return Listing{}, err
+	}
+	if err := stm.addPreviews(resolveListingDir(mod.Dir, listing.Key), listing.Previews); err != nil {
+		return Listing{}, err
+	}
+	application.Get().Event.Emit(EventListingChanged, mod.ID)
+	return stm.ReadListing(mod.ID, listing.Key)
+}
+
+// ImportListing makes an older listing of a mod from a Workshop item, saving its files as a zip. It returns an error
+// if Steam has no such item or its version is taken.
+func (stm *Service) ImportListing(modID, item, zip string) (Listing, error) {
+	ws, mod, err := stm.findMod(modID)
+	if err != nil {
+		return Listing{}, err
+	}
+	workshopID, err := toWorkshopID(item)
+	if err != nil || workshopID == "" {
+		return Listing{}, cmp.Or(err, errors.New("name the Workshop item by its id or the address of its page"))
+	}
+	stm.removeAnswer(workshopID)
+	answer := stm.resolveAnswer(ws, workshopID)
+	if answer.Reason != "" {
+		return Listing{}, errors.New(answer.Reason)
+	}
+	cacheDir := stm.Workspace.Config.Dirs.Cache
+	if _, ok := LoadSnapshot(cacheDir, workshopID); !ok {
+		return Listing{}, errors.New("PMT has no copy of the item's files: try the import again")
+	}
+	snapshotDir := resolveSnapshotDir(cacheDir, workshopID)
+	descriptor, err := workspace.ReadDescriptor(ws.Game, snapshotDir)
+	if err != nil {
+		return Listing{}, fmt.Errorf("the item holds no descriptor of a mod: %w", err)
+	}
+	key, supported, err := resolveListingVersion(mod.Dir, descriptor.SupportedVersion)
+	if err != nil {
+		return Listing{}, fmt.Errorf("PMT cannot make a listing for the game version the item supports: %w", err)
+	}
+	walked, err := files.Walk(files.Root{Dir: snapshotDir})
+	if err == nil {
+		err = writeArchive(zip, walked)
+	}
+	if err != nil {
+		return Listing{}, err
+	}
+	details := answer.Steam
+	return stm.createListing(ws, mod, Listing{
+		Key: key, WorkshopID: workshopID, Title: details.Title, Description: details.Description,
+		Tags:     toCategoryTags(stm.listVersionTags(ws.Game.SteamAppID), details.Tags),
+		Previews: details.Previews, DLC: details.DLC, Version: descriptor.Version, SupportedVersion: supported,
+		Source: zip,
+	})
+}
+
+// LinkItem links a mod's listing to a Workshop item, or unlinks it for "". It returns an error if the text names no
+// item.
+func (stm *Service) LinkItem(modID, key, item string) error {
 	workshopID, err := toWorkshopID(item)
 	if err != nil {
 		return err
 	}
-	listing, err := stm.ReadListing(modID)
+	ws, mod, err := stm.findMod(modID)
 	if err != nil {
 		return err
 	}
-	previous := listing.WorkshopID
-	listing.WorkshopID = workshopID
-	if err := stm.WriteListing(modID, listing); err != nil {
+	current, err := stm.ReadListing(modID, key)
+	if err != nil {
 		return err
 	}
-	return stm.removeItemCopy(previous)
+	listing := current
+	listing.WorkshopID = workshopID
+	if err := stm.writeChanges(ws, mod, current, listing); err != nil {
+		return err
+	}
+	application.Get().Event.Emit(EventListingChanged, modID)
+	return stm.removeItemCopy(current.WorkshopID)
 }
 
-// removeItemCopy deletes PMT's kept copy of a Workshop item's files and the item's snapshot, unless a mod of any
-// workspace still links the item in its record. An empty id has nothing to delete.
+// removeItemCopy deletes PMT's copy of a Workshop item, unless a mod in any workspace still links it. It does nothing
+// for an empty id.
 func (stm *Service) removeItemCopy(workshopID string) error {
 	mods := lo.FlatMap(stm.Workspace.Config.Config().Workspaces, func(ws app.Workspace, _ int) []app.Mod { return ws.Mods })
 	if workshopID == "" || slices.ContainsFunc(mods, func(mod app.Mod) bool { return mod.WorkshopID == workshopID }) {
 		return nil
 	}
+	stm.removeAnswer(workshopID)
 	cacheDir := stm.Workspace.Config.Dirs.Cache
 	return errors.Join(
 		removeCacheDir(cacheDir, resolveSnapshotDir(cacheDir, workshopID)),
@@ -362,8 +521,8 @@ func (stm *Service) removeItemCopy(workshopID string) error {
 	)
 }
 
-// toWorkshopID returns the id of the Workshop item that a text names: the id itself, or the address of the item's
-// page. It returns "" for an empty text, and an error for a text that names no item.
+// toWorkshopID returns the id of the Workshop item that a text names by its id or its page's address. It returns ""
+// for an empty text and an error for a text that names no item.
 func toWorkshopID(item string) (string, error) {
 	text := strings.TrimSpace(item)
 	if page, err := url.Parse(text); err == nil && page.Query().Has("id") {
@@ -379,29 +538,38 @@ func toWorkshopID(item string) (string, error) {
 	return strconv.FormatUint(id, 10), nil
 }
 
-// ListUpload returns the files a mod's next upload sends: the mod's files except those the rules leave out and those
-// that the mod's .gitignore and its own exclusions cover. The rules keep the .metadata folder, which holds the
-// descriptor of Vic3 and EU5, though it starts with a dot.
-func (stm *Service) ListUpload(modID string) (Upload, error) {
-	_, mod, err := stm.findMod(modID)
+// ListUpload returns the files the next upload of a mod's listing sends and leaves out. It returns an error if there
+// is no such mod or listing, or a file cannot be read.
+func (stm *Service) ListUpload(modID, key string) (Upload, error) {
+	ws, mod, err := stm.findMod(modID)
 	if err != nil {
 		return Upload{}, err
 	}
-	walked, err := files.Walk(files.Root{Dir: mod.Dir, Origin: mod.ID})
+	listing, err := stm.ReadListing(modID, key)
 	if err != nil {
 		return Upload{}, err
 	}
-	gitignore, err := files.ReadText(files.Join(mod.Dir, gitignoreFile))
-	if err != nil && !errors.Is(err, fs.ErrNotExist) {
+	return stm.buildUpload(ws, mod, listing)
+}
+
+// buildUpload returns the files that the next upload of a listing of a mod sends, and the ones it leaves out. It
+// returns an error if the listing's zip cannot be read or a file cannot be read.
+func (stm *Service) buildUpload(ws *workspace.Session, mod workspace.Mod, listing Listing) (Upload, error) {
+	dir, err := stm.resolveSource(ws, mod, listing)
+	if err != nil {
 		return Upload{}, err
 	}
-	patterns := append(lo.Map(Rules, func(rule Rule, _ int) string { return rule.Pattern }), "!"+game.MetadataDir+"/")
-	ignores := []files.Ignore{
-		files.ParseIgnore(strings.Join(patterns, "\n")), files.ParseIgnore(gitignore.Text), files.ParseIgnore(mod.Ignore),
+	ignores, err := buildIgnores(mod)
+	if err != nil {
+		return Upload{}, err
+	}
+	walked, err := files.Walk(files.Root{Dir: dir, Origin: mod.ID})
+	if err != nil {
+		return Upload{}, err
 	}
 	upload := Upload{Files: []files.File{}, Excluded: []string{}}
 	for _, file := range walked {
-		if slices.ContainsFunc(ignores, func(ignore files.Ignore) bool { return ignore.Match(file.Rel, false) }) {
+		if isExcluded(ignores, file.Rel) {
 			upload.Excluded = append(upload.Excluded, file.Rel)
 			continue
 		}
@@ -415,26 +583,149 @@ func (stm *Service) ListUpload(modID string) (Upload, error) {
 	return upload, nil
 }
 
-// WriteZip writes the files of a mod's next upload as a zip at the given path. A zip it fails to write is removed.
-func (stm *Service) WriteZip(modID, path string) error {
-	upload, err := stm.ListUpload(modID)
+// buildIgnores returns what every upload of a mod leaves out, by the rules, the mod's .gitignore and its own
+// exclusions. The rules keep the .metadata folder. It returns an error if the .gitignore cannot be read.
+func buildIgnores(mod workspace.Mod) ([]files.Ignore, error) {
+	gitignore, err := files.LoadText(files.Join(mod.Dir, gitignoreFile))
+	if err != nil {
+		return nil, err
+	}
+	patterns := append(lo.Map(Rules, func(rule Rule, _ int) string { return rule.Pattern }), "!"+game.MetadataDir+"/")
+	return []files.Ignore{
+		files.ParseIgnore(strings.Join(patterns, "\n")), files.ParseIgnore(gitignore.Text), files.ParseIgnore(mod.Ignore),
+	}, nil
+}
+
+// isExcluded reports whether any of the ignores covers a file.
+func isExcluded(ignores []files.Ignore, rel string) bool {
+	return slices.ContainsFunc(ignores, func(ignore files.Ignore) bool { return ignore.Match(rel, false) })
+}
+
+// resolveSource returns the folder a mod's listing uploads from. It returns an error if an older listing's zip is
+// missing or unreadable.
+func (stm *Service) resolveSource(ws *workspace.Session, mod workspace.Mod, listing Listing) (string, error) {
+	if listing.Key == "" {
+		return mod.Dir, nil
+	}
+	if listing.Source == "" {
+		return "", fmt.Errorf("the listing for game %s names no zip to take its files from", listing.Key)
+	}
+	dir, descriptor, err := loadZip(ws.Game, stm.Workspace.Config.Dirs.Cache, mod.ID+"/"+listing.Key, listing.Source)
+	if err != nil {
+		return "", err
+	}
+	if descriptor.Name == listing.Title && descriptor.Version == listing.Version &&
+		descriptor.SupportedVersion == listing.SupportedVersion && descriptor.WorkshopID == listing.WorkshopID {
+		return dir, nil
+	}
+	descriptor.Name, descriptor.Version, descriptor.SupportedVersion, descriptor.WorkshopID =
+		listing.Title, listing.Version, listing.SupportedVersion, listing.WorkshopID
+	return dir, workspace.WriteDescriptor(ws.Game, dir, descriptor)
+}
+
+// loadZip returns the cache folder holding a zip's files and the mod's descriptor in it, extracting the zip if it
+// changed. It returns an error if the zip cannot be read or holds no descriptor.
+func loadZip(row *game.Game, cacheDir, listing, zip string) (string, workspace.Descriptor, error) {
+	extractTurn.Lock()
+	defer extractTurn.Unlock()
+	stat, err := os.Stat(zip)
+	if err != nil {
+		return "", workspace.Descriptor{}, err
+	}
+	digest := sha256.Sum256([]byte(listing))
+	dir := filepath.Join(cacheDir, "listing-"+hex.EncodeToString(digest[:8]))
+	stamp := fmt.Sprintf("%s\n%d\n%d\n", files.ToKey(zip), stat.Size(), stat.ModTime().UnixNano())
+	if kept, err := os.ReadFile(dir + ".stamp"); err != nil || string(kept) != stamp || !files.IsFolder(dir) {
+		if err := extractZip(cacheDir, zip, dir, stamp); err != nil {
+			return "", workspace.Descriptor{}, err
+		}
+	}
+	descriptor, err := workspace.ReadDescriptor(row, dir)
+	if err != nil {
+		return "", workspace.Descriptor{}, fmt.Errorf("the zip holds no descriptor of a mod: %w", err)
+	}
+	return dir, descriptor, nil
+}
+
+// extractZip extracts a zip into a listing's cache folder. It returns an error if the zip cannot be read or names a
+// file outside its folder.
+func extractZip(cacheDir, zip, dir, stamp string) error {
+	temp, err := os.MkdirTemp(cacheDir, "copy-")
 	if err != nil {
 		return err
 	}
+	if err := writeEntries(zip, temp); err != nil {
+		return errors.Join(err, removeCacheDir(cacheDir, temp))
+	}
+	if err := moveCacheDir(cacheDir, temp, dir); err != nil {
+		return err
+	}
+	return os.WriteFile(dir+".stamp", []byte(stamp), 0o644)
+}
+
+// writeEntries writes the files of a zip into a folder. A top folder that holds every file is dropped from the paths.
+// Links are skipped. It returns an error if the zip cannot be read or names a path outside the folder.
+func writeEntries(zipFile, dir string) error {
+	archive, err := zip.OpenReader(zipFile)
+	if err != nil {
+		return err
+	}
+	defer func() { _ = archive.Close() }()
+	entries := lo.Filter(archive.File, func(entry *zip.File, _ int) bool {
+		return !entry.FileInfo().IsDir() && entry.Mode()&fs.ModeSymlink == 0
+	})
+	top, _, _ := strings.Cut(lo.FirstOr(entries, &zip.File{}).Name, "/")
+	if !lo.EveryBy(entries, func(entry *zip.File) bool { return strings.HasPrefix(entry.Name, top+"/") }) {
+		top = ""
+	}
+	for _, entry := range entries {
+		target := files.Join(dir, strings.TrimPrefix(entry.Name, top+"/"))
+		if !files.IsUnder(dir, target) {
+			return fmt.Errorf("the zip names %s, which is outside its own folder", entry.Name)
+		}
+		if err := writeEntry(entry, target); err != nil {
+			return err
+		}
+	}
+	return nil
+}
+
+// writeEntry writes one file of a zip to disk, making its folder first.
+func writeEntry(entry *zip.File, target string) error {
+	if err := os.MkdirAll(filepath.Dir(target), 0o755); err != nil {
+		return err
+	}
+	reader, err := entry.Open()
+	if err != nil {
+		return err
+	}
+	defer func() { _ = reader.Close() }()
+	file, err := os.Create(target)
+	if err != nil {
+		return err
+	}
+	_, err = io.Copy(file, reader)
+	return errors.Join(err, file.Close())
+}
+
+// WriteZip writes the files of a mod's next upload as a zip. A zip it fails to write is removed.
+func (stm *Service) WriteZip(modID, path string) error {
+	upload, err := stm.ListUpload(modID, "")
+	if err != nil {
+		return err
+	}
+	return writeArchive(path, upload.Files)
+}
+
+// writeArchive writes files as a zip, each at its path from its own folder. A zip it fails to write is removed.
+func writeArchive(path string, list []files.File) error {
 	zipFile, err := os.Create(path)
 	if err != nil {
 		return err
 	}
 	archive := zip.NewWriter(zipFile)
-	for _, file := range upload.Files {
-		var content []byte
-		var entry io.Writer
-		if content, err = os.ReadFile(file.Path); err == nil {
-			if entry, err = archive.Create(file.Rel); err == nil {
-				_, err = entry.Write(content)
-			}
-		}
-		if err != nil {
+	for _, file := range list {
+		if err = writeArchiveFile(archive, file); err != nil {
 			break
 		}
 	}
@@ -442,6 +733,30 @@ func (stm *Service) WriteZip(modID, path string) error {
 		return errors.Join(err, os.Remove(path))
 	}
 	return nil
+}
+
+// writeArchiveFile writes one file into a zip, compressed, keeping its modified time. It returns an error if the file
+// cannot be read or the zip cannot take it.
+func writeArchiveFile(archive *zip.Writer, file files.File) error {
+	stat, err := os.Stat(file.Path)
+	if err != nil {
+		return err
+	}
+	header, err := zip.FileInfoHeader(stat)
+	if err != nil {
+		return err
+	}
+	header.Name, header.Method = file.Rel, zip.Deflate
+	entry, err := archive.CreateHeader(header)
+	if err != nil {
+		return err
+	}
+	content, err := os.ReadFile(file.Path)
+	if err != nil {
+		return err
+	}
+	_, err = entry.Write(content)
+	return err
 }
 
 // WriteIgnore writes a mod's upload exclusions to the .workshop-ignore file in its folder.
@@ -459,128 +774,6 @@ func (stm *Service) ReadIgnore(modID string) (string, error) {
 	if err != nil {
 		return "", err
 	}
-	text, err := files.ReadText(files.Join(mod.Dir, ignoreFile))
-	if errors.Is(err, fs.ErrNotExist) {
-		return "", nil
-	}
+	text, err := files.LoadText(files.Join(mod.Dir, ignoreFile))
 	return text.Text, err
-}
-
-// LoadSnapshot loads the snapshot saved for a Workshop item. It returns false if there is none, or if the item has no
-// id.
-func LoadSnapshot(cacheDir, workshopID string) (Snapshot, bool) {
-	snapshot, err := app.LoadJSON[Snapshot](resolveSnapshotPath(cacheDir, workshopID))
-	return snapshot, err == nil && workshopID != "" && snapshot.WorkshopID == workshopID
-}
-
-// SaveSnapshot saves the snapshot of an upload under the id of its Workshop item.
-func SaveSnapshot(cacheDir string, snapshot Snapshot) error {
-	return app.SaveJSON(resolveSnapshotPath(cacheDir, snapshot.WorkshopID), snapshot)
-}
-
-// resolveSnapshotPath returns the path of the file that keeps the snapshot of a Workshop item.
-func resolveSnapshotPath(cacheDir, workshopID string) string {
-	return filepath.Join(cacheDir, "snapshot-"+workshopID+".json")
-}
-
-// resolveSnapshotDir returns the folder that keeps PMT's one copy of a Workshop item's files: those the last upload
-// sent, or Steam's once downloaded.
-func resolveSnapshotDir(cacheDir, workshopID string) string {
-	return filepath.Join(cacheDir, "snapshot-"+workshopID)
-}
-
-// Compare lists what an upload and a listing change against the snapshot of the last upload: the files added, changed
-// and removed, the listing fields that differ, and the upload's status. It carries the given Steam details beside
-// them, nil if there are none.
-func Compare(listing Listing, upload Upload, snapshot Snapshot, details *Details) Comparison {
-	hashes := buildHashes(upload.Files)
-	rels := slices.Sorted(maps.Keys(hashes))
-	comparison := Comparison{
-		Added: lo.Filter(rels, func(rel string, _ int) bool {
-			_, ok := snapshot.Files[rel]
-			return !ok
-		}),
-		Changed: lo.Filter(rels, func(rel string, _ int) bool {
-			last, ok := snapshot.Files[rel]
-			return ok && last != hashes[rel]
-		}),
-		Removed: lo.Filter(slices.Sorted(maps.Keys(snapshot.Files)), func(rel string, _ int) bool {
-			_, ok := hashes[rel]
-			return !ok
-		}),
-		Listing:    compareListing(listing, snapshot.Listing),
-		Last:       snapshot.Listing,
-		UploadedAt: snapshot.UploadedAt,
-		Downloaded: snapshot.Downloaded,
-		Steam:      details,
-	}
-	comparison.Status = toStatus(listing, snapshot, comparison)
-	return comparison
-}
-
-// toStatus returns the status of a mod's next upload: new if the listing names no item, unknown if there is no
-// snapshot of the item, same if the comparison finds nothing changed, and changed if it finds anything.
-func toStatus(listing Listing, snapshot Snapshot, comparison Comparison) string {
-	switch {
-	case listing.WorkshopID == "":
-		return statusNew
-	case snapshot.WorkshopID == "":
-		return statusUnknown
-	case len(comparison.Added)+len(comparison.Changed)+len(comparison.Removed)+len(comparison.Listing) == 0:
-		return statusSame
-	}
-	return statusChanged
-}
-
-// compareListing returns the names of the fields in which a listing differs from the last one sent, in the order
-// the fields are shown.
-func compareListing(listing, last Listing) []string {
-	fields := []struct {
-		field   string
-		differs bool
-	}{
-		{"title", listing.Title != last.Title},
-		{"description", listing.Description != last.Description},
-		{"changelog", listing.Changelog != last.Changelog},
-		{"tags", !slices.Equal(listing.Tags, last.Tags)},
-		{"dlc", !slices.Equal(listing.DLC, last.DLC)},
-		{"previews", !slices.Equal(listing.Previews, last.Previews)},
-		{"visibility", listing.Visibility != last.Visibility},
-	}
-	differing := []string{}
-	for _, row := range fields {
-		if row.differs {
-			differing = append(differing, row.field)
-		}
-	}
-	return differing
-}
-
-// buildHashes returns the SHA-256 of each of the given files by its rel. A file that cannot be
-// read has the hash "".
-func buildHashes(list []files.File) map[string]string {
-	hashes := make([]string, len(list))
-	var group errgroup.Group
-	group.SetLimit(files.Workers)
-	for position, file := range list {
-		group.Go(func() error {
-			handle, err := os.Open(file.Path)
-			if err != nil {
-				return nil
-			}
-			digest := sha256.New()
-			_, err = io.Copy(digest, handle)
-			_ = handle.Close()
-			if err == nil {
-				hashes[position] = hex.EncodeToString(digest.Sum(nil))
-			}
-			return nil
-		})
-	}
-	_ = group.Wait()
-	byRel := make(map[string]string, len(list))
-	for position, file := range list {
-		byRel[file.Rel] = hashes[position]
-	}
-	return byRel
 }

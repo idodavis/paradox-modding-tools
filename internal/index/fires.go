@@ -3,6 +3,8 @@ package index
 import (
 	"slices"
 
+	"github.com/samber/lo"
+
 	"paradox-modding-tools/internal/game"
 	"paradox-modding-tools/internal/schema"
 )
@@ -16,10 +18,8 @@ type Fire struct {
 	Via    []Site `json:"via,omitempty"` // the scripted effects entered between them, in order
 }
 
-// ListFires returns what a definition of any database fires: the events, on_actions and decisions it names in a
-// reference that fires, the databases the schema lists in FireDatabases. A reference fires where the scan marks it
-// Firing: in effect script and in an on_action's own lists. With the flag set, it also follows the scripted effects
-// the definition calls, so what they fire counts too. It returns nil if the definition fires nothing.
+// ListFires returns the events, on_actions and decisions a definition fires, through its scripted effects if asked. It
+// returns nil if it fires nothing.
 func (index *Index) ListFires(schema *schema.Schema, site Site, follow bool) []Fire {
 	targets, effects := schema.FireDatabases, schema.Effects
 	var fires []Fire
@@ -38,13 +38,13 @@ func (index *Index) ListFires(schema *schema.Schema, site Site, follow bool) []F
 				if !targeted && (!follow || reference.Database != effects) {
 					continue
 				}
-				winner, ok := index.FindKeptLocal(schema, reference, use.File)
-				switch {
-				case !ok:
-				case targeted:
-					fires = append(fires, Fire{Source: site, Target: winner.Site, Use: use, Via: via})
-				case !open[winner.Site]:
-					walk(winner.Site, append(slices.Clone(via), winner.Site))
+				for _, target := range index.ListActing(schema, reference, use.File) {
+					switch {
+					case targeted:
+						fires = append(fires, Fire{Source: site, Target: target, Use: use, Via: via})
+					case !open[target]:
+						walk(target, append(slices.Clone(via), target))
+					}
 				}
 			}
 		}
@@ -53,11 +53,8 @@ func (index *Index) ListFires(schema *schema.Schema, site Site, follow bool) []F
 	return fires
 }
 
-// ListFiredBy returns what fires a definition: each definition of any database that names it in a reference that
-// fires, as for ListFires. A definition that fires itself is one of them. Only an event, an on_action or a decision is
-// fired, the databases the schema lists in FireDatabases, so it returns nil for any other. With the flag set, a
-// scripted effect that fires it is followed to the definitions that call the effect, which fire it in the effect's
-// place. It returns nil for a definition the game does not keep.
+// ListFiredBy returns the definitions that fire a definition, through scripted effects if asked. It returns nil if
+// nothing fires it.
 func (index *Index) ListFiredBy(schema *schema.Schema, site Site, follow bool) []Fire {
 	targets, effects := schema.FireDatabases, schema.Effects
 	if !slices.Contains(targets, index.ToReference(site).Database) {
@@ -71,9 +68,9 @@ func (index *Index) ListFiredBy(schema *schema.Schema, site Site, follow bool) [
 	walk = func(current Site, via []Site, use Site) {
 		open[current] = true
 		defer delete(open, current)
-		// Only the definition the game keeps is called by name.
+		// Only a definition that acts is called by name.
 		reference := index.ToReference(current)
-		if winner, ok := index.FindKeptLocal(schema, reference, current.File); !ok || !winner.IsKept(current) {
+		if winner, ok := index.FindKeptLocal(schema, reference, current.File); !ok || !index.isActing(winner, current) {
 			return
 		}
 		for _, referrer := range index.ListUses(reference.Database, reference.Name) {
@@ -89,8 +86,9 @@ func (index *Index) ListFiredBy(schema *schema.Schema, site Site, follow bool) [
 			switch {
 			case holder.Database != effects || !follow:
 				// A firer the game drops fires nothing, and a merged one stands as the definition the game keeps.
-				if winner, ok := index.FindKeptLocal(schema, holder, parent.File); ok && winner.IsKept(parent) {
-					fires = append(fires, Fire{Source: winner.Site, Target: site, Use: fired, Via: via})
+				if winner, ok := index.FindKeptLocal(schema, holder, parent.File); ok && index.isActing(winner, parent) {
+					source := lo.Ternary(winner.Reason == Unsettled, parent, winner.Site)
+					fires = append(fires, Fire{Source: source, Target: site, Use: fired, Via: via})
 				}
 			case !open[parent]:
 				walk(parent, slices.Insert(slices.Clone(via), 0, parent), fired)
@@ -99,6 +97,24 @@ func (index *Index) ListFiredBy(schema *schema.Schema, site Site, follow bool) [
 	}
 	walk(site, nil, Site{})
 	return fires
+}
+
+// ListActing returns the copies of a name that a reference in a file reaches. It returns none if the game keeps none.
+func (index *Index) ListActing(schema *schema.Schema, reference schema.Reference, file int32) []Site {
+	winner, ok := index.FindKeptLocal(schema, reference, file)
+	if !ok {
+		return nil
+	}
+	return lo.Filter(index.ResolveLocal(reference, index.Files[file].Path), func(site Site, _ int) bool {
+		return index.isActing(winner, site)
+	})
+}
+
+// isActing reports whether a definition of the name a winner won takes part in what the game runs: the one it keeps,
+// one merged into it, or, where no source says which it keeps, any copy in a file it reads.
+func (index *Index) isActing(winner Winner, site Site) bool {
+	kept, reason := index.ResolveSite(winner, site)
+	return kept || reason == Unsettled
 }
 
 // listReferences returns the references that sit directly inside a definition, in source order.
@@ -119,11 +135,7 @@ func (index *Index) listReferences(definition Site) []Site {
 	return sites
 }
 
-// isFiring reports whether a reference fires the event, on_action or decision it names. It fires in effect script,
-// which is an effect or the arguments of one, but it fires a decision only through an effect the game's row says runs
-// it. It also fires in an on_action's own lists, and in the fields the game's row lists. It never fires inside a
-// trigger block, in a preview, a block that is shown in the tooltip and never run, or as a scope link. Anywhere else,
-// such as in a GUI file or in a definition's other fields, it does not fire.
+// isFiring reports whether a reference fires the event, on_action or decision it names.
 func (collector *collector) isFiring(context *schema.Context, reference schema.Reference) bool {
 	if context.Conditional || context.Preview || context.Category == schema.CategoryLink {
 		return false
@@ -149,9 +161,7 @@ func (collector *collector) isFiring(context *schema.Context, reference schema.R
 	})
 }
 
-// isEffect reports whether a statement is an effect: a command the dumps declare as an effect where it is written,
-// or a call of a scripted effect. The scripted effects are the definitions of the given database. A call that may
-// name any callable database counts too, as outside a trigger block it calls a scripted effect.
+// isEffect reports whether a statement is an effect or a call of a scripted effect.
 func isEffect(context *schema.Context, effects string) bool {
 	return context.Declaration == game.DeclaredEffect ||
 		slices.ContainsFunc(context.References, func(reference schema.Reference) bool {

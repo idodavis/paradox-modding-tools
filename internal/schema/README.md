@@ -10,7 +10,7 @@ and the walk reads directly. A schema is built once for each version of an insta
 
 | file | holds |
 |---|---|
-| `schema.go` | the shape: `Claim` and `Claims`, `ValueType` and its constants, `Expected`, `Vanilla`, `Field`, `Command`, `Example`, `Database`, `ScopeType`, `DataFunction`, `DataType`, `Modifier`, `OnAction`, `ScriptedDefinition`, `SourceState`, `Schema`; `Build`; the databases and their callees; `SplitStage`, `IsLocReplacement`; the lookups (`FindDatabase`, `FindDatabaseByClass`, `FindCommand`, `ResolveLink`); the data calls (`ResolveCallTypes`, `FindFunction`, `ResolveMacro`, `ResolveDatacontext`, `ListCallReferences`, `ResolveTypeDatabase`); `ToPhrase`, `MatchValue` |
+| `schema.go` | the shape: `Claim` and `Claims`, `ValueType` and its constants, `Expected`, `Vanilla`, `Field`, `Command`, `Example`, `Database`, `ScopeType`, `DataFunction`, `DataType`, `Modifier`, `OnAction`, `ScriptedDefinition`, `SourceState`, `Schema`; `Build`; the databases and their callees; `SplitStage`, `FindLocReplacement` (the rank of a localization replace folder among the game's forms); `JoinNested` and `SplitNested`; the lookups (`FindDatabase`, `FindDatabaseByClass`, `FindCommand`, `ResolveLink`); the data calls (`ResolveCallTypes`, `FindFunction`, `ResolveMacro`, `ResolveDatacontext`, `ListCallReferences`, `ResolveTypeDatabase`); `ToPhrase`, `MatchValue` |
 | `dumps.go` | the dumps reader: `DumpCommand`, `Dumps`, `ReadDumps`, `FindDumpsAt`; the commands, the arguments a usage writes, the list families' shared arguments; the backup for a missing section |
 | `docs.go` | the docs reader, `docReader`: which files are docs, and the blurbs, types, requirements, defaults, choices and scopes their prose states |
 | `vanilla.go` | the vanilla count, `CountVanilla`: the `declarer` that records what script and GUI files call by name, the `counter` and its `holder`s that count what the game's own files write, and the claims the counts support |
@@ -24,7 +24,12 @@ A `Database` is one database of the game: the `Field` tree of its definitions, a
 (its `Row`, its `Callable` and its `Precedence`). A database is built for each folder a script file belongs to, each
 folder or file a row names that the install has, each nesting (a database inside another's definitions, such as a
 culture's dialects), each GUI database, and each database only the walk names. A nested database is named by its
-parent's name, a dot and its own.
+parent's name, a dot and its own. A nesting with a `NameKey` names a definition by that key's value, as the three kinds
+of block in `gfx/portraits/accessory_variations` are each named by their `name`. A definition in a nested database whose parent writes a separator is named by its
+holder's name, the separator and its key (`JoinNested`, `SplitNested`): a define is `NAI|X`, as script reads it, so
+two groups' same key are two names. A data call's argument in such a database takes the argument before it as its
+holder, as `GetDefine('NAI', 'X')` does, and a script link `define:NAI|X` (or `array_define:`) names the group `NAI` at
+its span and the define `NAI|X` at the key's (`listLabelReferences`).
 
 A `Field` is one key that may be written in a definition, with what it takes and the fields that may be written inside
 it. Its `Children` are keyed by the key as written, or by a pattern: `<number>` (`game.NumberKey`) for any number, and

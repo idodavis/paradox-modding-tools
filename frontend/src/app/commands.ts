@@ -418,7 +418,7 @@ export const COMMANDS: readonly Command[] = [
   },
 ];
 
-/** Registers every command's keyboard shortcut. A command's shortcut is on while its `when` holds. */
+/** registerShortcuts registers every command's keyboard shortcut. A command's shortcut is on while its `when` holds. */
 export function registerShortcuts(): void {
   const { mutate } = useMutation({ mutation: (work: () => Promise<unknown>) => work() });
   run = mutate;
@@ -438,8 +438,8 @@ export function registerShortcuts(): void {
 }
 
 /**
- * The palette's groups: the commands it ran last that apply now, the other commands that apply, the pages, the
- * workspaces, and the settings by type.
+ * paletteGroups returns the palette's groups: the commands it ran last that apply now, the other commands that
+ * apply, the pages, the workspaces, and the settings by type.
  */
 export function paletteGroups(): { id: string; label: string; items: Command[] }[] {
   const id = useWorkspaceStore().activeId();
@@ -458,7 +458,7 @@ export function paletteGroups(): { id: string; label: string; items: Command[] }
     makeRow(`workspace.${record.id}`, {
       label: record.name,
       icon: record.id === id ? "i-lucide-check" : "i-lucide-folder",
-      onSelect: () => void router.push(homeRoute(record.id, record.homePage, listShownTools())),
+      onSelect: () => void router.push(homeRoute(record.id, record.homePage)),
     }),
   );
   return [
@@ -471,20 +471,23 @@ export function paletteGroups(): { id: string; label: string; items: Command[] }
   ];
 }
 
-/** Puts a command the palette ran first in its Recently used. A row that is no command, such as a file, is skipped. */
+/**
+ * rememberCommand puts a command the palette ran first in its Recently used. A row that is no command, such as a
+ * file, is skipped.
+ */
 export function rememberCommand(id: string): void {
   if (!COMMANDS.some((row) => row.id === id)) return;
   recent.value = [id, ...recent.value.filter((one) => one !== id)].slice(0, RECENT);
 }
 
-/** Shows the IDE page, then opens the compare of two files in it, the first on the left. */
+/** compare shows the IDE page, then opens the compare of two files in it, the first on the left. */
 export function compare(left: Place, right: Place): void {
   void useWindowsStore()
     .showIde()
     .then(() => compareBus.emit({ left, right }));
 }
 
-/** Opens the compare of a mod's file with the game's copy of it. A file the game has no copy of gets a message. */
+/** compareWithGame opens the compare of a mod's file with the game's copy of it. A file the game has no copy of gets a message. */
 export function compareWithGame(place: Place): void {
   run(async () => {
     const copy = findGameCopy(place, await loadQuery(copiesQuery(place.path)));
@@ -494,8 +497,8 @@ export function compareWithGame(place: Place): void {
 }
 
 /**
- * Asks for another file and opens the compare of the given file with it. The dialog starts in the file's mod, and
- * cancelling it does nothing.
+ * compareWithFile asks for another file and opens the compare of the given file with it. The dialog starts in the
+ * file's mod, and cancelling it does nothing.
  */
 export function compareWithFile(place: Place): void {
   run(async () => {
@@ -506,8 +509,8 @@ export function compareWithFile(place: Place): void {
 }
 
 /**
- * Finds the game's copy of a mod's file among the file's copies, which come in load order. It is undefined for a file
- * of the game, which is no copy of itself, and when the game has no copy.
+ * findGameCopy finds the game's copy of a mod's file among the file's copies, which come in load order. It is
+ * undefined for a file of the game, which is no copy of itself, and when the game has no copy.
  */
 export function findGameCopy(place: Place, copies: Place[] | null | undefined): Place | undefined {
   const [first] = copies ?? [];
@@ -515,8 +518,8 @@ export function findGameCopy(place: Place, copies: Place[] | null | undefined): 
 }
 
 /**
- * Asks whether to move a file or folder to PMT's trash under the given label, moves it, and offers to bring it back.
- * A note, when given, is added to the question. It returns false when the user says no.
+ * trashFile asks whether to move a file or folder to PMT's trash under the given label, moves it, and offers to
+ * bring it back. A note, when given, is added to the question. It returns false when the user says no.
  */
 export async function trashFile(path: string, label: string, note = ""): Promise<boolean> {
   const body = `${label} goes to PMT's trash.${note}`;
@@ -527,13 +530,13 @@ export async function trashFile(path: string, label: string, note = ""): Promise
   return true;
 }
 
-/** The model of the active tab's file, or null when the tab shows none. */
+/** activeModel returns the model of the active tab's file, or null when the tab shows none. */
 function activeModel(): Model | null {
   const tab = useEditorStore().activeTab();
   return tab ? findModel(parseTab(tab.id).key) : null;
 }
 
-/** Makes a handler that acts on the active tab, if there is one. */
+/** onTab makes a handler that acts on the active tab, if there is one. */
 function onTab(act: (tab: Tab) => void): () => void {
   return () => {
     const tab = useEditorStore().activeTab();
@@ -541,7 +544,7 @@ function onTab(act: (tab: Tab) => void): () => void {
   };
 }
 
-/** Makes a handler that acts on the active model, if there is one. */
+/** onActive makes a handler that acts on the active model, if there is one. */
 function onActive(act: (model: Model) => void): () => void {
   return () => {
     const model = activeModel();
@@ -549,7 +552,7 @@ function onActive(act: (model: Model) => void): () => void {
   };
 }
 
-/** Makes a handler that acts on the place of the active tab's file, if there is one. */
+/** onFile makes a handler that acts on the place of the active tab's file, if there is one. */
 function onFile(act: (place: Place) => void): () => void {
   return () => {
     const place = useEditorStore().activeFile();
@@ -557,21 +560,24 @@ function onFile(act: (place: Place) => void): () => void {
   };
 }
 
-/** Whether the active tab's file is one a mod holds, which can be created beside, renamed and deleted. */
+/**
+ * canChange reports whether the active tab's file is one a mod holds, which can be created beside, renamed and
+ * deleted.
+ */
 function canChange(): boolean {
   const place = useEditorStore().activeFile();
   return !!place && !place.readOnly;
 }
 
-/** Whether the active tab's file is a mod's, and that mod is in a repository. */
+/** canUseGit reports whether the active tab's file is a mod's, and that mod is in a repository. */
 function canUseGit(): boolean {
   return canChange() && !!useGitStore().findRoot(useEditorStore().activeFile());
 }
 
 /**
- * Runs a git command's action on the repository it acts on: the active file's, else the only one listed. When the
- * active file is in none and several are listed, the palette first asks which, under the given command id and
- * question.
+ * chooseRepository runs a git command's action on the repository it acts on: the active file's, else the only one
+ * listed. When the active file is in none and several are listed, the palette first asks which, under the given
+ * command id and question.
  */
 function chooseRepository(id: string, label: string, act: (root: string) => void): void {
   const repositories = useGitStore().repositories;
@@ -591,7 +597,7 @@ function chooseRepository(id: string, label: string, act: (root: string) => void
   choicesBus.emit({ id, label, items });
 }
 
-/** Shows the IDE's Source Control view with the commit box of the given repository unfolded and focused. */
+/** showCommit shows the IDE's Source Control view with the commit box of the given repository unfolded and focused. */
 function showCommit(root: string): void {
   void useWindowsStore()
     .showIde()
@@ -602,7 +608,7 @@ function showCommit(root: string): void {
     });
 }
 
-/** Makes the `when` of a view row: whether the active file can be shown in that view. */
+/** canShow makes the `when` of a view row: whether the active file can be shown in that view. */
 function canShow(view: View): () => boolean {
   return () => {
     const place = useEditorStore().activeFile();
@@ -611,7 +617,7 @@ function canShow(view: View): () => boolean {
   };
 }
 
-/** Moves a tab into the group after its own. The last group has none after it, so nothing moves. */
+/** moveToNextGroup moves a tab into the group after its own. The last group has none after it, so nothing moves. */
 function moveToNextGroup(tab: Tab): void {
   const editor = useEditorStore();
   const groups = editor.layout().rows.flatMap((row) => row.columns);
@@ -619,7 +625,7 @@ function moveToNextGroup(tab: Tab): void {
   if (next) editor.move(tab.id, next.id, next.tabs.length);
 }
 
-/** Runs one of Monaco's actions in the editor with the focus, else in the one showing the active file. */
+/** runAction runs one of Monaco's actions in the editor with the focus, else in the one showing the active file. */
 function runAction(id: string): void {
   const editors = monaco.editor.getEditors();
   const model = activeModel()?.model;
@@ -628,25 +634,28 @@ function runAction(id: string): void {
   void target?.getAction(id)?.run();
 }
 
-/** Opens the compare of the two files selected in the explorer. */
+/** compareSelection opens the compare of the two files selected in the explorer. */
 function compareSelection(): void {
   const [left, right] = useEditorStore().listSelection();
   if (left && right) compare(left, right);
 }
 
-/** Shows a page. A workspace's pages are shown for the active workspace. */
+/** openPage shows a page. A workspace's pages are shown for the active workspace. */
 function openPage(name: PageName): void {
   void (isWorkspacePage(name)
     ? router.push({ name, params: { id: useWorkspaceStore().activeId() } })
     : router.push({ name }));
 }
 
-/** Makes a row of the palette that is made at the time and always applies. */
+/** makeRow makes a row of the palette that is made at the time and always applies. */
 function makeRow(id: string, row: CommandPaletteItem): Command {
   return { ...row, id, when: () => true };
 }
 
-/** Lists the palette's switches: each setting that is one, each page a workspace can show and each of the checks. */
+/**
+ * listSwitches lists the palette's switches: each setting that is one, each page a workspace can show and each of
+ * the checks.
+ */
 function listSwitches(): Command[] {
   const settings = useSettingsStore();
   const cache = useQueryCache();
@@ -658,7 +667,7 @@ function listSwitches(): Command[] {
       makeToggle(
         `setting.${setting.key}`,
         { label: setting.label, words: setting.words, scope: setting.workspace ? "IDE" : "App" },
-        settings.value(setting.key) === "true",
+        settings.isOn(setting.key),
         (on) => settings.write(setting.key, String(on)),
       ),
     );
@@ -684,7 +693,10 @@ function listSwitches(): Command[] {
   return [...switches, ...pages, ...checks];
 }
 
-/** Makes a row of the palette that flips a setting. It shows whether the setting is on, and picking it flips it. */
+/**
+ * makeToggle makes a row of the palette that flips a setting. It shows whether the setting is on, and picking it
+ * flips it.
+ */
 function makeToggle(id: string, row: CommandPaletteItem, on: boolean, write: (on: boolean) => void): Command {
   return makeRow(id, {
     ...row,
@@ -696,7 +708,9 @@ function makeToggle(id: string, row: CommandPaletteItem, on: boolean, write: (on
   });
 }
 
-/** Lists the palette's settings with a value. Each opens where it is set: the IDE's in the IDE's settings. */
+/**
+ * listValues lists the palette's settings with a value. Each opens where it is set: the IDE's in the IDE's settings.
+ */
 function listValues(): Command[] {
   const id = useWorkspaceStore().activeId();
   return (useQueryCache().getQueryData(settingsCatalogQuery.key) ?? [])
@@ -715,7 +729,10 @@ function listValues(): Command[] {
     );
 }
 
-/** Opens the Event Graph on the name under the model's caret. A caret on a name the graph lacks does nothing. */
+/**
+ * openGraph opens the Event Graph on the name under the model's caret. A caret on a name the graph lacks does
+ * nothing.
+ */
 async function openGraph(model: Model): Promise<void> {
   const card = await lsp.Hover(model.place.path, model.caret.line, model.caret.column);
   if (card?.node) {
@@ -727,14 +744,14 @@ async function openGraph(model: Model): Promise<void> {
   }
 }
 
-/** Asks where to make a new file or folder, starting in the active file's mod. Cancelling does nothing. */
+/** createPath asks where to make a new file or folder, starting in the active file's mod. Cancelling does nothing. */
 async function createPath(place: Place, folder: boolean): Promise<void> {
   const title = folder ? "New folder" : "New file";
   const path = await Dialogs.SaveFile({ Title: title, Directory: place.root, ButtonText: "Create" });
   if (path) await workspaceApi.Create(path, folder);
 }
 
-/** Asks where to move the active file to, and moves it. Cancelling does nothing. */
+/** renameFile asks where to move the active file to, and moves it. Cancelling does nothing. */
 async function renameFile(place: Place): Promise<void> {
   const target = await Dialogs.SaveFile({
     Title: "Rename",
@@ -745,13 +762,13 @@ async function renameFile(place: Place): Promise<void> {
   if (target) await useEditorStore().rename(place.path, target);
 }
 
-/** Puts the active file's path on the clipboard. */
+/** copyPath puts the active file's path on the clipboard. */
 async function copyPath(place: Place): Promise<void> {
   await Clipboard.SetText(place.path);
   toast?.add({ title: "Path copied", description: place.path, color: "success" });
 }
 
-/** Asks whether to throw away the active file's changes, and does. */
+/** discardFile asks whether to throw away the active file's changes, and does. */
 async function discardFile(place: Place): Promise<void> {
   const body = `The changes to ${place.rel} are lost.`;
   if (await confirm.open({ title: "Discard the changes?", body, confirm: "Discard", destructive: true })) {

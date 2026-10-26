@@ -11,7 +11,7 @@ import { computed, shallowRef, watch } from "vue";
 import * as draw from "@services/draw/service";
 import type { Group, Window } from "@services/draw/models";
 
-import { toSentence } from "../../../lib/format";
+import { matchQuery, toSentence } from "../../../lib/format";
 import { statesQuery } from "../../../queries";
 import { useDrawStore } from "../../../stores/draw";
 import { useWorkspaceStore } from "../../../stores/workspace";
@@ -71,16 +71,13 @@ const changedOnly = shallowRef(false);
 // list of pictures is picked in Properties
 const candidates = computed(() => {
   const selected = file.value.selected ?? 0;
-  const needle = query.value.toLowerCase();
   const applies = (group: Group) =>
     changedOnly.value && changes.value.length
       ? group.id in store.picks
       : (states.value?.applies?.[group.id] ?? []).some((id) => isUnder(id, selected));
   return groups.value
     .filter((group) => !group.pictures && applies(group))
-    .filter((group) =>
-      [group.subject, group.key, group.label, group.id].some((text) => text?.toLowerCase().includes(needle)),
-    )
+    .filter((group) => matchQuery(query.value, group.subject, group.key, group.label, group.id))
     .toSorted((first, second) => (second.reach ?? 0) - (first.reach ?? 0));
 });
 const boxes = computed<Box[]>(() => {

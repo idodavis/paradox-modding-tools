@@ -33,9 +33,11 @@ type Program struct {
 
 // An ErrorLog is a game's error log: where it is written and how its lines are taken apart.
 type ErrorLog struct {
-	Rel      string         // under the user-data folder (logs/error.log)
-	Line     *regexp.Regexp // a message's header: time, an optional [E], the source file and line, the message
-	Location *regexp.Regexp // the script path and line a message names; nil where it names none
+	Rel  string         // under the user-data folder (logs/error.log)
+	Line *regexp.Regexp // a message's header: time, an optional [E], the source file and line, the message
+	// Locations are the forms in which the log names a line of a script file, each with the groups path and line; empty
+	// where it names none.
+	Locations []*regexp.Regexp
 }
 
 // Events holds a game's rules for events: where an event writes its root scope and how its picture is found.
@@ -62,7 +64,7 @@ type Game struct {
 	Name          string             `json:"name"` // also its folder under Documents
 	ShortName     string             `json:"shortName"`
 	WikiAPI       string             `json:"-"`                    // the MediaWiki api.php endpoint of its wiki
-	StageRoots    []string           `json:"-"`                    // EU5's stages under ScriptRoot, at a mod's root
+	StageRoots    []string           `json:"-"`                    // EU5's stages at a root, in the order it mounts them
 	ModDescriptor string             `json:"descriptor,omitempty"` // the descriptor file's path from the mod's root
 	ThumbnailDir  string             `json:"-"`                    // where a new listing image goes; "" means the root
 	SteamAppID    int                `json:"-"`
@@ -74,11 +76,18 @@ type Game struct {
 	Databases     map[string]Database   `json:"-"` // its own databases by path, tried before Databases
 	Nestings      []Nesting             `json:"-"` // its own nested databases, tried before Nestings
 	Precedences   map[string]Precedence `json:"-"` // its own precedences by database, tried before Precedences
+	MergedRoots   []string              `json:"-"` // the top folders whose databases keep every copy without a row
 	References    []Reference           `json:"-"` // what the key paths of its own databases name
 	Events        Events                `json:"-"`
-	EntryModes    []EntryMode           `json:"-"` // the entry modes, in the order the game runs them
+	EntryModes    []EntryMode           `json:"-"`
 	ModeFolders   ModeFolders           `json:"-"`
 	ConceptPrefix string                `json:"-"` // a concept's loc key prefix; "" means none
+	// LocReplaceFolders are the forms of the folder whose localization overrides every other, with the language at %s,
+	// the one that wins first.
+	LocReplaceFolders []string `json:"-"`
+	// LogsRepeatedKey says whether the game logs a localization key that a mod and the game both write outside a
+	// replace folder.
+	LogsRepeatedKey bool `json:"-"`
 	// Placeholders is its own shapes, tried before Placeholders: a character's silhouette from its period, and its
 	// coat of arms as a shield or a flag.
 	Placeholders  []Placeholder `json:"-"`
@@ -99,10 +108,13 @@ type Game struct {
 	// GUISuffixStems is, by the stem of the defines for a kind and a field of its pictures (GUI.FolderDefineSuffix), the
 	// stem its suffix define is written under instead, where the game names it so.
 	GUISuffixStems map[string]string `json:"-"`
-	GUITiers       TierFrames        `json:"-"` // how it draws a title's tier from a sheet of cells; zero for none
-	CoatFolder     string            `json:"-"` // where it keeps its coats, from the folder holding its stages
-	CoatShade      CoatShade         `json:"-"` // how it shades every coat; the zero value shades none
-	CoatFrames     []CoatFrame       `json:"-"` // the frames its coat designer previews, in order
+	// GUIDefineGroup is the define group whose defines say where the game's icons and pictures are, such as
+	// TRAIT_ICON_PATH.
+	GUIDefineGroup string      `json:"-"`
+	GUITiers       TierFrames  `json:"-"` // how it draws a title's tier from a sheet of cells; zero for none
+	CoatFolder     string      `json:"-"` // where it keeps its coats, from the folder holding its stages
+	CoatShade      CoatShade   `json:"-"` // how it shades every coat; the zero value shades none
+	CoatFrames     []CoatFrame `json:"-"` // the frames its coat designer previews, in order
 }
 
 // The supported games' ids.
@@ -143,9 +155,26 @@ const (
 // line, and the message.
 var errorLogLine = regexp.MustCompile(`^\[(\d\d):(\d\d):(\d\d)\](?:\[([A-Z])\])?\[([A-Za-z0-9_]+\.(?:cpp|h|hpp|inl)):(\d+)\]: ?(.*)$`)
 
-// DumpFolders are the folders under a game's user data where the console's dumps land. CK3 writes script_docs to
-// logs; Vic3 and EU5 write event_scopes.log to logs and the rest to docs; dump_data_types writes to
-// logs/data_types in every game.
+// The forms in which an error log names a line of a script file, each with the groups path and line. None matches a
+// bare path and line: every log line's header holds its source as [file.cpp:N], so a path must follow a space.
+var (
+	// errorLogFileLine is CK3's "file: P line: N", after "Script location:", "at", "location '" or "from database".
+	errorLogFileLine = regexp.MustCompile(`file: *(?P<path>\S+) line: *(?P<line>\d+)`)
+	// errorLogNearLine is the reader's "in file: "P" near line: N", written by all three games.
+	errorLogNearLine = regexp.MustCompile(`in file: "(?P<path>[^"]+)" near line: (?P<line>\d+)`)
+	// errorLogPathLine is "P:N" after other words, as in "Script location: P:N" and "]: P:N - Missing file".
+	errorLogPathLine = regexp.MustCompile(`(?:^|\s)(?P<path>[^\s\[\]:'"]+\.\w+):(?P<line>\d+)\b`)
+	// errorLogLineColumn is EU5's "line N and column C in P".
+	errorLogLineColumn = regexp.MustCompile(`line (?P<line>\d+) and column \d+ in (?P<path>\S+)`)
+)
+
+// MountLog is the log line in which the game names each folder it reads.
+var MountLog = struct {
+	Rel  string
+	Line *regexp.Regexp
+}{"logs/debug.log", regexp.MustCompile(`Mounted Data: (.+?)\s*$`)}
+
+// DumpFolders are the folders under a game's user data where the console's dumps land.
 var DumpFolders = []string{"logs", "docs", "logs/data_types"}
 
 var steamLibrary = map[string]string{"windows": "binaries/steam_api64.dll", "linux": "binaries/libsteam_api.so"}
@@ -164,13 +193,23 @@ var games = map[string]*Game{
 			"windows": {Executable: "binaries/ck3.exe", DebugArgs: []string{"-debug_mode", "-develop"}, Settings: launcherFile},
 			"linux":   {DebugArgs: []string{"-debug_mode", "-develop"}, Settings: launcherFile},
 		},
-		ErrorLog:      ErrorLog{Rel: errorLogRel, Line: errorLogLine},
-		Databases:     ck3Databases,
-		Nestings:      ck3Nestings,
-		References:    ck3References,
-		Precedences:   ck3Precedences,
+		ErrorLog: ErrorLog{
+			Rel: errorLogRel, Line: errorLogLine,
+			Locations: []*regexp.Regexp{errorLogFileLine, errorLogNearLine, errorLogPathLine},
+		},
+		Databases:   ck3Databases,
+		Nestings:    ck3Nestings,
+		References:  ck3References,
+		Precedences: ck3Precedences,
+		// history/_history.info:3-13: dated entries stack, as history/titles/01_admin_titles_tgp.txt:6339,6435 write
+		// c_nf_wang_738b_7 twice
+		MergedRoots:   []string{"history"},
 		Events:        Events{ScopeKey: "scope", DefaultScope: "character", Picture: ck3Picture}, // _events.info
 		ConceptPrefix: "game_concept_",
+		// the wiki's Localization page: localization/replace/english takes precedence over localization/english/replace
+		LocReplaceFolders: []string{"localization/replace/%s", "localization/%s/replace"},
+		// the wiki's Modding page; ck3.exe "Duplicate localization key. Key '%s' is defined in both '%s' and '%s'."
+		LogsRepeatedKey: true,
 		// effects.log: "execute_decision - Execute the specified decision for the scoped character"
 		DecisionEffects: []string{"execute_decision"},
 		Placeholders: []Placeholder{
@@ -185,9 +224,9 @@ var games = map[string]*Game{
 		// common/defines/graphic/00_graphics.txt:812-813: GOVERNMENT_TYPE_REALM_MASK_PATH with
 		// GOVERNMENT_TYPE_REALM_FRAME_MASK_SUFFIX
 		GUISuffixStems: map[string]string{"GOVERNMENT_TYPE_REALM_MASK": "GOVERNMENT_TYPE_REALM_FRAME_MASK"},
-		// gui/map_icon_layer.gui:4820-4856 asks cell 3 for a count, 4 for a duke and from 5 for a king or an emperor;
-		// common/defines/00_defines.txt:358 counts seven tiers, Unlanded to Hegemon, and gfx/interface/coat_of_arms'
-		// topframe_62.dds and crown_strip_62.dds are seven cells wide
+		// common/defines/graphic/00_graphics.txt:782 writes TRAIT_ICON_PATH in it, and :812 the realm mask's path
+		GUIDefineGroup: "NGameIcons",
+		// seven tiers: cell 3 for a count, 4 for a duke, from 5 for a king or an emperor
 		GUITiers: TierFrames{
 			Function: "GetTierFrame", Tiers: []string{"unlanded", "baron", "count", "duke", "king", "emperor", "hegemon"},
 		},
@@ -209,8 +248,7 @@ var games = map[string]*Game{
 			"linux":   {DebugArgs: []string{"-debug_mode"}, Settings: launcherFile},
 		},
 		ErrorLog: ErrorLog{
-			Rel: errorLogRel, Line: errorLogLine,
-			Location: regexp.MustCompile(`Script location: (\S+):(\d+)`),
+			Rel: errorLogRel, Line: errorLogLine, Locations: []*regexp.Regexp{errorLogNearLine, errorLogPathLine},
 		},
 		Databases:   vic3Databases,
 		Precedences: vic3Precedences,
@@ -218,6 +256,8 @@ var games = map[string]*Game{
 		Events:      Events{TypeKey: "type", TypeSuffix: "_event", DefaultScope: "country", Picture: vic3Picture},
 		EntryModes:  EntryModes,
 		ModeFolders: vic3ModeFolders,
+		// victoria3.exe matches the path part /replace/; no source says which form wins
+		LocReplaceFolders: []string{"localization/%s/replace", "localization/replace/%s"},
 		Placeholders: []Placeholder{
 			{Shape: "top-hat", Kinds: []string{"portrait texture"}, Runtime: true},
 			{Shape: "flag", Kinds: []string{"coat of arms"}, Runtime: true},
@@ -229,11 +269,12 @@ var games = map[string]*Game{
 		CoatFolder:     "common/coat_of_arms/coat_of_arms",
 	},
 	eu5: {
-		ID:            eu5,
-		Name:          "Europa Universalis V",
-		ShortName:     "EU5",
-		WikiAPI:       "https://eu5.paradoxwikis.com/api.php",
-		StageRoots:    []string{"in_game", "main_menu", "loading_screen"},
+		ID:        eu5,
+		Name:      "Europa Universalis V",
+		ShortName: "EU5",
+		WikiAPI:   "https://eu5.paradoxwikis.com/api.php",
+		// debug.log:5372-5394 mounts each root's stages in this order, and only them; the wiki's Mod structure, l.46-57
+		StageRoots:    []string{"loading_screen", "main_menu", "in_game"},
 		ModDescriptor: MetadataDir + "/metadata.json",
 		ThumbnailDir:  MetadataDir, // where EU5 mods keep it
 		SteamAppID:    3450310,
@@ -244,24 +285,29 @@ var games = map[string]*Game{
 		},
 		ErrorLog: ErrorLog{
 			Rel: errorLogRel, Line: errorLogLine,
-			Location: regexp.MustCompile(`\bat (\S+):(\d+)`),
+			Locations: []*regexp.Regexp{errorLogNearLine, errorLogPathLine, errorLogLineColumn},
 		},
 		Databases:     eu5Databases,
 		Nestings:      eu5Nestings,
 		Precedences:   eu5Precedences,
+		MergedRoots:   []string{"setup"}, // the wiki's Setup modding, l.10: its managers are additive; Mod structure, l.78
 		References:    eu5References,
 		Events:        Events{TypeKey: "type", TypeSuffix: "_event", DefaultScope: "country", Picture: eu5Picture},
 		EntryModes:    EntryModes,
 		ModeFolders:   eu5ModeFolders,
 		ConceptPrefix: "game_concept_",
+		// the wiki's Mod compatibility, l.209, and Localization, l.2, name only this form
+		LocReplaceFolders: []string{"localization/%s/replace"},
 		Placeholders: []Placeholder{
 			{Shape: "plumed-hat", Kinds: []string{"portrait texture"}, Runtime: true},
 			{Shape: "flag", Kinds: []string{"coat of arms"}, Runtime: true},
 		},
-		GUIHolders:    map[string]string{"lateralview": "lateralview_left_layer"},
-		CoatColorForm: ColorForm{Tag: tagHSV360, Example: []float64{360, 100, 100}},
-		GUIUndeclared: []string{"axis", "plotline", "screen_grab", "newsfeed_carousel"},
-		CoatFolder:    "main_menu/common/coat_of_arms/coat_of_arms",
+		GUIHolders: map[string]string{"lateralview": "lateralview_left_layer"},
+		// loading_screen/common/defines/graphic/00_graphics.txt writes its kinds' icon paths in it
+		GUIDefineGroup: "NGameIcons",
+		CoatColorForm:  ColorForm{Tag: tagHSV360, Example: []float64{360, 100, 100}},
+		GUIUndeclared:  []string{"axis", "plotline", "screen_grab", "newsfeed_carousel"},
+		CoatFolder:     "main_menu/common/coat_of_arms/coat_of_arms",
 	},
 }
 

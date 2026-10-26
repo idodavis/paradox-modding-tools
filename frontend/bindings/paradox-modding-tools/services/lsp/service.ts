@@ -53,7 +53,7 @@ export function DescribeIndentation(path: string): $CancellablePromise<string> {
 
 /**
  * Diagnose returns the problems of a file, judged against the open workspace. It leaves out the checks the user turned
- * off in the settings.
+ * off.
  */
 export function Diagnose(path: string): $CancellablePromise<$models.Diagnostic[] | null> {
     return $Call.ByID(3833762539, path);

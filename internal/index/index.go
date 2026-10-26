@@ -8,6 +8,7 @@ import (
 	"slices"
 
 	"paradox-modding-tools/internal/files"
+	"paradox-modding-tools/internal/game"
 	"paradox-modding-tools/internal/jomini"
 )
 
@@ -84,9 +85,7 @@ type Posting struct {
 	Database uint16
 }
 
-// An Index is what a scan found in one list of files, with the postings that answer lookups by name. A mods' index
-// stands on the install's: its files, roots and tables start as copies of the install's, so a file's position and
-// an ordinal mean the same in both, and its lookups read the install's postings beside its own.
+// An Index is what a scan found in one list of files. A mods' index stands on the install's.
 type Index struct {
 	Game        string // the game's id
 	Files       []files.File
@@ -130,6 +129,11 @@ func (index *Index) Text(site Site) string {
 		return ""
 	}
 	return texts[site.Occurrence]
+}
+
+// FindMode returns the entry mode a definition is written with. It returns false for a plain definition.
+func (index *Index) FindMode(site Site) (game.EntryMode, bool) {
+	return game.LookupEntryMode(index.Modes.Texts[index.Occurrence(site).Mode])
 }
 
 // FindFile returns the position in Files of the file with the given path, or false if the index has no such file.

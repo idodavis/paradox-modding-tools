@@ -1,5 +1,5 @@
-// Package app is the app's own service: its version, updates, settings, log and windows. It also holds PMT's folders
-// on this machine and config.json, which every other service reads and writes.
+// Package app is the service for the app itself, such as its updates, settings and windows. It also holds
+// config.json, which every other service reads and writes.
 package app
 
 import (
@@ -19,17 +19,16 @@ import (
 	"paradox-modding-tools/internal/files"
 )
 
-// Dirs is the folders PMT keeps its files in on this machine.
+// Dirs is the set of folders PMT keeps its files in on this machine.
 type Dirs struct {
 	App   string // config.json
-	Cache string // the schema and index caches, the wiki's pages, the Steam snapshots
+	Cache string // the caches, wiki pages and Steam snapshots
 	Log   string // pmt.log
 	Trash string // deleted files, emptied at each start
 }
 
-// ResolveDirs finds PMT's folders and creates any that are missing but the trash. config.json goes in the user's
-// config folder, and the log, the caches and the trash in the user's cache folder, each as the system places them.
-// It returns an error if the system has no such folders.
+// ResolveDirs finds PMT's folders and creates any that are missing, but the trash. It returns an error if the system
+// has no config or cache folder.
 func ResolveDirs() (Dirs, error) {
 	const folder = "paradox-modding-tools"
 	config, err := os.UserConfigDir()
@@ -108,14 +107,9 @@ type Mod struct {
 	Calendar   Calendar `json:"calendar"`
 	WorkshopID string   `json:"workshopId"` // "" unpublished
 	Ignore     string   `json:"ignore"`     // the upload exclusions, one pattern per line
-	// DescriptionSource is where the Workshop description comes from: markdown, bbcode or steam, Steam's own text.
-	// "" takes the first description file the mod has, else Steam's own text.
-	DescriptionSource string `json:"descriptionSource"`
-	// DescriptionFile is the path of the description's file from the mod's folder, or "" for its source's own file.
-	DescriptionFile string `json:"descriptionFile"`
 }
 
-// A Workspace is one recorded workspace: a game install and the mods loaded with it, in load order.
+// A Workspace is one recorded workspace, a game install and the mods loaded with it.
 type Workspace struct {
 	ID           string `json:"id"`
 	Name         string `json:"name"`
@@ -126,8 +120,10 @@ type Workspace struct {
 	GameColor    string `json:"gameColor"`    // the color of the game's files, as a slot or a CSS color; "" for its own
 	ResetTabs    bool   `json:"resetTabs"`    // the IDE opens with no tabs rather than those left open
 	ShowBinaries bool   `json:"showBinaries"` // the explorer lists images, fonts and other binary files
-	// Settings holds the values the user set of the settings kept per workspace, by key.
+	// Settings holds the user's values of the per-workspace settings, by key.
 	Settings map[string]string `json:"settings"`
+	// IgnoredPairs holds the sorted pairs of mods whose conflicts the workspace ignores.
+	IgnoredPairs [][2]string `json:"ignoredPairs"`
 }
 
 // Config is the content of config.json.
@@ -142,8 +138,8 @@ type Setting struct {
 	Key       string   `json:"key"` // `<area>.<noun>`
 	Label     string   `json:"label"`
 	Help      string   `json:"help"`
-	Section   string   `json:"section"`   // appearance; the IDE's editor, language, checks, explorer, visual, wiki
-	Workspace bool     `json:"workspace"` // it is kept per workspace, as the IDE's settings are
+	Section   string   `json:"section"`   // appearance, or an IDE area: editor, language, checks, explorer, visual, wiki
+	Workspace bool     `json:"workspace"` // it is kept per workspace
 	Type      string   `json:"type"`      // switch, choice, number, text
 	Default   string   `json:"default"`
 	Choices   []string `json:"choices,omitempty"`
@@ -283,30 +279,19 @@ var Catalog = []Setting{
 		Section: "visual", Workspace: true, Type: "number", Default: "3", Min: 1, Max: 20,
 		Help:  "How many times the Visual view draws the item of a data model.",
 		Words: "gui preview list repeat items"},
-	// A resolution of the Visual view is a size a game lays its interface out in: the screen divided by the GUI
-	// scale. The default is the size the game designs for. CK3 and Vic3 scale their main menu's 1920 by 1080 art to
-	// fit the screen (frontend_main.gui). EU5's files declare no size.
-	{Key: "draw.resolution.ck3", Label: "Resolution, CK3",
+	// The default is the size each game designs for. CK3 and Vic3 scale their 1920 by 1080 main menu art to the
+	// screen (frontend_main.gui). EU5's files declare no size.
+	{Key: "draw.resolution", Label: "Resolution",
 		Section: "visual", Workspace: true, Type: "choice", Default: "1920x1080",
 		Choices: []string{"1920x1080", "2560x1080", "1920x1200"},
-		Help:    "CK3's interface size: the screen divided by the GUI scale. 2560x1080 is ultrawide, 1920x1200 is 16:10.",
-		Words:   "gui preview screen size ultrawide aspect"},
-	{Key: "draw.resolution.vic3", Label: "Resolution, Vic3",
-		Section: "visual", Workspace: true, Type: "choice", Default: "1920x1080",
-		Choices: []string{"1920x1080", "2560x1080", "1920x1200"},
-		Help:    "Vic3's interface size: the screen divided by the GUI scale. 2560x1080 is ultrawide, 1920x1200 is 16:10.",
-		Words:   "gui preview screen size ultrawide aspect"},
-	{Key: "draw.resolution.eu5", Label: "Resolution, EU5",
-		Section: "visual", Workspace: true, Type: "choice", Default: "1920x1080",
-		Choices: []string{"1920x1080", "2560x1080", "1920x1200"},
-		Help:    "EU5's interface size: the screen divided by the GUI scale. 2560x1080 is ultrawide, 1920x1200 is 16:10.",
+		Help:    "The game's interface size: the screen divided by the GUI scale. 2560x1080 is ultrawide, 1920x1200 is 16:10.",
 		Words:   "gui preview screen size ultrawide aspect"},
 }
 
 // A ConfigFile is config.json held in memory for every service. A missing file means a first run. A file that cannot be
 // read gives an empty, read-only config, so the real file is never overwritten.
 type ConfigFile struct {
-	Dirs     Dirs // the folders PMT keeps its files in, resolved once with the config
+	Dirs     Dirs // PMT's folders
 	path     string
 	mu       sync.RWMutex
 	config   Config
@@ -317,16 +302,14 @@ type ConfigFile struct {
 func openConfig(dirs Dirs) *ConfigFile {
 	file := &ConfigFile{Dirs: dirs, path: filepath.Join(dirs.App, "config.json")}
 	config, err := LoadJSON[Config](file.path)
-	// a config that cannot be read stays empty and is never written back
 	file.config, file.readOnly = config, err != nil
 	return file
 }
 
-// Config returns a copy of the config as it stands.
+// Config returns a copy of the config. The copy shares no slice or map with the file's own.
 func (file *ConfigFile) Config() Config {
 	file.mu.RLock()
 	defer file.mu.RUnlock()
-	// the copy shares no slice or map with the file's own
 	config := file.config
 	config.Installs = slices.Clone(config.Installs)
 	config.Workspaces = lo.Map(config.Workspaces, func(workspace Workspace, _ int) Workspace {
@@ -335,15 +318,15 @@ func (file *ConfigFile) Config() Config {
 			mod.Calendar.Months = slices.Clone(mod.Calendar.Months)
 			return mod
 		})
+		workspace.IgnoredPairs = slices.Clone(workspace.IgnoredPairs)
 		return workspace
 	})
 	config.Settings = maps.Clone(config.Settings)
 	return config
 }
 
-// Update changes the config, saves it and emits config:changed with the given section, "" meaning all of them. If the
-// change returns an error, nothing is saved or emitted and Update returns that error. It also returns an error if the
-// config is read-only or cannot be saved.
+// Update changes the config, saves it and emits config:changed with a section, or "" for all. If the change fails,
+// nothing is saved and its error is returned. It also returns an error if the config is read-only or cannot be saved.
 func (file *ConfigFile) Update(section string, change func(config *Config) error) error {
 	file.mu.Lock()
 	defer file.mu.Unlock()
@@ -360,9 +343,8 @@ func (file *ConfigFile) Update(section string, change func(config *Config) error
 	return nil
 }
 
-// LookupSetting returns one setting's value in the given workspace: for a setting kept per workspace the workspace's
-// own, else the one the user set for the app, and the catalog's default when it was never set. It returns false for a
-// key the catalog does not have.
+// LookupSetting returns a setting's value in a workspace, or the catalog's default if it was never set. It returns
+// false if the catalog does not have the setting.
 func (file *ConfigFile) LookupSetting(workspaceID, key string) (string, bool) {
 	setting, ok := lo.Find(Catalog, func(setting Setting) bool { return setting.Key == key })
 	if !ok {

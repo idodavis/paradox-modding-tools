@@ -8,10 +8,10 @@ import type { TabsItem } from "@nuxt/ui";
 
 import { COMMANDS } from "../../app/commands";
 import { TOOL_CHOICES } from "../../app/pages";
-import { describeDumps, describeLanguages } from "../../lib/format";
+import { describeDumps, describeLanguages, matchQuery } from "../../lib/format";
 import { languagesQuery, settingsCatalogQuery, stateQuery, workspacesQuery } from "../../queries";
 import { gameIcon, THEME_FAMILIES, useSettingsStore } from "../../stores/settings";
-import { useWorkspaceStore } from "../../stores/workspace";
+import { useWorkspaceStore, VANILLA } from "../../stores/workspace";
 import CreateModForm from "../../ui/CreateModForm.vue";
 import FileSelector from "../../ui/FileSelector.vue";
 import InstallPicker from "../../ui/InstallPicker.vue";
@@ -72,8 +72,6 @@ const PANES = [
 ];
 const ROW = "relative flex h-14 min-w-0 items-center gap-2.5 border-b border-default ps-2 pe-3 text-start";
 const PICKED = "bg-(--accent-soft) before:absolute before:inset-y-0 before:start-0 before:w-0.5 before:bg-primary";
-/** The origin of the game's own files, which is also what the game's row in the load order picks. */
-const GAME = "vanilla";
 
 const { id, section = "general" } = defineProps<{ id: string; section?: string }>();
 
@@ -97,7 +95,7 @@ const { data: languages } = useQuery(() => ({
 }));
 const mods = computed(() => state.value?.mods ?? []);
 const selected = computed(
-  () => mods.value.find((mod) => mod.id === origin.value) ?? (origin.value === GAME ? undefined : mods.value[0]),
+  () => mods.value.find((mod) => mod.id === origin.value) ?? (origin.value === VANILLA ? undefined : mods.value[0]),
 );
 const order = computed({
   get: () => preview.value ?? mods.value,
@@ -107,17 +105,16 @@ const order = computed({
   },
 });
 const dumps = computed(() => state.value && describeDumps(state.value.dumps));
-const custom = computed(() => !!record.value?.gameColor || mods.value.some((mod) => store.isCustom(mod.id)));
+const custom = computed(() => !!record.value?.gameColor || mods.value.some((mod) => store.isCustom(mod.color)));
 
 // a section is listed when its title or one of its settings matches what was typed
 const sections = computed(() => {
-  const needle = search.value.trim().toLowerCase();
   const matches = (one: { value: string; label: string }) =>
-    !needle ||
-    [
+    matchQuery(
+      search.value,
       one.label,
       ...(catalog.value ?? []).filter((row) => row.section === one.value).map((row) => `${row.label} ${row.words}`),
-    ].some((text) => text.toLowerCase().includes(needle));
+    );
   return GROUPS.map((group) => ({ ...group, sections: group.sections.filter(matches) })).filter(
     (group) => group.sections.length,
   );
@@ -331,13 +328,13 @@ async function remove(): Promise<void> {
                   type="button"
                   class="w-full text-dimmed"
                   :class="[ROW, selected ? 'hover:bg-elevated' : PICKED]"
-                  @click="origin = GAME"
+                  @click="origin = VANILLA"
                 >
                   <span class="w-3.5 shrink-0" />
                   <span class="w-3.5 shrink-0 text-center font-mono text-11">0</span>
                   <span
                     class="size-5.5 shrink-0 rounded-md border border-accented"
-                    :style="{ background: store.originColor(GAME) }"
+                    :style="{ background: store.originColor(VANILLA) }"
                   />
                   <span class="flex min-w-0 grow flex-col">
                     <span class="truncate text-13 font-medium text-toned">{{ state.game?.name }}</span>
@@ -426,20 +423,7 @@ async function remove(): Promise<void> {
             </div>
           </template>
         </USplitter>
-        <UModal
-          v-model:open="creating"
-          title="Create a mod"
-          description="A descriptor, the game's mod folders, readmes and a localization file."
-          :ui="{ content: 'h-128' }"
-        >
-          <template #body>
-            <CreateModForm :workspace-id="id" @created="creating = false" />
-          </template>
-          <template #footer="{ close }">
-            <span class="grow" />
-            <UButton label="Cancel" @click="close" />
-          </template>
-        </UModal>
+        <CreateModForm v-model:open="creating" :workspace-id="id" />
       </div>
     </template>
 
@@ -495,7 +479,7 @@ async function remove(): Promise<void> {
             </p>
           </div>
           <div class="flex flex-wrap items-center gap-3">
-            <OriginChip v-for="chip in [GAME, ...mods.map((mod) => mod.id)]" :key="chip" :origin="chip" />
+            <OriginChip v-for="chip in [VANILLA, ...mods.map((mod) => mod.id)]" :key="chip" :origin="chip" />
             <span class="grow" />
             <UButton label="Reset all to automatic" size="sm" :disabled="!custom" @click="resetColors()" />
           </div>

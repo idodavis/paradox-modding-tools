@@ -1,8 +1,4 @@
-/**
- * Tab ids and what they open. A file tab is `file:<key>`; a diff tab is `diff:changes|staged|conflict:<root>:<key>`
- * or `diff:commit@<hash>:<root>:<key>`, where the root is the repository's folder written as a URI component. One
- * function parses an id and one makes a diff's. The table of views by file format is here too.
- */
+/** Tab ids and what they open, with the views each file format offers. */
 import type { Format } from "@internal/files/models";
 import type { Place } from "@services/workspace/models";
 import type { View } from "../../../stores/editor";
@@ -16,37 +12,36 @@ import scriptIcon from "../fileicons/paradox-script.svg?url";
 import shaderIcon from "../fileicons/paradox-shader.svg?url";
 import textureIcon from "../fileicons/paradox-texture.svg?url";
 
-/** What a tab id decodes to: a file at a place, or a diff of a file of a repository at a revision. */
+const SIDES = ["changes", "staged", "conflict", "commit"] as const;
+
+/** A DiffSide names the two revisions a diff tab compares. */
+type DiffSide = (typeof SIDES)[number];
+
+/** A TabTarget is what one tab id opens, a file or a diff of one. */
 export type TabTarget =
-  | { tab: "file"; key: string }
-  | { tab: "diff"; side: "changes" | "staged" | "conflict" | "commit"; root: string; key: string; hash?: string };
+  { tab: "file"; key: string } | { tab: "diff"; side: DiffSide; root: string; key: string; hash?: string };
 
-type DiffSide = Extract<TabTarget, { tab: "diff" }>["side"];
-
-const SIDES: readonly DiffSide[] = ["changes", "staged", "conflict", "commit"];
+/** The pattern of a diff tab's id. */
 const DIFF = new RegExp(`^diff:(${SIDES.join("|")})(?:@([0-9a-f]+))?:([^:]*):(.+)$`, "s");
 
-/**
- * How each file format is shown: its views, the URL of its icon and its editor language, keyed by Go's format. A
- * format with no icon of its own has "" for one.
- */
-export const VIEWS: Readonly<Record<Format, { views: readonly View[]; icon: string; language: string }>> = {
-  "": { views: ["code"], icon: "", language: "plaintext" },
-  script: { views: ["code"], icon: scriptIcon, language: "paradox-script" },
-  gui: { views: ["code", "visual", "split"], icon: guiIcon, language: "paradox-gui" },
-  asset: { views: ["code"], icon: assetIcon, language: "paradox-script" },
-  font: { views: ["code"], icon: fontIcon, language: "paradox-script" },
-  gfx: { views: ["code"], icon: gfxIcon, language: "paradox-script" },
-  localization: { views: ["code"], icon: locIcon, language: "paradox-localization" },
-  image: { views: ["image"], icon: textureIcon, language: "plaintext" },
-  table: { views: ["code"], icon: "", language: "plaintext" },
-  descriptor: { views: ["code"], icon: modIcon, language: "plaintext" },
-  shader: { views: ["code"], icon: shaderIcon, language: "plaintext" },
-  text: { views: ["code"], icon: "", language: "plaintext" },
-  binary: { views: [], icon: "", language: "plaintext" },
+/** VIEWS holds the views and the icon of each file format. A format with no icon of its own has "". */
+export const VIEWS: Readonly<Record<Format, { views: readonly View[]; icon: string }>> = {
+  "": { views: ["code"], icon: "" },
+  script: { views: ["code"], icon: scriptIcon },
+  gui: { views: ["code", "visual", "split"], icon: guiIcon },
+  asset: { views: ["code"], icon: assetIcon },
+  font: { views: ["code"], icon: fontIcon },
+  gfx: { views: ["code"], icon: gfxIcon },
+  localization: { views: ["code"], icon: locIcon },
+  image: { views: ["image"], icon: textureIcon },
+  table: { views: ["code"], icon: "" },
+  descriptor: { views: ["code"], icon: modIcon },
+  shader: { views: ["code"], icon: shaderIcon },
+  text: { views: ["code"], icon: "" },
+  binary: { views: [], icon: "" },
 };
 
-/** Each view's name and icon, in the order a tab offers them. */
+/** VIEW_ROWS holds each view's label and icon, in the order a tab offers them. */
 export const VIEW_ROWS: readonly { view: View; label: string; icon: string }[] = [
   { view: "code", label: "Code", icon: "i-lucide-code" },
   { view: "split", label: "Split", icon: "i-lucide-columns-2" },
@@ -54,16 +49,13 @@ export const VIEW_ROWS: readonly { view: View; label: string; icon: string }[] =
   { view: "image", label: "Image", icon: "i-lucide-image" },
 ];
 
-/**
- * Lists the views a file can show: its format's own, then Visual and Split when it holds something the Visual view
- * draws.
- */
+/** listViews lists the views a file can show. A file the Visual view can draw also gets Visual and Split. */
 export function listViews(place: Place, drawable: boolean): View[] {
   const more: View[] = drawable ? ["visual", "split"] : [];
   return [...new Set([...VIEWS[place.format].views, ...more])];
 }
 
-/** Decodes a tab id into what it opens. An id that is no diff's is a file's, with or without its prefix. */
+/** parseTab decodes a tab id into what it opens. Any id that is not a diff's is a file's. */
 export function parseTab(id: string): TabTarget {
   const [, text, hash, root = "", key] = DIFF.exec(id) ?? [];
   const side = SIDES.find((candidate) => candidate === text);
@@ -71,10 +63,12 @@ export function parseTab(id: string): TabTarget {
   return { tab: "file", key: id.replace(/^file:/, "") };
 }
 
-/**
- * Makes a diff tab's id from its side, the root of the file's repository and the file's key. A diff of a commit also
- * names the commit's hash.
- */
+/** fileTab makes a file tab's id from the file's key. */
+export function fileTab(key: string): string {
+  return `file:${key}`;
+}
+
+/** diffTab makes a diff tab's id. A diff of a commit also holds the commit's hash. */
 export function diffTab(side: DiffSide, root: string, key: string, hash?: string): string {
   return `diff:${side}${hash ? `@${hash}` : ""}:${encodeURIComponent(root)}:${key}`;
 }

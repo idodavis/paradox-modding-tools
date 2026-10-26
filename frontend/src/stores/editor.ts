@@ -15,7 +15,7 @@ import type { Place } from "@services/workspace/models";
 import * as workspaceApi from "@services/workspace/service";
 import type { IPosition } from "monaco-editor";
 import { closeModel, findModel, openModel, renameModel, unsavedModels } from "../pages/ide/editor/models";
-import { diffTab, parseTab, VIEWS } from "../pages/ide/editor/tabs";
+import { diffTab, fileTab, parseTab, VIEWS } from "../pages/ide/editor/tabs";
 import { drawablesQuery, loadQuery, placeQuery, workspacesQuery } from "../queries";
 import { THIS_WINDOW, useWindowsStore } from "./windows";
 import { useWorkspaceStore } from "./workspace";
@@ -69,16 +69,18 @@ export const useEditorStore = defineStore("editor", () => {
       await openFile(request.place, request.position);
       // a file shown as code that defines something the view draws, a coat of arms, opens drawn
       if (!request.created || defaultView(request.place) !== "code") return;
-      if ((await loadQuery(drawablesQuery(request.place.path)))?.length) setView(`file:${request.place.key}`, "visual");
+      if ((await loadQuery(drawablesQuery(request.place.path)))?.length) setView(fileTab(request.place.key), "visual");
     },
   });
-  // a tab brought back for a file no longer on disk closes, as one deleted while open does; the error still toasts
+  // a file that cannot open is closed and forgotten
   const { mutate: openPath } = useMutation({
     mutation: async (path: string) => {
       const place = await loadQuery(placeQuery(path));
       if (!place) return;
       await openFile(place).catch((error: unknown) => {
-        while (find(`file:${place.key}`)) close(`file:${place.key}`);
+        const id = fileTab(place.key);
+        while (find(id)) close(id);
+        places.delete(place.key);
         throw error;
       });
     },
@@ -105,8 +107,9 @@ export const useEditorStore = defineStore("editor", () => {
   Events.On("fs:changed", ({ data }) => {
     if (!data.deleted) return;
     void loadQuery(placeQuery(data.path)).then((place) => {
-      const id = `file:${place?.key}`;
-      while (place && !findModel(place.key)?.unsaved && find(id)) close(id);
+      if (!place) return;
+      const id = fileTab(place.key);
+      while (!findModel(place.key)?.unsaved && find(id)) close(id);
     });
   });
 
@@ -290,7 +293,7 @@ export const useEditorStore = defineStore("editor", () => {
     if (THIS_WINDOW === "main" && page && page !== "workspace-ide") {
       void router.push({ name: "workspace-ide", params: { id: workspace.activeId() } });
     }
-    const id = `file:${place.key}`;
+    const id = fileTab(place.key);
     const tab = group.tabs.find((other) => other.id === id);
     if (tab) {
       if (source !== "explorer") tab.preview = false;
@@ -431,7 +434,8 @@ export const useEditorStore = defineStore("editor", () => {
    */
   const rename = async (from: string, to: string): Promise<void> => {
     await workspaceApi.Rename(from, to);
-    const key = from.replaceAll("\\", "/").toLowerCase();
+    const key = (await loadQuery(placeQuery(from)))?.key;
+    if (!key) return;
     const moved = [...places.values()].filter((place) => place.key === key || place.key.startsWith(`${key}/`));
     for (const old of moved) {
       const place = await loadQuery(placeQuery(to + old.path.slice(from.length)));
@@ -446,7 +450,7 @@ export const useEditorStore = defineStore("editor", () => {
         const target = parseTab(tab.id);
         if (target.key !== key) continue;
         const id =
-          target.tab === "file" ? `file:${place.key}` : diffTab(target.side, target.root, place.key, target.hash);
+          target.tab === "file" ? fileTab(place.key) : diffTab(target.side, target.root, place.key, target.hash);
         if (group.active === tab.id) group.active = id;
         tab.id = id;
       }
@@ -459,15 +463,16 @@ export const useEditorStore = defineStore("editor", () => {
 
   // a file a rename or a fix edited where no tab shows it gets a tab after the shown one, which stays shown
   watch(
-    () => unsavedModels().filter((model) => !find(`file:${model.place.key}`)),
+    () => unsavedModels().filter((model) => !find(fileTab(model.place.key))),
     (untabbed) => {
       const group = activeGroup();
       if (!group) return;
       for (const model of untabbed) {
         places.set(model.place.key, model.place);
         const index = group.tabs.findIndex((tab) => tab.id === group.active) + 1;
-        group.tabs.splice(index, 0, { id: `file:${model.place.key}`, preview: false, view: "code" });
-        group.active ??= `file:${model.place.key}`;
+        const id = fileTab(model.place.key);
+        group.tabs.splice(index, 0, { id, preview: false, view: "code" });
+        group.active ??= id;
       }
     },
   );

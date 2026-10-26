@@ -119,9 +119,7 @@ func findDescription(tree *jomini.Tree, statement int32) string {
 	return ""
 }
 
-// makeSection returns the section of one statement at the top of a definition. A key whose value has a message gets
-// its text, and so does a title or a description that has none. A block also gets its own trigger, the texts it can
-// show and, for an option, the keys it writes as yes.
+// makeSection returns the section of one statement at the top of a definition, with its texts.
 func makeSection(ws *workspace.Session, mods *index.Index, tree *jomini.Tree, statement int32) Section {
 	current := tree.Statements[statement]
 	section := Section{Key: tree.Text(current.Key), Value: tree.Unquoted(current.Value), Line: toSourceLine(tree, current.Key)}
@@ -190,9 +188,7 @@ func listVersions(ws *workspace.Session, mods *index.Index, tree *jomini.Tree, s
 	return versions, random
 }
 
-// makeVersion returns the text a statement shows. The statement is a key whose value is a localization key, or a block
-// that writes one as its desc or text. The text is missing if the detail's language has no message with the key; it is
-// then the base language's, or "" if that has none either. It returns false if the statement writes no key.
+// makeVersion returns the text a statement shows. It returns false if the statement writes no localization key.
 func makeVersion(ws *workspace.Session, mods *index.Index, tree *jomini.Tree, statement int32) (Version, bool) {
 	label := statement
 	if tree.Statements[statement].IsBlock() {
@@ -257,13 +253,11 @@ func listLinked(ws *workspace.Session, mods *index.Index, fires, firedBy []index
 	return linked
 }
 
-// listReferences returns the nodes that a node's definitions refer to, each name once, in the order first written. A
-// saved scope or a variable is a node at the place it is first read. Any other name the game keeps no definition of is
-// left out.
+// listReferences returns the nodes a node's definitions refer to, each once, in the order first written.
 func listReferences(ws *workspace.Session, mods *index.Index, site index.Site) []Node {
 	references := []Node{}
 	seen := map[schema.Reference]bool{}
-	for _, part := range listMerged(ws, mods, site) {
+	for _, part := range listActing(ws, mods, site) {
 		occurrences := mods.Occurrences[part.File]
 		for position := part.Occurrence + 1; int(position) < len(occurrences) && isInside(occurrences, position, part.Occurrence); position++ {
 			if occurrences[position].Role != index.RoleRefers {
@@ -294,9 +288,7 @@ func isInside(occurrences []index.Occurrence, position, definition int32) bool {
 	return false
 }
 
-// findReference returns the node of a name that a definition reads at the given site. For a saved scope or a variable
-// it is the place the name is read, and for any other name the definition the game keeps of it. It returns false if
-// the game keeps none.
+// findReference returns the node of a name a definition reads. It returns false if the game keeps no definition of it.
 func findReference(ws *workspace.Session, mods *index.Index, reference schema.Reference, use index.Site) (Node, bool) {
 	if _, saved := game.LinkMakers[reference.Database]; saved {
 		return makeNode(ws, mods, use, 0), true
@@ -342,9 +334,7 @@ func findBackground(ws *workspace.Session, mods *index.Index, tree *jomini.Tree,
 	return ""
 }
 
-// resolveChain returns the path of the picture a chain of definitions ends in, starting from the given values. It uses
-// the chain's fallback if the game does not read the final file. It returns "" if a hop finds no definition or no
-// file is read.
+// resolveChain returns the path of the picture a chain of definitions ends in, or "" if there is none.
 func resolveChain(ws *workspace.Session, mods *index.Index, chain game.PictureChain, values []string) string {
 	var tree *jomini.Tree
 	var statement int32

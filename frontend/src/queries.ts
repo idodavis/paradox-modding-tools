@@ -1,9 +1,5 @@
-/**
- * Every read of Go, one query per RPC, and the one place query keys are defined. A table Go sends once is a query
- * no event refreshes; a query that an event or a mutation refreshes has a key factory here. Monaco's per-position
- * reads go through the providers, not here.
- */
-import { defineQueryOptions, useQueryCache, type UseQueryOptions } from "@pinia/colada";
+/** The queries that read Go, one per RPC, and the keys that events and mutations refresh. */
+import { defineQueryOptions, useMutation, useQueryCache, type UseQueryOptions } from "@pinia/colada";
 
 import * as app from "@services/app/service";
 import * as draw from "@services/draw/service";
@@ -19,18 +15,18 @@ import type { Coat, PictureList, States } from "@services/draw/models";
 import type { Filter } from "@services/graph/models";
 import type { FindingSite } from "@services/health/models";
 
-/** The URL the files route serves a path at, for an image, a texture or a thumbnail. */
+/** fileUrl returns the URL that serves a file. */
 export function fileUrl(path: string): string {
   return `/files?path=${encodeURIComponent(path)}`;
 }
 
-/** Reads a query outside a component: the cached answer if it is fresh, else Go's. It throws if Go's read fails. */
+/** loadQuery reads a query outside a component, from the cache if it is fresh. It throws if Go's read fails. */
 export async function loadQuery<T>(options: UseQueryOptions<T>): Promise<T | undefined> {
   const cache = useQueryCache();
   return (await cache.refresh(cache.ensure(options))).data;
 }
 
-/** The keys an event or a mutation refreshes. */
+/** keys holds the query keys that an event or a mutation refreshes. */
 export const keys = {
   settings: ["app", "settings"] as const,
   windows: ["app", "windows"] as const,
@@ -58,7 +54,11 @@ export const settingsQuery = defineQueryOptions((workspaceId: string) => ({
   key: [...keys.settings, workspaceId],
   query: () => app.ReadSettings(workspaceId),
 }));
-export const updateQuery = defineQueryOptions({ key: ["app", "update"], query: () => app.CheckUpdate() });
+// a check GitHub refuses, such as a rate limit, finds no update
+export const updateQuery = defineQueryOptions({
+  key: ["app", "update"],
+  query: () => app.CheckUpdate().catch(() => ({ version: "", available: false })),
+});
 export const windowsQuery = defineQueryOptions({ key: keys.windows, query: () => app.ListWindows() });
 export const crashedQuery = defineQueryOptions({ key: ["app", "crashed"], query: () => app.CrashedLastRun() });
 
@@ -124,7 +124,7 @@ export const windowQuery = defineQueryOptions(({ path, name }: { path: string; n
   key: [...keys.draw(path), "window", name],
   query: () => draw.ResolveWindow(path, name),
 }));
-// a new pick keeps the last answer shown until its own arrives, so the picture and the panel never blank
+// a new pick shows the last answer until its own arrives, so the view never blanks
 export const statesQuery = defineQueryOptions(
   ({ path, name, picks }: { path: string; name: string; picks: Record<string, string> }) => ({
     key: [...keys.draw(path), "states", name, picks],
@@ -155,10 +155,6 @@ export const reportQuery = defineQueryOptions((order: string[]) => ({
   key: [...keys.health, "report", order],
   query: () => health.BuildReport(order),
 }));
-export const sectionsQuery = defineQueryOptions({
-  key: ["health", "sections"],
-  query: () => health.ListSections(),
-});
 export const codesQuery = defineQueryOptions({ key: ["health", "codes"], query: () => health.ListCodes() });
 export const overviewQuery = defineQueryOptions({
   key: [...keys.health, "overview"],
@@ -172,9 +168,9 @@ export const comparedQuery = defineQueryOptions(({ a, b }: { a: FindingSite; b: 
   key: [...keys.health, "compared", a, b],
   query: () => health.CompareStatements(a, b),
 }));
-export const sourcesQuery = defineQueryOptions((sites: FindingSite[]) => ({
-  key: [...keys.health, "sources", sites],
-  query: () => health.ListSources(sites),
+export const snippetsQuery = defineQueryOptions((sites: FindingSite[]) => ({
+  key: [...keys.health, "snippets", sites],
+  query: () => health.ListSnippets(sites),
 }));
 export const readersQuery = defineQueryOptions((key: string) => ({
   key: [...keys.health, "readers", key],
@@ -187,7 +183,7 @@ export const indentationQuery = defineQueryOptions((path: string) => ({
   key: [...keys.file(path), "indentation"],
   query: () => lsp.DescribeIndentation(path),
 }));
-// a file's entries are read again with the Visual view's reads, each time the editor sends Go the file's text
+// the outline shares the Visual view's key, so it is read again each time the editor sends Go the text
 export const outlineQuery = defineQueryOptions((path: string) => ({
   key: [...keys.draw(path), "outline"],
   query: () => lsp.ListSymbols(path),
@@ -274,31 +270,45 @@ export const gitFileQuery = defineQueryOptions(
   }),
 );
 
-// Publish
-export const listingQuery = defineQueryOptions((modId: string) => ({
-  key: [...keys.release(modId), "listing"],
-  query: () => steam.ReadListing(modId),
+// Publish. A listing's key is "" for the mod's own listing.
+export const listingsQuery = defineQueryOptions((modId: string) => ({
+  key: [...keys.release(modId), "listings"],
+  query: () => steam.ListListings(modId),
 }));
-export const uploadQuery = defineQueryOptions((modId: string) => ({
-  key: [...keys.release(modId), "upload"],
-  query: () => steam.ListUpload(modId),
+export const listingQuery = defineQueryOptions(({ modId, key }: { modId: string; key: string }) => ({
+  key: [...keys.release(modId), "listing", key],
+  query: () => steam.ReadListing(modId, key),
 }));
-export const comparisonQuery = defineQueryOptions((modId: string) => ({
-  key: [...keys.release(modId), "comparison"],
-  query: () => steam.CompareUpload(modId),
+export const uploadQuery = defineQueryOptions(({ modId, key }: { modId: string; key: string }) => ({
+  key: [...keys.release(modId), "upload", key],
+  query: () => steam.ListUpload(modId, key),
 }));
-export const comparedFileQuery = defineQueryOptions(({ modId, rel }: { modId: string; rel: string }) => ({
-  key: [...keys.release(modId), "file", rel],
-  query: () => steam.CompareFile(modId, rel),
+export const comparisonQuery = defineQueryOptions(({ modId, key }: { modId: string; key: string }) => ({
+  key: [...keys.release(modId), "comparison", key],
+  query: () => steam.CompareUpload(modId, key),
+}));
+/** useComparison returns a mutation that asks Steam again about a listing's item and caches the answer. */
+export function useComparison() {
+  const cache = useQueryCache();
+  return useMutation({
+    mutation: ({ modId, key }: { modId: string; key: string }) => steam.FetchItem(modId, key),
+    onSuccess: (comparison, variables) => cache.setQueryData(comparisonQuery(variables).key, comparison),
+  });
+}
+export const comparedFileQuery = defineQueryOptions(
+  ({ modId, key, rel }: { modId: string; key: string; rel: string }) => ({
+    key: [...keys.release(modId), "file", key, rel],
+    query: () => steam.CompareFile(modId, key, rel),
+  }),
+);
+export const changeNotesQuery = defineQueryOptions(({ modId, key }: { modId: string; key: string }) => ({
+  key: [...keys.release(modId), "change-notes", key],
+  query: () => steam.ListChangeNotes(modId, key),
 }));
 export const dlcQuery = defineQueryOptions({ key: ["release", "dlc"], query: () => steam.ListDLC() });
 export const tagsQuery = defineQueryOptions({ key: ["release", "tags"], query: () => steam.ListTags() });
 export const rulesQuery = defineQueryOptions({ key: ["release", "rules"], query: () => steam.ListRules() });
 export const steamStatusQuery = defineQueryOptions({ key: ["release", "steam"], query: () => steam.DescribeSteam() });
-export const bbcodeQuery = defineQueryOptions((markdown: string) => ({
-  key: ["release", "bbcode", markdown],
-  query: () => steam.ToBBCode(markdown),
-}));
 export const htmlQuery = defineQueryOptions((bbcode: string) => ({
   key: ["release", "html", bbcode],
   query: () => steam.ToHTML(bbcode),

@@ -10,6 +10,7 @@ import { computed, shallowRef, useTemplateRef } from "vue";
 import { Format } from "@internal/files/models";
 import type { Symbol } from "@services/lsp/models";
 
+import { matchQuery } from "../../lib/format";
 import { coatQuery, drawablesQuery, loadQuery, outlineQuery } from "../../queries";
 import { useDrawStore } from "../../stores/draw";
 import { useEditorStore } from "../../stores/editor";
@@ -47,10 +48,7 @@ const drawn = computed(() => (place.value ? store.file(place.value.path).drawabl
 const search = shallowRef("");
 const query = refDebounced(search, 150);
 const rows = computed<Row[]>(() => {
-  const text = query.value.toLowerCase();
-  const matches = entries.value.filter(
-    ({ name, title }) => name.toLowerCase().includes(text) || title.toLowerCase().includes(text),
-  );
+  const matches = entries.value.filter(({ name, title }) => matchQuery(query.value, name, title));
   const groups = [...Map.groupBy(matches, ({ database }) => database).values()];
   // a script file's rows do not say their kind, so its list has a heading even where it holds one kind
   if (drawable.value && groups.length < 2) return matches.map((entry) => ({ entry }));
@@ -67,8 +65,9 @@ const pinned = computed(() => {
 const canvases = new WeakSet<HTMLCanvasElement>();
 
 /**
- * Lists symbols with the symbols nested in each that are of its own database, such as a kingdom in an empire, in the
- * order they are written. A name script saves inside an entry, such as a saved scope, is left to the outline.
+ * flatten lists symbols with the symbols nested in each that are of its own database, such as a kingdom in an
+ * empire, in the order they are written. A name script saves inside an entry, such as a saved scope, is left to the
+ * outline.
  */
 function flatten(symbols: Symbol[]): Symbol[] {
   return symbols.flatMap((symbol) => [
@@ -77,14 +76,14 @@ function flatten(symbols: Symbol[]): Symbol[] {
   ]);
 }
 
-/** Describes an entry under its name: its title, then its kind unless it is a coat. */
+/** describe returns the line under an entry's name: its title, then its kind unless it is a coat. */
 function describe(entry: Symbol): string {
   return [entry.title, isCoat.value ? "" : entry.what].filter(Boolean).join(" · ");
 }
 
 /**
- * Opens an entry of the active file. One the Visual view draws is drawn, in the Visual view where its tab shows the
- * code. Any other is shown in the code at its first line.
+ * openEntry opens an entry of the active file. One the Visual view draws is drawn, in the Visual view where its tab
+ * shows the code. Any other is shown in the code at its first line.
  */
 function openEntry(entry: Symbol): void {
   const tab = editor.activeTab();
@@ -97,7 +96,7 @@ function openEntry(entry: Symbol): void {
   editor.show(place.value, { lineNumber: entry.range.startLineNumber, column: entry.range.startColumn });
 }
 
-/** Draws a coat's picture on a canvas in the list. A canvas that is drawn already is left as it is. */
+/** buildThumbnail draws a coat's picture on a canvas in the list. A canvas drawn already is left as it is. */
 async function buildThumbnail(canvas: unknown, name: string): Promise<void> {
   if (!(canvas instanceof HTMLCanvasElement) || canvases.has(canvas) || !place.value) return;
   canvases.add(canvas);

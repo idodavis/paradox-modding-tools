@@ -4,6 +4,7 @@
 package game
 
 import (
+	"path"
 	"slices"
 	"strings"
 
@@ -32,8 +33,7 @@ type ShapeRule struct {
 // A Keyword is a key of the language itself: one it gives a fixed shape to, or one of its operators. The first row
 // that fits a key wins.
 type Keyword struct {
-	// Key is a key path. Its last step is the key as written in lower case, and its earlier steps are the commands
-	// that must hold it. <number> and <any> match by shape, and a trailing * makes it a prefix.
+	// Key is a key path in lower case: the commands that must hold the key, then the key.
 	Key    string
 	Holder string // fits only in a block of this shape; "" means any
 	Shape  string // what its block holds, a Shapes key; enclosing the holder's; "" means what the key's rule gives
@@ -75,6 +75,9 @@ const (
 
 // descBlurb is the sentence shown for a description, which a value block's desc shares.
 const descBlurb = "The text shown: a localization key, or a block that chooses one."
+
+// customBlurb is the sentence shown for a list's custom text.
+const customBlurb = "The text shown for the list in the tooltip: a localization key."
 
 // ScopeLinks are the language's links to the scopes a walk holds at any place in a definition: the definition's
 // root, the scope before the last step, and the current one. The dumps declare them as links with no target.
@@ -179,9 +182,7 @@ var Shapes = map[string]ShapeRule{
 	"description": {Values: Localization},
 }
 
-// Keywords lists the keys the language gives a fixed shape to (random_list's branches, switch's cases, the list
-// iterators, a description's markers, a value block's operators), followed by the operators the dumps declare as
-// commands, which name no shape and leave it to the key's rule.
+// Keywords lists the keys the language gives a fixed shape to, then the operators the dumps declare as commands.
 var Keywords = []Keyword{
 	{Key: "random_list/<number>", Shape: "effects", Caller: AnyCall, Weighted: true, Blurb: "One branch of a random list; its number is how likely it is."},
 	{Key: "switch/<any>", Shape: "enclosing", Blurb: "One case of a switch: runs when the trigger's value is this."},
@@ -189,6 +190,9 @@ var Keywords = []Keyword{
 	{Key: "random_*", Shape: "effects", Class: "list", Blurb: "Runs the effects inside it on one random item of the list."},
 	{Key: "ordered_*", Shape: "effects", Class: "list", Blurb: "Runs the effects inside it on the items of the list in the order given."},
 	{Key: "any_*", Shape: "triggers", Class: "list", Blurb: "True when at least one item of the list passes the triggers inside it."},
+	// no dump declares a list's custom text; the games write it inside every_ and ordered_ lists only
+	{Key: "every_*/custom", Shape: "description", Class: "display", Blurb: customBlurb},
+	{Key: "ordered_*/custom", Shape: "description", Class: "display", Blurb: customBlurb},
 	{Holder: "description", Key: "first_valid", Shape: "description", Class: "display", Shows: "first", Blurb: "Shows the first text inside it whose trigger holds."},
 	{Holder: "description", Key: "random_valid", Shape: "description", Class: "display", Shows: "random", Blurb: "Shows one of the texts inside it whose trigger holds, at random."},
 	{Holder: "description", Key: "triggered_desc", Shape: "description", Class: "display", Shows: "leaf", Blurb: "A text shown only when its trigger holds."},
@@ -266,10 +270,7 @@ var DumpPhrases = struct {
 	NoScope  []string // scope names that name no scope
 }{"Iterate through", []string{"none", "all"}}
 
-// LinkMakers are, for each link of the dumps that reads a name back (scope:x, var:x, local_var:x, global_var:x),
-// the commands that make its names: a command whose value is the name, or command/key for the key in its block
-// that holds it. The dumps declare the links and the commands, but only their prose says which command makes the
-// name a link reads.
+// LinkMakers are the commands that make the names a link such as scope:x or var:x reads, by link.
 var LinkMakers = map[string][]string{
 	SavedScopes: {
 		"save_scope_as", "save_temporary_scope_as", "save_scope_value_as/name", "save_temporary_scope_value_as/name",
@@ -321,9 +322,8 @@ var makerLinks = func() map[string]string {
 	return links
 }()
 
-// LookupKeyword returns the first keyword that fits a key, given the shape of the block it is in and the command
-// that holds it: by the key alone, or by the command and the key. A key that is a number or a date also fits
-// <number>. A prefix keyword never fits here. It returns false if none fits.
+// LookupKeyword returns the first keyword that fits a key in a block's shape and command. It returns false if none
+// fits.
 func LookupKeyword(shape, command, key string) (Keyword, bool) {
 	candidates := append(make([]string, 0, 3), key, AnyKey)
 	if IsNumberKey(key) {
@@ -337,7 +337,8 @@ func LookupKeyword(shape, command, key string) (Keyword, bool) {
 			}
 			row := Keywords[position]
 			holder, _, held := strings.Cut(row.Key, "/")
-			if (row.Holder == "" || row.Holder == shape) && (!held || holder == command) {
+			fits, _ := path.Match(holder, command)
+			if (row.Holder == "" || row.Holder == shape) && (!held || fits) {
 				best, ok = position, true
 				break
 			}
@@ -362,9 +363,7 @@ func LookupLinkMaker(maker string) (string, bool) {
 	return link, ok
 }
 
-// ClassifyKey returns the operator class of a key, or "" if it is not an operator. Keys are matched in lower case
-// because the games write AND and and alike. A list iterator's prefix is no class by itself, since a scripted
-// trigger may be named any_x.
+// ClassifyKey returns the operator class of a key, ignoring case, or "" if it is not an operator.
 func ClassifyKey(shape, command, key string) string {
 	keyword, _ := LookupKeyword(shape, command, strings.ToLower(key))
 	return keyword.Class

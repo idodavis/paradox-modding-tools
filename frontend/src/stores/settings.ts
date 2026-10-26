@@ -1,8 +1,7 @@
 /**
  * The settings store: every value through the settings query for the active workspace, written through one mutation,
  * and the theme put on `<html>` from the settings and the system's preference. This store keeps no copy of a value.
- * GAMES is the frontend's one table keyed by Go's game ids, holding each game's icon and theme family, since icons
- * and colors are the frontend's.
+ * GAMES is the frontend's one table keyed by Go's game ids, holding each game's icon, since icons are the frontend's.
  */
 import { defineStore } from "pinia";
 import { useMutation, useQuery } from "@pinia/colada";
@@ -16,11 +15,11 @@ import * as app from "@services/app/service";
 import { settingsQuery, stateQuery } from "../queries";
 import { useWorkspaceStore } from "./workspace";
 
-/** The games as the frontend draws them, by Go's id: each game's icon and the theme family named after it. */
-export const GAMES: readonly { id: string; icon: string; family: string }[] = [
-  { id: "ck3", icon: ck3Icon, family: "ck3" },
-  { id: "vic3", icon: vic3Icon, family: "vic3" },
-  { id: "eu5", icon: eu5Icon, family: "eu5" },
+/** The games as the frontend draws them, by Go's id: each game's icon. A game's theme family has the game's id. */
+export const GAMES: readonly { id: string; icon: string }[] = [
+  { id: "ck3", icon: ck3Icon },
+  { id: "vic3", icon: vic3Icon },
+  { id: "eu5", icon: eu5Icon },
 ];
 
 /** The theme families: pmt, catppuccin, one, pierre, and one per GAMES row. */
@@ -34,15 +33,19 @@ export const THEME_FAMILIES: readonly { id: string; label: string }[] = [
   { id: "vic3", label: "Victoria" },
 ];
 
-/** A game's icon: the URL of its image. It is "" for a game the app has no icon for. */
+/** gameIcon returns the URL of a game's icon. It is "" for a game the app has no icon for. */
 export function gameIcon(id: string): string {
   return GAMES.find((row) => row.id === id)?.icon ?? "";
 }
 
 export const useSettingsStore = defineStore("settings", () => {
   const workspace = useWorkspaceStore();
-  // Go answers each setting for the active workspace: the IDE's are kept per workspace, the rest for the app
-  const { data: values } = useQuery(() => settingsQuery(workspace.activeId()));
+  // Go answers each setting for the active workspace: the IDE's are kept per workspace, the rest for the app. The last
+  // workspace's values stand in while the next one's are read, so no setting reads as "" during a switch.
+  const { data: values } = useQuery(() => ({
+    ...settingsQuery(workspace.activeId()),
+    placeholderData: (previous) => previous,
+  }));
   const { data: state } = useQuery(stateQuery);
   const { mutate } = useMutation({
     mutation: (change: { key: string; value: string }) =>
@@ -53,6 +56,9 @@ export const useSettingsStore = defineStore("settings", () => {
 
   /** A setting's value, which is its default when it was never set. It is "" for a key the catalog lacks. */
   const value = (key: string): string => values.value?.[key] ?? "";
+
+  /** Whether a setting that is a switch is on. */
+  const isOn = (key: string): boolean => value(key) === "true";
 
   /** Writes a setting. The config:changed event then refreshes the query. */
   const write = (key: string, value: string): void => mutate({ key, value });
@@ -67,11 +73,10 @@ export const useSettingsStore = defineStore("settings", () => {
 
   /** The theme in force: the family and whether dark, from the settings and the system. */
   const theme = (): { family: string; dark: boolean } => {
-    const game =
-      value("appearance.matchGame") === "true" ? GAMES.find((row) => row.id === state.value?.game?.id) : undefined;
+    const game = isOn("appearance.matchGame") ? GAMES.find((row) => row.id === state.value?.game?.id) : undefined;
     return {
-      family: game?.family ?? (value("appearance.theme") || "pmt"),
-      dark: value("appearance.followSystem") === "true" ? systemDark.value : value("appearance.dark") === "true",
+      family: game?.id ?? (value("appearance.theme") || "pmt"),
+      dark: isOn("appearance.followSystem") ? systemDark.value : isOn("appearance.dark"),
     };
   };
 
@@ -104,5 +109,5 @@ export const useSettingsStore = defineStore("settings", () => {
     root.style.setProperty("--ide-ui-font", `${value("ide.panelTextSize")}px`);
   });
 
-  return { value, write, writeItem, theme, codeFont };
+  return { value, isOn, write, writeItem, theme, codeFont };
 });

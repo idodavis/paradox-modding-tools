@@ -10,3 +10,9 @@ func loadLibrary(path string) (uintptr, error) {
 	handle, err := syscall.LoadLibrary(path)
 	return uintptr(handle), err
 }
+
+// findSymbol returns the address of a function that a loaded DLL exports. It returns an error if the DLL does not
+// export it.
+func findSymbol(handle uintptr, name string) (uintptr, error) {
+	return syscall.GetProcAddress(syscall.Handle(handle), name)
+}

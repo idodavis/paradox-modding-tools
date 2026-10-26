@@ -10,11 +10,11 @@ schema's databases.
 
 | file | holds |
 |---|---|
-| `index.go` | `Role` and its constants, `Occurrence`, `Table` with `Intern` and `Lookup`, `Site`, `Posting`, `Index`; the accessors of a site (`Occurrence`, `File`, `Language`, `Text`); `FindFile`, `IsListed`, `ListOwnFiles`, `FindRoot` |
+| `index.go` | `Role` and its constants, `Occurrence`, `Table` with `Intern` and `Lookup`, `Site`, `Posting`, `Index`; the accessors of a site (`Occurrence`, `File`, `Language`, `Text`, `FindMode`); `FindFile`, `IsListed`, `ListOwnFiles`, `FindRoot` |
 | `scan.go` | the scan and the load: `Scan`, `ScanMods`, `LoadIndex`, `Index.ScanFiles`, `Index.Clone`, `ListFiles`; the scan's visitor, `collector`; the messages of a localization file, the references in their text, and the rows of a table file; `ToCaseless` |
 | `lookup.go` | the lookups by name: `Resolve`, `ResolveLocal`, `ListDatabases`, `ListUses`, `ListCallees`, `ListDefinitions`, `ListMessages`, `FindDefinition`, `ToReference`, `CountDefinitions`; the postings |
-| `combine.go` | what the game keeps: `Winner` with `IsKept`, `FindWinner`, `FindKept`, `FindKeptLocal`, `ListKept`; the file the game reads at a path, `FindLoaded`, `IsLoaded`, `ListImages`, `ResolveTexture`; the load order |
-| `fires.go` | `Fire`, `ListFires`, `ListFiredBy`; the rule that marks a reference `Firing` |
+| `combine.go` | what the game keeps: `Winner` with `IsKept`, `Injected`, `Combined`, `Unsettled`, `ResolveSite`, `FindWinner`, `FindKept`, `FindKeptLocal`, `ListKept`; the file the game reads at a path, `FindLoaded`, `IsLoaded`, `ListImages`, `ResolveTexture`; the load order, the entry modes, the priorities and the replace_path |
+| `fires.go` | `Fire`, `ListFires`, `ListFiredBy`, `ListActing`; the rule that marks a reference `Firing` |
 
 ## Occurrences and tables
 
@@ -83,27 +83,46 @@ A localization key is defined by its messages, so its role is `RoleLocalizes` wh
 Two questions decide what the game reads, each answered in one place in `combine.go`.
 
 **The file at a path.** `FindLoaded` returns the file the game reads for a path from a root: the last one in load order.
-A mod whose `replace_path` holds the path's folder drops the files of every root before it in that folder. A stage
-folder (the game's `StageRoots`) is not part of the path, so the same path in two stages is one path. `FindLoaded` also
-returns the files the loaded one hides. `IsLoaded` asks whether the game reads a file at all, and `ResolveTexture` finds
-the image file a written texture path names among the files the game reads.
+A mod's `replace_path` drops the game's files in exactly the folder it names, not in its subfolders. No source says
+whether it also drops an earlier mod's files there, so `FindLoaded` keeps them, and a name such a drop would decide is
+unsettled. A stage folder (the game's `StageRoots`, in the order it mounts them) is not part of the path, so the same
+path in two stages is one path. In a game with stages, a mod's file outside a stage folder is never read: it is not
+loaded, hides no file and defines nothing. `FindLoaded` also returns the files the loaded one hides, the dropped ones
+among them. `IsLoaded` asks whether the game reads a file at all, and `ResolveTexture` finds the image file a written
+texture path names among the files the game reads.
 
 **The definition of a name.** `FindWinner` decides which of several definitions of one name the game keeps, by the
 database's `game.Precedence`. The definitions are put in the game's load order first: by their files, where a folder's
-files come before its subfolders' and names compare byte by byte with case, or by their roots where the precedence says
-the playset decides. Then:
+files come before its subfolders' (Vic3's game.log, the EU5 wiki; no CK3 source says otherwise) and names compare byte
+by byte with case, or by their roots where the precedence says the playset decides. Only the copies in files the game
+reads take part. Then:
 
-- A database whose precedence names entry modes reads them in load order. A plain definition replaces what came before
-  it. A mode that replaces takes its place, a mode that adds joins it, and a mode with nothing to act on does nothing
-  unless it creates. `game.EntryModes` says which mode does what.
-- Otherwise the first or the last one loaded wins, or the one with the highest override priority, or all of them are
-  merged, as the precedence's `Keeps` says.
-- Where a `replace_path` dropped some of the definitions, the game decides among the rest, and the reason is `replace`
-  if that changes which one wins.
+- A database whose precedence names entry modes keeps the first plain definition, and a later plain one is not
+  created; where the database keeps every copy (Vic3's DNA data), a later plain one joins it. The entry modes act in a
+  pass after every plain copy, the kinds in the order of `game.EntryModes` and the modes of one kind in file order (the
+  wikis' Mod compatibility, Processing order). A mode acts on what stands: one that replaces takes its place, one that
+  adds joins it, and one with nothing to act on does nothing unless it creates. `game.EntryModes` says which mode does
+  what, and the precedence's `Injects` what a mode that adds does. The reason is `mode` only where a mode's own copy
+  wins, one that replaced the plain copy or created the name; where modes only join the plain copy, it keeps its own
+  reason (`first`, or `merge` where the database keeps every copy). A mode that adds (`INJECT`, `TRY_INJECT`,
+  `INJECT_OR_CREATE`) where no source says what it does (`Injects` unsettled) leaves the winner unsettled.
+- A copy written with an entry mode in a database that takes none makes the winner unsettled: no source says that the
+  folder takes the keyword, or what the game does with it. EU5's coats of arms are such a database: their row keeps
+  the last copy, as the wiki's Flag modding page says.
+- Otherwise the first or the last by file name wins, the lower root's where the playset decides, the one with the
+  highest override priority, or all of them merge, as the precedence's `Keeps` says. Copies that share the highest
+  priority are unsettled: the game logs an error and keeps one, and no source says which.
+- Where copies sit in files the game does not read, the reason is `replace` if the copies a `replace_path` dropped
+  would change the winner, and `path` if the copies a file at the same path hid would.
 
-A `Winner` is the kept definition, the reason it wins (`order`, `mode`, `priority`, `merge` or `replace`) and the
-definitions merged into it. `FindKept` finds the winner of a name in a database, and `ListKept` the winner of every
-name.
+A `Winner` is the kept definition, the reason it wins, what leaves an unsettled one open (`Cause`: `priority`,
+`keyword`, `inject` or `replace`) and the definitions merged into it. The reasons are `last` and `first` (by
+file name), `playset`, `path`, `priority`, `mode`, `merge`, `replace` and `Unsettled`; a lone copy has none. A
+localization key's winner, which the workspace's `LookupText` finds, is `replace-folder` where a replace folder holds
+it. Where the reason is unsettled, `Site` is one of the copies in question, for the features that need one to show.
+`ResolveSite` is the one place a copy's own reason is decided: the winner's reason, `Injected` or `Combined` for a copy
+merged into it, and, where the winner is unsettled, no copy kept and each loaded one `Unsettled`; Health's sites and
+hover's both read it. `FindKept` finds the winner of a name in a database, and `ListKept` the winner of every name.
 
 ## Fires
 
@@ -130,7 +149,8 @@ A reference fires what it names only where the scan marks it `Firing`. The walke
 
 Both directions read that mark and nothing else, so they agree, and a definition that fires itself is listed both ways.
 With the follow flag set, a firing through a scripted effect (`Schema.Effects`) is followed into it. Only the
-definition the game keeps is called by name, and scripted effects that call each other end the walk.
+definition the game keeps is called by name, and scripted effects that call each other end the walk. Where the winner
+is unsettled, every copy in a file the game reads fires and is fired, since no source says which one runs.
 
 ## The cache
 
@@ -147,5 +167,6 @@ for the install's version, its dumps and the app's version.
 - **Table**: the interned texts of one kind, each given one ordinal.
 - **Posting**: one group of occurrences: those of one role in one database.
 - **Winner**: the definition the game keeps when several share a name, and why.
+- **Unsettled**: the reason of a winner where no source says which copy the game keeps.
 - **Fire**: one firing: a source, a target, the reference that names the target, and the scripted effects between.
 - **Load order**: the order the game reads roots, stages and files in.

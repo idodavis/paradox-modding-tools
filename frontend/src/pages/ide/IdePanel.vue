@@ -1,84 +1,99 @@
 <!--
-  The IDE's bottom panel: the problems of the open files by file, the editor's and then the load order's from Health,
-  the hits of the search and the output of git.
+  The IDE's bottom panel. It shows the problems of the open files, the hits of the search or the output of git.
 -->
+<script lang="ts">
+import type { Finding } from "@services/health/models";
+import type { Code, Diagnostic } from "@services/lsp/models";
+import type { Place } from "@services/workspace/models";
+
+import { useEditorStore } from "../../stores/editor";
+import { useSettingsStore } from "../../stores/settings";
+import { findModel } from "./editor/models";
+
+/** A Problem is one problem in the list, an editor diagnostic or a Health finding. A finding has its own level. */
+export type Problem = { code: Code; problem: Diagnostic; level: string; health?: true };
+
+/**
+ * listPanelProblems lists the editor's problems and Health's findings for each file open in a tab. A file with no
+ * problem is left out.
+ */
+export function listPanelProblems(
+  codes: readonly Code[],
+  findings: readonly Finding[],
+): { place: Place; problems: Problem[] }[] {
+  const editor = useEditorStore();
+  const off = useSettingsStore().value("ide.checks").split(",");
+  const places = editor.listTabs().flatMap((one) => editor.placeOf(one.id) ?? []);
+  return [...new Map(places.map((place) => [place.key, place])).values()].flatMap((place) => {
+    const own = (findModel(place.key)?.problems ?? []).flatMap((problem) => {
+      const code = codes.find((one) => one.id === problem.code);
+      return code ? [{ code, problem, level: code.level }] : [];
+    });
+    const problems = [...own, ...listFindings(place, codes, findings, off)];
+    return problems.length ? [{ place, problems }] : [];
+  });
+}
+
+/** listFindings returns a file's findings about the mods together as problems. Checks turned off are left out. */
+function listFindings(place: Place, codes: readonly Code[], findings: readonly Finding[], off: string[]): Problem[] {
+  return findings.flatMap((finding) => {
+    const code = codes.find((one) => one.id === finding.code);
+    if (code?.question !== "compatibility" || off.includes(code.id)) return [];
+    return (finding.sites ?? []).flatMap(({ place: site, range }) =>
+      site.key === place.key
+        ? [
+            {
+              code,
+              problem: { code: code.id, range, facts: finding.facts },
+              level: finding.level,
+              health: true as const,
+            },
+          ]
+        : [],
+    );
+  });
+}
+</script>
+
 <script setup lang="ts">
 import { computed, shallowRef, useTemplateRef, watch } from "vue";
 import { useQuery } from "@pinia/colada";
 
-import type { Code, Diagnostic } from "@services/lsp/models";
-import type { Place } from "@services/workspace/models";
-
-import { diagnosticMessage } from "../../lib/format";
-import { codesQuery, reportQuery, stateQuery } from "../../queries";
-import { useEditorStore } from "../../stores/editor";
+import { diagnosticMessage, matchQuery } from "../../lib/format";
+import { codesQuery, reportQuery } from "../../queries";
 import { useGitStore } from "../../stores/git";
 import { useSearchStore } from "../../stores/search";
-import { useSettingsStore } from "../../stores/settings";
 import { useWorkspaceStore } from "../../stores/workspace";
 import OriginChip from "../../ui/OriginChip.vue";
 import ProblemRow from "../../ui/ProblemRow.vue";
 import SearchHits from "./SearchHits.vue";
-import { listOpenProblems } from "./editor/models";
 
 const { tab } = defineProps<{ tab: "problems" | "search" | "output" }>();
 
-/** A problem the list shows: one the editor found, or one of Health's findings at its place in the file. */
-type Problem = { code: Code; problem: Diagnostic; health?: true };
-/** A row of the problems list: a file, or one problem of the file above it. */
-type Row = { place: Place; count: number } | ({ place: Place } & Problem);
+/** A Row is one row of the problems list, a file or one of its problems with its message. */
+type Row = { place: Place; count: number } | ({ place: Place; message: string } & Problem);
 
 const workspace = useWorkspaceStore();
 const editor = useEditorStore();
 const git = useGitStore();
 const search = useSearchStore();
-const settings = useSettingsStore();
 const filter = shallowRef("");
 const output = useTemplateRef("output");
 
 const { data: codes } = useQuery(codesQuery);
-const { data: state } = useQuery(stateQuery);
-// Health's report for the workspace's own load order, which the Health page shows too
+// Health's report for the workspace's own load order
 const { data: report } = useQuery(() => ({
-  ...reportQuery((state.value?.mods ?? []).map((mod) => mod.id)),
-  enabled: tab === "problems" && workspace.isOpen() && !!state.value,
+  ...reportQuery(workspace.listModIds()),
+  enabled: tab === "problems" && workspace.isOpen(),
 }));
-const rows = computed<Row[]>(() => {
-  const needle = filter.value.trim().toLowerCase();
-  const files = listOpenProblems(editor.listTabs(), codes.value ?? []);
-  return listOpenPlaces().flatMap((place) => {
-    const problems = files.find((file) => file.place.key === place.key)?.problems ?? [];
-    const shown = [...problems, ...listFindings(place)].filter(({ code, problem }) =>
-      `${diagnosticMessage(code.message, problem.facts ?? {})} ${code.id} ${place.rel}`.toLowerCase().includes(needle),
-    );
-    return shown.length ? [{ place, count: shown.length }, ...shown.map((one) => ({ place, ...one }))] : [];
-  });
-});
-
-/** Lists the places of the files open in tabs, each once, in the order of the tabs. */
-function listOpenPlaces(): Place[] {
-  const places = editor.listTabs().flatMap((one) => editor.placeOf(one.id) ?? []);
-  return [...new Map(places.map((place) => [place.key, place])).values()];
-}
-
-/**
- * Lists the findings the load order decides at their places in a file, as problems of the file. A finding whose check
- * is turned off is left out.
- */
-function listFindings(place: Place): Problem[] {
-  const off = settings.value("ide.checks").split(",");
-  // the load order's sections, whose findings the editor never reports
-  const sections = (report.value?.sections ?? []).filter((one) => one.group === "load order").map((one) => one.id);
-  return (report.value?.findings ?? []).flatMap((finding) => {
-    const code = codes.value?.find((one) => one.id === finding.code);
-    if (!sections.includes(finding.section) || !code || off.includes(code.id)) return [];
-    return (finding.sites ?? []).flatMap(({ place: site, range }) =>
-      site.key === place.key
-        ? [{ code, problem: { code: code.id, range, facts: finding.facts }, health: true as const }]
-        : [],
-    );
-  });
-}
+const rows = computed<Row[]>(() =>
+  listPanelProblems(codes.value ?? [], report.value?.findings ?? []).flatMap(({ place, problems }) => {
+    const shown = problems
+      .map((one) => ({ place, ...one, message: diagnosticMessage(one.code.message, one.problem.facts ?? {}) }))
+      .filter(({ message, code }) => matchQuery(filter.value, message, code.id, place.rel));
+    return shown.length ? [{ place, count: shown.length }, ...shown] : [];
+  }),
+);
 
 // the Output keeps its newest line in view
 watch(
@@ -97,7 +112,7 @@ watch(
           label="Open in Health"
           variant="ghost"
           size="xs"
-          :to="{ name: 'health', params: { id: workspace.activeId() }, query: { section: 'script' } }"
+          :to="{ name: 'health', params: { id: workspace.activeId() } }"
         />
       </Teleport>
       <UScrollArea
@@ -107,23 +122,28 @@ watch(
         :virtualize="{ estimateSize: 24, skipMeasurement: true }"
         class="min-h-0 flex-1 py-1"
       >
-        <div v-if="'code' in item" class="flex items-center">
-          <ProblemRow
-            class="min-w-0 flex-1 ps-7.5"
-            :code="item.code"
-            :facts="item.problem.facts ?? {}"
-            :line="item.problem.range.startLineNumber"
-            :column="item.problem.range.startColumn"
-            @open="
-              editor.show(
-                item.place,
-                { lineNumber: item.problem.range.startLineNumber, column: item.problem.range.startColumn },
-                'navigate',
-              )
-            "
-          />
-          <UBadge v-if="item.health" label="Health" color="info" variant="subtle" size="sm" class="me-3 shrink-0" />
-        </div>
+        <ProblemRow
+          v-if="'code' in item"
+          dense
+          class="ps-7.5"
+          :level="item.level"
+          :message="item.message"
+          @open="
+            editor.show(
+              item.place,
+              { lineNumber: item.problem.range.startLineNumber, column: item.problem.range.startColumn },
+              'navigate',
+            )
+          "
+        >
+          <template #trailing>
+            <span class="shrink-0 font-mono text-11 text-dimmed">{{ item.code.id }}</span>
+            <span class="shrink-0 font-mono text-11 text-dimmed">
+              {{ item.problem.range.startLineNumber }}:{{ item.problem.range.startColumn }}
+            </span>
+            <UBadge v-if="item.health" label="Health" color="neutral" variant="subtle" size="sm" class="shrink-0" />
+          </template>
+        </ProblemRow>
         <div v-else class="flex h-6 items-center gap-1.5 px-3 text-12 font-medium whitespace-nowrap text-highlighted">
           <OriginChip :origin="item.place.origin" dot />
           <span class="truncate">{{ item.place.rel }}</span>

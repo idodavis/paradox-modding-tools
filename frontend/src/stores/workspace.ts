@@ -8,15 +8,15 @@ import { useLocalStorage } from "@vueuse/core";
 import { Events } from "@wailsio/runtime";
 
 import * as workspace from "@services/workspace/service";
-import type { Workspace } from "@services/app/models";
+import type { Mod as ModRecord, Workspace } from "@services/app/models";
 import type { Place } from "@services/workspace/models";
 import { gamesQuery, installsQuery, modsQuery, stateQuery, workspacesQuery } from "../queries";
 import ConfirmModal from "../ui/ConfirmModal.vue";
 
-// Go's name for the game's own files as an origin
-const VANILLA = "vanilla";
-// Go writes a color slot as o1, o2 and so on
-const SLOT = /^o\d+$/;
+/** VANILLA is Go's name for the game's own files as an origin. */
+export const VANILLA = "vanilla";
+/** SLOTS lists the theme's color slots a mod picks from, the only colors Go writes as a slot. */
+export const SLOTS = Array.from({ length: 16 }, (_, index) => `o${index + 1}`);
 
 export const useWorkspaceStore = defineStore("workspace", () => {
   const id = useLocalStorage("pmt.workspace.activeId", "");
@@ -71,24 +71,35 @@ export const useWorkspaceStore = defineStore("workspace", () => {
   const originColor = (origin: string, recorded?: string): string => {
     const color = recorded ?? (origin === VANILLA ? activeRecord()?.gameColor : findMod(origin)?.color);
     if (!color) return "var(--game)";
-    return SLOT.test(color) ? `var(--${color})` : color;
+    return SLOTS.includes(color) ? `var(--${color})` : color;
   };
 
   /** Whether a mod's color was picked by hand: a CSS color rather than one of the theme's slots. */
-  const isCustom = (modId: string): boolean => {
-    const color = findMod(modId)?.color;
-    return !!color && !SLOT.test(color);
-  };
+  const isCustom = (color: string | undefined): boolean => !!color && !SLOTS.includes(color);
 
-  /** Makes a workspace active and asks Go to open it. */
+  /** The ids of the open workspace's mods in load order. It is empty while no workspace is open. */
+  const listModIds = (): string[] => (state.value?.mods ?? []).map((mod) => mod.id);
+
+  /** open makes a workspace active and asks Go to open it. */
   function open(workspaceId: string): void {
     id.value = workspaceId;
     mutate(workspaceId);
   }
 
+  /** findModRecord returns a mod's record in a workspace. It is undefined if the workspace does not record the mod. */
+  const findModRecord = (workspaceId: string, modId: string): ModRecord | undefined =>
+    workspaces.value?.find((one) => one.id === workspaceId)?.mods?.find((mod) => mod.id === modId);
+
+  /** updateMod writes some fields of a mod's record over its latest copy. It rejects if the mod has no record. */
+  async function updateMod(workspaceId: string, modId: string, changes: Partial<ModRecord>): Promise<void> {
+    const record = findModRecord(workspaceId, modId);
+    if (!record) throw new Error("The mod's record was not found, so the change was not saved.");
+    await workspace.UpdateMod(workspaceId, { ...record, ...changes });
+  }
+
   /**
-   * Asks before the given workspace leaves PMT, then removes it. Its mod folders stay on disk. If it was the active
-   * one, the first workspace left becomes active. It returns whether the user confirmed.
+   * remove asks before the given workspace leaves PMT, then removes it. Its mod folders stay on disk. If it was the
+   * active one, the first workspace left becomes active. It returns whether the user confirmed.
    */
   async function remove(record: Workspace): Promise<boolean> {
     const confirmed = await confirm.open({
@@ -101,5 +112,16 @@ export const useWorkspaceStore = defineStore("workspace", () => {
     return confirmed === true;
   }
 
-  return { activeId, isOpen, originName, describeFolder, originColor, isCustom, open, remove };
+  return {
+    activeId,
+    isOpen,
+    originName,
+    describeFolder,
+    originColor,
+    isCustom,
+    listModIds,
+    open,
+    updateMod,
+    remove,
+  };
 });

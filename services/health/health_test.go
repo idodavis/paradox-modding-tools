@@ -22,20 +22,17 @@ import (
 	"paradox-modding-tools/services/workspace"
 )
 
-// The ids and descriptor names of the fixture mods, the languages of the scaffolds and the sections the tests use.
+// The ids and descriptor names of the fixture mods, and the languages of the scaffolds.
 const (
-	modA            = "mod-a"
-	modB            = "mod-b"
-	titleA          = "Fixture Mod"
-	titleB          = "Second Mod"
-	french          = "french"
-	german          = "german"
-	sectionDangling = "dangling"
-	sectionErrorLog = "errorlog"
+	modA   = "mod-a"
+	modB   = "mod-b"
+	titleA = "Fixture Mod"
+	titleB = "Second Mod"
+	french = "french"
+	german = "german"
 )
 
-// modAFiles are the files the first mod adds: traits, events, a file with an unclosed block, a file that replaces a
-// file of the game, and messages in two languages.
+// modAFiles are the files the first mod adds.
 var modAFiles = map[string]string{
 	"common/traits/a_shared.txt": "shared = { category = personality diplomacy = 1 }\n",
 	"common/traits/m_unused.txt": "unloved = { category = personality }\n",
@@ -47,14 +44,13 @@ var modAFiles = map[string]string{
 	"localization/german/m_l_german.yml":   "l_german:\n m_kept:0 \"Behalten\"\n",
 }
 
-// modBFiles are the files the second mod adds: its own descriptor name, and a trait the first mod writes otherwise.
+// modBFiles are the files the second mod adds.
 var modBFiles = map[string]string{
 	"descriptor.mod":             "version=\"1.0\"\nname=\"" + titleB + "\"\nsupported_version=\"1.*\"\n",
 	"common/traits/b_shared.txt": "shared = { category = personality diplomacy = 2 }\n",
 }
 
-// errorLogText is an error log in Victoria 3's format. Its first message has continuation lines, the last of which
-// names a place in a mod's file.
+// errorLogText is an error log in Victoria 3's format. Its first message goes on over lines that name a mod's file.
 const errorLogText = "[22:07:20][jomini_script_system.cpp:247]: Script system error!\n" +
 	"  Error: custom_tooltip trigger\n\n" +
 	"  Script location: common/country_definitions/m_countries.txt:2\n" +
@@ -75,7 +71,7 @@ var devMods = map[string][]string{
 	},
 }
 
-// createApp makes the application the workspace service sends its events through, once for the whole test run.
+// createApp makes the application that carries the workspace's events, once per test run.
 var createApp = sync.OnceFunc(func() { application.New(application.Options{}) })
 
 // resolveFixture returns the absolute path of a folder under internal/testdata.
@@ -100,8 +96,7 @@ func writeFile(t *testing.T, dir, rel, text string) {
 	}
 }
 
-// createMod copies a game's fixture mod into a temporary folder, writes the given files over it and returns its
-// record.
+// createMod copies a game's fixture mod into a temporary folder and writes files over it. It returns the mod's record.
 func createMod(t *testing.T, gameID, id string, added map[string]string) app.Mod {
 	t.Helper()
 	dir := t.TempDir()
@@ -114,8 +109,8 @@ func createMod(t *testing.T, gameID, id string, added map[string]string) app.Mod
 	return app.Mod{ID: id, Dir: dir}
 }
 
-// createInstall copies a game's fixture install into a temporary folder, with the game's user data in another folder
-// that holds the given error log. It returns the install's folder.
+// createInstall copies a game's fixture install into a temporary folder, with user data that holds an error log. It
+// returns the install's folder.
 func createInstall(t *testing.T, gameID, errorLog string) string {
 	t.Helper()
 	install, userData := t.TempDir(), t.TempDir()
@@ -131,8 +126,8 @@ func createInstall(t *testing.T, gameID, errorLog string) string {
 	return install
 }
 
-// openService opens a workspace on an install with the given mods, with a config and caches of its own, and returns
-// the Health service over it. The workspace closes when the test ends.
+// openService opens a workspace on an install and returns a Health service over it. The workspace has a config and
+// caches of its own. It closes when the test ends.
 func openService(t *testing.T, gameID, installPath string, mods ...app.Mod) *Service {
 	t.Helper()
 	createApp()
@@ -160,8 +155,8 @@ func openService(t *testing.T, gameID, installPath string, mods ...app.Mod) *Ser
 	return &Service{Workspace: wsp}
 }
 
-// findFinding returns the finding with the given code, name and database, and fails the test if there is none. An
-// empty database matches any.
+// findFinding returns the finding of a code, name and database. It fails the test if there is none. An empty database
+// matches any.
 func findFinding(t *testing.T, findings []Finding, code, name, database string) Finding {
 	t.Helper()
 	finding, ok := lo.Find(findings, func(finding Finding) bool {
@@ -173,99 +168,55 @@ func findFinding(t *testing.T, findings []Finding, code, name, database string) 
 	return finding
 }
 
-// countSection returns how many findings of a section a report holds.
-func countSection(report Report, section string) int {
-	return lo.CountBy(report.Findings, func(finding Finding) bool { return finding.Section == section })
-}
-
-// assertSectionCounts checks that each section of a report over the two fixture mods counts its findings, that the
-// error log's counts the game's log and the overview's the two mods, and that no other section is empty.
-func assertSectionCounts(t *testing.T, hlt *Service, report Report) {
-	t.Helper()
-	errorLog, _ := hlt.ListErrorLog()
-	for _, section := range report.Sections {
-		want := countSection(report, section.ID)
-		switch section.ID {
-		case sectionErrorLog:
-			want = len(errorLog)
-		case "overview":
-			want = 2
-		}
-		if section.Count != want || (section.Count == 0 && section.ID != sectionErrorLog) {
-			t.Errorf("section %s has the count %d", section.ID, section.Count)
-		}
-	}
-}
-
-// TestBuildReportFindsEachSection checks that a report over two fixture mods holds a finding of each section, that each
-// section's count matches its findings, and that a file a mod replaces is a finding of the file and not of its names.
-// It checks that another load order moves the loaded file and keeps the dependencies.
-func TestBuildReportFindsEachSection(t *testing.T) {
+// TestBuildReportFindsContestsOverridesAndProblems checks a report over two fixture mods.
+func TestBuildReportFindsContestsOverridesAndProblems(t *testing.T) {
 	hlt := openService(t, "ck3", resolveFixture(t, "ck3"), createMod(t, "ck3", modA, modAFiles), createMod(t, "ck3", modB, modBFiles))
 	report, err := hlt.BuildReport(nil)
 	if err != nil {
 		t.Fatal(err)
 	}
-	assertSectionCounts(t, hlt, report)
 	contest := findFinding(t, report.Findings, "contest", "shared", "trait")
-	if contest.Section != "contests" || contest.Facts["rule"] != "LIOS" || len(contest.Sites) != 2 ||
-		!contest.Sites[0].Kept || contest.Sites[1].Kept || contest.Sites[0].Reason != "order" || contest.Sites[0].Place.Origin != modB {
+	if contest.Question != lsp.QuestionCompatibility || len(contest.Sites) != 2 || !contest.Sites[0].Kept ||
+		contest.Sites[1].Kept || contest.Sites[0].Reason != "last" || contest.Sites[0].Place.Origin != modB {
 		t.Errorf("contest of shared: %+v", contest)
 	}
-	shipped := findFinding(t, report.Findings, "contest", "common/traits/m_traits.txt", game.File)
-	if shipped.Facts["rule"] != "LIOS" || len(shipped.Sites) != 2 || !shipped.Sites[0].Kept || shipped.Sites[1].Kept ||
+	shipped := findFinding(t, report.Findings, "file-contest", "common/traits/m_traits.txt", game.File)
+	if len(shipped.Sites) != 2 || !shipped.Sites[0].Kept || shipped.Sites[1].Kept ||
 		shipped.Sites[0].Place.Origin != modB || shipped.Sites[0].Range.StartLine != 1 {
 		t.Errorf("contest of the file m_traits.txt: %+v", shipped)
 	}
 	if lo.ContainsBy(report.Findings, func(finding Finding) bool { return finding.Name == "descriptor.mod" }) {
 		t.Error("a descriptor, which the game does not read as a file, is a finding")
 	}
-	// the game loads the files of a folder by name, so its own v_traits.txt comes after the mods' m_traits.txt
-	override := findFinding(t, report.Findings, "override", "brave", "trait")
-	if override.Facts["kept"] != "its own" || len(override.Sites) != 2 || !override.Sites[0].Place.ReadOnly || !override.Sites[0].Kept ||
-		override.Sites[1].Kept {
-		t.Errorf("override of brave: %+v", override)
+	// the game's own v_traits.txt loads after the mods' m_traits.txt
+	unused := findFinding(t, report.Findings, "unused-copy", "brave", "trait")
+	if unused.Facts["mod"] != titleB || unused.Facts["reason"] != "its file is read after the mod's" ||
+		len(unused.Sites) != 2 || !unused.Sites[0].Place.ReadOnly || !unused.Sites[0].Kept || unused.Sites[1].Kept {
+		t.Errorf("unused copy of brave: %+v", unused)
 	}
 	replaced := findFinding(t, report.Findings, "override", "events/v_events.txt", game.File)
 	if replaced.Facts["kept"] != "the mod's" || len(replaced.Sites) != 2 || !replaced.Sites[0].Kept || replaced.Sites[1].Kept ||
 		lo.ContainsBy(report.Findings, func(finding Finding) bool { return finding.Code == "override" && finding.Name == "v.1" }) {
 		t.Errorf("override of the file v_events.txt: %+v", replaced)
 	}
-	assertDependencies(t, report)
 	assertLocalization(t, report)
 	dangling := findFinding(t, report.Findings, "unresolved-reference", "m.99", "")
-	if dangling.Section != sectionDangling || len(dangling.Sites) != 1 || dangling.Sites[0].Range.StartLine != 3 {
+	if dangling.Question != lsp.QuestionHealth || len(dangling.Sites) != 1 || dangling.Sites[0].Range.StartLine != 3 {
 		t.Errorf("dangling reference: %+v", dangling)
 	}
-	if script := findFinding(t, report.Findings, "unclosed-block", "", ""); script.Section != "script" {
+	if script := findFinding(t, report.Findings, "unclosed-block", "", ""); script.Question != lsp.QuestionHealth {
 		t.Errorf("script problem: %+v", script)
 	}
 	previewed, err := hlt.BuildReport([]string{modB, modA})
 	if err != nil {
 		t.Fatal(err)
 	}
-	kept := findFinding(t, previewed.Findings, "contest", "common/traits/m_traits.txt", game.File).Sites
+	kept := findFinding(t, previewed.Findings, "file-contest", "common/traits/m_traits.txt", game.File).Sites
 	if len(kept) != 2 || !kept[0].Kept || kept[0].Place.Origin != modA {
 		t.Errorf("contest of the file m_traits.txt with the first mod loaded last: %+v", kept)
 	}
-	if got, want := countSection(previewed, "dependencies"), countSection(report, "dependencies"); got != want || want != 2 {
-		t.Errorf("%d dependencies with the first mod loaded last, %d otherwise", got, want)
-	}
 	if _, err := hlt.BuildReport([]string{modA}); err == nil {
 		t.Error("an order that leaves out a mod was built")
-	}
-}
-
-// assertDependencies checks that the second mod depends on the first and that the first is affected by it, each with
-// one name and its two definitions.
-func assertDependencies(t *testing.T, report Report) {
-	t.Helper()
-	depends := findFinding(t, report.Findings, "depends", titleB, "mod")
-	affects := findFinding(t, report.Findings, "affects", titleA, "mod")
-	if depends.Facts["other"] != titleA || affects.Facts["other"] != titleB || depends.Facts["count"] != "1" ||
-		affects.Facts["count"] != "1" || len(depends.Sites) != 2 || len(affects.Sites) != 2 ||
-		!depends.Sites[0].Kept || depends.Sites[0].Place.Origin != modB || affects.Sites[0].Place.Origin != modA {
-		t.Errorf("dependencies: %+v, %+v", depends, affects)
 	}
 }
 
@@ -280,15 +231,16 @@ func assertLocalization(t *testing.T, report Report) {
 	}
 }
 
-// TestListErrorLogAddsContinuationLines checks that the lines after a message are part of it, that a location on one of
-// them gives the message its place, and that a blank line adds nothing.
+// TestListErrorLogAddsContinuationLines checks that the lines after a message are part of it. A location on one of
+// them gives the message its place. A blank line adds nothing.
 func TestListErrorLogAddsContinuationLines(t *testing.T) {
 	hlt := openService(t, "vic3", createInstall(t, "vic3", errorLogText), createMod(t, "vic3", modA, nil))
-	findings, err := hlt.ListErrorLog()
+	gameLog, err := hlt.ListErrorLog()
 	if err != nil {
 		t.Fatal(err)
 	}
-	if len(findings) != 2 || findings[0].Code != "game-error" || findings[0].Section != sectionErrorLog {
+	findings := gameLog.Findings
+	if len(findings) != 2 || findings[0].Code != "game-error" || findings[0].Question != lsp.QuestionLog {
 		t.Fatalf("findings %+v", findings)
 	}
 	wantMessage := "Script system error!\n  Error: custom_tooltip trigger\n  Script location: common/country_definitions/m_countries.txt:2"
@@ -301,9 +253,8 @@ func TestListErrorLogAddsContinuationLines(t *testing.T) {
 	}
 }
 
-// TestWriteScaffoldWritesMissingFiles checks that a scaffold writes a file for each base-language file, with the
-// messages as placeholders and a byte order mark. It checks that an existing file is left as it is and that a name that
-// is no language writes nothing.
+// TestWriteScaffoldWritesMissingFiles checks that a scaffold writes a file for each base-language file, with a byte
+// order mark. An existing file is left alone. A name that is no language writes nothing.
 func TestWriteScaffoldWritesMissingFiles(t *testing.T) {
 	mod := createMod(t, "ck3", modA, modAFiles)
 	hlt := openService(t, "ck3", resolveFixture(t, "ck3"), mod)
@@ -328,7 +279,7 @@ func TestWriteScaffoldWritesMissingFiles(t *testing.T) {
 	if again, err := hlt.WriteScaffold(modA, french); err != nil || len(again) != 0 {
 		t.Errorf("scaffold of french again: %v, %v", again, err)
 	}
-	// the mod has german messages for its file already, so only the file under the replace folder is missing
+	// only the replace folder's file lacks german
 	if partial, err := hlt.WriteScaffold(modA, german); err != nil || len(partial) != 1 ||
 		!strings.HasSuffix(filepath.ToSlash(partial[0]), "localization/replace/german/m_replace_l_german.yml") {
 		t.Errorf("scaffold of german: %v, %v", partial, err)
@@ -338,8 +289,8 @@ func TestWriteScaffoldWritesMissingFiles(t *testing.T) {
 	}
 }
 
-// TestBuildReportInstalls builds the report of each real install that PMT_TEST_INSTALL_<GAME> names, with the dev mods,
-// and logs it. It fails if the report holds other counts of the editor's codes than the editor finds in the same files.
+// TestBuildReportInstalls builds and logs the report of each real install that PMT_TEST_INSTALL_<GAME> names, with the
+// dev mods. It fails if the report's counts of the editor's codes differ from the editor's.
 func TestBuildReportInstalls(t *testing.T) {
 	for gameID, dirs := range devMods {
 		t.Run(gameID, func(t *testing.T) {
@@ -359,31 +310,40 @@ func TestBuildReportInstalls(t *testing.T) {
 			}
 			t.Logf("%d findings in %s", len(report.Findings), time.Since(started).Round(time.Millisecond))
 			logCounts(t, report)
-			logDependencies(t, hlt, report, mods)
 			started = time.Now()
-			errorLog, err := hlt.ListErrorLog()
+			gameLog, err := hlt.ListErrorLog()
 			if err != nil {
 				t.Fatal(err)
 			}
-			t.Logf("error log: %d findings, %d with a site, in %s", len(errorLog),
-				lo.CountBy(errorLog, func(finding Finding) bool { return len(finding.Sites) > 0 }), time.Since(started).Round(time.Millisecond))
+			t.Logf("error log: %d findings, %d with a site, %d a mod's, %d repeats folded, in %s", len(gameLog.Findings),
+				lo.CountBy(gameLog.Findings, func(finding Finding) bool { return len(finding.Sites) > 0 }),
+				lo.CountBy(gameLog.Findings, func(finding Finding) bool { return finding.Origin != "" }),
+				lo.SumBy(gameLog.Findings, func(finding Finding) int { return finding.Count - 1 }),
+				time.Since(started).Round(time.Millisecond))
 			compareDiagnostics(t, hlt, report)
 		})
 	}
 }
 
-// logCounts logs the findings of a report by section and by code.
+// logCounts logs the findings of a report by code.
 func logCounts(t *testing.T, report Report) {
 	t.Helper()
-	for _, section := range report.Sections {
-		t.Logf("section %s: %d", section.ID, section.Count)
-	}
-	codes := map[string]int{}
+	codes, levels := map[string]int{}, map[string]int{}
 	for _, finding := range report.Findings {
 		codes[finding.Code]++
+		levels[finding.Question+"/"+finding.Level]++
+	}
+	for _, level := range slices.Sorted(maps.Keys(levels)) {
+		t.Logf("question/level %s: %d", level, levels[level])
 	}
 	for _, code := range slices.Sorted(maps.Keys(codes)) {
 		t.Logf("code %s: %d", code, codes[code])
+	}
+	for _, finding := range report.Findings {
+		if finding.Code == "undeclared-dependency" || finding.Code == "ignored-pair" || len(finding.Order) > 0 {
+			t.Logf("%s %s: %s, level %s, mods %v, facts %v, order %v", finding.Code, finding.Database, finding.Name,
+				finding.Level, finding.Mods, finding.Facts, finding.Order)
+		}
 	}
 	for _, code := range []string{"contest", "override"} {
 		listed := lo.Filter(report.Findings, func(finding Finding, _ int) bool { return finding.Code == code })
@@ -392,27 +352,7 @@ func logCounts(t *testing.T, report Report) {
 	}
 }
 
-// logDependencies logs the dependency findings of a report, and those of the same mods in the reverse order.
-func logDependencies(t *testing.T, hlt *Service, report Report, mods []app.Mod) {
-	t.Helper()
-	for _, finding := range report.Findings {
-		if finding.Section == "dependencies" {
-			t.Logf("%s: %s, other %s, %s names", finding.Code, finding.Name, finding.Facts["other"], finding.Facts["count"])
-		}
-	}
-	order := lo.Map(mods, func(mod app.Mod, _ int) string { return mod.ID })
-	slices.Reverse(order)
-	previewed, err := hlt.BuildReport(order)
-	if err != nil {
-		t.Fatal(err)
-	}
-	t.Logf("dependencies under the reverse order: %d findings", lo.CountBy(previewed.Findings, func(finding Finding) bool {
-		return finding.Section == "dependencies"
-	}))
-}
-
-// compareDiagnostics fails the test if the report holds other counts of the editor's codes than the editor finds in the
-// mod files.
+// compareDiagnostics fails the test if the report's counts of the editor's codes differ from what the editor finds.
 func compareDiagnostics(t *testing.T, hlt *Service, report Report) {
 	t.Helper()
 	ws, err := hlt.Workspace.Session()
@@ -430,11 +370,11 @@ func compareDiagnostics(t *testing.T, hlt *Service, report Report) {
 			want[diagnostic.Code]++
 		}
 	}
-	own := []string{"missing-message", "coverage"}
+	own := []string{"missing-message", "coverage", "mod-for-older-version"}
 	got := map[string]int{}
 	for _, finding := range report.Findings {
-		if slices.Contains([]string{sectionDangling, "script", "localization"}, finding.Section) && !slices.Contains(own, finding.Code) {
-			got[finding.Code] += lo.Ternary(finding.Section == sectionDangling, len(finding.Sites), 1)
+		if (finding.Question == lsp.QuestionHealth || slices.Contains(sharedCodes, finding.Code)) && !slices.Contains(own, finding.Code) {
+			got[finding.Code] += len(finding.Sites)
 		}
 	}
 	t.Logf("the editor's codes: %d places in the report, %d in the editor", lo.Sum(slices.Collect(maps.Values(got))),

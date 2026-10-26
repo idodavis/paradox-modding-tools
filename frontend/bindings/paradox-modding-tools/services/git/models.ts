@@ -96,7 +96,8 @@ export interface Status {
     "changes": Change[] | null;
 
     /**
-     * Ignored is the files and folders git ignores, each as a full path; a folder stands for everything in it.
+     * Ignored is the files and folders git ignores, each as a full path; a folder ends with a separator and stands for
+     * everything in it.
      */
     "ignored": string[] | null;
 }

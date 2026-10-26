@@ -4,11 +4,12 @@
  * and the commit box to focus. What a repository holds comes from the git queries.
  */
 import { defineStore } from "pinia";
-import { useQuery } from "@pinia/colada";
+import { useMutation, useQuery, useQueryCache } from "@pinia/colada";
 import { Events } from "@wailsio/runtime";
 import { groupBy } from "es-toolkit";
 import { computed, reactive, shallowRef, watch } from "vue";
 
+import * as gitApi from "@services/git/service";
 import type { Mod, Place } from "@services/workspace/models";
 import { loadQuery, repositoryQuery, stateQuery } from "../queries";
 
@@ -17,6 +18,7 @@ const OUTPUT_LINES = 300;
 
 export const useGitStore = defineStore("git", () => {
   const { data: state } = useQuery(stateQuery);
+  const cache = useQueryCache();
   /** Each repository of the workspace's mods: its root and the mods in it, in the load order of their first mod. */
   const repositories = shallowRef<{ root: string; mods: Mod[] }[]>([]);
   /** The root of the repository picked in the Graph's header, or "" until one is picked. */
@@ -36,8 +38,8 @@ export const useGitStore = defineStore("git", () => {
   });
 
   /**
-   * Looks for the repository of each of the workspace's mods again. Mods in the same repository share it, and a mod
-   * in none is left out.
+   * listRepositories looks for the repository of each of the workspace's mods again. Mods in the same repository
+   * share it, and a mod in none is left out.
    */
   async function listRepositories(): Promise<void> {
     const order = mods.value;
@@ -57,11 +59,20 @@ export const useGitStore = defineStore("git", () => {
   }
 
   /** The root of the repository that holds a file's mod, or "" when the file is in no mod with a repository. */
-  const findRoot = (place: Place | null | undefined): string =>
+  const findRoot = (place: Pick<Place, "origin"> | null | undefined): string =>
     repositories.value.find((one) => one.mods.some((mod) => mod.id === place?.origin))?.root ?? "";
 
   /** The lines git printed, newest last, from git:output. */
   const output = (): readonly string[] => lines.value;
 
-  return { repositories, graphRoot, folded, commitTarget, listRepositories, findRoot, output };
+  /** initialize starts a repository in the given folder, then reads the git queries and the repositories again. */
+  const { mutate: initialize } = useMutation({
+    mutation: (dir: string) => gitApi.Run(dir, "init"),
+    onSuccess: async () => {
+      await cache.invalidateQueries({ key: ["git"] });
+      await listRepositories();
+    },
+  });
+
+  return { repositories, graphRoot, folded, commitTarget, listRepositories, findRoot, output, initialize };
 });

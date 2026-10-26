@@ -9,8 +9,16 @@ import { Events } from "@wailsio/runtime";
 
 import { errorLogQuery, keys, updateQuery } from "../queries";
 
-/** One row: an event and the query keys it refreshes, computed from the event's data. */
-export type EventRow = { event: string; stale: (data: unknown) => readonly (readonly unknown[])[] };
+/**
+ * An EventRow is one row of the table: an event and the query keys it refreshes, computed from the event's data. A
+ * row that forgets also empties the cached data of those keys first, for an event after which that data belongs to
+ * no workspace.
+ */
+export type EventRow = {
+  event: string;
+  stale: (data: unknown) => readonly (readonly unknown[])[];
+  forgets?: true;
+};
 
 // the reads that hang on the open workspace, so any change of it makes them stale
 const FOLDERS = ["folder"] as const;
@@ -44,7 +52,7 @@ export const EVENTS: readonly EventRow[] = [
     stale: (section) => (toText(section) ? (SECTIONS[toText(section)] ?? []) : Object.values(SECTIONS).flat()),
   },
   { event: "workspace:opened", stale: () => WORKSPACE_KEYS },
-  { event: "workspace:closed", stale: () => WORKSPACE_KEYS },
+  { event: "workspace:closed", stale: () => WORKSPACE_KEYS, forgets: true },
   { event: "install:scanned", stale: () => [keys.installs, keys.state] },
   // a changed file is read again, with the listings and places that name it, the pictures drawn from files and the
   // git statuses
@@ -60,17 +68,26 @@ export const EVENTS: readonly EventRow[] = [
   { event: "app:update", stale: () => [updateQuery.key] },
 ];
 
-/** Subscribes to every event in the table. Called once at startup. */
+/** subscribeEvents subscribes to every event in the table. */
 export function subscribeEvents(): void {
   const cache = useQueryCache();
-  for (const { event, stale } of EVENTS) {
+  for (const { event, stale, forgets } of EVENTS) {
     Events.On(event, ({ data }) => {
-      for (const key of stale(data)) void cache.invalidateQueries({ key: key as EntryKey });
+      const affected = stale(data);
+      if (forgets) affected.forEach((key) => forget(cache, key));
+      for (const key of affected) void cache.invalidateQueries({ key: key as EntryKey });
     });
   }
 }
 
-/** Lists the keys of the git statuses in the cache, one per repository. */
+/** forget empties the data of every cached query under a key, so no page shows what a closed workspace gave it. */
+function forget(cache: ReturnType<typeof useQueryCache>, key: readonly unknown[]): void {
+  for (const entry of cache.getEntries({ key: key as EntryKey })) {
+    cache.setEntryState(entry, { status: "pending", data: undefined, error: null });
+  }
+}
+
+/** listStatusKeys lists the keys of the git statuses in the cache, one per repository. */
 function listStatusKeys(): (readonly unknown[])[] {
   return useQueryCache()
     .getEntries({ key: ["git"] })
@@ -78,12 +95,12 @@ function listStatusKeys(): (readonly unknown[])[] {
     .map((entry) => entry.key);
 }
 
-/** Converts the text an event carries, or "" when it carries none. */
+/** toText returns the text an event carries, or "" when it carries none. */
 function toText(data: unknown): string {
   return typeof data === "string" ? data : "";
 }
 
-/** Converts an fs:changed event to the path it names. */
+/** toPath returns the path an fs:changed event names. */
 function toPath(change: unknown): string {
   return typeof change === "object" && change !== null && "path" in change ? toText(change.path) : "";
 }

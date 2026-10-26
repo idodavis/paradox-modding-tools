@@ -3,9 +3,7 @@ package workspace
 import (
 	"cmp"
 	"encoding/json"
-	"errors"
 	"fmt"
-	"io/fs"
 	"os"
 	"path"
 	"path/filepath"
@@ -23,8 +21,7 @@ import (
 	"paradox-modding-tools/services/app"
 )
 
-// A Descriptor is a mod's own description as its game writes it: CK3's `.mod` file, or Vic3's and EU5's
-// `.metadata/metadata.json`.
+// A Descriptor is a mod's own description, read from its game's descriptor file.
 type Descriptor struct {
 	Path             string   `json:"path"`
 	ID               string   `json:"id"` // the id metadata.json gives the mod; "" means none
@@ -35,12 +32,17 @@ type Descriptor struct {
 	ReplacePaths     []string `json:"replacePaths"` // folders whose earlier files the game does not load
 	Thumbnail        string   `json:"thumbnail"`    // the full path of the picture file the descriptor names
 	WorkshopID       string   `json:"workshopId"`
-	// Dependencies are the mods it needs: their ids in metadata.json, their names in a script descriptor. They are read
-	// and never written.
-	Dependencies []string `json:"dependencies"`
+	// Dependencies are the mods it needs. They are read and never written.
+	Dependencies []Dependency `json:"dependencies"`
 }
 
-// A Mod is one mod of a workspace: the mod as the config records it, with its descriptor.
+// A Dependency is one mod a descriptor says its mod needs.
+type Dependency struct {
+	ID    string `json:"id"`    // the mod's id or name, as the descriptor writes it
+	Title string `json:"title"` // the title metadata.json gives it; "" where the descriptor gives none
+}
+
+// A Mod is one mod of a workspace, with its descriptor.
 type Mod struct {
 	app.Mod
 	Descriptor Descriptor `json:"descriptor"`
@@ -48,7 +50,7 @@ type Mod struct {
 	Thumbnail  string     `json:"thumbnail"` // the full path of the picture shown for it; "" when it has none
 }
 
-// thumbnailName is the name, before its extension, of the picture file a mod keeps without its descriptor naming it.
+// thumbnailName is the name, without its extension, of a mod's thumbnail file.
 const thumbnailName = "thumbnail"
 
 // scriptKeys are the keys of a script descriptor that a Descriptor models.
@@ -56,12 +58,11 @@ var scriptKeys = []string{
 	"name", "version", "supported_version", "picture", "remote_file_id", "replace_path", "tags",
 }
 
-// releaseVersion matches a game version that starts with a major and a minor release number.
+// releaseVersion matches a version that starts with a major and a minor number.
 var releaseVersion = regexp.MustCompile(`^(\d+)\.(\d+)(?:\.|$)`)
 
-// ReadDescriptor reads the descriptor of the mod in the given folder, from the file the given game keeps it in. Its
-// thumbnail is the full path of the picture, by the given game's rule. It returns an error if the file cannot be read
-// or is not a valid descriptor.
+// ReadDescriptor reads the descriptor of the mod in a folder. Its thumbnail is a full path. It returns an error if
+// the file cannot be read or is not a valid descriptor.
 func ReadDescriptor(row *game.Game, dir string) (Descriptor, error) {
 	file, metadata := resolveDescriptor(row, dir)
 	text, err := files.ReadText(file)
@@ -84,10 +85,8 @@ func ReadDescriptor(row *game.Game, dir string) (Descriptor, error) {
 	return descriptor, nil
 }
 
-// findThumbnail returns the full path of the picture shown for the mod in the given folder. It is a thumbnail file of
-// any picture type in the folder where the given game keeps one, then in the mod's own folder; a game that keeps it in
-// the mod's folder looks in .metadata second. Mods follow no one convention, so both places are looked in. Without such
-// a file it is the picture the descriptor names. It returns "" if none of these files exists.
+// findThumbnail returns the full path of the picture shown for a mod. It is the mod's thumbnail file, else the
+// picture its descriptor names. It returns "" if neither exists.
 func findThumbnail(row *game.Game, dir, named string) string {
 	folders := []string{row.ThumbnailDir, ""}
 	if row.ThumbnailDir == "" {
@@ -106,15 +105,11 @@ func findThumbnail(row *game.Game, dir, named string) string {
 	return found
 }
 
-// WriteDescriptor writes the given descriptor for the mod in the given folder, in the format the given game uses. It
-// keeps the fields of the existing file that a Descriptor does not model, and makes the file if it is missing. It
-// writes the thumbnail relative to the mod's folder, and returns an error if the picture is outside it.
+// WriteDescriptor writes a mod's descriptor in its game's format, making the file if it is missing. Fields a
+// Descriptor does not model keep their values. It returns an error if the thumbnail is outside the mod's folder.
 func WriteDescriptor(row *game.Game, dir string, descriptor Descriptor) error {
 	file, metadata := resolveDescriptor(row, dir)
-	existing, err := files.ReadText(file)
-	if errors.Is(err, fs.ErrNotExist) {
-		err = nil
-	}
+	existing, err := files.LoadText(file)
 	if err != nil {
 		return err
 	}
@@ -137,10 +132,20 @@ func WriteDescriptor(row *game.Game, dir string, descriptor Descriptor) error {
 	return files.WriteText(file, existing)
 }
 
-// createModFolder makes a new mod in the given folder, with its descriptor and the folders the game expects. It returns
-// the mod's folder. The descriptor names the mod, gives it version 1.0 and supports the release of the given game
-// version. A game that lists mods by a launcher file gets that file beside the mod's folder. It returns an error if the
-// mod's folder exists already.
+// FindMod returns the mod that a dependency names, by its id or its name. It returns false if no mod matches.
+func FindMod(mods []Mod, dependency Dependency) (Mod, bool) {
+	return lo.Find(mods, func(mod Mod) bool {
+		return mod.Descriptor.ID == dependency.ID || mod.Descriptor.Name == dependency.ID
+	})
+}
+
+// ResolveWorkshopID returns the Workshop id of the mod's record, else its descriptor's. It is "" if neither has one.
+func (mod Mod) ResolveWorkshopID() string {
+	return cmp.Or(mod.WorkshopID, mod.Descriptor.WorkshopID)
+}
+
+// createModFolder makes a mod's folder with its descriptor and the folders the game expects, and returns it. A game
+// that lists mods by a launcher file gets one beside the folder. It returns an error if the folder exists already.
 func createModFolder(row *game.Game, dir, name, version string) (string, error) {
 	folder := resolveModFolder(dir, name)
 	if err := os.MkdirAll(dir, 0o755); err != nil {
@@ -161,14 +166,14 @@ func createModFolder(row *game.Game, dir, name, version string) (string, error) 
 	if _, metadata := resolveDescriptor(row, folder); metadata {
 		return folder, nil
 	}
-	// the launcher lists a mod by a .mod file beside its folder, with the descriptor's keys and the folder's path
-	launcher := encodeDescriptorScript("", descriptor) + "path=" + toQuoted(filepath.ToSlash(folder)) + "\n"
+	// the launcher lists a mod by a .mod file beside its folder
+	launcher := encodeDescriptorScript("", descriptor) + `path="` + filepath.ToSlash(folder) + "\"\n"
 	err := files.WriteText(filepath.Join(dir, files.ToSlug(name)+".mod"), files.Text{Text: launcher, Encoding: files.EncodingUTF8})
 	return folder, err
 }
 
-// createLocalization writes a new mod's localization file, holding only its header, in a language's folder, the base
-// language's when it is "". A game with no localization folder gets none.
+// createLocalization writes a mod's localization file with only its header. With no language it uses the base
+// language. A game with no localization folder gets none.
 func createLocalization(row *game.Game, folder, name, language string) error {
 	language = cmp.Or(language, game.BaseLanguage)
 	rel, ok := findLocalizationFolder(row)
@@ -179,15 +184,13 @@ func createLocalization(row *game.Game, folder, name, language string) error {
 	return files.WriteText(file, files.Text{Text: loc.Encode(language, nil), Encoding: files.EncodingUTF8BOM})
 }
 
-// findLocalizationFolder returns the folder a game keeps its localization in, from a mod's or the game's root. It
-// returns false for a game with none.
+// findLocalizationFolder returns the folder a game keeps localization in. It returns false if the game has none.
 func findLocalizationFolder(row *game.Game) (string, bool) {
 	return lo.Find(row.ModFolders, func(rel string) bool { return path.Base(rel) == game.Localization })
 }
 
-// toSupportedVersion returns the release a mod supports for a game version: its major and minor numbers followed by
-// a star, such as 1.20.* for 1.20.1.2. It returns "" for a version that does not start with two numbers, such as a
-// Steam build.
+// toSupportedVersion turns a game version into the release a mod supports, such as 1.20.* for 1.20.1.2. It returns ""
+// if the version does not start with two numbers.
 func toSupportedVersion(version string) string {
 	match := releaseVersion.FindStringSubmatch(version)
 	if match == nil {
@@ -196,16 +199,15 @@ func toSupportedVersion(version string) string {
 	return match[1] + "." + match[2] + ".*"
 }
 
-// IsOlderRelease reports whether the release a mod supports is older than the release of a game version. Only the major
-// and minor numbers count, so 1.19.* is older than 1.20.1.2. It is false if either does not start with two numbers.
+// IsOlderRelease reports whether the release a mod supports is older than a game version's. Only the major and minor
+// numbers count. It is false if either does not start with two numbers.
 func IsOlderRelease(supported, version string) bool {
 	older, hasOlder := toRelease(supported)
 	newer, hasNewer := toRelease(version)
 	return hasOlder && hasNewer && slices.Compare(older[:], newer[:]) < 0
 }
 
-// toRelease returns the major and minor numbers a version starts with. It returns false if it does not start with
-// two numbers.
+// toRelease returns the major and minor numbers a version starts with. It returns false if there are not two.
 func toRelease(version string) ([2]int, bool) {
 	match := releaseVersion.FindStringSubmatch(version)
 	if match == nil {
@@ -216,16 +218,15 @@ func toRelease(version string) ([2]int, bool) {
 	return [2]int{major, minor}, true
 }
 
-// resolveModFolder returns the folder for a new mod with the given name, inside the given folder of the game's mods.
+// resolveModFolder returns the folder for a mod inside a folder of mods, named after the mod.
 func resolveModFolder(dir, name string) string { return filepath.Join(dir, files.ToSlug(name)) }
 
-// resolveDescriptor returns the path of a mod's descriptor, and whether the game writes it as metadata.json rather
-// than as script.
+// resolveDescriptor returns the path of a mod's descriptor and whether it is metadata.json rather than script.
 func resolveDescriptor(row *game.Game, dir string) (file string, metadata bool) {
 	return files.Join(dir, row.ModDescriptor), path.Ext(row.ModDescriptor) == ".json"
 }
 
-// parseDescriptorScript returns the descriptor that a script text writes, for a game that writes it as script.
+// parseDescriptorScript parses a descriptor written as script.
 func parseDescriptorScript(text string) Descriptor {
 	tree := jomini.Parse(text)
 	var descriptor Descriptor
@@ -248,7 +249,9 @@ func parseDescriptorScript(text string) Descriptor {
 		case "tags":
 			descriptor.Tags = append(descriptor.Tags, listBlockValues(tree, statement)...)
 		case "dependencies":
-			descriptor.Dependencies = append(descriptor.Dependencies, listBlockValues(tree, statement)...)
+			for _, dependency := range listBlockValues(tree, statement) {
+				descriptor.Dependencies = append(descriptor.Dependencies, Dependency{ID: dependency})
+			}
 		}
 	}
 	return descriptor
@@ -263,9 +266,8 @@ func listBlockValues(tree *jomini.Tree, statement int32) []string {
 	return values
 }
 
-// decodeDescriptorMetadata returns the descriptor that a metadata.json text writes. Its dependencies are the mods the
-// file lists as dependencies; a dependency on anything else, such as a DLC, is left out. It returns an error if the
-// text is not JSON.
+// decodeDescriptorMetadata decodes a descriptor written as metadata.json. A dependency on anything but a mod, such as
+// a DLC, is left out. It returns an error if the text is not JSON.
 func decodeDescriptorMetadata(text string) (Descriptor, error) {
 	var metadata struct {
 		ID               string   `json:"id"`
@@ -278,6 +280,7 @@ func decodeDescriptorMetadata(text string) (Descriptor, error) {
 			Kind     string `json:"rel_type"`
 			ID       string `json:"id"`
 			Resource string `json:"resource_type"`
+			Title    string `json:"display_name"`
 		} `json:"relationships"`
 		GameCustomData struct {
 			ReplacePaths []string `json:"replace_paths"`
@@ -292,19 +295,19 @@ func decodeDescriptorMetadata(text string) (Descriptor, error) {
 	}
 	for _, relationship := range metadata.Relationships {
 		if relationship.Kind == "dependency" && relationship.Resource == "mod" {
-			descriptor.Dependencies = append(descriptor.Dependencies, relationship.ID)
+			descriptor.Dependencies = append(descriptor.Dependencies, Dependency{ID: relationship.ID, Title: relationship.Title})
 		}
 	}
 	return descriptor, nil
 }
 
-// encodeDescriptorScript returns the text of a descriptor written as script: the fields the descriptor models, then
-// every other statement of the existing text as it was written.
+// encodeDescriptorScript returns a descriptor's text as script. Statements of the existing text that a Descriptor
+// does not model follow unchanged.
 func encodeDescriptorScript(existing string, descriptor Descriptor) string {
 	var text strings.Builder
 	write := func(key, value string) {
 		if value != "" {
-			text.WriteString(key + "=" + toQuoted(value) + "\n")
+			fmt.Fprintf(&text, "%s=\"%s\"\n", key, value)
 		}
 	}
 	write("name", descriptor.Name)
@@ -318,7 +321,7 @@ func encodeDescriptorScript(existing string, descriptor Descriptor) string {
 	if len(descriptor.Tags) > 0 {
 		text.WriteString("tags={\n")
 		for _, tag := range descriptor.Tags {
-			text.WriteString("\t" + toQuoted(tag) + "\n")
+			fmt.Fprintf(&text, "\t\"%s\"\n", tag)
 		}
 		text.WriteString("}\n")
 	}
@@ -326,18 +329,14 @@ func encodeDescriptorScript(existing string, descriptor Descriptor) string {
 	for statement := range tree.Children(0) {
 		current := tree.Statements[statement]
 		if !slices.Contains(scriptKeys, tree.Text(current.Key)) {
-			text.WriteString(tree.Text(current.Span) + "\n")
+			fmt.Fprintln(&text, tree.Text(current.Span))
 		}
 	}
 	return text.String()
 }
 
-// toQuoted returns a value in quotes.
-func toQuoted(value string) string { return `"` + value + `"` }
-
-// encodeDescriptorMetadata returns the text of a descriptor written as metadata.json: the existing text with the
-// fields the descriptor models set, and every other key as it was. It returns an error if the existing text is not
-// JSON.
+// encodeDescriptorMetadata returns a descriptor's text as metadata.json. Keys of the existing text that a Descriptor
+// does not model stay. It returns an error if the existing text is not JSON.
 func encodeDescriptorMetadata(existing string, descriptor Descriptor) (string, error) {
 	fields := map[string]any{}
 	if strings.TrimSpace(existing) != "" {

@@ -20,25 +20,17 @@ import type { ContextMenuItem } from "@nuxt/ui";
 
 import type { Root } from "@internal/files/models";
 import * as app from "@services/app/service";
-import * as gitApi from "@services/git/service";
 import * as service from "@services/workspace/service";
 import type { Child, FileChange, Place } from "@services/workspace/models";
 
 import { COMMANDS, compare, trashFile } from "../../app/commands";
-import {
-  fileSearchQuery,
-  folderQuery,
-  gitStatusQuery,
-  loadQuery,
-  repositoryQuery,
-  stateQuery,
-  workspacesQuery,
-} from "../../queries";
+import { fileSearchQuery, folderQuery, gitStatusQuery, loadQuery, workspacesQuery } from "../../queries";
 import { useEditorStore } from "../../stores/editor";
+import { useGitStore } from "../../stores/git";
 import { useSettingsStore } from "../../stores/settings";
 import { useWindowsStore } from "../../stores/windows";
-import { useWorkspaceStore } from "../../stores/workspace";
-import { VIEWS } from "./editor/tabs";
+import { useWorkspaceStore, VANILLA } from "../../stores/workspace";
+import { fileTab, VIEWS } from "./editor/tabs";
 
 const { roots } = defineProps<{ roots: Root[] }>();
 const emit = defineEmits<{ open: [place: Place, preview: boolean] }>();
@@ -71,6 +63,7 @@ const FILTER_HITS = 500;
 type Move = { from: string; to: string };
 
 const editor = useEditorStore();
+const git = useGitStore();
 const settings = useSettingsStore();
 const windows = useWindowsStore();
 const workspace = useWorkspaceStore();
@@ -89,13 +82,12 @@ const members = new Map<string, Set<string>>(); // a folder row's rows
 const listings = new Map<string, Promise<void>>(); // a folder row's listing, started when it expanded
 const drafts = new Map<string, () => void>(); // a new row's way to stop watching for its rename to be cancelled
 const icons: Record<string, { name: string; viewBox: string }> = {}; // a file's icon by its name
-const ignoredSheet = new CSSStyleSheet(); // the rows git ignores, dimmed
+// the rows git ignores, dimmed; a git status would count them as changes in every folder above
+const ignoredSheet = new CSSStyleSheet();
 const history = { done: [] as Move[], undone: [] as Move[] };
 let afterClose: (() => void) | undefined;
 
-const { data: state } = useQuery(stateQuery);
 const { data: workspaces } = useQuery(workspacesQuery);
-const writableOrigins = computed(() => new Set((state.value?.mods ?? []).map((mod) => mod.id)));
 const labels = computed(() => {
   const counts = new Map<string, number>();
   return roots.map((root) => {
@@ -105,14 +97,14 @@ const labels = computed(() => {
     return count > 1 ? `${label} (${count})` : label;
   });
 });
-const writable = computed(() => roots.some((root) => writableOrigins.value.has(root.origin)));
+const writable = computed(() => roots.some((root) => root.origin !== VANILLA));
 const shape = computed(() =>
   [
     roots.map((root) => root.dir).join("|"),
     labels.value.join("|"),
     writable.value,
-    on("ide.stickyFolders"),
-    on("ide.rootColors"),
+    settings.isOn("ide.stickyFolders"),
+    settings.isOn("ide.rootColors"),
     settings.value("ide.density"),
     workspaces.value?.find((one) => one.id === workspace.activeId())?.showBinaries,
   ].join("\n"),
@@ -125,6 +117,7 @@ onBeforeUnmount(() => {
   view.value?.cleanUp();
 });
 watch(shape, mount);
+watch(() => git.repositories, markGit);
 watch(() => editor.activeFile()?.key, follow);
 watchDebounced(filter, (query) => void filterRows(query), { debounce: 200 });
 watch(filtering, (shown) => {
@@ -133,13 +126,10 @@ watch(filtering, (shown) => {
   void filterRows("");
 });
 
-/** Whether a setting that is a switch is on. */
-function on(key: string): boolean {
-  return settings.value(key) === "true";
-}
-
 /** Builds the tree of the roots, with nothing listed yet. */
 function mount(): void {
+  // cleaning up leaves the old tree's element in the host
+  view.value?.getFileTreeContainer()?.remove();
   view.value?.cleanUp();
   [disks, places, members, listings, drafts].forEach((map) => map.clear());
   Object.keys(icons).forEach((name) => delete icons[name]);
@@ -151,7 +141,7 @@ function mount(): void {
     initialExpansion: "closed",
     icons: { set: "complete", spriteSheet: SPRITE },
     density: settings.value("ide.density") as FileTreeDensityKeyword,
-    stickyFolders: on("ide.stickyFolders"),
+    stickyFolders: settings.isOn("ide.stickyFolders"),
     unsafeCSS: buildStyles(),
     renderRowDecoration: ({ item }) =>
       isRoot(item.path) && !isWritable(item.path) ? { icon: "file-tree-icon-lock", title: "Read only" } : null,
@@ -187,7 +177,7 @@ function buildStyles(): string {
     .map((root, index) => {
       const row = CSS.escape(`${labels.value[index]}/`);
       const color = workspace.originColor(root.origin);
-      const text = on("ide.rootColors") ? `color: ${color};` : "";
+      const text = settings.isOn("ide.rootColors") ? `color: ${color};` : "";
       return `[data-item-path="${row}"] { font-weight: 600; ${text} border-radius: 0; box-shadow: inset 3px 0 0 ${color}; }`;
     })
     .join("\n");
@@ -196,7 +186,7 @@ function buildStyles(): string {
 /** The index of the root a row is under. */
 const rootIndex = (row: string) => labels.value.indexOf(row.slice(0, row.indexOf("/")));
 const isRoot = (row: string) => row.indexOf("/") === row.length - 1;
-const isWritable = (row: string) => writableOrigins.value.has(roots[rootIndex(row)]?.origin ?? "");
+const isWritable = (row: string) => (roots[rootIndex(row)]?.origin ?? VANILLA) !== VANILLA;
 
 /** Finds the folder a row is in. */
 function findParent(row: string): string {
@@ -282,31 +272,41 @@ function changed(change: FileChange): void {
   void refresh();
 }
 
-/** Marks the rows git reports as changed, for each mod that is a repository. */
+/** Marks the rows git reports as changed and dims the ones it ignores, for each repository the mods are in. */
 async function markGit(): Promise<void> {
   const tree = view.value;
   if (!tree) return;
   const marks: GitStatusEntry[] = [];
   const dimmed: string[] = [];
-  for (const [index, root] of roots.entries()) {
-    if (!writableOrigins.value.has(root.origin)) continue;
-    const [, found] = (await loadQuery(repositoryQuery(root.dir))) ?? ["", false];
-    if (!found) continue;
-    const { data } = await queryCache.fetch(queryCache.ensure(gitStatusQuery(root.dir)));
-    for (const change of data?.changes ?? [])
-      marks.push({
-        path: `${labels.value[index]}/${change.place.rel}`,
-        status: GIT_MARKS[change.status] ?? "modified",
-      });
-    const base = root.dir.replaceAll("\\", "/").replace(/\/$/, "");
-    for (const path of (data?.ignored ?? []).map((one) => one.replaceAll("\\", "/"))) {
-      if (!path.toLowerCase().startsWith(`${base.toLowerCase()}/`)) continue;
-      const row = `${labels.value[index]}${path.slice(base.length)}`;
-      dimmed.push(`[data-item-path${path.endsWith("/") ? "^" : ""}="${row.replaceAll('"', '\\"')}"]`);
+  for (const { root: dir } of git.repositories) {
+    const { data } = await queryCache.fetch(queryCache.ensure(gitStatusQuery(dir)));
+    for (const change of data?.changes ?? []) {
+      const index = roots.findIndex((root) => root.origin === change.place.origin);
+      if (index >= 0) {
+        marks.push({
+          path: `${labels.value[index]}/${change.place.rel}`,
+          status: GIT_MARKS[change.status] ?? "modified",
+        });
+      }
+    }
+    for (const path of data?.ignored ?? []) {
+      const row = findRow(path);
+      if (row) dimmed.push(`[data-item-path${row.endsWith("/") ? "^" : ""}="${row.replaceAll('"', '\\"')}"]`);
     }
   }
   tree.setGitStatus(marks);
   ignoredSheet.replaceSync(dimmed.length ? `${dimmed.join(",")} { color: var(--fg-3); }` : "");
+}
+
+/** Finds the row of a path on disk. It is "" for a path under none of the tree's roots. A folder's path ends in "/". */
+function findRow(path: string): string {
+  const slashed = path.replaceAll("\\", "/");
+  for (const [index, root] of roots.entries()) {
+    const base = root.dir.replaceAll("\\", "/").replace(/\/$/, "");
+    if (slashed.toLowerCase().startsWith(`${base.toLowerCase()}/`))
+      return `${labels.value[index]}${slashed.slice(base.length)}`;
+  }
+  return "";
 }
 
 /**
@@ -329,7 +329,7 @@ function pin(): void {
 
 /** Reveals the active file in the tree, when the explorer follows the active file. */
 function follow(): void {
-  if (on("ide.followFile")) void reveal();
+  if (settings.isOn("ide.followFile")) void reveal();
 }
 
 /** Opens the folders down to the active file and selects it. A file under none of the tree's roots changes nothing. */
@@ -339,7 +339,7 @@ async function reveal(): Promise<void> {
   const tree = view.value;
   if (!place || !tree || !folders.length) return;
   folders.forEach((folder) => findHandle(folder)?.expand());
-  const row = `${folders.at(-1)}${place.rel.split("/").at(-1)}`;
+  const row = `${folders.at(-1)}${place.name}`;
   tree.getItem(row)?.select();
   tree.scrollToPath(row, { focus: false, offset: "nearest" });
 }
@@ -394,11 +394,6 @@ const { mutate: rename } = useMutation({
     forget(source);
   },
   onError: (_error, { source, destination }) => view.value?.move(destination, source),
-});
-
-const { mutate: initialize } = useMutation({
-  mutation: (dir: string) => gitApi.Run(dir, "init"),
-  onSettled: () => queryCache.invalidateQueries({ key: ["git"] }),
 });
 
 const { mutate: replay } = useMutation({
@@ -501,7 +496,7 @@ function buildMenu(row: string): ContextMenuItem[][] {
           icon: "i-lucide-app-window",
           onSelect: () => {
             editor.show(file);
-            windows.popOut({ tab: `file:${file.key}` });
+            windows.popOut({ tab: fileTab(file.key) });
           },
         },
         ...(VIEWS[file.format].views.includes("visual")
@@ -511,7 +506,7 @@ function buildMenu(row: string): ContextMenuItem[][] {
                 icon: "i-lucide-eye",
                 onSelect: () => {
                   editor.show(file);
-                  editor.setView(`file:${file.key}`, "visual");
+                  editor.setView(fileTab(file.key), "visual");
                 },
               },
             ]
@@ -537,11 +532,16 @@ function buildMenu(row: string): ContextMenuItem[][] {
     !file && place?.database.startsWith("coat_of_arms") && isWritable(row)
       ? [{ label: "New coat of arms", icon: "i-lucide-shield-plus", onSelect: () => commandBus.emit("draw.newCoat") }]
       : [];
-  // a mod's root that git has no repository for offers one
-  const repository = queryCache.getQueryData(repositoryQuery(dir).key);
+  // a mod's root that is in no repository offers one
   const init: ContextMenuItem[] =
-    isRoot(row) && isWritable(row) && repository && !repository[1]
-      ? [{ label: "Initialize a git repository", icon: "i-lucide-git-branch-plus", onSelect: () => initialize(dir) }]
+    isRoot(row) && isWritable(row) && !git.findRoot(roots[rootIndex(row)])
+      ? [
+          {
+            label: "Initialize a git repository",
+            icon: "i-lucide-git-branch-plus",
+            onSelect: () => git.initialize(dir),
+          },
+        ]
       : [];
   const comparisons = file
     ? [

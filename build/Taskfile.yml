@@ -72,8 +72,6 @@ tasks:
   build:frontend:
     label: build:frontend (DEV={{.DEV}} RUNNER={{.PACKAGE_MANAGER}})
     summary: Build the frontend project
-    # darwin:build:universal runs its per-arch builds as parallel deps of this task; without
-    # run:once one regenerates frontend/bindings while the other's bundler reads it (#4637).
     run: once
     dir: frontend
     sources:
@@ -186,17 +184,15 @@ tasks:
       - wails3 generate bindings -f '{{.BUILD_FLAGS}}' -clean=true{{if eq .OBFUSCATED "true"}} -obfuscated{{end}} -ts -i
 
   generate:icons:
-    summary: Generates Windows `.ico` and Mac `.icns` from an image; on macOS, `-iconcomposerinput appicon.icon -macassetdir darwin` also produces `Assets.car` from a `.icon` file (skipped on other platforms).
+    summary: Generates the Windows `.ico` from `appicon.png`
     run: once
     dir: build
     sources:
       - "appicon.png"
-      - "appicon.icon"
     generates:
-      - "darwin/icons.icns"
       - "windows/icon.ico"
     cmds:
-      - wails3 generate icons -input appicon.png -macfilename darwin/icons.icns -windowsfilename windows/icon.ico -iconcomposerinput appicon.icon -macassetdir darwin
+      - wails3 generate icons -input appicon.png -windowsfilename windows/icon.ico
 
   dev:frontend:
     summary: Runs the frontend in development mode
@@ -226,10 +222,12 @@ tasks:
       - bun run dev --port {{.VITE_PORT}} --strictPort
 
   update:build-assets:
-    summary: Updates the build assets
+    summary: Updates the build assets from config.yml; VERSION, when given, replaces its version
     dir: build
     cmds:
-      - wails3 update build-assets -name "{{.APP_NAME}}" -binaryname "{{.APP_NAME}}" -config config.yml -dir .
+      - wails3 update build-assets -name "{{.APP_NAME}}" -binaryname "{{.APP_NAME}}" -config config.yml -dir .{{if .VERSION}} -productversion "{{.VERSION}}"{{end}}
+      # Wails writes macOS and iOS assets too; the app supports neither
+      - rm -rf darwin ios
 
   build:server:
     summary: Builds the application in server mode (no GUI, HTTP server only)

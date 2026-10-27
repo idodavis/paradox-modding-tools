@@ -83,7 +83,7 @@ jobs:
 
       - uses: actions/setup-go@v7
         with:
-          go-version: "1.27.2"
+          go-version: "1.27.3"
 
       - uses: actions/setup-node@v7
         with:
@@ -101,6 +101,9 @@ jobs:
         run: |
           go install "github.com/wailsapp/wails/v3/cmd/wails3@$(go list -m -f '{{.Version}}' github.com/wailsapp/wails/v3)"
           echo "$(go env GOPATH)/bin" >> "$GITHUB_PATH"
+
+      - name: Stamp the version into the build assets
+        run: wails3 task common:update:build-assets VERSION="${{ needs.version.outputs.version }}"
 
       - name: Build ${{ matrix.zip }}
         run: |

@@ -7,7 +7,7 @@ import type { ContextMenuItem, DropdownMenuItem } from "@nuxt/ui";
 import { useQuery } from "@pinia/colada";
 import { useElementSize, useEventBus } from "@vueuse/core";
 import { Events } from "@wailsio/runtime";
-import { computed, onScopeDispose, shallowRef, useTemplateRef } from "vue";
+import { computed, onScopeDispose, reactive, shallowRef, useTemplateRef, watch } from "vue";
 import { useRoute, useRouter } from "vue-router";
 
 import logoIcon from "@assets/PMT-Logo-Icon.svg?url";
@@ -16,7 +16,7 @@ import { gamesQuery, installsQuery, stateQuery, workspacesQuery } from "../queri
 import { gameIcon, useSettingsStore } from "../stores/settings";
 import { THIS_WINDOW, useWindowsStore } from "../stores/windows";
 import { useWorkspaceStore } from "../stores/workspace";
-import { homeRoute, isWorkspacePage, listShownTools, PAGES, type WorkspaceTool } from "./pages";
+import { homeRoute, isWorkspacePage, listShownTools, PAGES, type WorkspacePage, type WorkspaceTool } from "./pages";
 
 const route = useRoute();
 const router = useRouter();
@@ -53,6 +53,23 @@ const popped = (name: WorkspaceTool) => !!holder(name) && holder(name) !== THIS_
 const canPopOut = (name: WorkspaceTool) => name !== "workspace-ide";
 // the page shown here, when it can open in a window of its own
 const page = computed(() => tools.value.find((tool) => tool === route.name && canPopOut(tool)));
+
+/** The full path each page was last shown at, by its path without the query. */
+const paths = reactive(new Map<string, string>());
+watch(
+  () => route.fullPath,
+  () => paths.set(route.path, route.fullPath),
+  { immediate: true },
+);
+
+/**
+ * resolveTabLink returns where a page's tab goes. It goes back to where the page was last shown, with its view, row
+ * or root. The tab of the page shown goes to the page's first state, such as Health's summary.
+ */
+function resolveTabLink(name: WorkspacePage) {
+  const first = { name, params: { id: workspace.activeId() } };
+  return route.name === name ? first : (paths.get(router.resolve(first).path) ?? first);
+}
 
 /** tabClass returns the classes of a page's tab, marked when its page is the one shown. */
 function tabClass(on: boolean): string[] {
@@ -184,7 +201,7 @@ for (const event of ["install:scanned", "workspace:opened", "workspace:failed"] 
         </button>
         <RouterLink
           v-else
-          :to="{ name, params: { id: workspace.activeId() } }"
+          :to="resolveTabLink(name)"
           :class="tabClass(route.name === name)"
           :aria-label="PAGES[name].title"
         >
@@ -243,7 +260,7 @@ for (const event of ["install:scanned", "workspace:opened", "workspace:failed"] 
           square
           aria-label="Settings"
           :disabled="!active"
-          :to="active ? { name: 'workspace-settings', params: { id: active.id } } : undefined"
+          :to="active ? resolveTabLink('workspace-settings') : undefined"
         />
       </UTooltip>
     </div>

@@ -1,8 +1,8 @@
 # Contributing
 
 Paradox Modding Tools is a desktop app for Windows and Linux. This page is for people who build it from source.
-macOS is not supported (the `darwin` Taskfile under `build/` comes from the Wails template; do not use it). What the
-app does and how to install it is in [README.md](README.md); where it is going is in [ROADMAP.md](ROADMAP.md).
+macOS is not supported. What the app does and how to install it is in [README.md](README.md); where it is going is in
+[ROADMAP.md](ROADMAP.md).
 
 ## What you need
 

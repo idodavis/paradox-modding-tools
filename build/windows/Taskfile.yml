@@ -13,7 +13,6 @@ vars:
 
   # Docker image for cross-compilation with CGO (used when CGO_ENABLED=1 on non-Windows)
   CROSS_IMAGE: wails-cross
-  VERSION: '{{.VERSION | default "dev"}}'
 
 tasks:
   build:
@@ -56,9 +55,9 @@ tasks:
       - cmd: powershell Remove-item *.syso
         platforms: [windows]
       - cmd: rm -f *.syso
-        platforms: [linux, darwin]
+        platforms: [linux]
     vars:
-      BUILD_FLAGS: '{{if eq .DEV "true"}}{{if or .EXTRA_TAGS (eq .OBFUSCATED "true")}}-tags {{if eq .OBFUSCATED "true"}}wails_obfuscated{{if .EXTRA_TAGS}},{{end}}{{end}}{{.EXTRA_TAGS}} {{end}}-buildvcs=false -ldflags="-X main.version={{.VERSION}}"{{else}}-tags production{{if eq .OBFUSCATED "true"}},wails_obfuscated{{end}}{{if .EXTRA_TAGS}},{{.EXTRA_TAGS}}{{end}} -trimpath -buildvcs=false -ldflags="-w -s -H windowsgui -X main.version={{.VERSION}}"{{end}}'
+      BUILD_FLAGS: '{{if eq .DEV "true"}}{{if or .EXTRA_TAGS (eq .OBFUSCATED "true")}}-tags {{if eq .OBFUSCATED "true"}}wails_obfuscated{{if .EXTRA_TAGS}},{{end}}{{end}}{{.EXTRA_TAGS}} {{end}}-buildvcs=false -ldflags="-X main.version={{.VERSION | default "dev"}}"{{else}}-tags production{{if eq .OBFUSCATED "true"}},wails_obfuscated{{end}}{{if .EXTRA_TAGS}},{{.EXTRA_TAGS}}{{end}} -trimpath -buildvcs=false -ldflags="-w -s -H windowsgui -X main.version={{.VERSION | default "dev"}}"{{end}}'
     env:
       GOOS: windows
       CGO_ENABLED: '{{.CGO_ENABLED | default "0"}}'
@@ -86,12 +85,12 @@ tasks:
           ARCH: "{{.ARCH}}"
       - docker run --rm -v "{{.ROOT_DIR}}:/app" {{.DOCKER_MOUNTS}} -e APP_NAME="{{.APP_NAME}}" {{if .EXTRA_TAGS}}-e EXTRA_TAGS="{{.EXTRA_TAGS}}"{{end}} {{if eq .OBFUSCATED "true"}}-e OBFUSCATED=true{{end}} {{if .GARBLE_ARGS}}-e GARBLE_ARGS="{{.GARBLE_ARGS}}"{{end}} {{.CROSS_IMAGE}} windows {{.DOCKER_ARCH}}
       - cmd: docker run --rm -v "{{.ROOT_DIR}}:/app" alpine chown -R $(id -u):$(id -g) /app/bin
-        platforms: [linux, darwin]
+        platforms: [linux]
       - rm -f *.syso
     vars:
       DOCKER_ARCH: '{{.ARCH | default "amd64"}}'
       # Generate Docker volume mounts: Go module cache + go.mod replace directives
-      # Uses wails3 tool docker-mounts for cross-platform compatibility (Windows/Linux/macOS)
+      # Uses wails3 tool docker-mounts for cross-platform compatibility (Windows/Linux)
       DOCKER_MOUNTS:
         sh: "wails3 tool docker-mounts"
 
@@ -101,15 +100,9 @@ tasks:
       - task: '{{if eq (.FORMAT | default "nsis") "msix"}}create:msix:package{{else}}create:nsis:installer{{end}}'
         vars:
           INSTALL_SCOPE: '{{.INSTALL_SCOPE | default "machine"}}'
-          CERT_PATH: '{{.CERT_PATH | default ""}}'
-          PUBLISHER: '{{.PUBLISHER | default ""}}'
-          USE_MSIX_TOOL: '{{.USE_MSIX_TOOL | default "false"}}'
     vars:
       FORMAT: '{{.FORMAT | default "nsis"}}'
       INSTALL_SCOPE: '{{.INSTALL_SCOPE | default "machine"}}'
-      CERT_PATH: '{{.CERT_PATH | default ""}}'
-      PUBLISHER: '{{.PUBLISHER | default ""}}'
-      USE_MSIX_TOOL: '{{.USE_MSIX_TOOL | default "false"}}'
 
   generate:syso:
     summary: Generates Windows `.syso` file
@@ -148,14 +141,14 @@ tasks:
     cmds:
       - |-
         wails3 tool msix \
-          --config "{{.ROOT_DIR}}/wails.json" \
-          --name "{{.APP_NAME}}" \
+          --config "{{.ROOT_DIR}}/build/config.yml" \
+          --name "{{.APP_NAME}}.exe" \
           --executable "{{.ROOT_DIR}}/{{.BIN_DIR}}/{{.APP_NAME}}.exe" \
           --arch "{{.ARCH}}" \
           --out "{{.ROOT_DIR}}/{{.BIN_DIR}}/{{.APP_NAME}}-{{.ARCH}}.msix" \
           {{if .CERT_PATH}}--cert "{{.CERT_PATH}}"{{end}} \
           {{if .PUBLISHER}}--publisher "{{.PUBLISHER}}"{{end}} \
-          {{if .USE_MSIX_TOOL}}--use-msix-tool{{else}}--use-makeappx{{end}}
+          {{if eq .USE_MSIX_TOOL "true"}}--use-msix-tool{{else}}--use-makeappx{{end}}
     vars:
       ARCH: "{{.ARCH | default ARCH}}"
       CERT_PATH: '{{.CERT_PATH | default ""}}'

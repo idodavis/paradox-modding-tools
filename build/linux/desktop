@@ -1,7 +1,7 @@
 [Desktop Entry]
 Version=1.0
 Name=Paradox Modding Tools
-Comment=A paradox-modding-tools application
+Comment=Desktop workspace for Crusader Kings III, Victoria 3, and Europa Universalis V modders.
 # The Exec line includes %u to pass the URL to the application
 Exec=/usr/local/bin/paradox-modding-tools %u
 Terminal=false

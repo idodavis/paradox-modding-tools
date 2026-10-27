@@ -118,8 +118,7 @@ Each rule says what checks it; "review" means nothing does, so the author and th
 - Paradox Modding Tools is a Wails desktop app at the versions `go.mod` names (a Go backend, a Vue 3 + Nuxt UI + Pinia
   + Colada frontend) for Paradox modders, licensed under GPL-3.0-or-later.
 - **Supported OS:** Windows and Linux (traditional desktop distros, GTK4 + WebKitGTK 6). **macOS is not supported** —
-  do not add Mac downloads, Mac user docs, or a macOS issue-template option. Leave the Wails `darwin` Taskfile in the
-  tree; do not advertise it.
+  do not add Mac downloads, Mac user docs, a macOS issue-template option or macOS build files.
 - The product is workspace-centric: Library, IDE, Event Graph, Health, Patch Notes (wiki notes **only**), Publish
   (Steam + Paradox Mods copy, and a compare with Steam), Settings. CK3, Vic3, EU5 (partial).
 - Releases: per-platform **zips** on GitHub (`paradox-modding-tools-{windows-amd64,linux-amd64}.zip` + sibling

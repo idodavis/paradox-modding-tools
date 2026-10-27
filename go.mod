@@ -1,6 +1,6 @@
 module paradox-modding-tools
 
-go 1.27.2
+go 1.27.3
 
 require (
 	github.com/bmatcuk/doublestar/v4 v4.10.3
@@ -10,7 +10,7 @@ require (
 	github.com/hashicorp/golang-lru/v2 v2.0.7
 	github.com/samber/lo v1.53.0
 	github.com/sergi/go-diff v1.4.0
-	github.com/wailsapp/wails/v3 v3.0.0-beta.34
+	github.com/wailsapp/wails/v3 v3.0.0
 	golang.org/x/mod v0.41.0
 	golang.org/x/net v0.61.0
 	golang.org/x/sync v0.24.0

@@ -104,7 +104,7 @@ func TestUserDataDirLinux(t *testing.T) {
 // findSteamLibraries resolves links before dedup: ~/.steam/steam usually links ~/.local/share/Steam.
 func TestSteamLibrariesLinkedRoots(t *testing.T) {
 	if runtime.GOOS == "windows" {
-		t.Skip("the ~/.steam/steam convention is Linux/macOS")
+		t.Skip("the ~/.steam/steam convention is Linux's")
 	}
 	home := t.TempDir()
 	t.Setenv("HOME", home)

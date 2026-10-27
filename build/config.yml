@@ -11,9 +11,6 @@ info:
   copyright: "(c) 2026, idavis.io"
   comments: "Unofficial. Not affiliated with Paradox Interactive."
   version: "0.0.1"
-  # cfBundleIconName: "appicon" # The macOS icon name in Assets.car icon bundles (optional)
-  #                               # Should match the name of your .icon file without the extension
-  #                               # If not set and Assets.car exists, defaults to "appicon"
 
 # iOS build configuration (uncomment to customise iOS project generation)
 # Note: Keys under `ios` OVERRIDE values under `info` when set.
@@ -57,6 +54,7 @@ dev_mode:
       type: background
     - cmd: wails3 task run
       type: primary
+      exit_policy: shutdown
 
 # File Associations
 fileAssociations:

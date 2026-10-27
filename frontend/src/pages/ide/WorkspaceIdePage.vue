@@ -20,7 +20,6 @@ import {
   placeQuery,
   reportQuery,
   rootsQuery,
-  settingsCatalogQuery,
   wikiPagesQuery,
   windowsQuery,
 } from "../../queries";
@@ -32,7 +31,6 @@ import { THIS_WINDOW, useWindowsStore } from "../../stores/windows";
 import { useWorkspaceStore, VANILLA } from "../../stores/workspace";
 import FileSelector from "../../ui/FileSelector.vue";
 import { EDITOR_LANGUAGES } from "../../ui/ScriptSnippet.vue";
-import SettingsSection from "../../ui/SettingsSection.vue";
 import CoatDialog from "./draw/CoatDialog.vue";
 import EditorLayout from "./EditorLayout.vue";
 import EntriesView from "./EntriesView.vue";
@@ -44,7 +42,7 @@ import SourceControlView from "./SourceControlView.vue";
 import WikiPane from "./WikiPane.vue";
 import { LANGUAGES } from "./editor/monaco";
 import { findModel } from "./editor/models";
-import { parseTab, VIEWS } from "./editor/tabs";
+import { parseTab } from "./editor/tabs";
 
 const { id } = defineProps<{ id: string }>();
 
@@ -55,18 +53,8 @@ const SIDEBAR = [
   { value: "git", icon: "i-lucide-git-compare", label: "Source control" },
   { value: "entries", icon: "i-lucide-shapes", label: "Entries" },
 ];
-/** The tabs of the IDE's settings, one for each section of the catalog. */
-const SETTINGS_TABS = [
-  { value: "editor", label: "Editor" },
-  { value: "explorer", label: "Explorer" },
-  { value: "language", label: "Language" },
-  { value: "checks", label: "Checks" },
-  { value: "visual", label: "Visual view" },
-  { value: "wiki", label: "Wiki" },
-];
 const PANEL = [
   { value: "problems", label: "Problems" },
-  { value: "search", label: "Search" },
   { value: "output", label: "Output" },
   { value: "terminal", label: "Terminal" },
 ] as const;
@@ -96,11 +84,9 @@ const sidebar = useLocalStorage("pmt.ide.sidebar", "explorer");
 const panel = useLocalStorage("pmt.ide.panel", "");
 const wiki = useLocalStorage("pmt.ide.wiki", false);
 const gameOpen = useLocalStorage("pmt.ide.gameOpen", true);
-const settingsOpen = shallowRef(false);
 /** Which trees show their filter box. It is never saved. */
 const filtering = reactive({ mods: false, game: false, own: false });
 const [DefineFilterButton, FilterButton] = createReusableTemplate<{ tree: keyof typeof filtering }>();
-const settingsTab = shallowRef<string | number>("editor");
 const visible = useShown();
 const splitter = useTemplateRef("splitter");
 const modTree = useTemplateRef("modTree");
@@ -113,10 +99,9 @@ commands.on((command) => {
   if (command === "git.commit") showSidebar("git");
   if (command === "editor.toggleWiki") wiki.value = !wiki.value;
   if (command === "draw.newCoat") void coatDialog.open();
-  if (command === "ide.settings") settingsOpen.value = true;
   if (command === "explorer.reveal") void revealFile();
   if (command === "terminal.sendFile") {
-    panel.value = "terminal";
+    if (layout.value === "full") panel.value = "terminal";
     useTerminalStore().sendFile();
   }
 });
@@ -140,14 +125,13 @@ useEventListener(document, "mouseup", (event) => {
 /** The part of the IDE this window holds. */
 const part = THIS_WINDOW.split(":")[0];
 const layout = computed(() => {
-  if (part === "panel") return "panel";
+  if (part === "terminal") return "terminal";
   if (part === "wiki") return "wiki";
   if (part === "editor") return "editor";
   return part === "game" || part === "files" ? "files" : "full";
 });
 
 const { data: roots } = useQuery(() => ({ ...rootsQuery, enabled: workspace.isOpen() }));
-const { data: catalog } = useQuery(settingsCatalogQuery);
 const { data: windowNames } = useQuery(windowsQuery);
 const { data: folderPlace } = useQuery(() => ({
   ...placeQuery(THIS_WINDOW.slice("files:".length)),
@@ -186,9 +170,9 @@ const panes = computed<SplitterItem[]>(() => [
     : []),
 ]);
 const editorPanes = computed<SplitterItem[]>(() => [
-  ...(layout.value === "panel" ? [] : [{ id: "code", slot: "code", order: 1, minSize: 50 }]),
-  // the panel leaves this window while it has a window of its own, which shows the tab this one did
-  ...(layout.value === "panel" || (panel.value && !windowNames.value?.includes("panel"))
+  ...(layout.value === "terminal" ? [] : [{ id: "code", slot: "code", order: 1, minSize: 50 }]),
+  // the terminal's own window shows the panel on the Terminal tab alone
+  ...(layout.value === "terminal" || panel.value
     ? [
         {
           id: "panel",
@@ -219,7 +203,12 @@ const explorerPanes = computed<SplitterItem[]>(() => [
       ? [{ id: "game", slot: "game", order: 2, sizeUnit: PIXELS, minSize: 120 }]
       : [{ id: "folded", slot: "game", order: 2, sizeUnit: PIXELS, defaultSize: 33, minSize: 33, maxSize: 33 }]),
 ]);
-const panelTab = computed(() => PANEL.find((tab) => tab.value === panel.value)?.value ?? "problems");
+const panelTabs = computed(() =>
+  layout.value === "terminal" ? PANEL.filter((tab) => tab.value === "terminal") : PANEL,
+);
+const panelTab = computed(() =>
+  layout.value === "terminal" ? "terminal" : (PANEL.find((tab) => tab.value === panel.value)?.value ?? "problems"),
+);
 
 // the status bar counts the panel's problems. It only reads Health's report, as building one checks every mod
 const { data: codes } = useQuery(codesQuery);
@@ -232,10 +221,6 @@ const { data: status } = useQuery(() => ({
   ...gitStatusQuery(git.findRoot(editor.activeFile())),
   enabled: !!git.findRoot(editor.activeFile()),
 }));
-const { data: indentation } = useQuery(() => ({
-  ...indentationQuery(editor.activeFile()?.path ?? ""),
-  enabled: !!editor.activeFile() && VIEWS[editor.activeFile()?.format ?? ""].views.includes("code"),
-}));
 const open = computed(() => {
   const active = editor.activeFile();
   return active ? findModel(active.key) : null;
@@ -247,6 +232,11 @@ const diff = computed(() => {
   const target = parseTab(editor.activeTab()?.id ?? "");
   return target.tab === "diff" ? target.side : null;
 });
+// the status bar shows the indentation of a file open as code, never of a diff
+const { data: indentation } = useQuery(() => ({
+  ...indentationQuery(open.value?.place.path ?? ""),
+  enabled: !diff.value && !!open.value,
+}));
 
 // while the Wiki pane is closed, a kind of file the wiki has pages for is suggested once
 const suggestions = new Set<string>();
@@ -279,12 +269,23 @@ function show(place: Place, preview: boolean): void {
 }
 
 /**
- * popOutPanel puts the panel in a window of its own, on the tab it shows. Its shells' screens go to Go first, for that
- * window to draw.
+ * choosePanelTab shows a tab of the panel. While the terminal has a window of its own, its tab brings that window to
+ * the front instead. The terminal's own window has only the one tab.
  */
-async function popOutPanel(): Promise<void> {
+function choosePanelTab(value: string): void {
+  if (layout.value !== "full") return;
+  if (value === "terminal" && windowNames.value?.includes("terminal")) windows.showWindow("terminal");
+  else panel.value = value;
+}
+
+/**
+ * popOutTerminal puts the terminal in a window of its own, and shows Problems here. Its shells' screens go to Go first,
+ * for that window to draw.
+ */
+async function popOutTerminal(): Promise<void> {
   await useTerminalStore().handOver();
-  windows.popOut({ panel: true });
+  windows.popOut({ terminal: true });
+  panel.value = "problems";
 }
 
 /** showSidebar shows a sidebar tab, unfolding the sidebar if it is folded. */
@@ -297,11 +298,6 @@ function showSidebar(value: string): void {
 function choose(value: string, collapsed: boolean, collapse: () => void): void {
   if (!collapsed && sidebar.value === value) collapse();
   else showSidebar(value);
-}
-
-/** resetSettings puts every setting of the open settings tab back to its default for this workspace. */
-function resetSettings(): void {
-  for (const row of catalog.value ?? []) if (row.section === settingsTab.value) settings.write(row.key, row.default);
 }
 
 /** toggleFilter shows or hides a tree's filter box. Showing the game files' box unfolds them. */
@@ -379,14 +375,6 @@ async function revealFile(): Promise<void> {
                 @click="collapseAll"
               />
             </UTooltip>
-            <UButton
-              icon="i-lucide-settings"
-              square
-              variant="ghost"
-              :ui="{ leadingIcon: 'size-4.5' }"
-              aria-label="IDE settings"
-              @click="settingsOpen = true"
-            />
           </div>
           <!-- the explorer turns invisible, not hidden, behind another view, so its splitter keeps its height -->
           <div v-if="!collapsed" class="relative flex min-h-0 flex-1 flex-col">
@@ -507,11 +495,11 @@ async function revealFile(): Promise<void> {
               <div class="flex h-8 shrink-0 items-center gap-0.5 border-b border-default ps-2 pe-1.5">
                 <UTabs
                   :model-value="panelTab"
-                  :items="[...PANEL]"
+                  :items="[...panelTabs]"
                   :content="false"
                   variant="link"
                   size="sm"
-                  @update:model-value="panel = String($event)"
+                  @update:model-value="choosePanelTab(String($event))"
                 >
                   <template #trailing="{ item }">
                     <template v-if="item.value === 'problems'">
@@ -522,24 +510,27 @@ async function revealFile(): Promise<void> {
                 </UTabs>
                 <span class="grow" />
                 <span id="panel-actions" class="contents" />
-                <UTooltip v-if="layout === 'full'" text="Open in its own window">
+                <!-- the terminal's own window closes by the window's own button -->
+                <template v-if="layout === 'full'">
+                  <UTooltip v-if="panelTab === 'terminal'" text="Open the terminal in its own window">
+                    <UButton
+                      icon="i-lucide-app-window"
+                      variant="ghost"
+                      size="sm"
+                      square
+                      aria-label="Open the terminal in its own window"
+                      @click="popOutTerminal"
+                    />
+                  </UTooltip>
                   <UButton
-                    icon="i-lucide-app-window"
+                    icon="i-lucide-x"
                     variant="ghost"
                     size="sm"
                     square
-                    aria-label="Open in its own window"
-                    @click="popOutPanel"
+                    aria-label="Close the panel"
+                    @click="panel = ''"
                   />
-                </UTooltip>
-                <UButton
-                  icon="i-lucide-x"
-                  variant="ghost"
-                  size="sm"
-                  square
-                  :aria-label="layout === 'full' ? 'Close the panel' : 'Back into the main window'"
-                  @click="layout === 'full' ? (panel = '') : windows.dockBack()"
-                />
+                </template>
               </div>
               <IdePanel :tab="panelTab" />
             </div>
@@ -554,7 +545,7 @@ async function revealFile(): Promise<void> {
         />
       </template>
     </USplitter>
-    <Teleport v-if="!['panel', 'wiki'].includes(layout) && visible" defer to="#status-start">
+    <Teleport v-if="!['terminal', 'wiki'].includes(layout) && visible" defer to="#status-start">
       <button class="flex items-center gap-1 text-error" @click="toggleProblems">
         <UIcon name="i-lucide-circle-x" class="size-3" />{{ problems.serious }}
       </button>
@@ -568,7 +559,7 @@ async function revealFile(): Promise<void> {
         </template>
       </button>
     </Teleport>
-    <Teleport v-if="!['panel', 'wiki'].includes(layout) && visible" defer to="#status-end">
+    <Teleport v-if="!['terminal', 'wiki'].includes(layout) && visible" defer to="#status-end">
       <span v-if="diff">{{ COMPARES[diff] }}</span>
       <template v-else-if="open">
         <span>Ln {{ open.caret.line }}, Col {{ open.caret.column }}</span>
@@ -580,33 +571,6 @@ async function revealFile(): Promise<void> {
     <UModal :open="!!comparing" title="Compare" fullscreen @update:open="comparing = undefined">
       <template #body>
         <FileCompare v-if="comparing" :left="comparing.left" :right="comparing.right" />
-      </template>
-    </UModal>
-    <UModal
-      v-model:open="settingsOpen"
-      title="IDE settings"
-      description="Kept for this workspace."
-      :ui="{ content: 'h-170 sm:max-w-4xl', body: 'flex min-h-0 flex-col p-0 sm:p-0' }"
-    >
-      <template #body>
-        <UTabs
-          v-model="settingsTab"
-          :items="SETTINGS_TABS"
-          variant="link"
-          :ui="{ root: 'min-h-0 flex-1 gap-0', list: 'px-4', content: 'min-h-0 flex-1 overflow-y-auto px-5' }"
-        >
-          <template #content="{ item }">
-            <SettingsSection :section="String(item.value)" />
-          </template>
-        </UTabs>
-      </template>
-      <template #footer>
-        <span class="grow" />
-        <UButton
-          :label="settingsTab === 'checks' ? 'Reset the checks' : 'Reset this tab'"
-          variant="ghost"
-          @click="resetSettings"
-        />
       </template>
     </UModal>
   </div>

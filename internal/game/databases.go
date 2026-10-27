@@ -428,10 +428,16 @@ var vic3Precedences = map[string]Precedence{
 	"dna_data": {Keeps: "merged", Modes: "entry"},
 }
 
-// ck3References are the CK3 references that name files, such as a trait's icon (_traits.info:4,23-35).
+// ck3References are the CK3 key paths whose values name files or another database's definitions, such as a trait's
+// icon (_traits.info:4,23-35) and an event portrait's animation.
 var ck3References = []Reference{
 	{Database: "traits", KeyPath: "icon", Target: File, Folder: "gfx/interface/icons/traits"},
 	{Database: "traits", KeyPath: "icon/**/desc", Target: File, Folder: "gfx/interface/icons/traits"},
+	// events/_events.info:101,107: a portrait's animation is an "animation name … See animations.txt"
+	{Database: "events", KeyPath: "*_portrait/animation", Target: "gfx/portraits/portrait_animations"},
+	{Database: "events", KeyPath: "*_portrait/triggered_animation/animation", Target: "gfx/portraits/portrait_animations"},
+	{Database: "events", KeyPath: "sender/animation", Target: "gfx/portraits/portrait_animations"},
+	{Database: "events", KeyPath: "sender/triggered_animation/animation", Target: "gfx/portraits/portrait_animations"},
 }
 
 // ck3FiringFields are the CK3 fields that fire the events, on_actions and decisions they name.

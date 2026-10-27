@@ -5,14 +5,14 @@
 -->
 <script setup lang="ts">
 import { computed, onMounted, shallowRef, useTemplateRef, watch } from "vue";
-import { useMutation, useQuery } from "@pinia/colada";
+import { useQuery } from "@pinia/colada";
 import type { DropdownMenuItem, SplitterItem } from "@nuxt/ui";
 import { useResizeObserver, useThrottleFn } from "@vueuse/core";
 
 import type { Shell } from "@internal/terminal/models";
-import * as app from "@services/app/service";
 import { loadQuery, programsQuery, shellsQuery } from "../../../queries";
 import { useTerminalStore } from "../../../stores/terminal";
+import { useWindowsStore } from "../../../stores/windows";
 import { useWorkspaceStore } from "../../../stores/workspace";
 import FindBox from "../../../ui/FindBox.vue";
 
@@ -49,7 +49,7 @@ const rows = shallowRef<string[]>([]);
 
 const current = computed(() => terminal.consoles.find((open) => open.shell.id === terminal.active));
 const hasFile = computed(() => !!terminal.findFile());
-const { mutate: showPanel } = useMutation({ mutation: () => app.ShowWindow("panel") });
+const windows = useWindowsStore();
 const { data: programs } = useQuery(programsQuery);
 // the menu beside New shell: a shell of each program this system has
 const programItems = computed<DropdownMenuItem[]>(() =>
@@ -113,8 +113,8 @@ function closeFind(): void {
 
 <template>
   <div v-if="!terminal.holding" class="flex flex-col gap-2 px-3 py-2 text-12 text-dimmed">
-    The shells are in the panel's own window.
-    <div><UButton label="Show window" size="xs" variant="ghost" @click="showPanel()" /></div>
+    The shells are in the terminal's own window.
+    <div><UButton label="Show window" size="xs" variant="ghost" @click="windows.showWindow('terminal')" /></div>
   </div>
   <USplitter v-else :items="PANES" auto-save-id="pmt.terminal.shells" class="min-h-0 min-w-0 flex-1">
     <template #screen>

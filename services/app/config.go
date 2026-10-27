@@ -180,6 +180,10 @@ var Catalog = []Setting{
 		Help: "The shell New shell starts; the arrow beside it starts another. Found by PMT unless you pick one. On " +
 			"Windows: pwsh on the PATH, then PowerShell 7, then Windows PowerShell. On Linux: your $SHELL, else sh.",
 		Words: "terminal shell pwsh powershell bash zsh wsl program console default"},
+	{Key: "shortcuts.bindings", Label: "Keyboard shortcuts",
+		Section: "shortcuts", Type: "text", Default: "",
+		Help:  "The shortcuts changed from PMT's own, by command.",
+		Words: "keys keybindings hotkeys rebind"},
 	{Key: "ide.editorTextSize", Label: "Editor text size",
 		Section: "editor", Workspace: true, Type: "number", Default: "14", Min: 10, Max: 24,
 		Help:  "The size of the editor's text in pixels.",

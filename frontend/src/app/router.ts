@@ -24,10 +24,7 @@ const ROUTES = {
   health: { path: "health", component: () => import("../pages/health/HealthPage.vue") },
   "patch-notes": { path: "patch-notes", component: () => import("../pages/notes/PatchNotesPage.vue") },
   release: { path: "release", component: () => import("../pages/publish/ReleasePage.vue") },
-  "workspace-settings": { path: "settings", component: () => import("../pages/settings/SettingsPage.vue") },
 } satisfies Record<PageName, Pick<RouteRecordRaw, "path" | "component">>;
-
-const WORKSPACE_PAGES: readonly PageName[] = [...WORKSPACE_TOOLS, "workspace-settings"];
 
 /** The app's router. Its guard writes the active workspace id. */
 export const router: Router = createRouter({
@@ -36,7 +33,7 @@ export const router: Router = createRouter({
     { path: "/", redirect: { name: "library" } },
     makeRoute("library"),
     makeRoute("wizard"),
-    { path: "/workspace/:id", children: WORKSPACE_PAGES.map(makeRoute) },
+    { path: "/workspace/:id", children: WORKSPACE_TOOLS.map(makeRoute) },
   ],
 });
 
@@ -48,7 +45,6 @@ export const KEPT: readonly string[] = [
   "HealthPage",
   "PatchNotesPage",
   "ReleasePage",
-  "SettingsPage",
 ];
 
 router.beforeEach(async (target, previous) => {

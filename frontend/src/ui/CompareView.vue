@@ -65,21 +65,29 @@ onMounted(() => {
     const lines = view?.getLineChanges() ?? [];
     changes.value = lines.length;
     const count = (start: number, end: number) => (end ? end - start + 1 : 0);
+    // an empty text has no lines, though Monaco gives its model one
     emit(
       "changes",
-      lines.reduce((sum, one) => sum + count(one.modifiedStartLineNumber, one.modifiedEndLineNumber), 0),
-      lines.reduce((sum, one) => sum + count(one.originalStartLineNumber, one.originalEndLineNumber), 0),
+      right ? lines.reduce((sum, one) => sum + count(one.modifiedStartLineNumber, one.modifiedEndLineNumber), 0) : 0,
+      left ? lines.reduce((sum, one) => sum + count(one.originalStartLineNumber, one.originalEndLineNumber), 0) : 0,
     );
   });
 });
 
+// Monaco keeps which unchanged lines are folded as marks in each text, and a text set whole loses them
 watch(
   () => left,
-  (text) => original.setValue(text),
+  (text) => {
+    original.setValue(text);
+    compareAgain();
+  },
 );
 watch(
   () => right,
-  (text) => modified.setValue(text),
+  (text) => {
+    modified.setValue(text);
+    compareAgain();
+  },
 );
 watch(
   () => language,
@@ -89,13 +97,21 @@ watch(
   },
 );
 watch(split, (side) => view?.updateOptions({ renderSideBySide: side }));
-watch(all, (shown) => view?.updateOptions({ hideUnchangedRegions: { enabled: !shown } }));
+watch(all, (shown) => {
+  view?.updateOptions({ hideUnchangedRegions: { enabled: !shown } });
+  if (!shown) compareAgain();
+});
 
 onBeforeUnmount(() => {
   view?.dispose();
   original.dispose();
   modified.dispose();
 });
+
+/** compareAgain compares the two texts anew, which folds every unchanged region again unless all lines are shown. */
+function compareAgain(): void {
+  view?.setModel({ original, modified });
+}
 </script>
 
 <template>

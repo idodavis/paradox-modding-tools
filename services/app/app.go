@@ -276,7 +276,7 @@ func (app *Service) ShowFolder(path string) error {
 //wails:ignore
 func (app *Service) OpenMainWindow() {
 	pmt := application.Get()
-	window := pmt.Window.NewWithOptions(application.WebviewWindowOptions{
+	window := newWindow(application.WebviewWindowOptions{
 		Name:   mainWindow,
 		Title:  "Paradox Modding Tools",
 		Width:  1400,
@@ -299,7 +299,7 @@ func (app *Service) OpenWindow(name, url string) error {
 	if _, open := pmt.Window.Get(name); open {
 		return fmt.Errorf("a window named %q is already open", name)
 	}
-	window := pmt.Window.NewWithOptions(application.WebviewWindowOptions{Name: name, URL: url})
+	window := newWindow(application.WebviewWindowOptions{Name: name, URL: url})
 	// the first close waits for the frontend; the next one goes through
 	var unhook func()
 	unhook = window.RegisterHook(events.Common.WindowClosing, func(event *application.WindowEvent) {
@@ -351,6 +351,15 @@ func resolveMark(dirs Dirs) string { return filepath.Join(dirs.Log, "running") }
 
 // resolveLog returns the path of pmt.log.
 func resolveLog(dirs Dirs) string { return filepath.Join(dirs.Log, "pmt.log") }
+
+// newWindow opens a window with the given options and no frame of the system's, since the page draws its own. On
+// Windows the page marks its title bar and buttons, and Windows treats them as its own, so dragging, snapping and the
+// system menu work as they do on any window.
+func newWindow(options application.WebviewWindowOptions) *application.WebviewWindow {
+	options.Frameless = true
+	options.Windows.WebView2CompositionHosting = true
+	return application.Get().Window.NewWithOptions(options)
+}
 
 // lookupWindow returns the open window with the given name. It returns an error when no window has it.
 func lookupWindow(name string) (application.Window, error) {

@@ -23,7 +23,7 @@ type docReader struct {
 	header  string   // the key the last header wrote, while no statement of it has followed; "" none
 	above   []string // the comment lines directly above the next statement
 	list    string   // what a label opened for the current field: choices, scopes, or ""
-	keys    []string // the key of each block the line is in, "" for the example's entry and a placeholder
+	keys    []string // the key of each block the line is in, "" for the example's entry and a key that stands for names
 	blurb   []string // the first paragraph of prose before the first statement
 	scope   string   // the scope type of the root the prose before the first field gives
 	started bool     // a statement, header or field has been read
@@ -43,7 +43,7 @@ var (
 	hashRun         = regexp.MustCompile(`^(?:#+\s*)+`)
 	headingLine     = regexp.MustCompile(`^(=+ *[^=]* *=+|[-=#*_|]{3,}|[A-Z][A-Z0-9 _/:-]{2,}|-[a-z_]+(=<[^>]*>)?)$`)
 	briefLine       = regexp.MustCompile(`(?i)^brief\s*[:=]?\s*([A-Za-z_][A-Za-z0-9_.]*)\s*(?:-[^(]*)?(?:\(\s*([^)]*)\))?`)
-	statementLine   = regexp.MustCompile(`^(<[^>]+>|[A-Za-z_@][A-Za-z0-9_.'-]*|\d[0-9.]*)\s*(?:\?=|==|<=|>=|=|<|>)\s*(.*)$`)
+	statementLine   = regexp.MustCompile(`^(<[^>]+>|\$\w+\$|\w+:[\w@.]+|\w+(?:/\w+)+|[A-Za-z_@][A-Za-z0-9_.'-]*|\d[0-9.]*)\s*(?:\?=|==|<=|>=|=|<|>)\s*(.*)$`)
 	braceLine       = regexp.MustCompile(`^[{}. ]+$`)
 	labelLine       = regexp.MustCompile(`^([A-Z][A-Za-z ]{1,24}|format):\s*(.*)$`)
 	fieldLine       = regexp.MustCompile(`^([a-z_][a-z0-9_]*):\s+(\S.*)$`)
@@ -182,7 +182,7 @@ func (reader *docReader) readLine(raw string, heading bool) {
 	if bullet := bulletLine.FindStringSubmatch(code); statement == nil && bullet != nil {
 		statement = statementLine.FindStringSubmatch(bullet[1])
 	}
-	isStatement := statement != nil && !isFact(statement[1])
+	isStatement := statement != nil && !isFact(statement[1]) && !isNote(statement[1], statement[2])
 	opens := strings.Count(code, "{") - strings.Count(code, "}")
 	reader.countLine(line, isStatement || braceLine.MatchString(code))
 	switch {
@@ -236,6 +236,13 @@ func splitValue(value string) (string, string) {
 func isFact(key string) bool {
 	lower := strings.ToLower(key)
 	return lower == game.ScopeLinks.Root || lower == "default"
+}
+
+// isNote reports whether a statement is a note in prose rather than script, as `scope:actor = the actor` and
+// `days/weeks/months/years = X` are: a key with a prefix, alternatives or a parameter, whose value is no block. Such a
+// key that opens a block is script.
+func isNote(key, value string) bool {
+	return strings.ContainsAny(key, ":/$") && !strings.HasPrefix(value, "{")
 }
 
 // splitComment splits a line into its code and the comment after a `#` that is not inside quotes.
@@ -293,17 +300,20 @@ func (reader *docReader) field(key string) *Field {
 }
 
 // readStatement reads a line of script. The block at the top of the example is the entry and has no key, and neither
-// does a placeholder key. Any other key is a field under the entry. The comment after it and the comments above it
-// are its text, its value is its type, and a header just before it gives its claims.
+// does a key that stands for names. Any other key is a field under the entry. The comment after it and the comments
+// above it are its text, its value is its type, and a header just before it gives its claims.
 func (reader *docReader) readStatement(key, value, text string, opens int) {
 	reader.started = true
 	entry := len(reader.keys) == 0 && (opens > 0 || strings.HasPrefix(value, "{"))
-	keyed := key != "" && !entry && !strings.HasPrefix(key, "<")
+	keyed := key != "" && !entry && !isStandIn(key)
 	step := key
 	if game.IsNumberKey(step) {
 		step = game.NumberKey
 	}
 	if keyed {
+		if reader.header != key {
+			reader.closeHeader()
+		}
 		field := reader.field(path.Join(append(slices.DeleteFunc(slices.Clone(reader.keys), isBlank), step)...))
 		if reader.header == key {
 			field.take(reader.current.Claims)
@@ -325,7 +335,7 @@ func (reader *docReader) readStatement(key, value, text string, opens int) {
 }
 
 // closeHeader gives the last header's facts to its key at the top of the definition, if no statement of that key
-// followed it.
+// followed it. It is called when a statement of another key or the end of the doc comes first.
 func (reader *docReader) closeHeader() {
 	if reader.header != "" {
 		reader.field(reader.header).take(reader.current.Claims)
@@ -333,7 +343,14 @@ func (reader *docReader) closeHeader() {
 	}
 }
 
-// isBlank reports whether a key is empty. The example's entry and a placeholder have none, so they are on no path.
+// isStandIn reports whether a key stands for names rather than naming a field: a placeholder such as <key>, a key with
+// a prefix such as scope:actor, alternatives such as trigger/effect, or a parameter such as $target$.
+func isStandIn(key string) bool {
+	return strings.HasPrefix(key, "<") || strings.ContainsAny(key, ":/$")
+}
+
+// isBlank reports whether a key is empty. The example's entry and a key that stands for names have none, so they are
+// on no path.
 func isBlank(key string) bool { return key == "" }
 
 // readLabel reads a `Label: text` line. It gives the field above a default or a scope, opens a list of its values or
@@ -521,7 +538,7 @@ func resolveValue(field *Field, value string) {
 		}
 	case placeholder || known:
 		resolveDocType(field, inner, game.SourceDocs)
-	case jomini.IsNumber(value), value == "x", value == "X", value == "N":
+	case jomini.IsNumber(value):
 		resolveDocType(field, "number", game.SourceDocs)
 	case slices.Contains(game.Bools, value):
 		resolveDocType(field, "bool", game.SourceDocs)

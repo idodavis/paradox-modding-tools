@@ -483,6 +483,20 @@ func (schema *Schema) ResolveLink(link, scope string) (string, bool) {
 	return command.Target, true
 }
 
+// isLink reports whether a key or a value starts with a scope link, ignoring case, as scope:target and prev do.
+func (schema *Schema) isLink(key string) bool {
+	first := strings.ToLower(jomini.SplitChain(key)[0])
+	if command := schema.Commands[first]; command != nil && !command.Wild && slices.Contains(command.Declared, game.DeclaredLink) {
+		return true
+	}
+	prefix, _, ok := jomini.SplitPrefixed(first)
+	if _, exists := schema.Prefixes[prefix]; ok && exists {
+		return true
+	}
+	wild := schema.Commands[prefix]
+	return ok && wild != nil && wild.Wild
+}
+
 // ResolveCallTypes returns the type each step of a data call leads to. It stops at a step no dump declares, which
 // gets "".
 func (schema *Schema) ResolveCallTypes(call jomini.Call, datacontext string) []string {

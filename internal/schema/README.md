@@ -72,8 +72,9 @@ a number, a date or a yes-or-no word. Where vanilla shows no reference and no so
 written as a block is a color if every block was one, and else a block. A field written only as scalars gets the first
 type in `valueTests` that all its values fit.
 
-`resolveReference` gives a reference when one database defines every value. A value that holds a parameter is left
-out. A database whose row names another as its target counts as that one, and so do the coats of arms where a database
+`resolveReference` gives a reference when one database defines every value. A quoted value names what it names
+unquoted. A value that holds a parameter is left out, and so is a link (`isLink`, the test the walk uses too), which
+leads to a scope rather than naming a definition. A database whose row names another as its target counts as that one, and so do the coats of arms where a database
 that holds coats defines the values too. Where no one database defines them all, a database with nested ones may,
 counted together with them, as a language and its dialects are (`Expected.Nested`). The game concepts, then the
 localization, count only when nothing else does.
@@ -102,7 +103,9 @@ traits name a database's class takes that database's names.
 A doc is an `.info`, `.md` or readme file, or a `.txt` file whose name marks it as one, in a database's folder. A
 `.txt` file with more script lines than prose is data and is skipped. The `docReader` reads a doc line by line, by
 pattern: prose is no valid script, so nothing is parsed. Its example's statements are fields, and the comments beside
-and above them are their text. That text states a blurb, a type by the words of `game.DocTypes`, a requirement, a
+and above them are their text. A key that stands for names (`<key>`, `scope:actor`, `trigger/effect`, `$target$`)
+makes no field, but a block it opens is still a level of the example; written with prose instead of a block, as
+`scope:actor = the actor` is, it is a note. That text states a blurb, a type by the words of `game.DocTypes`, a requirement, a
 default, choices and a scope. A later doc only fills what an earlier one left out.
 
 ## The vanilla count

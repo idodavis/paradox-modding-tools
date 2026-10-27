@@ -27,7 +27,7 @@ const COLORS: Record<string, string> = {
     <OriginChip :origin="change.place.origin" dot />
     <span class="min-w-0 grow truncate">
       <span class="text-highlighted">{{ change.place.name }}</span>
-      <span class="text-dimmed"> {{ change.place.folder }}</span>
+      <span class="ms-1.5 text-dimmed">{{ change.place.folder }}</span>
     </span>
     <UButton
       v-if="(change.staged || change.unstaged) && change.status !== 'deleted' && change.status !== 'conflict'"

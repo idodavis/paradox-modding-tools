@@ -1,5 +1,6 @@
 <!--
-  The status bar: the page's own facts, the wiki download, the windows, Help and the version with its update check.
+  The status bar: the install and its scan, the page's own facts, the wiki download, the windows, Help and the
+  version with its update check.
 -->
 <script setup lang="ts">
 import type { ToastProps } from "@nuxt/ui";
@@ -9,9 +10,9 @@ import { computed, onScopeDispose, shallowRef, watch } from "vue";
 import { useRoute } from "vue-router";
 
 import * as app from "@services/app/service";
-import { day } from "../lib/format";
+import { day, installLine } from "../lib/format";
 import { crashedQuery, releasesQuery, stateQuery, updateQuery, versionQuery, windowsQuery } from "../queries";
-import { THIS_WINDOW, useWindowsStore } from "../stores/windows";
+import { describeWindow, THIS_WINDOW, useWindowsStore } from "../stores/windows";
 import { PAGES } from "./pages";
 
 const route = useRoute();
@@ -45,6 +46,13 @@ onScopeDispose(
     if (data && THIS_WINDOW === "main") toast.add({ title: "Wiki fetch failed", description: data, color: "error" });
   }),
 );
+
+// the install's scan while a workspace opens, as the last stage it reported
+const scan = shallowRef<{ stage: string; percent: number } | null>(null);
+onScopeDispose(Events.On("install:scanning", ({ data }) => (scan.value = data)));
+for (const event of ["install:scanned", "workspace:opened", "workspace:failed"] as const) {
+  onScopeDispose(Events.On(event, () => (scan.value = null)));
+}
 
 // the other windows, each brought to the front from the menu of the main window
 const others = computed(() =>
@@ -98,15 +106,6 @@ function showToast(key: string, options: Partial<ToastProps>): void {
   toast.add({ ...options, duration: 0 });
 }
 
-/** describeWindow returns what a window shows, for the menu. */
-function describeWindow(name: string): string {
-  const [kind = "", rest = ""] = name.split(/:(.*)/s);
-  if (kind === "page") return Object.entries(PAGES).find(([key]) => key === rest)?.[1].title ?? rest;
-  if (kind === "editor") return `Editor ${rest}`;
-  if (kind === "files") return rest.split(/[\\/]/).at(-1) ?? rest;
-  return { main: "Main window", game: "Game files", panel: "Panel" }[kind] ?? name;
-}
-
 const ITEM = "flex h-6 items-center gap-1.25 hover:text-highlighted";
 </script>
 
@@ -114,6 +113,24 @@ const ITEM = "flex h-6 items-center gap-1.25 hover:text-highlighted";
   <footer
     class="flex h-6 shrink-0 items-center gap-3.5 border-t border-default bg-muted px-3 text-11 whitespace-nowrap text-dimmed"
   >
+    <template v-if="scan || state?.open">
+      <span class="flex items-center gap-1.5 text-toned">
+        <span
+          class="size-1.5 shrink-0 rounded-full"
+          :class="[state?.installFound === false ? 'bg-error' : 'bg-success', { 'animate-pulse': scan }]"
+        />
+        <template v-if="scan">
+          <span>{{ scan.stage }}</span>
+          <span class="tabular-nums">{{ scan.percent }}%</span>
+        </template>
+        <span v-else-if="state?.installFound === false">Install not found</span>
+        <span v-else-if="state?.open">
+          {{ installLine(state.game?.shortName ?? "", state.install.version, state.install.scannedAt) }}
+        </span>
+      </span>
+      <!-- the line before the page's own facts, shown when the page has some -->
+      <span class="hidden h-3 w-px shrink-0 bg-accented [&:has(+#status-start>*)]:block" />
+    </template>
     <div id="status-start" class="contents" />
     <span class="grow" />
     <div id="status-end" class="contents" />

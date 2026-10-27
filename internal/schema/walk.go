@@ -722,7 +722,7 @@ func (walker *walker) matchRule(rule string, parent *Context, key string) (match
 	case "operator":
 		return match{}, game.IsOperator(key)
 	case "link":
-		return match{category: CategoryLink}, walker.isLink(key)
+		return match{category: CategoryLink}, walker.schema.isLink(key)
 	case "modifier":
 		_, declared := walker.schema.Modifiers[key]
 		return match{category: CategoryField, child: holder.findChild(key)}, declared
@@ -801,20 +801,6 @@ func (walker *walker) matchCommand(parent *Context, key string) (match, bool) {
 	}
 	fit.declaration, ok = parent.FindDeclaration(fit.command)
 	return fit, ok
-}
-
-// isLink reports whether a key starts with a scope link, ignoring case.
-func (walker *walker) isLink(key string) bool {
-	first := strings.ToLower(jomini.SplitChain(key)[0])
-	if command := walker.schema.Commands[first]; command != nil && !command.Wild && slices.Contains(command.Declared, game.DeclaredLink) {
-		return true
-	}
-	prefix, _, ok := jomini.SplitPrefixed(first)
-	if _, exists := walker.schema.Prefixes[prefix]; ok && exists {
-		return true
-	}
-	wild := walker.schema.Commands[prefix]
-	return ok && wild != nil && wild.Wild
 }
 
 // findLinkCommand returns the command of the first link of a chain, or the command of its prefix if it has one. It
@@ -1102,7 +1088,7 @@ func (walker *walker) resolveValueReferences(context *Context, statement int32, 
 	}
 	var databases []string
 	claim := ""
-	if field := context.Field; field != nil && field.Value.Value.Type == ValueReference && !walker.isLink(text) {
+	if field := context.Field; field != nil && field.Value.Value.Type == ValueReference && !walker.schema.isLink(text) {
 		claim = field.Value.Value.Database
 	}
 	if claim != "" {
@@ -1152,12 +1138,12 @@ func (walker *walker) findScriptValue(context *Context, level int, span jomini.S
 	last := links[len(links)-1]
 	enclosing, key := walker.frames[level-1], walker.frames[level].label
 	chained := len(links) > 1 && !jomini.IsEventID(text) &&
-		!slices.ContainsFunc(links[:len(links)-1], func(link string) bool { return !walker.isLink(link) })
+		!slices.ContainsFunc(links[:len(links)-1], func(link string) bool { return !walker.schema.isLink(link) })
 	operated := game.ClassifyKey(findShape(enclosing.context), strings.ToLower(enclosing.label), strings.ToLower(key)) == "math"
 	valued := context.Field != nil && context.Field.Value.Value.Values
 	_, declared := walker.schema.FindCommand(last)
 	if walker.schema.Values == "" || !chained && !operated && !valued || !jomini.IsIdentifier(last) || declared ||
-		walker.isLink(last) || slices.Contains(game.Bools, last) {
+		walker.schema.isLink(last) || slices.Contains(game.Bools, last) {
 		return Reference{}, false
 	}
 	start := span.End - len(last)

@@ -67,4 +67,4 @@ The shells: `$SHELL`, then each shell `/etc/shells` lists, then `sh`, each file 
 
 Every shell gets PMT's own environment, with these over it: `COLORTERM=truecolor`; on Linux `TERM=xterm-256color`; on
 Windows `CLAUDE_CODE_ALT_SCREEN_FULL_REPAINT=1`, Claude Code's documented fix for the fragments a pseudo console leaves
-on its full screen. `ListEnvironment` lists them for the Settings page.
+on its full screen. `ListEnvironment` lists them for Settings.

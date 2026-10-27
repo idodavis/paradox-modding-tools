@@ -793,6 +793,9 @@
   --o15: oklch(calc(var(--ol) - 0.04) calc(var(--oc) * 0.82) 268);
   --o16: oklch(calc(var(--ol) - 0.18) calc(var(--oc) * 1.48) 295);
 
+  /* the window's close button under the pointer on Windows, the red Windows gives its own in every theme */
+  --window-close: #c42b1c;
+
   /* Nuxt UI: radius-sm, md, lg and xl are 4, 6, 8 and 12 */
   --ui-radius: 0.25rem;
   --ui-bg: var(--bg-1);

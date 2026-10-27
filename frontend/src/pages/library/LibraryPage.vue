@@ -3,6 +3,7 @@
 import { computed, onScopeDispose, shallowRef } from "vue";
 import { useRouter } from "vue-router";
 import { useMutation, useQuery } from "@pinia/colada";
+import { useEventBus } from "@vueuse/core";
 import { Events } from "@wailsio/runtime";
 import type { DropdownMenuItem } from "@nuxt/ui";
 
@@ -23,6 +24,7 @@ import type { Workspace } from "@services/app/models";
 const router = useRouter();
 const toast = useToast();
 const store = useWorkspaceStore();
+const bus = useEventBus<string>("pmt.command");
 const creatingMod = shallowRef(false);
 const guiding = shallowRef(false);
 const resetting = shallowRef(false);
@@ -93,9 +95,16 @@ onScopeDispose(
   }),
 );
 
-/** open goes to a workspace's home page. The workspace becomes the active one. */
-function open(record: Workspace): void {
-  void router.push(homeRoute(record.id, record.homePage));
+/** open goes to a workspace's home page, which makes it the active one. It resolves to a failure if cancelled. */
+function open(record: Workspace) {
+  return router.push(homeRoute(record.id, record.homePage));
+}
+
+/** openSettings opens Settings on a workspace. One that is not open is opened on its home page first. */
+async function openSettings(record: Workspace): Promise<void> {
+  const isCurrent = record.id === store.activeId() && store.isOpen();
+  if (!isCurrent && (await open(record))) return;
+  bus.emit("settings.open");
 }
 
 /** openModDialog opens the new mod dialog, or the wizard if no workspace is open. */
@@ -165,7 +174,7 @@ function describeMenu(record: Workspace, leading: DropdownMenuItem[]): DropdownM
             :to="{ name: 'workspace-ide', params: { id: active.record.id } }"
           />
           <UButton label="Health" size="md" :to="{ name: 'health', params: { id: active.record.id } }" />
-          <UButton label="Settings" size="md" :to="{ name: 'workspace-settings', params: { id: active.record.id } }" />
+          <UButton label="Settings" size="md" @click="openSettings(active.record)" />
           <UDropdownMenu
             :items="
               describeMenu(active.record, [
@@ -240,7 +249,7 @@ function describeMenu(record: Workspace, leading: DropdownMenuItem[]): DropdownM
                     {
                       label: 'Settings',
                       icon: 'i-lucide-settings',
-                      to: { name: 'workspace-settings', params: { id: row.record.id } },
+                      onSelect: () => openSettings(row.record),
                     },
                   ])
                 "

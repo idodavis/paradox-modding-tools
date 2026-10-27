@@ -103,8 +103,8 @@ by one patch number per release after that. The app's footer button checks for u
 First, a terminal in the IDE's panel, so git or a command line agent such as Claude Code or GitHub Copilot CLI runs
 beside the editor. The editor follows what the agent does.
 
-- **The shells.** The app starts and keeps each shell, so a panel popped out into its own window shows the same shell
-  with its recent output and goes on. A shell ends when you close it, when its program exits or when the app does.
+- **The shells.** The app starts and keeps each shell, so the terminal popped out into its own window shows the same
+  shell with its recent output and goes on. A shell ends when you close it, when its program exits or when the app does.
   On Windows it is PowerShell 7 if installed, else Windows PowerShell; on Linux it is your `$SHELL`, else `sh`. A
   setting overrides this. A new shell opens in the mod folder of the active file, else the workspace's first mod.
 - **The view.** A third tab in the panel beside Problems and Git, with several shells as tabs inside it, colored from

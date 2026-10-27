@@ -93,17 +93,6 @@ export const PAGES = {
       "Paradox Mods has no API: use Copy for Paradox Mods in the description's BBCode view and paste it in the Paradox Launcher's Upload Mod.",
     ],
   },
-  "workspace-settings": {
-    title: "Settings",
-    icon: "i-lucide-settings",
-    workspace: true,
-    help: [
-      "General: the workspace's name, its localization language, the page it opens on, and the IDE's tabs and explorer.",
-      "Game install: the install this workspace reads, and how to make the game print its script_docs.",
-      "Mods and load order: drag to reorder. When two mods ship a file at the same path, the game reads the one lower in the order; Health's Compatibility view explains how each game picks between copies. Colors stay with the mod, not its position. Each mod's calendar, Workshop link and upload exclusions are on its card. Changes save as you make them.",
-      "Appearance applies to every workspace: the theme, light and dark, matching the game's theme, the interface scale and the pages shown. The IDE's settings, such as text sizes and the Visual view's resolution, are on their own card.",
-    ],
-  },
 } as const satisfies Record<string, Page>;
 
 /** A PageName is the route name of a page. */

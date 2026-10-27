@@ -1,6 +1,5 @@
 <!--
-  The IDE's bottom panel. It shows the problems of the open files, the hits of the search, the output of git or the
-  shells.
+  The IDE's bottom panel. It shows the problems of the open files, the output of git or the shells.
 -->
 <script lang="ts">
 import type { Finding } from "@services/health/models";
@@ -63,14 +62,12 @@ import { useQuery } from "@pinia/colada";
 import { diagnosticMessage, matchQuery } from "../../lib/format";
 import { codesQuery, reportQuery } from "../../queries";
 import { useGitStore } from "../../stores/git";
-import { useSearchStore } from "../../stores/search";
 import { useWorkspaceStore } from "../../stores/workspace";
 import OriginChip from "../../ui/OriginChip.vue";
 import ProblemRow from "../../ui/ProblemRow.vue";
-import SearchHits from "./SearchHits.vue";
 import TerminalPanel from "./terminal/TerminalPanel.vue";
 
-const { tab } = defineProps<{ tab: "problems" | "search" | "output" | "terminal" }>();
+const { tab } = defineProps<{ tab: "problems" | "output" | "terminal" }>();
 
 /** A Row is one row of the problems list, a file or one of its problems with its message. */
 type Row = { place: Place; count: number } | ({ place: Place; message: string } & Problem);
@@ -78,7 +75,6 @@ type Row = { place: Place; count: number } | ({ place: Place; message: string } 
 const workspace = useWorkspaceStore();
 const editor = useEditorStore();
 const git = useGitStore();
-const search = useSearchStore();
 const filter = shallowRef("");
 const output = useTemplateRef("output");
 
@@ -156,10 +152,6 @@ watch(
         {{ filter ? "No problem matches the filter." : "No problems in the open files." }}
       </p>
     </template>
-    <div v-else-if="tab === 'search'" class="min-h-0 flex-1 overflow-y-auto">
-      <SearchHits v-if="search.current().query" />
-      <p v-else class="px-3 py-2 text-12 text-dimmed">The sidebar's search lists its hits here.</p>
-    </div>
     <TerminalPanel v-else-if="tab === 'terminal'" />
     <div v-else ref="output" class="min-h-0 flex-1 overflow-y-auto px-3 py-1.5 font-mono text-11">
       <pre v-for="(line, index) in git.output()" :key="index" class="pb-0.5 whitespace-pre-wrap text-toned">{{

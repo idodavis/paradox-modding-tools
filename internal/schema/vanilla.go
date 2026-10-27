@@ -274,9 +274,10 @@ func (counter *counter) Enter(tree *jomini.Tree, statement int32, context *Conte
 	return true
 }
 
-// countDefinition records the name a statement defines, if it defines one.
+// countDefinition records the name a statement defines, if it defines one. The second name that a value at an alias key
+// gives its definition counts too, as a trait's group does.
 func (counter *counter) countDefinition(context *Context) {
-	if !context.Defines || context.Category != CategoryDefinition {
+	if !context.Defines || context.Category != CategoryDefinition && !context.Definition.Alias {
 		return
 	}
 	if counter.defined[context.Database] == nil {
@@ -790,14 +791,21 @@ func (counter *counter) resolveKeys(field *Field) {
 }
 
 // resolveReference returns the reference that every given value makes: to the one database that defines them all. A
-// value that holds a parameter is left out. A database named for another that defines them too does not count apart
-// from it. Where no database defines them all, a database and those nested in it may, as a language and its dialects
-// do, and the reference names the nested ones too. A game concept or a message key is text, not a definition: the
-// concepts database counts only if nothing else defines every value, and the localization only if the concepts do not
-// either. It returns false if there are no values, if nothing defines them all or if more than one does.
+// quoted value names what it names unquoted. A value that holds a parameter is left out, and so is a link, as
+// scope:target is, since it leads to a scope rather than naming a definition. A database named for another that
+// defines them too does not count apart from it. Where no database defines them all, a database and those nested in it
+// may, as a language and its dialects do, and the reference names the nested ones too. A game concept or a message key
+// is text, not a definition: the concepts database counts only if nothing else defines every value, and the
+// localization only if the concepts do not either. It returns false if there are no values, if nothing defines them
+// all or if more than one does.
 func (counter *counter) resolveReference(values map[string]int) (Expected, bool) {
-	named := maps.Clone(values)
-	maps.DeleteFunc(named, func(value string, _ int) bool { return jomini.IsParameter(value) })
+	named := map[string]int{}
+	for value, count := range values {
+		name := strings.Trim(value, `"`)
+		if !jomini.IsParameter(name) && !counter.schema.isLink(name) {
+			named[name] += count
+		}
+	}
 	if len(named) == 0 {
 		return Expected{}, false
 	}

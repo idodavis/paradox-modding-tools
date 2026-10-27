@@ -1,5 +1,5 @@
 /**
- * The terminal store: the shells of this window. The panel's own window holds them while it is open, else the main
+ * The terminal store: the shells of this window. The terminal's own window holds them while it is open, else the main
  * window. The holder keeps one xterm for each shell, fed by the shell's stream from Go, for as long as it holds the
  * shells, shown or not; the other windows keep none. Before the shells go to another window, each xterm's screen goes
  * to Go, which gives it to the next holder with the output that came after it.
@@ -21,7 +21,7 @@ import type { Screen, Shell } from "@internal/terminal/models";
 import type { Link } from "@services/terminal/models";
 import type { Place } from "@services/workspace/models";
 import * as terminal from "@services/terminal/service";
-import { COMMANDS } from "../app/commands";
+import { findBinding, listPressedKeys } from "../app/commands";
 import { shellsQuery } from "../queries";
 import { useEditorStore } from "./editor";
 import { useSettingsStore } from "./settings";
@@ -59,9 +59,9 @@ export const useTerminalStore = defineStore("terminal", () => {
   const active = useLocalStorage("pmt.terminal.active", "");
   // the find box over the active shell is open
   const findOpen = shallowRef(false);
-  // the shells went to another window, and stay there until the panel moves again
+  // the shells went to another window, and stay there until the terminal moves again
   const away = shallowRef(false);
-  const holding = computed(() => !away.value && windows.resolvePanel() === THIS_WINDOW);
+  const holding = computed(() => !away.value && windows.resolveTerminal() === THIS_WINDOW);
   const { data: shells } = useQuery(() => ({ ...shellsQuery, enabled: holding.value }));
 
   // starts the given program's shell, or the default shell for ""
@@ -84,7 +84,7 @@ export const useTerminalStore = defineStore("terminal", () => {
   });
 
   watch(
-    () => windows.resolvePanel(),
+    () => windows.resolveTerminal(),
     () => (away.value = false),
   );
   watch([holding, shells], syncConsoles, { immediate: true });
@@ -222,17 +222,17 @@ export const useTerminalStore = defineStore("terminal", () => {
 
   /**
    * showLink opens the file a link names at its line: in this window's editor, or in the main window's from the
-   * panel's.
+   * terminal's.
    */
   function showLink(link: Link): void {
     const position = { lineNumber: link.line, column: Math.max(link.column, 1) };
-    if (THIS_WINDOW === "panel") windows.showElsewhere("main", link.place, position);
+    if (THIS_WINDOW === "terminal") windows.showElsewhere("main", link.place, position);
     else editor.show(link.place, position, "navigate");
   }
 
   /**
    * findFile finds the file the shells work on: the active file of this window, or of the main window from the
-   * panel's own. It is null when there is none.
+   * terminal's own. It is null when there is none.
    */
   const findFile = (): Place | null => editor.activeFile() ?? windows.findActive("main");
 
@@ -301,16 +301,8 @@ function resolveTheme(): ITheme {
 
 /** isAppKey reports whether a key is the shortcut of a command that reaches the app from a terminal. */
 function isAppKey(event: KeyboardEvent): boolean {
-  const pressed = [event.ctrlKey && "meta", event.shiftKey && "shift", event.altKey && "alt", event.key];
-  const shortcut = pressed.filter(Boolean).join("+").toLowerCase();
-  return COMMANDS.some(
-    (row) =>
-      APP_COMMANDS.includes(row.id) &&
-      row.kbds
-        ?.map((part) => (typeof part === "string" ? part : (part?.value ?? "")))
-        .join("+")
-        .toLowerCase() === shortcut,
-  );
+  const command = findBinding(listPressedKeys(event));
+  return !!command && APP_COMMANDS.includes(command.id);
 }
 
 /**

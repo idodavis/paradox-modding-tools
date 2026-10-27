@@ -2,15 +2,27 @@
 import type { Format } from "@internal/files/models";
 import type { Place } from "@services/workspace/models";
 import type { View } from "../../../stores/editor";
+import animIcon from "../fileicons/paradox-anim.svg?url";
 import assetIcon from "../fileicons/paradox-asset.svg?url";
+import audioIcon from "../fileicons/paradox-audio.svg?url";
+import bbcodeIcon from "../fileicons/paradox-bbcode.svg?url";
+import binaryIcon from "../fileicons/paradox-binary.svg?url";
+import csvIcon from "../fileicons/paradox-csv.svg?url";
 import fontIcon from "../fileicons/paradox-font.svg?url";
 import gfxIcon from "../fileicons/paradox-gfx.svg?url";
 import guiIcon from "../fileicons/paradox-gui.svg?url";
+import infoIcon from "../fileicons/paradox-info.svg?url";
+import jsonIcon from "../fileicons/paradox-json.svg?url";
 import locIcon from "../fileicons/paradox-loc.svg?url";
+import logIcon from "../fileicons/paradox-log.svg?url";
+import mdIcon from "../fileicons/paradox-md.svg?url";
+import meshIcon from "../fileicons/paradox-mesh.svg?url";
 import modIcon from "../fileicons/paradox-mod.svg?url";
 import scriptIcon from "../fileicons/paradox-script.svg?url";
 import shaderIcon from "../fileicons/paradox-shader.svg?url";
+import textIcon from "../fileicons/paradox-text.svg?url";
 import textureIcon from "../fileicons/paradox-texture.svg?url";
+import videoIcon from "../fileicons/paradox-video.svg?url";
 
 const SIDES = ["changes", "staged", "conflict", "commit"] as const;
 
@@ -24,9 +36,9 @@ export type TabTarget =
 /** The pattern of a diff tab's id. */
 const DIFF = new RegExp(`^diff:(${SIDES.join("|")})(?:@([0-9a-f]+))?:([^:]*):(.+)$`, "s");
 
-/** VIEWS holds the views and the icon of each file format. A format with no icon of its own has "". */
+/** VIEWS holds the views and the icon of each file format. */
 export const VIEWS: Readonly<Record<Format, { views: readonly View[]; icon: string }>> = {
-  "": { views: ["code"], icon: "" },
+  "": { views: ["code"], icon: textIcon },
   script: { views: ["code"], icon: scriptIcon },
   gui: { views: ["code", "visual", "split"], icon: guiIcon },
   asset: { views: ["code"], icon: assetIcon },
@@ -34,12 +46,38 @@ export const VIEWS: Readonly<Record<Format, { views: readonly View[]; icon: stri
   gfx: { views: ["code"], icon: gfxIcon },
   localization: { views: ["code"], icon: locIcon },
   image: { views: ["image"], icon: textureIcon },
-  table: { views: ["code"], icon: "" },
+  table: { views: ["code"], icon: csvIcon },
   descriptor: { views: ["code"], icon: modIcon },
   shader: { views: ["code"], icon: shaderIcon },
-  text: { views: ["code"], icon: "" },
-  binary: { views: [], icon: "" },
+  text: { views: ["code"], icon: textIcon },
+  binary: { views: [], icon: binaryIcon },
 };
+
+/** EXTENSION_ICONS holds the icons of the extensions that have one of their own, by the format they are in. */
+const EXTENSION_ICONS: Partial<Record<Format, Readonly<Record<string, string>>>> = {
+  text: { ".json": jsonIcon, ".info": infoIcon, ".md": mdIcon, ".bbcode": bbcodeIcon, ".log": logIcon },
+  binary: {
+    ".ogg": audioIcon,
+    ".wav": audioIcon,
+    ".mp3": audioIcon,
+    ".bk2": videoIcon,
+    ".mesh": meshIcon,
+    ".anim": animIcon,
+  },
+};
+
+/** findIcon returns the icon of a file: its extension's where its format has one for it, else its format's. */
+export function findIcon(place: Place): string {
+  const name = place.name.toLowerCase();
+  const extensions = Object.entries(EXTENSION_ICONS[place.format] ?? {});
+  return extensions.find(([extension]) => name.endsWith(extension))?.[1] ?? VIEWS[place.format].icon;
+}
+
+/** listIcons lists every file icon once. */
+export function listIcons(): string[] {
+  const extensions = Object.values(EXTENSION_ICONS).flatMap((icons) => Object.values(icons));
+  return [...new Set([...Object.values(VIEWS).map(({ icon }) => icon), ...extensions])];
+}
 
 /** VIEW_ROWS holds each view's label and icon, in the order a tab offers them. */
 export const VIEW_ROWS: readonly { view: View; label: string; icon: string }[] = [

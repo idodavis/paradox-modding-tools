@@ -15,7 +15,7 @@
  * | results        | the searcher → all | one file's search hits                  |
  * | closing        | the closer → all | its tabs handed back before it closes     |
  *
- * The results message belongs to the search store, which sends and reads it on the shared channel. The panel's own
+ * The results message belongs to the search store, which sends and reads it on the shared channel. The terminal's own
  * window hands its shells' screens back to Go before it closes.
  */
 import { defineStore } from "pinia";
@@ -28,14 +28,17 @@ import { useRouter } from "vue-router";
 
 import * as app from "@services/app/service";
 import type { Place } from "@services/workspace/models";
-import { WORKSPACE_TOOLS } from "../app/pages";
+import { PAGES, WORKSPACE_TOOLS } from "../app/pages";
 import { findModel, openModel, saveUnsaved } from "../pages/ide/editor/models";
 import { parseTab } from "../pages/ide/editor/tabs";
 import { keys } from "../queries";
 import { useEditorStore, type Tab } from "./editor";
 import { useWorkspaceStore } from "./workspace";
 
-/** A window's name from its URL: `main`, or `page:<route>`, `editor:<n>`, `game`, `files:<folder>`, `panel`, `wiki`. */
+/**
+ * A window's name from its URL: `main`, or `page:<route>`, `editor:<n>`, `game`, `files:<folder>`, `terminal` or
+ * `wiki`.
+ */
 export type WindowName = string;
 
 /** What a window holds, announced on the shared channel. */
@@ -67,6 +70,15 @@ type Channel = ReturnType<typeof useBroadcastChannel<Message, Message>>;
 
 /** This window's name, from its URL. */
 export const THIS_WINDOW: WindowName = new URLSearchParams(location.search).get("window") ?? "main";
+
+/** describeWindow returns what the given window shows, such as Health, Editor 2 or a folder's name. */
+export function describeWindow(name: WindowName): string {
+  const [kind = "", rest = ""] = name.split(/:(.*)/s);
+  if (kind === "page") return Object.entries(PAGES).find(([key]) => key === rest)?.[1].title ?? rest;
+  if (kind === "editor") return `Editor ${rest}`;
+  if (kind === "files") return rest.split(/[\\/]/).at(-1) ?? rest;
+  return { main: "Main window", game: "Game files", terminal: "Terminal", wiki: "Wiki" }[kind] ?? name;
+}
 
 export const useWindowsStore = defineStore("windows", () => {
   const editor = useEditorStore();
@@ -104,9 +116,9 @@ export const useWindowsStore = defineStore("windows", () => {
         await received;
         if (!(await saveUnsaved("Closing PMT"))) return;
       }
-      // the main window's shells end with the app; the panel's own window gives them back to it, the terminal store
+      // the main window's shells end with the app; the terminal's own window gives them back to it, the terminal store
       // loaded only here, since it needs the command table, which needs this store
-      if (THIS_WINDOW === "panel") await (await import("./terminal")).useTerminalStore().handOver();
+      if (THIS_WINDOW === "terminal") await (await import("./terminal")).useTerminalStore().handOver();
       await app.CloseWindow(THIS_WINDOW);
     },
   });
@@ -247,7 +259,7 @@ export const useWindowsStore = defineStore("windows", () => {
   };
 
   /**
-   * Opens a window on a page, an editor group, one tab, a folder, the panel, the Wiki pane or the game's files, or
+   * Opens a window on a page, an editor group, one tab, a folder, the terminal, the Wiki pane or the game's files, or
    * brings it to the front if it is open. A group's or a tab's tabs go to the new window.
    */
   const popOut = (what: {
@@ -255,7 +267,7 @@ export const useWindowsStore = defineStore("windows", () => {
     group?: string;
     tab?: string;
     folder?: string;
-    panel?: true;
+    terminal?: true;
     wiki?: true;
     game?: true;
   }): void => {
@@ -263,7 +275,7 @@ export const useWindowsStore = defineStore("windows", () => {
     if (what.page) target = `page:${what.page}`;
     else if (what.group || what.tab) target = resolveEditor();
     else if (what.folder) target = `files:${what.folder}`;
-    else if (what.panel) target = "panel";
+    else if (what.terminal) target = "terminal";
     else if (what.wiki) target = "wiki";
     if (others.has(target)) {
       showWindow(target);
@@ -306,8 +318,9 @@ export const useWindowsStore = defineStore("windows", () => {
   /** The place the given window's active tab shows, as it last said, or null when it shows none or is not open. */
   const findActive = (name: WindowName): Place | null => others.get(name)?.active ?? null;
 
-  /** Resolves the window that shows the IDE's panel: the panel's own window while it is open, else the main window. */
-  const resolvePanel = (): WindowName => (THIS_WINDOW === "panel" || others.has("panel") ? "panel" : "main");
+  /** Resolves the window that shows the terminal: its own window while it is open, else the main window. */
+  const resolveTerminal = (): WindowName =>
+    THIS_WINDOW === "terminal" || others.has("terminal") ? "terminal" : "main";
 
   /** Shows a look-up in the Wiki pane: in the pane's own window when it has one, else in the main window. */
   const lookUp = (lookup: WikiLookup): void => {
@@ -347,7 +360,7 @@ export const useWindowsStore = defineStore("windows", () => {
     showElsewhere,
     openPage,
     findActive,
-    resolvePanel,
+    resolveTerminal,
     showWindow,
     closeOther,
     lookUp,

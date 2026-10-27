@@ -13,7 +13,7 @@ import type { ContextMenuItem, DropdownMenuItem } from "@nuxt/ui";
 import * as lsp from "@services/lsp/service";
 import type { Place } from "@services/workspace/models";
 
-import { COMMANDS, compare, compareWithGame, findGameCopy } from "../../app/commands";
+import { COMMANDS, compare, compareWithGame, findGameCopy, findKbds } from "../../app/commands";
 import { list } from "../../lib/format";
 import { copiesQuery, drawablesQuery } from "../../queries";
 import { useEditorStore, type Group, type Tab, type View } from "../../stores/editor";
@@ -28,7 +28,7 @@ import DrawPane from "./draw/DrawPane.vue";
 import GitDiff from "./GitDiff.vue";
 import ImageView from "./ImageView.vue";
 import { findModel, save, setText, unsavedModels, type Model } from "./editor/models";
-import { listViews, parseTab, VIEW_ROWS, VIEWS } from "./editor/tabs";
+import { findIcon, listViews, parseTab, VIEW_ROWS, VIEWS } from "./editor/tabs";
 
 const { group, active } = defineProps<{ group: Group; active: boolean }>();
 
@@ -160,7 +160,7 @@ function describe(tab: Tab) {
     tabPlace,
     path,
     label: tabPlace?.name ?? path,
-    icon: tabPlace ? VIEWS[tabPlace.format].icon : "",
+    icon: tabPlace ? findIcon(tabPlace) : "",
     suffix: parsed.tab === "diff" ? (parsed.hash?.slice(0, 7) ?? parsed.side) : "",
     readOnly: !!tabPlace?.readOnly && parsed.tab === "file",
     unsaved: !!findModel(parsed.key)?.unsaved,
@@ -307,7 +307,12 @@ function buildMenu(row: Row): ContextMenuItem[][] {
   const open = findModel(row.parsed.key);
   return [
     [
-      { label: "Save", kbds: ["Ctrl S"], disabled: !open?.unsaved, onSelect: () => open && saveModel(open) },
+      {
+        label: "Save",
+        kbds: findKbds("editor.save"),
+        disabled: !open?.unsaved,
+        onSelect: () => open && saveModel(open),
+      },
       { label: "Save all", disabled: !unsavedModels().length, onSelect: () => saveAll() },
     ],
     [
@@ -404,7 +409,7 @@ const actions = computed<DropdownMenuItem[]>(() => [
             class="group relative flex h-8.75 shrink-0 cursor-pointer items-center gap-1.75 border-e border-default ps-3 pe-1.5 text-12 whitespace-nowrap"
             :class="
               row.tab.id === group.active
-                ? 'bg-(--bg-0) text-highlighted before:absolute before:inset-x-0 before:top-0 before:h-px before:bg-primary'
+                ? 'bg-(--bg-0) text-highlighted before:absolute before:inset-x-0 before:bottom-0 before:h-0.5 before:bg-primary'
                 : 'text-dimmed hover:text-toned'
             "
             :title="row.path"

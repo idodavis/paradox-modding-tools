@@ -41,15 +41,21 @@ import { homeRoute, isWorkspacePage, listShownTools, PAGES, WORKSPACE_TOOLS, typ
 import { router } from "./router";
 
 /** One command: a menu item whose id names its area, such as `editor.save`, and whether it applies now. */
-export type Command = CommandPaletteItem & {
+export type Command = Omit<CommandPaletteItem, "kbds"> & {
   /** `<area>.<verb>`: editor.save, file.rename, graph.open, window.popOut … */
   id: string;
   /** Whether the command applies now. One that does not is left out of the palette and its shortcut is off. */
   when: () => boolean;
+  /** The keys of the command's shortcut, such as meta and K. */
+  kbds?: string[];
+  /** The keys of a second shortcut that runs the command too. */
+  secondKbds?: string[];
 };
 
 // the commands a focused editor or input keeps for itself, so their shortcuts stay off while one is typed in
 const OWN_KEYS = new Set(["editor.undo", "editor.redo", "editor.find"]);
+// the setting that holds the shortcuts the user changed: each changed command's shortcuts, as Nuxt UI writes them
+const BINDINGS = "shortcuts.bindings";
 // the settings that hold a list, each item of which the palette switches on a row of its own
 const LISTS = ["appearance.pages", "ide.checks"];
 // how many commands the palette's Recently used lists
@@ -90,6 +96,7 @@ export const COMMANDS: readonly Command[] = [
     label: "Search and commands",
     icon: "i-lucide-search",
     kbds: ["meta", "K"],
+    secondKbds: ["meta", "shift", "P"],
     when: () => true,
     onSelect: () => bus.emit("palette.open"),
   },
@@ -364,7 +371,7 @@ export const COMMANDS: readonly Command[] = [
     prefix: "IDE:",
     icon: "i-lucide-at-sign",
     when: hasFile,
-    onSelect: () => useWindowsStore().sendCommand("terminal.sendFile", useWindowsStore().resolvePanel()),
+    onSelect: () => useWindowsStore().sendCommand("terminal.sendFile", useWindowsStore().resolveTerminal()),
   },
   {
     id: "git.stage",
@@ -411,23 +418,19 @@ export const COMMANDS: readonly Command[] = [
     onSelect: () => openPage("library"),
   },
   {
-    id: "ide.settings",
-    label: "IDE settings",
-    prefix: "IDE:",
+    id: "settings.open",
+    label: "Settings",
     icon: "i-lucide-settings",
-    when: isOpen,
-    onSelect: () => useWindowsStore().sendCommand("ide.settings"),
-  },
-  {
-    id: "workspace.settings",
-    label: "Workspace settings",
-    icon: "i-lucide-settings",
-    when: isOpen,
-    onSelect: () => openPage("workspace-settings"),
+    kbds: ["meta", ","],
+    when: () => true,
+    onSelect: () => bus.emit("settings.open"),
   },
 ];
 
-/** registerShortcuts registers every command's keyboard shortcut. A command's shortcut is on while its `when` holds. */
+/**
+ * registerShortcuts registers every command's keyboard shortcuts as the user set them. A command's shortcuts are on
+ * while its `when` holds.
+ */
 export function registerShortcuts(): void {
   const { mutate } = useMutation({ mutation: (work: () => Promise<unknown>) => work() });
   run = mutate;
@@ -436,14 +439,76 @@ export function registerShortcuts(): void {
     computed(() =>
       Object.fromEntries(
         COMMANDS.filter((row) => row.when()).flatMap((row) =>
-          Object.entries(extractShortcuts([row])).map(([keys, handler]) => [
-            keys,
-            { handler, usingInput: !OWN_KEYS.has(row.id) },
-          ]),
+          Object.entries(extractShortcuts(listBindings(row).map((kbds) => ({ ...row, kbds })))).map(
+            ([keys, handler]) => [keys, { handler, usingInput: !OWN_KEYS.has(row.id) }],
+          ),
         ),
       ),
     ),
   );
+}
+
+/** listDefaultBindings returns a command's own shortcuts: its kbds, then its second. It is empty when it has none. */
+export function listDefaultBindings(command: Command): string[][] {
+  return [command.kbds, command.secondKbds].filter((kbds) => kbds !== undefined);
+}
+
+/** listBindings returns a command's shortcuts as the user set them: each changed one as changed, the others its own. */
+export function listBindings(command: Command): string[][] {
+  const changed = parseBindings()[command.id];
+  return listDefaultBindings(command).map((own, slot) => (changed?.[slot] ? splitShortcut(changed[slot]) : own));
+}
+
+/**
+ * writeBinding sets one of a command's shortcuts, the given place among them, to the given keys. With no keys it puts
+ * the command's own back. A command whose shortcuts are all its own again leaves the setting.
+ */
+export function writeBinding(command: Command, slot: number, kbds?: string[]): void {
+  const own = listDefaultBindings(command);
+  const next = listBindings(command).map((keys, index) => (index === slot ? (kbds ?? own[index]) : keys));
+  const changed = parseBindings();
+  if (next.every((keys, index) => joinShortcut(keys) === joinShortcut(own[index] ?? []))) delete changed[command.id];
+  else changed[command.id] = next.map(joinShortcut);
+  useSettingsStore().write(BINDINGS, JSON.stringify(changed));
+}
+
+/** findBinding returns the command one of whose shortcuts is the given keys, or undefined when none is. */
+export function findBinding(kbds: string[]): Command | undefined {
+  const shortcut = joinShortcut(kbds);
+  return COMMANDS.find((command) => listBindings(command).some((keys) => joinShortcut(keys) === shortcut));
+}
+
+/** listPressedKeys returns the keys of a key press as a command row writes them, Ctrl as meta and a letter in capitals. */
+export function listPressedKeys(event: KeyboardEvent): string[] {
+  const key = event.key.length === 1 ? event.key.toUpperCase() : event.key.toLowerCase();
+  return [event.ctrlKey && "meta", event.shiftKey && "shift", event.altKey && "alt", key].filter(
+    (part) => typeof part === "string",
+  );
+}
+
+/** findKbds returns the keys of a command's first shortcut as the user set it. It is empty for an unknown command. */
+export function findKbds(id: string): string[] {
+  const command = COMMANDS.find((row) => row.id === id);
+  return (command && listBindings(command)[0]) ?? [];
+}
+
+/** parseBindings returns the shortcuts the user changed, by command. A setting that is not JSON counts as none. */
+function parseBindings(): Record<string, string[]> {
+  try {
+    return JSON.parse(useSettingsStore().value(BINDINGS) || "{}") as Record<string, string[]>;
+  } catch {
+    return {};
+  }
+}
+
+/** joinShortcut returns keys as Nuxt UI writes a shortcut, such as meta_shift_p. */
+export function joinShortcut(kbds: string[]): string {
+  return kbds.join("_").toLowerCase();
+}
+
+/** splitShortcut returns a shortcut's keys, a letter or a function key in capitals as the command rows write them. */
+function splitShortcut(shortcut: string): string[] {
+  return shortcut.split("_").map((key) => (key.length === 1 || /^f\d+$/.test(key) ? key.toUpperCase() : key));
 }
 
 /**
@@ -452,9 +517,10 @@ export function registerShortcuts(): void {
  */
 export function paletteGroups(): { id: string; label: string; items: Command[] }[] {
   const id = useWorkspaceStore().activeId();
-  const applicable = COMMANDS.filter((row) => row.when());
+  // each row shows its first shortcut as the user set it
+  const applicable = COMMANDS.filter((row) => row.when()).map((row) => ({ ...row, kbds: listBindings(row)[0] }));
   const recentRows = recent.value.flatMap((one) => applicable.find((row) => row.id === one) ?? []);
-  const names: PageName[] = ["library", "wizard", ...(id ? [...listShownTools(), "workspace-settings" as const] : [])];
+  const names: PageName[] = ["library", "wizard", ...(id ? listShownTools() : [])];
   const pages = names.map((name) => {
     const page: Page = PAGES[name];
     return makeRow(`page.${name}`, {
@@ -657,7 +723,7 @@ function openPage(name: PageName): void {
 }
 
 /** makeRow makes a row of the palette that is made at the time and always applies. */
-function makeRow(id: string, row: CommandPaletteItem): Command {
+function makeRow(id: string, row: Omit<CommandPaletteItem, "kbds">): Command {
   return { ...row, id, when: () => true };
 }
 
@@ -717,11 +783,8 @@ function makeToggle(id: string, row: CommandPaletteItem, on: boolean, write: (on
   });
 }
 
-/**
- * listValues lists the palette's settings with a value. Each opens where it is set: the IDE's in the IDE's settings.
- */
+/** listValues lists the palette's settings with a value. Each opens Settings at its section. */
 function listValues(): Command[] {
-  const id = useWorkspaceStore().activeId();
   return (useQueryCache().getQueryData(settingsCatalogQuery.key) ?? [])
     .filter((setting) => setting.type !== "switch" && !LISTS.includes(setting.key))
     .map((setting) =>
@@ -730,10 +793,8 @@ function listValues(): Command[] {
         words: setting.words,
         icon: "i-lucide-settings",
         slot: "setting",
-        opens: setting.workspace ? "opens IDE settings" : `opens ${toSentence(setting.section)}`,
-        onSelect: setting.workspace
-          ? () => useWindowsStore().sendCommand("ide.settings")
-          : () => void router.push({ name: "workspace-settings", params: { id }, query: { section: setting.section } }),
+        opens: `opens ${toSentence(setting.section)}`,
+        onSelect: () => bus.emit("settings.open", setting.section),
       }),
     );
 }

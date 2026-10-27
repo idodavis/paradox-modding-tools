@@ -30,7 +30,7 @@ import { useGitStore } from "../../stores/git";
 import { useSettingsStore } from "../../stores/settings";
 import { useWindowsStore } from "../../stores/windows";
 import { useWorkspaceStore, VANILLA } from "../../stores/workspace";
-import { fileTab, VIEWS } from "./editor/tabs";
+import { fileTab, findIcon, listIcons, VIEWS } from "./editor/tabs";
 
 const { roots } = defineProps<{ roots: Root[] }>();
 const emit = defineEmits<{ open: [place: Place, preview: boolean] }>();
@@ -47,13 +47,12 @@ const GIT_MARKS: Record<string, GitStatus> = {
   untracked: "untracked",
   conflict: "modified",
 };
-const SPRITE = `<svg xmlns="http://www.w3.org/2000/svg" width="0" height="0" style="position: absolute">${Object.entries(
-  VIEWS,
-)
-  .filter(([, { icon }]) => icon)
+/** The symbol of the tree's sprite that draws each file icon. */
+const SYMBOLS = new Map(listIcons().map((icon, index) => [icon, `pmt-${index}`]));
+const SPRITE = `<svg xmlns="http://www.w3.org/2000/svg" width="0" height="0" style="position: absolute">${[...SYMBOLS]
   .map(
-    ([format, { icon }]) =>
-      `<symbol id="pmt-${format}" viewBox="0 0 800 800"><image href="${icon}" width="800" height="800"/></symbol>`,
+    ([icon, id]) =>
+      `<symbol id="${id}" viewBox="0 0 800 800"><image href="${icon}" width="800" height="800"/></symbol>`,
   )
   .join("")}</svg>`;
 /** How many files the filter asks the file search for. The search lists the mods' files before the game's. */
@@ -139,7 +138,7 @@ function mount(): void {
     // the roots stay in the order they come, the workspace's load order; what a root holds the tree sorts itself
     preparedInput: preparePresortedFileTreeInput([...disks.keys()]),
     initialExpansion: "closed",
-    icons: { set: "complete", spriteSheet: SPRITE },
+    icons: { set: "none", spriteSheet: SPRITE },
     density: settings.value("ide.density") as FileTreeDensityKeyword,
     stickyFolders: settings.isOn("ide.stickyFolders"),
     unsafeCSS: buildStyles(),
@@ -239,8 +238,7 @@ function apply(row: string, children: Child[]): void {
     next.add(path);
     disks.set(path, child.place.path);
     places.set(path, child.place);
-    if (!child.dir && VIEWS[child.place.format].icon)
-      icons[child.name] = { name: `pmt-${child.place.format}`, viewBox: "0 0 800 800" };
+    if (!child.dir) icons[child.name] = { name: SYMBOLS.get(findIcon(child.place)) ?? "", viewBox: "0 0 800 800" };
   }
   const tree = view.value;
   const gone = [...(members.get(row) ?? [])].filter((path) => !next.has(path) && tree?.getItem(path));
@@ -249,7 +247,7 @@ function apply(row: string, children: Child[]): void {
     ...gone.map((path) => ({ type: "remove" as const, path, recursive: true })),
     ...added.map((path) => ({ type: "add" as const, path })),
   ]);
-  tree?.setIcons({ set: "complete", spriteSheet: SPRITE, byFileName: icons });
+  tree?.setIcons({ set: "none", spriteSheet: SPRITE, byFileName: icons });
   members.set(row, next);
 }
 
@@ -332,7 +330,7 @@ function follow(): void {
   if (settings.isOn("ide.followFile")) void reveal();
 }
 
-/** Opens the folders down to the active file and selects it. A file under none of the tree's roots changes nothing. */
+/** Opens the folders down to the active file and selects it. A file the tree has no row for changes nothing. */
 async function reveal(): Promise<void> {
   const place = editor.activeFile();
   const folders = place ? await loadFolders(place) : [];
@@ -346,7 +344,7 @@ async function reveal(): Promise<void> {
 
 /**
  * Lists the folders down to a file, so the tree holds the file's row, and returns their rows, the root's first. A file
- * under none of the tree's roots gives none.
+ * under none of the tree's roots gives none, and so does a file under a folder gone from disk, such as a deleted one.
  */
 async function loadFolders(place: Place): Promise<string[]> {
   const index = roots.findIndex((root) => root.dir === place.root);
@@ -355,7 +353,11 @@ async function loadFolders(place: Place): Promise<string[]> {
     .split("/")
     .slice(0, -1)
     .reduce<string[]>((rows, part) => [...rows, `${rows.at(-1)}${part}/`], [`${labels.value[index]}/`]);
-  for (const folder of folders) await load(folder);
+  for (const folder of folders) {
+    // a folder has a row once the listing of its parent found it on disk
+    if (!disks.has(folder)) return [];
+    await load(folder);
+  }
   return folders;
 }
 

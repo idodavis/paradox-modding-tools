@@ -12,7 +12,7 @@ import type { Edge } from "@services/graph/models";
 import * as lsp from "@services/lsp/service";
 import type { Card, Fix, Location } from "@services/lsp/models";
 
-import { COMMANDS, compareWithFile, compareWithGame, findGameCopy } from "../../app/commands";
+import { COMMANDS, compareWithFile, compareWithGame, findGameCopy, findKbds } from "../../app/commands";
 import { copiesQuery, detailQuery, fileQuery, loadQuery, placeQuery, wikiPagesQuery } from "../../queries";
 import { useEditorStore } from "../../stores/editor";
 import { useSearchStore } from "../../stores/search";
@@ -254,7 +254,7 @@ const groups = computed<ContextMenuItem[][]>(() => [
       onSelect: () => void Clipboard.Text().then(replaceSelections),
     },
   ],
-  [{ label: "Command palette", kbds: ["Ctrl Shift P"], onSelect: () => commands.emit("palette.open") }],
+  [{ label: "Command palette", kbds: findKbds("palette.open"), onSelect: () => commands.emit("palette.open") }],
 ]);
 const menu = computed(() => groups.value.filter((group) => group.length));
 </script>

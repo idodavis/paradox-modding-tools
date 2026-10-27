@@ -1,4 +1,9 @@
-<!-- One section of the settings catalog as fields. The Settings page shows every section; the IDE shows its own. -->
+<!-- One section of the settings catalog as fields, as Settings shows it. -->
+<script lang="ts">
+/** SETTING_ROWS holds the classes of a list of settings, each row with room above and below and a faint line under. */
+export const SETTING_ROWS = "flex flex-col *:border-b *:border-accented *:py-2.5";
+</script>
+
 <script setup lang="ts">
 import { computed } from "vue";
 import { useQuery } from "@pinia/colada";
@@ -34,7 +39,7 @@ function describeScales(row: Setting) {
 </script>
 
 <template>
-  <div class="flex flex-col divide-y divide-default">
+  <div :class="SETTING_ROWS">
     <template v-for="row in rows" :key="row.key">
       <UFormField
         v-if="row.key === 'appearance.scale' || row.key === 'appearance.pages'"
@@ -58,7 +63,7 @@ function describeScales(row: Setting) {
         />
       </UFormField>
       <UFormField v-else-if="row.key === 'ide.checks'" :label="row.label" :description="row.help" class="ps-3.5 pt-3">
-        <div class="mt-2 flex flex-col divide-y divide-default">
+        <div class="mt-2 flex flex-col divide-y divide-accented">
           <ValueField
             v-for="code in codes ?? []"
             :key="code.id"

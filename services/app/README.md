@@ -58,6 +58,10 @@ newest down to the one running, with their notes, and leaves out drafts and prer
 
 ## Windows
 
+Every window has no frame of the system's: the page draws its own title bar and buttons. On Windows the page marks
+them with `--wails-non-client-region` and the window is hosted through composition, so Windows treats them as its
+own and dragging, snapping, the system menu and the Snap Layouts work; Linux drags by `--wails-draggable`.
+
 Wails's JavaScript runtime acts only on the window that calls it, so showing or closing another window goes through
 this service. The main window's close is held and sent to the page as `window:closing`, until `CloseWindow` lets it
 through and the app quits. A window that `OpenWindow` opens gets one `window:closing` before it closes, so the page can

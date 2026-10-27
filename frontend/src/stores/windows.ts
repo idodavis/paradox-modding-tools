@@ -8,19 +8,21 @@
  * | state          | any → all        | its name, what it holds, its active file  |
  * | tab-requested  | any → the holder | a tab's id the asker wants                |
  * | tab-handed     | holder → asker   | the tab with its unsaved text             |
- * | show           | any → one        | a place to show                           |
+ * | show           | any → one        | a place to show, and where in it          |
  * | page           | any → the main   | a route to show                           |
  * | wiki           | any → the Wiki pane's | a page or lexicon entry to look up   |
  * | command        | any → one        | a command for its IDE page to carry out   |
  * | results        | the searcher → all | one file's search hits                  |
  * | closing        | the closer → all | its tabs handed back before it closes     |
  *
- * The results message belongs to the search store, which sends and reads it on the shared channel.
+ * The results message belongs to the search store, which sends and reads it on the shared channel. The panel's own
+ * window hands its shells' screens back to Go before it closes.
  */
 import { defineStore } from "pinia";
 import { useMutation, useQueryCache } from "@pinia/colada";
 import { until, useBroadcastChannel, useEventBus, useEventListener, useLocalStorage } from "@vueuse/core";
 import { Events } from "@wailsio/runtime";
+import type { IPosition } from "monaco-editor";
 import { computed, nextTick, shallowReactive, watch } from "vue";
 import { useRouter } from "vue-router";
 
@@ -55,7 +57,7 @@ type Message =
   | { type: "state"; state: WindowState }
   | { type: "tab-requested"; tab: string; from: WindowName }
   | { type: "tab-handed"; from: WindowName; tabs: HandedTab[] }
-  | { type: "show"; place: Place }
+  | { type: "show"; place: Place; position?: IPosition }
   | { type: "page"; path: string }
   | { type: "wiki"; lookup: WikiLookup }
   | { type: "command"; command: string }
@@ -102,6 +104,9 @@ export const useWindowsStore = defineStore("windows", () => {
         await received;
         if (!(await saveUnsaved("Closing PMT"))) return;
       }
+      // the main window's shells end with the app; the panel's own window gives them back to it, the terminal store
+      // loaded only here, since it needs the command table, which needs this store
+      if (THIS_WINDOW === "panel") await (await import("./terminal")).useTerminalStore().handOver();
       await app.CloseWindow(THIS_WINDOW);
     },
   });
@@ -137,7 +142,7 @@ export const useWindowsStore = defineStore("windows", () => {
   useEventListener(own.channel, "message", ({ data }: MessageEvent<Message>) => {
     if (data.type === "tab-handed") receive(data);
     else if (data.type === "tab-requested") sendTab(data.tab, data.from);
-    else if (data.type === "show") editor.show(data.place);
+    else if (data.type === "show") editor.show(data.place, data.position);
     else if (data.type === "page") void router.push(data.path);
     else if (data.type === "wiki") void showLookup(data.lookup);
     else if (data.type === "command") void runCommand(data.command);
@@ -286,9 +291,9 @@ export const useWindowsStore = defineStore("windows", () => {
     if (holder && holder !== THIS_WINDOW) link(holder).post({ type: "tab-requested", tab: tabId, from: THIS_WINDOW });
   };
 
-  /** Shows a place in the given window and brings the window to the front. */
-  const showElsewhere = (window: WindowName, place: Place): void => {
-    link(window).post({ type: "show", place: { ...place } });
+  /** Shows a place in the given window, at the given position if any, and brings the window to the front. */
+  const showElsewhere = (window: WindowName, place: Place, position?: IPosition): void => {
+    link(window).post({ type: "show", place: { ...place }, position: position && { ...position } });
     showWindow(window);
   };
 
@@ -300,6 +305,9 @@ export const useWindowsStore = defineStore("windows", () => {
 
   /** The place the given window's active tab shows, as it last said, or null when it shows none or is not open. */
   const findActive = (name: WindowName): Place | null => others.get(name)?.active ?? null;
+
+  /** Resolves the window that shows the IDE's panel: the panel's own window while it is open, else the main window. */
+  const resolvePanel = (): WindowName => (THIS_WINDOW === "panel" || others.has("panel") ? "panel" : "main");
 
   /** Shows a look-up in the Wiki pane: in the pane's own window when it has one, else in the main window. */
   const lookUp = (lookup: WikiLookup): void => {
@@ -339,6 +347,7 @@ export const useWindowsStore = defineStore("windows", () => {
     showElsewhere,
     openPage,
     findActive,
+    resolvePanel,
     showWindow,
     closeOther,
     lookUp,

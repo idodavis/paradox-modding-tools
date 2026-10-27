@@ -1,5 +1,6 @@
 <!--
-  The IDE's bottom panel. It shows the problems of the open files, the hits of the search or the output of git.
+  The IDE's bottom panel. It shows the problems of the open files, the hits of the search, the output of git or the
+  shells.
 -->
 <script lang="ts">
 import type { Finding } from "@services/health/models";
@@ -67,8 +68,9 @@ import { useWorkspaceStore } from "../../stores/workspace";
 import OriginChip from "../../ui/OriginChip.vue";
 import ProblemRow from "../../ui/ProblemRow.vue";
 import SearchHits from "./SearchHits.vue";
+import TerminalPanel from "./terminal/TerminalPanel.vue";
 
-const { tab } = defineProps<{ tab: "problems" | "search" | "output" }>();
+const { tab } = defineProps<{ tab: "problems" | "search" | "output" | "terminal" }>();
 
 /** A Row is one row of the problems list, a file or one of its problems with its message. */
 type Row = { place: Place; count: number } | ({ place: Place; message: string } & Problem);
@@ -158,6 +160,7 @@ watch(
       <SearchHits v-if="search.current().query" />
       <p v-else class="px-3 py-2 text-12 text-dimmed">The sidebar's search lists its hits here.</p>
     </div>
+    <TerminalPanel v-else-if="tab === 'terminal'" />
     <div v-else ref="output" class="min-h-0 flex-1 overflow-y-auto px-3 py-1.5 font-mono text-11">
       <pre v-for="(line, index) in git.output()" :key="index" class="pb-0.5 whitespace-pre-wrap text-toned">{{
         line

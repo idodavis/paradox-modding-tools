@@ -60,9 +60,8 @@ export function Create(path: string, dir: boolean): $CancellablePromise<void> {
 }
 
 /**
- * CreateMod makes a mod with a localization file and adds it to a workspace. With no folder it is made in the game's
- * mod folder. With no language the file is in the base language. It returns an error if the workspace is not recorded
- * or the mod's folder exists already.
+ * CreateMod makes a mod with a localization file and adds it to a workspace. It returns an error if the workspace is
+ * not recorded or the folder exists.
  */
 export function CreateMod(workspaceID: string, dir: string, name: string, language: string): $CancellablePromise<$models.Mod> {
     return $Call.ByID(186126879, workspaceID, dir, name, language);
@@ -186,9 +185,8 @@ export function Locate(path: string): $CancellablePromise<$models.Place> {
 }
 
 /**
- * Open opens a workspace in the background, closing the one open before. It sends install:scanning as it goes and
- * workspace:opened or workspace:failed at the end. Session, State and Close wait for it. A workspace that is open
- * already is left as it is.
+ * Open opens a workspace in the background, closing the one before. It sends workspace:opened or workspace:failed at
+ * the end.
  */
 export function Open(workspaceID: string): $CancellablePromise<void> {
     return $Call.ByID(2144133549, workspaceID);

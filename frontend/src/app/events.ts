@@ -65,6 +65,8 @@ export const EVENTS: readonly EventRow[] = [
   { event: "wiki:updated", stale: () => [keys.wiki] },
   { event: "errorlog:changed", stale: () => [errorLogQuery.key] },
   { event: "game:exited", stale: () => [keys.state] },
+  { event: "shell:started", stale: () => [keys.shells] },
+  { event: "shell:exited", stale: () => [keys.shells] },
   { event: "app:update", stale: () => [updateQuery.key] },
 ];
 

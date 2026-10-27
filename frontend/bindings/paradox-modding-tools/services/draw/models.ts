@@ -589,9 +589,7 @@ export interface Window {
     "groups": Group[] | null;
 
     /**
-     * TextFont and TextSize are the font and the size, as written, that the game's own type of a text writes
-     * (game.GUI.Fonts.TextType), which a text with neither of its own is drawn in. Each is "" where that type writes
-     * none.
+     * TextFont and TextSize are the font and size of a text that sets neither, or "" if the game sets none.
      */
     "textFont": string;
     "textSize": string;

@@ -137,10 +137,7 @@ export interface Graph {
 }
 
 /**
- * A Node is one node of the event graph: an event, an on_action, a decision, a scripted effect or any other entry
- * that fires one, shown at a copy of it the game runs, or a fold that stands for the firings of one node past the
- * fan-out. The copy shown is the one the game keeps. Where no source says which copy that is, it is the first one the
- * graph meets.
+ * A Node is one entry of the event graph, or a fold that stands for the rest of a node's firings.
  */
 export interface Node {
     /**

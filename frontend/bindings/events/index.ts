@@ -64,6 +64,16 @@ export const ReleaseChanged = "release:changed";
 export const SearchHits = "search:hits";
 
 /**
+ * Name of the custom event "shell:exited".
+ */
+export const ShellExited = "shell:exited";
+
+/**
+ * Name of the custom event "shell:started".
+ */
+export const ShellStarted = "shell:started";
+
+/**
  * Name of the custom event "steam:progress".
  */
 export const SteamProgress = "steam:progress";

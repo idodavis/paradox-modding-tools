@@ -27,6 +27,7 @@ import {
 import { useEditorStore } from "../../stores/editor";
 import { useGitStore } from "../../stores/git";
 import { useSettingsStore } from "../../stores/settings";
+import { useTerminalStore } from "../../stores/terminal";
 import { THIS_WINDOW, useWindowsStore } from "../../stores/windows";
 import { useWorkspaceStore, VANILLA } from "../../stores/workspace";
 import FileSelector from "../../ui/FileSelector.vue";
@@ -67,6 +68,7 @@ const PANEL = [
   { value: "problems", label: "Problems" },
   { value: "search", label: "Search" },
   { value: "output", label: "Output" },
+  { value: "terminal", label: "Terminal" },
 ] as const;
 const COMPARES = {
   changes: "Comparing the working tree with the staged copy",
@@ -113,6 +115,10 @@ commands.on((command) => {
   if (command === "draw.newCoat") void coatDialog.open();
   if (command === "ide.settings") settingsOpen.value = true;
   if (command === "explorer.reveal") void revealFile();
+  if (command === "terminal.sendFile") {
+    panel.value = "terminal";
+    useTerminalStore().sendFile();
+  }
 });
 defineShortcuts(
   computed(() =>
@@ -181,7 +187,8 @@ const panes = computed<SplitterItem[]>(() => [
 ]);
 const editorPanes = computed<SplitterItem[]>(() => [
   ...(layout.value === "panel" ? [] : [{ id: "code", slot: "code", order: 1, minSize: 50 }]),
-  ...(layout.value === "panel" || panel.value
+  // the panel leaves this window while it has a window of its own, which shows the tab this one did
+  ...(layout.value === "panel" || (panel.value && !windowNames.value?.includes("panel"))
     ? [
         {
           id: "panel",
@@ -271,10 +278,13 @@ function show(place: Place, preview: boolean): void {
   editor.show(place, undefined, preview ? "explorer" : "navigate");
 }
 
-/** popOutPanel puts the panel in a window of its own. */
-function popOutPanel(): void {
+/**
+ * popOutPanel puts the panel in a window of its own, on the tab it shows. Its shells' screens go to Go first, for that
+ * window to draw.
+ */
+async function popOutPanel(): Promise<void> {
+  await useTerminalStore().handOver();
   windows.popOut({ panel: true });
-  panel.value = "";
 }
 
 /** showSidebar shows a sidebar tab, unfolding the sidebar if it is folded. */

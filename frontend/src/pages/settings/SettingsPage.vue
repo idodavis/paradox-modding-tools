@@ -1,15 +1,26 @@
-<!-- The Settings page: a section per part of the catalog, the mods' cards, the theme preview and the shortcuts. -->
+<!--
+  The Settings page: a section per part of the catalog, the mods' cards, the theme preview, the shortcuts and the
+  terminal's default shell.
+-->
 <script setup lang="ts">
 import { computed, shallowRef, useTemplateRef, watch } from "vue";
 import { useRouter } from "vue-router";
 import { useMutation, useQuery } from "@pinia/colada";
 import { useSortable } from "@vueuse/integrations/useSortable";
-import type { TabsItem } from "@nuxt/ui";
+import { Dialogs } from "@wailsio/runtime";
+import type { SelectItem, TabsItem } from "@nuxt/ui";
 
 import { COMMANDS } from "../../app/commands";
 import { TOOL_CHOICES } from "../../app/pages";
 import { describeDumps, describeLanguages, matchQuery } from "../../lib/format";
-import { languagesQuery, settingsCatalogQuery, stateQuery, workspacesQuery } from "../../queries";
+import {
+  environmentQuery,
+  languagesQuery,
+  programsQuery,
+  settingsCatalogQuery,
+  stateQuery,
+  workspacesQuery,
+} from "../../queries";
 import { gameIcon, THEME_FAMILIES, useSettingsStore } from "../../stores/settings";
 import { useWorkspaceStore, VANILLA } from "../../stores/workspace";
 import CreateModForm from "../../ui/CreateModForm.vue";
@@ -44,6 +55,7 @@ const GROUPS = [
     sections: [
       { value: "appearance", label: "Appearance" },
       { value: "shortcuts", label: "Keyboard shortcuts" },
+      { value: "terminal", label: "Terminal" },
     ],
   },
 ];
@@ -72,6 +84,10 @@ const PANES = [
 ];
 const ROW = "relative flex h-14 min-w-0 items-center gap-2.5 border-b border-default ps-2 pe-3 text-start";
 const PICKED = "bg-(--accent-soft) before:absolute before:inset-y-0 before:start-0 before:w-0.5 before:bg-primary";
+// the shell picker's two choices that are no path: PMT's own choice, which the setting holds as "", and a program
+// chosen with the file dialog
+const DEFAULT_SHELL = "default";
+const OTHER_SHELL = "other";
 
 const { id, section = "general" } = defineProps<{ id: string; section?: string }>();
 
@@ -155,6 +171,31 @@ const { mutate: updateMod } = useMutation({
 });
 const { mutate: resetColors } = useMutation({ mutation: () => workspace.ResetColors(id) });
 const { mutate: rescan } = useMutation({ mutation: () => workspace.RescanInstall(state.value?.install.id ?? "") });
+
+const { data: programs } = useQuery(() => ({ ...programsQuery, enabled: current.value === "terminal" }));
+const { data: environment } = useQuery(() => ({ ...environmentQuery, enabled: current.value === "terminal" }));
+const shellRow = computed(() => catalog.value?.find((row) => row.key === "terminal.shell"));
+// PMT's own choice, each shell of the system, the program the setting names if it is none of them, and another
+const shellChoices = computed<SelectItem[]>(() => {
+  const system = programs.value ?? [];
+  const chosen = settings.value("terminal.shell");
+  return [
+    { label: "Found by PMT", description: system[0]?.name ?? "No shell was found", value: DEFAULT_SHELL },
+    ...system.map((program) => ({ label: program.name, description: program.path, value: program.path })),
+    ...(chosen && !system.some((program) => program.path === chosen)
+      ? [{ label: "Your program", description: chosen, value: chosen }]
+      : []),
+    { type: "separator" },
+    { label: "Another program…", value: OTHER_SHELL },
+  ];
+});
+const { mutate: writeShell } = useMutation({
+  mutation: async (choice: string) => {
+    const path =
+      choice === OTHER_SHELL ? await Dialogs.OpenFile({ CanChooseFiles: true, Title: "The shell to run" }) : choice;
+    if (path) settings.write("terminal.shell", path === DEFAULT_SHELL ? "" : path);
+  },
+});
 
 /** remove removes the workspace after asking, then goes to the Library. Cancelling stays on the page. */
 async function remove(): Promise<void> {
@@ -507,6 +548,52 @@ async function remove(): Promise<void> {
             </span>
           </div>
         </div>
+      </div>
+    </template>
+
+    <template #terminal>
+      <div class="flex h-full flex-col gap-4 overflow-y-auto px-8 py-6">
+        <div class="flex flex-col gap-0.5">
+          <h1 class="text-20">Terminal</h1>
+          <p class="text-13 text-dimmed">The shells in the IDE's panel and in their own window.</p>
+        </div>
+        <section class="grid grid-cols-[260px_minmax(0,1fr)] gap-8 border-b border-default pb-5">
+          <div class="min-w-0">
+            <h2 class="text-13 font-semibold">{{ shellRow?.label }}</h2>
+            <p class="mt-0.75 text-12 leading-4.5 text-dimmed">{{ shellRow?.help }}</p>
+          </div>
+          <USelect
+            :model-value="settings.value('terminal.shell') || DEFAULT_SHELL"
+            :items="shellChoices"
+            icon="i-lucide-terminal"
+            class="w-75 self-start"
+            :ui="{
+              content: 'min-w-75',
+              item: 'has-data-[slot=itemDescription]:h-11',
+              itemWrapper: 'gap-px',
+              itemLabel: 'leading-4.5',
+              itemDescription: 'font-mono text-11 leading-4 text-dimmed',
+            }"
+            @update:model-value="writeShell(String($event))"
+          />
+        </section>
+        <section class="grid grid-cols-[260px_minmax(0,1fr)] gap-8 border-b border-default pb-5">
+          <div class="min-w-0">
+            <h2 class="text-13 font-semibold">Where a shell starts</h2>
+            <p class="mt-0.75 text-12 leading-4.5 text-dimmed">
+              The folder of the mod that holds the active file, else the workspace's first mod.
+            </p>
+          </div>
+        </section>
+        <section class="flex flex-col gap-2.5">
+          <h2 class="text-13 font-semibold">What every shell is given</h2>
+          <dl class="grid grid-cols-[minmax(0,max-content)_minmax(0,1fr)] gap-x-4 gap-y-1.5 text-12">
+            <template v-for="row in environment ?? []" :key="row.name">
+              <dt class="font-mono text-highlighted">{{ row.name }}={{ row.value }}</dt>
+              <dd class="text-dimmed">{{ row.help }}</dd>
+            </template>
+          </dl>
+        </section>
       </div>
     </template>
   </UTabs>

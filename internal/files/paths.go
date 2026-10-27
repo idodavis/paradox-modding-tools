@@ -73,3 +73,9 @@ func IsFolder(path string) bool {
 	stat, err := os.Stat(path)
 	return err == nil && stat.IsDir()
 }
+
+// IsFile reports whether a path is a file that exists, a folder not counting.
+func IsFile(path string) bool {
+	stat, err := os.Stat(path)
+	return err == nil && !stat.IsDir()
+}

@@ -9,6 +9,7 @@ import * as health from "@services/health/service";
 import * as lsp from "@services/lsp/service";
 import * as search from "@services/search/service";
 import * as steam from "@services/steam/service";
+import * as terminal from "@services/terminal/service";
 import * as wiki from "@services/wiki/service";
 import * as workspace from "@services/workspace/service";
 import type { Coat, PictureList, States } from "@services/draw/models";
@@ -42,6 +43,7 @@ export const keys = {
   wiki: ["wiki"] as const,
   git: (dir: string) => ["git", dir] as const,
   release: (modId: string) => ["release", modId] as const,
+  shells: ["terminal", "shells"] as const,
 };
 
 // the app
@@ -269,6 +271,17 @@ export const gitFileQuery = defineQueryOptions(
     query: () => git.ReadFile(dir, revision, path),
   }),
 );
+
+// the terminal
+export const shellsQuery = defineQueryOptions({ key: keys.shells, query: () => terminal.ListShells() });
+export const programsQuery = defineQueryOptions({
+  key: ["terminal", "programs"],
+  query: () => terminal.ListPrograms(),
+});
+export const environmentQuery = defineQueryOptions({
+  key: ["terminal", "environment"],
+  query: () => terminal.ListEnvironment(),
+});
 
 // Publish. A listing's key is "" for the mod's own listing.
 export const listingsQuery = defineQueryOptions((modId: string) => ({

@@ -1,6 +1,6 @@
 <!--
   One editor group: its tab strip, with tabs dragged between groups and windows, and the active tab's view: code,
-  image, visual, split or a diff.
+  image, visual, split or a diff. A file that changed on disk under unsaved text shows a notice and a compare.
 -->
 <script setup lang="ts">
 import { computed, shallowRef, useTemplateRef, watch } from "vue";
@@ -19,13 +19,15 @@ import { copiesQuery, drawablesQuery } from "../../queries";
 import { useEditorStore, type Group, type Tab, type View } from "../../stores/editor";
 import { THIS_WINDOW, useWindowsStore } from "../../stores/windows";
 import { useWorkspaceStore } from "../../stores/workspace";
+import CompareView from "../../ui/CompareView.vue";
 import ConfirmModal from "../../ui/ConfirmModal.vue";
 import OriginChip from "../../ui/OriginChip.vue";
+import { EDITOR_LANGUAGES } from "../../ui/ScriptSnippet.vue";
 import CodeEditor from "./CodeEditor.vue";
 import DrawPane from "./draw/DrawPane.vue";
 import GitDiff from "./GitDiff.vue";
 import ImageView from "./ImageView.vue";
-import { findModel, save, unsavedModels, type Model } from "./editor/models";
+import { findModel, save, setText, unsavedModels, type Model } from "./editor/models";
 import { listViews, parseTab, VIEW_ROWS, VIEWS } from "./editor/tabs";
 
 const { group, active } = defineProps<{ group: Group; active: boolean }>();
@@ -132,6 +134,20 @@ defineShortcuts(computed(() => (active ? { meta_shift_v: { handler: cycleViews, 
 
 const { mutate: saveModel } = useMutation({ mutation: (open: Model) => save(open) });
 const { mutate: saveAll } = useMutation({ mutation: () => Promise.all(unsavedModels().map(save)) });
+// the compare of the active file's unsaved text with the disk's is open
+const comparing = shallowRef(false);
+
+/** Saves a model's text over the disk's text it kept, and closes the compare. */
+function saveMine(open: Model): void {
+  saveModel(open);
+  comparing.value = false;
+}
+
+/** Puts the disk's text a model kept in the model, dropping its unsaved text, and closes the compare. */
+function applyDisk(open: Model): void {
+  if (open.diskText) setText(open, open.diskText);
+  comparing.value = false;
+}
 
 /** Describes a tab for the strip: its label, its icon and what marks it. */
 function describe(tab: Tab) {
@@ -148,6 +164,8 @@ function describe(tab: Tab) {
     suffix: parsed.tab === "diff" ? (parsed.hash?.slice(0, 7) ?? parsed.side) : "",
     readOnly: !!tabPlace?.readOnly && parsed.tab === "file",
     unsaved: !!findModel(parsed.key)?.unsaved,
+    // the file changed on disk under its unsaved text
+    stale: !!findModel(parsed.key)?.diskText,
   };
 }
 type Row = ReturnType<typeof describe>;
@@ -400,6 +418,7 @@ const actions = computed<DropdownMenuItem[]>(() => [
             <span class="truncate" :class="{ italic: row.tab.preview }">{{ row.label }}</span>
             <span v-if="row.suffix" class="text-dimmed">{{ row.suffix }}</span>
             <UIcon v-else-if="row.readOnly" name="i-lucide-lock" class="size-3 shrink-0 text-dimmed" />
+            <span v-if="row.stale" class="size-1.5 shrink-0 rounded-full bg-warning" title="Changed on disk" />
             <span class="flex size-5 shrink-0 items-center justify-center">
               <span v-if="row.unsaved" class="size-1.5 rounded-full bg-(--fg-2) group-hover:hidden" />
               <UButton
@@ -452,6 +471,55 @@ const actions = computed<DropdownMenuItem[]>(() => [
           </UTooltip>
         </template>
       </div>
+    </div>
+    <div
+      v-if="model?.diskText"
+      class="flex h-9.5 shrink-0 items-center gap-2.5 border-b border-default bg-(--orange-soft) ps-3.5 pe-3 text-12"
+    >
+      <UIcon name="i-lucide-triangle-alert" class="size-3.5 shrink-0 text-warning" />
+      <span class="grow">This file changed on disk while you have unsaved text here.</span>
+      <UButton
+        label="Compare the two"
+        icon="i-lucide-git-compare"
+        size="xs"
+        color="neutral"
+        variant="outline"
+        @click="comparing = true"
+      />
+      <UButton label="Keep mine" size="xs" color="neutral" variant="ghost" @click="saveMine(model)" />
+      <UButton label="Take the disk's" size="xs" color="neutral" variant="ghost" @click="applyDisk(model)" />
+      <UModal
+        :open="comparing"
+        fullscreen
+        :ui="{ header: 'gap-2.5', body: 'flex min-h-0 flex-col' }"
+        @update:open="comparing = $event"
+      >
+        <template #header>
+          <span class="text-13 font-semibold">Compare</span>
+          <UBadge label="Changed on disk while you had unsaved text" color="warning" variant="subtle" />
+          <span class="font-mono text-11.5 text-dimmed">{{ model.place.rel }}</span>
+          <span class="grow" />
+          <UButton label="Keep mine" color="neutral" variant="outline" @click="saveMine(model)" />
+          <UButton label="Take the disk's" @click="applyDisk(model)" />
+          <UButton icon="i-lucide-x" color="neutral" variant="ghost" aria-label="Close" @click="comparing = false" />
+        </template>
+        <template #body>
+          <div class="flex min-h-0 flex-1 flex-col overflow-hidden rounded-lg border border-default">
+            <CompareView
+              :left="model.diskText.text"
+              :right="model.model.getValue()"
+              :language="EDITOR_LANGUAGES[model.place.format] ?? 'plaintext'"
+              left-label="The file on disk"
+              right-label="Your unsaved text"
+            />
+          </div>
+        </template>
+        <template #footer>
+          <span class="text-12 text-dimmed">
+            Keep mine saves your text over the disk's; Take the disk's drops your unsaved text.
+          </span>
+        </template>
+      </UModal>
     </div>
     <div
       v-if="place && target?.tab === 'file'"

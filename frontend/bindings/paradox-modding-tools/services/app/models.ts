@@ -78,7 +78,7 @@ export interface Setting {
     "help": string;
 
     /**
-     * appearance, or an IDE area: editor, language, checks, explorer, visual, wiki
+     * appearance, terminal, or an IDE area (editor, language, checks, …)
      */
     "section": string;
 

@@ -69,7 +69,7 @@
   --syn-scope: var(--link);
 }
 
-/* PMT */
+/* PMT; its terminal's colors and the three games' are the design system's */
 [data-theme="pmt-dark"] {
   --bg-0: #0f1116;
   --bg-1: #13161c;
@@ -94,6 +94,22 @@
   --syn-scope: #62d3e8;
   --syn-string: #79cb83;
   --syn-literal: #e8c96a;
+  --ansi-black: #1e232c;
+  --ansi-red: #f0716b;
+  --ansi-green: #5ccb8f;
+  --ansi-yellow: #e8c96a;
+  --ansi-blue: #6fb7f0;
+  --ansi-magenta: #b19cf5;
+  --ansi-cyan: #62d3e8;
+  --ansi-white: #aab4c1;
+  --ansi-bright-black: #7f8a98;
+  --ansi-bright-red: #ff8f88;
+  --ansi-bright-green: #74e2a5;
+  --ansi-bright-yellow: #ffe083;
+  --ansi-bright-blue: #90cdfe;
+  --ansi-bright-magenta: #c6b6fe;
+  --ansi-bright-cyan: #7deaff;
+  --ansi-bright-white: #e8ecf1;
   --ol: 0.76;
   --oc: 0.174;
   --shadow: 0 8px 24px rgba(0, 0, 0, 0.45), 0 0 0 1px var(--line-2);
@@ -124,13 +140,29 @@
   --syn-scope: #0e7f9a;
   --syn-literal: #8a6500;
   --syn-comment: #6b7684;
+  --ansi-black: #1a1f27;
+  --ansi-red: #c4372f;
+  --ansi-green: #1f8a4c;
+  --ansi-yellow: #8a6500;
+  --ansi-blue: #2568b8;
+  --ansi-magenta: #6b4fd1;
+  --ansi-cyan: #007a75;
+  --ansi-white: #636e7c;
+  --ansi-bright-black: #4d5866;
+  --ansi-bright-red: #b2241f;
+  --ansi-bright-green: #037b3f;
+  --ansi-bright-yellow: #785805;
+  --ansi-bright-blue: #1359a8;
+  --ansi-bright-magenta: #5e3fc0;
+  --ansi-bright-cyan: #056a65;
+  --ansi-bright-white: #cfd4dd;
   --ol: 0.56;
   --oc: 0.121;
   --shadow: 0 8px 24px rgba(20, 30, 50, 0.16), 0 0 0 1px var(--line-2);
   color-scheme: light;
 }
 
-/* Catppuccin: Mocha and Latte */
+/* Catppuccin: Mocha and Latte; the terminal's colors are the palette's own ANSI colors (1.8.0) */
 [data-theme="catppuccin-dark"] {
   --bg-0: #1e1e2e;
   --bg-1: #11111b;
@@ -158,6 +190,22 @@
   --syn-variable: #eba0ac;
   --syn-literal: #89dceb;
   --syn-comment: #7f849c;
+  --ansi-black: #45475a;
+  --ansi-red: #f38ba8;
+  --ansi-green: #a6e3a1;
+  --ansi-yellow: #f9e2af;
+  --ansi-blue: #89b4fa;
+  --ansi-magenta: #f5c2e7;
+  --ansi-cyan: #94e2d5;
+  --ansi-white: #a6adc8;
+  --ansi-bright-black: #585b70;
+  --ansi-bright-red: #f37799;
+  --ansi-bright-green: #89d88b;
+  --ansi-bright-yellow: #ebd391;
+  --ansi-bright-blue: #74a8fc;
+  --ansi-bright-magenta: #f2aede;
+  --ansi-bright-cyan: #6bd7ca;
+  --ansi-bright-white: #bac2de;
   --ol: 0.82;
   --oc: 0.119;
   --shadow: 0 8px 24px rgba(0, 0, 0, 0.45), 0 0 0 1px var(--line-2);
@@ -191,13 +239,29 @@
   --syn-variable: #e64553;
   --syn-literal: #0085bc;
   --syn-comment: #8c8fa1;
+  --ansi-black: #5c5f77;
+  --ansi-red: #d20f39;
+  --ansi-green: #40a02b;
+  --ansi-yellow: #df8e1d;
+  --ansi-blue: #1e66f5;
+  --ansi-magenta: #ea76cb;
+  --ansi-cyan: #179299;
+  --ansi-white: #acb0be;
+  --ansi-bright-black: #6c6f85;
+  --ansi-bright-red: #de293e;
+  --ansi-bright-green: #49af3d;
+  --ansi-bright-yellow: #eea02d;
+  --ansi-bright-blue: #456eff;
+  --ansi-bright-magenta: #fe85d8;
+  --ansi-bright-cyan: #2d9fa8;
+  --ansi-bright-white: #bcc0cc;
   --ol: 0.58;
   --oc: 0.126;
   --shadow: 0 8px 24px rgba(76, 79, 105, 0.18), 0 0 0 1px var(--line-2);
   color-scheme: light;
 }
 
-/* One: One Dark and One Light */
+/* One: One Dark and One Light. The terminal colors are One Dark Pro's and Windows Terminal's One Half Light. */
 [data-theme="one-dark"] {
   --bg-0: #282c34;
   --bg-1: #21252b;
@@ -223,6 +287,22 @@
   --syn-field: #cfa9df;
   --syn-scope: #e5c07b;
   --syn-literal: #d19a66;
+  --ansi-black: #3f4451;
+  --ansi-red: #e05561;
+  --ansi-green: #8cc265;
+  --ansi-yellow: #d18f52;
+  --ansi-blue: #4aa5f0;
+  --ansi-magenta: #c162de;
+  --ansi-cyan: #42b3c2;
+  --ansi-white: #d7dae0;
+  --ansi-bright-black: #4f5666;
+  --ansi-bright-red: #ff616e;
+  --ansi-bright-green: #a5e075;
+  --ansi-bright-yellow: #f0a45d;
+  --ansi-bright-blue: #4dc4ff;
+  --ansi-bright-magenta: #de73ff;
+  --ansi-bright-cyan: #4cd1e0;
+  --ansi-bright-white: #e6e6e6;
   --ol: 0.78;
   --oc: 0.155;
   --shadow: 0 8px 24px rgba(0, 0, 0, 0.45), 0 0 0 1px var(--line-2);
@@ -254,6 +334,22 @@
   --syn-field: #573c7f;
   --syn-literal: #b45000;
   --syn-comment: #686b75;
+  --ansi-black: #383a42;
+  --ansi-red: #e45649;
+  --ansi-green: #50a14f;
+  --ansi-yellow: #c18301;
+  --ansi-blue: #0184bc;
+  --ansi-magenta: #a626a4;
+  --ansi-cyan: #0997b3;
+  --ansi-white: #fafafa;
+  --ansi-bright-black: #4f525d;
+  --ansi-bright-red: #df6c75;
+  --ansi-bright-green: #98c379;
+  --ansi-bright-yellow: #e4c07a;
+  --ansi-bright-blue: #61afef;
+  --ansi-bright-magenta: #c577dd;
+  --ansi-bright-cyan: #56b5c1;
+  --ansi-bright-white: #ffffff;
   --ol: 0.56;
   --oc: 0.121;
   --shadow: 0 8px 24px rgba(40, 44, 52, 0.16), 0 0 0 1px var(--line-2);
@@ -263,7 +359,8 @@
 /* Pierre: Pierre Dark Soft and Pierre Light Soft, after @pierre/theme (Apache-2.0): each token from the key that
    plays its part there (the editor, the bars and sidebars, menus, inputs; text, the sidebar's, the line numbers'),
    its git colors as the status ones; the light link is Pierre Light's, the soft one reading too faint on white; the
-   diffs take Pierre's own (the regular theme's) green and red */
+   diffs take Pierre's own (the regular theme's) green and red; the terminal's colors are the Soft themes' own
+   (2.0.0) */
 [data-theme="pierre-dark"] {
   --bg-0: #171717;
   --bg-1: #101010;
@@ -294,6 +391,22 @@
   --syn-number: #96d9f6;
   --syn-literal: #5cd5c7;
   --syn-comment: #636363;
+  --ansi-black: #171717;
+  --ansi-red: #ff2e3f;
+  --ansi-green: #0dbe4e;
+  --ansi-yellow: #ffca00;
+  --ansi-blue: #009fff;
+  --ansi-magenta: #e130ac;
+  --ansi-cyan: #08c0ef;
+  --ansi-white: #bcbcbc;
+  --ansi-bright-black: #171717;
+  --ansi-bright-red: #ff2e3f;
+  --ansi-bright-green: #86c427;
+  --ansi-bright-yellow: #ffca00;
+  --ansi-bright-blue: #009fff;
+  --ansi-bright-magenta: #e130ac;
+  --ansi-bright-cyan: #08c0ef;
+  --ansi-bright-white: #bcbcbc;
   --ol: 0.76;
   --oc: 0.174;
   --shadow: 0 8px 24px rgba(0, 0, 0, 0.5), 0 0 0 1px var(--line-2);
@@ -330,6 +443,22 @@
   --syn-string: #0dbe4e;
   --syn-number: #08c0ef;
   --syn-literal: #00877c;
+  --ansi-black: #1d1d1d;
+  --ansi-red: #ff2e3f;
+  --ansi-green: #0dbe4e;
+  --ansi-yellow: #ffca00;
+  --ansi-blue: #009fff;
+  --ansi-magenta: #e130ac;
+  --ansi-cyan: #08c0ef;
+  --ansi-white: #bcbcbc;
+  --ansi-bright-black: #1d1d1d;
+  --ansi-bright-red: #ff2e3f;
+  --ansi-bright-green: #86c427;
+  --ansi-bright-yellow: #ffca00;
+  --ansi-bright-blue: #009fff;
+  --ansi-bright-magenta: #e130ac;
+  --ansi-bright-cyan: #08c0ef;
+  --ansi-bright-white: #bcbcbc;
   --ol: 0.56;
   --oc: 0.121;
   --shadow: 0 8px 24px rgba(10, 10, 10, 0.12), 0 0 0 1px var(--line-2);
@@ -363,6 +492,22 @@
   --syn-number: #76c3ab;
   --syn-literal: #e8c87a;
   --syn-comment: #8a7a69;
+  --ansi-black: #2a1f1d;
+  --ansi-red: #e2665e;
+  --ansi-green: #8fbf7a;
+  --ansi-yellow: #e8c87a;
+  --ansi-blue: #86a9d6;
+  --ansi-magenta: #c29ad6;
+  --ansi-cyan: #8fbfc4;
+  --ansi-white: #c7b8a3;
+  --ansi-bright-black: #978672;
+  --ansi-bright-red: #fb7c73;
+  --ansi-bright-green: #a5d690;
+  --ansi-bright-yellow: #ffdf92;
+  --ansi-bright-blue: #9bbfed;
+  --ansi-bright-magenta: #d9b0ed;
+  --ansi-bright-cyan: #a5d6db;
+  --ansi-bright-white: #f0e6d6;
   --ol: 0.76;
   --oc: 0.174;
   --shadow: 0 8px 24px rgba(0, 0, 0, 0.45), 0 0 0 1px var(--line-2);
@@ -395,6 +540,22 @@
   --syn-number: #117555;
   --syn-literal: #86600f;
   --syn-comment: #766452;
+  --ansi-black: #2b1d16;
+  --ansi-red: #a32d27;
+  --ansi-green: #46702f;
+  --ansi-yellow: #86600f;
+  --ansi-blue: #365a89;
+  --ansi-magenta: #77448b;
+  --ansi-cyan: #26666d;
+  --ansi-white: #6b5848;
+  --ansi-bright-black: #5a463a;
+  --ansi-bright-red: #921a18;
+  --ansi-bright-green: #386120;
+  --ansi-bright-yellow: #755202;
+  --ansi-bright-blue: #284c7a;
+  --ansi-bright-magenta: #68367c;
+  --ansi-bright-cyan: #14585f;
+  --ansi-bright-white: #cfbc9d;
   --ol: 0.55;
   --oc: 0.118;
   --shadow: 0 8px 24px rgba(70, 45, 25, 0.18), 0 0 0 1px var(--line-2);
@@ -430,6 +591,22 @@
   --syn-number: #e0a867;
   --syn-literal: #e8dc7a;
   --syn-comment: #7a889b;
+  --ansi-black: #1a2330;
+  --ansi-red: #ec6f68;
+  --ansi-green: #6cc494;
+  --ansi-yellow: #e8dc7a;
+  --ansi-blue: #6fb4dd;
+  --ansi-magenta: #b3a2f0;
+  --ansi-cyan: #69cee6;
+  --ansi-white: #a9b6c7;
+  --ansi-bright-black: #7d8b9e;
+  --ansi-bright-red: #fe8a82;
+  --ansi-bright-green: #83dbaa;
+  --ansi-bright-yellow: #fef290;
+  --ansi-bright-blue: #85cbf4;
+  --ansi-bright-magenta: #c8bbff;
+  --ansi-bright-cyan: #81e5fd;
+  --ansi-bright-white: #e6ebf2;
   --ol: 0.76;
   --oc: 0.174;
   --shadow: 0 8px 24px rgba(0, 0, 0, 0.45), 0 0 0 1px var(--line-2);
@@ -463,6 +640,22 @@
   --syn-number: #97560f;
   --syn-literal: #5f6b00;
   --syn-comment: #617085;
+  --ansi-black: #162030;
+  --ansi-red: #b0352d;
+  --ansi-green: #25704a;
+  --ansi-yellow: #82601a;
+  --ansi-blue: #235ca2;
+  --ansi-magenta: #6549b8;
+  --ansi-cyan: #0d736a;
+  --ansi-white: #56657a;
+  --ansi-bright-black: #44546a;
+  --ansi-bright-red: #9f231e;
+  --ansi-bright-green: #11613c;
+  --ansi-bright-yellow: #735202;
+  --ansi-bright-blue: #124d92;
+  --ansi-bright-magenta: #583aa7;
+  --ansi-bright-cyan: #01645b;
+  --ansi-bright-white: #c4cedb;
   --ol: 0.56;
   --oc: 0.121;
   --shadow: 0 8px 24px rgba(20, 35, 60, 0.16), 0 0 0 1px var(--line-2);
@@ -497,6 +690,22 @@
   --syn-string: #a8c47a;
   --syn-number: #e0a060;
   --syn-literal: #71d0d5;
+  --ansi-black: #1c2825;
+  --ansi-red: #e3685d;
+  --ansi-green: #78c38a;
+  --ansi-yellow: #e6cf7a;
+  --ansi-blue: #7aa8d8;
+  --ansi-magenta: #e88fb5;
+  --ansi-cyan: #71d0d5;
+  --ansi-white: #a8b8b0;
+  --ansi-bright-black: #7e8f87;
+  --ansi-bright-red: #fc7e72;
+  --ansi-bright-green: #8edaa0;
+  --ansi-bright-yellow: #fde691;
+  --ansi-bright-blue: #8fbeef;
+  --ansi-bright-magenta: #fea6cb;
+  --ansi-bright-cyan: #88e7ec;
+  --ansi-bright-white: #e6ede8;
   --ol: 0.76;
   --oc: 0.174;
   --shadow: 0 8px 24px rgba(0, 0, 0, 0.45), 0 0 0 1px var(--line-2);
@@ -530,6 +739,22 @@
   --syn-string: #5f7a1f;
   --syn-literal: #13787a;
   --syn-comment: #8a7e6a;
+  --ansi-black: #2a241b;
+  --ansi-red: #b3382e;
+  --ansi-green: #2f7a3e;
+  --ansi-yellow: #796006;
+  --ansi-blue: #2f5f9e;
+  --ansi-magenta: #a3407a;
+  --ansi-cyan: #13787a;
+  --ansi-white: #6f634f;
+  --ansi-bright-black: #5a4f40;
+  --ansi-bright-red: #a2271f;
+  --ansi-bright-green: #1e6b30;
+  --ansi-bright-yellow: #685204;
+  --ansi-bright-blue: #21518e;
+  --ansi-bright-magenta: #93316b;
+  --ansi-bright-cyan: #07686a;
+  --ansi-bright-white: #cbbfa5;
   --ol: 0.55;
   --oc: 0.118;
   --shadow: 0 8px 24px rgba(60, 45, 20, 0.18), 0 0 0 1px var(--line-2);

@@ -116,7 +116,7 @@ export function setupMonaco(): void {
   ]);
   document.fonts.addEventListener("loadingdone", () => monaco.editor.remeasureFonts());
   registerConflicts();
-  setupModels(useToast());
+  setupModels();
   const settings = useSettingsStore();
   watch(
     () => settings.theme(),

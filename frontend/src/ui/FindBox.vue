@@ -1,6 +1,6 @@
 <!--
   A find bar over a list of texts: the term, the count, the current hit, next, previous and close. It tells its holder
-  which text is current.
+  which text is current. A bar its holder opens on a key takes the keys at once.
 -->
 <script setup lang="ts">
 import { computed, useId, useTemplateRef, watch } from "vue";
@@ -9,7 +9,7 @@ import { useCycleList } from "@vueuse/core";
 import { matchQuery } from "../lib/format";
 
 const term = defineModel<string>("term", { default: "" });
-const { texts } = defineProps<{ texts: readonly string[] }>();
+const { texts, autofocus = false } = defineProps<{ texts: readonly string[]; autofocus?: boolean }>();
 const emit = defineEmits<{ hit: [index: number]; close: [] }>();
 
 const input = useTemplateRef("input");
@@ -55,6 +55,7 @@ defineShortcuts({
     icon="i-lucide-search"
     placeholder="Find"
     :name="id"
+    :autofocus="autofocus"
     :ui="{ base: term.trim() && 'pe-36', trailing: 'gap-0.5' }"
   >
     <template #trailing>

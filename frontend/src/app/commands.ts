@@ -357,6 +357,15 @@ export const COMMANDS: readonly Command[] = [
         if (await saveUnsaved("Reloading the window")) location.reload();
       }),
   },
+  // carried out by the window that shows the panel, which holds the shells
+  {
+    id: "terminal.sendFile",
+    label: "Send the file to the shell",
+    prefix: "IDE:",
+    icon: "i-lucide-at-sign",
+    when: hasFile,
+    onSelect: () => useWindowsStore().sendCommand("terminal.sendFile", useWindowsStore().resolvePanel()),
+  },
   {
     id: "git.stage",
     label: "Stage the file",

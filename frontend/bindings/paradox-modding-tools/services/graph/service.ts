@@ -23,26 +23,22 @@ export function BuildDetail(id: string): $CancellablePromise<$models.Detail> {
 }
 
 /**
- * BuildGraph builds the graph that reaches out from a root node under a filter. It follows what the root fires and what
- * fires it, up to the filter's depth and node limit. A node the filter hides is replaced by one edge, with the node's
- * name added to Via. It returns an error if the game keeps no definition of the root.
+ * BuildGraph builds the graph of what a root fires and what fires it, under a filter. It returns an error if the game
+ * keeps no definition of the root.
  */
 export function BuildGraph(root: string, filter: $models.Filter): $CancellablePromise<$models.Graph> {
     return $Call.ByID(2455070978, root, filter);
 }
 
 /**
- * Defaults returns the filter for a new graph. It draws every kind the filter picks among, from the game and every
- * mod, six firings of a node before the rest are folded, with every fold closed. It returns an empty filter if no
- * workspace is open.
+ * Defaults returns the filter for a new graph. It returns an empty filter if no workspace is open.
  */
 export function Defaults(): $CancellablePromise<$models.Filter> {
     return $Call.ByID(3340937252);
 }
 
 /**
- * FindRoots returns up to the given limit of the nodes whose name holds the query, ignoring case. The name equal to
- * the query comes first, then the names that start with it, then the rest, each in name order. It returns nil if no
+ * FindRoots returns up to a limit of the nodes whose name holds the query, best matches first. It returns nil if no
  * workspace is open.
  */
 export function FindRoots(query: string, limit: number): $CancellablePromise<$models.Node[] | null> {

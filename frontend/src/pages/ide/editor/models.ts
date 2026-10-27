@@ -1,6 +1,7 @@
 /**
  * The open files of this window, each a model around a Monaco text model that its tabs share. A model shows Go's
- * problems as markers and follows its file on disk.
+ * problems as markers and follows its file on disk; a change under unsaved text is kept beside it, for the user to keep
+ * either text.
  */
 import { useQueryCache } from "@pinia/colada";
 import { useDebounceFn } from "@vueuse/core";
@@ -27,6 +28,7 @@ export type Model = {
   unsaved: boolean;
   caret: { line: number; column: number };
   problems: Diagnostic[];
+  diskText: Text | null; // the disk's text after the file changed on disk under unsaved text; null while none did
 };
 
 /** SEVERITIES holds the Monaco severity of each level. */
@@ -48,12 +50,12 @@ const syncs = new Map<string, () => Promise<Diagnostic[]>>();
 const confirm = useOverlay().create(ConfirmModal);
 
 /**
- * setupModels keeps the models in step with the disk, the workspace and the settings. A toast asks before a change on
- * disk replaces unsaved text.
+ * setupModels keeps the models in step with the disk, the workspace and the settings. A change on disk under unsaved
+ * text is kept as the model's disk text.
  */
-export function setupModels(toast: ReturnType<typeof useToast>): void {
+export function setupModels(): void {
   Events.On("fs:changed", ({ data }) => {
-    if (!data.deleted) void applyChange(data.path, toast);
+    if (!data.deleted) void applyChange(data.path);
   });
   Events.On("workspace:opened", () => {
     models.forEach((model) => void (model.unsaved ? syncText(model) : diagnose(model)));
@@ -108,8 +110,8 @@ export async function syncText(model: Model): Promise<Diagnostic[]> {
 }
 
 /**
- * save writes a model's text to disk and marks it saved, unless it was edited meanwhile. The other models are checked
- * again.
+ * save writes a model's text to disk and marks it saved, unless it was edited meanwhile. It drops a disk text the
+ * model kept. The other models are checked again.
  */
 export async function save(model: Model): Promise<void> {
   const text = model.model.getValue();
@@ -117,6 +119,7 @@ export async function save(model: Model): Promise<void> {
   await workspace.Write(model.place.path, { text, encoding: model.encoding });
   disk.set(model.place.key, { version, text });
   model.unsaved = model.model.getAlternativeVersionId() !== version;
+  model.diskText = null;
   await Promise.all([...models.values()].filter((other) => other !== model).map(diagnose));
 }
 
@@ -207,6 +210,7 @@ function buildModel(place: Place, start: { text: string; disk: string; encoding:
     unsaved: start.unsaved,
     caret: { line: 1, column: 1 },
     problems: [],
+    diskText: null,
   });
   disk.set(place.key, { version: start.unsaved ? -1 : text.getAlternativeVersionId(), text: start.disk });
   text.onDidChangeContent(() => {
@@ -252,36 +256,33 @@ async function setMarkers(model: Model, diagnostics: Diagnostic[]): Promise<void
   monaco.editor.setModelMarkers(model.model, "pmt", markers);
 }
 
-/** applyChange brings a change on disk into its file's model. A toast asks first if the model has unsaved text. */
-async function applyChange(path: string, toast: ReturnType<typeof useToast>): Promise<void> {
+/**
+ * applyChange brings a change on disk into its file's model, at once if the model has no unsaved text. Otherwise the
+ * model keeps the disk's text beside its own until the user keeps one; a disk back at the text the model last agreed
+ * with drops it.
+ */
+async function applyChange(path: string): Promise<void> {
   const place = await loadQuery(placeQuery(path));
   const model = place && models.get(place.key);
   if (!model) return;
   const cache = useQueryCache();
   const { data: file } = await cache.fetch(cache.ensure(fileQuery(path)));
   const snapshot = disk.get(model.place.key);
+  if (!file || !snapshot) return;
   // a write this window made reaches it as a change too
-  if (!file || !snapshot || file.text.text === snapshot.text) return;
-  if (!model.unsaved) {
-    setText(model, file.text);
-    return;
-  }
-  toast.add({
-    title: `${model.place.name} changed on disk`,
-    description: "Reload it and lose your edits, or keep them.",
-    color: "warning",
-    duration: 0,
-    actions: [
-      { label: "Reload", onClick: () => setText(model, file.text) },
-      { label: "Keep", onClick: () => disk.set(model.place.key, { version: snapshot.version, text: file.text.text }) },
-    ],
-  });
+  if (file.text.text === snapshot.text) model.diskText = null;
+  else if (model.unsaved) model.diskText = file.text;
+  else setText(model, file.text);
 }
 
-/** setText puts text from disk in a model as one undoable edit. The model then matches the disk. */
-function setText(model: Model, text: Text): void {
+/**
+ * setText puts text from disk in a model as one undoable edit. The model then matches the disk, and drops a disk text
+ * it kept.
+ */
+export function setText(model: Model, text: Text): void {
   applyEdits(model, [{ range: model.model.getFullModelRange(), text: text.text }]);
   model.encoding = text.encoding;
   disk.set(model.place.key, { version: model.model.getAlternativeVersionId(), text: text.text });
   model.unsaved = false;
+  model.diskText = null;
 }

@@ -20,6 +20,7 @@ import (
 	"paradox-modding-tools/services/lsp"
 	"paradox-modding-tools/services/search"
 	"paradox-modding-tools/services/steam"
+	"paradox-modding-tools/services/terminal"
 	"paradox-modding-tools/services/wiki"
 	"paradox-modding-tools/services/workspace"
 )
@@ -58,6 +59,7 @@ func main() {
 			application.NewService(logservice.New()),
 			application.NewServiceWithOptions(wsp, application.ServiceOptions{Route: "/files"}),
 			application.NewService(&lsp.Service{Workspace: wsp}),
+			application.NewService(&terminal.Service{Workspace: wsp, Config: config}),
 			application.NewService(&draw.Service{Workspace: wsp}),
 			application.NewService(&health.Service{Workspace: wsp}),
 			application.NewService(&graph.Service{Workspace: wsp}),

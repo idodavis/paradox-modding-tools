@@ -35,6 +35,8 @@ declare module "@wailsio/runtime" {
             "install:scanning": workspace$0.Scanning;
             "release:changed": string;
             "search:hits": search$0.Hits;
+            "shell:exited": string;
+            "shell:started": string;
             "steam:progress": steam$0.Progress;
             "wiki:progress": wiki$0.Progress;
             "wiki:updated": string;

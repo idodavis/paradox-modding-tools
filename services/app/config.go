@@ -138,7 +138,7 @@ type Setting struct {
 	Key       string   `json:"key"` // `<area>.<noun>`
 	Label     string   `json:"label"`
 	Help      string   `json:"help"`
-	Section   string   `json:"section"`   // appearance, or an IDE area: editor, language, checks, explorer, visual, wiki
+	Section   string   `json:"section"`   // appearance, terminal, or an IDE area (editor, language, checks, …)
 	Workspace bool     `json:"workspace"` // it is kept per workspace
 	Type      string   `json:"type"`      // switch, choice, number, text
 	Default   string   `json:"default"`
@@ -175,6 +175,11 @@ var Catalog = []Setting{
 		Section: "appearance", Type: "text", Default: "workspace-ide,event-graph,health,patch-notes,release",
 		Help:  "The pages the sidebar offers, in order, separated by commas.",
 		Words: "sidebar navigation hide"},
+	{Key: "terminal.shell", Label: "Default shell",
+		Section: "terminal", Type: "text", Default: "",
+		Help: "The shell New shell starts; the arrow beside it starts another. Found by PMT unless you pick one. On " +
+			"Windows: pwsh on the PATH, then PowerShell 7, then Windows PowerShell. On Linux: your $SHELL, else sh.",
+		Words: "terminal shell pwsh powershell bash zsh wsl program console default"},
 	{Key: "ide.editorTextSize", Label: "Editor text size",
 		Section: "editor", Workspace: true, Type: "number", Default: "14", Min: 10, Max: 24,
 		Help:  "The size of the editor's text in pixels.",

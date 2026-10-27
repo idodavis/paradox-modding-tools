@@ -98,16 +98,18 @@ tasks:
       - task: check:frontend
 
   check:go:
-    summary: gofmt, the three vets, staticcheck, golangci-lint and the short tests.
+    summary: gofmt, the four vets, staticcheck, golangci-lint and the short tests.
     vars:
       # the engine's packages that build without Wails, whose files for other systems need no cgo
-      ENGINE: ./internal/files/... ./internal/game/... ./internal/jomini/... ./internal/loc/... ./internal/schema/... ./internal/texture/... ./internal/index/...
+      ENGINE: ./internal/files/... ./internal/game/... ./internal/jomini/... ./internal/loc/... ./internal/schema/... ./internal/texture/... ./internal/index/... ./internal/terminal/...
     cmds:
       - test -z "$(gofmt -l main.go internal services)"
-      # plain vet skips the files of other systems; these two cover them
+      # plain vet skips the files of other systems; these three cover them. Wails' server tag leaves out its Linux
+      # window code, which needs cgo, so that the services' Linux files are vetted too
       - go vet ./...
       - GOOS=linux go vet {{.ENGINE}}
       - GOOS=windows go vet {{.ENGINE}}
+      - GOOS=linux go vet -tags server ./services/...
       - staticcheck ./...
       - golangci-lint run ./...
       - task: test

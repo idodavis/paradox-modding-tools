@@ -48,13 +48,13 @@ func (sch *Service) ServiceShutdown() error {
 
 // A Query is one text search: what to find and where.
 type Query struct {
-	Text      string   `json:"text"`
-	Regex     bool     `json:"regex"`
-	MatchCase bool     `json:"matchCase"`
-	WholeWord bool     `json:"wholeWord"`
-	Include   string   `json:"include"` // glob patterns, comma-separated
-	Exclude   string   `json:"exclude"`
-	Origins   []string `json:"origins"` // the mods and the game searched; empty for the mods
+	Text      string   `json:"text" jsonschema:"the text to find, or a regular expression when regex is true"`
+	Regex     bool     `json:"regex" jsonschema:"whether the text is a regular expression"`
+	MatchCase bool     `json:"matchCase" jsonschema:"whether a letter's case must match"`
+	WholeWord bool     `json:"wholeWord" jsonschema:"whether a match must be a whole word"`
+	Include   string   `json:"include" jsonschema:"glob patterns of the files searched, comma-separated; all if empty"`
+	Exclude   string   `json:"exclude" jsonschema:"glob patterns of the files left out, comma-separated"`
+	Origins   []string `json:"origins" jsonschema:"the mods searched, by id, and vanilla for the game's files; the mods if empty"`
 }
 
 // A Hit is one match of a text search. Its range's columns also mark the match inside the text of its line.

@@ -5,13 +5,14 @@ to the agents on this computer, and passes on to the windows what an agent asks 
 
 The server runs on the official `modelcontextprotocol/go-sdk`, imported as `sdk` so that the receiver can be `mcp`.
 Its tools answer through the other services' methods, the ones that answer the pages: `lsp`, `health`, `graph`,
-`wiki`, `search` and `workspace`. It holds none of their logic.
+`wiki`, `draw`, `search` and `workspace`. It holds none of their logic.
 
 | file | holds |
 |---|---|
 | `mcp.go` | the package comment; `Service`; `Task` and `Tasks`; `Variables`; the instructions; `ServiceStartup`, `ServiceShutdown`; `ReadURL`, `ReadToken`, `CreateToken`, `ListTasks`; the handler and its checks; the prompts |
 | `tools.go` | the tools' inputs; `Preview`; the guide's texts; the editor's, the pages' and the app's tools; `read_guide`; the write tools' previews and tokens |
 | `app.go` | `EventShow`; `View`, `Chip`, `Page`, `Show`, `Lookup`; `SetView`, `SetPages`; `describe_view` and `show` |
+| `checks.go` | `queryKeys`, the queries `show` takes, and the guide's lines on them; the checks of what the tools are given |
 
 ## The server
 
@@ -41,7 +42,7 @@ Claude's 4,096 characters. `read_guide` holds the rest:
 - `workspace`: the open workspace's game and install, its mods in load order with their folders, and the game's
   folders with what each holds, read from the schema's databases.
 
-The starter tasks are `Tasks`, served as MCP prompts and listed by `ListTasks` for the Agents page and the pane: fix
+The starter tasks are `Tasks`, served as MCP prompts and listed by `ListTasks` for the agent pane: fix
 this file's problems, explain this page, write the missing localization, and why this event fires. Each text works
 with the page's chip attached and, outside PMT, through `describe_view`.
 
@@ -66,6 +67,11 @@ with the page's chip attached and, outside PMT, through `describe_view`.
 Positions are lines and columns from one, as the editor counts them. A tool's error comes back to the agent as the
 tool's result, not as a protocol error.
 
+A tool given a name the workspace does not have answers with an error that says where the right one comes from,
+never with an empty answer that reads as "none": a node id (`find_roots`), a mod's id (`read_guide`'s workspace
+topic), a check's id (`list_codes`), a level, a language of the install, a file of the mods or the game (not a
+folder). The checks are in `checks.go`, each the one place its rule is written.
+
 The three write tools preview first: without a token, a call answers with the change it would make and a token, and
 called again with that token, it makes the change once. They write only in the workspace's mods, through
 `workspace.Write`, and leave alone a file with text the user has not saved.
@@ -74,8 +80,14 @@ called again with that token, it makes the change once. They write only in the w
 
 `show` sends `mcp:show` with a `Show`: a page with its query, a file with its lines selected, a Visual view window
 with the states it is drawn at, or a Wiki look-up. The main window's agent store carries it out. The pages take what
-an agent sets as their route's query, as Health's already did: the Event Graph's `node` and `filters`, Patch Notes'
-`patch` and `find`.
+an agent sets as their route's query.
+
+`show` checks the request first and sends nothing when any part is wrong: the page against the pages the main window
+sent, each query key and value against `queryKeys`, the file (it exists, is a file, and is in the mods or the game),
+its lines, its drawable against `draw.ListDrawables` and a window's picks against its groups and their options, and
+a look-up against the wiki's pages and the Lexicon. `queryKeys` has a row per page and key, with its help, the values
+it takes where they are few, and its check; the guide's lines on `show` are written from it, so the two cannot
+differ. A key no tool can give a value for (Health's open row, Publish's older listings) is left out of it.
 
 ## Events
 

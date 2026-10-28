@@ -77,7 +77,7 @@ export function describeWindow(name: WindowName): string {
   if (kind === "page") return Object.entries(PAGES).find(([key]) => key === rest)?.[1].title ?? rest;
   if (kind === "editor") return `Editor ${rest}`;
   if (kind === "files") return rest.split(/[\\/]/).at(-1) ?? rest;
-  return { main: "Main window", game: "Game files", terminal: "Terminal", wiki: "Wiki" }[kind] ?? name;
+  return { main: "Main window", game: "Game files", terminal: "Terminal", wiki: "Wiki", agent: "Agent" }[kind] ?? name;
 }
 
 export const useWindowsStore = defineStore("windows", () => {
@@ -259,8 +259,8 @@ export const useWindowsStore = defineStore("windows", () => {
   };
 
   /**
-   * Opens a window on a page, an editor group, one tab, a folder, the terminal, the Wiki pane or the game's files, or
-   * brings it to the front if it is open. A group's or a tab's tabs go to the new window.
+   * Opens a window on a page, an editor group, one tab, a folder, the terminal, the Wiki pane, the agent pane or the
+   * game's files, or brings it to the front if it is open. A group's or a tab's tabs go to the new window.
    */
   const popOut = (what: {
     page?: string;
@@ -269,6 +269,7 @@ export const useWindowsStore = defineStore("windows", () => {
     folder?: string;
     terminal?: true;
     wiki?: true;
+    agent?: true;
     game?: true;
   }): void => {
     let target: WindowName = "game";
@@ -277,6 +278,7 @@ export const useWindowsStore = defineStore("windows", () => {
     else if (what.folder) target = `files:${what.folder}`;
     else if (what.terminal) target = "terminal";
     else if (what.wiki) target = "wiki";
+    else if (what.agent) target = "agent";
     if (others.has(target)) {
       showWindow(target);
       return;

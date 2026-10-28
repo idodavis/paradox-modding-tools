@@ -93,18 +93,15 @@ export const PAGES = {
       "Paradox Mods has no API: use Copy for Paradox Mods in the description's BBCode view and paste it in the Paradox Launcher's Upload Mod.",
     ],
   },
-  agents: {
-    title: "Agents",
-    icon: "i-lucide-bot",
-    workspace: true,
-    help: [
-      "Agents chats with coding agents: Claude, GitHub Copilot and Codex, and agents of your own that Settings adds. Each runs on your computer and signs in to its own account; PMT never sees it.",
-      "Add sets an agent up. PMT installs it from the Agent Client Protocol's registry into its own folder, with Node when your system has none new enough. An agent signs in its own way: in PMT's Terminal, or in your browser.",
-      "Every session is given PMT's tools, so the agent finds names, problems, Health's findings and the Event Graph as PMT does, with your unsaved text. What the agent asks permission for shows in the session, and a link it asks to open shows as a card; nothing opens before you choose.",
-      "The agent pane, the button beside search (Ctrl Alt I), shows the same session beside any workspace page. What the page has in front of you goes with your prompt as a chip, and ✕ leaves it out. Follow the agent opens the files it works on.",
-    ],
-  },
 } as const satisfies Record<string, Page>;
+
+/** PANE_HELP is the agent pane's help, which every workspace page's Help shows after its own. */
+export const PANE_HELP = [
+  "The agent pane chats with coding agents: Claude, GitHub Copilot and Codex, and agents of your own that Settings adds. Each runs on your computer and signs in to its own account; PMT never sees it. The button beside search (Ctrl Alt I) shows it beside any workspace page; ⤢ shows the session over the whole window, and the window button moves it into a window of its own.",
+  "Settings, Agents and tools, sets an agent up. PMT installs it from the Agent Client Protocol's registry into its own folder, with Node when your system has none new enough. An agent signs in its own way: in PMT's Terminal, or in your browser.",
+  "Every session is given PMT's tools, so the agent finds names, problems, Health's findings and the Event Graph as PMT does, with your unsaved text. What the agent asks permission for shows in the session, and a link it asks to open shows as a card; nothing opens before you choose.",
+  "What the page has in front of you goes with your prompt as an attachment, and ✕ leaves it out. Follow the agent opens the files it reads in the preview tab and keeps those it edits open. The session menu lists every session, with Rename, Archive and Delete. An edit can be undone from its row, or all of a session's at once from the files button.",
+];
 
 /** A PageName is the route name of a page. */
 export type PageName = keyof typeof PAGES;
@@ -132,7 +129,6 @@ export const WORKSPACE_TOOLS = [
   "health",
   "patch-notes",
   "release",
-  "agents",
 ] as const satisfies readonly WorkspacePage[];
 
 /** A WorkspaceTool is the route name of a workspace page that has a tab in the top bar. */

@@ -85,6 +85,7 @@ export type Session = {
   protocol: Protocol;
   id: string; // the agent's id for it, "" until the agent gives one
   title: string;
+  isRenamed: boolean; // the title is the user's, which the agent's titles do not replace
   state: "starting" | "sign-in" | "idle" | "running" | "ended";
   entries: Entry[];
   terminals: Record<string, string>; // what each of the agent's display-only terminals shows, its command first
@@ -96,7 +97,10 @@ export type Session = {
   error: string;
 };
 
-/** A SessionRecord is one session as every window's sessions list remembers it, and whether the user archived it. */
+/**
+ * A SessionRecord is one session as every window's sessions list remembers it, and whether the user archived it or
+ * gave it a title of their own.
+ */
 export type SessionRecord = {
   agent: string;
   id: string;
@@ -105,6 +109,7 @@ export type SessionRecord = {
   resumable: boolean;
   deletable: boolean;
   isArchived: boolean;
+  isRenamed: boolean;
 };
 
 /**
@@ -204,7 +209,7 @@ export const useAgentStore = defineStore("agent", () => {
     const asking = session.entries.find((entry) => entry.kind === "permission");
     if (asking?.kind === "permission") return `${name} asks: ${asking.title}`;
     if (session.entries.some((entry) => entry.kind === "link")) return `${name} asks to open a link`;
-    if (session.state === "running") return `${name} is working: ${session.title}`;
+    if (session.state === "running") return `${name} is working: ${describeTitle(session)}`;
     if (session.state === "sign-in") return `${name} needs you to sign in`;
     if (session.state === "starting") return `${name} is starting`;
     const fileCount = listChanges(session).length;
@@ -252,6 +257,7 @@ export const useAgentStore = defineStore("agent", () => {
       protocol: protocols.value[`${agent.id}@${agent.installed}`] ?? 2,
       id: record?.id ?? "",
       title: record?.title ?? "New session",
+      isRenamed: record?.isRenamed ?? false,
       state: "starting",
       entries: [],
       terminals: {},
@@ -519,7 +525,7 @@ export const useAgentStore = defineStore("agent", () => {
       else session.entries.push({ kind: "plan", id: "plan", steps });
     } else if (kind === "session_info_update") {
       const title = (update as v2.SessionInfoUpdate).title;
-      if (title) session.title = title;
+      if (title && !session.isRenamed) session.title = title;
       remember(session);
     } else if (kind === "state_update") {
       const state = update as { state: string; stopReason?: string | null };
@@ -764,9 +770,24 @@ export const useAgentStore = defineStore("agent", () => {
       resumable: session.resumable,
       deletable: session.deletable,
       isArchived: records.value.find((other) => other.id === session.id)?.isArchived ?? false,
+      isRenamed: session.isRenamed,
     };
     records.value = [record, ...records.value.filter((other) => other.id !== session.id)].slice(0, 50);
   }
+
+  /**
+   * rename gives the session of the given id the user's own title, in the sessions list and here, which the agent's
+   * later titles do not replace. A blank title changes nothing.
+   */
+  const rename = (id: string, title: string): void => {
+    const text = title.trim();
+    if (!text) return;
+    records.value = records.value.map((other) =>
+      other.id === id ? { ...other, title: text, isRenamed: true } : other,
+    );
+    const live = sessions.find((session) => session.id === id);
+    if (live) Object.assign(live, { title: text, isRenamed: true });
+  };
 
   /**
    * open shows a remembered session here: the one this window runs, else the agent's replay of it. A session whose
@@ -861,12 +882,12 @@ export const useAgentStore = defineStore("agent", () => {
   };
 
   /**
-   * popOut opens the Agents page in a window of its own. The session shown here, if any, ends here, and that window
+   * popOut opens the agent pane in a window of its own. The session shown here, if any, ends here, and that window
    * resumes it from the sessions list if its agent can replay it.
    */
   const popOut = (shown: Session | undefined): void => {
     if (shown) close(shown);
-    windows.popOut({ page: "agents" });
+    windows.popOut({ agent: true });
   };
 
   /** setChip keeps what a page offers a prompt, or null for nothing. */
@@ -928,6 +949,7 @@ export const useAgentStore = defineStore("agent", () => {
     start,
     open,
     archive,
+    rename,
     deleteSession,
     undo,
     isUndoable,
@@ -958,6 +980,19 @@ export function useChip(source: () => Chip | null): void {
 /** makeChip returns a chip that carries a text, such as an event's id, under a label. */
 export function makeChip(label: string, text: string): Chip {
   return { label, path: "", startLine: 0, endLine: 0, text };
+}
+
+/** TITLE_WORDS is how many words of an agent's title a list shows. */
+const TITLE_WORDS = 4;
+
+/**
+ * describeTitle returns a session's title as a list shows it: a title the user gave whole, else the first line of the
+ * agent's cut to its first words, with "…" where it was cut.
+ */
+export function describeTitle(item: { title: string; isRenamed: boolean }): string {
+  if (item.isRenamed) return item.title;
+  const words = (item.title.split("\n")[0] ?? "").trim().split(/\s+/);
+  return words.length > TITLE_WORDS ? `${words.slice(0, TITLE_WORDS).join(" ")}…` : words.join(" ");
 }
 
 /** STOPS holds the words for each reason an agent's turn ends early. */

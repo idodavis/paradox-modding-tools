@@ -14,7 +14,7 @@ import { day, installLine } from "../lib/format";
 import { crashedQuery, releasesQuery, stateQuery, updateQuery, versionQuery, windowsQuery } from "../queries";
 import { useAgentStore } from "../stores/agent";
 import { describeWindow, THIS_WINDOW, useWindowsStore } from "../stores/windows";
-import { PAGES } from "./pages";
+import { isWorkspacePage, PAGES, PANE_HELP } from "./pages";
 
 const route = useRoute();
 const toast = useToast();
@@ -163,6 +163,11 @@ const ITEM = "flex h-6 items-center gap-1.25 hover:text-highlighted";
       <template #body>
         <div class="flex flex-col gap-3 text-13 text-toned">
           <p v-for="(paragraph, index) in page?.help ?? []" :key="index">{{ paragraph }}</p>
+          <!-- the agent pane sits beside every workspace page, so each one's help ends with the pane's -->
+          <template v-if="route.name && isWorkspacePage(route.name)">
+            <h3 class="mt-2 text-13 font-semibold text-highlighted">The agent pane</h3>
+            <p v-for="(paragraph, index) in PANE_HELP" :key="`pane${index}`">{{ paragraph }}</p>
+          </template>
         </div>
       </template>
       <template #footer>

@@ -65,18 +65,18 @@ watch(
 );
 
 const { data: defaults } = useQuery(() => ({ ...graphDefaultsQuery, enabled: workspace.isOpen() }));
-// the filter is Go's defaults until the user or the route changes one of its parts
-const edits = shallowRef<Filter | null>(null);
+// the filter is Go's defaults, with the parts the user or the route changed laid over them
+const edits = shallowRef<Partial<Filter> | null>(null);
 watch(
   () => id,
   () => (edits.value = null),
 );
 watch(
   () => filters,
-  (json) => (edits.value = json ? (JSON.parse(json) as Filter) : edits.value),
+  (json) => (edits.value = json ? (JSON.parse(json) as Partial<Filter>) : edits.value),
   { immediate: true },
 );
-const filter = computed(() => edits.value ?? defaults.value);
+const filter = computed(() => defaults.value && { ...defaults.value, ...edits.value });
 const { data: graph, error } = useQuery(() => ({
   ...graphQuery({ root, filter: filter.value ?? NO_FILTER }),
   enabled: workspace.isOpen() && !!root && !!filter.value,

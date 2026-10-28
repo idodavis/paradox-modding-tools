@@ -426,13 +426,13 @@ export const COMMANDS: readonly Command[] = [
     when: () => true,
     onSelect: () => bus.emit("settings.open"),
   },
-  // the pane sits in the main window, beside a workspace's pages but the Agents page
+  // the pane sits in the main window, beside a workspace's pages
   {
     id: "agent.togglePane",
     label: "Show or hide the agent pane",
     icon: "i-lucide-sparkles",
     kbds: ["meta", "alt", "I"],
-    when: () => THIS_WINDOW === "main" && useWorkspaceStore().isOpen() && router.currentRoute.value.name !== "agents",
+    when: () => THIS_WINDOW === "main" && useWorkspaceStore().isOpen(),
     onSelect: () => {
       const agent = useAgentStore();
       agent.isPaneOpen = !agent.isPaneOpen;

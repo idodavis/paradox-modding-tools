@@ -50,14 +50,14 @@ type Edge struct {
 
 // A Filter says what the graph shows and how far it reaches from its root.
 type Filter struct {
-	Databases []string          `json:"databases"`
-	Origins   []string          `json:"origins"`
-	Depth     int               `json:"depth"`
-	Limit     int               `json:"limit"`
-	Fanout    int               `json:"fanout"` // the firings of one node drawn before the rest fold; 0 folds none
-	Expand    []string          `json:"expand"` // the folds opened, and the nodes the depth stopped at that are opened
-	Follow    bool              `json:"follow"`
-	Labels    map[string]string `json:"labels,omitempty"` // what each database's definitions are called
+	Databases []string          `json:"databases" jsonschema:"the kinds of node drawn, by the part of a node's id before its colon, such as events"`
+	Origins   []string          `json:"origins" jsonschema:"the mods drawn, by id, and vanilla for the game's own files"`
+	Depth     int               `json:"depth" jsonschema:"how many steps from the root are drawn"`
+	Limit     int               `json:"limit" jsonschema:"the most nodes drawn"`
+	Fanout    int               `json:"fanout" jsonschema:"the firings of one node drawn before the rest fold; 0 folds none"`
+	Expand    []string          `json:"expand" jsonschema:"the folds opened, and the nodes the depth stopped at that are opened"`
+	Follow    bool              `json:"follow" jsonschema:"whether a scripted effect is walked into for the events it fires"`
+	Labels    map[string]string `json:"labels,omitempty" jsonschema:"what each kind's nodes are called, for the page"`
 }
 
 // A Graph is the event graph from one root. It has no coordinates.

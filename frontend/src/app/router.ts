@@ -24,7 +24,6 @@ const ROUTES = {
   health: { path: "health", component: () => import("../pages/health/HealthPage.vue") },
   "patch-notes": { path: "patch-notes", component: () => import("../pages/notes/PatchNotesPage.vue") },
   release: { path: "release", component: () => import("../pages/publish/ReleasePage.vue") },
-  agents: { path: "agents", component: () => import("../pages/agents/AgentsPage.vue") },
 } satisfies Record<PageName, Pick<RouteRecordRaw, "path" | "component">>;
 
 /** The app's router. Its guard writes the active workspace id. */
@@ -46,7 +45,6 @@ export const KEPT: readonly string[] = [
   "HealthPage",
   "PatchNotesPage",
   "ReleasePage",
-  "AgentsPage",
 ];
 
 router.beforeEach(async (target, previous) => {

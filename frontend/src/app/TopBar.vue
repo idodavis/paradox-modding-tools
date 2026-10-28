@@ -273,11 +273,7 @@ function closePage(name: WorkspaceTool): void {
       <span class="truncate text-dimmed">{{ active?.name }}</span>
     </span>
 
-    <UTooltip
-      v-if="IS_MAIN && active && route.name !== 'agents'"
-      text="Agent pane"
-      :kbds="findKbds('agent.togglePane')"
-    >
+    <UTooltip v-if="IS_MAIN && active" text="Agent pane" :kbds="findKbds('agent.togglePane')">
       <UChip :show="agent.sessions.some(agent.isWaiting)" color="warning" inset size="sm">
         <UButton
           icon="i-lucide-sparkles"

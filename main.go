@@ -88,8 +88,10 @@ func listServices(config *app.ConfigFile, appService *app.Service) []application
 	healthService := &health.Service{Workspace: wsp}
 	graphService := &graph.Service{Workspace: wsp}
 	wikiService := &wiki.Service{Workspace: wsp}
+	drawService := &draw.Service{Workspace: wsp}
 	mcpService := &mcp.Service{
-		Workspace: wsp, LSP: lspService, Health: healthService, Graph: graphService, Wiki: wikiService, Build: version,
+		Workspace: wsp, LSP: lspService, Health: healthService, Graph: graphService, Wiki: wikiService,
+		Draw: drawService, Build: version,
 	}
 	return []application.Service{
 		application.NewService(appService),
@@ -97,7 +99,7 @@ func listServices(config *app.ConfigFile, appService *app.Service) []application
 		application.NewServiceWithOptions(wsp, application.ServiceOptions{Route: "/files"}),
 		application.NewService(lspService),
 		application.NewService(&terminal.Service{Workspace: wsp, Config: config}),
-		application.NewService(&draw.Service{Workspace: wsp}),
+		application.NewService(drawService),
 		application.NewService(healthService),
 		application.NewService(graphService),
 		application.NewService(&search.Service{Workspace: wsp}),

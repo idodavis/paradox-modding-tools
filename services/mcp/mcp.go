@@ -21,6 +21,7 @@ import (
 
 	"paradox-modding-tools/internal/files"
 	"paradox-modding-tools/internal/terminal"
+	"paradox-modding-tools/services/draw"
 	"paradox-modding-tools/services/graph"
 	"paradox-modding-tools/services/health"
 	"paradox-modding-tools/services/lsp"
@@ -36,6 +37,7 @@ type Service struct {
 	Health    *health.Service
 	Graph     *graph.Service
 	Wiki      *wiki.Service
+	Draw      *draw.Service
 	Build     string       // the app's version, which the server reports
 	server    *http.Server // nil until the server listens
 	mu        sync.Mutex   // guards the fields below

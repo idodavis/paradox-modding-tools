@@ -40,7 +40,8 @@ type Service struct {
 	MCP       *mcp.Service       // PMT's tools, whose address and token the register texts carry
 }
 
-// An Agent is one agent as the Agents page lists it: its record, with what the registry and PMT's folder say of it.
+// An Agent is one agent as Settings and the agent pane list it: its record, with what the registry and PMT's folder
+// say of it.
 type Agent struct {
 	app.Agent
 	Version     string `json:"version"`     // the registry's version of one PMT offers; "" for the user's

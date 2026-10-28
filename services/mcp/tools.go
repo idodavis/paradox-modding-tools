@@ -60,7 +60,7 @@ type findingFilter struct {
 
 // A graphRoot is what an Event Graph is drawn from, and how.
 type graphRoot struct {
-	Root   string        `json:"root" jsonschema:"a node's id from find_roots, such as event:my_mod.0001"`
+	Root   string        `json:"root" jsonschema:"a node's id from find_roots, such as events:my_mod.0001"`
 	Filter *graph.Filter `json:"filter,omitempty" jsonschema:"what is drawn; the Event Graph's defaults if left out"`
 }
 
@@ -152,14 +152,10 @@ Events: find_roots finds an event, an on_action, a decision or a scripted effect
 Localization: a mod's localization files are YAML under localization/<language>/, each beginning with ` +
 		`l_<language>: and saved with a byte order mark. write_scaffold writes the keys a language lacks, with the ` +
 		`base language's text as the placeholder.`
-	guideQueries = `What show brings to the front, by page id and its query:
-- workspace-ide: give path, with startLine and endLine to select lines; drawable and picks draw a window of a ` +
-		`.gui file in the Visual view at the states picked; lookUp looks a word up in the Wiki pane.
-- event-graph: root (a node id), node (a node id, selected with its path drawn) and filters (an Event Graph ` +
-		`filter as JSON).
-- health: view (compatibility, mods or log), mod (a mod's id), code (a check's id), row and name.
-- patch-notes: patch (a version's notes) and find (text found in them).
-- release: mod (a mod's id), compare (yes to open the compare with Steam) and listing.`
+	guideShow = `What show brings to the front. A file in the IDE: path, with startLine and endLine to select lines, ` +
+		`and for a .gui file drawable, a window drawn in the Visual view, and picks, the option each of its state ` +
+		`groups is drawn at. A word looked up in the IDE's Wiki pane: lookUp. A page: page, its id, and query, which ` +
+		`the pages below take; the others take none. show checks each and says what is wrong instead of showing it.`
 )
 
 // addEditorTools adds the tools that answer as PMT's editor does: a file's problems and names, what is valid at a
@@ -170,6 +166,9 @@ func (mcp *Service) addEditorTools(server *sdk.Server) {
 	sdk.AddTool(server, &sdk.Tool{Name: "read_file", Description: "Reads a file of the workspace or the game, " +
 		"with where it sits and the user's unsaved text of it as its draft."},
 		answer(func(request document) (workspace.FileText, error) {
+			if _, err := mcp.locateFile(request.Path); err != nil {
+				return workspace.FileText{}, err
+			}
 			return mcp.Workspace.Read(request.Path)
 		}))
 	sdk.AddTool(server, &sdk.Tool{Name: "diagnose", Description: "Lists a file's problems as PMT's editor shows " +
@@ -227,11 +226,13 @@ func (mcp *Service) addPageTools(server *sdk.Server) {
 		}))
 	sdk.AddTool(server, &sdk.Tool{Name: "build_graph", Description: "Draws the Event Graph of a root: what it " +
 		"fires and what fires it, step by step."}, answer(func(request graphRoot) (graph.Graph, error) {
+		if err := mcp.checkNode(request.Root); err != nil {
+			return graph.Graph{}, err
+		}
 		return mcp.Graph.BuildGraph(request.Root, lo.FromPtrOr(request.Filter, mcp.Graph.Defaults()))
 	}))
 	sdk.AddTool(server, &sdk.Tool{Name: "build_detail", Description: "Gives one Event Graph node's detail: its " +
-		"texts, what it fires and what fires it, what it reads, and its script."},
-		answer(func(request node) (graph.Detail, error) { return mcp.Graph.BuildDetail(request.ID) }))
+		"texts, what it fires and what fires it, what it reads, and its script."}, answer(mcp.buildDetail))
 	sdk.AddTool(server, &sdk.Tool{Name: "search_pages", Description: "Finds the game wiki's modding pages " +
 		"that hold a text."}, answer(func(request textQuery) ([]wiki.Summary, error) {
 		pages, err := mcp.Wiki.SearchPages(request.Query)
@@ -298,7 +299,7 @@ func (mcp *Service) describePages() string {
 	for _, page := range mcp.pages {
 		fmt.Fprintf(&guide, "# %s (%s)\n\n%s\n\n", page.Title, page.ID, strings.Join(page.Help, "\n\n"))
 	}
-	guide.WriteString(guideQueries)
+	guide.WriteString(guideShow + describeQueries())
 	return guide.String()
 }
 
@@ -330,8 +331,12 @@ func (mcp *Service) describeWorkspace() (string, error) {
 	return guide.String(), nil
 }
 
-// buildReport returns Health's findings for the workspace's load order that pass the filter, at most its limit.
+// buildReport returns Health's findings for the workspace's load order that pass the filter, at most its limit. It
+// returns an error if the filter names a mod, a check or a level PMT does not have.
 func (mcp *Service) buildReport(filter findingFilter) (health.Report, error) {
+	if err := mcp.checkFindings(filter); err != nil {
+		return health.Report{}, err
+	}
 	report, err := mcp.Health.BuildReport(nil)
 	findings := lo.Filter(report.Findings, func(finding health.Finding, _ int) bool {
 		modMatches := filter.Mod == "" || finding.Origin == filter.Mod || slices.Contains(finding.Mods, filter.Mod)
@@ -418,8 +423,8 @@ func collectEntries(symbols []lsp.Symbol, entry string) []lsp.Symbol {
 }
 
 // writeScaffold previews writing the localization keys a mod lacks in a language, by how many keys each file gets, or
-// writes those a token names. It returns an error if the workspace has no such mod, the mod lacks no key, or a file
-// it would change has text the user has not saved.
+// writes those a token names. It returns an error if the workspace has no such mod, the game no such language, the
+// mod lacks no key, or a file it would change has text the user has not saved.
 func (mcp *Service) writeScaffold(request scaffolding) (any, error) {
 	if request.Token != "" {
 		return mcp.confirm(request.Token)
@@ -428,10 +433,10 @@ func (mcp *Service) writeScaffold(request scaffolding) (any, error) {
 	if err != nil {
 		return nil, err
 	}
-	mod, ok := mcp.Workspace.LookupMod(request.Mod)
-	if !ok {
-		return nil, fmt.Errorf("the workspace has no mod %s", request.Mod)
+	if err := errors.Join(mcp.checkMod(request.Mod), mcp.checkLanguage(request.Language)); err != nil {
+		return nil, err
 	}
+	mod, _ := mcp.Workspace.LookupMod(request.Mod)
 	scaffolds := health.ListScaffolds(ws.Mods.Load(), mod, request.Language)
 	if len(scaffolds) == 0 {
 		return nil, fmt.Errorf("%s lacks no localization key in %s", request.Mod, request.Language)

@@ -54,6 +54,9 @@ linters:
       # the code table spells each code, and each report names its own
       - path: services/lsp/diagnostics\.go
         linters: [goconst]
+      # show's query table and the starter tasks repeat a page's id, a key and a chip's kind as data
+      - path: services/mcp/(checks|mcp)\.go
+        linters: [goconst]
 
 formatters:
   enable:

@@ -1,15 +1,19 @@
 <!--
-  Settings' Agents and tools: the port and token of PMT's tools for coding agents, the text that registers them with
-  each agent run outside PMT, and the agents of the user's own.
+  Settings' Agents and tools: the agents the agent pane runs, with Node and each one's install, the port and token of
+  PMT's tools for coding agents, the text that registers them with each agent run outside PMT, and the agents of the
+  user's own.
 -->
 <script setup lang="ts">
 import { useMutation, useQuery, useQueryCache } from "@pinia/colada";
 import { Clipboard } from "@wailsio/runtime";
 import { computed, shallowRef } from "vue";
 
+import type { Agent } from "@services/agent/models";
 import * as agentApi from "@services/agent/service";
 import * as mcp from "@services/mcp/service";
-import { accessQuery, agentsQuery, keys } from "../../queries";
+import { abbreviate } from "../../lib/format";
+import { accessQuery, agentsQuery, keys, nodeQuery } from "../../queries";
+import { useAgentStore } from "../../stores/agent";
 import FileSelector from "../../ui/FileSelector.vue";
 import SettingsSection from "../../ui/SettingsSection.vue";
 
@@ -20,13 +24,32 @@ const NOTES: Record<string, string> = { "codex-acp": "# add to ~/.codex/config.t
 
 const toast = useToast();
 const cache = useQueryCache();
+const agent = useAgentStore();
 const { data: access } = useQuery(accessQuery);
 const { data: agents } = useQuery(agentsQuery);
+const { data: node } = useQuery(nodeQuery);
 const name = shallowRef("");
 const command = shallowRef("");
 
+// the agents PMT offers, each with the line that says how it stands
+const offered = computed(() =>
+  (agents.value ?? []).filter((row) => row.version).map((row) => ({ row, line: describeAgent(row) })),
+);
 const offers = computed(() => (agents.value ?? []).filter((row) => row.register));
 const own = computed(() => (agents.value ?? []).filter((row) => !row.version && row.program));
+
+const refresh = () => cache.invalidateQueries({ key: keys.agents });
+const {
+  mutate: install,
+  isLoading: installing,
+  variables: installed,
+  error: installError,
+} = useMutation({ mutation: (id: string) => agentApi.InstallAgent(id), onSettled: refresh });
+const {
+  mutate: installNode,
+  isLoading: downloading,
+  error: nodeError,
+} = useMutation({ mutation: () => agentApi.InstallNode(), onSettled: refresh });
 
 const { mutate: renewToken } = useMutation({
   mutation: () => mcp.CreateToken(),
@@ -47,6 +70,18 @@ const { mutate: add } = useMutation({
   },
 });
 const { mutate: remove } = useMutation({ mutation: (id: string) => agentApi.RemoveAgent(id) });
+
+/** describeAgent returns the line under an agent's name: how its sessions here stand, else whether it is installed. */
+function describeAgent(row: Agent): { text: string; dot: string } {
+  const live = agent.sessions.filter((one) => one.agent.id === row.id);
+  if (live.some((one) => one.state === "sign-in")) return { text: "Needs sign-in", dot: "bg-warning" };
+  if (live.some((one) => one.state === "idle" || one.state === "running"))
+    return { text: "Signed in", dot: "bg-success" };
+  if (!row.installed) return { text: `Not installed; version ${row.version} from the registry`, dot: "" };
+  return row.installed === row.version
+    ? { text: `Version ${row.installed}, installed`, dot: "" }
+    : { text: `Version ${row.installed}; ${row.version} is out`, dot: "bg-primary" };
+}
 
 /** copy puts a text on the clipboard and says so. */
 async function copy(text: string, what: string): Promise<void> {
@@ -74,8 +109,60 @@ function quote(path: string): string {
   <div class="flex h-full flex-col gap-4 overflow-y-auto px-8 py-6">
     <div class="flex flex-col gap-0.5">
       <h1 class="text-20">Agents and tools</h1>
-      <p class="text-13 text-dimmed">PMT's tools for coding agents, and the agents you run yourself.</p>
+      <p class="text-13 text-dimmed">
+        The agents the agent pane runs, PMT's tools for coding agents, and the agents you run yourself.
+      </p>
     </div>
+    <section class="flex flex-col gap-2.5 border-b border-accented pb-5">
+      <h2 class="text-13 font-semibold">Agents</h2>
+      <p class="text-12 text-dimmed">
+        PMT installs each from the Agent Client Protocol's registry into its own folder; nothing changes on your system.
+        Each signs in to its own account when a session first needs it, and PMT never sees it.
+      </p>
+      <div class="flex items-center gap-3 rounded-md border border-default bg-muted px-3 py-2.5">
+        <UIcon
+          :name="node?.path ? 'i-lucide-circle-check' : 'i-lucide-circle-alert'"
+          :class="node?.path ? 'text-success' : 'text-warning'"
+          class="size-5 shrink-0"
+        />
+        <span class="flex min-w-0 grow flex-col gap-0.5">
+          <span class="text-13 font-medium">Node</span>
+          <span v-if="node?.path" class="text-12 text-dimmed">
+            {{ node.own ? "Node downloaded by PMT into its own folder." : `Your system's Node ${node.system}.` }}
+          </span>
+          <span v-else class="text-12 text-toned">
+            {{ node?.system ? `Your system has Node ${node.system}.` : "Your system has no Node." }} These agents need
+            22 or newer. Download Node needs no admin rights: it goes into PMT's folder, checked against nodejs.org's
+            published sums.
+          </span>
+          <span v-if="nodeError" class="text-12 text-error">{{ nodeError.message }}</span>
+        </span>
+        <UButton v-if="!node?.path" label="Download Node" :loading="downloading" @click="installNode()" />
+      </div>
+      <div
+        v-for="{ row, line } in offered"
+        :key="row.id"
+        class="flex items-center gap-3 rounded-md border border-default px-3 py-2.5"
+      >
+        <UAvatar :text="abbreviate(row.name)" size="sm" class="rounded-md" />
+        <span class="flex min-w-0 grow flex-col gap-0.5">
+          <span class="text-13 font-medium">{{ row.name }}</span>
+          <span class="flex items-center gap-1.5 text-12 text-dimmed">
+            <span v-if="line.dot" class="size-1.5 rounded-full" :class="line.dot" />{{ line.text }}
+          </span>
+          <span v-if="installError && installed === row.id" class="text-12 whitespace-pre-wrap text-error">
+            {{ installError.message }}
+          </span>
+        </span>
+        <UButton
+          v-if="row.installed !== row.version"
+          :label="row.installed ? `Update to ${row.version}` : 'Install'"
+          :disabled="!node?.path"
+          :loading="installing && installed === row.id"
+          @click="install(row.id)"
+        />
+      </div>
+    </section>
     <SettingsSection section="agents" />
     <section class="grid grid-cols-[260px_minmax(0,1fr)] gap-8 border-b border-accented pb-5">
       <div class="min-w-0">
@@ -94,7 +181,7 @@ function quote(path: string): string {
       <h2 class="text-13 font-semibold">Register PMT with an agent you run yourself</h2>
       <p class="text-12 text-dimmed">
         Once for each agent, in any terminal or its own settings file. Each carries this computer's port and token, so
-        after New token you register again. Sessions in the Agents page need none of this.
+        after New token you register again. Sessions in the agent pane need none of this.
       </p>
       <div v-for="row in offers" :key="row.id" class="flex flex-col gap-1">
         <span class="text-12 font-medium">{{ row.name }}</span>
@@ -136,7 +223,7 @@ function quote(path: string): string {
         />
       </div>
       <div class="flex items-center gap-2">
-        <UInput v-model="name" placeholder="Its name in the Agents list" class="w-56" />
+        <UInput v-model="name" placeholder="Its name in the pane's list" class="w-56" />
         <UInput v-model="command" placeholder="The program and its arguments" class="min-w-0 grow font-mono" />
         <FileSelector path="" :filter="[]" @update:path="command = quote($event)">
           <template #default="{ browse }">

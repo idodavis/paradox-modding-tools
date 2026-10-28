@@ -99,21 +99,9 @@ export interface Filter {
     "origins": string[] | null;
     "depth": number;
     "limit": number;
-
-    /**
-     * the firings of one node drawn before the rest fold; 0 folds none
-     */
     "fanout": number;
-
-    /**
-     * the folds opened, and the nodes the depth stopped at that are opened
-     */
     "expand": string[] | null;
     "follow": boolean;
-
-    /**
-     * what each database's definitions are called
-     */
     "labels"?: { [_ in string]?: string } | null;
 }
 

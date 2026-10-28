@@ -1,6 +1,6 @@
 <!--
-  The app's frame: the top bar, the page with the agent pane beside it in the main window, the status bar, and the
-  palette and Settings over them.
+  The app's frame: the top bar, the page with the agent pane beside it in the main window, or the pane alone in a
+  window of its own, the status bar, and the palette and Settings over them.
 -->
 <script setup lang="ts">
 import type { SplitterItem } from "@nuxt/ui";
@@ -22,10 +22,10 @@ registerShortcuts();
 const route = useRoute();
 const agent = useAgentStore();
 
-// the pane sits beside a workspace's pages but the Agents page, which shows the session itself
+// the pane sits beside a workspace's pages in the main window
 const panes = computed<SplitterItem[]>(() => [
   { id: "page", slot: "page", order: 1, minSize: 40 },
-  ...(THIS_WINDOW === "main" && agent.isPaneOpen && route.name && route.name !== "agents" && isWorkspacePage(route.name)
+  ...(THIS_WINDOW === "main" && agent.isPaneOpen && route.name && isWorkspacePage(route.name)
     ? [{ id: "agent", slot: "agent", order: 2, sizeUnit: "px" as const, defaultSize: 400, minSize: 320 }]
     : []),
 ]);
@@ -36,7 +36,8 @@ const panes = computed<SplitterItem[]>(() => [
     <div class="flex h-screen min-h-0 flex-col overflow-hidden bg-default">
       <TopBar />
       <main class="flex min-h-0 flex-1 overflow-hidden">
-        <USplitter :items="panes" auto-save-id="pmt.agent.pane" class="min-w-0 flex-1">
+        <AgentPane v-if="THIS_WINDOW === 'agent'" />
+        <USplitter v-else :items="panes" auto-save-id="pmt.agent.pane" class="min-w-0 flex-1">
           <template #page>
             <div class="relative min-h-0 min-w-0 flex-1 overflow-hidden">
               <RouterView v-slot="{ Component, route: current }">

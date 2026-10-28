@@ -1,7 +1,7 @@
 <!--
-  One session with an agent: its transcript, the requests it waits on, and the prompt box with the page's chip, the
-  files added with @, the agent's commands picked with / and the agent's settings. The Agents page and the agent pane
-  both show it; the pane's is narrower.
+  One session with an agent, in a chat palette: its transcript, the requests it waits on, and the prompt box with the
+  page's chip, the files added with @, the agent's commands picked with / and the agent's settings.
+  The agent pane shows it narrow, and over the whole window or in a window of its own wide.
 -->
 <script setup lang="ts">
 import type {
@@ -12,7 +12,9 @@ import type {
 } from "@agentclientprotocol/sdk/experimental/v2";
 import type { DropdownMenuItem } from "@nuxt/ui";
 import { useQuery } from "@pinia/colada";
-import { refDebounced } from "@vueuse/core";
+import { refDebounced, useTimeoutFn } from "@vueuse/core";
+import { Clipboard } from "@wailsio/runtime";
+import { uniqBy } from "es-toolkit";
 import { computed, shallowRef, useTemplateRef, watch } from "vue";
 
 import type { Place } from "@services/workspace/models";
@@ -48,6 +50,11 @@ const OPTIONS: Record<string, { color: "primary" | "neutral"; variant: "solid" |
 };
 // the kinds of setting drawn as a picker each, in this order; the agent's other settings are in one menu
 const CATEGORIES = ["model", "thought_level", "mode"];
+// the palette's padding around the transcript and the prompt, narrow in the pane and wide elsewhere
+const FRAMES = {
+  narrow: { content: "px-3.5 py-4", prompt: "border-t-0 px-3 pb-3" },
+  wide: { content: "px-7 py-5", prompt: "border-t-0 px-7 pb-4.5" },
+};
 
 const agent = useAgentStore();
 const { data: tasks } = useQuery(tasksQuery);
@@ -63,6 +70,9 @@ const { data: places } = useQuery(() => ({
   enabled: picking.value,
 }));
 const comparing = shallowRef<Change | null>(null);
+// the answer just copied, whose button shows a tick for a moment
+const copied = shallowRef("");
+const { start: clearCopied } = useTimeoutFn(() => (copied.value = ""), 1500, { immediate: false });
 
 // each entry is a message of its own, with what its view reads from it worked out once
 const messages = computed(() =>
@@ -150,6 +160,14 @@ function pickCommand(command: AvailableCommand): void {
   pickingCommand.value = false;
 }
 
+/** copyAnswer puts an answer of the agent's on the clipboard, and ticks its button for a moment. */
+async function copyAnswer(entry: Entry): Promise<void> {
+  if (entry.kind !== "agent") return;
+  await Clipboard.SetText(entry.text);
+  copied.value = entry.id;
+  clearCopied();
+}
+
 /** focusBox puts the caret back in the prompt box when the command list closes, in place of the Command button. */
 function focusBox(event: Event): void {
   event.preventDefault();
@@ -158,7 +176,8 @@ function focusBox(event: Event): void {
 
 /**
  * listValues returns the values of one of the agent's settings, each made an item by the given function, in their
- * groups, each group led by its name. Values in no group make one group with no name.
+ * groups, each group led by its name. Values in no group make one group with no name. A value an agent sends twice
+ * is listed once.
  */
 function listValues<T>(option: SelectOption, toItem: (value: SessionConfigSelectOption) => T): (T | Label)[][] {
   const values = option.options as (SessionConfigSelectOption | SessionConfigSelectGroup)[];
@@ -168,7 +187,7 @@ function listValues<T>(option: SelectOption, toItem: (value: SessionConfigSelect
     : [{ name: "", options: values as SessionConfigSelectOption[] }];
   return groups.map((group) => [
     ...(group.name ? [{ type: "label" as const, label: group.name }] : []),
-    ...group.options.map(toItem),
+    ...uniqBy(group.options, (value) => value.value).map(toItem),
   ]);
 }
 
@@ -223,8 +242,8 @@ function stripControls(output: string): string {
 </script>
 
 <template>
-  <div class="flex min-h-0 flex-1 flex-col">
-    <div class="min-h-0 flex-1 overflow-y-auto" :class="narrow ? 'px-3.5 py-4' : 'px-7 py-5'">
+  <UChatPalette :ui="narrow ? FRAMES.narrow : FRAMES.wide">
+    <div class="flex flex-col">
       <div v-if="session.state === 'starting'" class="flex items-center gap-2 text-12 text-dimmed">
         <UIcon name="i-lucide-loader-circle" class="size-4 animate-spin" />{{ session.agent.name }} is starting…
       </div>
@@ -420,10 +439,42 @@ function stripControls(output: string): string {
             <p v-else-if="entry.kind === 'notice'" class="text-12 text-dimmed">{{ entry.text }}</p>
           </template>
         </template>
+        <!-- an answer of the agent's can be copied; the other entries have no actions -->
+        <template #actions="{ message }">
+          <UButton
+            v-if="(message.parts as Part[])[0]?.entry.kind === 'agent'"
+            :icon="copied === message.id ? 'i-lucide-check' : 'i-lucide-copy'"
+            variant="ghost"
+            color="neutral"
+            size="xs"
+            square
+            aria-label="Copy"
+            @click="copyAnswer((message.parts as Part[])[0]!.entry)"
+          />
+        </template>
       </UChatMessages>
     </div>
 
-    <div :class="narrow ? 'px-3 pb-3' : 'px-7 pb-4.5'">
+    <UModal :open="!!comparing" :title="comparing?.label ?? ''" fullscreen @update:open="comparing = null">
+      <template #body>
+        <CompareView
+          v-if="comparing && comparing.after !== null"
+          :left="comparing.before ?? ''"
+          :right="comparing.after"
+          language="plaintext"
+          left-label="Before"
+          :right-label="`After ${session.agent.name}'s edit`"
+        />
+        <pre v-else-if="comparing" class="font-mono text-12 leading-5"><span
+            v-for="(line, index) in comparing.patch.split('\n')"
+            :key="index"
+            :class="line.startsWith('+') ? 'text-success' : line.startsWith('-') ? 'text-error' : 'text-toned'"
+          >{{ line }}
+</span></pre>
+      </template>
+    </UModal>
+
+    <template #prompt>
       <UChatPrompt
         ref="box"
         v-model="text"
@@ -530,7 +581,8 @@ function stripControls(output: string): string {
           </UDropdownMenu>
           <USwitch v-if="narrow" v-model="agent.follow" label="Follow" size="sm" />
           <span class="grow" />
-          <span class="text-11 text-dimmed">{{ waiting ? "Waiting for you" : busy ? "Working…" : "" }}</span>
+          <span v-if="waiting" class="text-11 text-dimmed">Waiting for you</span>
+          <UChatShimmer v-else-if="busy" :text="`${session.agent.name} is working…`" class="text-11" />
           <UButton
             v-if="busy"
             label="Stop"
@@ -543,25 +595,6 @@ function stripControls(output: string): string {
           <UChatPromptSubmit v-else :disabled="session.state !== 'idle' || !text.trim()" size="sm" />
         </template>
       </UChatPrompt>
-    </div>
-
-    <UModal :open="!!comparing" :title="comparing?.label ?? ''" fullscreen @update:open="comparing = null">
-      <template #body>
-        <CompareView
-          v-if="comparing && comparing.after !== null"
-          :left="comparing.before ?? ''"
-          :right="comparing.after"
-          language="plaintext"
-          left-label="Before"
-          :right-label="`After ${session.agent.name}'s edit`"
-        />
-        <pre v-else-if="comparing" class="font-mono text-12 leading-5"><span
-            v-for="(line, index) in comparing.patch.split('\n')"
-            :key="index"
-            :class="line.startsWith('+') ? 'text-success' : line.startsWith('-') ? 'text-error' : 'text-toned'"
-          >{{ line }}
-</span></pre>
-      </template>
-    </UModal>
-  </div>
+    </template>
+  </UChatPalette>
 </template>

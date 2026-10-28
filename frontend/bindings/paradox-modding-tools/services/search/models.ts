@@ -33,15 +33,7 @@ export interface Query {
     "regex": boolean;
     "matchCase": boolean;
     "wholeWord": boolean;
-
-    /**
-     * glob patterns, comma-separated
-     */
     "include": string;
     "exclude": string;
-
-    /**
-     * the mods and the game searched; empty for the mods
-     */
     "origins": string[] | null;
 }

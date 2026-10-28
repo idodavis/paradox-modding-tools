@@ -80,11 +80,16 @@ func (mcp *Service) describeView(struct{}) (View, error) {
 	return mcp.view, nil
 }
 
-// show sends the main window what an agent asks it to show. It returns an error if the request names nothing to show.
+// show sends the main window what an agent asks it to show. It returns an error, which says what to give instead, if
+// the request names nothing, or a page, a query, a file, a window or a look-up the workspace does not have.
 func (mcp *Service) show(request Show) (string, error) {
 	namesNothing := request.Page == "" && request.Path == "" && request.LookUp == nil
 	if namesNothing {
 		return "", errors.New("name a page, a file or a word to look up")
+	}
+	err := errors.Join(mcp.checkPage(request.Page, request.Query), mcp.checkFile(request), mcp.checkLookUp(request.LookUp))
+	if err != nil {
+		return "", err
 	}
 	application.Get().Event.Emit(EventShow, request)
 	return "PMT shows it.", nil

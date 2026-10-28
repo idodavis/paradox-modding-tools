@@ -31,6 +31,7 @@ import {
   settingsCatalogQuery,
   workspacesQuery,
 } from "../queries";
+import { useAgentStore } from "../stores/agent";
 import { useEditorStore, type Tab, type View } from "../stores/editor";
 import { useGitStore } from "../stores/git";
 import { useSettingsStore } from "../stores/settings";
@@ -424,6 +425,18 @@ export const COMMANDS: readonly Command[] = [
     kbds: ["meta", ","],
     when: () => true,
     onSelect: () => bus.emit("settings.open"),
+  },
+  // the pane sits in the main window, beside a workspace's pages but the Agents page
+  {
+    id: "agent.togglePane",
+    label: "Show or hide the agent pane",
+    icon: "i-lucide-sparkles",
+    kbds: ["meta", "alt", "I"],
+    when: () => THIS_WINDOW === "main" && useWorkspaceStore().isOpen() && router.currentRoute.value.name !== "agents",
+    onSelect: () => {
+      const agent = useAgentStore();
+      agent.isPaneOpen = !agent.isPaneOpen;
+    },
   },
 ];
 

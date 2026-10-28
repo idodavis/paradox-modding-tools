@@ -6,7 +6,6 @@ import (
 	"context"
 	"errors"
 	"fmt"
-	"os"
 	"slices"
 	"strconv"
 	"sync"
@@ -16,6 +15,7 @@ import (
 
 	"paradox-modding-tools/internal/terminal"
 	"paradox-modding-tools/services/app"
+	"paradox-modding-tools/services/mcp"
 	"paradox-modding-tools/services/workspace"
 )
 
@@ -80,24 +80,37 @@ func (trm *Service) ListShells() []*terminal.Shell {
 // ListPrograms returns the shells this system has, PMT's pick first.
 func (trm *Service) ListPrograms() []terminal.Program { return terminal.ListPrograms() }
 
-// ListEnvironment returns the variables every shell is given on this system.
-func (trm *Service) ListEnvironment() []terminal.Variable { return terminal.ListEnvironment() }
+// ListEnvironment returns the variables every shell is given on this system: PMT's address and token for coding
+// agents, which PMT's own environment carries, then the terminal's own.
+func (trm *Service) ListEnvironment() []terminal.Variable {
+	return append(slices.Clone(mcp.Variables), terminal.ListEnvironment()...)
+}
 
 // Start starts a shell of the given size running the program at the given path, or for "" the default shell, in the
-// folder resolveFolder gives for the file at the given path, which may be "". It returns an error if this system has
+// folder ResolveFolder gives for the file at the given path, which may be "". It returns an error if this system has
 // no shell or the program cannot be started.
 func (trm *Service) Start(path, program string, columns, rows int) (*terminal.Shell, error) {
 	program, args, err := trm.resolveProgram(program)
 	if err != nil {
 		return nil, err
 	}
-	folder, origin := trm.resolveFolder(path)
+	return trm.Run(path, append([]string{program}, args...), columns, rows)
+}
+
+// Run starts a shell of the given size that runs a command, a program and its arguments as given, in the folder
+// ResolveFolder gives for the file at the given path, which may be "". It returns an error if the command is empty or
+// its program cannot be started.
+func (trm *Service) Run(path string, command []string, columns, rows int) (*terminal.Shell, error) {
+	if len(command) == 0 {
+		return nil, errors.New("no program was given to run")
+	}
+	folder, origin := trm.Workspace.ResolveFolder(path)
 	trm.mu.Lock()
 	trm.count++
-	shell := &terminal.Shell{ID: strconv.Itoa(trm.count), Program: program, Args: args, Folder: folder, Origin: origin}
+	shell := &terminal.Shell{ID: strconv.Itoa(trm.count), Program: command[0], Args: command[1:], Folder: folder, Origin: origin}
 	trm.mu.Unlock()
 	if err := shell.Start(columns, rows); err != nil {
-		return nil, fmt.Errorf("%s could not be started: %w", program, err)
+		return nil, fmt.Errorf("%s could not be started: %w", command[0], err)
 	}
 	trm.mu.Lock()
 	trm.shells = append(trm.shells, shell)
@@ -133,22 +146,6 @@ func (trm *Service) resolveProgram(program string) (string, []string, error) {
 		return "", nil, errors.New("no shell was found on this system")
 	}
 	return programs[0].Path, programs[0].Args, nil
-}
-
-// resolveFolder returns the folder a new shell starts in, and the id of the mod it is the folder of. It is the folder
-// of the mod that holds the file at the given path, else of the workspace's first mod, a mod whose folder is missing
-// passed over. With neither it is the home folder, and the id is "".
-func (trm *Service) resolveFolder(path string) (string, string) {
-	mods := trm.Workspace.State().Mods
-	if path != "" {
-		origin := trm.Workspace.Locate(path).Origin
-		mods = append(lo.Filter(mods, func(mod workspace.Mod, _ int) bool { return mod.ID == origin }), mods...)
-	}
-	if mod, ok := lo.Find(mods, func(mod workspace.Mod) bool { return !mod.Broken }); ok {
-		return mod.Dir, mod.ID
-	}
-	home, _ := os.UserHomeDir()
-	return home, ""
 }
 
 // Close ends the shell with the given id, and on Windows every process it started. It returns an error if no shell

@@ -8,7 +8,7 @@
  * | state          | any → all        | its name, what it holds, its active file  |
  * | tab-requested  | any → the holder | a tab's id the asker wants                |
  * | tab-handed     | holder → asker   | the tab with its unsaved text             |
- * | show           | any → one        | a place to show, and where in it          |
+ * | show           | any → one        | a place to show, where in it, and its source |
  * | page           | any → the main   | a route to show                           |
  * | wiki           | any → the Wiki pane's | a page or lexicon entry to look up   |
  * | command        | any → one        | a command for its IDE page to carry out   |
@@ -32,7 +32,7 @@ import { PAGES, WORKSPACE_TOOLS } from "../app/pages";
 import { findModel, openModel, saveUnsaved } from "../pages/ide/editor/models";
 import { parseTab } from "../pages/ide/editor/tabs";
 import { keys } from "../queries";
-import { useEditorStore, type Tab } from "./editor";
+import { useEditorStore, type Source, type Tab } from "./editor";
 import { useWorkspaceStore } from "./workspace";
 
 /**
@@ -60,7 +60,7 @@ type Message =
   | { type: "state"; state: WindowState }
   | { type: "tab-requested"; tab: string; from: WindowName }
   | { type: "tab-handed"; from: WindowName; tabs: HandedTab[] }
-  | { type: "show"; place: Place; position?: IPosition }
+  | { type: "show"; place: Place; position?: IPosition; source?: Source }
   | { type: "page"; path: string }
   | { type: "wiki"; lookup: WikiLookup }
   | { type: "command"; command: string }
@@ -154,7 +154,7 @@ export const useWindowsStore = defineStore("windows", () => {
   useEventListener(own.channel, "message", ({ data }: MessageEvent<Message>) => {
     if (data.type === "tab-handed") receive(data);
     else if (data.type === "tab-requested") sendTab(data.tab, data.from);
-    else if (data.type === "show") editor.show(data.place, data.position);
+    else if (data.type === "show") editor.show(data.place, data.position, data.source);
     else if (data.type === "page") void router.push(data.path);
     else if (data.type === "wiki") void showLookup(data.lookup);
     else if (data.type === "command") void runCommand(data.command);
@@ -303,9 +303,12 @@ export const useWindowsStore = defineStore("windows", () => {
     if (holder && holder !== THIS_WINDOW) link(holder).post({ type: "tab-requested", tab: tabId, from: THIS_WINDOW });
   };
 
-  /** Shows a place in the given window, at the given position if any, and brings the window to the front. */
-  const showElsewhere = (window: WindowName, place: Place, position?: IPosition): void => {
-    link(window).post({ type: "show", place: { ...place }, position: position && { ...position } });
+  /**
+   * Shows a place in the given window, at the given position if any, as the given source shows one, and brings the
+   * window to the front.
+   */
+  const showElsewhere = (window: WindowName, place: Place, position?: IPosition, source?: Source): void => {
+    link(window).post({ type: "show", place: { ...place }, position: position && { ...position }, source });
     showWindow(window);
   };
 

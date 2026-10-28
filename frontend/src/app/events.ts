@@ -43,6 +43,7 @@ const SECTIONS: Record<string, readonly (readonly unknown[])[]> = {
   settings: [keys.settings, FOLDERS],
   workspaces: [keys.workspaces, keys.state, ["git"], ["release"]],
   installs: [keys.installs, keys.state],
+  agents: [keys.agents],
 };
 
 /** Every event Go sends to the pages, and what each makes stale. */

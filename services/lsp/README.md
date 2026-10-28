@@ -11,11 +11,11 @@ lists and the problems in words.
 
 | file | holds |
 |---|---|
-| `lsp.go` | the package comment, `Service`; Monaco's ranges: `Range`, `Location`, `Edit`, and the one conversion from byte spans (`ToRange`, `ToLineRange`, `ToOffset`, `ToEdits`); `SetText`, `CloseFile` |
+| `lsp.go` | the package comment, `Service`; Monaco's ranges: `Range`, `Location`, `Edit`, and the one conversion with byte spans (`ToRange`, `ToSpan`, `ToLineRange`, `ToOffset`, `ToEdits`); `SetText`, `CloseFile` |
 | `hover.go` | `Card`, `CardScope`, `CardSite`, `CardDate`; `Hover` |
 | `complete.go` | `Completion`; `Complete` |
 | `navigate.go` | `Symbol`, `WorkspaceSymbol`; `Definition`, `References`, `PrepareRename`, `Rename`, `ListSymbols`, `ListFileSymbols`, `FindSymbols` |
-| `diagnostics.go` | `Code`, `Codes`, `Diagnostic`; `Diagnose`, `DiagnoseFile`, `DescribeReference` |
+| `diagnostics.go` | `Code`, `Codes`, `Diagnostic`; `Diagnose`, `DiagnoseText`, `DiagnoseFile`, `DescribeReference` |
 | `tokens.go` | `Legend`; `Tokens`, `ListLegend` |
 | `edits.go` | `Fix`; `Format`, `DescribeIndentation`, `ListFixes` |
 | `details.go` | `Fold`, `Hint`, `ColorSite`, `Signature`; `ListFolds`, `ListHints`, `ListColorSites`, `PresentColor`, `Signature` |
@@ -24,8 +24,9 @@ lists and the problems in words.
 
 A position comes in as Monaco gives it: a line from one and a UTF-16 column from one. An answer's `Range` is Monaco's
 `IRange` with Monaco's own field names, so the frontend hands it over as it is. Every other package keeps UTF-8 byte
-offsets. The one conversion between the two is `lsp.go`'s: `ToOffset` takes a Monaco position to a byte offset, and
-`ToRange` and `ToEdits` take byte spans and the engine's `jomini.Edit`s to Monaco's. No other package converts.
+offsets. The one conversion between the two is `lsp.go`'s: `ToOffset` takes a Monaco position to a byte offset and
+`ToSpan` a Monaco range to a byte span, and `ToRange` and `ToEdits` take byte spans and the engine's `jomini.Edit`s to
+Monaco's. No other package converts.
 
 ## The open file
 
@@ -66,8 +67,9 @@ references, values, localization, definitions or descriptor), its label and its 
 fill. The game log has no level and no topic, since the game writes none. A sentence about a problem is written once,
 there, and the editor's markers and Health's rows both read the level from it. `DiagnoseFile` returns a file's problems
 in a session against a given index, and a file of the game has its parse errors only. `Diagnose` is the same against
-the open session, with the checks the user turned off (`ide.checks`) left out. `DescribeReference` gives the facts
-that name what a problem is about.
+the open session, with the checks the user turned off (`ide.checks`) left out. `DiagnoseText` judges a text a file
+would have, as a coding agent's change through PMT's tools, without touching the editor's buffer; both run the checks
+over a tree in one function. `DescribeReference` gives the facts that name what a problem is about.
 
 A check accuses only on firm ground. A reference is judged dangling only where its database is known and holds no names
 made as the script runs, and where the claim that makes it is not inferred from the game's files alone. A name the

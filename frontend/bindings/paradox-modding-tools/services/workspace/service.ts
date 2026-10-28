@@ -178,7 +178,8 @@ export function ListWorkspaces(): $CancellablePromise<app$0.Workspace[] | null> 
 }
 
 /**
- * Locate returns the place of a file in the open workspace. It returns an empty place if none is open.
+ * Locate returns the place of a file or folder in the open workspace, which says whether it is a folder. It returns
+ * an empty place if none is open.
  */
 export function Locate(path: string): $CancellablePromise<$models.Place> {
     return $Call.ByID(1496256747, path);

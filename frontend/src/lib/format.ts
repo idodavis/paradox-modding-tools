@@ -105,6 +105,15 @@ export function toSentence(words: string): string {
   return words.charAt(0).toUpperCase() + words.slice(1);
 }
 
+/**
+ * abbreviate returns the letters an avatar shows for a name: the first letters of its first two words, such as GC for
+ * GitHub Copilot, or the first two letters of a one-word name, such as Cl for Claude.
+ */
+export function abbreviate(name: string): string {
+  const words = name.split(/\s+/).filter(Boolean);
+  return words.length > 1 ? `${words[0]?.[0]}${words[1]?.[0]}` : name.slice(0, 2);
+}
+
 /** list joins items into a phrase, such as "a, b and c". It is "" for no items. */
 export function list(items: readonly string[]): string {
   return LISTS.format(items);

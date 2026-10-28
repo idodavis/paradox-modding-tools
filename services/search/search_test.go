@@ -7,7 +7,6 @@ import (
 	"strings"
 	"sync"
 	"testing"
-	"time"
 
 	"github.com/wailsapp/wails/v3/pkg/application"
 
@@ -84,27 +83,19 @@ func openService(t *testing.T, prepare func(dir string)) (*Service, *workspace.S
 	return &Service{Workspace: wsp}, ws, dir
 }
 
-// listHits runs a search and returns the hits of the given number of files it sent.
+// listHits runs a search and returns its hits, which must be in the given number of files.
 func listHits(t *testing.T, ws *workspace.Session, query Query, fileCount int) []Hit {
 	t.Helper()
-	results := make(chan Hits, 64)
-	remove := application.Get().Event.On(EventHits, func(event *application.CustomEvent) {
-		results <- event.Data.(Hits)
-	})
-	defer remove()
-	expression, err := parseQuery(query)
+	collected, _, err := CollectText(ws, query, maxHits, make(chan struct{}))
 	if err != nil {
 		t.Fatal(err)
 	}
-	run(ws, query, expression, make(chan struct{}))
+	if len(collected) != fileCount {
+		t.Fatalf("hits of %d files were found, want %d", len(collected), fileCount)
+	}
 	var hits []Hit
-	for range fileCount {
-		select {
-		case file := <-results:
-			hits = append(hits, file.Hits...)
-		case <-time.After(5 * time.Second):
-			t.Fatalf("hits of %d files were sent, want %d", len(hits), fileCount)
-		}
+	for _, file := range collected {
+		hits = append(hits, file.Hits...)
 	}
 	return hits
 }

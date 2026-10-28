@@ -50,6 +50,17 @@ const menu = {
     itemTrailingIcon: "size-3.5",
   },
 };
+// chatRow sizes a tool call's and a thought's row in an agent's transcript: 12px text and 14px icons
+const chatRow = {
+  slots: {
+    trigger: "text-12",
+    leading: "size-3.5",
+    leadingIcon: "size-3.5",
+    chevronIcon: "size-3.5",
+    trailingIcon: "size-3.5",
+    body: "text-12",
+  },
+};
 // step draws a stepper's circle: green when done, the accent when current
 const step = {
   trigger: [
@@ -274,6 +285,10 @@ export default defineConfig({
             ],
           },
         },
+        // an agent's prompt box types at the fields' 13px
+        chatPrompt: { slots: { base: "text-13" } },
+        chatTool: chatRow,
+        chatReasoning: chatRow,
         // horizontal in the Wizard, vertical in the Publish rail
         stepper: {
           compoundVariants: [

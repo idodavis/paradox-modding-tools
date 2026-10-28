@@ -1,6 +1,7 @@
 <!--
   The top bar of every window: the PMT menu, then the workspace switcher and the workspace's page tabs in the main
-  window or what another window shows, then search and the window's buttons. Its empty space moves the window.
+  window or what another window shows, then the agent pane's button in the main window, search and the window's
+  buttons. Its empty space moves the window.
 -->
 <script setup lang="ts">
 import type { ContextMenuItem, DropdownMenuItem } from "@nuxt/ui";
@@ -12,6 +13,7 @@ import { useRoute, useRouter } from "vue-router";
 
 import logoIcon from "@assets/PMT-Logo-Icon.svg?url";
 import { gamesQuery, installsQuery, workspacesQuery } from "../queries";
+import { useAgentStore } from "../stores/agent";
 import { gameIcon, useSettingsStore } from "../stores/settings";
 import { describeWindow, THIS_WINDOW, useWindowsStore } from "../stores/windows";
 import { useWorkspaceStore } from "../stores/workspace";
@@ -30,6 +32,7 @@ const router = useRouter();
 const workspace = useWorkspaceStore();
 const settings = useSettingsStore();
 const windows = useWindowsStore();
+const agent = useAgentStore();
 const bus = useEventBus<string>("pmt.command");
 
 const { data: workspaces } = useQuery(workspacesQuery);
@@ -270,6 +273,22 @@ function closePage(name: WorkspaceTool): void {
       <span class="truncate text-dimmed">{{ active?.name }}</span>
     </span>
 
+    <UTooltip
+      v-if="IS_MAIN && active && route.name !== 'agents'"
+      text="Agent pane"
+      :kbds="findKbds('agent.togglePane')"
+    >
+      <UChip :show="agent.sessions.some(agent.isWaiting)" color="warning" inset size="sm">
+        <UButton
+          icon="i-lucide-sparkles"
+          :variant="agent.isPaneOpen ? 'soft' : 'ghost'"
+          size="sm"
+          square
+          aria-label="Agent pane"
+          @click="agent.isPaneOpen = !agent.isPaneOpen"
+        />
+      </UChip>
+    </UTooltip>
     <UTooltip text="Search and commands" :kbds="findKbds('palette.open')">
       <UButton
         icon="i-lucide-search"

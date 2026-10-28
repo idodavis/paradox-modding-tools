@@ -158,41 +158,66 @@ func (lsp *Service) Diagnose(path string) ([]Diagnostic, error) {
 	return lsp.listEnabled(ws.ID, diagnostics), err
 }
 
+// DiagnoseText returns the problems a file would have with the given text, judged against the open workspace. It
+// leaves the editor's text of the file alone, and leaves out the checks the user turned off. It returns an error if
+// no workspace is open.
+func (lsp *Service) DiagnoseText(path, text string) ([]Diagnostic, error) {
+	ws, err := lsp.Workspace.Session()
+	if err != nil {
+		return nil, err
+	}
+	mods := ws.Mods.Load()
+	place := ws.Locate(mods, path)
+	if !isDiagnosed(place) {
+		return []Diagnostic{}, nil
+	}
+	return lsp.listEnabled(ws.ID, diagnoseTree(ws, mods, place, jomini.Parse(text))), nil
+}
+
 // DescribeReference returns the facts that say which name a problem is about.
 func DescribeReference(reference schema.Reference) map[string]string {
 	return map[string]string{"name": reference.Name, "database": game.DescribeDefinition(reference.Database, false)}
 }
 
-// DiagnoseFile returns the problems of a file in a workspace. A file of the game has its parse errors only. A file that
-// is neither script nor localization has none, unless it sits in a misspelled localization folder.
+// DiagnoseFile returns the problems of a file in a workspace, judged on its tree: the editor's text where the file is
+// open, else the text on disk. It returns an error if the file cannot be read.
 func DiagnoseFile(ws *workspace.Session, mods *index.Index, path string) ([]Diagnostic, error) {
 	place := ws.Locate(mods, path)
-	if place.Format == files.FormatText && !place.ReadOnly && strings.HasSuffix(strings.ToLower(place.Rel), ".yml") {
-		// the game reads nothing under a misspelled folder, so only the folder is judged
-		tree, err := ws.LoadTree(path)
-		if err != nil {
-			return nil, err
-		}
-		return diagnoseFolders(tree, place), nil
-	}
-	if place.Format != files.FormatLocalization && !place.Format.IsScript() {
+	if !isDiagnosed(place) {
 		return []Diagnostic{}, nil
 	}
 	tree, err := ws.LoadTree(path)
 	if err != nil {
 		return nil, err
 	}
-	if place.Format == files.FormatLocalization {
-		return diagnoseMessages(ws, mods, tree, place), nil
+	return diagnoseTree(ws, mods, place, tree), nil
+}
+
+// isDiagnosed reports whether a file can have problems: it is script or localization, or a mod's .yml file, which
+// may sit in a misspelled localization folder.
+func isDiagnosed(place workspace.Place) bool {
+	return place.Format == files.FormatLocalization || place.Format.IsScript() ||
+		place.Format == files.FormatText && !place.ReadOnly && strings.HasSuffix(strings.ToLower(place.Rel), ".yml")
+}
+
+// diagnoseTree returns the problems of a file judged on the given tree of its text. A file of the game has its parse
+// errors only.
+func diagnoseTree(ws *workspace.Session, mods *index.Index, place workspace.Place, tree *jomini.Tree) []Diagnostic {
+	switch {
+	case place.Format == files.FormatLocalization:
+		return diagnoseMessages(ws, mods, tree, place)
+	case !place.Format.IsScript():
+		// the game reads nothing under a misspelled folder, so only the folder is judged
+		return diagnoseFolders(tree, place)
 	}
 	diagnostics := toDiagnostics(tree, tree.Errors)
 	if !place.ReadOnly {
-		position, listed := mods.FindFile(path)
+		position, listed := mods.FindFile(place.Path)
 		visitor := &diagnoseVisitor{ws: ws, index: mods, file: place.File, position: position, listed: listed}
 		ws.Schema.Walk(tree, place.File, visitor)
 		diagnostics = append(diagnostics, visitor.diagnostics...)
 	}
-	return diagnostics, nil
+	return diagnostics
 }
 
 // listEnabled drops the diagnostics of the checks the user turned off in a workspace.

@@ -22,6 +22,7 @@ type Place struct {
 	Database string `json:"database"`
 	ReadOnly bool   `json:"readOnly"` // true for the game's own files
 	Loaded   bool   `json:"loaded"`   // the game reads it
+	IsDir    bool   `json:"isDir"`    // true for a folder, which a folder's listing and Service.Locate tell
 }
 
 // Locate returns the place of the file with the given path, as the given index of the mods lists its files. A path

@@ -416,4 +416,4 @@ func moveCacheDir(cacheDir, filled, kept string) error {
 }
 
 // ListRules returns the rules that say what an upload leaves out.
-func (stm *Service) ListRules() []Rule { return Rules }
+func (stm *Service) ListRules() []Rule { return listRules() }

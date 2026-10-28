@@ -1,4 +1,7 @@
-<!-- A wiki article: its HTML with the article styles, a table of contents over its headings, and find. -->
+<!--
+  A wiki article: its HTML with the article styles, a table of contents over its headings, and find, which can start
+  with a text its holder gives.
+-->
 <script setup lang="ts">
 import { computed, shallowRef, useTemplateRef, watch } from "vue";
 import { useEventListener, useLocalStorage } from "@vueuse/core";
@@ -9,7 +12,7 @@ import type { Page } from "@services/wiki/models";
 import FindBox from "./FindBox.vue";
 import ScriptSnippet from "./ScriptSnippet.vue";
 
-const { page } = defineProps<{ page: Page }>();
+const { page, find = "" } = defineProps<{ page: Page; find?: string }>();
 
 const BLOCKS = "p, li, h1, h2, h3, h4, h5, h6, td, th, pre, blockquote";
 const LEVELS: Record<number, string> = {
@@ -53,6 +56,14 @@ watch(
     for (const { pre } of codeBlocks.value) pre.replaceChildren();
     body.value?.scrollTo({ top: 0 });
     active.value = -1;
+  },
+  { flush: "post" },
+);
+// a text the holder asks to find is found once the article's texts are read
+watch(
+  [() => find, texts],
+  () => {
+    if (find) term.value = find;
   },
   { flush: "post" },
 );

@@ -26,6 +26,7 @@ function place(key: string, format = Format.FormatScript): Place {
     database: "",
     readOnly: false,
     loaded: true,
+    isDir: false,
   };
 }
 

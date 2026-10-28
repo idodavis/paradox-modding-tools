@@ -7,7 +7,6 @@ import (
 	"context"
 	"fmt"
 	"maps"
-	"os"
 	"path/filepath"
 	"slices"
 	"strconv"
@@ -322,8 +321,10 @@ func findStatementText(ws *workspace.Session, site FindingSite) (string, error) 
 	return tree.Text(tree.Statements[statement].Span), nil
 }
 
-// WriteScaffold writes the localization files a mod lacks in a language and returns their paths. It returns an error
-// if the mod or the language is not valid, or a file cannot be written.
+// WriteScaffold writes the localization keys a mod lacks in a language, with the base text as the placeholder, and
+// returns the files it wrote. A key goes at the end of the language's file that matches the base-language file it is
+// in, which is created if it does not exist. It returns an error if the mod or the language is not valid, or a file
+// cannot be written.
 func (hlt *Service) WriteScaffold(modID, language string) ([]string, error) {
 	ws, err := hlt.Workspace.Session()
 	if err != nil {
@@ -336,11 +337,10 @@ func (hlt *Service) WriteScaffold(modID, language string) ([]string, error) {
 	if language == "" || language != files.ToSlug(language) {
 		return nil, fmt.Errorf("%q is not a language", language)
 	}
-	scaffolds := listScaffolds(ws, ws.Mods.Load(), mod, language)
+	scaffolds := ListScaffolds(ws.Mods.Load(), mod, language)
 	paths := slices.Sorted(maps.Keys(scaffolds))
 	for position, target := range paths {
-		text := files.Text{Text: loc.Encode(language, scaffolds[target]), Encoding: files.EncodingUTF8BOM}
-		if err := hlt.Workspace.Write(target, text); err != nil {
+		if err := hlt.writeMessages(target, language, scaffolds[target]); err != nil {
 			return paths[:position], err
 		}
 	}
@@ -349,29 +349,33 @@ func (hlt *Service) WriteScaffold(modID, language string) ([]string, error) {
 	return paths, nil
 }
 
-// listScaffolds returns the base-language messages of a mod that have no file in a language, by the file they belong
-// in.
-func listScaffolds(ws *workspace.Session, mods *index.Index, mod workspace.Mod, language string) map[string][]loc.Message {
+// writeMessages adds messages at the end of a localization file in a language, in the file's own line ending and
+// encoding. A file that is missing or holds nothing is written whole, with the language's header and a byte order
+// mark.
+func (hlt *Service) writeMessages(path, language string, messages []loc.Message) error {
+	text, err := files.LoadText(path)
+	if err != nil {
+		return err
+	}
+	switch ending := jomini.LineEnding(text.Text); {
+	case strings.TrimSpace(text.Text) == "":
+		text = files.Text{Text: loc.Encode(language, messages), Encoding: files.EncodingUTF8BOM}
+	case strings.HasSuffix(text.Text, "\n"):
+		text.Text += loc.EncodeMessages(messages, ending)
+	default:
+		text.Text += ending + loc.EncodeMessages(messages, ending)
+	}
+	return hlt.Workspace.Write(path, text)
+}
+
+// ListScaffolds returns the base-language messages of a mod whose key has no message in a language, by the file of
+// that language they belong in. That file may exist already.
+func ListScaffolds(mods *index.Index, mod workspace.Mod, language string) map[string][]loc.Message {
+	messages := lo.Filter(listMessages(mods), func(site index.Site, _ int) bool { return mods.File(site).Origin == mod.ID })
 	scaffolds := map[string][]loc.Message{}
-	for _, position := range mods.ListOwnFiles() {
-		file := mods.Files[position]
-		if file.Origin != mod.ID || file.Format != files.FormatLocalization {
-			continue
-		}
-		target := files.Join(mod.Dir, loc.ToLanguageRel(file.Rel, language))
-		if _, err := os.Stat(target); err == nil {
-			continue
-		}
-		tree, err := ws.LoadTree(file.Path)
-		if err != nil {
-			continue
-		}
-		for ordinal, occurrence := range mods.Occurrences[position] {
-			site := index.Site{File: position, Occurrence: int32(ordinal)}
-			if occurrence.Role == index.RoleLocalizes && mods.Language(site) == game.BaseLanguage {
-				scaffolds[target] = append(scaffolds[target], loc.Message{Key: tree.Text(occurrence.Span), Text: mods.Text(site)})
-			}
-		}
+	for _, site := range listUntranslated(mods, lo.GroupBy(messages, mods.Language), language) {
+		target := files.Join(mod.Dir, loc.ToLanguageRel(mods.File(site).Rel, language))
+		scaffolds[target] = append(scaffolds[target], loc.Message{Key: mods.ToReference(site).Name, Text: mods.Text(site)})
 	}
 	return scaffolds
 }
@@ -712,7 +716,7 @@ func listCoverage(ws *workspace.Session, mods *index.Index, messages []index.Sit
 	var findings []Finding
 	byMod := lo.GroupBy(messages, func(site index.Site) string { return mods.File(site).Origin })
 	for _, mod := range ws.Order {
-		byLanguage := lo.GroupBy(byMod[mod.ID], func(site index.Site) string { return mods.Language(site) })
+		byLanguage := lo.GroupBy(byMod[mod.ID], mods.Language)
 		base := listKeys(mods, byLanguage[game.BaseLanguage])
 		if len(base) == 0 {
 			continue
@@ -723,7 +727,7 @@ func listCoverage(ws *workspace.Session, mods *index.Index, messages []index.Sit
 			}
 			facts := lsp.DescribeReference(schema.Reference{Database: game.Localization, Name: language})
 			facts["mod"] = describeMod(ws, mod.ID)
-			facts["have"] = strconv.Itoa(len(lo.Intersect(base, listKeys(mods, byLanguage[language]))))
+			facts["have"] = strconv.Itoa(len(base) - len(listUntranslated(mods, byLanguage, language)))
 			facts["of"] = strconv.Itoa(len(base))
 			positions := lo.Uniq(lo.Map(byLanguage[language], func(site index.Site, _ int) int32 { return site.File }))
 			findings = append(findings, makeFinding(mods, "coverage", facts, lo.Map(positions, func(position int32, _ int) FindingSite {
@@ -732,6 +736,17 @@ func listCoverage(ws *workspace.Session, mods *index.Index, messages []index.Sit
 		}
 	}
 	return findings
+}
+
+// listUntranslated returns the base-language messages whose key has no message in a language, one for each key. The
+// messages are one mod's, by their language.
+func listUntranslated(mods *index.Index, byLanguage map[string][]index.Site, language string) []index.Site {
+	translated := lo.Keyify(listKeys(mods, byLanguage[language]))
+	untranslated := lo.Reject(byLanguage[game.BaseLanguage], func(site index.Site, _ int) bool {
+		_, ok := translated[mods.ToReference(site).Name]
+		return ok
+	})
+	return lo.UniqBy(untranslated, func(site index.Site) string { return mods.ToReference(site).Name })
 }
 
 // listKeys returns each message's key once.

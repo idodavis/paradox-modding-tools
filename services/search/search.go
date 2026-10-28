@@ -27,7 +27,7 @@ import (
 // EventHits is sent with one file's hits as a text search finds them. It carries a Hits.
 const EventHits = "search:hits"
 
-// maxHits is the most hits a text search sends. A search that reaches it stops there.
+// maxHits is the most hits the IDE's text search sends. A search that reaches it stops there.
 const maxHits = 10000
 
 // init registers the search event with the application.
@@ -70,10 +70,12 @@ type Hits struct {
 	Hits  []Hit           `json:"hits"`
 }
 
-// A tally is the count of the hits one text search has sent, which stops at maxHits.
+// A tally is the count of the hits one text search has given, which stops at its limit.
 type tally struct {
-	mu    sync.Mutex
-	count int
+	mu      sync.Mutex
+	count   int
+	limit   int        // the most hits the search gives
+	receive func(Hits) // takes one file's hits, one file at a time
 }
 
 // SearchText runs a text search over the files the query names. It sends each file's hits as a search:hits event, at
@@ -85,13 +87,22 @@ func (sch *Service) SearchText(query Query) (bool, error) {
 	if err != nil {
 		return false, err
 	}
-	expression, err := parseQuery(query)
-	if err != nil {
-		return false, err
-	}
 	stop := make(chan struct{})
 	sch.setStop(stop)
-	return run(ws, query, expression, stop), nil
+	return run(ws, query, stop, &tally{limit: maxHits, receive: func(hits Hits) {
+		application.Get().Event.Emit(EventHits, hits)
+	}})
+}
+
+// CollectText runs a text search over a workspace's files and returns each file's hits, at most the given count in
+// all. It stops early when the given channel closes. It returns whether the search stopped at the count, and an error
+// if the query is empty or is a regular expression that does not parse.
+func CollectText(ws *workspace.Session, query Query, limit int, stop <-chan struct{}) ([]Hits, bool, error) {
+	collected := []Hits{}
+	full, err := run(ws, query, stop, &tally{limit: limit, receive: func(hits Hits) {
+		collected = append(collected, hits)
+	}})
+	return collected, full, err
 }
 
 // StopSearch ends the running search, if any.
@@ -157,14 +168,18 @@ func (sch *Service) SearchFiles(query string, limit int) []workspace.Place {
 	return places
 }
 
-// run runs one text search with the given expression over the files the query names, sending each file's hits. It
-// returns when the search finishes, has sent maxHits or the given channel closes, and reports whether it sent maxHits.
-func run(ws *workspace.Session, query Query, expression *regexp.Regexp, stop <-chan struct{}) bool {
+// run runs one text search over the files the query names, giving each file's hits to the tally. It returns when the
+// search finishes, has reached the tally's limit or the given channel closes, and reports whether it reached the
+// limit. It returns an error if the query is empty or is a regular expression that does not parse.
+func run(ws *workspace.Session, query Query, stop <-chan struct{}, sent *tally) (bool, error) {
+	expression, err := parseQuery(query)
+	if err != nil {
+		return false, err
+	}
 	var group errgroup.Group
 	group.SetLimit(files.Workers)
 	mods := ws.Mods.Load()
 	holds := makeTest(query)
-	sent := &tally{}
 	for _, file := range listFiles(mods, query) {
 		if isClosed(stop) || sent.isFull() {
 			break
@@ -181,7 +196,7 @@ func run(ws *workspace.Session, query Query, expression *regexp.Regexp, stop <-c
 		})
 	}
 	_ = group.Wait()
-	return sent.isFull()
+	return sent.isFull(), nil
 }
 
 // makeTest returns the quick test a file's whole text must pass before it is searched line by line: it holds a plain
@@ -225,11 +240,11 @@ func readSource(ws *workspace.Session, path string) (string, bool) {
 	return text.Text, err == nil
 }
 
-// send sends one file's hits at the given place as a search:hits event, as many as maxHits leaves room for.
+// send gives one file's hits at the given place to the tally's receiver, as many as its limit leaves room for.
 func (tally *tally) send(place workspace.Place, hits []Hit) {
 	tally.mu.Lock()
 	defer tally.mu.Unlock()
-	hits = hits[:min(len(hits), maxHits-tally.count)]
+	hits = hits[:min(len(hits), tally.limit-tally.count)]
 	if len(hits) == 0 {
 		return
 	}
@@ -237,14 +252,14 @@ func (tally *tally) send(place workspace.Place, hits []Hit) {
 	for index := range hits {
 		hits[index].Place = place
 	}
-	application.Get().Event.Emit(EventHits, Hits{Place: place, Hits: hits})
+	tally.receive(Hits{Place: place, Hits: hits})
 }
 
-// isFull reports whether the search has sent maxHits.
+// isFull reports whether the search has given as many hits as its limit.
 func (tally *tally) isFull() bool {
 	tally.mu.Lock()
 	defer tally.mu.Unlock()
-	return tally.count >= maxHits
+	return tally.count >= tally.limit
 }
 
 // setStop ends the running search, if any, and keeps the given channel as the one that ends the next. A nil channel

@@ -5,11 +5,22 @@ import { useQuery } from "@pinia/colada";
 import { Browser } from "@wailsio/runtime";
 import { day } from "../../lib/format";
 import { noteQuery, notesQuery, stateQuery } from "../../queries";
+import { makeChip, useChip } from "../../stores/agent";
 import { useWorkspaceStore } from "../../stores/workspace";
 import StatusFacts from "../../ui/StatusFacts.vue";
 import WikiArticle from "../../ui/WikiArticle.vue";
 
-const { id } = defineProps<{ id: string }>();
+const {
+  id,
+  patch = "",
+  find = "",
+} = defineProps<{
+  id: string;
+  /** The version whose notes are shown, as the route names it; the newest when it names none. */
+  patch?: string;
+  /** Text to find in the notes shown. */
+  find?: string;
+}>();
 
 const PANES = [
   { slot: "versions", defaultSize: 248, minSize: 180, maxSize: 400, sizeUnit: "px" as const },
@@ -20,11 +31,16 @@ const workspace = useWorkspaceStore();
 const { data: state } = useQuery(stateQuery);
 const { data: notes } = useQuery(() => ({ ...notesQuery, enabled: workspace.isOpen() }));
 
-// the version shown is the one chosen, else the newest, which Go lists first
+// the version shown is the one chosen or the route names, else the newest, which Go lists first
 const choice = shallowRef<string>();
 watch(
   () => id,
   () => (choice.value = undefined),
+);
+watch(
+  () => patch,
+  (value) => (choice.value = value || choice.value),
+  { immediate: true },
 );
 const version = computed({
   get: () => choice.value ?? notes.value?.[0]?.version ?? "",
@@ -39,6 +55,11 @@ const facts = computed(() => [
   { label: "Patch notes from the", value: `${state.value?.game?.name ?? ""} wiki` },
   ...(page.value ? [{ label: "Cached", value: day(page.value.fetchedAt) }] : []),
 ]);
+useChip(() =>
+  version.value
+    ? makeChip(version.value, `The ${state.value?.game?.name ?? ""} patch notes of ${version.value}`)
+    : null,
+);
 </script>
 
 <template>
@@ -101,7 +122,7 @@ const facts = computed(() => [
               @click="Browser.OpenURL(page.url)"
             />
           </div>
-          <WikiArticle v-if="page" :page="page" class="min-h-0 flex-1" />
+          <WikiArticle v-if="page" :page="page" :find="find" class="min-h-0 flex-1" />
           <p v-else-if="!isLoading" class="px-8 pt-4 text-13 text-dimmed">No notes for this version.</p>
         </section>
       </template>

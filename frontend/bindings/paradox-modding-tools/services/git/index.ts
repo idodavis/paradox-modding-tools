@@ -9,6 +9,7 @@ export {
 export type {
     Change,
     Commit,
+    LineChange,
     Ref,
     Status
 } from "./models.js";

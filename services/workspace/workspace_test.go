@@ -638,7 +638,8 @@ func TestServiceReadsOpenWorkspace(t *testing.T) {
 	}
 	mod := ws.Order[0].Dir
 	children, err := wsp.ListFolder(mod)
-	if err != nil || len(children) != 5 || !children[0].Dir || children[4].Name != "descriptor.mod" || children[4].Dir {
+	if err != nil || len(children) != 5 || !children[0].Place.IsDir || children[4].Name != "descriptor.mod" ||
+		children[4].Place.IsDir {
 		t.Errorf("mod's entries %+v, %v", children, err)
 	}
 	fonts := filepath.Join(resolveFixture(t, ck3), "game", "fonts")

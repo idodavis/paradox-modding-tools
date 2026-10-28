@@ -289,5 +289,9 @@ function buildColors(token: (key: string) => string, dark: boolean): Record<stri
     "diffEditor.diagonalFill": token("line-1"),
     "diffEditor.unchangedRegionBackground": token("bg-1"),
     "diffEditor.unchangedRegionForeground": token("fg-3"),
+    // the change bars' marks in the ruler (ide/editor/changes.ts)
+    "pmt.changeAdded": added,
+    "pmt.changeChanged": token("blue"),
+    "pmt.changeRemoved": removed,
   };
 }

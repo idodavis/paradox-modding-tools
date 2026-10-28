@@ -9,7 +9,7 @@ holds the `*Service` and asks it for the session at each call.
 
 | file | holds |
 |---|---|
-| `workspace.go` | `FileChange`, `Service`, `State`, `Scanning`, `FileText`, `Child`; the events; the installs (`ListGames`, `ListInstalls`, `ListReadyInstalls`, `DetectInstalls`, `AddInstall`, `UpdateInstall`, `ListLanguages`, `DeleteInstall`, `RescanInstall`); `ResetData`; the workspaces (`ListWorkspaces`, `CreateWorkspace`, `UpdateWorkspace`, `DeleteWorkspace`); the mods (`AddMod`, `ListMods`, `CreateMod`, `ResolveModFolder`, `RemoveMod`, `ReorderMods`, `ResetColors`, `UpdateMod`); `Open`, `Session`, `Close`, `State`, `LookupMod`; `Launch`; the files (`Read`, `ReadHeader`, `Write`, `ListFolder`, `ListRoots`, `Create`, `Rename`, `Delete`, `Restore`, `Locate`); `ServeHTTP` |
+| `workspace.go` | `FileChange`, `Service`, `State`, `Scanning`, `FileText`, `Child`; the events; the installs (`ListGames`, `ListInstalls`, `ListReadyInstalls`, `DetectInstalls`, `AddInstall`, `UpdateInstall`, `ListLanguages`, `DeleteInstall`, `RescanInstall`); `ResetData`; the workspaces (`ListWorkspaces`, `CreateWorkspace`, `UpdateWorkspace`, `DeleteWorkspace`); the mods (`AddMod`, `ListMods`, `CreateMod`, `ResolveModFolder`, `RemoveMod`, `ReorderMods`, `ResetColors`, `UpdateMod`); `Open`, `Session`, `Close`, `State`, `LookupMod`, `ResolveFolder`; `Launch`; the files (`Read`, `ReadHeader`, `Write`, `ListFolder`, `ListRoots`, `Create`, `Rename`, `Delete`, `Restore`, `Locate`); `ServeHTTP` |
 | `session.go` | the package comment; `Session`; the open: the install's caches, the mods' scan and the watcher; `ScanOrder`; `Close`; the trees and buffers (`LoadTree`, `SetText`, `CloseBuffer`, `LookupBuffer`); the texts (`LookupText`, `LookupTitle`, `FindTitleKey`); `FindStatement`; `Rescan` |
 | `mod.go` | `Descriptor`, `Dependency` and `Mod`; `ReadDescriptor`, `WriteDescriptor`; `FindMod` (the mod a descriptor's dependency names, by its id or its name); `Mod.ResolveWorkshopID` (the record's Workshop id, else the descriptor's); a new mod's skeleton and its localization file; the thumbnail; `IsOlderRelease` |
 | `locate.go` | `Place`, `Session.Locate`, `ListCopies`, `Session.ListRoots` |
@@ -24,6 +24,9 @@ for it. `install:scanning` reports each stage, and `workspace:opened` or `worksp
 
 A change to a workspace's record that alters what its open read, which is its install, its language, or its mods and
 their folders in load order, opens it again. So does moving the install it uses, or rescanning it.
+
+`ResolveFolder` gives the folder a shell or a coding agent starts in: the folder of the mod that holds a file, else
+the workspace's first mod whose folder exists, else the home folder. It is Go's alone and not bound to the page.
 
 ## The caches
 
@@ -61,7 +64,9 @@ statement of a site.
 A `Place` is where one file sits in the workspace: the `files.File` as its root lists it, with its name, its folder, its
 root, its database, whether it is read only and whether the game reads it. The game's own files are read only. Every
 answer that names a file carries a place, and the page renders its fields as they are. `Locate` makes one, and
-`ListCopies` lists the place of every copy of a file's path in load order, the game's first.
+`ListCopies` lists the place of every copy of a file's path in load order, the game's first. A place can be of a
+folder too, which `IsDir` says: a folder's listing sets it for each entry, and `Service.Locate` for the path it is
+given, which may be a folder an agent names.
 
 ## Files
 
@@ -76,10 +81,12 @@ frame of a sprite sheet or one of a DDS's smaller mip levels.
 
 ## The watcher
 
-A `Watcher` watches the mods' folders and every folder made under them, the hidden ones left out. The first event of a
-burst starts a timer that later events do not reset. When it ends, every path the burst touched is reported once, as
-deleted where it no longer exists. The session scans the batch again through `index.Index.ScanFiles`, then emits
-`fs:changed` for each path. The watcher judges nothing.
+A `Watcher` watches the mods' folders and every folder made under them, the hidden ones left out but the coding
+agents' folders (`agentFolders`: `.claude`, `.codex`, `.github`), so that an agent's edit there reaches an open tab and
+the explorer. The first event of a burst starts a timer that later events do not reset. When it ends, every path the
+burst touched is reported once, as deleted where it no longer exists. The session scans the batch again through
+`index.Index.ScanFiles`, the agents' folders left out, since the index skips every dot folder, then emits `fs:changed`
+for each path. The watcher judges nothing.
 
 `Rename` and `Delete` move through `Watcher.Move`. It stops watching the folders under the source while the move runs,
 since Windows refuses to move a folder while a folder inside it is watched, and watches them again if the move fails.

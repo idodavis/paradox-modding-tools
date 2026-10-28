@@ -11,6 +11,7 @@ import { useRouter } from "vue-router";
 import type { Filter } from "@services/graph/models";
 import { plural } from "../../lib/format";
 import { graphDefaultsQuery, graphQuery, graphRootsQuery } from "../../queries";
+import { makeChip, useChip } from "../../stores/agent";
 import { useWorkspaceStore } from "../../stores/workspace";
 import OriginChip from "../../ui/OriginChip.vue";
 import StatusFacts from "../../ui/StatusFacts.vue";
@@ -18,7 +19,19 @@ import EventDetail from "./EventDetail.vue";
 import GraphCanvas from "./GraphCanvas.vue";
 import { lookupLook } from "./layout";
 
-const { id, root = "" } = defineProps<{ id: string; root?: string }>();
+const {
+  id,
+  root = "",
+  node = "",
+  filters = "",
+} = defineProps<{
+  id: string;
+  root?: string;
+  /** The node selected, its path drawn, as the route names it. */
+  node?: string;
+  /** The filter the graph is drawn with, as JSON, as the route gives it. */
+  filters?: string;
+}>();
 
 const NO_FILTER: Filter = { databases: [], origins: [], depth: 0, limit: 0, fanout: 0, expand: [], follow: false };
 const LAYOUTS = [
@@ -41,18 +54,27 @@ const canvas = useTemplateRef("canvas");
 const page = useTemplateRef("page");
 const { isFullscreen, toggle: toggleFullscreen } = useFullscreen(page);
 
-const selected = shallowRef(root);
+const selected = shallowRef(node || root);
 watch(
   () => root,
   (next) => (selected.value = next),
 );
+watch(
+  () => node,
+  (value) => (selected.value = value || selected.value),
+);
 
 const { data: defaults } = useQuery(() => ({ ...graphDefaultsQuery, enabled: workspace.isOpen() }));
-// the filter is Go's defaults until the user changes one of its parts
+// the filter is Go's defaults until the user or the route changes one of its parts
 const edits = shallowRef<Filter | null>(null);
 watch(
   () => id,
   () => (edits.value = null),
+);
+watch(
+  () => filters,
+  (json) => (edits.value = json ? (JSON.parse(json) as Filter) : edits.value),
+  { immediate: true },
 );
 const filter = computed(() => edits.value ?? defaults.value);
 const { data: graph, error } = useQuery(() => ({
@@ -120,6 +142,16 @@ const items = computed(() => {
   return root && !roots.value?.some((node) => node.id === root) ? [[{ id: root }], ...heads] : heads;
 });
 const rootNode = computed(() => graph.value?.nodes?.find((node) => node.id === root));
+// the node selected goes with an agent's prompt
+useChip(() => {
+  const selectedNode = graph.value?.nodes?.find((one) => one.id === selected.value);
+  return selectedNode
+    ? makeChip(
+        selectedNode.name,
+        `The ${selectedNode.what} ${selectedNode.name}, selected in PMT's Event Graph (${selectedNode.id})`,
+      )
+    : null;
+});
 const rootLook = computed(() => lookupLook(rootNode.value?.database ?? ""));
 // the root's kind sits over the field's end, as wide as its words: a long id stops before it
 const { width: whatWidth } = useElementSize(useTemplateRef("whatBadge"), undefined, { box: "border-box" });

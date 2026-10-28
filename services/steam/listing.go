@@ -590,7 +590,7 @@ func buildIgnores(mod workspace.Mod) ([]files.Ignore, error) {
 	if err != nil {
 		return nil, err
 	}
-	patterns := append(lo.Map(Rules, func(rule Rule, _ int) string { return rule.Pattern }), "!"+game.MetadataDir+"/")
+	patterns := append(lo.Map(listRules(), func(rule Rule, _ int) string { return rule.Pattern }), "!"+game.MetadataDir+"/")
 	return []files.Ignore{
 		files.ParseIgnore(strings.Join(patterns, "\n")), files.ParseIgnore(gitignore.Text), files.ParseIgnore(mod.Ignore),
 	}, nil

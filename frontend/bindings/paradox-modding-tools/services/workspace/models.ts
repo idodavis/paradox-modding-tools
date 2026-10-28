@@ -19,7 +19,6 @@ import * as app$0 from "../app/models.js";
  */
 export interface Child {
     "name": string;
-    "dir": boolean;
     "place": Place;
 }
 
@@ -166,6 +165,11 @@ export interface Place {
      * the game reads it
      */
     "loaded": boolean;
+
+    /**
+     * true for a folder, which a folder's listing and Service.Locate tell
+     */
+    "isDir": boolean;
 }
 
 /**

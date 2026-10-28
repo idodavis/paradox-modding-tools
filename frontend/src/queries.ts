@@ -1,12 +1,14 @@
 /** The queries that read Go, one per RPC, and the keys that events and mutations refresh. */
 import { defineQueryOptions, useMutation, useQueryCache, type UseQueryOptions } from "@pinia/colada";
 
+import * as agent from "@services/agent/service";
 import * as app from "@services/app/service";
 import * as draw from "@services/draw/service";
 import * as git from "@services/git/service";
 import * as graph from "@services/graph/service";
 import * as health from "@services/health/service";
 import * as lsp from "@services/lsp/service";
+import * as mcp from "@services/mcp/service";
 import * as search from "@services/search/service";
 import * as steam from "@services/steam/service";
 import * as terminal from "@services/terminal/service";
@@ -44,6 +46,7 @@ export const keys = {
   git: (dir: string) => ["git", dir] as const,
   release: (modId: string) => ["release", modId] as const,
   shells: ["terminal", "shells"] as const,
+  agents: ["agent"] as const,
 };
 
 // the app
@@ -281,6 +284,15 @@ export const programsQuery = defineQueryOptions({
 export const environmentQuery = defineQueryOptions({
   key: ["terminal", "environment"],
   query: () => terminal.ListEnvironment(),
+});
+
+// the agents and PMT's tools for them; the access is the server's address and token
+export const agentsQuery = defineQueryOptions({ key: [...keys.agents, "list"], query: () => agent.ListAgents() });
+export const nodeQuery = defineQueryOptions({ key: [...keys.agents, "node"], query: () => agent.DescribeNode() });
+export const tasksQuery = defineQueryOptions({ key: ["mcp", "tasks"], query: () => mcp.ListTasks() });
+export const accessQuery = defineQueryOptions({
+  key: ["mcp", "access"],
+  query: async () => ({ url: await mcp.ReadURL(), token: await mcp.ReadToken() }),
 });
 
 // Publish. A listing's key is "" for the mod's own listing.

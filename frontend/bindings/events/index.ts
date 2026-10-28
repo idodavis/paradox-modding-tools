@@ -54,6 +54,11 @@ export const InstallScanned = "install:scanned";
 export const InstallScanning = "install:scanning";
 
 /**
+ * Name of the custom event "mcp:show".
+ */
+export const McpShow = "mcp:show";
+
+/**
  * Name of the custom event "release:changed".
  */
 export const ReleaseChanged = "release:changed";

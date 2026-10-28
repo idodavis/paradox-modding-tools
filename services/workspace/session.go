@@ -416,7 +416,8 @@ func (ws *Session) Rescan(changes []FileChange) error {
 	var failure error
 	for _, change := range changes {
 		place := ws.Locate(mods, change.Path)
-		if place.Root == "" || place.ReadOnly {
+		// the index skips the agents' folders, as it skips every dot folder
+		if place.Root == "" || place.ReadOnly || isInAgentFolder(place.Rel) {
 			continue
 		}
 		listed, err := ws.listChanged(mods, place, change.Deleted)

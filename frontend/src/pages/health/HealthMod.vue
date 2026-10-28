@@ -91,7 +91,7 @@ const coverage = computed(() =>
       label: describeLanguages([name])[0]?.label ?? name,
       percent: (have / total) * 100,
       text: have === total ? `all ${describeCount(total)}` : `${describeCount(have)} of ${describeCount(total)}`,
-      missing: have < total,
+      missing: total - have,
     };
   }),
 );
@@ -193,7 +193,7 @@ const { mutate: writeScaffold, isLoading: scaffolding } = useMutation({
               <span class="grow" />
               <UButton
                 v-if="language.missing"
-                :label="`Write the missing ${language.label} files`"
+                :label="`Write the ${plural(language.missing, `missing ${language.label} key`)}`"
                 size="xs"
                 :loading="scaffolding"
                 @click="writeScaffold(language.name)"

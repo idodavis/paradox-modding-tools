@@ -234,11 +234,12 @@ async function list(dir: string): Promise<Child[]> {
 function apply(row: string, children: Child[]): void {
   const next = new Set<string>();
   for (const child of children) {
-    const path = `${row}${child.name}${child.dir ? "/" : ""}`;
+    const path = `${row}${child.name}${child.place.isDir ? "/" : ""}`;
     next.add(path);
     disks.set(path, child.place.path);
     places.set(path, child.place);
-    if (!child.dir) icons[child.name] = { name: SYMBOLS.get(findIcon(child.place)) ?? "", viewBox: "0 0 800 800" };
+    if (!child.place.isDir)
+      icons[child.name] = { name: SYMBOLS.get(findIcon(child.place)) ?? "", viewBox: "0 0 800 800" };
   }
   const tree = view.value;
   const gone = [...(members.get(row) ?? [])].filter((path) => !next.has(path) && tree?.getItem(path));

@@ -36,7 +36,8 @@ export function FindLinks(id: string, text: string): $CancellablePromise<$models
 }
 
 /**
- * ListEnvironment returns the variables every shell is given on this system.
+ * ListEnvironment returns the variables every shell is given on this system: PMT's address and token for coding
+ * agents, which PMT's own environment carries, then the terminal's own.
  */
 export function ListEnvironment(): $CancellablePromise<terminal$0.Variable[] | null> {
     return $Call.ByID(2938101957);
@@ -66,6 +67,15 @@ export function ResolveReference(id: string, path: string): $CancellablePromise<
 }
 
 /**
+ * Run starts a shell of the given size that runs a command, a program and its arguments as given, in the folder
+ * ResolveFolder gives for the file at the given path, which may be "". It returns an error if the command is empty or
+ * its program cannot be started.
+ */
+export function Run(path: string, command: string[] | null, columns: number, rows: number): $CancellablePromise<terminal$0.Shell | null> {
+    return $Call.ByID(2499983721, path, command, columns, rows);
+}
+
+/**
  * SetScreen keeps the screen a window drew for a shell, which the next window to show the shell draws first. It
  * returns an error if no shell has the given id.
  */
@@ -75,7 +85,7 @@ export function SetScreen(id: string, screen: terminal$0.Screen): $CancellablePr
 
 /**
  * Start starts a shell of the given size running the program at the given path, or for "" the default shell, in the
- * folder resolveFolder gives for the file at the given path, which may be "". It returns an error if this system has
+ * folder ResolveFolder gives for the file at the given path, which may be "". It returns an error if this system has
  * no shell or the program cannot be started.
  */
 export function Start(path: string, program: string, columns: number, rows: number): $CancellablePromise<terminal$0.Shell | null> {

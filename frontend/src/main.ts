@@ -1,7 +1,7 @@
 /**
  * The app's bootstrap: the stores, the query cache with its one error handler, Nuxt UI, the router, the events
- * table, the search store's subscription, the terminal store, and Monaco with its providers. Nothing is set up
- * anywhere else.
+ * table, the search store's subscription, the terminal store, the agent store, and Monaco with its providers. Nothing
+ * is set up anywhere else.
  */
 import { createApp } from "vue";
 import { createPinia } from "pinia";
@@ -12,6 +12,7 @@ import { Error as logError } from "../bindings/github.com/wailsapp/wails/v3/pkg/
 import App from "./app/App.vue";
 import { router } from "./app/router";
 import { subscribeEvents } from "./app/events";
+import { useAgentStore } from "./stores/agent";
 import { useSearchStore } from "./stores/search";
 import { useTerminalStore } from "./stores/terminal";
 import { setupMonaco } from "./pages/ide/editor/monaco";
@@ -63,6 +64,8 @@ app.runWithContext(() => {
   useSearchStore().subscribe();
   // the window that shows the panel holds the shells from its start, whichever page or tab it shows
   useTerminalStore();
+  // every window tells PMT's tools what it shows, and the main window shows what an agent asks it to
+  useAgentStore();
   setupMonaco();
 });
 app.mount("#app");

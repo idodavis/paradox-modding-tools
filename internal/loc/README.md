@@ -9,7 +9,7 @@ offsets. It knows no game and no index: what a key names, and which message the 
 
 | file | holds |
 |---|---|
-| `loc.go` | `Message` and `File`; `Parse`, `ParseMessage`; the language rule (`FindSuffixLanguage`, `ToLanguageRel`, `ToLanguageKey`); the writer, `Encode` |
+| `loc.go` | `Message` and `File`; `Parse`, `ParseMessage`; the language rule (`FindSuffixLanguage`, `ToLanguageRel`, `ToLanguageKey`); the writer, `Encode` and `EncodeMessages` |
 | `markup.go` | `Markup` and its constants, `Segment`; `Segments`, `ToPlain` |
 
 ## The file
@@ -46,8 +46,9 @@ segment's `Text` holds a sample of that value instead of the call.
 
 ## The writer
 
-`Encode` writes the text of a localization file for one language: the header, then each message as its key, its
-version and its quoted text, in the layout the game reads.
+`Encode` writes the text of a localization file for one language: the header, then its messages. `EncodeMessages`
+writes the messages alone, each as its key, its version and its quoted text, in the layout the game reads, with the
+line ending of the file they join.
 
 ## Terms
 

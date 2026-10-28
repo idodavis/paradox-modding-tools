@@ -18,6 +18,7 @@ import { useEditorStore } from "../../stores/editor";
 import { useSearchStore } from "../../stores/search";
 import { useWindowsStore } from "../../stores/windows";
 import { useWorkspaceStore } from "../../stores/workspace";
+import { markChanges } from "./editor/changes";
 import { decorate } from "./editor/conflicts";
 import { attachHover } from "./editor/hover";
 import { applyEdits, openModel, type Model } from "./editor/models";
@@ -38,6 +39,7 @@ const commands = useEventBus<string>("pmt.command");
 const host = useTemplateRef("host");
 const view = shallowRef<editor.IStandaloneCodeEditor>();
 let detachHover = () => {};
+let stopChanges = () => {};
 
 const { mutate: ask, data: asked } = useMutation({
   mutation: async () => {
@@ -109,6 +111,10 @@ onMounted(() => {
     // eslint-disable-next-line vue/no-mutating-props -- the model is state shared by every group that shows the file
     model.caret = { line: caret.lineNumber, column: caret.column };
   });
+  codeEditor.onDidChangeCursorSelection(({ selection }) => {
+    // eslint-disable-next-line vue/no-mutating-props -- the model is state shared by every group that shows the file
+    model.lines = selection.isEmpty() ? null : { start: selection.startLineNumber, end: selection.endLineNumber };
+  });
   codeEditor.addAction({
     id: "pmt.findAllReferences",
     label: "Find all references",
@@ -118,9 +124,11 @@ onMounted(() => {
   detachHover = attachHover(codeEditor);
   view.value = codeEditor;
   decorate(model);
+  stopChanges = markChanges(codeEditor, model);
 });
 onBeforeUnmount(() => {
   detachHover();
+  stopChanges();
   view.value?.dispose();
 });
 
@@ -128,14 +136,15 @@ watch(
   () => editorOptions(),
   (options) => view.value?.updateOptions(options),
 );
-// a position the file was shown at moves the active group's editor there once, and gives it the focus
+// a range the file was shown with is selected once in the active group's editor, which takes the focus unless Follow
+// the agent showed the file: the user's focus stays where they are typing
 watch(
   [view, () => (active ? editorStore.findRequest(model.place.key) : undefined)],
   ([codeEditor, wanted]) => {
     if (!codeEditor || !wanted) return;
-    codeEditor.setPosition(wanted);
-    codeEditor.revealPositionInCenterIfOutsideViewport(wanted);
-    codeEditor.focus();
+    codeEditor.setSelection(wanted);
+    codeEditor.revealRangeInCenterIfOutsideViewport(wanted);
+    if (!editorStore.isFollowed()) codeEditor.focus();
     editorStore.clearRequest();
   },
   { immediate: true },

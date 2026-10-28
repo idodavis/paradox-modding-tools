@@ -21,6 +21,7 @@ import (
 	"paradox-modding-tools/internal/game"
 	"paradox-modding-tools/internal/index"
 	"paradox-modding-tools/internal/jomini"
+	"paradox-modding-tools/services/agent"
 	"paradox-modding-tools/services/app"
 	"paradox-modding-tools/services/workspace"
 )
@@ -60,6 +61,14 @@ var Rules = []Rule{
 	{Pattern: ".*", Reason: "Files that start with a dot belong to the author's tools, not to the game."},
 	{Pattern: gitignoreFile, Reason: "What the mod's own .gitignore names stays out too."},
 	{Pattern: "", Reason: "What the mod's own exclusions name stays out too."}, // the patterns in the mod's record
+}
+
+// listRules returns what an upload leaves out: the rules, then the instruction files of the coding agents PMT offers
+// that the first rule does not cover, as the agents' rows name them.
+func listRules() []Rule {
+	instructions := lo.Reject(agent.ListFiles(), func(file string, _ int) bool { return strings.HasPrefix(file, ".") })
+	return append(slices.Clone(Rules), Rule{Pattern: strings.Join(instructions, "\n"),
+		Reason: "Instructions for coding agents belong to the author's tools, not to the game."})
 }
 
 // releaseNumber matches the major and minor numbers that a version or a version tag starts with.

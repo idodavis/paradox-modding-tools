@@ -8,6 +8,7 @@ import { useMutation, useQuery } from "@pinia/colada";
 import { createReusableTemplate, useEventBus, useEventListener, useLocalStorage } from "@vueuse/core";
 import type { SplitterItem } from "@nuxt/ui";
 
+import type { Chip } from "@services/mcp/models";
 import * as workspaceApi from "@services/workspace/service";
 import type { Place } from "@services/workspace/models";
 
@@ -23,6 +24,7 @@ import {
   wikiPagesQuery,
   windowsQuery,
 } from "../../queries";
+import { useChip } from "../../stores/agent";
 import { useEditorStore } from "../../stores/editor";
 import { useGitStore } from "../../stores/git";
 import { useSettingsStore } from "../../stores/settings";
@@ -88,6 +90,17 @@ const gameOpen = useLocalStorage("pmt.ide.gameOpen", true);
 const filtering = reactive({ mods: false, game: false, own: false });
 const [DefineFilterButton, FilterButton] = createReusableTemplate<{ tree: keyof typeof filtering }>();
 const visible = useShown();
+// the active file, with its selected lines, goes with an agent's prompt; while the active tab is one Follow the agent
+// showed, the chip stays the file the user had before
+const fileChip = computed<Chip | null>((previous) => {
+  if (editor.isFollowed()) return previous ?? null;
+  const place = editor.activeFile();
+  const lines = place && findModel(place.key)?.lines;
+  return place
+    ? { label: place.name, path: place.path, startLine: lines?.start ?? 0, endLine: lines?.end ?? 0, text: "" }
+    : null;
+});
+useChip(() => fileChip.value);
 const splitter = useTemplateRef("splitter");
 const modTree = useTemplateRef("modTree");
 const gameTree = useTemplateRef("gameTree");
@@ -104,6 +117,7 @@ commands.on((command) => {
     if (layout.value === "full") panel.value = "terminal";
     useTerminalStore().sendFile();
   }
+  if (command === "terminal.show" && layout.value === "full") panel.value = "terminal";
 });
 defineShortcuts(
   computed(() =>

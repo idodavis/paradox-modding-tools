@@ -23,6 +23,7 @@ import {
 } from "../../lib/format";
 import { useShown } from "../../app/pages";
 import { errorLogQuery, keys, overviewQuery, reportQuery, stateQuery } from "../../queries";
+import { makeChip, useChip } from "../../stores/agent";
 import { useWorkspaceStore } from "../../stores/workspace";
 import LevelCounts from "../../ui/LevelCounts.vue";
 import ModAvatar from "../../ui/ModAvatar.vue";
@@ -152,6 +153,19 @@ const current = computed(() => mods.value.find((one) => one.id === (mod || landi
 const filter = shallowRef(wanted.value);
 watch(wanted, (next) => (filter.value = next));
 const opened = computed(() => (row ? Number(row) : -1));
+// the open row's finding goes with an agent's prompt
+const openFinding = computed((): Finding | undefined => {
+  if (opened.value < 0) return undefined;
+  if (shown.value === "compatibility") return compatibility.value[opened.value];
+  if (shown.value === "log") return logRows.value[opened.value];
+  return shown.value === "mod" && current.value ? problems.value[current.value.id]?.[opened.value] : undefined;
+});
+useChip(() => {
+  const finding = openFinding.value;
+  const site = finding?.sites?.[0];
+  const where = site ? ` at ${site.place.path} line ${site.range.startLineNumber}` : "";
+  return finding ? makeChip(finding.code, `Health's ${finding.code} finding about ${finding.name}${where}`) : null;
+});
 
 const { data: overview } = useQuery(() => ({
   ...overviewQuery,

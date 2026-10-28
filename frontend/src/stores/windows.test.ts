@@ -72,6 +72,7 @@ describe("the windows", () => {
       database: "",
       readOnly: false,
       loaded: true,
+      isDir: false,
     };
     editor.show(place);
     expect(windows.holderOf({ file: "m" })).toBe("main");

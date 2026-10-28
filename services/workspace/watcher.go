@@ -7,6 +7,7 @@ import (
 	"os"
 	"path/filepath"
 	"slices"
+	"strings"
 	"time"
 
 	"github.com/fsnotify/fsnotify"
@@ -20,6 +21,10 @@ type Watcher struct {
 	watcher *fsnotify.Watcher
 	done    chan struct{} // closed when run ends
 }
+
+// agentFolders holds the dot folders that coding agents keep their instructions in. The watcher watches them, so
+// that an agent's edit there reaches an open tab and the explorer; the index and the search still skip them.
+var agentFolders = []string{".claude", ".codex", ".github"}
 
 // startWatcher watches folders and any folder made under them. It reports the files changed in each burst together.
 // It returns an error if a folder cannot be watched.
@@ -38,7 +43,8 @@ func startWatcher(dirs []string, change func(changes []FileChange)) (*Watcher, e
 	return watcher, nil
 }
 
-// addFolders makes a notifier watch a folder and every folder under it but the hidden ones. A file adds nothing.
+// addFolders makes a notifier watch a folder and every folder under it but the hidden ones, the agents' folders
+// watched all the same. A file adds nothing.
 func addFolders(notifier *fsnotify.Watcher, dir string) error {
 	return filepath.WalkDir(dir, func(path string, entry fs.DirEntry, err error) error {
 		switch {
@@ -46,10 +52,22 @@ func addFolders(notifier *fsnotify.Watcher, dir string) error {
 			return err
 		case !entry.IsDir():
 			return nil
-		case path != dir && files.IsHiddenDir(entry.Name()):
+		case path != dir && !isWatched(entry.Name()):
 			return filepath.SkipDir
 		}
 		return notifier.Add(path)
+	})
+}
+
+// isWatched reports whether the watcher watches a folder, by its name: any but a hidden one, and the agents' folders.
+func isWatched(folder string) bool {
+	return !files.IsHiddenDir(folder) || slices.Contains(agentFolders, folder)
+}
+
+// isInAgentFolder reports whether a path from a mod's root is one of the agents' folders or lies in one.
+func isInAgentFolder(rel string) bool {
+	return slices.ContainsFunc(strings.Split(rel, "/"), func(folder string) bool {
+		return slices.Contains(agentFolders, folder)
 	})
 }
 
@@ -92,9 +110,9 @@ func (watcher *Watcher) run(change func(changes []FileChange)) {
 	}
 }
 
-// isHiddenFolder reports whether a path is a folder that nothing lists or watches.
+// isHiddenFolder reports whether a path is a folder that the watcher does not watch.
 func isHiddenFolder(path string) bool {
-	return files.IsFolder(path) && files.IsHiddenDir(filepath.Base(path))
+	return files.IsFolder(path) && !isWatched(filepath.Base(path))
 }
 
 // Close stops the watcher. It returns once no report is under way.

@@ -11,7 +11,7 @@ game's error log says, each as findings that point at their sites.
 
 | file | holds |
 |---|---|
-| `health.go` | the package comment; `EventErrorLogChanged`; `Service` with `ServiceStartup` and `ServiceShutdown`; `FindingSite`, `Finding`, `Change`, `Report`, `GameLog`, `Overview`, `Compared`, `Snippet`; `BuildReport` and the findings of overrides, unused copies, descriptors, unmounted folders, localization and the editor's checks; `ListCodes`, `ListOverview`, `CompareStatements`, `ListSnippets`, `ListReaders`, `WriteScaffold` |
+| `health.go` | the package comment; `EventErrorLogChanged`; `Service` with `ServiceStartup` and `ServiceShutdown`; `FindingSite`, `Finding`, `Change`, `Report`, `GameLog`, `Overview`, `Compared`, `Snippet`; `BuildReport` and the findings of overrides, unused copies, descriptors, unmounted folders, localization and the editor's checks; `ListCodes`, `ListOverview`, `CompareStatements`, `ListSnippets`, `ListReaders`, `WriteScaffold`, `ListScaffolds` |
 | `contests.go` | the contests of names and of files, and the undecided ones; their winner, beaten mods, level and suggested order; what a previewed order changes |
 | `ignored.go` | `AddIgnoredPair`, `RemoveIgnoredPair`; the ignored pairs and their findings |
 | `declared.go` | which mod declares which as a dependency, and the use of a mod that is not declared |
@@ -136,8 +136,12 @@ lists every place in script and localization that reads a localization key. `Lis
 
 ## The translation scaffold
 
-`WriteScaffold` writes the localization files a mod lacks in a language. Each holds the mod's base-language messages
-whose file does not exist in that language yet, with the base text as the placeholder, written by `loc.Encode`.
+`WriteScaffold` writes the localization keys a mod lacks in a language: each of its base-language messages whose key
+has no message of the mod in that language, once, with the base text as the placeholder. These are the keys
+`coverage` counts as missing (`listUntranslated`). A key goes at the end of the language's file that matches the
+base-language file it is in (`loc.ToLanguageRel`), in that file's line ending and encoding (`loc.EncodeMessages`); a
+matching file that is missing or empty is written whole by `loc.Encode`. `ListScaffolds` gives those messages by the
+file they go in, which PMT's tools for coding agents preview.
 
 ## Events
 

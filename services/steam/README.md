@@ -17,7 +17,7 @@ HTML of the description's editor.
 | `compare.go` | `Snapshot`, `Details`, `Difference`, `Comparison`; `CompareUpload`, `FetchItem`, `CompareFile`; Steam's kept answers; the snapshots (`LoadSnapshot`, `SaveSnapshot`) |
 | `notes.go` | `ChangeNote`; `ListChangeNotes` |
 | `pictures.go` | the smaller copies of pictures Steam refuses for their size |
-| `workshop.go` | `DLC`, `Rule`, `Tags`, `Rules`; `ListDLC`, `ListTags` |
+| `workshop.go` | `DLC`, `Rule`, `Tags`, `Rules` and the agents' rule; `ListDLC`, `ListTags` |
 | `ugc.go` | `Progress`, `Client`: Steam's library bound once through purego, its UGC calls and their call results; `Open`, `Close`, `FetchDetails`, `CreateItem`, `Submit` |
 | `bbcode.go` | `ToBBCode`, `ToHTML`, over one table of Steam's tags |
 | `publish.go` | `Params`; the second copy: its flags, `StartPublish`, the work each flag does, its run |
@@ -66,8 +66,9 @@ outside the mod is copied in: where the game reads it for the own listing, into 
 An `Upload` is the set of files a listing's next upload sends. The own listing sends the mod's folder. An older one
 sends the files of its zip, extracted once into PMT's cache folder and kept until the zip's path, size or time changes,
 with the extracted descriptor's name, versions and Workshop id set to the listing's; the zip itself is never changed.
-Either way `ListUpload` leaves out what the `Rules` name: files that start with a dot, though the `.metadata` folder
-stays, and what the mod's `.gitignore` and its own exclusions cover, each read as a `files.Ignore`. `WriteZip` writes
+Either way `ListUpload` leaves out what the rules name: files that start with a dot, though the `.metadata` folder
+stays, the coding agents' instruction files the agents' rows name (`agent.ListFiles`), and what the mod's
+`.gitignore` and its own exclusions cover, each read as a `files.Ignore`. `WriteZip` writes
 the own listing's set as a zip. Before an upload, the set is copied into a folder of its own, so Steam is sent those
 files and no others.
 

@@ -66,11 +66,11 @@ export const useTerminalStore = defineStore("terminal", () => {
 
   // starts the given program's shell, or the default shell for ""
   const { mutate: start } = useMutation({
-    mutation: async (program: string) => {
-      const size = consoles.get(active.value)?.xterm;
-      const shell = await terminal.Start(findFile()?.path ?? "", program, size?.cols ?? 80, size?.rows ?? 24);
-      if (shell) active.value = shell.id;
-    },
+    mutation: (program: string) => launch((path, columns, rows) => terminal.Start(path, program, columns, rows)),
+  });
+  // runs a command, a program and its arguments as given, in a new shell
+  const { mutateAsync: run } = useMutation({
+    mutation: (command: string[]) => launch((path, columns, rows) => terminal.Run(path, command, columns, rows)),
   });
   const { mutate: close } = useMutation({ mutation: (id: string) => terminal.Close(id) });
   const { mutate: sendFile } = useMutation({
@@ -95,6 +95,16 @@ export const useTerminalStore = defineStore("terminal", () => {
     () => consoles.forEach(applyStyle),
     { flush: "post" },
   );
+
+  /**
+   * launch starts a shell through the given call, which takes the active file's path and the size of the shell shown,
+   * and shows the new shell.
+   */
+  async function launch(begin: (path: string, columns: number, rows: number) => Promise<Shell | null>): Promise<void> {
+    const size = consoles.get(active.value)?.xterm;
+    const shell = await begin(findFile()?.path ?? "", size?.cols ?? 80, size?.rows ?? 24);
+    if (shell) active.value = shell.id;
+  }
 
   /**
    * syncConsoles makes a console for each shell this window holds, and lets go of the consoles of the shells it no
@@ -272,6 +282,7 @@ export const useTerminalStore = defineStore("terminal", () => {
     findOpen,
     holding,
     start,
+    run,
     close,
     sendFile,
     findFile,

@@ -12,12 +12,14 @@ import (
 	"github.com/wailsapp/wails/v3/pkg/updater"
 	"github.com/wailsapp/wails/v3/pkg/updater/providers/github"
 
+	"paradox-modding-tools/services/agent"
 	"paradox-modding-tools/services/app"
 	"paradox-modding-tools/services/draw"
 	"paradox-modding-tools/services/git"
 	"paradox-modding-tools/services/graph"
 	"paradox-modding-tools/services/health"
 	"paradox-modding-tools/services/lsp"
+	"paradox-modding-tools/services/mcp"
 	"paradox-modding-tools/services/search"
 	"paradox-modding-tools/services/steam"
 	"paradox-modding-tools/services/terminal"
@@ -46,28 +48,13 @@ func main() {
 	if err != nil {
 		log.Fatalf("log: %v", err)
 	}
-	wsp := &workspace.Service{Config: config, Build: version}
 	appService := &app.Service{Config: config, Build: version}
-	gitService := &git.Service{Workspace: wsp}
 
 	pmt := application.New(application.Options{
 		Name:        "paradox-modding-tools",
 		Description: "Desktop tools for Paradox Interactive game modding",
 		Logger:      logger,
-		Services: []application.Service{
-			application.NewService(appService),
-			application.NewService(logservice.New()),
-			application.NewServiceWithOptions(wsp, application.ServiceOptions{Route: "/files"}),
-			application.NewService(&lsp.Service{Workspace: wsp}),
-			application.NewService(&terminal.Service{Workspace: wsp, Config: config}),
-			application.NewService(&draw.Service{Workspace: wsp}),
-			application.NewService(&health.Service{Workspace: wsp}),
-			application.NewService(&graph.Service{Workspace: wsp}),
-			application.NewService(&search.Service{Workspace: wsp}),
-			application.NewService(&wiki.Service{Workspace: wsp}),
-			application.NewService(gitService),
-			application.NewService(&steam.Service{Workspace: wsp, Git: gitService}),
-		},
+		Services:    listServices(config, appService),
 		Assets: application.AssetOptions{
 			Handler: application.BundledAssetFileServer(assets),
 			// a log line per loaded file would fill pmt.log
@@ -89,6 +76,36 @@ func main() {
 
 	if err := pmt.Run(); err != nil {
 		log.Fatalf("app.Run: %v", err)
+	}
+}
+
+// listServices returns the app's services, the given app service first. Each other service reads the given config
+// through the workspace service, which holds the open workspace.
+func listServices(config *app.ConfigFile, appService *app.Service) []application.Service {
+	wsp := &workspace.Service{Config: config, Build: version}
+	gitService := &git.Service{Workspace: wsp}
+	lspService := &lsp.Service{Workspace: wsp}
+	healthService := &health.Service{Workspace: wsp}
+	graphService := &graph.Service{Workspace: wsp}
+	wikiService := &wiki.Service{Workspace: wsp}
+	mcpService := &mcp.Service{
+		Workspace: wsp, LSP: lspService, Health: healthService, Graph: graphService, Wiki: wikiService, Build: version,
+	}
+	return []application.Service{
+		application.NewService(appService),
+		application.NewService(logservice.New()),
+		application.NewServiceWithOptions(wsp, application.ServiceOptions{Route: "/files"}),
+		application.NewService(lspService),
+		application.NewService(&terminal.Service{Workspace: wsp, Config: config}),
+		application.NewService(&draw.Service{Workspace: wsp}),
+		application.NewService(healthService),
+		application.NewService(graphService),
+		application.NewService(&search.Service{Workspace: wsp}),
+		application.NewService(wikiService),
+		application.NewService(mcpService),
+		application.NewService(&agent.Service{Workspace: wsp, MCP: mcpService}),
+		application.NewService(gitService),
+		application.NewService(&steam.Service{Workspace: wsp, Git: gitService}),
 	}
 }
 

@@ -126,11 +126,23 @@ type Workspace struct {
 	IgnoredPairs [][2]string `json:"ignoredPairs"`
 }
 
+// An Agent is one coding agent PMT can start for a chat: one PMT offers, which the ACP registry describes, or one the
+// user adds as a program of their own.
+type Agent struct {
+	ID       string   `json:"id"` // the registry's id of one PMT offers
+	Name     string   `json:"name"`
+	Program  string   `json:"program,omitempty"` // the program the user's agent runs; "" for one PMT offers
+	Args     []string `json:"args,omitempty"`
+	Register string   `json:"register,omitempty"` // how PMT's tools are registered with it for use outside PMT
+	Files    []string `json:"files,omitempty"`    // its instruction files and folders, by their names in a mod
+}
+
 // Config is the content of config.json.
 type Config struct {
 	Installs   []Install         `json:"installs"`
 	Workspaces []Workspace       `json:"workspaces"`
 	Settings   map[string]string `json:"settings"`
+	Agents     []Agent           `json:"agents"` // the agents the user adds
 }
 
 // A Setting is one row of the catalog of settings.
@@ -172,7 +184,7 @@ var Catalog = []Setting{
 		Help:  "The size of the whole interface, as a percentage.",
 		Words: "zoom size percent"},
 	{Key: "appearance.pages", Label: "Pages a workspace shows",
-		Section: "appearance", Type: "text", Default: "workspace-ide,event-graph,health,patch-notes,release",
+		Section: "appearance", Type: "text", Default: "workspace-ide,event-graph,health,patch-notes,release,agents",
 		Help:  "The pages the sidebar offers, in order, separated by commas.",
 		Words: "sidebar navigation hide"},
 	{Key: "terminal.shell", Label: "Default shell",
@@ -180,6 +192,11 @@ var Catalog = []Setting{
 		Help: "The shell New shell starts; the arrow beside it starts another. Found by PMT unless you pick one. On " +
 			"Windows: pwsh on the PATH, then PowerShell 7, then Windows PowerShell. On Linux: your $SHELL, else sh.",
 		Words: "terminal shell pwsh powershell bash zsh wsl program console default"},
+	{Key: "agents.port", Label: "Port",
+		Section: "agents", Type: "number", Default: "47820", Min: 1024, Max: 65535,
+		Help: "Fixed, so an agent registers PMT once. PMT's tools listen on 127.0.0.1 only. A new port takes " +
+			"effect when PMT starts again, and each agent is registered again.",
+		Words: "mcp agents server port claude copilot codex"},
 	{Key: "shortcuts.bindings", Label: "Keyboard shortcuts",
 		Section: "shortcuts", Type: "text", Default: "",
 		Help:  "The shortcuts changed from PMT's own, by command.",
@@ -331,6 +348,10 @@ func (file *ConfigFile) Config() Config {
 		return workspace
 	})
 	config.Settings = maps.Clone(config.Settings)
+	config.Agents = lo.Map(config.Agents, func(agent Agent, _ int) Agent {
+		agent.Args = slices.Clone(agent.Args)
+		return agent
+	})
 	return config
 }
 

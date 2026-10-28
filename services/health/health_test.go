@@ -253,9 +253,10 @@ func TestListErrorLogAddsContinuationLines(t *testing.T) {
 	}
 }
 
-// TestWriteScaffoldWritesMissingFiles checks that a scaffold writes a file for each base-language file, with a byte
-// order mark. An existing file is left alone. A name that is no language writes nothing.
-func TestWriteScaffoldWritesMissingFiles(t *testing.T) {
+// TestWriteScaffoldWritesMissingKeys checks that a scaffold writes each key a language lacks. A missing file is written
+// whole, with a byte order mark, and an existing one gets the keys at its end. A name that is no language writes
+// nothing.
+func TestWriteScaffoldWritesMissingKeys(t *testing.T) {
 	mod := createMod(t, "ck3", modA, modAFiles)
 	hlt := openService(t, "ck3", resolveFixture(t, "ck3"), mod)
 	written, err := hlt.WriteScaffold(modA, french)
@@ -279,10 +280,14 @@ func TestWriteScaffoldWritesMissingFiles(t *testing.T) {
 	if again, err := hlt.WriteScaffold(modA, french); err != nil || len(again) != 0 {
 		t.Errorf("scaffold of french again: %v, %v", again, err)
 	}
-	// only the replace folder's file lacks german
-	if partial, err := hlt.WriteScaffold(modA, german); err != nil || len(partial) != 1 ||
-		!strings.HasSuffix(filepath.ToSlash(partial[0]), "localization/replace/german/m_replace_l_german.yml") {
-		t.Errorf("scaffold of german: %v, %v", partial, err)
+	// german has m_kept: m_orphan joins its file, and the replace folder's file is written
+	partial, err := hlt.WriteScaffold(modA, german)
+	if err != nil || len(partial) != 2 ||
+		!strings.HasSuffix(filepath.ToSlash(partial[1]), "localization/replace/german/m_replace_l_german.yml") {
+		t.Fatalf("scaffold of german: %v, %v", partial, err)
+	}
+	if text, _ := files.ReadText(partial[0]); text.Text != "l_german:\n m_kept:0 \"Behalten\"\n m_orphan:0 \"Alone\"\n" {
+		t.Errorf("german file %q", text.Text)
 	}
 	if _, err := hlt.WriteScaffold(modA, "../"+game.BaseLanguage); err == nil {
 		t.Error("a scaffold was written for a name that is no language")

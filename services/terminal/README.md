@@ -8,7 +8,7 @@ until they end, and asks the workspace service for a folder's mod and a file's p
 
 | file | holds |
 |---|---|
-| `terminal.go` | the package comment; the events; `Service`; `Start`, `Close`, `ListShells`, `SetScreen`, `ListPrograms`, `ListEnvironment`; the stream |
+| `terminal.go` | the package comment; the events; `Service`; `Start`, `Run`, `Close`, `ListShells`, `SetScreen`, `ListPrograms`, `ListEnvironment`; the stream |
 | `links.go` | `Link`; `FindLinks`, `ResolveReference` |
 
 ## Starting a shell
@@ -16,8 +16,13 @@ until they end, and asks the workspace service for a folder's mod and a file's p
 `Start` takes the active file's path, which may be "", the path of the program to run, and the terminal's size. A
 program of "" is the default shell: the `terminal.shell` setting, else the first shell `internal/terminal` finds. A
 program that list holds starts with its arguments, as Git Bash starts with `--login -i`; any other starts with none.
-The folder is the folder of the mod that holds the file, else the workspace's first mod whose folder exists, else the
-home folder. A shell ends when its tab closes, when its program exits, or when the app quits.
+`Run` starts a command, a program and its arguments as given, in a tab of its own, as a coding agent's sign-in runs.
+The folder is `workspace.ResolveFolder`'s: the folder of the mod that holds the file, else the workspace's first mod
+whose folder exists, else the home folder. A shell ends when its tab closes, when its program exits, or when the app
+quits.
+
+`ListEnvironment` lists what every shell is given: `PMT_MCP_URL` and `PMT_MCP_TOKEN`, which PMT's own environment
+carries for coding agents (`mcp.Variables`), then `internal/terminal`'s own variables.
 
 ## The stream
 

@@ -13,7 +13,7 @@ import { useRouter } from "vue-router";
 
 import type { Place } from "@services/workspace/models";
 import * as workspaceApi from "@services/workspace/service";
-import type { IPosition } from "monaco-editor";
+import type { IPosition, IRange } from "monaco-editor";
 import { closeModel, findModel, openModel, renameModel, unsavedModels } from "../pages/ide/editor/models";
 import { diffTab, fileTab, parseTab, VIEWS } from "../pages/ide/editor/tabs";
 import { drawablesQuery, loadQuery, placeQuery, workspacesQuery } from "../queries";
@@ -33,6 +33,12 @@ export type Layout = { rows: { columns: Group[] }[] };
 
 /** A workspace's saved layout: the groups, the active group, and the path of each file a tab holds. */
 type SavedLayout = { layout: Layout; active: string; paths: Record<string, string> };
+
+/**
+ * A Source is what showed a place: the explorer, a jump, the palette, a page, the history, or Follow the agent for a
+ * file an agent reads or edits.
+ */
+export type Source = "explorer" | "navigate" | "palette" | "graph" | "health" | "history" | "agent" | "edit";
 
 /** One place the user was in: a file and a caret position in it. */
 type Visit = { place: Place; position: IPosition };
@@ -56,8 +62,10 @@ export const useEditorStore = defineStore("editor", () => {
   const places = shallowReactive(new Map<string, Place>());
   // whether changes are written down: not while a workspace's layout is being brought back, and in the main window only
   const tracking = shallowRef(false);
-  // the position a file was shown at, which the active group's editor of that file moves its caret to once
-  const request = shallowRef<{ key: string; position: IPosition } | null>(null);
+  // the range a file was shown with, which the active group's editor of that file selects once
+  const request = shallowRef<{ key: string; range: IRange } | null>(null);
+  // the tab Follow the agent showed last, until the user picks a tab or a group
+  const agentTab = shallowRef("");
   // the files the explorer's last selection holds, for the compare of two
   const selection = shallowRef<Place[]>([]);
   // the places the user jumped between, the oldest first, and the index of the one the user is at
@@ -65,8 +73,8 @@ export const useEditorStore = defineStore("editor", () => {
   const current = shallowRef(-1);
 
   const { mutate: openPlace } = useMutation({
-    mutation: async (request: { place: Place; position?: IPosition; created: boolean }) => {
-      await openFile(request.place, request.position);
+    mutation: async (request: { place: Place; range?: IRange; created: boolean }) => {
+      await openFile(request.place, request.range);
       // a file shown as code that defines something the view draws, a coat of arms, opens drawn
       if (!request.created || defaultView(request.place) !== "code") return;
       if ((await loadQuery(drawablesQuery(request.place.path)))?.length) setView(fileTab(request.place.key), "visual");
@@ -147,16 +155,16 @@ export const useEditorStore = defineStore("editor", () => {
   }
 
   /**
-   * Remembers a file's place and opens its model. A position, when given, becomes the model's caret, which the Form
-   * view shows the entry at, and is asked of the file's editor.
+   * Remembers a file's place and opens its model. A range, when given, is asked of the file's editor to select, and
+   * its start becomes the model's caret, which the Form view shows the entry at.
    */
-  async function openFile(place: Place, position?: IPosition): Promise<void> {
+  async function openFile(place: Place, range?: IRange): Promise<void> {
     places.set(place.key, place);
     if (!VIEWS[place.format].views.includes("code")) return;
     const model = await openModel(place);
-    if (!position) return;
-    model.caret = { line: position.lineNumber, column: position.column };
-    request.value = { key: place.key, position };
+    if (!range) return;
+    model.caret = { line: range.startLineNumber, column: range.startColumn };
+    request.value = { key: place.key, range };
   }
 
   /** Lists all the groups, row by row. */
@@ -252,10 +260,13 @@ export const useEditorStore = defineStore("editor", () => {
     return tab ? placeOf(tab.id) : null;
   };
 
+  /** Whether the active tab is the one Follow the agent showed last, which the user has not picked since. */
+  const isFollowed = (): boolean => !!agentTab.value && activeTab()?.id === agentTab.value;
+
   /**
    * Opens a tab of a place, a diff tab among them, and makes its group the active one. The tab is looked for in the
    * given group first, the active group unless one is given, then in the others; a tab no group holds goes into the
-   * first. The history keeps the switch, from where the user was before it.
+   * first. The history keeps the switch, from where the user was before it. The tab is the user's pick.
    */
   const open = (tabId: string, place: Place, groupId?: string): void => {
     places.set(place.key, place);
@@ -267,19 +278,19 @@ export const useEditorStore = defineStore("editor", () => {
     if (!home) add(group, { id: tabId, preview: false, view: "code" });
     group.active = tabId;
     activeId.value = group.id;
+    release(tabId);
   };
 
   /**
    * Shows a place. It opens the file in the view the request calls for: the explorer's single click opens a
    * preview tab, a definition opens the code view at its position, and a coat opens the Visual view. The file
    * opens in this window, or in the window that already holds it. The main window shows the IDE first. The history
-   * keeps the jump, unless the history is what shows the place.
+   * keeps the jump, unless the history is what shows the place. A place Follow the agent shows is the agent's, not
+   * the user's pick, until the user picks its tab or its group; a file the agent reads opens in the preview tab, and
+   * one it edits stays open. A folder, which an agent may name, is not shown.
    */
-  const show = (
-    place: Place,
-    position?: IPosition,
-    source: "explorer" | "navigate" | "palette" | "graph" | "health" | "history" = "navigate",
-  ): void => {
+  const show = (place: Place, selection?: IPosition | IRange, source: Source = "navigate"): void => {
+    if (place.isDir) return;
     const windows = useWindowsStore();
     const holder = windows.holderOf({ file: place.key });
     if (holder && holder !== THIS_WINDOW) {
@@ -288,27 +299,39 @@ export const useEditorStore = defineStore("editor", () => {
     }
     const group = activeGroup();
     if (!group) return;
-    if (source !== "history") record(position ? { place, position } : locate(place));
+    const range = selection && toRange(selection);
+    const start = range && { lineNumber: range.startLineNumber, column: range.startColumn };
+    if (source !== "history") record(start ? { place, position: start } : locate(place));
     const page = router.currentRoute.value.name;
     if (THIS_WINDOW === "main" && page && page !== "workspace-ide") {
       void router.push({ name: "workspace-ide", params: { id: workspace.activeId() } });
     }
     const id = fileTab(place.key);
+    // the preview tab the user opened is kept when Follow opens one, so Follow replaces only its own
+    if (source === "agent") {
+      group.tabs.filter((one) => one.preview && one.id !== agentTab.value).forEach((one) => pin(one.id));
+    }
+    agentTab.value = source === "agent" || source === "edit" ? id : "";
+    // the explorer's single click and an agent's read open the preview tab, which the next one replaces
+    const isPreview = source === "explorer" || source === "agent";
     const tab = group.tabs.find((other) => other.id === id);
     if (tab) {
-      if (source !== "explorer") tab.preview = false;
+      if (!isPreview) tab.preview = false;
       group.active = id;
     } else {
-      add(group, { id, preview: source === "explorer", view: defaultView(place) });
+      add(group, { id, preview: isPreview, view: defaultView(place) });
     }
-    openPlace({ place, position, created: !tab });
+    openPlace({ place, range, created: !tab });
   };
 
-  /** The position a file was last shown at that no editor has moved to yet, or undefined when there is none. */
-  const findRequest = (key: string): IPosition | undefined =>
-    request.value?.key === key ? request.value.position : undefined;
+  /**
+   * The range a file was last shown with, to select, or empty to put the caret at, that no editor has moved to yet. It
+   * is undefined when there is none.
+   */
+  const findRequest = (key: string): IRange | undefined =>
+    request.value?.key === key ? request.value.range : undefined;
 
-  /** Forgets the position asked of an editor, once the editor has moved its caret there. */
+  /** Forgets the range asked of an editor, once the editor has moved its caret there. */
   const clearRequest = (): void => {
     request.value = null;
   };
@@ -365,10 +388,22 @@ export const useEditorStore = defineStore("editor", () => {
     return !!visit && visit.place.key === other.place.key && visit.position.lineNumber === other.position.lineNumber;
   }
 
-  /** Makes the given group the active one. A group the layout lacks changes nothing. */
+  /** Makes the given group the active one, as the user's pick. A group the layout lacks changes nothing. */
   const activate = (groupId: string): void => {
-    if (listGroups().some((group) => group.id === groupId)) activeId.value = groupId;
+    const group = listGroups().find((one) => one.id === groupId);
+    if (!group) return;
+    activeId.value = groupId;
+    release(group.active);
   };
+
+  /**
+   * Ends Follow the agent's hold on the tab it showed, as the user picks a tab. The tab Follow showed stays open when
+   * it is the one the user picks.
+   */
+  function release(tabId: string | null): void {
+    if (tabId && tabId === agentTab.value) pin(tabId);
+    agentTab.value = "";
+  }
 
   /** Keeps a preview tab: it is no longer replaced by the next file shown. */
   const pin = (tabId: string): void => {
@@ -483,6 +518,7 @@ export const useEditorStore = defineStore("editor", () => {
     activeGroup,
     activeTab,
     activeFile,
+    isFollowed,
     placeOf,
     show,
     open,
@@ -501,3 +537,10 @@ export const useEditorStore = defineStore("editor", () => {
     rename,
   };
 });
+
+/** toRange returns what the editor selects as a range: a position as the empty range at it. */
+function toRange(selection: IPosition | IRange): IRange {
+  if ("startLineNumber" in selection) return selection;
+  const { lineNumber, column } = selection;
+  return { startLineNumber: lineNumber, startColumn: column, endLineNumber: lineNumber, endColumn: column };
+}

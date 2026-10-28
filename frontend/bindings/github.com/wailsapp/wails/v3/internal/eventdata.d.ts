@@ -10,6 +10,9 @@ import type { Events } from "@wailsio/runtime";
 import type * as app$0 from "../../../../../paradox-modding-tools/services/app/models.js";
 // eslint-disable-next-line @typescript-eslint/ban-ts-comment
 // @ts-ignore: Unused imports
+import type * as mcp$0 from "../../../../../paradox-modding-tools/services/mcp/models.js";
+// eslint-disable-next-line @typescript-eslint/ban-ts-comment
+// @ts-ignore: Unused imports
 import type * as search$0 from "../../../../../paradox-modding-tools/services/search/models.js";
 // eslint-disable-next-line @typescript-eslint/ban-ts-comment
 // @ts-ignore: Unused imports
@@ -33,6 +36,7 @@ declare module "@wailsio/runtime" {
             "git:output": string;
             "install:scanned": string;
             "install:scanning": workspace$0.Scanning;
+            "mcp:show": mcp$0.Show;
             "release:changed": string;
             "search:hits": search$0.Hits;
             "shell:exited": string;

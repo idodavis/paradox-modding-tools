@@ -77,7 +77,6 @@ type FileText struct {
 // A Child is one entry in a folder listing.
 type Child struct {
 	Name  string `json:"name"`
-	Dir   bool   `json:"dir"`
 	Place Place  `json:"place"`
 }
 
@@ -615,6 +614,24 @@ func (wsp *Service) LookupMod(modID string) (Mod, bool) {
 	return lo.Find(wsp.State().Mods, func(mod Mod) bool { return mod.ID == modID })
 }
 
+// ResolveFolder returns the folder a shell or an agent starts in, and the id of the mod it is the folder of. It is
+// the folder of the mod that holds the file at the given path, else of the workspace's first mod, a mod whose folder
+// is missing passed over. With neither it is the home folder, and the id is "".
+//
+//wails:ignore
+func (wsp *Service) ResolveFolder(path string) (string, string) {
+	mods := wsp.State().Mods
+	if path != "" {
+		origin := wsp.Locate(path).Origin
+		mods = append(lo.Filter(mods, func(mod Mod, _ int) bool { return mod.ID == origin }), mods...)
+	}
+	if mod, ok := lo.Find(mods, func(mod Mod) bool { return !mod.Broken }); ok {
+		return mod.Dir, mod.ID
+	}
+	home, _ := os.UserHomeDir()
+	return home, ""
+}
+
 // Launch starts the game with its debug flag. When the game exits, the game:exited event says whether it wrote
 // fresher dumps. It returns an error if no workspace is open or the game cannot be started.
 func (wsp *Service) Launch() error {
@@ -710,13 +727,14 @@ func (wsp *Service) ListFolder(dir string) ([]Child, error) {
 	mods := session.Mods.Load()
 	children := lo.FilterMap(entries, func(entry os.DirEntry, _ int) (Child, bool) {
 		place := session.Locate(mods, filepath.Join(dir, entry.Name()))
-		return Child{Name: entry.Name(), Dir: entry.IsDir(), Place: place}, entry.IsDir() || record.ShowBinaries || place.Format.IsText()
+		place.IsDir = entry.IsDir()
+		return Child{Name: entry.Name(), Place: place}, place.IsDir || record.ShowBinaries || place.Format.IsText()
 	})
 	slices.SortStableFunc(children, func(a, b Child) int {
 		switch {
-		case a.Dir == b.Dir:
+		case a.Place.IsDir == b.Place.IsDir:
 			return 0
-		case a.Dir:
+		case a.Place.IsDir:
 			return -1
 		}
 		return 1
@@ -817,13 +835,17 @@ func move(source, target string) error {
 	return os.RemoveAll(source)
 }
 
-// Locate returns the place of a file in the open workspace. It returns an empty place if none is open.
+// Locate returns the place of a file or folder in the open workspace, which says whether it is a folder. It returns
+// an empty place if none is open.
 func (wsp *Service) Locate(path string) Place {
 	session, err := wsp.Session()
 	if err != nil {
 		return Place{}
 	}
-	return session.Locate(session.Mods.Load(), path)
+	place := session.Locate(session.Mods.Load(), path)
+	info, err := os.Stat(path)
+	place.IsDir = err == nil && info.IsDir()
+	return place
 }
 
 // ServeHTTP serves the file a request names, DDS and TGA as PNG. A file outside the recorded installs and mods is

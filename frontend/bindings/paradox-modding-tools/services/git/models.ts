@@ -59,6 +59,19 @@ export interface Commit {
 }
 
 /**
+ * A LineChange is one run of lines a text changes from its file's last commit, by its lines in the text. A run of
+ * removed lines has no line of its own, so it is marked on the line before it, or on the first line.
+ */
+export interface LineChange {
+    /**
+     * "added", "changed" or "removed"
+     */
+    "kind": string;
+    "start": number;
+    "end": number;
+}
+
+/**
  * A Ref is one branch, remote branch or tag.
  */
 export interface Ref {

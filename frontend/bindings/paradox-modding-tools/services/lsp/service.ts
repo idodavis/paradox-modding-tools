@@ -60,6 +60,15 @@ export function Diagnose(path: string): $CancellablePromise<$models.Diagnostic[]
 }
 
 /**
+ * DiagnoseText returns the problems a file would have with the given text, judged against the open workspace. It
+ * leaves the editor's text of the file alone, and leaves out the checks the user turned off. It returns an error if
+ * no workspace is open.
+ */
+export function DiagnoseText(path: string, text: string): $CancellablePromise<$models.Diagnostic[] | null> {
+    return $Call.ByID(1030121980, path, text);
+}
+
+/**
  * FindSymbols returns the definitions whose name contains the query, the mods' first, and then the localization keys
  * that do, up to the given limit. It returns an empty list for an empty query.
  */

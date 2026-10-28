@@ -27,6 +27,7 @@ export type Model = {
   encoding: Encoding;
   unsaved: boolean;
   caret: { line: number; column: number };
+  lines: { start: number; end: number } | null; // the lines selected, or null when nothing is
   problems: Diagnostic[];
   diskText: Text | null; // the disk's text after the file changed on disk under unsaved text; null while none did
 };
@@ -209,6 +210,7 @@ function buildModel(place: Place, start: { text: string; disk: string; encoding:
     encoding: start.encoding,
     unsaved: start.unsaved,
     caret: { line: 1, column: 1 },
+    lines: null,
     problems: [],
     diskText: null,
   });

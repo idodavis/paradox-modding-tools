@@ -9,7 +9,7 @@ It lists the files from the mods' index (`index.Index`), reads each one as the e
 
 | file | holds |
 |---|---|
-| `search.go` | the package comment; `EventHits`, `maxHits`; `Service` with `ServiceShutdown`; `Query`, `Hit`, `Hits`; `SearchText`, `StopSearch`, `ReplaceText`, `SearchFiles`; the run, the quick test before a file is read line by line, the globs and the matches |
+| `search.go` | the package comment; `EventHits`, `maxHits`; `Service` with `ServiceShutdown`; `Query`, `Hit`, `Hits`; `SearchText`, `CollectText`, `StopSearch`, `ReplaceText`, `SearchFiles`; the run, the quick test before a file is read line by line, the globs and the matches |
 
 ## Text search
 
@@ -21,6 +21,10 @@ spans two lines. A search stops at `maxHits` and says so.
 
 The service runs one search at a time. Starting a new one stops the last, and `StopSearch` stops it. `ServiceShutdown`
 stops a running search.
+
+The run gives each file's hits to a receiver, up to a limit. `SearchText` sends them as events, up to `maxHits`;
+`CollectText`, which PMT's tools for coding agents call, collects and returns them, up to its caller's limit, and
+stops when its caller's channel closes.
 
 ## Replace
 

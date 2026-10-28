@@ -166,13 +166,17 @@ func findLanguageFolder(folders []string) (int, bool) {
 	return root + 1 + next, true
 }
 
-// Encode returns the text of a localization file for one language: the header line, then each message as its key,
-// its version and its quoted text, in the layout the game reads.
+// Encode returns the text of a localization file for one language: the header line, then its messages.
 func Encode(language string, messages []Message) string {
+	return ToLanguageKey(language) + ":\n" + EncodeMessages(messages, "\n")
+}
+
+// EncodeMessages returns one line for each given message: its key, its version and its quoted text in the layout the
+// game reads, ended by the given line ending.
+func EncodeMessages(messages []Message, ending string) string {
 	var text strings.Builder
-	fmt.Fprintf(&text, "%s:\n", ToLanguageKey(language))
 	for _, message := range messages {
-		fmt.Fprintf(&text, " %s:%d \"%s\"\n", message.Key, message.Version, message.Text)
+		fmt.Fprintf(&text, " %s:%d \"%s\"%s", message.Key, message.Version, message.Text, ending)
 	}
 	return text.String()
 }

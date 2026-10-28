@@ -48,6 +48,14 @@ func ToRange(text string, lines jomini.Lines, span jomini.Span) Range {
 	}
 }
 
+// ToSpan converts a Monaco range to a byte span in a text, using the text's line index.
+func ToSpan(text string, lines jomini.Lines, bounds Range) jomini.Span {
+	return jomini.Span{
+		Start: ToOffset(text, lines, bounds.StartLine, bounds.StartColumn),
+		End:   ToOffset(text, lines, bounds.EndLine, bounds.EndColumn),
+	}
+}
+
 // ToLineRange returns the empty range at the start of a line, counted from one.
 func ToLineRange(line int) Range {
 	return Range{StartLine: line, StartColumn: 1, EndLine: line, EndColumn: 1}

@@ -30,6 +30,7 @@ import OriginChip from "../../ui/OriginChip.vue";
 import ScriptDocsGuide from "../../ui/ScriptDocsGuide.vue";
 import ValueField from "../../ui/ValueField.vue";
 import SettingsSection, { SETTING_ROWS } from "../../ui/SettingsSection.vue";
+import AgentsSection from "./AgentsSection.vue";
 import ShortcutsSection from "./ShortcutsSection.vue";
 import ThemePreview from "./ThemePreview.vue";
 import WorkspaceModCard from "./WorkspaceModCard.vue";
@@ -51,6 +52,7 @@ const GROUPS = [
       { value: "appearance", label: "Appearance" },
       { value: "shortcuts", label: "Keyboard shortcuts" },
       { value: "terminal", label: "Terminal" },
+      { value: "agents", label: "Agents and tools" },
     ],
   },
   {
@@ -87,6 +89,7 @@ const HELP = [
   "Mods and load order: drag to reorder. When two mods ship a file at the same path, the game reads the one lower in the order; Health's Compatibility view explains how each game picks between copies. Colors stay with the mod, not its position. Each mod's calendar, Workshop link and upload exclusions are on its card. Changes save as you make them.",
   "IDE: the editor, the explorer, the language's help, the checks, the Visual view and the wiki, kept for this workspace.",
   "Appearance applies to every workspace: the theme, light and dark, matching the game's theme, the interface scale and the pages shown.",
+  "Agents and tools: the port and token of PMT's tools for coding agents, the text that registers PMT with an agent you run yourself, and agents of your own.",
 ];
 const HEADING = {
   ui: {
@@ -682,12 +685,16 @@ async function remove(): Promise<void> {
               <h2 class="text-13 font-semibold">What every shell is given</h2>
               <dl class="grid grid-cols-[minmax(0,max-content)_minmax(0,1fr)] gap-x-4 gap-y-1.5 text-12">
                 <template v-for="row in environment ?? []" :key="row.name">
-                  <dt class="font-mono text-highlighted">{{ row.name }}={{ row.value }}</dt>
+                  <dt class="font-mono text-highlighted">{{ row.value ? `${row.name}=${row.value}` : row.name }}</dt>
                   <dd class="text-dimmed">{{ row.help }}</dd>
                 </template>
               </dl>
             </section>
           </div>
+        </template>
+
+        <template #agents>
+          <AgentsSection />
         </template>
       </UTabs>
     </template>

@@ -1,6 +1,6 @@
 <!--
-  The status bar: the install and its scan, the page's own facts, the wiki download, the windows, Help and the
-  version with its update check.
+  The status bar: the install and its scan, the page's own facts, what the agent is doing, the wiki download, the
+  windows, Help and the version with its update check.
 -->
 <script setup lang="ts">
 import type { ToastProps } from "@nuxt/ui";
@@ -12,12 +12,14 @@ import { useRoute } from "vue-router";
 import * as app from "@services/app/service";
 import { day, installLine } from "../lib/format";
 import { crashedQuery, releasesQuery, stateQuery, updateQuery, versionQuery, windowsQuery } from "../queries";
+import { useAgentStore } from "../stores/agent";
 import { describeWindow, THIS_WINDOW, useWindowsStore } from "../stores/windows";
 import { PAGES } from "./pages";
 
 const route = useRoute();
 const toast = useToast();
 const windows = useWindowsStore();
+const agent = useAgentStore();
 
 const page = computed(() => (route.name ? PAGES[route.name] : undefined));
 const { data: state } = useQuery(stateQuery);
@@ -134,6 +136,19 @@ const ITEM = "flex h-6 items-center gap-1.25 hover:text-highlighted";
     <div id="status-start" class="contents" />
     <span class="grow" />
     <div id="status-end" class="contents" />
+    <button v-if="agent.status && agent.active" type="button" :class="ITEM" @click="agent.isPaneOpen = true">
+      <span
+        class="size-1.5 shrink-0 rounded-full"
+        :class="
+          agent.isWaiting(agent.active)
+            ? 'bg-warning'
+            : agent.active.state === 'running'
+              ? 'animate-pulse bg-primary'
+              : 'bg-success'
+        "
+      />
+      {{ agent.status }}
+    </button>
     <span v-if="wiki" class="flex items-center gap-1.25 tabular-nums">
       <span class="size-1.5 shrink-0 animate-pulse rounded-full bg-primary" />
       {{ state?.game?.name ?? "Game" }} wiki: {{ wiki.done }} of {{ wiki.total }}

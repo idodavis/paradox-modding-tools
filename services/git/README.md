@@ -12,6 +12,7 @@ service for the place of each changed file. A repository is its root folder, as 
 | `git.go` | the package comment; the events; `Service`; `Run`, which runs git; `FindRepository`, `ReadFile`; the commands (`Stage`, `Unstage`, `Discard`, `CreateCommit`, `CreateBranch`, `SwitchBranch`, `Merge`) |
 | `status.go` | `Change`, `Status`, `Ref`; `ReadStatus`, `ListRefs`; the parser of the status records |
 | `log.go` | `Commit`; `ListCommits`, `ListCommitFiles` |
+| `diff.go` | `LineChange`; `DiffFile`, the editor's change bars |
 
 ## Running git
 
@@ -32,6 +33,10 @@ holds it; `FindRepository` returns that repository's root.
 - `ListCommitFiles` lists the files one commit changed, a renamed file with its old path.
 - `ReadFile` returns a file's text at a revision, as `git show` prints it, decoded as the files on disk are. The
   revision `:0` reads the staged version. The diffs and the conflicts are drawn by the editor from these texts.
+- `DiffFile` returns the runs of lines an editor's text changes from its file at the last commit: added, changed, or
+  removed, a removed run marked on the line before it. It diffs by go-diff's line mode, `\r\n` read as `\n`, the
+  engine's diff for line counts too (`steam`'s compare). A file git does not track is checked first with
+  `rev-parse --quiet`, so typing in it prints nothing to git's output; it is an error, and the editor draws no bars.
 
 ## Commands
 

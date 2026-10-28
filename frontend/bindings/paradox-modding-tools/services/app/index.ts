@@ -7,6 +7,7 @@ export {
 };
 
 export type {
+    Agent,
     Calendar,
     Era,
     Install,

@@ -29,6 +29,15 @@ export function CreateCommit(dir: string, message: string): $CancellablePromise<
 }
 
 /**
+ * DiffFile returns the runs of lines a text changes from its file's text at the last commit, for the editor's change
+ * bars. A line that ends in \r\n is read as one that ends in \n in both texts. It returns an error if the file is in
+ * no repository or git does not track it.
+ */
+export function DiffFile(path: string, text: string): $CancellablePromise<$models.LineChange[] | null> {
+    return $Call.ByID(297592599, path, text);
+}
+
+/**
  * Discard throws away the working changes of the given files and emits git:changed. A file git does not track is
  * deleted.
  */

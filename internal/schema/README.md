@@ -10,10 +10,10 @@ and the walk reads directly. A schema is built once for each version of an insta
 
 | file | holds |
 |---|---|
-| `schema.go` | the shape: `Claim` and `Claims`, `ValueType` and its constants, `Expected`, `Vanilla`, `Field`, `Command`, `Example`, `Database`, `ScopeType`, `DataFunction`, `DataType`, `Modifier`, `OnAction`, `ScriptedDefinition`, `SourceState`, `Schema`; `Build`; the databases and their callees; `SplitStage`, `FindLocReplacement` (the rank of a localization replace folder among the game's forms); `JoinNested` and `SplitNested`; the lookups (`FindDatabase`, `FindDatabaseByClass`, `FindCommand`, `ResolveLink`); the data calls (`ResolveCallTypes`, `FindFunction`, `ResolveMacro`, `ResolveDatacontext`, `ListCallReferences`, `ResolveTypeDatabase`); `ToPhrase`, `MatchValue` |
+| `schema.go` | the shape: `Claim` and `Claims`, `ValueType` and its constants, `Expected`, `Vanilla`, `Field`, `Command`, `Example`, `Database`, `ScopeType`, `DataFunction`, `DataType`, `Modifier`, `OnAction`, `ScriptedDefinition`, `SourceState`, `Schema`; `Build`; the databases and their callees; `SplitStage`, `FindLocReplacement` (the rank of a localization replace folder among the game's forms); `JoinNested` and `SplitNested`; the lookups (`FindDatabase`, `FindDatabaseByClass`, `FindCommand`, `ResolveLink`); the data calls (`ResolveCallTypes`, `FindFunction`, `ResolveMacro`, `ResolveDatacontext`, `ListCallReferences`, `ResolveTypeDatabase`, `FindUnlisted`); `ToPhrase`, `MatchValue` |
 | `dumps.go` | the dumps reader: `DumpCommand`, `Dumps`, `ReadDumps`, `FindDumpsAt`; the commands, the arguments a usage writes, the list families' shared arguments; the backup for a missing section |
 | `docs.go` | the docs reader, `docReader`: which files are docs, and the blurbs, types, requirements, defaults, choices and scopes their prose states |
-| `vanilla.go` | the vanilla count, `CountVanilla`: the `declarer` that records what script and GUI files call by name, the `counter` and its `holder`s that count what the game's own files write, and the claims the counts support |
+| `vanilla.go` | the vanilla count, `CountVanilla`: the `declarer` that records what script and GUI files call by name, the `counter` and its `holder`s that count what the game's own files write, and the claims the counts support; the mods' scripted definitions (`SetScripted`), the parameters a body writes (`ListParameters`) and how many places of a name are kept as examples (`ExampleCount`) |
 | `walk.go` | the walk: `Category` and its constants, `Definition`, `Reference`, `Saved`, `Context`, `Visitor`; `Walk`, `WalkTo`, `ListNamespaces`, `ParseCall`; the `walker`, its `frame`s and the `match` a key fits |
 | `shipped.go` | the shipped backup of each game's dumps, `LoadShipped`, embedded from `shipped/*.gob` |
 | `gen/main.go` | the program that writes `shipped/<game>.gob` from the dumps of an install that `PMT_TEST_INSTALL_<GAME>` names |
@@ -106,7 +106,11 @@ pattern: prose is no valid script, so nothing is parsed. Its example's statement
 and above them are their text. A key that stands for names (`<key>`, `scope:actor`, `trigger/effect`, `$target$`)
 makes no field, but a block it opens is still a level of the example; written with prose instead of a block, as
 `scope:actor = the actor` is, it is a note. That text states a blurb, a type by the words of `game.DocTypes`, a requirement, a
-default, choices and a scope. A later doc only fills what an earlier one left out.
+default, choices and a scope. A sample value such as `innovation_key` names the database of its words, by
+`ResolveTypeDatabase`, and the key `date` stands for a date key, as a dated history block's. The example's first
+block is the definition, but a definition named by its file is the whole file, so such a doc is read as already
+inside it. A later doc only fills what an earlier one left out. A database of records, such as `history/titles`,
+gives no data type its words: "title" names a landed title, not its history.
 
 ## The vanilla count
 

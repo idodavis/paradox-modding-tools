@@ -9,7 +9,6 @@ import (
 	"path/filepath"
 	"regexp"
 	"slices"
-	"strconv"
 	"strings"
 
 	"github.com/samber/lo"
@@ -64,17 +63,12 @@ var releaseVersion = regexp.MustCompile(`^(\d+)\.(\d+)(?:\.|$)`)
 // ReadDescriptor reads the descriptor of the mod in a folder. Its thumbnail is a full path. It returns an error if
 // the file cannot be read or is not a valid descriptor.
 func ReadDescriptor(row *game.Game, dir string) (Descriptor, error) {
-	file, metadata := resolveDescriptor(row, dir)
+	file, _ := resolveDescriptor(row, dir)
 	text, err := files.ReadText(file)
 	if err != nil {
 		return Descriptor{}, err
 	}
-	var descriptor Descriptor
-	if metadata {
-		descriptor, err = decodeDescriptorMetadata(text.Text)
-	} else {
-		descriptor = parseDescriptorScript(text.Text)
-	}
+	descriptor, err := ParseDescriptor(file, text.Text)
 	if err != nil {
 		return Descriptor{}, err
 	}
@@ -83,6 +77,15 @@ func ReadDescriptor(row *game.Game, dir string) (Descriptor, error) {
 		descriptor.Thumbnail = files.Join(dir, path.Join(row.ThumbnailDir, descriptor.Thumbnail))
 	}
 	return descriptor, nil
+}
+
+// ParseDescriptor reads the text of a descriptor: as JSON where the file is a metadata.json, else as script. Its
+// thumbnail is as written. It returns an error if the JSON cannot be read.
+func ParseDescriptor(file, text string) (Descriptor, error) {
+	if path.Ext(file) == ".json" {
+		return decodeDescriptorMetadata(text)
+	}
+	return parseDescriptorScript(text), nil
 }
 
 // findThumbnail returns the full path of the picture shown for a mod. It is the mod's thumbnail file, else the
@@ -137,6 +140,37 @@ func FindMod(mods []Mod, dependency Dependency) (Mod, bool) {
 	return lo.Find(mods, func(mod Mod) bool {
 		return mod.Descriptor.ID == dependency.ID || mod.Descriptor.Name == dependency.ID
 	})
+}
+
+// ListDependencies returns the ids of the workspace's mods that a mod depends on, as its descriptor declares them, and
+// theirs, all the way down, in the order they are found. A dependency the workspace lacks is left out, and so is the
+// mod itself.
+func (ws *Session) ListDependencies(modID string) []string {
+	var dependencies []string
+	for pending := []string{modID}; len(pending) > 0; {
+		mod, _ := lo.Find(ws.Order, func(mod Mod) bool { return mod.ID == pending[0] })
+		pending = pending[1:]
+		for _, dependency := range mod.Descriptor.Dependencies {
+			if other, ok := FindMod(ws.Order, dependency); ok && other.ID != modID && !slices.Contains(dependencies, other.ID) {
+				dependencies = append(dependencies, other.ID)
+				pending = append(pending, other.ID)
+			}
+		}
+	}
+	return dependencies
+}
+
+// DescribeMod returns a mod's title, or its folder's name if the descriptor gives none. It returns the game's name for
+// the game, and the id itself for a mod the workspace lacks.
+func (ws *Session) DescribeMod(modID string) string {
+	mod, ok := lo.Find(ws.Order, func(mod Mod) bool { return mod.ID == modID })
+	switch {
+	case ok:
+		return cmp.Or(mod.Descriptor.Name, filepath.Base(mod.Dir))
+	case modID == game.OriginVanilla:
+		return ws.Game.Name
+	}
+	return modID
 }
 
 // ResolveWorkshopID returns the Workshop id of the mod's record, else its descriptor's. It is "" if neither has one.
@@ -199,23 +233,23 @@ func toSupportedVersion(version string) string {
 	return match[1] + "." + match[2] + ".*"
 }
 
-// IsOlderRelease reports whether the release a mod supports is older than a game version's. Only the major and minor
-// numbers count. It is false if either does not start with two numbers.
-func IsOlderRelease(supported, version string) bool {
-	older, hasOlder := toRelease(supported)
-	newer, hasNewer := toRelease(version)
-	return hasOlder && hasNewer && slices.Compare(older[:], newer[:]) < 0
-}
-
-// toRelease returns the major and minor numbers a version starts with. It returns false if there are not two.
-func toRelease(version string) ([2]int, bool) {
-	match := releaseVersion.FindStringSubmatch(version)
-	if match == nil {
-		return [2]int{}, false
+// MatchVersion reports whether a mod made for a supported version runs on a game version. It matches them part by
+// part, as EU5's and Vic3's logs show the games doing, and a * matches the rest. Its second result is false where no
+// source shows how the games match: a supported version that is empty or has a * inside a part, such as 1.4*, or a
+// game version that is not numbers between dots, such as a build id.
+func MatchVersion(supported, version string) (matches, judged bool) {
+	wanted, actual := strings.Split(supported, "."), strings.Split(version, ".")
+	judged = supported != "" && lo.EveryBy(wanted, func(part string) bool { return part == "*" || jomini.IsNumber(part) }) &&
+		lo.EveryBy(actual, jomini.IsNumber)
+	for position, part := range wanted {
+		switch {
+		case part == "*":
+			return true, judged
+		case position >= len(actual) || part != actual[position]:
+			return false, judged
+		}
 	}
-	major, _ := strconv.Atoi(match[1])
-	minor, _ := strconv.Atoi(match[2])
-	return [2]int{major, minor}, true
+	return len(wanted) == len(actual), judged
 }
 
 // resolveModFolder returns the folder for a mod inside a folder of mods, named after the mod.

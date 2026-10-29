@@ -1,10 +1,11 @@
 <!--
   One mod's health, with what it holds, its problems and how much of each language is written. The open problem's
-  detail links to the game's log lines at its place.
+  detail links to the game's log lines at its place, and to the finding of workspace compatibility about the file
+  that defines its name.
 -->
 <script setup lang="ts">
 import { computed, shallowRef } from "vue";
-import { useMutation, useQueryCache } from "@pinia/colada";
+import { useMutation, useQuery, useQueryCache } from "@pinia/colada";
 import { groupBy, sortBy } from "es-toolkit";
 import { WriteScaffold } from "@services/health/service";
 import type { Finding, Overview } from "@services/health/models";
@@ -14,16 +15,21 @@ import {
   describeCount,
   describeLanguages,
   describeLogLine,
+  describeTitle,
   list,
   listFindingRows,
+  type Part,
   plural,
+  splitFinding,
   toSiteKey,
 } from "../../lib/format";
-import { keys } from "../../queries";
+import { codesQuery, keys } from "../../queries";
 import { useWorkspaceStore } from "../../stores/workspace";
 import ModAvatar from "../../ui/ModAvatar.vue";
 import HealthDetail from "./HealthDetail.vue";
+import HealthLink from "./HealthLink.vue";
 import HealthList from "./HealthList.vue";
+import HealthSection from "./HealthSection.vue";
 
 const {
   mod,
@@ -31,6 +37,7 @@ const {
   languages,
   overview = undefined,
   log,
+  compatibility,
   opened = -1,
 } = defineProps<{
   mod: Mod;
@@ -41,10 +48,12 @@ const {
   overview?: Overview;
   /** The rows of the game's log. */
   log: Finding[];
+  /** The findings of workspace compatibility. */
+  compatibility: Finding[];
   /** The open finding's index, or -1 for none. */
   opened?: number;
 }>();
-const emit = defineEmits<{ open: [index: number]; log: [index: number] }>();
+const emit = defineEmits<{ open: [index: number]; log: [index: number]; compatibility: [index: number] }>();
 const filter = defineModel<string>("filter", { default: "" });
 
 /** How many databases show before the rest fold behind a button. */
@@ -53,14 +62,15 @@ const DATABASES_SHOWN = 5;
 const workspace = useWorkspaceStore();
 const toast = useToast();
 const cache = useQueryCache();
+const { data: codes } = useQuery(codesQuery);
 const allDatabases = shallowRef(false);
 
 const open = computed(() => findings[opened]);
 const subtitle = computed(() => {
-  const dependencies = mod.descriptor.dependencies ?? [];
+  const judged = overview?.judged ?? [];
   return [
     mod.descriptor.version && `Version ${mod.descriptor.version}`,
-    dependencies.length && `depends on ${list(dependencies.map((one) => one.title || one.id))}`,
+    overview && `judged ${judged.length ? `with ${list(judged.map(workspace.originName))}` : "on its own"}`,
   ]
     .filter(Boolean)
     .join(" · ");
@@ -98,15 +108,31 @@ const coverage = computed(() =>
 /** The game's log rows by the place they name, each with its index. */
 const logPlaces = computed(() => groupBy(listFindingRows(log), (row) => toSiteKey(row.finding)));
 const hits = computed(() => (open.value ? (logPlaces.value[toSiteKey(open.value)] ?? []) : []));
-const hit = computed(() => {
-  const first = hits.value[0];
-  return (
-    first && {
-      index: first.index,
-      message: describeLogLine(first.finding),
-      times: countLines(hits.value.map((one) => one.finding)),
-    }
-  );
+/** How many lines of the game's log are at the open problem's place, repeats included. */
+const hitLines = computed(() => countLines(hits.value.map((hit) => hit.finding)));
+/** The index of the compatibility finding about the file where another mod defines the open problem's name. */
+const related = computed(() => {
+  const path = open.value?.defined?.[0]?.place.path;
+  return path
+    ? compatibility.findIndex(
+        (finding) => finding.code === "removed-names" && finding.sites?.some((site) => site.place.path === path),
+      )
+    : -1;
+});
+/**
+ * The related compatibility finding, as parts: the file it is about, then its message. It is empty if there is no
+ * such finding.
+ */
+const relation = computed((): Part[] => {
+  const other = compatibility[related.value];
+  return other
+    ? [
+        ...describeTitle(other),
+        { text: ": ", style: "" },
+        ...splitFinding(other, codes.value),
+        { text: " Open it in workspace compatibility.", style: "" },
+      ]
+    : [];
 });
 
 const { mutate: writeScaffold, isLoading: scaffolding } = useMutation({
@@ -204,19 +230,27 @@ const { mutate: writeScaffold, isLoading: scaffolding } = useMutation({
       </template>
       <template #detail>
         <HealthDetail v-if="open" :finding="open" :findings="findings">
-          <button
-            v-if="hit"
-            type="button"
-            class="flex items-center gap-2.5 rounded-lg border border-default bg-muted px-3 py-2.5 text-start hover:bg-accented"
-            @click="emit('log', hit.index)"
-          >
-            <UIcon name="i-lucide-terminal" class="size-4 shrink-0 text-dimmed" />
-            <span class="flex min-w-0 grow flex-col">
-              <span class="text-12 text-highlighted">In the game's log, {{ plural(hit.times, "time") }}</span>
-              <span class="truncate font-mono text-11 text-dimmed">{{ hit.message }}</span>
-            </span>
-            <UIcon name="i-lucide-chevron-right" class="size-3.5 text-dimmed" />
-          </button>
+          <HealthSection v-if="relation.length" title="Related">
+            <HealthLink
+              :level="compatibility[related]?.level ?? ''"
+              :parts="relation"
+              @open="emit('compatibility', related)"
+            />
+          </HealthSection>
+          <HealthSection v-if="hits[0]" title="In the game's log" :count="hitLines">
+            <template #actions>
+              <UButton
+                label="Show in the log"
+                icon="i-lucide-terminal"
+                variant="ghost"
+                size="xs"
+                @click="hits[0] && emit('log', hits[0].index)"
+              />
+            </template>
+            <p class="font-mono text-11.5 leading-4.5 wrap-anywhere text-toned">
+              {{ describeLogLine(hits[0].finding) }}
+            </p>
+          </HealthSection>
         </HealthDetail>
         <p v-else class="p-4 text-12 text-dimmed">Select a row.</p>
       </template>

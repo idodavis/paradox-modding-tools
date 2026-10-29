@@ -56,15 +56,26 @@ func LoadIndex(path string) (*Index, bool) {
 	return index, true
 }
 
+// ParseFile reads the file with the given path and parses it as script. It returns an error if the file cannot be
+// read.
+func ParseFile(path string) (*jomini.Tree, error) {
+	text, err := files.ReadText(path)
+	if err != nil {
+		return nil, err
+	}
+	return jomini.Parse(text.Text), nil
+}
+
 // ScanMods builds the index of a workspace's mods on top of the install's index, so that a lookup in the mods'
-// index falls through to the install's. The replaced folders are given per root, as each mod's replace_path lists
-// them. The index records every language the mods write, even one the install does not. It returns an error if a
-// root cannot be walked.
+// index falls through to the install's. It first gives the schema the mods' scripted definitions. The replaced
+// folders are given per root, as each mod's replace_path lists them. The index records every language the mods write,
+// even one the install does not. It returns an error if a root cannot be walked.
 func ScanMods(schema *schema.Schema, install *Index, roots []files.Root, replaced [][]string) (*Index, error) {
 	listing, err := ListFiles(roots)
 	if err != nil {
 		return nil, err
 	}
+	schema.SetScripted(listing, ParseFile)
 	index := newIndex(schema, install, roots, listing)
 	index.scanFiles(schema, func(int) {})
 	index.buildPostings()
@@ -72,8 +83,9 @@ func ScanMods(schema *schema.Schema, install *Index, roots []files.Root, replace
 	return index, nil
 }
 
-// ScanFiles scans the given files again after they changed, reading each from disk. A file that no longer exists is
-// dropped with its occurrences. It returns an error, and changes nothing, if any of the files is the install's.
+// ScanFiles scans the given files again after they changed, reading each from disk, and first gives the schema the
+// scripted definitions they declare now. A file that no longer exists is dropped with its occurrences. It returns an
+// error, and changes nothing, if any of the files is the install's.
 func (index *Index) ScanFiles(schema *schema.Schema, changed []files.File) error {
 	installFiles := index.countInstallFiles()
 	for _, file := range changed {
@@ -81,6 +93,7 @@ func (index *Index) ScanFiles(schema *schema.Schema, changed []files.File) error
 			return fmt.Errorf("%s is a file of the install", file.Path)
 		}
 	}
+	schema.SetScripted(changed, ParseFile)
 	var lock sync.RWMutex
 	for _, file := range changed {
 		position, known := index.FindFile(file.Path)
@@ -434,7 +447,7 @@ func (index *Index) buildMessages(schema *schema.Schema, position int32, source 
 		if keep {
 			texts = append(texts, strings.Clone(message.Text))
 		}
-		for _, reference := range listTextReferences(schema, message) {
+		for _, reference := range ListTextReferences(schema, message) {
 			occurrence := index.makeOccurrence(RoleRefers, reference.Database, reference.Name, reference.Span)
 			occurrence.Line = int32(file.Lines.ToPosition(reference.Span.Start).Line)
 			occurrence.Parent, occurrence.Nested, occurrence.Language = parent, true, language
@@ -447,10 +460,10 @@ func (index *Index) buildMessages(schema *schema.Schema, position int32, source 
 	return occurrences, texts
 }
 
-// listTextReferences returns what a message's text refers to: the localization keys written between dollar signs, the
+// ListTextReferences returns what a message's text refers to: the localization keys written between dollar signs, the
 // text formats and icons it names, and the names that each data call in it refers to. A call also holds the keys its
 // own text writes between dollar signs.
-func listTextReferences(schema *schema.Schema, message loc.Message) (references []schema.Reference) {
+func ListTextReferences(schema *schema.Schema, message loc.Message) (references []schema.Reference) {
 	for _, segment := range loc.Segments(message.Text, message.TextSpan.Start) {
 		references = append(references, listMarkup(segment)...)
 		if segment.Markup != loc.MarkupCall {

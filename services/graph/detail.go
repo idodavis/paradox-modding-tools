@@ -53,16 +53,15 @@ type Version struct {
 
 // The keys of an event that its sections read for their texts, their trigger and their split into options.
 const (
-	descriptionKey = "desc"
-	nameKey        = "name"
-	labelKey       = "text"
-	optionKey      = "option"
-	triggerKey     = "trigger"
+	nameKey    = "name"
+	labelKey   = "text"
+	optionKey  = "option"
+	triggerKey = "trigger"
 )
 
 // textKeys are the keys at the top of a definition whose value is always a localization key. Each is shown as a text
 // even when no message has its key.
-var textKeys = []string{game.TitleKey, descriptionKey}
+var textKeys = []string{game.TitleKey, game.DescriptionKey}
 
 // BuildDetail returns the detail of the node with the given id, read from the definition the game keeps of it. It
 // returns an error if no workspace is open, if the game keeps no definition of the node, or if its file cannot be read.
@@ -107,12 +106,12 @@ func (gph *Service) BuildDetail(id string) (Detail, error) {
 // findDescription returns the localization key of a definition's description. If the description is a block, it is the
 // first desc inside it that has a value. It returns "" if there is none.
 func findDescription(tree *jomini.Tree, statement int32) string {
-	child, ok := tree.FindChild(statement, descriptionKey)
+	child, ok := tree.FindChild(statement, game.DescriptionKey)
 	if !ok {
 		return ""
 	}
 	for position := child; position < tree.Statements[child].Last; position++ {
-		if description := tree.Statements[position]; tree.Text(description.Key) == descriptionKey && !description.Value.IsEmpty() {
+		if description := tree.Statements[position]; tree.Text(description.Key) == game.DescriptionKey && !description.Value.IsEmpty() {
 			return tree.Unquoted(description.Value)
 		}
 	}
@@ -174,7 +173,7 @@ func listVersions(ws *workspace.Session, mods *index.Index, tree *jomini.Tree, s
 		key := tree.Text(tree.Statements[child].Key)
 		row, _ := game.LookupKeyword(game.ShapeDescription, "", key)
 		switch {
-		case row.Shows == "leaf" || key == descriptionKey || key == nameKey:
+		case row.Shows == "leaf" || key == game.DescriptionKey || key == nameKey:
 			if version, ok := makeVersion(ws, mods, tree, child); ok {
 				version.When = findTrigger(tree, child)
 				versions = append(versions, version)
@@ -193,7 +192,7 @@ func makeVersion(ws *workspace.Session, mods *index.Index, tree *jomini.Tree, st
 	label := statement
 	if tree.Statements[statement].IsBlock() {
 		// a desc or text that is not found leaves 0, the file, which has no value
-		label, _ = tree.FindChild(statement, descriptionKey)
+		label, _ = tree.FindChild(statement, game.DescriptionKey)
 		if label == 0 {
 			label, _ = tree.FindChild(statement, labelKey)
 		}
@@ -228,7 +227,7 @@ func toOneLine(text string) string {
 // makeEdge returns the edge of one firing, with where its reference is written.
 func makeEdge(ws *workspace.Session, mods *index.Index, fire index.Fire) Edge {
 	return Edge{
-		From: toID(mods, fire.Source), To: toID(mods, fire.Target), Days: findDelay(ws, mods, fire.Use), Via: listVia(mods, fire),
+		From: toID(mods, fire.Source), To: toID(mods, fire.Target), Days: ws.FindDelay(mods, fire.Use), Via: listVia(mods, fire),
 		Place: ws.Locate(mods, mods.File(fire.Use).Path), Line: toLine(mods, fire.Use),
 	}
 }
@@ -290,7 +289,7 @@ func isInside(occurrences []index.Occurrence, position, definition int32) bool {
 
 // findReference returns the node of a name a definition reads. It returns false if the game keeps no definition of it.
 func findReference(ws *workspace.Session, mods *index.Index, reference schema.Reference, use index.Site) (Node, bool) {
-	if _, saved := game.LinkMakers[reference.Database]; saved {
+	if slices.Contains(game.Links, reference.Database) {
 		return makeNode(ws, mods, use, 0), true
 	}
 	winner, ok := mods.FindKeptLocal(ws.Schema, reference, use.File)

@@ -282,6 +282,9 @@ function jump(index: number): void {
               <span v-if="item.target" class="font-mono text-11 text-dimmed">→ {{ item.target }}</span>
             </div>
             <p v-if="item.blurb" class="text-12 text-toned">{{ item.blurb }}</p>
+            <p v-if="item.defined" class="flex flex-wrap items-center gap-1 text-11 text-dimmed">
+              Scripted, in <SourceLink :place="item.defined.place" :line="item.defined.line" />
+            </p>
             <ScriptSnippet
               v-if="item.usage"
               :text="item.usage"

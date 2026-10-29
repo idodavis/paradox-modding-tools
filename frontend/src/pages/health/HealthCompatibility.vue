@@ -1,6 +1,6 @@
 <!--
-  Health's view of the workspace's mods together. It shows a guide to how the game picks a copy, the load order to drag
-  for a preview, and the findings about the mods with the open one's detail.
+  Health's view of workspace compatibility. It shows a guide to how the game picks a copy, the load order to drag for a
+  preview, with a switch per mod that leaves it out of these checks, and the findings with the open one's detail.
 -->
 <script setup lang="ts">
 import { computed, shallowRef } from "vue";
@@ -10,7 +10,7 @@ import type { DropdownMenuItem } from "@nuxt/ui";
 import { AddIgnoredPair, RemoveIgnoredPair } from "@services/health/service";
 import type { Change, Finding } from "@services/health/models";
 import type { Mod } from "@services/workspace/models";
-import { plural } from "../../lib/format";
+import { list, plural } from "../../lib/format";
 import { keys, stateQuery } from "../../queries";
 import { useWorkspaceStore } from "../../stores/workspace";
 import LoadOrder from "../../ui/LoadOrder.vue";
@@ -27,7 +27,7 @@ const {
   dirty,
   saving,
 } = defineProps<{
-  /** The findings about the mods together. */
+  /** The findings of workspace compatibility. */
   findings: Finding[];
   /** The names that change hands in the tried order. */
   changes: Change[];
@@ -91,6 +91,14 @@ const { mutate: stopIgnoring } = useMutation({
   mutation: (pair: [string, string]) => RemoveIgnoredPair(pair[0], pair[1]),
   onSuccess: () => cache.invalidateQueries({ key: keys.health }),
 });
+const { mutate: switchMod } = useMutation({
+  mutation: (mod: string) => workspace.updateMod(workspace.activeId(), mod, { leftOut: !workspace.isLeftOut(mod) }),
+  onSuccess: () => cache.invalidateQueries({ key: keys.health }),
+});
+/** The mods left out of the checks. */
+const leftOut = computed(() => mods.filter((mod) => workspace.isLeftOut(mod.id)));
+/** The titles of the mods left out, as a phrase. */
+const leftOutTitles = computed(() => list(leftOut.value.map((mod) => mod.descriptor.name)));
 
 /** buildMenu builds the menu of a contest's or a shared key's row, to compare, open or ignore its copies. */
 function buildMenu(finding: Finding, index: number): DropdownMenuItem[][] {
@@ -123,9 +131,13 @@ function buildMenu(finding: Finding, index: number): DropdownMenuItem[][] {
 <template>
   <div class="flex h-full min-h-0 min-w-0 flex-col">
     <div class="flex min-h-12 shrink-0 items-center gap-2.5 px-4 pt-1.5">
-      <span class="shrink-0 text-16 text-highlighted">Compatibility</span>
+      <span class="shrink-0 text-16 text-highlighted">Workspace compatibility</span>
       <span class="min-w-0 text-12 text-dimmed">
-        {{ dirty ? "Previewing another order." : `${guide?.hint ?? ""} Drag a mod to preview another order.` }}
+        {{
+          dirty
+            ? "Previewing another order."
+            : `${guide?.hint ?? ""} Drag a mod to try another order, or switch one off to leave it out of these checks.`
+        }}
       </span>
       <span class="grow" />
       <template v-if="dirty">
@@ -169,10 +181,10 @@ function buildMenu(finding: Finding, index: number): DropdownMenuItem[][] {
             suggests a new order only where it would change the outcome.
           </p>
           <p>
-            <b class="font-semibold text-highlighted">Levels.</b> Serious: a mod's change is never used, a dependency is
-            missing, or which copy the game keeps is not documented. Warning: a mod's own copy the game ignores, a name
-            used from a mod it does not declare, or a shared localization key. Info: a mod overriding the game, or a
-            contest between mods where the winner declares the other as a dependency or you ignored the pair. A declared
+            <b class="font-semibold text-highlighted">Levels.</b> Critical: a mod's copy is never used, a file it
+            replaces leaves out names still in use, a dependency is missing, or which copy the game keeps is not
+            documented. Warning: a localization key several mods define. Info: a mod overriding the game, or a contest
+            between mods where the winner declares the other as a dependency or you ignored the pair. A declared
             dependency lowering a contest is Health's judgment, not a game rule.
           </p>
         </div>
@@ -180,8 +192,17 @@ function buildMenu(finding: Finding, index: number): DropdownMenuItem[][] {
     </UCollapsible>
     <div class="flex shrink-0 items-start gap-2 px-4 pb-2.5">
       <span class="me-1.5 shrink-0 text-12 leading-7 font-medium whitespace-nowrap text-muted">Load order</span>
-      <LoadOrder v-model:order="order" editable class="min-w-0" />
+      <LoadOrder v-model:order="order" editable class="min-w-0" @toggle="switchMod" />
     </div>
+    <p v-if="leftOut.length" class="flex shrink-0 items-center gap-1.5 px-4 pb-2.5 text-12 text-dimmed">
+      <UIcon name="i-lucide-eye-off" class="size-3.5 shrink-0" />
+      {{ leftOutTitles }}
+      {{
+        leftOut.length === 1
+          ? "is left out: its problems show only in its own view."
+          : "are left out: their problems show only in their own views."
+      }}
+    </p>
     <div
       v-if="gains.length"
       class="mx-4 mb-2.5 flex shrink-0 flex-col gap-1 rounded-lg border border-default bg-muted px-3 py-2"

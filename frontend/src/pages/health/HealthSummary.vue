@@ -1,29 +1,36 @@
 <!--
   The summary of Health, with the load order and three panels side by side. Each panel gives a verdict, its worst rows
-  and a link into its view.
+  or its checks, and a link into its view.
 -->
 <script setup lang="ts">
 import { computed } from "vue";
 import { useQuery } from "@pinia/colada";
 import { useIntervalFn, useNow } from "@vueuse/core";
-import { sortBy } from "es-toolkit";
+import { groupBy, sortBy, sumBy } from "es-toolkit";
 import type { Finding, GameLog } from "@services/health/models";
 import type { Mod } from "@services/workspace/models";
 import {
   describeAge,
+  describeBrief,
   describeCheck,
   describeCount,
-  describeDetail,
   describeFinding,
+  describeLevels,
   describeLogLine,
   describeTime,
+  describeTitle,
+  FIX_LEVELS,
   LEVELS,
+  list,
   listFindingRows,
+  type Part,
   plural,
+  PROBLEM_LEVELS,
   toSiteKey,
 } from "../../lib/format";
 import { codesQuery } from "../../queries";
 import { useWorkspaceStore } from "../../stores/workspace";
+import FactText from "../../ui/FactText.vue";
 import LevelCounts from "../../ui/LevelCounts.vue";
 import LoadOrder from "../../ui/LoadOrder.vue";
 import ModAvatar from "../../ui/ModAvatar.vue";
@@ -42,14 +49,14 @@ const {
   game,
 } = defineProps<{
   mods: Mod[];
-  /** The findings about the mods together. */
+  /** The findings of workspace compatibility. */
   compatibility: Finding[];
   /** Each mod's problems, by mod id. */
   health: Record<string, Finding[]>;
   log?: GameLog;
   /** When the report was made. */
   checkedAt: Date;
-  /** The level counts of the mods together. */
+  /** The level counts of workspace compatibility. */
   compatibilityLevels: Record<string, number>;
   /** The level counts of all the mods' problems. */
   healthLevels: Record<string, number>;
@@ -60,11 +67,11 @@ const {
   /** How many lines of the game's log are the game's own. */
   game: number;
 }>();
-const emit = defineEmits<{ open: [view: string, mod?: string, row?: number] }>();
+const emit = defineEmits<{ open: [view: string, mod?: string, row?: number]; check: [code: string] }>();
 
 /** How many rows a panel lists. */
 const ROWS_SHOWN = 4;
-/** The plain words for the info about the mods together, one row for each kind of finding and the checks it counts. */
+/** The plain words for compatibility's info, one row for each kind of finding and the checks it counts. */
 const INFO_WORDS: readonly { checks: readonly string[]; one: string; many: string }[] = [
   { checks: ["override"], one: "override of the game", many: "overrides of the game" },
   {
@@ -85,10 +92,12 @@ const order = computed(() => mods.map((mod) => mod.id));
 const rows = computed(() => log?.findings ?? []);
 /** The places the game's log names. */
 const loggedPlaces = computed(() => new Set(rows.value.map(toSiteKey)));
+/** Each mod with its level counts and its lead: the first problem of its worst level. */
 const tallies = computed(() =>
   mods.map((mod) => {
     const problems = health[mod.id] ?? [];
-    const row = problems.findIndex((finding) => finding.level === "serious");
+    const worst = PROBLEM_LEVELS.find((level) => problems.some((finding) => finding.level === level));
+    const row = problems.findIndex((finding) => finding.level === worst);
     const finding = problems[row];
     return {
       mod,
@@ -98,9 +107,9 @@ const tallies = computed(() =>
   }),
 );
 const busiest = computed(() =>
-  Math.max(1, ...tallies.value.map((tally) => (tally.levels.serious ?? 0) + (tally.levels.warning ?? 0))),
+  Math.max(1, ...tallies.value.map((tally) => sumBy(PROBLEM_LEVELS, (level) => tally.levels[level] ?? 0))),
 );
-const brokenCount = computed(() => tallies.value.filter((tally) => tally.levels.serious).length);
+const brokenCount = computed(() => tallies.value.filter((tally) => isBroken(tally.levels)).length);
 /** The mods' share of the log's lines, as the meter's width. */
 const logShare = computed(() => `${(yours / Math.max(1, yours + game)) * 100}%`);
 const lastRun = computed(() => (log?.writtenAt ? describeTime(log.writtenAt) : ""));
@@ -113,14 +122,23 @@ const top = computed(() =>
 );
 /** Whether one of those rows repeats. Each then gets a column for its count. */
 const topRepeated = computed(() => top.value.some((row) => row.finding.count > 1));
-/** The conflicts and warnings among the mods, serious first. */
-const lead = computed(() =>
+/** Each check of workspace compatibility with problems, at one level, with how many it found, the worst first. */
+const checks = computed(() =>
   sortBy(
-    listFindingRows(compatibility).filter((row) => row.finding.level !== "info"),
-    [(row) => (row.finding.level === "serious" ? 0 : 1)],
-  ).slice(0, ROWS_SHOWN),
+    Object.values(
+      groupBy(
+        compatibility.filter((finding) => finding.level !== "info"),
+        (finding) => `${finding.level}:${finding.code}`,
+      ),
+    ).flatMap((group) => (group[0] ? [{ code: group[0].code, level: group[0].level, count: group.length }] : [])),
+    [(check) => Object.keys(LEVELS).indexOf(check.level), (check) => -check.count],
+  ),
 );
-/** The info about the mods together, in plain words. */
+/** The mods left out of the compatibility checks, as a phrase, or "" for none. */
+const leftOut = computed(() =>
+  list(mods.filter((mod) => workspace.isLeftOut(mod.id)).map((mod) => mod.descriptor.name)),
+);
+/** Compatibility's info, in plain words. */
 const infoChecks = computed(() =>
   INFO_WORDS.flatMap((row) => {
     const count = compatibility.filter(
@@ -129,15 +147,25 @@ const infoChecks = computed(() =>
     return count ? [plural(count, row.one, row.many)] : [];
   }).join(" · "),
 );
+/** Compatibility's worst level that needs a fix, which its headline counts, or "" for none. */
+const worstFix = computed(() => FIX_LEVELS.find((level) => compatibilityLevels[level]) ?? "");
 const panels = computed(() => [
   {
     view: "compatibility",
-    kicker: "Compatibility",
+    kicker: "Workspace compatibility",
     icon: "i-lucide-git-merge",
     color: resolveColor(compatibilityLevels),
-    verdict: describeVerdict(compatibilityLevels, plural(compatibilityLevels.serious ?? 0, "serious problem")),
-    note: `${plural(compatibilityLevels.warning ?? 0, "warning")} · ${describeCount(compatibilityLevels.info ?? 0)} info`,
-    footer: "Open Compatibility",
+    verdict: describeVerdict(compatibilityLevels, describeLevels(compatibilityLevels, [worstFix.value]).join("")),
+    note: [
+      ...describeLevels(
+        compatibilityLevels,
+        Object.keys(LEVELS).filter((level) => level !== worstFix.value),
+      ),
+      leftOut.value && `${leftOut.value} left out`,
+    ]
+      .filter(Boolean)
+      .join(" · "),
+    footer: "Open workspace compatibility",
   },
   {
     view: "mod",
@@ -148,7 +176,7 @@ const panels = computed(() => [
       healthLevels,
       `${describeCount(brokenCount.value)} ${brokenCount.value === 1 ? "mod needs" : "mods need"} a fix`,
     ),
-    note: `${describeCount(healthLevels.serious ?? 0)} serious · ${plural(healthLevels.warning ?? 0, "warning")}`,
+    note: describeLevels(healthLevels, PROBLEM_LEVELS).join(" · "),
     footer: "Open the mods",
     modId: mods[0]?.id,
   },
@@ -165,16 +193,24 @@ const panels = computed(() => [
   },
 ]);
 
-/** describeVerdict returns a panel's headline. With no serious problem it is "No serious problems" or "No problems". */
-function describeVerdict(levels: Record<string, number>, serious: string): string {
-  if (levels.serious) return serious;
-  return levels.warning ? "No serious problems" : "No problems";
+/** isBroken reports whether level counts hold a level that needs a fix. */
+function isBroken(levels: Record<string, number>): boolean {
+  return FIX_LEVELS.some((level) => levels[level]);
+}
+
+/**
+ * describeVerdict returns a panel's headline: the given words where something needs a fix. Otherwise it is "Nothing
+ * needs a fix" where there are warnings, and "No problems" where there are none.
+ */
+function describeVerdict(levels: Record<string, number>, fix: string): string {
+  if (isBroken(levels)) return fix;
+  return levels.warning ? "Nothing needs a fix" : "No problems";
 }
 
 /** resolveColor returns the color of a panel's worst level. It is success when there is no problem. */
 function resolveColor(levels: Record<string, number>): string {
-  if (levels.serious) return "error";
-  return levels.warning ? "warning" : "success";
+  const worst = PROBLEM_LEVELS.find((level) => levels[level]);
+  return LEVELS[worst ?? ""]?.color ?? "success";
 }
 
 /** describeRing returns the style of a panel's ring in a Nuxt UI color. */
@@ -188,24 +224,24 @@ function describeRing(color: string): Record<string, string> {
 }
 
 /**
- * describeMeter returns the segments of a mod's meter, one for serious problems and one for warnings. A mod with
- * neither gets one full segment.
+ * describeMeter returns the segments of a mod's meter, one for each level of problem. A mod with no problem gets one
+ * full segment.
  */
 function describeMeter(levels: Record<string, number>): { color: string; width: string }[] {
-  const serious = levels.serious ?? 0;
-  const warning = levels.warning ?? 0;
-  if (!serious && !warning) return [{ color: "success", width: "100%" }];
+  if (!PROBLEM_LEVELS.some((level) => levels[level])) return [{ color: "success", width: "100%" }];
   // a level with any problem keeps a sliver, so it never reads as clean
   const share = (count: number): string => `${count ? Math.max(3, (count / busiest.value) * 100) : 0}%`;
-  return [
-    { color: "error", width: share(serious) },
-    { color: "warning", width: share(warning) },
-  ];
+  return PROBLEM_LEVELS.map((level) => ({ color: LEVELS[level]?.color ?? "", width: share(levels[level] ?? 0) }));
 }
 
-/** describeLogPlace returns the mod and the place a log row names. */
-function describeLogPlace(finding: Finding): string {
-  return [workspace.originName(finding.origin), describeDetail(finding)].filter(Boolean).join(" · ");
+/** describeLogPlace returns the mod a log row is about and the file it names, as parts. */
+function describeLogPlace(finding: Finding): Part[] {
+  const site = finding.sites?.[0];
+  return [
+    { text: workspace.originName(finding.origin), style: "mod" },
+    { text: " · ", style: "" },
+    site ? { text: site.place.rel, style: "path" } : { text: finding.facts?.named ?? "", style: "code" },
+  ];
 }
 </script>
 
@@ -241,15 +277,21 @@ function describeLogPlace(finding: Finding): string {
         </div>
         <div class="flex min-h-0 grow flex-col overflow-y-auto py-1">
           <template v-if="panel.view === 'compatibility'">
-            <ProblemRow
-              v-for="row in lead"
-              :key="row.index"
-              :level="row.finding.level"
-              :message="describeFinding(row.finding, codes)"
-              :detail="describeDetail(row.finding)"
-              :check="describeCheck(row.finding.code, codes)"
-              @open="emit('open', 'compatibility', undefined, row.index)"
-            />
+            <button
+              v-for="check in checks"
+              :key="`${check.level}:${check.code}`"
+              type="button"
+              class="mx-1 flex h-9 items-center gap-2.5 rounded-md px-2.5 text-start text-12 text-highlighted hover:bg-accented"
+              @click="emit('check', check.code)"
+            >
+              <UIcon
+                :name="LEVELS[check.level]?.icon ?? 'i-lucide-info'"
+                class="size-3.5 shrink-0"
+                :style="{ color: `var(--ui-${LEVELS[check.level]?.color})` }"
+              />
+              <span class="min-w-0 grow truncate">{{ describeCheck(check.code, codes) }}</span>
+              <span class="shrink-0 font-semibold tabular-nums">{{ describeCount(check.count) }}</span>
+            </button>
             <p v-if="infoChecks" class="flex items-start gap-2.5 px-3 py-2 text-12 text-dimmed">
               <UIcon :name="LEVELS.info.icon" class="mt-0.5 size-3.5 shrink-0" />
               {{ infoChecks }}
@@ -266,6 +308,12 @@ function describeLogPlace(finding: Finding): string {
                 <span class="flex min-w-0 grow flex-col gap-1.25">
                   <span class="flex items-center gap-2 text-12">
                     <span class="grow truncate font-medium text-highlighted">{{ tally.mod.descriptor.name }}</span>
+                    <UIcon
+                      v-if="workspace.isLeftOut(tally.mod.id)"
+                      name="i-lucide-eye-off"
+                      class="size-3.5 shrink-0 text-dimmed"
+                      aria-label="Left out of workspace compatibility"
+                    />
                     <LevelCounts :levels="tally.levels" />
                   </span>
                   <span class="flex h-1.5 overflow-hidden rounded-full bg-accented">
@@ -282,12 +330,20 @@ function describeLogPlace(finding: Finding): string {
                 v-if="tally.lead"
                 :level="tally.lead.finding.level"
                 :message="describeFinding(tally.lead.finding, codes)"
-                :detail="describeDetail(tally.lead.finding)"
-                :check="describeCheck(tally.lead.finding.code, codes)"
-                mono
                 class="ps-12"
                 @open="emit('open', 'mod', tally.mod.id, tally.lead.row)"
               >
+                <template v-if="tally.lead.finding.name" #message>
+                  <span class="font-mono text-12"><FactText :parts="describeTitle(tally.lead.finding)" /></span>
+                </template>
+                <template #detail>
+                  <span class="min-w-0 truncate text-11 text-dimmed">
+                    {{ describeCheck(tally.lead.finding.code, codes) }}
+                    <template v-if="describeBrief(tally.lead.finding).length">
+                      · <FactText :parts="describeBrief(tally.lead.finding)" />
+                    </template>
+                  </span>
+                </template>
                 <template v-if="tally.lead.logged" #trailing>
                   <UBadge label="in the log" color="neutral" variant="subtle" size="sm" class="shrink-0" />
                 </template>
@@ -312,9 +368,13 @@ function describeLogPlace(finding: Finding): string {
               v-for="row in top"
               :key="row.index"
               :message="describeLogLine(row.finding)"
-              :detail="describeLogPlace(row.finding)"
               @open="emit('open', 'log', undefined, row.index)"
             >
+              <template #detail>
+                <span class="min-w-0 truncate text-11 text-dimmed"
+                  ><FactText :parts="describeLogPlace(row.finding)"
+                /></span>
+              </template>
               <template v-if="topRepeated" #leading>
                 <span class="flex w-9 shrink-0 justify-center">
                   <UBadge v-if="row.finding.count > 1" :label="`×${describeCount(row.finding.count)}`" size="sm" />

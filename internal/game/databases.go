@@ -51,6 +51,8 @@ type Callable struct {
 	Local      bool     // its definitions answer only in the file that declares them
 	FoldsCase  bool     // its references match without regard to case
 	Proves     []string // the shapes a block that calls one of its definitions can have
+	// Command is the kind of command a definition acts as where it is called, effect or trigger, or "" for neither.
+	Command string
 }
 
 // A FileType is what a file's extension says about a file, beyond what the databases of its folder say.
@@ -133,6 +135,15 @@ const EventNamespaceKey = "namespace"
 // TitleKey is the key that names a definition's title localization, as in an event's title = <key>.
 const TitleKey = "title"
 
+// DescriptionKey is the key that writes an event's description: a localization key, or a block that chooses one.
+const DescriptionKey = "desc"
+
+// EventDelay is how a firing's delay is written.
+var EventDelay = struct {
+	Keys  []string // the keys that write how long the firing waits
+	Block string   // the key of a block that holds the delay of every firing written after it
+}{[]string{"days", "weeks", "months", "years"}, "delay"} // Vic3 effects.log:38529
+
 // EventPortraits is how an event's portraits are found.
 var EventPortraits = struct {
 	Suffixes  []string // the last word of a portrait's key (left_portrait, left_icon)
@@ -157,6 +168,8 @@ var definitionWords = map[string]struct{ One, Many string }{
 	Variables:       {"variable", "variables"},
 	LocalVariables:  {"local variable", "local variables"},
 	GlobalVariables: {"global variable", "global variables"},
+	Lists:           {"list", "lists"},
+	Flags:           {"flag", "flags"},
 }
 
 // plurals are the plural endings of a word, each with its singular ending. The first ending that fits wins.
@@ -249,10 +262,13 @@ var Nestings = []Nesting{
 
 // Callables lists the callable databases by name.
 var Callables = map[string]Callable{
-	"scripted_effects": {Callers: []string{callEffect}, Shape: "effects", Parameters: true, Proves: []string{ShapeEffects}},
+	"scripted_effects": {
+		Callers: []string{callEffect}, Shape: "effects", Parameters: true, Proves: []string{ShapeEffects}, Command: callEffect,
+	},
 	// A value block calls them too.
 	"scripted_triggers": {
 		Callers: []string{callTrigger, callValue}, Shape: "triggers", Parameters: true, Proves: []string{ShapeTriggers, ShapeValue},
+		Command: callTrigger,
 	},
 	"scripted_modifiers": {Callers: []string{callValue}, Parameters: true, Proves: []string{ShapeValue}},
 	"script_values":      {Callers: []string{callTrigger, callValue}, Shape: "value", Proves: []string{ShapeTriggers, ShapeValue}},

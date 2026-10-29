@@ -80,6 +80,16 @@ export interface Finding {
     "removed"?: string[] | null;
 
     /**
+     * Uses holds the removed names that the files the game reads still use, the most used first.
+     */
+    "uses"?: Use[] | null;
+
+    /**
+     * Defined is where the workspace defines the name, in a mod the finding's mod does not depend on.
+     */
+    "defined"?: FindingSite[] | null;
+
+    /**
      * Comparable is true when the kept statement and the ones it replaces can be shown side by side.
      */
     "comparable": boolean;
@@ -152,7 +162,7 @@ export interface GameLog {
 }
 
 /**
- * An Overview is what one mod holds, counted.
+ * An Overview is what one mod holds, counted, and the mods it is judged with.
  */
 export interface Overview {
     "mod": string;
@@ -163,6 +173,11 @@ export interface Overview {
     "counts": { [_ in string]?: number } | null;
     "files": number;
     "messages": number;
+
+    /**
+     * Judged is the ids of the workspace's mods its own problems are judged with: those it depends on, all the way down.
+     */
+    "judged": string[] | null;
 }
 
 /**
@@ -187,4 +202,13 @@ export interface Snippet {
      * the line it begins at, counted from one
      */
     "line": number;
+}
+
+/**
+ * A Use is one name a finding is about, with how often the files the game reads use it and where they first do.
+ */
+export interface Use {
+    "name": string;
+    "count": number;
+    "first": FindingSite;
 }

@@ -82,8 +82,10 @@ type Context struct {
 	Preview     bool        // the statement is inside a block that is shown in the tooltip and never run
 	Category    Category    // the key's color category
 	Command     *Command    // the command the key names; nil where the key matched none
-	Declaration string      // how the dumps declare that command where the key is in this block: a game.Declared word
-	ValueGroup  Category    // the value's color category
+	// Callee is the scripted definition the key calls, where the walk knows it; nil for any other key.
+	Callee      *ScriptedDefinition
+	Declaration string   // how the dumps declare that command where the key is in this block: a game.Declared word
+	ValueGroup  Category // the value's color category
 	// Caller is the word a call in this statement's block resolves by, where a keyword gives one; "" means the block's
 	// shape's.
 	Caller      string
@@ -117,6 +119,7 @@ type walker struct {
 	namespaces []int32                       // the statements that declare an event namespace
 	declaring  map[string]string             // the database a word before a statement declares a definition of, inline
 	inline     map[string]ScriptedDefinition // each name the file declared for itself so far
+	mods       map[string]ScriptedDefinition // the mods' scripted definitions when the walk began
 	frames     []frame                       // frames[0] is the file's; frames[n] is that of the statements n levels down
 	saved      []Saved
 }
@@ -191,6 +194,7 @@ func (schema *Schema) newWalker(tree *jomini.Tree, file files.File, visitor Visi
 	}
 	walker := &walker{
 		schema: schema, row: row, tree: tree, file: file, visitor: visitor, inline: map[string]ScriptedDefinition{},
+		mods: schema.loadMods(),
 	}
 	_, walker.rel = SplitStage(row, file.Rel)
 	walker.stem = strings.TrimSuffix(path.Base(walker.rel), path.Ext(walker.rel))
@@ -762,31 +766,13 @@ func (walker *walker) findCallee(caller, key string) (ScriptedDefinition, string
 		}
 	}
 	if caller != game.AnyCall {
-		callee, ok := walker.lookupCallee(caller, key)
+		callee, ok := walker.schema.lookupScripted(walker.mods, caller, key)
 		if !ok && caller == game.GUI.TagCalls && walker.schema.WidgetTypes[key] {
 			return ScriptedDefinition{}, caller, true
 		}
 		return callee, caller, ok && caller != ""
 	}
-	var scripted ScriptedDefinition
-	best := ""
-	for via := range walker.schema.Callees {
-		if callee, ok := walker.lookupCallee(via, key); ok && via != game.AnyCall && (best == "" || via < best) {
-			scripted, best = callee, via
-		}
-	}
-	return scripted, best, best != ""
-}
-
-// lookupCallee returns the scripted definition of a name called through the given word. A name in another case finds
-// the definition only in a database that ignores case.
-func (walker *walker) lookupCallee(caller, key string) (ScriptedDefinition, bool) {
-	if callee, ok := walker.schema.ScriptedDefinitions[caller+":"+key]; ok {
-		return callee, true
-	}
-	callee, ok := walker.schema.ScriptedDefinitions[caller+":"+strings.ToLower(key)]
-	database := walker.schema.Databases[callee.Database]
-	return callee, ok && database != nil && database.Callable.FoldsCase
+	return walker.schema.findScripted(walker.mods, key)
 }
 
 // matchCommand returns the command a key names. It returns false if the block does not take that command.
@@ -819,7 +805,7 @@ func (walker *walker) resolveMatch(context *Context, parent *Context, fit match,
 	context.Field = walker.resolveField(rule.Fields, parent, fit)
 	context.Shape = cmp.Or(walker.resolveShape(rule.Shape, parent, context.Field, fit), game.Shapes[findShape(parent)].Blocks)
 	context.Category = fit.category
-	context.Command, context.Declaration = fit.command, fit.declaration
+	context.Command, context.Declaration, context.Callee = fit.command, fit.declaration, fit.callee
 	if keyword != nil {
 		if keyword.Shape == "enclosing" {
 			context.Shape = findShape(parent)
@@ -974,26 +960,31 @@ func (walker *walker) findSavedType(label string) string {
 	return ""
 }
 
-// resolveSaved resolves a command that makes a name which a link reads back later, such as a saved scope or a
-// variable. The name becomes a definition. A saved scope is also added to the scopes the definition saved.
+// resolveSaved resolves a statement that saves a name of one of game.Links, or reads one back. A save makes the name a
+// definition: a command that saves, or an argument of a scripted call whose body saves it. A read makes it a
+// reference. A saved scope is also added to the scopes the definition saved. A name with a parameter is none yet.
 func (walker *walker) resolveSaved(context *Context, statement int32, level int) {
 	current := walker.tree.Statements[statement]
-	if current.IsBlock() || current.Value.IsEmpty() {
+	span := walker.tree.UnquotedSpan(current.Value)
+	label := walker.tree.Text(span)
+	if current.IsBlock() || label == "" || jomini.IsParameter(label) || strings.HasPrefix(label, "[") {
 		return
 	}
-	key, parent := walker.frames[level].label, walker.frames[level-1].context
-	link, ok := game.LookupLinkMaker(key)
+	key, holder, parent := walker.frames[level].label, walker.frames[level-1].label, walker.frames[level-1].context
+	if link, _, ok := findLinked(game.LinkUsers, holder, key); ok {
+		context.References = append(context.References, Reference{Database: link, Name: label, Span: span})
+		return
+	}
+	link, inBlock, ok := findLinked(game.LinkMakers, holder, key)
 	scope := parent.Scope
-	if isArgument(parent, key) {
+	if inBlock || isArgument(parent, key) {
+		scope = ""
+	}
+	if !ok && parent.Callee != nil {
+		link, ok = parent.Callee.Saves[key]
 		scope = ""
 	}
 	if !ok {
-		link, ok = game.LookupLinkMaker(strings.ToLower(walker.frames[level-1].label) + "/" + key)
-		scope = ""
-	}
-	span := walker.tree.UnquotedSpan(current.Value)
-	label := walker.tree.Text(span)
-	if !ok || jomini.IsParameter(label) || strings.HasPrefix(label, "[") {
 		return
 	}
 	context.Definition = &Definition{Database: link, Name: label, Span: span, Statement: statement}
@@ -1001,6 +992,17 @@ func (walker *walker) resolveSaved(context *Context, statement int32, level int)
 	if link == game.SavedScopes {
 		walker.saved = append(walker.saved, Saved{Name: label, Type: scope})
 	}
+}
+
+// findLinked returns the link of a key in a table of game.LinkMakers' shape: the key is a command the table holds, or a
+// key in the block of one, the holder given. It reports whether the key is in the holder's block, and returns false if
+// the table holds neither.
+func findLinked(table map[string]string, holder, key string) (link string, inBlock, ok bool) {
+	if link, ok := table[key]; ok {
+		return link, false, true
+	}
+	link, ok = table[strings.ToLower(holder)+"/"+key]
+	return link, true, ok
 }
 
 // resolveAlias makes the value that a statement writes at an alias key of its database a definition. It is a second
@@ -1080,10 +1082,10 @@ func (walker *walker) resolveValue(context *Context, statement int32, level int)
 }
 
 // resolveValueReferences resolves the references a plain value makes. A value with a parameter or a bracket makes
-// none.
+// none, and so does a name the statement saves or reads back.
 func (walker *walker) resolveValueReferences(context *Context, statement int32, level int, span jomini.Span) {
 	text := walker.tree.Text(span)
-	if text == "" || strings.ContainsAny(text, "[$") {
+	if text == "" || strings.ContainsAny(text, "[$") || isSavedName(context, span) {
 		return
 	}
 	var databases []string
@@ -1110,7 +1112,9 @@ func (walker *walker) resolveValueReferences(context *Context, statement int32, 
 	if !walker.tree.Statements[statement].Tag.IsEmpty() && walker.database != nil && walker.database.Name == game.Coat.Database {
 		databases = append(databases, game.Coat.ListsDatabase)
 	}
-	if walker.schema.Events != "" && walker.file.Format == files.FormatScript && jomini.IsEventID(text) {
+	// A value shaped like an event id may name an event, unless its field claims another database.
+	if walker.schema.Events != "" && walker.file.Format == files.FormatScript && jomini.IsEventID(text) &&
+		(claim == "" || claim == walker.schema.Events) {
 		databases = append(databases, walker.schema.Events)
 	}
 	// The claim is the first database. It is inferred if it rests on the game's own files and no other rule makes it.
@@ -1129,6 +1133,17 @@ func (walker *walker) resolveValueReferences(context *Context, statement int32, 
 		context.References = append(context.References, value)
 	}
 	context.References = append(context.References, walker.listPrefixed(text, span.Start)...)
+}
+
+// isSavedName reports whether the value at a span is a name of one of game.Links that its statement saves or reads
+// back, such as a flag. Such a name names nothing else, even where it is shaped like an event id.
+func isSavedName(context *Context, span jomini.Span) bool {
+	if context.Defines && context.Definition.Span == span && slices.Contains(game.Links, context.Definition.Database) {
+		return true
+	}
+	return slices.ContainsFunc(context.References, func(reference Reference) bool {
+		return reference.Span == span && slices.Contains(game.Links, reference.Database)
+	})
 }
 
 // findScriptValue returns the reference a value makes to a script value. It returns false if it makes none.

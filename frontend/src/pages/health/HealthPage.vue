@@ -1,6 +1,6 @@
 <!--
-  The Health page. A rail switches between the summary and the views of the mods together, of each mod and of the
-  game's log.
+  The Health page. A rail switches between the summary and the views of workspace compatibility, of each mod and of
+  the game's log.
 -->
 <script setup lang="ts">
 import { computed, onActivated, onDeactivated, shallowRef, watch } from "vue";
@@ -12,15 +12,7 @@ import type { SplitterItem } from "@nuxt/ui";
 import { ReorderMods } from "@services/workspace/service";
 import type { Finding } from "@services/health/models";
 import type { Mod } from "@services/workspace/models";
-import {
-  countLevels,
-  countLines,
-  describeCount,
-  describeLogLine,
-  findOwner,
-  listProblems,
-  plural,
-} from "../../lib/format";
+import { countLevels, countLines, describeCount, describeLogLine, findOwner, listProblems } from "../../lib/format";
 import { useShown } from "../../app/pages";
 import { errorLogQuery, keys, overviewQuery, reportQuery, stateQuery } from "../../queries";
 import { makeChip, useChip } from "../../stores/agent";
@@ -61,6 +53,8 @@ type RailRow = {
   mod?: Mod;
   levels?: Record<string, number>;
   count?: number;
+  /** Whether the row's mod is left out of the compatibility checks. */
+  leftOut?: boolean;
 };
 
 /** The rail's pane, wide enough for a long mod name and its counts. */
@@ -192,14 +186,9 @@ watch(order, (next, previous) => {
 const rail = computed((): { title: string; rows: RailRow[] }[] => [
   { title: "", rows: [{ view: "summary", label: "Summary", icon: "i-lucide-gauge" }] },
   {
-    title: "Compatibility",
+    title: "Workspace",
     rows: [
-      {
-        view: "compatibility",
-        label: `The ${plural(mods.value.length, "mod")} together`,
-        icon: "i-lucide-git-merge",
-        levels: compatibilityLevels.value,
-      },
+      { view: "compatibility", label: "Compatibility", icon: "i-lucide-git-merge", levels: compatibilityLevels.value },
     ],
   },
   {
@@ -209,6 +198,7 @@ const rail = computed((): { title: string; rows: RailRow[] }[] => [
       mod: one,
       label: one.descriptor.name,
       levels: modLevels.value[one.id],
+      leftOut: workspace.isLeftOut(one.id),
     })),
   },
   {
@@ -238,6 +228,11 @@ function show(next: string, modId?: string, index?: number): void {
   void router.replace({
     query: { view: next, mod: modId, row: index === undefined ? undefined : String(index) },
   });
+}
+
+/** showCheck shows workspace compatibility with its rows filtered to one check. */
+function showCheck(check: string): void {
+  void router.replace({ query: { view: "compatibility", code: check } });
 }
 
 /** keepRailWidth keeps the rail's width from the panes' sizes. The summary has no rail. */
@@ -300,6 +295,12 @@ function openRow(index: number): void {
                 <UIcon :name="railRow.icon" class="size-3.5 text-toned" />
               </span>
               <span class="min-w-0 grow truncate font-medium">{{ railRow.label }}</span>
+              <UIcon
+                v-if="railRow.leftOut"
+                name="i-lucide-eye-off"
+                class="size-3.5 shrink-0 text-dimmed"
+                aria-label="Left out of workspace compatibility"
+              />
               <LevelCounts v-if="railRow.levels" :levels="railRow.levels" />
               <span v-else-if="railRow.count !== undefined" class="shrink-0 text-11 text-toned tabular-nums">
                 {{ describeCount(railRow.count) }}
@@ -337,6 +338,7 @@ function openRow(index: number): void {
             :yours="yours"
             :game="game"
             @open="show"
+            @check="showCheck"
           />
           <HealthCompatibility
             v-else-if="shown === 'compatibility'"
@@ -360,9 +362,11 @@ function openRow(index: number): void {
             :languages="languages[current.id] ?? []"
             :overview="currentOverview"
             :log="logRows"
+            :compatibility="compatibility"
             :opened="opened"
             @open="openRow"
             @log="(index) => show('log', undefined, index)"
+            @compatibility="(index) => show('compatibility', undefined, index)"
           />
         </section>
       </template>

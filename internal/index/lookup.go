@@ -53,18 +53,15 @@ func (index *Index) ListDatabases(name string) []string {
 			key, listed = lower, hasLower
 		}
 		posting := Posting{Role: toRole(database), Database: uint16(ordinal)}
-		for source := index; listed && source != nil; source = source.install {
-			if len(source.postings[posting][key]) > 0 {
-				databases = append(databases, database)
-				break
-			}
+		if listed && len(index.listKey(posting, key)) > 0 {
+			databases = append(databases, database)
 		}
 	}
 	return databases
 }
 
-// ListUses returns every reference to a name in a database, in load order. For a database that script calls by name,
-// the calls that may name any callable database count too.
+// ListUses returns every reference to a name in a database, in load order. For a database whose definitions script
+// calls, the calls that may be to any callable database count too.
 func (index *Index) ListUses(database, name string) []Site {
 	uses := index.listPosting(RoleRefers, database, name)
 	if len(game.Callables[database].Callers) == 0 {
@@ -102,7 +99,7 @@ func (index *Index) ListDefinitions(database string) []Site {
 	}
 	var own []Site
 	for _, postings := range index.postings[Posting{Role: toRole(database), Database: uint16(ordinal)}] {
-		own = append(own, postings...)
+		own = append(own, index.narrowSites(postings)...)
 	}
 	slices.SortFunc(own, compareSites)
 	return append(sites, own...)
@@ -166,7 +163,7 @@ func (index *Index) listPosting(role Role, database, name string) []Site {
 
 // listKey returns the sites of a name in a posting, the install's first and then this index's own.
 func (index *Index) listKey(key Posting, name uint32) []Site {
-	own := index.postings[key][name]
+	own := index.narrowSites(index.postings[key][name])
 	if index.install == nil {
 		return own
 	}
@@ -178,6 +175,15 @@ func (index *Index) listKey(key Posting, name uint32) []Site {
 		return fromInstall
 	}
 	return slices.Concat(fromInstall, own)
+}
+
+// narrowSites returns the sites of the files the index answers for. An index that is not narrowed returns the given
+// sites themselves.
+func (index *Index) narrowSites(sites []Site) []Site {
+	if index.origins == nil {
+		return sites
+	}
+	return lo.Filter(sites, func(site Site, _ int) bool { return index.hasFile(site.File) })
 }
 
 // compareSites orders two sites by their files' positions, then by their places in a file.

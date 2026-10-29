@@ -48,8 +48,8 @@ var queryKeys = []queryKey{
 	{Page: "release", Key: "compare", Help: "the compare of the mod with its Steam item", Values: []string{"steam"}},
 }
 
-// levels holds the levels of Health's findings, the most serious first.
-var levels = []string{"serious", "warning", "info"}
+// levels holds the levels of Health's findings, the worst first.
+var levels = []string{lsp.LevelCritical, lsp.LevelError, lsp.LevelWarning, lsp.LevelInfo}
 
 // nodeHint says where an Event Graph node's id comes from, for an error about one.
 const nodeHint = "find_roots gives node ids, such as events:my_mod.0001"

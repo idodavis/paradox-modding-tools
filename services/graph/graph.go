@@ -12,7 +12,6 @@ import (
 
 	"paradox-modding-tools/internal/game"
 	"paradox-modding-tools/internal/index"
-	"paradox-modding-tools/internal/jomini"
 	"paradox-modding-tools/internal/schema"
 	"paradox-modding-tools/services/workspace"
 )
@@ -80,12 +79,6 @@ type reach struct {
 	count  int             // how many of the nodes the filter draws
 	cut    map[string]bool // the ids of the nodes the limit kept out
 }
-
-// delayKeys are the keys that write a delay.
-var delayKeys = []string{"days", "months", "years"}
-
-// delayBlock is the key of a block that holds a delay for every firing listed after it.
-const delayBlock = "delay"
 
 // BuildGraph builds the graph of what a root fires and what fires it, under a filter. It returns an error if the game
 // keeps no definition of the root.
@@ -325,38 +318,6 @@ func listKinds(schema *schema.Schema) []string {
 		kinds = append(kinds, schema.Effects)
 	}
 	return kinds
-}
-
-// findDelay returns the delay written for a firing, such as "days = 5". It returns "" if there is none.
-func findDelay(ws *workspace.Session, mods *index.Index, use index.Site) string {
-	tree, err := ws.LoadTree(mods.File(use).Path)
-	if err != nil {
-		return ""
-	}
-	// the delay is in the first block, going up from the reference that fires, that holds one directly or in a delay
-	// block
-	for statement := tree.FindStatement(mods.Occurrence(use).Span.Start); statement > 0; statement = tree.Statements[statement].Parent {
-		holders := []int32{statement}
-		if block, ok := tree.FindChild(statement, delayBlock); ok {
-			holders = append(holders, block)
-		}
-		for _, holder := range holders {
-			if delay := findDuration(tree, holder); delay != "" {
-				return delay
-			}
-		}
-	}
-	return ""
-}
-
-// findDuration returns the days, months or years statement a block holds. It returns "" if there is none.
-func findDuration(tree *jomini.Tree, block int32) string {
-	for _, key := range delayKeys {
-		if child, ok := tree.FindChild(block, key); ok {
-			return tree.Text(tree.Statements[child].Span)
-		}
-	}
-	return ""
 }
 
 // splice removes the hidden nodes, joining the edges through each. The root and the folds stay.

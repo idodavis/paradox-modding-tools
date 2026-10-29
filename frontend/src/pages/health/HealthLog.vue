@@ -1,6 +1,6 @@
 <!--
-  The game's error log, with the lines about your mods set apart from the game's own. It lists them by mod or by
-  message, with the open line's detail beside them.
+  The game's error log, with the lines about your mods set apart from the game's own. It lists them by mod, each mod's
+  section folding, or by message, with the open line's detail beside them.
 -->
 <script setup lang="ts">
 import { computed, shallowRef } from "vue";
@@ -10,24 +10,32 @@ import type { Finding, GameLog } from "@services/health/models";
 import type { Mod } from "@services/workspace/models";
 import {
   countLines,
-  describeCheck,
   describeCount,
   describeDetail,
-  describeFinding,
   describeLogLine,
   describeTime,
   type FindingRow,
+  type Level,
   LEVELS,
   listFindingRows,
+  type Part,
   plural,
+  splitFinding,
+  splitLogLine,
+  splitMessage,
   toSiteKey,
 } from "../../lib/format";
 import { codesQuery, loadQuery, placeQuery, snippetsQuery } from "../../queries";
 import { useEditorStore } from "../../stores/editor";
 import { useWorkspaceStore } from "../../stores/workspace";
+import FactText from "../../ui/FactText.vue";
+import ModTitle from "../../ui/ModTitle.vue";
 import OriginChip from "../../ui/OriginChip.vue";
 import ProblemRow from "../../ui/ProblemRow.vue";
+import HealthFrame from "./HealthFrame.vue";
 import { PANES, ROWS } from "./HealthList.vue";
+import HealthLink from "./HealthLink.vue";
+import HealthSection from "./HealthSection.vue";
 import HealthSite, { openSite } from "./HealthSite.vue";
 
 const {
@@ -55,13 +63,18 @@ const {
 const emit = defineEmits<{ open: [index: number]; fix: [mod: string, row: number] }>();
 const filter = defineModel<string>("filter", { default: "" });
 
-/** A HeadRow is the row above one mod's lines, or above the game's own when it has no mod. */
-type HeadRow = { mod: string; count: number };
+/** A HeadRow is the row above one mod's lines, which may be folded, or above the game's own when it has no mod. */
+type HeadRow = { mod: string; count: number; folded: boolean };
 
 const GROUPINGS = [
   { label: "By mod", value: "mod" },
   { label: "By message", value: "message" },
 ];
+/** WHY holds the sentence that says why a row is a mod's, by what ties it to the mod: a file or a name. */
+const WHY: Readonly<Record<string, string>> = {
+  file: "The line points at {file}, and the game loads that file from {mod}.",
+  name: "The line names {name}, and only {mod} defines it.",
+};
 
 const workspace = useWorkspaceStore();
 const editor = useEditorStore();
@@ -69,6 +82,8 @@ const { data: codes } = useQuery(codesQuery);
 // the tabs give their values as text or numbers
 const scope = shallowRef<string | number>("mods");
 const grouping = shallowRef<string | number>("mod");
+/** The mods whose sections are folded. */
+const folded = shallowRef<string[]>([]);
 
 const logRows = computed(() => listFindingRows(log?.findings ?? []));
 const gameRows = computed(() => logRows.value.filter((row) => !row.finding.origin));
@@ -87,9 +102,11 @@ const rows = computed((): (HeadRow | FindingRow)[] => {
   if (scope.value === "mods" && grouping.value === "mod") {
     const grouped = mods.flatMap((mod) => {
       const own = matches.filter((row) => row.finding.origin === mod.id);
-      return own.length ? [{ mod: mod.id, count: countLines(own.map((row) => row.finding)) }, ...own] : [];
+      const shut = folded.value.includes(mod.id);
+      const head = { mod: mod.id, count: countLines(own.map((row) => row.finding)), folded: shut };
+      return own.length ? [head, ...(shut ? [] : own)] : [];
     });
-    return grouped.length && game ? [...grouped, { mod: "", count: game }] : grouped;
+    return grouped.length && game ? [...grouped, { mod: "", count: game, folded: true }] : grouped;
   }
   return sortBy(matches, [(row) => -row.finding.count]);
 });
@@ -130,10 +147,20 @@ const faults = computed(() => {
   }
   return byPlace;
 });
-/** The mod's problem at the open row's place, if any. */
+/** The mod's problem at the open row's place, if any, with the sentence that says the mod's own check finds it. */
 const fault = computed(() => {
   const shared = open.value && faults.value.get(toSiteKey(open.value));
-  return shared && { ...shared, label: describeCheck(shared.finding.code, codes.value) };
+  if (!shared) return undefined;
+  const mod: Part = { text: workspace.originName(shared.mod), style: "mod" };
+  const parts: Part[] = [
+    mod,
+    { text: "'s own check finds the same problem: ", style: "" },
+    ...splitFinding(shared.finding, codes.value),
+    { text: " Open it in ", style: "" },
+    mod,
+    { text: "'s problems.", style: "" },
+  ];
+  return { ...shared, parts };
 });
 
 const { mutate: openFile } = useMutation({
@@ -143,17 +170,23 @@ const { mutate: openFile } = useMutation({
   },
 });
 
-/** describeWhy says in a sentence why a row is a mod's. */
-function describeWhy(finding: Finding): string {
-  const mod = workspace.originName(finding.origin);
-  const named = finding.facts?.named;
-  return finding.facts?.why === "file"
-    ? `Yours because the line names ${named}, a file the game loads from ${mod}.`
-    : `Names ${named}, which only ${mod} defines.`;
+/** describeWhy returns the sentence that says why a row is a mod's, as parts: the file it points at, or its name. */
+function describeWhy(finding: Finding): Part[] {
+  const named = finding.facts?.named ?? "";
+  return splitMessage(WHY[finding.facts?.why ?? ""] ?? "", {
+    file: named,
+    name: named,
+    mod: workspace.originName(finding.origin),
+  });
+}
+
+/** fold folds a mod's section, or unfolds it if it is folded. */
+function fold(mod: string): void {
+  folded.value = folded.value.includes(mod) ? folded.value.filter((one) => one !== mod) : [...folded.value, mod];
 }
 
 /** describeFaultColor returns the level color of the mod's problem at a row's place, or undefined for none. */
-function describeFaultColor(finding: Finding): "error" | "warning" | "info" | undefined {
+function describeFaultColor(finding: Finding): Level["color"] | undefined {
   const shared = faults.value.get(toSiteKey(finding));
   return shared && LEVELS[shared.finding.level]?.color;
 }
@@ -211,13 +244,21 @@ function showGame(): void {
           :virtualize="ROWS"
           class="h-full w-full border-e border-default bg-muted"
         >
-          <div
+          <button
             v-if="'mod' in item && item.mod"
-            class="flex h-8 w-full items-center gap-2 border-b border-default px-3 text-12 font-medium text-toned"
+            type="button"
+            class="flex h-8 w-full items-center gap-2 border-b border-default px-3 text-12 font-medium text-toned hover:bg-accented"
+            :aria-expanded="!item.folded"
+            @click="fold(item.mod)"
           >
-            <OriginChip :origin="item.mod" />
+            <ModTitle :origin="item.mod" />
             <span class="text-11 font-normal text-dimmed tabular-nums">{{ plural(item.count, "line") }}</span>
-          </div>
+            <span class="grow" />
+            <UIcon
+              :name="item.folded ? 'i-lucide-chevron-right' : 'i-lucide-chevron-down'"
+              class="size-3.5 text-dimmed"
+            />
+          </button>
           <button
             v-else-if="'mod' in item"
             type="button"
@@ -235,6 +276,7 @@ function showGame(): void {
             :selected="item.index === opened"
             @open="emit('open', item.index)"
           >
+            <template #message><FactText :parts="splitLogLine(item.finding)" /></template>
             <template v-if="repeated" #leading>
               <span class="flex w-9 shrink-0 justify-center">
                 <UBadge v-if="item.finding.count > 1" :label="`×${describeCount(item.finding.count)}`" size="sm" />
@@ -256,48 +298,43 @@ function showGame(): void {
         <p v-else class="w-full border-e border-default bg-muted p-4 text-12 text-dimmed">{{ empty }}</p>
       </template>
       <template #detail>
-        <section v-if="open" class="flex h-full min-w-0 grow flex-col gap-3 overflow-auto bg-default p-4">
-          <div class="flex items-center gap-2">
-            <span class="min-w-0 text-13 font-semibold break-words text-highlighted">{{ describeLogLine(open) }}</span>
-            <UBadge
-              v-if="open.count > 1"
-              :label="`×${describeCount(open.count)} this run`"
-              size="sm"
-              class="shrink-0"
-            />
-            <span class="grow" />
-            <UButton v-if="sites.length" label="Open in the IDE" icon="i-lucide-code" @click="openSite(sites[0])" />
-          </div>
-          <div
-            v-if="open.origin"
-            class="flex items-start gap-2.5 rounded-lg border border-default bg-muted px-3 py-2.5 text-12 text-muted"
-          >
-            <UIcon name="i-lucide-pin" class="mt-0.5 size-3.5 shrink-0" />
-            {{ describeWhy(open) }}
-          </div>
-          <pre
-            class="overflow-auto rounded-lg border border-default bg-(--bg-0) p-3 font-mono text-11 whitespace-pre-wrap text-toned"
-          >
-[{{ open.facts?.time }}][{{ open.facts?.source }}]: {{ open.facts?.message }}</pre>
-          <HealthSite v-for="(site, index) in sites" :key="index" :site="site" :snippet="snippets?.[index]" />
-          <button
-            v-if="fault"
-            type="button"
-            class="flex items-center gap-2.5 rounded-lg border border-default bg-muted px-3 py-2.5 text-start hover:bg-accented"
-            @click="emit('fix', fault.mod, fault.row)"
-          >
-            <UIcon
-              :name="LEVELS[fault.finding.level]?.icon ?? 'i-lucide-info'"
-              class="size-4 shrink-0"
-              :style="{ color: `var(--ui-${LEVELS[fault.finding.level]?.color})` }"
-            />
-            <span class="flex min-w-0 grow flex-col">
-              <span class="text-12 text-highlighted">Health found it too: {{ fault.label }}</span>
-              <span class="truncate text-11 text-dimmed">{{ describeFinding(fault.finding, codes) }}</span>
+        <HealthFrame v-if="open" icon="i-lucide-terminal" label="Game log">
+          <template #title><FactText :parts="splitLogLine(open)" /></template>
+          <template #line>
+            <span v-if="open.count > 1" class="whitespace-nowrap text-toned">
+              ×{{ describeCount(open.count) }} this run
             </span>
-            <UIcon name="i-lucide-chevron-right" class="size-3.5 text-dimmed" />
-          </button>
-        </section>
+            <span v-if="open.facts?.time" class="whitespace-nowrap">· last at {{ open.facts.time }}</span>
+            <template v-if="open.origin">· <ModTitle :origin="open.origin" /></template>
+          </template>
+          <template #buttons>
+            <UButton
+              v-if="sites[0]"
+              label="Open in the IDE"
+              icon="i-lucide-code"
+              @click="sites[0] && openSite(sites[0])"
+            />
+          </template>
+          <HealthSection title="What the game logged">
+            <pre
+              class="overflow-auto rounded-md bg-(--bg-0) px-3 py-2.5 font-mono text-11.5 leading-4.5 whitespace-pre-wrap text-toned"
+            >
+[{{ open.facts?.time }}][{{ open.facts?.source }}]: {{ open.facts?.message }}</pre>
+          </HealthSection>
+          <HealthSection v-if="open.origin" :title="`Why it's listed under ${workspace.originName(open.origin)}`">
+            <p class="max-w-[74ch] text-13 leading-5.5 text-toned"><FactText :parts="describeWhy(open)" /></p>
+          </HealthSection>
+          <HealthSection v-if="sites[0]" title="Where it points" @open="sites[0] && openSite(sites[0])">
+            <HealthSite v-for="(site, index) in sites" :key="index" :site="site" :snippet="snippets?.[index]" />
+          </HealthSection>
+          <HealthSection v-if="fault" title="Health found it too">
+            <HealthLink
+              :level="fault.finding.level"
+              :parts="fault.parts"
+              @open="fault && emit('fix', fault.mod, fault.row)"
+            />
+          </HealthSection>
+        </HealthFrame>
         <p v-else class="p-4 text-12 text-dimmed">Select a row.</p>
       </template>
     </USplitter>

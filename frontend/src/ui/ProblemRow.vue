@@ -1,4 +1,7 @@
-<!-- Shows one problem as a row with its level's mark, its message and a second line. -->
+<!--
+  Shows one problem as a row with its level's mark, its message and a second line. Slots can draw the message and the
+  second line instead.
+-->
 <script setup lang="ts">
 import { computed } from "vue";
 
@@ -60,19 +63,21 @@ const file = computed(() => detail.slice(folder.value.length));
     />
     <span class="flex min-w-0 grow" :class="dense ? 'items-center gap-2' : 'flex-col'">
       <span :title="message" :class="dense ? 'min-w-0 truncate' : 'line-clamp-2 text-13 break-words text-highlighted'">
-        {{ message }}
+        <slot name="message">{{ message }}</slot>
       </span>
-      <span v-if="detail || check" class="flex min-w-0 items-center gap-1.5">
+      <span v-if="detail || check || $slots.detail" class="flex min-w-0 items-center gap-1.5">
         <UBadge v-if="check" :label="check" color="neutral" variant="subtle" size="sm" class="shrink-0" />
-        <span
-          v-if="detail"
-          :title="detail"
-          class="flex min-w-0 text-dimmed"
-          :class="mono ? 'font-mono text-11' : 'text-12'"
-        >
-          <span class="truncate">{{ folder }}</span>
-          <span class="max-w-full shrink-0 truncate">{{ file }}</span>
-        </span>
+        <slot name="detail">
+          <span
+            v-if="detail"
+            :title="detail"
+            class="flex min-w-0 text-dimmed"
+            :class="mono ? 'font-mono text-11' : 'text-12'"
+          >
+            <span class="truncate">{{ folder }}</span>
+            <span class="max-w-full shrink-0 truncate">{{ file }}</span>
+          </span>
+        </slot>
       </span>
     </span>
     <slot name="trailing" />

@@ -16,9 +16,9 @@ import { Call as $Call, CancellablePromise as $CancellablePromise } from "@wails
 import * as $models from "./models.js";
 
 /**
- * BuildLexicon builds the lexicon rows of the given class: effect, trigger, link, scope or function. The rows are
- * sorted by name, letter case aside, so each first letter is one run. It returns an error if no workspace is open or
- * the class is none of those.
+ * BuildLexicon builds the lexicon rows of the given class: effect, trigger, link, scope or function. Effects and
+ * triggers take in the scripted ones the workspace defines. The rows are sorted by name, letter case aside, so each
+ * first letter is one run. It returns an error if no workspace is open or the class is none of those.
  */
 export function BuildLexicon($class: string): $CancellablePromise<$models.LexiconRow[] | null> {
     return $Call.ByID(2321752544, $class);

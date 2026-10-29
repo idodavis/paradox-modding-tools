@@ -28,9 +28,6 @@ const (
 	sharedMessageCode = "shared-message"    // two or more mods define one localization key in one language
 )
 
-// sharedCodes are the codes of the problems a definition has when others share its name.
-var sharedCodes = []string{"duplicate-definition", "conflicting-priority"}
-
 // listContests lists the names that two or more mods define, with the mod whose copy the game keeps and why.
 func listContests(ws *workspace.Session, mods *index.Index, defined []schema.Reference, kept map[schema.Reference]index.Winner) []Finding {
 	var findings []Finding
@@ -52,20 +49,18 @@ func listContests(ws *workspace.Session, mods *index.Index, defined []schema.Ref
 	return findings
 }
 
-// listFileContests lists the files that two or more mods ship in a folder the game reads. A file has no contest if no
-// copy is read.
-func listFileContests(ws *workspace.Session, mods *index.Index, paths []string) []Finding {
-	folders := listFolders(ws)
+// listFileContests lists the files that two or more mods ship, from the file sites at each path the mods ship. A file
+// has no contest if no copy is read.
+func listFileContests(mods *index.Index, copies [][]FindingSite) []Finding {
 	var findings []Finding
-	for _, path := range paths {
-		sites := lo.Reject(makeFileSites(ws, mods, path), func(site FindingSite, _ int) bool { return site.Place.ReadOnly })
-		origins := lo.Map(sites, func(site FindingSite, _ int) string { return site.Place.Origin })
-		if len(lo.Uniq(origins)) < 2 || !isGameFolder(folders, sites[0].Place.Rel) ||
-			!lo.SomeBy(sites, func(site FindingSite) bool { return site.Kept }) {
+	for _, sites := range copies {
+		shipped := lo.Reject(sites, func(site FindingSite, _ int) bool { return site.Place.ReadOnly })
+		origins := lo.Map(shipped, func(site FindingSite, _ int) string { return site.Place.Origin })
+		if len(lo.Uniq(origins)) < 2 || !lo.SomeBy(shipped, func(site FindingSite) bool { return site.Kept }) {
 			continue
 		}
-		facts := lsp.DescribeReference(schema.Reference{Database: game.File, Name: sites[0].Place.Rel})
-		findings = append(findings, makeFinding(mods, fileContestCode, facts, sites))
+		facts := lsp.DescribeReference(schema.Reference{Database: game.File, Name: shipped[0].Place.Rel})
+		findings = append(findings, makeFinding(mods, fileContestCode, facts, shipped))
 	}
 	return findings
 }
@@ -205,19 +200,6 @@ func isGameFolder(folders map[string]bool, rel string) bool {
 	return folders[folder]
 }
 
-// resolveQuestion makes a finding of a shared name a compatibility question when the name's loaded definitions lie in
-// two or more mods. It lists those mods on the finding.
-func resolveQuestion(mods *index.Index, finding *Finding) {
-	origins := lo.FilterMap(mods.Resolve(schema.Reference{Name: finding.Name}), func(site index.Site, _ int) (string, bool) {
-		file := mods.File(site)
-		return file.Origin, mods.IsLoaded(site.File) && file.Origin != game.OriginVanilla &&
-			game.DescribeDefinition(mods.ToReference(site).Database, false) == finding.Database
-	})
-	if origins = lo.Uniq(origins); len(origins) > 1 {
-		finding.Question, finding.Mods = lsp.QuestionCompatibility, listMods(mods, origins)
-	}
-}
-
 // listForgiven returns the pairs of mods whose contests are no problem, the winner first. The winner depends on the
 // other mod, or the workspace ignores the pair.
 func listForgiven(declared map[[2]string]bool, ignored [][2]string) map[[2]string]bool {
@@ -229,13 +211,13 @@ func listForgiven(declared map[[2]string]bool, ignored [][2]string) map[[2]strin
 }
 
 // resolveContest names a contest's winner and beaten mods and sets its level. The level is info if every beaten mod
-// is forgiven, and serious otherwise.
+// is forgiven, and critical otherwise.
 func resolveContest(ws *workspace.Session, finding *Finding, forgiven map[[2]string]bool) {
 	winner, beaten := findWinner(*finding), listBeaten(*finding)
-	finding.Facts["winner"] = describeMod(ws, winner)
+	finding.Facts["winner"] = ws.DescribeMod(winner)
 	finding.Facts["beaten"] = describeMods(ws, beaten)
 	finding.Level = lo.Ternary(lo.EveryBy(beaten, func(id string) bool { return forgiven[[2]string{winner, id}] }),
-		lsp.LevelInfo, lsp.LevelSerious)
+		lsp.LevelInfo, lsp.LevelCritical)
 }
 
 // resolveForgiven sets a finding's level to info if every two of the mods and the game among its sites are a forgiven
@@ -291,18 +273,18 @@ func listBeaten(finding Finding) []string {
 // describeMods returns the titles of mods joined as in a sentence: "A", "A and B", "A, B and C". The game is called by
 // its name. It returns "" for none.
 func describeMods(ws *workspace.Session, modIDs []string) string {
-	titles := lo.Map(modIDs, func(id string, _ int) string { return describeMod(ws, id) })
+	titles := lo.Map(modIDs, func(id string, _ int) string { return ws.DescribeMod(id) })
 	if len(titles) < 2 {
 		return strings.Join(titles, "")
 	}
 	return strings.Join(titles[:len(titles)-1], ", ") + " and " + titles[len(titles)-1]
 }
 
-// resolveOrder gives a serious contest that the load order decides the order that fixes it. It moves the one beaten
+// resolveOrder gives a critical contest that the load order decides the order that fixes it. It moves the one beaten
 // mod just after the winner, where that mod declares the winner as a dependency.
 func resolveOrder(finding *Finding, order []string, declared map[[2]string]bool) {
 	winner, beaten := findWinner(*finding), listBeaten(*finding)
-	if !isOrderDecided(*finding) || finding.Level != lsp.LevelSerious || len(beaten) != 1 ||
+	if !isOrderDecided(*finding) || finding.Level != lsp.LevelCritical || len(beaten) != 1 ||
 		!declared[[2]string{beaten[0], winner}] {
 		return
 	}
@@ -338,15 +320,14 @@ func listDefinitionChanges(ws *workspace.Session, base, mods *index.Index, kept 
 	return changes
 }
 
-// listPathChanges lists the paths in the game's folders whose loaded file lies in another mod than in the workspace's
-// index. A path nothing loads has "" as its mod.
-func listPathChanges(ws *workspace.Session, base, mods *index.Index, paths []string) []Change {
-	folders := listFolders(ws)
+// listPathChanges lists the paths whose loaded file lies in another mod than in the workspace's index. A path nothing
+// loads has "" as its mod.
+func listPathChanges(base, mods *index.Index, paths []string) []Change {
 	changes := []Change{}
 	for _, path := range paths {
 		previous, _, _ := base.FindLoaded(path)
 		current, _, _ := mods.FindLoaded(path)
-		if previous.Origin != current.Origin && isGameFolder(folders, path) {
+		if previous.Origin != current.Origin {
 			changes = append(changes, Change{
 				Database: game.DescribeDefinition(game.File, false), Name: path, Before: previous.Origin, After: current.Origin,
 			})

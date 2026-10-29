@@ -12,11 +12,15 @@ import { Error as logError } from "../bindings/github.com/wailsapp/wails/v3/pkg/
 import App from "./app/App.vue";
 import { router } from "./app/router";
 import { subscribeEvents } from "./app/events";
+import { splitError } from "./lib/format";
 import { useAgentStore } from "./stores/agent";
 import { useSearchStore } from "./stores/search";
 import { useTerminalStore } from "./stores/terminal";
 import { setupMonaco } from "./pages/ide/editor/monaco";
 import "./styles/nuxt-ui.css";
+
+// how many lines after an error's first one its toast shows
+const TOAST_LINES = 3;
 
 /** writeLog writes an error to pmt.log with the place it came from. */
 function writeLog(error: unknown, source: string): void {
@@ -49,10 +53,11 @@ app.use(createPinia());
 app.use(PiniaColada, {
   queryOptions: { staleTime: 30_000, refetchOnWindowFocus: false },
   mutationOptions: {
-    /** The one place a failed mutation is reported: a toast and a log line. */
+    /** The one place a failed mutation is reported: a toast of the error's first lines, and a log line of all of it. */
     onError: (error: unknown) => {
       if (isCancelled(error)) return;
-      toast.add({ title: error instanceof Error ? error.message : String(error), color: "error" });
+      const [summary, details] = splitError(error, TOAST_LINES);
+      toast.add({ title: summary, description: details, color: "error", ui: { description: "whitespace-pre-wrap" } });
       writeLog(error, "mutation");
     },
   },

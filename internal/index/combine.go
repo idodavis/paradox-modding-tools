@@ -137,7 +137,7 @@ func (index *Index) FindLoaded(rel string) (loaded files.File, hidden []files.Fi
 	for _, position := range index.byRel[toRelKey(row, rel)] {
 		file := index.Files[position]
 		switch {
-		case !index.IsListed(position), IsUnmounted(row, file):
+		case !index.IsListed(position), IsUnmounted(row, file), !index.hasFile(position):
 		case index.isDropped(row, file):
 			hidden = append(hidden, file)
 		default:
@@ -347,7 +347,8 @@ func (index *Index) isReplacedLater(row *game.Game, file files.File) bool {
 }
 
 // listReplacers returns the positions among the roots of the mods whose replace_path names the folder of a path,
-// given as its group's key. A replace_path names one folder exactly, not the folders below it.
+// given as its group's key. A replace_path names one folder exactly, not the folders below it. A mod a narrowed index
+// does not answer for replaces nothing.
 func (index *Index) listReplacers(row *game.Game, key string) []int {
 	folder := path.Dir(key)
 	if folder == "." {
@@ -355,7 +356,7 @@ func (index *Index) listReplacers(row *game.Game, key string) []int {
 	}
 	var replacers []int
 	for position, folders := range index.Replaced {
-		if slices.ContainsFunc(folders, func(replaced string) bool {
+		if index.hasMod(index.Roots[position].Origin) && slices.ContainsFunc(folders, func(replaced string) bool {
 			_, rest := schema.SplitStage(row, strings.Trim(replaced, "/"))
 			return strings.EqualFold(rest, folder)
 		}) {

@@ -125,14 +125,15 @@ func findCall(text string, start int) (int, bool) {
 // parseFormat parses the format that starts with the `#` at the given offset of a text, or the end of a format if
 // `#!` is there. The base offset is where the text's first byte sits in its file. A format runs to the first white
 // space outside a call or a key, and that one white space belongs to it. It returns the format's segment first, then
-// the segments of the calls and keys inside it. It returns nil if no format follows the `#`.
+// the segments of the calls and keys inside it. It returns nil if no format follows the `#`, as where a `.` or a `,`
+// does: no format's name starts with one.
 func parseFormat(text string, start, base int) []Segment {
 	if strings.HasPrefix(text[start:], "#!") {
 		end := base + start + 2
 		return []Segment{{Markup: MarkupFormat, Span: jomini.Span{Start: base + start, End: end}, TextSpan: jomini.Span{Start: end, End: end}}}
 	}
 	run := findFormat(text, start+1)
-	if run == start+1 {
+	if run == start+1 || strings.ContainsAny(text[start+1:start+2], ".,") {
 		return nil
 	}
 	_, space := utf8.DecodeRuneInString(text[run:])
@@ -175,6 +176,48 @@ func findFormat(text string, start int) int {
 func makeText(text string, start, end, base int) Segment {
 	span := jomini.Span{Start: base + start, End: base + end}
 	return Segment{Markup: MarkupText, Text: text[start:end], Span: span, TextSpan: span}
+}
+
+// ListCalls returns the data calls a text writes between brackets, those inside its formats too. The offset is where
+// the text's first byte sits in its file.
+func ListCalls(text string, base int) []jomini.Call {
+	var calls []jomini.Call
+	for _, segment := range Segments(text, base) {
+		if segment.Markup != MarkupCall {
+			continue
+		}
+		if call, ok := jomini.ParseCall(segment.Text, segment.TextSpan.Start); ok {
+			calls = append(calls, call)
+		}
+	}
+	return calls
+}
+
+// ListMarkupFaults returns the markup a message's text gets wrong, each as a loc-markup error. One fault is a [ that
+// no ] closes and that a call starts after: the text keeps it as a plain [. The other is a format ended with #. or #,
+// where the game ends one with #!. A [ with nothing or a space after it is a plain [, and no fault.
+func ListMarkupFaults(message Message) []jomini.Error {
+	var faults []jomini.Error
+	for _, segment := range Segments(message.Text, message.TextSpan.Start) {
+		for offset := 0; segment.Markup == MarkupText && offset < len(segment.Text); offset++ {
+			start, rest := segment.Span.Start+offset, segment.Text[offset:]
+			switch {
+			case rest[0] == '[' && isCallStart(rest[1:]):
+				faults = append(faults, jomini.Error{Code: "loc-markup", Message: "a data call has no closing ]",
+					Span: jomini.Span{Start: start, End: start + 1}})
+			case strings.HasPrefix(rest, "#.") || strings.HasPrefix(rest, "#,"):
+				faults = append(faults, jomini.Error{Code: "loc-markup", Message: "a format ends with #!",
+					Span: jomini.Span{Start: start, End: start + 2}})
+			}
+		}
+	}
+	return faults
+}
+
+// isCallStart reports whether a text starts as a data call does: with a letter, an underscore, a cast's ( or another [.
+func isCallStart(text string) bool {
+	first, _ := utf8.DecodeRuneInString(text)
+	return text != "" && (unicode.IsLetter(first) || strings.ContainsRune("_([", first))
 }
 
 // ToPlain returns the text a player reads: the plain pieces joined together, the markup dropped, and each break

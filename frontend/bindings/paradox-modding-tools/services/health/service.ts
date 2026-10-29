@@ -58,7 +58,8 @@ export function ListErrorLog(): $CancellablePromise<$models.GameLog> {
 }
 
 /**
- * ListOverview counts the definitions, files and messages of each mod in the workspace.
+ * ListOverview counts the definitions, files and messages of each mod in the workspace, and lists the mods each is
+ * judged with.
  */
 export function ListOverview(): $CancellablePromise<$models.Overview[] | null> {
     return $Call.ByID(147932697);

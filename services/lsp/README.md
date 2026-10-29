@@ -62,14 +62,17 @@ file is read as the editor holds it.
 ## Diagnostics
 
 A `Diagnostic` is a code, a range and its facts. `Codes` is the one table of every code: its id, the question Health
-asks it under (`compatibility`, `health` or `log`), its level (`serious`, `warning` or `info`), its topic (syntax,
-references, values, localization, definitions or descriptor), its label and its message, a template that the facts
-fill. The game log has no level and no topic, since the game writes none. A sentence about a problem is written once,
-there, and the editor's markers and Health's rows both read the level from it. `DiagnoseFile` returns a file's problems
-in a session against a given index, and a file of the game has its parse errors only. `Diagnose` is the same against
-the open session, with the checks the user turned off (`ide.checks`) left out. `DiagnoseText` judges a text a file
-would have, as a coding agent's change through PMT's tools, without touching the editor's buffer; both run the checks
-over a tree in one function. `DescribeReference` gives the facts that name what a problem is about.
+asks it under (`compatibility`, `health` or `log`), its level (`critical`, `error`, `warning` or `info`), its topic
+(syntax, references, values, localization, definitions or descriptor), its label and its message, a template that the
+facts fill. The game log has no level and no topic, since the game writes none. A sentence about a problem is written
+once, there, and the editor's markers and Health's rows both read the level from it. A code of a name nothing defines
+also has an `Elsewhere` message, used where a mod the file's mod does not depend on defines the name; the diagnostic's
+`Defined` says where. `DiagnoseFile` returns a file's problems in a session against a given index, and a file of the
+game has its parse errors only. A mod's file is judged with the index narrowed to its mod and the mods it depends on.
+`Diagnose` is the same against the open session, with the checks the user turned off (`ide.checks`) left out.
+`DiagnoseText` judges a text a file would have, as a coding agent's change through PMT's tools, without touching the
+editor's buffer; both run the checks over a tree in one function. `DescribeReference` gives the facts that name what a
+problem is about.
 
 A check accuses only on firm ground. A reference is judged dangling only where its database is known and holds no names
 made as the script runs, and where the claim that makes it is not inferred from the game's files alone. A name the

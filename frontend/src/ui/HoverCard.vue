@@ -143,7 +143,7 @@ const sites = computed(() => (card?.sites ?? []).slice(0, SITES_SHOWN));
         <div v-for="site in sites" :key="`${site.place.key}:${site.line}`" class="flex min-w-0 items-center gap-2">
           <SourceLink :place="site.place" :line="site.line" />
           <UBadge v-if="site.kept" label="Kept" color="success" size="sm" />
-          <UBadge v-if="site.reason" :label="REASONS[site.reason] ?? site.reason" size="sm" />
+          <UBadge v-if="site.reason" :label="REASONS[site.reason]?.label ?? site.reason" size="sm" />
         </div>
         <span v-if="(card.sites?.length ?? 0) > SITES_SHOWN" class="text-11 text-dimmed"
           >+{{ (card.sites?.length ?? 0) - SITES_SHOWN }} more</span

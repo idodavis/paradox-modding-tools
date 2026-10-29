@@ -107,6 +107,7 @@ type Mod struct {
 	Calendar   Calendar `json:"calendar"`
 	WorkshopID string   `json:"workshopId"` // "" unpublished
 	Ignore     string   `json:"ignore"`     // the upload exclusions, one pattern per line
+	LeftOut    bool     `json:"leftOut"`    // left out of the workspace's compatibility checks
 }
 
 // A Workspace is one recorded workspace, a game install and the mods loaded with it.
@@ -233,10 +234,6 @@ var Catalog = []Setting{
 		Section: "checks", Workspace: true, Type: "text", Default: "",
 		Help:  "The checks the editor runs, kept as the ids of those turned off. Health's counts do not change.",
 		Words: "diagnostics problems lint ignore"},
-	{Key: "ide.wikiToast", Label: "Suggestion toast",
-		Section: "wiki", Workspace: true, Type: "switch", Default: "true",
-		Help:  "Shows a toast when the wiki has a page for what you are editing.",
-		Words: "wiki notification popup"},
 	{Key: "ide.wordWrap", Label: "Word wrap",
 		Section: "editor", Workspace: true, Type: "switch", Default: "false",
 		Help:  "Long lines wrap at the editor's edge.",

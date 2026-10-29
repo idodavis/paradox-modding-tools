@@ -48,7 +48,6 @@ const (
 	unresolvedReference  = "unresolved-reference"
 	wrongNamespace       = "wrong-namespace"
 	duplicateDefinition  = "duplicate-definition"
-	conflictingPriority  = "conflicting-priority"
 	artifactsPath        = "common/artifacts/z_artifacts.txt"
 	artifactsDocsPath    = "game/common/artifacts/_artifacts.info"
 	artifactsShippedPath = "game/common/artifacts/v_artifacts.txt"
@@ -247,20 +246,21 @@ func TestDiagnoseReportsEachVerdict(t *testing.T) {
 		"events/u_default.txt":       "namespace = n\n\nn.1 = {\n\ttype = character_event\n}\n",
 		"common/traits/e_traits.txt": "dup_trait = {\n\tcategory = personality\n}\n",
 	})
+	// each mod is judged on its own, so a priority the two share is no tie of either; Health reports it once
 	checkCodes(t, ide, dirs[0], map[string][]string{
 		eventsPath:                   {unresolvedReference, wrongNamespace, "wrong-scope"},
-		"events/t_tie.txt":           {conflictingPriority},
-		"events/t_default.txt":       {conflictingPriority},
+		"events/t_tie.txt":           {},
+		"events/t_default.txt":       {},
 		"common/traits/d_traits.txt": {},
-		traitsPath:                   {},
+		traitsPath:                   {duplicateDefinition},
 		"common/traits/t_traits.txt": {"wrong-value"},
 		"common/traits/t_broken.txt": {"unclosed-block"},
 		messagesPath:                 {"duplicate-message", "duplicate-message", "malformed-line", "missing-bom"},
 		"events/m_events.txt":        {},
 	})
 	checkCodes(t, ide, dirs[1], map[string][]string{
-		"events/u_tie.txt":           {conflictingPriority},
-		"events/u_default.txt":       {conflictingPriority},
+		"events/u_tie.txt":           {},
+		"events/u_default.txt":       {},
 		"common/traits/e_traits.txt": {},
 	})
 }
@@ -279,7 +279,7 @@ func TestDiagnoseGradesEntryModesAndFirstDefinitions(t *testing.T) {
 		"events/zz_events.txt":  {},
 		"events/zza_events.txt": {duplicateDefinition},
 	})
-	checkCodes(t, ide, dirs[1], map[string][]string{"events/zzz_events.txt": {}, "events/zzzz_events.txt": {}})
+	checkCodes(t, ide, dirs[1], map[string][]string{"events/zzz_events.txt": {}, "events/zzzz_events.txt": {duplicateDefinition}})
 }
 
 // TestDiagnoseReportsKeysEveryShippedDefinitionWrites checks that a missing key is reported only if every definition
@@ -615,8 +615,13 @@ type problem struct {
 	facts     map[string]string
 }
 
-// TestDiagnoseInstalls diagnoses the files of each real install that PMT_TEST_INSTALL_<GAME> names, with no mod, and
-// logs the problems by code. It fails only if a file panics.
+// vanillaClean holds the codes that no file of the three games gets, each found so by reading every finding of the
+// installs.
+var vanillaClean = []string{"else-without-if", "invalid-date", "unknown-data-call", "unknown-loc-key", "unused-argument"}
+
+// TestDiagnoseInstalls judges the files of each real install that PMT_TEST_INSTALL_<GAME> names as a mod's files are
+// judged, and logs the problems by code. It fails if a file panics, or if a file of the game gets one of vanillaClean's
+// codes.
 func TestDiagnoseInstalls(t *testing.T) {
 	for _, gameID := range []string{ck3, vic3, eu5} {
 		t.Run(gameID, func(t *testing.T) {
@@ -629,33 +634,99 @@ func TestDiagnoseInstalls(t *testing.T) {
 			ide := openService(t, gameID, install)
 			ws, _ := ide.Workspace.Session()
 			started := time.Now()
-			problems, checked, failures := diagnoseAll(ide, ws.Install.Files)
+			problems, checked, failures := diagnoseAll(judgeAsMod(ws), ws.Install.Files)
 			t.Logf("opened in %s; diagnosed %d files in %s: %d problems, %d files unread or crashed", started.Sub(opening).Round(time.Second),
 				checked, time.Since(started).Round(time.Millisecond), len(problems), len(failures))
 			logProblems(t, problems)
-			for _, failure := range failures {
-				if errors.Is(failure, errCrash) {
-					t.Error(failure)
-				} else {
-					t.Log(failure)
+			reportFailures(t, failures)
+			for _, current := range problems {
+				if slices.Contains(vanillaClean, current.code) {
+					t.Errorf("%s %s:%d %v", current.code, current.rel, current.line, current.facts)
 				}
 			}
 		})
 	}
 }
 
-// diagnoseAll diagnoses the files of a list in parallel. It returns the problems, sorted by code and place, how many
-// files it checked and why each failed file failed.
-func diagnoseAll(ide *Service, listing []files.File) (problems []problem, checked int, failures []error) {
+// TestSweepMods judges every mod in the folder that PMT_TEST_MODS_<GAME> names, each folder in it one mod, over the
+// install PMT_TEST_INSTALL_<GAME> names, and logs the problems by code. It fails only if a file panics.
+func TestSweepMods(t *testing.T) {
+	for _, gameID := range []string{ck3, vic3, eu5} {
+		t.Run(gameID, func(t *testing.T) {
+			install, folder := os.Getenv("PMT_TEST_INSTALL_"+strings.ToUpper(gameID)), os.Getenv("PMT_TEST_MODS_"+strings.ToUpper(gameID))
+			if install == "" || folder == "" {
+				t.Skipf("PMT_TEST_INSTALL_%[1]s or PMT_TEST_MODS_%[1]s is not set", strings.ToUpper(gameID))
+			}
+			entries, err := os.ReadDir(folder)
+			if err != nil {
+				t.Fatal(err)
+			}
+			var mods []app.Mod
+			for _, entry := range entries {
+				if entry.IsDir() {
+					mods = append(mods, app.Mod{ID: "sweep-" + entry.Name(), Dir: filepath.Join(folder, entry.Name())})
+				}
+			}
+			ide := openService(t, gameID, install, mods...)
+			ws, _ := ide.Workspace.Session()
+			own := ws.Mods.Load().Files[len(ws.Install.Files):]
+			for _, mod := range ws.Order {
+				if mod.Descriptor.Path != "" {
+					own = append(own, files.File{Path: mod.Descriptor.Path, Rel: filepath.Base(mod.Descriptor.Path), Format: files.FormatDescriptor})
+				}
+			}
+			started := time.Now()
+			problems, checked, failures := diagnoseAll(judgeAsMod(ws), own)
+			t.Logf("%d mods; diagnosed %d files in %s: %d problems", len(mods), checked, time.Since(started).Round(time.Millisecond),
+				len(problems))
+			logProblems(t, problems)
+			reportFailures(t, failures)
+		})
+	}
+}
+
+// judgeAsMod returns a function that judges a file of a workspace as a mod's file is judged, a file of the game too.
+func judgeAsMod(ws *workspace.Session) func(path string) ([]Diagnostic, error) {
+	mods := ws.Mods.Load()
+	return func(path string) ([]Diagnostic, error) {
+		place := ws.Locate(mods, path)
+		place.ReadOnly = false
+		if !isDiagnosed(place) {
+			return nil, nil
+		}
+		tree, err := ws.LoadTree(path)
+		if err != nil {
+			return nil, err
+		}
+		return newVisitor(ws, mods, place).diagnoseTree(tree), nil
+	}
+}
+
+// reportFailures fails the test for each file that panicked, and logs each file that could not be read.
+func reportFailures(t *testing.T, failures []error) {
+	t.Helper()
+	for _, failure := range failures {
+		if errors.Is(failure, errCrash) {
+			t.Error(failure)
+		} else {
+			t.Log(failure)
+		}
+	}
+}
+
+// diagnoseAll judges the files of a list in parallel with the given function. It returns the problems, sorted by code
+// and place, how many files it checked and why each failed file failed.
+func diagnoseAll(judge func(path string) ([]Diagnostic, error), listing []files.File) (problems []problem, checked int, failures []error) {
 	var mu sync.Mutex
 	var group errgroup.Group
 	group.SetLimit(max(runtime.NumCPU()-2, 1))
 	for _, file := range listing {
 		switch file.Format {
-		case files.FormatScript, files.FormatGUI, files.FormatAsset, files.FormatFont, files.FormatGFX, files.FormatLocalization:
+		case files.FormatScript, files.FormatGUI, files.FormatAsset, files.FormatFont, files.FormatGFX, files.FormatLocalization,
+			files.FormatDescriptor:
 			checked++
 			group.Go(func() error {
-				diagnostics, err := diagnoseSafely(ide, file.Path)
+				diagnostics, err := diagnoseSafely(judge, file.Path)
 				mu.Lock()
 				defer mu.Unlock()
 				if err != nil {
@@ -678,14 +749,14 @@ func diagnoseAll(ide *Service, listing []files.File) (problems []problem, checke
 // errCrash is the error a panic becomes.
 var errCrash = errors.New("panic")
 
-// diagnoseSafely diagnoses a file, and turns a panic into an error.
-func diagnoseSafely(ide *Service, target string) (diagnostics []Diagnostic, err error) {
+// diagnoseSafely judges a file with the given function, and turns a panic into an error.
+func diagnoseSafely(judge func(path string) ([]Diagnostic, error), target string) (diagnostics []Diagnostic, err error) {
 	defer func() {
 		if crash := recover(); crash != nil {
 			err = fmt.Errorf("%w: %v", errCrash, crash)
 		}
 	}()
-	return ide.Diagnose(target)
+	return judge(target)
 }
 
 // logProblems logs the first problems of each code, then the count of each code.

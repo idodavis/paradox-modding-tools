@@ -27,6 +27,7 @@ import type * as workspace$0 from "../../../../../paradox-modding-tools/services
 declare module "@wailsio/runtime" {
     namespace Events {
         interface CustomEvents {
+            "agent:changed": string;
             "app:update": app$0.Update;
             "config:changed": string;
             "errorlog:changed": {};

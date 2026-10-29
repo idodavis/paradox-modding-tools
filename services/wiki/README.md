@@ -53,8 +53,10 @@ version's hotfix notes after all of its numbered patches. `ReadNote` returns one
 
 `BuildLexicon` builds the Lexicon tab's rows of one class: effect, trigger, link, scope or data function. A
 `LexiconRow` carries the dump's blurb and usage, the scopes it runs in and the scope it leads to, and an `Example` for
-each place the game's own files use it, as the schema's vanilla count kept them. The rows are sorted by name, letter
-case aside.
+each place the game's own files use it, as the schema's vanilla count kept them. Effects and triggers also take in the
+scripted effects and triggers the game and the workspace's mods define, one row for each name the game keeps a copy of:
+its call written from the parameters its body reads, `Defined` where that copy is, and the first places that use it.
+The rows are sorted by name, letter case aside.
 
 ## Events
 
@@ -71,5 +73,6 @@ case aside.
 - **Listing**: what the wiki has for one game: its modding pages and its patch versions.
 - **Note**: one patch's notes page.
 - **Progress**: how far a refresh has come.
-- **LexiconRow**: one effect, trigger, link, scope or data function, with the dump's text and its examples.
-- **Example**: one place the game's own files use a lexicon row's name.
+- **LexiconRow**: one effect, trigger, link, scope or data function the dumps declare, with the dump's text and its
+  examples, or one scripted effect or trigger, with how a call to it is written.
+- **Example**: one place in the workspace's files where a lexicon row's name is used, or defined.

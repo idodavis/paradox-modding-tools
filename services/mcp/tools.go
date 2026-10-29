@@ -54,7 +54,7 @@ type textQuery struct {
 type findingFilter struct {
 	Mod   string `json:"mod,omitempty" jsonschema:"a mod's id: only the findings about it"`
 	Code  string `json:"code,omitempty" jsonschema:"a check's id from list_codes, such as wrong-scope or coverage"`
-	Level string `json:"level,omitempty" jsonschema:"serious, warning or info"`
+	Level string `json:"level,omitempty" jsonschema:"critical, error, warning or info"`
 	Limit int    `json:"limit,omitempty" jsonschema:"the most findings wanted; 50 if left out"`
 }
 

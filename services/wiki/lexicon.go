@@ -3,6 +3,7 @@ package wiki
 import (
 	"cmp"
 	"fmt"
+	"maps"
 	"slices"
 	"strings"
 
@@ -14,8 +15,8 @@ import (
 	"paradox-modding-tools/services/workspace"
 )
 
-// A LexiconRow is one effect, trigger, link, scope or data function the game's dumps declare, with the dump's text
-// and example uses from the index.
+// A LexiconRow is one effect, trigger, link, scope or data function: one the game's dumps declare, with the dump's
+// text, or a scripted effect or trigger, with how a call to it is written. Each has example uses from the index.
 type LexiconRow struct {
 	Class    string    `json:"class"` // effect, trigger, link, scope, function
 	Name     string    `json:"name"`
@@ -24,9 +25,11 @@ type LexiconRow struct {
 	Scopes   []string  `json:"scopes,omitempty"`
 	Target   string    `json:"target,omitempty"`
 	Examples []Example `json:"examples"`
+	// Defined is where the copy the game keeps of a scripted effect or trigger is, or nil for what the dumps declare.
+	Defined *Example `json:"defined,omitempty"`
 }
 
-// An Example is one place where the game's own files use a lexicon row's name.
+// An Example is one place in the workspace's files: where a lexicon row's name is used, or defined.
 type Example struct {
 	Place workspace.Place `json:"place"`
 	Line  int             `json:"line"` // counted from one
@@ -40,9 +43,9 @@ var declaredClasses = map[string]string{
 	"link":    game.DeclaredLink,
 }
 
-// BuildLexicon builds the lexicon rows of the given class: effect, trigger, link, scope or function. The rows are
-// sorted by name, letter case aside, so each first letter is one run. It returns an error if no workspace is open or
-// the class is none of those.
+// BuildLexicon builds the lexicon rows of the given class: effect, trigger, link, scope or function. Effects and
+// triggers take in the scripted ones the workspace defines. The rows are sorted by name, letter case aside, so each
+// first letter is one run. It returns an error if no workspace is open or the class is none of those.
 func (wik *Service) BuildLexicon(class string) ([]LexiconRow, error) {
 	ws, err := wik.Workspace.Session()
 	if err != nil {
@@ -60,6 +63,7 @@ func (wik *Service) BuildLexicon(class string) ([]LexiconRow, error) {
 				})
 			}
 		}
+		rows = append(rows, listScripted(ws, mods, class)...)
 	case class == "scope":
 		for name := range ws.Schema.Scopes {
 			rows = append(rows, LexiconRow{Class: class, Name: name, Examples: []Example{}})
@@ -88,4 +92,56 @@ func toExamples(ws *workspace.Session, mods *index.Index, examples []schema.Exam
 	return lo.Map(examples, func(example schema.Example, _ int) Example {
 		return Example{Place: ws.Locate(mods, example.Path), Line: example.Line + 1}
 	})
+}
+
+// listScripted returns the lexicon rows of the scripted definitions that act as commands of the given class, one for
+// each name the game keeps a copy of.
+func listScripted(ws *workspace.Session, mods *index.Index, class string) []LexiconRow {
+	var rows []LexiconRow
+	for database, callable := range game.Callables {
+		if callable.Command != class {
+			continue
+		}
+		listed := map[string]bool{}
+		for _, site := range mods.ListDefinitions(database) {
+			reference := mods.ToReference(site)
+			if listed[reference.Name] {
+				continue
+			}
+			listed[reference.Name] = true
+			if winner, ok := mods.FindKept(ws.Schema, reference); ok {
+				rows = append(rows, makeScripted(ws, mods, class, reference, winner.Site))
+			}
+		}
+	}
+	return rows
+}
+
+// makeScripted returns the lexicon row of a scripted definition: how a call to the copy the game keeps is written,
+// with the parameters its body reads, where that copy is and the first places that use the name.
+func makeScripted(ws *workspace.Session, mods *index.Index, class string, reference schema.Reference, kept index.Site) LexiconRow {
+	usage := reference.Name + " = yes"
+	if tree, statement, err := ws.FindStatement(mods, kept); err == nil {
+		parameters := lo.Filter(slices.Sorted(maps.Keys(schema.ListParameters(tree, statement).Children)), func(key string, _ int) bool {
+			return !strings.HasPrefix(key, "<")
+		})
+		if len(parameters) > 0 {
+			usage = reference.Name + " = { " + strings.Join(lo.Map(parameters, func(parameter string, _ int) string {
+				return parameter + " = …"
+			}), " ") + " }"
+		}
+	}
+	uses := mods.ListUses(reference.Database, reference.Name)
+	defined := locateExample(ws, mods, kept)
+	return LexiconRow{
+		Class: class, Name: reference.Name, Usage: usage, Defined: &defined,
+		Examples: lo.Map(uses[:min(len(uses), schema.ExampleCount)], func(use index.Site, _ int) Example {
+			return locateExample(ws, mods, use)
+		}),
+	}
+}
+
+// locateExample returns the example of one site of the index: its file's place and its line.
+func locateExample(ws *workspace.Session, mods *index.Index, site index.Site) Example {
+	return Example{Place: ws.Locate(mods, mods.File(site).Path), Line: int(mods.Occurrence(site).Line) + 1}
 }

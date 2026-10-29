@@ -2,6 +2,7 @@ package lsp
 
 import (
 	"cmp"
+	"maps"
 	"slices"
 	"strings"
 
@@ -11,53 +12,66 @@ import (
 	"paradox-modding-tools/internal/game"
 	"paradox-modding-tools/internal/index"
 	"paradox-modding-tools/internal/jomini"
-	"paradox-modding-tools/internal/loc"
 	"paradox-modding-tools/internal/schema"
 	"paradox-modding-tools/services/workspace"
 )
 
-// The questions a check answers, and the levels a check's findings have.
+// The questions a check answers, and the levels a check's findings have, by how much the game loses.
 const (
 	QuestionCompatibility = "compatibility" // how the workspace's mods touch the same things
 	QuestionHealth        = "health"        // each mod's own problems
 	QuestionLog           = "log"           // what the game's last run logged
-	LevelSerious          = "serious"
-	LevelWarning          = "warning"
-	LevelInfo             = "info"
+	LevelCritical         = "critical"      // the game loses a whole file, folder, definition or mod
+	LevelError            = "error"         // the game skips one statement, line or value and keeps running
+	LevelWarning          = "warning"       // it may be fine, or only shows a player the wrong text
+	LevelInfo             = "info"          // only how things are
 )
+
+// unresolvedCode is the code of a name nothing defines that is of no narrower kind.
+const unresolvedCode = "unresolved-reference"
+
+// elsewhereMessage is the message of a name the file's mod does not define that a mod it does not depend on does.
+const elsewhereMessage = "{mod} uses this {database}, but the game doesn't define it: {other} does. {mod} doesn't " +
+	"list {other} as a dependency, so in a game without {other} the {database} doesn't exist, and every place that " +
+	"uses it finds nothing."
 
 // A Code is one kind of problem.
 type Code struct {
 	ID       string `json:"id"`       // the code's name in kebab case, such as wrong-scope
 	Question string `json:"question"` // compatibility, health or log
-	Level    string `json:"level"`    // serious, warning or info, or "" for the game log
+	Level    string `json:"level"`    // critical, error, warning or info, or "" for the game log
 	Topic    string `json:"topic"`    // such as syntax or localization, or "" for the log
 	Label    string `json:"label"`    // the code's title
 	Message  string `json:"message"`  // a template the facts fill, such as {name}
+	// Elsewhere is the message where a mod the file's mod does not depend on defines the name, or "" if the code has
+	// none.
+	Elsewhere string `json:"elsewhere,omitempty"`
 }
 
 // Codes holds every problem code.
 var Codes = []Code{
 	{ID: "unclosed-block", Question: QuestionHealth, Level: LevelWarning, Topic: "syntax",
 		Label: "Unclosed block", Message: "This block is opened and never closed."},
-	{ID: "unexpected-brace", Question: QuestionHealth, Level: LevelWarning, Topic: "syntax",
+	{ID: "unexpected-brace", Question: QuestionHealth, Level: LevelCritical, Topic: "syntax",
 		Label: "Unexpected brace", Message: "This closing brace has no block to close."},
-	{ID: "unclosed-string", Question: QuestionHealth, Level: LevelSerious, Topic: "syntax",
+	{ID: "unclosed-string", Question: QuestionHealth, Level: LevelCritical, Topic: "syntax",
 		Label: "Unclosed string", Message: "This string is opened and never closed."},
-	{ID: "missing-value", Question: QuestionHealth, Level: LevelSerious, Topic: "syntax",
+	{ID: "missing-value", Question: QuestionHealth, Level: LevelError, Topic: "syntax",
 		Label: "Missing value", Message: "This key has an operator and no value."},
-	{ID: "malformed-line", Question: QuestionHealth, Level: LevelSerious, Topic: "localization",
+	{ID: "else-without-if", Question: QuestionHealth, Level: LevelError, Topic: "syntax",
+		Label: "An else with no if before it", Message: "{name} must come right after {follows}."},
+	{ID: "malformed-line", Question: QuestionHealth, Level: LevelError, Topic: "localization",
 		Label: "Malformed line", Message: "The game cannot read this line as a localization key and its text."},
-	{ID: "loc-content-before-header", Question: QuestionHealth, Level: LevelSerious, Topic: "localization",
+	{ID: "loc-content-before-header", Question: QuestionHealth, Level: LevelError, Topic: "localization",
 		Label:   "Line above the header",
 		Message: "This line is above the localization header, so the game does not read it."},
-	{ID: "loc-unterminated-value", Question: QuestionHealth, Level: LevelSerious, Topic: "localization",
+	{ID: "loc-unterminated-value", Question: QuestionHealth, Level: LevelError, Topic: "localization",
 		Label:   "Text without a closing quote",
 		Message: "This localization key's text has no closing quote, so it runs to the end of the line."},
-	{ID: "missing-bom", Question: QuestionHealth, Level: LevelSerious, Topic: "localization",
+	{ID: "missing-bom", Question: QuestionHealth, Level: LevelCritical, Topic: "localization",
 		Label:   "Missing byte order mark",
 		Message: "The game reads a localization file only with a UTF-8 byte order mark."},
-	{ID: "wrong-localization-folder", Question: QuestionHealth, Level: LevelSerious, Topic: "localization",
+	{ID: "wrong-localization-folder", Question: QuestionHealth, Level: LevelCritical, Topic: "localization",
 		Label: "Wrong localization folder", Message: "The game reads the folder {right}, not {wrong}."},
 	{ID: "loc-header-mismatch", Question: QuestionHealth, Level: LevelWarning, Topic: "localization",
 		Label: "Header of another language", Message: "The file is named for {language}, but its header says {header}."},
@@ -67,67 +81,79 @@ var Codes = []Code{
 	{ID: "missing-message", Question: QuestionHealth, Level: LevelWarning, Topic: "localization",
 		Label:   "Missing title localization",
 		Message: "The {database} {name} has no localization key for its title in the base language."},
+	{ID: "unknown-loc-key", Question: QuestionHealth, Level: LevelWarning, Topic: "localization",
+		Label: "Unknown localization key", Message: "Nothing defines the localization key {name}.",
+		Elsewhere: elsewhereMessage},
+	{ID: "loc-markup", Question: QuestionHealth, Level: LevelWarning, Topic: "localization",
+		Label: "Unknown text markup", Message: "This is not text markup the game reads: {why}."},
 	{ID: "coverage", Question: QuestionHealth, Level: LevelInfo, Topic: "localization",
 		Label: "Language coverage", Message: "{mod} has {have} of its {of} localization keys in {name}."},
-	{ID: "unresolved-reference", Question: QuestionHealth, Level: LevelSerious, Topic: "references",
-		Label: "Unresolved reference", Message: "Nothing defines the {database} {name}."},
-	{ID: "wrong-scope", Question: QuestionHealth, Level: LevelSerious, Topic: "values",
+	{ID: unresolvedCode, Question: QuestionHealth, Level: LevelError, Topic: "references",
+		Label: "Unresolved reference", Message: "Nothing defines the {database} {name}.", Elsewhere: elsewhereMessage},
+	{ID: "unknown-data-call", Question: QuestionHealth, Level: LevelWarning, Topic: "references",
+		Label: "Unknown data function", Message: "{type} has no data function {name}."},
+	{ID: "wrong-scope", Question: QuestionHealth, Level: LevelError, Topic: "values",
 		Label: "Wrong scope", Message: "{name} runs in {allowed}, not in {scope}."},
-	{ID: "wrong-value", Question: QuestionHealth, Level: LevelSerious, Topic: "values",
+	{ID: "wrong-value", Question: QuestionHealth, Level: LevelError, Topic: "values",
 		Label: "Wrong value", Message: "{name} takes {expected}."},
-	{ID: "missing-key", Question: QuestionHealth, Level: LevelSerious, Topic: "values",
+	{ID: "invalid-date", Question: QuestionHealth, Level: LevelError, Topic: "values",
+		Label: "Impossible date", Message: "{name} is no date: a month runs from 1 to 12, and a day from 1 to 31."},
+	{ID: "missing-key", Question: QuestionHealth, Level: LevelError, Topic: "values",
 		Label: "Missing key", Message: "The {database} {name} does not write {key}, which it must."},
 	{ID: "unknown-key", Question: QuestionHealth, Level: LevelWarning, Topic: "values",
 		Label: "Unknown key", Message: "{name} is not a key a {database} takes here."},
-	{ID: "wrong-namespace", Question: QuestionHealth, Level: LevelSerious, Topic: "definitions",
+	{ID: "unused-argument", Question: QuestionHealth, Level: LevelWarning, Topic: "values",
+		Label: "Argument not read or not given", Message: "The argument {name} {why} {callee}."},
+	{ID: "wrong-namespace", Question: QuestionHealth, Level: LevelCritical, Topic: "definitions",
 		Label:   "Wrong namespace",
 		Message: "The {database} {name} is not in a namespace this file declares ({namespace})."},
-	{ID: "misplaced-mode", Question: QuestionHealth, Level: LevelSerious, Topic: "definitions",
+	{ID: "misplaced-mode", Question: QuestionHealth, Level: LevelCritical, Topic: "definitions",
 		Label: "Misplaced entry mode", Message: "The {database} {name} cannot be written with {mode} here."},
-	{ID: "inject-without-target", Question: QuestionHealth, Level: LevelWarning, Topic: "definitions",
+	{ID: "inject-without-target", Question: QuestionHealth, Level: LevelCritical, Topic: "definitions",
 		Label:   "Entry mode with nothing to change",
 		Message: "The {database} {name} is written with {mode}, and no {database} {name} is loaded for it to change."},
-	{ID: "duplicate-definition", Question: QuestionHealth, Level: LevelWarning, Topic: "definitions",
+	{ID: "duplicate-definition", Question: QuestionHealth, Level: LevelCritical, Topic: "definitions",
 		Label:   "Duplicate definition",
 		Message: "The {database} {name} is defined more than once, and the game keeps only one."},
-	{ID: "conflicting-priority", Question: QuestionHealth, Level: LevelWarning, Topic: "definitions",
+	{ID: "conflicting-priority", Question: QuestionHealth, Level: LevelCritical, Topic: "definitions",
 		Label: "Conflicting priority",
 		Message: "{name} has the same override priority in two files. The game logs an error and keeps one copy; " +
 			"which one is not documented. Give one a higher {key}."},
-	{ID: "mod-for-older-version", Question: QuestionHealth, Level: LevelWarning, Topic: "descriptor",
-		Label:   "Made for an older game version",
-		Message: "{name} is made for game {supported}; the game is {version}."},
 	{ID: "unmounted-folder", Question: QuestionHealth, Level: LevelWarning, Topic: "definitions",
 		Label: "Folder the game never reads",
 		Message: "{name} is outside the in_game, main_menu and loading_screen folders, " +
 			"so the game never reads the files in it: {count}."},
-	{ID: "contest", Question: QuestionCompatibility, Level: LevelSerious, Topic: "definitions",
-		Label:   "Contested definition",
-		Message: "{beaten}'s copy of {name} is never used: the game keeps {winner}'s."},
-	{ID: "file-contest", Question: QuestionCompatibility, Level: LevelSerious, Topic: "definitions",
+	{ID: "supported-version", Question: QuestionHealth, Level: LevelWarning, Topic: "descriptor",
+		Label: "Made for another game version", Message: "{name} is made for game {supported}; the game is {version}."},
+	{ID: "contest", Question: QuestionCompatibility, Level: LevelCritical, Topic: "definitions",
+		Label: "Contested definition",
+		Message: "{winner} and {beaten} each define this {database}. The game uses only {winner}'s copy, so " +
+			"{beaten}'s never takes effect."},
+	{ID: "file-contest", Question: QuestionCompatibility, Level: LevelCritical, Topic: "definitions",
 		Label: "Contested file",
 		Message: "{winner} and {beaten} both ship {name}. The game reads {winner}'s, which is lower in the load order, " +
 			"so {beaten}'s is never used."},
-	{ID: "undecided-contest", Question: QuestionCompatibility, Level: LevelSerious, Topic: "definitions",
+	{ID: "undecided-contest", Question: QuestionCompatibility, Level: LevelCritical, Topic: "definitions",
 		Label:   "Undecided contest",
 		Message: "{mods} each write {name}. Which copy the game uses, or whether they combine, is not documented: {why}."},
 	{ID: "shared-message", Question: QuestionCompatibility, Level: LevelWarning, Topic: "localization",
 		Label: "Localization key in several mods",
 		Message: "{mods} define the localization key {name} in {language}. The game shows one copy's text, " +
 			"and a copy in a replace folder wins."},
-	{ID: "missing-dependency", Question: QuestionCompatibility, Level: LevelSerious, Topic: "descriptor",
+	{ID: "missing-dependency", Question: QuestionCompatibility, Level: LevelCritical, Topic: "descriptor",
 		Label:   "Missing dependency",
 		Message: "{mod} depends on {name}, which the workspace does not have."},
-	{ID: "undeclared-dependency", Question: QuestionCompatibility, Level: LevelWarning, Topic: "references",
-		Label: "Use of a mod it does not depend on",
-		Message: "{name} uses {count} names that only {other} defines, and does not declare it as a dependency. " +
-			"Without {other} they are undefined."},
 	{ID: "override", Question: QuestionCompatibility, Level: LevelInfo, Topic: "definitions",
 		Label:   "Override of the game",
 		Message: "{name}: a mod and the game both define this {database}, and the game keeps {kept}."},
-	{ID: "unused-copy", Question: QuestionCompatibility, Level: LevelWarning, Topic: "definitions",
+	{ID: "removed-names", Question: QuestionCompatibility, Level: LevelCritical, Topic: "definitions",
+		Label: "Replaced file removes names in use",
+		Message: "{mod} replaces the game's copy of this file with its own. Its copy leaves out {removed} of the " +
+			"{total} {definitions} the game's copy defines. {count} of them are defined nowhere else and still used, " +
+			"{uses} times in all, and each of those uses now finds nothing."},
+	{ID: "unused-copy", Question: QuestionCompatibility, Level: LevelCritical, Topic: "definitions",
 		Label:   "Copy never used",
-		Message: "{mod}'s copy of {name} is never used: the game keeps its own, {reason}."},
+		Message: "{beaten}'s copy of {name} is never used: the game keeps its own."},
 	{ID: "ignored-pair", Question: QuestionCompatibility, Level: LevelInfo, Topic: "definitions",
 		Label:   "Ignored conflicts",
 		Message: "Conflicts between {name} and {other} are ignored in this workspace: {count}."},
@@ -139,6 +165,8 @@ type Diagnostic struct {
 	Code  string            `json:"code"`
 	Range Range             `json:"range"`
 	Facts map[string]string `json:"facts"`
+	// Defined is where the workspace defines a name the file's mod does not, in a mod it does not depend on.
+	Defined []Location `json:"defined,omitempty"`
 }
 
 // valueDescriptions holds the words that describe each value type.
@@ -171,7 +199,7 @@ func (lsp *Service) DiagnoseText(path, text string) ([]Diagnostic, error) {
 	if !isDiagnosed(place) {
 		return []Diagnostic{}, nil
 	}
-	return lsp.listEnabled(ws.ID, diagnoseTree(ws, mods, place, jomini.Parse(text))), nil
+	return lsp.listEnabled(ws.ID, newVisitor(ws, mods, place).diagnoseTree(jomini.Parse(text))), nil
 }
 
 // DescribeReference returns the facts that say which name a problem is about.
@@ -190,49 +218,39 @@ func DiagnoseFile(ws *workspace.Session, mods *index.Index, path string) ([]Diag
 	if err != nil {
 		return nil, err
 	}
-	return diagnoseTree(ws, mods, place, tree), nil
+	return newVisitor(ws, mods, place).diagnoseTree(tree), nil
 }
 
-// isDiagnosed reports whether a file can have problems: it is script or localization, or a mod's .yml file, which
-// may sit in a misspelled localization folder.
+// isDiagnosed reports whether a file can have problems: it is script, localization or a mod's descriptor, or a mod's
+// .yml file, which may sit in a misspelled localization folder. A file of the game's own GUI editor has none.
 func isDiagnosed(place workspace.Place) bool {
-	return place.Format == files.FormatLocalization || place.Format.IsScript() ||
-		place.Format == files.FormatText && !place.ReadOnly && strings.HasSuffix(strings.ToLower(place.Rel), ".yml")
-}
-
-// diagnoseTree returns the problems of a file judged on the given tree of its text. A file of the game has its parse
-// errors only.
-func diagnoseTree(ws *workspace.Session, mods *index.Index, place workspace.Place, tree *jomini.Tree) []Diagnostic {
-	switch {
-	case place.Format == files.FormatLocalization:
-		return diagnoseMessages(ws, mods, tree, place)
-	case !place.Format.IsScript():
-		// the game reads nothing under a misspelled folder, so only the folder is judged
-		return diagnoseFolders(tree, place)
+	rel := strings.ToLower(place.Rel)
+	if lo.SomeBy(game.GUI.EditorFolders, func(folder string) bool { return strings.HasPrefix(rel, folder+"/") }) {
+		return false
 	}
-	diagnostics := toDiagnostics(tree, tree.Errors)
-	if !place.ReadOnly {
-		position, listed := mods.FindFile(place.Path)
-		visitor := &diagnoseVisitor{ws: ws, index: mods, file: place.File, position: position, listed: listed}
-		ws.Schema.Walk(tree, place.File, visitor)
-		diagnostics = append(diagnostics, visitor.diagnostics...)
-	}
-	return diagnostics
+	return place.Format == files.FormatLocalization || place.Format.IsScript() || place.Format == files.FormatDescriptor ||
+		place.Format == files.FormatText && !place.ReadOnly && strings.HasSuffix(rel, ".yml")
 }
 
 // listEnabled drops the diagnostics of the checks the user turned off in a workspace.
 func (lsp *Service) listEnabled(workspaceID string, diagnostics []Diagnostic) []Diagnostic {
-	setting, _ := lsp.Workspace.Config.LookupSetting(workspaceID, "ide.checks")
-	disabled := lo.Map(strings.Split(setting, ","), func(id string, _ int) string { return strings.TrimSpace(id) })
+	disabled := listIDs(lsp.Workspace, workspaceID, "ide.checks")
 	return slices.DeleteFunc(diagnostics, func(diagnostic Diagnostic) bool {
 		return slices.Contains(disabled, diagnostic.Code)
 	})
 }
 
-// toDiagnostics returns a tree's parse errors as diagnostics.
+// listIDs returns the ids of checks that a workspace's setting of the given key lists, apart by commas. An empty
+// setting lists none.
+func listIDs(wsp *workspace.Service, workspaceID, key string) []string {
+	setting, _ := wsp.Config.LookupSetting(workspaceID, key)
+	return lo.Compact(lo.Map(strings.Split(setting, ","), func(id string, _ int) string { return strings.TrimSpace(id) }))
+}
+
+// toDiagnostics returns a tree's parse errors as diagnostics. Each error's words are its fact why.
 func toDiagnostics(tree *jomini.Tree, errors []jomini.Error) []Diagnostic {
 	return lo.Map(errors, func(parseError jomini.Error, _ int) Diagnostic {
-		return makeDiagnostic(tree, parseError.Span, parseError.Code, map[string]string{})
+		return makeDiagnostic(tree, parseError.Span, parseError.Code, map[string]string{"why": parseError.Message})
 	})
 }
 
@@ -241,73 +259,68 @@ func makeDiagnostic(tree *jomini.Tree, span jomini.Span, code string, facts map[
 	return Diagnostic{Code: code, Range: ToRange(tree.Src, tree.Lines, span), Facts: facts}
 }
 
-// diagnoseMessages returns the problems of a localization file. A file of the game has its parse errors only.
-func diagnoseMessages(ws *workspace.Session, mods *index.Index, tree *jomini.Tree, place workspace.Place) []Diagnostic {
-	file := loc.Parse(tree.Src, place.Path)
-	diagnostics := toDiagnostics(tree, file.Errors)
-	if place.ReadOnly {
-		return diagnostics
-	}
-	diagnostics = append(diagnostics, diagnoseLocalizationFile(tree, file, place)...)
-	if _, replaces := schema.FindLocReplacement(ws.Game, place.Rel, file.Language); replaces {
-		return diagnostics
-	}
-	position, known := mods.FindFile(place.Path)
-	counts := lo.CountValuesBy(file.Messages, func(message loc.Message) string { return message.Key })
-	for _, message := range file.Messages {
-		others := lo.CountBy(mods.ListMessages(message.Key), func(site index.Site) bool {
-			other := mods.File(site)
-			_, replaces := schema.FindLocReplacement(ws.Game, other.Rel, file.Language)
-			repeats := other.Origin == place.Origin || other.Origin == game.OriginVanilla && ws.Game.LogsRepeatedKey
-			return (!known || site.File != position) && repeats && mods.Language(site) == file.Language &&
-				mods.IsLoaded(site.File) && !replaces
-		})
-		if counts[message.Key]+others > 1 {
-			diagnostics = append(diagnostics, makeDiagnostic(tree, message.KeySpan, "duplicate-message",
-				map[string]string{"name": message.Key, "language": file.Language}))
-		}
-	}
-	return diagnostics
-}
-
-// diagnoseLocalizationFile returns the problems of a mod's localization file as a whole.
-func diagnoseLocalizationFile(tree *jomini.Tree, file *loc.File, place workspace.Place) []Diagnostic {
-	diagnostics := []Diagnostic{}
-	add := func(code string, facts map[string]string) {
-		diagnostics = append(diagnostics, makeDiagnostic(tree, jomini.Span{}, code, facts))
-	}
-	if suffix := loc.FindSuffixLanguage(place.Path); suffix != "" && file.Language != "" &&
-		!strings.EqualFold(suffix, file.Language) {
-		add("loc-header-mismatch", map[string]string{"language": suffix, "header": file.Language})
-	}
-	diagnostics = append(diagnostics, diagnoseFolders(tree, place)...)
-	if disk, err := files.ReadText(place.Path); err != nil || disk.Encoding != files.EncodingUTF8BOM {
-		add("missing-bom", map[string]string{})
-	}
-	return diagnostics
-}
-
-// diagnoseFolders returns a problem for each misspelled localization folder in a file's path.
-func diagnoseFolders(tree *jomini.Tree, place workspace.Place) []Diagnostic {
-	diagnostics := []Diagnostic{}
-	folders := strings.Split(strings.ToLower(place.Rel), "/")
-	for _, folder := range folders[:len(folders)-1] {
-		if right, misspelled := game.MisspelledFolders[folder]; misspelled {
-			diagnostics = append(diagnostics, makeDiagnostic(tree, jomini.Span{}, "wrong-localization-folder",
-				map[string]string{"wrong": folder, "right": right}))
-		}
-	}
-	return diagnostics
-}
-
-// A diagnoseVisitor collects the problems of a script file.
+// A diagnoseVisitor collects the problems of one file.
 type diagnoseVisitor struct {
 	ws          *workspace.Session
-	index       *index.Index // the mods' index
-	file        files.File
+	index       *index.Index // the mods' index, narrowed to a mod's file's mod and the mods it depends on
+	whole       *index.Index // the mods' index, every mod of the workspace
+	place       workspace.Place
 	position    int32 // where the index lists the file
 	listed      bool  // whether the index lists the file
 	diagnostics []Diagnostic
+}
+
+// newVisitor returns the visitor that judges a file of a workspace. A mod's file is judged with the index narrowed to
+// its mod and the mods it depends on, so it is judged as the mod on its own.
+func newVisitor(ws *workspace.Session, mods *index.Index, place workspace.Place) *diagnoseVisitor {
+	visitor := &diagnoseVisitor{ws: ws, index: mods, whole: mods, place: place}
+	if !place.ReadOnly && place.Origin != "" && place.Origin != game.OriginVanilla {
+		visitor.index = mods.Narrow(append([]string{place.Origin}, ws.ListDependencies(place.Origin)...))
+	}
+	visitor.position, visitor.listed = visitor.index.FindFile(place.Path)
+	return visitor
+}
+
+// diagnoseTree returns the problems of the visitor's file judged on the given tree of its text. A file of the game
+// has its parse errors only.
+func (visitor *diagnoseVisitor) diagnoseTree(tree *jomini.Tree) []Diagnostic {
+	place := visitor.place
+	switch {
+	case place.Format == files.FormatDescriptor:
+		return visitor.diagnoseDescriptor(tree)
+	case place.Format == files.FormatLocalization:
+		return visitor.diagnoseMessages(tree)
+	case !place.Format.IsScript():
+		// the game reads nothing under a misspelled folder, so only the folder is judged
+		return diagnoseFolders(tree, place)
+	}
+	diagnostics := toDiagnostics(tree, tree.Errors)
+	if !place.ReadOnly {
+		visitor.ws.Schema.Walk(tree, place.File, visitor)
+		diagnostics = append(diagnostics, visitor.diagnostics...)
+	}
+	return diagnostics
+}
+
+// diagnoseDescriptor returns the problems of a mod's descriptor, read as the workspace reads one: a supported version
+// the game's version does not match, at the line that writes it. A descriptor has none if it writes no supported
+// version, writes one in a form no source shows the games matching, or cannot be read.
+func (visitor *diagnoseVisitor) diagnoseDescriptor(tree *jomini.Tree) []Diagnostic {
+	descriptor, err := workspace.ParseDescriptor(visitor.place.Path, tree.Src)
+	version := visitor.ws.Schema.Version
+	if matches, judged := workspace.MatchVersion(descriptor.SupportedVersion, version); err != nil || matches || !judged {
+		return []Diagnostic{}
+	}
+	// the version's line is the first after the word supported, which both descriptor forms write it under
+	span := jomini.Span{}
+	if key := strings.Index(tree.Src, "supported"); key >= 0 {
+		if value := strings.Index(tree.Src[key:], descriptor.SupportedVersion); value >= 0 {
+			span = jomini.Span{Start: key + value, End: key + value + len(descriptor.SupportedVersion)}
+		}
+	}
+	facts := DescribeReference(schema.Reference{Name: cmp.Or(descriptor.Name, "This mod")})
+	facts["supported"], facts["version"] = descriptor.SupportedVersion, version
+	return []Diagnostic{makeDiagnostic(tree, span, "supported-version", facts)}
 }
 
 // Enter records the problems of a statement.
@@ -316,6 +329,12 @@ func (visitor *diagnoseVisitor) Enter(tree *jomini.Tree, statement int32, contex
 	visitor.diagnoseKey(tree, statement, context)
 	visitor.diagnoseScope(tree, statement, context)
 	visitor.diagnoseValue(tree, statement, context)
+	visitor.diagnoseDate(tree, statement, context)
+	visitor.diagnoseCall(tree, statement, context)
+	// a GUI file's text is read as localization is, in the data context of its block
+	if value := tree.Statements[statement].Value; visitor.place.Format == files.FormatGUI && strings.Contains(tree.Text(value), "[") {
+		visitor.diagnoseCalls(tree, tree.Unquoted(value), tree.UnquotedSpan(value).Start, context.Datacontext)
+	}
 	return true
 }
 
@@ -344,50 +363,107 @@ func (visitor *diagnoseVisitor) Leave(tree *jomini.Tree, statement int32, contex
 	}
 }
 
-// diagnoseReferences records each name the statement refers to that nothing defines. A name that could be in several
-// databases is recorded only if none has it.
+// diagnoseReferences records each name the statement refers to that nothing defines. A definition's title key is
+// missing-message's.
 func (visitor *diagnoseVisitor) diagnoseReferences(tree *jomini.Tree, context *schema.Context) {
-	for position, reference := range context.References {
-		if slices.ContainsFunc(context.References[:position], func(other schema.Reference) bool { return other.Span == reference.Span }) {
+	if context.Label == game.TitleKey && context.Parent.Defines {
+		return
+	}
+	visitor.diagnoseMissing(tree, context.References)
+}
+
+// diagnoseMissing records each of the given references whose name nothing defines, with the code classifyMissing
+// gives. References at one span are alternatives, recorded only if none is defined, and as an unresolved reference
+// where their codes differ. Where a mod the file's mod does not depend on defines the name, the problem says where.
+func (visitor *diagnoseVisitor) diagnoseMissing(tree *jomini.Tree, references []schema.Reference) {
+	for position, reference := range references {
+		atSpan := func(other schema.Reference) bool { return other.Span == reference.Span }
+		if slices.ContainsFunc(references[:position], atSpan) {
 			continue
 		}
-		alternatives := lo.Filter(context.References, func(other schema.Reference, _ int) bool { return other.Span == reference.Span })
-		if lo.EveryBy(alternatives, canJudge) &&
-			!lo.SomeBy(alternatives, visitor.isKnown) {
-			databases := lo.Map(alternatives, func(other schema.Reference, _ int) string {
-				return game.DescribeDefinition(other.Database, false)
-			})
-			visitor.diagnostics = append(visitor.diagnostics, makeDiagnostic(tree, reference.Span, "unresolved-reference",
-				map[string]string{"name": reference.Name, "database": strings.Join(lo.Uniq(databases), " or ")}))
+		alternatives := lo.Filter(references, func(other schema.Reference, _ int) bool { return atSpan(other) })
+		if !lo.EveryBy(alternatives, canJudge) || lo.SomeBy(alternatives, visitor.isKnown) {
+			continue
 		}
+		code := classifyMissing(alternatives)
+		databases := lo.Uniq(lo.Map(alternatives, func(other schema.Reference, _ int) string {
+			return game.DescribeDefinition(other.Database, false)
+		}))
+		facts := map[string]string{"name": reference.Name, "database": strings.Join(databases, " or ")}
+		if code == "loc-markup" {
+			facts["why"] = "no file declares the " + facts["database"] + " " + reference.Name
+		}
+		diagnostic := makeDiagnostic(tree, reference.Span, code, facts)
+		if site, ok := visitor.findElsewhere(alternatives); ok {
+			file := visitor.whole.File(site)
+			facts["mod"], facts["other"], facts["file"] = visitor.ws.DescribeMod(visitor.place.Origin),
+				visitor.ws.DescribeMod(file.Origin), file.Rel
+			diagnostic.Defined = []Location{locateOccurrence(visitor.ws, visitor.whole, site)}
+		}
+		visitor.diagnostics = append(visitor.diagnostics, diagnostic)
 	}
 }
 
-// canJudge reports whether a reference can be judged dangling.
-func canJudge(reference schema.Reference) bool {
-	_, runtime := game.LinkMakers[reference.Database]
-	_, _, prefixed := jomini.SplitPrefixed(reference.Name)
-	return reference.Database != "" && !runtime && reference.Caller != game.AnyCall && reference.Caller != game.GUI.TagCalls &&
-		!reference.Inferred && !prefixed && !strings.Contains(reference.Name, "$")
+// classifyMissing returns the code of a name nothing defines, by the databases of the references that are its
+// alternatives: an unknown localization key, or an unknown text icon or format, where every alternative is of that
+// kind, and an unresolved reference otherwise.
+func classifyMissing(alternatives []schema.Reference) string {
+	codes := lo.Uniq(lo.Map(alternatives, func(reference schema.Reference, _ int) string {
+		switch reference.Database {
+		case game.Localization:
+			return "unknown-loc-key"
+		case game.GUI.TextIcons, game.GUI.TextFormats:
+			return "loc-markup"
+		}
+		return ""
+	}))
+	if len(codes) == 1 && codes[0] != "" {
+		return codes[0]
+	}
+	return unresolvedCode
 }
 
-// isKnown reports whether the game knows a reference's name.
+// canJudge reports whether a reference can be judged dangling. A saved name, such as a scope or a variable, never is.
+func canJudge(reference schema.Reference) bool {
+	_, _, prefixed := jomini.SplitPrefixed(reference.Name)
+	return reference.Database != "" && !slices.Contains(game.Links, reference.Database) &&
+		reference.Caller != game.AnyCall && reference.Caller != game.GUI.TagCalls && !reference.Inferred && !prefixed &&
+		!strings.Contains(reference.Name, "$")
+}
+
+// isKnown reports whether the game knows a reference's name. Any name the game's own files use is known.
 func (visitor *diagnoseVisitor) isKnown(reference schema.Reference) bool {
 	mods := visitor.index
 	if reference.Database == game.File {
 		if _, ok := mods.ResolveTexture(reference.Name); ok {
 			return true
 		}
-	} else if sites := mods.ResolveLocal(reference, visitor.file.Path); len(sites) > 0 {
+	} else if sites := mods.ResolveLocal(reference, visitor.place.Path); len(sites) > 0 {
 		return slices.ContainsFunc(sites, func(site index.Site) bool {
 			file := mods.File(site)
 			hiding, _, ok := mods.FindLoaded(file.Rel)
-			return file.Key == visitor.file.Key || mods.IsLoaded(site.File) || ok && hiding.Origin != visitor.file.Origin
+			return file.Key == visitor.place.Key || mods.IsLoaded(site.File) || ok && hiding.Origin != visitor.place.Origin
 		})
 	}
 	return lo.SomeBy(mods.ListUses(reference.Database, reference.Name), func(site index.Site) bool {
 		return mods.File(site).Origin == game.OriginVanilla
 	})
+}
+
+// findElsewhere returns the definition the game takes a name from in the whole workspace, for a name the file's mod
+// does not define: the copy the game keeps of the first alternative it keeps one of, in a file the game reads. It
+// returns false where the file is judged with every mod, or where the game keeps no copy of any alternative.
+func (visitor *diagnoseVisitor) findElsewhere(alternatives []schema.Reference) (index.Site, bool) {
+	if visitor.whole == visitor.index {
+		return index.Site{}, false
+	}
+	for _, reference := range alternatives {
+		if winner, ok := findKept(visitor.ws, visitor.whole, reference, visitor.place.Path); ok &&
+			visitor.whole.IsLoaded(winner.Site.File) {
+			return winner.Site, true
+		}
+	}
+	return index.Site{}, false
 }
 
 // diagnoseKey records what is wrong with the key of a statement.
@@ -396,6 +472,8 @@ func (visitor *diagnoseVisitor) diagnoseKey(tree *jomini.Tree, statement int32, 
 	switch {
 	case context.Defines:
 		visitor.diagnoseDefinition(tree, statement, context.Definition)
+	case context.Category == schema.CategoryKeyword:
+		visitor.diagnoseFollows(tree, statement, context)
 	case current.Key.IsEmpty() || context.Category != schema.CategoryNone || context.Field != nil:
 		// a key with a meaning of its own is not an unknown key
 	case current.Parent == 0 && jomini.IsEventID(tree.Unquoted(current.Key)):
@@ -405,7 +483,8 @@ func (visitor *diagnoseVisitor) diagnoseKey(tree *jomini.Tree, statement int32, 
 	}
 }
 
-// diagnoseDefinition records the problems of a definition's entry mode and of a name it shares.
+// diagnoseDefinition records the problems of a definition's entry mode and of a name it shares, and a title key with
+// no message in the base language.
 func (visitor *diagnoseVisitor) diagnoseDefinition(tree *jomini.Tree, statement int32, definition *schema.Definition) {
 	database := visitor.ws.Schema.Databases[definition.Database]
 	if database == nil || definition.Alias {
@@ -430,6 +509,17 @@ func (visitor *diagnoseVisitor) diagnoseDefinition(tree *jomini.Tree, statement 
 			visitor.diagnostics = append(visitor.diagnostics, makeDiagnostic(tree, definition.Span, code, facts))
 		}
 	}
+	if key, ok := tree.FindChildValue(statement, game.TitleKey); ok && jomini.IsIdentifier(key) && !visitor.hasMessage(key) {
+		missing := DescribeReference(schema.Reference{Database: definition.Database, Name: definition.Name})
+		missing["key"] = key
+		visitor.diagnostics = append(visitor.diagnostics, makeDiagnostic(tree, definition.Span, "missing-message", missing))
+	}
+}
+
+// hasMessage reports whether the judged index has a message of a localization key in the base language.
+func (visitor *diagnoseVisitor) hasMessage(key string) bool {
+	mods := visitor.index
+	return lo.ContainsBy(mods.ListMessages(key), func(site index.Site) bool { return mods.Language(site) == game.BaseLanguage })
 }
 
 // isOrphan reports whether a definition written with an entry mode has nothing to change. An optional mode, or one
@@ -441,7 +531,7 @@ func (visitor *diagnoseVisitor) isOrphan(definition *schema.Definition, preceden
 	}
 	mods := visitor.index
 	reference := schema.Reference{Database: definition.Database, Name: definition.Name}
-	_, acts := mods.FindWinner(mods.ResolveLocal(reference, visitor.file.Path), precedence)
+	_, acts := mods.FindWinner(mods.ResolveLocal(reference, visitor.place.Path), precedence)
 	return !acts
 }
 
@@ -454,7 +544,7 @@ func (visitor *diagnoseVisitor) isOwn(site index.Site, definition *schema.Defini
 func (visitor *diagnoseVisitor) classifyDuplicate(definition *schema.Definition, precedence game.Precedence) string {
 	mods := visitor.index
 	reference := schema.Reference{Database: definition.Database, Name: definition.Name}
-	defined := lo.Filter(mods.ResolveLocal(reference, visitor.file.Path), func(site index.Site, _ int) bool {
+	defined := lo.Filter(mods.ResolveLocal(reference, visitor.place.Path), func(site index.Site, _ int) bool {
 		return mods.Occurrence(site).Mode == 0 && !mods.Occurrence(site).Alias
 	})
 	sites := lo.Filter(defined, func(site index.Site, _ int) bool { return mods.IsLoaded(site.File) })
@@ -470,9 +560,9 @@ func (visitor *diagnoseVisitor) classifyDuplicate(definition *schema.Definition,
 		return ""
 	}
 	byGame := lo.CountBy(defined, func(site index.Site) bool { return mods.File(site).Origin == game.OriginVanilla })
-	winner, kept := findKept(visitor.ws, mods, reference, visitor.file.Path)
+	winner, kept := findKept(visitor.ws, mods, reference, visitor.place.Path)
 	if kept && winner.Reason != index.Unsettled && byGame < 2 && winner.Site != sites[own] &&
-		mods.Occurrence(winner.Site).Mode == 0 && mods.File(winner.Site).Origin == visitor.file.Origin {
+		mods.Occurrence(winner.Site).Mode == 0 && mods.File(winner.Site).Origin == visitor.place.Origin {
 		return "duplicate-definition"
 	}
 	return ""
@@ -480,13 +570,32 @@ func (visitor *diagnoseVisitor) classifyDuplicate(definition *schema.Definition,
 
 // diagnoseNamespace records an event at the top of an events file that is outside the file's namespaces.
 func (visitor *diagnoseVisitor) diagnoseNamespace(tree *jomini.Tree, current jomini.Statement) {
-	database, ok := visitor.ws.Schema.FindDatabase(visitor.file.Rel)
+	database, ok := visitor.ws.Schema.FindDatabase(visitor.place.Rel)
 	if !ok || database.Row.Houses != "events" {
 		return
 	}
 	facts := DescribeReference(schema.Reference{Database: database.Name, Name: tree.Unquoted(current.Key)})
-	facts["namespace"] = cmp.Or(strings.Join(visitor.ws.Schema.ListNamespaces(tree, visitor.file), ", "), "none")
+	facts["namespace"] = cmp.Or(strings.Join(visitor.ws.Schema.ListNamespaces(tree, visitor.place.File), ", "), "none")
 	visitor.diagnostics = append(visitor.diagnostics, makeDiagnostic(tree, current.Key, "wrong-namespace", facts))
+}
+
+// diagnoseFollows records a keyword such as else that is not written right after one of the keys it must follow, in
+// any case.
+func (visitor *diagnoseVisitor) diagnoseFollows(tree *jomini.Tree, statement int32, context *schema.Context) {
+	current := tree.Statements[statement]
+	holder := context.Parent
+	keyword, _ := game.LookupKeyword(cmp.Or(holder.Shape, game.ShapeUnknown), strings.ToLower(holder.Label),
+		strings.ToLower(tree.Unquoted(current.Key)))
+	if len(keyword.Follows) == 0 {
+		return
+	}
+	previous, ok := tree.FindPrevious(statement)
+	if ok && slices.Contains(keyword.Follows, strings.ToLower(tree.Unquoted(tree.Statements[previous].Key))) {
+		return
+	}
+	facts := DescribeReference(schema.Reference{Name: tree.Unquoted(current.Key)})
+	facts["follows"] = strings.Join(keyword.Follows, " or ")
+	visitor.diagnostics = append(visitor.diagnostics, makeDiagnostic(tree, current.Key, "else-without-if", facts))
 }
 
 // diagnoseUnknown records a key its block does not take. A key that is not a plain name is not judged.
@@ -581,10 +690,82 @@ func describeExpected(expected schema.Expected) string {
 	return valueDescriptions[expected.Type]
 }
 
+// diagnoseDate records a date the game cannot have: a key written as year.month.day, or the value of a field a
+// declared source says takes a date. A key of two numbers is a number, not a date.
+func (visitor *diagnoseVisitor) diagnoseDate(tree *jomini.Tree, statement int32, context *schema.Context) {
+	current := tree.Statements[statement]
+	spans := []jomini.Span{}
+	if key := tree.Unquoted(current.Key); !jomini.IsNumber(key) {
+		spans = append(spans, current.Key)
+	}
+	if field := context.Field; field != nil && field.Value.Value.Type == schema.ValueDate && field.Value.Source.CanAccuse() &&
+		!current.IsBlock() {
+		spans = append(spans, current.Value)
+	}
+	for _, span := range spans {
+		if date, ok := jomini.ParseDate(tree.Unquoted(span)); ok && !date.IsValid() {
+			visitor.diagnostics = append(visitor.diagnostics, makeDiagnostic(tree, span, "invalid-date",
+				DescribeReference(schema.Reference{Name: tree.Unquoted(span)})))
+		}
+	}
+}
+
+// diagnoseCall records the arguments a call to a scripted definition gives that its body does not read, and the
+// parameters with no default that the call does not give, at the call. The definition judged is the copy the game
+// keeps of the one the walk decided at the call. A call inside another scripted definition is given that
+// definition's own parameters too, since they reach it.
+func (visitor *diagnoseVisitor) diagnoseCall(tree *jomini.Tree, statement int32, context *schema.Context) {
+	current := tree.Statements[statement]
+	parameters := visitor.listCalleeParameters(tree.Unquoted(current.Key), context.Callee)
+	if parameters == nil {
+		return
+	}
+	around := &schema.Field{}
+	if context.Definition != nil {
+		around = schema.ListParameters(tree, context.Definition.Statement)
+	}
+	add := func(span jomini.Span, name, why string) {
+		facts := DescribeReference(schema.Reference{Name: name})
+		facts["why"], facts["callee"] = why, tree.Unquoted(current.Key)
+		visitor.diagnostics = append(visitor.diagnostics, makeDiagnostic(tree, span, "unused-argument", facts))
+	}
+	given := map[string]bool{}
+	if current.IsBlock() {
+		for child := range tree.Children(statement) {
+			key := tree.Statements[child].Key
+			given[tree.Unquoted(key)] = true
+			if _, read := parameters.Children[tree.Unquoted(key)]; !read && !key.IsEmpty() {
+				add(key, tree.Unquoted(key), "is never read by")
+			}
+		}
+	}
+	for _, name := range slices.Sorted(maps.Keys(parameters.Children)) {
+		if _, inherited := around.Children[name]; !given[name] && !inherited && !parameters.Children[name].Default.IsStated() {
+			add(current.Key, name, "is not given to")
+		}
+	}
+}
+
+// listCalleeParameters returns the parameters of the copy the game keeps of the scripted definition a call names, read
+// from its body in the judged index, or those the walk knows where the index keeps no copy. It returns nil if the
+// call names no scripted definition that takes parameters.
+func (visitor *diagnoseVisitor) listCalleeParameters(key string, callee *schema.ScriptedDefinition) *schema.Field {
+	if callee == nil || callee.Parameters == nil {
+		return nil
+	}
+	reference := schema.Reference{Database: callee.Database, Name: key}
+	if winner, ok := findKept(visitor.ws, visitor.index, reference, visitor.place.Path); ok {
+		if tree, statement, err := visitor.ws.FindStatement(visitor.index, winner.Site); err == nil {
+			return schema.ListParameters(tree, statement)
+		}
+	}
+	return callee.Parameters
+}
+
 // isWritten reports whether another definition the game merges with this one writes a key.
 func (visitor *diagnoseVisitor) isWritten(definition *schema.Definition, key string) bool {
 	mods := visitor.index
-	winner, ok := findKept(visitor.ws, mods, schema.Reference{Database: definition.Database, Name: definition.Name}, visitor.file.Path)
+	winner, ok := findKept(visitor.ws, mods, schema.Reference{Database: definition.Database, Name: definition.Name}, visitor.place.Path)
 	return ok && slices.ContainsFunc(winner.Merged, func(site index.Site) bool {
 		if visitor.isOwn(site, definition) {
 			return false

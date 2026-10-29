@@ -126,6 +126,15 @@ tasks:
       # not 60s: each gate here scans three real installs
       - go test -count=1 -timeout 1800s ./...
 
+  test:sweep:
+    summary: >
+      The mod sweep: the editor's checks over every mod in the folder that
+      PMT_TEST_MODS_{CK3,VIC3,EU5} names, each over its game's install in
+      PMT_TEST_INSTALL_*, with every stricter check on. It logs each check's
+      problems by code, to be read.
+    cmds:
+      - go test -count=1 -timeout 1800s -run TestSweepMods -v ./services/lsp
+
   test:full:
     summary: The real-install gates and then the frontend typecheck. What to run before a commit that touches the engine.
     cmds:

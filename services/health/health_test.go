@@ -190,8 +190,8 @@ func TestBuildReportFindsContestsOverridesAndProblems(t *testing.T) {
 	}
 	// the game's own v_traits.txt loads after the mods' m_traits.txt
 	unused := findFinding(t, report.Findings, "unused-copy", "brave", "trait")
-	if unused.Facts["mod"] != titleB || unused.Facts["reason"] != "its file is read after the mod's" ||
-		len(unused.Sites) != 2 || !unused.Sites[0].Place.ReadOnly || !unused.Sites[0].Kept || unused.Sites[1].Kept {
+	if unused.Facts["beaten"] != titleB || unused.Facts["winner"] == "" || len(unused.Sites) != 2 ||
+		unused.Sites[0].Reason != "last" || !unused.Sites[0].Place.ReadOnly || !unused.Sites[0].Kept || unused.Sites[1].Kept {
 		t.Errorf("unused copy of brave: %+v", unused)
 	}
 	replaced := findFinding(t, report.Findings, "override", "events/v_events.txt", game.File)
@@ -345,7 +345,7 @@ func logCounts(t *testing.T, report Report) {
 		t.Logf("code %s: %d", code, codes[code])
 	}
 	for _, finding := range report.Findings {
-		if finding.Code == "undeclared-dependency" || finding.Code == "ignored-pair" || len(finding.Order) > 0 {
+		if finding.Code == "removed-names" || finding.Code == "ignored-pair" || len(finding.Order) > 0 {
 			t.Logf("%s %s: %s, level %s, mods %v, facts %v, order %v", finding.Code, finding.Database, finding.Name,
 				finding.Level, finding.Mods, finding.Facts, finding.Order)
 		}
@@ -375,10 +375,11 @@ func compareDiagnostics(t *testing.T, hlt *Service, report Report) {
 			want[diagnostic.Code]++
 		}
 	}
-	own := []string{"missing-message", "coverage", "mod-for-older-version"}
+	// the report's own health findings, and the descriptors', which the loop above does not judge
+	own := []string{"coverage", "supported-version"}
 	got := map[string]int{}
 	for _, finding := range report.Findings {
-		if (finding.Question == lsp.QuestionHealth || slices.Contains(sharedCodes, finding.Code)) && !slices.Contains(own, finding.Code) {
+		if finding.Question == lsp.QuestionHealth && !slices.Contains(own, finding.Code) {
 			got[finding.Code] += len(finding.Sites)
 		}
 	}

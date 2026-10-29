@@ -8,7 +8,7 @@ this package serves. Go starts the program, carries its lines both ways and ends
 
 | file | holds |
 |---|---|
-| `agent.go` | the package comment; `Service`; `Agent`, `Node`; the registry's types; the agents table; `ListFiles`; `ListAgents`, `AddAgent`, `RemoveAgent`; `DescribeNode`, `InstallNode`, `InstallAgent`; the registry, the installed versions, npm, Node's archives |
+| `agent.go` | the package comment; `EventChanged`; `Service`; `Agent`, `Node`; the registry's types; the agents table; `ListFiles`; `ListAgents`, `AddAgent`, `RemoveAgent`; `DescribeNode`, `InstallNode`, `InstallAgent`; the registry, the installed versions, npm, Node's archives |
 | `process.go` | the stream: its first messages, `ServiceStartup`, the program and its pipes, the lines both ways |
 | `process_windows.go`, `process_linux.go` | the group each agent runs in: a job object on Windows, a process group on Linux |
 
@@ -32,7 +32,10 @@ The registry is fetched from the ACP project at most once a day and kept as `reg
 last copy is used. Everything lives under `Dirs.Cache/agents/`, so resetting PMT's data removes it:
 
 - `<id>@<version>/` holds one agent, installed by `InstallAgent` with npm at the registry's version; its other
-  versions are removed. Its program is the one script its package declares.
+  versions are removed. Its program is the one script its package declares. An agent has one install at a time,
+  since two npm runs in one folder delete each other's files: while npm runs, a second is refused, `ListAgents` gives
+  the agent the time its install started as `Installing`, and `EventChanged` is sent when the install starts and when
+  it ends. A failed install's error names the package on its first line, and what npm wrote follows.
 - `node/` holds PMT's own Node, which `InstallNode` downloads: the newest long-term release from nodejs.org, checked
   against the sums nodejs.org publishes, a zip on Windows and a gzipped tar on Linux.
 
@@ -50,3 +53,9 @@ starting.
 Each later message is one JSON-RPC message, written to the agent's input as one line, and each line of its output goes
 back as one message. What it writes as errors goes to PMT's log under its id. The agent runs in a group of its own, so
 closing the stream ends it and every program it started; its end closes the stream.
+
+## Events
+
+| event | data | sent when |
+|---|---|---|
+| `agent:changed` | the agent's id | npm starts or ends installing the agent |

@@ -761,8 +761,11 @@
   color-scheme: light;
 }
 
-/* Mixed from the theme's tokens on the element that sets it; a theme never sets these. */
+/* Mixed from the theme's tokens on the element that sets it; a theme never sets these. The yellow of a warning is the
+   terminal's. */
 [data-theme] {
+  --yellow: var(--ansi-yellow);
+  --yellow-soft: color-mix(in srgb, var(--yellow) 16%, transparent);
   --accent-soft: color-mix(in srgb, var(--accent) 15%, transparent);
   --link-soft: color-mix(in srgb, var(--link) 14%, transparent);
   --red-soft: color-mix(in srgb, var(--red) 16%, transparent);
@@ -820,6 +823,7 @@
   --ui-warning: var(--orange);
   --ui-error: var(--red);
   --ui-purple: var(--purple);
+  --ui-yellow: var(--yellow);
 }
 
 @layer base {

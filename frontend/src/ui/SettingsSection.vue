@@ -10,6 +10,7 @@ import { useQuery } from "@pinia/colada";
 import { range } from "es-toolkit";
 
 import { TOOL_CHOICES } from "../app/pages";
+import { TOPICS } from "../lib/format";
 import { codesQuery, settingsCatalogQuery } from "../queries";
 import { useSettingsStore } from "../stores/settings";
 import ValueField from "./ValueField.vue";
@@ -22,10 +23,17 @@ const { section } = defineProps<{ section: string }>();
 const settings = useSettingsStore();
 const { data: catalog } = useQuery(settingsCatalogQuery);
 const { data: codes } = useQuery(codesQuery);
-// the checks turned off, by id
-const off = computed(() => settings.value("ide.checks").split(",").filter(Boolean));
 // the Appearance page draws the theme as tiles
 const rows = computed(() => catalog.value?.filter((row) => row.section === section && row.key !== "appearance.theme"));
+// the checks turned off, by id
+const off = computed(() => settings.value("ide.checks").split(",").filter(Boolean));
+/** The checks' switches, grouped by topic. */
+const groups = computed(() =>
+  Object.entries(TOPICS).map(([topic, title]) => ({
+    title,
+    codes: (codes.value ?? []).filter((code) => code.topic === topic),
+  })),
+);
 
 /** classifyControl returns the control that edits a setting of the given type. A type with no control is text. */
 function classifyControl(type: string) {
@@ -63,16 +71,19 @@ function describeScales(row: Setting) {
         />
       </UFormField>
       <UFormField v-else-if="row.key === 'ide.checks'" :label="row.label" :description="row.help" class="ps-3.5 pt-3">
-        <div class="mt-2 flex flex-col divide-y divide-accented">
-          <ValueField
-            v-for="code in codes ?? []"
-            :key="code.id"
-            kind="switch"
-            :value="String(!off.includes(code.id))"
-            :label="code.label"
-            :help="code.id"
-            @update:value="settings.writeItem('ide.checks', code.id, $event !== 'true')"
-          />
+        <div v-for="group in groups" :key="group.title" class="mt-3">
+          <p class="text-13 font-medium text-highlighted">{{ group.title }}</p>
+          <div class="mt-1 flex flex-col divide-y divide-accented">
+            <ValueField
+              v-for="code in group.codes"
+              :key="code.id"
+              kind="switch"
+              :value="String(!off.includes(code.id))"
+              :label="code.label"
+              :help="code.id"
+              @update:value="settings.writeItem('ide.checks', code.id, $event !== 'true')"
+            />
+          </div>
         </div>
       </UFormField>
       <ValueField

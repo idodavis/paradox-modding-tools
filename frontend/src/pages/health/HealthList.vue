@@ -1,6 +1,6 @@
 <!--
-  The findings of one view in rows grouped by level and then by check, with the open one's detail beside them. Chips
-  and filters above them narrow the rows.
+  The findings of one view in rows grouped by level and then by check, with the open one's detail beside them. Each
+  row names the thing it is about, the worst first, and chips and filters above them narrow the rows.
 -->
 <script lang="ts">
 /** PANES are the splitter's two panes, the list and the detail. */
@@ -13,22 +13,31 @@ export const ROWS = { estimateSize: 64, useAnimationFrameWithResizeObserver: tru
 <script setup lang="ts">
 import { computed, shallowRef } from "vue";
 import { useQuery } from "@pinia/colada";
-import { countBy, groupBy, sortBy } from "es-toolkit";
+import { countBy, groupBy, sortBy, sumBy, uniq } from "es-toolkit";
 import type { Finding } from "@services/health/models";
 import {
   countLevels,
+  describeBrief,
   describeCheck,
   describeCount,
   describeDetail,
   describeFinding,
+  describeTitle,
   type FindingRow,
+  findOwner,
+  joinParts,
   LEVELS,
   listFindingRows,
+  type Part,
+  PROBLEM_LEVELS,
   TOPICS,
   toRepeatKey,
   toSiteKey,
+  toWeight,
 } from "../../lib/format";
 import { codesQuery } from "../../queries";
+import { useWorkspaceStore } from "../../stores/workspace";
+import FactText from "../../ui/FactText.vue";
 import ProblemRow from "../../ui/ProblemRow.vue";
 
 const {
@@ -58,19 +67,20 @@ type Extra = { extra: true };
 type Repeats = { rows: FindingRow[] };
 /** A LevelHead is the head row of one level. */
 type LevelHead = { level: string; count: number };
-/** A CheckHead is the head row of one check within a level. */
-type CheckHead = { key: string; check: string; count: number; open: boolean };
+/** A CheckHead is the head row of one check within a level, with the mod all its rows share, if any. */
+type CheckHead = { key: string; check: string; count: number; open: boolean; shared: Part[] };
 
 const LEVEL_ORDER = Object.keys(LEVELS);
 const SORTS = [
-  { label: "Sort: level", value: "level" },
+  { label: "Sort: worst first", value: "level" },
   { label: "Sort: name", value: "name" },
   { label: "Sort: file", value: "file" },
 ];
 
+const workspace = useWorkspaceStore();
 const { data: codes } = useQuery(codesQuery);
 /** The levels whose rows show. Info starts folded. */
-const shown = shallowRef(["serious", "warning"]);
+const shown = shallowRef([...PROBLEM_LEVELS]);
 /** Whether each check's rows show, set when its head is pressed. */
 const pressed = shallowRef<Record<string, boolean>>({});
 const topic = shallowRef("");
@@ -92,7 +102,7 @@ const findingRows = computed(() => {
     ({ finding }) =>
       isPicked(finding.code) &&
       (!needle ||
-        `${describeFinding(finding, codes.value)} ${finding.name} ${finding.code} ${describeDetail(finding)}`
+        `${describeFinding(finding, codes.value)} ${finding.name} ${finding.code} ${describeDetail(finding)} ${joinParts(describeBrief(finding))}`
           .toLowerCase()
           .includes(needle)),
   );
@@ -147,18 +157,41 @@ function listCheck(
     checks.value.length > 0 ||
     members.some((member) => "index" in member && member.index === opened);
   const open = pressed.value[key] ?? shownByDefault;
-  const head = { key, check, count: members.length, open };
-  if (!open) return [head];
   const findingMembers = members.filter((member): member is FindingRow => "index" in member);
+  const head = { key, check, count: members.length, open, shared: describeShared(findingMembers) };
+  if (!open) return [head];
   const repeats = Object.values(groupBy(findingMembers, (row) => toRepeatKey(row.finding, codes.value))).map(
     (group): Repeats => ({ rows: group }),
   );
   const extra = members.filter((member): member is Extra => "extra" in member);
-  if (sort.value === "level") return [head, ...repeats, ...extra];
+  // the worst first: the most used names, then the most repeated
+  if (sort.value === "level")
+    return [head, ...sortBy(repeats, [({ rows: group }) => -sumBy(group, (row) => toWeight(row.finding))]), ...extra];
   const sorted = sortBy(repeats, [
     ({ rows: [first] }) => (first ? (sort.value === "name" ? first.finding.name : toSiteKey(first.finding)) : ""),
   ]);
   return [head, ...sorted, ...extra];
+}
+
+/**
+ * describeShared returns the mod every row of a check shares, as parts: the one mod that alone defines the names its
+ * mod lacks, or the one mod a check of the workspace's compatibility is about. It is empty if the rows share none.
+ */
+function describeShared(rows: FindingRow[]): Part[] {
+  const others = uniq(rows.map((row) => row.finding.facts?.other ?? ""));
+  if (others.length === 1 && others[0])
+    return [
+      { text: "all only in ", style: "" },
+      { text: others[0], style: "mod" },
+    ];
+  const owners = uniq(rows.map((row) => (row.finding.question === "compatibility" ? findOwner(row.finding) : "")));
+  return owners.length === 1 && owners[0] ? [{ text: workspace.originName(owners[0]), style: "mod" }] : [];
+}
+
+/** describePlace returns where a mod's own problem is, as its file's name and line. It is "" for any other finding. */
+function describePlace(finding: Finding): string {
+  const site = finding.sites?.[0];
+  return finding.question === "health" && site ? `${site.place.name}:${site.range.startLineNumber}` : "";
 }
 
 /** toggle folds a level's rows, or shows them if they are folded. */
@@ -263,6 +296,9 @@ function toggleCheck(head: CheckHead): void {
             <span class="truncate font-medium text-highlighted">{{ describeCheck(item.check, codes) }}</span>
             <span class="shrink-0 text-11 text-dimmed">{{ TOPICS[findTopic(item.check)] }}</span>
             <span class="grow" />
+            <span v-if="item.shared.length" class="shrink-0 text-11 whitespace-nowrap text-dimmed">
+              <FactText :parts="item.shared" />
+            </span>
             <span class="shrink-0 text-11 text-dimmed tabular-nums">{{ describeCount(item.count) }}</span>
           </button>
           <slot v-else-if="'extra' in item" name="info" />
@@ -270,11 +306,20 @@ function toggleCheck(head: CheckHead): void {
             v-else-if="item.rows[0]"
             :level="item.rows[0].finding.level"
             :message="describeFinding(item.rows[0].finding, codes)"
-            :detail="describeDetail(item.rows[0].finding)"
-            :mono="item.rows[0].finding.question === 'health'"
             :selected="item.rows.some((row) => row.index === opened)"
+            class="ps-8"
             @open="emit('open', item.rows[0].index)"
           >
+            <template v-if="item.rows[0].finding.name" #message>
+              <span class="font-mono text-12"><FactText :parts="describeTitle(item.rows[0].finding)" /></span>
+            </template>
+            <template #detail>
+              <span class="flex min-w-0 grow items-center gap-3 text-12 text-dimmed">
+                <span class="min-w-0 truncate"><FactText :parts="describeBrief(item.rows[0].finding)" /></span>
+                <span class="grow" />
+                <span class="shrink-0 font-mono text-11">{{ describePlace(item.rows[0].finding) }}</span>
+              </span>
+            </template>
             <template #trailing>
               <UBadge
                 v-if="item.rows.length > 1"

@@ -1,4 +1,5 @@
-// ignored.go keeps the pairs of mods whose conflicts the open workspace ignores, and lists a finding for each pair.
+// ignored.go keeps the pairs of mods whose conflicts the open workspace ignores, and lists a finding for each pair. It
+// also lists the mods its compatibility checks judge, which are all but those the workspace leaves out.
 
 package health
 
@@ -61,11 +62,17 @@ func (hlt *Service) updatePairs(first, second string, change func(pairs [][2]str
 	})
 }
 
-// listPairs returns the pairs of mods whose conflicts the workspace ignores. It returns none if the workspace has no
-// record.
-func (hlt *Service) listPairs(ws *workspace.Session) [][2]string {
+// findRecord returns the open workspace's record. It returns an empty record if the workspace has none.
+func (hlt *Service) findRecord(ws *workspace.Session) app.Workspace {
 	record, _ := lo.Find(hlt.Workspace.Config.Config().Workspaces, func(record app.Workspace) bool { return record.ID == ws.ID })
-	return record.IgnoredPairs
+	return record
+}
+
+// listChecked returns the mods of a load order that the compatibility checks judge: every one the workspace's record
+// does not leave out.
+func listChecked(order []string, record app.Workspace) []string {
+	leftOut := lo.FilterMap(record.Mods, func(mod app.Mod, _ int) (string, bool) { return mod.ID, mod.LeftOut })
+	return lo.Without(order, leftOut...)
 }
 
 // listPairFindings lists a finding for each ignored pair whose mods are both in the workspace. It counts the contests
@@ -81,8 +88,8 @@ func listPairFindings(ws *workspace.Session, mods *index.Index, findings []Findi
 			ids = ordered
 		}
 		count := lo.CountBy(findings, func(finding Finding) bool { return slices.Contains(finding.Pairs, [2]string(ids)) })
-		facts := lsp.DescribeReference(schema.Reference{Name: describeMod(ws, ids[0])})
-		facts["other"], facts["count"] = describeMod(ws, ids[1]), strconv.Itoa(count)
+		facts := lsp.DescribeReference(schema.Reference{Name: ws.DescribeMod(ids[0])})
+		facts["other"], facts["count"] = ws.DescribeMod(ids[1]), strconv.Itoa(count)
 		finding := makeFinding(mods, "ignored-pair", facts, nil)
 		finding.Origin, finding.Mods = ids[0], ids
 		pairFindings = append(pairFindings, finding)

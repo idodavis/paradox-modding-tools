@@ -5,13 +5,14 @@
 -->
 <script setup lang="ts">
 import { useMutation, useQuery, useQueryCache } from "@pinia/colada";
+import { useIntervalFn, useNow } from "@vueuse/core";
 import { Clipboard } from "@wailsio/runtime";
 import { computed, shallowRef } from "vue";
 
 import type { Agent } from "@services/agent/models";
 import * as agentApi from "@services/agent/service";
 import * as mcp from "@services/mcp/service";
-import { abbreviate } from "../../lib/format";
+import { abbreviate, parseTime, splitError } from "../../lib/format";
 import { accessQuery, agentsQuery, keys, nodeQuery } from "../../queries";
 import { useAgentStore } from "../../stores/agent";
 import FileSelector from "../../ui/FileSelector.vue";
@@ -30,6 +31,8 @@ const { data: agents } = useQuery(agentsQuery);
 const { data: node } = useQuery(nodeQuery);
 const name = shallowRef("");
 const command = shallowRef("");
+// the clock an install's line counts its seconds by
+const now = useNow({ scheduler: (tick) => useIntervalFn(tick, 1000) });
 
 // the agents PMT offers, each with the line that says how it stands
 const offered = computed(() =>
@@ -45,6 +48,8 @@ const {
   variables: installed,
   error: installError,
 } = useMutation({ mutation: (id: string) => agentApi.InstallAgent(id), onSettled: refresh });
+// a failed install's error: its first line, the alert's title, and npm's output after it
+const installFailure = computed(() => (installError.value ? splitError(installError.value) : undefined));
 const {
   mutate: installNode,
   isLoading: downloading,
@@ -71,8 +76,17 @@ const { mutate: add } = useMutation({
 });
 const { mutate: remove } = useMutation({ mutation: (id: string) => agentApi.RemoveAgent(id) });
 
-/** describeAgent returns the line under an agent's name: how its sessions here stand, else whether it is installed. */
+/**
+ * describeAgent returns the line under an agent's name: its install and the seconds since it started while npm runs
+ * it, else how its sessions here stand, else whether it is installed.
+ */
 function describeAgent(row: Agent): { text: string; dot: string } {
+  if (isInstalling(row)) {
+    const started = parseTime(row.installing) ?? now.value;
+    // the clock ticks once a second, so it can read just before the start
+    const seconds = Math.max(0, Math.round((now.value.getTime() - started.getTime()) / 1000));
+    return { text: `${row.installed ? "Updating to" : "Installing"} ${row.version} with npm · ${seconds} s`, dot: "" };
+  }
   const live = agent.sessions.filter((one) => one.agent.id === row.id);
   if (live.some((one) => one.state === "sign-in")) return { text: "Needs sign-in", dot: "bg-warning" };
   if (live.some((one) => one.state === "idle" || one.state === "running"))
@@ -81,6 +95,14 @@ function describeAgent(row: Agent): { text: string; dot: string } {
   return row.installed === row.version
     ? { text: `Version ${row.installed}, installed`, dot: "" }
     : { text: `Version ${row.installed}; ${row.version} is out`, dot: "bg-primary" };
+}
+
+/**
+ * isInstalling reports whether npm is installing an agent: Go's list says so, or this view asked for the install and
+ * Go's list has not come back since.
+ */
+function isInstalling(row: Agent): boolean {
+  return !!parseTime(row.installing) || (installing.value && installed.value === row.id);
 }
 
 /** copy puts a text on the clipboard and says so. */
@@ -142,7 +164,7 @@ function quote(path: string): string {
       <div
         v-for="{ row, line } in offered"
         :key="row.id"
-        class="flex items-center gap-3 rounded-md border border-default px-3 py-2.5"
+        class="flex flex-wrap items-center gap-3 rounded-md border border-default px-3 py-2.5"
       >
         <UAvatar :text="abbreviate(row.name)" size="sm" class="rounded-md" />
         <span class="flex min-w-0 grow flex-col gap-0.5">
@@ -150,17 +172,38 @@ function quote(path: string): string {
           <span class="flex items-center gap-1.5 text-12 text-dimmed">
             <span v-if="line.dot" class="size-1.5 rounded-full" :class="line.dot" />{{ line.text }}
           </span>
-          <span v-if="installError && installed === row.id" class="text-12 whitespace-pre-wrap text-error">
-            {{ installError.message }}
-          </span>
         </span>
         <UButton
           v-if="row.installed !== row.version"
           :label="row.installed ? `Update to ${row.version}` : 'Install'"
           :disabled="!node?.path"
-          :loading="installing && installed === row.id"
+          :loading="isInstalling(row)"
           @click="install(row.id)"
         />
+        <UAlert
+          v-if="installFailure && installed === row.id"
+          class="basis-full"
+          color="error"
+          variant="subtle"
+          icon="i-lucide-circle-x"
+          orientation="horizontal"
+          :title="installFailure[0]"
+          :actions="[
+            {
+              label: 'Copy',
+              icon: 'i-lucide-copy',
+              color: 'neutral',
+              variant: 'outline',
+              onClick: () => copy(installError?.message ?? '', 'The error'),
+            },
+          ]"
+        >
+          <template v-if="installFailure[1]" #description>
+            <pre class="max-h-40 overflow-y-auto font-mono text-11 leading-4.5 whitespace-pre-wrap">{{
+              installFailure[1]
+            }}</pre>
+          </template>
+        </UAlert>
       </div>
     </section>
     <SettingsSection section="agents" />

@@ -13,7 +13,7 @@ import * as workspaceApi from "@services/workspace/service";
 import type { Place } from "@services/workspace/models";
 
 import { useShown } from "../../app/pages";
-import { countLevels, plural } from "../../lib/format";
+import { countLevels, LEVELS, plural, PROBLEM_LEVELS } from "../../lib/format";
 import {
   codesQuery,
   gitStatusQuery,
@@ -21,7 +21,6 @@ import {
   placeQuery,
   reportQuery,
   rootsQuery,
-  wikiPagesQuery,
   windowsQuery,
 } from "../../queries";
 import { useChip } from "../../stores/agent";
@@ -80,7 +79,6 @@ const git = useGitStore();
 const settings = useSettingsStore();
 const windows = useWindowsStore();
 const workspace = useWorkspaceStore();
-const toast = useToast();
 const coatDialog = useOverlay().create(CoatDialog);
 const sidebar = useLocalStorage("pmt.ide.sidebar", "explorer");
 const panel = useLocalStorage("pmt.ide.panel", "");
@@ -251,29 +249,6 @@ const { data: indentation } = useQuery(() => ({
   ...indentationQuery(open.value?.place.path ?? ""),
   enabled: !diff.value && !!open.value,
 }));
-
-// while the Wiki pane is closed, a kind of file the wiki has pages for is suggested once
-const suggestions = new Set<string>();
-const isSuggesting = computed(() => !wiki.value && settings.isOn("ide.wikiToast"));
-const { data: pages } = useQuery(() => ({
-  ...wikiPagesQuery(editor.activeFile()?.path ?? ""),
-  enabled: !!editor.activeFile() && workspace.isOpen() && isSuggesting.value,
-}));
-watch(pages, (summaries) => {
-  const active = editor.activeFile();
-  const kind = active ? `${active.format}:${active.database}` : "";
-  // a query turned off still hands back its pages
-  if (!summaries?.length || !kind || suggestions.has(kind) || !isSuggesting.value) return;
-  suggestions.add(kind);
-  toast.add({
-    title: `Wiki: ${summaries[0]?.title}`,
-    actions: [{ label: "Open", color: "neutral", variant: "outline", onClick: () => (wiki.value = true) }],
-  });
-});
-watch(
-  () => id,
-  () => suggestions.clear(),
-);
 
 const { mutate: addMod } = useMutation({ mutation: (dir: string) => workspaceApi.AddMod(id, dir) });
 
@@ -517,8 +492,14 @@ async function revealFile(): Promise<void> {
                 >
                   <template #trailing="{ item }">
                     <template v-if="item.value === 'problems'">
-                      <UBadge v-if="problems.serious" :label="String(problems.serious)" color="error" size="sm" />
-                      <UBadge v-if="problems.warning" :label="String(problems.warning)" color="warning" size="sm" />
+                      <template v-for="level in PROBLEM_LEVELS" :key="level">
+                        <UBadge
+                          v-if="problems[level]"
+                          :label="String(problems[level])"
+                          :color="LEVELS[level]?.color"
+                          size="sm"
+                        />
+                      </template>
                     </template>
                   </template>
                 </UTabs>
@@ -560,11 +541,14 @@ async function revealFile(): Promise<void> {
       </template>
     </USplitter>
     <Teleport v-if="!['terminal', 'wiki'].includes(layout) && visible" defer to="#status-start">
-      <button class="flex items-center gap-1 text-error" @click="toggleProblems">
-        <UIcon name="i-lucide-circle-x" class="size-3" />{{ problems.serious }}
-      </button>
-      <button class="flex items-center gap-1 text-warning" @click="toggleProblems">
-        <UIcon name="i-lucide-triangle-alert" class="size-3" />{{ problems.warning }}
+      <button
+        v-for="level in PROBLEM_LEVELS"
+        :key="level"
+        class="flex items-center gap-1"
+        :style="{ color: `var(--ui-${LEVELS[level]?.color})` }"
+        @click="toggleProblems"
+      >
+        <UIcon :name="LEVELS[level]?.icon" class="size-3" />{{ problems[level] }}
       </button>
       <button v-if="status" class="flex items-center gap-1 hover:text-highlighted" @click="showSidebar('git')">
         <UIcon name="i-lucide-git-branch" class="size-3" />{{ status.branch || "detached HEAD" }}

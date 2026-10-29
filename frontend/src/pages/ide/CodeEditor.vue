@@ -16,7 +16,7 @@ import { COMMANDS, compareWithFile, compareWithGame, findGameCopy, findKbds } fr
 import { copiesQuery, detailQuery, fileQuery, loadQuery, placeQuery, wikiPagesQuery } from "../../queries";
 import { useEditorStore } from "../../stores/editor";
 import { useSearchStore } from "../../stores/search";
-import { useWindowsStore } from "../../stores/windows";
+import { useWindowsStore, type WikiLookup } from "../../stores/windows";
 import { useWorkspaceStore } from "../../stores/workspace";
 import { markChanges } from "./editor/changes";
 import { decorate } from "./editor/conflicts";
@@ -34,7 +34,6 @@ const router = useRouter();
 const editorStore = useEditorStore();
 const windows = useWindowsStore();
 const workspace = useWorkspaceStore();
-const toast = useToast();
 const commands = useEventBus<string>("pmt.command");
 const host = useTemplateRef("host");
 const view = shallowRef<editor.IStandaloneCodeEditor>();
@@ -71,18 +70,21 @@ const { mutate: findFirers } = useMutation({
     listReferences(`What fires ${subject.title}`, locations);
   },
 });
-// a command looks up its lexicon entry, and a definition the first wiki page of the file it is defined in
-const { mutate: lookUp } = useMutation({
-  mutation: async (subject: Card) => {
-    if (CLASSES.some((one) => one.value === subject.what)) return { class: subject.what, name: subject.title };
-    const path = subject.sites?.[0]?.place.path;
-    const title = path ? (await loadQuery(wikiPagesQuery(path)))?.[0]?.title : undefined;
-    return title ? { title } : undefined;
-  },
-  onSuccess: (lookup, subject) => {
-    if (lookup) windows.lookUp(lookup);
-    else toast.add({ title: `The wiki has no page for ${subject.title}` });
-  },
+/** The lexicon class that lists the card's name: a command's own, or the one a scripted effect or trigger acts as. */
+const lexiconClass = computed(() => {
+  const what = card.value?.what ?? "";
+  return CLASSES.some((one) => one.value === what) ? what : (card.value?.command ?? "");
+});
+// a definition the lexicon does not list looks up the first wiki page of the file it is defined in
+const { data: pages } = useQuery(() => ({
+  ...wikiPagesQuery(card.value?.sites?.[0]?.place.path ?? ""),
+  enabled: workspace.isOpen() && !lexiconClass.value && !!card.value?.sites?.length,
+}));
+/** The card's look-up: its lexicon row, else its file's first wiki page, else none. */
+const lookup = computed((): WikiLookup | undefined => {
+  if (lexiconClass.value && card.value) return { class: lexiconClass.value, name: card.value.title };
+  const title = pages.value?.[0]?.title;
+  return title ? { title } : undefined;
 });
 // the menu offers the compare with the game's copy only for a mod's file the game has too
 const { data: copies } = useQuery(() => ({ ...copiesQuery(model.place.path), enabled: !model.place.readOnly }));
@@ -230,7 +232,11 @@ const groups = computed<ContextMenuItem[][]>(() => [
       onSelect: (event) => void COMMANDS.find((command) => command.id === "editor.openGraph")?.onSelect?.(event),
     },
     { label: "Show in Health", disabled: !card.value, onSelect: () => void showInHealth() },
-    { label: "Look up in the wiki", disabled: !card.value, onSelect: () => card.value && lookUp(card.value) },
+    {
+      label: "Look up in the wiki",
+      disabled: !lookup.value,
+      onSelect: () => lookup.value && windows.lookUp(lookup.value),
+    },
   ],
   [
     ...(gameCopy.value

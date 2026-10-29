@@ -81,15 +81,12 @@ type Date struct {
 	Day   int `json:"day"`
 }
 
-// ParseDate parses a date written as `year.month.day`. A minus before the year makes it negative. A missing day is 0.
-// It returns false for anything else, including a month outside 1 to 12 and a day outside 1 to 31.
+// ParseDate parses a text written in the shape of a date, `year.month.day`, whether or not the date can be. A minus
+// before the year makes it negative. A missing day is 0. It returns false for any other shape.
 func ParseDate(text string) (Date, bool) {
 	text, negative := strings.CutPrefix(text, "-")
 	parts := strings.Split(text, ".")
-	if len(parts) < 2 || len(parts) > 3 {
-		return Date{}, false
-	}
-	if !lo.EveryBy(parts, isDigits) {
+	if len(parts) < 2 || len(parts) > 3 || !lo.EveryBy(parts, isDigits) {
 		return Date{}, false
 	}
 	numbers := lo.Map(parts, func(part string, _ int) int {
@@ -102,14 +99,14 @@ func ParseDate(text string) (Date, bool) {
 	}
 	if len(numbers) == 3 {
 		date.Day = numbers[2]
-		if date.Day < 1 || date.Day > 31 {
-			return Date{}, false
-		}
-	}
-	if date.Month < 1 || date.Month > 12 {
-		return Date{}, false
 	}
 	return date, true
+}
+
+// IsValid reports whether a date can be: its month is from 1 to 12, and its day from 1 to 31. A day of 0 is a date
+// written without its day.
+func (date Date) IsValid() bool {
+	return date.Month >= 1 && date.Month <= 12 && date.Day >= 0 && date.Day <= 31
 }
 
 // SplitPrefixed splits text written as `prefix:name` into the prefix and the name. It returns false if there is

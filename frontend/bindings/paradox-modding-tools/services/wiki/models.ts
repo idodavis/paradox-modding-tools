@@ -6,7 +6,7 @@
 import * as workspace$0 from "../workspace/models.js";
 
 /**
- * An Example is one place where the game's own files use a lexicon row's name.
+ * An Example is one place in the workspace's files: where a lexicon row's name is used, or defined.
  */
 export interface Example {
     "place": workspace$0.Place;
@@ -18,8 +18,8 @@ export interface Example {
 }
 
 /**
- * A LexiconRow is one effect, trigger, link, scope or data function the game's dumps declare, with the dump's text
- * and example uses from the index.
+ * A LexiconRow is one effect, trigger, link, scope or data function: one the game's dumps declare, with the dump's
+ * text, or a scripted effect or trigger, with how a call to it is written. Each has example uses from the index.
  */
 export interface LexiconRow {
     /**
@@ -32,6 +32,11 @@ export interface LexiconRow {
     "scopes"?: string[] | null;
     "target"?: string;
     "examples": Example[] | null;
+
+    /**
+     * Defined is where the copy the game keeps of a scripted effect or trigger is, or nil for what the dumps declare.
+     */
+    "defined"?: Example | null;
 }
 
 /**

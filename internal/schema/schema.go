@@ -4,11 +4,13 @@
 package schema
 
 import (
+	"cmp"
 	"fmt"
 	"maps"
 	"path"
 	"slices"
 	"strings"
+	"sync/atomic"
 	"time"
 	"unicode"
 
@@ -152,11 +154,26 @@ type OnAction struct {
 	Scope string
 }
 
-// A ScriptedDefinition is a scripted effect, trigger, value or list the game defines, with the parameters it
+// A ScriptedDefinition is a scripted effect, trigger, value or list the game or a mod defines, with the parameters it
 // takes.
 type ScriptedDefinition struct {
 	Database   string
-	Parameters *Field // nil when the database's definitions take no parameters
+	Parameters *Field            // nil when the database's definitions take no parameters
+	Saves      map[string]string // by parameter: the link its body saves the argument's name under, such as scope
+	relays     []relay           // the parameters its body passes on to calls of other scripted definitions
+}
+
+// A relay is one parameter that a scripted definition's body passes on as an argument of a call to another one.
+type relay struct {
+	Callee    string // the called definition's name as written
+	Argument  string // the argument's key in the call
+	Parameter string // the parameter of the body that the argument writes
+}
+
+// modScripted is the scripted definitions of the workspace's mods: each file's, and all of them together.
+type modScripted struct {
+	byFile map[string]map[string]ScriptedDefinition // by a file's key, then as ScriptedDefinitions holds them
+	all    map[string]ScriptedDefinition
 }
 
 // A SourceState says where one source's data came from and how fresh it is.
@@ -185,13 +202,19 @@ type Schema struct {
 	InlineDatabases     map[string]string // by a key that declares a definition inline in an events file: its database
 	ScriptedDefinitions map[string]ScriptedDefinition
 	WidgetTypes         map[string]bool
-	Lists               string   // the database of scripted lists, or "" if the game has none
-	Events              string   // the database of events, or "" if the game has none
-	Concepts            string   // the database of game concepts, or "" if the game has none
-	ModifierTypes       string   // the database of modifier types, or "" if the game has none
-	Effects             string   // the database of scripted effects, or "" if the game has none
-	Values              string   // the database of script values: the callable whose definitions hold a value; "" if none
-	FireDatabases       []string // the databases that are fired: those whose row houses a game.FireHouses word
+	// UnlistedCalls are the steps of data calls that no dump declares for the type before them and the game's own
+	// localization and GUI text write all the same, keyed Type.step.
+	UnlistedCalls map[string]bool
+	Lists         string   // the database of scripted lists, or "" if the game has none
+	Events        string   // the database of events, or "" if the game has none
+	Concepts      string   // the database of game concepts, or "" if the game has none
+	ModifierTypes string   // the database of modifier types, or "" if the game has none
+	Effects       string   // the database of scripted effects, or "" if the game has none
+	Values        string   // the database of script values: the callable whose definitions hold a value; "" if none
+	FireDatabases []string // the databases that are fired: those whose row houses a game.FireHouses word
+	// mods is the mods' scripted definitions, which a call finds after the game's. No cache keeps them, and a rescan
+	// puts a new table in place.
+	mods atomic.Pointer[modScripted]
 }
 
 // The origins of a source's data: the install, the shipped backup, or none.
@@ -240,6 +263,7 @@ func newSchema(row *game.Game) *Schema {
 		InlineDatabases:     map[string]string{},
 		ScriptedDefinitions: map[string]ScriptedDefinition{},
 		WidgetTypes:         map[string]bool{},
+		UnlistedCalls:       map[string]bool{},
 	}
 }
 
@@ -323,6 +347,9 @@ func (schema *Schema) buildDatabases(row *game.Game, folders []string) {
 		schema.buildDatabase(row, game.GUI.DatabasePrefix+declaring, "", game.Database{})
 	}
 	schema.buildDatabase(row, game.GUI.WidgetDatabase, "", game.Database{})
+	// a text names a format or an icon in any case
+	schema.buildDatabase(row, game.GUI.TextFormats, "", game.Database{FoldsCase: true})
+	schema.buildDatabase(row, game.GUI.TextIcons, "", game.Database{FoldsCase: true})
 	housed := map[string][]string{}
 	callables := map[string]*string{"effects": &schema.Effects, "value": &schema.Values}
 	for label, database := range schema.Databases {
@@ -352,7 +379,9 @@ func (schema *Schema) buildDatabases(row *game.Game, folders []string) {
 	schema.listCallees()
 }
 
-// buildDatabase builds one database from its row. It does nothing if the schema has it already.
+// buildDatabase builds one database from its row. It does nothing if the schema has it already. A database of records
+// named for another's definitions, such as the history of titles, gives no data type its words, since those words
+// name the other's definitions.
 func (schema *Schema) buildDatabase(row *game.Game, label, folder string, rule game.Database) {
 	if schema.Databases[label] != nil {
 		return
@@ -363,6 +392,9 @@ func (schema *Schema) buildDatabase(row *game.Game, label, folder string, rule g
 	}
 	for _, key := range rule.DeclaringKeys {
 		schema.InlineDatabases[key] = label
+	}
+	if rule.Target != "" {
+		return
 	}
 	phrase := game.DescribeDefinition(label, false)
 	if named, ok := schema.TypeDatabases[phrase]; ok && !isNamedExactly(label, phrase) {
@@ -543,6 +575,22 @@ func (schema *Schema) FindFunction(call jomini.Call, datacontext string, step in
 	}
 	function, ok := schema.DataTypes[owners[step]].Functions[call.Steps[step].Text]
 	return function, ok
+}
+
+// FindUnlisted returns the first step of a data call that the dumps do not declare for the type before it, and that
+// type: the data context's, or Global's, for the first step. It returns false if the dumps declare every step, or the
+// type before the step is unknown.
+func (schema *Schema) FindUnlisted(call jomini.Call, datacontext string) (int, string, bool) {
+	owners := schema.listCallOwners(call, datacontext)
+	step := slices.Index(owners, "")
+	if step < 0 {
+		return 0, "", false
+	}
+	before := cmp.Or(datacontext, game.GlobalType)
+	if step > 0 {
+		before = schema.DataTypes[owners[step-1]].Functions[call.Steps[step-1].Text].Returns
+	}
+	return step, before, before != ""
 }
 
 // ResolveMacro returns a data call with its data binding macros expanded. A macro that expands into itself gives an

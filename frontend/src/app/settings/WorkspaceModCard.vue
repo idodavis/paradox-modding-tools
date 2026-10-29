@@ -19,9 +19,6 @@ import * as workspace from "@services/workspace/service";
 import type { Era, Mod as ModRecord } from "@services/app/models";
 import type { Mod } from "@services/workspace/models";
 
-/** RELATIONS lists the finding codes about a mod's dependencies. */
-const RELATIONS = ["missing-dependency", "undeclared-dependency"];
-
 const { workspaceId, mod } = defineProps<{ workspaceId: string; mod: Mod }>();
 
 const store = useWorkspaceStore();
@@ -44,7 +41,9 @@ const { data: report } = useQuery(() => ({
 const eras = computed(() => mod.calendar.eras ?? []);
 const months = computed(() => Array.from({ length: 12 }, (_, index) => mod.calendar.months?.[index] ?? ""));
 const dependencies = computed(() =>
-  (report.value?.findings ?? []).filter((finding) => RELATIONS.includes(finding.code) && finding.origin === mod.id),
+  (report.value?.findings ?? []).filter(
+    (finding) => finding.code === "missing-dependency" && finding.origin === mod.id,
+  ),
 );
 
 const { mutate: update } = useMutation({
@@ -267,7 +266,7 @@ function updateMonth(index: number, text: string): void {
             />
             {{ describeFinding(finding, codes) }}
           </p>
-          <p v-if="!dependencies.length" class="text-12 text-dimmed">No missing or undeclared dependency.</p>
+          <p v-if="!dependencies.length" class="text-12 text-dimmed">No missing dependency.</p>
         </section>
       </div>
     </div>

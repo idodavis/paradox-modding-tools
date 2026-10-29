@@ -32,9 +32,10 @@ export type Model = {
   diskText: Text | null; // the disk's text after the file changed on disk under unsaved text; null while none did
 };
 
-/** SEVERITIES holds the Monaco severity of each level. */
+/** SEVERITIES holds the Monaco severity of each level. Monaco has one severity for both critical and error. */
 export const SEVERITIES: Record<string, monaco.MarkerSeverity> = {
-  serious: monaco.MarkerSeverity.Error,
+  critical: monaco.MarkerSeverity.Error,
+  error: monaco.MarkerSeverity.Error,
   warning: monaco.MarkerSeverity.Warning,
   info: monaco.MarkerSeverity.Info,
 };

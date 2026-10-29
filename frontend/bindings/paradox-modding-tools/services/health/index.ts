@@ -14,5 +14,6 @@ export type {
     GameLog,
     Overview,
     Report,
-    Snippet
+    Snippet,
+    Use
 } from "./models.js";

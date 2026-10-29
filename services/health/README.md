@@ -13,16 +13,15 @@ game's error log says, each as findings that point at their sites.
 |---|---|
 | `health.go` | the package comment; `EventErrorLogChanged`; `Service` with `ServiceStartup` and `ServiceShutdown`; `FindingSite`, `Finding`, `Change`, `Report`, `GameLog`, `Overview`, `Compared`, `Snippet`; `BuildReport` and the findings of overrides, unused copies, descriptors, unmounted folders, localization and the editor's checks; `ListCodes`, `ListOverview`, `CompareStatements`, `ListSnippets`, `ListReaders`, `WriteScaffold`, `ListScaffolds` |
 | `contests.go` | the contests of names and of files, and the undecided ones; their winner, beaten mods, level and suggested order; what a previewed order changes |
-| `ignored.go` | `AddIgnoredPair`, `RemoveIgnoredPair`; the ignored pairs and their findings |
-| `declared.go` | which mod declares which as a dependency, and the use of a mod that is not declared |
+| `ignored.go` | `AddIgnoredPair`, `RemoveIgnoredPair`; the ignored pairs and their findings; the workspace's record and the mods its compatibility checks judge (`listChecked`) |
 | `errorlog.go` | `ListErrorLog`: the rows of the game's error log, folded and told apart; the log's watch |
 
 ## Questions, levels and topics
 
 Every finding answers one of three questions: `compatibility` (how the mods touch the same things), `health` (each
-mod's own problems) or `log` (what the game's last run logged). A finding has a level, `serious`, `warning` or `info`,
-and the game log has none. Its code's row in `lsp.Codes` gives the question, the level and the topic. Three rules
-decide per finding:
+mod's own problems) or `log` (what the game's last run logged). A finding has a level by how much the game loses,
+`critical`, `error`, `warning` or `info`, and the game log has none. Its code's row in `lsp.Codes` gives the
+question, the level and the topic. Three rules decide per finding:
 
 - **A contest's level.** A `contest` is a name two or more mods define, and a `file-contest` a file two or more mods
   ship in a folder the game reads. The kept copy's mod is the winner. The beaten mods are the other mods among the
@@ -30,7 +29,7 @@ decide per finding:
   beaten. A name whose every mod's copy is kept is no contest and has no finding, and neither is one whose kept copy
   is the game's own: each mod whose copies the game does not use then has an `unused-copy`. The contest is `info`
   when the winner declares every beaten mod as a dependency, or the workspace ignores the pair; otherwise it is
-  `serious`. A contest is never a warning. The facts `winner` and `beaten` hold the mods' names, several written "A
+  `critical`. A contest is never a warning. The facts `winner` and `beaten` hold the mods' names, several written "A
   and B" or "A, B and C". A declared dependency forgiving a contest is Health's judgment, not a game rule.
 - **An undecided contest.** Where `index.FindWinner` gives the reason `unsettled`, no source says which copy the game
   keeps, so the copies of the mods and the game are one `undecided-contest` finding, with no site kept and each site's
@@ -38,7 +37,7 @@ decide per finding:
   an on_action's trigger and effect) in two files. The fact `mods` names the mods and the game, and `why` is the
   sentence that says what leaves it open: a shared override priority, a mode keyword in a folder no
   source says takes it, a mode that adds in a folder that takes REPLACE only, a replace_path, or the block. It is
-  `info` when every two of its mods are a declared dependency or an ignored pair, and `serious` otherwise; a pair
+  `info` when every two of its mods are a declared dependency or an ignored pair, and `critical` otherwise; a pair
   with the game is never forgiven.
 - **The question of a shared check.** `duplicate-definition` and `conflicting-priority` are `health` findings of one
   mod's file. When the loaded definitions of the name lie in two or more mods they are `compatibility` findings, and
@@ -60,10 +59,13 @@ an undecided contest or a shared key. `Count` is 1, except for a log row that re
 
 The other findings are plain facts. An **override** is a name a mod defines that the game defines too, both in files
 the game reads, where the game keeps the mod's copy, or a file a mod ships over the game's own. Where the game keeps
-its own copy of the name, each mod none of whose copies it uses has an `unused-copy` (warning), beside any other mod's
-override; its fact `mod` names that one mod, and `reason` says why in words (`describeLoss`): in a database that takes
-entry modes, a plain copy after the first is never created and reads "its file is read before the mod's"; any other
-takes the words of the winner's reason. A name whose kept copy no source settles is an undecided contest instead. A
+its own copy of the name, each mod none of whose copies it uses has an `unused-copy` (critical), beside any other mod's
+override; its facts `winner` and `beaten` name the game and that one mod, as a contest's do, and the kept copy's
+reason says why the game's copy wins. A name whose kept copy no source settles is an undecided contest instead. A
+mod's file the game reads over its own copy at the same path is a `removed-names` instead of an override where the
+game's copy defines names that no file the game reads defines and one still uses: `Uses` lists them, the most used
+first, and the facts count the names the game's copy defines (`total`, called `definitions`, such as "scripted
+triggers"), the ones the mod's copy leaves out (`removed`), those still used (`count`) and their uses (`uses`). A
 `missing-message` is a definition whose title has no message in the base language, and `coverage` says how many of a
 mod's base-language messages another language has. An `unmounted-folder` is a top folder of a mod outside the stage
 folders of a game that keeps its files under stages: the game never reads its files, and the finding counts them and
@@ -77,13 +79,14 @@ descriptor id or its name. A dependency's own dependencies count, all the way do
 a `missing-dependency` finding, which names it by the title its relationship gives (`display_name`), else by its id;
 the fact `mod` names the mod that declares it.
 
-**Used without being declared.** For each mod, a use of a name that nothing in the game, in the mod itself or in its
-declared dependencies makes, and that another mod does. A use is a reference, or a name written with `INJECT:` or
-`REPLACE:` (not `TRY_`, not `_OR_CREATE`), which needs a definition to act on; only a use in a file the game reads
-counts. A name is made by a plain definition, or one written with a mode that creates, and only loaded ones count. Each
-pair of a using mod and a used mod, the used mod being the one whose definition the game keeps, is one
-`undeclared-dependency` finding. It counts the distinct names and points at the first use of each. A name that the
-using file defines for itself is not a use.
+**A mod on its own.** Each mod's own problems are judged with the index narrowed to the mod and its declared
+dependencies, so a name only another mod defines is that mod's `unresolved-reference`. Its message is the code's
+elsewhere message, which names the mod that defines it, and its `Defined` is where. `Overview.Judged` lists the mods a
+mod is judged with.
+
+**Mods left out.** A mod the workspace's record marks `LeftOut` is left out of the compatibility checks: their lists,
+the ignored pairs and a preview's changes are judged on the index narrowed to the other mods. Its own problems are
+judged as every mod's are.
 
 ## The load order
 
@@ -92,7 +95,7 @@ order is scanned by `workspace.Session.ScanOrder` and saved nowhere. The definit
 once and shared by the checks, which then run side by side.
 
 - **A suggested order.** The load order decides only a file two mods ship at one path, and a name whose winner's
-  reason is `playset` (EU5's GUI types and templates). A serious contest of either kind with one beaten mod that
+  reason is `playset` (EU5's GUI types and templates). A critical contest of either kind with one beaten mod that
   declares the winner as a dependency carries the order in `Finding.Order` that fixes it: the reported order with the
   beaten mod moved just after the winner. A name decided by file name, priority or entry mode, and an undecided one,
   has none, since no order changes it.
@@ -152,7 +155,7 @@ file they go in, which PMT's tools for coding agents preview.
 ## Terms
 
 - **Question**: one of the three things Health answers: compatibility, health and the game log.
-- **Level**: how much a finding matters: serious, warning or info.
+- **Level**: how much the game loses by a finding: critical, error, warning or info.
 - **Topic**: what a check is about: syntax, references, values, localization, definitions or descriptor.
 - **Finding**: one row of the Health page: a problem or a fact, with the places it points at.
 - **FindingSite**: one place a finding points at, with whether the game keeps it and why.

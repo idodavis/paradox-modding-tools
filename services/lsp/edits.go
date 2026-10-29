@@ -192,7 +192,7 @@ func (lsp *Service) ListFixes(path string, diagnostics []Diagnostic) ([]Fix, err
 		var title string
 		var edits []Edit
 		switch diagnostic.Code {
-		case "unresolved-reference":
+		case unresolvedCode:
 			title, edits = buildReferenceFix(mods, walk(diagnostic), diagnostic)
 		case "missing-key":
 			title, edits = buildMissingFix(ws.Schema, tree, walk(diagnostic), diagnostic)

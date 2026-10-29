@@ -149,6 +149,19 @@ func (tree *Tree) Children(statement int32) iter.Seq[int32] {
 	}
 }
 
+// FindPrevious returns the statement written just before a statement in the block that holds it. It returns false if
+// the statement is the block's first.
+func (tree *Tree) FindPrevious(statement int32) (int32, bool) {
+	previous := int32(0)
+	for child := range tree.Children(tree.Statements[statement].Parent) {
+		if child == statement {
+			break
+		}
+		previous = child
+	}
+	return previous, previous > 0
+}
+
 // FindStatement returns the innermost statement that covers the given byte offset. It returns 0, the file, if no
 // other statement does.
 func (tree *Tree) FindStatement(offset int) int32 {

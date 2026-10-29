@@ -146,7 +146,7 @@ func (ws *Session) loadInstall(installPath, version string, progress func(stage 
 	}
 	if !hasSchema {
 		progress("schema", 0)
-		if language, err = schema.Build(ws.Game, installPath, listing, parseFile); err != nil {
+		if language, err = schema.Build(ws.Game, installPath, listing, index.ParseFile); err != nil {
 			return err
 		}
 		language.Version = version
@@ -162,16 +162,6 @@ func (ws *Session) loadInstall(installPath, version string, progress func(stage 
 	}
 	ws.Schema, ws.Install = language, install
 	return nil
-}
-
-// parseFile reads the file with the given path and parses it as script. It returns an error if the file cannot be
-// read.
-func parseFile(path string) (*jomini.Tree, error) {
-	text, err := files.ReadText(path)
-	if err != nil {
-		return nil, err
-	}
-	return jomini.Parse(text.Text), nil
 }
 
 // deleteOlderCaches deletes every folder beside the given caches' folder, which are the game's caches of other
@@ -277,7 +267,7 @@ func (ws *Session) LoadTree(path string) (*jomini.Tree, error) {
 	if tree, ok := ws.trees.Get(key); ok {
 		return tree, nil
 	}
-	tree, err := parseFile(path)
+	tree, err := index.ParseFile(path)
 	if err != nil {
 		return nil, err
 	}
@@ -388,6 +378,39 @@ func (ws *Session) FindTitleKey(mods *index.Index, site index.Site) (string, boo
 		return "", false
 	}
 	return tree.FindChildValue(statement, game.TitleKey)
+}
+
+// FindDelay returns the delay written for a firing, such as "days = 5", as the given index of the mods lists the use
+// that fires. It returns "" if there is none or the file cannot be read.
+func (ws *Session) FindDelay(mods *index.Index, use index.Site) string {
+	tree, err := ws.LoadTree(mods.File(use).Path)
+	if err != nil {
+		return ""
+	}
+	// the delay is in the first block, going up from the use, that holds one directly or in a delay block
+	for statement := tree.FindStatement(mods.Occurrence(use).Span.Start); statement > 0; statement = tree.Statements[statement].Parent {
+		holders := []int32{statement}
+		if block, ok := tree.FindChild(statement, game.EventDelay.Block); ok {
+			holders = append(holders, block)
+		}
+		for _, holder := range holders {
+			if delay := findDuration(tree, holder); delay != "" {
+				return delay
+			}
+		}
+	}
+	return ""
+}
+
+// findDuration returns the statement that writes a delay in a block, such as "days = 5". It returns "" if there is
+// none.
+func findDuration(tree *jomini.Tree, block int32) string {
+	for _, key := range game.EventDelay.Keys {
+		if child, ok := tree.FindChild(block, key); ok {
+			return tree.Text(tree.Statements[child].Span)
+		}
+	}
+	return ""
 }
 
 // FindStatement returns the tree of a site's file and the statement that writes it. It returns an error if the file

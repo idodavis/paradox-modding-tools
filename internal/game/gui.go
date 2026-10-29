@@ -135,7 +135,10 @@ type GUIRules struct {
 	References     []Reference // what a widget's keys name, Database "" for any
 	TextFormats    string      // the database a text's #format names
 	TextIcons      string      // the database an icon in a text, @icon!, names
-	Slots          map[string]WidgetSlot
+	// EditorFolders hold the files of the game's own GUI editor, which call functions of the editor no dump declares;
+	// they are not judged.
+	EditorFolders []string
+	Slots         map[string]WidgetSlot
 	// Types is the row of each built-in widget type. Any other type holds its children by their anchors and keeps a
 	// hidden child's room.
 	Types           map[string]WidgetType
@@ -196,6 +199,8 @@ type GUIRules struct {
 	// CallTargets is the data functions whose quoted arguments are names, by function: the database each argument's
 	// names are in, in order, and "" for one that is no name.
 	CallTargets map[string][]string
+	// StepDatabases are the databases whose definitions a data call names as a step of its own, which no dump declares.
+	StepDatabases []string
 	// Booleans is the data functions a binding combines conditions with, by name without the argument count.
 	Booleans map[string]string
 	Literals map[string]bool // a condition's plain values, in lower case, and whether each holds
@@ -251,6 +256,8 @@ var GUI = GUIRules{
 	},
 	TextFormats: "gui.format",   // gui/preload/textformatting.gui:6-7
 	TextIcons:   "gui.texticon", // gui/debug/placeholder_types_templates.gui:346-347
+	// clausewitz/gui/gui_editor, and EU5's loading_screen stage
+	EditorFolders: []string{"gui/gui_editor", "loading_screen/gui/gui_editor"},
 	Slots: map[string]WidgetSlot{
 		"background":           {Role: "skin", Type: "background"},
 		"tooltipwidget":        {Role: "attachment"},
@@ -356,6 +363,8 @@ var GUI = GUIRules{
 	Getters:        []string{"Get", "Access"},
 	HiddenKeys:     []string{"visible", "visible_at_creation"},
 	DropsHiddenKey: "ignoreinvisible",
+	// a data binding is called by its own name (the data_binding row's NamedBy call), as a customizable localization is
+	StepDatabases: []string{"data_binding", "customizable_localization"},
 	CallTargets: map[string][]string{
 		"GetDefine":         {"defines", "defines.define"},
 		"Localize":          {Localization},     // the dumps' AddLocalizationIf expansion calls it

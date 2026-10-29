@@ -13,12 +13,15 @@ import {
   describeCount,
   describeDetail,
   describeFinding,
+  describeLevels,
   type FindingRow,
+  FIX_LEVELS,
   LEVELS,
   list,
   listFindingRows,
   listProblems,
   plural,
+  PROBLEM_LEVELS,
   toRepeatKey,
   toSentence,
 } from "../../lib/format";
@@ -79,27 +82,18 @@ const visibility = computed({
   set: (next: string) => (picked.value = next),
 });
 const counts = computed(() => countBy(problems.value, ({ finding }) => finding.level));
-const sentence = computed(() =>
-  list(
-    [
-      counts.value.serious ? plural(counts.value.serious, "serious problem") : "",
-      counts.value.warning ? plural(counts.value.warning, "warning") : "",
-    ].filter(Boolean),
-  ),
-);
-// Each serious finding once, with its repeats, as Health lists them.
-const serious = computed(() =>
+const sentence = computed(() => list(describeLevels(counts.value, PROBLEM_LEVELS)));
+// Each finding that needs a fix once, with its repeats, as Health lists them.
+const faults = computed(() =>
   Object.values(
     groupBy(
-      problems.value.filter(({ finding }) => finding.level === "serious"),
+      problems.value.filter(({ finding }) => FIX_LEVELS.includes(finding.level)),
       ({ finding }) => toRepeatKey(finding, codes.value),
     ),
   ),
 );
 // The worst level among the problems, or none if the mod has none.
-const worst = computed(() =>
-  counts.value.serious ? LEVELS.serious : counts.value.warning ? LEVELS.warning : undefined,
-);
+const worst = computed(() => LEVELS[PROBLEM_LEVELS.find((level) => counts.value[level]) ?? ""]);
 const label = computed(() => {
   if (reason.value) return "Start Steam to upload";
   return listing.workshopId ? "Upload to Steam" : "Create on Steam";
@@ -236,11 +230,11 @@ function submit(): void {
         <span class="grow">This mod has {{ sentence }}. Steam will still take the upload.</span>
       </div>
       <div
-        v-if="serious.length"
+        v-if="faults.length"
         class="max-h-36 divide-y divide-default overflow-y-auto rounded-lg border border-default bg-default"
       >
         <ProblemRow
-          v-for="[problem, ...repeats] in serious"
+          v-for="[problem, ...repeats] in faults"
           :key="problem?.index"
           :level="problem?.finding.level"
           :message="problem ? describeFinding(problem.finding, codes) : ''"

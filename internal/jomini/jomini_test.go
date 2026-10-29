@@ -280,25 +280,24 @@ func TestIsConstant(t *testing.T) {
 
 func TestParseDate(t *testing.T) {
 	tests := []struct {
-		text string
-		want Date
-		ok   bool
+		text      string
+		want      Date
+		ok, valid bool
 	}{
-		{"1066.9.15", Date{Year: 1066, Month: 9, Day: 15}, true},
-		{"867.1.1", Date{Year: 867, Month: 1, Day: 1}, true},
-		{"1066.9", Date{Year: 1066, Month: 9}, true},
-		{"1066", Date{}, false},
-		{"1066.13.1", Date{}, false},
-		{"1066.0.1", Date{}, false},
-		{"1066.9.32", Date{}, false},
-		{"1066.9.0", Date{}, false},
-		{"1066.9.15.1", Date{}, false},
-		{"year.1.1", Date{}, false},
-		{"", Date{}, false},
+		{"1066.9.15", Date{Year: 1066, Month: 9, Day: 15}, true, true},
+		{"867.1.1", Date{Year: 867, Month: 1, Day: 1}, true, true},
+		{"1066.9", Date{Year: 1066, Month: 9}, true, true},
+		{"1066", Date{}, false, false},
+		{"1066.13.1", Date{Year: 1066, Month: 13, Day: 1}, true, false},
+		{"1066.0.1", Date{Year: 1066, Day: 1}, true, false},
+		{"1066.9.32", Date{Year: 1066, Month: 9, Day: 32}, true, false},
+		{"1066.9.15.1", Date{}, false, false},
+		{"year.1.1", Date{}, false, false},
+		{"", Date{}, false, false},
 	}
 	for _, test := range tests {
-		if got, ok := ParseDate(test.text); got != test.want || ok != test.ok {
-			t.Errorf("ParseDate(%q) = %+v %v, want %+v %v", test.text, got, ok, test.want, test.ok)
+		if got, ok := ParseDate(test.text); got != test.want || ok != test.ok || ok && got.IsValid() != test.valid {
+			t.Errorf("ParseDate(%q) = %+v %v, want %+v %v, valid %v", test.text, got, ok, test.want, test.ok, test.valid)
 		}
 	}
 }

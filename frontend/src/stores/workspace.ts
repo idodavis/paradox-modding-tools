@@ -1,6 +1,7 @@
 /**
  * The workspace store: the active workspace id, kept in local storage, and the facts of the open workspace that
- * every page reads: whether it is open, each origin's name and color, and a file's folder as lists show it.
+ * every page reads: whether it is open, each origin's name and color, which mods its compatibility checks leave out,
+ * and a file's folder as lists show it.
  */
 import { defineStore } from "pinia";
 import { useMutation, useQuery } from "@pinia/colada";
@@ -74,6 +75,9 @@ export const useWorkspaceStore = defineStore("workspace", () => {
     return SLOTS.includes(color) ? `var(--${color})` : color;
   };
 
+  /** Whether the active workspace leaves a mod out of its compatibility checks. */
+  const isLeftOut = (modId: string): boolean => !!findMod(modId)?.leftOut;
+
   /** Whether a mod's color was picked by hand: a CSS color rather than one of the theme's slots. */
   const isCustom = (color: string | undefined): boolean => !!color && !SLOTS.includes(color);
 
@@ -118,6 +122,7 @@ export const useWorkspaceStore = defineStore("workspace", () => {
     originName,
     describeFolder,
     originColor,
+    isLeftOut,
     isCustom,
     listModIds,
     open,

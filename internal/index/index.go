@@ -7,6 +7,8 @@ import (
 	"maps"
 	"slices"
 
+	"github.com/samber/lo"
+
 	"paradox-modding-tools/internal/files"
 	"paradox-modding-tools/internal/game"
 	"paradox-modding-tools/internal/jomini"
@@ -107,6 +109,27 @@ type Index struct {
 	// and has no stage folder.
 	byRel    map[string][]int32
 	rootKeys []string // by root, as Roots lists them: its folder's key, ending in a slash
+	// origins are the ids of the mods a narrowed index answers for; nil means every mod.
+	origins map[string]struct{}
+}
+
+// Narrow returns a copy of a mods' index that answers for the install and the given mods only: the other mods' files,
+// definitions, references and messages are left out of its lookups. It shares everything else with the original.
+func (index *Index) Narrow(origins []string) *Index {
+	narrowed := *index
+	narrowed.origins = lo.Keyify(origins)
+	return &narrowed
+}
+
+// hasFile reports whether an index answers for a file: one of the install's, or one of a mod it answers for.
+func (index *Index) hasFile(position int32) bool {
+	return position < index.countInstallFiles() || index.hasMod(index.Files[position].Origin)
+}
+
+// hasMod reports whether an index answers for a mod. An index that is not narrowed answers for every mod.
+func (index *Index) hasMod(origin string) bool {
+	_, ok := index.origins[origin]
+	return index.origins == nil || ok
 }
 
 // Occurrence returns the occurrence a site points at.
@@ -150,11 +173,12 @@ func (index *Index) IsListed(position int32) bool {
 }
 
 // ListOwnFiles returns the positions in Files of the files this index scanned itself, in order: for a mods' index,
-// the mods' files, and for the install's, all of them. A file deleted since the scan is left out.
+// the mods' files, and for the install's, all of them. A file deleted since the scan is left out, and so is a file of
+// a mod a narrowed index does not answer for.
 func (index *Index) ListOwnFiles() []int32 {
 	var positions []int32
 	for position := index.countInstallFiles(); int(position) < len(index.Files); position++ {
-		if index.IsListed(position) {
+		if index.IsListed(position) && index.hasFile(position) {
 			positions = append(positions, position)
 		}
 	}

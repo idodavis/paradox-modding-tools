@@ -85,7 +85,7 @@ func (schema *Schema) buildDoc(file files.File, folders []string) error {
 	if err != nil {
 		return err
 	}
-	if reader, ok := schema.parseDoc(text.Text, file.Rel); ok {
+	if reader, ok := schema.parseDoc(text.Text, file.Rel, database.Row); ok {
 		reader.build(database)
 	}
 	return nil
@@ -115,10 +115,14 @@ func findDocDatabase(rel string, folders []string) (string, bool) {
 	return "", false
 }
 
-// parseDoc returns a reader that has read one doc file. It returns false for a .txt file that is data, not prose. Such
-// a file has more script lines than prose lines.
-func (schema *Schema) parseDoc(text, rel string) (*docReader, bool) {
+// parseDoc returns a reader that has read one doc file of the given database. It returns false for a .txt file that is
+// data, not prose. Such a file has more script lines than prose lines.
+func (schema *Schema) parseDoc(text, rel string, row game.Database) (*docReader, bool) {
 	reader := &docReader{schema: schema, fields: map[string]*Field{}}
+	// a definition named by its file is the whole file, so the doc is read as already inside it
+	if row.NamedBy == "file" {
+		reader.keys = []string{""}
+	}
 	md := strings.EqualFold(path.Ext(rel), ".md")
 	for raw := range strings.Lines(text) {
 		reader.readLine(raw, md && strings.HasPrefix(raw, "#"))
@@ -307,7 +311,7 @@ func (reader *docReader) readStatement(key, value, text string, opens int) {
 	entry := len(reader.keys) == 0 && (opens > 0 || strings.HasPrefix(value, "{"))
 	keyed := key != "" && !entry && !isStandIn(key)
 	step := key
-	if game.IsNumberKey(step) {
+	if game.IsNumberKey(step) || step == game.DocDateKey {
 		step = game.NumberKey
 	}
 	if keyed {
@@ -320,7 +324,7 @@ func (reader *docReader) readStatement(key, value, text string, opens int) {
 			reader.header = ""
 		}
 		reader.resolveText(field, strings.Join(append(reader.above, text), " "))
-		resolveValue(field, value)
+		reader.resolveValue(field, value)
 		reader.current, reader.list = field, ""
 	}
 	for range max(opens, 0) {
@@ -416,7 +420,7 @@ func (reader *docReader) readProse(text string) {
 func (reader *docReader) resolveText(field *Field, text string) {
 	text = strings.TrimSpace(text)
 	if value, rest := splitValue(text); strings.HasPrefix(value, "<") {
-		resolveValue(field, value)
+		reader.resolveValue(field, value)
 		text = rest
 	}
 	if text == "" {
@@ -520,12 +524,14 @@ func (reader *docReader) resolveScope(field *Field, phrase string) {
 }
 
 // resolveValue reads a field's type from the value its example writes. The value may be a placeholder, alternatives,
-// a type term or a sample value.
-func resolveValue(field *Field, value string) {
+// a type term, a sample key such as innovation_key that names the database of its words, or a sample value.
+func (reader *docReader) resolveValue(field *Field, value string) {
 	inner, placeholder := strings.CutPrefix(value, "<")
 	inner = strings.ToLower(strings.TrimSuffix(inner, ">"))
 	_, known := game.DocTypes[ToPhrase(inner)]
 	_, date := jomini.ParseDate(value)
+	words, keyed := strings.CutSuffix(inner, "_key")
+	database, named := reader.schema.ResolveTypeDatabase(words)
 	switch {
 	case value == "":
 	case strings.HasPrefix(value, "{"):
@@ -536,6 +542,8 @@ func resolveValue(field *Field, value string) {
 		if !slices.ContainsFunc(parts, func(part string) bool { _, ok := game.DocTypes[ToPhrase(part)]; return ok }) {
 			resolveChoices(field, parts)
 		}
+	case keyed && named && !known:
+		field.Value.resolve(Expected{Type: ValueReference, Database: database}, game.SourceDocs)
 	case placeholder || known:
 		resolveDocType(field, inner, game.SourceDocs)
 	case jomini.IsNumber(value):

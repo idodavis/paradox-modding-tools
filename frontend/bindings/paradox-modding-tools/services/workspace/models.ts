@@ -112,6 +112,11 @@ export interface Mod {
      * the upload exclusions, one pattern per line
      */
     "ignore": string;
+
+    /**
+     * left out of the workspace's compatibility checks
+     */
+    "leftOut": boolean;
     "descriptor": Descriptor;
 
     /**

@@ -24,9 +24,11 @@ import (
 	"slices"
 	"strconv"
 	"strings"
+	"sync"
 	"time"
 
 	"github.com/samber/lo"
+	"github.com/wailsapp/wails/v3/pkg/application"
 
 	"paradox-modding-tools/internal/files"
 	"paradox-modding-tools/services/app"
@@ -34,19 +36,28 @@ import (
 	"paradox-modding-tools/services/workspace"
 )
 
-// Service is the agent service. It holds a running agent's program only while a window's stream to it is open.
+// EventChanged is sent when an agent's install starts and when it ends. The data is the agent's id.
+const EventChanged = "agent:changed"
+
+// init registers the agent event with the application.
+func init() { application.RegisterEvent[string](EventChanged) }
+
+// Service is the agent service. It holds a running agent's program only while a window's stream to it is open, and
+// the start of each install while it runs.
 type Service struct {
 	Workspace *workspace.Service // the open workspace, for an agent's folder
 	MCP       *mcp.Service       // PMT's tools, whose address and token the register texts carry
+	installs  sync.Map           // when each running install started, by the agent's id
 }
 
 // An Agent is one agent as Settings and the agent pane list it: its record, with what the registry and PMT's folder
 // say of it.
 type Agent struct {
 	app.Agent
-	Version     string `json:"version"`     // the registry's version of one PMT offers; "" for the user's
-	Installed   string `json:"installed"`   // the version installed in PMT's folder; "" if none is
-	Description string `json:"description"` // the registry's words for it
+	Version     string    `json:"version"`     // the registry's version of one PMT offers; "" for the user's
+	Installed   string    `json:"installed"`   // the version installed in PMT's folder; "" if none is
+	Description string    `json:"description"` // the registry's words for it
+	Installing  time.Time `json:"installing"`  // when its running install started; zero if none runs
 }
 
 // A Node is the Node that PMT's agents run on: the system's if it is new enough, else PMT's own copy.
@@ -119,10 +130,10 @@ func ListFiles() []string {
 }
 
 // ListAgents returns the agents PMT offers, then the user's own. Each one PMT offers has its registry version and
-// words, and its register text with PMT's address and token filled in. One installed, with a Node new enough, has the
-// program and arguments that start it: its package's script on Node, with the registry's arguments. The registry is
-// fetched at most once a day; without a network its last copy is used, and with no copy the agents have no version
-// and cannot be installed.
+// words, and its register text with PMT's address and token filled in. One being installed has the time its install
+// started. One installed, with a Node new enough, has the program and arguments that start it: its package's script
+// on Node, with the registry's arguments. The registry is fetched at most once a day; without a network its last copy
+// is used, and with no copy the agents have no version and cannot be installed.
 func (agt *Service) ListAgents() []Agent {
 	listing, _ := agt.loadRegistry()
 	node := agt.DescribeNode()
@@ -131,6 +142,8 @@ func (agt *Service) ListAgents() []Agent {
 		row.Register = replacer.Replace(row.Register)
 		entry, _ := lo.Find(listing.Agents, func(entry registryAgent) bool { return entry.ID == row.ID })
 		agent := Agent{Agent: row, Version: entry.Version, Installed: agt.findInstalled(row.ID), Description: entry.Description}
+		started, _ := agt.installs.Load(row.ID)
+		agent.Installing, _ = started.(time.Time)
 		script, err := findScript(filepath.Join(agt.findDir(), row.ID+"@"+agent.Installed))
 		canStart := agent.Installed != "" && err == nil && node.Path != ""
 		if canStart {
@@ -217,8 +230,9 @@ func (agt *Service) InstallNode() error {
 }
 
 // InstallAgent installs an agent PMT offers into PMT's folder at the registry's version, with npm on the Node that
-// DescribeNode gives, and removes its other versions. It returns an error if the registry lacks the agent, no Node is
-// new enough, or npm fails, with what npm wrote.
+// DescribeNode gives, and removes its other versions. It sends EventChanged when npm starts and when it ends. It
+// returns an error if the registry lacks the agent, no Node is new enough, npm is installing it already, or npm
+// fails. npm's error names the package on its first line, and what npm wrote follows.
 func (agt *Service) InstallAgent(id string) error {
 	listing, err := agt.loadRegistry()
 	if err != nil {
@@ -232,6 +246,15 @@ func (agt *Service) InstallAgent(id string) error {
 	if node.Path == "" {
 		return fmt.Errorf("the agents need Node %s or newer", minNode)
 	}
+	// two npm runs in one folder delete each other's files
+	if _, isRunning := agt.installs.LoadOrStore(id, time.Now()); isRunning {
+		return fmt.Errorf("npm is installing %s already", entry.Distribution.Npx.Package)
+	}
+	application.Get().Event.Emit(EventChanged, id)
+	defer func() {
+		agt.installs.Delete(id)
+		application.Get().Event.Emit(EventChanged, id)
+	}()
 	dir := filepath.Join(agt.findDir(), id+"@"+entry.Version)
 	command := exec.Command(node.Path, findNpm(node.Path), "install", "--prefix", dir, "--no-audit", "--no-fund",
 		entry.Distribution.Npx.Package)
@@ -239,7 +262,7 @@ func (agt *Service) InstallAgent(id string) error {
 	command.Env = addToPath(os.Environ(), filepath.Dir(node.Path))
 	prepareCommand(command)
 	if output, err := command.CombinedOutput(); err != nil {
-		return fmt.Errorf("npm could not install %s: %w\n%s", entry.Distribution.Npx.Package, err, output)
+		return fmt.Errorf("npm could not install %s\n%w\n%s", entry.Distribution.Npx.Package, err, output)
 	}
 	for _, version := range agt.listInstalled(id) {
 		if version != entry.Version {

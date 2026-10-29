@@ -10,8 +10,8 @@ schema's databases.
 
 | file | holds |
 |---|---|
-| `index.go` | `Role` and its constants, `Occurrence`, `Table` with `Intern` and `Lookup`, `Site`, `Posting`, `Index`; the accessors of a site (`Occurrence`, `File`, `Language`, `Text`, `FindMode`); `FindFile`, `IsListed`, `ListOwnFiles`, `FindRoot` |
-| `scan.go` | the scan and the load: `Scan`, `ScanMods`, `LoadIndex`, `Index.ScanFiles`, `Index.Clone`, `ListFiles`; the scan's visitor, `collector`; the messages of a localization file, the references in their text, and the rows of a table file; `ToCaseless` |
+| `index.go` | `Role` and its constants, `Occurrence`, `Table` with `Intern` and `Lookup`, `Site`, `Posting`, `Index`; the accessors of a site (`Occurrence`, `File`, `Language`, `Text`, `FindMode`); `FindFile`, `IsListed`, `ListOwnFiles`, `FindRoot`; `Narrow` (a copy that answers for the install and the given mods only) |
+| `scan.go` | the scan and the load: `Scan`, `ScanMods`, `LoadIndex`, `Index.ScanFiles`, `Index.Clone`, `ListFiles`, `ParseFile`; the scan's visitor, `collector`; the messages of a localization file, the references in their text (`ListTextReferences`), and the rows of a table file; `ToCaseless` |
 | `lookup.go` | the lookups by name: `Resolve`, `ResolveLocal`, `ListDatabases`, `ListUses`, `ListCallees`, `ListDefinitions`, `ListMessages`, `FindDefinition`, `ToReference`, `CountDefinitions`; the postings |
 | `combine.go` | what the game keeps: `Winner` with `IsKept`, `Injected`, `Combined`, `Unsettled`, `ResolveSite`, `FindWinner`, `FindKept`, `FindKeptLocal`, `ListKept`; the file the game reads at a path, `FindLoaded`, `IsLoaded`, `ListImages`, `ResolveTexture`; the load order, the entry modes, the priorities and the replace_path |
 | `fires.go` | `Fire`, `ListFires`, `ListFiredBy`, `ListActing`; the rule that marks a reference `Firing` |

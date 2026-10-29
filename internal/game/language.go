@@ -41,6 +41,8 @@ type Keyword struct {
 	Shows  string // a description marker: which of its texts it shows, first, random or leaf
 	Class  string // the operator class: logical, conditional, flow, display, saving, math, list; "" means none
 	Blurb  string // the one line a hover card shows
+	// Follows are the keys, in lower case, one of which must be written just before it in its block; empty means any.
+	Follows []string
 	// Weighted marks a keyword whose branches are weights: a branch's key is a number, and its chance is its share.
 	Weighted bool
 	// Preview marks a keyword whose block is shown in the tooltip and never run.
@@ -56,6 +58,10 @@ const AnyKey = "<any>"
 // NumberKey is the key that matches a key written as a number or a date, such as random_list's branches.
 const NumberKey = "<number>"
 
+// DocDateKey is the key the games' own docs write for a date, as `date = { … }` stands for each dated block of a
+// history file.
+const DocDateKey = "date"
+
 // The dumps' words for what declares a command, by the file that declares it. Command.Declared lists them in dump
 // order.
 const (
@@ -64,14 +70,20 @@ const (
 	DeclaredLink    = "event target" // event_targets.log
 )
 
-// The databases of the names script saves and a link reads back: saved scopes (scope:x), the variables of a scope
-// (var:x), of the effect being run (local_var:x) and of the game (global_var:x).
+// The databases of the names script saves and reads back: saved scopes (scope:x), the variables of a scope (var:x), of
+// the effect being run (local_var:x) and of the game (global_var:x), the lists add_to_list makes, and the flags CK3
+// gives a character.
 const (
 	SavedScopes     = "scope"
 	Variables       = "var"
 	LocalVariables  = "local_var"
 	GlobalVariables = "global_var"
+	Lists           = "list"
+	Flags           = "flag"
 )
+
+// Links are the databases of the names script saves and reads back, which no file defines.
+var Links = []string{SavedScopes, Variables, LocalVariables, GlobalVariables, Lists, Flags}
 
 // descBlurb is the sentence shown for a description, which a value block's desc shares.
 const descBlurb = "The text shown: a localization key, or a block that chooses one."
@@ -238,11 +250,11 @@ var Keywords = []Keyword{
 	{Key: "any_false", Shape: "triggers", Class: "logical", Blurb: "True when at least one thing inside it is false (the same as NAND)."},
 	{Key: "always", Class: "logical", Blurb: "True or false as written: always = yes is always true."},
 	{Key: "if", Shape: "enclosing", Class: "conditional", Blurb: "Runs what is inside it when its limit holds."},
-	{Key: "else_if", Shape: "enclosing", Class: "conditional", Blurb: "Runs when the if or else_if before it did not, and its own limit holds."},
-	{Key: "else", Shape: "enclosing", Class: "conditional", Blurb: "Runs when no if or else_if before it ran."},
+	{Key: "else_if", Shape: "enclosing", Class: "conditional", Blurb: "Runs when the if or else_if before it did not, and its own limit holds.", Follows: []string{"if", "else_if"}},
+	{Key: "else", Shape: "enclosing", Class: "conditional", Blurb: "Runs when no if or else_if before it ran.", Follows: []string{"if", "else_if"}},
 	{Key: "trigger_if", Shape: "enclosing", Class: "conditional", Blurb: "Checks what is inside it only when its limit holds."},
-	{Key: "trigger_else_if", Shape: "enclosing", Class: "conditional", Blurb: "Checks what is inside it when the trigger_if before it was skipped and its own limit holds."},
-	{Key: "trigger_else", Shape: "enclosing", Class: "conditional", Blurb: "Checks what is inside it when every trigger_if before it was skipped."},
+	{Key: "trigger_else_if", Shape: "enclosing", Class: "conditional", Blurb: "Checks what is inside it when the trigger_if before it was skipped and its own limit holds.", Follows: []string{"trigger_if", "trigger_else_if"}},
+	{Key: "trigger_else", Shape: "enclosing", Class: "conditional", Blurb: "Checks what is inside it when every trigger_if before it was skipped.", Follows: []string{"trigger_if", "trigger_else_if"}},
 	{Key: "limit", Shape: "triggers", Class: "conditional", Blurb: "The conditions an if, a list, a while or a trigger_if checks first."},
 	{Key: "alternative_limit", Shape: "triggers", Class: "conditional", Blurb: "A second limit a list falls back to when its limit matches nothing."},
 	{Key: "switch", Class: "conditional", Blurb: "Reads one trigger and runs the case whose value matches, else the fallback."},
@@ -270,23 +282,63 @@ var DumpPhrases = struct {
 	NoScope  []string // scope names that name no scope
 }{"Iterate through", []string{"none", "all"}}
 
-// LinkMakers are the commands that make the names a link such as scope:x or var:x reads, by link.
-var LinkMakers = map[string][]string{
-	SavedScopes: {
-		"save_scope_as", "save_temporary_scope_as", "save_scope_value_as/name", "save_temporary_scope_value_as/name",
-		"save_opinion_value_as/name", "save_temporary_opinion_value_as/name",
-	},
-	Variables: {
-		"set_variable", "set_variable/name", "set_dead_character_variable/name", "add_to_variable_list/name",
-		"add_to_variable_map/name",
-	},
-	LocalVariables: {
-		"set_local_variable", "set_local_variable/name", "add_to_local_variable_list/name", "add_to_local_variable_map/name",
-	},
-	GlobalVariables: {
-		"set_global_variable", "set_global_variable/name", "add_to_global_variable_list/name",
-		"add_to_global_variable_map/name",
-	},
+// LinkMakers are the commands that save a name of one of the Links, by the command, or by command/key for a key in
+// its block: each with the link that reads the name back.
+var LinkMakers = map[string]string{
+	"save_scope_as": SavedScopes, "save_temporary_scope_as": SavedScopes, "save_scope_value_as/name": SavedScopes,
+	"save_temporary_scope_value_as/name": SavedScopes, "save_opinion_value_as/name": SavedScopes,
+	"save_temporary_opinion_value_as/name": SavedScopes,
+	// a script value's (CK3 common/script_values; EU5 generic_actions/western_schism.txt:361 writes the block)
+	"save_temporary_value_as": SavedScopes, "save_temporary_value_as/name": SavedScopes,
+	// CK3 _character_interactions.info:349 and _decisions.info:315, 395: the option picked sets scope:<name>
+	"send_option/flag": SavedScopes, "item/value": SavedScopes,
+	// EU5 cabinet_actions/assimilate_area.txt:16: the target picked is scope:<name>
+	"select_trigger/target_flag": SavedScopes,
+	"set_variable":               Variables, "set_variable/name": Variables, "set_dead_character_variable/name": Variables,
+	"add_to_variable_list/name": Variables, "add_to_variable_map/name": Variables,
+	"set_local_variable": LocalVariables, "set_local_variable/name": LocalVariables,
+	"add_to_local_variable_list/name": LocalVariables, "add_to_local_variable_map/name": LocalVariables,
+	"set_global_variable": GlobalVariables, "set_global_variable/name": GlobalVariables,
+	"add_to_global_variable_list/name": GlobalVariables, "add_to_global_variable_map/name": GlobalVariables,
+	"add_to_list": Lists, "add_to_temporary_list": Lists,
+	// CK3 effects.log:2984 and 3014: "where X is the name of the flag", "flag = <name>"
+	"add_character_flag": Flags, "add_character_flag/flag": Flags, "add_dead_character_flag/flag": Flags,
+}
+
+// LinkUsers are the triggers and lists that use a name of one of the Links, in LinkMakers' shape: each with the link
+// whose name it uses. Each is in its game's triggers.log or effects.log. The variable maps are Vic3's and EU5's,
+// and a character's flags are CK3's.
+var LinkUsers = map[string]string{
+	"has_variable": Variables, "has_variable/name": Variables, "has_all_variables/name": Variables,
+	"has_none_of_variables/name": Variables, "has_dead_character_variable": Variables, "has_variable_list": Variables,
+	"variable_list_size/name": Variables, "is_target_in_variable_list/name": Variables, "has_variable_map": Variables,
+	"variable_map_size/name": Variables, "is_key_in_variable_map/name": Variables,
+	"is_value_in_variable_map/name": Variables, "any_key_in_variable_map/variable": Variables,
+	"every_key_in_variable_map/variable": Variables, "ordered_key_in_variable_map/variable": Variables,
+	"random_key_in_variable_map/variable": Variables, "any_in_list/variable": Variables,
+	"every_in_list/variable": Variables, "ordered_in_list/variable": Variables, "random_in_list/variable": Variables,
+	"has_local_variable": LocalVariables, "has_local_variable_list": LocalVariables,
+	"local_variable_list_size/name": LocalVariables, "is_target_in_local_variable_list/name": LocalVariables,
+	"has_local_variable_map": LocalVariables, "local_variable_map_size/name": LocalVariables,
+	"is_key_in_local_variable_map/name": LocalVariables, "is_value_in_local_variable_map/name": LocalVariables,
+	"any_key_in_local_variable_map/variable": LocalVariables, "every_key_in_local_variable_map/variable": LocalVariables,
+	"ordered_key_in_local_variable_map/variable": LocalVariables,
+	"random_key_in_local_variable_map/variable":  LocalVariables, "any_in_local_list/variable": LocalVariables,
+	"every_in_local_list/variable": LocalVariables, "ordered_in_local_list/variable": LocalVariables,
+	"random_in_local_list/variable": LocalVariables,
+	"has_global_variable":           GlobalVariables, "has_global_variable_list": GlobalVariables,
+	"global_variable_list_size/name": GlobalVariables, "is_target_in_global_variable_list/name": GlobalVariables,
+	"has_global_variable_map": GlobalVariables, "global_variable_map_size/name": GlobalVariables,
+	"is_key_in_global_variable_map/name": GlobalVariables, "is_value_in_global_variable_map/name": GlobalVariables,
+	"any_key_in_global_variable_map/variable":     GlobalVariables,
+	"every_key_in_global_variable_map/variable":   GlobalVariables,
+	"ordered_key_in_global_variable_map/variable": GlobalVariables,
+	"random_key_in_global_variable_map/variable":  GlobalVariables, "any_in_global_list/variable": GlobalVariables,
+	"every_in_global_list/variable": GlobalVariables, "ordered_in_global_list/variable": GlobalVariables,
+	"random_in_global_list/variable": GlobalVariables,
+	"is_in_list":                     Lists, "any_in_list/list": Lists, "every_in_list/list": Lists,
+	"ordered_in_list/list": Lists, "random_in_list/list": Lists,
+	"has_character_flag": Flags, "has_dead_character_flag": Flags, "remove_character_flag": Flags,
 }
 
 // Bools are the words a yes-or-no value is written with.
@@ -310,17 +362,6 @@ var keywordPositions = func() map[string][]int {
 
 // iteratorKeywords holds the keywords whose key is a prefix, such as any_*, in the order Keywords gives them.
 var iteratorKeywords = slices.DeleteFunc(slices.Clone(Keywords), func(row Keyword) bool { return !strings.HasSuffix(row.Key, "*") })
-
-// makerLinks holds, for each command that LinkMakers names, the link that reads the names the command makes.
-var makerLinks = func() map[string]string {
-	links := map[string]string{}
-	for link, makers := range LinkMakers {
-		for _, maker := range makers {
-			links[maker] = link
-		}
-	}
-	return links
-}()
 
 // LookupKeyword returns the first keyword that fits a key in a block's shape and command. It returns false if none
 // fits.
@@ -354,13 +395,6 @@ func LookupKeyword(shape, command, key string) (Keyword, bool) {
 func IsNumberKey(key string) bool {
 	_, date := jomini.ParseDate(key)
 	return date || jomini.IsNumber(key)
-}
-
-// LookupLinkMaker returns the link whose names a command makes, given the command or command/key for a key in its
-// block. It returns false if the command makes no name a link reads.
-func LookupLinkMaker(maker string) (string, bool) {
-	link, ok := makerLinks[maker]
-	return link, ok
 }
 
 // ClassifyKey returns the operator class of a key, ignoring case, or "" if it is not an operator.

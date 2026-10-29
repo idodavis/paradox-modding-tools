@@ -252,8 +252,8 @@ func TestRefreshEmitsUpdatedWithoutWorkspace(t *testing.T) {
 }
 
 // TestBuildLexiconListsEffectsAndFunctions checks the rows of effects, of scopes and of data functions over the CK3
-// fixture install: one row for each declared effect or function, in name order, with the usage and the places of its
-// examples, counted from one; and an error for a class the lexicon does not have.
+// fixture install: one row for each declared effect or function and each scripted effect, in name order, with the
+// usage and the places of its examples, counted from one; and an error for a class the lexicon does not have.
 func TestBuildLexiconListsEffectsAndFunctions(t *testing.T) {
 	wik, ws := openService(t)
 	effects, err := wik.BuildLexicon("effect")
@@ -266,13 +266,23 @@ func TestBuildLexiconListsEffectsAndFunctions(t *testing.T) {
 			declared++
 		}
 	}
-	if len(effects) == 0 || len(effects) != declared || !slices.IsSortedFunc(effects, func(first, second LexiconRow) int {
+	mods, scripted := ws.Mods.Load(), map[string]bool{}
+	for _, site := range mods.ListDefinitions(ws.Schema.Effects) {
+		scripted[mods.ToReference(site).Name] = true
+	}
+	if len(effects) == 0 || len(effects) != declared+len(scripted) || !slices.IsSortedFunc(effects, func(first, second LexiconRow) int {
 		return strings.Compare(first.Name, second.Name)
 	}) {
-		t.Fatalf("%d effect rows for %d declared effects, sorted by name", len(effects), declared)
+		t.Fatalf("%d effect rows for %d declared and %d scripted effects, sorted by name", len(effects), declared, len(scripted))
 	}
 	examples := 0
 	for _, row := range effects {
+		if row.Defined != nil {
+			if !scripted[row.Name] || !strings.HasPrefix(row.Usage, row.Name+" = ") {
+				t.Errorf("scripted row %+v", row)
+			}
+			continue
+		}
 		command := ws.Schema.Commands[row.Name]
 		if row.Class != "effect" || row.Usage != command.Usage || row.Blurb != command.Blurb ||
 			len(row.Examples) != len(command.Examples) {

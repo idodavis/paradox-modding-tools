@@ -60,6 +60,11 @@ export interface Card {
     "returns"?: string;
 
     /**
+     * the kind of command a scripted definition the workspace has acts as
+     */
+    "command"?: string;
+
+    /**
      * what its block holds, in words
      */
     "holds"?: string;
@@ -171,7 +176,7 @@ export interface Code {
     "question": string;
 
     /**
-     * serious, warning or info, or "" for the game log
+     * critical, error, warning or info, or "" for the game log
      */
     "level": string;
 
@@ -189,6 +194,12 @@ export interface Code {
      * a template the facts fill, such as {name}
      */
     "message": string;
+
+    /**
+     * Elsewhere is the message where a mod the file's mod does not depend on defines the name, or "" if the code has
+     * none.
+     */
+    "elsewhere"?: string;
 }
 
 /**
@@ -243,6 +254,11 @@ export interface Diagnostic {
     "code": string;
     "range": Range;
     "facts": { [_ in string]?: string } | null;
+
+    /**
+     * Defined is where the workspace defines a name the file's mod does not, in a mod it does not depend on.
+     */
+    "defined"?: Location[] | null;
 }
 
 /**

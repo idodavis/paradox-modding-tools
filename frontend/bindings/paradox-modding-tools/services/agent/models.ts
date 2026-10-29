@@ -42,6 +42,11 @@ export interface Agent {
      * the registry's words for it
      */
     "description": string;
+
+    /**
+     * when its running install started; zero if none runs
+     */
+    "installing": string;
 }
 
 /**

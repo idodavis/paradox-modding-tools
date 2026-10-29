@@ -160,6 +160,10 @@ var errorLogLine = regexp.MustCompile(`^\[(\d\d):(\d\d):(\d\d)\](?:\[([A-Z])\])?
 var (
 	// errorLogFileLine is CK3's "file: P line: N", after "Script location:", "at", "location '" or "from database".
 	errorLogFileLine = regexp.MustCompile(`file: *(?P<path>\S+) line: *(?P<line>\d+)`)
+	// errorLogQuotedLine is the line a quoted message names before its file, as in "Unknown effect: x, near line: 3501"
+	// in file: "P" near line: 3502. All three games write it. The quoted line is the statement's. The file's line after
+	// it is where the reader stopped, often the end of the statement's block.
+	errorLogQuotedLine = regexp.MustCompile(`near line: (?P<line>\d+)" in file: "(?P<path>[^"]+)"`)
 	// errorLogNearLine is the reader's "in file: "P" near line: N", written by all three games.
 	errorLogNearLine = regexp.MustCompile(`in file: "(?P<path>[^"]+)" near line: (?P<line>\d+)`)
 	// errorLogPathLine is "P:N" after other words, as in "Script location: P:N" and "]: P:N - Missing file".
@@ -195,7 +199,7 @@ var games = map[string]*Game{
 		},
 		ErrorLog: ErrorLog{
 			Rel: errorLogRel, Line: errorLogLine,
-			Locations: []*regexp.Regexp{errorLogFileLine, errorLogNearLine, errorLogPathLine},
+			Locations: []*regexp.Regexp{errorLogFileLine, errorLogQuotedLine, errorLogNearLine, errorLogPathLine},
 		},
 		Databases:   ck3Databases,
 		Nestings:    ck3Nestings,
@@ -248,7 +252,8 @@ var games = map[string]*Game{
 			"linux":   {DebugArgs: []string{"-debug_mode"}, Settings: launcherFile},
 		},
 		ErrorLog: ErrorLog{
-			Rel: errorLogRel, Line: errorLogLine, Locations: []*regexp.Regexp{errorLogNearLine, errorLogPathLine},
+			Rel: errorLogRel, Line: errorLogLine,
+			Locations: []*regexp.Regexp{errorLogQuotedLine, errorLogNearLine, errorLogPathLine},
 		},
 		Databases:   vic3Databases,
 		Precedences: vic3Precedences,
@@ -285,7 +290,7 @@ var games = map[string]*Game{
 		},
 		ErrorLog: ErrorLog{
 			Rel: errorLogRel, Line: errorLogLine,
-			Locations: []*regexp.Regexp{errorLogNearLine, errorLogPathLine, errorLogLineColumn},
+			Locations: []*regexp.Regexp{errorLogQuotedLine, errorLogNearLine, errorLogPathLine, errorLogLineColumn},
 		},
 		Databases:     eu5Databases,
 		Nestings:      eu5Nestings,

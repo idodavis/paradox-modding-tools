@@ -10,15 +10,8 @@ import (
 
 	"paradox-modding-tools/internal/files"
 	"paradox-modding-tools/internal/game"
-	"paradox-modding-tools/internal/jomini"
 	"paradox-modding-tools/internal/schema"
 )
-
-// parseFile parses a file from disk, as the workspace does.
-func parseFile(path string) (*jomini.Tree, error) {
-	text, err := files.ReadText(path)
-	return jomini.Parse(text.Text), err
-}
 
 // scanInstall builds the schema of an install, scans the install with it, and returns both and the scan's time.
 func scanInstall(t *testing.T, gameID, install string) (*schema.Schema, *Index, time.Duration) {
@@ -31,7 +24,7 @@ func scanInstall(t *testing.T, gameID, install string) (*schema.Schema, *Index, 
 	if err != nil {
 		t.Fatal(err)
 	}
-	built, err := schema.Build(game.LookupGame(gameID), install, listing, parseFile)
+	built, err := schema.Build(game.LookupGame(gameID), install, listing, ParseFile)
 	if err != nil {
 		t.Fatal(err)
 	}

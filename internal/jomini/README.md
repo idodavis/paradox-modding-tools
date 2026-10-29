@@ -9,9 +9,9 @@ data call. It never imports `game`.
 
 | file | holds |
 |---|---|
-| `tree.go` | `Span`, `Position`, `Error`, `Lines` with `NewLines`, `CountLines`, `ToPosition` and `LineSpan`; `Statement` with `IsBlock`, `IsListed` and `ResolveValueSpan`; `Tree` with `Text`, `Unquoted`, `UnquotedSpan`, `Children`, `FindStatement`, `LookupStatement`, `FindChild`, `FindChildValue` and `IsEqual` |
+| `tree.go` | `Span`, `Position`, `Error`, `Lines` with `NewLines`, `CountLines`, `ToPosition` and `LineSpan`; `Statement` with `IsBlock`, `IsListed` and `ResolveValueSpan`; `Tree` with `Text`, `Unquoted`, `UnquotedSpan`, `Children`, `FindStatement`, `FindPrevious`, `LookupStatement`, `FindChild`, `FindChildValue` and `IsEqual` |
 | `parse.go` | the lexer and the parser: `Parse`, `CountBrackets` |
-| `shapes.go` | the predicates on a written word (`IsIdentifier`, `IsNumber`, `IsEventID`, `IsParameter`, `IsConstant`); `Date` and `ParseDate`; `SplitPrefixed`, `SplitChain`, `ColorParts`; the constants and expressions a file writes (`Tree.ResolveNumber`, `ListConstants`) |
+| `shapes.go` | the predicates on a written word (`IsIdentifier`, `IsNumber`, `IsEventID`, `IsParameter`, `IsConstant`); `Date` with `IsValid`, and `ParseDate`; `SplitPrefixed`, `SplitChain`, `ColorParts`; the constants and expressions a file writes (`Tree.ResolveNumber`, `ListConstants`) |
 | `call.go` | the data calls: `Call`, `Step`, `Argument`; `ParseBracketed`, `ParseCall`, `SubstituteCall` |
 | `edit.go` | `Edit`, `ApplyEdits`, `DiffEdits`, `LineEnding`, `Tree.Indentation`, `Tree.IndentLines`, `Tree.BuildInsertion` |
 

@@ -55,6 +55,7 @@ type Card struct {
 	About    string          `json:"about,omitempty"`   // what the database says of its definitions
 	Writes   []string        `json:"writes,omitempty"`  // the values the game writes most for a field nothing declares, up to eight
 	Returns  string          `json:"returns,omitempty"` // what a call of a scripted definition gives
+	Command  string          `json:"command,omitempty"` // the kind of command a scripted definition the workspace has acts as
 	Holds    string          `json:"holds,omitempty"`   // what its block holds, in words
 	Leads    string          `json:"leads,omitempty"`   // the scope its block runs in, for a command or link that switches
 	Target   string          `json:"target,omitempty"`  // the scope its value must be, for a command or link with no block
@@ -130,7 +131,8 @@ func (lsp *Service) describeHit(ws *workspace.Session, tree *jomini.Tree, place 
 			card.Node = reference.ToID()
 		}
 		if database := ws.Schema.Databases[reference.Database]; database != nil {
-			card.About, card.Returns = database.Definition.Blurb.Value, returnsLabels[database.Callable.Shape]
+			card.About, card.Returns, card.Command = database.Definition.Blurb.Value, returnsLabels[database.Callable.Shape],
+				lo.Ternary(len(card.Sites) > 0, database.Callable.Command, "")
 		}
 		if reference.Database == game.Constant {
 			describeNumber(card, tree, reference.Span)
@@ -428,12 +430,13 @@ func describeValue(card *Card, ws *workspace.Session, tree *jomini.Tree, visitor
 }
 
 // findDate returns the date a statement writes as its value. It returns false unless the statement's field expects a
-// date.
+// date and the value is one that can be.
 func findDate(tree *jomini.Tree, statement int32, context *schema.Context) (jomini.Date, bool) {
 	if context.Field == nil || context.Field.Value.Value.Type != schema.ValueDate {
 		return jomini.Date{}, false
 	}
-	return jomini.ParseDate(tree.Unquoted(tree.Statements[statement].Value))
+	date, ok := jomini.ParseDate(tree.Unquoted(tree.Statements[statement].Value))
+	return date, ok && date.IsValid()
 }
 
 // resolveDate returns a date in the given calendar of a mod: the era it falls in and its month's name. The month has

@@ -218,7 +218,7 @@ func TestParseDoc(t *testing.T) {
 			"option/weight", func(field *Field) bool { return field.Value.Value.Type == ValueNumber }},
 	}
 	for _, each := range cases {
-		reader, ok := docs.parseDoc(each.text, each.rel)
+		reader, ok := docs.parseDoc(each.text, each.rel, game.Database{})
 		if !ok {
 			t.Errorf("%s: not read as a doc", each.name)
 			continue
@@ -234,11 +234,11 @@ func TestParseDoc(t *testing.T) {
 func TestParseDocDatabase(t *testing.T) {
 	docs := newDocSchema()
 	text := "# Reference\nA building of a state.\n\nexample = {\n\t# root = owning country or no scope\n\tgroup = x\n}\n"
-	reader, ok := docs.parseDoc(text, "x/x.md")
+	reader, ok := docs.parseDoc(text, "x/x.md", game.Database{})
 	if !ok || strings.Join(reader.blurb, " ") != "A building of a state." || reader.scope != "country" {
 		t.Fatalf("database blurb and root: %v", reader)
 	}
-	if _, ok := docs.parseDoc("a = 1\nb = 2\nc = { d = 3 }\n", "x/00_example_templates.txt"); ok {
+	if _, ok := docs.parseDoc("a = 1\nb = 2\nc = { d = 3 }\n", "x/00_example_templates.txt", game.Database{}); ok {
 		t.Error("a data file named like a doc is read as one")
 	}
 	if scope := docs.resolveScopePhrase("interest group"); scope != "interest_group" {

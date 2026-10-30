@@ -26,8 +26,9 @@ another, the file belongs to the inner one; that rule is `index`'s, in `index.Li
 
 `Classify` gives a file its `Format` from its extension and its folder, never from its contents. A `.yml` file is
 localization only under a `localization` folder. A `.mod` file is a descriptor only at the root, and `metadata.json` is
-one only in `.metadata`. Script written directly at a root is text, since the games never read it. An extension the
-switch does not know is text too.
+one only in `.metadata`. Script written directly at a root is text, since the games never read it. A `.jpg`, `.jpeg`,
+`.gif` or `.webp` is a web image: a picture the games do not read, such as a Workshop preview, which the app shows
+but never offers as a texture. An extension the switch does not know is text too.
 
 `IsScript` is true for the formats written in the script language, which `jomini` parses: `.txt`, `.gui`, `.asset`,
 `.font` and `.gfx`. `IsText` is true for every format but images and binaries.
@@ -36,7 +37,8 @@ switch does not know is text too.
 
 A `Text` is a file's text with the `Encoding` it was stored in, so that a write puts it back the same way. `DecodeText`
 reads a byte order mark as UTF-8 with one, valid UTF-8 as UTF-8, and any other bytes as Windows-1252. `ReadText` refuses
-a file over `TextLimit` and a file that `IsBinary` flags, which means a NUL byte in its first kilobyte. `Text.Encode`
+a file over `TextLimit` and a file that `IsBinary` flags, which means a NUL byte in its first kilobyte; both errors wrap
+`ErrBinary`. `Text.Encode`
 writes the text back in its encoding. A character that Windows-1252 cannot hold becomes `?`.
 
 Every write goes through `WriteAtomic`. The bytes go to a temporary file beside the target, which is then renamed over

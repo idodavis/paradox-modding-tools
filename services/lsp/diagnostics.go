@@ -30,6 +30,9 @@ const (
 // unresolvedCode is the code of a name nothing defines that is of no narrower kind.
 const unresolvedCode = "unresolved-reference"
 
+// keyFacts are the codes of a localization key with no base-language text, each with the fact that names the key.
+var keyFacts = map[string]string{"missing-message": "key", "unknown-loc-key": "name"}
+
 // elsewhereMessage is the message of a name the file's mod does not define that a mod it does not depend on does.
 const elsewhereMessage = "{mod} uses this {database}, but the game doesn't define it: {other} does. {mod} doesn't " +
 	"list {other} as a dependency, so in a game without {other} the {database} doesn't exist, and every place that " +

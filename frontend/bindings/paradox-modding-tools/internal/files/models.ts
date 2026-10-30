@@ -88,6 +88,11 @@ export enum Format {
     FormatImage = "image",
 
     /**
+     * .jpg, .jpeg, .gif, .webp: an image the games do not read
+     */
+    FormatWebImage = "web-image",
+
+    /**
      * .csv
      */
     FormatTable = "table",

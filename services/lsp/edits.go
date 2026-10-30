@@ -1,6 +1,8 @@
 package lsp
 
 import (
+	"fmt"
+	"path/filepath"
 	"slices"
 	"strconv"
 	"strings"
@@ -10,16 +12,22 @@ import (
 	"github.com/samber/lo"
 	"github.com/sergi/go-diff/diffmatchpatch"
 
+	"paradox-modding-tools/internal/files"
+	"paradox-modding-tools/internal/game"
 	"paradox-modding-tools/internal/index"
 	"paradox-modding-tools/internal/jomini"
+	"paradox-modding-tools/internal/loc"
 	"paradox-modding-tools/internal/schema"
+	"paradox-modding-tools/services/workspace"
 )
 
 // A Fix is one quick fix for a problem. It carries the edits that apply it, grouped by file.
 type Fix struct {
-	Title string            `json:"title"`
-	Code  string            `json:"code"` // the diagnostic it fixes
-	Edits map[string][]Edit `json:"edits"`
+	Title   string            `json:"title"`
+	Code    string            `json:"code"` // the diagnostic it fixes
+	Edits   map[string][]Edit `json:"edits"`
+	Creates string            `json:"creates,omitempty"` // a localization file written first, with only its header
+	Reveal  *Location         `json:"reveal,omitempty"`  // where the caret goes once the fix is applied
 }
 
 // fixDistance is how many edits away a name may be and still be offered as the fix for an unresolved reference.
@@ -203,7 +211,63 @@ func (lsp *Service) ListFixes(path string, diagnostics []Diagnostic) ([]Fix, err
 			fixes = append(fixes, Fix{Title: title, Code: diagnostic.Code, Edits: map[string][]Edit{path: edits}})
 		}
 	}
+	if problem, ok := lo.Find(diagnostics, func(diagnostic Diagnostic) bool { return keyFacts[diagnostic.Code] != "" }); ok {
+		if fix, ok := lsp.buildKeysFix(ws, mods, place, problem.Code); ok {
+			fixes = append(fixes, fix)
+		}
+	}
 	return fixes, nil
+}
+
+// buildKeysFix returns the fix that adds the localization keys a file uses with no base-language text, each with an
+// empty text, to the localization file PMT makes for the file's mod. The fix writes that file first if it is missing
+// or empty, and leaves the caret inside the first new quotes. It returns false for a file of the game, a mod with no
+// name, a game with no localization folder, and a file that lacks no text.
+func (lsp *Service) buildKeysFix(
+	ws *workspace.Session, mods *index.Index, place workspace.Place, code string,
+) (Fix, bool) {
+	mod, ok := lsp.Workspace.LookupMod(place.Origin)
+	if !ok || place.ReadOnly || mod.Descriptor.Name == "" {
+		return Fix{}, false
+	}
+	target, ok := workspace.FindLocalizationFile(ws.Game, mod.Dir, mod.Descriptor.Name, game.BaseLanguage)
+	keys := lsp.listMissingKeys(ws, mods, place.Path)
+	if !ok || len(keys) == 0 {
+		return Fix{}, false
+	}
+	text, open := ws.LookupBuffer(target)
+	if !open {
+		disk, _ := files.LoadText(target)
+		text = disk.Text
+	}
+	subject := keys[0]
+	if len(keys) > 1 {
+		subject = fmt.Sprintf("%d missing keys", len(keys))
+	}
+	fix := Fix{Code: code, Title: fmt.Sprintf("Add %s to %s", subject, filepath.Base(target))}
+	if strings.TrimSpace(text) == "" {
+		fix.Creates, fix.Title, text = target, fix.Title+", a new file", loc.Encode(game.BaseLanguage, nil)
+	}
+	messages := lo.Map(keys, func(key string, _ int) loc.Message { return loc.Message{Key: key} })
+	addition := loc.EncodeAddition(text, messages)
+	end := jomini.Span{Start: len(text), End: len(text)}
+	fix.Edits = map[string][]Edit{target: {{Range: ToRange(text, jomini.NewLines(text), end), Text: addition}}}
+	whole := text + addition
+	quote := len(text) + strings.Index(addition, `""`) + 1
+	caret := ToRange(whole, jomini.NewLines(whole), jomini.Span{Start: quote, End: quote})
+	fix.Reveal = &Location{Place: ws.Locate(mods, target), Range: caret}
+	return fix, true
+}
+
+// listMissingKeys returns the localization keys a file uses with no base-language text, each once, in the order of
+// its problems. It leaves out the checks the user turned off. A file that cannot be read has none.
+func (lsp *Service) listMissingKeys(ws *workspace.Session, mods *index.Index, path string) []string {
+	diagnostics, _ := DiagnoseFile(ws, mods, path)
+	keys := lo.FilterMap(lsp.listEnabled(ws.ID, diagnostics), func(diagnostic Diagnostic, _ int) (string, bool) {
+		fact, ok := keyFacts[diagnostic.Code]
+		return diagnostic.Facts[fact], ok
+	})
+	return lo.Uniq(keys)
 }
 
 // buildReferenceFix returns the fix for a reference nothing defines: a change to the nearest name its database defines.

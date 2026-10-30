@@ -71,7 +71,8 @@ type FileText struct {
 	Place Place      `json:"place"`
 	Text  files.Text `json:"text"`
 	// Draft is the editor's unsaved text of the file. It is "" if there is none or it matches the disk.
-	Draft string `json:"draft"`
+	Draft  string `json:"draft"`
+	Binary bool   `json:"binary"` // the file is not text, so it has no text
 }
 
 // A Child is one entry in a folder listing.
@@ -400,8 +401,10 @@ func (wsp *Service) CreateMod(workspaceID, dir, name, language string) (Mod, err
 	if err != nil {
 		return Mod{}, err
 	}
-	if err := createLocalization(row, folder, name, language); err != nil {
-		return Mod{}, err
+	if file, ok := FindLocalizationFile(row, folder, name, language); ok {
+		if err := createLocalization(file); err != nil {
+			return Mod{}, err
+		}
 	}
 	return wsp.AddMod(workspaceID, folder)
 }
@@ -657,19 +660,23 @@ func (wsp *Service) Launch() error {
 	return nil
 }
 
-// Read returns a file's text, its place in the workspace and the editor's draft of it. It returns an error if no
-// workspace is open or the file cannot be read.
+// Read returns a file's text, its place in the workspace and the editor's draft of it. A file that is not text comes
+// back as binary, with no text. It returns an error if no workspace is open or the file cannot be read.
 func (wsp *Service) Read(path string) (FileText, error) {
 	session, err := wsp.Session()
 	if err != nil {
 		return FileText{}, err
 	}
+	place := session.Locate(session.Mods.Load(), path)
 	text, err := files.ReadText(path)
+	if errors.Is(err, files.ErrBinary) {
+		return FileText{Place: place, Binary: true}, nil
+	}
 	draft, open := session.LookupBuffer(path)
 	if !open || draft == text.Text {
 		draft = ""
 	}
-	return FileText{Place: session.Locate(session.Mods.Load(), path), Text: text, Draft: draft}, err
+	return FileText{Place: place, Text: text, Draft: draft}, err
 }
 
 // ReadHeader returns an image file's header. It returns an error if the file is not an image in the open workspace.
@@ -691,6 +698,44 @@ func (wsp *Service) Write(path string, text files.Text) error {
 		return err
 	}
 	return files.WriteText(path, text)
+}
+
+// WriteBytes writes a file's bytes, making its folder if it is missing. The watcher sends fs:changed once the index
+// has the file. It returns an error for a file outside the workspace's mods.
+//
+//wails:ignore
+func (wsp *Service) WriteBytes(path string, bytes []byte) error {
+	if _, err := wsp.findWritable(path); err != nil {
+		return err
+	}
+	return files.WriteAtomic(path, bytes)
+}
+
+// CreateCopy copies a file of the game or of another mod to the same place in a mod, and returns the copy's path. It
+// returns an error if no workspace is open, the mod is not in it or has no folder, the file is under none of its
+// roots, or the mod has a file there already.
+func (wsp *Service) CreateCopy(path, modID string) (string, error) {
+	session, err := wsp.Session()
+	if err != nil {
+		return "", err
+	}
+	mod, ok := wsp.LookupMod(modID)
+	if !ok || mod.Broken {
+		return "", fmt.Errorf("the mod %s is not in the workspace or has no folder", modID)
+	}
+	place := session.Locate(session.Mods.Load(), path)
+	if place.Root == "" {
+		return "", fmt.Errorf("%s is outside the workspace", path)
+	}
+	target := files.Join(mod.Dir, place.Rel)
+	if files.IsFile(target) {
+		return "", fmt.Errorf("%s has %s already", session.DescribeMod(modID), place.Rel)
+	}
+	bytes, err := os.ReadFile(path)
+	if err != nil {
+		return "", err
+	}
+	return target, wsp.WriteBytes(target, bytes)
 }
 
 // findWritable returns the open session if every file or folder is in one of its mods. It returns an error if no

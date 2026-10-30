@@ -9,9 +9,9 @@ holds the `*Service` and asks it for the session at each call.
 
 | file | holds |
 |---|---|
-| `workspace.go` | `FileChange`, `Service`, `State`, `Scanning`, `FileText`, `Child`; the events; the installs (`ListGames`, `ListInstalls`, `ListReadyInstalls`, `DetectInstalls`, `AddInstall`, `UpdateInstall`, `ListLanguages`, `DeleteInstall`, `RescanInstall`); `ResetData`; the workspaces (`ListWorkspaces`, `CreateWorkspace`, `UpdateWorkspace`, `DeleteWorkspace`); the mods (`AddMod`, `ListMods`, `CreateMod`, `ResolveModFolder`, `RemoveMod`, `ReorderMods`, `ResetColors`, `UpdateMod`); `Open`, `Session`, `Close`, `State`, `LookupMod`, `ResolveFolder`; `Launch`; the files (`Read`, `ReadHeader`, `Write`, `ListFolder`, `ListRoots`, `Create`, `Rename`, `Delete`, `Restore`, `Locate`); `ServeHTTP` |
-| `session.go` | the package comment; `Session`; the open: the install's caches, the mods' scan and the watcher; `ScanOrder`; `Close`; the trees and buffers (`LoadTree`, `SetText`, `CloseBuffer`, `LookupBuffer`); the texts (`LookupText`, `LookupTitle`, `FindTitleKey`); `FindStatement`; `FindDelay` (the delay written for a firing); `Rescan` |
-| `mod.go` | `Descriptor`, `Dependency` and `Mod`; `ReadDescriptor`, `ParseDescriptor` (the one reader of a descriptor's text, script or JSON), `WriteDescriptor`; `ListDependencies` (a mod's dependencies, all the way down), `Session.DescribeMod` (a mod's title), `MatchVersion` (whether a supported version fits the game's); `FindMod` (the mod a descriptor's dependency names, by its id or its name); `Mod.ResolveWorkshopID` (the record's Workshop id, else the descriptor's); a new mod's skeleton and its localization file; the thumbnail; `IsOlderRelease` |
+| `workspace.go` | `FileChange`, `Service`, `State`, `Scanning`, `FileText`, `Child`; the events; the installs (`ListGames`, `ListInstalls`, `ListReadyInstalls`, `DetectInstalls`, `AddInstall`, `UpdateInstall`, `ListLanguages`, `DeleteInstall`, `RescanInstall`); `ResetData`; the workspaces (`ListWorkspaces`, `CreateWorkspace`, `UpdateWorkspace`, `DeleteWorkspace`); the mods (`AddMod`, `ListMods`, `CreateMod`, `ResolveModFolder`, `RemoveMod`, `ReorderMods`, `ResetColors`, `UpdateMod`); `Open`, `Session`, `Close`, `State`, `LookupMod`, `ResolveFolder`; `Launch`; the files (`Read`, `ReadHeader`, `Write`, `WriteBytes`, `CreateCopy`, `ListFolder`, `ListRoots`, `Create`, `Rename`, `Delete`, `Restore`, `Locate`); `ServeHTTP` |
+| `session.go` | the package comment; `Session`; the open: the install's caches, the mods' scan and the watcher; `ScanOrder`; `Close`; the trees and buffers (`LoadTree`, `SetText`, `CloseBuffer`, `LookupBuffer`); the texts (`LookupText`, `LookupTitle` with a concept's and a message's title keys, `FindTitleKey`, `FindTextKey`); `FindStatement`; `Rescan` |
+| `mod.go` | `Descriptor`, `Dependency` and `Mod`; `ReadDescriptor`, `ParseDescriptor` (the one reader of a descriptor's text, script or JSON), `WriteDescriptor`; `ListDependencies` (a mod's dependencies, all the way down), `Session.DescribeMod` (a mod's title), `MatchVersion` (whether a supported version fits the game's); `FindMod` (the mod a descriptor's dependency names, by its id or its name); `Mod.ResolveWorkshopID` (the record's Workshop id, else the descriptor's); a new mod's skeleton and its localization file (`FindLocalizationFile`, `CreateLocalization`); the thumbnail; `IsOlderRelease` |
 | `locate.go` | `Place`, `Session.Locate`, `ListCopies`, `Session.ListRoots` |
 | `watcher.go` | `Watcher`: the folders it watches, the bursts of changes it reports together, and `Move` |
 
@@ -55,9 +55,13 @@ the game keeps: one in a replace folder wins, for the reason `replace-folder`, i
 wins first (`LocReplaceFolders`). Where several messages share the best place, in one form of the folder or outside
 it, which the game shows is not documented, so the first loaded comes back with the reason `unsettled`. The install
 keeps only the base language's texts, so a game file's text in another language is read from its file when asked.
-`LookupTitle` returns the text a definition is shown by: its title key's message, else the message named like it, and
-for a game concept the message of the game's concept prefix and its name. `FindStatement` returns the tree and the
-statement of a site.
+`LookupTitle` returns the text a definition is shown by: its title key's message, else the message named like it, for
+a game concept the message of the game's concept prefix and its name, and for a message the game's message title key
+(`game.Game.MessageTitle`, Vic3's `notification_<name>_name`). `FindTextKey` gives the key a statement writes under
+a text's key, such as `title` or `desc`: its value, or for a block such as a `first_valid` of triggered descs the first
+desc in it, which every block title of the three games holds, or a `text` written directly in it (`game.LabelKey`), as
+an option's triggered name holds (the events write `name = {` 3,071 times in CK3, 9 in Vic3, 25 in EU5). `FindStatement` returns the tree and the statement of a
+site.
 
 ## Places
 
@@ -71,9 +75,13 @@ given, which may be a folder an agent names.
 ## Files
 
 Every write is refused outside the workspace's mods and in the game's own files. `Write` writes a text in its own
-encoding, atomically. `Delete` moves a file or a folder into PMT's trash and returns where it went, for `Restore`.
+encoding, atomically, and `WriteBytes` writes bytes the same way for Go's callers. `CreateCopy` copies a file of the
+game or of another mod to the same place in a mod, the place the game needs for the copy to replace it, and refuses
+when the mod has a file there already. `Delete` moves a file or a folder into PMT's trash and returns where it went, for
+`Restore`.
 Deleting a mod's root folder removes the mod from the workspace too. `ListFolder` lists a folder with the place of each
-entry, and leaves out binary files unless the workspace shows them.
+entry, and leaves out binary files unless the workspace shows them. `Read` gives a file that is not text back as
+binary, with no text, so the editor says it cannot show it.
 
 `ServeHTTP` serves to the page the file a request names, whether or not a workspace is open, and refuses a path outside
 every recorded install and mod. A DDS or TGA is decoded to PNG first, since the browser cannot show it, and so is one
@@ -81,12 +89,13 @@ frame of a sprite sheet or one of a DDS's smaller mip levels.
 
 ## The watcher
 
-A `Watcher` watches the mods' folders and every folder made under them, the hidden ones left out but the coding
-agents' folders (`agentFolders`: `.claude`, `.codex`, `.github`), so that an agent's edit there reaches an open tab and
-the explorer. The first event of a burst starts a timer that later events do not reset. When it ends, every path the
-burst touched is reported once, as deleted where it no longer exists. The session scans the batch again through
-`index.Index.ScanFiles`, the agents' folders left out, since the index skips every dot folder, then emits `fs:changed`
-for each path. The watcher judges nothing.
+A `Watcher` watches the mods' folders and every folder made under them. It leaves out the hidden ones, but watches the
+dot folders the explorer shows files of (`watchedFolders`): the coding agents' `.claude`, `.codex` and `.github`, and
+the Workshop listing's `.workshop`. So an edit there reaches an open tab and the explorer. The first event of a burst
+starts a timer that later events do not reset. When it ends, every path the burst touched is reported once, as
+deleted where it no longer exists. The session scans the batch again through `index.Index.ScanFiles`, the watched
+dot folders left out, since the index skips every dot folder, then emits `fs:changed` for each path. The watcher
+judges nothing.
 
 `Rename` and `Delete` move through `Watcher.Move`. It stops watching the folders under the source while the move runs,
 since Windows refuses to move a folder while a folder inside it is watched, and watches them again if the move fails.
@@ -103,7 +112,10 @@ picture where the game keeps one, else the picture the descriptor names.
 
 `CreateMod` makes a new mod's skeleton: its folder, the folders the game expects, a descriptor that supports the game's
 release, a launcher file beside the folder for a game that lists mods by one, and a localization file that holds only
-its header. `IsOlderRelease` compares the release a mod supports with the game's, by the major and minor numbers alone.
+its header. `FindLocalizationFile` names that file: the mod's name as a slug, with the language's suffix, in the
+language's folder. lsp's quick fix adds keys to it in the base language. `CreateLocalization` is the one writer of a
+localization file's header: the fix calls it when the mod lacks the file, and Health's scaffold for a file it creates. `IsOlderRelease` compares the release a mod supports with the game's, by the major and minor numbers
+alone.
 
 ## Launch
 

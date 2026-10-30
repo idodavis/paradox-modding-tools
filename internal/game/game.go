@@ -101,6 +101,9 @@ type Game struct {
 	// DecisionEffects is the effects that run the decision they name, as its dumps declare them. With none, no effect
 	// fires a decision.
 	DecisionEffects []string `json:"-"`
+	// MessageTitle is the localization key of a message's title where the message writes none, with its name at %s.
+	// "" means the name itself.
+	MessageTitle string `json:"-"`
 
 	GUIHolders     map[string]string `json:"-"` // the window a window made from a type is laid out in, by the type
 	GUIUndeclared  []string          `json:"-"` // the widget types it draws though no file of its install declares them
@@ -261,6 +264,8 @@ var games = map[string]*Game{
 		Events:      Events{TypeKey: "type", TypeSuffix: "_event", DefaultScope: "country", Picture: vic3Picture},
 		EntryModes:  EntryModes,
 		ModeFolders: vic3ModeFolders,
+		// localization/english/content_304_l_english.yml:228 names arranged_accident_failed's title so
+		MessageTitle: "notification_%s_name",
 		// victoria3.exe matches the path part /replace/; no source says which form wins
 		LocReplaceFolders: []string{"localization/%s/replace", "localization/replace/%s"},
 		Placeholders: []Placeholder{

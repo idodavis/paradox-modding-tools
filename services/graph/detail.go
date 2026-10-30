@@ -2,6 +2,7 @@ package graph
 
 import (
 	"cmp"
+	"fmt"
 	"slices"
 	"strings"
 
@@ -10,61 +11,77 @@ import (
 	"paradox-modding-tools/internal/game"
 	"paradox-modding-tools/internal/index"
 	"paradox-modding-tools/internal/jomini"
+	"paradox-modding-tools/internal/loc"
 	"paradox-modding-tools/internal/schema"
 	"paradox-modding-tools/services/workspace"
 )
 
-// A Detail is what the page shows about one node: its text, its keys, its firings, its references and its pictures.
+// A Detail is what the page shows about one node: its texts, its keys, its firings and what it reads.
 type Detail struct {
-	Node       Node            `json:"node"`
-	Text       string          `json:"text"`     // the event's localized description
-	Language   string          `json:"language"` // the workspace's language, or the base language if it has none
-	Source     string          `json:"source"`   // the definition as written
-	Sections   []Section       `json:"sections"` // the keys at the top of the definition, except its options
-	Options    []Section       `json:"options"`  // the definition's option blocks
-	Fires      []Edge          `json:"fires"`
+	Node       Node            `json:"node"`              // its Fires are every firing it makes
+	Language   string          `json:"language"`          // the workspace's language, or the base language if it has none
+	Source     string          `json:"source"`            // the definition as written
+	Trigger    []Condition     `json:"trigger,omitempty"` // the definition's own trigger in words; nil for none
+	Sections   []Section       `json:"sections"`          // the keys at the top of the definition, except its options
+	Options    []Section       `json:"options"`           // the definition's option blocks
 	FiredBy    []Edge          `json:"firedBy"`
-	Linked     map[string]Node `json:"linked"` // the node at the other end of each of those firings, by its id
+	Linked     map[string]Node `json:"linked"` // the node at the other end of each of its firings, by its id
 	References []Node          `json:"references"`
-	Portraits  []string        `json:"portraits"`  // the characters the event's portraits show
-	Silhouette string          `json:"silhouette"` // the shape among the page's placeholders each portrait is drawn as
-	Background string          `json:"background"` // the path of the picture found; "" if there is none
+	Uses       map[string]int  `json:"uses"`           // how many times the definition reads each of its references, by the node's id
+	Rules      []Rule          `json:"rules"`          // the game rules the definition reads
+	Copy       *Node           `json:"copy,omitempty"` // the copy of its name that the definition hides; nil for none
 }
 
 // A Section is one key at the top of a definition, as the page shows it.
 type Section struct {
-	Key    string    `json:"key"`
-	Value  string    `json:"value"`            // a scalar as written, or a block on one line with inner blocks as { … }
-	Line   int       `json:"line"`             // counted from one
-	When   string    `json:"when,omitempty"`   // the block's own trigger on one line
-	Random bool      `json:"random,omitempty"` // one of the texts shows at random, else the first whose trigger holds
-	Texts  []Version `json:"texts,omitempty"`
-	Flags  []string  `json:"flags,omitempty"` // an option's keys written as yes
+	Key   string      `json:"key"`
+	Value string      `json:"value"`          // a scalar as written; "" for a block
+	Line  int         `json:"line"`           // counted from one
+	When  []Condition `json:"when,omitempty"` // a block's own limit, else its trigger, in words
+	Texts []Version   `json:"texts,omitempty"`
 }
 
 // A Version is one text a key can show, with the trigger that decides it.
 type Version struct {
-	Key     string `json:"key"` // its localization key
-	Text    string `json:"text"`
-	Missing bool   `json:"missing,omitempty"` // the detail's language has no message with its key
-	When    string `json:"when,omitempty"`    // its trigger on one line; "" if it always can
-	Line    int    `json:"line"`              // counted from one
+	Key      string        `json:"key"` // its localization key
+	Text     string        `json:"text"`
+	Segments []loc.Segment `json:"segments"`          // the text's pieces, each data call in words
+	Missing  bool          `json:"missing,omitempty"` // the detail's language has no message with its key
+	When     []Condition   `json:"when,omitempty"`    // its trigger in words; nil if it always can
+	Line     int           `json:"line"`              // counted from one
+}
+
+// A Rule is one game rule a definition reads, with its settings.
+type Rule struct {
+	ID      string       `json:"id"` // the rule's name
+	Options []RuleOption `json:"options"`
+}
+
+// A RuleOption is one setting of a game rule.
+type RuleOption struct {
+	Key         string `json:"key"`
+	Text        string `json:"text"`        // its localized name; "" if it has none
+	Description string `json:"description"` // its localized description; "" if it has none
+	Default     bool   `json:"default,omitempty"`
 }
 
 // The keys of an event that its sections read for their texts, their trigger and their split into options.
 const (
 	nameKey    = "name"
-	labelKey   = "text"
 	optionKey  = "option"
 	triggerKey = "trigger"
 )
+
+// callKind is the kind of a data call's segment once it holds the call's words.
+const callKind = "text"
 
 // textKeys are the keys at the top of a definition whose value is always a localization key. Each is shown as a text
 // even when no message has its key.
 var textKeys = []string{game.TitleKey, game.DescriptionKey}
 
-// BuildDetail returns the detail of the node with the given id, read from the definition the game keeps of it. It
-// returns an error if no workspace is open, if the game keeps no definition of the node, or if its file cannot be read.
+// BuildDetail returns the detail of the node with the given id, read from the definition the game keeps of it, with
+// the copy that definition hides. It returns an error if no workspace is open, if the game keeps no definition of the
+// node, or if its file cannot be read.
 func (gph *Service) BuildDetail(id string) (Detail, error) {
 	ws, err := gph.Workspace.Session()
 	if err != nil {
@@ -75,47 +92,46 @@ func (gph *Service) BuildDetail(id string) (Detail, error) {
 	if err != nil {
 		return Detail{}, err
 	}
+	detail, err := buildDetail(ws, mods, site)
+	if err != nil {
+		return Detail{}, err
+	}
+	if hidden, ok := findCopy(ws, mods, site); ok {
+		other := makeNode(ws, mods, hidden, 0)
+		detail.Copy = &other
+	}
+	return detail, nil
+}
+
+// buildDetail returns the detail of one definition, without the copy it hides. It returns an error if its file cannot
+// be read.
+func buildDetail(ws *workspace.Session, mods *index.Index, site index.Site) (Detail, error) {
 	tree, statement, err := ws.FindStatement(mods, site)
 	if err != nil {
 		return Detail{}, err
 	}
-	node := makeNode(ws, mods, site, 0)
-	text, _, _ := ws.LookupText(mods, findDescription(tree, statement))
+	node := drawNode(ws, mods, site, 0)
+	fires, firedBy := listFires(ws, mods, site, true), mods.ListFiredBy(ws.Schema, site, true)
+	node.Fires = makeEdges(ws, mods, fires)
 	sections := lo.Map(slices.Collect(tree.Children(statement)), func(child int32, _ int) Section {
 		return makeSection(ws, mods, tree, child)
 	})
 	sections, options := lo.FilterReject(sections, func(section Section, _ int) bool { return section.Key != optionKey })
-	fires, firedBy := listFires(ws, mods, site, true), mods.ListFiredBy(ws.Schema, site, true)
-	return Detail{
+	references, uses := listReferences(ws, mods, site)
+	detail := Detail{
 		Node:       node,
-		Text:       text,
 		Language:   resolveLanguage(ws),
 		Source:     tree.Text(tree.Statements[statement].Span),
+		Trigger:    findCondition(ws, tree, statement),
 		Sections:   sections,
 		Options:    options,
-		Fires:      makeEdges(ws, mods, fires),
 		FiredBy:    makeEdges(ws, mods, firedBy),
 		Linked:     listLinked(ws, mods, fires, firedBy),
-		References: listReferences(ws, mods, site),
-		Portraits:  listPortraits(tree, statement),
-		Silhouette: ws.Game.FindPlaceholder(schema.ToPhrase(game.GUI.PortraitKey)).Shape,
-		Background: findBackground(ws, mods, tree, statement),
-	}, nil
-}
-
-// findDescription returns the localization key of a definition's description. If the description is a block, it is the
-// first desc inside it that has a value. It returns "" if there is none.
-func findDescription(tree *jomini.Tree, statement int32) string {
-	child, ok := tree.FindChild(statement, game.DescriptionKey)
-	if !ok {
-		return ""
+		References: references,
+		Uses:       uses,
+		Rules:      listRules(ws, mods, tree, statement),
 	}
-	for position := child; position < tree.Statements[child].Last; position++ {
-		if description := tree.Statements[position]; tree.Text(description.Key) == game.DescriptionKey && !description.Value.IsEmpty() {
-			return tree.Unquoted(description.Value)
-		}
-	}
-	return ""
+	return detail, nil
 }
 
 // makeSection returns the section of one statement at the top of a definition, with its texts.
@@ -129,62 +145,29 @@ func makeSection(ws *workspace.Session, mods *index.Index, tree *jomini.Tree, st
 		}
 		return section
 	}
-	section.Value = makeValue(tree, statement)
-	section.When = findTrigger(tree, statement)
-	section.Texts, section.Random = listVersions(ws, mods, tree, statement)
-	if section.Key == optionKey {
-		section.Flags = lo.FilterMap(slices.Collect(tree.Children(statement)), func(child int32, _ int) (string, bool) {
-			flag := tree.Statements[child]
-			return tree.Text(flag.Key), tree.Text(flag.Value) == game.Bools[0]
-		})
-	}
+	section.When = findCondition(ws, tree, statement)
+	section.Texts = listVersions(ws, mods, tree, statement)
 	return section
 }
 
-// makeValue returns a block's statements on one line. A statement that is a block is its head and { … }, and the
-// block's own trigger is left out.
-func makeValue(tree *jomini.Tree, statement int32) string {
-	parts := []string{"{"}
-	for child := range tree.Children(statement) {
-		current := tree.Statements[child]
-		switch {
-		case !current.IsBlock():
-			parts = append(parts, toOneLine(tree.Text(current.Span)))
-		case tree.Text(current.Key) != triggerKey:
-			parts = append(parts, toOneLine(tree.Text(jomini.Span{Start: current.Span.Start, End: current.Block.Start}))+" { … }")
-		}
-	}
-	return strings.Join(append(parts, "}"), " ")
-}
-
-// findTrigger returns the trigger block a statement holds, on one line. It returns "" if there is none.
-func findTrigger(tree *jomini.Tree, statement int32) string {
-	trigger, ok := tree.FindChild(statement, triggerKey)
-	if !ok || !tree.Statements[trigger].IsBlock() {
-		return ""
-	}
-	return toOneLine(strings.TrimSuffix(strings.TrimPrefix(tree.Text(tree.Statements[trigger].Block), "{"), "}"))
-}
-
-// listVersions returns the texts a block can show in the order it writes them, and whether they show at random. A text
-// is a desc or a name, or a block with its own trigger that holds one. A first_valid or random_valid block holds more.
-func listVersions(ws *workspace.Session, mods *index.Index, tree *jomini.Tree, statement int32) (versions []Version, random bool) {
+// listVersions returns the texts a block can show in the order it writes them. A text is a desc or a name, or a block
+// with its own trigger that holds one. A first_valid or random_valid block holds several.
+func listVersions(ws *workspace.Session, mods *index.Index, tree *jomini.Tree, statement int32) []Version {
+	var versions []Version
 	for child := range tree.Children(statement) {
 		key := tree.Text(tree.Statements[child].Key)
 		row, _ := game.LookupKeyword(game.ShapeDescription, "", key)
 		switch {
 		case row.Shows == "leaf" || key == game.DescriptionKey || key == nameKey:
 			if version, ok := makeVersion(ws, mods, tree, child); ok {
-				version.When = findTrigger(tree, child)
+				version.When = findCondition(ws, tree, child)
 				versions = append(versions, version)
 			}
 		case row.Shows != "":
-			inner, innerRandom := listVersions(ws, mods, tree, child)
-			versions = append(versions, inner...)
-			random = random || innerRandom || row.Shows == "random"
+			versions = append(versions, listVersions(ws, mods, tree, child)...)
 		}
 	}
-	return versions, random
+	return versions
 }
 
 // makeVersion returns the text a statement shows. It returns false if the statement writes no localization key.
@@ -194,7 +177,7 @@ func makeVersion(ws *workspace.Session, mods *index.Index, tree *jomini.Tree, st
 		// a desc or text that is not found leaves 0, the file, which has no value
 		label, _ = tree.FindChild(statement, game.DescriptionKey)
 		if label == 0 {
-			label, _ = tree.FindChild(statement, labelKey)
+			label, _ = tree.FindChild(statement, game.LabelKey)
 		}
 	}
 	value := tree.Statements[label].Value
@@ -205,7 +188,67 @@ func makeVersion(ws *workspace.Session, mods *index.Index, tree *jomini.Tree, st
 	text, winner, ok := ws.LookupText(mods, key)
 	// a key that is no identifier is shown as written, so it misses nothing
 	missing := jomini.IsIdentifier(key) && (!ok || mods.Language(winner.Site) != resolveLanguage(ws))
-	return Version{Key: key, Text: text, Missing: missing, Line: toSourceLine(tree, tree.Statements[label].Key)}, true
+	return Version{
+		Key: key, Text: text, Segments: describeCalls(ws, mods, text), Missing: missing,
+		Line: toSourceLine(tree, tree.Statements[label].Key),
+	}, true
+}
+
+// describeCalls returns a text's pieces with each data call made its words, as the call's last step reads: a call that
+// names a customizable localization reads as the texts it can show, one that names any other definition as that
+// name, and any other call as its function. A call keeps its markup and has the kind callKind.
+func describeCalls(ws *workspace.Session, mods *index.Index, text string) []loc.Segment {
+	segments := loc.Segments(text, 0)
+	for position, segment := range segments {
+		call, ok := jomini.ParseCall(segment.Text, 0)
+		if segment.Markup != loc.MarkupCall || !ok || len(call.Steps) == 0 {
+			continue
+		}
+		step := call.Steps[len(call.Steps)-1]
+		segments[position].Text = cmp.Or(describeCustom(ws, mods, step), schema.DescribeStep(step, true))
+		segments[position].Kind = callKind
+	}
+	return segments
+}
+
+// describeCustom returns the texts a call's customizable localization can show, each once in the order written, joined
+// by slashes, such as "daughter/son". It returns "" for a call that names none, or one the workspace does not define.
+func describeCustom(ws *workspace.Session, mods *index.Index, step jomini.Step) string {
+	position := slices.Index(game.GUI.CallTargets[step.Text], game.CustomTexts.Database)
+	if position < 0 || position >= len(step.Arguments) || !step.Arguments[position].Quoted {
+		return ""
+	}
+	reference := schema.Reference{Database: game.CustomTexts.Database, Name: step.Arguments[position].Text}
+	winner, ok := mods.FindKept(ws.Schema, reference)
+	if !ok {
+		return ""
+	}
+	tree, statement, err := ws.FindStatement(mods, winner.Site)
+	if err != nil {
+		return ""
+	}
+	var texts []string
+	for child := range tree.Children(statement) {
+		key, ok := tree.FindChildValue(child, game.CustomTexts.Key)
+		if !ok || tree.Text(tree.Statements[child].Key) != game.CustomTexts.Block {
+			continue
+		}
+		text, _, _ := ws.LookupText(mods, key)
+		texts = append(texts, strings.TrimSpace(loc.ToPlain(loc.Segments(text, 0))))
+	}
+	return strings.Join(lo.Uniq(lo.Compact(texts)), "/")
+}
+
+// toTitle returns a text as the one line a player reads, each data call in its words. Its keys, formats, icons and
+// breaks are left out.
+func toTitle(ws *workspace.Session, mods *index.Index, text string) string {
+	var title strings.Builder
+	for _, segment := range describeCalls(ws, mods, text) {
+		if segment.Markup == loc.MarkupText || segment.Markup == loc.MarkupCall {
+			title.WriteString(segment.Text)
+		}
+	}
+	return strings.TrimSpace(title.String())
 }
 
 // resolveLanguage returns the language the detail shows its texts in: the workspace's own, or the game's base language
@@ -217,24 +260,6 @@ func resolveLanguage(ws *workspace.Session) string {
 // toSourceLine returns the line of a span in a tree, counted from one.
 func toSourceLine(tree *jomini.Tree, span jomini.Span) int {
 	return tree.Lines.ToPosition(span.Start).Line + 1
-}
-
-// toOneLine returns a text with every run of white space made one space.
-func toOneLine(text string) string {
-	return strings.Join(strings.Fields(text), " ")
-}
-
-// makeEdge returns the edge of one firing, with where its reference is written.
-func makeEdge(ws *workspace.Session, mods *index.Index, fire index.Fire) Edge {
-	return Edge{
-		From: toID(mods, fire.Source), To: toID(mods, fire.Target), Days: ws.FindDelay(mods, fire.Use), Via: listVia(mods, fire),
-		Place: ws.Locate(mods, mods.File(fire.Use).Path), Line: toLine(mods, fire.Use),
-	}
-}
-
-// makeEdges returns the edges of some firings, each edge once.
-func makeEdges(ws *workspace.Session, mods *index.Index, fires []index.Fire) []Edge {
-	return lo.UniqBy(lo.Map(fires, func(fire index.Fire, _ int) Edge { return makeEdge(ws, mods, fire) }), toKey)
 }
 
 // listLinked returns the nodes at the other end of a node's firings, by id: the targets of what it fires and the
@@ -252,29 +277,40 @@ func listLinked(ws *workspace.Session, mods *index.Index, fires, firedBy []index
 	return linked
 }
 
-// listReferences returns the nodes a node's definitions refer to, each once, in the order first written.
-func listReferences(ws *workspace.Session, mods *index.Index, site index.Site) []Node {
-	references := []Node{}
-	seen := map[schema.Reference]bool{}
-	for _, part := range listActing(ws, mods, site) {
-		occurrences := mods.Occurrences[part.File]
-		for position := part.Occurrence + 1; int(position) < len(occurrences) && isInside(occurrences, position, part.Occurrence); position++ {
-			if occurrences[position].Role != index.RoleRefers {
-				continue
-			}
-			use := index.Site{File: part.File, Occurrence: position}
-			for _, reference := range index.ListCallees(mods.ToReference(use)) {
-				if seen[reference] {
-					continue
-				}
-				if node, ok := findReference(ws, mods, reference, use); ok {
-					seen[reference] = true
-					references = append(references, node)
-				}
+// listReferences returns the nodes a node's definitions refer to, each once, in the order first written, and how many
+// times each is read, by the node's id.
+func listReferences(ws *workspace.Session, mods *index.Index, site index.Site) ([]Node, map[string]int) {
+	references, uses := []Node{}, map[string]int{}
+	ids := map[schema.Reference]string{}
+	for _, use := range listUses(ws, mods, site) {
+		for _, reference := range index.ListCallees(mods.ToReference(use)) {
+			if id, seen := ids[reference]; seen {
+				uses[id]++
+			} else if node, ok := findReference(ws, mods, reference, use); ok {
+				ids[reference] = node.ID
+				references = append(references, node)
+				uses[node.ID]++
 			}
 		}
 	}
-	return references
+	return references, uses
+}
+
+// listUses returns the references written inside a node's definitions, in the order written.
+func listUses(ws *workspace.Session, mods *index.Index, site index.Site) []index.Site {
+	var uses []index.Site
+	for _, part := range listActing(ws, mods, site) {
+		occurrences := mods.Occurrences[part.File]
+		for position := part.Occurrence + 1; int(position) < len(occurrences); position++ {
+			if !isInside(occurrences, position, part.Occurrence) {
+				break
+			}
+			if occurrences[position].Role == index.RoleRefers {
+				uses = append(uses, index.Site{File: part.File, Occurrence: position})
+			}
+		}
+	}
+	return uses
 }
 
 // isInside reports whether an occurrence is inside a definition.
@@ -299,112 +335,53 @@ func findReference(ws *workspace.Session, mods *index.Index, reference schema.Re
 	return makeNode(ws, mods, winner.Site, 0), true
 }
 
-// listPortraits returns the characters an event's portraits show. It returns an empty list if the event shows none.
-func listPortraits(tree *jomini.Tree, statement int32) []string {
-	portraits := []string{}
-	for child := range tree.Children(statement) {
-		key := tree.Text(tree.Statements[child].Key)
-		if !lo.SomeBy(game.EventPortraits.Suffixes, func(suffix string) bool { return strings.HasSuffix(key, suffix) }) {
+// listRules returns the game rules a definition reads, each once, in the order first read. A setting that no rule the
+// game keeps holds is left out.
+func listRules(ws *workspace.Session, mods *index.Index, tree *jomini.Tree, statement int32) []Rule {
+	rules := []Rule{}
+	for child := statement + 1; child < tree.Statements[statement].Last; child++ {
+		if tree.Text(tree.Statements[child].Key) != game.GameRules.Trigger {
 			continue
 		}
-		portrait, ok := child, true
-		if tree.Statements[child].Value.IsEmpty() {
-			portrait, ok = tree.FindChild(child, game.EventPortraits.Character)
-		}
-		if ok && !tree.Statements[portrait].Value.IsEmpty() {
-			portraits = append(portraits, tree.Unquoted(tree.Statements[portrait].Value))
+		rule, ok := findRule(ws, mods, tree.Unquoted(tree.Statements[child].Value))
+		if ok && !slices.ContainsFunc(rules, func(other Rule) bool { return other.ID == rule.ID }) {
+			rules = append(rules, rule)
 		}
 	}
-	return portraits
+	return rules
 }
 
-// findBackground returns the path of the picture an event shows as its background. It returns "" if there is none.
-func findBackground(ws *workspace.Session, mods *index.Index, tree *jomini.Tree, statement int32) string {
-	picture := ws.Game.Events.Picture
-	if path, ok := mods.ResolveTexture(lo.FirstOr(listValues(tree, statement, picture.FileKey), "")); ok {
-		return path
-	}
-	for _, chain := range picture.Chains {
-		values := listValues(tree, statement, lo.FirstOr(chain.Steps, game.PictureStep{}).Key)
-		if path := resolveChain(ws, mods, chain, values); path != "" {
-			return path
-		}
-	}
-	return ""
-}
-
-// resolveChain returns the path of the picture a chain of definitions ends in, or "" if there is none.
-func resolveChain(ws *workspace.Session, mods *index.Index, chain game.PictureChain, values []string) string {
-	var tree *jomini.Tree
-	var statement int32
-	for position, step := range chain.Steps {
-		if position > 0 {
-			values = listValues(tree, statement, step.Key)
-		}
-		site, ok := findHop(ws, mods, step, values)
-		if !ok {
-			return ""
-		}
-		var err error
-		if tree, statement, err = ws.FindStatement(mods, site); err != nil {
-			return ""
-		}
-	}
-	if path, ok := mods.ResolveTexture(lo.FirstOr(listValues(tree, statement, chain.FileKey), "")); ok || chain.Fallback == "" {
-		return path
-	}
-	last := game.PictureStep{Database: lo.LastOr(chain.Steps, game.PictureStep{}).Database}
-	fallback, ok := findHop(ws, mods, last, listValues(tree, statement, chain.Fallback))
-	if !ok {
-		return ""
-	}
-	tree, statement, err := ws.FindStatement(mods, fallback)
-	if err != nil {
-		return ""
-	}
-	path, _ := mods.ResolveTexture(lo.FirstOr(listValues(tree, statement, chain.FileKey), ""))
-	return path
-}
-
-// findHop returns the definition a hop leads to from the given values. It returns false if there is none.
-func findHop(ws *workspace.Session, mods *index.Index, step game.PictureStep, values []string) (index.Site, bool) {
-	if len(values) == 0 {
-		return index.Site{}, false
-	}
-	if step.Match == "" {
-		winner, ok := mods.FindKept(ws.Schema, schema.Reference{Database: step.Database, Name: values[0]})
-		return winner.Site, ok
-	}
-	for _, winner := range mods.ListKept(ws.Schema, step.Database) {
+// findRule returns the game rule the game keeps that holds a setting, with its settings. It returns false if no such
+// rule holds it.
+func findRule(ws *workspace.Session, mods *index.Index, setting string) (Rule, bool) {
+	for _, winner := range mods.ListKept(ws.Schema, game.GameRules.Database) {
 		tree, statement, err := ws.FindStatement(mods, winner.Site)
-		if err == nil && lo.Every(listValues(tree, statement, step.Match), values) {
-			return winner.Site, true
+		if err != nil {
+			continue
+		}
+		if child, ok := tree.FindChild(statement, setting); ok && tree.Statements[child].IsBlock() {
+			return makeRule(ws, mods, tree, statement), true
 		}
 	}
-	return index.Site{}, false
+	return Rule{}, false
 }
 
-// listValues returns the values written at a key path in a definition. The path is keys joined by slashes. It returns
-// nil if the path is empty or the key is not written.
-func listValues(tree *jomini.Tree, statement int32, path string) []string {
-	if path == "" {
-		return nil
-	}
-	for _, key := range strings.Split(path, "/") {
-		child, ok := tree.FindChild(statement, key)
-		if !ok {
-			return nil
-		}
-		statement = child
-	}
-	if value := tree.Statements[statement].Value; !value.IsEmpty() {
-		return []string{tree.Unquoted(value)}
-	}
-	var values []string
+// makeRule returns the game rule a statement defines, with its settings in the order written and its default marked:
+// the setting it names as its default, else its first.
+func makeRule(ws *workspace.Session, mods *index.Index, tree *jomini.Tree, statement int32) Rule {
+	preset, hasDefault := tree.FindChildValue(statement, game.GameRules.DefaultKey)
+	options := []RuleOption{}
 	for child := range tree.Children(statement) {
-		if value := tree.Statements[child].Value; !value.IsEmpty() {
-			values = append(values, tree.Unquoted(value))
+		key := tree.Text(tree.Statements[child].Key)
+		if !tree.Statements[child].IsBlock() || key == game.GameRules.CategoriesKey {
+			continue
 		}
+		text, _, _ := ws.LookupText(mods, fmt.Sprintf(game.GameRules.Setting, key))
+		description, _, _ := ws.LookupText(mods, fmt.Sprintf(game.GameRules.Description, key))
+		options = append(options, RuleOption{Key: key, Text: text, Description: description, Default: key == preset})
 	}
-	return values
+	if !hasDefault && len(options) > 0 {
+		options[0].Default = true
+	}
+	return Rule{ID: tree.Text(tree.Statements[statement].Key), Options: options}
 }

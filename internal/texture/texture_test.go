@@ -2,16 +2,21 @@ package texture
 
 import (
 	"encoding/binary"
+	"errors"
 	"fmt"
 	"image"
 	"image/color"
+	"image/draw"
+	"math/bits"
 	"os"
 	"path/filepath"
 	"runtime"
 	"slices"
 	"strings"
 	"sync"
+	"sync/atomic"
 	"testing"
+	"time"
 
 	"golang.org/x/sync/errgroup"
 )
@@ -158,9 +163,9 @@ var ddsCases = []struct {
 	{"BC7 mode 6", buildDDSHeader(4, 4, 1, "BC7"), encodeDX10(98), bc7Mode6, bc7Fade},
 	{"BC7 mode 1", buildDDSHeader(4, 4, 1, "BC7"), encodeDX10(98), bc7Mode1, bc7Halves},
 	{"RGBA8", buildDDSHeader(2, 2, 1, ""),
-		encodePixelFormat(ddsRGB|1, "", 32, [4]uint32{0xff, 0xff00, 0xff0000, 0xff000000}), rgba8, rgba8Colors},
+		encodePixelFormat(ddsRGB|ddsAlphaPixels, "", 32, [4]uint32{0xff, 0xff00, 0xff0000, 0xff000000}), rgba8, rgba8Colors},
 	{"BGRA8", buildDDSHeader(2, 2, 1, ""),
-		encodePixelFormat(ddsRGB|1, "", 32, [4]uint32{0xff0000, 0xff00, 0xff, 0xff000000}),
+		encodePixelFormat(ddsRGB|ddsAlphaPixels, "", 32, [4]uint32{0xff0000, 0xff00, 0xff, 0xff000000}),
 		[]byte{0, 0, 255, 255, 0, 255, 0, 128, 255, 0, 0, 0, 255, 255, 255, 255}, rgba8Colors},
 	{"RGB8", buildDDSHeader(2, 2, 1, ""), encodePixelFormat(ddsRGB, "", 24, [4]uint32{0xff0000, 0xff00, 0xff, 0}),
 		[]byte{0, 0, 255, 0, 255, 0, 255, 0, 0, 255, 255, 255}, [][4]uint8{red, green, blue, white}},
@@ -258,16 +263,15 @@ var decodeCases = []struct {
 // encodeDDS writes a DDS file in memory: the header for the given one, the given pixel format with any DX10
 // header it carries, then the data.
 func encodeDDS(header Header, pixelFormat, data []byte) []byte {
-	file := make([]byte, 128)
+	file := make([]byte, ddsDataOffset)
 	copy(file, ddsMagic)
-	binary.LittleEndian.PutUint32(file[4:], 124)
-	// The flags for caps, height, width, the pixel format and the mipmap count.
-	binary.LittleEndian.PutUint32(file[8:], 0x21007)
-	binary.LittleEndian.PutUint32(file[12:], uint32(header.Height))
-	binary.LittleEndian.PutUint32(file[16:], uint32(header.Width))
-	binary.LittleEndian.PutUint32(file[28:], uint32(header.Mipmaps))
-	copy(file[76:], pixelFormat[:32])
-	return slices.Concat(file, pixelFormat[32:], data)
+	binary.LittleEndian.PutUint32(file[ddsSizeOffset:], ddsHeaderSize)
+	binary.LittleEndian.PutUint32(file[ddsFlagsOffset:], ddsHeaderFlags)
+	binary.LittleEndian.PutUint32(file[ddsHeightOffset:], uint32(header.Height))
+	binary.LittleEndian.PutUint32(file[ddsWidthOffset:], uint32(header.Width))
+	binary.LittleEndian.PutUint32(file[ddsMipmapsOffset:], uint32(header.Mipmaps))
+	copy(file[ddsFormatOffset:], pixelFormat[:ddsFormatSize])
+	return slices.Concat(file, pixelFormat[ddsFormatSize:], data)
 }
 
 // buildDDSHeader is the header of a DDS of the given size, mipmap count and compression.
@@ -277,13 +281,13 @@ func buildDDSHeader(width, height, mipmaps int, compression string) Header {
 
 // encodePixelFormat writes a DDS pixel format: its flags, its FourCC, its bits per pixel and its masks.
 func encodePixelFormat(flags uint32, fourCC string, depth uint32, masks [4]uint32) []byte {
-	format := make([]byte, 32)
-	binary.LittleEndian.PutUint32(format, 32)
-	binary.LittleEndian.PutUint32(format[4:], flags)
-	copy(format[8:], fourCC)
-	binary.LittleEndian.PutUint32(format[12:], depth)
+	format := make([]byte, ddsFormatSize)
+	binary.LittleEndian.PutUint32(format, ddsFormatSize)
+	binary.LittleEndian.PutUint32(format[ddsFormatFlagsOffset-ddsFormatOffset:], flags)
+	copy(format[ddsFourCCOffset-ddsFormatOffset:], fourCC)
+	binary.LittleEndian.PutUint32(format[ddsDepthOffset-ddsFormatOffset:], depth)
 	for i, mask := range masks {
-		binary.LittleEndian.PutUint32(format[16+4*i:], mask)
+		binary.LittleEndian.PutUint32(format[ddsMasksOffset-ddsFormatOffset+4*i:], mask)
 	}
 	return format
 }
@@ -516,20 +520,7 @@ func TestDecodeInstall(t *testing.T) {
 // decodeInstall decodes every image of one game's install in parallel and reports what is refused, or skips
 // when the game's variable is not set.
 func decodeInstall(t *testing.T, game string) {
-	root := os.Getenv("PMT_TEST_INSTALL_" + game)
-	if root == "" {
-		t.Skipf("PMT_TEST_INSTALL_%s is not set", game)
-	}
-	var paths []string
-	err := filepath.WalkDir(root, func(path string, entry os.DirEntry, err error) error {
-		if extension := strings.ToLower(filepath.Ext(path)); extension == ".dds" || extension == ".tga" {
-			paths = append(paths, path)
-		}
-		return err
-	})
-	if err != nil {
-		t.Fatal(err)
-	}
+	paths := listInstall(t, game, ".dds", ".tga")
 	var group errgroup.Group
 	var mutex sync.Mutex
 	unknown, failed := 0, 0
@@ -556,6 +547,26 @@ func decodeInstall(t *testing.T, game string) {
 	t.Logf("%s: %d images, %d of formats PMT does not know, %d failed", game, len(paths), unknown, failed)
 }
 
+// listInstall returns the files of one game's install with the given extensions, in any case, or skips when the
+// game's variable is not set.
+func listInstall(t *testing.T, game string, extensions ...string) []string {
+	root := os.Getenv("PMT_TEST_INSTALL_" + game)
+	if root == "" {
+		t.Skipf("PMT_TEST_INSTALL_%s is not set", game)
+	}
+	var paths []string
+	err := filepath.WalkDir(root, func(path string, entry os.DirEntry, err error) error {
+		if slices.Contains(extensions, strings.ToLower(filepath.Ext(path))) {
+			paths = append(paths, path)
+		}
+		return err
+	})
+	if err != nil {
+		t.Fatal(err)
+	}
+	return paths
+}
+
 // decodeFile decodes one image and checks its size against the header read from its first bytes. It returns
 // whether PMT knows the file's format, and the error if the file does not decode or the sizes disagree.
 func decodeFile(path string) (bool, error) {
@@ -576,4 +587,87 @@ func decodeFile(path string) (bool, error) {
 		return true, fmt.Errorf("decoded %d by %d, header says %d by %d", size.X, size.Y, header.Width, header.Height)
 	}
 	return true, nil
+}
+
+// TestEncodeInstall writes every PNG of each real install as a BC3 DDS with every mip level and decodes each level
+// again, and checks that an uncompressed DDS keeps its pixels. It runs only where PMT_TEST_INSTALL_CK3, _VIC3 or
+// _EU5 names the install.
+func TestEncodeInstall(t *testing.T) {
+	if testing.Short() {
+		t.Skip("real installs are skipped under -short")
+	}
+	for _, game := range []string{"CK3", "VIC3", "EU5"} {
+		t.Run(game, func(t *testing.T) {
+			encodeInstall(t, game)
+		})
+	}
+}
+
+// encodeInstall encodes every PNG of one game's install, two at a time since a terrain map takes hundreds of
+// megabytes, printing its progress, or skips when the game's variable is not set.
+func encodeInstall(t *testing.T, game string) {
+	paths := listInstall(t, game, ".png")
+	start := time.Now()
+	var group errgroup.Group
+	var progress atomic.Int64
+	group.SetLimit(2)
+	for _, path := range paths {
+		group.Go(func() error {
+			if err := encodeFile(path); err != nil {
+				t.Errorf("%s: %v", path, err)
+			}
+			if count := progress.Add(1); count%100 == 0 {
+				t.Logf("%s: %d of %d pictures, %s", game, count, len(paths), time.Since(start).Round(time.Second))
+			}
+			return nil
+		})
+	}
+	_ = group.Wait()
+	t.Logf("%s: %d pictures in %s", game, len(paths), time.Since(start).Round(time.Second))
+}
+
+// encodeFile writes one picture as a BC3 DDS with every mip level, and as an uncompressed DDS of one level. It
+// returns an error if a level does not decode at its size, or the uncompressed picture does not decode to the same
+// pixels. A picture past Direct3D's limit on a side, which no DDS holds, is passed over.
+func encodeFile(path string) error {
+	file, err := os.ReadFile(path)
+	if err != nil {
+		return err
+	}
+	picture, err := Decode(file, 0)
+	if err != nil {
+		return err
+	}
+	size := picture.Bounds().Size()
+	if checkSides(size.X, size.Y) != nil {
+		return nil
+	}
+	compressed, err := EncodeDDS(picture, true, true)
+	if err != nil {
+		return err
+	}
+	for level := range bits.Len(uint(max(size.X, size.Y))) {
+		decoded, err := Decode(compressed, level)
+		if err != nil {
+			return fmt.Errorf("level %d: %w", level, err)
+		}
+		if decoded.Bounds().Size() != size {
+			return fmt.Errorf("level %d is %v, want %v", level, decoded.Bounds().Size(), size)
+		}
+		size = image.Pt(max(1, size.X/2), max(1, size.Y/2))
+	}
+	uncompressed, err := EncodeDDS(picture, false, false)
+	if err != nil {
+		return err
+	}
+	decoded, err := Decode(uncompressed, 0)
+	if err != nil {
+		return err
+	}
+	want := image.NewNRGBA(image.Rectangle{Max: picture.Bounds().Size()})
+	draw.Draw(want, want.Rect, picture, picture.Bounds().Min, draw.Src)
+	if got, ok := decoded.(*image.NRGBA); !ok || !slices.Equal(got.Pix, want.Pix) {
+		return errors.New("the uncompressed DDS does not decode to the picture's pixels")
+	}
+	return nil
 }

@@ -1,6 +1,6 @@
 <!--
-  The graph canvas. It draws the laid-out graph with a minimap, reports a node's click and double click, and exports
-  the picture as SVG or PNG.
+  The canvas the graph draws on: its columns and wires, with a minimap, zoom buttons and a legend. It reports a node's
+  click and double click, and exports the picture as SVG or PNG.
 -->
 <script setup lang="ts">
 import { computed, useTemplateRef } from "vue";
@@ -11,84 +11,69 @@ import {
   getBezierPath,
   getRectOfNodes,
   useVueFlow,
+  type Edge as FlowEdge,
   type EdgeProps,
   type FlowEvents,
   type GraphNode as FlowNode,
+  type Node as FlowInput,
 } from "@vue-flow/core";
 import { useResizeObserver } from "@vueuse/core";
 import { MiniMap } from "@vue-flow/minimap";
 import "@vue-flow/core/dist/style.css";
 import "@vue-flow/minimap/dist/style.css";
 import { toPng, toSvg } from "html-to-image";
-import type { Graph, Node } from "@services/graph/models";
 import GraphNode from "./GraphNode.vue";
-import { useEventGraph } from "./layout";
+import type { Drawn } from "./layout";
 
-const { graph, selected, full = false } = defineProps<{ graph: Graph; selected: string; full?: boolean }>();
+const {
+  nodes,
+  edges,
+  view,
+  root,
+  full = false,
+  labels = {},
+} = defineProps<{
+  nodes: FlowInput[];
+  edges: FlowEdge[];
+  /** What the canvas shows; the view is fitted again when it changes, such as for another root. */
+  view: string;
+  root: string;
+  full?: boolean;
+  labels?: Record<string, string | undefined>;
+}>();
 const emit = defineEmits<{ select: [id: string]; draw: [id: string] }>();
 
 type Point = { x: number; y: number };
 
 /** The room left around the graph in an exported picture. */
 const MARGIN = 24;
+/** The legend: a sample's classes and its words. */
 const LEGEND = [
-  { label: "Event", sample: "h-3 w-5.5 rounded-xs border border-accented bg-elevated" },
-  { label: "On action", sample: "h-2.5 w-5 rounded-full border border-accented bg-muted" },
-  { label: "Effect or trigger", sample: "h-2.5 w-5 rounded-full border border-accented" },
-  { label: "Other entry", sample: "h-2.5 w-5 rounded-full border border-(--fg-3)" },
+  { label: "Event", sample: "h-3 w-5.5 rounded-xs border border-(--line-2) bg-(--bg-3)" },
+  {
+    label: "Hidden event",
+    sample: "h-3 w-5.5 rounded-xs bg-[repeating-linear-gradient(135deg,var(--bg-2)_0_3px,var(--bg-1)_3px_6px)]",
+  },
+  { label: "Message", sample: "h-3 w-5.5 rounded-[3px] bg-(--bg-2)" },
+  { label: "On action", sample: "h-2.5 w-5 rounded-full border border-(--line-2) bg-(--bg-2)" },
+  { label: "A branch's port", sample: "size-2.25 rounded-full border-[1.5px] border-(--fg-3)" },
   { label: "Root", sample: "h-2.5 w-5 rounded-full border border-primary" },
-  { label: "Selected path", sample: "h-0.5 w-3.5 bg-secondary" },
+  { label: "Selected path", sample: "h-0.5 w-3.5 bg-(--link)" },
 ];
 
-const flow = useEventGraph(() => graph);
 const { fitView, getNodes, viewport, zoomIn, zoomOut } = useVueFlow("event-graph");
 const canvas = useTemplateRef("canvas");
-const zoomedOut = computed(() => viewport.value.zoom < 0.7);
 const zoom = computed(() => Math.round(viewport.value.zoom * 100));
 
-const lit = computed(() => {
-  if (!selected) return null;
-  const parents = new Map((graph.nodes ?? []).map((node) => [node.id, node.parent]));
-  const route = new Set([selected]);
-  for (let id = parents.get(selected); id; id = parents.get(id)) route.add(id);
-  const near = new Set(route);
-  for (const edge of graph.edges ?? []) {
-    if (edge.from === selected) near.add(edge.to);
-    if (edge.to === selected) near.add(edge.from);
-  }
-  return { route, near };
-});
-const nodes = computed(() =>
-  flow.nodes.map((node) =>
-    node.type === "graph"
-      ? {
-          ...node,
-          class: [node.class, node.id === selected && "selected", lit.value && !lit.value.near.has(node.id) && "dim"],
-        }
-      : node,
-  ),
-);
-const edges = computed(() =>
-  flow.edges.map((edge) => {
-    const touches = [edge.source, edge.target].includes(selected);
-    const onRoute = lit.value?.route.has(edge.source) && lit.value.route.has(edge.target);
-    return {
-      ...edge,
-      label: touches ? edge.label : "",
-      class: onRoute || touches ? "lit" : [lit.value && "dim", edge.data.back && "back"],
-    };
-  }),
-);
-
-let lastRoot = "";
+let lastView = "";
 // the view is fitted again as the canvas changes size, until the user moves it
 let following = true;
 useResizeObserver(canvas, () => following && void fit());
 
-/** Fits the graph once for each root. The same root with other filters keeps the view. */
+/** Fits the canvas once for each view. The same view with other filters keeps where the user moved it. */
 function fitOnce(): void {
-  if (lastRoot === graph.root) return;
-  lastRoot = graph.root;
+  if (lastView === view) return;
+  lastView = view;
   following = true;
   void fit();
 }
@@ -98,7 +83,7 @@ function stopFollowing({ event }: FlowEvents["moveStart"]): void {
   if ("sourceEvent" in event && event.sourceEvent) following = false;
 }
 
-/** Fits the whole graph in the canvas. */
+/** Fits everything drawn in the canvas. */
 function fit(): Promise<boolean> {
   return fitView({ padding: 0.15, maxZoom: 1 });
 }
@@ -126,18 +111,23 @@ function buildPath(edge: EdgeProps): { path: string; x: number; y: number } {
 
 /** Returns the minimap's color for a node: the accent for the root, a quiet line for the rest. */
 function resolveColor(node: FlowNode): string {
-  return node.id === graph.root ? "var(--accent)" : "var(--line-2)";
+  return node.id === root ? "var(--accent)" : "var(--line-2)";
 }
 
-/** Saves the whole graph as a picture, drawn by the given function, in a file with the given extension. */
+/** Reports a click on a node: an entry is selected, and a column's head does nothing. */
+function click(node: FlowNode): void {
+  if (node.type === "graph") emit("select", node.id);
+}
+
+/** Saves the whole canvas as a picture, drawn by the given function, in a file with the given extension. */
 async function save(draw: typeof toSvg, extension: string): Promise<void> {
-  const viewport = canvas.value?.querySelector<HTMLElement>(".vue-flow__viewport");
-  if (!canvas.value || !viewport) return;
+  const flow = canvas.value?.querySelector<HTMLElement>(".vue-flow__viewport");
+  if (!canvas.value || !flow) return;
   const bounds = getRectOfNodes(getNodes.value);
   const width = bounds.width + 2 * MARGIN;
   const height = bounds.height + 2 * MARGIN;
   const link = document.createElement("a");
-  link.href = await draw(viewport, {
+  link.href = await draw(flow, {
     width,
     height,
     backgroundColor: getComputedStyle(canvas.value).backgroundColor,
@@ -155,7 +145,7 @@ defineExpose({ fit, exportSvg: () => save(toSvg, "svg"), exportPng: () => save(t
 </script>
 
 <template>
-  <div ref="canvas" class="graph relative h-full w-full bg-(--bg-0)" :class="{ 'zoomed-out': zoomedOut }">
+  <div ref="canvas" class="graph relative h-full w-full bg-(--bg-0)">
     <VueFlow
       id="event-graph"
       :nodes="nodes"
@@ -166,8 +156,8 @@ defineExpose({ fit, exportSvg: () => save(toSvg, "svg"), exportPng: () => save(t
       :min-zoom="0.3"
       :max-zoom="2"
       class="h-full w-full"
-      @node-click="({ node }) => node.type === 'graph' && emit('select', node.id)"
-      @node-double-click="({ node }) => node.type === 'graph' && !node.data.count && emit('draw', node.id)"
+      @node-click="({ node }) => click(node)"
+      @node-double-click="({ node }) => node.type === 'graph' && !node.data.node.count && emit('draw', node.id)"
       @pane-click="emit('select', '')"
       @nodes-initialized="fitOnce"
       @move-start="stopFollowing"
@@ -182,8 +172,8 @@ defineExpose({ fit, exportSvg: () => save(toSvg, "svg"), exportPng: () => save(t
           >
         </EdgeLabelRenderer>
       </template>
-      <template #node-graph="{ data }: { data: Node }">
-        <GraphNode :node="data" />
+      <template #node-graph="{ data }: { data: Drawn }">
+        <GraphNode :drawn="data" :labels="labels" @fold="emit('select', $event)" />
       </template>
       <template #node-head="{ data }: { data: { label: string } }">
         <span class="pointer-events-none text-11 font-medium whitespace-nowrap text-dimmed">{{ data.label }}</span>
@@ -200,11 +190,11 @@ defineExpose({ fit, exportSvg: () => save(toSvg, "svg"), exportPng: () => save(t
       />
     </VueFlow>
     <div
-      v-if="full && zoomedOut"
+      v-if="full && zoom < 70"
       class="absolute start-4 bottom-3.5 flex items-center gap-2 rounded-lg border border-default bg-muted px-2.5 py-1.5 text-11 text-dimmed"
     >
       <UIcon name="i-lucide-info" class="size-3.5" />
-      Zoomed out to {{ zoom }}%: cards show names only. Nodes off the selected path are faded.
+      Zoomed out to {{ zoom }}%. Nodes off the selected path are faded.
     </div>
     <div
       v-else

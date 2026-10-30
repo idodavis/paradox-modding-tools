@@ -726,7 +726,7 @@ func (walker *walker) matchRule(rule string, parent *Context, key string) (match
 	case "operator":
 		return match{}, game.IsOperator(key)
 	case "link":
-		return match{category: CategoryLink}, walker.schema.isLink(key)
+		return match{category: CategoryLink}, walker.schema.IsLink(key)
 	case "modifier":
 		_, declared := walker.schema.Modifiers[key]
 		return match{category: CategoryField, child: holder.findChild(key)}, declared
@@ -1090,7 +1090,7 @@ func (walker *walker) resolveValueReferences(context *Context, statement int32, 
 	}
 	var databases []string
 	claim := ""
-	if field := context.Field; field != nil && field.Value.Value.Type == ValueReference && !walker.schema.isLink(text) {
+	if field := context.Field; field != nil && field.Value.Value.Type == ValueReference && !walker.schema.IsLink(text) {
 		claim = field.Value.Value.Database
 	}
 	if claim != "" {
@@ -1146,23 +1146,27 @@ func isSavedName(context *Context, span jomini.Span) bool {
 	})
 }
 
-// findScriptValue returns the reference a value makes to a script value. It returns false if it makes none.
+// findScriptValue returns the reference a value makes to a script value. It returns false if it makes none. The
+// reference is inferred where only the field makes it and the field learned so from the game's own files.
 func (walker *walker) findScriptValue(context *Context, level int, span jomini.Span) (Reference, bool) {
 	text := walker.tree.Text(span)
 	links := jomini.SplitChain(text)
 	last := links[len(links)-1]
 	enclosing, key := walker.frames[level-1], walker.frames[level].label
 	chained := len(links) > 1 && !jomini.IsEventID(text) &&
-		!slices.ContainsFunc(links[:len(links)-1], func(link string) bool { return !walker.schema.isLink(link) })
+		!slices.ContainsFunc(links[:len(links)-1], func(link string) bool { return !walker.schema.IsLink(link) })
 	operated := game.ClassifyKey(findShape(enclosing.context), strings.ToLower(enclosing.label), strings.ToLower(key)) == "math"
 	valued := context.Field != nil && context.Field.Value.Value.Values
 	_, declared := walker.schema.FindCommand(last)
 	if walker.schema.Values == "" || !chained && !operated && !valued || !jomini.IsIdentifier(last) || declared ||
-		walker.schema.isLink(last) || slices.Contains(game.Bools, last) {
+		walker.schema.IsLink(last) || slices.Contains(game.Bools, last) {
 		return Reference{}, false
 	}
 	start := span.End - len(last)
-	return Reference{Database: walker.schema.Values, Name: last, Span: jomini.Span{Start: start, End: span.End}}, true
+	inferred := !chained && !operated && !context.Field.Value.Source.CanAccuse()
+	return Reference{
+		Database: walker.schema.Values, Name: last, Span: jomini.Span{Start: start, End: span.End}, Inferred: inferred,
+	}, true
 }
 
 // findValueDatabase returns the database a statement's value names by where it is written, and the folder of a file

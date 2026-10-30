@@ -181,6 +181,16 @@ func EncodeMessages(messages []Message, ending string) string {
 	return text.String()
 }
 
+// EncodeAddition returns the text that adds messages at the end of a localization file's text: a line break first
+// if the text does not end in one, then one line for each message, all in the text's own line ending.
+func EncodeAddition(text string, messages []Message) string {
+	ending := jomini.LineEnding(text)
+	if text == "" || strings.HasSuffix(text, "\n") {
+		return EncodeMessages(messages, ending)
+	}
+	return ending + EncodeMessages(messages, ending)
+}
+
 // ToLanguageKey returns the word the game writes a language as: its name after l_, as in l_english.
 func ToLanguageKey(language string) string {
 	return "l_" + language

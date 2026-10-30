@@ -15,7 +15,7 @@ import type { Place } from "@services/workspace/models";
 
 import { COMMANDS, compare, compareWithGame, findGameCopy, findKbds } from "../../app/commands";
 import { list } from "../../lib/format";
-import { copiesQuery, drawablesQuery } from "../../queries";
+import { copiesQuery, drawablesQuery, fileQuery } from "../../queries";
 import { useEditorStore, type Group, type Tab, type View } from "../../stores/editor";
 import { THIS_WINDOW, useWindowsStore } from "../../stores/windows";
 import { useWorkspaceStore } from "../../stores/workspace";
@@ -62,10 +62,13 @@ const activeTab = computed(() => group.tabs.find((tab) => tab.id === group.activ
 const target = computed(() => (activeTab.value ? parseTab(activeTab.value.id) : null));
 const place = computed(() => (activeTab.value ? editor.placeOf(activeTab.value.id) : null));
 const model = computed(() => (target.value?.tab === "file" ? findModel(target.value.key) : null));
-const { data: drawables } = useQuery(() => ({
-  ...drawablesQuery(place.value?.path ?? ""),
-  enabled: target.value?.tab === "file" && !!place.value && VIEWS[place.value.format].views.includes("code"),
-}));
+const hasCode = computed(
+  () => target.value?.tab === "file" && !!place.value && VIEWS[place.value.format].views.includes("code"),
+);
+const { data: drawables } = useQuery(() => ({ ...drawablesQuery(place.value?.path ?? ""), enabled: hasCode.value }));
+const { data: file } = useQuery(() => ({ ...fileQuery(place.value?.path ?? ""), enabled: hasCode.value }));
+// a file with no view of its own, or whose bytes are not text, says so rather than stay blank
+const isUnshown = computed(() => !!place.value && (!VIEWS[place.value.format].views.length || !!file.value?.binary));
 const views = computed<View[]>(() =>
   place.value && target.value?.tab === "file" ? listViews(place.value, !!drawables.value?.length) : [],
 );
@@ -568,6 +571,9 @@ const actions = computed<DropdownMenuItem[]>(() => [
           />
           <CodeEditor v-else :key="place.key" :model="model" :active="active" />
         </template>
+        <p v-else-if="isUnshown" class="flex flex-1 items-center justify-center bg-(--bg-0) text-12 text-dimmed">
+          PMT can't show this file.
+        </p>
       </template>
       <div v-else-if="!activeTab" class="flex flex-1 items-center justify-center bg-(--bg-0) text-12 text-dimmed">
         Open a file from the explorer, or Ctrl P

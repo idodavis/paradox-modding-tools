@@ -7,13 +7,50 @@ import (
 	"math/bits"
 )
 
-// The flags of a DDS pixel format: the data is named by a FourCC, has color masks, has a luminance mask or has
-// only an alpha mask.
+// The flags of a DDS pixel format: the data is named by a FourCC, has color masks, has a luminance mask, has only
+// an alpha mask, or has an alpha mask beside its color masks.
 const (
-	ddsFourCC    = 0x4
-	ddsRGB       = 0x40
-	ddsLuminance = 0x20000
-	ddsAlpha     = 0x2
+	ddsFourCC      = 0x4
+	ddsRGB         = 0x40
+	ddsLuminance   = 0x20000
+	ddsAlpha       = 0x2
+	ddsAlphaPixels = 0x1
+)
+
+// The offsets of a DDS file's fields, counted from its magic: the header's size and flags, the image's height, width
+// and mip levels, the pixel format with its flags, FourCC, bits per pixel and masks, the caps, and the DXGI format of
+// a DX10 header.
+const (
+	ddsSizeOffset        = 4
+	ddsFlagsOffset       = 8
+	ddsHeightOffset      = 12
+	ddsWidthOffset       = 16
+	ddsMipmapsOffset     = 28
+	ddsFormatOffset      = 76
+	ddsFormatFlagsOffset = 80
+	ddsFourCCOffset      = 84
+	ddsDepthOffset       = 88
+	ddsMasksOffset       = 92
+	ddsCapsOffset        = 108
+	ddsDXGIOffset        = 128
+)
+
+// The sizes of a DDS header without its magic and of its pixel format, and where a file's data starts without a
+// DX10 header and with one.
+const (
+	ddsHeaderSize     = 124
+	ddsFormatSize     = 32
+	ddsDataOffset     = 128
+	ddsDX10DataOffset = 148
+)
+
+// ddsHeaderFlags are the fields a DDS header fills: caps, height, width, pixel format and mipmap count.
+const ddsHeaderFlags = 0x21007
+
+// The caps of a DDS: a texture, and the two a texture with a chain of mip levels adds, complex and mipmap.
+const (
+	ddsTexture = 0x1000
+	ddsChain   = 0x400008
 )
 
 // fourCCs are the DXGI formats the FourCC of a pixel format without a DX10 header stands for.
@@ -50,10 +87,10 @@ var dxgiMasks = map[uint32][5]uint32{
 // decodeDDS decodes one mip level of a DDS with the given header to RGBA. It handles BC1 to BC7 and uncompressed data.
 // It returns an error if the data ends before the level's last pixel.
 func decodeDDS(bytes []byte, header Header, level int) (image.Image, error) {
-	data := bytes[128:]
+	data := bytes[ddsDataOffset:]
 	dxgi, dx10 := lookupDXGI(bytes)
 	if dx10 {
-		data = bytes[148:]
+		data = bytes[ddsDX10DataOffset:]
 	}
 	depth, masks := resolveDDSMasks(bytes)
 	blockBytes := findBlockBytes(header.Compression)
@@ -110,7 +147,8 @@ func countLevelBytes(header Header, blockBytes, depth int) int {
 // decodeDDSHeader decodes a DDS header, the DX10 extension included. It returns false if the bytes are not a DDS
 // that PMT decodes.
 func decodeDDSHeader(bytes []byte) (Header, bool) {
-	if !hasMagic(bytes, ddsMagic) || len(bytes) < 128 || binary.LittleEndian.Uint32(bytes[4:]) != 124 {
+	if !hasMagic(bytes, ddsMagic) || len(bytes) < ddsDataOffset ||
+		binary.LittleEndian.Uint32(bytes[ddsSizeOffset:]) != ddsHeaderSize {
 		return Header{}, false
 	}
 	compression, ok := classifyDDS(bytes)
@@ -119,9 +157,9 @@ func decodeDDSHeader(bytes []byte) (Header, bool) {
 	}
 	header := Header{
 		Format:      "dds",
-		Width:       int(binary.LittleEndian.Uint32(bytes[16:])),
-		Height:      int(binary.LittleEndian.Uint32(bytes[12:])),
-		Mipmaps:     max(1, int(binary.LittleEndian.Uint32(bytes[28:]))),
+		Width:       int(binary.LittleEndian.Uint32(bytes[ddsWidthOffset:])),
+		Height:      int(binary.LittleEndian.Uint32(bytes[ddsHeightOffset:])),
+		Mipmaps:     max(1, int(binary.LittleEndian.Uint32(bytes[ddsMipmapsOffset:]))),
 		Compression: compression,
 	}
 	return header, true
@@ -130,14 +168,14 @@ func decodeDDSHeader(bytes []byte) (Header, bool) {
 // classifyDDS names the compression a DDS pixel format declares: BC1 to BC7, or "" for uncompressed data read
 // through masks. It returns false for a format PMT does not decode.
 func classifyDDS(bytes []byte) (string, bool) {
-	flags := binary.LittleEndian.Uint32(bytes[80:])
+	flags := binary.LittleEndian.Uint32(bytes[ddsFormatFlagsOffset:])
 	if flags&ddsFourCC == 0 {
-		depth := binary.LittleEndian.Uint32(bytes[88:])
+		depth := binary.LittleEndian.Uint32(bytes[ddsDepthOffset:])
 		return "", flags&(ddsRGB|ddsLuminance|ddsAlpha) != 0 && depth%8 == 0 && depth >= 8 && depth <= 32
 	}
 	dxgi, ok := lookupDXGI(bytes)
 	if !ok {
-		if dxgi, ok = fourCCs[string(bytes[84:88])]; !ok {
+		if dxgi, ok = fourCCs[string(bytes[ddsFourCCOffset:ddsDepthOffset])]; !ok {
 			return "", false
 		}
 	}
@@ -153,10 +191,11 @@ func classifyDDS(bytes []byte) (string, bool) {
 // lookupDXGI returns the DXGI format of a DDS with a DX10 header. It returns false when the pixel format names no
 // DX10 header or the bytes end before it.
 func lookupDXGI(bytes []byte) (uint32, bool) {
-	if binary.LittleEndian.Uint32(bytes[80:])&ddsFourCC == 0 || string(bytes[84:88]) != "DX10" || len(bytes) < 148 {
+	if binary.LittleEndian.Uint32(bytes[ddsFormatFlagsOffset:])&ddsFourCC == 0 ||
+		string(bytes[ddsFourCCOffset:ddsDepthOffset]) != "DX10" || len(bytes) < ddsDX10DataOffset {
 		return 0, false
 	}
-	return binary.LittleEndian.Uint32(bytes[128:]), true
+	return binary.LittleEndian.Uint32(bytes[ddsDXGIOffset:]), true
 }
 
 // describeDDSFormat names the format a DDS header declares, for an error about it: its DXGI format, its FourCC
@@ -165,8 +204,8 @@ func describeDDSFormat(bytes []byte) string {
 	if dxgi, ok := lookupDXGI(bytes); ok {
 		return fmt.Sprintf("DXGI format %d", dxgi)
 	}
-	if binary.LittleEndian.Uint32(bytes[80:])&ddsFourCC != 0 {
-		fourCC := bytes[84:88]
+	if binary.LittleEndian.Uint32(bytes[ddsFormatFlagsOffset:])&ddsFourCC != 0 {
+		fourCC := bytes[ddsFourCCOffset:ddsDepthOffset]
 		for _, symbol := range fourCC {
 			if symbol < '0' || symbol > 'z' {
 				return fmt.Sprintf("format %d", binary.LittleEndian.Uint32(fourCC))
@@ -174,7 +213,7 @@ func describeDDSFormat(bytes []byte) string {
 		}
 		return fmt.Sprintf("format %q", fourCC)
 	}
-	return fmt.Sprintf("pixel format of %d bits per pixel", binary.LittleEndian.Uint32(bytes[88:]))
+	return fmt.Sprintf("pixel format of %d bits per pixel", binary.LittleEndian.Uint32(bytes[ddsDepthOffset:]))
 }
 
 // decodeBlocks decodes a block-compressed image one 4 by 4 block at a time, each block through the given decoder.
@@ -263,27 +302,32 @@ func decodeBC3(block []byte, pixels *[16][4]uint8) {
 	}
 }
 
-// decodeBC4Channel decodes one BC4 block to its sixteen values: eight interpolated from the two it stores, or six
-// with 0 and 255 when the first is not above the second.
+// decodeBC4Channel decodes one BC4 block to its sixteen values, each picked from its palette by a three-bit index.
 func decodeBC4Channel(block []byte) [16]uint8 {
-	first, second := int(block[0]), int(block[1])
-	palette := [8]int{first, second}
-	if first > second {
-		for i := 2; i < 8; i++ {
-			palette[i] = ((8-i)*first + (i-1)*second + 3) / 7
-		}
-	} else {
-		for i := 2; i < 6; i++ {
-			palette[i] = ((6-i)*first + (i-1)*second + 2) / 5
-		}
-		palette[6], palette[7] = 0, 255
-	}
+	palette := resolveBC4Palette(int(block[0]), int(block[1]))
 	indices := binary.LittleEndian.Uint64(block[:8]) >> 16
 	var values [16]uint8
 	for i := range 16 {
 		values[i] = uint8(palette[indices>>(3*i)&7])
 	}
 	return values
+}
+
+// resolveBC4Palette builds the eight values of a BC4 block from the two it stores: six interpolated between them
+// when the first is above the second, else four with 0 and 255.
+func resolveBC4Palette(first, second int) [8]int {
+	palette := [8]int{first, second}
+	if first > second {
+		for i := 2; i < 8; i++ {
+			palette[i] = ((8-i)*first + (i-1)*second + 3) / 7
+		}
+		return palette
+	}
+	for i := 2; i < 6; i++ {
+		palette[i] = ((6-i)*first + (i-1)*second + 2) / 5
+	}
+	palette[6], palette[7] = 0, 255
+	return palette
 }
 
 // decodeBC4 decodes one BC4 block to its red channel, with green and blue 0 and alpha 255.
@@ -309,14 +353,12 @@ func resolveDDSMasks(bytes []byte) (int, [4]uint32) {
 		row := dxgiMasks[dxgi]
 		return int(row[0]), [4]uint32{row[1], row[2], row[3], row[4]}
 	}
-	depth := int(binary.LittleEndian.Uint32(bytes[88:]))
-	masks := [4]uint32{
-		binary.LittleEndian.Uint32(bytes[92:]),
-		binary.LittleEndian.Uint32(bytes[96:]),
-		binary.LittleEndian.Uint32(bytes[100:]),
-		binary.LittleEndian.Uint32(bytes[104:]),
+	depth := int(binary.LittleEndian.Uint32(bytes[ddsDepthOffset:]))
+	var masks [4]uint32
+	for c := range masks {
+		masks[c] = binary.LittleEndian.Uint32(bytes[ddsMasksOffset+4*c:])
 	}
-	if binary.LittleEndian.Uint32(bytes[80:])&ddsLuminance != 0 {
+	if binary.LittleEndian.Uint32(bytes[ddsFormatFlagsOffset:])&ddsLuminance != 0 {
 		masks[1], masks[2] = masks[0], masks[0]
 	}
 	return depth, masks

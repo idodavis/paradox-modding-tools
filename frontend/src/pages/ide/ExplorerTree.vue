@@ -23,7 +23,7 @@ import * as app from "@services/app/service";
 import * as service from "@services/workspace/service";
 import type { Child, FileChange, Place } from "@services/workspace/models";
 
-import { COMMANDS, compare, trashFile } from "../../app/commands";
+import { canCopyToMod, canSaveAsDds, COMMANDS, compare, copyToMod, trashFile } from "../../app/commands";
 import { fileSearchQuery, folderQuery, gitStatusQuery, loadQuery, workspacesQuery } from "../../queries";
 import { useEditorStore } from "../../stores/editor";
 import { useGitStore } from "../../stores/git";
@@ -31,6 +31,7 @@ import { useSettingsStore } from "../../stores/settings";
 import { useWindowsStore } from "../../stores/windows";
 import { useWorkspaceStore, VANILLA } from "../../stores/workspace";
 import { fileTab, findIcon, listIcons, VIEWS } from "./editor/tabs";
+import SaveDdsModal from "./SaveDdsModal.vue";
 
 const { roots } = defineProps<{ roots: Root[] }>();
 const emit = defineEmits<{ open: [place: Place, preview: boolean] }>();
@@ -68,6 +69,7 @@ const windows = useWindowsStore();
 const workspace = useWorkspaceStore();
 const queryCache = useQueryCache();
 const commandBus = useEventBus<string>("pmt.command");
+const saveDds = useOverlay().create(SaveDdsModal);
 const compareWith = useLocalStorage<Place | null>("pmt.ide.compare", null);
 const host = useTemplateRef("host");
 const view = shallowRef<FileTree>();
@@ -468,15 +470,30 @@ const { mutate: remove } = useMutation({
   },
 });
 
-// what the menu's rows of the command table do to the row clicked, and whether they change the files
-const ACTIONS: Record<string, { writes: boolean; run: (row: string) => void }> = {
+// what the menu's rows of the command table do to the row clicked, whether they change the files, and on which rows
+// they show when not on every one
+const ACTIONS: Record<string, { writes: boolean; shows?: (row: string) => boolean; run: (row: string) => void }> = {
   "file.new": { writes: true, run: (row) => (afterClose = () => create({ folder: findFolder(row), dir: false })) },
   "file.newFolder": { writes: true, run: (row) => (afterClose = () => create({ folder: findFolder(row), dir: true })) },
   "file.rename": { writes: true, run: (row) => (afterClose = () => view.value?.startRenaming(row)) },
   "file.delete": { writes: true, run: (row) => remove(row) },
   "file.copyPath": { writes: false, run: (row) => void Clipboard.SetText(disks.get(row) ?? "") },
   "file.reveal": { writes: false, run: (row) => void app.ShowFolder(disks.get(row) ?? "") },
+  "file.copyToMod": { writes: false, shows: (row) => canCopyToMod(places.get(row)), run: onPlace(copyToMod) },
+  "image.saveDds": {
+    writes: true,
+    shows: (row) => row.endsWith("/") || canSaveAsDds(places.get(row)),
+    run: onPlace((place) => void saveDds.open({ place })),
+  },
 };
+
+/** onPlace makes a menu row's action that acts on the place of the row clicked, when the explorer has it. */
+function onPlace(act: (place: Place) => void): (row: string) => void {
+  return (row) => {
+    const place = places.get(row);
+    if (place) act(place);
+  };
+}
 
 /** Builds the menu of a row. It is built when the menu opens, so it reads the selection as it is then. */
 function buildMenu(row: string): ContextMenuItem[][] {
@@ -526,7 +543,7 @@ function buildMenu(row: string): ContextMenuItem[][] {
         ];
   const commands = COMMANDS.flatMap((command) => {
     const action = ACTIONS[command.id];
-    if (!action || (action.writes && !isWritable(row))) return [];
+    if (!action || (action.writes && !isWritable(row)) || (action.shows && !action.shows(row))) return [];
     const disabled = command.id === "file.rename" && isRoot(row);
     const label = command.id === "file.delete" && isRoot(row) ? "Delete the mod's folder" : command.label;
     return [{ label, icon: command.icon, kbds: command.kbds, disabled, onSelect: () => action.run(row) }];

@@ -280,6 +280,16 @@ export interface Fix {
      */
     "code": string;
     "edits": { [_ in string]?: Edit[] | null } | null;
+
+    /**
+     * a localization file written first, with only its header
+     */
+    "creates"?: string;
+
+    /**
+     * where the caret goes once the fix is applied
+     */
+    "reveal"?: Location | null;
 }
 
 /**

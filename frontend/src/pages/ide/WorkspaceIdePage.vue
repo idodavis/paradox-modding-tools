@@ -33,6 +33,7 @@ import { useWorkspaceStore, VANILLA } from "../../stores/workspace";
 import FileSelector from "../../ui/FileSelector.vue";
 import { EDITOR_LANGUAGES } from "../../ui/ScriptSnippet.vue";
 import CoatDialog from "./draw/CoatDialog.vue";
+import SaveDdsModal from "./SaveDdsModal.vue";
 import EditorLayout from "./EditorLayout.vue";
 import EntriesView from "./EntriesView.vue";
 import ExplorerTree from "./ExplorerTree.vue";
@@ -80,6 +81,7 @@ const settings = useSettingsStore();
 const windows = useWindowsStore();
 const workspace = useWorkspaceStore();
 const coatDialog = useOverlay().create(CoatDialog);
+const saveDds = useOverlay().create(SaveDdsModal);
 const sidebar = useLocalStorage("pmt.ide.sidebar", "explorer");
 const panel = useLocalStorage("pmt.ide.panel", "");
 const wiki = useLocalStorage("pmt.ide.wiki", false);
@@ -110,6 +112,10 @@ commands.on((command) => {
   if (command === "git.commit") showSidebar("git");
   if (command === "editor.toggleWiki") wiki.value = !wiki.value;
   if (command === "draw.newCoat") void coatDialog.open();
+  if (command === "image.saveDds") {
+    const active = editor.activeFile();
+    if (active) void saveDds.open({ place: active });
+  }
   if (command === "explorer.reveal") void revealFile();
   if (command === "terminal.sendFile") {
     if (layout.value === "full") panel.value = "terminal";

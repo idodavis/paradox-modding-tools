@@ -871,6 +871,11 @@ func (counter *counter) resolveClaims(field *Field) {
 		field.Value = Claim[Expected]{Value: expected, Source: game.SourceVanilla}
 		return
 	}
+	// a command's argument counts its values but not its writes
+	if vanilla.Blocks == 0 && counter.takesValues(vanilla.Values) {
+		field.Value.resolve(Expected{Type: ValueNumber, Values: true}, game.SourceVanilla)
+		return
+	}
 	switch {
 	case vanilla.Count == 0:
 	case vanilla.Blocks == vanilla.Count && vanilla.Colors == vanilla.Count:
@@ -967,7 +972,7 @@ func (counter *counter) resolveReference(values map[string]int) (Expected, bool)
 	named := map[string]int{}
 	for value, count := range values {
 		name := strings.Trim(value, `"`)
-		if !jomini.IsParameter(name) && !counter.schema.isLink(name) {
+		if !jomini.IsParameter(name) && !counter.schema.IsLink(name) {
 			named[name] += count
 		}
 	}
@@ -1056,6 +1061,27 @@ func (counter *counter) matchAll(valueType ValueType, values map[string]int) boo
 		}
 	}
 	return len(values) > 0
+}
+
+// takesValues reports whether a field takes a number that a script value may give, by the values the game's own files
+// write in it: at least one names a script value, as add_stability = stability_mild_bonus does, and each other is a
+// number, a parameter, a chain of links or a command the dumps declare. It is false if a value is any other name, such
+// as a flag or a relation level, which a script value's name in the field only shares by chance.
+func (counter *counter) takesValues(values map[string]int) bool {
+	names := counter.defined[counter.schema.Values]
+	named := false
+	for value := range values {
+		text := strings.Trim(value, `"`)
+		_, declared := counter.schema.FindCommand(text)
+		switch {
+		case names[text]:
+			named = true
+		case jomini.IsNumber(text) || jomini.IsParameter(text) || counter.schema.IsLink(text) || declared:
+		default:
+			return false
+		}
+	}
+	return named
 }
 
 // resolvePrefix sets the database that defines every name written after the prefix. It sets none if no database does,

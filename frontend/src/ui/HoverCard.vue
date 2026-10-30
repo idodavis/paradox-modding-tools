@@ -153,10 +153,10 @@ const sites = computed(() => (card?.sites ?? []).slice(0, SITES_SHOWN));
       <div
         class="flex flex-wrap items-center gap-x-3 gap-y-1 bg-muted px-3.5 py-1.5 text-tiny whitespace-nowrap text-dimmed"
       >
-        <span v-for="[key, action] in KEYS" :key="key" class="flex items-center gap-1"
-          ><UKbd :value="key" />{{ action }}</span
-        >
-        <span v-if="card.node" class="flex items-center gap-1"><UKbd value="Ctrl Shift G" />graph</span>
+        <span v-for="[key, action] in KEYS" :key="key" class="flex items-center gap-1">
+          <UKbd :value="key" />{{ action }}
+        </span>
+        <span v-if="card.node" class="flex items-center gap-1"> <UKbd value="Ctrl Shift G" />graph </span>
         <span class="ms-auto">Right-click for more</span>
       </div>
     </template>

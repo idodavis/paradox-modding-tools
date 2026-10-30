@@ -11,12 +11,13 @@ import { Events } from "@wailsio/runtime";
 import { ref, shallowReactive, shallowRef, toRaw, watch } from "vue";
 import { useRouter } from "vue-router";
 
+import type { Fix } from "@services/lsp/models";
 import type { Place } from "@services/workspace/models";
 import * as workspaceApi from "@services/workspace/service";
 import type { IPosition, IRange } from "monaco-editor";
-import { closeModel, findModel, openModel, renameModel, unsavedModels } from "../pages/ide/editor/models";
+import { applyEdits, closeModel, findModel, openModel, renameModel, unsavedModels } from "../pages/ide/editor/models";
 import { diffTab, fileTab, parseTab, VIEWS } from "../pages/ide/editor/tabs";
-import { drawablesQuery, loadQuery, placeQuery, workspacesQuery } from "../queries";
+import { drawablesQuery, fileQuery, loadQuery, placeQuery, workspacesQuery } from "../queries";
 import { THIS_WINDOW, useWindowsStore } from "./windows";
 import { useWorkspaceStore } from "./workspace";
 
@@ -94,6 +95,27 @@ export const useEditorStore = defineStore("editor", () => {
     },
   });
 
+  /**
+   * Applies a quick fix: it writes the file the fix creates, applies its edits to each file's model as one undoable
+   * step, then shows the place it reveals in the group to the right of the active one, made when there is none.
+   */
+  const { mutate: applyFix } = useMutation({
+    mutation: async (fix: Fix) => {
+      if (fix.creates) await workspaceApi.CreateLocalization(fix.creates);
+      for (const [path, edits] of Object.entries(fix.edits ?? {})) {
+        const place = await loadQuery(placeQuery(path));
+        if (place) applyEdits(await openModel(place), edits ?? []);
+      }
+      if (!fix.reveal) return;
+      const group = activeGroup();
+      const row = state.value.rows.find((candidate) => !!group && candidate.columns.includes(group));
+      const beside = group && row?.columns[row.columns.indexOf(group) + 1];
+      if (beside) activate(beside.id);
+      else split("row");
+      show(fix.reveal.place, fix.reveal.range);
+    },
+  });
+
   watch(() => workspace.activeId(), loadLayout, { immediate: true });
   watch(
     [state, activeId, places],
@@ -161,6 +183,8 @@ export const useEditorStore = defineStore("editor", () => {
   async function openFile(place: Place, range?: IRange): Promise<void> {
     places.set(place.key, place);
     if (!VIEWS[place.format].views.includes("code")) return;
+    // a file that is not text gets no model, and its tab says it cannot be shown
+    if ((await loadQuery(fileQuery(place.path)))?.binary) return;
     const model = await openModel(place);
     if (!range) return;
     model.caret = { line: range.startLineNumber, column: range.startColumn };
@@ -535,6 +559,7 @@ export const useEditorStore = defineStore("editor", () => {
     split,
     move,
     rename,
+    applyFix,
   };
 });
 

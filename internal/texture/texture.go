@@ -1,5 +1,5 @@
-// Package texture decodes DDS, TGA and PNG images to pixels and reads an image's header without decoding it. It also
-// finds the image file that a path written in script names.
+// Package texture decodes DDS, TGA and PNG images to pixels, writes pictures as DDS files, and reads an image's header
+// without decoding it. It also finds the image file that a path written in script names.
 package texture
 
 import (
@@ -102,9 +102,10 @@ func decodeHeader(file []byte) (Header, bool) {
 // the level cannot be read.
 func Decode(file []byte, level int) (image.Image, error) {
 	header, ok := decodeHeader(file)
+	if err := checkSides(header.Width, header.Height); ok && err != nil {
+		return nil, err
+	}
 	switch {
-	case ok && (header.Width > sideLimit || header.Height > sideLimit):
-		return nil, fmt.Errorf("%d by %d pixels is past the %d limit on a side", header.Width, header.Height, sideLimit)
 	case ok && (level < 0 || level >= header.Mipmaps):
 		return nil, fmt.Errorf("the image has %d levels, so no level %d", header.Mipmaps, level)
 	case ok && header.Format == "dds":
@@ -114,12 +115,21 @@ func Decode(file []byte, level int) (image.Image, error) {
 	case hasMagic(file, pngMagic):
 		return png.Decode(bytes.NewReader(file))
 	case hasMagic(file, ddsMagic):
-		if len(file) < 128 || (string(file[84:88]) == "DX10" && len(file) < 148) {
+		if len(file) < ddsDataOffset ||
+			(string(file[ddsFourCCOffset:ddsDepthOffset]) == "DX10" && len(file) < ddsDX10DataOffset) {
 			return nil, errTruncated
 		}
 		return nil, fmt.Errorf("DDS %s is not supported", describeDDSFormat(file))
 	}
 	return nil, errors.New("not a DDS, TGA or PNG")
+}
+
+// checkSides returns an error if an image of the given width and height is past Direct3D's limit on a side.
+func checkSides(width, height int) error {
+	if width > sideLimit || height > sideLimit {
+		return fmt.Errorf("%d by %d pixels is past the %d limit on a side", width, height, sideLimit)
+	}
+	return nil
 }
 
 // Resolve finds the file a path in script names, trying each image extension the game accepts. It returns false if

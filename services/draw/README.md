@@ -26,6 +26,7 @@ A widget's row (`game.WidgetType`) leaves its empty fields out.
 | `textures.go` | the `library` of what definitions show: the image file of a written path, an icon name or a texture binding; the pictures the defines name; the placeholders; the colors of definitions; `ExportPNG` |
 | `coat.go` | `Instance`, `Blend`, `Recolor`, `Shading`, `Layer`, `Coat`, `Image`, `NamedColor`; `ResolveCoat`; `ListColors`, `ListTextures`, `ListFrames`; the edits `AddLayer`, `MoveLayer`, `RemoveBlock`; `CreateCoatFile`, `CopyCoat` |
 | `fonts.go` | `Font`: each style of a font a window names, with the file the game reads it from in the session's language |
+| `dds.go` | Save as DDS: `ListPictureFiles`, the pictures directly in a folder; `FindReferences`, the DDS whose settings each keeps, the one beside it, else the game's own at its place; `WriteDDS` |
 
 ## Edits, not writes
 

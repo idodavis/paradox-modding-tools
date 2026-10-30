@@ -224,6 +224,7 @@ defineExpose({ fit, reveal, pane });
         <USeparator orientation="vertical" class="mx-1 h-3.5" />
       </template>
       <template v-if="snapshot">
+        <slot name="export" />
         <UButton
           label="Export PNG"
           icon="i-lucide-download"

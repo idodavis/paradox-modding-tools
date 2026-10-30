@@ -14,6 +14,7 @@ import { Clipboard, Dialogs } from "@wailsio/runtime";
 import * as monaco from "monaco-editor/editor/editor.api";
 import { computed } from "vue";
 
+import { Format } from "@internal/files/models";
 import * as appApi from "@services/app/service";
 import * as git from "@services/git/service";
 import * as lsp from "@services/lsp/service";
@@ -280,6 +281,21 @@ export const COMMANDS: readonly Command[] = [
     icon: "i-lucide-folder-open",
     when: hasFile,
     onSelect: onFile((place) => run(() => appApi.ShowFolder(place.path))),
+  },
+  {
+    id: "file.copyToMod",
+    label: "Copy into a mod…",
+    icon: "i-lucide-copy-plus",
+    when: () => canCopyToMod(useEditorStore().activeFile()),
+    onSelect: onFile(copyToMod),
+  },
+  {
+    id: "image.saveDds",
+    label: "Save as DDS…",
+    prefix: "Image:",
+    icon: "i-lucide-file-image",
+    when: () => canSaveAsDds(useEditorStore().activeFile()),
+    onSelect: () => useWindowsStore().sendCommand("image.saveDds"),
   },
   {
     id: "explorer.reveal",
@@ -594,6 +610,43 @@ export function compareWithFile(place: Place): void {
     const other = path ? await loadQuery(placeQuery(path)) : undefined;
     if (other) compare(other, place);
   });
+}
+
+/** canCopyToMod reports whether a file, not a folder, has a mod to be copied into. */
+export function canCopyToMod(place: Place | null | undefined): boolean {
+  return !!place && !place.isDir && listCopyTargets(place).length > 0;
+}
+
+/**
+ * copyToMod copies a file of the game or of another mod to the same place in a mod, and opens the copy. When it can
+ * go into more than one mod, the palette asks which.
+ */
+export function copyToMod(place: Place): void {
+  const copy = (modId: string) =>
+    run(async () => {
+      const target = await loadQuery(placeQuery(await workspaceApi.CreateCopy(place.path, modId)));
+      if (target) useEditorStore().show(target);
+    });
+  const mods = listCopyTargets(place);
+  const [only] = mods;
+  if (mods.length === 1 && only) {
+    copy(only);
+    return;
+  }
+  const items = mods.map((id) => ({ label: useWorkspaceStore().originName(id), onSelect: () => copy(id) }));
+  choicesBus.emit({ id: "file.copyToMod", label: "Choose the mod to copy into", items });
+}
+
+/** listCopyTargets lists the mods a file can be copied into: every mod of the workspace but the file's own. */
+function listCopyTargets(place: Place): string[] {
+  return useWorkspaceStore()
+    .listModIds()
+    .filter((id) => id !== place.origin);
+}
+
+/** canSaveAsDds reports whether a file can be saved as a DDS: it is a mod's picture that is not a DDS already. */
+export function canSaveAsDds(place: Place | null | undefined): boolean {
+  return !!place && !place.readOnly && place.format === Format.FormatImage && !/\.dds$/i.test(place.name);
 }
 
 /**

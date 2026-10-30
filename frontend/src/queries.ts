@@ -17,6 +17,7 @@ import * as workspace from "@services/workspace/service";
 import type { Coat, PictureList, States } from "@services/draw/models";
 import type { Filter } from "@services/graph/models";
 import type { FindingSite } from "@services/health/models";
+import type { Place } from "@services/workspace/models";
 
 /** fileUrl returns the URL that serves a file. */
 export function fileUrl(path: string): string {
@@ -108,6 +109,14 @@ export const placeQuery = defineQueryOptions((path: string) => ({
 export const headerQuery = defineQueryOptions((path: string) => ({
   key: [...keys.file(path), "header"],
   query: () => workspace.ReadHeader(path),
+}));
+/** The pictures Save as DDS writes, a picture or those directly in a folder, and the DDS whose settings each keeps. */
+export const ddsPicturesQuery = defineQueryOptions((place: Place) => ({
+  key: [...keys.file(place.path), "dds-pictures"],
+  query: async () => {
+    const pictures = place.isDir ? ((await draw.ListPictureFiles(place.path)) ?? []) : [place];
+    return { pictures, references: (await draw.FindReferences(pictures.map((picture) => picture.path))) ?? {} };
+  },
 }));
 export const copiesQuery = defineQueryOptions((path: string) => ({
   key: [...keys.file(path), "copies"],
@@ -211,6 +220,10 @@ export const graphRootsQuery = defineQueryOptions((query: string) => ({
   key: [...keys.graph, "roots", query],
   query: () => graph.FindRoots(query, 50),
 }));
+export const ownRootsQuery = defineQueryOptions({
+  key: [...keys.graph, "own"],
+  query: () => graph.ListOwnRoots(),
+});
 export const graphDefaultsQuery = defineQueryOptions({
   key: ["graph", "defaults"],
   query: () => graph.Defaults(),

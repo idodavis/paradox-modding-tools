@@ -4,6 +4,7 @@ package draw
 
 import (
 	"cmp"
+	"errors"
 	"fmt"
 	"hash/fnv"
 	"iter"
@@ -18,6 +19,7 @@ import (
 
 	"github.com/samber/lo"
 
+	"paradox-modding-tools/internal/files"
 	"paradox-modding-tools/internal/game"
 	"paradox-modding-tools/internal/index"
 	"paradox-modding-tools/internal/jomini"
@@ -214,13 +216,16 @@ var loremSentences = []string{
 }
 
 // ListDrawables lists the windows, types, templates and coats a file defines, the one the view opens on first. It
-// lists none for a file that is not a GUI or coat file.
+// lists none for a file that is not a GUI or coat file, or not text.
 func (drw *Service) ListDrawables(path string) ([]lsp.Symbol, error) {
 	ws, err := drw.Workspace.Session()
 	if err != nil {
 		return nil, err
 	}
 	symbols, err := lsp.ListFileSymbols(ws, resolveIndex(ws, path), path)
+	if errors.Is(err, files.ErrBinary) {
+		return []lsp.Symbol{}, nil
+	}
 	if err != nil {
 		return nil, err
 	}

@@ -7,11 +7,15 @@ export {
 };
 
 export type {
+    Condition,
     Detail,
     Edge,
     Filter,
     Graph,
     Node,
+    Rule,
+    RuleOption,
     Section,
+    Step,
     Version
 } from "./models.js";

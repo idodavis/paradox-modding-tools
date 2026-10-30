@@ -30,6 +30,7 @@ const (
 	FormatGFX          Format = "gfx"          // .gfx
 	FormatLocalization Format = "localization" // .yml under localization
 	FormatImage        Format = "image"        // .dds, .png, .tga
+	FormatWebImage     Format = "web-image"    // .jpg, .jpeg, .gif, .webp: an image the games do not read
 	FormatTable        Format = "table"        // .csv
 	FormatDescriptor   Format = "descriptor"   // .mod, metadata.json
 	FormatShader       Format = "shader"       // .fxh, .shader
@@ -72,6 +73,8 @@ func Classify(rel string) Format {
 		return FormatGFX
 	case ".dds", ".png", ".tga":
 		return FormatImage
+	case ".jpg", ".jpeg", ".gif", ".webp":
+		return FormatWebImage
 	case ".csv":
 		return FormatTable
 	case ".fxh", ".shader", ".hlsl":
@@ -91,7 +94,7 @@ func (format Format) IsScript() bool {
 
 // IsText reports whether files of the format are text: every format but images and binaries.
 func (format Format) IsText() bool {
-	return format != FormatImage && format != FormatBinary
+	return !slices.Contains([]Format{FormatImage, FormatWebImage, FormatBinary}, format)
 }
 
 // A Root is one folder laid out like the game's own: the game's folder, a DLC's or a mod's.

@@ -138,12 +138,20 @@ type Agent struct {
 	Files    []string `json:"files,omitempty"`    // its instruction files and folders, by their names in a mod
 }
 
+// A Window is how the main window was left: its size and whether it was maximized.
+type Window struct {
+	Width     int  `json:"width"`  // in device-independent pixels; 0 before the first close
+	Height    int  `json:"height"` // in device-independent pixels; 0 before the first close
+	Maximized bool `json:"maximized"`
+}
+
 // Config is the content of config.json.
 type Config struct {
 	Installs   []Install         `json:"installs"`
 	Workspaces []Workspace       `json:"workspaces"`
 	Settings   map[string]string `json:"settings"`
 	Agents     []Agent           `json:"agents"` // the agents the user adds
+	Window     Window            `json:"window"` // the main window as it was last closed
 }
 
 // A Setting is one row of the catalog of settings.

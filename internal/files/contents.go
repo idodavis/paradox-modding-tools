@@ -37,7 +37,11 @@ type Text struct {
 	Encoding Encoding `json:"encoding"`
 }
 
-// ReadText reads a file into its text. It returns an error for a file over TextLimit and for one that is binary.
+// ErrBinary is the error for a file that is not text: its bytes are binary, or it is over TextLimit.
+var ErrBinary = errors.New("binary")
+
+// ReadText reads a file into its text. It returns an error wrapping ErrBinary for a file over TextLimit and for one
+// that is binary.
 func ReadText(path string) (Text, error) {
 	file, err := os.Open(path)
 	if err != nil {
@@ -49,15 +53,15 @@ func ReadText(path string) (Text, error) {
 		return Text{}, err
 	}
 	if stat.Size() > TextLimit {
-		return Text{}, fmt.Errorf("%s is %d bytes, over the %d-byte limit for text, so it is binary",
-			path, stat.Size(), TextLimit)
+		return Text{}, fmt.Errorf("%s is %d bytes, over the %d-byte limit for text, so it is %w",
+			path, stat.Size(), TextLimit, ErrBinary)
 	}
 	content, err := io.ReadAll(file)
 	if err != nil {
 		return Text{}, err
 	}
 	if IsBinary(content) {
-		return Text{}, fmt.Errorf("%s is binary", path)
+		return Text{}, fmt.Errorf("%s is %w", path, ErrBinary)
 	}
 	return DecodeText(content), nil
 }

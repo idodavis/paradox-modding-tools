@@ -6,18 +6,60 @@
 import * as index$0 from "../../internal/index/models.js";
 // eslint-disable-next-line @typescript-eslint/ban-ts-comment
 // @ts-ignore: Unused imports
+import * as loc$0 from "../../internal/loc/models.js";
+// eslint-disable-next-line @typescript-eslint/ban-ts-comment
+// @ts-ignore: Unused imports
 import * as workspace$0 from "../workspace/models.js";
 
 /**
- * A Detail is what the page shows about one node: its text, its keys, its firings, its references and its pictures.
+ * A Condition is one statement of a block of triggers in words, with the statements of its block under it.
  */
-export interface Detail {
-    "node": Node;
+export interface Condition {
+    /**
+     * Subject is what it is about, as written, read first: a key that names a scope, or the value of a keyword that
+     * reads its value first, as in X exists; "" for any other.
+     */
+    "subject"?: string;
 
     /**
-     * the event's localized description
+     * the key and its operator in words, such as "has trait"
      */
-    "text": string;
+    "text"?: string;
+
+    /**
+     * the value as written; "" for a block, a yes, a no or a subject
+     */
+    "value"?: string;
+
+    /**
+     * Title is the in-game name of what its value names, or its subject where that is its value; "" for none.
+     */
+    "title"?: string;
+
+    /**
+     * it must be false
+     */
+    "negated"?: boolean;
+
+    /**
+     * counted from one
+     */
+    "line": number;
+
+    /**
+     * the statements of its block, in the order written
+     */
+    "conditions"?: Condition[] | null;
+}
+
+/**
+ * A Detail is what the page shows about one node: its texts, its keys, its firings and what it reads.
+ */
+export interface Detail {
+    /**
+     * its Fires are every firing it makes
+     */
+    "node": Node;
 
     /**
      * the workspace's language, or the base language if it has none
@@ -30,6 +72,11 @@ export interface Detail {
     "source": string;
 
     /**
+     * the definition's own trigger in words; nil for none
+     */
+    "trigger"?: Condition[] | null;
+
+    /**
      * the keys at the top of the definition, except its options
      */
     "sections": Section[] | null;
@@ -38,45 +85,64 @@ export interface Detail {
      * the definition's option blocks
      */
     "options": Section[] | null;
-    "fires": Edge[] | null;
     "firedBy": Edge[] | null;
 
     /**
-     * the node at the other end of each of those firings, by its id
+     * the node at the other end of each of its firings, by its id
      */
     "linked": { [_ in string]?: Node } | null;
     "references": Node[] | null;
 
     /**
-     * the characters the event's portraits show
+     * how many times the definition reads each of its references, by the node's id
      */
-    "portraits": string[] | null;
+    "uses": { [_ in string]?: number } | null;
 
     /**
-     * the shape among the page's placeholders each portrait is drawn as
+     * the game rules the definition reads
      */
-    "silhouette": string;
+    "rules": Rule[] | null;
 
     /**
-     * the path of the picture found; "" if there is none
+     * the copy of its name that the definition hides; nil for none
      */
-    "background": string;
+    "copy"?: Node | null;
 }
 
 /**
- * An Edge is one firing the graph draws, from a firer to what it fires.
+ * An Edge is one firing, from a firer to what it fires.
  */
 export interface Edge {
     "from": string;
     "to": string;
 
     /**
-     * the delay as written: days, months or years
+     * the delay in words, such as 7 days or 10–30 days; "" for none
      */
-    "days"?: string;
+    "delay"?: string;
 
     /**
-     * the scripted effects passed through, when they are not drawn as nodes
+     * the soonest it comes, in days; 0 for none, -1 for a value or a name
+     */
+    "delayDays": number;
+
+    /**
+     * the blocks it is written inside, from the top of its definition
+     */
+    "steps"?: Step[] | null;
+
+    /**
+     * the key of the statement that writes it, such as trigger_event
+     */
+    "effect"?: string;
+
+    /**
+     * the title that statement gives it, each data call in words
+     */
+    "title"?: string;
+
+    /**
+     * Via is the scripted effects passed through, when they are not drawn as nodes.
      */
     "via"?: string[] | null;
 
@@ -141,9 +207,34 @@ export interface Node {
     "what": string;
 
     /**
-     * its localized title; "" if it has none
+     * its localized title, each data call in words; "" if it has none
      */
     "title": string;
+
+    /**
+     * Display is how the player sees an event or a message: window, hidden or message; "" for any other entry.
+     */
+    "display"?: string;
+
+    /**
+     * the path of an event's picture; "" if none is found
+     */
+    "background"?: string;
+
+    /**
+     * the comment lines just above its definition, joined by newlines
+     */
+    "comment"?: string;
+
+    /**
+     * an on_action the game calls from its own code
+     */
+    "hardcoded"?: boolean;
+
+    /**
+     * CopyOrigin is the origin of the latest-loaded copy of its name that its definition hides; "" for none.
+     */
+    "copyOrigin"?: string;
     "site": index$0.Site;
     "place": workspace$0.Place;
 
@@ -171,6 +262,40 @@ export interface Node {
      * the depth stopped at it, and it links further to a next step
      */
     "deep": boolean;
+
+    /**
+     * Fires is every firing it makes, in the order written. It is nil for a fold and outside a graph and a detail.
+     */
+    "fires"?: Edge[] | null;
+}
+
+/**
+ * A Rule is one game rule a definition reads, with its settings.
+ */
+export interface Rule {
+    /**
+     * the rule's name
+     */
+    "id": string;
+    "options": RuleOption[] | null;
+}
+
+/**
+ * A RuleOption is one setting of a game rule.
+ */
+export interface RuleOption {
+    "key": string;
+
+    /**
+     * its localized name; "" if it has none
+     */
+    "text": string;
+
+    /**
+     * its localized description; "" if it has none
+     */
+    "description": string;
+    "default"?: boolean;
 }
 
 /**
@@ -180,7 +305,7 @@ export interface Section {
     "key": string;
 
     /**
-     * a scalar as written, or a block on one line with inner blocks as { … }
+     * a scalar as written; "" for a block
      */
     "value": string;
 
@@ -190,20 +315,56 @@ export interface Section {
     "line": number;
 
     /**
-     * the block's own trigger on one line
+     * a block's own limit, else its trigger, in words
      */
-    "when"?: string;
-
-    /**
-     * one of the texts shows at random, else the first whose trigger holds
-     */
-    "random"?: boolean;
+    "when"?: Condition[] | null;
     "texts"?: Version[] | null;
+}
+
+/**
+ * A Step is one block a firing is written inside, as the page shows it.
+ */
+export interface Step {
+    /**
+     * as written, such as if, random_list, option or scope:child.dynasty
+     */
+    "key": string;
 
     /**
-     * an option's keys written as yes
+     * branch, weight, list, scope, option or block
      */
-    "flags"?: string[] | null;
+    "kind": string;
+
+    /**
+     * a weighted branch's number as written
+     */
+    "weight"?: string;
+
+    /**
+     * the blocks in a weighted branch that change its weight
+     */
+    "modifiers"?: number;
+
+    /**
+     * its limit, else its trigger, in words
+     */
+    "when"?: Condition[] | null;
+
+    /**
+     * an option's name in words; "" for the other kinds
+     */
+    "title"?: string;
+
+    /**
+     * Group is the line of the if that starts the chain a branch is in, or of a weighted branch's keyword; 0 for the
+     * other kinds.
+     */
+    "group"?: number;
+
+    /**
+     * counted from one
+     */
+    "line": number;
 }
 
 /**
@@ -217,14 +378,19 @@ export interface Version {
     "text": string;
 
     /**
+     * the text's pieces, each data call in words
+     */
+    "segments": loc$0.Segment[] | null;
+
+    /**
      * the detail's language has no message with its key
      */
     "missing"?: boolean;
 
     /**
-     * its trigger on one line; "" if it always can
+     * its trigger in words; nil if it always can
      */
-    "when"?: string;
+    "when"?: Condition[] | null;
 
     /**
      * counted from one

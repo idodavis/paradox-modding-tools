@@ -354,7 +354,8 @@ func (ws *Session) findText(mods *index.Index, site index.Site, language string)
 	return message.Text
 }
 
-// LookupTitle returns the title of a definition, or "" if it has none.
+// LookupTitle returns the title of a definition, or "" if it has none. A definition that writes no title key is
+// titled by its name, by its concept key for a game concept, and by the game's message title for a message.
 func (ws *Session) LookupTitle(mods *index.Index, site index.Site) string {
 	if key, ok := ws.FindTitleKey(mods, site); ok {
 		if text, _, ok := ws.LookupText(mods, key); ok {
@@ -363,54 +364,46 @@ func (ws *Session) LookupTitle(mods *index.Index, site index.Site) string {
 	}
 	reference := mods.ToReference(site)
 	key := reference.Name
-	if reference.Database == ws.Schema.Concepts {
+	switch {
+	case reference.Database == ws.Schema.Concepts:
 		key = ws.Game.ConceptPrefix + key
+	case reference.Database == ws.Schema.Messages && ws.Game.MessageTitle != "":
+		key = fmt.Sprintf(ws.Game.MessageTitle, key)
 	}
 	text, _, _ := ws.LookupText(mods, key)
 	return text
 }
 
 // FindTitleKey returns the localization key that a definition writes as its title, as the given index of the mods lists
-// the definition. It returns false if the definition writes none or its statement cannot be found.
+// the definition. A title written as a block is the first text in it. It returns false if the definition writes none
+// or its statement cannot be found.
 func (ws *Session) FindTitleKey(mods *index.Index, site index.Site) (string, bool) {
 	tree, statement, err := ws.FindStatement(mods, site)
 	if err != nil {
 		return "", false
 	}
-	return tree.FindChildValue(statement, game.TitleKey)
+	return FindTextKey(tree, statement, game.TitleKey)
 }
 
-// FindDelay returns the delay written for a firing, such as "days = 5", as the given index of the mods lists the use
-// that fires. It returns "" if there is none or the file cannot be read.
-func (ws *Session) FindDelay(mods *index.Index, use index.Site) string {
-	tree, err := ws.LoadTree(mods.File(use).Path)
-	if err != nil {
-		return ""
+// FindTextKey returns the localization key a statement writes under the given key, such as an event's title. Where it
+// writes a block there, it is the first desc in the block that has a value, as in a first_valid of triggered descs, or
+// a text written directly in the block, as in an option's triggered name. It returns false if the statement writes no
+// such key, or a block that holds neither.
+func FindTextKey(tree *jomini.Tree, statement int32, key string) (string, bool) {
+	child, ok := tree.FindChild(statement, key)
+	if !ok {
+		return "", false
 	}
-	// the delay is in the first block, going up from the use, that holds one directly or in a delay block
-	for statement := tree.FindStatement(mods.Occurrence(use).Span.Start); statement > 0; statement = tree.Statements[statement].Parent {
-		holders := []int32{statement}
-		if block, ok := tree.FindChild(statement, game.EventDelay.Block); ok {
-			holders = append(holders, block)
-		}
-		for _, holder := range holders {
-			if delay := findDuration(tree, holder); delay != "" {
-				return delay
-			}
-		}
-	}
-	return ""
-}
-
-// findDuration returns the statement that writes a delay in a block, such as "days = 5". It returns "" if there is
-// none.
-func findDuration(tree *jomini.Tree, block int32) string {
-	for _, key := range game.EventDelay.Keys {
-		if child, ok := tree.FindChild(block, key); ok {
-			return tree.Text(tree.Statements[child].Span)
+	// the child itself, then each statement inside its block
+	for position := child; position < tree.Statements[child].Last; position++ {
+		current := tree.Statements[position]
+		field := tree.Text(current.Key)
+		isText := field == game.DescriptionKey || field == game.LabelKey && current.Parent == child
+		if (position == child || isText) && !current.Value.IsEmpty() {
+			return tree.Unquoted(current.Value), true
 		}
 	}
-	return ""
+	return "", false
 }
 
 // FindStatement returns the tree of a site's file and the statement that writes it. It returns an error if the file
@@ -439,8 +432,8 @@ func (ws *Session) Rescan(changes []FileChange) error {
 	var failure error
 	for _, change := range changes {
 		place := ws.Locate(mods, change.Path)
-		// the index skips the agents' folders, as it skips every dot folder
-		if place.Root == "" || place.ReadOnly || isInAgentFolder(place.Rel) {
+		// the index skips the watched dot folders, as it skips every dot folder
+		if place.Root == "" || place.ReadOnly || isInWatchedFolder(place.Rel) {
 			continue
 		}
 		listed, err := ws.listChanged(mods, place, change.Deleted)

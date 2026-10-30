@@ -152,11 +152,20 @@ A first try that kept a state per file and pressed only what the file also showe
 CK3's folders, 56 of 204 in Vic3's and 71 of 483 in EU5's, so it was dropped for a design that covers every
 window.
 
-Two things sit on top of it:
+Three things sit on top of it:
 
 - **Preview values.** A binding such as `[Character.GetName]` is drawn as `[…]` today. With preview values, a binding
   shows text or a number you give it, or one read from a save game.
 - **An event simulator** that steps through an event, its options and what each one fires, over those values.
+- **An event's window in the Event Graph.** A card of the window was built and dropped in October 2026, as more work
+  than it was worth while nothing evaluated an event's triggers. Done again, it is the game's own event window drawn
+  with the event's values: each game's window binds about 14 data calls (CK3 `character_event.gui`'s
+  `EventWindowData`, Vic3 `eventwindow.gui`'s `EventWindow`, `Event` and `EventOption`), and the card's lessons stand.
+  Each `first_valid` or `random_valid` block shows one text, so you pick the text it shows, not its conditions. Two
+  conditions exclude each other only where the script says so. A CK3 portrait's trigger is read in its character's
+  scope (`_events.info:100`), a widget's `is_shown` in the event's (`:170`). CK3's places are left, center, right, the
+  three lower ones and `sender` (`:89-95`), and Vic3's are its minor icons and its left and right icons. CK3's 11 event
+  windows are picked by an event's `window`; Vic3's 77 videos (`.bk2`) have no still to show.
 
 ## Image to DDS
 

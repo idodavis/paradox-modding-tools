@@ -12,7 +12,8 @@ import (
 // A Database is the row for one database's folder. A folder with no row is a database whose top-level keys name its
 // definitions.
 type Database struct {
-	// Houses is what it holds beyond definitions: events, on_actions, decisions, lists, concepts, history or modifiers.
+	// Houses is what it holds beyond definitions: events, on_actions, decisions, messages, lists, concepts, history or
+	// modifiers.
 	Houses        string
 	NamedBy       string   // how a definition is named: "" means its own key, else field, call, file, column or nothing
 	NameKey       string   // the key whose value names a definition, or holds the call that does
@@ -94,7 +95,9 @@ type EntryMode struct {
 
 // A PictureStep is one hop from an event toward its picture.
 type PictureStep struct {
-	Key      string // the key path read in the block the hop starts from
+	// Key is the key path read in the block the hop starts from. A key written key[field=value] reads, of the blocks
+	// of that key, the one that writes the value at the field.
+	Key      string
 	Database string // the database whose definition the key's value names
 	Match    string // the key path whose words match the value in each definition; "" means the definition's name
 }
@@ -110,6 +113,12 @@ type PictureChain struct {
 type Picture struct {
 	FileKey string // the key that writes a picture file outright; "" means none
 	Chains  []PictureChain
+}
+
+// A DelayUnit is one key a firing's delay is written with, and how many days one of it is.
+type DelayUnit struct {
+	Key  string
+	Days int
 }
 
 // Localization and File are the databases that a loc key and a file path name. No definition carries them.
@@ -138,17 +147,40 @@ const TitleKey = "title"
 // DescriptionKey is the key that writes an event's description: a localization key, or a block that chooses one.
 const DescriptionKey = "desc"
 
-// EventDelay is how a firing's delay is written.
-var EventDelay = struct {
-	Keys  []string // the keys that write how long the firing waits
-	Block string   // the key of a block that holds the delay of every firing written after it
-}{[]string{"days", "weeks", "months", "years"}, "delay"} // Vic3 effects.log:38529
+// LabelKey is the key that holds a text's localization key in a block that picks the text, as in an option's
+// name = { trigger = { … } text = <key> } or a custom_tooltip's text.
+const LabelKey = "text"
 
-// EventPortraits is how an event's portraits are found.
-var EventPortraits = struct {
-	Suffixes  []string // the last word of a portrait's key (left_portrait, left_icon)
-	Character string   // the key in a portrait's block that names its character
-}{[]string{"_portrait", "_icon"}, "character"}
+// HiddenKey is the key whose yes makes an event show no window (CK3 events/_events.info:38). The three games write it
+// alike.
+const HiddenKey = "hidden"
+
+// EventDelay is how a firing's delay is written. A month is counted as 30 days and a year as 365.
+var EventDelay = struct {
+	Units []DelayUnit // the keys that write how long the firing waits, in the order they are looked for
+	Block string      // the key of a block that holds the delay of every firing written after it
+}{[]DelayUnit{{"days", 1}, {"weeks", 7}, {"months", 30}, {"years", 365}}, "delay"} // Vic3 effects.log:38529
+
+// GameRules is how the game rules are written and named. The three games write them alike: CK3
+// common/game_rules/_game_rules.info:1-20, Vic3 common/game_rules/game_rules.md:1-12 and EU5
+// main_menu/common/game_rules/_game_rules.info:1-19.
+var GameRules = struct {
+	Database      string // the database of the rules, each a block holding a block per setting
+	Trigger       string // the trigger that asks whether a rule is set to the setting it names
+	DefaultKey    string // the key that names a rule's default setting; with none, the first setting is the default
+	CategoriesKey string // the key of the one block in a rule that is no setting
+	Setting       string // the localization key of a setting's name, with the setting at %s
+	Description   string // the localization key of a setting's description, with the setting at %s
+}{"game_rules", "has_game_rule", "default", "categories", "setting_%s", "setting_%s_desc"}
+
+// CustomTexts is how a customizable localization is written: a block for each text it can show, which names the
+// text's localization key. The three games write it alike: CK3 common/customizable_localization/_custom_loc.info:18-38,
+// EU5 in_game/common/customizable_localization/customizable_localization.info:1-10, and Vic3's own files there.
+var CustomTexts = struct {
+	Database string // the database of the customizable localizations
+	Block    string // the key of a block that holds one of the texts
+	Key      string // the key in that block that names the text's localization key
+}{"customizable_localization", "text", "localization_key"}
 
 // MisspelledFolders maps folder names the game never reads to the name it reads instead.
 var MisspelledFolders = map[string]string{"localisation": "localization"}
@@ -189,8 +221,8 @@ var EntryModes = []EntryMode{
 	{Prefix: "INJECT"}, {Prefix: "REPLACE", Replaces: true},
 }
 
-// FireHouses are the Houses of the databases that fire and are fired.
-var FireHouses = []string{"events", "on_actions", "decisions"}
+// FireHouses are the Houses of the databases that fire and are fired. A message is fired when an effect sends it.
+var FireHouses = []string{"events", "on_actions", "decisions", "messages"}
 
 // TableSyntax is how a table file such as CK3's map_data/definition.csv writes its rows. The first column names a row.
 var TableSyntax = struct{ Separator, Comment string }{";", "#"}
@@ -336,7 +368,9 @@ var eu5Picture = Picture{
 		Steps: []PictureStep{
 			{Key: "illustration_tags", Database: "gfx/illustrations/database", Match: "tags"},
 			{Key: "scene", Database: "gfx/scenes"},
-			{Key: "ecs_illustration_image/list", Database: "gfx/images", Match: "tag"},
+			// a scene's layers are written front to back, and its backdrop is the one drawn on background2_mesh, as
+			// in_game/gfx/scenes/00_scenes_events.txt writes each of its characters_ scenes
+			{Key: "ecs_illustration_image[pdxmesh=background2_mesh]/list", Database: "gfx/images", Match: "tag"},
 		},
 		FileKey: "illustration_image/texture_file",
 	}},
@@ -345,6 +379,8 @@ var eu5Picture = Picture{
 var ck3Databases = map[string]Database{ // its .info files unless noted
 	"common/on_action": {Houses: "on_actions", RunOrder: onActionOrder},
 	"events":           {Houses: "events", RunOrder: ck3EventOrder},
+	// _messages.info:1, sent by send_interface_message, send_interface_toast and send_interface_popup (effects.log:9999)
+	"common/messages": {Houses: "messages"},
 	// _decisions.info:194,200,208
 	"common/decisions": {
 		Houses: "decisions", RunOrder: []string{"is_shown", "is_valid", "cost", "cooldown", "effect"},
@@ -411,6 +447,7 @@ var vic3Databases = map[string]Database{
 	"common/on_actions":       {Houses: "on_actions", RunOrder: onActionOrder}, // _on_actions.md
 	"events":                  {Houses: "events", RunOrder: eventOrder},        // the wiki
 	"common/decisions":        {Houses: "decisions"},
+	"common/messages":         {Houses: "messages"}, // post_notification sends one (effects.log:27072)
 	"gfx/map/map_object_data": {NamedBy: "nothing"},
 	"gfx/map/post_effects":    {NamedBy: "field", NameKey: "name", WrapperKeys: []string{"posteffect_volumes"}},
 	"common/history":          {Houses: "history", NamedBy: "nothing", Shape: "effects"}, // COUNTRIES = { … }: effects

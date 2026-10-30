@@ -20,7 +20,6 @@ import (
 	"paradox-modding-tools/internal/files"
 	"paradox-modding-tools/internal/game"
 	"paradox-modding-tools/internal/index"
-	"paradox-modding-tools/internal/jomini"
 	"paradox-modding-tools/internal/loc"
 	"paradox-modding-tools/internal/schema"
 	"paradox-modding-tools/services/lsp"
@@ -355,7 +354,7 @@ func (hlt *Service) WriteScaffold(modID, language string) ([]string, error) {
 	scaffolds := ListScaffolds(ws.Mods.Load(), mod, language)
 	paths := slices.Sorted(maps.Keys(scaffolds))
 	for position, target := range paths {
-		if err := hlt.writeMessages(target, language, scaffolds[target]); err != nil {
+		if err := hlt.writeMessages(target, scaffolds[target]); err != nil {
 			return paths[:position], err
 		}
 	}
@@ -364,22 +363,20 @@ func (hlt *Service) WriteScaffold(modID, language string) ([]string, error) {
 	return paths, nil
 }
 
-// writeMessages adds messages at the end of a localization file in a language, in the file's own line ending and
-// encoding. A file that is missing or holds nothing is written whole, with the language's header and a byte order
-// mark.
-func (hlt *Service) writeMessages(path, language string, messages []loc.Message) error {
+// writeMessages adds messages at the end of a localization file, in the file's own line ending and encoding. A file
+// that is missing or holds nothing gets its header first, in the language its name ends in. It returns an error if
+// the file cannot be read or written, or its name ends in no language.
+func (hlt *Service) writeMessages(path string, messages []loc.Message) error {
 	text, err := files.LoadText(path)
+	if err == nil && strings.TrimSpace(text.Text) == "" {
+		if err = hlt.Workspace.CreateLocalization(path); err == nil {
+			text, err = files.LoadText(path)
+		}
+	}
 	if err != nil {
 		return err
 	}
-	switch ending := jomini.LineEnding(text.Text); {
-	case strings.TrimSpace(text.Text) == "":
-		text = files.Text{Text: loc.Encode(language, messages), Encoding: files.EncodingUTF8BOM}
-	case strings.HasSuffix(text.Text, "\n"):
-		text.Text += loc.EncodeMessages(messages, ending)
-	default:
-		text.Text += ending + loc.EncodeMessages(messages, ending)
-	}
+	text.Text += loc.EncodeAddition(text.Text, messages)
 	return hlt.Workspace.Write(path, text)
 }
 

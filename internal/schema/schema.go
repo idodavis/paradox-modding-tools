@@ -150,8 +150,9 @@ type Modifier struct {
 
 // An OnAction is one on_action the dumps declare, with the scope it runs in.
 type OnAction struct {
-	Name  string
-	Scope string
+	Name      string
+	Scope     string
+	Hardcoded bool // the game calls it from its own code, as the dumps' "From Code: Yes" says
 }
 
 // A ScriptedDefinition is a scripted effect, trigger, value or list the game or a mod defines, with the parameters it
@@ -207,6 +208,7 @@ type Schema struct {
 	UnlistedCalls map[string]bool
 	Lists         string   // the database of scripted lists, or "" if the game has none
 	Events        string   // the database of events, or "" if the game has none
+	Messages      string   // the database of the messages an effect sends the player, or "" if the game has none
 	Concepts      string   // the database of game concepts, or "" if the game has none
 	ModifierTypes string   // the database of modifier types, or "" if the game has none
 	Effects       string   // the database of scripted effects, or "" if the game has none
@@ -362,7 +364,8 @@ func (schema *Schema) buildDatabases(row *game.Game, folders []string) {
 		}
 	}
 	houses := map[string]*string{
-		"events": &schema.Events, "lists": &schema.Lists, "concepts": &schema.Concepts, "modifiers": &schema.ModifierTypes,
+		"events": &schema.Events, "messages": &schema.Messages, "lists": &schema.Lists, "concepts": &schema.Concepts,
+		"modifiers": &schema.ModifierTypes,
 	}
 	for purpose, house := range houses {
 		if len(housed[purpose]) == 1 {
@@ -515,8 +518,8 @@ func (schema *Schema) ResolveLink(link, scope string) (string, bool) {
 	return command.Target, true
 }
 
-// isLink reports whether a key or a value starts with a scope link, ignoring case, as scope:target and prev do.
-func (schema *Schema) isLink(key string) bool {
+// IsLink reports whether a key or a value starts with a scope link, ignoring case, as scope:target and prev do.
+func (schema *Schema) IsLink(key string) bool {
 	first := strings.ToLower(jomini.SplitChain(key)[0])
 	if command := schema.Commands[first]; command != nil && !command.Wild && slices.Contains(command.Declared, game.DeclaredLink) {
 		return true
@@ -728,6 +731,38 @@ func ToPhrase(text string) string {
 		previous = r
 	}
 	return words.String()
+}
+
+// DescribeStep returns one step of a data call in words, with its quoted arguments after them. A getter's leading word
+// is dropped from a step that reaches an object. A step whose function takes a name, such as Custom('GetDaughterSon'),
+// reads as that name in words instead, without its getter's word: "daughter son". A function that takes two names
+// reads as the last.
+func DescribeStep(step jomini.Step, reaches bool) string {
+	var given []string
+	for _, argument := range step.Arguments {
+		if argument.Quoted && argument.Text != "" {
+			given = append(given, argument.Text)
+		}
+	}
+	if _, named := game.GUI.CallTargets[step.Text]; named && len(given) > 0 {
+		return ToPhrase(dropGetter(given[len(given)-1]))
+	}
+	name := step.Text
+	if reaches {
+		name = dropGetter(name)
+	}
+	return strings.Join(append([]string{ToPhrase(name)}, given...), " ")
+}
+
+// dropGetter returns a function's name without the getter's word it starts with, such as FirstName for GetFirstName.
+// A name that is the word alone, or goes on in lower case, is returned as it is.
+func dropGetter(name string) string {
+	for _, getter := range game.GUI.Getters {
+		if rest, ok := strings.CutPrefix(name, getter); ok && rest != "" && unicode.IsUpper([]rune(rest)[0]) {
+			return rest
+		}
+	}
+	return name
 }
 
 // MatchValue reports whether a written value fits what a field takes. A scalar never fits a color or a block.

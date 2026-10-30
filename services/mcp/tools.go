@@ -219,20 +219,22 @@ func (mcp *Service) addPageTools(server *sdk.Server) {
 	}))
 	sdk.AddTool(server, &sdk.Tool{Name: "list_codes", Description: "Lists Health's checks: each one's id, " +
 		"question, level and message."}, answer(func(struct{}) ([]lsp.Code, error) { return mcp.Health.ListCodes(), nil }))
-	sdk.AddTool(server, &sdk.Tool{Name: "find_roots", Description: "Finds the events, on_actions, decisions " +
-		"and scripted effects an Event Graph can be drawn from, by id, namespace or number."},
+	sdk.AddTool(server, &sdk.Tool{Name: "find_roots", Description: "Finds the events, on_actions, decisions, " +
+		"messages and scripted effects an Event Graph can be drawn from, by id, namespace or number."},
 		answer(func(request textQuery) ([]graph.Node, error) {
 			return mcp.Graph.FindRoots(request.Query, cmp.Or(request.Limit, defaultLimit)), nil
 		}))
 	sdk.AddTool(server, &sdk.Tool{Name: "build_graph", Description: "Draws the Event Graph of a root: what it " +
-		"fires and what fires it, step by step."}, answer(func(request graphRoot) (graph.Graph, error) {
-		if err := mcp.checkNode(request.Root); err != nil {
-			return graph.Graph{}, err
-		}
-		return mcp.Graph.BuildGraph(request.Root, lo.FromPtrOr(request.Filter, mcp.Graph.Defaults()))
-	}))
+		"fires and what fires it, step by step, each firing with the blocks it sits in and its delay."},
+		answer(func(request graphRoot) (graph.Graph, error) {
+			if err := mcp.checkNode(request.Root); err != nil {
+				return graph.Graph{}, err
+			}
+			return mcp.Graph.BuildGraph(request.Root, lo.FromPtrOr(request.Filter, mcp.Graph.Defaults()))
+		}))
 	sdk.AddTool(server, &sdk.Tool{Name: "build_detail", Description: "Gives one Event Graph node's detail: its " +
-		"texts, what it fires and what fires it, what it reads, and its script."}, answer(mcp.buildDetail))
+		"texts, what it fires and what fires it, what it reads and the game rules among it, the game's copy it " +
+		"replaces, and its script."}, answer(mcp.buildDetail))
 	sdk.AddTool(server, &sdk.Tool{Name: "search_pages", Description: "Finds the game wiki's modding pages " +
 		"that hold a text."}, answer(func(request textQuery) ([]wiki.Summary, error) {
 		pages, err := mcp.Wiki.SearchPages(request.Query)

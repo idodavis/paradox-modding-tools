@@ -10,10 +10,10 @@ import type { ContextMenuItem } from "@nuxt/ui";
 
 import type { Edge } from "@services/graph/models";
 import * as lsp from "@services/lsp/service";
-import type { Card, Fix, Location } from "@services/lsp/models";
+import type { Card, Location } from "@services/lsp/models";
 
 import { COMMANDS, compareWithFile, compareWithGame, findGameCopy, findKbds } from "../../app/commands";
-import { copiesQuery, detailQuery, fileQuery, loadQuery, placeQuery, wikiPagesQuery } from "../../queries";
+import { copiesQuery, detailQuery, fileQuery, loadQuery, wikiPagesQuery } from "../../queries";
 import { useEditorStore } from "../../stores/editor";
 import { useSearchStore } from "../../stores/search";
 import { useWindowsStore, type WikiLookup } from "../../stores/windows";
@@ -21,7 +21,7 @@ import { useWorkspaceStore } from "../../stores/workspace";
 import { markChanges } from "./editor/changes";
 import { decorate } from "./editor/conflicts";
 import { attachHover } from "./editor/hover";
-import { applyEdits, openModel, type Model } from "./editor/models";
+import type { Model } from "./editor/models";
 import { editorOptions } from "./editor/monaco";
 import { CLASSES } from "./WikiPane.vue";
 
@@ -89,14 +89,6 @@ const lookup = computed((): WikiLookup | undefined => {
 // the menu offers the compare with the game's copy only for a mod's file the game has too
 const { data: copies } = useQuery(() => ({ ...copiesQuery(model.place.path), enabled: !model.place.readOnly }));
 const gameCopy = computed(() => findGameCopy(model.place, copies.value));
-const { mutate: applyFix } = useMutation({
-  mutation: async (fix: Fix) => {
-    for (const [path, edits] of Object.entries(fix.edits ?? {})) {
-      const place = await loadQuery(placeQuery(path));
-      if (place) applyEdits(await openModel(place), edits ?? []);
-    }
-  },
-});
 
 onMounted(() => {
   if (!host.value) return;
@@ -183,6 +175,12 @@ async function locateFiring(edge: Edge, name: string): Promise<Location> {
   };
 }
 
+/** Keeps the focus in the editor a row of the menu moved it to, such as the file a fix opened. */
+function keepMovedFocus(event: Event): void {
+  const focused = document.activeElement;
+  if (focused?.closest(".monaco-editor") && !host.value?.contains(focused)) event.preventDefault();
+}
+
 /** Runs one of Monaco's own actions in this editor. */
 function run(action: string): void {
   view.value?.focus();
@@ -206,7 +204,7 @@ const groups = computed<ContextMenuItem[][]>(() => [
   (asked.value?.fixes ?? []).map((fix) => ({
     label: fix.title,
     icon: "i-lucide-lightbulb",
-    onSelect: () => applyFix(fix),
+    onSelect: () => editorStore.applyFix(fix),
   })),
   [
     { label: "Go to definition", kbds: ["F12"], onSelect: () => run("editor.action.revealDefinition") },
@@ -276,7 +274,12 @@ const menu = computed(() => groups.value.filter((group) => group.length));
 
 <template>
   <!-- the menu's trigger takes its child's ref, so the editor's element is the one inside it -->
-  <UContextMenu :items="menu" :ui="{ content: 'w-79' }" @update:open="(open) => open && ask()">
+  <UContextMenu
+    :items="menu"
+    :ui="{ content: 'min-w-79 max-w-130' }"
+    :content="{ onCloseAutoFocus: keepMovedFocus }"
+    @update:open="(open) => open && ask()"
+  >
     <div class="flex min-h-0 flex-1">
       <div ref="host" class="min-w-0 flex-1 border-s-12 border-(--bg-0)" />
     </div>

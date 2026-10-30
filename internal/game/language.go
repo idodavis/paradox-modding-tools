@@ -1,5 +1,6 @@
 // language.go holds the script language's own rules: the shapes a block can hold and how each reads its keys, the
-// keywords with the sentence a hover card shows for each, and the words that name a scope, a variable or a yes-or-no.
+// keywords with the sentence a hover card shows for each and the words a condition reads, and the words that name a
+// scope, a variable or a yes-or-no.
 
 package game
 
@@ -41,10 +42,21 @@ type Keyword struct {
 	Shows  string // a description marker: which of its texts it shows, first, random or leaf
 	Class  string // the operator class: logical, conditional, flow, display, saving, math, list; "" means none
 	Blurb  string // the one line a hover card shows
+	// Says is what a condition in words reads for it, a * in it the rest of a prefix key; "" means its key in words.
+	Says string
+	// Covers marks a keyword whose own text is shown in place of the conditions written inside it.
+	Covers bool
+	// ValueFirst marks a keyword whose value a condition in words reads first, as what it is about: X exists.
+	ValueFirst bool
+	// Negates marks a keyword that is true when what it holds is false; around one condition, it reads as that
+	// condition, negated.
+	Negates bool
 	// Follows are the keys, in lower case, one of which must be written just before it in its block; empty means any.
 	Follows []string
 	// Weighted marks a keyword whose branches are weights: a branch's key is a number, and its chance is its share.
 	Weighted bool
+	// Modifies marks a keyword whose block changes the weight of the block it is written in.
+	Modifies bool
 	// Preview marks a keyword whose block is shown in the tooltip and never run.
 	Preview bool
 }
@@ -197,11 +209,15 @@ var Shapes = map[string]ShapeRule{
 // Keywords lists the keys the language gives a fixed shape to, then the operators the dumps declare as commands.
 var Keywords = []Keyword{
 	{Key: "random_list/<number>", Shape: "effects", Caller: AnyCall, Weighted: true, Blurb: "One branch of a random list; its number is how likely it is."},
+	// _on_actions.info:55-90 (CK3; EU5's on_actions.info and Vic3's _on_actions.md alike): one entry is picked to fire
+	{Key: "random_events/<number>", Weighted: true, Blurb: "One event the on_action can pick; its number is how likely it is. An event of 0 is a chance that none fires."},
+	{Key: "random_on_action/<number>", Weighted: true, Blurb: "One on_action the on_action can pick; its number is how likely it is."},
+	{Key: "random_on_actions/<number>", Weighted: true, Blurb: "One on_action the on_action can pick; its number is how likely it is."},
 	{Key: "switch/<any>", Shape: "enclosing", Blurb: "One case of a switch: runs when the trigger's value is this."},
 	{Key: "every_*", Shape: "effects", Class: "list", Blurb: "Runs the effects inside it on every item of the list named after every_."},
 	{Key: "random_*", Shape: "effects", Class: "list", Blurb: "Runs the effects inside it on one random item of the list."},
 	{Key: "ordered_*", Shape: "effects", Class: "list", Blurb: "Runs the effects inside it on the items of the list in the order given."},
-	{Key: "any_*", Shape: "triggers", Class: "list", Blurb: "True when at least one item of the list passes the triggers inside it."},
+	{Key: "any_*", Shape: "triggers", Class: "list", Says: "any * where", Blurb: "True when at least one item of the list passes the triggers inside it."},
 	// no dump declares a list's custom text; the games write it inside every_ and ordered_ lists only
 	{Key: "every_*/custom", Shape: "description", Class: "display", Blurb: customBlurb},
 	{Key: "ordered_*/custom", Shape: "description", Class: "display", Blurb: customBlurb},
@@ -236,36 +252,36 @@ var Keywords = []Keyword{
 	{Holder: "value", Key: "base", Shape: "value", Class: "math", Blurb: "The number a weight starts from."},
 	// the CK3 wiki's Weight modifier page
 	{Holder: "value", Key: "factor", Shape: "value", Class: "math", Blurb: "Multiplies the weight by the number given."},
-	{Holder: "value", Key: "modifier", Shape: "value", Blurb: "Changes the weight by its add or factor when the triggers inside it hold."},
+	{Holder: "value", Key: "modifier", Shape: "value", Modifies: true, Blurb: "Changes the weight by its add or factor when the triggers inside it hold."},
 	// common/character_interactions/00_alliance.txt:648 writes a weight modifier's conditions in it
 	{Holder: "value", Key: "trigger", Shape: ShapeTriggers, Blurb: "The conditions that must hold for the modifier around it to apply."},
-	{Holder: "value", Key: "opinion_modifier", Shape: "arguments", Blurb: "Changes the weight by how much one character likes another."},
-	{Holder: "value", Key: "compare_modifier", Shape: "arguments", Blurb: "Changes the weight by how a value of one character compares with another's."},
-	{Key: "and", Shape: "triggers", Class: "logical", Blurb: "True only when everything inside it is true."},
-	{Key: "or", Shape: "triggers", Class: "logical", Blurb: "True when at least one thing inside it is true."},
-	{Key: "not", Shape: "triggers", Class: "logical", Blurb: "True when what is inside it is false."},
-	{Key: "nor", Shape: "triggers", Class: "logical", Blurb: "True only when nothing inside it is true."},
-	{Key: "nand", Shape: "triggers", Class: "logical", Blurb: "True unless everything inside it is true."},
-	{Key: "all_false", Shape: "triggers", Class: "logical", Blurb: "True only when nothing inside it is true (the same as NOR)."},
-	{Key: "any_false", Shape: "triggers", Class: "logical", Blurb: "True when at least one thing inside it is false (the same as NAND)."},
+	{Holder: "value", Key: "opinion_modifier", Shape: "arguments", Modifies: true, Blurb: "Changes the weight by how much one character likes another."},
+	{Holder: "value", Key: "compare_modifier", Shape: "arguments", Modifies: true, Blurb: "Changes the weight by how a value of one character compares with another's."},
+	{Key: "and", Shape: "triggers", Class: "logical", Says: "all of", Blurb: "True only when everything inside it is true."},
+	{Key: "or", Shape: "triggers", Class: "logical", Says: "any of", Blurb: "True when at least one thing inside it is true."},
+	{Key: "not", Shape: "triggers", Class: "logical", Says: "not all of", Negates: true, Blurb: "True when what is inside it is false."},
+	{Key: "nor", Shape: "triggers", Class: "logical", Says: "none of", Negates: true, Blurb: "True only when nothing inside it is true."},
+	{Key: "nand", Shape: "triggers", Class: "logical", Says: "not all of", Negates: true, Blurb: "True unless everything inside it is true."},
+	{Key: "all_false", Shape: "triggers", Class: "logical", Says: "none of", Negates: true, Blurb: "True only when nothing inside it is true (the same as NOR)."},
+	{Key: "any_false", Shape: "triggers", Class: "logical", Says: "not all of", Negates: true, Blurb: "True when at least one thing inside it is false (the same as NAND)."},
 	{Key: "always", Class: "logical", Blurb: "True or false as written: always = yes is always true."},
 	{Key: "if", Shape: "enclosing", Class: "conditional", Blurb: "Runs what is inside it when its limit holds."},
 	{Key: "else_if", Shape: "enclosing", Class: "conditional", Blurb: "Runs when the if or else_if before it did not, and its own limit holds.", Follows: []string{"if", "else_if"}},
 	{Key: "else", Shape: "enclosing", Class: "conditional", Blurb: "Runs when no if or else_if before it ran.", Follows: []string{"if", "else_if"}},
-	{Key: "trigger_if", Shape: "enclosing", Class: "conditional", Blurb: "Checks what is inside it only when its limit holds."},
-	{Key: "trigger_else_if", Shape: "enclosing", Class: "conditional", Blurb: "Checks what is inside it when the trigger_if before it was skipped and its own limit holds.", Follows: []string{"trigger_if", "trigger_else_if"}},
-	{Key: "trigger_else", Shape: "enclosing", Class: "conditional", Blurb: "Checks what is inside it when every trigger_if before it was skipped.", Follows: []string{"trigger_if", "trigger_else_if"}},
-	{Key: "limit", Shape: "triggers", Class: "conditional", Blurb: "The conditions an if, a list, a while or a trigger_if checks first."},
+	{Key: "trigger_if", Shape: "enclosing", Class: "conditional", Says: "if", Blurb: "Checks what is inside it only when its limit holds."},
+	{Key: "trigger_else_if", Shape: "enclosing", Class: "conditional", Says: "else if", Blurb: "Checks what is inside it when the trigger_if before it was skipped and its own limit holds.", Follows: []string{"trigger_if", "trigger_else_if"}},
+	{Key: "trigger_else", Shape: "enclosing", Class: "conditional", Says: "else", Blurb: "Checks what is inside it when every trigger_if before it was skipped.", Follows: []string{"trigger_if", "trigger_else_if"}},
+	{Key: "limit", Shape: "triggers", Class: "conditional", Says: "when", Blurb: "The conditions an if, a list, a while or a trigger_if checks first."},
 	{Key: "alternative_limit", Shape: "triggers", Class: "conditional", Blurb: "A second limit a list falls back to when its limit matches nothing."},
 	{Key: "switch", Class: "conditional", Blurb: "Reads one trigger and runs the case whose value matches, else the fallback."},
-	{Key: "calc_true_if", Shape: "triggers", Class: "conditional", Blurb: "True when at least amount of the triggers inside it are true."},
+	{Key: "calc_true_if", Shape: "triggers", Class: "conditional", Says: "at least the amount of", Blurb: "True when at least amount of the triggers inside it are true."},
 	{Key: "while", Shape: "effects", Class: "flow", Blurb: "Repeats what is inside it while its limit holds, or count times."},
 	{Key: "random", Shape: "effects", Class: "flow", Blurb: "Runs what is inside it with the chance given, else nothing."},
 	{Key: "random_list", Class: "flow", Blurb: "Picks one branch at random; each branch's number is its weight."},
 	{Key: "hidden_effect", Shape: "effects", Class: "display", Blurb: "Runs its effects without showing them in the tooltip."},
 	{Key: "show_as_tooltip", Shape: "effects", Class: "display", Blurb: "Shows its effects in the tooltip without running them.", Preview: true},
-	{Key: "custom_tooltip", Class: "display", Blurb: "Shows a text of your own in place of the tooltip of what is inside."},
-	{Key: "custom_description", Class: "display", Blurb: "Shows a text of your own in place of the generated description."},
+	{Key: "custom_tooltip", Class: "display", Covers: true, Blurb: "Shows a text of your own in place of the tooltip of what is inside."},
+	{Key: "custom_description", Class: "display", Covers: true, Blurb: "Shows a text of your own in place of the generated description."},
 	{Key: "custom_label", Class: "display", Blurb: "Shows a text of your own in the tooltip, with this scope as its subject."},
 	{Key: "save_scope_as", Class: "saving", Blurb: "Remembers the current scope under a name for the rest of the event chain."},
 	{Key: "save_temporary_scope_as", Class: "saving", Blurb: "Remembers the current scope under a name until this effect ends."},
@@ -273,7 +289,7 @@ var Keywords = []Keyword{
 	{Key: "save_temporary_scope_value_as", Class: "saving", Blurb: "Remembers a number or a yes/no under a name until this effect ends."},
 	{Key: "add_to_list", Class: "saving", Blurb: "Adds the current scope to a named list for the rest of the event chain."},
 	{Key: "add_to_temporary_list", Class: "saving", Blurb: "Adds the current scope to a named list until this effect ends."},
-	{Key: "exists", Class: "saving", Blurb: "True when the scope named is there and is not nothing."},
+	{Key: "exists", Class: "saving", ValueFirst: true, Blurb: "True when the scope named is there and is not nothing."},
 }
 
 // DumpPhrases are the dumps' own words that the engine decides by.

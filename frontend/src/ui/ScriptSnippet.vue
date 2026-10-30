@@ -12,6 +12,7 @@ export const EDITOR_LANGUAGES: Readonly<Record<Format, string>> = {
   gfx: "paradox-script",
   localization: "paradox-localization",
   image: "plaintext",
+  "web-image": "plaintext",
   table: "plaintext",
   descriptor: "plaintext",
   shader: "plaintext",
@@ -31,6 +32,7 @@ const {
   language,
   line = 0,
   focus = undefined,
+  inline = false,
 } = defineProps<{
   text: string;
   language: string;
@@ -38,6 +40,8 @@ const {
   line?: number;
   /** The first and last file lines to highlight. */
   focus?: [number, number];
+  /** Whether it shows as a piece of a line, in the line's text size, with no gutter, band or padding. */
+  inline?: boolean;
 }>();
 
 const settings = useSettingsStore();
@@ -88,7 +92,14 @@ watch(
 </script>
 
 <template>
-  <div class="relative flex bg-(--bg-0) text-(--fg-1)" :style="style">
+  <!-- eslint-disable-next-line vue/no-v-html -- Monaco escapes the text it colors -->
+  <span
+    v-if="inline"
+    class="inline-snippet whitespace-pre-wrap"
+    :style="{ fontFamily: style.fontFamily }"
+    v-html="html"
+  />
+  <div v-else class="relative flex bg-(--bg-0) text-(--fg-1)" :style="style">
     <div
       v-if="band"
       class="pointer-events-none absolute inset-x-0 bg-(--bg-3) shadow-[inset_2px_0_0_var(--accent)]"
@@ -105,3 +116,13 @@ watch(
     <div class="relative min-w-0 flex-1 overflow-x-auto whitespace-pre" v-html="html" />
   </div>
 </template>
+
+<style scoped>
+/* Monaco sends its colored text as a block of lines, which a piece of a line shows on its own line */
+.inline-snippet :deep(div) {
+  display: inline;
+}
+.inline-snippet :deep(br) {
+  display: none;
+}
+</style>

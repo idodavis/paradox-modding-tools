@@ -206,16 +206,35 @@ func createModFolder(row *game.Game, dir, name, version string) (string, error) 
 	return folder, err
 }
 
-// createLocalization writes a mod's localization file with only its header. With no language it uses the base
-// language. A game with no localization folder gets none.
-func createLocalization(row *game.Game, folder, name, language string) error {
+// FindLocalizationFile returns the localization file PMT makes for a mod with the given folder and name, in a
+// language: the name's slug and the language's suffix, in the language's folder. With no language it uses the base
+// language. It returns false for a game with no localization folder.
+func FindLocalizationFile(row *game.Game, folder, name, language string) (string, bool) {
 	language = cmp.Or(language, game.BaseLanguage)
 	rel, ok := findLocalizationFolder(row)
 	if !ok {
-		return nil
+		return "", false
 	}
-	file := files.Join(folder, path.Join(rel, language, files.ToSlug(name)+"_l_"+language+".yml"))
-	return files.WriteText(file, files.Text{Text: loc.Encode(language, nil), Encoding: files.EncodingUTF8BOM})
+	return files.Join(folder, path.Join(rel, language, files.ToSlug(name)+"_l_"+language+".yml")), true
+}
+
+// CreateLocalization writes a localization file of a mod with only its header, in the language its name ends in. It
+// returns an error for a file outside the workspace's mods, or a name that ends in no language.
+func (wsp *Service) CreateLocalization(path string) error {
+	if _, err := wsp.findWritable(path); err != nil {
+		return err
+	}
+	return createLocalization(path)
+}
+
+// createLocalization writes a localization file with only its header, in the language its name ends in, with a byte
+// order mark. It returns an error for a name that ends in no language.
+func createLocalization(path string) error {
+	language := loc.FindSuffixLanguage(path)
+	if language == "" {
+		return fmt.Errorf("%s does not end in a language, such as _l_%s.yml", filepath.Base(path), game.BaseLanguage)
+	}
+	return files.WriteText(path, files.Text{Text: loc.Encode(language, nil), Encoding: files.EncodingUTF8BOM})
 }
 
 // findLocalizationFolder returns the folder a game keeps localization in. It returns false if the game has none.

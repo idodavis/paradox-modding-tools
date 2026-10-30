@@ -7,12 +7,15 @@ import * as monaco from "monaco-editor/editor/editor.api";
 import type { languages } from "monaco-editor";
 
 import * as lsp from "@services/lsp/service";
-import type { Completion, Edit, Location, Symbol } from "@services/lsp/models";
+import type { Completion, Edit, Fix, Location, Symbol } from "@services/lsp/models";
 import type { Place } from "@services/workspace/models";
 import { loadQuery, placeQuery } from "../../../queries";
 import { useEditorStore } from "../../../stores/editor";
 import { useWorkspaceStore } from "../../../stores/workspace";
 import { openModel, findModel } from "./models";
+
+/** The id of the command a quick fix of the lightbulb runs. */
+const FIX_COMMAND = "pmt.applyFix";
 
 // the place of a file in each folder that definitions or references were found in, by the folder's address
 const folders = new Map<string, Place>();
@@ -151,16 +154,16 @@ function registerWriting(selector: languages.LanguageFilter[]): void {
       );
       if (!problems.length) return none;
       const fixes = (await lsp.ListFixes(model.uri.fsPath, problems)) ?? [];
-      const actions = await Promise.all(
-        fixes.map(async (fix) => ({
-          title: fix.title,
-          kind: "quickfix",
-          edit: await toWorkspaceEdit(fix.edits ?? {}),
-        })),
-      );
+      const actions = fixes.map((fix) => ({
+        title: fix.title,
+        kind: "quickfix",
+        command: { id: FIX_COMMAND, title: fix.title, arguments: [fix] },
+      }));
       return { actions, dispose: () => undefined };
     },
   });
+  // a fix runs as the menu's does, so that it can write a new file and show where it leaves the caret
+  monaco.editor.registerCommand(FIX_COMMAND, (_accessor, fix: Fix) => useEditorStore().applyFix(fix));
 }
 
 /** Registers folding, inlay hints, colors and the semantic tokens. */

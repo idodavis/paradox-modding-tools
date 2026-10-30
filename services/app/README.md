@@ -23,8 +23,13 @@ it.
 
 A `ConfigFile` is config.json held in memory for every service. `Config` returns a copy that shares no slice or map
 with the file's own. `Update` changes the config under its lock, saves it whole and emits `config:changed` with the
-section it wrote: `installs`, `workspaces`, `settings`, or "" for all of them. A change that returns an error saves and
-emits nothing.
+section it wrote: `installs`, `workspaces`, `settings`, `agents`, `window`, or "" for all of them. A change that
+returns an error saves and emits nothing.
+
+The `Window` record is the main window as it was last closed: its size and whether it was maximized, saved as it
+closes. `OpenMainWindow` opens it so, centered, and at 1400 by 900 on the first run. A pane sized in pixels is saved
+by its splitter as a share of the window, so a window that opens at the size it closed at brings each pane back at its
+own size.
 
 A missing file is a first run. Any other read failure gives an empty config that is read-only, so a passing fault never
 overwrites the real file. The config carries no format version: a changed record means Reset data, never a migration.

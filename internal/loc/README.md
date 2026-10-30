@@ -9,7 +9,7 @@ offsets. It knows no game and no index: what a key names, and which message the 
 
 | file | holds |
 |---|---|
-| `loc.go` | `Message` and `File`; `Parse`, `ParseMessage`; the language rule (`FindSuffixLanguage`, `ToLanguageRel`, `ToLanguageKey`); the writer, `Encode` and `EncodeMessages` |
+| `loc.go` | `Message` and `File`; `Parse`, `ParseMessage`; the language rule (`FindSuffixLanguage`, `ToLanguageRel`, `ToLanguageKey`); the writer, `Encode`, `EncodeMessages` and `EncodeAddition` |
 | `markup.go` | `Markup` and its constants, `Segment`; `Segments`, `ToPlain`; the data calls a text writes (`ListCalls`) and the markup it gets wrong (`ListMarkupFaults`) |
 
 ## The file
@@ -48,7 +48,8 @@ segment's `Text` holds a sample of that value instead of the call.
 
 `Encode` writes the text of a localization file for one language: the header, then its messages. `EncodeMessages`
 writes the messages alone, each as its key, its version and its quoted text, in the layout the game reads, with the
-line ending of the file they join.
+line ending of the file they join. `EncodeAddition` writes what adds messages at the end of a file's text: a line break
+first where the text lacks a final one, then the messages, in the text's own line ending.
 
 ## Terms
 

@@ -650,34 +650,21 @@ func describe(call jomini.Call) Group {
 		given := lo.FilterMap(call.Steps[0].Arguments, func(argument jomini.Argument, _ int) (string, bool) {
 			return toCallText(lo.FromPtr(argument.Call)), argument.Call != nil
 		})
-		return Group{Subject: "Game", Label: strings.Join(append([]string{toPhrase(call.Steps[0], false)}, given...), " ")}
+		return Group{Subject: "Game", Label: strings.Join(append([]string{schema.DescribeStep(call.Steps[0], false)}, given...), " ")}
 	}
 	end := min(last, directSteps-1)
-	path := lo.Map(call.Steps[end:last], func(step jomini.Step, _ int) string { return toPhrase(step, true) })
+	path := lo.Map(call.Steps[end:last], func(step jomini.Step, _ int) string { return schema.DescribeStep(step, true) })
 	check := call.Steps[last]
 	exists := len(path) > 0 && check.Text == game.GUI.ValidFunction && len(check.Arguments) == 0
 	if !exists {
-		path = append(path, toPhrase(check, false))
+		path = append(path, schema.DescribeStep(check, false))
 	}
 	keys := lo.FlatMap(call.Steps[:end], func(step jomini.Step, _ int) []string { return listGiven(step) })
-	runes := []rune(toPhrase(jomini.Step{Text: call.Steps[end-1].Text}, true))
+	runes := []rune(schema.DescribeStep(jomini.Step{Text: call.Steps[end-1].Text}, true))
 	return Group{
 		Subject: string(unicode.ToUpper(runes[0])) + string(runes[1:]), Key: strings.Join(keys, " "),
 		Label: strings.Join(path, " › "), Exists: exists,
 	}
-}
-
-// toPhrase returns one step of a call in words, with its quoted arguments. A getter's leading word is dropped from a
-// step that reaches an object.
-func toPhrase(step jomini.Step, reaches bool) string {
-	name := step.Text
-	for _, getter := range game.GUI.Getters {
-		if rest, ok := strings.CutPrefix(name, getter); reaches && ok && rest != "" && unicode.IsUpper([]rune(rest)[0]) {
-			name = rest
-			break
-		}
-	}
-	return strings.Join(append([]string{schema.ToPhrase(name)}, listGiven(step)...), " ")
 }
 
 // listGiven returns the quoted arguments of a step that are not empty, in order.

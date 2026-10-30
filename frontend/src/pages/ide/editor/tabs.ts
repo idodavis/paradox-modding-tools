@@ -46,6 +46,7 @@ export const VIEWS: Readonly<Record<Format, { views: readonly View[]; icon: stri
   gfx: { views: ["code"], icon: gfxIcon },
   localization: { views: ["code"], icon: locIcon },
   image: { views: ["image"], icon: textureIcon },
+  "web-image": { views: ["image"], icon: textureIcon },
   table: { views: ["code"], icon: csvIcon },
   descriptor: { views: ["code"], icon: modIcon },
   shader: { views: ["code"], icon: shaderIcon },

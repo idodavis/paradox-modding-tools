@@ -270,18 +270,21 @@ func (app *Service) ShowFolder(path string) error {
 	return application.Get().Env.OpenFileManager(path, !stat.IsDir())
 }
 
-// OpenMainWindow opens the main window. Its close is held and sent to the frontend as window:closing, until
-// CloseWindow lets it through and the app quits.
+// OpenMainWindow opens the main window as it was last closed: maximized, or at its size, centered; 1400 by 900 on the
+// first run. Its close is held and sent to the frontend as window:closing, until CloseWindow lets it through, and then
+// its state is saved and the app quits.
 //
 //wails:ignore
 func (app *Service) OpenMainWindow() {
 	pmt := application.Get()
+	left := app.Config.Config().Window
 	window := newWindow(application.WebviewWindowOptions{
-		Name:   mainWindow,
-		Title:  "Paradox Modding Tools",
-		Width:  1400,
-		Height: 900,
-		URL:    "/",
+		Name:       mainWindow,
+		Title:      "Paradox Modding Tools",
+		Width:      cmp.Or(left.Width, 1400),
+		Height:     cmp.Or(left.Height, 900),
+		StartState: lo.Ternary(left.Maximized, application.WindowStateMaximised, application.WindowStateNormal),
+		URL:        "/",
 	})
 	window.RegisterHook(events.Common.WindowClosing, func(event *application.WindowEvent) {
 		if !app.mainClosable.Load() {
@@ -289,7 +292,23 @@ func (app *Service) OpenMainWindow() {
 			pmt.Event.Emit(EventWindowClosing, mainWindow)
 		}
 	})
-	window.OnWindowEvent(events.Common.WindowClosing, func(*application.WindowEvent) { pmt.Quit() })
+	window.OnWindowEvent(events.Common.WindowClosing, func(*application.WindowEvent) {
+		app.saveWindow(window)
+		pmt.Quit()
+	})
+}
+
+// saveWindow records how the main window is left, for the next start. A maximized window keeps the size it was last
+// left at unmaximized. A config that cannot be written records nothing.
+func (app *Service) saveWindow(window *application.WebviewWindow) {
+	maximized, bounds := window.IsMaximised(), window.Bounds()
+	_ = app.Config.Update("window", func(config *Config) error {
+		config.Window.Maximized = maximized
+		if !maximized {
+			config.Window.Width, config.Window.Height = bounds.Width, bounds.Height
+		}
+		return nil
+	})
 }
 
 // OpenWindow opens a new window with the given name on a page of the app. It returns an error if a window already

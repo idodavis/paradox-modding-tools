@@ -14,6 +14,9 @@ import { Call as $Call, CancellablePromise as $CancellablePromise } from "@wails
 // eslint-disable-next-line @typescript-eslint/ban-ts-comment
 // @ts-ignore: Unused imports
 import * as lsp$0 from "../lsp/models.js";
+// eslint-disable-next-line @typescript-eslint/ban-ts-comment
+// @ts-ignore: Unused imports
+import * as workspace$0 from "../workspace/models.js";
 
 // eslint-disable-next-line @typescript-eslint/ban-ts-comment
 // @ts-ignore: Unused imports
@@ -82,6 +85,15 @@ export function ExportPNG(target: string, data: string | null): $CancellableProm
 }
 
 /**
+ * FindReferences returns, for each picture, the DDS whose settings it keeps when it is saved as a DDS: the DDS of
+ * the same name beside it, else the game's own DDS at the place the picture's DDS will have. A picture with neither
+ * is left out. It returns an error if no workspace is open.
+ */
+export function FindReferences(paths: string[] | null): $CancellablePromise<{ [_ in string]?: workspace$0.Place } | null> {
+    return $Call.ByID(3394937835, paths);
+}
+
+/**
  * ListColors returns the game's named colors, for the color picker. It returns an empty list if no workspace is open.
  */
 export function ListColors(): $CancellablePromise<$models.NamedColor[] | null> {
@@ -90,7 +102,7 @@ export function ListColors(): $CancellablePromise<$models.NamedColor[] | null> {
 
 /**
  * ListDrawables lists the windows, types, templates and coats a file defines, the one the view opens on first. It
- * lists none for a file that is not a GUI or coat file.
+ * lists none for a file that is not a GUI or coat file, or not text.
  */
 export function ListDrawables(path: string): $CancellablePromise<lsp$0.Symbol[] | null> {
     return $Call.ByID(1197751465, path);
@@ -103,6 +115,14 @@ export function ListDrawables(path: string): $CancellablePromise<lsp$0.Symbol[] 
  */
 export function ListFrames(): $CancellablePromise<$models.Image[] | null> {
     return $Call.ByID(1929556180);
+}
+
+/**
+ * ListPictureFiles returns the pictures directly in a folder, by name: its images that are not DDS files. It returns
+ * an error if no workspace is open, the folder is outside it, or the folder cannot be read.
+ */
+export function ListPictureFiles(folder: string): $CancellablePromise<workspace$0.Place[] | null> {
+    return $Call.ByID(1251743187, folder);
 }
 
 /**
@@ -167,4 +187,13 @@ export function ResolveWindow(path: string, name: string): $CancellablePromise<$
  */
 export function Reveal(path: string, name: string, picks: { [_ in string]?: string } | null, widget: number): $CancellablePromise<{ [_ in string]?: string } | null> {
     return $Call.ByID(3826975671, path, name, picks, widget);
+}
+
+/**
+ * WriteDDS writes each picture beside itself as a DDS, in BC3 blocks when compressed and else uncompressed, with or
+ * without its mip levels, replacing a DDS of that name. It returns the files written. On an error it returns the ones
+ * written before it, and the error names the picture and how many were written.
+ */
+export function WriteDDS(paths: string[] | null, compressed: boolean, mipmaps: boolean): $CancellablePromise<string[] | null> {
+    return $Call.ByID(3500940746, paths, compressed, mipmaps);
 }

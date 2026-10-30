@@ -60,6 +60,23 @@ export function Create(path: string, dir: boolean): $CancellablePromise<void> {
 }
 
 /**
+ * CreateCopy copies a file of the game or of another mod to the same place in a mod, and returns the copy's path. It
+ * returns an error if no workspace is open, the mod is not in it or has no folder, the file is under none of its
+ * roots, or the mod has a file there already.
+ */
+export function CreateCopy(path: string, modID: string): $CancellablePromise<string> {
+    return $Call.ByID(1678022200, path, modID);
+}
+
+/**
+ * CreateLocalization writes a localization file of a mod with only its header, in the language its name ends in. It
+ * returns an error for a file outside the workspace's mods, or a name that ends in no language.
+ */
+export function CreateLocalization(path: string): $CancellablePromise<void> {
+    return $Call.ByID(1414076, path);
+}
+
+/**
  * CreateMod makes a mod with a localization file and adds it to a workspace. It returns an error if the workspace is
  * not recorded or the folder exists.
  */
@@ -194,8 +211,8 @@ export function Open(workspaceID: string): $CancellablePromise<void> {
 }
 
 /**
- * Read returns a file's text, its place in the workspace and the editor's draft of it. It returns an error if no
- * workspace is open or the file cannot be read.
+ * Read returns a file's text, its place in the workspace and the editor's draft of it. A file that is not text comes
+ * back as binary, with no text. It returns an error if no workspace is open or the file cannot be read.
  */
 export function Read(path: string): $CancellablePromise<$models.FileText> {
     return $Call.ByID(3746079041, path);

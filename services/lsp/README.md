@@ -51,8 +51,11 @@ file is read as the editor holds it.
   Monaco's semantic tokens against `ListLegend`.
 - **Edits.** `Format` keeps the file's own indentation, else the given one, and gives no edits for a file that does not
   parse or that would change in more than its spacing. Its edits come from `jomini.DiffEdits`. `ListFixes` gives the
-  quick fixes: the nearest defined name for one that nothing defines, a missing key with its default, and an entry mode
-  out of place removed.
+  quick fixes: the nearest defined name for one that nothing defines, a missing key with its default, an entry mode
+  out of place removed, and the file's localization keys with no base-language text added. That last fix adds every
+  such key of the file, each with an empty text, to the localization file PMT makes for the mod
+  (`workspace.FindLocalizationFile`). It works from the text the editor holds where that file is open. It writes the
+  file first when it is missing or empty (`Fix.Creates`), and says where the caret goes (`Fix.Reveal`).
 - **Details.** `ListFolds` returns every block that spans lines. `ListHints` reads each date in the mod's calendar,
   where its field expects a date. `ListColorSites` lists the colors a file writes, and `PresentColor` writes a color in
   the form the file already wrote it in; a color not written yet, such as a coat's layer's, takes the form the game's
@@ -104,7 +107,7 @@ or not, and why, as `index.ResolveSite` says: where no source says which copy th
 - **Code**: one kind of problem, with its question, its level, its topic and its message.
 - **Diagnostic**: one problem found in a file: its code, its range and its facts.
 - **Legend**: the token types and modifiers the semantic tokens are encoded against.
-- **Fix**: one quick fix, with its edits grouped by file.
+- **Fix**: one quick fix, with its edits grouped by file, a file it writes first, and where it leaves the caret.
 - **Fold**: one foldable region.
 - **Hint**: a text drawn inline beside the code.
 - **ColorSite**: one color written in a file.

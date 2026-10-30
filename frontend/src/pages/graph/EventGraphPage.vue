@@ -1,23 +1,25 @@
 <!--
-  The Event Graph page: the root search and the export in the toolbar, the filters, the canvas, and the detail in a
-  side panel or a drawer. Full screen floats the toolbar over the canvas.
+  The Event Graph page: Back and Forward, the root search and the filters in the toolbar, the canvas, and the detail
+  in a side panel or below. With no root it shows where to start. Full screen floats the toolbar over the canvas.
 -->
 <script setup lang="ts">
 import { computed, onDeactivated, shallowRef, useTemplateRef, watch } from "vue";
 import { useQuery } from "@pinia/colada";
-import { refDebounced, useElementSize, useFullscreen, useLocalStorage } from "@vueuse/core";
+import { computedAsync, refDebounced, useElementSize, useFullscreen, useLocalStorage } from "@vueuse/core";
 import { groupBy, union, xor } from "es-toolkit";
 import { useRouter } from "vue-router";
-import type { Filter } from "@services/graph/models";
+import type { Filter, Node } from "@services/graph/models";
 import { plural } from "../../lib/format";
-import { graphDefaultsQuery, graphQuery, graphRootsQuery } from "../../queries";
+import { graphDefaultsQuery, graphQuery, graphRootsQuery, ownRootsQuery } from "../../queries";
 import { makeChip, useChip } from "../../stores/agent";
+import { useSettingsStore } from "../../stores/settings";
 import { useWorkspaceStore } from "../../stores/workspace";
 import OriginChip from "../../ui/OriginChip.vue";
 import StatusFacts from "../../ui/StatusFacts.vue";
 import EventDetail from "./EventDetail.vue";
 import GraphCanvas from "./GraphCanvas.vue";
-import { lookupLook } from "./layout";
+import GraphStart from "./GraphStart.vue";
+import { buildLayout, lookupLook } from "./layout";
 
 const {
   id,
@@ -33,10 +35,21 @@ const {
   filters?: string;
 }>();
 
+/** A root kept in the recent list, with what the start page shows of it. */
+type Recent = Pick<Node, "id" | "database" | "name" | "what" | "title" | "display" | "background">;
+
 const NO_FILTER: Filter = { databases: [], origins: [], depth: 0, limit: 0, fanout: 0, expand: [], follow: false };
+/** The canvas with nothing drawn. */
+const EMPTY = { nodes: [], edges: [] };
+/** How many roots the recent list keeps. */
+const RECENT = 8;
 const LAYOUTS = [
   { label: "Detail below", icon: "i-lucide-panel-bottom", value: "panel" },
   { label: "Detail beside", icon: "i-lucide-panel-right", value: "drawer" },
+];
+const BRANCHES = [
+  { label: "Path", icon: "i-lucide-split", value: "path" },
+  { label: "All", value: "all" },
 ];
 const EXPORTS = [
   { label: "Save as SVG", icon: "i-lucide-file-code", onSelect: () => void canvas.value?.exportSvg() },
@@ -47,12 +60,20 @@ const CHECKBOX_UI = {
   wrapper: "flex grow items-center gap-2",
   label: "flex grow items-center gap-2 text-12",
 };
+/** The words that say how the chain is laid out, for each choice of the nodes that open. */
+const LAID_OUT: Record<string, string> = {
+  path: "left to right by step, the path's branches open",
+  all: "left to right by step, every node that fires open",
+};
 
 const router = useRouter();
 const workspace = useWorkspaceStore();
+const settings = useSettingsStore();
 const canvas = useTemplateRef("canvas");
 const page = useTemplateRef("page");
 const { isFullscreen, toggle: toggleFullscreen } = useFullscreen(page);
+const branches = useLocalStorage("pmt.graph.branches", "path");
+const recent = useLocalStorage<Recent[]>(() => `pmt.graph.recent.${id}`, []);
 
 const selected = shallowRef(node || root);
 watch(
@@ -62,6 +83,19 @@ watch(
 watch(
   () => node,
   (value) => (selected.value = value || selected.value),
+);
+
+// the roots drawn on this page, and where Back and Forward stand among them
+const history = shallowRef<string[]>([]);
+const position = shallowRef(-1);
+watch(
+  () => root,
+  (next) => {
+    if (!next || history.value[position.value] === next) return;
+    history.value = [...history.value.slice(0, position.value + 1), next];
+    position.value = history.value.length - 1;
+  },
+  { immediate: true },
 );
 
 const { data: defaults } = useQuery(() => ({ ...graphDefaultsQuery, enabled: workspace.isOpen() }));
@@ -82,9 +116,21 @@ const { data: graph, error } = useQuery(() => ({
   enabled: workspace.isOpen() && !!root && !!filter.value,
   placeholderData: (previous) => (root ? previous : undefined),
 }));
+const { data: own } = useQuery(() => ({ ...ownRootsQuery, enabled: workspace.isOpen() }));
+const unit = computed(() => Number(settings.value("appearance.scale")) / 100 || 1);
+// ELK lays the graph out in a worker; the canvas keeps the last layout until the next one arrives
+const flow = computedAsync(() => {
+  if (!graph.value) return EMPTY;
+  const options = { branches: branches.value, selected: selected.value, unit: unit.value };
+  return buildLayout(graph.value, {
+    ...options,
+    fanout: filter.value?.fanout ?? 0,
+    expand: filter.value?.expand ?? [],
+  });
+}, EMPTY);
 const kinds = computed(() =>
   (defaults.value?.databases ?? []).map((database) => {
-    const nodes = graph.value?.nodes?.filter((node) => node.database === database) ?? [];
+    const nodes = graph.value?.nodes?.filter((one) => one.database === database) ?? [];
     return { database, what: defaults.value?.labels?.[database] ?? database, count: nodes.length };
   }),
 );
@@ -111,23 +157,26 @@ const count = computed(() => {
   const total = graph.value?.total ?? 0;
   return total > drawn ? `${drawn} of ${plural(total, "node")}` : plural(total, "node");
 });
-const facts = computed(() => [
-  ...(graph.value
+const facts = computed(() =>
+  graph.value
     ? [
         {
           label: "Drawn",
-          value: `${count.value}${graph.value.truncated ? ", stopped at the node limit" : ""}${graph.value.nodes?.some((node) => node.deep) ? ", the depth limit" : ""}`,
+          value: `${count.value}${graph.value.truncated ? ", stopped at the node limit" : ""}${graph.value.nodes?.some((one) => one.deep) ? ", the depth limit" : ""}`,
         },
+        { label: "Laid out", value: LAID_OUT[branches.value] ?? "" },
       ]
-    : []),
-  { label: "Laid out", value: "left to right by step" },
-]);
+    : [{ label: "No root", value: "pick one to draw" }],
+);
 
 const term = shallowRef("");
 const search = refDebounced(term, 200);
 // the root's menu closes when another page is shown, since a kept page's menu would stay over it
 const menuOpen = shallowRef(false);
 onDeactivated(() => (menuOpen.value = false));
+// the menu lists the mods' own events, as the start page's Show all asks, until the user types
+const showingOwn = shallowRef(false);
+watch(term, () => (showingOwn.value = false));
 const { data: roots, isLoading: searching } = useQuery(() => ({
   ...graphRootsQuery(search.value),
   enabled: workspace.isOpen() && !!search.value,
@@ -135,13 +184,16 @@ const { data: roots, isLoading: searching } = useQuery(() => ({
 }));
 // the hits under a head per kind, the root first when the search does not hold it
 const items = computed(() => {
-  const heads = Object.entries(groupBy(roots.value ?? [], (node) => node.what)).map(([what, nodes]) => [
-    { id: what, type: "label" as const },
+  const head = (label: string) => ({ id: label, name: label, type: "label" as const });
+  if (showingOwn.value) return [[head("From your mods"), ...(own.value ?? [])]];
+  const heads = Object.entries(groupBy(roots.value ?? [], (one) => one.what)).map(([what, nodes]) => [
+    head(what),
     ...nodes,
   ]);
-  return root && !roots.value?.some((node) => node.id === root) ? [[{ id: root }], ...heads] : heads;
+  const shown = { id: root, name: rootNode.value?.name ?? root };
+  return root && !roots.value?.some((one) => one.id === root) ? [[shown], ...heads] : heads;
 });
-const rootNode = computed(() => graph.value?.nodes?.find((node) => node.id === root));
+const rootNode = computed(() => graph.value?.nodes?.find((one) => one.id === root));
 // the node selected goes with an agent's prompt
 useChip(() => {
   const selectedNode = graph.value?.nodes?.find((one) => one.id === selected.value);
@@ -155,13 +207,20 @@ useChip(() => {
 const rootLook = computed(() => lookupLook(rootNode.value?.database ?? ""));
 // the root's kind sits over the field's end, as wide as its words: a long id stops before it
 const { width: whatWidth } = useElementSize(useTemplateRef("whatBadge"), undefined, { box: "border-box" });
+// the root drawn joins the recent list, newest first
+watch(rootNode, (drawn) => {
+  if (!drawn) return;
+  const { id: rootId, database, name, what, title, display, background } = drawn;
+  const kept = recent.value.filter((one) => one.id !== rootId);
+  recent.value = [{ id: rootId, database, name, what, title, display, background }, ...kept].slice(0, RECENT);
+});
 
 // the detail opens beside the graph or below it; full screen keeps it beside
 const layout = useLocalStorage<string | number>("pmt.graph.layout", "drawer");
 const below = computed(() => layout.value === "panel" && !isFullscreen.value);
 const panes = computed(() => [
   { id: "graph", slot: "graph", order: 1, minSize: below.value ? undefined : 50 },
-  ...(selected.value
+  ...(selected.value && root
     ? [
         // in percent: a pane in pixels that appears after the splitter is made is taken as a share
         {
@@ -182,11 +241,24 @@ function draw(next: string): void {
   void router.replace({ query: { root: next } });
 }
 
+/** Goes back to the root drawn before this one, or forward again for a positive step. */
+function step(by: number): void {
+  position.value += by;
+  void router.replace({ query: { root: history.value[position.value] } });
+}
+
+/** Opens the root's menu on the mods' own events. */
+function showOwn(): void {
+  showingOwn.value = true;
+  menuOpen.value = true;
+}
+
 /** Selects the node with the given id. A fold is opened instead, and a node the depth stopped at is opened as well. */
 function select(nodeId: string): void {
-  const node = graph.value?.nodes?.find((candidate) => candidate.id === nodeId);
-  if (!node?.count) selected.value = nodeId;
-  if (node?.count || node?.deep) update({ expand: union(filter.value?.expand ?? [], [nodeId]) });
+  const picked = graph.value?.nodes?.find((candidate) => candidate.id === nodeId);
+  const fold = nodeId.startsWith("more:") || !!picked?.count;
+  if (!fold) selected.value = nodeId;
+  if (fold || picked?.deep) update({ expand: union(filter.value?.expand ?? [], [nodeId]) });
 }
 
 /** Changes parts of the filter. Nothing changes until Go's defaults have arrived. */
@@ -207,9 +279,27 @@ function setNumber(key: "depth" | "limit", value: number | null | undefined): vo
       :class="
         isFullscreen
           ? 'absolute top-3 left-4 z-10 rounded-tile bg-elevated px-2 shadow-(--shadow)'
-          : 'border-b border-default bg-muted ps-4 pe-3'
+          : 'border-b border-default bg-muted ps-3 pe-3'
       "
     >
+      <UTooltip :text="position > 0 ? `Back to ${history[position - 1]}` : 'Back'">
+        <UButton
+          icon="i-lucide-arrow-left"
+          variant="ghost"
+          square
+          :aria-label="position > 0 ? `Back to ${history[position - 1]}` : 'Back'"
+          :disabled="position <= 0"
+          @click="step(-1)"
+        />
+      </UTooltip>
+      <UButton
+        icon="i-lucide-arrow-right"
+        variant="ghost"
+        square
+        aria-label="Forward"
+        :disabled="position >= history.length - 1"
+        @click="step(1)"
+      />
       <UInputMenu
         v-model:search-term="term"
         v-model:open="menuOpen"
@@ -217,14 +307,18 @@ function setNumber(key: "depth" | "limit", value: number | null | undefined): vo
         :items="items"
         ignore-filter
         :loading="searching"
+        :content="{ align: 'start' }"
         placeholder="An id, a namespace or a number"
-        class="shrink-0"
-        :class="isFullscreen ? 'w-75' : 'w-95'"
+        class="w-75 shrink-0"
         value-key="id"
-        label-key="id"
+        label-key="name"
         :style="{ '--what': `${whatWidth + 16}px` }"
         :ui="{
-          base: ['font-mono', isFullscreen ? 'ps-9' : 'ps-17', rootNode && 'pe-(--what)'],
+          base: [
+            'font-mono placeholder:font-sans placeholder:text-13',
+            isFullscreen ? 'ps-9' : 'ps-17',
+            rootNode && 'pe-(--what)',
+          ],
           content: 'min-w-140',
           itemLabel: 'truncate',
         }"
@@ -239,19 +333,19 @@ function setNumber(key: "depth" | "limit", value: number | null | undefined): vo
         <template v-if="rootNode" #trailing>
           <UBadge
             ref="whatBadge"
-            :label="rootNode.what"
-            :icon="rootLook.icon"
+            :label="`${rootNode.display === 'hidden' ? 'hidden ' : ''}${rootNode.what}`"
+            :icon="rootNode.display === 'hidden' ? 'i-lucide-eye-off' : rootLook.icon"
             size="sm"
             class="bg-current/16"
             :style="{ color: rootLook.color }"
           />
         </template>
         <template #item-label="{ item }">
-          <span class="font-mono">{{ "name" in item ? item.name : item.id }}</span>
+          <span class="font-mono">{{ item.name }}</span>
           <span v-if="'title' in item && item.title" class="ms-2 text-dimmed">{{ item.title }}</span>
         </template>
         <template #item-trailing="{ item }">
-          <OriginChip v-if="'place' in item" :origin="item.place.origin" />
+          <OriginChip v-if="'place' in item" :origin="(item as Node).place.origin" />
         </template>
       </UInputMenu>
       <UPopover :content="{ align: 'start' }">
@@ -335,6 +429,15 @@ function setNumber(key: "depth" | "limit", value: number | null | undefined): vo
           @click="update({ follow: !filter?.follow })"
         />
       </UTooltip>
+      <UTooltip text="Which nodes open into their branches: those on the path, or all">
+        <UTabs
+          :model-value="branches"
+          :items="BRANCHES"
+          :content="false"
+          size="sm"
+          @update:model-value="branches = String($event)"
+        />
+      </UTooltip>
       <span v-if="!isFullscreen" class="grow" />
       <USeparator v-else orientation="vertical" class="h-5" />
       <span
@@ -345,7 +448,7 @@ function setNumber(key: "depth" | "limit", value: number | null | undefined): vo
         {{ count }}{{ isFullscreen ? "" : " shown" }}
       </span>
       <USeparator v-if="!isFullscreen" orientation="vertical" class="h-5" />
-      <UButton icon="i-lucide-scan" square aria-label="Fit to view" @click="canvas?.fit()" />
+      <UButton icon="i-lucide-scan" square aria-label="Fit to view" :disabled="!graph" @click="canvas?.fit()" />
       <UDropdownMenu :items="EXPORTS" :content="{ align: 'end' }">
         <UButton label="Export" icon="i-lucide-download" trailing-icon="i-lucide-chevron-down" :disabled="!graph" />
       </UDropdownMenu>
@@ -354,7 +457,12 @@ function setNumber(key: "depth" | "limit", value: number | null | undefined): vo
       </UButton>
       <template v-else>
         <UTooltip text="Fold back every group and every dashed node you opened">
-          <UButton label="Collapse all" icon="i-lucide-fold-vertical" @click="update({ expand: [] })" />
+          <UButton
+            label="Collapse all"
+            icon="i-lucide-fold-vertical"
+            :disabled="!graph"
+            @click="update({ expand: [] })"
+          />
         </UTooltip>
         <UButton icon="i-lucide-maximize-2" square aria-label="Full screen" @click="toggleFullscreen()" />
         <USeparator orientation="vertical" class="h-5" />
@@ -362,7 +470,16 @@ function setNumber(key: "depth" | "limit", value: number | null | undefined): vo
       </template>
     </div>
     <UAlert v-if="error" color="error" variant="subtle" :description="error.message" class="m-2" />
+    <GraphStart
+      v-if="!root"
+      :recent="recent as Node[]"
+      :own="own ?? []"
+      class="min-h-0 flex-1"
+      @draw="draw"
+      @show-all="showOwn"
+    />
     <USplitter
+      v-else
       :key="below ? 'below' : 'beside'"
       :items="panes"
       :orientation="below ? 'vertical' : 'horizontal'"
@@ -373,22 +490,28 @@ function setNumber(key: "depth" | "limit", value: number | null | undefined): vo
         <GraphCanvas
           v-if="graph"
           ref="canvas"
-          :graph="graph"
-          :selected="selected"
+          :nodes="flow.nodes"
+          :edges="flow.edges"
+          :view="root"
+          :root="root"
           :full="isFullscreen"
+          :labels="filter?.labels ?? {}"
           @select="select"
           @draw="draw"
         />
         <p v-else-if="!error" class="grid h-full min-w-0 flex-1 place-items-center text-13 text-dimmed">
-          {{ root ? "Drawing the graph" : "Pick a root to draw what it fires and what fires it." }}
+          Drawing the graph
         </p>
       </template>
       <template #detail>
         <EventDetail
           :id="selected"
+          :graph="graph"
+          :below="below"
           class="h-full border-default"
           :class="below ? 'border-t' : 'border-s'"
           @close="selected = ''"
+          @select="select"
         />
       </template>
     </USplitter>

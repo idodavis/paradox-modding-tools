@@ -88,6 +88,11 @@ export interface FileText {
      * Draft is the editor's unsaved text of the file. It is "" if there is none or it matches the disk.
      */
     "draft": string;
+
+    /**
+     * the file is not text, so it has no text
+     */
+    "binary": boolean;
 }
 
 /**

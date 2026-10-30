@@ -36,7 +36,11 @@ function isCancelled(error: unknown): boolean {
   return String((error as { message?: unknown } | null | undefined)?.message).includes("cancelled by user");
 }
 
-window.addEventListener("error", (event) => writeLog(event.error ?? event.message, "window"));
+window.addEventListener("error", (event) => {
+  // the browser's notice that a resize observer changed the layout again within one frame is harmless
+  if (event.message.startsWith("ResizeObserver loop")) return;
+  writeLog(event.error ?? event.message, "window");
+});
 window.addEventListener("unhandledrejection", (event) => {
   if (isCancelled(event.reason)) event.preventDefault();
   else writeLog(event.reason, "promise");

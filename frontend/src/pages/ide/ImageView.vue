@@ -1,22 +1,28 @@
 <!--
   An image file on a viewport, fit to the pane until zoomed, on the chosen backdrop, with its header's facts above it.
-  A DDS with smaller mip levels lists them beside it: a click shows one, and Export writes the one shown as PNG.
+  A DDS with smaller mip levels lists them beside it: a click shows one, and Export writes the one shown as PNG. A mod's
+  PNG or TGA can be saved as a DDS.
 -->
 <script setup lang="ts">
 import { computed, shallowRef, watch } from "vue";
 import { useQuery } from "@pinia/colada";
 
+import { Format } from "@internal/files/models";
 import type { Place } from "@services/workspace/models";
 
+import { canSaveAsDds } from "../../app/commands";
 import { bytes } from "../../lib/format";
 import { fileUrl, headerQuery } from "../../queries";
 import PictureViewport from "./draw/PictureViewport.vue";
+import SaveDdsModal from "./SaveDdsModal.vue";
 
 const { place } = defineProps<{ place: Place }>();
 
+const saveDds = useOverlay().create(SaveDdsModal);
 const failed = shallowRef(false);
 const level = shallowRef(0);
-const { data: header } = useQuery(() => headerQuery(place.path));
+// only the formats the games read have a header Go reads; a web image has no facts line
+const { data: header } = useQuery(() => ({ ...headerQuery(place.path), enabled: place.format === Format.FormatImage }));
 const facts = computed(() => {
   if (!header.value) return "";
   const { width, height, format, compression, mipmaps, bytes: size } = header.value;
@@ -74,6 +80,16 @@ async function snapshot(): Promise<Blob | null> {
           class="block max-w-none [image-rendering:pixelated]"
           @error="failed = true"
         />
+        <template v-if="canSaveAsDds(place)" #export>
+          <UButton
+            label="Save as DDS"
+            icon="i-lucide-file-image"
+            variant="ghost"
+            color="neutral"
+            size="xs"
+            @click="saveDds.open({ place })"
+          />
+        </template>
       </PictureViewport>
       <p v-if="failed" class="absolute inset-x-0 top-12 text-center text-12 text-dimmed">This image is not shown.</p>
     </div>

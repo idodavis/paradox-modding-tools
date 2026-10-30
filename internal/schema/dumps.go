@@ -148,9 +148,7 @@ func (dumps *Dumps) parseFile(file, text string) {
 	case "modifiers.log":
 		dumps.parseModifiers(text)
 	case "on_actions.log":
-		for title, scope := range parseScoped(text) {
-			dumps.OnActions[title] = OnAction{Name: title, Scope: scope}
-		}
+		maps.Copy(dumps.OnActions, parseOnActions(text))
 	case "event_scopes.log":
 		dumps.parseScopes(text)
 	default:
@@ -260,16 +258,21 @@ func parsePairs(body []string) map[string]string {
 	return pairs
 }
 
-// parseScoped parses the on_actions dump, whose entries are a title and the scope it is used in. It returns the scope
-// by title.
-func parseScoped(text string) map[string]string {
-	scopes := map[string]string{}
+// parseOnActions parses the on_actions dump. Each entry is an on_action's name, whether the game calls it from its own
+// code, and the scope it runs in. It returns the on_actions by name.
+func parseOnActions(text string) map[string]OnAction {
+	actions := map[string]OnAction{}
 	for head, body := range parseSections(text, true) {
-		if title, ok := strings.CutSuffix(head, ":"); ok {
-			scopes[title] = strings.Join(splitScopes(parsePairs(body)["Expected Scope"]), "")
+		if name, ok := strings.CutSuffix(head, ":"); ok {
+			pairs := parsePairs(body)
+			actions[name] = OnAction{
+				Name:      name,
+				Scope:     strings.Join(splitScopes(pairs["Expected Scope"]), ""),
+				Hardcoded: pairs["From Code"] == "Yes",
+			}
 		}
 	}
-	return scopes
+	return actions
 }
 
 // parseScopes parses the scope types of the event scopes dump. Each is a title, then what script can do in the scope.

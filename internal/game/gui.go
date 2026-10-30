@@ -373,6 +373,8 @@ var GUI = GUIRules{
 		"SetMapMode":        {"gfx/map/map_modes"},         // CK3 gui/shared/mapmodes.gui:26, [SetMapMode('baronies')]
 		"Custom":            {"customizable_localization"}, // EU5 customizable_localization.info:25
 		"GetCustom":         {"customizable_localization"}, // EU5 customizable_localization.info:25
+		// CK3's data_types declare Character.Custom2( Arg0, Arg1 ); each of its 5,455 calls names one by the first
+		"Custom2": {"customizable_localization"},
 	},
 	Booleans: map[string]string{"And": "and", "Or": "or", "Nor": "nor", "Not": "not"},
 	Literals: map[string]bool{"yes": true, "true": true, "no": false, "false": false},

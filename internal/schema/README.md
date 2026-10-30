@@ -10,7 +10,7 @@ and the walk reads directly. A schema is built once for each version of an insta
 
 | file | holds |
 |---|---|
-| `schema.go` | the shape: `Claim` and `Claims`, `ValueType` and its constants, `Expected`, `Vanilla`, `Field`, `Command`, `Example`, `Database`, `ScopeType`, `DataFunction`, `DataType`, `Modifier`, `OnAction`, `ScriptedDefinition`, `SourceState`, `Schema`; `Build`; the databases and their callees; `SplitStage`, `FindLocReplacement` (the rank of a localization replace folder among the game's forms); `JoinNested` and `SplitNested`; the lookups (`FindDatabase`, `FindDatabaseByClass`, `FindCommand`, `ResolveLink`); the data calls (`ResolveCallTypes`, `FindFunction`, `ResolveMacro`, `ResolveDatacontext`, `ListCallReferences`, `ResolveTypeDatabase`, `FindUnlisted`); `ToPhrase`, `MatchValue` |
+| `schema.go` | the shape: `Claim` and `Claims`, `ValueType` and its constants, `Expected`, `Vanilla`, `Field`, `Command`, `Example`, `Database`, `ScopeType`, `DataFunction`, `DataType`, `Modifier`, `OnAction`, `ScriptedDefinition`, `SourceState`, `Schema`; `Build`; the databases and their callees; `SplitStage`, `FindLocReplacement` (the rank of a localization replace folder among the game's forms); `JoinNested` and `SplitNested`; the lookups (`FindDatabase`, `FindDatabaseByClass`, `FindCommand`, `ResolveLink`, `IsLink`); the data calls (`ResolveCallTypes`, `FindFunction`, `ResolveMacro`, `ResolveDatacontext`, `ListCallReferences`, `ResolveTypeDatabase`, `FindUnlisted`); the databases each house names (`Events`, `Messages`, `Lists`, `Concepts`, `ModifierTypes`, `FireDatabases`); `ToPhrase`, `DescribeStep` (a data call's step in words, a call that names a definition read as that name), `MatchValue` |
 | `dumps.go` | the dumps reader: `DumpCommand`, `Dumps`, `ReadDumps`, `FindDumpsAt`; the commands, the arguments a usage writes, the list families' shared arguments; the backup for a missing section |
 | `docs.go` | the docs reader, `docReader`: which files are docs, and the blurbs, types, requirements, defaults, choices and scopes their prose states |
 | `vanilla.go` | the vanilla count, `CountVanilla`: the `declarer` that records what script and GUI files call by name, the `counter` and its `holder`s that count what the game's own files write, and the claims the counts support; the mods' scripted definitions (`SetScripted`), the parameters a body writes (`ListParameters`) and how many places of a name are kept as examples (`ExampleCount`) |
@@ -68,12 +68,16 @@ key that fits more than one kind of block, give unknown. Then come its keys (`re
 A stated value is kept, except a reference with no database, a block or a text, which take the reference vanilla shows.
 A block or a text never takes a reference to the game concepts, whose names are common words. Vanilla shows a reference
 when one database defines every value written at the field, as `resolveReference` finds it, and none of the values is
-a number, a date or a yes-or-no word. Where vanilla shows no reference and no source states a value, a field always
-written as a block is a color if every block was one, and else a block. A field written only as scalars gets the first
-type in `valueTests` that all its values fit.
+a number, a date or a yes-or-no word. Where vanilla shows no reference, a field never written as a block takes a number
+a script value may give (`takesValues`) when vanilla names a script value there, as `add_stability =
+stability_mild_bonus` does, and writes nothing else but numbers, parameters, chains of links and commands the dumps
+declare; a field with any other name, such as a flag or a relation level, does not. A script value named there is an
+inferred reference, so a name nothing defines is no problem. Where no source states a value, a field always written as
+a block is a color if every block was one, and else a block. A field written only as scalars gets the first type in
+`valueTests` that all its values fit.
 
 `resolveReference` gives a reference when one database defines every value. A quoted value names what it names
-unquoted. A value that holds a parameter is left out, and so is a link (`isLink`, the test the walk uses too), which
+unquoted. A value that holds a parameter is left out, and so is a link (`IsLink`, the test the walk uses too), which
 leads to a scope rather than naming a definition. A database whose row names another as its target counts as that one, and so do the coats of arms where a database
 that holds coats defines the values too. Where no one database defines them all, a database with nested ones may,
 counted together with them, as a language and its dialects are (`Expected.Nested`). The game concepts, then the
@@ -188,7 +192,7 @@ read only where an install's dump section is missing. It never holds the game's 
 - **DataType**: one type of the data binding language, with its functions.
 - **DataFunction**: one function of a data type.
 - **Modifier**: one modifier the dumps declare.
-- **OnAction**: one on_action the dumps declare, with its scope.
+- **OnAction**: one on_action the dumps declare, with its scope and whether the game calls it from its own code.
 - **ScriptedDefinition**: a scripted definition the game defines, with the parameters it takes.
 - **Example**: one place the game's own files write a command or call a data function.
 - **SourceState**: where one source's data came from and how fresh it is.

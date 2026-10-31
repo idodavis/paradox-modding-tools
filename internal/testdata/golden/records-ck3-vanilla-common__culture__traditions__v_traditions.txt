@@ -1,2 +1,0 @@
-def culture/traditions "tradition_x" mode="" 0-11 @0:0 local=false named=false
-def culture/traditions "tradition_y" mode="" 39-50 @3:0 local=false named=false

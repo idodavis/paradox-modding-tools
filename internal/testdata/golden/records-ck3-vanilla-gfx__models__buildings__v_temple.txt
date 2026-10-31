@@ -1,5 +1,0 @@
-def asset.pdxmesh "v_temple_mesh" mode="" 0-7 @0:0 local=false named=false
-def asset.entity "v_temple_entity" mode="" 126-132 @7:0 local=false named=false
-ref asset.pdxmesh "v_temple_mesh" called="" 20-35 @1:8 from=0 trigger=false
-ref asset.entity "v_temple_entity" called="" 145-162 @8:8 from=1 trigger=false
-ref asset.pdxmesh "v_temple_mesh" called="" 174-189 @9:11 from=1 trigger=false

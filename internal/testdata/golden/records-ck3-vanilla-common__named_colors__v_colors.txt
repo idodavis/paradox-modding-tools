@@ -1,3 +1,0 @@
-def named_colors "v_red" mode="" 12-17 @1:1 local=false named=false
-def named_colors "v_white" mode="" 31-38 @2:1 local=false named=false
-def named_colors "v_blue" mode="" 62-68 @3:1 local=false named=false

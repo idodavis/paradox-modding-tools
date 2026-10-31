@@ -1,1 +1,0 @@
-def map_data "europe" mode="" 0-6 @0:0 local=false named=false

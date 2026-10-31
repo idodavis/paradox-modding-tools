@@ -1,2 +1,0 @@
-def coat_of_arms/options "" mode="" 0-5 @0:0 local=false named=false
-def coat_of_arms/options "" mode="" 55-60 @4:0 local=false named=false

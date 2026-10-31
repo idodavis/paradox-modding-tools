@@ -1,7 +1,0 @@
-def history/titles "k_x" mode="" 0-3 @0:0 local=false named=false
-def history/titles "c_x" mode="" 44-47 @5:0 local=false named=false
-def history/titles "c_y" mode="" 108-111 @11:0 local=false named=false
-ref landed_titles "k_x" called="" 0-3 @0:0 from=0 trigger=false
-ref landed_titles "c_x" called="" 44-47 @5:0 from=1 trigger=false
-ref landed_titles "k_x" called="" 93-102 @8:10 from=1 trigger=false
-ref landed_titles "c_y" called="" 108-111 @11:0 from=2 trigger=false

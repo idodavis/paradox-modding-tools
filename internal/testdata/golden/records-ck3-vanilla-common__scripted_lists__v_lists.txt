@@ -1,3 +1,0 @@
-def scripted_lists "adult_child" mode="" 0-11 @0:0 local=false named=false
-def scripted_lists "rich_vassal" mode="" 65-76 @4:0 local=false named=false
-ref script_values "big_value" called="" 119-128 @6:23 from=1 trigger=true

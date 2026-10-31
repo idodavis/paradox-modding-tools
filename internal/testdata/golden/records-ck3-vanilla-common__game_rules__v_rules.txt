@@ -1,3 +1,0 @@
-def game_rules "my_rule" mode="" 0-7 @0:0 local=false named=false
-def game_rules "hard_rule" mode="" 75-84 @5:0 local=false named=false
-def game_rules "pace_rule" mode="" 167-176 @10:0 local=false named=false

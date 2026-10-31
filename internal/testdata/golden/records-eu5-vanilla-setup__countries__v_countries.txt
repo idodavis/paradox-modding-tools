@@ -1,2 +1,0 @@
-def setup/countries "FRA" mode="" 0-3 @0:0 local=false named=false
-def setup/countries "ENG" mode="" 37-40 @3:0 local=false named=false

@@ -1,9 +1,0 @@
-def traits "brave" mode="" 0-5 @0:0 local=false named=false
-def traits "craven" mode="" 98-104 @5:0 local=false named=false
-def traits "ambitious" mode="" 150-159 @9:0 local=false named=false
-def traits "content" mode="" 205-212 @13:0 local=false named=false
-def traits "lazy" mode="" 258-262 @17:0 local=false named=false
-def traits "diligent" mode="" 308-316 @21:0 local=false named=false
-def traits "zealous" mode="" 362-369 @25:0 local=false named=false
-def traits "cynical" mode="" 415-422 @29:0 local=false named=false
-ref file "gfx/interface/icons/traits/brave.dds" called="" 57-95 @3:8 from=0 trigger=false

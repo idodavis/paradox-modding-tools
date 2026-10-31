@@ -1,4 +1,0 @@
-def country_definitions "GBR" mode="" 0-3 @0:0 local=false named=false
-def country_definitions "FRA" mode="" 55-58 @4:0 local=false named=false
-ref map_data/state_regions "STATE_HOME" called="" 42-52 @2:11 from=0 trigger=false
-ref map_data/state_regions "STATE_AWAY" called="" 97-107 @6:11 from=1 trigger=false

@@ -1,2 +1,0 @@
-def traits "bold" mode="" 0-4 @0:0 local=false named=false
-def traits "brave" mode="" 68-73 @5:0 local=false named=false

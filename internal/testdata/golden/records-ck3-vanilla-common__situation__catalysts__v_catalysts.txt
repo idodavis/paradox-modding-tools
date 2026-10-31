@@ -1,2 +1,0 @@
-def situation/catalysts "catalyst_situation_flood" mode="" 0-24 @0:0 local=false named=false
-def situation/catalysts "catalyst_situation_drought" mode="" 31-57 @1:0 local=false named=false

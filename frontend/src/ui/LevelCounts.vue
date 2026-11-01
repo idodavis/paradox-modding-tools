@@ -1,18 +1,19 @@
 <!-- The marks of a set of problems, one for each level with its count. With none, it says "No problems". -->
 <script setup lang="ts">
 import { computed } from "vue";
+import type { Tally } from "@services/health/models";
 
 import { describeCount, LEVELS, PROBLEM_LEVELS } from "../lib/format";
 
-const { levels } = defineProps<{
-  /** How many problems there are of each level, by Go's level. */
-  levels: Record<string, number>;
+const { levels = undefined } = defineProps<{
+  /** How many problems there are of each level, by Go's level. Without counts it says there are none. */
+  levels?: Tally["counts"];
 }>();
 
 const marks = computed(() =>
   PROBLEM_LEVELS.flatMap((level) => {
     const row = LEVELS[level];
-    const count = levels[level] ?? 0;
+    const count = levels?.[level] ?? 0;
     return row && count ? [{ level, ...row, count: describeCount(count) }] : [];
   }),
 );

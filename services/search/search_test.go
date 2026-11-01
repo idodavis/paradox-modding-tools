@@ -13,6 +13,7 @@ import (
 	"paradox-modding-tools/internal/files"
 	"paradox-modding-tools/internal/game"
 	"paradox-modding-tools/services/app"
+	"paradox-modding-tools/services/lsp"
 	"paradox-modding-tools/services/workspace"
 )
 
@@ -84,7 +85,7 @@ func openService(t *testing.T, prepare func(dir string)) (*Service, *workspace.S
 }
 
 // listHits runs a search and returns its hits, which must be in the given number of files.
-func listHits(t *testing.T, ws *workspace.Session, query Query, fileCount int) []Hit {
+func listHits(t *testing.T, ws *workspace.Session, query Query, fileCount int) []lsp.Site {
 	t.Helper()
 	collected, _, err := CollectText(ws, query, maxHits, make(chan struct{}))
 	if err != nil {
@@ -93,7 +94,7 @@ func listHits(t *testing.T, ws *workspace.Session, query Query, fileCount int) [
 	if len(collected) != fileCount {
 		t.Fatalf("hits of %d files were found, want %d", len(collected), fileCount)
 	}
-	var hits []Hit
+	var hits []lsp.Site
 	for _, file := range collected {
 		hits = append(hits, file.Hits...)
 	}

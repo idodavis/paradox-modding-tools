@@ -57,7 +57,7 @@ const COLUMNS = [
 ];
 
 const { data: games } = useQuery(gamesQuery);
-const name = computed(() => games.value?.find((row) => row?.id === game)?.name ?? "the game");
+const name = computed(() => games.value?.find((row) => row.id === game)?.name ?? "the game");
 </script>
 
 <template>

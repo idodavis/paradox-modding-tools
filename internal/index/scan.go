@@ -50,6 +50,7 @@ func LoadIndex(path string) (*Index, bool) {
 	if !ok {
 		return nil, false
 	}
+	index.row = game.LookupGame(index.Game)
 	index.buildTables()
 	index.buildPaths()
 	index.buildPostings()
@@ -80,6 +81,9 @@ func ScanMods(schema *schema.Schema, install *Index, roots []files.Root, replace
 	index.scanFiles(schema, func(int) {})
 	index.buildPostings()
 	index.Replaced = slices.Concat(make([][]string, len(install.Roots)), replaced)
+	index.replacedKeys = lo.Map(index.Replaced, func(folders []string, _ int) []string {
+		return lo.Map(folders, func(folder string, _ int) string { return toRelKey(index.row, strings.Trim(folder, "/")) })
+	})
 	return index, nil
 }
 
@@ -109,6 +113,7 @@ func (index *Index) ScanFiles(schema *schema.Schema, changed []files.File) error
 				index.Files = append(index.Files, file)
 				index.Occurrences = append(index.Occurrences, nil)
 				index.Texts = append(index.Texts, nil)
+				index.placements = append(index.placements, placement{})
 				slot = len(index.Files) - 1
 				index.buildGroup(int32(slot))
 			}
@@ -134,6 +139,7 @@ func (index *Index) Clone() *Index {
 	next.Files = slices.Clone(index.Files)
 	next.Occurrences = slices.Clone(index.Occurrences)
 	next.Texts = slices.Clone(index.Texts)
+	next.placements = slices.Clone(index.placements)
 	next.byKey = maps.Clone(index.byKey)
 	next.byRel = maps.Clone(index.byRel)
 	next.cloneTables(index)
@@ -180,7 +186,7 @@ func findRoot(keys []string, fileKey string) (int, bool) {
 // install's files, roots and what they hold, and copies of its tables, so that a file's position and an ordinal
 // mean the same in both.
 func newIndex(schema *schema.Schema, install *Index, roots []files.Root, listing []files.File) *Index {
-	index := &Index{Game: schema.Game, Files: listing, Roots: roots, install: install}
+	index := &Index{Game: schema.Game, Files: listing, Roots: roots, install: install, row: game.LookupGame(schema.Game)}
 	var occurrences [][]Occurrence
 	var texts [][]string
 	if install != nil {
@@ -230,45 +236,42 @@ func (index *Index) buildTables() {
 	}
 }
 
-// buildPaths fills the map that finds a file by its key, the keys of the roots' folders, and the groups of files by
-// their paths.
+// buildPaths fills the map that finds a file by its key, the keys of the roots' folders, and each file's placement
+// and the groups of files by their paths.
 func (index *Index) buildPaths() {
 	index.rootKeys = listRootKeys(index.Roots)
 	index.byKey = make(map[string]int32, len(index.Files))
 	index.byRel = make(map[string][]int32, len(index.Files))
+	index.placements = make([]placement, len(index.Files))
 	for position, file := range index.Files {
 		index.byKey[file.Key] = int32(position)
 		index.buildGroup(int32(position))
 	}
 }
 
-// buildGroup adds the file at a position to the group of files at its path, in load order. The group is replaced,
-// not changed, since a clone of the index may still read it.
+// buildGroup works out where the game mounts the file at a position, and adds the file to the group of files at its
+// path, in load order. The group is replaced, not changed, since a clone of the index may still read it.
 func (index *Index) buildGroup(position int32) {
-	key := toRelKey(game.LookupGame(index.Game), index.Files[position].Rel)
-	group := index.byRel[key]
+	file := index.Files[position]
+	// the stage is found in any case, then cut from the path as written
+	stage, _ := index.row.SplitStage(strings.ToLower(file.Rel))
+	place := placement{rest: file.Rel, unmounted: index.row.IsUnmounted(file)}
+	if stage != "" {
+		place.stage, place.rest = 1+slices.Index(index.row.StageRoots, stage), file.Rel[len(stage)+1:]
+	}
+	place.root, _ = findRoot(index.rootKeys, file.Key)
+	place.key = strings.ToLower(place.rest)
+	index.placements[position] = place
+	group := index.byRel[place.key]
 	at, _ := slices.BinarySearchFunc(group, position, index.compareLoaded)
-	index.byRel[key] = slices.Concat(group[:at], []int32{position}, group[at:])
+	index.byRel[place.key] = slices.Concat(group[:at], []int32{position}, group[at:])
 }
 
 // compareLoaded orders two files, given by their positions in Files, the way the game loads them: by their roots in
 // load order, then by their stages, then as listed.
 func (index *Index) compareLoaded(a, b int32) int {
-	first, _ := findRoot(index.rootKeys, index.Files[a].Key)
-	second, _ := findRoot(index.rootKeys, index.Files[b].Key)
-	row := game.LookupGame(index.Game)
-	return cmp.Or(cmp.Compare(first, second), cmp.Compare(index.classifyStage(row, a), index.classifyStage(row, b)),
-		cmp.Compare(a, b))
-}
-
-// classifyStage returns where the stage of the file at a position comes in the given game's order of stages: 0 for a
-// file under no stage, then 1 and up for the stages in the order the game lists them.
-func (index *Index) classifyStage(row *game.Game, position int32) int {
-	stage, _ := schema.SplitStage(row, strings.ToLower(index.Files[position].Rel))
-	if stage == "" {
-		return 0
-	}
-	return 1 + slices.Index(row.StageRoots, stage)
+	first, second := index.placements[a], index.placements[b]
+	return cmp.Or(cmp.Compare(first.root, second.root), cmp.Compare(first.stage, second.stage), cmp.Compare(a, b))
 }
 
 // scanFiles builds the occurrences of every file of the index's own, in parallel on every core but two. The progress
@@ -322,9 +325,9 @@ func (index *Index) readSource(position int32) string {
 	return text.Text
 }
 
-// makeTables returns an index that has the same files and caseless databases as this one and tables of its own.
+// makeTables returns an index that has the same files, caseless databases and game as this one and tables of its own.
 func (index *Index) makeTables() *Index {
-	tables := &Index{Files: index.Files, Caseless: index.Caseless}
+	tables := &Index{Files: index.Files, Caseless: index.Caseless, row: index.row}
 	tables.buildTables()
 	return tables
 }

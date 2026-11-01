@@ -8,7 +8,7 @@ opens, and reads and writes the config through it.
 
 | file | holds |
 |---|---|
-| `app.go` | the events; `DevBuild`; `Service` with `ServiceStartup` and `ServiceShutdown`; `Update`, `Release`; `OpenConfig`, `OpenLog`; the version and the updater (`Version`, `CheckUpdate`, `ApplyUpdate`, `ListReleases`); the settings (`ListSettings`, `ReadSettings`, `WriteSetting`); the log (`CrashedLastRun`, `LogPath`, `BuildDiagnostics`); `ShowFolder`; the windows (`OpenMainWindow`, `OpenWindow`, `ShowWindow`, `CloseWindow`, `ListWindows`) |
+| `app.go` | the events; `DevBuild`; `Service` with `ServiceStartup` and `ServiceShutdown`; `Update`, `Release`; `OpenConfig`, `OpenLog`; the version and the updater (`Version`, `CheckUpdate`, `ApplyUpdate`, `ListReleases`); the settings (`ListSettings`, `ReadSettings`, `WriteSetting`); the log (`CrashedLastRun`, `LogPath`, `BuildDiagnostics`); `ShowFolder`; the windows (`OpenMainWindow`, `OpenWindow`, `ShowWindow`, `CloseWindow`) |
 | `config.go` | the package comment; `Dirs` and `ResolveDirs`; `LoadJSON`, `SaveJSON`; the records (`Install`, `Era`, `Calendar`, `Mod`, `Workspace`, `Config`); `Setting` and `Catalog`; `ConfigFile` with `Config`, `Update` and `LookupSetting` |
 
 ## PMT's folders

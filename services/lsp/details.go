@@ -8,7 +8,6 @@ import (
 
 	"github.com/samber/lo"
 
-	"paradox-modding-tools/internal/game"
 	"paradox-modding-tools/internal/index"
 	"paradox-modding-tools/internal/jomini"
 	"paradox-modding-tools/internal/schema"
@@ -32,8 +31,8 @@ type Hint struct {
 
 // A ColorSite is one color written in a file: where it is and the color it stands for.
 type ColorSite struct {
-	Range Range     `json:"range"`
-	Color game.RGBA `json:"color"`
+	Range Range       `json:"range"`
+	Color jomini.RGBA `json:"color"`
 }
 
 // A Signature is the parameter list of a scripted definition at a call, with the parameter the position is on.
@@ -123,7 +122,7 @@ func (lsp *Service) ListColorSites(path string) ([]ColorSite, error) {
 	}
 	sites := []ColorSite{}
 	for statement := int32(1); int(statement) < len(tree.Statements); statement++ {
-		if color, ok := game.ToColor(tree, statement); ok {
+		if color, ok := jomini.ToColor(tree, statement); ok {
 			span := tree.Statements[statement].ResolveValueSpan()
 			sites = append(sites, ColorSite{Range: ToRange(tree.Src, tree.Lines, span), Color: color})
 		}
@@ -134,8 +133,8 @@ func (lsp *Service) ListColorSites(path string) ([]ColorSite, error) {
 // PresentColor returns the text that writes a color into a file, in the same form as the color written in the given
 // range: the same tag and scale, with an alpha only if that color has one. A range that holds no color, such as a
 // coat's layer that does not write the color yet, gets it in the form the game's own coats write their colors in
-// (game.Game.CoatColorForm). It returns an error if the form cannot be written.
-func (lsp *Service) PresentColor(path string, within Range, color game.RGBA) (string, error) {
+// (game.Game.Coat.ColorForm). It returns an error if the form cannot be written.
+func (lsp *Service) PresentColor(path string, within Range, color jomini.RGBA) (string, error) {
 	ws, tree, err := lsp.loadTree(path)
 	if err != nil {
 		return "", err
@@ -143,9 +142,9 @@ func (lsp *Service) PresentColor(path string, within Range, color game.RGBA) (st
 	offset := ToOffset(tree.Src, tree.Lines, within.StartLine, within.StartColumn)
 	tag, parts, ok := jomini.ColorParts(tree, tree.FindStatement(offset))
 	if !ok {
-		tag, parts = ws.Game.CoatColorForm.Tag, ws.Game.CoatColorForm.Example
+		tag, parts = ws.Game.Coat.ColorForm.Tag, ws.Game.Coat.ColorForm.Example
 	}
-	encoded, ok := game.EncodeColor(tag, parts, color)
+	encoded, ok := jomini.EncodeColor(tag, parts, color)
 	if !ok {
 		return "", fmt.Errorf("the color form %q cannot be written", tag)
 	}
@@ -160,9 +159,9 @@ func (lsp *Service) Signature(path string, line, column int) (*Signature, error)
 		return nil, err
 	}
 	offset := ToOffset(tree.Src, tree.Lines, line, column)
-	visitor := &hoverVisitor{offset: offset}
+	visitor := &hoverVisitor{tree: tree, offset: offset}
 	ws.Schema.WalkTo(tree, ws.Locate(ws.Mods.Load(), path).File, offset, visitor)
-	call, callee, key, ok := findCall(ws, tree, visitor)
+	call, callee, key, ok := findCall(ws, visitor)
 	if !ok {
 		return nil, nil
 	}
@@ -182,15 +181,15 @@ func (lsp *Service) Signature(path string, line, column int) (*Signature, error)
 // findCall returns the call to a scripted definition that holds the visited position: its statement, the field that
 // lists the parameters the definition takes, and the key it is called by. It returns false if the position is in no
 // such call, or if the definition takes no parameters.
-func findCall(ws *workspace.Session, tree *jomini.Tree, visitor *hoverVisitor) (int32, *schema.Field, string, bool) {
+func findCall(ws *workspace.Session, visitor *hoverVisitor) (int32, *schema.Field, string, bool) {
 	for statement, context := visitor.statement, &visitor.context; statement > 0; {
-		current := tree.Statements[statement]
+		current := visitor.tree.Statements[statement]
 		if current.IsBlock() && visitor.offset > current.Block.Start && visitor.offset < current.Block.End &&
 			context.Category == schema.CategoryCall && context.Field != nil {
 			for _, reference := range lo.FlatMap(context.References, func(reference schema.Reference, _ int) []schema.Reference {
 				return index.ListCallees(reference)
 			}) {
-				if database := ws.Schema.Databases[reference.Database]; reference.Name == tree.Unquoted(current.Key) &&
+				if database := ws.Schema.Databases[reference.Database]; reference.Name == visitor.tree.Unquoted(current.Key) &&
 					database != nil && database.Callable.Parameters {
 					return statement, context.Field, reference.Name, true
 				}

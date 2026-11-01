@@ -447,7 +447,7 @@ func TestResolveWindowOrdersChildrenAndOpensStates(t *testing.T) {
 	if got, want := listChildNames(window, holder.ID), []string{"d_label", "d_plain", "d_slash", "d_state", "d_item", "d_row_item"}; !slices.Equal(got, want) {
 		t.Errorf("children %v, want %v", got, want)
 	}
-	if label := findWidget(t, window, "d_label"); label.Role != roleLabel {
+	if label := findWidget(t, window, "d_label"); label.Role != game.GUI.Slots["buttontext"].Role {
 		t.Errorf("label %+v", label)
 	}
 	if file := filepath.ToSlash(findWidget(t, window, "d_slash").Textures["texture"]); !strings.HasSuffix(file, "gfx/interface/v_bg.dds") {
@@ -649,7 +649,7 @@ func TestResolveCoatReadsLayersParentsAndLists(t *testing.T) {
 	}
 	pattern, emblem := coat.Layers[0], coat.Layers[1]
 	wantColors := []string{game.Coat.Fallback, cssRed, cssBlue, "", "", ""}
-	if pattern.Role != patternKey || pattern.Texture != patternFile || !strings.HasSuffix(filepath.ToSlash(pattern.Path), "patterns/v_pattern.dds") ||
+	if pattern.Role != game.Coat.PatternKey || pattern.Texture != patternFile || !strings.HasSuffix(filepath.ToSlash(pattern.Path), "patterns/v_pattern.dds") ||
 		!slices.Equal(pattern.Colors, wantColors) {
 		t.Errorf("pattern %+v", pattern)
 	}
@@ -683,7 +683,7 @@ func TestResolveCoatReadsLayersParentsAndLists(t *testing.T) {
 		t.Errorf("the heaviest option outside the special selection: %+v", heavy)
 	}
 	if equal.Texture != "first.dds" || equal.Lists[0].Picked != "first.dds" || listed.Layers[2].Texture != "missing:d_nowhere_list" ||
-		listed.Layers[2].Path != "" || listed.Layers[3].Role != subKey || listed.Layers[3].Sub.Name != coatParent ||
+		listed.Layers[2].Path != "" || listed.Layers[3].Role != game.Coat.SubKey || listed.Layers[3].Sub.Name != coatParent ||
 		len(listed.Layers[3].Sub.Layers) != 2 || listed.Layers[3].Instances[0].Position != [2]float64{0.5, 0} {
 		t.Errorf("a list of equal weights, a list that is missing and a sub: %+v", listed.Layers)
 	}
@@ -724,16 +724,16 @@ func TestEditPropertyReplacesOrAddsKey(t *testing.T) {
 	}
 	edit := makeEditor(t, string(coatText))
 	listed := lo.Must(drw.ResolveCoat(coatFile, "d_listed", nil))
-	_, replaced := edit(drw.EditProperty(coatFile, listed.Range, patternKey, `"v_pattern.dds"`))
-	pattern := replaced.Statements[lo.Must(replaced.FindChild(lo.Must(replaced.FindChild(0, "d_listed")), patternKey))]
+	_, replaced := edit(drw.EditProperty(coatFile, listed.Range, game.Coat.PatternKey, `"v_pattern.dds"`))
+	pattern := replaced.Statements[lo.Must(replaced.FindChild(lo.Must(replaced.FindChild(0, "d_listed")), game.Coat.PatternKey))]
 	if !pattern.Tag.IsEmpty() || replaced.Text(pattern.Value) != `"v_pattern.dds"` {
 		t.Errorf("a list replaced by a plain value, tag and all: %q", replaced.Text(pattern.Span))
 	}
 	parent := lo.Must(drw.ResolveCoat(coatFile, coatParent, nil))
 	emblem, instance := parent.Layers[1], parent.Layers[1].Instances[0]
-	_, retextured := edit(drw.EditProperty(coatFile, emblem.Range, textureKey, `"v_textured.dds"`))
+	_, retextured := edit(drw.EditProperty(coatFile, emblem.Range, game.Coat.TextureKey, `"v_textured.dds"`))
 	block := lo.Must(retextured.FindChild(lo.Must(retextured.FindChild(0, coatParent)), emblemKey))
-	if got := retextured.Unquoted(retextured.Statements[lo.Must(retextured.FindChild(block, textureKey))].Value); got != "v_textured.dds" {
+	if got := retextured.Unquoted(retextured.Statements[lo.Must(retextured.FindChild(block, game.Coat.TextureKey))].Value); got != "v_textured.dds" {
 		t.Errorf("texture after the edit: %s", got)
 	}
 	deeper, _ := edit(drw.EditProperty(coatFile, instance.Range, "depth", "5"))
@@ -759,24 +759,24 @@ func TestEditCoatLayers(t *testing.T) {
 	drw, coatFile, text := openCoatFile(t)
 	edit := makeEditor(t, text)
 	_, added := edit(drw.AddLayer(coatFile, coatParent, emblemKey, 1))
-	if got := listKeys(added, coatParent); !slices.Equal(got, []string{patternKey, emblemKey, slotOne, slotTwo, emblemKey}) {
+	if got := listKeys(added, coatParent); !slices.Equal(got, []string{game.Coat.PatternKey, emblemKey, slotOne, slotTwo, emblemKey}) {
 		t.Errorf("keys after adding an emblem: %v", got)
 	}
 	emblem := lo.Must(drw.ResolveCoat(coatFile, coatParent, nil)).Layers[1]
 	_, removed := edit(drw.RemoveBlock(coatFile, emblem.Range))
-	if got := listKeys(removed, coatParent); !slices.Equal(got, []string{patternKey, slotOne, slotTwo}) {
+	if got := listKeys(removed, coatParent); !slices.Equal(got, []string{game.Coat.PatternKey, slotOne, slotTwo}) {
 		t.Errorf("keys after removing the emblem: %v", got)
 	}
 	_, moved := edit(drw.MoveLayer(coatFile, coatParent, 1, 0))
-	if got := listKeys(moved, coatParent); !slices.Equal(got, []string{emblemKey, patternKey, slotOne, slotTwo}) {
+	if got := listKeys(moved, coatParent); !slices.Equal(got, []string{emblemKey, game.Coat.PatternKey, slotOne, slotTwo}) {
 		t.Errorf("keys after moving the emblem first: %v", got)
 	}
 	_, later := edit(drw.MoveLayer(coatFile, coatParent, 0, 1))
-	if got := listKeys(later, coatParent); !slices.Equal(got, []string{slotOne, slotTwo, emblemKey, patternKey}) {
+	if got := listKeys(later, coatParent); !slices.Equal(got, []string{slotOne, slotTwo, emblemKey, game.Coat.PatternKey}) {
 		t.Errorf("keys after moving the pattern last: %v", got)
 	}
 	for name, err := range map[string]error{
-		"a second pattern":      errOf(drw.AddLayer(coatFile, coatParent, patternKey, 0)),
+		"a second pattern":      errOf(drw.AddLayer(coatFile, coatParent, game.Coat.PatternKey, 0)),
 		"a layer after nothing": errOf(drw.AddLayer(coatFile, coatParent, emblemKey, 9)),
 		"a layer of an alias":   errOf(drw.AddLayer(coatFile, "d_alias", emblemKey, 0)),
 	} {
@@ -963,15 +963,15 @@ func (totals *coatTotals) count(coat Coat) {
 		totals.instances += len(layer.Instances)
 		totals.lists += len(layer.Lists)
 		switch layer.Role {
-		case patternKey:
+		case game.Coat.PatternKey:
 			totals.patterns++
-		case subKey:
+		case game.Coat.SubKey:
 			totals.subs++
 			totals.count(*layer.Sub)
 		default:
 			totals.emblems++
 		}
-		if layer.Role != subKey && layer.Texture != "" {
+		if layer.Role != game.Coat.SubKey && layer.Texture != "" {
 			totals.found += lo.Ternary(layer.Path != "", 1, 0)
 			totals.lost += lo.Ternary(layer.Path == "", 1, 0)
 		}

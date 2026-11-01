@@ -8,7 +8,6 @@ import (
 	"bufio"
 	"bytes"
 	"compress/gzip"
-	"context"
 	"crypto/rand"
 	"crypto/sha256"
 	"encoding/hex"
@@ -16,7 +15,6 @@ import (
 	"errors"
 	"fmt"
 	"io"
-	"net/http"
 	"os"
 	"os/exec"
 	"path/filepath"
@@ -124,6 +122,9 @@ const minNode = "22"
 // registryAge is how long the registry's copy in PMT's folder is used before it is fetched again.
 const registryAge = 24 * time.Hour
 
+// fetchTimeout is how long a download from nodejs.org or the ACP registry may take.
+const fetchTimeout = 5 * time.Minute
+
 // ListFiles returns the instruction files and folders that the agents PMT offers read in a mod, each name once.
 func ListFiles() []string {
 	return lo.Uniq(lo.FlatMap(agents, func(agent app.Agent, _ int) []string { return agent.Files }))
@@ -137,7 +138,8 @@ func ListFiles() []string {
 func (agt *Service) ListAgents() []Agent {
 	listing, _ := agt.loadRegistry()
 	node := agt.DescribeNode()
-	replacer := strings.NewReplacer("{url}", agt.MCP.ReadURL(), "{token}", agt.MCP.ReadToken())
+	access := agt.MCP.ResolveAccess()
+	replacer := strings.NewReplacer("{url}", access.URL, "{token}", access.Token)
 	offers := lo.Map(agents, func(row app.Agent, _ int) Agent {
 		row.Register = replacer.Replace(row.Register)
 		entry, _ := lo.Find(listing.Agents, func(entry registryAgent) bool { return entry.ID == row.ID })
@@ -197,7 +199,7 @@ func (agt *Service) DescribeNode() Node {
 // sums nodejs.org publishes. It returns an error if a download fails, the sum does not match, or the archive cannot
 // be unpacked.
 func (agt *Service) InstallNode() error {
-	index, err := fetch(nodeURL + "index.json")
+	index, err := app.FetchURL(nodeURL+"index.json", fetchTimeout)
 	if err != nil {
 		return err
 	}
@@ -212,7 +214,7 @@ func (agt *Service) InstallNode() error {
 	system := lo.Ternary(runtime.GOOS == windowsOS, "win", runtime.GOOS)
 	arch := lo.Ternary(runtime.GOARCH == "amd64", "x64", runtime.GOARCH)
 	asset := fmt.Sprintf("node-%s-%s-%s%s", newest.Version, system, arch, lo.Ternary(system == "win", ".zip", ".tar.gz"))
-	archive, err := fetch(nodeURL + newest.Version + "/" + asset)
+	archive, err := app.FetchURL(nodeURL+newest.Version+"/"+asset, fetchTimeout)
 	if err != nil {
 		return err
 	}
@@ -224,7 +226,11 @@ func (agt *Service) InstallNode() error {
 		return err
 	}
 	if system == "win" {
-		return unzip(archive, dir)
+		reader, err := zip.NewReader(bytes.NewReader(archive), int64(len(archive)))
+		if err != nil {
+			return err
+		}
+		return files.Unzip(reader, dir)
 	}
 	return untar(archive, dir)
 }
@@ -294,7 +300,7 @@ func (agt *Service) loadRegistry() (registry, error) {
 	path := filepath.Join(agt.findDir(), "registry.json")
 	content, err := os.ReadFile(path)
 	if info, statErr := os.Stat(path); statErr != nil || time.Since(info.ModTime()) > registryAge {
-		if fetched, fetchErr := fetch(registryURL); fetchErr == nil {
+		if fetched, fetchErr := app.FetchURL(registryURL, fetchTimeout); fetchErr == nil {
 			content, err = fetched, files.WriteAtomic(path, fetched)
 		}
 	}
@@ -405,29 +411,10 @@ func compareVersions(a, b string) int {
 	return slices.Compare(parse(a), parse(b))
 }
 
-// fetch returns the body of a web address. It returns an error if the request fails or does not answer 200.
-func fetch(url string) ([]byte, error) {
-	ctx, cancel := context.WithTimeout(context.Background(), 5*time.Minute)
-	defer cancel()
-	request, err := http.NewRequestWithContext(ctx, http.MethodGet, url, nil)
-	if err != nil {
-		return nil, err
-	}
-	response, err := http.DefaultClient.Do(request)
-	if err != nil {
-		return nil, err
-	}
-	defer func() { _ = response.Body.Close() }()
-	if response.StatusCode != http.StatusOK {
-		return nil, fmt.Errorf("%s answered %s", url, response.Status)
-	}
-	return io.ReadAll(response.Body)
-}
-
 // checkSum checks a Node archive, a release's file of the given version, against the sum nodejs.org publishes for it.
 // It returns an error if the sums cannot be fetched, list no sum for the file, or list another.
 func checkSum(version, asset string, archive []byte) error {
-	sums, err := fetch(nodeURL + version + "/SHASUMS256.txt")
+	sums, err := app.FetchURL(nodeURL+version+"/SHASUMS256.txt", fetchTimeout)
 	if err != nil {
 		return err
 	}
@@ -442,28 +429,6 @@ func checkSum(version, asset string, archive []byte) error {
 		}
 	}
 	return fmt.Errorf("nodejs.org publishes no sum for %s", asset)
-}
-
-// unzip unpacks the files of a zip archive into a folder, without the archive's one top folder.
-func unzip(archive []byte, dir string) error {
-	reader, err := zip.NewReader(bytes.NewReader(archive), int64(len(archive)))
-	if err != nil {
-		return err
-	}
-	for _, entry := range reader.File {
-		if entry.FileInfo().IsDir() {
-			continue
-		}
-		content, err := entry.Open()
-		if err != nil {
-			return err
-		}
-		err = errors.Join(writeEntry(dir, entry.Name, entry.Mode(), content), content.Close())
-		if err != nil {
-			return err
-		}
-	}
-	return nil
 }
 
 // untar unpacks the files of a gzipped tar archive into a folder, without the archive's one top folder. Its links are

@@ -68,7 +68,11 @@ func openService(t *testing.T) (*Service, *workspace.Session) {
 // keepPage caches a page with the given title and HTML in a client's folder, as a refresh would have.
 func keepPage(t *testing.T, client *Client, html, title string) {
 	t.Helper()
-	if err := app.SaveJSON(client.resolvePath(title), Page{Title: title, HTML: html, FetchedAt: time.Now(), Modding: hasModding(html)}); err != nil {
+	root, _ := parseFragment(html)
+	page := Page{
+		Title: title, HTML: html, FetchedAt: time.Now(), Modding: hasModding(root), Released: resolveReleased(root),
+	}
+	if err := app.SaveJSON(client.resolvePath(title), page); err != nil {
 		t.Fatal(err)
 	}
 }
@@ -185,9 +189,6 @@ func TestResolveClientFollowsGame(t *testing.T) {
 func TestClientRefreshesFromServer(t *testing.T) {
 	server := httptest.NewServer(http.HandlerFunc(func(writer http.ResponseWriter, request *http.Request) {
 		query := request.URL.Query()
-		if request.Header.Get("User-Agent") != userAgent {
-			t.Errorf("user agent = %q", request.Header.Get("User-Agent"))
-		}
 		switch {
 		case query.Get("action") == "parse" && query.Get("page") == "Missing":
 			_, _ = writer.Write([]byte(`{"error":{"code":"missingtitle","info":"no such page"}}`))
@@ -206,7 +207,8 @@ func TestClientRefreshesFromServer(t *testing.T) {
 	}))
 	defer server.Close()
 
-	client := NewClient(t.TempDir(), &game.Game{ID: "test", WikiAPI: server.URL + "/api.php"})
+	client := NewClient(t.TempDir(), &game.Game{ID: "test"})
+	client.api = server.URL + "/api.php"
 	client.limiter = rate.NewLimiter(rate.Inf, 1)
 	keepPage(t, client, "<p>kept</p>", "Traits")
 	var lastDone, lastTotal int

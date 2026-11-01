@@ -4,8 +4,8 @@ import { computed, shallowRef, watch } from "vue";
 import { useQuery } from "@pinia/colada";
 import { Browser } from "@wailsio/runtime";
 import { day } from "../../lib/format";
-import { noteQuery, notesQuery, stateQuery } from "../../queries";
-import { makeChip, useChip } from "../../stores/agent";
+import { notesQuery, stateQuery, wikiPageQuery } from "../../queries";
+import { makeChip, useChip } from "../../stores/toolView";
 import { useWorkspaceStore } from "../../stores/workspace";
 import StatusFacts from "../../ui/StatusFacts.vue";
 import WikiArticle from "../../ui/WikiArticle.vue";
@@ -46,10 +46,14 @@ const version = computed({
   get: () => choice.value ?? notes.value?.[0]?.version ?? "",
   set: (next: string | undefined) => (choice.value = next),
 });
+/** The list's items: the versions, a sub-version indented. */
+const versions = computed(() =>
+  (notes.value ?? []).map((one) => ({ ...one, class: one.parent ? "h-6.5 ps-5.5 text-12" : undefined })),
+);
 const note = computed(() => notes.value?.find((one) => one.version === version.value));
 const { data: page, isLoading } = useQuery(() => ({
-  ...noteQuery(version.value),
-  enabled: workspace.isOpen() && !!version.value,
+  ...wikiPageQuery(note.value?.title ?? ""),
+  enabled: workspace.isOpen() && !!note.value,
 }));
 const facts = computed(() => [
   { label: "Patch notes from the", value: `${state.value?.game?.name ?? ""} wiki` },
@@ -76,7 +80,7 @@ useChip(() =>
           </div>
           <UListbox
             v-model="version"
-            :items="notes.map((one) => ({ ...one, class: one.parent ? 'h-6.5 ps-5.5 text-12' : undefined }))"
+            :items="versions"
             value-key="version"
             :filter="{ placeholder: 'Filter versions', icon: 'i-lucide-search', size: 'sm', variant: 'outline' }"
             class="min-h-0 flex-1"

@@ -172,14 +172,14 @@ export interface Place {
     "readOnly": boolean;
 
     /**
-     * the game reads it
-     */
-    "loaded": boolean;
-
-    /**
-     * true for a folder, which a folder's listing and Service.Locate tell
+     * true for a folder: a root, an entry of a folder's listing, or git's or an agent's
      */
     "isDir": boolean;
+
+    /**
+     * true for a GUI file and for the coats' files and folder, which Visual draws
+     */
+    "drawable": boolean;
 }
 
 /**
@@ -208,8 +208,6 @@ export interface State {
      * the recorded version, if opening found a different one
      */
     "updatedFrom": string;
-    "mods": Mod[] | null;
-    "language": string;
     "dumps": schema$0.SourceState;
 
     /**
@@ -226,4 +224,27 @@ export interface State {
      * how many scope types the schema declares
      */
     "scopes": number;
+}
+
+/**
+ * A Workspace is one recorded workspace as the pages list it: its record, its install, its game and its mods in load
+ * order. Each mod's descriptor is read from disk when the list is made.
+ */
+export interface Workspace {
+    "record": app$0.Workspace;
+
+    /**
+     * empty if the install is not recorded or its game not supported
+     */
+    "install": app$0.Install;
+
+    /**
+     * nil if the install is not recorded or its game not supported
+     */
+    "game": game$0.Game | null;
+
+    /**
+     * none if the install is not recorded or its game not supported
+     */
+    "mods": Mod[] | null;
 }

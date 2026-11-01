@@ -119,18 +119,6 @@ export enum Format {
 };
 
 /**
- * A Root is one folder laid out like the game's own: the game's folder, a DLC's or a mod's.
- */
-export interface Root {
-    "dir": string;
-
-    /**
-     * game.OriginVanilla or a mod's id
-     */
-    "origin": string;
-}
-
-/**
  * A Text is the text of a file. It remembers how the file was stored, so it can be written back the same way.
  */
 export interface Text {

@@ -6,6 +6,7 @@ import (
 	"github.com/samber/lo"
 
 	"paradox-modding-tools/internal/game"
+	"paradox-modding-tools/internal/jomini"
 	"paradox-modding-tools/internal/schema"
 )
 
@@ -87,7 +88,7 @@ func (index *Index) ListFiredBy(schema *schema.Schema, site Site, follow bool) [
 			case holder.Database != effects || !follow:
 				// A firer the game drops fires nothing, and a merged one stands as the definition the game keeps.
 				if winner, ok := index.FindKeptLocal(schema, holder, parent.File); ok && index.isActing(winner, parent) {
-					source := lo.Ternary(winner.Reason == Unsettled, parent, winner.Site)
+					source := lo.Ternary(winner.Reason == ReasonUnsettled, parent, winner.Site)
 					fires = append(fires, Fire{Source: source, Target: site, Use: fired, Via: via})
 				}
 			case !open[parent]:
@@ -105,7 +106,7 @@ func (index *Index) ListActing(schema *schema.Schema, reference schema.Reference
 	if !ok {
 		return nil
 	}
-	return lo.Filter(index.ResolveLocal(reference, index.Files[file].Path), func(site Site, _ int) bool {
+	return lo.Filter(index.ResolveLocal(reference, file), func(site Site, _ int) bool {
 		return index.isActing(winner, site)
 	})
 }
@@ -114,7 +115,7 @@ func (index *Index) ListActing(schema *schema.Schema, reference schema.Reference
 // one merged into it, or, where no source says which it keeps, any copy in a file it reads.
 func (index *Index) isActing(winner Winner, site Site) bool {
 	kept, reason := index.ResolveSite(winner, site)
-	return kept || reason == Unsettled
+	return kept || reason == ReasonUnsettled
 }
 
 // listReferences returns the references that sit directly inside a definition, in source order.
@@ -140,24 +141,24 @@ func (collector *collector) isFiring(context *schema.Context, reference schema.R
 	if context.Conditional || context.Preview || context.Category == schema.CategoryLink {
 		return false
 	}
-	row := game.LookupGame(collector.schema.Game)
+	row := collector.index.row
 	effect := context
 	if !isEffect(effect, collector.schema.Effects) {
 		effect = context.Parent
 	}
 	if effect != nil && isEffect(effect, collector.schema.Effects) {
 		target := collector.schema.Databases[reference.Database]
-		return target == nil || target.Row.Houses != "decisions" || slices.Contains(row.DecisionEffects, effect.Label)
+		return target == nil || target.Row.Contents != game.ContentsDecisions || slices.Contains(row.DecisionEffects, effect.Label)
 	}
-	if holder := collector.schema.Databases[context.Database]; holder != nil && holder.Row.Houses == "on_actions" {
+	if holder := collector.schema.Databases[context.Database]; holder != nil && holder.Row.Contents == game.ContentsOnActions {
 		return true
 	}
 	keys := context.Path
 	if context.Label != "" {
 		keys = append(keys[:len(keys):len(keys)], context.Label)
 	}
-	return slices.ContainsFunc(row.FiringFields, func(field game.Reference) bool {
-		return field.Database == context.Database && game.MatchKeyPath(field.KeyPath, keys)
+	return slices.ContainsFunc(row.ListFiringFields(), func(field game.Reference) bool {
+		return field.Database == context.Database && jomini.MatchKeyPath(field.KeyPath, keys)
 	})
 }
 

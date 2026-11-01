@@ -5,7 +5,6 @@ package schema
 
 import (
 	"cmp"
-	"fmt"
 	"maps"
 	"path"
 	"slices"
@@ -109,7 +108,6 @@ type Example struct {
 // A Database is one database of the game: the field tree of its definitions and the game's rows that govern it.
 type Database struct {
 	Name       string
-	Folder     string   // the folder or file its definitions are written in; "" for a nested database
 	Nested     []string // the databases whose definitions are keys inside its own
 	Definition *Field
 	Row        game.Database   // where its definitions are written and how each is named
@@ -206,6 +204,9 @@ type Schema struct {
 	// UnlistedCalls are the steps of data calls that no dump declares for the type before them and the game's own
 	// localization and GUI text write all the same, keyed Type.step.
 	UnlistedCalls map[string]bool
+	// TopFolders holds the first folder of each of the game's files, less the stage folder that opens its path, in
+	// lower case: the folders under which the game reads a mod's files.
+	TopFolders    map[string]bool
 	Lists         string   // the database of scripted lists, or "" if the game has none
 	Events        string   // the database of events, or "" if the game has none
 	Messages      string   // the database of the messages an effect sends the player, or "" if the game has none
@@ -213,10 +214,13 @@ type Schema struct {
 	ModifierTypes string   // the database of modifier types, or "" if the game has none
 	Effects       string   // the database of scripted effects, or "" if the game has none
 	Values        string   // the database of script values: the callable whose definitions hold a value; "" if none
-	FireDatabases []string // the databases that are fired: those whose row houses a game.FireHouses word
+	FireDatabases []string // the databases that are fired: those whose row holds a game.FireContents word
 	// mods is the mods' scripted definitions, which a call finds after the game's. No cache keeps them, and a rescan
 	// puts a new table in place.
 	mods atomic.Pointer[modScripted]
+	// families holds, for each list family, the arguments of its commands, whose children buildFamilies made one. It is
+	// kept while the schema is built.
+	families [][]*Field
 }
 
 // The origins of a source's data: the install, the shipped backup, or none.
@@ -233,6 +237,7 @@ func Build(row *game.Game, installPath string, listing []files.File, parse func(
 		return strings.HasPrefix(file.Rel, game.DLCFolder+"/")
 	})
 	schema := newSchema(row)
+	schema.TopFolders = listTopFolders(row, listing)
 	folders := listFolders(row, listing)
 	// Dumps first, then docs, then the game's own files. Last, a blurb the docs give a key is shared with the same key
 	// elsewhere in its database.
@@ -269,13 +274,26 @@ func newSchema(row *game.Game) *Schema {
 	}
 }
 
+// listTopFolders returns the first folder of each file in a listing, in lower case, less the stage folder that opens
+// the path in a game with stages. A file at the top of its root or of its stage lies in none.
+func listTopFolders(row *game.Game, listing []files.File) map[string]bool {
+	folders := map[string]bool{}
+	for _, file := range listing {
+		_, rest := row.SplitStage(strings.ToLower(file.Rel))
+		if folder, _, nested := strings.Cut(rest, "/"); nested {
+			folders[folder] = true
+		}
+	}
+	return folders
+}
+
 // listFolders returns the folder of each database the game's files make: the folder each script file belongs to,
 // and every folder or file a row names that the listing has.
 func listFolders(row *game.Game, listing []files.File) []string {
 	folders := map[string]bool{}
 	present := map[string]bool{}
 	for _, file := range listing {
-		_, rel := SplitStage(row, file.Rel)
+		_, rel := row.SplitStage(file.Rel)
 		for dir := rel; dir != "."; dir = path.Dir(dir) {
 			present[dir] = true
 		}
@@ -283,36 +301,13 @@ func listFolders(row *game.Game, listing []files.File) []string {
 			folders[findFolder(row, rel)] = true
 		}
 	}
-	for _, folder := range slices.Concat(slices.Collect(maps.Keys(game.Databases)), slices.Collect(maps.Keys(row.Databases))) {
+	for _, folder := range row.ListDatabaseFolders() {
 		if present[folder] {
 			folders[folder] = true
 		}
 	}
 	delete(folders, ".")
 	return slices.Sorted(maps.Keys(folders))
-}
-
-// SplitStage splits a path into the stage folder that opens it and the rest, for the games that keep their files
-// under stages. A path under no stage, or a game with none, gives "" and the path as it is.
-func SplitStage(row *game.Game, rel string) (stage, rest string) {
-	if row == nil {
-		return "", rel
-	}
-	stage, rest, ok := strings.Cut(rel, "/")
-	if ok && slices.Contains(row.StageRoots, stage) {
-		return stage, rest
-	}
-	return "", rel
-}
-
-// FindLocReplacement returns the rank of the localization replace folder a file is in, the lowest winning. It returns
-// false if the file is in none.
-func FindLocReplacement(row *game.Game, rel, language string) (int, bool) {
-	_, rel = SplitStage(row, rel)
-	rank := slices.IndexFunc(row.LocReplaceFolders, func(folder string) bool {
-		return strings.HasPrefix(rel, fmt.Sprintf(folder, language)+"/")
-	})
-	return rank, rank >= 0
 }
 
 // findFolder returns the folder of the database that a script file belongs to: the file itself if a row names it,
@@ -333,29 +328,30 @@ func findFolder(row *game.Game, rel string) string {
 func (schema *Schema) buildDatabases(row *game.Game, folders []string) {
 	for _, folder := range folders {
 		rule, _ := row.FindDatabase(folder)
-		schema.buildDatabase(row, game.ToDatabase(folder), folder, rule)
+		rule.Folder = folder
+		schema.buildDatabase(row, game.ToDatabase(folder), rule)
 	}
-	for _, nesting := range slices.Concat(row.Nestings, game.Nestings) {
+	for _, nesting := range row.ListNestings() {
 		if nesting.Database == "" {
 			continue
 		}
 		label := game.ToDatabase(nesting.Parent) + "." + nesting.Database
-		schema.buildDatabase(row, label, "", game.Database{Target: nesting.Target})
+		schema.buildDatabase(row, label, game.Database{Target: nesting.Target})
 		if parent := schema.Databases[game.ToDatabase(nesting.Parent)]; parent != nil && !slices.Contains(parent.Nested, label) {
 			parent.Nested = append(parent.Nested, label)
 		}
 	}
 	for _, declaring := range game.GUI.Declares {
-		schema.buildDatabase(row, game.GUI.DatabasePrefix+declaring, "", game.Database{})
+		schema.buildDatabase(row, game.GUI.DatabasePrefix+declaring, game.Database{})
 	}
-	schema.buildDatabase(row, game.GUI.WidgetDatabase, "", game.Database{})
+	schema.buildDatabase(row, game.GUI.WidgetDatabase, game.Database{})
 	// a text names a format or an icon in any case
-	schema.buildDatabase(row, game.GUI.TextFormats, "", game.Database{FoldsCase: true})
-	schema.buildDatabase(row, game.GUI.TextIcons, "", game.Database{FoldsCase: true})
-	housed := map[string][]string{}
+	schema.buildDatabase(row, game.GUI.TextFormats, game.Database{FoldsCase: true})
+	schema.buildDatabase(row, game.GUI.TextIcons, game.Database{FoldsCase: true})
+	housed := map[game.Contents][]string{}
 	callables := map[string]*string{"effects": &schema.Effects, "value": &schema.Values}
 	for label, database := range schema.Databases {
-		housed[database.Row.Houses] = append(housed[database.Row.Houses], label)
+		housed[database.Row.Contents] = append(housed[database.Row.Contents], label)
 		if best, ok := callables[database.Callable.Shape]; ok && (*best == "" || label < *best) {
 			*best = label
 		}
@@ -363,20 +359,20 @@ func (schema *Schema) buildDatabases(row *game.Game, folders []string) {
 			schema.Prefixes[prefix] = label
 		}
 	}
-	houses := map[string]*string{
-		"events": &schema.Events, "messages": &schema.Messages, "lists": &schema.Lists, "concepts": &schema.Concepts,
-		"modifiers": &schema.ModifierTypes,
+	houses := map[game.Contents]*string{
+		game.ContentsEvents: &schema.Events, game.ContentsMessages: &schema.Messages, game.ContentsLists: &schema.Lists,
+		game.ContentsConcepts: &schema.Concepts, game.ContentsModifiers: &schema.ModifierTypes,
 	}
 	for purpose, house := range houses {
 		if len(housed[purpose]) == 1 {
 			*house = housed[purpose][0]
 		}
 	}
-	for _, house := range game.FireHouses {
+	for _, house := range game.FireContents {
 		schema.FireDatabases = append(schema.FireDatabases, housed[house]...)
 	}
 	slices.Sort(schema.FireDatabases)
-	for _, widget := range slices.Concat(slices.Collect(maps.Keys(game.GUI.Types)), row.GUIUndeclared) {
+	for _, widget := range slices.Concat(slices.Collect(maps.Keys(game.GUI.Types)), row.GUI.Undeclared) {
 		schema.WidgetTypes[widget] = true
 	}
 	schema.listCallees()
@@ -385,13 +381,13 @@ func (schema *Schema) buildDatabases(row *game.Game, folders []string) {
 // buildDatabase builds one database from its row. It does nothing if the schema has it already. A database of records
 // named for another's definitions, such as the history of titles, gives no data type its words, since those words
 // name the other's definitions.
-func (schema *Schema) buildDatabase(row *game.Game, label, folder string, rule game.Database) {
+func (schema *Schema) buildDatabase(row *game.Game, label string, rule game.Database) {
 	if schema.Databases[label] != nil {
 		return
 	}
 	schema.Databases[label] = &Database{
-		Name: label, Folder: folder, Definition: &Field{}, Row: rule, Callable: game.Callables[label],
-		Precedence: row.LookupPrecedence(label, folder), Documented: map[string]bool{},
+		Name: label, Definition: &Field{}, Row: rule, Callable: game.Callables[label],
+		Precedence: row.LookupPrecedence(label, rule.Folder), Documented: map[string]bool{},
 	}
 	for _, key := range rule.DeclaringKeys {
 		schema.InlineDatabases[key] = label
@@ -415,8 +411,7 @@ func isNamedExactly(label, phrase string) bool {
 	return label == strings.ReplaceAll(phrase, " ", "_")
 }
 
-// listCallees lists, for each word a call is made with, the databases whose definitions it can call. game.AnyCall
-// lists them all.
+// listCallees lists, for each word a call is made with, the databases whose definitions it can call.
 func (schema *Schema) listCallees() {
 	for label, callable := range game.Callables {
 		if schema.Databases[label] == nil {
@@ -424,9 +419,6 @@ func (schema *Schema) listCallees() {
 		}
 		for _, caller := range callable.Callers {
 			schema.Callees[caller] = append(schema.Callees[caller], label)
-		}
-		if len(callable.Callers) > 0 {
-			schema.Callees[game.AnyCall] = append(schema.Callees[game.AnyCall], label)
 		}
 	}
 	for _, labels := range schema.Callees {
@@ -437,9 +429,9 @@ func (schema *Schema) listCallees() {
 // FindDatabase returns the database that a file belongs to, going by its relative path and the game's folder
 // rules. It returns false if no database claims the file.
 func (schema *Schema) FindDatabase(rel string) (*Database, bool) {
-	_, rel = SplitStage(game.LookupGame(schema.Game), rel)
+	_, rel = game.LookupGame(schema.Game).SplitStage(rel)
 	for folder := rel; folder != "."; folder = path.Dir(folder) {
-		if database, ok := schema.Databases[game.ToDatabase(folder)]; ok && database.Folder == folder {
+		if database, ok := schema.Databases[game.ToDatabase(folder)]; ok && database.Row.Folder == folder {
 			return database, true
 		}
 	}
@@ -520,36 +512,42 @@ func (schema *Schema) ResolveLink(link, scope string) (string, bool) {
 
 // IsLink reports whether a key or a value starts with a scope link, ignoring case, as scope:target and prev do.
 func (schema *Schema) IsLink(key string) bool {
-	first := strings.ToLower(jomini.SplitChain(key)[0])
-	if command := schema.Commands[first]; command != nil && !command.Wild && slices.Contains(command.Declared, game.DeclaredLink) {
-		return true
+	head, prefixed := splitLinkHead(key)
+	command := schema.Commands[head]
+	if prefixed {
+		_, reserved := schema.Prefixes[head]
+		return reserved || command != nil && command.Wild
 	}
-	prefix, _, ok := jomini.SplitPrefixed(first)
-	if _, exists := schema.Prefixes[prefix]; ok && exists {
-		return true
+	return command != nil && !command.Wild && slices.Contains(command.Declared, game.DeclaredLink)
+}
+
+// splitLinkHead returns the first link of a chain, in lower case. For a link written with a prefix, as scope:target
+// is, it returns the prefix alone, and true.
+func splitLinkHead(key string) (string, bool) {
+	head := strings.ToLower(jomini.SplitChain(key)[0])
+	if prefix, _, ok := jomini.SplitPrefixed(head); ok {
+		return prefix, true
 	}
-	wild := schema.Commands[prefix]
-	return ok && wild != nil && wild.Wild
+	return head, false
 }
 
 // ResolveCallTypes returns the type each step of a data call leads to. It stops at a step no dump declares, which
 // gets "".
 func (schema *Schema) ResolveCallTypes(call jomini.Call, datacontext string) []string {
-	owners := schema.listCallOwners(call, datacontext)
-	types := make([]string, len(owners))
-	for i, owner := range owners {
-		types[i] = owner
-		if function, ok := schema.DataTypes[owner].Functions[call.Steps[i].Text]; ok {
-			types[i] = function.Returns
-		}
+	_, functions := schema.listCallOwners(call, datacontext)
+	types := make([]string, len(functions))
+	for i, function := range functions {
+		types[i] = function.Returns
 	}
 	return types
 }
 
-// listCallOwners returns the data type that declares each step of a data call. It stops at a step no dump declares,
-// which gets "".
-func (schema *Schema) listCallOwners(call jomini.Call, datacontext string) []string {
+// listCallOwners returns the data type that declares each step of a data call, and the function the step calls. It
+// stops at a step no dump declares, which gets "" and no function. A first step that names a data type is owned by
+// that type and leads to it, as a function returning it would, though it calls none.
+func (schema *Schema) listCallOwners(call jomini.Call, datacontext string) ([]string, []DataFunction) {
 	var owners []string
+	var functions []DataFunction
 	current := datacontext
 	for i, step := range call.Steps {
 		function, ok := schema.DataTypes[current].Functions[step.Text]
@@ -557,22 +555,21 @@ func (schema *Schema) listCallOwners(call jomini.Call, datacontext string) []str
 			current = game.GlobalType
 			function, ok = schema.DataTypes[current].Functions[step.Text]
 			if _, named := schema.DataTypes[step.Text]; !ok && named {
-				owners, current = append(owners, step.Text), step.Text
-				continue
+				function, ok, current = DataFunction{Returns: step.Text}, true, step.Text
 			}
 		}
 		if !ok {
-			return append(owners, "")
+			return append(owners, ""), append(functions, DataFunction{})
 		}
-		owners = append(owners, current)
+		owners, functions = append(owners, current), append(functions, function)
 		current = function.Returns
 	}
-	return owners
+	return owners, functions
 }
 
 // FindFunction returns the data function one step of a data call calls. It returns false if the dumps declare none.
 func (schema *Schema) FindFunction(call jomini.Call, datacontext string, step int) (DataFunction, bool) {
-	owners := schema.listCallOwners(call, datacontext)
+	owners, _ := schema.listCallOwners(call, datacontext)
 	if step < 0 || step >= len(owners) || owners[step] == "" {
 		return DataFunction{}, false
 	}
@@ -584,14 +581,14 @@ func (schema *Schema) FindFunction(call jomini.Call, datacontext string, step in
 // type: the data context's, or Global's, for the first step. It returns false if the dumps declare every step, or the
 // type before the step is unknown.
 func (schema *Schema) FindUnlisted(call jomini.Call, datacontext string) (int, string, bool) {
-	owners := schema.listCallOwners(call, datacontext)
+	owners, functions := schema.listCallOwners(call, datacontext)
 	step := slices.Index(owners, "")
 	if step < 0 {
 		return 0, "", false
 	}
 	before := cmp.Or(datacontext, game.GlobalType)
 	if step > 0 {
-		before = schema.DataTypes[owners[step-1]].Functions[call.Steps[step-1].Text].Returns
+		before = functions[step-1].Returns
 	}
 	return step, before, before != ""
 }
@@ -842,15 +839,18 @@ func walkField(field *Field, visit func(key string, child *Field)) {
 	}
 }
 
-// buildChild returns the child of a field at a key, building an empty one when there is none.
-func (field *Field) buildChild(key string) *Field {
+// buildChild returns the child of a field at a key, building an empty one when there is none. A child with no source
+// takes the given one.
+func (field *Field) buildChild(key string, source game.Source) *Field {
 	if field.Children == nil {
 		field.Children = map[string]*Field{}
 	}
 	if field.Children[key] == nil {
 		field.Children[key] = &Field{}
 	}
-	return field.Children[key]
+	child := field.Children[key]
+	child.Source = cmp.Or(child.Source, source)
+	return child
 }
 
 // findChild returns the child of a field written at a key, or nil if it has none. A nil field has none.
@@ -867,8 +867,8 @@ func (field *Field) findPatternChild(key string) *Field {
 	if child := field.findChild(key); child != nil {
 		return child
 	}
-	if game.IsNumberKey(key) {
-		if child := field.findChild(game.NumberKey); child != nil {
+	if jomini.IsNumberKey(key) {
+		if child := field.findChild(jomini.NumberKey); child != nil {
 			return child
 		}
 	}

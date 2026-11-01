@@ -15,7 +15,7 @@ import ScriptSnippet from "./ScriptSnippet.vue";
 const { page, find = "" } = defineProps<{ page: Page; find?: string }>();
 
 const BLOCKS = "p, li, h1, h2, h3, h4, h5, h6, td, th, pre, blockquote";
-const LEVELS: Record<number, string> = {
+const HEADING_CLASSES: Record<number, string> = {
   1: "mt-2 ps-2.5 text-12 font-semibold text-highlighted",
   2: "mt-2 ps-2.5 text-12 font-semibold text-highlighted",
   3: "ps-5.5 text-12 text-dimmed",
@@ -73,13 +73,13 @@ watch(active, (index) =>
   contents.value?.querySelector(`[data-heading="${index}"]`)?.scrollIntoView({ block: "nearest" }),
 );
 
-/** Marks the last heading that has scrolled past the top of the article. */
+/** markActive marks the last heading that has scrolled past the top of the article. */
 function markActive(): void {
   const top = (body.value?.getBoundingClientRect().top ?? 0) + 24;
   active.value = headings.value.findLastIndex((heading) => heading.getBoundingClientRect().top <= top);
 }
 
-/** Marks the text at the given index as the find's current hit and scrolls to it. */
+/** show marks the text at the given position as the find's current hit and scrolls to it. */
 function show(index: number): void {
   marked?.classList.remove(...MARKED);
   marked = blocks.value[index];
@@ -87,14 +87,14 @@ function show(index: number): void {
   marked?.scrollIntoView({ block: "center" });
 }
 
-/** Removes the find's mark and its term. */
+/** clear removes the find's mark and its term. */
 function clear(): void {
   marked?.classList.remove(...MARKED);
   marked = undefined;
   term.value = "";
 }
 
-/** Follows a link: an anchor scrolls, a web address opens outside, and a link to a wiki page is left to the holder. */
+/** follow follows a link: an anchor scrolls, a web address opens outside, a wiki page's link is left to the holder. */
 function follow(event: MouseEvent): void {
   const link = event.target instanceof Element ? event.target.closest("a") : null;
   const href = link?.getAttribute("href");
@@ -139,7 +139,7 @@ function follow(event: MouseEvent): void {
             :title="heading.textContent ?? ''"
             :class="[
               index === active ? 'border-primary text-highlighted' : 'border-default',
-              LEVELS[Number(heading.tagName.slice(1))],
+              HEADING_CLASSES[Number(heading.tagName.slice(1))],
             ]"
             @click="heading.scrollIntoView({ block: 'start' })"
           >

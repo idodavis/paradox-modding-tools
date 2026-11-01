@@ -5,28 +5,40 @@
 <script setup lang="ts">
 import type { CommandPaletteGroup, CommandPaletteItem } from "@nuxt/ui";
 import { useQuery } from "@pinia/colada";
-import { useEventBus } from "@vueuse/core";
+import { useEventBus, useLocalStorage } from "@vueuse/core";
 import { useFuse } from "@vueuse/integrations/useFuse";
 import { computed, shallowRef } from "vue";
 
-import type { IPosition } from "monaco-editor";
 import type { WorkspaceSymbol } from "@services/lsp/models";
 import type { Place } from "@services/workspace/models";
+import { toSentence } from "../lib/format";
 import { codesQuery, fileSearchQuery, settingsCatalogQuery, symbolsQuery, workspacesQuery } from "../queries";
 import { useEditorStore } from "../stores/editor";
+import { useSettingsStore } from "../stores/settings";
+import { COMMAND_BUS } from "../stores/windows";
 import { useWorkspaceStore } from "../stores/workspace";
-import { paletteGroups, rememberCommand } from "./commands";
+import { COMMANDS, findCommand, listBindings, openPage } from "./commands";
+import { homeRoute, listShownTools, PAGES, WORKSPACE_TOOLS, type Page, type PageName } from "./pages";
+import { router } from "./router";
 
 const open = defineModel<boolean>("open", { default: false });
 
 /** How many files the palette lists for a search. */
 const FILE_HITS = 50;
+// how many commands the palette's Recently used lists
+const RECENT = 5;
+// the settings that hold a list, each item of which the palette switches on a row of its own
+const LISTS = ["appearance.pages", "ide.checks"];
 
 const editor = useEditorStore();
+const settings = useSettingsStore();
 const workspace = useWorkspaceStore();
+const commandBus = useEventBus(COMMAND_BUS);
 const term = shallowRef("");
 // the list a command handed the palette to pick from, under the command's id, or null when there is none
 const choices = shallowRef<CommandPaletteGroup | null>(null);
+// the ids of the commands the palette ran last, the latest first
+const recent = useLocalStorage<string[]>("pmt.palette.recent", []);
 
 // what the search looks through: a command's list while one is shown, else by the search's first character: ">"
 // the commands, "@" or "#" the definitions, else the files
@@ -37,10 +49,9 @@ const mode = computed(() => {
 });
 const query = computed(() => (mode.value === "files" ? term.value : term.value.slice(1)).trim());
 
-// the commands' lists read these from the cache, so they are kept loaded while the palette exists
-useQuery(workspacesQuery);
-useQuery(settingsCatalogQuery);
-useQuery(codesQuery);
+const { data: workspaces } = useQuery(workspacesQuery);
+const { data: catalog } = useQuery(settingsCatalogQuery);
+const { data: codes } = useQuery(codesQuery);
 const { data: files } = useQuery(() => ({
   ...fileSearchQuery({ query: query.value, limit: FILE_HITS }),
   enabled: open.value && mode.value === "files" && workspace.isOpen(),
@@ -52,7 +63,7 @@ const { data: symbols } = useQuery(() => ({
   placeholderData: (previous: WorkspaceSymbol[] | null | undefined) => previous,
 }));
 
-const available = computed(() => (mode.value === "commands" ? paletteGroups() : []));
+const available = computed(() => (mode.value === "commands" ? listCommandGroups() : []));
 const { results } = useFuse(
   query,
   () => available.value.flatMap((group) => group.items.map((item) => ({ ...item, group: group.id }))),
@@ -71,17 +82,17 @@ const groups = computed<CommandPaletteGroup[]>(() => {
       label: place.rel,
       suffix: workspace.originName(place.origin),
       icon: "i-lucide-file",
-      onSelect: () => show(place),
+      onSelect: () => editor.show(place),
     }));
     return [{ id: "files", label: "Files", ignoreFilter: true, items }];
   }
   if (mode.value === "symbols") {
-    const items = (symbols.value ?? []).map(({ name, database, location }) => ({
+    const items = (symbols.value ?? []).map(({ name, database, site }) => ({
       label: name,
       suffix: database,
       icon: "i-lucide-hash",
       onSelect: () =>
-        show(location.place, { lineNumber: location.range.startLineNumber, column: location.range.startColumn }),
+        editor.show(site.place, { lineNumber: site.range.startLineNumber, column: site.range.startColumn }),
     }));
     return [{ id: "symbols", label: "Definitions", ignoreFilter: true, items }];
   }
@@ -93,7 +104,7 @@ const groups = computed<CommandPaletteGroup[]>(() => {
   }));
 });
 
-useEventBus<string>("pmt.command").on((command) => {
+commandBus.on((command) => {
   if (command !== "palette.open" && command !== "editor.goToFile") return;
   choices.value = null;
   term.value = command === "palette.open" ? "> " : "";
@@ -105,21 +116,120 @@ useEventBus<CommandPaletteGroup>("pmt.choices").on((group) => {
   open.value = true;
 });
 
-/** Shows a place in the IDE. */
-function show(place: Place, position?: IPosition): void {
-  editor.show(place, position, "palette");
+/**
+ * listCommandGroups returns the groups of the palette's commands mode: the commands it ran last that apply now, the
+ * other commands that apply, the pages, the workspaces, and the settings by type.
+ */
+function listCommandGroups(): { id: string; label: string; items: CommandPaletteItem[] }[] {
+  const activeId = workspace.activeId();
+  // each row shows its first shortcut as the user set it
+  const applicable = COMMANDS.filter((row) => row.when()).map((row) => ({ ...row, kbds: listBindings(row)[0] }));
+  const recentRows = recent.value.flatMap((one) => applicable.find((row) => row.id === one) ?? []);
+  const names: PageName[] = ["library", "wizard", ...(activeId ? listShownTools() : [])];
+  const pages = names.map((name) => {
+    const page: Page = PAGES[name];
+    return {
+      id: `page.${name}`,
+      label: page.title,
+      icon: page.icon ?? "i-lucide-plus",
+      onSelect: () => openPage(name),
+    };
+  });
+  const records = (workspaces.value ?? []).map(({ record }) => ({
+    id: `workspace.${record.id}`,
+    label: record.name,
+    icon: record.id === activeId ? "i-lucide-check" : "i-lucide-folder",
+    onSelect: () => void router.push(homeRoute(record.id, record.homePage)),
+  }));
+  return [
+    { id: "recent", label: "Recently used", items: recentRows },
+    { id: "commands", label: "Commands", items: applicable.filter((row) => !recentRows.includes(row)) },
+    { id: "pages", label: "Pages", items: pages },
+    { id: "workspaces", label: "Workspaces", items: records },
+    { id: "switches", label: "Settings you can switch", items: activeId ? listSwitches() : [] },
+    { id: "values", label: "Settings with a value", items: activeId ? listValues() : [] },
+  ];
 }
 
 /**
- * Closes the palette once a row has run. A command that handed the palette a list under its own id leaves it open
- * on that list. A command is kept among the ones run last.
+ * listSwitches lists the palette's switches: each setting that is one, each page a workspace can show and each of
+ * the checks.
+ */
+function listSwitches(): CommandPaletteItem[] {
+  const settingRows = catalog.value ?? [];
+  const findSetting = (key: string) => settingRows.find((setting) => setting.key === key);
+  const switches = settingRows
+    .filter((setting) => setting.type === "switch")
+    .map((setting) =>
+      makeToggle(
+        `setting.${setting.key}`,
+        { label: setting.label, words: setting.words, scope: setting.workspace ? "IDE" : "App" },
+        settings.isOn(setting.key),
+        (on) => settings.write(setting.key, String(on)),
+      ),
+    );
+  const shown = listShownTools();
+  const pages = WORKSPACE_TOOLS.map((tool) =>
+    makeToggle(
+      `setting.appearance.pages.${tool}`,
+      { label: `Show the ${PAGES[tool].title} page`, words: findSetting("appearance.pages")?.words, scope: "App" },
+      shown.includes(tool),
+      (on) => settings.writeItem("appearance.pages", tool, on),
+    ),
+  );
+  // the setting lists the checks turned off
+  const off = settings.value("ide.checks").split(",");
+  const checks = (codes.value ?? []).map((code) =>
+    makeToggle(
+      `setting.ide.checks.${code.id}`,
+      { label: `Check: ${code.label}`, words: [code.id, findSetting("ide.checks")?.words].join(" "), scope: "IDE" },
+      !off.includes(code.id),
+      (on) => settings.writeItem("ide.checks", code.id, !on),
+    ),
+  );
+  return [...switches, ...pages, ...checks];
+}
+
+/**
+ * makeToggle makes a row of the palette that flips a setting. It shows whether the setting is on, and picking it
+ * flips it.
+ */
+function makeToggle(
+  id: string,
+  row: CommandPaletteItem,
+  on: boolean,
+  write: (on: boolean) => void,
+): CommandPaletteItem {
+  return { ...row, id, prefix: "Toggle:", icon: "i-lucide-check", slot: "setting", on, onSelect: () => write(!on) };
+}
+
+/** listValues lists the palette's settings with a value. Each opens Settings at its section. */
+function listValues(): CommandPaletteItem[] {
+  return (catalog.value ?? [])
+    .filter((setting) => setting.type !== "switch" && !LISTS.includes(setting.key))
+    .map((setting) => ({
+      id: `setting.${setting.key}`,
+      label: setting.label,
+      words: setting.words,
+      icon: "i-lucide-settings",
+      slot: "setting",
+      opens: `opens ${toSentence(setting.section)}`,
+      onSelect: () => commandBus.emit("settings.open", setting.section),
+    }));
+}
+
+/**
+ * pick closes the palette once a row has run. A command that handed the palette a list under its own id leaves it
+ * open on that list. A command is kept among the ones run last; a row that is no command, such as a file, is not.
  */
 function pick(row: CommandPaletteItem): void {
-  if (typeof row.id === "string") rememberCommand(row.id);
+  if (typeof row.id === "string" && findCommand(row.id)) {
+    recent.value = [row.id, ...recent.value.filter((one) => one !== row.id)].slice(0, RECENT);
+  }
   if (!choices.value || row.id !== choices.value.id) open.value = false;
 }
 
-/** Goes back from a command's list to the commands when Backspace is pressed on an empty search. */
+/** goBack goes back from a command's list to the commands when Backspace is pressed on an empty search. */
 function goBack(event: KeyboardEvent): void {
   if (!choices.value || term.value) return;
   event.preventDefault();

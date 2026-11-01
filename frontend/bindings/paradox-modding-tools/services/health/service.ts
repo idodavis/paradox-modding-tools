@@ -38,7 +38,7 @@ export function BuildReport(order: string[] | null): $CancellablePromise<$models
  * CompareStatements returns the texts of the statements at two sites. It returns an error if a file cannot be read or
  * no statement starts at a site.
  */
-export function CompareStatements(a: $models.FindingSite, b: $models.FindingSite): $CancellablePromise<$models.Compared> {
+export function CompareStatements(a: lsp$0.Site, b: lsp$0.Site): $CancellablePromise<$models.Compared> {
     return $Call.ByID(17702159, a, b);
 }
 
@@ -68,15 +68,16 @@ export function ListOverview(): $CancellablePromise<$models.Overview[] | null> {
 /**
  * ListReaders returns every place in script and localization that reads a localization key.
  */
-export function ListReaders(key: string): $CancellablePromise<$models.FindingSite[] | null> {
+export function ListReaders(key: string): $CancellablePromise<lsp$0.Site[] | null> {
     return $Call.ByID(3956762482, key);
 }
 
 /**
- * ListSnippets returns the code at each finding site, at most ten lines of it. A site of one line also gets the two
- * lines on each side. An open file's code is the editor's text. It returns an error if a file cannot be read.
+ * ListSnippets returns the code at each finding site, at most ten lines of it: the lines of its range, or the statement
+ * that starts on its line if it has no range. A site of one line also gets the two lines on each side. An open file's
+ * code is the editor's text. It returns an error if a file cannot be read.
  */
-export function ListSnippets(sites: $models.FindingSite[] | null): $CancellablePromise<$models.Snippet[] | null> {
+export function ListSnippets(sites: lsp$0.Site[] | null): $CancellablePromise<$models.Snippet[] | null> {
     return $Call.ByID(354852256, sites);
 }
 

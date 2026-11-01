@@ -12,53 +12,45 @@ import (
 
 	"paradox-modding-tools/internal/files"
 	"paradox-modding-tools/internal/game"
+	"paradox-modding-tools/internal/index"
 	"paradox-modding-tools/internal/texture"
 	"paradox-modding-tools/services/workspace"
 )
 
-// ListPictureFiles returns the pictures directly in a folder, by name: its images that are not DDS files. It returns
-// an error if no workspace is open, the folder is outside it, or the folder cannot be read.
-func (drw *Service) ListPictureFiles(folder string) ([]workspace.Place, error) {
-	session, err := drw.Workspace.Session()
-	if err != nil {
-		return nil, err
-	}
-	mods := session.Mods.Load()
-	if _, ok := mods.FindRoot(folder); !ok {
-		return nil, fmt.Errorf("%s is outside the workspace", folder)
-	}
-	entries, err := os.ReadDir(folder)
-	if err != nil {
-		return nil, err
-	}
-	pictures := []workspace.Place{}
-	for _, entry := range entries {
-		if !entry.IsDir() && texture.IsImage(entry.Name()) && !strings.EqualFold(filepath.Ext(entry.Name()), ".dds") {
-			pictures = append(pictures, session.Locate(mods, filepath.Join(folder, entry.Name())))
-		}
-	}
-	return pictures, nil
+// A PictureFiles is the pictures Save as DDS saves, and for each the DDS whose settings it keeps, by the picture's
+// path.
+type PictureFiles struct {
+	Pictures   []workspace.Place          `json:"pictures"`
+	References map[string]workspace.Place `json:"references"`
 }
 
-// FindReferences returns, for each picture, the DDS whose settings it keeps when it is saved as a DDS: the DDS of
-// the same name beside it, else the game's own DDS at the place the picture's DDS will have. A picture with neither
-// is left out. It returns an error if no workspace is open.
-func (drw *Service) FindReferences(paths []string) (map[string]workspace.Place, error) {
-	session, err := drw.Workspace.Session()
+// FindPictureFiles returns the pictures that Save as DDS saves for the given path: the picture itself, or for a folder
+// the pictures directly in it, by name, which are its images that are not DDS files. Each picture keeps the settings
+// of the DDS of the same name beside it, else of the game's own DDS at the place its DDS will have; a picture with
+// neither has no reference. It returns an error if no workspace is open, or a folder is outside it or cannot be read.
+func (drw *Service) FindPictureFiles(path string) (PictureFiles, error) {
+	ws, err := drw.Workspace.Session()
 	if err != nil {
-		return nil, err
+		return PictureFiles{}, err
+	}
+	mods := ws.Mods.Load()
+	pictures := []workspace.Place{ws.Locate(mods, path)}
+	if files.IsFolder(path) {
+		if pictures, err = listPictureFiles(ws, mods, path); err != nil {
+			return PictureFiles{}, err
+		}
 	}
 	isGame := func(place workspace.Place) bool { return place.Origin == game.OriginVanilla }
 	references := map[string]workspace.Place{}
-	for _, path := range paths {
-		target := toDDSPath(path)
+	for _, picture := range pictures {
+		target := toDDSPath(picture.Path)
 		if files.IsFile(target) {
-			references[path] = session.Locate(session.Mods.Load(), target)
+			references[picture.Path] = ws.Locate(mods, target)
 		} else if place, ok := lo.Find(drw.Workspace.ListCopies(target), isGame); ok {
-			references[path] = place
+			references[picture.Path] = place
 		}
 	}
-	return references, nil
+	return PictureFiles{Pictures: pictures, References: references}, nil
 }
 
 // WriteDDS writes each picture beside itself as a DDS, in BC3 blocks when compressed and else uncompressed, with or
@@ -77,6 +69,25 @@ func (drw *Service) WriteDDS(paths []string, compressed, mipmaps bool) ([]string
 		ddsPaths = append(ddsPaths, toDDSPath(path))
 	}
 	return ddsPaths, nil
+}
+
+// listPictureFiles returns the pictures directly in a folder, by name: its images that are not DDS files. It returns an
+// error if the folder is outside the workspace or cannot be read.
+func listPictureFiles(ws *workspace.Session, mods *index.Index, folder string) ([]workspace.Place, error) {
+	if _, ok := mods.FindRoot(folder); !ok {
+		return nil, fmt.Errorf("%s is outside the workspace", folder)
+	}
+	entries, err := os.ReadDir(folder)
+	if err != nil {
+		return nil, err
+	}
+	pictures := []workspace.Place{}
+	for _, entry := range entries {
+		if !entry.IsDir() && texture.IsImage(entry.Name()) && !strings.EqualFold(filepath.Ext(entry.Name()), ".dds") {
+			pictures = append(pictures, ws.Locate(mods, filepath.Join(folder, entry.Name())))
+		}
+	}
+	return pictures, nil
 }
 
 // toDDSPath returns the path of the DDS a picture is saved as: the picture's, with .dds for its extension.

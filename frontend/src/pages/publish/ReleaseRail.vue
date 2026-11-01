@@ -11,34 +11,31 @@ import {
   day,
   describeAge,
   describeCount,
-  describeDifference,
   MARKS,
   parseTime,
   plural,
+  toDifferenceId,
   toSentence,
-  type DifferenceRow,
 } from "../../lib/format";
-import { changeNotesQuery, comparisonQuery, stateQuery, tagsQuery, uploadQuery, useComparison } from "../../queries";
+import { changeNotesQuery, comparisonQuery, stateQuery, tagsQuery, useComparison } from "../../queries";
 import { useUploadStore } from "../../stores/uploads";
 import { useWorkspaceStore } from "../../stores/workspace";
+import DifferenceList from "./DifferenceList.vue";
 import UploadAction from "./UploadAction.vue";
-import type { Difference, Listing } from "@services/steam/models";
-
-/** Row is one line of the comparison box. A line with no id cannot be picked. */
-type Row = Partial<DifferenceRow> & { id: string; summary: string; extra?: string; lit: boolean };
+import type { Listing } from "@services/steam/models";
 
 /** RELEASE matches the major, minor and hotfix numbers a version starts with. The last two are optional. */
 const RELEASE = /^(\d+)(?:\.(\d+))?(?:\.(\d+))?/;
 
-const { modId, listingKey, listing, comparing, picked } = defineProps<{
+const { modId, listingKey, comparing, picked } = defineProps<{
   modId: string;
   listingKey: string;
-  listing: Listing;
   comparing: boolean;
   /** The id of the difference the compare shows, or "" when there is none. */
   picked: string;
 }>();
-const emit = defineEmits<{ "update:listing": [listing: Listing]; compare: [id: string]; link: [] }>();
+const emit = defineEmits<{ compare: [id: string]; link: [] }>();
+const listing = defineModel<Listing>("listing", { required: true });
 
 const workspace = useWorkspaceStore();
 const uploads = useUploadStore();
@@ -46,7 +43,6 @@ const uploads = useUploadStore();
 const enabled = computed(() => workspace.isOpen());
 const { data: state } = useQuery(stateQuery);
 const { data: tags } = useQuery(() => ({ ...tagsQuery, enabled: enabled.value }));
-const { data: upload } = useQuery(() => ({ ...uploadQuery({ modId, key: listingKey }), enabled: enabled.value }));
 const { data: notes } = useQuery(() => ({ ...changeNotesQuery({ modId, key: listingKey }), enabled: enabled.value }));
 const { data: comparison, error: unreachable } = useQuery(() => ({
   ...comparisonQuery({ modId, key: listingKey }),
@@ -57,15 +53,15 @@ const { mutate: check, isLoading: checking } = useComparison();
 const older = computed(() => listingKey !== "");
 // The version stays as it is for an older listing and while an upload runs.
 const locked = computed(() => older.value || uploads.find(modId, listingKey)?.status === "running");
-const bumps = computed(() => listBumps(listing.version));
+const bumps = computed(() => listBumps(listing.value.version));
 // The game's major and minor version when Steam lists no tag for it, else "".
 const untaggedVersion = computed(() => {
-  if (listing.versionTag || !tags.value?.versions?.length || !listing.supportedVersion) return "";
-  return listing.supportedVersion.split(".").slice(0, 2).join(".");
+  if (listing.value.versionTag || !tags.value?.versions?.length || !listing.value.supportedVersion) return "";
+  return listing.value.supportedVersion.split(".").slice(0, 2).join(".");
 });
 // The draft the change note was filled from, if it is unedited.
 const filledNote = computed(() =>
-  listing.changelog ? notes.value?.find((note) => note.text === listing.changelog) : undefined,
+  listing.value.changelog ? notes.value?.find((note) => note.text === listing.value.changelog) : undefined,
 );
 const hint = computed(() => {
   const note = filledNote.value;
@@ -75,41 +71,31 @@ const hint = computed(() => {
   return `Drafted from the ${plural(note.count, "commit")} ${since}. Edit it before you upload.`;
 });
 
-// The file differences fold into one summary row.
-const groups = computed<{ label: string; rows: Row[] }[]>(() => {
-  const files = comparison.value?.files ?? [];
-  const changes = files.filter((difference) => difference.field === "file");
+// The page's differences and the version's are listed. The file differences fold into one summary row after them.
+const groups = computed(() => {
+  const page = comparison.value?.page ?? [];
+  const version = (comparison.value?.files ?? []).filter((difference) => difference.field === "version");
+  return [...(page.length ? [{ label: "Page", differences: page }] : []), { label: "Files", differences: version }];
+});
+const fileSummary = computed(() => {
+  const changes = (comparison.value?.files ?? []).filter((difference) => difference.field === "file");
+  const upload = comparison.value?.upload;
   const counted = countBy(changes, (difference) => difference.status);
-  const summary = Object.entries(MARKS)
+  const counts = Object.entries(MARKS)
     .filter(([status]) => counted[status])
     .map(([status, { count }]) => `${describeCount(counted[status] ?? 0)} ${count}`);
-  const total = upload.value?.files?.length
-    ? `${describeCount(upload.value.files.length)} · ${bytes(upload.value.bytes)}`
-    : "";
-  const toRow = (difference: Difference): Row => {
-    const row = describeDifference(difference);
-    return { ...row, lit: comparing && row.id === picked };
+  return {
+    // A summary with no id cannot be picked.
+    id: changes[0] ? toDifferenceId(changes[0]) : "",
+    lit: comparing && changes.some((difference) => toDifferenceId(difference) === picked),
+    text: counts.join(", ") || "Files are the same as Steam's",
+    total: upload?.files?.length ? `${describeCount(upload.files.length)} · ${bytes(upload.bytes)}` : "",
   };
-  return [
-    { label: "Page", rows: (comparison.value?.page ?? []).map(toRow) },
-    {
-      label: "Files",
-      rows: [
-        ...files.filter((difference) => difference.field === "version").map(toRow),
-        {
-          id: changes[0] ? describeDifference(changes[0]).id : "",
-          summary: summary.join(", ") || "Files are the same as Steam's",
-          extra: total,
-          lit: comparing && picked.startsWith("file:"),
-        },
-      ],
-    },
-  ].filter(({ rows }) => rows.length);
 });
 
-/** change emits the listing with some of its fields changed. */
+/** change sets some fields of the listing. */
 function change(changes: Partial<Listing>): void {
-  emit("update:listing", { ...listing, ...changes });
+  listing.value = { ...listing.value, ...changes };
 }
 
 /** listBumps returns the next minor and the next hotfix version of a version. It returns none if it has no number. */
@@ -257,31 +243,19 @@ function listBumps(version: string): string[] {
           />
         </div>
         <template v-else>
-          <div v-for="group in groups" :key="group.label" class="pb-1">
-            <div class="px-3 pt-2 pb-0.5 text-11 font-semibold text-dimmed">{{ group.label }}</div>
+          <div class="pb-1">
+            <DifferenceList :groups="groups" :lit="comparing ? picked : ''" @pick="emit('compare', $event)" />
             <button
-              v-for="row in group.rows"
-              :key="row.id + row.summary"
               type="button"
-              :disabled="!row.id"
+              :disabled="!fileSummary.id"
               class="flex h-7 w-full items-center gap-2 ps-3 pe-2.5 text-start text-12 enabled:hover:bg-elevated"
-              :class="{ 'bg-(--accent-soft) shadow-[inset_2px_0_0_var(--accent)]': row.lit }"
-              @click="emit('compare', row.id)"
+              :class="{ 'bg-(--accent-soft) shadow-[inset_2px_0_0_var(--accent)]': fileSummary.lit }"
+              @click="emit('compare', fileSummary.id)"
             >
-              <b v-if="row.mark" class="w-3.5 shrink-0 text-center font-mono font-medium" :class="row.color">
-                {{ row.mark }}
-              </b>
-              <UIcon v-else name="i-lucide-file" class="size-3.5 shrink-0 text-dimmed" />
-              <span v-if="row.label" class="w-30 shrink-0 truncate text-highlighted">{{ row.label }}</span>
-              <span
-                class="grow truncate text-toned"
-                :class="{ 'font-mono text-11.5': row.id.startsWith('version:') }"
-                :title="row.summary"
-              >
-                {{ row.summary }}
-              </span>
-              <span v-if="row.extra" class="shrink-0 text-11 text-dimmed">{{ row.extra }}</span>
-              <UIcon v-if="!row.label" name="i-lucide-chevron-right" class="size-3.5 shrink-0 text-dimmed" />
+              <UIcon name="i-lucide-file" class="size-3.5 shrink-0 text-dimmed" />
+              <span class="grow truncate text-toned" :title="fileSummary.text">{{ fileSummary.text }}</span>
+              <span v-if="fileSummary.total" class="shrink-0 text-11 text-dimmed">{{ fileSummary.total }}</span>
+              <UIcon name="i-lucide-chevron-right" class="size-3.5 shrink-0 text-dimmed" />
             </button>
           </div>
         </template>

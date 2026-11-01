@@ -7,6 +7,7 @@ import (
 
 	"github.com/samber/lo"
 
+	"paradox-modding-tools/internal/index"
 	"paradox-modding-tools/internal/jomini"
 	"paradox-modding-tools/services/workspace"
 )
@@ -26,17 +27,53 @@ type Range struct {
 	EndColumn   int `json:"endColumn"`
 }
 
-// A Location is a range in a file, with where the file sits in the workspace.
-type Location struct {
-	Place workspace.Place `json:"place"`
-	Range Range           `json:"range"`
-	Text  string          `json:"text"` // the text of the line, "" where the file cannot be read
-}
-
 // An Edit is one change to a file's text: the range replaced and the text that replaces it.
 type Edit struct {
 	Range Range  `json:"range"`
 	Text  string `json:"text"`
+}
+
+// A Site is one place in a file that an answer points at: where the file sits and a line. Where the answer has them,
+// it also has a range in the editor's form and the text of the line. Where the answer judged a definition, it says
+// whether the game keeps it and why. A whole-file site lists the names the file defines.
+type Site struct {
+	Place   workspace.Place `json:"place"`
+	Line    int             `json:"line"`           // counted from one
+	Range   Range           `json:"range"`          // the zero range where the answer has none
+	Text    string          `json:"text,omitempty"` // the text of the line, where the answer read the file
+	Kept    bool            `json:"kept"`
+	Reason  index.Reason    `json:"reason,omitempty"` // as index.ResolveSite gives it; unsettled where no source says
+	Defines []string        `json:"defines,omitempty"`
+}
+
+// MakeSite returns the site of an occurrence, as the given index of the mods lists it: its place and its line. It
+// reads no file, so it has no range and no text.
+func MakeSite(ws *workspace.Session, mods *index.Index, site index.Site) Site {
+	return Site{Place: ws.Locate(mods, mods.File(site).Path), Line: int(mods.Occurrence(site).Line) + 1}
+}
+
+// MakeSites returns the sites of a name's definitions, each with whether a winner keeps it and why, as
+// index.ResolveSite says. A nil winner keeps none.
+func MakeSites(ws *workspace.Session, mods *index.Index, definitions []index.Site, winner *index.Winner) []Site {
+	return lo.Map(definitions, func(definition index.Site, _ int) Site {
+		site := MakeSite(ws, mods, definition)
+		if winner != nil {
+			site.Kept, site.Reason = mods.ResolveSite(*winner, definition)
+		}
+		return site
+	})
+}
+
+// LocateSite returns the site of an occurrence with the range of its name and the text of the line it starts on,
+// read from the file's tree. The range stays empty and the text "" if the file cannot be read.
+func LocateSite(ws *workspace.Session, mods *index.Index, handle index.Site) Site {
+	site := MakeSite(ws, mods, handle)
+	if tree, err := ws.LoadTree(site.Place.Path); err == nil {
+		span := mods.Occurrence(handle).Span
+		line := tree.Lines.LineSpan(tree.Lines.ToPosition(span.Start).Line)
+		site.Range, site.Text = ToRange(tree.Src, tree.Lines, span), tree.Src[line.Start:line.End]
+	}
+	return site
 }
 
 // ToRange converts a byte span in a text to a Monaco range, using the text's line index.

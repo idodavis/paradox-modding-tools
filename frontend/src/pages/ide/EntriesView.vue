@@ -1,8 +1,11 @@
 <!--
-  The Entries view of the sidebar: the active file's entries under a heading for each kind, each with its title in the
-  workspace's language, its key and its line. A coat shows its picture, and a click opens the entry.
+  The Entries view of the sidebar, which Visual calls Structure. In Code it lists the active file's entries under a
+  heading for each kind, each with its title in the workspace's language, its key and its line. In Visual it lists what
+  the file draws: a GUI file's windows to pick from over the drawn window's widgets as a tree, a coat file's coats with
+  their pictures.
 -->
 <script setup lang="ts">
+import type { TreeItem } from "@nuxt/ui";
 import { useQuery } from "@pinia/colada";
 import { createReusableTemplate, refDebounced } from "@vueuse/core";
 import { computed, shallowRef, useTemplateRef } from "vue";
@@ -11,7 +14,7 @@ import { Format } from "@internal/files/models";
 import type { Symbol } from "@services/lsp/models";
 
 import { matchQuery } from "../../lib/format";
-import { coatQuery, drawablesQuery, loadQuery, outlineQuery } from "../../queries";
+import { coatQuery, drawablesQuery, loadQuery, outlineQuery, windowQuery } from "../../queries";
 import { useDrawStore } from "../../stores/draw";
 import { useEditorStore } from "../../stores/editor";
 import { useWorkspaceStore } from "../../stores/workspace";
@@ -20,7 +23,7 @@ import { drawCoat } from "./draw/coat";
 
 /** A Heading is the row over a kind of entry, with how many entries of the list it heads. */
 type Heading = { heading: string; count: number };
-/** A row of the list: a heading, or an entry. */
+/** A Row is a row of the list: a heading, or an entry. */
 type Row = Heading | { entry: Symbol };
 
 const store = useDrawStore();
@@ -31,19 +34,46 @@ const scroll = useTemplateRef<{ virtualizer?: { range?: { startIndex: number } |
 const [DefineHeading, ReuseHeading] = createReusableTemplate<{ row: Heading }>();
 
 const place = computed(() => editor.activeFile());
+const isVisual = computed(() => editor.mode === "visual");
+// in Visual a GUI file lists its windows over the widgets of the drawn one, and any other file lists its coats
+const isWindow = computed(() => isVisual.value && place.value?.format === Format.FormatGUI);
+const isCoat = computed(() => isVisual.value && !isWindow.value);
 const { data: drawables } = useQuery(() => ({
   ...drawablesQuery(place.value?.path ?? ""),
-  enabled: workspace.isOpen() && !!place.value,
+  enabled: workspace.isOpen() && !!place.value && isVisual.value,
 }));
-// a file the Visual view draws lists what it draws; any other lists its outline
-const drawable = computed(() => !!drawables.value?.length);
 const { data: outline } = useQuery(() => ({
   ...outlineQuery(place.value?.path ?? ""),
-  enabled: workspace.isOpen() && !!place.value && drawables.value?.length === 0,
+  enabled: workspace.isOpen() && !!place.value && !isVisual.value,
 }));
-const entries = computed(() => (drawable.value ? (drawables.value ?? []) : flatten(outline.value ?? [])));
-const isCoat = computed(() => drawable.value && place.value?.format !== Format.FormatGUI);
+const entries = computed(() => (isVisual.value ? (drawables.value ?? []) : flatten(outline.value ?? [])));
 const drawn = computed(() => (place.value ? store.file(place.value.path).drawable : null));
+const { data: drawnWindow } = useQuery(() => ({
+  ...windowQuery({ path: place.value?.path ?? "", name: drawn.value ?? "" }),
+  enabled: workspace.isOpen() && isWindow.value && !!drawn.value,
+}));
+
+// the drawn window's widgets as rows of a tree, each under the widget that holds it; widget 0 is the window
+const widgets = computed(() => {
+  const list = drawnWindow.value?.widgets ?? [];
+  const rows = list.map(({ id, name, type, role }) => ({
+    value: String(id),
+    label: name || type,
+    role,
+    defaultExpanded: id === 0,
+    children: [] as TreeItem[],
+  }));
+  for (const { id, parent } of list) {
+    const row = rows[id];
+    if (id && row) rows[parent]?.children.push(row);
+  }
+  return rows;
+});
+// the names the window picker lists
+const windowNames = computed(() => entries.value.map(({ name }) => name));
+// the tree starts at the window, whose row holds every other widget
+const windowRow = computed(() => widgets.value.slice(0, 1));
+const selectedWidget = computed(() => widgets.value[store.file(place.value?.path ?? "").selected ?? -1]);
 
 const search = shallowRef("");
 const query = refDebounced(search, 150);
@@ -51,7 +81,7 @@ const rows = computed<Row[]>(() => {
   const matches = entries.value.filter(({ name, title }) => matchQuery(query.value, name, title));
   const groups = [...Map.groupBy(matches, ({ database }) => database).values()];
   // a script file's rows do not say their kind, so its list has a heading even where it holds one kind
-  if (drawable.value && groups.length < 2) return matches.map((entry) => ({ entry }));
+  if (isCoat.value && groups.length < 2) return matches.map((entry) => ({ entry }));
   return groups.flatMap((group) => [
     { heading: group[0].what, count: group.length },
     ...group.map((entry) => ({ entry })),
@@ -76,24 +106,25 @@ function flatten(symbols: Symbol[]): Symbol[] {
   ]);
 }
 
-/** describe returns the line under an entry's name: its title, then its kind unless it is a coat. */
-function describe(entry: Symbol): string {
-  return [entry.title, isCoat.value ? "" : entry.what].filter(Boolean).join(" · ");
-}
-
 /**
- * openEntry opens an entry of the active file. One the Visual view draws is drawn, in the Visual view where its tab
- * shows the code. Any other is shown in the code at its first line.
+ * openEntry opens an entry of the active file. A coat listed in Visual is drawn. Any other entry is shown in the code
+ * at its first line.
  */
 function openEntry(entry: Symbol): void {
-  const tab = editor.activeTab();
-  if (!place.value || !tab) return;
-  if (drawable.value) {
+  if (!place.value) return;
+  if (isCoat.value) {
     store.draw(place.value.path, entry.name);
-    if (tab.view === "code") editor.setView(tab.id, "visual");
     return;
   }
   editor.show(place.value, { lineNumber: entry.range.startLineNumber, column: entry.range.startColumn });
+}
+
+/**
+ * selectWidget selects the widget of a tree row in the drawn window. A click that would clear the row leaves the
+ * selection as it is.
+ */
+function selectWidget(row: TreeItem | undefined): void {
+  if (place.value && row) store.select(place.value.path, Number(row.value));
 }
 
 /** buildThumbnail draws a coat's picture on a canvas in the list. A canvas drawn already is left as it is. */
@@ -129,64 +160,86 @@ async function buildThumbnail(canvas: unknown, name: string): Promise<void> {
       </UTooltip>
     </div>
     <template v-if="entries.length">
-      <UInput v-model="search" icon="i-lucide-search" size="sm" placeholder="Find an entry" class="mx-2 mb-1.5" />
-      <div class="relative flex min-h-0 flex-1 flex-col">
-        <div v-if="pinned" class="absolute inset-x-0 top-0 z-10">
-          <ReuseHeading :row="pinned" />
-        </div>
-        <UScrollArea
-          ref="scroll"
-          v-slot="{ item }"
-          :items="rows"
-          :virtualize="{ estimateSize: isCoat ? 76 : 40, overscan: 8 }"
-          class="min-h-0 flex-1"
+      <template v-if="isWindow">
+        <USelectMenu
+          :model-value="drawn ?? undefined"
+          :items="windowNames"
+          size="sm"
+          class="mx-2 mb-1.5"
+          @update:model-value="(name) => place && store.draw(place.path, name)"
+        />
+        <UTree
+          :key="drawn ?? ''"
+          :items="windowRow"
+          :model-value="selectedWidget"
+          :get-key="(row) => row.value"
+          selection-behavior="replace"
+          size="sm"
+          virtualize
+          class="min-h-0 flex-1 px-1"
+          @update:model-value="selectWidget"
         >
-          <ReuseHeading v-if="'heading' in item" :row="item" />
-          <button
-            v-else-if="drawable"
-            type="button"
-            class="flex w-full min-w-0 items-center gap-2.5 px-3 text-start hover:bg-elevated"
-            :class="[
-              item.entry.name === drawn && 'bg-(--accent-soft) shadow-[inset_2px_0_0_var(--accent)]',
-              isCoat ? 'h-19' : 'h-10',
-            ]"
-            :title="item.entry.name"
-            @click="openEntry(item.entry)"
+          <template #item-label="{ item }">
+            {{ item.label }}
+            <span v-if="item.role" class="ms-1.5 text-11 font-normal text-dimmed">{{ item.role }}</span>
+          </template>
+        </UTree>
+      </template>
+      <template v-else>
+        <UInput v-model="search" icon="i-lucide-search" size="sm" placeholder="Find an entry" class="mx-2 mb-1.5" />
+        <div class="relative flex min-h-0 flex-1 flex-col">
+          <div v-if="pinned" class="absolute inset-x-0 top-0 z-10">
+            <ReuseHeading :row="pinned" />
+          </div>
+          <UScrollArea
+            ref="scroll"
+            v-slot="{ item }"
+            :items="rows"
+            :virtualize="{ estimateSize: isCoat ? 76 : 40, overscan: 8 }"
+            class="min-h-0 flex-1"
           >
-            <canvas
-              v-if="isCoat"
-              :key="item.entry.name"
-              :ref="(element) => void buildThumbnail(element, item.entry.name)"
-              class="h-16 w-24 shrink-0 object-contain"
-            />
-            <UIcon v-else name="i-lucide-app-window" class="size-4 shrink-0 text-dimmed" />
-            <span class="flex min-w-0 grow flex-col">
+            <ReuseHeading v-if="'heading' in item" :row="item" />
+            <button
+              v-else-if="isCoat"
+              type="button"
+              class="flex h-19 w-full min-w-0 items-center gap-2.5 px-3 text-start hover:bg-elevated"
+              :class="item.entry.name === drawn && 'bg-(--accent-soft) shadow-[inset_2px_0_0_var(--accent)]'"
+              :title="item.entry.name"
+              @click="openEntry(item.entry)"
+            >
+              <canvas
+                :key="item.entry.name"
+                :ref="(element) => void buildThumbnail(element, item.entry.name)"
+                class="h-16 w-24 shrink-0 object-contain"
+              />
+              <span class="flex min-w-0 grow flex-col">
+                <span class="flex min-w-0 items-baseline gap-2">
+                  <span class="truncate font-mono text-12 text-highlighted">{{ item.entry.name }}</span>
+                  <span class="ms-auto shrink-0 text-11 text-dimmed">L{{ item.entry.range.startLineNumber }}</span>
+                </span>
+                <span class="truncate text-11 text-dimmed first-letter:uppercase">{{ item.entry.title }}</span>
+              </span>
+            </button>
+            <button
+              v-else
+              type="button"
+              class="flex w-full min-w-0 flex-col px-3 py-1 text-start hover:bg-elevated"
+              :title="item.entry.name"
+              @click="openEntry(item.entry)"
+            >
               <span class="flex min-w-0 items-baseline gap-2">
-                <span class="truncate font-mono text-12 text-highlighted">{{ item.entry.name }}</span>
-                <span class="ms-auto shrink-0 text-11 text-dimmed">L{{ item.entry.range.startLineNumber }}</span>
+                <span class="truncate text-highlighted" :class="!item.entry.title && 'font-mono'">
+                  {{ item.entry.title || item.entry.name }}
+                </span>
+                <span class="ms-auto shrink-0 text-11 text-dimmed tabular-nums">
+                  {{ item.entry.range.startLineNumber }}
+                </span>
               </span>
-              <span class="truncate text-11 text-dimmed first-letter:uppercase">{{ describe(item.entry) }}</span>
-            </span>
-          </button>
-          <button
-            v-else
-            type="button"
-            class="flex w-full min-w-0 flex-col px-3 py-1 text-start hover:bg-elevated"
-            :title="item.entry.name"
-            @click="openEntry(item.entry)"
-          >
-            <span class="flex min-w-0 items-baseline gap-2">
-              <span class="truncate text-highlighted" :class="!item.entry.title && 'font-mono'">
-                {{ item.entry.title || item.entry.name }}
-              </span>
-              <span class="ms-auto shrink-0 text-11 text-dimmed tabular-nums">
-                {{ item.entry.range.startLineNumber }}
-              </span>
-            </span>
-            <span v-if="item.entry.title" class="truncate font-mono text-11 text-dimmed">{{ item.entry.name }}</span>
-          </button>
-        </UScrollArea>
-      </div>
+              <span v-if="item.entry.title" class="truncate font-mono text-11 text-dimmed">{{ item.entry.name }}</span>
+            </button>
+          </UScrollArea>
+        </div>
+      </template>
     </template>
     <UEmpty
       v-else

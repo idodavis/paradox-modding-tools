@@ -8,7 +8,7 @@ import { TableKit } from "@tiptap/extension-table";
 import type { EditorCustomHandlers, EditorHandler, EditorToolbarItem, TabsItem } from "@nuxt/ui";
 
 import { plural } from "../../lib/format";
-import { htmlQuery, loadQuery } from "../../queries";
+import { bbcodeQuery, htmlQuery, loadQuery } from "../../queries";
 import * as steam from "@services/steam/service";
 import type { Comparison, Listing } from "@services/steam/models";
 
@@ -224,7 +224,7 @@ async function showDescription(bbcode: string): Promise<void> {
   await nextTick();
   const kept = await until(editor).toBeTruthy({ timeout: 2000 });
   if (!kept) return;
-  const back = await loadQuery(htmlQuery(await steam.ToBBCode(kept.getHTML())));
+  const back = await loadQuery(htmlQuery((await loadQuery(bbcodeQuery(kept.getHTML()))) ?? ""));
   if (turn !== drawing) return;
   lossy.value = back !== drawn;
   if (lossy.value && !chosen.value) view.value = "bbcode";

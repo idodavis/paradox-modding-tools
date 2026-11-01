@@ -1,6 +1,9 @@
 package index
 
 import (
+	"encoding/json"
+	"fmt"
+	"hash/fnv"
 	"os"
 	"path/filepath"
 	"slices"
@@ -140,7 +143,8 @@ func TestLoadIndexLoadsSavedIndexEqual(t *testing.T) {
 }
 
 // TestScanInstalls scans each real install that PMT_TEST_INSTALL_<GAME> names, and prints the scan's time, its
-// occurrences by role and the cache's size and times. The counts are read, not asserted.
+// occurrences by role and the cache's size and times. The counts are read, not asserted. Where PMT_TEST_DUMP_DIR
+// names a folder, it also writes the install's schema and index there, to compare with another run's.
 func TestScanInstalls(t *testing.T) {
 	for _, gameID := range []string{"ck3", "vic3", "eu5"} {
 		t.Run(gameID, func(t *testing.T) {
@@ -149,7 +153,10 @@ func TestScanInstalls(t *testing.T) {
 			if install == "" {
 				t.Skipf("%s is not set", variable)
 			}
-			_, scanned, elapsed := scanInstall(t, gameID, install)
+			built, scanned, elapsed := scanInstall(t, gameID, install)
+			if dir := os.Getenv("PMT_TEST_DUMP_DIR"); dir != "" {
+				dumpInstall(t, filepath.Join(dir, gameID), built, scanned)
+			}
 			roles := map[Role]int{}
 			for _, occurrences := range scanned.Occurrences {
 				for _, occurrence := range occurrences {
@@ -176,6 +183,64 @@ func TestScanInstalls(t *testing.T) {
 				time.Since(start).Round(time.Millisecond))
 		})
 	}
+}
+
+// dumpInstall writes an install's schema and index to two files whose paths start with the given prefix: the schema
+// as indented JSON, whose maps come out sorted by key, and the index as one line per file, which also gives the group
+// of copies the file belongs to and its place in their load order. Two dumps of one install differ only where the
+// schema or the index does.
+func dumpInstall(t *testing.T, prefix string, built *schema.Schema, scanned *Index) {
+	t.Helper()
+	text, err := json.MarshalIndent(built, "", " ")
+	if err != nil {
+		t.Fatal(err)
+	}
+	places := map[int32]string{}
+	for key, group := range scanned.byRel {
+		for rank, position := range group {
+			places[position] = fmt.Sprintf("%s %d", key, rank)
+		}
+	}
+	lines := make([]string, len(scanned.Files))
+	for position := range scanned.Files {
+		lines[position] = describeFile(scanned, int32(position)) + "\t" + places[int32(position)]
+	}
+	slices.Sort(lines)
+	dumps := map[string][]byte{
+		prefix + "-schema.json": text,
+		prefix + "-index.txt":   []byte(strings.Join(lines, "\n") + "\n"),
+	}
+	for path, content := range dumps {
+		if err := os.WriteFile(path, content, 0o644); err != nil {
+			t.Fatal(err)
+		}
+	}
+}
+
+// describeFile returns the dump's line for one file of an index: its key, its origin, its definitions, references and
+// messages, and a hash of its occurrences and texts. An ordinal is hashed as the text it stands for, since the scan
+// interns texts in no fixed order; a mode only counts for a definition and a language only for a message.
+func describeFile(scanned *Index, position int32) string {
+	hash, counts := fnv.New64a(), map[Role]int{}
+	for _, occurrence := range scanned.Occurrences[position] {
+		counts[occurrence.Role]++
+		mode, language := "", ""
+		if occurrence.Role == RoleDefines {
+			mode = scanned.Modes.Texts[occurrence.Mode]
+		}
+		if occurrence.Role == RoleLocalizes {
+			language = scanned.Languages.Texts[occurrence.Language]
+		}
+		_, _ = fmt.Fprintln(hash, occurrence.Role, scanned.Databases.Texts[occurrence.Database],
+			scanned.Names.Texts[occurrence.Name], occurrence.Span, occurrence.Line, mode, occurrence.Priority, language,
+			occurrence.Local, occurrence.Alias, occurrence.Nested, occurrence.Firing, occurrence.Parent, occurrence.Statement)
+	}
+	for _, text := range scanned.Texts[position] {
+		_, _ = fmt.Fprintln(hash, text)
+	}
+	file := scanned.Files[position]
+	return fmt.Sprintf("%s\t%s\t%d %d %d\t%x", file.Key, file.Origin, counts[RoleDefines], counts[RoleRefers],
+		counts[RoleLocalizes], hash.Sum64())
 }
 
 // scanFixtureMods scans the CK3 fixture mod over the fixture install, the mod replacing the opinion modifiers folder.
@@ -215,16 +280,16 @@ func TestFindWinnerKeepsByPrecedence(t *testing.T) {
 	}
 	vanilla, modded := sites[0], sites[1]
 	last, ok := mods.FindWinner(sites, game.Precedence{Keeps: "last"})
-	if !ok || last.Site != vanilla || last.Reason != "last" {
+	if !ok || last.Site != vanilla || last.Reason != ReasonLast {
 		t.Errorf("last: %+v %v", last, ok)
 	}
 	first, ok := mods.FindWinner(sites, game.Precedence{Keeps: "first"})
-	if !ok || first.Site != modded || first.Reason != "first" {
+	if !ok || first.Site != modded || first.Reason != ReasonFirst {
 		t.Errorf("first: %+v %v", first, ok)
 	}
 	mods.Occurrences[modded.File][modded.Occurrence].Priority = 5
 	highest, ok := mods.FindWinner(sites, game.Precedence{Keeps: "highest"})
-	if !ok || highest.Site != modded || highest.Reason != "priority" {
+	if !ok || highest.Site != modded || highest.Reason != ReasonPriority {
 		t.Errorf("highest: %+v %v", highest, ok)
 	}
 	install.Occurrences[vanilla.File][vanilla.Occurrence].Priority = 9
@@ -235,11 +300,11 @@ func TestFindWinnerKeepsByPrecedence(t *testing.T) {
 	modes := game.Precedence{Keeps: "first", Modes: "entry"}
 	// the mod's file loads before the install's, but its mode acts after the install's plain definition
 	injected, ok := mods.FindWinner(sites, modes)
-	if !ok || injected.Site != vanilla || injected.Reason != "first" || len(injected.Merged) != 2 {
+	if !ok || injected.Site != vanilla || injected.Reason != ReasonFirst || len(injected.Merged) != 2 {
 		t.Errorf("inject: %+v %v", injected, ok)
 	}
 	mods.Occurrences[modded.File][modded.Occurrence].Mode = uint8(mods.Modes.Intern("REPLACE"))
-	if replaced, ok := mods.FindWinner(sites, modes); !ok || replaced.Site != modded || replaced.Reason != "mode" {
+	if replaced, ok := mods.FindWinner(sites, modes); !ok || replaced.Site != modded || replaced.Reason != ReasonMode {
 		t.Errorf("replace: %+v %v", replaced, ok)
 	}
 }

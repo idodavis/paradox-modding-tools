@@ -14,7 +14,6 @@ type Commit struct {
 	Hash    string    `json:"hash"`
 	Short   string    `json:"short"` // the abbreviated hash git chose
 	Parents []string  `json:"parents"`
-	Author  string    `json:"author"`
 	Date    time.Time `json:"date"`
 	Subject string    `json:"subject"`
 	Refs    []string  `json:"refs"` // the refs pointing here, decorated
@@ -25,12 +24,12 @@ type Commit struct {
 func (git *Service) ListCommits(dir string, limit int, refs []string) ([]Commit, error) {
 	// the closing "--" keeps a ref named like a file from being read as a path
 	args := slices.Concat([]string{
-		"log", fmt.Sprintf("--max-count=%d", limit), "--format=%H%x00%h%x00%P%x00%an%x00%aI%x00%s%x00%D%x1e",
+		"log", fmt.Sprintf("--max-count=%d", limit), "--format=%H%x00%h%x00%P%x00%aI%x00%s%x00%D%x1e",
 	}, refs, []string{"--"})
-	stdout, err := git.Run(dir, args...)
+	stdout, err := git.run(dir, args...)
 	if err != nil {
 		// a repository before its first commit has no log, which is not an error
-		if _, headErr := git.Run(dir, "rev-parse", "--verify", "-q", "HEAD"); headErr != nil {
+		if _, headErr := git.run(dir, "rev-parse", "--verify", "-q", "HEAD"); headErr != nil {
 			return []Commit{}, nil
 		}
 		return nil, err
@@ -51,7 +50,7 @@ func (git *Service) ListCommits(dir string, limit int, refs []string) ([]Commit,
 
 // ListCommitFiles returns the files changed by the commit with the given hash. A renamed file carries its old path.
 func (git *Service) ListCommitFiles(dir, hash string) ([]Change, error) {
-	stdout, err := git.Run(dir, "show", "--name-status", "--format=", "-z", hash)
+	stdout, err := git.run(dir, "show", "--name-status", "--format=", "-z", hash)
 	if err != nil {
 		return nil, err
 	}
@@ -59,7 +58,7 @@ func (git *Service) ListCommitFiles(dir, hash string) ([]Change, error) {
 	// a record is a letter then the path; a rename's letter is followed by its old path, then its new one
 	records := splitRecords(stdout)
 	for len(records) >= 2 {
-		change := Change{Status: classifyStatus(records[0]), Path: records[1], Staged: true}
+		change := Change{Status: classifyStatus(records[0]), Path: records[1]}
 		records = records[2:]
 		if change.Status == "renamed" {
 			change.From, change.Path = change.Path, records[0]
@@ -78,7 +77,7 @@ func (git *Service) ListCommitFiles(dir, hash string) ([]Change, error) {
 // parseCommit returns the commit one log record describes. The error is the date's if it does not parse.
 func parseCommit(record string) (Commit, error) {
 	fields := strings.Split(record, "\x00")
-	date, err := time.Parse(time.RFC3339, fields[4])
+	date, err := time.Parse(time.RFC3339, fields[3])
 	if err != nil {
 		return Commit{}, err
 	}
@@ -86,11 +85,10 @@ func parseCommit(record string) (Commit, error) {
 		Hash:    fields[0],
 		Short:   fields[1],
 		Parents: strings.Fields(fields[2]),
-		Author:  fields[3],
 		Date:    date,
-		Subject: fields[5],
+		Subject: fields[4],
 		// the decoration writes the current branch as "HEAD -> main"
-		Refs: lo.FilterMap(strings.Split(fields[6], ", "), func(ref string, _ int) (string, bool) {
+		Refs: lo.FilterMap(strings.Split(fields[5], ", "), func(ref string, _ int) (string, bool) {
 			return strings.TrimPrefix(ref, "HEAD -> "), ref != ""
 		}),
 	}, nil

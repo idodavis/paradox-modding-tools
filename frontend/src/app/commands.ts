@@ -1,16 +1,12 @@
 /**
- * The command table. Every command of the app is one row here, in the menu item shape, with the area it belongs
- * to and when it applies. The palette, the context menus, the dropdown menus, the toolbar buttons and the
- * shortcuts all read these rows; a command exists nowhere else. Undo and redo are two rows over the model's own
- * history, and they stay out of the way of a focused editor.
- *
- * A command that the IDE page or the palette carries out, because it needs their state, is sent on the event bus
- * `pmt.command` with the row's id once the page shows. The palette keeps the commands it last ran, for each viewer.
+ * The command table: each command of the app is one row, in the menu item shape, with the area it belongs to and when
+ * it applies. A command that the IDE page or the palette carries out, because it needs their state, is sent on the
+ * command bus with the row's id.
  */
 import type { CommandPaletteGroup, CommandPaletteItem } from "@nuxt/ui";
-import { useMutation, useQueryCache } from "@pinia/colada";
-import { useEventBus, useLocalStorage } from "@vueuse/core";
-import { Clipboard, Dialogs } from "@wailsio/runtime";
+import { useMutation } from "@pinia/colada";
+import { useEventBus } from "@vueuse/core";
+import { Dialogs } from "@wailsio/runtime";
 import * as monaco from "monaco-editor/editor/editor.api";
 import { computed } from "vue";
 
@@ -20,29 +16,20 @@ import * as git from "@services/git/service";
 import * as lsp from "@services/lsp/service";
 import * as workspaceApi from "@services/workspace/service";
 import type { Place } from "@services/workspace/models";
-import { toSentence } from "../lib/format";
+import { confirm, copyText, toast } from "../lib/feedback";
 import { findModel, save, saveUnsaved, unsavedModels, type Model } from "../pages/ide/editor/models";
-import { diffTab, listViews, parseTab, VIEW_ROWS } from "../pages/ide/editor/tabs";
-import {
-  codesQuery,
-  copiesQuery,
-  drawablesQuery,
-  loadQuery,
-  placeQuery,
-  settingsCatalogQuery,
-  workspacesQuery,
-} from "../queries";
+import { diffTab, parseTab } from "../pages/ide/editor/tabs";
+import { copiesQuery, loadQuery, placeQuery } from "../queries";
 import { useAgentStore } from "../stores/agent";
-import { useEditorStore, type Tab, type View } from "../stores/editor";
+import { useEditorStore, type Tab } from "../stores/editor";
 import { useGitStore } from "../stores/git";
 import { useSettingsStore } from "../stores/settings";
-import { THIS_WINDOW, useWindowsStore } from "../stores/windows";
+import { COMMAND_BUS, THIS_WINDOW, useWindowsStore } from "../stores/windows";
 import { useWorkspaceStore } from "../stores/workspace";
-import ConfirmModal from "../ui/ConfirmModal.vue";
-import { homeRoute, isWorkspacePage, listShownTools, PAGES, WORKSPACE_TOOLS, type Page, type PageName } from "./pages";
+import { isWorkspacePage, type PageName } from "./pages";
 import { router } from "./router";
 
-/** One command: a menu item whose id names its area, such as `editor.save`, and whether it applies now. */
+/** A Command is one command: a menu item whose id names its area, such as `editor.save`, and whether it applies now. */
 export type Command = Omit<CommandPaletteItem, "kbds"> & {
   /** `<area>.<verb>`: editor.save, file.rename, graph.open, window.popOut … */
   id: string;
@@ -58,23 +45,24 @@ export type Command = Omit<CommandPaletteItem, "kbds"> & {
 const OWN_KEYS = new Set(["editor.undo", "editor.redo", "editor.find"]);
 // the setting that holds the shortcuts the user changed: each changed command's shortcuts, as Nuxt UI writes them
 const BINDINGS = "shortcuts.bindings";
-// the settings that hold a list, each item of which the palette switches on a row of its own
-const LISTS = ["appearance.pages", "ide.checks"];
-// how many commands the palette's Recently used lists
-const RECENT = 5;
 
-const bus = useEventBus<string>("pmt.command");
+const commandBus = useEventBus(COMMAND_BUS);
 const compareBus = useEventBus<{ left: Place; right: Place }>("pmt.compare");
 // a list a command hands the palette to pick one from, under the command's id
 const choicesBus = useEventBus<CommandPaletteGroup>("pmt.choices");
-const confirm = useOverlay().create(ConfirmModal);
-// the ids of the commands the palette ran last, the latest first
-const recent = useLocalStorage<string[]>("pmt.palette.recent", []);
+// the shortcuts the user changed, by command, parsed from the setting once per change; a setting that is not JSON
+// counts as none
+const changedBindings = computed<Record<string, string[]>>(() => {
+  try {
+    return JSON.parse(useSettingsStore().value(BINDINGS) || "{}") as Record<string, string[]>;
+  } catch {
+    return {};
+  }
+});
 
-// a write run as the one mutation, so a failure reaches the app's error handler, and the toast of the app; both are
-// made when the shortcuts are registered, inside the app
+// a write run as the one mutation, so a failure reaches the app's error handler; it is made when the shortcuts are
+// registered, inside the app
 let run: (work: () => Promise<unknown>) => void = () => undefined;
-let toast: ReturnType<typeof useToast> | undefined;
 
 const hasModel = () => !!activeModel();
 const hasTab = () => !!useEditorStore().activeTab();
@@ -82,16 +70,7 @@ const hasFile = () => !!useEditorStore().activeFile();
 const isOpen = () => useWorkspaceStore().isOpen();
 const isIde = () => router.currentRoute.value.name === "workspace-ide";
 
-const VIEW_COMMANDS: Command[] = VIEW_ROWS.map(({ view, label, icon }) => ({
-  label: `Open as ${label}`,
-  prefix: "IDE:",
-  icon,
-  id: `view.${view}`,
-  when: canShow(view),
-  onSelect: onTab((tab) => useEditorStore().setView(tab.id, view)),
-}));
-
-/** Every command of the app. */
+/** COMMANDS holds every command of the app. */
 export const COMMANDS: readonly Command[] = [
   {
     id: "palette.open",
@@ -100,7 +79,7 @@ export const COMMANDS: readonly Command[] = [
     kbds: ["meta", "K"],
     secondKbds: ["meta", "shift", "P"],
     when: () => true,
-    onSelect: () => bus.emit("palette.open"),
+    onSelect: () => commandBus.emit("palette.open"),
   },
   {
     id: "editor.save",
@@ -126,7 +105,11 @@ export const COMMANDS: readonly Command[] = [
     icon: "i-lucide-x",
     kbds: ["meta", "W"],
     when: hasTab,
-    onSelect: onTab((tab) => useEditorStore().close(tab.id)),
+    onSelect: onTab((tab) =>
+      run(async () => {
+        if (await useEditorStore().confirmClose([tab])) useEditorStore().close(tab.id);
+      }),
+    ),
   },
   {
     id: "editor.splitRight",
@@ -185,7 +168,7 @@ export const COMMANDS: readonly Command[] = [
     icon: "i-lucide-file-search",
     kbds: ["meta", "P"],
     when: isOpen,
-    onSelect: () => bus.emit("editor.goToFile"),
+    onSelect: () => commandBus.emit("editor.goToFile"),
   },
   {
     id: "editor.back",
@@ -273,7 +256,7 @@ export const COMMANDS: readonly Command[] = [
     label: "Copy the path",
     icon: "i-lucide-copy",
     when: hasFile,
-    onSelect: onFile((place) => run(() => copyPath(place))),
+    onSelect: onFile((place) => run(() => copyText(place.path, "Path", place.path))),
   },
   {
     id: "file.reveal",
@@ -356,13 +339,30 @@ export const COMMANDS: readonly Command[] = [
       void router.push({ name: "release", params, query: { mod: place.origin, compare: "steam" } });
     }),
   },
-  ...VIEW_COMMANDS,
+  {
+    id: "ide.mode",
+    label: "Switch between Code and Visual",
+    prefix: "IDE:",
+    icon: "i-lucide-eye",
+    kbds: ["meta", "shift", "V"],
+    when: () => useEditorStore().isDrawable(useEditorStore().activeTab()?.id),
+    onSelect: () => {
+      const editor = useEditorStore();
+      editor.mode = editor.mode === "visual" ? "code" : "visual";
+    },
+  },
   {
     id: "window.popOut",
     label: "Open the group in a new window",
     icon: "i-lucide-app-window",
     when: () => !!useEditorStore().activeGroup()?.tabs.length,
-    onSelect: () => useWindowsStore().popOut({ group: useEditorStore().activeGroup()?.id }),
+    onSelect: () =>
+      useWindowsStore().popOut(
+        "editor",
+        useEditorStore()
+          .activeGroup()
+          ?.tabs.map((tab) => tab.id),
+      ),
   },
   {
     id: "window.dockBack",
@@ -440,7 +440,7 @@ export const COMMANDS: readonly Command[] = [
     icon: "i-lucide-settings",
     kbds: ["meta", ","],
     when: () => true,
-    onSelect: () => bus.emit("settings.open"),
+    onSelect: () => commandBus.emit("settings.open"),
   },
   // the pane sits in the main window, beside a workspace's pages
   {
@@ -449,10 +449,7 @@ export const COMMANDS: readonly Command[] = [
     icon: "i-lucide-sparkles",
     kbds: ["meta", "alt", "I"],
     when: () => THIS_WINDOW === "main" && useWorkspaceStore().isOpen(),
-    onSelect: () => {
-      const agent = useAgentStore();
-      agent.isPaneOpen = !agent.isPaneOpen;
-    },
+    onSelect: () => useAgentStore().togglePane(),
   },
 ];
 
@@ -463,7 +460,6 @@ export const COMMANDS: readonly Command[] = [
 export function registerShortcuts(): void {
   const { mutate } = useMutation({ mutation: (work: () => Promise<unknown>) => work() });
   run = mutate;
-  toast = useToast();
   defineShortcuts(
     computed(() =>
       Object.fromEntries(
@@ -484,7 +480,7 @@ export function listDefaultBindings(command: Command): string[][] {
 
 /** listBindings returns a command's shortcuts as the user set them: each changed one as changed, the others its own. */
 export function listBindings(command: Command): string[][] {
-  const changed = parseBindings()[command.id];
+  const changed = changedBindings.value[command.id];
   return listDefaultBindings(command).map((own, slot) => (changed?.[slot] ? splitShortcut(changed[slot]) : own));
 }
 
@@ -495,7 +491,7 @@ export function listBindings(command: Command): string[][] {
 export function writeBinding(command: Command, slot: number, kbds?: string[]): void {
   const own = listDefaultBindings(command);
   const next = listBindings(command).map((keys, index) => (index === slot ? (kbds ?? own[index]) : keys));
-  const changed = parseBindings();
+  const changed = { ...changedBindings.value };
   if (next.every((keys, index) => joinShortcut(keys) === joinShortcut(own[index] ?? []))) delete changed[command.id];
   else changed[command.id] = next.map(joinShortcut);
   useSettingsStore().write(BINDINGS, JSON.stringify(changed));
@@ -507,7 +503,10 @@ export function findBinding(kbds: string[]): Command | undefined {
   return COMMANDS.find((command) => listBindings(command).some((keys) => joinShortcut(keys) === shortcut));
 }
 
-/** listPressedKeys returns the keys of a key press as a command row writes them, Ctrl as meta and a letter in capitals. */
+/**
+ * listPressedKeys returns the keys of a key press as a command row writes them, Ctrl as meta and a letter in
+ * capitals.
+ */
 export function listPressedKeys(event: KeyboardEvent): string[] {
   const key = event.key.length === 1 ? event.key.toUpperCase() : event.key.toLowerCase();
   return [event.ctrlKey && "meta", event.shiftKey && "shift", event.altKey && "alt", key].filter(
@@ -515,19 +514,15 @@ export function listPressedKeys(event: KeyboardEvent): string[] {
   );
 }
 
-/** findKbds returns the keys of a command's first shortcut as the user set it. It is empty for an unknown command. */
-export function findKbds(id: string): string[] {
-  const command = COMMANDS.find((row) => row.id === id);
-  return (command && listBindings(command)[0]) ?? [];
+/** findCommand returns the command with the given id, or undefined when there is none. */
+export function findCommand(id: string): Command | undefined {
+  return COMMANDS.find((row) => row.id === id);
 }
 
-/** parseBindings returns the shortcuts the user changed, by command. A setting that is not JSON counts as none. */
-function parseBindings(): Record<string, string[]> {
-  try {
-    return JSON.parse(useSettingsStore().value(BINDINGS) || "{}") as Record<string, string[]>;
-  } catch {
-    return {};
-  }
+/** findKbds returns the keys of a command's first shortcut as the user set it. It is empty for an unknown command. */
+export function findKbds(id: string): string[] {
+  const command = findCommand(id);
+  return (command && listBindings(command)[0]) ?? [];
 }
 
 /** joinShortcut returns keys as Nuxt UI writes a shortcut, such as meta_shift_p. */
@@ -540,50 +535,6 @@ function splitShortcut(shortcut: string): string[] {
   return shortcut.split("_").map((key) => (key.length === 1 || /^f\d+$/.test(key) ? key.toUpperCase() : key));
 }
 
-/**
- * paletteGroups returns the palette's groups: the commands it ran last that apply now, the other commands that
- * apply, the pages, the workspaces, and the settings by type.
- */
-export function paletteGroups(): { id: string; label: string; items: Command[] }[] {
-  const id = useWorkspaceStore().activeId();
-  // each row shows its first shortcut as the user set it
-  const applicable = COMMANDS.filter((row) => row.when()).map((row) => ({ ...row, kbds: listBindings(row)[0] }));
-  const recentRows = recent.value.flatMap((one) => applicable.find((row) => row.id === one) ?? []);
-  const names: PageName[] = ["library", "wizard", ...(id ? listShownTools() : [])];
-  const pages = names.map((name) => {
-    const page: Page = PAGES[name];
-    return makeRow(`page.${name}`, {
-      label: page.title,
-      icon: page.icon ?? "i-lucide-plus",
-      onSelect: () => openPage(name),
-    });
-  });
-  const workspaces = (useQueryCache().getQueryData(workspacesQuery.key) ?? []).map((record) =>
-    makeRow(`workspace.${record.id}`, {
-      label: record.name,
-      icon: record.id === id ? "i-lucide-check" : "i-lucide-folder",
-      onSelect: () => void router.push(homeRoute(record.id, record.homePage)),
-    }),
-  );
-  return [
-    { id: "recent", label: "Recently used", items: recentRows },
-    { id: "commands", label: "Commands", items: applicable.filter((row) => !recentRows.includes(row)) },
-    { id: "pages", label: "Pages", items: pages },
-    { id: "workspaces", label: "Workspaces", items: workspaces },
-    { id: "switches", label: "Settings you can switch", items: id ? listSwitches() : [] },
-    { id: "values", label: "Settings with a value", items: id ? listValues() : [] },
-  ];
-}
-
-/**
- * rememberCommand puts a command the palette ran first in its Recently used. A row that is no command, such as a
- * file, is skipped.
- */
-export function rememberCommand(id: string): void {
-  if (!COMMANDS.some((row) => row.id === id)) return;
-  recent.value = [id, ...recent.value.filter((one) => one !== id)].slice(0, RECENT);
-}
-
 /** compare shows the IDE page, then opens the compare of two files in it, the first on the left. */
 export function compare(left: Place, right: Place): void {
   void useWindowsStore()
@@ -591,7 +542,10 @@ export function compare(left: Place, right: Place): void {
     .then(() => compareBus.emit({ left, right }));
 }
 
-/** compareWithGame opens the compare of a mod's file with the game's copy of it. A file the game has no copy of gets a message. */
+/**
+ * compareWithGame opens the compare of a mod's file with the game's copy of it. A file the game has no copy of gets a
+ * message.
+ */
 export function compareWithGame(place: Place): void {
   run(async () => {
     const copy = findGameCopy(place, await loadQuery(copiesQuery(place.path)));
@@ -730,7 +684,7 @@ function chooseRepository(id: string, label: string, act: (root: string) => void
     return;
   }
   const items = repositories.map((one) => ({
-    label: one.mods.map((mod) => useWorkspaceStore().originName(mod.id)).join(", "),
+    label: (one.mods ?? []).map(useWorkspaceStore().originName).join(", "),
     suffix: one.root,
     icon: "i-lucide-folder-git-2",
     onSelect: () => act(one.root),
@@ -749,19 +703,10 @@ function showCommit(root: string): void {
     });
 }
 
-/** canShow makes the `when` of a view row: whether the active file can be shown in that view. */
-function canShow(view: View): () => boolean {
-  return () => {
-    const place = useEditorStore().activeFile();
-    const drawables = place && useQueryCache().getQueryData(drawablesQuery(place.path).key);
-    return !!place && listViews(place, !!drawables?.length).includes(view);
-  };
-}
-
 /** moveToNextGroup moves a tab into the group after its own. The last group has none after it, so nothing moves. */
 function moveToNextGroup(tab: Tab): void {
   const editor = useEditorStore();
-  const groups = editor.layout().rows.flatMap((row) => row.columns);
+  const groups = editor.listGroups();
   const next = groups[groups.findIndex((group) => group.id === editor.activeGroup()?.id) + 1];
   if (next) editor.move(tab.id, next.id, next.tabs.length);
 }
@@ -782,87 +727,10 @@ function compareSelection(): void {
 }
 
 /** openPage shows a page. A workspace's pages are shown for the active workspace. */
-function openPage(name: PageName): void {
+export function openPage(name: PageName): void {
   void (isWorkspacePage(name)
     ? router.push({ name, params: { id: useWorkspaceStore().activeId() } })
     : router.push({ name }));
-}
-
-/** makeRow makes a row of the palette that is made at the time and always applies. */
-function makeRow(id: string, row: Omit<CommandPaletteItem, "kbds">): Command {
-  return { ...row, id, when: () => true };
-}
-
-/**
- * listSwitches lists the palette's switches: each setting that is one, each page a workspace can show and each of
- * the checks.
- */
-function listSwitches(): Command[] {
-  const settings = useSettingsStore();
-  const cache = useQueryCache();
-  const catalog = cache.getQueryData(settingsCatalogQuery.key) ?? [];
-  const findSetting = (key: string) => catalog.find((setting) => setting.key === key);
-  const switches = catalog
-    .filter((setting) => setting.type === "switch")
-    .map((setting) =>
-      makeToggle(
-        `setting.${setting.key}`,
-        { label: setting.label, words: setting.words, scope: setting.workspace ? "IDE" : "App" },
-        settings.isOn(setting.key),
-        (on) => settings.write(setting.key, String(on)),
-      ),
-    );
-  const shown = listShownTools();
-  const pages = WORKSPACE_TOOLS.map((tool) =>
-    makeToggle(
-      `setting.appearance.pages.${tool}`,
-      { label: `Show the ${PAGES[tool].title} page`, words: findSetting("appearance.pages")?.words, scope: "App" },
-      shown.includes(tool),
-      (on) => settings.writeItem("appearance.pages", tool, on),
-    ),
-  );
-  // the setting lists the checks turned off
-  const off = settings.value("ide.checks").split(",");
-  const checks = (cache.getQueryData(codesQuery.key) ?? []).map((code) =>
-    makeToggle(
-      `setting.ide.checks.${code.id}`,
-      { label: `Check: ${code.label}`, words: [code.id, findSetting("ide.checks")?.words].join(" "), scope: "IDE" },
-      !off.includes(code.id),
-      (on) => settings.writeItem("ide.checks", code.id, !on),
-    ),
-  );
-  return [...switches, ...pages, ...checks];
-}
-
-/**
- * makeToggle makes a row of the palette that flips a setting. It shows whether the setting is on, and picking it
- * flips it.
- */
-function makeToggle(id: string, row: CommandPaletteItem, on: boolean, write: (on: boolean) => void): Command {
-  return makeRow(id, {
-    ...row,
-    prefix: "Toggle:",
-    icon: "i-lucide-check",
-    slot: "setting",
-    on,
-    onSelect: () => write(!on),
-  });
-}
-
-/** listValues lists the palette's settings with a value. Each opens Settings at its section. */
-function listValues(): Command[] {
-  return (useQueryCache().getQueryData(settingsCatalogQuery.key) ?? [])
-    .filter((setting) => setting.type !== "switch" && !LISTS.includes(setting.key))
-    .map((setting) =>
-      makeRow(`setting.${setting.key}`, {
-        label: setting.label,
-        words: setting.words,
-        icon: "i-lucide-settings",
-        slot: "setting",
-        opens: `opens ${toSentence(setting.section)}`,
-        onSelect: () => bus.emit("settings.open", setting.section),
-      }),
-    );
 }
 
 /**
@@ -896,12 +764,6 @@ async function renameFile(place: Place): Promise<void> {
     ButtonText: "Rename",
   });
   if (target) await useEditorStore().rename(place.path, target);
-}
-
-/** copyPath puts the active file's path on the clipboard. */
-async function copyPath(place: Place): Promise<void> {
-  await Clipboard.SetText(place.path);
-  toast?.add({ title: "Path copied", description: place.path, color: "success" });
 }
 
 /** discardFile asks whether to throw away the active file's changes, and does. */

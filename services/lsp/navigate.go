@@ -33,46 +33,45 @@ type Symbol struct {
 type WorkspaceSymbol struct {
 	Name     string          `json:"name"`
 	Database string          `json:"database"`
-	Location Location        `json:"location"`
+	Site     Site            `json:"site"`
 	Category schema.Category `json:"category"`
 }
 
 // Definition returns where the name at a position is defined, with the definition the game keeps first. For an image
 // path it returns the image file. It returns an empty list if the position is on no name.
-func (lsp *Service) Definition(path string, line, column int) ([]Location, error) {
+func (lsp *Service) Definition(path string, line, column int) ([]Site, error) {
 	ws, tree, err := lsp.loadTree(path)
 	if err != nil {
 		return nil, err
 	}
 	mods := ws.Mods.Load()
 	place := ws.Locate(mods, path)
-	_, reference := findReference(ws, tree, place, ToOffset(tree.Src, tree.Lines, line, column))
+	_, reference := findReference(ws, mods, tree, place, ToOffset(tree.Src, tree.Lines, line, column))
 	if reference.Database == game.File {
 		target, ok := mods.ResolveTexture(reference.Name)
 		if !ok {
-			return []Location{}, nil
+			return []Site{}, nil
 		}
-		return []Location{{Place: ws.Locate(mods, target), Range: ToLineRange(1)}}, nil
+		return []Site{{Place: ws.Locate(mods, target), Line: 1, Range: ToLineRange(1)}}, nil
 	}
 	if reference.Name == "" {
-		return []Location{}, nil
+		return []Site{}, nil
 	}
-	return lo.Map(listSites(ws, mods, place, reference), func(site CardSite, _ int) Location {
-		return locate(ws, site.Place, site.Line)
-	}), nil
+	sites, _ := listSites(ws, mods, place, reference)
+	return lo.Map(sites, func(site index.Site, _ int) Site { return LocateSite(ws, mods, site) }), nil
 }
 
 // findReference returns the reference a definition or a use makes at the given offset, with the span it is written at.
 // The reference has no name if the offset is on none.
-func findReference(ws *workspace.Session, tree *jomini.Tree, place workspace.Place, offset int) (jomini.Span, schema.Reference) {
+func findReference(ws *workspace.Session, mods *index.Index, tree *jomini.Tree, place workspace.Place, offset int) (jomini.Span, schema.Reference) {
 	if place.Format == files.FormatLocalization {
 		_, reference := describeMessage(ws, tree, place, offset)
 		return reference.Span, reference
 	}
-	visitor := &hoverVisitor{offset: offset}
+	visitor := &hoverVisitor{tree: tree, offset: offset}
 	ws.Schema.WalkTo(tree, place.File, offset, visitor)
-	span, reference := findHit(tree, visitor)
-	return span, resolveHit(ws.Mods.Load(), place, reference, visitor.context.References)
+	span, reference := findHit(visitor)
+	return span, resolveHit(mods, place, reference, visitor.context.References)
 }
 
 // resolveHit returns the reference that the name under the cursor makes, of the given references written at its span:
@@ -85,7 +84,7 @@ func resolveHit(mods *index.Index, place workspace.Place, reference schema.Refer
 		candidates = index.ListCallees(reference)
 	}
 	if position := slices.IndexFunc(candidates, func(candidate schema.Reference) bool {
-		return len(mods.ResolveLocal(candidate, place.Path)) > 0
+		return len(mods.ResolveLocal(candidate, place.Position)) > 0
 	}); position >= 0 {
 		return candidates[position]
 	}
@@ -97,26 +96,24 @@ func resolveHit(mods *index.Index, place workspace.Place, reference schema.Refer
 
 // References returns where the name at a position is defined and where it is used. A localization key's translations
 // are left out. It returns an empty list if the position is on no name.
-func (lsp *Service) References(path string, line, column int) ([]Location, error) {
+func (lsp *Service) References(path string, line, column int) ([]Site, error) {
 	ws, tree, err := lsp.loadTree(path)
 	if err != nil {
 		return nil, err
 	}
 	mods := ws.Mods.Load()
 	place := ws.Locate(mods, path)
-	_, reference := findReference(ws, tree, place, ToOffset(tree.Src, tree.Lines, line, column))
+	_, reference := findReference(ws, mods, tree, place, ToOffset(tree.Src, tree.Lines, line, column))
 	if reference.Name == "" {
-		return []Location{}, nil
+		return []Site{}, nil
 	}
 	occurrences := dropTranslations(ws, mods, place, listOccurrences(mods, place, reference))
-	return lo.Map(occurrences, func(site index.Site, _ int) Location {
-		return locateOccurrence(ws, mods, site)
-	}), nil
+	return lo.Map(occurrences, func(site index.Site, _ int) Site { return LocateSite(ws, mods, site) }), nil
 }
 
 // listOccurrences returns the sites of a name, its definitions and then its uses, as seen from the given file.
 func listOccurrences(mods *index.Index, place workspace.Place, reference schema.Reference) []index.Site {
-	return slices.Concat(mods.ResolveLocal(reference, place.Path), mods.ListUses(reference.Database, reference.Name))
+	return slices.Concat(mods.ResolveLocal(reference, place.Position), mods.ListUses(reference.Database, reference.Name))
 }
 
 // PrepareRename returns the range of the name at a position. It returns nil if the position is on no name, if the
@@ -128,12 +125,12 @@ func (lsp *Service) PrepareRename(path string, line, column int) (*Range, error)
 	}
 	mods := ws.Mods.Load()
 	place := ws.Locate(mods, path)
-	span, reference := findReference(ws, tree, place, ToOffset(tree.Src, tree.Lines, line, column))
+	span, reference := findReference(ws, mods, tree, place, ToOffset(tree.Src, tree.Lines, line, column))
 	if reference.Name == "" {
 		return nil, nil
 	}
 	// a name the game also defines cannot be renamed, since its definition in the game's files stays
-	sites := mods.ResolveLocal(reference, place.Path)
+	sites := mods.ResolveLocal(reference, place.Position)
 	if len(sites) == 0 || lo.SomeBy(sites, func(site index.Site) bool { return mods.File(site).Origin == game.OriginVanilla }) {
 		return nil, nil
 	}
@@ -153,7 +150,7 @@ func (lsp *Service) Rename(path string, line, column int, name string) (map[stri
 	}
 	mods := ws.Mods.Load()
 	place := ws.Locate(mods, path)
-	_, reference := findReference(ws, tree, place, ToOffset(tree.Src, tree.Lines, line, column))
+	_, reference := findReference(ws, mods, tree, place, ToOffset(tree.Src, tree.Lines, line, column))
 	if reference.Database == "" {
 		if databases := mods.ListDatabases(reference.Name); len(databases) > 1 {
 			slices.Sort(databases)
@@ -189,25 +186,26 @@ func (lsp *Service) ListSymbols(path string) ([]Symbol, error) {
 // a localization file. Each has its title in the session's language, as the given index finds it. It returns none for
 // a file that is neither script nor localization, and an error if the file cannot be read.
 func ListFileSymbols(ws *workspace.Session, mods *index.Index, path string) ([]Symbol, error) {
-	tree, err := ws.LoadTree(path)
+	document, err := ws.LoadDocument(path)
 	if err != nil {
 		return nil, err
 	}
 	place := ws.Locate(mods, path)
 	if place.Format == files.FormatLocalization {
-		return listMessages(ws, mods, tree, path), nil
+		return listMessages(ws, mods, document), nil
 	}
-	visitor := &symbolsVisitor{ws: ws, mods: mods, path: path, symbols: []Symbol{}}
+	visitor := &symbolsVisitor{ws: ws, mods: mods, file: place.Position, symbols: []Symbol{}}
 	if place.Format.IsScript() {
-		ws.Schema.Walk(tree, place.File, visitor)
+		ws.Schema.Walk(document.Tree, place.File, visitor)
 	}
 	return visitor.symbols, nil
 }
 
-// listMessages returns the messages of a localization file as symbols: each one's key, with its text in the session's
-// language.
-func listMessages(ws *workspace.Session, mods *index.Index, tree *jomini.Tree, path string) []Symbol {
-	return lo.Map(loc.Parse(tree.Src, path).Messages, func(message loc.Message, _ int) Symbol {
+// listMessages returns the messages of a localization file's document as symbols: each one's key, with its text in
+// the session's language.
+func listMessages(ws *workspace.Session, mods *index.Index, document workspace.Document) []Symbol {
+	tree := document.Tree
+	return lo.Map(document.Messages.Messages, func(message loc.Message, _ int) Symbol {
 		text, _, _ := ws.LookupText(mods, message.Key)
 		return Symbol{
 			Name: message.Key, Title: text, Database: game.Localization,
@@ -222,7 +220,7 @@ func listMessages(ws *workspace.Session, mods *index.Index, tree *jomini.Tree, p
 type symbolsVisitor struct {
 	ws         *workspace.Session
 	mods       *index.Index
-	path       string
+	file       int32 // where the index lists the file; -1 where it does not
 	symbols    []Symbol
 	open       []int   // the position of each open symbol among its siblings, outermost first
 	statements []int32 // the statement of each open symbol
@@ -234,7 +232,7 @@ func (visitor *symbolsVisitor) Enter(tree *jomini.Tree, statement int32, context
 		return true
 	}
 	definition := *context.Definition
-	symbol := makeSymbol(tree, statement, definition, lookupTitle(visitor.ws, visitor.mods, visitor.path, definition))
+	symbol := makeSymbol(tree, statement, definition, lookupTitle(visitor.ws, visitor.mods, visitor.file, definition))
 	siblings := &visitor.symbols
 	for _, position := range visitor.open {
 		siblings = &(*siblings)[position].Children
@@ -257,10 +255,9 @@ func makeSymbol(tree *jomini.Tree, statement int32, definition schema.Definition
 // lookupTitle returns the text the game shows for a definition in the session's language, as the given index of the
 // mods lists the definition in the given file. It returns "" if there is no such text, or if the index does not list
 // the definition in that file, as for one the file has only since it was last saved.
-func lookupTitle(ws *workspace.Session, mods *index.Index, path string, definition schema.Definition) string {
-	file, listed := mods.FindFile(path)
-	sites := mods.ResolveLocal(schema.Reference{Database: definition.Database, Name: definition.Name}, path)
-	site, ok := lo.Find(sites, func(site index.Site) bool { return listed && site.File == file })
+func lookupTitle(ws *workspace.Session, mods *index.Index, file int32, definition schema.Definition) string {
+	sites := mods.ResolveLocal(schema.Reference{Database: definition.Database, Name: definition.Name}, file)
+	site, ok := lo.Find(sites, func(site index.Site) bool { return site.File == file })
 	if !ok {
 		return ""
 	}
@@ -301,7 +298,7 @@ func (lsp *Service) FindSymbols(query string, limit int) ([]WorkspaceSymbol, err
 				reference := mods.ToReference(site)
 				symbols = append(symbols, WorkspaceSymbol{
 					Name: reference.Name, Database: reference.Database,
-					Location: locateOccurrence(ws, mods, site), Category: schema.CategoryDefinition,
+					Site: LocateSite(ws, mods, site), Category: schema.CategoryDefinition,
 				})
 				if len(symbols) == limit {
 					return symbols, nil
@@ -310,25 +307,4 @@ func (lsp *Service) FindSymbols(query string, limit int) ([]WorkspaceSymbol, err
 		}
 	}
 	return symbols, nil
-}
-
-// locateOccurrence returns the location of an occurrence: the range of its name, with the text of its line. The range
-// is empty if the file cannot be read.
-func locateOccurrence(ws *workspace.Session, mods *index.Index, site index.Site) Location {
-	occurrence := mods.Occurrence(site)
-	location := locate(ws, ws.Locate(mods, mods.File(site).Path), int(occurrence.Line)+1)
-	if tree, err := ws.LoadTree(location.Place.Path); err == nil {
-		location.Range = ToRange(tree.Src, tree.Lines, occurrence.Span)
-	}
-	return location
-}
-
-// locate returns the location of a line in a file. The range is empty if the file cannot be read or has no such line.
-func locate(ws *workspace.Session, place workspace.Place, line int) Location {
-	tree, err := ws.LoadTree(place.Path)
-	if err != nil || line < 1 || line > tree.Lines.CountLines() {
-		return Location{Place: place}
-	}
-	span := tree.Lines.LineSpan(line - 1)
-	return Location{Place: place, Range: ToRange(tree.Src, tree.Lines, span), Text: tree.Src[span.Start:span.End]}
 }

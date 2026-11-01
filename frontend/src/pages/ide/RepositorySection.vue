@@ -5,34 +5,31 @@
 <script setup lang="ts">
 import { computed, nextTick, shallowRef, useTemplateRef, watch } from "vue";
 import { useMutation, useQuery, useQueryCache } from "@pinia/colada";
-import { useLocalStorage } from "@vueuse/core";
 import type { CommandPaletteGroup, CommandPaletteItem, DropdownMenuItem } from "@nuxt/ui";
 
 import * as gitApi from "@services/git/service";
 import type { Change, Ref } from "@services/git/models";
-import type { Mod, Place } from "@services/workspace/models";
+import type { Place } from "@services/workspace/models";
 
+import { confirm } from "../../lib/feedback";
 import { describeAge, plural } from "../../lib/format";
 import { commitsQuery, gitStatusQuery, keys, refsQuery } from "../../queries";
 import { useEditorStore } from "../../stores/editor";
 import { useGitStore } from "../../stores/git";
 import { useWorkspaceStore } from "../../stores/workspace";
-import ConfirmModal from "../../ui/ConfirmModal.vue";
 import GitFileRow from "../../ui/GitFileRow.vue";
 import OriginChip from "../../ui/OriginChip.vue";
 import { diffTab, parseTab } from "./editor/tabs";
 
-const { root, mods } = defineProps<{ root: string; mods: Mod[] }>();
+const { root, mods } = defineProps<{ root: string; mods: string[] }>();
 
-/** What the branch menu lists. */
+/** A Mode is what the branch menu lists. */
 type Mode = "main" | "name" | "start" | "tag" | "pull" | "merge" | "delete";
-/** The side of a file's diff, as a diff tab names it. */
-type Side = Parameters<typeof diffTab>[0];
-/** A list of changed files with the buttons that act on all of them. */
+/** A Section is a list of changed files with the buttons that act on all of them. */
 type Section = {
   title: string;
   rows: Change[];
-  side?: "staged" | "changes";
+  side: "staged" | "changes" | "conflict";
   all: { label: string; icon: string; color?: "error"; run: (rows: Change[]) => void }[];
 };
 
@@ -59,7 +56,6 @@ const editor = useEditorStore();
 const workspace = useWorkspaceStore();
 const queryCache = useQueryCache();
 const toast = useToast();
-const confirm = useOverlay().create(ConfirmModal);
 
 const { data: status, error } = useQuery(() => gitStatusQuery(root));
 const { data: refs } = useQuery(() => ({ ...refsQuery(root), enabled: !!status.value }));
@@ -70,7 +66,6 @@ const term = shallowRef("");
 const base = shallowRef("");
 const remoting = shallowRef(false);
 const remote = shallowRef({ label: "origin", url: "" });
-const panel = useLocalStorage("pmt.ide.panel", "");
 const box = useTemplateRef("box");
 // the log is read only while the branch menu lists the commits to check out
 const { data: commits } = useQuery(() => ({
@@ -83,8 +78,8 @@ const { data: commits } = useQuery(() => ({
 }));
 const folded = computed(() => git.folded.has(root));
 // the section is named for the repository's first mod in load order; the header counts the others after it
-const origin = computed(() => mods[0]?.id ?? "");
-const others = computed(() => mods.slice(1).map((mod) => workspace.originName(mod.id)));
+const origin = computed(() => mods[0] ?? "");
+const others = computed(() => mods.slice(1).map(workspace.originName));
 
 // the commit box takes the focus when it is asked for, unless the section is folded
 watch(
@@ -102,18 +97,19 @@ const changes = computed(() => status.value?.changes ?? []);
 const sections = computed<Section[]>(() => [
   {
     title: "Merge conflicts",
-    rows: changes.value.filter((c) => c.status === "conflict").map((c) => ({ ...c, staged: false, unstaged: true })),
+    rows: changes.value.filter((c) => c.status === "conflict"),
+    side: "conflict",
     all: [],
   },
   {
     title: "Staged",
-    rows: changes.value.filter((c) => c.staged && c.status !== "conflict").map((c) => ({ ...c, unstaged: false })),
+    rows: changes.value.filter((c) => c.staged && c.status !== "conflict"),
     side: "staged",
     all: [{ label: "Unstage all", icon: "i-lucide-minus", run: (rows) => change(gitApi.Unstage, rows) }],
   },
   {
     title: "Changes",
-    rows: changes.value.filter((c) => c.unstaged && c.status !== "conflict").map((c) => ({ ...c, staged: false })),
+    rows: changes.value.filter((c) => c.unstaged && c.status !== "conflict"),
     side: "changes",
     all: [
       { label: "Discard all changes", icon: "i-lucide-undo-2", color: "error", run: (rows) => discard(rows) },
@@ -130,7 +126,6 @@ const remotes = computed(() => (refs.value ?? []).filter((ref) => ref.type === "
 
 const { mutate: run } = useMutation({
   mutation: (work: () => Promise<unknown>) => work(),
-  onSettled: () => queryCache.invalidateQueries({ key: keys.git(root) }),
 });
 const { mutate: listRemotes, data: remoteList } = useMutation({
   mutation: () => gitApi.Run(root, "remote", "-v"),
@@ -142,7 +137,6 @@ const { mutate: commit } = useMutation({
     if (push) await gitApi.Run(root, "push");
   },
   onSuccess: () => (message.value = ""),
-  onSettled: () => queryCache.invalidateQueries({ key: keys.git(root) }),
 });
 
 const commitOptions = computed<DropdownMenuItem[]>(() => [
@@ -168,7 +162,7 @@ const moreActions = computed<DropdownMenuItem[][]>(() => [
     { label: "Stage all changes", icon: "i-lucide-plus", onSelect: () => change(gitApi.Stage, changes.value) },
     { label: "Unstage all", icon: "i-lucide-minus", onSelect: () => change(gitApi.Unstage, changes.value) },
   ],
-  [{ label: "Show the Git output", icon: "i-lucide-terminal", onSelect: () => (panel.value = "output") }],
+  [{ label: "Show the Git output", icon: "i-lucide-terminal", onSelect: () => (editor.panel = "output") }],
 ]);
 const remoteRows = computed(() => {
   const addresses = new Map<string, string>();
@@ -225,7 +219,10 @@ const groups = computed<CommandPaletteGroup[]>(() => {
   return [{ id: mode.value, label: title, items }];
 });
 
-/** Builds the item that creates a branch with the given name from a starting branch. It is none for an empty name. */
+/**
+ * buildCreateItems builds the item that creates a branch with the given name from a starting branch. It is none for an
+ * empty name.
+ */
 function buildCreateItems(label: string, start: string): CommandPaletteItem[] {
   if (!label || local.value.some((ref) => ref.name === label)) return [];
   const make = () =>
@@ -233,7 +230,10 @@ function buildCreateItems(label: string, start: string): CommandPaletteItem[] {
   return [{ label: `Create branch ${label} from ${start}`, icon: "i-lucide-plus", onSelect: () => act(make) }];
 }
 
-/** Builds the branch menu's first list: the branch to create, the ways on, then the local and remote branches. */
+/**
+ * buildMainGroups builds the branch menu's first list: the branch to create, the ways on, then the local and remote
+ * branches.
+ */
 function buildMainGroups(label: string): CommandPaletteGroup[] {
   const ways = [
     {
@@ -270,9 +270,9 @@ function buildMainGroups(label: string): CommandPaletteGroup[] {
 }
 
 /**
- * Describes a branch in the branch menu. The current branch says how far it is ahead of its upstream and behind it,
- * and the upstream how many of its commits the current branch lacks. Any other branch says when its last commit was
- * made, and a remote branch also what picking it does.
+ * describeBranch describes a branch in the branch menu. The current branch says how far it is ahead of its upstream
+ * and behind it, and the upstream how many of its commits the current branch lacks. Any other branch says when its
+ * last commit was made, and a remote branch also what picking it does.
  */
 function describeBranch(ref: Ref): string {
   const age = describeAge(ref.date, "long");
@@ -285,7 +285,7 @@ function describeBranch(ref: Ref): string {
   return `${age}, checks out as a new local branch`;
 }
 
-/** Builds the lists of tags and of the newest commits, each of which a checkout can detach to. */
+/** buildTagGroups builds the lists of tags and of the newest commits, each of which a checkout can detach to. */
 function buildTagGroups(): CommandPaletteGroup[] {
   return [
     {
@@ -312,50 +312,52 @@ function buildTagGroups(): CommandPaletteGroup[] {
   ];
 }
 
-/** Builds the git command with the given arguments, to run in this repository. */
+/** buildCommand builds the git command with the given arguments, to run in this repository. */
 function buildCommand(...args: string[]): () => Promise<string> {
   return () => gitApi.Run(root, ...args);
 }
 
-/** Runs one git action and closes the branch menu. */
+/** act runs one git action and closes the branch menu. */
 function act(work: () => Promise<unknown>): void {
   branchMenu.value = false;
   run(work);
 }
 
-/** Shows the branch menu in the given mode, with an empty search. A starting branch is the base of a new branch. */
+/**
+ * show shows the branch menu in the given mode, with an empty search. A starting branch is the base of a new branch.
+ */
 function show(next: Mode, start = ""): void {
   mode.value = next;
   base.value = start;
   term.value = "";
 }
 
-/** Shows the remotes of the repository. */
+/** showRemotes shows the remotes of the repository. */
 function showRemotes(): void {
   branchMenu.value = false;
   remoting.value = true;
   listRemotes();
 }
 
-/** Folds the section, or unfolds it when it is folded. */
+/** toggle folds the section, or unfolds it when it is folded. */
 function toggle(): void {
   if (folded.value) git.folded.delete(root);
   else git.folded.add(root);
 }
 
-/** Opens a changed file, or its diff on the given side. */
-function open(place: Place, side?: Side): void {
-  if (side) editor.open(diffTab(side, root, place.key), place);
+/** open opens a changed file, or its diff on the given side. A conflicted file opens as a file. */
+function open(place: Place, side?: Section["side"]): void {
+  if (side && side !== "conflict") editor.open(diffTab(side, root, place.key), place);
   else editor.show(place);
 }
 
-/** Whether the active tab is the diff of the given side of the given changed file. */
+/** isLit reports whether the active tab is the diff of the given side of the given changed file. */
 function isLit(side: Section["side"], row: Change): boolean {
   const target = parseTab(editor.activeTab()?.id ?? "");
   return target.tab === "diff" && target.side === side && target.key === row.place.key;
 }
 
-/** Stages, unstages or discards files, as the given call of the git service does. */
+/** change stages, unstages or discards files, as the given call of the git service does. */
 function change(call: typeof gitApi.Stage, files: Change[]): void {
   run(() =>
     call(
@@ -365,7 +367,7 @@ function change(call: typeof gitApi.Stage, files: Change[]): void {
   );
 }
 
-/** Throws the working changes of files away, once the user has agreed. */
+/** discard throws the working changes of files away, once the user has agreed. */
 function discard(files: Change[]): void {
   const body = `The changes to ${files.length === 1 ? files[0]?.path : plural(files.length, "file")} go, and a file git does not track yet is deleted. This cannot be undone.`;
   run(async () => {
@@ -377,7 +379,10 @@ function discard(files: Change[]): void {
   });
 }
 
-/** Pulls and pushes the branch, or publishes it where it has no upstream. A repository with no remote asks for one. */
+/**
+ * sync pulls and pushes the branch, or publishes it where it has no upstream. A repository with no remote asks for
+ * one.
+ */
 function sync(): void {
   run(async () => {
     const existing = (await gitApi.Run(root, "remote")).split("\n")[0]?.trim();
@@ -389,7 +394,7 @@ function sync(): void {
   });
 }
 
-/** Adds a remote, or changes the address of one with the same label, and pushes to it if it is the first. */
+/** saveRemote adds a remote, or changes the address of one with the same label, and pushes to it if it is the first. */
 function saveRemote(): void {
   const { label, url } = remote.value;
   const exists = remoteRows.value.some((row) => row.label === label);
@@ -401,7 +406,7 @@ function saveRemote(): void {
   remote.value = { label: "origin", url: "" };
 }
 
-/** Removes a remote and lists the rest. */
+/** removeRemote removes a remote and lists the rest. */
 function removeRemote(label: string): void {
   run(async () => {
     await gitApi.Run(root, "remote", "remove", label);
@@ -409,13 +414,13 @@ function removeRemote(label: string): void {
   });
 }
 
-/** Pulls one remote branch into the current one. */
+/** pullBranch pulls one remote branch into the current one. */
 function pullBranch(ref: string): Promise<string> {
   const slash = ref.indexOf("/");
   return gitApi.Run(root, "pull", ref.slice(0, slash), ref.slice(slash + 1));
 }
 
-/** Deletes a branch. One with commits no other branch has is deleted only when the user asks again. */
+/** deleteBranch deletes a branch. One with commits no other branch has is deleted only when the user asks again. */
 async function deleteBranch(branch: string): Promise<void> {
   try {
     await gitApi.Run(root, "branch", "-d", branch);
@@ -537,7 +542,7 @@ async function deleteBranch(branch: string): Promise<void> {
             </div>
           </div>
           <template v-for="section in sections" :key="section.title">
-            <template v-if="section.rows.length || section.side">
+            <template v-if="section.rows.length || section.side !== 'conflict'">
               <div :class="SECTION">
                 {{ section.title }}<span class="font-normal text-dimmed">{{ section.rows.length }}</span>
                 <span class="grow" />
@@ -557,6 +562,7 @@ async function deleteBranch(branch: string): Promise<void> {
                 <GitFileRow
                   :class="{ 'bg-accented': isLit(section.side, row) }"
                   :change="row"
+                  :side="section.side"
                   @open="open(row.place)"
                   @stage="change(gitApi.Stage, [row])"
                   @unstage="change(gitApi.Unstage, [row])"

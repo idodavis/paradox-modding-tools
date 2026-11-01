@@ -2,31 +2,32 @@
  * The hover card over an editor, in place of Monaco's own. When the pointer rests on a word, the card of the word and
  * the problems on it show above it until the pointer moves away, so the lines below stay free to hover and right-click.
  */
-import UPopover from "@nuxt/ui/components/Popover.vue";
 import { useDebounceFn } from "@vueuse/core";
 import * as monaco from "monaco-editor/editor/editor.api";
-import {
-  getCurrentInstance,
-  h,
-  render,
-  shallowRef,
-  type AppContext,
-  type FunctionalComponent,
-  type ShallowRef,
-} from "vue";
+import { shallowRef, type ShallowRef } from "vue";
 
 import * as lsp from "@services/lsp/service";
 import type { Card } from "@services/lsp/models";
 import type { editor } from "monaco-editor";
-import HoverCard, { type HoverProblem } from "../../../ui/HoverCard.vue";
+import { findLevel } from "../../../lib/format";
+import { codesQuery, loadQuery } from "../../../queries";
 import { useSettingsStore } from "../../../stores/settings";
-import { SEVERITIES } from "./models";
+import type { HoverProblem } from "../../../ui/HoverCard.vue";
 
-/** A card on show: the facts of a word, the problems on it, and the rectangle of the word in the page. */
+/** A Hover is the card on show: the facts of a word, the problems on it, and the rectangle of the word in the page. */
 type Hover = { card: Card | null; problems: HoverProblem[]; anchor: DOMRect };
 
-/** Shows a hover card over the word the pointer rests on in an editor. It returns the function that detaches it. */
-export function attachHover(codeEditor: editor.IStandaloneCodeEditor): () => void {
+/**
+ * attachHover shows a hover card over the word the pointer rests on in an editor. It returns the card on show, which is
+ * null while there is none, the functions that take the card down and hold it while the pointer is on it, and the
+ * function that detaches the card from the editor.
+ */
+export function attachHover(codeEditor: editor.IStandaloneCodeEditor): {
+  hover: ShallowRef<Hover | null>;
+  close: () => void;
+  hold: (on: boolean) => void;
+  detach: () => void;
+} {
   const settings = useSettingsStore();
   const hover = shallowRef<Hover | null>(null);
   // the start of the word the pointer is on, and whether the pointer is on the card
@@ -34,38 +35,50 @@ export function attachHover(codeEditor: editor.IStandaloneCodeEditor): () => voi
   let onCard = false;
   let timer: ReturnType<typeof setTimeout> | undefined;
 
-  /** Takes the card down at once and forgets the word. */
-  const closeCard = (): void => {
+  /** close takes the card down at once and forgets the word. */
+  const close = (): void => {
     clearTimeout(timer);
     target = null;
     onCard = false;
     hover.value = null;
   };
-  /** Takes the card down after a moment, unless the pointer is on it by then. */
-  const closeCardLater = (): void => {
+  /** closeLater takes the card down after a moment, unless the pointer is on it by then. */
+  const closeLater = (): void => {
     clearTimeout(timer);
     timer = setTimeout(() => onCard || (hover.value = null), 300);
   };
+  /** hold holds the card while the pointer is on it, and takes it down after a moment once the pointer leaves it. */
+  const hold = (on: boolean): void => {
+    onCard = on;
+    if (!on) closeLater();
+  };
   /**
-   * Finds the card of a word and the problems on it and shows them, unless the pointer has moved on meanwhile. A card
-   * the pointer is on is never replaced.
+   * findCard finds the card of a word and the problems on it and shows them, unless the pointer has moved on
+   * meanwhile. A card the pointer is on is never replaced.
    */
   const findCard = useDebounceFn(async (word: editor.IWordAtPosition, lineNumber: number) => {
     const model = codeEditor.getModel();
-    const card = model && (await lsp.Hover(model.uri.fsPath, lineNumber, word.startColumn));
-    if (!model || onCard || target?.lineNumber !== lineNumber || target.column !== word.startColumn) return;
+    if (!model) return;
+    const [card, codes] = await Promise.all([
+      lsp.Hover(model.uri.fsPath, lineNumber, word.startColumn),
+      loadQuery(codesQuery),
+    ]);
+    if (onCard || target?.lineNumber !== lineNumber || target.column !== word.startColumn) return;
     const span = card?.range ?? new monaco.Range(lineNumber, word.startColumn, lineNumber, word.endColumn);
-    // a marker's message has its facts filled in already, and its severity says the level
+    // a marker's message has its facts filled in already
     const problems = monaco.editor
       .getModelMarkers({ resource: model.uri })
       .filter((marker) => monaco.Range.areIntersectingOrTouching(marker, span))
-      .map((marker) => ({
-        id: typeof marker.code === "string" ? marker.code : (marker.code?.value ?? ""),
-        level: Object.keys(SEVERITIES).find((level) => SEVERITIES[level] === marker.severity) ?? "info",
-        message: marker.message,
-        line: marker.startLineNumber,
-        column: marker.startColumn,
-      }));
+      .map((marker) => {
+        const id = typeof marker.code === "string" ? marker.code : (marker.code?.value ?? "");
+        return {
+          id,
+          level: findLevel(id, codes),
+          message: marker.message,
+          line: marker.startLineNumber,
+          column: marker.startColumn,
+        };
+      });
     const start = codeEditor.getScrolledVisiblePosition({ lineNumber, column: word.startColumn });
     const end = codeEditor.getScrolledVisiblePosition({ lineNumber, column: word.endColumn });
     const box = codeEditor.getDomNode()?.getBoundingClientRect();
@@ -87,78 +100,23 @@ export function attachHover(codeEditor: editor.IStandaloneCodeEditor): () => voi
         return;
       }
       target = position && word ? { lineNumber: position.lineNumber, column: word.startColumn } : null;
-      closeCardLater();
+      closeLater();
       if (position && word && settings.isOn("ide.hover")) void findCard(word, position.lineNumber);
     }),
-    codeEditor.onMouseDown(closeCard),
-    codeEditor.onContextMenu(closeCard),
-    codeEditor.onKeyDown(closeCard),
-    codeEditor.onDidScrollChange(closeCard),
-    codeEditor.onMouseLeave(closeCardLater),
+    codeEditor.onMouseDown(close),
+    codeEditor.onContextMenu(close),
+    codeEditor.onKeyDown(close),
+    codeEditor.onDidScrollChange(close),
+    codeEditor.onMouseLeave(closeLater),
   ];
-  const detachCard = attachCard(
+
+  return {
     hover,
-    {
-      close: closeCard,
-      hold: (on) => {
-        onCard = on;
-        if (!on) closeCardLater();
-      },
+    close,
+    hold,
+    detach: () => {
+      subscriptions.forEach((subscription) => subscription.dispose());
+      close();
     },
-    getCurrentInstance()?.appContext,
-  );
-
-  return () => {
-    subscriptions.forEach((subscription) => subscription.dispose());
-    closeCard();
-    detachCard();
   };
-}
-
-/**
- * Draws the card in a popover against the word's rectangle, in the given app. It returns the function that takes the
- * popover away.
- */
-function attachCard(
-  hover: ShallowRef<Hover | null>,
-  pointer: { close: () => void; hold: (on: boolean) => void },
-  appContext?: AppContext,
-): () => void {
-  const reference = { getBoundingClientRect: () => hover.value?.anchor ?? new DOMRect() };
-  const Popover: FunctionalComponent = () =>
-    h(
-      UPopover,
-      {
-        open: !!hover.value,
-        reference,
-        // flush on the word, so the pointer crosses no other line on its way to the card
-        content: {
-          side: "top",
-          sideOffset: 0,
-          align: "start",
-          onOpenAutoFocus: (event: Event) => event.preventDefault(),
-          onCloseAutoFocus: (event: Event) => event.preventDefault(),
-        },
-        "onUpdate:open": (open: boolean) => open || pointer.close(),
-      },
-      {
-        // never taller than the room beside the word: a long card scrolls inside itself
-        content: () =>
-          hover.value &&
-          h(
-            "div",
-            {
-              class: "max-h-(--reka-popover-content-available-height) overflow-y-auto",
-              onMouseenter: () => pointer.hold(true),
-              onMouseleave: () => pointer.hold(false),
-            },
-            h(HoverCard, { card: hover.value.card, problems: hover.value.problems }),
-          ),
-      },
-    );
-  const host = document.createElement("div");
-  const vnode = h(Popover);
-  vnode.appContext = appContext ?? null;
-  render(vnode, host);
-  return () => render(null, host);
 }

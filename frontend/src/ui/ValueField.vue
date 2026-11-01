@@ -5,6 +5,8 @@
 <script setup lang="ts">
 import { computed } from "vue";
 
+import { toSentence } from "../lib/format";
+
 const {
   kind,
   value,
@@ -34,7 +36,7 @@ const range = computed(() => (min || max ? { min, max } : {}));
 const size = computed(() => (label ? "md" : "xs"));
 const toggled = computed(() => value.split(" ").filter(Boolean));
 
-/** Emits the toggles on once the given one is switched. */
+/** toggle emits the toggles on once the given one is switched. */
 function toggle(choice: string): void {
   const on = toggled.value.includes(choice)
     ? toggled.value.filter((one) => one !== choice)
@@ -59,7 +61,7 @@ function toggle(choice: string): void {
     <USelect
       v-else-if="kind === 'choice'"
       :model-value="value"
-      :items="choices.map((choice) => ({ label: choice.charAt(0).toUpperCase() + choice.slice(1), value: choice }))"
+      :items="choices.map((choice) => ({ label: toSentence(choice), value: choice }))"
       :size="size"
       :disabled="disabled"
       class="w-full"

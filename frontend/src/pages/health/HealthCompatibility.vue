@@ -4,14 +4,14 @@
 -->
 <script setup lang="ts">
 import { computed, shallowRef } from "vue";
-import { useMutation, useQuery, useQueryCache } from "@pinia/colada";
+import { useMutation, useQuery } from "@pinia/colada";
 import { groupBy } from "es-toolkit";
 import type { DropdownMenuItem } from "@nuxt/ui";
 import { AddIgnoredPair, RemoveIgnoredPair } from "@services/health/service";
 import type { Change, Finding } from "@services/health/models";
 import type { Mod } from "@services/workspace/models";
-import { list, plural } from "../../lib/format";
-import { keys, stateQuery } from "../../queries";
+import { list, listLeftOut, plural } from "../../lib/format";
+import { stateQuery } from "../../queries";
 import { useWorkspaceStore } from "../../stores/workspace";
 import LoadOrder from "../../ui/LoadOrder.vue";
 import OriginChip from "../../ui/OriginChip.vue";
@@ -23,7 +23,7 @@ const {
   findings,
   changes,
   mods,
-  opened = -1,
+  opened = undefined,
   dirty,
   saving,
 } = defineProps<{
@@ -32,13 +32,13 @@ const {
   /** The names that change hands in the tried order. */
   changes: Change[];
   mods: Mod[];
-  /** The open finding's index, or -1 for none. */
-  opened?: number;
+  /** The open finding, or undefined for none. */
+  opened?: Finding;
   /** Whether the tried order differs from the workspace's. */
   dirty: boolean;
   saving: boolean;
 }>();
-const emit = defineEmits<{ open: [index: number]; save: [] }>();
+const emit = defineEmits<{ open: [finding: Finding]; save: [] }>();
 /** The tried load order, as mod ids. */
 const order = defineModel<string[]>("order", { required: true });
 const filter = defineModel<string>("filter", { default: "" });
@@ -75,33 +75,26 @@ const GUIDES: Readonly<Record<string, Guide>> = {
 const MENU_CODES = ["contest", "file-contest", "undecided-contest", "shared-message"];
 
 const workspace = useWorkspaceStore();
-const cache = useQueryCache();
 const { data: state } = useQuery(stateQuery);
 const guide = computed((): Guide | undefined => GUIDES[state.value?.game?.id ?? ""]);
 const comparing = shallowRef(false);
-const open = computed(() => findings[opened]);
 /** What each mod would win from the others in the tried order. */
 const gains = computed(() => Object.entries(groupBy(changes, (change) => change.after)));
 
 const { mutate: ignorePair } = useMutation({
   mutation: (pair: [string, string]) => AddIgnoredPair(pair[0], pair[1]),
-  onSuccess: () => cache.invalidateQueries({ key: keys.health }),
 });
 const { mutate: stopIgnoring } = useMutation({
   mutation: (pair: [string, string]) => RemoveIgnoredPair(pair[0], pair[1]),
-  onSuccess: () => cache.invalidateQueries({ key: keys.health }),
 });
 const { mutate: switchMod } = useMutation({
   mutation: (mod: string) => workspace.updateMod(workspace.activeId(), mod, { leftOut: !workspace.isLeftOut(mod) }),
-  onSuccess: () => cache.invalidateQueries({ key: keys.health }),
 });
 /** The mods left out of the checks. */
-const leftOut = computed(() => mods.filter((mod) => workspace.isLeftOut(mod.id)));
-/** The titles of the mods left out, as a phrase. */
-const leftOutTitles = computed(() => list(leftOut.value.map((mod) => mod.descriptor.name)));
+const leftOut = computed(() => listLeftOut(mods));
 
 /** buildMenu builds the menu of a contest's or a shared key's row, to compare, open or ignore its copies. */
-function buildMenu(finding: Finding, index: number): DropdownMenuItem[][] {
+function buildMenu(finding: Finding): DropdownMenuItem[][] {
   const copies = (finding.sites ?? []).map((site) => ({
     label: `Open ${workspace.originName(site.place.origin)}'s copy in the IDE`,
     icon: "i-lucide-code",
@@ -113,7 +106,7 @@ function buildMenu(finding: Finding, index: number): DropdownMenuItem[][] {
           label: "Compare the two",
           icon: "i-lucide-diff",
           onSelect: () => {
-            emit("open", index);
+            emit("open", finding);
             comparing.value = true;
           },
         },
@@ -196,7 +189,7 @@ function buildMenu(finding: Finding, index: number): DropdownMenuItem[][] {
     </div>
     <p v-if="leftOut.length" class="flex shrink-0 items-center gap-1.5 px-4 pb-2.5 text-12 text-dimmed">
       <UIcon name="i-lucide-eye-off" class="size-3.5 shrink-0" />
-      {{ leftOutTitles }}
+      {{ list(leftOut) }}
       {{
         leftOut.length === 1
           ? "is left out: its problems show only in its own view."
@@ -227,7 +220,7 @@ function buildMenu(finding: Finding, index: number): DropdownMenuItem[][] {
       class="grow"
       @open="emit('open', $event)"
     >
-      <template #trailing="{ finding, index }">
+      <template #trailing="{ finding }">
         <span class="flex shrink-0 gap-0.75">
           <OriginChip v-for="mod in finding.mods" :key="mod" :origin="mod" dot />
         </span>
@@ -240,7 +233,7 @@ function buildMenu(finding: Finding, index: number): DropdownMenuItem[][] {
           class="shrink-0"
           @click.stop="stopIgnoring([finding.mods?.[0] ?? '', finding.mods?.[1] ?? ''])"
         />
-        <UDropdownMenu v-else-if="MENU_CODES.includes(finding.code)" :items="buildMenu(finding, index)">
+        <UDropdownMenu v-else-if="MENU_CODES.includes(finding.code)" :items="buildMenu(finding)">
           <UTooltip text="Compare, open or ignore">
             <UButton
               icon="i-lucide-ellipsis"
@@ -257,10 +250,9 @@ function buildMenu(finding: Finding, index: number): DropdownMenuItem[][] {
       </template>
       <template #detail>
         <HealthDetail
-          v-if="open"
+          v-if="opened"
           v-model:comparing="comparing"
-          :finding="open"
-          :findings="findings"
+          :finding="opened"
           :order="order"
           @preview="order = $event"
         />

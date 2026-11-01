@@ -4,7 +4,6 @@ import (
 	"cmp"
 	"maps"
 	"slices"
-	"strings"
 
 	"github.com/samber/lo"
 
@@ -19,11 +18,10 @@ func (index *Index) Resolve(reference schema.Reference) []Site {
 	return index.listResolved(reference, func(Site) bool { return false })
 }
 
-// ResolveLocal is Resolve for a reference written in the given file: that file's local definitions count too. A file
-// the index does not list counts none.
-func (index *Index) ResolveLocal(reference schema.Reference, path string) []Site {
-	file, listed := index.FindFile(path)
-	return index.listResolved(reference, func(site Site) bool { return listed && site.File == file })
+// ResolveLocal is Resolve for a reference written in the file at the given position in Files: that file's local
+// definitions count too. A file the index does not list has the position -1, which counts none.
+func (index *Index) ResolveLocal(reference schema.Reference, file int32) []Site {
+	return index.listResolved(reference, func(site Site) bool { return site.File == file })
 }
 
 // listResolved returns the definitions that a reference names, as Resolve orders them. A local definition counts where
@@ -44,20 +42,9 @@ func (index *Index) listResolved(reference schema.Reference, isVisible func(Site
 // ListDatabases returns the databases with a definition of a name, local ones included, in the order of the index's
 // table. A key of the localization database is defined by its messages. It is empty if nothing defines the name.
 func (index *Index) ListDatabases(name string) []string {
-	exact, hasExact := index.Names.Lookup(name)
-	lower, hasLower := index.Names.Lookup(strings.ToLower(name))
-	var databases []string
-	for ordinal, database := range index.Databases.Texts {
-		key, listed := exact, hasExact
-		if slices.Contains(index.Caseless, database) {
-			key, listed = lower, hasLower
-		}
-		posting := Posting{Role: toRole(database), Database: uint16(ordinal)}
-		if listed && len(index.listKey(posting, key)) > 0 {
-			databases = append(databases, database)
-		}
-	}
-	return databases
+	return lo.Filter(index.Databases.Texts, func(database string, _ int) bool {
+		return len(index.listPosting(toRole(database), database, name)) > 0
+	})
 }
 
 // ListUses returns every reference to a name in a database, in load order. For a database whose definitions script

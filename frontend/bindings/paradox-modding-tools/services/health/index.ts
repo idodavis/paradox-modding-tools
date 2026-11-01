@@ -8,12 +8,14 @@ export {
 
 export type {
     Change,
+    Check,
     Compared,
     Finding,
-    FindingSite,
     GameLog,
+    Group,
     Overview,
     Report,
     Snippet,
+    Tally,
     Use
 } from "./models.js";

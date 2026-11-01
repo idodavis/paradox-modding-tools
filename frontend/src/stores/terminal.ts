@@ -18,7 +18,6 @@ import { upperFirst } from "es-toolkit";
 import { computed, markRaw, shallowReactive, shallowRef, watch } from "vue";
 
 import type { Screen, Shell } from "@internal/terminal/models";
-import type { Link } from "@services/terminal/models";
 import type { Place } from "@services/workspace/models";
 import * as terminal from "@services/terminal/service";
 import { findBinding, listPressedKeys } from "../app/commands";
@@ -28,7 +27,7 @@ import { useSettingsStore } from "./settings";
 import { THIS_WINDOW, useWindowsStore } from "./windows";
 
 /** A Console is one shell as this window draws it: its xterm, the addons the store calls, and its stream from Go. */
-export type Console = {
+type Console = {
   shell: Shell;
   xterm: Terminal;
   fit: FitAddon;
@@ -226,18 +225,10 @@ export const useTerminalStore = defineStore("terminal", () => {
     return ((await terminal.FindLinks(open.shell.id, text)) ?? []).flatMap((link) => {
       const [start, end] = [cells[link.start], cells[link.end - 1]];
       if (!start || !end) return [];
-      return [{ range: { start, end }, text: text.slice(link.start, link.end), activate: () => showLink(link) }];
+      const position = { lineNumber: link.site.line, column: Math.max(link.site.range.startColumn, 1) };
+      const activate = (): void => editor.show(link.site.place, position, "navigate");
+      return [{ range: { start, end }, text: text.slice(link.start, link.end), activate }];
     });
-  }
-
-  /**
-   * showLink opens the file a link names at its line: in this window's editor, or in the main window's from the
-   * terminal's.
-   */
-  function showLink(link: Link): void {
-    const position = { lineNumber: link.line, column: Math.max(link.column, 1) };
-    if (THIS_WINDOW === "terminal") windows.showElsewhere("main", link.place, position);
-    else editor.show(link.place, position, "navigate");
   }
 
   /**

@@ -156,8 +156,8 @@ func TestOpenLoadsCachesOnSecondOpen(t *testing.T) {
 	if _, err := os.Stat(stray); err != nil {
 		t.Error("a file beside the caches' folder was deleted")
 	}
-	if len(ws.Order) != 2 || ws.Order[0].Descriptor.Name != "Fixture Mod" || ws.Order[0].Broken || !ws.Order[1].Broken {
-		t.Errorf("mods: %+v", ws.Order)
+	if order := *ws.Order.Load(); len(order) != 2 || order[0].Descriptor.Name != "Fixture Mod" || order[0].Broken || !order[1].Broken {
+		t.Errorf("mods: %+v", order)
 	}
 	if mods := ws.Mods.Load(); len(mods.Roots) != len(ws.Install.Roots)+1 || len(mods.Files) <= len(ws.Install.Files) {
 		t.Errorf("the mods' index has %d roots and %d files over the install's %d and %d",
@@ -210,14 +210,14 @@ func TestLocateSaysWhereFileSits(t *testing.T) {
 	ws, dir := openFixture(t)
 	events := ws.Locate(ws.Mods.Load(), filepath.Join(dir, "events", "m_events.txt"))
 	if events.Rel != "events/m_events.txt" || events.Origin != fixtureModID || events.Root != dir || events.ReadOnly ||
-		events.Database != "events" || events.Format != files.FormatScript || !events.Loaded {
+		events.Database != "events" || events.Format != files.FormatScript {
 		t.Errorf("a mod's file: %+v", events.File)
 	}
 	vanilla := ws.Locate(ws.Mods.Load(), filepath.Join(resolveFixture(t, ck3), "game", "events", "v_events.txt"))
-	if vanilla.Rel != "events/v_events.txt" || vanilla.Origin != game.OriginVanilla || !vanilla.ReadOnly || !vanilla.Loaded {
+	if vanilla.Rel != "events/v_events.txt" || vanilla.Origin != game.OriginVanilla || !vanilla.ReadOnly {
 		t.Errorf("a game's file: %+v", vanilla)
 	}
-	if fresh := ws.Locate(ws.Mods.Load(), filepath.Join(dir, "events", "m_fresh.txt")); fresh.Root != dir || fresh.Loaded {
+	if fresh := ws.Locate(ws.Mods.Load(), filepath.Join(dir, "events", "m_fresh.txt")); fresh.Root != dir {
 		t.Errorf("a file the index lacks: %+v", fresh)
 	}
 	if outside := ws.Locate(ws.Mods.Load(), filepath.Join(t.TempDir(), "x.txt")); outside.Root != "" || outside.Rel != "" || outside.Key == "" {
@@ -366,7 +366,7 @@ func TestRescanFollowsDisk(t *testing.T) {
 	if _, ok := before.FindFile(fresh); ok {
 		t.Error("the index a request holds changed")
 	}
-	if !ws.Locate(ws.Mods.Load(), fresh).Loaded {
+	if position, ok := ws.Mods.Load().FindFile(fresh); !ok || !ws.Mods.Load().IsLoaded(position) {
 		t.Error("a new file is not loaded")
 	}
 	copied := filepath.Join(dir, "events", "copied")
@@ -633,10 +633,10 @@ func TestServiceReadsOpenWorkspace(t *testing.T) {
 	}
 	ws, _, _ := listOpenStages(t, config)
 	wsp.session = ws
-	if state := wsp.State(); !state.Open || state.ID != "w1" || state.Game.ID != ck3 || len(state.Mods) != 1 || state.Install.ID != "i1" {
+	if state := wsp.State(); !state.Open || state.ID != "w1" || state.Game.ID != ck3 || len(wsp.ListMods()) != 1 || state.Install.ID != "i1" {
 		t.Errorf("state %+v", state)
 	}
-	mod := ws.Order[0].Dir
+	mod := (*ws.Order.Load())[0].Dir
 	children, err := wsp.ListFolder(mod)
 	if err != nil || len(children) != 5 || !children[0].Place.IsDir || children[4].Name != "descriptor.mod" ||
 		children[4].Place.IsDir {
@@ -680,7 +680,7 @@ func TestServiceRefusesGameFiles(t *testing.T) {
 	config := openConfig(t, ck3, resolveFixture(t, ck3), app.Mod{ID: fixtureModID, Dir: copyMod(t, ck3)})
 	ws, _, _ := listOpenStages(t, config)
 	wsp := &Service{Config: config, session: ws}
-	mod := ws.Order[0].Dir
+	mod := (*ws.Order.Load())[0].Dir
 	vanilla := filepath.Join(resolveFixture(t, ck3), "game", "events", "v_events.txt")
 	mine := filepath.Join(mod, "events", "m_events.txt")
 	_, deleteErr := wsp.Delete(vanilla)

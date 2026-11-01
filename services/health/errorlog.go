@@ -34,10 +34,9 @@ func (hlt *Service) ListErrorLog() (GameLog, error) {
 	if err != nil {
 		return GameLog{}, err
 	}
-	errorLog := ws.Game.ErrorLog
 	gameLog := GameLog{Path: resolveErrorLog(ws)}
 	text, err := files.ReadText(gameLog.Path)
-	if errors.Is(err, fs.ErrNotExist) || errorLog.Line == nil {
+	if errors.Is(err, fs.ErrNotExist) {
 		return gameLog, nil
 	}
 	if err != nil {
@@ -47,7 +46,7 @@ func (hlt *Service) ListErrorLog() (GameLog, error) {
 		gameLog.WrittenAt = stat.ModTime()
 	}
 	// without a debug log, every mod counts as read
-	read := lo.SliceToMap(ws.Order, func(mod workspace.Mod) (string, bool) { return mod.ID, true })
+	read := lo.SliceToMap(*ws.Order.Load(), func(mod workspace.Mod) (string, bool) { return mod.ID, true })
 	if folders, ok := readMountLog(ws); ok {
 		read, gameLog.Copies, gameLog.Unloaded = sortRunMods(ws, folders)
 	}
@@ -62,7 +61,7 @@ func (hlt *Service) ListErrorLog() (GameLog, error) {
 // readMountLog returns the folders that the run which wrote the error log read, from the game's debug log. It returns
 // false if there is no debug log.
 func readMountLog(ws *workspace.Session) ([]string, bool) {
-	text, err := files.ReadText(files.Join(game.FindUserDataDir(ws.Game.ID, ws.InstallPath), game.MountLog.Rel))
+	text, err := files.ReadText(files.Join(ws.Game.FindUserDataDir(ws.InstallPath), game.MountLog.Rel))
 	if err != nil {
 		return nil, false
 	}
@@ -79,8 +78,9 @@ func readMountLog(ws *workspace.Session) ([]string, bool) {
 func sortRunMods(ws *workspace.Session, folders []string) (read map[string]bool, copies map[string]string, unloaded []string) {
 	read, copies = map[string]bool{}, map[string]string{}
 	others := map[string]string{} // a folder of another copy, by the name its descriptor gives
+	order := *ws.Order.Load()
 	for _, folder := range folders {
-		mod, ok := lo.Find(ws.Order, func(mod workspace.Mod) bool {
+		mod, ok := lo.Find(order, func(mod workspace.Mod) bool {
 			return files.ToKey(mod.Dir) == files.ToKey(folder) || files.IsUnder(mod.Dir, folder)
 		})
 		if ok {
@@ -89,7 +89,7 @@ func sortRunMods(ws *workspace.Session, folders []string) (read map[string]bool,
 			others[name] = folder
 		}
 	}
-	for _, mod := range ws.Order {
+	for _, mod := range order {
 		if folder, ok := others[mod.Descriptor.Name]; ok && !read[mod.ID] {
 			copies[mod.ID] = folder
 		} else if !read[mod.ID] {
@@ -112,18 +112,17 @@ func readCopyName(ws *workspace.Session, folder string) string {
 
 // resolveErrorLog returns the path of the game's error log.
 func resolveErrorLog(ws *workspace.Session) string {
-	dir := game.FindUserDataDir(ws.Game.ID, ws.InstallPath)
-	return files.Join(dir, ws.Game.ErrorLog.Rel)
+	dir := ws.Game.FindUserDataDir(ws.InstallPath)
+	return files.Join(dir, game.ErrorLog.Rel)
 }
 
 // parseRows returns a finding for each message in the error log's text, in order. A message that names a line of a
 // mod's file points at it.
 func parseRows(ws *workspace.Session, mods *index.Index, text string) []Finding {
-	errorLog := ws.Game.ErrorLog
 	var findings []Finding
 	for line := range strings.Lines(text) {
 		line = strings.TrimRight(line, "\r\n")
-		if match := errorLog.Line.FindStringSubmatch(line); match != nil {
+		if match := game.ErrorLog.Line.FindStringSubmatch(line); match != nil {
 			findings = append(findings, makeFinding(mods, "game-error", map[string]string{
 				"time": match[1] + ":" + match[2] + ":" + match[3], "source": match[5] + ":" + match[6], "message": match[7],
 			}, nil))
@@ -132,8 +131,8 @@ func parseRows(ws *workspace.Session, mods *index.Index, text string) []Finding 
 		}
 		// the location may be on a line after the message
 		if last := len(findings) - 1; last >= 0 && len(findings[last].Sites) == 0 {
-			if site, ok := findLogSite(ws, mods, errorLog.Locations, line); ok {
-				findings[last].Sites = []FindingSite{site}
+			if site, ok := findLogSite(ws, mods, ws.Game.ErrorLocations, line); ok {
+				findings[last].Sites = []lsp.Site{site}
 			}
 		}
 	}
@@ -142,37 +141,26 @@ func parseRows(ws *workspace.Session, mods *index.Index, text string) []Finding 
 
 // findLogSite returns the line of a mod's file that a line of the log names, in the first of the given forms that
 // names one. It returns false if the line names none, or only files of the game.
-func findLogSite(ws *workspace.Session, mods *index.Index, locations []*regexp.Regexp, line string) (FindingSite, bool) {
+func findLogSite(ws *workspace.Session, mods *index.Index, locations []*regexp.Regexp, line string) (lsp.Site, bool) {
 	for _, location := range locations {
 		for _, match := range location.FindAllStringSubmatch(line, -1) {
 			file, _, ok := mods.FindLoaded(match[location.SubexpIndex("path")])
 			number, err := strconv.Atoi(match[location.SubexpIndex("line")])
 			if ok && err == nil && file.Origin != game.OriginVanilla {
-				return FindingSite{Place: ws.Locate(mods, file.Path), Range: lsp.ToLineRange(number)}, true
+				return lsp.Site{Place: ws.Locate(mods, file.Path), Line: number, Range: lsp.ToLineRange(number)}, true
 			}
 		}
 	}
-	return FindingSite{}, false
+	return lsp.Site{}, false
 }
 
 // buildRows folds the rows with the same message and place into the first. A folded row has their count and the last
 // one's time.
 func buildRows(rows []Finding) []Finding {
-	var folded []Finding
-	positions := map[[3]string]int{} // by message, file and line
-	for _, row := range rows {
-		site := lo.FirstOr(row.Sites, FindingSite{})
-		key := [3]string{row.Facts["message"], site.Place.Path, strconv.Itoa(site.Range.StartLine)}
-		position, ok := positions[key]
-		if !ok {
-			positions[key] = len(folded)
-			folded = append(folded, row)
-			continue
-		}
-		folded[position].Count++
-		folded[position].Facts["time"] = row.Facts["time"]
-	}
-	return folded
+	return foldFindings(rows, func(row Finding) [3]string {
+		site := lo.FirstOr(row.Sites, lsp.Site{})
+		return [3]string{row.Facts["message"], site.Place.Path, strconv.Itoa(site.Line)}
+	}, func(first *Finding, repeat Finding) { first.Facts["time"] = repeat.Facts["time"] })
 }
 
 // resolveOrigin gives a log row to the mod it is about, by file or by name. Any other row is the game's.
@@ -205,9 +193,7 @@ func findLogOwner(mods *index.Index, message string) (identifier, origin string,
 			continue
 		}
 		for _, database := range mods.ListDatabases(candidate) {
-			sites := lo.Filter(mods.Resolve(schema.Reference{Database: database, Name: candidate}), func(site index.Site, _ int) bool {
-				return mods.IsLoaded(site.File)
-			})
+			sites := listLoaded(mods, mods.Resolve(schema.Reference{Database: database, Name: candidate}))
 			origins := lo.Uniq(lo.Map(sites, func(site index.Site, _ int) string { return mods.File(site).Origin }))
 			if len(origins) == 1 && origins[0] != game.OriginVanilla {
 				return candidate, origins[0], true

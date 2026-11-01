@@ -41,7 +41,7 @@ func (lsp *Service) Complete(path string, line, column int) ([]Completion, error
 	offset := ToOffset(tree.Src, tree.Lines, line, column)
 	if statement, ok := findValue(tree, offset); ok {
 		current := tree.Statements[statement]
-		visitor := &hoverVisitor{offset: current.Span.Start}
+		visitor := &hoverVisitor{tree: tree, offset: current.Span.Start}
 		ws.Schema.WalkTo(tree, place.File, visitor.offset, visitor)
 		typed := ""
 		if !current.Value.IsEmpty() && offset >= current.Value.Start {
@@ -96,7 +96,7 @@ func listValues(mods *index.Index, row *game.Game, field *schema.Field, typed st
 	case expected.Type == schema.ValueReference && expected.Database == game.File:
 		for _, file := range mods.ListImages(typed[:strings.LastIndex(typed, "/")+1]) {
 			// script writes a path without the stage folder it sits in
-			_, rel := schema.SplitStage(row, file.Rel)
+			_, rel := row.SplitStage(file.Rel)
 			values = append(values, Completion{Label: rel, Insert: rel, Category: schema.CategoryReference})
 		}
 	case expected.Type == schema.ValueReference:

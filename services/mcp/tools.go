@@ -179,11 +179,11 @@ func (mcp *Service) addEditorTools(server *sdk.Server) {
 		return mcp.LSP.Diagnose(request.Path)
 	}))
 	sdk.AddTool(server, &sdk.Tool{Name: "definition", Description: "Finds where the name at a position is " +
-		"defined, in the mods and the game."}, answer(func(request position) ([]lsp.Location, error) {
+		"defined, in the mods and the game."}, answer(func(request position) ([]lsp.Site, error) {
 		return mcp.LSP.Definition(request.Path, request.Line, request.Column)
 	}))
 	sdk.AddTool(server, &sdk.Tool{Name: "references", Description: "Finds every place the name at a position " +
-		"is defined or used."}, answer(func(request position) ([]lsp.Location, error) {
+		"is defined or used."}, answer(func(request position) ([]lsp.Site, error) {
 		return mcp.LSP.References(request.Path, request.Line, request.Column)
 	}))
 	sdk.AddTool(server, &sdk.Tool{Name: "list_symbols", Description: "Lists a file's entries, nested as " +
@@ -212,7 +212,8 @@ func (mcp *Service) addEditorTools(server *sdk.Server) {
 func (mcp *Service) addPageTools(server *sdk.Server) {
 	sdk.AddTool(server, &sdk.Tool{Name: "build_report", Description: "Gives Health's findings for the " +
 		"workspace's load order: how the mods touch the same things, each mod's own problems, and each " +
-		"language's localization coverage (the coverage check)."}, answer(mcp.buildReport))
+		"language's localization coverage (the coverage check). The findings come in groups, the compatibility and " +
+		"each mod, with the counts of each level and check; a finding's count says how many it folds."}, answer(mcp.buildReport))
 	sdk.AddTool(server, &sdk.Tool{Name: "list_overview", Description: "Counts what each mod holds: its " +
 		"definitions by kind, its files and its localization keys."}, answer(func(struct{}) ([]health.Overview, error) {
 		return mcp.Health.ListOverview()
@@ -227,14 +228,15 @@ func (mcp *Service) addPageTools(server *sdk.Server) {
 	sdk.AddTool(server, &sdk.Tool{Name: "build_graph", Description: "Draws the Event Graph of a root: what it " +
 		"fires and what fires it, step by step, each firing with the blocks it sits in and its delay."},
 		answer(func(request graphRoot) (graph.Graph, error) {
-			if err := mcp.checkNode(request.Root); err != nil {
-				return graph.Graph{}, err
+			eventGraph, err := mcp.Graph.BuildGraph(request.Root, lo.FromPtrOr(request.Filter, mcp.Graph.Defaults()))
+			if err != nil {
+				return eventGraph, fmt.Errorf("%w; %s", err, nodeHint)
 			}
-			return mcp.Graph.BuildGraph(request.Root, lo.FromPtrOr(request.Filter, mcp.Graph.Defaults()))
+			return eventGraph, nil
 		}))
 	sdk.AddTool(server, &sdk.Tool{Name: "build_detail", Description: "Gives one Event Graph node's detail: its " +
-		"texts, what it fires and what fires it, what it reads and the game rules among it, the game's copy it " +
-		"replaces, and its script."}, answer(mcp.buildDetail))
+		"texts, what it fires and what fires it, the game rules it reads, the game's copy it replaces, and its " +
+		"script."}, answer(mcp.buildDetail))
 	sdk.AddTool(server, &sdk.Tool{Name: "search_pages", Description: "Finds the game wiki's modding pages " +
 		"that hold a text."}, answer(func(request textQuery) ([]wiki.Summary, error) {
 		pages, err := mcp.Wiki.SearchPages(request.Query)
@@ -316,37 +318,48 @@ func (mcp *Service) describeWorkspace() (string, error) {
 	var guide strings.Builder
 	fmt.Fprintf(&guide, "Game: %s %s, installed at %s. Its files are read only.\n", state.Game.Name,
 		state.Install.Version, state.Install.Path)
-	fmt.Fprintf(&guide, "Language: %s, beside the base language, %s.\n\nMods in load order:\n", state.Language,
+	fmt.Fprintf(&guide, "Language: %s, beside the base language, %s.\n\nMods in load order:\n", ws.Language,
 		game.BaseLanguage)
-	for _, mod := range state.Mods {
+	for _, mod := range mcp.Workspace.ListMods() {
 		fmt.Fprintf(&guide, "- %s (id %s): %s%s\n", mod.Descriptor.Name, mod.ID, mod.Dir,
 			lo.Ternary(mod.Broken, ", a folder that is missing", ""))
 	}
 	guide.WriteString("\nThe game's folders and what each holds:\n")
 	databases := lo.Filter(slices.Collect(maps.Values(ws.Schema.Databases)), func(database *schema.Database, _ int) bool {
-		return database.Folder != ""
+		return database.Row.Folder != ""
 	})
-	slices.SortFunc(databases, func(a, b *schema.Database) int { return strings.Compare(a.Folder, b.Folder) })
+	slices.SortFunc(databases, func(a, b *schema.Database) int { return strings.Compare(a.Row.Folder, b.Row.Folder) })
 	for _, database := range databases {
-		fmt.Fprintf(&guide, "- %s: %s\n", database.Folder, game.DescribeDefinition(database.Name, true))
+		fmt.Fprintf(&guide, "- %s: %s\n", database.Row.Folder, game.DescribeDefinition(database.Name, true))
 	}
 	return guide.String(), nil
 }
 
-// buildReport returns Health's findings for the workspace's load order that pass the filter, at most its limit. It
-// returns an error if the filter names a mod, a check or a level PMT does not have.
+// buildReport returns Health's report for the workspace's load order, with the findings of its groups that pass the
+// filter, at most its limit of them in all. The tallies and checks still count every finding. It returns an error if
+// the filter names a mod, a check or a level PMT does not have.
 func (mcp *Service) buildReport(filter findingFilter) (health.Report, error) {
 	if err := mcp.checkFindings(filter); err != nil {
 		return health.Report{}, err
 	}
 	report, err := mcp.Health.BuildReport(nil)
-	findings := lo.Filter(report.Findings, func(finding health.Finding, _ int) bool {
-		modMatches := filter.Mod == "" || finding.Origin == filter.Mod || slices.Contains(finding.Mods, filter.Mod)
-		codeMatches := filter.Code == "" || finding.Code == filter.Code
-		levelMatches := filter.Level == "" || finding.Level == filter.Level
-		return modMatches && codeMatches && levelMatches
-	})
-	report.Findings = findings[:min(len(findings), cmp.Or(filter.Limit, defaultLimit))]
+	room := cmp.Or(filter.Limit, defaultLimit)
+	pick := func(findings []health.Finding) []health.Finding {
+		matches := lo.Filter(findings, func(finding health.Finding, _ int) bool {
+			modMatches := filter.Mod == "" || finding.Origin == filter.Mod || slices.Contains(finding.Mods, filter.Mod)
+			codeMatches := filter.Code == "" || finding.Code == filter.Code
+			levelMatches := filter.Level == "" || finding.Level == filter.Level
+			return modMatches && codeMatches && levelMatches
+		})
+		matches = matches[:min(len(matches), room)]
+		room -= len(matches)
+		return matches
+	}
+	report.Compatibility.Findings = pick(report.Compatibility.Findings)
+	for position := range report.Mods {
+		group := &report.Mods[position]
+		group.Findings, group.Languages = pick(group.Findings), pick(group.Languages)
+	}
 	return report, err
 }
 

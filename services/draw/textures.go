@@ -34,9 +34,6 @@ type library struct {
 	colors  map[PictureList]string // the color of the first definition that writes a list's color; "" for none
 }
 
-// defineCall is the data call that reads a define, whose database lists the folders of the game's icons.
-const defineCall = "GetDefine"
-
 // ExportPNG writes a PNG that the page made, such as a coat as drawn or one mip level of an image, to the given file,
 // which the user chose. It returns an error if the data is not a PNG or the file cannot be written.
 func (drw *Service) ExportPNG(target string, data []byte) error {
@@ -49,7 +46,7 @@ func (drw *Service) ExportPNG(target string, data []byte) error {
 // lookupDefineDatabase returns the database of the defines that the data call reading a define names: the one its
 // last argument names.
 func lookupDefineDatabase() string {
-	targets := game.GUI.CallTargets[defineCall]
+	targets := game.GUI.CallTargets[game.GUI.DefineCall]
 	return targets[len(targets)-1]
 }
 
@@ -147,7 +144,7 @@ func (library *library) findLevelFolder(kind string) string {
 		return ""
 	}
 	key := toDefineWords(kind) + game.GUI.FolderDefineSuffix
-	return strings.TrimSuffix(library.lookupDefine(library.ws.Game.GUIDefineGroup, key), "/")
+	return strings.TrimSuffix(library.lookupDefine(library.ws.Game.GUI.DefineGroup, key), "/")
 }
 
 // findLevelPicture returns the first picture of a level, such as icon_prestige_00, or "" if there is none.
@@ -247,8 +244,8 @@ func (library *library) listPictureDefines(list PictureList) (folder, prefix, su
 		return "", "", ""
 	}
 	stem := toDefineWords(list.Type) + "_" + strings.ToUpper(list.Field)
-	suffixStem := cmp.Or(library.ws.Game.GUISuffixStems[stem], stem)
-	group := library.ws.Game.GUIDefineGroup
+	suffixStem := cmp.Or(library.ws.Game.GUI.SuffixStems[stem], stem)
+	group := library.ws.Game.GUI.DefineGroup
 	return library.lookupDefine(group, stem+game.GUI.FolderDefineSuffix),
 		library.lookupDefine(group, stem+game.GUI.PrefixDefineSuffix),
 		library.lookupDefine(group, suffixStem+game.GUI.NameDefineSuffix)
@@ -401,7 +398,7 @@ func (library *library) listIconFolders() map[string]string {
 		return library.folders
 	}
 	library.folders = map[string]string{}
-	database, group := lookupDefineDatabase(), library.ws.Game.GUIDefineGroup
+	database, group := lookupDefineDatabase(), library.ws.Game.GUI.DefineGroup
 	for _, site := range library.mods.ListDefinitions(database) {
 		define := library.mods.ToReference(site).Name
 		key := library.ws.Schema.SplitNested(database, define)
@@ -508,7 +505,7 @@ func (resolver *resolver) resolvePicture(widget *Widget, property Property, call
 	if len(call.Steps) > 0 && !placeholder.Runtime {
 		resolver.resolveListedPicture(widget, property.Key, call)
 	}
-	if widget.Textures[property.Key] == "" && widget.Role != "skin" && widget.Placeholder == "" {
+	if widget.Textures[property.Key] == "" && !game.GUI.Slots[widget.Slot].Dresses && widget.Placeholder == "" {
 		widget.Placeholder = placeholder.Shape
 	}
 }
@@ -564,15 +561,14 @@ func listDefinitionImages(ws *workspace.Session, mods *index.Index, definition c
 	if definition.tree == nil {
 		return nil
 	}
-	rules := ws.Game.Illustrations
+	rules := ws.Game.GUI.Illustrations
 	folder, ok := definition.tree.FindChildValue(definition.statement, rules.FolderKey)
 	if !ok {
 		folder = rules.Folder
 	}
 	var images, conditional []string
 	for _, part := range listChildren(definition) {
-		_, isConditional := part.tree.FindChild(part.statement, rules.TriggerKey)
-		isConditional = isConditional && rules.TriggerKey != ""
+		_, isConditional := part.tree.FindChild(part.statement, game.TriggerKey)
 		last := part.tree.Statements[part.statement].Last
 		for _, inner := range part.tree.Statements[part.statement:max(last, part.statement+1)] {
 			value := part.tree.Unquoted(inner.Value)

@@ -1,24 +1,31 @@
-<!-- The sidebar's search: the query form, the hits, and Replace behind a confirmation. -->
+<!--
+  The sidebar's search: the query form, the hits grouped by file, and Replace behind a confirmation. A hit opens its
+  place in the editor, at the match.
+-->
 <script setup lang="ts">
 import { computed, shallowRef } from "vue";
 import { useMutation, useQuery } from "@pinia/colada";
 import { watchDebounced } from "@vueuse/core";
 
 import * as searchApi from "@services/search/service";
+import type { Site } from "@services/lsp/models";
 import type { Query } from "@services/search/models";
 
+import { confirm } from "../../lib/feedback";
 import { plural } from "../../lib/format";
 import { rootsQuery } from "../../queries";
+import { useEditorStore } from "../../stores/editor";
 import { useSearchStore } from "../../stores/search";
 import { useWorkspaceStore } from "../../stores/workspace";
-import ConfirmModal from "../../ui/ConfirmModal.vue";
 import OriginChip from "../../ui/OriginChip.vue";
-import SearchHits from "./SearchHits.vue";
 
+/** How many hits are listed open before the next files are folded. */
+const OPEN_HITS = 500;
+
+const editor = useEditorStore();
 const search = useSearchStore();
 const workspace = useWorkspaceStore();
 const toast = useToast();
-const confirm = useOverlay().create(ConfirmModal);
 
 const text = shallowRef("");
 const replacement = shallowRef("");
@@ -28,6 +35,8 @@ const wholeWord = shallowRef(false);
 const include = shallowRef("");
 const exclude = shallowRef("");
 const disabled = shallowRef(new Set<string>());
+// the files clicked, which are folded if they would be open and open if they would be folded
+const flips = shallowRef(new Set<string>());
 
 const { data: roots } = useQuery(() => ({ ...rootsQuery, enabled: workspace.isOpen() }));
 const origins = computed(() => [...new Set((roots.value ?? []).map((root) => root.origin))]);
@@ -40,6 +49,18 @@ const query = computed<Query>(() => ({
   exclude: exclude.value,
   origins: origins.value.filter((origin) => !disabled.value.has(origin)),
 }));
+// a folded file's lines are not split around their match until it opens
+const files = computed(() => {
+  let lineCount = 0;
+  return search.current().files.map(({ place, hits }) => {
+    const count = hits?.length ?? 0;
+    const open = lineCount < OPEN_HITS !== flips.value.has(place.key);
+    if (open) lineCount += count;
+    const folder = workspace.describeFolder(place);
+    return { place, count, lines: open ? (hits ?? []).map(describe) : [], open, folder };
+  });
+});
+const count = computed(() => files.value.reduce((sum, file) => sum + file.count, 0));
 
 const TOGGLES = [
   { label: "Regular expression", icon: "i-lucide-regex", on: regex },
@@ -53,17 +74,36 @@ const GLOBS = [
 
 watchDebounced([text, regex, matchCase, wholeWord, include, exclude, disabled], run, { debounce: 300 });
 
-/** Starts the search the form describes, if it has a text. */
+/** run starts the search the form describes, if it has a text. */
 function run(): void {
   if (text.value.trim()) search.search(query.value);
 }
 
-/** Ticks or unticks an origin in the search. */
+/** tick ticks or unticks an origin in the search. */
 function tick(origin: string, on: boolean): void {
   const next = new Set(disabled.value);
   if (on) next.delete(origin);
   else next.add(origin);
   disabled.value = next;
+}
+
+/** describe splits a hit's line around its match, with the text before the match trimmed at its start. */
+function describe(hit: Site): { line: number; column: number; before: string; match: string; after: string } {
+  const { text: line = "", range } = hit;
+  return {
+    line: range.startLineNumber,
+    column: range.startColumn,
+    before: line.slice(0, range.startColumn - 1).trimStart(),
+    match: line.slice(range.startColumn - 1, range.endColumn - 1),
+    after: line.slice(range.endColumn - 1),
+  };
+}
+
+/** flip folds an open file's hits, or opens a folded file's. */
+function flip(key: string): void {
+  const next = new Set(flips.value);
+  if (!next.delete(key)) next.add(key);
+  flips.value = next;
 }
 
 const { mutate: replaceAll } = useMutation({
@@ -167,8 +207,54 @@ const { mutate: replaceAll } = useMutation({
         </div>
       </UFormField>
     </div>
-    <div v-if="text.trim() || search.current().title" class="border-t border-default">
-      <SearchHits />
-    </div>
+    <section
+      v-if="search.current().title || (text.trim() && search.current().query)"
+      class="border-t border-default py-1"
+    >
+      <p class="flex flex-wrap items-center gap-x-2 px-2.5 pb-1 text-11 text-dimmed">
+        <span v-if="search.current().title" class="font-medium text-toned">{{ search.current().title }}</span>
+        {{ plural(count, "result") }} in {{ plural(files.length, "file") }}
+        <span v-if="search.current().running">· searching…</span>
+        <UBadge
+          v-if="search.current().capped"
+          label="Stopped here: narrow the search to see the rest"
+          color="warning"
+          variant="subtle"
+          size="sm"
+        />
+      </p>
+      <template v-for="file in files" :key="file.place.key">
+        <button
+          type="button"
+          class="flex h-6 w-full items-center gap-1.5 ps-1.5 pe-2.5 text-start text-12 whitespace-nowrap hover:bg-accented"
+          @click="flip(file.place.key)"
+        >
+          <UIcon
+            :name="file.open ? 'i-lucide-chevron-down' : 'i-lucide-chevron-right'"
+            class="size-3.5 shrink-0 text-dimmed"
+          />
+          <OriginChip :origin="file.place.origin" dot />
+          <span class="shrink-0 text-highlighted">{{ file.place.name }}</span>
+          <span class="min-w-0 truncate text-11 text-dimmed">{{ file.folder }}</span>
+          <UBadge :label="String(file.count)" size="sm" class="ms-auto shrink-0" />
+        </button>
+        <template v-if="file.open">
+          <button
+            v-for="(hit, index) in file.lines"
+            :key="index"
+            type="button"
+            class="flex h-5.5 w-full items-center ps-7 pe-2.5 text-start font-mono text-11 whitespace-nowrap text-toned hover:bg-accented"
+            :title="`${file.place.rel}:${hit.line}`"
+            @click="editor.show(file.place, { lineNumber: hit.line, column: hit.column }, 'navigate')"
+          >
+            <span class="truncate"
+              >{{ hit.before }}<b class="rounded-xs bg-(--accent-soft) font-medium text-highlighted">{{ hit.match }}</b
+              >{{ hit.after }}</span
+            >
+          </button>
+        </template>
+      </template>
+      <p v-if="!files.length && !search.current().running" class="px-2.5 py-1 text-12 text-dimmed">No results.</p>
+    </section>
   </div>
 </template>

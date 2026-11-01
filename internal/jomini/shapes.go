@@ -1,6 +1,7 @@
 package jomini
 
 import (
+	"path"
 	"sort"
 	"strconv"
 	"strings"
@@ -12,6 +13,9 @@ import (
 
 // precedences holds how tightly each operator of an expression binds. An operator that is not here binds nothing.
 var precedences = map[string]int{"+": 1, "-": 1, "*": 2, "/": 2}
+
+// NumberKey is the key that matches a key written as a number or a date, such as random_list's branches.
+const NumberKey = "<number>"
 
 // The predicates below tell what shape a written key or value has.
 
@@ -109,6 +113,12 @@ func (date Date) IsValid() bool {
 	return date.Month >= 1 && date.Month <= 12 && date.Day >= 0 && date.Day <= 31
 }
 
+// IsNumberKey reports whether a key is written as a number or a date, the keys that a <number> form stands for.
+func IsNumberKey(key string) bool {
+	_, date := ParseDate(key)
+	return date || IsNumber(key)
+}
+
 // SplitPrefixed splits text written as `prefix:name` into the prefix and the name. It returns false if there is
 // no prefix.
 func SplitPrefixed(text string) (prefix, name string, ok bool) {
@@ -140,6 +150,15 @@ func SplitChain(text string) []string {
 		}
 	}
 	return append(links, text[start:])
+}
+
+// MatchKeyPath reports whether the keys that lead to a statement fit a key path. A segment may be a glob, <number>,
+// or ** for any depth.
+func MatchKeyPath(pattern string, keys []string) bool {
+	if pattern == "" {
+		return len(keys) == 0
+	}
+	return matchSegments(strings.Split(pattern, "/"), keys)
 }
 
 // ColorParts returns the tag and the numbers of a block statement such as `rgb { 1 2 3 }`. The tag is "" for a block
@@ -340,4 +359,27 @@ func (tree *Tree) evaluateOperand(tokens []Span, cursor int) (float64, int, bool
 	}
 	number, ok := tree.resolveConstant(text, tokens[0].Start)
 	return number, cursor + 1, ok
+}
+
+// matchSegments reports whether keys fit the segments of a key path.
+func matchSegments(segments, keys []string) bool {
+	if len(segments) == 0 {
+		return len(keys) == 0
+	}
+	if segments[0] == "**" {
+		for skip := 0; skip <= len(keys); skip++ {
+			if matchSegments(segments[1:], keys[skip:]) {
+				return true
+			}
+		}
+		return false
+	}
+	if len(keys) == 0 {
+		return false
+	}
+	fits, _ := path.Match(segments[0], keys[0])
+	if segments[0] == NumberKey {
+		fits = IsNumberKey(keys[0])
+	}
+	return fits && matchSegments(segments[1:], keys[1:])
 }

@@ -16,7 +16,7 @@ import { statesQuery } from "../../../queries";
 import { useDrawStore } from "../../../stores/draw";
 import { useWorkspaceStore } from "../../../stores/workspace";
 import ScriptSnippet from "../../../ui/ScriptSnippet.vue";
-import { TYPE_ICONS } from "./picture";
+import { findTypeIcon } from "./properties";
 
 const { path, window } = defineProps<{ path: string; window: Window }>();
 
@@ -129,8 +129,8 @@ const {
 watch(() => file.value.selected, reset);
 
 /**
- * Merges the boxes of objects of one kind told apart only by their key into one box of chips, one chip a key, where
- * each asks one thing of two values, the same thing: the relations a character has to the player.
+ * mergeKinds merges the boxes of objects of one kind told apart only by their key into one box of chips, one chip a
+ * key, where each asks one thing of two values, the same thing: the relations a character has to the player.
  */
 function mergeKinds(list: Box[]): Box[] {
   const isSingle = (box: Box) =>
@@ -151,29 +151,31 @@ function mergeKinds(list: Box[]): Box[] {
   );
 }
 
-/** Whether a box is folded: a list's rows start folded, the rest open, and a fold by hand flips that. */
+/**
+ * isFolded reports whether a box is folded: a list's rows start folded, the rest open, and a fold by hand flips that.
+ */
 function isFolded(box: Box): boolean {
   return box.id.startsWith("item:") !== overrides.value.has(box.id);
 }
 
-/** Folds a box, or opens it. */
+/** fold folds a box, or opens it. */
 function fold(box: Box): void {
   const next = new Set(overrides.value);
   if (!next.delete(box.id)) next.add(box.id);
   overrides.value = next;
 }
 
-/** Lists the groups a box shows: its first rows, or every row once opened whole or while searching. */
+/** listRows lists the groups a box shows: its first rows, or every row once opened whole or while searching. */
 function listRows(box: Box): Group[] {
   return wholeBoxes.value.has(box.id) || query.value ? box.groups : box.groups.slice(0, FIRST);
 }
 
-/** Shows every row of a box. */
+/** showWhole shows every row of a box. */
 function showWhole(box: Box): void {
   wholeBoxes.value = new Set([...wholeBoxes.value, box.id]);
 }
 
-/** Whether a widget is the given one or lies under it. */
+/** isUnder reports whether a widget is the given one or lies under it. */
 function isUnder(id: number, holder: number): boolean {
   for (let at = id; ; at = widgets.value[at].parent) {
     if (at === holder) return true;
@@ -181,42 +183,42 @@ function isUnder(id: number, holder: number): boolean {
   }
 }
 
-/** Lists the values a group can be picked at, without every value and none. */
+/** listValues lists the values a group can be picked at, without every value and none. */
 function listValues(group: Group): string[] {
   return (group.options ?? []).filter((option) => option !== EVERY && option !== NONE);
 }
 
 /**
- * Converts a value to how the panel writes it: the text of the button that picks it, else the value without its type
- * as the start of a sentence.
+ * toCaption converts a value to how the panel writes it: the text of the button that picks it, else the value without
+ * its type as the start of a sentence.
  */
 function toCaption(group: Group, value: string): string {
   return group.captions?.[value] ?? LABELS[value] ?? toSentence(value.replace(/^\(\w+\)/, ""));
 }
 
-/** Converts a group's object to words: its kind and the key that picks it. */
+/** toTitle converts a group's object to words: its kind and the key that picks it. */
 function toTitle(group: Group): string {
   return [group.subject, group.key].filter(Boolean).join(" ");
 }
 
-/** Lists a group's choices in two sections: the values the window asks of it, then all and none. */
+/** listChoices lists a group's choices in two sections: the values the window asks of it, then all and none. */
 function listChoices(group: Group): { label: string; value: string }[][] {
   const toChoice = (value: string) => ({ label: toCaption(group, value), value });
   const lists = [listValues(group), [EVERY, NONE].filter((option) => group.options?.includes(option))];
   return lists.filter((list) => list.length).map((list) => list.map(toChoice));
 }
 
-/** Whether a group of one value holds: it is at that value or at every value. */
+/** isOn reports whether a group of one value holds: it is at that value or at every value. */
 function isOn(group: Group): boolean {
   return values.value[group.id] !== NONE;
 }
 
-/** Picks a group of one value on or off. */
+/** turn picks a group of one value on or off. */
 function turn(group: Group, on: boolean): void {
   store.pick({ [group.id]: on ? (listValues(group)[0] ?? EVERY) : NONE });
 }
 
-/** Outlines the widgets a group decides, or none. */
+/** outline outlines the widgets a group decides, or none. */
 function outline(group: Group | null): void {
   store.outline(path, group ? (states.value?.applies?.[group.id] ?? []) : []);
 }
@@ -277,7 +279,7 @@ function outline(group: Group | null): void {
     <section v-if="way.length" class="flex shrink-0 flex-col gap-2 border-b border-default p-3">
       <div v-for="step in way" :key="step.widget.id" class="rounded-lg border border-default bg-default p-2">
         <div class="mb-1 flex items-center gap-1.5 text-12">
-          <UIcon :name="TYPE_ICONS[step.widget.type] ?? 'i-lucide-square-dashed'" class="size-3.5 text-dimmed" />
+          <UIcon :name="findTypeIcon(step.widget.type)" class="size-3.5 text-dimmed" />
           <span class="truncate font-mono text-highlighted">{{ step.widget.name || step.widget.type }}</span>
           <span class="grow" />
           <UBadge

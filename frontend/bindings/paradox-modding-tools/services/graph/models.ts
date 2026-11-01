@@ -3,13 +3,10 @@
 
 // eslint-disable-next-line @typescript-eslint/ban-ts-comment
 // @ts-ignore: Unused imports
-import * as index$0 from "../../internal/index/models.js";
-// eslint-disable-next-line @typescript-eslint/ban-ts-comment
-// @ts-ignore: Unused imports
 import * as loc$0 from "../../internal/loc/models.js";
 // eslint-disable-next-line @typescript-eslint/ban-ts-comment
 // @ts-ignore: Unused imports
-import * as workspace$0 from "../workspace/models.js";
+import * as lsp$0 from "../lsp/models.js";
 
 /**
  * A Condition is one statement of a block of triggers in words, with the statements of its block under it.
@@ -53,7 +50,7 @@ export interface Condition {
 }
 
 /**
- * A Detail is what the page shows about one node: its texts, its keys, its firings and what it reads.
+ * A Detail is what the page shows about one node: its texts, its keys, its firings and the game rules it reads.
  */
 export interface Detail {
     /**
@@ -72,11 +69,6 @@ export interface Detail {
     "source": string;
 
     /**
-     * the definition's own trigger in words; nil for none
-     */
-    "trigger"?: Condition[] | null;
-
-    /**
      * the keys at the top of the definition, except its options
      */
     "sections": Section[] | null;
@@ -91,12 +83,6 @@ export interface Detail {
      * the node at the other end of each of its firings, by its id
      */
     "linked": { [_ in string]?: Node } | null;
-    "references": Node[] | null;
-
-    /**
-     * how many times the definition reads each of its references, by the node's id
-     */
-    "uses": { [_ in string]?: number } | null;
 
     /**
      * the game rules the definition reads
@@ -122,11 +108,6 @@ export interface Edge {
     "delay"?: string;
 
     /**
-     * the soonest it comes, in days; 0 for none, -1 for a value or a name
-     */
-    "delayDays": number;
-
-    /**
      * the blocks it is written inside, from the top of its definition
      */
     "steps"?: Step[] | null;
@@ -149,12 +130,7 @@ export interface Edge {
     /**
      * where the firing is written
      */
-    "place": workspace$0.Place;
-
-    /**
-     * counted from one
-     */
-    "line": number;
+    "site": lsp$0.Site;
 }
 
 /**
@@ -222,6 +198,11 @@ export interface Node {
     "background"?: string;
 
     /**
+     * Trigger is its own trigger in words. It is nil for none, for a fold, and outside a graph and a detail.
+     */
+    "trigger"?: Condition[] | null;
+
+    /**
      * the comment lines just above its definition, joined by newlines
      */
     "comment"?: string;
@@ -235,13 +216,7 @@ export interface Node {
      * CopyOrigin is the origin of the latest-loaded copy of its name that its definition hides; "" for none.
      */
     "copyOrigin"?: string;
-    "site": index$0.Site;
-    "place": workspace$0.Place;
-
-    /**
-     * counted from one
-     */
-    "line": number;
+    "site": lsp$0.Site;
 
     /**
      * its distance from the root, negative for a firer
@@ -354,12 +329,6 @@ export interface Step {
      * an option's name in words; "" for the other kinds
      */
     "title"?: string;
-
-    /**
-     * Group is the line of the if that starts the chain a branch is in, or of a weighted branch's keyword; 0 for the
-     * other kinds.
-     */
-    "group"?: number;
 
     /**
      * counted from one

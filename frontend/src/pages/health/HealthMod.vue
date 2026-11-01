@@ -11,17 +11,20 @@ import { WriteScaffold } from "@services/health/service";
 import type { Finding, Overview } from "@services/health/models";
 import type { Mod } from "@services/workspace/models";
 import {
-  countLines,
+  countFindings,
+  countFindingsBy,
   describeCount,
   describeLanguages,
   describeLogLine,
-  describeTitle,
+  findTopic,
+  splitSubject,
   list,
-  listFindingRows,
+  listSiteKeys,
   type Part,
   plural,
   splitFinding,
   toSiteKey,
+  TOPICS,
 } from "../../lib/format";
 import { codesQuery, keys } from "../../queries";
 import { useWorkspaceStore } from "../../stores/workspace";
@@ -38,7 +41,7 @@ const {
   overview = undefined,
   log,
   compatibility,
-  opened = -1,
+  opened = undefined,
 } = defineProps<{
   mod: Mod;
   /** The mod's problems, without its languages. */
@@ -50,10 +53,10 @@ const {
   log: Finding[];
   /** The findings of workspace compatibility. */
   compatibility: Finding[];
-  /** The open finding's index, or -1 for none. */
-  opened?: number;
+  /** The open finding, or undefined for none. */
+  opened?: Finding;
 }>();
-const emit = defineEmits<{ open: [index: number]; log: [index: number]; compatibility: [index: number] }>();
+const emit = defineEmits<{ open: [finding: Finding]; log: [finding: Finding]; compatibility: [finding: Finding] }>();
 const filter = defineModel<string>("filter", { default: "" });
 
 /** How many databases show before the rest fold behind a button. */
@@ -64,8 +67,9 @@ const toast = useToast();
 const cache = useQueryCache();
 const { data: codes } = useQuery(codesQuery);
 const allDatabases = shallowRef(false);
+// the tabs give their values as text or numbers
+const topic = shallowRef<string | number>("");
 
-const open = computed(() => findings[opened]);
 const subtitle = computed(() => {
   const judged = overview?.judged ?? [];
   return [
@@ -105,29 +109,43 @@ const coverage = computed(() =>
     };
   }),
 );
-/** The game's log rows by the place they name, each with its index. */
-const logPlaces = computed(() => groupBy(listFindingRows(log), (row) => toSiteKey(row.finding)));
-const hits = computed(() => (open.value ? (logPlaces.value[toSiteKey(open.value)] ?? []) : []));
+/** The topic tabs' items, "All topics" first and then each topic that has a finding. */
+const topicItems = computed(() => {
+  const counted = countFindingsBy(findings, (finding) => findTopic(finding.code, codes.value));
+  return [
+    { label: "All topics", value: "" },
+    ...Object.entries(TOPICS)
+      .filter(([id]) => counted[id])
+      .map(([id, label]) => ({ label: `${label} ${describeCount(counted[id] ?? 0)}`, value: id })),
+  ];
+});
+/** The findings of the picked topic, or all of them if no topic is picked. */
+const topicFindings = computed(() =>
+  topic.value ? findings.filter((finding) => findTopic(finding.code, codes.value) === topic.value) : findings,
+);
+/** The game's log rows by the place they name. */
+const logPlaces = computed(() => groupBy(log, toSiteKey));
+const hits = computed(() => (opened ? listHits(opened) : []));
 /** How many lines of the game's log are at the open problem's place, repeats included. */
-const hitLines = computed(() => countLines(hits.value.map((hit) => hit.finding)));
-/** The index of the compatibility finding about the file where another mod defines the open problem's name. */
+const hitLines = computed(() => countFindings(hits.value));
+/** The compatibility finding about the file where another mod defines the open problem's name. */
 const related = computed(() => {
-  const path = open.value?.defined?.[0]?.place.path;
+  const path = opened?.defined?.[0]?.place.path;
   return path
-    ? compatibility.findIndex(
+    ? compatibility.find(
         (finding) => finding.code === "removed-names" && finding.sites?.some((site) => site.place.path === path),
       )
-    : -1;
+    : undefined;
 });
 /**
  * The related compatibility finding, as parts: the file it is about, then its message. It is empty if there is no
  * such finding.
  */
 const relation = computed((): Part[] => {
-  const other = compatibility[related.value];
+  const other = related.value;
   return other
     ? [
-        ...describeTitle(other),
+        ...splitSubject(other),
         { text: ": ", style: "" },
         ...splitFinding(other, codes.value),
         { text: " Open it in workspace compatibility.", style: "" },
@@ -142,6 +160,11 @@ const { mutate: writeScaffold, isLoading: scaffolding } = useMutation({
     void cache.invalidateQueries({ key: keys.health });
   },
 });
+
+/** listHits returns the game's log rows at the places of a finding and of the findings folded into it. */
+function listHits(finding: Finding): Finding[] {
+  return listSiteKeys(finding).flatMap((place) => logPlaces.value[place] ?? []);
+}
 </script>
 
 <template>
@@ -183,19 +206,62 @@ const { mutate: writeScaffold, isLoading: scaffolding } = useMutation({
         />
       </div>
     </div>
+    <UCollapsible
+      v-if="coverage.length"
+      class="flex shrink-0 flex-col gap-1.5 px-4 pb-3"
+      :ui="{ content: 'flex flex-col gap-1.5' }"
+    >
+      <button type="button" class="group flex items-center gap-2 self-start text-13 text-highlighted">
+        <UIcon
+          name="i-lucide-chevron-right"
+          class="size-3.5 shrink-0 text-dimmed transition-transform group-data-[state=open]:rotate-90"
+        />
+        <UIcon name="i-lucide-info" class="size-3.5 shrink-0" style="color: var(--ui-info)" />
+        Languages
+        <span class="text-dimmed tabular-nums">{{ describeCount(coverage.length) }}</span>
+      </button>
+      <template #content>
+        <div
+          v-for="language in coverage"
+          :key="language.name"
+          class="flex flex-wrap items-center gap-x-2 gap-y-1 ps-11 text-11"
+        >
+          <span class="w-36 shrink-0 truncate text-toned">{{ language.label }}</span>
+          <UProgress :model-value="language.percent" size="xs" color="info" class="w-24 shrink-0" />
+          <span class="shrink-0 text-dimmed tabular-nums">{{ language.text }}</span>
+          <span class="grow" />
+          <UButton
+            v-if="language.missing"
+            :label="`Write the ${plural(language.missing, `missing ${language.label} key`)}`"
+            size="xs"
+            :loading="scaffolding"
+            @click="writeScaffold(language.name)"
+          />
+        </div>
+      </template>
+    </UCollapsible>
     <HealthList
       v-model:filter="filter"
-      topics
-      :info-check="languages[0]?.code ?? ''"
-      :findings="findings"
+      :findings="topicFindings"
       empty="No problems."
       :opened="opened"
       class="grow"
       @open="emit('open', $event)"
     >
+      <template #tabs>
+        <UTabs
+          v-model="topic"
+          :items="topicItems"
+          :content="false"
+          size="xs"
+          variant="pill"
+          color="neutral"
+          :ui="{ root: 'max-w-full overflow-x-auto', list: 'w-max' }"
+        />
+      </template>
       <template #trailing="{ finding }">
         <UBadge
-          v-if="logPlaces[toSiteKey(finding)]"
+          v-if="listHits(finding).length"
           label="in the log"
           color="neutral"
           variant="subtle"
@@ -203,39 +269,10 @@ const { mutate: writeScaffold, isLoading: scaffolding } = useMutation({
           class="shrink-0"
         />
       </template>
-      <template #info>
-        <div class="flex items-start gap-2.5 px-3 py-2.5">
-          <UIcon name="i-lucide-info" class="mt-0.75 size-3.5 shrink-0" style="color: var(--ui-info)" />
-          <div class="flex min-w-0 grow flex-col gap-1.5">
-            <span class="text-13 text-highlighted">Languages</span>
-            <div
-              v-for="language in coverage"
-              :key="language.name"
-              class="flex flex-wrap items-center gap-x-2 gap-y-1 text-11"
-            >
-              <span class="w-36 shrink-0 truncate text-toned">{{ language.label }}</span>
-              <UProgress :model-value="language.percent" size="xs" color="info" class="w-24 shrink-0" />
-              <span class="shrink-0 text-dimmed tabular-nums">{{ language.text }}</span>
-              <span class="grow" />
-              <UButton
-                v-if="language.missing"
-                :label="`Write the ${plural(language.missing, `missing ${language.label} key`)}`"
-                size="xs"
-                :loading="scaffolding"
-                @click="writeScaffold(language.name)"
-              />
-            </div>
-          </div>
-        </div>
-      </template>
       <template #detail>
-        <HealthDetail v-if="open" :finding="open" :findings="findings">
-          <HealthSection v-if="relation.length" title="Related">
-            <HealthLink
-              :level="compatibility[related]?.level ?? ''"
-              :parts="relation"
-              @open="emit('compatibility', related)"
-            />
+        <HealthDetail v-if="opened" :finding="opened">
+          <HealthSection v-if="related" title="Related">
+            <HealthLink :level="related.level" :parts="relation" @open="emit('compatibility', related)" />
           </HealthSection>
           <HealthSection v-if="hits[0]" title="In the game's log" :count="hitLines">
             <template #actions>
@@ -244,11 +281,11 @@ const { mutate: writeScaffold, isLoading: scaffolding } = useMutation({
                 icon="i-lucide-terminal"
                 variant="ghost"
                 size="xs"
-                @click="hits[0] && emit('log', hits[0].index)"
+                @click="hits[0] && emit('log', hits[0])"
               />
             </template>
             <p class="font-mono text-11.5 leading-4.5 wrap-anywhere text-toned">
-              {{ describeLogLine(hits[0].finding) }}
+              {{ describeLogLine(hits[0]) }}
             </p>
           </HealthSection>
         </HealthDetail>

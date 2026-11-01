@@ -362,7 +362,7 @@ func (dumps *Dumps) parseDataTypes(text string) {
 // buildDumps reads the dumps of the install and builds what they declare. What they lack comes from the shipped
 // backup. It records where the dumps came from and whether they are stale.
 func (schema *Schema) buildDumps(row *game.Game, installPath string) error {
-	dumps, err := ReadDumps(game.FindDumpDirs(row.ID, installPath))
+	dumps, err := ReadDumps(row.FindDumpDirs(installPath))
 	if err != nil {
 		return err
 	}
@@ -482,7 +482,8 @@ func parseArguments(title, prose, usage string) *Field {
 	field, found := &Field{Source: game.SourceDumps}, false
 	for line := range strings.Lines(prose) {
 		if match := argumentLine.FindStringSubmatch(line); match != nil && match[1] != title && jomini.IsIdentifier(match[1]) {
-			field.buildChild(match[1]).Source, found = game.SourceDumps, true
+			field.buildChild(match[1], game.SourceDumps)
+			found = true
 		}
 	}
 	tree := jomini.Parse(usage)
@@ -519,8 +520,7 @@ func buildArguments(tree *jomini.Tree, statement int32, field *Field) {
 				if !jomini.IsIdentifier(part) {
 					continue
 				}
-				argument := field.buildChild(part)
-				argument.Source = game.SourceDumps
+				argument := field.buildChild(part, game.SourceDumps)
 				term := strings.TrimSuffix(strings.TrimPrefix(tree.Text(inner.Value), "<"), ">")
 				_, known := game.DocTypes[ToPhrase(term)]
 				switch {
@@ -576,12 +576,13 @@ func (schema *Schema) buildKeywordShapes() {
 		if !held || command == nil || row.Shape == "" || row.Shape == "enclosing" {
 			continue
 		}
-		command.makeArguments(game.SourceDumps).buildChild(key).Shape.resolve(row.Shape, game.SourceRegistry)
+		command.makeArguments(game.SourceDumps).buildChild(key, game.SourceNone).Shape.resolve(row.Shape, game.SourceRegistry)
 	}
 }
 
 // buildFamilies makes the commands of one list family, any_x, every_x, random_x and ordered_x, share the keys of their
-// arguments. Each command keeps its own arguments field and shape. A command with no arguments gets none.
+// arguments, and keeps the families. Each command keeps its own arguments field and shape. A command with no arguments
+// gets none.
 func (schema *Schema) buildFamilies() {
 	families := map[string][]*Field{}
 	for _, name := range slices.Sorted(maps.Keys(schema.Commands)) {
@@ -599,6 +600,7 @@ func (schema *Schema) buildFamilies() {
 		for _, member := range members {
 			member.Children = united.Children
 		}
+		schema.families = append(schema.families, members)
 	}
 }
 

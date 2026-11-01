@@ -12,27 +12,22 @@ import (
 	"paradox-modding-tools/internal/game"
 	"paradox-modding-tools/internal/index"
 	"paradox-modding-tools/internal/schema"
+	"paradox-modding-tools/services/lsp"
 	"paradox-modding-tools/services/workspace"
 )
 
 // A LexiconRow is one effect, trigger, link, scope or data function: one the game's dumps declare, with the dump's
 // text, or a scripted effect or trigger, with how a call to it is written. Each has example uses from the index.
 type LexiconRow struct {
-	Class    string    `json:"class"` // effect, trigger, link, scope, function
-	Name     string    `json:"name"`
-	Blurb    string    `json:"blurb"`
-	Usage    string    `json:"usage"`
-	Scopes   []string  `json:"scopes,omitempty"`
-	Target   string    `json:"target,omitempty"`
-	Examples []Example `json:"examples"`
+	Class    string     `json:"class"` // effect, trigger, link, scope, function
+	Name     string     `json:"name"`
+	Blurb    string     `json:"blurb"`
+	Usage    string     `json:"usage"`
+	Scopes   []string   `json:"scopes,omitempty"`
+	Target   string     `json:"target,omitempty"`
+	Examples []lsp.Site `json:"examples"`
 	// Defined is where the copy the game keeps of a scripted effect or trigger is, or nil for what the dumps declare.
-	Defined *Example `json:"defined,omitempty"`
-}
-
-// An Example is one place in the workspace's files: where a lexicon row's name is used, or defined.
-type Example struct {
-	Place workspace.Place `json:"place"`
-	Line  int             `json:"line"` // counted from one
+	Defined *lsp.Site `json:"defined,omitempty"`
 }
 
 // declaredClasses are the lexicon classes of the commands the dumps declare, each with the word the dumps use for
@@ -45,13 +40,32 @@ var declaredClasses = map[string]string{
 
 // BuildLexicon builds the lexicon rows of the given class: effect, trigger, link, scope or function. Effects and
 // triggers take in the scripted ones the workspace defines. The rows are sorted by name, letter case aside, so each
-// first letter is one run. It returns an error if no workspace is open or the class is none of those.
+// first letter is one run. A class built already for the current index is answered from memory. It returns an error
+// if no workspace is open or the class is none of those.
 func (wik *Service) BuildLexicon(class string) ([]LexiconRow, error) {
 	ws, err := wik.Workspace.Session()
 	if err != nil {
 		return nil, err
 	}
 	mods := ws.Mods.Load()
+	wik.mu.Lock()
+	defer wik.mu.Unlock()
+	if wik.mods != mods {
+		wik.lexicon, wik.mods = map[string][]LexiconRow{}, mods
+	}
+	if rows, ok := wik.lexicon[class]; ok {
+		return rows, nil
+	}
+	rows, err := buildLexicon(ws, mods, class)
+	if err == nil {
+		wik.lexicon[class] = rows
+	}
+	return rows, err
+}
+
+// buildLexicon builds the lexicon rows of the given class from the given index of the mods, as BuildLexicon describes
+// them. It returns an error if the class is none of the five.
+func buildLexicon(ws *workspace.Session, mods *index.Index, class string) ([]LexiconRow, error) {
 	var rows []LexiconRow
 	switch declared := declaredClasses[class]; {
 	case declared != "":
@@ -66,7 +80,7 @@ func (wik *Service) BuildLexicon(class string) ([]LexiconRow, error) {
 		rows = append(rows, listScripted(ws, mods, class)...)
 	case class == "scope":
 		for name := range ws.Schema.Scopes {
-			rows = append(rows, LexiconRow{Class: class, Name: name, Examples: []Example{}})
+			rows = append(rows, LexiconRow{Class: class, Name: name, Examples: []lsp.Site{}})
 		}
 	case class == "function":
 		for _, dataType := range ws.Schema.DataTypes {
@@ -88,9 +102,9 @@ func (wik *Service) BuildLexicon(class string) ([]LexiconRow, error) {
 
 // toExamples converts each given place where the game's own files use a name to an example. Each carries its place in
 // the open workspace, as the given index of the mods holds it.
-func toExamples(ws *workspace.Session, mods *index.Index, examples []schema.Example) []Example {
-	return lo.Map(examples, func(example schema.Example, _ int) Example {
-		return Example{Place: ws.Locate(mods, example.Path), Line: example.Line + 1}
+func toExamples(ws *workspace.Session, mods *index.Index, examples []schema.Example) []lsp.Site {
+	return lo.Map(examples, func(example schema.Example, _ int) lsp.Site {
+		return lsp.Site{Place: ws.Locate(mods, example.Path), Line: example.Line + 1}
 	})
 }
 
@@ -132,16 +146,11 @@ func makeScripted(ws *workspace.Session, mods *index.Index, class string, refere
 		}
 	}
 	uses := mods.ListUses(reference.Database, reference.Name)
-	defined := locateExample(ws, mods, kept)
+	defined := lsp.MakeSite(ws, mods, kept)
 	return LexiconRow{
 		Class: class, Name: reference.Name, Usage: usage, Defined: &defined,
-		Examples: lo.Map(uses[:min(len(uses), schema.ExampleCount)], func(use index.Site, _ int) Example {
-			return locateExample(ws, mods, use)
+		Examples: lo.Map(uses[:min(len(uses), schema.ExampleCount)], func(use index.Site, _ int) lsp.Site {
+			return lsp.MakeSite(ws, mods, use)
 		}),
 	}
-}
-
-// locateExample returns the example of one site of the index: its file's place and its line.
-func locateExample(ws *workspace.Session, mods *index.Index, site index.Site) Example {
-	return Example{Place: ws.Locate(mods, mods.File(site).Path), Line: int(mods.Occurrence(site).Line) + 1}
 }

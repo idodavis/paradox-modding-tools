@@ -99,7 +99,7 @@ func listPairFindings(ws *workspace.Session, mods *index.Index, findings []Findi
 
 // findPair returns two mods in load order. It returns false if either is not in the workspace or they are one mod.
 func findPair(ws *workspace.Session, first, second string) ([]string, bool) {
-	ids := lo.FilterMap(ws.Order, func(mod workspace.Mod, _ int) (string, bool) {
+	ids := lo.FilterMap(*ws.Order.Load(), func(mod workspace.Mod, _ int) (string, bool) {
 		return mod.ID, mod.ID == first || mod.ID == second
 	})
 	return ids, len(ids) == 2

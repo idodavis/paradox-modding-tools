@@ -5,13 +5,16 @@
 <script setup lang="ts">
 import type { ToastProps } from "@nuxt/ui";
 import { useMutation, useQuery } from "@pinia/colada";
-import { Clipboard, Events } from "@wailsio/runtime";
+import { Events } from "@wailsio/runtime";
 import { computed, onScopeDispose, shallowRef, watch } from "vue";
 import { useRoute } from "vue-router";
 
 import * as app from "@services/app/service";
+import type { Progress } from "@services/wiki/models";
+import type { Scanning } from "@services/workspace/models";
+import { copyText } from "../lib/feedback";
 import { day, installLine } from "../lib/format";
-import { crashedQuery, releasesQuery, stateQuery, updateQuery, versionQuery, windowsQuery } from "../queries";
+import { crashedQuery, releasesQuery, stateQuery, updateQuery, versionQuery } from "../queries";
 import { useAgentStore } from "../stores/agent";
 import { describeWindow, THIS_WINDOW, useWindowsStore } from "../stores/windows";
 import { isWorkspacePage, PAGES, PANE_HELP } from "./pages";
@@ -22,25 +25,24 @@ const windows = useWindowsStore();
 const agent = useAgentStore();
 
 const page = computed(() => (route.name ? PAGES[route.name] : undefined));
+// the dot of the agent's line: waiting for the user, working, or done
+const agentDot = computed(() => {
+  if (!agent.active) return "";
+  if (agent.isWaiting(agent.active)) return "bg-warning";
+  return agent.active.state === "running" ? "animate-pulse bg-primary" : "bg-success";
+});
 const { data: state } = useQuery(stateQuery);
 const { data: version } = useQuery(versionQuery);
 const { data: update, refetch: checkUpdate, isLoading: checking } = useQuery({ ...updateQuery, staleTime: 3_600_000 });
 const { data: releases, refetch: refetchReleases } = useQuery({ ...releasesQuery, enabled: false });
 const { data: crashed } = useQuery(crashedQuery);
-const { data: names } = useQuery(windowsQuery);
 const { mutate: applyUpdate } = useMutation({ mutation: () => app.ApplyUpdate() });
 const { mutate: copyDiagnostics } = useMutation({
-  mutation: async () => {
-    await Clipboard.SetText(await app.BuildDiagnostics());
-    toast.add({
-      title: "Diagnostics copied",
-      description: "Paste them into a bug report on GitHub.",
-      color: "success",
-    });
-  },
+  mutation: async () =>
+    copyText(await app.BuildDiagnostics(), "Diagnostics", "Paste them into a bug report on GitHub."),
 });
 
-const wiki = shallowRef<{ done: number; total: number } | null>(null);
+const wiki = shallowRef<Progress | null>(null);
 onScopeDispose(Events.On("wiki:progress", ({ data }) => (wiki.value = data)));
 onScopeDispose(
   Events.On("wiki:updated", ({ data }) => {
@@ -50,7 +52,7 @@ onScopeDispose(
 );
 
 // the install's scan while a workspace opens, as the last stage it reported
-const scan = shallowRef<{ stage: string; percent: number } | null>(null);
+const scan = shallowRef<Scanning | null>(null);
 onScopeDispose(Events.On("install:scanning", ({ data }) => (scan.value = data)));
 for (const event of ["install:scanned", "workspace:opened", "workspace:failed"] as const) {
   onScopeDispose(Events.On(event, () => (scan.value = null)));
@@ -58,7 +60,8 @@ for (const event of ["install:scanned", "workspace:opened", "workspace:failed"] 
 
 // the other windows, each brought to the front from the menu of the main window
 const others = computed(() =>
-  (names.value ?? [])
+  windows
+    .listWindows()
     .filter((name) => name !== THIS_WINDOW)
     .map((name) => ({ label: describeWindow(name), onSelect: () => windows.showWindow(name) })),
 );
@@ -136,17 +139,8 @@ const ITEM = "flex h-6 items-center gap-1.25 hover:text-highlighted";
     <div id="status-start" class="contents" />
     <span class="grow" />
     <div id="status-end" class="contents" />
-    <button v-if="agent.status && agent.active" type="button" :class="ITEM" @click="agent.isPaneOpen = true">
-      <span
-        class="size-1.5 shrink-0 rounded-full"
-        :class="
-          agent.isWaiting(agent.active)
-            ? 'bg-warning'
-            : agent.active.state === 'running'
-              ? 'animate-pulse bg-primary'
-              : 'bg-success'
-        "
-      />
+    <button v-if="agent.status && agent.active" type="button" :class="ITEM" @click="agent.showPane()">
+      <span class="size-1.5 shrink-0 rounded-full" :class="agentDot" />
       {{ agent.status }}
     </button>
     <span v-if="wiki" class="flex items-center gap-1.25 tabular-nums">

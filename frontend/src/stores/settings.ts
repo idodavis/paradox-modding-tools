@@ -15,22 +15,25 @@ import * as app from "@services/app/service";
 import { settingsQuery, stateQuery } from "../queries";
 import { useWorkspaceStore } from "./workspace";
 
-/** The games as the frontend draws them, by Go's id: each game's icon. A game's theme family has the game's id. */
+/** GAMES holds the games as the frontend draws them, by Go's id: each game's icon. A game's theme family has its id. */
 export const GAMES: readonly { id: string; icon: string }[] = [
   { id: "ck3", icon: ck3Icon },
   { id: "vic3", icon: vic3Icon },
   { id: "eu5", icon: eu5Icon },
 ];
 
-/** The theme families: pmt, catppuccin, one, pierre, and one per GAMES row. */
-export const THEME_FAMILIES: readonly { id: string; label: string }[] = [
-  { id: "pmt", label: "PMT" },
-  { id: "catppuccin", label: "Catppuccin" },
-  { id: "one", label: "One" },
-  { id: "pierre", label: "Pierre Soft" },
-  { id: "ck3", label: "Crusader Kings" },
-  { id: "eu5", label: "Europa Universalis" },
-  { id: "vic3", label: "Victoria" },
+/**
+ * THEME_FAMILIES holds the theme families: pmt, catppuccin, one, pierre, and one per GAMES row. Each has the note the
+ * Appearance page shows under its name.
+ */
+export const THEME_FAMILIES: readonly { id: string; label: string; note: string }[] = [
+  { id: "pmt", label: "PMT", note: "PMT's own" },
+  { id: "catppuccin", label: "Catppuccin", note: "Mocha and Latte" },
+  { id: "one", label: "One", note: "One Dark and One Light" },
+  { id: "pierre", label: "Pierre Soft", note: "Pierre Dark Soft and Pierre Light Soft" },
+  { id: "ck3", label: "Crusader Kings", note: "CK3 workspaces" },
+  { id: "eu5", label: "Europa Universalis", note: "EU5 workspaces" },
+  { id: "vic3", label: "Victoria", note: "Vic3 workspaces" },
 ];
 
 /** gameIcon returns the URL of a game's icon. It is "" for a game the app has no icon for. */
@@ -54,16 +57,16 @@ export const useSettingsStore = defineStore("settings", () => {
   const systemDark = usePreferredDark();
   const colorMode = useColorMode();
 
-  /** A setting's value, which is its default when it was never set. It is "" for a key the catalog lacks. */
+  /** value returns a setting's value, its default if never set. It is "" for a key the catalog lacks. */
   const value = (key: string): string => values.value?.[key] ?? "";
 
-  /** Whether a setting that is a switch is on. */
+  /** isOn reports whether a setting that is a switch is on. */
   const isOn = (key: string): boolean => value(key) === "true";
 
-  /** Writes a setting. The config:changed event then refreshes the query. */
+  /** write writes a setting. The config:changed event then refreshes the query. */
   const write = (key: string, value: string): void => mutate({ key, value });
 
-  /** Puts an item in a setting that lists items with commas, or takes it out. An item put in goes last, once. */
+  /** writeItem puts an item in a setting that lists items with commas, or takes it out. A new item goes last, once. */
   const writeItem = (key: string, item: string, listed: boolean): void => {
     const items = value(key)
       .split(",")
@@ -71,7 +74,7 @@ export const useSettingsStore = defineStore("settings", () => {
     write(key, (listed ? [...items, item] : items).join(","));
   };
 
-  /** The theme in force: the family and whether dark, from the settings and the system. */
+  /** theme returns the theme in force: the family and whether it is dark, from the settings and the system. */
   const theme = (): { family: string; dark: boolean } => {
     const game = isOn("appearance.matchGame") ? GAMES.find((row) => row.id === state.value?.game?.id) : undefined;
     return {
@@ -81,8 +84,8 @@ export const useSettingsStore = defineStore("settings", () => {
   };
 
   /**
-   * How every code view sets its code, under Monaco's option keys: the font, text size and line height, the padding
-   * above the first line in pixels, and how many digits the line numbers keep room for.
+   * codeFont returns how every code view sets its code, under Monaco's option keys: the font, text size and line
+   * height, the padding above the first line in pixels, and how many digits the line numbers keep room for.
    */
   const codeFont = (): {
     fontFamily: string;

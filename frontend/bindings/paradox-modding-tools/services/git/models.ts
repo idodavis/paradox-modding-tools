@@ -48,7 +48,6 @@ export interface Commit {
      */
     "short": string;
     "parents": string[] | null;
-    "author": string;
     "date": string;
     "subject": string;
 
@@ -92,6 +91,18 @@ export interface Ref {
 }
 
 /**
+ * A Repository is one git repository among the workspace's mods: its root folder, and the mods in it in load order.
+ */
+export interface Repository {
+    "root": string;
+
+    /**
+     * the mods' ids
+     */
+    "mods": string[] | null;
+}
+
+/**
  * A Status is what git status reports for one repository.
  */
 export interface Status {
@@ -109,8 +120,8 @@ export interface Status {
     "changes": Change[] | null;
 
     /**
-     * Ignored is the files and folders git ignores, each as a full path; a folder ends with a separator and stands for
-     * everything in it.
+     * Ignored is where the files and folders git ignores are in the open workspace; a folder stands for everything in
+     * it. They are empty places while none is open.
      */
-    "ignored": string[] | null;
+    "ignored": workspace$0.Place[] | null;
 }

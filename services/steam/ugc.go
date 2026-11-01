@@ -36,17 +36,16 @@ type Client struct {
 
 // Steam's own numbers, as its Workshop headers give them.
 const (
-	resultOK               = 1              // the result code of a call that worked
-	resultNotFound         = 9              // the result code of an item Steam does not find
-	communityFileType      = 0              // the file type of a mod's item
-	imagePreviewType       = 0              // the type of preview that is a picture
-	videoPreviewType       = 1              // the type of preview that is a YouTube video
-	subscriptionsStatistic = 0              // the statistic that counts an item's subscribers
-	invalidHandle          = math.MaxUint64 // what an update or a query handle is when Steam made none
-	invalidCall            = 0              // what a call is when Steam started none
-	pollInterval           = 100 * time.Millisecond
-	downloadTimeout        = 10 * time.Minute
-	watchLink              = "https://www.youtube.com/watch?v=" // the link to watch a video, before its id
+	resultOK          = 1              // the result code of a call that worked
+	resultNotFound    = 9              // the result code of an item Steam does not find
+	communityFileType = 0              // the file type of a mod's item
+	imagePreviewType  = 0              // the type of preview that is a picture
+	videoPreviewType  = 1              // the type of preview that is a YouTube video
+	invalidHandle     = math.MaxUint64 // what an update or a query handle is when Steam made none
+	invalidCall       = 0              // what a call is when Steam started none
+	pollInterval      = 100 * time.Millisecond
+	downloadTimeout   = 10 * time.Minute
+	watchLink         = "https://www.youtube.com/watch?v=" // the link to watch a video, before its id
 )
 
 // The stages of an upload that a Progress names.
@@ -148,7 +147,6 @@ var api struct {
 	createQuery         func(ugc uintptr, ids *uint64, count uint32) uint64
 	sendQuery           func(ugc uintptr, query uint64) uint64
 	getQueryResult      func(ugc uintptr, query uint64, index uint32, details unsafe.Pointer) bool
-	getStatistic        func(ugc uintptr, query uint64, index uint32, statistic int32, value *uint64) bool
 	releaseQuery        func(ugc uintptr, query uint64) bool
 	setLongDescription  func(ugc uintptr, query uint64, enable bool) bool
 	setPreviewsReturned func(ugc uintptr, query uint64, enable bool) bool
@@ -190,7 +188,6 @@ var bindings = map[string]any{
 	"SteamAPI_ISteamUGC_CreateQueryUGCDetailsRequest":     &api.createQuery,
 	"SteamAPI_ISteamUGC_SendQueryUGCRequest":              &api.sendQuery,
 	"SteamAPI_ISteamUGC_GetQueryUGCResult":                &api.getQueryResult,
-	"SteamAPI_ISteamUGC_GetQueryUGCStatistic":             &api.getStatistic,
 	"SteamAPI_ISteamUGC_ReleaseQueryUGCRequest":           &api.releaseQuery,
 	"SteamAPI_ISteamUGC_SetReturnLongDescription":         &api.setLongDescription,
 	"SteamAPI_ISteamUGC_SetReturnAdditionalPreviews":      &api.setPreviewsReturned,
@@ -302,9 +299,6 @@ func (client *Client) FetchDetails(workshopID string) (Details, error) {
 		return Details{}, err
 	}
 	details := decodeDetails(raw)
-	var subscribers uint64
-	api.getStatistic(client.ugc, query, 0, subscriptionsStatistic, &subscribers)
-	details.Subscribers = int(subscribers)
 	details.Previews = client.listQueryPreviews(query)
 	details.Dependencies = client.listChildren(query, raw)
 	details.DLC, details.DLCCount, err = client.fetchDLC(id)
@@ -359,10 +353,7 @@ func (client *Client) fetchDLC(id uint64) ([]string, int, error) {
 		return nil, 0, nil
 	}
 	call := api.getAppDependencies(client.ugc, id)
-	result, err := client.fetchResult(call, appDependenciesResultID, appDependenciesResultBytes, nil)
-	if err == nil {
-		err = toResultError(result, resultCode)
-	}
+	result, err := client.fetchOK(call, appDependenciesResultID, appDependenciesResultBytes, nil)
 	if err != nil {
 		return nil, 0, err
 	}
@@ -423,10 +414,7 @@ func toText(field []byte) string {
 // has not accepted the Workshop's legal agreement yet.
 func (client *Client) CreateItem() (string, error) {
 	call := api.createItem(client.ugc, uint32(client.appID), communityFileType)
-	result, err := client.fetchResult(call, createItemResultID, createItemResultBytes, nil)
-	if err == nil {
-		err = toResultError(result, resultCode)
-	}
+	result, err := client.fetchOK(call, createItemResultID, createItemResultBytes, nil)
 	if err != nil {
 		return "", err
 	}
@@ -479,12 +467,9 @@ func (client *Client) Submit(workshopID string, params Params, progress func(Pro
 		}
 	}
 	call := api.submit(client.ugc, update, listing.Changelog)
-	result, err := client.fetchResult(call, submitItemUpdateResultID, submitItemUpdateResultBytes, report)
+	result, err := client.fetchOK(call, submitItemUpdateResultID, submitItemUpdateResultBytes, report)
 	if err == nil && result[submitItemUpdateResultAgreement] != 0 {
 		err = errAgreement
-	}
-	if err == nil {
-		err = toResultError(result, resultCode)
 	}
 	if err != nil {
 		return err
@@ -563,11 +548,7 @@ func (client *Client) applyChanges(ids []string, change func(id uint64) uint64, 
 		if err != nil {
 			return fmt.Errorf("%q is not a Steam id", text)
 		}
-		result, err := client.fetchResult(change(value), callbackID, size, nil)
-		if err == nil {
-			err = toResultError(result, resultCode)
-		}
-		if err != nil {
+		if _, err := client.fetchOK(change(value), callbackID, size, nil); err != nil {
 			return err
 		}
 	}
@@ -678,6 +659,16 @@ func (client *Client) fetchResult(call uint64, callbackID, size int32, poll func
 		return nil, errors.New("steam could not return the result of the call")
 	}
 	return result, nil
+}
+
+// fetchOK waits for one of Steam's calls to finish and returns its result. While it waits it calls a function, if
+// any. It returns an error if Steam started no call, the call failed, or the result's code says it did not work.
+func (client *Client) fetchOK(call uint64, callbackID, size int32, poll func()) ([]byte, error) {
+	result, err := client.fetchResult(call, callbackID, size, poll)
+	if err != nil {
+		return nil, err
+	}
+	return result, toResultError(result, resultCode)
 }
 
 // toResultError returns an error unless a result's code says the call worked. An item Steam does not find gets an

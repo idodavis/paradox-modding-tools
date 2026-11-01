@@ -1,6 +1,7 @@
 package files
 
 import (
+	"archive/zip"
 	"bytes"
 	"encoding/gob"
 	"errors"
@@ -12,6 +13,7 @@ import (
 	"strings"
 	"unicode/utf8"
 
+	"github.com/samber/lo"
 	"golang.org/x/text/encoding/charmap"
 )
 
@@ -155,4 +157,45 @@ func SaveGob(path string, value any) error {
 		return err
 	}
 	return WriteAtomic(path, buffer.Bytes())
+}
+
+// Unzip writes the files of a zip into a folder. A top folder that holds every file is left out of their paths, and
+// links are skipped. It returns an error if a file cannot be read or written, or the zip names a path outside the
+// folder.
+func Unzip(archive *zip.Reader, dir string) error {
+	entries := lo.Filter(archive.File, func(entry *zip.File, _ int) bool {
+		return !entry.FileInfo().IsDir() && entry.Mode()&fs.ModeSymlink == 0
+	})
+	top, _, _ := strings.Cut(lo.FirstOr(entries, &zip.File{}).Name, "/")
+	if !lo.EveryBy(entries, func(entry *zip.File) bool { return strings.HasPrefix(entry.Name, top+"/") }) {
+		top = ""
+	}
+	for _, entry := range entries {
+		target := Join(dir, strings.TrimPrefix(entry.Name, top+"/"))
+		if !IsUnder(dir, target) {
+			return fmt.Errorf("the zip names %s, which is outside its own folder", entry.Name)
+		}
+		if err := writeEntry(entry, target); err != nil {
+			return err
+		}
+	}
+	return nil
+}
+
+// writeEntry writes one file of a zip to disk, making its folder first.
+func writeEntry(entry *zip.File, target string) error {
+	if err := os.MkdirAll(filepath.Dir(target), 0o755); err != nil {
+		return err
+	}
+	reader, err := entry.Open()
+	if err != nil {
+		return err
+	}
+	defer func() { _ = reader.Close() }()
+	file, err := os.Create(target)
+	if err != nil {
+		return err
+	}
+	_, err = io.Copy(file, reader)
+	return errors.Join(err, file.Close())
 }

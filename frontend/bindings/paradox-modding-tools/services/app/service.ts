@@ -71,13 +71,6 @@ export function ListSettings(): $CancellablePromise<$models.Setting[] | null> {
 }
 
 /**
- * ListWindows returns the names of the open windows.
- */
-export function ListWindows(): $CancellablePromise<string[] | null> {
-    return $Call.ByID(738970240);
-}
-
-/**
  * LogPath returns the path of pmt.log.
  */
 export function LogPath(): $CancellablePromise<string> {

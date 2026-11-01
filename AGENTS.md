@@ -70,9 +70,9 @@ Each rule says what checks it; "review" means nothing does, so the author and th
   decision is made and why. Size is reported, never a reason to pack, to skip a split or to keep a helper out. (review)
 - **One decision, one place.** A rule is a data row that carries its whole condition, or one named function with a doc
   comment; never a constant whose meaning is a `case` somewhere else. (review)
-- **Functions** are at most 60 lines, four nesting levels and four parameters; a literal table or a switch over an enum
-  may be longer. A function that does two jobs is two functions; a loop body moved out to shed a level is not a helper.
-  (golangci-lint `funlen` at 60 lines and 40 statements, and `nestif`; the rest review)
+- **Functions** are at most 60 lines and four nesting levels; a literal table or a switch over an enum may be longer. A
+  function that does two jobs is two functions; a loop body moved out to shed a level is not a helper. (golangci-lint
+  `funlen` at 60 lines and 40 statements, and `nestif`; the rest review)
 - **Helpers.** A helper exists when it names a decision or has two callers. Nothing is inlined to save a function. (review)
 - **Structs.** A struct with methods carries state that changes across its calls; two values that never change are
   parameters, and no holder struct is made to spare a parameter list. (review)

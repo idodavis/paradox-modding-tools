@@ -26,7 +26,7 @@ A widget's row (`game.WidgetType`) leaves its empty fields out.
 | `textures.go` | the `library` of what definitions show: the image file of a written path, an icon name or a texture binding; the pictures the defines name; the placeholders; the colors of definitions; `ExportPNG` |
 | `coat.go` | `Instance`, `Blend`, `Recolor`, `Shading`, `Layer`, `Coat`, `Image`, `NamedColor`; `ResolveCoat`; `ListColors`, `ListTextures`, `ListFrames`; the edits `AddLayer`, `MoveLayer`, `RemoveBlock`; `CreateCoatFile`, `CopyCoat` |
 | `fonts.go` | `Font`: each style of a font a window names, with the file the game reads it from in the session's language |
-| `dds.go` | Save as DDS: `ListPictureFiles`, the pictures directly in a folder; `FindReferences`, the DDS whose settings each keeps, the one beside it, else the game's own at its place; `WriteDDS` |
+| `dds.go` | `PictureFiles`; Save as DDS: `FindPictureFiles`, the picture or the pictures directly in a folder, each with the DDS whose settings it keeps, the one beside it, else the game's own at its place; `WriteDDS` |
 
 ## Edits, not writes
 
@@ -97,8 +97,8 @@ reads a field of the object the step before leads to (`[GovernmentType.GetRealmF
 reads the texture of the concept `tax_base`). A definition's picture is, in order, the field the binding reads, the
 file the defines for its kind and field name (`<KIND>_<FIELD>_PATH`, `_PREFIX` and `_SUFFIX`, with a folder's
 `_default`), its picture by the game's picture keys or its name as an icon, and the one image it writes. A suffix
-define the game writes under another stem is read there (`game.Game.GUISuffixStems`), as CK3 writes its realm mask's.
-A define is named by its group and key. The defines that say where pictures are sit in the game's `GUIDefineGroup`
+define the game writes under another stem is read there (`game.Game.GUI.SuffixStems`), as CK3 writes its realm mask's.
+A define is named by its group and key. The defines that say where pictures are sit in the game's `GUI.DefineGroup`
 (CK3's and EU5's `NGameIcons`, as in `NGameIcons|TRAIT_ICON_PATH`), and `GetDefine('NGroup', 'KEY')` names both.
 
 A mask, a coat of arms' or the widget's own (`game.GUI.MaskKeys`), written as a path or as a binding, is found as a
@@ -175,7 +175,7 @@ variable's name first, and a variable's name stays part of its group. `UnsetOrVa
 `NotExistOrHasValue('x', 'v')`, holds while a variable is unset or set to the given value. `expandVariableQuery`
 reads it as `Or(Not(Exists('x')), HasValue('x', 'v'))`, so it asks the same two groups that `Exists` and `HasValue` ask.
 
-**Tiers.** Where the game draws a title's tier from a sheet of cells (`game.Game.GUITiers`, CK3's `GetTierFrame`),
+**Tiers.** Where the game draws a title's tier from a sheet of cells (`game.Game.GUI.Tiers`, CK3's `GetTierFrame`),
 each call of that function is a group whose options are the game's tiers, with the widgets that write it as its
 readers (`listTierGroups`, found once per window). A tier picked gives each reader's property its cell, counted from
 one (`pickTiers`).

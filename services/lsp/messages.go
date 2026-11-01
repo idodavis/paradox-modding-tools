@@ -21,29 +21,30 @@ import (
 // diagnoseMessages returns the problems of a localization file. A file of the game has its parse errors only. Each
 // message's text is judged for its markup, the keys, icons and formats it names, and its data calls. A message in a
 // replace folder is never a duplicate.
-func (visitor *diagnoseVisitor) diagnoseMessages(tree *jomini.Tree) []Diagnostic {
+func (visitor *diagnoseVisitor) diagnoseMessages(document workspace.Document) []Diagnostic {
 	place, mods := visitor.place, visitor.index
-	file := loc.Parse(tree.Src, place.Path)
+	tree, file := document.Tree, document.Messages
 	visitor.diagnostics = toDiagnostics(tree, file.Errors)
 	if place.ReadOnly {
 		return visitor.diagnostics
 	}
 	visitor.diagnostics = append(visitor.diagnostics, diagnoseLocalizationFile(tree, file, place)...)
 	for _, message := range file.Messages {
-		visitor.diagnostics = append(visitor.diagnostics, toDiagnostics(tree, loc.ListMarkupFaults(message))...)
+		segments := loc.Segments(message.Text, message.TextSpan.Start)
+		visitor.diagnostics = append(visitor.diagnostics, toDiagnostics(tree, loc.ListMarkupFaults(segments))...)
 		visitor.diagnoseMissing(tree, index.ListTextReferences(visitor.ws.Schema, message))
-		visitor.diagnoseCalls(tree, message.Text, message.TextSpan.Start, "")
+		visitor.diagnoseCalls(tree, segments, "")
 	}
-	if _, replaces := schema.FindLocReplacement(visitor.ws.Game, place.Rel, file.Language); replaces {
+	if _, replaces := visitor.ws.Game.FindLocReplacement(place.Rel, file.Language); replaces {
 		return visitor.diagnostics
 	}
 	counts := lo.CountValuesBy(file.Messages, func(message loc.Message) string { return message.Key })
 	for _, message := range file.Messages {
 		others := lo.CountBy(mods.ListMessages(message.Key), func(site index.Site) bool {
 			other := mods.File(site)
-			_, replaces := schema.FindLocReplacement(visitor.ws.Game, other.Rel, file.Language)
+			_, replaces := visitor.ws.Game.FindLocReplacement(other.Rel, file.Language)
 			repeats := other.Origin == place.Origin || other.Origin == game.OriginVanilla && visitor.ws.Game.LogsRepeatedKey
-			return (!visitor.listed || site.File != visitor.position) && repeats && mods.Language(site) == file.Language &&
+			return site.File != visitor.place.Position && repeats && mods.Language(site) == file.Language &&
 				mods.IsLoaded(site.File) && !replaces
 		})
 		if counts[message.Key]+others > 1 {
@@ -85,13 +86,13 @@ func diagnoseFolders(tree *jomini.Tree, place workspace.Place) []Diagnostic {
 	return diagnostics
 }
 
-// diagnoseCalls records the data calls a text writes whose step no dump declares for the type before it, read in the
-// given data context. The text starts at the given offset of its file. A first step in lower case is a saved scope. A
-// step is known where the judged index defines one of game.GUI.StepDatabases by its name, or the game's own text
-// writes it after the same type.
-func (visitor *diagnoseVisitor) diagnoseCalls(tree *jomini.Tree, text string, base int, datacontext string) {
+// diagnoseCalls records the data calls that the given segments of a text write whose step no dump declares for the
+// type before it, read in the given data context. A first step in lower case is a saved scope. A step is known where
+// the judged index defines one of game.GUI.StepDatabases by its name, or the game's own text writes it after the
+// same type.
+func (visitor *diagnoseVisitor) diagnoseCalls(tree *jomini.Tree, segments []loc.Segment, datacontext string) {
 	language := visitor.ws.Schema
-	for _, call := range loc.ListCalls(text, base) {
+	for _, call := range loc.ListCalls(segments) {
 		step, before, ok := language.FindUnlisted(call, datacontext)
 		if !ok {
 			continue

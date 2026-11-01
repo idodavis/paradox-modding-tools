@@ -22,18 +22,18 @@ vi.mock("@vueuse/core", async (importOriginal) => {
   };
 });
 
-/** Makes the windows store, with the editor store it reads. */
+/** stores makes the windows store, with the editor store it reads. */
 function stores() {
   vi.mocked(Events.On).mockClear();
   return inApp(() => ({ editor: useEditorStore(), windows: useWindowsStore() }));
 }
 
-/** Has a window announce what it holds on the channel every window hears. */
+/** announce has a window announce what it holds on the channel every window hears. */
 function announce(state: WindowState): void {
   channels.get("pmt.windows")?.dispatchEvent(new MessageEvent("message", { data: { type: "state", state } }));
 }
 
-/** The handler the store registered for a Wails event. */
+/** handlerOf returns the handler the store registered for a Wails event. */
 function handlerOf(event: string): (message: { data: unknown }) => void {
   const call = vi.mocked(Events.On).mock.calls.find(([name]) => name === event);
   if (!call) throw new Error(`no handler for ${event}`);
@@ -47,15 +47,14 @@ describe("the windows", () => {
     expect(THIS_WINDOW).toBe("main");
   });
 
-  it("finds the window that holds a file, a folder or a page", () => {
+  it("finds the window that holds a file, and lists the windows open", () => {
     const { windows } = stores();
-    announce({ name: "editor:1", files: ["a"], folders: [], page: null, active: null });
-    announce({ name: "files:/mod/sub", files: [], folders: ["/mod/sub"], page: null, active: null });
-    announce({ name: "page:health", files: [], folders: [], page: "health", active: null });
-    expect(windows.holderOf({ file: "a" })).toBe("editor:1");
-    expect(windows.holderOf({ folder: "/mod/sub" })).toBe("files:/mod/sub");
-    expect(windows.holderOf({ page: "health" })).toBe("page:health");
-    expect(windows.holderOf({ file: "other" })).toBe("");
+    announce({ name: "editor:1", files: ["a"], active: null });
+    announce({ name: "files:/mod/sub", files: [], active: null });
+    announce({ name: "page:health", files: [], active: null });
+    expect(windows.holderOf("a")).toBe("editor:1");
+    expect(windows.holderOf("other")).toBe("");
+    expect(windows.listWindows()).toEqual(["main", "editor:1", "files:/mod/sub", "page:health"]);
   });
 
   it("answers its own name for a file open in its own editor", () => {
@@ -71,17 +70,17 @@ describe("the windows", () => {
       root: "/mod",
       database: "",
       readOnly: false,
-      loaded: true,
       isDir: false,
+      drawable: false,
     };
     editor.show(place);
-    expect(windows.holderOf({ file: "m" })).toBe("main");
+    expect(windows.holderOf("m")).toBe("main");
   });
 
   it("forgets a window once it has closed", () => {
     const { windows } = stores();
-    announce({ name: "editor:1", files: ["a"], folders: [], page: null, active: null });
+    announce({ name: "editor:1", files: ["a"], active: null });
     handlerOf("window:closed")({ data: "editor:1" });
-    expect(windows.holderOf({ file: "a" })).toBe("");
+    expect(windows.holderOf("a")).toBe("");
   });
 });

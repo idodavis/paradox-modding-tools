@@ -3,7 +3,7 @@
   beside the editors or in a window of its own, and shows the page or lexicon entry the editor looks up.
 -->
 <script lang="ts">
-/** The lexicon's classes, in the order its tabs show them. */
+/** CLASSES holds the lexicon's classes, in the order its tabs show them. */
 export const CLASSES = [
   { label: "Effects", value: "effect" },
   { label: "Triggers", value: "trigger" },
@@ -16,7 +16,7 @@ export const CLASSES = [
 <script setup lang="ts">
 import { computed, shallowRef, useTemplateRef, watch } from "vue";
 import { useQuery } from "@pinia/colada";
-import { refDebounced, useEventBus, useLocalStorage } from "@vueuse/core";
+import { refDebounced, useEventBus } from "@vueuse/core";
 import { Browser } from "@wailsio/runtime";
 import type { DropdownMenuItem } from "@nuxt/ui";
 
@@ -24,6 +24,7 @@ import type { Place } from "@services/workspace/models";
 
 import { matchQuery } from "../../lib/format";
 import { lexiconQuery, stateQuery, wikiPageQuery, wikiPagesQuery, wikiSearchQuery } from "../../queries";
+import { useEditorStore } from "../../stores/editor";
 import { useSettingsStore } from "../../stores/settings";
 import { THIS_WINDOW, useWindowsStore, type WikiLookup } from "../../stores/windows";
 import { useWorkspaceStore } from "../../stores/workspace";
@@ -42,11 +43,11 @@ const TABS = [
   { label: "Lexicon", value: "lexicon" },
 ];
 
+const editor = useEditorStore();
 const settings = useSettingsStore();
 const windows = useWindowsStore();
 const workspace = useWorkspaceStore();
 const { data: state } = useQuery(stateQuery);
-const wiki = useLocalStorage("pmt.ide.wiki", false);
 const view = shallowRef("pages");
 const title = shallowRef("");
 const lexiconClass = shallowRef("effect");
@@ -167,7 +168,7 @@ function jump(index: number): void {
           size="sm"
           square
           aria-label="Open in its own window"
-          @click="windows.popOut({ wiki: true })"
+          @click="windows.popOut('wiki')"
         />
       </UTooltip>
       <UButton
@@ -176,7 +177,7 @@ function jump(index: number): void {
         size="sm"
         square
         :aria-label="THIS_WINDOW === 'wiki' ? 'Back into the main window' : 'Close the Wiki pane'"
-        @click="THIS_WINDOW === 'wiki' ? windows.dockBack() : (wiki = false)"
+        @click="THIS_WINDOW === 'wiki' ? windows.dockBack() : (editor.wiki = false)"
       />
     </div>
     <template v-if="view === 'pages'">

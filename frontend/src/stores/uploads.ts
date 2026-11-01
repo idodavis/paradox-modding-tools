@@ -4,6 +4,7 @@ import { useQueryCache } from "@pinia/colada";
 import { ref } from "vue";
 import { Events, type CancellablePromise } from "@wailsio/runtime";
 
+import { describeError } from "../lib/format";
 import { keys } from "../queries";
 import * as steam from "@services/steam/service";
 import type { Listing, Progress } from "@services/steam/models";
@@ -58,10 +59,7 @@ export const useUploadStore = defineStore("upload", () => {
       await running;
       attempts.value[id].status = "done";
     } catch (error) {
-      Object.assign(attempts.value[id], {
-        status: "failed",
-        message: error instanceof Error ? error.message : String(error),
-      });
+      Object.assign(attempts.value[id], { status: "failed", message: describeError(error) });
     } finally {
       active.value = "";
       running = undefined;

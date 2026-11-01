@@ -1,4 +1,7 @@
-<!-- A Monaco editor over one model, with the hover card, the merge conflict marks and a context menu. -->
+<!--
+  A Monaco editor over one model, with the hover card, the merge conflict marks and a context menu. It exposes the
+  editor it creates.
+-->
 <script setup lang="ts">
 import { computed, onBeforeUnmount, onMounted, shallowRef, useTemplateRef, watch } from "vue";
 import { useRouter } from "vue-router";
@@ -6,18 +9,19 @@ import { useMutation, useQuery } from "@pinia/colada";
 import { useEventBus } from "@vueuse/core";
 import { Clipboard } from "@wailsio/runtime";
 import { editor, KeyCode, KeyMod, Range } from "monaco-editor/editor/editor.api";
-import type { ContextMenuItem } from "@nuxt/ui";
+import type { ContextMenuItem, PopoverProps } from "@nuxt/ui";
 
 import type { Edge } from "@services/graph/models";
 import * as lsp from "@services/lsp/service";
-import type { Card, Location } from "@services/lsp/models";
+import type { Card, Site } from "@services/lsp/models";
 
-import { COMMANDS, compareWithFile, compareWithGame, findGameCopy, findKbds } from "../../app/commands";
+import { compareWithFile, compareWithGame, findCommand, findGameCopy, findKbds } from "../../app/commands";
 import { copiesQuery, detailQuery, fileQuery, loadQuery, wikiPagesQuery } from "../../queries";
 import { useEditorStore } from "../../stores/editor";
 import { useSearchStore } from "../../stores/search";
-import { useWindowsStore, type WikiLookup } from "../../stores/windows";
+import { COMMAND_BUS, useWindowsStore, type WikiLookup } from "../../stores/windows";
 import { useWorkspaceStore } from "../../stores/workspace";
+import HoverCard from "../../ui/HoverCard.vue";
 import { markChanges } from "./editor/changes";
 import { decorate } from "./editor/conflicts";
 import { attachHover } from "./editor/hover";
@@ -29,16 +33,30 @@ const { model, active } = defineProps<{ model: Model; active: boolean }>();
 
 /** How many lines the caret must move in one go for the history to keep the place it left. */
 const JUMP_LINES = 10;
+/**
+ * Where the hover card sits: flush on the word, so the pointer crosses no other line on its way to the card. The focus
+ * stays in the editor as the card opens and closes.
+ */
+const CARD_CONTENT: PopoverProps["content"] = {
+  side: "top",
+  sideOffset: 0,
+  align: "start",
+  onOpenAutoFocus: (event) => event.preventDefault(),
+  onCloseAutoFocus: (event) => event.preventDefault(),
+};
 
 const router = useRouter();
 const editorStore = useEditorStore();
 const windows = useWindowsStore();
 const workspace = useWorkspaceStore();
-const commands = useEventBus<string>("pmt.command");
+const commandBus = useEventBus(COMMAND_BUS);
 const host = useTemplateRef("host");
 const view = shallowRef<editor.IStandaloneCodeEditor>();
-let detachHover = () => {};
+const hovering = shallowRef<ReturnType<typeof attachHover>>();
+// the hover card is anchored on the rectangle of the word the pointer rests on
+const anchor = { getBoundingClientRect: () => hovering.value?.hover.value?.anchor ?? new DOMRect() };
 let stopChanges = () => {};
+defineExpose({ view });
 
 const { mutate: ask, data: asked } = useMutation({
   mutation: async () => {
@@ -55,19 +73,19 @@ const card = computed(() => asked.value?.card);
 const { mutate: findAll } = useMutation({
   mutation: async () => {
     const caret = view.value?.getPosition() ?? { lineNumber: 1, column: 1 };
-    const [hovered, locations] = await Promise.all([
+    const [hovered, sites] = await Promise.all([
       lsp.Hover(model.place.path, caret.lineNumber, caret.column),
       lsp.References(model.place.path, caret.lineNumber, caret.column),
     ]);
-    listReferences(`References to ${hovered?.title ?? "the name"}`, locations ?? []);
+    listReferences(`References to ${hovered?.title ?? "the name"}`, sites ?? []);
   },
 });
 // the places that fire a name the Event Graph draws, from the name's detail there
 const { mutate: findFirers } = useMutation({
   mutation: async (subject: Card) => {
     const detail = await loadQuery(detailQuery(subject.node ?? ""));
-    const locations = await Promise.all((detail?.firedBy ?? []).map((edge) => locateFiring(edge, subject.title)));
-    listReferences(`What fires ${subject.title}`, locations);
+    const sites = await Promise.all((detail?.firedBy ?? []).map((edge) => locateFiring(edge, subject.title)));
+    listReferences(`What fires ${subject.title}`, sites);
   },
 });
 /** The lexicon class that lists the card's name: a command's own, or the one a scripted effect or trigger acts as. */
@@ -115,13 +133,13 @@ onMounted(() => {
     keybindings: [KeyMod.Shift | KeyMod.Alt | KeyCode.F12],
     run: () => findAll(),
   });
-  detachHover = attachHover(codeEditor);
+  hovering.value = attachHover(codeEditor);
   view.value = codeEditor;
   decorate(model);
   stopChanges = markChanges(codeEditor, model);
 });
 onBeforeUnmount(() => {
-  detachHover();
+  hovering.value?.detach();
   stopChanges();
   view.value?.dispose();
 });
@@ -144,55 +162,55 @@ watch(
   { immediate: true },
 );
 
-/** Opens Health with its table filtered to the name under the caret. */
+/** showInHealth opens Health with its table filtered to the name under the caret. */
 async function showInHealth(): Promise<void> {
   await router.push({ name: "health", params: { id: workspace.activeId() }, query: { name: card.value?.title } });
 }
 
 /**
- * Lists places in the sidebar's references under the given heading, which every window's list shows, and shows the
- * main window's sidebar search.
+ * listReferences lists places in the sidebar's references under the given heading, which every window's list shows. It
+ * also shows the main window's sidebar search.
  */
-function listReferences(heading: string, locations: Location[]): void {
-  useSearchStore().showReferences(heading, locations);
+function listReferences(heading: string, sites: Site[]): void {
+  useSearchStore().showReferences(heading, sites);
   windows.sendCommand("editor.findInFiles", "main");
 }
 
 /**
- * Finds the place of a firing as a reference: its line's text, with the given name marked where the line holds it. A
- * file that cannot be read gives the line no text.
+ * locateFiring finds the place of a firing as a reference: its line's text, with the given name marked where the line
+ * holds it. A file that cannot be read gives the line no text.
  */
-async function locateFiring(edge: Edge, name: string): Promise<Location> {
-  const file = await loadQuery(fileQuery(edge.place.path)).catch(() => undefined);
-  const text = file?.text.text.split(/\r?\n/)[edge.line - 1] ?? "";
+async function locateFiring(edge: Edge, name: string): Promise<Site> {
+  const file = await loadQuery(fileQuery(edge.site.place.path)).catch(() => undefined);
+  const text = file?.text.text.split(/\r?\n/)[edge.site.line - 1] ?? "";
   const index = text.indexOf(name);
   // a line that names a scripted effect which fires the name, not the name itself, is marked nowhere
   const [start, end] = index < 0 ? [1, 1] : [index + 1, index + 1 + name.length];
   return {
-    place: edge.place,
-    range: { startLineNumber: edge.line, startColumn: start, endLineNumber: edge.line, endColumn: end },
+    ...edge.site,
+    range: { startLineNumber: edge.site.line, startColumn: start, endLineNumber: edge.site.line, endColumn: end },
     text,
   };
 }
 
-/** Keeps the focus in the editor a row of the menu moved it to, such as the file a fix opened. */
+/** keepMovedFocus keeps the focus in the editor a row of the menu moved it to, such as the file a fix opened. */
 function keepMovedFocus(event: Event): void {
   const focused = document.activeElement;
   if (focused?.closest(".monaco-editor") && !host.value?.contains(focused)) event.preventDefault();
 }
 
-/** Runs one of Monaco's own actions in this editor. */
+/** run runs one of Monaco's own actions in this editor. */
 function run(action: string): void {
   view.value?.focus();
   view.value?.trigger("menu", action, null);
 }
 
-/** Joins the text of the selections with line breaks. */
+/** joinSelections joins the text of the selections with line breaks. */
 function joinSelections(): string {
   return (view.value?.getSelections() ?? []).map((range) => model.model.getValueInRange(range)).join("\n");
 }
 
-/** Replaces the selections with a text. An empty text deletes them. */
+/** replaceSelections replaces the selections with the given text. An empty text deletes them. */
 function replaceSelections(text: string): void {
   view.value?.executeEdits(
     "menu",
@@ -225,9 +243,9 @@ const groups = computed<ContextMenuItem[][]>(() => [
   [
     {
       label: "Open in Event Graph",
-      kbds: ["Ctrl Shift G"],
+      kbds: findKbds("editor.openGraph"),
       disabled: !card.value?.node,
-      onSelect: (event) => void COMMANDS.find((command) => command.id === "editor.openGraph")?.onSelect?.(event),
+      onSelect: (event) => void findCommand("editor.openGraph")?.onSelect?.(event),
     },
     { label: "Show in Health", disabled: !card.value, onSelect: () => void showInHealth() },
     {
@@ -245,7 +263,7 @@ const groups = computed<ContextMenuItem[][]>(() => [
   [
     {
       label: "Format document",
-      kbds: ["Shift Alt F"],
+      kbds: findKbds("editor.format"),
       disabled: model.place.readOnly,
       onSelect: () => run("editor.action.formatDocument"),
     },
@@ -267,7 +285,7 @@ const groups = computed<ContextMenuItem[][]>(() => [
       onSelect: () => void Clipboard.Text().then(replaceSelections),
     },
   ],
-  [{ label: "Command palette", kbds: findKbds("palette.open"), onSelect: () => commands.emit("palette.open") }],
+  [{ label: "Command palette", kbds: findKbds("palette.open"), onSelect: () => commandBus.emit("palette.open") }],
 ]);
 const menu = computed(() => groups.value.filter((group) => group.length));
 </script>
@@ -282,6 +300,24 @@ const menu = computed(() => groups.value.filter((group) => group.length));
   >
     <div class="flex min-h-0 flex-1">
       <div ref="host" class="min-w-0 flex-1 border-s-12 border-(--bg-0)" />
+      <UPopover
+        :open="!!hovering?.hover.value"
+        :reference="anchor"
+        :content="CARD_CONTENT"
+        @update:open="(open) => open || hovering?.close()"
+      >
+        <template #content>
+          <!-- never taller than the room beside the word: a long card scrolls inside itself -->
+          <div
+            v-if="hovering?.hover.value"
+            class="max-h-(--reka-popover-content-available-height) overflow-y-auto"
+            @mouseenter="hovering.hold(true)"
+            @mouseleave="hovering.hold(false)"
+          >
+            <HoverCard :card="hovering.hover.value.card" :problems="hovering.hover.value.problems" />
+          </div>
+        </template>
+      </UPopover>
     </div>
   </UContextMenu>
 </template>

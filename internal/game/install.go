@@ -35,6 +35,9 @@ type launcherSettings struct {
 // DLCFolder is the folder under the game folder that holds each DLC's own files, laid out as the game's are.
 const DLCFolder = "dlc"
 
+// LauncherModFolder is the folder under a game's user-data folder where its launcher keeps mods.
+const LauncherModFolder = "mod"
+
 // The patterns that read Steam's library file, an app manifest and its build id, and the game's release branch in
 // its revision log (release/1.20.1, u26q2/release/1.3.11).
 var (
@@ -44,12 +47,8 @@ var (
 	gameBranchRe = regexp.MustCompile(`\]: game_branch: (?:\S+/)?release/(\S+)`)
 )
 
-// FindInstalls returns the installs of a game that Steam's libraries hold. It returns nil for an unknown game.
-func FindInstalls(gameID string) []DetectedInstall {
-	game := LookupGame(gameID)
-	if game == nil {
-		return nil
-	}
+// FindInstalls returns the installs of the game that Steam's libraries hold.
+func (game *Game) FindInstalls() []DetectedInstall {
 	var out []DetectedInstall
 	for _, library := range findSteamLibraries() {
 		manifest := filepath.Join(library, "steamapps", "appmanifest_"+strconv.Itoa(game.SteamAppID)+".acf")
@@ -68,7 +67,7 @@ func FindInstalls(gameID string) []DetectedInstall {
 		out = append(out, DetectedInstall{
 			Name:    game.Name,
 			Path:    path,
-			Version: LoadGameVersion(game.ID, path),
+			Version: game.LoadVersion(path),
 		})
 	}
 	return out
@@ -127,10 +126,10 @@ func listDefaultSteamRoots() []string {
 	}
 }
 
-// LoadGameVersion returns an install's version. The launcher settings come first, then the game's revision log, then
-// the Steam manifest, which gives "build <id>". The revision log counts only when the game started after the
-// install's last update. It returns "" if none of them says.
-func LoadGameVersion(gameID, installPath string) string {
+// LoadVersion returns the version of an install of the game. The launcher settings come first, then the game's
+// revision log, then the Steam manifest, which gives "build <id>". The revision log counts only when the game started
+// after the install's last update. It returns "" if none of them says.
+func (game *Game) LoadVersion(installPath string) string {
 	settings := loadLauncher(installPath)
 	if settings.RawVersion != "" {
 		return settings.RawVersion
@@ -139,13 +138,8 @@ func LoadGameVersion(gameID, installPath string) string {
 	if version = strings.TrimSpace(version); version != "" {
 		return version
 	}
-	if version := readLoggedVersion(gameID, installPath); version != "" {
+	if version := game.readLoggedVersion(installPath); version != "" {
 		return version
-	}
-
-	game := LookupGame(gameID)
-	if game == nil {
-		return ""
 	}
 	manifest, err := os.ReadFile(filepath.Join(installPath, "..", "..", "appmanifest_"+strconv.Itoa(game.SteamAppID)+".acf"))
 	if match := buildIDRe.FindSubmatch(manifest); err == nil && match != nil {
@@ -168,8 +162,8 @@ func loadLauncher(installPath string) (settings launcherSettings) {
 // readLoggedVersion returns the version a game wrote in its revision log at its last start: the part of its release
 // branch after release/. It returns "" when there is no log, when the log names no release, or when the install was
 // updated after the log was written, since the game has not run as the new version yet.
-func readLoggedVersion(gameID, installPath string) string {
-	user := FindUserDataDir(gameID, installPath)
+func (game *Game) readLoggedVersion(installPath string) string {
+	user := game.FindUserDataDir(installPath)
 	if user == "" {
 		return ""
 	}
@@ -208,9 +202,9 @@ func ListInstallRoots(installPath string) ([]files.Root, error) {
 	return roots, nil
 }
 
-// FindDumpDirs returns the folders the game's console dumps land in. It returns nil for an unknown game.
-func FindDumpDirs(gameID, installPath string) []string {
-	user := FindUserDataDir(gameID, installPath)
+// FindDumpDirs returns the folders the game's console dumps land in.
+func (game *Game) FindDumpDirs(installPath string) []string {
+	user := game.FindUserDataDir(installPath)
 	if user == "" {
 		return nil
 	}
@@ -222,9 +216,9 @@ func FindDumpDirs(gameID, installPath string) []string {
 }
 
 // FindUserDataDir returns the game's user-data folder: the first candidate that exists, or else the most likely
-// one. It returns "" for an unknown game.
-func FindUserDataDir(gameID, installPath string) string {
-	candidates := listUserDataCandidates(gameID, installPath)
+// one.
+func (game *Game) FindUserDataDir(installPath string) string {
+	candidates := game.listUserDataCandidates(installPath)
 	for _, candidate := range candidates {
 		if files.IsFolder(candidate) {
 			return candidate
@@ -238,11 +232,7 @@ func FindUserDataDir(gameID, installPath string) string {
 
 // listUserDataCandidates returns the folders a game may keep its user data in, most likely first: the launcher's
 // setting, then the OS's conventions.
-func listUserDataCandidates(gameID, installPath string) []string {
-	game := LookupGame(gameID)
-	if game == nil {
-		return nil
-	}
+func (game *Game) listUserDataCandidates(installPath string) []string {
 	name := game.Name
 	var candidates []string
 	add := func(path string) {
@@ -301,11 +291,7 @@ func expandGameDataPath(path string) string {
 // mode, from an install's folder. Where the game's row names the launcher settings, their executable and arguments
 // win over the row's; the row's debug flags always come last. It returns false when the game has no executable on
 // this operating system.
-func ResolveProgram(gameID, installPath string) (path string, args []string, ok bool) {
-	game := LookupGame(gameID)
-	if game == nil {
-		return "", nil, false
-	}
+func (game *Game) ResolveProgram(installPath string) (path string, args []string, ok bool) {
 	program := game.Program[runtime.GOOS]
 	if program.Executable != "" {
 		path = files.Join(installPath, program.Executable)

@@ -21,14 +21,17 @@ type Place struct {
 	Root     string `json:"root"`
 	Database string `json:"database"`
 	ReadOnly bool   `json:"readOnly"` // true for the game's own files
-	Loaded   bool   `json:"loaded"`   // the game reads it
-	IsDir    bool   `json:"isDir"`    // true for a folder, which a folder's listing and Service.Locate tell
+	Position int32  `json:"-"`        // where the index lists the file; -1 where it does not
+	IsDir    bool   `json:"isDir"`    // true for a folder: a root, an entry of a folder's listing, or git's or an agent's
+	Drawable bool   `json:"drawable"` // true for a GUI file and for the coats' files and folder, which Visual draws
 }
 
 // Locate returns the place of the file with the given path, as the given index of the mods lists its files. A path
-// under none of the roots gives a place with only the path and its key set. A file of the game is read only.
+// under none of the roots gives a place with only the path and its key set. A file of the game is read only. A GUI
+// file is drawable, and so is a file or folder of the coats' database. A file the index does not list has the
+// position -1.
 func (ws *Session) Locate(mods *index.Index, path string) Place {
-	place := Place{File: files.File{Path: path, Key: files.ToKey(path)}, Name: filepath.Base(path)}
+	place := Place{File: files.File{Path: path, Key: files.ToKey(path)}, Name: filepath.Base(path), Position: -1}
 	root, ok := mods.FindRoot(path)
 	if !ok {
 		return place
@@ -44,8 +47,9 @@ func (ws *Session) Locate(mods *index.Index, path string) Place {
 	if database, ok := ws.Schema.FindDatabase(rel); ok {
 		place.Database = database.Name
 	}
+	place.Drawable = place.Format == files.FormatGUI || place.Database == game.Coat.Database
 	if position, ok := mods.FindFile(path); ok {
-		place.Loaded = mods.IsLoaded(position)
+		place.Position = position
 	}
 	return place
 }

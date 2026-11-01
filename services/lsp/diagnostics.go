@@ -12,6 +12,7 @@ import (
 	"paradox-modding-tools/internal/game"
 	"paradox-modding-tools/internal/index"
 	"paradox-modding-tools/internal/jomini"
+	"paradox-modding-tools/internal/loc"
 	"paradox-modding-tools/internal/schema"
 	"paradox-modding-tools/services/workspace"
 )
@@ -26,6 +27,9 @@ const (
 	LevelWarning          = "warning"       // it may be fine, or only shows a player the wrong text
 	LevelInfo             = "info"          // only how things are
 )
+
+// Levels holds the levels of a finding, the worst first.
+var Levels = []string{LevelCritical, LevelError, LevelWarning, LevelInfo}
 
 // unresolvedCode is the code of a name nothing defines that is of no narrower kind.
 const unresolvedCode = "unresolved-reference"
@@ -169,7 +173,7 @@ type Diagnostic struct {
 	Range Range             `json:"range"`
 	Facts map[string]string `json:"facts"`
 	// Defined is where the workspace defines a name the file's mod does not, in a mod it does not depend on.
-	Defined []Location `json:"defined,omitempty"`
+	Defined []Site `json:"defined,omitempty"`
 }
 
 // valueDescriptions holds the words that describe each value type.
@@ -202,7 +206,8 @@ func (lsp *Service) DiagnoseText(path, text string) ([]Diagnostic, error) {
 	if !isDiagnosed(place) {
 		return []Diagnostic{}, nil
 	}
-	return lsp.listEnabled(ws.ID, newVisitor(ws, mods, place).diagnoseTree(jomini.Parse(text))), nil
+	document := workspace.ParseDocument(place.Format, path, text)
+	return lsp.listEnabled(ws.ID, newVisitor(ws, mods, place).diagnoseTree(document)), nil
 }
 
 // DescribeReference returns the facts that say which name a problem is about.
@@ -210,18 +215,18 @@ func DescribeReference(reference schema.Reference) map[string]string {
 	return map[string]string{"name": reference.Name, "database": game.DescribeDefinition(reference.Database, false)}
 }
 
-// DiagnoseFile returns the problems of a file in a workspace, judged on its tree: the editor's text where the file is
-// open, else the text on disk. It returns an error if the file cannot be read.
+// DiagnoseFile returns the problems of a file in a workspace, judged on its document: the editor's text where the file
+// is open, else the text on disk. It returns an error if the file cannot be read.
 func DiagnoseFile(ws *workspace.Session, mods *index.Index, path string) ([]Diagnostic, error) {
 	place := ws.Locate(mods, path)
 	if !isDiagnosed(place) {
 		return []Diagnostic{}, nil
 	}
-	tree, err := ws.LoadTree(path)
+	document, err := ws.LoadDocument(path)
 	if err != nil {
 		return nil, err
 	}
-	return newVisitor(ws, mods, place).diagnoseTree(tree), nil
+	return newVisitor(ws, mods, place).diagnoseTree(document), nil
 }
 
 // isDiagnosed reports whether a file can have problems: it is script, localization or a mod's descriptor, or a mod's
@@ -268,8 +273,6 @@ type diagnoseVisitor struct {
 	index       *index.Index // the mods' index, narrowed to a mod's file's mod and the mods it depends on
 	whole       *index.Index // the mods' index, every mod of the workspace
 	place       workspace.Place
-	position    int32 // where the index lists the file
-	listed      bool  // whether the index lists the file
 	diagnostics []Diagnostic
 }
 
@@ -280,19 +283,18 @@ func newVisitor(ws *workspace.Session, mods *index.Index, place workspace.Place)
 	if !place.ReadOnly && place.Origin != "" && place.Origin != game.OriginVanilla {
 		visitor.index = mods.Narrow(append([]string{place.Origin}, ws.ListDependencies(place.Origin)...))
 	}
-	visitor.position, visitor.listed = visitor.index.FindFile(place.Path)
 	return visitor
 }
 
-// diagnoseTree returns the problems of the visitor's file judged on the given tree of its text. A file of the game
-// has its parse errors only.
-func (visitor *diagnoseVisitor) diagnoseTree(tree *jomini.Tree) []Diagnostic {
-	place := visitor.place
+// diagnoseTree returns the problems of the visitor's file judged on the given document of its text. A file of the
+// game has its parse errors only.
+func (visitor *diagnoseVisitor) diagnoseTree(document workspace.Document) []Diagnostic {
+	tree, place := document.Tree, visitor.place
 	switch {
 	case place.Format == files.FormatDescriptor:
 		return visitor.diagnoseDescriptor(tree)
 	case place.Format == files.FormatLocalization:
-		return visitor.diagnoseMessages(tree)
+		return visitor.diagnoseMessages(document)
 	case !place.Format.IsScript():
 		// the game reads nothing under a misspelled folder, so only the folder is judged
 		return diagnoseFolders(tree, place)
@@ -336,7 +338,7 @@ func (visitor *diagnoseVisitor) Enter(tree *jomini.Tree, statement int32, contex
 	visitor.diagnoseCall(tree, statement, context)
 	// a GUI file's text is read as localization is, in the data context of its block
 	if value := tree.Statements[statement].Value; visitor.place.Format == files.FormatGUI && strings.Contains(tree.Text(value), "[") {
-		visitor.diagnoseCalls(tree, tree.Unquoted(value), tree.UnquotedSpan(value).Start, context.Datacontext)
+		visitor.diagnoseCalls(tree, loc.Segments(tree.Unquoted(value), tree.UnquotedSpan(value).Start), context.Datacontext)
 	}
 	return true
 }
@@ -354,13 +356,18 @@ func (visitor *diagnoseVisitor) Leave(tree *jomini.Tree, statement int32, contex
 	var missing []string
 	for key, field := range context.Field.Children {
 		if field.Required.Value == "always" && field.Required.Source.CanAccuse() && !strings.HasPrefix(key, "<") &&
-			!hasChild(tree, statement, key) && !visitor.isWritten(definition, key) && isRequired(context.Field, field) {
+			!hasChild(tree, statement, key) && isRequired(context.Field, field) {
 			missing = append(missing, key)
 		}
 	}
+	reference := schema.Reference{Database: definition.Database, Name: definition.Name}
+	if len(missing) > 0 {
+		winner, _ := findKept(visitor.ws, visitor.index, reference, visitor.place.Position)
+		missing = slices.DeleteFunc(missing, func(key string) bool { return visitor.isWritten(winner, definition, key) })
+	}
 	slices.Sort(missing)
 	for _, key := range missing {
-		facts := DescribeReference(schema.Reference{Database: definition.Database, Name: definition.Name})
+		facts := DescribeReference(reference)
 		facts["key"] = key
 		visitor.diagnostics = append(visitor.diagnostics, makeDiagnostic(tree, definition.Span, "missing-key", facts))
 	}
@@ -401,7 +408,7 @@ func (visitor *diagnoseVisitor) diagnoseMissing(tree *jomini.Tree, references []
 			file := visitor.whole.File(site)
 			facts["mod"], facts["other"], facts["file"] = visitor.ws.DescribeMod(visitor.place.Origin),
 				visitor.ws.DescribeMod(file.Origin), file.Rel
-			diagnostic.Defined = []Location{locateOccurrence(visitor.ws, visitor.whole, site)}
+			diagnostic.Defined = []Site{LocateSite(visitor.ws, visitor.whole, site)}
 		}
 		visitor.diagnostics = append(visitor.diagnostics, diagnostic)
 	}
@@ -441,7 +448,7 @@ func (visitor *diagnoseVisitor) isKnown(reference schema.Reference) bool {
 		if _, ok := mods.ResolveTexture(reference.Name); ok {
 			return true
 		}
-	} else if sites := mods.ResolveLocal(reference, visitor.place.Path); len(sites) > 0 {
+	} else if sites := mods.ResolveLocal(reference, visitor.place.Position); len(sites) > 0 {
 		return slices.ContainsFunc(sites, func(site index.Site) bool {
 			file := mods.File(site)
 			hiding, _, ok := mods.FindLoaded(file.Rel)
@@ -461,7 +468,7 @@ func (visitor *diagnoseVisitor) findElsewhere(alternatives []schema.Reference) (
 		return index.Site{}, false
 	}
 	for _, reference := range alternatives {
-		if winner, ok := findKept(visitor.ws, visitor.whole, reference, visitor.place.Path); ok &&
+		if winner, ok := findKept(visitor.ws, visitor.whole, reference, visitor.place.Position); ok &&
 			visitor.whole.IsLoaded(winner.Site.File) {
 			return winner.Site, true
 		}
@@ -480,7 +487,7 @@ func (visitor *diagnoseVisitor) diagnoseKey(tree *jomini.Tree, statement int32, 
 	case current.Key.IsEmpty() || context.Category != schema.CategoryNone || context.Field != nil:
 		// a key with a meaning of its own is not an unknown key
 	case current.Parent == 0 && jomini.IsEventID(tree.Unquoted(current.Key)):
-		visitor.diagnoseNamespace(tree, current)
+		visitor.diagnoseNamespace(tree, current, context)
 	case context.Definition != nil:
 		visitor.diagnoseUnknown(tree, statement, context)
 	}
@@ -501,7 +508,7 @@ func (visitor *diagnoseVisitor) diagnoseDefinition(tree *jomini.Tree, statement 
 		facts["mode"] = definition.Mode
 		mode := jomini.Span{Start: definition.Span.Start - len(definition.Mode) - 1, End: definition.Span.Start}
 		visitor.diagnostics = append(visitor.diagnostics, makeDiagnostic(tree, mode, "misplaced-mode", facts))
-	case definition.Mode != "" && visitor.isOrphan(definition, database.Precedence):
+	case definition.Mode != "" && visitor.isOrphan(definition):
 		facts["mode"] = definition.Mode
 		visitor.diagnostics = append(visitor.diagnostics, makeDiagnostic(tree, definition.Span, "inject-without-target", facts))
 	case definition.Mode == "" && !definition.Local:
@@ -527,27 +534,26 @@ func (visitor *diagnoseVisitor) hasMessage(key string) bool {
 
 // isOrphan reports whether a definition written with an entry mode has nothing to change. An optional mode, or one
 // that creates, never is.
-func (visitor *diagnoseVisitor) isOrphan(definition *schema.Definition, precedence game.Precedence) bool {
+func (visitor *diagnoseVisitor) isOrphan(definition *schema.Definition) bool {
 	mode, _ := game.LookupEntryMode(definition.Mode)
 	if mode.Optional || mode.Creates {
 		return false
 	}
-	mods := visitor.index
 	reference := schema.Reference{Database: definition.Database, Name: definition.Name}
-	_, acts := mods.FindWinner(mods.ResolveLocal(reference, visitor.place.Path), precedence)
+	_, acts := findKept(visitor.ws, visitor.index, reference, visitor.place.Position)
 	return !acts
 }
 
 // isOwn reports whether a site is a definition as written in the file being walked.
 func (visitor *diagnoseVisitor) isOwn(site index.Site, definition *schema.Definition) bool {
-	return visitor.listed && site.File == visitor.position && visitor.index.Occurrence(site).Span == definition.Span
+	return site.File == visitor.place.Position && visitor.index.Occurrence(site).Span == definition.Span
 }
 
 // classifyDuplicate returns the code of the problem a definition has because others share its name, or "" for none.
 func (visitor *diagnoseVisitor) classifyDuplicate(definition *schema.Definition, precedence game.Precedence) string {
 	mods := visitor.index
 	reference := schema.Reference{Database: definition.Database, Name: definition.Name}
-	defined := lo.Filter(mods.ResolveLocal(reference, visitor.place.Path), func(site index.Site, _ int) bool {
+	defined := lo.Filter(mods.ResolveLocal(reference, visitor.place.Position), func(site index.Site, _ int) bool {
 		return mods.Occurrence(site).Mode == 0 && !mods.Occurrence(site).Alias
 	})
 	sites := lo.Filter(defined, func(site index.Site, _ int) bool { return mods.IsLoaded(site.File) })
@@ -563,8 +569,8 @@ func (visitor *diagnoseVisitor) classifyDuplicate(definition *schema.Definition,
 		return ""
 	}
 	byGame := lo.CountBy(defined, func(site index.Site) bool { return mods.File(site).Origin == game.OriginVanilla })
-	winner, kept := findKept(visitor.ws, mods, reference, visitor.place.Path)
-	if kept && winner.Reason != index.Unsettled && byGame < 2 && winner.Site != sites[own] &&
+	winner, kept := findKept(visitor.ws, mods, reference, visitor.place.Position)
+	if kept && winner.Reason != index.ReasonUnsettled && byGame < 2 && winner.Site != sites[own] &&
 		mods.Occurrence(winner.Site).Mode == 0 && mods.File(winner.Site).Origin == visitor.place.Origin {
 		return "duplicate-definition"
 	}
@@ -572,13 +578,16 @@ func (visitor *diagnoseVisitor) classifyDuplicate(definition *schema.Definition,
 }
 
 // diagnoseNamespace records an event at the top of an events file that is outside the file's namespaces.
-func (visitor *diagnoseVisitor) diagnoseNamespace(tree *jomini.Tree, current jomini.Statement) {
+func (visitor *diagnoseVisitor) diagnoseNamespace(tree *jomini.Tree, current jomini.Statement, context *schema.Context) {
 	database, ok := visitor.ws.Schema.FindDatabase(visitor.place.Rel)
-	if !ok || database.Row.Houses != "events" {
+	if !ok || database.Row.Contents != game.ContentsEvents {
 		return
 	}
+	namespaces := lo.Map(context.Parent.Namespaces, func(statement int32, _ int) string {
+		return tree.Unquoted(tree.Statements[statement].Value)
+	})
 	facts := DescribeReference(schema.Reference{Database: database.Name, Name: tree.Unquoted(current.Key)})
-	facts["namespace"] = cmp.Or(strings.Join(visitor.ws.Schema.ListNamespaces(tree, visitor.place.File), ", "), "none")
+	facts["namespace"] = cmp.Or(strings.Join(namespaces, ", "), "none")
 	visitor.diagnostics = append(visitor.diagnostics, makeDiagnostic(tree, current.Key, "wrong-namespace", facts))
 }
 
@@ -586,9 +595,7 @@ func (visitor *diagnoseVisitor) diagnoseNamespace(tree *jomini.Tree, current jom
 // any case.
 func (visitor *diagnoseVisitor) diagnoseFollows(tree *jomini.Tree, statement int32, context *schema.Context) {
 	current := tree.Statements[statement]
-	holder := context.Parent
-	keyword, _ := game.LookupKeyword(cmp.Or(holder.Shape, game.ShapeUnknown), strings.ToLower(holder.Label),
-		strings.ToLower(tree.Unquoted(current.Key)))
+	keyword := context.Keyword
 	if len(keyword.Follows) == 0 {
 		return
 	}
@@ -757,7 +764,7 @@ func (visitor *diagnoseVisitor) listCalleeParameters(key string, callee *schema.
 		return nil
 	}
 	reference := schema.Reference{Database: callee.Database, Name: key}
-	if winner, ok := findKept(visitor.ws, visitor.index, reference, visitor.place.Path); ok {
+	if winner, ok := findKept(visitor.ws, visitor.index, reference, visitor.place.Position); ok {
 		if tree, statement, err := visitor.ws.FindStatement(visitor.index, winner.Site); err == nil {
 			return schema.ListParameters(tree, statement)
 		}
@@ -765,15 +772,13 @@ func (visitor *diagnoseVisitor) listCalleeParameters(key string, callee *schema.
 	return callee.Parameters
 }
 
-// isWritten reports whether another definition the game merges with this one writes a key.
-func (visitor *diagnoseVisitor) isWritten(definition *schema.Definition, key string) bool {
-	mods := visitor.index
-	winner, ok := findKept(visitor.ws, mods, schema.Reference{Database: definition.Database, Name: definition.Name}, visitor.place.Path)
-	return ok && slices.ContainsFunc(winner.Merged, func(site index.Site) bool {
+// isWritten reports whether a definition that a winner merges, other than the one walked, writes a key.
+func (visitor *diagnoseVisitor) isWritten(winner index.Winner, definition *schema.Definition, key string) bool {
+	return slices.ContainsFunc(winner.Merged, func(site index.Site) bool {
 		if visitor.isOwn(site, definition) {
 			return false
 		}
-		tree, statement, err := visitor.ws.FindStatement(mods, site)
+		tree, statement, err := visitor.ws.FindStatement(visitor.index, site)
 		return err == nil && hasChild(tree, statement, key)
 	})
 }

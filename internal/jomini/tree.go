@@ -135,6 +135,12 @@ func (tree *Tree) UnquotedSpan(span Span) Span {
 	return span
 }
 
+// ParseBracketed parses the data call that a value of the tree writes between brackets, without its quotes. The
+// call's spans are the tree's offsets. It returns false if the value is no call.
+func (tree *Tree) ParseBracketed(span Span) (Call, bool) {
+	return ParseBracketed(tree.Unquoted(span), tree.UnquotedSpan(span).Start)
+}
+
 // Children yields the direct children of a statement in document order. For the file, which is the first statement,
 // they are the top-level statements.
 func (tree *Tree) Children(statement int32) iter.Seq[int32] {
@@ -204,26 +210,4 @@ func (tree *Tree) FindChildValue(statement int32, key string) (string, bool) {
 		return "", false
 	}
 	return tree.Unquoted(tree.Statements[child].Value), true
-}
-
-// IsEqual reports whether a statement writes the same as a statement of another tree: the same keys, operators,
-// tags and values, nested the same way. Comments, spacing and quotes do not count.
-func (tree *Tree) IsEqual(statement int32, other *Tree, otherStatement int32) bool {
-	count := tree.Statements[statement].Last - statement
-	if other.Statements[otherStatement].Last-otherStatement != count {
-		return false
-	}
-	for offset := range count {
-		current, compared := tree.Statements[statement+offset], other.Statements[otherStatement+offset]
-		// The first statement's parent lies outside what is compared.
-		if offset > 0 && current.Parent-statement != compared.Parent-otherStatement {
-			return false
-		}
-		if current.IsBlock() != compared.IsBlock() || tree.Unquoted(current.Key) != other.Unquoted(compared.Key) ||
-			tree.Text(current.Op) != other.Text(compared.Op) || tree.Text(current.Tag) != other.Text(compared.Tag) ||
-			tree.Unquoted(current.Value) != other.Unquoted(compared.Value) {
-			return false
-		}
-	}
-	return true
 }

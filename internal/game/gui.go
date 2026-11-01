@@ -24,8 +24,13 @@ type WidgetType struct {
 type WidgetSlot struct {
 	// Role is what the block is to its widget: skin (a background), chrome (a scroll bar), attachment (a tooltip) or
 	// label (its text).
-	Role string
-	Type string // the built-in type the block is drawn as; "" means the block's own
+	Role    string
+	Type    string // the built-in type the block is drawn as; "" means the block's own
+	Floats  bool   // the block floats apart from its widget, as a tooltip does, so it is drawn as no child of it
+	Dresses bool   // the block only dresses its widget, so a picture it lacks draws no placeholder
+	// Labels says the block's widgets show their widget's text. They come before its other children, and the next
+	// label replaces them.
+	Labels bool
 }
 
 // An Animation is how one state of a widget leads to others: the key that names the state run after it, the key of
@@ -95,18 +100,31 @@ type TierFrames struct {
 // A Placeholder is a shape PMT draws where a picture has no file, for the kinds of object it stands for. The shape is
 // a file among the page's placeholders, and the page tints each in a color of its own.
 type Placeholder struct {
+	Games   []string // the games it holds for; none means every game
 	Shape   string
 	Kinds   []string // the kinds as keys, data types and data functions write them, in lower-case words ("coat of arms")
 	Runtime bool     // only the running game draws its pictures, from what it holds, so no file is looked for
 }
 
 // Illustrations is where the pictures are that a definition names by a path below a folder: the key that names the
-// folder, and the folder where the definition names none. A picture written in a block with the trigger key is drawn
-// only where its condition holds; the others are the fallback.
+// folder, and the folder where the definition names none. A picture written in a block with a trigger is drawn only
+// where its condition holds; the others are the fallback.
 type Illustrations struct {
-	FolderKey  string
-	Folder     string
-	TriggerKey string
+	FolderKey string
+	Folder    string
+}
+
+// A GameGUI is what one game does with GUI files beyond what every game does.
+type GameGUI struct {
+	Holders     map[string]string // the window a window made from a type is laid out in, by the type
+	Undeclared  []string          // the widget types it draws though no file of its install declares them
+	DropsHidden []string          // the types beyond GUI.Types in which a hidden child takes no room
+	// SuffixStems is, by the stem of the defines for a kind and a field of its pictures, the stem its suffix define is
+	// written under instead, where the game names it so.
+	SuffixStems   map[string]string
+	DefineGroup   string        // the define group whose defines say where its icons and pictures are
+	Tiers         TierFrames    // how it draws a title's tier from a sheet of cells; zero for none
+	Illustrations Illustrations // where the pictures are that a definition names by a path below a folder
 }
 
 // Levels is where the pictures are of a kind of level, one for each level: the last word of the kind, which says it is
@@ -122,37 +140,47 @@ type GUIRules struct {
 	// Declares is the words before a top block that declare a definition of gui.<word>, or group definitions
 	// (types x { }).
 	Declares  []string
+	TypeKey   string            // the word that declares a type; a type no file defines is marked missing under it
+	BlockKey  string            // the word that declares a labeled block, which a widget's BlockCalls block replaces
 	NameKeyOf map[string]string // a block key at any depth, and the key whose value names its definition
 	// WidgetKey is the key that names every other top block, a definition of WidgetDatabase. The file's only block
 	// written under a key that writes none is named after the file.
 	WidgetKey      string
-	DatabasePrefix string      // what a GUI database's name starts with, before the word that declares it
-	WidgetDatabase string      // the database of every top block that no declaring word declares
-	TagCalls       string      // the word that calls the tag a block is written with
-	TemplateCalls  string      // the word that calls a template
-	BlockCalls     string      // the word that calls the block a template or type leaves for a widget to replace
-	ContextKey     string      // the key whose value is the data call its block's bindings read in
-	References     []Reference // what a widget's keys name, Database "" for any
-	TextFormats    string      // the database a text's #format names
-	TextIcons      string      // the database an icon in a text, @icon!, names
+	DatabasePrefix string // what a GUI database's name starts with, before the word that declares it
+	WidgetDatabase string // the database of every top block that no declaring word declares
+	TagCalls       string // the word that calls the tag a block is written with
+	TemplateCalls  string // the word that calls a template
+	BlockCalls     string // the word that calls the block a template or type leaves for a widget to replace
+	ContextKey     string // the key whose value is the data call its block's bindings read in
+	TextFormats    string // the database a text's #format names
+	TextIcons      string // the database an icon in a text, @icon!, names
 	// EditorFolders hold the files of the game's own GUI editor, which call functions of the editor no dump declares;
 	// they are not judged.
 	EditorFolders []string
 	Slots         map[string]WidgetSlot
+	ItemKey       string // the key of a data model's block for the widgets of each of its items
 	// Types is the row of each built-in widget type. Any other type holds its children by their anchors and keeps a
 	// hidden child's room.
 	Types           map[string]WidgetType
 	OpeningStates   []string          // the states run by name as a window opens
 	OpeningTriggers map[string]string // the states run as a window opens by a key's value
-	StateKeys       []string          // the keys of a state that are its own rather than end values
-	OpeningCalls    string            // the key of a state whose calls run as the state starts
-	Animation       Animation
+	// StateKey is the key of a widget's block for one of its states; StateKeys are the keys inside one.
+	StateKey     string
+	StateKeys    []string // the keys of a state that are its own rather than end values
+	OpeningCalls string   // the key of a state whose calls run as the state starts
+	Animation    Animation
 	// RepeatedKeys is the keys a widget keeps every value of, in the order written, each adding to the ones before.
 	RepeatedKeys []string
-	// TextKeys is the keys that write a widget's one text, localized or as written. The last one written wins.
+	// TextKeys is the keys that write a widget's one text, the localized one first and then the one shown as written.
+	// The last one written wins.
 	TextKeys     []string
 	MultilineKey string // the key whose yes lets a widget's text run over several lines
 	ResizeKey    string // the key whose yes resizes a widget to fit what it holds
+	SizeKey      string // the key that sets a widget's size
+	// OverlayKey is the key of a block that lays a texture over its widget's own, and OverlayTextureKey the key in it of
+	// that texture.
+	OverlayKey        string
+	OverlayTextureKey string
 	// CallKinds is what a data call in a text shows, by the type its last function returns: number or text. A type
 	// with no row shows two words of text. A call that DateCalls knows shows a date. draw's sampleCall reads the
 	// words, number, text and date, and writes each sample's word in its loc.Segment.Kind, by which placeholders.ts
@@ -199,6 +227,7 @@ type GUIRules struct {
 	// CallTargets is the data functions whose quoted arguments are names, by function: the database each argument's
 	// names are in, in order, and "" for one that is no name.
 	CallTargets map[string][]string
+	DefineCall  string // the data function that reads a define; its CallTargets row names the defines' databases
 	// StepDatabases are the databases whose definitions a data call names as a step of its own, which no dump declares.
 	StepDatabases []string
 	// Booleans is the data functions a binding combines conditions with, by name without the argument count.
@@ -227,9 +256,14 @@ type GUIRules struct {
 	ShownFirst string
 }
 
-// The words that call a type, a template and a block override, which GUI and the callable databases both name,
-// the key that names a widget, and the key that names a widget's font with the database of fonts.
+// The words that GUI and another table both name. Its Declares names the words that declare a type and a labeled
+// block, and its CallTargets the data function that reads a define. The callable databases name the words that call
+// a type, a template and a block override. The last three are the key that names a widget, the key that names a
+// widget's font, and the database of fonts.
 const (
+	guiType          = "type"
+	guiBlock         = "block"
+	guiDefineCall    = "GetDefine"
 	guiFontKey       = "font"
 	guiFontDatabase  = "font.font"
 	guiWidgetKey     = "name"
@@ -240,7 +274,9 @@ const (
 
 // GUI is what every game does with a GUI file.
 var GUI = GUIRules{
-	Declares:       []string{"type", "local_type", "template", "local_template", "block", "layer"},
+	Declares:       []string{guiType, "local_type", "template", "local_template", guiBlock, "layer"},
+	TypeKey:        guiType,
+	BlockKey:       guiBlock,
 	NameKeyOf:      map[string]string{"texticon": "icon", "format": "name"},
 	WidgetKey:      guiWidgetKey,
 	DatabasePrefix: "gui.",
@@ -249,24 +285,20 @@ var GUI = GUIRules{
 	TemplateCalls:  guiTemplateCalls,
 	BlockCalls:     guiBlockCalls,
 	ContextKey:     "datacontext",
-	References: []Reference{
-		{KeyPath: guiTemplateCalls, Target: "gui.template"}, {KeyPath: "layer", Target: "gui.layer"},
-		{KeyPath: "texture", Target: File}, {KeyPath: guiFontKey, Target: guiFontDatabase},
-		{KeyPath: "text", Target: Localization}, {KeyPath: "title", Target: Localization},
-	},
-	TextFormats: "gui.format",   // gui/preload/textformatting.gui:6-7
-	TextIcons:   "gui.texticon", // gui/debug/placeholder_types_templates.gui:346-347
+	TextFormats:    "gui.format",   // gui/preload/textformatting.gui:6-7
+	TextIcons:      "gui.texticon", // gui/debug/placeholder_types_templates.gui:346-347
 	// clausewitz/gui/gui_editor, and EU5's loading_screen stage
 	EditorFolders: []string{"gui/gui_editor", "loading_screen/gui/gui_editor"},
 	Slots: map[string]WidgetSlot{
-		"background":           {Role: "skin", Type: "background"},
-		"tooltipwidget":        {Role: "attachment"},
+		"background":           {Role: "skin", Type: "background", Dresses: true},
+		"tooltipwidget":        {Role: "attachment", Floats: true},
 		"scrollbar_vertical":   {Role: "chrome", Type: "scrollbar"},
 		"scrollbar_horizontal": {Role: "chrome", Type: "scrollbar"},
-		"buttontext":           {Role: "label"},
+		"buttontext":           {Role: "label", Labels: true},
 		"scrollwidget":         {Type: "widget"},
 		"zoomwidget":           {Type: "widget"},
 	},
+	ItemKey: "item",
 	Types: map[string]WidgetType{
 		"hbox":           {Holding: "row", DropsHidden: true},
 		"uberhbox":       {Holding: "row", DropsHidden: true},
@@ -287,6 +319,7 @@ var GUI = GUIRules{
 	},
 	OpeningStates:   []string{"_show"},
 	OpeningTriggers: map[string]string{"trigger_on_create": "yes"},
+	StateKey:        "state",
 	StateKeys: []string{
 		guiWidgetKey, "duration", "next", "on_start", "on_finish", "trigger_on_create", "delay", "bezier", "loop", "animation",
 		"restart_on_show", "skip_initial_animation", "trigger_when", "start_sound", "end_sound", "sstart_sound",
@@ -301,6 +334,8 @@ var GUI = GUIRules{
 	TextKeys:     []string{"text", "raw_text"}, // the wiki: raw_text is a text that is not localized
 	MultilineKey: "multiline",                  // the wiki's Interface page
 	ResizeKey:    "autoresize",                 // the wiki's Interface page
+	SizeKey:      "size",
+	OverlayKey:   "modify_texture", OverlayTextureKey: "texture",
 	// the dumps' Return type of the last function of every data call in the three installs' GUI texts;
 	// CPdxStringView is EU5's alone and int64 Vic3's
 	CallKinds: map[string]string{
@@ -366,7 +401,7 @@ var GUI = GUIRules{
 	// a data binding is called by its own name (the data_binding row's NamedBy call), as a customizable localization is
 	StepDatabases: []string{"data_binding", "customizable_localization"},
 	CallTargets: map[string][]string{
-		"GetDefine":         {"defines", "defines.define"},
+		guiDefineCall:       {"defines", "defines.define"},
 		"Localize":          {Localization},     // the dumps' AddLocalizationIf expansion calls it
 		"AddLocalizationIf": {"", Localization}, // the dumps' expansion is AddLocalizationIf(Condition, LocKey)
 		"Concept":           {"game_concepts"},
@@ -376,8 +411,9 @@ var GUI = GUIRules{
 		// CK3's data_types declare Character.Custom2( Arg0, Arg1 ); each of its 5,455 calls names one by the first
 		"Custom2": {"customizable_localization"},
 	},
-	Booleans: map[string]string{"And": "and", "Or": "or", "Nor": "nor", "Not": "not"},
-	Literals: map[string]bool{"yes": true, "true": true, "no": false, "false": false},
+	DefineCall: guiDefineCall,
+	Booleans:   map[string]string{"And": "and", "Or": "or", "Nor": "nor", "Not": "not"},
+	Literals:   map[string]bool{"yes": true, "true": true, "no": false, "false": false},
 	// CK3 gui/shared/lists.gui:2671, LessThanOrEqualTo_int32(GetDataModelSize(TraitArrays.GetPersonalityTraits), …)
 	Comparisons: map[string][]int{
 		"LessThan": {-1}, "LessThanOrEqualTo": {-1, 0}, "GreaterThan": {1}, "GreaterThanOrEqualTo": {0, 1},
@@ -404,9 +440,15 @@ var GUI = GUIRules{
 	ShownFirst: "gui.widget",
 }
 
-// Placeholders are the shapes every game draws where a picture has no file, tried in order after the game's own. The
-// last is the plain icon, which stands for any picture of no listed kind.
+// Placeholders are the shapes drawn where a picture has no file, tried in order, a game's own before every game's:
+// a character's silhouette from its period, and its coat of arms as a shield or a flag. The last is the plain icon,
+// which stands for any picture of no listed kind.
 var Placeholders = []Placeholder{
+	{Games: []string{ck3}, Shape: "crowned-ruler", Kinds: []string{"portrait texture"}, Runtime: true},
+	{Games: []string{ck3}, Shape: "shield", Kinds: []string{"coat of arms"}, Runtime: true},
+	{Games: []string{vic3}, Shape: "top-hat", Kinds: []string{"portrait texture"}, Runtime: true},
+	{Games: []string{eu5}, Shape: "plumed-hat", Kinds: []string{"portrait texture"}, Runtime: true},
+	{Games: vic3AndEU5, Shape: "flag", Kinds: []string{"coat of arms"}, Runtime: true},
 	{Shape: "illustration", Kinds: []string{"illustration", "image", "picture"}},
 	{Shape: "flag", Kinds: []string{"flag"}},
 	{Shape: "faith", Kinds: []string{"faith", "religion", "religious", "rite", "tenet", "doctrine"}},
@@ -428,14 +470,13 @@ var Placeholders = []Placeholder{
 // where the phrase holds none.
 func (game *Game) FindPlaceholder(phrase string) Placeholder {
 	padded := " " + phrase + " "
-	all := slices.Concat(game.Placeholders, Placeholders)
-	for _, placeholder := range all {
-		isNamed := slices.ContainsFunc(placeholder.Kinds, func(kind string) bool {
+	for _, placeholder := range Placeholders {
+		isNamed := game.Matches(placeholder.Games) && slices.ContainsFunc(placeholder.Kinds, func(kind string) bool {
 			return strings.Contains(padded, " "+kind+" ")
 		})
 		if isNamed {
 			return placeholder
 		}
 	}
-	return all[len(all)-1]
+	return Placeholders[len(Placeholders)-1]
 }

@@ -7,7 +7,7 @@ import * as monaco from "monaco-editor/editor/editor.api";
 import type { languages } from "monaco-editor";
 
 import * as lsp from "@services/lsp/service";
-import type { Completion, Edit, Fix, Location, Symbol } from "@services/lsp/models";
+import type { Completion, Edit, Fix, Site, Symbol } from "@services/lsp/models";
 import type { Place } from "@services/workspace/models";
 import { loadQuery, placeQuery } from "../../../queries";
 import { useEditorStore } from "../../../stores/editor";
@@ -230,9 +230,9 @@ async function show(resource: monaco.Uri, selection?: monaco.IRange | monaco.IPo
   useEditorStore().show(place, position);
 }
 
-/** Turns Go's locations into Monaco's, and keeps each file's place for a peek of them. */
-function toLocations(locations: Location[] | null): languages.Location[] {
-  const found = (locations ?? []).map(({ place, range }) => ({ uri: markPlace(place), range }));
+/** Turns Go's sites into Monaco's locations, and keeps each file's place for a peek of them. */
+function toLocations(sites: Site[] | null): languages.Location[] {
+  const found = (sites ?? []).map(({ place, range }) => ({ uri: markPlace(place), range }));
   dotSheet.replaceSync([...dots.values()].join("\n"));
   return found;
 }

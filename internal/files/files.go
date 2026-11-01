@@ -1,5 +1,5 @@
 // Package files lists the files of an install, a mod or a dump folder and tells what format each one is. It reads and
-// writes a file's text in its own encoding, compares and joins paths, and applies ignore rules.
+// writes a file's text in its own encoding, compares and joins paths, unpacks a zip and applies ignore rules.
 package files
 
 import (
@@ -38,52 +38,34 @@ const (
 	FormatBinary       Format = "binary"       // anything the binary test flags
 )
 
+// formats holds the format each extension says by itself.
+var formats = map[string]Format{
+	".txt": FormatScript, ".gui": FormatGUI, ".asset": FormatAsset, ".font": FormatFont, ".gfx": FormatGFX,
+	".dds": FormatImage, ".png": FormatImage, ".tga": FormatImage,
+	".jpg": FormatWebImage, ".jpeg": FormatWebImage, ".gif": FormatWebImage, ".webp": FormatWebImage,
+	".csv": FormatTable, ".fxh": FormatShader, ".shader": FormatShader, ".hlsl": FormatShader,
+	".dll": FormatBinary, ".exe": FormatBinary, ".so": FormatBinary, ".bin": FormatBinary, ".ogg": FormatBinary,
+	".wav": FormatBinary, ".mp3": FormatBinary, ".bk2": FormatBinary, ".mesh": FormatBinary, ".anim": FormatBinary,
+	".pdx": FormatBinary, ".ttf": FormatBinary, ".otf": FormatBinary, ".zip": FormatBinary, ".pak": FormatBinary,
+}
+
 // Classify returns the format of a file from its path under its root. It looks at the extension and the folder only.
 // It returns FormatText for an extension it does not know, and for script written directly in a root, which the games
 // never read.
 func Classify(rel string) Format {
 	folder, base := path.Split(strings.ToLower(rel))
 	ext := path.Ext(base)
-	if folder == "" && slices.Contains([]string{".txt", ".gui", ".asset", ".font", ".gfx"}, ext) {
+	switch {
+	case ext == ".yml" && slices.Contains(strings.Split(folder, "/"), "localization"):
+		return FormatLocalization
+	case ext == ".mod" && folder == "", base == "metadata.json" && path.Base(folder) == ".metadata":
+		return FormatDescriptor
+	}
+	format, ok := formats[ext]
+	if !ok || folder == "" && format.IsScript() {
 		return FormatText
 	}
-	switch ext {
-	case ".yml":
-		folders := strings.Split(folder, "/")
-		if slices.Contains(folders, "localization") {
-			return FormatLocalization
-		}
-	case ".mod":
-		if folder == "" {
-			return FormatDescriptor
-		}
-	case ".json":
-		if base == "metadata.json" && path.Base(folder) == ".metadata" {
-			return FormatDescriptor
-		}
-	case ".txt":
-		return FormatScript
-	case ".gui":
-		return FormatGUI
-	case ".asset":
-		return FormatAsset
-	case ".font":
-		return FormatFont
-	case ".gfx":
-		return FormatGFX
-	case ".dds", ".png", ".tga":
-		return FormatImage
-	case ".jpg", ".jpeg", ".gif", ".webp":
-		return FormatWebImage
-	case ".csv":
-		return FormatTable
-	case ".fxh", ".shader", ".hlsl":
-		return FormatShader
-	case ".dll", ".exe", ".so", ".bin", ".ogg", ".wav", ".mp3", ".bk2", ".mesh", ".anim", ".pdx", ".ttf", ".otf",
-		".zip", ".pak":
-		return FormatBinary
-	}
-	return FormatText
+	return format
 }
 
 // IsScript reports whether files of the format are written in the script language: .txt, .gui, .asset, .font and

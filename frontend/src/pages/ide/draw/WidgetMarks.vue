@@ -7,7 +7,8 @@ import { computed } from "vue";
 
 import type { Window } from "@services/draw/models";
 
-import { applyProperties, listProperties, TYPE_ICONS } from "./picture";
+import { applyProperties, listProperties } from "./picture";
+import { findTypeIcon } from "./properties";
 
 const props = defineProps<{
   rects: Map<number, DOMRect>;
@@ -15,7 +16,10 @@ const props = defineProps<{
   hovered: number | null;
   /** The widgets whose condition the state under the pointer decides. */
   outlined: number[];
-  window: Window;
+  /** The drawn window, or null for a coat. */
+  window: Window | null;
+  /** The widgets that lack a property the game's files did not give, one row for each such property. */
+  missing: { id: number }[];
   /** The key of the property on the caret's line, or "". */
   property: string;
   /** Whether the window lay wholly off the screen and is drawn at the screen's edge it passed. */
@@ -49,7 +53,7 @@ const marks = computed(() => {
   ];
   return ids.flatMap(({ look, id }) => {
     const rect = id === null ? undefined : props.rects.get(id);
-    const widget = id === null ? undefined : props.window.widgets?.[id];
+    const widget = id === null ? undefined : props.window?.widgets?.[id];
     return rect ? [{ look, rect, widget }] : [];
   });
 });
@@ -57,17 +61,14 @@ const marks = computed(() => {
 const outlines = computed(() => props.outlined.flatMap((id) => props.rects.get(id) ?? []));
 
 const badges = computed(() =>
-  (props.window.widgets ?? []).flatMap(({ id, properties }) => {
-    const rect = props.rects.get(id);
-    return rect && listProperties(props.window, properties).some(({ origin }) => origin === "missing") ? [rect] : [];
-  }),
+  [...new Set(props.missing.map(({ id }) => id))].flatMap((id) => props.rects.get(id) ?? []),
 );
 
 const guide = computed(() => {
-  const widget = props.selected === null ? undefined : props.window.widgets?.[props.selected];
+  const widget = props.selected === null ? undefined : props.window?.widgets?.[props.selected];
   const rect = props.selected === null ? undefined : props.rects.get(props.selected);
   const shape = GUIDES[props.property];
-  if (!widget || !rect || !shape) return null;
+  if (!props.window || !widget || !rect || !shape) return null;
   const style = document.createElement("div").style;
   const properties = listProperties(props.window, widget.properties);
   applyProperties(properties, style);
@@ -122,7 +123,7 @@ const guide = computed(() => {
         }"
       >
         <template v-if="mark.widget">
-          <UIcon :name="TYPE_ICONS[mark.widget.type] ?? 'i-lucide-square-dashed'" class="size-3 shrink-0" />
+          <UIcon :name="findTypeIcon(mark.widget.type)" class="size-3 shrink-0" />
           {{ mark.widget.type }} {{ mark.widget.name }}
         </template>
         <span class="opacity-70">{{ Math.round(mark.rect.width) }} × {{ Math.round(mark.rect.height) }}</span>

@@ -87,6 +87,15 @@ type Posting struct {
 	Database uint16
 }
 
+// A placement is where the game mounts one file: its root's position in load order, its stage's rank (0 for none,
+// then 1 and up in the game's order), its path from the stage as written and in lower case, and whether the game
+// never mounts it.
+type placement struct {
+	root, stage int
+	rest, key   string
+	unmounted   bool
+}
+
 // An Index is what a scan found in one list of files. A mods' index stands on the install's.
 type Index struct {
 	Game        string // the game's id
@@ -103,12 +112,15 @@ type Index struct {
 	// install is the install's index that a mods' index stands on, whose postings it reads. It is nil for the
 	// install's own.
 	install  *Index
+	row      *game.Game                    // the game's row, looked up once when the index is made or loaded
 	postings map[Posting]map[uint32][]Site // by a posting, then by a name's ordinal
 	byKey    map[string]int32              // by a file's key: its position in Files
 	// byRel holds the positions of the files that share a path from a root, in load order. The path is in lower case
 	// and has no stage folder.
-	byRel    map[string][]int32
-	rootKeys []string // by root, as Roots lists them: its folder's key, ending in a slash
+	byRel        map[string][]int32
+	placements   []placement // per file, as Files lists them: where the game mounts it
+	replacedKeys [][]string  // by root, its mod's replace_path folders as group keys
+	rootKeys     []string    // by root, as Roots lists them: its folder's key, ending in a slash
 	// origins are the ids of the mods a narrowed index answers for; nil means every mod.
 	origins map[string]struct{}
 }

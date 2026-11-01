@@ -3,7 +3,7 @@
 
 // eslint-disable-next-line @typescript-eslint/ban-ts-comment
 // @ts-ignore: Unused imports
-import * as game$0 from "../../internal/game/models.js";
+import * as index$0 from "../../internal/index/models.js";
 // eslint-disable-next-line @typescript-eslint/ban-ts-comment
 // @ts-ignore: Unused imports
 import * as jomini$0 from "../../internal/jomini/models.js";
@@ -111,7 +111,7 @@ export interface Card {
      */
     "number"?: number | null;
     "image"?: texture$0.Header | null;
-    "sites"?: CardSite[] | null;
+    "sites"?: Site[] | null;
 
     /**
      * a fact was learned from the game's files
@@ -141,24 +141,6 @@ export interface CardScope {
     "link": string;
     "type": string;
     "about": string;
-}
-
-/**
- * A CardSite is one place a name is defined, with whether the game keeps that definition and why.
- */
-export interface CardSite {
-    "place": workspace$0.Place;
-
-    /**
-     * counted from one
-     */
-    "line": number;
-    "kept": boolean;
-
-    /**
-     * as index.ResolveSite gives it; unsettled where no source says
-     */
-    "reason"?: string;
 }
 
 /**
@@ -207,7 +189,7 @@ export interface Code {
  */
 export interface ColorSite {
     "range": Range;
-    "color": game$0.RGBA;
+    "color": jomini$0.RGBA;
 }
 
 /**
@@ -258,7 +240,7 @@ export interface Diagnostic {
     /**
      * Defined is where the workspace defines a name the file's mod does not, in a mod it does not depend on.
      */
-    "defined"?: Location[] | null;
+    "defined"?: Site[] | null;
 }
 
 /**
@@ -289,7 +271,7 @@ export interface Fix {
     /**
      * where the caret goes once the fix is applied
      */
-    "reveal"?: Location | null;
+    "reveal"?: Site | null;
 }
 
 /**
@@ -319,19 +301,6 @@ export interface Legend {
 }
 
 /**
- * A Location is a range in a file, with where the file sits in the workspace.
- */
-export interface Location {
-    "place": workspace$0.Place;
-    "range": Range;
-
-    /**
-     * the text of the line, "" where the file cannot be read
-     */
-    "text": string;
-}
-
-/**
  * A Range is a span as Monaco counts it: lines and columns from one, the column in UTF-16 code units, the end
  * exclusive.
  */
@@ -353,6 +322,37 @@ export interface Signature {
      * the parameter the position is on; absent if none
      */
     "active"?: number | null;
+}
+
+/**
+ * A Site is one place in a file that an answer points at: where the file sits and a line. Where the answer has them,
+ * it also has a range in the editor's form and the text of the line. Where the answer judged a definition, it says
+ * whether the game keeps it and why. A whole-file site lists the names the file defines.
+ */
+export interface Site {
+    "place": workspace$0.Place;
+
+    /**
+     * counted from one
+     */
+    "line": number;
+
+    /**
+     * the zero range where the answer has none
+     */
+    "range": Range;
+
+    /**
+     * the text of the line, where the answer read the file
+     */
+    "text"?: string;
+    "kept": boolean;
+
+    /**
+     * as index.ResolveSite gives it; unsettled where no source says
+     */
+    "reason"?: index$0.Reason;
+    "defines"?: string[] | null;
 }
 
 /**
@@ -395,6 +395,6 @@ export interface Symbol {
 export interface WorkspaceSymbol {
     "name": string;
     "database": string;
-    "location": Location;
+    "site": Site;
     "category": schema$0.Category;
 }

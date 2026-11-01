@@ -48,6 +48,10 @@ linters:
       # the registry's rows and the OS words repeat as data
       - path: internal/game/(game|install)\.go
         linters: [goconst]
+      # a game's own part of a topic carries the game's word: GUI and Coat are the rules every game shares
+      - path: internal/game/(gui|coat|databases)\.go
+        linters: [revive]
+        text: 'game\.Game(GUI|Coat|Events) by other packages'
       # the settings catalog's rows repeat their section, type and choice words as data
       - path: services/app/config\.go
         linters: [goconst]

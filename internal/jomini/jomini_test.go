@@ -522,3 +522,30 @@ func TestParseInstall(t *testing.T) {
 		})
 	}
 }
+
+func TestColorOf(t *testing.T) {
+	tree := Parse("a = rgb { 255 0 0 }\nb = rgb { 1 0.5 0 }\nc = hsv { 0.5 1 1 }\nd = hsv360 { 180 100 100 }\n" +
+		"e = hex { 0xff8000ff }\nf = rgb { 255 0 }\ng = { 1 2 3 }\nh = foo { 1 2 3 }\n")
+	wants := []string{
+		"rgba(255, 0, 0, 1)", "rgba(255, 128, 0, 1)", "rgba(0, 255, 255, 1)", "rgba(0, 255, 255, 1)", "rgba(255, 128, 0, 1)", "",
+		"rgba(1, 2, 3, 1)", "",
+	}
+	i := 0
+	for statement := range tree.Children(0) {
+		want := wants[i]
+		i++
+		key := tree.Text(tree.Statements[statement].Key)
+		tag, parts, isColor := ColorParts(tree, statement)
+		color, known := ParseColor(tag, parts)
+		if got := color.ToCSS(); !isColor || !known {
+			got = ""
+		} else if got != want {
+			t.Errorf("%s: %q, want %q", key, got, want)
+		} else {
+			continue
+		}
+		if want != "" || isColor && known {
+			t.Errorf("%s: no color, want %q", key, want)
+		}
+	}
+}

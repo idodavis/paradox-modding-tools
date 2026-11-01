@@ -151,10 +151,7 @@ func (reader *docReader) build(database *Database) {
 		}
 		field := definition
 		for step := range strings.SplitSeq(key, "/") {
-			field = field.buildChild(step)
-			if field.Source == game.SourceNone {
-				field.Source = game.SourceDocs
-			}
+			field = field.buildChild(step, game.SourceDocs)
 		}
 		if !strings.Contains(key, "/") {
 			database.Documented[key] = true
@@ -311,8 +308,8 @@ func (reader *docReader) readStatement(key, value, text string, opens int) {
 	entry := len(reader.keys) == 0 && (opens > 0 || strings.HasPrefix(value, "{"))
 	keyed := key != "" && !entry && !isStandIn(key)
 	step := key
-	if game.IsNumberKey(step) || step == game.DocDateKey {
-		step = game.NumberKey
+	if jomini.IsNumberKey(step) || step == game.DocDateKey {
+		step = jomini.NumberKey
 	}
 	if keyed {
 		if reader.header != key {

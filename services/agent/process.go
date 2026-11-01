@@ -65,7 +65,7 @@ func (agt *Service) serve(conn *application.StreamConn) {
 		return
 	}
 	defer running.end()
-	directories := lo.FilterMap(agt.Workspace.State().Mods, func(mod workspace.Mod, _ int) (string, bool) {
+	directories := lo.FilterMap(agt.Workspace.ListMods(), func(mod workspace.Mod, _ int) (string, bool) {
 		return mod.Dir, !mod.Broken && mod.ID != origin
 	})
 	if conn.SendJSON(Start{Folder: folder, Directories: directories}) != nil {

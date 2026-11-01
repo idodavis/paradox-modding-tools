@@ -350,7 +350,7 @@ function findLit(graph: Graph, selected: string): Lit | null {
 
 /** Reports whether a node's firing is the one a drawn edge stands for: the same firer, file and line. */
 function isSameFiring(fire: Edge, edge: Edge): boolean {
-  return fire.from === edge.from && fire.line === edge.line && fire.place.path === edge.place.path;
+  return fire.from === edge.from && fire.site.line === edge.site.line && fire.site.place.path === edge.site.place.path;
 }
 
 /** Describes a column by its step from the root: those before it fire the root. */

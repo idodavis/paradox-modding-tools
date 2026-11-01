@@ -66,11 +66,12 @@ site.
 ## Places
 
 A `Place` is where one file sits in the workspace: the `files.File` as its root lists it, with its name, its folder, its
-root, its database, whether it is read only and whether the game reads it. The game's own files are read only. Every
-answer that names a file carries a place, and the page renders its fields as they are. `Locate` makes one, and
-`ListCopies` lists the place of every copy of a file's path in load order, the game's first. A place can be of a
-folder too, which `IsDir` says: a folder's listing sets it for each entry, and `Service.Locate` for the path it is
-given, which may be a folder an agent names.
+root, its database, whether it is read only, whether the game reads it and whether Visual draws it. The game's own
+files are read only. A GUI file is drawable, and so is a file or folder of the coats' database. Every answer that
+names a file carries a place, and the page renders its fields as they are. `Locate` makes one, and `ListCopies` lists
+the place of every copy of a file's path in load order, the game's first. A place can be of a folder too, which
+`IsDir` says: a folder's listing sets it for each entry, git's status for an ignored folder, and `Service.Locate` for
+the path it is given, each root `ListRoots` lists or a folder an agent names.
 
 ## Files
 

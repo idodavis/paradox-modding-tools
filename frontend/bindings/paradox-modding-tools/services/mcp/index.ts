@@ -7,6 +7,7 @@ export {
 };
 
 export type {
+    Access,
     Chip,
     Lookup,
     Page,

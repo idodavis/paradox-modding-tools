@@ -135,6 +135,22 @@ func WriteDescriptor(row *game.Game, dir string, descriptor Descriptor) error {
 	return files.WriteText(file, existing)
 }
 
+// WriteDescriptor writes a mod's descriptor and refreshes the session's copy of it in the same call. It returns an
+// error if the session holds no such mod or the file cannot be written.
+func (ws *Session) WriteDescriptor(modID string, descriptor Descriptor) error {
+	mod, ok := lo.Find(*ws.Order.Load(), func(mod Mod) bool { return mod.ID == modID })
+	if !ok {
+		return fmt.Errorf("the mod %s is not in the open workspace", modID)
+	}
+	if err := WriteDescriptor(ws.Game, mod.Dir, descriptor); err != nil {
+		return err
+	}
+	ws.mu.Lock()
+	defer ws.mu.Unlock()
+	ws.refreshMod(modID)
+	return nil
+}
+
 // FindMod returns the mod that a dependency names, by its id or its name. It returns false if no mod matches.
 func FindMod(mods []Mod, dependency Dependency) (Mod, bool) {
 	return lo.Find(mods, func(mod Mod) bool {
@@ -146,12 +162,13 @@ func FindMod(mods []Mod, dependency Dependency) (Mod, bool) {
 // theirs, all the way down, in the order they are found. A dependency the workspace lacks is left out, and so is the
 // mod itself.
 func (ws *Session) ListDependencies(modID string) []string {
+	order := *ws.Order.Load()
 	var dependencies []string
 	for pending := []string{modID}; len(pending) > 0; {
-		mod, _ := lo.Find(ws.Order, func(mod Mod) bool { return mod.ID == pending[0] })
+		mod, _ := lo.Find(order, func(mod Mod) bool { return mod.ID == pending[0] })
 		pending = pending[1:]
 		for _, dependency := range mod.Descriptor.Dependencies {
-			if other, ok := FindMod(ws.Order, dependency); ok && other.ID != modID && !slices.Contains(dependencies, other.ID) {
+			if other, ok := FindMod(order, dependency); ok && other.ID != modID && !slices.Contains(dependencies, other.ID) {
 				dependencies = append(dependencies, other.ID)
 				pending = append(pending, other.ID)
 			}
@@ -163,7 +180,7 @@ func (ws *Session) ListDependencies(modID string) []string {
 // DescribeMod returns a mod's title, or its folder's name if the descriptor gives none. It returns the game's name for
 // the game, and the id itself for a mod the workspace lacks.
 func (ws *Session) DescribeMod(modID string) string {
-	mod, ok := lo.Find(ws.Order, func(mod Mod) bool { return mod.ID == modID })
+	mod, ok := lo.Find(*ws.Order.Load(), func(mod Mod) bool { return mod.ID == modID })
 	switch {
 	case ok:
 		return cmp.Or(mod.Descriptor.Name, filepath.Base(mod.Dir))

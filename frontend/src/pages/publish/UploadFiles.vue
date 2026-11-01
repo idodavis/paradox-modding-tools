@@ -91,7 +91,7 @@ const { mutate: exportIgnore } = useMutation({
 
       <section class="flex flex-col gap-1">
         <span class="text-12 font-medium text-toned">Every upload leaves out</span>
-        <p v-for="rule in rules?.filter((one) => one.pattern) ?? []" :key="rule.pattern" class="text-12 text-dimmed">
+        <p v-for="rule in rules ?? []" :key="rule.pattern" class="text-12 text-dimmed">
           <span class="font-mono text-toned">{{ rule.pattern }}</span> {{ rule.reason }}
         </p>
       </section>

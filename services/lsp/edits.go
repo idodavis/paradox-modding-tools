@@ -12,7 +12,6 @@ import (
 	"github.com/samber/lo"
 	"github.com/sergi/go-diff/diffmatchpatch"
 
-	"paradox-modding-tools/internal/files"
 	"paradox-modding-tools/internal/game"
 	"paradox-modding-tools/internal/index"
 	"paradox-modding-tools/internal/jomini"
@@ -27,7 +26,7 @@ type Fix struct {
 	Code    string            `json:"code"` // the diagnostic it fixes
 	Edits   map[string][]Edit `json:"edits"`
 	Creates string            `json:"creates,omitempty"` // a localization file written first, with only its header
-	Reveal  *Location         `json:"reveal,omitempty"`  // where the caret goes once the fix is applied
+	Reveal  *Site             `json:"reveal,omitempty"`  // where the caret goes once the fix is applied
 }
 
 // fixDistance is how many edits away a name may be and still be offered as the fix for an unresolved reference.
@@ -191,7 +190,7 @@ func (lsp *Service) ListFixes(path string, diagnostics []Diagnostic) ([]Fix, err
 	place := ws.Locate(mods, path)
 	walk := func(diagnostic Diagnostic) *hoverVisitor {
 		offset := ToOffset(tree.Src, tree.Lines, diagnostic.Range.StartLine, diagnostic.Range.StartColumn)
-		visitor := &hoverVisitor{offset: offset}
+		visitor := &hoverVisitor{tree: tree, offset: offset}
 		ws.Schema.WalkTo(tree, place.File, offset, visitor)
 		return visitor
 	}
@@ -203,7 +202,7 @@ func (lsp *Service) ListFixes(path string, diagnostics []Diagnostic) ([]Fix, err
 		case unresolvedCode:
 			title, edits = buildReferenceFix(mods, walk(diagnostic), diagnostic)
 		case "missing-key":
-			title, edits = buildMissingFix(ws.Schema, tree, walk(diagnostic), diagnostic)
+			title, edits = buildMissingFix(ws.Schema, walk(diagnostic), diagnostic)
 		case "misplaced-mode":
 			title, edits = buildModeFix(diagnostic)
 		}
@@ -235,11 +234,7 @@ func (lsp *Service) buildKeysFix(
 	if !ok || len(keys) == 0 {
 		return Fix{}, false
 	}
-	text, open := ws.LookupBuffer(target)
-	if !open {
-		disk, _ := files.LoadText(target)
-		text = disk.Text
-	}
+	text, _ := ws.LoadSource(target)
 	subject := keys[0]
 	if len(keys) > 1 {
 		subject = fmt.Sprintf("%d missing keys", len(keys))
@@ -255,7 +250,7 @@ func (lsp *Service) buildKeysFix(
 	whole := text + addition
 	quote := len(text) + strings.Index(addition, `""`) + 1
 	caret := ToRange(whole, jomini.NewLines(whole), jomini.Span{Start: quote, End: quote})
-	fix.Reveal = &Location{Place: ws.Locate(mods, target), Range: caret}
+	fix.Reveal = &Site{Place: ws.Locate(mods, target), Line: caret.StartLine, Range: caret}
 	return fix, true
 }
 
@@ -307,8 +302,8 @@ func countEdits(first, second string) int {
 
 // buildMissingFix returns the fix for a definition that lacks a key it must write: a line that adds the key with its
 // default. The edits are empty if the key has no default.
-func buildMissingFix(schema *schema.Schema, tree *jomini.Tree, visitor *hoverVisitor, diagnostic Diagnostic) (string, []Edit) {
-	definition, key := visitor.context.Definition, diagnostic.Facts["key"]
+func buildMissingFix(schema *schema.Schema, visitor *hoverVisitor, diagnostic Diagnostic) (string, []Edit) {
+	tree, definition, key := visitor.tree, visitor.context.Definition, diagnostic.Facts["key"]
 	if definition == nil || !tree.Statements[definition.Statement].IsBlock() {
 		return "", nil
 	}

@@ -1,12 +1,9 @@
 package git
 
 import (
-	"path/filepath"
 	"strconv"
 	"strings"
 	"time"
-
-	"github.com/samber/lo"
 
 	"paradox-modding-tools/services/workspace"
 )
@@ -29,9 +26,9 @@ type Status struct {
 	Ahead    int      `json:"ahead"`
 	Behind   int      `json:"behind"`
 	Changes  []Change `json:"changes"`
-	// Ignored is the files and folders git ignores, each as a full path; a folder ends with a separator and stands for
-	// everything in it.
-	Ignored []string `json:"ignored"`
+	// Ignored is where the files and folders git ignores are in the open workspace; a folder stands for everything in
+	// it. They are empty places while none is open.
+	Ignored []workspace.Place `json:"ignored"`
 }
 
 // refTypes is the type of a ref by the prefix of its full name.
@@ -47,11 +44,12 @@ var statuses = []struct{ letters, status string }{
 
 // ReadStatus returns a repository's status. The error is git's if the folder is in no repository.
 func (git *Service) ReadStatus(dir string) (Status, error) {
-	stdout, err := git.Run(dir, "status", "--porcelain=v2", "-z", "--branch", "--ignored")
+	stdout, err := git.run(dir, "status", "--porcelain=v2", "-z", "--branch", "--ignored")
 	if err != nil {
 		return Status{}, err
 	}
-	status := Status{Changes: []Change{}, Ignored: []string{}}
+	status := Status{Changes: []Change{}}
+	ignored := []string{}
 	records := splitRecords(stdout)
 	for i := 0; i < len(records); i++ {
 		record := records[i]
@@ -66,7 +64,7 @@ func (git *Service) ReadStatus(dir string) (Status, error) {
 			change.From = records[i]
 			status.Changes = append(status.Changes, change)
 		case '!':
-			status.Ignored = append(status.Ignored, record[2:])
+			ignored = append(ignored, record[2:])
 		}
 	}
 	root, err := git.resolveRepository(dir)
@@ -74,13 +72,7 @@ func (git *Service) ReadStatus(dir string) (Status, error) {
 		return Status{}, err
 	}
 	git.locateChanges(root, status.Changes)
-	status.Ignored = lo.Map(status.Ignored, func(path string, _ int) string {
-		full := filepath.Join(root, path)
-		if strings.HasSuffix(path, "/") {
-			full += string(filepath.Separator)
-		}
-		return full
-	})
+	status.Ignored = git.locate(root, ignored)
 	return status, nil
 }
 
@@ -98,7 +90,7 @@ type Ref struct {
 // ListRefs returns a repository's branches, remote branches and tags, each with the date of its commit. The error is
 // git's if the folder is in no repository.
 func (git *Service) ListRefs(dir string) ([]Ref, error) {
-	stdout, err := git.Run(dir, "for-each-ref",
+	stdout, err := git.run(dir, "for-each-ref",
 		"--format=%(refname)%00%(objectname)%00%(creatordate:iso-strict)%00%(HEAD)")
 	if err != nil {
 		return nil, err

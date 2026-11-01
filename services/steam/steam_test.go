@@ -211,7 +211,7 @@ func TestListUploadSplitsFilesByRules(t *testing.T) {
 func TestCompareReportsChanges(t *testing.T) {
 	dir := copyFixture(t, "mods", "ck3")
 	stm := openService(t, resolveFixture(t, "ck3"), app.Mod{ID: fixtureModID, Dir: dir})
-	ws, mod, err := stm.findMod(fixtureModID)
+	ws, _, err := stm.findMod(fixtureModID)
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -231,7 +231,7 @@ func TestCompareReportsChanges(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	got, err := stm.compareFiles(ws.Game, mod, Listing{WorkshopID: "1", Version: "1.0"}, upload)
+	got, err := stm.compareFiles(ws.Game, nil, Listing{WorkshopID: "1", Version: "1.0"}, upload)
 	if err != nil {
 		t.Fatal(err)
 	}

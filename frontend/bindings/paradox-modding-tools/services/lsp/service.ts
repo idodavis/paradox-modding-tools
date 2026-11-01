@@ -13,7 +13,7 @@ import { Call as $Call, CancellablePromise as $CancellablePromise } from "@wails
 
 // eslint-disable-next-line @typescript-eslint/ban-ts-comment
 // @ts-ignore: Unused imports
-import * as game$0 from "../../internal/game/models.js";
+import * as jomini$0 from "../../internal/jomini/models.js";
 
 // eslint-disable-next-line @typescript-eslint/ban-ts-comment
 // @ts-ignore: Unused imports
@@ -39,7 +39,7 @@ export function Complete(path: string, line: number, column: number): $Cancellab
  * Definition returns where the name at a position is defined, with the definition the game keeps first. For an image
  * path it returns the image file. It returns an empty list if the position is on no name.
  */
-export function Definition(path: string, line: number, column: number): $CancellablePromise<$models.Location[] | null> {
+export function Definition(path: string, line: number, column: number): $CancellablePromise<$models.Site[] | null> {
     return $Call.ByID(3801469422, path, line, column);
 }
 
@@ -148,9 +148,9 @@ export function PrepareRename(path: string, line: number, column: number): $Canc
  * PresentColor returns the text that writes a color into a file, in the same form as the color written in the given
  * range: the same tag and scale, with an alpha only if that color has one. A range that holds no color, such as a
  * coat's layer that does not write the color yet, gets it in the form the game's own coats write their colors in
- * (game.Game.CoatColorForm). It returns an error if the form cannot be written.
+ * (game.Game.Coat.ColorForm). It returns an error if the form cannot be written.
  */
-export function PresentColor(path: string, within: $models.Range, color: game$0.RGBA): $CancellablePromise<string> {
+export function PresentColor(path: string, within: $models.Range, color: jomini$0.RGBA): $CancellablePromise<string> {
     return $Call.ByID(3581946373, path, within, color);
 }
 
@@ -158,7 +158,7 @@ export function PresentColor(path: string, within: $models.Range, color: game$0.
  * References returns where the name at a position is defined and where it is used. A localization key's translations
  * are left out. It returns an empty list if the position is on no name.
  */
-export function References(path: string, line: number, column: number): $CancellablePromise<$models.Location[] | null> {
+export function References(path: string, line: number, column: number): $CancellablePromise<$models.Site[] | null> {
     return $Call.ByID(2236984049, path, line, column);
 }
 

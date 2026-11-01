@@ -10,7 +10,7 @@ import type { DropdownMenuItem } from "@nuxt/ui";
 
 import type { Change, Commit } from "@services/git/models";
 
-import { commitFilesQuery, commitsQuery, gitStatusQuery, refsQuery, stateQuery } from "../../queries";
+import { commitFilesQuery, commitsQuery, gitStatusQuery, refsQuery } from "../../queries";
 import { useEditorStore } from "../../stores/editor";
 import { useGitStore } from "../../stores/git";
 import { useWorkspaceStore } from "../../stores/workspace";
@@ -19,7 +19,7 @@ import OriginChip from "../../ui/OriginChip.vue";
 import RepositorySection from "./RepositorySection.vue";
 import { diffTab } from "./editor/tabs";
 
-/** One commit in the graph, placed on a lane. */
+/** A GraphRow is one commit in the graph, placed on a lane. */
 type GraphRow = {
   commit: Commit;
   lane: number;
@@ -29,7 +29,7 @@ type GraphRow = {
   merges: number[];
   below: number[];
 };
-/** One row of the log: a commit, or a file the open commit changed. */
+/** An Entry is one row of the log: a commit, or a file the open commit changed. */
 type Entry = { key: string; row: GraphRow; change?: Change; paths: { path: string; lane: number }[] };
 
 const LANE_WIDTH = 12;
@@ -50,12 +50,9 @@ const editor = useEditorStore();
 const workspace = useWorkspaceStore();
 const [DefineLane, Lane] = createReusableTemplate<{ entry: Entry }>();
 
-const { data: state } = useQuery(stateQuery);
 // the mods in no repository, each of which can start one
 const bare = computed(() =>
-  (state.value?.mods ?? []).filter(
-    (mod) => !mod.broken && !git.repositories.some((one) => one.mods.some((member) => member.id === mod.id)),
-  ),
+  workspace.listMods().filter((mod) => !mod.broken && !git.repositories.some((one) => one.mods?.includes(mod.id))),
 );
 // the repository the Graph shows: the one picked in its header, else the active file's, else the first
 const dir = computed(
@@ -66,10 +63,10 @@ const dir = computed(
 );
 // each repository is offered under its first mod in load order
 const options = computed(() =>
-  git.repositories.map(({ root, mods: [first] }) => ({
-    label: workspace.originName(first?.id ?? ""),
+  git.repositories.map(({ root, mods }) => ({
+    label: workspace.originName(mods?.[0] ?? ""),
     value: root,
-    origin: first?.id ?? "",
+    origin: mods?.[0] ?? "",
   })),
 );
 const graphOrigin = computed(() => options.value.find((one) => one.value === dir.value)?.origin ?? "");
@@ -118,7 +115,7 @@ const entries = computed<Entry[]>(() =>
     ...(opened.value === row.commit.hash ? (openedFiles.value ?? []) : []).map((file) => ({
       key: `${row.commit.hash}:${file.path}`,
       row,
-      change: { ...file, staged: false, unstaged: false },
+      change: file,
       paths: row.below.map((lane) => ({ path: `M${laneX(lane)} 0V${ROW_HEIGHT}`, lane })),
     })),
   ]),
@@ -158,9 +155,9 @@ function buildGraph(log: readonly Commit[]): GraphRow[] {
   });
 }
 
-/** The horizontal middle of a lane. */
+/** laneX returns the horizontal middle of a lane. */
 const laneX = (lane: number) => LANE_WIDTH / 2 + 2 + lane * LANE_WIDTH;
-/** The color of a lane. The colors repeat after the last. */
+/** laneColor returns the color of a lane. The colors repeat after the last. */
 const laneColor = (lane: number) => LANE_COLORS[lane % LANE_COLORS.length];
 
 /**
@@ -252,7 +249,7 @@ function describeRefs(one: Commit): { label: string; color: "primary" | "info" |
     >
       <template #repositories>
         <div class="flex min-h-0 min-w-0 flex-1 flex-col overflow-y-auto py-1">
-          <RepositorySection v-for="{ root, mods } in git.repositories" :key="root" :root="root" :mods="mods" />
+          <RepositorySection v-for="{ root, mods } in git.repositories" :key="root" :root="root" :mods="mods ?? []" />
         </div>
       </template>
       <template #graph>
@@ -292,7 +289,7 @@ function describeRefs(one: Commit): { label: string; color: "primary" | "info" |
                   editor.open(diffTab('commit', dir, entry.change.place.key, entry.row.commit.hash), entry.change.place)
                 "
               >
-                <GitFileRow :change="entry.change">
+                <GitFileRow :change="entry.change" side="commit">
                   <template #lane><Lane :entry="entry" /></template>
                 </GitFileRow>
               </div>

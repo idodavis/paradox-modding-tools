@@ -7,7 +7,6 @@ export {
 };
 
 export type {
-    Hit,
     Hits,
     Query
 } from "./models.js";

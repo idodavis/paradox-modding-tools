@@ -3,5 +3,6 @@
 
 export type {
     Date,
+    RGBA,
     Span
 } from "./models.js";

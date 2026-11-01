@@ -5,7 +5,6 @@ import (
 	"context"
 	"errors"
 	"fmt"
-	"io"
 	"net/http"
 	"os"
 	"path"
@@ -22,6 +21,7 @@ import (
 
 	"paradox-modding-tools/internal/files"
 	"paradox-modding-tools/internal/game"
+	"paradox-modding-tools/services/app"
 	"paradox-modding-tools/services/git"
 	"paradox-modding-tools/services/workspace"
 )
@@ -60,8 +60,8 @@ func ServePublish(args []string) (exitCode int, served bool) {
 	return 0, false
 }
 
-// findMod returns the open workspace and one of its mods. The mod's descriptor is the one read when the workspace
-// opened. It returns an error if no workspace is open or it does not have the mod.
+// findMod returns the open workspace and one of its mods, with the session's copy of its descriptor. It returns an
+// error if no workspace is open or it does not have the mod.
 func (stm *Service) findMod(modID string) (*workspace.Session, workspace.Mod, error) {
 	ws, err := stm.Workspace.Session()
 	if err != nil {
@@ -188,18 +188,23 @@ func (stm *Service) writeVideos(dir string, urls []string) error {
 	return stm.writeFile(files.Join(dir, videosFile), strings.Join(urls, "\n")+"\n")
 }
 
-// FetchPreviews copies the gallery of a listing's Workshop item into the listing, adding what it lacks. It returns an
-// error if the listing has no item, Steam cannot be asked or a download fails.
+// FetchPreviews copies the gallery of a listing's Workshop item into the listing, adding what it lacks. Steam is
+// asked about the item again, which also brings the comparison up to date. It returns an error if the listing has no
+// item, Steam cannot be asked or a download fails.
 func (stm *Service) FetchPreviews(modID, key string) error {
-	params, err := stm.buildItemParams(modID, key)
+	ws, _, listing, err := stm.findListing(modID, key)
 	if err != nil {
 		return err
 	}
-	details, err := fetchDetails(params)
-	if err != nil {
-		return err
+	if listing.WorkshopID == "" {
+		return fmt.Errorf("the listing of the mod %s has no Workshop item", modID)
 	}
-	return stm.changeListing(modID, key, func(dir string) error { return stm.addPreviews(dir, details.Previews) })
+	stm.removeAnswer(listing.WorkshopID)
+	answer := stm.resolveAnswer(ws, listing.WorkshopID)
+	if answer.Steam == nil {
+		return errors.New(answer.Reason)
+	}
+	return stm.changeListing(modID, key, func(dir string) error { return stm.addPreviews(dir, answer.Steam.Previews) })
 }
 
 // addPreviews adds to a listing's gallery the previews from Steam that it lacks. It returns an error if a download
@@ -239,50 +244,15 @@ func toLabel(preview Preview) string {
 // fetchPicture downloads one of Steam's gallery pictures into a listing's folder. It returns an error if the download
 // fails or the picture is there already.
 func (stm *Service) fetchPicture(dir string, preview Preview) error {
-	content, contentType, err := fetchURL(preview.URL, time.Minute)
+	content, err := app.FetchURL(preview.URL, time.Minute)
 	if err != nil {
 		return err
 	}
 	name := filepath.Base(preview.Path)
 	if !slices.Contains(game.PictureExtensions, strings.ToLower(filepath.Ext(name))) {
-		name += cmp.Or(contentExtensions[contentType], ".png")
+		name += cmp.Or(contentExtensions[http.DetectContentType(content)], ".png")
 	}
 	return stm.writePicture(dir, path.Join(previewsDir, name), content)
-}
-
-// fetchURL downloads an address within the given time. It returns the body and its content type. It returns an error
-// if the download fails or the answer is not 200.
-func fetchURL(address string, timeout time.Duration) (body []byte, contentType string, err error) {
-	client := http.Client{Timeout: timeout}
-	response, err := client.Get(address)
-	if err != nil {
-		return nil, "", err
-	}
-	defer func() { _ = response.Body.Close() }()
-	if response.StatusCode != http.StatusOK {
-		return nil, "", fmt.Errorf("%s answered %s", address, response.Status)
-	}
-	body, err = io.ReadAll(response.Body)
-	return body, response.Header.Get("Content-Type"), err
-}
-
-// buildItemParams returns a second copy's parameters for the Workshop item of one of a mod's listings. It returns an
-// error if the listing has no item or the game has no Steam library on this system.
-func (stm *Service) buildItemParams(modID, key string) (Params, error) {
-	ws, err := stm.Workspace.Session()
-	if err != nil {
-		return Params{}, err
-	}
-	listing, err := stm.ReadListing(modID, key)
-	if err != nil {
-		return Params{}, err
-	}
-	if listing.WorkshopID == "" {
-		return Params{}, fmt.Errorf("the listing of the mod %s has no Workshop item", modID)
-	}
-	params, err := stm.buildParams(ws)
-	params.WorkshopID = listing.WorkshopID
-	return params, err
 }
 
 // DescribeSteam returns why Steam cannot take an upload for the open workspace's game now, or "" if it can.
@@ -309,15 +279,11 @@ func (stm *Service) Publish(ctx context.Context, modID, key, visibility string) 
 			return err
 		}
 	}
-	ws, mod, err := stm.findMod(modID)
+	ws, mod, listing, err := stm.findListing(modID, key)
 	if err != nil {
 		return err
 	}
-	listing, err := stm.ReadListing(modID, key)
-	if err != nil {
-		return err
-	}
-	upload, err := stm.buildUpload(ws, mod, listing)
+	upload, _, err := stm.buildUpload(ws, mod, listing)
 	if err != nil {
 		return err
 	}
@@ -340,7 +306,7 @@ func (stm *Service) Publish(ctx context.Context, modID, key, visibility string) 
 	}
 	defer func() { _ = removeCacheDir(cacheDir, params.UploadDir) }()
 	params.WorkshopID, params.Listing, params.Visibility = listing.WorkshopID, listing, visibility
-	params.ModWorkshopIDs = stm.listModWorkshopIDs()
+	params.ModWorkshopIDs = lo.Keys(stm.listModTitles())
 	pmt := application.Get()
 	var linkErr error
 	err = StartPublish(ctx, params, func(step Progress) { pmt.Event.Emit(EventProgress, step) }, func(workshopID string) {
@@ -354,11 +320,12 @@ func (stm *Service) Publish(ctx context.Context, modID, key, visibility string) 
 	return errors.Join(err, linkErr)
 }
 
-// listModWorkshopIDs returns the Workshop ids of the open workspace's mods.
-func (stm *Service) listModWorkshopIDs() []string {
-	return lo.FilterMap(stm.Workspace.State().Mods, func(mod workspace.Mod, _ int) (string, bool) {
+// listModTitles returns the titles of the open workspace's mods by their Workshop ids. A mod with no Workshop id is
+// left out.
+func (stm *Service) listModTitles() map[string]string {
+	return lo.FilterSliceToMap(stm.Workspace.ListMods(), func(mod workspace.Mod) (string, string, bool) {
 		workshopID := mod.ResolveWorkshopID()
-		return workshopID, workshopID != ""
+		return workshopID, mod.Descriptor.Name, workshopID != ""
 	})
 }
 
@@ -414,6 +381,3 @@ func moveCacheDir(cacheDir, filled, kept string) error {
 	}
 	return nil
 }
-
-// ListRules returns the rules that say what an upload leaves out.
-func (stm *Service) ListRules() []Rule { return listRules() }

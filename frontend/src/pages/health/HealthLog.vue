@@ -6,18 +6,18 @@
 import { computed, shallowRef } from "vue";
 import { useMutation, useQuery } from "@pinia/colada";
 import { sortBy } from "es-toolkit";
-import type { Finding, GameLog } from "@services/health/models";
+import type { Finding, GameLog, Group } from "@services/health/models";
 import type { Mod } from "@services/workspace/models";
 import {
-  countLines,
+  countFindings,
   describeCount,
   describeDetail,
   describeLogLine,
   describeTime,
-  type FindingRow,
   type Level,
   LEVELS,
-  listFindingRows,
+  listSiteKeys,
+  matchQuery,
   type Part,
   plural,
   splitFinding,
@@ -42,25 +42,25 @@ const {
   log = undefined,
   error = null,
   mods,
-  health,
+  groups,
   yours,
   game,
-  opened = -1,
+  opened = undefined,
 } = defineProps<{
   log?: GameLog;
   /** Why the log could not be read, or null. */
   error?: Error | null;
   mods: Mod[];
-  /** Each mod's problems, by mod id. */
-  health: Record<string, Finding[]>;
+  /** The groups of the mods' problems. */
+  groups: Group[];
   /** How many lines of the log are the mods'. */
   yours: number;
   /** How many lines of the log are the game's own. */
   game: number;
-  /** The open row's index, or -1 for none. */
-  opened?: number;
+  /** The open row, or undefined for none. */
+  opened?: Finding;
 }>();
-const emit = defineEmits<{ open: [index: number]; fix: [mod: string, row: number] }>();
+const emit = defineEmits<{ open: [finding: Finding]; fix: [mod: string, finding: Finding] }>();
 const filter = defineModel<string>("filter", { default: "" });
 
 /** A HeadRow is the row above one mod's lines, which may be folded, or above the game's own when it has no mod. */
@@ -85,30 +85,29 @@ const grouping = shallowRef<string | number>("mod");
 /** The mods whose sections are folded. */
 const folded = shallowRef<string[]>([]);
 
-const logRows = computed(() => listFindingRows(log?.findings ?? []));
-const gameRows = computed(() => logRows.value.filter((row) => !row.finding.origin));
+const logRows = computed(() => log?.findings ?? []);
+const gameRows = computed(() => logRows.value.filter((row) => !row.origin));
 /** Whether any line repeats. Every row then gets a column for its count. */
-const repeated = computed(() => logRows.value.some((row) => row.finding.count > 1));
-const modRows = computed(() => logRows.value.filter((row) => row.finding.origin));
+const repeated = computed(() => logRows.value.some((row) => row.count > 1));
+const modRows = computed(() => logRows.value.filter((row) => row.origin));
 const scopes = computed(() => [
   { label: `From your mods ${describeCount(yours)}`, value: "mods" },
   { label: `The game's own ${describeCount(game)}`, value: "game" },
 ]);
-const rows = computed((): (HeadRow | FindingRow)[] => {
-  const needle = filter.value.trim().toLowerCase();
-  const matches = (scope.value === "mods" ? modRows.value : gameRows.value).filter(
-    (row) => !needle || `${describeLogLine(row.finding)} ${describeDetail(row.finding)}`.toLowerCase().includes(needle),
+const rows = computed((): (HeadRow | Finding)[] => {
+  const matches = (scope.value === "mods" ? modRows.value : gameRows.value).filter((row) =>
+    matchQuery(filter.value, describeLogLine(row), describeDetail(row)),
   );
   if (scope.value === "mods" && grouping.value === "mod") {
     const grouped = mods.flatMap((mod) => {
-      const own = matches.filter((row) => row.finding.origin === mod.id);
+      const own = matches.filter((row) => row.origin === mod.id);
       const shut = folded.value.includes(mod.id);
-      const head = { mod: mod.id, count: countLines(own.map((row) => row.finding)), folded: shut };
+      const head = { mod: mod.id, count: countFindings(own), folded: shut };
       return own.length ? [head, ...(shut ? [] : own)] : [];
     });
     return grouped.length && game ? [...grouped, { mod: "", count: game, folded: true }] : grouped;
   }
-  return sortBy(matches, [(row) => -row.finding.count]);
+  return sortBy(matches, [(row) => -row.count]);
 });
 const empty = computed(() => {
   if (error) return "The game's log could not be read.";
@@ -130,26 +129,25 @@ const runNote = computed(() => {
     ? `This log is from a run without all of this workspace's mods. ${parts.join(" ")} Their lines count as the game's.`
     : "";
 });
-const open = computed(() => log?.findings?.[opened]);
-const sites = computed(() => open.value?.sites ?? []);
+const sites = computed(() => opened?.sites ?? []);
 const { data: snippets } = useQuery(() => ({
   ...snippetsQuery(sites.value),
   enabled: workspace.isOpen() && sites.value.length > 0,
 }));
-/** The mods' first problem at each place, with its mod and its row in that mod's list. */
+/** The mods' first problem at each place, with its mod. */
 const faults = computed(() => {
-  const byPlace = new Map<string, { mod: string; row: number; finding: Finding }>();
-  for (const [mod, problems] of Object.entries(health)) {
-    problems.forEach((finding, row) => {
-      const place = toSiteKey(finding);
-      if (place && !byPlace.has(place)) byPlace.set(place, { mod, row, finding });
-    });
+  const byPlace = new Map<string, { mod: string; finding: Finding }>();
+  for (const group of groups) {
+    for (const finding of group.findings ?? []) {
+      for (const place of listSiteKeys(finding))
+        if (!byPlace.has(place)) byPlace.set(place, { mod: group.mod, finding });
+    }
   }
   return byPlace;
 });
 /** The mod's problem at the open row's place, if any, with the sentence that says the mod's own check finds it. */
 const fault = computed(() => {
-  const shared = open.value && faults.value.get(toSiteKey(open.value));
+  const shared = opened && faults.value.get(toSiteKey(opened));
   if (!shared) return undefined;
   const mod: Part = { text: workspace.originName(shared.mod), style: "mod" };
   const parts: Part[] = [
@@ -270,24 +268,24 @@ function showGame(): void {
           </button>
           <ProblemRow
             v-else
-            :message="describeLogLine(item.finding)"
-            :detail="describeDetail(item.finding)"
-            :mono="!!item.finding.sites?.length"
-            :selected="item.index === opened"
-            @open="emit('open', item.index)"
+            :message="describeLogLine(item)"
+            :detail="describeDetail(item)"
+            :mono="!!item.sites?.length"
+            :selected="item === opened"
+            @open="emit('open', item)"
           >
-            <template #message><FactText :parts="splitLogLine(item.finding)" /></template>
+            <template #message><FactText :parts="splitLogLine(item)" /></template>
             <template v-if="repeated" #leading>
               <span class="flex w-9 shrink-0 justify-center">
-                <UBadge v-if="item.finding.count > 1" :label="`×${describeCount(item.finding.count)}`" size="sm" />
+                <UBadge v-if="item.count > 1" :label="`×${describeCount(item.count)}`" size="sm" />
               </span>
             </template>
             <template #trailing>
-              <OriginChip v-if="grouping === 'message' && item.finding.origin" :origin="item.finding.origin" dot />
+              <OriginChip v-if="grouping === 'message' && item.origin" :origin="item.origin" dot />
               <UBadge
-                v-if="describeFaultColor(item.finding)"
+                v-if="describeFaultColor(item)"
                 label="in Health"
-                :color="describeFaultColor(item.finding)"
+                :color="describeFaultColor(item)"
                 variant="subtle"
                 size="sm"
                 class="shrink-0"
@@ -298,14 +296,14 @@ function showGame(): void {
         <p v-else class="w-full border-e border-default bg-muted p-4 text-12 text-dimmed">{{ empty }}</p>
       </template>
       <template #detail>
-        <HealthFrame v-if="open" icon="i-lucide-terminal" label="Game log">
-          <template #title><FactText :parts="splitLogLine(open)" /></template>
+        <HealthFrame v-if="opened" icon="i-lucide-terminal" label="Game log">
+          <template #title><FactText :parts="splitLogLine(opened)" /></template>
           <template #line>
-            <span v-if="open.count > 1" class="whitespace-nowrap text-toned">
-              ×{{ describeCount(open.count) }} this run
+            <span v-if="opened.count > 1" class="whitespace-nowrap text-toned">
+              ×{{ describeCount(opened.count) }} this run
             </span>
-            <span v-if="open.facts?.time" class="whitespace-nowrap">· last at {{ open.facts.time }}</span>
-            <template v-if="open.origin">· <ModTitle :origin="open.origin" /></template>
+            <span v-if="opened.facts?.time" class="whitespace-nowrap">· last at {{ opened.facts.time }}</span>
+            <template v-if="opened.origin">· <ModTitle :origin="opened.origin" /></template>
           </template>
           <template #buttons>
             <UButton
@@ -319,10 +317,10 @@ function showGame(): void {
             <pre
               class="overflow-auto rounded-md bg-(--bg-0) px-3 py-2.5 font-mono text-11.5 leading-4.5 whitespace-pre-wrap text-toned"
             >
-[{{ open.facts?.time }}][{{ open.facts?.source }}]: {{ open.facts?.message }}</pre>
+[{{ opened.facts?.time }}][{{ opened.facts?.source }}]: {{ opened.facts?.message }}</pre>
           </HealthSection>
-          <HealthSection v-if="open.origin" :title="`Why it's listed under ${workspace.originName(open.origin)}`">
-            <p class="max-w-[74ch] text-13 leading-5.5 text-toned"><FactText :parts="describeWhy(open)" /></p>
+          <HealthSection v-if="opened.origin" :title="`Why it's listed under ${workspace.originName(opened.origin)}`">
+            <p class="max-w-[74ch] text-13 leading-5.5 text-toned"><FactText :parts="describeWhy(opened)" /></p>
           </HealthSection>
           <HealthSection v-if="sites[0]" title="Where it points" @open="sites[0] && openSite(sites[0])">
             <HealthSite v-for="(site, index) in sites" :key="index" :site="site" :snippet="snippets?.[index]" />
@@ -331,7 +329,7 @@ function showGame(): void {
             <HealthLink
               :level="fault.finding.level"
               :parts="fault.parts"
-              @open="fault && emit('fix', fault.mod, fault.row)"
+              @open="fault && emit('fix', fault.mod, fault.finding)"
             />
           </HealthSection>
         </HealthFrame>

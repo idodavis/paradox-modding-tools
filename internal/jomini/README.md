@@ -9,7 +9,7 @@ data call. It never imports `game`.
 
 | file | holds |
 |---|---|
-| `tree.go` | `Span`, `Position`, `Error`, `Lines` with `NewLines`, `CountLines`, `ToPosition` and `LineSpan`; `Statement` with `IsBlock`, `IsListed` and `ResolveValueSpan`; `Tree` with `Text`, `Unquoted`, `UnquotedSpan`, `Children`, `FindStatement`, `FindPrevious`, `LookupStatement`, `FindChild`, `FindChildValue` and `IsEqual` |
+| `tree.go` | `Span`, `Position`, `Error`, `Lines` with `NewLines`, `CountLines`, `ToPosition` and `LineSpan`; `Statement` with `IsBlock`, `IsListed` and `ResolveValueSpan`; `Tree` with `Text`, `Unquoted`, `UnquotedSpan`, `Children`, `FindStatement`, `FindPrevious`, `LookupStatement`, `FindChild` and `FindChildValue` |
 | `parse.go` | the lexer and the parser: `Parse`, `CountBrackets` |
 | `shapes.go` | the predicates on a written word (`IsIdentifier`, `IsNumber`, `IsEventID`, `IsParameter`, `IsConstant`); `Date` with `IsValid`, and `ParseDate`; `SplitPrefixed`, `SplitChain`, `ColorParts`; the constants and expressions a file writes (`Tree.ResolveNumber`, `ListConstants`) |
 | `call.go` | the data calls: `Call`, `Step`, `Argument`; `ParseBracketed`, `ParseCall`, `SubstituteCall` |
@@ -33,8 +33,7 @@ are `lsp`'s, which converts at its edge.
 
 `FindStatement` returns the innermost statement that covers an offset. `LookupStatement` returns the one that starts at
 an offset, as an edit names a block by where it starts. `FindChild` and `FindChildValue` read a child by its key, and
-where several children have the key, the last one wins. `IsEqual` compares two statements by what they write, so that
-comments, spacing and quotes do not count.
+where several children have the key, the last one wins.
 
 ## The parse
 

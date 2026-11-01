@@ -8,16 +8,15 @@ import (
 
 	"paradox-modding-tools/internal/files"
 	"paradox-modding-tools/internal/terminal"
+	"paradox-modding-tools/services/lsp"
 	"paradox-modding-tools/services/workspace"
 )
 
 // A Link is a file that a line of a shell's output names at a line, with where it sits in the workspace.
 type Link struct {
-	Start  int             `json:"start"` // where the name starts in the line, in UTF-16 code units
-	End    int             `json:"end"`   // where the name and its line end, in UTF-16 code units
-	Place  workspace.Place `json:"place"`
-	Line   int             `json:"line"`
-	Column int             `json:"column"` // 0 when the line names no column
+	Start int      `json:"start"` // where the name starts in the line, in UTF-16 code units
+	End   int      `json:"end"`   // where the name and its line end, in UTF-16 code units
+	Site  lsp.Site `json:"site"`  // the empty range at the column the line names; the zero range where it names none
 }
 
 // linkPattern matches a path with a file extension, followed by a line in one of the forms VS Code's terminal links:
@@ -50,13 +49,14 @@ func (trm *Service) FindLinks(id, text string) []Link {
 		if !ok {
 			continue
 		}
-		link := Link{Start: countUnits(text[:match[0]]), End: countUnits(text[:match[1]]), Place: place}
+		link := Link{Start: countUnits(text[:match[0]]), End: countUnits(text[:match[1]]), Site: lsp.Site{Place: place}}
 		// the first form whose line matched gives the line and its column
 		for group := 4; group < len(match); group += 4 {
 			if match[group] >= 0 {
-				link.Line, _ = strconv.Atoi(text[match[group]:match[group+1]])
+				link.Site.Line, _ = strconv.Atoi(text[match[group]:match[group+1]])
 				if match[group+2] >= 0 {
-					link.Column, _ = strconv.Atoi(text[match[group+2]:match[group+3]])
+					column, _ := strconv.Atoi(text[match[group+2]:match[group+3]])
+					link.Site.Range = lsp.Range{StartLine: link.Site.Line, StartColumn: column, EndLine: link.Site.Line, EndColumn: column}
 				}
 				break
 			}

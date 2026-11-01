@@ -13,14 +13,15 @@ import type { Task } from "@services/mcp/models";
 import { abbreviate, describeAge, plural } from "../lib/format";
 import { agentsQuery, tasksQuery } from "../queries";
 import { describeTitle, useAgentStore, type SessionRecord } from "../stores/agent";
-import { THIS_WINDOW } from "../stores/windows";
+import { listLatestEdits } from "../stores/edits";
+import { COMMAND_BUS, THIS_WINDOW } from "../stores/windows";
 import AgentSession from "../ui/AgentSession.vue";
 
 // whether the pane is a window of its own, which has no pane to close or pop out
 const IS_WINDOW = THIS_WINDOW === "agent";
 
 const agent = useAgentStore();
-const commands = useEventBus<string>("pmt.command");
+const commandBus = useEventBus(COMMAND_BUS);
 const { data: agents } = useQuery(agentsQuery);
 const { data: tasks } = useQuery(tasksQuery);
 const field = useTemplateRef("field");
@@ -30,7 +31,7 @@ const draft = shallowRef<string | null>(null);
 
 const session = computed(() => agent.active);
 const ready = computed(() => (agents.value ?? []).filter((row) => row.program));
-const changes = computed(() => (session.value ? agent.listChanges(session.value) : []));
+const changes = computed(() => (session.value ? listLatestEdits(session.value) : []));
 // the agent a task starts with: the one used last, else the first that can start
 const taskAgent = computed(() => ready.value.find((row) => row.id === agent.lastAgent) ?? ready.value[0]);
 // the sessions to resume, the latest first: those not archived whose agent can start, each with its agent's name
@@ -88,7 +89,7 @@ const menu = computed(() => {
 
 /** openSettings shows Settings at the agents' section, where agents are installed and updated. */
 function openSettings(): void {
-  commands.emit("settings.open", "agents");
+  commandBus.emit("settings.open", "agents");
 }
 
 /** startRename shows a session, the shown one unless one is given, with its title ready to be typed over. */

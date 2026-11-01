@@ -3,13 +3,13 @@ package wiki
 import (
 	"cmp"
 	"errors"
-	"html"
 	"regexp"
 	"slices"
 	"strings"
 
 	"github.com/samber/lo"
 	"golang.org/x/mod/semver"
+	"golang.org/x/net/html"
 
 	"paradox-modding-tools/internal/game"
 )
@@ -26,10 +26,7 @@ type Note struct {
 // releasePattern matches the release date in the first sentence of a patch note, such as "released on 2026-09-30".
 var releasePattern = regexp.MustCompile(`released on (?:the )?(\d{4}-\d{2}-\d{2})`)
 
-// tagPattern matches one HTML tag.
-var tagPattern = regexp.MustCompile(`<[^>]+>`)
-
-// releaseSpan is how many bytes of a note's HTML are searched for its release date.
+// releaseSpan is how many bytes of a note's text are searched for its release date.
 const releaseSpan = 2000
 
 // errNoListing is the error of a call that needs the listing before a refresh has kept one.
@@ -111,10 +108,10 @@ func resolveParent(version string) string {
 	return lo.Ternary(minor == version, "", minor)
 }
 
-// resolveReleased returns the release date that a patch note's HTML gives in its opening text, or "" if it gives none.
-func resolveReleased(text string) string {
-	text = html.UnescapeString(tagPattern.ReplaceAllString(text[:min(len(text), releaseSpan)], " "))
-	return lo.NthOr(releasePattern.FindStringSubmatch(text), 1, "")
+// resolveReleased returns the release date that a patch note gives in its opening text, or "" if it gives none.
+func resolveReleased(root *html.Node) string {
+	text := textOf(root)
+	return lo.NthOr(releasePattern.FindStringSubmatch(text[:min(len(text), releaseSpan)]), 1, "")
 }
 
 // compareVersions orders two patch versions as semver does, except that a minor version's hotfix notes, "1.20.X",
@@ -131,12 +128,8 @@ func compareVersions(first, second string) int {
 	return semver.Compare("v"+first, "v"+second)
 }
 
-// hasModding reports whether a page's HTML has a heading that holds the word "Modding".
-func hasModding(text string) bool {
-	root, err := parseFragment(text)
-	if err != nil {
-		return false
-	}
+// hasModding reports whether a page has a heading that holds the word "Modding".
+func hasModding(root *html.Node) bool {
 	for node := range root.Descendants() {
 		if elements[node.DataAtom].heading && strings.Contains(textOf(node), "Modding") {
 			return true

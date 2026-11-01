@@ -314,6 +314,15 @@ export interface Picture {
 }
 
 /**
+ * A PictureFiles is the pictures Save as DDS saves, and for each the DDS whose settings it keeps, by the picture's
+ * path.
+ */
+export interface PictureFiles {
+    "pictures": workspace$0.Place[] | null;
+    "references": { [_ in string]?: workspace$0.Place } | null;
+}
+
+/**
  * A PictureList is where the pictures are listed that a picture binding may draw: the images that one definition
  * writes, or, where Name is "", what the binding shows of each definition of a database, which a pick of one sets.
  */

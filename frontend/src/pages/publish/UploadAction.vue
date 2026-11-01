@@ -6,7 +6,7 @@ import { computed, shallowRef, watch } from "vue";
 import { useQuery } from "@pinia/colada";
 import { useIntervalFn, useNow } from "@vueuse/core";
 import { Browser } from "@wailsio/runtime";
-import { countBy, groupBy, isEqual, omit } from "es-toolkit";
+import { isEqual, omit } from "es-toolkit";
 import { useRouter } from "vue-router";
 
 import {
@@ -14,15 +14,11 @@ import {
   describeDetail,
   describeFinding,
   describeLevels,
-  type FindingRow,
+  findWorstProblem,
   FIX_LEVELS,
-  LEVELS,
   list,
-  listFindingRows,
-  listProblems,
   plural,
   PROBLEM_LEVELS,
-  toRepeatKey,
   toSentence,
 } from "../../lib/format";
 import { codesQuery, comparisonQuery, reportQuery, steamStatusQuery } from "../../queries";
@@ -31,6 +27,7 @@ import { useWorkspaceStore } from "../../stores/workspace";
 import LevelCounts from "../../ui/LevelCounts.vue";
 import ProblemRow from "../../ui/ProblemRow.vue";
 import { AGREEMENT_URL, toPageURL } from "./workshop";
+import type { Finding } from "@services/health/models";
 import type { Listing } from "@services/steam/models";
 
 const VISIBILITIES = [
@@ -65,10 +62,8 @@ const { data: comparison } = useQuery(() => ({
   enabled: enabled.value,
 }));
 
-// The mod's own problems as Health lists them, each with the row Health opens it at. An older listing has none.
-const problems = computed(() =>
-  listingKey ? [] : listFindingRows(listProblems(report.value?.findings ?? [])[modId] ?? []),
-);
+// The mod's group in Health's report, its own problems as Health lists them. An older listing has none.
+const group = computed(() => (listingKey ? undefined : report.value?.mods?.find((one) => one.mod === modId)));
 
 const attempt = computed(() => uploads.find(modId, listingKey));
 // The route that opens Health at the mod.
@@ -81,19 +76,11 @@ const visibility = computed({
   get: () => picked.value || comparison.value?.steam?.visibility || (listing.workshopId ? "" : "private"),
   set: (next: string) => (picked.value = next),
 });
-const counts = computed(() => countBy(problems.value, ({ finding }) => finding.level));
-const sentence = computed(() => list(describeLevels(counts.value, PROBLEM_LEVELS)));
-// Each finding that needs a fix once, with its repeats, as Health lists them.
-const faults = computed(() =>
-  Object.values(
-    groupBy(
-      problems.value.filter(({ finding }) => FIX_LEVELS.includes(finding.level)),
-      ({ finding }) => toRepeatKey(finding, codes.value),
-    ),
-  ),
-);
+const sentence = computed(() => list(describeLevels(group.value?.counts, PROBLEM_LEVELS)));
+// Each finding that needs a fix, once with its repeats folded in, as Health lists them.
+const faults = computed(() => (group.value?.findings ?? []).filter((finding) => FIX_LEVELS.includes(finding.level)));
 // The worst level among the problems, or none if the mod has none.
-const worst = computed(() => LEVELS[PROBLEM_LEVELS.find((level) => counts.value[level]) ?? ""]);
+const worst = computed(() => findWorstProblem(group.value));
 const label = computed(() => {
   if (reason.value) return "Start Steam to upload";
   return listing.workshopId ? "Upload to Steam" : "Create on Steam";
@@ -129,8 +116,9 @@ function start(): void {
 }
 
 /** open shows a problem in Health. */
-function open(problem: FindingRow): void {
-  void router.push({ ...healthRoute.value, query: { ...healthRoute.value.query, row: String(problem.index) } });
+function open(finding: Finding): void {
+  const row = String(group.value?.findings?.indexOf(finding));
+  void router.push({ ...healthRoute.value, query: { ...healthRoute.value.query, row } });
 }
 
 /** submit writes the listing and uploads it, with the picked visibility or the item's own. */
@@ -234,16 +222,16 @@ function submit(): void {
         class="max-h-36 divide-y divide-default overflow-y-auto rounded-lg border border-default bg-default"
       >
         <ProblemRow
-          v-for="[problem, ...repeats] in faults"
-          :key="problem?.index"
-          :level="problem?.finding.level"
-          :message="problem ? describeFinding(problem.finding, codes) : ''"
-          :detail="problem ? describeDetail(problem.finding) : ''"
+          v-for="(problem, position) in faults"
+          :key="position"
+          :level="problem.level"
+          :message="describeFinding(problem, codes)"
+          :detail="describeDetail(problem)"
           mono
-          @open="problem && open(problem)"
+          @open="open(problem)"
         >
           <template #trailing>
-            <UBadge v-if="repeats.length" :label="`×${describeCount(repeats.length + 1)}`" size="sm" class="shrink-0" />
+            <UBadge v-if="problem.count > 1" :label="`×${describeCount(problem.count)}`" size="sm" class="shrink-0" />
           </template>
         </ProblemRow>
       </div>
@@ -270,7 +258,7 @@ function submit(): void {
       >
         <UIcon name="i-lucide-activity" class="size-4 shrink-0 text-dimmed" />
         <span class="grow text-start">Health</span>
-        <LevelCounts :levels="counts" />
+        <LevelCounts :levels="group?.counts" />
         <UIcon name="i-lucide-chevron-right" class="size-3.5 shrink-0 text-dimmed" />
       </UButton>
       <span v-if="reason" class="flex items-center gap-2 text-11 text-dimmed">

@@ -36,18 +36,16 @@ const gameId = computed({
   get: () => selectedGame.value || games.value?.[0]?.id || "",
   set: (id: string) => (selectedGame.value = id),
 });
-const current = computed(() => games.value?.find((one) => one?.id === gameId.value));
-const { data: allInstalls } = useQuery(installsQuery);
-const installs = computed(() => allInstalls.value?.filter((install) => install.game === gameId.value) ?? []);
+const current = computed(() => games.value?.find((one) => one.id === gameId.value));
+const { data: installs } = useQuery(() => installsQuery(gameId.value));
 const installId = computed({
-  get: () => installs.value.find((install) => install.id === selectedInstall.value)?.id ?? installs.value[0]?.id ?? "",
+  get: () =>
+    installs.value?.find((install) => install.id === selectedInstall.value)?.id ?? installs.value?.[0]?.id ?? "",
   set: (id: string) => (selectedInstall.value = id),
 });
 const { data: languages } = useQuery(() => ({ ...languagesQuery(installId.value), enabled: !!installId.value }));
 
-const gameItems = computed(() =>
-  (games.value ?? []).filter((one) => one !== null).map((one) => ({ label: one.name, value: one.id })),
-);
+const gameItems = computed(() => (games.value ?? []).map((one) => ({ label: one.name, value: one.id })));
 const steps = computed<StepperItem[]>(() =>
   STEPS.map((heading, index) => ({
     title: heading,
@@ -100,6 +98,11 @@ function addNewMod(): void {
   const text = newMod.value.trim();
   newMod.value = "";
   if (text) mods.value = [...mods.value, { id: crypto.randomUUID(), dir: "", title: text }];
+}
+
+/** removeMod takes a mod out of the load order. */
+function removeMod(mod: { id: string }): void {
+  mods.value = mods.value.filter((one) => one.id !== mod.id);
 }
 
 /** setStep shows one step of the wizard. It ignores a value that is not a number. */
@@ -179,7 +182,7 @@ function setStep(index: string | number | undefined): void {
                 size="xs"
                 square
                 aria-label="Leave out"
-                @click="mods = mods.filter((one) => one !== mod)"
+                @click="removeMod(mod)"
               />
             </div>
           </div>

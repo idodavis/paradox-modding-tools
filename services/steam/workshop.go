@@ -56,23 +56,20 @@ const (
 	pageScript = "valve-ssr-data"
 )
 
-// Rules lists what an upload leaves out.
-var Rules = []Rule{
-	{Pattern: ".*", Reason: "Files that start with a dot belong to the author's tools, not to the game."},
-	{Pattern: gitignoreFile, Reason: "What the mod's own .gitignore names stays out too."},
-	{Pattern: "", Reason: "What the mod's own exclusions name stays out too."}, // the patterns in the mod's record
-}
-
-// listRules returns what an upload leaves out: the rules, then the instruction files of the coding agents PMT offers
-// that the first rule does not cover, as the agents' rows name them.
-func listRules() []Rule {
-	instructions := lo.Reject(agent.ListFiles(), func(file string, _ int) bool { return strings.HasPrefix(file, ".") })
-	return append(slices.Clone(Rules), Rule{Pattern: strings.Join(instructions, "\n"),
-		Reason: "Instructions for coding agents belong to the author's tools, not to the game."})
-}
-
 // releaseNumber matches the major and minor numbers that a version or a version tag starts with.
 var releaseNumber = regexp.MustCompile(`^\d+\.\d+`)
+
+// ListRules returns the rules that say what every upload leaves out. One rule names the coding agents' instruction
+// files that start with no dot, as the agents' rows name them.
+func (stm *Service) ListRules() []Rule {
+	instructions := lo.Reject(agent.ListFiles(), func(file string, _ int) bool { return strings.HasPrefix(file, ".") })
+	return []Rule{
+		{Pattern: ".*", Reason: "Files that start with a dot belong to the author's tools, not to the game."},
+		{Pattern: gitignoreFile, Reason: "What the mod's own .gitignore names stays out too."},
+		{Pattern: strings.Join(instructions, "\n"),
+			Reason: "Instructions for coding agents belong to the author's tools, not to the game."},
+	}
+}
 
 // ListDLC returns the DLCs of the open workspace's install that have a Steam id. It returns an error if no workspace is
 // open or a descriptor cannot be read.
@@ -171,7 +168,7 @@ func (stm *Service) ListTags() (Tags, error) {
 	if err != nil {
 		return Tags{}, err
 	}
-	modTags := lo.FlatMap(ws.Order, func(mod workspace.Mod, _ int) []string { return mod.Descriptor.Tags })
+	modTags := lo.FlatMap(*ws.Order.Load(), func(mod workspace.Mod, _ int) []string { return mod.Descriptor.Tags })
 	categories := toCategoryTags(declared.Versions, lo.Uniq(slices.Concat(declared.Categories, modTags)))
 	slices.Sort(categories)
 	return Tags{Categories: categories, Versions: declared.Versions}, nil
@@ -217,7 +214,7 @@ func toCategoryTags(versions, tags []string) []string {
 // fetchTags fetches the tags that a game's Workshop page declares for its items, without those only Steam's admins may
 // set. It returns an error if the page cannot be fetched or declares no tags.
 func fetchTags(appID int) (Tags, error) {
-	body, _, err := fetchURL(fmt.Sprintf(browsePage, appID), 30*time.Second)
+	body, err := app.FetchURL(fmt.Sprintf(browsePage, appID), 30*time.Second)
 	if err != nil {
 		return Tags{}, err
 	}

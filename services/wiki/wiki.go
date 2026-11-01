@@ -8,6 +8,7 @@ import (
 	"github.com/samber/lo"
 	"github.com/wailsapp/wails/v3/pkg/application"
 
+	"paradox-modding-tools/internal/index"
 	"paradox-modding-tools/services/workspace"
 )
 
@@ -33,8 +34,10 @@ type Progress struct {
 // and a new one when a workspace of another game opens.
 type Service struct {
 	Workspace *workspace.Service
-	mu        sync.Mutex // held while client is read or replaced
-	client    *Client    // made on first use for the open workspace's game
+	mu        sync.Mutex              // held while the client, the lexicon and its index are read or replaced
+	client    *Client                 // made on first use for the open workspace's game
+	lexicon   map[string][]LexiconRow // the rows built for each class, for the index they were built from
+	mods      *index.Index            // the mods' index the lexicon was built from; another index empties it
 }
 
 // ServiceStartup refreshes the wiki of the open workspace's game in the background each time a workspace opens.
@@ -73,20 +76,10 @@ func (wik *Service) ListNotes() ([]Note, error) {
 		title := resolvePatch(version)
 		page, _ := client.LoadPage(title)
 		return Note{
-			Version: version, Parent: resolveParent(version), Released: resolveReleased(page.HTML), Title: title,
+			Version: version, Parent: resolveParent(version), Released: page.Released, Title: title,
 			Modding: page.Modding,
 		}
 	}), nil
-}
-
-// ReadNote returns the patch notes page of the given version, fetching it if it is not cached. It returns an error if
-// no workspace is open or the fetch fails.
-func (wik *Service) ReadNote(version string) (Page, error) {
-	ws, err := wik.Workspace.Session()
-	if err != nil {
-		return Page{}, err
-	}
-	return wik.resolveClient(ws).resolvePage(resolvePatch(version))
 }
 
 // Refresh fetches the page listing and every page that is missing or stale. The wiki:progress event reports each

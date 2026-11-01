@@ -3,7 +3,7 @@
 
 // eslint-disable-next-line @typescript-eslint/ban-ts-comment
 // @ts-ignore: Unused imports
-import * as workspace$0 from "../workspace/models.js";
+import * as lsp$0 from "../lsp/models.js";
 
 /**
  * A Link is a file that a line of a shell's output names at a line, with where it sits in the workspace.
@@ -18,11 +18,9 @@ export interface Link {
      * where the name and its line end, in UTF-16 code units
      */
     "end": number;
-    "place": workspace$0.Place;
-    "line": number;
 
     /**
-     * 0 when the line names no column
+     * the empty range at the column the line names; the zero range where it names none
      */
-    "column": number;
+    "site": lsp$0.Site;
 }

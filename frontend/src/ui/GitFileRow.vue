@@ -1,10 +1,12 @@
-<!-- One changed file: its status, its path, and buttons to stage, unstage, discard and open. -->
+<!--
+  One changed file: its status, its path, and the buttons its section offers to stage, unstage, discard and open.
+-->
 <script setup lang="ts">
 import type { Change } from "@services/git/models";
 
 import OriginChip from "./OriginChip.vue";
 
-defineProps<{ change: Change }>();
+defineProps<{ change: Change; side: "staged" | "changes" | "conflict" | "commit" }>();
 const emit = defineEmits<{ open: []; stage: []; unstage: []; discard: [] }>();
 
 const COLORS: Record<string, string> = {
@@ -30,7 +32,7 @@ const COLORS: Record<string, string> = {
       <span class="ms-1.5 text-dimmed">{{ change.place.folder }}</span>
     </span>
     <UButton
-      v-if="(change.staged || change.unstaged) && change.status !== 'deleted' && change.status !== 'conflict'"
+      v-if="(side === 'staged' || side === 'changes') && change.status !== 'deleted'"
       class="hidden group-hover:flex"
       icon="i-lucide-file"
       variant="ghost"
@@ -40,7 +42,7 @@ const COLORS: Record<string, string> = {
       @click.stop="emit('open')"
     />
     <UButton
-      v-if="change.unstaged && change.status !== 'conflict'"
+      v-if="side === 'changes'"
       class="hidden group-hover:flex"
       icon="i-lucide-undo-2"
       color="error"
@@ -51,17 +53,17 @@ const COLORS: Record<string, string> = {
       @click.stop="emit('discard')"
     />
     <UButton
-      v-if="change.unstaged"
+      v-if="side === 'changes' || side === 'conflict'"
       class="hidden group-hover:flex"
       icon="i-lucide-plus"
       variant="ghost"
       size="xs"
       square
-      :aria-label="change.status === 'conflict' ? 'Stage, resolved' : 'Stage'"
+      :aria-label="side === 'conflict' ? 'Stage, resolved' : 'Stage'"
       @click.stop="emit('stage')"
     />
     <UButton
-      v-if="change.staged"
+      v-if="side === 'staged'"
       class="hidden group-hover:flex"
       icon="i-lucide-minus"
       variant="ghost"

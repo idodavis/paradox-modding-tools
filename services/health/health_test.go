@@ -17,6 +17,7 @@ import (
 
 	"paradox-modding-tools/internal/files"
 	"paradox-modding-tools/internal/game"
+	"paradox-modding-tools/internal/index"
 	"paradox-modding-tools/services/app"
 	"paradox-modding-tools/services/lsp"
 	"paradox-modding-tools/services/workspace"
@@ -37,7 +38,8 @@ var modAFiles = map[string]string{
 	"common/traits/a_shared.txt": "shared = { category = personality diplomacy = 1 }\n",
 	"common/traits/m_unused.txt": "unloved = { category = personality }\n",
 	"events/m_title_events.txt": "namespace = m\nm.3 = { type = character_event title = m.3.t }\n" +
-		"m.4 = { type = character_event immediate = { trigger_event = m.99 } }\n",
+		"m.4 = { type = character_event immediate = { trigger_event = m.99 } }\n" +
+		"m.5 = { type = character_event immediate = { trigger_event = m.99 } }\n",
 	"events/m_broken.txt":                  "broken = {\n",
 	"events/v_events.txt":                  "namespace = v\nv.1 = { type = character_event }\nv.2 = { type = character_event }\n",
 	"localization/english/m_l_english.yml": "l_english:\n m_orphan:0 \"Alone\"\n m_kept:0 \"Kept\"\n",
@@ -175,43 +177,51 @@ func TestBuildReportFindsContestsOverridesAndProblems(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	contest := findFinding(t, report.Findings, "contest", "shared", "trait")
+	findings := listFindings(report)
+	contest := findFinding(t, findings, "contest", "shared", "trait")
 	if contest.Question != lsp.QuestionCompatibility || len(contest.Sites) != 2 || !contest.Sites[0].Kept ||
-		contest.Sites[1].Kept || contest.Sites[0].Reason != "last" || contest.Sites[0].Place.Origin != modB {
+		contest.Sites[1].Kept || contest.Sites[0].Reason != index.ReasonLast || contest.Sites[0].Place.Origin != modB {
 		t.Errorf("contest of shared: %+v", contest)
 	}
-	shipped := findFinding(t, report.Findings, "file-contest", "common/traits/m_traits.txt", game.File)
+	shipped := findFinding(t, findings, "file-contest", "common/traits/m_traits.txt", game.File)
 	if len(shipped.Sites) != 2 || !shipped.Sites[0].Kept || shipped.Sites[1].Kept ||
 		shipped.Sites[0].Place.Origin != modB || shipped.Sites[0].Range.StartLine != 1 {
 		t.Errorf("contest of the file m_traits.txt: %+v", shipped)
 	}
-	if lo.ContainsBy(report.Findings, func(finding Finding) bool { return finding.Name == "descriptor.mod" }) {
+	if lo.ContainsBy(findings, func(finding Finding) bool { return finding.Name == "descriptor.mod" }) {
 		t.Error("a descriptor, which the game does not read as a file, is a finding")
 	}
 	// the game's own v_traits.txt loads after the mods' m_traits.txt
-	unused := findFinding(t, report.Findings, "unused-copy", "brave", "trait")
+	unused := findFinding(t, findings, "unused-copy", "brave", "trait")
 	if unused.Facts["beaten"] != titleB || unused.Facts["winner"] == "" || len(unused.Sites) != 2 ||
-		unused.Sites[0].Reason != "last" || !unused.Sites[0].Place.ReadOnly || !unused.Sites[0].Kept || unused.Sites[1].Kept {
+		unused.Sites[0].Reason != index.ReasonLast || !unused.Sites[0].Place.ReadOnly || !unused.Sites[0].Kept || unused.Sites[1].Kept {
 		t.Errorf("unused copy of brave: %+v", unused)
 	}
-	replaced := findFinding(t, report.Findings, "override", "events/v_events.txt", game.File)
+	replaced := findFinding(t, findings, "override", "events/v_events.txt", game.File)
 	if replaced.Facts["kept"] != "the mod's" || len(replaced.Sites) != 2 || !replaced.Sites[0].Kept || replaced.Sites[1].Kept ||
-		lo.ContainsBy(report.Findings, func(finding Finding) bool { return finding.Code == "override" && finding.Name == "v.1" }) {
+		lo.ContainsBy(findings, func(finding Finding) bool { return finding.Code == "override" && finding.Name == "v.1" }) {
 		t.Errorf("override of the file v_events.txt: %+v", replaced)
 	}
-	assertLocalization(t, report)
-	dangling := findFinding(t, report.Findings, "unresolved-reference", "m.99", "")
-	if dangling.Question != lsp.QuestionHealth || len(dangling.Sites) != 1 || dangling.Sites[0].Range.StartLine != 3 {
+	assertLocalization(t, findings)
+	// the two references to m.99 are one finding that counts both
+	dangling := findFinding(t, findings, "unresolved-reference", "m.99", "")
+	if dangling.Question != lsp.QuestionHealth || len(dangling.Sites) != 1 || dangling.Sites[0].Range.StartLine != 3 ||
+		dangling.Count != 2 || len(dangling.Repeats) != 1 || dangling.Repeats[0].Range.StartLine != 4 {
 		t.Errorf("dangling reference: %+v", dangling)
 	}
-	if script := findFinding(t, report.Findings, "unclosed-block", "", ""); script.Question != lsp.QuestionHealth {
+	if script := findFinding(t, findings, "unclosed-block", "", ""); script.Question != lsp.QuestionHealth {
 		t.Errorf("script problem: %+v", script)
+	}
+	assertGroups(t, report, []string{modA, modB})
+	if report.Compatibility.Worst != lsp.LevelCritical || report.Compatibility.Checks[0].Level != lsp.LevelCritical {
+		t.Errorf("compatibility: worst %q, checks %+v", report.Compatibility.Worst, report.Compatibility.Checks)
 	}
 	previewed, err := hlt.BuildReport([]string{modB, modA})
 	if err != nil {
 		t.Fatal(err)
 	}
-	kept := findFinding(t, previewed.Findings, "file-contest", "common/traits/m_traits.txt", game.File).Sites
+	assertGroups(t, previewed, []string{modB, modA})
+	kept := findFinding(t, listFindings(previewed), "file-contest", "common/traits/m_traits.txt", game.File).Sites
 	if len(kept) != 2 || !kept[0].Kept || kept[0].Place.Origin != modA {
 		t.Errorf("contest of the file m_traits.txt with the first mod loaded last: %+v", kept)
 	}
@@ -220,11 +230,52 @@ func TestBuildReportFindsContestsOverridesAndProblems(t *testing.T) {
 	}
 }
 
-// assertLocalization checks the findings of a missing title message and of a partly written language.
-func assertLocalization(t *testing.T, report Report) {
+// listFindings returns the findings of a report's groups, the mods' languages too.
+func listFindings(report Report) []Finding {
+	findings := report.Compatibility.Findings
+	for _, group := range report.Mods {
+		findings = slices.Concat(findings, group.Findings, group.Languages)
+	}
+	return findings
+}
+
+// assertGroups checks that a report has a group for each mod in the order, and that each group's tally, checks and
+// sort say what its findings do.
+func assertGroups(t *testing.T, report Report, order []string) {
 	t.Helper()
-	missing := findFinding(t, report.Findings, "missing-message", "m.3", "")
-	coverage := findFinding(t, report.Findings, "coverage", german, "")
+	if ids := lo.Map(report.Mods, func(group Group, _ int) string { return group.Mod }); !slices.Equal(ids, order) {
+		t.Fatalf("the mods' groups are %v, want %v", ids, order)
+	}
+	var own []Finding
+	for _, group := range slices.Concat([]Group{report.Compatibility}, report.Mods) {
+		want := makeTally(group.Findings)
+		if !maps.Equal(group.Counts, want.Counts) || group.Worst != want.Worst || len(group.Counts) != len(lsp.Levels) {
+			t.Errorf("group %q: tally %+v, want %+v", group.Mod, group.Tally, want)
+		}
+		if checked := lo.SumBy(group.Checks, func(check Check) int { return check.Count }); checked != lo.Sum(slices.Collect(maps.Values(group.Counts))) {
+			t.Errorf("group %q: the checks count %d findings, the tally %v", group.Mod, checked, group.Counts)
+		}
+		levels := lo.Map(group.Findings, func(finding Finding, _ int) int { return slices.Index(lsp.Levels, finding.Level) })
+		if !slices.IsSorted(levels) {
+			t.Errorf("group %q: findings are not sorted worst first: %v", group.Mod, levels)
+		}
+		if group.Mod != "" {
+			own = slices.Concat(own, group.Findings)
+		}
+	}
+	if want := makeTally(own); report.Own.Worst == "" || !maps.Equal(report.Own.Counts, want.Counts) {
+		t.Errorf("the mods' tally is %+v, want %+v", report.Own, want)
+	}
+	if want := makeTally(slices.Concat(report.Compatibility.Findings, own)); !maps.Equal(report.Counts, want.Counts) {
+		t.Errorf("the report's tally is %+v, want %+v", report.Tally, want)
+	}
+}
+
+// assertLocalization checks the findings of a missing title message and of a partly written language.
+func assertLocalization(t *testing.T, findings []Finding) {
+	t.Helper()
+	missing := findFinding(t, findings, "missing-message", "m.3", "")
+	coverage := findFinding(t, findings, "coverage", german, "")
 	if missing.Facts["key"] != "m.3.t" || coverage.Facts["mod"] != titleA ||
 		coverage.Facts["have"] != "1" || coverage.Facts["of"] != "3" || len(coverage.Sites) != 1 {
 		t.Errorf("localization: %+v, %+v", missing, coverage)
@@ -313,7 +364,9 @@ func TestBuildReportInstalls(t *testing.T) {
 			if err != nil {
 				t.Fatal(err)
 			}
-			t.Logf("%d findings in %s", len(report.Findings), time.Since(started).Round(time.Millisecond))
+			t.Logf("%d findings, %v counted, in %s", len(listFindings(report)), report.Counts,
+				time.Since(started).Round(time.Millisecond))
+			assertGroups(t, report, lo.Map(mods, func(mod app.Mod, _ int) string { return mod.ID }))
 			logCounts(t, report)
 			started = time.Now()
 			gameLog, err := hlt.ListErrorLog()
@@ -334,9 +387,10 @@ func TestBuildReportInstalls(t *testing.T) {
 func logCounts(t *testing.T, report Report) {
 	t.Helper()
 	codes, levels := map[string]int{}, map[string]int{}
-	for _, finding := range report.Findings {
-		codes[finding.Code]++
-		levels[finding.Question+"/"+finding.Level]++
+	findings := listFindings(report)
+	for _, finding := range findings {
+		codes[finding.Code] += finding.Count
+		levels[finding.Question+"/"+finding.Level] += finding.Count
 	}
 	for _, level := range slices.Sorted(maps.Keys(levels)) {
 		t.Logf("question/level %s: %d", level, levels[level])
@@ -344,14 +398,14 @@ func logCounts(t *testing.T, report Report) {
 	for _, code := range slices.Sorted(maps.Keys(codes)) {
 		t.Logf("code %s: %d", code, codes[code])
 	}
-	for _, finding := range report.Findings {
+	for _, finding := range findings {
 		if finding.Code == "removed-names" || finding.Code == "ignored-pair" || len(finding.Order) > 0 {
 			t.Logf("%s %s: %s, level %s, mods %v, facts %v, order %v", finding.Code, finding.Database, finding.Name,
 				finding.Level, finding.Mods, finding.Facts, finding.Order)
 		}
 	}
 	for _, code := range []string{"contest", "override"} {
-		listed := lo.Filter(report.Findings, func(finding Finding, _ int) bool { return finding.Code == code })
+		listed := lo.Filter(findings, func(finding Finding, _ int) bool { return finding.Code == code })
 		shipped := lo.CountBy(listed, func(finding Finding) bool { return finding.Database == game.File })
 		t.Logf("%s: %d names, %d files", code, len(listed)-shipped, shipped)
 	}
@@ -378,9 +432,9 @@ func compareDiagnostics(t *testing.T, hlt *Service, report Report) {
 	// the report's own health findings, and the descriptors', which the loop above does not judge
 	own := []string{"coverage", "supported-version"}
 	got := map[string]int{}
-	for _, finding := range report.Findings {
+	for _, finding := range listFindings(report) {
 		if finding.Question == lsp.QuestionHealth && !slices.Contains(own, finding.Code) {
-			got[finding.Code] += len(finding.Sites)
+			got[finding.Code] += len(finding.Sites) + len(finding.Repeats)
 		}
 	}
 	t.Logf("the editor's codes: %d places in the report, %d in the editor", lo.Sum(slices.Collect(maps.Values(got))),

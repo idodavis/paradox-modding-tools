@@ -7,12 +7,7 @@ import { closeModel } from "../pages/ide/editor/models";
 import { useEditorStore } from "./editor";
 import { useWindowsStore } from "./windows";
 
-// the one file the view can draw something from
-vi.mock("@services/draw/service", () => ({
-  ListDrawables: vi.fn((path: string) => Promise.resolve(path === "coat" ? [{ name: "coat" }] : null)),
-}));
-
-/** A place whose key, path and rel are the same word, of the given format. */
+/** place returns a place whose key, path and rel are the same word, of the given format. */
 function place(key: string, format = Format.FormatScript): Place {
   return {
     path: key,
@@ -25,19 +20,19 @@ function place(key: string, format = Format.FormatScript): Place {
     root: "/mod",
     database: "",
     readOnly: false,
-    loaded: true,
     isDir: false,
+    drawable: false,
   };
 }
 
 beforeEach(() => vi.mocked(closeModel).mockClear());
 
-/** The editor store and the windows store it asks, made together. */
+/** stores makes the editor store and the windows store it asks, together. */
 function stores() {
   return inApp(() => ({ editor: useEditorStore(), windows: useWindowsStore() }));
 }
 
-/** The ids of the tabs of the active group, with whether each is a preview. */
+/** tabsOf returns the ids of the tabs of the active group, with whether each is a preview. */
 function tabsOf(editor: ReturnType<typeof useEditorStore>) {
   return (editor.activeGroup()?.tabs ?? []).map((tab) => [tab.id, tab.preview]);
 }
@@ -58,7 +53,7 @@ describe("showing a place", () => {
   it("pins a preview tab when the file is shown any other way", () => {
     const { editor } = stores();
     editor.show(place("a"), undefined, "explorer");
-    editor.show(place("a"), undefined, "palette");
+    editor.show(place("a"), undefined, "navigate");
     expect(tabsOf(editor)).toEqual([["file:a", false]]);
     editor.show(place("b"), undefined, "explorer");
     editor.pin("file:b");
@@ -68,22 +63,12 @@ describe("showing a place", () => {
     ]);
   });
 
-  it("opens a file with something to draw in the visual view, a GUI file in split and an image in the image view", async () => {
-    const { editor } = stores();
-    editor.show(place("coat"));
-    editor.show(place("events"));
-    editor.show(place("window", Format.FormatGUI));
-    editor.show(place("flag", Format.FormatImage));
-    const views = () => (editor.activeGroup()?.tabs ?? []).map((tab) => tab.view);
-    await vi.waitFor(() => expect(views()).toEqual(["visual", "code", "split", "image"]));
-  });
-
   it("shows a file another window holds in that window and opens no tab here", () => {
     const { editor, windows } = stores();
     vi.spyOn(windows, "holderOf").mockReturnValue("editor:1");
     const showElsewhere = vi.spyOn(windows, "showElsewhere").mockImplementation(() => undefined);
     editor.show(place("a"));
-    expect(showElsewhere).toHaveBeenCalledWith("editor:1", place("a"));
+    expect(showElsewhere).toHaveBeenCalledWith("editor:1", place("a"), undefined, "navigate");
     expect(tabsOf(editor)).toEqual([]);
   });
 });

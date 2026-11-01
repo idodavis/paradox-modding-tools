@@ -116,7 +116,7 @@ func TestListCommits(t *testing.T) {
 	}
 	newest, oldest := commits[0], commits[1]
 	if newest.Subject != subjects[1] || !slices.Equal(newest.Parents, []string{oldest.Hash}) ||
-		newest.Author != "Tester" || newest.Date.IsZero() || !strings.HasPrefix(newest.Hash, newest.Short) ||
+		newest.Date.IsZero() || !strings.HasPrefix(newest.Hash, newest.Short) ||
 		!slices.Equal(newest.Refs, []string{branch}) {
 		t.Fatalf("newest commit %+v", newest)
 	}

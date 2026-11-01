@@ -5,27 +5,33 @@ repository: status, refs and log, a file at a revision, and the commands the Sou
 
 It runs the git CLI and reads its machine output. Nothing of git is reimplemented, and no git library is used. Of the
 engine it calls `files`, to decode a file as the files on disk are and to compare paths, and it asks the workspace
-service for the place of each changed file. A repository is its root folder, as a string.
+service for the place of each changed file and each ignored path. A repository is its root folder, as a string.
 
 | file | holds |
 |---|---|
-| `git.go` | the package comment; the events; `Service`; `Run`, which runs git; `FindRepository`, `ReadFile`; the commands (`Stage`, `Unstage`, `Discard`, `CreateCommit`, `CreateBranch`, `SwitchBranch`, `Merge`) |
+| `git.go` | the package comment; the events; `Service`; `Run` and `run`, which run git; `FindRepository`, `ReadFile`; the commands (`Stage`, `Unstage`, `Discard`, `CreateCommit`, `CreateBranch`, `SwitchBranch`, `Merge`); the locating of paths |
 | `status.go` | `Change`, `Status`, `Ref`; `ReadStatus`, `ListRefs`; the parser of the status records |
 | `log.go` | `Commit`; `ListCommits`, `ListCommitFiles` |
 | `diff.go` | `LineChange`; `DiffFile`, the editor's change bars |
 
 ## Running git
 
-git is found on the PATH on the first call, and kept. `Run` runs it in a folder and returns its standard output. Each
+git is found on the PATH on the first call, and kept. `run` runs it in a folder and returns its standard output. Each
 line of standard error is sent as a `git:output` event as it arrives, and a nonzero exit is an error that carries the
 text of standard error. A missing git is an error too. Every method takes a folder and works on the repository that
 holds it; `FindRepository` returns that repository's root.
 
+`Run` is the one the frontend calls for the commands of its own (a pull, a push, a checkout): it calls `run` and then
+emits `git:changed` with the folder, so what shows a repository's state reads it again. The package's own reads and
+commands call `run`, so a read never sends the event; the commands that change a repository send it themselves.
+
 ## Reading
 
 - `ReadStatus` reads `git status --porcelain=v2 -z --branch --ignored`: the branch, its upstream and how far they
-  differ, each `Change` with which sides hold it and what was done to it, and the files git ignores. Each change gets
-  its file's `workspace.Place`, from the repository's root, while a workspace is open.
+  differ, each `Change` with which sides hold it and what was done to it, and the files git ignores. Each change and
+  each ignored path gets its `workspace.Place`, from the repository's root, while a workspace is open; the place of a
+  path git ends with a slash, a folder, says `isDir`. A path under none of the workspace's roots gets a place with no
+  origin.
 - `ListRefs` reads `git for-each-ref`: the branches, remote branches and tags, each with the date of its commit and
   whether it is current.
 - `ListCommits` reads `git log` with a NUL-separated format: each commit's hashes, parents, author, date, subject and
@@ -49,7 +55,7 @@ not. A merge that conflicts is not an error: it leaves the markers in the files,
 | event | data | sent when |
 |---|---|---|
 | `git:output` | a line git printed | git writes a line to its standard error |
-| `git:changed` | the repository's folder | a command PMT ran changed a repository |
+| `git:changed` | the repository's folder, or the folder `Run` was given | a command PMT ran changed a repository |
 
 ## Terms
 

@@ -13,6 +13,7 @@ import (
 	"strconv"
 	"strings"
 	"sync"
+	"time"
 
 	"paradox-modding-tools/internal/files"
 	"paradox-modding-tools/services/app"
@@ -20,12 +21,13 @@ import (
 
 // Params is what a second copy of the app needs to upload a mod or work on an item.
 type Params struct {
-	LibraryPath string  `json:"libraryPath"` // the game's copy of Steam's library
-	AppID       int     `json:"appId"`
-	UploadDir   string  `json:"uploadDir"`
-	WorkshopID  string  `json:"workshopId"` // "" creates the item
-	Listing     Listing `json:"listing"`
-	Visibility  string  `json:"visibility"` // private, friends, public or unlisted; "" keeps the item's own
+	LibraryPath string    `json:"libraryPath"` // the game's copy of Steam's library
+	AppID       int       `json:"appId"`
+	UploadDir   string    `json:"uploadDir"`
+	WorkshopID  string    `json:"workshopId"` // "" creates the item
+	UpdatedAt   time.Time `json:"updatedAt"`  // when Steam last updated the item, which a download waits for
+	Listing     Listing   `json:"listing"`
+	Visibility  string    `json:"visibility"` // private, friends, public or unlisted; "" keeps the item's own
 	// ModWorkshopIDs are the Workshop ids of the workspace's mods. An upload removes no other required item.
 	ModWorkshopIDs []string `json:"modWorkshopIds"`
 }
@@ -164,11 +166,7 @@ func publish(client *Client, params Params) error {
 // download has Steam download an item and keeps a copy of its files in PMT's cache as the item's snapshot. A failed
 // download leaves the copy kept before as it was.
 func download(client *Client, params Params) error {
-	details, err := client.FetchDetails(params.WorkshopID)
-	if err != nil {
-		return err
-	}
-	folder, err := client.fetchFolder(params.WorkshopID, details.UpdatedAt)
+	folder, err := client.fetchFolder(params.WorkshopID, params.UpdatedAt)
 	if err != nil {
 		return err
 	}
@@ -184,7 +182,7 @@ func download(client *Client, params Params) error {
 	if err != nil {
 		return err
 	}
-	return keepSnapshot(dirs.Cache, dir, Snapshot{WorkshopID: params.WorkshopID, UpdatedAt: details.UpdatedAt})
+	return keepSnapshot(dirs.Cache, dir, Snapshot{WorkshopID: params.WorkshopID, UpdatedAt: params.UpdatedAt})
 }
 
 // keepSnapshot moves a folder in PMT's cache into place as an item's kept copy and saves the item's snapshot. If the

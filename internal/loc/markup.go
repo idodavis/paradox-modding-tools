@@ -178,11 +178,11 @@ func makeText(text string, start, end, base int) Segment {
 	return Segment{Markup: MarkupText, Text: text[start:end], Span: span, TextSpan: span}
 }
 
-// ListCalls returns the data calls a text writes between brackets, those inside its formats too. The offset is where
-// the text's first byte sits in its file.
-func ListCalls(text string, base int) []jomini.Call {
+// ListCalls returns the data calls that the given segments of a text write between brackets, those inside its formats
+// too.
+func ListCalls(segments []Segment) []jomini.Call {
 	var calls []jomini.Call
-	for _, segment := range Segments(text, base) {
+	for _, segment := range segments {
 		if segment.Markup != MarkupCall {
 			continue
 		}
@@ -193,12 +193,12 @@ func ListCalls(text string, base int) []jomini.Call {
 	return calls
 }
 
-// ListMarkupFaults returns the markup a message's text gets wrong, each as a loc-markup error. One fault is a [ that
-// no ] closes and that a call starts after: the text keeps it as a plain [. The other is a format ended with #. or #,
-// where the game ends one with #!. A [ with nothing or a space after it is a plain [, and no fault.
-func ListMarkupFaults(message Message) []jomini.Error {
+// ListMarkupFaults returns the markup that the given segments of a text get wrong, each as a loc-markup error. One
+// fault is a [ that no ] closes and that a call starts after: the text keeps it as a plain [. The other is a format
+// ended with #. or #, where the game ends one with #!. A [ with nothing or a space after it is a plain [, and no fault.
+func ListMarkupFaults(segments []Segment) []jomini.Error {
 	var faults []jomini.Error
-	for _, segment := range Segments(message.Text, message.TextSpan.Start) {
+	for _, segment := range segments {
 		for offset := 0; segment.Markup == MarkupText && offset < len(segment.Text); offset++ {
 			start, rest := segment.Span.Start+offset, segment.Text[offset:]
 			switch {

@@ -19,20 +19,44 @@ import (
 // A Winner is the definition the game keeps when several share a name, and the reason it wins. Where the sources do
 // not say which copy the game keeps, the reason is unsettled and the winner is one of the copies in question.
 type Winner struct {
-	Site Site `json:"site"`
-	// Reason is last, first, playset, path, priority, mode, merge, replace or unsettled; "" for a lone copy. A
-	// localization key's winner is replace-folder, unsettled or "".
-	Reason string `json:"reason"`
-	// Cause is what leaves an unsettled choice open: priority, keyword, inject or replace; else "".
-	Cause  string `json:"cause,omitempty"`
+	Site   Site   `json:"site"`
+	Reason Reason `json:"reason"`          // why the game keeps it; "" for a lone copy
+	Cause  Cause  `json:"cause,omitempty"` // what leaves an unsettled choice open; "" for a settled one
 	Merged []Site `json:"merged,omitempty"`
 }
 
-// The reasons a copy other than the winner can have.
+// A Reason is why the game keeps a copy of a name, or that no source says which copy it keeps.
+type Reason string
+
+// The reasons: the last copy, the first, the playset's last, the one with the highest priority, the one an entry
+// mode puts in place, the first of copies merged into one, the copy left when another mod's replace_path or a path
+// the game does not read drops the one that would win, and a localization key's in a replace folder; a copy merged
+// into the winner by an entry mode or by its database; and a choice no source settles.
 const (
-	Injected  = "injected"
-	Combined  = "combined"
-	Unsettled = "unsettled"
+	ReasonLast          Reason = "last"
+	ReasonFirst         Reason = "first"
+	ReasonPlayset       Reason = "playset"
+	ReasonPriority      Reason = "priority"
+	ReasonMode          Reason = "mode"
+	ReasonMerge         Reason = "merge"
+	ReasonReplace       Reason = "replace"
+	ReasonPath          Reason = "path"
+	ReasonReplaceFolder Reason = "replace-folder"
+	ReasonInjected      Reason = "injected"
+	ReasonCombined      Reason = "combined"
+	ReasonUnsettled     Reason = "unsettled"
+)
+
+// A Cause is what leaves the choice of a kept copy open: a tie of priorities, a key the game may read as an entry
+// mode, an INJECT no source settles, or a later mod's replace_path.
+type Cause string
+
+// The causes, in the order Cause's comment gives them.
+const (
+	CausePriority Cause = "priority"
+	CauseKeyword  Cause = "keyword"
+	CauseInject   Cause = "inject"
+	CauseReplace  Cause = "replace"
 )
 
 // IsKept reports whether the game keeps a definition of the name this winner won: the winner itself, or one merged
@@ -43,14 +67,14 @@ func (winner Winner) IsKept(site Site) bool {
 
 // ResolveSite reports whether the game keeps a copy of a winner's name, and why. If the winner is unsettled, no copy
 // is kept, and a copy in a file the game reads has the reason unsettled.
-func (index *Index) ResolveSite(winner Winner, site Site) (bool, string) {
+func (index *Index) ResolveSite(winner Winner, site Site) (bool, Reason) {
 	switch {
-	case winner.Reason == Unsettled:
-		return false, lo.Ternary(index.IsLoaded(site.File), Unsettled, "")
+	case winner.Reason == ReasonUnsettled:
+		return false, lo.Ternary(index.IsLoaded(site.File), ReasonUnsettled, "")
 	case site == winner.Site:
 		return true, winner.Reason
 	case slices.Contains(winner.Merged, site):
-		return true, lo.Ternary(index.Occurrence(site).Mode != 0, Injected, Combined)
+		return true, lo.Ternary(index.Occurrence(site).Mode != 0, ReasonInjected, ReasonCombined)
 	}
 	return false, ""
 }
@@ -58,20 +82,19 @@ func (index *Index) ResolveSite(winner Winner, site Site) (bool, string) {
 // FindWinner returns the definition of a name that the game keeps, by the database's precedence. It returns false if
 // the game keeps none.
 func (index *Index) FindWinner(sites []Site, precedence game.Precedence) (Winner, bool) {
-	row := game.LookupGame(index.Game)
 	ordered := lo.Reject(index.listLoadOrder(sites, precedence.ByPlayset), func(site Site, _ int) bool {
-		return IsUnmounted(row, index.File(site))
+		return index.placements[site.File].unmounted
 	})
 	loaded := lo.Filter(ordered, func(site Site, _ int) bool { return index.IsLoaded(site.File) })
 	winner, ok := index.resolveWinner(loaded, precedence)
-	if !ok || winner.Reason == Unsettled || precedence.KeepsEvery() {
+	if !ok || winner.Reason == ReasonUnsettled || precedence.KeepsEvery() {
 		return winner, ok
 	}
 	if len(loaded) < len(ordered) {
-		winner.Reason = index.resolveReason(row, winner, ordered, precedence)
+		winner.Reason = index.resolveReason(winner, ordered, precedence)
 	}
-	if index.isReplaceOpen(row, loaded, winner, precedence) {
-		winner.Reason, winner.Cause = Unsettled, "replace"
+	if index.isReplaceOpen(loaded, winner, precedence) {
+		winner.Reason, winner.Cause = ReasonUnsettled, CauseReplace
 	}
 	return winner, true
 }
@@ -82,7 +105,8 @@ func (index *Index) FindKept(schema *schema.Schema, reference schema.Reference) 
 	return index.findKept(schema, reference, func(Site) bool { return false })
 }
 
-// FindKeptLocal is FindKept for a reference written in a file: that file's local definitions count too.
+// FindKeptLocal is FindKept for a reference written in a file: that file's local definitions count too. A file the
+// index does not list has the position -1, which counts none.
 func (index *Index) FindKeptLocal(schema *schema.Schema, reference schema.Reference, file int32) (Winner, bool) {
 	return index.findKept(schema, reference, func(site Site) bool { return site.File == file })
 }
@@ -117,11 +141,10 @@ func (index *Index) ListKept(schema *schema.Schema, database string) []Winner {
 
 // ListImages returns the image files the game reads under a folder, ignoring case. An empty folder gives every image.
 func (index *Index) ListImages(folder string) []files.File {
-	row := game.LookupGame(index.Game)
 	folder = strings.ToLower(folder)
 	var images []files.File
 	for position, file := range index.Files {
-		if file.Format == files.FormatImage && strings.HasPrefix(toRelKey(row, file.Rel), folder) &&
+		if file.Format == files.FormatImage && strings.HasPrefix(index.placements[position].key, folder) &&
 			index.IsLoaded(int32(position)) {
 			images = append(images, file)
 		}
@@ -132,13 +155,12 @@ func (index *Index) ListImages(folder string) []files.File {
 // FindLoaded returns the file the game reads at a relative path, and the files it hides. It returns false if the game
 // reads none.
 func (index *Index) FindLoaded(rel string) (loaded files.File, hidden []files.File, ok bool) {
-	row := game.LookupGame(index.Game)
 	var kept []files.File
-	for _, position := range index.byRel[toRelKey(row, rel)] {
+	for _, position := range index.byRel[toRelKey(index.row, rel)] {
 		file := index.Files[position]
 		switch {
-		case !index.IsListed(position), IsUnmounted(row, file), !index.hasFile(position):
-		case index.isDropped(row, file):
+		case !index.IsListed(position), index.placements[position].unmounted, !index.hasFile(position):
+		case index.isDropped(position):
 			hidden = append(hidden, file)
 		default:
 			kept = append(kept, file)
@@ -153,7 +175,7 @@ func (index *Index) FindLoaded(rel string) (loaded files.File, hidden []files.Fi
 // toRelKey returns the key of the group a relative path belongs to: the path in lower case, less its stage folder,
 // so that a path shared by two stages is one path.
 func toRelKey(row *game.Game, rel string) string {
-	_, rest := schema.SplitStage(row, strings.ToLower(rel))
+	_, rest := row.SplitStage(strings.ToLower(rel))
 	return rest
 }
 
@@ -176,23 +198,12 @@ func (index *Index) IsLoaded(file int32) bool {
 // listLoadOrder returns sites in the order the game loads their definitions: by their files' load order, or by
 // their files' roots where the playset decides, and within one file as written.
 func (index *Index) listLoadOrder(sites []Site, byPlayset bool) []Site {
-	// Each site's place is worked out once: its root's position, or its file's path without its stage folder.
-	sources, rels := map[Site]int{}, map[Site]string{}
-	if byPlayset {
-		for _, site := range sites {
-			sources[site], _ = findRoot(index.rootKeys, index.File(site).Key)
-		}
-	} else {
-		row := game.LookupGame(index.Game)
-		for _, site := range sites {
-			_, rels[site] = schema.SplitStage(row, index.File(site).Rel)
-		}
-	}
 	return slices.SortedStableFunc(slices.Values(sites), func(a, b Site) int {
+		first, second := index.placements[a.File], index.placements[b.File]
 		if byPlayset {
-			return cmp.Or(cmp.Compare(sources[a], sources[b]), compareSites(a, b))
+			return cmp.Or(cmp.Compare(first.root, second.root), compareSites(a, b))
 		}
-		return cmp.Or(compareLoadOrder(rels[a], rels[b]), compareSites(a, b))
+		return cmp.Or(compareLoadOrder(first.rest, second.rest), compareSites(a, b))
 	})
 }
 
@@ -216,13 +227,6 @@ func compareLoadOrder(a, b string) int {
 	}
 }
 
-// IsUnmounted reports whether the game never mounts a file: a mod's file outside the stage folders, in a game that
-// keeps its files under stages (EU5 debug.log:80-83, 5392; the wiki's Mod structure, l.46-48).
-func IsUnmounted(row *game.Game, file files.File) bool {
-	stage, _ := schema.SplitStage(row, strings.ToLower(file.Rel))
-	return row != nil && len(row.StageRoots) > 0 && file.Origin != game.OriginVanilla && stage == ""
-}
-
 // resolveWinner returns the winner among copies in load order, all in files the game reads. It returns false if
 // there are none, or if entry modes find nothing to act on.
 func (index *Index) resolveWinner(ordered []Site, precedence game.Precedence) (Winner, bool) {
@@ -233,19 +237,19 @@ func (index *Index) resolveWinner(ordered []Site, precedence game.Precedence) (W
 	case precedence.Modes != "":
 		return index.resolveModes(ordered, precedence)
 	case lo.SomeBy(ordered, func(site Site) bool { return index.Occurrence(site).Mode != 0 }):
-		return Winner{Site: ordered[0], Reason: Unsettled, Cause: "keyword"}, true
+		return Winner{Site: ordered[0], Reason: ReasonUnsettled, Cause: CauseKeyword}, true
 	case len(ordered) == 1:
 		return Winner{Site: ordered[0]}, true
 	case precedence.Keeps == "first":
-		return Winner{Site: ordered[0], Reason: "first"}, true
+		return Winner{Site: ordered[0], Reason: ReasonFirst}, true
 	case precedence.KeepsEvery():
-		return Winner{Site: ordered[0], Reason: "merge", Merged: ordered}, true
+		return Winner{Site: ordered[0], Reason: ReasonMerge, Merged: ordered}, true
 	case precedence.Keeps == "highest":
 		return index.resolvePriority(ordered, precedence), true
 	case precedence.ByPlayset:
-		return Winner{Site: ordered[last], Reason: "playset"}, true
+		return Winner{Site: ordered[last], Reason: ReasonPlayset}, true
 	}
-	return Winner{Site: ordered[last], Reason: "last"}, true
+	return Winner{Site: ordered[last], Reason: ReasonLast}, true
 }
 
 // resolveModes returns the winner among the copies of a name in a database that takes entry modes, in load order. It
@@ -284,12 +288,12 @@ func (index *Index) resolveModes(ordered []Site, precedence game.Precedence) (Wi
 	}
 	switch {
 	case len(ordered) == 1:
-	case hasAdding && precedence.Injects == Unsettled:
-		winner.Reason, winner.Cause = Unsettled, "inject"
+	case hasAdding && precedence.Injects == "unsettled":
+		winner.Reason, winner.Cause = ReasonUnsettled, CauseInject
 	case modeWins:
-		winner.Reason = "mode"
+		winner.Reason = ReasonMode
 	default:
-		winner.Reason = lo.Ternary(precedence.KeepsEvery(), "merge", "first")
+		winner.Reason = lo.Ternary(precedence.KeepsEvery(), ReasonMerge, ReasonFirst)
 	}
 	return winner, true
 }
@@ -298,9 +302,9 @@ func (index *Index) resolveModes(ordered []Site, precedence game.Precedence) (Wi
 func (index *Index) resolvePriority(ordered []Site, precedence game.Precedence) Winner {
 	priority := func(site Site) int16 { return index.Occurrence(site).Priority }
 	top := slices.MaxFunc(ordered, func(a, b Site) int { return cmp.Compare(priority(a), priority(b)) })
-	winner := Winner{Site: top, Reason: "priority"}
+	winner := Winner{Site: top, Reason: ReasonPriority}
 	if lo.CountBy(ordered, func(site Site) bool { return priority(site) == priority(top) }) > 1 {
-		winner.Reason, winner.Cause = Unsettled, "priority"
+		winner.Reason, winner.Cause = ReasonUnsettled, CausePriority
 	}
 	if len(precedence.Overrides) > 0 {
 		winner.Merged = ordered
@@ -310,23 +314,23 @@ func (index *Index) resolvePriority(ordered []Site, precedence game.Precedence) 
 
 // resolveReason returns why a winner wins when some copies lie in files the game does not read: replace, path or
 // the winner's own reason.
-func (index *Index) resolveReason(row *game.Game, winner Winner, ordered []Site, precedence game.Precedence) string {
+func (index *Index) resolveReason(winner Winner, ordered []Site, precedence game.Precedence) Reason {
 	copies := lo.Filter(ordered, func(site Site, _ int) bool {
-		return index.IsLoaded(site.File) || index.isDropped(row, index.File(site))
+		return index.IsLoaded(site.File) || index.isDropped(site.File)
 	})
 	if other, ok := index.resolveWinner(copies, precedence); ok && other.Site != winner.Site {
-		return "replace"
+		return ReasonReplace
 	}
 	if other, ok := index.resolveWinner(ordered, precedence); ok && other.Site != winner.Site {
-		return "path"
+		return ReasonPath
 	}
 	return winner.Reason
 }
 
 // isReplaceOpen reports whether a later mod's replace_path may change which copy the game keeps. No source says
 // whether a replace_path drops another mod's files.
-func (index *Index) isReplaceOpen(row *game.Game, loaded []Site, winner Winner, precedence game.Precedence) bool {
-	rest := lo.Reject(loaded, func(site Site, _ int) bool { return index.isReplacedLater(row, index.File(site)) })
+func (index *Index) isReplaceOpen(loaded []Site, winner Winner, precedence game.Precedence) bool {
+	rest := lo.Reject(loaded, func(site Site, _ int) bool { return index.isReplacedLater(site.File) })
 	if len(rest) == len(loaded) {
 		return false
 	}
@@ -334,32 +338,31 @@ func (index *Index) isReplaceOpen(row *game.Game, loaded []Site, winner Winner, 
 	return !ok || other.Site != winner.Site
 }
 
-// isDropped reports whether a replace_path drops a file: a game file in a folder that a mod's replace_path names.
-func (index *Index) isDropped(row *game.Game, file files.File) bool {
-	return file.Origin == game.OriginVanilla && len(index.listReplacers(row, toRelKey(row, file.Rel))) > 0
+// isDropped reports whether a replace_path drops the file at a position: a game file in a folder that a mod's
+// replace_path names.
+func (index *Index) isDropped(position int32) bool {
+	return index.Files[position].Origin == game.OriginVanilla && len(index.listReplacers(index.placements[position].key)) > 0
 }
 
-// isReplacedLater reports whether a mod's file sits in a folder that a later mod's replace_path names.
-func (index *Index) isReplacedLater(row *game.Game, file files.File) bool {
-	source, _ := findRoot(index.rootKeys, file.Key)
-	return file.Origin != game.OriginVanilla && slices.ContainsFunc(index.listReplacers(row, toRelKey(row, file.Rel)),
-		func(replacer int) bool { return replacer > source })
+// isReplacedLater reports whether the file at a position is a mod's file in a folder that a later mod's replace_path
+// names.
+func (index *Index) isReplacedLater(position int32) bool {
+	place := index.placements[position]
+	return index.Files[position].Origin != game.OriginVanilla && slices.ContainsFunc(index.listReplacers(place.key),
+		func(replacer int) bool { return replacer > place.root })
 }
 
 // listReplacers returns the positions among the roots of the mods whose replace_path names the folder of a path,
 // given as its group's key. A replace_path names one folder exactly, not the folders below it. A mod a narrowed index
 // does not answer for replaces nothing.
-func (index *Index) listReplacers(row *game.Game, key string) []int {
+func (index *Index) listReplacers(key string) []int {
 	folder := path.Dir(key)
 	if folder == "." {
 		folder = ""
 	}
 	var replacers []int
-	for position, folders := range index.Replaced {
-		if index.hasMod(index.Roots[position].Origin) && slices.ContainsFunc(folders, func(replaced string) bool {
-			_, rest := schema.SplitStage(row, strings.Trim(replaced, "/"))
-			return strings.EqualFold(rest, folder)
-		}) {
+	for position, folders := range index.replacedKeys {
+		if index.hasMod(index.Roots[position].Origin) && slices.Contains(folders, folder) {
 			replacers = append(replacers, position)
 		}
 	}

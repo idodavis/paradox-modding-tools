@@ -3,21 +3,20 @@
   game's solid pattern. The coat file is created and shown.
 -->
 <script setup lang="ts">
-import { useMutation, useQuery } from "@pinia/colada";
+import { useMutation } from "@pinia/colada";
 import { computed, shallowRef } from "vue";
 
 import * as draw from "@services/draw/service";
-import * as workspace from "@services/workspace/service";
 
-import { stateQuery } from "../../../queries";
 import { useEditorStore } from "../../../stores/editor";
+import { useWorkspaceStore } from "../../../stores/workspace";
 import { listMods } from "./coat";
 
 const emit = defineEmits<{ close: [result: { modId: string; name: string } | null] }>();
 
 const editor = useEditorStore();
-const { data: state } = useQuery(stateQuery);
-const mods = computed(() => listMods(state.value?.mods));
+const workspaceStore = useWorkspaceStore();
+const mods = computed(() => listMods(workspaceStore.listMods()));
 const choice = shallowRef("");
 const id = shallowRef("");
 const script = shallowRef("");
@@ -27,7 +26,7 @@ const modId = computed({
 });
 
 const { mutate: create } = useMutation({
-  mutation: async () => workspace.Locate(await draw.CreateCoatFile(modId.value, id.value.trim(), script.value)),
+  mutation: () => draw.CreateCoatFile(modId.value, id.value.trim(), script.value),
   onSuccess: (place) => {
     editor.show(place);
     emit("close", { modId: modId.value, name: id.value.trim() });

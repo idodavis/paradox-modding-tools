@@ -26,7 +26,7 @@ const ROUTES = {
   release: { path: "release", component: () => import("../pages/publish/ReleasePage.vue") },
 } satisfies Record<PageName, Pick<RouteRecordRaw, "path" | "component">>;
 
-/** The app's router. Its guard writes the active workspace id. */
+/** router is the app's router. Its guard writes the active workspace id. */
 export const router: Router = createRouter({
   history: createWebHashHistory(),
   routes: [
@@ -36,16 +36,6 @@ export const router: Router = createRouter({
     { path: "/workspace/:id", children: WORKSPACE_TOOLS.map(makeRoute) },
   ],
 });
-
-/** The pages kept alive across navigation. */
-export const KEPT: readonly string[] = [
-  "LibraryPage",
-  "WorkspaceIdePage",
-  "EventGraphPage",
-  "HealthPage",
-  "PatchNotesPage",
-  "ReleasePage",
-];
 
 router.beforeEach(async (target, previous) => {
   if (THIS_WINDOW !== "main" && previous.name && target.name !== previous.name) {
@@ -60,12 +50,15 @@ router.beforeEach(async (target, previous) => {
   workspace.open(params.id);
 });
 
-/** Makes the route of a page. The page gets the route's params and query as props. */
+/** makeRoute makes the route of a page. The page gets the route's params and query as props. */
 function makeRoute(name: PageName): RouteRecordRaw {
   return { name, path: ROUTES[name].path, component: ROUTES[name].component, props: resolveProps };
 }
 
-/** Resolves the props a page takes: the workspace's id and whatever the query names, such as a section or a root. */
+/**
+ * resolveProps returns the props a page takes: the workspace's id and whatever the query names, such as a section or
+ * a root.
+ */
 function resolveProps(route: RouteLocationNormalized): Record<string, unknown> {
   return { ...route.params, ...route.query };
 }

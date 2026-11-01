@@ -35,11 +35,7 @@ var heading = regexp.MustCompile(`^(#{1,6})\s+(.*)$`)
 // ListChangeNotes returns drafts of the next change note, from git and from the changelog file. It returns an error
 // if there is no such mod or listing, git fails, or a file cannot be read.
 func (stm *Service) ListChangeNotes(modID, key string) ([]ChangeNote, error) {
-	ws, mod, err := stm.findMod(modID)
-	if err != nil {
-		return nil, err
-	}
-	listing, err := stm.ReadListing(modID, key)
+	ws, mod, listing, err := stm.findListing(modID, key)
 	if err != nil {
 		return nil, err
 	}

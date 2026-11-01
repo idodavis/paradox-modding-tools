@@ -15,5 +15,6 @@ export type {
     Mod,
     Place,
     Scanning,
-    State
+    State,
+    Workspace
 } from "./models.js";

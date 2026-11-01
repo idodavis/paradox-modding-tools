@@ -76,6 +76,15 @@ export function ListRefs(dir: string): $CancellablePromise<$models.Ref[] | null>
 }
 
 /**
+ * ListRepositories returns the repositories the open workspace's mods are in, in the load order of their first mod,
+ * each with the mods in it. A mod in none is left out, and so is one whose folder is missing. It is empty while no
+ * workspace is open.
+ */
+export function ListRepositories(): $CancellablePromise<$models.Repository[] | null> {
+    return $Call.ByID(1749972734);
+}
+
+/**
  * Merge merges the given branch into the current one and emits git:changed. A conflict is not an error. It leaves
  * the markers in the files for the editor to resolve.
  */
@@ -99,9 +108,8 @@ export function ReadStatus(dir: string): $CancellablePromise<$models.Status> {
 }
 
 /**
- * Run runs git in a folder with the given arguments and returns its standard output. Each line of standard
- * error is also sent as a git:output event as it arrives. A nonzero exit is an error that carries the text of
- * standard error, and so is git not being installed.
+ * Run runs git in a folder with the given arguments and returns its standard output, as run does. It then emits
+ * git:changed with the folder, also when git failed, since a failed command can leave the repository changed.
  */
 export function Run(dir: string, ...args: string[]): $CancellablePromise<string> {
     return $Call.ByID(2670563755, dir, args);

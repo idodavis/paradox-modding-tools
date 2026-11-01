@@ -7,7 +7,6 @@ export {
 };
 
 export type {
-    Example,
     LexiconRow,
     Note,
     Page,

@@ -295,14 +295,14 @@ func TestBuildGraphSkipsReplacedFirer(t *testing.T) {
 		t.Fatal(err)
 	}
 	if replacing.Node.CopyOrigin != game.OriginVanilla || replacing.Copy == nil ||
-		replacing.Copy.Place.Origin != game.OriginVanilla || added.Node.CopyOrigin != "" || added.Copy != nil {
+		replacing.Copy.Site.Place.Origin != game.OriginVanilla || added.Node.CopyOrigin != "" || added.Copy != nil {
 		t.Errorf("v.2 hides %q (%v); vc.1 hides %q (%v)", replacing.Node.CopyOrigin, replacing.Copy != nil,
 			added.Node.CopyOrigin, added.Copy != nil)
 	}
 }
 
-// TestBuildDetailReadsDefinition checks the detail of an event: its text, what it fires and what fires it, its
-// references, and that an id nothing defines is an error.
+// TestBuildDetailReadsDefinition checks the detail of an event: its text, what it fires and what fires it, and that
+// an id nothing defines is an error.
 func TestBuildDetailReadsDefinition(t *testing.T) {
 	gph := openFixture(t)
 	detail, err := gph.BuildDetail(eventD1)
@@ -317,19 +317,14 @@ func TestBuildDetailReadsDefinition(t *testing.T) {
 	if detail.Node.ID != eventD1 || !hasEdges(detail.Node.Fires, wantFires) || len(detail.FiredBy) != 0 {
 		t.Errorf("detail of d.1: %+v", detail)
 	}
-	if !slices.ContainsFunc(detail.References, func(reference Node) bool {
-		return reference.Database == "events" && reference.Name == "b.1" && reference.Place.Origin == modB
-	}) {
-		t.Errorf("references of d.1: %+v", detail.References)
-	}
 	vanilla, err := gph.BuildDetail("events:v.1")
 	if err != nil {
 		t.Fatal(err)
 	}
-	if findDescription(vanilla) != "Desc" || vanilla.Node.Title != "Hello" || vanilla.Node.Line != 4 ||
+	if findDescription(vanilla) != "Desc" || vanilla.Node.Title != "Hello" || vanilla.Node.Site.Line != 4 ||
 		!slices.ContainsFunc(vanilla.FiredBy, func(edge Edge) bool { return edge.From == "on_action:on_birth" }) {
 		t.Errorf("detail of v.1: text %q, title %q, line %d, fired by %+v",
-			findDescription(vanilla), vanilla.Node.Title, vanilla.Node.Line, vanilla.FiredBy)
+			findDescription(vanilla), vanilla.Node.Title, vanilla.Node.Site.Line, vanilla.FiredBy)
 	}
 	if _, err := gph.BuildDetail("events:nowhere.1"); err == nil {
 		t.Error("the detail of a node nothing defines was built")
@@ -434,7 +429,7 @@ func checkBirth(t *testing.T, gph *Service, filter Filter) {
 func logDetails(t *testing.T, gph *Service, root string, graph Graph) {
 	t.Helper()
 	started := time.Now()
-	texts, references, backgrounds := 0, 0, 0
+	texts, backgrounds := 0, 0
 	for _, node := range graph.Nodes {
 		if node.Count > 0 {
 			continue
@@ -444,14 +439,13 @@ func logDetails(t *testing.T, gph *Service, root string, graph Graph) {
 			t.Fatalf("detail of %s: %v", node.ID, err)
 		}
 		texts += lo.Ternary(findDescription(detail) != "", 1, 0)
-		references += len(detail.References)
 		backgrounds += lo.Ternary(detail.Node.Background != "", 1, 0)
 		if node.Display == displayWindow && detail.Node.Background == "" {
 			t.Logf("%s shows no background", node.ID)
 		}
 	}
-	t.Logf("%s: details of %d nodes, %d with a text, %d references, %d with a background, %s", root, len(graph.Nodes),
-		texts, references, backgrounds, time.Since(started).Round(time.Millisecond))
+	t.Logf("%s: details of %d nodes, %d with a text, %d with a background, %s", root, len(graph.Nodes),
+		texts, backgrounds, time.Since(started).Round(time.Millisecond))
 }
 
 // buildGraph builds the graph from a root under a filter. It fails the test if the graph is an error.

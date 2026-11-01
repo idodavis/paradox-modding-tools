@@ -20,10 +20,11 @@ import (
 func main() {
 	for _, id := range os.Args[1:] {
 		install := os.Getenv("PMT_TEST_INSTALL_" + strings.ToUpper(id))
-		if game.LookupGame(id) == nil || install == "" {
+		row := game.LookupGame(id)
+		if row == nil || install == "" {
 			log.Fatalf("%s: no such game, or PMT_TEST_INSTALL_%s is not set", id, strings.ToUpper(id))
 		}
-		dumps, err := schema.ReadDumps(game.FindDumpDirs(id, install))
+		dumps, err := schema.ReadDumps(row.FindDumpDirs(install))
 		if err != nil {
 			log.Fatal(err)
 		}

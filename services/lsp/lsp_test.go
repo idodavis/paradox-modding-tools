@@ -670,7 +670,7 @@ func TestSweepMods(t *testing.T) {
 			ide := openService(t, gameID, install, mods...)
 			ws, _ := ide.Workspace.Session()
 			own := ws.Mods.Load().Files[len(ws.Install.Files):]
-			for _, mod := range ws.Order {
+			for _, mod := range *ws.Order.Load() {
 				if mod.Descriptor.Path != "" {
 					own = append(own, files.File{Path: mod.Descriptor.Path, Rel: filepath.Base(mod.Descriptor.Path), Format: files.FormatDescriptor})
 				}
@@ -694,11 +694,11 @@ func judgeAsMod(ws *workspace.Session) func(path string) ([]Diagnostic, error) {
 		if !isDiagnosed(place) {
 			return nil, nil
 		}
-		tree, err := ws.LoadTree(path)
+		document, err := ws.LoadDocument(path)
 		if err != nil {
 			return nil, err
 		}
-		return newVisitor(ws, mods, place).diagnoseTree(tree), nil
+		return newVisitor(ws, mods, place).diagnoseTree(document), nil
 	}
 }
 

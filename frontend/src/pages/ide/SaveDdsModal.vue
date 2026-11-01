@@ -12,6 +12,7 @@ import type { Place } from "@services/workspace/models";
 import { plural } from "../../lib/format";
 import { ddsPicturesQuery, headerQuery, loadQuery, placeQuery } from "../../queries";
 import { useEditorStore } from "../../stores/editor";
+import { useWorkspaceStore } from "../../stores/workspace";
 
 const { place } = defineProps<{ place: Place }>();
 const emit = defineEmits<{ close: [] }>();
@@ -23,15 +24,17 @@ const FORMATS = [
 
 const toast = useToast();
 const editor = useEditorStore();
+const workspace = useWorkspaceStore();
 const format = shallowRef("uncompressed");
 const mipmaps = shallowRef(false);
 const likeness = shallowRef("");
-const { data } = useQuery(() => ddsPicturesQuery(place));
+const { data } = useQuery(() => ddsPicturesQuery(place.path));
 const pictures = computed(() => data.value?.pictures ?? []);
-const folder = computed(() => (place.isDir ? place.rel : place.folder));
+// a mod's own folder, or a picture at its top, has no path in the mod, so it goes by the mod's name
+const folder = computed(() => (place.isDir ? place.rel : place.folder) || workspace.originName(place.origin));
 const summary = computed(() => {
   const [first] = pictures.value;
-  if (!first) return `No PNG or TGA pictures in ${folder.value}.`;
+  if (!first) return "No PNG or TGA pictures";
   if (pictures.value.length === 1) return `${first.name} → ${toDDS(first.name)}`;
   return `${pictures.value.length} pictures → a .dds beside each`;
 });
@@ -71,7 +74,7 @@ function toSettings(header: Header | undefined): { format: string; mipmaps: bool
  * one and they agree, and says so. Otherwise the choices keep their default, uncompressed without mipmaps.
  */
 async function preselect(): Promise<void> {
-  const references = pictures.value.flatMap((picture) => data.value?.references[picture.path] ?? []);
+  const references = pictures.value.flatMap((picture) => data.value?.references?.[picture.path] ?? []);
   const [reference] = references;
   if (!reference || references.length < pictures.value.length) return;
   const settings = await Promise.all(references.map(async (one) => toSettings(await loadQuery(headerQuery(one.path)))));

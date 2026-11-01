@@ -3,13 +3,13 @@
   code there. A copy shows its whole definition, and a copy the game ignores is dimmed.
 -->
 <script lang="ts">
-import type { FindingSite } from "@services/health/models";
+import type { Site } from "@services/lsp/models";
 
 import { useEditorStore } from "../../stores/editor";
 
-/** openSite opens a site in the editor at the start of its range. */
-export function openSite(site: FindingSite): void {
-  useEditorStore().show(site.place, { lineNumber: site.range.startLineNumber, column: site.range.startColumn });
+/** openSite opens a site in the editor at its line, at the start of its range where it has one. */
+export function openSite(site: Site): void {
+  useEditorStore().show(site.place, { lineNumber: site.line, column: site.range.startColumn || 1 });
 }
 </script>
 
@@ -18,13 +18,14 @@ import { computed } from "vue";
 import type { Snippet } from "@services/health/models";
 import ModTitle from "../../ui/ModTitle.vue";
 import ScriptSnippet, { EDITOR_LANGUAGES } from "../../ui/ScriptSnippet.vue";
+import SourceLink from "../../ui/SourceLink.vue";
 
 const {
   site,
   snippet = undefined,
   ignored = false,
 } = defineProps<{
-  site: FindingSite;
+  site: Site;
   /** The code around the site. */
   snippet?: Snippet;
   /** Whether the site is a copy the game ignores. */
@@ -36,26 +37,15 @@ const {
  * settles, shows a whole definition and highlights none.
  */
 const focus = computed((): [number, number] | undefined =>
-  site.kept || site.reason || ignored ? undefined : [site.range.startLineNumber, site.range.endLineNumber],
+  site.kept || site.reason || ignored ? undefined : [site.line, snippet?.last ?? site.line],
 );
 </script>
 
 <template>
   <div class="flex min-w-0 flex-col gap-2">
-    <button
-      type="button"
-      class="flex min-w-0 items-center gap-1.75 text-start text-12 whitespace-nowrap text-dimmed hover:underline"
-      :title="`Open ${site.place.rel} in the IDE`"
-      @click="openSite(site)"
-    >
-      <ModTitle :origin="site.place.origin" class="shrink-0" />
-      <span aria-hidden="true">·</span>
-      <span class="min-w-0 truncate font-mono"
-        ><template v-if="site.place.folder">{{ site.place.folder }}/</template
-        ><span class="font-medium text-highlighted">{{ site.place.name }}</span
-        >:{{ site.range.startLineNumber }}</span
-      >
-    </button>
+    <SourceLink :place="site.place" :line="site.line" :column="site.range.startColumn || undefined" class="self-start">
+      <template #leading><ModTitle :origin="site.place.origin" class="shrink-0" /></template>
+    </SourceLink>
     <ScriptSnippet
       v-if="snippet?.text"
       :text="snippet.text"

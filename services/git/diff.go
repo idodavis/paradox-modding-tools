@@ -24,7 +24,7 @@ func (git *Service) DiffFile(path, text string) ([]LineChange, error) {
 	// git reads a path that starts with ./ from the folder it runs in
 	dir, rel := filepath.Dir(path), "./"+filepath.Base(path)
 	// a file git does not track is not in the last commit, which --quiet keeps git from printing as an error
-	if _, err := git.Run(dir, "rev-parse", "--verify", "--quiet", "HEAD:"+rel); err != nil {
+	if _, err := git.run(dir, "rev-parse", "--verify", "--quiet", "HEAD:"+rel); err != nil {
 		return nil, err
 	}
 	committed, err := git.ReadFile(dir, "HEAD", rel)

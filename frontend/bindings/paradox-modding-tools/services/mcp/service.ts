@@ -31,17 +31,11 @@ export function ListTasks(): $CancellablePromise<$models.Task[] | null> {
 }
 
 /**
- * ReadToken returns the token an agent sends to the server.
+ * ResolveAccess returns the address an agent reaches the server at, on the port the settings name, and the token it
+ * sends.
  */
-export function ReadToken(): $CancellablePromise<string> {
-    return $Call.ByID(1139201807);
-}
-
-/**
- * ReadURL returns the address an agent reaches the server at, on the port the settings name.
- */
-export function ReadURL(): $CancellablePromise<string> {
-    return $Call.ByID(3329407715);
+export function ResolveAccess(): $CancellablePromise<$models.Access> {
+    return $Call.ByID(3157914132);
 }
 
 /**

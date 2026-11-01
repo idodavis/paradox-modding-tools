@@ -11,8 +11,8 @@ game's error log says, each as findings that point at their sites.
 
 | file | holds |
 |---|---|
-| `health.go` | the package comment; `EventErrorLogChanged`; `Service` with `ServiceStartup` and `ServiceShutdown`; `FindingSite`, `Finding`, `Change`, `Report`, `GameLog`, `Overview`, `Compared`, `Snippet`; `BuildReport` and the findings of overrides, unused copies, descriptors, unmounted folders, localization and the editor's checks; `ListCodes`, `ListOverview`, `CompareStatements`, `ListSnippets`, `ListReaders`, `WriteScaffold`, `ListScaffolds` |
-| `contests.go` | the contests of names and of files, and the undecided ones; their winner, beaten mods, level and suggested order; what a previewed order changes |
+| `health.go` | the package comment; `EventErrorLogChanged`; `Service` with `ServiceStartup` and `ServiceShutdown`; `FindingSite`, `Finding`, `Change`, `Tally`, `Check`, `Group`, `Report`, `GameLog`, `Overview`, `Compared`, `Snippet`; `BuildReport`, `groupReport` and the findings of unused copies, removed names, descriptors, unmounted folders, localization and the editor's checks; `ListCodes`, `ListOverview`, `CompareStatements`, `ListSnippets`, `ListReaders`, `WriteScaffold`, `ListScaffolds` |
+| `contests.go` | the findings of one name's copies and of the files at one path: contests, undecided contests and overrides; their winner, beaten mods, level, pairs and suggested order; `JoinList`; what a previewed order changes |
 | `ignored.go` | `AddIgnoredPair`, `RemoveIgnoredPair`; the ignored pairs and their findings; the workspace's record and the mods its compatibility checks judge (`listChecked`) |
 | `errorlog.go` | `ListErrorLog`: the rows of the game's error log, folded and told apart; the log's watch |
 
@@ -39,9 +39,6 @@ question, the level and the topic. Three rules decide per finding:
   source says takes it, a mode that adds in a folder that takes REPLACE only, a replace_path, or the block. It is
   `info` when every two of its mods are a declared dependency or an ignored pair, and `critical` otherwise; a pair
   with the game is never forgiven.
-- **The question of a shared check.** `duplicate-definition` and `conflicting-priority` are `health` findings of one
-  mod's file. When the loaded definitions of the name lie in two or more mods they are `compatibility` findings, and
-  their `Mods` are those mods.
 - **A shared localization key.** A key that two or more mods define in one language is one `shared-message` finding,
   with no winner, since which copy the game shows is not settled; a copy in a replace folder wins. It is `info` when
   every two of its mods are a declared dependency or an ignored pair, and `warning` otherwise. A key one mod defines
@@ -55,7 +52,8 @@ entry mode or plain. A file the game reads in place of others at its path is `pa
 `Mods` lists the ids of the mods a finding concerns in load order: the origin of a health finding, each mod of a
 compatibility one. The game is never among them. `Pairs` lists each two of them that the finding sets against each
 other, in load order, which the page offers to ignore: a contest's winner with each beaten mod, and every two mods of
-an undecided contest or a shared key. `Count` is 1, except for a log row that repeats.
+an undecided contest or a shared key. `Count` is 1, except for a log row that repeats and a finding the report folded
+others into (see The report's groups).
 
 The other findings are plain facts. An **override** is a name a mod defines that the game defines too, both in files
 the game reads, where the game keeps the mod's copy, or a file a mod ships over the game's own. Where the game keeps
@@ -102,13 +100,34 @@ once and shared by the checks, which then run side by side.
 - **Changes.** For a previewed order, `Report.Changes` lists every name and every shipped path whose kept copy lies in
   another mod than in the workspace's own order, with both mods' ids and the game's `vanilla` where it is the game's.
   A database that merges its definitions has none, nor has a name whose kept copy is unsettled in either order, and a
-  path counts only in a folder the game reads. The list is sorted by database, then by name. The workspace's own order
+  path counts only in a folder the game's own files lie in, after the stage folder in a game that keeps its files
+  under stages. The list is sorted by database, then by name. The workspace's own order
   has an empty list.
 - **Ignored pairs.** `AddIgnoredPair` and `RemoveIgnoredPair` change the open workspace's record (`IgnoredPairs`, each
   pair sorted). They return an error if either mod is not in the workspace, the two are one mod, or the pair is not
   there to remove. The report reads the pairs at each call. Each pair whose two mods are in the workspace is an
   `ignored-pair` finding, with the two mods in the report's load order, that counts the findings whose `Pairs` hold
   the two.
+
+## The report's groups
+
+`BuildReport` hands the findings over grouped, counted and sorted, so no page derives them again (`groupReport`).
+
+- **The fold.** Findings with the same code, the same owner (the first of `Mods`, else `Origin`), the same name and
+  the same message are one. The message is the code's template filled with the finding's facts, the code's elsewhere
+  template where it has one and another mod defines the name. The first finding stands for them: its `Count` adds
+  theirs and its `Repeats` holds their sites. The game log's rows fold the same way by message and place
+  (`foldFindings`), and `Count` is then the lines.
+- **The groups.** `Compatibility` holds the findings of the `compatibility` question, folded. `Mods` holds one group
+  for each mod of the report's load order, with the mod's `health` findings; its coverage findings are apart, as
+  `Languages`. A health finding about a mod outside the order is left out.
+- **The sort.** A group's `Checks` are its findings' codes at a level, counted with the folded findings in: the worst
+  level first (`lsp.Levels`), and within a level the check with the most findings. `Findings` follow the order of
+  their checks, and within a check the heaviest first: a finding's weight is its `Count` times how often the files the
+  game reads use the names a replaced file leaves out, else times 1.
+- **The tallies.** A `Tally` counts findings by level, every level present, as `Count` says, and names the worst level
+  that has a finding. A group, the report (the compatibility and the mods together) and `Own` (the mods together) each
+  have one. Languages are in none.
 
 ## The error log
 
@@ -159,7 +178,11 @@ file they go in, which PMT's tools for coding agents preview.
 - **Topic**: what a check is about: syntax, references, values, localization, definitions or descriptor.
 - **Finding**: one row of the Health page: a problem or a fact, with the places it points at.
 - **FindingSite**: one place a finding points at, with whether the game keeps it and why.
-- **Report**: the findings for one load order, and what that order changes against the workspace's own.
+- **Report**: the findings for one load order, grouped and counted, and what that order changes against the
+  workspace's own.
+- **Group**: the folded and sorted findings of the workspace's compatibility or of one mod, with their tally and checks.
+- **Tally**: how many findings there are of each level, and the worst level.
+- **Check**: one code at one level in a group, with how many findings it has.
 - **Change**: one name or path whose kept copy moves to another mod in a previewed order.
 - **GameLog**: the rows of the game's last error log, with its path and when it was written.
 - **Overview**: what one mod holds, counted.

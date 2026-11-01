@@ -11,6 +11,31 @@ export interface Date {
 }
 
 /**
+ * An RGBA is a color as red, green, blue and alpha channels, each from 0 to 1.
+ */
+export interface RGBA {
+    /**
+     * red, 0 to 1
+     */
+    "r": number;
+
+    /**
+     * green, 0 to 1
+     */
+    "g": number;
+
+    /**
+     * blue, 0 to 1
+     */
+    "b": number;
+
+    /**
+     * alpha, 0 to 1
+     */
+    "a": number;
+}
+
+/**
  * A Span is a half-open range of bytes in a text. It includes its first byte and not the byte at its end.
  */
 export interface Span {

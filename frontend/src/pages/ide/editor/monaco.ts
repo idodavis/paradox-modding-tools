@@ -16,6 +16,7 @@ import type { editor, languages } from "monaco-editor";
 import { legendQuery, loadQuery, placeQuery } from "../../../queries";
 import { useEditorStore } from "../../../stores/editor";
 import { useSettingsStore } from "../../../stores/settings";
+import { COMMAND_BUS } from "../../../stores/windows";
 import { registerConflicts } from "./conflicts";
 import { LOCALIZATION, SCRIPT } from "./grammars";
 import { openModel, setupModels } from "./models";
@@ -74,8 +75,8 @@ const SYNTAX: Record<string, string> = {
 const defined = new Set<string>();
 
 /**
- * Sets Monaco up, once, before the first editor: its worker, the text model and label services, the languages, the
- * palette's and the history's keys inside an editor, the providers and the conflict links.
+ * setupMonaco sets Monaco up, once, before the first editor: its worker, the text model and label services, the
+ * languages, the palette's and the history's keys inside an editor, the providers and the conflict links.
  */
 export function setupMonaco(): void {
   self.MonacoEnvironment = { getWorker: () => new EditorWorker() };
@@ -101,9 +102,9 @@ export function setupMonaco(): void {
     monaco.languages.setMonarchTokensProvider(id, grammar);
     monaco.languages.setLanguageConfiguration(id, { ...CONFIGURATION, wordPattern: word });
   }
-  const bus = useEventBus<string>("pmt.command");
-  monaco.editor.registerCommand("pmt.palette", () => bus.emit("palette.open"));
-  monaco.editor.registerCommand("pmt.files", () => bus.emit("editor.goToFile"));
+  const commandBus = useEventBus(COMMAND_BUS);
+  monaco.editor.registerCommand("pmt.palette", () => commandBus.emit("palette.open"));
+  monaco.editor.registerCommand("pmt.files", () => commandBus.emit("editor.goToFile"));
   monaco.editor.registerCommand("pmt.back", () => useEditorStore().go(-1));
   monaco.editor.registerCommand("pmt.forward", () => useEditorStore().go(1));
   monaco.editor.addKeybindingRules([
@@ -129,18 +130,20 @@ export function setupMonaco(): void {
   });
 }
 
-/** Makes Monaco's theme for the page theme in force, if it does not exist yet, applies it and returns its id. */
-export function applyTheme(family: string, dark: boolean): string {
+/** applyTheme makes Monaco's theme for the page theme in force, if it does not exist yet, and applies it. */
+function applyTheme(family: string, dark: boolean): void {
   const id = `pmt-${family}-${dark ? "dark" : "light"}`;
   if (!defined.has(id)) {
     defined.add(id);
     monaco.editor.defineTheme(id, makeTheme(`${family}-${dark ? "dark" : "light"}`, dark));
   }
   monaco.editor.setTheme(id);
-  return id;
 }
 
-/** The editor options from the settings: the code font, the indentation and the features they turn on or off. */
+/**
+ * editorOptions returns the editor options from the settings: the code font, the indentation and the features they
+ * turn on or off.
+ */
 export function editorOptions(): editor.IStandaloneEditorConstructionOptions {
   const settings = useSettingsStore();
   return {
@@ -173,8 +176,8 @@ export function editorOptions(): editor.IStandaloneEditorConstructionOptions {
 }
 
 /**
- * Makes a Monaco theme from the tokens of a page theme: the colors of the syntax and the editor's own. Monaco takes
- * no CSS variables, so the tokens are read from an element of that page theme.
+ * makeTheme makes a Monaco theme from the tokens of the given page theme: the colors of the syntax and the editor's
+ * own. Monaco takes no CSS variables, so the tokens are read from an element of that page theme.
  */
 function makeTheme(pageTheme: string, dark: boolean): editor.IStandaloneThemeData {
   const probe = document.body.appendChild(document.createElement("div"));
@@ -196,13 +199,15 @@ function makeTheme(pageTheme: string, dark: boolean): editor.IStandaloneThemeDat
   return theme;
 }
 
-/** A CSS color as #rrggbb, whatever form the token is written in. It is "" for a token that is not set. */
+/**
+ * toHex converts a CSS color to #rrggbb, whatever form the token is written in. It is "" for a token that is not set.
+ */
 function toHex(color: string): string {
   if (!color || color.startsWith("#")) return color;
   return new Color(color).to("srgb").toString({ format: "hex" });
 }
 
-/** The editor's colors in a theme, from the page's tokens. */
+/** buildColors builds the editor's colors in a theme, from the page's tokens. */
 function buildColors(token: (key: string) => string, dark: boolean): Record<string, string> {
   const accent = token("accent");
   const clear = `${token("bg-0")}00`;

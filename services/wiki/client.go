@@ -6,8 +6,6 @@ import (
 	"context"
 	"encoding/json"
 	"fmt"
-	"io"
-	"net/http"
 	"net/url"
 	"path/filepath"
 	"strings"
@@ -26,38 +24,36 @@ type Page struct {
 	URL       string    `json:"url"` // the page on the wiki
 	HTML      string    `json:"html"`
 	FetchedAt time.Time `json:"fetchedAt"`
-	Modding   bool      `json:"modding"` // the page has a heading that holds the word Modding
+	Modding   bool      `json:"modding"`  // the page has a heading that holds the word Modding
+	Released  string    `json:"released"` // the release date a patch note gives in its opening text; "" if none
 }
 
 // A Client fetches one game's wiki, rate limited, and caches each page in the cache folder.
 type Client struct {
 	game    *game.Game
-	http    *http.Client
+	api     string // the address of the wiki's API
 	limiter *rate.Limiter
 	dir     string
 }
 
-// What a client asks of the wiki: how long a request may take, how many it may send each second, how large an answer
-// it reads, and the user agent it names itself by.
+// What a client asks of the wiki: how long a request may take and how many it may send each second.
 const (
 	requestTimeout    = 30 * time.Second
 	requestsPerSecond = 2
-	maxBytes          = 8 << 20
-	userAgent         = "paradox-modding-tools (+https://github.com/idodavis/paradox-modding-tools)"
 )
 
 // NewClient returns a client for a game's wiki that caches its pages in the given folder.
 func NewClient(cacheDir string, row *game.Game) *Client {
 	return &Client{
 		game:    row,
-		http:    &http.Client{Timeout: requestTimeout},
+		api:     fmt.Sprintf(game.WikiAPI, row.ID),
 		limiter: rate.NewLimiter(requestsPerSecond, 1),
 		dir:     filepath.Join(cacheDir, "wiki", row.ID),
 	}
 }
 
 // FetchPage fetches a page through the wiki's API, sanitizes it and caches it. It returns an error if the request
-// fails, the wiki has no such page or the page cannot be cached.
+// fails, the wiki has no such page or the page cannot be parsed or cached.
 func (client *Client) FetchPage(title string) (Page, error) {
 	params := url.Values{"action": {"parse"}, "page": {title}, "prop": {"text"}}
 	var response struct {
@@ -76,15 +72,19 @@ func (client *Client) FetchPage(title string) (Page, error) {
 	if response.Error.Code != "" {
 		return Page{}, fmt.Errorf("wiki page %q: %s", title, response.Error.Info)
 	}
-	api, err := url.Parse(client.game.WikiAPI)
+	api, err := url.Parse(client.api)
 	if err != nil {
 		return Page{}, fmt.Errorf("wiki page %q: %w", title, err)
 	}
 	origin := &url.URL{Scheme: api.Scheme, Host: api.Host}
 	sanitized := Sanitize(response.Parse.Text, origin)
+	root, err := parseFragment(sanitized)
+	if err != nil {
+		return Page{}, fmt.Errorf("wiki page %q: %w", title, err)
+	}
 	page := Page{
 		Title: response.Parse.Title, URL: origin.JoinPath(strings.ReplaceAll(response.Parse.Title, " ", "_")).String(),
-		HTML: sanitized, FetchedAt: time.Now(), Modding: hasModding(sanitized),
+		HTML: sanitized, FetchedAt: time.Now(), Modding: hasModding(root), Released: resolveReleased(root),
 	}
 	if err := app.SaveJSON(client.resolvePath(title), page); err != nil {
 		return Page{}, fmt.Errorf("wiki page %q: %w", title, err)
@@ -106,21 +106,11 @@ func (client *Client) fetch(params url.Values, target any) error {
 	if err := client.limiter.Wait(context.Background()); err != nil {
 		return err
 	}
-	request, err := http.NewRequest(http.MethodGet, client.game.WikiAPI+"?"+params.Encode(), nil)
+	body, err := app.FetchURL(client.api+"?"+params.Encode(), requestTimeout)
 	if err != nil {
 		return err
 	}
-	request.Header.Set("User-Agent", userAgent)
-	request.Header.Set("Accept", "application/json")
-	response, err := client.http.Do(request)
-	if err != nil {
-		return err
-	}
-	defer func() { _ = response.Body.Close() }()
-	if response.StatusCode != http.StatusOK {
-		return fmt.Errorf("the wiki answered %s", response.Status)
-	}
-	return json.NewDecoder(io.LimitReader(response.Body, maxBytes)).Decode(target)
+	return json.Unmarshal(body, target)
 }
 
 // resolvePath returns the file a page is cached in.

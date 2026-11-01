@@ -4,11 +4,10 @@
 -->
 <script setup lang="ts">
 import { computed, useTemplateRef } from "vue";
-import { useQuery } from "@pinia/colada";
 import { useSortable } from "@vueuse/integrations/useSortable";
 
-import { stateQuery } from "../queries";
 import { useWorkspaceStore, VANILLA } from "../stores/workspace";
+import LeftOutMark from "./LeftOutMark.vue";
 import ModAvatar from "./ModAvatar.vue";
 
 const CHIP =
@@ -19,7 +18,6 @@ const { editable } = defineProps<{ editable: boolean }>();
 const emit = defineEmits<{ toggle: [mod: string] }>();
 
 const workspace = useWorkspaceStore();
-const { data: state } = useQuery(stateQuery);
 
 useSortable(useTemplateRef<HTMLElement>("chips"), order, {
   animation: 150,
@@ -34,7 +32,7 @@ const chips = computed(() =>
     const title = workspace.originName(id);
     return {
       id,
-      mod: state.value?.mods?.find((mod) => mod.id === id),
+      mod: workspace.listMods().find((mod) => mod.id === id),
       out,
       action: out ? `Check ${title} with the other mods again` : `Leave ${title} out of the compatibility checks`,
     };
@@ -75,12 +73,7 @@ const chips = computed(() =>
               @click="emit('toggle', chip.id)"
             />
           </UTooltip>
-          <UIcon
-            v-else-if="chip.out"
-            name="i-lucide-eye-off"
-            class="size-3.5"
-            aria-label="Left out of workspace compatibility"
-          />
+          <LeftOutMark v-else-if="chip.out" />
         </span>
       </li>
     </ul>

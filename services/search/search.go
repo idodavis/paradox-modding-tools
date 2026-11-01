@@ -57,17 +57,11 @@ type Query struct {
 	Origins   []string `json:"origins" jsonschema:"the mods searched, by id, and vanilla for the game's files; the mods if empty"`
 }
 
-// A Hit is one match of a text search. Its range's columns also mark the match inside the text of its line.
-type Hit struct {
-	Place workspace.Place `json:"place"`
-	Range lsp.Range       `json:"range"`
-	Text  string          `json:"text"`
-}
-
-// Hits holds the matches in one file. It is what the search:hits event carries.
+// Hits holds the matches in one file, each with the range of the match and the text of its line. It is what the
+// search:hits event carries.
 type Hits struct {
 	Place workspace.Place `json:"place"`
-	Hits  []Hit           `json:"hits"`
+	Hits  []lsp.Site      `json:"hits"`
 }
 
 // A tally is the count of the hits one text search has given, which stops at its limit.
@@ -185,8 +179,8 @@ func run(ws *workspace.Session, query Query, stop <-chan struct{}, sent *tally) 
 			break
 		}
 		group.Go(func() error {
-			source, ok := readSource(ws, file.Path)
-			if !ok || !holds(source) {
+			source, err := ws.LoadSource(file.Path)
+			if err != nil || !holds(source) {
 				return nil
 			}
 			if hits := findHits(source, expression, query.WholeWord); len(hits) > 0 && !isClosed(stop) {
@@ -230,18 +224,8 @@ func containsFold(text, piece string) bool {
 	return false
 }
 
-// readSource returns a file's text: the editor's where the file is open, else the one on disk. It returns false if the
-// file cannot be read.
-func readSource(ws *workspace.Session, path string) (string, bool) {
-	if source, open := ws.LookupBuffer(path); open {
-		return source, true
-	}
-	text, err := files.ReadText(path)
-	return text.Text, err == nil
-}
-
 // send gives one file's hits at the given place to the tally's receiver, as many as its limit leaves room for.
-func (tally *tally) send(place workspace.Place, hits []Hit) {
+func (tally *tally) send(place workspace.Place, hits []lsp.Site) {
 	tally.mu.Lock()
 	defer tally.mu.Unlock()
 	hits = hits[:min(len(hits), tally.limit-tally.count)]
@@ -396,11 +380,13 @@ func isSubsequence(text string, characters []rune) bool {
 }
 
 // findHits returns the hits of an expression in a file's text, in order, without their place.
-func findHits(source string, expression *regexp.Regexp, wholeWord bool) []Hit {
+func findHits(source string, expression *regexp.Regexp, wholeWord bool) []lsp.Site {
 	lines := jomini.NewLines(source)
-	return lo.Map(findMatches(source, lines, expression, wholeWord), func(match []int, _ int) Hit {
-		line := lines.LineSpan(lines.ToPosition(match[0]).Line)
-		return Hit{
+	return lo.Map(findMatches(source, lines, expression, wholeWord), func(match []int, _ int) lsp.Site {
+		position := lines.ToPosition(match[0])
+		line := lines.LineSpan(position.Line)
+		return lsp.Site{
+			Line:  position.Line + 1,
 			Range: lsp.ToRange(source, lines, jomini.Span{Start: match[0], End: match[1]}),
 			Text:  source[line.Start:line.End],
 		}

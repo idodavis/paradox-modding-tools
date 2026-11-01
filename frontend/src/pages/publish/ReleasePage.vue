@@ -9,7 +9,7 @@ import { useMutation, useQuery, useQueryCache } from "@pinia/colada";
 import { Browser } from "@wailsio/runtime";
 import type { DropdownMenuItem } from "@nuxt/ui";
 
-import { describeDifference } from "../../lib/format";
+import { toDifferenceId } from "../../lib/format";
 import { comparisonQuery, listingQuery, listingsQuery, stateQuery } from "../../queries";
 import { useWorkspaceStore } from "../../stores/workspace";
 import FileSelector from "../../ui/FileSelector.vue";
@@ -87,7 +87,7 @@ watch(
 );
 
 const { data: state } = useQuery(stateQuery);
-const mods = computed(() => (state.value?.mods ?? []).filter((one) => !one.broken));
+const mods = computed(() => workspace.listMods().filter((one) => !one.broken));
 const modId = computed(() =>
   mods.value.some((one) => one.id === selectedMod.value) ? selectedMod.value : (mods.value[0]?.id ?? ""),
 );
@@ -116,9 +116,7 @@ const { data: comparison, isLoading: asking } = useQuery(() => ({
 
 // The picked difference while the comparison still holds it, else the first one. Both the rail and the compare show it.
 const shown = computed(() => {
-  const ids = [...(comparison.value?.page ?? []), ...(comparison.value?.files ?? [])].map(
-    (difference) => describeDifference(difference).id,
-  );
+  const ids = [...(comparison.value?.page ?? []), ...(comparison.value?.files ?? [])].map(toDifferenceId);
   return ids.find((one) => one === picked.value) ?? ids[0] ?? "";
 });
 

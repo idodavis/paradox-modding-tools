@@ -8,6 +8,5 @@ export {
 
 export type {
     File,
-    Root,
     Text
 } from "./models.js";

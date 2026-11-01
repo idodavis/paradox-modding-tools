@@ -6,6 +6,7 @@ import (
 	"encoding/json"
 	"errors"
 	"fmt"
+	"io"
 	"log/slog"
 	"net/http"
 	"os"
@@ -80,6 +81,9 @@ type Release struct {
 // releasesURL is where GitHub lists the app's releases, the newest first.
 const releasesURL = "https://api.github.com/repos/idodavis/paradox-modding-tools/releases"
 
+// userAgent is how PMT names itself to the sites it fetches from.
+const userAgent = "paradox-modding-tools (+https://github.com/idodavis/paradox-modding-tools)"
+
 // OpenConfig finds PMT's folders on this machine and loads config.json. It returns an error if a folder cannot be
 // made.
 func OpenConfig() (*ConfigFile, error) {
@@ -144,20 +148,9 @@ func (app *Service) ApplyUpdate() error {
 // build that is no release, such as a dev build, gets the newest only. Drafts and prereleases are left out. It returns
 // an error if GitHub cannot be reached or answers with an error.
 func (app *Service) ListReleases() ([]Release, error) {
-	ctx, cancel := context.WithTimeout(context.Background(), 15*time.Second)
-	defer cancel()
-	request, err := http.NewRequestWithContext(ctx, http.MethodGet, releasesURL, nil)
+	body, err := FetchURL(releasesURL, 15*time.Second)
 	if err != nil {
 		return nil, err
-	}
-	request.Header.Set("Accept", "application/vnd.github+json")
-	response, err := http.DefaultClient.Do(request)
-	if err != nil {
-		return nil, err
-	}
-	defer func() { _ = response.Body.Close() }()
-	if response.StatusCode != http.StatusOK {
-		return nil, fmt.Errorf("GitHub answered %s", response.Status)
 	}
 	var listed []struct {
 		Tag        string    `json:"tag_name"`
@@ -166,7 +159,7 @@ func (app *Service) ListReleases() ([]Release, error) {
 		Draft      bool      `json:"draft"`
 		Prerelease bool      `json:"prerelease"`
 	}
-	if err := json.NewDecoder(response.Body).Decode(&listed); err != nil {
+	if err := json.Unmarshal(body, &listed); err != nil {
 		return nil, err
 	}
 	running := strings.TrimPrefix(app.Build, "v")
@@ -182,6 +175,26 @@ func (app *Service) ListReleases() ([]Release, error) {
 		}
 	}
 	return releases[:min(len(releases), 1)], nil
+}
+
+// FetchURL downloads a web address within the given time and returns the body of the answer. It sends PMT's user
+// agent. It returns an error if the request fails or the answer is not 200.
+func FetchURL(address string, timeout time.Duration) ([]byte, error) {
+	request, err := http.NewRequest(http.MethodGet, address, nil)
+	if err != nil {
+		return nil, err
+	}
+	request.Header.Set("User-Agent", userAgent)
+	request.Header.Set("Accept", "*/*") // some wikis answer a challenge page to a request that sends no Accept header
+	response, err := (&http.Client{Timeout: timeout}).Do(request)
+	if err != nil {
+		return nil, err
+	}
+	defer func() { _ = response.Body.Close() }()
+	if response.StatusCode != http.StatusOK {
+		return nil, fmt.Errorf("%s answered %s", request.URL.Host, response.Status)
+	}
+	return io.ReadAll(response.Body)
 }
 
 // ListSettings returns the settings catalog.
@@ -356,13 +369,6 @@ func (app *Service) CloseWindow(name string) error {
 	}
 	window.Close()
 	return nil
-}
-
-// ListWindows returns the names of the open windows.
-func (app *Service) ListWindows() []string {
-	return lo.Map(application.Get().Window.GetAll(), func(window application.Window, _ int) string {
-		return window.Name()
-	})
 }
 
 // resolveMark returns the path of the running mark, which sits beside the log.

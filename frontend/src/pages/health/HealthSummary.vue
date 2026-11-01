@@ -5,24 +5,25 @@
 <script setup lang="ts">
 import { computed } from "vue";
 import { useQuery } from "@pinia/colada";
-import { useIntervalFn, useNow } from "@vueuse/core";
-import { groupBy, sortBy, sumBy } from "es-toolkit";
-import type { Finding, GameLog } from "@services/health/models";
+import { useTimeAgo } from "@vueuse/core";
+import { keyBy, sortBy, sumBy } from "es-toolkit";
+import type { Finding, GameLog, Report, Tally } from "@services/health/models";
 import type { Mod } from "@services/workspace/models";
 import {
-  describeAge,
-  describeBrief,
+  splitBrief,
   describeCheck,
   describeCount,
   describeFinding,
   describeLevels,
   describeLogLine,
   describeTime,
-  describeTitle,
+  splitSubject,
+  findWorstProblem,
   FIX_LEVELS,
   LEVELS,
   list,
-  listFindingRows,
+  listLeftOut,
+  listSiteKeys,
   type Part,
   plural,
   PROBLEM_LEVELS,
@@ -31,6 +32,7 @@ import {
 import { codesQuery } from "../../queries";
 import { useWorkspaceStore } from "../../stores/workspace";
 import FactText from "../../ui/FactText.vue";
+import LeftOutMark from "../../ui/LeftOutMark.vue";
 import LevelCounts from "../../ui/LevelCounts.vue";
 import LoadOrder from "../../ui/LoadOrder.vue";
 import ModAvatar from "../../ui/ModAvatar.vue";
@@ -38,36 +40,20 @@ import ProblemRow from "../../ui/ProblemRow.vue";
 
 const {
   mods,
-  compatibility,
-  health,
+  report,
   log = undefined,
-  checkedAt,
-  compatibilityLevels,
-  healthLevels,
-  modLevels,
   yours,
   game,
 } = defineProps<{
   mods: Mod[];
-  /** The findings of workspace compatibility. */
-  compatibility: Finding[];
-  /** Each mod's problems, by mod id. */
-  health: Record<string, Finding[]>;
+  report: Report;
   log?: GameLog;
-  /** When the report was made. */
-  checkedAt: Date;
-  /** The level counts of workspace compatibility. */
-  compatibilityLevels: Record<string, number>;
-  /** The level counts of all the mods' problems. */
-  healthLevels: Record<string, number>;
-  /** The level counts of each mod, by mod id. */
-  modLevels: Record<string, Record<string, number>>;
   /** How many lines of the game's log are the mods'. */
   yours: number;
   /** How many lines of the game's log are the game's own. */
   game: number;
 }>();
-const emit = defineEmits<{ open: [view: string, mod?: string, row?: number]; check: [code: string] }>();
+const emit = defineEmits<{ open: [view: string, mod?: string, finding?: Finding]; check: [code: string] }>();
 
 /** How many rows a panel lists. */
 const ROWS_SHOWN = 4;
@@ -84,81 +70,74 @@ const INFO_WORDS: readonly { checks: readonly string[]; one: string; many: strin
 ];
 
 const workspace = useWorkspaceStore();
-const now = useNow({ scheduler: (tick) => useIntervalFn(tick, 30_000) });
 const { data: codes } = useQuery(codesQuery);
 
-const checked = computed(() => (now.value ? describeAge(checkedAt, "long") : ""));
+const checked = useTimeAgo(() => report.checkedAt);
 const order = computed(() => mods.map((mod) => mod.id));
 const rows = computed(() => log?.findings ?? []);
 /** The places the game's log names. */
 const loggedPlaces = computed(() => new Set(rows.value.map(toSiteKey)));
-/** Each mod with its level counts and its lead: the first problem of its worst level. */
-const tallies = computed(() =>
+/** The report's group of each mod, by mod id. */
+const groups = computed(() => keyBy(report.mods ?? [], (group) => group.mod));
+/** Each mod with its group and its lead, the first problem of its worst level, which Go sorts first, and its brief. */
+const modRows = computed(() =>
   mods.map((mod) => {
-    const problems = health[mod.id] ?? [];
-    const worst = PROBLEM_LEVELS.find((level) => problems.some((finding) => finding.level === level));
-    const row = problems.findIndex((finding) => finding.level === worst);
-    const finding = problems[row];
+    const group = groups.value[mod.id];
+    const lead = group?.findings?.[0];
     return {
       mod,
-      levels: modLevels[mod.id] ?? {},
-      lead: finding && { finding, row, logged: loggedPlaces.value.has(toSiteKey(finding)) },
+      group,
+      lead,
+      brief: lead ? splitBrief(lead) : [],
+      logged: !!lead && listSiteKeys(lead).some((place) => loggedPlaces.value.has(place)),
     };
   }),
 );
 const busiest = computed(() =>
-  Math.max(1, ...tallies.value.map((tally) => sumBy(PROBLEM_LEVELS, (level) => tally.levels[level] ?? 0))),
+  Math.max(1, ...modRows.value.map(({ group }) => sumBy(PROBLEM_LEVELS, (level) => group?.counts?.[level] ?? 0))),
 );
-const brokenCount = computed(() => tallies.value.filter((tally) => isBroken(tally.levels)).length);
+const brokenCount = computed(() => modRows.value.filter(({ group }) => FIX_LEVELS.includes(group?.worst ?? "")).length);
 /** The mods' share of the log's lines, as the meter's width. */
 const logShare = computed(() => `${(yours / Math.max(1, yours + game)) * 100}%`);
 const lastRun = computed(() => (log?.writtenAt ? describeTime(log.writtenAt) : ""));
 /** The mods' log rows that repeat most. */
 const top = computed(() =>
   sortBy(
-    listFindingRows(rows.value).filter((row) => row.finding.origin),
-    [(row) => -row.finding.count],
+    rows.value.filter((row) => row.origin),
+    [(row) => -row.count],
   ).slice(0, ROWS_SHOWN - 1),
 );
 /** Whether one of those rows repeats. Each then gets a column for its count. */
-const topRepeated = computed(() => top.value.some((row) => row.finding.count > 1));
+const topRepeated = computed(() => top.value.some((row) => row.count > 1));
 /** Each check of workspace compatibility with problems, at one level, with how many it found, the worst first. */
-const checks = computed(() =>
-  sortBy(
-    Object.values(
-      groupBy(
-        compatibility.filter((finding) => finding.level !== "info"),
-        (finding) => `${finding.level}:${finding.code}`,
-      ),
-    ).flatMap((group) => (group[0] ? [{ code: group[0].code, level: group[0].level, count: group.length }] : [])),
-    [(check) => Object.keys(LEVELS).indexOf(check.level), (check) => -check.count],
-  ),
-);
+const checks = computed(() => (report.compatibility.checks ?? []).filter((check) => check.level !== "info"));
 /** The mods left out of the compatibility checks, as a phrase, or "" for none. */
-const leftOut = computed(() =>
-  list(mods.filter((mod) => workspace.isLeftOut(mod.id)).map((mod) => mod.descriptor.name)),
-);
+const leftOut = computed(() => list(listLeftOut(mods)));
 /** Compatibility's info, in plain words. */
 const infoChecks = computed(() =>
   INFO_WORDS.flatMap((row) => {
-    const count = compatibility.filter(
-      (finding) => finding.level === "info" && row.checks.includes(finding.code),
-    ).length;
+    const count = sumBy(
+      (report.compatibility.checks ?? []).filter((check) => check.level === "info" && row.checks.includes(check.code)),
+      (check) => check.count,
+    );
     return count ? [plural(count, row.one, row.many)] : [];
   }).join(" · "),
 );
 /** Compatibility's worst level that needs a fix, which its headline counts, or "" for none. */
-const worstFix = computed(() => FIX_LEVELS.find((level) => compatibilityLevels[level]) ?? "");
+const worstFix = computed(() => (FIX_LEVELS.includes(report.compatibility.worst) ? report.compatibility.worst : ""));
 const panels = computed(() => [
   {
     view: "compatibility",
     kicker: "Workspace compatibility",
     icon: "i-lucide-git-merge",
-    color: resolveColor(compatibilityLevels),
-    verdict: describeVerdict(compatibilityLevels, describeLevels(compatibilityLevels, [worstFix.value]).join("")),
+    color: resolveColor(report.compatibility),
+    verdict: describeVerdict(
+      report.compatibility,
+      describeLevels(report.compatibility.counts, [worstFix.value]).join(""),
+    ),
     note: [
       ...describeLevels(
-        compatibilityLevels,
+        report.compatibility.counts,
         Object.keys(LEVELS).filter((level) => level !== worstFix.value),
       ),
       leftOut.value && `${leftOut.value} left out`,
@@ -171,12 +150,12 @@ const panels = computed(() => [
     view: "mod",
     kicker: "Mods",
     icon: "i-lucide-package",
-    color: resolveColor(healthLevels),
+    color: resolveColor(report.own),
     verdict: describeVerdict(
-      healthLevels,
+      report.own,
       `${describeCount(brokenCount.value)} ${brokenCount.value === 1 ? "mod needs" : "mods need"} a fix`,
     ),
-    note: describeLevels(healthLevels, PROBLEM_LEVELS).join(" · "),
+    note: describeLevels(report.own.counts, PROBLEM_LEVELS).join(" · "),
     footer: "Open the mods",
     modId: mods[0]?.id,
   },
@@ -193,24 +172,18 @@ const panels = computed(() => [
   },
 ]);
 
-/** isBroken reports whether level counts hold a level that needs a fix. */
-function isBroken(levels: Record<string, number>): boolean {
-  return FIX_LEVELS.some((level) => levels[level]);
-}
-
 /**
  * describeVerdict returns a panel's headline: the given words where something needs a fix. Otherwise it is "Nothing
  * needs a fix" where there are warnings, and "No problems" where there are none.
  */
-function describeVerdict(levels: Record<string, number>, fix: string): string {
-  if (isBroken(levels)) return fix;
-  return levels.warning ? "Nothing needs a fix" : "No problems";
+function describeVerdict(tally: Tally, fix: string): string {
+  if (FIX_LEVELS.includes(tally.worst)) return fix;
+  return tally.counts?.warning ? "Nothing needs a fix" : "No problems";
 }
 
 /** resolveColor returns the color of a panel's worst level. It is success when there is no problem. */
-function resolveColor(levels: Record<string, number>): string {
-  const worst = PROBLEM_LEVELS.find((level) => levels[level]);
-  return LEVELS[worst ?? ""]?.color ?? "success";
+function resolveColor(tally: Tally): string {
+  return findWorstProblem(tally)?.color ?? "success";
 }
 
 /** describeRing returns the style of a panel's ring in a Nuxt UI color. */
@@ -227,11 +200,11 @@ function describeRing(color: string): Record<string, string> {
  * describeMeter returns the segments of a mod's meter, one for each level of problem. A mod with no problem gets one
  * full segment.
  */
-function describeMeter(levels: Record<string, number>): { color: string; width: string }[] {
-  if (!PROBLEM_LEVELS.some((level) => levels[level])) return [{ color: "success", width: "100%" }];
+function describeMeter(counts: Tally["counts"] | undefined): { color: string; width: string }[] {
+  if (!PROBLEM_LEVELS.some((level) => counts?.[level])) return [{ color: "success", width: "100%" }];
   // a level with any problem keeps a sliver, so it never reads as clean
   const share = (count: number): string => `${count ? Math.max(3, (count / busiest.value) * 100) : 0}%`;
-  return PROBLEM_LEVELS.map((level) => ({ color: LEVELS[level]?.color ?? "", width: share(levels[level] ?? 0) }));
+  return PROBLEM_LEVELS.map((level) => ({ color: LEVELS[level]?.color ?? "", width: share(counts?.[level] ?? 0) }));
 }
 
 /** describeLogPlace returns the mod a log row is about and the file it names, as parts. */
@@ -298,27 +271,22 @@ function describeLogPlace(finding: Finding): Part[] {
             </p>
           </template>
           <template v-else-if="panel.view === 'mod'">
-            <template v-for="tally in tallies" :key="tally.mod.id">
+            <template v-for="modRow in modRows" :key="modRow.mod.id">
               <button
                 type="button"
                 class="flex items-center gap-2.5 px-3 py-2 text-start hover:bg-accented"
-                @click="emit('open', 'mod', tally.mod.id)"
+                @click="emit('open', 'mod', modRow.mod.id)"
               >
-                <ModAvatar :mod="tally.mod" size="sm" />
+                <ModAvatar :mod="modRow.mod" size="sm" />
                 <span class="flex min-w-0 grow flex-col gap-1.25">
                   <span class="flex items-center gap-2 text-12">
-                    <span class="grow truncate font-medium text-highlighted">{{ tally.mod.descriptor.name }}</span>
-                    <UIcon
-                      v-if="workspace.isLeftOut(tally.mod.id)"
-                      name="i-lucide-eye-off"
-                      class="size-3.5 shrink-0 text-dimmed"
-                      aria-label="Left out of workspace compatibility"
-                    />
-                    <LevelCounts :levels="tally.levels" />
+                    <span class="grow truncate font-medium text-highlighted">{{ modRow.mod.descriptor.name }}</span>
+                    <LeftOutMark v-if="modRow.mod.leftOut" />
+                    <LevelCounts :levels="modRow.group?.counts" />
                   </span>
                   <span class="flex h-1.5 overflow-hidden rounded-full bg-accented">
                     <span
-                      v-for="segment in describeMeter(tally.levels)"
+                      v-for="segment in describeMeter(modRow.group?.counts)"
                       :key="segment.color"
                       class="h-full"
                       :style="{ width: segment.width, background: `var(--ui-${segment.color})` }"
@@ -327,24 +295,22 @@ function describeLogPlace(finding: Finding): Part[] {
                 </span>
               </button>
               <ProblemRow
-                v-if="tally.lead"
-                :level="tally.lead.finding.level"
-                :message="describeFinding(tally.lead.finding, codes)"
+                v-if="modRow.lead"
+                :level="modRow.lead.level"
+                :message="describeFinding(modRow.lead, codes)"
                 class="ps-12"
-                @open="emit('open', 'mod', tally.mod.id, tally.lead.row)"
+                @open="emit('open', 'mod', modRow.mod.id, modRow.lead)"
               >
-                <template v-if="tally.lead.finding.name" #message>
-                  <span class="font-mono text-12"><FactText :parts="describeTitle(tally.lead.finding)" /></span>
+                <template v-if="modRow.lead.name" #message>
+                  <span class="font-mono text-12"><FactText :parts="splitSubject(modRow.lead)" /></span>
                 </template>
                 <template #detail>
                   <span class="min-w-0 truncate text-11 text-dimmed">
-                    {{ describeCheck(tally.lead.finding.code, codes) }}
-                    <template v-if="describeBrief(tally.lead.finding).length">
-                      · <FactText :parts="describeBrief(tally.lead.finding)" />
-                    </template>
+                    {{ describeCheck(modRow.lead.code, codes) }}
+                    <template v-if="modRow.brief.length">· <FactText :parts="modRow.brief" /></template>
                   </span>
                 </template>
-                <template v-if="tally.lead.logged" #trailing>
+                <template v-if="modRow.logged" #trailing>
                   <UBadge label="in the log" color="neutral" variant="subtle" size="sm" class="shrink-0" />
                 </template>
               </ProblemRow>
@@ -365,19 +331,17 @@ function describeLogPlace(finding: Finding): Part[] {
               </span>
             </div>
             <ProblemRow
-              v-for="row in top"
-              :key="row.index"
-              :message="describeLogLine(row.finding)"
-              @open="emit('open', 'log', undefined, row.index)"
+              v-for="(row, position) in top"
+              :key="position"
+              :message="describeLogLine(row)"
+              @open="emit('open', 'log', undefined, row)"
             >
               <template #detail>
-                <span class="min-w-0 truncate text-11 text-dimmed"
-                  ><FactText :parts="describeLogPlace(row.finding)"
-                /></span>
+                <span class="min-w-0 truncate text-11 text-dimmed"><FactText :parts="describeLogPlace(row)" /></span>
               </template>
               <template v-if="topRepeated" #leading>
                 <span class="flex w-9 shrink-0 justify-center">
-                  <UBadge v-if="row.finding.count > 1" :label="`×${describeCount(row.finding.count)}`" size="sm" />
+                  <UBadge v-if="row.count > 1" :label="`×${describeCount(row.count)}`" size="sm" />
                 </span>
               </template>
             </ProblemRow>

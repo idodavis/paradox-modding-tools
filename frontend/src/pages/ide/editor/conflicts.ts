@@ -10,7 +10,7 @@ import { applyEdits, type Model } from "./models";
 import { diffTab } from "./tabs";
 
 /** One conflict block: its lines and the two sides' line ranges. */
-export type Conflict = { start: number; end: number; ours: [number, number]; theirs: [number, number] };
+type Conflict = { start: number; end: number; ours: [number, number]; theirs: [number, number] };
 
 type Side = "ours" | "theirs" | "both";
 
@@ -42,7 +42,7 @@ const lenses: monaco.languages.CodeLensProvider = {
   },
 };
 
-/** Registers the links over the conflict blocks and the command each one runs. */
+/** registerConflicts registers the links over the conflict blocks and the command each one runs. */
 export function registerConflicts(): void {
   monaco.languages.registerCodeLensProvider("*", lenses);
   monaco.editor.registerCommand("pmt.conflict", (_accessor, uri: string, line: number, side: Side | "compare") => {
@@ -57,8 +57,11 @@ export function registerConflicts(): void {
   });
 }
 
-/** Finds the conflict blocks in a model's text. A side with no line has a range that ends before it starts. */
-export function findConflicts(model: Model): Conflict[] {
+/**
+ * findConflicts finds the conflict blocks in a model's text. A side with no line has a range that ends before it
+ * starts.
+ */
+function findConflicts(model: Model): Conflict[] {
   const conflicts: Conflict[] = [];
   let start = 0;
   let base = 0;
@@ -79,8 +82,8 @@ export function findConflicts(model: Model): Conflict[] {
   return conflicts;
 }
 
-/** Resolves a block by keeping a side, or both, as one undoable edit. */
-export function resolve(model: Model, conflict: Conflict, side: Side): void {
+/** resolve resolves a block by keeping a side, or both, as one undoable edit. */
+function resolve(model: Model, conflict: Conflict, side: Side): void {
   const lines = model.model.getLinesContent();
   const sideLines = ([first, last]: [number, number]) => lines.slice(first - 1, Math.max(last, first - 1));
   const ours = sideLines(conflict.ours);
@@ -91,7 +94,7 @@ export function resolve(model: Model, conflict: Conflict, side: Side): void {
   applyEdits(model, [{ range, text }]);
 }
 
-/** Draws the blocks' decorations and the resolve links over them. The drawing follows the model's edits. */
+/** decorate draws the blocks' decorations and the resolve links over them. The drawing follows the model's edits. */
 export function decorate(model: Model): void {
   if (!decorations.has(model.uri)) {
     model.model.onDidChangeContent(() => decorate(model));

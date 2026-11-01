@@ -16,20 +16,17 @@ import (
 	"paradox-modding-tools/services/workspace"
 )
 
-// A Detail is what the page shows about one node: its texts, its keys, its firings and what it reads.
+// A Detail is what the page shows about one node: its texts, its keys, its firings and the game rules it reads.
 type Detail struct {
-	Node       Node            `json:"node"`              // its Fires are every firing it makes
-	Language   string          `json:"language"`          // the workspace's language, or the base language if it has none
-	Source     string          `json:"source"`            // the definition as written
-	Trigger    []Condition     `json:"trigger,omitempty"` // the definition's own trigger in words; nil for none
-	Sections   []Section       `json:"sections"`          // the keys at the top of the definition, except its options
-	Options    []Section       `json:"options"`           // the definition's option blocks
-	FiredBy    []Edge          `json:"firedBy"`
-	Linked     map[string]Node `json:"linked"` // the node at the other end of each of its firings, by its id
-	References []Node          `json:"references"`
-	Uses       map[string]int  `json:"uses"`           // how many times the definition reads each of its references, by the node's id
-	Rules      []Rule          `json:"rules"`          // the game rules the definition reads
-	Copy       *Node           `json:"copy,omitempty"` // the copy of its name that the definition hides; nil for none
+	Node     Node            `json:"node"`     // its Fires are every firing it makes
+	Language string          `json:"language"` // the workspace's language, or the base language if it has none
+	Source   string          `json:"source"`   // the definition as written
+	Sections []Section       `json:"sections"` // the keys at the top of the definition, except its options
+	Options  []Section       `json:"options"`  // the definition's option blocks
+	FiredBy  []Edge          `json:"firedBy"`
+	Linked   map[string]Node `json:"linked"`         // the node at the other end of each of its firings, by its id
+	Rules    []Rule          `json:"rules"`          // the game rules the definition reads
+	Copy     *Node           `json:"copy,omitempty"` // the copy of its name that the definition hides; nil for none
 }
 
 // A Section is one key at the top of a definition, as the page shows it.
@@ -65,13 +62,6 @@ type RuleOption struct {
 	Default     bool   `json:"default,omitempty"`
 }
 
-// The keys of an event that its sections read for their texts, their trigger and their split into options.
-const (
-	nameKey    = "name"
-	optionKey  = "option"
-	triggerKey = "trigger"
-)
-
 // callKind is the kind of a data call's segment once it holds the call's words.
 const callKind = "text"
 
@@ -92,20 +82,6 @@ func (gph *Service) BuildDetail(id string) (Detail, error) {
 	if err != nil {
 		return Detail{}, err
 	}
-	detail, err := buildDetail(ws, mods, site)
-	if err != nil {
-		return Detail{}, err
-	}
-	if hidden, ok := findCopy(ws, mods, site); ok {
-		other := makeNode(ws, mods, hidden, 0)
-		detail.Copy = &other
-	}
-	return detail, nil
-}
-
-// buildDetail returns the detail of one definition, without the copy it hides. It returns an error if its file cannot
-// be read.
-func buildDetail(ws *workspace.Session, mods *index.Index, site index.Site) (Detail, error) {
 	tree, statement, err := ws.FindStatement(mods, site)
 	if err != nil {
 		return Detail{}, err
@@ -116,20 +92,20 @@ func buildDetail(ws *workspace.Session, mods *index.Index, site index.Site) (Det
 	sections := lo.Map(slices.Collect(tree.Children(statement)), func(child int32, _ int) Section {
 		return makeSection(ws, mods, tree, child)
 	})
-	sections, options := lo.FilterReject(sections, func(section Section, _ int) bool { return section.Key != optionKey })
-	references, uses := listReferences(ws, mods, site)
+	sections, options := lo.FilterReject(sections, func(section Section, _ int) bool { return section.Key != game.OptionKey })
 	detail := Detail{
-		Node:       node,
-		Language:   resolveLanguage(ws),
-		Source:     tree.Text(tree.Statements[statement].Span),
-		Trigger:    findCondition(ws, tree, statement),
-		Sections:   sections,
-		Options:    options,
-		FiredBy:    makeEdges(ws, mods, firedBy),
-		Linked:     listLinked(ws, mods, fires, firedBy),
-		References: references,
-		Uses:       uses,
-		Rules:      listRules(ws, mods, tree, statement),
+		Node:     node,
+		Language: resolveLanguage(ws),
+		Source:   tree.Text(tree.Statements[statement].Span),
+		Sections: sections,
+		Options:  options,
+		FiredBy:  makeEdges(ws, mods, firedBy),
+		Linked:   listLinked(ws, mods, fires, firedBy),
+		Rules:    listRules(ws, mods, tree, statement),
+	}
+	if hidden, ok := findCopy(ws, mods, site); ok {
+		other := makeNode(ws, mods, hidden, 0)
+		detail.Copy = &other
 	}
 	return detail, nil
 }
@@ -145,7 +121,7 @@ func makeSection(ws *workspace.Session, mods *index.Index, tree *jomini.Tree, st
 		}
 		return section
 	}
-	section.When = findCondition(ws, tree, statement)
+	section.When = findCondition(ws, mods, tree, statement)
 	section.Texts = listVersions(ws, mods, tree, statement)
 	return section
 }
@@ -158,9 +134,9 @@ func listVersions(ws *workspace.Session, mods *index.Index, tree *jomini.Tree, s
 		key := tree.Text(tree.Statements[child].Key)
 		row, _ := game.LookupKeyword(game.ShapeDescription, "", key)
 		switch {
-		case row.Shows == "leaf" || key == game.DescriptionKey || key == nameKey:
+		case row.Shows == "leaf" || key == game.DescriptionKey || key == game.OptionTitleKey:
 			if version, ok := makeVersion(ws, mods, tree, child); ok {
-				version.When = findCondition(ws, tree, child)
+				version.When = findCondition(ws, mods, tree, child)
 				versions = append(versions, version)
 			}
 		case row.Shows != "":
@@ -275,64 +251,6 @@ func listLinked(ws *workspace.Session, mods *index.Index, fires, firedBy []index
 		linked[node.ID] = node
 	}
 	return linked
-}
-
-// listReferences returns the nodes a node's definitions refer to, each once, in the order first written, and how many
-// times each is read, by the node's id.
-func listReferences(ws *workspace.Session, mods *index.Index, site index.Site) ([]Node, map[string]int) {
-	references, uses := []Node{}, map[string]int{}
-	ids := map[schema.Reference]string{}
-	for _, use := range listUses(ws, mods, site) {
-		for _, reference := range index.ListCallees(mods.ToReference(use)) {
-			if id, seen := ids[reference]; seen {
-				uses[id]++
-			} else if node, ok := findReference(ws, mods, reference, use); ok {
-				ids[reference] = node.ID
-				references = append(references, node)
-				uses[node.ID]++
-			}
-		}
-	}
-	return references, uses
-}
-
-// listUses returns the references written inside a node's definitions, in the order written.
-func listUses(ws *workspace.Session, mods *index.Index, site index.Site) []index.Site {
-	var uses []index.Site
-	for _, part := range listActing(ws, mods, site) {
-		occurrences := mods.Occurrences[part.File]
-		for position := part.Occurrence + 1; int(position) < len(occurrences); position++ {
-			if !isInside(occurrences, position, part.Occurrence) {
-				break
-			}
-			if occurrences[position].Role == index.RoleRefers {
-				uses = append(uses, index.Site{File: part.File, Occurrence: position})
-			}
-		}
-	}
-	return uses
-}
-
-// isInside reports whether an occurrence is inside a definition.
-func isInside(occurrences []index.Occurrence, position, definition int32) bool {
-	for current := occurrences[position]; current.Nested; current = occurrences[current.Parent] {
-		if current.Parent == definition {
-			return true
-		}
-	}
-	return false
-}
-
-// findReference returns the node of a name a definition reads. It returns false if the game keeps no definition of it.
-func findReference(ws *workspace.Session, mods *index.Index, reference schema.Reference, use index.Site) (Node, bool) {
-	if slices.Contains(game.Links, reference.Database) {
-		return makeNode(ws, mods, use, 0), true
-	}
-	winner, ok := mods.FindKeptLocal(ws.Schema, reference, use.File)
-	if !ok {
-		return Node{}, false
-	}
-	return makeNode(ws, mods, winner.Site, 0), true
 }
 
 // listRules returns the game rules a definition reads, each once, in the order first read. A setting that no rule the

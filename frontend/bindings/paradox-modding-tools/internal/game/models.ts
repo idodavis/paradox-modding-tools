@@ -34,8 +34,8 @@ export interface DetectedInstall {
 }
 
 /**
- * A Game is one supported game with every fact that is its own. A game's own table is tried before the shared table
- * of the same name.
+ * A Game is one supported game with every fact that is its own. The tables beside it hold the facts it shares, each
+ * row naming the games it holds for.
  */
 export interface Game {
     "id": string;
@@ -50,31 +50,6 @@ export interface Game {
      * the descriptor file's path from the mod's root
      */
     "descriptor"?: string;
-}
-
-/**
- * An RGBA is a color as red, green, blue and alpha channels, each from 0 to 1.
- */
-export interface RGBA {
-    /**
-     * red, 0 to 1
-     */
-    "r": number;
-
-    /**
-     * green, 0 to 1
-     */
-    "g": number;
-
-    /**
-     * blue, 0 to 1
-     */
-    "b": number;
-
-    /**
-     * alpha, 0 to 1
-     */
-    "a": number;
 }
 
 /**

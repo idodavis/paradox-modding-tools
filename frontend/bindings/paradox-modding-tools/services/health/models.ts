@@ -4,9 +4,6 @@
 // eslint-disable-next-line @typescript-eslint/ban-ts-comment
 // @ts-ignore: Unused imports
 import * as lsp$0 from "../lsp/models.js";
-// eslint-disable-next-line @typescript-eslint/ban-ts-comment
-// @ts-ignore: Unused imports
-import * as workspace$0 from "../workspace/models.js";
 
 /**
  * A Change is one name whose kept copy moves to another mod in a previewed load order.
@@ -30,6 +27,22 @@ export interface Change {
 }
 
 /**
+ * A Check is one kind of finding at one level, and how many findings it has.
+ */
+export interface Check {
+    /**
+     * an lsp.Codes id
+     */
+    "code": string;
+    "level": string;
+
+    /**
+     * the findings it has, the ones folded into others included
+     */
+    "count": number;
+}
+
+/**
  * Compared is the texts of two statements.
  */
 export interface Compared {
@@ -47,7 +60,7 @@ export interface Finding {
     "code": string;
 
     /**
-     * the code's question, or "compatibility" if the sites lie in two mods
+     * the code's question
      */
     "question": string;
 
@@ -72,7 +85,7 @@ export interface Finding {
      */
     "mods": string[] | null;
     "facts": { [_ in string]?: string } | null;
-    "sites": FindingSite[] | null;
+    "sites": lsp$0.Site[] | null;
 
     /**
      * Removed holds the names the replaced sites define that the kept file does not.
@@ -87,7 +100,7 @@ export interface Finding {
     /**
      * Defined is where the workspace defines the name, in a mod the finding's mod does not depend on.
      */
-    "defined"?: FindingSite[] | null;
+    "defined"?: lsp$0.Site[] | null;
 
     /**
      * Comparable is true when the kept statement and the ones it replaces can be shown side by side.
@@ -100,38 +113,20 @@ export interface Finding {
     "order"?: string[] | null;
 
     /**
-     * a game log row's repeats, else 1
+     * Count is how many findings or game log lines the row stands for: 1 unless a report folded findings into it or the
+     * log repeated the line.
      */
     "count": number;
+
+    /**
+     * Repeats holds the sites of the findings a report folded into this one.
+     */
+    "repeats"?: lsp$0.Site[] | null;
 
     /**
      * Pairs are each two workspace mods the finding sets against each other, in load order, which can be ignored.
      */
     "pairs": string[][] | null;
-}
-
-/**
- * A FindingSite is one place a finding points at.
- */
-export interface FindingSite {
-    "place": workspace$0.Place;
-    "range": lsp$0.Range;
-    "kept": boolean;
-
-    /**
-     * why the game keeps it, or unsettled where no source says
-     */
-    "reason"?: string;
-
-    /**
-     * the names a whole-file site defines
-     */
-    "defines"?: string[] | null;
-
-    /**
-     * the names it defines that the kept file does not
-     */
-    "removed"?: string[] | null;
 }
 
 /**
@@ -162,6 +157,42 @@ export interface GameLog {
 }
 
 /**
+ * A Group is the findings of the workspace's compatibility or of one mod, folded, counted and sorted.
+ */
+export interface Group {
+    /**
+     * by level, with every level in it
+     */
+    "counts": { [_ in string]?: number } | null;
+
+    /**
+     * the worst level that has a finding, or "" if none has
+     */
+    "worst": string;
+
+    /**
+     * the mod's id, or "" for the workspace's compatibility
+     */
+    "mod": string;
+
+    /**
+     * Findings are sorted by level, the worst first, then by check, the one with the most findings first, then by
+     * weight. A mod's findings leave out its coverage.
+     */
+    "findings": Finding[] | null;
+
+    /**
+     * Languages holds the mod's coverage findings, one for each language beside the base one.
+     */
+    "languages": Finding[] | null;
+
+    /**
+     * in the order of the findings
+     */
+    "checks": Check[] | null;
+}
+
+/**
  * An Overview is what one mod holds, counted, and the mods it is judged with.
  */
 export interface Overview {
@@ -181,10 +212,30 @@ export interface Overview {
 }
 
 /**
- * A Report is the findings for one load order, and what that order changes.
+ * A Report is the findings for one load order, grouped and counted, and what that order changes.
  */
 export interface Report {
-    "findings": Finding[] | null;
+    /**
+     * by level, with every level in it
+     */
+    "counts": { [_ in string]?: number } | null;
+
+    /**
+     * the worst level that has a finding, or "" if none has
+     */
+    "worst": string;
+    "compatibility": Group;
+
+    /**
+     * in load order
+     */
+    "mods": Group[] | null;
+
+    /**
+     * the findings of the mods together, the compatibility's left out
+     */
+    "own": Tally;
+    "checkedAt": string;
 
     /**
      * none for the workspace's own order
@@ -202,6 +253,26 @@ export interface Snippet {
      * the line it begins at, counted from one
      */
     "line": number;
+
+    /**
+     * the last line of the site's own code, counted from one
+     */
+    "last": number;
+}
+
+/**
+ * A Tally is how many findings there are of each level.
+ */
+export interface Tally {
+    /**
+     * by level, with every level in it
+     */
+    "counts": { [_ in string]?: number } | null;
+
+    /**
+     * the worst level that has a finding, or "" if none has
+     */
+    "worst": string;
 }
 
 /**
@@ -210,5 +281,5 @@ export interface Snippet {
 export interface Use {
     "name": string;
     "count": number;
-    "first": FindingSite;
+    "first": lsp$0.Site;
 }

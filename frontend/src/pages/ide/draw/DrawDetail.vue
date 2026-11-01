@@ -1,24 +1,23 @@
 <!--
-  The Visual view's panel: a window's Properties and States tabs, or a coat's Layers.
+  Visual's panel: a window's Properties and States tabs, or a coat's Layers.
 -->
 <script setup lang="ts">
 import { useMutation, useQuery } from "@pinia/colada";
 import { Clipboard } from "@wailsio/runtime";
-import { Range } from "monaco-editor";
+import { Range } from "monaco-editor/editor/editor.api";
 import { computed } from "vue";
 
 import * as draw from "@services/draw/service";
-import * as workspace from "@services/workspace/service";
 import type { Coat, Window } from "@services/draw/models";
 import type { Edit, Range as Span } from "@services/lsp/models";
 import type { Place } from "@services/workspace/models";
 
-import { drawablesQuery, stateQuery } from "../../../queries";
+import { confirm } from "../../../lib/feedback";
+import { drawablesQuery } from "../../../queries";
 import { useDrawStore } from "../../../stores/draw";
 import type { DrawFile } from "../../../stores/draw";
 import { useEditorStore } from "../../../stores/editor";
 import { useWorkspaceStore } from "../../../stores/workspace";
-import ConfirmModal from "../../../ui/ConfirmModal.vue";
 import OriginChip from "../../../ui/OriginChip.vue";
 import { applyEdits, openModel } from "../editor/models";
 import type { Model } from "../editor/models";
@@ -40,7 +39,6 @@ const COAT_TABS: Tab[] = [{ label: "Layers", icon: "i-lucide-layers", value: "la
 const store = useDrawStore();
 const editor = useEditorStore();
 const workspaceStore = useWorkspaceStore();
-const overlay = useOverlay();
 
 const file = computed(() => store.file(props.model.place.path));
 const tabs = computed(() => (props.coat ? COAT_TABS : WINDOW_TABS));
@@ -48,14 +46,13 @@ const tab = computed(() =>
   tabs.value.some(({ value }) => value === file.value.tab) ? file.value.tab : tabs.value[0].value,
 );
 
-const { data: state } = useQuery(() => ({ ...stateQuery, enabled: workspaceStore.isOpen() }));
 const { data: drawables } = useQuery(() => ({
   ...drawablesQuery(props.model.place.path),
   enabled: workspaceStore.isOpen(),
 }));
 
 const mods = computed(() =>
-  listMods(state.value?.mods).map(({ label, value }) => ({ label, onSelect: () => copy(value) })),
+  listMods(workspaceStore.listMods()).map(({ label, value }) => ({ label, onSelect: () => copy(value) })),
 );
 
 const actions = computed(() => [
@@ -93,12 +90,14 @@ const { mutate: edit } = useMutation({
     applyEdits(await openModel(change.place), (await change.request()) ?? []),
 });
 const { mutate: copy } = useMutation({
-  mutation: async (modId: string) =>
-    workspace.Locate(await draw.CopyCoat(props.model.place.path, props.coat?.name ?? "", modId)),
+  mutation: (modId: string) => draw.CopyCoat(props.model.place.path, props.coat?.name ?? "", modId),
   onSuccess: (place) => editor.show(place),
 });
 
-/** Finds the script inside the braces of the coat and where it is, or null for a coat written as another's name. */
+/**
+ * findBody finds the script inside the braces of a coat and where it is. It returns null for a coat written as
+ * another's name.
+ */
 function findBody(model: Model, span: Span): { text: string; range: Range } | null {
   const text = model.model.getValueInRange(span);
   const open = text.indexOf("{");
@@ -109,13 +108,13 @@ function findBody(model: Model, span: Span): { text: string; range: Range } | nu
   return { text: text.slice(open + 1, text.lastIndexOf("}")).trim(), range: Range.fromPositions(start, end) };
 }
 
-/** Copies the coat's script to the clipboard, as the game's coat designer pastes it. */
+/** copyScript copies the coat's script to the clipboard, as the game's coat designer pastes it. */
 function copyScript(): void {
   const body = props.coat && findBody(props.model, props.coat.range);
   if (body) void Clipboard.SetText(body.text);
 }
 
-/** Replaces the coat's script with the one on the clipboard, which the game's coat designer copies. */
+/** pasteScript replaces the coat's script with the one on the clipboard, which the game's coat designer copies. */
 async function pasteScript(): Promise<void> {
   const body = props.coat && findBody(props.model, props.coat.range);
   if (!body || !props.coat) return;
@@ -123,10 +122,10 @@ async function pasteScript(): Promise<void> {
   edit({ place: props.coat.place, request: () => Promise.resolve([{ range: body.range, text: `\n${text}\n` }]) });
 }
 
-/** Deletes the coat from the file once the user confirms. */
+/** deleteCoat deletes the coat from the file once the user confirms. */
 async function deleteCoat(): Promise<void> {
   const coat = props.coat;
-  const choice = await overlay.create(ConfirmModal).open({
+  const choice = await confirm.open({
     title: "Delete the coat",
     body: `${coat?.name} is removed from the file.`,
     confirm: "Delete",
@@ -135,7 +134,7 @@ async function deleteCoat(): Promise<void> {
   if (coat && choice) edit({ place: coat.place, request: () => draw.RemoveBlock(props.model.place.path, coat.range) });
 }
 
-/** Shows a tab of the panel. */
+/** selectTab shows the given tab of the panel. */
 function selectTab(value: string | number): void {
   const next = tabs.value.find((one) => one.value === value);
   if (next) file.value.tab = next.value;

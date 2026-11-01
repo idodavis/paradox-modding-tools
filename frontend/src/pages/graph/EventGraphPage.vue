@@ -10,15 +10,14 @@ import { groupBy, union, xor } from "es-toolkit";
 import { useRouter } from "vue-router";
 import type { Filter, Node } from "@services/graph/models";
 import { plural } from "../../lib/format";
-import { graphDefaultsQuery, graphQuery, graphRootsQuery, ownRootsQuery } from "../../queries";
-import { makeChip, useChip } from "../../stores/agent";
+import { fileUrl, graphDefaultsQuery, graphQuery, graphRootsQuery, ownRootsQuery } from "../../queries";
+import { makeChip, useChip } from "../../stores/toolView";
 import { useSettingsStore } from "../../stores/settings";
 import { useWorkspaceStore } from "../../stores/workspace";
 import OriginChip from "../../ui/OriginChip.vue";
 import StatusFacts from "../../ui/StatusFacts.vue";
 import EventDetail from "./EventDetail.vue";
 import GraphCanvas from "./GraphCanvas.vue";
-import GraphStart from "./GraphStart.vue";
 import { buildLayout, lookupLook } from "./layout";
 
 const {
@@ -43,6 +42,10 @@ const NO_FILTER: Filter = { databases: [], origins: [], depth: 0, limit: 0, fano
 const EMPTY = { nodes: [], edges: [] };
 /** How many roots the recent list keeps. */
 const RECENT = 8;
+/** How many roots each list of the start page shows. */
+const START_SHOWN = 4;
+/** The classes of one root's row on the start page. */
+const START_ROW = "flex h-8.5 w-full items-center gap-2.5 rounded-md px-2 text-start hover:bg-elevated";
 const LAYOUTS = [
   { label: "Detail below", icon: "i-lucide-panel-bottom", value: "panel" },
   { label: "Detail beside", icon: "i-lucide-panel-right", value: "drawer" },
@@ -235,25 +238,28 @@ const panes = computed(() => [
     : []),
 ]);
 
-/** Draws the graph from the node with the given id. */
+/** draw draws the graph from the node with the given id. */
 function draw(next: string): void {
   update({ expand: [] });
   void router.replace({ query: { root: next } });
 }
 
-/** Goes back to the root drawn before this one, or forward again for a positive step. */
+/** step goes back to the root drawn before this one, or forward again for a positive step. */
 function step(by: number): void {
   position.value += by;
   void router.replace({ query: { root: history.value[position.value] } });
 }
 
-/** Opens the root's menu on the mods' own events. */
+/** showOwn opens the root's menu on the mods' own events. */
 function showOwn(): void {
   showingOwn.value = true;
   menuOpen.value = true;
 }
 
-/** Selects the node with the given id. A fold is opened instead, and a node the depth stopped at is opened as well. */
+/**
+ * select selects the node with the given id. A fold is opened instead, and a node the depth stopped at is opened as
+ * well.
+ */
 function select(nodeId: string): void {
   const picked = graph.value?.nodes?.find((candidate) => candidate.id === nodeId);
   const fold = nodeId.startsWith("more:") || !!picked?.count;
@@ -261,12 +267,12 @@ function select(nodeId: string): void {
   if (fold || picked?.deep) update({ expand: union(filter.value?.expand ?? [], [nodeId]) });
 }
 
-/** Changes parts of the filter. Nothing changes until Go's defaults have arrived. */
+/** update changes parts of the filter. Nothing changes until Go's defaults have arrived. */
 function update(change: Partial<Filter>): void {
   if (filter.value) edits.value = { ...filter.value, ...change };
 }
 
-/** Sets the filter's depth or its node limit. An emptied field changes nothing. */
+/** setNumber sets the filter's depth or its node limit. An emptied field changes nothing. */
 function setNumber(key: "depth" | "limit", value: number | null | undefined): void {
   if (value) update({ [key]: value });
 }
@@ -345,7 +351,7 @@ function setNumber(key: "depth" | "limit", value: number | null | undefined): vo
           <span v-if="'title' in item && item.title" class="ms-2 text-dimmed">{{ item.title }}</span>
         </template>
         <template #item-trailing="{ item }">
-          <OriginChip v-if="'place' in item" :origin="(item as Node).place.origin" />
+          <OriginChip v-if="'site' in item" :origin="(item as Node).site.place.origin" />
         </template>
       </UInputMenu>
       <UPopover :content="{ align: 'start' }">
@@ -470,14 +476,57 @@ function setNumber(key: "depth" | "limit", value: number | null | undefined): vo
       </template>
     </div>
     <UAlert v-if="error" color="error" variant="subtle" :description="error.message" class="m-2" />
-    <GraphStart
-      v-if="!root"
-      :recent="recent as Node[]"
-      :own="own ?? []"
-      class="min-h-0 flex-1"
-      @draw="draw"
-      @show-all="showOwn"
-    />
+    <div v-if="!root" class="flex min-h-0 flex-1 justify-center overflow-auto bg-(--bg-0)">
+      <div class="flex w-190 max-w-full flex-col gap-5.5 px-4 pt-24">
+        <div class="flex flex-col gap-1.5">
+          <span class="text-20 font-semibold text-highlighted">Where to start</span>
+          <span class="text-13 text-muted">
+            Pick a root to draw what fires it and what it fires. In the editor, <UKbd value="Ctrl" />
+            <UKbd value="Shift" /> <UKbd value="G" /> opens the event under the cursor here.
+          </span>
+        </div>
+        <div class="flex items-start gap-7">
+          <section v-if="recent.length" class="flex flex-1 flex-col gap-1" aria-label="Recent roots">
+            <span class="px-2 pb-1.5 text-11 font-semibold tracking-wide text-dimmed uppercase">Recent</span>
+            <button v-for="one in recent.slice(0, START_SHOWN)" :key="one.id" :class="START_ROW" @click="draw(one.id)">
+              <span
+                v-if="one.display === 'window' && one.background"
+                class="h-4 w-5.5 shrink-0 rounded-[3px] bg-cover bg-center"
+                :style="{ backgroundImage: `url(&quot;${fileUrl(one.background)}&quot;)` }"
+              />
+              <UIcon
+                v-else
+                :name="one.display === 'hidden' ? 'i-lucide-eye-off' : lookupLook(one.database).icon"
+                class="size-4 shrink-0"
+                :style="{ color: lookupLook(one.database).color }"
+              />
+              <span class="font-mono text-12 text-highlighted">{{ one.name }}</span>
+              <span class="min-w-0 grow truncate text-12 text-dimmed">{{ one.title || one.what }}</span>
+            </button>
+          </section>
+          <section v-if="own?.length" class="flex flex-1 flex-col gap-1" aria-label="Events from your mods">
+            <span class="flex items-center px-2 pb-1.5">
+              <span class="text-11 font-semibold tracking-wide text-dimmed uppercase">From your mods</span>
+              <span class="grow" />
+              <UButton :label="`Show all ${own.length}`" variant="link" size="xs" class="p-0" @click="showOwn()" />
+            </span>
+            <button v-for="one in own.slice(0, START_SHOWN)" :key="one.id" :class="START_ROW" @click="draw(one.id)">
+              <OriginChip :origin="one.site.place.origin" dot />
+              <span class="font-mono text-12 text-highlighted">{{ one.name }}</span>
+              <span class="min-w-0 grow truncate text-12 text-dimmed">{{
+                one.display === "hidden" ? "hidden" : one.title || one.what
+              }}</span>
+              <UBadge
+                :label="one.copyOrigin ? 'replaces' : 'added'"
+                :color="one.copyOrigin ? 'warning' : 'success'"
+                variant="subtle"
+                size="sm"
+              />
+            </button>
+          </section>
+        </div>
+      </div>
+    </div>
     <USplitter
       v-else
       :key="below ? 'below' : 'beside'"

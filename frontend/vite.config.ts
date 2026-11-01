@@ -98,7 +98,7 @@ export default defineConfig({
       // only Nuxt UI's components are resolved by name
       components: { dirs: [] },
       theme: {
-        colors: ["primary", "secondary", "success", "info", "warning", "error", "purple", "yellow"],
+        colors: ["primary", "secondary", "success", "info", "warning", "error", "yellow"],
       },
       ui: {
         // a pane's resize handle is a 2px line, grabbed on a wider strip above the panes' own layers
@@ -382,7 +382,6 @@ export default defineConfig({
             { color: "info", variant: "soft", class: "bg-(--blue-soft) text-info" },
             { color: "warning", variant: "soft", class: "bg-(--orange-soft) text-warning" },
             { color: "error", variant: "soft", class: "bg-(--red-soft) text-error" },
-            { color: "purple", variant: "soft", class: "bg-(--purple-soft) text-(--purple)" },
             { color: "yellow", variant: "soft", class: "bg-(--yellow-soft) text-(--yellow)" },
           ],
           defaultVariants: { color: "neutral", variant: "soft" },

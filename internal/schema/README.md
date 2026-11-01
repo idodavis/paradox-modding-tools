@@ -10,7 +10,7 @@ and the walk reads directly. A schema is built once for each version of an insta
 
 | file | holds |
 |---|---|
-| `schema.go` | the shape: `Claim` and `Claims`, `ValueType` and its constants, `Expected`, `Vanilla`, `Field`, `Command`, `Example`, `Database`, `ScopeType`, `DataFunction`, `DataType`, `Modifier`, `OnAction`, `ScriptedDefinition`, `SourceState`, `Schema`; `Build`; the databases and their callees; `SplitStage`, `FindLocReplacement` (the rank of a localization replace folder among the game's forms); `JoinNested` and `SplitNested`; the lookups (`FindDatabase`, `FindDatabaseByClass`, `FindCommand`, `ResolveLink`, `IsLink`); the data calls (`ResolveCallTypes`, `FindFunction`, `ResolveMacro`, `ResolveDatacontext`, `ListCallReferences`, `ResolveTypeDatabase`, `FindUnlisted`); the databases each house names (`Events`, `Messages`, `Lists`, `Concepts`, `ModifierTypes`, `FireDatabases`); `ToPhrase`, `DescribeStep` (a data call's step in words, a call that names a definition read as that name), `MatchValue` |
+| `schema.go` | the shape: `Claim` and `Claims`, `ValueType` and its constants, `Expected`, `Vanilla`, `Field`, `Command`, `Example`, `Database`, `ScopeType`, `DataFunction`, `DataType`, `Modifier`, `OnAction`, `ScriptedDefinition`, `SourceState`, `Schema`; `Build`; the databases and their callees; `SplitStage`, `FindLocReplacement` (the rank of a localization replace folder among the game's forms); `JoinNested` and `SplitNested`; the lookups (`FindDatabase`, `FindDatabaseByClass`, `FindCommand`, `ResolveLink`, `IsLink`); the data calls (`ResolveCallTypes`, `FindFunction`, `ResolveMacro`, `ResolveDatacontext`, `ListCallReferences`, `ResolveTypeDatabase`, `FindUnlisted`); the databases each house names (`Events`, `Messages`, `Lists`, `Concepts`, `ModifierTypes`, `FireDatabases`); the folders under which the game reads a mod's files (`TopFolders`: the first folder of each of the game's files, less its stage folder, in lower case); `ToPhrase`, `DescribeStep` (a data call's step in words, a call that names a definition read as that name), `MatchValue` |
 | `dumps.go` | the dumps reader: `DumpCommand`, `Dumps`, `ReadDumps`, `FindDumpsAt`; the commands, the arguments a usage writes, the list families' shared arguments; the backup for a missing section |
 | `docs.go` | the docs reader, `docReader`: which files are docs, and the blurbs, types, requirements, defaults, choices and scopes their prose states |
 | `vanilla.go` | the vanilla count, `CountVanilla`: the `declarer` that records what script and GUI files call by name, the `counter` and its `holder`s that count what the game's own files write, and the claims the counts support; the mods' scripted definitions (`SetScripted`), the parameters a body writes (`ListParameters`) and how many places of a name are kept as examples (`ExampleCount`) |
@@ -58,7 +58,8 @@ A field's `Claims` are its facts: its value, shape, scope, requirement, default,
 which holds one value and the `game.Source` that states it. A higher-ranked source replaces a lower one, and a claim
 that states nothing takes any source (`Claim.resolve`). `Field.take` gives a field another field's claims where they
 outrank its own, all but `Keys`. The docs reader gives a database's fields what a doc says through it, and the dumps
-reader merges the arguments of one list family (any_, every_, random_ and ordered_) through it.
+reader merges the arguments of one list family (any_, every_, random_ and ordered_) through it, and the family's
+members share one `Keys` claim.
 
 `CountVanilla` states what no source does, field by field, in `resolveClaims`. First comes the shape its blocks tell
 (`resolveShapeClaim`). Where its blocks call scripted definitions, it is the one shape every call allows. Otherwise it
@@ -88,7 +89,9 @@ only vanilla writes in the block is a definition of one database. Those keys' fi
 `<any>` (`game.AnyKey`), and the walk reads a field key there as a reference to that database (`findMatch`). A key a
 source declares stays as it is. Left out are a block whose shape holds commands (`game.Shapes[…].Allows`), and keys
 that are game concepts or messages, definitions of a GUI database (whose names are common words, such as value), or
-the definitions of a database with its nested ones.
+the definitions of a database with its nested ones. A list family's keys are resolved once for the family, before the
+other fields: the first member that takes a claim, in the order of their names, gives it to every member
+(`resolveFamilyKeys`).
 
 ## The dumps
 

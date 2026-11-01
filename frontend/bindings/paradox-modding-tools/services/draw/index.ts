@@ -18,6 +18,7 @@ export type {
     NamedColor,
     Overlay,
     Picture,
+    PictureFiles,
     PictureList,
     Property,
     Recolor,

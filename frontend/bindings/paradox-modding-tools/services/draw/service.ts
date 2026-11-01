@@ -43,19 +43,19 @@ export function AddLayer(path: string, coat: string, role: string, position: num
 
 /**
  * CopyCoat copies a coat that a file defines into the given mod, as a new coat of arms file with the coat's own name,
- * and returns its path. It returns an error if the file does not define the coat, or as CreateCoatFile does.
+ * and returns its place. It returns an error if the file does not define the coat, or as CreateCoatFile does.
  */
-export function CopyCoat(path: string, name: string, modID: string): $CancellablePromise<string> {
+export function CopyCoat(path: string, name: string, modID: string): $CancellablePromise<workspace$0.Place> {
     return $Call.ByID(943421932, path, name, modID);
 }
 
 /**
- * CreateCoatFile writes a new coat of arms file into the given mod and returns its path. The coat is named after the
+ * CreateCoatFile writes a new coat of arms file into the given mod and returns its place. The coat is named after the
  * given text as a slug, and holds the given script, as the game's coat designer copies it, or the game's coat template
  * when the script is "". It returns an error if the workspace has no such mod, the game keeps coats of arms in no
  * folder, the text has no slug, the file exists already or the game has no pattern.
  */
-export function CreateCoatFile(modID: string, name: string, script: string): $CancellablePromise<string> {
+export function CreateCoatFile(modID: string, name: string, script: string): $CancellablePromise<workspace$0.Place> {
     return $Call.ByID(3933983011, modID, name, script);
 }
 
@@ -85,12 +85,13 @@ export function ExportPNG(target: string, data: string | null): $CancellableProm
 }
 
 /**
- * FindReferences returns, for each picture, the DDS whose settings it keeps when it is saved as a DDS: the DDS of
- * the same name beside it, else the game's own DDS at the place the picture's DDS will have. A picture with neither
- * is left out. It returns an error if no workspace is open.
+ * FindPictureFiles returns the pictures that Save as DDS saves for the given path: the picture itself, or for a folder
+ * the pictures directly in it, by name, which are its images that are not DDS files. Each picture keeps the settings
+ * of the DDS of the same name beside it, else of the game's own DDS at the place its DDS will have; a picture with
+ * neither has no reference. It returns an error if no workspace is open, or a folder is outside it or cannot be read.
  */
-export function FindReferences(paths: string[] | null): $CancellablePromise<{ [_ in string]?: workspace$0.Place } | null> {
-    return $Call.ByID(3394937835, paths);
+export function FindPictureFiles(path: string): $CancellablePromise<$models.PictureFiles> {
+    return $Call.ByID(2619042612, path);
 }
 
 /**
@@ -115,14 +116,6 @@ export function ListDrawables(path: string): $CancellablePromise<lsp$0.Symbol[] 
  */
 export function ListFrames(): $CancellablePromise<$models.Image[] | null> {
     return $Call.ByID(1929556180);
-}
-
-/**
- * ListPictureFiles returns the pictures directly in a folder, by name: its images that are not DDS files. It returns
- * an error if no workspace is open, the folder is outside it, or the folder cannot be read.
- */
-export function ListPictureFiles(folder: string): $CancellablePromise<workspace$0.Place[] | null> {
-    return $Call.ByID(1251743187, folder);
 }
 
 /**

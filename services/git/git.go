@@ -38,6 +38,12 @@ type Service struct {
 	Workspace *workspace.Service
 }
 
+// A Repository is one git repository among the workspace's mods: its root folder, and the mods in it in load order.
+type Repository struct {
+	Root string   `json:"root"`
+	Mods []string `json:"mods"` // the mods' ids
+}
+
 // findGit is the one lookup of git on the PATH, made on the first call and kept.
 var findGit = sync.OnceValues(func() (string, error) {
 	path, err := exec.LookPath("git")
@@ -47,10 +53,18 @@ var findGit = sync.OnceValues(func() (string, error) {
 	return path, nil
 })
 
-// Run runs git in a folder with the given arguments and returns its standard output. Each line of standard
-// error is also sent as a git:output event as it arrives. A nonzero exit is an error that carries the text of
-// standard error, and so is git not being installed.
+// Run runs git in a folder with the given arguments and returns its standard output, as run does. It then emits
+// git:changed with the folder, also when git failed, since a failed command can leave the repository changed.
 func (git *Service) Run(dir string, args ...string) (string, error) {
+	stdout, err := git.run(dir, args...)
+	application.Get().Event.Emit(EventChanged, dir)
+	return stdout, err
+}
+
+// run runs git in a folder with the given arguments and returns its standard output. Each line of standard
+// error is also sent as a git:output event as it arrives. A nonzero exit is an error that carries the text of
+// standard error, and so is git not being installed. It sends no git:changed.
+func (git *Service) run(dir string, args ...string) (string, error) {
 	path, err := findGit()
 	if err != nil {
 		return "", err
@@ -83,10 +97,33 @@ func (git *Service) FindRepository(dir string) (string, bool) {
 	return root, err == nil
 }
 
+// ListRepositories returns the repositories the open workspace's mods are in, in the load order of their first mod,
+// each with the mods in it. A mod in none is left out, and so is one whose folder is missing. It is empty while no
+// workspace is open.
+func (git *Service) ListRepositories() []Repository {
+	var repositories []Repository
+	for _, mod := range git.Workspace.ListMods() {
+		if mod.Broken {
+			continue
+		}
+		root, ok := git.FindRepository(mod.Dir)
+		if !ok {
+			continue
+		}
+		position := slices.IndexFunc(repositories, func(repository Repository) bool { return repository.Root == root })
+		if position < 0 {
+			repositories = append(repositories, Repository{Root: root})
+			position = len(repositories) - 1
+		}
+		repositories[position].Mods = append(repositories[position].Mods, mod.ID)
+	}
+	return repositories
+}
+
 // ReadFile returns a file's text at a revision, as `git show <revision>:<path>` prints it, decoded as the files on disk
 // are. The path is from the repository's root. The revision `:0` reads the staged version.
 func (git *Service) ReadFile(dir, revision, path string) (string, error) {
-	stdout, err := git.Run(dir, "show", revision+":"+filepath.ToSlash(path))
+	stdout, err := git.run(dir, "show", revision+":"+filepath.ToSlash(path))
 	return files.DecodeText([]byte(stdout)).Text, err
 }
 
@@ -108,19 +145,19 @@ func (git *Service) Discard(dir string, paths []string) error {
 		return err
 	}
 	// restore knows only the files git tracks; an untracked file is removed instead
-	stdout, err := git.Run(root, slices.Concat([]string{"ls-files", "-z", "--"}, paths)...)
+	stdout, err := git.run(root, slices.Concat([]string{"ls-files", "-z", "--"}, paths)...)
 	if err != nil {
 		return err
 	}
 	tracked := splitRecords(stdout)
 	untracked := lo.Without(paths, tracked...)
 	if len(untracked) > 0 {
-		if _, err := git.Run(root, slices.Concat([]string{"clean", "-f", "--"}, untracked)...); err != nil {
+		if _, err := git.run(root, slices.Concat([]string{"clean", "-f", "--"}, untracked)...); err != nil {
 			return err
 		}
 	}
 	if len(tracked) > 0 {
-		if _, err := git.Run(root, slices.Concat([]string{"restore", "--worktree", "--"}, tracked)...); err != nil {
+		if _, err := git.run(root, slices.Concat([]string{"restore", "--worktree", "--"}, tracked)...); err != nil {
 			return err
 		}
 	}
@@ -151,7 +188,7 @@ func (git *Service) Merge(dir, name string) error {
 		return err
 	}
 	// a conflict exits nonzero too, announced on standard output, and the status shows it
-	stdout, err := git.Run(root, "merge", "--no-edit", name)
+	stdout, err := git.run(root, "merge", "--no-edit", name)
 	if err != nil && !strings.Contains(stdout, "CONFLICT") {
 		return err
 	}
@@ -176,7 +213,7 @@ func emitLines(stream io.Reader) {
 
 // resolveRepository returns the repository that holds a folder. The error is git's if the folder is in none.
 func (git *Service) resolveRepository(dir string) (string, error) {
-	root, err := git.Run(dir, "rev-parse", "--show-toplevel")
+	root, err := git.run(dir, "rev-parse", "--show-toplevel")
 	if err != nil {
 		return "", err
 	}
@@ -186,14 +223,26 @@ func (git *Service) resolveRepository(dir string) (string, error) {
 // locateChanges gives each change the place of its file in the open workspace, from the root folder of the
 // repository, which git writes a change's path from. The changes keep an empty place if no workspace is open.
 func (git *Service) locateChanges(root string, changes []Change) {
-	session, err := git.Workspace.Session()
+	paths := lo.Map(changes, func(change Change, _ int) string { return change.Path })
+	for position, place := range git.locate(root, paths) {
+		changes[position].Place = place
+	}
+}
+
+// locate returns the place in the open workspace of each given path, which git writes from the root folder of the
+// repository. A path ending in a slash is a folder. The places are empty if no workspace is open.
+func (git *Service) locate(root string, paths []string) []workspace.Place {
+	places := make([]workspace.Place, len(paths))
+	ws, err := git.Workspace.Session()
 	if err != nil {
-		return
+		return places
 	}
-	mods := session.Mods.Load()
-	for position := range changes {
-		changes[position].Place = session.Locate(mods, filepath.Join(root, changes[position].Path))
+	mods := ws.Mods.Load()
+	for position, path := range paths {
+		places[position] = ws.Locate(mods, filepath.Join(root, path))
+		places[position].IsDir = strings.HasSuffix(path, "/")
 	}
+	return places
 }
 
 // apply runs a command that changes a repository and emits git:changed with the repository's folder. The error is
@@ -203,7 +252,7 @@ func (git *Service) apply(dir string, args ...string) error {
 	if err != nil {
 		return err
 	}
-	if _, err := git.Run(root, args...); err != nil {
+	if _, err := git.run(root, args...); err != nil {
 		return err
 	}
 	application.Get().Event.Emit(EventChanged, root)

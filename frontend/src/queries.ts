@@ -16,8 +16,7 @@ import * as wiki from "@services/wiki/service";
 import * as workspace from "@services/workspace/service";
 import type { Coat, PictureList, States } from "@services/draw/models";
 import type { Filter } from "@services/graph/models";
-import type { FindingSite } from "@services/health/models";
-import type { Place } from "@services/workspace/models";
+import type { Site } from "@services/lsp/models";
 
 /** fileUrl returns the URL that serves a file. */
 export function fileUrl(path: string): string {
@@ -30,25 +29,47 @@ export async function loadQuery<T>(options: UseQueryOptions<T>): Promise<T | und
   return (await cache.refresh(cache.ensure(options))).data;
 }
 
-/** keys holds the query keys that an event or a mutation refreshes. */
+/** GIT_STATUS is the last part of the key of a repository's status. */
+const GIT_STATUS = "status";
+
+// the key of every query of a kind that takes a path, a folder, a repository or a mod
+const KINDS = {
+  files: ["file"],
+  folders: ["folder"],
+  places: ["place"],
+  draws: ["draw"],
+  gits: ["git"],
+  releases: ["release"],
+} as const;
+
+/** keys holds the query keys that an event or a mutation refreshes. A kind's plural is the key of all of them. */
 export const keys = {
+  ...KINDS,
   settings: ["app", "settings"] as const,
-  windows: ["app", "windows"] as const,
   installs: ["workspace", "installs"] as const,
   workspaces: ["workspace", "workspaces"] as const,
   state: ["workspace", "state"] as const,
-  file: (path: string) => ["file", path] as const,
-  folder: (dir: string) => ["folder", dir] as const,
+  file: (path: string) => [...KINDS.files, path] as const,
+  folder: (dir: string) => [...KINDS.folders, dir] as const,
+  place: (path: string) => [...KINDS.places, path] as const,
   roots: ["roots"] as const,
-  draw: (path: string) => ["draw", path] as const,
+  draw: (path: string) => [...KINDS.draws, path] as const,
   health: ["health"] as const,
   graph: ["graph"] as const,
   wiki: ["wiki"] as const,
-  git: (dir: string) => ["git", dir] as const,
-  release: (modId: string) => ["release", modId] as const,
+  git: (dir: string) => [...KINDS.gits, dir] as const,
+  gitStatus: (dir: string) => [...KINDS.gits, dir, GIT_STATUS] as const,
+  release: (modId: string) => [...KINDS.releases, modId] as const,
+  lsp: ["lsp"] as const,
+  search: ["search"] as const,
   shells: ["terminal", "shells"] as const,
   agents: ["agent"] as const,
 };
+
+/** isGitStatus reports whether a query key is a repository's status. */
+export function isGitStatus(key: readonly unknown[]): boolean {
+  return key.length === 3 && key[0] === KINDS.gits[0] && key[2] === GIT_STATUS;
+}
 
 // the app
 export const versionQuery = defineQueryOptions({ key: ["app", "version"], query: () => app.Version() });
@@ -65,7 +86,6 @@ export const updateQuery = defineQueryOptions({
   key: ["app", "update"],
   query: () => app.CheckUpdate().catch(() => ({ version: "", available: false })),
 });
-export const windowsQuery = defineQueryOptions({ key: keys.windows, query: () => app.ListWindows() });
 export const crashedQuery = defineQueryOptions({ key: ["app", "crashed"], query: () => app.CrashedLastRun() });
 
 // the workspace and its files
@@ -73,7 +93,10 @@ export const gamesQuery = defineQueryOptions({
   key: ["workspace", "games"],
   query: () => workspace.ListGames(),
 });
-export const installsQuery = defineQueryOptions({ key: keys.installs, query: () => workspace.ListInstalls() });
+export const installsQuery = defineQueryOptions((gameId: string) => ({
+  key: [...keys.installs, gameId],
+  query: () => workspace.ListInstalls(gameId),
+}));
 export const readyInstallsQuery = defineQueryOptions({
   key: [...keys.installs, "ready"],
   query: () => workspace.ListReadyInstalls(),
@@ -86,7 +109,6 @@ export const workspacesQuery = defineQueryOptions({
   key: keys.workspaces,
   query: () => workspace.ListWorkspaces(),
 });
-export const modsQuery = defineQueryOptions({ key: [...keys.workspaces, "mods"], query: () => workspace.ListMods() });
 export const releasesQuery = defineQueryOptions({ key: ["app", "releases"], query: () => app.ListReleases() });
 export const stateQuery = defineQueryOptions({ key: keys.state, query: () => workspace.State() });
 export const languagesQuery = defineQueryOptions((installId: string) => ({
@@ -103,20 +125,20 @@ export const folderQuery = defineQueryOptions((dir: string) => ({
 }));
 export const rootsQuery = defineQueryOptions({ key: keys.roots, query: () => workspace.ListRoots() });
 export const placeQuery = defineQueryOptions((path: string) => ({
-  key: ["place", path],
+  key: keys.place(path),
   query: () => workspace.Locate(path),
 }));
 export const headerQuery = defineQueryOptions((path: string) => ({
   key: [...keys.file(path), "header"],
   query: () => workspace.ReadHeader(path),
 }));
-/** The pictures Save as DDS writes, a picture or those directly in a folder, and the DDS whose settings each keeps. */
-export const ddsPicturesQuery = defineQueryOptions((place: Place) => ({
-  key: [...keys.file(place.path), "dds-pictures"],
-  query: async () => {
-    const pictures = place.isDir ? ((await draw.ListPictureFiles(place.path)) ?? []) : [place];
-    return { pictures, references: (await draw.FindReferences(pictures.map((picture) => picture.path))) ?? {} };
-  },
+/**
+ * ddsPicturesQuery lists the pictures Save as DDS writes, a picture or those directly in a folder, and the DDS whose
+ * settings each keeps.
+ */
+export const ddsPicturesQuery = defineQueryOptions((path: string) => ({
+  key: [...keys.file(path), "dds-pictures"],
+  query: () => draw.FindPictureFiles(path),
 }));
 export const copiesQuery = defineQueryOptions((path: string) => ({
   key: [...keys.file(path), "copies"],
@@ -153,14 +175,14 @@ export const coatQuery = defineQueryOptions(
     placeholderData: (previous: Coat | undefined) => previous,
   }),
 );
-export const colorsQuery = defineQueryOptions({ key: ["draw", "colors"], query: () => draw.ListColors() });
+export const colorsQuery = defineQueryOptions({ key: [...keys.draws, "colors"], query: () => draw.ListColors() });
 export const texturesQuery = defineQueryOptions((role: string) => ({
-  key: ["draw", "textures", role],
+  key: [...keys.draws, "textures", role],
   query: () => draw.ListTextures(role),
 }));
-export const framesQuery = defineQueryOptions({ key: ["draw", "frames"], query: () => draw.ListFrames() });
+export const framesQuery = defineQueryOptions({ key: [...keys.draws, "frames"], query: () => draw.ListFrames() });
 export const picturesQuery = defineQueryOptions(({ path, list }: { path: string; list: PictureList }) => ({
-  key: ["draw", "pictures", path, list.database, list.name, list.type, list.field, list.argument, list.folder],
+  key: [...keys.draws, "pictures", path, list.database, list.name, list.type, list.field, list.argument, list.folder],
   query: () => draw.ListPictures(path, list),
 }));
 
@@ -169,7 +191,7 @@ export const reportQuery = defineQueryOptions((order: string[]) => ({
   key: [...keys.health, "report", order],
   query: () => health.BuildReport(order),
 }));
-export const codesQuery = defineQueryOptions({ key: ["health", "codes"], query: () => health.ListCodes() });
+export const codesQuery = defineQueryOptions({ key: [...keys.health, "codes"], query: () => health.ListCodes() });
 export const overviewQuery = defineQueryOptions({
   key: [...keys.health, "overview"],
   query: () => health.ListOverview(),
@@ -178,11 +200,11 @@ export const errorLogQuery = defineQueryOptions({
   key: [...keys.health, "errorlog"],
   query: () => health.ListErrorLog(),
 });
-export const comparedQuery = defineQueryOptions(({ a, b }: { a: FindingSite; b: FindingSite }) => ({
+export const comparedQuery = defineQueryOptions(({ a, b }: { a: Site; b: Site }) => ({
   key: [...keys.health, "compared", a, b],
   query: () => health.CompareStatements(a, b),
 }));
-export const snippetsQuery = defineQueryOptions((sites: FindingSite[]) => ({
+export const snippetsQuery = defineQueryOptions((sites: Site[]) => ({
   key: [...keys.health, "snippets", sites],
   query: () => health.ListSnippets(sites),
 }));
@@ -192,7 +214,7 @@ export const readersQuery = defineQueryOptions((key: string) => ({
 }));
 
 // the editor
-export const legendQuery = defineQueryOptions({ key: ["lsp", "legend"], query: () => lsp.ListLegend() });
+export const legendQuery = defineQueryOptions({ key: [...keys.lsp, "legend"], query: () => lsp.ListLegend() });
 export const indentationQuery = defineQueryOptions((path: string) => ({
   key: [...keys.file(path), "indentation"],
   query: () => lsp.DescribeIndentation(path),
@@ -203,7 +225,7 @@ export const outlineQuery = defineQueryOptions((path: string) => ({
   query: () => lsp.ListSymbols(path),
 }));
 export const symbolsQuery = defineQueryOptions((query: string) => ({
-  key: ["lsp", "symbols", query],
+  key: [...keys.lsp, "symbols", query],
   query: () => lsp.FindSymbols(query, 50),
 }));
 
@@ -225,13 +247,13 @@ export const ownRootsQuery = defineQueryOptions({
   query: () => graph.ListOwnRoots(),
 });
 export const graphDefaultsQuery = defineQueryOptions({
-  key: ["graph", "defaults"],
+  key: [...keys.graph, "defaults"],
   query: () => graph.Defaults(),
 });
 
 // search
 export const fileSearchQuery = defineQueryOptions(({ query, limit }: { query: string; limit: number }) => ({
-  key: ["search", "files", query, limit],
+  key: [...keys.search, "files", query, limit],
   query: () => search.SearchFiles(query, limit),
 }));
 
@@ -249,22 +271,18 @@ export const wikiSearchQuery = defineQueryOptions((term: string) => ({
   query: () => wiki.SearchPages(term),
 }));
 export const notesQuery = defineQueryOptions({ key: [...keys.wiki, "notes"], query: () => wiki.ListNotes() });
-export const noteQuery = defineQueryOptions((version: string) => ({
-  key: [...keys.wiki, "note", version],
-  query: () => wiki.ReadNote(version),
-}));
 export const lexiconQuery = defineQueryOptions((cls: string) => ({
   key: [...keys.wiki, "lexicon", cls],
   query: () => wiki.BuildLexicon(cls),
 }));
 
 // git
-export const repositoryQuery = defineQueryOptions((dir: string) => ({
-  key: [...keys.git(dir), "repository"],
-  query: () => git.FindRepository(dir),
-}));
+export const repositoriesQuery = defineQueryOptions({
+  key: [...keys.gits, "repositories"],
+  query: () => git.ListRepositories(),
+});
 export const gitStatusQuery = defineQueryOptions((dir: string) => ({
-  key: [...keys.git(dir), "status"],
+  key: keys.gitStatus(dir),
   query: () => git.ReadStatus(dir),
 }));
 export const refsQuery = defineQueryOptions((dir: string) => ({
@@ -303,10 +321,7 @@ export const environmentQuery = defineQueryOptions({
 export const agentsQuery = defineQueryOptions({ key: [...keys.agents, "list"], query: () => agent.ListAgents() });
 export const nodeQuery = defineQueryOptions({ key: [...keys.agents, "node"], query: () => agent.DescribeNode() });
 export const tasksQuery = defineQueryOptions({ key: ["mcp", "tasks"], query: () => mcp.ListTasks() });
-export const accessQuery = defineQueryOptions({
-  key: ["mcp", "access"],
-  query: async () => ({ url: await mcp.ReadURL(), token: await mcp.ReadToken() }),
-});
+export const accessQuery = defineQueryOptions({ key: ["mcp", "access"], query: () => mcp.ResolveAccess() });
 
 // Publish. A listing's key is "" for the mod's own listing.
 export const listingsQuery = defineQueryOptions((modId: string) => ({
@@ -343,11 +358,18 @@ export const changeNotesQuery = defineQueryOptions(({ modId, key }: { modId: str
   key: [...keys.release(modId), "change-notes", key],
   query: () => steam.ListChangeNotes(modId, key),
 }));
-export const dlcQuery = defineQueryOptions({ key: ["release", "dlc"], query: () => steam.ListDLC() });
-export const tagsQuery = defineQueryOptions({ key: ["release", "tags"], query: () => steam.ListTags() });
-export const rulesQuery = defineQueryOptions({ key: ["release", "rules"], query: () => steam.ListRules() });
-export const steamStatusQuery = defineQueryOptions({ key: ["release", "steam"], query: () => steam.DescribeSteam() });
+export const dlcQuery = defineQueryOptions({ key: [...keys.releases, "dlc"], query: () => steam.ListDLC() });
+export const tagsQuery = defineQueryOptions({ key: [...keys.releases, "tags"], query: () => steam.ListTags() });
+export const rulesQuery = defineQueryOptions({ key: [...keys.releases, "rules"], query: () => steam.ListRules() });
+export const steamStatusQuery = defineQueryOptions({
+  key: [...keys.releases, "steam"],
+  query: () => steam.DescribeSteam(),
+});
 export const htmlQuery = defineQueryOptions((bbcode: string) => ({
-  key: ["release", "html", bbcode],
+  key: [...keys.releases, "html", bbcode],
   query: () => steam.ToHTML(bbcode),
+}));
+export const bbcodeQuery = defineQueryOptions((html: string) => ({
+  key: [...keys.releases, "bbcode", html],
+  query: () => steam.ToBBCode(html),
 }));

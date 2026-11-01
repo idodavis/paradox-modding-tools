@@ -4,27 +4,25 @@ import { computed, shallowRef } from "vue";
 import { useMutation, useQuery } from "@pinia/colada";
 import { Dialogs } from "@wailsio/runtime";
 
+import { confirm } from "../lib/feedback";
 import { describeLexicon, installLine, toSentence } from "../lib/format";
 import { detectedInstallsQuery, installsQuery, readyInstallsQuery, stateQuery } from "../queries";
-import ConfirmModal from "./ConfirmModal.vue";
 import FileSelector from "./FileSelector.vue";
 import * as workspace from "@services/workspace/service";
 
 const installId = defineModel<string>({ required: true });
 const { gameId } = defineProps<{ gameId: string }>();
 
-const confirm = useOverlay().create(ConfirmModal);
 const folder = shallowRef("");
 const title = shallowRef("");
 const version = shallowRef("");
 
-const { data: allInstalls } = useQuery(installsQuery);
+const { data: installs } = useQuery(() => installsQuery(gameId));
 const { data: ready } = useQuery(readyInstallsQuery);
 const { data: state } = useQuery(stateQuery);
 const { data: detected } = useQuery(() => ({ ...detectedInstallsQuery(gameId), enabled: !!gameId }));
-const installs = computed(() => allInstalls.value?.filter((install) => install.game === gameId) ?? []);
 const items = computed(() =>
-  installs.value.map((install) => ({
+  (installs.value ?? []).map((install) => ({
     value: install.id,
     label: install.name,
     description: install.path,
@@ -33,7 +31,7 @@ const items = computed(() =>
 );
 // the picked install's version and scan; the counts are known only for the install of the open workspace
 const scanLine = computed(() => {
-  const install = installs.value.find((one) => one.id === installId.value);
+  const install = installs.value?.find((one) => one.id === installId.value);
   if (!install) return "";
   const line = `${toSentence(installLine("", install.version, install.scannedAt))}.`;
   const open = state.value?.open && state.value.install.id === install.id ? state.value : undefined;
@@ -130,7 +128,7 @@ async function removeInstall(id: string): Promise<void> {
             <span class="text-12 font-medium">{{ install.name }} {{ install.version }}</span>
             <span class="truncate font-mono text-12 text-dimmed">{{ install.path }}</span>
           </div>
-          <UBadge v-if="installs.some((one) => one.path === install.path)" label="Added" />
+          <UBadge v-if="installs?.some((one) => one.path === install.path)" label="Added" />
           <UButton
             v-else
             label="Add"

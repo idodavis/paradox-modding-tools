@@ -11,7 +11,7 @@ import { groupBy } from "es-toolkit";
 import { shallowRef, triggerRef } from "vue";
 
 import * as searchApi from "@services/search/service";
-import type { Location } from "@services/lsp/models";
+import type { Site } from "@services/lsp/models";
 import type { Hits, Query } from "@services/search/models";
 
 /** How the search of the window that started it stands, sent on the channel every window hears. */
@@ -94,14 +94,14 @@ export const useSearchStore = defineStore("search", () => {
   };
 
   /** Lists places as the results under the given title, as a name's references, in place of a search's hits. */
-  const showReferences = (heading: string, locations: Location[]): void => {
+  const showReferences = (heading: string, sites: Site[]): void => {
     started = false;
     void searchApi.StopSearch();
     query.value = null;
     title.value = heading;
     running.value = false;
     capped.value = false;
-    files.value = Object.values(groupBy(locations, (location) => location.place.key)).flatMap(([first, ...rest]) =>
+    files.value = Object.values(groupBy(sites, (site) => site.place.key)).flatMap(([first, ...rest]) =>
       first ? [{ place: first.place, hits: [first, ...rest] }] : [],
     );
     sendResults({ reset: true, hits: files.value });

@@ -11,7 +11,6 @@ const {
   level = "",
   message,
   detail = "",
-  check = "",
   mono = false,
   dense = false,
   selected = false,
@@ -22,8 +21,6 @@ const {
   message: string;
   /** The second line, after the message when dense. */
   detail?: string;
-  /** The name of the check that found it, shown as a chip. */
-  check?: string;
   /** The second line is a path, in the mono font. */
   mono?: boolean;
   dense?: boolean;
@@ -65,8 +62,7 @@ const file = computed(() => detail.slice(folder.value.length));
       <span :title="message" :class="dense ? 'min-w-0 truncate' : 'line-clamp-2 text-13 break-words text-highlighted'">
         <slot name="message">{{ message }}</slot>
       </span>
-      <span v-if="detail || check || $slots.detail" class="flex min-w-0 items-center gap-1.5">
-        <UBadge v-if="check" :label="check" color="neutral" variant="subtle" size="sm" class="shrink-0" />
+      <span v-if="detail || $slots.detail" class="flex min-w-0 items-center gap-1.5">
         <slot name="detail">
           <span
             v-if="detail"

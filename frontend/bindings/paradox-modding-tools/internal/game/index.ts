@@ -5,6 +5,5 @@ export type {
     CoatStrength,
     DetectedInstall,
     Game,
-    RGBA,
     WidgetType
 } from "./models.js";

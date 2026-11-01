@@ -19,15 +19,17 @@ import { computed, shallowRef, useTemplateRef, watch } from "vue";
 
 import type { Place } from "@services/workspace/models";
 import { fileSearchQuery, tasksQuery } from "../queries";
-import { useAgentStore, type Change, type Entry, type Session } from "../stores/agent";
+import { useAgentStore, type Entry, type Session } from "../stores/agent";
+import type { FileEdit } from "../stores/edits";
+import { useToolViewStore } from "../stores/toolView";
 import CompareView from "./CompareView.vue";
 
 /** A Tool is a tool call's title as the transcript shows it, and PMT's name after it when it is PMT's own. */
 type Tool = { text: string; suffix: string };
 /** A Url is a link split around its host, and whether the host is written with look-alike letters. */
 type Url = { before: string; host: string; after: string; lookalike: boolean };
-/** A Part is one entry of the transcript with what its view reads from it. */
-type Part = { entry: Entry; tool?: Tool; link?: Url };
+/** A ShownEntry is one entry of the transcript with what its view reads from it. */
+type ShownEntry = { entry: Entry; tool?: Tool; link?: Url };
 /** A SelectOption is one of the agent's settings whose value is one of a list, such as its model. */
 type SelectOption = Extract<SessionConfigOption, { type: "select" }>;
 /** A Label is the name a group of a setting's values is listed under. */
@@ -57,6 +59,7 @@ const FRAMES = {
 };
 
 const agent = useAgentStore();
+const toolView = useToolViewStore();
 const { data: tasks } = useQuery(tasksQuery);
 const box = useTemplateRef("box");
 const text = shallowRef("");
@@ -69,7 +72,7 @@ const { data: places } = useQuery(() => ({
   ...fileSearchQuery({ query: search.value, limit: 30 }),
   enabled: picking.value,
 }));
-const comparing = shallowRef<Change | null>(null);
+const comparing = shallowRef<FileEdit | null>(null);
 // the answer just copied, whose button shows a tick for a moment
 const copied = shallowRef("");
 const { start: clearCopied } = useTimeoutFn(() => (copied.value = ""), 1500, { immediate: false });
@@ -97,6 +100,10 @@ const placeholder = computed(() =>
     ? `Ask ${session.agent.name}, type @ to add a file or / for a command`
     : `Ask ${session.agent.name}, or type @ to add a file`,
 );
+// the workspace's files the file list offers
+const fileGroups = computed(() => [
+  { id: "files", items: (places.value ?? []).map((place) => ({ label: place.rel, onSelect: () => pick(place) })) },
+]);
 // the agent's commands, as the command list shows them: each on one line, its description dimmed after its name
 const commands = computed(() => [
   {
@@ -298,7 +305,7 @@ function stripControls(output: string): string {
         :ui="{ root: 'gap-3.5' }"
       >
         <template #content="{ message }">
-          <template v-for="{ entry, tool, link } in message.parts as Part[]" :key="entry.id">
+          <template v-for="{ entry, tool, link } in message.parts as ShownEntry[]" :key="entry.id">
             <div v-if="entry.kind === 'user'" class="flex flex-col items-end gap-1.5">
               <span class="text-13 leading-5 whitespace-pre-wrap">{{ entry.text }}</span>
               <span
@@ -335,7 +342,7 @@ function stripControls(output: string): string {
                   :key="terminal"
                   class="max-h-60 overflow-auto rounded-sm bg-(--bg-0) px-2 py-1.5 font-mono text-11 leading-4.5 text-toned"
                   >{{ stripControls(session.terminals[terminal] ?? "") }}</pre>
-                <span v-for="change in entry.changes" :key="change.path" class="flex items-center gap-2">
+                <span v-for="change in entry.edits" :key="change.path" class="flex items-center gap-2">
                   <span class="truncate font-mono text-11">{{ change.label }}</span>
                   <template v-if="change.patch">
                     <span class="text-11 text-success">+{{ change.added }}</span>
@@ -442,14 +449,14 @@ function stripControls(output: string): string {
         <!-- an answer of the agent's can be copied; the other entries have no actions -->
         <template #actions="{ message }">
           <UButton
-            v-if="(message.parts as Part[])[0]?.entry.kind === 'agent'"
+            v-if="(message.parts as ShownEntry[])[0]?.entry.kind === 'agent'"
             :icon="copied === message.id ? 'i-lucide-check' : 'i-lucide-copy'"
             variant="ghost"
             color="neutral"
             size="xs"
             square
             aria-label="Copy"
-            @click="copyAnswer((message.parts as Part[])[0]!.entry)"
+            @click="copyAnswer((message.parts as ShownEntry[])[0]!.entry)"
           />
         </template>
       </UChatMessages>
@@ -486,15 +493,18 @@ function stripControls(output: string): string {
         @submit="send"
       >
         <template #header>
-          <div v-if="(agent.chip && !agent.chipLeftOut) || files.length" class="flex flex-wrap gap-1.5">
+          <div v-if="toolView.promptChip || files.length" class="flex flex-wrap gap-1.5">
             <span
-              v-if="agent.chip && !agent.chipLeftOut"
+              v-if="toolView.promptChip"
               class="flex h-5.5 items-center gap-1.5 rounded-sm bg-accented ps-1.75 pe-1 text-11"
             >
-              <UIcon :name="agent.chip.path ? 'i-lucide-file' : 'i-lucide-scan-text'" class="size-3 text-dimmed" />
-              <span :class="agent.chip.path && 'font-mono'">{{ agent.chip.label }}</span>
-              <span v-if="agent.chip.startLine" class="text-dimmed"
-                >{{ agent.chip.startLine }}–{{ agent.chip.endLine }}</span
+              <UIcon
+                :name="toolView.promptChip.path ? 'i-lucide-file' : 'i-lucide-scan-text'"
+                class="size-3 text-dimmed"
+              />
+              <span :class="toolView.promptChip.path && 'font-mono'">{{ toolView.promptChip.label }}</span>
+              <span v-if="toolView.promptChip.startLine" class="text-dimmed"
+                >{{ toolView.promptChip.startLine }}–{{ toolView.promptChip.endLine }}</span
               >
               <UButton
                 icon="i-lucide-x"
@@ -502,7 +512,7 @@ function stripControls(output: string): string {
                 size="xs"
                 square
                 aria-label="Leave it out"
-                @click="agent.chipLeftOut = true"
+                @click="toolView.chipLeftOut = true"
               />
             </span>
             <span
@@ -529,12 +539,7 @@ function stripControls(output: string): string {
             <template #content>
               <UCommandPalette
                 v-model:search-term="term"
-                :groups="[
-                  {
-                    id: 'files',
-                    items: (places ?? []).map((place) => ({ label: place.rel, onSelect: () => pick(place) })),
-                  },
-                ]"
+                :groups="fileGroups"
                 placeholder="Find a file of the workspace"
                 class="h-72 w-96"
               />

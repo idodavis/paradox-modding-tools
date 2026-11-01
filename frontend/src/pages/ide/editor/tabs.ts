@@ -1,7 +1,6 @@
-/** Tab ids and what they open, with the views each file format offers. */
+/** Tab ids and what they open, with how each file format is shown and its icon. */
 import type { Format } from "@internal/files/models";
 import type { Place } from "@services/workspace/models";
-import type { View } from "../../../stores/editor";
 import animIcon from "../fileicons/paradox-anim.svg?url";
 import assetIcon from "../fileicons/paradox-asset.svg?url";
 import audioIcon from "../fileicons/paradox-audio.svg?url";
@@ -36,22 +35,22 @@ export type TabTarget =
 /** The pattern of a diff tab's id. */
 const DIFF = new RegExp(`^diff:(${SIDES.join("|")})(?:@([0-9a-f]+))?:([^:]*):(.+)$`, "s");
 
-/** VIEWS holds the views and the icon of each file format. */
-export const VIEWS: Readonly<Record<Format, { views: readonly View[]; icon: string }>> = {
-  "": { views: ["code"], icon: textIcon },
-  script: { views: ["code"], icon: scriptIcon },
-  gui: { views: ["code", "visual", "split"], icon: guiIcon },
-  asset: { views: ["code"], icon: assetIcon },
-  font: { views: ["code"], icon: fontIcon },
-  gfx: { views: ["code"], icon: gfxIcon },
-  localization: { views: ["code"], icon: locIcon },
-  image: { views: ["image"], icon: textureIcon },
-  "web-image": { views: ["image"], icon: textureIcon },
-  table: { views: ["code"], icon: csvIcon },
-  descriptor: { views: ["code"], icon: modIcon },
-  shader: { views: ["code"], icon: shaderIcon },
-  text: { views: ["code"], icon: textIcon },
-  binary: { views: [], icon: binaryIcon },
+/** VIEWS holds how each file format is shown, as code or as an image, or not at all for null, and its icon. */
+export const VIEWS: Readonly<Record<Format, { view: "code" | "image" | null; icon: string }>> = {
+  "": { view: "code", icon: textIcon },
+  script: { view: "code", icon: scriptIcon },
+  gui: { view: "code", icon: guiIcon },
+  asset: { view: "code", icon: assetIcon },
+  font: { view: "code", icon: fontIcon },
+  gfx: { view: "code", icon: gfxIcon },
+  localization: { view: "code", icon: locIcon },
+  image: { view: "image", icon: textureIcon },
+  "web-image": { view: "image", icon: textureIcon },
+  table: { view: "code", icon: csvIcon },
+  descriptor: { view: "code", icon: modIcon },
+  shader: { view: "code", icon: shaderIcon },
+  text: { view: "code", icon: textIcon },
+  binary: { view: null, icon: binaryIcon },
 };
 
 /** EXTENSION_ICONS holds the icons of the extensions that have one of their own, by the format they are in. */
@@ -78,20 +77,6 @@ export function findIcon(place: Place): string {
 export function listIcons(): string[] {
   const extensions = Object.values(EXTENSION_ICONS).flatMap((icons) => Object.values(icons));
   return [...new Set([...Object.values(VIEWS).map(({ icon }) => icon), ...extensions])];
-}
-
-/** VIEW_ROWS holds each view's label and icon, in the order a tab offers them. */
-export const VIEW_ROWS: readonly { view: View; label: string; icon: string }[] = [
-  { view: "code", label: "Code", icon: "i-lucide-code" },
-  { view: "split", label: "Split", icon: "i-lucide-columns-2" },
-  { view: "visual", label: "Visual", icon: "i-lucide-eye" },
-  { view: "image", label: "Image", icon: "i-lucide-image" },
-];
-
-/** listViews lists the views a file can show. A file the Visual view can draw also gets Visual and Split. */
-export function listViews(place: Place, drawable: boolean): View[] {
-  const more: View[] = drawable ? ["visual", "split"] : [];
-  return [...new Set([...VIEWS[place.format].views, ...more])];
 }
 
 /** parseTab decodes a tab id into what it opens. Any id that is not a diff's is a file's. */

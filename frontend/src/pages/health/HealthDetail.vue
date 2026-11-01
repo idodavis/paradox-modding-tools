@@ -6,7 +6,8 @@
 import { computed, shallowRef } from "vue";
 import { useQuery } from "@pinia/colada";
 import { groupBy, isEqual, maxBy, sumBy } from "es-toolkit";
-import type { Finding, FindingSite } from "@services/health/models";
+import type { Finding } from "@services/health/models";
+import type { Site } from "@services/lsp/models";
 import { compareWithGame } from "../../app/commands";
 import {
   describeCount,
@@ -18,7 +19,6 @@ import {
   REASONS,
   splitFinding,
   splitMessage,
-  toRepeatKey,
 } from "../../lib/format";
 import { codesQuery, comparedQuery, readersQuery, snippetsQuery } from "../../queries";
 import { useWorkspaceStore } from "../../stores/workspace";
@@ -30,14 +30,8 @@ import HealthFrame from "./HealthFrame.vue";
 import HealthSection from "./HealthSection.vue";
 import HealthSite, { openSite } from "./HealthSite.vue";
 
-const {
-  finding,
-  findings = [],
-  order = [],
-} = defineProps<{
+const { finding, order = [] } = defineProps<{
   finding: Finding;
-  /** The view's findings, among them the finding's repeats. */
-  findings?: Finding[];
   /** The load order the finding was checked in. */
   order?: string[];
 }>();
@@ -59,20 +53,13 @@ const mark = computed(() => LEVELS[finding.level]);
  * use the name.
  */
 const isMissing = computed(() => !!code.value?.elsewhere);
-/** The finding and its repeats at other places. */
-const repeats = computed(() => {
-  const key = toRepeatKey(finding, codes.value);
-  const same = findings.filter((one) => toRepeatKey(one, codes.value) === key);
-  return same.length ? same : [finding];
-});
 /** The line under the title, after the level and the check: what the name is, and how often it is used or found. */
 const subtitle = computed(() => {
-  const count = repeats.value.length;
-  const frequency = isMissing.value ? `used ${describeCount(count)} times` : plural(count, "place");
-  return [finding.database, count > 1 ? frequency : ""].filter(Boolean).join(" · ");
+  const frequency = isMissing.value ? `used ${describeCount(finding.count)} times` : plural(finding.count, "place");
+  return [finding.database, finding.count > 1 ? frequency : ""].filter(Boolean).join(" · ");
 });
-/** The places drawn as code: the first repeat's. The other repeats' places are listed as lines. */
-const sites = computed(() => repeats.value[0]?.sites ?? []);
+/** The places drawn as code: the finding's own. The places of the findings folded into it are listed as lines. */
+const sites = computed(() => finding.sites ?? []);
 /** The file the finding is about, or undefined for a finding of a name. */
 const file = computed(() => (finding.database === "file" ? sites.value[0]?.place : undefined));
 const copies = computed(() => sites.value.filter((site) => site.defines?.length));
@@ -81,14 +68,9 @@ const kept = computed(() => places.value.filter((site) => site.kept));
 const ignored = computed(() => places.value.filter((site) => !site.kept));
 /** Whether the game uses one of a file's copies, so each copy says whether it is used. */
 const hasKeptCopy = computed(() => copies.value.some((copy) => copy.kept));
-/** The other repeats' places by file, each file named "this file" where it is the first place's, else by its path. */
+/** The folded places by file, each file named "this file" where it is the first place's, else by its path. */
 const others = computed(() =>
-  Object.values(
-    groupBy(
-      repeats.value.slice(1).flatMap((one) => one.sites ?? []),
-      (site) => site.place.path,
-    ),
-  ).map((group) => ({
+  Object.values(groupBy(finding.repeats ?? [], (site) => site.place.path)).map((group) => ({
     file: group[0]?.place.path === places.value[0]?.place.path ? "this file" : (group[0]?.place.rel ?? ""),
     sites: group,
   })),
@@ -97,7 +79,11 @@ const others = computed(() =>
 const replacing = computed(() =>
   finding.code === "removed-names" ? sites.value.find((site) => site.kept) : undefined,
 );
-const move = computed(() => describeMove(order, finding.order ?? []));
+/**
+ * Whether the finding suggests a load order other than the current one. Go moves the one beaten mod after the
+ * winner.
+ */
+const reorders = computed(() => !!finding.order?.length && !isEqual(order, finding.order));
 /**
  * Why the game keeps the winner's copy of a contested name, as parts: the long form of the winner's reason, filled
  * with the folder and the files of the copies. It is empty for a file, a finding with no winner, and a reason with
@@ -124,6 +110,7 @@ const uses = computed(() => (finding.uses ?? []).filter((use) => matchQuery(uses
 const shownUses = computed(() => (allUses.value || usesFilter.value ? uses.value : uses.value.slice(0, USES_SHOWN)));
 const mostUses = computed(() => maxBy(finding.uses ?? [], (use) => use.count)?.count ?? 1);
 const hiddenUses = computed(() => uses.value.slice(shownUses.value.length));
+const hiddenUseCount = computed(() => sumBy(hiddenUses.value, (use) => use.count));
 /** The names the kept file leaves out that are not among the names still used. */
 const unused = computed(() => (finding.removed ?? []).filter((one) => !finding.uses?.some((use) => use.name === one)));
 
@@ -151,30 +138,8 @@ const {
 }));
 
 /** describeSite returns the label of one side of the comparison. */
-function describeSite(site: FindingSite): string {
+function describeSite(site: Site): string {
   return `${workspace.originName(site.place.origin)} · ${site.place.rel}`;
-}
-
-/**
- * describeMove returns the one move that turns the current load order into the suggested one. It returns undefined
- * unless exactly one mod moves.
- */
-function describeMove(
-  current: string[],
-  suggested: string[],
-): { mod: string; before: boolean; other: string } | undefined {
-  if (!suggested.length || isEqual(current, suggested)) return undefined;
-  const mod = suggested.find((id) =>
-    isEqual(
-      current.filter((one) => one !== id),
-      suggested.filter((one) => one !== id),
-    ),
-  );
-  if (!mod) return undefined;
-  const position = suggested.indexOf(mod);
-  const before = position < current.indexOf(mod);
-  const other = suggested[before ? position + 1 : position - 1];
-  return other ? { mod, before, other } : undefined;
 }
 </script>
 
@@ -218,14 +183,13 @@ function describeMove(
     <HealthSection v-if="why.length" :title="`Why ${finding.facts?.winner}'s copy wins`">
       <p class="max-w-[74ch] text-13 leading-5.5 text-toned"><FactText :parts="why" /></p>
     </HealthSection>
-    <HealthSection v-if="move" title="A load order that fixes it">
+    <HealthSection v-if="reorders" title="A load order that fixes it">
       <template #actions>
         <UButton label="Try this order" @click="emit('preview', finding.order ?? [])" />
       </template>
       <p class="max-w-[74ch] text-13 leading-5.5 text-toned">
-        Put <b class="font-semibold text-highlighted">{{ workspace.originName(move.mod) }}</b>
-        {{ move.before ? "before" : "after" }} {{ workspace.originName(move.other) }}. The preview shows what else would
-        change hands before you keep the order.
+        Put <b class="font-semibold text-highlighted">{{ finding.facts?.beaten }}</b> after {{ finding.facts?.winner }}.
+        The preview shows what else would change hands before you keep the order.
       </p>
     </HealthSection>
     <HealthSection
@@ -235,7 +199,7 @@ function describeMove(
     >
       <HealthSite
         v-for="(site, index) in finding.defined"
-        :key="`${site.place.path}:${site.range.startLineNumber}`"
+        :key="`${site.place.path}:${site.line}`"
         :site="site"
         :snippet="definitions?.[index]"
       />
@@ -243,7 +207,7 @@ function describeMove(
     <HealthSection
       v-if="places.length === 1"
       :title="isMissing ? `Where it's used` : 'Where it is'"
-      :count="repeats.length > 1 ? repeats.length : undefined"
+      :count="finding.count > 1 ? finding.count : undefined"
       @open="places[0] && openSite(places[0])"
     >
       <HealthSite v-for="site in places" :key="site.place.path" :site="site" :snippet="snippets?.[0]" />
@@ -251,12 +215,12 @@ function describeMove(
         <span class="me-1">Also in {{ group.file }} at {{ group.sites.length === 1 ? "line" : "lines" }}</span>
         <button
           v-for="site in group.sites"
-          :key="`${site.range.startLineNumber}:${site.range.startColumn}`"
+          :key="`${site.line}:${site.range.startColumn}`"
           type="button"
           class="rounded-sm bg-elevated px-1.5 font-mono text-11.5 text-toned hover:text-highlighted"
           @click="openSite(site)"
         >
-          {{ site.range.startLineNumber }}
+          {{ site.line }}
         </button>
       </div>
     </HealthSection>
@@ -268,7 +232,7 @@ function describeMove(
       >
         <HealthSite
           v-for="site in kept"
-          :key="`${site.place.path}:${site.range.startLineNumber}`"
+          :key="`${site.place.path}:${site.line}`"
           :site="site"
           :snippet="snippets?.[places.indexOf(site)]"
         />
@@ -281,7 +245,7 @@ function describeMove(
       >
         <HealthSite
           v-for="site in ignored"
-          :key="`${site.place.path}:${site.range.startLineNumber}`"
+          :key="`${site.place.path}:${site.line}`"
           :site="site"
           :snippet="snippets?.[places.indexOf(site)]"
           ignored
@@ -296,7 +260,7 @@ function describeMove(
     >
       <HealthSite
         v-for="(site, index) in places"
-        :key="`${site.place.path}:${site.range.startLineNumber}`"
+        :key="`${site.place.path}:${site.line}`"
         :site="site"
         :snippet="snippets?.[index]"
       />
@@ -319,13 +283,10 @@ function describeMove(
         >
           <span class="flex min-w-0 grow flex-col items-start">
             <span class="max-w-full truncate font-mono text-12 text-highlighted">{{ use.name }}</span>
-            <button
-              type="button"
-              class="max-w-full truncate text-start font-mono text-11 text-dimmed hover:underline"
-              @click="openSite(use.first)"
-            >
-              first used in {{ use.first.place.rel }}:{{ use.first.range.startLineNumber }}
-            </button>
+            <span class="flex max-w-full items-center gap-1 text-11 text-dimmed">
+              first used in
+              <SourceLink :place="use.first.place" :line="use.first.line" />
+            </span>
           </span>
           <span class="flex shrink-0 items-center gap-2 text-12 font-medium text-highlighted tabular-nums">
             <span
@@ -342,13 +303,7 @@ function describeMove(
           @click="allUses = true"
         >
           <UIcon name="i-lucide-chevron-down" class="size-3.5" />
-          Show {{ describeCount(hiddenUses.length) }} more, used
-          {{
-            plural(
-              sumBy(hiddenUses, (use) => use.count),
-              "time",
-            )
-          }}
+          Show {{ describeCount(hiddenUses.length) }} more, used {{ plural(hiddenUseCount, "time") }}
         </button>
         <p v-if="!uses.length" class="text-12 text-dimmed">No name matches.</p>
       </div>
@@ -394,10 +349,10 @@ function describeMove(
     <HealthSection v-if="readers?.length" title="Where it's read" :count="readers.length">
       <div class="flex flex-col items-start gap-1">
         <SourceLink
-          v-for="reader in readers"
-          :key="`${reader.place.path}:${reader.range.startLineNumber}:${reader.range.startColumn}`"
+          v-for="(reader, index) in readers"
+          :key="`${reader.place.path}:${reader.line}:${index}`"
           :place="reader.place"
-          :line="reader.range.startLineNumber"
+          :line="reader.line"
         />
       </div>
     </HealthSection>

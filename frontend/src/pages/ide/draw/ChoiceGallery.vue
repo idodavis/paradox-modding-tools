@@ -1,5 +1,5 @@
 <!--
-  The one picker of the Visual view's panel: the current choice with its name and place, which opens a search and a
+  The one picker of Visual's panel: the current choice with its name and place, which opens a search and a
   grid of every choice, for a widget's pictures and a coat layer's texture and colors alike.
 -->
 <script setup lang="ts">
@@ -9,7 +9,7 @@ import { computed, shallowRef } from "vue";
 import { matchQuery } from "../../../lib/format";
 import { fileUrl } from "../../../queries";
 
-/** One choice: its value, its name, and the image file or the color that shows it. */
+/** A GalleryChoice is one choice: its value, its name, and the image file or the color that shows it. */
 export type GalleryChoice = { value: string; label: string; path?: string; color?: string };
 
 const {

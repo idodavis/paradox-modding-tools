@@ -7,7 +7,7 @@
 import { computed } from "vue";
 import { Handle, Position } from "@vue-flow/core";
 import type { Edge } from "@services/graph/models";
-import { plural } from "../../lib/format";
+import { describeCount } from "../../lib/format";
 import { fileUrl } from "../../queries";
 import OriginChip from "../../ui/OriginChip.vue";
 import ConditionList from "./ConditionList.vue";
@@ -39,21 +39,27 @@ const caption = computed(() => {
   if (outline.value) return "Beyond depth, expand to load";
   return node.value.title || (hidden.value ? "hidden event" : node.value.what);
 });
-/** Describes a row's target: the one node it fires, a message by its title, or how many it fires. */
+/**
+ * describeTarget describes a row's target: the one node it fires, a message by its title, or how many it fires, by
+ * kind.
+ */
 function describeTarget(fires: Edge[]): string {
   if (fires.length > 1) {
     const database = fires[0].to.split(":")[0];
-    return plural(fires.length, labels[database]?.replace(/s$/, "") ?? "entry");
+    return `${describeCount(fires.length)} ${labels[database] ?? "entries"}`;
   }
   return fires[0].title || fires[0].to.slice(fires[0].to.indexOf(":") + 1);
 }
 
-/** Describes what a row's firing is written in where no block decides it: its first block, else its effect. */
+/**
+ * describePlain describes what a row's firing is written in where no block decides it: its first block, else its
+ * effect.
+ */
 function describePlain(row: Row): string {
   return row.fires[0]?.steps?.[0]?.key ?? row.fires[0]?.effect ?? "";
 }
 
-/** Opens the node's "N more" fold. The click stops there, so it does not also select the node. */
+/** openMore opens the node's "N more" fold. The click stops there, so it does not also select the node. */
 function openMore(event: MouseEvent): void {
   event.stopPropagation();
   emit("fold", `more:${node.value.id}`);
@@ -93,7 +99,7 @@ function openMore(event: MouseEvent): void {
           ><UIcon name="i-lucide-cog" class="size-2.5" />game</span
         >
         <span class="grow" />
-        <OriginChip :origin="node.place.origin" dot />
+        <OriginChip :origin="node.site.place.origin" dot />
       </span>
       <span class="truncate font-mono text-12 leading-4.25 font-semibold text-(--fg-1)">{{ node.name }}</span>
       <span v-if="node.title && node.display === 'window'" class="truncate text-[11.5px] leading-3.75 text-(--fg-2)">{{
@@ -169,7 +175,7 @@ function openMore(event: MouseEvent): void {
     >
       <UIcon v-if="hidden || !scene" :name="icon" class="size-4.5" />
       <OriginChip
-        :origin="node.place.origin"
+        :origin="node.site.place.origin"
         dot
         class="absolute end-1.5 top-1.5 rounded-full shadow-[0_0_0_2px_rgb(14_16_20/0.6)]"
       />
@@ -200,7 +206,7 @@ function openMore(event: MouseEvent): void {
     ]"
     class="flex h-6.5 w-44 items-center gap-1.5 overflow-hidden rounded-full border border-accented ps-2 pe-2.5 font-mono text-11 whitespace-nowrap"
   >
-    <OriginChip :origin="node.place.origin" dot />
+    <OriginChip :origin="node.site.place.origin" dot />
     <UIcon :name="drawn.look.icon" class="size-3 shrink-0" :style="{ color: drawn.look.color }" />
     <span class="truncate">{{ node.name }}</span>
     <UIcon v-if="node.hardcoded" name="i-lucide-cog" class="ms-auto size-3 shrink-0 text-dimmed" />

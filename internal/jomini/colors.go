@@ -1,6 +1,6 @@
 // colors.go reads the color blocks script writes and writes a color back the way the block wrote it.
 
-package game
+package jomini
 
 import (
 	"cmp"
@@ -8,8 +8,6 @@ import (
 	"math"
 	"slices"
 	"strconv"
-
-	"paradox-modding-tools/internal/jomini"
 )
 
 // A Color is one way script writes a color, such as an rgb block or a hex number.
@@ -21,13 +19,13 @@ type Color struct {
 	Parts float64 // what the other parts are out of; 0 means 1
 }
 
-// tagHSV360 is the tag of a color written as a hue out of 360, then a saturation and a value out of 100.
-const tagHSV360 = "hsv360"
+// TagHSV360 is the tag of a color written as a hue out of 360, then a saturation and a value out of 100.
+const TagHSV360 = "hsv360"
 
 // Colors lists the ways script writes a color. A part of rgb, or of a block with no tag, is out of 255, or out of
 // 1 when red, green and blue are each at most 1. A fourth part is the alpha.
 var Colors = []Color{
-	{Tag: "rgb"}, {Tag: ""}, {Tag: "hsv", HSV: true}, {Tag: tagHSV360, HSV: true, Hue: 360, Parts: 100}, {Tag: "hex", Hex: true},
+	{Tag: "rgb"}, {Tag: ""}, {Tag: "hsv", HSV: true}, {Tag: TagHSV360, HSV: true, Hue: 360, Parts: 100}, {Tag: "hex", Hex: true},
 }
 
 // An RGBA is a color as red, green, blue and alpha channels, each from 0 to 1.
@@ -73,8 +71,8 @@ func ParseColor(tag string, parts []float64) (RGBA, bool) {
 
 // ToColor returns the color a statement writes as a color block. It returns false if the statement is no color block
 // or its tag and parts make no color.
-func ToColor(tree *jomini.Tree, statement int32) (RGBA, bool) {
-	tag, parts, ok := jomini.ColorParts(tree, statement)
+func ToColor(tree *Tree, statement int32) (RGBA, bool) {
+	tag, parts, ok := ColorParts(tree, statement)
 	if !ok {
 		return RGBA{}, false
 	}

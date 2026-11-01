@@ -2,6 +2,8 @@
 
 package game
 
+import "paradox-modding-tools/internal/jomini"
+
 // A CoatStrength is a texture channel taken at a strength.
 type CoatStrength struct {
 	Channel  string  `json:"channel"`  // the channel (r, g, b)
@@ -38,9 +40,22 @@ type CoatSlot struct {
 
 // A CoatPlace is what one placement key does to a layer.
 type CoatPlace struct {
-	Part     string    // what it moves, sizes or turns: center, size, turn, corner or depth
+	Part     CoatPart  // what it moves, sizes or turns
 	Defaults []float64 // the values it takes where the layer writes none
 }
+
+// A CoatPart is what one placement key sets on a layer's instance. The zero CoatPart sets nothing.
+type CoatPart uint8
+
+// The parts a placement key sets: the center an emblem is placed by, the corner a sub is placed by, the size, the
+// turn and the depth.
+const (
+	CoatPartCenter CoatPart = iota + 1
+	CoatPartCorner
+	CoatPartSize
+	CoatPartTurn
+	CoatPartDepth
+)
 
 // A CoatFrame is a shape that a game's coat designer previews a coat in.
 type CoatFrame struct {
@@ -83,6 +98,24 @@ type CoatRules struct {
 	Template  CoatTemplate
 	FrameMask string   // where a named frame's mask is, with the name at %s
 	Holders   []string // the databases whose definitions take the coat of their own name where they name none
+	// PatternKey is the key of a coat's pattern, which draws under every emblem and has no instance.
+	PatternKey  string
+	InstanceKey string // the key of one placement of an emblem or a sub, and Placement's row for an emblem
+	SubKey      string // the key of a sub-coat, and Placement's row for a sub
+	ParentKey   string // the key that names the coat a coat or a sub is laid over
+	NoParent    string // the parent that names no coat
+	TextureKey  string // the key of an emblem's texture
+	MaskKey     string // the key of the pattern's regions an emblem shows in
+	TileSizeKey string // the key of an atlas' tile size in FieldFile
+	ListTag     string // the tag of a value drawn from a template list, as list "x" writes it
+}
+
+// A GameCoat is what one game does with coats of arms beyond what every game does.
+type GameCoat struct {
+	Folder    string           // where it keeps its coats, from the folder holding its stages
+	Shade     CoatShade        // how it shades every coat; the zero value shades none
+	Frames    []CoatFrame      // the frames its coat designer previews, in order
+	ColorForm jomini.ColorForm // the form PMT writes a new layer color in, the one the game's own coats use
 }
 
 // coatInstance is the instance a new emblem is written with: at the middle of the field, at half size, on one
@@ -115,14 +148,14 @@ var Coat = CoatRules{
 	Slots: []CoatSlot{{Key: "color1", Required: true}, {Key: "color2"}, {Key: "color3"}, {Key: "color4"}, {Key: "color5"}},
 	Placement: map[string]map[string]CoatPlace{
 		"instance": {
-			"position": {Part: "center", Defaults: []float64{0.5, 0.5}},
-			"scale":    {Part: "size", Defaults: []float64{1, 1}},
-			"rotation": {Part: "turn", Defaults: []float64{0}},
-			"depth":    {Part: "depth", Defaults: []float64{0}}, // CK3 01_holy_order_coas.txt:139
+			"position": {Part: CoatPartCenter, Defaults: []float64{0.5, 0.5}},
+			"scale":    {Part: CoatPartSize, Defaults: []float64{1, 1}},
+			"rotation": {Part: CoatPartTurn, Defaults: []float64{0}},
+			"depth":    {Part: CoatPartDepth, Defaults: []float64{0}}, // CK3 01_holy_order_coas.txt:139
 		},
 		"sub": {
-			"offset": {Part: "corner", Defaults: []float64{0, 0}},
-			"scale":  {Part: "size", Defaults: []float64{1, 1}},
+			"offset": {Part: CoatPartCorner, Defaults: []float64{0, 0}},
+			"scale":  {Part: CoatPartSize, Defaults: []float64{1, 1}},
 		},
 	},
 	Inputs: map[string]string{
@@ -147,38 +180,7 @@ var Coat = CoatRules{
 	FrameMask: "gfx/interface/coat_of_arms/frames/%s_mask.dds",
 	// _dynamic_definitions.info:11, common/dynasties/_dynasties.info:7, common/dynasty_houses/_dynasty_houses.info:6,
 	// Vic3 common/flag_definitions/00_flag_definitions.txt:1 ("its tag is used a COA_KEY").
-	Holders: []string{"landed_titles", "dynasties", "dynasty_houses", "country_definitions"},
-}
-
-var ck3CoatShade = CoatShade{ // game/gfx/FX/coat_of_arms
-	Texture: "gfx/coat_of_arms/coa_mask_texture.dds",
-	Overlay: CoatStrength{Channel: "b", Strength: 0.2},
-	Grain:   CoatStrength{Channel: "g", Strength: 2},
-}
-
-// ck3CoatFrames are the frames of gui/shared/coa_designer.gui, without the unit's 3D banner. Each define is named in
-// full, as common/defines/graphic/00_graphics.txt:309,319 write them in NCoatOfArms.
-var ck3CoatFrames = []CoatFrame{
-	{
-		Label: "Dynasty", Define: "NCoatOfArms|DEFAULT_DYNASTY_COA_FRAME_NAME",
-		Override: CoatOverride{
-			Frame: "NCoatOfArms|OVERRIDE_DYNASTY_COA_FRAME_NAME", Offset: "NCoatOfArms|OVERRIDE_DYNASTY_COA_FRAME_OFFSET",
-			Scale: "NCoatOfArms|OVERRIDE_DYNASTY_COA_FRAME_SCALE",
-		},
-	},
-	{
-		Label: "House", Define: "NCoatOfArms|DEFAULT_HOUSE_COA_FRAME_NAME",
-		Override: CoatOverride{
-			Frame: "NCoatOfArms|OVERRIDE_HOUSE_COA_FRAME_NAME", Offset: "NCoatOfArms|OVERRIDE_HOUSE_COA_FRAME_OFFSET",
-			Scale: "NCoatOfArms|OVERRIDE_HOUSE_COA_FRAME_SCALE",
-		},
-	},
-	{Label: "Title", Mask: "gfx/interface/coat_of_arms/title_mask.dds"},
-	{
-		Label: "Realm", Mask: "gfx/interface/icons/realm_frames/_default_mask.dds",
-		Override: CoatOverride{
-			Enabled: "NCoatOfArms|OVERRIDE_REALM_MASK_ENABLED", Offset: "NCoatOfArms|OVERRIDE_REALM_MASK_OFFSET",
-			Scale: "NCoatOfArms|OVERRIDE_REALM_MASK_SCALE",
-		},
-	},
+	Holders:    []string{"landed_titles", "dynasties", "dynasty_houses", "country_definitions"},
+	PatternKey: "pattern", InstanceKey: "instance", SubKey: "sub", ParentKey: "parent", NoParent: "none",
+	TextureKey: "texture", MaskKey: "mask", TileSizeKey: "tile_size", ListTag: "list",
 }

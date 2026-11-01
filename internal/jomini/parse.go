@@ -24,7 +24,7 @@ const (
 // A tagged block such as `rgb { … }` or `list "x"` is one value with a tag, `?=` is an operator like `=`, and a `#`
 // comment runs to the end of its line.
 func Parse(text string) *Tree {
-	tree := &Tree{Src: text, Lines: NewLines(text), Statements: []Statement{{Span: Span{End: len(text)}}}}
+	tree := NewTree(text)
 	tokens := scan(text)
 	kept := tokens[:0]
 	for _, tok := range tokens {
@@ -40,6 +40,12 @@ func Parse(text string) *Tree {
 	parseStatements(tree, kept, 0, 0)
 	tree.Statements[0].Last = int32(len(tree.Statements))
 	return tree
+}
+
+// NewTree returns the tree of a text before any script is read from it: the text, its lines and the file's own
+// statement, which holds nothing.
+func NewTree(text string) *Tree {
+	return &Tree{Src: text, Lines: NewLines(text), Statements: []Statement{{Span: Span{End: len(text)}, Last: 1}}}
 }
 
 // scan splits a text into its tokens. A quoted string is one token, quotes included.

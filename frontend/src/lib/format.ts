@@ -1,13 +1,13 @@
 /** The sentences and numbers the UI writes from facts. A name or a description from Go is shown as it is. */
 import { formatTimeAgo, type UseTimeAgoMessages } from "@vueuse/core";
-import { countBy, groupBy, sumBy } from "es-toolkit";
+import { groupBy, mapValues, sumBy } from "es-toolkit";
 
 import type { SourceState } from "@internal/schema/models";
 import type { Header } from "@internal/texture/models";
 import type { Difference } from "@services/steam/models";
-import type { State } from "@services/workspace/models";
-import type { Finding } from "@services/health/models";
-import type { Code } from "@services/lsp/models";
+import type { Mod, State } from "@services/workspace/models";
+import type { Finding, Tally } from "@services/health/models";
+import type { Code, Site } from "@services/lsp/models";
 
 const PLURALS = new Intl.PluralRules("en");
 const NUMBERS = new Intl.NumberFormat("en");
@@ -111,6 +111,15 @@ export const LEVELS: Readonly<Record<string, Level>> = {
 /** PROBLEM_LEVELS holds the levels that count as problems, the worst first. Info does not. */
 export const PROBLEM_LEVELS: readonly string[] = ["critical", "error", "warning"];
 
+/**
+ * findWorstProblem returns the row of LEVELS for the worst level of the given tally. It is undefined when that level
+ * is not a problem, and when there is no tally.
+ */
+export function findWorstProblem(tally: Tally | undefined): Level | undefined {
+  const level = tally?.worst ?? "";
+  return PROBLEM_LEVELS.includes(level) ? LEVELS[level] : undefined;
+}
+
 /** FIX_LEVELS holds the levels a mod needs a fix for, where the game loses something. A warning may be fine. */
 export const FIX_LEVELS: readonly string[] = ["critical", "error"];
 
@@ -124,8 +133,8 @@ export const TOPICS: Readonly<Record<string, string>> = {
   descriptor: "Descriptor",
 };
 
-/** LANGUAGES holds each localization language's name in English, by the folder the game keeps it in. */
-const LANGUAGES: Readonly<Record<string, string>> = {
+/** LOCALIZATION_LANGUAGES holds each localization language's name in English, by the folder the game keeps it in. */
+const LOCALIZATION_LANGUAGES: Readonly<Record<string, string>> = {
   english: "English",
   french: "French",
   german: "German",
@@ -171,7 +180,7 @@ const SEPARATOR: Part = { text: " · ", style: "" };
 
 /** describeLanguages returns languages as a select's items, named in English or else by folder. Null gives none. */
 export function describeLanguages(languages: readonly string[] | null | undefined): { label: string; value: string }[] {
-  return (languages ?? []).map((value) => ({ label: LANGUAGES[value] ?? value, value }));
+  return (languages ?? []).map((value) => ({ label: LOCALIZATION_LANGUAGES[value] ?? value, value }));
 }
 
 /** describeCount returns a count as the user reads it, such as "8" or "1,350". */
@@ -203,14 +212,23 @@ export function list(items: readonly string[]): string {
   return LISTS.format(items);
 }
 
+/** listLeftOut returns the names of the given mods that the workspace leaves out of its compatibility checks. */
+export function listLeftOut(mods: readonly Mod[]): string[] {
+  return mods.filter((mod) => mod.leftOut).map((mod) => mod.descriptor.name);
+}
+
+/** describeError returns an error's message. For a thrown value that is not an Error, it returns the value as text. */
+export function describeError(error: unknown): string {
+  return error instanceof Error ? error.message : String(error);
+}
+
 /**
  * splitError returns an error's message in two parts: its first line, which says what failed, and the lines after it,
  * at most the given count of them. Without a count it keeps every line. The second part is "" for a message of one
  * line.
  */
 export function splitError(error: unknown, count = Infinity): [summary: string, details: string] {
-  const message = error instanceof Error ? error.message : String(error);
-  const [summary = "", ...details] = message.split("\n");
+  const [summary = "", ...details] = describeError(error).split("\n");
   return [summary, details.slice(0, count).join("\n")];
 }
 
@@ -285,11 +303,6 @@ export function joinParts(parts: readonly Part[]): string {
   return parts.map((part) => part.text).join("");
 }
 
-/** diagnosticMessage fills a code's message template with a diagnostic's facts, as splitMessage does, as text. */
-export function diagnosticMessage(template: string, facts: Record<string, string | undefined>): string {
-  return joinParts(splitMessage(template, facts));
-}
-
 /**
  * splitFinding returns the message of a finding or an editor diagnostic, as parts. Where a mod the finding's mod does
  * not depend on defines the name, it is the code's elsewhere message. It is the code's id if the app does not list the
@@ -313,18 +326,18 @@ export function describeFinding(
   return joinParts(splitFinding(finding, codes));
 }
 
-/** describeTitle returns the thing a finding is about, as a part: its name, or the path of a file. */
-export function describeTitle(finding: Finding): Part[] {
+/** splitSubject returns the thing a finding is about, as a part: its name, or the path of a file. */
+export function splitSubject(finding: Finding): Part[] {
   return [{ text: finding.name, style: finding.database === "file" ? "path" : "" }];
 }
 
 /**
- * describeBrief returns the line under a finding's name in a list, as parts. It says what kind of thing the name is,
+ * splitBrief returns the line under a finding's name in a list, as parts. It says what kind of thing the name is,
  * how many names a replaced file leaves out that are still used and how often, the mod that alone defines the name,
  * and why the game keeps a copy. It is empty if the finding holds none of these.
  */
-export function describeBrief(finding: Finding): Part[] {
-  const site = finding.sites?.find((one) => one.kept) ?? finding.sites?.[0];
+export function splitBrief(finding: Finding): Part[] {
+  const site = findKeptSite(finding);
   const facts = finding.facts ?? {};
   const hasUses = !!finding.uses?.length;
   const pieces: Part[][] = [
@@ -347,38 +360,19 @@ export function describeBrief(finding: Finding): Part[] {
   return pieces.filter((piece) => piece.length).flatMap((piece, index) => [...(index ? [SEPARATOR] : []), ...piece]);
 }
 
-/**
- * toWeight returns how bad a finding is among its check's: how often the names a replaced file leaves out are still
- * used, else 1.
- */
-export function toWeight(finding: Finding): number {
-  return Number(finding.facts?.uses) || 1;
-}
-
 /** describeCheck returns the name of a check. It is the code itself if the app does not list it. */
 export function describeCheck(code: string, codes: readonly Code[] | null | undefined): string {
   return codes?.find((one) => one.id === code)?.label ?? code;
 }
 
-/** A FindingRow is a finding with its index in its list. */
-export type FindingRow = { finding: Finding; index: number };
-
-/** listFindingRows pairs each finding with its index. */
-export function listFindingRows(findings: readonly Finding[]): FindingRow[] {
-  return findings.map((finding, index) => ({ finding, index }));
+/** findLevel returns the level of a check, such as "error". It is "info" if the app does not list the check. */
+export function findLevel(code: string, codes: readonly Code[] | null | undefined): string {
+  return codes?.find((one) => one.id === code)?.level ?? "info";
 }
 
-/** listProblems returns each mod's own problems among a report's findings, by mod id. Language coverage is left out. */
-export function listProblems(findings: readonly Finding[]): Record<string, Finding[]> {
-  return groupBy(
-    findings.filter((finding) => finding.question === "health" && finding.code !== "coverage"),
-    findOwner,
-  );
-}
-
-/** toRepeatKey returns the key a finding shares with each finding of the same check, name, mod and message. */
-export function toRepeatKey(finding: Finding, codes: readonly Code[] | null | undefined): string {
-  return [finding.code, findOwner(finding), finding.name, describeFinding(finding, codes)].join("\n");
+/** findTopic returns the topic of a check, or "" if the app does not list the check. */
+export function findTopic(code: string, codes: readonly Code[] | null | undefined): string {
+  return codes?.find((one) => one.id === code)?.topic ?? "";
 }
 
 /** findOwner returns the id of the mod a finding is about. It is the first mod it concerns, else its origin. */
@@ -391,15 +385,29 @@ export function findOwner(finding: Finding): string {
  * no site says what it names instead. It is "" if there is nothing to add.
  */
 export function describeDetail(finding: Finding): string {
-  const site = finding.sites?.find((one) => one.kept) ?? finding.sites?.[0];
-  if (site) return `${site.place.rel}:${site.range.startLineNumber}`;
+  const site = findKeptSite(finding);
+  if (site) return `${site.place.rel}:${site.line}`;
   return finding.facts?.named ? `Names ${finding.facts.named}` : "";
+}
+
+/** findKeptSite returns the site of a finding that the game keeps, else its first site. It is undefined for none. */
+function findKeptSite(finding: Finding): Site | undefined {
+  return finding.sites?.find((one) => one.kept) ?? finding.sites?.[0];
 }
 
 /** toSiteKey returns the key of a finding's first site, such as "path:line". It is "" for a finding with no site. */
 export function toSiteKey(finding: Finding): string {
-  const site = finding.sites?.[0];
-  return site ? `${site.place.path}:${site.range.startLineNumber}` : "";
+  return describeSiteKey(finding.sites?.[0]);
+}
+
+/** listSiteKeys returns the keys of a finding's first site and of the sites of the findings folded into it. */
+export function listSiteKeys(finding: Finding): string[] {
+  return [finding.sites?.[0], ...(finding.repeats ?? [])].map(describeSiteKey).filter(Boolean);
+}
+
+/** describeSiteKey returns the key of a site, such as "path:line". It is "" for no site. */
+function describeSiteKey(site: Site | undefined): string {
+  return site ? `${site.place.path}:${site.line}` : "";
 }
 
 /** describeLogLine returns a log row's message as one line, its lines trimmed and joined with " · ". */
@@ -427,29 +435,39 @@ export function splitLogLine(finding: Finding): Part[] {
   ];
 }
 
-/** countLevels returns how many of the given findings or problems there are of each level. A level with none has 0. */
-export function countLevels(findings: readonly { level: string }[]): Record<string, number> {
-  return {
-    ...Object.fromEntries(Object.keys(LEVELS).map((level) => [level, 0])),
-    ...countBy(findings, (finding) => finding.level),
-  };
+/**
+ * countLevels returns how many of the given findings or problems there are of each level, a finding counting as many
+ * as its count says and a problem as one. A level with none has 0.
+ */
+export function countLevels(findings: readonly { level: string; count?: number }[]): Record<string, number> {
+  const counts = Object.fromEntries(Object.keys(LEVELS).map((level) => [level, 0]));
+  for (const finding of findings) counts[finding.level] = (counts[finding.level] ?? 0) + (finding.count ?? 1);
+  return counts;
 }
 
 /**
  * describeLevels returns the count of each of the given levels in words, in their order, such as "235 critical
  * problems". A level with none is left out.
  */
-export function describeLevels(counts: Record<string, number>, levels: readonly string[]): string[] {
+export function describeLevels(counts: Tally["counts"] | undefined, levels: readonly string[]): string[] {
   return levels.flatMap((level) => {
     const row = LEVELS[level];
-    const count = counts[level] ?? 0;
+    const count = counts?.[level] ?? 0;
     return row && count ? [plural(count, row.noun, row.nouns)] : [];
   });
 }
 
-/** countLines returns how many lines of the game's log a set of rows stands for, repeats included. */
-export function countLines(findings: readonly Finding[]): number {
+/** countFindings returns how many findings or log lines a set of rows stands for, repeats included. */
+export function countFindings(findings: readonly Finding[]): number {
   return sumBy(findings, (finding) => finding.count);
+}
+
+/** countFindingsBy returns how many findings there are for each key the given function gives, repeats included. */
+export function countFindingsBy(
+  findings: readonly Finding[],
+  key: (finding: Finding) => string,
+): Record<string, number> {
+  return mapValues(groupBy(findings, key), countFindings);
 }
 
 /**
@@ -490,16 +508,6 @@ export function describeLexicon(state: State): string {
   return counts.join(", ");
 }
 
-/** A DifferenceRow is one difference the next upload makes on Steam, as a row of a list. */
-export type DifferenceRow = {
-  id: string;
-  label: string;
-  summary: string;
-  mark: string;
-  color: string;
-  sentence: string;
-};
-
 /**
  * MARKS holds, for each status Go gives a difference, its mark and color, the word a count of files uses, and the
  * words a sentence uses. The rows are in the order a count lists them.
@@ -521,16 +529,20 @@ const DIFFERENCE_FIELDS: Readonly<Record<string, string>> = {
   version: "Version",
 };
 
-/** describeDifference returns a difference as a row of a list, with a short summary of what changes. */
-export function describeDifference(difference: Difference): DifferenceRow {
-  const { field, rel = "", added, removed, gained, lost, before, after } = difference;
+/** toDifferenceId returns what names a difference in a list: its field and, for a file, its path. */
+export function toDifferenceId({ field, rel = "" }: Difference): string {
+  return `${field}:${rel}`;
+}
+
+/** describeDifferenceLabel returns the name of what a difference changes: a file's path, else the field in words. */
+export function describeDifferenceLabel({ field, rel = "" }: Difference): string {
+  return field === "file" ? rel : (DIFFERENCE_FIELDS[field] ?? field);
+}
+
+/** describeDifference returns a short summary of what a difference changes. */
+export function describeDifference({ added, removed, gained, lost, before, after }: Difference): string {
   const items = [...(added ?? []).map((one) => `+${one}`), ...(removed ?? []).map((one) => `−${one}`)];
   const lines = [gained ? `+${gained}` : "", lost ? `−${lost}` : ""].filter(Boolean);
   const values = before || after ? `${before ?? ""} → ${after ?? ""}` : "";
-  return {
-    id: `${field}:${rel}`,
-    label: field === "file" ? rel : DIFFERENCE_FIELDS[field],
-    summary: (items.length ? items : lines).join(" ") || values,
-    ...MARKS[difference.status],
-  };
+  return (items.length ? items : lines).join(" ") || values;
 }

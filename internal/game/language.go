@@ -9,19 +9,14 @@ import (
 	"slices"
 	"strings"
 
+	"github.com/samber/lo"
+
 	"paradox-modding-tools/internal/jomini"
 )
 
-// A KeyRule is what follows when a key fits one rule of the language. Whether the rule fits is the walk's test.
-type KeyRule struct {
-	Fields string // where the block's fields come from: child, callee, arguments or holder
-	Shape  string // what decides the shape it holds: claim, command, same or arguments
-	Scope  string // how its scope follows: stays, follows or unknown
-}
-
 // A ShapeRule is how a block of one shape reads its keys.
 type ShapeRule struct {
-	Rules  []string // the KeyRules tried in order; the first that fits wins
+	Rules  []string // the key rules tried in order; the first that fits wins
 	Caller string   // the word a call here resolves by; AnyCall every callable
 	Allows []string // the declared commands it holds; inside a trigger, never an effect
 	// Values is the database every value written in a block of this shape names; "" means none.
@@ -66,9 +61,6 @@ const AnyCall = "*"
 
 // AnyKey is the key that matches any key written in a block, such as switch's cases.
 const AnyKey = "<any>"
-
-// NumberKey is the key that matches a key written as a number or a date, such as random_list's branches.
-const NumberKey = "<number>"
 
 // DocDateKey is the key the games' own docs write for a date, as `date = { … }` stands for each dated block of a
 // history file.
@@ -141,22 +133,6 @@ var DocTypes = map[string]DocType{
 	"modifier":            {Value: "block", Shape: ShapeModifiers}, "modifiers": {Value: "block", Shape: ShapeModifiers},
 	"modifier(s)": {Value: "block", Shape: ShapeModifiers}, "block": {Value: "block"}, "mtth": {Value: "block"},
 	"scripted cost": {Value: "block"}, "cost": {Value: "block"}, "vector 2": {Value: "block"}, "vector2": {Value: "block"},
-}
-
-// KeyRules is the table of key rules by name.
-var KeyRules = map[string]KeyRule{
-	"known-call":    {Fields: "callee", Shape: "claim", Scope: "stays"},        // a scripted definition vanilla defines
-	"declared":      {Fields: "child", Shape: "claim", Scope: "stays"},         // a key the dumps, docs or wiki declare
-	"documented":    {Fields: "child", Shape: "claim", Scope: "stays"},         // a key the database's docs write
-	"command":       {Fields: "arguments", Shape: "command", Scope: "follows"}, // a trigger or effect the dumps declare
-	"operator":      {Fields: "child", Shape: "arguments", Scope: "stays"},     // a value block's operator (IsOperator)
-	"link":          {Fields: "holder", Shape: "same", Scope: "follows"},       // a link the dumps declare
-	"modifier":      {Fields: "child", Shape: "claim", Scope: "stays"},         // a modifier the dumps declare
-	"modifier-type": {Fields: "child", Shape: "claim", Scope: "stays"},         // any other name: a modifier type
-	"observed":      {Fields: "child", Shape: "claim", Scope: "unknown"},       // a key vanilla writes: scope unknown
-	"field":         {Fields: "child", Shape: "claim", Scope: "stays"},         // the place's own field, known or not
-	"field-or-call": {Fields: "child", Shape: "claim", Scope: "stays"},         // its own field, or a call vanilla writes
-	"call":          {Fields: "child", Shape: "claim", Scope: "stays"},         // any other key: a scripted call
 }
 
 // The shapes that Go code names. Each is the key of its row in Shapes.
@@ -292,6 +268,18 @@ var Keywords = []Keyword{
 	{Key: "exists", Class: "saving", ValueFirst: true, Blurb: "True when the scope named is there and is not nothing."},
 }
 
+// LimitKey is the key of the conditions an if, a list or a while checks first.
+const LimitKey = "limit"
+
+// TriggerKey is the key of the conditions a block holds for itself, such as an event's or an option's trigger.
+const TriggerKey = "trigger"
+
+// OperatorSays is what a condition in words reads for each operator between a key and a value.
+var OperatorSays = map[string]string{
+	"=": "is", "==": "is", "!=": "is not", ">": "more than", ">=": "at least", "<": "less than", "<=": "at most",
+	"?=": "is, if it exists",
+}
+
 // DumpPhrases are the dumps' own words that the engine decides by.
 var DumpPhrases = struct {
 	Iterates string   // a blurb opening with it and naming no target walks a list or variable map: scope unknown
@@ -376,15 +364,13 @@ var keywordPositions = func() map[string][]int {
 	return positions
 }()
 
-// iteratorKeywords holds the keywords whose key is a prefix, such as any_*, in the order Keywords gives them.
-var iteratorKeywords = slices.DeleteFunc(slices.Clone(Keywords), func(row Keyword) bool { return !strings.HasSuffix(row.Key, "*") })
-
-// LookupKeyword returns the first keyword that fits a key in a block's shape and command. It returns false if none
-// fits.
+// LookupKeyword returns the first keyword that fits a key in a block's shape and command, the key and the command in
+// any case. It returns false if none fits.
 func LookupKeyword(shape, command, key string) (Keyword, bool) {
+	command, key = strings.ToLower(command), strings.ToLower(key)
 	candidates := append(make([]string, 0, 3), key, AnyKey)
-	if IsNumberKey(key) {
-		candidates = append(candidates, NumberKey)
+	if jomini.IsNumberKey(key) {
+		candidates = append(candidates, jomini.NumberKey)
 	}
 	best, ok := 0, false
 	for _, candidate := range candidates {
@@ -407,18 +393,6 @@ func LookupKeyword(shape, command, key string) (Keyword, bool) {
 	return Keywords[best], true
 }
 
-// IsNumberKey reports whether a key is written as a number or a date, the keys that a <number> form stands for.
-func IsNumberKey(key string) bool {
-	_, date := jomini.ParseDate(key)
-	return date || jomini.IsNumber(key)
-}
-
-// ClassifyKey returns the operator class of a key, ignoring case, or "" if it is not an operator.
-func ClassifyKey(shape, command, key string) string {
-	keyword, _ := LookupKeyword(shape, command, strings.ToLower(key))
-	return keyword.Class
-}
-
 // IsOperator reports whether a key is an operator of a value block.
 func IsOperator(key string) bool {
 	return slices.ContainsFunc(Keywords, func(row Keyword) bool { return row.Holder == "value" && row.Key == key })
@@ -427,10 +401,8 @@ func IsOperator(key string) bool {
 // MatchListIterator returns the keyword whose prefix a key starts with: a call that iterates a scripted list, whose
 // block runs in the list's item scope. It returns false if the key starts with none.
 func MatchListIterator(key string) (Keyword, bool) {
-	for _, row := range iteratorKeywords {
-		if strings.HasPrefix(key, strings.TrimSuffix(row.Key, "*")) {
-			return row, true
-		}
-	}
-	return Keyword{}, false
+	return lo.Find(Keywords, func(row Keyword) bool {
+		prefix, ok := strings.CutSuffix(row.Key, "*")
+		return ok && strings.HasPrefix(key, prefix)
+	})
 }

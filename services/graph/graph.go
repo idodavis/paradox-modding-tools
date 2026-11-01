@@ -15,6 +15,7 @@ import (
 	"paradox-modding-tools/internal/index"
 	"paradox-modding-tools/internal/jomini"
 	"paradox-modding-tools/internal/schema"
+	"paradox-modding-tools/services/lsp"
 	"paradox-modding-tools/services/workspace"
 )
 
@@ -33,34 +34,33 @@ type Node struct {
 	// Display is how the player sees an event or a message: window, hidden or message; "" for any other entry.
 	Display    string `json:"display,omitempty"`
 	Background string `json:"background,omitempty"` // the path of an event's picture; "" if none is found
-	Comment    string `json:"comment,omitempty"`    // the comment lines just above its definition, joined by newlines
-	Hardcoded  bool   `json:"hardcoded,omitempty"`  // an on_action the game calls from its own code
+	// Trigger is its own trigger in words. It is nil for none, for a fold, and outside a graph and a detail.
+	Trigger   []Condition `json:"trigger,omitempty"`
+	Comment   string      `json:"comment,omitempty"`   // the comment lines just above its definition, joined by newlines
+	Hardcoded bool        `json:"hardcoded,omitempty"` // an on_action the game calls from its own code
 	// CopyOrigin is the origin of the latest-loaded copy of its name that its definition hides; "" for none.
-	CopyOrigin string          `json:"copyOrigin,omitempty"`
-	Site       index.Site      `json:"site"`
-	Place      workspace.Place `json:"place"`
-	Line       int             `json:"line"`   // counted from one
-	Step       int             `json:"step"`   // its distance from the root, negative for a firer
-	Parent     string          `json:"parent"` // the drawn node one step nearer the root; "" for the root
-	Count      int             `json:"count"`  // the firings a fold stands for; 0 for a definition
-	Deep       bool            `json:"deep"`   // the depth stopped at it, and it links further to a next step
+	CopyOrigin string     `json:"copyOrigin,omitempty"`
+	Definition index.Site `json:"-"` // the definition the node stands for, which only Go reads
+	Site       lsp.Site   `json:"site"`
+	Step       int        `json:"step"`   // its distance from the root, negative for a firer
+	Parent     string     `json:"parent"` // the drawn node one step nearer the root; "" for the root
+	Count      int        `json:"count"`  // the firings a fold stands for; 0 for a definition
+	Deep       bool       `json:"deep"`   // the depth stopped at it, and it links further to a next step
 	// Fires is every firing it makes, in the order written. It is nil for a fold and outside a graph and a detail.
 	Fires []Edge `json:"fires,omitempty"`
 }
 
 // An Edge is one firing, from a firer to what it fires.
 type Edge struct {
-	From      string `json:"from"`
-	To        string `json:"to"`
-	Delay     string `json:"delay,omitempty"`  // the delay in words, such as 7 days or 10–30 days; "" for none
-	DelayDays int    `json:"delayDays"`        // the soonest it comes, in days; 0 for none, -1 for a value or a name
-	Steps     []Step `json:"steps,omitempty"`  // the blocks it is written inside, from the top of its definition
-	Effect    string `json:"effect,omitempty"` // the key of the statement that writes it, such as trigger_event
-	Title     string `json:"title,omitempty"`  // the title that statement gives it, each data call in words
+	From   string `json:"from"`
+	To     string `json:"to"`
+	Delay  string `json:"delay,omitempty"`  // the delay in words, such as 7 days or 10–30 days; "" for none
+	Steps  []Step `json:"steps,omitempty"`  // the blocks it is written inside, from the top of its definition
+	Effect string `json:"effect,omitempty"` // the key of the statement that writes it, such as trigger_event
+	Title  string `json:"title,omitempty"`  // the title that statement gives it, each data call in words
 	// Via is the scripted effects passed through, when they are not drawn as nodes.
-	Via   []string        `json:"via,omitempty"`
-	Place workspace.Place `json:"place"` // where the firing is written
-	Line  int             `json:"line"`  // counted from one
+	Via  []string `json:"via,omitempty"`
+	Site lsp.Site `json:"site"` // where the firing is written
 }
 
 // A Filter says what the graph shows and how far it reaches from its root.
@@ -122,7 +122,7 @@ func (gph *Service) BuildGraph(root string, filter Filter) (Graph, error) {
 	reach.splice()
 	for position, node := range reach.nodes {
 		if node.Count == 0 {
-			reach.nodes[position].Fires = makeEdges(ws, mods, listFires(ws, mods, node.Site, filter.Follow))
+			reach.nodes[position].Fires = makeEdges(ws, mods, listFires(ws, mods, node.Definition, filter.Follow))
 		}
 	}
 	return Graph{
@@ -162,12 +162,11 @@ func makeNode(ws *workspace.Session, mods *index.Index, site index.Site, step in
 		What:       game.DescribeDefinition(reference.Database, false),
 		Title:      toTitle(ws, mods, ws.LookupTitle(mods, site)),
 		CopyOrigin: findCopyOrigin(ws, mods, site),
-		Site:       site,
-		Place:      ws.Locate(mods, mods.File(site).Path),
-		Line:       toLine(mods, site),
+		Definition: site,
+		Site:       lsp.MakeSite(ws, mods, site),
 		Step:       step,
 	}
-	if database := ws.Schema.Databases[reference.Database]; database != nil && database.Row.Houses == "on_actions" {
+	if database := ws.Schema.Databases[reference.Database]; database != nil && database.Row.Contents == game.ContentsOnActions {
 		node.Hardcoded = ws.Schema.OnActions[reference.Name].Hardcoded
 	}
 	tree, statement, err := ws.FindStatement(mods, site)
@@ -186,11 +185,14 @@ func makeNode(ws *workspace.Session, mods *index.Index, site index.Site, step in
 }
 
 // drawNode returns the node of a definition as the page draws it, at the given step from the root: makeNode's, with
-// an event's picture.
+// an event's picture and its own trigger in words. Its trigger is nil if its file cannot be read.
 func drawNode(ws *workspace.Session, mods *index.Index, site index.Site, step int) Node {
 	node := makeNode(ws, mods, site, step)
 	if node.Display == displayWindow || node.Display == displayHidden {
 		node.Background = findPicture(ws, mods, site, ws.Game.Events.Picture)
+	}
+	if tree, statement, err := ws.FindStatement(mods, site); err == nil {
+		node.Trigger = findCondition(ws, mods, tree, statement)
 	}
 	return node
 }
@@ -233,11 +235,6 @@ func findCopyOrigin(ws *workspace.Session, mods *index.Index, site index.Site) s
 	return lo.Ternary(ok, mods.File(hidden).Origin, "")
 }
 
-// toLine returns the line of the occurrence at a site, counted from one.
-func toLine(mods *index.Index, site index.Site) int {
-	return int(mods.Occurrence(site).Line) + 1
-}
-
 // toID returns the id of the node of a definition: its database and its name.
 func toID(mods *index.Index, site index.Site) string { return mods.ToReference(site).ToID() }
 
@@ -269,7 +266,7 @@ func (reach *reach) expand(root index.Site, forward bool) {
 // listHidden returns the nodes the filter hides. The root and the folds are never hidden.
 func (reach *reach) listHidden() []Node {
 	return lo.Filter(reach.nodes, func(node Node, _ int) bool {
-		return node.Step != 0 && node.Count == 0 && reach.isHidden(node.Site)
+		return node.Step != 0 && node.Count == 0 && reach.isHidden(node.Definition)
 	})
 }
 
@@ -361,7 +358,7 @@ func (reach *reach) addFire(fire index.Fire, forward bool, step int) (index.Site
 		if !forward {
 			from, to = to, from
 		}
-		edge := Edge{Place: whole.Place, Line: whole.Line}
+		edge := Edge{Site: whole.Site}
 		if to == fire.Target {
 			edge = whole
 		}
@@ -553,7 +550,7 @@ func (gph *Service) Defaults() Filter {
 	}
 	databases := listKinds(ws.Schema)
 	origins := []string{game.OriginVanilla}
-	for _, mod := range ws.Order {
+	for _, mod := range *ws.Order.Load() {
 		origins = append(origins, mod.ID)
 	}
 	labels := lo.SliceToMap(databases, func(database string) (string, string) {

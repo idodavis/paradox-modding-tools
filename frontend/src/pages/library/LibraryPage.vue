@@ -8,9 +8,10 @@ import { Events } from "@wailsio/runtime";
 import type { DropdownMenuItem } from "@nuxt/ui";
 
 import { homeRoute, useShown } from "../../app/pages";
-import { countLevels, describeDumps, describeLexicon, installLine, plural } from "../../lib/format";
-import { gamesQuery, installsQuery, modsQuery, reportQuery, stateQuery, workspacesQuery } from "../../queries";
+import { describeDumps, describeLexicon, installLine, plural } from "../../lib/format";
+import { gamesQuery, reportQuery, stateQuery, workspacesQuery } from "../../queries";
 import { gameIcon } from "../../stores/settings";
+import { COMMAND_BUS } from "../../stores/windows";
 import { useWorkspaceStore, VANILLA } from "../../stores/workspace";
 import CreateModForm from "../../ui/CreateModForm.vue";
 import LevelCounts from "../../ui/LevelCounts.vue";
@@ -24,7 +25,7 @@ import type { Workspace } from "@services/app/models";
 const router = useRouter();
 const toast = useToast();
 const store = useWorkspaceStore();
-const bus = useEventBus<string>("pmt.command");
+const commandBus = useEventBus(COMMAND_BUS);
 const creatingMod = shallowRef(false);
 const guiding = shallowRef(false);
 const resetting = shallowRef(false);
@@ -32,30 +33,22 @@ const confirmation = shallowRef("");
 const visible = useShown();
 
 const { data: workspaces, isPending } = useQuery(workspacesQuery);
-const { data: installs } = useQuery(installsQuery);
 const { data: games } = useQuery(gamesQuery);
-const { data: mods } = useQuery(modsQuery);
 const { data: state } = useQuery(stateQuery);
 const { data: report } = useQuery(() => ({ ...reportQuery(store.listModIds()), enabled: store.isOpen() }));
 
 const rows = computed(() =>
   (workspaces.value ?? [])
-    .map((record) => {
-      const install = installs.value?.find((one) => one.id === record.install);
-      const game = games.value?.find((one) => one?.id === install?.game);
-      return {
-        record,
-        install,
-        game,
-        active: record.id === store.activeId(),
-        line: install ? installLine(install.name, install.version, install.scannedAt) : "",
-      };
-    })
+    .map((row) => ({
+      ...row,
+      active: row.record.id === store.activeId(),
+      line: row.install.id ? installLine(row.install.name, row.install.version, row.install.scannedAt) : "",
+    }))
     .sort((a, b) => Number(b.active) - Number(a.active)),
 );
 const active = computed(() => rows.value.find((row) => row.active));
 const groups = computed(() =>
-  [...(games.value ?? []).filter((game) => game !== null), undefined]
+  [...(games.value ?? []), undefined]
     .map((game) => ({ game, rows: rows.value.filter((row) => row.game?.id === game?.id) }))
     .filter((group) => group.rows.length),
 );
@@ -104,7 +97,7 @@ function open(record: Workspace) {
 async function openSettings(record: Workspace): Promise<void> {
   const isCurrent = record.id === store.activeId() && store.isOpen();
   if (!isCurrent && (await open(record))) return;
-  bus.emit("settings.open");
+  commandBus.emit("settings.open");
 }
 
 /** openModDialog opens the new mod dialog, or the wizard if no workspace is open. */
@@ -190,7 +183,7 @@ function describeMenu(record: Workspace, leading: DropdownMenuItem[]): DropdownM
             <span class="text-12 font-medium text-toned">Load order</span>
             <div class="flex flex-wrap gap-1.5">
               <OriginChip :origin="VANILLA" />
-              <OriginChip v-for="mod in mods?.[active.record.id] ?? []" :key="mod.id" :origin="mod.id" />
+              <OriginChip v-for="mod in active.mods ?? []" :key="mod.id" :origin="mod.id" />
             </div>
           </div>
           <div class="flex min-w-0 flex-col gap-2">
@@ -213,7 +206,7 @@ function describeMenu(record: Workspace, leading: DropdownMenuItem[]): DropdownM
           <div class="flex min-w-0 flex-col gap-2">
             <span class="text-12 font-medium text-toned">Health</span>
             <template v-if="report">
-              <LevelCounts :levels="countLevels(report.findings ?? [])" />
+              <LevelCounts :levels="report.counts" />
               <span class="text-12 text-dimmed">From the last scan.</span>
             </template>
             <span v-else class="text-12 text-dimmed">Counted once the workspace is open.</span>
@@ -257,15 +250,15 @@ function describeMenu(record: Workspace, leading: DropdownMenuItem[]): DropdownM
                 <UButton icon="i-lucide-ellipsis" variant="ghost" size="sm" square aria-label="More" @click.stop />
               </UDropdownMenu>
             </div>
-            <span v-if="!row.install" class="flex items-center gap-1.25 text-12 text-warning">
+            <span v-if="!row.install.id" class="flex items-center gap-1.25 text-12 text-warning">
               <UIcon name="i-lucide-triangle-alert" class="size-3.5" />No install set
             </span>
             <span v-else class="text-12 text-dimmed">{{ row.line }}</span>
             <div class="flex flex-wrap gap-1.5">
-              <UTooltip v-for="mod in mods?.[row.record.id] ?? []" :key="mod.id" :text="mod.descriptor.name">
+              <UTooltip v-for="mod in row.mods ?? []" :key="mod.id" :text="mod.descriptor.name">
                 <ModAvatar :mod="mod" />
               </UTooltip>
-              <span v-if="!mods?.[row.record.id]?.length" class="text-12 text-dimmed">No mods, game files only</span>
+              <span v-if="!row.mods?.length" class="text-12 text-dimmed">No mods, game files only</span>
             </div>
           </div>
           <RouterLink

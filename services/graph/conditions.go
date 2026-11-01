@@ -10,6 +10,7 @@ import (
 	"github.com/samber/lo"
 
 	"paradox-modding-tools/internal/game"
+	"paradox-modding-tools/internal/index"
 	"paradox-modding-tools/internal/jomini"
 	"paradox-modding-tools/internal/schema"
 	"paradox-modding-tools/services/workspace"
@@ -29,27 +30,21 @@ type Condition struct {
 	Conditions []Condition `json:"conditions,omitempty"` // the statements of its block, in the order written
 }
 
-// comparisonWords are the words each operator reads between a key and a value.
-var comparisonWords = map[string]string{
-	"=": "is", "==": "is", "!=": "is not", ">": "more than", ">=": "at least", "<": "less than", "<=": "at most",
-	"?=": "is, if it exists",
-}
-
 // findCondition returns the condition of a block in words: its limit, else its trigger. It returns nil if it holds
 // neither as a block.
-func findCondition(ws *workspace.Session, tree *jomini.Tree, statement int32) []Condition {
-	for _, key := range []string{limitKey, triggerKey} {
+func findCondition(ws *workspace.Session, mods *index.Index, tree *jomini.Tree, statement int32) []Condition {
+	for _, key := range []string{game.LimitKey, game.TriggerKey} {
 		if child, ok := tree.FindChild(statement, key); ok && tree.Statements[child].IsBlock() {
-			return listConditions(ws, tree, child)
+			return listConditions(ws, mods, tree, child)
 		}
 	}
 	return nil
 }
 
 // listConditions returns the statements of a block of triggers in words, in the order written.
-func listConditions(ws *workspace.Session, tree *jomini.Tree, block int32) []Condition {
+func listConditions(ws *workspace.Session, mods *index.Index, tree *jomini.Tree, block int32) []Condition {
 	return lo.Map(slices.Collect(tree.Children(block)), func(child int32, _ int) Condition {
-		return makeCondition(ws, tree, child)
+		return makeCondition(ws, mods, tree, child)
 	})
 }
 
@@ -59,17 +54,17 @@ func listConditions(ws *workspace.Session, tree *jomini.Tree, block int32) []Con
 // and a no makes it negated.
 // A value stays as written, with the in-game name of what it names, read first where its keyword says so. A block
 // holds its statements, and one that only wraps one of them folds into it.
-func makeCondition(ws *workspace.Session, tree *jomini.Tree, statement int32) Condition {
+func makeCondition(ws *workspace.Session, mods *index.Index, tree *jomini.Tree, statement int32) Condition {
 	current := tree.Statements[statement]
 	key := tree.Unquoted(current.Key)
 	condition := Condition{Value: tree.Unquoted(current.Value), Line: toSourceLine(tree, current.Span)}
-	keyword, ok := game.LookupKeyword(game.ShapeTriggers, "", strings.ToLower(key))
+	keyword, ok := game.LookupKeyword(game.ShapeTriggers, "", key)
 	if !ok {
 		keyword, _ = game.MatchListIterator(strings.ToLower(key))
 	}
 	switch {
 	case keyword.Covers:
-		condition.Text, condition.Value = describeCover(ws, tree, statement)
+		condition.Text, condition.Value = describeCover(ws, mods, tree, statement)
 		return condition
 	case keyword.Says != "":
 		rest := strings.TrimPrefix(strings.ToLower(key), strings.TrimSuffix(keyword.Key, "*"))
@@ -89,12 +84,12 @@ func makeCondition(ws *workspace.Session, tree *jomini.Tree, statement int32) Co
 			condition.Negated, condition.Value = true, ""
 		}
 	}
-	condition.Title = findName(ws, condition.Value)
+	condition.Title = findName(ws, mods, condition.Value)
 	if keyword.ValueFirst {
 		condition.Subject, condition.Value = condition.Value, ""
 	}
 	if current.IsBlock() {
-		condition.Conditions = listConditions(ws, tree, statement)
+		condition.Conditions = listConditions(ws, mods, tree, statement)
 	}
 	return foldCondition(condition, keyword)
 }
@@ -102,13 +97,12 @@ func makeCondition(ws *workspace.Session, tree *jomini.Tree, statement int32) Co
 // findName returns the in-game name of the definition a value written prefix:name names, as its node shows it: the
 // title of the copy the game keeps. It returns "" for a value with no prefix that names a database, and for one that
 // names nothing kept or nothing with a title.
-func findName(ws *workspace.Session, value string) string {
+func findName(ws *workspace.Session, mods *index.Index, value string) string {
 	prefix, label, ok := jomini.SplitPrefixed(value)
 	database := ws.Schema.Prefixes[prefix]
 	if !ok || database == "" {
 		return ""
 	}
-	mods := ws.Mods.Load()
 	winner, ok := mods.FindKept(ws.Schema, schema.Reference{Database: database, Name: label})
 	if !ok {
 		return ""
@@ -136,14 +130,13 @@ func foldCondition(condition Condition, keyword game.Keyword) Condition {
 }
 
 // describeCover returns the text a statement shows in place of the conditions it holds, as a player reads it: the
-// message its value or its text field names, from the workspace's index of the moment. Where no message has that key,
-// it returns the statement's own key in words and the key it names.
-func describeCover(ws *workspace.Session, tree *jomini.Tree, statement int32) (string, string) {
+// message its value or its text field names, from the given index. Where no message has that key, it returns the
+// statement's own key in words and the key it names.
+func describeCover(ws *workspace.Session, mods *index.Index, tree *jomini.Tree, statement int32) (string, string) {
 	key := tree.Unquoted(tree.Statements[statement].Value)
 	if label, ok := tree.FindChildValue(statement, game.LabelKey); ok {
 		key = label
 	}
-	mods := ws.Mods.Load()
 	text, _, ok := ws.LookupText(mods, key)
 	if !ok {
 		return toWords(tree.Text(tree.Statements[statement].Key)), key
@@ -166,5 +159,5 @@ func describeOperator(operator string, isBlock, isScope bool) string {
 	case operator == "?=" && isBlock:
 		return "if it exists"
 	}
-	return comparisonWords[operator]
+	return game.OperatorSays[operator]
 }

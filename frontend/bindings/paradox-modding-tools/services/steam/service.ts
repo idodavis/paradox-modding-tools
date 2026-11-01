@@ -62,8 +62,9 @@ export function FetchItem(modID: string, key: string): $CancellablePromise<$mode
 }
 
 /**
- * FetchPreviews copies the gallery of a listing's Workshop item into the listing, adding what it lacks. It returns an
- * error if the listing has no item, Steam cannot be asked or a download fails.
+ * FetchPreviews copies the gallery of a listing's Workshop item into the listing, adding what it lacks. Steam is
+ * asked about the item again, which also brings the comparison up to date. It returns an error if the listing has no
+ * item, Steam cannot be asked or a download fails.
  */
 export function FetchPreviews(modID: string, key: string): $CancellablePromise<void> {
     return $Call.ByID(502807331, modID, key);
@@ -110,7 +111,8 @@ export function ListListings(modID: string): $CancellablePromise<$models.Listing
 }
 
 /**
- * ListRules returns the rules that say what an upload leaves out.
+ * ListRules returns the rules that say what every upload leaves out. One rule names the coding agents' instruction
+ * files that start with no dot, as the agents' rows name them.
  */
 export function ListRules(): $CancellablePromise<$models.Rule[] | null> {
     return $Call.ByID(770400553);

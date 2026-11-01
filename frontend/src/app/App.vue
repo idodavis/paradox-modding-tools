@@ -13,7 +13,6 @@ import AgentPane from "./AgentPane.vue";
 import { registerShortcuts } from "./commands";
 import CommandPalette from "./CommandPalette.vue";
 import { isWorkspacePage } from "./pages";
-import { KEPT } from "./router";
 import SettingsModal from "./settings/SettingsModal.vue";
 import StatusBar from "./StatusBar.vue";
 import TopBar from "./TopBar.vue";
@@ -41,7 +40,7 @@ const panes = computed<SplitterItem[]>(() => [
           <template #page>
             <div class="relative min-h-0 min-w-0 flex-1 overflow-hidden">
               <RouterView v-slot="{ Component, route: current }">
-                <KeepAlive :include="[...KEPT]">
+                <KeepAlive exclude="WizardPage">
                   <component :is="Component" :key="current.name" />
                 </KeepAlive>
               </RouterView>

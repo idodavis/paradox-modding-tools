@@ -8,39 +8,42 @@ import { useMutation, useQuery } from "@pinia/colada";
 import { createReusableTemplate, useEventBus, useEventListener, useLocalStorage } from "@vueuse/core";
 import type { SplitterItem } from "@nuxt/ui";
 
+import type { Code, Diagnostic } from "@services/lsp/models";
 import type { Chip } from "@services/mcp/models";
 import * as workspaceApi from "@services/workspace/service";
 import type { Place } from "@services/workspace/models";
 
 import { useShown } from "../../app/pages";
-import { countLevels, LEVELS, plural, PROBLEM_LEVELS } from "../../lib/format";
+import { countLevels, describeFinding, LEVELS, matchQuery, plural, PROBLEM_LEVELS } from "../../lib/format";
 import {
   codesQuery,
+  fileQuery,
   gitStatusQuery,
   indentationQuery,
   placeQuery,
   reportQuery,
   rootsQuery,
-  windowsQuery,
 } from "../../queries";
-import { useChip } from "../../stores/agent";
+import { useChip } from "../../stores/toolView";
 import { useEditorStore } from "../../stores/editor";
 import { useGitStore } from "../../stores/git";
 import { useSettingsStore } from "../../stores/settings";
 import { useTerminalStore } from "../../stores/terminal";
-import { THIS_WINDOW, useWindowsStore } from "../../stores/windows";
+import { COMMAND_BUS, THIS_WINDOW, useWindowsStore } from "../../stores/windows";
 import { useWorkspaceStore, VANILLA } from "../../stores/workspace";
+import CompareView from "../../ui/CompareView.vue";
 import FileSelector from "../../ui/FileSelector.vue";
+import OriginChip from "../../ui/OriginChip.vue";
+import ProblemRow from "../../ui/ProblemRow.vue";
 import { EDITOR_LANGUAGES } from "../../ui/ScriptSnippet.vue";
 import CoatDialog from "./draw/CoatDialog.vue";
 import SaveDdsModal from "./SaveDdsModal.vue";
-import EditorLayout from "./EditorLayout.vue";
+import EditorGroup from "./EditorGroup.vue";
 import EntriesView from "./EntriesView.vue";
 import ExplorerTree from "./ExplorerTree.vue";
-import FileCompare from "./FileCompare.vue";
-import IdePanel, { listPanelProblems } from "./IdePanel.vue";
 import SearchView from "./SearchView.vue";
 import SourceControlView from "./SourceControlView.vue";
+import TerminalPanel from "./terminal/TerminalPanel.vue";
 import WikiPane from "./WikiPane.vue";
 import { LANGUAGES } from "./editor/monaco";
 import { findModel } from "./editor/models";
@@ -48,12 +51,18 @@ import { parseTab } from "./editor/tabs";
 
 const { id } = defineProps<{ id: string }>();
 
+/** A Problem is one problem in the list, an editor diagnostic or a Health finding. A finding has its own level. */
+type Problem = { code: Code; problem: Diagnostic; level: string; health?: true };
+/** A Row is one row of the problems list, a file or one of its problems with its message. */
+type Row = { place: Place; count: number } | ({ place: Place; message: string } & Problem);
+
 const PIXELS = "px" as const;
-const SIDEBAR = [
-  { value: "explorer", icon: "i-lucide-files", label: "Explorer" },
+/** The sidebar's tabs. A tab with a `visual` label is also shown in Visual, under that label. */
+const SIDEBAR: { value: string; icon: string; label: string; visual?: string }[] = [
+  { value: "explorer", icon: "i-lucide-files", label: "Explorer", visual: "Explorer" },
   { value: "search", icon: "i-lucide-search", label: "Search" },
   { value: "git", icon: "i-lucide-git-compare", label: "Source control" },
-  { value: "entries", icon: "i-lucide-shapes", label: "Entries" },
+  { value: "entries", icon: "i-lucide-shapes", label: "Entries", visual: "Structure" },
 ];
 const PANEL = [
   { value: "problems", label: "Problems" },
@@ -83,8 +92,16 @@ const workspace = useWorkspaceStore();
 const coatDialog = useOverlay().create(CoatDialog);
 const saveDds = useOverlay().create(SaveDdsModal);
 const sidebar = useLocalStorage("pmt.ide.sidebar", "explorer");
-const panel = useLocalStorage("pmt.ide.panel", "");
-const wiki = useLocalStorage("pmt.ide.wiki", false);
+const isVisual = computed(() => editor.mode === "visual");
+// in Visual, the tabs it has under their own labels, and Structure where the saved tab is not one of them
+const tabs = computed(() =>
+  isVisual.value ? SIDEBAR.flatMap(({ visual, ...tab }) => (visual ? [{ ...tab, label: visual }] : [])) : SIDEBAR,
+);
+const shownSidebar = computed(() =>
+  tabs.value.some((tab) => tab.value === sidebar.value) ? sidebar.value : "entries",
+);
+// Visual shows the active group alone
+const visualGroup = computed(() => (isVisual.value ? editor.activeGroup() : null));
 const gameOpen = useLocalStorage("pmt.ide.gameOpen", true);
 /** Which trees show their filter box. It is never saved. */
 const filtering = reactive({ mods: false, game: false, own: false });
@@ -104,13 +121,13 @@ useChip(() => fileChip.value);
 const splitter = useTemplateRef("splitter");
 const modTree = useTemplateRef("modTree");
 const gameTree = useTemplateRef("gameTree");
-const commands = useEventBus<string>("pmt.command");
+const commandBus = useEventBus(COMMAND_BUS);
 const comparing = shallowRef<{ left: Place; right: Place }>();
 useEventBus<{ left: Place; right: Place }>("pmt.compare").on((pair) => (comparing.value = pair));
-commands.on((command) => {
+commandBus.on((command) => {
   if (command === "editor.findInFiles") showSidebar("search");
   if (command === "git.commit") showSidebar("git");
-  if (command === "editor.toggleWiki") wiki.value = !wiki.value;
+  if (command === "editor.toggleWiki") toggleWiki();
   if (command === "draw.newCoat") void coatDialog.open();
   if (command === "image.saveDds") {
     const active = editor.activeFile();
@@ -118,16 +135,16 @@ commands.on((command) => {
   }
   if (command === "explorer.reveal") void revealFile();
   if (command === "terminal.sendFile") {
-    if (layout.value === "full") panel.value = "terminal";
+    if (layout.value === "full") editor.showPanel("terminal");
     useTerminalStore().sendFile();
   }
-  if (command === "terminal.show" && layout.value === "full") panel.value = "terminal";
+  if (command === "terminal.show" && layout.value === "full") editor.showPanel("terminal");
 });
 defineShortcuts(
   computed(() =>
     visible.value
       ? {
-          meta_j: { handler: () => (panel.value = panel.value ? "" : "problems"), usingInput: true },
+          meta_j: { handler: togglePanel, usingInput: true },
           meta_shift_e: { handler: () => showSidebar("explorer"), usingInput: true },
         }
       : {},
@@ -150,7 +167,6 @@ const layout = computed(() => {
 });
 
 const { data: roots } = useQuery(() => ({ ...rootsQuery, enabled: workspace.isOpen() }));
-const { data: windowNames } = useQuery(windowsQuery);
 const { data: folderPlace } = useQuery(() => ({
   ...placeQuery(THIS_WINDOW.slice("files:".length)),
   enabled: part === "files",
@@ -161,7 +177,7 @@ const game = computed(() => (roots.value ?? []).filter((root) => root.origin ===
 const gameShown = computed(() => settings.isOn("ide.gameFiles"));
 const own = computed(() => {
   if (part === "game") return game.value;
-  return folderPlace.value ? [{ dir: folderPlace.value.path, origin: folderPlace.value.origin }] : [];
+  return folderPlace.value ? [folderPlace.value] : [];
 });
 
 const panes = computed<SplitterItem[]>(() => [
@@ -182,15 +198,16 @@ const panes = computed<SplitterItem[]>(() => [
   ...(layout.value === "files" || layout.value === "wiki"
     ? []
     : [{ id: "editors", slot: "editors", order: 2, minSize: 33 }]),
-  // the Wiki pane leaves the main window while it has a window of its own
-  ...((layout.value === "full" && wiki.value && !windowNames.value?.includes("wiki")) || layout.value === "wiki"
+  // the Wiki pane leaves the main window while it has a window of its own, and while Visual takes the screen
+  ...((layout.value === "full" && editor.wiki && !isVisual.value && !windows.listWindows().includes("wiki")) ||
+  layout.value === "wiki"
     ? [{ id: "wiki", slot: "wiki", order: 3, sizeUnit: PIXELS, defaultSize: 440, minSize: 320 }]
     : []),
 ]);
 const editorPanes = computed<SplitterItem[]>(() => [
   ...(layout.value === "terminal" ? [] : [{ id: "code", slot: "code", order: 1, minSize: 50 }]),
-  // the terminal's own window shows the panel on the Terminal tab alone
-  ...(layout.value === "terminal" || panel.value
+  // the terminal's own window shows the panel on the Terminal tab alone, and Visual hides the panel
+  ...(layout.value === "terminal" || (editor.panel && !isVisual.value)
     ? [
         {
           id: "panel",
@@ -207,7 +224,10 @@ const editorPanes = computed<SplitterItem[]>(() => [
 ]);
 // the panel opens again at the size it had when it was dragged closed
 const editorSplitter = useTemplateRef("editorSplitter");
-watch(panel, (tab) => tab && void nextTick(() => editorSplitter.value?.panelsRef.at(-1)?.expand()));
+watch(
+  () => editor.panel,
+  (tab) => tab && void nextTick(() => editorSplitter.value?.panelsRef.at(-1)?.expand()),
+);
 const explorerPanes = computed<SplitterItem[]>(() => [
   {
     id: "mods",
@@ -225,14 +245,33 @@ const panelTabs = computed(() =>
   layout.value === "terminal" ? PANEL.filter((tab) => tab.value === "terminal") : PANEL,
 );
 const panelTab = computed(() =>
-  layout.value === "terminal" ? "terminal" : (PANEL.find((tab) => tab.value === panel.value)?.value ?? "problems"),
+  layout.value === "terminal" ? "terminal" : (PANEL.find((tab) => tab.value === editor.panel)?.value ?? "problems"),
 );
 
-// the status bar counts the panel's problems. It only reads Health's report, as building one checks every mod
+const problemFilter = shallowRef("");
+const output = useTemplateRef("output");
 const { data: codes } = useQuery(codesQuery);
-const { data: report } = useQuery(() => ({ ...reportQuery(workspace.listModIds()), enabled: false }));
-const problems = computed(() =>
-  countLevels(listPanelProblems(codes.value ?? [], report.value?.findings ?? []).flatMap((file) => file.problems)),
+// Health's report for the workspace's own load order, built only while the panel shows Problems, as building one
+// checks every mod; the status bar counts what the report holds
+const { data: report } = useQuery(() => ({
+  ...reportQuery(workspace.listModIds()),
+  enabled: panelTab.value === "problems" && !!editor.panel && workspace.isOpen(),
+}));
+const panelProblems = computed(listProblems);
+const problems = computed(() => countLevels(panelProblems.value.flatMap((file) => file.problems)));
+const rows = computed<Row[]>(() =>
+  panelProblems.value.flatMap(({ place, problems: listed }) => {
+    const shown = listed
+      .map((one) => ({ place, ...one, message: describeFinding(one.problem, codes.value) }))
+      .filter(({ message, code }) => matchQuery(problemFilter.value, message, code.id, place.rel));
+    return shown.length ? [{ place, count: shown.length }, ...shown] : [];
+  }),
+);
+// the Output keeps its newest line in view
+watch(
+  () => git.output().length,
+  () => output.value?.scrollTo({ top: output.value.scrollHeight }),
+  { flush: "post" },
 );
 
 const { data: status } = useQuery(() => ({
@@ -246,6 +285,28 @@ const open = computed(() => {
 const languageName = computed(
   () => LANGUAGES.find((one) => one.id === EDITOR_LANGUAGES[open.value?.place.format ?? ""])?.label ?? "Plain text",
 );
+// the open files laid out in rows of columns, with the sizes remembered per workspace
+const groupRows = computed(() =>
+  editor.layout().rows.map((row, order) => ({
+    id: row.columns[0]?.id ?? String(order),
+    slot: "row",
+    order,
+    minSize: 10,
+    columns: row.columns.map((group, index) => ({ id: group.id, slot: "column", order: index, minSize: 10, group })),
+  })),
+);
+const layoutKey = computed(() => `pmt.ide.layout.${workspace.activeId()}`);
+// a row's splitter keeps its sizes under its first group's id, which never comes back once the row loses that group
+watch(
+  () => groupRows.value.map((row) => row.id),
+  (ids, before) => {
+    for (const id of before.filter((one) => !ids.includes(one)))
+      localStorage.removeItem(`reka:${layoutKey.value}.${id}`);
+  },
+);
+// the two files of the compare, read while it is open
+const leftFile = useQuery(() => ({ ...fileQuery(comparing.value?.left.path ?? ""), enabled: !!comparing.value }));
+const rightFile = useQuery(() => ({ ...fileQuery(comparing.value?.right.path ?? ""), enabled: !!comparing.value }));
 const diff = computed(() => {
   const target = parseTab(editor.activeTab()?.id ?? "");
   return target.tab === "diff" ? target.side : null;
@@ -269,8 +330,8 @@ function show(place: Place, preview: boolean): void {
  */
 function choosePanelTab(value: string): void {
   if (layout.value !== "full") return;
-  if (value === "terminal" && windowNames.value?.includes("terminal")) windows.showWindow("terminal");
-  else panel.value = value;
+  if (value === "terminal" && windows.listWindows().includes("terminal")) windows.showWindow("terminal");
+  else editor.panel = value;
 }
 
 /**
@@ -279,19 +340,20 @@ function choosePanelTab(value: string): void {
  */
 async function popOutTerminal(): Promise<void> {
   await useTerminalStore().handOver();
-  windows.popOut({ terminal: true });
-  panel.value = "problems";
+  windows.popOut("terminal");
+  editor.panel = "problems";
 }
 
-/** showSidebar shows a sidebar tab, unfolding the sidebar if it is folded. */
+/** showSidebar shows a sidebar tab, unfolding the sidebar if it is folded. A tab Visual hides brings Code back. */
 function showSidebar(value: string): void {
+  if (!tabs.value.some((tab) => tab.value === value)) editor.mode = "code";
   sidebar.value = value;
   splitter.value?.panelsRef[0]?.expand();
 }
 
 /** choose shows a sidebar tab, or folds the sidebar when its open tab is chosen again. */
 function choose(value: string, collapsed: boolean, collapse: () => void): void {
-  if (!collapsed && sidebar.value === value) collapse();
+  if (!collapsed && shownSidebar.value === value) collapse();
   else showSidebar(value);
 }
 
@@ -303,7 +365,62 @@ function toggleFilter(tree: keyof typeof filtering): void {
 
 /** toggleProblems shows the panel on Problems, or closes it if it shows Problems already. */
 function toggleProblems(): void {
-  panel.value = panel.value === "problems" ? "" : "problems";
+  if (editor.panel === "problems" && !isVisual.value) editor.panel = "";
+  else editor.showPanel("problems");
+}
+
+/** togglePanel shows the panel, on Problems unless it has a tab already, or closes it if it shows. */
+function togglePanel(): void {
+  if (editor.panel && !isVisual.value) editor.panel = "";
+  else editor.showPanel(editor.panel || "problems");
+}
+
+/** toggleWiki shows the Wiki pane, or closes it if it shows. */
+function toggleWiki(): void {
+  if (editor.wiki && !isVisual.value) editor.wiki = false;
+  else editor.showWiki();
+}
+
+/**
+ * listProblems lists the editor's problems and Health's findings for each file open in a tab. A file with no problem is
+ * left out.
+ */
+function listProblems(): { place: Place; problems: Problem[] }[] {
+  const places = editor.listTabs().flatMap((one) => editor.placeOf(one.id) ?? []);
+  return [...new Map(places.map((place) => [place.key, place])).values()].flatMap((place) => {
+    const editorProblems = (findModel(place.key)?.problems ?? []).flatMap((problem) => {
+      const code = codes.value?.find((one) => one.id === problem.code);
+      return code ? [{ code, problem, level: code.level }] : [];
+    });
+    const listed = [...editorProblems, ...listFindings(place)];
+    return listed.length ? [{ place, problems: listed }] : [];
+  });
+}
+
+/** listFindings returns a file's findings about the mods together as problems. Checks turned off are left out. */
+function listFindings(place: Place): Problem[] {
+  const off = settings.value("ide.checks").split(",");
+  return (report.value?.compatibility.findings ?? []).flatMap((finding) => {
+    const code = codes.value?.find((one) => one.id === finding.code);
+    if (code?.question !== "compatibility" || off.includes(code.id)) return [];
+    return [...(finding.sites ?? []), ...(finding.repeats ?? [])].flatMap(({ place: site, range }) =>
+      site.key === place.key
+        ? [
+            {
+              code,
+              problem: { code: code.id, range, facts: finding.facts },
+              level: finding.level,
+              health: true as const,
+            },
+          ]
+        : [],
+    );
+  });
+}
+
+/** describePlace returns a file's label above its side of the compare, its origin's name and its path. */
+function describePlace(place: Place): string {
+  return `${workspace.originName(place.origin)} · ${place.rel}`;
 }
 
 /** collapseAll folds every folder of both explorers. */
@@ -347,20 +464,20 @@ async function revealFile(): Promise<void> {
             class="flex shrink-0 items-center gap-0.5"
             :class="collapsed ? 'flex-col px-1 py-1.5' : 'h-9 border-b border-default px-1.5'"
           >
-            <UTooltip v-for="tab in SIDEBAR" :key="tab.value" :text="tab.label" :content="{ side: 'right' }">
+            <UTooltip v-for="tab in tabs" :key="tab.value" :text="tab.label" :content="{ side: 'right' }">
               <UButton
                 :icon="tab.icon"
                 square
                 :ui="{ leadingIcon: 'size-4.5' }"
                 :aria-label="tab.label"
-                :color="!collapsed && sidebar === tab.value ? 'primary' : 'neutral'"
-                :variant="!collapsed && sidebar === tab.value ? 'soft' : 'ghost'"
+                :color="!collapsed && shownSidebar === tab.value ? 'primary' : 'neutral'"
+                :variant="!collapsed && shownSidebar === tab.value ? 'soft' : 'ghost'"
                 @click="choose(tab.value, collapsed, collapse)"
               />
             </UTooltip>
             <span class="grow" />
             <span id="sidebar-actions" class="contents" />
-            <UTooltip v-if="!collapsed && sidebar === 'explorer'" text="Collapse all">
+            <UTooltip v-if="!collapsed && shownSidebar === 'explorer'" text="Collapse all">
               <UButton
                 icon="i-lucide-chevrons-down-up"
                 variant="ghost"
@@ -379,7 +496,7 @@ async function revealFile(): Promise<void> {
               :disabled="!gameOpen"
               auto-save-id="pmt.ide.explorer"
               class="absolute inset-0 py-1"
-              :class="sidebar !== 'explorer' && 'invisible'"
+              :class="shownSidebar !== 'explorer' && 'invisible'"
             >
               <template #mods>
                 <div class="flex min-h-0 min-w-0 flex-1 flex-col">
@@ -421,7 +538,7 @@ async function revealFile(): Promise<void> {
                         class="size-3.5"
                       />Game files
                     </button>
-                    <FilterButton v-if="!windowNames?.includes('game')" tree="game" />
+                    <FilterButton v-if="!windows.listWindows().includes('game')" tree="game" />
                     <UTooltip text="Open in its own window">
                       <UButton
                         icon="i-lucide-app-window"
@@ -429,12 +546,12 @@ async function revealFile(): Promise<void> {
                         size="xs"
                         square
                         aria-label="Open in its own window"
-                        @click="windows.popOut({ game: true })"
+                        @click="windows.popOut('game')"
                       />
                     </UTooltip>
                   </div>
                   <div
-                    v-if="windowNames?.includes('game')"
+                    v-if="windows.listWindows().includes('game')"
                     v-show="gameOpen"
                     class="flex flex-col gap-2 px-3 py-1.5 text-12 text-dimmed"
                   >
@@ -455,9 +572,9 @@ async function revealFile(): Promise<void> {
                 </div>
               </template>
             </USplitter>
-            <SearchView v-show="sidebar === 'search'" />
-            <SourceControlView v-if="sidebar === 'git'" />
-            <EntriesView v-if="sidebar === 'entries'" />
+            <SearchView v-show="shownSidebar === 'search'" />
+            <SourceControlView v-if="shownSidebar === 'git'" />
+            <EntriesView v-if="shownSidebar === 'entries'" />
           </div>
         </aside>
         <aside v-else class="flex min-h-0 min-w-0 flex-1 flex-col border-e border-default bg-muted pb-1">
@@ -478,11 +595,30 @@ async function revealFile(): Promise<void> {
           orientation="vertical"
           auto-save-id="pmt.ide.editors"
           class="min-w-0 flex-1"
-          @collapse="(index) => editorPanes[index]?.id === 'panel' && (panel = '')"
+          @collapse="(index) => editorPanes[index]?.id === 'panel' && (editor.panel = '')"
         >
           <template #code>
-            <div class="flex min-h-0 min-w-0 flex-1">
-              <EditorLayout />
+            <EditorGroup v-if="visualGroup" :group="visualGroup" active />
+            <div v-else class="flex min-h-0 min-w-0 flex-1">
+              <USplitter
+                :items="groupRows"
+                orientation="vertical"
+                :auto-save-id="`${layoutKey}.rows`"
+                class="min-h-0 min-w-0 flex-1"
+              >
+                <template #row="{ item: row }">
+                  <USplitter
+                    :key="row.id"
+                    :items="row.columns"
+                    :auto-save-id="`${layoutKey}.${row.id}`"
+                    class="min-h-0 min-w-0 flex-1"
+                  >
+                    <template #column="{ item: column }">
+                      <EditorGroup :group="column.group" :active="column.group.id === editor.activeGroup()?.id" />
+                    </template>
+                  </USplitter>
+                </template>
+              </USplitter>
             </div>
           </template>
           <template #panel>
@@ -529,11 +665,86 @@ async function revealFile(): Promise<void> {
                     size="sm"
                     square
                     aria-label="Close the panel"
-                    @click="panel = ''"
+                    @click="editor.panel = ''"
                   />
                 </template>
               </div>
-              <IdePanel :tab="panelTab" />
+              <div class="flex min-h-0 flex-1 flex-col bg-muted text-(length:--ide-ui-font)">
+                <template v-if="panelTab === 'problems'">
+                  <Teleport defer to="#panel-actions">
+                    <UInput
+                      v-model="problemFilter"
+                      placeholder="Filter problems"
+                      size="xs"
+                      class="w-50"
+                      icon="i-lucide-filter"
+                    />
+                    <UButton
+                      label="Open in Health"
+                      variant="ghost"
+                      size="xs"
+                      :to="{ name: 'health', params: { id: workspace.activeId() } }"
+                    />
+                  </Teleport>
+                  <UScrollArea
+                    v-if="rows.length"
+                    v-slot="{ item }"
+                    :items="rows"
+                    :virtualize="{ estimateSize: 24, skipMeasurement: true }"
+                    class="min-h-0 flex-1 py-1"
+                  >
+                    <ProblemRow
+                      v-if="'code' in item"
+                      dense
+                      class="ps-7.5"
+                      :level="item.level"
+                      :message="item.message"
+                      @open="
+                        editor.show(
+                          item.place,
+                          { lineNumber: item.problem.range.startLineNumber, column: item.problem.range.startColumn },
+                          'navigate',
+                        )
+                      "
+                    >
+                      <template #trailing>
+                        <span class="shrink-0 font-mono text-11 text-dimmed">{{ item.code.id }}</span>
+                        <span class="shrink-0 font-mono text-11 text-dimmed">
+                          {{ item.problem.range.startLineNumber }}:{{ item.problem.range.startColumn }}
+                        </span>
+                        <UBadge
+                          v-if="item.health"
+                          label="Health"
+                          color="neutral"
+                          variant="subtle"
+                          size="sm"
+                          class="shrink-0"
+                        />
+                      </template>
+                    </ProblemRow>
+                    <div
+                      v-else
+                      class="flex h-6 items-center gap-1.5 px-3 text-12 font-medium whitespace-nowrap text-highlighted"
+                    >
+                      <OriginChip :origin="item.place.origin" dot />
+                      <span class="truncate">{{ item.place.rel }}</span>
+                      <span class="text-11 font-normal text-dimmed">{{ item.count }}</span>
+                    </div>
+                  </UScrollArea>
+                  <p v-else class="px-3 py-2 text-12 text-dimmed">
+                    {{ problemFilter ? "No problem matches the filter." : "No problems in the open files." }}
+                  </p>
+                </template>
+                <TerminalPanel v-else-if="panelTab === 'terminal'" />
+                <div v-else ref="output" class="min-h-0 flex-1 overflow-y-auto px-3 py-1.5 font-mono text-11">
+                  <pre
+                    v-for="(line, index) in git.output()"
+                    :key="index"
+                    class="pb-0.5 whitespace-pre-wrap text-toned"
+                    >{{ line }}</pre>
+                  <p v-if="!git.output().length" class="font-sans text-12 text-dimmed">The output of git shows here.</p>
+                </div>
+              </div>
             </div>
           </template>
         </USplitter>
@@ -574,7 +785,22 @@ async function revealFile(): Promise<void> {
     </Teleport>
     <UModal :open="!!comparing" title="Compare" fullscreen @update:open="comparing = undefined">
       <template #body>
-        <FileCompare v-if="comparing" :left="comparing.left" :right="comparing.right" />
+        <div v-if="comparing" class="flex h-full min-h-0 flex-col overflow-hidden rounded-lg border border-default">
+          <p v-if="leftFile.isPending.value || rightFile.isPending.value" class="p-4 text-12 text-dimmed">
+            Reading the two files…
+          </p>
+          <p v-else-if="leftFile.error.value || rightFile.error.value" class="p-4 text-12 text-dimmed">
+            {{ describePlace(leftFile.error.value ? comparing.left : comparing.right) }} could not be read.
+          </p>
+          <CompareView
+            v-else-if="leftFile.data.value && rightFile.data.value"
+            :left="leftFile.data.value.text.text"
+            :right="rightFile.data.value.text.text"
+            :language="EDITOR_LANGUAGES[comparing.right.format]"
+            :left-label="describePlace(comparing.left)"
+            :right-label="describePlace(comparing.right)"
+          />
+        </div>
       </template>
     </UModal>
   </div>

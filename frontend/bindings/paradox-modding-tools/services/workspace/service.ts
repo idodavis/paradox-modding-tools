@@ -114,7 +114,7 @@ export function DeleteWorkspace(id: string): $CancellablePromise<void> {
 }
 
 /**
- * DetectInstalls finds a game's installs on this machine.
+ * DetectInstalls finds a game's installs on this machine. It finds none for a game this build does not support.
  */
 export function DetectInstalls(gameID: string): $CancellablePromise<game$0.DetectedInstall[] | null> {
     return $Call.ByID(3307033194, gameID);
@@ -147,15 +147,15 @@ export function ListFolder(dir: string): $CancellablePromise<$models.Child[] | n
 /**
  * ListGames returns the supported games.
  */
-export function ListGames(): $CancellablePromise<(game$0.Game | null)[] | null> {
+export function ListGames(): $CancellablePromise<game$0.Game[] | null> {
     return $Call.ByID(3286235044);
 }
 
 /**
- * ListInstalls returns every recorded install.
+ * ListInstalls returns every recorded install of the given game.
  */
-export function ListInstalls(): $CancellablePromise<app$0.Install[] | null> {
-    return $Call.ByID(924143505);
+export function ListInstalls(gameID: string): $CancellablePromise<app$0.Install[] | null> {
+    return $Call.ByID(924143505, gameID);
 }
 
 /**
@@ -166,14 +166,6 @@ export function ListLanguages(installID: string): $CancellablePromise<string[] |
 }
 
 /**
- * ListMods returns the mods of every workspace in load order, by the workspace's id. A workspace whose install is
- * not recorded is left out.
- */
-export function ListMods(): $CancellablePromise<{ [_ in string]?: $models.Mod[] | null } | null> {
-    return $Call.ByID(4166687960);
-}
-
-/**
  * ListReadyInstalls returns the ids of the installs whose caches are up to date, so opening them scans nothing.
  */
 export function ListReadyInstalls(): $CancellablePromise<string[] | null> {
@@ -181,16 +173,18 @@ export function ListReadyInstalls(): $CancellablePromise<string[] | null> {
 }
 
 /**
- * ListRoots returns the workspace's root folders in load order, the game's last. It returns none if none is open.
+ * ListRoots returns the place of each of the workspace's root folders, in load order, the game's last. It returns
+ * none if none is open.
  */
-export function ListRoots(): $CancellablePromise<files$0.Root[] | null> {
+export function ListRoots(): $CancellablePromise<$models.Place[] | null> {
     return $Call.ByID(1315421210);
 }
 
 /**
- * ListWorkspaces returns every recorded workspace.
+ * ListWorkspaces returns every recorded workspace with its install, its game and its mods, each mod's descriptor read
+ * from disk.
  */
-export function ListWorkspaces(): $CancellablePromise<app$0.Workspace[] | null> {
+export function ListWorkspaces(): $CancellablePromise<$models.Workspace[] | null> {
     return $Call.ByID(2552451463);
 }
 
@@ -294,7 +288,8 @@ export function State(): $CancellablePromise<$models.State> {
 
 /**
  * UpdateInstall moves an install to another folder and reads its version again. A workspace open on the install
- * opens again. It returns an error if the install is not recorded or the folder does not exist.
+ * opens again. It returns an error if the install is not recorded, its game is not supported or the folder does not
+ * exist.
  */
 export function UpdateInstall(id: string, path: string): $CancellablePromise<void> {
     return $Call.ByID(2552603427, id, path);
@@ -308,7 +303,8 @@ export function UpdateMod(workspaceID: string, mod: app$0.Mod): $CancellableProm
 }
 
 /**
- * UpdateWorkspace replaces a workspace's record. It returns an error if the workspace is not recorded.
+ * UpdateWorkspace replaces a workspace's record, all but its mods, its settings and its ignored pairs. It returns an
+ * error if the workspace is not recorded.
  */
 export function UpdateWorkspace(ws: app$0.Workspace): $CancellablePromise<void> {
     return $Call.ByID(3617229917, ws);

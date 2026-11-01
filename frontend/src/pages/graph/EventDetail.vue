@@ -8,19 +8,22 @@ import { computed, shallowRef, watch } from "vue";
 import { useQuery } from "@pinia/colada";
 import { createReusableTemplate, useClipboard } from "@vueuse/core";
 import { useRoute, useRouter } from "vue-router";
-import type { Condition, Edge, Graph, Node } from "@services/graph/models";
+import { Markup } from "@internal/loc/models";
+import type { Edge, Graph, Node } from "@services/graph/models";
 import type { Place } from "@services/workspace/models";
 import { compare } from "../../app/commands";
-import { detailQuery, loadQuery } from "../../queries";
+import { detailQuery } from "../../queries";
 import { useEditorStore } from "../../stores/editor";
 import { useWorkspaceStore } from "../../stores/workspace";
-import LocText from "../../ui/LocText.vue";
 import OriginChip from "../../ui/OriginChip.vue";
 import ScriptSnippet from "../../ui/ScriptSnippet.vue";
-import SectionHead from "../../ui/SectionHead.vue";
 import SourceLink from "../../ui/SourceLink.vue";
 import ConditionList, { describeStep, groupConditions } from "./ConditionList.vue";
 import { listRoute, lookupLook } from "./layout";
+
+// the chip a data call and a key are drawn as; a long one is cut, its whole text on hover
+const CHIP =
+  "inline-block h-4.5 max-w-[18em] truncate rounded-chip bg-(--bg-4) px-1.5 align-[-3px] text-[11.5px] leading-4.5";
 
 const { id, graph = undefined, below = false } = defineProps<{ id: string; graph?: Graph; below?: boolean }>();
 const emit = defineEmits<{ close: []; select: [id: string] }>();
@@ -30,9 +33,10 @@ const router = useRouter();
 const editor = useEditorStore();
 const workspace = useWorkspaceStore();
 const { copy, copied } = useClipboard();
-const [DefineWay, Way] = createReusableTemplate();
-const [DefineRule, Rule] = createReusableTemplate();
-const [DefineCopy, Copy] = createReusableTemplate();
+// a section's head: its title, a count if it has one, and what its slot puts at the row's end
+const [DefineSectionHead, SectionHead] = createReusableTemplate<{ title: string; count?: number }>();
+// the tabs of the head, which sit in one place when the detail is below the canvas and in another when it is beside it
+const [DefineTabs, Tabs] = createReusableTemplate();
 // one firing on the Links tab, by the node at its given end
 const [DefineLink, Link] = createReusableTemplate<{ edge: Edge; end: "from" | "to" }>();
 
@@ -75,25 +79,11 @@ const way = computed(() => {
   }
   return chain.map((one, position) => ({ node: one, edge: findEdge(one, chain[position + 1]) }));
 });
-// the own trigger of each node on the way before the selected one, read from its detail
-const callerTriggers = shallowRef<Record<string, Condition[]>>({});
-watch(
-  () => way.value.map(({ node: one }) => one.id).filter((one) => one !== id),
-  async (ids, _previous, onCleanup) => {
-    let stale = false;
-    onCleanup(() => (stale = true));
-    const pairs = await Promise.all(ids.map(async (one) => [one, await loadTrigger(one)] as const));
-    if (!stale) callerTriggers.value = Object.fromEntries(pairs);
-  },
-  { immediate: true },
-);
-// every node's own trigger on the way, the selected one's from its own detail
-const triggers = computed(() => ({ ...callerTriggers.value, [id]: detail.value?.trigger ?? [] }));
 // what the way says under each of its nodes: its own trigger under "when", then the blocks its next firing sits in
 // under "then"
 const wayConditions = computed(() =>
   way.value.map(({ node: one, edge }) => {
-    const trigger = groupConditions(triggers.value[one.id] ?? []);
+    const trigger = groupConditions(one.trigger ?? []);
     const steps = (edge?.steps ?? []).flatMap(describeStep);
     return [
       ...(trigger.length ? [{ text: "when", conditions: trigger, line: 0 }] : []),
@@ -101,36 +91,32 @@ const wayConditions = computed(() =>
     ];
   }),
 );
-/** Finds the drawn edge from one node to the next on the way. It finds none for the last. */
+/** findEdge finds the drawn edge from one node to the next on the way. It finds none for the last. */
 function findEdge(firer: Node, next: Node | undefined): Edge | undefined {
   return next && (graph?.edges ?? []).find((edge) => edge.from === firer.id && edge.to === next.id);
 }
 
-/** Reads a node's own trigger in words from its detail. It reads none for a node that writes none. */
-async function loadTrigger(nodeId: string): Promise<Condition[]> {
-  const other = await loadQuery(detailQuery(nodeId)).catch(() => undefined);
-  return other?.trigger ?? [];
-}
-
-/** Describes the blocks a firing is written in, as a row reads them: "option · trigger_event, days = 30". */
+/**
+ * describeHow describes the blocks a firing is written in, as a row reads them: "option · trigger_event, days = 30".
+ */
 function describeHow(edge: Edge): string {
   const blocks = (edge.steps ?? []).filter((step) => step.kind !== "block").map((step) => step.weight ?? step.key);
   return [...blocks, [edge.effect, edge.delay].filter(Boolean).join(", ")].filter(Boolean).join(" · ");
 }
 
-/** Returns the node at the other end of a firing, as the detail names it. */
+/** findLinked returns the node at the other end of a firing, as the detail names it. */
 function findLinked(edge: Edge, end: "from" | "to"): Node | undefined {
   return detail.value?.linked?.[edge[end]];
 }
 
-/** Draws the graph from the node with the given id. */
+/** setRoot draws the graph from the node with the given id. */
 function setRoot(root: string): void {
   void router.replace({ query: { root } });
 }
 
-/** Shows a file at a line. */
+/** show shows a file at a line. */
 function show(place: Place, line: number): void {
-  editor.show(place, { lineNumber: line, column: 1 }, "graph");
+  editor.show(place, { lineNumber: line, column: 1 });
 }
 </script>
 
@@ -138,77 +124,14 @@ function show(place: Place, line: number): void {
   <aside class="flex min-h-0 w-full min-w-0 flex-col overflow-hidden bg-muted">
     <UAlert v-if="error" color="error" variant="subtle" :description="error.message" class="m-3" />
     <template v-else-if="detail && node">
-      <DefineWay>
-        <SectionHead title="How it triggers" />
-        <ol class="flex flex-col px-4 pt-2">
-          <li v-for="({ node: one }, position) in way" :key="one.id" class="relative flex gap-2.5 pb-3 last:pb-0">
-            <span v-if="position < way.length - 1" class="absolute start-2.75 top-6.5 bottom-0.5 w-px bg-(--line-2)" />
-            <span
-              class="grid size-5.75 shrink-0 place-items-center rounded-[7px] border bg-(--bg-3)"
-              :class="one.id === id ? 'border-(--link) ring-3 ring-(--link-soft)' : 'border-(--line-2)'"
-            >
-              <UIcon
-                :name="one.display === 'hidden' ? 'i-lucide-eye-off' : lookupLook(one.database).icon"
-                class="size-3.25"
-                :style="{ color: lookupLook(one.database).color }"
-              />
-            </span>
-            <div class="flex min-w-0 flex-1 flex-col gap-1 pt-0.5">
-              <span class="flex items-center gap-1.5 text-12 leading-4.5 whitespace-nowrap text-dimmed">
-                <code class="font-mono font-semibold text-highlighted">{{ one.name }}</code>
-                {{ one.id === id ? "here" : one.display === "hidden" ? "hidden event" : one.what }}
-                <span
-                  v-if="one.hardcoded"
-                  class="inline-flex h-4 items-center gap-0.75 rounded-sm bg-(--bg-4) px-1.25 text-[10px]"
-                  ><UIcon name="i-lucide-cog" class="size-2.5" />the game calls it</span
-                >
-              </span>
-              <ConditionList
-                v-if="wayConditions[position]?.length"
-                :conditions="wayConditions[position] ?? []"
-                class="text-12 leading-4.5"
-              />
-              <span v-if="one.id === id && !triggers[one.id]?.length" class="text-12 leading-4.5 text-dimmed"
-                >with no trigger of its own</span
-              >
-            </div>
-          </li>
-        </ol>
-      </DefineWay>
-      <DefineRule>
-        <template v-for="rule in detail.rules ?? []" :key="rule.id">
-          <SectionHead title="The rule it reads"
-            ><span class="font-mono text-11 font-normal text-dimmed">{{ rule.id }}</span></SectionHead
-          >
-          <div class="mx-4 mt-2 flex flex-col gap-1 rounded-lg border border-(--line-1) bg-(--bg-2) px-2.5 py-2">
-            <div v-for="option in rule.options ?? []" :key="option.key" class="flex items-baseline gap-2.5 text-11">
-              <UBadge
-                :label="option.text || option.key"
-                :color="option.default ? 'success' : 'neutral'"
-                variant="subtle"
-                size="sm"
-                class="min-w-18 shrink-0 justify-center"
-              />
-              <span class="min-w-0 flex-1 text-toned">{{ option.description }}</span>
-              <span v-if="option.default" class="text-dimmed">default</span>
-            </div>
-          </div>
-        </template>
-      </DefineRule>
-      <DefineCopy>
-        <template v-if="detail.copy">
-          <SectionHead title="It replaces the game's">
-            <UButton
-              label="Compare"
-              icon="i-lucide-git-compare"
-              variant="ghost"
-              size="xs"
-              @click="detail.copy && compare(detail.copy.place, node.place)"
-            />
-          </SectionHead>
-          <div class="px-4 pt-2"><SourceLink :place="detail.copy.place" :line="detail.copy.line" /></div>
-        </template>
-      </DefineCopy>
+      <DefineSectionHead v-slot="{ title, count, $slots }">
+        <div class="flex h-11 shrink-0 items-center gap-2.5 border-b border-default px-3">
+          <span class="shrink-0 text-13 font-semibold">{{ title }}</span>
+          <span class="grow" />
+          <span v-if="count !== undefined" class="shrink-0 text-11 text-dimmed tabular-nums">{{ count }}</span>
+          <component :is="$slots.default" />
+        </div>
+      </DefineSectionHead>
       <DefineLink v-slot="{ edge, end }">
         <li
           role="button"
@@ -237,10 +160,23 @@ function show(place: Place, line: number): void {
           />
           <!-- the source link opens its file without selecting the row -->
           <span class="flex max-w-40 min-w-0 shrink" @click.stop @dblclick.stop>
-            <SourceLink :place="edge.place" :line="edge.line" class="min-w-0" />
+            <SourceLink :place="edge.site.place" :line="edge.site.line" class="min-w-0" />
           </span>
         </li>
       </DefineLink>
+      <DefineTabs>
+        <UTabs
+          :model-value="tab"
+          :items="tabs"
+          :content="false"
+          variant="link"
+          @update:model-value="tab = String($event)"
+        >
+          <template #trailing="{ item }">
+            <span v-if="item.value === 'script'" class="text-11 font-normal text-dimmed">{{ lines }} lines</span>
+          </template>
+        </UTabs>
+      </DefineTabs>
 
       <div class="flex shrink-0 flex-col gap-1.5 border-b border-default px-4 pt-3 pb-2.5" :class="below && 'pb-0'">
         <div class="flex flex-wrap items-center gap-2">
@@ -253,23 +189,11 @@ function show(place: Place, line: number): void {
           />
           <template v-if="below">
             <span class="font-mono text-14 font-semibold text-highlighted">{{ node.name }}</span>
-            <SourceLink :place="node.place" :line="node.line" />
-            <OriginChip :origin="node.place.origin" />
+            <SourceLink :place="node.site.place" :line="node.site.line" />
+            <OriginChip :origin="node.site.place.origin" />
           </template>
           <span class="grow" />
-          <UTabs
-            v-if="below"
-            :model-value="tab"
-            :items="tabs"
-            :content="false"
-            variant="link"
-            :ui="{ list: 'border-0' }"
-            @update:model-value="tab = String($event)"
-          >
-            <template #trailing="{ item }">
-              <span v-if="item.value === 'script'" class="text-11 font-normal text-dimmed">{{ lines }} lines</span>
-            </template>
-          </UTabs>
+          <Tabs v-if="below" :ui="{ list: 'border-0' }" />
           <UButton
             label="Set as root"
             icon="i-lucide-target"
@@ -278,7 +202,7 @@ function show(place: Place, line: number): void {
             :disabled="route.query.root === id"
             @click="setRoot(id)"
           />
-          <UButton label="Open in IDE" icon="i-lucide-external-link" @click="show(node.place, node.line)" />
+          <UButton label="Open in IDE" icon="i-lucide-external-link" @click="show(node.site.place, node.site.line)" />
           <UButton
             icon="i-lucide-x"
             variant="ghost"
@@ -291,23 +215,12 @@ function show(place: Place, line: number): void {
         <template v-if="!below">
           <span class="font-mono text-16 leading-5.5 font-semibold break-all text-highlighted">{{ node.name }}</span>
           <span class="flex items-center gap-2"
-            ><SourceLink :place="node.place" :line="node.line" /><OriginChip :origin="node.place.origin"
+            ><SourceLink :place="node.site.place" :line="node.site.line" /><OriginChip :origin="node.site.place.origin"
           /></span>
           <p v-if="node.comment" class="font-mono text-11 leading-4.25 whitespace-pre-line text-(--syn-comment) italic">
             {{ node.comment }}
           </p>
-          <UTabs
-            :model-value="tab"
-            :items="tabs"
-            :content="false"
-            variant="link"
-            class="-mx-1"
-            @update:model-value="tab = String($event)"
-          >
-            <template #trailing="{ item }">
-              <span v-if="item.value === 'script'" class="text-11 font-normal text-dimmed">{{ lines }} lines</span>
-            </template>
-          </UTabs>
+          <Tabs class="-mx-1" />
         </template>
       </div>
 
@@ -320,9 +233,78 @@ function show(place: Place, line: number): void {
               : 'flex flex-col gap-4 py-3.5'
           "
         >
-          <section><Way /></section>
-          <section v-if="detail.rules?.length"><Rule /></section>
-          <section v-if="detail.copy"><Copy /></section>
+          <section>
+            <SectionHead title="How it triggers" />
+            <ol class="flex flex-col px-4 pt-2">
+              <li v-for="({ node: one }, position) in way" :key="one.id" class="relative flex gap-2.5 pb-3 last:pb-0">
+                <span
+                  v-if="position < way.length - 1"
+                  class="absolute start-2.75 top-6.5 bottom-0.5 w-px bg-(--line-2)"
+                />
+                <span
+                  class="grid size-5.75 shrink-0 place-items-center rounded-[7px] border bg-(--bg-3)"
+                  :class="one.id === id ? 'border-(--link) ring-3 ring-(--link-soft)' : 'border-(--line-2)'"
+                >
+                  <UIcon
+                    :name="one.display === 'hidden' ? 'i-lucide-eye-off' : lookupLook(one.database).icon"
+                    class="size-3.25"
+                    :style="{ color: lookupLook(one.database).color }"
+                  />
+                </span>
+                <div class="flex min-w-0 flex-1 flex-col gap-1 pt-0.5">
+                  <span class="flex items-center gap-1.5 text-12 leading-4.5 whitespace-nowrap text-dimmed">
+                    <code class="font-mono font-semibold text-highlighted">{{ one.name }}</code>
+                    {{ one.id === id ? "here" : one.display === "hidden" ? "hidden event" : one.what }}
+                    <span
+                      v-if="one.hardcoded"
+                      class="inline-flex h-4 items-center gap-0.75 rounded-sm bg-(--bg-4) px-1.25 text-[10px]"
+                      ><UIcon name="i-lucide-cog" class="size-2.5" />the game calls it</span
+                    >
+                  </span>
+                  <ConditionList
+                    v-if="wayConditions[position]?.length"
+                    :conditions="wayConditions[position] ?? []"
+                    class="text-12 leading-4.5"
+                  />
+                  <span v-if="one.id === id && !one.trigger?.length" class="text-12 leading-4.5 text-dimmed"
+                    >with no trigger of its own</span
+                  >
+                </div>
+              </li>
+            </ol>
+          </section>
+          <section v-if="detail.rules?.length">
+            <template v-for="rule in detail.rules" :key="rule.id">
+              <SectionHead title="The rule it reads"
+                ><span class="font-mono text-11 font-normal text-dimmed">{{ rule.id }}</span></SectionHead
+              >
+              <div class="mx-4 mt-2 flex flex-col gap-1 rounded-lg border border-(--line-1) bg-(--bg-2) px-2.5 py-2">
+                <div v-for="option in rule.options ?? []" :key="option.key" class="flex items-baseline gap-2.5 text-11">
+                  <UBadge
+                    :label="option.text || option.key"
+                    :color="option.default ? 'success' : 'neutral'"
+                    variant="subtle"
+                    size="sm"
+                    class="min-w-18 shrink-0 justify-center"
+                  />
+                  <span class="min-w-0 flex-1 text-toned">{{ option.description }}</span>
+                  <span v-if="option.default" class="text-dimmed">default</span>
+                </div>
+              </div>
+            </template>
+          </section>
+          <section v-if="detail.copy">
+            <SectionHead title="It replaces the game's">
+              <UButton
+                label="Compare"
+                icon="i-lucide-git-compare"
+                variant="ghost"
+                size="xs"
+                @click="compare(detail.copy.site.place, node.site.place)"
+              />
+            </SectionHead>
+            <div class="px-4 pt-2"><SourceLink :place="detail.copy.site.place" :line="detail.copy.site.line" /></div>
+          </section>
           <section v-if="properties.length">
             <SectionHead title="Properties" />
             <dl class="grid grid-cols-[max-content_minmax(0,1fr)] items-baseline gap-x-3 gap-y-1 px-4 pt-2 text-12">
@@ -344,9 +326,28 @@ function show(place: Place, line: number): void {
               size="xs"
               class="min-w-0 self-start p-0 font-mono text-dimmed"
               :ui="{ label: 'truncate' }"
-              @click="show(node.place, version.line)"
+              @click="show(node.site.place, version.line)"
             />
-            <p class="text-13 whitespace-pre-line text-highlighted"><LocText :segments="version.segments" /></p>
+            <p class="text-13 whitespace-pre-line text-highlighted">
+              <template v-for="(segment, index) in version.segments ?? []" :key="index">
+                <span
+                  v-if="segment.markup === Markup.MarkupCall"
+                  :class="CHIP"
+                  class="text-(--syn-scope)"
+                  :title="segment.text"
+                  >{{ segment.text }}</span
+                >
+                <span
+                  v-else-if="segment.markup === Markup.MarkupKey"
+                  :class="CHIP"
+                  class="font-mono text-(--syn-variable)"
+                  >{{ segment.text }}</span
+                >
+                <br v-else-if="segment.markup === Markup.MarkupBreak" />
+                <span v-else-if="segment.markup === Markup.MarkupIcon" class="text-dimmed">{{ segment.text }}</span>
+                <template v-else-if="segment.markup === Markup.MarkupText">{{ segment.text }}</template>
+              </template>
+            </p>
             <p v-if="version.missing" class="text-12 text-warning">Missing in {{ detail.language }}</p>
             <ConditionList
               v-if="version.when?.length"
@@ -379,7 +380,7 @@ function show(place: Place, line: number): void {
               class="flex h-8 items-center gap-2 border-b border-default bg-elevated px-2.5 text-12 whitespace-nowrap"
             >
               <UIcon name="i-lucide-code" class="size-3.5 shrink-0 text-dimmed" />
-              <SourceLink :place="node.place" :line="node.line" />
+              <SourceLink :place="node.site.place" :line="node.site.line" />
               <span class="grow" />
               <UButton
                 :icon="copied ? 'i-lucide-check' : 'i-lucide-copy'"
@@ -395,10 +396,10 @@ function show(place: Place, line: number): void {
                 size="xs"
                 square
                 aria-label="Open in IDE"
-                @click="show(node.place, node.line)"
+                @click="show(node.site.place, node.site.line)"
               />
             </div>
-            <ScriptSnippet :text="detail.source" :line="node.line" language="paradox-script" class="px-3 pb-1.5" />
+            <ScriptSnippet :text="detail.source" :line="node.site.line" language="paradox-script" class="px-3 pb-1.5" />
           </div>
         </div>
       </div>

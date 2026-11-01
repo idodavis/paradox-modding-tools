@@ -38,6 +38,11 @@ export interface Comparison {
     "files": Difference[] | null;
 
     /**
+     * the files the next upload sends and leaves out
+     */
+    "upload": Upload;
+
+    /**
      * when Steam was last asked for the item
      */
     "checkedAt": string;
@@ -86,7 +91,6 @@ export interface Details {
     "updatedAt": string;
     "visibility": string;
     "tags": string[] | null;
-    "subscribers": number;
     "previews": Preview[] | null;
 
     /**

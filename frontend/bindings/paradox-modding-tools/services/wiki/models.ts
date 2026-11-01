@@ -3,19 +3,7 @@
 
 // eslint-disable-next-line @typescript-eslint/ban-ts-comment
 // @ts-ignore: Unused imports
-import * as workspace$0 from "../workspace/models.js";
-
-/**
- * An Example is one place in the workspace's files: where a lexicon row's name is used, or defined.
- */
-export interface Example {
-    "place": workspace$0.Place;
-
-    /**
-     * counted from one
-     */
-    "line": number;
-}
+import * as lsp$0 from "../lsp/models.js";
 
 /**
  * A LexiconRow is one effect, trigger, link, scope or data function: one the game's dumps declare, with the dump's
@@ -31,12 +19,12 @@ export interface LexiconRow {
     "usage": string;
     "scopes"?: string[] | null;
     "target"?: string;
-    "examples": Example[] | null;
+    "examples": lsp$0.Site[] | null;
 
     /**
      * Defined is where the copy the game keeps of a scripted effect or trigger is, or nil for what the dumps declare.
      */
-    "defined"?: Example | null;
+    "defined"?: lsp$0.Site | null;
 }
 
 /**
@@ -75,6 +63,11 @@ export interface Page {
      * the page has a heading that holds the word Modding
      */
     "modding": boolean;
+
+    /**
+     * the release date a patch note gives in its opening text; "" if none
+     */
+    "released": string;
 }
 
 /**

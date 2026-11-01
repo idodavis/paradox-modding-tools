@@ -117,7 +117,7 @@ func toFileLabel(file string) string {
 }
 
 // listTierGroups returns a group for each data call of the window that gives the cell of a title's tier in a sheet of
-// cells (Game.GUITiers), by the call written from the window down, with the widgets that write it as its readers. Its
+// cells (Game.GUI.Tiers), by the call written from the window down, with the widgets that write it as its readers. Its
 // options are the game's tiers.
 func (evaluator *evaluator) listTierGroups(tiers game.TierFrames) []Group {
 	groups := []Group{}

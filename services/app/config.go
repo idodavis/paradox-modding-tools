@@ -6,10 +6,8 @@ import (
 	"encoding/json"
 	"errors"
 	"io/fs"
-	"maps"
 	"os"
 	"path/filepath"
-	"slices"
 	"sync"
 	"time"
 
@@ -193,7 +191,7 @@ var Catalog = []Setting{
 		Help:  "The size of the whole interface, as a percentage.",
 		Words: "zoom size percent"},
 	{Key: "appearance.pages", Label: "Pages a workspace shows",
-		Section: "appearance", Type: "text", Default: "workspace-ide,event-graph,health,patch-notes,release,agents",
+		Section: "appearance", Type: "text", Default: "workspace-ide,event-graph,health,patch-notes,release",
 		Help:  "The pages the sidebar offers, in order, separated by commas.",
 		Words: "sidebar navigation hide"},
 	{Key: "terminal.shell", Label: "Default shell",
@@ -317,6 +315,10 @@ var Catalog = []Setting{
 		Choices: []string{"1920x1080", "2560x1080", "1920x1200"},
 		Help:    "The game's interface size: the screen divided by the GUI scale. 2560x1080 is ultrawide, 1920x1200 is 16:10.",
 		Words:   "gui preview screen size ultrawide aspect"},
+	{Key: "draw.openVisual", Label: "Open drawable files in Visual",
+		Section: "visual", Workspace: true, Type: "switch", Default: "false",
+		Help:  "A GUI or coat of arms file you open shows drawn, not as code.",
+		Words: "gui preview mode code coat"},
 }
 
 // A ConfigFile is config.json held in memory for every service. A missing file means a first run. A file that cannot be
@@ -337,43 +339,37 @@ func openConfig(dirs Dirs) *ConfigFile {
 	return file
 }
 
-// Config returns a copy of the config. The copy shares no slice or map with the file's own.
+// Config returns the config. Update never changes it in place, so the caller may keep it, and only reads it.
 func (file *ConfigFile) Config() Config {
 	file.mu.RLock()
 	defer file.mu.RUnlock()
-	config := file.config
-	config.Installs = slices.Clone(config.Installs)
-	config.Workspaces = lo.Map(config.Workspaces, func(workspace Workspace, _ int) Workspace {
-		workspace.Mods = lo.Map(workspace.Mods, func(mod Mod, _ int) Mod {
-			mod.Calendar.Eras = slices.Clone(mod.Calendar.Eras)
-			mod.Calendar.Months = slices.Clone(mod.Calendar.Months)
-			return mod
-		})
-		workspace.IgnoredPairs = slices.Clone(workspace.IgnoredPairs)
-		return workspace
-	})
-	config.Settings = maps.Clone(config.Settings)
-	config.Agents = lo.Map(config.Agents, func(agent Agent, _ int) Agent {
-		agent.Args = slices.Clone(agent.Args)
-		return agent
-	})
-	return config
+	return file.config
 }
 
 // Update changes the config, saves it and emits config:changed with a section, or "" for all. If the change fails,
 // nothing is saved and its error is returned. It also returns an error if the config is read-only or cannot be saved.
+// The change gets a copy of the config, so a failed change or save leaves the config as it was.
 func (file *ConfigFile) Update(section string, change func(config *Config) error) error {
 	file.mu.Lock()
 	defer file.mu.Unlock()
 	if file.readOnly {
 		return errors.New("config.json could not be read when the app started, so it is not written")
 	}
-	if err := change(&file.config); err != nil {
+	content, err := json.Marshal(file.config)
+	if err != nil {
 		return err
 	}
-	if err := SaveJSON(file.path, file.config); err != nil {
+	var next Config
+	if err := json.Unmarshal(content, &next); err != nil {
 		return err
 	}
+	if err := change(&next); err != nil {
+		return err
+	}
+	if err := SaveJSON(file.path, next); err != nil {
+		return err
+	}
+	file.config = next
 	application.Get().Event.Emit(EventConfigChanged, section)
 	return nil
 }

@@ -127,7 +127,7 @@ func pickChild(tree *jomini.Tree, statement int32, key string) (int32, bool) {
 			}
 			continue
 		}
-		if _, triggered := tree.FindChild(child, triggerKey); !triggered {
+		if _, triggered := tree.FindChild(child, game.TriggerKey); !triggered {
 			return child, true
 		}
 		if !ok {

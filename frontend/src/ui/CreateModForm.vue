@@ -20,7 +20,7 @@ const thumbnail = shallowRef("");
 
 const { data: workspaces } = useQuery(workspacesQuery);
 /** install returns the id of the workspace's install, or "" before the workspaces are read. */
-const install = () => workspaces.value?.find((record) => record.id === workspaceId)?.install ?? "";
+const install = () => workspaces.value?.find((row) => row.record.id === workspaceId)?.record.install ?? "";
 const { data: languages } = useQuery(() => ({ ...languagesQuery(install()), enabled: open.value && !!install() }));
 const { data: parent } = useQuery(() => ({
   ...modFolderQuery({ workspaceId, dir: folder.value, name: "" }),

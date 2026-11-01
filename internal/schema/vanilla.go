@@ -187,7 +187,7 @@ func (schema *Schema) resolveSaves(table, mods map[string]ScriptedDefinition) {
 // calls definitions in alphabetical order. It returns false if no word finds one.
 func (schema *Schema) findScripted(mods map[string]ScriptedDefinition, key string) (ScriptedDefinition, string, bool) {
 	for _, caller := range slices.Sorted(maps.Keys(schema.Callees)) {
-		if callee, ok := schema.lookupScripted(mods, caller, key); ok && caller != game.AnyCall {
+		if callee, ok := schema.lookupScripted(mods, caller, key); ok {
 			return callee, caller, true
 		}
 	}
@@ -321,8 +321,7 @@ func ListParameters(tree *jomini.Tree, statement int32) *Field {
 		current := tree.Statements[position]
 		for _, span := range []jomini.Span{current.Key, current.Tag, current.Value} {
 			for _, parameter := range parameterRe.FindAllStringSubmatch(tree.Text(span), -1) {
-				argument := parameters.buildChild(parameter[1])
-				argument.Source = game.SourceVanilla
+				argument := parameters.buildChild(parameter[1], game.SourceVanilla)
 				argument.Vanilla.Count++
 				switch {
 				case !strings.Contains(parameter[0], "|"):
@@ -467,13 +466,13 @@ func addCounts(total, added map[string]int) map[string]int {
 
 // countCommand keeps the place of a statement whose key is a command or a link the dumps declare. It also keeps the
 // scope the command runs in there, if known. A chain of links counts as its first link, and a prefixed link as its
-// prefix.
+// prefix, each in lower case.
 func (counter *counter) countCommand(tree *jomini.Tree, statement int32, context *Context) {
 	if context.Command == nil || context.Category != CategoryCommand && context.Category != CategoryLink {
 		return
 	}
 	key := tree.Statements[statement].Key
-	name, _, _ := strings.Cut(jomini.SplitChain(tree.Unquoted(key))[0], ":")
+	name, _ := splitLinkHead(tree.Unquoted(key))
 	example := Example{Path: counter.path, Line: tree.Lines.ToPosition(key.Start).Line}
 	counter.examples[name] = keepExample(counter.examples[name], example)
 	if scope := context.Parent.Scope; scope != "" {
@@ -501,16 +500,14 @@ func keepExample(examples []Example, example Example) []Example {
 // countCalls keeps the place of each data function that the data call of a statement names, under the type that
 // declares it.
 func (counter *counter) countCalls(tree *jomini.Tree, statement int32, context *Context) {
-	if context.ValueGroup != CategoryCall {
+	call := context.Call
+	if call == nil {
 		return
 	}
 	value := tree.Statements[statement].Value
-	call, ok := ParseCall(tree, value)
-	if !ok {
-		return
-	}
 	example := Example{Path: counter.path, Line: tree.Lines.ToPosition(value.Start).Line}
-	for i, owner := range counter.schema.listCallOwners(call, context.Datacontext) {
+	owners, _ := counter.schema.listCallOwners(*call, context.Datacontext)
+	for i, owner := range owners {
 		if owner != "" {
 			name := owner + "." + call.Steps[i].Text
 			counter.examples[name] = keepExample(counter.examples[name], example)
@@ -521,7 +518,7 @@ func (counter *counter) countCalls(tree *jomini.Tree, statement int32, context *
 // countUnlisted records the step of each data call a text writes that no dump declares for the type before it, read in
 // the given data context.
 func (counter *counter) countUnlisted(text, datacontext string) {
-	for _, call := range loc.ListCalls(text, 0) {
+	for _, call := range loc.ListCalls(loc.Segments(text, 0)) {
 		if step, before, ok := counter.schema.FindUnlisted(call, datacontext); ok {
 			counter.unlisted[before+"."+call.Steps[step].Text] = true
 		}
@@ -556,7 +553,7 @@ func (counter *counter) resolveProofs(key string) (string, bool) {
 	defined := false
 	for caller := range counter.schema.Callees {
 		scripted, ok := counter.schema.ScriptedDefinitions[caller+":"+key]
-		if !ok || caller == game.AnyCall {
+		if !ok {
 			continue
 		}
 		proves := game.Callables[scripted.Database].Proves
@@ -571,10 +568,9 @@ func (counter *counter) resolveProofs(key string) (string, bool) {
 	return strings.Join(shapes, " "), defined
 }
 
-// resolveKeyShape returns the shape of the block that holds the given key. A keyword gives its holder, an operator
-// gives value, and a command declared as one of triggers or effects gives that. A key nothing else explains gives
-// modifiers or fields. A command that fits more than one kind gives shapeAmbiguous. A link, a list iterator, a
-// parameter and a call give "".
+// resolveKeyShape returns the shape of the block that holds the given key. A keyword gives its holder, and a command
+// declared as one of triggers or effects gives that. A key nothing else explains gives modifiers or fields. A command
+// that fits more than one kind gives shapeAmbiguous. A link, a list iterator, a parameter and a call give "".
 func (counter *counter) resolveKeyShape(key string, context *Context) string {
 	lower := strings.ToLower(key)
 	for _, keyword := range game.Keywords {
@@ -588,8 +584,6 @@ func (counter *counter) resolveKeyShape(key string, context *Context) string {
 	switch {
 	case context.Category == CategoryKeyword, context.Category == CategoryParameter:
 		return ""
-	case game.IsOperator(key):
-		return game.ShapeValue
 	case context.Category == CategoryCommand && context.Command != nil:
 		return counter.resolveCommandShape(key, context.Command)
 	case counter.isUnexplained(key, context):
@@ -656,10 +650,10 @@ func (counter *counter) countField(parent holder, tree *jomini.Tree, statement i
 		return nil
 	}
 	rawKey := key
-	if game.IsNumberKey(key) {
-		key = game.NumberKey
+	if jomini.IsNumberKey(key) {
+		key = jomini.NumberKey
 	}
-	field := parent.field.buildChild(key)
+	field := parent.field.buildChild(key, game.SourceNone)
 	field.Vanilla.Count++
 	if parent.keys != nil && !parent.keys[key] {
 		parent.keys[key] = true
@@ -683,7 +677,7 @@ func isOwnDefinition(context *Context) bool {
 // isColor reports whether a block is a color. A block with a color tag is one. A bare block of three or four numbers is
 // one only under a key that ends as the file type says.
 func (counter *counter) isColor(tree *jomini.Tree, statement int32, key string) bool {
-	_, ok := game.ToColor(tree, statement)
+	_, ok := jomini.ToColor(tree, statement)
 	return ok && (!tree.Statements[statement].Tag.IsEmpty() ||
 		counter.colorSuffix != "" && strings.HasSuffix(key, counter.colorSuffix))
 }
@@ -785,11 +779,7 @@ func (field *Field) add(counted *Field) {
 	field.Vanilla.Shapes = addCounts(field.Vanilla.Shapes, counted.Vanilla.Shapes)
 	field.Vanilla.Proofs = addCounts(field.Vanilla.Proofs, counted.Vanilla.Proofs)
 	for key, child := range counted.Children {
-		target := field.buildChild(key)
-		if target.Source == game.SourceNone {
-			target.Source = game.SourceVanilla
-		}
-		target.add(child)
+		field.buildChild(key, game.SourceVanilla).add(child)
 	}
 }
 
@@ -816,17 +806,34 @@ func (counter *counter) resolveCounts() {
 		command.makeArguments(game.SourceVanilla).add(counted)
 	}
 	for _, database := range slices.Sorted(maps.Keys(counter.defined)) {
-		counter.schema.buildDatabase(row, database, "", game.Database{})
+		counter.schema.buildDatabase(row, database, game.Database{})
 	}
 	for database, counted := range counter.definitions {
-		counter.schema.buildDatabase(row, database, "", game.Database{})
+		counter.schema.buildDatabase(row, database, game.Database{})
 		counter.schema.Databases[database].Definition.add(counted)
 	}
+	counter.resolveFamilyKeys()
 	counter.schema.walkFields(counter.resolveClaims)
 	for prefix, labels := range counter.prefixed {
 		counter.resolvePrefix(prefix, labels)
 	}
 	counter.schema.UnlistedCalls = counter.unlisted
+}
+
+// resolveFamilyKeys resolves the keys that each list family's commands share once for the family, and gives every
+// member the claim they make. The first member that takes a claim, in the order of their names, decides it.
+func (counter *counter) resolveFamilyKeys() {
+	for _, members := range counter.schema.families {
+		for _, member := range members {
+			counter.resolveKeys(member)
+			if member.Keys.IsStated() {
+				for _, other := range members {
+					other.Keys = member.Keys
+				}
+				break
+			}
+		}
+	}
 }
 
 // walkFields calls the function on every field of every database's definitions and of every command's arguments.
@@ -941,7 +948,7 @@ func (counter *counter) resolveKeys(field *Field) {
 	}
 	keys := map[string]int{}
 	for key, child := range field.Children {
-		if child.Source == game.SourceVanilla && key != game.AnyKey && key != game.NumberKey {
+		if child.Source == game.SourceVanilla && key != game.AnyKey && key != jomini.NumberKey {
 			keys[key] = child.Vanilla.Count
 		}
 	}
@@ -949,10 +956,7 @@ func (counter *counter) resolveKeys(field *Field) {
 	if !ok || expected.Nested || counter.isText(expected) || strings.HasPrefix(expected.Database, game.GUI.DatabasePrefix) {
 		return
 	}
-	merged := field.buildChild(game.AnyKey)
-	if merged.Source == game.SourceNone {
-		merged.Source = game.SourceVanilla
-	}
+	merged := field.buildChild(game.AnyKey, game.SourceVanilla)
 	for key := range keys {
 		merged.add(field.Children[key])
 		delete(field.Children, key)

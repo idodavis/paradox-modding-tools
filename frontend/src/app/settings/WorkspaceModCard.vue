@@ -5,24 +5,26 @@
 import { computed, shallowRef } from "vue";
 import { useMutation, useQuery } from "@pinia/colada";
 
+import { confirm } from "../../lib/feedback";
 import { describeFinding, describePicture } from "../../lib/format";
 import { codesQuery, headerQuery, listingQuery, reportQuery } from "../../queries";
 import { SLOTS, useWorkspaceStore } from "../../stores/workspace";
-import ConfirmModal from "../../ui/ConfirmModal.vue";
 import FileSelector from "../../ui/FileSelector.vue";
+import ColorPicker from "../../ui/ColorPicker.vue";
 import ModAvatar from "../../ui/ModAvatar.vue";
 import OriginChip from "../../ui/OriginChip.vue";
-import ValueField from "../../ui/ValueField.vue";
 import * as app from "@services/app/service";
 import * as steam from "@services/steam/service";
 import * as workspace from "@services/workspace/service";
 import type { Era, Mod as ModRecord } from "@services/app/models";
 import type { Mod } from "@services/workspace/models";
 
+/** The swatches of a mod's color, one for each slot of the theme. */
+const SLOT_COLORS = SLOTS.map((slot) => ({ value: slot, background: `var(--${slot})`, label: `Color ${slot}` }));
+
 const { workspaceId, mod } = defineProps<{ workspaceId: string; mod: Mod }>();
 
 const store = useWorkspaceStore();
-const confirm = useOverlay().create(ConfirmModal);
 const newEra = shallowRef<Era>({ name: "", year: 0 });
 // The Workshop item being typed, as its id or its page's address.
 const item = shallowRef("");
@@ -41,7 +43,7 @@ const { data: report } = useQuery(() => ({
 const eras = computed(() => mod.calendar.eras ?? []);
 const months = computed(() => Array.from({ length: 12 }, (_, index) => mod.calendar.months?.[index] ?? ""));
 const dependencies = computed(() =>
-  (report.value?.findings ?? []).filter(
+  (report.value?.compatibility.findings ?? []).filter(
     (finding) => finding.code === "missing-dependency" && finding.origin === mod.id,
   ),
 );
@@ -124,33 +126,13 @@ function updateMonth(index: number, text: string): void {
           </UFormField>
         </section>
 
-        <section class="flex flex-col gap-3 border-b border-default px-5 py-4">
-          <h3 class="flex items-baseline gap-2.5 text-13 font-semibold">
-            Color
-            <span class="text-12 font-normal text-dimmed">
-              {{ store.isCustom(mod.color) ? "Picked by hand" : "A slot of the theme" }}
-            </span>
-          </h3>
-          <div class="flex flex-wrap items-center gap-2">
-            <button
-              v-for="slot in SLOTS"
-              :key="slot"
-              type="button"
-              class="size-5.5 shrink-0 rounded-md border border-accented"
-              :class="{ 'ring-1 ring-primary ring-offset-2 ring-offset-(--bg-3)': mod.color === slot }"
-              :style="{ background: `var(--${slot})` }"
-              :aria-label="`Color ${slot}`"
-              @click="update({ color: slot })"
-            />
-            <span class="mx-1 h-4.5 w-px shrink-0 bg-accented" />
-            <ValueField
-              kind="color"
-              :value="store.isCustom(mod.color) ? mod.color : ''"
-              label="Custom…"
-              @update:value="update({ color: $event })"
-            />
-          </div>
-        </section>
+        <ColorPicker
+          :model-value="mod.color"
+          :items="SLOT_COLORS"
+          note="A slot of the theme"
+          class="border-b border-default px-5 py-4"
+          @update:model-value="update({ color: $event })"
+        />
 
         <section class="flex flex-col gap-3 border-b border-default px-5 py-4 @2xl:border-b-0">
           <h3 class="flex items-baseline gap-2.5 text-13 font-semibold">
@@ -237,7 +219,7 @@ function updateMonth(index: number, text: string): void {
               <UButton label="Unlink" color="error" variant="ghost" :loading="linking" @click="link('')" />
             </div>
             <form v-else class="flex gap-2" @submit.prevent="link(item)">
-              <UInput v-model="item" placeholder="The item's id or its Workshop address" class="grow font-mono" />
+              <UInput v-model="item" placeholder="The item's id or its address" class="grow font-mono" />
               <UButton type="submit" label="Link" :disabled="!listing || !item.trim()" :loading="linking" />
             </form>
           </UFormField>

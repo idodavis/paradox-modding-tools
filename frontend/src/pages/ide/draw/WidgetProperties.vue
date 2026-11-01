@@ -16,7 +16,8 @@ import { useWorkspaceStore } from "../../../stores/workspace";
 import { applyEdits, openModel } from "../editor/models";
 import ChoiceGallery from "./ChoiceGallery.vue";
 import type { GalleryChoice } from "./ChoiceGallery.vue";
-import { listProperties, TYPE_ICONS } from "./picture";
+import { listProperties } from "./picture";
+import { findTypeIcon, splitColor, toCss } from "./properties";
 
 const { path, window } = defineProps<{ path: string; window: Window }>();
 
@@ -31,8 +32,6 @@ const NO_PICTURES: PictureList = {
   folder: "",
   shown: "",
 };
-// a color as a GUI file writes one: red, green, blue and an optional alpha, each from 0 to 1, in braces
-const COLOR = /^\{\s*([\d.]+)\s+([\d.]+)\s+([\d.]+)(?:\s+([\d.]+))?\s*\}$/;
 const CHANNELS = ["Red", "Green", "Blue", "Alpha"];
 
 const store = useDrawStore();
@@ -95,13 +94,15 @@ const { mutate: write } = useMutation({
   },
 });
 
-/** Opens a property's editor with its value, or closes it when it is open. */
+/** open opens a property's editor with its value, or closes it when it is open. */
 function open(ordinal: number, property: Property): void {
   openRow.value = openRow.value === ordinal ? null : ordinal;
   draft.value = property.value;
 }
 
-/** Says where a property comes from: the widget, a template or a type, by its name, or that no file defines it. */
+/**
+ * toSource says where a property comes from: the widget, a template or a type, by its name, or that no file defines it.
+ */
 function toSource(property: Property): string {
   if (property.origin === "missing") return "missing";
   if (property.origin === "type") return `type ${property.writer}`;
@@ -109,26 +110,14 @@ function toSource(property: Property): string {
   return property.writer ? `in ${property.writer}` : "this widget";
 }
 
-/** Splits a color as a GUI file writes it into its four channels, or returns null for any other value. */
-function splitColor(value: string): string[] | null {
-  const parts = COLOR.exec(value.trim());
-  return parts ? [parts[1], parts[2], parts[3], parts[4] ?? "1"] : null;
-}
-
-/** Converts a color's channels, each from 0 to 1, to CSS. */
-function toCss(channels: string[]): string {
-  const [red, green, blue, alpha] = channels.map(Number);
-  return `color(srgb ${red} ${green} ${blue} / ${alpha})`;
-}
-
-/** Sets one channel of the color in the editor. */
+/** setChannel sets one channel of the color in the editor. */
 function setChannel(position: number, text: string): void {
   const channels = splitColor(draft.value) ?? ["0", "0", "0", "1"];
   channels[position] = text;
   draft.value = `{ ${channels.join(" ")} }`;
 }
 
-/** Converts an image file to its label: its name without its folder or extension. */
+/** toFileLabel converts an image file to its label: its name without its folder or extension. */
 function toFileLabel(file: string): string {
   return (
     file
@@ -153,7 +142,7 @@ function toFileLabel(file: string): string {
             @mouseenter="store.hover(path, crumb.id)"
             @mouseleave="store.hover(path, null)"
           >
-            <UIcon :name="TYPE_ICONS[crumb.type] ?? 'i-lucide-square-dashed'" class="size-3 shrink-0" />
+            <UIcon :name="findTypeIcon(crumb.type)" class="size-3 shrink-0" />
             {{ crumb.name || crumb.type }}
           </button>
         </template>

@@ -9,7 +9,7 @@ Its tools answer through the other services' methods, the ones that answer the p
 
 | file | holds |
 |---|---|
-| `mcp.go` | the package comment; `Service`; `Task` and `Tasks`; `Variables`; the instructions; `ServiceStartup`, `ServiceShutdown`; `ReadURL`, `ReadToken`, `CreateToken`, `ListTasks`; the handler and its checks; the prompts |
+| `mcp.go` | the package comment; `Service`; `Task` and `Tasks`; `Access`; `Variables`; the instructions; `ServiceStartup`, `ServiceShutdown`; `ResolveAccess`, `CreateToken`, `ListTasks`; the handler and its checks; the prompts |
 | `tools.go` | the tools' inputs; `Preview`; the guide's texts; the editor's, the pages' and the app's tools; `read_guide`; the write tools' previews and tokens |
 | `app.go` | `EventShow`; `View`, `Chip`, `Page`, `Show`, `Lookup`; `SetView`, `SetPages`; `describe_view` and `show` |
 | `checks.go` | `queryKeys`, the queries `show` takes, and the guide's lines on them; the checks of what the tools are given |
@@ -54,7 +54,7 @@ with the page's chip attached and, outside PMT, through `describe_view`.
 | `definition`, `references`, `list_symbols`, `find_symbols`, `complete`, `hover`, `signature` | the `lsp` methods of those names |
 | `search_text` | `search.CollectText`, stopped when the agent cancels the call |
 | `read_file` | `workspace.Read`, with the user's unsaved text as its draft |
-| `build_report`, `list_overview`, `list_codes` | the `health` methods of those names; a report is filtered by mod, check and level |
+| `build_report`, `list_overview`, `list_codes` | the `health` methods of those names; a report's groups are filtered by mod, check and level, and keep their tallies |
 | `find_roots`, `build_graph`, `build_detail` | the `graph` methods of those names |
 | `search_pages`, `read_page`, `build_lexicon` | the `wiki` methods of those names; the Lexicon is filtered by name |
 | `read_guide` | the guide above |

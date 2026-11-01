@@ -38,7 +38,7 @@ export const PAGES = {
       "The editor's right-click menu also finds what fires an event, an on_action, a decision or a scripted effect, listed in the sidebar's search; looks the name up in the Wiki pane, as a lexicon entry or its file's page; and compares a mod's file with the game's copy or with another file you pick. Ctrl Shift D compares the active file with its last commit.",
       "Alt Left and Alt Right, or the mouse's back and forward buttons, go back and forward through the places you jumped between: a definition, a search hit, a file opened, a tab switched to, or a move of the caret of more than ten lines. Each window keeps its own last 50.",
       "Ctrl K opens the palette: type > for the commands and settings, the ones you ran last first. Enter flips a switch, a page shown or a check at once; a setting with a value opens where it is set. Compare this mod with Steam opens Publish's compare for the active file's mod.",
-      "A .gui file opens as its code beside its picture; a coat of arms opens in the Visual view with its layers. The panel beside the picture lists the widgets with each property as written and the States that hide or show them. It starts closed and opens when you click a widget or a layer. The States button, Layers for a coat, opens it on that tab and closes it again, and dragging its edge past its least width closes it too.",
+      "A .gui file or a coat of arms file opens as its code, unless Open drawable files in Visual is on. The Code and Visual switch at the end of its tabs, or Ctrl Shift V, draws it in Visual, which gives the picture the IDE's screen: the sidebar's Structure lists what the file draws, a window's widgets as a tree or the coats with their pictures, and the tools over the picture are Save, the resolution or the coat's frame, Bounds, Grid, the code beside the picture and the panel. The panel lists the widgets with each property as written and the States that hide or show them, or a coat's Layers. It starts closed and opens when you click a widget or a layer. Its button opens it on States, Layers for a coat, and closes it again, and dragging its edge past its least width closes it too; the code beside the picture opens and closes the same way.",
       "The Wiki button at the end of the editor's tabs (Ctrl Shift W) opens the wiki's pages for the file you are in, and the Lexicon of the game's triggers, effects and scopes.",
       "Source control, the sidebar's third view, runs the git installed on your computer on each mod that is a repository. Each repository has a section of its own, named for its first mod, with its branch, its commit box and its changes; mods that share a repository are counted in its header, and its commit, refresh and other actions show when the pointer is on the header. The Graph at the bottom shows the log of the active file's repository, or of the one you pick in its header. Commit in the palette opens the active file's repository's commit box, and asks which repository when the file is in none. Diffs open as tabs, and merge conflicts are resolved in the editor.",
       "Entries, the sidebar's fourth view, lists the active file's entries grouped by kind, with their titles and their keys. Find an entry searches both, and a click opens an entry at its line.",
@@ -119,22 +119,18 @@ declare module "vue-router" {
   }
 }
 
+/** isPage reports whether a name is the route name of a page. */
+export function isPage(name: string): name is PageName {
+  return name in PAGES;
+}
+
 /** isWorkspacePage reports whether a route is one of a workspace's pages. */
 export function isWorkspacePage(name: PageName): name is WorkspacePage {
   return "workspace" in PAGES[name];
 }
 
-/** WORKSPACE_TOOLS holds the workspace pages that have a tab in the top bar, in order. */
-export const WORKSPACE_TOOLS = [
-  "workspace-ide",
-  "event-graph",
-  "health",
-  "patch-notes",
-  "release",
-] as const satisfies readonly WorkspacePage[];
-
-/** A WorkspaceTool is the route name of a workspace page that has a tab in the top bar. */
-export type WorkspaceTool = (typeof WORKSPACE_TOOLS)[number];
+/** WORKSPACE_TOOLS holds the workspace pages, which have a tab in the top bar, in the catalog's order. */
+export const WORKSPACE_TOOLS = (Object.keys(PAGES) as PageName[]).filter(isWorkspacePage);
 
 /** TOOL_CHOICES holds the top bar's tabs as the choices of a select. */
 export const TOOL_CHOICES: { label: string; value: string }[] = WORKSPACE_TOOLS.map((tool) => ({
@@ -143,7 +139,7 @@ export const TOOL_CHOICES: { label: string; value: string }[] = WORKSPACE_TOOLS.
 }));
 
 /** listShownTools returns the top bar's tabs that the settings show, in order. */
-export function listShownTools(): WorkspaceTool[] {
+export function listShownTools(): WorkspacePage[] {
   const pages = useSettingsStore().value("appearance.pages").split(",");
   return WORKSPACE_TOOLS.filter((tool) => pages.includes(tool));
 }

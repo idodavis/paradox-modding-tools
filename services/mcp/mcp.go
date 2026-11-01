@@ -55,6 +55,12 @@ type Task struct {
 	Chip  string `json:"chip"` // file, page, mod or event
 }
 
+// An Access is what an agent needs to reach the server.
+type Access struct {
+	URL   string `json:"url"`
+	Token string `json:"token"`
+}
+
 // Tasks holds the starter tasks. Each text works with the chip attached, and without it through describe_view.
 var Tasks = []Task{
 	{Name: "fix-problems", Title: "Fix this file's problems", Chip: "file",
@@ -148,8 +154,14 @@ func (mcp *Service) ServiceShutdown() error {
 	return mcp.server.Close()
 }
 
-// ReadURL returns the address an agent reaches the server at, on the port the settings name.
-func (mcp *Service) ReadURL() string {
+// ResolveAccess returns the address an agent reaches the server at, on the port the settings name, and the token it
+// sends.
+func (mcp *Service) ResolveAccess() Access {
+	return Access{URL: mcp.readURL(), Token: mcp.readToken()}
+}
+
+// readURL returns the address an agent reaches the server at, on the port the settings name.
+func (mcp *Service) readURL() string {
 	return "http://" + mcp.readAddress() + "/mcp"
 }
 
@@ -160,8 +172,8 @@ func (mcp *Service) readAddress() string {
 	return net.JoinHostPort("127.0.0.1", port)
 }
 
-// ReadToken returns the token an agent sends to the server.
-func (mcp *Service) ReadToken() string {
+// readToken returns the token an agent sends to the server.
+func (mcp *Service) readToken() string {
 	mcp.mu.Lock()
 	defer mcp.mu.Unlock()
 	return mcp.token
@@ -187,7 +199,7 @@ func (mcp *Service) setToken(token string) {
 	mcp.mu.Lock()
 	mcp.token = token
 	mcp.mu.Unlock()
-	_ = os.Setenv(variableURL, mcp.ReadURL())
+	_ = os.Setenv(variableURL, mcp.readURL())
 	_ = os.Setenv(variableToken, token)
 }
 
@@ -206,7 +218,7 @@ func (mcp *Service) newHandler() http.Handler {
 		&sdk.StreamableHTTPOptions{Stateless: true})
 	gate := http.HandlerFunc(func(writer http.ResponseWriter, request *http.Request) {
 		sent := strings.TrimPrefix(request.Header.Get("Authorization"), "Bearer ")
-		if subtle.ConstantTimeCompare([]byte(sent), []byte(mcp.ReadToken())) != 1 {
+		if subtle.ConstantTimeCompare([]byte(sent), []byte(mcp.readToken())) != 1 {
 			http.Error(writer, "PMT's token is missing or wrong", http.StatusUnauthorized)
 			return
 		}

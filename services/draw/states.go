@@ -195,7 +195,7 @@ func evaluate(library *library, opened opening, picks map[string]string) States 
 		}
 	}
 	evaluator.pickColors(library, opened.pictures, picks, choices)
-	evaluator.pickTiers(library.ws.Game.GUITiers, opened.tiers, picks, choices)
+	evaluator.pickTiers(library.ws.Game.GUI.Tiers, opened.tiers, picks, choices)
 	return States{Values: values, Hidden: hidden, Applies: applies, Choices: choices}
 }
 

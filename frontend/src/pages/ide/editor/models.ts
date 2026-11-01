@@ -14,9 +14,9 @@ import type { Place } from "@services/workspace/models";
 import type { Encoding, Text } from "@internal/files/models";
 import * as lsp from "@services/lsp/service";
 import * as workspace from "@services/workspace/service";
-import { describeFinding, list, plural } from "../../../lib/format";
+import { confirm } from "../../../lib/feedback";
+import { describeFinding, findLevel, list, plural } from "../../../lib/format";
 import { codesQuery, fileQuery, keys, loadQuery, placeQuery } from "../../../queries";
-import ConfirmModal from "../../../ui/ConfirmModal.vue";
 import { EDITOR_LANGUAGES } from "../../../ui/ScriptSnippet.vue";
 
 /** A Model is one open file in this window, shared by every tab that shows it. */
@@ -30,10 +30,12 @@ export type Model = {
   lines: { start: number; end: number } | null; // the lines selected, or null when nothing is
   problems: Diagnostic[];
   diskText: Text | null; // the disk's text after the file changed on disk under unsaved text; null while none did
+  disk: { version: number; text: string }; // the version and text last agreed with on disk
+  sync: () => Promise<Diagnostic[]>; // the send of the text to Go once the edits pause
 };
 
 /** SEVERITIES holds the Monaco severity of each level. Monaco has one severity for both critical and error. */
-export const SEVERITIES: Record<string, monaco.MarkerSeverity> = {
+const SEVERITIES: Record<string, monaco.MarkerSeverity> = {
   critical: monaco.MarkerSeverity.Error,
   error: monaco.MarkerSeverity.Error,
   warning: monaco.MarkerSeverity.Warning,
@@ -45,20 +47,9 @@ const models = shallowReactive(new Map<string, Model>());
 const opening = new Map<string, Promise<Model>>();
 /** The keys closed while their model was loading. */
 const doomed = new Set<string>();
-/** The version and text each model last agreed with on disk. */
-const disk = new Map<string, { version: number; text: string }>();
-/** The debounced send of each model's text to Go, by file key. */
-const syncs = new Map<string, () => Promise<Diagnostic[]>>();
-const confirm = useOverlay().create(ConfirmModal);
 
-/**
- * setupModels keeps the models in step with the disk, the workspace and the settings. A change on disk under unsaved
- * text is kept as the model's disk text.
- */
+/** setupModels keeps the models in step with the workspace and the settings. */
 export function setupModels(): void {
-  Events.On("fs:changed", ({ data }) => {
-    if (!data.deleted) void applyChange(data.path);
-  });
   Events.On("workspace:opened", () => {
     models.forEach((model) => void (model.unsaved ? syncText(model) : diagnose(model)));
   });
@@ -103,12 +94,7 @@ export function applyEdits(model: Model, edits: Edit[]): void {
  * replaces returns none.
  */
 export async function syncText(model: Model): Promise<Diagnostic[]> {
-  let debounced = syncs.get(model.place.key);
-  if (!debounced) {
-    debounced = useDebounceFn(() => sendText(model), 300);
-    syncs.set(model.place.key, debounced);
-  }
-  return (await debounced()) ?? [];
+  return (await model.sync()) ?? [];
 }
 
 /**
@@ -119,7 +105,7 @@ export async function save(model: Model): Promise<void> {
   const text = model.model.getValue();
   const version = model.model.getAlternativeVersionId();
   await workspace.Write(model.place.path, { text, encoding: model.encoding });
-  disk.set(model.place.key, { version, text });
+  model.disk = { version, text };
   model.unsaved = model.model.getAlternativeVersionId() !== version;
   model.diskText = null;
   await Promise.all([...models.values()].filter((other) => other !== model).map(diagnose));
@@ -142,13 +128,12 @@ export function closeModel(key: string): void {
  */
 export function renameModel(key: string, place: Place): void {
   const old = models.get(key);
-  const previous = disk.get(key);
   if (!old) return;
   const text = old.model.getValue();
   closeModel(key);
   const model = buildModel(place, {
     text,
-    disk: previous?.text ?? text,
+    disk: old.disk.text,
     encoding: old.encoding,
     unsaved: old.unsaved,
   });
@@ -204,7 +189,7 @@ function buildModel(place: Place, start: { text: string; disk: string; encoding:
   const uri = monaco.Uri.file(place.path);
   const text =
     monaco.editor.getModel(uri) ?? monaco.editor.createModel(start.text, EDITOR_LANGUAGES[place.format], uri);
-  const model = shallowReactive<Model>({
+  const model: Model = shallowReactive<Model>({
     uri: uri.toString(),
     place,
     model: text,
@@ -214,17 +199,14 @@ function buildModel(place: Place, start: { text: string; disk: string; encoding:
     lines: null,
     problems: [],
     diskText: null,
+    disk: { version: start.unsaved ? -1 : text.getAlternativeVersionId(), text: start.disk },
+    sync: useDebounceFn((): Promise<Diagnostic[]> => sendText(model), 300),
   });
-  disk.set(place.key, { version: start.unsaved ? -1 : text.getAlternativeVersionId(), text: start.disk });
   text.onDidChangeContent(() => {
-    model.unsaved = text.getAlternativeVersionId() !== disk.get(place.key)?.version;
+    model.unsaved = text.getAlternativeVersionId() !== model.disk.version;
     void syncText(model);
   });
-  text.onWillDispose(() => {
-    models.delete(place.key);
-    disk.delete(place.key);
-    syncs.delete(place.key);
-  });
+  text.onWillDispose(() => models.delete(place.key));
   models.set(place.key, model);
   return model;
 }
@@ -251,8 +233,7 @@ async function setMarkers(model: Model, diagnostics: Diagnostic[]): Promise<void
   model.problems = diagnostics;
   const markers = diagnostics.map((diagnostic) => ({
     ...diagnostic.range,
-    severity:
-      SEVERITIES[codes.find((row) => row.id === diagnostic.code)?.level ?? "info"] ?? monaco.MarkerSeverity.Info,
+    severity: SEVERITIES[findLevel(diagnostic.code, codes)] ?? monaco.MarkerSeverity.Info,
     message: describeFinding(diagnostic, codes),
     code: diagnostic.code,
   }));
@@ -264,16 +245,15 @@ async function setMarkers(model: Model, diagnostics: Diagnostic[]): Promise<void
  * model keeps the disk's text beside its own until the user keeps one; a disk back at the text the model last agreed
  * with drops it.
  */
-async function applyChange(path: string): Promise<void> {
+export async function applyChange(path: string): Promise<void> {
   const place = await loadQuery(placeQuery(path));
   const model = place && models.get(place.key);
   if (!model) return;
   const cache = useQueryCache();
   const { data: file } = await cache.fetch(cache.ensure(fileQuery(path)));
-  const snapshot = disk.get(model.place.key);
-  if (!file || !snapshot) return;
+  if (!file) return;
   // a write this window made reaches it as a change too
-  if (file.text.text === snapshot.text) model.diskText = null;
+  if (file.text.text === model.disk.text) model.diskText = null;
   else if (model.unsaved) model.diskText = file.text;
   else setText(model, file.text);
 }
@@ -285,7 +265,7 @@ async function applyChange(path: string): Promise<void> {
 export function setText(model: Model, text: Text): void {
   applyEdits(model, [{ range: model.model.getFullModelRange(), text: text.text }]);
   model.encoding = text.encoding;
-  disk.set(model.place.key, { version: model.model.getAlternativeVersionId(), text: text.text });
+  model.disk = { version: model.model.getAlternativeVersionId(), text: text.text };
   model.unsaved = false;
   model.diskText = null;
 }

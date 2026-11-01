@@ -18,7 +18,8 @@ import * as $models from "./models.js";
 /**
  * BuildLexicon builds the lexicon rows of the given class: effect, trigger, link, scope or function. Effects and
  * triggers take in the scripted ones the workspace defines. The rows are sorted by name, letter case aside, so each
- * first letter is one run. It returns an error if no workspace is open or the class is none of those.
+ * first letter is one run. A class built already for the current index is answered from memory. It returns an error
+ * if no workspace is open or the class is none of those.
  */
 export function BuildLexicon($class: string): $CancellablePromise<$models.LexiconRow[] | null> {
     return $Call.ByID(2321752544, $class);
@@ -39,14 +40,6 @@ export function FindPages(path: string): $CancellablePromise<$models.Summary[] |
  */
 export function ListNotes(): $CancellablePromise<$models.Note[] | null> {
     return $Call.ByID(665702169);
-}
-
-/**
- * ReadNote returns the patch notes page of the given version, fetching it if it is not cached. It returns an error if
- * no workspace is open or the fetch fails.
- */
-export function ReadNote(version: string): $CancellablePromise<$models.Page> {
-    return $Call.ByID(3075694124, version);
 }
 
 /**

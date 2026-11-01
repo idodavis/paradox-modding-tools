@@ -9,20 +9,12 @@ import * as lsp$0 from "../lsp/models.js";
 import * as workspace$0 from "../workspace/models.js";
 
 /**
- * A Hit is one match of a text search. Its range's columns also mark the match inside the text of its line.
- */
-export interface Hit {
-    "place": workspace$0.Place;
-    "range": lsp$0.Range;
-    "text": string;
-}
-
-/**
- * Hits holds the matches in one file. It is what the search:hits event carries.
+ * Hits holds the matches in one file, each with the range of the match and the text of its line. It is what the
+ * search:hits event carries.
  */
 export interface Hits {
     "place": workspace$0.Place;
-    "hits": Hit[] | null;
+    "hits": lsp$0.Site[] | null;
 }
 
 /**

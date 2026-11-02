@@ -20,11 +20,12 @@ A widget's row (`game.WidgetType`) leaves its empty fields out.
 
 | file | holds |
 |---|---|
-| `gui.go` | the package comment; `Service`; `Property`, `Widget`, `Overlay`, `Window`; `ListDrawables`, `ResolveWindow`; the index a file is drawn from and the window the service keeps; the `resolver` of a window: types, templates, labeled blocks, the opening animation, its overlays and its holders, the tables of properties and overlays; the texts and their samples (`library.sampleText`, `library.sampleCall`); the edits `EditProperty` and `AddInstance` |
+| `gui.go` | the package comment; `Service`; `Property`, `Widget`, `Overlay`, `Window`; `ListDrawables`, `ResolveWindow`; the index a file is drawn from and the window the service keeps; the `resolver` of a window: types, templates, labeled blocks, the opening animation, its overlays and its holders, the tables of properties and overlays; the edit `EditProperty` |
+| `texts.go` | the text a value in a GUI file shows and the sample text a data call in it shows |
 | `states.go` | `Group`, `States`; `EvaluateStates`, `Reveal`; the `opening` and the `evaluator`: the groups a window's conditions read, the data contexts, the values a window opens with, the data models' sizes, the presses, and the GUI's variable system |
 | `choices.go` | `Choice`, `Row`, `PictureList`, `Picture`; `ListPictures`; the groups of picture lists, the choices between two values, the rows of a data model's list, the colors a pick gives |
 | `textures.go` | the `library` of what definitions show: the image file of a written path, an icon name or a texture binding; the pictures the defines name; the placeholders; the colors of definitions; `ExportPNG` |
-| `coat.go` | `Instance`, `Blend`, `Recolor`, `Shading`, `Layer`, `Coat`, `Image`, `NamedColor`; `ResolveCoat`; `ListColors`, `ListTextures`, `ListFrames`; the edits `AddLayer`, `MoveLayer`, `RemoveBlock`; `CreateCoatFile`, `CopyCoat` |
+| `coat.go` | `Instance`, `Blend`, `Recolor`, `Shading`, `Layer`, `Coat`, `Image`, `NamedColor`; `ResolveCoat`; `ListColors`, `ListTextures`, `ListFrames`; the edits `AddLayer`, `MoveLayer`, `RemoveBlock`, `AddInstance`; `CreateCoatFile`, `CopyCoat` |
 | `fonts.go` | `Font`: each style of a font a window names, with the file the game reads it from in the session's language |
 | `dds.go` | `PictureFiles`; Save as DDS: `FindPictureFiles`, the picture or the pictures directly in a folder, each with the DDS whose settings it keeps, the one beside it, else the game's own at its place; `WriteDDS` |
 
@@ -32,10 +33,10 @@ A widget's row (`game.WidgetType`) leaves its empty fields out.
 
 A method that changes an existing file does not write it. It returns `[]lsp.Edit`, which the editor applies to its own
 model, so there is only ever one copy of the text and undo goes through the editor. Each edit sits beside what it
-edits: `EditProperty` and `AddInstance` in `gui.go`, the layer edits in `coat.go`. `EditProperty` replaces a value where
-the block writes the key, and otherwise adds the key as the block's last statement. A block is named by the range where
-it starts. Only `CreateCoatFile` and `CopyCoat` write, since they make a new file, and `ExportPNG` writes a PNG the page
-made to a file the user chose.
+edits: the layer edits and `AddInstance` in `coat.go`, and `EditProperty`, which sets a key of any block, a widget's or
+a coat's, in `gui.go`. `EditProperty` replaces a value where the block writes the key, and otherwise adds the key as
+the block's last statement. A block is named by the range where it starts. Only `CreateCoatFile` and `CopyCoat` write,
+since they make a new file, and `ExportPNG` writes a PNG the page made to a file the user chose.
 
 ## Windows
 
@@ -49,7 +50,8 @@ and `ResolveWindow` finds it by that name.
 `ResolveWindow` resolves one window. A widget's properties come from its type's chain, its templates and its own block,
 and the last written of each key wins, keys matching without regard to case. A labeled block is read as written, or as
 the widget's `blockoverride` replaces it, whether either is written `block "x" { }` or `block = "x" { }`
-(`findLead`). Of several definitions of a type or a template, the one the game keeps wins,
+(`findLead`). A `blockoverride` written inside the block that replaces a labeled block applies too, as the game's files
+write them. Of several definitions of a type or a template, the one the game keeps wins,
 as it would if the game read the file being drawn; a file another file at its path replaces is drawn as if the game
 read it. A `Property` carries where it is written (`Origin`: widget, template or type) and the type or template whose
 block wrote it (`Writer`). A type or template no file defines is a property with the origin `missing`, so the page can
@@ -62,7 +64,7 @@ shown on, as written, and its `TextFont` and `TextSize` the font and size of the
 the states it opens in, and those its holders' opening runs on it by name, each state gives its end values and the calls
 it runs as it starts, then leads to the state its `next` names and to those its calls run by name (`TriggerAnimation`
 on the widget, or on a child that `FindChild` finds, which opens with it; `game.GUI.Animation`). A state that fades the
-widget out and runs calls as it ends takes it off the screen (`isLeaving`), so it is left out with all that would
+widget out and runs calls as it ends takes it off the screen (`classifyState`), so it is left out with all that would
 follow it. Each state runs once. A labeled block in a state is read in its place.
 
 ## Texts and their samples
@@ -148,11 +150,13 @@ and `none` for none. The `evaluator` reads every boolean data function the dumps
 Not and Nor. A call that reads the object of a data context is written from the window down to that object, so the
 same call about two objects is two groups.
 
-**Once per window.** The service keeps the window it resolved last as an `opening`: its index, file and name, and its
-evaluator at the values it opens with, its groups classified. `ResolveWindow` always resolves anew and replaces it; a
-change of states starts from it (`applyPicks`) and resolves the window again only where its index, its file, its
-name or the rows setting differs. A group's fixed fields are the `Window`'s (`Groups`), and `States` carries what the
-picks change: each group's value (`Values`), the hidden widgets, what each group decides and the choices.
+**Once per window.** The service keeps the window it resolved last as an `opening`: its index, file and name, its
+evaluator at the values it opens with, its groups classified, and the library that found its pictures, whose lookups
+later picks reuse. Each call that reads the kept window holds the service's lock. `ResolveWindow` always resolves anew
+and replaces it; a change of states starts from it (`applyPicks`) and resolves the window again only where its index,
+its file, its name or the rows setting differs. A group's fixed fields are the `Window`'s (`Groups`), and `States`
+carries what the picks change: each group's value (`Values`), the hidden widgets, what each group decides and the
+choices.
 
 **Data models' sizes** (`computeFact`). As the window opens, each data model's list draws "Rows per list" rows, so
 `GetDataModelSize` is that number, `IsDataModelEmpty` is false, and a comparison of numbers (`game.GUI.Comparisons`) is

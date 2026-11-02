@@ -5,14 +5,14 @@
 <script setup lang="ts">
 import { computed } from "vue";
 
-import type { Part } from "../lib/format";
+import type { Part } from "@services/lsp/models";
 
-const { parts } = defineProps<{ parts: readonly Part[] }>();
+const { parts = [] } = defineProps<{ parts?: readonly Part[] | null }>();
 
 /** Each part as drawn, a fact drawn before as plain text, with a path's folder and file. */
 const drawn = computed(() => {
   const keys = new Set<string>();
-  return parts.map((part) => {
+  return (parts ?? []).map((part) => {
     const key = `${part.style}:${part.text}`;
     const style = keys.has(key) ? "" : part.style;
     keys.add(key);

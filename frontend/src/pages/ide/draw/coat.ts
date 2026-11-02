@@ -3,6 +3,7 @@
  * way the game's shaders do, with the colors Go resolved, and composites the layers in their instances onto the
  * field.
  */
+import Color from "colorjs.io";
 import { Range } from "monaco-editor/editor/editor.api";
 
 import type { Coat, Instance, Layer, Recolor, Shading } from "@services/draw/models";
@@ -340,15 +341,12 @@ function writeColor(pixels: ImageData, offset: number, color: Rgba): void {
 }
 
 /**
- * toRgba converts a color Go writes as CSS, rgba(red, green, blue, alpha), to four numbers out of one. "" is clear.
+ * toRgba converts a CSS color to four numbers out of one: one Go writes, rgba(red, green, blue, alpha), or one picked
+ * as #rrggbb. "" is clear.
  */
 export function toRgba(css: string): Rgba {
-  const [red = 0, green = 0, blue = 0, alpha = 1] = (/\(([^)]*)\)/.exec(css)?.[1] ?? "").split(",").map(Number);
-  return css ? [red / 255, green / 255, blue / 255, alpha] : [0, 0, 0, 0];
-}
-
-/** parseHex converts a color picked as #rrggbb to four numbers out of one, opaque. */
-export function parseHex(hex: string): Rgba {
-  const [red, green, blue] = [1, 3, 5].map((start) => parseInt(hex.slice(start, start + 2), 16) / 255);
-  return [red, green, blue, 1];
+  if (!css) return [0, 0, 0, 0];
+  const color = new Color(css).to("srgb");
+  const [red, green, blue] = color.coords;
+  return [red ?? 0, green ?? 0, blue ?? 0, color.alpha];
 }

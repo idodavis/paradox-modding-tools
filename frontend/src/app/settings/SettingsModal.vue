@@ -12,7 +12,7 @@ import { Dialogs } from "@wailsio/runtime";
 import type { SelectItem, TabsItem } from "@nuxt/ui";
 
 import { TOOL_CHOICES } from "../pages";
-import { describeDumps, describeLanguages, matchQuery } from "../../lib/format";
+import { describeDumps, matchQuery } from "../../lib/format";
 import {
   environmentQuery,
   languagesQuery,
@@ -390,7 +390,8 @@ async function remove(): Promise<void> {
               >
                 <USelect
                   :model-value="record.language"
-                  :items="describeLanguages(languages)"
+                  :items="languages ?? []"
+                  value-key="folder"
                   placeholder="The game's base language"
                   class="w-60"
                   @update:model-value="update({ ...record, language: $event })"

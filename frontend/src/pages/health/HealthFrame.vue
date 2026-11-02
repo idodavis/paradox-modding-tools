@@ -3,8 +3,6 @@
   and buttons, over a body of sections that scrolls.
 -->
 <script setup lang="ts">
-import type { Level } from "../../lib/format";
-
 const {
   icon,
   label,
@@ -14,8 +12,8 @@ const {
   icon: string;
   /** The words in the pill under the title, such as the finding's level. */
   label: string;
-  /** The color of the icon and the pill. Unset, both are neutral. */
-  color?: Level["color"];
+  /** The color of the icon and the pill, such as a level's. Unset, both are neutral. */
+  color?: string;
 }>();
 </script>
 

@@ -6,8 +6,8 @@ import { computed, shallowRef } from "vue";
 import { useMutation, useQuery } from "@pinia/colada";
 
 import { confirm } from "../../lib/feedback";
-import { describeFinding, describePicture } from "../../lib/format";
-import { codesQuery, headerQuery, listingQuery, reportQuery } from "../../queries";
+import { describePicture, joinParts } from "../../lib/format";
+import { headerQuery, listingQuery, reportQuery } from "../../queries";
 import { SLOTS, useWorkspaceStore } from "../../stores/workspace";
 import FileSelector from "../../ui/FileSelector.vue";
 import ColorPicker from "../../ui/ColorPicker.vue";
@@ -29,7 +29,6 @@ const newEra = shallowRef<Era>({ name: "", year: 0 });
 // The Workshop item being typed, as its id or its page's address.
 const item = shallowRef("");
 
-const { data: codes } = useQuery(codesQuery);
 const { data: listing } = useQuery(() => ({ ...listingQuery({ modId: mod.id, key: "" }), enabled: store.isOpen() }));
 const { data: header } = useQuery(() => ({
   ...headerQuery(mod.thumbnail),
@@ -246,7 +245,7 @@ function updateMonth(index: number, text: string): void {
               :key="other"
               :origin="other"
             />
-            {{ describeFinding(finding, codes) }}
+            {{ joinParts(finding.message) }}
           </p>
           <p v-if="!dependencies.length" class="text-12 text-dimmed">No missing dependency.</p>
         </section>

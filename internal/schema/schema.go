@@ -96,6 +96,7 @@ type Command struct {
 	VanillaScopes []string  // the scopes the game's own files run it in, sorted
 	Wild          bool      // a link that is a pattern, so it is never matched by a written name
 	Lists         bool      // it iterates a list and has no target, so the scope inside its block is unknown
+	Patterned     bool      // some pattern lists it
 }
 
 // An Example is one place where the game's own files write a command or call a data function: the file's path and
@@ -103,6 +104,14 @@ type Command struct {
 type Example struct {
 	Path string
 	Line int
+}
+
+// A CommandPattern is a family of commands that the dumps declare once for each definition of a database, as
+// has_relation_* is for the scripted relations. The name of a definition stands in the place of the star.
+type CommandPattern struct {
+	Key      string   // the commands' name with a star in the place of a definition's name
+	Database string   // the database whose definitions' names fill the star
+	Commands []string // the commands the dumps declare by it, one for each definition, sorted
 }
 
 // A Database is one database of the game: the field tree of its definitions and the game's rows that govern it.
@@ -169,26 +178,31 @@ type relay struct {
 	Parameter string // the parameter of the body that the argument writes
 }
 
-// modScripted is the scripted definitions of the workspace's mods: each file's, and all of them together.
+// modScripted is what the files of the workspace's mods declare: each file's declarer, and the scripted
+// definitions and the modifier types of all of them together.
 type modScripted struct {
-	byFile map[string]map[string]ScriptedDefinition // by a file's key, then as ScriptedDefinitions holds them
-	all    map[string]ScriptedDefinition
+	byFile    map[string]*declarer          // by a file's key
+	all       map[string]ScriptedDefinition // as ScriptedDefinitions holds them
+	modifiers map[string]*Field             // as ModifierFields holds them
 }
 
 // A SourceState says where one source's data came from and how fresh it is.
 type SourceState struct {
 	Origin    string    `json:"origin"` // install, shipped, none
 	WrittenAt time.Time `json:"writtenAt"`
-	Stale     bool      `json:"stale"`   // older than the install
+	Stale     bool      `json:"stale"`   // a dump file read is older than the install
 	Folders   []string  `json:"folders"` // the install's folders its files were read from; none for the shipped backup
 }
 
 // A Schema is the language of one game version, as built from the dumps, the docs and the game's own files.
 type Schema struct {
-	Game                string
-	Version             string // the install's version; Build leaves it "", as only the install's record may know it
-	Dumps               SourceState
-	Databases           map[string]*Database
+	Game      string
+	Version   string // the install's version; Build leaves it "", as only the install's record may know it
+	Dumps     SourceState
+	Databases map[string]*Database
+	// Setups holds the folders its bookmarks name for its start setups, without their stage. A game with a single start
+	// has none.
+	Setups              []string
 	Callees             map[string][]string // by caller: the databases a call through it resolves in
 	Commands            map[string]*Command
 	Scopes              map[string]ScopeType
@@ -199,11 +213,15 @@ type Schema struct {
 	Prefixes            map[string]string // by link prefix: the database its names are in; "" for none
 	TypeDatabases       map[string]string // by the words of a data type: the database of its names; "" where several are
 	InlineDatabases     map[string]string // by a key that declares a definition inline in an events file: its database
+	ModifierFields      map[string]*Field // by modifier type the game defines: what its name takes in a modifiers block
 	ScriptedDefinitions map[string]ScriptedDefinition
 	WidgetTypes         map[string]bool
 	// UnlistedCalls are the steps of data calls that no dump declares for the type before them and the game's own
 	// localization and GUI text write all the same, keyed Type.step.
 	UnlistedCalls map[string]bool
+	// CommandPatterns are the patterns the dumps name commands by, one for each database that makes one, sorted by key
+	// and database.
+	CommandPatterns []CommandPattern
 	// TopFolders holds the first folder of each of the game's files, less the stage folder that opens its path, in
 	// lower case: the folders under which the game reads a mod's files.
 	TopFolders    map[string]bool
@@ -238,6 +256,7 @@ func Build(row *game.Game, installPath string, listing []files.File, parse func(
 	})
 	schema := newSchema(row)
 	schema.TopFolders = listTopFolders(row, listing)
+	schema.Setups = listSetups(row, listing, parse)
 	folders := listFolders(row, listing)
 	// Dumps first, then docs, then the game's own files. Last, a blurb the docs give a key is shared with the same key
 	// elsewhere in its database.
@@ -268,6 +287,7 @@ func newSchema(row *game.Game) *Schema {
 		},
 		TypeDatabases:       map[string]string{},
 		InlineDatabases:     map[string]string{},
+		ModifierFields:      map[string]*Field{},
 		ScriptedDefinitions: map[string]ScriptedDefinition{},
 		WidgetTypes:         map[string]bool{},
 		UnlistedCalls:       map[string]bool{},
@@ -285,6 +305,28 @@ func listTopFolders(row *game.Game, listing []files.File) map[string]bool {
 		}
 	}
 	return folders
+}
+
+// listSetups returns the folders that the game's bookmarks name as the folders of their start setups, sorted and each
+// once. It returns none for a game with no bookmark folder. A bookmark file that cannot be parsed names none.
+func listSetups(row *game.Game, listing []files.File, parse func(path string) (*jomini.Tree, error)) []string {
+	var setups []string
+	for _, file := range listing {
+		if _, rel := row.SplitStage(file.Rel); row.BookmarkFolder == "" || !strings.HasPrefix(rel, row.BookmarkFolder+"/") {
+			continue
+		}
+		tree, err := parse(file.Path)
+		if err != nil {
+			continue
+		}
+		for bookmark := range tree.Children(0) {
+			if setup, ok := tree.FindChildValue(bookmark, row.SetupKey); ok && setup != "" {
+				setups = append(setups, setup)
+			}
+		}
+	}
+	slices.Sort(setups)
+	return slices.Compact(setups)
 }
 
 // listFolders returns the folder of each database the game's files make: the folder each script file belongs to,
@@ -328,11 +370,14 @@ func findFolder(row *game.Game, rel string) string {
 func (schema *Schema) buildDatabases(row *game.Game, folders []string) {
 	for _, folder := range folders {
 		rule, _ := row.FindDatabase(folder)
+		if slices.Contains(schema.Setups, folder) {
+			rule, _ = row.FindDatabase(game.SetupFolder)
+		}
 		rule.Folder = folder
 		schema.buildDatabase(row, game.ToDatabase(folder), rule)
 	}
-	for _, nesting := range row.ListNestings() {
-		if nesting.Database == "" {
+	for _, nesting := range slices.Concat(row.ListNestings(), row.ListSetupNestings(schema.Setups...)) {
+		if nesting.Database == "" || nesting.Parent == game.SetupFolder {
 			continue
 		}
 		label := game.ToDatabase(nesting.Parent) + "." + nesting.Database
@@ -406,7 +451,7 @@ func (schema *Schema) buildDatabase(row *game.Game, label string, rule game.Data
 }
 
 // isNamedExactly reports whether a database's own name is the given words of a data type, with an underscore for each
-// space: the database institution for the words "institution", where setup/start.institution has them too.
+// space: the database institution for the words "institution", where setup/1337.institution has them too.
 func isNamedExactly(label, phrase string) bool {
 	return label == strings.ReplaceAll(phrase, " ", "_")
 }
@@ -463,38 +508,43 @@ func (schema *Schema) FindCommand(key string) (*Command, bool) {
 	return command, ok
 }
 
-// findList returns the plain list's command for a key such as every_country_in_<region>, with the database and the
-// name it iterates over. It returns a nil command for any other key.
-func (schema *Schema) findList(key string) (command *Command, database, name string) {
-	head, name, ok := strings.Cut(key, "_in_")
-	if !ok {
-		return nil, "", ""
-	}
-	list := strings.ToLower(head)
-	for _, candidate := range schema.Databases {
-		for _, alias := range listAliases(candidate) {
-			if _, ok := schema.Commands[list+"_in_"+alias]; ok {
-				return schema.Commands[list], candidate.Name, name
-			}
-		}
-	}
-	return nil, "", ""
+// findStar returns where the text that stands in the place of the pattern's star starts and ends in a key, which
+// is in lower case. It returns false if the key does not fit the pattern or leaves nothing for the star, and where
+// the text there holds a dot, as a chain of links does, since no definition's name holds one.
+func (pattern CommandPattern) findStar(key string) (start, end int, fits bool) {
+	prefix, suffix, _ := strings.Cut(pattern.Key, "*")
+	start, end = len(prefix), len(key)-len(suffix)
+	return start, end, end > start && !strings.Contains(key[start:end], ".") && strings.HasPrefix(key, prefix) &&
+		strings.HasSuffix(key, suffix)
 }
 
-// listAliases returns the names the game's own files write at the alias keys of a database's definitions, sorted and
-// without quotes.
-func listAliases(database *Database) []string {
-	var aliases []string
-	for _, key := range database.Row.AliasKeys {
-		if field := database.Definition.findChild(key); field != nil {
-			aliases = append(aliases, slices.Collect(maps.Keys(field.Vanilla.Values))...)
+// findPatterns returns the command patterns that make a key. A command the dumps declare is made by the patterns
+// that list it. Any other key is made by the patterns it fits that leave the least text in the place of their
+// star, and by the first of them in the table's order where several fit equally; every database of that pattern
+// makes it. It returns none for a key no pattern makes.
+func (schema *Schema) findPatterns(key string) []CommandPattern {
+	key = strings.ToLower(key)
+	command := schema.Commands[key]
+	if !strings.Contains(key, "_") || command != nil && !command.Patterned {
+		return nil
+	}
+	var best []CommandPattern
+	shortest := len(key)
+	for _, pattern := range schema.CommandPatterns {
+		start, end, fits := pattern.findStar(key)
+		switch {
+		case !fits:
+		case command != nil:
+			if _, listed := slices.BinarySearch(pattern.Commands, key); listed {
+				best = append(best, pattern)
+			}
+		case end-start < shortest:
+			best, shortest = []CommandPattern{pattern}, end-start
+		case end-start == shortest && pattern.Key == best[0].Key:
+			best = append(best, pattern)
 		}
 	}
-	for position, alias := range aliases {
-		aliases[position] = strings.Trim(alias, `"`)
-	}
-	slices.Sort(aliases)
-	return aliases
+	return best
 }
 
 // ResolveLink returns the scope that a link leads to when followed from a given scope. It returns false if the
@@ -508,6 +558,13 @@ func (schema *Schema) ResolveLink(link, scope string) (string, bool) {
 		return "", false
 	}
 	return command.Target, true
+}
+
+// isScope reports whether a name is a scope type that script runs in: the dumps declare triggers or effects for it.
+// It returns false for the words the dumps use for no scope, such as none, which they declare like a scope type.
+func (schema *Schema) isScope(scope string) bool {
+	scopeType := schema.Scopes[scope]
+	return (scopeType.Triggers || scopeType.Effects) && !slices.Contains(game.DumpPhrases.NoScope, scope)
 }
 
 // IsLink reports whether a key or a value starts with a scope link, ignoring case, as scope:target and prev do.

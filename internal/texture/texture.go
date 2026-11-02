@@ -34,8 +34,8 @@ const (
 	jpegMagic = "\xff\xd8\xff"
 )
 
-// sideLimit is the most pixels an image may have on a side, Direct3D's limit on a texture. A header past it is
-// corrupt, not a picture.
+// sideLimit is the most pixels an image may have on a side, Direct3D's limit on a texture. Decode refuses an image past
+// it.
 const sideLimit = 16384
 
 // extensions are the image extensions the game accepts, in the order they are tried.

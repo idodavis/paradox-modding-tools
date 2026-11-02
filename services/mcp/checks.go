@@ -12,6 +12,7 @@ import (
 	"github.com/samber/lo"
 
 	"paradox-modding-tools/internal/files"
+	"paradox-modding-tools/internal/loc"
 	"paradox-modding-tools/services/draw"
 	"paradox-modding-tools/services/graph"
 	"paradox-modding-tools/services/health"
@@ -161,8 +162,9 @@ func (mcp *Service) checkFindings(filter findingFilter) error {
 	if filter.Code != "" {
 		errs = append(errs, mcp.checkCode(filter.Code))
 	}
-	if filter.Level != "" && !slices.Contains(lsp.Levels, filter.Level) {
-		errs = append(errs, fmt.Errorf("a finding's level is %s, not %q", health.JoinList(lsp.Levels, "or"), filter.Level))
+	levels := lo.Map(lsp.Levels, func(level lsp.Level, _ int) string { return level.ID })
+	if filter.Level != "" && !slices.Contains(levels, filter.Level) {
+		errs = append(errs, fmt.Errorf("a finding's level is %s, not %q", health.JoinList(levels, "or"), filter.Level))
 	}
 	return errors.Join(errs...)
 }
@@ -174,8 +176,9 @@ func (mcp *Service) checkLanguage(language string) error {
 	if err != nil {
 		return err
 	}
-	if !slices.Contains(languages, language) {
-		return fmt.Errorf("the game has no language %q; its languages are %s", language, strings.Join(languages, ", "))
+	folders := lo.Map(languages, func(language loc.Language, _ int) string { return language.Folder })
+	if !slices.Contains(folders, language) {
+		return fmt.Errorf("the game has no language %q; its languages are %s", language, strings.Join(folders, ", "))
 	}
 	return nil
 }

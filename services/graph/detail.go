@@ -190,11 +190,11 @@ func describeCalls(ws *workspace.Session, mods *index.Index, text string) []loc.
 // describeCustom returns the texts a call's customizable localization can show, each once in the order written, joined
 // by slashes, such as "daughter/son". It returns "" for a call that names none, or one the workspace does not define.
 func describeCustom(ws *workspace.Session, mods *index.Index, step jomini.Step) string {
-	position := slices.Index(game.GUI.CallTargets[step.Text], game.CustomTexts.Database)
+	position := slices.Index(game.GUI.CallTargets[step.Text], game.CustomLocalization)
 	if position < 0 || position >= len(step.Arguments) || !step.Arguments[position].Quoted {
 		return ""
 	}
-	reference := schema.Reference{Database: game.CustomTexts.Database, Name: step.Arguments[position].Text}
+	reference := schema.Reference{Database: game.CustomLocalization, Name: step.Arguments[position].Text}
 	winner, ok := mods.FindKept(ws.Schema, reference)
 	if !ok {
 		return ""

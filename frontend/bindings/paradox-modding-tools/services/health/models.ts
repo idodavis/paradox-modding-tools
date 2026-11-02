@@ -34,6 +34,11 @@ export interface Check {
      * an lsp.Codes id
      */
     "code": string;
+
+    /**
+     * the code's title
+     */
+    "label": string;
     "level": string;
 
     /**
@@ -68,6 +73,36 @@ export interface Finding {
      * the code's level, or a contest's own
      */
     "level": string;
+
+    /**
+     * the code's title
+     */
+    "label": string;
+
+    /**
+     * the code's topic
+     */
+    "topic": string;
+
+    /**
+     * the code's template filled with the facts, or a log row's line
+     */
+    "message": lsp$0.Part[] | null;
+
+    /**
+     * the line under its name in a list
+     */
+    "brief"?: lsp$0.Part[] | null;
+
+    /**
+     * its place, such as a.txt:12, or what a log row names
+     */
+    "detail": string;
+
+    /**
+     * why the winner's copy wins, or why a log row is a mod's
+     */
+    "why"?: lsp$0.Part[] | null;
     "name": string;
 
     /**
@@ -166,6 +201,12 @@ export interface Group {
     "counts": { [_ in string]?: number } | null;
 
     /**
+     * Phrases holds each level's count as a phrase, such as 235 critical problems, by level. A level with no finding
+     * has none.
+     */
+    "phrases": { [_ in string]?: string } | null;
+
+    /**
      * the worst level that has a finding, or "" if none has
      */
     "worst": string;
@@ -221,6 +262,12 @@ export interface Report {
     "counts": { [_ in string]?: number } | null;
 
     /**
+     * Phrases holds each level's count as a phrase, such as 235 critical problems, by level. A level with no finding
+     * has none.
+     */
+    "phrases": { [_ in string]?: string } | null;
+
+    /**
      * the worst level that has a finding, or "" if none has
      */
     "worst": string;
@@ -268,6 +315,12 @@ export interface Tally {
      * by level, with every level in it
      */
     "counts": { [_ in string]?: number } | null;
+
+    /**
+     * Phrases holds each level's count as a phrase, such as 235 critical problems, by level. A level with no finding
+     * has none.
+     */
+    "phrases": { [_ in string]?: string } | null;
 
     /**
      * the worst level that has a finding, or "" if none has

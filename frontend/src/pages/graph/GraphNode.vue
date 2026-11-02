@@ -6,7 +6,6 @@
 <script setup lang="ts">
 import { computed } from "vue";
 import { Handle, Position } from "@vue-flow/core";
-import type { Edge } from "@services/graph/models";
 import { describeCount } from "../../lib/format";
 import { fileUrl } from "../../queries";
 import OriginChip from "../../ui/OriginChip.vue";
@@ -43,7 +42,8 @@ const caption = computed(() => {
  * describeTarget describes a row's target: the one node it fires, a message by its title, or how many it fires, by
  * kind.
  */
-function describeTarget(fires: Edge[]): string {
+function describeTarget(row: Row): string {
+  const fires = row.fires ?? [];
   if (fires.length > 1) {
     const database = fires[0].to.split(":")[0];
     return `${describeCount(fires.length)} ${labels[database] ?? "entries"}`;
@@ -56,7 +56,7 @@ function describeTarget(fires: Edge[]): string {
  * effect.
  */
 function describePlain(row: Row): string {
-  return row.fires[0]?.steps?.[0]?.key ?? row.fires[0]?.effect ?? "";
+  return row.fires?.[0]?.steps?.[0]?.key ?? row.fires?.[0]?.effect ?? "";
 }
 
 /** openMore opens the node's "N more" fold. The click stops there, so it does not also select the node. */
@@ -144,18 +144,16 @@ function openMore(event: MouseEvent): void {
             class="flex-1 text-[10.5px]"
           />
           <code
-            v-if="row.scopes.length"
+            v-if="row.scopes?.length"
             class="min-w-0 flex-1 truncate font-mono text-[10.5px] text-(--fg-3)"
             :title="row.scopes.map((scope) => scope.key).join(' › ')"
             >in {{ row.scopes.map((scope) => scope.key).join(" › ") }}</code
           >
           <template v-if="!row.header">
             <span v-if="row.delay" class="shrink-0 text-(--fg-3)">{{ row.delay }}</span>
-            <span
-              class="ms-auto min-w-0 truncate font-mono text-[10.5px] text-(--fg-1)"
-              :title="describeTarget(row.fires)"
-              >{{ describeTarget(row.fires) }}</span
-            >
+            <span class="ms-auto min-w-0 truncate font-mono text-[10.5px] text-(--fg-1)" :title="describeTarget(row)">{{
+              describeTarget(row)
+            }}</span>
             <Handle :id="row.id" type="source" :position="Position.Right" :connectable="false" />
           </template>
         </template>

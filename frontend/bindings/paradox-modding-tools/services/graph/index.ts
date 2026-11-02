@@ -13,6 +13,7 @@ export type {
     Filter,
     Graph,
     Node,
+    Row,
     Rule,
     RuleOption,
     Section,

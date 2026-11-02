@@ -43,6 +43,7 @@ type Site struct {
 	Text    string          `json:"text,omitempty"` // the text of the line, where the answer read the file
 	Kept    bool            `json:"kept"`
 	Reason  index.Reason    `json:"reason,omitempty"` // as index.ResolveSite gives it; unsettled where no source says
+	Label   string          `json:"label,omitempty"`  // the reason in words
 	Defines []string        `json:"defines,omitempty"`
 }
 
@@ -53,12 +54,13 @@ func MakeSite(ws *workspace.Session, mods *index.Index, site index.Site) Site {
 }
 
 // MakeSites returns the sites of a name's definitions, each with whether a winner keeps it and why, as
-// index.ResolveSite says. A nil winner keeps none.
+// index.ResolveSite says, and the reason in words. A nil winner keeps none.
 func MakeSites(ws *workspace.Session, mods *index.Index, definitions []index.Site, winner *index.Winner) []Site {
 	return lo.Map(definitions, func(definition index.Site, _ int) Site {
 		site := MakeSite(ws, mods, definition)
 		if winner != nil {
 			site.Kept, site.Reason = mods.ResolveSite(*winner, definition)
+			site.Label = index.Reasons[site.Reason].Label
 		}
 		return site
 	})

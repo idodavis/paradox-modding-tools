@@ -242,6 +242,50 @@ export interface Node {
      * Fires is every firing it makes, in the order written. It is nil for a fold and outside a graph and a detail.
      */
     "fires"?: Edge[] | null;
+
+    /**
+     * Rows are the lines it shows open: its firings grouped by the blocks that decide them, the rest folded past the
+     * fan-out. They are nil for a fold and outside a graph.
+     */
+    "rows"?: Row[] | null;
+}
+
+/**
+ * A Row is one line of an open node: the firings written in the same blocks, a block the rows under it share, or the
+ * fold of the firings past the fan-out.
+ */
+export interface Row {
+    /**
+     * Step is the block that decides its firings, or the one a header row stands for. It is nil for a firing written
+     * plainly and for a fold.
+     */
+    "step"?: Step | null;
+
+    /**
+     * the links to other scopes its firings are written in
+     */
+    "scopes"?: Step[] | null;
+
+    /**
+     * nil for a header row and a fold
+     */
+    "fires"?: Edge[] | null;
+
+    /**
+     * under a header row
+     */
+    "nested"?: boolean;
+    "header"?: boolean;
+
+    /**
+     * the delay of its first firing, in words
+     */
+    "delay"?: string;
+
+    /**
+     * the firings a fold stands for; 0 for any other row
+     */
+    "more"?: number;
 }
 
 /**

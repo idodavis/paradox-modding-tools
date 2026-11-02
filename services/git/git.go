@@ -44,6 +44,12 @@ type Repository struct {
 	Mods []string `json:"mods"` // the mods' ids
 }
 
+// A Remote is one remote of a repository: its label and the address it fetches from.
+type Remote struct {
+	Label string `json:"label"`
+	URL   string `json:"url"`
+}
+
 // findGit is the one lookup of git on the PATH, made on the first call and kept.
 var findGit = sync.OnceValues(func() (string, error) {
 	path, err := exec.LookPath("git")
@@ -93,8 +99,11 @@ func (git *Service) run(dir string, args ...string) (string, error) {
 
 // FindRepository returns the root folder of the repository that holds a folder, or false if the folder is in none.
 func (git *Service) FindRepository(dir string) (string, bool) {
-	root, err := git.resolveRepository(dir)
-	return root, err == nil
+	root, err := git.run(dir, "rev-parse", "--show-toplevel")
+	if err != nil {
+		return "", false
+	}
+	return filepath.Clean(filepath.FromSlash(strings.TrimSpace(root))), true
 }
 
 // ListRepositories returns the repositories the open workspace's mods are in, in the load order of their first mod,
@@ -127,66 +136,49 @@ func (git *Service) ReadFile(dir, revision, path string) (string, error) {
 	return files.DecodeText([]byte(stdout)).Text, err
 }
 
-// Stage stages the given files and emits git:changed.
-func (git *Service) Stage(dir string, paths []string) error {
-	return git.apply(dir, slices.Concat([]string{"add", "--"}, paths)...)
-}
-
-// Unstage unstages the given files and emits git:changed.
-func (git *Service) Unstage(dir string, paths []string) error {
-	return git.apply(dir, slices.Concat([]string{"reset", "-q", "--"}, paths)...)
-}
-
-// Discard throws away the working changes of the given files and emits git:changed. A file git does not track is
-// deleted.
-func (git *Service) Discard(dir string, paths []string) error {
-	root, err := git.resolveRepository(dir)
+// ListRemotes returns the remotes of the repository at the given root folder, each with the address it fetches from,
+// in the order git lists them. The error is git's if the folder is in no repository.
+func (git *Service) ListRemotes(root string) ([]Remote, error) {
+	stdout, err := git.run(root, "remote", "-v")
 	if err != nil {
-		return err
+		return nil, err
 	}
-	// restore knows only the files git tracks; an untracked file is removed instead
+	// each remote has a line "<label>\t<address> (fetch)", and its push line after it
+	remotes := []Remote{}
+	for line := range strings.Lines(stdout) {
+		label, rest, _ := strings.Cut(strings.TrimSuffix(line, "\n"), "\t")
+		if address, ok := strings.CutSuffix(rest, " (fetch)"); ok {
+			remotes = append(remotes, Remote{Label: label, URL: address})
+		}
+	}
+	return remotes, nil
+}
+
+// Discard throws away the working changes of the given files in the repository at the given root folder, and emits
+// git:changed. A file git does not track is deleted. A file's path is absolute or from the root. With no files it does
+// nothing. It returns git's error if a command fails.
+func (git *Service) Discard(root string, paths []string) error {
+	if len(paths) == 0 {
+		return nil
+	}
+	// restore knows only the files git tracks, and clean deletes only the ones it does not
 	stdout, err := git.run(root, slices.Concat([]string{"ls-files", "-z", "--"}, paths)...)
 	if err != nil {
 		return err
 	}
-	tracked := splitRecords(stdout)
-	untracked := lo.Without(paths, tracked...)
-	if len(untracked) > 0 {
-		if _, err := git.run(root, slices.Concat([]string{"clean", "-f", "--"}, untracked)...); err != nil {
-			return err
-		}
-	}
-	if len(tracked) > 0 {
+	if tracked := splitRecords(stdout); len(tracked) > 0 {
 		if _, err := git.run(root, slices.Concat([]string{"restore", "--worktree", "--"}, tracked)...); err != nil {
 			return err
 		}
 	}
-	application.Get().Event.Emit(EventChanged, root)
-	return nil
+	_, err = git.Run(root, slices.Concat([]string{"clean", "-f", "--"}, paths)...)
+	return err
 }
 
-// CreateCommit commits what is staged with the given message and emits git:changed.
-func (git *Service) CreateCommit(dir, message string) error {
-	return git.apply(dir, "commit", "-m", message)
-}
-
-// CreateBranch creates a branch with the given name, switches to it and emits git:changed.
-func (git *Service) CreateBranch(dir, name string) error {
-	return git.apply(dir, "switch", "-c", name)
-}
-
-// SwitchBranch switches to the given branch and emits git:changed.
-func (git *Service) SwitchBranch(dir, name string) error {
-	return git.apply(dir, "switch", name)
-}
-
-// Merge merges the given branch into the current one and emits git:changed. A conflict is not an error. It leaves
-// the markers in the files for the editor to resolve.
-func (git *Service) Merge(dir, name string) error {
-	root, err := git.resolveRepository(dir)
-	if err != nil {
-		return err
-	}
+// Merge merges the given branch into the current one of the repository at the given root folder, and emits
+// git:changed. A conflict is not an error: it leaves the markers in the files for the editor to resolve. Any other
+// failure returns git's error.
+func (git *Service) Merge(root, name string) error {
 	// a conflict exits nonzero too, announced on standard output, and the status shows it
 	stdout, err := git.run(root, "merge", "--no-edit", name)
 	if err != nil && !strings.Contains(stdout, "CONFLICT") {
@@ -194,6 +186,26 @@ func (git *Service) Merge(dir, name string) error {
 	}
 	application.Get().Event.Emit(EventChanged, root)
 	return nil
+}
+
+// Pull pulls one remote branch, given with its remote as in origin/main, into the current branch of the repository at
+// the given root folder, and emits git:changed. It returns git's error if the pull fails.
+func (git *Service) Pull(root, ref string) error {
+	remote, branch, _ := strings.Cut(ref, "/")
+	_, err := git.Run(root, "pull", remote, branch)
+	return err
+}
+
+// DeleteBranch deletes a branch of the repository at the given root folder, and emits git:changed. Unless forced, git
+// refuses a branch with commits no other branch has: DeleteBranch then returns false and no error. Any other failure
+// returns git's error.
+func (git *Service) DeleteBranch(root, name string, force bool) (bool, error) {
+	_, err := git.Run(root, "branch", lo.Ternary(force, "-D", "-d"), name)
+	// git says such a branch is "not fully merged"
+	if err != nil && strings.Contains(err.Error(), "not fully merged") {
+		return false, nil
+	}
+	return err == nil, err
 }
 
 // emitLines sends each line of a stream as a git:output event as it arrives. It does not send an empty line. It
@@ -209,15 +221,6 @@ func emitLines(stream io.Reader) {
 			return
 		}
 	}
-}
-
-// resolveRepository returns the repository that holds a folder. The error is git's if the folder is in none.
-func (git *Service) resolveRepository(dir string) (string, error) {
-	root, err := git.run(dir, "rev-parse", "--show-toplevel")
-	if err != nil {
-		return "", err
-	}
-	return filepath.Clean(filepath.FromSlash(strings.TrimSpace(root))), nil
 }
 
 // locateChanges gives each change the place of its file in the open workspace, from the root folder of the
@@ -243,18 +246,4 @@ func (git *Service) locate(root string, paths []string) []workspace.Place {
 		places[position].IsDir = strings.HasSuffix(path, "/")
 	}
 	return places
-}
-
-// apply runs a command that changes a repository and emits git:changed with the repository's folder. The error is
-// git's if the command fails or the folder is in no repository.
-func (git *Service) apply(dir string, args ...string) error {
-	root, err := git.resolveRepository(dir)
-	if err != nil {
-		return err
-	}
-	if _, err := git.run(root, args...); err != nil {
-		return err
-	}
-	application.Get().Event.Emit(EventChanged, root)
-	return nil
 }

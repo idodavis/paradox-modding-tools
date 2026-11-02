@@ -37,14 +37,14 @@ const (
 	kindBlock  = "block"  // any other block
 )
 
-// makeEdge returns the edge of one firing: where it is written, the blocks it sits in, its delay, and the effect that
-// writes it with the title that effect gives it. A firing written as one weighted entry of a list that picks one, such
-// as an on_action's random_events, has that entry as its last step. An edge whose file cannot be read has only its
-// ends and its place.
+// makeEdge returns the edge of one firing: where it is written, with the range of the name it fires and the text of
+// its line, the blocks it sits in, its delay, and the effect that writes it with the title that effect gives it. A
+// firing written as one weighted entry of a list that picks one, such as an on_action's random_events, has that entry
+// as its last step. An edge whose file cannot be read has only its ends, its place and its line.
 func makeEdge(ws *workspace.Session, mods *index.Index, fire index.Fire) Edge {
 	edge := Edge{
 		From: toID(mods, fire.Source), To: toID(mods, fire.Target), Via: listVia(mods, fire),
-		Site: lsp.MakeSite(ws, mods, fire.Use),
+		Site: lsp.LocateSite(ws, mods, fire.Use),
 	}
 	tree, err := ws.LoadTree(edge.Site.Place.Path)
 	if err != nil {

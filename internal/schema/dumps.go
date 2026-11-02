@@ -38,7 +38,8 @@ type Dumps struct {
 	Modifiers map[string]Modifier
 	OnActions map[string]OnAction
 	DataTypes map[string]DataType
-	WrittenAt time.Time // the oldest dump file's time
+	WrittenAt time.Time // the newest dump file's time
+	OldestAt  time.Time // the oldest dump file's time
 	Folders   []string  // the folders the dump files were read from, each once
 }
 
@@ -70,26 +71,26 @@ var (
 	signature    = regexp.MustCompile(`^(\S+?)\s*(?:\(\s*(.*?)\s*\))?$`)
 )
 
-// FindDumpsAt returns when the dumps under the given folders were written: the time of the oldest dump file. It reads
-// no file. The time is zero when no folder holds a dump, and the error is that of a dump file whose time cannot be
-// read.
+// FindDumpsAt returns when the dumps under the given folders were last written: the time of the newest dump file. It
+// reads no file. The time is zero when no folder holds a dump, and the error is that of a dump file whose time cannot
+// be read.
 func FindDumpsAt(dirs []string) (time.Time, error) {
-	var oldest time.Time
+	var newest time.Time
 	for _, file := range dumpFiles {
 		_, fileAt, err := findDump(dirs, file)
 		if err != nil {
 			return time.Time{}, err
 		}
-		if !fileAt.IsZero() && (oldest.IsZero() || fileAt.Before(oldest)) {
-			oldest = fileAt
+		if fileAt.After(newest) {
+			newest = fileAt
 		}
 	}
-	return oldest, nil
+	return newest, nil
 }
 
-// ReadDumps reads every dump file under the given folders, and notes each folder a file was read from. A missing file
-// is left out, so the caller can fill it from the shipped backup. It returns an error only for a file that exists and
-// cannot be read.
+// ReadDumps reads the newest copy of each dump file under the given folders, and notes each folder a file was read
+// from. A missing file is left out, so the caller can fill it from the shipped backup. It returns an error only for a
+// file that exists and cannot be read.
 func ReadDumps(dirs []string) (*Dumps, error) {
 	dumpsAt, err := FindDumpsAt(dirs)
 	if err != nil {
@@ -100,12 +101,15 @@ func ReadDumps(dirs []string) (*Dumps, error) {
 		OnActions: map[string]OnAction{}, DataTypes: map[string]DataType{}, WrittenAt: dumpsAt,
 	}
 	for _, file := range dumpFiles {
-		path, _, err := findDump(dirs, file)
+		path, fileAt, err := findDump(dirs, file)
 		if err != nil {
 			return nil, err
 		}
 		if path == "" {
 			continue
+		}
+		if dumps.OldestAt.IsZero() || fileAt.Before(dumps.OldestAt) {
+			dumps.OldestAt = fileAt
 		}
 		text, err := files.ReadText(path)
 		if err != nil {
@@ -119,21 +123,22 @@ func ReadDumps(dirs []string) (*Dumps, error) {
 	return dumps, nil
 }
 
-// findDump returns the path and the time of the first file of the given base name that one of the folders holds. The
-// path is "" and the time zero when no folder holds the file.
+// findDump returns the path and the time of the newest file of the given base name that the folders hold. The path
+// is "" and the time zero when no folder holds the file.
 func findDump(dirs []string, file string) (string, time.Time, error) {
+	newest, newestAt := "", time.Time{}
 	for _, dir := range dirs {
 		path := filepath.Join(dir, file)
 		stat, err := os.Stat(path)
 		switch {
 		case errors.Is(err, fs.ErrNotExist):
-			continue
 		case err != nil:
 			return "", time.Time{}, err
+		case stat.ModTime().After(newestAt):
+			newest, newestAt = path, stat.ModTime()
 		}
-		return path, stat.ModTime(), nil
 	}
-	return "", time.Time{}, nil
+	return newest, newestAt, nil
 }
 
 // parseFile parses the text of one dump file into the dumps, by the file's base name.
@@ -372,7 +377,7 @@ func (schema *Schema) buildDumps(row *game.Game, installPath string) error {
 	switch {
 	case !dumps.WrittenAt.IsZero():
 		state.Origin = originInstall
-		state.Stale = dumps.WrittenAt.Before(game.ReadInstallUpdatedAt(installPath))
+		state.Stale = dumps.OldestAt.Before(game.ReadInstallUpdatedAt(installPath))
 	case filled:
 		state.Origin = originShipped
 	}

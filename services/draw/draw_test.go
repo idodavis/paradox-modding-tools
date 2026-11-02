@@ -699,10 +699,10 @@ func TestResolveCoatReadsLayersParentsAndLists(t *testing.T) {
 	}
 }
 
-// TestEditPropertyReplacesOrAddsKey checks that an edit of a key in a widget's, coat's, layer's or instance's block
+// TestEditPropertiesReplacesOrAddsKey checks that an edit of a key in a widget's, coat's, layer's or instance's block
 // replaces the whole value where the block writes the key, and adds the key in the file's indentation where it does
 // not. It also checks that a range where no block starts is an error.
-func TestEditPropertyReplacesOrAddsKey(t *testing.T) {
+func TestEditPropertiesReplacesOrAddsKey(t *testing.T) {
 	drw, _, modDir := openFixture(t)
 	modFile, coatFile := filepath.Join(modDir, modWindowPath), filepath.Join(modDir, modCoatPath)
 	window, err := drw.ResolveWindow(modFile, windowName)
@@ -718,37 +718,37 @@ func TestEditPropertyReplacesOrAddsKey(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	edited, _ := makeEditor(t, string(windowText))(drw.EditProperty(window.Places[widget.Place].Path, widget.Range, "visible", "no"))
+	edited, _ := makeEditor(t, string(windowText))(drw.EditProperties(window.Places[widget.Place].Path, []Setting{{Block: widget.Range, Key: "visible", Value: "no"}}))
 	if !strings.Contains(edited, `name = "d_trait_a" visible = no }`) {
 		t.Errorf("value replaced in a block on one line: %s", edited)
 	}
 	edit := makeEditor(t, string(coatText))
 	listed := lo.Must(drw.ResolveCoat(coatFile, "d_listed", nil))
-	_, replaced := edit(drw.EditProperty(coatFile, listed.Range, game.Coat.PatternKey, `"v_pattern.dds"`))
+	_, replaced := edit(drw.EditProperties(coatFile, []Setting{{Block: listed.Range, Key: game.Coat.PatternKey, Value: `"v_pattern.dds"`}}))
 	pattern := replaced.Statements[lo.Must(replaced.FindChild(lo.Must(replaced.FindChild(0, "d_listed")), game.Coat.PatternKey))]
 	if !pattern.Tag.IsEmpty() || replaced.Text(pattern.Value) != `"v_pattern.dds"` {
 		t.Errorf("a list replaced by a plain value, tag and all: %q", replaced.Text(pattern.Span))
 	}
 	parent := lo.Must(drw.ResolveCoat(coatFile, coatParent, nil))
 	emblem, instance := parent.Layers[1], parent.Layers[1].Instances[0]
-	_, retextured := edit(drw.EditProperty(coatFile, emblem.Range, game.Coat.TextureKey, `"v_textured.dds"`))
+	_, retextured := edit(drw.EditProperties(coatFile, []Setting{{Block: emblem.Range, Key: game.Coat.TextureKey, Value: `"v_textured.dds"`}}))
 	block := lo.Must(retextured.FindChild(lo.Must(retextured.FindChild(0, coatParent)), emblemKey))
 	if got := retextured.Unquoted(retextured.Statements[lo.Must(retextured.FindChild(block, game.Coat.TextureKey))].Value); got != "v_textured.dds" {
 		t.Errorf("texture after the edit: %s", got)
 	}
-	deeper, _ := edit(drw.EditProperty(coatFile, instance.Range, "depth", "5"))
+	deeper, _ := edit(drw.EditProperties(coatFile, []Setting{{Block: instance.Range, Key: "depth", Value: "5"}}))
 	if !strings.Contains(deeper, "rotation = 45 depth = 5 }") {
 		t.Errorf("depth after the edit: %s", deeper)
 	}
-	added, _ := edit(drw.EditProperty(coatFile, emblem.Range, slotTwo, `"white"`))
+	added, _ := edit(drw.EditProperties(coatFile, []Setting{{Block: emblem.Range, Key: slotTwo, Value: `"white"`}}))
 	if !strings.Contains(added, "\n\t\tcolor2 = \"white\"\n") {
 		t.Errorf("a color added to the emblem, in the file's indentation:\n%s", added)
 	}
-	_, colored := edit(drw.EditProperty(coatFile, parent.Range, "color3", `"white"`))
+	_, colored := edit(drw.EditProperties(coatFile, []Setting{{Block: parent.Range, Key: "color3", Value: `"white"`}}))
 	if _, ok := colored.FindChild(lo.Must(colored.FindChild(0, coatParent)), "color3"); !ok {
 		t.Error("a color was not added to the coat")
 	}
-	if _, err := drw.EditProperty(coatFile, parent.Layers[0].Range, slotOne, "red"); err == nil {
+	if _, err := drw.EditProperties(coatFile, []Setting{{Block: parent.Layers[0].Range, Key: slotOne, Value: "red"}}); err == nil {
 		t.Error("a key was set in the statement of a pattern, which is no block")
 	}
 }

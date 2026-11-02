@@ -23,7 +23,8 @@ and the walk reads directly. A schema is built once for each version of an insta
 A `Database` is one database of the game: the `Field` tree of its definitions, and the `game` rows that govern it
 (its `Row`, its `Callable` and its `Precedence`). A database is built for each folder a script file belongs to, each
 folder or file a row names that the install has, each nesting (a database inside another's definitions, such as a
-culture's dialects), each GUI database, and each database only the walk names. A nested database is named by its
+culture's dialects), each start setup, the folder a bookmark names, with the start setup's nestings under it, each GUI
+database, and each database only the walk names. A nested database is named by its
 parent's name, a dot and its own. A nesting with a `NameKey` names a definition by that key's value, as the three kinds
 of block in `gfx/portraits/accessory_variations` are each named by their `name`. A definition in a nested database whose parent writes a separator is named by its
 holder's name, the separator and its key (`JoinNested`, `SplitNested`): a define is `NAI|X`, as script reads it, so
@@ -79,8 +80,9 @@ a block is a color if every block was one, and else a block. A field written onl
 
 `resolveReference` gives a reference when one database defines every value. A quoted value names what it names
 unquoted. A value that holds a parameter is left out, and so is a link (`IsLink`, the test the walk uses too), which
-leads to a scope rather than naming a definition. A database whose row names another as its target counts as that one, and so do the coats of arms where a database
-that holds coats defines the values too. Where no one database defines them all, a database with nested ones may,
+leads to a scope rather than naming a definition. A database whose row names another as its target counts as that one,
+and so does a mirror, such as the coats of arms, wherever another database defines the values too. Where no one
+database defines them all, a database with nested ones may,
 counted together with them, as a language and its dialects are (`Expected.Nested`). The game concepts, then the
 localization, count only when nothing else does.
 
@@ -97,7 +99,7 @@ other fields: the first member that takes a claim, in the order of their names, 
 
 `ReadDumps` reads the script_docs and data types dumps under the given folders: the effects, triggers and event
 targets logs, the modifiers, the on_actions, the event scopes, and the data types files. `FindDumpsAt` gives when they
-were written, the time of the oldest dump file, without reading one. A section the install lacks is taken from the
+were written, the time of the newest dump file, without reading one. A section the install lacks is taken from the
 shipped backup, one section at a time. The schema's `Dumps` is a `SourceState`: whether the dumps came from the install,
 the shipped backup or neither, when they were written, and whether they are older than the install.
 
@@ -107,10 +109,11 @@ traits name a database's class takes that database's names.
 
 ## The docs
 
-A doc is an `.info`, `.md` or readme file, or a `.txt` file whose name marks it as one, in a database's folder. A
-`.txt` file with more script lines than prose is data and is skipped. The `docReader` reads a doc line by line, by
-pattern: prose is no valid script, so nothing is parsed. Its example's statements are fields, and the comments beside
-and above them are their text. A key that stands for names (`<key>`, `scope:actor`, `trigger/effect`, `$target$`)
+A doc is an `.info`, `.md` or readme file, or a `.txt` file whose name marks it as one, in a database's folder or below
+one, or named for one. A file with no prose and no comment, or a `.txt` file with more script lines than prose, is data
+and is skipped. The `docReader` reads a doc line by line, by pattern: prose is no valid script, so nothing is parsed.
+Its example's statements are fields, except below a block that holds script, and the comments beside and above them
+are their text. A key that stands for names (`<key>`, `scope:actor`, `trigger/effect`, `$target$`)
 makes no field, but a block it opens is still a level of the example; written with prose instead of a block, as
 `scope:actor = the actor` is, it is a note. That text states a blurb, a type by the words of `game.DocTypes`, a requirement, a
 default, choices and a scope. A sample value such as `innovation_key` names the database of its words, by
@@ -173,7 +176,7 @@ data binding macros. `ResolveCallTypes` gives the type each step leads to from a
 sets. `ListCallReferences` gives the names a call's quoted arguments hold, each in the database of the type its step
 returns, or as `game.GUI.CallTargets` says. `ResolveTypeDatabase` finds the database that holds a data type's names by
 the type's words, as `ToPhrase` writes them. Where two databases have the same words, the one whose own name is those
-words takes them (`isNamedExactly`: EU5's `institution` over `setup/start.institution`), and else they name neither.
+words takes them (`isNamedExactly`: EU5's `institution` over `setup/1337.institution`), and else they name neither.
 
 ## The shipped backup
 

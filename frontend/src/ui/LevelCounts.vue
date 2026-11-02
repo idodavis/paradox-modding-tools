@@ -1,20 +1,22 @@
 <!-- The marks of a set of problems, one for each level with its count. With none, it says "No problems". -->
 <script setup lang="ts">
 import { computed } from "vue";
+import { useQuery } from "@pinia/colada";
 import type { Tally } from "@services/health/models";
 
-import { describeCount, LEVELS, PROBLEM_LEVELS } from "../lib/format";
+import { describeCount } from "../lib/format";
+import { levelsQuery } from "../queries";
 
 const { levels = undefined } = defineProps<{
   /** How many problems there are of each level, by Go's level. Without counts it says there are none. */
   levels?: Tally["counts"];
 }>();
 
+const { data: rows } = useQuery(levelsQuery);
 const marks = computed(() =>
-  PROBLEM_LEVELS.flatMap((level) => {
-    const row = LEVELS[level];
-    const count = levels?.[level] ?? 0;
-    return row && count ? [{ level, ...row, count: describeCount(count) }] : [];
+  (rows.value ?? []).flatMap((row) => {
+    const count = levels?.[row.id] ?? 0;
+    return row.problem && count ? [{ ...row, count: describeCount(count) }] : [];
   }),
 );
 </script>
@@ -23,7 +25,7 @@ const marks = computed(() =>
   <span class="flex shrink-0 items-center gap-2 text-11 tabular-nums">
     <span
       v-for="mark in marks"
-      :key="mark.level"
+      :key="mark.id"
       :title="`${mark.label}: ${mark.count}`"
       class="flex items-center gap-0.5"
       :style="{ color: `var(--ui-${mark.color})` }"

@@ -398,10 +398,7 @@ func (mcp *Service) rename(request renaming) (any, error) {
 	if err != nil {
 		return nil, err
 	}
-	if err := mcp.checkSaved(slices.Collect(maps.Keys(edits))...); err != nil {
-		return nil, err
-	}
-	return mcp.preview(edits, func() (any, error) { return mcp.writeEdits(edits) }), nil
+	return mcp.preview(slices.Collect(maps.Keys(edits)), edits, func() (any, error) { return mcp.writeEdits(edits) })
 }
 
 // applyEdit previews replacing one entry of a file with new text, or makes the change a token names. It returns an
@@ -409,9 +406,6 @@ func (mcp *Service) rename(request renaming) (any, error) {
 func (mcp *Service) applyEdit(request entryEdit) (any, error) {
 	if request.Token != "" {
 		return mcp.confirm(request.Token)
-	}
-	if err := mcp.checkSaved(request.Path); err != nil {
-		return nil, err
 	}
 	symbols, err := mcp.LSP.ListSymbols(request.Path)
 	if err != nil {
@@ -422,7 +416,7 @@ func (mcp *Service) applyEdit(request entryEdit) (any, error) {
 		return nil, fmt.Errorf("the file has %d entries named %s; list_symbols lists them", len(entries), request.Entry)
 	}
 	edits := map[string][]lsp.Edit{request.Path: {{Range: entries[0].Range, Text: request.Text}}}
-	return mcp.preview(edits, func() (any, error) { return mcp.writeEdits(edits) }), nil
+	return mcp.preview([]string{request.Path}, edits, func() (any, error) { return mcp.writeEdits(edits) })
 }
 
 // collectEntries returns the symbols of the given name among a file's symbols, nested ones included.
@@ -456,11 +450,10 @@ func (mcp *Service) writeScaffold(request scaffolding) (any, error) {
 	if len(scaffolds) == 0 {
 		return nil, fmt.Errorf("%s lacks no localization key in %s", request.Mod, request.Language)
 	}
-	if err := mcp.checkSaved(slices.Collect(maps.Keys(scaffolds))...); err != nil {
-		return nil, err
-	}
 	counts := lo.MapValues(scaffolds, func(messages []loc.Message, _ string) int { return len(messages) })
-	return mcp.preview(counts, func() (any, error) { return mcp.Health.WriteScaffold(request.Mod, request.Language) }), nil
+	return mcp.preview(slices.Collect(maps.Keys(counts)), counts, func() (any, error) {
+		return mcp.Health.WriteScaffold(request.Mod, request.Language)
+	})
 }
 
 // checkSaved returns an error naming the first of the files whose text in the editor the user has not saved.
@@ -493,8 +486,12 @@ func (mcp *Service) writeEdits(edits map[string][]lsp.Edit) ([]string, error) {
 	return paths, nil
 }
 
-// preview keeps a change under a new token, and returns what the change would be with the token that makes it.
-func (mcp *Service) preview(change any, apply func() (any, error)) Preview {
+// preview keeps a change to the given files under a new token, and returns what the change would be with the token
+// that makes it. It returns an error, and keeps nothing, if the user has not saved one of the files.
+func (mcp *Service) preview(paths []string, change any, apply func() (any, error)) (any, error) {
+	if err := mcp.checkSaved(paths...); err != nil {
+		return nil, err
+	}
 	token := rand.Text()
 	mcp.mu.Lock()
 	defer mcp.mu.Unlock()
@@ -502,7 +499,7 @@ func (mcp *Service) preview(change any, apply func() (any, error)) Preview {
 		mcp.pending = map[string]func() (any, error){}
 	}
 	mcp.pending[token] = apply
-	return Preview{Change: change, Token: token}
+	return Preview{Change: change, Token: token}, nil
 }
 
 // confirm makes the change kept under a token, once. It returns an error if no change has the token.

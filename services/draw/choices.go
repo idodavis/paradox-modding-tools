@@ -5,7 +5,6 @@ package draw
 
 import (
 	"cmp"
-	"maps"
 	"path"
 	"path/filepath"
 	"slices"
@@ -90,24 +89,22 @@ func (drw *Service) ListPictures(path string, list PictureList) ([]Picture, erro
 // drawn, with those widgets as its readers: one per definition whose images are listed, and one per database whose
 // definitions are, which every widget reading that kind of object shares.
 func listPictureGroups(window Window) []Group {
-	var groups []Group
-	positions := map[string]int{}
+	var groups table[string, Group]
 	for _, widget := range window.Widgets {
 		if widget.Pictures == nil {
 			continue
 		}
 		list := *widget.Pictures
 		id := strings.TrimSuffix(cmp.Or(list.Database, list.Folder)+":"+list.Name, ":")
-		position, known := positions[id]
-		if !known {
-			position, positions[id] = len(groups), len(groups)
+		position := groups.add(id, func() Group {
 			label := cmp.Or(schema.ToPhrase(list.Name), game.DescribeDefinition(list.Database, false), list.Type)
-			groups = append(groups, Group{ID: id, Subject: picturesSubject, Label: label, Pictures: &list})
-		}
-		groups[position].Readers = append(groups[position].Readers, widget.ID)
-		groups[position].Reach = len(groups[position].Readers)
+			return Group{ID: id, Subject: picturesSubject, Label: label, Pictures: &list}
+		})
+		group := &groups.values[position]
+		group.Readers = append(group.Readers, widget.ID)
+		group.Reach = len(group.Readers)
 	}
-	return groups
+	return groups.values
 }
 
 // toFileLabel returns the label of an image file: its name without its extension.
@@ -120,28 +117,25 @@ func toFileLabel(file string) string {
 // cells (Game.GUI.Tiers), by the call written from the window down, with the widgets that write it as its readers. Its
 // options are the game's tiers.
 func (evaluator *evaluator) listTierGroups(tiers game.TierFrames) []Group {
-	groups := []Group{}
-	positions := map[string]int{}
+	var groups table[string, Group]
 	for _, widget := range evaluator.window.Widgets {
-		evaluator.context = evaluator.contexts[widget.ID]
+		context := evaluator.contexts[widget.ID]
 		for property := range evaluator.window.listProperties(widget) {
 			call, ok := findTierCall(tiers, property)
 			if !ok {
 				continue
 			}
-			id := toCallText(evaluator.reach(call))
-			position, known := positions[id]
-			if !known {
-				position, positions[id] = len(groups), len(groups)
+			id := toCallText(context.expand(evaluator.schema, call))
+			position := groups.add(id, func() Group {
 				group := makeGroup(id)
 				group.Options = tiers.Tiers
-				groups = append(groups, group)
-			}
-			group := &groups[position]
+				return group
+			})
+			group := &groups.values[position]
 			group.Readers, group.Reach = append(group.Readers, widget.ID), len(group.Readers)+1
 		}
 	}
-	return groups
+	return groups.values
 }
 
 // pickTiers adds to the given choices the cells that the tiers picked in the given picks give the readers of the
@@ -174,42 +168,30 @@ func findTierCall(tiers game.TierFrames, property Property) (jomini.Call, bool) 
 	return call, ok && call.Steps[len(call.Steps)-1].Text == tiers.Function
 }
 
-// pickColors adds to the given choices the colors that the values picked for the given picture groups in the given
-// picks give the window's bindings of a definition's color. A binding of the kind of object that a group of a
-// database picks among takes the color of the definition picked, as the pictures of that kind take its picture. A
-// binding that no group picks for, or whose picked definition writes no color, keeps the color it has.
-func (evaluator *evaluator) pickColors(library *library, groups []Group, picks map[string]string, choices map[int32][]Choice) {
+// pickColors adds to the given choices the colors that the values picked in the given picks for the window's picture
+// groups give its bindings of a definition's color. A binding of the kind of object that a group of a database picks
+// among takes the color of the definition picked, as the pictures of that kind take its picture. A binding that no
+// group picks for, or whose picked definition writes no color, keeps the color it has.
+func pickColors(opened opening, picks map[string]string, choices map[int32][]Choice) {
 	definitions := map[string]string{} // the definition picked, by the database the group picks among
-	for _, group := range groups {
+	for _, group := range opened.pictures {
 		if picked := picks[group.ID]; picked != "" && group.Pictures.Name == "" && group.Pictures.Database != "" {
 			definitions[group.Pictures.Database] = picked
 		}
 	}
-	if len(definitions) == 0 {
-		return
-	}
-	for _, widget := range evaluator.window.Widgets {
-		for _, list := range library.listDatabaseLists(&evaluator.window, widget, evaluator.contexts[widget.ID]) {
-			_, isColor := widget.Colors[list.Key]
-			definition, ok := definitions[list.Database]
-			if !isColor || !ok {
-				continue
-			}
-			if choice, chosen := library.pickDefinition(widget, list, definition); chosen {
-				choices[widget.ID] = append(choices[widget.ID], choice)
-			}
-		}
+	for id, picked := range opened.library.pickDefinitions(opened.evaluator.window.Widgets, opened.colorLists, definitions) {
+		choices[id] = append(choices[id], picked...)
 	}
 }
 
-// listRows returns, by the item of a data model in a window, the rows its list draws: one for each of the first
-// definitions of the database of the objects the list holds, up to the given count, in load order and each name once.
-// That is the database of the first list, among those listDatabaseLists finds for the item's widgets, its nested
-// items' apart, whose binding reads its object as an element, as readsElement says. Each row gives the widgets that
-// read the database the pictures and colors of its definition. An item that reads no such list is left out, and its
-// list draws the page's sample rows.
-func listRows(library *library, window Window, count int) map[int32][]Row {
-	contexts := listContexts(library.ws.Schema, window)
+// listRows returns, by the item of a data model in a window as it opens, the rows its list draws: one for each of the
+// first definitions of the database of the objects the list holds, up to the count the window opens with, in load
+// order and each name once. That is the database of the first list, among those listDatabaseLists finds for the
+// item's widgets, its nested items' apart, whose binding reads its object as an element, as readsElement says. Each
+// row gives the widgets that read the database the pictures and colors of its definition. An item that reads no such
+// list is left out, and its list draws the page's sample rows.
+func listRows(opened opening) map[int32][]Row {
+	library, window, contexts := opened.library, &opened.evaluator.window, opened.evaluator.contexts
 	items := listItems(window.Widgets)
 	rows := map[int32][]Row{}
 	for item, members := range lo.GroupBy(window.Widgets, func(widget Widget) int32 { return items[widget.ID] }) {
@@ -218,15 +200,15 @@ func listRows(library *library, window Window, count int) map[int32][]Row {
 		}
 		lists, database := map[int32][]PictureList{}, ""
 		for _, widget := range members {
-			lists[widget.ID] = library.listDatabaseLists(&window, widget, contexts[widget.ID])
+			lists[widget.ID] = listDatabaseLists(widget, opened.colorLists[widget.ID])
 			if element, ok := lo.Find(lists[widget.ID], func(list PictureList) bool {
-				return library.readsElement(&window, widget, list, contexts[widget.ID])
+				return library.readsElement(window, widget, list, contexts[widget.ID])
 			}); ok {
 				database = cmp.Or(database, element.Database)
 			}
 		}
 		if database != "" {
-			rows[item] = library.makeRows(database, lists, window.Widgets, count)
+			rows[item] = library.makeRows(database, lists, window.Widgets, opened.evaluator.rows)
 		}
 	}
 	return rows
@@ -248,41 +230,42 @@ func (library *library) makeRows(database string, lists map[int32][]PictureList,
 	names := lo.Uniq(lo.Map(library.mods.ListDefinitions(database), func(site index.Site, _ int) string {
 		return library.mods.ToReference(site).Name
 	}))
-	names = names[:min(count, len(names))]
-	reading := lo.MapValues(lists, func(read []PictureList, _ int32) []PictureList {
-		return lo.Filter(read, func(list PictureList, _ int) bool { return list.Database == database })
+	return lo.Map(names[:min(count, len(names))], func(name string, _ int) Row {
+		return Row{Definition: name, Choices: library.pickDefinitions(widgets, lists, map[string]string{database: name})}
 	})
-	rows := make([]Row, len(names))
-	for position, name := range names {
-		rows[position] = Row{Definition: name, Choices: map[int32][]Choice{}}
-		for id, read := range reading {
-			for _, list := range read {
-				if choice, ok := library.pickDefinition(widgets[id], list, name); ok {
-					rows[position].Choices[id] = append(rows[position].Choices[id], choice)
-				}
-			}
-		}
-	}
-	return rows
 }
 
-// listDatabaseLists returns the lists of the bindings of one of a window's widgets that read the definitions of a
-// database, read in the given data context of the widget: the list of its picture binding, then that of each of its
-// bindings of a definition's color, by property key. A list that names its definition, or whose objects are folders,
-// reads no database.
-func (library *library) listDatabaseLists(window *Window, widget Widget, context context) []PictureList {
-	var lists []PictureList
+// listDatabaseLists returns the lists of one widget's bindings that read the definitions of a database: the list of
+// its picture binding, then the given lists of its bindings of a definition's color. A list that names its definition,
+// or whose objects are folders, reads no database.
+func listDatabaseLists(widget Widget, colorLists []PictureList) []PictureList {
+	lists := colorLists
 	if widget.Pictures != nil {
-		lists = append(lists, *widget.Pictures)
-	}
-	for _, key := range slices.Sorted(maps.Keys(widget.Colors)) {
-		call, _ := jomini.ParseBracketed(findProperty(window.listProperties(widget), key).Value, 0)
-		list, _ := library.makePictureList(key, context.expand(library.ws.Schema, call))
-		lists = append(lists, list)
+		lists = slices.Concat([]PictureList{*widget.Pictures}, colorLists)
 	}
 	return lo.Filter(lists, func(list PictureList, _ int) bool {
 		return list.Database != "" && list.Name == "" && list.Folder == ""
 	})
+}
+
+// pickDefinitions returns, by widget, the values that the given definitions give the properties of the given widgets
+// through the given lists of each widget. A definition is given by the database it is picked among, and a list of a
+// database with none given gives nothing.
+func (library *library) pickDefinitions(widgets []Widget, lists map[int32][]PictureList,
+	definitions map[string]string) map[int32][]Choice {
+	choices := map[int32][]Choice{}
+	for id := range lists {
+		for _, list := range lists[id] {
+			definition, ok := definitions[list.Database]
+			if !ok {
+				continue
+			}
+			if choice, chosen := library.pickDefinition(widgets[id], list, definition); chosen {
+				choices[id] = append(choices[id], choice)
+			}
+		}
+	}
+	return choices
 }
 
 // pickDefinition returns the value that picking a definition gives the property a list is read under: the
@@ -315,33 +298,34 @@ func (evaluator *evaluator) listChoices(library *library) map[int32][]Choice {
 // listWidgetChoices returns the values that the evaluator's values give one widget's properties written as a choice
 // between two values, without the texts or files they lead to. A property whose condition is unknown is left out.
 func (evaluator *evaluator) listWidgetChoices(widget int32) []Choice {
-	evaluator.context = evaluator.contexts[widget]
+	context := evaluator.contexts[widget]
 	var choices []Choice
 	for property := range evaluator.window.listProperties(evaluator.window.Widgets[widget]) {
 		call, isCall := jomini.ParseBracketed(property.Value, 0)
-		if value, ok := evaluator.choose(call); isCall && ok {
+		if value, ok := evaluator.choose(context, call); isCall && ok {
 			choices = append(choices, Choice{Key: property.Key, Value: value})
 		}
 	}
 	return choices
 }
 
-// choose returns the value that a choice between two values gives under the evaluator's values: the second argument
-// where the first holds, else the third, a choice nested in that argument worked out the same way. The last result
-// is false if the call is no such choice, its condition is unknown, or the value it chooses is another data call.
-func (evaluator *evaluator) choose(call jomini.Call) (string, bool) {
+// choose returns the value that a choice between two values, read in the given context, gives under the evaluator's
+// values: the second argument where the first holds, else the third, a choice nested in that argument worked out the
+// same way. The last result is false if the call is no such choice, its condition is unknown, or the value it chooses
+// is another data call.
+func (evaluator *evaluator) choose(context context, call jomini.Call) (string, bool) {
 	arguments, ok := splitSelect(call)
 	if !ok || arguments[0].Call == nil {
 		return "", false
 	}
-	holds, known := evaluator.evaluateCall(*arguments[0].Call)
+	holds, known := evaluator.evaluateCall(context, *arguments[0].Call)
 	if !known {
 		return "", false
 	}
 	branch := arguments[lo.Ternary(holds, 1, 2)]
 	switch {
 	case branch.Call != nil:
-		return evaluator.choose(*branch.Call)
+		return evaluator.choose(context, *branch.Call)
 	case branch.Quoted:
 		return toWrittenValue(branch.Text), true
 	}

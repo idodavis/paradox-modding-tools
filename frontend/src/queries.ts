@@ -192,6 +192,8 @@ export const reportQuery = defineQueryOptions((order: string[]) => ({
   query: () => health.BuildReport(order),
 }));
 export const codesQuery = defineQueryOptions({ key: [...keys.health, "codes"], query: () => health.ListCodes() });
+export const levelsQuery = defineQueryOptions({ key: [...keys.health, "levels"], query: () => health.ListLevels() });
+export const topicsQuery = defineQueryOptions({ key: [...keys.health, "topics"], query: () => health.ListTopics() });
 export const overviewQuery = defineQueryOptions({
   key: [...keys.health, "overview"],
   query: () => health.ListOverview(),
@@ -275,6 +277,7 @@ export const lexiconQuery = defineQueryOptions((cls: string) => ({
   key: [...keys.wiki, "lexicon", cls],
   query: () => wiki.BuildLexicon(cls),
 }));
+export const classesQuery = defineQueryOptions({ key: [...keys.wiki, "classes"], query: () => wiki.ListClasses() });
 
 // git
 export const repositoriesQuery = defineQueryOptions({

@@ -18,11 +18,10 @@ import * as workspaceApi from "@services/workspace/service";
 import type { Place } from "@services/workspace/models";
 import { confirm, copyText, toast } from "../lib/feedback";
 import { findModel, save, saveUnsaved, unsavedModels, type Model } from "../pages/ide/editor/models";
-import { diffTab, parseTab } from "../pages/ide/editor/tabs";
 import { copiesQuery, loadQuery, placeQuery } from "../queries";
 import { useAgentStore } from "../stores/agent";
 import { useEditorStore, type Tab } from "../stores/editor";
-import { useGitStore } from "../stores/git";
+import { STAGE, UNSTAGE, useGitStore } from "../stores/git";
 import { useSettingsStore } from "../stores/settings";
 import { COMMAND_BUS, THIS_WINDOW, useWindowsStore } from "../stores/windows";
 import { useWorkspaceStore } from "../stores/workspace";
@@ -300,7 +299,9 @@ export const COMMANDS: readonly Command[] = [
       (place) =>
         void useWindowsStore()
           .showIde()
-          .then(() => useEditorStore().open(diffTab("changes", useGitStore().findRoot(place), place.key), place)),
+          .then(() =>
+            useEditorStore().open({ key: place.key, side: "changes", root: useGitStore().findRoot(place) }, place),
+          ),
     ),
   },
   {
@@ -345,7 +346,7 @@ export const COMMANDS: readonly Command[] = [
     prefix: "IDE:",
     icon: "i-lucide-eye",
     kbds: ["meta", "shift", "V"],
-    when: () => useEditorStore().isDrawable(useEditorStore().activeTab()?.id),
+    when: () => useEditorStore().isDrawable(useEditorStore().activeTab()),
     onSelect: () => {
       const editor = useEditorStore();
       editor.mode = editor.mode === "visual" ? "code" : "visual";
@@ -395,14 +396,14 @@ export const COMMANDS: readonly Command[] = [
     label: "Stage the file",
     icon: "i-lucide-plus",
     when: canUseGit,
-    onSelect: onFile((place) => run(() => git.Stage(useGitStore().findRoot(place), [place.path]))),
+    onSelect: onFile((place) => run(() => git.Run(useGitStore().findRoot(place), ...STAGE, place.path))),
   },
   {
     id: "git.unstage",
     label: "Unstage the file",
     icon: "i-lucide-minus",
     when: canUseGit,
-    onSelect: onFile((place) => run(() => git.Unstage(useGitStore().findRoot(place), [place.path]))),
+    onSelect: onFile((place) => run(() => git.Run(useGitStore().findRoot(place), ...UNSTAGE, place.path))),
   },
   {
     id: "git.commit",
@@ -628,7 +629,7 @@ export async function trashFile(path: string, label: string, note = ""): Promise
 /** activeModel returns the model of the active tab's file, or null when the tab shows none. */
 function activeModel(): Model | null {
   const tab = useEditorStore().activeTab();
-  return tab ? findModel(parseTab(tab.id).key) : null;
+  return tab ? findModel(tab.key) : null;
 }
 
 /** onTab makes a handler that acts on the active tab, if there is one. */

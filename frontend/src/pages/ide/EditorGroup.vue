@@ -27,7 +27,7 @@ import DrawPane from "./draw/DrawPane.vue";
 import GitDiff from "./GitDiff.vue";
 import ImageView from "./ImageView.vue";
 import { findModel, save, setText, type Model } from "./editor/models";
-import { findIcon, parseTab, VIEWS } from "./editor/tabs";
+import { findIcon, VIEWS } from "./editor/tabs";
 
 const { group, active } = defineProps<{ group: Group; active: boolean }>();
 
@@ -61,16 +61,13 @@ const over = shallowRef(false);
 const zone = shallowRef<Zone | null>(null);
 
 const activeTab = computed(() => group.tabs.find((tab) => tab.id === group.active));
-const target = computed(() => (activeTab.value ? parseTab(activeTab.value.id) : null));
-const place = computed(() => (activeTab.value ? editor.placeOf(activeTab.value.id) : null));
-const model = computed(() => (target.value?.tab === "file" ? findModel(target.value.key) : null));
-const hasCode = computed(
-  () => target.value?.tab === "file" && !!place.value && VIEWS[place.value.format].view === "code",
-);
+const place = computed(() => (activeTab.value ? editor.placeOf(activeTab.value.key) : null));
+const model = computed(() => (activeTab.value && !activeTab.value.side ? findModel(activeTab.value.key) : null));
+const hasCode = computed(() => !activeTab.value?.side && !!place.value && VIEWS[place.value.format].view === "code");
 const { data: file } = useQuery(() => ({ ...fileQuery(place.value?.path ?? ""), enabled: hasCode.value }));
 // a file with no view of its own, or whose bytes are not text, says so rather than stay blank
 const isUnshown = computed(() => !!place.value && (!VIEWS[place.value.format].view || !!file.value?.binary));
-const isDrawable = computed(() => editor.isDrawable(group.active));
+const isDrawable = computed(() => editor.isDrawable(activeTab.value));
 // this group is the one Visual shows, and its active file is drawn
 const isVisual = computed(() => active && editor.mode === "visual" && isDrawable.value);
 const corner = computed(() => THIS_WINDOW === "main" && editor.layout().rows[0]?.columns.at(-1)?.id === group.id);
@@ -85,7 +82,7 @@ const folders = computed(() => (place.value?.rel.split("/").length ?? 1) - 1);
 // a file of the game that a mod replaces shows the mod's name; a mod file's copies, which the cache may hold, do not
 const { data: copies } = useQuery(() => ({
   ...copiesQuery(place.value?.path ?? ""),
-  enabled: !!place.value?.readOnly && target.value?.tab === "file",
+  enabled: !!place.value?.readOnly && !activeTab.value?.side,
 }));
 const replacement = computed(() =>
   place.value?.readOnly && copies.value && copies.value.length > 1 ? copies.value.at(-1) : undefined,
@@ -148,21 +145,19 @@ function applyDisk(open: Model): void {
 
 /** describe describes a tab for the strip: its label, its icon and what marks it. */
 function describe(tab: Tab) {
-  const parsed = parseTab(tab.id);
-  const tabPlace = editor.placeOf(tab.id);
-  const path = tabPlace?.rel ?? parsed.key;
+  const tabPlace = editor.placeOf(tab.key);
+  const path = tabPlace?.rel ?? tab.key;
   return {
     tab,
-    parsed,
     tabPlace,
     path,
     label: tabPlace?.name ?? path,
     icon: tabPlace ? findIcon(tabPlace) : "",
-    suffix: parsed.tab === "diff" ? (parsed.hash?.slice(0, 7) ?? parsed.side) : "",
-    readOnly: !!tabPlace?.readOnly && parsed.tab === "file",
-    unsaved: !!findModel(parsed.key)?.unsaved,
+    suffix: tab.side ? (tab.hash?.slice(0, 7) ?? tab.side) : "",
+    readOnly: !!tabPlace?.readOnly && !tab.side,
+    unsaved: !!findModel(tab.key)?.unsaved,
     // the file changed on disk under its unsaved text
-    stale: !!findModel(parsed.key)?.diskText,
+    stale: !!findModel(tab.key)?.diskText,
   };
 }
 type Row = ReturnType<typeof describe>;
@@ -178,7 +173,7 @@ function setMode(choice: string | number): void {
 
 /** select shows a tab of this group, which makes the group the active one. */
 function select(row: Row): void {
-  if (row.tabPlace) editor.open(row.tab.id, row.tabPlace, group.id);
+  if (row.tabPlace) editor.open(row.tab, row.tabPlace, group.id);
   else editor.activate(group.id);
 }
 
@@ -202,7 +197,7 @@ async function closeTabs(tabs: Tab[]): Promise<void> {
 
 /** listSaved lists the tabs of this group that hold no changes that are not saved. */
 function listSaved(): Tab[] {
-  return group.tabs.filter((tab) => !findModel(parseTab(tab.id).key)?.unsaved);
+  return group.tabs.filter((tab) => !findModel(tab.key)?.unsaved);
 }
 
 /** listOthers lists the tabs of this group other than the given one. */
@@ -282,7 +277,7 @@ function dropOnEditor(event: DragEvent): void {
 /** buildMenu builds the menu of a tab. */
 function buildMenu(row: Row): ContextMenuItem[][] {
   const mine = row.tabPlace;
-  const open = findModel(row.parsed.key);
+  const open = findModel(row.tab.key);
   return [
     [
       {
@@ -316,7 +311,7 @@ function buildMenu(row: Row): ContextMenuItem[][] {
       {
         label: "Compare with the game's copy",
         // the game's copy read for this tab's file, which the menu opening asked for
-        disabled: row.parsed.tab !== "file" || menuPlace.value?.key !== mine?.key || !menuGameCopy.value,
+        disabled: !!row.tab.side || menuPlace.value?.key !== mine?.key || !menuGameCopy.value,
         onSelect: () => mine && compareWithGame(mine),
       },
       { label: "Select for compare", disabled: !mine, onSelect: () => (editor.compareFile = mine ?? null) },
@@ -408,11 +403,7 @@ const actions = computed<DropdownMenuItem[]>(() => [
               @dblclick="editor.pin(row.tab.id)"
               @auxclick.middle="closeTabs([row.tab])"
             >
-              <UIcon
-                v-if="row.parsed.tab === 'diff'"
-                name="i-lucide-git-compare"
-                class="size-3.5 shrink-0 text-dimmed"
-              />
+              <UIcon v-if="row.tab.side" name="i-lucide-git-compare" class="size-3.5 shrink-0 text-dimmed" />
               <img v-else-if="row.icon" :src="row.icon" alt="" class="size-3.5 shrink-0" />
               <UIcon v-else name="i-lucide-file" class="size-3.5 shrink-0 text-dimmed" />
               <span class="truncate" :class="{ italic: row.tab.preview }">{{ row.label }}</span>
@@ -522,7 +513,7 @@ const actions = computed<DropdownMenuItem[]>(() => [
       </UModal>
     </div>
     <div
-      v-if="place && target?.tab === 'file'"
+      v-if="place && !activeTab?.side"
       class="flex h-7 shrink-0 items-center gap-1.5 overflow-hidden border-b border-default bg-(--bg-0) px-3.5 text-12 whitespace-nowrap text-dimmed"
     >
       <OriginChip :origin="place.origin" dot />
@@ -541,7 +532,13 @@ const actions = computed<DropdownMenuItem[]>(() => [
       </template>
     </div>
     <div class="relative flex min-h-0 min-w-0 flex-1 flex-col">
-      <GitDiff v-if="activeTab && target?.tab === 'diff'" :key="activeTab.id" :tab="target" />
+      <GitDiff
+        v-if="activeTab?.side"
+        :key="activeTab.id"
+        :tab="activeTab"
+        :side="activeTab.side"
+        :root="activeTab.root"
+      />
       <template v-else-if="place">
         <ImageView v-if="VIEWS[place.format].view === 'image'" :key="place.key" :place="place" />
         <template v-else-if="model">

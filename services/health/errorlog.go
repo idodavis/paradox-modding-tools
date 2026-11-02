@@ -27,6 +27,19 @@ import (
 // identifierPattern matches a word in a log message that may be the name of a definition.
 var identifierPattern = regexp.MustCompile(`[A-Za-z_][A-Za-z0-9_.:]*`)
 
+// The ties of a log row to a mod, which the row's why fact holds: a file of the mod the row points at, or a definition
+// the row names that only the mod defines.
+const (
+	tieFile       = "file"
+	tieDefinition = "name"
+)
+
+// rowReasons holds the sentence that says why a log row is a mod's, by what ties it to the mod.
+var rowReasons = map[string]string{
+	tieFile:       "The line points at {file}, and the game loads that file from {mod}.",
+	tieDefinition: "The line names {name}, and only {mod} defines it.",
+}
+
 // ListErrorLog lists the messages of the game's error log as findings. A message repeated at one place is one row with
 // its count. It returns no findings if there is no log, and an error if the log cannot be read.
 func (hlt *Service) ListErrorLog() (GameLog, error) {
@@ -54,6 +67,7 @@ func (hlt *Service) ListErrorLog() (GameLog, error) {
 	gameLog.Findings = buildRows(parseRows(ws, mods, text.Text))
 	for position := range gameLog.Findings {
 		resolveOrigin(mods, read, &gameLog.Findings[position])
+		describeRow(ws, &gameLog.Findings[position])
 	}
 	return gameLog, nil
 }
@@ -169,9 +183,9 @@ func resolveOrigin(mods *index.Index, read map[string]bool, row *Finding) {
 		row.Sites = nil
 	}
 	if len(row.Sites) > 0 {
-		row.Origin, row.Facts["why"], row.Facts["named"] = row.Sites[0].Place.Origin, "file", row.Sites[0].Place.Rel
+		row.Origin, row.Facts["why"], row.Facts["named"] = row.Sites[0].Place.Origin, tieFile, row.Sites[0].Place.Rel
 	} else if identifier, origin, ok := findLogOwner(mods, row.Facts["message"]); ok && read[origin] {
-		row.Origin, row.Facts["why"], row.Facts["named"] = origin, "name", identifier
+		row.Origin, row.Facts["why"], row.Facts["named"] = origin, tieDefinition, identifier
 	}
 	if row.Origin != "" {
 		row.Mods = []string{row.Origin}
@@ -201,6 +215,31 @@ func findLogOwner(mods *index.Index, message string) (identifier, origin string,
 		}
 	}
 	return "", "", false
+}
+
+// describeRow fills in a log row's words as describeFinding does, but for two: its message is the line the game logged,
+// and its why says what ties the row to its mod.
+func describeRow(ws *workspace.Session, row *Finding) {
+	describeFinding(row)
+	row.Message = splitLogLine(*row)
+	row.Why = lsp.SplitMessage(rowReasons[row.Facts["why"]], map[string]string{
+		"file": row.Facts["named"], "name": row.Facts["named"], "mod": ws.DescribeMod(row.Origin),
+	})
+}
+
+// splitLogLine returns a log row's message as one line, its lines trimmed and joined by a dot, as parts. The name or
+// file that ties the row to a mod is drawn apart where the line writes it.
+func splitLogLine(row Finding) []lsp.Part {
+	lines := lo.Map(strings.Split(row.Facts["message"], "\n"), func(line string, _ int) string {
+		return strings.TrimSpace(line)
+	})
+	line, identifier := strings.Join(lo.Compact(lines), " · "), row.Facts["named"]
+	start := strings.Index(line, identifier)
+	if identifier == "" || start < 0 {
+		return []lsp.Part{{Text: line}}
+	}
+	style := lo.Ternary(row.Facts["why"] == tieFile, "path", "code")
+	return []lsp.Part{{Text: line[:start]}, {Text: identifier, Style: style}, {Text: line[start+len(identifier):]}}
 }
 
 // watchErrorLog calls a function each time the game's error log grows. It returns a function that ends the watch.

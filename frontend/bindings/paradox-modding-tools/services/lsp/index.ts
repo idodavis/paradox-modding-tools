@@ -10,6 +10,7 @@ export type {
     Card,
     CardDate,
     CardScope,
+    Class,
     Code,
     ColorSite,
     Completion,
@@ -19,9 +20,12 @@ export type {
     Fold,
     Hint,
     Legend,
+    Level,
+    Part,
     Range,
     Signature,
     Site,
     Symbol,
+    Topic,
     WorkspaceSymbol
 } from "./models.js";

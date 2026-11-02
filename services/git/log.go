@@ -16,7 +16,7 @@ type Commit struct {
 	Parents []string  `json:"parents"`
 	Date    time.Time `json:"date"`
 	Subject string    `json:"subject"`
-	Refs    []string  `json:"refs"` // the refs pointing here, decorated
+	Refs    []Ref     `json:"refs"` // the refs pointing here
 }
 
 // ListCommits returns the commits reachable from the given refs, newest first, up to the given limit. With no refs
@@ -24,7 +24,7 @@ type Commit struct {
 func (git *Service) ListCommits(dir string, limit int, refs []string) ([]Commit, error) {
 	// the closing "--" keeps a ref named like a file from being read as a path
 	args := slices.Concat([]string{
-		"log", fmt.Sprintf("--max-count=%d", limit), "--format=%H%x00%h%x00%P%x00%aI%x00%s%x00%D%x1e",
+		"log", fmt.Sprintf("--max-count=%d", limit), "--decorate=full", "--format=%H%x00%h%x00%P%x00%aI%x00%s%x00%D%x1e",
 	}, refs, []string{"--"})
 	stdout, err := git.run(dir, args...)
 	if err != nil {
@@ -48,9 +48,10 @@ func (git *Service) ListCommits(dir string, limit int, refs []string) ([]Commit,
 	return commits, nil
 }
 
-// ListCommitFiles returns the files changed by the commit with the given hash. A renamed file carries its old path.
-func (git *Service) ListCommitFiles(dir, hash string) ([]Change, error) {
-	stdout, err := git.run(dir, "show", "--name-status", "--format=", "-z", hash)
+// ListCommitFiles returns the files changed by the commit with the given hash, in the repository at the given root
+// folder. A renamed file carries its old path. The error is git's if the repository has no such commit.
+func (git *Service) ListCommitFiles(root, hash string) ([]Change, error) {
+	stdout, err := git.run(root, "show", "--name-status", "--format=", "-z", hash)
 	if err != nil {
 		return nil, err
 	}
@@ -65,10 +66,6 @@ func (git *Service) ListCommitFiles(dir, hash string) ([]Change, error) {
 			records = records[1:]
 		}
 		changes = append(changes, change)
-	}
-	root, err := git.resolveRepository(dir)
-	if err != nil {
-		return nil, err
 	}
 	git.locateChanges(root, changes)
 	return changes, nil
@@ -87,9 +84,13 @@ func parseCommit(record string) (Commit, error) {
 		Parents: strings.Fields(fields[2]),
 		Date:    date,
 		Subject: fields[4],
-		// the decoration writes the current branch as "HEAD -> main"
-		Refs: lo.FilterMap(strings.Split(fields[5], ", "), func(ref string, _ int) (string, bool) {
-			return strings.TrimPrefix(ref, "HEAD -> "), ref != ""
+		// the decoration writes full names, the current branch as "HEAD -> refs/heads/main" and a tag after "tag: "; a
+		// remote's HEAD, which names its default branch, is left out, and a detached HEAD is kept with no type
+		Refs: lo.FilterMap(strings.Split(fields[5], ", "), func(decoration string, _ int) (Ref, bool) {
+			name, current := strings.CutPrefix(decoration, "HEAD -> ")
+			name, refType := classifyRef(strings.TrimPrefix(name, "tag: "))
+			isRemoteHead := refType == "remote" && strings.HasSuffix(name, "/HEAD")
+			return Ref{Name: name, Type: refType, Current: current}, name != "" && !isRemoteHead
 		}),
 	}, nil
 }

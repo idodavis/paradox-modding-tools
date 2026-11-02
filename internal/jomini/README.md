@@ -41,10 +41,10 @@ where several children have the key, the last one wins.
 with a code: `unclosed-block`, `unexpected-brace`, `unclosed-string` or `missing-value`. A block that is never closed
 runs to the end of the text. A closing brace at the file's level closes nothing and is reported.
 
-The lexer splits the text into scalars, operators, braces and comments. A quoted string is one scalar, and so is a
-`[ … ]` inside a word, which keeps everything to its `]`. A `#` comment runs to the end of its line. The operators are
-`=`, `==`, `!=`, `<`, `>`, `<=`, `>=` and `?=`. A tagged block such as `rgb { … }` is one value with a `Tag`, and so is
-`list "x"`.
+The lexer splits the text into scalars, operators, braces and comments. A quoted string is one scalar, a backslash
+escaping the character after it, and so is a `[ … ]` inside a word, which keeps everything to its `]`. A `#` comment
+runs to the end of its line. The operators are `=`, `==`, `!=`, `<`, `>`, `<=`, `>=` and `?=`. A tagged block such as
+`rgb { … }` is one value with a `Tag`, and so is `list "x"`.
 
 ## The shapes of a word
 

@@ -74,8 +74,8 @@ also has an `Elsewhere` message, used where a mod the file's mod does not depend
 game has its parse errors only. A mod's file is judged with the index narrowed to its mod and the mods it depends on.
 `Diagnose` is the same against the open session, with the checks the user turned off (`ide.checks`) left out.
 `DiagnoseText` judges a text a file would have, as a coding agent's change through PMT's tools, without touching the
-editor's buffer; both run the checks over a tree in one function. `DescribeReference` gives the facts that name what a
-problem is about.
+editor's buffer; it is Go's alone and not bound to the page. Both run the checks over a tree in one function.
+`DescribeReference` gives the facts that name what a problem is about.
 
 A check accuses only on firm ground. A reference is judged dangling only where its database is known and holds no names
 made as the script runs, and where the claim that makes it is not inferred from the game's files alone. A name the

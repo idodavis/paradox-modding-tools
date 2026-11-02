@@ -6,6 +6,14 @@
 import * as jomini$0 from "../jomini/models.js";
 
 /**
+ * A Language is one localization language: the folder the game keeps it in, and its name in English.
+ */
+export interface Language {
+    "folder": string;
+    "label": string;
+}
+
+/**
  * A Markup is the class of a segment of a localization text: plain text, a key, a call, a format, an icon or a break.
  */
 export enum Markup {

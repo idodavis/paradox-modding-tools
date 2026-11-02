@@ -20,13 +20,13 @@ import (
 	"path/filepath"
 	"runtime"
 	"slices"
-	"strconv"
 	"strings"
 	"sync"
 	"time"
 
 	"github.com/samber/lo"
 	"github.com/wailsapp/wails/v3/pkg/application"
+	"golang.org/x/mod/semver"
 
 	"paradox-modding-tools/internal/files"
 	"paradox-modding-tools/services/app"
@@ -184,7 +184,7 @@ func (agt *Service) DescribeNode() Node {
 	node := Node{}
 	if path, err := exec.LookPath("node"); err == nil {
 		node.System = readVersion(path)
-		if node.System != "" && compareVersions(node.System, minNode) >= 0 {
+		if node.System != "" && semver.Compare("v"+node.System, "v"+minNode) >= 0 {
 			node.Path = path
 			return node
 		}
@@ -314,7 +314,7 @@ func (agt *Service) loadRegistry() (registry, error) {
 // findInstalled returns the version of an agent that PMT's folder holds, the newest if it holds several, or "".
 func (agt *Service) findInstalled(id string) string {
 	versions := agt.listInstalled(id)
-	slices.SortFunc(versions, compareVersions)
+	slices.SortFunc(versions, func(first, second string) int { return semver.Compare("v"+first, "v"+second) })
 	return lo.LastOr(versions, "")
 }
 
@@ -355,17 +355,17 @@ func findNpm(node string) string {
 // findScript returns the script of the agent installed in a folder: the one program its one package declares. It
 // returns an error if the folder holds no such package.
 func findScript(dir string) (string, error) {
-	var installed struct {
+	installed, err := app.LoadJSON[struct {
 		Dependencies map[string]string `json:"dependencies"`
-	}
-	if err := readJSON(filepath.Join(dir, "package.json"), &installed); err != nil || len(installed.Dependencies) != 1 {
+	}](filepath.Join(dir, "package.json"))
+	if err != nil || len(installed.Dependencies) != 1 {
 		return "", errors.Join(err, fmt.Errorf("%s holds no one agent package", dir))
 	}
 	packageDir := filepath.Join(dir, "node_modules", lo.Keys(installed.Dependencies)[0])
-	var declared struct {
+	declared, err := app.LoadJSON[struct {
 		Bin json.RawMessage `json:"bin"`
-	}
-	if err := readJSON(filepath.Join(packageDir, "package.json"), &declared); err != nil {
+	}](filepath.Join(packageDir, "package.json"))
+	if err != nil {
 		return "", err
 	}
 	// a package declares its program as a path, or as a map of one name to a path
@@ -380,15 +380,6 @@ func findScript(dir string) (string, error) {
 	return filepath.Join(packageDir, filepath.FromSlash(script)), nil
 }
 
-// readJSON reads a JSON file into a value. It returns an error if the file cannot be read or is not that JSON.
-func readJSON(path string, value any) error {
-	content, err := os.ReadFile(path)
-	if err != nil {
-		return err
-	}
-	return json.Unmarshal(content, value)
-}
-
 // readVersion returns the version a Node program reports, without its v, or "" if it cannot be run.
 func readVersion(node string) string {
 	command := exec.Command(node, "--version")
@@ -398,17 +389,6 @@ func readVersion(node string) string {
 		return ""
 	}
 	return strings.TrimPrefix(strings.TrimSpace(string(output)), "v")
-}
-
-// compareVersions orders two dotted versions by their numbers, so 22 comes before 22.1.
-func compareVersions(a, b string) int {
-	parse := func(version string) []int {
-		return lo.Map(strings.Split(version, "."), func(part string, _ int) int {
-			number, _ := strconv.Atoi(part)
-			return number
-		})
-	}
-	return slices.Compare(parse(a), parse(b))
 }
 
 // checkSum checks a Node archive, a release's file of the given version, against the sum nodejs.org publishes for it.

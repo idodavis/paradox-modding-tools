@@ -228,7 +228,7 @@ func listCommands(commands map[string]*schema.Command, holder *schema.Context, f
 			rank += holder.Field.Children[key].Vanilla.Count
 		}
 		candidates = append(candidates, makeKey(Completion{
-			Label: key, Category: schema.CategoryCommand, Detail: declaredLabels[declaration], Blurb: command.Blurb,
+			Label: key, Category: schema.CategoryCommand, Detail: findClass(declaration).ID, Blurb: command.Blurb,
 			Rank: rank,
 		}, isBlockCommand(command)))
 	}

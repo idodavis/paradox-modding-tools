@@ -223,10 +223,19 @@ func TestParseDoc(t *testing.T) {
 			t.Errorf("%s: not read as a doc", each.name)
 			continue
 		}
-		if field := reader.fields[each.key]; field == nil || !each.check(field) {
+		if field := findField(reader.root, each.key); field == nil || !each.check(field) {
 			t.Errorf("%s: %+v", each.name, field)
 		}
 	}
+}
+
+// findField returns the field written at a key path below the given field, its keys joined by slashes. It returns nil
+// if no field is written there.
+func findField(field *Field, path string) *Field {
+	for key := range strings.SplitSeq(path, "/") {
+		field = field.findChild(key)
+	}
+	return field
 }
 
 // TestParseDocDatabase checks what a doc file says of its database as a whole: its blurb and root scope, and that a
@@ -241,7 +250,7 @@ func TestParseDocDatabase(t *testing.T) {
 	if _, ok := docs.parseDoc("a = 1\nb = 2\nc = { d = 3 }\n", "x/00_example_templates.txt", game.Database{}); ok {
 		t.Error("a data file named like a doc is read as one")
 	}
-	if scope := docs.resolveScopePhrase("interest group"); scope != "interest_group" {
+	if scope, _ := docs.resolveScopePhrase("interest group"); scope != "interest_group" {
 		t.Errorf("a scope of two terms: %q", scope)
 	}
 }

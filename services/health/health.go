@@ -7,7 +7,6 @@ import (
 	"context"
 	"fmt"
 	"maps"
-	"regexp"
 	"slices"
 	"strconv"
 	"strings"
@@ -71,11 +70,17 @@ type Use struct {
 
 // A Finding is one problem, or one fact about the mods.
 type Finding struct {
-	Code     string `json:"code"`     // an lsp.Codes id
-	Question string `json:"question"` // the code's question
-	Level    string `json:"level"`    // the code's level, or a contest's own
-	Name     string `json:"name"`
-	Database string `json:"database"` // what the database calls a definition
+	Code     string     `json:"code"`            // an lsp.Codes id
+	Question string     `json:"question"`        // the code's question
+	Level    string     `json:"level"`           // the code's level, or a contest's own
+	Label    string     `json:"label"`           // the code's title
+	Topic    string     `json:"topic"`           // the code's topic
+	Message  []lsp.Part `json:"message"`         // the code's template filled with the facts, or a log row's line
+	Brief    []lsp.Part `json:"brief,omitempty"` // the line under its name in a list
+	Detail   string     `json:"detail"`          // its place, such as a.txt:12, or what a log row names
+	Why      []lsp.Part `json:"why,omitempty"`   // why the winner's copy wins, or why a log row is a mod's
+	Name     string     `json:"name"`
+	Database string     `json:"database"` // what the database calls a definition
 	// Origin is the mod the finding is about, or "" for the game's own log row.
 	Origin string            `json:"origin"`
 	Mods   []string          `json:"mods"` // the mods it concerns, in load order
@@ -110,12 +115,16 @@ type Change struct {
 // A Tally is how many findings there are of each level.
 type Tally struct {
 	Counts map[string]int `json:"counts"` // by level, with every level in it
-	Worst  string         `json:"worst"`  // the worst level that has a finding, or "" if none has
+	// Phrases holds each level's count as a phrase, such as 235 critical problems, by level. A level with no finding
+	// has none.
+	Phrases map[string]string `json:"phrases"`
+	Worst   string            `json:"worst"` // the worst level that has a finding, or "" if none has
 }
 
 // A Check is one kind of finding at one level, and how many findings it has.
 type Check struct {
-	Code  string `json:"code"` // an lsp.Codes id
+	Code  string `json:"code"`  // an lsp.Codes id
+	Label string `json:"label"` // the code's title
 	Level string `json:"level"`
 	Count int    `json:"count"` // the findings it has, the ones folded into others included
 }
@@ -181,9 +190,6 @@ const snippetContext = 2
 
 // coverageCode is the code of the finding that says how far a language covers a mod.
 const coverageCode = "coverage"
-
-// factPlaceholder matches a fact in a message template, such as {name}.
-var factPlaceholder = regexp.MustCompile(`\{\w+\}`)
 
 // BuildReport builds the report of the mods' problems in a load order. An empty order means the workspace's own.
 // Another order is not saved. The report lists what it changes. It returns an error if the mods cannot be scanned.
@@ -264,11 +270,15 @@ func resolveFindings(ws *workspace.Session, findings []Finding, order []string, 
 	}
 }
 
-// groupReport folds a report's findings and groups them: the workspace's compatibility, then each mod of the load
-// order. A health finding about a mod outside the order is left out. The report has no changes.
+// groupReport fills in the words of a report's findings, folds them and groups them: the workspace's compatibility,
+// then each mod of the load order. A health finding about a mod outside the order is left out. The report has no
+// changes.
 func groupReport(findings []Finding, order []string) Report {
+	for position := range findings {
+		describeFinding(&findings[position])
+	}
 	folded := foldFindings(findings, func(finding Finding) [4]string {
-		return [4]string{finding.Code, findOwner(finding), finding.Name, describeMessage(finding)}
+		return [4]string{finding.Code, findOwner(finding), finding.Name, lsp.JoinParts(finding.Message)}
 	}, func(first *Finding, repeat Finding) { first.Repeats = append(first.Repeats, repeat.Sites...) })
 	compatibility, own := lo.FilterReject(folded, func(finding Finding, _ int) bool {
 		return finding.Question == lsp.QuestionCompatibility
@@ -287,6 +297,53 @@ func groupReport(findings []Finding, order []string) Report {
 	}
 }
 
+// describeFinding fills in a finding's words from its code, its facts and its sites: its code's title and topic, its
+// message, the line under its name in a list, its place, and why the winner's copy wins.
+func describeFinding(finding *Finding) {
+	code := lsp.LookupCode(finding.Code)
+	finding.Label, finding.Topic = code.Label, code.Topic
+	finding.Message = lsp.SplitMessage(code.Template(finding.Facts), finding.Facts)
+	finding.Brief, finding.Detail, finding.Why = splitBrief(*finding), describeDetail(*finding), splitWhy(*finding)
+}
+
+// splitBrief returns the line under a finding's name in a list, as parts, its pieces apart by a dot. It says what kind
+// of thing the name is, how many names a replaced file leaves out that are still used and how often, the mod that
+// alone defines the name, and why the game keeps its copy. It is empty if the finding holds none of these.
+func splitBrief(finding Finding) []lsp.Part {
+	var parts []lsp.Part
+	add := func(piece ...lsp.Part) {
+		if len(parts) > 0 {
+			parts = append(parts, lsp.Part{Text: " · "})
+		}
+		parts = append(parts, piece...)
+	}
+	if finding.Database != "" && finding.Database != game.File {
+		add(lsp.Part{Text: finding.Database})
+	}
+	hasUses := len(finding.Uses) > 0
+	if hasUses {
+		add(lsp.SplitMessage(lo.Ternary(finding.Facts["count"] == "1", "{count} name still used · {uses} uses",
+			"{count} names still used · {uses} uses"), finding.Facts)...)
+	}
+	if other := finding.Facts["other"]; other != "" {
+		add(lsp.Part{Text: "only in "}, lsp.Part{Text: other, Style: "mod"})
+	}
+	// a finding's kept sites come first, so its first site is the one the game keeps where it keeps one
+	if site, _ := lo.First(finding.Sites); site.Label != "" && !hasUses {
+		add(lsp.Part{Text: site.Label})
+	}
+	return parts
+}
+
+// describeDetail returns a finding's place, such as a.txt:12: its first site's, which is the one the game keeps where
+// it keeps one. A log row with no site says what it names instead. It is "" if there is nothing to add.
+func describeDetail(finding Finding) string {
+	if site, ok := lo.First(finding.Sites); ok {
+		return site.Place.Rel + ":" + strconv.Itoa(site.Line)
+	}
+	return lo.Ternary(finding.Facts["named"] != "", "Names "+finding.Facts["named"], "")
+}
+
 // foldFindings folds each finding that has the key of an earlier one into that one. The earlier finding counts the
 // other in its Count, and the given function adds whatever else the earlier one keeps of it. The folded findings stay
 // in the order of their first.
@@ -303,18 +360,6 @@ func foldFindings[Key comparable](
 	})
 }
 
-// describeMessage returns a finding's message: the template of its code filled with the finding's facts. The template
-// is the code's elsewhere message where the code has one and another mod defines the name. A fact the finding lacks
-// stays as written. It is "" for a code that is not listed.
-func describeMessage(finding Finding) string {
-	code := lookupCode(finding.Code)
-	template := lo.Ternary(code.Elsewhere != "" && finding.Facts["other"] != "", code.Elsewhere, code.Message)
-	return factPlaceholder.ReplaceAllStringFunc(template, func(placeholder string) string {
-		fact, ok := finding.Facts[strings.Trim(placeholder, "{}")]
-		return lo.Ternary(ok, fact, placeholder)
-	})
-}
-
 // findOwner returns the id of the mod a finding is about: the first mod it concerns, else its origin.
 func findOwner(finding Finding) string { return lo.FirstOr(finding.Mods, finding.Origin) }
 
@@ -324,7 +369,7 @@ func findOwner(finding Finding) string { return lo.FirstOr(finding.Mods, finding
 func makeGroup(mod string, findings, languages []Finding) Group {
 	checks := lo.PartitionBy(findings, func(finding Finding) [2]string { return [2]string{finding.Level, finding.Code} })
 	slices.SortStableFunc(checks, func(a, b []Finding) int {
-		levels := cmp.Compare(slices.Index(lsp.Levels, a[0].Level), slices.Index(lsp.Levels, b[0].Level))
+		levels := cmp.Compare(rankLevel(a[0].Level), rankLevel(b[0].Level))
 		return cmp.Or(levels, cmp.Compare(countFindings(b), countFindings(a)))
 	})
 	for _, check := range checks {
@@ -333,9 +378,15 @@ func makeGroup(mod string, findings, languages []Finding) Group {
 	return Group{
 		Tally: makeTally(findings), Mod: mod, Findings: lo.Flatten(checks), Languages: lo.CoalesceSliceOrEmpty(languages),
 		Checks: lo.Map(checks, func(check []Finding, _ int) Check {
-			return Check{Code: check[0].Code, Level: check[0].Level, Count: countFindings(check)}
+			return Check{Code: check[0].Code, Label: check[0].Label, Level: check[0].Level, Count: countFindings(check)}
 		}),
 	}
+}
+
+// rankLevel returns where a level comes among the levels of a finding, the worst first. It returns -1 for a level that
+// is not one of them.
+func rankLevel(level string) int {
+	return slices.IndexFunc(lsp.Levels, func(row lsp.Level) bool { return row.ID == level })
 }
 
 // countFindings returns how many findings some findings stand for, the ones folded into them included.
@@ -343,16 +394,21 @@ func countFindings(findings []Finding) int {
 	return lo.SumBy(findings, func(finding Finding) int { return finding.Count })
 }
 
-// makeTally counts some findings by level, each as many times as its Count says.
+// makeTally counts some findings by level, each as many times as its Count says, and words each count.
 func makeTally(findings []Finding) Tally {
-	tally := Tally{Counts: map[string]int{}}
+	tally := Tally{Counts: map[string]int{}, Phrases: map[string]string{}}
 	for _, level := range lsp.Levels {
-		tally.Counts[level] = 0
+		tally.Counts[level.ID] = 0
 	}
 	for _, finding := range findings {
 		tally.Counts[finding.Level] += finding.Count
 	}
-	tally.Worst = lo.FindOrElse(lsp.Levels, "", func(level string) bool { return tally.Counts[level] > 0 })
+	for _, level := range lsp.Levels {
+		if count := tally.Counts[level.ID]; count > 0 {
+			tally.Phrases[level.ID] = lsp.Plural(count, level.Noun, level.Nouns)
+			tally.Worst = cmp.Or(tally.Worst, level.ID)
+		}
+	}
 	return tally
 }
 
@@ -362,14 +418,14 @@ func weigh(finding Finding) int {
 	return finding.Count * max(1, lo.SumBy(finding.Uses, func(use Use) int { return use.Count }))
 }
 
-// lookupCode returns a problem code. It returns the zero code if it is not found.
-func lookupCode(id string) lsp.Code {
-	code, _ := lo.Find(lsp.Codes, func(code lsp.Code) bool { return code.ID == id })
-	return code
-}
-
 // ListCodes returns every problem code.
 func (hlt *Service) ListCodes() []lsp.Code { return lsp.Codes }
+
+// ListLevels returns the levels of a finding, the worst first.
+func (hlt *Service) ListLevels() []lsp.Level { return lsp.Levels }
+
+// ListTopics returns the topics of the checks, in the order they are listed.
+func (hlt *Service) ListTopics() []lsp.Topic { return lsp.Topics }
 
 // ListOverview counts the definitions, files and messages of each mod in the workspace, and lists the mods each is
 // judged with.
@@ -576,7 +632,7 @@ func makeFinding(mods *index.Index, id string, facts map[string]string, sites []
 	case len(sites) > 0:
 		origin = sites[0].Place.Origin
 	}
-	code := lookupCode(id)
+	code := lsp.LookupCode(id)
 	return Finding{
 		Code: id, Question: code.Question, Level: code.Level, Name: facts["name"], Database: facts["database"], Origin: origin,
 		Mods:  listMods(mods, lo.Map(sites, func(site lsp.Site, _ int) string { return site.Place.Origin })),
@@ -644,7 +700,7 @@ func makeFileSites(ws *workspace.Session, mods *index.Index, path string) []lsp.
 		return makeFileSite(ws, mods, position)
 	})
 	if ok && len(sites) > 1 {
-		sites[len(sites)-1].Reason = index.ReasonPath
+		sites[len(sites)-1].Reason, sites[len(sites)-1].Label = index.ReasonPath, index.Reasons[index.ReasonPath].Label
 	}
 	return sites
 }

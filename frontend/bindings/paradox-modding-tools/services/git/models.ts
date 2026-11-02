@@ -52,9 +52,9 @@ export interface Commit {
     "subject": string;
 
     /**
-     * the refs pointing here, decorated
+     * the refs pointing here
      */
-    "refs": string[] | null;
+    "refs": Ref[] | null;
 }
 
 /**
@@ -77,7 +77,7 @@ export interface Ref {
     "name": string;
 
     /**
-     * branch, remote, tag
+     * branch, remote, tag; "" for another name a commit is decorated with
      */
     "type": string;
     "hash": string;
@@ -88,6 +88,14 @@ export interface Ref {
      */
     "date": string;
     "current": boolean;
+}
+
+/**
+ * A Remote is one remote of a repository: its label and the address it fetches from.
+ */
+export interface Remote {
+    "label": string;
+    "url": string;
 }
 
 /**

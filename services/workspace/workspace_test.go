@@ -124,8 +124,8 @@ func openFixture(t *testing.T) (*Session, string) {
 }
 
 // TestOpenLoadsCachesOnSecondOpen checks that a first open scans the install and writes both caches, that a second
-// open reads them and scans only the mods, that the caches of other versions are deleted but a file beside them is
-// not, and that a mod whose folder is missing is broken and not scanned.
+// open reads them and scans only the mods, that everything else in the game's cache folder is deleted, a file too,
+// and that a mod whose folder is missing is broken and not scanned.
 func TestOpenLoadsCachesOnSecondOpen(t *testing.T) {
 	missing := filepath.Join(t.TempDir(), "gone")
 	config := openConfig(t, ck3, resolveFixture(t, ck3),
@@ -135,16 +135,17 @@ func TestOpenLoadsCachesOnSecondOpen(t *testing.T) {
 	if err := os.MkdirAll(older, 0o755); err != nil {
 		t.Fatal(err)
 	}
-	if err := os.WriteFile(stray, []byte("kept"), 0o644); err != nil {
+	if err := os.WriteFile(stray, []byte("stray"), 0o644); err != nil {
 		t.Fatal(err)
 	}
 	ws, stages, _ := listOpenStages(t, config)
 	if want := []string{"listing", "schema", "indexing", "postings", "mods"}; !slices.Equal(stages, want) {
 		t.Errorf("first open stages: %v, want %v", stages, want)
 	}
-	// the folder is built from the session's own version and dumps, as the install record update builds it
+	// the folder is built from the session's own version, build and dumps, as the install record update builds it
 	dumpsAt := ws.Schema.Dumps.WrittenAt.Unix()
-	folder := filepath.Join(config.Dirs.Cache, ck3, fmt.Sprintf("%s-%d-test", ws.Schema.Version, dumpsAt))
+	checksum := game.LoadChecksum(resolveFixture(t, ck3))
+	folder := filepath.Join(config.Dirs.Cache, ck3, fmt.Sprintf("%s-%s-%d-test", ws.Schema.Version, checksum, dumpsAt))
 	for _, name := range []string{schemaFile, indexFile} {
 		if _, err := os.Stat(filepath.Join(folder, name)); err != nil {
 			t.Errorf("no cache: %v", err)
@@ -153,8 +154,8 @@ func TestOpenLoadsCachesOnSecondOpen(t *testing.T) {
 	if _, err := os.Stat(older); err == nil {
 		t.Error("the cache of another version was kept")
 	}
-	if _, err := os.Stat(stray); err != nil {
-		t.Error("a file beside the caches' folder was deleted")
+	if _, err := os.Stat(stray); err == nil {
+		t.Error("a file beside the caches' folder was kept")
 	}
 	if order := *ws.Order.Load(); len(order) != 2 || order[0].Descriptor.Name != "Fixture Mod" || order[0].Broken || !order[1].Broken {
 		t.Errorf("mods: %+v", order)
@@ -233,7 +234,8 @@ func TestListRootsPutsModsBeforeGame(t *testing.T) {
 		{Dir: dir, Origin: fixtureModID},
 		{Dir: filepath.Join(resolveFixture(t, ck3), "game"), Origin: game.OriginVanilla},
 	}
-	if roots := ws.ListRoots(); !slices.Equal(roots, want) {
+	isRoot := func(place Place, root files.Root) bool { return place.Path == root.Dir && place.Origin == root.Origin }
+	if roots := (&Service{session: ws}).ListRoots(); !slices.EqualFunc(roots, want, isRoot) {
 		t.Errorf("roots %v, want %v", roots, want)
 	}
 }
@@ -638,8 +640,8 @@ func TestServiceReadsOpenWorkspace(t *testing.T) {
 	}
 	mod := (*ws.Order.Load())[0].Dir
 	children, err := wsp.ListFolder(mod)
-	if err != nil || len(children) != 5 || !children[0].Place.IsDir || children[4].Name != "descriptor.mod" ||
-		children[4].Place.IsDir {
+	if err != nil || len(children) != 5 || !children[0].IsDir || children[4].Name != "descriptor.mod" ||
+		children[4].IsDir {
 		t.Errorf("mod's entries %+v, %v", children, err)
 	}
 	fonts := filepath.Join(resolveFixture(t, ck3), "game", "fonts")

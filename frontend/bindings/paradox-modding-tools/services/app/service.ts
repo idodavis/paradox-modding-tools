@@ -71,13 +71,6 @@ export function ListSettings(): $CancellablePromise<$models.Setting[] | null> {
 }
 
 /**
- * LogPath returns the path of pmt.log.
- */
-export function LogPath(): $CancellablePromise<string> {
-    return $Call.ByID(887789028);
-}
-
-/**
  * OpenWindow opens a new window with the given name on a page of the app. It returns an error if a window already
  * has the name.
  */

@@ -58,6 +58,13 @@ export function ListErrorLog(): $CancellablePromise<$models.GameLog> {
 }
 
 /**
+ * ListLevels returns the levels of a finding, the worst first.
+ */
+export function ListLevels(): $CancellablePromise<lsp$0.Level[] | null> {
+    return $Call.ByID(1991237329);
+}
+
+/**
  * ListOverview counts the definitions, files and messages of each mod in the workspace, and lists the mods each is
  * judged with.
  */
@@ -79,6 +86,13 @@ export function ListReaders(key: string): $CancellablePromise<lsp$0.Site[] | nul
  */
 export function ListSnippets(sites: lsp$0.Site[] | null): $CancellablePromise<$models.Snippet[] | null> {
     return $Call.ByID(354852256, sites);
+}
+
+/**
+ * ListTopics returns the topics of the checks, in the order they are listed.
+ */
+export function ListTopics(): $CancellablePromise<lsp$0.Topic[] | null> {
+    return $Call.ByID(2228109626);
 }
 
 /**

@@ -222,6 +222,26 @@ func resolveContest(ws *workspace.Session, finding *Finding, forgiven map[[2]str
 	})
 }
 
+// splitWhy returns why the game keeps the winner's copy of a name, as parts: the long form of the winner's reason,
+// filled with the finding's facts and with the folder and the files of the copies. It is empty for a file, for a
+// finding with no winner, and for a reason with no long form.
+func splitWhy(finding Finding) []lsp.Part {
+	winner, ok := lo.Find(finding.Sites, func(site lsp.Site) bool {
+		return site.Kept && index.Reasons[site.Reason].Why != ""
+	})
+	if !ok || finding.Facts["winner"] == "" || finding.Database == game.File {
+		return nil
+	}
+	folder := winner.Place.Folder
+	beaten := lo.FilterMap(finding.Sites, func(site lsp.Site, _ int) (string, bool) {
+		return lo.Ternary(site.Place.Folder == folder, site.Place.Name, site.Place.Rel),
+			!site.Kept && !site.Place.ReadOnly
+	})
+	facts := maps.Clone(finding.Facts)
+	facts["folder"], facts["file"], facts["beatenFile"] = folder+"/", winner.Place.Name, JoinList(beaten, "and")
+	return lsp.SplitMessage(index.Reasons[winner.Reason].Why, facts)
+}
+
 // resolveForgiven sets a finding's level to info if every two of the mods and the game among its sites are a forgiven
 // pair, in either order. A pair with the game never is.
 func resolveForgiven(finding *Finding, forgiven map[[2]string]bool) {

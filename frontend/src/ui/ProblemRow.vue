@@ -4,8 +4,9 @@
 -->
 <script setup lang="ts">
 import { computed } from "vue";
+import { useQuery } from "@pinia/colada";
 
-import { LEVELS } from "../lib/format";
+import { levelsQuery } from "../queries";
 
 const {
   level = "",
@@ -30,7 +31,8 @@ const {
 }>();
 const emit = defineEmits<{ open: [] }>();
 
-const mark = computed(() => LEVELS[level]);
+const { data: levels } = useQuery(levelsQuery);
+const mark = computed(() => levels.value?.find((one) => one.id === level));
 // a path shortens in its folders so its file name stays whole; any other second line is all "folder"
 const folder = computed(() => (mono ? detail.slice(0, Math.max(detail.lastIndexOf("/"), 0)) : detail));
 const file = computed(() => detail.slice(folder.value.length));

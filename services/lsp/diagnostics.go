@@ -3,7 +3,9 @@ package lsp
 import (
 	"cmp"
 	"maps"
+	"regexp"
 	"slices"
+	"strconv"
 	"strings"
 
 	"github.com/samber/lo"
@@ -28,8 +30,29 @@ const (
 	LevelInfo             = "info"          // only how things are
 )
 
+// A Level is one level of a finding: its words, its look on the page, and whether it counts as a problem and means
+// the game loses something.
+type Level struct {
+	ID      string `json:"id"`
+	Label   string `json:"label"`
+	Icon    string `json:"icon"`  // the page's icon
+	Color   string `json:"color"` // the page's color
+	Noun    string `json:"noun"`  // such as critical problem
+	Nouns   string `json:"nouns"`
+	Problem bool   `json:"problem"` // it counts as a problem; info does not
+	Fix     bool   `json:"fix"`     // the game loses something, so a mod needs a fix
+}
+
 // Levels holds the levels of a finding, the worst first.
-var Levels = []string{LevelCritical, LevelError, LevelWarning, LevelInfo}
+var Levels = []Level{
+	{ID: LevelCritical, Label: "Critical", Icon: "i-lucide-circle-x", Color: "error", Noun: "critical problem",
+		Nouns: "critical problems", Problem: true, Fix: true},
+	{ID: LevelError, Label: "Error", Icon: "i-lucide-circle-alert", Color: "warning", Noun: "error", Nouns: "errors",
+		Problem: true, Fix: true},
+	{ID: LevelWarning, Label: "Warning", Icon: "i-lucide-triangle-alert", Color: "yellow", Noun: "warning",
+		Nouns: "warnings", Problem: true},
+	{ID: LevelInfo, Label: "Info", Icon: "i-lucide-info", Color: "info", Noun: "info", Nouns: "info"},
+}
 
 // unresolvedCode is the code of a name nothing defines that is of no narrower kind.
 const unresolvedCode = "unresolved-reference"
@@ -167,11 +190,47 @@ var Codes = []Code{
 	{ID: "game-error", Question: QuestionLog, Label: "Game error", Message: "The game logged: {message}"},
 }
 
+// A Topic is one topic of the checks, in words.
+type Topic struct {
+	ID    string `json:"id"`
+	Label string `json:"label"`
+}
+
+// Topics holds the topics of the checks, in the order they are listed.
+var Topics = []Topic{
+	{ID: "syntax", Label: "Syntax"}, {ID: "references", Label: "References"},
+	{ID: "values", Label: "Scopes and values"}, {ID: "localization", Label: "Localization"},
+	{ID: "definitions", Label: "Definitions"}, {ID: "descriptor", Label: "Descriptor"},
+}
+
+// A Part is one piece of a sentence: plain text, or a fact drawn in its style, such as a mod's name, a code, a count
+// or a path.
+type Part struct {
+	Text  string `json:"text"`
+	Style string `json:"style,omitempty"` // "", mod, code, count or path
+}
+
+// factStyles holds the style of each fact a message draws apart, by the fact's key. Any other fact is plain text.
+var factStyles = map[string]string{
+	"mod": "mod", "other": "mod", "winner": "mod", "beaten": "mod",
+	"name": "code", "key": "code", "callee": "code", "namespace": "code",
+	"file": "path", "folder": "path", "beatenFile": "path",
+	"count": "count", "have": "count", "of": "count", "uses": "count", "removed": "count", "total": "count",
+}
+
+// languageFacts holds the facts of a message that hold a language's folder, shown as the language's name.
+var languageFacts = []string{"language", "header"}
+
+// factPlaceholder matches a fact in a message template, such as {name}.
+var factPlaceholder = regexp.MustCompile(`\{\w+\}`)
+
 // A Diagnostic is one problem found in a file.
 type Diagnostic struct {
-	Code  string            `json:"code"`
-	Range Range             `json:"range"`
-	Facts map[string]string `json:"facts"`
+	Code    string            `json:"code"`
+	Level   string            `json:"level"`   // its code's
+	Message string            `json:"message"` // its code's template filled with its facts, as text
+	Range   Range             `json:"range"`
+	Facts   map[string]string `json:"facts"`
 	// Defined is where the workspace defines a name the file's mod does not, in a mod it does not depend on.
 	Defined []Site `json:"defined,omitempty"`
 }
@@ -196,6 +255,8 @@ func (lsp *Service) Diagnose(path string) ([]Diagnostic, error) {
 // DiagnoseText returns the problems a file would have with the given text, judged against the open workspace. It
 // leaves the editor's text of the file alone, and leaves out the checks the user turned off. It returns an error if
 // no workspace is open.
+//
+//wails:ignore
 func (lsp *Service) DiagnoseText(path, text string) ([]Diagnostic, error) {
 	ws, err := lsp.Workspace.Session()
 	if err != nil {
@@ -207,7 +268,7 @@ func (lsp *Service) DiagnoseText(path, text string) ([]Diagnostic, error) {
 		return []Diagnostic{}, nil
 	}
 	document := workspace.ParseDocument(place.Format, path, text)
-	return lsp.listEnabled(ws.ID, newVisitor(ws, mods, place).diagnoseTree(document)), nil
+	return lsp.listEnabled(ws.ID, describeDiagnostics(newVisitor(ws, mods, place).diagnoseTree(document))), nil
 }
 
 // DescribeReference returns the facts that say which name a problem is about.
@@ -226,7 +287,7 @@ func DiagnoseFile(ws *workspace.Session, mods *index.Index, path string) ([]Diag
 	if err != nil {
 		return nil, err
 	}
-	return newVisitor(ws, mods, place).diagnoseTree(document), nil
+	return describeDiagnostics(newVisitor(ws, mods, place).diagnoseTree(document)), nil
 }
 
 // isDiagnosed reports whether a file can have problems: it is script, localization or a mod's descriptor, or a mod's
@@ -265,6 +326,88 @@ func toDiagnostics(tree *jomini.Tree, errors []jomini.Error) []Diagnostic {
 // makeDiagnostic returns a diagnostic over a span of a tree's text.
 func makeDiagnostic(tree *jomini.Tree, span jomini.Span, code string, facts map[string]string) Diagnostic {
 	return Diagnostic{Code: code, Range: ToRange(tree.Src, tree.Lines, span), Facts: facts}
+}
+
+// describeDiagnostics fills in each diagnostic's level and message from its code and its facts.
+func describeDiagnostics(diagnostics []Diagnostic) []Diagnostic {
+	for position := range diagnostics {
+		diagnostic := &diagnostics[position]
+		code := LookupCode(diagnostic.Code)
+		diagnostic.Level = code.Level
+		diagnostic.Message = JoinParts(SplitMessage(code.Template(diagnostic.Facts), diagnostic.Facts))
+	}
+	return diagnostics
+}
+
+// LookupCode returns the problem code of the given id. It returns the zero code if it is not listed.
+func LookupCode(id string) Code {
+	code, _ := lo.Find(Codes, func(code Code) bool { return code.ID == id })
+	return code
+}
+
+// Template returns the template of a code's message for the given facts: its elsewhere message where it has one and
+// the facts name another mod that defines the name, else its message.
+func (code Code) Template(facts map[string]string) string {
+	return lo.Ternary(code.Elsewhere != "" && facts["other"] != "", code.Elsewhere, code.Message)
+}
+
+// SplitMessage fills a template with the given facts, as parts: each {fact} in its style, a language fact as the
+// language's name, a count with its thousands separated, and the rest as plain text. A placeholder with no fact stays
+// as written.
+func SplitMessage(template string, facts map[string]string) []Part {
+	var parts []Part
+	for _, piece := range splitPlaceholders(template) {
+		key := strings.Trim(piece, "{}")
+		fact, ok := facts[key]
+		switch {
+		case !strings.HasPrefix(piece, "{") || !ok:
+			parts = append(parts, Part{Text: piece})
+		case slices.Contains(languageFacts, key):
+			parts = append(parts, Part{Text: loc.DescribeLanguage(fact)})
+		default:
+			style := factStyles[key]
+			if key == "name" && facts["database"] == game.File {
+				style = "path"
+			}
+			if number, err := strconv.Atoi(fact); err == nil && style == "count" {
+				fact = DescribeCount(number)
+			}
+			parts = append(parts, Part{Text: fact, Style: style})
+		}
+	}
+	return parts
+}
+
+// splitPlaceholders splits a template into its placeholders and the text between them, in order. An empty piece is
+// left out.
+func splitPlaceholders(template string) []string {
+	var pieces []string
+	last := 0
+	for _, match := range factPlaceholder.FindAllStringIndex(template, -1) {
+		pieces = append(pieces, template[last:match[0]], template[match[0]:match[1]])
+		last = match[1]
+	}
+	return lo.Compact(append(pieces, template[last:]))
+}
+
+// DescribeCount returns a count as the page shows it, its thousands separated by commas, such as 1,350.
+func DescribeCount(count int) string {
+	text := strconv.Itoa(count)
+	for start := len(text) - 3; start > 0 && text[start-1] != '-'; start -= 3 {
+		text = text[:start] + "," + text[start:]
+	}
+	return text
+}
+
+// JoinParts returns parts as one plain sentence.
+func JoinParts(parts []Part) string {
+	return strings.Join(lo.Map(parts, func(part Part, _ int) string { return part.Text }), "")
+}
+
+// Plural returns a count with its noun, such as 1 file or 1,350 files: the singular noun where the count is one, else
+// the plural.
+func Plural(count int, noun, nouns string) string {
+	return DescribeCount(count) + " " + lo.Ternary(count == 1, noun, nouns)
 }
 
 // A diagnoseVisitor collects the problems of one file.
@@ -636,7 +779,7 @@ func (visitor *diagnoseVisitor) diagnoseScope(tree *jomini.Tree, statement int32
 	if command == nil || len(command.Scopes) == 0 {
 		return
 	}
-	// a definition's starting scope is only its database's claim, so only a followed scope counts
+	// a starting scope is stated, not followed, so only a followed scope counts
 	scope, followed := context.Parent.Scope, len(context.Parent.Previous)
 	if scope == "" || followed == 0 || slices.Contains(command.Scopes, scope) || slices.Contains(command.VanillaScopes, scope) ||
 		!isScripted(context) {
@@ -665,8 +808,8 @@ func isScripted(context *schema.Context) bool {
 // are not judged.
 func (visitor *diagnoseVisitor) diagnoseValue(tree *jomini.Tree, statement int32, context *schema.Context) {
 	field, current := context.Field, tree.Statements[statement]
-	if context.Category != schema.CategoryField || field == nil || !field.Value.IsStated() ||
-		!field.Value.Source.CanAccuse() || current.IsBlock() || current.Value.IsEmpty() ||
+	if context.Category != schema.CategoryField && context.Category != schema.CategoryReference || field == nil ||
+		!field.Value.IsStated() || !field.Value.Source.CanAccuse() || current.IsBlock() || current.Value.IsEmpty() ||
 		context.ValueGroup == schema.CategoryReference {
 		return
 	}

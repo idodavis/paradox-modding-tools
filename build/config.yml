@@ -37,6 +37,7 @@ dev_mode:
       - node_modules
       - frontend
       - bin
+      - .claude
     file:
       - .DS_Store
       - .gitignore

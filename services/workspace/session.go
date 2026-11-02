@@ -82,7 +82,8 @@ func (wsp *Service) openSession(workspaceID string, progress func(stage string, 
 		return nil, err
 	}
 	ws.Effects, ws.Triggers = countDeclared(ws.Schema, game.DeclaredEffect), countDeclared(ws.Schema, game.DeclaredTrigger)
-	deleteOlderCaches(folder)
+	// the caches of the game's other versions go; one that cannot be deleted now goes at a later open
+	_ = removeEntries(filepath.Dir(folder), filepath.Base(folder))
 	if err := ws.scanMods(record.Mods, progress); err != nil {
 		return nil, err
 	}
@@ -117,14 +118,15 @@ func findInstall(records app.Config, installID string) (app.Install, *game.Game,
 	return install, row, nil
 }
 
-// resolveCaches returns the folder of an install's caches. Its name changes with the install's version, the game's
-// dumps and the app's version. It returns an error if the dumps cannot be listed.
+// resolveCaches returns the folder of an install's caches. Its name changes with the install's version and build, the
+// game's dumps and the app's version. It returns an error if the dumps cannot be listed.
 func resolveCaches(cacheDir string, row *game.Game, install app.Install, build string) (string, error) {
 	dumpsAt, err := schema.FindDumpsAt(row.FindDumpDirs(install.Path))
 	if err != nil {
 		return "", err
 	}
-	return filepath.Join(cacheDir, row.ID, fmt.Sprintf("%s-%d-%s", resolveVersion(row, install), dumpsAt.Unix(), build)), nil
+	folder := fmt.Sprintf("%s-%s-%d-%s", resolveVersion(row, install), game.LoadChecksum(install.Path), dumpsAt.Unix(), build)
+	return filepath.Join(cacheDir, row.ID, folder), nil
 }
 
 // resolveVersion returns an install's version: the one its files say, else the one its record holds, such as a version
@@ -172,18 +174,20 @@ func (ws *Session) loadInstall(installPath, version string, progress func(stage 
 	return nil
 }
 
-// deleteOlderCaches deletes every folder beside the given caches' folder, which are the game's caches of other
-// versions. A file there stays, and so does a folder that cannot be deleted.
-func deleteOlderCaches(folder string) {
-	entries, err := os.ReadDir(filepath.Dir(folder))
+// removeEntries deletes every file and folder in a folder but the one of the given base name, or every one for "". It
+// goes on past one it cannot delete and returns each failure. It returns an error if the folder cannot be read.
+func removeEntries(dir, base string) error {
+	entries, err := os.ReadDir(dir)
 	if err != nil {
-		return
+		return err
 	}
+	var failure error
 	for _, entry := range entries {
-		if entry.IsDir() && entry.Name() != filepath.Base(folder) {
-			_ = os.RemoveAll(filepath.Join(filepath.Dir(folder), entry.Name()))
+		if entry.Name() != base {
+			failure = errors.Join(failure, os.RemoveAll(filepath.Join(dir, entry.Name())))
 		}
 	}
+	return failure
 }
 
 // scanMods sets the session's mods from the workspace's records and scans them on top of the install. A mod whose

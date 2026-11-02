@@ -7,22 +7,23 @@ import * as monaco from "monaco-editor/editor/editor.api";
 import { shallowRef, type ShallowRef } from "vue";
 
 import * as lsp from "@services/lsp/service";
-import type { Card } from "@services/lsp/models";
+import type { Card, Diagnostic } from "@services/lsp/models";
 import type { editor } from "monaco-editor";
-import { findLevel } from "../../../lib/format";
-import { codesQuery, loadQuery } from "../../../queries";
 import { useSettingsStore } from "../../../stores/settings";
-import type { HoverProblem } from "../../../ui/HoverCard.vue";
+import type { Model } from "./models";
 
 /** A Hover is the card on show: the facts of a word, the problems on it, and the rectangle of the word in the page. */
-type Hover = { card: Card | null; problems: HoverProblem[]; anchor: DOMRect };
+type Hover = { card: Card | null; problems: Diagnostic[]; anchor: DOMRect };
 
 /**
- * attachHover shows a hover card over the word the pointer rests on in an editor. It returns the card on show, which is
- * null while there is none, the functions that take the card down and hold it while the pointer is on it, and the
- * function that detaches the card from the editor.
+ * attachHover shows a hover card over the word the pointer rests on in an editor of a file's model, with the model's
+ * problems on the word. It returns the card on show, which is null while there is none, the functions that take the
+ * card down and hold it while the pointer is on it, and the function that detaches the card from the editor.
  */
-export function attachHover(codeEditor: editor.IStandaloneCodeEditor): {
+export function attachHover(
+  codeEditor: editor.IStandaloneCodeEditor,
+  model: Model,
+): {
   hover: ShallowRef<Hover | null>;
   close: () => void;
   hold: (on: boolean) => void;
@@ -57,28 +58,10 @@ export function attachHover(codeEditor: editor.IStandaloneCodeEditor): {
    * meanwhile. A card the pointer is on is never replaced.
    */
   const findCard = useDebounceFn(async (word: editor.IWordAtPosition, lineNumber: number) => {
-    const model = codeEditor.getModel();
-    if (!model) return;
-    const [card, codes] = await Promise.all([
-      lsp.Hover(model.uri.fsPath, lineNumber, word.startColumn),
-      loadQuery(codesQuery),
-    ]);
+    const card = await lsp.Hover(model.place.path, lineNumber, word.startColumn);
     if (onCard || target?.lineNumber !== lineNumber || target.column !== word.startColumn) return;
     const span = card?.range ?? new monaco.Range(lineNumber, word.startColumn, lineNumber, word.endColumn);
-    // a marker's message has its facts filled in already
-    const problems = monaco.editor
-      .getModelMarkers({ resource: model.uri })
-      .filter((marker) => monaco.Range.areIntersectingOrTouching(marker, span))
-      .map((marker) => {
-        const id = typeof marker.code === "string" ? marker.code : (marker.code?.value ?? "");
-        return {
-          id,
-          level: findLevel(id, codes),
-          message: marker.message,
-          line: marker.startLineNumber,
-          column: marker.startColumn,
-        };
-      });
+    const problems = model.problems.filter((problem) => monaco.Range.areIntersectingOrTouching(problem.range, span));
     const start = codeEditor.getScrolledVisiblePosition({ lineNumber, column: word.startColumn });
     const end = codeEditor.getScrolledVisiblePosition({ lineNumber, column: word.endColumn });
     const box = codeEditor.getDomNode()?.getBoundingClientRect();

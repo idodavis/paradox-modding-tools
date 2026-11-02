@@ -634,14 +634,14 @@ func encodeFile(path string) error {
 	if err != nil {
 		return err
 	}
+	if header, _ := decodeHeader(file); checkSides(header.Width, header.Height) != nil {
+		return nil
+	}
 	picture, err := Decode(file, 0)
 	if err != nil {
 		return err
 	}
 	size := picture.Bounds().Size()
-	if checkSides(size.X, size.Y) != nil {
-		return nil
-	}
 	compressed, err := EncodeDDS(picture, true, true)
 	if err != nil {
 		return err

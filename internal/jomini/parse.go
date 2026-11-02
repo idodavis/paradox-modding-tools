@@ -101,10 +101,16 @@ func countLine(text string, offset int) int {
 }
 
 // countQuoted returns how many bytes the quoted scalar starting at the given quote runs, its closing quote
-// included, line endings between the quotes kept. Without a closing quote it runs to the text's end.
+// included, line endings between the quotes kept. A character after a backslash is part of the text, so an escaped
+// quote does not close it. Without a closing quote it runs to the text's end.
 func countQuoted(text string, offset int) int {
-	if end := strings.IndexByte(text[offset+1:], '"'); end >= 0 {
-		return end + 2
+	for i := offset + 1; i < len(text); i++ {
+		switch text[i] {
+		case '\\':
+			i++
+		case '"':
+			return i + 1 - offset
+		}
 	}
 	return len(text) - offset
 }

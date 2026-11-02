@@ -3,7 +3,6 @@
 import { shallowRef, watch } from "vue";
 import { useMutation, useQuery } from "@pinia/colada";
 
-import { describeLanguages } from "../lib/format";
 import { fileUrl, languagesQuery, modFolderQuery, workspacesQuery } from "../queries";
 import FileSelector, { IMAGES } from "./FileSelector.vue";
 import * as steam from "@services/steam/service";
@@ -84,7 +83,8 @@ watch(open, (opened) => {
           <UFormField label="Localization language">
             <USelect
               v-model="language"
-              :items="describeLanguages(languages)"
+              :items="languages ?? []"
+              value-key="folder"
               placeholder="The game's base language"
               class="w-full"
             />

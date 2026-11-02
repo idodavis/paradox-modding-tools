@@ -15,27 +15,18 @@ import { computed, shallowRef, watch } from "vue";
 import { useQuery } from "@pinia/colada";
 import { groupBy, sortBy, uniq } from "es-toolkit";
 import type { Finding } from "@services/health/models";
+import type { Part } from "@services/lsp/models";
 import {
   countFindings,
   countFindingsBy,
-  countLevels,
-  splitBrief,
-  describeCheck,
   describeCount,
-  describeDetail,
-  describeFinding,
   splitSubject,
   findOwner,
-  findTopic,
   joinParts,
-  LEVELS,
   matchQuery,
-  type Part,
-  PROBLEM_LEVELS,
-  TOPICS,
   toSiteKey,
 } from "../../lib/format";
-import { codesQuery } from "../../queries";
+import { levelsQuery, topicsQuery } from "../../queries";
 import { useWorkspaceStore } from "../../stores/workspace";
 import FactText from "../../ui/FactText.vue";
 import ProblemRow from "../../ui/ProblemRow.vue";
@@ -56,12 +47,11 @@ const emit = defineEmits<{ open: [finding: Finding] }>();
 /** The text a row must contain to be listed. */
 const filter = defineModel<string>("filter", { default: "" });
 
-/** A LevelHead is the head row of one level. */
-type LevelHead = { level: string; count: number };
-/** A CheckHead is the head row of one check within a level, with the mod all its rows share, if any. */
-type CheckHead = { key: string; check: string; count: number; open: boolean; shared: Part[] };
+/** A LevelHead is the head row of one level, with the level's words and color. */
+type LevelHead = { level: string; label: string; color: string; count: number };
+/** A CheckHead is the head row of one check within a level: its title, its topic, and the mod all its rows share. */
+type CheckHead = { key: string; label: string; topic: string; count: number; open: boolean; shared: Part[] };
 
-const LEVEL_ORDER = Object.keys(LEVELS);
 const SORTS = [
   { label: "Sort: worst first", value: "level" },
   { label: "Sort: name", value: "name" },
@@ -69,9 +59,15 @@ const SORTS = [
 ];
 
 const workspace = useWorkspaceStore();
-const { data: codes } = useQuery(codesQuery);
-/** The levels whose rows show. Info starts folded. */
-const shown = shallowRef([...PROBLEM_LEVELS]);
+const { data: levels } = useQuery(levelsQuery);
+const { data: topics } = useQuery(topicsQuery);
+/** The levels the user chose to show the rows of, or undefined until they choose. */
+const selection = shallowRef<string[]>();
+/** The levels whose rows show: the user's choice, else those that count as problems, so info starts folded. */
+const shown = computed({
+  get: () => selection.value ?? (levels.value ?? []).filter((level) => level.problem).map((level) => level.id),
+  set: (next: string[]) => (selection.value = next),
+});
 /** Whether each check's rows show, set when its head is pressed. */
 const pressed = shallowRef<Record<string, boolean>>({});
 const checks = shallowRef<string[]>([]);
@@ -84,41 +80,39 @@ watch(
 
 /** The level chips' items, each level with how many findings it has, the ones folded into a row included. */
 const levelItems = computed(() =>
-  LEVEL_ORDER.map((level) => ({
-    label: `${LEVELS[level]?.label} ${describeCount(counts.value[level] ?? 0)}`,
-    value: level,
+  (levels.value ?? []).map((level) => ({
+    label: `${level.label} ${describeCount(counts.value[level.id] ?? 0)}`,
+    value: level.id,
+    color: level.color,
   })),
 );
 /** The check filter's items, the most frequent check first. */
-const checkItems = computed(() => {
-  return sortBy(Object.entries(countFindingsBy(findings, (finding) => finding.code)), [([, count]) => -count]).map(
-    ([check, count]) => ({
-      label: `${describeCheck(check, codes.value)} ${describeCount(count)}`,
-      value: check,
-    }),
-  );
-});
+const checkItems = computed(() =>
+  sortBy(Object.entries(groupBy(findings, (finding) => finding.code)), [([, group]) => -countFindings(group)]).map(
+    ([check, group]) => ({ label: `${group[0]?.label} ${describeCount(countFindings(group))}`, value: check }),
+  ),
+);
 const matches = computed(() =>
   findings.filter(
     (finding) =>
       isPicked(finding.code) &&
       matchQuery(
         filter.value,
-        describeFinding(finding, codes.value),
+        joinParts(finding.message),
         finding.name,
         finding.code,
-        describeDetail(finding),
-        joinParts(splitBrief(finding)),
+        finding.detail,
+        joinParts(finding.brief),
         ...(finding.repeats ?? []).map((site) => `${site.place.rel}:${site.line}`),
       ),
   ),
 );
-const counts = computed(() => countLevels(matches.value));
+const counts = computed(() => countFindingsBy(matches.value, (finding) => finding.level));
 const rows = computed((): (LevelHead | CheckHead | Finding)[] =>
-  LEVEL_ORDER.flatMap((level) => {
+  (levels.value ?? []).flatMap(({ id: level, label, color }) => {
     const members = matches.value.filter((finding) => finding.level === level);
     if (!members.length) return [];
-    const head = { level, count: counts.value[level] ?? 0 };
+    const head = { level, label, color, count: counts.value[level] ?? 0 };
     if (!shown.value.includes(level)) return [head];
     const groups = sortBy(Object.entries(groupBy(members, (finding) => finding.code)), [
       ([, group]) => -countFindings(group),
@@ -138,7 +132,9 @@ function listCheck(level: string, check: string, members: Finding[], siblings: n
   const shownByDefault =
     siblings === 1 || !!filter.value.trim() || checks.value.length > 0 || members.some((member) => member === opened);
   const open = pressed.value[key] ?? shownByDefault;
-  const head = { key, check, count: countFindings(members), open, shared: describeShared(members) };
+  const topic = topics.value?.find((one) => one.id === members[0]?.topic)?.label ?? "";
+  const label = members[0]?.label ?? "";
+  const head = { key, label, topic, count: countFindings(members), open, shared: describeShared(members) };
   if (!open) return [head];
   // the worst first is the order Go sent them in
   if (sort.value === "level") return [head, ...members];
@@ -193,7 +189,7 @@ function toggleCheck(head: CheckHead): void {
         >
           <template #label="{ item }">
             <span class="flex items-center gap-1.5">
-              <span class="size-1.5 rounded-full" :style="{ background: `var(--ui-${LEVELS[item.value]?.color})` }" />
+              <span class="size-1.5 rounded-full" :style="{ background: `var(--ui-${item.color})` }" />
               {{ item.label }}
             </span>
           </template>
@@ -228,7 +224,7 @@ function toggleCheck(head: CheckHead): void {
           <ProblemRow
             v-if="'code' in item"
             :level="item.level"
-            :message="describeFinding(item, codes)"
+            :message="joinParts(item.message)"
             :selected="item === opened"
             class="ps-8"
             @open="emit('open', item)"
@@ -238,7 +234,7 @@ function toggleCheck(head: CheckHead): void {
             </template>
             <template #detail>
               <span class="flex min-w-0 grow items-center gap-3 text-12 text-dimmed">
-                <span class="min-w-0 truncate"><FactText :parts="splitBrief(item)" /></span>
+                <span class="min-w-0 truncate"><FactText :parts="item.brief" /></span>
                 <span class="grow" />
                 <span class="shrink-0 font-mono text-11">{{ describePlace(item) }}</span>
               </span>
@@ -254,8 +250,8 @@ function toggleCheck(head: CheckHead): void {
             class="flex h-8 w-full items-center gap-2 border-b border-default px-3 text-12 font-medium text-toned hover:bg-accented"
             @click="toggle(item.level)"
           >
-            <span class="size-1.5 rounded-full" :style="{ background: `var(--ui-${LEVELS[item.level]?.color})` }" />
-            {{ LEVELS[item.level]?.label }}
+            <span class="size-1.5 rounded-full" :style="{ background: `var(--ui-${item.color})` }" />
+            {{ item.label }}
             <span class="text-11 font-normal text-dimmed tabular-nums">{{ describeCount(item.count) }}</span>
             <span class="grow" />
             <UIcon
@@ -273,8 +269,8 @@ function toggleCheck(head: CheckHead): void {
               :name="item.open ? 'i-lucide-chevron-down' : 'i-lucide-chevron-right'"
               class="size-3.5 shrink-0 text-dimmed"
             />
-            <span class="truncate font-medium text-highlighted">{{ describeCheck(item.check, codes) }}</span>
-            <span class="shrink-0 text-11 text-dimmed">{{ TOPICS[findTopic(item.check, codes)] }}</span>
+            <span class="truncate font-medium text-highlighted">{{ item.label }}</span>
+            <span class="shrink-0 text-11 text-dimmed">{{ item.topic }}</span>
             <span class="grow" />
             <span v-if="item.shared.length" class="shrink-0 text-11 whitespace-nowrap text-dimmed">
               <FactText :parts="item.shared" />

@@ -10,7 +10,7 @@ import * as draw from "@services/draw/service";
 import type { Header } from "@internal/texture/models";
 import type { Place } from "@services/workspace/models";
 import { plural } from "../../lib/format";
-import { ddsPicturesQuery, headerQuery, loadQuery, placeQuery } from "../../queries";
+import { ddsPicturesQuery, loadQuery, placeQuery } from "../../queries";
 import { useEditorStore } from "../../stores/editor";
 import { useWorkspaceStore } from "../../stores/workspace";
 
@@ -38,7 +38,7 @@ const summary = computed(() => {
   if (pictures.value.length === 1) return `${first.name} → ${toDDS(first.name)}`;
   return `${pictures.value.length} pictures → a .dds beside each`;
 });
-watch(data, () => void preselect(), { immediate: true });
+watch(data, preselect, { immediate: true });
 
 const { mutate: save, isLoading } = useMutation({
   mutation: () =>
@@ -65,26 +65,26 @@ function toDDS(name: string): string {
 }
 
 /** toSettings returns a DDS's format and whether it has mipmaps, as the dialog's choices hold them. */
-function toSettings(header: Header | undefined): { format: string; mipmaps: boolean } {
-  return { format: header?.compression ? "BC3" : "uncompressed", mipmaps: (header?.mipmaps ?? 1) > 1 };
+function toSettings(header: Header): { format: string; mipmaps: boolean } {
+  return { format: header.compression ? "BC3" : "uncompressed", mipmaps: header.mipmaps > 1 };
 }
 
 /**
  * preselect sets the dialog's choices to the settings of the DDS files the pictures replace, when every picture has
  * one and they agree, and says so. Otherwise the choices keep their default, uncompressed without mipmaps.
  */
-async function preselect(): Promise<void> {
+function preselect(): void {
   const references = pictures.value.flatMap((picture) => data.value?.references?.[picture.path] ?? []);
   const [reference] = references;
   if (!reference || references.length < pictures.value.length) return;
-  const settings = await Promise.all(references.map(async (one) => toSettings(await loadQuery(headerQuery(one.path)))));
+  const settings = references.map((one) => toSettings(one.header));
   const [first] = settings;
   if (!first || settings.some((one) => one.format !== first.format || one.mipmaps !== first.mipmaps)) return;
   format.value = first.format;
   mipmaps.value = first.mipmaps;
   if (references.length > 1) likeness.value = `Set like the ${references.length} DDS files these replace`;
-  else if (reference.readOnly) likeness.value = `Set like the game's ${reference.rel}`;
-  else likeness.value = `Set like ${reference.name} beside it`;
+  else if (reference.place.readOnly) likeness.value = `Set like the game's ${reference.place.rel}`;
+  else likeness.value = `Set like ${reference.place.name} beside it`;
 }
 
 /** open shows a file in the editor. */

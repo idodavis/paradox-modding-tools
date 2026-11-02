@@ -9,7 +9,7 @@ import { editor as monacoEditor, MarkerSeverity, Range } from "monaco-editor/edi
 import type { IPosition, IRange } from "monaco-editor";
 import { computed, onBeforeUnmount, watch, watchEffect } from "vue";
 
-import type { Widget } from "@services/draw/models";
+import type { Missing, Widget } from "@services/draw/models";
 import type { Place } from "@services/workspace/models";
 
 import { useDrawStore } from "../../../stores/draw";
@@ -34,7 +34,7 @@ const {
   /** The ones hidden, by the session or by the states. */
   hidden: ReadonlySet<number>;
   /** What the game's files did not give for each one. */
-  missing: { id: number; text: string }[];
+  missing: Missing[];
   /** The name of the drawable. */
   name: string;
 }>();
@@ -124,8 +124,8 @@ const pointer = computed<monacoEditor.IModelDeltaDecoration[]>(() => {
 
 watchEffect(() => {
   const ranges = new Map(own.value.map(({ id, range }) => [id, range]));
-  const markers = missing.flatMap(({ id, text }) => {
-    const range = ranges.get(id);
+  const markers = missing.flatMap(({ widget, text }) => {
+    const range = ranges.get(widget);
     if (!range) return [];
     const line = range.startLineNumber;
     return [

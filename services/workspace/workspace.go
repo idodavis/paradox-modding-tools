@@ -24,6 +24,7 @@ import (
 
 	"paradox-modding-tools/internal/files"
 	"paradox-modding-tools/internal/game"
+	"paradox-modding-tools/internal/loc"
 	"paradox-modding-tools/internal/schema"
 	"paradox-modding-tools/internal/texture"
 	"paradox-modding-tools/services/app"
@@ -71,12 +72,6 @@ type FileText struct {
 	// Draft is the editor's unsaved text of the file. It is "" if there is none or it matches the disk.
 	Draft  string `json:"draft"`
 	Binary bool   `json:"binary"` // the file is not text, so it has no text
-}
-
-// A Child is one entry in a folder listing.
-type Child struct {
-	Name  string `json:"name"`
-	Place Place  `json:"place"`
 }
 
 // A Workspace is one recorded workspace as the pages list it: its record, its install, its game and its mods in load
@@ -198,18 +193,19 @@ func (wsp *Service) UpdateInstall(id, path string) error {
 	return err
 }
 
-// ListLanguages returns an install's localization languages. It returns an error if the install is not recorded.
-func (wsp *Service) ListLanguages(installID string) ([]string, error) {
+// ListLanguages returns an install's localization languages, each with its name in English. It returns an error if the
+// install is not recorded.
+func (wsp *Service) ListLanguages(installID string) ([]loc.Language, error) {
 	install, row, err := findInstall(wsp.Config.Config(), installID)
 	if err != nil {
 		return nil, err
 	}
 	rel, _ := findLocalizationFolder(row)
 	entries, _ := os.ReadDir(filepath.Join(install.Path, game.ScriptRoot, filepath.FromSlash(rel)))
-	languages := []string{}
+	languages := []loc.Language{}
 	for _, entry := range entries {
 		if entry.IsDir() {
-			languages = append(languages, entry.Name())
+			languages = append(languages, loc.Language{Folder: entry.Name(), Label: loc.DescribeLanguage(entry.Name())})
 		}
 	}
 	return languages, nil
@@ -262,7 +258,7 @@ func (wsp *Service) reopen(matches func(record app.Workspace) bool) {
 }
 
 // ResetData closes the open workspace and removes every workspace, install record and cache. Mods, game files and
-// settings stay. It returns an error if the records cannot be written or a cache cannot be deleted.
+// settings stay. It returns an error if the records cannot be written, and one for each cache it cannot delete.
 func (wsp *Service) ResetData() error {
 	wsp.mu.Lock()
 	defer wsp.mu.Unlock()
@@ -275,17 +271,7 @@ func (wsp *Service) ResetData() error {
 	if err != nil {
 		return err
 	}
-	cache := wsp.Config.Dirs.Cache
-	entries, err := os.ReadDir(cache)
-	if err != nil {
-		return err
-	}
-	for _, entry := range entries {
-		if err := os.RemoveAll(filepath.Join(cache, entry.Name())); err != nil {
-			return err
-		}
-	}
-	return nil
+	return removeEntries(wsp.Config.Dirs.Cache, "")
 }
 
 // ListWorkspaces returns every recorded workspace with its install, its game and its mods, each mod's descriptor read
@@ -302,14 +288,17 @@ func (wsp *Service) ListWorkspaces() []Workspace {
 	})
 }
 
-// CreateWorkspace records a workspace under an id of its own and returns it.
-func (wsp *Service) CreateWorkspace(ws app.Workspace) (app.Workspace, error) {
-	ws.ID = rand.Text()
+// CreateWorkspace records a workspace of the given install, with the given name and localization language, under an
+// id of its own, and returns it. It has no mods yet.
+func (wsp *Service) CreateWorkspace(name, install, language string) (app.Workspace, error) {
+	record := app.Workspace{
+		ID: rand.Text(), Name: name, Install: install, Language: language, Mods: []app.Mod{}, IgnoredPairs: [][2]string{},
+	}
 	err := wsp.Config.Update("workspaces", func(records *app.Config) error {
-		records.Workspaces = append(records.Workspaces, ws)
+		records.Workspaces = append(records.Workspaces, record)
 		return nil
 	})
-	return ws, err
+	return record, err
 }
 
 // UpdateWorkspace replaces a workspace's record, all but its mods, its settings and its ignored pairs. It returns an
@@ -786,9 +775,9 @@ func (wsp *Service) findWritable(paths ...string) (*Session, error) {
 	return session, nil
 }
 
-// ListFolder lists a folder's entries, folders first. Binary files are left out unless the workspace shows them. It
-// returns an error if no workspace is open or the folder cannot be read.
-func (wsp *Service) ListFolder(dir string) ([]Child, error) {
+// ListFolder returns the places of a folder's entries, folders first. Binary files are left out unless the workspace
+// shows them. It returns an error if no workspace is open or the folder cannot be read.
+func (wsp *Service) ListFolder(dir string) ([]Place, error) {
 	session, err := wsp.Session()
 	if err != nil {
 		return nil, err
@@ -799,31 +788,21 @@ func (wsp *Service) ListFolder(dir string) ([]Child, error) {
 	}
 	record, _, _, _ := findRecords(wsp.Config.Config(), session.ID)
 	mods := session.Mods.Load()
-	children := lo.FilterMap(entries, func(entry os.DirEntry, _ int) (Child, bool) {
+	places := lo.FilterMap(entries, func(entry os.DirEntry, _ int) (Place, bool) {
 		place := session.Locate(mods, filepath.Join(dir, entry.Name()))
 		place.IsDir = entry.IsDir()
-		return Child{Name: entry.Name(), Place: place}, place.IsDir || record.ShowBinaries || place.Format.IsText()
+		return place, place.IsDir || record.ShowBinaries || place.Format.IsText()
 	})
-	slices.SortStableFunc(children, func(a, b Child) int {
+	slices.SortStableFunc(places, func(a, b Place) int {
 		switch {
-		case a.Place.IsDir == b.Place.IsDir:
+		case a.IsDir == b.IsDir:
 			return 0
-		case a.Place.IsDir:
+		case a.IsDir:
 			return -1
 		}
 		return 1
 	})
-	return children, nil
-}
-
-// ListRoots returns the place of each of the workspace's root folders, in load order, the game's last. It returns
-// none if none is open.
-func (wsp *Service) ListRoots() []Place {
-	session, err := wsp.Session()
-	if err != nil {
-		return nil
-	}
-	return lo.Map(session.ListRoots(), func(root files.Root, _ int) Place { return wsp.Locate(root.Dir) })
+	return places, nil
 }
 
 // Create makes an empty file or a folder. The watcher sends fs:changed for it. It returns an error if it exists

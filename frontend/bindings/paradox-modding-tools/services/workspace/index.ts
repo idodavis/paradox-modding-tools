@@ -7,11 +7,11 @@ export {
 };
 
 export type {
-    Child,
     Dependency,
     Descriptor,
     FileChange,
     FileText,
+    Hunk,
     Mod,
     Place,
     Scanning,

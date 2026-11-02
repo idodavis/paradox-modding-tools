@@ -6,7 +6,6 @@ import { useMutation, useQuery } from "@pinia/colada";
 import { useSortable } from "@vueuse/integrations/useSortable";
 import type { StepperItem } from "@nuxt/ui";
 
-import { describeLanguages } from "../../lib/format";
 import { gamesQuery, installsQuery, languagesQuery } from "../../queries";
 import { gameIcon } from "../../stores/settings";
 import { useWorkspaceStore } from "../../stores/workspace";
@@ -61,19 +60,7 @@ useSortable(useTemplateRef<HTMLElement>("list"), mods, { handle: ".mod-handle", 
 
 const { mutate: create, isLoading: creating } = useMutation({
   mutation: async () => {
-    const record = await workspace.CreateWorkspace({
-      id: "",
-      name: title.value.trim(),
-      install: installId.value,
-      mods: [],
-      ignoredPairs: [],
-      language: language.value ?? "",
-      homePage: "",
-      gameColor: "",
-      resetTabs: false,
-      showBinaries: false,
-      settings: null,
-    });
+    const record = await workspace.CreateWorkspace(title.value.trim(), installId.value, language.value ?? "");
     // The mods are added one at a time, in load order.
     for (const mod of mods.value) {
       if (mod.dir) await workspace.AddMod(record.id, mod.dir);
@@ -214,7 +201,8 @@ function setStep(index: string | number | undefined): void {
             >
               <USelect
                 v-model="language"
-                :items="describeLanguages(languages)"
+                :items="languages ?? []"
+                value-key="folder"
                 placeholder="The game's base language"
                 class="w-full"
               />

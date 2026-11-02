@@ -1,4 +1,4 @@
-/** Tab ids and what they open, with how each file format is shown and its icon. */
+/** How a tab shows each file format, and each file's icon. */
 import type { Format } from "@internal/files/models";
 import type { Place } from "@services/workspace/models";
 import animIcon from "../fileicons/paradox-anim.svg?url";
@@ -22,18 +22,6 @@ import shaderIcon from "../fileicons/paradox-shader.svg?url";
 import textIcon from "../fileicons/paradox-text.svg?url";
 import textureIcon from "../fileicons/paradox-texture.svg?url";
 import videoIcon from "../fileicons/paradox-video.svg?url";
-
-const SIDES = ["changes", "staged", "conflict", "commit"] as const;
-
-/** A DiffSide names the two revisions a diff tab compares. */
-type DiffSide = (typeof SIDES)[number];
-
-/** A TabTarget is what one tab id opens, a file or a diff of one. */
-export type TabTarget =
-  { tab: "file"; key: string } | { tab: "diff"; side: DiffSide; root: string; key: string; hash?: string };
-
-/** The pattern of a diff tab's id. */
-const DIFF = new RegExp(`^diff:(${SIDES.join("|")})(?:@([0-9a-f]+))?:([^:]*):(.+)$`, "s");
 
 /** VIEWS holds how each file format is shown, as code or as an image, or not at all for null, and its icon. */
 export const VIEWS: Readonly<Record<Format, { view: "code" | "image" | null; icon: string }>> = {
@@ -77,22 +65,4 @@ export function findIcon(place: Place): string {
 export function listIcons(): string[] {
   const extensions = Object.values(EXTENSION_ICONS).flatMap((icons) => Object.values(icons));
   return [...new Set([...Object.values(VIEWS).map(({ icon }) => icon), ...extensions])];
-}
-
-/** parseTab decodes a tab id into what it opens. Any id that is not a diff's is a file's. */
-export function parseTab(id: string): TabTarget {
-  const [, text, hash, root = "", key] = DIFF.exec(id) ?? [];
-  const side = SIDES.find((candidate) => candidate === text);
-  if (side && key) return { tab: "diff", side, root: decodeURIComponent(root), key, hash };
-  return { tab: "file", key: id.replace(/^file:/, "") };
-}
-
-/** fileTab makes a file tab's id from the file's key. */
-export function fileTab(key: string): string {
-  return `file:${key}`;
-}
-
-/** diffTab makes a diff tab's id. A diff of a commit also holds the commit's hash. */
-export function diffTab(side: DiffSide, root: string, key: string, hash?: string): string {
-  return `diff:${side}${hash ? `@${hash}` : ""}:${encodeURIComponent(root)}:${key}`;
 }

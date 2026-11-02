@@ -9,19 +9,8 @@ import { Browser } from "@wailsio/runtime";
 import { isEqual, omit } from "es-toolkit";
 import { useRouter } from "vue-router";
 
-import {
-  describeCount,
-  describeDetail,
-  describeFinding,
-  describeLevels,
-  findWorstProblem,
-  FIX_LEVELS,
-  list,
-  plural,
-  PROBLEM_LEVELS,
-  toSentence,
-} from "../../lib/format";
-import { codesQuery, comparisonQuery, reportQuery, steamStatusQuery } from "../../queries";
+import { describeCount, joinParts, list, plural, toSentence } from "../../lib/format";
+import { comparisonQuery, levelsQuery, reportQuery, steamStatusQuery } from "../../queries";
 import { STAGES, useUploadStore } from "../../stores/uploads";
 import { useWorkspaceStore } from "../../stores/workspace";
 import LevelCounts from "../../ui/LevelCounts.vue";
@@ -55,7 +44,7 @@ const {
   refetch: checkSteam,
   isLoading: checkingSteam,
 } = useQuery(() => ({ ...steamStatusQuery, enabled: enabled.value }));
-const { data: codes } = useQuery(codesQuery);
+const { data: levels } = useQuery(levelsQuery);
 const { data: report } = useQuery(() => ({ ...reportQuery(workspace.listModIds()), enabled: enabled.value }));
 const { data: comparison } = useQuery(() => ({
   ...comparisonQuery({ modId, key: listingKey }),
@@ -76,11 +65,17 @@ const visibility = computed({
   get: () => picked.value || comparison.value?.steam?.visibility || (listing.workshopId ? "" : "private"),
   set: (next: string) => (picked.value = next),
 });
-const sentence = computed(() => list(describeLevels(group.value?.counts, PROBLEM_LEVELS)));
+const sentence = computed(() =>
+  list(
+    (levels.value ?? []).filter((level) => level.problem).flatMap((level) => group.value?.phrases?.[level.id] ?? []),
+  ),
+);
 // Each finding that needs a fix, once with its repeats folded in, as Health lists them.
-const faults = computed(() => (group.value?.findings ?? []).filter((finding) => FIX_LEVELS.includes(finding.level)));
+const faults = computed(() =>
+  (group.value?.findings ?? []).filter((finding) => levels.value?.find((level) => level.id === finding.level)?.fix),
+);
 // The worst level among the problems, or none if the mod has none.
-const worst = computed(() => findWorstProblem(group.value));
+const worst = computed(() => levels.value?.find((level) => level.problem && level.id === group.value?.worst));
 const label = computed(() => {
   if (reason.value) return "Start Steam to upload";
   return listing.workshopId ? "Upload to Steam" : "Create on Steam";
@@ -225,8 +220,8 @@ function submit(): void {
           v-for="(problem, position) in faults"
           :key="position"
           :level="problem.level"
-          :message="describeFinding(problem, codes)"
-          :detail="describeDetail(problem)"
+          :message="joinParts(problem.message)"
+          :detail="problem.detail"
           mono
           @open="open(problem)"
         >

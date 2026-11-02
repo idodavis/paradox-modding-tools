@@ -7,6 +7,14 @@ import (
 	"math/bits"
 )
 
+// A dxgiCompression is one block compression of a DDS, by the DXGI formats it covers.
+type dxgiCompression struct {
+	first, last uint32
+	compression string
+	blockBytes  int
+	decodeBlock func(block []byte, pixels *[16][4]uint8)
+}
+
 // The flags of a DDS pixel format: the data is named by a FourCC, has color masks, has a luminance mask, has only
 // an alpha mask, or has an alpha mask beside its color masks.
 const (
@@ -59,14 +67,14 @@ var fourCCs = map[string]uint32{
 }
 
 // dxgiCompressions are the block compressions, each by the DXGI formats from its typeless one to its last variant,
-// with the bytes of one of its 4 by 4 blocks.
-var dxgiCompressions = []struct {
-	first, last uint32
-	compression string
-	blockBytes  int
-}{
-	{70, 72, "BC1", 8}, {73, 75, "BC2", 16}, {76, 78, "BC3", 16}, {79, 81, "BC4", 8}, {82, 84, "BC5", 16},
-	{94, 96, "BC6H", 16}, {97, 99, "BC7", 16},
+// with the bytes of one of its 4 by 4 blocks and its block decoder. BC6H's signed format decodes apart from its
+// unsigned ones.
+var dxgiCompressions = []dxgiCompression{
+	{70, 72, "BC1", 8, decodeBC1}, {73, 75, "BC2", 16, decodeBC2}, {76, 78, "BC3", 16, decodeBC3},
+	{79, 81, "BC4", 8, decodeBC4}, {82, 84, "BC5", 16, decodeBC5},
+	{94, 95, "BC6H", 16, func(block []byte, pixels *[16][4]uint8) { decodeBC6H(block, pixels, false) }},
+	{96, 96, "BC6H", 16, func(block []byte, pixels *[16][4]uint8) { decodeBC6H(block, pixels, true) }},
+	{97, 99, "BC7", 16, decodeBC7},
 }
 
 // dxgiMasks are the uncompressed DXGI formats PMT decodes, each as its bits per pixel and then its red, green,
@@ -88,51 +96,23 @@ var dxgiMasks = map[uint32][5]uint32{
 // It returns an error if the data ends before the level's last pixel.
 func decodeDDS(bytes []byte, header Header, level int) (image.Image, error) {
 	data := bytes[ddsDataOffset:]
-	dxgi, dx10 := lookupDXGI(bytes)
-	if dx10 {
+	if _, dx10 := lookupDXGI(bytes); dx10 {
 		data = bytes[ddsDX10DataOffset:]
 	}
 	depth, masks := resolveDDSMasks(bytes)
-	blockBytes := findBlockBytes(header.Compression)
+	format, _ := classifyDDS(bytes)
 	for range level {
-		size := countLevelBytes(header, blockBytes, depth)
+		size := countLevelBytes(header, format.blockBytes, depth)
 		if len(data) < size {
 			return nil, errTruncated
 		}
 		data = data[size:]
 		header.Width, header.Height = max(1, header.Width/2), max(1, header.Height/2)
 	}
-	switch header.Compression {
-	case "BC1":
-		return decodeBlocks(data, header, blockBytes, decodeBC1)
-	case "BC2":
-		return decodeBlocks(data, header, blockBytes, decodeBC2)
-	case "BC3":
-		return decodeBlocks(data, header, blockBytes, decodeBC3)
-	case "BC4":
-		return decodeBlocks(data, header, blockBytes, decodeBC4)
-	case "BC5":
-		return decodeBlocks(data, header, blockBytes, decodeBC5)
-	case "BC6H":
-		signed := dxgi == 96
-		return decodeBlocks(data, header, blockBytes, func(block []byte, pixels *[16][4]uint8) {
-			decodeBC6H(block, pixels, signed)
-		})
-	case "BC7":
-		return decodeBlocks(data, header, blockBytes, decodeBC7)
+	if format.decodeBlock == nil {
+		return decodeMasked(data, header, depth, masks)
 	}
-	return decodeMasked(data, header, depth, masks)
-}
-
-// findBlockBytes returns the bytes of one 4 by 4 block of a block compression. It returns 0 for "", which is no
-// compression.
-func findBlockBytes(compression string) int {
-	for _, row := range dxgiCompressions {
-		if row.compression == compression {
-			return row.blockBytes
-		}
-	}
-	return 0
+	return decodeBlocks(data, header, format.blockBytes, format.decodeBlock)
 }
 
 // countLevelBytes returns the bytes of one mip level of the header's size: its 4 by 4 blocks of the given bytes each,
@@ -151,7 +131,7 @@ func decodeDDSHeader(bytes []byte) (Header, bool) {
 		binary.LittleEndian.Uint32(bytes[ddsSizeOffset:]) != ddsHeaderSize {
 		return Header{}, false
 	}
-	compression, ok := classifyDDS(bytes)
+	format, ok := classifyDDS(bytes)
 	if !ok {
 		return Header{}, false
 	}
@@ -160,32 +140,32 @@ func decodeDDSHeader(bytes []byte) (Header, bool) {
 		Width:       int(binary.LittleEndian.Uint32(bytes[ddsWidthOffset:])),
 		Height:      int(binary.LittleEndian.Uint32(bytes[ddsHeightOffset:])),
 		Mipmaps:     max(1, int(binary.LittleEndian.Uint32(bytes[ddsMipmapsOffset:]))),
-		Compression: compression,
+		Compression: format.compression,
 	}
 	return header, true
 }
 
-// classifyDDS names the compression a DDS pixel format declares: BC1 to BC7, or "" for uncompressed data read
+// classifyDDS returns the block compression a DDS pixel format declares, or the zero one for uncompressed data read
 // through masks. It returns false for a format PMT does not decode.
-func classifyDDS(bytes []byte) (string, bool) {
+func classifyDDS(bytes []byte) (dxgiCompression, bool) {
 	flags := binary.LittleEndian.Uint32(bytes[ddsFormatFlagsOffset:])
 	if flags&ddsFourCC == 0 {
 		depth := binary.LittleEndian.Uint32(bytes[ddsDepthOffset:])
-		return "", flags&(ddsRGB|ddsLuminance|ddsAlpha) != 0 && depth%8 == 0 && depth >= 8 && depth <= 32
+		return dxgiCompression{}, flags&(ddsRGB|ddsLuminance|ddsAlpha) != 0 && depth%8 == 0 && depth >= 8 && depth <= 32
 	}
 	dxgi, ok := lookupDXGI(bytes)
 	if !ok {
 		if dxgi, ok = fourCCs[string(bytes[ddsFourCCOffset:ddsDepthOffset])]; !ok {
-			return "", false
+			return dxgiCompression{}, false
 		}
 	}
 	for _, row := range dxgiCompressions {
 		if row.first <= dxgi && dxgi <= row.last {
-			return row.compression, true
+			return row, true
 		}
 	}
 	_, ok = dxgiMasks[dxgi]
-	return "", ok
+	return dxgiCompression{}, ok
 }
 
 // lookupDXGI returns the DXGI format of a DDS with a DX10 header. It returns false when the pixel format names no

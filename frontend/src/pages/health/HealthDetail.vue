@@ -9,18 +9,8 @@ import { groupBy, isEqual, maxBy, sumBy } from "es-toolkit";
 import type { Finding } from "@services/health/models";
 import type { Site } from "@services/lsp/models";
 import { compareWithGame } from "../../app/commands";
-import {
-  describeCount,
-  LEVELS,
-  list,
-  matchQuery,
-  type Part,
-  plural,
-  REASONS,
-  splitFinding,
-  splitMessage,
-} from "../../lib/format";
-import { codesQuery, comparedQuery, readersQuery, snippetsQuery } from "../../queries";
+import { describeCount, matchQuery, plural } from "../../lib/format";
+import { codesQuery, comparedQuery, levelsQuery, readersQuery, snippetsQuery } from "../../queries";
 import { useWorkspaceStore } from "../../stores/workspace";
 import CompareView from "../../ui/CompareView.vue";
 import FactText from "../../ui/FactText.vue";
@@ -46,13 +36,13 @@ const USES_SHOWN = 6;
 
 const workspace = useWorkspaceStore();
 const { data: codes } = useQuery(codesQuery);
-const code = computed(() => codes.value?.find((one) => one.id === finding.code));
-const mark = computed(() => LEVELS[finding.level]);
+const { data: levels } = useQuery(levelsQuery);
+const mark = computed(() => levels.value?.find((one) => one.id === finding.level));
 /**
  * Whether the finding is of a name nothing defines, the one check whose codes have an elsewhere message. Its places
  * use the name.
  */
-const isMissing = computed(() => !!code.value?.elsewhere);
+const isMissing = computed(() => !!codes.value?.find((one) => one.id === finding.code)?.elsewhere);
 /** The line under the title, after the level and the check: what the name is, and how often it is used or found. */
 const subtitle = computed(() => {
   const frequency = isMissing.value ? `used ${describeCount(finding.count)} times` : plural(finding.count, "place");
@@ -84,24 +74,6 @@ const replacing = computed(() =>
  * winner.
  */
 const reorders = computed(() => !!finding.order?.length && !isEqual(order, finding.order));
-/**
- * Why the game keeps the winner's copy of a contested name, as parts: the long form of the winner's reason, filled
- * with the folder and the files of the copies. It is empty for a file, a finding with no winner, and a reason with
- * no long form.
- */
-const why = computed((): Part[] => {
-  const winner = kept.value.find((site) => REASONS[site.reason ?? ""]?.why);
-  const template = REASONS[winner?.reason ?? ""]?.why;
-  if (!winner || !template || !finding.facts?.winner || finding.database === "file") return [];
-  const folder = winner.place.folder;
-  const beaten = ignored.value.filter((site) => !site.place.readOnly);
-  return splitMessage(template, {
-    ...finding.facts,
-    folder: `${folder}/`,
-    file: winner.place.name,
-    beatenFile: list(beaten.map((site) => (site.place.folder === folder ? site.place.name : site.place.rel))),
-  });
-});
 
 /** The text the names still used must hold to be listed, and whether all of them show. */
 const usesFilter = shallowRef("");
@@ -154,11 +126,11 @@ function describeSite(site: Site): string {
               >{{ folder }}/<wbr /></template></span
           >{{ file.name }}
         </template>
-        <template v-else>{{ finding.name || code?.label || finding.code }}</template>
+        <template v-else>{{ finding.name || finding.label || finding.code }}</template>
       </span>
     </template>
     <template #line>
-      <span v-if="finding.name" class="whitespace-nowrap text-toned">{{ code?.label }}</span>
+      <span v-if="finding.name" class="whitespace-nowrap text-toned">{{ finding.label }}</span>
       <span v-if="subtitle" class="whitespace-nowrap">· {{ subtitle }}</span>
     </template>
     <template #buttons>
@@ -177,11 +149,11 @@ function describeSite(site: Site): string {
       />
     </template>
     <HealthSection title="What's wrong">
-      <p class="max-w-[74ch] text-13 leading-5.5 text-toned"><FactText :parts="splitFinding(finding, codes)" /></p>
+      <p class="max-w-[74ch] text-13 leading-5.5 text-toned"><FactText :parts="finding.message" /></p>
       <p v-if="!sites.length" class="text-12 text-dimmed">This finding points at no place.</p>
     </HealthSection>
-    <HealthSection v-if="why.length" :title="`Why ${finding.facts?.winner}'s copy wins`">
-      <p class="max-w-[74ch] text-13 leading-5.5 text-toned"><FactText :parts="why" /></p>
+    <HealthSection v-if="finding.why?.length" :title="`Why ${finding.facts?.winner}'s copy wins`">
+      <p class="max-w-[74ch] text-13 leading-5.5 text-toned"><FactText :parts="finding.why" /></p>
     </HealthSection>
     <HealthSection v-if="reorders" title="A load order that fixes it">
       <template #actions>
@@ -335,7 +307,7 @@ function describeSite(site: Site): string {
           <ModTitle :origin="copy.place.origin" />
           <span class="shrink-0 text-dimmed">defines {{ describeCount(copy.defines?.length ?? 0) }}</span>
           <span class="grow" />
-          <span v-if="copy.reason" class="truncate text-dimmed">{{ REASONS[copy.reason]?.label ?? copy.reason }}</span>
+          <span v-if="copy.label" class="truncate text-dimmed">{{ copy.label }}</span>
           <UBadge
             v-if="hasKeptCopy"
             :label="copy.kept ? 'Used' : 'Not used'"

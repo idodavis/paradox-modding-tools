@@ -15,14 +15,6 @@ import * as schema$0 from "../../internal/schema/models.js";
 import * as app$0 from "../app/models.js";
 
 /**
- * A Child is one entry in a folder listing.
- */
-export interface Child {
-    "name": string;
-    "place": Place;
-}
-
-/**
  * A Dependency is one mod a descriptor says its mod needs.
  */
 export interface Dependency {
@@ -93,6 +85,14 @@ export interface FileText {
      * the file is not text, so it has no text
      */
     "binary": boolean;
+}
+
+/**
+ * A Hunk is one run of lines an agent's edit changed in a file.
+ */
+export interface Hunk {
+    "before": string[] | null;
+    "after": string[] | null;
 }
 
 /**

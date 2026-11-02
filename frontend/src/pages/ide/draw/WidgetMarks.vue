@@ -5,7 +5,7 @@
 <script setup lang="ts">
 import { computed } from "vue";
 
-import type { Window } from "@services/draw/models";
+import type { Missing, Window } from "@services/draw/models";
 
 import { applyProperties, listProperties } from "./picture";
 import { findTypeIcon } from "./properties";
@@ -19,7 +19,7 @@ const props = defineProps<{
   /** The drawn window, or null for a coat. */
   window: Window | null;
   /** The widgets that lack a property the game's files did not give, one row for each such property. */
-  missing: { id: number }[];
+  missing: Missing[];
   /** The key of the property on the caret's line, or "". */
   property: string;
   /** Whether the window lay wholly off the screen and is drawn at the screen's edge it passed. */
@@ -61,7 +61,7 @@ const marks = computed(() => {
 const outlines = computed(() => props.outlined.flatMap((id) => props.rects.get(id) ?? []));
 
 const badges = computed(() =>
-  [...new Set(props.missing.map(({ id }) => id))].flatMap((id) => props.rects.get(id) ?? []),
+  [...new Set(props.missing.map(({ widget }) => widget))].flatMap((id) => props.rects.get(id) ?? []),
 );
 
 const guide = computed(() => {

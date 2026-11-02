@@ -136,17 +136,10 @@ func (drw *Service) findCoat(path, name string, picks map[string]string) (*coatR
 		return nil, err
 	}
 	mods := resolveIndex(ws, path)
-	file, ok := mods.FindFile(path)
-	if !ok {
-		return nil, fmt.Errorf("the file %q is not in the workspace", path)
-	}
-	var definition clause
-	site, ok := findDrawn(mods, file, name, func(database string) bool { return database == game.Coat.Database })
-	if ok {
-		definition, ok = makeClause(ws, mods, index.Winner{Site: site})
-	}
-	if !ok {
-		return nil, fmt.Errorf("the file %q does not define the coat %q", path, name)
+	isCoat := func(database string) bool { return database == game.Coat.Database }
+	definition, _, err := (&library{ws: ws, mods: mods}).findDrawn(path, name, isCoat)
+	if err != nil {
+		return nil, err
 	}
 	return &coatResolver{
 		ws: ws, mods: mods, picks: picks, colors: map[string]string{},
@@ -659,11 +652,11 @@ func (drw *Service) ListFrames() []Image {
 }
 
 // listImages returns the image files the game reads directly in a folder, each labeled with its file name, sorted by
-// label. It returns an empty list if the folder has none.
+// label. The folder matches without regard to case. It returns an empty list if the folder has none.
 func listImages(ws *workspace.Session, mods *index.Index, folder string) []Image {
 	images := []Image{}
 	for _, file := range mods.ListImages(folder + "/") {
-		if _, rest := ws.Game.SplitStage(file.Rel); path.Dir(rest) == folder {
+		if _, rest := ws.Game.SplitStage(file.Rel); strings.EqualFold(path.Dir(rest), folder) {
 			images = append(images, Image{Label: path.Base(rest), Place: ws.Locate(mods, file.Path)})
 		}
 	}
@@ -720,13 +713,9 @@ func isPattern(field clause) bool {
 }
 
 // makeLayerLines returns the lines of the game's template for a layer with the given role. The layer starts from the
-// first texture of the role, or for a sub from the first coat other than the given one. It returns an error for a role
-// the template has no layer for, or a game with nothing to start one from.
+// role's first texture, the template's pattern first, or for a sub from the first coat other than the given one. It
+// returns an error for a role the template has no layer for, or a game with nothing to start one from.
 func makeLayerLines(ws *workspace.Session, mods *index.Index, role, coat string) ([]string, error) {
-	if role == game.Coat.PatternKey {
-		pattern, err := findTemplatePattern(ws, mods)
-		return []string{fmt.Sprintf("%s = %q", game.Coat.PatternKey, pattern)}, err
-	}
 	lines, ok := game.Coat.Template.Layers[role]
 	if !ok {
 		return nil, fmt.Errorf("the game has no template for a layer with the role %q", role)
@@ -739,7 +728,8 @@ func makeLayerLines(ws *workspace.Session, mods *index.Index, role, coat string)
 }
 
 // findTemplateFill returns what a new layer with the given role starts from: for a sub, the first coat by name other
-// than the given one, else the first texture file of the role. It returns an error if the game has none.
+// than the given one; for another role, the role's first texture file whose name starts with the template's pattern,
+// else its first. It returns an error if the game has none.
 func findTemplateFill(ws *workspace.Session, mods *index.Index, role, coat string) (string, error) {
 	if role == game.Coat.SubKey {
 		names := lo.FilterMap(mods.ListKept(ws.Schema, game.Coat.Database), func(winner index.Winner, _ int) (string, bool) {
@@ -755,19 +745,9 @@ func findTemplateFill(ws *workspace.Session, mods *index.Index, role, coat strin
 	if len(textures) == 0 {
 		return "", fmt.Errorf("the game has no %s texture to start a layer with", role)
 	}
-	return textures[0].Label, nil
-}
-
-// findTemplatePattern returns the file of the pattern a new coat starts with: the first pattern whose name starts as
-// the game's template says, else the first. It returns an error if the game has no pattern.
-func findTemplatePattern(ws *workspace.Session, mods *index.Index) (string, error) {
-	names := lo.Map(listImages(ws, mods, game.Coat.TextureFolders[game.Coat.PatternKey]), func(image Image, _ int) string {
-		return image.Label
-	})
-	if len(names) == 0 {
-		return "", fmt.Errorf("the game has no pattern to start a coat with")
-	}
-	return lo.FindOrElse(names, names[0], func(each string) bool { return strings.HasPrefix(each, game.Coat.Template.Pattern) }), nil
+	return lo.FindOrElse(textures, textures[0], func(image Image) bool {
+		return strings.HasPrefix(image.Label, game.Coat.Template.Pattern)
+	}).Label, nil
 }
 
 // listLayers returns the statements that write the layers of the coat asked for, in the order the layers draw, the
@@ -843,6 +823,72 @@ func (drw *Service) RemoveBlock(path string, block lsp.Range) ([]lsp.Edit, error
 	return lsp.ToEdits(tree.Src, tree.Lines, []jomini.Edit{edit}), nil
 }
 
+// AddInstance returns the edits that add a placement to a layer of a coat. It returns an error if the file is not in
+// the workspace, no block starts at the given range, or the layer takes no placement.
+func (drw *Service) AddInstance(path string, layer lsp.Range) ([]lsp.Edit, error) {
+	tree, statement, err := drw.findBlock(path, layer)
+	if err != nil {
+		return nil, err
+	}
+	role := strings.ToLower(tree.Unquoted(tree.Statements[statement].Key))
+	instance, ok := game.Coat.Template.Instances[role]
+	if !ok {
+		return nil, fmt.Errorf("the game places no layer with the role %q", role)
+	}
+	edit := tree.BuildInsertion(statement, []string{instance})
+	return lsp.ToEdits(tree.Src, tree.Lines, []jomini.Edit{edit}), nil
+}
+
+// findBlock returns the tree of a file and the block that starts where the given range does. It returns an error if
+// the file is not in the workspace or no block starts there.
+func (drw *Service) findBlock(path string, block lsp.Range) (*jomini.Tree, int32, error) {
+	tree, statement, err := drw.findStatement(path, block)
+	if err == nil && !tree.Statements[statement].IsBlock() {
+		err = fmt.Errorf("the statement at line %d, column %d of %q is no block", block.StartLine, block.StartColumn, path)
+	}
+	return tree, statement, err
+}
+
+// findStatement returns the tree of a file and the statement that starts where the given range does. It returns an
+// error if the file is not in the workspace or no statement starts there.
+func (drw *Service) findStatement(path string, block lsp.Range) (*jomini.Tree, int32, error) {
+	ws, err := drw.Workspace.Session()
+	if err != nil {
+		return nil, 0, err
+	}
+	tree, err := ws.LoadTree(path)
+	if err != nil {
+		return nil, 0, err
+	}
+	offset := lsp.ToOffset(tree.Src, tree.Lines, block.StartLine, block.StartColumn)
+	statement, ok := tree.LookupStatement(offset)
+	if !ok {
+		return nil, 0, fmt.Errorf("no statement starts at line %d, column %d of %q", block.StartLine, block.StartColumn, path)
+	}
+	return tree, statement, nil
+}
+
+// toIndented returns lines indented as the line holding an offset is, joined as the file ends its lines.
+func toIndented(tree *jomini.Tree, offset int, lines []string) string {
+	row := tree.Lines.LineSpan(tree.Lines.ToPosition(offset).Line)
+	text := tree.Src[row.Start:row.End]
+	return tree.IndentLines(lines, text[:len(text)-len(strings.TrimLeft(text, " \t"))])
+}
+
+// toLineSpan returns the span of the whole lines a statement takes, with the line ending of the last. A statement
+// that shares a line with another is the span itself.
+func toLineSpan(tree *jomini.Tree, span jomini.Span) jomini.Span {
+	first, last := tree.Lines.ToPosition(span.Start).Line, tree.Lines.ToPosition(span.End).Line
+	start, end := tree.Lines.LineSpan(first).Start, tree.Lines.LineSpan(last).End
+	if strings.TrimSpace(tree.Src[start:span.Start]) != "" || strings.TrimSpace(tree.Src[span.End:end]) != "" {
+		return span
+	}
+	if last+1 < tree.Lines.CountLines() {
+		end = tree.Lines.LineSpan(last + 1).Start
+	}
+	return jomini.Span{Start: start, End: end}
+}
+
 // CreateCoatFile writes a new coat of arms file into the given mod and returns its place. The coat is named after the
 // given text as a slug, and holds the given script, as the game's coat designer copies it, or the game's coat template
 // when the script is "". It returns an error if the workspace has no such mod, the game keeps coats of arms in no
@@ -856,11 +902,11 @@ func (drw *Service) CreateCoatFile(modID, name, script string) (workspace.Place,
 	if script = strings.TrimSpace(script); script != "" {
 		return drw.writeCoatFile(ws, modID, slug, fmt.Sprintf("%s = {\n%s\n}", slug, script))
 	}
-	pattern, err := findTemplatePattern(ws, ws.Mods.Load())
+	pattern, err := makeLayerLines(ws, ws.Mods.Load(), game.Coat.PatternKey, slug)
 	if err != nil {
 		return workspace.Place{}, err
 	}
-	lines := []string{slug + " = {", fmt.Sprintf("\t%s = %q", game.Coat.PatternKey, pattern)}
+	lines := slices.Concat([]string{slug + " = {"}, lo.Map(pattern, func(line string, _ int) string { return "\t" + line }))
 	for position, color := range game.Coat.Template.Colors {
 		lines = append(lines, fmt.Sprintf("\t%s = %q", game.Coat.Slots[position].Key, color))
 	}

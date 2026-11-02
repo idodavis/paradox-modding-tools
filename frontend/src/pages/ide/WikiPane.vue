@@ -2,17 +2,6 @@
   The Wiki pane: the pages for the active file, a search of the game's wiki, the article, and the Lexicon tab. It sits
   beside the editors or in a window of its own, and shows the page or lexicon entry the editor looks up.
 -->
-<script lang="ts">
-/** CLASSES holds the lexicon's classes, in the order its tabs show them. */
-export const CLASSES = [
-  { label: "Effects", value: "effect" },
-  { label: "Triggers", value: "trigger" },
-  { label: "Links", value: "link" },
-  { label: "Scopes", value: "scope" },
-  { label: "Functions", value: "function" },
-];
-</script>
-
 <script setup lang="ts">
 import { computed, shallowRef, useTemplateRef, watch } from "vue";
 import { useQuery } from "@pinia/colada";
@@ -23,7 +12,7 @@ import type { DropdownMenuItem } from "@nuxt/ui";
 import type { Place } from "@services/workspace/models";
 
 import { matchQuery } from "../../lib/format";
-import { lexiconQuery, stateQuery, wikiPageQuery, wikiPagesQuery, wikiSearchQuery } from "../../queries";
+import { classesQuery, lexiconQuery, stateQuery, wikiPageQuery, wikiPagesQuery, wikiSearchQuery } from "../../queries";
 import { useEditorStore } from "../../stores/editor";
 import { useSettingsStore } from "../../stores/settings";
 import { THIS_WINDOW, useWindowsStore, type WikiLookup } from "../../stores/windows";
@@ -117,6 +106,7 @@ const {
   placeholderData: (previous) => (search.value ? previous : undefined),
 }));
 
+const { data: classes } = useQuery(classesQuery);
 const { data: rows } = useQuery(() => ({
   ...lexiconQuery(lexiconClass.value),
   enabled: workspace.isOpen() && view.value === "lexicon",
@@ -254,7 +244,8 @@ function jump(index: number): void {
       <div class="flex shrink-0 flex-wrap items-center gap-2 border-b border-default px-3 py-2">
         <UTabs
           :model-value="lexiconClass"
-          :items="CLASSES"
+          :items="classes ?? []"
+          value-key="id"
           :content="false"
           size="xs"
           @update:model-value="lexiconClass = String($event)"

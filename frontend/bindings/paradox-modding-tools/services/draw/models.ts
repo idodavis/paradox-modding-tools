@@ -9,6 +9,9 @@ import * as game$0 from "../../internal/game/models.js";
 import * as loc$0 from "../../internal/loc/models.js";
 // eslint-disable-next-line @typescript-eslint/ban-ts-comment
 // @ts-ignore: Unused imports
+import * as texture$0 from "../../internal/texture/models.js";
+// eslint-disable-next-line @typescript-eslint/ban-ts-comment
+// @ts-ignore: Unused imports
 import * as lsp$0 from "../lsp/models.js";
 // eslint-disable-next-line @typescript-eslint/ban-ts-comment
 // @ts-ignore: Unused imports
@@ -27,6 +30,21 @@ export interface Blend {
      * the color blended in, as CSS
      */
     "color": string;
+}
+
+/**
+ * A Box is one of the boxes that the States tab sorts a window's groups into: the window's own, what an object has, an
+ * object's, or the rows of a list.
+ */
+export interface Box {
+    "id": string;
+    "title": string;
+    "icon": string;
+
+    /**
+     * "rows" with a control each, "chips", or "window" for the window's own groups
+     */
+    "look": string;
 }
 
 /**
@@ -71,6 +89,14 @@ export interface Coat {
      * the keys that write the color slots, slot 1 first
      */
     "slots": string[] | null;
+}
+
+/**
+ * A DDS is one DDS file whose settings a picture keeps: where it is and what its header says.
+ */
+export interface DDS {
+    "place": workspace$0.Place;
+    "header": texture$0.Header;
 }
 
 /**
@@ -125,9 +151,14 @@ export interface Group {
     "options": string[] | null;
 
     /**
-     * by value: the text of the widget whose press sets it
+     * by option, how the panel writes it, as listCaptions says
      */
     "captions"?: { [_ in string]?: string } | null;
+
+    /**
+     * the box of the States tab that it starts in
+     */
+    "box": Box;
 
     /**
      * Picked is the option a coat's list draws now. A window's group leaves it empty, since its value is the states'
@@ -281,6 +312,26 @@ export interface Layer {
 }
 
 /**
+ * A Missing is one type or template that a widget of a window uses and no file defines.
+ */
+export interface Missing {
+    /**
+     * the widget that uses it
+     */
+    "widget": number;
+
+    /**
+     * the key that uses it and its name, such as "using button_sort"
+     */
+    "text": string;
+
+    /**
+     * the widget's name, else its type
+     */
+    "detail": string;
+}
+
+/**
  * A NamedColor is one of the game's named colors, for the color picker.
  */
 export interface NamedColor {
@@ -319,7 +370,7 @@ export interface Picture {
  */
 export interface PictureFiles {
     "pictures": workspace$0.Place[] | null;
-    "references": { [_ in string]?: workspace$0.Place } | null;
+    "references": { [_ in string]?: DDS } | null;
 }
 
 /**
@@ -382,6 +433,11 @@ export interface Property {
      * the type or template whose block it is written in; "" for no such block
      */
     "writer": string;
+
+    /**
+     * where it comes from, in words, as describeSource writes it
+     */
+    "source": string;
 }
 
 /**
@@ -416,6 +472,18 @@ export interface Recolor {
 export interface Row {
     "definition": string;
     "choices": { [_ in `${number}`]?: Choice[] | null } | null;
+}
+
+/**
+ * A Setting is one property to set in a block: the key and the value to write for it.
+ */
+export interface Setting {
+    /**
+     * starts where the block does
+     */
+    "block": lsp$0.Range;
+    "key": string;
+    "value": string;
 }
 
 /**
@@ -566,11 +634,6 @@ export interface Window {
     "holders": Widget[] | null;
 
     /**
-     * the data context its bindings read
-     */
-    "datacontext": string;
-
-    /**
      * Places is the places of the files that its widgets and holders are written in, each once.
      */
     "places": workspace$0.Place[] | null;
@@ -590,6 +653,11 @@ export interface Window {
      * Conditions is, by widget, the conditions it is shown on, as written. A widget shown on none is left out.
      */
     "conditions": { [_ in `${number}`]?: string[] | null } | null;
+
+    /**
+     * Missing is the types and templates its widgets use that no file defines, widget by widget in document order.
+     */
+    "missing": Missing[] | null;
 
     /**
      * Groups is what the panel lets the user switch: the groups its widgets' conditions read, its lists of pictures,

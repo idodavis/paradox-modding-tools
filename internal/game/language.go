@@ -54,6 +54,11 @@ type Keyword struct {
 	Modifies bool
 	// Preview marks a keyword whose block is shown in the tooltip and never run.
 	Preview bool
+	// Values is the database of the text it shows, written as its value or as the text key in its block; "" means none.
+	Values string
+	// Entries is the database of the entry its text key names, by what declares the keyword as a command. The game does
+	// not need the entry defined. Nil means none.
+	Entries map[string]string
 }
 
 // AnyCall is the Caller of a block that resolves a call in every callable.
@@ -223,6 +228,8 @@ var Keywords = []Keyword{
 	// _script_values.info:48-49
 	{Holder: "value", Key: "desc", Shape: "description", Blurb: descBlurb},
 	{Holder: "value", Key: "format", Shape: "description", Blurb: "The text that lays out this block's line when the value is broken down."},
+	// EU5 in_game/common/international_organizations/hre.txt:897, "desc_sort_order = -99999 # Make sure we are last"
+	{Holder: "value", Key: "desc_sort_order", Class: "display", Blurb: "Where this block's line sorts when the value is broken down: the lowest comes last."},
 	{Holder: "value", Key: "save_temporary_value_as", Shape: "arguments", Class: "saving", Blurb: "Remembers a value under a name until this script value ends."},
 	// a weight block: CK3 _scripted_modifiers.info:13-22, EU5 scripted_modifiers.info:8-22, Vic3 _on_actions.md:50-55
 	{Holder: "value", Key: "base", Shape: "value", Class: "math", Blurb: "The number a weight starts from."},
@@ -256,9 +263,12 @@ var Keywords = []Keyword{
 	{Key: "random_list", Class: "flow", Blurb: "Picks one branch at random; each branch's number is its weight."},
 	{Key: "hidden_effect", Shape: "effects", Class: "display", Blurb: "Runs its effects without showing them in the tooltip."},
 	{Key: "show_as_tooltip", Shape: "effects", Class: "display", Blurb: "Shows its effects in the tooltip without running them.", Preview: true},
-	{Key: "custom_tooltip", Class: "display", Covers: true, Blurb: "Shows a text of your own in place of the tooltip of what is inside."},
-	{Key: "custom_description", Class: "display", Covers: true, Blurb: "Shows a text of your own in place of the generated description."},
-	{Key: "custom_label", Class: "display", Blurb: "Shows a text of your own in the tooltip, with this scope as its subject."},
+	{Key: "custom_tooltip", Class: "display", Covers: true, Values: Localization, Blurb: "Shows a text of your own in place of the tooltip of what is inside."},
+	// CK3 common/effect_localization/_effect_localization.info:9-17 and common/trigger_localization/
+	// _trigger_localization.info:15 say an entry need not be defined: the game then reads the localization keys that
+	// start with the entry's name
+	{Key: "custom_description", Class: "display", Covers: true, Entries: map[string]string{DeclaredEffect: "effect_localization", DeclaredTrigger: "trigger_localization"}, Blurb: "Shows a text of your own in place of the generated description."},
+	{Key: "custom_label", Class: "display", Values: Localization, Blurb: "Shows a text of your own in the tooltip, with this scope as its subject."},
 	{Key: "save_scope_as", Class: "saving", Blurb: "Remembers the current scope under a name for the rest of the event chain."},
 	{Key: "save_temporary_scope_as", Class: "saving", Blurb: "Remembers the current scope under a name until this effect ends."},
 	{Key: "save_scope_value_as", Class: "saving", Blurb: "Remembers a number or a yes/no under a name for the rest of the event chain."},
@@ -284,7 +294,8 @@ var OperatorSays = map[string]string{
 var DumpPhrases = struct {
 	Iterates string   // a blurb opening with it and naming no target walks a list or variable map: scope unknown
 	NoScope  []string // scope names that name no scope
-}{"Iterate through", []string{"none", "all"}}
+	Literal  string   // the scope of a link whose name is a literal, as flag:the_boss's
+}{"Iterate through", []string{"none", "all", "none/any"}, "flag"}
 
 // LinkMakers are the commands that save a name of one of the Links, by the command, or by command/key for a key in
 // its block: each with the link that reads the name back.

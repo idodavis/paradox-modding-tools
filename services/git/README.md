@@ -9,8 +9,8 @@ service for the place of each changed file and each ignored path. A repository i
 
 | file | holds |
 |---|---|
-| `git.go` | the package comment; the events; `Service`; `Run` and `run`, which run git; `FindRepository`, `ReadFile`; the commands (`Stage`, `Unstage`, `Discard`, `CreateCommit`, `CreateBranch`, `SwitchBranch`, `Merge`); the locating of paths |
-| `status.go` | `Change`, `Status`, `Ref`; `ReadStatus`, `ListRefs`; the parser of the status records |
+| `git.go` | the package comment; the events; `Service`, `Remote`; `Run` and `run`, which run git; `FindRepository`, `ReadFile`, `ListRemotes`; the commands (`Discard`, `Merge`, `Pull`, `DeleteBranch`); the locating of paths |
+| `status.go` | `Change`, `Status`, `Ref`; `ReadStatus`, `ListRefs`; the parser of the status records; a full ref's type by its prefix |
 | `log.go` | `Commit`; `ListCommits`, `ListCommitFiles` |
 | `diff.go` | `LineChange`; `DiffFile`, the editor's change bars |
 
@@ -18,12 +18,14 @@ service for the place of each changed file and each ignored path. A repository i
 
 git is found on the PATH on the first call, and kept. `run` runs it in a folder and returns its standard output. Each
 line of standard error is sent as a `git:output` event as it arrives, and a nonzero exit is an error that carries the
-text of standard error. A missing git is an error too. Every method takes a folder and works on the repository that
-holds it; `FindRepository` returns that repository's root.
+text of standard error. A missing git is an error too. `FindRepository` gives the root of the repository that holds a
+folder; `Discard`, `Merge`, `Pull`, `DeleteBranch`, `ReadStatus`, `ListRemotes` and `ListCommitFiles` take that root,
+the others any folder of the repository.
 
-`Run` is the one the frontend calls for the commands of its own (a pull, a push, a checkout): it calls `run` and then
-emits `git:changed` with the folder, so what shows a repository's state reads it again. The package's own reads and
-commands call `run`, so a read never sends the event; the commands that change a repository send it themselves.
+`Run` is the one the frontend calls for every command it names (staging, a commit, a branch, a pull, a push, a
+checkout): it calls `run` and then emits `git:changed` with the folder, so what shows a repository's state reads it
+again. The package's own reads and commands call `run`, so a read never sends the event; the commands that change a
+repository send it themselves.
 
 ## Reading
 
@@ -34,8 +36,11 @@ commands call `run`, so a read never sends the event; the commands that change a
   origin.
 - `ListRefs` reads `git for-each-ref`: the branches, remote branches and tags, each with the date of its commit and
   whether it is current.
-- `ListCommits` reads `git log` with a NUL-separated format: each commit's hashes, parents, author, date, subject and
-  the refs that point at it, newest first. A repository with no commit gives none.
+- `ListCommits` reads `git log` with a NUL-separated format: each commit's hashes, parents, date, subject and the refs
+  that point at it, newest first. A repository with no commit gives none. The refs come decorated with their full
+  names, so each is typed as `ListRefs` types it; a remote's `HEAD` is left out, and any other name, such as a
+  detached `HEAD`, is kept with no type.
+- `ListRemotes` reads `git remote -v`: each remote once, with the address it fetches from.
 - `ListCommitFiles` lists the files one commit changed, a renamed file with its old path.
 - `ReadFile` returns a file's text at a revision, as `git show` prints it, decoded as the files on disk are. The
   revision `:0` reads the staged version. The diffs and the conflicts are drawn by the editor from these texts.
@@ -46,9 +51,13 @@ commands call `run`, so a read never sends the event; the commands that change a
 
 ## Commands
 
-`Stage`, `Unstage`, `Discard`, `CreateCommit`, `CreateBranch`, `SwitchBranch` and `Merge` each run one git command and
-emit `git:changed` with the repository's folder. `Discard` restores the files git tracks and deletes the ones it does
-not. A merge that conflicts is not an error: it leaves the markers in the files, for the editor to resolve.
+Every command that changes a repository as the Source Control view sends it runs through `Run`, which emits
+`git:changed` with the repository's root, also when git fails. `Discard` and `Merge` hold a rule of their own and
+emit it too. `Discard` restores the files git tracks and deletes the ones it does not. A merge that conflicts is not
+an error: it leaves the markers in the files, for the editor to resolve. `Pull` and `DeleteBranch` hold one each and
+run through `Run`: `Pull` splits a remote branch's name into its remote and its branch, and `DeleteBranch` answers
+false, with no error, where git refuses a branch with commits no other branch has, which git's English calls "not
+fully merged".
 
 ## Events
 
@@ -63,4 +72,5 @@ not. A merge that conflicts is not an error: it leaves the markers in the files,
 - **Status**: what git status reports for one repository.
 - **Change**: one changed file as git status reports it.
 - **Ref**: one branch, remote branch or tag.
+- **Remote**: one remote of a repository: its label and the address it fetches from.
 - **Commit**: one commit of the log, with what the graph draws of it.

@@ -48,6 +48,7 @@ type Card struct {
 	Writes   []string        `json:"writes,omitempty"`  // the values the game writes most for a field nothing declares, up to eight
 	Returns  string          `json:"returns,omitempty"` // what a call of a scripted definition gives
 	Command  string          `json:"command,omitempty"` // the kind of command a scripted definition the workspace has acts as
+	Lexicon  string          `json:"lexicon,omitempty"` // the id of the lexicon class that lists it; "" for none
 	Holds    string          `json:"holds,omitempty"`   // what its block holds, in words
 	Leads    string          `json:"leads,omitempty"`   // the scope its block runs in, for a command or link that switches
 	Target   string          `json:"target,omitempty"`  // the scope its value must be, for a command or link with no block
@@ -65,9 +66,21 @@ type Card struct {
 	Range    Range           `json:"range"`    // what the card is about
 }
 
-// declaredLabels holds what a card calls a command, for each way the game declares one.
-var declaredLabels = map[string]string{
-	game.DeclaredEffect: "effect", game.DeclaredTrigger: "trigger", game.DeclaredLink: "link",
+// A Class is one class of the wiki's lexicon. A card and a completion call a command the game declares by the id of
+// its class.
+type Class struct {
+	ID       string `json:"id"`    // such as effect
+	Label    string `json:"label"` // the lexicon tab's, such as Effects
+	Declared string `json:"-"`     // the way the game declares the class's commands; "" for a class of no commands
+}
+
+// Classes holds the lexicon's classes, in the order its tabs show them.
+var Classes = []Class{
+	{ID: "effect", Label: "Effects", Declared: game.DeclaredEffect},
+	{ID: "trigger", Label: "Triggers", Declared: game.DeclaredTrigger},
+	{ID: "link", Label: "Links", Declared: game.DeclaredLink},
+	{ID: "scope", Label: "Scopes"},
+	{ID: "function", Label: "Functions"},
 }
 
 // returnsLabels holds what a call of a scripted definition gives, for the shape of its block.
@@ -100,7 +113,11 @@ func (lsp *Service) Hover(path string, line, column int) (*Card, error) {
 	}
 	visitor := &hoverVisitor{tree: tree, offset: offset}
 	ws.Schema.WalkTo(tree, place.File, offset, visitor)
-	return lsp.describeHit(ws, mods, place, visitor), nil
+	card := lsp.describeHit(ws, mods, place, visitor)
+	if card != nil {
+		card.Lexicon = findLexicon(card)
+	}
+	return card, nil
 }
 
 // describeHit returns the hover card for what the given visitor found at the cursor in a script file, as the given
@@ -435,7 +452,7 @@ func resolveDate(calendar app.Calendar, date jomini.Date) *CardDate {
 
 // describeCommand fills a card for an effect, a trigger or a link: what it does and the scope it takes or switches to.
 func describeCommand(card *Card, visitor *hoverVisitor) {
-	card.What = declaredLabels[visitor.context.Declaration]
+	card.What = findClass(visitor.context.Declaration).ID
 	command := visitor.context.Command
 	if command == nil {
 		return
@@ -446,6 +463,13 @@ func describeCommand(card *Card, visitor *hoverVisitor) {
 	} else {
 		card.Target = command.Target
 	}
+}
+
+// findClass returns the lexicon class of the commands the game declares in the given way. It returns the zero Class
+// for a way no class has.
+func findClass(declaration string) Class {
+	class, _ := lo.Find(Classes, func(class Class) bool { return class.Declared != "" && class.Declared == declaration })
+	return class
 }
 
 // describeField fills a card for a field of a definition: what it does, whether it is required and what it takes.
@@ -491,4 +515,13 @@ func describeBlock(card *Card, visitor *hoverVisitor) {
 	if color, ok := jomini.ToColor(visitor.tree, visitor.statement); ok {
 		card.Color = color.ToCSS()
 	}
+}
+
+// findLexicon returns the id of the lexicon class that lists what a card is about: what the card says it is, where
+// that is a class, else the kind of command a scripted definition acts as.
+func findLexicon(card *Card) string {
+	if slices.ContainsFunc(Classes, func(class Class) bool { return class.ID == card.What }) {
+		return card.What
+	}
+	return card.Command
 }

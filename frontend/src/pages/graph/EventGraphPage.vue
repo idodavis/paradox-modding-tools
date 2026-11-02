@@ -124,12 +124,7 @@ const unit = computed(() => Number(settings.value("appearance.scale")) / 100 || 
 // ELK lays the graph out in a worker; the canvas keeps the last layout until the next one arrives
 const flow = computedAsync(() => {
   if (!graph.value) return EMPTY;
-  const options = { branches: branches.value, selected: selected.value, unit: unit.value };
-  return buildLayout(graph.value, {
-    ...options,
-    fanout: filter.value?.fanout ?? 0,
-    expand: filter.value?.expand ?? [],
-  });
+  return buildLayout(graph.value, { branches: branches.value, selected: selected.value, unit: unit.value });
 }, EMPTY);
 const kinds = computed(() =>
   (defaults.value?.databases ?? []).map((database) => {

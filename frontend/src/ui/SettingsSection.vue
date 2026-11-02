@@ -10,8 +10,7 @@ import { useQuery } from "@pinia/colada";
 import { range } from "es-toolkit";
 
 import { TOOL_CHOICES } from "../app/pages";
-import { TOPICS } from "../lib/format";
-import { codesQuery, settingsCatalogQuery } from "../queries";
+import { codesQuery, settingsCatalogQuery, topicsQuery } from "../queries";
 import { useSettingsStore } from "../stores/settings";
 import ValueField from "./ValueField.vue";
 import type { Setting } from "@services/app/models";
@@ -23,15 +22,16 @@ const { section } = defineProps<{ section: string }>();
 const settings = useSettingsStore();
 const { data: catalog } = useQuery(settingsCatalogQuery);
 const { data: codes } = useQuery(codesQuery);
+const { data: topics } = useQuery(topicsQuery);
 // the Appearance page draws the theme as tiles
 const rows = computed(() => catalog.value?.filter((row) => row.section === section && row.key !== "appearance.theme"));
 // the checks turned off, by id
 const off = computed(() => settings.value("ide.checks").split(",").filter(Boolean));
 /** The checks' switches, grouped by topic. */
 const groups = computed(() =>
-  Object.entries(TOPICS).map(([topic, title]) => ({
-    title,
-    codes: (codes.value ?? []).filter((code) => code.topic === topic),
+  (topics.value ?? []).map((topic) => ({
+    title: topic.label,
+    codes: (codes.value ?? []).filter((code) => code.topic === topic.id),
   })),
 );
 

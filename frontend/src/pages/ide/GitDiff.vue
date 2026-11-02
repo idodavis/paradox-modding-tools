@@ -4,24 +4,24 @@ import { computed, shallowRef, watchEffect } from "vue";
 import { useQuery } from "@pinia/colada";
 
 import { commitsQuery, fileQuery, gitFileQuery, gitStatusQuery } from "../../queries";
-import { useEditorStore } from "../../stores/editor";
+import { useEditorStore, type DiffSide, type Tab } from "../../stores/editor";
 import CompareView from "../../ui/CompareView.vue";
 import OriginChip from "../../ui/OriginChip.vue";
 import { EDITOR_LANGUAGES } from "../../ui/ScriptSnippet.vue";
 import { findModel } from "./editor/models";
-import { fileTab, type TabTarget } from "./editor/tabs";
 
-const { tab } = defineProps<{ tab: Extract<TabTarget, { tab: "diff" }> }>();
+// the tab's side and its repository's root come apart from it, since only a diff tab has them
+const { tab, side, root = "" } = defineProps<{ tab: Tab; side: DiffSide; root?: string }>();
 
 const editor = useEditorStore();
-const place = computed(() => editor.placeOf(fileTab(tab.key)));
+const place = computed(() => editor.placeOf(tab.key));
 const added = shallowRef(0);
 const removed = shallowRef(0);
 
-const { data: status } = useQuery(() => ({ ...gitStatusQuery(tab.root), enabled: !!tab.root }));
+const { data: status } = useQuery(() => ({ ...gitStatusQuery(root), enabled: !!root }));
 const { data: log } = useQuery(() => ({
-  ...commitsQuery({ dir: tab.root, refs: [], limit: 1 }),
-  enabled: !!tab.root,
+  ...commitsQuery({ dir: root, refs: [], limit: 1 }),
+  enabled: !!root,
 }));
 const entry = computed(() => status.value?.changes?.find((one) => one.place.key === tab.key));
 const deleted = computed(() => entry.value?.status === "deleted");
@@ -34,21 +34,21 @@ const sides = computed(() => {
     staged: { revisions: ["HEAD", ":0"], labels: [last, "Staged"] },
     conflict: { revisions: [":2", ":3"], labels: ["Current (HEAD)", "Incoming"] },
     commit: { revisions: [`${tab.hash}^`, tab.hash ?? ""], labels: [`Before ${short}`, `Commit ${short}`] },
-  }[tab.side];
+  }[side];
 });
 
 const { data: left } = useQuery(() => ({
-  ...gitFileQuery({ dir: tab.root, revision: sides.value.revisions[0] ?? "", path: gitPath.value }),
-  enabled: !!tab.root && !!place.value,
+  ...gitFileQuery({ dir: root, revision: sides.value.revisions[0] ?? "", path: gitPath.value }),
+  enabled: !!root && !!place.value,
 }));
 const { data: revised } = useQuery(() => ({
-  ...gitFileQuery({ dir: tab.root, revision: sides.value.revisions[1] ?? "", path: gitPath.value }),
-  enabled: !!tab.root && !!place.value && tab.side !== "changes",
+  ...gitFileQuery({ dir: root, revision: sides.value.revisions[1] ?? "", path: gitPath.value }),
+  enabled: !!root && !!place.value && side !== "changes",
 }));
 // the working tree is read once git status says the file is there; a deleted file's side stays empty
 const { data: file, error: unreadable } = useQuery(() => ({
   ...fileQuery(place.value?.path ?? ""),
-  enabled: !!place.value && tab.side === "changes" && !!status.value && !deleted.value,
+  enabled: !!place.value && side === "changes" && !!status.value && !deleted.value,
 }));
 
 const working = shallowRef("");
@@ -62,7 +62,7 @@ watchEffect((onCleanup) => {
   const subscription = model.model.onDidChangeContent(() => (working.value = model.model.getValue()));
   onCleanup(() => subscription.dispose());
 });
-const right = computed(() => (tab.side === "changes" ? working.value : (revised.value ?? "")));
+const right = computed(() => (side === "changes" ? working.value : (revised.value ?? "")));
 </script>
 
 <template>

@@ -9,24 +9,20 @@ import { useMutation, useQuery, useQueryCache } from "@pinia/colada";
 import { groupBy, sortBy } from "es-toolkit";
 import { WriteScaffold } from "@services/health/service";
 import type { Finding, Overview } from "@services/health/models";
+import type { Part } from "@services/lsp/models";
 import type { Mod } from "@services/workspace/models";
 import {
   countFindings,
   countFindingsBy,
   describeCount,
-  describeLanguages,
-  describeLogLine,
-  findTopic,
+  joinParts,
   splitSubject,
   list,
   listSiteKeys,
-  type Part,
   plural,
-  splitFinding,
   toSiteKey,
-  TOPICS,
 } from "../../lib/format";
-import { codesQuery, keys } from "../../queries";
+import { keys, languagesQuery, stateQuery, topicsQuery } from "../../queries";
 import { useWorkspaceStore } from "../../stores/workspace";
 import ModAvatar from "../../ui/ModAvatar.vue";
 import HealthDetail from "./HealthDetail.vue";
@@ -65,7 +61,12 @@ const DATABASES_SHOWN = 5;
 const workspace = useWorkspaceStore();
 const toast = useToast();
 const cache = useQueryCache();
-const { data: codes } = useQuery(codesQuery);
+const { data: topics } = useQuery(topicsQuery);
+const { data: state } = useQuery(stateQuery);
+const { data: installLanguages } = useQuery(() => ({
+  ...languagesQuery(state.value?.install.id ?? ""),
+  enabled: !!state.value?.install.id,
+}));
 const allDatabases = shallowRef(false);
 // the tabs give their values as text or numbers
 const topic = shallowRef<string | number>("");
@@ -102,7 +103,7 @@ const coverage = computed(() =>
     const name = language.facts?.name ?? "";
     return {
       name,
-      label: describeLanguages([name])[0]?.label ?? name,
+      label: installLanguages.value?.find((one) => one.folder === name)?.label ?? name,
       percent: (have / total) * 100,
       text: have === total ? `all ${describeCount(total)}` : `${describeCount(have)} of ${describeCount(total)}`,
       missing: total - have,
@@ -111,17 +112,17 @@ const coverage = computed(() =>
 );
 /** The topic tabs' items, "All topics" first and then each topic that has a finding. */
 const topicItems = computed(() => {
-  const counted = countFindingsBy(findings, (finding) => findTopic(finding.code, codes.value));
+  const counted = countFindingsBy(findings, (finding) => finding.topic);
   return [
     { label: "All topics", value: "" },
-    ...Object.entries(TOPICS)
-      .filter(([id]) => counted[id])
-      .map(([id, label]) => ({ label: `${label} ${describeCount(counted[id] ?? 0)}`, value: id })),
+    ...(topics.value ?? [])
+      .filter(({ id }) => counted[id])
+      .map(({ id, label }) => ({ label: `${label} ${describeCount(counted[id] ?? 0)}`, value: id })),
   ];
 });
 /** The findings of the picked topic, or all of them if no topic is picked. */
 const topicFindings = computed(() =>
-  topic.value ? findings.filter((finding) => findTopic(finding.code, codes.value) === topic.value) : findings,
+  topic.value ? findings.filter((finding) => finding.topic === topic.value) : findings,
 );
 /** The game's log rows by the place they name. */
 const logPlaces = computed(() => groupBy(log, toSiteKey));
@@ -147,7 +148,7 @@ const relation = computed((): Part[] => {
     ? [
         ...splitSubject(other),
         { text: ": ", style: "" },
-        ...splitFinding(other, codes.value),
+        ...(other.message ?? []),
         { text: " Open it in workspace compatibility.", style: "" },
       ]
     : [];
@@ -285,7 +286,7 @@ function listHits(finding: Finding): Finding[] {
               />
             </template>
             <p class="font-mono text-11.5 leading-4.5 wrap-anywhere text-toned">
-              {{ describeLogLine(hits[0]) }}
+              {{ joinParts(hits[0].message) }}
             </p>
           </HealthSection>
         </HealthDetail>

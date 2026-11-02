@@ -7,31 +7,17 @@ import workerUrl from "elkjs/lib/elk-worker.min.js?url";
 import { groupBy } from "es-toolkit";
 import type { Edge as FlowEdge, Node as FlowNode } from "@vue-flow/core";
 
-import type { Edge, Graph, Node, Step } from "@services/graph/models";
+import type { Edge, Graph, Node, Row as GraphRow } from "@services/graph/models";
 import { plural } from "../../lib/format";
 
 /** How the nodes of a database are drawn: a frame, a toast or a pill, filled or outline, in a color with an icon. */
 export type Look = { shape: "frame" | "toast" | "pill"; filled: boolean; color: string; icon: string };
 
-/**
- * A Row is one line of an open node: the firings written in the same blocks, a block the rows under it share, or the
- * fold of the firings past the fan-out.
- */
-export type Row = {
-  id: string;
-  /** the block that decides the row's firings, or the one a header row stands for; none for a firing written plainly */
-  step?: Step;
-  scopes: Step[]; // the links to other scopes its firings are written in
-  fires: Edge[];
-  nested: boolean; // under a header row
-  header: boolean;
-  more: number; // the firings a fold row stands for; 0 for any other row
-  delay: string; // the delay of its first firing, in words
-  lit: boolean; // one of its firings is lit, as isLit says, or it heads a row with one
-};
+/** A Row is one line of an open node as Go groups it, with its id and whether lightRows lights it. */
+export type Row = GraphRow & { id: string; lit: boolean };
 
-/** What a layout is built for: which nodes open, the node selected, the fan-out, the folds opened and the text size. */
-export type Options = { branches: string; selected: string; fanout: number; expand: string[]; unit: number };
+/** What a layout is built for: which nodes open, the node selected and the text size. */
+export type Options = { branches: string; selected: string; unit: number };
 
 /** The nodes a selection lights: the one selected, its route back to the root, and the nodes it touches. */
 type Lit = { selected: string; route: Set<string>; near: Set<string> };
@@ -46,8 +32,6 @@ const SIZES = {
   pill: { width: 176, height: 26 },
   open: { width: 236, head: 46, line: 16, row: 22, rows: 9 },
 };
-/** The kinds of block that decide which of a definition's firings run. */
-const DECIDING = ["branch", "weight", "list"];
 const ACTIONS: Look = { shape: "pill", filled: true, color: "var(--green)", icon: "i-lucide-timer" };
 /** Each database's look, by Go's database id. */
 const LOOKS: Record<string, Look> = {
@@ -100,21 +84,26 @@ function listDrawn(graph: Graph, options: Options, lit: Lit | null): Drawn[] {
   const route = lit?.route ?? new Set([graph.root]);
   return (graph.nodes ?? []).map((node) => {
     const open = !node.count && (options.branches === "all" ? !!node.fires?.length : route.has(node.id));
-    const rows = open ? listRows(node, options) : [];
-    if (lit) lightRows(node.id, rows, lit);
+    const rows = open ? lightRows(node, lit) : [];
     return { node, look: lookupLook(node.database), open, rows };
   });
 }
 
-/** Lights each row of a node with a firing that is lit, as isLit says, and the header row it sits under. */
-function lightRows(id: string, rows: Row[], lit: Lit): void {
+/**
+ * Lists a node's rows, each with its id. With a selection, each row with a firing that is lit, as isLit says, is lit,
+ * and so is the header row it sits under.
+ */
+function lightRows(node: Node, lit: Lit | null): Row[] {
+  const rows = (node.rows ?? []).map((row, position) => ({ ...row, id: `row:${position}`, lit: false }));
+  if (!lit) return rows;
   let header: Row | undefined;
   for (const row of rows) {
     if (row.header) header = row;
     else if (!row.nested) header = undefined;
-    row.lit = row.fires.some((fire) => isLit(lit, id, fire.to));
+    row.lit = !!row.fires?.some((fire) => isLit(lit, node.id, fire.to));
     if (row.lit && header) header.lit = true;
   }
+  return rows;
 }
 
 /**
@@ -123,57 +112,6 @@ function lightRows(id: string, rows: Row[], lit: Lit): void {
  */
 function isLit(lit: Lit, from: string, to: string): boolean {
   return [from, to].includes(lit.selected) || (lit.route.has(from) && lit.route.has(to));
-}
-
-/**
- * Lists the rows an open node shows, in the order its firings are written. Firings that one block decides, written in
- * the same blocks, are one row, and a firing written plainly is a row of its own. A row weighted or listed inside a
- * branch of an if sits under a header row for that branch. Past the fan-out, the rest are one fold row until the fold
- * is opened.
- */
-export function listRows(node: Node, options: Pick<Options, "fanout" | "expand">): Row[] {
-  const groups = Object.values(
-    groupBy(node.fires ?? [], (fire, position) => {
-      const steps = fire.steps ?? [];
-      // a prefix keeps the keys from reading as numbers, which an object would sort ahead of the order written
-      return steps.some((step) => DECIDING.includes(step.kind))
-        ? `s${steps.map((step) => step.line).join(",")}`
-        : `p${position}`;
-    }),
-  );
-  const folded = options.fanout > 0 && groups.length > options.fanout && !options.expand.includes(`more:${node.id}`);
-  const shown = folded ? groups.slice(0, options.fanout) : groups;
-  const rows: Row[] = [];
-  for (const fires of shown) {
-    const steps = fires[0].steps ?? [];
-    const step = steps.findLast((one) => DECIDING.includes(one.kind));
-    const outer =
-      step && step.kind !== "branch"
-        ? steps.slice(0, steps.indexOf(step)).findLast((one) => one.kind === "branch")
-        : undefined;
-    if (outer && rows.findLast((row) => row.header)?.step?.line !== outer.line)
-      rows.push(makeRow(rows, { step: outer, header: true }));
-    const scopes = steps.filter((one) => one.kind === "scope");
-    rows.push(makeRow(rows, { step, scopes, fires, nested: !!outer, delay: fires[0].delay ?? "" }));
-  }
-  const rest = groups.slice(shown.length).flat().length;
-  if (rest) rows.push(makeRow(rows, { more: rest }));
-  return rows;
-}
-
-/** Makes the next row of a node from the parts given, the rest empty. */
-function makeRow(rows: Row[], parts: Partial<Row>): Row {
-  return {
-    id: `row:${rows.length}`,
-    scopes: [],
-    fires: [],
-    nested: false,
-    header: false,
-    more: 0,
-    delay: "",
-    lit: false,
-    ...parts,
-  };
 }
 
 /** Measures a node as it draws: an open node grows with its title, its comment and its rows. */
@@ -269,7 +207,7 @@ function listPorts(drawn: Drawn, unit: number): ElkPort[] {
     .map((one, index) => ({
       id: `${drawn.node.id}|${one.id}`,
       y: top + (index + 0.5) * row,
-      isFiring: !!one.fires.length,
+      isFiring: !!one.fires?.length,
     }))
     .filter((port) => port.isFiring)
     .map(({ id, y }) => ({ id, y }));
@@ -294,7 +232,7 @@ function scale(box: { width: number; height: number }, unit: number): { width: n
  */
 function findHandle(firer: Drawn | undefined, edge: Edge): string | undefined {
   if (!firer?.open) return undefined;
-  return firer.rows.find((row) => row.fires.some((fire) => isSameFiring(fire, edge)))?.id ?? "node";
+  return firer.rows.find((row) => row.fires?.some((fire) => isSameFiring(fire, edge)))?.id ?? "node";
 }
 
 /** Pairs each edge with the steps it spans, negative for an edge back to an earlier step, and with its id. */

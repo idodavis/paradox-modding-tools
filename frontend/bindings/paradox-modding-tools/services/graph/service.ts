@@ -25,7 +25,7 @@ export function BuildDetail(id: string): $CancellablePromise<$models.Detail> {
 
 /**
  * BuildGraph builds the graph of what a root fires and what fires it, under a filter. Each definition's node holds
- * every firing it makes. It returns an error if the game keeps no definition of the root.
+ * every firing it makes and the rows it shows open. It returns an error if the game keeps no definition of the root.
  */
 export function BuildGraph(root: string, filter: $models.Filter): $CancellablePromise<$models.Graph> {
     return $Call.ByID(2455070978, root, filter);

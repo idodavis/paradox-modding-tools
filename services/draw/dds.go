@@ -20,14 +20,21 @@ import (
 // A PictureFiles is the pictures Save as DDS saves, and for each the DDS whose settings it keeps, by the picture's
 // path.
 type PictureFiles struct {
-	Pictures   []workspace.Place          `json:"pictures"`
-	References map[string]workspace.Place `json:"references"`
+	Pictures   []workspace.Place `json:"pictures"`
+	References map[string]DDS    `json:"references"`
+}
+
+// A DDS is one DDS file whose settings a picture keeps: where it is and what its header says.
+type DDS struct {
+	Place  workspace.Place `json:"place"`
+	Header texture.Header  `json:"header"`
 }
 
 // FindPictureFiles returns the pictures that Save as DDS saves for the given path: the picture itself, or for a folder
 // the pictures directly in it, by name, which are its images that are not DDS files. Each picture keeps the settings
-// of the DDS of the same name beside it, else of the game's own DDS at the place its DDS will have; a picture with
-// neither has no reference. It returns an error if no workspace is open, or a folder is outside it or cannot be read.
+// of the DDS of the same name beside it, else of the game's own DDS at the place its DDS will have. A picture with
+// neither, or whose DDS has a header that cannot be read, has no reference. It returns an error if no workspace is
+// open, or a folder is outside it or cannot be read.
 func (drw *Service) FindPictureFiles(path string) (PictureFiles, error) {
 	ws, err := drw.Workspace.Session()
 	if err != nil {
@@ -41,13 +48,18 @@ func (drw *Service) FindPictureFiles(path string) (PictureFiles, error) {
 		}
 	}
 	isGame := func(place workspace.Place) bool { return place.Origin == game.OriginVanilla }
-	references := map[string]workspace.Place{}
+	references := map[string]DDS{}
 	for _, picture := range pictures {
 		target := toDDSPath(picture.Path)
-		if files.IsFile(target) {
-			references[picture.Path] = ws.Locate(mods, target)
-		} else if place, ok := lo.Find(drw.Workspace.ListCopies(target), isGame); ok {
-			references[picture.Path] = place
+		place, ok := ws.Locate(mods, target), files.IsFile(target)
+		if !ok {
+			place, ok = lo.Find(drw.Workspace.ListCopies(target), isGame)
+		}
+		if !ok {
+			continue
+		}
+		if header, err := drw.Workspace.ReadHeader(place.Path); err == nil {
+			references[picture.Path] = DDS{Place: place, Header: header}
 		}
 	}
 	return PictureFiles{Pictures: pictures, References: references}, nil

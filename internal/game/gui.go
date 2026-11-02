@@ -399,17 +399,17 @@ var GUI = GUIRules{
 	HiddenKeys:     []string{"visible", "visible_at_creation"},
 	DropsHiddenKey: "ignoreinvisible",
 	// a data binding is called by its own name (the data_binding row's NamedBy call), as a customizable localization is
-	StepDatabases: []string{"data_binding", "customizable_localization"},
+	StepDatabases: []string{"data_binding", CustomLocalization},
 	CallTargets: map[string][]string{
 		guiDefineCall:       {"defines", "defines.define"},
 		"Localize":          {Localization},     // the dumps' AddLocalizationIf expansion calls it
 		"AddLocalizationIf": {"", Localization}, // the dumps' expansion is AddLocalizationIf(Condition, LocKey)
 		"Concept":           {"game_concepts"},
-		"SetMapMode":        {"gfx/map/map_modes"},         // CK3 gui/shared/mapmodes.gui:26, [SetMapMode('baronies')]
-		"Custom":            {"customizable_localization"}, // EU5 customizable_localization.info:25
-		"GetCustom":         {"customizable_localization"}, // EU5 customizable_localization.info:25
+		"SetMapMode":        {"gfx/map/map_modes"}, // CK3 gui/shared/mapmodes.gui:26, [SetMapMode('baronies')]
+		"Custom":            {CustomLocalization},  // EU5 customizable_localization.info:25
+		"GetCustom":         {CustomLocalization},  // EU5 customizable_localization.info:25
 		// CK3's data_types declare Character.Custom2( Arg0, Arg1 ); each of its 5,455 calls names one by the first
-		"Custom2": {"customizable_localization"},
+		"Custom2": {CustomLocalization},
 	},
 	DefineCall: guiDefineCall,
 	Booleans:   map[string]string{"And": "and", "Or": "or", "Nor": "nor", "Not": "not"},

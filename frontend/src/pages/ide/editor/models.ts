@@ -15,8 +15,8 @@ import type { Encoding, Text } from "@internal/files/models";
 import * as lsp from "@services/lsp/service";
 import * as workspace from "@services/workspace/service";
 import { confirm } from "../../../lib/feedback";
-import { describeFinding, findLevel, list, plural } from "../../../lib/format";
-import { codesQuery, fileQuery, keys, loadQuery, placeQuery } from "../../../queries";
+import { list, plural } from "../../../lib/format";
+import { fileQuery, keys, loadQuery, placeQuery } from "../../../queries";
 import { EDITOR_LANGUAGES } from "../../../ui/ScriptSnippet.vue";
 
 /** A Model is one open file in this window, shared by every tab that shows it. */
@@ -215,7 +215,7 @@ function buildModel(place: Place, start: { text: string; disk: string; encoding:
 async function sendText(model: Model): Promise<Diagnostic[]> {
   if (model.model.isDisposed()) return [];
   const diagnostics = (await lsp.SetText(model.place.path, model.model.getValue())) ?? [];
-  await setMarkers(model, diagnostics);
+  setMarkers(model, diagnostics);
   // the file's pictures are drawn again from the new text
   void useQueryCache().invalidateQueries({ key: keys.draw(model.place.path) });
   return diagnostics;
@@ -223,18 +223,17 @@ async function sendText(model: Model): Promise<Diagnostic[]> {
 
 /** diagnose asks Go for a model's problems and shows them as its markers. */
 async function diagnose(model: Model): Promise<void> {
-  await setMarkers(model, (await lsp.Diagnose(model.place.path)) ?? []);
+  setMarkers(model, (await lsp.Diagnose(model.place.path)) ?? []);
 }
 
-/** setMarkers keeps a model's problems and shows them as its markers. */
-async function setMarkers(model: Model, diagnostics: Diagnostic[]): Promise<void> {
-  const codes = (await loadQuery(codesQuery)) ?? [];
+/** setMarkers keeps a model's problems and shows them as its markers. A disposed model is left alone. */
+function setMarkers(model: Model, diagnostics: Diagnostic[]): void {
   if (model.model.isDisposed()) return;
   model.problems = diagnostics;
   const markers = diagnostics.map((diagnostic) => ({
     ...diagnostic.range,
-    severity: SEVERITIES[findLevel(diagnostic.code, codes)] ?? monaco.MarkerSeverity.Info,
-    message: describeFinding(diagnostic, codes),
+    severity: SEVERITIES[diagnostic.level] ?? monaco.MarkerSeverity.Info,
+    message: diagnostic.message,
     code: diagnostic.code,
   }));
   monaco.editor.setModelMarkers(model.model, "pmt", markers);

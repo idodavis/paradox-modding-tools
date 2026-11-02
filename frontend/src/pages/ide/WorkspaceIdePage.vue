@@ -6,20 +6,21 @@
 import { computed, nextTick, reactive, shallowRef, useTemplateRef, watch } from "vue";
 import { useMutation, useQuery } from "@pinia/colada";
 import { createReusableTemplate, useEventBus, useEventListener, useLocalStorage } from "@vueuse/core";
+import { countBy } from "es-toolkit";
 import type { SplitterItem } from "@nuxt/ui";
 
-import type { Code, Diagnostic } from "@services/lsp/models";
+import type { Diagnostic } from "@services/lsp/models";
 import type { Chip } from "@services/mcp/models";
 import * as workspaceApi from "@services/workspace/service";
 import type { Place } from "@services/workspace/models";
 
 import { useShown } from "../../app/pages";
-import { countLevels, describeFinding, LEVELS, matchQuery, plural, PROBLEM_LEVELS } from "../../lib/format";
+import { joinParts, matchQuery, plural } from "../../lib/format";
 import {
-  codesQuery,
   fileQuery,
   gitStatusQuery,
   indentationQuery,
+  levelsQuery,
   placeQuery,
   reportQuery,
   rootsQuery,
@@ -47,14 +48,13 @@ import TerminalPanel from "./terminal/TerminalPanel.vue";
 import WikiPane from "./WikiPane.vue";
 import { LANGUAGES } from "./editor/monaco";
 import { findModel } from "./editor/models";
-import { parseTab } from "./editor/tabs";
 
 const { id } = defineProps<{ id: string }>();
 
-/** A Problem is one problem in the list, an editor diagnostic or a Health finding. A finding has its own level. */
-type Problem = { code: Code; problem: Diagnostic; level: string; health?: true };
-/** A Row is one row of the problems list, a file or one of its problems with its message. */
-type Row = { place: Place; count: number } | ({ place: Place; message: string } & Problem);
+/** A Problem is one problem in the list, an editor diagnostic or a Health finding, which Health marks. */
+type Problem = { problem: Diagnostic; health?: true };
+/** A Row is one row of the problems list, a file or one of its problems. */
+type Row = { place: Place; count: number } | ({ place: Place } & Problem);
 
 const PIXELS = "px" as const;
 /** The sidebar's tabs. A tab with a `visual` label is also shown in Visual, under that label. */
@@ -250,7 +250,9 @@ const panelTab = computed(() =>
 
 const problemFilter = shallowRef("");
 const output = useTemplateRef("output");
-const { data: codes } = useQuery(codesQuery);
+const { data: levels } = useQuery(levelsQuery);
+/** The levels that count as problems, the worst first. */
+const problemLevels = computed(() => (levels.value ?? []).filter((level) => level.problem));
 // Health's report for the workspace's own load order, built only while the panel shows Problems, as building one
 // checks every mod; the status bar counts what the report holds
 const { data: report } = useQuery(() => ({
@@ -258,12 +260,17 @@ const { data: report } = useQuery(() => ({
   enabled: panelTab.value === "problems" && !!editor.panel && workspace.isOpen(),
 }));
 const panelProblems = computed(listProblems);
-const problems = computed(() => countLevels(panelProblems.value.flatMap((file) => file.problems)));
+const problems = computed(() =>
+  countBy(
+    panelProblems.value.flatMap((file) => file.problems),
+    (one) => one.problem.level,
+  ),
+);
 const rows = computed<Row[]>(() =>
   panelProblems.value.flatMap(({ place, problems: listed }) => {
     const shown = listed
-      .map((one) => ({ place, ...one, message: describeFinding(one.problem, codes.value) }))
-      .filter(({ message, code }) => matchQuery(problemFilter.value, message, code.id, place.rel));
+      .map((one) => ({ place, ...one }))
+      .filter(({ problem }) => matchQuery(problemFilter.value, problem.message, problem.code, place.rel));
     return shown.length ? [{ place, count: shown.length }, ...shown] : [];
   }),
 );
@@ -307,10 +314,7 @@ watch(
 // the two files of the compare, read while it is open
 const leftFile = useQuery(() => ({ ...fileQuery(comparing.value?.left.path ?? ""), enabled: !!comparing.value }));
 const rightFile = useQuery(() => ({ ...fileQuery(comparing.value?.right.path ?? ""), enabled: !!comparing.value }));
-const diff = computed(() => {
-  const target = parseTab(editor.activeTab()?.id ?? "");
-  return target.tab === "diff" ? target.side : null;
-});
+const diff = computed(() => editor.activeTab()?.side);
 // the status bar shows the indentation of a file open as code, never of a diff
 const { data: indentation } = useQuery(() => ({
   ...indentationQuery(open.value?.place.path ?? ""),
@@ -386,12 +390,9 @@ function toggleWiki(): void {
  * left out.
  */
 function listProblems(): { place: Place; problems: Problem[] }[] {
-  const places = editor.listTabs().flatMap((one) => editor.placeOf(one.id) ?? []);
+  const places = editor.listTabs().flatMap((one) => editor.placeOf(one.key) ?? []);
   return [...new Map(places.map((place) => [place.key, place])).values()].flatMap((place) => {
-    const editorProblems = (findModel(place.key)?.problems ?? []).flatMap((problem) => {
-      const code = codes.value?.find((one) => one.id === problem.code);
-      return code ? [{ code, problem, level: code.level }] : [];
-    });
+    const editorProblems = (findModel(place.key)?.problems ?? []).map((problem) => ({ problem }));
     const listed = [...editorProblems, ...listFindings(place)];
     return listed.length ? [{ place, problems: listed }] : [];
   });
@@ -401,19 +402,11 @@ function listProblems(): { place: Place; problems: Problem[] }[] {
 function listFindings(place: Place): Problem[] {
   const off = settings.value("ide.checks").split(",");
   return (report.value?.compatibility.findings ?? []).flatMap((finding) => {
-    const code = codes.value?.find((one) => one.id === finding.code);
-    if (code?.question !== "compatibility" || off.includes(code.id)) return [];
+    if (finding.question !== "compatibility" || off.includes(finding.code)) return [];
+    const { code, level, facts } = finding;
+    const message = joinParts(finding.message);
     return [...(finding.sites ?? []), ...(finding.repeats ?? [])].flatMap(({ place: site, range }) =>
-      site.key === place.key
-        ? [
-            {
-              code,
-              problem: { code: code.id, range, facts: finding.facts },
-              level: finding.level,
-              health: true as const,
-            },
-          ]
-        : [],
+      site.key === place.key ? [{ problem: { code, level, message, range, facts }, health: true as const }] : [],
     );
   });
 }
@@ -634,11 +627,11 @@ async function revealFile(): Promise<void> {
                 >
                   <template #trailing="{ item }">
                     <template v-if="item.value === 'problems'">
-                      <template v-for="level in PROBLEM_LEVELS" :key="level">
+                      <template v-for="level in problemLevels" :key="level.id">
                         <UBadge
-                          v-if="problems[level]"
-                          :label="String(problems[level])"
-                          :color="LEVELS[level]?.color"
+                          v-if="problems[level.id]"
+                          :label="String(problems[level.id])"
+                          :color="level.color"
                           size="sm"
                         />
                       </template>
@@ -694,11 +687,11 @@ async function revealFile(): Promise<void> {
                     class="min-h-0 flex-1 py-1"
                   >
                     <ProblemRow
-                      v-if="'code' in item"
+                      v-if="'problem' in item"
                       dense
                       class="ps-7.5"
-                      :level="item.level"
-                      :message="item.message"
+                      :level="item.problem.level"
+                      :message="item.problem.message"
                       @open="
                         editor.show(
                           item.place,
@@ -708,7 +701,7 @@ async function revealFile(): Promise<void> {
                       "
                     >
                       <template #trailing>
-                        <span class="shrink-0 font-mono text-11 text-dimmed">{{ item.code.id }}</span>
+                        <span class="shrink-0 font-mono text-11 text-dimmed">{{ item.problem.code }}</span>
                         <span class="shrink-0 font-mono text-11 text-dimmed">
                           {{ item.problem.range.startLineNumber }}:{{ item.problem.range.startColumn }}
                         </span>
@@ -759,13 +752,13 @@ async function revealFile(): Promise<void> {
     </USplitter>
     <Teleport v-if="!['terminal', 'wiki'].includes(layout) && visible" defer to="#status-start">
       <button
-        v-for="level in PROBLEM_LEVELS"
-        :key="level"
+        v-for="level in problemLevels"
+        :key="level.id"
         class="flex items-center gap-1"
-        :style="{ color: `var(--ui-${LEVELS[level]?.color})` }"
+        :style="{ color: `var(--ui-${level.color})` }"
         @click="toggleProblems"
       >
-        <UIcon :name="LEVELS[level]?.icon" class="size-3" />{{ problems[level] }}
+        <UIcon :name="level.icon" class="size-3" />{{ problems[level.id] ?? 0 }}
       </button>
       <button v-if="status" class="flex items-center gap-1 hover:text-highlighted" @click="showSidebar('git')">
         <UIcon name="i-lucide-git-branch" class="size-3" />{{ status.branch || "detached HEAD" }}

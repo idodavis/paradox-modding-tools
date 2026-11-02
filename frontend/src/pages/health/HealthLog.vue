@@ -7,25 +7,19 @@ import { computed, shallowRef } from "vue";
 import { useMutation, useQuery } from "@pinia/colada";
 import { sortBy } from "es-toolkit";
 import type { Finding, GameLog, Group } from "@services/health/models";
+import type { Part } from "@services/lsp/models";
 import type { Mod } from "@services/workspace/models";
 import {
   countFindings,
   describeCount,
-  describeDetail,
-  describeLogLine,
   describeTime,
-  type Level,
-  LEVELS,
+  joinParts,
   listSiteKeys,
   matchQuery,
-  type Part,
   plural,
-  splitFinding,
-  splitLogLine,
-  splitMessage,
   toSiteKey,
 } from "../../lib/format";
-import { codesQuery, loadQuery, placeQuery, snippetsQuery } from "../../queries";
+import { levelsQuery, loadQuery, placeQuery, snippetsQuery } from "../../queries";
 import { useEditorStore } from "../../stores/editor";
 import { useWorkspaceStore } from "../../stores/workspace";
 import FactText from "../../ui/FactText.vue";
@@ -70,15 +64,10 @@ const GROUPINGS = [
   { label: "By mod", value: "mod" },
   { label: "By message", value: "message" },
 ];
-/** WHY holds the sentence that says why a row is a mod's, by what ties it to the mod: a file or a name. */
-const WHY: Readonly<Record<string, string>> = {
-  file: "The line points at {file}, and the game loads that file from {mod}.",
-  name: "The line names {name}, and only {mod} defines it.",
-};
 
 const workspace = useWorkspaceStore();
 const editor = useEditorStore();
-const { data: codes } = useQuery(codesQuery);
+const { data: levels } = useQuery(levelsQuery);
 // the tabs give their values as text or numbers
 const scope = shallowRef<string | number>("mods");
 const grouping = shallowRef<string | number>("mod");
@@ -96,7 +85,7 @@ const scopes = computed(() => [
 ]);
 const rows = computed((): (HeadRow | Finding)[] => {
   const matches = (scope.value === "mods" ? modRows.value : gameRows.value).filter((row) =>
-    matchQuery(filter.value, describeLogLine(row), describeDetail(row)),
+    matchQuery(filter.value, joinParts(row.message), row.detail),
   );
   if (scope.value === "mods" && grouping.value === "mod") {
     const grouped = mods.flatMap((mod) => {
@@ -153,7 +142,7 @@ const fault = computed(() => {
   const parts: Part[] = [
     mod,
     { text: "'s own check finds the same problem: ", style: "" },
-    ...splitFinding(shared.finding, codes.value),
+    ...(shared.finding.message ?? []),
     { text: " Open it in ", style: "" },
     mod,
     { text: "'s problems.", style: "" },
@@ -168,25 +157,15 @@ const { mutate: openFile } = useMutation({
   },
 });
 
-/** describeWhy returns the sentence that says why a row is a mod's, as parts: the file it points at, or its name. */
-function describeWhy(finding: Finding): Part[] {
-  const named = finding.facts?.named ?? "";
-  return splitMessage(WHY[finding.facts?.why ?? ""] ?? "", {
-    file: named,
-    name: named,
-    mod: workspace.originName(finding.origin),
-  });
-}
-
 /** fold folds a mod's section, or unfolds it if it is folded. */
 function fold(mod: string): void {
   folded.value = folded.value.includes(mod) ? folded.value.filter((one) => one !== mod) : [...folded.value, mod];
 }
 
 /** describeFaultColor returns the level color of the mod's problem at a row's place, or undefined for none. */
-function describeFaultColor(finding: Finding): Level["color"] | undefined {
+function describeFaultColor(finding: Finding): string | undefined {
   const shared = faults.value.get(toSiteKey(finding));
-  return shared && LEVELS[shared.finding.level]?.color;
+  return shared && levels.value?.find((level) => level.id === shared.finding.level)?.color;
 }
 
 /** showGame shows the game's own rows. */
@@ -268,13 +247,13 @@ function showGame(): void {
           </button>
           <ProblemRow
             v-else
-            :message="describeLogLine(item)"
-            :detail="describeDetail(item)"
+            :message="joinParts(item.message)"
+            :detail="item.detail"
             :mono="!!item.sites?.length"
             :selected="item === opened"
             @open="emit('open', item)"
           >
-            <template #message><FactText :parts="splitLogLine(item)" /></template>
+            <template #message><FactText :parts="item.message" /></template>
             <template v-if="repeated" #leading>
               <span class="flex w-9 shrink-0 justify-center">
                 <UBadge v-if="item.count > 1" :label="`×${describeCount(item.count)}`" size="sm" />
@@ -297,7 +276,7 @@ function showGame(): void {
       </template>
       <template #detail>
         <HealthFrame v-if="opened" icon="i-lucide-terminal" label="Game log">
-          <template #title><FactText :parts="splitLogLine(opened)" /></template>
+          <template #title><FactText :parts="opened.message" /></template>
           <template #line>
             <span v-if="opened.count > 1" class="whitespace-nowrap text-toned">
               ×{{ describeCount(opened.count) }} this run
@@ -320,7 +299,7 @@ function showGame(): void {
 [{{ opened.facts?.time }}][{{ opened.facts?.source }}]: {{ opened.facts?.message }}</pre>
           </HealthSection>
           <HealthSection v-if="opened.origin" :title="`Why it's listed under ${workspace.originName(opened.origin)}`">
-            <p class="max-w-[74ch] text-13 leading-5.5 text-toned"><FactText :parts="describeWhy(opened)" /></p>
+            <p class="max-w-[74ch] text-13 leading-5.5 text-toned"><FactText :parts="opened.why" /></p>
           </HealthSection>
           <HealthSection v-if="sites[0]" title="Where it points" @open="sites[0] && openSite(sites[0])">
             <HealthSite v-for="(site, index) in sites" :key="index" :site="site" :snippet="snippets?.[index]" />

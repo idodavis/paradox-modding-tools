@@ -90,7 +90,8 @@ const { mutate: write } = useMutation({
     const selected = widget.value;
     if (!selected) return;
     const place = places.value[selected.place];
-    applyEdits(await openModel(place), (await draw.EditProperty(place.path, selected.range, key, value)) ?? []);
+    const model = await openModel(place);
+    applyEdits(model, (await draw.EditProperties(place.path, [{ block: selected.range, key, value }])) ?? []);
   },
 });
 
@@ -98,16 +99,6 @@ const { mutate: write } = useMutation({
 function open(ordinal: number, property: Property): void {
   openRow.value = openRow.value === ordinal ? null : ordinal;
   draft.value = property.value;
-}
-
-/**
- * toSource says where a property comes from: the widget, a template or a type, by its name, or that no file defines it.
- */
-function toSource(property: Property): string {
-  if (property.origin === "missing") return "missing";
-  if (property.origin === "type") return `type ${property.writer}`;
-  if (property.origin === "template") return property.writer;
-  return property.writer ? `in ${property.writer}` : "this widget";
 }
 
 /** setChannel sets one channel of the color in the editor. */
@@ -224,7 +215,7 @@ function toFileLabel(file: string): string {
           class="truncate ps-3 font-mono text-11"
           :class="property.origin === 'missing' ? 'text-warning' : 'text-dimmed'"
           :title="`${places[property.place]?.rel}:${property.range.startLineNumber}`"
-          >{{ toSource(property) }}</span
+          >{{ property.source }}</span
         >
       </button>
       <div
@@ -258,9 +249,7 @@ function toFileLabel(file: string): string {
         </div>
         <UTextarea v-else v-model="draft" :rows="1" autoresize size="sm" class="font-mono" />
         <span class="text-12 text-dimmed">
-          {{
-            property.origin === "widget" && !property.writer ? "Written in this widget" : `From ${toSource(property)}`
-          }},
+          {{ property.origin === "widget" && !property.writer ? "Written in this widget" : `From ${property.source}` }},
           <button
             type="button"
             class="font-mono text-(--link) hover:underline"

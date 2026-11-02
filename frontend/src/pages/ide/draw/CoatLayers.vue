@@ -22,20 +22,17 @@ import { colorsQuery, texturesQuery } from "../../../queries";
 import { useDrawStore } from "../../../stores/draw";
 import { useWorkspaceStore } from "../../../stores/workspace";
 import ValueField from "../../../ui/ValueField.vue";
-import { applyEdits, syncText } from "../editor/models";
+import { applyEdits } from "../editor/models";
 import type { Model } from "../editor/models";
 import ChoiceGallery from "./ChoiceGallery.vue";
 import type { GalleryChoice } from "./ChoiceGallery.vue";
-import { drawTile, isOwn, parseHex, toRgba } from "./coat";
+import { drawTile, isOwn, toRgba } from "./coat";
 import type { Rgba } from "./coat";
 
 const { model, coat } = defineProps<{ model: Model; coat: Coat }>();
 
 /** A row of the list: one layer with its place among the coat's layers. */
 type Row = { layer: Layer; index: number };
-
-/** One key of a block to write, with its text. */
-type Write = { block: IRange; key: string; text: string };
 
 const SORTING = { handle: ".pmt-grip", animation: 150, watchElement: true };
 // a column whose key holds two numbers, across and down, can lock them to change together
@@ -100,17 +97,6 @@ const [DefineRow, ReuseRow] = createReusableTemplate<{ row: Row }>();
 const { mutate: edit } = useMutation({
   mutation: async (request: () => Promise<Edit[] | null>) => applyEdits(model, (await request()) ?? []),
 });
-const { mutate: writeAll } = useMutation({
-  mutation: async (writes: Write[]) => {
-    // the blocks furthest down first, so an edit never moves a block still to be written
-    for (const { block, key, text } of writes.toSorted(
-      (first, second) => second.block.startLineNumber - first.block.startLineNumber,
-    )) {
-      applyEdits(model, (await draw.EditProperty(model.place.path, block, key, text)) ?? []);
-      await syncText(model);
-    }
-  },
-});
 
 /** Whether a layer may be changed: it is written in this file, inside this coat's own block. */
 const canEdit = (layer: Layer) => isOwn(coat, layer, model.place.key);
@@ -141,7 +127,7 @@ const findBlock = (layer: Layer) => (layer.role === "pattern" ? coat.range : lay
 /** Writes one key of the block that writes the selected layer. */
 function writeLayer(key: string, text: string): void {
   const layer = current.value?.layer;
-  if (layer) edit(() => draw.EditProperty(model.place.path, findBlock(layer), key, text));
+  if (layer) edit(() => draw.EditProperties(model.place.path, [{ block: findBlock(layer), key, value: text }]));
 }
 
 /** Writes a name or a file of the selected layer as the game writes it: in quotes. */
@@ -154,7 +140,9 @@ function writeColor(key: string, hex: string): void {
   const layer = current.value?.layer;
   if (!layer) return;
   edit(async () =>
-    draw.EditProperty(model.place.path, findBlock(layer), key, await presentColor(layer, parseHex(hex))),
+    draw.EditProperties(model.place.path, [
+      { block: findBlock(layer), key, value: await presentColor(layer, toRgba(hex)) },
+    ]),
   );
 }
 
@@ -181,15 +169,14 @@ async function copyColors(layer: Layer): Promise<void> {
   store.colors = Object.fromEntries(keys.flatMap((key, position) => (texts[position] ? [[key, texts[position]]] : [])));
 }
 
-/** Pastes the copied colors onto the given layers, slot by slot, where a layer has that slot. */
+/** Pastes the copied colors onto the given layers, slot by slot, where a layer has that slot, as one edit. */
 function pasteColors(layers: Layer[]): void {
-  writeAll(
-    layers.filter(canEdit).flatMap((layer) =>
-      Object.entries(store.colors)
-        .filter(([key]) => layer.inputs?.[key] === "color")
-        .map(([key, text]) => ({ block: findBlock(layer), key, text })),
-    ),
+  const settings = layers.filter(canEdit).flatMap((layer) =>
+    Object.entries(store.colors)
+      .filter(([key]) => layer.inputs?.[key] === "color")
+      .map(([key, value]) => ({ block: findBlock(layer), key, value })),
   );
+  edit(() => draw.EditProperties(model.place.path, settings));
 }
 
 /** Writes the regions the selected layer's mask keeps, given as numbers separated by spaces. At least one stays. */
@@ -204,14 +191,8 @@ function writeInstance(instance: Instance, key: string, axis: number, number: nu
   const numbers = locks.value.has(key)
     ? changeTogether(key, before, axis, number)
     : before.map((one, position) => (position === axis ? number : one));
-  edit(() =>
-    draw.EditProperty(
-      model.place.path,
-      instance.range,
-      key,
-      numbers.length > 1 ? `{ ${numbers.join(" ")} }` : String(numbers[0]),
-    ),
-  );
+  const value = numbers.length > 1 ? `{ ${numbers.join(" ")} }` : String(numbers[0]);
+  edit(() => draw.EditProperties(model.place.path, [{ block: instance.range, key, value }]));
 }
 
 /**

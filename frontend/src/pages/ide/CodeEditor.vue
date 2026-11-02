@@ -11,12 +11,11 @@ import { Clipboard } from "@wailsio/runtime";
 import { editor, KeyCode, KeyMod, Range } from "monaco-editor/editor/editor.api";
 import type { ContextMenuItem, PopoverProps } from "@nuxt/ui";
 
-import type { Edge } from "@services/graph/models";
 import * as lsp from "@services/lsp/service";
 import type { Card, Site } from "@services/lsp/models";
 
 import { compareWithFile, compareWithGame, findCommand, findGameCopy, findKbds } from "../../app/commands";
-import { copiesQuery, detailQuery, fileQuery, loadQuery, wikiPagesQuery } from "../../queries";
+import { copiesQuery, detailQuery, loadQuery, wikiPagesQuery } from "../../queries";
 import { useEditorStore } from "../../stores/editor";
 import { useSearchStore } from "../../stores/search";
 import { COMMAND_BUS, useWindowsStore, type WikiLookup } from "../../stores/windows";
@@ -27,7 +26,6 @@ import { decorate } from "./editor/conflicts";
 import { attachHover } from "./editor/hover";
 import type { Model } from "./editor/models";
 import { editorOptions } from "./editor/monaco";
-import { CLASSES } from "./WikiPane.vue";
 
 const { model, active } = defineProps<{ model: Model; active: boolean }>();
 
@@ -84,23 +82,18 @@ const { mutate: findAll } = useMutation({
 const { mutate: findFirers } = useMutation({
   mutation: async (subject: Card) => {
     const detail = await loadQuery(detailQuery(subject.node ?? ""));
-    const sites = await Promise.all((detail?.firedBy ?? []).map((edge) => locateFiring(edge, subject.title)));
+    const sites = (detail?.firedBy ?? []).map((edge) => edge.site);
     listReferences(`What fires ${subject.title}`, sites);
   },
-});
-/** The lexicon class that lists the card's name: a command's own, or the one a scripted effect or trigger acts as. */
-const lexiconClass = computed(() => {
-  const what = card.value?.what ?? "";
-  return CLASSES.some((one) => one.value === what) ? what : (card.value?.command ?? "");
 });
 // a definition the lexicon does not list looks up the first wiki page of the file it is defined in
 const { data: pages } = useQuery(() => ({
   ...wikiPagesQuery(card.value?.sites?.[0]?.place.path ?? ""),
-  enabled: workspace.isOpen() && !lexiconClass.value && !!card.value?.sites?.length,
+  enabled: workspace.isOpen() && !card.value?.lexicon && !!card.value?.sites?.length,
 }));
 /** The card's look-up: its lexicon row, else its file's first wiki page, else none. */
 const lookup = computed((): WikiLookup | undefined => {
-  if (lexiconClass.value && card.value) return { class: lexiconClass.value, name: card.value.title };
+  if (card.value?.lexicon) return { class: card.value.lexicon, name: card.value.title };
   const title = pages.value?.[0]?.title;
   return title ? { title } : undefined;
 });
@@ -133,7 +126,7 @@ onMounted(() => {
     keybindings: [KeyMod.Shift | KeyMod.Alt | KeyCode.F12],
     run: () => findAll(),
   });
-  hovering.value = attachHover(codeEditor);
+  hovering.value = attachHover(codeEditor, model);
   view.value = codeEditor;
   decorate(model);
   stopChanges = markChanges(codeEditor, model);
@@ -174,23 +167,6 @@ async function showInHealth(): Promise<void> {
 function listReferences(heading: string, sites: Site[]): void {
   useSearchStore().showReferences(heading, sites);
   windows.sendCommand("editor.findInFiles", "main");
-}
-
-/**
- * locateFiring finds the place of a firing as a reference: its line's text, with the given name marked where the line
- * holds it. A file that cannot be read gives the line no text.
- */
-async function locateFiring(edge: Edge, name: string): Promise<Site> {
-  const file = await loadQuery(fileQuery(edge.site.place.path)).catch(() => undefined);
-  const text = file?.text.text.split(/\r?\n/)[edge.site.line - 1] ?? "";
-  const index = text.indexOf(name);
-  // a line that names a scripted effect which fires the name, not the name itself, is marked nowhere
-  const [start, end] = index < 0 ? [1, 1] : [index + 1, index + 1 + name.length];
-  return {
-    ...edge.site,
-    range: { startLineNumber: edge.site.line, startColumn: start, endLineNumber: edge.site.line, endColumn: end },
-    text,
-  };
 }
 
 /** keepMovedFocus keeps the focus in the editor a row of the menu moved it to, such as the file a fix opened. */

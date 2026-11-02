@@ -71,13 +71,8 @@ func findPowerShell7() (string, bool) {
 	defer func() { _ = versions.Close() }()
 	names, _ := versions.ReadSubKeyNames(-1)
 	for _, name := range names {
-		version, err := registry.OpenKey(versions, name, registry.QUERY_VALUE)
-		if err != nil {
-			continue
-		}
-		dir, _, err := version.GetStringValue("InstallDir")
-		_ = version.Close()
-		if path := filepath.Join(dir, "pwsh.exe"); err == nil && files.IsFile(path) {
+		dir, ok := lookupRegistry(versions, name, "InstallDir")
+		if path := filepath.Join(dir, "pwsh.exe"); ok && files.IsFile(path) {
 			return path, true
 		}
 	}
@@ -93,13 +88,7 @@ func findGitBash() (string, bool) {
 		dirs = append(dirs, filepath.Dir(filepath.Dir(git)))
 	}
 	for _, root := range []registry.Key{registry.LOCAL_MACHINE, registry.CURRENT_USER} {
-		key, err := registry.OpenKey(root, `SOFTWARE\GitForWindows`, registry.QUERY_VALUE)
-		if err != nil {
-			continue
-		}
-		dir, _, err := key.GetStringValue("InstallPath")
-		_ = key.Close()
-		if err == nil {
+		if dir, ok := lookupRegistry(root, `SOFTWARE\GitForWindows`, "InstallPath"); ok {
 			dirs = append(dirs, dir)
 		}
 	}
@@ -114,14 +103,21 @@ func findGitBash() (string, bool) {
 // hasWSL reports whether WSL has a distribution that wsl.exe starts by default. Without one, wsl.exe only offers to
 // install WSL.
 func hasWSL() bool {
-	key, err := registry.OpenKey(registry.CURRENT_USER, `Software\Microsoft\Windows\CurrentVersion\Lxss`,
-		registry.QUERY_VALUE)
+	_, ok := lookupRegistry(registry.CURRENT_USER, `Software\Microsoft\Windows\CurrentVersion\Lxss`,
+		"DefaultDistribution")
+	return ok
+}
+
+// lookupRegistry returns the text of the given value of the registry key at the given path under the given key. It
+// returns false if that key cannot be opened, or has no such value as text.
+func lookupRegistry(key registry.Key, path, value string) (string, bool) {
+	subkey, err := registry.OpenKey(key, path, registry.QUERY_VALUE)
 	if err != nil {
-		return false
+		return "", false
 	}
-	defer func() { _ = key.Close() }()
-	_, _, err = key.GetStringValue("DefaultDistribution")
-	return err == nil
+	defer func() { _ = subkey.Close() }()
+	text, _, err := subkey.GetStringValue(value)
+	return text, err == nil
 }
 
 // startConsole starts the shell's program under a new pseudo console of the shell's size, with the given environment,

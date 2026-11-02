@@ -19,18 +19,25 @@ type Database struct {
 	Contents      Contents // what it holds beyond definitions; "" means definitions alone
 	NamedBy       string   // how a definition is named: "" means its own key, else field, call, file, column or nothing
 	NameKey       string   // the key whose value names a definition, or holds the call that does
+	RootKey       string   // the key in a definition whose value names the scope its script starts in; "" means none
 	WrapperKeys   []string // keys at the top that only wrap definitions
 	DeclaringKeys []string // keys that declare a definition inline: scripted_effect x = { }
 	AliasKeys     []string // the keys whose value names a definition a second time
+	AliasTarget   string   // the database whose name an alias key's value is; "" means its own
 	// RunOrder is a definition's blocks in the order they run. Unlisted keys run after them, as written.
-	RunOrder  []string
-	Shape     string   // what a definition's block holds, a Shapes key; "" means its own fields
-	Target    string   // the database whose definitions its own set up or are named for; "" means none
+	RunOrder []string
+	Shape    string // what a definition's block holds, a Shapes key; "" means its own fields
+	Target   string // the database whose definitions its own set up or are named for; "" means none
+	// Mirrors marks a database whose definitions are named after other databases', so it never wins a vote it shares.
+	Mirrors   bool
 	FoldsCase bool     // its references match without regard to case
 	Prefixes  []string // the link prefixes script writes before a definition's name, as in dynasty:<key>
 	// Separator is the character between a definition's name and a key nested in it, as | in define:NAI|X. A prefixed
 	// reference names the definition up to it, and a nested definition is named across it. An empty one means neither.
 	Separator string
+	// BoolKey is the key a definition writes as yes to say that the name it defines takes yes or no where it is
+	// written, and a number otherwise. "" means the database's definitions say nothing of that.
+	BoolKey string
 }
 
 // A Contents is what a database holds beyond definitions. The zero Contents is definitions alone.
@@ -143,7 +150,6 @@ type Picture struct {
 
 // GameEvents holds a game's rules for events: where an event writes its root scope and how its picture is found.
 type GameEvents struct {
-	ScopeKey     string  // the key whose value is the event's root scope; "" means none
 	TypeKey      string  // the key whose value, less TypeSuffix, names the event's root scope; "" means none
 	TypeSuffix   string  // dropped from TypeKey's value
 	DefaultScope string  // the root scope where neither key is written
@@ -156,11 +162,18 @@ const (
 	File         = "file"
 )
 
+// CustomLocalization is the database of the customizable localizations, each a block for each text it can show.
+const CustomLocalization = "customizable_localization"
+
 // Constant is the database of the constants a file writes for itself as @name = value, local to the file.
 const Constant = "constant"
 
 // GlobalType is the data type a data call's first step is looked up on.
 const GlobalType = "Global"
+
+// AnyScopeType is the data type of a scope of any type. Its getters give each type of scope its own data type, as
+// Scope.GetCountry gives Country.
+const AnyScopeType = "Scope"
 
 // SelfFunctions are the data functions that return the object they are called on, such as EU5's Goods.Self. The dumps
 // say they return [unregistered].
@@ -212,10 +225,9 @@ var GameRules = struct {
 // text's localization key. The three games write it alike: CK3 common/customizable_localization/_custom_loc.info:18-38,
 // EU5 in_game/common/customizable_localization/customizable_localization.info:1-10, and Vic3's own files there.
 var CustomTexts = struct {
-	Database string // the database of the customizable localizations
-	Block    string // the key of a block that holds one of the texts
-	Key      string // the key in that block that names the text's localization key
-}{"customizable_localization", "text", "localization_key"}
+	Block string // the key of a block that holds one of the texts
+	Key   string // the key in that block that names the text's localization key
+}{"text", "localization_key"}
 
 // MisspelledFolders maps folder names the game never reads to the name it reads instead.
 var MisspelledFolders = map[string]string{"localisation": "localization"}
@@ -262,6 +274,10 @@ var FireContents = []Contents{ContentsEvents, ContentsOnActions, ContentsDecisio
 // TableSyntax is how a table file such as CK3's map_data/definition.csv writes its rows. The first column names a row.
 var TableSyntax = struct{ Separator, Comment string }{";", "#"}
 
+// SetupFolder is the folder the start setup's rows are written for. Each folder a bookmark names as the folder of its
+// start setup is read by them as if its files were here.
+const SetupFolder = "setup/start"
+
 // The words that call a scripted database's definitions.
 const (
 	callTrigger = "trigger"
@@ -281,7 +297,8 @@ var (
 var Databases = []Database{
 	// CK3 and EU5 _on_action.info
 	{Folder: "common/on_action", Games: ck3AndEU5, Contents: ContentsOnActions, RunOrder: onActionOrder},
-	{Folder: "events", Games: []string{ck3}, Contents: ContentsEvents, RunOrder: ck3EventOrder},
+	// CK3 events/_events.info:12: scope = scope_type overrides the root scope of an event.
+	{Folder: "events", Games: []string{ck3}, Contents: ContentsEvents, RunOrder: ck3EventOrder, RootKey: "scope"},
 	// CK3 _messages.info:1, sent by send_interface_message, send_interface_toast and send_interface_popup
 	// (effects.log:9999); Vic3's post_notification sends one (effects.log:27072)
 	{Folder: "common/messages", Games: ck3AndVic3, Contents: ContentsMessages},
@@ -305,8 +322,7 @@ var Databases = []Database{
 	{Folder: "history/wars", Games: []string{ck3}, NamedBy: "nothing"},
 	// history/_history.info:3 "All history files have the same format"
 	{Folder: "history/characters", Games: []string{ck3}, Shape: "setup"},
-	// no folder: _reader_export.info says what the reader loads before all other files
-	{Folder: "common/reader_export", Games: []string{ck3}},
+	{Folder: "reader_export", Games: []string{ck3}}, // _reader_export.info: what the reader loads before all other files
 	{Folder: "map_data/definition.csv", Games: []string{ck3}, NamedBy: "column"},
 	// common/province_terrain/_province_terrain.info:3 "This is not a regular keyed database"
 	{Folder: "common/province_terrain", Games: []string{ck3}, NamedBy: "nothing"},
@@ -316,7 +332,6 @@ var Databases = []Database{
 	{Folder: "gfx/court_scene/scene_settings", Games: []string{ck3}, NamedBy: "file"},
 	{Folder: "gfx/map/environment", Games: []string{ck3}, NamedBy: "file"},                         // gfx/map/environment/environment.info:1
 	{Folder: "common/dynasties", Games: []string{ck3}, Prefixes: []string{"dynasty"}},              // _dynasties.info:3
-	{Folder: "common/dynasty_houses", Games: []string{ck3}, Prefixes: []string{"house"}},           // _dynasty_houses.info:3
 	{Folder: "common/situation/situations", Games: []string{ck3}, Prefixes: []string{"situation"}}, // _situations.info:206
 	// Vic3 _on_actions.md
 	{Folder: "common/on_actions", Games: []string{vic3}, Contents: ContentsOnActions, RunOrder: onActionOrder},
@@ -330,30 +345,40 @@ var Databases = []Database{
 	{Folder: "common/history", Games: []string{vic3}, NamedBy: "nothing", Shape: "effects"}, // COUNTRIES = { … }: effects
 	// scripted_tests.md:2 "Every file is a test suite"
 	{Folder: "tools/scripted_tests", Games: []string{vic3}, NamedBy: "file"},
-	// Vic3 modifier_types.md:1-3 and EU5 00_modifier_types.txt:1
-	{Folder: "common/modifier_type_definitions", Games: vic3AndEU5, Contents: ContentsModifiers},
+	// Vic3 modifier_types.md:1-3,16-17 and EU5 00_modifier_types.txt:1,3
+	{Folder: "common/modifier_type_definitions", Games: vic3AndEU5, Contents: ContentsModifiers, BoolKey: "boolean"},
 	// map_data/province_terrains.txt:21698 defines x7F25CD, common/history/states/00_states.txt:137 writes x7f25cd
 	{Folder: "map_data/province_terrains.txt", Games: []string{vic3}, FoldsCase: true},
-	// common/geographic_regions/geographic_regions.md:8
-	{Folder: "common/strategic_regions", Games: []string{vic3}, Prefixes: []string{"sr"}},
 	{Folder: "common/static_modifiers", Games: []string{vic3}, Shape: ShapeModifiers}, // modifier_types.md:2
 	// common/geographic_regions/geographic_regions.md:4 names its lists by the short_key: every_country_in_<short_key>
 	{Folder: "common/geographic_regions", Games: []string{vic3}, AliasKeys: []string{"short_key"}},
+	// in_game/common/formable_countries/00_formable_countries.txt:18, tag = SCA: a formable names the country it forms
+	{Folder: "common/formable_countries", Games: []string{eu5}, AliasKeys: []string{"tag"}, AliasTarget: "setup/countries"},
 	{Folder: "gfx/map/map_objects", Games: []string{eu5}, NamedBy: "nothing"},
 	{Folder: "gfx/map/city_data", Games: []string{eu5}, NamedBy: "field", NameKey: "name"},
 	// A reference to a concept matches in either case.
 	{Folder: "common/game_concepts", Games: []string{eu5}, Contents: ContentsConcepts, FoldsCase: true},
 	// Its top keys are the managers that hold the nestings.
-	{Folder: "setup/start", Games: []string{eu5}, NamedBy: "nothing"},
+	{Folder: SetupFolder, Games: []string{eu5}, NamedBy: "nothing"},
 	// Its subfolders write the same attachment lists.
 	{Folder: "gfx/unit_graphics/attachments", Games: []string{eu5}},
 	{Folder: "setup/templates", Games: []string{eu5}, NamedBy: "file"},
 	{Folder: "map_data/location_templates.txt", Games: []string{eu5}, Target: "map_data/named_locations"},
 	{Folder: "map_data/generated_locators_port.txt", Games: []string{eu5}, NamedBy: "nothing"},
-	// in_game/common/bureaucracies/readme.txt:16
-	{Folder: "common/prices", Games: []string{eu5}, Prefixes: []string{"price"}},
-	// in_game/common/international_organizations/readme.txt:182
-	{Folder: "common/international_organizations", Games: []string{eu5}, Prefixes: []string{"international_organization"}},
+	// main_menu/common/modifier_icons: 2,771 definitions, 99.2% named after modifier types
+	{Folder: "common/modifier_icons", Games: []string{eu5}, Mirrors: true},
+	// The type of a customizable localization is the scope its command is used in: CK3 _custom_loc.info:1-2 and EU5
+	// customizable_localization.info:3.
+	{Folder: "common/customizable_localization", Games: ck3AndEU5, RootKey: "type"},
+	// The scope of a scripted GUI is the scope type it is available to: Vic3 scripted_guis.md:3 and EU5
+	// scripted_guis.info:2.
+	{Folder: "common/scripted_guis", Games: vic3AndEU5, RootKey: "scope"},
+	// The type of a parliament agenda or type is the scope its root is: EU5 parliament_agendas/readme.txt:2-5 and
+	// parliament_types/readme.txt:2-3.
+	{Folder: "common/parliament_agendas", Games: []string{eu5}, RootKey: "type"},
+	{Folder: "common/parliament_types", Games: []string{eu5}, RootKey: "type"},
+	// The scope of a filter is the type of object it operates on: EU5 gui/filters/readme.txt:12.
+	{Folder: "gui/filters", Games: []string{eu5}, RootKey: "scope"},
 	{Folder: "common/scripted_effects", DeclaringKeys: []string{"scripted_effect"}},
 	{Folder: "common/scripted_triggers", DeclaringKeys: []string{"scripted_trigger"}},
 	{Folder: "common/scripted_lists", Contents: ContentsLists},
@@ -369,7 +394,7 @@ var Databases = []Database{
 	{Folder: "common/game_concepts", Contents: ContentsConcepts},
 	{Folder: "common/achievement_groups.txt", NamedBy: "field", NameKey: "name"},
 	{Folder: "common/coat_of_arms/options", NamedBy: "nothing"},
-	{Folder: "common/coat_of_arms/coat_of_arms", WrapperKeys: []string{"template"}},
+	{Folder: "common/coat_of_arms/coat_of_arms", WrapperKeys: []string{"template"}, Mirrors: true},
 	{
 		Folder: "common/coat_of_arms/template_lists",
 		WrapperKeys: []string{
@@ -403,26 +428,26 @@ var Nestings = []Nesting{
 	{Games: []string{eu5}, Parent: "map_data/definitions.txt", KeyPath: "*/*", Database: "region"},
 	{Games: []string{eu5}, Parent: "map_data/definitions.txt", KeyPath: "*/*/*", Database: "area"},
 	{Games: []string{eu5}, Parent: "map_data/definitions.txt", KeyPath: "*/*/*/*", Database: "province"},
-	{Games: []string{eu5}, Parent: "setup/start", KeyPath: "character_db", Database: "character"},
-	{Games: []string{eu5}, Parent: "setup/start", KeyPath: "dynasty_manager", Database: "dynasty"},
-	{Games: []string{eu5}, Parent: "setup/start", KeyPath: "countries/countries", Database: "country", Target: "setup/countries"},
-	{Games: []string{eu5}, Parent: "setup/start", KeyPath: "locations", Database: "location", Target: "map_data/named_locations"},
-	{Games: []string{eu5}, Parent: "setup/start", KeyPath: "road_network", Database: "road", Target: "map_data/named_locations"},
+	{Games: []string{eu5}, Parent: SetupFolder, KeyPath: "character_db", Database: "character"},
+	{Games: []string{eu5}, Parent: SetupFolder, KeyPath: "dynasty_manager", Database: "dynasty"},
+	{Games: []string{eu5}, Parent: SetupFolder, KeyPath: "countries/countries", Database: "country", Target: "setup/countries"},
+	{Games: []string{eu5}, Parent: SetupFolder, KeyPath: "locations", Database: "location", Target: "map_data/named_locations"},
+	{Games: []string{eu5}, Parent: SetupFolder, KeyPath: "road_network", Database: "road", Target: "map_data/named_locations"},
 	{
-		Games: []string{eu5}, Parent: "setup/start", KeyPath: "townrights_manager", Database: "town_rights",
+		Games: []string{eu5}, Parent: SetupFolder, KeyPath: "townrights_manager", Database: "town_rights",
 		Target: "map_data/named_locations",
 	},
-	{Games: []string{eu5}, Parent: "setup/start", KeyPath: "building_manager", Database: "building", Target: "building_types"},
-	{Games: []string{eu5}, Parent: "setup/start", KeyPath: "work_of_art_manager", Database: "work_of_art", Target: "artist_work"},
+	{Games: []string{eu5}, Parent: SetupFolder, KeyPath: "building_manager", Database: "building", Target: "building_types"},
+	{Games: []string{eu5}, Parent: SetupFolder, KeyPath: "work_of_art_manager", Database: "work_of_art", Target: "artist_work"},
 	{
-		Games: []string{eu5}, Parent: "setup/start", KeyPath: "colony_manager", Database: "colony",
+		Games: []string{eu5}, Parent: SetupFolder, KeyPath: "colony_manager", Database: "colony",
 		Target: "map_data/definitions.province",
 	},
 	{
-		Games: []string{eu5}, Parent: "setup/start", KeyPath: "institution_manager/institutions", Database: "institution",
+		Games: []string{eu5}, Parent: SetupFolder, KeyPath: "institution_manager/institutions", Database: "institution",
 		Target: "institution",
 	},
-	{Games: []string{eu5}, Parent: "setup/start", KeyPath: "situation_manager", Database: "situation", Target: "situations"},
+	{Games: []string{eu5}, Parent: SetupFolder, KeyPath: "situation_manager", Database: "situation", Target: "situations"},
 	{Parent: "common/defines", Database: "define"},
 	// each kind of block is named by its name key, as CK3 afr.txt:11-12 writes, and two kinds may share a name
 	{Parent: "gfx/portraits/accessory_variations", Database: "pattern_textures", Keys: "pattern_textures", NameKey: "name"},
@@ -440,7 +465,7 @@ var Callables = map[string]Callable{
 		Callers: []string{callTrigger, callValue}, Shape: "triggers", Parameters: true, Proves: []string{ShapeTriggers, ShapeValue},
 		Command: callTrigger,
 	},
-	"scripted_modifiers": {Callers: []string{callValue}, Parameters: true, Proves: []string{ShapeValue}},
+	"scripted_modifiers": {Callers: []string{callValue}, Shape: ShapeValue, Parameters: true, Proves: []string{ShapeValue}},
 	"script_values":      {Callers: []string{callTrigger, callValue}, Shape: "value", Proves: []string{ShapeTriggers, ShapeValue}},
 	"gui.type":           {Callers: []string{guiTagCalls}, FoldsCase: true}, // a widget key naming a type
 	"gui.local_type":     {Callers: []string{guiTagCalls}, Local: true},
@@ -567,6 +592,9 @@ var References = []Reference{
 	{Database: "on_action", KeyPath: "first_valid_on_action"}, {Database: "on_action", KeyPath: "fallback"},
 	{Database: "on_actions", KeyPath: "on_actions"}, {Database: "on_actions", KeyPath: "random_on_actions/<number>"},
 	{Database: "on_actions", KeyPath: "first_valid_on_action"}, {Database: "on_actions", KeyPath: "fallback"},
+	// a customizable localization's texts name their keys: CK3 common/customizable_localization/_custom_loc.info:18-38,
+	// EU5 in_game/common/customizable_localization/customizable_localization.info:1-10, and Vic3's own files there
+	{Database: CustomLocalization, KeyPath: "text/localization_key", Target: Localization},
 	// CK3's trait icons (_traits.info:4,23-35)
 	{Games: []string{ck3}, Database: "traits", KeyPath: "icon", Target: File, Folder: "gfx/interface/icons/traits"},
 	{Games: []string{ck3}, Database: "traits", KeyPath: "icon/**/desc", Target: File, Folder: "gfx/interface/icons/traits"},
@@ -586,6 +614,8 @@ var References = []Reference{
 	{Games: []string{vic3}, Database: "events", KeyPath: "flavor", Target: Localization},
 	{Games: []string{eu5}, Database: "events", KeyPath: "historical_info", Target: Localization},
 	{Games: vic3AndEU5, Database: "events", KeyPath: "option/name", Target: Localization},
+	// EU5 in_game/gfx/map/map_modes/readme.txt:6: a map mode's tooltip_key is a script string, whose values are keys
+	{Games: []string{eu5}, Database: "gfx/map/map_modes", KeyPath: "tooltip_key/**/value", Target: Localization},
 	// Vic3 common/flag_definitions/00_flag_definitions.txt:5,7,10
 	{Games: []string{vic3}, Database: "flag_definitions", KeyPath: "flag_definition/coa", Target: Coat.Database},
 	{Games: []string{vic3}, Database: "flag_definitions", KeyPath: "flag_definition/coa_with_overlord_canton", Target: Coat.Database},
@@ -642,6 +672,19 @@ func (game *Game) FindNestings(rel string) []Nesting {
 // ListNestings returns every nesting of the game, its own before every game's.
 func (game *Game) ListNestings() []Nesting {
 	return lo.Filter(Nestings, func(row Nesting, _ int) bool { return game.Matches(row.Games) })
+}
+
+// ListSetupNestings returns the nestings written for the start setup, once for each of the given start setups, with
+// the folder of each as its parent.
+func (game *Game) ListSetupNestings(setups ...string) []Nesting {
+	var nestings []Nesting
+	for _, setup := range setups {
+		for _, nesting := range game.FindNestings(SetupFolder) {
+			nesting.Parent = setup
+			nestings = append(nestings, nesting)
+		}
+	}
+	return nestings
 }
 
 // gameReferences holds the rows of References that hold for each game, by the game's id.

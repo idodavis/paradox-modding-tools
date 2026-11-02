@@ -69,14 +69,18 @@ func (wsp *Service) ListCopies(path string) []Place {
 	return lo.Map(copies, func(file files.File, _ int) Place { return session.Locate(mods, file.Path) })
 }
 
-// ListRoots returns the folders the workspace's files are listed from: the mods' in load order, then the game's own
-// folder. The install's other folders are left out.
-func (ws *Session) ListRoots() []files.Root {
-	roots := slices.Clone(ws.Mods.Load().Roots[len(ws.Install.Roots):])
-	if position := slices.IndexFunc(ws.Install.Roots, func(root files.Root) bool {
+// ListRoots returns the place of each folder the workspace's files are listed from: the mods' in load order, then the
+// game's own folder. The install's other folders are left out. It returns none if no workspace is open.
+func (wsp *Service) ListRoots() []Place {
+	session, err := wsp.Session()
+	if err != nil {
+		return nil
+	}
+	roots := slices.Clone(session.Mods.Load().Roots[len(session.Install.Roots):])
+	if position := slices.IndexFunc(session.Install.Roots, func(root files.Root) bool {
 		return filepath.Base(root.Dir) == game.ScriptRoot
 	}); position >= 0 {
-		roots = append(roots, ws.Install.Roots[position])
+		roots = append(roots, session.Install.Roots[position])
 	}
-	return roots
+	return lo.Map(roots, func(root files.Root, _ int) Place { return wsp.Locate(root.Dir) })
 }

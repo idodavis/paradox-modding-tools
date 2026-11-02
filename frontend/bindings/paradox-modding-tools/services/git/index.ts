@@ -11,6 +11,7 @@ export type {
     Commit,
     LineChange,
     Ref,
+    Remote,
     Repository,
     Status
 } from "./models.js";

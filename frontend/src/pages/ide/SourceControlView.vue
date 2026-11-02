@@ -10,14 +10,13 @@ import type { DropdownMenuItem } from "@nuxt/ui";
 
 import type { Change, Commit } from "@services/git/models";
 
-import { commitFilesQuery, commitsQuery, gitStatusQuery, refsQuery } from "../../queries";
+import { commitFilesQuery, commitsQuery, gitStatusQuery } from "../../queries";
 import { useEditorStore } from "../../stores/editor";
 import { useGitStore } from "../../stores/git";
 import { useWorkspaceStore } from "../../stores/workspace";
 import GitFileRow from "../../ui/GitFileRow.vue";
 import OriginChip from "../../ui/OriginChip.vue";
 import RepositorySection from "./RepositorySection.vue";
-import { diffTab } from "./editor/tabs";
 
 /** A GraphRow is one commit in the graph, placed on a lane. */
 type GraphRow = {
@@ -44,6 +43,8 @@ const LANE_COLORS = [
   "var(--green)",
   "var(--red)",
 ];
+/** REF_COLORS holds a ref's chip color by its type: a remote branch is info, a tag plain, any other the accent. */
+const REF_COLORS: Partial<Record<string, "info" | "neutral">> = { remote: "info", tag: "neutral" };
 
 const git = useGitStore();
 const editor = useEditorStore();
@@ -73,7 +74,6 @@ const graphOrigin = computed(() => options.value.find((one) => one.value === dir
 // the view opens with the first repository's commit box focused, unless the commit command asked for another
 git.commitTarget ||= git.repositories[0]?.root ?? "";
 const { data: status } = useQuery(() => ({ ...gitStatusQuery(dir.value), enabled: !!dir.value }));
-const { data: refs } = useQuery(() => ({ ...refsQuery(dir.value), enabled: !!dir.value && !!status.value }));
 const limit = shallowRef(PAGE);
 const { data: commits } = useQuery(() => ({
   ...commitsQuery({
@@ -178,22 +178,6 @@ function buildLines(row: GraphRow): { path: string; lane: number }[] {
     })),
   ];
 }
-
-/**
- * describeRefs returns the refs at a commit as chips: a branch in the accent, a remote branch in the info color, a
- * tag plain.
- */
-function describeRefs(one: Commit): { label: string; color: "primary" | "info" | "neutral" }[] {
-  const remoteNames = new Set((refs.value ?? []).filter((ref) => ref.type === "remote").map((ref) => ref.name));
-  return (one.refs ?? [])
-    .filter((ref) => !ref.endsWith("/HEAD"))
-    .map((ref) => ref.replace(/^HEAD -> /, ""))
-    .map((ref) =>
-      ref.startsWith("tag: ")
-        ? { label: ref.slice(5), color: "neutral" }
-        : { label: ref, color: remoteNames.has(ref) ? "info" : "primary" },
-    );
-}
 </script>
 
 <template>
@@ -286,7 +270,10 @@ function describeRefs(one: Commit): { label: string; color: "primary" | "info" |
                 v-if="entry.change"
                 class="contents"
                 @click="
-                  editor.open(diffTab('commit', dir, entry.change.place.key, entry.row.commit.hash), entry.change.place)
+                  editor.open(
+                    { key: entry.change.place.key, side: 'commit', root: dir, hash: entry.row.commit.hash },
+                    entry.change.place,
+                  )
                 "
               >
                 <GitFileRow :change="entry.change" side="commit">
@@ -304,10 +291,10 @@ function describeRefs(one: Commit): { label: string; color: "primary" | "info" |
                   entry.row.commit.subject
                 }}</span>
                 <UBadge
-                  v-for="chip in describeRefs(entry.row.commit)"
-                  :key="chip.label"
-                  :label="chip.label"
-                  :color="chip.color"
+                  v-for="ref in entry.row.commit.refs ?? []"
+                  :key="ref.name"
+                  :label="ref.name"
+                  :color="REF_COLORS[ref.type] ?? 'primary'"
                   size="sm"
                   class="max-w-30 shrink-0"
                   :ui="{ label: 'truncate' }"

@@ -343,3 +343,13 @@ func findNewestFile(dir string) time.Time {
 	}
 	return newest
 }
+
+// LoadChecksum returns the hash an install's build writes beside its executable, which changes with every build. It
+// returns "" if the install has none.
+func LoadChecksum(installPath string) string {
+	data, err := os.ReadFile(filepath.Join(installPath, checksumRel))
+	if err != nil {
+		return ""
+	}
+	return strings.TrimSpace(string(data))
+}

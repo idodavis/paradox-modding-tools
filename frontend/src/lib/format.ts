@@ -6,8 +6,8 @@ import type { SourceState } from "@internal/schema/models";
 import type { Header } from "@internal/texture/models";
 import type { Difference } from "@services/steam/models";
 import type { Mod, State } from "@services/workspace/models";
-import type { Finding, Tally } from "@services/health/models";
-import type { Code, Site } from "@services/lsp/models";
+import type { Finding } from "@services/health/models";
+import type { Part, Site } from "@services/lsp/models";
 
 const PLURALS = new Intl.PluralRules("en");
 const NUMBERS = new Intl.NumberFormat("en");
@@ -29,159 +29,6 @@ const AGO: UseTimeAgoMessages = {
   second: (count) => `${count} s`,
   invalid: "",
 };
-
-/**
- * REASONS holds each reason Go gives a copy, in words. A reason says why the game keeps a copy, how a copy joins the
- * kept one, or that no source says which copy the game keeps. A reason a contest's winner can have also says at length
- * why it wins, as a template the contest's facts fill.
- */
-export const REASONS: Readonly<Record<string, { label: string; why?: string }>> = {
-  last: {
-    label: "Last file by name",
-    why:
-      "The game reads every file in {folder} in order of file name and keeps the copy it reads last. {winner}'s " +
-      "file, {file}, comes after {beaten}'s {beatenFile}, so its copy wins. Changing the load order doesn't change this.",
-  },
-  first: {
-    label: "First file by name",
-    why:
-      "The game reads every file in {folder} in order of file name and keeps the first copy it reads. {winner}'s " +
-      "file, {file}, comes before {beaten}'s {beatenFile}, so its copy wins. Changing the load order doesn't change this.",
-  },
-  playset: {
-    label: "Lower in the load order",
-    why:
-      "The game keeps the copy from the mod lowest in the load order. {winner} is lower than {beaten}, so its copy " +
-      "wins. Moving a mod in the load order changes this.",
-  },
-  path: {
-    label: "Same path, lower in the load order",
-    why:
-      "Another copy would win, but it is in a file the game never reads: a file at the same path, lower in the load " +
-      "order, hides it. Of the copies the game reads, it keeps {winner}'s.",
-  },
-  priority: {
-    label: "Higher override priority",
-    why:
-      "The game keeps the copy with the highest override priority, whatever the file names or the load order. " +
-      "{winner}'s copy has the highest, so it wins.",
-  },
-  mode: {
-    label: "By its entry mode",
-    why:
-      "The game applies entry modes, such as REPLACE:, after every plain copy, and the last one that creates or " +
-      "replaces the definition wins: {winner}'s, in {file}.",
-  },
-  merge: { label: "Combined" },
-  injected: { label: "Injected" },
-  combined: { label: "Combined" },
-  replace: {
-    label: "After a replace_path",
-    why:
-      "The game's own copy would win, but a mod's replace_path makes the game skip the game's files in that folder. " +
-      "Of the copies the game reads, it keeps {winner}'s.",
-  },
-  "replace-folder": { label: "In a replace folder" },
-  unsettled: { label: "Not documented" },
-};
-
-/** A Level is how the app shows one level of a finding, and the words that count it. */
-export type Level = {
-  label: string;
-  icon: string;
-  color: "error" | "warning" | "yellow" | "info";
-  noun: string;
-  nouns: string;
-};
-
-/** LEVELS holds each level of a finding, by Go's level, the worst first. */
-export const LEVELS: Readonly<Record<string, Level>> = {
-  critical: {
-    label: "Critical",
-    icon: "i-lucide-circle-x",
-    color: "error",
-    noun: "critical problem",
-    nouns: "critical problems",
-  },
-  error: { label: "Error", icon: "i-lucide-circle-alert", color: "warning", noun: "error", nouns: "errors" },
-  warning: { label: "Warning", icon: "i-lucide-triangle-alert", color: "yellow", noun: "warning", nouns: "warnings" },
-  info: { label: "Info", icon: "i-lucide-info", color: "info", noun: "info", nouns: "info" },
-};
-
-/** PROBLEM_LEVELS holds the levels that count as problems, the worst first. Info does not. */
-export const PROBLEM_LEVELS: readonly string[] = ["critical", "error", "warning"];
-
-/**
- * findWorstProblem returns the row of LEVELS for the worst level of the given tally. It is undefined when that level
- * is not a problem, and when there is no tally.
- */
-export function findWorstProblem(tally: Tally | undefined): Level | undefined {
-  const level = tally?.worst ?? "";
-  return PROBLEM_LEVELS.includes(level) ? LEVELS[level] : undefined;
-}
-
-/** FIX_LEVELS holds the levels a mod needs a fix for, where the game loses something. A warning may be fine. */
-export const FIX_LEVELS: readonly string[] = ["critical", "error"];
-
-/** TOPICS holds each topic of the checks in words, by Go's topic. */
-export const TOPICS: Readonly<Record<string, string>> = {
-  syntax: "Syntax",
-  references: "References",
-  values: "Scopes and values",
-  localization: "Localization",
-  definitions: "Definitions",
-  descriptor: "Descriptor",
-};
-
-/** LOCALIZATION_LANGUAGES holds each localization language's name in English, by the folder the game keeps it in. */
-const LOCALIZATION_LANGUAGES: Readonly<Record<string, string>> = {
-  english: "English",
-  french: "French",
-  german: "German",
-  spanish: "Spanish",
-  russian: "Russian",
-  korean: "Korean",
-  simp_chinese: "Simplified Chinese",
-  polish: "Polish",
-  turkish: "Turkish",
-  braz_por: "Brazilian Portuguese",
-  japanese: "Japanese",
-};
-
-/** LANGUAGE_FACTS names the facts of a message that hold a language's folder. */
-const LANGUAGE_FACTS: readonly string[] = ["language", "header"];
-
-/** A Part is one piece of a message: plain text, or a fact drawn in its style. */
-export type Part = { text: string; style: "" | "mod" | "code" | "count" | "path" };
-
-/** FACT_STYLES holds the style of each fact a message draws apart, by the fact's key. Any other fact is plain text. */
-const FACT_STYLES: Readonly<Record<string, Part["style"]>> = {
-  mod: "mod",
-  other: "mod",
-  winner: "mod",
-  beaten: "mod",
-  name: "code",
-  key: "code",
-  callee: "code",
-  namespace: "code",
-  file: "path",
-  folder: "path",
-  beatenFile: "path",
-  count: "count",
-  have: "count",
-  of: "count",
-  uses: "count",
-  removed: "count",
-  total: "count",
-};
-
-/** SEPARATOR is the part between two pieces of a line. */
-const SEPARATOR: Part = { text: " · ", style: "" };
-
-/** describeLanguages returns languages as a select's items, named in English or else by folder. Null gives none. */
-export function describeLanguages(languages: readonly string[] | null | undefined): { label: string; value: string }[] {
-  return (languages ?? []).map((value) => ({ label: LOCALIZATION_LANGUAGES[value] ?? value, value }));
-}
 
 /** describeCount returns a count as the user reads it, such as "8" or "1,350". */
 export function describeCount(count: number): string {
@@ -281,49 +128,9 @@ export function describePicture(header: Header): string {
   return `${header.width} by ${header.height}, ${bytes(header.bytes)}`;
 }
 
-/**
- * splitMessage fills a code's message template with a diagnostic's facts, as parts. Languages are named in English
- * and counts get thousands separators. The name of a file is a path. A placeholder with no fact stays as written.
- */
-export function splitMessage(template: string, facts: Record<string, string | undefined>): Part[] {
-  return template.split(/(\{\w+\})/).flatMap((piece): Part[] => {
-    const key = /^\{(\w+)\}$/.exec(piece)?.[1] ?? "";
-    const value = facts[key];
-    if (!piece) return [];
-    if (value === undefined) return [{ text: piece, style: "" }];
-    if (LANGUAGE_FACTS.includes(key)) return [{ text: describeLanguages([value])[0]?.label ?? value, style: "" }];
-    const style = key === "name" && facts.database === "file" ? "path" : (FACT_STYLES[key] ?? "");
-    const numeric = style === "count" && value !== "" && !Number.isNaN(Number(value));
-    return [{ text: numeric ? describeCount(Number(value)) : value, style }];
-  });
-}
-
-/** joinParts returns parts as one plain sentence. */
-export function joinParts(parts: readonly Part[]): string {
-  return parts.map((part) => part.text).join("");
-}
-
-/**
- * splitFinding returns the message of a finding or an editor diagnostic, as parts. Where a mod the finding's mod does
- * not depend on defines the name, it is the code's elsewhere message. It is the code's id if the app does not list the
- * code.
- */
-export function splitFinding(
-  finding: Pick<Finding, "code" | "facts">,
-  codes: readonly Code[] | null | undefined,
-): Part[] {
-  const code = codes?.find((one) => one.id === finding.code);
-  const facts = finding.facts ?? {};
-  if (!code) return [{ text: finding.code, style: "" }];
-  return splitMessage(code.elsewhere && facts.other ? code.elsewhere : code.message, facts);
-}
-
-/** describeFinding returns the message of a finding or an editor diagnostic, as splitFinding does, as text. */
-export function describeFinding(
-  finding: Pick<Finding, "code" | "facts">,
-  codes: readonly Code[] | null | undefined,
-): string {
-  return joinParts(splitFinding(finding, codes));
+/** joinParts returns parts as one plain sentence. It is "" for no parts. */
+export function joinParts(parts: readonly Part[] | null | undefined): string {
+  return (parts ?? []).map((part) => part.text).join("");
 }
 
 /** splitSubject returns the thing a finding is about, as a part: its name, or the path of a file. */
@@ -331,68 +138,9 @@ export function splitSubject(finding: Finding): Part[] {
   return [{ text: finding.name, style: finding.database === "file" ? "path" : "" }];
 }
 
-/**
- * splitBrief returns the line under a finding's name in a list, as parts. It says what kind of thing the name is,
- * how many names a replaced file leaves out that are still used and how often, the mod that alone defines the name,
- * and why the game keeps a copy. It is empty if the finding holds none of these.
- */
-export function splitBrief(finding: Finding): Part[] {
-  const site = findKeptSite(finding);
-  const facts = finding.facts ?? {};
-  const hasUses = !!finding.uses?.length;
-  const pieces: Part[][] = [
-    finding.database && finding.database !== "file" ? [{ text: finding.database, style: "" }] : [],
-    hasUses
-      ? [
-          ...splitMessage("{count}", facts),
-          { text: ` ${facts.count === "1" ? "name" : "names"} still used · `, style: "" },
-          ...splitMessage("{uses} uses", facts),
-        ]
-      : [],
-    facts.other
-      ? [
-          { text: "only in ", style: "" },
-          { text: facts.other, style: "mod" },
-        ]
-      : [],
-    REASONS[site?.reason ?? ""] && !hasUses ? [{ text: REASONS[site?.reason ?? ""]?.label ?? "", style: "" }] : [],
-  ];
-  return pieces.filter((piece) => piece.length).flatMap((piece, index) => [...(index ? [SEPARATOR] : []), ...piece]);
-}
-
-/** describeCheck returns the name of a check. It is the code itself if the app does not list it. */
-export function describeCheck(code: string, codes: readonly Code[] | null | undefined): string {
-  return codes?.find((one) => one.id === code)?.label ?? code;
-}
-
-/** findLevel returns the level of a check, such as "error". It is "info" if the app does not list the check. */
-export function findLevel(code: string, codes: readonly Code[] | null | undefined): string {
-  return codes?.find((one) => one.id === code)?.level ?? "info";
-}
-
-/** findTopic returns the topic of a check, or "" if the app does not list the check. */
-export function findTopic(code: string, codes: readonly Code[] | null | undefined): string {
-  return codes?.find((one) => one.id === code)?.topic ?? "";
-}
-
 /** findOwner returns the id of the mod a finding is about. It is the first mod it concerns, else its origin. */
 export function findOwner(finding: Finding): string {
   return finding.mods?.[0] ?? finding.origin;
-}
-
-/**
- * describeDetail returns a finding's place, such as "a.txt:12": its kept site's, else its first site's. A log row with
- * no site says what it names instead. It is "" if there is nothing to add.
- */
-export function describeDetail(finding: Finding): string {
-  const site = findKeptSite(finding);
-  if (site) return `${site.place.rel}:${site.line}`;
-  return finding.facts?.named ? `Names ${finding.facts.named}` : "";
-}
-
-/** findKeptSite returns the site of a finding that the game keeps, else its first site. It is undefined for none. */
-function findKeptSite(finding: Finding): Site | undefined {
-  return finding.sites?.find((one) => one.kept) ?? finding.sites?.[0];
 }
 
 /** toSiteKey returns the key of a finding's first site, such as "path:line". It is "" for a finding with no site. */
@@ -408,53 +156,6 @@ export function listSiteKeys(finding: Finding): string[] {
 /** describeSiteKey returns the key of a site, such as "path:line". It is "" for no site. */
 function describeSiteKey(site: Site | undefined): string {
   return site ? `${site.place.path}:${site.line}` : "";
-}
-
-/** describeLogLine returns a log row's message as one line, its lines trimmed and joined with " · ". */
-export function describeLogLine(finding: Finding): string {
-  return (finding.facts?.message ?? "")
-    .split("\n")
-    .map((line) => line.trim())
-    .filter(Boolean)
-    .join(" · ");
-}
-
-/**
- * splitLogLine returns a log row's message as one line, as describeLogLine does, as parts. The name or file that
- * ties the row to a mod is drawn apart where the message writes it.
- */
-export function splitLogLine(finding: Finding): Part[] {
-  const line = describeLogLine(finding);
-  const identifier = finding.facts?.named ?? "";
-  const start = identifier ? line.indexOf(identifier) : -1;
-  if (start < 0) return [{ text: line, style: "" }];
-  return [
-    { text: line.slice(0, start), style: "" },
-    { text: identifier, style: finding.facts?.why === "file" ? "path" : "code" },
-    { text: line.slice(start + identifier.length), style: "" },
-  ];
-}
-
-/**
- * countLevels returns how many of the given findings or problems there are of each level, a finding counting as many
- * as its count says and a problem as one. A level with none has 0.
- */
-export function countLevels(findings: readonly { level: string; count?: number }[]): Record<string, number> {
-  const counts = Object.fromEntries(Object.keys(LEVELS).map((level) => [level, 0]));
-  for (const finding of findings) counts[finding.level] = (counts[finding.level] ?? 0) + (finding.count ?? 1);
-  return counts;
-}
-
-/**
- * describeLevels returns the count of each of the given levels in words, in their order, such as "235 critical
- * problems". A level with none is left out.
- */
-export function describeLevels(counts: Tally["counts"] | undefined, levels: readonly string[]): string[] {
-  return levels.flatMap((level) => {
-    const row = LEVELS[level];
-    const count = counts?.[level] ?? 0;
-    return row && count ? [plural(count, row.noun, row.nouns)] : [];
-  });
 }
 
 /** countFindings returns how many findings or log lines a set of rows stands for, repeats included. */

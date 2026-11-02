@@ -255,7 +255,7 @@ func assertGroups(t *testing.T, report Report, order []string) {
 		if checked := lo.SumBy(group.Checks, func(check Check) int { return check.Count }); checked != lo.Sum(slices.Collect(maps.Values(group.Counts))) {
 			t.Errorf("group %q: the checks count %d findings, the tally %v", group.Mod, checked, group.Counts)
 		}
-		levels := lo.Map(group.Findings, func(finding Finding, _ int) int { return slices.Index(lsp.Levels, finding.Level) })
+		levels := lo.Map(group.Findings, func(finding Finding, _ int) int { return rankLevel(finding.Level) })
 		if !slices.IsSorted(levels) {
 			t.Errorf("group %q: findings are not sorted worst first: %v", group.Mod, levels)
 		}

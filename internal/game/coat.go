@@ -75,7 +75,7 @@ type CoatOverride struct {
 
 // A CoatTemplate is what the coat dialog writes for a new coat.
 type CoatTemplate struct {
-	Pattern   string              // a plain coat's pattern: the first starting with it, else the first
+	Pattern   string              // a new layer's texture: the first whose name starts with it, else the first
 	Colors    []string            // its first colors
 	Instances map[string]string   // a new instance of each role that is placed, on one line
 	Layers    map[string][]string // a new layer of each role, a line each, with %s for its texture or its parent
@@ -96,8 +96,7 @@ type CoatRules struct {
 	Placement map[string]map[string]CoatPlace // what a placed layer's keys do to it, by the layer's type
 	Inputs    map[string]string               // how each coat key's value is edited
 	Template  CoatTemplate
-	FrameMask string   // where a named frame's mask is, with the name at %s
-	Holders   []string // the databases whose definitions take the coat of their own name where they name none
+	FrameMask string // where a named frame's mask is, with the name at %s
 	// PatternKey is the key of a coat's pattern, which draws under every emblem and has no instance.
 	PatternKey  string
 	InstanceKey string // the key of one placement of an emblem or a sub, and Placement's row for an emblem
@@ -172,15 +171,13 @@ var Coat = CoatRules{
 			"colored_emblem": coatInstance, "textured_emblem": coatInstance, "sub": coatSubInstance,
 		},
 		Layers: map[string][]string{
+			"pattern":         {`pattern = "%s"`},
 			"colored_emblem":  {"colored_emblem = {", `texture = "%s"`, `color1 = "white"`, coatInstance, "}"},
 			"textured_emblem": {"textured_emblem = {", `texture = "%s"`, coatInstance, "}"},
 			"sub":             {"sub = {", `parent = "%s"`, coatSubInstance, "}"},
 		},
 	},
-	FrameMask: "gfx/interface/coat_of_arms/frames/%s_mask.dds",
-	// _dynamic_definitions.info:11, common/dynasties/_dynasties.info:7, common/dynasty_houses/_dynasty_houses.info:6,
-	// Vic3 common/flag_definitions/00_flag_definitions.txt:1 ("its tag is used a COA_KEY").
-	Holders:    []string{"landed_titles", "dynasties", "dynasty_houses", "country_definitions"},
+	FrameMask:  "gfx/interface/coat_of_arms/frames/%s_mask.dds",
 	PatternKey: "pattern", InstanceKey: "instance", SubKey: "sub", ParentKey: "parent", NoParent: "none",
 	TextureKey: "texture", MaskKey: "mask", TileSizeKey: "tile_size", ListTag: "list",
 }

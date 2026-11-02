@@ -91,7 +91,7 @@ export interface SourceState {
     "writtenAt": string;
 
     /**
-     * older than the install
+     * a dump file read is older than the install
      */
     "stale": boolean;
 

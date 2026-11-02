@@ -19,6 +19,9 @@ import * as files$0 from "../../internal/files/models.js";
 import * as game$0 from "../../internal/game/models.js";
 // eslint-disable-next-line @typescript-eslint/ban-ts-comment
 // @ts-ignore: Unused imports
+import * as loc$0 from "../../internal/loc/models.js";
+// eslint-disable-next-line @typescript-eslint/ban-ts-comment
+// @ts-ignore: Unused imports
 import * as texture$0 from "../../internal/texture/models.js";
 // eslint-disable-next-line @typescript-eslint/ban-ts-comment
 // @ts-ignore: Unused imports
@@ -85,10 +88,11 @@ export function CreateMod(workspaceID: string, dir: string, name: string, langua
 }
 
 /**
- * CreateWorkspace records a workspace under an id of its own and returns it.
+ * CreateWorkspace records a workspace of the given install, with the given name and localization language, under an
+ * id of its own, and returns it. It has no mods yet.
  */
-export function CreateWorkspace(ws: app$0.Workspace): $CancellablePromise<app$0.Workspace> {
-    return $Call.ByID(217270578, ws);
+export function CreateWorkspace(name: string, install: string, language: string): $CancellablePromise<app$0.Workspace> {
+    return $Call.ByID(217270578, name, install, language);
 }
 
 /**
@@ -137,10 +141,10 @@ export function ListCopies(path: string): $CancellablePromise<$models.Place[] | 
 }
 
 /**
- * ListFolder lists a folder's entries, folders first. Binary files are left out unless the workspace shows them. It
- * returns an error if no workspace is open or the folder cannot be read.
+ * ListFolder returns the places of a folder's entries, folders first. Binary files are left out unless the workspace
+ * shows them. It returns an error if no workspace is open or the folder cannot be read.
  */
-export function ListFolder(dir: string): $CancellablePromise<$models.Child[] | null> {
+export function ListFolder(dir: string): $CancellablePromise<$models.Place[] | null> {
     return $Call.ByID(434589381, dir);
 }
 
@@ -159,9 +163,10 @@ export function ListInstalls(gameID: string): $CancellablePromise<app$0.Install[
 }
 
 /**
- * ListLanguages returns an install's localization languages. It returns an error if the install is not recorded.
+ * ListLanguages returns an install's localization languages, each with its name in English. It returns an error if the
+ * install is not recorded.
  */
-export function ListLanguages(installID: string): $CancellablePromise<string[] | null> {
+export function ListLanguages(installID: string): $CancellablePromise<loc$0.Language[] | null> {
     return $Call.ByID(1853271504, installID);
 }
 
@@ -173,8 +178,8 @@ export function ListReadyInstalls(): $CancellablePromise<string[] | null> {
 }
 
 /**
- * ListRoots returns the place of each of the workspace's root folders, in load order, the game's last. It returns
- * none if none is open.
+ * ListRoots returns the place of each folder the workspace's files are listed from: the mods' in load order, then the
+ * game's own folder. The install's other folders are left out. It returns none if no workspace is open.
  */
 export function ListRoots(): $CancellablePromise<$models.Place[] | null> {
     return $Call.ByID(1315421210);
@@ -258,7 +263,7 @@ export function ResetColors(workspaceID: string): $CancellablePromise<void> {
 
 /**
  * ResetData closes the open workspace and removes every workspace, install record and cache. Mods, game files and
- * settings stay. It returns an error if the records cannot be written or a cache cannot be deleted.
+ * settings stay. It returns an error if the records cannot be written, and one for each cache it cannot delete.
  */
 export function ResetData(): $CancellablePromise<void> {
     return $Call.ByID(1355240916);
@@ -277,6 +282,16 @@ export function ResolveModFolder(workspaceID: string, dir: string, name: string)
  */
 export function Restore(trashed: string, path: string): $CancellablePromise<void> {
     return $Call.ByID(4110228885, trashed, path);
+}
+
+/**
+ * RevertHunks gives a file of the open workspace back its text from before an agent's edits, given as each edit's
+ * hunks, the earliest edit first. A file the earliest edit made goes to PMT's trash when it ends empty; any other is
+ * written in its own line endings. It returns an error, and changes nothing, if no workspace is open, the file cannot
+ * be read, it has unsaved text in the editor, an edit has no hunk, or a hunk's lines are not in the file once.
+ */
+export function RevertHunks(path: string, edits: ($models.Hunk[] | null)[] | null, isNew: boolean): $CancellablePromise<void> {
+    return $Call.ByID(1562964112, path, edits, isNew);
 }
 
 /**

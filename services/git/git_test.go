@@ -36,19 +36,18 @@ func TestReadStatus(t *testing.T) {
 	}
 	writeFile(t, dir, file, "one\n")
 	check(Change{Path: file, Status: "untracked", Unstaged: true})
-	must(t, git.Stage(dir, []string{file}))
+	mustRun(t, git, dir, "add", "--", file)
 	check(Change{Path: file, Status: "added", Staged: true})
-	must(t, git.CreateCommit(dir, "add"))
+	mustRun(t, git, dir, "commit", "-m", "add")
 	check()
 	writeFile(t, dir, file, "two\n")
 	check(Change{Path: file, Status: "modified", Unstaged: true})
-	must(t, git.Stage(dir, []string{file}))
-	must(t, git.CreateCommit(dir, "change"))
+	mustRun(t, git, dir, "add", "--", file)
+	mustRun(t, git, dir, "commit", "-m", "change")
 	target := "b.txt"
-	_, err := git.Run(dir, "mv", file, target)
-	must(t, err)
+	mustRun(t, git, dir, "mv", file, target)
 	check(Change{Path: target, From: file, Status: "renamed", Staged: true})
-	must(t, git.CreateCommit(dir, "move"))
+	mustRun(t, git, dir, "commit", "-m", "move")
 	must(t, os.Remove(filepath.Join(dir, target)))
 	check(Change{Path: target, Status: "deleted", Unstaged: true})
 }
@@ -57,10 +56,10 @@ func TestReadStatus(t *testing.T) {
 func TestReadFile(t *testing.T) {
 	git, dir := createRepository(t)
 	writeFile(t, dir, file, "old\n")
-	must(t, git.Stage(dir, []string{file}))
-	must(t, git.CreateCommit(dir, "old"))
+	mustRun(t, git, dir, "add", "--", file)
+	mustRun(t, git, dir, "commit", "-m", "old")
 	writeFile(t, dir, file, "new\n")
-	must(t, git.Stage(dir, []string{file}))
+	mustRun(t, git, dir, "add", "--", file)
 	for revision, want := range map[string]string{":0": "new\n", "HEAD": "old\n"} {
 		text, err := git.ReadFile(dir, revision, file)
 		must(t, err)
@@ -77,9 +76,9 @@ func TestReadFile(t *testing.T) {
 func TestListRefs(t *testing.T) {
 	git, dir := createRepository(t)
 	writeFile(t, dir, file, "one\n")
-	must(t, git.Stage(dir, []string{file}))
-	must(t, git.CreateCommit(dir, "first"))
-	must(t, git.CreateBranch(dir, "feature"))
+	mustRun(t, git, dir, "add", "--", file)
+	mustRun(t, git, dir, "commit", "-m", "first")
+	mustRun(t, git, dir, "switch", "-c", "feature")
 	commits, err := git.ListCommits(dir, 1, nil)
 	must(t, err)
 	head := commits[0]
@@ -106,8 +105,8 @@ func TestListCommits(t *testing.T) {
 	subjects := []string{"first", "second"}
 	for _, subject := range subjects {
 		writeFile(t, dir, file, subject)
-		must(t, git.Stage(dir, []string{file}))
-		must(t, git.CreateCommit(dir, subject))
+		mustRun(t, git, dir, "add", "--", file)
+		mustRun(t, git, dir, "commit", "-m", subject)
 	}
 	commits, err = git.ListCommits(dir, 10, []string{branch})
 	must(t, err)
@@ -117,7 +116,7 @@ func TestListCommits(t *testing.T) {
 	newest, oldest := commits[0], commits[1]
 	if newest.Subject != subjects[1] || !slices.Equal(newest.Parents, []string{oldest.Hash}) ||
 		newest.Date.IsZero() || !strings.HasPrefix(newest.Hash, newest.Short) ||
-		!slices.Equal(newest.Refs, []string{branch}) {
+		!slices.Equal(newest.Refs, []Ref{{Name: branch, Type: refTypes["refs/heads/"], Current: true}}) {
 		t.Fatalf("newest commit %+v", newest)
 	}
 	if oldest.Subject != subjects[0] || len(oldest.Parents) != 0 || len(oldest.Refs) != 0 {
@@ -142,12 +141,10 @@ func createRepository(t *testing.T) (*Service, string) {
 	createApp()
 	git := &Service{Workspace: &workspace.Service{}}
 	dir := t.TempDir()
-	_, err := git.Run(dir, "init", "-q", "-b", branch)
-	must(t, err)
+	mustRun(t, git, dir, "init", "-q", "-b", branch)
 	settings := [][2]string{{"user.name", "Tester"}, {"user.email", "tester@example.com"}, {"core.autocrlf", "false"}}
 	for _, setting := range settings {
-		_, err := git.Run(dir, "config", setting[0], setting[1])
-		must(t, err)
+		mustRun(t, git, dir, "config", setting[0], setting[1])
 	}
 	return git, dir
 }
@@ -156,6 +153,13 @@ func createRepository(t *testing.T) (*Service, string) {
 func writeFile(t *testing.T, dir, rel, text string) {
 	t.Helper()
 	must(t, os.WriteFile(filepath.Join(dir, rel), []byte(text), 0o644))
+}
+
+// mustRun runs the given git command through the service in the repository's folder. It ends the test if git fails.
+func mustRun(t *testing.T, git *Service, dir string, args ...string) {
+	t.Helper()
+	_, err := git.Run(dir, args...)
+	must(t, err)
 }
 
 // must ends the test when a step of its setup fails.

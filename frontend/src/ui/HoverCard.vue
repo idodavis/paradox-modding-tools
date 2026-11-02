@@ -1,21 +1,15 @@
 <!-- The card shown when the pointer rests on a word in the editor, with the word's facts and problems. -->
-<script lang="ts">
-/** A HoverProblem is one problem the editor marks on the word. */
-export type HoverProblem = { id: string; level: string; message: string; line: number; column: number };
-</script>
-
 <script setup lang="ts">
 import { computed } from "vue";
 import { useLocalStorage } from "@vueuse/core";
 
 import { ValueType } from "@internal/schema/models";
-import type { Card } from "@services/lsp/models";
+import type { Card, Diagnostic } from "@services/lsp/models";
 
-import { REASONS } from "../lib/format";
 import ProblemRow from "./ProblemRow.vue";
 import SourceLink from "./SourceLink.vue";
 
-const { card, problems } = defineProps<{ card: Card | null; problems: HoverProblem[] }>();
+const { card, problems } = defineProps<{ card: Card | null; problems: Diagnostic[] }>();
 
 const SITES_SHOWN = 4;
 const KEYS = [
@@ -74,11 +68,13 @@ const sites = computed(() => (card?.sites ?? []).slice(0, SITES_SHOWN));
         plain
         :level="problem.level"
         :message="problem.message"
-        :detail="problem.id"
+        :detail="problem.code"
         mono
       >
         <template #trailing>
-          <span class="shrink-0 font-mono text-11 text-dimmed">{{ problem.line }}:{{ problem.column }}</span>
+          <span class="shrink-0 font-mono text-11 text-dimmed"
+            >{{ problem.range.startLineNumber }}:{{ problem.range.startColumn }}</span
+          >
         </template>
       </ProblemRow>
     </div>
@@ -143,7 +139,7 @@ const sites = computed(() => (card?.sites ?? []).slice(0, SITES_SHOWN));
         <div v-for="site in sites" :key="`${site.place.key}:${site.line}`" class="flex min-w-0 items-center gap-2">
           <SourceLink :place="site.place" :line="site.line" />
           <UBadge v-if="site.kept" label="Kept" color="success" size="sm" />
-          <UBadge v-if="site.reason" :label="REASONS[site.reason]?.label ?? site.reason" size="sm" />
+          <UBadge v-if="site.label" :label="site.label" size="sm" />
         </div>
         <span v-if="(card.sites?.length ?? 0) > SITES_SHOWN" class="text-11 text-dimmed"
           >+{{ (card.sites?.length ?? 0) - SITES_SHOWN }} more</span

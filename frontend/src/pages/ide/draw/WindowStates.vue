@@ -20,13 +20,12 @@ import { findTypeIcon } from "./properties";
 
 const { path, window } = defineProps<{ path: string; window: Window }>();
 
-/** A box of the tab: its groups, shown as rows with controls, as chips, or as the window's own. */
-type Box = { id: string; title: string; icon: string; look: "rows" | "chips" | "window"; groups: Group[] };
+/** A box of the tab, as Go starts a group's box, with the groups it shows. */
+type Box = Group["box"] & { groups: Group[] };
 
 // Go's picks for every value of a group at once and for none
 const EVERY = "*every";
 const NONE = "none";
-const LABELS: Record<string, string> = { [EVERY]: "All", [NONE]: "None" };
 // the rows a box shows before More, and the most values a segmented control holds before it is a select
 const FIRST = 6;
 const SEGMENTS = 5;
@@ -80,38 +79,16 @@ const candidates = computed(() => {
     .filter((group) => matchQuery(query.value, group.subject, group.key, group.label, group.id))
     .toSorted((first, second) => (second.reach ?? 0) - (first.reach ?? 0));
 });
+// the candidates in the boxes Go starts them in: the window's own, then the objects', sorted by reach with their kinds
+// merged, then the rows of each list
 const boxes = computed<Box[]>(() => {
-  const own = candidates.value.filter((group) => !group.item);
-  const windowBox: Box = {
-    id: "window",
-    title: "This window",
-    icon: "i-lucide-app-window",
-    look: "window",
-    groups: own.filter((group) => group.clickable),
-  };
-  const objects = Map.groupBy(
-    own.filter((group) => !group.clickable),
-    (group) => `${group.subject}|${group.key ?? ""}|${group.exists ? "has" : ""}`,
-  );
-  const objectBoxes = [...objects.values()].map((list): Box => {
-    const [first] = list;
-    const title = toTitle(first);
-    return first.exists
-      ? { id: `has:${title}`, title: `${title} has`, icon: "i-lucide-check-check", look: "chips", groups: list }
-      : { id: `object:${title}`, title, icon: "i-lucide-circle-dot", look: "rows", groups: list };
-  });
-  const rows = Map.groupBy(
-    candidates.value.filter((group) => group.item),
-    (group) => group.item ?? 0,
-  );
-  const rowBoxes = [...rows].map(([item, list]): Box => ({
-    id: `item:${item}`,
-    title: `Rows of ${widgets.value[item].name || widgets.value[item].type}`,
-    icon: "i-lucide-list",
-    look: "rows",
-    groups: list,
-  }));
-  return [windowBox, ...mergeKinds(objectBoxes), ...rowBoxes].filter((box) => box.groups.length);
+  const grouping = Map.groupBy(candidates.value, (group) => group.box.id);
+  const shown = [...grouping.values()].map((groups): Box => ({ ...groups[0].box, groups }));
+  return [
+    ...shown.filter((box) => box.look === "window"),
+    ...mergeKinds(shown.filter((box) => box.look !== "window" && !isList(box))),
+    ...shown.filter(isList),
+  ];
 });
 
 // the boxes folded or opened by hand, and the boxes showing all their rows: a box starts open, a list's rows folded
@@ -151,11 +128,16 @@ function mergeKinds(list: Box[]): Box[] {
   );
 }
 
+/** isList reports whether a box holds the rows of a list. */
+function isList(box: Box): boolean {
+  return box.id.startsWith("item:");
+}
+
 /**
  * isFolded reports whether a box is folded: a list's rows start folded, the rest open, and a fold by hand flips that.
  */
 function isFolded(box: Box): boolean {
-  return box.id.startsWith("item:") !== overrides.value.has(box.id);
+  return isList(box) !== overrides.value.has(box.id);
 }
 
 /** fold folds a box, or opens it. */
@@ -188,22 +170,14 @@ function listValues(group: Group): string[] {
   return (group.options ?? []).filter((option) => option !== EVERY && option !== NONE);
 }
 
-/**
- * toCaption converts a value to how the panel writes it: the text of the button that picks it, else the value without
- * its type as the start of a sentence.
- */
-function toCaption(group: Group, value: string): string {
-  return group.captions?.[value] ?? LABELS[value] ?? toSentence(value.replace(/^\(\w+\)/, ""));
-}
-
 /** toTitle converts a group's object to words: its kind and the key that picks it. */
 function toTitle(group: Group): string {
   return [group.subject, group.key].filter(Boolean).join(" ");
 }
 
 /** listChoices lists a group's choices in two sections: the values the window asks of it, then all and none. */
-function listChoices(group: Group): { label: string; value: string }[][] {
-  const toChoice = (value: string) => ({ label: toCaption(group, value), value });
+function listChoices(group: Group): { label?: string; value: string }[][] {
+  const toChoice = (value: string) => ({ label: group.captions?.[value], value });
   const lists = [listValues(group), [EVERY, NONE].filter((option) => group.options?.includes(option))];
   return lists.filter((list) => list.length).map((list) => list.map(toChoice));
 }
@@ -234,7 +208,7 @@ function outline(group: Group | null): void {
       <UButton
         v-for="value in listValues(group)"
         :key="value"
-        :label="toCaption(group, value)"
+        :label="group.captions?.[value]"
         :color="values[group.id] === value ? 'primary' : 'neutral'"
         :variant="values[group.id] === value ? 'soft' : 'outline'"
         @click="store.pick({ [group.id]: value })"

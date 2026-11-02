@@ -12,7 +12,7 @@ import type { SplitterItem } from "@nuxt/ui";
 import { ReorderMods } from "@services/workspace/service";
 import type { Finding, Tally } from "@services/health/models";
 import type { Mod } from "@services/workspace/models";
-import { countFindings, describeCount, describeLogLine } from "../../lib/format";
+import { countFindings, describeCount, joinParts } from "../../lib/format";
 import { useShown } from "../../app/pages";
 import { errorLogQuery, keys, overviewQuery, reportQuery, stateQuery } from "../../queries";
 import { makeChip, useChip } from "../../stores/toolView";
@@ -196,7 +196,7 @@ function matchFinding(finding: Finding): boolean {
 
 /** matchLogRow reports whether a log row mentions the name or has the check asked for. */
 function matchLogRow(finding: Finding): boolean {
-  return name ? describeLogLine(finding).includes(name) : finding.code === code;
+  return name ? joinParts(finding.message).includes(name) : finding.code === code;
 }
 
 /** isShown reports whether a row of the rail is the view shown. */

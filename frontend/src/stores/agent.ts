@@ -285,11 +285,7 @@ export const useAgentStore = defineStore("agent", () => {
       };
     });
     const answers: Answers = new Map();
-    const dialect = markRaw(
-      session.protocol === 2
-        ? makeV2(session, { readable, writable }, socket, answers)
-        : makeV1(session, { readable, writable } as unknown as v1.Stream, socket, answers),
-    );
+    const dialect = markRaw(makeDialect(session, { readable, writable }, socket, answers));
     const link: Link = { dialect, answers };
     links.set(session.key, link);
     return { start: await ready, dialect };
@@ -301,147 +297,140 @@ export const useAgentStore = defineStore("agent", () => {
     links.delete(session.key);
   }
 
-  /** makeV2 speaks version 2 of the protocol for a session over a stream. Closing it closes the stream's socket. */
-  function makeV2(session: Session, stream: v2.Stream, socket: { close: () => void }, answers: Answers): Dialect {
-    const connection = v2
-      .client(CLIENT)
-      .onNotification("session/update", ({ params }) => applyUpdate(session, params.update))
-      .onRequest("session/request_permission", ({ params }) =>
-        ask(
-          session,
-          answers,
-          params.title,
-          (params.subject as { toolCall?: v2.ToolCallUpdate } | null)?.toolCall,
-          params.options,
-        ),
-      )
-      .onRequest("elicitation/create", ({ params }) => askLink(session, answers, params))
-      .onNotification("elicitation/complete", ({ params }) => closeEntry(session, answers, params.elicitationId, null))
-      .connect(stream);
-    const agent = connection.agent;
-    return {
-      initialize: async () => {
-        const answer = await agent.request("initialize", {
-          protocolVersion: 2,
-          info: CLIENT,
-          capabilities: { auth: { terminal: {} }, elicitation: { url: {} } },
-        });
-        const capabilities = answer.capabilities?.session;
-        session.resumable = true;
-        session.deletable = !!capabilities?.delete;
-        session.directories = !!capabilities?.additionalDirectories;
-        session.methods = (answer.authMethods ?? []).map((method) =>
-          toSignIn(session.agent, { ...method, id: method.methodId }),
-        );
+  /** VERSIONS holds what the protocol's two versions say differently. Every other step is the same call in both. */
+  const VERSIONS = {
+    2: {
+      client: () => v2.client(CLIENT),
+      toPermission: (params: unknown) => {
+        const { title, subject, options } = params as v2.RequestPermissionRequest;
+        return { title, toolCall: (subject as { toolCall?: v2.ToolCallUpdate } | null)?.toolCall, options };
       },
-      create: async (start) => {
-        const answer = await agent.request("session/new", {
-          cwd: start.folder,
-          mcpServers: listServers(),
-          ...folders(session, start),
-        });
-        applyOffers(session, answer);
-        return answer.sessionId;
+      initialize: {
+        protocolVersion: 2,
+        info: CLIENT,
+        capabilities: { auth: { terminal: {} }, elicitation: { url: {} } },
+      } satisfies v2.InitializeRequest,
+      toCapabilities: (answer: unknown) => {
+        const { capabilities, authMethods } = answer as v2.InitializeResponse;
+        return {
+          resumable: true,
+          deletable: !!capabilities?.session?.delete,
+          directories: !!capabilities?.session?.additionalDirectories,
+          methods: (authMethods ?? []).map((method) => ({ ...method, id: method.methodId })),
+        };
       },
-      resume: async (id, start) => {
-        const answer = await agent.request("session/resume", {
+      resume: (id: string, start: Start, folders: object): [string, object] => [
+        "session/resume",
+        {
           sessionId: id,
           cwd: start.folder,
           mcpServers: listServers(),
           replayFrom: { type: "start" },
-          ...folders(session, start),
-        });
-        applyOffers(session, answer);
+          ...folders,
+        } satisfies v2.ResumeSessionRequest,
+      ],
+      configure: (id: string, configId: string, value: string | boolean) =>
+        (typeof value === "boolean"
+          ? { sessionId: id, configId, type: "boolean", value }
+          : { sessionId: id, configId, type: "id", value }) satisfies v2.SetSessionConfigOptionRequest,
+      login: "auth/login",
+      endsTurnOnPrompt: false,
+    },
+    1: {
+      client: () => v1.client(CLIENT),
+      toPermission: (params: unknown) => {
+        const { toolCall, options } = params as v1.RequestPermissionRequest;
+        return { title: toolCall.title ?? "", toolCall: toolCall as v2.ToolCallUpdate, options };
       },
-      prompt: async (id, blocks) => {
-        session.state = "running";
-        await agent.request("session/prompt", { sessionId: id, prompt: blocks });
+      initialize: {
+        protocolVersion: 1,
+        clientInfo: CLIENT,
+        clientCapabilities: {
+          fs: { readTextFile: false, writeTextFile: false },
+          terminal: false,
+          auth: { terminal: true },
+          elicitation: { url: {} },
+        },
+      } satisfies v1.InitializeRequest,
+      toCapabilities: (answer: unknown) => {
+        const { agentCapabilities, authMethods } = answer as v1.InitializeResponse;
+        return {
+          resumable: !!agentCapabilities?.loadSession,
+          deletable: !!agentCapabilities?.sessionCapabilities?.delete,
+          directories: !!agentCapabilities?.sessionCapabilities?.additionalDirectories,
+          methods: authMethods ?? [],
+        };
       },
-      configure: async (id, configId, value) => {
-        const choice =
-          typeof value === "boolean" ? { type: "boolean" as const, value } : { type: "id" as const, value };
-        return agent.request("session/set_config_option", { sessionId: id, configId, ...choice });
-      },
-      cancel: (id) => agent.notify("session/cancel", { sessionId: id }),
-      delete: async (id) => void (await agent.request("session/delete", { sessionId: id })),
-      signIn: async (methodId) => void (await agent.request("auth/login", { methodId })),
-      close: () => {
-        connection.close();
-        socket.close();
-      },
-    };
-  }
+      resume: (id: string, start: Start, folders: object): [string, object] => [
+        "session/load",
+        { sessionId: id, cwd: start.folder, mcpServers: listServers(), ...folders } satisfies v1.LoadSessionRequest,
+      ],
+      // version 1 sends a value of the list as it is, and a switch's with its type
+      configure: (id: string, configId: string, value: string | boolean) =>
+        (typeof value === "boolean"
+          ? { sessionId: id, configId, type: "boolean", value }
+          : { sessionId: id, configId, value }) satisfies v1.SetSessionConfigOptionRequest,
+      login: "authenticate",
+      endsTurnOnPrompt: true,
+    },
+  };
 
-  /** makeV1 speaks version 1 of the protocol for a session over a stream. Closing it closes the stream's socket. */
-  function makeV1(session: Session, stream: v1.Stream, socket: { close: () => void }, answers: Answers): Dialect {
-    const connection = v1
-      .client(CLIENT)
-      .onNotification("session/update", ({ params }) => applyUpdate(session, params.update as v2.SessionUpdate))
-      .onRequest("session/request_permission", ({ params }) =>
-        ask(session, answers, params.toolCall.title ?? "", params.toolCall as v2.ToolCallUpdate, params.options),
-      )
-      .onRequest("elicitation/create", ({ params }) => askLink(session, answers, params as v2.CreateElicitationRequest))
-      .onNotification("elicitation/complete", ({ params }) => closeEntry(session, answers, params.elicitationId, null))
-      .connect(stream);
+  /** makeDialect speaks a session's version of the protocol over a stream. Closing it closes the stream's socket. */
+  function makeDialect(session: Session, stream: v2.Stream, socket: { close: () => void }, answers: Answers): Dialect {
+    const row = VERSIONS[session.protocol];
+    // both versions' clients and agents take a method by its name, its params in each version's own shape
+    const client: {
+      onNotification(method: string, handler: (context: { params: unknown }) => void): unknown;
+      onRequest(method: string, handler: (context: { params: unknown }) => unknown): unknown;
+      connect(stream: unknown): {
+        agent: {
+          request(method: string, params: object): Promise<unknown>;
+          notify(method: string, params: object): Promise<void>;
+        };
+        close(): void;
+      };
+    } = row.client();
+    client.onNotification("session/update", ({ params }) =>
+      applyUpdate(session, (params as v2.UpdateSessionNotification).update),
+    );
+    client.onRequest("session/request_permission", ({ params }) => {
+      const { title, toolCall, options } = row.toPermission(params);
+      return ask(session, answers, title, toolCall, options);
+    });
+    client.onRequest("elicitation/create", ({ params }) =>
+      askLink(session, answers, params as v2.CreateElicitationRequest),
+    );
+    client.onNotification("elicitation/complete", ({ params }) =>
+      closeEntry(session, answers, (params as v2.CompleteElicitationNotification).elicitationId, null),
+    );
+    const connection = client.connect(stream);
     const agent = connection.agent;
     return {
       initialize: async () => {
-        const request: v1.InitializeRequest = {
-          protocolVersion: 1,
-          clientInfo: CLIENT,
-          clientCapabilities: {
-            fs: { readTextFile: false, writeTextFile: false },
-            terminal: false,
-            auth: { terminal: true },
-            elicitation: { url: {} },
-          },
-        };
-        const answer = await agent.request("initialize", request);
-        const capabilities = answer.agentCapabilities?.sessionCapabilities;
-        session.resumable = !!answer.agentCapabilities?.loadSession;
-        session.deletable = !!capabilities?.delete;
-        session.directories = !!capabilities?.additionalDirectories;
-        session.methods = (answer.authMethods ?? []).map((method) => toSignIn(session.agent, method as Method));
+        const { methods, ...capabilities } = row.toCapabilities(await agent.request("initialize", row.initialize));
+        Object.assign(session, capabilities, { methods: methods.map((method) => toSignIn(session.agent, method)) });
       },
       create: async (start) => {
-        const request: v1.NewSessionRequest = {
-          cwd: start.folder,
-          mcpServers: listServers(),
-          ...folders(session, start),
-        };
-        const answer = await agent.request("session/new", request);
+        const request = { cwd: start.folder, mcpServers: listServers(), ...folders(session, start) };
+        const answer = (await agent.request("session/new", request)) as Offers & { sessionId: string };
         applyOffers(session, answer);
         return answer.sessionId;
       },
       resume: async (id, start) => {
         if (!session.resumable) throw new Error(`${session.agent.name} cannot replay a session`);
-        const request: v1.LoadSessionRequest = {
-          sessionId: id,
-          cwd: start.folder,
-          mcpServers: listServers(),
-          ...folders(session, start),
-        };
-        applyOffers(session, await agent.request("session/load", request));
+        applyOffers(session, (await agent.request(...row.resume(id, start, folders(session, start)))) as Offers);
       },
       prompt: async (id, blocks) => {
         session.state = "running";
-        const answer = await agent.request("session/prompt", { sessionId: id, prompt: blocks as v1.ContentBlock[] });
-        finishTurn(session, answer.stopReason);
+        const request = { sessionId: id, prompt: blocks };
+        const { stopReason } = (await agent.request("session/prompt", request)) as { stopReason: string };
+        if (row.endsTurnOnPrompt) finishTurn(session, stopReason);
       },
-      configure: async (id, configId, value) => {
-        // version 1 sends a value of the list as it is, and a switch's with its type
-        const request: v1.SetSessionConfigOptionRequest =
-          typeof value === "boolean"
-            ? { sessionId: id, configId, type: "boolean", value }
-            : { sessionId: id, configId, value };
-        return agent.request("session/set_config_option", request);
-      },
+      configure: async (id, configId, value) =>
+        (await agent.request("session/set_config_option", row.configure(id, configId, value))) as Offers,
       cancel: (id) => agent.notify("session/cancel", { sessionId: id }),
-      delete: async (id) => {
-        const request: v1.DeleteSessionRequest = { sessionId: id };
-        await agent.request("session/delete", request);
-      },
-      signIn: async (methodId) => void (await agent.request("authenticate", { methodId })),
+      delete: async (id) => void (await agent.request("session/delete", { sessionId: id })),
+      signIn: async (methodId) => void (await agent.request(row.login, { methodId })),
       close: () => {
         connection.close();
         socket.close();

@@ -20,16 +20,16 @@ import type { ContextMenuItem } from "@nuxt/ui";
 
 import * as app from "@services/app/service";
 import * as service from "@services/workspace/service";
-import type { Child, FileChange, Place } from "@services/workspace/models";
+import type { FileChange, Place } from "@services/workspace/models";
 
 import { canCopyToMod, canSaveAsDds, COMMANDS, compare, copyToMod, findCommand, trashFile } from "../../app/commands";
 import { fileSearchQuery, folderQuery, gitStatusQuery, loadQuery, workspacesQuery } from "../../queries";
-import { useEditorStore } from "../../stores/editor";
+import { tabId, useEditorStore } from "../../stores/editor";
 import { useGitStore } from "../../stores/git";
 import { useSettingsStore } from "../../stores/settings";
 import { COMMAND_BUS, useWindowsStore } from "../../stores/windows";
 import { useWorkspaceStore, VANILLA } from "../../stores/workspace";
-import { fileTab, findIcon, listIcons } from "./editor/tabs";
+import { findIcon, listIcons } from "./editor/tabs";
 import SaveDdsModal from "./SaveDdsModal.vue";
 
 const { roots } = defineProps<{ roots: Place[] }>();
@@ -238,14 +238,13 @@ async function load(row: string): Promise<void> {
 }
 
 /** apply makes a folder row hold the listed rows, adding the new ones and removing those that are gone. */
-function apply(row: string, children: Child[]): void {
+function apply(row: string, children: Place[]): void {
   const next = new Set<string>();
   for (const child of children) {
-    const path = `${row}${child.name}${child.place.isDir ? "/" : ""}`;
+    const path = `${row}${child.name}${child.isDir ? "/" : ""}`;
     next.add(path);
-    places.set(path, child.place);
-    if (!child.place.isDir)
-      icons[child.name] = { name: SYMBOLS.get(findIcon(child.place)) ?? "", viewBox: "0 0 800 800" };
+    places.set(path, child);
+    if (!child.isDir) icons[child.name] = { name: SYMBOLS.get(findIcon(child)) ?? "", viewBox: "0 0 800 800" };
   }
   const tree = view.value;
   const gone = [...(members.get(row) ?? [])].filter((path) => !next.has(path) && tree?.getItem(path));
@@ -580,7 +579,7 @@ function buildOpenItems(file: Place | undefined, dir: string): ContextMenuItem[]
         icon: "i-lucide-app-window",
         onSelect: () => {
           editor.show(file);
-          windows.popOut("editor", [fileTab(file.key)]);
+          windows.popOut("editor", [tabId({ key: file.key })]);
         },
       },
       ...(file.drawable

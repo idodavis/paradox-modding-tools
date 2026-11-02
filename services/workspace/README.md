@@ -9,10 +9,11 @@ holds the `*Service` and asks it for the session at each call.
 
 | file | holds |
 |---|---|
-| `workspace.go` | `FileChange`, `Service`, `State`, `Scanning`, `FileText`, `Child`; the events; the installs (`ListGames`, `ListInstalls`, `ListReadyInstalls`, `DetectInstalls`, `AddInstall`, `UpdateInstall`, `ListLanguages`, `DeleteInstall`, `RescanInstall`); `ResetData`; the workspaces (`ListWorkspaces`, `CreateWorkspace`, `UpdateWorkspace`, `DeleteWorkspace`); the mods (`AddMod`, `ListMods`, `CreateMod`, `ResolveModFolder`, `RemoveMod`, `ReorderMods`, `ResetColors`, `UpdateMod`); `Open`, `Session`, `Close`, `State`, `LookupMod`, `ResolveFolder`; `Launch`; the files (`Read`, `ReadHeader`, `Write`, `WriteBytes`, `CreateCopy`, `ListFolder`, `ListRoots`, `Create`, `Rename`, `Delete`, `Restore`, `Locate`); `ServeHTTP` |
+| `workspace.go` | `FileChange`, `Service`, `State`, `Scanning`, `FileText`; the events; the installs (`ListGames`, `ListInstalls`, `ListReadyInstalls`, `DetectInstalls`, `AddInstall`, `UpdateInstall`, `ListLanguages`, `DeleteInstall`, `RescanInstall`); `ResetData`; the workspaces (`ListWorkspaces`, `CreateWorkspace`, `UpdateWorkspace`, `DeleteWorkspace`); the mods (`AddMod`, `ListMods`, `CreateMod`, `ResolveModFolder`, `RemoveMod`, `ReorderMods`, `ResetColors`, `UpdateMod`); `Open`, `Session`, `Close`, `State`, `LookupMod`, `ResolveFolder`; `Launch`; the files (`Read`, `ReadHeader`, `Write`, `WriteBytes`, `CreateCopy`, `ListFolder`, `Create`, `Rename`, `Delete`, `Restore`, `Locate`); `ServeHTTP` |
 | `session.go` | the package comment; `Session`; the open: the install's caches, the mods' scan and the watcher; `ScanOrder`; `Close`; the trees and buffers (`LoadTree`, `SetText`, `CloseBuffer`, `LookupBuffer`); the texts (`LookupText`, `LookupTitle` with a concept's and a message's title keys, `FindTitleKey`, `FindTextKey`); `FindStatement`; `Rescan` |
 | `mod.go` | `Descriptor`, `Dependency` and `Mod`; `ReadDescriptor`, `ParseDescriptor` (the one reader of a descriptor's text, script or JSON), `WriteDescriptor`; `ListDependencies` (a mod's dependencies, all the way down), `Session.DescribeMod` (a mod's title), `MatchVersion` (whether a supported version fits the game's); `FindMod` (the mod a descriptor's dependency names, by its id or its name); `Mod.ResolveWorkshopID` (the record's Workshop id, else the descriptor's); a new mod's skeleton and its localization file (`FindLocalizationFile`, `CreateLocalization`); the thumbnail; `IsOlderRelease` |
-| `locate.go` | `Place`, `Session.Locate`, `ListCopies`, `Session.ListRoots` |
+| `locate.go` | `Place`, `Session.Locate`, `ListCopies`, `ListRoots` |
+| `revert.go` | `Hunk`; `RevertHunks`, an agent's edits to a file taken back |
 | `watcher.go` | `Watcher`: the folders it watches, the bursts of changes it reports together, and `Move` |
 
 ## The one open session
@@ -32,9 +33,9 @@ the workspace's first mod whose folder exists, else the home folder. It is Go's 
 
 An install's schema and index are cached as two gob files in one folder. The folder is named for the install's
 version, the time of its dumps and the app's version, so a new game version, fresher dumps or a new build each scan
-again. The open deletes the game's other cache folders. It loads both caches, or builds what one lacks and saves it:
-the schema with `schema.Build`, then the index with `index.Scan` over the same listing. An install's version is the
-one its files say, else the one its record holds. `ListReadyInstalls` names the installs whose next open scans
+again. The open deletes everything else in the game's cache folder. It loads both caches, or builds what one lacks and
+saves it: the schema with `schema.Build`, then the index with `index.Scan` over the same listing. An install's version
+is the one its files say, else the one its record holds. `ListReadyInstalls` names the installs whose next open scans
 nothing.
 
 ## The session
@@ -83,6 +84,12 @@ when the mod has a file there already. `Delete` moves a file or a folder into PM
 Deleting a mod's root folder removes the mod from the workspace too. `ListFolder` lists a folder with the place of each
 entry, and leaves out binary files unless the workspace shows them. `Read` gives a file that is not text back as
 binary, with no text, so the editor says it cannot show it.
+
+`RevertHunks` gives a file back its text from before an agent's edits, which the page reads from the agent's diffs as
+each edit's hunks. It refuses a file with unsaved text in the editor and an edit with no hunk. It takes the edits back
+the latest first: each hunk's lines after are found once in the file, a tab read as the two spaces a diff writes, and
+replaced by its lines before with the file's tabs restored; a hunk already undone is passed over. The file is written
+in its own line endings, or goes to the trash when the edits made it and it ends empty.
 
 `ServeHTTP` serves to the page the file a request names, whether or not a workspace is open, and refuses a path outside
 every recorded install and mod. A DDS or TGA is decoded to PNG first, since the browser cannot show it, and so is one
@@ -146,6 +153,5 @@ whether it wrote dumps fresher than the schema's.
 - **Watcher**: what watches the mods' folders and reports a burst of changes together.
 - **State**: the open workspace as the frontend sees it.
 - **FileText**: a file's text in its encoding, with its place and the editor's draft.
-- **Child**: one entry in a folder listing.
 - **FileChange**: one file that changed or was deleted on disk.
 - **Scanning**: one stage of an install's scan, with the percent of its files done.

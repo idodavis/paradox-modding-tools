@@ -15,11 +15,10 @@ import { confirm } from "../../lib/feedback";
 import { describeAge, plural } from "../../lib/format";
 import { commitsQuery, gitStatusQuery, keys, refsQuery } from "../../queries";
 import { useEditorStore } from "../../stores/editor";
-import { useGitStore } from "../../stores/git";
+import { STAGE, UNSTAGE, useGitStore } from "../../stores/git";
 import { useWorkspaceStore } from "../../stores/workspace";
 import GitFileRow from "../../ui/GitFileRow.vue";
 import OriginChip from "../../ui/OriginChip.vue";
-import { diffTab, parseTab } from "./editor/tabs";
 
 const { root, mods } = defineProps<{ root: string; mods: string[] }>();
 
@@ -105,7 +104,7 @@ const sections = computed<Section[]>(() => [
     title: "Staged",
     rows: changes.value.filter((c) => c.staged && c.status !== "conflict"),
     side: "staged",
-    all: [{ label: "Unstage all", icon: "i-lucide-minus", run: (rows) => change(gitApi.Unstage, rows) }],
+    all: [{ label: "Unstage all", icon: "i-lucide-minus", run: (rows) => change(UNSTAGE, rows) }],
   },
   {
     title: "Changes",
@@ -113,7 +112,7 @@ const sections = computed<Section[]>(() => [
     side: "changes",
     all: [
       { label: "Discard all changes", icon: "i-lucide-undo-2", color: "error", run: (rows) => discard(rows) },
-      { label: "Stage all changes", icon: "i-lucide-plus", run: (rows) => change(gitApi.Stage, rows) },
+      { label: "Stage all changes", icon: "i-lucide-plus", run: (rows) => change(STAGE, rows) },
     ],
   },
 ]);
@@ -127,13 +126,11 @@ const remotes = computed(() => (refs.value ?? []).filter((ref) => ref.type === "
 const { mutate: run } = useMutation({
   mutation: (work: () => Promise<unknown>) => work(),
 });
-const { mutate: listRemotes, data: remoteList } = useMutation({
-  mutation: () => gitApi.Run(root, "remote", "-v"),
-});
+const { mutate: listRemotes, data: remoteList } = useMutation({ mutation: () => gitApi.ListRemotes(root) });
 const { mutate: commit } = useMutation({
   mutation: async ({ amend = false, push = false }: { amend?: boolean; push?: boolean }) => {
     if (amend) await gitApi.Run(root, "commit", "--amend", "-m", message.value);
-    else await gitApi.CreateCommit(root, message.value);
+    else await gitApi.Run(root, "commit", "-m", message.value);
     if (push) await gitApi.Run(root, "push");
   },
   onSuccess: () => (message.value = ""),
@@ -159,19 +156,11 @@ const moreActions = computed<DropdownMenuItem[][]>(() => [
     ...(status.value?.upstream ? [] : [{ label: "Publish the branch", icon: "i-lucide-cloud-upload", onSelect: sync }]),
   ],
   [
-    { label: "Stage all changes", icon: "i-lucide-plus", onSelect: () => change(gitApi.Stage, changes.value) },
-    { label: "Unstage all", icon: "i-lucide-minus", onSelect: () => change(gitApi.Unstage, changes.value) },
+    { label: "Stage all changes", icon: "i-lucide-plus", onSelect: () => change(STAGE, changes.value) },
+    { label: "Unstage all", icon: "i-lucide-minus", onSelect: () => change(UNSTAGE, changes.value) },
   ],
   [{ label: "Show the Git output", icon: "i-lucide-terminal", onSelect: () => (editor.panel = "output") }],
 ]);
-const remoteRows = computed(() => {
-  const addresses = new Map<string, string>();
-  for (const line of (remoteList.value ?? "").split("\n")) {
-    const [label = "", url = ""] = line.replace(/ \((fetch|push)\)$/, "").split("\t");
-    if (label) addresses.set(label, url);
-  }
-  return [...addresses].map(([label, url]) => ({ label, url }));
-});
 const footer = computed(() => {
   const [fetch, pull, push] = SYNC.map(({ label, icon, args }) => ({
     label,
@@ -192,7 +181,7 @@ const picks = computed(() => {
   const all = [...local.value, ...remotes.value];
   return {
     start: { label: "Make the new branch from", refs: all, pick: (ref: string) => show("name", ref) },
-    pull: { label: "Pull from", refs: remotes.value, pick: (ref: string) => act(() => pullBranch(ref)) },
+    pull: { label: "Pull from", refs: remotes.value, pick: (ref: string) => act(() => gitApi.Pull(root, ref)) },
     merge: {
       label: `Merge into ${current.value}`,
       refs: all.filter((ref) => !ref.current),
@@ -225,8 +214,7 @@ const groups = computed<CommandPaletteGroup[]>(() => {
  */
 function buildCreateItems(label: string, start: string): CommandPaletteItem[] {
   if (!label || local.value.some((ref) => ref.name === label)) return [];
-  const make = () =>
-    start === current.value ? gitApi.CreateBranch(root, label) : gitApi.Run(root, "checkout", "-b", label, start);
+  const make = () => gitApi.Run(root, "switch", "-c", label, start);
   return [{ label: `Create branch ${label} from ${start}`, icon: "i-lucide-plus", onSelect: () => act(make) }];
 }
 
@@ -253,7 +241,7 @@ function buildMainGroups(label: string): CommandPaletteGroup[] {
         label: ref.name,
         icon: ref.current ? "i-lucide-check" : "i-lucide-git-branch",
         suffix: describeBranch(ref),
-        onSelect: () => act(() => gitApi.SwitchBranch(root, ref.name)),
+        onSelect: () => act(buildCommand("switch", ref.name)),
       })),
     },
     {
@@ -347,24 +335,19 @@ function toggle(): void {
 
 /** open opens a changed file, or its diff on the given side. A conflicted file opens as a file. */
 function open(place: Place, side?: Section["side"]): void {
-  if (side && side !== "conflict") editor.open(diffTab(side, root, place.key), place);
+  if (side && side !== "conflict") editor.open({ key: place.key, side, root }, place);
   else editor.show(place);
 }
 
 /** isLit reports whether the active tab is the diff of the given side of the given changed file. */
 function isLit(side: Section["side"], row: Change): boolean {
-  const target = parseTab(editor.activeTab()?.id ?? "");
-  return target.tab === "diff" && target.side === side && target.key === row.place.key;
+  const tab = editor.activeTab();
+  return tab?.side === side && tab.key === row.place.key;
 }
 
-/** change stages, unstages or discards files, as the given call of the git service does. */
-function change(call: typeof gitApi.Stage, files: Change[]): void {
-  run(() =>
-    call(
-      root,
-      files.map((file) => file.path),
-    ),
-  );
+/** change runs the given git command, which stages or unstages files, on the paths of the given changes. */
+function change(command: readonly string[], files: Change[]): void {
+  run(() => gitApi.Run(root, ...command, ...files.map((file) => file.path)));
 }
 
 /** discard throws the working changes of files away, once the user has agreed. */
@@ -385,7 +368,7 @@ function discard(files: Change[]): void {
  */
 function sync(): void {
   run(async () => {
-    const existing = (await gitApi.Run(root, "remote")).split("\n")[0]?.trim();
+    const existing = (await gitApi.ListRemotes(root))?.[0]?.label;
     if (!existing) remoting.value = true;
     else if (status.value?.upstream) {
       await gitApi.Run(root, "pull");
@@ -397,10 +380,10 @@ function sync(): void {
 /** saveRemote adds a remote, or changes the address of one with the same label, and pushes to it if it is the first. */
 function saveRemote(): void {
   const { label, url } = remote.value;
-  const exists = remoteRows.value.some((row) => row.label === label);
+  const exists = !!remoteList.value?.some((row) => row.label === label);
   run(async () => {
     await gitApi.Run(root, "remote", exists ? "set-url" : "add", label, url.trim());
-    if (!remoteRows.value.length) await gitApi.Run(root, "push", "-u", label, status.value?.branch ?? "");
+    if (!remoteList.value?.length) await gitApi.Run(root, "push", "-u", label, status.value?.branch ?? "");
     listRemotes();
   });
   remote.value = { label: "origin", url: "" };
@@ -414,26 +397,16 @@ function removeRemote(label: string): void {
   });
 }
 
-/** pullBranch pulls one remote branch into the current one. */
-function pullBranch(ref: string): Promise<string> {
-  const slash = ref.indexOf("/");
-  return gitApi.Run(root, "pull", ref.slice(0, slash), ref.slice(slash + 1));
-}
-
 /** deleteBranch deletes a branch. One with commits no other branch has is deleted only when the user asks again. */
 async function deleteBranch(branch: string): Promise<void> {
-  try {
-    await gitApi.Run(root, "branch", "-d", branch);
-  } catch (err) {
-    if (!String(err).includes("not fully merged")) throw err;
-    const force = {
-      label: "Delete anyway",
-      color: "error",
-      variant: "soft",
-      onClick: () => run(buildCommand("branch", "-D", branch)),
-    };
-    toast.add({ title: `${branch} has commits no other branch has`, actions: [force] });
-  }
+  if (await gitApi.DeleteBranch(root, branch, false)) return;
+  const force = {
+    label: "Delete anyway",
+    color: "error",
+    variant: "soft",
+    onClick: () => run(() => gitApi.DeleteBranch(root, branch, true)),
+  };
+  toast.add({ title: `${branch} has commits no other branch has`, actions: [force] });
 }
 </script>
 
@@ -564,8 +537,8 @@ async function deleteBranch(branch: string): Promise<void> {
                   :change="row"
                   :side="section.side"
                   @open="open(row.place)"
-                  @stage="change(gitApi.Stage, [row])"
-                  @unstage="change(gitApi.Unstage, [row])"
+                  @stage="change(STAGE, [row])"
+                  @unstage="change(UNSTAGE, [row])"
                   @discard="discard([row])"
                 />
               </div>
@@ -582,8 +555,8 @@ async function deleteBranch(branch: string): Promise<void> {
     >
       <template #body>
         <div class="flex flex-col gap-2 text-12">
-          <p v-if="!remoteRows.length" class="text-dimmed">This repository has no remote yet.</p>
-          <div v-for="row in remoteRows" :key="row.label" class="flex h-7 items-center gap-1.5">
+          <p v-if="!remoteList?.length" class="text-dimmed">This repository has no remote yet.</p>
+          <div v-for="row in remoteList ?? []" :key="row.label" class="flex h-7 items-center gap-1.5">
             <span class="w-16 shrink-0 truncate font-mono text-highlighted">{{ row.label }}</span>
             <span class="min-w-0 grow truncate font-mono text-toned">{{ row.url }}</span>
             <UButton

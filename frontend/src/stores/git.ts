@@ -14,6 +14,10 @@ import { keys, repositoriesQuery } from "../queries";
 
 // the lines kept, the newest last
 const OUTPUT_LINES = 300;
+/** STAGE is the git command that stages the files whose paths follow it. */
+export const STAGE = ["add", "--"] as const;
+/** UNSTAGE is the git command that unstages the files whose paths follow it. */
+export const UNSTAGE = ["reset", "-q", "--"] as const;
 
 export const useGitStore = defineStore("git", () => {
   const cache = useQueryCache();

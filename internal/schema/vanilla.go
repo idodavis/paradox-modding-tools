@@ -3,6 +3,7 @@ package schema
 import (
 	"cmp"
 	"errors"
+	"iter"
 	"maps"
 	"path"
 	"regexp"
@@ -20,9 +21,10 @@ import (
 // A declarer is the visitor of a walk over one file. It records the definitions that script and GUI files call by name.
 // It reads only the top statements.
 type declarer struct {
-	schema   *Schema
-	scripted map[string]ScriptedDefinition // by the word that calls it and its name
-	widgets  []string                      // the widget types the file defines or builds on
+	schema    *Schema
+	scripted  map[string]ScriptedDefinition // by the word that calls it and its name
+	widgets   []string                      // the widget types the file defines or builds on
+	modifiers map[string]*Field             // by modifier type the file defines: what its name takes
 }
 
 // A counter is the visitor of one worker's counting walk. It counts what the files write into fields of its own, apart
@@ -121,16 +123,19 @@ func (schema *Schema) CountVanilla(listing []files.File, parse func(path string)
 	return nil
 }
 
-// SetScripted reads the scripted definitions that the given files of the workspace's mods declare, in place of what
-// they declared before, so that a call to one is a known call, as a call to one of the game's is. It reads the script
-// files of the databases that script calls by name, parsed with the given function. A file that cannot be parsed, or
-// is gone, declares nothing.
+// SetScripted reads the scripted definitions and the modifier types that the given files of the workspace's mods
+// declare, in place of what they declared before, so that a call to one is a known call, as a call to one of the
+// game's is, and a modifier type's name takes what its definition says. It reads the script files of the databases
+// that script calls by name or whose definitions say what their names take, parsed with the given function. A file
+// that cannot be parsed, or is gone, declares nothing.
 func (schema *Schema) SetScripted(changed []files.File, parse func(path string) (*jomini.Tree, error)) {
 	declaring := slices.DeleteFunc(slices.Clone(changed), func(file files.File) bool {
 		return file.Format != files.FormatScript || !schema.declares(file)
 	})
 	declarers := schema.listDeclarers(declaring, parse)
-	next := &modScripted{byFile: map[string]map[string]ScriptedDefinition{}, all: map[string]ScriptedDefinition{}}
+	next := &modScripted{
+		byFile: map[string]*declarer{}, all: map[string]ScriptedDefinition{}, modifiers: map[string]*Field{},
+	}
 	if previous := schema.mods.Load(); previous != nil {
 		next.byFile = maps.Clone(previous.byFile)
 	}
@@ -139,15 +144,16 @@ func (schema *Schema) SetScripted(changed []files.File, parse func(path string) 
 	}
 	for position, declarer := range declarers {
 		if declarer != nil {
-			next.byFile[declaring[position].Key] = declarer.scripted
+			next.byFile[declaring[position].Key] = declarer
 		}
 	}
 	// each definition gets its own copy of its saves, which only this table's search for saves adds to
 	for _, key := range slices.Sorted(maps.Keys(next.byFile)) {
-		for name, scripted := range next.byFile[key] {
+		for name, scripted := range next.byFile[key].scripted {
 			scripted.Saves = maps.Clone(scripted.Saves)
 			next.all[name] = scripted
 		}
+		maps.Copy(next.modifiers, next.byFile[key].modifiers)
 	}
 	schema.resolveSaves(next.all, next.all)
 	schema.mods.Store(next)
@@ -158,7 +164,7 @@ func (schema *Schema) SetScripted(changed []files.File, parse func(path string) 
 func (schema *Schema) listDeclarers(declaring []files.File, parse func(path string) (*jomini.Tree, error)) []*declarer {
 	declarers := make([]*declarer, len(declaring))
 	eachParsed(declaring, parse, func(_, index int, tree *jomini.Tree) {
-		declarers[index] = &declarer{schema: schema, scripted: map[string]ScriptedDefinition{}}
+		declarers[index] = &declarer{schema: schema, scripted: map[string]ScriptedDefinition{}, modifiers: map[string]*Field{}}
 		schema.Walk(tree, declaring[index], declarers[index])
 	})
 	return declarers
@@ -218,12 +224,12 @@ func (schema *Schema) lookupDefinition(table map[string]ScriptedDefinition, call
 	return callee, ok && database != nil && database.Callable.FoldsCase
 }
 
-// loadMods returns the mods' scripted definitions as SetScripted last set them, or nil if it never did.
-func (schema *Schema) loadMods() map[string]ScriptedDefinition {
+// loadMods returns what the mods declared as SetScripted last set it, or an empty table if it never did.
+func (schema *Schema) loadMods() *modScripted {
 	if mods := schema.mods.Load(); mods != nil {
-		return mods.all
+		return mods
 	}
-	return nil
+	return &modScripted{}
 }
 
 // listVanilla returns the files of the given listing that hold script: script, GUI, asset, font and GFX files.
@@ -232,13 +238,13 @@ func listVanilla(listing []files.File) []files.File {
 }
 
 // declares reports whether a file declares definitions that script or GUI files call by name. A GUI file does, and so
-// does a file of a database that has callers.
+// does a file of a database that has callers, or a file of a database whose definitions say what their names take.
 func (schema *Schema) declares(file files.File) bool {
 	if file.Format == files.FormatGUI {
 		return true
 	}
 	database, ok := schema.FindDatabase(file.Rel)
-	return ok && len(database.Callable.Callers) > 0
+	return ok && (len(database.Callable.Callers) > 0 || database.Row.BoolKey != "")
 }
 
 // eachParsed parses each file of a listing in parallel with the first given function, and calls the second on each
@@ -275,11 +281,14 @@ func (declarer *declarer) Enter(tree *jomini.Tree, statement int32, context *Con
 
 // declare records a definition that is called by name. For each word that calls its database it records the scripted
 // definition with the parameters its body writes. If a widget calls it, it also records the widget type, and the type
-// that widget is built on.
+// that widget is built on. It also records what the name of a modifier type takes.
 func (declarer *declarer) declare(definition Definition, tree *jomini.Tree, statement int32) {
 	database := declarer.schema.Databases[definition.Database]
 	if database == nil {
 		return
+	}
+	if database.Row.BoolKey != "" {
+		declarer.modifiers[definition.Name] = makeModifierField(tree, statement, database.Row.BoolKey)
 	}
 	base := tree.Unquoted(tree.Statements[statement].Tag)
 	if base != "" && slices.Contains(database.Callable.Callers, game.GUI.TagCalls) {
@@ -298,6 +307,16 @@ func (declarer *declarer) declare(definition Definition, tree *jomini.Tree, stat
 			declarer.widgets = append(declarer.widgets, definition.Name)
 		}
 	}
+}
+
+// makeModifierField returns what the name of a modifier type takes in a modifiers block, as the type's definition
+// says: yes or no where it writes yes at the given key, else a number or a script value.
+func makeModifierField(tree *jomini.Tree, statement int32, key string) *Field {
+	expected := Expected{Type: ValueNumber, Values: true}
+	if value, _ := tree.FindChildValue(statement, key); value == yes {
+		expected = Expected{Type: ValueBool}
+	}
+	return &Field{Claims: Claims{Value: Claim[Expected]{Value: expected, Source: game.SourceDefinitions}}}
 }
 
 // makeScripted returns the scripted definition that a statement makes. If the database's definitions take parameters,
@@ -365,6 +384,7 @@ func (declarer *declarer) Leave(tree *jomini.Tree, statement int32, context *Con
 // build gives the schema what the walked files declared. A later definition of a name replaces an earlier one.
 func (declarer *declarer) build() {
 	maps.Copy(declarer.schema.ScriptedDefinitions, declarer.scripted)
+	maps.Copy(declarer.schema.ModifierFields, declarer.modifiers)
 	for _, widget := range declarer.widgets {
 		declarer.schema.WidgetTypes[widget] = true
 	}
@@ -432,24 +452,33 @@ func (counter *counter) countDefinition(context *Context) {
 	if !context.Defines || context.Category != CategoryDefinition && !context.Definition.Alias {
 		return
 	}
-	if counter.defined[context.Database] == nil {
-		counter.defined[context.Database] = map[string]bool{}
+	database := context.Definition.Database
+	if counter.defined[database] == nil {
+		counter.defined[database] = map[string]bool{}
 	}
-	counter.defined[context.Database][context.Definition.Name] = true
+	counter.defined[database][context.Definition.Name] = true
 }
 
-// countPrefixes records the names that a statement writes after a prefix, in its key and in its value. Only a prefix
-// with no database yet is counted.
+// countPrefixes records the names that a statement writes after a prefix, in its key and in its value. Only the names
+// of a prefix the vote decides are counted.
 func (counter *counter) countPrefixes(tree *jomini.Tree, statement int32) {
 	current := tree.Statements[statement]
 	for _, text := range []string{tree.Unquoted(current.Key), tree.Unquoted(current.Value)} {
 		for _, link := range jomini.SplitChain(text) {
 			prefix, label, ok := jomini.SplitPrefixed(link)
-			if database, exists := counter.schema.Prefixes[prefix]; ok && exists && database == "" {
+			if ok && counter.schema.isVoted(prefix) {
 				counter.prefixed[prefix] = addCounts(counter.prefixed[prefix], map[string]int{label: 1})
 			}
 		}
 	}
+}
+
+// isVoted reports whether the names written after a link prefix are counted for the vote that finds its database: a
+// prefix that has none yet is, except one whose link leads to a literal, as flag:the_boss's does.
+func (schema *Schema) isVoted(prefix string) bool {
+	database, exists := schema.Prefixes[prefix]
+	command := schema.Commands[prefix]
+	return exists && database == "" && (command == nil || command.Target != game.DumpPhrases.Literal)
 }
 
 // addCounts adds each count of the second map to the same key of the first and returns the first. It makes the first
@@ -785,8 +814,8 @@ func (field *Field) add(counted *Field) {
 
 // resolveCounts gives the schema what the count found. Counted fields join the databases and commands, each with the
 // claims its counts support, and the prefixes are resolved from the names defined. A database that only the walk
-// names, such as an asset file's entity, is made here. Each command and data function gets its examples, and each
-// command the scopes it runs in.
+// names, such as an asset file's entity, is made here. Each command and data function gets its examples, each
+// command the scopes it runs in, and the schema its command patterns.
 func (counter *counter) resolveCounts() {
 	row := game.LookupGame(counter.schema.Game)
 	for field, counted := range counter.fields {
@@ -812,12 +841,62 @@ func (counter *counter) resolveCounts() {
 		counter.schema.buildDatabase(row, database, game.Database{})
 		counter.schema.Databases[database].Definition.add(counted)
 	}
+	counter.resolvePatterns()
 	counter.resolveFamilyKeys()
 	counter.schema.walkFields(counter.resolveClaims)
 	for prefix, labels := range counter.prefixed {
 		counter.resolvePrefix(prefix, labels)
 	}
 	counter.schema.UnlistedCalls = counter.unlisted
+}
+
+// resolvePatterns finds the command patterns. A pattern is a database's where the names of all its definitions,
+// two or more, make commands the dumps declare, each with one definition's name in the place of the pattern's star.
+func (counter *counter) resolvePatterns() {
+	owners := map[string][]string{}
+	for database, labels := range counter.defined {
+		for label := range labels {
+			owners[label] = append(owners[label], database)
+		}
+	}
+	members := map[[2]string][]string{} // by pattern and database: the commands with a name of it in the star's place
+	for _, command := range slices.Sorted(maps.Keys(counter.schema.Commands)) {
+		for pattern, label := range splitPattern(command) {
+			for _, database := range owners[label] {
+				key := [2]string{pattern, database}
+				members[key] = append(members[key], command)
+			}
+		}
+	}
+	for key, commands := range members {
+		// one command for each definition: a name written twice, or in an entry mode, makes no pattern
+		if len(commands) >= 2 && len(commands) == counter.schema.Databases[key[1]].Definition.Vanilla.Definitions {
+			counter.schema.CommandPatterns = append(counter.schema.CommandPatterns,
+				CommandPattern{Key: key[0], Database: key[1], Commands: commands})
+			for _, command := range commands {
+				counter.schema.Commands[command].Patterned = true
+			}
+		}
+	}
+	slices.SortFunc(counter.schema.CommandPatterns, func(first, second CommandPattern) int {
+		return cmp.Or(strings.Compare(first.Key, second.Key), strings.Compare(first.Database, second.Database))
+	})
+}
+
+// splitPattern yields each way a command's name splits into a pattern and a label: the label is a run of the
+// name's words, and the pattern is the name with a star in the label's place. The whole name is never a label.
+func splitPattern(command string) iter.Seq2[string, string] {
+	return func(yield func(string, string) bool) {
+		parts := strings.Split(command, "_")
+		for first := range parts {
+			for last := first + 1; last <= len(parts); last++ {
+				pattern := slices.Concat(parts[:first], []string{"*"}, parts[last:])
+				if len(pattern) > 1 && !yield(strings.Join(pattern, "_"), strings.Join(parts[first:last], "_")) {
+					return
+				}
+			}
+		}
+	}
 }
 
 // resolveFamilyKeys resolves the keys that each list family's commands share once for the family, and gives every
@@ -973,19 +1052,13 @@ func (counter *counter) resolveKeys(field *Field) {
 // localization only if the concepts do not either. It returns false if there are no values, if nothing defines them
 // all or if more than one does.
 func (counter *counter) resolveReference(values map[string]int) (Expected, bool) {
-	named := map[string]int{}
-	for value, count := range values {
-		name := strings.Trim(value, `"`)
-		if !jomini.IsParameter(name) && !counter.schema.IsLink(name) {
-			named[name] += count
-		}
-	}
-	if len(named) == 0 {
+	labels := counter.listLabels(values)
+	if len(labels) == 0 {
 		return Expected{}, false
 	}
 	var matched []string
 	for database, names := range counter.defined {
-		if hasAll(named, names) {
+		if hasAll(labels, names) {
 			matched = append(matched, database)
 		}
 	}
@@ -994,19 +1067,33 @@ func (counter *counter) resolveReference(values map[string]int) (Expected, bool)
 	})
 	nested := false
 	if len(databases) == 0 {
-		databases = counter.listFamilies(named)
+		databases = counter.listFamilies(labels)
 		nested = len(databases) > 0
 	}
 	if len(databases) == 0 && slices.Contains(matched, counter.schema.Concepts) {
 		databases = append(databases, counter.schema.Concepts)
 	}
-	if len(databases) == 0 && hasAll(named, counter.messages) {
+	if len(databases) == 0 && hasAll(labels, counter.messages) {
 		databases = append(databases, game.Localization)
 	}
 	if len(databases) != 1 {
 		return Expected{}, false
 	}
 	return Expected{Type: ValueReference, Database: databases[0], Nested: nested}, true
+}
+
+// listLabels returns the labels that the given values write, each with its count. A quoted value counts as the
+// label inside its quotes. A value that holds a parameter is left out, and so is a link, which leads to a scope
+// rather than naming a definition.
+func (counter *counter) listLabels(values map[string]int) map[string]int {
+	labels := map[string]int{}
+	for value, count := range values {
+		label := strings.Trim(value, `"`)
+		if !jomini.IsParameter(label) && !counter.schema.IsLink(label) {
+			labels[label] += count
+		}
+	}
+	return labels
 }
 
 // hasAll reports whether every given value is held by at least one of the given sets.
@@ -1019,14 +1106,12 @@ func hasAll(values map[string]int, sets ...map[string]bool) bool {
 	return true
 }
 
-// isNamedFor reports whether the definitions of a database are named for those of one of the given others. That is so
-// if its row names one of them as its target, or, for coats of arms, if a database that holds coats is among them.
+// isNamedFor reports whether the definitions of a database are named for those of another of the given databases,
+// which all define the values: its row names one of them as its target, or it mirrors others and is not alone.
 func (counter *counter) isNamedFor(database string, others []string) bool {
-	if row := counter.schema.Databases[database]; row != nil && row.Row.Target != "" && slices.Contains(others, row.Row.Target) {
-		return true
-	}
-	return database == game.Coat.Database &&
-		slices.ContainsFunc(game.Coat.Holders, func(holder string) bool { return slices.Contains(others, holder) })
+	row := counter.schema.Databases[database]
+	return row != nil && (row.Row.Target != "" && slices.Contains(others, row.Row.Target) ||
+		row.Row.Mirrors && len(others) > 1)
 }
 
 // listFamilies returns the databases that define every given value together with the databases nested in them, as a
@@ -1088,10 +1173,16 @@ func (counter *counter) takesValues(values map[string]int) bool {
 	return named
 }
 
-// resolvePrefix sets the database that defines every name written after the prefix. It sets none if no database does,
-// or more than one does. The link's arguments record the names counted.
+// resolvePrefix sets the database whose definitions the names after a prefix are. A prefix that leads to a scope from
+// any scope names the database of that scope, where every name the game's own files write after it is defined there.
+// Otherwise it is the one database that defines every name written after it, and none where no database or several
+// do. The link's arguments record the names counted.
 func (counter *counter) resolvePrefix(prefix string, labels map[string]int) {
-	expected, ok := counter.resolveReference(labels)
+	database := counter.schema.findScopeDatabase(prefix)
+	expected, ok := Expected{Type: ValueReference, Database: database}, database != ""
+	if !ok || !hasAll(counter.listLabels(labels), counter.defined[database]) {
+		expected, ok = counter.resolveReference(labels)
+	}
 	counter.schema.Prefixes[prefix] = expected.Database
 	command := counter.schema.Commands[prefix]
 	if command == nil {
@@ -1105,4 +1196,23 @@ func (counter *counter) resolvePrefix(prefix string, labels map[string]int) {
 	if ok {
 		arguments.Value.resolve(expected, game.SourceVanilla)
 	}
+}
+
+// findScopeDatabase returns the database whose definitions the names after a link prefix are, where the prefix leads to
+// a scope from any scope: the database of the type the scope's own getter gives, else of the scope's words. It returns
+// "" for any other prefix, and where neither gives one.
+func (schema *Schema) findScopeDatabase(prefix string) string {
+	command := schema.Commands[prefix]
+	if command == nil || len(command.Scopes) > 0 || !schema.isScope(command.Target) {
+		return ""
+	}
+	getters := schema.DataTypes[game.AnyScopeType].Functions
+	for _, name := range slices.Sorted(maps.Keys(getters)) {
+		database, ok := schema.ResolveTypeDatabase(getters[name].Returns)
+		if ok && ToPhrase(dropGetter(name)) == ToPhrase(command.Target) {
+			return database
+		}
+	}
+	database, _ := schema.ResolveTypeDatabase(command.Target)
+	return database
 }

@@ -60,11 +60,13 @@ export function CreateCoatFile(modID: string, name: string, script: string): $Ca
 }
 
 /**
- * EditProperty returns the edits that set one property of a block. It returns an error if the file is not in the
- * workspace or no block starts at the given range.
+ * EditProperties returns the edits that make the given settings in a file. A key a block writes has its value
+ * replaced. The keys a block does not write are added together as its last statements, in the order given. Every edit
+ * is made against the file's text before any of them. It returns an error if the file is not in the workspace or no
+ * block starts where a setting's range does.
  */
-export function EditProperty(path: string, block: lsp$0.Range, key: string, value: string): $CancellablePromise<lsp$0.Edit[] | null> {
-    return $Call.ByID(4094060315, path, block, key, value);
+export function EditProperties(path: string, settings: $models.Setting[] | null): $CancellablePromise<lsp$0.Edit[] | null> {
+    return $Call.ByID(2779261435, path, settings);
 }
 
 /**
@@ -87,8 +89,9 @@ export function ExportPNG(target: string, data: string | null): $CancellableProm
 /**
  * FindPictureFiles returns the pictures that Save as DDS saves for the given path: the picture itself, or for a folder
  * the pictures directly in it, by name, which are its images that are not DDS files. Each picture keeps the settings
- * of the DDS of the same name beside it, else of the game's own DDS at the place its DDS will have; a picture with
- * neither has no reference. It returns an error if no workspace is open, or a folder is outside it or cannot be read.
+ * of the DDS of the same name beside it, else of the game's own DDS at the place its DDS will have. A picture with
+ * neither, or whose DDS has a header that cannot be read, has no reference. It returns an error if no workspace is
+ * open, or a folder is outside it or cannot be read.
  */
 export function FindPictureFiles(path: string): $CancellablePromise<$models.PictureFiles> {
     return $Call.ByID(2619042612, path);

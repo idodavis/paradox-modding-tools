@@ -47,6 +47,33 @@ const (
 	ReasonUnsettled     Reason = "unsettled"
 )
 
+// Reasons holds each reason in words: its label, and for a reason a contest's winner can have, why the winner wins at
+// length, as a template the contest's facts fill: {folder}, {file}, {winner}, {beaten} and {beatenFile}.
+var Reasons = map[Reason]struct{ Label, Why string }{
+	ReasonLast: {Label: "Last file by name", Why: "The game reads every file in {folder} in order of file name and " +
+		"keeps the copy it reads last. {winner}'s file, {file}, comes after {beaten}'s {beatenFile}, so its copy " +
+		"wins. Changing the load order doesn't change this."},
+	ReasonFirst: {Label: "First file by name", Why: "The game reads every file in {folder} in order of file name and " +
+		"keeps the first copy it reads. {winner}'s file, {file}, comes before {beaten}'s {beatenFile}, so its copy " +
+		"wins. Changing the load order doesn't change this."},
+	ReasonPlayset: {Label: "Lower in the load order", Why: "The game keeps the copy from the mod lowest in the load " +
+		"order. {winner} is lower than {beaten}, so its copy wins. Moving a mod in the load order changes this."},
+	ReasonPath: {Label: "Same path, lower in the load order", Why: "Another copy would win, but it is in a file the " +
+		"game never reads: a file at the same path, lower in the load order, hides it. Of the copies the game reads, " +
+		"it keeps {winner}'s."},
+	ReasonPriority: {Label: "Higher override priority", Why: "The game keeps the copy with the highest override " +
+		"priority, whatever the file names or the load order. {winner}'s copy has the highest, so it wins."},
+	ReasonMode: {Label: "By its entry mode", Why: "The game applies entry modes, such as REPLACE:, after every plain " +
+		"copy, and the last one that creates or replaces the definition wins: {winner}'s, in {file}."},
+	ReasonMerge:    {Label: "Combined"},
+	ReasonInjected: {Label: "Injected"},
+	ReasonCombined: {Label: "Combined"},
+	ReasonReplace: {Label: "After a replace_path", Why: "The game's own copy would win, but a mod's replace_path " +
+		"makes the game skip the game's files in that folder. Of the copies the game reads, it keeps {winner}'s."},
+	ReasonReplaceFolder: {Label: "In a replace folder"},
+	ReasonUnsettled:     {Label: "Not documented"},
+}
+
 // A Cause is what leaves the choice of a kept copy open: a tie of priorities, a key the game may read as an entry
 // mode, an INJECT no source settles, or a later mod's replace_path.
 type Cause string

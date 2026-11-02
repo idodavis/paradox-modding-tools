@@ -48,6 +48,9 @@ type Node struct {
 	Deep       bool       `json:"deep"`   // the depth stopped at it, and it links further to a next step
 	// Fires is every firing it makes, in the order written. It is nil for a fold and outside a graph and a detail.
 	Fires []Edge `json:"fires,omitempty"`
+	// Rows are the lines it shows open: its firings grouped by the blocks that decide them, the rest folded past the
+	// fan-out. They are nil for a fold and outside a graph.
+	Rows []Row `json:"rows,omitempty"`
 }
 
 // An Edge is one firing, from a firer to what it fires.
@@ -61,6 +64,20 @@ type Edge struct {
 	// Via is the scripted effects passed through, when they are not drawn as nodes.
 	Via  []string `json:"via,omitempty"`
 	Site lsp.Site `json:"site"` // where the firing is written
+}
+
+// A Row is one line of an open node: the firings written in the same blocks, a block the rows under it share, or the
+// fold of the firings past the fan-out.
+type Row struct {
+	// Step is the block that decides its firings, or the one a header row stands for. It is nil for a firing written
+	// plainly and for a fold.
+	Step   *Step  `json:"step,omitempty"`
+	Scopes []Step `json:"scopes,omitempty"` // the links to other scopes its firings are written in
+	Fires  []Edge `json:"fires,omitempty"`  // nil for a header row and a fold
+	Nested bool   `json:"nested,omitempty"` // under a header row
+	Header bool   `json:"header,omitempty"`
+	Delay  string `json:"delay,omitempty"` // the delay of its first firing, in words
+	More   int    `json:"more,omitempty"`  // the firings a fold stands for; 0 for any other row
 }
 
 // A Filter says what the graph shows and how far it reaches from its root.
@@ -104,7 +121,7 @@ type reach struct {
 }
 
 // BuildGraph builds the graph of what a root fires and what fires it, under a filter. Each definition's node holds
-// every firing it makes. It returns an error if the game keeps no definition of the root.
+// every firing it makes and the rows it shows open. It returns an error if the game keeps no definition of the root.
 func (gph *Service) BuildGraph(root string, filter Filter) (Graph, error) {
 	ws, err := gph.Workspace.Session()
 	if err != nil {
@@ -123,6 +140,7 @@ func (gph *Service) BuildGraph(root string, filter Filter) (Graph, error) {
 	for position, node := range reach.nodes {
 		if node.Count == 0 {
 			reach.nodes[position].Fires = makeEdges(ws, mods, listFires(ws, mods, node.Definition, filter.Follow))
+			reach.nodes[position].Rows = reach.listRows(node.ID, reach.nodes[position].Fires)
 		}
 	}
 	return Graph{
@@ -309,7 +327,7 @@ func (reach *reach) listLinks(site index.Site, forward bool) []index.Fire {
 func (reach *reach) fold(site index.Site, fires []index.Fire, forward bool, step int) []index.Fire {
 	parent := toID(reach.mods, site)
 	id := lo.Ternary(forward, "more:", "more-in:") + parent
-	if reach.filter.Fanout <= 0 || len(fires) <= reach.filter.Fanout || slices.Contains(reach.filter.Expand, id) {
+	if !reach.isFolded(len(fires), id) {
 		return fires
 	}
 	rest := fires[reach.filter.Fanout:]
@@ -323,6 +341,13 @@ func (reach *reach) fold(site index.Site, fires []index.Fire, forward bool, step
 	reach.nodes = append(reach.nodes, node)
 	reach.edges = append(reach.edges, lo.Ternary(forward, Edge{From: parent, To: id}, Edge{From: id, To: parent}))
 	return fires[:reach.filter.Fanout]
+}
+
+// isFolded reports whether the filter folds the rest of a node's firings, or of its rows, past the fan-out into the
+// fold with the given id, given how many there are. It folds none if the fan-out is 0, if there are no more than the
+// fan-out, or if the filter opens that fold.
+func (reach *reach) isFolded(count int, id string) bool {
+	return reach.filter.Fanout > 0 && count > reach.filter.Fanout && !slices.Contains(reach.filter.Expand, id)
 }
 
 // listFires returns what a node fires, including what the scripted effects it calls fire if the flag is set.
@@ -470,6 +495,67 @@ func (reach *reach) passDeep(hidden []Node, parents map[string]string) {
 			reach.nodes[position].Deep = true
 		}
 	}
+}
+
+// listRows returns the rows a node shows open, in the order its firings are written, one row for each group of its
+// firings. A row weighted or listed inside a branch of an if sits under a header row for that branch. Past the
+// fan-out, the rest are one fold row, unless the filter opens the node's fold.
+func (reach *reach) listRows(id string, fires []Edge) []Row {
+	groups := groupFires(fires)
+	var rest [][]Edge
+	if reach.isFolded(len(groups), "more:"+id) {
+		groups, rest = groups[:reach.filter.Fanout], groups[reach.filter.Fanout:]
+	}
+	var rows []Row
+	var header *Step // the branch the last header row stands for
+	for _, group := range groups {
+		steps := group[0].Steps
+		row := Row{Fires: group, Delay: group[0].Delay}
+		row.Scopes = lo.Filter(steps, func(step Step, _ int) bool { return step.Kind == kindScope })
+		if _, position, ok := lo.FindLastIndexOf(steps, isDeciding); ok {
+			row.Step = &steps[position]
+			_, branch, _ := lo.FindLastIndexOf(steps[:position], func(step Step) bool { return step.Kind == kindBranch })
+			row.Nested = branch >= 0 && row.Step.Kind != kindBranch
+			if row.Nested && (header == nil || header.Line != steps[branch].Line) {
+				header = &steps[branch]
+				rows = append(rows, Row{Step: header, Header: true})
+			}
+		}
+		rows = append(rows, row)
+	}
+	if len(rest) > 0 {
+		rows = append(rows, Row{More: len(lo.Flatten(rest))})
+	}
+	return rows
+}
+
+// groupFires returns a node's firings in groups, the groups in the order of their first firings. The firings a block
+// decides, written inside the blocks at the same lines, are one group, and a firing written plainly is a group of its
+// own.
+func groupFires(fires []Edge) [][]Edge {
+	var groups [][]Edge
+	positions := map[string]int{} // the position of each group a block decides, by the lines of its blocks
+	for _, edge := range fires {
+		if !slices.ContainsFunc(edge.Steps, isDeciding) {
+			groups = append(groups, []Edge{edge})
+			continue
+		}
+		lines := fmt.Sprint(lo.Map(edge.Steps, func(step Step, _ int) int { return step.Line }))
+		position, ok := positions[lines]
+		if !ok {
+			position = len(groups)
+			positions[lines] = position
+			groups = append(groups, nil)
+		}
+		groups[position] = append(groups[position], edge)
+	}
+	return groups
+}
+
+// isDeciding reports whether a block decides which of a definition's firings run: a branch of an if, a weighted
+// branch or a list.
+func isDeciding(step Step) bool {
+	return step.Kind == kindBranch || step.Kind == kindWeight || step.Kind == kindList
 }
 
 // toKey returns a text that is the same for two edges exactly when they go between the same nodes with the same delay

@@ -160,8 +160,10 @@ const { data: states } = useQuery(() => ({
   enabled: workspace.isOpen() && !!drawnWindow.value,
 }));
 const { mutate: writePosition } = useMutation({
-  mutation: async ({ moving, text }: { moving: Drag; text: string }) =>
-    applyEdits(model, (await draw.EditProperty(model.place.path, moving.instance.range, moving.key, text)) ?? []),
+  mutation: async ({ moving, text }: { moving: Drag; text: string }) => {
+    const setting = { block: moving.instance.range, key: moving.key, value: text };
+    applyEdits(model, (await draw.EditProperties(model.place.path, [setting])) ?? []);
+  },
   onError: () => (drag.value = null),
 });
 const asyncStatus = computed(() => (isCoat.value ? coatStatus : windowStatus).value);
@@ -197,19 +199,7 @@ const blocks = computed(() => {
   }
   return drawnCoat.value?.layers?.map(({ place, range }, id) => ({ id, parent: -1, place, range })) ?? [];
 });
-const missing = computed(() => {
-  const window = drawnWindow.value;
-  if (!window) return [];
-  return (window.widgets ?? []).flatMap((widget) =>
-    listProperties(window, widget.properties)
-      .filter((property) => property.origin === "missing")
-      .map((property) => ({
-        id: widget.id,
-        text: `${property.key} ${property.value}`,
-        detail: widget.name || widget.type,
-      })),
-  );
-});
+const missing = computed(() => drawnWindow.value?.missing ?? []);
 const lists = computed(() => [
   {
     label: "missing",
@@ -226,7 +216,7 @@ const lists = computed(() => [
     rows: file.value.hidden.map((id) => {
       const widget = drawnWindow.value?.widgets?.[id];
       return {
-        id,
+        widget: id,
         text: widget ? widget.name || widget.type : (drawnCoat.value?.layers?.[id]?.texture ?? ""),
         detail: "",
       };
@@ -776,7 +766,7 @@ function applyKey(event: KeyboardEvent): void {
                       <button
                         type="button"
                         class="flex min-w-0 grow flex-col px-1.5 py-1 text-start"
-                        @click="store.select(model.place.path, row.id)"
+                        @click="store.select(model.place.path, row.widget)"
                       >
                         <span class="truncate text-toned" :class="list.isHidden && 'font-mono'">{{ row.text }}</span>
                         <span v-if="row.detail" class="truncate font-mono text-11 text-dimmed">{{ row.detail }}</span>
@@ -789,7 +779,7 @@ function applyKey(event: KeyboardEvent): void {
                         size="xs"
                         square
                         aria-label="Show"
-                        @click="store.hide(model.place.path, row.id, false)"
+                        @click="store.hide(model.place.path, row.widget, false)"
                       />
                     </li>
                   </ul>

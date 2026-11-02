@@ -29,6 +29,9 @@ const (
 	SourceWiki                   // the community wiki, taken where no game source contradicts it
 	SourceVanilla                // the install's own files: evidence, never a claim that accuses
 	SourceInferred               // no source states it: written as inferred, it never fails a verdict
+	// SourceDefinitions is what a definition in the files says its name takes. It claims on fields of its own, so its
+	// rank among the others is never tried.
+	SourceDefinitions
 )
 
 // A Program is how a game is started on one operating system: its executable and the flags for debug mode. A game
@@ -77,9 +80,12 @@ type Game struct {
 	DecisionEffects []string `json:"-"`
 	// MessageTitle is the localization key of a message's title where the message writes none, with its name at %s.
 	// "" means the name itself.
-	MessageTitle string   `json:"-"`
-	GUI          GameGUI  `json:"-"`
-	Coat         GameCoat `json:"-"`
+	MessageTitle string `json:"-"`
+	// BookmarkFolder is the folder of the files that write the game's bookmarks, and SetupKey the key in a bookmark
+	// whose value is the folder of its start setup. A game with a single start has neither.
+	BookmarkFolder, SetupKey string   `json:"-"`
+	GUI                      GameGUI  `json:"-"`
+	Coat                     GameCoat `json:"-"`
 }
 
 // The supported games' ids.
@@ -119,10 +125,11 @@ var PictureExtensions = []string{".png", ".gif", ".jpg", ".jpeg", ".webp"}
 // WikiAPI is the address of a game's wiki API, with %s for the game's id.
 const WikiAPI = "https://%s.paradoxwikis.com/api.php"
 
-// The revision log every start writes, and the launcher's settings file.
+// The revision log every start writes, the launcher's settings file and the build's checksum.
 const (
 	revisionLogRel = "logs/code_revisions.log"
 	launcherFile   = "launcher/launcher-settings.json"
+	checksumRel    = "binaries/checksum.txt"
 )
 
 // ErrorLog is the log in which the game writes its errors, each line starting with the time and the source file and
@@ -172,7 +179,7 @@ var games = map[string]*Game{
 		},
 		ErrorLocations: []*regexp.Regexp{errorLogFileLine, errorLogQuotedLine, errorLogNearLine, errorLogPathLine},
 		// _events.info, _event_themes.info
-		Events: GameEvents{ScopeKey: "scope", DefaultScope: "character", Picture: Picture{
+		Events: GameEvents{DefaultScope: "character", Picture: Picture{
 			Chains: []PictureChain{
 				{
 					Steps:   []PictureStep{{Key: "override_background/reference", Database: "event_backgrounds"}},
@@ -308,6 +315,8 @@ var games = map[string]*Game{
 		ConceptPrefix: "game_concept_",
 		// the wiki's Mod compatibility, l.209, and Localization, l.2, name only this form
 		LocReplaceFolders: []string{"localization/%s/replace"},
+		// main_menu/common/bookmarks/00_bookmarks.txt:4
+		BookmarkFolder: "common/bookmarks", SetupKey: "setup_folder",
 		GUI: GameGUI{
 			Holders:    map[string]string{"lateralview": "lateralview_left_layer"},
 			Undeclared: []string{"axis", "plotline", "screen_grab", "newsfeed_carousel"},
@@ -321,10 +330,10 @@ var games = map[string]*Game{
 	},
 }
 
-// CanAccuse reports whether a claim from this source is firm enough to fail a verdict. Only the dumps, the docs and
-// the wiki are.
+// CanAccuse reports whether a claim from this source is firm enough to fail a verdict. Only the dumps, the docs, the
+// wiki and the definitions are.
 func (source Source) CanAccuse() bool {
-	return source == SourceDumps || source == SourceDocs || source == SourceWiki
+	return source == SourceDumps || source == SourceDocs || source == SourceWiki || source == SourceDefinitions
 }
 
 // LookupGame returns the game with the given id, or nil if this build does not support it.

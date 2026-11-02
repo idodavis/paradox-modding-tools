@@ -65,6 +65,11 @@ export interface Card {
     "command"?: string;
 
     /**
+     * the id of the lexicon class that lists it; "" for none
+     */
+    "lexicon"?: string;
+
+    /**
      * what its block holds, in words
      */
     "holds"?: string;
@@ -141,6 +146,22 @@ export interface CardScope {
     "link": string;
     "type": string;
     "about": string;
+}
+
+/**
+ * A Class is one class of the wiki's lexicon. A card and a completion call a command the game declares by the id of
+ * its class.
+ */
+export interface Class {
+    /**
+     * such as effect
+     */
+    "id": string;
+
+    /**
+     * the lexicon tab's, such as Effects
+     */
+    "label": string;
 }
 
 /**
@@ -234,6 +255,16 @@ export interface Completion {
  */
 export interface Diagnostic {
     "code": string;
+
+    /**
+     * its code's
+     */
+    "level": string;
+
+    /**
+     * its code's template filled with its facts, as text
+     */
+    "message": string;
     "range": Range;
     "facts": { [_ in string]?: string } | null;
 
@@ -301,6 +332,54 @@ export interface Legend {
 }
 
 /**
+ * A Level is one level of a finding: its words, its look on the page, and whether it counts as a problem and means
+ * the game loses something.
+ */
+export interface Level {
+    "id": string;
+    "label": string;
+
+    /**
+     * the page's icon
+     */
+    "icon": string;
+
+    /**
+     * the page's color
+     */
+    "color": string;
+
+    /**
+     * such as critical problem
+     */
+    "noun": string;
+    "nouns": string;
+
+    /**
+     * it counts as a problem; info does not
+     */
+    "problem": boolean;
+
+    /**
+     * the game loses something, so a mod needs a fix
+     */
+    "fix": boolean;
+}
+
+/**
+ * A Part is one piece of a sentence: plain text, or a fact drawn in its style, such as a mod's name, a code, a count
+ * or a path.
+ */
+export interface Part {
+    "text": string;
+
+    /**
+     * "", mod, code, count or path
+     */
+    "style"?: string;
+}
+
+/**
  * A Range is a span as Monaco counts it: lines and columns from one, the column in UTF-16 code units, the end
  * exclusive.
  */
@@ -352,6 +431,11 @@ export interface Site {
      * as index.ResolveSite gives it; unsettled where no source says
      */
     "reason"?: index$0.Reason;
+
+    /**
+     * the reason in words
+     */
+    "label"?: string;
     "defines"?: string[] | null;
 }
 
@@ -387,6 +471,14 @@ export interface Symbol {
      * for the icon
      */
     "category": schema$0.Category;
+}
+
+/**
+ * A Topic is one topic of the checks, in words.
+ */
+export interface Topic {
+    "id": string;
+    "label": string;
 }
 
 /**

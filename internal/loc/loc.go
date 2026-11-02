@@ -34,6 +34,12 @@ type File struct {
 	Lines    jomini.Lines   `json:"-"`
 }
 
+// A Language is one localization language: the folder the game keeps it in, and its name in English.
+type Language struct {
+	Folder string `json:"folder"`
+	Label  string `json:"label"`
+}
+
 var (
 	// headerLine matches the `l_<language>:` line that opens a file, with an optional comment after it.
 	headerLine = regexp.MustCompile(`(?i)^[ \t]*l_([a-z_]+):[ \t]*(#.*)?$`)
@@ -43,6 +49,13 @@ var (
 	// the language, the language, which is letters and underscores, and the ending.
 	languageSuffix = regexp.MustCompile(`(?i)^(.*_l_)([a-z_]+)(\.yml)$`)
 )
+
+// languageLabels holds each localization language's name in English, by the folder the game keeps it in.
+var languageLabels = map[string]string{
+	"english": "English", "french": "French", "german": "German", "spanish": "Spanish", "russian": "Russian",
+	"korean": "Korean", "simp_chinese": "Simplified Chinese", "polish": "Polish", "turkish": "Turkish",
+	"braz_por": "Brazilian Portuguese", "japanese": "Japanese",
+}
 
 // Parse parses the text of a localization file. It takes the language from the `l_<language>:` header, else from the
 // `_l_<language>` ending of the file's name, else from its folder, all without case. The language is "" if none of
@@ -194,4 +207,10 @@ func EncodeAddition(text string, messages []Message) string {
 // ToLanguageKey returns the word the game writes a language as: its name after l_, as in l_english.
 func ToLanguageKey(language string) string {
 	return "l_" + language
+}
+
+// DescribeLanguage returns a localization language's name in English, from the folder the game keeps it in, such as
+// Simplified Chinese for simp_chinese. It returns the folder itself for a language it does not know.
+func DescribeLanguage(folder string) string {
+	return lo.ValueOr(languageLabels, folder, folder)
 }

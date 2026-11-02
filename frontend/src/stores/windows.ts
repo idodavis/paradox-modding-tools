@@ -6,7 +6,7 @@
  * The protocol, each message a row:
  * | message        | from → to        | carries                                   |
  * | state          | any → all        | its name, what it holds, its active file  |
- * | tab-requested  | any → the holder | a tab's id the asker wants                |
+ * | tab-requested  | any → all        | a tab's id the asker wants                |
  * | tab-handed     | holder → asker   | the tab with its unsaved text             |
  * | show           | any → one        | a place to show, where in it, and its source |
  * | page           | any → the main   | a route to show                           |
@@ -30,7 +30,6 @@ import * as app from "@services/app/service";
 import type { Place } from "@services/workspace/models";
 import { isPage, PAGES, WORKSPACE_TOOLS } from "../app/pages";
 import { findModel, openModel, saveUnsaved } from "../pages/ide/editor/models";
-import { parseTab } from "../pages/ide/editor/tabs";
 import { useEditorStore, type Source, type Tab } from "./editor";
 import { useWorkspaceStore } from "./workspace";
 
@@ -145,7 +144,7 @@ export const useWindowsStore = defineStore("windows", () => {
     const active = editor.activeFile();
     return {
       name: THIS_WINDOW,
-      files: [...new Set(editor.listTabs().map((tab) => parseTab(tab.id).key))],
+      files: [...new Set(editor.listTabs().map((tab) => tab.key))],
       active: active ? { ...active } : null,
     };
   });
@@ -153,11 +152,11 @@ export const useWindowsStore = defineStore("windows", () => {
   watch(state, sendState, { immediate: true });
   useEventListener(shared.channel, "message", ({ data }: MessageEvent<Message>) => {
     if (data.type === "state") updateWindow(data.state);
+    else if (data.type === "tab-requested") sendTab(data.tab, data.from);
     else if (data.type === "closing" && THIS_WINDOW === "main") receive(data);
   });
   useEventListener(own.channel, "message", ({ data }: MessageEvent<Message>) => {
     if (data.type === "tab-handed") receive(data);
-    else if (data.type === "tab-requested") sendTab(data.tab, data.from);
     else if (data.type === "show") editor.show(data.place, data.selection, data.source);
     else if (data.type === "page") void router.push(data.path);
     else if (data.type === "wiki") void showLookup(data.lookup);
@@ -196,8 +195,8 @@ export const useWindowsStore = defineStore("windows", () => {
 
   /** toHanded makes a tab ready to send: a copy of it, its file's place and its unsaved text. None without a place. */
   function toHanded(tab: Tab): HandedTab[] {
-    const place = editor.placeOf(tab.id);
-    const model = findModel(parseTab(tab.id).key);
+    const place = editor.placeOf(tab.key);
+    const model = findModel(tab.key);
     return place
       ? [{ tab: { ...tab }, place: { ...place }, text: model?.unsaved ? model.model.getValue() : null }]
       : [];
@@ -215,12 +214,12 @@ export const useWindowsStore = defineStore("windows", () => {
   async function receiveTabs(handed: { from: WindowName; tabs: HandedTab[] }): Promise<void> {
     const sender = others.get(handed.from);
     if (sender) {
-      const keysHanded = handed.tabs.map(({ tab }) => parseTab(tab.id).key);
+      const keysHanded = handed.tabs.map(({ tab }) => tab.key);
       others.set(handed.from, { ...sender, files: sender.files.filter((key) => !keysHanded.includes(key)) });
     }
     for (const { tab, place, text } of handed.tabs) {
-      if (parseTab(tab.id).tab === "file") editor.show(place);
-      else editor.open(tab.id, place);
+      if (tab.side) editor.open(tab, place);
+      else editor.show(place);
       if (text !== null) (await openModel(place)).model.setValue(text);
     }
     // handed tabs open in Code, which showing a drawable file with the setting on would have changed; a window that
@@ -279,12 +278,10 @@ export const useWindowsStore = defineStore("windows", () => {
   };
 
   /**
-   * requestTab asks the window that holds a tab to hand it over. The tab arrives with its unsaved text and opens here.
+   * requestTab asks the other windows for a tab by its id. The one that holds it hands it over, and the tab arrives
+   * with its unsaved text and opens here.
    */
-  const requestTab = (tabId: string): void => {
-    const holder = holderOf(parseTab(tabId).key);
-    if (holder && holder !== THIS_WINDOW) link(holder).post({ type: "tab-requested", tab: tabId, from: THIS_WINDOW });
-  };
+  const requestTab = (tabId: string): void => shared.post({ type: "tab-requested", tab: tabId, from: THIS_WINDOW });
 
   /**
    * showElsewhere shows a place in the given window, with the given position or range selected if any, as the given

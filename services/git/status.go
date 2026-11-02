@@ -42,9 +42,9 @@ var statuses = []struct{ letters, status string }{
 	{"A", "added"}, {"D", "deleted"}, {"MT", "modified"}, {"RC", "renamed"},
 }
 
-// ReadStatus returns a repository's status. The error is git's if the folder is in no repository.
-func (git *Service) ReadStatus(dir string) (Status, error) {
-	stdout, err := git.run(dir, "status", "--porcelain=v2", "-z", "--branch", "--ignored")
+// ReadStatus returns the status of the repository at the given root folder. The error is git's if there is none.
+func (git *Service) ReadStatus(root string) (Status, error) {
+	stdout, err := git.run(root, "status", "--porcelain=v2", "-z", "--branch", "--ignored")
 	if err != nil {
 		return Status{}, err
 	}
@@ -67,10 +67,6 @@ func (git *Service) ReadStatus(dir string) (Status, error) {
 			ignored = append(ignored, record[2:])
 		}
 	}
-	root, err := git.resolveRepository(dir)
-	if err != nil {
-		return Status{}, err
-	}
 	git.locateChanges(root, status.Changes)
 	status.Ignored = git.locate(root, ignored)
 	return status, nil
@@ -79,7 +75,7 @@ func (git *Service) ReadStatus(dir string) (Status, error) {
 // A Ref is one branch, remote branch or tag.
 type Ref struct {
 	Name string `json:"name"`
-	Type string `json:"type"` // branch, remote, tag
+	Type string `json:"type"` // branch, remote, tag; "" for another name a commit is decorated with
 	Hash string `json:"hash"`
 	// Date is when the commit it points to was made, or when an annotated tag was. It is the zero time for a ref to
 	// an object with no date, such as a tag of a tree.
@@ -99,10 +95,8 @@ func (git *Service) ListRefs(dir string) ([]Ref, error) {
 	for line := range strings.Lines(stdout) {
 		fields := strings.Split(strings.TrimSuffix(line, "\n"), "\x00")
 		date, _ := time.Parse(time.RFC3339, fields[2])
-		for prefix, refType := range refTypes {
-			if name, ok := strings.CutPrefix(fields[0], prefix); ok {
-				refs = append(refs, Ref{Name: name, Type: refType, Hash: fields[1], Date: date, Current: fields[3] == "*"})
-			}
+		if name, refType := classifyRef(fields[0]); refType != "" {
+			refs = append(refs, Ref{Name: name, Type: refType, Hash: fields[1], Date: date, Current: fields[3] == "*"})
 		}
 	}
 	return refs, nil
@@ -160,4 +154,15 @@ func classifyStatus(letters string) string {
 		}
 	}
 	return ""
+}
+
+// classifyRef returns the short name of a full ref, such as main for refs/heads/main, and its type: branch, remote or
+// tag. A ref under none of their prefixes comes back whole, with no type.
+func classifyRef(ref string) (string, string) {
+	for prefix, refType := range refTypes {
+		if short, ok := strings.CutPrefix(ref, prefix); ok {
+			return short, refType
+		}
+	}
+	return ref, ""
 }

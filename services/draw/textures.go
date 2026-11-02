@@ -9,13 +9,11 @@ import (
 	"maps"
 	"os"
 	"path"
-	"path/filepath"
 	"slices"
 	"strings"
 
 	"github.com/samber/lo"
 
-	"paradox-modding-tools/internal/files"
 	"paradox-modding-tools/internal/game"
 	"paradox-modding-tools/internal/index"
 	"paradox-modding-tools/internal/jomini"
@@ -24,14 +22,17 @@ import (
 	"paradox-modding-tools/services/workspace"
 )
 
-// A library finds the pictures and colors that a session's definitions show, and keeps what it looks up.
+// A library finds what a session's files define and show: the definition a file draws, and the pictures and colors of
+// definitions. It keeps what it looks up.
 type library struct {
 	ws      *workspace.Session
 	mods    *index.Index
-	folders map[string]string      // the icon folders of the game, by the define that names each
-	defines map[string]string      // the defines read so far, by name; "" for one the game lacks
-	firsts  map[PictureList]string // the first definition that shows a list's picture, by the list; "" for none
-	colors  map[PictureList]string // the color of the first definition that writes a list's color; "" for none
+	folders map[string]string        // the icon folders of the game, by the define that names each
+	defines map[string]string        // the defines read so far, by name; "" for one the game lacks
+	firsts  map[PictureList]string   // the first definition that shows a list's picture, by the list; "" for none
+	colors  map[PictureList]string   // the color of the first definition that writes a list's color; "" for none
+	kinds   map[string]string        // the icon define of each kind looked up; "" for one no define names
+	objects map[PictureList][]string // the folder objects of each list walked
 }
 
 // ExportPNG writes a PNG that the page made, such as a coat as drawn or one mip level of an image, to the given file,
@@ -155,36 +156,33 @@ func (library *library) findLevelPicture(list PictureList) string {
 	}
 	words := strings.Fields(schema.ToPhrase(list.Type))
 	prefix := game.GUI.Levels.Prefix + strings.Join(words[:len(words)-1], "_") + "_"
-	var candidates []files.File
-	for _, image := range library.mods.ListImages(folder + "/") {
-		rel := strings.ToLower(filepath.ToSlash(image.Rel))
-		if path.Dir(rel) == strings.ToLower(folder) && strings.HasPrefix(path.Base(rel), prefix) {
-			candidates = append(candidates, image)
-		}
-	}
-	if len(candidates) == 0 {
-		return ""
-	}
-	return slices.MinFunc(candidates, func(first, second files.File) int {
-		return cmp.Compare(strings.ToLower(first.Rel), strings.ToLower(second.Rel))
-	}).Path
+	picture, ok := lo.Find(listImages(library.ws, library.mods, folder), func(image Image) bool {
+		return strings.HasPrefix(strings.ToLower(image.Label), prefix)
+	})
+	return lo.Ternary(ok, picture.Place.Path, "")
 }
 
 // listFolderObjects returns the subfolders of a list's folder that hold the image its argument names, one per object,
 // in the order of their names.
 func (library *library) listFolderObjects(list PictureList) []string {
+	if library.objects == nil {
+		library.objects = map[PictureList][]string{}
+	}
+	if objects, ok := library.objects[list]; ok {
+		return objects
+	}
 	folder := strings.ToLower(list.Folder) + "/"
 	var objects []string
 	for _, image := range library.mods.ListImages(folder) {
-		rel := strings.ToLower(filepath.ToSlash(image.Rel))
-		rest := rel[strings.Index(rel, folder)+len(folder):]
-		object, file, ok := strings.Cut(rest, "/")
+		_, rest := library.ws.Game.SplitStage(strings.ToLower(image.Rel))
+		object, file, ok := strings.Cut(strings.TrimPrefix(rest, folder), "/")
 		if ok && strings.TrimSuffix(file, path.Ext(file)) == strings.ToLower(list.Argument) {
 			objects = append(objects, object)
 		}
 	}
 	slices.Sort(objects)
-	return slices.Compact(objects)
+	library.objects[list] = slices.Compact(objects)
+	return library.objects[list]
 }
 
 // findShown returns the image file a list's binding shows of one definition or folder, or "" if there is none.
@@ -380,15 +378,24 @@ func (library *library) findIcon(icon, preferred string) string {
 // findIconDefine returns the define that names the icon folder of a kind of object, which it writes in the singular or
 // the plural: GRAPHICAL_CULTURES_ICON_PATH for a graphical culture. It returns "" where no define does.
 func (library *library) findIconDefine(kind string) string {
+	if library.kinds == nil {
+		library.kinds = map[string]string{}
+	}
+	define, known := library.kinds[kind]
+	if known {
+		return define
+	}
 	folders := library.listIconFolders()
 	phrase := schema.ToPhrase(kind)
-	for _, define := range slices.Sorted(maps.Keys(folders)) {
-		stem := strings.ToLower(strings.TrimSuffix(define, game.GUI.IconPathSuffix))
+	for _, key := range slices.Sorted(maps.Keys(folders)) {
+		stem := strings.ToLower(strings.TrimSuffix(key, game.GUI.IconPathSuffix))
 		if game.DescribeDefinition(stem, false) == phrase {
-			return define
+			define = key
+			break
 		}
 	}
-	return ""
+	library.kinds[kind] = define
+	return define
 }
 
 // listIconFolders returns the folder that each define of the game's GUI group names as holding icons, by the define's
@@ -472,7 +479,8 @@ func toDefineWords(kind string) string {
 	return strings.ToUpper(strings.ReplaceAll(schema.ToPhrase(kind), " ", "_"))
 }
 
-// resolveBindings gives a widget the pictures, masks, colors and sample texts its data bindings lead to.
+// resolveBindings gives a widget the pictures, masks, colors and sample texts its data bindings lead to. It keeps the
+// list of each binding that gives the widget a color.
 func (resolver *resolver) resolveBindings(window *Window, widget *Widget, context context) {
 	schema := resolver.ws.Schema
 	for property := range window.listProperties(*widget) {
@@ -489,8 +497,9 @@ func (resolver *resolver) resolveBindings(window *Window, widget *Widget, contex
 		case slices.Contains(game.GUI.MaskKeys, property.Key) && len(call.Steps) > 0 && widget.Textures[property.Key] == "":
 			resolver.resolveListedPicture(widget, property.Key, call)
 		case function.Returns == game.GUI.ColorType:
-			if color := resolver.library.findColor(call); color != "" {
-				widget.Colors[property.Key] = color
+			if color, list := resolver.library.findColor(call); color != "" {
+				list.Key, widget.Colors[property.Key] = property.Key, color
+				resolver.colorLists[widget.ID] = append(resolver.colorLists[widget.ID], list)
 			}
 		}
 	}
@@ -591,21 +600,22 @@ func listDefinitionImages(ws *workspace.Session, mods *index.Index, definition c
 	return lo.Uniq(append(images, conditional...))
 }
 
-// findColor returns the CSS color a binding of a definition's color leads to, or "" if there is none.
-func (library *library) findColor(call jomini.Call) string {
+// findColor returns the CSS color a binding of a definition's color leads to, and the list of the definitions it
+// reads. The color is "" if there is none.
+func (library *library) findColor(call jomini.Call) (string, PictureList) {
 	list, references := library.makePictureList("", call)
 	if list.Field == "" {
-		return ""
+		return "", list
 	}
 	for _, reference := range references {
 		if color := library.findFieldColor(list, reference); color != "" {
-			return color
+			return color, list
 		}
 	}
 	if slices.ContainsFunc(references, func(reference schema.Reference) bool { return reference.Database == list.Database }) {
-		return ""
+		return "", list
 	}
-	return library.findFirstColor(list)
+	return library.findFirstColor(list), list
 }
 
 // findFirstColor returns the first CSS color a list's definitions write in its field, or "" if there is none.

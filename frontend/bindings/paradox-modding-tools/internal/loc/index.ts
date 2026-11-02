@@ -6,5 +6,6 @@ export {
 } from "./models.js";
 
 export type {
+    Language,
     Segment
 } from "./models.js";

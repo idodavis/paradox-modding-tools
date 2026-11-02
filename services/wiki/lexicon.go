@@ -30,13 +30,8 @@ type LexiconRow struct {
 	Defined *lsp.Site `json:"defined,omitempty"`
 }
 
-// declaredClasses are the lexicon classes of the commands the dumps declare, each with the word the dumps use for
-// what declares it.
-var declaredClasses = map[string]string{
-	"effect":  game.DeclaredEffect,
-	"trigger": game.DeclaredTrigger,
-	"link":    game.DeclaredLink,
-}
+// ListClasses returns the lexicon's classes, in the order its tabs show them.
+func (wik *Service) ListClasses() []lsp.Class { return lsp.Classes }
 
 // BuildLexicon builds the lexicon rows of the given class: effect, trigger, link, scope or function. Effects and
 // triggers take in the scripted ones the workspace defines. The rows are sorted by name, letter case aside, so each
@@ -63,36 +58,37 @@ func (wik *Service) BuildLexicon(class string) ([]LexiconRow, error) {
 	return rows, err
 }
 
-// buildLexicon builds the lexicon rows of the given class from the given index of the mods, as BuildLexicon describes
-// them. It returns an error if the class is none of the five.
-func buildLexicon(ws *workspace.Session, mods *index.Index, class string) ([]LexiconRow, error) {
+// buildLexicon builds the lexicon rows of the class with the given id from the given index of the mods, as
+// BuildLexicon describes them. It returns an error if the id is none of the five classes'.
+func buildLexicon(ws *workspace.Session, mods *index.Index, id string) ([]LexiconRow, error) {
 	var rows []LexiconRow
-	switch declared := declaredClasses[class]; {
-	case declared != "":
+	class, _ := lo.Find(lsp.Classes, func(class lsp.Class) bool { return class.ID == id })
+	switch {
+	case class.Declared != "":
 		for name, command := range ws.Schema.Commands {
-			if slices.Contains(command.Declared, declared) {
+			if slices.Contains(command.Declared, class.Declared) {
 				rows = append(rows, LexiconRow{
-					Class: class, Name: name, Blurb: command.Blurb, Usage: command.Usage, Scopes: command.Scopes,
+					Class: id, Name: name, Blurb: command.Blurb, Usage: command.Usage, Scopes: command.Scopes,
 					Target: command.Target, Examples: toExamples(ws, mods, command.Examples),
 				})
 			}
 		}
-		rows = append(rows, listScripted(ws, mods, class)...)
-	case class == "scope":
+		rows = append(rows, listScripted(ws, mods, id)...)
+	case id == "scope":
 		for name := range ws.Schema.Scopes {
-			rows = append(rows, LexiconRow{Class: class, Name: name, Examples: []lsp.Site{}})
+			rows = append(rows, LexiconRow{Class: id, Name: name, Examples: []lsp.Site{}})
 		}
-	case class == "function":
+	case id == "function":
 		for _, dataType := range ws.Schema.DataTypes {
 			for _, function := range dataType.Functions {
 				rows = append(rows, LexiconRow{
-					Class: class, Name: dataType.Name + "." + function.Name, Blurb: function.Blurb,
+					Class: id, Name: dataType.Name + "." + function.Name, Blurb: function.Blurb,
 					Target: function.Returns, Examples: toExamples(ws, mods, function.Examples),
 				})
 			}
 		}
 	default:
-		return nil, fmt.Errorf("%q is not a lexicon class", class)
+		return nil, fmt.Errorf("%q is not a lexicon class", id)
 	}
 	slices.SortFunc(rows, func(first, second LexiconRow) int {
 		return cmp.Or(strings.Compare(strings.ToLower(first.Name), strings.ToLower(second.Name)), strings.Compare(first.Name, second.Name))

@@ -248,9 +248,6 @@ func (app *Service) CrashedLastRun() bool {
 	return crashed
 }
 
-// LogPath returns the path of pmt.log.
-func (app *Service) LogPath() string { return resolveLog(app.Config.Dirs) }
-
 // BuildDiagnostics returns what a bug report needs: the version, the system, the installs and the end of pmt.log.
 func (app *Service) BuildDiagnostics() string {
 	var report strings.Builder

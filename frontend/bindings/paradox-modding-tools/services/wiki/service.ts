@@ -13,6 +13,10 @@ import { Call as $Call, CancellablePromise as $CancellablePromise } from "@wails
 
 // eslint-disable-next-line @typescript-eslint/ban-ts-comment
 // @ts-ignore: Unused imports
+import * as lsp$0 from "../lsp/models.js";
+
+// eslint-disable-next-line @typescript-eslint/ban-ts-comment
+// @ts-ignore: Unused imports
 import * as $models from "./models.js";
 
 /**
@@ -32,6 +36,13 @@ export function BuildLexicon($class: string): $CancellablePromise<$models.Lexico
  */
 export function FindPages(path: string): $CancellablePromise<$models.Summary[] | null> {
     return $Call.ByID(2861154981, path);
+}
+
+/**
+ * ListClasses returns the lexicon's classes, in the order its tabs show them.
+ */
+export function ListClasses(): $CancellablePromise<lsp$0.Class[] | null> {
+    return $Call.ByID(3673744072);
 }
 
 /**

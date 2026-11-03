@@ -189,7 +189,7 @@ export function Reveal(path: string, name: string, picks: { [_ in string]?: stri
 /**
  * WriteDDS writes each picture beside itself as a DDS, in BC3 blocks when compressed and else uncompressed, with or
  * without its mip levels, replacing a DDS of that name. It returns the files written. On an error it returns the ones
- * written before it, and the error names the picture and how many were written.
+ * written before it, and the error names the picture and, if any were written, how many.
  */
 export function WriteDDS(paths: string[] | null, compressed: boolean, mipmaps: boolean): $CancellablePromise<string[] | null> {
     return $Call.ByID(3500940746, paths, compressed, mipmaps);

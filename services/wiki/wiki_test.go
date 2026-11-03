@@ -17,6 +17,7 @@ import (
 	"golang.org/x/time/rate"
 
 	"paradox-modding-tools/internal/game"
+	"paradox-modding-tools/internal/schema"
 	"paradox-modding-tools/services/app"
 	"paradox-modding-tools/services/workspace"
 )
@@ -326,7 +327,7 @@ func checkFunctions(t *testing.T, wik *Service, ws *workspace.Session) {
 	for _, row := range rows {
 		typeName, functionName, ok := strings.Cut(row.Name, ".")
 		function := ws.Schema.DataTypes[typeName].Functions[functionName]
-		if !ok || row.Class != "function" || row.Target != function.Returns || row.Blurb != function.Blurb ||
+		if !ok || row.Class != "function" || row.Target != schema.ReturnType(function) || row.Blurb != function.Blurb ||
 			len(row.Examples) != len(function.Examples) {
 			t.Fatalf("row %+v does not match function %+v of %s", row, function, typeName)
 		}

@@ -309,7 +309,8 @@ var DumpPhrases = struct {
 	Iterates string   // a blurb opening with it and naming no target walks a list or variable map: scope unknown
 	NoScope  []string // scope names that name no scope
 	Literal  string   // the scope of a link whose name is a literal, as flag:the_boss's
-}{"Iterate through", []string{"none", "all", "none/any"}, "flag"}
+	Unnamed  string   // the return type of a data function whose type the dumps do not name
+}{"Iterate through", []string{"none", "all", "none/any"}, "flag", "[unregistered]"}
 
 // LinkMakers are the commands that save a name of one of the Links, by the command, or by command/key for a key in
 // its block: each with the link that reads the name back.

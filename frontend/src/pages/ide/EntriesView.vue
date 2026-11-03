@@ -87,10 +87,12 @@ const rows = computed<Row[]>(() => {
     ...group.map((entry) => ({ entry })),
   ]);
 });
-// the heading of the top row's kind, drawn over the list so that it stays at the top while its rows scroll
+// the heading of the top row's kind, drawn over the list so that it stays at the top while its rows scroll; none while
+// the top row is that heading itself
 const pinned = computed(() => {
   const top = scroll.value?.virtualizer?.range?.startIndex ?? 0;
-  return rows.value.slice(0, top + 1).findLast((row): row is Heading => "heading" in row);
+  if (rows.value[top] && "heading" in rows.value[top]) return undefined;
+  return rows.value.slice(0, top).findLast((row): row is Heading => "heading" in row);
 });
 const canvases = new WeakSet<HTMLCanvasElement>();
 

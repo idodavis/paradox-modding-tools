@@ -86,7 +86,7 @@ func buildLexicon(ws *workspace.Session, mods *index.Index, id string) ([]Lexico
 			for _, function := range dataType.Functions {
 				rows = append(rows, LexiconRow{
 					Class: id, Name: dataType.Name + "." + function.Name, Blurb: function.Blurb,
-					Target: function.Returns, Examples: toExamples(ws, mods, function.Examples),
+					Target: schema.ReturnType(function), Examples: toExamples(ws, mods, function.Examples),
 				})
 			}
 		}

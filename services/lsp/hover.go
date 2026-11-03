@@ -259,17 +259,32 @@ func describeKey(ws *workspace.Session, mods *index.Index, place workspace.Place
 	card.Scopes = nil
 }
 
-// describeFunction fills a card for the step of a data call at an offset, and returns false if there is none.
+// describeFunction fills a card for the step of a data call at an offset, and returns false if there is none. A step of
+// a call nested in an argument gets its card too, found with no data context.
 func describeFunction(card *Card, ws *workspace.Session, tree *jomini.Tree, call jomini.Call, datacontext string, offset int) bool {
 	position := slices.IndexFunc(call.Steps, func(candidate jomini.Step) bool { return candidate.Span.Contains(offset) })
 	if position < 0 {
-		return false
+		nested, ok := findNestedCall(call, offset)
+		return ok && describeFunction(card, ws, tree, nested, "", offset)
 	}
 	step := call.Steps[position]
 	function, _ := ws.Schema.FindFunction(call, datacontext, position)
-	card.What, card.Blurb, card.Returns = "data function", function.Blurb, function.Returns
+	card.What, card.Blurb, card.Returns = "data function", function.Blurb, schema.ReturnType(function)
 	card.Title, card.Range = step.Text, ToRange(tree.Src, tree.Lines, step.Span)
 	return true
+}
+
+// findNestedCall returns the call, written as an argument of a step of the given call, that covers an offset. It
+// returns false if none does.
+func findNestedCall(call jomini.Call, offset int) (jomini.Call, bool) {
+	arguments := lo.FlatMap(call.Steps, func(step jomini.Step, _ int) []jomini.Argument { return step.Arguments })
+	argument, ok := lo.Find(arguments, func(argument jomini.Argument) bool {
+		return argument.Call != nil && argument.Call.Span.Contains(offset)
+	})
+	if !ok {
+		return jomini.Call{}, false
+	}
+	return *argument.Call, true
 }
 
 // listSites returns the definitions a reference names, as seen from the file at the given place, the ones the game

@@ -669,6 +669,14 @@ func (schema *Schema) FindFunction(call jomini.Call, datacontext string, step in
 	return function, ok
 }
 
+// ReturnType returns the name of the type a data function returns. It returns "" if the dumps do not name the type.
+func ReturnType(function DataFunction) string {
+	if function.Returns == game.DumpPhrases.Unnamed {
+		return ""
+	}
+	return function.Returns
+}
+
 // FindUnlisted returns the first step of a data call that the dumps do not declare for the type before it, and that
 // type: the data context's, or Global's, for the first step. It returns false if the dumps declare every step, or the
 // type before the step is unknown.

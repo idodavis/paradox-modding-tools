@@ -165,8 +165,8 @@ export const useEditorStore = defineStore("editor", () => {
     },
     { deep: true },
   );
-  // a file changed on disk is read into its model; a deleted one closes its tabs, unless it has edits not saved, which
-  // stay to be saved again
+  // a file changed on disk is read into its model; a deleted file, or every file in a deleted folder, closes its tabs,
+  // unless it has edits not saved, which stay to be saved again
   Events.On("fs:changed", ({ data }) => {
     if (!data.deleted) {
       void applyChange(data.path);
@@ -174,10 +174,17 @@ export const useEditorStore = defineStore("editor", () => {
     }
     void loadQuery(placeQuery(data.path)).then((place) => {
       if (!place) return;
-      const id = tabId({ key: place.key });
-      while (!findModel(place.key)?.unsaved && find(id)) close(id);
+      for (const { key } of listUnder(place.key)) {
+        const id = tabId({ key });
+        while (!findModel(key)?.unsaved && find(id)) close(id);
+      }
     });
   });
+
+  /** listUnder lists the places of the open files whose key is the given one or lies under it, as in a folder. */
+  function listUnder(key: string): Place[] {
+    return [...places.values()].filter((place) => place.key === key || place.key.startsWith(`${key}/`));
+  }
 
   /** makeLayout makes a layout of one empty group. */
   function makeLayout(): Layout {
@@ -581,8 +588,7 @@ export const useEditorStore = defineStore("editor", () => {
     await workspaceApi.Rename(source, target);
     const key = (await loadQuery(placeQuery(source)))?.key;
     if (!key) return;
-    const moved = [...places.values()].filter((place) => place.key === key || place.key.startsWith(`${key}/`));
-    for (const old of moved) {
+    for (const old of listUnder(key)) {
       const place = await loadQuery(placeQuery(target + old.path.slice(source.length)));
       if (place) retarget(old.key, place);
     }

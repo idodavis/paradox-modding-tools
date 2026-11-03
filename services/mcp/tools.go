@@ -413,10 +413,14 @@ func (mcp *Service) searchText(ctx context.Context, _ *sdk.CallToolRequest, requ
 }
 
 // rename previews giving the name at a position a new name in every mod file, or makes the change a token names. It
-// returns an error if no name that only the mods define is at the position.
+// returns an error if the file is outside the workspace's mods or the game's own, or if no name that only the mods
+// define is at the position.
 func (mcp *Service) rename(request renaming) (any, error) {
 	if request.Token != "" {
 		return mcp.confirm(request.Token)
+	}
+	if _, err := mcp.Workspace.FindWritable(request.Path); err != nil {
+		return nil, err
 	}
 	renamable, err := mcp.LSP.PrepareRename(request.Path, request.Line, request.Column)
 	if err != nil || renamable == nil {

@@ -14,6 +14,7 @@ import (
 	"paradox-modding-tools/internal/game"
 	"paradox-modding-tools/internal/index"
 	"paradox-modding-tools/internal/texture"
+	"paradox-modding-tools/services/lsp"
 	"paradox-modding-tools/services/workspace"
 )
 
@@ -67,7 +68,7 @@ func (drw *Service) FindPictureFiles(path string) (PictureFiles, error) {
 
 // WriteDDS writes each picture beside itself as a DDS, in BC3 blocks when compressed and else uncompressed, with or
 // without its mip levels, replacing a DDS of that name. It returns the files written. On an error it returns the ones
-// written before it, and the error names the picture and how many were written.
+// written before it, and the error names the picture and, if any were written, how many.
 func (drw *Service) WriteDDS(paths []string, compressed, mipmaps bool) ([]string, error) {
 	ddsPaths := []string{}
 	for _, path := range paths {
@@ -76,7 +77,11 @@ func (drw *Service) WriteDDS(paths []string, compressed, mipmaps bool) ([]string
 			err = drw.Workspace.WriteBytes(toDDSPath(path), dds)
 		}
 		if err != nil {
-			return ddsPaths, fmt.Errorf("%s was not saved, after %d saved: %w", filepath.Base(path), len(ddsPaths), err)
+			failure := fmt.Errorf("%s was not saved: %w", filepath.Base(path), err)
+			if len(ddsPaths) > 0 {
+				failure = fmt.Errorf("%w (%s saved before it)", failure, lsp.Plural(len(ddsPaths), "picture", "pictures"))
+			}
+			return ddsPaths, failure
 		}
 		ddsPaths = append(ddsPaths, toDDSPath(path))
 	}

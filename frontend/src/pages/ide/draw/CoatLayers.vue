@@ -321,7 +321,7 @@ sort(useTemplateRef<HTMLElement>("subList"), subs);
         row.layer.texture.replace(/\.[^.]+$/, "")
       }}</span>
       <span class="ms-auto shrink-0 text-11 text-dimmed">
-        {{ toSentence(row.layer.role.replace("_", " ")) }}
+        {{ toSentence(row.layer.role.replaceAll("_", " ")) }}
         <template v-if="row.layer.role !== 'pattern'">
           · {{ plural(row.layer.instances?.length ?? 0, "instance") }}
         </template>
@@ -390,8 +390,8 @@ sort(useTemplateRef<HTMLElement>("subList"), subs);
       />
     </div>
     <div v-if="current" class="mt-2 flex shrink-0 flex-col border-t border-default text-12">
-      <div class="flex h-9 shrink-0 items-center gap-1.5 ps-3.5 pe-1.5 font-semibold text-toned capitalize">
-        {{ current.layer.role.replace("_", " ") }}<span class="grow" />
+      <div class="flex h-9 shrink-0 items-center gap-1.5 ps-3.5 pe-1.5 font-semibold text-toned">
+        {{ toSentence(current.layer.role.replaceAll("_", " ")) }}<span class="grow" />
         <UButton
           v-if="current.layer.writer"
           :label="`from ${current.layer.writer}`"

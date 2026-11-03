@@ -1,3 +1,6 @@
+// diagnostics.go finds the problems in a file. It walks a script with the schema and the index and reports each problem
+// as a diagnostic: a code, a level and the facts its message is made from. It also holds the table of codes.
+
 package lsp
 
 import (
@@ -303,17 +306,11 @@ func isDiagnosed(place workspace.Place) bool {
 
 // listEnabled drops the diagnostics of the checks the user turned off in a workspace.
 func (lsp *Service) listEnabled(workspaceID string, diagnostics []Diagnostic) []Diagnostic {
-	disabled := listIDs(lsp.Workspace, workspaceID, "ide.checks")
+	setting, _ := lsp.Workspace.Config.LookupSetting(workspaceID, "ide.checks")
+	disabled := lo.Compact(lo.Map(strings.Split(setting, ","), func(id string, _ int) string { return strings.TrimSpace(id) }))
 	return slices.DeleteFunc(diagnostics, func(diagnostic Diagnostic) bool {
 		return slices.Contains(disabled, diagnostic.Code)
 	})
-}
-
-// listIDs returns the ids of checks that a workspace's setting of the given key lists, apart by commas. An empty
-// setting lists none.
-func listIDs(wsp *workspace.Service, workspaceID, key string) []string {
-	setting, _ := wsp.Config.LookupSetting(workspaceID, key)
-	return lo.Compact(lo.Map(strings.Split(setting, ","), func(id string, _ int) string { return strings.TrimSpace(id) }))
 }
 
 // toDiagnostics returns a tree's parse errors as diagnostics. Each error's words are its fact why.
@@ -355,8 +352,14 @@ func (code Code) Template(facts map[string]string) string {
 // language's name, a count with its thousands separated, and the rest as plain text. A placeholder with no fact stays
 // as written.
 func SplitMessage(template string, facts map[string]string) []Part {
+	var pieces []string
+	last := 0
+	for _, match := range factPlaceholder.FindAllStringIndex(template, -1) {
+		pieces = append(pieces, template[last:match[0]], template[match[0]:match[1]])
+		last = match[1]
+	}
 	var parts []Part
-	for _, piece := range splitPlaceholders(template) {
+	for _, piece := range lo.Compact(append(pieces, template[last:])) {
 		key := strings.Trim(piece, "{}")
 		fact, ok := facts[key]
 		switch {
@@ -376,18 +379,6 @@ func SplitMessage(template string, facts map[string]string) []Part {
 		}
 	}
 	return parts
-}
-
-// splitPlaceholders splits a template into its placeholders and the text between them, in order. An empty piece is
-// left out.
-func splitPlaceholders(template string) []string {
-	var pieces []string
-	last := 0
-	for _, match := range factPlaceholder.FindAllStringIndex(template, -1) {
-		pieces = append(pieces, template[last:match[0]], template[match[0]:match[1]])
-		last = match[1]
-	}
-	return lo.Compact(append(pieces, template[last:]))
 }
 
 // DescribeCount returns a count as the page shows it, its thousands separated by commas, such as 1,350.
@@ -808,8 +799,9 @@ func isScripted(context *schema.Context) bool {
 // are not judged.
 func (visitor *diagnoseVisitor) diagnoseValue(tree *jomini.Tree, statement int32, context *schema.Context) {
 	field, current := context.Field, tree.Statements[statement]
-	if context.Category != schema.CategoryField && context.Category != schema.CategoryReference || field == nil ||
-		!field.Value.IsStated() || !field.Value.Source.CanAccuse() || current.IsBlock() || current.Value.IsEmpty() ||
+	categories := []schema.Category{schema.CategoryField, schema.CategoryReference, schema.CategoryCommand}
+	if !slices.Contains(categories, context.Category) || field == nil || !field.Value.IsStated() ||
+		!field.Value.Source.CanAccuse() || current.IsBlock() || current.Value.IsEmpty() ||
 		context.ValueGroup == schema.CategoryReference {
 		return
 	}
@@ -839,6 +831,12 @@ func describeExpected(expected schema.Expected) string {
 		return "the name of a " + game.DescribeDefinition(expected.Database, false)
 	case expected.Type == schema.ValueReference:
 		return "a name"
+	case expected.Type == schema.ValueTarget:
+		description := "a link to a " + schema.ToPhrase(expected.Scope)
+		if expected.Database != "" {
+			description += ", or the name of a " + game.DescribeDefinition(expected.Database, false)
+		}
+		return description
 	}
 	return valueDescriptions[expected.Type]
 }
@@ -873,9 +871,9 @@ func (visitor *diagnoseVisitor) diagnoseCall(tree *jomini.Tree, statement int32,
 	if parameters == nil {
 		return
 	}
-	around := &schema.Field{}
+	enclosing := &schema.Field{}
 	if context.Definition != nil {
-		around = schema.ListParameters(tree, context.Definition.Statement)
+		enclosing = schema.ListParameters(tree, context.Definition.Statement)
 	}
 	add := func(span jomini.Span, name, why string) {
 		facts := DescribeReference(schema.Reference{Name: name})
@@ -893,7 +891,7 @@ func (visitor *diagnoseVisitor) diagnoseCall(tree *jomini.Tree, statement int32,
 		}
 	}
 	for _, name := range slices.Sorted(maps.Keys(parameters.Children)) {
-		if _, inherited := around.Children[name]; !given[name] && !inherited && !parameters.Children[name].Default.IsStated() {
+		if _, inherited := enclosing.Children[name]; !given[name] && !inherited && !parameters.Children[name].Default.IsStated() {
 			add(current.Key, name, "is not given to")
 		}
 	}

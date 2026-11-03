@@ -1,3 +1,6 @@
+// ugc.go calls the Workshop functions of Steam's library: it opens the library, uploads or updates an item and fetches
+// an item's details and previews.
+
 package steam
 
 import (
@@ -245,12 +248,6 @@ func lookupFunction(handle uintptr, name string, function any) error {
 // Close shuts the library down.
 func (client *Client) Close() { api.shutdown() }
 
-// isOnline reports whether a Steam user is logged on.
-func (client *Client) isOnline() bool {
-	user := api.userInterface()
-	return user != 0 && api.isLoggedOn(user)
-}
-
 // toItemID returns a Workshop id as a number. It returns an error if the id is not a number.
 func toItemID(workshopID string) (uint64, error) {
 	id, err := strconv.ParseUint(workshopID, 10, 64)
@@ -260,25 +257,6 @@ func toItemID(workshopID string) (uint64, error) {
 	return id, nil
 }
 
-// fetchQuery asks Steam for an item's page and returns the query's handle, which must be released. It returns an error
-// if Steam does not answer.
-func (client *Client) fetchQuery(id uint64) (uint64, error) {
-	query := api.createQuery(client.ugc, &id, 1)
-	if query == invalidHandle {
-		return 0, errors.New("steam did not start the query")
-	}
-	api.setLongDescription(client.ugc, query, true)
-	api.setPreviewsReturned(client.ugc, query, true)
-	if api.setChildrenReturned != nil {
-		api.setChildrenReturned(client.ugc, query, true)
-	}
-	if _, err := client.fetchResult(api.sendQuery(client.ugc, query), queryCompletedID, queryCompletedBytes, nil); err != nil {
-		api.releaseQuery(client.ugc, query)
-		return 0, err
-	}
-	return query, nil
-}
-
 // FetchDetails fetches an item's details from Steam. It returns an error if the id is not a Workshop id, or Steam does
 // not find the item or fails a call.
 func (client *Client) FetchDetails(workshopID string) (Details, error) {
@@ -286,11 +264,19 @@ func (client *Client) FetchDetails(workshopID string) (Details, error) {
 	if err != nil {
 		return Details{}, err
 	}
-	query, err := client.fetchQuery(id)
-	if err != nil {
-		return Details{}, err
+	query := api.createQuery(client.ugc, &id, 1)
+	if query == invalidHandle {
+		return Details{}, errors.New("steam did not start the query")
 	}
 	defer api.releaseQuery(client.ugc, query)
+	api.setLongDescription(client.ugc, query, true)
+	api.setPreviewsReturned(client.ugc, query, true)
+	if api.setChildrenReturned != nil {
+		api.setChildrenReturned(client.ugc, query, true)
+	}
+	if _, err := client.fetchResult(api.sendQuery(client.ugc, query), queryCompletedID, queryCompletedBytes, nil); err != nil {
+		return Details{}, err
+	}
 	raw := make([]byte, detailsBytes)
 	if !api.getQueryResult(client.ugc, query, 0, unsafe.Pointer(&raw[0])) {
 		return Details{}, fmt.Errorf("steam has no details of the item %s", workshopID)
@@ -531,7 +517,10 @@ func diffDLC(dlc []string, details Details) (added, removed []string) {
 // diffRequired returns the items that an upload adds to an item's required items and the ones it removes. It removes
 // only the workspace's own mods.
 func diffRequired(dependencies []Dependency, steam, modIDs []string) (added, removed []string) {
-	added, removed = lo.Difference(listRequired(dependencies), steam)
+	required := lo.FilterMap(dependencies, func(dependency Dependency, _ int) (string, bool) {
+		return dependency.WorkshopID, dependency.WorkshopID != ""
+	})
+	added, removed = lo.Difference(required, steam)
 	return added, lo.Intersect(removed, modIDs)
 }
 

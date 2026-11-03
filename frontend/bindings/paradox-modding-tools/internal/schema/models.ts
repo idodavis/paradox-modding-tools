@@ -67,6 +67,11 @@ export enum Category {
 export interface Expected {
     "type": ValueType;
     "database"?: string;
+
+    /**
+     * the scope a target's link leads to
+     */
+    "scope"?: string;
     "choices"?: string[] | null;
 
     /**
@@ -123,6 +128,11 @@ export enum ValueType {
      * a name of Expected.Database
      */
     ValueReference = "reference",
+
+    /**
+     * a link to Expected.Scope, or a name of Expected.Database where it is set
+     */
+    ValueTarget = "target",
 
     /**
      * one of Expected.Choices

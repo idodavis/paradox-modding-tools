@@ -10,9 +10,9 @@ Its tools answer through the other services' methods, the ones that answer the p
 | file | holds |
 |---|---|
 | `mcp.go` | the package comment; `Service`; `Task` and `Tasks`; `Access`; `Variables`; the instructions; `ServiceStartup`, `ServiceShutdown`; `ResolveAccess`, `CreateToken`, `ListTasks`; the handler and its checks; the prompts |
-| `tools.go` | the tools' inputs; `Preview`; the guide's texts; the editor's, the pages' and the app's tools; `read_guide`; the write tools' previews and tokens |
+| `tools.go` | the tools' inputs; `Preview`; the guide's texts; the editor's, the pages' and the app's tools; `read_guide`, with the guide's lines on `show` written from `queryKeys`; `build_report`'s filter and its checks; the write tools' previews and tokens |
 | `app.go` | `EventShow`; `View`, `Chip`, `Page`, `Show`, `Lookup`; `SetView`, `SetPages`; `describe_view` and `show` |
-| `checks.go` | `queryKeys`, the queries `show` takes, and the guide's lines on them; the checks of what the tools are given |
+| `checks.go` | `queryKeys`, the queries `show` takes; the checks of what the tools and `show` are given: a page and its query, a node, a filter, a mod, a check, a patch, a language, a file, a drawable and its picks, and a look-up |
 
 ## The server
 
@@ -70,7 +70,8 @@ tool's result, not as a protocol error.
 A tool given a name the workspace does not have answers with an error that says where the right one comes from,
 never with an empty answer that reads as "none": a node id (`find_roots`), a mod's id (`read_guide`'s workspace
 topic), a check's id (`list_codes`), a level, a language of the install, a file of the mods or the game (not a
-folder). The checks are in `checks.go`, each the one place its rule is written.
+folder). The checks are in `checks.go`, each the one place its rule is written; `build_report` checks its filter's
+level against `lsp.Levels` where it reads the filter.
 
 The three write tools preview first: without a token, a call answers with the change it would make and a token, and
 called again with that token, it makes the change once. They write only in the workspace's mods, through

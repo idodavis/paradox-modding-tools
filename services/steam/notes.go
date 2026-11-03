@@ -74,10 +74,10 @@ func (stm *Service) resolveSince(ws *workspace.Session, workshopID string) time.
 
 // buildGitNote drafts a change note from the subjects of the commits that changed a mod's folder since a time. A zero
 // time takes every commit. It returns an error if git fails.
-func (stm *Service) buildGitNote(dir, version string, since time.Time) (ChangeNote, error) {
+func (stm *Service) buildGitNote(dir, version string, cutoff time.Time) (ChangeNote, error) {
 	args := []string{"log", "--format=%s"}
-	if !since.IsZero() {
-		args = append(args, "--since="+since.Format(time.RFC3339))
+	if !cutoff.IsZero() {
+		args = append(args, "--since="+cutoff.Format(time.RFC3339))
 	}
 	stdout, err := stm.Git.Run(dir, append(args, "--", ".")...)
 	if err != nil {
@@ -87,7 +87,7 @@ func (stm *Service) buildGitNote(dir, version string, since time.Time) (ChangeNo
 	lines := append([]string{"Version " + version}, lo.Map(subjects, func(subject string, _ int) string {
 		return "- " + subject
 	})...)
-	return ChangeNote{Source: noteGit, Text: strings.Join(lines, "\n"), Count: len(subjects), Since: since}, nil
+	return ChangeNote{Source: noteGit, Text: strings.Join(lines, "\n"), Count: len(subjects), Since: cutoff}, nil
 }
 
 // findChangelogNote returns the section of a mod's changelog file for a version. It returns false if there is no such

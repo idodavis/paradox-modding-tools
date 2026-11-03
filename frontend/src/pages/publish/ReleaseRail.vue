@@ -53,7 +53,12 @@ const { mutate: check, isLoading: checking } = useComparison();
 const older = computed(() => listingKey !== "");
 // The version stays as it is for an older listing and while an upload runs.
 const locked = computed(() => older.value || uploads.find(modId, listingKey)?.status === "running");
-const bumps = computed(() => listBumps(listing.value.version));
+const bumps = computed(() => {
+  const match = RELEASE.exec(listing.value.version);
+  if (!match) return [];
+  const [major = 0, minor = 0, hotfix = 0] = match.slice(1).map((part) => Number(part ?? 0));
+  return [`${major}.${minor + 1}.0`, `${major}.${minor}.${hotfix + 1}`];
+});
 // The game's major and minor version when Steam lists no tag for it, else "".
 const untaggedVersion = computed(() => {
   if (listing.value.versionTag || !tags.value?.versions?.length || !listing.value.supportedVersion) return "";
@@ -96,14 +101,6 @@ const fileSummary = computed(() => {
 /** change sets some fields of the listing. */
 function change(changes: Partial<Listing>): void {
   listing.value = { ...listing.value, ...changes };
-}
-
-/** listBumps returns the next minor and the next hotfix version of a version. It returns none if it has no number. */
-function listBumps(version: string): string[] {
-  const match = RELEASE.exec(version);
-  if (!match) return [];
-  const [major = 0, minor = 0, hotfix = 0] = match.slice(1).map((part) => Number(part ?? 0));
-  return [`${major}.${minor + 1}.0`, `${major}.${minor}.${hotfix + 1}`];
 }
 </script>
 

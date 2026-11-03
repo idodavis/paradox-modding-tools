@@ -1,3 +1,6 @@
+// app.go keeps what the MCP server knows of the app: the page each window shows and the pages the guide describes. It
+// also hands the main window what an agent asks it to show.
+
 package mcp
 
 import (
@@ -44,7 +47,7 @@ type Show struct {
 	StartLine int               `json:"startLine,omitempty" jsonschema:"the first line selected, counted from one"`
 	EndLine   int               `json:"endLine,omitempty" jsonschema:"the last line selected"`
 	Drawable  string            `json:"drawable,omitempty" jsonschema:"a window of the .gui file, drawn in the Visual view"`
-	Picks     map[string]string `json:"picks,omitempty" jsonschema:"the option each state group of the window is drawn at"`
+	Picks     map[string]string `json:"picks,omitempty" jsonschema:"the option each state group of the window is drawn at, or its caption in the States panel, such as Yes"`
 	LookUp    *Lookup           `json:"lookUp,omitempty" jsonschema:"what the IDE's Wiki pane looks up"`
 }
 

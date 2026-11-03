@@ -1,3 +1,5 @@
+// diff.go finds the lines that a text changes from its file's last commit.
+
 package git
 
 import (

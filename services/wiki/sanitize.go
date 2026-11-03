@@ -1,3 +1,6 @@
+// sanitize.go strips the HTML of a wiki page down to what the article pane shows: it keeps the elements and attributes
+// the pane draws, makes links absolute, drops the page's chrome and folds a long table.
+
 package wiki
 
 import (
@@ -124,18 +127,18 @@ func sanitize(parent *html.Node, origin *url.URL) {
 // isDropped reports whether an element is one that a sanitized page loses with everything inside it: a dropped kind
 // of element, the table of contents, a citation, a link back to the top, or an element of the wiki's chrome.
 func isDropped(node *html.Node) bool {
-	id := lookupAttribute(node, "id")
+	id := LookupAttribute(node, "id")
 	switch {
 	case elements[node.DataAtom].dropped, node.DataAtom == atom.Div && id == "toc":
 		return true
 	case strings.HasPrefix(id, "cite_note"), strings.HasPrefix(id, "cite_ref"):
 		return true
-	case node.DataAtom == atom.A && strings.HasSuffix(lookupAttribute(node, "href"), "#top"):
+	case node.DataAtom == atom.A && strings.HasSuffix(LookupAttribute(node, "href"), "#top"):
 		return true
 	case node.DataAtom == atom.Div && strings.TrimSpace(textOf(node)) == "[top]":
 		return true
 	}
-	return slices.ContainsFunc(strings.Fields(lookupAttribute(node, "class")), func(class string) bool {
+	return slices.ContainsFunc(strings.Fields(LookupAttribute(node, "class")), func(class string) bool {
 		return slices.Contains(droppedClasses, class)
 	})
 }
@@ -154,10 +157,10 @@ func countRows(node *html.Node) int {
 }
 
 // foldTable puts a table of the given number of rows in a closed fold, under a line that says how long it is.
-func foldTable(table *html.Node, rows int) {
+func foldTable(table *html.Node, count int) {
 	fold := &html.Node{Type: html.ElementNode, Data: atom.Details.String(), DataAtom: atom.Details}
 	summary := &html.Node{Type: html.ElementNode, Data: atom.Summary.String(), DataAtom: atom.Summary}
-	summary.AppendChild(&html.Node{Type: html.TextNode, Data: "Table, " + strconv.Itoa(rows) + " rows"})
+	summary.AppendChild(&html.Node{Type: html.TextNode, Data: "Table, " + strconv.Itoa(count) + " rows"})
 	table.Parent.InsertBefore(fold, table)
 	table.Parent.RemoveChild(table)
 	fold.AppendChild(summary)
@@ -171,10 +174,14 @@ func arrangeSections(root *html.Node) {
 	var moved []*html.Node
 	for start := 0; start < len(nodes); start++ {
 		title := strings.ToLower(strings.TrimSpace(textOf(nodes[start])))
-		if levelOf(nodes[start]) == 0 || !slices.Contains(droppedSections, title) && !slices.Contains(lastSections, title) {
+		level := levelOf(nodes[start])
+		if level == 0 || !slices.Contains(droppedSections, title) && !slices.Contains(lastSections, title) {
 			continue
 		}
-		end := findSectionEnd(nodes, start)
+		end := start + 1
+		for end < len(nodes) && (levelOf(nodes[end]) == 0 || levelOf(nodes[end]) > level) {
+			end++
+		}
 		for _, node := range nodes[start:end] {
 			root.RemoveChild(node)
 		}
@@ -186,17 +193,6 @@ func arrangeSections(root *html.Node) {
 	for _, node := range moved {
 		root.AppendChild(node)
 	}
-}
-
-// findSectionEnd returns where the block that starts at the given node ends: a heading runs to the next heading of its
-// level or higher, and anything else is one node.
-func findSectionEnd(nodes []*html.Node, start int) int {
-	level := levelOf(nodes[start])
-	end := start + 1
-	for level > 0 && end < len(nodes) && (levelOf(nodes[end]) == 0 || levelOf(nodes[end]) > level) {
-		end++
-	}
-	return end
 }
 
 // levelOf returns a heading's level, 1 to 6, or 0 for any other node.
@@ -269,8 +265,8 @@ func resolveLink(target string, origin *url.URL) (string, bool) {
 	return address.String(), address.Scheme == "http" || address.Scheme == "https"
 }
 
-// lookupAttribute returns the value of an element's attribute, or "" if it has none.
-func lookupAttribute(node *html.Node, key string) string {
+// LookupAttribute returns the value of an element's attribute, or "" if it has none.
+func LookupAttribute(node *html.Node, key string) string {
 	for _, attribute := range node.Attr {
 		if attribute.Key == key {
 			return attribute.Val

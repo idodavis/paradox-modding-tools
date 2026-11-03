@@ -1,10 +1,12 @@
+// links.go finds the files that a line of a shell's output names, such as a compiler's file and line, so the page can
+// turn each into a link. It reports where each name sits in the line and which file in the workspace it means.
+
 package terminal
 
 import (
 	"path/filepath"
 	"regexp"
 	"strconv"
-	"unicode/utf16"
 
 	"paradox-modding-tools/internal/files"
 	"paradox-modding-tools/internal/terminal"
@@ -49,7 +51,7 @@ func (trm *Service) FindLinks(id, text string) []Link {
 		if !ok {
 			continue
 		}
-		link := Link{Start: countUnits(text[:match[0]]), End: countUnits(text[:match[1]]), Site: lsp.Site{Place: place}}
+		link := Link{Start: lsp.CountUnits(text[:match[0]]), End: lsp.CountUnits(text[:match[1]]), Site: lsp.Site{Place: place}}
 		// the first form whose line matched gives the line and its column
 		for group := 4; group < len(match); group += 4 {
 			if match[group] >= 0 {
@@ -87,15 +89,6 @@ func (trm *Service) resolveLink(shell *terminal.Shell, name string) (workspace.P
 		return workspace.Place{}, false
 	}
 	return session.Locate(index, loaded.Path), true
-}
-
-// countUnits returns the length of a text in UTF-16 code units, the units the page counts a line's text in.
-func countUnits(text string) int {
-	units := 0
-	for _, char := range text {
-		units += utf16.RuneLen(char)
-	}
-	return units
 }
 
 // ResolveReference returns the text that names a file to an agent in a shell, as Claude Code and Copilot CLI read it:

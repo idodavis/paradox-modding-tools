@@ -1,3 +1,5 @@
+// revert.go gives a file back its text from before an agent's edits, by undoing each run of lines the edits changed.
+
 package workspace
 
 import (

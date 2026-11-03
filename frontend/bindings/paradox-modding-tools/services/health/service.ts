@@ -51,7 +51,8 @@ export function ListCodes(): $CancellablePromise<lsp$0.Code[] | null> {
 
 /**
  * ListErrorLog lists the messages of the game's error log as findings. A message repeated at one place is one row with
- * its count. It returns no findings if there is no log, and an error if the log cannot be read.
+ * its count and the last one's time. It returns no findings if there is no log, and an error if the log cannot be
+ * read.
  */
 export function ListErrorLog(): $CancellablePromise<$models.GameLog> {
     return $Call.ByID(798966238);
@@ -106,8 +107,8 @@ export function RemoveIgnoredPair(first: string, second: string): $CancellablePr
 /**
  * WriteScaffold writes the localization keys a mod lacks in a language, with the base text as the placeholder, and
  * returns the files it wrote. A key goes at the end of the language's file that matches the base-language file it is
- * in, which is created if it does not exist. It returns an error if the mod or the language is not valid, or a file
- * cannot be written.
+ * in, in that file's line ending and encoding. A file that is missing or holds nothing gets its header first. It
+ * returns an error if the mod or the language is not valid, or a file cannot be read or written.
  */
 export function WriteScaffold(modID: string, language: string): $CancellablePromise<string[] | null> {
     return $Call.ByID(1632703803, modID, language);

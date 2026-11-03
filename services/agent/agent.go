@@ -143,7 +143,9 @@ func (agt *Service) ListAgents() []Agent {
 	offers := lo.Map(agents, func(row app.Agent, _ int) Agent {
 		row.Register = replacer.Replace(row.Register)
 		entry, _ := lo.Find(listing.Agents, func(entry registryAgent) bool { return entry.ID == row.ID })
-		agent := Agent{Agent: row, Version: entry.Version, Installed: agt.findInstalled(row.ID), Description: entry.Description}
+		versions := agt.listInstalled(row.ID)
+		slices.SortFunc(versions, func(first, second string) int { return semver.Compare("v"+first, "v"+second) })
+		agent := Agent{Agent: row, Version: entry.Version, Installed: lo.LastOr(versions, ""), Description: entry.Description}
 		started, _ := agt.installs.Load(row.ID)
 		agent.Installing, _ = started.(time.Time)
 		script, err := findScript(filepath.Join(agt.findDir(), row.ID+"@"+agent.Installed))
@@ -179,17 +181,24 @@ func (agt *Service) RemoveAgent(id string) error {
 	})
 }
 
-// DescribeNode returns the Node PMT's agents run on, and the system's own version.
+// DescribeNode returns the Node PMT's agents run on, and the system's own version. The system's version is "" if its
+// Node cannot be run.
 func (agt *Service) DescribeNode() Node {
 	node := Node{}
 	if path, err := exec.LookPath("node"); err == nil {
-		node.System = readVersion(path)
+		command := exec.Command(path, "--version")
+		prepareCommand(command)
+		if output, err := command.Output(); err == nil {
+			node.System = strings.TrimPrefix(strings.TrimSpace(string(output)), "v")
+		}
 		if node.System != "" && semver.Compare("v"+node.System, "v"+minNode) >= 0 {
 			node.Path = path
 			return node
 		}
 	}
-	if own := agt.findOwnNode(); files.IsFile(own) {
+	dir := filepath.Join(agt.findDir(), "node")
+	own := lo.Ternary(runtime.GOOS == windowsOS, filepath.Join(dir, "node.exe"), filepath.Join(dir, "bin", "node"))
+	if files.IsFile(own) {
 		node.Path, node.Own = own, true
 	}
 	return node
@@ -262,8 +271,12 @@ func (agt *Service) InstallAgent(id string) error {
 		application.Get().Event.Emit(EventChanged, id)
 	}()
 	dir := filepath.Join(agt.findDir(), id+"@"+entry.Version)
-	command := exec.Command(node.Path, findNpm(node.Path), "install", "--prefix", dir, "--no-audit", "--no-fund",
-		entry.Distribution.Npx.Package)
+	modules := filepath.Join(filepath.Dir(node.Path), "node_modules")
+	if runtime.GOOS != windowsOS {
+		modules = filepath.Join(filepath.Dir(node.Path), "..", "lib", "node_modules")
+	}
+	command := exec.Command(node.Path, filepath.Join(modules, "npm", "bin", "npm-cli.js"), "install", "--prefix", dir,
+		"--no-audit", "--no-fund", entry.Distribution.Npx.Package)
 	// npm's install scripts run on the same Node
 	command.Env = addToPath(os.Environ(), filepath.Dir(node.Path))
 	prepareCommand(command)
@@ -311,13 +324,6 @@ func (agt *Service) loadRegistry() (registry, error) {
 	return listing, json.Unmarshal(content, &listing)
 }
 
-// findInstalled returns the version of an agent that PMT's folder holds, the newest if it holds several, or "".
-func (agt *Service) findInstalled(id string) string {
-	versions := agt.listInstalled(id)
-	slices.SortFunc(versions, func(first, second string) int { return semver.Compare("v"+first, "v"+second) })
-	return lo.LastOr(versions, "")
-}
-
 // listInstalled returns each version of an agent that PMT's folder holds whole.
 func (agt *Service) listInstalled(id string) []string {
 	matches, _ := filepath.Glob(filepath.Join(agt.findDir(), id+"@*"))
@@ -332,24 +338,6 @@ func (agt *Service) listInstalled(id string) []string {
 // that resetting PMT's data removes them.
 func (agt *Service) findDir() string {
 	return filepath.Join(agt.Workspace.Config.Dirs.Cache, "agents")
-}
-
-// findOwnNode returns where PMT's own copy of Node keeps its program.
-func (agt *Service) findOwnNode() string {
-	dir := filepath.Join(agt.findDir(), "node")
-	if runtime.GOOS == windowsOS {
-		return filepath.Join(dir, "node.exe")
-	}
-	return filepath.Join(dir, "bin", "node")
-}
-
-// findNpm returns npm's script for a Node program, where Node's own archive puts it beside the program.
-func findNpm(node string) string {
-	dir := filepath.Dir(node)
-	if runtime.GOOS != windowsOS {
-		dir = filepath.Join(dir, "..", "lib")
-	}
-	return filepath.Join(dir, "node_modules", "npm", "bin", "npm-cli.js")
 }
 
 // findScript returns the script of the agent installed in a folder: the one program its one package declares. It
@@ -380,17 +368,6 @@ func findScript(dir string) (string, error) {
 	return filepath.Join(packageDir, filepath.FromSlash(script)), nil
 }
 
-// readVersion returns the version a Node program reports, without its v, or "" if it cannot be run.
-func readVersion(node string) string {
-	command := exec.Command(node, "--version")
-	prepareCommand(command)
-	output, err := command.Output()
-	if err != nil {
-		return ""
-	}
-	return strings.TrimPrefix(strings.TrimSpace(string(output)), "v")
-}
-
 // checkSum checks a Node archive, a release's file of the given version, against the sum nodejs.org publishes for it.
 // It returns an error if the sums cannot be fetched, list no sum for the file, or list another.
 func checkSum(version, asset string, archive []byte) error {
@@ -412,7 +389,8 @@ func checkSum(version, asset string, archive []byte) error {
 }
 
 // untar unpacks the files of a gzipped tar archive into a folder, without the archive's one top folder. Its links are
-// left out, since PMT runs Node's program and npm's script by their own paths.
+// left out, since PMT runs Node's program and npm's script by their own paths, and so is a file that would land
+// outside the folder.
 func untar(archive []byte, dir string) error {
 	unpacked, err := gzip.NewReader(bytes.NewReader(archive))
 	if err != nil {
@@ -427,33 +405,24 @@ func untar(archive []byte, dir string) error {
 		if err != nil {
 			return err
 		}
-		if header.Typeflag != tar.TypeReg {
+		_, rest, ok := strings.Cut(filepath.ToSlash(header.Name), "/")
+		target := filepath.Join(dir, filepath.FromSlash(rest))
+		rel, err := filepath.Rel(dir, target)
+		isTop := !ok || rest == ""
+		isOutside := err != nil || strings.HasPrefix(rel, "..")
+		if header.Typeflag != tar.TypeReg || isTop || isOutside {
 			continue
 		}
-		if err := writeEntry(dir, header.Name, header.FileInfo().Mode(), reader); err != nil {
+		if err := os.MkdirAll(filepath.Dir(target), 0o755); err != nil {
+			return err
+		}
+		file, err := os.OpenFile(target, os.O_CREATE|os.O_WRONLY|os.O_TRUNC, header.FileInfo().Mode().Perm()|0o600)
+		if err != nil {
+			return err
+		}
+		_, err = io.Copy(file, reader)
+		if err = errors.Join(err, file.Close()); err != nil {
 			return err
 		}
 	}
-}
-
-// writeEntry writes one file of an archive, by its path in the archive, into a folder, without the archive's top
-// folder. An entry that would land outside the folder is left out.
-func writeEntry(dir, entry string, mode os.FileMode, content io.Reader) error {
-	_, rest, ok := strings.Cut(filepath.ToSlash(entry), "/")
-	target := filepath.Join(dir, filepath.FromSlash(rest))
-	rel, err := filepath.Rel(dir, target)
-	isTop := !ok || rest == ""
-	isOutside := err != nil || strings.HasPrefix(rel, "..")
-	if isTop || isOutside {
-		return nil
-	}
-	if err := os.MkdirAll(filepath.Dir(target), 0o755); err != nil {
-		return err
-	}
-	file, err := os.OpenFile(target, os.O_CREATE|os.O_WRONLY|os.O_TRUNC, mode.Perm()|0o600)
-	if err != nil {
-		return err
-	}
-	_, err = io.Copy(file, content)
-	return errors.Join(err, file.Close())
 }

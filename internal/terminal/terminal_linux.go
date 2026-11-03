@@ -1,3 +1,5 @@
+// terminal_linux.go runs a shell on a Linux pseudo-terminal and lists the shells this system has.
+
 package terminal
 
 import (

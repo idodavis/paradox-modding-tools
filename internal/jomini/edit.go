@@ -1,3 +1,6 @@
+// edit.go applies changes to a text and finds the changes between two texts. It also reads a text's line ending and
+// indentation, and builds the change that adds lines to a block.
+
 package jomini
 
 import (

@@ -159,9 +159,9 @@ function showWhole(box: Box): void {
 
 /** isUnder reports whether a widget is the given one or lies under it. */
 function isUnder(id: number, holder: number): boolean {
-  for (let at = id; ; at = widgets.value[at].parent) {
-    if (at === holder) return true;
-    if (at === 0) return false;
+  for (let widgetId = id; ; widgetId = widgets.value[widgetId].parent) {
+    if (widgetId === holder) return true;
+    if (widgetId === 0) return false;
   }
 }
 
@@ -187,9 +187,14 @@ function isOn(group: Group): boolean {
   return values.value[group.id] !== NONE;
 }
 
+/** yesOption returns the option that Yes picks for a group of one value: its value, else every value. */
+function yesOption(group: Group): string {
+  return listValues(group)[0] ?? EVERY;
+}
+
 /** turn picks a group of one value on or off. */
 function turn(group: Group, on: boolean): void {
-  store.pick({ [group.id]: on ? (listValues(group)[0] ?? EVERY) : NONE });
+  store.pick({ [group.id]: on ? yesOption(group) : NONE });
 }
 
 /** outline outlines the widgets a group decides, or none. */
@@ -225,12 +230,17 @@ function outline(group: Group | null): void {
     />
     <UFieldGroup v-else size="xs" class="shrink-0">
       <UButton
-        label="Yes"
+        :label="group.captions?.[yesOption(group)]"
         :color="isOn(group) ? 'primary' : 'neutral'"
         :variant="isOn(group) ? 'soft' : 'outline'"
         @click="turn(group, true)"
       />
-      <UButton label="No" color="neutral" :variant="isOn(group) ? 'outline' : 'soft'" @click="turn(group, false)" />
+      <UButton
+        :label="group.captions?.[NONE]"
+        color="neutral"
+        :variant="isOn(group) ? 'outline' : 'soft'"
+        @click="turn(group, false)"
+      />
     </UFieldGroup>
   </DefineControl>
   <DefineChip v-slot="{ group, label }">

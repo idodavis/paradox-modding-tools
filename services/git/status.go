@@ -1,3 +1,6 @@
+// status.go reads a repository's status from git: its changed files and where it stands. It also lists the branches,
+// remote branches and tags.
+
 package git
 
 import (

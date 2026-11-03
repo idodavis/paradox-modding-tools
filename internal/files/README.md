@@ -1,7 +1,7 @@
 # files
 
 The package lists the files of an install, a mod or a dump folder and tells what format each one is. It reads and
-writes a file's text in its own encoding, compares and joins paths, and applies ignore rules.
+writes a file's text in its own encoding, compares and joins paths, unpacks a zip and applies ignore rules.
 
 It knows no game. Which folders a game reads and what each one holds are `game`'s rows. This package names a file by
 its place under a root and by its extension, and nothing more.
@@ -9,8 +9,8 @@ its place under a root and by its extension, and nothing more.
 | file | holds |
 |---|---|
 | `files.go` | `Format` and its constants, `Classify`, `Format.IsScript`, `Format.IsText`; `Root` and `File`; `Walk`, `IsHiddenDir`, `IsBinary`; `Ignore`, `ParseIgnore`, `Ignore.Match`; `Workers` |
-| `contents.go` | `Text` and `Encoding`, `TextLimit`, `ReadText`, `DecodeText`, `Text.Encode`, `WriteText`, `WriteAtomic`; the gob caches, `LoadGob` and `SaveGob` |
-| `paths.go` | `ToKey`, `ToRel`, `Join`, `IsUnder`, `ToSlug`, `IsFolder` |
+| `contents.go` | `Text` and `Encoding`, `TextLimit`, `ErrBinary`, `ReadText`, `LoadText`, `DecodeText`, `Text.Encode`, `WriteText`, `WriteAtomic`; the gob caches, `LoadGob` and `SaveGob`; `Unzip` |
+| `paths.go` | `ToKey`, `ToRel`, `Join`, `IsUnder`, `ToSlug`, `IsFolder`, `IsFile` |
 
 ## Roots and files
 
@@ -28,7 +28,7 @@ another, the file belongs to the inner one; that rule is `index`'s, in `index.Li
 localization only under a `localization` folder. A `.mod` file is a descriptor only at the root, and `metadata.json` is
 one only in `.metadata`. Script written directly at a root is text, since the games never read it. A `.jpg`, `.jpeg`,
 `.gif` or `.webp` is a web image: a picture the games do not read, such as a Workshop preview, which the app shows
-but never offers as a texture. An extension the switch does not know is text too.
+but never offers as a texture. An extension the table of formats does not know is text too.
 
 `IsScript` is true for the formats written in the script language, which `jomini` parses: `.txt`, `.gui`, `.asset`,
 `.font` and `.gfx`. `IsText` is true for every format but images and binaries.
@@ -38,12 +38,15 @@ but never offers as a texture. An extension the switch does not know is text too
 A `Text` is a file's text with the `Encoding` it was stored in, so that a write puts it back the same way. `DecodeText`
 reads a byte order mark as UTF-8 with one, valid UTF-8 as UTF-8, and any other bytes as Windows-1252. `ReadText` refuses
 a file over `TextLimit` and a file that `IsBinary` flags, which means a NUL byte in its first kilobyte; both errors wrap
-`ErrBinary`. `Text.Encode`
+`ErrBinary`. `LoadText` reads as `ReadText` does, but a missing file gives empty text and no error. `Text.Encode`
 writes the text back in its encoding. A character that Windows-1252 cannot hold becomes `?`.
 
 Every write goes through `WriteAtomic`. The bytes go to a temporary file beside the target, which is then renamed over
 it, so a file is replaced whole or not at all. `WriteText` and `SaveGob` write that way. `LoadGob` and `SaveGob` hold
 the gob caches. A cache that is missing or does not decode loads as false, and the caller builds it again.
+
+`Unzip` writes a zip's files into a folder. A top folder that holds every file is left out of their paths, links are
+skipped, and a zip that names a path outside the folder is refused.
 
 ## Paths and keys
 
@@ -51,7 +54,7 @@ Two paths are compared by their `Key`: the path cleaned, lower-cased and written
 platform wrote it. A map of files is keyed by it. `ToRel` gives a path from a root, or false if the path is not under
 the root. `IsUnder` asks only that. `Join` puts a root and a `Rel` back together for this platform. `ToSlug` turns a
 user's text into a file or folder name: lower case, ASCII only, words joined by `_`, and a letter with a mark folded to
-its plain form.
+its plain form. `IsFolder` and `IsFile` ask whether a path is a folder or a file that exists.
 
 ## Ignore rules
 

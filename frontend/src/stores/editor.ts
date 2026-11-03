@@ -577,13 +577,13 @@ export const useEditorStore = defineStore("editor", () => {
    * rename renames or moves a file or folder on disk, then moves the tabs of every file in it to the file's new
    * place. Each model keeps its text and whether it is unsaved. It throws if Go refuses the rename.
    */
-  const rename = async (from: string, to: string): Promise<void> => {
-    await workspaceApi.Rename(from, to);
-    const key = (await loadQuery(placeQuery(from)))?.key;
+  const rename = async (source: string, target: string): Promise<void> => {
+    await workspaceApi.Rename(source, target);
+    const key = (await loadQuery(placeQuery(source)))?.key;
     if (!key) return;
     const moved = [...places.values()].filter((place) => place.key === key || place.key.startsWith(`${key}/`));
     for (const old of moved) {
-      const place = await loadQuery(placeQuery(to + old.path.slice(from.length)));
+      const place = await loadQuery(placeQuery(target + old.path.slice(source.length)));
       if (place) retarget(old.key, place);
     }
   };

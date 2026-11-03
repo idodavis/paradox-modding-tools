@@ -9,9 +9,9 @@ holds the `*Service` and asks it for the session at each call.
 
 | file | holds |
 |---|---|
-| `workspace.go` | `FileChange`, `Service`, `State`, `Scanning`, `FileText`; the events; the installs (`ListGames`, `ListInstalls`, `ListReadyInstalls`, `DetectInstalls`, `AddInstall`, `UpdateInstall`, `ListLanguages`, `DeleteInstall`, `RescanInstall`); `ResetData`; the workspaces (`ListWorkspaces`, `CreateWorkspace`, `UpdateWorkspace`, `DeleteWorkspace`); the mods (`AddMod`, `ListMods`, `CreateMod`, `ResolveModFolder`, `RemoveMod`, `ReorderMods`, `ResetColors`, `UpdateMod`); `Open`, `Session`, `Close`, `State`, `LookupMod`, `ResolveFolder`; `Launch`; the files (`Read`, `ReadHeader`, `Write`, `WriteBytes`, `CreateCopy`, `ListFolder`, `Create`, `Rename`, `Delete`, `Restore`, `Locate`); `ServeHTTP` |
-| `session.go` | the package comment; `Session`; the open: the install's caches, the mods' scan and the watcher; `ScanOrder`; `Close`; the trees and buffers (`LoadTree`, `SetText`, `CloseBuffer`, `LookupBuffer`); the texts (`LookupText`, `LookupTitle` with a concept's and a message's title keys, `FindTitleKey`, `FindTextKey`); `FindStatement`; `Rescan` |
-| `mod.go` | `Descriptor`, `Dependency` and `Mod`; `ReadDescriptor`, `ParseDescriptor` (the one reader of a descriptor's text, script or JSON), `WriteDescriptor`; `ListDependencies` (a mod's dependencies, all the way down), `Session.DescribeMod` (a mod's title), `MatchVersion` (whether a supported version fits the game's); `FindMod` (the mod a descriptor's dependency names, by its id or its name); `Mod.ResolveWorkshopID` (the record's Workshop id, else the descriptor's); a new mod's skeleton and its localization file (`FindLocalizationFile`, `CreateLocalization`); the thumbnail; `IsOlderRelease` |
+| `workspace.go` | `FileChange`, `Service` with `ServiceShutdown`, `State`, `Scanning`, `FileText`, `Workspace`; the events; the installs (`ListGames`, `ListInstalls`, `ListReadyInstalls`, `DetectInstalls`, `AddInstall`, `UpdateInstall`, `ListLanguages`, `DeleteInstall`, `RescanInstall`); `ResetData`; the workspaces (`ListWorkspaces`, `CreateWorkspace`, `UpdateWorkspace`, `DeleteWorkspace`); the mods (`AddMod`, `ListMods`, `CreateMod`, `ResolveModFolder`, `RemoveMod`, `ReorderMods`, `ResetColors`, `UpdateMod`); `Open`, `Session`, `Close`, `State`, `LookupMod`, `ResolveFolder`; `Launch`; the files (`Read`, `ReadHeader`, `Write`, `WriteBytes`, `CreateCopy`, `ListFolder`, `Create`, `Rename`, `Delete`, `Restore`, `Locate`); `ServeHTTP` |
+| `session.go` | the package comment; `Session`, `Document`; the open: the install's caches, the mods' scan and the watcher; `ScanOrder`; `Close`; the documents, trees and buffers (`ParseDocument`, `LoadDocument`, `LoadTree`, `SetText`, `CloseBuffer`, `LookupBuffer`, `LoadSource`); the texts (`LookupText`, `LookupTitle` with a concept's and a message's title keys, `FindTitleKey`, `FindTextKey`); `FindStatement`; `Rescan` |
+| `mod.go` | `Descriptor`, `Dependency` and `Mod`; `ReadDescriptor`, `ParseDescriptor` (the one reader of a descriptor's text, script or JSON), `WriteDescriptor`; `ListDependencies` (a mod's dependencies, all the way down), `Session.DescribeMod` (a mod's title), `MatchVersion` (whether a supported version fits the game's); `FindMod` (the mod a descriptor's dependency names, by its id or its name); `Mod.ResolveWorkshopID` (the record's Workshop id, else the descriptor's); a new mod's skeleton and its localization file (`FindLocalizationFile`, `CreateLocalization`); the thumbnail |
 | `locate.go` | `Place`, `Session.Locate`, `ListCopies`, `ListRoots` |
 | `revert.go` | `Hunk`; `RevertHunks`, an agent's edits to a file taken back |
 | `watcher.go` | `Watcher`: the folders it watches, the bursts of changes it reports together, and `Move` |
@@ -44,9 +44,12 @@ A `Session` holds the game's row, the install's folder, the schema, the install'
 load order, and the language shown beside the base language. The mods' index sits in an atomic pointer. A reader loads
 it once and keeps that copy to its end. A rescan changes a `Clone` and stores it, so no reader takes a lock.
 
-An open file's buffer is the tree of the editor's text, which `SetText` parses and keeps. Any other file's tree is read
-and parsed when asked, and kept in a bounded LRU. `LoadTree` returns the buffer's tree, else the cached one, else it
-parses the file. `LookupBuffer` gives the editor's text of an open file.
+A `Document` is one file parsed once in the dialect of its format (`ParseDocument`): a localization file's tree holds
+its text and lines, and its messages are what it says; any other file's tree is its script. An open file's buffer is
+the document of the editor's text, which `SetText` parses and keeps. Any other file's document is read and parsed when
+asked, and kept in a bounded LRU. `LoadDocument` returns the buffer's document, else the cached one, else it parses the
+file, and `LoadTree` returns that document's tree. `LookupBuffer` gives the editor's text of an open file, and
+`LoadSource` that text, else the text on disk.
 
 `ScanOrder` scans the mods on the install's index in another load order, and saves the result nowhere. The open scans
 through it too. A broken mod, whose folder is missing, is left out.
@@ -61,13 +64,14 @@ a game concept the message of the game's concept prefix and its name, and for a 
 (`game.Game.MessageTitle`, Vic3's `notification_<name>_name`). `FindTextKey` gives the key a statement writes under
 a text's key, such as `title` or `desc`: its value, or for a block such as a `first_valid` of triggered descs the first
 desc in it, which every block title of the three games holds, or a `text` written directly in it (`game.LabelKey`), as
-an option's triggered name holds (the events write `name = {` 3,071 times in CK3, 9 in Vic3, 25 in EU5). `FindStatement` returns the tree and the statement of a
-site.
+an option's triggered name holds (the events write `name = {` 3,071 times in CK3, 9 in Vic3, 25 in EU5).
+`FindStatement` returns the tree and the statement of a site.
 
 ## Places
 
 A `Place` is where one file sits in the workspace: the `files.File` as its root lists it, with its name, its folder, its
-root, its database, whether it is read only, whether the game reads it and whether Visual draws it. The game's own
+root, its database, whether it is read only, where the index lists it (`Position`, Go's alone) and whether Visual
+draws it. The game's own
 files are read only. A GUI file is drawable, and so is a file or folder of the coats' database. Every answer that
 names a file carries a place, and the page renders its fields as they are. `Locate` makes one, and `ListCopies` lists
 the place of every copy of a file's path in load order, the game's first. A place can be of a folder too, which
@@ -122,8 +126,9 @@ picture where the game keeps one, else the picture the descriptor names.
 release, a launcher file beside the folder for a game that lists mods by one, and a localization file that holds only
 its header. `FindLocalizationFile` names that file: the mod's name as a slug, with the language's suffix, in the
 language's folder. lsp's quick fix adds keys to it in the base language. `CreateLocalization` is the one writer of a
-localization file's header: the fix calls it when the mod lacks the file, and Health's scaffold for a file it creates. `IsOlderRelease` compares the release a mod supports with the game's, by the major and minor numbers
-alone.
+localization file's header: the fix calls it when the mod lacks the file, and Health's scaffold for a file it creates.
+`MatchVersion` says whether a mod made for a supported version runs on a game version, part by part, a `*` matching
+the rest, and whether any source shows the games matching such a version at all.
 
 ## Launch
 
@@ -145,7 +150,9 @@ whether it wrote dumps fresher than the schema's.
 ## Terms
 
 - **Session**: the open workspace as every service reads it.
-- **Buffer**: the tree of the editor's text for one open file.
+- **Document**: one file parsed once in the dialect of its format.
+- **Buffer**: the document of the editor's text for one open file.
+- **Workspace**: one recorded workspace as the pages list it, with its install, its game and its mods.
 - **Place**: where one file sits in the workspace.
 - **Mod**: one mod of the open workspace: the recorded mod with its descriptor.
 - **Descriptor**: a mod's own description, as its game writes it.

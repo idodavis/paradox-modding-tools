@@ -50,6 +50,32 @@ export interface Game {
      * the descriptor file's path from the mod's root
      */
     "descriptor"?: string;
+    "guide": Guide;
+}
+
+/**
+ * A Guide is how a game picks which copy of a file or a definition it keeps, in the sentences where the games differ.
+ */
+export interface Guide {
+    /**
+     * what the load order decides, in one sentence
+     */
+    "hint": string;
+
+    /**
+     * which of a mod's files the game reads
+     */
+    "files": string;
+
+    /**
+     * which copy each kind of definition keeps
+     */
+    "kept": string;
+
+    /**
+     * what the load order changes
+     */
+    "changes": string;
 }
 
 /**

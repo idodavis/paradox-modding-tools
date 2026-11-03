@@ -67,6 +67,11 @@ export interface Descriptor {
 export interface FileChange {
     "path": string;
     "deleted": boolean;
+
+    /**
+     * the file is a mod's descriptor
+     */
+    "descriptor": boolean;
 }
 
 /**

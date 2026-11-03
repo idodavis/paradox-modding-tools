@@ -152,8 +152,12 @@ export const useWindowsStore = defineStore("windows", () => {
   watch(state, sendState, { immediate: true });
   useEventListener(shared.channel, "message", ({ data }: MessageEvent<Message>) => {
     if (data.type === "state") updateWindow(data.state);
-    else if (data.type === "tab-requested") sendTab(data.tab, data.from);
-    else if (data.type === "closing" && THIS_WINDOW === "main") receive(data);
+    else if (data.type === "tab-requested") {
+      const tab = editor.listTabs().find((other) => other.id === data.tab);
+      if (!tab) return;
+      link(data.from).post({ type: "tab-handed", from: THIS_WINDOW, tabs: toHanded(tab) });
+      editor.close(tab.id);
+    } else if (data.type === "closing" && THIS_WINDOW === "main") receive(data);
   });
   useEventListener(own.channel, "message", ({ data }: MessageEvent<Message>) => {
     if (data.type === "tab-handed") receive(data);
@@ -200,14 +204,6 @@ export const useWindowsStore = defineStore("windows", () => {
     return place
       ? [{ tab: { ...tab }, place: { ...place }, text: model?.unsaved ? model.model.getValue() : null }]
       : [];
-  }
-
-  /** sendTab sends the asking window a tab of this one, and closes it here. */
-  function sendTab(tabId: string, asker: WindowName): void {
-    const tab = editor.listTabs().find((other) => other.id === tabId);
-    if (!tab) return;
-    link(asker).post({ type: "tab-handed", from: THIS_WINDOW, tabs: toHanded(tab) });
-    editor.close(tab.id);
   }
 
   /** receiveTabs opens the tabs another window handed over, with their unsaved text, as this window's. */

@@ -1,3 +1,6 @@
+// workshop.go lists what a Workshop listing can choose from: the files an upload leaves out, the DLCs an item may
+// require and the tags it may carry.
+
 package steam
 
 import (
@@ -112,7 +115,9 @@ func loadDLC(ws *workspace.Session, mods *index.Index, dir string) (DLC, error) 
 		}
 		var steamID, name string
 		if ending == dlcScript {
-			steamID, name = decodeDLCScript(text.Text)
+			tree := jomini.Parse(text.Text)
+			steamID, _ = tree.FindChildValue(0, "steam_id")
+			name, _ = tree.FindChildValue(0, "name")
 		} else if steamID, name, err = decodeDLCJSON(ws, mods, text.Text); err != nil {
 			return DLC{}, err
 		}
@@ -123,14 +128,6 @@ func loadDLC(ws *workspace.Session, mods *index.Index, dir string) (DLC, error) 
 		return DLC{ID: strconv.FormatUint(id, 10), Name: cmp.Or(name, filepath.Base(dir))}, nil
 	}
 	return DLC{}, nil
-}
-
-// decodeDLCScript returns the Steam id and the name in a DLC's script descriptor. Each is "" if the script has none.
-func decodeDLCScript(text string) (steamID, name string) {
-	tree := jomini.Parse(text)
-	steamID, _ = tree.FindChildValue(0, "steam_id")
-	name, _ = tree.FindChildValue(0, "name")
-	return steamID, name
 }
 
 // decodeDLCJSON returns the Steam id and the name in a DLC's JSON descriptor. The name is localized where the mods'
@@ -206,9 +203,12 @@ func hasTags(tags Tags) bool {
 	return len(tags.Categories)+len(tags.Versions) > 0
 }
 
-// toCategoryTags returns tags without those that name a game version.
+// toCategoryTags returns tags without those that name a game version: Steam's version tags, and any tag that starts
+// with a release number.
 func toCategoryTags(versions, tags []string) []string {
-	return lo.Reject(tags, func(tag string, _ int) bool { return isVersionTag(versions, tag) })
+	return lo.Reject(tags, func(tag string, _ int) bool {
+		return slices.Contains(versions, tag) || releaseNumber.MatchString(tag)
+	})
 }
 
 // fetchTags fetches the tags that a game's Workshop page declares for its items, without those only Steam's admins may
@@ -222,8 +222,16 @@ func fetchTags(appID int) (Tags, error) {
 	if err != nil {
 		return Tags{}, err
 	}
+	script := ""
+	for node := range page.Descendants() {
+		if node.Type == html.ElementNode && node.FirstChild != nil &&
+			slices.Contains(node.Attr, html.Attribute{Key: "id", Val: pageScript}) {
+			script = node.FirstChild.Data
+			break
+		}
+	}
 	tags := Tags{Categories: []string{}, Versions: []string{}}
-	for _, names := range decodeTagGroups(findPageScript(page)) {
+	for _, names := range decodeTagGroups(script) {
 		if slices.ContainsFunc(names, releaseNumber.MatchString) {
 			tags.Versions = append(tags.Versions, names...)
 		} else {
@@ -234,17 +242,6 @@ func fetchTags(appID int) (Tags, error) {
 		return Tags{}, errors.New("steam's Workshop page declares no tags; its layout may have changed")
 	}
 	return tags, nil
-}
-
-// findPageScript returns the text of the script that holds a Workshop page's data, or "" if the page has none.
-func findPageScript(page *html.Node) string {
-	for node := range page.Descendants() {
-		if node.Type == html.ElementNode && node.FirstChild != nil &&
-			slices.Contains(node.Attr, html.Attribute{Key: "id", Val: pageScript}) {
-			return node.FirstChild.Data
-		}
-	}
-	return ""
 }
 
 // decodeTagGroups returns the groups of tags that a Workshop page's script declares, without those only Steam's admins
@@ -290,11 +287,6 @@ func loadTags(cacheDir string, appID int) Tags {
 // resolveTagsPath returns the path of the file that keeps a game's Workshop tags.
 func resolveTagsPath(cacheDir string, appID int) string {
 	return filepath.Join(cacheDir, "tags-"+strconv.Itoa(appID)+".json")
-}
-
-// isVersionTag reports whether a tag is one of Steam's version tags or starts with a release number.
-func isVersionTag(versions []string, tag string) bool {
-	return slices.Contains(versions, tag) || releaseNumber.MatchString(tag)
 }
 
 // resolveVersionTag returns the version tag for the release of a supported version, such as 1.20 'Crozier' for 1.20.*.

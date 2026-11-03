@@ -5,13 +5,13 @@ one node.
 
 What fires what is the index's: `index.ListFires` and `index.ListFiredBy` give the firings, and `index.FindKept` the
 definition the game keeps of a name. This package adds the reach from a root by steps, the folds, the nodes the filter
-hides spliced out, where each firing sits in its definition, an event's picture, and the detail's texts, rules and copy. The
-graph has no coordinates; the page lays it out with ELK and draws it with Vue Flow.
+hides spliced out, where each firing sits in its definition, the rows a node shows open, an event's picture, and the
+detail's texts, rules and copy. The graph has no coordinates; the page lays it out with ELK and draws it with Vue Flow.
 
 | file | holds |
 |---|---|
-| `graph.go` | the package comment; `Service`; `Node`, `Edge`, `Filter`, `Graph`; `BuildGraph` and its `reach`: the steps out from the root, the folds, the deep marks, the splice of hidden nodes; a node's display, comment and hidden copy, and a drawn node's own trigger; `FindRoots`, `ListOwnRoots`, `Defaults` |
-| `steps.go` | `Step`; where a firing sits: the statement that writes it, the blocks around it from the top of its definition, its delay in words, the effect that writes it and the title that effect gives it, an option's name |
+| `graph.go` | the package comment; `Service`; `Node`, `Edge`, `Row`, `Filter`, `Graph`; `BuildGraph` and its `reach`: the steps out from the root, the folds, the deep marks, the splice of hidden nodes, the rows of each node; a node's display, comment and hidden copy, and a drawn node's own trigger; `FindRoots`, `ListOwnRoots`, `Defaults` |
+| `steps.go` | `Step`; the edge of a firing: its site with the range of the name it fires and the text of its line, the statement that writes it, the blocks around it from the top of its definition, its delay in words, the effect that writes it and the title that effect gives it, an option's name |
 | `conditions.go` | `Condition`; a block of triggers in words: a block's limit, else its trigger, each statement as one line with the statements of its block under it |
 | `pictures.go` | an event's picture, found by a chain of definitions that ends in an image file |
 | `detail.go` | `Detail`, `Section`, `Version`, `Rule`, `RuleOption`; `BuildDetail`: a node's texts in pieces, its sections and options, its firings, the game rules it reads, and the copy it hides |
@@ -29,21 +29,27 @@ graph meets. Where the game keeps no copy for every file, the node is the copy a
 scripted effect an events file defines.
 
 A node says how the player sees it: an event shows a window or is hidden (`game.HiddenKey`), and a message is sent
-(the database `game.FireHouses`' messages house names). An event's node holds its background picture, found by the
+(the database `schema.Schema.Messages` names). An event's node holds its background picture, found by the
 `Picture` chain of the game's `Events` row: a chain of definitions that ends in an image file, where at each hop, of
 several copies of a key, the first with no trigger of its own wins, or the one a `key[field=value]` names (EU5's
-backdrop, the layer of a scene on `background2_mesh`). An on_action's
-says whether the game calls it from its own code (the dumps' "From Code: Yes"), and every node holds the comment lines
-just above its definition and the origin of the copy of its name it hides. In a graph and a detail, a node holds every
+backdrop, the layer of a scene on `background2_mesh`). An on_action's says whether the game calls it from its own
+code (the dumps' "From Code: Yes"), and every node holds the comment lines just above its definition and the origin of
+the copy of its name it hides. In a graph and a detail, a node holds every
 firing it makes, `Fires`, in the order written. A drawn node holds its own trigger in words, `Trigger`.
+
+In a graph, a node also holds the `Row`s it shows open, `Rows`, in the order its firings are written. The firings that
+blocks decide (a branch of an if, a weighted branch or a list) written inside the blocks at the same lines are one row,
+with the last deciding block as its `Step`; a firing written plainly is a row of its own. A row that a weighted branch
+or a list decides inside a branch of an if sits under a header row for that branch (`Nested`, `Header`). Past the
+fan-out the rest are one fold row, whose `More` counts them, unless `Expand` opens the node's fold.
 
 A fold is a node too, with the id `more:<id>` or `more-in:<id>`: it stands for the firings of one node past the
 filter's fan-out, and `Count` says how many. An `Edge` is one firing, from a firer to what it fires, with where it is
-written and where it sits: its `Steps`, each a block around it from the top of the definition (a branch of an if's
-chain, a weighted branch, a list, a link to another scope, an option or another block; a firing written as an entry
-that an on_action's `random_events` picks by weight has that entry as its last step) with its condition in words
-and, for an option, its name in words, its delay in words ("7 days", "10–30 days"), the effect that writes it and the title
-that effect gives it.
+written (`Site`, with the range of the name it fires and the text of its line) and where it sits: its `Steps`, each a
+block around it from the top of the definition (a branch of an if's chain, a weighted branch, a list, a link to
+another scope, an option or another block; a firing written as an entry that an on_action's `random_events` picks by
+weight has that entry as its last step) with its condition in words and, for an option, its name in words, its delay
+in words ("7 days", "10–30 days"), the effect that writes it and the title that effect gives it.
 
 A condition in words is a block's limit, else its trigger, each statement a `Condition`. A keyword of the language
 reads its `game.Keyword.Says` ("any of", "any province where"), and one that `Covers` what it holds reads its text as
@@ -81,15 +87,16 @@ workspace's mods define that the game keeps, for the page's start.
 ## The detail
 
 `BuildDetail` reads the definition the game keeps of a node. A `Detail` holds its node, with the node's own trigger in
-words, its source and its `Section`s, one for each key at its top, the options apart, a block's value left to the source, with their texts in
-the workspace's language, else the base language. A section that shows a text has its `Version`s: each text it can
-show with the trigger that decides it in words, and its pieces (`loc.Segments`), each data call made its words: a call
-that names a customizable localization reads as the texts it can show, joined by slashes ("daughter/son",
-`game.CustomTexts`). A version whose key has no message in the detail's language is `Missing`, and shows the base
-language's text.
+words, its source and its `Section`s, one for each key at its top, the options apart, a block's value left to the
+source, with their texts in the workspace's language, else the base language. A section that shows a text has its
+`Version`s: each text it can show with the trigger that decides it in words, and its pieces (`loc.Segments`), each
+data call made its words: a call that names a customizable localization reads as the texts it can show, joined by
+slashes ("daughter/son", `game.CustomTexts`). A version whose key has no message in the detail's language is
+`Missing`, and shows the base language's text.
 
 The detail also holds the firings of what fires it, the node at the other end of each firing, and the game rules it
-reads with their settings' texts (`game.GameRules`). Where the definition hides a copy of its name, the detail holds that copy's node.
+reads with their settings' texts (`game.GameRules`). Where the definition hides a copy of its name, the detail holds
+that copy's node.
 
 ## Terms
 
@@ -97,6 +104,7 @@ reads with their settings' texts (`game.GameRules`). Where the definition hides 
   scripted effect or another entry that fires one, or a fold.
 - **Fold**: a node that stands for the firings of one node past the fan-out.
 - **Edge**: one firing, from a firer to what it fires.
+- **Row**: one line of an open node: the firings written in the same blocks, a header for a branch, or the fold.
 - **Step**: one block a firing is written inside, from the top of its definition.
 - **Condition**: one statement of a block of triggers in words, with the statements of its block under it.
 - **Filter**: what the graph shows and how far it reaches from its root.

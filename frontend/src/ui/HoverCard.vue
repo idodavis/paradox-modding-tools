@@ -28,6 +28,7 @@ const takes = computed(() => {
   const type = expected.type === ValueType.ValueUnknown ? "" : expected.type;
   return [
     type,
+    expected.scope && `leading to ${expected.scope}`,
     expected.database && `of ${expected.database}`,
     expected.choices?.join(" | "),
     expected.values && "or a script value",

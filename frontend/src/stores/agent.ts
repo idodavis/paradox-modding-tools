@@ -762,24 +762,18 @@ export const useAgentStore = defineStore("agent", () => {
     const live = sessions.find((session) => session.id === record.id);
     if (live) close(live);
     records.value = records.value.filter((other) => other.id !== record.id);
-    if (row && isDeletable) {
-      await deleteCopy(row, record).catch((error: unknown) =>
-        toast.add({ title: `${name} could not delete its copy`, description: describeError(error), color: "error" }),
-      );
-    }
-  };
-
-  /** deleteCopy has an agent delete its own copy of a session, over a stream opened for that alone. */
-  async function deleteCopy(agent: Agent, record: SessionRecord): Promise<void> {
-    const session = makeSession(agent, record);
+    if (!row || !isDeletable) return;
+    const session = makeSession(row, record);
     try {
       const { dialect } = await openDialect(session);
       await dialect.initialize();
       await dialect.delete(record.id);
+    } catch (error) {
+      toast.add({ title: `${name} could not delete its copy`, description: describeError(error), color: "error" });
     } finally {
       unlink(session);
     }
-  }
+  };
 
   /**
    * undo gives each file the given edits made back its text from before them, the latest change first, and marks

@@ -148,8 +148,12 @@ function mount(): void {
       isRoot(item.path) && !isWritable(item.path) ? { icon: "file-tree-icon-lock", title: "Read only" } : null,
     onSelectionChange: select,
     renaming: writable.value && {
-      canRename: ({ path }) => isWritable(path) && !isRoot(path),
-      onRename: ({ sourcePath, destinationPath }) => rename({ source: sourcePath, destination: destinationPath }),
+      canRename: ({ path, isFolder }) => {
+        const row = rowOf(path, isFolder);
+        return isWritable(row) && !isRoot(row);
+      },
+      onRename: ({ sourcePath, destinationPath, isFolder }) =>
+        rename({ source: rowOf(sourcePath, isFolder), destination: rowOf(destinationPath, isFolder) }),
     },
     dragAndDrop: writable.value && {
       canDrop: ({ target: drop }) => drop.kind === "directory" && isWritable(drop.directoryPath ?? ""),
@@ -192,6 +196,11 @@ const rootIndex = (row: string) => labels.value.indexOf(row.slice(0, row.indexOf
 const isRoot = (row: string) => row.indexOf("/") === row.length - 1;
 const isWritable = (row: string) => (roots[rootIndex(row)]?.origin ?? VANILLA) !== VANILLA;
 
+/** rowOf returns the row of a path the tree hands out. The tree leaves off the slash a folder's row ends in. */
+function rowOf(path: string, isFolder: boolean): string {
+  return isFolder && !path.endsWith("/") ? `${path}/` : path;
+}
+
 /** findPath finds a row's path on disk: its place's, or a new row's. It is "" for a row the tree lacks. */
 function findPath(row: string): string {
   return places.get(row)?.path ?? drafts.get(row)?.path ?? "";
@@ -231,10 +240,15 @@ function loadExpanded(): void {
 
 /**
  * load lists a folder row and puts its rows in the tree. A listing already on its way is shared, and one that no change
- * on disk has made stale is read from the cache.
+ * on disk has made stale is read from the cache. A folder gone from disk lists nothing and changes nothing: its
+ * parent's listing takes its row away.
  */
 async function load(row: string): Promise<void> {
-  apply(row, (await loadQuery(folderQuery(findPath(row)))) ?? []);
+  const children = await loadQuery(folderQuery(findPath(row))).then(
+    (listed) => listed ?? [],
+    () => undefined,
+  );
+  if (children) apply(row, children);
 }
 
 /** apply makes a folder row hold the listed rows, adding the new ones and removing those that are gone. */

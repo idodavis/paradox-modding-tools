@@ -354,7 +354,7 @@ func TestBuildInstalls(t *testing.T) {
 				t.Fatal("no commands")
 			}
 			sources, facts := map[game.Source]int{}, map[string]int{}
-			built.walkFields(func(field *Field) {
+			built.walkFields(func(field *Field, _ bool) {
 				sources[field.Source]++
 				for name, claim := range map[string]game.Source{
 					"blurb": field.Blurb.Source, "value": field.Value.Source, "default": field.Default.Source,

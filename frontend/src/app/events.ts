@@ -45,9 +45,19 @@ const EVENTS: { [E in keyof Events.CustomEvents]?: EventRow<E> } = {
   "workspace:closed": { stale: () => WORKSPACE_KEYS, forgets: true },
   "install:scanned": { stale: () => [keys.installs, keys.state] },
   // a changed file is read again, with the listings and places that name it, the pictures drawn from files and the
-  // git statuses
+  // git statuses, and the mods' descriptors when a descriptor changed
   "fs:changed": {
-    stale: ({ path }) => [keys.file(path), keys.folders, keys.place(path), keys.draws, ...listStatusKeys()],
+    stale: ({ path, descriptor }) => [
+      keys.file(path),
+      keys.folders,
+      keys.place(path),
+      keys.draws,
+      ...(descriptor ? [keys.workspaces] : []),
+      ...useQueryCache()
+        .getEntries({ key: keys.gits })
+        .filter((entry) => isGitStatus(entry.key))
+        .map((entry) => entry.key),
+    ],
   },
   "git:changed": { stale: (dir) => [keys.git(dir)] },
   "release:changed": { stale: (modId) => [keys.release(modId)] },
@@ -70,7 +80,8 @@ export function subscribeEvents(): void {
     Events.On(event, ({ data }) => {
       const affected = stale(data);
       if (forgets) affected.forEach((key) => forget(cache, key));
-      for (const key of affected) void cache.invalidateQueries({ key: key as EntryKey });
+      // a query that fails keeps its error for the page that shows it, so the refresh's rejection says nothing more
+      for (const key of affected) cache.invalidateQueries({ key: key as EntryKey }).catch(() => undefined);
     });
   }
 }
@@ -80,12 +91,4 @@ function forget(cache: ReturnType<typeof useQueryCache>, key: readonly unknown[]
   for (const entry of cache.getEntries({ key: key as EntryKey })) {
     cache.setEntryState(entry, { status: "pending", data: undefined, error: null });
   }
-}
-
-/** listStatusKeys lists the keys of the git statuses in the cache, one per repository. */
-function listStatusKeys(): (readonly unknown[])[] {
-  return useQueryCache()
-    .getEntries({ key: keys.gits })
-    .filter((entry) => isGitStatus(entry.key))
-    .map((entry) => entry.key);
 }

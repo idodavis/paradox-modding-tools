@@ -1,3 +1,5 @@
+// process_linux.go holds an agent's programs in a process group, so that they all end together.
+
 package agent
 
 import (

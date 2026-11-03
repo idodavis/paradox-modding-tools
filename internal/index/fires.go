@@ -1,3 +1,6 @@
+// fires.go lists which definitions fire which: an event, an on_action or a decision that triggers another, directly or
+// through the scripted effects between them.
+
 package index
 
 import (
@@ -26,8 +29,8 @@ func (index *Index) ListFires(schema *schema.Schema, site Site, follow bool) []F
 	var fires []Fire
 	// The scripted effects on the way from the definition are open, so that effects calling each other end the walk.
 	open := map[Site]bool{}
-	var walk func(current Site, via []Site)
-	walk = func(current Site, via []Site) {
+	var walk func(current Site, effectSites []Site)
+	walk = func(current Site, effectSites []Site) {
 		open[current] = true
 		defer delete(open, current)
 		for _, use := range index.listReferences(current) {
@@ -42,9 +45,9 @@ func (index *Index) ListFires(schema *schema.Schema, site Site, follow bool) []F
 				for _, target := range index.ListActing(schema, reference, use.File) {
 					switch {
 					case targeted:
-						fires = append(fires, Fire{Source: site, Target: target, Use: use, Via: via})
+						fires = append(fires, Fire{Source: site, Target: target, Use: use, Via: effectSites})
 					case !open[target]:
-						walk(target, append(slices.Clone(via), target))
+						walk(target, append(slices.Clone(effectSites), target))
 					}
 				}
 			}
@@ -65,8 +68,8 @@ func (index *Index) ListFiredBy(schema *schema.Schema, site Site, follow bool) [
 	// The scripted effects on the way from the definition are open, so that effects calling each other end the walk.
 	open := map[Site]bool{}
 	// The use passed down is the reference that names the fired definition, found at the first step.
-	var walk func(current Site, via []Site, use Site)
-	walk = func(current Site, via []Site, use Site) {
+	var walk func(current Site, effectSites []Site, use Site)
+	walk = func(current Site, effectSites []Site, use Site) {
 		open[current] = true
 		defer delete(open, current)
 		// Only a definition that acts is called by name.
@@ -75,8 +78,8 @@ func (index *Index) ListFiredBy(schema *schema.Schema, site Site, follow bool) [
 			return
 		}
 		for _, referrer := range index.ListUses(reference.Database, reference.Name) {
-			parent, inside := index.FindDefinition(referrer)
-			if !inside || !index.Occurrence(referrer).Firing {
+			parent, enclosed := index.FindDefinition(referrer)
+			if !enclosed || !index.Occurrence(referrer).Firing {
 				continue
 			}
 			fired := use
@@ -89,10 +92,10 @@ func (index *Index) ListFiredBy(schema *schema.Schema, site Site, follow bool) [
 				// A firer the game drops fires nothing, and a merged one stands as the definition the game keeps.
 				if winner, ok := index.FindKeptLocal(schema, holder, parent.File); ok && index.isActing(winner, parent) {
 					source := lo.Ternary(winner.Reason == ReasonUnsettled, parent, winner.Site)
-					fires = append(fires, Fire{Source: source, Target: site, Use: fired, Via: via})
+					fires = append(fires, Fire{Source: source, Target: site, Use: fired, Via: effectSites})
 				}
 			case !open[parent]:
-				walk(parent, slices.Insert(slices.Clone(via), 0, parent), fired)
+				walk(parent, slices.Insert(slices.Clone(effectSites), 0, parent), fired)
 			}
 		}
 	}

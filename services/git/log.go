@@ -1,3 +1,5 @@
+// log.go lists the commits of a repository's log, with what the graph draws of each, and the files a commit changed.
+
 package git
 
 import (
@@ -39,11 +41,26 @@ func (git *Service) ListCommits(dir string, limit int, refs []string) ([]Commit,
 		if record = strings.TrimSpace(record); record == "" {
 			continue
 		}
-		commit, err := parseCommit(record)
+		fields := strings.Split(record, "\x00")
+		date, err := time.Parse(time.RFC3339, fields[3])
 		if err != nil {
 			return nil, err
 		}
-		commits = append(commits, commit)
+		commits = append(commits, Commit{
+			Hash:    fields[0],
+			Short:   fields[1],
+			Parents: strings.Fields(fields[2]),
+			Date:    date,
+			Subject: fields[4],
+			// the decoration writes full names, the current branch as "HEAD -> refs/heads/main" and a tag after "tag: ";
+			// a remote's HEAD, which names its default branch, is left out, and a detached HEAD is kept with no type
+			Refs: lo.FilterMap(strings.Split(fields[5], ", "), func(decoration string, _ int) (Ref, bool) {
+				name, current := strings.CutPrefix(decoration, "HEAD -> ")
+				name, refType := classifyRef(strings.TrimPrefix(name, "tag: "))
+				isRemoteHead := refType == "remote" && strings.HasSuffix(name, "/HEAD")
+				return Ref{Name: name, Type: refType, Current: current}, name != "" && !isRemoteHead
+			}),
+		})
 	}
 	return commits, nil
 }
@@ -69,28 +86,4 @@ func (git *Service) ListCommitFiles(root, hash string) ([]Change, error) {
 	}
 	git.locateChanges(root, changes)
 	return changes, nil
-}
-
-// parseCommit returns the commit one log record describes. The error is the date's if it does not parse.
-func parseCommit(record string) (Commit, error) {
-	fields := strings.Split(record, "\x00")
-	date, err := time.Parse(time.RFC3339, fields[3])
-	if err != nil {
-		return Commit{}, err
-	}
-	return Commit{
-		Hash:    fields[0],
-		Short:   fields[1],
-		Parents: strings.Fields(fields[2]),
-		Date:    date,
-		Subject: fields[4],
-		// the decoration writes full names, the current branch as "HEAD -> refs/heads/main" and a tag after "tag: "; a
-		// remote's HEAD, which names its default branch, is left out, and a detached HEAD is kept with no type
-		Refs: lo.FilterMap(strings.Split(fields[5], ", "), func(decoration string, _ int) (Ref, bool) {
-			name, current := strings.CutPrefix(decoration, "HEAD -> ")
-			name, refType := classifyRef(strings.TrimPrefix(name, "tag: "))
-			isRemoteHead := refType == "remote" && strings.HasSuffix(name, "/HEAD")
-			return Ref{Name: name, Type: refType, Current: current}, name != "" && !isRemoteHead
-		}),
-	}, nil
 }

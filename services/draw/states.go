@@ -1,3 +1,6 @@
+// states.go works out which widgets of a window the picks hide, and which picks show a hidden widget. It also finds
+// the groups the panel lets the user switch and what the window opens with.
+
 package draw
 
 import (
@@ -135,7 +138,32 @@ func (drw *Service) EvaluateStates(path, name string, picks map[string]string) (
 	if err != nil {
 		return States{}, err
 	}
-	return evaluate(opened, picks), nil
+	evaluator, library := opened.evaluator.applyPicks(picks), opened.library
+	window := &evaluator.window
+	hidden := lo.FilterMap(window.Widgets[1:], func(widget Widget, _ int) (int32, bool) {
+		return widget.ID, evaluator.isFalse(widget.ID)
+	})
+	applies, choices := listApplies(evaluator, evaluator.groups, hidden), evaluator.listChoices(library)
+	values := map[string]string{}
+	for _, group := range evaluator.groups {
+		values[group.ID] = evaluator.values[group.ID]
+	}
+	for _, group := range slices.Concat(opened.pictures, opened.tiers) {
+		applies[group.ID] = group.Readers
+		if picked := picks[group.ID]; picked != "" {
+			values[group.ID] = picked
+		}
+	}
+	for _, group := range opened.pictures {
+		for _, reader := range group.Readers {
+			if picked := picks[group.ID]; picked != "" {
+				choices[reader] = append(choices[reader], library.pickPicture(*window.Widgets[reader].Pictures, picked))
+			}
+		}
+	}
+	pickColors(opened, picks, choices)
+	evaluator.pickTiers(library.ws.Game.GUI.Tiers, opened.tiers, picks, choices)
+	return States{Values: values, Hidden: hidden, Applies: applies, Choices: choices}, nil
 }
 
 // Reveal returns the picks that make a hidden widget of one window in a GUI file visible under the given picks. Each
@@ -179,47 +207,21 @@ func (drw *Service) Reveal(path, name string, picks map[string]string, widget in
 	return required, nil
 }
 
-// evaluate works out the states of a window under the given picks, from the window as it opens, with the pictures,
-// colors and texts that its library finds. A list of pictures and a tier are at the value picked for them, and draw as
-// written where none is.
-func evaluate(opened opening, picks map[string]string) States {
-	evaluator, library := opened.evaluator.applyPicks(picks), opened.library
-	window := &evaluator.window
-	hidden := lo.FilterMap(window.Widgets[1:], func(widget Widget, _ int) (int32, bool) {
-		return widget.ID, evaluator.isFalse(widget.ID)
-	})
-	applies, choices := listApplies(evaluator, evaluator.groups, hidden), evaluator.listChoices(library)
-	values := map[string]string{}
-	for _, group := range evaluator.groups {
-		values[group.ID] = evaluator.values[group.ID]
-	}
-	for _, group := range slices.Concat(opened.pictures, opened.tiers) {
-		applies[group.ID] = group.Readers
-		if picked := picks[group.ID]; picked != "" {
-			values[group.ID] = picked
-		}
-	}
-	for _, group := range opened.pictures {
-		for _, reader := range group.Readers {
-			if picked := picks[group.ID]; picked != "" {
-				choices[reader] = append(choices[reader], library.pickPicture(*window.Widgets[reader].Pictures, picked))
-			}
-		}
-	}
-	pickColors(opened, picks, choices)
-	evaluator.pickTiers(library.ws.Game.GUI.Tiers, opened.tiers, picks, choices)
-	return States{Values: values, Hidden: hidden, Applies: applies, Choices: choices}
-}
-
 // openEvaluator returns the evaluator of a resolved window whose widgets read in the given contexts, at the values it
 // opens with, its groups classified, as classifyGroups says, each of its data models' lists drawing the given number
 // of rows.
 func openEvaluator(schema *schema.Schema, window Window, contexts []context, count int) *evaluator {
 	groups := listGroups(schema, window, contexts)
+	objects := lo.GroupBy(groups, func(group Group) string {
+		call, ok := jomini.ParseCall(group.ID, 0)
+		if !ok || len(call.Steps) < 2 {
+			return ""
+		}
+		return toCallText(jomini.Call{Steps: call.Steps[:len(call.Steps)-1]})
+	})
 	evaluator := &evaluator{
 		schema: schema, window: window, contexts: contexts, groups: groups, values: map[string]string{}, rows: count,
-		objects: lo.GroupBy(groups, func(group Group) string { return toObject(group.ID) }),
-		parsed:  map[string]parsedCondition{},
+		objects: objects, parsed: map[string]parsedCondition{},
 	}
 	evaluator.strips = evaluator.listStrips()
 	evaluator.open()
@@ -477,10 +479,16 @@ func isDrawing(window *Window, widget Widget) bool {
 
 // listCaptions returns how the panel writes each of a group's options: the text of the widget whose press sets it, All
 // or None for the picks of every value and of none, else the value as a GUI file writes it, as the start of a sentence.
+// A group of fewer than two values is a yes or no: Yes is on its one value, or on every value where it has none, and
+// No is on none.
 func listCaptions(group Group) map[string]string {
 	captions := map[string]string{}
 	for _, option := range group.Options {
 		captions[option] = cmp.Or(group.Captions[option], pickCaptions[option], toSentence(toWrittenValue(option)))
+	}
+	values := lo.Without(group.Options, pickEvery, pickNone)
+	if len(values) < 2 && slices.Contains(group.Options, pickNone) {
+		captions[lo.FirstOr(values, pickEvery)], captions[pickNone] = "Yes", "No"
 	}
 	return captions
 }
@@ -515,10 +523,10 @@ func chooseBox(group Group, widgets []Widget) Box {
 func listApplies(evaluator *evaluator, groups []Group, hidden []int32) map[string][]int32 {
 	widgets := evaluator.window.Widgets
 	hides := lo.Keyify(hidden)
-	under := make([]bool, len(widgets))
+	covered := make([]bool, len(widgets))
 	for _, widget := range widgets[1:] {
 		_, held := hides[widget.Parent]
-		under[widget.ID] = under[widget.Parent] || held
+		covered[widget.ID] = covered[widget.Parent] || held
 	}
 	applies := map[string][]int32{}
 	for _, group := range groups {
@@ -531,7 +539,7 @@ func listApplies(evaluator *evaluator, groups []Group, hidden []int32) map[strin
 				!slices.EqualFunc(everyChoices, evaluator.listWidgetChoices(reader), func(first, second Choice) bool {
 					return first.Key == second.Key && first.Value == second.Value
 				})
-			if !under[reader] && isDecided {
+			if !covered[reader] && isDecided {
 				applies[group.ID] = append(applies[group.ID], reader)
 			}
 		}
@@ -614,17 +622,6 @@ func findPressCondition(window *Window, widget Widget) (string, bool) {
 	return "", false
 }
 
-// listConditions returns the condition that one of a window's widgets is drawn by: the value of the first of the
-// game's hiding keys that it writes. It returns none if the widget writes none of them.
-func listConditions(window *Window, widget Widget) []string {
-	for _, key := range game.GUI.HiddenKeys {
-		if property := findProperty(window.listProperties(widget), key); property.Value != "" {
-			return []string{property.Value}
-		}
-	}
-	return nil
-}
-
 // listGroups returns the groups that the conditions of a window's widgets read, those their choices between two values
 // are made by too, in the order they are first read, each with its readers. A group offers the values the window asks
 // of it, then every value where it has none or several, then none. The window's own widget is always drawn, so its
@@ -635,7 +632,12 @@ func listGroups(schema *schema.Schema, window Window, contexts []context) []Grou
 		calls := lo.FilterMap(window.Conditions[widget.ID], func(condition string, _ int) (jomini.Call, bool) {
 			return jomini.ParseBracketed(condition, 0)
 		})
-		for _, call := range append(calls, listChoiceConditions(&window, widget)...) {
+		for property := range window.listProperties(widget) {
+			if call, ok := jomini.ParseBracketed(property.Value, 0); ok {
+				calls = append(calls, listSelectConditions(call)...)
+			}
+		}
+		for _, call := range calls {
 			for _, fact := range listFacts(schema, call, contexts[widget.ID]) {
 				id, value, _, _ := splitFact(schema, contexts[widget.ID].reach(fact))
 				position := groups.add(id, func() Group { return makeGroup(id) })
@@ -657,28 +659,22 @@ func listGroups(schema *schema.Schema, window Window, contexts []context) []Grou
 	return groups.values
 }
 
-// makeGroup returns the group of a call, with the object it asks about and what it asks, in words.
+// makeGroup returns the group of a call, with the object it asks about, as its kind and the key that picks one of that
+// kind, and what it asks of it, in words. The object is the last of the call's start and at most one step past it, as
+// a window or a row reads it, and a call of one step asks about the game. What it asks is each step past the object,
+// then the last step. A check that an object further on exists is labeled by that object alone.
 func makeGroup(id string) Group {
 	call, _ := jomini.ParseCall(id, 0)
-	group := describe(call)
-	group.ID = id
-	return group
-}
-
-// describe returns the words of a call's group: the object it asks about, as its kind and the key that picks one of
-// that kind, and what it asks of it. The object is the last of the call's start and at most one step past it, as a
-// window or a row reads it, and a call of one step asks about the game. What it asks is each step past the object,
-// then the last step. A check that an object further on exists is labeled by that object alone.
-func describe(call jomini.Call) Group {
 	last := len(call.Steps) - 1
 	switch {
 	case last < 0:
-		return Group{}
+		return Group{ID: id}
 	case last == 0:
 		given := lo.FilterMap(call.Steps[0].Arguments, func(argument jomini.Argument, _ int) (string, bool) {
 			return toCallText(lo.FromPtr(argument.Call)), argument.Call != nil
 		})
-		return Group{Subject: "Game", Label: strings.Join(append([]string{schema.DescribeStep(call.Steps[0], false)}, given...), " ")}
+		parts := append([]string{schema.DescribeStep(call.Steps[0], false)}, given...)
+		return Group{ID: id, Subject: "Game", Label: strings.Join(parts, " ")}
 	}
 	end := min(last, directSteps-1)
 	path := lo.Map(call.Steps[end:last], func(step jomini.Step, _ int) string { return schema.DescribeStep(step, true) })
@@ -687,14 +683,9 @@ func describe(call jomini.Call) Group {
 	if !exists {
 		path = append(path, schema.DescribeStep(check, false))
 	}
-	keys := lo.FlatMap(call.Steps[:end], func(step jomini.Step, _ int) []string { return listGiven(step) })
+	keys := lo.Compact(lo.FlatMap(call.Steps[:end], func(step jomini.Step, _ int) []string { return listQuoted(step) }))
 	subject := toSentence(schema.DescribeStep(jomini.Step{Text: call.Steps[end-1].Text}, true))
-	return Group{Subject: subject, Key: strings.Join(keys, " "), Label: strings.Join(path, " › "), Exists: exists}
-}
-
-// listGiven returns the quoted arguments of a step that are not empty, in order.
-func listGiven(step jomini.Step) []string {
-	return lo.Filter(listQuoted(step), func(text string, _ int) bool { return text != "" })
+	return Group{ID: id, Subject: subject, Key: strings.Join(keys, " "), Label: strings.Join(path, " › "), Exists: exists}
 }
 
 // listFacts returns the calls that a condition reads. A boolean function reads its operands, so it looks through And,
@@ -830,7 +821,10 @@ func splitFact(schema *schema.Schema, call jomini.Call) (group, value string, st
 	if blank < 0 {
 		return toCallText(call), "", 0, false
 	}
-	return toBlankedText(call, last, blank), value, last, true
+	steps := slices.Clone(call.Steps)
+	steps[last].Arguments = slices.Clone(steps[last].Arguments)
+	steps[last].Arguments[blank].Text = ""
+	return toCallText(jomini.Call{Steps: steps}), value, last, true
 }
 
 // isVariables reports whether the given steps reach the GUI's variable system.
@@ -888,24 +882,6 @@ func toCallText(call jomini.Call) string {
 		return step.Text + "(" + strings.Join(arguments, ", ") + ")"
 	})
 	return strings.Join(steps, ".")
-}
-
-// toBlankedText returns the text of a call with the quoted argument at the given step and position blanked.
-func toBlankedText(call jomini.Call, step, argument int) string {
-	steps := slices.Clone(call.Steps)
-	steps[step].Arguments = slices.Clone(steps[step].Arguments)
-	steps[step].Arguments[argument].Text = ""
-	return toCallText(jomini.Call{Steps: steps})
-}
-
-// toObject returns the call that a group's conditions read, up to its last step, as the group's text writes it with
-// its blank kept. A group with a single step has none.
-func toObject(group string) string {
-	call, ok := jomini.ParseCall(group, 0)
-	if !ok || len(call.Steps) < 2 {
-		return ""
-	}
-	return toCallText(jomini.Call{Steps: call.Steps[:len(call.Steps)-1]})
 }
 
 // evaluateCondition works out whether a condition, read in the given context, holds under the values of the groups. It

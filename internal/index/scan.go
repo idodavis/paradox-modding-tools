@@ -1,3 +1,6 @@
+// scan.go builds an index from an install's files and the mods' files: it lists the files, scans each one for the
+// definitions and references it holds, and interns the names in the index's tables.
+
 package index
 
 import (
@@ -218,9 +221,9 @@ func (index *Index) listTables() []*Table {
 // cloneTables gives the index copies of the tables of a source, which it can intern into without changing the
 // source's.
 func (index *Index) cloneTables(source *Index) {
-	from := source.listTables()
+	originals := source.listTables()
 	for position, table := range index.listTables() {
-		*table = from[position].clone()
+		*table = Table{Texts: slices.Clone(originals[position].Texts), ordinals: maps.Clone(originals[position].ordinals)}
 	}
 }
 
@@ -263,8 +266,8 @@ func (index *Index) buildGroup(position int32) {
 	place.key = strings.ToLower(place.rest)
 	index.placements[position] = place
 	group := index.byRel[place.key]
-	at, _ := slices.BinarySearchFunc(group, position, index.compareLoaded)
-	index.byRel[place.key] = slices.Concat(group[:at], []int32{position}, group[at:])
+	insertion, _ := slices.BinarySearchFunc(group, position, index.compareLoaded)
+	index.byRel[place.key] = slices.Concat(group[:insertion], []int32{position}, group[insertion:])
 }
 
 // compareLoaded orders two files, given by their positions in Files, the way the game loads them: by their roots in
@@ -300,7 +303,8 @@ func (index *Index) scanFiles(schema *schema.Schema, progress func(percent int))
 func (index *Index) buildFile(lock *sync.RWMutex, schema *schema.Schema, position int32) {
 	// The file is built against tables of its own, so that building takes no lock; its ordinals move to the index's
 	// tables afterwards, which takes the lock a few times for the whole file, not once for each occurrence.
-	tables := index.makeTables()
+	tables := &Index{Files: index.Files, Caseless: index.Caseless, row: index.row}
+	tables.buildTables()
 	var occurrences []Occurrence
 	var texts []string
 	switch format := index.Files[position].Format; {
@@ -323,13 +327,6 @@ func (index *Index) buildFile(lock *sync.RWMutex, schema *schema.Schema, positio
 func (index *Index) readSource(position int32) string {
 	text, _ := files.ReadText(index.Files[position].Path)
 	return text.Text
-}
-
-// makeTables returns an index that has the same files, caseless databases and game as this one and tables of its own.
-func (index *Index) makeTables() *Index {
-	tables := &Index{Files: index.Files, Caseless: index.Caseless, row: index.row}
-	tables.buildTables()
-	return tables
 }
 
 // Enter records the statement's definition and references.

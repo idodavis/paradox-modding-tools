@@ -4,9 +4,6 @@
 package index
 
 import (
-	"maps"
-	"slices"
-
 	"github.com/samber/lo"
 
 	"paradox-modding-tools/internal/files"
@@ -67,11 +64,6 @@ func (table *Table) Intern(text string) uint32 {
 func (table *Table) Lookup(text string) (uint32, bool) {
 	ordinal, ok := table.ordinals[text]
 	return ordinal, ok
-}
-
-// clone returns a copy of a table that can be interned into without changing this one.
-func (table *Table) clone() Table {
-	return Table{Texts: slices.Clone(table.Texts), ordinals: maps.Clone(table.ordinals)}
 }
 
 // A Site is a handle to one occurrence. A mods' index lists the install's files first, so a site means the same file

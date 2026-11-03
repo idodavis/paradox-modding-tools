@@ -13,6 +13,7 @@ import type { Edit, Range as Span } from "@services/lsp/models";
 import type { Place } from "@services/workspace/models";
 
 import { confirm } from "../../../lib/feedback";
+import { toSentence } from "../../../lib/format";
 import { drawablesQuery } from "../../../queries";
 import { useDrawStore } from "../../../stores/draw";
 import type { DrawFile } from "../../../stores/draw";
@@ -145,7 +146,7 @@ function selectTab(value: string | number): void {
   <aside class="flex min-h-0 min-w-0 flex-1 flex-col bg-muted text-(length:--ide-ui-font)">
     <div class="flex flex-col gap-1.5 border-b border-default px-4 pt-3.5 pb-3">
       <div class="flex flex-wrap items-center gap-2">
-        <UBadge v-if="drawn" :label="drawn.what" color="neutral" variant="subtle" size="sm" class="capitalize" />
+        <UBadge v-if="drawn" :label="toSentence(drawn.what)" color="neutral" variant="subtle" size="sm" />
         <OriginChip :origin="model.place.origin" />
         <span class="grow" />
         <template v-if="coat">

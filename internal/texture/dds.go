@@ -1,3 +1,6 @@
+// dds.go reads a DDS file's header and decodes its levels into an image, whether they are uncompressed or in blocks of
+// the BC1 to BC5 compressions. It also names the file's format.
+
 package texture
 
 import (
@@ -102,7 +105,10 @@ func decodeDDS(bytes []byte, header Header, level int) (image.Image, error) {
 	depth, masks := resolveDDSMasks(bytes)
 	format, _ := classifyDDS(bytes)
 	for range level {
-		size := countLevelBytes(header, format.blockBytes, depth)
+		size := header.Width * header.Height * depth / 8
+		if format.blockBytes > 0 {
+			size = (header.Width + 3) / 4 * ((header.Height + 3) / 4) * format.blockBytes
+		}
 		if len(data) < size {
 			return nil, errTruncated
 		}
@@ -113,15 +119,6 @@ func decodeDDS(bytes []byte, header Header, level int) (image.Image, error) {
 		return decodeMasked(data, header, depth, masks)
 	}
 	return decodeBlocks(data, header, format.blockBytes, format.decodeBlock)
-}
-
-// countLevelBytes returns the bytes of one mip level of the header's size: its 4 by 4 blocks of the given bytes each,
-// or, with no compression, its pixels of the given bits each.
-func countLevelBytes(header Header, blockBytes, depth int) int {
-	if blockBytes > 0 {
-		return (header.Width + 3) / 4 * ((header.Height + 3) / 4) * blockBytes
-	}
-	return header.Width * header.Height * depth / 8
 }
 
 // decodeDDSHeader decodes a DDS header, the DX10 extension included. It returns false if the bytes are not a DDS

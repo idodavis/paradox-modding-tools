@@ -1,3 +1,6 @@
+// details.go answers the editor's smaller questions about a file: where it folds, the hints and color boxes it draws,
+// how a color is written, and the signature of the call under the cursor.
+
 package lsp
 
 import (
@@ -86,33 +89,28 @@ type hintsVisitor struct {
 // Enter records the hint for the statement's value if it is a date.
 func (visitor *hintsVisitor) Enter(tree *jomini.Tree, statement int32, context *schema.Context) bool {
 	if date, ok := findDate(tree, statement, context); ok {
+		card := resolveDate(visitor.calendar, date)
+		parts := []string{}
+		if card.Date.Day > 0 {
+			parts = append(parts, fmt.Sprint(card.Date.Day))
+		}
+		if card.Month != "" {
+			parts = append(parts, card.Month)
+		}
+		parts = append(parts, fmt.Sprint(card.Date.Year))
+		if card.Era != "" {
+			parts = append(parts, card.Era)
+		}
 		end := tree.Statements[statement].Value.End
 		point := ToRange(tree.Src, tree.Lines, jomini.Span{Start: end, End: end})
 		visitor.hints = append(visitor.hints,
-			Hint{Line: point.StartLine, Column: point.StartColumn, Text: describeDate(resolveDate(visitor.calendar, date))})
+			Hint{Line: point.StartLine, Column: point.StartColumn, Text: strings.Join(parts, " ")})
 	}
 	return true
 }
 
 // Leave does nothing.
 func (visitor *hintsVisitor) Leave(tree *jomini.Tree, statement int32, context *schema.Context) {}
-
-// describeDate writes a date read in a mod's calendar as a short phrase: the day, the month's name, the year and the
-// era. A date that leaves out its day or its month leaves them out of the phrase.
-func describeDate(card *CardDate) string {
-	parts := []string{}
-	if card.Date.Day > 0 {
-		parts = append(parts, fmt.Sprint(card.Date.Day))
-	}
-	if card.Month != "" {
-		parts = append(parts, card.Month)
-	}
-	parts = append(parts, fmt.Sprint(card.Date.Year))
-	if card.Era != "" {
-		parts = append(parts, card.Era)
-	}
-	return strings.Join(parts, " ")
-}
 
 // ListColorSites returns every color written in a file, with the color it makes.
 func (lsp *Service) ListColorSites(path string) ([]ColorSite, error) {
@@ -134,12 +132,12 @@ func (lsp *Service) ListColorSites(path string) ([]ColorSite, error) {
 // range: the same tag and scale, with an alpha only if that color has one. A range that holds no color, such as a
 // coat's layer that does not write the color yet, gets it in the form the game's own coats write their colors in
 // (game.Game.Coat.ColorForm). It returns an error if the form cannot be written.
-func (lsp *Service) PresentColor(path string, within Range, color jomini.RGBA) (string, error) {
+func (lsp *Service) PresentColor(path string, colorRange Range, color jomini.RGBA) (string, error) {
 	ws, tree, err := lsp.loadTree(path)
 	if err != nil {
 		return "", err
 	}
-	offset := ToOffset(tree.Src, tree.Lines, within.StartLine, within.StartColumn)
+	offset := ToOffset(tree.Src, tree.Lines, colorRange.StartLine, colorRange.StartColumn)
 	tag, parts, ok := jomini.ColorParts(tree, tree.FindStatement(offset))
 	if !ok {
 		tag, parts = ws.Game.Coat.ColorForm.Tag, ws.Game.Coat.ColorForm.Example

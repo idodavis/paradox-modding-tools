@@ -1,3 +1,6 @@
+// navigate.go finds where a name is defined and used and renames it. It also lists the symbols of a file and finds
+// definitions by name across the workspace.
+
 package lsp
 
 import (
@@ -192,28 +195,17 @@ func ListFileSymbols(ws *workspace.Session, mods *index.Index, path string) ([]S
 	}
 	place := ws.Locate(mods, path)
 	if place.Format == files.FormatLocalization {
-		return listMessages(ws, mods, document), nil
+		return lo.Map(document.Messages.Messages, func(message loc.Message, _ int) Symbol {
+			text, _, _ := ws.LookupText(mods, message.Key)
+			reference := schema.Reference{Database: game.Localization, Name: message.Key, Span: message.KeySpan}
+			return makeSymbol(document.Tree, reference, message.Span, text)
+		}), nil
 	}
 	visitor := &symbolsVisitor{ws: ws, mods: mods, file: place.Position, symbols: []Symbol{}}
 	if place.Format.IsScript() {
 		ws.Schema.Walk(document.Tree, place.File, visitor)
 	}
 	return visitor.symbols, nil
-}
-
-// listMessages returns the messages of a localization file's document as symbols: each one's key, with its text in
-// the session's language.
-func listMessages(ws *workspace.Session, mods *index.Index, document workspace.Document) []Symbol {
-	tree := document.Tree
-	return lo.Map(document.Messages.Messages, func(message loc.Message, _ int) Symbol {
-		text, _, _ := ws.LookupText(mods, message.Key)
-		return Symbol{
-			Name: message.Key, Title: text, Database: game.Localization,
-			What: game.DescribeDefinition(game.Localization, false), Category: schema.CategoryDefinition,
-			Range:     ToRange(tree.Src, tree.Lines, message.Span),
-			NameRange: ToRange(tree.Src, tree.Lines, message.KeySpan),
-		}
-	})
 }
 
 // A symbolsVisitor builds the outline of a file.
@@ -232,7 +224,8 @@ func (visitor *symbolsVisitor) Enter(tree *jomini.Tree, statement int32, context
 		return true
 	}
 	definition := *context.Definition
-	symbol := makeSymbol(tree, statement, definition, lookupTitle(visitor.ws, visitor.mods, visitor.file, definition))
+	symbol := makeSymbol(tree, schema.Reference{Database: definition.Database, Name: definition.Name, Span: definition.Span},
+		tree.Statements[statement].Span, lookupTitle(visitor.ws, visitor.mods, visitor.file, definition))
 	siblings := &visitor.symbols
 	for _, position := range visitor.open {
 		siblings = &(*siblings)[position].Children
@@ -242,13 +235,14 @@ func (visitor *symbolsVisitor) Enter(tree *jomini.Tree, statement int32, context
 	return true
 }
 
-// makeSymbol returns the symbol of a definition that a statement of a tree writes, with the given title.
-func makeSymbol(tree *jomini.Tree, statement int32, definition schema.Definition, title string) Symbol {
+// makeSymbol returns the symbol of a name a tree defines, with the given title. The name comes as a reference, with
+// the span the name is written at, and the given span holds the whole of what defines it, a statement or a message.
+func makeSymbol(tree *jomini.Tree, reference schema.Reference, span jomini.Span, title string) Symbol {
 	return Symbol{
-		Name: definition.Name, Title: title, Database: definition.Database,
-		What: game.DescribeDefinition(definition.Database, false), Category: schema.CategoryDefinition,
-		Range:     ToRange(tree.Src, tree.Lines, tree.Statements[statement].Span),
-		NameRange: ToRange(tree.Src, tree.Lines, definition.Span),
+		Name: reference.Name, Title: title, Database: reference.Database,
+		What: game.DescribeDefinition(reference.Database, false), Category: schema.CategoryDefinition,
+		Range:     ToRange(tree.Src, tree.Lines, span),
+		NameRange: ToRange(tree.Src, tree.Lines, reference.Span),
 	}
 }
 

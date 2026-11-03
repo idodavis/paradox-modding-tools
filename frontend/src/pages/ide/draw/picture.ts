@@ -163,7 +163,11 @@ export function placeOnScreen(nodes: PictureNode[], floor: HTMLElement): boolean
  */
 export function fitTexts(nodes: PictureNode[]): void {
   const spans = nodes.flatMap(({ element }) => element.querySelector<HTMLElement>(":scope > span") ?? []);
-  for (const span of spans) restoreText(span);
+  for (const span of spans) {
+    span.dataset.size ??= span.style.fontSize;
+    span.style.fontSize = span.dataset.size;
+    for (const sample of listSamples(span)) sample.textContent = sample.dataset.sample ?? "";
+  }
   trimSamples(spans.filter((span) => listSamples(span).length && isCut(span)));
   shrinkTexts(spans.filter(isCut));
 }
@@ -468,9 +472,30 @@ function buildPictures(widget: Drawn, element: HTMLElement): HTMLElement[] {
     const own = makeSprite(path, element.style);
     pictures.push(buildTextures(own, widget.overlays, element.style));
     // the wiki: a widget with a texture and no size is the texture's size
-    if (!findVariable(element, "width") && !findVariable(element, "height")) pictures.push(buildSizer(own));
+    if (!findVariable(element, "width") && !findVariable(element, "height")) {
+      const sizer = document.createElement("img");
+      sizer.src = own.url;
+      sizer.alt = "";
+      applyCss(sizer.style, {
+        "grid-area": "1 / 1",
+        display: "block",
+        "max-width": "none",
+        visibility: "hidden",
+        zoom: String(1 / own.density),
+      });
+      pictures.push(sizer);
+    }
   }
-  if (widget.placeholder && !isLine) pictures.push(buildPlaceholder(widget.placeholder, mask));
+  if (widget.placeholder && !isLine) {
+    const placeholder = document.createElement("div");
+    placeholder.dataset.placeholder = widget.placeholder;
+    applyCss(placeholder.style, {
+      position: "absolute",
+      inset: "0",
+      ...findPlaceholder(widget.placeholder, mask && fileUrl(mask)),
+    });
+    pictures.push(placeholder);
+  }
   const text = buildText(widget, element);
   return text ? [...pictures, text] : pictures;
 }
@@ -550,21 +575,6 @@ function buildLayer(sprite: Sprite, style: CSSStyleDeclaration, alpha: number, m
   return layer;
 }
 
-/** buildSizer builds the hidden image that gives a widget with no size of its own the size of its texture on screen. */
-function buildSizer(sprite: Sprite): HTMLElement {
-  const image = document.createElement("img");
-  image.src = sprite.url;
-  image.alt = "";
-  applyCss(image.style, {
-    "grid-area": "1 / 1",
-    display: "block",
-    "max-width": "none",
-    visibility: "hidden",
-    zoom: String(1 / sprite.density),
-  });
-  return image;
-}
-
 /** toPaint converts a sprite to the CSS that paints it over its box: by its nine slices where it has a border. */
 function toPaint(sprite: Sprite): Record<string, string> {
   if (isSliced(sprite)) return { "border-style": "solid", "border-width": "0", "border-image": toSlices(sprite) };
@@ -627,17 +637,6 @@ function isSliced(sprite: Sprite): boolean {
   return sprite.border.some(Boolean);
 }
 
-/**
- * buildPlaceholder builds the placeholder of the given shape over a widget whose picture has no file. Its file says how
- * it lies there, and a mask's image file, where the widget has one, cuts it to the mask's outline.
- */
-function buildPlaceholder(shape: string, mask: string): HTMLElement {
-  const holder = document.createElement("div");
-  holder.dataset.placeholder = shape;
-  applyCss(holder.style, { position: "absolute", inset: "0", ...findPlaceholder(shape, mask && fileUrl(mask)) });
-  return holder;
-}
-
 /** buildText builds a widget's texts as a span in its cell, placed by its align values, or null where it has none. */
 function buildText(widget: Drawn, element: HTMLElement): HTMLElement | null {
   const texts = Object.values(widget.texts ?? {}).flatMap((text) => (text?.length ? [text] : []));
@@ -676,13 +675,6 @@ function buildSegment(segment: Segment): Node | string {
   sample.dataset.sample = segment.text;
   sample.style.setProperty("color", SAMPLE_COLORS[segment.kind]);
   return sample;
-}
-
-/** restoreText gives a text back its written font size and the whole of each sample in it. */
-function restoreText(span: HTMLElement): void {
-  span.dataset.size ??= span.style.fontSize;
-  span.style.fontSize = span.dataset.size;
-  for (const sample of listSamples(span)) sample.textContent = sample.dataset.sample ?? "";
 }
 
 /** listSamples lists the samples in a text, each the sample text of a data call. */

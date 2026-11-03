@@ -1,3 +1,5 @@
+// complete.go lists what can be written at a position in a file: keys, operators, commands and values.
+
 package lsp
 
 import (
@@ -26,8 +28,9 @@ type Completion struct {
 }
 
 // Complete returns the completion candidates at a position in a file. At a key they are the language's operators,
-// then the commands and fields the block takes. At a value they are the field's choices, the names the game loads or
-// the image files a path could name. It returns an empty list for a file that is not script.
+// then the commands and fields the block takes. At a value they are the field's choices, the names the game loads, the
+// links to the scope a target needs or the image files a path could name. It returns an empty list for a file that
+// is not script.
 func (lsp *Service) Complete(path string, line, column int) ([]Completion, error) {
 	ws, tree, err := lsp.loadTree(path)
 	if err != nil {
@@ -47,7 +50,7 @@ func (lsp *Service) Complete(path string, line, column int) ([]Completion, error
 		if !current.Value.IsEmpty() && offset >= current.Value.Start {
 			typed = tree.Src[current.Value.Start:offset]
 		}
-		return listValues(mods, ws.Game, visitor.context.Field, typed), nil
+		return listValues(mods, ws.Game, &visitor.context, typed), nil
 	}
 	visitor := &completeVisitor{offset: offset}
 	ws.Schema.WalkTo(tree, place.File, offset, visitor)
@@ -75,17 +78,23 @@ func findValue(tree *jomini.Tree, offset int) (int32, bool) {
 	return statement, true
 }
 
-// listValues returns the values a field may take: its choices, yes and no, the loaded names of a database, or the
-// image files under the folder typed so far. The given text is what is typed, with the quote it may begin with. It
-// returns an empty list if the field states no value.
-func listValues(mods *index.Index, row *game.Game, field *schema.Field, typed string) []Completion {
+// listValues returns the values a statement's field may take: its choices, yes and no, the loaded names of a
+// database, the links that lead to the scope it needs, or the image files under the folder typed so far. The given
+// text is what is typed, with the quote it may begin with. It returns an empty list if the field states no value.
+func listValues(mods *index.Index, row *game.Game, context *schema.Context, typed string) []Completion {
+	field := context.Field
 	if field == nil || !field.Value.IsStated() {
 		return []Completion{}
 	}
-	expected, typed := field.Value.Value, strings.TrimPrefix(typed, `"`)
+	expected, quoted := field.Value.Value, strings.HasPrefix(typed, `"`)
+	typed = strings.TrimPrefix(typed, `"`)
 	rank := func(value string) int { return max(field.Vanilla.Values[value], field.Vanilla.Values[`"`+value+`"`]) }
 	makeConstant := func(value string, _ int) Completion {
-		return Completion{Label: value, Insert: value, Category: schema.CategoryConstant, Rank: rank(value)}
+		insert := value
+		if !quoted && strings.Contains(value, " ") {
+			insert = `"` + value + `"`
+		}
+		return Completion{Label: value, Insert: insert, Category: schema.CategoryConstant, Rank: rank(value)}
 	}
 	values := []Completion{}
 	switch {
@@ -99,12 +108,21 @@ func listValues(mods *index.Index, row *game.Game, field *schema.Field, typed st
 			_, rel := row.SplitStage(file.Rel)
 			values = append(values, Completion{Label: rel, Insert: rel, Category: schema.CategoryReference})
 		}
-	case expected.Type == schema.ValueReference:
+	case expected.Type == schema.ValueReference || expected.Type == schema.ValueTarget && expected.Database != "":
 		for _, site := range mods.ListDefinitions(expected.Database) {
 			if key := mods.ToReference(site).Name; mods.IsLoaded(site.File) {
 				values = append(values, Completion{
 					Label: key, Insert: key, Category: schema.CategoryReference,
 					Detail: game.DescribeDefinition(expected.Database, false), Rank: rank(key),
+				})
+			}
+		}
+	}
+	if expected.Type == schema.ValueTarget {
+		for _, scope := range listScopes(context) {
+			if scope.Type == expected.Scope {
+				values = append(values, Completion{
+					Label: scope.Link, Insert: scope.Link, Category: schema.CategoryLink, Blurb: scope.About, Rank: rank(scope.Link),
 				})
 			}
 		}

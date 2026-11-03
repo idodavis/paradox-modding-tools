@@ -12,12 +12,12 @@ HTML of the description's editor.
 
 | file | holds |
 |---|---|
-| `steam.go` | the events; `Service`; `ServePublish`; the gallery (`AddPreview`, `RemovePreview`, `FetchPreviews`); `DescribeSteam`; `Publish`; `ListRules` |
+| `steam.go` | the events; `Service`; `ServePublish`; the gallery (`AddPreview`, `RemovePreview`, `FetchPreviews`); `DescribeSteam`; `Publish` and the copies of the files Steam is sent |
 | `listing.go` | the package comment; `Preview`, `Dependency`, `Listing`, `Upload`; `ReadListing`, `WriteListing`, `ListListings`, `CreateListing`, `ImportListing`, `LinkItem`; the upload set (`ListUpload`, `WriteZip`, `ReadIgnore`, `WriteIgnore`) and an older listing's zip |
 | `compare.go` | `Snapshot`, `Details`, `Difference`, `Comparison`; `CompareUpload`, `FetchItem`, `CompareFile`; Steam's kept answers; the snapshots (`LoadSnapshot`, `SaveSnapshot`) |
 | `notes.go` | `ChangeNote`; `ListChangeNotes` |
 | `pictures.go` | the smaller copies of pictures Steam refuses for their size |
-| `workshop.go` | `DLC`, `Rule`, `Tags`, `Rules` and the agents' rule; `ListDLC`, `ListTags` |
+| `workshop.go` | `DLC`, `Rule`, `Tags`; `ListRules`, with the agents' rule; `ListDLC`, `ListTags` |
 | `ugc.go` | `Progress`, `Client`: Steam's library bound once through purego, its UGC calls and their call results; `Open`, `Close`, `FetchDetails`, `CreateItem`, `Submit` |
 | `bbcode.go` | `ToBBCode`, `ToHTML`, over one table of Steam's tags |
 | `publish.go` | `Params`; the second copy: its flags, `StartPublish`, the work each flag does, its run |
@@ -75,8 +75,8 @@ files and no others.
 ## The compare
 
 The compare's reference is Steam. A `Snapshot` is PMT's kept copy of an item's files as Steam has them, with the time
-Steam last updated the item. The service keeps Steam's answer about each item: its `Details` (the page, the
-subscribers, the gallery, the DLC and the required items) or why they could not be read, with when it asked.
+Steam last updated the item. The service keeps Steam's answer about each item: its `Details` (the page, its
+visibility, the gallery, the DLC and the required items) or why they could not be read, with when it asked.
 `CompareUpload` asks Steam only when nothing is kept for the item, a failed answer included, so the page can compare at
 every save, and comparisons that need the same item while Steam is asked wait for that one answer. `FetchItem` drops
 the kept answer and compares again; an upload drops it too. When Steam is asked, a second copy reads the details, and
@@ -105,7 +105,8 @@ The library's functions are bound by name. Those an upload needs must be there. 
 change its required items may be missing from an older library: then the details leave those fields nil, the compare
 leaves out their difference, and an upload leaves them as Steam has them.
 
-`Publish` reads the item's details first and makes the update a diff against them; an item the copy made a moment
+`Publish` takes a visibility, one of Steam's (`public`, `friends`, `private` or `unlisted`), or "" to keep the item's
+own. It reads the item's details first and makes the update a diff against them; an item the copy made a moment
 before has nothing yet, and is not asked. The DLC are removed and added to match the listing, except that when Steam
 listed only some of them (one answer holds 32) none is removed. A required item is added for each dependency with a
 Workshop id, and removed only when it is one of the workspace's mods that the descriptor does not name, so an item

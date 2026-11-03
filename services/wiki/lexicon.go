@@ -1,3 +1,6 @@
+// lexicon.go builds the lexicon of a class of script commands: the effects, triggers, links, scopes and data functions
+// the game's dumps declare, and the scripted effects and triggers the mods define, each with its example uses.
+
 package wiki
 
 import (
@@ -112,16 +115,8 @@ func listScripted(ws *workspace.Session, mods *index.Index, class string) []Lexi
 		if callable.Command != class {
 			continue
 		}
-		listed := map[string]bool{}
-		for _, site := range mods.ListDefinitions(database) {
-			reference := mods.ToReference(site)
-			if listed[reference.Name] {
-				continue
-			}
-			listed[reference.Name] = true
-			if winner, ok := mods.FindKept(ws.Schema, reference); ok {
-				rows = append(rows, makeScripted(ws, mods, class, reference, winner.Site))
-			}
+		for _, winner := range mods.ListKept(ws.Schema, database) {
+			rows = append(rows, makeScripted(ws, mods, class, mods.ToReference(winner.Site), winner.Site))
 		}
 	}
 	return rows

@@ -213,6 +213,7 @@ const {
   mutate: write,
   isLoading: writing,
   error: writeError,
+  reset: resetWrite,
 } = useMutation({
   mutation: (edit: Unsaved) => steam.WriteListing(edit.modId, edit.key, edit.listing),
   onSuccess: (_, edit) => {
@@ -229,14 +230,15 @@ const { mutate: link, isLoading: linkingItem } = useMutation({
     workshopItem.value = "";
   },
 });
-// The status bar says whether the edits are written.
+// The status bar says while the edits are being written, and when they are not.
 const facts = computed(() => {
-  const saving = unsaved.value || writing.value ? "Saving…" : "Saved in the mod";
-  return [writeError.value ? { label: "Not saved", value: writeError.value.message } : { label: saving, value: "" }];
+  if (writeError.value) return [{ label: "Not saved", value: writeError.value.message }];
+  return unsaved.value || writing.value ? [{ label: "Saving…", value: "" }] : [];
 });
 
-// An unsaved edit is written before another listing shows or the page closes.
+// An unsaved edit is written before another listing shows or the page closes. A failure belongs to the listing it hit.
 watch(target, flush);
+watch([target, () => id], resetWrite);
 onBeforeUnmount(flush);
 
 /** edit holds a listing as typed and writes it when the typing stops. */

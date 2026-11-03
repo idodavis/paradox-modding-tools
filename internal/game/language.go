@@ -142,15 +142,19 @@ var DocTypes = map[string]DocType{
 
 // The shapes that Go code names. Each is the key of its row in Shapes.
 const (
-	ShapeUnknown     = "unknown"     // a block whose keys can be of any kind
-	ShapeFields      = "fields"      // a block of a definition's own fields
-	ShapeArguments   = "arguments"   // a block of what a command takes
-	ShapeTriggers    = "triggers"    // a block of triggers
-	ShapeEffects     = "effects"     // a block of effects
-	ShapeValue       = "value"       // a block that computes a number
-	ShapeWidget      = "widget"      // a block of a GUI widget's properties and children
-	ShapeModifiers   = "modifiers"   // a block of modifiers, each a name and a number
-	ShapeDescription = "description" // a block that writes a text with its trigger
+	ShapeUnknown   = "unknown"   // a block whose keys can be of any kind
+	ShapeFields    = "fields"    // a block of a definition's own fields
+	ShapeArguments = "arguments" // a block of what a command takes
+	// ShapeEffectArguments and ShapeTriggerArguments are the block of an effect and of a trigger: what it takes, and
+	// the commands of its own kind it runs.
+	ShapeEffectArguments  = "effect arguments"
+	ShapeTriggerArguments = "trigger arguments"
+	ShapeTriggers         = "triggers"    // a block of triggers
+	ShapeEffects          = "effects"     // a block of effects
+	ShapeValue            = "value"       // a block that computes a number
+	ShapeWidget           = "widget"      // a block of a GUI widget's properties and children
+	ShapeModifiers        = "modifiers"   // a block of modifiers, each a name and a number
+	ShapeDescription      = "description" // a block that writes a text with its trigger
 )
 
 // Shapes is the table of shapes a block can hold, each with how it reads its keys. A description block reads its
@@ -168,6 +172,16 @@ var Shapes = map[string]ShapeRule{
 	ShapeArguments: {
 		Rules:  []string{"known-call", "declared", "command", "observed", "link", "call"},
 		Caller: AnyCall, Allows: []string{DeclaredEffect, DeclaredTrigger},
+	},
+	// A key no rule explains in a command's block is a call of any kind, which is never judged: it may be an argument
+	// that neither the dumps nor the game's files write.
+	ShapeEffectArguments: {
+		Rules:  []string{"known-call", "declared", "command", "observed", "link", "call"},
+		Caller: AnyCall, Allows: []string{DeclaredEffect},
+	},
+	ShapeTriggerArguments: {
+		Rules:  []string{"known-call", "declared", "command", "observed", "link", "call"},
+		Caller: AnyCall, Allows: []string{DeclaredTrigger},
 	},
 	ShapeValue: {
 		Rules:  []string{"known-call", "declared", "command", "operator", "observed", "link", "call"},
@@ -354,6 +368,21 @@ var LinkUsers = map[string]string{
 	"is_in_list":                     Lists, "any_in_list/list": Lists, "every_in_list/list": Lists,
 	"ordered_in_list/list": Lists, "random_in_list/list": Lists,
 	"has_character_flag": Flags, "has_dead_character_flag": Flags, "remove_character_flag": Flags,
+}
+
+// LocStems are the arguments whose value is the stem of the localization key it names, in LinkMakers' shape: each
+// with that key, the stem at %s.
+var LocStems = map[string]string{
+	// CK3: ActivityLogEntry.GetTitle shows <key>_title, which every key the game's files log defines; the description,
+	// GetDescription, is <key> itself where one is written
+	"add_activity_log_entry/key": "%s_title",
+}
+
+// CommandKeys are the commands whose block's keys, beside the arguments the dumps declare, are names of a database:
+// each with that database.
+var CommandKeys = map[string]string{
+	// CK3 effects.log, stress_impact: "trait = value # add this stress if the character has this trait"
+	"stress_impact": "traits", "stress_and_fulfillment_impact": "traits",
 }
 
 // Bools are the words a yes-or-no value is written with.

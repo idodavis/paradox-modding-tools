@@ -87,7 +87,17 @@ func (git *Service) run(dir string, args ...string) (string, error) {
 	if err := cmd.Start(); err != nil {
 		return "", err
 	}
-	emitLines(io.TeeReader(stderrPipe, &stderr)) // read to its end before Wait, which closes the pipe
+	// standard error is read to its end before Wait, which closes the pipe
+	reader := bufio.NewReader(io.TeeReader(stderrPipe, &stderr))
+	for {
+		line, err := reader.ReadString('\n')
+		if line = strings.TrimRight(line, "\r\n"); line != "" {
+			application.Get().Event.Emit(EventOutput, line)
+		}
+		if err != nil {
+			break
+		}
+	}
 	if err := cmd.Wait(); err != nil {
 		if text := strings.TrimSpace(stderr.String()); text != "" {
 			return stdout.String(), errors.New(text)
@@ -206,21 +216,6 @@ func (git *Service) DeleteBranch(root, name string, force bool) (bool, error) {
 		return false, nil
 	}
 	return err == nil, err
-}
-
-// emitLines sends each line of a stream as a git:output event as it arrives. It does not send an empty line. It
-// returns when the stream ends.
-func emitLines(stream io.Reader) {
-	reader := bufio.NewReader(stream)
-	for {
-		line, err := reader.ReadString('\n')
-		if line = strings.TrimRight(line, "\r\n"); line != "" {
-			application.Get().Event.Emit(EventOutput, line)
-		}
-		if err != nil {
-			return
-		}
-	}
 }
 
 // locateChanges gives each change the place of its file in the open workspace, from the root folder of the

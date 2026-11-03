@@ -1,3 +1,6 @@
+// hover.go builds the hover card for a key or a value at a position in a file: what it is, what it takes or says, where
+// the game defines it and the scopes its statement runs in.
+
 package lsp
 
 import (
@@ -89,7 +92,8 @@ var returnsLabels = map[string]string{game.ShapeTriggers: "yes or no", game.Shap
 // blockLabels holds what a card says a block holds, for the shape of the block.
 var blockLabels = map[string]string{
 	game.ShapeFields: "fields", game.ShapeTriggers: "triggers", game.ShapeEffects: "effects",
-	game.ShapeArguments: "what the command takes", game.ShapeValue: "the steps that work out a number",
+	game.ShapeArguments: "what the command takes", game.ShapeEffectArguments: "what the effect takes",
+	game.ShapeTriggerArguments: "what the trigger takes", game.ShapeValue: "the steps that work out a number",
 	game.ShapeWidget: "a widget's properties and children", game.ShapeModifiers: "modifiers",
 	game.ShapeDescription: "texts, each with the trigger that picks it", "setup": "history fields and effects",
 }
@@ -131,7 +135,7 @@ func (lsp *Service) describeHit(ws *workspace.Session, mods *index.Index, place 
 	reference = resolveHit(mods, place, reference, context.References)
 	card := &Card{
 		Title: tree.Unquoted(span), Range: ToRange(tree.Src, tree.Lines, span), Scopes: listScopes(context),
-		Within: visitor.within,
+		Within: visitor.ancestors,
 	}
 	switch {
 	case reference.Database == game.Localization:
@@ -184,7 +188,7 @@ type hoverVisitor struct {
 	offset    int
 	statement int32 // 0, the file, if there is none
 	context   schema.Context
-	within    []string // the definition's name, then the keys of the blocks that hold the offset
+	ancestors []string // the definition's name, then the keys of the blocks that hold the offset
 }
 
 // Enter keeps the context when the statement covers the offset. It also keeps the name of the definition the offset is
@@ -198,9 +202,9 @@ func (visitor *hoverVisitor) Enter(tree *jomini.Tree, statement int32, context *
 	visitor.context.References = slices.Clone(context.References)
 	switch {
 	case context.Defines:
-		visitor.within = []string{context.Definition.Name}
+		visitor.ancestors = []string{context.Definition.Name}
 	case context.Definition != nil && !current.Key.IsEmpty() && current.Block.Contains(visitor.offset):
-		visitor.within = append(visitor.within, tree.Unquoted(current.Key))
+		visitor.ancestors = append(visitor.ancestors, tree.Unquoted(current.Key))
 	}
 	return true
 }
@@ -233,7 +237,12 @@ func describeMessage(ws *workspace.Session, tree *jomini.Tree, place workspace.P
 		case loc.MarkupKey:
 			key, span = segment.Text, segment.TextSpan
 		case loc.MarkupCall:
-			return describeCall(ws, tree, segment, offset), schema.Reference{}
+			call, ok := jomini.ParseCall(segment.Text, segment.TextSpan.Start)
+			card := &Card{}
+			if !ok || !describeFunction(card, ws, tree, call, "", offset) {
+				return nil, schema.Reference{}
+			}
+			return card, schema.Reference{}
 		default:
 			return nil, schema.Reference{}
 		}
@@ -250,24 +259,17 @@ func describeKey(ws *workspace.Session, mods *index.Index, place workspace.Place
 	card.Scopes = nil
 }
 
-// describeCall returns the card for the step of a data call at the given offset. It returns nil if the offset is on no
-// step.
-func describeCall(ws *workspace.Session, tree *jomini.Tree, segment loc.Segment, offset int) *Card {
-	call, ok := jomini.ParseCall(segment.Text, segment.TextSpan.Start)
-	position := slices.IndexFunc(call.Steps, func(step jomini.Step) bool { return step.Span.Contains(offset) })
-	if !ok || position < 0 {
-		return nil
+// describeFunction fills a card for the step of a data call at an offset, and returns false if there is none.
+func describeFunction(card *Card, ws *workspace.Session, tree *jomini.Tree, call jomini.Call, datacontext string, offset int) bool {
+	position := slices.IndexFunc(call.Steps, func(candidate jomini.Step) bool { return candidate.Span.Contains(offset) })
+	if position < 0 {
+		return false
 	}
-	card := &Card{}
-	function, _ := ws.Schema.FindFunction(call, "", position)
-	describeFunction(card, tree, call.Steps[position], function)
-	return card
-}
-
-// describeFunction fills a card for one step of a data call: what the function returns and says.
-func describeFunction(card *Card, tree *jomini.Tree, step jomini.Step, function schema.DataFunction) {
+	step := call.Steps[position]
+	function, _ := ws.Schema.FindFunction(call, datacontext, position)
 	card.What, card.Blurb, card.Returns = "data function", function.Blurb, function.Returns
 	card.Title, card.Range = step.Text, ToRange(tree.Src, tree.Lines, step.Span)
+	return true
 }
 
 // listSites returns the definitions a reference names, as seen from the file at the given place, the ones the game
@@ -416,12 +418,7 @@ func describeValue(card *Card, ws *workspace.Session, visitor *hoverVisitor) {
 		card.What = "constant"
 		describeNumber(card, visitor.tree, visitor.tree.Statements[visitor.statement].Value)
 	case schema.CategoryCall:
-		call := visitor.context.Call
-		position := slices.IndexFunc(call.Steps, func(step jomini.Step) bool { return step.Span.Contains(visitor.offset) })
-		if position >= 0 {
-			function, _ := ws.Schema.FindFunction(*call, visitor.context.Datacontext, position)
-			describeFunction(card, visitor.tree, call.Steps[position], function)
-		}
+		describeFunction(card, ws, visitor.tree, *visitor.context.Call, visitor.context.Datacontext, visitor.offset)
 	}
 }
 
@@ -450,7 +447,8 @@ func resolveDate(calendar app.Calendar, date jomini.Date) *CardDate {
 	return card
 }
 
-// describeCommand fills a card for an effect, a trigger or a link: what it does and the scope it takes or switches to.
+// describeCommand fills a card for an effect, a trigger or a link: what it does, what its value takes and the scope it
+// takes or switches to.
 func describeCommand(card *Card, visitor *hoverVisitor) {
 	card.What = findClass(visitor.context.Declaration).ID
 	command := visitor.context.Command
@@ -462,6 +460,7 @@ func describeCommand(card *Card, visitor *hoverVisitor) {
 		card.Leads = command.Target
 	} else {
 		card.Target = command.Target
+		describeTakes(card, command.Arguments)
 	}
 }
 
@@ -476,15 +475,22 @@ func findClass(declaration string) Class {
 func describeField(card *Card, context *schema.Context) {
 	field := context.Field
 	card.What, card.Blurb, card.Need = "field", field.Blurb.Value, field.Required.Value
-	if field.Value.IsStated() {
-		card.Takes = field.Value.Value
-	} else {
+	describeTakes(card, field)
+	if !field.Value.IsStated() {
 		values := slices.SortedFunc(maps.Keys(field.Vanilla.Values), func(first, second string) int {
 			return cmp.Or(field.Vanilla.Values[second]-field.Vanilla.Values[first], strings.Compare(first, second))
 		})
 		card.Writes = values[:min(len(values), 8)]
 	}
-	card.Inferred = field.Value.Source == game.SourceVanilla || field.Shape.Source == game.SourceVanilla
+	card.Inferred = card.Inferred || field.Shape.Source == game.SourceVanilla
+}
+
+// describeTakes gives a card the type that a field's value takes, where a source states one. The card is inferred
+// where the game's own files state it. A nil field takes nothing.
+func describeTakes(card *Card, field *schema.Field) {
+	if field != nil && field.Value.IsStated() {
+		card.Takes, card.Inferred = field.Value.Value, field.Value.Source == game.SourceVanilla
+	}
 }
 
 // resolveWeight returns the number a branch of a random list is written with, as a percent of the numbers of all its

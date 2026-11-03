@@ -5,7 +5,6 @@ package draw
 
 import (
 	"cmp"
-	"path"
 	"path/filepath"
 	"slices"
 	"strconv"
@@ -77,11 +76,19 @@ func (drw *Service) ListPictures(path string, list PictureList) ([]Picture, erro
 	}
 	mods := resolveIndex(ws, path)
 	if list.Name == "" {
-		return (&library{ws: ws, mods: mods}).listShown(list), nil
+		library := &library{ws: ws, mods: mods}
+		pictures := []Picture{}
+		for _, reference := range library.listObjects(list) {
+			if file := library.findShown(list, reference); file != "" {
+				pictures = append(pictures, Picture{Label: reference.Name, Path: file, Value: reference.Name})
+			}
+		}
+		return lo.UniqBy(pictures, func(picture Picture) string { return picture.Label }), nil
 	}
 	definition, _ := findKeptClause(ws, mods, schema.Reference{Database: list.Database, Name: list.Name})
 	return lo.Map(listDefinitionImages(ws, mods, definition), func(file string, _ int) Picture {
-		return Picture{Label: toFileLabel(file), Path: file, Value: file}
+		name := filepath.Base(file)
+		return Picture{Label: strings.TrimSuffix(name, filepath.Ext(name)), Path: file, Value: file}
 	}), nil
 }
 
@@ -105,12 +112,6 @@ func listPictureGroups(window Window) []Group {
 		group.Reach = len(group.Readers)
 	}
 	return groups.values
-}
-
-// toFileLabel returns the label of an image file: its name without its extension.
-func toFileLabel(file string) string {
-	name := path.Base(filepath.ToSlash(file))
-	return strings.TrimSuffix(name, path.Ext(name))
 }
 
 // listTierGroups returns a group for each data call of the window that gives the cell of a title's tier in a sheet of
@@ -208,7 +209,13 @@ func listRows(opened opening) map[int32][]Row {
 			}
 		}
 		if database != "" {
-			rows[item] = library.makeRows(database, lists, window.Widgets, opened.evaluator.rows)
+			names := lo.Uniq(lo.Map(library.mods.ListDefinitions(database), func(site index.Site, _ int) string {
+				return library.mods.ToReference(site).Name
+			}))
+			rows[item] = lo.Map(names[:min(opened.evaluator.rows, len(names))], func(name string, _ int) Row {
+				choices := library.pickDefinitions(window.Widgets, lists, map[string]string{database: name})
+				return Row{Definition: name, Choices: choices}
+			})
 		}
 	}
 	return rows
@@ -221,18 +228,6 @@ func (library *library) readsElement(window *Window, widget Widget, list Picture
 	call, _ := jomini.ParseBracketed(findProperty(window.listProperties(widget), list.Key).Value, 0)
 	path := context.expand(library.ws.Schema, call)
 	return len(path.Steps) > 1 && path.Steps[0].Text == list.Type
-}
-
-// makeRows returns a row for each of the first definitions of a database, up to the given count, in load order and
-// each name once. A row holds the values that its definition gives the window's widgets through those of their given
-// lists that read the database, by widget.
-func (library *library) makeRows(database string, lists map[int32][]PictureList, widgets []Widget, count int) []Row {
-	names := lo.Uniq(lo.Map(library.mods.ListDefinitions(database), func(site index.Site, _ int) string {
-		return library.mods.ToReference(site).Name
-	}))
-	return lo.Map(names[:min(count, len(names))], func(name string, _ int) Row {
-		return Row{Definition: name, Choices: library.pickDefinitions(widgets, lists, map[string]string{database: name})}
-	})
 }
 
 // listDatabaseLists returns the lists of one widget's bindings that read the definitions of a database: the list of
@@ -330,18 +325,6 @@ func (evaluator *evaluator) choose(context context, call jomini.Call) (string, b
 		return toWrittenValue(branch.Text), true
 	}
 	return branch.Text, true
-}
-
-// listChoiceConditions returns the conditions that the choices between two values of one of a window's widgets are made
-// by, those of a choice nested in another's argument too.
-func listChoiceConditions(window *Window, widget Widget) []jomini.Call {
-	var conditions []jomini.Call
-	for property := range window.listProperties(widget) {
-		if call, ok := jomini.ParseBracketed(property.Value, 0); ok {
-			conditions = append(conditions, listSelectConditions(call)...)
-		}
-	}
-	return conditions
 }
 
 // listSelectConditions returns the condition of a choice between two values, then those of the choices nested in its

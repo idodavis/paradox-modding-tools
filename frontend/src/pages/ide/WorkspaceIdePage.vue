@@ -133,7 +133,11 @@ commandBus.on((command) => {
     const active = editor.activeFile();
     if (active) void saveDds.open({ place: active });
   }
-  if (command === "explorer.reveal") void revealFile();
+  if (command === "explorer.reveal") {
+    showSidebar("explorer");
+    if (editor.activeFile()?.readOnly) gameOpen.value = true;
+    void nextTick().then(() => Promise.all([modTree.value?.reveal(), gameTree.value?.reveal()]));
+  }
   if (command === "terminal.sendFile") {
     if (layout.value === "full") editor.showPanel("terminal");
     useTerminalStore().sendFile();
@@ -420,14 +424,6 @@ function describePlace(place: Place): string {
 function collapseAll(): void {
   modTree.value?.collapseAll();
   gameTree.value?.collapseAll();
-}
-
-/** revealFile selects the active file in the explorer. It unfolds the game's files for a file of the game. */
-async function revealFile(): Promise<void> {
-  showSidebar("explorer");
-  if (editor.activeFile()?.readOnly) gameOpen.value = true;
-  await nextTick();
-  await Promise.all([modTree.value?.reveal(), gameTree.value?.reveal()]);
 }
 </script>
 

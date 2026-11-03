@@ -127,8 +127,9 @@ func listDefaultSteamRoots() []string {
 }
 
 // LoadVersion returns the version of an install of the game. The launcher settings come first, then the game's
-// revision log, then the Steam manifest, which gives "build <id>". The revision log counts only when the game started
-// after the install's last update. It returns "" if none of them says.
+// revision log, which gives the part of its release branch after release/, then the Steam manifest, which gives
+// "build <id>". The revision log counts only when the game started after the install's last update, since until then
+// the game has not run as the new version. It returns "" if none of them says.
 func (game *Game) LoadVersion(installPath string) string {
 	settings := loadLauncher(installPath)
 	if settings.RawVersion != "" {
@@ -138,8 +139,15 @@ func (game *Game) LoadVersion(installPath string) string {
 	if version = strings.TrimSpace(version); version != "" {
 		return version
 	}
-	if version := game.readLoggedVersion(installPath); version != "" {
-		return version
+	if user := game.FindUserDataDir(installPath); user != "" {
+		path := files.Join(user, revisionLogRel)
+		info, err := os.Stat(path)
+		if err == nil && !info.ModTime().Before(ReadInstallUpdatedAt(installPath)) {
+			data, err := os.ReadFile(path)
+			if match := gameBranchRe.FindSubmatch(data); err == nil && match != nil {
+				return string(match[1])
+			}
+		}
 	}
 	manifest, err := os.ReadFile(filepath.Join(installPath, "..", "..", "appmanifest_"+strconv.Itoa(game.SteamAppID)+".acf"))
 	if match := buildIDRe.FindSubmatch(manifest); err == nil && match != nil {
@@ -157,26 +165,6 @@ func loadLauncher(installPath string) (settings launcherSettings) {
 		_ = json.Unmarshal(data, &settings)
 	}
 	return settings
-}
-
-// readLoggedVersion returns the version a game wrote in its revision log at its last start: the part of its release
-// branch after release/. It returns "" when there is no log, when the log names no release, or when the install was
-// updated after the log was written, since the game has not run as the new version yet.
-func (game *Game) readLoggedVersion(installPath string) string {
-	user := game.FindUserDataDir(installPath)
-	if user == "" {
-		return ""
-	}
-	path := files.Join(user, revisionLogRel)
-	info, err := os.Stat(path)
-	if err != nil || info.ModTime().Before(ReadInstallUpdatedAt(installPath)) {
-		return ""
-	}
-	data, err := os.ReadFile(path)
-	if match := gameBranchRe.FindSubmatch(data); err == nil && match != nil {
-		return string(match[1])
-	}
-	return ""
 }
 
 // ListInstallRoots returns the folders of an install that the game reads, in the order it mounts them: the install's
@@ -313,35 +301,30 @@ func ReadInstallUpdatedAt(installPath string) time.Time {
 	if installPath == "" {
 		return time.Time{}
 	}
+	// a folder's own time is no use, because replacing a file in place leaves it unchanged
 	for _, dir := range []string{filepath.Join(installPath, "binaries"), installPath} {
-		if newest := findNewestFile(dir); !newest.IsZero() {
+		entries, err := os.ReadDir(dir)
+		if err != nil {
+			continue
+		}
+		var newest time.Time
+		for _, entry := range entries {
+			if entry.IsDir() {
+				continue
+			}
+			info, err := entry.Info()
+			if err != nil {
+				continue
+			}
+			if info.ModTime().After(newest) {
+				newest = info.ModTime()
+			}
+		}
+		if !newest.IsZero() {
 			return newest
 		}
 	}
 	return time.Time{}
-}
-
-// findNewestFile returns the newest modification time among the files directly in a folder. The folder's own
-// time is no use, because replacing a file in place leaves it unchanged.
-func findNewestFile(dir string) time.Time {
-	entries, err := os.ReadDir(dir)
-	if err != nil {
-		return time.Time{}
-	}
-	var newest time.Time
-	for _, entry := range entries {
-		if entry.IsDir() {
-			continue
-		}
-		info, err := entry.Info()
-		if err != nil {
-			continue
-		}
-		if info.ModTime().After(newest) {
-			newest = info.ModTime()
-		}
-	}
-	return newest
 }
 
 // LoadChecksum returns the hash an install's build writes beside its executable, which changes with every build. It

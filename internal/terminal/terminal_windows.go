@@ -1,3 +1,5 @@
+// terminal_windows.go runs a shell under a Windows pseudo console and lists the shells this system has.
+
 package terminal
 
 import (
@@ -178,10 +180,16 @@ func startProcess(handle windows.Handle, shell *Shell, env []string) (windows.Pr
 	if err != nil {
 		return process, err
 	}
-	block, err := buildBlock(env)
-	if err != nil {
-		return process, err
+	// CreateProcess takes the environment as one block: each NAME=value string with its NUL, then one more NUL
+	var block []uint16
+	for _, entry := range env {
+		text, err := windows.UTF16FromString(entry)
+		if err != nil {
+			return process, err
+		}
+		block = append(block, text...)
 	}
+	block = append(block, 0)
 	flags := uint32(windows.EXTENDED_STARTUPINFO_PRESENT | windows.CREATE_UNICODE_ENVIRONMENT)
 	err = windows.CreateProcess(nil, commandLine, nil, nil, false, flags, &block[0], folder, &startup.StartupInfo, &process)
 	if err != nil {
@@ -189,19 +197,6 @@ func startProcess(handle windows.Handle, shell *Shell, env []string) (windows.Pr
 	}
 	closeHandles(process.Thread)
 	return process, nil
-}
-
-// buildBlock returns the given NAME=value strings as the block of UTF-16 strings that CreateProcess takes.
-func buildBlock(env []string) ([]uint16, error) {
-	var block []uint16
-	for _, entry := range env {
-		text, err := windows.UTF16FromString(entry)
-		if err != nil {
-			return nil, err
-		}
-		block = append(block, text...)
-	}
-	return append(block, 0), nil
 }
 
 // setUTF8 sets the code pages of the given process's console to UTF-8, so that UTF-8 output such as git's prints

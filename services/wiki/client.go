@@ -117,12 +117,3 @@ func (client *Client) fetch(params url.Values, target any) error {
 func (client *Client) resolvePath(title string) string {
 	return filepath.Join(client.dir, files.ToSlug(title)+".json")
 }
-
-// resolvePage returns a page from the cache, or fetches it when it is not cached. It returns an error if the fetch
-// fails.
-func (client *Client) resolvePage(title string) (Page, error) {
-	if page, ok := client.LoadPage(title); ok {
-		return page, nil
-	}
-	return client.FetchPage(title)
-}

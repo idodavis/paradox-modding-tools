@@ -82,8 +82,8 @@ func LocateSite(ws *workspace.Session, mods *index.Index, handle index.Site) Sit
 func ToRange(text string, lines jomini.Lines, span jomini.Span) Range {
 	start, end := lines.ToPosition(span.Start), lines.ToPosition(span.End)
 	return Range{
-		StartLine: start.Line + 1, StartColumn: countUnits(text, lines, start) + 1,
-		EndLine: end.Line + 1, EndColumn: countUnits(text, lines, end) + 1,
+		StartLine: start.Line + 1, StartColumn: countColumn(text, lines, start) + 1,
+		EndLine: end.Line + 1, EndColumn: countColumn(text, lines, end) + 1,
 	}
 }
 
@@ -120,15 +120,21 @@ func ToEdits(text string, lines jomini.Lines, edits []jomini.Edit) []Edit {
 	})
 }
 
-// countUnits returns how many UTF-16 code units of its line lie before a position. A character above U+FFFF counts
-// two.
-func countUnits(text string, lines jomini.Lines, position jomini.Position) int {
-	start := lines.LineSpan(position.Line).Start
+// CountUnits returns the length of a text in UTF-16 code units, the units Monaco counts columns in. A character above
+// U+FFFF counts two.
+func CountUnits(text string) int {
 	units := 0
-	for _, character := range text[start : start+position.Column] {
+	for _, character := range text {
 		units += utf16.RuneLen(character)
 	}
 	return units
+}
+
+// countColumn returns the column of a position as Monaco counts it from zero: how many UTF-16 code units of its line
+// lie before it.
+func countColumn(text string, lines jomini.Lines, position jomini.Position) int {
+	start := lines.LineSpan(position.Line).Start
+	return CountUnits(text[start : start+position.Column])
 }
 
 // SetText gives the session the text the editor holds for an open file. It returns the file's problems.

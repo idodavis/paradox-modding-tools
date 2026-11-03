@@ -155,7 +155,16 @@ func (sch *Service) SearchFiles(query string, limit int) []workspace.Place {
 		if len(places) >= limit {
 			return places
 		}
-		if file := mods.Files[position]; isSubsequence(strings.ToLower(file.Rel), characters) {
+		file, rest := mods.Files[position], characters
+		for _, character := range strings.ToLower(file.Rel) {
+			if len(rest) == 0 {
+				break
+			}
+			if character == rest[0] {
+				rest = rest[1:]
+			}
+		}
+		if len(rest) == 0 {
 			places = append(places, ws.Locate(mods, file.Path))
 		}
 	}
@@ -183,7 +192,17 @@ func run(ws *workspace.Session, query Query, stop <-chan struct{}, sent *tally) 
 			if err != nil || !holds(source) {
 				return nil
 			}
-			if hits := findHits(source, expression, query.WholeWord); len(hits) > 0 && !isClosed(stop) {
+			lines := jomini.NewLines(source)
+			hits := lo.Map(findMatches(source, lines, expression, query.WholeWord), func(match []int, _ int) lsp.Site {
+				position := lines.ToPosition(match[0])
+				line := lines.LineSpan(position.Line)
+				return lsp.Site{
+					Line:  position.Line + 1,
+					Range: lsp.ToRange(source, lines, jomini.Span{Start: match[0], End: match[1]}),
+					Text:  source[line.Start:line.End],
+				}
+			})
+			if len(hits) > 0 && !isClosed(stop) {
 				sent.send(ws.Locate(mods, file.Path), hits)
 			}
 			return nil
@@ -364,33 +383,6 @@ func (sch *Service) replaceFile(
 	replaced.WriteString(text.Text[last:])
 	text.Text = replaced.String()
 	return len(matches), sch.Workspace.Write(path, text)
-}
-
-// isSubsequence reports whether a text holds the given characters in order, not necessarily next to each other.
-func isSubsequence(text string, characters []rune) bool {
-	for _, character := range text {
-		if len(characters) == 0 {
-			break
-		}
-		if character == characters[0] {
-			characters = characters[1:]
-		}
-	}
-	return len(characters) == 0
-}
-
-// findHits returns the hits of an expression in a file's text, in order, without their place.
-func findHits(source string, expression *regexp.Regexp, wholeWord bool) []lsp.Site {
-	lines := jomini.NewLines(source)
-	return lo.Map(findMatches(source, lines, expression, wholeWord), func(match []int, _ int) lsp.Site {
-		position := lines.ToPosition(match[0])
-		line := lines.LineSpan(position.Line)
-		return lsp.Site{
-			Line:  position.Line + 1,
-			Range: lsp.ToRange(source, lines, jomini.Span{Start: match[0], End: match[1]}),
-			Text:  source[line.Start:line.End],
-		}
-	})
 }
 
 // isClosed reports whether a stop channel is closed.

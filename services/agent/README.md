@@ -9,7 +9,7 @@ this package serves. Go starts the program, carries its lines both ways and ends
 | file | holds |
 |---|---|
 | `agent.go` | the package comment; `EventChanged`; `Service`; `Agent`, `Node`; the registry's types; the agents table; `ListFiles`; `ListAgents`, `AddAgent`, `RemoveAgent`; `DescribeNode`, `InstallNode`, `InstallAgent`; the registry, the installed versions, npm, Node's archives |
-| `process.go` | the stream: its first messages, `ServiceStartup`, the program and its pipes, the lines both ways |
+| `process.go` | `Start`; the stream: its first messages, `ServiceStartup`, the program and its pipes, the lines both ways |
 | `process_windows.go`, `process_linux.go` | the group each agent runs in: a job object on Windows, a process group on Linux |
 
 ## The agents

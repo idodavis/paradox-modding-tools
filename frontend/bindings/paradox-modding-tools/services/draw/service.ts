@@ -145,8 +145,8 @@ export function ListTextures(role: string): $CancellablePromise<$models.Image[] 
  * returns no edits if both positions are the same. It returns an error if either position has no layer or has a layer
  * that comes from a parent coat.
  */
-export function MoveLayer(path: string, coat: string, $from: number, to: number): $CancellablePromise<lsp$0.Edit[] | null> {
-    return $Call.ByID(3796674032, path, coat, $from, to);
+export function MoveLayer(path: string, coat: string, source: number, target: number): $CancellablePromise<lsp$0.Edit[] | null> {
+    return $Call.ByID(3796674032, path, coat, source, target);
 }
 
 /**
@@ -158,9 +158,10 @@ export function RemoveBlock(path: string, block: lsp$0.Range): $CancellablePromi
 }
 
 /**
- * ResolveCoat resolves one coat of arms in a file into its layers. A layer whose value is a template list draws the
- * option the given picks hold for that list, else the list's heaviest option. A pick is the option chosen for the ID
- * of a group. It returns an error if the file is not in the workspace or does not define the coat.
+ * ResolveCoat resolves one coat of arms in a file into its layers. A coat written as the name of another is that coat,
+ * and one whose name no coat answers has no layers. A layer whose value is a template list draws the option the given
+ * picks hold for that list, else the list's heaviest option. A pick is the option chosen for the ID of a group. It
+ * returns an error if the file is not in the workspace or does not define the coat.
  */
 export function ResolveCoat(path: string, name: string, picks: { [_ in string]?: string } | null): $CancellablePromise<$models.Coat> {
     return $Call.ByID(1245723553, path, name, picks);

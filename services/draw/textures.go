@@ -54,15 +54,10 @@ func lookupDefineDatabase() string {
 // resolveTexture returns the image file for a texture value as a GUI or coat file writes it: a path under the game's
 // gfx folders, an icon name looked up in the icon folders, or a texture binding. It returns "" if no file is found.
 func (library *library) resolveTexture(written string) string {
-	if call, ok := jomini.ParseBracketed(written, 0); ok {
-		return library.resolveBinding(call)
+	call, ok := jomini.ParseBracketed(written, 0)
+	if !ok {
+		return library.findFile(written, "")
 	}
-	return library.findFile(written, "")
-}
-
-// resolveBinding returns the image file of a texture binding: what it shows of the first definition that it names and
-// that shows a picture. It returns "" if it names none that does.
-func (library *library) resolveBinding(call jomini.Call) string {
 	list, references := library.makePictureList("", call)
 	for _, reference := range references {
 		if file := library.findShown(list, reference); file != "" {
@@ -81,7 +76,8 @@ func (library *library) makePictureList(key string, call jomini.Call) (PictureLi
 	if len(last.Arguments) > 0 && last.Arguments[0].Quoted {
 		argument = last.Arguments[0].Text
 	}
-	parts := strings.Fields(schema.ToPhrase(trimGetter(last.Text)))
+	rest := schema.DropGetter(last.Text)
+	parts := strings.Fields(schema.ToPhrase(rest))
 	if list, ok := library.findKind(parts, object, argument); ok {
 		list.Key = key
 		if argument != "" && list.Folder == "" {
@@ -89,7 +85,8 @@ func (library *library) makePictureList(key string, call jomini.Call) (PictureLi
 		}
 		return list, references
 	}
-	list := PictureList{Key: key, Type: object, Field: toField(last.Text), Argument: toWrittenValue(argument)}
+	field := lo.Ternary(rest == last.Text, "", lo.SnakeCase(rest))
+	list := PictureList{Key: key, Type: object, Field: field, Argument: toWrittenValue(argument)}
 	list.Database, _ = library.ws.Schema.ResolveTypeDatabase(object)
 	return list, references
 }
@@ -132,7 +129,8 @@ func (library *library) resolveKind(parts []string, object string) (kind, databa
 			return kind, database, true
 		}
 	}
-	if targets := game.GUI.CallTargets[toCamel(parts)]; len(targets) > 0 {
+	function := strings.Join(lo.Map(parts, func(part string, _ int) string { return lo.Capitalize(part) }), "")
+	if targets := game.GUI.CallTargets[function]; len(targets) > 0 {
 		return game.DescribeDefinition(targets[0], false), targets[0], true
 	}
 	return "", "", false
@@ -277,18 +275,6 @@ func (library *library) findFirstShown(list PictureList) (name, file string) {
 	}
 	library.firsts[list] = ""
 	return "", ""
-}
-
-// listShown returns the pictures that a list's binding shows of each object it picks among, labeled by the object,
-// picking which sets the object.
-func (library *library) listShown(list PictureList) []Picture {
-	pictures := []Picture{}
-	for _, reference := range library.listObjects(list) {
-		if file := library.findShown(list, reference); file != "" {
-			pictures = append(pictures, Picture{Label: reference.Name, Path: file, Value: reference.Name})
-		}
-	}
-	return lo.UniqBy(pictures, func(picture Picture) string { return picture.Label })
 }
 
 // listObjects returns the folders or definitions a list picks among, in order.
@@ -450,29 +436,6 @@ func findObjectType(schema *schema.Schema, call jomini.Call) string {
 	return types[len(call.Steps)-2]
 }
 
-// toField returns the field of its object that a data function reads: its name without the word that starts a getter,
-// in snake case (GetRealmFrame reads realm_frame). It returns "" for a function that starts with no such word.
-func toField(function string) string {
-	trimmed := trimGetter(function)
-	return lo.Ternary(trimmed == function, "", lo.SnakeCase(trimmed))
-}
-
-// trimGetter returns a data function's name without the word that starts a getter, such as Get or Access.
-func trimGetter(function string) string {
-	for _, getter := range game.GUI.Getters {
-		if rest, ok := strings.CutPrefix(function, getter); ok && rest != "" {
-			return rest
-		}
-	}
-	return function
-}
-
-// toCamel joins lower-case words into the camel case a data function's name is written in: game concept is
-// GameConcept.
-func toCamel(parts []string) string {
-	return strings.Join(lo.Map(parts, func(part string, _ int) string { return lo.Capitalize(part) }), "")
-}
-
 // toDefineWords returns a kind of object as the defines write it: GovernmentType and government type are
 // GOVERNMENT_TYPE.
 func toDefineWords(kind string) string {
@@ -524,7 +487,7 @@ func (resolver *resolver) describePicture(property Property, call jomini.Call) s
 	if len(call.Steps) == 0 {
 		return schema.ToPhrase(property.Key + " " + strings.NewReplacer("/", " ", ".", " ").Replace(property.Value))
 	}
-	object, last := findObjectType(resolver.ws.Schema, call), trimGetter(call.Steps[len(call.Steps)-1].Text)
+	object, last := findObjectType(resolver.ws.Schema, call), schema.DropGetter(call.Steps[len(call.Steps)-1].Text)
 	return schema.ToPhrase(property.Key + " " + object + " " + last)
 }
 

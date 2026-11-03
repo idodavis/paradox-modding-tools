@@ -86,6 +86,15 @@ type Game struct {
 	BookmarkFolder, SetupKey string   `json:"-"`
 	GUI                      GameGUI  `json:"-"`
 	Coat                     GameCoat `json:"-"`
+	Guide                    Guide    `json:"guide"`
+}
+
+// A Guide is how a game picks which copy of a file or a definition it keeps, in the sentences where the games differ.
+type Guide struct {
+	Hint    string `json:"hint"`    // what the load order decides, in one sentence
+	Files   string `json:"files"`   // which of a mod's files the game reads
+	Kept    string `json:"kept"`    // which copy each kind of definition keeps
+	Changes string `json:"changes"` // what the load order changes
 }
 
 // The supported games' ids.
@@ -249,6 +258,12 @@ var games = map[string]*Game{
 			},
 			ColorForm: jomini.ColorForm{Tag: "rgb", Example: []float64{255, 255, 255}},
 		},
+		Guide: Guide{
+			Hint:    "The load order decides only files that two mods ship at the same path.",
+			Files:   "A mod's replace_path makes the game skip its own files in that folder; whether it also skips the folder's subfolders is not documented.",
+			Kept:    "Most things keep the copy read last; events keep the highest override priority, and on a tie the game logs an error and keeps one copy without saying which; a character takes its name, traits, skills, parents and birth from the copy with the highest override priority and combines the rest, and the game calls a tie an error without saying what it keeps; on_actions combine their lists.",
+			Changes: "Only files at the same path.",
+		},
 	},
 	vic3: {
 		ID:            vic3,
@@ -281,6 +296,12 @@ var games = map[string]*Game{
 		Coat: GameCoat{
 			Folder:    "common/coat_of_arms/coat_of_arms",
 			ColorForm: jomini.ColorForm{Tag: jomini.TagHSV360, Example: []float64{360, 100, 100}},
+		},
+		Guide: Guide{
+			Hint:    "The load order decides only files that two mods ship at the same path.",
+			Files:   "A mod's replace_path makes the game skip its own files in that folder. This is documented for CK3 and EU5, whose engine Vic3 shares; whether it also skips the folder's subfolders is not documented.",
+			Kept:    "Most things keep the copy read last; events and GUI types keep the first; where a folder takes INJECT: and REPLACE:, the first plain copy stays and a later one is refused, so mods change it with those keywords, which act after every plain copy whatever their file's name, by kind (INJECT_OR_CREATE first, REPLACE last) and then by file name; character DNA copies all exist.",
+			Changes: "Only files at the same path.",
 		},
 	},
 	eu5: {
@@ -326,6 +347,12 @@ var games = map[string]*Game{
 		Coat: GameCoat{
 			Folder:    "main_menu/common/coat_of_arms/coat_of_arms",
 			ColorForm: jomini.ColorForm{Tag: jomini.TagHSV360, Example: []float64{360, 100, 100}},
+		},
+		Guide: Guide{
+			Hint:    "The load order decides only files that two mods ship at the same path, and GUI types and templates.",
+			Files:   "A mod's files count only inside its in_game, main_menu or loading_screen folder. A mod's replace_path makes the game skip its own files in that folder, not in its subfolders.",
+			Kept:    "Under common/ the first plain copy stays and mods change it with INJECT: and REPLACE:, which act after every plain copy whatever their file's name, by kind (INJECT_OR_CREATE first, REPLACE last) and then by file name; events keep the first; GUI types and templates follow the load order; coats of arms and defines keep the last.",
+			Changes: "Only files at the same path and GUI types and templates.",
 		},
 	},
 }

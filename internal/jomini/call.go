@@ -1,3 +1,6 @@
+// call.go parses the data calls that GUI files and localization texts write between brackets. It also fills in a
+// macro's call with the arguments it was given.
+
 package jomini
 
 import (

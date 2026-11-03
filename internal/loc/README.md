@@ -9,7 +9,7 @@ offsets. It knows no game and no index: what a key names, and which message the 
 
 | file | holds |
 |---|---|
-| `loc.go` | `Message` and `File`; `Parse`, `ParseMessage`; the language rule (`FindSuffixLanguage`, `ToLanguageRel`, `ToLanguageKey`); the writer, `Encode`, `EncodeMessages` and `EncodeAddition` |
+| `loc.go` | `Message`, `File` and `Language`; `Parse`, `ParseMessage`; the language rule (`FindSuffixLanguage`, `ToLanguageRel`, `ToLanguageKey`) and the languages' names (`DescribeLanguage`); the writer, `Encode`, `EncodeMessages` and `EncodeAddition` |
 | `markup.go` | `Markup` and its constants, `Segment`; `Segments`, `ToPlain`; the data calls a text writes (`ListCalls`) and the markup it gets wrong (`ListMarkupFaults`) |
 
 ## The file
@@ -29,7 +29,9 @@ A file's language is decided once, by the first of three that says: the `l_<lang
 `_l_<language>.yml` ending of the file's name, then the folder under `localization` that holds the file, a `replace`
 folder skipped. Each is read without regard to case. The language is "" if none of them says. `ToLanguageRel` gives the
 path of the file that holds the same messages in another language, setting the language in the folder and in the name
-where the file has them. `ToLanguageKey` writes a language as the game does, `l_english`.
+where the file has them. `ToLanguageKey` writes a language as the game does, `l_english`. A `Language` is one
+language's folder and its name in English; `DescribeLanguage` gives that name for a folder, such as Simplified Chinese
+for `simp_chinese`, or the folder itself for a language it does not know.
 
 ## Markup
 
@@ -55,6 +57,7 @@ first where the text lacks a final one, then the messages, in the text's own lin
 
 - **File**: one parsed localization file.
 - **Message**: one line of a localization file: a key, its version and its text.
-- **Language**: the language a file is for, as the game names it without its `l_`.
+- **Language**: the language a file is for, as the game names it without its `l_`; as a type, that name's folder and
+  its name in English.
 - **Segment**: one piece of a message's text, with its spans.
 - **Markup**: what a segment is: text, key, call, format, icon or break.

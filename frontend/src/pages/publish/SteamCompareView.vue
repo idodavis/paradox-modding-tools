@@ -92,6 +92,9 @@ onKeyStroke("Escape", (event) => {
     </div>
 
     <p v-if="comparison.status === 'unknown'" class="p-5 text-13 text-dimmed">{{ toSentence(comparison.reason) }}</p>
+    <p v-else-if="comparison.status === 'new'" class="p-5 text-13 text-dimmed">
+      Nothing to compare yet: this mod is not on the Workshop. The first upload creates its item and sends its files.
+    </p>
     <p v-else-if="!current" class="p-5 text-13 text-dimmed">Nothing differs: the next upload sends what Steam has.</p>
     <div v-else class="flex min-h-0 grow">
       <nav class="flex w-65 shrink-0 flex-col overflow-y-auto border-e border-default bg-muted py-2">

@@ -1,3 +1,6 @@
+// checks.go checks what an agent asks the app to show before the app shows it: the page, each key of its query, and the
+// node, mod, file or lookup the query names.
+
 package mcp
 
 import (
@@ -52,19 +55,6 @@ var queryKeys = []queryKey{
 
 // nodeHint says where an Event Graph node's id comes from, for an error about one.
 const nodeHint = "find_roots gives node ids, such as events:my_mod.0001"
-
-// describeQueries returns the guide's lines on the queries show takes: each page that takes one, with its keys.
-func describeQueries() string {
-	var guide strings.Builder
-	for _, page := range lo.Uniq(lo.Map(queryKeys, func(row queryKey, _ int) string { return row.Page })) {
-		keys := lo.FilterMap(queryKeys, func(row queryKey, _ int) (string, bool) {
-			values := lo.Ternary(len(row.Values) > 0, health.JoinList(row.Values, "or")+": ", "")
-			return fmt.Sprintf("%s (%s%s)", row.Key, values, row.Help), row.Page == page
-		})
-		fmt.Fprintf(&guide, "\n- %s: %s.", page, strings.Join(keys, "; "))
-	}
-	return guide.String()
-}
 
 // checkPage returns an error if PMT has no page of the given id, if its query has a key the page does not take, or if
 // a value is not one the key takes or names nothing the workspace has. A query needs a page.
@@ -153,22 +143,6 @@ func (mcp *Service) checkPatch(version string) error {
 	return nil
 }
 
-// checkFindings returns an error if a filter of Health's findings names a mod, a check or a level PMT does not have.
-func (mcp *Service) checkFindings(filter findingFilter) error {
-	var errs []error
-	if filter.Mod != "" {
-		errs = append(errs, mcp.checkMod(filter.Mod))
-	}
-	if filter.Code != "" {
-		errs = append(errs, mcp.checkCode(filter.Code))
-	}
-	levels := lo.Map(lsp.Levels, func(level lsp.Level, _ int) string { return level.ID })
-	if filter.Level != "" && !slices.Contains(levels, filter.Level) {
-		errs = append(errs, fmt.Errorf("a finding's level is %s, not %q", health.JoinList(levels, "or"), filter.Level))
-	}
-	return errors.Join(errs...)
-}
-
 // checkLanguage returns an error if the workspace's install has no localization in the given language, naming those
 // it has.
 func (mcp *Service) checkLanguage(language string) error {
@@ -219,15 +193,19 @@ func (mcp *Service) locateFile(path string) (workspace.Place, error) {
 	return place, nil
 }
 
-// checkDrawable returns an error if a file draws nothing of the given name, naming what it draws, or if the picks name
-// a group or an option a window of a .gui file does not have. A coat's picks are not checked.
+// checkDrawable returns an error if a file draws nothing of the given name, naming what it draws, and one for each
+// pick that names a group or an option a window of a .gui file does not have, naming those it has. A pick may be an
+// option or its caption in the States panel, and the given picks then hold the option. A coat's picks are not checked.
 func (mcp *Service) checkDrawable(place workspace.Place, drawable string, picks map[string]string) error {
 	symbols, err := mcp.Draw.ListDrawables(place.Path)
 	if err != nil {
 		return err
 	}
 	names := lo.Map(symbols, func(symbol lsp.Symbol, _ int) string { return symbol.Name })
-	if !slices.Contains(names, drawable) {
+	switch {
+	case len(names) == 0:
+		return fmt.Errorf("%s draws nothing", place.Name)
+	case !slices.Contains(names, drawable):
 		return fmt.Errorf("%s draws no %q; it draws %s", place.Name, drawable, strings.Join(names, ", "))
 	}
 	if len(picks) == 0 || place.Format != files.FormatGUI {
@@ -237,12 +215,6 @@ func (mcp *Service) checkDrawable(place workspace.Place, drawable string, picks 
 	if err != nil {
 		return err
 	}
-	return checkPicks(window, picks)
-}
-
-// checkPicks returns an error for each pick of a window that names a group it does not have, or an option its group
-// does not take, naming those it has.
-func checkPicks(window draw.Window, picks map[string]string) error {
 	var errs []error
 	for _, id := range slices.Sorted(maps.Keys(picks)) {
 		group, ok := lo.Find(window.Groups, func(group draw.Group) bool { return group.ID == id })
@@ -250,11 +222,32 @@ func checkPicks(window draw.Window, picks map[string]string) error {
 		case !ok:
 			ids := lo.Map(window.Groups, func(group draw.Group, _ int) string { return group.ID })
 			errs = append(errs, fmt.Errorf("%s has no state group %q; its groups are %s", window.Name, id, strings.Join(ids, ", ")))
-		case !slices.Contains(group.Options, picks[id]):
-			errs = append(errs, fmt.Errorf("%s's group %q takes %s, not %q", window.Name, id, health.JoinList(group.Options, "or"), picks[id]))
+		default:
+			if option, isOption := findOption(group, picks[id]); isOption {
+				picks[id] = option
+				continue
+			}
+			words := lo.Map(group.Options, func(option string, _ int) string { return describeOption(group, option) })
+			errs = append(errs, fmt.Errorf("%s's group %q takes %s, not %q", window.Name, id, health.JoinList(words, "or"), picks[id]))
 		}
 	}
 	return errors.Join(errs...)
+}
+
+// findOption returns the option of a group that a word names: an option itself, else the option whose caption in the
+// States panel is the word, in any case. It returns false if the word names none.
+func findOption(group draw.Group, word string) (string, bool) {
+	if slices.Contains(group.Options, word) {
+		return word, true
+	}
+	return lo.Find(group.Options, func(option string) bool { return strings.EqualFold(group.Captions[option], word) })
+}
+
+// describeOption returns an option of a group as the States panel writes it, followed by the option itself in
+// brackets where that is another word.
+func describeOption(group draw.Group, option string) string {
+	caption := group.Captions[option]
+	return lo.Ternary(strings.EqualFold(caption, option), caption, fmt.Sprintf("%s (%s)", caption, option))
 }
 
 // checkLookUp returns an error if a look-up names no wiki page or Lexicon entry the game's wiki has, or names neither.

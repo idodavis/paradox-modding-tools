@@ -1,3 +1,6 @@
+// steam.go is the Wails service that publishes mods to the Steam Workshop. It uploads a mod's listing, keeps the
+// previews of a listing and says why Steam cannot take an upload.
+
 package steam
 
 import (
@@ -108,20 +111,14 @@ func (stm *Service) AddPreview(modID, key string, preview Preview) error {
 	}
 	return stm.changeListing(modID, key, func(dir string) error {
 		if preview.Type == previewImage {
-			return stm.copyPicture(dir, preview.Path)
+			content, err := os.ReadFile(preview.Path)
+			if err != nil {
+				return err
+			}
+			return stm.writePicture(dir, path.Join(previewsDir, filepath.Base(preview.Path)), content)
 		}
 		return stm.addVideo(dir, preview.URL)
 	})
-}
-
-// copyPicture copies a picture into a listing's previews folder. It returns an error if the folder has a picture of
-// that name.
-func (stm *Service) copyPicture(dir, picture string) error {
-	content, err := os.ReadFile(picture)
-	if err != nil {
-		return err
-	}
-	return stm.writePicture(dir, path.Join(previewsDir, filepath.Base(picture)), content)
 }
 
 // writePicture writes a picture into a listing's folder. It returns an error if the file exists already.
@@ -155,7 +152,14 @@ func (stm *Service) RemovePreview(modID, key string, preview Preview) error {
 		if preview.Type == previewImage {
 			return stm.deletePicture(dir, preview.Path)
 		}
-		return stm.deleteVideo(dir, preview.URL)
+		urls, err := listVideos(dir)
+		if err != nil {
+			return err
+		}
+		if !slices.Contains(urls, preview.URL) {
+			return fmt.Errorf("the listing has no video %s", preview.URL)
+		}
+		return stm.writeVideos(dir, slices.DeleteFunc(urls, func(listed string) bool { return listed == preview.URL }))
 	})
 }
 
@@ -169,18 +173,6 @@ func (stm *Service) deletePicture(dir, picture string) error {
 	}
 	_, err := stm.Workspace.Delete(picture)
 	return err
-}
-
-// deleteVideo removes a video from a listing's gallery. It returns an error if the gallery does not have it.
-func (stm *Service) deleteVideo(dir, url string) error {
-	urls, err := listVideos(dir)
-	if err != nil {
-		return err
-	}
-	if !slices.Contains(urls, url) {
-		return fmt.Errorf("the listing has no video %s", url)
-	}
-	return stm.writeVideos(dir, slices.DeleteFunc(urls, func(listed string) bool { return listed == url }))
 }
 
 // writeVideos writes the list of a listing's gallery videos.

@@ -39,8 +39,8 @@ func (hlt *Service) RemoveIgnoredPair(first, second string) error {
 	})
 }
 
-// updatePairs changes the ignored pairs in the open workspace's record. It returns an error if the mods are not two of
-// the workspace's, or the change or the save fails.
+// updatePairs changes the ignored pairs in the open workspace's record, which keeps each pair sorted. It returns an
+// error if the mods are not two of the workspace's, or the change or the save fails.
 func (hlt *Service) updatePairs(first, second string, change func(pairs [][2]string, pair [2]string) ([][2]string, error)) error {
 	ws, err := hlt.Workspace.Session()
 	if err != nil {
@@ -54,18 +54,12 @@ func (hlt *Service) updatePairs(first, second string, change func(pairs [][2]str
 		if position < 0 {
 			return fmt.Errorf("the workspace %s is not recorded", ws.ID)
 		}
-		pairs, err := change(config.Workspaces[position].IgnoredPairs, makePair(first, second))
+		pairs, err := change(config.Workspaces[position].IgnoredPairs, [2]string{min(first, second), max(first, second)})
 		if err == nil {
 			config.Workspaces[position].IgnoredPairs = pairs
 		}
 		return err
 	})
-}
-
-// findRecord returns the open workspace's record. It returns an empty record if the workspace has none.
-func (hlt *Service) findRecord(ws *workspace.Session) app.Workspace {
-	record, _ := lo.Find(hlt.Workspace.Config.Config().Workspaces, func(record app.Workspace) bool { return record.ID == ws.ID })
-	return record
 }
 
 // listChecked returns the mods of a load order that the compatibility checks judge: every one the workspace's record
@@ -103,9 +97,4 @@ func findPair(ws *workspace.Session, first, second string) ([]string, bool) {
 		return mod.ID, mod.ID == first || mod.ID == second
 	})
 	return ids, len(ids) == 2
-}
-
-// makePair returns a pair of mods in sorted order.
-func makePair(first, second string) [2]string {
-	return lo.Ternary(first <= second, [2]string{first, second}, [2]string{second, first})
 }

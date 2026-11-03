@@ -1,3 +1,6 @@
+// mod.go reads and writes the descriptors of a workspace's mods. It also tells a mod's title, its dependencies and its
+// Workshop id.
+
 package workspace
 
 import (
@@ -238,7 +241,7 @@ func FindLocalizationFile(row *game.Game, folder, name, language string) (string
 // CreateLocalization writes a localization file of a mod with only its header, in the language its name ends in. It
 // returns an error for a file outside the workspace's mods, or a name that ends in no language.
 func (wsp *Service) CreateLocalization(path string) error {
-	if _, err := wsp.findWritable(path); err != nil {
+	if _, err := wsp.FindWritable(path); err != nil {
 		return err
 	}
 	return createLocalization(path)

@@ -1,8 +1,8 @@
 # Agent notes
 
 The tree being built is the `rearchitecture` branch: its design, with the feature list every page answers to, is
-`.claude/plans/rearchitecture.md`, its builder briefs are under `.superpowers/sdd/rearchitecture/briefs/`, and each
-package's README holds its design and its terms.
+`.claude/plans/archive/rearchitecture.md`, its builder briefs are under `.superpowers/sdd/rearchitecture/briefs/`,
+and each package's README holds its design and its terms.
 
 ## Learned User Preferences
 
@@ -96,7 +96,7 @@ Each rule says what checks it; "review" means nothing does, so the author and th
   one or two plain sentences on what the file shows or does. Never the algorithm (that is a comment inside the
   body), never who calls it, never a library inventory, and no history, plan, stage, ruling, date or person. A
   comment line fits in 120 columns, a tab counting 2. A comment that restates the next line is deleted. The sample
-  is `services/draw/*.go` on the `rearchitecture` branch. Before and after, from it: "ResolveWindow resolves a
+  is `services/draw/*.go` in this repository. Before and after, from it: "ResolveWindow resolves a
   window of a file: its types and templates the ones the game keeps, block overrides applied, each property by the
   last written" became "ResolveWindow resolves one window in a GUI file. It applies the window's type and
   templates, looks up its texts and finds its textures. It returns an error if the file is not in the workspace or

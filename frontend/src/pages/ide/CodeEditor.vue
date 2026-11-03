@@ -155,11 +155,6 @@ watch(
   { immediate: true },
 );
 
-/** showInHealth opens Health with its table filtered to the name under the caret. */
-async function showInHealth(): Promise<void> {
-  await router.push({ name: "health", params: { id: workspace.activeId() }, query: { name: card.value?.title } });
-}
-
 /**
  * listReferences lists places in the sidebar's references under the given heading, which every window's list shows. It
  * also shows the main window's sidebar search.
@@ -223,7 +218,12 @@ const groups = computed<ContextMenuItem[][]>(() => [
       disabled: !card.value?.node,
       onSelect: (event) => void findCommand("editor.openGraph")?.onSelect?.(event),
     },
-    { label: "Show in Health", disabled: !card.value, onSelect: () => void showInHealth() },
+    {
+      label: "Show in Health",
+      disabled: !card.value,
+      onSelect: () =>
+        void router.push({ name: "health", params: { id: workspace.activeId() }, query: { name: card.value?.title } }),
+    },
     {
       label: "Look up in the wiki",
       disabled: !lookup.value,

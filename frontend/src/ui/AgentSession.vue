@@ -5,7 +5,6 @@
 -->
 <script setup lang="ts">
 import type {
-  AvailableCommand,
   SessionConfigOption,
   SessionConfigSelectGroup,
   SessionConfigSelectOption,
@@ -111,7 +110,10 @@ const commands = computed(() => [
     items: session.commands.map((command) => ({
       label: `/${command.name}`,
       suffix: command.description,
-      onSelect: () => pickCommand(command),
+      onSelect: () => {
+        text.value = `/${command.name} `;
+        pickingCommand.value = false;
+      },
     })),
   },
 ]);
@@ -159,12 +161,6 @@ function pick(place: Place): void {
   if (!files.value.some((file) => file.key === place.key)) files.value = [...files.value, place];
   picking.value = false;
   term.value = "";
-}
-
-/** pickCommand starts the prompt with one of the agent's commands, for the user to add its input and send. */
-function pickCommand(command: AvailableCommand): void {
-  text.value = `/${command.name} `;
-  pickingCommand.value = false;
 }
 
 /** copyAnswer puts an answer of the agent's on the clipboard, and ticks its button for a moment. */

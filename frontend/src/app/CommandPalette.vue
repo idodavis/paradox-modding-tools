@@ -63,7 +63,37 @@ const { data: symbols } = useQuery(() => ({
   placeholderData: (previous: WorkspaceSymbol[] | null | undefined) => previous,
 }));
 
-const available = computed(() => (mode.value === "commands" ? listCommandGroups() : []));
+const available = computed((): { id: string; label: string; items: CommandPaletteItem[] }[] => {
+  if (mode.value !== "commands") return [];
+  const activeId = workspace.activeId();
+  // each row shows its first shortcut as the user set it
+  const applicable = COMMANDS.filter((row) => row.when()).map((row) => ({ ...row, kbds: listBindings(row)[0] }));
+  const recentRows = recent.value.flatMap((one) => applicable.find((row) => row.id === one) ?? []);
+  const names: PageName[] = ["library", "wizard", ...(activeId ? listShownTools() : [])];
+  const pages = names.map((name) => {
+    const page: Page = PAGES[name];
+    return {
+      id: `page.${name}`,
+      label: page.title,
+      icon: page.icon ?? "i-lucide-plus",
+      onSelect: () => openPage(name),
+    };
+  });
+  const records = (workspaces.value ?? []).map(({ record }) => ({
+    id: `workspace.${record.id}`,
+    label: record.name,
+    icon: record.id === activeId ? "i-lucide-check" : "i-lucide-folder",
+    onSelect: () => void router.push(homeRoute(record.id, record.homePage)),
+  }));
+  return [
+    { id: "recent", label: "Recently used", items: recentRows },
+    { id: "commands", label: "Commands", items: applicable.filter((row) => !recentRows.includes(row)) },
+    { id: "pages", label: "Pages", items: pages },
+    { id: "workspaces", label: "Workspaces", items: records },
+    { id: "switches", label: "Settings you can switch", items: activeId ? listSwitches() : [] },
+    { id: "values", label: "Settings with a value", items: activeId ? listValues() : [] },
+  ];
+});
 const { results } = useFuse(
   query,
   () => available.value.flatMap((group) => group.items.map((item) => ({ ...item, group: group.id }))),
@@ -115,41 +145,6 @@ useEventBus<CommandPaletteGroup>("pmt.choices").on((group) => {
   term.value = "";
   open.value = true;
 });
-
-/**
- * listCommandGroups returns the groups of the palette's commands mode: the commands it ran last that apply now, the
- * other commands that apply, the pages, the workspaces, and the settings by type.
- */
-function listCommandGroups(): { id: string; label: string; items: CommandPaletteItem[] }[] {
-  const activeId = workspace.activeId();
-  // each row shows its first shortcut as the user set it
-  const applicable = COMMANDS.filter((row) => row.when()).map((row) => ({ ...row, kbds: listBindings(row)[0] }));
-  const recentRows = recent.value.flatMap((one) => applicable.find((row) => row.id === one) ?? []);
-  const names: PageName[] = ["library", "wizard", ...(activeId ? listShownTools() : [])];
-  const pages = names.map((name) => {
-    const page: Page = PAGES[name];
-    return {
-      id: `page.${name}`,
-      label: page.title,
-      icon: page.icon ?? "i-lucide-plus",
-      onSelect: () => openPage(name),
-    };
-  });
-  const records = (workspaces.value ?? []).map(({ record }) => ({
-    id: `workspace.${record.id}`,
-    label: record.name,
-    icon: record.id === activeId ? "i-lucide-check" : "i-lucide-folder",
-    onSelect: () => void router.push(homeRoute(record.id, record.homePage)),
-  }));
-  return [
-    { id: "recent", label: "Recently used", items: recentRows },
-    { id: "commands", label: "Commands", items: applicable.filter((row) => !recentRows.includes(row)) },
-    { id: "pages", label: "Pages", items: pages },
-    { id: "workspaces", label: "Workspaces", items: records },
-    { id: "switches", label: "Settings you can switch", items: activeId ? listSwitches() : [] },
-    { id: "values", label: "Settings with a value", items: activeId ? listValues() : [] },
-  ];
-}
 
 /**
  * listSwitches lists the palette's switches: each setting that is one, each page a workspace can show and each of

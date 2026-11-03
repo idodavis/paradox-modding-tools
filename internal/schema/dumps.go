@@ -1,3 +1,6 @@
+// dumps.go reads the dump files a game writes of its own script language: the effects, triggers, links, scopes,
+// modifiers and data types it declares. The schema starts from what they say.
+
 package schema
 
 import (
@@ -27,7 +30,7 @@ type DumpCommand struct {
 	Description string
 	Prefixed    bool   // the dump says it requires data: the link is written with a name after a colon
 	Wild        bool   // the dump says it is a wild card
-	Class       string // the database class a trigger's traits line names; "" if none
+	Traits      string // what a trigger's Traits line writes after its colon; "" if none
 }
 
 // Dumps is everything that a game's script_docs and data types dumps declare.
@@ -59,17 +62,32 @@ var dumpFiles = []string{
 
 // The patterns of the lines a dump is read by.
 var (
-	dashesLine   = regexp.MustCompile(`^-{10,}$`)
-	headingRow   = regexp.MustCompile(`^#{2,3} +(\S+)$`)
-	scopeLine    = regexp.MustCompile(`^\*{0,2}(Supported Scopes|Supported Targets|Input Scopes|Output Scopes)\*{0,2}:\s*(.*)$`)
-	usageLine    = regexp.MustCompile(`^\s*\S+\s*=\s*\{`)
-	argumentLine = regexp.MustCompile(`^\s*(\S+?)\s*=`)
-	titleLine    = regexp.MustCompile(`^([A-Za-z0-9_$]+):$`)
-	pairLine     = regexp.MustCompile(`^\s*([A-Za-z ]+?):\s*(.*)$`)
-	tagLine      = regexp.MustCompile(`^Tag:\s*([^,\s]+)(?:,\s*Categories:\s*(.*))?$`)
-	traitsLine   = regexp.MustCompile(`^Traits:\s*class (C\w+) key$`)
-	signature    = regexp.MustCompile(`^(\S+?)\s*(?:\(\s*(.*?)\s*\))?$`)
+	dashesLine = regexp.MustCompile(`^-{10,}$`)
+	headingRow = regexp.MustCompile(`^#{2,3} +(\S+)$`)
+	scopeLine  = regexp.MustCompile(`^\*{0,2}(Supported Scopes|Supported Targets|Input Scopes|Output Scopes)\*{0,2}:\s*(.*)$`)
+	usageLine  = regexp.MustCompile(`^\s*\S+\s*=\s*\{`)
+	titleLine  = regexp.MustCompile(`^([A-Za-z0-9_$]+):$`)
+	pairLine   = regexp.MustCompile(`^\s*([A-Za-z ]+?):\s*(.*)$`)
+	tagLine    = regexp.MustCompile(`^Tag:\s*([^,\s]+)(?:,\s*Categories:\s*(.*))?$`)
+	signature  = regexp.MustCompile(`^(\S+?)\s*(?:\(\s*(.*?)\s*\))?$`)
+	// usageToken is one token of a usage: a brace, an operator of two characters, a group in angle or square brackets,
+	// an operator of one, or a run of other characters but spaces.
+	usageToken = regexp.MustCompile(`[{}]|[<>!=?]=|<[^<>\n]*>|\[[^\[\]\n]*\]|[=<>]|[^\s{}=<>\[\]]+`)
+	// usageComment is a comment in a usage, as CK3's stress_impact writes "# multiple 'trait = value' lines".
+	usageComment = regexp.MustCompile(`#[^\n]*`)
 )
+
+// The forms of a trigger's Traits line, as the dumps write them after its colon.
+var (
+	comparisonTraits = regexp.MustCompile(`^<, <=, =, (?:!=, )?>, >=( valid date)?$`)
+	classTraits      = regexp.MustCompile(`^class (C\w+) key$`)
+	targetTraits     = regexp.MustCompile(`^(\w+) (?:scope|target)(?: \w+ scope)?$`)
+	tagTraits        = regexp.MustCompile(`^\w+ (?:tag|id)/(\w+) scope$`)
+	choiceTraits     = regexp.MustCompile(`^(?:Valid [\w ]+: )?(.+, .+)$`)
+)
+
+// usageOperators are the operators a usage writes between a key and its value.
+var usageOperators = []string{"=", "==", "!=", "<", ">", "<=", ">=", "?="}
 
 // FindDumpsAt returns when the dumps under the given folders were last written: the time of the newest dump file. It
 // reads no file. The time is zero when no folder holds a dump, and the error is that of a dump file whose time cannot
@@ -209,15 +227,14 @@ func (dumps *Dumps) parseCommands(text, declaration string) {
 		lines := []string{first}
 		for _, line := range body {
 			scope := scopeLine.FindStringSubmatch(line)
-			traits := traitsLine.FindStringSubmatch(line)
 			switch trimmed := strings.TrimSpace(line); {
 			case trimmed == "Requires Data: yes":
 				command.Prefixed = true
 			case trimmed == "Global Link: yes": // dropped from the description
 			case trimmed == "Wild Card: yes":
 				command.Wild = true
-			case traits != nil:
-				command.Class = traits[1]
+			case strings.HasPrefix(trimmed, "Traits:"):
+				command.Traits = strings.TrimSpace(strings.TrimPrefix(trimmed, "Traits:"))
 			case scope == nil:
 				lines = append(lines, line)
 			case scope[1] == "Supported Scopes" || scope[1] == "Input Scopes":
@@ -323,10 +340,9 @@ func (dumps *Dumps) parseModifiers(text string) {
 			last = strings.TrimSuffix(line, ":")
 			dumps.Modifiers[last] = Modifier{Name: last}
 		case last == "":
-		case strings.HasPrefix(trimmed, "Use areas:"):
-			dumps.Modifiers[last] = Modifier{Name: last, Blurb: strings.TrimSpace(strings.TrimPrefix(trimmed, "Use areas:"))}
-		case strings.HasPrefix(trimmed, "Description:"):
-			dumps.Modifiers[last] = Modifier{Name: last, Blurb: strings.TrimSpace(strings.TrimPrefix(trimmed, "Description:"))}
+		case strings.HasPrefix(trimmed, "Use areas:") || strings.HasPrefix(trimmed, "Description:"):
+			_, blurb, _ := strings.Cut(trimmed, ":")
+			dumps.Modifiers[last] = Modifier{Name: last, Blurb: strings.TrimSpace(blurb)}
 		}
 	}
 }
@@ -426,7 +442,8 @@ func takeMissing[T any](table *map[string]T, backup map[string]T) bool {
 }
 
 // buildCommands builds the commands the dumps declare. A name that several dumps list is one command. A link that
-// takes data after a colon is a prefix. A trigger that takes the key of a database names that database.
+// takes data after a colon is a prefix. A trigger whose Traits line says what its value is takes that as its value. The
+// keys of a command game.CommandKeys names are names of its database.
 func (schema *Schema) buildCommands(dumps []DumpCommand) {
 	for _, dump := range dumps {
 		command := schema.Commands[dump.Name]
@@ -435,16 +452,23 @@ func (schema *Schema) buildCommands(dumps []DumpCommand) {
 			schema.Commands[dump.Name] = command
 		}
 		command.build(dump)
-		if dump.Declared != game.DeclaredLink {
-			schema.buildClass(command, dump.Class)
-		} else if _, reserved := schema.Prefixes[dump.Name]; !reserved && dump.Prefixed {
+		if expected, ok := schema.resolveTraits(dump.Traits); ok {
+			command.makeArguments(game.SourceDumps).Value.resolve(expected, game.SourceDumps)
+		}
+		if _, reserved := schema.Prefixes[dump.Name]; dump.Declared == game.DeclaredLink && !reserved && dump.Prefixed {
 			schema.Prefixes[dump.Name] = ""
+		}
+	}
+	for name, database := range game.CommandKeys {
+		if command := schema.Commands[name]; command != nil {
+			command.makeArguments(game.SourceRegistry).Keys.resolve(database, game.SourceRegistry)
 		}
 	}
 }
 
 // build adds what one dump says about a command. Its scopes are the union of the scopes of its dumps, and a dump that
-// names none makes it run in any scope. The first target, blurb and arguments are kept.
+// names none makes it run in any scope. The first target, blurb and arguments are kept. The dump's usage starts at
+// the first line of its description written as `<scope> = { … }`.
 func (command *Command) build(dump DumpCommand) {
 	switch {
 	case len(command.Declared) == 0:
@@ -456,87 +480,125 @@ func (command *Command) build(dump DumpCommand) {
 	}
 	command.Declared = append(command.Declared, dump.Declared)
 	command.Target = cmp.Or(command.Target, dump.Target)
-	prose, usage := cutUsage(dump.Description)
+	prose, usage := dump.Description, ""
+	lines := strings.Split(dump.Description, "\n")
+	if cut := slices.IndexFunc(lines, usageLine.MatchString); cut >= 0 {
+		prose, usage = strings.Join(lines[:cut], "\n"), strings.Join(lines[cut:], "\n")
+	}
 	blurb, _, _ := strings.Cut(strings.TrimSpace(prose), "\n")
 	blurb = strings.TrimSpace(blurb)
 	command.Blurb = cmp.Or(command.Blurb, blurb)
 	command.Usage = cmp.Or(command.Usage, usage)
 	if command.Arguments == nil {
-		command.Arguments = parseArguments(dump.Name, prose, usage)
+		command.Arguments, command.ArgumentKey = parseArguments(dump.Name, prose, usage)
 	}
 	if dump.Declared == game.DeclaredLink {
 		command.Wild = dump.Wild
+		command.Bare = command.Bare || !dump.Prefixed
 	}
 	command.Lists = command.Lists || (strings.HasPrefix(blurb, game.DumpPhrases.Iterates) && command.Target == "")
 }
 
-// cutUsage splits a dump description into its prose and its usage. The usage starts at the first line written as
-// `<scope> = { … }`.
-func cutUsage(description string) (prose string, usage string) {
-	lines := strings.Split(description, "\n")
-	cut := slices.IndexFunc(lines, usageLine.MatchString)
-	if cut < 0 {
-		return description, ""
+// parseArguments returns the keys a command takes, as fields: those of each usage block written under the command's
+// name, on a line of its own or inside a sentence, and the key each line of the description opens with, as in
+// key = value. The words after a value, such as "- must be defined", declare nothing. It returns nil if the
+// description gives the command no key and no shape. It also returns the first key of the first block form that opens
+// with one, an identifier followed by an operator, or "".
+func parseArguments(title, prose, usage string) (*Field, string) {
+	arguments, first := &Field{Source: game.SourceDumps}, ""
+	prose, usage = usageComment.ReplaceAllString(prose, ""), usageComment.ReplaceAllString(usage, "")
+	lines := strings.Split(prose, "\n")
+	for position, line := range lines {
+		tokens := usageToken.FindAllString(line, -1)
+		// A key with nothing after it whose block opens on the next line is the scope the usage runs in, as Vic3's
+		// "power_bloc =" is, and no argument.
+		opens := len(tokens) == 2 && position+1 < len(lines) && strings.HasPrefix(strings.TrimSpace(lines[position+1]), "{")
+		if len(tokens) > 1 && tokens[0] != title && jomini.IsIdentifier(tokens[0]) && tokens[1] == "=" && !opens {
+			parseUsageStatement(tokens, 0, arguments, false)
+		}
 	}
-	return strings.Join(lines[:cut], "\n"), strings.Join(lines[cut:], "\n")
+	tokens := usageToken.FindAllString(prose+"\n"+usage, -1)
+	for position := 0; position+2 < len(tokens); position++ {
+		if tokens[position] == title && tokens[position+1] == "=" && tokens[position+2] == "{" {
+			start := position + 3
+			if first == "" && start+1 < len(tokens) && jomini.IsIdentifier(tokens[start]) &&
+				slices.Contains(usageOperators, tokens[start+1]) {
+				first = tokens[start]
+			}
+			position = parseUsageBlock(tokens, start, arguments) - 1
+		}
+	}
+	if len(arguments.Children) == 0 && !arguments.Shape.IsStated() {
+		return nil, ""
+	}
+	return arguments, first
 }
 
-// parseArguments returns the keys a command takes, as fields. They are the keys inside every block of the usage that is
-// keyed by the command's name, and the keys that the prose writes as `key = value`. It returns nil if there are none.
-func parseArguments(title, prose, usage string) *Field {
-	field, found := &Field{Source: game.SourceDumps}, false
-	for line := range strings.Lines(prose) {
-		if match := argumentLine.FindStringSubmatch(line); match != nil && match[1] != title && jomini.IsIdentifier(match[1]) {
-			field.buildChild(match[1], game.SourceDumps)
-			found = true
-		}
-	}
-	tree := jomini.Parse(usage)
-	for statement := 1; statement < len(tree.Statements); statement++ {
-		if tree.Text(tree.Statements[statement].Key) == title && tree.Statements[statement].IsBlock() {
-			buildArguments(tree, int32(statement), field)
-			found = true
-		}
-	}
-	if !found {
-		return nil
-	}
-	return field
-}
-
-// buildArguments adds the keys of a usage block to a field as children. A key written with slashes adds a child for
-// each part. A child gets the keys of its own block, and the type its value names if the value is a type term. A
-// placeholder such as `<triggers>` inside a block gives the block its shape.
-func buildArguments(tree *jomini.Tree, statement int32, field *Field) {
-	for child := range tree.Children(statement) {
-		inner := tree.Statements[child]
-		token := inner.Key
-		if inner.IsListed() {
-			token = inner.Value
-		}
-		key := tree.Text(token)
+// parseUsageBlock reads the statements of the usage block that starts at the given token into a field's children, up
+// to the brace that closes it. A placeholder such as <triggers> gives the field the shape it names, and a statement
+// written in angle or square brackets is optional. It returns the token after the closing brace.
+func parseUsageBlock(tokens []string, cursor int, field *Field) int {
+	for cursor < len(tokens) && tokens[cursor] != "}" {
+		token := tokens[cursor]
 		switch {
-		case token.Start > 0 && tree.Src[token.Start-1] == '<':
-			if shape, ok := findPlaceholderShape(key); ok {
+		case token == "{":
+			cursor = parseUsageBlock(tokens, cursor+1, &Field{})
+		case (token[0] == '<' || token[0] == '[') && strings.Contains(token, "="):
+			parseUsageStatement(usageToken.FindAllString(token[1:len(token)-1], -1), 0, field, true)
+			cursor++
+		case token[0] == '<':
+			if shape, ok := findPlaceholderShape(token[1:]); ok {
 				field.Shape.resolve(shape, game.SourceDumps)
 			}
-		case !inner.IsListed():
-			for part := range strings.SplitSeq(key, "/") {
-				if !jomini.IsIdentifier(part) {
-					continue
-				}
-				argument := field.buildChild(part, game.SourceDumps)
-				term := strings.TrimSuffix(strings.TrimPrefix(tree.Text(inner.Value), "<"), ">")
-				_, known := game.DocTypes[ToPhrase(term)]
-				switch {
-				case inner.IsBlock():
-					buildArguments(tree, child, argument)
-				case known && len(term) > 1:
-					resolveDocType(argument, term, game.SourceDumps)
-				}
-			}
+			cursor++
+		default:
+			cursor = parseUsageStatement(tokens, cursor, field, false)
 		}
 	}
+	return cursor + 1
+}
+
+// parseUsageStatement reads the key = value statement of a usage that starts at the given token into a field's
+// children: a child for each key a slash joins, optional where the statement was written in brackets. It returns the
+// token after the statement, or the next token where no statement starts.
+func parseUsageStatement(tokens []string, cursor int, field *Field, optional bool) int {
+	if cursor+1 >= len(tokens) || !slices.Contains(usageOperators, tokens[cursor+1]) {
+		return cursor + 1
+	}
+	// A key written with nothing after it, as create_character's "age =", is declared all the same.
+	valued := cursor+2 < len(tokens) && tokens[cursor+2] != "}"
+	next := cursor + 2
+	for part := range strings.SplitSeq(tokens[cursor], "/") {
+		argument := &Field{} // a part that is no key still reads its value, into no field
+		if jomini.IsIdentifier(part) {
+			argument = field.buildChild(part, game.SourceDumps)
+		}
+		if optional {
+			argument.Required.resolve("optional", game.SourceDumps)
+		}
+		if valued {
+			next = parseUsageValue(tokens, cursor+2, argument)
+		}
+	}
+	return next
+}
+
+// parseUsageValue gives an argument what the value written for it at the given token says: the keys of a block, the
+// choices of a list such as [yes|no] or <A|B>, or the type a docs' type word names, bare or in angle brackets. Any
+// other value is a sample and says nothing. It returns the token after the value.
+func parseUsageValue(tokens []string, cursor int, argument *Field) int {
+	value := tokens[cursor]
+	term := strings.TrimSuffix(strings.TrimPrefix(value, "<"), ">")
+	_, known := game.DocTypes[ToPhrase(term)]
+	switch {
+	case value == "{":
+		return parseUsageBlock(tokens, cursor+1, argument)
+	case strings.ContainsAny(value[:1], "<[") && strings.Contains(value, "|"):
+		resolveChoices(argument, strings.Split(strings.Trim(value, "<>[]"), "|"), game.SourceDumps)
+	case known && len(term) > 1:
+		resolveDocType(argument, term, game.SourceDumps)
+	}
+	return cursor + 1
 }
 
 // findPlaceholderShape returns the shape that a placeholder names, such as `<triggers>`, `<effect>` or
@@ -551,16 +613,39 @@ func findPlaceholderShape(placeholder string) (string, bool) {
 	return shape, ok
 }
 
-// buildClass gives a command a key of a database as its argument, if its dump names the class that holds the key.
-func (schema *Schema) buildClass(command *Command, class string) {
-	if class == "" {
-		return
+// resolveTraits returns what a trigger's value must be, as its Traits line says. A comparison takes a number or a
+// script value, or a date where the line says so. A line of yes and no takes yes or no. A class takes a name of the
+// database that holds its keys. A scope or a target takes a link to that scope. A tag or an id takes such a link, or
+// a name of the database that holds the scope's names. A list takes one of its words. It returns false for an empty
+// line, for a line in no form it knows and for a class whose database the game does not have.
+func (schema *Schema) resolveTraits(traits string) (Expected, bool) {
+	comparison, class := comparisonTraits.FindStringSubmatch(traits), classTraits.FindStringSubmatch(traits)
+	target, tag := targetTraits.FindStringSubmatch(traits), tagTraits.FindStringSubmatch(traits)
+	list := choiceTraits.FindStringSubmatch(traits)
+	switch {
+	case comparison != nil && comparison[1] != "":
+		return Expected{Type: ValueDate}, true
+	case comparison != nil:
+		return Expected{Type: ValueNumber, Values: true}, true
+	case traits == "yes/no":
+		return Expected{Type: ValueBool}, true
+	case class != nil:
+		database, ok := schema.FindDatabaseByClass(class[1])
+		if !ok {
+			return Expected{}, false
+		}
+		return Expected{Type: ValueReference, Database: database.Name}, true
+	case target != nil:
+		return Expected{Type: ValueTarget, Scope: target[1]}, true
+	case tag != nil:
+		database, _ := schema.ResolveTypeDatabase(tag[1])
+		return Expected{Type: ValueTarget, Scope: tag[1], Database: database}, true
+	case list != nil:
+		choices := splitList(list[1])
+		choices[len(choices)-1] = strings.TrimPrefix(choices[len(choices)-1], "and ")
+		return Expected{Type: ValueChoice, Choices: choices}, true
 	}
-	database, ok := schema.FindDatabaseByClass(class)
-	if !ok {
-		return
-	}
-	command.makeArguments(game.SourceDumps).Value.resolve(Expected{Type: ValueReference, Database: database.Name}, game.SourceDumps)
+	return Expected{}, false
 }
 
 // makeArguments returns the field of the keys a command takes. It makes the field, with the given source, if the
@@ -586,8 +671,7 @@ func (schema *Schema) buildKeywordShapes() {
 }
 
 // buildFamilies makes the commands of one list family, any_x, every_x, random_x and ordered_x, share the keys of their
-// arguments, and keeps the families. Each command keeps its own arguments field and shape. A command with no arguments
-// gets none.
+// arguments. Each command keeps its own arguments field and shape. A command with no arguments gets none.
 func (schema *Schema) buildFamilies() {
 	families := map[string][]*Field{}
 	for _, name := range slices.Sorted(maps.Keys(schema.Commands)) {
@@ -605,7 +689,6 @@ func (schema *Schema) buildFamilies() {
 		for _, member := range members {
 			member.Children = united.Children
 		}
-		schema.families = append(schema.families, members)
 	}
 }
 

@@ -1,3 +1,6 @@
+// bptc.go decodes the blocks of the BC6H and BC7 compressions into pixels. It holds the mode and partition tables those
+// compressions use.
+
 package texture
 
 import (

@@ -1,3 +1,6 @@
+// contents.go reads and writes the contents of files. It decodes a text file into a Text that remembers how the file
+// was stored, writes files whole or not at all, keeps gob caches and unpacks zip archives.
+
 package files
 
 import (

@@ -1,3 +1,5 @@
+// shipped.go loads the backup of each game's dumps that is embedded in the app, for an install that lacks a dump file.
+
 package schema
 
 import (

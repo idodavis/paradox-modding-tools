@@ -1,3 +1,5 @@
+// tga.go decodes a TGA file into an image. The data may be raw or run-length encoded, with or without a palette.
+
 package texture
 
 import (

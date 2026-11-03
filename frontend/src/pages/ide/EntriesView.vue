@@ -13,7 +13,7 @@ import { computed, shallowRef, useTemplateRef } from "vue";
 import { Format } from "@internal/files/models";
 import type { Symbol } from "@services/lsp/models";
 
-import { matchQuery } from "../../lib/format";
+import { matchQuery, toSentence } from "../../lib/format";
 import { coatQuery, drawablesQuery, loadQuery, outlineQuery, windowQuery } from "../../queries";
 import { useDrawStore } from "../../stores/draw";
 import { useEditorStore } from "../../stores/editor";
@@ -140,7 +140,7 @@ async function buildThumbnail(canvas: unknown, name: string): Promise<void> {
   <div class="flex min-h-0 flex-1 flex-col">
     <DefineHeading v-slot="{ row }">
       <div class="flex h-7 items-center gap-2 bg-muted px-3 text-11 font-semibold text-dimmed">
-        <span class="truncate capitalize">{{ row.heading }}</span>
+        <span class="truncate">{{ toSentence(row.heading) }}</span>
         <span class="ms-auto font-normal tabular-nums">{{ row.count }}</span>
       </div>
     </DefineHeading>

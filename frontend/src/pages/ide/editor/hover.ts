@@ -1,6 +1,7 @@
 /**
- * The hover card over an editor, in place of Monaco's own. When the pointer rests on a word, the card of the word and
- * the problems on it show above it until the pointer moves away, so the lines below stay free to hover and right-click.
+ * The hover card over an editor, in place of Monaco's own. When the pointer rests on a word or on a step of a data
+ * call, its card and the problems on it show above it until the pointer moves away, so the lines below stay free to
+ * hover and right-click.
  */
 import { useDebounceFn } from "@vueuse/core";
 import * as monaco from "monaco-editor/editor/editor.api";
@@ -31,15 +32,18 @@ export function attachHover(
 } {
   const settings = useSettingsStore();
   const hover = shallowRef<Hover | null>(null);
-  // the start of the word the pointer is on, and whether the pointer is on the card
+  // the position of the pointer a card is asked for, what the answer on show is about, and whether the pointer is on
+  // the card
   let target: monaco.IPosition | null = null;
+  let shown: monaco.IRange | null = null;
   let onCard = false;
   let timer: ReturnType<typeof setTimeout> | undefined;
 
-  /** close takes the card down at once and forgets the word. */
+  /** close takes the card down at once and forgets where the pointer was. */
   const close = (): void => {
     clearTimeout(timer);
     target = null;
+    shown = null;
     onCard = false;
     hover.value = null;
   };
@@ -54,16 +58,19 @@ export function attachHover(
     if (!on) closeLater();
   };
   /**
-   * findCard finds the card of a word and the problems on it and shows them, unless the pointer has moved on
-   * meanwhile. A card the pointer is on is never replaced.
+   * findCard finds the card at the pointer in a word and the problems on it and shows them, unless the pointer has
+   * moved on meanwhile. The card is about one step of a data call or one name, and sits over it. A card the pointer is
+   * on is never replaced.
    */
-  const findCard = useDebounceFn(async (word: editor.IWordAtPosition, lineNumber: number) => {
-    const card = await lsp.Hover(model.place.path, lineNumber, word.startColumn);
-    if (onCard || target?.lineNumber !== lineNumber || target.column !== word.startColumn) return;
+  const findCard = useDebounceFn(async (word: editor.IWordAtPosition, pointer: monaco.IPosition) => {
+    const card = await lsp.Hover(model.place.path, pointer.lineNumber, pointer.column);
+    if (onCard || target?.lineNumber !== pointer.lineNumber || target.column !== pointer.column) return;
+    const { lineNumber } = pointer;
     const span = card?.range ?? new monaco.Range(lineNumber, word.startColumn, lineNumber, word.endColumn);
+    shown = span;
     const problems = model.problems.filter((problem) => monaco.Range.areIntersectingOrTouching(problem.range, span));
-    const start = codeEditor.getScrolledVisiblePosition({ lineNumber, column: word.startColumn });
-    const end = codeEditor.getScrolledVisiblePosition({ lineNumber, column: word.endColumn });
+    const start = codeEditor.getScrolledVisiblePosition({ lineNumber: span.startLineNumber, column: span.startColumn });
+    const end = codeEditor.getScrolledVisiblePosition({ lineNumber: span.endLineNumber, column: span.endColumn });
     const box = codeEditor.getDomNode()?.getBoundingClientRect();
     if ((!card && !problems.length) || !start || !end || !box) return;
     const width = Math.max(end.left - start.left, 1);
@@ -78,13 +85,14 @@ export function attachHover(
     codeEditor.onMouseMove((event) => {
       const position = event.target.type === monaco.editor.MouseTargetType.CONTENT_TEXT ? event.target.position : null;
       const word = position && codeEditor.getModel()?.getWordAtPosition(position);
-      if (position && word && target?.lineNumber === position.lineNumber && target.column === word.startColumn) {
+      if (position && word && shown && monaco.Range.containsPosition(shown, position)) {
         clearTimeout(timer);
         return;
       }
-      target = position && word ? { lineNumber: position.lineNumber, column: word.startColumn } : null;
+      target = position && word ? position : null;
+      shown = null;
       closeLater();
-      if (position && word && settings.isOn("ide.hover")) void findCard(word, position.lineNumber);
+      if (position && word && settings.isOn("ide.hover")) void findCard(word, position);
     }),
     codeEditor.onMouseDown(close),
     codeEditor.onContextMenu(close),

@@ -185,7 +185,16 @@ async function buildLayer(
   const context = canvas.getContext("2d");
   if (!context) return null;
   const instances: (Instance | null)[] = layer.instances?.length ? layer.instances : [null];
-  for (const instance of instances) applyInstance(context, source, instance, layer.role === "sub");
+  for (const instance of instances) {
+    context.save();
+    if (instance) {
+      context.setTransform(buildMatrix(instance, layer.role === "sub", width, height));
+      context.drawImage(source, -width / 2, -height / 2, width, height);
+    } else {
+      context.drawImage(source, 0, 0, width, height);
+    }
+    context.restore();
+  }
   const isEmblem = layer.role !== "pattern" && layer.role !== "sub";
   const masks = [
     ...(layer.mask ? [{ path: layer.mask, alpha: buildRegionMask(layer.maskChannels ?? []) }] : []),
@@ -210,27 +219,6 @@ async function buildTexture(path: string, how: Recolor | null): Promise<HTMLCanv
   if (!how) return image;
   const pixels = await loadPixels(path, image.naturalWidth, image.naturalHeight);
   return toCanvas(resolveRecolor(pixels, how));
-}
-
-/**
- * applyInstance applies an instance to a canvas: the layer's texture or sub-coat drawn moved, sized, turned and
- * flipped.
- */
-function applyInstance(
-  context: CanvasRenderingContext2D,
-  source: CanvasImageSource,
-  instance: Instance | null,
-  isSub: boolean,
-): void {
-  const { width, height } = context.canvas;
-  context.save();
-  if (instance) {
-    context.setTransform(buildMatrix(instance, isSub, width, height));
-    context.drawImage(source, -width / 2, -height / 2, width, height);
-  } else {
-    context.drawImage(source, 0, 0, width, height);
-  }
-  context.restore();
 }
 
 /**

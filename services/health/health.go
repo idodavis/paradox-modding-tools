@@ -23,6 +23,7 @@ import (
 	"paradox-modding-tools/internal/jomini"
 	"paradox-modding-tools/internal/loc"
 	"paradox-modding-tools/internal/schema"
+	"paradox-modding-tools/services/app"
 	"paradox-modding-tools/services/lsp"
 	"paradox-modding-tools/services/workspace"
 )
@@ -208,11 +209,14 @@ func (hlt *Service) BuildReport(order []string) (Report, error) {
 		ids = order
 	}
 	// the compatibility checks judge the mods as if those left out were not loaded; each mod's own checks see them all
-	record := hlt.findRecord(ws)
+	record, _ := lo.Find(hlt.Workspace.Config.Config().Workspaces, func(record app.Workspace) bool { return record.ID == ws.ID })
 	checked := listChecked(ids, record)
 	compatible := mods.Narrow(checked)
 	kept, defined := map[schema.Reference]index.Winner{}, []schema.Reference{}
-	for _, reference := range listDefined(compatible, listDefinitions(ws, compatible)) {
+	references := lo.Map(listDefinitions(ws, compatible), func(site index.Site, _ int) schema.Reference {
+		return compatible.ToReference(site)
+	})
+	for _, reference := range lo.Uniq(references) {
 		if winner, ok := compatible.FindKept(ws.Schema, reference); ok {
 			kept[reference] = winner
 			defined = append(defined, reference)
@@ -254,9 +258,13 @@ func (hlt *Service) BuildReport(order []string) (Report, error) {
 
 // resolveFindings grades the contests and shared localization keys of a load order. A contest the mods' declared
 // dependencies or an ignored pair settle is lowered, and a contest the order decides gets the order that fixes it.
-// Each finding then lists the pairs of mods it sets against each other.
+// Each finding then lists the pairs of mods it sets against each other. A pair is forgiven where the winner depends on
+// the other mod, or where the workspace ignores the two in either order.
 func resolveFindings(ws *workspace.Session, findings []Finding, order []string, declared map[[2]string]bool, pairs [][2]string) {
-	forgiven := listForgiven(declared, pairs)
+	forgiven := maps.Clone(declared)
+	for _, pair := range pairs {
+		forgiven[pair], forgiven[[2]string{pair[1], pair[0]}] = true, true
+	}
 	for position := range findings {
 		finding := &findings[position]
 		switch finding.Code {
@@ -298,12 +306,18 @@ func groupReport(findings []Finding, order []string) Report {
 }
 
 // describeFinding fills in a finding's words from its code, its facts and its sites: its code's title and topic, its
-// message, the line under its name in a list, its place, and why the winner's copy wins.
+// message, the line under its name in a list, its place, and why the winner's copy wins. Its place is its first
+// site's, such as a.txt:12, which is the one the game keeps where it keeps one. A log row with no site names what it
+// is about instead, and one that names nothing has no place.
 func describeFinding(finding *Finding) {
 	code := lsp.LookupCode(finding.Code)
 	finding.Label, finding.Topic = code.Label, code.Topic
 	finding.Message = lsp.SplitMessage(code.Template(finding.Facts), finding.Facts)
-	finding.Brief, finding.Detail, finding.Why = splitBrief(*finding), describeDetail(*finding), splitWhy(*finding)
+	finding.Brief, finding.Why = splitBrief(*finding), splitWhy(*finding)
+	finding.Detail = lo.Ternary(finding.Facts["named"] != "", "Names "+finding.Facts["named"], "")
+	if site, ok := lo.First(finding.Sites); ok {
+		finding.Detail = site.Place.Rel + ":" + strconv.Itoa(site.Line)
+	}
 }
 
 // splitBrief returns the line under a finding's name in a list, as parts, its pieces apart by a dot. It says what kind
@@ -333,15 +347,6 @@ func splitBrief(finding Finding) []lsp.Part {
 		add(lsp.Part{Text: site.Label})
 	}
 	return parts
-}
-
-// describeDetail returns a finding's place, such as a.txt:12: its first site's, which is the one the game keeps where
-// it keeps one. A log row with no site says what it names instead. It is "" if there is nothing to add.
-func describeDetail(finding Finding) string {
-	if site, ok := lo.First(finding.Sites); ok {
-		return site.Place.Rel + ":" + strconv.Itoa(site.Line)
-	}
-	return lo.Ternary(finding.Facts["named"] != "", "Names "+finding.Facts["named"], "")
 }
 
 // foldFindings folds each finding that has the key of an earlier one into that one. The earlier finding counts the
@@ -489,10 +494,10 @@ func (hlt *Service) ListSnippets(sites []lsp.Site) ([]Snippet, error) {
 		if statement, ok := findLineStatement(tree, site.Line); site.Range.EndLine == 0 && ok {
 			end = min(tree.Lines.ToPosition(tree.Statements[statement].Span.End).Line, first+9)
 		}
-		around := lo.Ternary(end == first, snippetContext, 0)
-		from, to := max(first-around, 0), min(end+around, last)
+		margin := lo.Ternary(end == first, snippetContext, 0)
+		top, bottom := max(first-margin, 0), min(end+margin, last)
 		snippets[position] = Snippet{
-			Text: tree.Src[tree.Lines.LineSpan(from).Start:tree.Lines.LineSpan(to).End], Line: from + 1, Last: end + 1,
+			Text: tree.Src[tree.Lines.LineSpan(top).Start:tree.Lines.LineSpan(bottom).End], Line: top + 1, Last: end + 1,
 		}
 	}
 	return snippets, nil
@@ -526,8 +531,8 @@ func findStatementText(ws *workspace.Session, site lsp.Site) (string, error) {
 
 // WriteScaffold writes the localization keys a mod lacks in a language, with the base text as the placeholder, and
 // returns the files it wrote. A key goes at the end of the language's file that matches the base-language file it is
-// in, which is created if it does not exist. It returns an error if the mod or the language is not valid, or a file
-// cannot be written.
+// in, in that file's line ending and encoding. A file that is missing or holds nothing gets its header first. It
+// returns an error if the mod or the language is not valid, or a file cannot be read or written.
 func (hlt *Service) WriteScaffold(modID, language string) ([]string, error) {
 	ws, err := hlt.Workspace.Session()
 	if err != nil {
@@ -543,30 +548,23 @@ func (hlt *Service) WriteScaffold(modID, language string) ([]string, error) {
 	scaffolds := ListScaffolds(ws.Mods.Load(), mod, language)
 	paths := slices.Sorted(maps.Keys(scaffolds))
 	for position, target := range paths {
-		if err := hlt.writeMessages(target, scaffolds[target]); err != nil {
+		text, err := files.LoadText(target)
+		if err == nil && strings.TrimSpace(text.Text) == "" {
+			if err = hlt.Workspace.CreateLocalization(target); err == nil {
+				text, err = files.LoadText(target)
+			}
+		}
+		if err == nil {
+			text.Text += loc.EncodeAddition(text.Text, scaffolds[target])
+			err = hlt.Workspace.Write(target, text)
+		}
+		if err != nil {
 			return paths[:position], err
 		}
 	}
 	// a file the rescan cannot read waits for the watcher
 	_ = ws.Rescan(lo.Map(paths, func(target string, _ int) workspace.FileChange { return workspace.FileChange{Path: target} }))
 	return paths, nil
-}
-
-// writeMessages adds messages at the end of a localization file, in the file's own line ending and encoding. A file
-// that is missing or holds nothing gets its header first, in the language its name ends in. It returns an error if
-// the file cannot be read or written, or its name ends in no language.
-func (hlt *Service) writeMessages(path string, messages []loc.Message) error {
-	text, err := files.LoadText(path)
-	if err == nil && strings.TrimSpace(text.Text) == "" {
-		if err = hlt.Workspace.CreateLocalization(path); err == nil {
-			text, err = files.LoadText(path)
-		}
-	}
-	if err != nil {
-		return err
-	}
-	text.Text += loc.EncodeAddition(text.Text, messages)
-	return hlt.Workspace.Write(path, text)
 }
 
 // ListScaffolds returns the base-language messages of a mod whose key has no message in a language, by the file of
@@ -579,11 +577,6 @@ func ListScaffolds(mods *index.Index, mod workspace.Mod, language string) map[st
 		scaffolds[target] = append(scaffolds[target], loc.Message{Key: mods.ToReference(site).Name, Text: mods.Text(site)})
 	}
 	return scaffolds
-}
-
-// listDefined returns each defined name once.
-func listDefined(mods *index.Index, definitions []index.Site) []schema.Reference {
-	return lo.Uniq(lo.Map(definitions, func(site index.Site, _ int) schema.Reference { return mods.ToReference(site) }))
 }
 
 // listDefinitions returns the mods' definitions in known databases, without aliases.
@@ -746,30 +739,25 @@ func listUnused(ws *workspace.Session, mods *index.Index, sites []index.Site, wi
 
 // describeRemoved fills in the finding of a mod's file that removes names in use. It sets the names still used, and
 // the facts the message counts: the mod, how many names the game's copy defines and what they are called, how many of
-// them the mod's copy leaves out, and how many of those are still used and how often.
+// them the mod's copy leaves out, and how many of those are still used and how often. They are called by their kind in
+// the plural, such as "scripted triggers", or "names" where they are of more than one kind.
 func describeRemoved(ws *workspace.Session, mods *index.Index, finding *Finding, uses []Use) {
 	original, _ := lo.Find(finding.Sites, func(site lsp.Site) bool { return site.Place.ReadOnly })
 	kept, _ := lo.Find(finding.Sites, func(site lsp.Site) bool { return site.Kept })
 	position, _ := mods.FindFile(original.Place.Path)
-	finding.Uses = uses
-	finding.Facts["mod"] = ws.DescribeMod(finding.Origin)
-	finding.Facts["total"] = strconv.Itoa(len(lo.Uniq(original.Defines)))
-	finding.Facts["definitions"] = describeDefinitions(mods, position)
-	finding.Facts["removed"] = strconv.Itoa(len(listRemoved([]lsp.Site{kept, original})))
-	finding.Facts["count"] = strconv.Itoa(len(uses))
-	finding.Facts["uses"] = strconv.Itoa(lo.SumBy(uses, func(use Use) int { return use.Count }))
-}
-
-// describeDefinitions returns what the definitions of a file are called, in the plural, such as "scripted triggers".
-// It returns "names" for a file whose definitions are of more than one kind.
-func describeDefinitions(mods *index.Index, position int32) string {
 	databases := lo.Uniq(lo.Map(listFileDefinitions(mods, position), func(occurrence index.Occurrence, _ int) string {
 		return mods.Databases.Texts[occurrence.Database]
 	}))
-	if len(databases) != 1 {
-		return "names"
+	finding.Uses = uses
+	finding.Facts["mod"] = ws.DescribeMod(finding.Origin)
+	finding.Facts["total"] = strconv.Itoa(len(lo.Uniq(original.Defines)))
+	finding.Facts["definitions"] = "names"
+	if len(databases) == 1 {
+		finding.Facts["definitions"] = game.DescribeDefinition(databases[0], true)
 	}
-	return game.DescribeDefinition(databases[0], true)
+	finding.Facts["removed"] = strconv.Itoa(len(listRemoved([]lsp.Site{kept, original})))
+	finding.Facts["count"] = strconv.Itoa(len(uses))
+	finding.Facts["uses"] = strconv.Itoa(lo.SumBy(uses, func(use Use) int { return use.Count }))
 }
 
 // listRemovedUses returns the names the game's copy of a file defines that no file the game reads defines, each with

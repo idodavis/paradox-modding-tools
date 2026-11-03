@@ -1,3 +1,6 @@
+// process.go serves the stream each window opens to an agent. It starts the agent's program, passes the window's
+// messages to it and its output back, and ends the program when the stream closes.
+
 package agent
 
 import (

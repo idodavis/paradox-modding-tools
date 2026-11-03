@@ -1,3 +1,5 @@
+// steam_windows.go loads Steam's DLL on Windows and finds the functions it exports.
+
 package steam
 
 import "syscall"

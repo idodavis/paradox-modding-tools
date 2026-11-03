@@ -1,3 +1,5 @@
+// encode.go writes a picture as a DDS file, uncompressed or in BC3 blocks, with a chain of mip levels if asked.
+
 package texture
 
 import (

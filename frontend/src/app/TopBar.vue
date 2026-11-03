@@ -172,7 +172,14 @@ function tabMenu(name: WorkspacePage): ContextMenuItem[] {
     return [{ label: "Open in a new window", icon: "i-lucide-app-window", onSelect: () => popOut(name) }];
   return [
     { label: "Show window", icon: "i-lucide-app-window", onSelect: () => windows.showWindow(pageWindow(name)) },
-    { label: "Back into the main window", icon: "i-lucide-panel-top-close", onSelect: () => closePage(name) },
+    {
+      label: "Back into the main window",
+      icon: "i-lucide-panel-top-close",
+      onSelect: () => {
+        windows.closeOther(pageWindow(name));
+        void router.push({ name, params: { id: workspace.activeId() } });
+      },
+    },
   ];
 }
 
@@ -181,12 +188,6 @@ function popOut(name: WorkspacePage): void {
   windows.popOut(pageWindow(name));
   const next = tools.value.find((tool) => tool !== name && !popped(tool));
   if (route.name === name && next) void router.push({ name: next, params: { id: workspace.activeId() } });
-}
-
-/** closePage closes a page's window and shows the page here again. */
-function closePage(name: WorkspacePage): void {
-  windows.closeOther(pageWindow(name));
-  void router.push({ name, params: { id: workspace.activeId() } });
 }
 
 /** styleButton returns a window button's classes: round on Linux, square on Windows, close red under the pointer. */

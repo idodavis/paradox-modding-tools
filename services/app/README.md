@@ -8,8 +8,8 @@ opens, and reads and writes the config through it.
 
 | file | holds |
 |---|---|
-| `app.go` | the events; `DevBuild`; `Service` with `ServiceStartup` and `ServiceShutdown`; `Update`, `Release`; `OpenConfig`, `OpenLog`; the version and the updater (`Version`, `CheckUpdate`, `ApplyUpdate`, `ListReleases`); the settings (`ListSettings`, `ReadSettings`, `WriteSetting`); the log (`CrashedLastRun`, `BuildDiagnostics`); `ShowFolder`; the windows (`OpenMainWindow`, `OpenWindow`, `ShowWindow`, `CloseWindow`) |
-| `config.go` | the package comment; `Dirs` and `ResolveDirs`; `LoadJSON`, `SaveJSON`; the records (`Install`, `Era`, `Calendar`, `Mod`, `Workspace`, `Config`); `Setting` and `Catalog`; `ConfigFile` with `Config`, `Update` and `LookupSetting` |
+| `app.go` | the events; `DevBuild`; `Service` with `ServiceStartup` and `ServiceShutdown`; `Update`, `Release`; `OpenConfig`, `OpenLog`; the version and the updater (`Version`, `CheckUpdate`, `ApplyUpdate`, `ListReleases`); `FetchURL`; the settings (`ListSettings`, `ReadSettings`, `WriteSetting`); the log (`CrashedLastRun`, `BuildDiagnostics`); `ShowFolder`; the windows (`OpenMainWindow`, `OpenWindow`, `ShowWindow`, `CloseWindow`) |
+| `config.go` | the package comment; `Dirs` and `ResolveDirs`; `LoadJSON`, `SaveJSON`; the records (`Install`, `Era`, `Calendar`, `Mod`, `Workspace`, `Agent`, `Window`, `Config`); `Setting` and `Catalog`; `ConfigFile` with `Config`, `Update` and `LookupSetting` |
 
 ## PMT's folders
 
@@ -35,10 +35,12 @@ A missing file is a first run. Any other read failure gives an empty config that
 overwrites the real file. The config carries no format version: a changed record means Reset data, never a migration.
 
 The records are plain. An `Install` is one game install PMT has recorded, with its version and when it was last
-scanned. A `Workspace` is an install and its mods in load order, with its language, its home page and its own settings.
-A `Mod` is a mod's folder with its color, its `Calendar`, its Workshop id, its upload exclusions and where its
-Workshop description comes from. The open
-workspace's view of a mod, with its descriptor, is `workspace.Mod`, which embeds this record.
+scanned. A `Workspace` is an install and its mods in load order, with its language, its home page, the color of the
+game's files, whether the IDE opens with no tabs and the explorer lists binary files, its own settings and the pairs
+of mods whose conflicts it ignores. A `Mod` is a mod's folder with its color, its `Calendar`, its Workshop id, its
+upload exclusions and whether it is left out of the compatibility checks. The open workspace's view of a mod, with its
+descriptor, is `workspace.Mod`, which embeds this record. An `Agent` is a coding agent: one the user adds, a name with
+a program and its arguments, or a row of the agents PMT offers, which the `agent` package holds.
 
 ## Settings
 
@@ -59,7 +61,9 @@ installs and the end of the log.
 
 `CheckUpdate` asks the project's GitHub releases through Wails's updater, and emits `app:update` when a newer version
 exists. `ApplyUpdate` downloads it beside the app and restarts into it. `ListReleases` lists the releases from the
-newest down to the one running, with their notes, and leaves out drafts and prereleases.
+newest down to the one running, with their notes, and leaves out drafts and prereleases; a build that is no release,
+such as a dev build, gets the newest alone. `FetchURL` downloads a web address within a time limit, with PMT's user
+agent, for this service and the others that read the web.
 
 ## Windows
 
@@ -91,6 +95,8 @@ hand its tabs back. It closes when the page closes it again, or when a timer end
 - **Mod**: one mod that a workspace records.
 - **Calendar**: how a mod counts years and names months.
 - **Era**: one era of a mod's calendar.
+- **Agent**: one coding agent PMT can start for a chat.
+- **Window**: how the main window was left: its size and whether it was maximized.
 - **Setting**: one row of the catalog of settings.
 - **Catalog**: the list of every setting.
 - **Update**: the result of a check for a newer version.

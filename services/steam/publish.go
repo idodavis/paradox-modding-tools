@@ -1,3 +1,6 @@
+// publish.go starts the second copy of the app that talks to Steam, relays its progress, and does the copy's work: an
+// upload or a download of one Workshop item.
+
 package steam
 
 import (
@@ -47,9 +50,15 @@ var copyTurn sync.Mutex
 var copyWork = map[string]func(client *Client, params Params) error{
 	publishFlag:  publish,
 	downloadFlag: download,
-	detailsFlag:  func(client *Client, params Params) error { return printJSON(client.FetchDetails(params.WorkshopID)) },
-	statusFlag: func(client *Client, _ Params) error {
-		if !client.isOnline() {
+	detailsFlag: func(client *Client, params Params) error {
+		details, err := client.FetchDetails(params.WorkshopID)
+		if err != nil {
+			return err
+		}
+		return json.NewEncoder(os.Stdout).Encode(details)
+	},
+	statusFlag: func(*Client, Params) error {
+		if user := api.userInterface(); user == 0 || !api.isLoggedOn(user) {
 			return errors.New("steam is running but offline: go online to upload")
 		}
 		return nil
@@ -67,16 +76,6 @@ func StartPublish(ctx context.Context, params Params, progress func(Progress), l
 			progress(step)
 		}
 	})
-}
-
-// fetchDetails reads an item's details from Steam through a second copy of the app. It returns an error if Steam is
-// not running or does not find the item.
-func fetchDetails(params Params) (Details, error) {
-	var details Details
-	err := startCopy(context.Background(), detailsFlag, params, func(line string) {
-		_ = json.Unmarshal([]byte(line), &details)
-	})
-	return details, err
 }
 
 // startCopy starts a second copy of the app for one kind of work and hands each line it prints to a function, if any.
@@ -182,30 +181,15 @@ func download(client *Client, params Params) error {
 	if err != nil {
 		return err
 	}
-	return keepSnapshot(dirs.Cache, dir, Snapshot{WorkshopID: params.WorkshopID, UpdatedAt: params.UpdatedAt})
-}
-
-// keepSnapshot moves a folder in PMT's cache into place as an item's kept copy and saves the item's snapshot. If the
-// move fails, the folder is deleted.
-func keepSnapshot(cacheDir, dir string, snapshot Snapshot) error {
-	kept := resolveSnapshotDir(cacheDir, snapshot.WorkshopID)
-	if err := moveCacheDir(cacheDir, dir, kept); err != nil {
+	kept := resolveSnapshotDir(dirs.Cache, params.WorkshopID)
+	if err := moveCacheDir(dirs.Cache, dir, kept); err != nil {
 		return err
 	}
-	walked, err := files.Walk(files.Root{Dir: kept})
-	if err != nil {
+	if walked, err = files.Walk(files.Root{Dir: kept}); err != nil {
 		return err
 	}
-	snapshot.Files = buildHashes(walked)
-	return SaveSnapshot(cacheDir, snapshot)
-}
-
-// printJSON prints a value on standard output as one JSON line. It returns the error instead, if there is one.
-func printJSON[T any](value T, err error) error {
-	if err != nil {
-		return err
-	}
-	return json.NewEncoder(os.Stdout).Encode(value)
+	snapshot := Snapshot{WorkshopID: params.WorkshopID, UpdatedAt: params.UpdatedAt, Files: buildHashes(walked)}
+	return SaveSnapshot(dirs.Cache, snapshot)
 }
 
 // toExitCode prints an error on standard error as one JSON line and returns 1. It returns 0 for no error.

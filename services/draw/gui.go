@@ -348,8 +348,11 @@ func (drw *Service) resolveOpening(ws *workspace.Session, path, name string) (op
 	window.Places, window.Fonts = resolver.places.values, findFonts(ws, mods, &window)
 	window.Conditions = map[int32][]string{}
 	for _, widget := range window.Widgets[1:] {
-		if written := listConditions(&window, widget); len(written) > 0 {
-			window.Conditions[widget.ID] = written
+		for _, key := range game.GUI.HiddenKeys {
+			if property := findProperty(window.listProperties(widget), key); property.Value != "" {
+				window.Conditions[widget.ID] = []string{property.Value}
+				break
+			}
 		}
 	}
 	for _, widget := range window.Widgets {
@@ -769,20 +772,15 @@ func (resolver *resolver) findReplacement(field clause) clause {
 	return field
 }
 
-// gatherInner gathers the widgets inside a label or an item as children. A label replaces the one before it.
+// gatherInner gathers the widgets inside a label or an item, and inside its templates, as children that fill the given
+// slot. A label replaces the one before it, and a widget inside an item is an item of a data model.
 func (resolver *resolver) gatherInner(field clause, slot game.WidgetSlot, depth int) {
 	if slot.Labels {
 		resolver.gathered.children = slices.DeleteFunc(resolver.gathered.children, func(held child) bool {
 			return held.slot.Labels
 		})
 	}
-	resolver.gatherWidgets(field, slot, depth)
-}
-
-// gatherWidgets gathers the widgets in a block and its templates as children that fill the given slot. A child of a
-// block that is no label is an item of a data model.
-func (resolver *resolver) gatherWidgets(holder clause, slot game.WidgetSlot, depth int) {
-	for _, inner := range resolver.listFields(holder, depth) {
+	for _, inner := range resolver.listFields(field, depth) {
 		current := inner.tree.Statements[inner.statement]
 		if current.IsBlock() && resolver.isWidget(inner, inner.tree.Unquoted(current.Key)) {
 			resolver.gathered.children = append(resolver.gathered.children, child{clause: inner, slot: slot, item: !slot.Labels})
@@ -849,7 +847,15 @@ func (resolver *resolver) makeProperty(field clause) Property {
 	current := field.tree.Statements[field.statement]
 	value := field.tree.Unquoted(current.Value)
 	if current.IsBlock() {
-		value = resolver.resolveContents(field.tree, field.statement)
+		span := current.ResolveValueSpan()
+		var edits []jomini.Edit
+		for _, inner := range field.tree.Statements[field.statement+1 : current.Last] {
+			if resolved, ok := resolver.resolveSpan(field.tree, inner.Value); ok {
+				shifted := jomini.Span{Start: inner.Value.Start - span.Start, End: inner.Value.End - span.Start}
+				edits = append(edits, jomini.Edit{Span: shifted, Text: resolved})
+			}
+		}
+		value = jomini.ApplyEdits(field.tree.Text(span), edits)
 	} else if resolved, ok := resolver.resolveSpan(field.tree, current.Value); ok {
 		value = resolved
 	}
@@ -858,21 +864,6 @@ func (resolver *resolver) makeProperty(field clause) Property {
 		Place: resolver.locate(field.path), Range: toRange(field), Writer: field.writer,
 		Source: describeSource(field.origin, field.writer),
 	}
-}
-
-// resolveContents returns the text a block statement writes after its operator, with each value that resolveSpan
-// answers replaced by its answer.
-func (resolver *resolver) resolveContents(tree *jomini.Tree, statement int32) string {
-	current := tree.Statements[statement]
-	span := current.ResolveValueSpan()
-	var edits []jomini.Edit
-	for _, inner := range tree.Statements[statement+1 : current.Last] {
-		if resolved, ok := resolver.resolveSpan(tree, inner.Value); ok {
-			shifted := jomini.Span{Start: inner.Value.Start - span.Start, End: inner.Value.End - span.Start}
-			edits = append(edits, jomini.Edit{Span: shifted, Text: resolved})
-		}
-	}
-	return jomini.ApplyEdits(tree.Text(span), edits)
 }
 
 // resolveSpan returns what the game reads for a value written in a span: the number of a constant or an expression, or
@@ -984,7 +975,19 @@ func (resolver *resolver) triggerStates(source string, states map[string]clause)
 // built-in type and that type's row, its texts, its textures and its overlays.
 func (resolver *resolver) resolveWidget(id int32, builtin string, properties []Property) {
 	properties = resolveProperties(properties)
-	texts, textures := resolver.resolvePictures(properties)
+	texts, textures := map[string][]loc.Segment{}, map[string]string{}
+	for _, property := range properties {
+		if property.Origin == originMissing {
+			continue
+		}
+		text, texture := resolver.library.resolveValue(property.Key, property.Value)
+		if len(text) > 0 {
+			texts[property.Key] = text
+		}
+		if texture != "" {
+			textures[property.Key] = texture
+		}
+	}
 	widget := &resolver.widgets[id]
 	widget.Name = findProperty(slices.Values(properties), game.GUI.WidgetKey).Value
 	widget.Row, widget.Builtin = game.GUI.Types[builtin], builtin
@@ -1005,34 +1008,16 @@ func (resolver *resolver) isDropping(row game.WidgetType, builtin, ignore string
 		isLiteral && !row.KeepsHidden
 }
 
-// resolvePictures returns the texts and the textures that a widget's properties lead to, by property key. A property
-// that leads nowhere has no entry. The raw text of a widget is its text as written.
-func (resolver *resolver) resolvePictures(properties []Property) (map[string][]loc.Segment, map[string]string) {
-	texts, textures := map[string][]loc.Segment{}, map[string]string{}
-	for _, property := range properties {
-		if property.Origin == originMissing {
-			continue
-		}
-		text, texture := resolver.library.resolveValue(property.Key, property.Value)
-		if len(text) > 0 {
-			texts[property.Key] = text
-		}
-		if texture != "" {
-			textures[property.Key] = texture
-		}
-	}
-	return texts, textures
-}
-
-// resolveValue returns the text a key's value shows or the image file it names. Both are empty if it leads to
-// neither.
+// resolveValue returns the text a key's value shows or the image file it names. A localization key shows its message,
+// or itself where it has none, and a raw text shows as written. Both are empty if it leads to neither.
 func (library *library) resolveValue(key, value string) (text []loc.Segment, texture string) {
 	switch {
 	case value == "":
 	case slices.Contains(game.GUI.PictureKeys, key) || slices.Contains(game.GUI.MaskKeys, key):
 		texture = library.resolveTexture(value)
 	case isLocalized(key):
-		text = resolveText(library.ws, library.mods, value)
+		message, _, ok := library.ws.LookupText(library.mods, value)
+		text = resolveSegments(library.ws, library.mods, loc.Segments(lo.Ternary(ok, message, value), 0), 0)
 	case key == game.GUI.TextKeys[1]:
 		text = resolveSegments(library.ws, library.mods, loc.Segments(value, 0), 0)
 	}
@@ -1043,7 +1028,8 @@ func (library *library) resolveValue(key, value string) (text []loc.Segment, tex
 func isLocalized(key string) bool { return localizedKeys()[key] }
 
 // resolveChildren makes the widgets of the blocks that a widget gathered, the label first and an item of a data model
-// last. A block that a widget above it is written in is left out. A label shows the text of its holder.
+// last. A block that a widget above it is written in is left out. A label takes the texts of its holder, which then
+// shows none.
 func (resolver *resolver) resolveChildren(holder int32) {
 	children := resolver.gathered.children
 	slices.SortStableFunc(children, compareChildren)
@@ -1056,7 +1042,10 @@ func (resolver *resolver) resolveChildren(holder int32) {
 		id := int32(len(resolver.widgets))
 		resolver.buildWidget(held, holder, "")
 		if held.slot.Labels {
-			resolver.applyTexts(holder, id)
+			for key, text := range resolver.widgets[holder].Texts {
+				resolver.widgets[id].Texts[key] = text
+				delete(resolver.widgets[holder].Texts, key)
+			}
 		}
 	}
 }
@@ -1074,14 +1063,6 @@ func compareChildren(first, second child) int {
 		return 1
 	}
 	return cmp.Compare(rank(first), rank(second))
-}
-
-// applyTexts gives a label the texts of its holder, which then has none of them.
-func (resolver *resolver) applyTexts(holder, label int32) {
-	for key, text := range resolver.widgets[holder].Texts {
-		resolver.widgets[label].Texts[key] = text
-		delete(resolver.widgets[holder].Texts, key)
-	}
 }
 
 // findHolders returns the game window that a window of the given type is laid out in, as its own widget: the one the
@@ -1120,7 +1101,13 @@ func (drw *Service) EditProperties(path string, settings []Setting) ([]lsp.Edit,
 		if tree, holder, err = drw.findBlock(path, setting.Block); err != nil {
 			return nil, err
 		}
-		if statement, ok := findSetting(tree, holder, setting.Key); ok {
+		statement, ok := int32(0), false
+		for child := range tree.Children(holder) {
+			if strings.EqualFold(tree.Unquoted(tree.Statements[child].Key), setting.Key) {
+				statement, ok = child, true
+			}
+		}
+		if ok {
 			edits = append(edits, jomini.Edit{Span: tree.Statements[statement].ResolveValueSpan(), Text: setting.Value})
 			continue
 		}
@@ -1210,16 +1197,4 @@ func toRange(field clause) lsp.Range {
 		span = field.tree.Statements[field.statement].Span
 	}
 	return lsp.ToRange(field.tree.Src, field.tree.Lines, span)
-}
-
-// findSetting returns the last statement of a block that writes the given key, without regard to case. It returns
-// false if the block does not write it.
-func findSetting(tree *jomini.Tree, holder int32, key string) (int32, bool) {
-	setting, ok := int32(0), false
-	for child := range tree.Children(holder) {
-		if strings.EqualFold(tree.Unquoted(tree.Statements[child].Key), key) {
-			setting, ok = child, true
-		}
-	}
-	return setting, ok
 }

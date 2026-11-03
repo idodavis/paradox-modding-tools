@@ -52,8 +52,9 @@ func listConditions(ws *workspace.Session, mods *index.Index, tree *jomini.Tree,
 // and one whose text is shown in place of what it holds reads that text alone. A key that names a scope, or a parameter
 // that stands for one, stays as written. Any other key is its words, underscores as spaces: a yes after it is dropped
 // and a no makes it negated.
-// A value stays as written, with the in-game name of what it names, read first where its keyword says so. A block
-// holds its statements, and one that only wraps one of them folds into it.
+// A value stays as written, read first where its keyword says so. A value written prefix:name has the in-game name of
+// the definition it names, the title its node shows. It has none where the prefix names no database or the game keeps
+// no such definition. A block holds its statements, and one that only wraps one of them folds into it.
 func makeCondition(ws *workspace.Session, mods *index.Index, tree *jomini.Tree, statement int32) Condition {
 	current := tree.Statements[statement]
 	key := tree.Unquoted(current.Key)
@@ -84,7 +85,12 @@ func makeCondition(ws *workspace.Session, mods *index.Index, tree *jomini.Tree, 
 			condition.Negated, condition.Value = true, ""
 		}
 	}
-	condition.Title = findName(ws, mods, condition.Value)
+	prefix, label, isPrefixed := jomini.SplitPrefixed(condition.Value)
+	if database := ws.Schema.Prefixes[prefix]; isPrefixed && database != "" {
+		if winner, ok := mods.FindKept(ws.Schema, schema.Reference{Database: database, Name: label}); ok {
+			condition.Title = toTitle(ws, mods, ws.LookupTitle(mods, winner.Site))
+		}
+	}
 	if keyword.ValueFirst {
 		condition.Subject, condition.Value = condition.Value, ""
 	}
@@ -92,22 +98,6 @@ func makeCondition(ws *workspace.Session, mods *index.Index, tree *jomini.Tree, 
 		condition.Conditions = listConditions(ws, mods, tree, statement)
 	}
 	return foldCondition(condition, keyword)
-}
-
-// findName returns the in-game name of the definition a value written prefix:name names, as its node shows it: the
-// title of the copy the game keeps. It returns "" for a value with no prefix that names a database, and for one that
-// names nothing kept or nothing with a title.
-func findName(ws *workspace.Session, mods *index.Index, value string) string {
-	prefix, label, ok := jomini.SplitPrefixed(value)
-	database := ws.Schema.Prefixes[prefix]
-	if !ok || database == "" {
-		return ""
-	}
-	winner, ok := mods.FindKept(ws.Schema, schema.Reference{Database: database, Name: label})
-	if !ok {
-		return ""
-	}
-	return toTitle(ws, mods, ws.LookupTitle(mods, winner.Site))
 }
 
 // foldCondition folds a block that only wraps one condition into it. A negation around one condition is that

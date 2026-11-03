@@ -1,3 +1,6 @@
+// pages.go finds the wiki pages that belong to a file and searches the modding pages by text. It also reads the
+// release date and the Modding section of a patch notes page.
+
 package wiki
 
 import (
@@ -100,12 +103,6 @@ func (wik *Service) SearchPages(term string) ([]Summary, error) {
 		root, err := parseFragment(page.HTML)
 		return err == nil && strings.Contains(strings.ToLower(textOf(root)), term)
 	})...), nil
-}
-
-// resolveParent returns the version a hotfix belongs to: its major and minor numbers. It returns "" for a release.
-func resolveParent(version string) string {
-	minor := strings.TrimPrefix(semver.MajorMinor("v"+strings.TrimSuffix(version, ".X")), "v")
-	return lo.Ternary(minor == version, "", minor)
 }
 
 // resolveReleased returns the release date that a patch note gives in its opening text, or "" if it gives none.

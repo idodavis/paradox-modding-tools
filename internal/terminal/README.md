@@ -9,9 +9,9 @@ terminal.md`). It knows no workspace and no Wails, so its Linux half builds and 
 
 | file | holds |
 |---|---|
-| `terminal.go` | `Shell`, `Screen`, `Program`, `Variable`; the environment every shell is given; the shell's `Start`, `Write`, `Resize`, `Read`, `Acknowledge`, `Screen`, `SetScreen`, `Close`, `Wait` |
-| `terminal_windows.go` | the pseudo console and its process, the console's UTF-8 code pages, and the shells Windows has |
-| `terminal_linux.go` | the pty and its session, and the shells Linux has |
+| `terminal.go` | `Shell`, `Screen`, `Program`, `Variable`; the environment every shell is given, `ListEnvironment`; the shell's `Start`, `Write`, `Resize`, `Read`, `Acknowledge`, `Screen`, `SetScreen`, `Close`, `Wait` |
+| `terminal_windows.go` | the pseudo console and its process, the console's UTF-8 code pages, and the shells Windows has (`ListPrograms`) |
+| `terminal_linux.go` | the pty and its session, and the shells Linux has (`ListPrograms`) |
 
 ## A shell's life
 
@@ -41,12 +41,12 @@ The pseudo console is `CreatePseudoConsole` over two pipes, and the program star
 attribute. `STARTF_USESTDHANDLES` is set, or the program writes to PMT's own handles rather than to the console. Closing
 the pseudo console ends the process tree.
 
-A console starts on the system's code page (437 here), which turns a program's raw UTF-8 bytes, as git and rg write
+A console starts on the system's code page, such as 437, which turns a program's raw UTF-8 bytes, as git and rg write
 them, into mojibake. Right after the program starts, PMT attaches to its console for a moment and sets both code pages
 to UTF-8. A process that has a console of its own, as a dev build has, cannot attach, so a dev build keeps the
 system's code page.
 
-The shells, as VS Code finds them:
+The shells `ListPrograms` gives, as VS Code finds them:
 
 - PowerShell 7: `pwsh` on the PATH, else the install folder its install key names. PMT's pick.
 - Windows PowerShell, in System32.
@@ -61,7 +61,7 @@ The pty is `/dev/ptmx`, unlocked, with its other side as the program's three sta
 session of its own with the pty as its controlling terminal. Every ioctl goes through `SyscallConn`, which keeps the
 file non-blocking, so that `Close` wakes a reader that is waiting. Closing the pty hangs up on the session.
 
-The shells: `$SHELL`, then each shell `/etc/shells` lists, then `sh`, each file once.
+The shells `ListPrograms` gives: `$SHELL`, then each shell `/etc/shells` lists, then `sh`, each file once.
 
 ## The environment
 

@@ -18,7 +18,9 @@ function its caller passes.
 ## Headers and pixels
 
 A `Header` is what an image file says about itself before its pixels: its format, its size, its mip levels and its
-block compression. `ReadHeader` reads only the start of a file, and adds the file's size in bytes.
+block compression. `ReadHeader` reads only the start of a file, and adds the file's size in bytes. The bytes say the
+format, whatever the extension. It reads a JPEG's header too, for a web image, from the start of the file, since a
+JPEG keeps its size past its first bytes; a JPEG is never decoded.
 
 `Decode` takes an image's bytes and one mip level: 0 is the whole image, and each level after it is half the size of
 the one before. The bytes say which format it is. A DDS opens with its magic, a PNG with its own, and anything else is

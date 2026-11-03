@@ -1,3 +1,6 @@
+// edits.go formats a script file and offers quick fixes for its problems. Each is returned as the edits that apply it,
+// in Monaco's ranges.
+
 package lsp
 
 import (
@@ -33,15 +36,15 @@ type Fix struct {
 const fixDistance = 3
 
 // Format returns the edits that format a file's text. It keeps the file's own indentation, or else indents with the
-// given tab size, in spaces if the flag is set. It returns no edits for a file that is not script, does not parse, or
-// would change in more than its spacing.
+// given tab size, in spaces if the flag is set. It returns no edits for a game file, a file that is not script or does
+// not parse, or one that would change in more than its spacing.
 func (lsp *Service) Format(path string, tabSize int, insertSpaces bool) ([]Edit, error) {
 	ws, tree, err := lsp.loadTree(path)
 	if err != nil {
 		return nil, err
 	}
-	// a file that does not parse is left as it is
-	if !ws.Locate(ws.Mods.Load(), path).Format.IsScript() || len(tree.Errors) > 0 {
+	// a game file, and a file that does not parse, are left as they are
+	if place := ws.Locate(ws.Mods.Load(), path); place.ReadOnly || !place.Format.IsScript() || len(tree.Errors) > 0 {
 		return []Edit{}, nil
 	}
 	unit := tree.Indentation()
@@ -147,14 +150,16 @@ func encodeTree(tree *jomini.Tree, pieces []piece, unit string) string {
 	var before piece
 	end := 0
 	for position, current := range pieces {
-		between := tree.Src[end:current.span.Start]
+		spacing := tree.Src[end:current.span.Start]
 		switch {
-		case strings.TrimSpace(between) != "":
-			text.WriteString(between)
-		case strings.Contains(between, "\n"):
-			text.WriteString(strings.Repeat(eol, strings.Count(between, "\n")) + strings.Repeat(unit, current.depth))
+		case strings.TrimSpace(spacing) != "":
+			text.WriteString(spacing)
+		case strings.Contains(spacing, "\n"):
+			text.WriteString(strings.Repeat(eol, strings.Count(spacing, "\n")) + strings.Repeat(unit, current.depth))
+		case position > 0 && current.kind != pieceComment && (before.kind == pieceOperator || current.kind == pieceOperator):
+			text.WriteString(gap)
 		case position > 0:
-			text.WriteString(separatePieces(before, current, gap))
+			text.WriteString(" ")
 		}
 		source := tree.Text(current.span)
 		if current.kind == pieceComment {
@@ -169,15 +174,6 @@ func encodeTree(tree *jomini.Tree, pieces []piece, unit string) string {
 		text.WriteString(strings.Repeat(eol, strings.Count(rest, "\n")))
 	}
 	return text.String()
-}
-
-// separatePieces returns the space between two pieces on one line: the given spacing next to an operator, else one
-// space.
-func separatePieces(before, current piece, gap string) string {
-	if current.kind != pieceComment && (before.kind == pieceOperator || current.kind == pieceOperator) {
-		return gap
-	}
-	return " "
 }
 
 // ListFixes returns the quick fixes for the given problems of a file, one for each problem that has a fix.
@@ -204,7 +200,7 @@ func (lsp *Service) ListFixes(path string, diagnostics []Diagnostic) ([]Fix, err
 		case "missing-key":
 			title, edits = buildMissingFix(ws.Schema, walk(diagnostic), diagnostic)
 		case "misplaced-mode":
-			title, edits = buildModeFix(diagnostic)
+			title, edits = "Remove mode", []Edit{{Range: diagnostic.Range, Text: ""}}
 		}
 		if len(edits) > 0 {
 			fixes = append(fixes, Fix{Title: title, Code: diagnostic.Code, Edits: map[string][]Edit{path: edits}})
@@ -230,7 +226,11 @@ func (lsp *Service) buildKeysFix(
 		return Fix{}, false
 	}
 	target, ok := workspace.FindLocalizationFile(ws.Game, mod.Dir, mod.Descriptor.Name, game.BaseLanguage)
-	keys := lsp.listMissingKeys(ws, mods, place.Path)
+	diagnostics, _ := DiagnoseFile(ws, mods, place.Path)
+	keys := lo.Uniq(lo.FilterMap(lsp.listEnabled(ws.ID, diagnostics), func(diagnostic Diagnostic, _ int) (string, bool) {
+		fact, ok := keyFacts[diagnostic.Code]
+		return diagnostic.Facts[fact], ok
+	}))
 	if !ok || len(keys) == 0 {
 		return Fix{}, false
 	}
@@ -254,20 +254,10 @@ func (lsp *Service) buildKeysFix(
 	return fix, true
 }
 
-// listMissingKeys returns the localization keys a file uses with no base-language text, each once, in the order of
-// its problems. It leaves out the checks the user turned off. A file that cannot be read has none.
-func (lsp *Service) listMissingKeys(ws *workspace.Session, mods *index.Index, path string) []string {
-	diagnostics, _ := DiagnoseFile(ws, mods, path)
-	keys := lo.FilterMap(lsp.listEnabled(ws.ID, diagnostics), func(diagnostic Diagnostic, _ int) (string, bool) {
-		fact, ok := keyFacts[diagnostic.Code]
-		return diagnostic.Facts[fact], ok
-	})
-	return lo.Uniq(keys)
-}
-
 // buildReferenceFix returns the fix for a reference nothing defines: a change to the nearest name its database defines.
 // The edits are empty if no name is near enough.
 func buildReferenceFix(mods *index.Index, visitor *hoverVisitor, diagnostic Diagnostic) (string, []Edit) {
+	diff := diffmatchpatch.New()
 	best, nearest := fixDistance, ""
 	for _, reference := range visitor.context.References {
 		if reference.Span.Start != visitor.offset {
@@ -283,7 +273,7 @@ func buildReferenceFix(mods *index.Index, visitor *hoverVisitor, diagnostic Diag
 			if max(utf8.RuneCountInString(key)-length, length-utf8.RuneCountInString(key)) >= best {
 				continue
 			}
-			if distance := countEdits(name, key); distance > 0 && distance < best {
+			if distance := diff.DiffLevenshtein(diff.DiffMain(name, key, false)); distance > 0 && distance < best {
 				best, nearest = distance, key
 			}
 		}
@@ -292,12 +282,6 @@ func buildReferenceFix(mods *index.Index, visitor *hoverVisitor, diagnostic Diag
 		return "", nil
 	}
 	return "Change to " + nearest, []Edit{{Range: diagnostic.Range, Text: nearest}}
-}
-
-// countEdits returns how many single-character edits turn one text into another.
-func countEdits(first, second string) int {
-	diff := diffmatchpatch.New()
-	return diff.DiffLevenshtein(diff.DiffMain(first, second, false))
 }
 
 // buildMissingFix returns the fix for a definition that lacks a key it must write: a line that adds the key with its
@@ -314,9 +298,4 @@ func buildMissingFix(schema *schema.Schema, visitor *hoverVisitor, diagnostic Di
 	statement := key + " = " + database.Definition.Children[key].Default.Value
 	insertion := tree.BuildInsertion(definition.Statement, []string{statement})
 	return "Add " + statement, ToEdits(tree.Src, tree.Lines, []jomini.Edit{insertion})
-}
-
-// buildModeFix returns the fix for an entry mode that is out of place: it removes the mode and its colon.
-func buildModeFix(diagnostic Diagnostic) (string, []Edit) {
-	return "Remove mode", []Edit{{Range: diagnostic.Range, Text: ""}}
 }

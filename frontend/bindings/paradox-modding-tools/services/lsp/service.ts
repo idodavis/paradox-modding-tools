@@ -28,8 +28,9 @@ export function CloseFile(path: string): $CancellablePromise<void> {
 
 /**
  * Complete returns the completion candidates at a position in a file. At a key they are the language's operators,
- * then the commands and fields the block takes. At a value they are the field's choices, the names the game loads or
- * the image files a path could name. It returns an empty list for a file that is not script.
+ * then the commands and fields the block takes. At a value they are the field's choices, the names the game loads, the
+ * links to the scope a target needs or the image files a path could name. It returns an empty list for a file that
+ * is not script.
  */
 export function Complete(path: string, line: number, column: number): $CancellablePromise<$models.Completion[] | null> {
     return $Call.ByID(2419173360, path, line, column);
@@ -69,8 +70,8 @@ export function FindSymbols(query: string, limit: number): $CancellablePromise<$
 
 /**
  * Format returns the edits that format a file's text. It keeps the file's own indentation, or else indents with the
- * given tab size, in spaces if the flag is set. It returns no edits for a file that is not script, does not parse, or
- * would change in more than its spacing.
+ * given tab size, in spaces if the flag is set. It returns no edits for a game file, a file that is not script or does
+ * not parse, or one that would change in more than its spacing.
  */
 export function Format(path: string, tabSize: number, insertSpaces: boolean): $CancellablePromise<$models.Edit[] | null> {
     return $Call.ByID(331973468, path, tabSize, insertSpaces);
@@ -141,8 +142,8 @@ export function PrepareRename(path: string, line: number, column: number): $Canc
  * coat's layer that does not write the color yet, gets it in the form the game's own coats write their colors in
  * (game.Game.Coat.ColorForm). It returns an error if the form cannot be written.
  */
-export function PresentColor(path: string, within: $models.Range, color: jomini$0.RGBA): $CancellablePromise<string> {
-    return $Call.ByID(3581946373, path, within, color);
+export function PresentColor(path: string, colorRange: $models.Range, color: jomini$0.RGBA): $CancellablePromise<string> {
+    return $Call.ByID(3581946373, path, colorRange, color);
 }
 
 /**

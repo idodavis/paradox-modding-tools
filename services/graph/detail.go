@@ -1,3 +1,6 @@
+// detail.go builds what the page shows about one node of the Event Graph: its texts with their triggers, its keys, its
+// firings and the game rules it reads.
+
 package graph
 
 import (
@@ -89,6 +92,15 @@ func (gph *Service) BuildDetail(id string) (Detail, error) {
 	node := drawNode(ws, mods, site, 0)
 	fires, firedBy := listFires(ws, mods, site, true), mods.ListFiredBy(ws.Schema, site, true)
 	node.Fires = makeEdges(ws, mods, fires)
+	linked := map[string]Node{}
+	for _, fire := range fires {
+		target := makeNode(ws, mods, fire.Target, 0)
+		linked[target.ID] = target
+	}
+	for _, fire := range firedBy {
+		source := makeNode(ws, mods, fire.Source, 0)
+		linked[source.ID] = source
+	}
 	sections := lo.Map(slices.Collect(tree.Children(statement)), func(child int32, _ int) Section {
 		return makeSection(ws, mods, tree, child)
 	})
@@ -100,7 +112,7 @@ func (gph *Service) BuildDetail(id string) (Detail, error) {
 		Sections: sections,
 		Options:  options,
 		FiredBy:  makeEdges(ws, mods, firedBy),
-		Linked:   listLinked(ws, mods, fires, firedBy),
+		Linked:   linked,
 		Rules:    listRules(ws, mods, tree, statement),
 	}
 	if hidden, ok := findCopy(ws, mods, site); ok {
@@ -236,21 +248,6 @@ func resolveLanguage(ws *workspace.Session) string {
 // toSourceLine returns the line of a span in a tree, counted from one.
 func toSourceLine(tree *jomini.Tree, span jomini.Span) int {
 	return tree.Lines.ToPosition(span.Start).Line + 1
-}
-
-// listLinked returns the nodes at the other end of a node's firings, by id: the targets of what it fires and the
-// sources of what fires it.
-func listLinked(ws *workspace.Session, mods *index.Index, fires, firedBy []index.Fire) map[string]Node {
-	linked := map[string]Node{}
-	for _, fire := range fires {
-		node := makeNode(ws, mods, fire.Target, 0)
-		linked[node.ID] = node
-	}
-	for _, fire := range firedBy {
-		node := makeNode(ws, mods, fire.Source, 0)
-		linked[node.ID] = node
-	}
-	return linked
 }
 
 // listRules returns the game rules a definition reads, each once, in the order first read. A setting that no rule the

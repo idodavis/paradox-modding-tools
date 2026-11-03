@@ -1,3 +1,5 @@
+// tokens.go gives the semantic tokens of a file: the color category of every key and value, encoded as Monaco wants.
+
 package lsp
 
 import (

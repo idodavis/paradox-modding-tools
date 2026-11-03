@@ -11,11 +11,12 @@ lists and the problems in words.
 
 | file | holds |
 |---|---|
-| `lsp.go` | the package comment, `Service`; Monaco's ranges: `Range`, `Location`, `Edit`, and the one conversion with byte spans (`ToRange`, `ToSpan`, `ToLineRange`, `ToOffset`, `ToEdits`); `SetText`, `CloseFile` |
-| `hover.go` | `Card`, `CardScope`, `CardSite`, `CardDate`; `Hover` |
+| `lsp.go` | the package comment, `Service`; Monaco's ranges: `Range`, `Edit`, and the one conversion with byte spans (`ToRange`, `ToSpan`, `ToLineRange`, `ToOffset`, `ToEdits`, and `CountUnits`, a text's length in UTF-16 code units); `Site`, `MakeSite`, `MakeSites`, `LocateSite`; `SetText`, `CloseFile` |
+| `hover.go` | `Card`, `CardScope`, `CardDate`, `Class`, `Classes`; `Hover` |
 | `complete.go` | `Completion`; `Complete` |
 | `navigate.go` | `Symbol`, `WorkspaceSymbol`; `Definition`, `References`, `PrepareRename`, `Rename`, `ListSymbols`, `ListFileSymbols`, `FindSymbols` |
-| `diagnostics.go` | `Code`, `Codes`, `Diagnostic`; `Diagnose`, `DiagnoseText`, `DiagnoseFile`, `DescribeReference` |
+| `diagnostics.go` | the questions and levels; `Level`, `Levels`, `Code`, `Codes`, `Topic`, `Topics`, `Part`, `Diagnostic`; `Diagnose`, `DiagnoseText`, `DiagnoseFile`, `DescribeReference`; `LookupCode`, `Code.Template`, `SplitMessage`, `DescribeCount`, `JoinParts`, `Plural`; the checks of a script file |
+| `messages.go` | the checks of a localization file: the file as a whole, its messages, and the markup, names and data calls each message's text writes |
 | `tokens.go` | `Legend`; `Tokens`, `ListLegend` |
 | `edits.go` | `Fix`; `Format`, `DescribeIndentation`, `ListFixes` |
 | `details.go` | `Fold`, `Hint`, `ColorSite`, `Signature`; `ListFolds`, `ListHints`, `ListColorSites`, `PresentColor`, `Signature` |
@@ -28,6 +29,11 @@ offsets. The one conversion between the two is `lsp.go`'s: `ToOffset` takes a Mo
 `ToSpan` a Monaco range to a byte span, and `ToRange` and `ToEdits` take byte spans and the engine's `jomini.Edit`s to
 Monaco's. No other package converts.
 
+A `Site` is one place in a file that an answer points at: the file's `workspace.Place` and a line. `MakeSite` makes
+one from an index's occurrence and reads no file, so it has no range and no text. `LocateSite` reads the file's tree
+and adds the range of the name and the text of its line. `MakeSites` makes the sites of a name's definitions, each with
+whether the game keeps it and why (`Kept`, `Reason`, as `index.ResolveSite` says) and the reason in words (`Label`).
+
 ## The open file
 
 `SetText` gives the session the editor's text of an open file, which becomes the file's buffer, and answers with the
@@ -38,40 +44,53 @@ file is read as the editor holds it.
 
 - **Hover.** `Hover` walks to the position and returns a `Card`: what the key or value is, what it takes, what it
   returns or leads to, the scopes script can name there (`CardScope`), a date in the mod's calendar (`CardDate`), a
-  color, an image's header, and the sites that define the name (`CardSite`), the one the game keeps first and why. A
-  fact learned only from the game's files marks the card inferred.
+  color, an image's header, and the sites that define the name (`Site`), the one the game keeps first and why. A
+  command's card shows what its value takes and the scope it needs where it writes no block, and the scope it leads to
+  where it does. A command the game declares is named by its `Class`'s id. `Classes` is the wiki lexicon's classes in
+  the order of its tabs, and `Card.Lexicon` is the id of the class that lists what the card is about (`findLexicon`).
+  A fact learned only from the game's files marks the card inferred.
 - **Completion.** `Complete` returns what fits at a key: the language's operators that fit the block, then its
   commands, ranked by how often the game writes each in that field, then its fields. At a value it returns the field's
-  choices, yes and no, the names the game loads of its database, or the image files under the folder typed so far.
-- **Navigation.** `Definition` returns where a name is defined, the kept definition first. `References` adds where it
-  is used, a localization key's translations left out. `Rename` returns the edits of a rename, grouped by the mod file
-  they change; `PrepareRename` refuses a name the game defines too, or one no mod defines. `ListSymbols` is a file's
-  outline, each definition with its title, and `FindSymbols` searches the workspace's definitions and keys.
+  choices, yes and no, the names the game loads of its database, or the image files under the folder typed so far. A
+  value that takes a target also gets the links that lead to the scope it needs. A choice with a space in it is
+  quoted, unless the text typed opens a quote already.
+- **Navigation.** `Definition` returns where a name is defined, the kept definition first, and an image path's file.
+  `References` adds where it is used, a localization key's translations left out. `Rename` returns the edits of a
+  rename, grouped by the mod file they change; `PrepareRename` refuses a name the game defines too, or one no mod
+  defines. `ListSymbols` is a file's outline, each definition with its title, and `FindSymbols` searches the
+  workspace's definitions and keys.
 - **Tokens.** `Tokens` returns the color category of every key and value, from the walk's `schema.Category`, encoded as
   Monaco's semantic tokens against `ListLegend`.
-- **Edits.** `Format` keeps the file's own indentation, else the given one, and gives no edits for a file that does not
-  parse or that would change in more than its spacing. Its edits come from `jomini.DiffEdits`. `ListFixes` gives the
-  quick fixes: the nearest defined name for one that nothing defines, a missing key with its default, an entry mode
-  out of place removed, and the file's localization keys with no base-language text added. That last fix adds every
-  such key of the file, each with an empty text, to the localization file PMT makes for the mod
-  (`workspace.FindLocalizationFile`). It works from the text the editor holds where that file is open. It writes the
-  file first when it is missing or empty (`Fix.Creates`), and says where the caret goes (`Fix.Reveal`).
+- **Edits.** `Format` keeps the file's own indentation, else the given one, and gives no edits for a game file, a file
+  that is not script or does not parse, or one that would change in more than its spacing. Its edits come from
+  `jomini.DiffEdits`. `ListFixes` gives the quick fixes: the nearest defined name for one that nothing defines, a
+  missing key with its default, an entry mode out of place removed, and the file's localization keys with no
+  base-language text added. That last fix adds every such key of the file, each with an empty text, to the
+  localization file PMT makes for the mod (`workspace.FindLocalizationFile`). It works from the text the editor holds
+  where that file is open. It writes the file first when it is missing or empty (`Fix.Creates`), and says where the
+  caret goes (`Fix.Reveal`).
 - **Details.** `ListFolds` returns every block that spans lines. `ListHints` reads each date in the mod's calendar,
   where its field expects a date. `ListColorSites` lists the colors a file writes, and `PresentColor` writes a color in
   the form the file already wrote it in; a color not written yet, such as a coat's layer's, takes the form the game's
-  own coats write their colors in (`game.Game.CoatColorForm`). `Signature` returns the parameters of the scripted
+  own coats write their colors in (`game.Game.Coat.ColorForm`). `Signature` returns the parameters of the scripted
   definition a call names.
 
 ## Diagnostics
 
-A `Diagnostic` is a code, a range and its facts. `Codes` is the one table of every code: its id, the question Health
-asks it under (`compatibility`, `health` or `log`), its level (`critical`, `error`, `warning` or `info`), its topic
-(syntax, references, values, localization, definitions or descriptor), its label and its message, a template that the
-facts fill. The game log has no level and no topic, since the game writes none. A sentence about a problem is written
-once, there, and the editor's markers and Health's rows both read the level from it. A code of a name nothing defines
-also has an `Elsewhere` message, used where a mod the file's mod does not depend on defines the name; the diagnostic's
-`Defined` says where. `DiagnoseFile` returns a file's problems in a session against a given index, and a file of the
-game has its parse errors only. A mod's file is judged with the index narrowed to its mod and the mods it depends on.
+A `Diagnostic` is a code, a range and its facts, with its code's level and its message filled in. `Codes` is the one
+table of every code: its id, the question Health asks it under (`compatibility`, `health` or `log`), its level
+(`critical`, `error`, `warning` or `info`), its topic (syntax, references, values, localization, definitions or
+descriptor), its label and its message, a template that the facts fill. The game log has no level and no topic, since
+the game writes none. A sentence about a problem is written once, there, and the editor's markers and Health's rows
+both read the level from it. `Levels` holds each level's words, icon and color, worst first, and whether it counts as
+a problem and needs a fix; `Topics` holds each topic's label in the order they are listed. A code of a name nothing
+defines also has an `Elsewhere` message, used where a mod the file's mod does not depend on defines the name
+(`Code.Template`); the diagnostic's `Defined` says where. `SplitMessage` fills a template with the facts as `Part`s,
+each fact in its style (a mod, a code, a count or a path), a language as its name and a count with its thousands
+separated; `JoinParts` joins them into the plain `Message`.
+
+`DiagnoseFile` returns a file's problems in a session against a given index, and a file of the game has its parse
+errors only. A mod's file is judged with the index narrowed to its mod and the mods it depends on.
 `Diagnose` is the same against the open session, with the checks the user turned off (`ide.checks`) left out.
 `DiagnoseText` judges a text a file would have, as a coding agent's change through PMT's tools, without touching the
 editor's buffer; it is Go's alone and not bound to the page. Both run the checks over a tree in one function.
@@ -80,9 +99,11 @@ editor's buffer; it is Go's alone and not bound to the page. Both run the checks
 A check accuses only on firm ground. A reference is judged dangling only where its database is known and holds no names
 made as the script runs, and where the claim that makes it is not inferred from the game's files alone. A name the
 game's own files use is never dangling, unless it is defined and every definition lies in a file the game does not
-read (`isKnown`). A key is unknown, or a value of the wrong type, only
-where a source that can accuse describes the block and the game's own files never write otherwise. The parse errors and
-the localization codes come from `jomini` and `loc` under the same table.
+read (`isKnown`). A key is unknown, or a value of the wrong type, only where a source that can accuse describes the
+block and the game's own files never write otherwise. `wrong-value` judges the value of a field, of a key that names a
+definition such as a modifier, and of a command such as a trigger (`diagnoseValue`). It leaves alone a reference, a
+path, free text, a block's short form, and a name where a number goes, which the game reads as a script value. The
+parse errors and the localization codes come from `jomini` and `loc` under the same table.
 
 A name others share is judged by what the game keeps (`index.FindWinner`). A copy with the same override priority as
 another loaded copy is `conflicting-priority`, which the game logs as an error. A plain copy that its own mod's other
@@ -95,16 +116,20 @@ or not, and why, as `index.ResolveSite` says: where no source says which copy th
 ## Terms
 
 - **Range**: a span as Monaco counts it: lines and UTF-16 columns from one, the end exclusive.
-- **Location**: a range in a file, with the file's place and the text of its line.
+- **Site**: one place in a file that an answer points at, with its range, the text of its line and whether the game
+  keeps it where the answer has them.
 - **Edit**: one change to a file's text, as a range and the text that replaces it.
 - **Card**: a hover card: the facts about a key or a value, for the page to lay out.
 - **CardScope**: one scope script can name at a statement.
-- **CardSite**: one place a name is defined, with whether the game keeps it and why.
 - **CardDate**: a date read in the mod's calendar.
+- **Class**: one class of the wiki's lexicon, which names the commands the game declares in one way.
 - **Completion**: one candidate in the completion list.
 - **Symbol**: one entry of a file's outline.
 - **WorkspaceSymbol**: one definition found by the symbol search across the workspace.
 - **Code**: one kind of problem, with its question, its level, its topic and its message.
+- **Level**: one level of a finding, by how much the game loses.
+- **Topic**: one topic of the checks, in words.
+- **Part**: one piece of a sentence: plain text, or a fact drawn in its style.
 - **Diagnostic**: one problem found in a file: its code, its range and its facts.
 - **Legend**: the token types and modifiers the semantic tokens are encoded against.
 - **Fix**: one quick fix, with its edits grouped by file, a file it writes first, and where it leaves the caret.

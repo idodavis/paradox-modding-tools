@@ -1,12 +1,17 @@
+// wiki.go is the Wails service that reads the wiki. It makes one client for the open workspace's game, serves pages and
+// patch notes, and refreshes the cache in the background.
+
 package wiki
 
 import (
 	"context"
 	"slices"
+	"strings"
 	"sync"
 
 	"github.com/samber/lo"
 	"github.com/wailsapp/wails/v3/pkg/application"
+	"golang.org/x/mod/semver"
 
 	"paradox-modding-tools/internal/index"
 	"paradox-modding-tools/services/workspace"
@@ -55,7 +60,11 @@ func (wik *Service) ReadPage(title string) (Page, error) {
 	if err != nil {
 		return Page{}, err
 	}
-	return wik.resolveClient(ws).resolvePage(title)
+	client := wik.resolveClient(ws)
+	if page, ok := client.LoadPage(title); ok {
+		return page, nil
+	}
+	return client.FetchPage(title)
 }
 
 // ListNotes returns the patch notes, newest first. A note whose page is not cached yet shows no Modding section. It
@@ -75,8 +84,9 @@ func (wik *Service) ListNotes() ([]Note, error) {
 	return lo.Map(versions, func(version string, _ int) Note {
 		title := resolvePatch(version)
 		page, _ := client.LoadPage(title)
+		minor := strings.TrimPrefix(semver.MajorMinor("v"+strings.TrimSuffix(version, ".X")), "v")
 		return Note{
-			Version: version, Parent: resolveParent(version), Released: page.Released, Title: title,
+			Version: version, Parent: lo.Ternary(minor == version, "", minor), Released: page.Released, Title: title,
 			Modding: page.Modding,
 		}
 	}), nil

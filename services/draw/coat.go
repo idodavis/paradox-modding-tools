@@ -1,3 +1,6 @@
+// coat.go resolves a coat of arms into the layers the Visual view draws. It also lists what the coat panel offers,
+// makes the panel's edits to a coat and writes new coat files.
+
 package draw
 
 import (
@@ -117,15 +120,41 @@ type coatResolver struct {
 // missingList is the start of what a template list that is not there is shown as.
 const missingList = "missing:"
 
-// ResolveCoat resolves one coat of arms in a file into its layers. A layer whose value is a template list draws the
-// option the given picks hold for that list, else the list's heaviest option. A pick is the option chosen for the ID
-// of a group. It returns an error if the file is not in the workspace or does not define the coat.
+// ResolveCoat resolves one coat of arms in a file into its layers. A coat written as the name of another is that coat,
+// and one whose name no coat answers has no layers. A layer whose value is a template list draws the option the given
+// picks hold for that list, else the list's heaviest option. A pick is the option chosen for the ID of a group. It
+// returns an error if the file is not in the workspace or does not define the coat.
 func (drw *Service) ResolveCoat(path, name string, picks map[string]string) (Coat, error) {
 	resolver, err := drw.findCoat(path, name, picks)
 	if err != nil {
 		return Coat{}, err
 	}
-	return resolver.resolveCoat(), nil
+	definition := resolver.definition
+	coat := Coat{
+		Name: definition.tree.Unquoted(definition.tree.Statements[definition.statement].Key), Layers: []Layer{},
+		Range: toRange(definition), Place: resolver.ws.Locate(resolver.mods, definition.path),
+		Regions: lo.RangeFrom(1, len(game.Coat.Regions)),
+		Slots:   lo.Map(game.Coat.Slots, func(slot game.CoatSlot, _ int) string { return slot.Key }),
+	}
+	shade := resolver.ws.Game.Coat.Shade
+	if texture, ok := resolver.mods.ResolveTexture(shade.Texture); ok {
+		coat.Shading = &Shading{Path: texture, Overlay: shade.Overlay, Grain: shade.Grain}
+	}
+	coat.Width, coat.Height = findFieldSize(resolver.ws, resolver.mods)
+	root := definition
+	for range maxDepth {
+		current := root.tree.Statements[root.statement]
+		if current.IsBlock() {
+			coat.Layers = resolver.resolveLayers(resolver.listCoatFields(root, 0), 0)
+			return coat, nil
+		}
+		target, ok := findKeptClause(resolver.ws, resolver.mods, schema.Reference{Database: game.Coat.Database, Name: root.tree.Unquoted(current.Value)})
+		if !ok {
+			return coat, nil
+		}
+		root = target
+	}
+	return coat, nil
 }
 
 // findCoat returns the resolver for the coat that a file defines under the given name, with the given picks. It
@@ -145,44 +174,6 @@ func (drw *Service) findCoat(path, name string, picks map[string]string) (*coatR
 		ws: ws, mods: mods, picks: picks, colors: map[string]string{},
 		definition: definition,
 	}, nil
-}
-
-// resolveCoat resolves the coat asked for into its layers, from its own statements and its parent's. A coat written as
-// the name of another is that coat. A name that no coat answers has no layers.
-func (resolver *coatResolver) resolveCoat() Coat {
-	definition := resolver.definition
-	coat := Coat{
-		Name: definition.tree.Unquoted(definition.tree.Statements[definition.statement].Key), Layers: []Layer{},
-		Range: toRange(definition), Place: resolver.ws.Locate(resolver.mods, definition.path),
-		Shading: makeShading(resolver.ws, resolver.mods), Regions: lo.RangeFrom(1, len(game.Coat.Regions)),
-		Slots: lo.Map(game.Coat.Slots, func(slot game.CoatSlot, _ int) string { return slot.Key }),
-	}
-	coat.Width, coat.Height = findFieldSize(resolver.ws, resolver.mods)
-	root := definition
-	for range maxDepth {
-		current := root.tree.Statements[root.statement]
-		if current.IsBlock() {
-			coat.Layers = resolver.resolveLayers(resolver.listCoatFields(root, 0), 0)
-			return coat
-		}
-		target, ok := findKeptClause(resolver.ws, resolver.mods, schema.Reference{Database: game.Coat.Database, Name: root.tree.Unquoted(current.Value)})
-		if !ok {
-			return coat
-		}
-		root = target
-	}
-	return coat
-}
-
-// makeShading returns the shading the game lays over its coats. It returns nil if the game shades none or no file has
-// the shading's texture.
-func makeShading(ws *workspace.Session, mods *index.Index) *Shading {
-	shade := ws.Game.Coat.Shade
-	texture, ok := mods.ResolveTexture(shade.Texture)
-	if !ok {
-		return nil
-	}
-	return &Shading{Path: texture, Overlay: shade.Overlay, Grain: shade.Grain}
 }
 
 // findFieldSize returns the width and the height in pixels of the field a coat is drawn on: the tile size of the first
@@ -293,15 +284,28 @@ func (resolver *coatResolver) resolveLayers(fields []clause, depth int) []Layer 
 		key, _, _ := splitField(field)
 		switch key {
 		case game.Coat.PatternKey:
-			layer = resolver.resolvePattern(field, colors, names, lists)
+			texture, own := resolver.resolveValue(field)
+			layer = Layer{
+				Role: field.tree.Unquoted(field.tree.Statements[field.statement].Key), Texture: texture,
+				Path: resolver.findCoatFile(key, texture), Colors: colors, ColorNames: names, Lists: slices.Concat(own, lists),
+				Regions: []int{}, Instances: []Instance{}, Range: toRange(field),
+			}
 			patternFile = layer.Path
 		case game.Coat.SubKey:
 			layer = resolver.resolveSub(field)
 		default:
 			layer = resolver.resolveEmblem(field, colors, names, patternFile)
 		}
-		layer.Recolor, layer.Inputs = makeRecolor(key, layer.Colors), listInputs(key)
-		layer.MaskChannels = listMaskChannels(layer)
+		if row, ok := game.Coat.Recolors[key]; ok {
+			layer.Recolor = &Recolor{
+				Start: lo.NthOr(layer.Colors, row.Start, ""),
+				Blends: lo.Map(row.Lerps, func(lerp game.CoatLerp, _ int) Blend {
+					return Blend{Channel: lerp.Channel, Color: lo.NthOr(layer.Colors, lerp.Slot, "")}
+				}),
+				Overlay: row.Overlay, Alpha: row.Shape,
+			}
+		}
+		layer.Inputs, layer.MaskChannels = listInputs(key), listMaskChannels(layer)
 		layer.Place, layer.Writer = resolver.ws.Locate(resolver.mods, field.path), field.writer
 		layers = append(layers, layer)
 	}
@@ -324,22 +328,6 @@ func rankInstances(layers []Layer) {
 	slices.SortStableFunc(spots, func(first, second spot) int { return cmp.Compare(depth(second), depth(first)) })
 	for rank, one := range spots {
 		layers[one.layer].Instances[one.instance].Rank = rank
-	}
-}
-
-// makeRecolor returns how the game colors the texture of a layer with the given key, from the layer's colors. It
-// returns nil if the game keeps the pixels of such a texture.
-func makeRecolor(key string, colors []string) *Recolor {
-	row, ok := game.Coat.Recolors[key]
-	if !ok {
-		return nil
-	}
-	return &Recolor{
-		Start: lo.NthOr(colors, row.Start, ""),
-		Blends: lo.Map(row.Lerps, func(lerp game.CoatLerp, _ int) Blend {
-			return Blend{Channel: lerp.Channel, Color: lo.NthOr(colors, lerp.Slot, "")}
-		}),
-		Overlay: row.Overlay, Alpha: row.Shape,
 	}
 }
 
@@ -379,17 +367,6 @@ func listInputs(role string) map[string]string {
 		}
 	}
 	return inputs
-}
-
-// resolvePattern returns the layer of a coat's pattern, painted in the coat's colors, with their names. Its lists are
-// the ones its texture and the coat's colors are drawn from.
-func (resolver *coatResolver) resolvePattern(field clause, colors, names []string, lists []Group) Layer {
-	texture, own := resolver.resolveValue(field)
-	return Layer{
-		Role: field.tree.Unquoted(field.tree.Statements[field.statement].Key), Texture: texture,
-		Path: resolver.findCoatFile(game.Coat.PatternKey, texture), Colors: colors, ColorNames: names, Lists: slices.Concat(own, lists),
-		Regions: []int{}, Instances: []Instance{}, Range: toRange(field),
-	}
 }
 
 // resolveEmblem returns the layer of an emblem: its texture, its colors over the coat's colors and their names, its
@@ -687,8 +664,12 @@ func (drw *Service) AddLayer(path, coat, role string, position int) ([]lsp.Edit,
 	if err != nil {
 		return nil, err
 	}
+	own := lo.FilterMap(layers, func(layer clause, _ int) (int32, bool) {
+		return layer.statement, resolver.isOwn(layer)
+	})
+	slices.Sort(own)
 	var edit jomini.Edit
-	switch own := resolver.listOwn(layers); {
+	switch {
 	case position > 0:
 		layer, err := resolver.findLayer(layers, position-1)
 		if err != nil {
@@ -773,41 +754,31 @@ func (resolver *coatResolver) isOwn(layer clause) bool {
 	return layer.path == resolver.definition.path && layer.tree.Statements[layer.statement].Parent == resolver.definition.statement
 }
 
-// listOwn returns the statements of the given layers that the coat writes in its own block, in the order they are
-// written.
-func (resolver *coatResolver) listOwn(layers []clause) []int32 {
-	own := lo.FilterMap(layers, func(layer clause, _ int) (int32, bool) {
-		return layer.statement, resolver.isOwn(layer)
-	})
-	slices.Sort(own)
-	return own
-}
-
 // MoveLayer moves one layer of a coat to another position among its layers and returns the edits that do it. It
 // returns no edits if both positions are the same. It returns an error if either position has no layer or has a layer
 // that comes from a parent coat.
-func (drw *Service) MoveLayer(path, coat string, from, to int) ([]lsp.Edit, error) {
+func (drw *Service) MoveLayer(path, coat string, source, target int) ([]lsp.Edit, error) {
 	resolver, err := drw.findCoat(path, coat, nil)
 	if err != nil {
 		return nil, err
 	}
 	layers := resolver.listLayers()
-	moved, err := resolver.findLayer(layers, from)
+	moved, err := resolver.findLayer(layers, source)
 	if err != nil {
 		return nil, err
 	}
-	target, err := resolver.findLayer(layers, to)
-	if err != nil || from == to {
+	neighbor, err := resolver.findLayer(layers, target)
+	if err != nil || source == target {
 		return []lsp.Edit{}, err
 	}
 	tree := moved.tree
 	cut := toLineSpan(tree, tree.Statements[moved.statement].Span)
-	destination := toLineSpan(tree, tree.Statements[target.statement].Span)
+	destination := toLineSpan(tree, tree.Statements[neighbor.statement].Span)
 	text := tree.Src[cut.Start:cut.End]
 	if !strings.HasSuffix(text, "\n") {
 		text += lo.Ternary(strings.HasSuffix(tree.Src[destination.Start:destination.End], "\n"), jomini.LineEnding(tree.Src), " ")
 	}
-	insertion := lo.Ternary(to < from, destination.Start, destination.End)
+	insertion := lo.Ternary(target < source, destination.Start, destination.End)
 	edits := []jomini.Edit{{Span: cut}, {Span: jomini.Span{Start: insertion, End: insertion}, Text: text}}
 	return lsp.ToEdits(tree.Src, tree.Lines, edits), nil
 }

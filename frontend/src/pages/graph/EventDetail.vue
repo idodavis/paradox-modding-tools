@@ -77,7 +77,11 @@ const way = computed(() => {
     const caller = callers.find((one) => one.hardcoded) ?? callers[0];
     if (caller && chain[0]?.id === graph?.root && id !== caller.id) chain.unshift(caller);
   }
-  return chain.map((one, position) => ({ node: one, edge: findEdge(one, chain[position + 1]) }));
+  const edges = graph.edges ?? [];
+  return chain.map((one, position) => ({
+    node: one,
+    edge: edges.find((edge) => edge.from === one.id && edge.to === chain[position + 1]?.id),
+  }));
 });
 // what the way says under each of its nodes: its own trigger under "when", then the blocks its next firing sits in
 // under "then"
@@ -91,11 +95,6 @@ const wayConditions = computed(() =>
     ];
   }),
 );
-/** findEdge finds the drawn edge from one node to the next on the way. It finds none for the last. */
-function findEdge(firer: Node, next: Node | undefined): Edge | undefined {
-  return next && (graph?.edges ?? []).find((edge) => edge.from === firer.id && edge.to === next.id);
-}
-
 /**
  * describeHow describes the blocks a firing is written in, as a row reads them: "option · trigger_event, days = 30".
  */

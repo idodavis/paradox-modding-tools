@@ -196,16 +196,6 @@ func isGameFolder(ws *workspace.Session, rel string) bool {
 	return nested && ws.Schema.TopFolders[folder]
 }
 
-// listForgiven returns the pairs of mods whose contests are no problem, the winner first. The winner depends on the
-// other mod, or the workspace ignores the pair.
-func listForgiven(declared map[[2]string]bool, ignored [][2]string) map[[2]string]bool {
-	forgiven := maps.Clone(declared)
-	for _, pair := range ignored {
-		forgiven[pair], forgiven[[2]string{pair[1], pair[0]}] = true, true
-	}
-	return forgiven
-}
-
 // resolveContest names a contest's winner and beaten mods, sets its level and lists its pairs: the winner with each
 // beaten mod, in load order. The level is info if every beaten mod is forgiven, and critical otherwise.
 func resolveContest(ws *workspace.Session, finding *Finding, forgiven map[[2]string]bool) {

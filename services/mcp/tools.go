@@ -1,7 +1,8 @@
+// tools.go defines the tools the MCP server gives agents to read and change the workspace, and what each tool does.
+
 package mcp
 
 import (
-	"cmp"
 	"context"
 	"crypto/rand"
 	"errors"
@@ -192,7 +193,7 @@ func (mcp *Service) addEditorTools(server *sdk.Server) {
 	}))
 	sdk.AddTool(server, &sdk.Tool{Name: "find_symbols", Description: "Finds definitions by their name in the " +
 		"mods and the game."}, answer(func(request textQuery) ([]lsp.WorkspaceSymbol, error) {
-		return mcp.LSP.FindSymbols(request.Query, cmp.Or(request.Limit, defaultLimit))
+		return mcp.LSP.FindSymbols(request.Query, resolveLimit(request.Limit, defaultLimit))
 	}))
 	sdk.AddTool(server, &sdk.Tool{Name: "complete", Description: "Lists what can be written at a position: " +
 		"the keys, values and names that fit there."}, answer(func(request position) ([]lsp.Completion, error) {
@@ -223,7 +224,7 @@ func (mcp *Service) addPageTools(server *sdk.Server) {
 	sdk.AddTool(server, &sdk.Tool{Name: "find_roots", Description: "Finds the events, on_actions, decisions, " +
 		"messages and scripted effects an Event Graph can be drawn from, by id, namespace or number."},
 		answer(func(request textQuery) ([]graph.Node, error) {
-			return mcp.Graph.FindRoots(request.Query, cmp.Or(request.Limit, defaultLimit)), nil
+			return mcp.Graph.FindRoots(request.Query, resolveLimit(request.Limit, defaultLimit)), nil
 		}))
 	sdk.AddTool(server, &sdk.Tool{Name: "build_graph", Description: "Draws the Event Graph of a root: what it " +
 		"fires and what fires it, step by step, each firing with the blocks it sits in and its delay."},
@@ -240,7 +241,7 @@ func (mcp *Service) addPageTools(server *sdk.Server) {
 	sdk.AddTool(server, &sdk.Tool{Name: "search_pages", Description: "Finds the game wiki's modding pages " +
 		"that hold a text."}, answer(func(request textQuery) ([]wiki.Summary, error) {
 		pages, err := mcp.Wiki.SearchPages(request.Query)
-		return pages[:min(len(pages), cmp.Or(request.Limit, defaultLimit))], err
+		return pages[:min(len(pages), resolveLimit(request.Limit, defaultLimit))], err
 	}))
 	sdk.AddTool(server, &sdk.Tool{Name: "read_page", Description: "Reads a page of the game's wiki, as HTML."},
 		answer(func(request pageTitle) (wiki.Page, error) { return mcp.Wiki.ReadPage(request.Title) }))
@@ -278,6 +279,15 @@ func answer[In, Out any](respond func(In) (Out, error)) sdk.ToolHandlerFor[In, a
 	}
 }
 
+// resolveLimit returns how many answers a tool gives: the limit it was asked for, or the given fallback if the limit
+// is left out, zero or negative.
+func resolveLimit(limit, fallback int) int {
+	if limit < 1 {
+		return fallback
+	}
+	return limit
+}
+
 // readGuide returns one topic of PMT's guide, or with no topic the list of topics. It returns an error for a topic
 // the guide does not have.
 func (mcp *Service) readGuide(request guideTopic) (string, error) {
@@ -303,7 +313,14 @@ func (mcp *Service) describePages() string {
 	for _, page := range mcp.pages {
 		fmt.Fprintf(&guide, "# %s (%s)\n\n%s\n\n", page.Title, page.ID, strings.Join(page.Help, "\n\n"))
 	}
-	guide.WriteString(guideShow + describeQueries())
+	guide.WriteString(guideShow)
+	for _, page := range lo.Uniq(lo.Map(queryKeys, func(row queryKey, _ int) string { return row.Page })) {
+		keys := lo.FilterMap(queryKeys, func(row queryKey, _ int) (string, bool) {
+			values := lo.Ternary(len(row.Values) > 0, health.JoinList(row.Values, "or")+": ", "")
+			return fmt.Sprintf("%s (%s%s)", row.Key, values, row.Help), row.Page == page
+		})
+		fmt.Fprintf(&guide, "\n- %s: %s.", page, strings.Join(keys, "; "))
+	}
 	return guide.String()
 }
 
@@ -339,11 +356,22 @@ func (mcp *Service) describeWorkspace() (string, error) {
 // filter, at most its limit of them in all. The tallies and checks still count every finding. It returns an error if
 // the filter names a mod, a check or a level PMT does not have.
 func (mcp *Service) buildReport(filter findingFilter) (health.Report, error) {
-	if err := mcp.checkFindings(filter); err != nil {
+	var errs []error
+	if filter.Mod != "" {
+		errs = append(errs, mcp.checkMod(filter.Mod))
+	}
+	if filter.Code != "" {
+		errs = append(errs, mcp.checkCode(filter.Code))
+	}
+	levels := lo.Map(lsp.Levels, func(level lsp.Level, _ int) string { return level.ID })
+	if filter.Level != "" && !slices.Contains(levels, filter.Level) {
+		errs = append(errs, fmt.Errorf("a finding's level is %s, not %q", health.JoinList(levels, "or"), filter.Level))
+	}
+	if err := errors.Join(errs...); err != nil {
 		return health.Report{}, err
 	}
 	report, err := mcp.Health.BuildReport(nil)
-	room := cmp.Or(filter.Limit, defaultLimit)
+	room := resolveLimit(filter.Limit, defaultLimit)
 	pick := func(findings []health.Finding) []health.Finding {
 		matches := lo.Filter(findings, func(finding health.Finding, _ int) bool {
 			modMatches := filter.Mod == "" || finding.Origin == filter.Mod || slices.Contains(finding.Mods, filter.Mod)
@@ -368,7 +396,7 @@ func (mcp *Service) buildLexicon(filter lexiconFilter) ([]wiki.LexiconRow, error
 	rows, err := mcp.Wiki.BuildLexicon(filter.Class)
 	query := strings.ToLower(filter.Query)
 	rows = lo.Filter(rows, func(row wiki.LexiconRow, _ int) bool { return strings.Contains(strings.ToLower(row.Name), query) })
-	return rows[:min(len(rows), cmp.Or(filter.Limit, defaultLimit))], err
+	return rows[:min(len(rows), resolveLimit(filter.Limit, defaultLimit))], err
 }
 
 // searchText answers search_text: each file's hits, at most the request's limit in all. It stops when the agent
@@ -380,7 +408,7 @@ func (mcp *Service) searchText(ctx context.Context, _ *sdk.CallToolRequest, requ
 	if err != nil {
 		return nil, nil, err
 	}
-	hits, _, err := search.CollectText(ws, request.Query, cmp.Or(request.Limit, 200), ctx.Done())
+	hits, _, err := search.CollectText(ws, request.Query, resolveLimit(request.Limit, 200), ctx.Done())
 	return nil, hits, err
 }
 
@@ -448,22 +476,12 @@ func (mcp *Service) writeScaffold(request scaffolding) (any, error) {
 	mod, _ := mcp.Workspace.LookupMod(request.Mod)
 	scaffolds := health.ListScaffolds(ws.Mods.Load(), mod, request.Language)
 	if len(scaffolds) == 0 {
-		return nil, fmt.Errorf("%s lacks no localization key in %s", request.Mod, request.Language)
+		return nil, fmt.Errorf("%s lacks no localization key in %s", ws.DescribeMod(request.Mod), request.Language)
 	}
 	counts := lo.MapValues(scaffolds, func(messages []loc.Message, _ string) int { return len(messages) })
 	return mcp.preview(slices.Collect(maps.Keys(counts)), counts, func() (any, error) {
 		return mcp.Health.WriteScaffold(request.Mod, request.Language)
 	})
-}
-
-// checkSaved returns an error naming the first of the files whose text in the editor the user has not saved.
-func (mcp *Service) checkSaved(paths ...string) error {
-	for _, target := range paths {
-		if text, err := mcp.Workspace.Read(target); err == nil && text.Draft != "" {
-			return fmt.Errorf("%s has changes the user has not saved; ask them to save or discard them first", target)
-		}
-	}
-	return nil
 }
 
 // writeEdits applies the edits to each file's text on disk and writes it in its encoding, and returns the files
@@ -487,10 +505,16 @@ func (mcp *Service) writeEdits(edits map[string][]lsp.Edit) ([]string, error) {
 }
 
 // preview keeps a change to the given files under a new token, and returns what the change would be with the token
-// that makes it. It returns an error, and keeps nothing, if the user has not saved one of the files.
+// that makes it. It returns an error, and keeps nothing, if one of the files is outside the workspace's mods or the
+// game's own, or if the user has not saved it.
 func (mcp *Service) preview(paths []string, change any, apply func() (any, error)) (any, error) {
-	if err := mcp.checkSaved(paths...); err != nil {
+	if _, err := mcp.Workspace.FindWritable(paths...); err != nil {
 		return nil, err
+	}
+	for _, target := range paths {
+		if text, err := mcp.Workspace.Read(target); err == nil && text.Draft != "" {
+			return nil, fmt.Errorf("%s has changes the user has not saved; ask them to save or discard them first", target)
+		}
 	}
 	token := rand.Text()
 	mcp.mu.Lock()

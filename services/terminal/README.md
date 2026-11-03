@@ -8,7 +8,7 @@ until they end, and asks the workspace service for a folder's mod and a file's p
 
 | file | holds |
 |---|---|
-| `terminal.go` | the package comment; the events; `Service`; `Start`, `Run`, `Close`, `ListShells`, `SetScreen`, `ListPrograms`, `ListEnvironment`; the stream |
+| `terminal.go` | the package comment; the events; `Service` with `ServiceStartup` and `ServiceShutdown`; `Start`, `Run`, `Close`, `ListShells`, `SetScreen`, `ListPrograms`, `ListEnvironment`; the stream |
 | `links.go` | `Link`; `FindLinks`, `ResolveReference` |
 
 ## Starting a shell
@@ -38,8 +38,9 @@ after it.
 
 - `FindLinks` reads one line of output for paths with a line, in the suffix forms VS Code's terminal reads (`:L`,
   `:L:C`, `(L,C)`, `", line L` and the rest). A path resolves as absolute, then from the shell's folder, then as a path
-  the workspace loads. Only a file under a root of the workspace links. Ranges are in UTF-16 units, as the page counts
-  the line's text.
+  the workspace loads. Only a file under a root of the workspace links. A `Link`'s `Start` and `End` are in UTF-16
+  units, as the page counts the line's text, and its `Site` is an `lsp.Site`: the file's place and line, with the empty
+  range at the column the line names.
 - `ResolveReference` gives the text that names a file to an agent in the shell, as Claude Code and Copilot CLI read
   it: `@` and the path from the shell's folder, or the full path for a file outside it.
 

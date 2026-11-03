@@ -179,10 +179,12 @@ func makeNode(ws *workspace.Session, mods *index.Index, site index.Site, step in
 		Name:       reference.Name,
 		What:       game.DescribeDefinition(reference.Database, false),
 		Title:      toTitle(ws, mods, ws.LookupTitle(mods, site)),
-		CopyOrigin: findCopyOrigin(ws, mods, site),
 		Definition: site,
 		Site:       lsp.MakeSite(ws, mods, site),
 		Step:       step,
+	}
+	if hidden, ok := findCopy(ws, mods, site); ok {
+		node.CopyOrigin = mods.File(hidden).Origin
 	}
 	if database := ws.Schema.Databases[reference.Database]; database != nil && database.Row.Contents == game.ContentsOnActions {
 		node.Hardcoded = ws.Schema.OnActions[reference.Name].Hardcoded
@@ -224,9 +226,9 @@ func findComment(tree *jomini.Tree, statement int32) string {
 	after := sort.Search(len(tree.Comments), func(position int) bool { return tree.Comments[position].Start >= start })
 	for position := after - 1; position >= 0; position-- {
 		comment := tree.Comments[position]
-		above := line - len(lines) - 1
-		if tree.Lines.ToPosition(comment.Start).Line != above ||
-			strings.TrimSpace(tree.Src[tree.Lines.LineSpan(above).Start:comment.Start]) != "" {
+		commentLine := line - len(lines) - 1
+		if tree.Lines.ToPosition(comment.Start).Line != commentLine ||
+			strings.TrimSpace(tree.Src[tree.Lines.LineSpan(commentLine).Start:comment.Start]) != "" {
 			break
 		}
 		lines = append(lines, strings.TrimSpace(tree.Text(comment)))
@@ -244,13 +246,6 @@ func findCopy(ws *workspace.Session, mods *index.Index, site index.Site) (index.
 		return slices.Contains(acting, other)
 	})
 	return lo.Last(hidden)
-}
-
-// findCopyOrigin returns the origin of the copy a definition hides, as findCopy finds it. It returns "" if there is
-// none.
-func findCopyOrigin(ws *workspace.Session, mods *index.Index, site index.Site) string {
-	hidden, ok := findCopy(ws, mods, site)
-	return lo.Ternary(ok, mods.File(hidden).Origin, "")
 }
 
 // toID returns the id of the node of a definition: its database and its name.
@@ -368,7 +363,10 @@ func listActing(ws *workspace.Session, mods *index.Index, site index.Site) []ind
 // firing through scripted effects the filter draws is an edge for each effect, and only the last holds the firing's
 // blocks and delay.
 func (reach *reach) addFire(fire index.Fire, forward bool, step int) (index.Site, bool) {
-	path := reach.listPath(fire)
+	path := []index.Site{fire.Source, fire.Target}
+	if slices.Contains(reach.filter.Databases, reach.ws.Schema.Effects) {
+		path = slices.Concat([]index.Site{fire.Source}, fire.Via, []index.Site{fire.Target})
+	}
 	if !forward {
 		slices.Reverse(path)
 	}
@@ -379,36 +377,21 @@ func (reach *reach) addFire(fire index.Fire, forward bool, step int) (index.Site
 		if !reach.add(path[position], step, path[position-1]) {
 			return end, false
 		}
-		from, to := path[position-1], path[position]
+		source, target := path[position-1], path[position]
 		if !forward {
-			from, to = to, from
+			source, target = target, source
 		}
 		edge := Edge{Site: whole.Site}
-		if to == fire.Target {
+		if target == fire.Target {
 			edge = whole
 		}
-		edge.From, edge.To = toID(reach.mods, from), toID(reach.mods, to)
+		edge.From, edge.To = toID(reach.mods, source), toID(reach.mods, target)
 		if len(path) > 2 {
 			edge.Via = nil
 		}
 		reach.edges = append(reach.edges, edge)
 	}
 	return end, isNew
-}
-
-// listPath returns the definitions a firing goes through, from the firer to what it fires. The scripted effects it
-// passes are included if the filter draws them.
-func (reach *reach) listPath(fire index.Fire) []index.Site {
-	if !slices.Contains(reach.filter.Databases, reach.ws.Schema.Effects) {
-		return []index.Site{fire.Source, fire.Target}
-	}
-	return slices.Concat([]index.Site{fire.Source}, fire.Via, []index.Site{fire.Target})
-}
-
-// listVia returns the names of the scripted effects a firing passes through, in order. It is empty if it passes
-// through none.
-func listVia(mods *index.Index, fire index.Fire) []string {
-	return lo.Map(fire.Via, func(site index.Site, _ int) string { return mods.ToReference(site).Name })
 }
 
 // add puts the node of a definition in the graph, at the given step from the root, reached from the given parent. A

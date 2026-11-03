@@ -30,13 +30,6 @@ var loremSentences = []string{
 	"Excepteur sint occaecat cupidatat non proident, sunt in culpa qui officia.",
 }
 
-// resolveText returns the text to show for a property value, its messages found in the given index of the mods. A
-// localization key becomes the segments of its text, as resolveSegments makes them; any other value is read as a text.
-func resolveText(ws *workspace.Session, mods *index.Index, value string) []loc.Segment {
-	text, _, ok := ws.LookupText(mods, value)
-	return resolveSegments(ws, mods, loc.Segments(lo.Ternary(ok, text, value), 0), 0)
-}
-
 // resolveSegments returns what a player reads in a text: each $key$ as its message and each break as a newline.
 func resolveSegments(ws *workspace.Session, mods *index.Index, segments []loc.Segment, depth int) []loc.Segment {
 	return lo.FlatMap(segments, func(segment loc.Segment, _ int) []loc.Segment {

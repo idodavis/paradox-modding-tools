@@ -43,7 +43,8 @@ const (
 // as its last step. An edge whose file cannot be read has only its ends, its place and its line.
 func makeEdge(ws *workspace.Session, mods *index.Index, fire index.Fire) Edge {
 	edge := Edge{
-		From: toID(mods, fire.Source), To: toID(mods, fire.Target), Via: listVia(mods, fire),
+		From: toID(mods, fire.Source), To: toID(mods, fire.Target),
+		Via:  lo.Map(fire.Via, func(site index.Site, _ int) string { return mods.ToReference(site).Name }),
 		Site: lsp.LocateSite(ws, mods, fire.Use),
 	}
 	tree, err := ws.LoadTree(edge.Site.Place.Path)
@@ -67,8 +68,8 @@ func makeEdge(ws *workspace.Session, mods *index.Index, fire index.Fire) Edge {
 // makeEdges returns the edges of some firings, one for each place a firing is written.
 func makeEdges(ws *workspace.Session, mods *index.Index, fires []index.Fire) []Edge {
 	type firing struct {
-		from, to, path string
-		line           int
+		source, target, path string
+		line                 int
 	}
 	edges := lo.Map(fires, func(fire index.Fire, _ int) Edge { return makeEdge(ws, mods, fire) })
 	return lo.UniqBy(edges, func(edge Edge) firing { return firing{edge.From, edge.To, edge.Site.Place.Path, edge.Site.Line} })
@@ -156,7 +157,8 @@ func listSteps(ws *workspace.Session, mods *index.Index, tree *jomini.Tree, firi
 
 // makeStep returns the step of one block a firing sits in, in the given definition. Its kind is the first that fits,
 // in this order: a branch of a chain of ifs, a weighted branch, a list the dumps declare, a link to another scope, one
-// of the definition's options, and any other block. Its condition is its limit, else its trigger, in words.
+// of the definition's options, and any other block. Its condition is its limit, else its trigger, in words. A weighted
+// branch counts the blocks in it that change its weight.
 func makeStep(ws *workspace.Session, mods *index.Index, tree *jomini.Tree, statement, definition int32) Step {
 	current := tree.Statements[statement]
 	key, holder := tree.Text(current.Key), tree.Text(tree.Statements[current.Parent].Key)
@@ -171,7 +173,10 @@ func makeStep(ws *workspace.Session, mods *index.Index, tree *jomini.Tree, state
 		step.Kind = kindBranch
 	case keyword.Weighted:
 		step.Key, step.Kind, step.Weight = holder, kindWeight, key
-		step.Modifiers = countModifiers(tree, statement)
+		step.Modifiers = lo.CountBy(slices.Collect(tree.Children(statement)), func(child int32) bool {
+			row, _ := game.LookupKeyword(game.ShapeValue, "", tree.Text(tree.Statements[child].Key))
+			return row.Modifies
+		})
 	case iterates && !isKeyword && isCommand:
 		step.Kind = kindList
 	case ws.Schema.IsLink(key):
@@ -180,12 +185,4 @@ func makeStep(ws *workspace.Session, mods *index.Index, tree *jomini.Tree, state
 		step.Kind, step.Title = kindOption, findTitle(ws, mods, tree, statement, game.OptionTitleKey)
 	}
 	return step
-}
-
-// countModifiers returns how many blocks in a weighted branch change its weight.
-func countModifiers(tree *jomini.Tree, statement int32) int {
-	return lo.CountBy(slices.Collect(tree.Children(statement)), func(child int32) bool {
-		keyword, _ := game.LookupKeyword(game.ShapeValue, "", tree.Text(tree.Statements[child].Key))
-		return keyword.Modifies
-	})
 }

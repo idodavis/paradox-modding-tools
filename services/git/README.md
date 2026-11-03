@@ -5,18 +5,20 @@ repository: status, refs and log, a file at a revision, and the commands the Sou
 
 It runs the git CLI and reads its machine output. Nothing of git is reimplemented, and no git library is used. Of the
 engine it calls `files`, to decode a file as the files on disk are and to compare paths, and it asks the workspace
-service for the place of each changed file and each ignored path. A repository is its root folder, as a string.
+service for the place of each changed file and each ignored path. Every method names a repository by its root folder,
+as a string.
 
 | file | holds |
 |---|---|
-| `git.go` | the package comment; the events; `Service`, `Remote`; `Run` and `run`, which run git; `FindRepository`, `ReadFile`, `ListRemotes`; the commands (`Discard`, `Merge`, `Pull`, `DeleteBranch`); the locating of paths |
+| `git.go` | the package comment; the events; `Service`, `Repository`, `Remote`; `Run` and `run`, which run git; `FindRepository`, `ListRepositories`, `ReadFile`, `ListRemotes`; the commands (`Discard`, `Merge`, `Pull`, `DeleteBranch`); the locating of paths |
 | `status.go` | `Change`, `Status`, `Ref`; `ReadStatus`, `ListRefs`; the parser of the status records; a full ref's type by its prefix |
 | `log.go` | `Commit`; `ListCommits`, `ListCommitFiles` |
 | `diff.go` | `LineChange`; `DiffFile`, the editor's change bars |
 
 ## Running git
 
-git is found on the PATH on the first call, and kept. `run` runs it in a folder and returns its standard output. Each
+git is found on the PATH on the first call, and kept. `run` runs it in a folder and returns its standard output, on a
+failure too. Each
 line of standard error is sent as a `git:output` event as it arrives, and a nonzero exit is an error that carries the
 text of standard error. A missing git is an error too. `FindRepository` gives the root of the repository that holds a
 folder; `Discard`, `Merge`, `Pull`, `DeleteBranch`, `ReadStatus`, `ListRemotes` and `ListCommitFiles` take that root,
@@ -29,6 +31,8 @@ repository send it themselves.
 
 ## Reading
 
+- `ListRepositories` lists the repositories the open workspace's mods are in, each a `Repository` with its root and
+  its mods, in the load order of their first mod. A mod in none, or whose folder is missing, is left out.
 - `ReadStatus` reads `git status --porcelain=v2 -z --branch --ignored`: the branch, its upstream and how far they
   differ, each `Change` with which sides hold it and what was done to it, and the files git ignores. Each change and
   each ignored path gets its `workspace.Place`, from the repository's root, while a workspace is open; the place of a
@@ -68,7 +72,7 @@ fully merged".
 
 ## Terms
 
-- **Repository**: a git repository, named by its root folder.
+- **Repository**: a git repository, named by its root folder, with the workspace's mods in it.
 - **Status**: what git status reports for one repository.
 - **Change**: one changed file as git status reports it.
 - **Ref**: one branch, remote branch or tag.

@@ -195,11 +195,6 @@ async function closeTabs(tabs: Tab[]): Promise<void> {
   for (const tab of [...tabs]) editor.close(tab.id);
 }
 
-/** listSaved lists the tabs of this group that hold no changes that are not saved. */
-function listSaved(): Tab[] {
-  return group.tabs.filter((tab) => !findModel(tab.key)?.unsaved);
-}
-
 /** listOthers lists the tabs of this group other than the given one. */
 function listOthers(keep: string | null): Tab[] {
   return group.tabs.filter((tab) => tab.id !== keep);
@@ -268,10 +263,8 @@ function dropOnEditor(event: DragEvent): void {
   const middle = zone.value === "middle" || !zone.value;
   over.value = false;
   zone.value = null;
-  if (!id) return;
-  editor.activate(group.id);
-  windows.requestTab(id);
-  editor.move(id, middle ? group.id : crypto.randomUUID(), middle ? group.tabs.length : 0);
+  drop(event);
+  if (id) editor.move(id, middle ? group.id : crypto.randomUUID(), middle ? group.tabs.length : 0);
 }
 
 /** buildMenu builds the menu of a tab. */
@@ -295,7 +288,10 @@ function buildMenu(row: Row): ContextMenuItem[][] {
         label: "Close tabs to the right",
         onSelect: () => void closeTabs(group.tabs.slice(group.tabs.findIndex((tab) => tab.id === row.tab.id) + 1)),
       },
-      { label: "Close saved", onSelect: () => void closeTabs(listSaved()) },
+      {
+        label: "Close saved",
+        onSelect: () => void closeTabs(group.tabs.filter((tab) => !findModel(tab.key)?.unsaved)),
+      },
       { label: "Close all", onSelect: () => void closeTabs(group.tabs) },
     ],
     [
@@ -331,7 +327,7 @@ function buildMenu(row: Row): ContextMenuItem[][] {
         ? []
         : [
             {
-              label: "Dock back into the main window",
+              label: "Back into the main window",
               icon: "i-lucide-panel-top-close",
               onSelect: () => windows.dockBack(),
             },

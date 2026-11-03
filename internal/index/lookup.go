@@ -1,3 +1,6 @@
+// lookup.go answers the index's questions about names: where a reference is defined and used, what a database holds
+// and which definition a site sits in.
+
 package index
 
 import (

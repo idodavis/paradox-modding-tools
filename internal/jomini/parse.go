@@ -1,3 +1,6 @@
+// parse.go splits a text into tokens and parses them into a Tree. A malformed text never fails: the problems in it are
+// kept in the tree.
+
 package jomini
 
 import "strings"
@@ -32,7 +35,8 @@ func Parse(text string) *Tree {
 			tree.Comments = append(tree.Comments, tok.span)
 			continue
 		}
-		if tok.class == tokenScalar && isUnclosedString(tree.Text(tok.span)) {
+		scalar := tree.Text(tok.span)
+		if tok.class == tokenScalar && scalar[0] == '"' && (len(scalar) < 2 || scalar[len(scalar)-1] != '"') {
 			tree.Errors = append(tree.Errors, Error{Code: "unclosed-string", Message: "string is not closed", Span: tok.span})
 		}
 		kept = append(kept, tok)
@@ -154,11 +158,6 @@ func CountBrackets(text string, offset int) int {
 		}
 	}
 	return len(text) - offset
-}
-
-// isUnclosedString reports whether the scalar opens with a quote and does not close with one.
-func isUnclosedString(scalar string) bool {
-	return scalar[0] == '"' && (len(scalar) < 2 || scalar[len(scalar)-1] != '"')
 }
 
 // parseStatements parses statements into the tree as children of the given parent until the tokens end or a

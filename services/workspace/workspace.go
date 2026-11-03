@@ -1,3 +1,6 @@
+// workspace.go is the workspace service: the games, installs, workspaces and mods the app records, the one open
+// session, and the reading, writing and moving of the files in the workspace's mods.
+
 package workspace
 
 import (
@@ -32,8 +35,9 @@ import (
 
 // A FileChange is a file of the open workspace that changed or was deleted on disk. The fs:changed event carries it.
 type FileChange struct {
-	Path    string `json:"path"`
-	Deleted bool   `json:"deleted"`
+	Path       string `json:"path"`
+	Deleted    bool   `json:"deleted"`
+	Descriptor bool   `json:"descriptor"` // the file is a mod's descriptor
 }
 
 // Service is the Wails service behind installs, workspaces and their files. It holds the one open workspace and
@@ -712,7 +716,7 @@ func (wsp *Service) ReadHeader(path string) (texture.Header, error) {
 // Write writes a file's text in its encoding, making its folder if it is missing. The watcher sends fs:changed once
 // the index has the text. It returns an error for a file outside the workspace's mods.
 func (wsp *Service) Write(path string, text files.Text) error {
-	if _, err := wsp.findWritable(path); err != nil {
+	if _, err := wsp.FindWritable(path); err != nil {
 		return err
 	}
 	return files.WriteText(path, text)
@@ -723,7 +727,7 @@ func (wsp *Service) Write(path string, text files.Text) error {
 //
 //wails:ignore
 func (wsp *Service) WriteBytes(path string, bytes []byte) error {
-	if _, err := wsp.findWritable(path); err != nil {
+	if _, err := wsp.FindWritable(path); err != nil {
 		return err
 	}
 	return files.WriteAtomic(path, bytes)
@@ -756,9 +760,11 @@ func (wsp *Service) CreateCopy(path, modID string) (string, error) {
 	return target, wsp.WriteBytes(target, bytes)
 }
 
-// findWritable returns the open session if every file or folder is in one of its mods. It returns an error if no
-// workspace is open or one is not.
-func (wsp *Service) findWritable(paths ...string) (*Session, error) {
+// FindWritable returns the open session if every given file or folder is in one of its mods. It returns an error if no
+// workspace is open, or if one is outside the mods or among the game's own files.
+//
+//wails:ignore
+func (wsp *Service) FindWritable(paths ...string) (*Session, error) {
 	session, err := wsp.Session()
 	if err != nil {
 		return nil, err
@@ -808,7 +814,7 @@ func (wsp *Service) ListFolder(dir string) ([]Place, error) {
 // Create makes an empty file or a folder. The watcher sends fs:changed for it. It returns an error if it exists
 // already or is outside the workspace's mods.
 func (wsp *Service) Create(path string, dir bool) error {
-	if _, err := wsp.findWritable(path); err != nil {
+	if _, err := wsp.FindWritable(path); err != nil {
 		return err
 	}
 	if dir {
@@ -823,21 +829,21 @@ func (wsp *Service) Create(path string, dir bool) error {
 
 // Rename moves a file or a folder to a new path. The watcher sends fs:changed for both paths. It returns an error if
 // the new path exists already or either path is outside the workspace's mods.
-func (wsp *Service) Rename(from, to string) error {
-	session, err := wsp.findWritable(from, to)
+func (wsp *Service) Rename(source, target string) error {
+	session, err := wsp.FindWritable(source, target)
 	if err != nil {
 		return err
 	}
-	if _, err := os.Lstat(to); err == nil {
-		return fmt.Errorf("%s exists already", to)
+	if _, err := os.Lstat(target); err == nil {
+		return fmt.Errorf("%s exists already", target)
 	}
-	return session.watcher.Move(from, func() error { return os.Rename(from, to) })
+	return session.watcher.Move(source, func() error { return os.Rename(source, target) })
 }
 
 // Delete moves a file or a folder to PMT's trash and returns where it went. Deleting a mod's folder takes the mod
 // out of the workspace too. It returns an error if it is outside the workspace's mods.
 func (wsp *Service) Delete(path string) (string, error) {
-	session, err := wsp.findWritable(path)
+	session, err := wsp.FindWritable(path)
 	if err != nil {
 		return "", err
 	}
@@ -857,7 +863,7 @@ func (wsp *Service) Restore(trashed, path string) error {
 	if !files.IsUnder(wsp.Config.Dirs.Trash, trashed) {
 		return fmt.Errorf("%s is not in the trash", trashed)
 	}
-	if _, err := wsp.findWritable(path); err != nil {
+	if _, err := wsp.FindWritable(path); err != nil {
 		return err
 	}
 	if _, err := os.Lstat(path); err == nil {
@@ -906,7 +912,16 @@ func (wsp *Service) Locate(path string) Place {
 func (wsp *Service) ServeHTTP(w http.ResponseWriter, r *http.Request) {
 	query := r.URL.Query()
 	path := query.Get("path")
-	if !isRecorded(wsp.Config.Config(), path) {
+	records := wsp.Config.Config()
+	dirs := lo.Map(records.Installs, func(install app.Install, _ int) string { return install.Path })
+	for _, record := range records.Workspaces {
+		dirs = append(dirs, lo.Map(record.Mods, func(mod app.Mod, _ int) string { return mod.Dir })...)
+	}
+	isRecorded := lo.ContainsBy(dirs, func(dir string) bool {
+		_, ok := files.ToRel(dir, path)
+		return ok
+	})
+	if !isRecorded {
 		http.Error(w, "the path is outside every recorded install and mod", http.StatusForbidden)
 		return
 	}
@@ -952,20 +967,8 @@ func cutFrame(picture image.Image, query url.Values) image.Image {
 		return picture
 	}
 	frame, _ := strconv.Atoi(query.Get("frame"))
-	across := bounds.Dx() / size.X
-	position := min(max(frame, 1), across*(bounds.Dy()/size.Y)) - 1
-	corner := bounds.Min.Add(image.Pt(position%across*size.X, position/across*size.Y))
+	rowFrames := bounds.Dx() / size.X
+	position := min(max(frame, 1), rowFrames*(bounds.Dy()/size.Y)) - 1
+	corner := bounds.Min.Add(image.Pt(position%rowFrames*size.X, position/rowFrames*size.Y))
 	return sheet.SubImage(image.Rectangle{Min: corner, Max: corner.Add(size)})
-}
-
-// isRecorded reports whether a file is inside a recorded install or a mod of a recorded workspace.
-func isRecorded(records app.Config, path string) bool {
-	dirs := lo.Map(records.Installs, func(install app.Install, _ int) string { return install.Path })
-	for _, record := range records.Workspaces {
-		dirs = append(dirs, lo.Map(record.Mods, func(mod app.Mod, _ int) string { return mod.Dir })...)
-	}
-	return lo.ContainsBy(dirs, func(dir string) bool {
-		_, inside := files.ToRel(dir, path)
-		return inside
-	})
 }

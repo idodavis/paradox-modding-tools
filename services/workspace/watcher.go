@@ -1,3 +1,6 @@
+// watcher.go watches folders and reports the files that change or are deleted in them. It stops watching the folders of
+// a move the app makes while the move runs.
+
 package workspace
 
 import (
@@ -7,7 +10,6 @@ import (
 	"os"
 	"path/filepath"
 	"slices"
-	"strings"
 	"time"
 
 	"github.com/fsnotify/fsnotify"
@@ -66,13 +68,6 @@ func isWatched(folder string) bool {
 	return !files.IsHiddenDir(folder) || slices.Contains(watchedFolders, folder)
 }
 
-// isInWatchedFolder reports whether a path from a mod's root is one of the watched dot folders or lies in one.
-func isInWatchedFolder(rel string) bool {
-	return slices.ContainsFunc(strings.Split(rel, "/"), func(folder string) bool {
-		return slices.Contains(watchedFolders, folder)
-	})
-}
-
 // run reports the changes the watcher sees until it is closed.
 func (watcher *Watcher) run(change func(changes []FileChange)) {
 	defer close(watcher.done)
@@ -85,7 +80,7 @@ func (watcher *Watcher) run(change func(changes []FileChange)) {
 			if !ok {
 				return
 			}
-			if event.Op == fsnotify.Chmod || isHiddenFolder(event.Name) {
+			if event.Op == fsnotify.Chmod || files.IsFolder(event.Name) && !isWatched(filepath.Base(event.Name)) {
 				continue
 			}
 			if event.Has(fsnotify.Create) {
@@ -110,11 +105,6 @@ func (watcher *Watcher) run(change func(changes []FileChange)) {
 			change(changes)
 		}
 	}
-}
-
-// isHiddenFolder reports whether a path is a folder that the watcher does not watch.
-func isHiddenFolder(path string) bool {
-	return files.IsFolder(path) && !isWatched(filepath.Base(path))
 }
 
 // Close stops the watcher. It returns once no report is under way.

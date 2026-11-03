@@ -99,19 +99,13 @@ func (visitor *diagnoseVisitor) diagnoseCalls(tree *jomini.Tree, segments []loc.
 		}
 		name := call.Steps[step].Text
 		saved := step == 0 && name != "" && unicode.IsLower(rune(name[0]))
-		if saved || language.UnlistedCalls[before+"."+name] || visitor.isBound(name) {
+		if saved || language.UnlistedCalls[before+"."+name] || lo.SomeBy(game.GUI.StepDatabases, func(database string) bool {
+			return len(visitor.index.Resolve(schema.Reference{Database: database, Name: name})) > 0
+		}) {
 			continue
 		}
 		facts := DescribeReference(schema.Reference{Name: name})
 		facts["type"] = before
 		visitor.diagnostics = append(visitor.diagnostics, makeDiagnostic(tree, call.Steps[step].Span, "unknown-data-call", facts))
 	}
-}
-
-// isBound reports whether the judged index defines a name in one of the databases whose definitions a data call names
-// as a step.
-func (visitor *diagnoseVisitor) isBound(name string) bool {
-	return lo.SomeBy(game.GUI.StepDatabases, func(database string) bool {
-		return len(visitor.index.Resolve(schema.Reference{Database: database, Name: name})) > 0
-	})
 }

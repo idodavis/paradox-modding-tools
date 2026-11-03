@@ -7,6 +7,7 @@ import (
 	"context"
 	"crypto/sha256"
 	"encoding/hex"
+	"encoding/json"
 	"errors"
 	"fmt"
 	"io"
@@ -154,7 +155,10 @@ func (stm *Service) fetchAnswer(ws *workspace.Session, workshopID string) Compar
 	if err == nil {
 		params.WorkshopID = workshopID
 		var details Details
-		if details, err = fetchDetails(params); err == nil {
+		err = startCopy(context.Background(), detailsFlag, params, func(line string) {
+			_ = json.Unmarshal([]byte(line), &details)
+		})
+		if err == nil {
 			answer.Steam = &details
 			params.UpdatedAt = details.UpdatedAt
 			err = refreshSnapshot(stm.Workspace.Config.Dirs.Cache, params)
@@ -266,13 +270,6 @@ func toNames(ids []string, names map[string]string) []string {
 // listLabels returns the label of each preview of a gallery, in its order.
 func listLabels(previews []Preview) []string {
 	return lo.Map(previews, func(preview Preview, _ int) string { return toLabel(preview) })
-}
-
-// listRequired returns the Workshop ids of a listing's dependencies that have one.
-func listRequired(dependencies []Dependency) []string {
-	return lo.FilterMap(dependencies, func(dependency Dependency, _ int) (string, bool) {
-		return dependency.WorkshopID, dependency.WorkshopID != ""
-	})
 }
 
 // toPlainText returns a text without Windows line ends, trailing spaces or trailing blank lines, so that two copies of

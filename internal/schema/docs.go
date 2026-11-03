@@ -1,3 +1,6 @@
+// docs.go reads the documentation files a game ships beside its script, such as the readme of a folder, into the
+// fields, scopes and defaults they describe. It tells such a file from a data file by its name and its lines.
+
 package schema
 
 import (
@@ -20,18 +23,18 @@ type docReader struct {
 	root   *Field // the doc's definition: the fields its example writes, each under the block that holds it
 	// blocks holds, for each block the line is in, the field its keys belong to. The example's entry and a key that
 	// stands for names keep the field around them.
-	blocks  []*Field
-	current *Field   // the field the text attaches to; nil before the first
-	headed  bool     // current came from a header and no statement has followed
-	header  string   // the key the last header wrote, while no statement of it has followed; "" none
-	above   []string // the comment lines directly above the next statement
-	list    string   // what a label opened for the current field: choices, scopes, or ""
-	blurb   []string // the first paragraph of prose before the first statement
-	scope   string   // the scope type of the root the prose before the first field gives
-	started bool     // a statement, header or field has been read
-	ended   bool     // the first paragraph has ended
-	script  int      // the live script lines, which tell a data file from a doc
-	prose   int      // the other lines with text
+	blocks   []*Field
+	current  *Field   // the field the text attaches to; nil before the first
+	headed   bool     // current came from a header and no statement has followed
+	header   string   // the key the last header wrote, while no statement of it has followed; "" none
+	comments []string // the comment lines directly above the next statement
+	list     string   // what a label opened for the current field: choices, scopes, or ""
+	blurb    []string // the first paragraph of prose before the first statement
+	scope    string   // the scope type of the root the prose before the first field gives
+	started  bool     // a statement, header or field has been read
+	ended    bool     // the first paragraph has ended
+	script   int      // the live script lines, which tell a data file from a doc
+	prose    int      // the other lines with text
 }
 
 // docMarkers are the terms in a .txt file's name that mark it as a doc.
@@ -65,33 +68,25 @@ var (
 
 // buildDocs reads the docs in the given listing into the databases they describe. A doc is an .info, readme or .md
 // file, or a .txt file named like one, that belongs to one of the given database folders. A later doc only fills in
-// what an earlier one left out. It returns an error if a doc cannot be read.
+// what an earlier one left out. A doc that describes one part of its database gives it no blurb. It returns an error
+// if a doc cannot be read.
 func (schema *Schema) buildDocs(listing []files.File, folders []string) error {
 	for _, file := range listing {
-		if err := schema.buildDoc(file, folders); err != nil {
+		label, partial, ok := findDocDatabase(file.Rel, folders)
+		database := schema.Databases[label]
+		if !ok || database == nil {
+			continue
+		}
+		text, err := files.ReadText(file.Path)
+		if err != nil {
 			return err
 		}
-	}
-	return nil
-}
-
-// buildDoc reads one file into the database it describes, if it is a doc of one. A doc that describes one part of its
-// database gives it no blurb. It returns an error if the file cannot be read.
-func (schema *Schema) buildDoc(file files.File, folders []string) error {
-	label, partial, ok := findDocDatabase(file.Rel, folders)
-	database := schema.Databases[label]
-	if !ok || database == nil {
-		return nil
-	}
-	text, err := files.ReadText(file.Path)
-	if err != nil {
-		return err
-	}
-	if reader, ok := schema.parseDoc(text.Text, file.Rel, database.Row); ok {
-		if partial {
-			reader.blurb = nil
+		if reader, ok := schema.parseDoc(text.Text, file.Rel, database.Row); ok {
+			if partial {
+				reader.blurb = nil
+			}
+			reader.build(database)
 		}
-		reader.build(database)
 	}
 	return nil
 }
@@ -202,7 +197,7 @@ func (reader *docReader) readLine(raw string, heading bool) {
 	reader.countLine(line, isStatement || braceLine.MatchString(code))
 	switch {
 	case line == "":
-		reader.above, reader.list = nil, ""
+		reader.comments, reader.list = nil, ""
 		reader.ended = reader.ended || len(reader.blurb) > 0
 	case text == "":
 	case strings.HasPrefix(line, "#") && briefLine.MatchString(text):
@@ -214,7 +209,7 @@ func (reader *docReader) readLine(raw string, heading bool) {
 	case braceLine.MatchString(code):
 		reader.readStatement("", "", "", opens)
 	case heading || headingLine.MatchString(text):
-		reader.above, reader.list = nil, ""
+		reader.comments, reader.list = nil, ""
 	case strings.HasPrefix(text, "scope:"):
 		reader.readProse(text)
 	case labelLine.MatchString(text):
@@ -223,7 +218,7 @@ func (reader *docReader) readLine(raw string, heading bool) {
 	case fieldLine.MatchString(text):
 		field := fieldLine.FindStringSubmatch(text)
 		reader.readField(field[1], field[2])
-		reader.above = nil
+		reader.comments = nil
 	case bulletLine.MatchString(text):
 		reader.readBullet(bulletLine.FindStringSubmatch(text)[1])
 	default:
@@ -294,7 +289,7 @@ func (reader *docReader) readHeader(key, text string) {
 	reader.closeHeader()
 	field := &Field{}
 	resolveType(field, text)
-	reader.current, reader.headed, reader.header, reader.above, reader.list = field, true, key, nil, ""
+	reader.current, reader.headed, reader.header, reader.comments, reader.list = field, true, key, nil, ""
 }
 
 // readField reads a `key: text` line or a keyed bullet. The key is a field at the top of the definition, and the text
@@ -336,7 +331,7 @@ func (reader *docReader) readStatement(key, value, text string, opens int) {
 			field.take(reader.current.Claims)
 			reader.header = ""
 		}
-		reader.resolveText(field, append(reader.above, text)...)
+		reader.resolveText(field, append(reader.comments, text)...)
 		reader.resolveValue(field, value)
 		reader.current, reader.list = field, ""
 	}
@@ -344,7 +339,7 @@ func (reader *docReader) readStatement(key, value, text string, opens int) {
 		reader.blocks = append(reader.blocks, field)
 	}
 	reader.blocks = reader.blocks[:max(len(reader.blocks)+min(opens, 0), 0)]
-	reader.above, reader.headed = nil, false
+	reader.comments, reader.headed = nil, false
 }
 
 // closeHeader gives the last header's facts to its key at the top of the definition, if no statement of that key
@@ -376,7 +371,7 @@ func (reader *docReader) readLabel(title, text string) {
 		reader.resolveScope(reader.current, findTerm(text))
 	case choiceLabel.MatchString(label):
 		reader.list = "choices"
-		resolveChoices(reader.current, strings.Split(text, ","))
+		resolveChoices(reader.current, strings.Split(text, ","), game.SourceDocs)
 	default:
 		reader.readProse(title + ": " + text)
 	}
@@ -391,7 +386,7 @@ func (reader *docReader) readBullet(bullet string) {
 	}
 	switch {
 	case reader.list == "choices" && reader.current != nil:
-		resolveChoices(reader.current, []string{cmp.Or(key, text)})
+		resolveChoices(reader.current, []string{cmp.Or(key, text)}, game.SourceDocs)
 	case reader.list == "scopes" && reader.current != nil:
 		if scope := scopeBullet.FindStringSubmatch(key + text); scope != nil {
 			reader.resolveScope(reader.current, scope[1])
@@ -417,7 +412,7 @@ func (reader *docReader) readProse(text string) {
 		reader.resolveText(reader.current, text)
 		return
 	}
-	reader.above = append(reader.above, text)
+	reader.comments = append(reader.comments, text)
 }
 
 // resolveText reads the text written about a field, given as one or more lines. A placeholder at its start is the
@@ -552,7 +547,7 @@ func (reader *docReader) resolveValue(field *Field, value string) {
 		// Alternatives such as number/scripted name types, not values, so they state no choices.
 		parts := strings.FieldsFunc(inner, func(r rune) bool { return r == '/' || r == '|' })
 		if !slices.ContainsFunc(parts, func(part string) bool { _, ok := game.DocTypes[ToPhrase(part)]; return ok }) {
-			resolveChoices(field, parts)
+			resolveChoices(field, parts, game.SourceDocs)
 		}
 	case keyed && named && !known:
 		field.Value.resolve(Expected{Type: ValueReference, Database: database}, game.SourceDocs)
@@ -569,9 +564,10 @@ func (reader *docReader) resolveValue(field *Field, value string) {
 	}
 }
 
-// resolveChoices adds the given values to the choices of a field. They outrank a type the same doc gave. The one
-// marked as the default is the default. If the choices are only the two yes-or-no terms, the field is a bool.
-func resolveChoices(field *Field, values []string) {
+// resolveChoices adds the given values to the choices of a field, as the given source states them. They outrank a type
+// stated before them. The one marked as the default is the default. If the choices are only the two yes-or-no terms,
+// the field is a bool.
+func resolveChoices(field *Field, values []string, source game.Source) {
 	var choices []string
 	if field.Value.Value.Type == ValueChoice {
 		choices = field.Value.Value.Choices
@@ -595,7 +591,7 @@ func resolveChoices(field *Field, values []string) {
 	if slices.Equal(slices.Sorted(slices.Values(choices)), slices.Sorted(slices.Values(game.Bools))) {
 		expected = Expected{Type: ValueBool}
 	}
-	field.Value = Claim[Expected]{Value: expected, Source: game.SourceDocs}
+	field.Value = Claim[Expected]{Value: expected, Source: source}
 }
 
 // findTerm returns the first term of the text without quotes and punctuation, or "" if it has none.

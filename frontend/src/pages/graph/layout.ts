@@ -110,8 +110,8 @@ function lightRows(node: Node, lit: Lit | null): Row[] {
  * Reports whether a firing from one node to another is lit: it touches the node selected, or both its ends are on the
  * route from the selection back to the root.
  */
-function isLit(lit: Lit, from: string, to: string): boolean {
-  return [from, to].includes(lit.selected) || (lit.route.has(from) && lit.route.has(to));
+function isLit(lit: Lit, source: string, target: string): boolean {
+  return [source, target].includes(lit.selected) || (lit.route.has(source) && lit.route.has(target));
 }
 
 /** Measures a node as it draws: an open node grows with its title, its comment and its rows. */
@@ -261,13 +261,14 @@ function buildEdges(
     const firer = byId.get(edge.from);
     const touches = !!lit && [edge.from, edge.to].includes(lit.selected);
     const route = span < 0 ? routes.get(id) : undefined;
+    const via = edge.via?.length ? `via ${edge.via.join(", ")}` : "";
     return {
       id,
       source: edge.from,
       target: edge.to,
       sourceHandle: findHandle(firer, edge),
       type: "fire",
-      label: touches && !firer?.open ? describeEdge(edge) : "",
+      label: touches && !firer?.open ? [edge.delay, via].filter(Boolean).join(" · ") : "",
       class: lit && isLit(lit, edge.from, edge.to) ? "lit" : [lit && "dim", span < 0 && "back"],
       data: { points: route ? [route.startPoint, ...(route.bendPoints ?? []), route.endPoint] : [] },
     };
@@ -296,9 +297,4 @@ function describeColumn(step: number): string {
   if (step === 0) return "Root";
   if (step === -1) return "Fired by";
   return step < 0 ? `${-step} steps before` : plural(step, "step");
-}
-
-/** Describes an edge in words: its delay and the scripted effects it passes through. It is empty for neither. */
-function describeEdge(edge: Edge): string {
-  return [edge.delay, edge.via?.length ? `via ${edge.via.join(", ")}` : ""].filter(Boolean).join(" · ");
 }

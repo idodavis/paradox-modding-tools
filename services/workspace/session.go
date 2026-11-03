@@ -9,6 +9,7 @@ import (
 	"os"
 	"path/filepath"
 	"slices"
+	"strings"
 	"sync"
 	"sync/atomic"
 
@@ -84,10 +85,22 @@ func (wsp *Service) openSession(workspaceID string, progress func(stage string, 
 	ws.Effects, ws.Triggers = countDeclared(ws.Schema, game.DeclaredEffect), countDeclared(ws.Schema, game.DeclaredTrigger)
 	// the caches of the game's other versions go; one that cannot be deleted now goes at a later open
 	_ = removeEntries(filepath.Dir(folder), filepath.Base(folder))
-	if err := ws.scanMods(record.Mods, progress); err != nil {
+	order := lo.Map(record.Mods, func(mod app.Mod, _ int) Mod { return readMod(row, mod) })
+	ws.Order.Store(&order)
+	progress("mods", 0)
+	mods, err := ws.ScanOrder(lo.Map(record.Mods, func(mod app.Mod, _ int) string { return mod.ID }))
+	if err != nil {
 		return nil, err
 	}
-	if err := ws.openWatcher(change); err != nil {
+	ws.Mods.Store(mods)
+	roots := mods.Roots[len(ws.Install.Roots):]
+	ws.watcher, err = startWatcher(lo.Map(roots, func(root files.Root, _ int) string { return root.Dir }),
+		func(changes []FileChange) {
+			// a file that cannot be scanned again keeps its old entries until the next change
+			_ = ws.Rescan(changes)
+			change(changes)
+		})
+	if err != nil {
 		return nil, err
 	}
 	return ws, nil
@@ -190,20 +203,6 @@ func removeEntries(dir, base string) error {
 	return failure
 }
 
-// scanMods sets the session's mods from the workspace's records and scans them on top of the install. A mod whose
-// folder is missing is broken and is not scanned. A mod whose descriptor cannot be read is scanned with an empty one.
-func (ws *Session) scanMods(records []app.Mod, progress func(stage string, percent int)) error {
-	order := lo.Map(records, func(record app.Mod, _ int) Mod { return readMod(ws.Game, record) })
-	ws.Order.Store(&order)
-	progress("mods", 0)
-	mods, err := ws.ScanOrder(lo.Map(records, func(record app.Mod, _ int) string { return record.ID }))
-	if err != nil {
-		return err
-	}
-	ws.Mods.Store(mods)
-	return nil
-}
-
 // readMod returns a recorded mod with its descriptor and thumbnail, read by the given game's rule. A mod whose folder
 // is missing is broken, and one whose descriptor cannot be read has an empty one.
 func readMod(row *game.Game, record app.Mod) Mod {
@@ -245,23 +244,6 @@ func (ws *Session) ScanOrder(modIDs []string) (*index.Index, error) {
 		}
 	}
 	return index.ScanMods(ws.Schema, ws.Install, roots, replaced)
-}
-
-// openWatcher starts the session's watcher over the mods' folders. Each batch of changes is scanned again, and then
-// reported to the given function.
-func (ws *Session) openWatcher(change func(changes []FileChange)) error {
-	roots := ws.Mods.Load().Roots[len(ws.Install.Roots):]
-	watcher, err := startWatcher(lo.Map(roots, func(root files.Root, _ int) string { return root.Dir }),
-		func(changes []FileChange) {
-			// a file that cannot be scanned again keeps its old entries until the next change
-			_ = ws.Rescan(changes)
-			change(changes)
-		})
-	if err != nil {
-		return err
-	}
-	ws.watcher = watcher
-	return nil
 }
 
 // Close stops the watcher and drops the open files' buffers and documents.
@@ -365,16 +347,16 @@ func (ws *Session) LookupText(mods *index.Index, key string) (text string, winne
 			continue
 		}
 		// every form of the replace folder ranks before a file outside one
-		outside := len(ws.Game.LocReplaceFolders)
+		unreplaced := len(ws.Game.LocReplaceFolders)
 		rank := func(candidate index.Site) int {
 			position, replaces := ws.Game.FindLocReplacement(mods.File(candidate).Rel, language)
-			return lo.Ternary(replaces, position, outside)
+			return lo.Ternary(replaces, position, unreplaced)
 		}
 		winner = index.Winner{Site: slices.MinFunc(candidates, func(a, b index.Site) int { return cmp.Compare(rank(a), rank(b)) })}
 		switch {
 		case lo.CountBy(candidates, func(candidate index.Site) bool { return rank(candidate) == rank(winner.Site) }) > 1:
 			winner.Reason = index.ReasonUnsettled
-		case rank(winner.Site) < outside:
+		case rank(winner.Site) < unreplaced:
 			winner.Reason = index.ReasonReplaceFolder
 		}
 		return ws.findText(mods, winner.Site, language), winner, true
@@ -473,21 +455,23 @@ func (ws *Session) FindStatement(mods *index.Index, site index.Site) (*jomini.Tr
 	return nil, 0, fmt.Errorf("%s has no statement where the index read one", path)
 }
 
-// Rescan brings the mods' index up to date with a batch of file changes. It returns the error of a change it cannot
-// read, after the others.
+// Rescan brings the mods' index up to date with a batch of file changes. It reads a mod's descriptor again and marks
+// the change in the batch when the change is the descriptor. It returns the error of a change it cannot read, after the
+// others.
 func (ws *Session) Rescan(changes []FileChange) error {
 	ws.mu.Lock()
 	defer ws.mu.Unlock()
 	mods := ws.Mods.Load()
 	var changed []files.File
 	var failure error
-	for _, change := range changes {
+	for position, change := range changes {
 		place := ws.Locate(mods, change.Path)
 		if descriptor, _ := resolveDescriptor(ws.Game, place.Root); place.Root != "" && files.ToKey(descriptor) == place.Key {
 			ws.refreshMod(place.Origin)
+			changes[position].Descriptor = true
 		}
 		// the index skips the watched dot folders, as it skips every dot folder
-		if place.Root == "" || place.ReadOnly || isInWatchedFolder(place.Rel) {
+		if place.Root == "" || place.ReadOnly || lo.Some(strings.Split(place.Rel, "/"), watchedFolders) {
 			continue
 		}
 		listed, err := ws.listChanged(mods, place, change.Deleted)

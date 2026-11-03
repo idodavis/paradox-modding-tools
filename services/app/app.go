@@ -1,3 +1,6 @@
+// app.go is the Wails service for the app itself: its version and updates, its settings and log, and its windows. It
+// also opens the config file and the log.
+
 package app
 
 import (
@@ -303,21 +306,15 @@ func (app *Service) OpenMainWindow() {
 		}
 	})
 	window.OnWindowEvent(events.Common.WindowClosing, func(*application.WindowEvent) {
-		app.saveWindow(window)
+		maximized, bounds := window.IsMaximised(), window.Bounds()
+		_ = app.Config.Update("window", func(config *Config) error {
+			config.Window.Maximized = maximized
+			if !maximized {
+				config.Window.Width, config.Window.Height = bounds.Width, bounds.Height
+			}
+			return nil
+		})
 		pmt.Quit()
-	})
-}
-
-// saveWindow records how the main window is left, for the next start. A maximized window keeps the size it was last
-// left at unmaximized. A config that cannot be written records nothing.
-func (app *Service) saveWindow(window *application.WebviewWindow) {
-	maximized, bounds := window.IsMaximised(), window.Bounds()
-	_ = app.Config.Update("window", func(config *Config) error {
-		config.Window.Maximized = maximized
-		if !maximized {
-			config.Window.Width, config.Window.Height = bounds.Width, bounds.Height
-		}
-		return nil
 	})
 }
 

@@ -213,7 +213,14 @@ func (mcp *Service) newHandler() http.Handler {
 	mcp.addEditorTools(server)
 	mcp.addPageTools(server)
 	mcp.addAppTools(server)
-	addPrompts(server)
+	for _, task := range Tasks {
+		server.AddPrompt(&sdk.Prompt{Name: task.Name, Title: task.Title},
+			func(context.Context, *sdk.GetPromptRequest) (*sdk.GetPromptResult, error) {
+				return &sdk.GetPromptResult{Messages: []*sdk.PromptMessage{
+					{Role: "user", Content: &sdk.TextContent{Text: task.Text}},
+				}}, nil
+			})
+	}
 	streamable := sdk.NewStreamableHTTPHandler(func(*http.Request) *sdk.Server { return server },
 		&sdk.StreamableHTTPOptions{Stateless: true})
 	gate := http.HandlerFunc(func(writer http.ResponseWriter, request *http.Request) {
@@ -227,16 +234,4 @@ func (mcp *Service) newHandler() http.Handler {
 	mux := http.NewServeMux()
 	mux.Handle("/mcp", http.NewCrossOriginProtection().Handler(gate))
 	return mux
-}
-
-// addPrompts adds the starter tasks to the server as prompts.
-func addPrompts(server *sdk.Server) {
-	for _, task := range Tasks {
-		server.AddPrompt(&sdk.Prompt{Name: task.Name, Title: task.Title},
-			func(context.Context, *sdk.GetPromptRequest) (*sdk.GetPromptResult, error) {
-				return &sdk.GetPromptResult{Messages: []*sdk.PromptMessage{
-					{Role: "user", Content: &sdk.TextContent{Text: task.Text}},
-				}}, nil
-			})
-	}
 }

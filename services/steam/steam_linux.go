@@ -1,3 +1,5 @@
+// steam_linux.go loads Steam's shared library on Linux and finds the functions it exports.
+
 package steam
 
 import "github.com/ebitengine/purego"

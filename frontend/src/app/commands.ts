@@ -63,9 +63,11 @@ const changedBindings = computed<Record<string, string[]>>(() => {
 // registered, inside the app
 let run: (work: () => Promise<unknown>) => void = () => undefined;
 
+const activeTab = () => useEditorStore().activeTab();
+const activeFile = () => useEditorStore().activeFile();
 const hasModel = () => !!activeModel();
-const hasTab = () => !!useEditorStore().activeTab();
-const hasFile = () => !!useEditorStore().activeFile();
+const hasTab = () => !!activeTab();
+const hasFile = () => !!activeFile();
 const isOpen = () => useWorkspaceStore().isOpen();
 const isIde = () => router.currentRoute.value.name === "workspace-ide";
 
@@ -87,7 +89,7 @@ export const COMMANDS: readonly Command[] = [
     icon: "i-lucide-save",
     kbds: ["meta", "S"],
     when: hasModel,
-    onSelect: onActive((model) => run(() => save(model))),
+    onSelect: actOn(activeModel, (model) => run(() => save(model))),
   },
   {
     id: "editor.saveAll",
@@ -104,7 +106,7 @@ export const COMMANDS: readonly Command[] = [
     icon: "i-lucide-x",
     kbds: ["meta", "W"],
     when: hasTab,
-    onSelect: onTab((tab) =>
+    onSelect: actOn(activeTab, (tab) =>
       run(async () => {
         if (await useEditorStore().confirmClose([tab])) useEditorStore().close(tab.id);
       }),
@@ -133,7 +135,7 @@ export const COMMANDS: readonly Command[] = [
     prefix: "IDE:",
     icon: "i-lucide-arrow-right-to-line",
     when: hasTab,
-    onSelect: onTab(moveToNextGroup),
+    onSelect: actOn(activeTab, moveToNextGroup),
   },
   {
     id: "editor.format",
@@ -141,7 +143,7 @@ export const COMMANDS: readonly Command[] = [
     prefix: "IDE:",
     icon: "i-lucide-align-left",
     kbds: ["shift", "alt", "F"],
-    when: hasModel,
+    when: () => hasModel() && canChange(),
     onSelect: () => runAction("editor.action.formatDocument"),
   },
   {
@@ -194,7 +196,7 @@ export const COMMANDS: readonly Command[] = [
     icon: "i-lucide-git-branch",
     kbds: ["meta", "shift", "G"],
     when: hasModel,
-    onSelect: onActive((model) => run(() => openGraph(model))),
+    onSelect: actOn(activeModel, (model) => run(() => openGraph(model))),
   },
   {
     id: "editor.toggleWiki",
@@ -211,7 +213,7 @@ export const COMMANDS: readonly Command[] = [
     icon: "i-lucide-undo-2",
     kbds: ["meta", "Z"],
     when: hasModel,
-    onSelect: onActive((model) => void model.model.undo()),
+    onSelect: actOn(activeModel, (model) => void model.model.undo()),
   },
   {
     id: "editor.redo",
@@ -219,28 +221,38 @@ export const COMMANDS: readonly Command[] = [
     icon: "i-lucide-redo-2",
     kbds: ["meta", "Y"],
     when: hasModel,
-    onSelect: onActive((model) => void model.model.redo()),
+    onSelect: actOn(activeModel, (model) => void model.model.redo()),
   },
   {
     id: "file.new",
     label: "New file",
     icon: "i-lucide-file-plus",
     when: canChange,
-    onSelect: onFile((place) => run(() => createPath(place, false))),
+    onSelect: actOn(activeFile, (place) => run(() => createPath(place, false))),
   },
   {
     id: "file.newFolder",
     label: "New folder",
     icon: "i-lucide-folder-plus",
     when: canChange,
-    onSelect: onFile((place) => run(() => createPath(place, true))),
+    onSelect: actOn(activeFile, (place) => run(() => createPath(place, true))),
   },
   {
     id: "file.rename",
     label: "Rename",
     icon: "i-lucide-pencil",
     when: canChange,
-    onSelect: onFile((place) => run(() => renameFile(place))),
+    onSelect: actOn(activeFile, (place) =>
+      run(async () => {
+        const target = await Dialogs.SaveFile({
+          Title: "Rename",
+          Directory: place.root,
+          Filename: place.name,
+          ButtonText: "Rename",
+        });
+        if (target) await useEditorStore().rename(place.path, target);
+      }),
+    ),
   },
   {
     id: "file.delete",
@@ -248,28 +260,28 @@ export const COMMANDS: readonly Command[] = [
     icon: "i-lucide-trash-2",
     color: "error",
     when: canChange,
-    onSelect: onFile((place) => run(() => trashFile(place.path, place.rel))),
+    onSelect: actOn(activeFile, (place) => run(() => trashFile(place.path, place.rel))),
   },
   {
     id: "file.copyPath",
     label: "Copy the path",
     icon: "i-lucide-copy",
     when: hasFile,
-    onSelect: onFile((place) => run(() => copyText(place.path, "Path", place.path))),
+    onSelect: actOn(activeFile, (place) => run(() => copyText(place.path, "Path", place.path))),
   },
   {
     id: "file.reveal",
     label: "Show in the file manager",
     icon: "i-lucide-folder-open",
     when: hasFile,
-    onSelect: onFile((place) => run(() => appApi.ShowFolder(place.path))),
+    onSelect: actOn(activeFile, (place) => run(() => appApi.ShowFolder(place.path))),
   },
   {
     id: "file.copyToMod",
     label: "Copy into a mod…",
     icon: "i-lucide-copy-plus",
     when: () => canCopyToMod(useEditorStore().activeFile()),
-    onSelect: onFile(copyToMod),
+    onSelect: actOn(activeFile, copyToMod),
   },
   {
     id: "image.saveDds",
@@ -295,7 +307,8 @@ export const COMMANDS: readonly Command[] = [
     icon: "i-lucide-git-compare",
     kbds: ["meta", "shift", "D"],
     when: canUseGit,
-    onSelect: onFile(
+    onSelect: actOn(
+      activeFile,
       (place) =>
         void useWindowsStore()
           .showIde()
@@ -310,7 +323,7 @@ export const COMMANDS: readonly Command[] = [
     prefix: "Compare:",
     icon: "i-lucide-diff",
     when: hasFile,
-    onSelect: onFile(compareWithFile),
+    onSelect: actOn(activeFile, compareWithFile),
   },
   {
     id: "compare.game",
@@ -318,7 +331,7 @@ export const COMMANDS: readonly Command[] = [
     prefix: "Compare:",
     icon: "i-lucide-diff",
     when: canChange,
-    onSelect: onFile(compareWithGame),
+    onSelect: actOn(activeFile, compareWithGame),
   },
   {
     id: "compare.selected",
@@ -335,7 +348,7 @@ export const COMMANDS: readonly Command[] = [
     icon: "i-lucide-cloud",
     // the mod is the active file's
     when: canChange,
-    onSelect: onFile((place) => {
+    onSelect: actOn(activeFile, (place) => {
       const params = { id: useWorkspaceStore().activeId() };
       void router.push({ name: "release", params, query: { mod: place.origin, compare: "steam" } });
     }),
@@ -396,14 +409,14 @@ export const COMMANDS: readonly Command[] = [
     label: "Stage the file",
     icon: "i-lucide-plus",
     when: canUseGit,
-    onSelect: onFile((place) => run(() => git.Run(useGitStore().findRoot(place), ...STAGE, place.path))),
+    onSelect: actOn(activeFile, (place) => run(() => git.Run(useGitStore().findRoot(place), ...STAGE, place.path))),
   },
   {
     id: "git.unstage",
     label: "Unstage the file",
     icon: "i-lucide-minus",
     when: canUseGit,
-    onSelect: onFile((place) => run(() => git.Run(useGitStore().findRoot(place), ...UNSTAGE, place.path))),
+    onSelect: actOn(activeFile, (place) => run(() => git.Run(useGitStore().findRoot(place), ...UNSTAGE, place.path))),
   },
   {
     id: "git.commit",
@@ -418,7 +431,14 @@ export const COMMANDS: readonly Command[] = [
     icon: "i-lucide-undo",
     color: "error",
     when: canUseGit,
-    onSelect: onFile((place) => run(() => discardFile(place))),
+    onSelect: actOn(activeFile, (place) =>
+      run(async () => {
+        const body = `The changes to ${place.rel} are lost.`;
+        if (await confirm.open({ title: "Discard the changes?", body, confirm: "Discard", destructive: true })) {
+          await git.Discard(useGitStore().findRoot(place), [place.path]);
+        }
+      }),
+    ),
   },
   {
     id: "draw.newCoat",
@@ -628,31 +648,15 @@ export async function trashFile(path: string, label: string, note = ""): Promise
 
 /** activeModel returns the model of the active tab's file, or null when the tab shows none. */
 function activeModel(): Model | null {
-  const tab = useEditorStore().activeTab();
+  const tab = activeTab();
   return tab ? findModel(tab.key) : null;
 }
 
-/** onTab makes a handler that acts on the active tab, if there is one. */
-function onTab(act: (tab: Tab) => void): () => void {
+/** actOn makes a handler that calls the given action on what the given lookup finds, if it finds anything. */
+function actOn<T>(find: () => T | null | undefined, act: (value: T) => void): () => void {
   return () => {
-    const tab = useEditorStore().activeTab();
-    if (tab) act(tab);
-  };
-}
-
-/** onActive makes a handler that acts on the active model, if there is one. */
-function onActive(act: (model: Model) => void): () => void {
-  return () => {
-    const model = activeModel();
-    if (model) act(model);
-  };
-}
-
-/** onFile makes a handler that acts on the place of the active tab's file, if there is one. */
-function onFile(act: (place: Place) => void): () => void {
-  return () => {
-    const place = useEditorStore().activeFile();
-    if (place) act(place);
+    const value = find();
+    if (value) act(value);
   };
 }
 
@@ -754,23 +758,4 @@ async function createPath(place: Place, folder: boolean): Promise<void> {
   const title = folder ? "New folder" : "New file";
   const path = await Dialogs.SaveFile({ Title: title, Directory: place.root, ButtonText: "Create" });
   if (path) await workspaceApi.Create(path, folder);
-}
-
-/** renameFile asks where to move the active file to, and moves it. Cancelling does nothing. */
-async function renameFile(place: Place): Promise<void> {
-  const target = await Dialogs.SaveFile({
-    Title: "Rename",
-    Directory: place.root,
-    Filename: place.name,
-    ButtonText: "Rename",
-  });
-  if (target) await useEditorStore().rename(place.path, target);
-}
-
-/** discardFile asks whether to throw away the active file's changes, and does. */
-async function discardFile(place: Place): Promise<void> {
-  const body = `The changes to ${place.rel} are lost.`;
-  if (await confirm.open({ title: "Discard the changes?", body, confirm: "Discard", destructive: true })) {
-    await git.Discard(useGitStore().findRoot(place), [place.path]);
-  }
 }

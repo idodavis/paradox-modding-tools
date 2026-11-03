@@ -1,3 +1,6 @@
+// refresh.go fetches the wiki's listing of modding pages and patch versions, then every page the listing names that the
+// cache lacks or holds stale.
+
 package wiki
 
 import (

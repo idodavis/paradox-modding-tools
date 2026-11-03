@@ -183,7 +183,10 @@ function makeTheme(pageTheme: string, dark: boolean): editor.IStandaloneThemeDat
   const probe = document.body.appendChild(document.createElement("div"));
   probe.dataset.theme = pageTheme;
   const style = getComputedStyle(probe);
-  const token = (key: string): string => toHex(style.getPropertyValue(`--${key}`).trim());
+  const token = (key: string): string => {
+    const color = style.getPropertyValue(`--${key}`).trim();
+    return !color || color.startsWith("#") ? color : new Color(color).to("srgb").toString({ format: "hex" });
+  };
   const rules = Object.entries(SYNTAX).map(([type, syntax]) => ({
     token: type,
     foreground: token(`syn-${syntax}`),
@@ -197,14 +200,6 @@ function makeTheme(pageTheme: string, dark: boolean): editor.IStandaloneThemeDat
   };
   probe.remove();
   return theme;
-}
-
-/**
- * toHex converts a CSS color to #rrggbb, whatever form the token is written in. It is "" for a token that is not set.
- */
-function toHex(color: string): string {
-  if (!color || color.startsWith("#")) return color;
-  return new Color(color).to("srgb").toString({ format: "hex" });
 }
 
 /** buildColors builds the editor's colors in a theme, from the page's tokens. */

@@ -9,7 +9,7 @@ It lists the files from the mods' index (`index.Index`), reads each one as the e
 
 | file | holds |
 |---|---|
-| `search.go` | the package comment; `EventHits`, `maxHits`; `Service` with `ServiceShutdown`; `Query`, `Hit`, `Hits`; `SearchText`, `CollectText`, `StopSearch`, `ReplaceText`, `SearchFiles`; the run, the quick test before a file is read line by line, the globs and the matches |
+| `search.go` | the package comment; `EventHits`, `maxHits`; `Service` with `ServiceShutdown`; `Query`, `Hits`; `SearchText`, `CollectText`, `StopSearch`, `ReplaceText`, `SearchFiles`; the run, the quick test before a file is read line by line, the globs and the matches |
 
 ## Text search
 
@@ -17,7 +17,8 @@ A `Query` is one text search: the text, as a plain text or a regular expression,
 the include and exclude globs, and the origins searched, the mods' when it names none. `SearchText` searches the text
 files the query names in parallel on `files.Workers` goroutines, and sends each file's hits as a `search:hits` event
 as it finds them. A file is first tested whole for a plain query's text before it is read line by line. A match never
-spans two lines. A search stops at `maxHits` and says so.
+spans two lines. Each hit is an `lsp.Site`: the file's place, the range of the match and the text of its line. A
+search stops at `maxHits` and says so.
 
 The service runs one search at a time. Starting a new one stops the last, and `StopSearch` stops it. `ServiceShutdown`
 stops a running search.
@@ -46,5 +47,4 @@ each as its `workspace.Place`.
 ## Terms
 
 - **Query**: one text search: what to find and where.
-- **Hit**: one match of a text search, with its line's text.
-- **Hits**: the matches in one file.
+- **Hits**: the matches in one file, each with its range and its line's text.

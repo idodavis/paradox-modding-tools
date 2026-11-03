@@ -38,6 +38,7 @@ const (
 	ValueDate      ValueType = "date"
 	ValueText      ValueType = "text"
 	ValueReference ValueType = "reference" // a name of Expected.Database
+	ValueTarget    ValueType = "target"    // a link to Expected.Scope, or a name of Expected.Database where it is set
 	ValueChoice    ValueType = "choice"    // one of Expected.Choices
 	ValueColor     ValueType = "color"
 	ValueBlock     ValueType = "block"
@@ -48,6 +49,7 @@ const (
 type Expected struct {
 	Type     ValueType `json:"type"`
 	Database string    `json:"database,omitempty"`
+	Scope    string    `json:"scope,omitempty"` // the scope a target's link leads to
 	Choices  []string  `json:"choices,omitempty"`
 	Values   bool      `json:"values,omitempty"` // a number written as a script value too, as a docs' type term says
 	Nested   bool      `json:"nested,omitempty"` // a name of a database nested in Database too, as a language's dialect
@@ -86,15 +88,20 @@ type Field struct {
 
 // A Command is one effect, trigger or link the dumps declare.
 type Command struct {
-	Declared      []string // what declares it: game.DeclaredEffect, DeclaredTrigger, DeclaredLink, in dump order
-	Scopes        []string // the scopes it runs in; empty for any
-	Target        string   // the scope a link leads to; "" for none
-	Arguments     *Field   // the keys it takes, as fields
+	Declared  []string // what declares it: game.DeclaredEffect, DeclaredTrigger, DeclaredLink, in dump order
+	Scopes    []string // the scopes it runs in; empty for any
+	Target    string   // the scope a link leads to; "" for none
+	Arguments *Field   // the keys it takes, as fields
+	// ArgumentKey is the first key of the first block form its usage writes, which the argument in parentheses after
+	// its name stands for, as the court position of aptitude(court_jester_court_position) does. It is "" where its
+	// usage writes none.
+	ArgumentKey   string
 	Blurb         string
 	Usage         string    // the dump's usage lines, which show how it is written; "" if the dump gives none
 	Examples      []Example // the first places the game's own files write it, by path and then line
 	VanillaScopes []string  // the scopes the game's own files run it in, sorted
 	Wild          bool      // a link that is a pattern, so it is never matched by a written name
+	Bare          bool      // a link the dumps let script write as its name alone, not only as name:data
 	Lists         bool      // it iterates a list and has no target, so the scope inside its block is unknown
 	Patterned     bool      // some pattern lists it
 }
@@ -236,9 +243,6 @@ type Schema struct {
 	// mods is the mods' scripted definitions, which a call finds after the game's. No cache keeps them, and a rescan
 	// puts a new table in place.
 	mods atomic.Pointer[modScripted]
-	// families holds, for each list family, the arguments of its commands, whose children buildFamilies made one. It is
-	// kept while the schema is built.
-	families [][]*Field
 }
 
 // The origins of a source's data: the install, the shipped backup, or none.
@@ -254,8 +258,29 @@ func Build(row *game.Game, installPath string, listing []files.File, parse func(
 	listing = slices.DeleteFunc(slices.Clone(listing), func(file files.File) bool {
 		return strings.HasPrefix(file.Rel, game.DLCFolder+"/")
 	})
-	schema := newSchema(row)
-	schema.TopFolders = listTopFolders(row, listing)
+	schema := &Schema{
+		Game:      row.ID,
+		Databases: map[string]*Database{},
+		Callees:   map[string][]string{},
+		Commands:  map[string]*Command{},
+		Prefixes: map[string]string{
+			game.SavedScopes: game.SavedScopes, game.Variables: game.Variables,
+			game.LocalVariables: game.LocalVariables, game.GlobalVariables: game.GlobalVariables,
+		},
+		TypeDatabases:       map[string]string{},
+		InlineDatabases:     map[string]string{},
+		ModifierFields:      map[string]*Field{},
+		ScriptedDefinitions: map[string]ScriptedDefinition{},
+		WidgetTypes:         map[string]bool{},
+		UnlistedCalls:       map[string]bool{},
+		TopFolders:          map[string]bool{},
+	}
+	for _, file := range listing {
+		_, rest := row.SplitStage(strings.ToLower(file.Rel))
+		if folder, _, nested := strings.Cut(rest, "/"); nested {
+			schema.TopFolders[folder] = true
+		}
+	}
 	schema.Setups = listSetups(row, listing, parse)
 	folders := listFolders(row, listing)
 	// Dumps first, then docs, then the game's own files. Last, a blurb the docs give a key is shared with the same key
@@ -272,39 +297,6 @@ func Build(row *game.Game, installPath string, listing []files.File, parse func(
 	}
 	schema.buildDocBlurbs()
 	return schema, nil
-}
-
-// newSchema returns an empty schema of the given game. Only the prefixes that script saves names under are filled.
-func newSchema(row *game.Game) *Schema {
-	return &Schema{
-		Game:      row.ID,
-		Databases: map[string]*Database{},
-		Callees:   map[string][]string{},
-		Commands:  map[string]*Command{},
-		Prefixes: map[string]string{
-			game.SavedScopes: game.SavedScopes, game.Variables: game.Variables,
-			game.LocalVariables: game.LocalVariables, game.GlobalVariables: game.GlobalVariables,
-		},
-		TypeDatabases:       map[string]string{},
-		InlineDatabases:     map[string]string{},
-		ModifierFields:      map[string]*Field{},
-		ScriptedDefinitions: map[string]ScriptedDefinition{},
-		WidgetTypes:         map[string]bool{},
-		UnlistedCalls:       map[string]bool{},
-	}
-}
-
-// listTopFolders returns the first folder of each file in a listing, in lower case, less the stage folder that opens
-// the path in a game with stages. A file at the top of its root or of its stage lies in none.
-func listTopFolders(row *game.Game, listing []files.File) map[string]bool {
-	folders := map[string]bool{}
-	for _, file := range listing {
-		_, rest := row.SplitStage(strings.ToLower(file.Rel))
-		if folder, _, nested := strings.Cut(rest, "/"); nested {
-			folders[folder] = true
-		}
-	}
-	return folders
 }
 
 // listSetups returns the folders that the game's bookmarks name as the folders of their start setups, sorted and each
@@ -508,6 +500,42 @@ func (schema *Schema) FindCommand(key string) (*Command, bool) {
 	return command, ok
 }
 
+// findKeyCall returns the call that a key writes as a command's name with one argument in parentheses, as
+// "squared_distance(root)" does, and the command the name is. The spans are in the file's offsets, counted from
+// the offset where the key starts in it. It returns false for any other key, and for a name that is no command.
+func (schema *Schema) findKeyCall(key string, start int) (jomini.Step, *Command, bool) {
+	if !strings.HasSuffix(key, ")") {
+		return jomini.Step{}, nil, false
+	}
+	call, ok := jomini.ParseCall(key, start)
+	if !ok || len(call.Steps) != 1 || len(call.Steps[0].Arguments) != 1 || call.Span.End != start+len(key) {
+		return jomini.Step{}, nil, false
+	}
+	command, ok := schema.FindCommand(call.Steps[0].Text)
+	return call.Steps[0], command, ok
+}
+
+// findStatementCall returns the call that a statement's key writes as a command's name with one argument in
+// parentheses, and the command the name is, as findKeyCall does. A key compared with a block, as
+// "list_size(x)" < { value = … } is, writes none: the game reads that block as a value it works out.
+func (schema *Schema) findStatementCall(tree *jomini.Tree, statement int32) (jomini.Step, *Command, bool) {
+	current := tree.Statements[statement]
+	if operator := tree.Text(current.Op); current.IsBlock() && operator != "=" && operator != "?=" {
+		return jomini.Step{}, nil, false
+	}
+	span := tree.UnquotedSpan(current.Key)
+	return schema.findKeyCall(tree.Text(span), span.Start)
+}
+
+// findCallee returns the command a statement's key calls: the command of a key that writes a call, as
+// findStatementCall finds one, else the key itself.
+func (schema *Schema) findCallee(tree *jomini.Tree, statement int32) string {
+	if step, _, ok := schema.findStatementCall(tree, statement); ok {
+		return step.Text
+	}
+	return tree.Unquoted(tree.Statements[statement].Key)
+}
+
 // findStar returns where the text that stands in the place of the pattern's star starts and ends in a key, which
 // is in lower case. It returns false if the key does not fit the pattern or leaves nothing for the star, and where
 // the text there holds a dot, as a chain of links does, since no definition's name holds one.
@@ -576,6 +604,13 @@ func (schema *Schema) IsLink(key string) bool {
 		return reserved || command != nil && command.Wild
 	}
 	return command != nil && !command.Wild && slices.Contains(command.Declared, game.DeclaredLink)
+}
+
+// isKeyLink reports whether a key starts with a scope link, as IsLink does. A link that requires data, as EU5's
+// modifier:<key> does, is none where a key writes it alone.
+func (schema *Schema) isKeyLink(key string) bool {
+	head, prefixed := splitLinkHead(key)
+	return schema.IsLink(key) && (prefixed || schema.Commands[head].Bare)
 }
 
 // splitLinkHead returns the first link of a chain, in lower case. For a link written with a prefix, as scope:target
@@ -799,18 +834,18 @@ func DescribeStep(step jomini.Step, reaches bool) string {
 		}
 	}
 	if _, named := game.GUI.CallTargets[step.Text]; named && len(given) > 0 {
-		return ToPhrase(dropGetter(given[len(given)-1]))
+		return ToPhrase(DropGetter(given[len(given)-1]))
 	}
 	name := step.Text
 	if reaches {
-		name = dropGetter(name)
+		name = DropGetter(name)
 	}
 	return strings.Join(append([]string{ToPhrase(name)}, given...), " ")
 }
 
-// dropGetter returns a function's name without the getter's word it starts with, such as FirstName for GetFirstName.
+// DropGetter returns a function's name without the getter's word it starts with, such as FirstName for GetFirstName.
 // A name that is the word alone, or goes on in lower case, is returned as it is.
-func dropGetter(name string) string {
+func DropGetter(name string) string {
 	for _, getter := range game.GUI.Getters {
 		if rest, ok := strings.CutPrefix(name, getter); ok && rest != "" && unicode.IsUpper([]rune(rest)[0]) {
 			return rest
@@ -819,7 +854,9 @@ func dropGetter(name string) string {
 	return name
 }
 
-// MatchValue reports whether a written value fits what a field takes. A scalar never fits a color or a block.
+// MatchValue reports whether a written value fits what a field takes. A scalar never fits a color or a block. A
+// choice fits in any case where its database matches names without regard to case. A target fits a link, or a name
+// where it names a database.
 func (schema *Schema) MatchValue(expected Expected, text string) bool {
 	unquoted := strings.Trim(text, `"`)
 	switch expected.Type {
@@ -831,9 +868,15 @@ func (schema *Schema) MatchValue(expected Expected, text string) bool {
 		_, ok := jomini.ParseDate(text)
 		return ok
 	case ValueChoice:
-		return schema.matchChoice(expected, unquoted)
+		database := schema.Databases[expected.Database]
+		folds := database != nil && database.IsCaseless()
+		return slices.ContainsFunc(expected.Choices, func(choice string) bool {
+			return choice == unquoted || folds && strings.EqualFold(choice, unquoted)
+		})
 	case ValueReference:
 		return jomini.IsIdentifier(unquoted)
+	case ValueTarget:
+		return schema.IsLink(unquoted) || expected.Database != "" && jomini.IsIdentifier(unquoted)
 	case ValueColor, ValueBlock:
 		return false
 	case ValueText:
@@ -843,16 +886,6 @@ func (schema *Schema) MatchValue(expected Expected, text string) bool {
 		return ok
 	}
 	return true
-}
-
-// matchChoice reports whether a text is one of the choices a field allows, without regard to case where the
-// choices' database matches names that way.
-func (schema *Schema) matchChoice(expected Expected, text string) bool {
-	database := schema.Databases[expected.Database]
-	folds := database != nil && database.IsCaseless()
-	return slices.ContainsFunc(expected.Choices, func(choice string) bool {
-		return choice == text || folds && strings.EqualFold(choice, text)
-	})
 }
 
 // IsCaseless reports whether the database's names match without regard to case.

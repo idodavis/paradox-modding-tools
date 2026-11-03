@@ -9,9 +9,10 @@ data call. It never imports `game`.
 
 | file | holds |
 |---|---|
-| `tree.go` | `Span`, `Position`, `Error`, `Lines` with `NewLines`, `CountLines`, `ToPosition` and `LineSpan`; `Statement` with `IsBlock`, `IsListed` and `ResolveValueSpan`; `Tree` with `Text`, `Unquoted`, `UnquotedSpan`, `Children`, `FindStatement`, `FindPrevious`, `LookupStatement`, `FindChild` and `FindChildValue` |
-| `parse.go` | the lexer and the parser: `Parse`, `CountBrackets` |
-| `shapes.go` | the predicates on a written word (`IsIdentifier`, `IsNumber`, `IsEventID`, `IsParameter`, `IsConstant`); `Date` with `IsValid`, and `ParseDate`; `SplitPrefixed`, `SplitChain`, `ColorParts`; the constants and expressions a file writes (`Tree.ResolveNumber`, `ListConstants`) |
+| `tree.go` | `Span` with `IsEmpty` and `Contains`, `Position`, `Error`, `Lines` with `NewLines`, `CountLines`, `ToPosition` and `LineSpan`; `Statement` with `IsBlock`, `IsListed` and `ResolveValueSpan`; `Tree` with `Text`, `Unquoted`, `UnquotedSpan`, `ParseBracketed`, `Children`, `FindStatement`, `FindPrevious`, `LookupStatement`, `FindChild` and `FindChildValue` |
+| `parse.go` | the lexer and the parser: `Parse`, `NewTree`, `CountBrackets` |
+| `shapes.go` | `NumberKey`; the predicates on a written word (`IsIdentifier`, `IsNumber`, `IsEventID`, `IsParameter`, `IsConstant`, `IsNumberKey`); `Date` with `IsValid`, and `ParseDate`; `SplitPrefixed`, `SplitChain`, `MatchKeyPath`, `ColorParts`; the constants and expressions a file writes (`Tree.ResolveNumber`, `ListConstants`) |
+| `colors.go` | `Color`, `Colors`, `TagHSV360`, `RGBA` with `ToCSS`, `ColorForm`; `ParseColor`, `ToColor`, `EncodeColor` |
 | `call.go` | the data calls: `Call`, `Step`, `Argument`; `ParseBracketed`, `ParseCall`, `SubstituteCall` |
 | `edit.go` | `Edit`, `ApplyEdits`, `DiffEdits`, `LineEnding`, `Tree.Indentation`, `Tree.IndentLines`, `Tree.BuildInsertion` |
 
@@ -37,9 +38,11 @@ where several children have the key, the last one wins.
 
 ## The parse
 
-`Parse` never fails. A malformed text gives the statements it could parse, and each problem is an `Error` on the tree
-with a code: `unclosed-block`, `unexpected-brace`, `unclosed-string` or `missing-value`. A block that is never closed
-runs to the end of the text. A closing brace at the file's level closes nothing and is reported.
+`NewTree` gives the tree of a text before any script is read from it: the text, its lines and the file's own
+statement, which holds nothing, as a localization file's tree is. `Parse` never fails. A malformed text gives the
+statements it could parse, and each problem is an `Error` on the tree with a code: `unclosed-block`,
+`unexpected-brace`, `unclosed-string` or `missing-value`. A block that is never closed runs to the end of the text.
+A closing brace at the file's level closes nothing and is reported.
 
 The lexer splits the text into scalars, operators, braces and comments. A quoted string is one scalar, a backslash
 escaping the character after it, and so is a `[ … ]` inside a word, which keeps everything to its `]`. A `#` comment
@@ -53,7 +56,18 @@ scripted parameter, `$NAME$`, anywhere in a word. `IsConstant` is a script const
 `SplitPrefixed` splits `scope:x`, and `SplitChain` splits a dotted chain of links, keeping a dot inside brackets or
 quotes. `ColorParts` reads a block of plain numbers, with its tag. `Tree.ResolveNumber` works out the number a value
 stands for: a number, a constant the file declared earlier, or an expression of numbers, constants, the four operators
-and brackets.
+and brackets. `IsNumberKey` asks whether a key is written as a number or a date, the keys `NumberKey` (`<number>`)
+stands for. `MatchKeyPath` asks whether the keys that lead to a statement fit a key path, each segment a glob,
+`<number>` or `**` for any depth.
+
+## Colors
+
+`Colors` lists the ways script writes a color, each a `Color`: an `rgb` block, a block with no tag, `hsv`, `hsv360`
+(`TagHSV360`) and `hex`. A part of rgb, or of a block with no tag, is out of 255, or out of 1 when red, green and blue
+are each at most 1, and a fourth part is the alpha. `ParseColor` turns a tag and its numbers into an `RGBA`, and
+`ToColor` reads a statement's color block that way. `EncodeColor` writes a color back the way an existing block wrote
+its own: in the same scale, with an alpha only where that block had one. A `ColorForm` is how a color is written that
+no block writes yet: a tag and an example's numbers, which give the scale. `RGBA.ToCSS` gives the color as CSS.
 
 ## Data calls
 
@@ -81,6 +95,9 @@ indents with a tab.
 - **Error**: one problem a parse found, with its code and its span.
 - **Edit**: a span and the text that replaces it.
 - **Date**: a date as the game writes one, `year.month.day`.
+- **Color**: one way script writes a color, such as an rgb block or a hex number.
+- **RGBA**: a color as red, green, blue and alpha channels, each from 0 to 1.
+- **ColorForm**: how a color is written that no block writes yet.
 - **Call**: one data call, its steps and its suffix.
 - **Step**: one step of a call, with its arguments and its cast.
 - **Argument**: one argument of a step: a quoted text, a number or a nested call.

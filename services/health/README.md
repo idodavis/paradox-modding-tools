@@ -11,10 +11,10 @@ game's error log says, each as findings that point at their sites.
 
 | file | holds |
 |---|---|
-| `health.go` | the package comment; `EventErrorLogChanged`; `Service` with `ServiceStartup` and `ServiceShutdown`; `FindingSite`, `Finding`, `Change`, `Tally`, `Check`, `Group`, `Report`, `GameLog`, `Overview`, `Compared`, `Snippet`; `BuildReport`, `groupReport` and the findings of unused copies, removed names, descriptors, unmounted folders, localization and the editor's checks; `ListCodes`, `ListOverview`, `CompareStatements`, `ListSnippets`, `ListReaders`, `WriteScaffold`, `ListScaffolds` |
-| `contests.go` | the findings of one name's copies and of the files at one path: contests, undecided contests and overrides; their winner, beaten mods, level, pairs and suggested order; `JoinList`; what a previewed order changes |
-| `ignored.go` | `AddIgnoredPair`, `RemoveIgnoredPair`; the ignored pairs and their findings; the workspace's record and the mods its compatibility checks judge (`listChecked`) |
-| `errorlog.go` | `ListErrorLog`: the rows of the game's error log, folded and told apart; the log's watch |
+| `health.go` | the package comment; `EventErrorLogChanged`; `Service` with `ServiceStartup` and `ServiceShutdown`; `Use`, `Finding`, `Change`, `Tally`, `Check`, `Group`, `Report`, `GameLog`, `Overview`, `Compared`, `Snippet`; `BuildReport`, `groupReport`, a finding's words, and the findings of unused copies, removed names, descriptors, unmounted folders, localization and the editor's checks; `ListCodes`, `ListLevels`, `ListTopics`, `ListOverview`, `CompareStatements`, `ListSnippets`, `ListReaders`, `WriteScaffold`, `ListScaffolds` |
+| `contests.go` | the findings of one name's copies and of the files at one path: contests, undecided contests and overrides; their winner, beaten mods, level, pairs and suggested order; why the winner's copy wins; `JoinList`; what a previewed order changes |
+| `ignored.go` | `AddIgnoredPair`, `RemoveIgnoredPair`; the ignored pairs and their findings; the mods the compatibility checks judge (`listChecked`) |
+| `errorlog.go` | `ListErrorLog`: the rows of the game's error log, folded, told apart and worded; the mods the last run read, from the debug log; the log's watch |
 
 ## Questions, levels and topics
 
@@ -111,12 +111,19 @@ once and shared by the checks, which then run side by side.
 
 ## The report's groups
 
-`BuildReport` hands the findings over grouped, counted and sorted, so no page derives them again (`groupReport`).
+`BuildReport` hands the findings over worded, grouped, counted and sorted, so no page derives them again
+(`groupReport`).
 
+- **The words** (`describeFinding`). A finding takes its code's `Label` and `Topic`, and its `Message` is the code's
+  template filled with its facts as `lsp.Part`s, the code's elsewhere template where it has one and another mod
+  defines the name (`lsp.SplitMessage`). Its `Brief` is the line under its name in a list: what kind of thing the
+  name is, how many names a replaced file leaves out that are still used and how often, the mod that alone defines
+  the name, and why the game keeps its copy. Its `Detail` is its first site's place, such as `a.txt:12`. Its `Why` is
+  the long form of the winner's reason (`index.Reasons`), filled with the facts and the files of the copies; a file,
+  a finding with no winner and a reason with no long form have none.
 - **The fold.** Findings with the same code, the same owner (the first of `Mods`, else `Origin`), the same name and
-  the same message are one. The message is the code's template filled with the finding's facts, the code's elsewhere
-  template where it has one and another mod defines the name. The first finding stands for them: its `Count` adds
-  theirs and its `Repeats` holds their sites. The game log's rows fold the same way by message and place
+  the same message are one. The first finding stands for them: its `Count` adds theirs and its `Repeats` holds their
+  sites. The game log's rows fold the same way by message and place
   (`foldFindings`), and `Count` is then the lines.
 - **The groups.** `Compatibility` holds the findings of the `compatibility` question, folded. `Mods` holds one group
   for each mod of the report's load order, with the mod's `health` findings; its coverage findings are apart, as
@@ -125,25 +132,31 @@ once and shared by the checks, which then run side by side.
   level first (`lsp.Levels`), and within a level the check with the most findings. `Findings` follow the order of
   their checks, and within a check the heaviest first: a finding's weight is its `Count` times how often the files the
   game reads use the names a replaced file leaves out, else times 1.
-- **The tallies.** A `Tally` counts findings by level, every level present, as `Count` says, and names the worst level
-  that has a finding. A group, the report (the compatibility and the mods together) and `Own` (the mods together) each
-  have one. Languages are in none.
+- **The tallies.** A `Tally` counts findings by level, every level present, as `Count` says, words each count as a
+  phrase (`Phrases`, such as "235 critical problems", by `lsp.Plural`), and names the worst level that has a finding.
+  A group, the report (the compatibility and the mods together) and `Own` (the mods together) each have one.
+  Languages are in none.
 
 ## The error log
 
-`ListErrorLog` reads the game's error log, in the game's user data folder where the game's `ErrorLog` row says. A
+`ListErrorLog` reads the game's error log, in the game's user data folder where `game.ErrorLog` says. A
 message that is repeated with the same text at the same file and line is one row: `Count` is the repeats and `time` is
 the last one's. `WrittenAt` is the log file's modification time. A row names its mod in `Origin`, and `why` and `named`
 say how:
 
 - `file`: the row names a line of a file that the game loads from the mod; `named` is the file's path in the mod. The
-  game's `ErrorLog.Locations` are the forms its log names a line in, each with a `path` and a `line` group: `file: P
-  line: N` (CK3), `in file: "P" near line: N` (all three), `P:N` after other words and `line N and column C in P`
-  (EU5). The first form that names a line of a mod's file gives the row's place, on the message's line or one after.
+  game's `ErrorLocations` are the forms its log names a line in, each with a `path` and a `line` group: `file: P
+  line: N` (CK3), a quoted message's `near line: N" in file: "P"`, the reader's `in file: "P" near line: N` and `P:N`
+  after other words (all three), and `line N and column C in P` (EU5). The first form that names a line of a mod's
+  file gives the row's place, on the message's line or one after.
 - `name`: an identifier in the message, not a plain word, is the name of a definition in some database, and all of that
   definition's loaded copies lie in one mod and none in the game; `named` is the name.
 
-Any other row is the game's own and has no origin.
+Any other row is the game's own and has no origin. The game's debug log (`game.MountLog`) names each folder the last
+run read. A row goes to a mod only if that run read it: `Unloaded` lists the workspace's mods it did not read, and
+`Copies` the folder of another copy it read in a mod's place, found by the name the copy's descriptor gives. Without a
+debug log, every mod counts as read. A row's `Message` is the line the game logged, its lines joined by a dot, with
+the name or file that ties it to its mod drawn apart, and its `Why` is the sentence that says what ties it.
 
 While a workspace is open, the service watches the log, from the nearest folder above it that exists while its own
 folder does not, and emits `errorlog:changed` once each burst of writes to it ends. The watch stops when the workspace
@@ -152,18 +165,19 @@ closes, and at shutdown.
 ## Reading a finding
 
 `CompareStatements` returns the texts of two sites' statements, so a kept definition and one it replaces show side by
-side. `ListSnippets` returns each site's lines as a `Snippet`, its text and the line it begins at, an open file's from
-the editor's text: a site of one line with two lines around it, a longer one from its own first line. `ListReaders`
-lists every place in script and localization that reads a localization key. `ListOverview` counts what each mod holds.
+side. `ListSnippets` returns each site's lines as a `Snippet`, its text, the line it begins at and the last line of
+the site's own code, an open file's from the editor's text: a site of one line with two lines around it, a longer one
+from its own first line. `ListReaders` lists every place in script and localization that reads a localization key.
+`ListOverview` counts what each mod holds. `ListCodes`, `ListLevels` and `ListTopics` give the page `lsp`'s tables.
 
 ## The translation scaffold
 
 `WriteScaffold` writes the localization keys a mod lacks in a language: each of its base-language messages whose key
 has no message of the mod in that language, once, with the base text as the placeholder. These are the keys
 `coverage` counts as missing (`listUntranslated`). A key goes at the end of the language's file that matches the
-base-language file it is in (`loc.ToLanguageRel`), in that file's line ending and encoding (`loc.EncodeMessages`); a
-matching file that is missing or empty is written whole by `loc.Encode`. `ListScaffolds` gives those messages by the
-file they go in, which PMT's tools for coding agents preview.
+base-language file it is in (`loc.ToLanguageRel`), in that file's line ending (`loc.EncodeAddition`); a matching file
+that is missing or empty is first made with only its header (`workspace.Service.CreateLocalization`).
+`ListScaffolds` gives those messages by the file they go in, which PMT's tools for coding agents preview.
 
 ## Events
 
@@ -176,8 +190,8 @@ file they go in, which PMT's tools for coding agents preview.
 - **Question**: one of the three things Health answers: compatibility, health and the game log.
 - **Level**: how much the game loses by a finding: critical, error, warning or info.
 - **Topic**: what a check is about: syntax, references, values, localization, definitions or descriptor.
-- **Finding**: one row of the Health page: a problem or a fact, with the places it points at.
-- **FindingSite**: one place a finding points at, with whether the game keeps it and why.
+- **Finding**: one row of the Health page: a problem or a fact, with the places it points at (`lsp.Site`).
+- **Use**: one name a finding is about, with how often the files the game reads use it and where they first do.
 - **Report**: the findings for one load order, grouped and counted, and what that order changes against the
   workspace's own.
 - **Group**: the folded and sorted findings of the workspace's compatibility or of one mod, with their tally and checks.

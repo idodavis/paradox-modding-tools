@@ -1,3 +1,6 @@
+// markup.go splits the text of a localization message into its pieces: plain text, keys, data calls, formats, icons and
+// line breaks. Each piece comes with its span in the file.
+
 package loc
 
 import (
@@ -142,9 +145,9 @@ func parseFormat(text string, start, base int) []Segment {
 		Markup: MarkupFormat, Text: text[start+1 : run], Span: span,
 		TextSpan: jomini.Span{Start: base + start + 1, End: base + run},
 	}
-	inside := Segments(format.Text, base+start+1)
-	inside = slices.DeleteFunc(inside, func(segment Segment) bool { return segment.Markup == MarkupText })
-	return append([]Segment{format}, inside...)
+	nested := Segments(format.Text, base+start+1)
+	nested = slices.DeleteFunc(nested, func(segment Segment) bool { return segment.Markup == MarkupText })
+	return append([]Segment{format}, nested...)
 }
 
 // findFormat returns the offset where the format that begins at the given offset of a text ends: its first white

@@ -5,5 +5,6 @@ export type {
     CoatStrength,
     DetectedInstall,
     Game,
+    Guide,
     WidgetType
 } from "./models.js";

@@ -1,3 +1,6 @@
+// paths.go turns paths into keys and relative paths and back, and tells whether a path is a file or a folder. It also
+// turns a user's text into a file name.
+
 package files
 
 import (

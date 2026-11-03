@@ -1,3 +1,6 @@
+// process_windows.go holds an agent's programs in a job object, so that they all end together. It starts them without
+// a console window.
+
 package agent
 
 import (

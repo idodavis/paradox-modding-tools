@@ -132,7 +132,11 @@ func (stm *Service) findListing(modID, key string) (*workspace.Session, workspac
 	versions := stm.listVersionTags(ws.Game.SteamAppID)
 	listing.Tags = toCategoryTags(versions, listing.Tags)
 	listing.VersionTag = resolveVersionTag(versions, listing.SupportedVersion)
-	listing.Dependencies = resolveDependencies(stm.Workspace.ListMods(), mod.Descriptor.Dependencies)
+	mods := stm.Workspace.ListMods()
+	listing.Dependencies = lo.Map(mod.Descriptor.Dependencies, func(dependency workspace.Dependency, _ int) Dependency {
+		required, _ := workspace.FindMod(mods, dependency)
+		return Dependency{Name: dependency.ID, WorkshopID: required.ResolveWorkshopID()}
+	})
 	listing, err = loadPage(dir, listing)
 	return ws, mod, listing, err
 }
@@ -193,14 +197,6 @@ func toRecord(listing Listing) Listing {
 		Tags:             append([]string{}, listing.Tags...),
 		Source:           listing.Source,
 	}
-}
-
-// resolveDependencies returns a descriptor's dependencies, each with the Workshop id of the workspace mod it names.
-func resolveDependencies(mods []workspace.Mod, dependencies []workspace.Dependency) []Dependency {
-	return lo.Map(dependencies, func(dependency workspace.Dependency, _ int) Dependency {
-		mod, _ := workspace.FindMod(mods, dependency)
-		return Dependency{Name: dependency.ID, WorkshopID: mod.ResolveWorkshopID()}
-	})
 }
 
 // loadPage returns a listing with its page files read from its folder. A missing file reads as no text. It returns an

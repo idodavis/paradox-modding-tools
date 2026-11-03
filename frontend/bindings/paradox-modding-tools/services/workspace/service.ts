@@ -235,8 +235,8 @@ export function RemoveMod(workspaceID: string, modID: string): $CancellablePromi
  * Rename moves a file or a folder to a new path. The watcher sends fs:changed for both paths. It returns an error if
  * the new path exists already or either path is outside the workspace's mods.
  */
-export function Rename($from: string, to: string): $CancellablePromise<void> {
-    return $Call.ByID(3575852159, $from, to);
+export function Rename(source: string, target: string): $CancellablePromise<void> {
+    return $Call.ByID(3575852159, source, target);
 }
 
 /**

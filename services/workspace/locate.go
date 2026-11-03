@@ -1,3 +1,6 @@
+// locate.go says where a file sits in the workspace: the root it is under and its path relative to that root. It also
+// lists a file's copies and the folders the workspace's files are listed from.
+
 package workspace
 
 import (

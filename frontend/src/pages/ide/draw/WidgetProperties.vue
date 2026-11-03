@@ -69,7 +69,12 @@ const pictureChoices = computed<GalleryChoice[]>(() => {
   const listed = (pictures.value ?? []).map(({ label, path: file, value }) => ({ value, label, path: file }));
   const key = widget.value?.pictures?.key ?? "";
   const shown = widget.value?.textures?.[key] ?? "";
-  return listed.length ? listed : [{ value: picture.value, label: toFileLabel(picture.value), path: shown }];
+  const label =
+    picture.value
+      .split(/[\\/]/)
+      .pop()
+      ?.replace(/\.[^.]+$/, "") ?? picture.value;
+  return listed.length ? listed : [{ value: picture.value, label, path: shown }];
 });
 
 const filter = shallowRef("");
@@ -106,16 +111,6 @@ function setChannel(position: number, text: string): void {
   const channels = splitColor(draft.value) ?? ["0", "0", "0", "1"];
   channels[position] = text;
   draft.value = `{ ${channels.join(" ")} }`;
-}
-
-/** toFileLabel converts an image file to its label: its name without its folder or extension. */
-function toFileLabel(file: string): string {
-  return (
-    file
-      .split(/[\\/]/)
-      .pop()
-      ?.replace(/\.[^.]+$/, "") ?? file
-  );
 }
 </script>
 

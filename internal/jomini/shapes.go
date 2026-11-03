@@ -1,3 +1,6 @@
+// shapes.go tells what shape a written key or value has: an identifier, a number, a date, a parameter or a constant.
+// It also splits prefixed names and dotted chains, matches key paths and resolves the numbers a file writes.
+
 package jomini
 
 import (
@@ -168,8 +171,8 @@ func ColorParts(tree *Tree, statement int32) (tag string, parts []float64, ok bo
 		return "", nil, false
 	}
 	for child := range tree.Children(statement) {
-		part, ok := parseColorPart(tree, tree.Statements[child])
-		if !ok {
+		part, ok := parseNumber(tree.Text(tree.Statements[child].Value))
+		if !tree.Statements[child].IsListed() || !ok {
 			return "", nil, false
 		}
 		parts = append(parts, part)
@@ -236,15 +239,6 @@ func isAlphanumeric(text string) bool {
 // isAlphanumericRune reports whether the rune is an ASCII letter, a digit or an underscore.
 func isAlphanumericRune(r rune) bool {
 	return r < utf8.RuneSelf && (unicode.IsLetter(r) || unicode.IsDigit(r) || r == '_')
-}
-
-// parseColorPart parses one bare value of a color block as a number. It returns false for a keyed statement, a block
-// or a value that is not a number.
-func parseColorPart(tree *Tree, statement Statement) (float64, bool) {
-	if !statement.IsListed() {
-		return 0, false
-	}
-	return parseNumber(tree.Text(statement.Value))
 }
 
 // parseNumber parses a number as the game writes one, a `0x` value as its integer. It returns false for any other

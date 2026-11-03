@@ -28,7 +28,8 @@ export function AddAgent(agent: app$0.Agent): $CancellablePromise<app$0.Agent> {
 }
 
 /**
- * DescribeNode returns the Node PMT's agents run on, and the system's own version.
+ * DescribeNode returns the Node PMT's agents run on, and the system's own version. The system's version is "" if its
+ * Node cannot be run.
  */
 export function DescribeNode(): $CancellablePromise<$models.Node> {
     return $Call.ByID(1228482776);

@@ -7,7 +7,6 @@ import { computed, shallowRef, watch } from "vue";
 import { useMutation, useQuery } from "@pinia/colada";
 
 import * as draw from "@services/draw/service";
-import type { Header } from "@internal/texture/models";
 import type { Place } from "@services/workspace/models";
 import { plural } from "../../lib/format";
 import { ddsPicturesQuery, loadQuery, placeQuery } from "../../queries";
@@ -40,7 +39,11 @@ const summary = computed(() => {
 });
 watch(data, preselect, { immediate: true });
 
-const { mutate: save, isLoading } = useMutation({
+const {
+  mutate: save,
+  isLoading,
+  error,
+} = useMutation({
   mutation: () =>
     draw.WriteDDS(
       pictures.value.map((picture) => picture.path),
@@ -64,11 +67,6 @@ function toDDS(name: string): string {
   return name.replace(/\.[^.]+$/, ".dds");
 }
 
-/** toSettings returns a DDS's format and whether it has mipmaps, as the dialog's choices hold them. */
-function toSettings(header: Header): { format: string; mipmaps: boolean } {
-  return { format: header.compression ? "BC3" : "uncompressed", mipmaps: header.mipmaps > 1 };
-}
-
 /**
  * preselect sets the dialog's choices to the settings of the DDS files the pictures replace, when every picture has
  * one and they agree, and says so. Otherwise the choices keep their default, uncompressed without mipmaps.
@@ -77,7 +75,10 @@ function preselect(): void {
   const references = pictures.value.flatMap((picture) => data.value?.references?.[picture.path] ?? []);
   const [reference] = references;
   if (!reference || references.length < pictures.value.length) return;
-  const settings = references.map((one) => toSettings(one.header));
+  const settings = references.map(({ header }) => ({
+    format: header.compression ? "BC3" : "uncompressed",
+    mipmaps: header.mipmaps > 1,
+  }));
   const [first] = settings;
   if (!first || settings.some((one) => one.format !== first.format || one.mipmaps !== first.mipmaps)) return;
   format.value = first.format;
@@ -110,6 +111,7 @@ async function open(path: string): Promise<void> {
           @update:model-value="(checked) => (mipmaps = checked === true)"
         />
         <span v-if="likeness" class="text-11 text-dimmed">{{ likeness }}</span>
+        <UAlert v-if="error" color="error" variant="subtle" :description="error.message" />
       </div>
     </template>
     <template #footer>

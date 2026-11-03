@@ -1,3 +1,6 @@
+// bbcode.go converts between the HTML of the visual editor and the BBCode that Steam stores a listing's description
+// in. Only the tags Steam draws are converted.
+
 package steam
 
 import (
@@ -9,6 +12,8 @@ import (
 
 	"golang.org/x/net/html"
 	"golang.org/x/net/html/atom"
+
+	"paradox-modding-tools/services/wiki"
 )
 
 // steamElements are the BBCode tags Steam draws, with the HTML element each is drawn as.
@@ -62,34 +67,29 @@ func (stm *Service) ToBBCode(markup string) string {
 	return strings.TrimRight(bbcode.String(), "\n")
 }
 
-// writeChildren writes the children of an HTML node as BBCode.
+// writeChildren writes the children of an HTML node as BBCode. An HTML comment writes nothing, and so does an empty
+// paragraph that is alone in its parent, such as an empty table cell's.
 func writeChildren(bbcode *strings.Builder, parent *html.Node) {
 	for node := range parent.ChildNodes() {
-		writeNode(bbcode, node)
-	}
-}
-
-// writeNode writes one HTML node as BBCode. An HTML comment writes nothing, and so does an empty paragraph that is
-// alone in its parent, such as an empty table cell's.
-func writeNode(bbcode *strings.Builder, node *html.Node) {
-	switch {
-	case node.Type == html.TextNode:
-		writeText(bbcode, node.Data)
-	case node.Type != html.ElementNode:
-		// a comment or a doctype writes nothing
-	case node.DataAtom == atom.Br:
-		bbcode.WriteString("\n")
-	case node.DataAtom == atom.P:
-		if node.PrevSibling != nil {
-			writeBreak(bbcode)
-		}
-		// an empty paragraph between others is a blank line
-		if node.FirstChild == nil && (node.PrevSibling != nil || node.NextSibling != nil) {
+		switch {
+		case node.Type == html.TextNode:
+			writeText(bbcode, node.Data)
+		case node.Type != html.ElementNode:
+			// a comment or a doctype writes nothing
+		case node.DataAtom == atom.Br:
 			bbcode.WriteString("\n")
+		case node.DataAtom == atom.P:
+			if node.PrevSibling != nil {
+				writeBreak(bbcode)
+			}
+			// an empty paragraph between others is a blank line
+			if node.FirstChild == nil && (node.PrevSibling != nil || node.NextSibling != nil) {
+				bbcode.WriteString("\n")
+			}
+			writeChildren(bbcode, node)
+		default:
+			writeElement(bbcode, node)
 		}
-		writeChildren(bbcode, node)
-	default:
-		writeElement(bbcode, node)
 	}
 }
 
@@ -135,13 +135,13 @@ func writeElement(bbcode *strings.Builder, node *html.Node) {
 		writeBreak(bbcode)
 	}
 	fmt.Fprintf(bbcode, "[%s", tag)
-	if argument := cmp.Or(lookupAttribute(node, "href"), lookupAttribute(node, "title")); argument != "" && !literal {
+	if argument := cmp.Or(wiki.LookupAttribute(node, "href"), wiki.LookupAttribute(node, "title")); argument != "" && !literal {
 		fmt.Fprintf(bbcode, "=%s", argument)
 	}
 	bbcode.WriteString("]")
 	switch {
 	case node.DataAtom == atom.Img:
-		bbcode.WriteString(lookupAttribute(node, "src"))
+		bbcode.WriteString(wiki.LookupAttribute(node, "src"))
 	case literal:
 		if block {
 			bbcode.WriteString("\n")
@@ -182,16 +182,6 @@ func lookupTag(element string) (tag string, block, literal, ok bool) {
 		}
 	}
 	return "", false, false, false
-}
-
-// lookupAttribute returns the value of one of an HTML element's attributes, or "" if it has none.
-func lookupAttribute(node *html.Node, key string) string {
-	for _, attribute := range node.Attr {
-		if attribute.Key == key {
-			return attribute.Val
-		}
-	}
-	return ""
 }
 
 // ToHTML returns BBCode as the HTML Steam draws it as. Only Steam's tags become elements, and a link only to a web

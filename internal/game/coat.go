@@ -59,18 +59,9 @@ const (
 
 // A CoatFrame is a shape that a game's coat designer previews a coat in.
 type CoatFrame struct {
-	Label    string       // the designer's name for it
-	Mask     string       // the mask file; "" where a define names the frame
-	Define   string       // the define naming the frame whose mask is used (a culture's, drawn as the default)
-	Override CoatOverride // the defines that win over the frame and the default one
-}
-
-// A CoatOverride names the defines that replace a frame, or "" where the frame has none.
-type CoatOverride struct {
-	Frame   string // the frame's name (a dynasty's or house's)
-	Enabled string // whether the realm's mask is forced
-	Offset  string // the offset both give
-	Scale   string // the scale both give
+	Label  string // the designer's name for it
+	Mask   string // the mask file; "" where a define names the frame
+	Define string // the define naming the frame whose mask is used (a culture's, drawn as the default)
 }
 
 // A CoatTemplate is what the coat dialog writes for a new coat.

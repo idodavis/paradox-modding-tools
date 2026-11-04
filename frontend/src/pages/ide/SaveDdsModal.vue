@@ -1,6 +1,6 @@
 <!--
-  Save as DDS: writes a picture, or the pictures directly in a folder, as DDS files beside them. The pictures start
-  with the settings of the DDS files they replace when those agree.
+  Save as DDS: writes a picture, or the pictures directly in a folder, as DDS files beside them. The choices start as
+  the settings of the DDS files being replaced, when those agree.
 -->
 <script setup lang="ts">
 import { computed, shallowRef, watch } from "vue";
@@ -29,7 +29,7 @@ const mipmaps = shallowRef(false);
 const likeness = shallowRef("");
 const { data } = useQuery(() => ddsPicturesQuery(place.path));
 const pictures = computed(() => data.value?.pictures ?? []);
-// a mod's own folder, or a picture at its top, has no path in the mod, so it goes by the mod's name
+// a mod's root folder, or a picture directly in it, has no path inside the mod, so the mod's name labels it
 const folder = computed(() => (place.isDir ? place.rel : place.folder) || workspace.originName(place.origin));
 const summary = computed(() => {
   const [first] = pictures.value;
@@ -69,7 +69,7 @@ function toDDS(name: string): string {
 
 /**
  * preselect sets the dialog's choices to the settings of the DDS files the pictures replace, when every picture has
- * one and they agree, and says so. Otherwise the choices keep their default, uncompressed without mipmaps.
+ * one and they agree, and notes it in likeness. Otherwise the choices keep their defaults: uncompressed, no mipmaps.
  */
 function preselect(): void {
   const references = pictures.value.flatMap((picture) => data.value?.references?.[picture.path] ?? []);
@@ -80,7 +80,7 @@ function preselect(): void {
     mipmaps: header.mipmaps > 1,
   }));
   const [first] = settings;
-  if (!first || settings.some((one) => one.format !== first.format || one.mipmaps !== first.mipmaps)) return;
+  if (!first || settings.some((other) => other.format !== first.format || other.mipmaps !== first.mipmaps)) return;
   format.value = first.format;
   mipmaps.value = first.mipmaps;
   if (references.length > 1) likeness.value = `Set like the ${references.length} DDS files these replace`;
@@ -88,7 +88,7 @@ function preselect(): void {
   else likeness.value = `Set like ${reference.place.name} beside it`;
 }
 
-/** open shows a file in the editor. */
+/** open shows the file at the given path in the editor. A path with no place does nothing. */
 async function open(path: string): Promise<void> {
   const file = await loadQuery(placeQuery(path));
   if (file) editor.show(file);

@@ -1,7 +1,7 @@
 <!--
-  A camera over a picture: drag to pan, Ctrl wheel to zoom, and Fit. A bar under it holds the zoom, a slot, and where
-  asked the backdrop and an export to PNG. Its pane around the picture takes focus, so the page can listen there for
-  clicks and keys off the picture too.
+  A pan and zoom viewport over a picture: drag to pan, Ctrl and the wheel to zoom, and Fit. A bar under it holds the
+  zoom, a toolbar slot and, when asked, the backdrop and an Export PNG button. The pane around the picture takes focus,
+  so the page can listen there for clicks and keys that land off the picture.
 -->
 <script lang="ts">
 /** How far a press must move on the screen, in pixels, to be a drag rather than a click. */
@@ -21,10 +21,10 @@ import { useDrawStore } from "../../../stores/draw";
 
 const MIN_ZOOM = 0.02;
 const MAX_ZOOM = 32;
-// the room left around a fitted box
+// MARGIN is the space around a fitted box.
 const MARGIN = 32;
 const CHECKS = "repeating-conic-gradient(var(--bg-0) 0 25%, var(--bg-4) 0 50%) 0 0 / 16px 16px";
-// the backdrops a coat or an image can sit on, with what each paints; any other is a color
+// BACKDROPS are the backdrops a coat or an image can sit on, with what each paints. Any other value is a color.
 const BACKDROPS = [
   { value: "dark", label: "Dark", paint: "var(--bg-0)" },
   { value: "light", label: "Light", paint: "#e6e4df" },
@@ -70,7 +70,7 @@ const { mutate: exportPng, isLoading: isExporting } = useMutation({
 
 let camera: PanzoomObject | null = null;
 const zoom = shallowRef(1);
-// undefined fits the whole picture, null means the user has moved the camera
+// fitBox is the box kept in view: undefined fits the whole picture, null means the user has moved the camera.
 const fitBox = shallowRef<DOMRect | null | undefined>(undefined);
 let isPanning = false;
 let hasDragged = false;
@@ -80,7 +80,7 @@ useResizeObserver([pane, content], () => {
   if (fitBox.value !== null) fit(fitBox.value);
 });
 
-// a layer keeps the scale it was painted at, so the picture leaves its layer for a frame to be painted sharp
+// A layer keeps the scale it was painted at, so the picture leaves its layer for a frame to be painted sharp.
 const sharpen = useDebounceFn(() => {
   const layer = content.value;
   if (!layer) return;
@@ -89,8 +89,8 @@ const sharpen = useDebounceFn(() => {
 }, 250);
 
 /**
- * Shows a box of the picture whole in the middle of the pane, no larger than it is. With no box it shows all of the
- * picture, and keeps showing it as the picture and the pane change size. A box with no size is not shown.
+ * fit shows a box of the picture whole in the middle of the pane, no larger than it is, or all of the picture with no
+ * box, and keeps showing it as they change size. A box with no size is not shown.
  */
 function fit(box?: DOMRect): void {
   const room = pane.value;
@@ -108,7 +108,7 @@ function fit(box?: DOMRect): void {
   fitBox.value = box;
 }
 
-/** Pans the camera so a box of the picture is in the middle of the pane, when it is not in view. A pan ends the fit. */
+/** reveal pans the camera to put a box in the middle of the pane if it is not wholly in view. A pan ends the fit. */
 function reveal(box: DOMRect): void {
   const room = pane.value?.getBoundingClientRect();
   const origin = content.value?.getBoundingClientRect();
@@ -122,20 +122,20 @@ function reveal(box: DOMRect): void {
   fitBox.value = null;
 }
 
-/** Zooms to a level about the middle, which ends the fit. */
+/** applyZoom zooms to the given level, which ends the fit. */
 function applyZoom(level: number): void {
   camera?.zoom(level, { animate: false });
   fitBox.value = null;
 }
 
-/** Zooms around the pointer with Ctrl and the wheel. The wheel alone pans. */
+/** onWheel zooms around the pointer with Ctrl and the wheel, and pans with the wheel alone. Both end the fit. */
 function onWheel(event: WheelEvent): void {
   if (event.ctrlKey) camera?.zoomWithWheel(event, { step: 0.25 });
   else camera?.pan(-event.deltaX / zoom.value, -event.deltaY / zoom.value, { relative: true, animate: false });
   fitBox.value = null;
 }
 
-/** Keeps the click that ends a drag from the picture and the pane's own listeners, so a pan selects nothing. */
+/** onClick stops the click that ends a drag from reaching the picture's and the pane's listeners. */
 function onClick(event: MouseEvent): void {
   if (hasDragged) event.stopImmediatePropagation();
   hasDragged = false;

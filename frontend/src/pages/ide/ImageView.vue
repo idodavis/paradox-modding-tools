@@ -1,6 +1,6 @@
 <!--
-  An image file on a viewport, fit to the pane until zoomed, on the chosen backdrop, with its header's facts above it.
-  A DDS with smaller mip levels lists them beside it: a click shows one, and Export writes the one shown as PNG. A mod's
+  An image file in a viewport, fit to the pane until zoomed, on the chosen backdrop, with its header facts above. A DDS
+  with mip levels lists them beside the image: a click shows a level, and Export writes the shown level as PNG. A mod's
   PNG or TGA can be saved as a DDS.
 -->
 <script setup lang="ts">
@@ -26,8 +26,8 @@ const { data: header } = useQuery(() => ({ ...headerQuery(place.path), enabled: 
 const facts = computed(() => {
   if (!header.value) return "";
   const { width, height, format, compression, mipmaps, bytes: size } = header.value;
-  const levels = mipmaps > 1 ? `${mipmaps} mip levels` : "";
-  return [`${width} × ${height}`, format.toUpperCase(), compression, levels, bytes(size)].filter(Boolean).join(" · ");
+  const mipText = mipmaps > 1 ? `${mipmaps} mip levels` : "";
+  return [`${width} × ${height}`, format.toUpperCase(), compression, mipText, bytes(size)].filter(Boolean).join(" · ");
 });
 // each mip level with its size: half the one before on each side, never under a pixel
 const levels = computed(() => {
@@ -45,12 +45,12 @@ watch(
 );
 watch(source, () => (failed.value = false));
 
-/** The address of one mip level of the image: the image as it is for the first. */
+/** toSource returns the URL of one mip level of the image. Level 0 is the image itself. */
 function toSource(index: number): string {
   return index ? `${fileUrl(place.path)}&level=${index}` : fileUrl(place.path);
 }
 
-/** Makes a PNG of the level shown, as the files route decodes it, or null if it cannot. */
+/** snapshot returns the shown level as a PNG, decoded by the files route, or null if the fetch fails. */
 async function snapshot(): Promise<Blob | null> {
   const response = await fetch(source.value);
   return response.ok ? response.blob() : null;
@@ -99,25 +99,25 @@ async function snapshot(): Promise<Blob | null> {
       </div>
       <div class="flex min-h-0 flex-1 flex-col overflow-auto">
         <button
-          v-for="one in levels"
-          :key="one.index"
+          v-for="mip in levels"
+          :key="mip.index"
           type="button"
           class="flex h-10 shrink-0 items-center gap-2.5 px-3 text-12 text-toned hover:bg-elevated"
-          :class="one.index === level && 'bg-(--accent-soft) text-highlighted'"
-          @click="level = one.index"
+          :class="mip.index === level && 'bg-(--accent-soft) text-highlighted'"
+          @click="level = mip.index"
         >
           <span
             class="flex size-7 shrink-0 items-center justify-center overflow-hidden rounded bg-(--bg-0) ring-1 ring-default"
           >
             <img
-              :src="toSource(one.index)"
+              :src="toSource(mip.index)"
               alt=""
               loading="lazy"
               class="max-h-full max-w-full [image-rendering:pixelated]"
             />
           </span>
-          Level {{ one.index }}
-          <span class="ms-auto font-mono text-11 text-dimmed">{{ one.width }} × {{ one.height }}</span>
+          Level {{ mip.index }}
+          <span class="ms-auto font-mono text-11 text-dimmed">{{ mip.width }} × {{ mip.height }}</span>
         </button>
       </div>
     </aside>

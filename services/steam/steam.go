@@ -48,7 +48,7 @@ type Service struct {
 	flight     singleflight.Group    // runs one ask of Steam per item, and one fetch of tags per game, at a time
 	mu         sync.Mutex            // guards the maps below
 	answers    map[string]Comparison // Steam's side of each item, by Workshop id
-	hashes     map[string]string     // the hash of each hashed file, by its path, size and time
+	hashes     map[string]string     // the SHA-256 of each file, by its path, size and time
 	lines      map[string]Difference // a file's added and removed lines, by the hashes of its two copies
 	tagFetches map[int]bool          // the app ids of the games whose tags were fetched in this run
 }
@@ -63,8 +63,8 @@ func ServePublish(args []string) (exitCode int, served bool) {
 	return 0, false
 }
 
-// findMod returns the open workspace and one of its mods, with the session's copy of its descriptor. It returns an
-// error if no workspace is open or it does not have the mod.
+// findMod returns the open workspace and one of its mods. It returns an error if no workspace is open or it has no
+// such mod.
 func (stm *Service) findMod(modID string) (*workspace.Session, workspace.Mod, error) {
 	ws, err := stm.Workspace.Session()
 	if err != nil {
@@ -180,9 +180,8 @@ func (stm *Service) writeVideos(dir string, urls []string) error {
 	return stm.writeFile(files.Join(dir, videosFile), strings.Join(urls, "\n")+"\n")
 }
 
-// FetchPreviews copies the gallery of a listing's Workshop item into the listing, adding what it lacks. Steam is
-// asked about the item again, which also brings the comparison up to date. It returns an error if the listing has no
-// item, Steam cannot be asked or a download fails.
+// FetchPreviews copies the gallery of a listing's Workshop item into the listing, adding what it lacks. It asks Steam
+// about the item again. It returns an error if the listing has no item, Steam cannot be asked or a download fails.
 func (stm *Service) FetchPreviews(modID, key string) error {
 	ws, _, listing, err := stm.findListing(modID, key)
 	if err != nil {
@@ -199,16 +198,15 @@ func (stm *Service) FetchPreviews(modID, key string) error {
 	return stm.changeListing(modID, key, func(dir string) error { return stm.addPreviews(dir, answer.Steam.Previews) })
 }
 
-// addPreviews adds to a listing's gallery the previews from Steam that it lacks. It returns an error if a download
-// fails.
-func (stm *Service) addPreviews(dir string, fetched []Preview) error {
-	have, err := listPreviews(dir)
+// addPreviews adds each of the given previews that a listing's gallery lacks. It returns an error if a download fails.
+func (stm *Service) addPreviews(dir string, steamPreviews []Preview) error {
+	current, err := listPreviews(dir)
 	if err != nil {
 		return err
 	}
-	held := lo.SliceToMap(have, func(preview Preview) (string, bool) { return toLabel(preview), true })
-	for _, preview := range fetched {
-		if held[toLabel(preview)] {
+	labels := lo.SliceToMap(current, func(preview Preview) (string, bool) { return toLabel(preview), true })
+	for _, preview := range steamPreviews {
+		if labels[toLabel(preview)] {
 			continue
 		}
 		if preview.Type == previewVideo {
@@ -333,8 +331,8 @@ func (stm *Service) buildParams(ws *workspace.Session) (Params, error) {
 	}, nil
 }
 
-// copyFiles copies files into a fresh folder in PMT's cache, each at its path from its own folder, and returns it. It
-// deletes the folder if a copy fails.
+// copyFiles copies the files into a new folder in PMT's cache, each under its Rel path, and returns the folder. If a
+// copy fails, it deletes the folder and returns the error.
 func copyFiles(cacheDir string, list []files.File) (string, error) {
 	dir, err := os.MkdirTemp(cacheDir, "copy-")
 	if err != nil {
@@ -365,11 +363,11 @@ func removeCacheDir(cacheDir, dir string) error {
 	return os.RemoveAll(dir)
 }
 
-// moveCacheDir replaces a folder in PMT's cache with a filled one, moved into its place. If the move fails, the filled
-// folder is deleted.
-func moveCacheDir(cacheDir, filled, kept string) error {
-	if err := errors.Join(removeCacheDir(cacheDir, kept), os.Rename(filled, kept)); err != nil {
-		return errors.Join(err, removeCacheDir(cacheDir, filled))
+// moveCacheDir moves the source folder to the target's place in PMT's cache, replacing the target. If that fails, it
+// deletes the source.
+func moveCacheDir(cacheDir, source, target string) error {
+	if err := errors.Join(removeCacheDir(cacheDir, target), os.Rename(source, target)); err != nil {
+		return errors.Join(err, removeCacheDir(cacheDir, source))
 	}
 	return nil
 }

@@ -206,8 +206,8 @@ type Schema struct {
 	Version   string // the install's version; Build leaves it "", as only the install's record may know it
 	Dumps     SourceState
 	Databases map[string]*Database
-	// Setups holds the folders its bookmarks name for its start setups, without their stage. A game with a single start
-	// has none.
+	// Setups holds the folders that the game's bookmarks name for their start setups, without the stage folder. A game
+	// with a single start has none.
 	Setups              []string
 	Callees             map[string][]string // by caller: the databases a call through it resolves in
 	Commands            map[string]*Command
@@ -222,14 +222,14 @@ type Schema struct {
 	ModifierFields      map[string]*Field // by modifier type the game defines: what its name takes in a modifiers block
 	ScriptedDefinitions map[string]ScriptedDefinition
 	WidgetTypes         map[string]bool
-	// UnlistedCalls are the steps of data calls that no dump declares for the type before them and the game's own
-	// localization and GUI text write all the same, keyed Type.step.
+	// UnlistedCalls holds the data call steps that no dump declares for the type before them, though the game's own
+	// localization and GUI text write them. A key is Type.step.
 	UnlistedCalls map[string]bool
-	// CommandPatterns are the patterns the dumps name commands by, one for each database that makes one, sorted by key
-	// and database.
+	// CommandPatterns holds the patterns the dumps name commands by, one for each database that makes one, sorted by
+	// key and database.
 	CommandPatterns []CommandPattern
-	// TopFolders holds the first folder of each of the game's files, less the stage folder that opens its path, in
-	// lower case: the folders under which the game reads a mod's files.
+	// TopFolders holds the first folder of each of the game's files in lower case, without the stage folder. These are
+	// the folders under which the game reads a mod's files.
 	TopFolders    map[string]bool
 	Lists         string   // the database of scripted lists, or "" if the game has none
 	Events        string   // the database of events, or "" if the game has none
@@ -385,25 +385,27 @@ func (schema *Schema) buildDatabases(row *game.Game, folders []string) {
 	schema.buildDatabase(row, game.GUI.TextFormats, game.Database{FoldsCase: true})
 	schema.buildDatabase(row, game.GUI.TextIcons, game.Database{FoldsCase: true})
 	housed := map[game.Contents][]string{}
-	callables := map[string]*string{"effects": &schema.Effects, "value": &schema.Values}
 	for label, database := range schema.Databases {
 		housed[database.Row.Contents] = append(housed[database.Row.Contents], label)
-		if best, ok := callables[database.Callable.Shape]; ok && (*best == "" || label < *best) {
-			*best = label
+		switch { // the effects and value callables are the first label in order with that shape
+		case database.Callable.Shape == "effects" && (schema.Effects == "" || label < schema.Effects):
+			schema.Effects = label
+		case database.Callable.Shape == "value" && (schema.Values == "" || label < schema.Values):
+			schema.Values = label
 		}
 		for _, prefix := range database.Row.Prefixes {
 			schema.Prefixes[prefix] = label
 		}
 	}
-	houses := map[game.Contents]*string{
-		game.ContentsEvents: &schema.Events, game.ContentsMessages: &schema.Messages, game.ContentsLists: &schema.Lists,
-		game.ContentsConcepts: &schema.Concepts, game.ContentsModifiers: &schema.ModifierTypes,
-	}
-	for purpose, house := range houses {
-		if len(housed[purpose]) == 1 {
-			*house = housed[purpose][0]
+	findOnly := func(contents game.Contents) string {
+		if len(housed[contents]) == 1 {
+			return housed[contents][0]
 		}
+		return ""
 	}
+	schema.Events, schema.Messages, schema.Lists = findOnly(game.ContentsEvents), findOnly(game.ContentsMessages),
+		findOnly(game.ContentsLists)
+	schema.Concepts, schema.ModifierTypes = findOnly(game.ContentsConcepts), findOnly(game.ContentsModifiers)
 	for _, house := range game.FireContents {
 		schema.FireDatabases = append(schema.FireDatabases, housed[house]...)
 	}
@@ -414,9 +416,8 @@ func (schema *Schema) buildDatabases(row *game.Game, folders []string) {
 	schema.listCallees()
 }
 
-// buildDatabase builds one database from its row. It does nothing if the schema has it already. A database of records
-// named for another's definitions, such as the history of titles, gives no data type its words, since those words
-// name the other's definitions.
+// buildDatabase adds one database built from its row. It does nothing if the schema has it already. A database with a
+// target, such as the history of titles, names no data type, since its definitions are the target's.
 func (schema *Schema) buildDatabase(row *game.Game, label string, rule game.Database) {
 	if schema.Databases[label] != nil {
 		return
@@ -431,23 +432,25 @@ func (schema *Schema) buildDatabase(row *game.Game, label string, rule game.Data
 	if rule.Target != "" {
 		return
 	}
+	// Where two databases have the same words, the one named exactly by them keeps them, and otherwise neither does.
 	phrase := game.DescribeDefinition(label, false)
-	if named, ok := schema.TypeDatabases[phrase]; ok && !isNamedExactly(label, phrase) {
-		label = ""
-		if isNamedExactly(named, phrase) {
-			label = named
+	owner := label
+	if earlier, ok := schema.TypeDatabases[phrase]; ok && !isNamedExactly(label, phrase) {
+		owner = ""
+		if isNamedExactly(earlier, phrase) {
+			owner = earlier
 		}
 	}
-	schema.TypeDatabases[phrase] = label
+	schema.TypeDatabases[phrase] = owner
 }
 
-// isNamedExactly reports whether a database's own name is the given words of a data type, with an underscore for each
-// space: the database institution for the words "institution", where setup/1337.institution has them too.
+// isNamedExactly reports whether a database's name is the given words of a data type, with an underscore for each
+// space. The database institution is named exactly by "institution", and setup/1337.institution is not.
 func isNamedExactly(label, phrase string) bool {
 	return label == strings.ReplaceAll(phrase, " ", "_")
 }
 
-// listCallees lists, for each word a call is made with, the databases whose definitions it can call.
+// listCallees fills Callees: for each word a call is written with, the databases whose definitions it can call.
 func (schema *Schema) listCallees() {
 	for label, callable := range game.Callables {
 		if schema.Databases[label] == nil {
@@ -499,9 +502,9 @@ func (schema *Schema) FindCommand(key string) (*Command, bool) {
 	return command, ok
 }
 
-// findKeyCall returns the call that a key writes as a command's name with one argument in parentheses, as
-// "squared_distance(root)" does, and the command the name is. The spans are in the file's offsets, counted from
-// the offset where the key starts in it. It returns false for any other key, and for a name that is no command.
+// findKeyCall parses a key written as a command's name with one argument in parentheses, such as
+// squared_distance(root). It returns the call's step and the command. The step's spans are offsets in the file, where
+// the key starts at the given offset. It returns false for any other key, and when the name is no command.
 func (schema *Schema) findKeyCall(key string, start int) (jomini.Step, *Command, bool) {
 	if !strings.HasSuffix(key, ")") {
 		return jomini.Step{}, nil, false
@@ -514,9 +517,8 @@ func (schema *Schema) findKeyCall(key string, start int) (jomini.Step, *Command,
 	return call.Steps[0], command, ok
 }
 
-// findStatementCall returns the call that a statement's key writes as a command's name with one argument in
-// parentheses, and the command the name is, as findKeyCall does. A key compared with a block, as
-// "list_size(x)" < { value = … } is, writes none: the game reads that block as a value it works out.
+// findStatementCall does what findKeyCall does for a statement's key. A key compared with a block, such as
+// list_size(x) < { value = … }, writes no call: the game reads that block as a value to work out.
 func (schema *Schema) findStatementCall(tree *jomini.Tree, statement int32) (jomini.Step, *Command, bool) {
 	current := tree.Statements[statement]
 	if operator := tree.Text(current.Op); current.IsBlock() && operator != "=" && operator != "?=" {
@@ -526,8 +528,8 @@ func (schema *Schema) findStatementCall(tree *jomini.Tree, statement int32) (jom
 	return schema.findKeyCall(tree.Text(span), span.Start)
 }
 
-// findCallee returns the command a statement's key calls: the command of a key that writes a call, as
-// findStatementCall finds one, else the key itself.
+// findCallee returns the name a statement's key calls: the command's name where the key writes a call with an argument
+// in parentheses, else the unquoted key.
 func (schema *Schema) findCallee(tree *jomini.Tree, statement int32) string {
 	if step, _, ok := schema.findStatementCall(tree, statement); ok {
 		return step.Text
@@ -535,9 +537,9 @@ func (schema *Schema) findCallee(tree *jomini.Tree, statement int32) string {
 	return tree.Unquoted(tree.Statements[statement].Key)
 }
 
-// findStar returns where the text that stands in the place of the pattern's star starts and ends in a key, which
-// is in lower case. It returns false if the key does not fit the pattern or leaves nothing for the star, and where
-// the text there holds a dot, as a chain of links does, since no definition's name holds one.
+// findStar returns the start and end of the text in a lower-case key that fills the pattern's star. It returns false if
+// the key does not fit the pattern, leaves nothing for the star, or has a dot there. A dot means a chain of links, and
+// no definition's name holds one.
 func (pattern CommandPattern) findStar(key string) (start, end int, fits bool) {
 	prefix, suffix, _ := strings.Cut(pattern.Key, "*")
 	start, end = len(prefix), len(key)-len(suffix)
@@ -545,10 +547,10 @@ func (pattern CommandPattern) findStar(key string) (start, end int, fits bool) {
 		strings.HasSuffix(key, suffix)
 }
 
-// findPatterns returns the command patterns that make a key. A command the dumps declare is made by the patterns
-// that list it. Any other key is made by the patterns it fits that leave the least text in the place of their
-// star, and by the first of them in the table's order where several fit equally; every database of that pattern
-// makes it. It returns none for a key no pattern makes.
+// findPatterns returns the command patterns that make a key, or none if no pattern does. A key the dumps declare as a
+// command is made by the patterns that list it. Any other key is made by the fitting pattern with the shortest text in
+// its star. If several fit equally, the first key in the table's order wins, and every database's pattern with that
+// key makes it.
 func (schema *Schema) findPatterns(key string) []CommandPattern {
 	key = strings.ToLower(key)
 	command := schema.Commands[key]
@@ -560,7 +562,7 @@ func (schema *Schema) findPatterns(key string) []CommandPattern {
 	for _, pattern := range schema.CommandPatterns {
 		start, end, fits := pattern.findStar(key)
 		switch {
-		case !fits:
+		case !fits: // the key does not fit this pattern
 		case command != nil:
 			if _, listed := slices.BinarySearch(pattern.Commands, key); listed {
 				best = append(best, pattern)
@@ -574,8 +576,8 @@ func (schema *Schema) findPatterns(key string) []CommandPattern {
 	return best
 }
 
-// ResolveLink returns the scope that a link leads to when followed from a given scope. It returns false if the
-// link is unknown, wild or leads nowhere.
+// ResolveLink returns the scope that a link leads to from the given scope. It returns false if the link is unknown,
+// wild, leads nowhere or does not run in that scope.
 func (schema *Schema) ResolveLink(link, scope string) (string, bool) {
 	command, ok := schema.Commands[link]
 	if !ok || command.Wild || !slices.Contains(command.Declared, game.DeclaredLink) || command.Target == "" {
@@ -587,8 +589,8 @@ func (schema *Schema) ResolveLink(link, scope string) (string, bool) {
 	return command.Target, true
 }
 
-// isScope reports whether a name is a scope type that script runs in: the dumps declare triggers or effects for it.
-// It returns false for the words the dumps use for no scope, such as none, which they declare like a scope type.
+// isScope reports whether a name is a scope type that script runs in, meaning the dumps declare triggers or effects for
+// it. It returns false for the words the dumps use for no scope, such as none, though they declare them like a scope.
 func (schema *Schema) isScope(scope string) bool {
 	scopeType := schema.Scopes[scope]
 	return (scopeType.Triggers || scopeType.Effects) && !slices.Contains(game.DumpPhrases.NoScope, scope)
@@ -633,9 +635,9 @@ func (schema *Schema) ResolveCallTypes(call jomini.Call, datacontext string) []s
 	return types
 }
 
-// listCallOwners returns the data type that declares each step of a data call, and the function the step calls. It
-// stops at a step no dump declares, which gets "" and no function. A first step that names a data type is owned by
-// that type and leads to it, as a function returning it would, though it calls none.
+// listCallOwners returns the data type that declares each step of a data call, and the function each step calls. It
+// stops at a step no dump declares, which gets "" and an empty function. A first step that names a data type is owned
+// by that type and leads to it, as a function returning it would, though it calls no function.
 func (schema *Schema) listCallOwners(call jomini.Call, datacontext string) ([]string, []DataFunction) {
 	var owners []string
 	var functions []DataFunction
@@ -676,9 +678,9 @@ func ReturnType(function DataFunction) string {
 	return function.Returns
 }
 
-// FindUnlisted returns the first step of a data call that the dumps do not declare for the type before it, and that
-// type: the data context's, or Global's, for the first step. It returns false if the dumps declare every step, or the
-// type before the step is unknown.
+// FindUnlisted finds the first step of a data call that the dumps do not declare. It returns the step's position and
+// the type before it, which for the first step is the data context's type, else Global. It returns false if the dumps
+// declare every step or the type before the step is unknown.
 func (schema *Schema) FindUnlisted(call jomini.Call, datacontext string) (int, string, bool) {
 	owners, functions := schema.listCallOwners(call, datacontext)
 	step := slices.Index(owners, "")
@@ -692,8 +694,8 @@ func (schema *Schema) FindUnlisted(call jomini.Call, datacontext string) (int, s
 	return step, before, before != ""
 }
 
-// ResolveMacro returns a data call with its data binding macros expanded. A macro that expands into itself gives an
-// empty call.
+// ResolveMacro returns a data call with its leading data binding macros expanded. The data context's own functions are
+// never macros. A macro that expands into itself gives an empty call.
 func (schema *Schema) ResolveMacro(call jomini.Call, datacontext string) jomini.Call {
 	expanded := map[string]bool{}
 	for len(call.Steps) > 0 {
@@ -708,13 +710,13 @@ func (schema *Schema) ResolveMacro(call jomini.Call, datacontext string) jomini.
 			return jomini.Call{}
 		}
 		expanded[first.Text] = true
-		given := map[string]jomini.Argument{}
+		bindings := map[string]jomini.Argument{}
 		for i, parameter := range function.Arguments {
 			if i < len(first.Arguments) {
-				given[parameter] = first.Arguments[i]
+				bindings[parameter] = first.Arguments[i]
 			}
 		}
-		next := jomini.SubstituteCall(expansion, given)
+		next := jomini.SubstituteCall(expansion, bindings)
 		next.Steps = append(next.Steps, call.Steps[1:]...)
 		next.Span, next.Suffix = call.Span, call.Suffix
 		call = next
@@ -722,8 +724,8 @@ func (schema *Schema) ResolveMacro(call jomini.Call, datacontext string) jomini.
 	return call
 }
 
-// ResolveDatacontext returns the data context type of a GUI block, from the data call its datacontext key writes and
-// the data context of the block that holds it. It returns "" if the dumps do not resolve the call.
+// ResolveDatacontext returns the data context type of a GUI block. It takes the data call that the block's datacontext
+// key writes, and the data context of the block around it. It returns "" if the dumps do not resolve the call.
 func (schema *Schema) ResolveDatacontext(call jomini.Call, datacontext string) string {
 	types := schema.ResolveCallTypes(schema.ResolveMacro(call, datacontext), datacontext)
 	if len(types) == 0 {
@@ -732,7 +734,8 @@ func (schema *Schema) ResolveDatacontext(call jomini.Call, datacontext string) s
 	return types[len(types)-1]
 }
 
-// ListCallReferences returns the names a data call's quoted arguments refer to, with the database of each.
+// ListCallReferences returns a reference for each quoted argument of a data call, calls inside its arguments included.
+// Its database is the one game.GUI.CallTargets lists for the argument's position, or none, else the step's type's.
 func (schema *Schema) ListCallReferences(call jomini.Call, datacontext string) []Reference {
 	var references []Reference
 	call = schema.ResolveMacro(call, datacontext)
@@ -759,7 +762,7 @@ func (schema *Schema) ListCallReferences(call jomini.Call, datacontext string) [
 			if listed && position > 0 {
 				reference.Name = schema.JoinNested(database, step.Arguments[position-1].Text, argument.Text)
 			}
-			// An argument at a position the row leaves empty is no name.
+			// An argument whose position the row leaves empty names nothing.
 			if argument.Quoted && !argument.Span.IsEmpty() && (!listed || database != "") {
 				references = append(references, reference)
 			}
@@ -788,8 +791,8 @@ func (schema *Schema) SplitNested(database, nested string) string {
 	return nested
 }
 
-// findSeparator returns the separator that the database holding a nested database writes. It returns "" if the
-// database is not nested, or its holder writes none.
+// findSeparator returns the separator that the holder of a nested database writes, such as the | of NAI|X. It returns
+// "" if the database is not nested or its holder writes none.
 func (schema *Schema) findSeparator(database string) string {
 	dot := strings.LastIndex(database, ".")
 	if dot < 0 {
@@ -829,29 +832,28 @@ func ToPhrase(text string) string {
 	return words.String()
 }
 
-// DescribeStep returns one step of a data call in words, with its quoted arguments after them. A getter's leading word
-// is dropped from a step that reaches an object. A step whose function takes a name, such as Custom('GetDaughterSon'),
-// reads as that name in words instead, without its getter's word: "daughter son". A function that takes two names
-// reads as the last.
+// DescribeStep returns one step of a data call in words, followed by its quoted arguments. If reaches is true, the
+// getter word is dropped from the step's name. A step whose function takes a name, such as Custom('GetDaughterSon'),
+// reads as its last quoted argument instead, without the getter word: "daughter son".
 func DescribeStep(step jomini.Step, reaches bool) string {
-	var given []string
+	var quoted []string
 	for _, argument := range step.Arguments {
 		if argument.Quoted && argument.Text != "" {
-			given = append(given, argument.Text)
+			quoted = append(quoted, argument.Text)
 		}
 	}
-	if _, named := game.GUI.CallTargets[step.Text]; named && len(given) > 0 {
-		return ToPhrase(DropGetter(given[len(given)-1]))
+	if _, named := game.GUI.CallTargets[step.Text]; named && len(quoted) > 0 {
+		return ToPhrase(DropGetter(quoted[len(quoted)-1]))
 	}
 	name := step.Text
 	if reaches {
 		name = DropGetter(name)
 	}
-	return strings.Join(append([]string{ToPhrase(name)}, given...), " ")
+	return strings.Join(append([]string{ToPhrase(name)}, quoted...), " ")
 }
 
-// DropGetter returns a function's name without the getter's word it starts with, such as FirstName for GetFirstName.
-// A name that is the word alone, or goes on in lower case, is returned as it is.
+// DropGetter returns a function's name without the getter word it starts with, such as FirstName for GetFirstName. A
+// name that is only the word, or where the word is followed by a lower-case letter, is returned as it is.
 func DropGetter(name string) string {
 	for _, getter := range game.GUI.Getters {
 		if rest, ok := strings.CutPrefix(name, getter); ok && rest != "" && unicode.IsUpper([]rune(rest)[0]) {
@@ -861,9 +863,8 @@ func DropGetter(name string) string {
 	return name
 }
 
-// MatchValue reports whether a written value fits what a field takes. A scalar never fits a color or a block. A
-// choice fits in any case where its database matches names without regard to case. A target fits a link, or a name
-// where it names a database.
+// MatchValue reports whether a written value fits what a field takes. A scalar never fits a color or a block. A choice
+// fits in any case if its database ignores case. A target fits a link, or a name if the field names a database.
 func (schema *Schema) MatchValue(expected Expected, text string) bool {
 	unquoted := strings.Trim(text, `"`)
 	switch expected.Type {
@@ -925,8 +926,8 @@ func (field *Field) take(other Claims) {
 	field.Blurb.take(other.Blurb)
 }
 
-// walkField calls the given function on each field under a field, in key order, and then on the fields under that
-// one. The function also gets the field's key.
+// walkField calls visit on each field below a field, with the field's key. It goes depth first, with each field's
+// children in key order.
 func walkField(field *Field, visit func(key string, child *Field)) {
 	for _, key := range slices.Sorted(maps.Keys(field.Children)) {
 		child := field.Children[key]
@@ -935,8 +936,8 @@ func walkField(field *Field, visit func(key string, child *Field)) {
 	}
 }
 
-// buildChild returns the child of a field at a key, building an empty one when there is none. A child with no source
-// takes the given one.
+// buildChild returns the field's child for a key, adding an empty one if there is none. A child with no source takes
+// the given source.
 func (field *Field) buildChild(key string, source game.Source) *Field {
 	if field.Children == nil {
 		field.Children = map[string]*Field{}
@@ -949,7 +950,7 @@ func (field *Field) buildChild(key string, source game.Source) *Field {
 	return child
 }
 
-// findChild returns the child of a field written at a key, or nil if it has none. A nil field has none.
+// findChild returns the field's child for a key, or nil if there is none. A nil field has none.
 func (field *Field) findChild(key string) *Field {
 	if field == nil {
 		return nil
@@ -957,8 +958,8 @@ func (field *Field) findChild(key string) *Field {
 	return field.Children[key]
 }
 
-// findPatternChild returns the child of a field written at a key, else the one written for a number where the key
-// is one, else the one written for any key. It returns nil if there is none.
+// findPatternChild returns the field's child for a key, else the <number> child if the key is a number, else the <any>
+// child. It returns nil if there is none.
 func (field *Field) findPatternChild(key string) *Field {
 	if child := field.findChild(key); child != nil {
 		return child

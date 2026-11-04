@@ -224,8 +224,8 @@ func (git *Service) DeleteBranch(root, name string, force bool) (bool, error) {
 	return err == nil, err
 }
 
-// locateChanges gives each change the place of its file in the open workspace, from the root folder of the
-// repository, which git writes a change's path from. The changes keep an empty place if no workspace is open.
+// locateChanges sets the Place of each change. Git writes a change's path from the repository's root folder, so the
+// place is found from there. The places stay empty if no workspace is open.
 func (git *Service) locateChanges(root string, changes []Change) {
 	paths := lo.Map(changes, func(change Change, _ int) string { return change.Path })
 	for position, place := range git.locate(root, paths) {
@@ -233,8 +233,8 @@ func (git *Service) locateChanges(root string, changes []Change) {
 	}
 }
 
-// locate returns the place in the open workspace of each given path, which git writes from the root folder of the
-// repository. A path ending in a slash is a folder. The places are empty if no workspace is open.
+// locate returns the place in the open workspace of each given path. Git writes the paths from the repository's root
+// folder. A path ending in a slash is a folder. The places are empty if no workspace is open.
 func (git *Service) locate(root string, paths []string) []workspace.Place {
 	places := make([]workspace.Place, len(paths))
 	ws, err := git.Workspace.Session()

@@ -18,9 +18,8 @@ import (
 	"paradox-modding-tools/services/workspace"
 )
 
-// diagnoseMessages returns the problems of a localization file. A file of the game has its parse errors only. Each
-// message's text is judged for its markup, the keys, icons and formats it names, and its data calls. A message in a
-// replace folder is never a duplicate.
+// diagnoseMessages returns the problems of a localization file, only parse errors for a game file. It judges each
+// message's markup, the names it uses and its data calls, and flags duplicate keys, except in a replace folder.
 func (visitor *diagnoseVisitor) diagnoseMessages(document workspace.Document) []Diagnostic {
 	place, mods := visitor.place, visitor.index
 	tree, file := document.Tree, document.Messages
@@ -44,7 +43,7 @@ func (visitor *diagnoseVisitor) diagnoseMessages(document workspace.Document) []
 			other := mods.File(site)
 			_, replaces := visitor.ws.Game.FindLocReplacement(other.Rel, file.Language)
 			repeats := other.Origin == place.Origin || other.Origin == game.OriginVanilla && visitor.ws.Game.LogsRepeatedKey
-			return site.File != visitor.place.Position && repeats && mods.Language(site) == file.Language &&
+			return site.File != place.Position && repeats && mods.Language(site) == file.Language &&
 				mods.IsLoaded(site.File) && !replaces
 		})
 		if counts[message.Key]+others > 1 {
@@ -86,10 +85,10 @@ func diagnoseFolders(tree *jomini.Tree, place workspace.Place) []Diagnostic {
 	return diagnostics
 }
 
-// diagnoseCalls records the data calls that the given segments of a text write whose step no dump declares for the
-// type before it, read in the given data context. A first step in lower case is a saved scope. A step is known where
-// the judged index defines one of game.GUI.StepDatabases by its name, or the game's own text writes it after the
-// same type.
+// diagnoseCalls records a problem for each data call in the segments of a text that has a step no dump declares for
+// the type before it, read in the given data context. A first step in lower case is a saved scope, so it is not a
+// problem. A step is also known if the judged index defines its name in one of game.GUI.StepDatabases, or if the game's
+// own text writes it after the same type.
 func (visitor *diagnoseVisitor) diagnoseCalls(tree *jomini.Tree, segments []loc.Segment, datacontext string) {
 	language := visitor.ws.Schema
 	for _, call := range loc.ListCalls(segments) {
@@ -99,9 +98,10 @@ func (visitor *diagnoseVisitor) diagnoseCalls(tree *jomini.Tree, segments []loc.
 		}
 		name := call.Steps[step].Text
 		saved := step == 0 && name != "" && unicode.IsLower(rune(name[0]))
-		if saved || language.UnlistedCalls[before+"."+name] || lo.SomeBy(game.GUI.StepDatabases, func(database string) bool {
+		isDefined := func(database string) bool {
 			return len(visitor.index.Resolve(schema.Reference{Database: database, Name: name})) > 0
-		}) {
+		}
+		if saved || language.UnlistedCalls[before+"."+name] || lo.SomeBy(game.GUI.StepDatabases, isDefined) {
 			continue
 		}
 		facts := DescribeReference(schema.Reference{Name: name})

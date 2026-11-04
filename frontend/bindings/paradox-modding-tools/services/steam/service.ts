@@ -42,8 +42,8 @@ export function CompareUpload(modID: string, key: string): $CancellablePromise<$
  * CreateListing makes an older listing of a mod for a game version from a zip. It returns an error if the version is
  * not valid or taken, or the zip holds no descriptor.
  */
-export function CreateListing(modID: string, supportedVersion: string, zip: string): $CancellablePromise<$models.Listing> {
-    return $Call.ByID(4079047830, modID, supportedVersion, zip);
+export function CreateListing(modID: string, supportedVersion: string, zipPath: string): $CancellablePromise<$models.Listing> {
+    return $Call.ByID(4079047830, modID, supportedVersion, zipPath);
 }
 
 /**
@@ -62,9 +62,8 @@ export function FetchItem(modID: string, key: string): $CancellablePromise<$mode
 }
 
 /**
- * FetchPreviews copies the gallery of a listing's Workshop item into the listing, adding what it lacks. Steam is
- * asked about the item again, which also brings the comparison up to date. It returns an error if the listing has no
- * item, Steam cannot be asked or a download fails.
+ * FetchPreviews copies the gallery of a listing's Workshop item into the listing, adding what it lacks. It asks Steam
+ * about the item again. It returns an error if the listing has no item, Steam cannot be asked or a download fails.
  */
 export function FetchPreviews(modID: string, key: string): $CancellablePromise<void> {
     return $Call.ByID(502807331, modID, key);
@@ -74,8 +73,8 @@ export function FetchPreviews(modID: string, key: string): $CancellablePromise<v
  * ImportListing makes an older listing of a mod from a Workshop item, saving its files as a zip. It returns an error
  * if Steam has no such item or its version is taken.
  */
-export function ImportListing(modID: string, item: string, zip: string): $CancellablePromise<$models.Listing> {
-    return $Call.ByID(3769493145, modID, item, zip);
+export function ImportListing(modID: string, item: string, zipPath: string): $CancellablePromise<$models.Listing> {
+    return $Call.ByID(3769493145, modID, item, zipPath);
 }
 
 /**
@@ -111,8 +110,8 @@ export function ListListings(modID: string): $CancellablePromise<$models.Listing
 }
 
 /**
- * ListRules returns the rules that say what every upload leaves out. One rule names the coding agents' instruction
- * files that start with no dot, as the agents' rows name them.
+ * ListRules returns the rules for the files every upload leaves out. The last rule lists the coding agents'
+ * instruction files, except the ones that start with a dot, which the first rule already covers.
  */
 export function ListRules(): $CancellablePromise<$models.Rule[] | null> {
     return $Call.ByID(770400553);
@@ -197,8 +196,8 @@ export function WriteListing(modID: string, key: string, listing: $models.Listin
 }
 
 /**
- * WriteZip writes the files of a mod's next upload as a zip. A zip it fails to write is removed.
+ * WriteZip writes the files of a mod's next upload as a zip. It removes the zip if writing fails.
  */
-export function WriteZip(modID: string, path: string): $CancellablePromise<void> {
-    return $Call.ByID(1036300132, modID, path);
+export function WriteZip(modID: string, target: string): $CancellablePromise<void> {
+    return $Call.ByID(1036300132, modID, target);
 }

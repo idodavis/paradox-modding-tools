@@ -1,7 +1,7 @@
 /**
- * Monaco's language providers over the editor service for the Paradox languages, one registration per feature, each
- * handing the service's answer to Monaco as it is, since Go answers in Monaco's ranges. The files of each definition
- * and reference found are kept, so a peek can show whose files they are.
+ * Monaco's language providers for the Paradox languages, one registration per feature. Each hands the lsp service's
+ * answer to Monaco as it is, since Go answers in Monaco's ranges. It also records the place of every file a peek lists,
+ * so the peek can label its folder and color its origin.
  */
 import * as monaco from "monaco-editor/editor/editor.api";
 import type { languages } from "monaco-editor";
@@ -16,7 +16,7 @@ import { useSettingsStore } from "../../../stores/settings";
 import { useWorkspaceStore } from "../../../stores/workspace";
 import { openModel, findModel } from "./models";
 
-/** The id of the command a quick fix of the lightbulb runs. */
+/** FIX_COMMAND is the id of the command a quick fix runs. */
 const FIX_COMMAND = "pmt.applyFix";
 /** The setting that turns off each kind of inlay hint, by the kind Go gives it. A kind with none is always shown. */
 const HINT_SETTINGS: Record<string, string> = { text: "ide.textHints" };
@@ -34,15 +34,15 @@ export const SHOW_DETAILS: monaco.editor.IActionDescriptor = {
 /** An ImageCompletion is a completion item that names an image file, kept with the file's full path. */
 type ImageCompletion = languages.CompletionItem & { image?: string };
 
-// the place of a file in each folder that definitions or references were found in, by the folder's address
+// the place of one file in each folder a peek lists, by the folder's URI
 const folders = new Map<string, Place>();
-// the rule that colors the dot before each such file's name in a peek, by the file's path, and their sheet
+// the CSS rule that colors the dot before each listed file's name in a peek, by file path, and the sheet holding them
 const dots = new Map<string, string>();
 const dotSheet = new CSSStyleSheet();
 
 /**
- * Monaco's labels of files and folders. A peek names the folder of a definition or reference by its origin, as a list
- * of files does. Any other folder or file is named by its path.
+ * labelService gives Monaco its labels for files and folders. A folder a peek lists is labeled as the workspace store
+ * describes its place. Any other file or folder is labeled by its path.
  */
 export const labelService = {
   getUriLabel: (uri: monaco.Uri): string => {
@@ -54,8 +54,8 @@ export const labelService = {
 };
 
 /**
- * Registers every provider for the given languages, which must be registered already, and the sheet of the dots in a
- * peek.
+ * registerProviders registers every provider for the given languages, which must already be registered, and adds the
+ * peek dots' sheet to the document.
  */
 export function registerProviders(languageIds: string[], legend: languages.SemanticTokensLegend): void {
   const selector = languageIds.map((language) => ({ language, scheme: "file" }));
@@ -66,7 +66,7 @@ export function registerProviders(languageIds: string[], legend: languages.Seman
   registerDecoration(selector, legend);
 }
 
-/** Registers going to a definition and its references, renaming and the outline, and the opener of other files. */
+/** registerNavigation registers definitions, references, rename, the outline and the opener for other files. */
 function registerNavigation(selector: languages.LanguageFilter[]): void {
   monaco.languages.registerDefinitionProvider(selector, {
     provideDefinition: async (model, position) =>
@@ -91,7 +91,7 @@ function registerNavigation(selector: languages.LanguageFilter[]): void {
   monaco.languages.registerDocumentSymbolProvider(selector, {
     provideDocumentSymbols: async (model) => ((await lsp.ListSymbols(model.uri.fsPath)) ?? []).map(toSymbol),
   });
-  // the editor has only the one model, so a definition in another file is shown in the IDE
+  // an editor holds one model, so a definition in another file opens in the IDE
   monaco.editor.registerEditorOpener({
     openCodeEditor: (_source, resource, selection) => {
       void show(resource, selection);
@@ -100,7 +100,7 @@ function registerNavigation(selector: languages.LanguageFilter[]): void {
   });
 }
 
-/** Registers completion, predicted text and signature help. */
+/** registerCompletion registers completion, inline completion and signature help. */
 function registerCompletion(selector: languages.LanguageFilter[]): void {
   const settings = useSettingsStore();
   monaco.languages.registerCompletionItemProvider(selector, {
@@ -164,7 +164,7 @@ function registerCompletion(selector: languages.LanguageFilter[]): void {
   });
 }
 
-/** Registers formatting and quick fixes. */
+/** registerWriting registers formatting and quick fixes. */
 function registerWriting(selector: languages.LanguageFilter[]): void {
   monaco.languages.registerDocumentFormattingEditProvider(selector, {
     provideDocumentFormattingEdits: async (model, options) =>
@@ -175,8 +175,8 @@ function registerWriting(selector: languages.LanguageFilter[]): void {
       const none = { actions: [], dispose: () => undefined };
       if (!context.markers.length) return none;
       const place = await loadQuery(placeQuery(model.uri.fsPath));
-      const open = place && findModel(place.key);
-      const problems = (open?.problems ?? []).filter((problem) =>
+      const fileModel = place && findModel(place.key);
+      const problems = (fileModel?.problems ?? []).filter((problem) =>
         context.markers.some(
           (marker) =>
             marker.code === problem.code &&
@@ -194,11 +194,11 @@ function registerWriting(selector: languages.LanguageFilter[]): void {
       return { actions, dispose: () => undefined };
     },
   });
-  // a fix runs as the menu's does, so that it can write a new file and show where it leaves the caret
+  // the editor store runs a fix, so that it can create a file and place the caret
   monaco.editor.registerCommand(FIX_COMMAND, (_accessor, fix: Fix) => useEditorStore().applyFix(fix));
 }
 
-/** Registers folding, inlay hints, colors and the semantic tokens. */
+/** registerDecoration registers folding, inlay hints, colors and semantic tokens. */
 function registerDecoration(selector: languages.LanguageFilter[], legend: languages.SemanticTokensLegend): void {
   monaco.languages.registerFoldingRangeProvider(selector, {
     provideFoldingRanges: async (model) =>
@@ -253,7 +253,7 @@ function registerDecoration(selector: languages.LanguageFilter[], legend: langua
   });
 }
 
-/** Resolves the completions at a position and the word typed so far, which the completions go on from. */
+/** resolveCompletions returns the completions at a position and the word typed up to it, which they replace. */
 async function resolveCompletions(
   model: monaco.editor.ITextModel,
   position: monaco.Position,
@@ -264,7 +264,8 @@ async function resolveCompletions(
 }
 
 /**
- * Fetches the picture of an image file as a data URL, which Monaco's markdown shows where it refuses a relative one.
+ * fetchPicture returns the picture of an image file as a data URL, which Monaco's markdown shows where it refuses a
+ * relative one.
  * The picture is drawn at most PICTURE_WIDTH wide, a smaller one at its own size, so the URL stays under the 100,000
  * characters Monaco's markdown takes. It is "" if the file cannot be read.
  */
@@ -281,7 +282,7 @@ async function fetchPicture(path: string): Promise<string> {
   return canvas.toDataURL();
 }
 
-/** Shows the file at a resource in the IDE, at the given selection. */
+/** show opens the file at a resource in the IDE, at the given selection or position. */
 async function show(resource: monaco.Uri, selection?: monaco.IRange | monaco.IPosition): Promise<void> {
   const place = await loadQuery(placeQuery(resource.fsPath));
   if (!place) return;
@@ -292,17 +293,17 @@ async function show(resource: monaco.Uri, selection?: monaco.IRange | monaco.IPo
   useEditorStore().show(place, position);
 }
 
-/** Turns Go's sites into Monaco's locations, and keeps each file's place for a peek of them. */
+/** toLocations turns Go's sites into Monaco's locations and records each file's place for the peek. */
 function toLocations(sites: Site[] | null): languages.Location[] {
-  const found = (sites ?? []).map(({ place, range }) => ({ uri: markPlace(place), range }));
+  const locations = (sites ?? []).map(({ place, range }) => ({ uri: markPlace(place), range }));
   dotSheet.replaceSync([...dots.values()].join("\n"));
-  return found;
+  return locations;
 }
 
 /**
- * Keeps the place of a file a peek may list, and returns the file's address. The peek names the file's folder by its
- * place, and the dot before the file's name takes its origin's color. Monaco gives a peek's rows no hook of their own,
- * so the dot's rule finds the row by the full path its label ends with.
+ * markPlace records the place of a file a peek may list and returns the file's URI. The place gives the peek its
+ * folder label and the dot before the file name its origin color. Monaco gives a peek's rows no hook, so the dot's
+ * rule finds the row by the full path its label ends with.
  */
 function markPlace(place: Place): monaco.Uri {
   const uri = monaco.Uri.file(place.path);
@@ -313,9 +314,9 @@ function markPlace(place: Place): monaco.Uri {
   return uri;
 }
 
-/** Turns Go's edits by path into a workspace edit. The files they change are opened first, so Monaco can edit them. */
-async function toWorkspaceEdit(byPath: Record<string, Edit[] | null | undefined>): Promise<languages.WorkspaceEdit> {
-  const entries = Object.entries(byPath);
+/** toWorkspaceEdit turns Go's edits, grouped by path, into a workspace edit. It first opens the files to edit. */
+async function toWorkspaceEdit(pathEdits: Record<string, Edit[] | null | undefined>): Promise<languages.WorkspaceEdit> {
+  const entries = Object.entries(pathEdits);
   const places = await Promise.all(entries.map(([path]) => loadQuery(placeQuery(path))));
   await Promise.all(places.flatMap((place) => (place ? [openModel(place)] : [])));
   return {
@@ -329,7 +330,7 @@ async function toWorkspaceEdit(byPath: Record<string, Edit[] | null | undefined>
   };
 }
 
-/** Turns one of Go's symbols and the ones inside it into the outline's. */
+/** toSymbol turns one of Go's symbols and its children into Monaco's outline symbols. */
 function toSymbol(symbol: Symbol): languages.DocumentSymbol {
   return {
     name: symbol.name,

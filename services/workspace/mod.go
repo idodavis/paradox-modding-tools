@@ -88,8 +88,8 @@ func ReadDescriptor(row *game.Game, dir string) (Descriptor, error) {
 	return descriptor, nil
 }
 
-// ParseDescriptor reads the text of a descriptor: as JSON where the file is a metadata.json, else as script. Its
-// thumbnail is as written. It returns an error if the JSON cannot be read.
+// ParseDescriptor parses a descriptor's text as JSON if the given file name is a .json file, else as script. The
+// thumbnail stays as written. It returns an error if the JSON cannot be parsed.
 func ParseDescriptor(file, text string) (Descriptor, error) {
 	if path.Ext(file) == ".json" {
 		return decodeDescriptorMetadata(text)
@@ -97,9 +97,9 @@ func ParseDescriptor(file, text string) (Descriptor, error) {
 	return parseDescriptorScript(text), nil
 }
 
-// findThumbnail returns the full path of the picture shown for a mod. It is the mod's thumbnail file, else the
-// picture its descriptor names. It returns "" if neither exists.
-func findThumbnail(row *game.Game, dir, named string) string {
+// findThumbnail returns the full path of the picture shown for a mod. It is the mod's thumbnail file, else the given
+// picture, which the mod's descriptor names. It returns "" if neither exists.
+func findThumbnail(row *game.Game, dir, picture string) string {
 	folders := []string{row.ThumbnailDir, ""}
 	if row.ThumbnailDir == "" {
 		folders = []string{"", game.MetadataDir}
@@ -110,11 +110,11 @@ func findThumbnail(row *game.Game, dir, named string) string {
 			candidates = append(candidates, files.Join(dir, path.Join(folder, thumbnailName+extension)))
 		}
 	}
-	found, _ := lo.Find(append(candidates, named), func(file string) bool {
+	thumbnail, _ := lo.Find(append(candidates, picture), func(file string) bool {
 		_, err := os.Stat(file)
 		return file != "" && err == nil
 	})
-	return found
+	return thumbnail
 }
 
 // WriteDescriptor writes a mod's descriptor in its game's format, making the file if it is missing. Fields a
@@ -167,9 +167,8 @@ func FindMod(mods []Mod, dependency Dependency) (Mod, bool) {
 	})
 }
 
-// ListDependencies returns the ids of the workspace's mods that a mod depends on, as its descriptor declares them, and
-// theirs, all the way down, in the order they are found. A dependency the workspace lacks is left out, and so is the
-// mod itself.
+// ListDependencies returns the ids of the workspace's mods that a mod depends on, directly or through other
+// dependencies, in the order they are reached. A dependency the workspace lacks is left out, and so is the mod itself.
 func (ws *Session) ListDependencies(modID string) []string {
 	order := *ws.Order.Load()
 	var dependencies []string
@@ -234,12 +233,12 @@ func (wsp *Service) AddMod(workspaceID, dir string) (Mod, error) {
 //
 //wails:ignore
 func (wsp *Service) ListMods() []Mod {
-	session, err := wsp.Session()
+	ws, err := wsp.Session()
 	if err != nil {
 		return nil
 	}
-	record, _, _, _ := findRecords(wsp.Config.Config(), session.ID)
-	return lo.Map(*session.Order.Load(), func(mod Mod, _ int) Mod {
+	record, _, _, _ := findRecords(wsp.Config.Config(), ws.ID)
+	return lo.Map(*ws.Order.Load(), func(mod Mod, _ int) Mod {
 		if position := slices.IndexFunc(record.Mods, func(other app.Mod) bool { return other.ID == mod.ID }); position >= 0 {
 			mod.Mod = record.Mods[position]
 		}
@@ -404,9 +403,9 @@ func createModFolder(row *game.Game, dir, name, version string) (string, error) 
 	return folder, err
 }
 
-// FindLocalizationFile returns the localization file PMT makes for a mod with the given folder and name, in a
-// language: the name's slug and the language's suffix, in the language's folder. With no language it uses the base
-// language. It returns false for a game with no localization folder.
+// FindLocalizationFile returns the path of a mod's localization file in the given language: the slug of the mod's name
+// with the language's suffix, in the language's folder under the game's localization folder. An empty language means
+// the base language. It returns false for a game with no localization folder.
 func FindLocalizationFile(row *game.Game, folder, name, language string) (string, bool) {
 	language = cmp.Or(language, game.BaseLanguage)
 	rel, ok := findLocalizationFolder(row)
@@ -427,12 +426,12 @@ func (wsp *Service) CreateLocalization(path string) error {
 
 // createLocalization writes a localization file with only its header, in the language its name ends in, with a byte
 // order mark. It returns an error for a name that ends in no language.
-func createLocalization(path string) error {
-	language := loc.FindSuffixLanguage(path)
+func createLocalization(file string) error {
+	language := loc.FindSuffixLanguage(file)
 	if language == "" {
-		return fmt.Errorf("%s does not end in a language, such as _l_%s.yml", filepath.Base(path), game.BaseLanguage)
+		return fmt.Errorf("%s does not end in a language, such as _l_%s.yml", filepath.Base(file), game.BaseLanguage)
 	}
-	return files.WriteText(path, files.Text{Text: loc.Encode(language, nil), Encoding: files.EncodingUTF8BOM})
+	return files.WriteText(file, files.Text{Text: loc.Encode(language, nil), Encoding: files.EncodingUTF8BOM})
 }
 
 // findLocalizationFolder returns the folder a game keeps localization in. It returns false if the game has none.
@@ -456,8 +455,8 @@ func toSupportedVersion(version string) string {
 // game version that is not numbers between dots, such as a build id.
 func MatchVersion(supported, version string) (matches, judged bool) {
 	wanted, actual := strings.Split(supported, "."), strings.Split(version, ".")
-	judged = supported != "" && lo.EveryBy(wanted, func(part string) bool { return part == "*" || jomini.IsNumber(part) }) &&
-		lo.EveryBy(actual, jomini.IsNumber)
+	isWanted := func(part string) bool { return part == "*" || jomini.IsNumber(part) }
+	judged = supported != "" && lo.EveryBy(wanted, isWanted) && lo.EveryBy(actual, jomini.IsNumber)
 	for position, part := range wanted {
 		switch {
 		case part == "*":

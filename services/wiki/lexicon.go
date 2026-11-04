@@ -37,9 +37,8 @@ type LexiconRow struct {
 func (wik *Service) ListClasses() []lsp.Class { return lsp.Classes }
 
 // BuildLexicon builds the lexicon rows of the given class: effect, trigger, link, scope or function. Effects and
-// triggers take in the scripted ones the workspace defines. The rows are sorted by name, letter case aside, so each
-// first letter is one run. A class built already for the current index is answered from memory. It returns an error
-// if no workspace is open or the class is none of those.
+// triggers include the scripted ones the workspace defines. The rows are sorted by name, letter case aside, and kept
+// for the current mods index. It returns an error if no workspace is open or the class is none of those.
 func (wik *Service) BuildLexicon(class string) ([]LexiconRow, error) {
 	ws, err := wik.Workspace.Session()
 	if err != nil {
@@ -61,8 +60,8 @@ func (wik *Service) BuildLexicon(class string) ([]LexiconRow, error) {
 	return rows, err
 }
 
-// buildLexicon builds the lexicon rows of the class with the given id from the given index of the mods, as
-// BuildLexicon describes them. It returns an error if the id is none of the five classes'.
+// buildLexicon builds the rows of the class with the given id from the mods' index, as BuildLexicon describes. It
+// returns an error if the id is not a lexicon class.
 func buildLexicon(ws *workspace.Session, mods *index.Index, id string) ([]LexiconRow, error) {
 	var rows []LexiconRow
 	class, _ := lo.Find(lsp.Classes, func(class lsp.Class) bool { return class.ID == id })
@@ -99,8 +98,8 @@ func buildLexicon(ws *workspace.Session, mods *index.Index, id string) ([]Lexico
 	return rows, nil
 }
 
-// toExamples converts each given place where the game's own files use a name to an example. Each carries its place in
-// the open workspace, as the given index of the mods holds it.
+// toExamples turns the schema's examples into sites. Each site holds the file's place in the open workspace, located
+// through the mods' index, and the example's line counted from one.
 func toExamples(ws *workspace.Session, mods *index.Index, examples []schema.Example) []lsp.Site {
 	return lo.Map(examples, func(example schema.Example, _ int) lsp.Site {
 		return lsp.Site{Place: ws.Locate(mods, example.Path), Line: example.Line + 1}
@@ -122,19 +121,20 @@ func listScripted(ws *workspace.Session, mods *index.Index, class string) []Lexi
 	return rows
 }
 
-// makeScripted returns the lexicon row of a scripted definition: where the copy the game keeps is, the first places
-// that use the name, and how a call to it is written with the parameters its body reads. A definition that reads no
-// parameter has no usage, since it is called as name = yes.
+// makeScripted returns the lexicon row of a scripted definition. Its usage is a call with the parameters that the
+// definition's body reads. A definition that reads no parameter has no usage, since it is called as name = yes. The
+// row also holds where the game's copy is defined and the first places that use the name.
 func makeScripted(ws *workspace.Session, mods *index.Index, class string, reference schema.Reference, kept index.Site) LexiconRow {
 	usage := ""
 	if tree, statement, err := ws.FindStatement(mods, kept); err == nil {
-		parameters := lo.Filter(slices.Sorted(maps.Keys(schema.ListParameters(tree, statement).Children)), func(key string, _ int) bool {
-			return !strings.HasPrefix(key, "<")
-		})
+		var parameters []string
+		for _, key := range slices.Sorted(maps.Keys(schema.ListParameters(tree, statement).Children)) {
+			if !strings.HasPrefix(key, "<") {
+				parameters = append(parameters, key+" = …")
+			}
+		}
 		if len(parameters) > 0 {
-			usage = reference.Name + " = { " + strings.Join(lo.Map(parameters, func(parameter string, _ int) string {
-				return parameter + " = …"
-			}), " ") + " }"
+			usage = reference.Name + " = { " + strings.Join(parameters, " ") + " }"
 		}
 	}
 	uses := mods.ListUses(reference.Database, reference.Name)

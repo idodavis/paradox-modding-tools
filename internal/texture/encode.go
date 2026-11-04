@@ -37,7 +37,7 @@ func EncodeDDS(picture image.Image, compressed, mipmaps bool) ([]byte, error) {
 		levels = bits.Len(uint(max(size.X, size.Y)))
 	}
 	file := encodeDDSHeader(size, levels, compressed)
-	// a picture already in the pixels the encoder reads is not copied
+	// A picture that is already NRGBA and starts at (0, 0) is used as it is, without a copy.
 	level, ok := picture.(*image.NRGBA)
 	if !ok || level.Rect.Min != (image.Point{}) {
 		level = image.NewNRGBA(image.Rectangle{Max: size})
@@ -87,7 +87,7 @@ func encodeDDSHeader(size image.Point, levels int, compressed bool) []byte {
 	return file
 }
 
-// buildMip makes the mip level after a picture: half its size on each side, rounded down and never under a
+// buildMip returns the mip level after the picture: half its size on each side, rounded down and never under a
 // pixel. Each pixel is the average of the two by two pixels it covers, their colors mixed in linear light and their
 // alpha as it is. A side of one pixel uses that pixel twice.
 func buildMip(picture *image.NRGBA) *image.NRGBA {
@@ -153,7 +153,7 @@ func encodeBGRA(picture *image.NRGBA) []byte {
 // A block past the right or bottom edge repeats the last column or row.
 func encodeBC3(picture *image.NRGBA) []byte {
 	size := picture.Rect.Size()
-	// a block of 16 pixels is 16 bytes: a byte for each pixel of the size rounded up to whole blocks
+	// A BC3 block of 16 pixels is 16 bytes: a byte for each pixel of the size rounded up to whole blocks.
 	data := make([]byte, 0, (size.X+3)/4*4*((size.Y+3)/4*4))
 	var block [16][4]uint8
 	for top := 0; top < size.Y; top += 4 {
@@ -176,7 +176,7 @@ func encodeAlphaBlock(block *[16][4]uint8) []byte {
 	for _, pixel := range block {
 		highest, lowest = max(highest, pixel[3]), min(lowest, pixel[3])
 	}
-	palette := resolveBC4Palette(int(highest), int(lowest))
+	palette := buildBC4Palette(int(highest), int(lowest))
 	var indices uint64
 	for i, pixel := range block {
 		alpha, nearest, best := int(pixel[3]), 0, math.MaxInt
@@ -196,12 +196,13 @@ func encodeAlphaBlock(block *[16][4]uint8) []byte {
 // reads in the four-color mode. It starts from the block's two pixels farthest apart, takes each pixel's nearest
 // palette color, then fits the two colors to those once by least squares.
 func encodeColorBlock(block *[16][4]uint8) []byte {
-	start := findFarthest(block, block[0])
-	first, second := to565(toFloats(block[findFarthest(block, block[start])])), to565(toFloats(block[start]))
+	farthest := findFarthest(block, block[0])
+	opposite := findFarthest(block, block[farthest])
+	first, second := to565(toFloats(block[opposite])), to565(toFloats(block[farthest]))
 	first, second = resolveEndpoints(block, resolveIndices(block, first, second))
 	indices := resolveIndices(block, first, second)
 	if first < second {
-		// swapping the colors swaps the indices 0 with 1 and 2 with 3
+		// Swapping the colors swaps the indices 0 with 1 and 2 with 3, which flipping each index's low bit does.
 		first, second, indices = second, first, indices^0x55555555
 	}
 	out := binary.LittleEndian.AppendUint16(nil, first)
@@ -213,15 +214,15 @@ func encodeColorBlock(block *[16][4]uint8) []byte {
 func findFarthest(block *[16][4]uint8, color [4]uint8) int {
 	farthest, best := 0, -1
 	for i, pixel := range block {
-		if distance := countDistance(pixel, color); distance > best {
+		if distance := measureDistance(pixel, color); distance > best {
 			farthest, best = i, distance
 		}
 	}
 	return farthest
 }
 
-// countDistance returns the square of the distance between two colors' red, green and blue.
-func countDistance(first, second [4]uint8) int {
+// measureDistance returns the square of the distance between two colors' red, green and blue.
+func measureDistance(first, second [4]uint8) int {
 	distance := 0
 	for c := range 3 {
 		difference := int(first[c]) - int(second[c])
@@ -248,12 +249,12 @@ func to565(color [3]float64) uint16 {
 // resolveIndices returns the two-bit index of each pixel's nearest color in the palette of two 5-6-5 colors, the
 // first pixel in the lowest bits.
 func resolveIndices(block *[16][4]uint8, first, second uint16) uint32 {
-	palette := resolveBC1Palette(binary.LittleEndian.AppendUint16(binary.LittleEndian.AppendUint16(nil, first), second))
+	palette := buildBC1Palette(binary.LittleEndian.AppendUint16(binary.LittleEndian.AppendUint16(nil, first), second))
 	var indices uint32
 	for i, pixel := range block {
 		nearest, best := 0, math.MaxInt
 		for candidate, color := range palette {
-			if distance := countDistance(pixel, color); distance < best {
+			if distance := measureDistance(pixel, color); distance < best {
 				nearest, best = candidate, distance
 			}
 		}

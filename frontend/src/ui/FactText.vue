@@ -9,15 +9,15 @@ import type { Part } from "@services/lsp/models";
 
 const { parts = [] } = defineProps<{ parts?: readonly Part[] | null }>();
 
-/** Each part as drawn, a fact drawn before as plain text, with a path's folder and file. */
+/** drawn holds each part with its style: plain for a fact shown before, and a path split into folder and file. */
 const drawn = computed(() => {
   const keys = new Set<string>();
   return (parts ?? []).map((part) => {
     const key = `${part.style}:${part.text}`;
     const style = keys.has(key) ? "" : part.style;
     keys.add(key);
-    const slash = style === "path" ? part.text.lastIndexOf("/") + 1 : 0;
-    return { text: part.text, style, folder: part.text.slice(0, slash), file: part.text.slice(slash) };
+    const fileStart = style === "path" ? part.text.lastIndexOf("/") + 1 : 0;
+    return { text: part.text, style, folder: part.text.slice(0, fileStart), file: part.text.slice(fileStart) };
   });
 });
 </script>

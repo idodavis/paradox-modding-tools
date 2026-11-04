@@ -80,7 +80,7 @@ func LoadText(path string) (Text, error) {
 	return text, err
 }
 
-// DecodeText decodes bytes already in memory. A byte order mark means UTF-8 with one. Without it, valid UTF-8 is
+// DecodeText decodes the bytes of a text file. A byte order mark means UTF-8 with one. Without it, valid UTF-8 is
 // UTF-8 and any other bytes are Windows-1252.
 func DecodeText(content []byte) Text {
 	text := string(content)
@@ -94,8 +94,8 @@ func DecodeText(content []byte) Text {
 	return Text{Text: string(decoded), Encoding: EncodingWindows1252}
 }
 
-// Encode returns the bytes to store the text as, in its own encoding, with the byte order mark if it had one. A
-// character that Windows-1252 cannot hold becomes `?`.
+// Encode returns the bytes of the text in its encoding, with the byte order mark if it had one. A character that
+// Windows-1252 cannot hold becomes `?`.
 func (text Text) Encode() []byte {
 	switch text.Encoding {
 	case EncodingUTF8BOM:
@@ -114,13 +114,13 @@ func (text Text) Encode() []byte {
 	return []byte(text.Text)
 }
 
-// WriteText writes a text to a file in its own encoding. The write is atomic, as WriteAtomic is.
+// WriteText writes the text to the file at the given path, in the text's encoding. It writes as WriteAtomic does.
 func WriteText(path string, text Text) error {
 	return WriteAtomic(path, text.Encode())
 }
 
-// WriteAtomic writes bytes to a file so that the file is replaced whole or not at all. It makes the file's folder
-// first. A failed write leaves no temporary file behind.
+// WriteAtomic writes the bytes to the file at the given path so that the file is replaced whole or not at all. It
+// makes the file's folder first. A failed write leaves no temporary file behind.
 func WriteAtomic(path string, content []byte) error {
 	if err := os.MkdirAll(filepath.Dir(path), 0o755); err != nil {
 		return err
@@ -140,20 +140,20 @@ func WriteAtomic(path string, content []byte) error {
 	return nil
 }
 
-// LoadGob loads a value from a gob cache file. It returns false if the file is missing or cannot be decoded.
+// LoadGob loads a value from a gob cache file. It returns the zero value and false if it is missing or undecodable.
 func LoadGob[T any](path string) (T, bool) {
-	var value T
+	var value, zero T
 	content, err := os.ReadFile(path)
 	if err != nil {
-		return value, false
+		return zero, false
 	}
 	if err := gob.NewDecoder(bytes.NewReader(content)).Decode(&value); err != nil {
-		return *new(T), false
+		return zero, false
 	}
 	return value, true
 }
 
-// SaveGob saves a value as a gob cache file. It writes the file as WriteAtomic does.
+// SaveGob saves a value as a gob cache file at the given path. It writes as WriteAtomic does.
 func SaveGob(path string, value any) error {
 	var buffer bytes.Buffer
 	if err := gob.NewEncoder(&buffer).Encode(value); err != nil {
@@ -162,9 +162,9 @@ func SaveGob(path string, value any) error {
 	return WriteAtomic(path, buffer.Bytes())
 }
 
-// Unzip writes the files of a zip into a folder. A top folder that holds every file is left out of their paths, and
-// links are skipped. It returns an error if a file cannot be read or written, or the zip names a path outside the
-// folder.
+// Unzip writes the files of a zip into the given folder. A top folder that holds every file is left out of their
+// paths, and links are skipped. It returns an error if a file cannot be read or written, or if the zip names a path
+// outside the folder.
 func Unzip(archive *zip.Reader, dir string) error {
 	entries := lo.Filter(archive.File, func(entry *zip.File, _ int) bool {
 		return !entry.FileInfo().IsDir() && entry.Mode()&fs.ModeSymlink == 0

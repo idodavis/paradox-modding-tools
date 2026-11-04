@@ -1,7 +1,7 @@
 <!--
-  One node of the canvas. A closed event is a frame with its scene and its origin's dot, a message a toast, any other
-  entry a pill and a fold a dashed pill. An open node is its head, over its scene for a window, and a row per firing,
-  each row with its own handle. A node the depth stopped at is dashed until the user opens it.
+  One node of the canvas. A closed event is a frame with its scene and an origin dot, a message is a toast, any other
+  entry is a pill, and a fold is a dashed pill. An open node is a head, with the scene behind it for a window, and a row
+  for each firing, each with its own handle. A node beyond the depth limit is dashed until the user opens it.
 -->
 <script setup lang="ts">
 import { computed } from "vue";
@@ -15,32 +15,34 @@ import type { Drawn, Row } from "./layout";
 const { drawn, labels = {} } = defineProps<{ drawn: Drawn; labels?: Record<string, string | undefined> }>();
 const emit = defineEmits<{ fold: [id: string] }>();
 
-/** The classes that fade a node off the lit route and ring the root and the selected node. */
+/** STATE is the classes that fade a node off the lit route and ring the root and the selected node. */
 const STATE =
   "in-[.dim]:opacity-40 in-[.root]:border-primary in-[.root]:ring-3 in-[.root]:ring-(--accent-soft) in-[.selected]:border-secondary in-[.selected]:ring-3 in-[.selected]:ring-(--link-soft)";
-/** The hatching of a hidden event's scene and head. */
+/** HATCHED is the hatching of a hidden event's scene and head. */
 const HATCHED = "bg-[repeating-linear-gradient(135deg,var(--bg-2)_0_6px,var(--bg-1)_6px_12px)]";
-/** The color of each kind of deciding block's key, as the editor colors it. */
+/** KEYS is the color of the key of each kind of deciding block, as the editor colors it. */
 const KEYS: Record<string, string> = { branch: "var(--syn-block)", list: "var(--syn-scope)" };
 
 const node = computed(() => drawn.node);
 const hidden = computed(() => node.value.display === "hidden");
-/** Whether the node is drawn dashed: the depth stopped at it, and it is not the root. */
-const outline = computed(() => node.value.deep && node.value.step !== 0);
+/** dashed is true when the node is drawn dashed: it is beyond the depth limit and is not the root. */
+const dashed = computed(() => node.value.deep && node.value.step !== 0);
+/** fill is the colors of a pill: stronger when its look is filled. */
+const fill = computed(() => (drawn.look.filled ? "bg-muted text-highlighted" : "bg-default text-muted"));
 const icon = computed(() => (hidden.value ? "i-lucide-eye-off" : drawn.look.icon));
-/** Whether a row goes on along the selection's route, so that the rest fade. */
+/** isLit is true when a row is lit by the selection; the rows that are not lit fade. */
 const isLit = computed(() => drawn.rows.some((row) => row.lit));
 const scene = computed(() =>
   node.value.background ? { backgroundImage: `url("${fileUrl(node.value.background)}")` } : undefined,
 );
 /** The frame's first line: the title, else what it is. */
 const caption = computed(() => {
-  if (outline.value) return "Beyond depth, expand to load";
+  if (dashed.value) return "Beyond depth, expand to load";
   return node.value.title || (hidden.value ? "hidden event" : node.value.what);
 });
 /**
- * describeTarget describes a row's target: the one node it fires, a message by its title, or how many it fires, by
- * kind.
+ * describeTarget describes what a row fires. For one node it is the node's title, else its id without the database.
+ * For several it is their count and the database's label, such as "3 events".
  */
 function describeTarget(row: Row): string {
   const fires = row.fires ?? [];
@@ -51,10 +53,7 @@ function describeTarget(row: Row): string {
   return fires[0].title || fires[0].to.slice(fires[0].to.indexOf(":") + 1);
 }
 
-/**
- * describePlain describes what a row's firing is written in where no block decides it: its first block, else its
- * effect.
- */
+/** describePlain describes a row with no step of its own: the key of its first firing's first step, else its effect. */
 function describePlain(row: Row): string {
   return row.fires?.[0]?.steps?.[0]?.key ?? row.fires?.[0]?.effect ?? "";
 }
@@ -163,7 +162,7 @@ function openMore(event: MouseEvent): void {
   </div>
   <div
     v-else-if="drawn.look.shape === 'frame'"
-    :class="[STATE, outline ? 'border-dashed' : 'bg-(--bg-3)']"
+    :class="[STATE, dashed ? 'border-dashed' : 'bg-(--bg-3)']"
     class="w-49 overflow-hidden rounded-md border border-(--line-2)"
   >
     <div
@@ -198,10 +197,7 @@ function openMore(event: MouseEvent): void {
   </div>
   <div
     v-else
-    :class="[
-      STATE,
-      outline ? 'border-dashed' : drawn.look.filled ? 'bg-muted text-highlighted' : 'bg-default text-muted',
-    ]"
+    :class="[STATE, dashed ? 'border-dashed' : fill]"
     class="flex h-6.5 w-44 items-center gap-1.5 overflow-hidden rounded-full border border-accented ps-2 pe-2.5 font-mono text-11 whitespace-nowrap"
   >
     <OriginChip :origin="node.site.place.origin" dot />

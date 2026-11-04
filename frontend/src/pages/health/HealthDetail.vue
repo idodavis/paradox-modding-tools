@@ -37,12 +37,9 @@ const USES_SHOWN = 6;
 const workspace = useWorkspaceStore();
 const { data: codes } = useQuery(codesQuery);
 const { data: levels } = useQuery(levelsQuery);
-const mark = computed(() => levels.value?.find((one) => one.id === finding.level));
-const code = computed(() => codes.value?.find((one) => one.id === finding.code));
-/**
- * Whether the finding is of a name nothing defines, the one check whose codes have an elsewhere message. Its places
- * use the name.
- */
+const mark = computed(() => levels.value?.find((level) => level.id === finding.level));
+const code = computed(() => codes.value?.find((row) => row.id === finding.code));
+/** Whether the finding is about a name nothing defines. Its places are where the name is used. */
 const isMissing = computed(() => !!code.value?.elsewhere);
 /** The line under the title, after the level and the check: what the name is, and how often it is used or found. */
 const subtitle = computed(() => {
@@ -59,24 +56,21 @@ const kept = computed(() => places.value.filter((site) => site.kept));
 const ignored = computed(() => places.value.filter((site) => !site.kept));
 /** Whether the game uses one of a file's copies, so each copy says whether it is used. */
 const hasKeptCopy = computed(() => copies.value.some((copy) => copy.kept));
-/** The folded places by file, each file named "this file" where it is the first place's, else by its path. */
+/** The folded places grouped by file. The first place's file shows as "this file", any other by its relative path. */
 const others = computed(() =>
   Object.values(groupBy(finding.repeats ?? [], (site) => site.place.path)).map((group) => ({
     file: group[0]?.place.path === places.value[0]?.place.path ? "this file" : (group[0]?.place.rel ?? ""),
     sites: group,
   })),
 );
-/** The mod's copy the game reads, where the finding is of a file that replaces the game's and removes names. */
+/** For a removed-names finding, the mod's kept file that replaces the game's. */
 const replacing = computed(() =>
   finding.code === "removed-names" ? sites.value.find((site) => site.kept) : undefined,
 );
-/**
- * Whether the finding suggests a load order other than the current one. Go moves the one beaten mod after the
- * winner.
- */
+/** Whether the finding suggests a load order other than the current one. */
 const reorders = computed(() => !!finding.order?.length && !isEqual(order, finding.order));
 
-/** The text the names still used must hold to be listed, and whether all of them show. */
+/** The text a name still used must match to be listed, and whether the list shows all of them. */
 const usesFilter = shallowRef("");
 const allUses = shallowRef(false);
 const uses = computed(() => (finding.uses ?? []).filter((use) => matchQuery(usesFilter.value, use.name)));
@@ -85,7 +79,9 @@ const mostUses = computed(() => maxBy(finding.uses ?? [], (use) => use.count)?.c
 const hiddenUses = computed(() => uses.value.slice(shownUses.value.length));
 const hiddenUseCount = computed(() => sumBy(hiddenUses.value, (use) => use.count));
 /** The names the kept file leaves out that are not among the names still used. */
-const unused = computed(() => (finding.removed ?? []).filter((one) => !finding.uses?.some((use) => use.name === one)));
+const unused = computed(() =>
+  (finding.removed ?? []).filter((removed) => !finding.uses?.some((use) => use.name === removed)),
+);
 
 const { data: snippets } = useQuery(() => ({
   ...snippetsQuery(places.value),
@@ -291,7 +287,7 @@ function describeSite(site: Site): string {
       fold
     >
       <div class="flex flex-wrap gap-x-3 gap-y-0.5 font-mono text-12 text-toned">
-        <span v-for="one in unused" :key="one">{{ one }}</span>
+        <span v-for="removed in unused" :key="removed">{{ removed }}</span>
       </div>
     </HealthSection>
     <HealthSection

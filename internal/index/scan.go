@@ -35,9 +35,9 @@ type collector struct {
 	definitions []int32 // the positions of the definitions the walk is inside, innermost last
 }
 
-// Scan builds the index of an install's files, in parallel. The roots are the game's, then each DLC's, in load
-// order, and the listing is the files under them, as ListFiles returns. The progress function is called with the
-// name of each stage, and again with the percent of the files done while the files are indexed.
+// Scan builds the index of an install's files, in parallel. The roots are the game's, then each DLC's, in load order,
+// and the listing is the files under them, as ListFiles returns. The progress function is called with the name of each
+// stage, and during indexing with the percent of the files done.
 func Scan(schema *schema.Schema, roots []files.Root, listing []files.File, progress func(stage string, percent int)) *Index {
 	index := newIndex(schema, nil, roots, listing)
 	progress("indexing", 0)
@@ -60,8 +60,7 @@ func LoadIndex(path string) (*Index, bool) {
 	return index, true
 }
 
-// ParseFile reads the file with the given path and parses it as script. It returns an error if the file cannot be
-// read.
+// ParseFile reads a file and parses it as script. It returns an error if the file cannot be read.
 func ParseFile(path string) (*jomini.Tree, error) {
 	text, err := files.ReadText(path)
 	if err != nil {
@@ -70,10 +69,9 @@ func ParseFile(path string) (*jomini.Tree, error) {
 	return jomini.Parse(text.Text), nil
 }
 
-// ScanMods builds the index of a workspace's mods on top of the install's index, so that a lookup in the mods'
-// index falls through to the install's. It first gives the schema the mods' scripted definitions. The replaced
-// folders are given per root, as each mod's replace_path lists them. The index records every language the mods write,
-// even one the install does not. It returns an error if a root cannot be walked.
+// ScanMods builds the index of a workspace's mods on top of the install's, so a lookup in it also reads the install's
+// postings. It first gives the schema the mods' scripted definitions. The replaced folders are one list for each of the
+// given roots, holding the folders that the mod's replace_path names. It returns an error if a root cannot be walked.
 func ScanMods(schema *schema.Schema, install *Index, roots []files.Root, replaced [][]string) (*Index, error) {
 	listing, err := ListFiles(roots)
 	if err != nil {
@@ -90,9 +88,9 @@ func ScanMods(schema *schema.Schema, install *Index, roots []files.Root, replace
 	return index, nil
 }
 
-// ScanFiles scans the given files again after they changed, reading each from disk, and first gives the schema the
-// scripted definitions they declare now. A file that no longer exists is dropped with its occurrences. It returns an
-// error, and changes nothing, if any of the files is the install's.
+// ScanFiles scans the given changed files again, reading each from disk, and first gives the schema the scripted
+// definitions they declare now. A file that no longer exists is dropped with its occurrences. It returns an error, and
+// changes nothing, if any of the files is the install's.
 func (index *Index) ScanFiles(schema *schema.Schema, changed []files.File) error {
 	installFiles := index.countInstallFiles()
 	for _, file := range changed {
@@ -110,7 +108,7 @@ func (index *Index) ScanFiles(schema *schema.Schema, changed []files.File) error
 			continue
 		}
 		if !known {
-			// A file gone before keeps its place, which a file of the same path takes again.
+			// A file deleted earlier keeps its place in Files, which a file at the same path takes again.
 			slot := slices.IndexFunc(index.Files, func(other files.File) bool { return other.Key == file.Key })
 			if slot < 0 {
 				index.Files = append(index.Files, file)
@@ -134,9 +132,9 @@ func (index *Index) ScanFiles(schema *schema.Schema, changed []files.File) error
 	return nil
 }
 
-// Clone returns a copy of an index that ScanFiles can change while the original is still being read. The copy has
-// its own lists of files, occurrences and texts, its own paths and its own tables, which are what ScanFiles writes.
-// It shares the rest with the original.
+// Clone returns a copy of an index that ScanFiles can change while the original is still being read. The copy has its
+// own lists of files, occurrences and texts, its own paths and its own tables, which are what ScanFiles writes. It
+// shares the rest with the original.
 func (index *Index) Clone() *Index {
 	next := *index
 	next.Files = slices.Clone(index.Files)
@@ -185,9 +183,9 @@ func findRoot(keys []string, fileKey string) (int, bool) {
 	return position, ok
 }
 
-// newIndex returns an index of the given files with nothing found yet. Over an install's index it starts with the
-// install's files, roots and what they hold, and copies of its tables, so that a file's position and an ordinal
-// mean the same in both.
+// newIndex returns an index of the listed files with nothing scanned yet. On top of an install's index, it starts with
+// the install's files, roots, occurrences and texts, and copies of its tables, so a position and an ordinal mean the
+// same in both.
 func newIndex(schema *schema.Schema, install *Index, roots []files.Root, listing []files.File) *Index {
 	index := &Index{Game: schema.Game, Files: listing, Roots: roots, install: install, row: game.LookupGame(schema.Game)}
 	var occurrences [][]Occurrence
@@ -218,8 +216,7 @@ func (index *Index) listTables() []*Table {
 	return []*Table{&index.Databases, &index.Names, &index.Modes, &index.Languages}
 }
 
-// cloneTables gives the index copies of the tables of a source, which it can intern into without changing the
-// source's.
+// cloneTables copies the source index's tables into this one, so interning here leaves the source unchanged.
 func (index *Index) cloneTables(source *Index) {
 	originals := source.listTables()
 	for position, table := range index.listTables() {
@@ -239,8 +236,8 @@ func (index *Index) buildTables() {
 	}
 }
 
-// buildPaths fills the map that finds a file by its key, the keys of the roots' folders, and each file's placement
-// and the groups of files by their paths.
+// buildPaths builds the lookups by path: the roots' folder keys, the position of each file by key, each file's
+// placement, and the groups of files that share a path.
 func (index *Index) buildPaths() {
 	index.rootKeys = listRootKeys(index.Roots)
 	index.byKey = make(map[string]int32, len(index.Files))
@@ -256,7 +253,7 @@ func (index *Index) buildPaths() {
 // path, in load order. The group is replaced, not changed, since a clone of the index may still read it.
 func (index *Index) buildGroup(position int32) {
 	file := index.Files[position]
-	// the stage is found in any case, then cut from the path as written
+	// the stage is found in lower case, then cut from the path as written
 	stage, _ := index.row.SplitStage(strings.ToLower(file.Rel))
 	place := placement{rest: file.Rel, unmounted: index.row.IsUnmounted(file)}
 	if stage != "" {
@@ -277,8 +274,8 @@ func (index *Index) compareLoaded(a, b int32) int {
 	return cmp.Or(cmp.Compare(first.root, second.root), cmp.Compare(first.stage, second.stage), cmp.Compare(a, b))
 }
 
-// scanFiles builds the occurrences of every file of the index's own, in parallel on every core but two. The progress
-// function is called with each whole percent of the files that is done.
+// scanFiles builds the occurrences of every file the index scans itself, in parallel on files.Workers goroutines. The
+// progress function is called with each whole percent of the files that is done.
 func (index *Index) scanFiles(schema *schema.Schema, progress func(percent int)) {
 	var group errgroup.Group
 	var lock sync.RWMutex
@@ -482,9 +479,8 @@ func ListTextReferences(schema *schema.Schema, message loc.Message) (references 
 	return references
 }
 
-// listMarkup returns what one piece of a message's text refers to: the localization key between dollar signs, each
-// text format that a format names, which semicolons separate, and the icon an icon names. Any other piece refers to
-// nothing.
+// listMarkup returns what one segment of a message's text refers to: a localization key between dollar signs, each text
+// format of a format segment (semicolons separate them), or an icon. Any other segment refers to nothing.
 func listMarkup(segment loc.Segment) []schema.Reference {
 	switch segment.Markup {
 	case loc.MarkupKey:

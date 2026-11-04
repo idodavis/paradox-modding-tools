@@ -75,7 +75,7 @@ const cache = useQueryCache();
 
 const { data: state } = useQuery(stateQuery);
 const mods = computed(() => workspace.listMods());
-const ids = computed(() => mods.value.map((one) => one.id));
+const ids = computed(() => mods.value.map((workspaceMod) => workspaceMod.id));
 
 /** The load order dragged to preview, or [] for the workspace's own. */
 const preview = shallowRef<string[]>([]);
@@ -98,7 +98,6 @@ onActivated(() => {
 // a row another page opens counts in the workspace's own order
 onDeactivated(() => (preview.value = []));
 
-/** The findings of workspace compatibility. */
 const compatibility = computed(() => report.value?.compatibility.findings ?? []);
 /** The report's group of each mod, by mod id. */
 const groups = computed(() => keyBy(report.value?.mods ?? [], (group) => group.mod));
@@ -111,7 +110,7 @@ const wanted = computed(() => name || code);
 const landing = computed(() => {
   if (!wanted.value) return { view: "summary", mod: "" };
   if (compatibility.value.some(matchFinding)) return { view: "compatibility", mod: "" };
-  const owner = mods.value.find((one) => groups.value[one.id]?.findings?.some(matchFinding));
+  const owner = mods.value.find((candidate) => groups.value[candidate.id]?.findings?.some(matchFinding));
   if (owner) return { view: "mod", mod: owner.id };
   return { view: logRows.value.some(matchLogRow) ? "log" : "summary", mod: "" };
 });
@@ -125,7 +124,8 @@ watch(
   (summary) => (panes.value = summary ? [VIEW] : [{ ...RAIL, defaultSize: railWidth.value }, VIEW]),
   { immediate: true },
 );
-const current = computed(() => mods.value.find((one) => one.id === (mod || landing.value.mod)) ?? mods.value[0]);
+const currentId = computed(() => mod || landing.value.mod);
+const current = computed(() => mods.value.find((candidate) => candidate.id === currentId.value) ?? mods.value[0]);
 const filter = shallowRef(wanted.value);
 watch(wanted, (next) => (filter.value = next));
 /** The findings of the view shown, where the route's row is the index of the open one. */
@@ -143,7 +143,7 @@ const { data: overview } = useQuery(() => ({
   ...overviewQuery,
   enabled: workspace.isOpen() && shown.value === "mod",
 }));
-const currentOverview = computed(() => overview.value?.find((one) => one.mod === current.value?.id));
+const currentOverview = computed(() => overview.value?.find((counts) => counts.mod === current.value?.id));
 
 const { mutate: reorder, isLoading: saving } = useMutation({
   mutation: (next: string[]) => ReorderMods(id, next),
@@ -176,11 +176,11 @@ const rail = computed((): { title: string; rows: RailRow[] }[] => [
   },
   {
     title: "Mods",
-    rows: mods.value.map((one) => ({
+    rows: mods.value.map((workspaceMod) => ({
       view: "mod",
-      mod: one,
-      label: one.descriptor.name,
-      levels: groups.value[one.id]?.counts,
+      mod: workspaceMod,
+      label: workspaceMod.descriptor.name,
+      levels: groups.value[workspaceMod.id]?.counts,
     })),
   },
   {
@@ -204,7 +204,7 @@ function isShown(railRow: RailRow): boolean {
   return railRow.view === shown.value && (!railRow.mod || railRow.mod.id === current.value?.id);
 }
 
-/** listFindings returns the findings a view lists, in the order of its rows: those of a mod's view are the mod's. */
+/** listFindings returns the findings the given view lists, in row order. A mod view lists that mod's findings. */
 function listFindings(view: string, modId?: string): Finding[] {
   if (view === "compatibility") return compatibility.value;
   if (view === "log") return logRows.value;

@@ -36,8 +36,8 @@ type Segment struct {
 	Kind string `json:"kind"`
 }
 
-// Segments splits a message's text into its pieces. The offset is where the text's first byte sits in its file, so
-// the spans come out in the file's offsets.
+// Segments splits a message's text into its pieces. The given offset is where the text starts in its file, so the
+// spans are offsets in the file.
 func Segments(text string, base int) []Segment {
 	var segments []Segment
 	plain := 0
@@ -60,9 +60,9 @@ func Segments(text string, base int) []Segment {
 	return segments
 }
 
-// parseMarkup parses the markup that starts at the given offset of a text. The base offset is where the text's first
-// byte sits in its file. It returns the markup's segment first, and after it the segments of any markup inside a
-// format. It returns nil if nothing starts there, so the character is plain text.
+// parseMarkup parses the markup that starts at the given offset of a text. The given base is where the text starts in
+// its file. It returns the markup's segment, followed by the segments of any markup inside a format. It returns nil if
+// no markup starts there, so the character is plain text.
 func parseMarkup(text string, start, base int) []Segment {
 	var markup Markup
 	var inner string
@@ -105,8 +105,8 @@ func parseMarkup(text string, start, base int) []Segment {
 	}}
 }
 
-// findMark returns the offset of the closing character of the markup that starts at the given offset of a text. It
-// returns false if there is none, or if the characters between are empty or hold a space.
+// findMark returns the offset of the next mark character after the given offset of a text. It returns false if there
+// is none, or if the text between the two is empty or holds white space.
 func findMark(text string, start int, mark byte) (int, bool) {
 	closing := strings.IndexByte(text[start+1:], mark)
 	if closing <= 0 || strings.IndexFunc(text[start+1:start+1+closing], unicode.IsSpace) >= 0 {
@@ -125,11 +125,11 @@ func findCall(text string, start int) (int, bool) {
 	return end, true
 }
 
-// parseFormat parses the format that starts with the `#` at the given offset of a text, or the end of a format if
-// `#!` is there. The base offset is where the text's first byte sits in its file. A format runs to the first white
-// space outside a call or a key, and that one white space belongs to it. It returns the format's segment first, then
-// the segments of the calls and keys inside it. It returns nil if no format follows the `#`, as where a `.` or a `,`
-// does: no format's name starts with one.
+// parseFormat parses the format that starts at the `#` at the given offset of a text, or the end of a format if `#!`
+// is there. The given base is where the text starts in its file. A format runs to the first white space outside a
+// call or a key, and that white space belongs to it. It returns the format's segment, followed by the segments of the
+// calls and keys inside it. It returns nil if no format follows the `#`, as when a `.` or a `,` does: no format's
+// name starts with one.
 func parseFormat(text string, start, base int) []Segment {
 	if strings.HasPrefix(text[start:], "#!") {
 		end := base + start + 2
@@ -174,15 +174,15 @@ func findFormat(text string, start int) int {
 	return len(text)
 }
 
-// makeText returns the plain segment that covers the given range of a text. The base offset is where the text's first
-// byte sits in its file.
+// makeText returns the plain segment that covers the given range of a text. The given base is where the text starts in
+// its file.
 func makeText(text string, start, end, base int) Segment {
 	span := jomini.Span{Start: base + start, End: base + end}
 	return Segment{Markup: MarkupText, Text: text[start:end], Span: span, TextSpan: span}
 }
 
-// ListCalls returns the data calls that the given segments of a text write between brackets, those inside its formats
-// too.
+// ListCalls parses the call segments among the given segments, those inside formats included. A segment whose text is
+// no call is skipped.
 func ListCalls(segments []Segment) []jomini.Call {
 	var calls []jomini.Call
 	for _, segment := range segments {
@@ -196,9 +196,9 @@ func ListCalls(segments []Segment) []jomini.Call {
 	return calls
 }
 
-// ListMarkupFaults returns the markup that the given segments of a text get wrong, each as a loc-markup error. One
-// fault is a [ that no ] closes and that a call starts after: the text keeps it as a plain [. The other is a format
-// ended with #. or #, where the game ends one with #!. A [ with nothing or a space after it is a plain [, and no fault.
+// ListMarkupFaults returns a loc-markup error for each markup mistake in the plain text of the given segments. One is
+// a [ that starts a call but has no closing ], which the game reads as a plain [. The other is a format ended with #.
+// or #, where the game ends one with #!. A [ followed by nothing or a space is plain text, not a mistake.
 func ListMarkupFaults(segments []Segment) []jomini.Error {
 	var faults []jomini.Error
 	for _, segment := range segments {

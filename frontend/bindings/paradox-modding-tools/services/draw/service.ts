@@ -31,11 +31,11 @@ export function AddInstance(path: string, layer: lsp$0.Range): $CancellablePromi
 }
 
 /**
- * AddLayer inserts a new layer into a coat at the given position among its layers, 0 being first, and returns the
- * edits that do it. The new layer is the game's template for the given role. It returns an error if the file does not
- * define the coat, the coat is written as the name of another, or a pattern is added to a coat that has one. It also
- * returns an error if the game has no template for the role or nothing to start the layer from, or if the layer before
- * the position does not exist or comes from a parent coat.
+ * AddLayer returns the edits that insert a new layer into a coat at the given position among its layers, 0 being first.
+ * The new layer is the game's template for the given role. It returns an error if the file does not define the coat,
+ * the coat is written as the name of another, or a pattern is added to a coat that has one. It also returns an error if
+ * the game has no template for the role or nothing to start the layer from, or if the layer before the position does
+ * not exist or comes from a parent coat.
  */
 export function AddLayer(path: string, coat: string, role: string, position: number): $CancellablePromise<lsp$0.Edit[] | null> {
     return $Call.ByID(1704294882, path, coat, role, position);

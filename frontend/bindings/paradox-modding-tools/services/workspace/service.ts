@@ -212,7 +212,7 @@ export function ListWorkspaces(): $CancellablePromise<$models.Workspace[] | null
 }
 
 /**
- * Locate returns the place of a file or folder in the open workspace, which says whether it is a folder. It returns
+ * Locate returns the place of a file or folder in the open workspace; the place's IsDir says which it is. It returns
  * an empty place if none is open.
  */
 export function Locate(path: string): $CancellablePromise<$models.Place> {
@@ -220,8 +220,8 @@ export function Locate(path: string): $CancellablePromise<$models.Place> {
 }
 
 /**
- * Open opens a workspace in the background, closing the one before. It sends workspace:opened or workspace:failed at
- * the end.
+ * Open opens a workspace in the background, closing the open one first. It sends workspace:opened or workspace:failed
+ * at the end.
  */
 export function Open(workspaceID: string): $CancellablePromise<void> {
     return $Call.ByID(2144133549, workspaceID);
@@ -306,9 +306,9 @@ export function Restore(trashed: string, path: string): $CancellablePromise<void
 
 /**
  * RevertHunks gives a file of the open workspace back its text from before an agent's edits, given as each edit's
- * hunks, the earliest edit first. A file the earliest edit made goes to PMT's trash when it ends empty; any other is
- * written in its own line endings. It returns an error, and changes nothing, if no workspace is open, the file cannot
- * be read, it has unsaved text in the editor, an edit has no hunk, or a hunk's lines are not in the file once.
+ * hunks, the earliest edit first. If the edits created the file and it ends up empty, it goes to PMT's trash; else it
+ * is written in its own line endings. It returns an error, and changes nothing, if no workspace is open, the file
+ * cannot be read, it has unsaved text in the editor, an edit has no hunk, or a hunk's lines are not in the file once.
  */
 export function RevertHunks(path: string, edits: ($models.Hunk[] | null)[] | null, isNew: boolean): $CancellablePromise<void> {
     return $Call.ByID(1562964112, path, edits, isNew);
@@ -338,11 +338,11 @@ export function UpdateMod(workspaceID: string, mod: app$0.Mod): $CancellableProm
 }
 
 /**
- * UpdateWorkspace replaces a workspace's record, all but its mods, its settings and its ignored pairs. It returns an
- * error if the workspace is not recorded.
+ * UpdateWorkspace replaces a workspace's record but keeps its mods, settings and ignored pairs. It returns an error if
+ * the workspace is not recorded.
  */
-export function UpdateWorkspace(ws: app$0.Workspace): $CancellablePromise<void> {
-    return $Call.ByID(3617229917, ws);
+export function UpdateWorkspace(workspace: app$0.Workspace): $CancellablePromise<void> {
+    return $Call.ByID(3617229917, workspace);
 }
 
 /**

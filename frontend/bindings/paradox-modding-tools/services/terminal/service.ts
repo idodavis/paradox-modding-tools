@@ -27,9 +27,9 @@ export function Close(id: string): $CancellablePromise<void> {
 }
 
 /**
- * FindLinks returns the files that the given line of a shell's output names at a line. A name resolves as a full
- * path, then as a path from the shell's folder, then as a path the workspace loads. A name under no root of the
- * workspace is left out. It returns none for a line longer than a listing's, or if no shell has the given id.
+ * FindLinks returns the links in the given line of the output of the shell with the given id. A name resolves as a
+ * full path or a path from the shell's folder, else as a path the workspace loads. A name under no root of the
+ * workspace is left out. It returns none for a line longer than a listing's, or if no shell has the id.
  */
 export function FindLinks(id: string, text: string): $CancellablePromise<$models.Link[] | null> {
     return $Call.ByID(828924320, id, text);
@@ -67,9 +67,9 @@ export function ResolveReference(id: string, path: string): $CancellablePromise<
 }
 
 /**
- * Run starts a shell of the given size that runs a command, a program and its arguments as given, in the folder
- * ResolveFolder gives for the file at the given path, which may be "". It returns an error if the command is empty or
- * its program cannot be started.
+ * Run starts a shell of the given size that runs the given command, a program followed by its arguments. It starts in
+ * the folder ResolveFolder gives for the given file path, which may be "". It returns an error if the command is empty
+ * or its program cannot be started.
  */
 export function Run(path: string, command: string[] | null, columns: number, rows: number): $CancellablePromise<terminal$0.Shell | null> {
     return $Call.ByID(2499983721, path, command, columns, rows);
@@ -84,9 +84,9 @@ export function SetScreen(id: string, screen: terminal$0.Screen): $CancellablePr
 }
 
 /**
- * Start starts a shell of the given size running the program at the given path, or for "" the default shell, in the
- * folder ResolveFolder gives for the file at the given path, which may be "". It returns an error if this system has
- * no shell or the program cannot be started.
+ * Start starts a shell of the given size. It starts in the folder ResolveFolder gives for the given file path, which
+ * may be "". It runs the program at the given program path, or the default shell for "". It returns an error if this
+ * system has no shell or the program cannot be started.
  */
 export function Start(path: string, program: string, columns: number, rows: number): $CancellablePromise<terminal$0.Shell | null> {
     return $Call.ByID(2994279040, path, program, columns, rows);

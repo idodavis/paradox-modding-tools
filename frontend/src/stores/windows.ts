@@ -99,7 +99,7 @@ export const useWindowsStore = defineStore("windows", () => {
   const links = new Map<WindowName, Channel>();
   const commandBus = useEventBus(COMMAND_BUS);
   const wikiBus = useEventBus<WikiLookup>("pmt.wiki");
-  // ends when the last batch of handed tabs is open
+  // settles when the last batch of handed tabs has opened
   let received: Promise<void> = Promise.resolve();
 
   const { mutate: receive } = useMutation({
@@ -122,8 +122,8 @@ export const useWindowsStore = defineStore("windows", () => {
         await received;
         if (!(await saveUnsaved("Closing PMT"))) return;
       }
-      // the main window's shells end with the app; the terminal's own window gives them back to it, the terminal store
-      // loaded only here, since it needs the command table, which needs this store
+      // The terminal window hands its shells back to Go. The terminal store is imported here because it needs the
+      // command table, which needs this store.
       if (THIS_WINDOW === "terminal") await (await import("./terminal")).useTerminalStore().handOver();
       await app.CloseWindow(THIS_WINDOW);
     },
@@ -200,7 +200,7 @@ export const useWindowsStore = defineStore("windows", () => {
     if (isNew) sendState();
   }
 
-  /** toHanded makes a tab ready to send: a copy of it, its file's place and its unsaved text. None without a place. */
+  /** toHanded returns a tab ready to send, as a list of one: a copy of it, its file's place and its unsaved text. */
   function toHanded(tab: Tab): HandedTab[] {
     const place = editor.placeOf(tab.key);
     const model = findModel(tab.key);
@@ -221,8 +221,7 @@ export const useWindowsStore = defineStore("windows", () => {
       else editor.show(place);
       if (text !== null) (await openModel(place)).model.setValue(text);
     }
-    // handed tabs open in Code, which showing a drawable file with the setting on would have changed; a window that
-    // closes with none leaves the mode as it is
+    // Showing a drawable file could open it in Visual, so put the editor back in Code. With no tabs the mode stays.
     if (handed.tabs.length) editor.mode = "code";
   }
 
@@ -284,8 +283,8 @@ export const useWindowsStore = defineStore("windows", () => {
   const requestTab = (tabId: string): void => shared.post({ type: "tab-requested", tab: tabId, from: THIS_WINDOW });
 
   /**
-   * showElsewhere shows a place in the given window, with the given position or range selected if any, as the given
-   * source shows one, and brings the window to the front.
+   * showElsewhere shows a place in the given window and brings that window to the front. The window selects the given
+   * position or range, if any, and treats the place as shown from the given source.
    */
   const showElsewhere = (window: WindowName, place: Place, selection?: IPosition | IRange, source?: Source): void => {
     link(window).post({ type: "show", place: { ...place }, selection: selection && { ...selection }, source });
@@ -298,10 +297,7 @@ export const useWindowsStore = defineStore("windows", () => {
     showWindow("main");
   };
 
-  /**
-   * findActive returns the place the given window's active tab shows, as it last said, or null when it shows none or
-   * is not open.
-   */
+  /** findActive returns the place the given window's active tab shows, as it last announced. It is null if none. */
   const findActive = (name: WindowName): Place | null => others.get(name)?.active ?? null;
 
   /** resolveTerminal returns the window that shows the terminal: its own window while it is open, else the main one. */

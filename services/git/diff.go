@@ -57,9 +57,9 @@ func (git *Service) DiffFile(path, text string) ([]LineChange, error) {
 	return appendRun(changes, line, added, removed), nil
 }
 
-// appendRun adds to the list the run of lines that starts at the given line, adding and removing the given numbers of
-// lines. Lines added are a run of their own, changed when lines were removed too; lines only removed are marked on
-// the line before them, or on the first. A run that adds and removes nothing adds nothing.
+// appendRun appends the change that starts at the given line and adds and removes the given numbers of lines. Added
+// lines are a run of their own, marked changed if lines were removed too. Lines only removed are marked on the line
+// before them, or on the first. It appends nothing if no line is added or removed.
 func appendRun(changes []LineChange, line, added, removed int) []LineChange {
 	switch {
 	case added > 0:

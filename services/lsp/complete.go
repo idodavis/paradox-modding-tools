@@ -29,9 +29,8 @@ type Completion struct {
 }
 
 // Complete returns the completion candidates at a position in a file. At a key they are the language's operators,
-// then the commands and fields the block takes. At a value they are the field's choices, the names the game loads, the
-// links to the scope a target needs or the image files a path could name. It returns an empty list for a file that
-// is not script.
+// commands and fields. At a value they are the field's choices, the names the game loads, the links to the scope a
+// target needs or the image files a path could name. It returns an empty list for a file that is not script.
 func (lsp *Service) Complete(path string, line, column int) ([]Completion, error) {
 	ws, tree, err := lsp.loadTree(path)
 	if err != nil {
@@ -72,11 +71,12 @@ func findValue(tree *jomini.Tree, offset int) (int32, bool) {
 	}
 	statement := tree.FindStatement(len(prefix) - 1)
 	current := tree.Statements[statement]
-	if current.IsBlock() || current.Op.IsEmpty() || offset < current.Op.End || strings.Contains(tree.Src[current.Op.End:offset], "\n") ||
-		!current.Value.IsEmpty() && offset > current.Value.End {
+	if current.IsBlock() || current.Op.IsEmpty() || offset < current.Op.End {
 		return 0, false
 	}
-	return statement, true
+	pastLine := strings.Contains(tree.Src[current.Op.End:offset], "\n")
+	pastValue := !current.Value.IsEmpty() && offset > current.Value.End
+	return statement, !pastLine && !pastValue
 }
 
 // listValues returns the values a statement's field may take: its choices, yes and no, the loaded names of a
@@ -188,7 +188,8 @@ func findTopRank(candidates []Completion) int {
 	return lo.MaxBy(candidates, func(first, second Completion) bool { return first.Rank > second.Rank }).Rank
 }
 
-// listFields returns the keys of a block's field in alphabetical order. It returns nil if the block has no field.
+// listFields returns the keys the block's field declares, in alphabetical order, leaving out keys that begin with "<".
+// It returns nil if the block has no field.
 func listFields(holder *schema.Context) []Completion {
 	if holder.Field == nil {
 		return nil
@@ -207,9 +208,9 @@ func listFields(holder *schema.Context) []Completion {
 	return fields
 }
 
-// listOperators returns the keys of the language that fit a block, ranked above the given floor. They come grouped
-// by class, the classes in the order they first come in game.Keywords and each class's keys in the table's order. A
-// key that is written with a block is inserted with one. Only the keywords of the given game count.
+// listOperators returns the language's keys that fit a block, ranked above the given floor. They are grouped by
+// class, in the order each class first appears in game.Keywords, and keep the table's order within a class. A key
+// that is written with a block is inserted with one. Only the keywords of the given game count.
 func listOperators(row *game.Game, commands map[string]*schema.Command, holder *schema.Context, floor int) []Completion {
 	fitting := lo.Filter(game.Keywords, func(keyword game.Keyword, _ int) bool {
 		return !strings.ContainsAny(keyword.Key, "/*<") && row.Matches(keyword.Games) &&
@@ -245,8 +246,7 @@ func isBlockField(field *schema.Field) bool {
 		field.Vanilla.Blocks > 0 && field.Vanilla.Blocks == field.Vanilla.Count)
 }
 
-// isOperatorFit reports whether a keyword of the language, with the command of its key, fits the block of the given
-// context.
+// isOperatorFit reports whether a language keyword, with the command of its key, fits the block of the context.
 func isOperatorFit(keyword game.Keyword, command *schema.Command, holder *schema.Context) bool {
 	switch {
 	case keyword.Holder != "":

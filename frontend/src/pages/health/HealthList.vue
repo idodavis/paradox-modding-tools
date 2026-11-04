@@ -95,7 +95,7 @@ const checkItems = computed(() =>
 const matches = computed(() =>
   findings.filter(
     (finding) =>
-      isPicked(finding.code) &&
+      (!checks.value.length || checks.value.includes(finding.code)) &&
       matchQuery(
         filter.value,
         joinParts(finding.message),
@@ -121,18 +121,13 @@ const rows = computed((): (LevelHead | CheckHead | Finding)[] =>
   }),
 );
 
-/** isPicked reports whether a check passes the check filter. */
-function isPicked(check: string): boolean {
-  return !checks.value.length || checks.value.includes(check);
-}
-
 /** listCheck lists the head of one check's rows in a level, then the rows if they show. */
 function listCheck(level: string, check: string, members: Finding[], siblings: number): (CheckHead | Finding)[] {
   const key = `${level}:${check}`;
   const shownByDefault =
     siblings === 1 || !!filter.value.trim() || checks.value.length > 0 || members.some((member) => member === opened);
   const open = pressed.value[key] ?? shownByDefault;
-  const topic = topics.value?.find((one) => one.id === members[0]?.topic)?.label ?? "";
+  const topic = topics.value?.find((candidate) => candidate.id === members[0]?.topic)?.label ?? "";
   const label = members[0]?.label ?? "";
   const head = { key, label, topic, count: countFindings(members), open, shared: describeShared(members) };
   if (!open) return [head];
@@ -143,8 +138,8 @@ function listCheck(level: string, check: string, members: Finding[], siblings: n
 }
 
 /**
- * describeShared returns the mod every finding of a check shares, as parts: the one mod that alone defines the names
- * its mod lacks, or the one mod a check of the workspace's compatibility is about. It is empty if they share none.
+ * describeShared returns the one mod all the findings of a check share, as parts. It is the mod that alone defines the
+ * names a mod lacks, or for a compatibility check the mod the findings are about. It is empty if there is no such mod.
  */
 function describeShared(members: Finding[]): Part[] {
   const others = uniq(members.map((finding) => finding.facts?.other ?? ""));
@@ -165,7 +160,9 @@ function describePlace(finding: Finding): string {
 
 /** toggle folds a level's rows, or shows them if they are folded. */
 function toggle(level: string): void {
-  shown.value = shown.value.includes(level) ? shown.value.filter((one) => one !== level) : [...shown.value, level];
+  shown.value = shown.value.includes(level)
+    ? shown.value.filter((shownLevel) => shownLevel !== level)
+    : [...shown.value, level];
 }
 
 /** toggleCheck folds a check's rows, or shows them if they are folded. */

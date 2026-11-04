@@ -81,12 +81,12 @@ const { mutate: resetData, isLoading: resettingData } = useMutation({
   },
 });
 
-/** open goes to a workspace's home page, which makes it the active one. It resolves to a failure if cancelled. */
+/** open goes to a workspace's home page, which makes it the active one. It returns the failure if cancelled. */
 function open(record: Workspace) {
   return router.push(homeRoute(record.id, record.homePage));
 }
 
-/** openSettings opens Settings on a workspace. One that is not open is opened on its home page first. */
+/** openSettings opens Settings on a workspace. A workspace that is not the open one is opened first. */
 async function openSettings(record: Workspace): Promise<void> {
   const isCurrent = record.id === store.activeId() && store.isOpen();
   if (!isCurrent && (await open(record))) return;
@@ -99,7 +99,7 @@ function openModDialog(): void {
   else void router.push({ name: "new-mod" });
 }
 
-/** describeMenu returns a workspace's menu, with Remove after the other entries. */
+/** describeMenu returns a workspace's menu: the given leading items, then Remove. */
 function describeMenu(record: Workspace, leading: DropdownMenuItem[]): DropdownMenuItem[] {
   return [
     ...leading,

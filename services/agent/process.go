@@ -41,7 +41,7 @@ type program struct {
 	command *exec.Cmd
 	input   io.WriteCloser
 	output  io.ReadCloser
-	errors  io.ReadCloser
+	stderr  io.ReadCloser
 	group   group
 }
 
@@ -75,7 +75,7 @@ func (agt *Service) serve(conn *application.StreamConn) {
 		return
 	}
 	go sendLines(conn, running.output)
-	go logLines(first.Agent, running.errors)
+	go logLines(first.Agent, running.stderr)
 	for {
 		message, err := conn.Receive()
 		if err != nil {
@@ -88,7 +88,7 @@ func (agt *Service) serve(conn *application.StreamConn) {
 }
 
 // startProgram starts an agent's program in a folder, with PMT's own environment and the Node the agents run on first
-// on its PATH. It returns an error if the agent cannot start or its program cannot be started.
+// on its PATH. It returns an error if findAgent fails or the program cannot be started.
 func (agt *Service) startProgram(id, folder string) (*program, error) {
 	agent, err := agt.findAgent(id)
 	if err != nil {
@@ -107,7 +107,7 @@ func (agt *Service) startProgram(id, folder string) (*program, error) {
 	if running.output, err = command.StdoutPipe(); err != nil {
 		return nil, err
 	}
-	if running.errors, err = command.StderrPipe(); err != nil {
+	if running.stderr, err = command.StderrPipe(); err != nil {
 		return nil, err
 	}
 	if running.group, err = startGroup(command); err != nil {
@@ -144,8 +144,8 @@ func sendLines(conn *application.StreamConn, output io.Reader) {
 }
 
 // logLines writes each line an agent writes as an error to PMT's log, under the agent's id, until the agent ends.
-func logLines(id string, errors io.Reader) {
-	scanner := bufio.NewScanner(errors)
+func logLines(id string, stderr io.Reader) {
+	scanner := bufio.NewScanner(stderr)
 	scanner.Buffer(nil, 1<<20)
 	for scanner.Scan() {
 		application.Get().Logger.Info(scanner.Text(), "agent", id)

@@ -6,7 +6,7 @@
 import * as lsp$0 from "../lsp/models.js";
 
 /**
- * A Link is a file that a line of a shell's output names at a line, with where it sits in the workspace.
+ * A Link is a file name in a line of a shell's output, with the file's place in the workspace and the line it names.
  */
 export interface Link {
     /**

@@ -57,7 +57,7 @@ const {
 const emit = defineEmits<{ open: [finding: Finding]; fix: [mod: string, finding: Finding] }>();
 const filter = defineModel<string>("filter", { default: "" });
 
-/** A HeadRow is the row above one mod's lines, which may be folded, or above the game's own when it has no mod. */
+/** A HeadRow is the row above one mod's lines. With no mod, it is the row that stands for the game's own lines. */
 type HeadRow = { mod: string; count: number; folded: boolean };
 
 const GROUPINGS = [
@@ -90,9 +90,9 @@ const rows = computed((): (HeadRow | Finding)[] => {
   if (scope.value === "mods" && grouping.value === "mod") {
     const grouped = mods.flatMap((mod) => {
       const own = matches.filter((row) => row.origin === mod.id);
-      const shut = folded.value.includes(mod.id);
-      const head = { mod: mod.id, count: countFindings(own), folded: shut };
-      return own.length ? [head, ...(shut ? [] : own)] : [];
+      const isFolded = folded.value.includes(mod.id);
+      const head = { mod: mod.id, count: countFindings(own), folded: isFolded };
+      return own.length ? [head, ...(isFolded ? [] : own)] : [];
     });
     return grouped.length && game ? [...grouped, { mod: "", count: game, folded: true }] : grouped;
   }
@@ -106,7 +106,7 @@ const empty = computed(() => {
   return scope.value === "mods" ? "No line of the game's last run names your mods." : "Every line names your mods.";
 });
 const lastRun = computed(() => (log?.writtenAt ? describeTime(log.writtenAt) : ""));
-/** Which of the workspace's mods the run that wrote the log did not read from their own folders, or "". */
+/** A warning that the run that wrote the log did not read every mod from its own folder, or "" if it did. */
 const runNote = computed(() => {
   const unloaded = (log?.unloaded ?? []).map((mod) => workspace.originName(mod));
   const copies = Object.entries(log?.copies ?? {}).map(([mod, folder]) => `${workspace.originName(mod)} (${folder})`);
@@ -134,17 +134,17 @@ const faults = computed(() => {
   }
   return byPlace;
 });
-/** The mod's problem at the open row's place, if any, with the sentence that says the mod's own check finds it. */
+/** The mod's problem at the open row's place, if any, with a sentence saying the mod's own check finds it too. */
 const fault = computed(() => {
   const shared = opened && faults.value.get(toSiteKey(opened));
   if (!shared) return undefined;
-  const mod: Part = { text: workspace.originName(shared.mod), style: "mod" };
+  const modPart: Part = { text: workspace.originName(shared.mod), style: "mod" };
   const parts: Part[] = [
-    mod,
+    modPart,
     { text: "'s own check finds the same problem: ", style: "" },
     ...(shared.finding.message ?? []),
     { text: " Open it in ", style: "" },
-    mod,
+    modPart,
     { text: "'s problems.", style: "" },
   ];
   return { ...shared, parts };
@@ -159,7 +159,7 @@ const { mutate: openFile } = useMutation({
 
 /** fold folds a mod's section, or unfolds it if it is folded. */
 function fold(mod: string): void {
-  folded.value = folded.value.includes(mod) ? folded.value.filter((one) => one !== mod) : [...folded.value, mod];
+  folded.value = folded.value.includes(mod) ? folded.value.filter((id) => id !== mod) : [...folded.value, mod];
 }
 
 /** describeFaultColor returns the level color of the mod's problem at a row's place, or undefined for none. */

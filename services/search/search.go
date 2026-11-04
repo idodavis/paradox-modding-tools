@@ -64,7 +64,7 @@ type Hits struct {
 	Hits  []lsp.Site      `json:"hits"`
 }
 
-// A tally is the count of the hits one text search has given, which stops at its limit.
+// A tally counts the hits one text search has given and passes each file's hits on, up to a limit.
 type tally struct {
 	mu      sync.Mutex
 	count   int
@@ -172,9 +172,9 @@ func (sch *Service) SearchFiles(query string, limit int) []workspace.Place {
 }
 
 // run runs one text search over the files the query names, giving each file's hits to the tally. It returns when the
-// search finishes, has reached the tally's limit or the given channel closes, and reports whether it reached the
-// limit. It returns an error if the query is empty or is a regular expression that does not parse.
-func run(ws *workspace.Session, query Query, stop <-chan struct{}, sent *tally) (bool, error) {
+// search finishes, reaches the tally's limit or the given channel closes. It returns whether the limit was reached,
+// and an error if the query is empty or is a regular expression that does not parse.
+func run(ws *workspace.Session, query Query, stop <-chan struct{}, tally *tally) (bool, error) {
 	expression, err := parseQuery(query)
 	if err != nil {
 		return false, err
@@ -182,14 +182,14 @@ func run(ws *workspace.Session, query Query, stop <-chan struct{}, sent *tally) 
 	var group errgroup.Group
 	group.SetLimit(files.Workers)
 	mods := ws.Mods.Load()
-	holds := makeTest(query)
+	quickTest := makeTest(query)
 	for _, file := range listFiles(mods, query) {
-		if isClosed(stop) || sent.isFull() {
+		if isClosed(stop) || tally.isFull() {
 			break
 		}
 		group.Go(func() error {
 			source, err := ws.LoadSource(file.Path)
-			if err != nil || !holds(source) {
+			if err != nil || !quickTest(source) {
 				return nil
 			}
 			lines := jomini.NewLines(source)
@@ -203,17 +203,17 @@ func run(ws *workspace.Session, query Query, stop <-chan struct{}, sent *tally) 
 				}
 			})
 			if len(hits) > 0 && !isClosed(stop) {
-				sent.send(ws.Locate(mods, file.Path), hits)
+				tally.send(ws.Locate(mods, file.Path), hits)
 			}
 			return nil
 		})
 	}
 	_ = group.Wait()
-	return sent.isFull(), nil
+	return tally.isFull(), nil
 }
 
-// makeTest returns the quick test a file's whole text must pass before it is searched line by line: it holds a plain
-// query's text, in any case unless the query matches case. A regular expression is matched in every file.
+// makeTest returns the quick test a file's whole text must pass before it is searched line by line: that it holds a
+// plain query's text, in any case unless the query matches case. A regular expression passes every file.
 func makeTest(query Query) func(text string) bool {
 	lower := strings.ToLower(query.Text)
 	switch {
@@ -221,7 +221,7 @@ func makeTest(query Query) func(text string) bool {
 		return func(string) bool { return true }
 	case query.MatchCase:
 		return func(text string) bool { return strings.Contains(text, query.Text) }
-	case utf8.RuneCountInString(lower) != len(lower):
+	case utf8.RuneCountInString(lower) != len(lower): // containsFold folds ASCII only
 		return func(text string) bool { return strings.Contains(strings.ToLower(text), lower) }
 	}
 	return func(text string) bool { return containsFold(text, lower) }
@@ -231,14 +231,14 @@ func makeTest(query Query) func(text string) bool {
 func containsFold(text, piece string) bool {
 	first := piece[:1] + strings.ToUpper(piece[:1])
 	for len(text) >= len(piece) {
-		index := strings.IndexAny(text, first)
-		if index < 0 || len(text)-index < len(piece) {
+		offset := strings.IndexAny(text, first)
+		if offset < 0 || len(text)-offset < len(piece) {
 			return false
 		}
-		if strings.EqualFold(text[index:index+len(piece)], piece) {
+		if strings.EqualFold(text[offset:offset+len(piece)], piece) {
 			return true
 		}
-		text = text[index+1:]
+		text = text[offset+1:]
 	}
 	return false
 }
@@ -252,8 +252,8 @@ func (tally *tally) send(place workspace.Place, hits []lsp.Site) {
 		return
 	}
 	tally.count += len(hits)
-	for index := range hits {
-		hits[index].Place = place
+	for position := range hits {
+		hits[position].Place = place
 	}
 	tally.receive(Hits{Place: place, Hits: hits})
 }
@@ -308,8 +308,8 @@ func listFiles(mods *index.Index, query Query) []files.File {
 	})
 }
 
-// parseGlobs returns the rules of a list of glob patterns, separated by commas outside braces and by line breaks. So
-// "*.{txt,yml}" is one pattern.
+// parseGlobs parses a list of glob patterns into ignore rules. The patterns are separated by commas outside braces and
+// by line breaks, so "*.{txt,yml}" is one pattern.
 func parseGlobs(text string) files.Ignore {
 	var rules strings.Builder
 	depth := 0
@@ -335,9 +335,10 @@ func findMatches(text string, lines jomini.Lines, expression *regexp.Regexp, who
 		span := lines.LineSpan(line)
 		content := text[span.Start:span.End]
 		for _, match := range expression.FindAllStringSubmatchIndex(content, -1) {
-			if match[0] == match[1] || wholeWord && !isWholeWord(content, match[0], match[1]) {
+			if match[0] == match[1] || (wholeWord && !isWholeWord(content, match[0], match[1])) {
 				continue
 			}
+			// The offsets are in the line. Shift them to offsets in the text, leaving the -1 of a group that did not match.
 			for position, offset := range match {
 				if offset >= 0 {
 					match[position] = offset + span.Start

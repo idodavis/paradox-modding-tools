@@ -89,9 +89,9 @@ var (
 // usageOperators are the operators a usage writes between a key and its value.
 var usageOperators = []string{"=", "==", "!=", "<", ">", "<=", ">=", "?="}
 
-// FindDumpsAt returns when the dumps under the given folders were last written: the time of the newest dump file. It
-// reads no file. The time is zero when no folder holds a dump, and the error is that of a dump file whose time cannot
-// be read.
+// FindDumpsAt returns when the dumps under the given folders were last written, which is the time of the newest dump
+// file. It reads no file. The time is zero if no folder holds a dump. The error is that of a dump file whose time
+// cannot be read.
 func FindDumpsAt(dirs []string) (time.Time, error) {
 	var newest time.Time
 	for _, file := range dumpFiles {
@@ -106,9 +106,9 @@ func FindDumpsAt(dirs []string) (time.Time, error) {
 	return newest, nil
 }
 
-// ReadDumps reads the newest copy of each dump file under the given folders, and notes each folder a file was read
-// from. A missing file is left out, so the caller can fill it from the shipped backup. It returns an error only for a
-// file that exists and cannot be read.
+// ReadDumps reads the newest copy of each dump file under the given folders, and records the folders it read from. A
+// missing file is left out, so the caller can fill it from the shipped backup. It returns an error only for a file that
+// exists and cannot be read.
 func ReadDumps(dirs []string) (*Dumps, error) {
 	dumpsAt, err := FindDumpsAt(dirs)
 	if err != nil {
@@ -141,15 +141,15 @@ func ReadDumps(dirs []string) (*Dumps, error) {
 	return dumps, nil
 }
 
-// findDump returns the path and the time of the newest file of the given base name that the folders hold. The path
-// is "" and the time zero when no folder holds the file.
+// findDump returns the path and the time of the newest file with the given base name in the folders. The path is "" and
+// the time zero if no folder holds the file.
 func findDump(dirs []string, file string) (string, time.Time, error) {
 	newest, newestAt := "", time.Time{}
 	for _, dir := range dirs {
 		path := filepath.Join(dir, file)
 		stat, err := os.Stat(path)
 		switch {
-		case errors.Is(err, fs.ErrNotExist):
+		case errors.Is(err, fs.ErrNotExist): // the folder lacks this file
 		case err != nil:
 			return "", time.Time{}, err
 		case stat.ModTime().After(newestAt):
@@ -159,7 +159,7 @@ func findDump(dirs []string, file string) (string, time.Time, error) {
 	return newest, newestAt, nil
 }
 
-// parseFile parses the text of one dump file into the dumps, by the file's base name.
+// parseFile parses the text of one dump file, chosen by its base name, into the dumps.
 func (dumps *Dumps) parseFile(file, text string) {
 	switch file {
 	case "effects.log":
@@ -179,9 +179,9 @@ func (dumps *Dumps) parseFile(file, text string) {
 	}
 }
 
-// parseSections yields the entries of a dump, each as its first line and the lines after it. A line of dashes or a
-// markdown heading starts an entry. A heading is the whole first line of its entry. If the flag says the dump opens
-// with a title, the title is skipped.
+// parseSections yields the entries of a dump, each as its head and the lines after it. A line of dashes or a markdown
+// heading starts an entry. The head is the heading's word, or the first line after the dashes. If titled is set, the
+// dump opens with a title, and the lines before the first entry are skipped.
 func parseSections(text string, titled bool) iter.Seq2[string, []string] {
 	return func(yield func(string, []string) bool) {
 		head, body, open := "", []string(nil), !titled
@@ -197,7 +197,7 @@ func parseSections(text string, titled bool) iter.Seq2[string, []string] {
 				if heading != nil {
 					head = heading[1]
 				}
-			case !open:
+			case !open: // the dump's title
 			case head == "":
 				head = strings.TrimSpace(line)
 			default:
@@ -211,7 +211,7 @@ func parseSections(text string, titled bool) iter.Seq2[string, []string] {
 }
 
 // parseCommands parses the effects, triggers or links of one script_docs dump, in the order it lists them. The event
-// targets dump ends with a list of the targets that the game saves from code. Those are names only.
+// targets dump ends with a list of the targets that the game saves from code, which are names only.
 func (dumps *Dumps) parseCommands(text, declaration string) {
 	for head, body := range parseSections(text, true) {
 		if head == savedTitle {
@@ -269,7 +269,7 @@ func splitScopes(text string) []string {
 	})
 }
 
-// parsePairs returns the `Key: value` lines of an entry's body by key. A later line of the same key wins.
+// parsePairs returns the "Key: value" lines of an entry's body by key. A later line with the same key wins.
 func parsePairs(body []string) map[string]string {
 	pairs := map[string]string{}
 	for _, line := range body {
@@ -280,8 +280,8 @@ func parsePairs(body []string) map[string]string {
 	return pairs
 }
 
-// parseOnActions parses the on_actions dump. Each entry is an on_action's name, whether the game calls it from its own
-// code, and the scope it runs in. It returns the on_actions by name.
+// parseOnActions parses the on_actions dump. Each entry gives an on_action's name, the scope it runs in and whether the
+// game calls it from its own code. It returns the on_actions by name.
 func parseOnActions(text string) map[string]OnAction {
 	actions := map[string]OnAction{}
 	for head, body := range parseSections(text, true) {
@@ -297,8 +297,8 @@ func parseOnActions(text string) map[string]OnAction {
 	return actions
 }
 
-// parseScopes parses the scope types of the event scopes dump. Each is a title, then what script can do in the scope.
-// The save token the dump also writes is not read.
+// parseScopes parses the scope types of the event scopes dump. Each is a title, then lines saying whether triggers and
+// effects run in the scope. The dump's other lines, such as its save token, are not read.
 func (dumps *Dumps) parseScopes(text string) {
 	var lines []string
 	flush := func() {
@@ -324,8 +324,8 @@ func (dumps *Dumps) parseScopes(text string) {
 	flush()
 }
 
-// parseModifiers parses the modifiers dump. The games write it in three layouts: a `Tag:` line with a `Use areas:` line
-// below it, a `Tag:` line with its categories, or a title with an indented description.
+// parseModifiers parses the modifiers dump. The games write it in three layouts: a "Tag:" line with a "Use areas:" line
+// below it, a "Tag:" line with its categories, or a title with an indented description.
 func (dumps *Dumps) parseModifiers(text string) {
 	last := ""
 	for line := range strings.Lines(text) {
@@ -339,7 +339,7 @@ func (dumps *Dumps) parseModifiers(text string) {
 		case titleLine.MatchString(line):
 			last = strings.TrimSuffix(line, ":")
 			dumps.Modifiers[last] = Modifier{Name: last}
-		case last == "":
+		case last == "": // a line before the first modifier
 		case strings.HasPrefix(trimmed, "Use areas:") || strings.HasPrefix(trimmed, "Description:"):
 			_, blurb, _ := strings.Cut(trimmed, ":")
 			dumps.Modifiers[last] = Modifier{Name: last, Blurb: strings.TrimSpace(blurb)}
@@ -348,8 +348,8 @@ func (dumps *Dumps) parseModifiers(text string) {
 }
 
 // parseDataTypes parses the types and functions of one data types dump. A function written on a type belongs to that
-// type, and a global one belongs to game.GlobalType. A function that returns its own object (game.SelfFunctions)
-// returns its type. A macro keeps its text. A function written for several arities keeps the first.
+// type, and a global one belongs to game.GlobalType. A function in game.SelfFunctions returns its own type. A macro
+// keeps its text. A function written for several arities keeps the first.
 func (dumps *Dumps) parseDataTypes(text string) {
 	for head, body := range parseSections(text, false) {
 		parts := signature.FindStringSubmatch(head)
@@ -407,8 +407,8 @@ func (schema *Schema) buildDumps(row *game.Game, installPath string) error {
 	return nil
 }
 
-// resolveMissing takes each section the dumps lack from the backup. It reports whether it took any. The effects,
-// triggers and links are three sections. The links bring the targets saved from code.
+// resolveMissing takes each section the dumps lack from the backup, and reports whether it took any. The effects,
+// triggers and links are three sections, and the links bring the targets saved from code.
 func (dumps *Dumps) resolveMissing(backup *Dumps) bool {
 	missing := false
 	for _, declaration := range []string{game.DeclaredEffect, game.DeclaredTrigger, game.DeclaredLink} {
@@ -445,7 +445,7 @@ func (dumps *Dumps) applyCorrections(row *game.Game) {
 	}
 }
 
-// takeMissing gives the dumps the backup's table where they have none of it, and reports whether it did.
+// takeMissing replaces an empty table with the backup's, and reports whether it did.
 func takeMissing[T any](table *map[string]T, backup map[string]T) bool {
 	if len(*table) > 0 {
 		return false
@@ -455,8 +455,8 @@ func takeMissing[T any](table *map[string]T, backup map[string]T) bool {
 }
 
 // buildCommands builds the commands the dumps declare. A name that several dumps list is one command. A link that
-// takes data after a colon is a prefix. A trigger whose Traits line says what its value is takes that as its value. The
-// keys of a command game.CommandKeys names are names of its database.
+// requires data is a prefix. A trigger whose Traits line says what its value is takes that as its value. The keys of a
+// command that game.CommandKeys names are names in its database.
 func (schema *Schema) buildCommands(dumps []DumpCommand) {
 	for _, dump := range dumps {
 		command := schema.Commands[dump.Name]
@@ -479,9 +479,9 @@ func (schema *Schema) buildCommands(dumps []DumpCommand) {
 	}
 }
 
-// build adds what one dump says about a command. Its scopes are the union of the scopes of its dumps, and a dump that
-// names none leaves it with none. The first target, blurb and arguments are kept. The dump's usage starts at
-// the first line of its description written as `<scope> = { … }`.
+// build adds what one dump says about a command. Its scopes are the union of its dumps' scopes, and a dump that names
+// none leaves it with none. The first target, blurb and arguments are kept. The dump's usage starts at the first line
+// of its description that opens a block, such as "key = {".
 func (command *Command) build(dump DumpCommand) {
 	switch {
 	case len(command.Declared) == 0:
@@ -512,11 +512,11 @@ func (command *Command) build(dump DumpCommand) {
 	command.Lists = command.Lists || (strings.HasPrefix(blurb, game.DumpPhrases.Iterates) && command.Target == "")
 }
 
-// parseArguments returns the keys a command takes, as fields: those of each usage block written under the command's
-// name, on a line of its own or inside a sentence, and the key each line of the description opens with, as in
-// key = value. The words after a value, such as "- must be defined", declare nothing. It returns nil if the
-// description gives the command no key and no shape. It also returns the first key of the first block form that opens
-// with one, an identifier followed by an operator, or "".
+// parseArguments returns the keys a command takes as fields, and the command's argument key. The keys come from each
+// usage block written as title = { … }, on a line of its own or inside a sentence, and from each line of the prose
+// that opens with key = value. The words after a value, such as "- must be defined", declare nothing. The argument key
+// is the first key of the first block that opens with an identifier and an operator, else "". It returns nil if the
+// description gives the command no key and no shape.
 func parseArguments(title, prose, usage string) (*Field, string) {
 	arguments, first := &Field{Source: game.SourceDumps}, ""
 	prose, usage = usageComment.ReplaceAllString(prose, ""), usageComment.ReplaceAllString(usage, "")
@@ -547,9 +547,9 @@ func parseArguments(title, prose, usage string) (*Field, string) {
 	return arguments, first
 }
 
-// parseUsageBlock reads the statements of the usage block that starts at the given token into a field's children, up
-// to the brace that closes it. A placeholder such as <triggers> gives the field the shape it names, and a statement
-// written in angle or square brackets is optional. It returns the token after the closing brace.
+// parseUsageBlock reads the statements of the usage block that starts at a token into a field's children, up to the
+// brace that closes it. A placeholder such as <triggers> gives the field the shape it names, and a statement written in
+// angle or square brackets is optional. It returns the position after the closing brace.
 func parseUsageBlock(tokens []string, cursor int, field *Field) int {
 	for cursor < len(tokens) && tokens[cursor] != "}" {
 		token := tokens[cursor]
@@ -571,9 +571,9 @@ func parseUsageBlock(tokens []string, cursor int, field *Field) int {
 	return cursor + 1
 }
 
-// parseUsageStatement reads the key = value statement of a usage that starts at the given token into a field's
-// children: a child for each key a slash joins, optional where the statement was written in brackets. It returns the
-// token after the statement, or the next token where no statement starts.
+// parseUsageStatement reads the key = value statement of a usage that starts at a token into a field's children. It
+// adds a child for each key that slashes join, and marks it optional if the statement was written in brackets. It
+// returns the position after the statement, or the next position if no statement starts there.
 func parseUsageStatement(tokens []string, cursor int, field *Field, optional bool) int {
 	if cursor+1 >= len(tokens) || !slices.Contains(usageOperators, tokens[cursor+1]) {
 		return cursor + 1
@@ -596,9 +596,9 @@ func parseUsageStatement(tokens []string, cursor int, field *Field, optional boo
 	return next
 }
 
-// parseUsageValue gives an argument what the value written for it at the given token says: the keys of a block, the
-// choices of a list such as [yes|no] or <A|B>, or the type a docs' type word names, bare or in angle brackets. Any
-// other value is a sample and says nothing. It returns the token after the value.
+// parseUsageValue gives an argument what the value at a token says. A block gives the argument its keys, a list such as
+// [yes|no] or <A|B> gives its choices, and a docs' type word, bare or in angle brackets, gives its type. Any other
+// value is a sample and says nothing. It returns the position after the value.
 func parseUsageValue(tokens []string, cursor int, argument *Field) int {
 	value := tokens[cursor]
 	term := strings.TrimSuffix(strings.TrimPrefix(value, "<"), ">")
@@ -614,8 +614,8 @@ func parseUsageValue(tokens []string, cursor int, argument *Field) int {
 	return cursor + 1
 }
 
-// findPlaceholderShape returns the shape that a placeholder names, such as `<triggers>`, `<effect>` or
-// `<display_triggers>`. It returns false if the placeholder names none.
+// findPlaceholderShape returns the shape that a placeholder names, such as <triggers>, <effect> or <display_triggers>.
+// It returns false if the placeholder names none.
 func findPlaceholderShape(placeholder string) (string, bool) {
 	shape := strings.TrimSuffix(placeholder, ">")
 	shape = shape[strings.LastIndex(shape, "_")+1:]
@@ -627,10 +627,10 @@ func findPlaceholderShape(placeholder string) (string, bool) {
 }
 
 // resolveTraits returns what a trigger's value must be, as its Traits line says. A comparison takes a number or a
-// script value, or a date where the line says so. A line of yes and no takes yes or no. A class takes a name of the
-// database that holds its keys. A scope or a target takes a link to that scope. A tag or an id takes such a link, or
-// a name of the database that holds the scope's names. A list takes one of its words. It returns false for an empty
-// line, for a line in no form it knows and for a class whose database the game does not have.
+// script value, or a date if the line says so. A yes/no line takes yes or no. A class takes a name from the database
+// that holds its keys. A scope or a target takes a link to that scope. A tag or an id takes such a link, or a name from
+// the database of that scope's names. A list takes one of its words. It returns false for an empty line, a line in no
+// known form, and a class whose database the game does not have.
 func (schema *Schema) resolveTraits(traits string) (Expected, bool) {
 	comparison, class := comparisonTraits.FindStringSubmatch(traits), classTraits.FindStringSubmatch(traits)
 	target, tag := targetTraits.FindStringSubmatch(traits), tagTraits.FindStringSubmatch(traits)
@@ -661,8 +661,8 @@ func (schema *Schema) resolveTraits(traits string) (Expected, bool) {
 	return Expected{}, false
 }
 
-// makeArguments returns the field of the keys a command takes. It makes the field, with the given source, if the
-// command has none.
+// makeArguments returns the field of the keys a command takes. If the command has none, it adds an empty one with the
+// given source.
 func (command *Command) makeArguments(source game.Source) *Field {
 	if command.Arguments == nil {
 		command.Arguments = &Field{Source: source}
@@ -675,17 +675,17 @@ func (command *Command) makeArguments(source game.Source) *Field {
 // count.
 func (schema *Schema) buildKeywordShapes(row *game.Game) {
 	for _, keyword := range game.Keywords {
-		title, key, held := strings.Cut(keyword.Key, "/")
+		title, key, nested := strings.Cut(keyword.Key, "/")
 		command := schema.Commands[title]
-		if !held || command == nil || keyword.Shape == "" || keyword.Shape == "enclosing" || !row.Matches(keyword.Games) {
+		if !nested || command == nil || keyword.Shape == "" || keyword.Shape == "enclosing" || !row.Matches(keyword.Games) {
 			continue
 		}
 		command.makeArguments(game.SourceDumps).buildChild(key, game.SourceNone).Shape.resolve(keyword.Shape, game.SourceRegistry)
 	}
 }
 
-// buildFamilies makes the commands of one list family, any_x, every_x, random_x and ordered_x, share the keys of their
-// arguments. Each command keeps its own arguments field and shape. A command with no arguments gets none.
+// buildFamilies makes the commands of one list family, such as any_x, every_x, random_x and ordered_x, share the keys
+// of their arguments. Each command keeps its own arguments field and shape. A command with no arguments gets none.
 func (schema *Schema) buildFamilies() {
 	families := map[string][]*Field{}
 	for _, name := range slices.Sorted(maps.Keys(schema.Commands)) {
@@ -707,7 +707,7 @@ func (schema *Schema) buildFamilies() {
 }
 
 // unite returns one field that merges the given fields. It has one child for each key they write, merged the same way,
-// and it states all their claims.
+// and takes all their claims.
 func unite(fields []*Field) *Field {
 	united := &Field{}
 	keyed := map[string][]*Field{}

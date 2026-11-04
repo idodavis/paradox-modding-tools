@@ -35,7 +35,7 @@ import (
 type Snapshot struct {
 	WorkshopID string            `json:"workshopId"`
 	UpdatedAt  time.Time         `json:"updatedAt"` // when Steam last updated the item, as of the download
-	Files      map[string]string `json:"files"`     // the hash of each file, by its path
+	Files      map[string]string `json:"files"`     // the SHA-256 of each file, by its Rel path
 }
 
 // Details is what Steam reports about an item.
@@ -352,8 +352,8 @@ func (stm *Service) compareFiles(
 	return differences, nil
 }
 
-// buildUploadHashes returns the SHA-256 of each file of an upload by its path. Only the files that changed since the
-// last comparison are hashed again.
+// buildUploadHashes returns the SHA-256 of each file of an upload by its Rel path. It hashes only the files whose path,
+// size or time changed since an earlier call.
 func (stm *Service) buildUploadHashes(list []files.File) map[string]string {
 	keys := make([]string, len(list))
 	for position, file := range list {
@@ -464,7 +464,7 @@ func resolveSnapshotDir(cacheDir, workshopID string) string {
 	return filepath.Join(cacheDir, "snapshot-"+workshopID)
 }
 
-// buildHashes returns the SHA-256 of each file by its path. A file that cannot be read has the hash "".
+// buildHashes returns the SHA-256 of each file by its Rel path. A file that cannot be read has the hash "".
 func buildHashes(list []files.File) map[string]string {
 	hashes := make([]string, len(list))
 	var group errgroup.Group

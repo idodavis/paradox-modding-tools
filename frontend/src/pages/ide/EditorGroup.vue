@@ -1,8 +1,8 @@
 <!--
-  One editor group: its tab strip, with tabs dragged between groups and windows, and the active tab shown as code, an
-  image, a diff or the start page, or in Visual as the picture it draws. A group with no tab shows the start page. A
-  file that changed on disk under unsaved text shows a notice and a compare. A read only file shows a notice that says
-  how to change it.
+  One editor group: its tab strip, whose tabs can be dragged between groups and windows, and the active tab shown as
+  code, an image, a diff or the start page, or in Visual as the picture it draws. A group with no tab shows the start
+  page. A file changed on disk under unsaved text shows a notice and a compare. A read only file shows a notice that
+  says how to change it.
 -->
 <script setup lang="ts">
 import { computed, shallowReactive, shallowRef, useTemplateRef, watch } from "vue";
@@ -44,10 +44,10 @@ import { findIcon, VIEWS } from "./editor/tabs";
 
 const { group, active } = defineProps<{ group: Group; active: boolean }>();
 
-/** The data a dragged tab carries to another window. */
+/** TAB is the drag data type that carries a tab to another window. */
 const TAB = "application/x-pmt-tab";
 type Zone = Side | "middle";
-/** The half of the editor each drop zone lights. */
+/** ZONES gives the classes that light each drop zone: a half of the editor, or all of it for the middle. */
 const ZONES: Record<Zone, string> = {
   left: "inset-y-0 left-0 w-1/2",
   right: "inset-y-0 right-0 w-1/2",
@@ -55,12 +55,12 @@ const ZONES: Record<Zone, string> = {
   down: "inset-x-0 bottom-0 h-1/2",
   middle: "inset-0",
 };
-/** The two modes the switch offers. */
+/** MODES are the options of the Code or Visual switch. */
 const MODES = [
   { label: "Code", icon: "i-lucide-code", value: "code" },
   { label: "Visual", icon: "i-lucide-eye", value: "visual" },
 ];
-/** The command that shows the active file in the explorer, and the one that saves every file with unsaved text. */
+/** REVEAL and SAVE_ALL are the commands that reveal the active file in the explorer and save every unsaved file. */
 const REVEAL = findCommand("explorer.reveal");
 const SAVE_ALL = findCommand("editor.saveAll");
 
@@ -70,7 +70,7 @@ const workspace = useWorkspaceStore();
 const strip = useTemplateRef("strip");
 // the index in the group a tab dragged over the strip would land at, while one is
 const landing = shallowRef<number | null>(null);
-const over = shallowRef(false);
+const isDraggedOver = shallowRef(false);
 const zone = shallowRef<Zone | null>(null);
 
 const activeTab = computed(() => group.tabs.find((tab) => tab.id === group.active));
@@ -83,23 +83,24 @@ const isUnshown = computed(() => !!place.value && (!VIEWS[place.value.format].vi
 const isDrawable = computed(() => editor.isDrawable(activeTab.value));
 // this group is the one Visual shows, and its active file is drawn
 const isVisual = computed(() => active && editor.mode === "visual" && isDrawable.value);
-const corner = computed(() => THIS_WINDOW === "main" && editor.layout().rows[0]?.columns.at(-1)?.id === group.id);
+const isTopRight = computed(() => THIS_WINDOW === "main" && editor.layout().rows[0]?.columns.at(-1)?.id === group.id);
 const rows = computed(() => group.tabs.map(describe));
 
-// where the caret is, as the definition and the blocks around it, and the fix that overrides the entry it is in
+// the hover card at the caret, which names the definition it is in and the blocks around it, and the fix that
+// overrides the entry it is in
 const { mutate: locateCaret, data: located } = useMutation({
-  mutation: async (open: Model) => {
+  mutation: async (fileModel: Model) => {
     const [card, override] = await Promise.all([
-      lsp.Hover(open.place.path, open.caret.line, open.caret.column),
-      findOverride(open.place, open.caret.line, open.caret.column),
+      lsp.Hover(fileModel.place.path, fileModel.caret.line, fileModel.caret.column),
+      findOverride(fileModel.place, fileModel.caret.line, fileModel.caret.column),
     ]);
     return { card, override };
   },
 });
 const card = computed(() => located.value?.card);
 const crumbs = computed(() => [...(place.value?.rel.split("/") ?? []), ...(card.value?.within ?? [])]);
-const folders = computed(() => (place.value?.rel.split("/").length ?? 1) - 1);
-// a file of the game that a mod replaces shows the mod's name; a mod file's copies, which the cache may hold, do not
+const folderCount = computed(() => (place.value?.rel.split("/").length ?? 1) - 1);
+// a game file that a mod replaces shows the replacing mod; the copies of a mod's own file are not fetched
 const { data: copies } = useQuery(() => ({
   ...copiesQuery(place.value?.path ?? ""),
   enabled: place.value?.origin === VANILLA && !activeTab.value?.side,
@@ -107,7 +108,7 @@ const { data: copies } = useQuery(() => ({
 const replacement = computed(() =>
   place.value?.origin === VANILLA && copies.value && copies.value.length > 1 ? copies.value.at(-1) : undefined,
 );
-// the file of the tab whose menu is open, with the game's copy of it, read when the menu opens
+// the file of the tab whose menu is open; its copies are fetched when the menu opens
 const menuPlace = shallowRef<Place | null>(null);
 const { data: menuCopies } = useQuery(() => ({
   ...copiesQuery(menuPlace.value?.path ?? ""),
@@ -162,19 +163,19 @@ watchDebounced(
 );
 // a tab drag ends with a drop or a drag end that reaches the window wherever it lands, so every group stops showing it
 useEventListener(window, ["drop", "dragend"], endDrag);
-const { mutate: saveModel } = useMutation({ mutation: (open: Model) => save(open) });
-// the compare of the active file's unsaved text with the disk's is open
+const { mutate: saveModel } = useMutation({ mutation: (fileModel: Model) => save(fileModel) });
+// whether the compare of the unsaved text with the disk's text is open
 const comparing = shallowRef(false);
 
-/** saveMine saves a model's text over the disk's text it kept, and closes the compare. */
-function saveMine(open: Model): void {
-  saveModel(open);
+/** saveMine saves a model's text over the disk's text, and closes the compare. */
+function saveMine(fileModel: Model): void {
+  saveModel(fileModel);
   comparing.value = false;
 }
 
-/** applyDisk puts the disk's text a model kept in the model, dropping its unsaved text, and closes the compare. */
-function applyDisk(open: Model): void {
-  if (open.diskText) setText(open, open.diskText);
+/** applyDisk replaces a model's unsaved text with the disk's text, and closes the compare. */
+function applyDisk(fileModel: Model): void {
+  if (fileModel.diskText) setText(fileModel, fileModel.diskText);
   comparing.value = false;
 }
 
@@ -182,11 +183,15 @@ function applyDisk(open: Model): void {
  * overrideHere overrides the entry at a model's caret in the mod the notice's button names, then finds the caret's
  * place again, so the button goes once the entry is overridden.
  */
-function overrideHere(open: Model): void {
+function overrideHere(fileModel: Model): void {
   const modId = located.value?.override?.reveal?.place.origin;
-  void overrideEntry(open.place, open.caret.line, open.caret.column, card.value?.within?.[0] ?? "", modId).then(() =>
-    locateCaret(open),
-  );
+  void overrideEntry(
+    fileModel.place,
+    fileModel.caret.line,
+    fileModel.caret.column,
+    card.value?.within?.[0] ?? "",
+    modId,
+  ).then(() => locateCaret(fileModel));
 }
 
 /** describe describes a tab for the strip: its label, its icon and what marks it. */
@@ -209,32 +214,29 @@ function describe(tab: Tab) {
 }
 type Row = ReturnType<typeof describe>;
 
-/**
- * setMode sets the mode to the one the switch picked. Picking Visual in a group that is not the active one activates
- * it.
- */
+/** setMode activates this group, then sets the editor mode to the one the switch picked. */
 function setMode(choice: string | number): void {
   editor.activate(group.id);
   editor.mode = choice === "visual" ? "visual" : "code";
 }
 
-/** select shows a tab of this group, which makes the group the active one. */
+/** select shows a row's tab and makes this group active. A tab with no file only activates the group. */
 function select(row: Row): void {
   if (row.tabPlace || row.tab.start) editor.open(row.tab, row.tabPlace, group.id);
   else editor.activate(group.id);
 }
 
 /**
- * activateGroup makes this group the active one when the pointer goes down in it. On a tab it waits for the click to
- * show the tab, so the history keeps the place the user leaves in the group active before.
+ * activateGroup makes this group active when the pointer goes down in it. On a tab it waits for the click, so the
+ * history records the place the user leaves in the previously active group.
  */
 function activateGroup(event: PointerEvent): void {
   if (!(event.target instanceof Element && event.target.closest("[data-tab]"))) editor.activate(group.id);
 }
 
 /**
- * closeTabs closes the given tabs of this group. When that leaves a file with changes that are not saved in no tab, it
- * asks first, once for all of them, and saying no closes none.
+ * closeTabs closes the given tabs of this group. If that would leave a file with unsaved changes in no tab, it first
+ * asks once about all such files, and closes none if the user says no.
  */
 async function closeTabs(tabs: Tab[]): Promise<void> {
   if (!(await editor.confirmClose(tabs))) return;
@@ -242,12 +244,12 @@ async function closeTabs(tabs: Tab[]): Promise<void> {
   for (const tab of [...tabs]) editor.close(tab.id);
 }
 
-/** listOthers lists the tabs of this group other than the given one. */
+/** listOthers lists the tabs of this group except the one with the given id. */
 function listOthers(keep: string | null): Tab[] {
   return group.tabs.filter((tab) => tab.id !== keep);
 }
 
-/** split splits the group at a tab, which shows in the new group too. */
+/** split shows a row's tab, then splits the group in the given direction. The tab shows in the new group too. */
 function split(row: Row, direction: "row" | "column"): void {
   select(row);
   editor.split(direction);
@@ -322,9 +324,9 @@ function leaveStrip(event: DragEvent): void {
   if (!isEnteringChild(event)) landing.value = null;
 }
 
-/** enter starts to show where a dragged tab would land in the editor. */
+/** enter shows the drop zones while a tab is dragged over the group. */
 function enter(event: DragEvent): void {
-  if (event.dataTransfer?.types.includes(TAB)) over.value = true;
+  if (event.dataTransfer?.types.includes(TAB)) isDraggedOver.value = true;
 }
 
 /** isEnteringChild tells whether a leaving drag goes to an element inside the one that handles the event. */
@@ -336,21 +338,25 @@ function isEnteringChild(event: DragEvent): boolean {
   );
 }
 
-/** leave stops showing where a dragged tab would land once the pointer is out of the group. */
+/** leave hides the drop zones once the pointer leaves the group. */
 function leave(event: DragEvent): void {
   if (isEnteringChild(event)) return;
-  over.value = false;
+  isDraggedOver.value = false;
   zone.value = null;
 }
 
-/** lightZone lights the zone of the editor the dragged tab is over. */
+/** lightZone lights the drop zone under the dragged tab. */
 function lightZone(event: DragEvent): void {
   event.preventDefault();
   if (!(event.currentTarget instanceof HTMLElement)) return;
   const box = event.currentTarget.getBoundingClientRect();
   const x = (event.clientX - box.left) / box.width;
   const y = (event.clientY - box.top) / box.height;
-  zone.value = x < 0.25 ? "left" : x > 0.75 ? "right" : y < 0.25 ? "up" : y > 0.75 ? "down" : "middle";
+  if (x < 0.25) zone.value = "left";
+  else if (x > 0.75) zone.value = "right";
+  else if (y < 0.25) zone.value = "up";
+  else if (y > 0.75) zone.value = "down";
+  else zone.value = "middle";
 }
 
 /** dropOnEditor drops a tab on the lit zone: into this group in the middle, else into a new group on that side. */
@@ -362,21 +368,21 @@ function dropOnEditor(event: DragEvent): void {
 /** endDrag stops showing a tab drag in this group: the line in the strip, the editor's drop layer and its lit zone. */
 function endDrag(): void {
   landing.value = null;
-  over.value = false;
+  isDraggedOver.value = false;
   zone.value = null;
 }
 
-/** buildMenu builds the menu of a tab. */
+/** buildMenu returns the context menu of a tab, as groups of items. */
 function buildMenu(row: Row): ContextMenuItem[][] {
-  const mine = row.tabPlace;
-  const open = findModel(row.tab.key);
+  const filePlace = row.tabPlace;
+  const fileModel = findModel(row.tab.key);
   return [
     [
       {
         label: "Save",
         kbds: findKbds("editor.save"),
-        disabled: !open?.unsaved,
-        onSelect: () => open && saveModel(open),
+        disabled: !fileModel?.unsaved,
+        onSelect: () => fileModel && saveModel(fileModel),
       },
       { label: "Save all", disabled: !SAVE_ALL?.when(), onSelect: (event) => SAVE_ALL?.onSelect?.(event) },
     ],
@@ -411,15 +417,15 @@ function buildMenu(row: Row): ContextMenuItem[][] {
     [
       {
         label: "Compare with the game's copy",
-        // the game's copy read for this tab's file, which the menu opening asked for
-        disabled: !!row.tab.side || menuPlace.value?.key !== mine?.key || !menuGameCopy.value,
-        onSelect: () => mine && compareWithGame(mine),
+        // menuGameCopy belongs to the tab whose menu opened last, so it counts only for that tab's file
+        disabled: !!row.tab.side || menuPlace.value?.key !== filePlace?.key || !menuGameCopy.value,
+        onSelect: () => filePlace && compareWithGame(filePlace),
       },
-      { label: "Select for compare", disabled: !mine, onSelect: () => (editor.compareFile = mine ?? null) },
+      { label: "Select for compare", disabled: !filePlace, onSelect: () => (editor.compareFile = filePlace ?? null) },
       {
         label: editor.compareFile ? `Compare with ${editor.compareFile.rel}` : "Compare with selected",
-        disabled: !mine || !editor.compareFile || editor.compareFile.key === mine.key,
-        onSelect: () => mine && editor.compareFile && compare(editor.compareFile, mine),
+        disabled: !filePlace || !editor.compareFile || editor.compareFile.key === filePlace.key,
+        onSelect: () => filePlace && editor.compareFile && compare(editor.compareFile, filePlace),
       },
     ],
     // the start page never leaves the main window
@@ -444,10 +450,10 @@ function buildMenu(row: Row): ContextMenuItem[][] {
           ],
         ]),
     [
-      { label: "Copy path", disabled: !mine, onSelect: () => mine && void Clipboard.SetText(mine.path) },
+      { label: "Copy path", disabled: !filePlace, onSelect: () => filePlace && void Clipboard.SetText(filePlace.path) },
       {
         label: "Reveal in explorer",
-        disabled: !mine || !REVEAL?.when(),
+        disabled: !filePlace || !REVEAL?.when(),
         onSelect: (event) => {
           select(row);
           REVEAL?.onSelect?.(event);
@@ -536,13 +542,10 @@ const actions = computed<DropdownMenuItem[]>(() => [
                   size="xs"
                   square
                   aria-label="Close"
-                  :class="
-                    row.unsaved
-                      ? 'hidden group-hover:flex'
-                      : row.tab.id === group.active
-                        ? ''
-                        : 'invisible group-hover:visible'
-                  "
+                  :class="{
+                    'hidden group-hover:flex': row.unsaved,
+                    'invisible group-hover:visible': !row.unsaved && row.tab.id !== group.active,
+                  }"
                   @click.stop="closeTabs([row.tab])"
                 />
               </span>
@@ -554,7 +557,7 @@ const actions = computed<DropdownMenuItem[]>(() => [
           <UDropdownMenu :items="actions">
             <UButton icon="i-lucide-ellipsis" variant="ghost" size="sm" square aria-label="Tab actions" />
           </UDropdownMenu>
-          <UTooltip v-if="corner" text="Wiki pane" :kbds="findKbds('editor.toggleWiki')">
+          <UTooltip v-if="isTopRight" text="Wiki pane" :kbds="findKbds('editor.toggleWiki')">
             <UButton
               icon="i-lucide-book-text"
               square
@@ -638,7 +641,7 @@ const actions = computed<DropdownMenuItem[]>(() => [
       <span>{{ workspace.originName(place.origin) }}</span>
       <template v-for="(part, index) in crumbs" :key="index">
         <UIcon name="i-lucide-chevron-right" class="size-3 shrink-0" />
-        <span :class="{ 'font-mono text-highlighted': index > folders, 'text-toned': index === folders }">{{
+        <span :class="{ 'font-mono text-highlighted': index > folderCount, 'text-toned': index === folderCount }">{{
           part
         }}</span>
       </template>
@@ -707,7 +710,7 @@ const actions = computed<DropdownMenuItem[]>(() => [
       </template>
       <StartPage v-else-if="!activeTab || activeTab.start" />
       <div
-        v-if="over"
+        v-if="isDraggedOver"
         class="absolute inset-0 z-20"
         @dragover="lightZone"
         @dragleave="zone = null"

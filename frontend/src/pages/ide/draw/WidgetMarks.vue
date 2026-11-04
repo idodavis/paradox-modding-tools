@@ -76,13 +76,13 @@ const guide = computed(() => {
     return { shape, rect, widths: SIDES.map((side) => parseFloat(style.getPropertyValue(`--margin-${side}`)) || 0) };
   }
   const holder = props.rects.get(widget.parent) ?? rect;
-  const at = (name: string, axis: string) => Number(style.getPropertyValue(`--${name}-${axis}`) || 0);
-  const own = (axis: string) => Number(style.getPropertyValue(`--own-${axis}`) || at("parent", axis));
+  const findAnchor = (prefix: string, axis: string) => Number(style.getPropertyValue(`--${prefix}-${axis}`) || 0);
+  const findOwnAnchor = (axis: string) => Number(style.getPropertyValue(`--own-${axis}`) || findAnchor("parent", axis));
   return {
     shape,
-    from: [holder.x + at("parent", "x") * holder.width, holder.y + at("parent", "y") * holder.height],
-    to: [rect.x + own("x") * rect.width, rect.y + own("y") * rect.height],
-    word: properties.findLast(({ key }) => key.toLowerCase() === props.property)?.value ?? "",
+    start: [holder.x + findAnchor("parent", "x") * holder.width, holder.y + findAnchor("parent", "y") * holder.height],
+    end: [rect.x + findOwnAnchor("x") * rect.width, rect.y + findOwnAnchor("y") * rect.height],
+    text: properties.findLast(({ key }) => key.toLowerCase() === props.property)?.value ?? "",
   };
 });
 </script>
@@ -177,16 +177,16 @@ const guide = computed(() => {
     </div>
     <svg v-if="guide?.shape === 'anchor'" class="absolute inset-0 size-full overflow-visible">
       <line
-        :x1="guide.from[0]"
-        :y1="guide.from[1]"
-        :x2="guide.to[0]"
-        :y2="guide.to[1]"
+        :x1="guide.start[0]"
+        :y1="guide.start[1]"
+        :x2="guide.end[0]"
+        :y2="guide.end[1]"
         stroke="var(--link)"
         stroke-width="1.5"
         vector-effect="non-scaling-stroke"
       />
       <circle
-        v-for="(point, ordinal) in [guide.from, guide.to]"
+        v-for="(point, ordinal) in [guide.start, guide.end]"
         :key="ordinal"
         :cx="point[0]"
         :cy="point[1]"
@@ -198,15 +198,15 @@ const guide = computed(() => {
       />
     </svg>
     <span
-      v-if="guide?.shape === 'anchor' && guide.word"
+      v-if="guide?.shape === 'anchor' && guide.text"
       class="absolute flex h-4.5 origin-top-left items-center rounded bg-(--link) px-1.5 font-mono text-11 leading-none whitespace-nowrap text-(--bg-0)"
       :style="{
-        left: `${guide.to[0]}px`,
-        top: `${guide.to[1]}px`,
+        left: `${guide.end[0]}px`,
+        top: `${guide.end[1]}px`,
         transform: 'translate(calc(8px / var(--zoom, 1)), calc(8px / var(--zoom, 1))) scale(calc(1 / var(--zoom, 1)))',
       }"
     >
-      {{ guide.word }}
+      {{ guide.text }}
     </span>
   </div>
 </template>

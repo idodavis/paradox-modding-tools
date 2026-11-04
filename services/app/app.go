@@ -55,8 +55,8 @@ type Service struct {
 	mainClosable atomic.Bool // the frontend let the main window close
 }
 
-// ServiceStartup empties the trash and writes a mark saying the app is running, which CrashedLastRun reads on the
-// next start.
+// ServiceStartup empties the trash and writes the running mark. The mark holds whether the last run left one behind,
+// which CrashedLastRun reads.
 func (app *Service) ServiceStartup(ctx context.Context, options application.ServiceOptions) error {
 	_ = os.RemoveAll(app.Config.Dirs.Trash)
 	mark := resolveMark(app.Config.Dirs)
@@ -283,20 +283,20 @@ func (app *Service) ShowFolder(path string) error {
 	return application.Get().Env.OpenFileManager(path, !stat.IsDir())
 }
 
-// OpenMainWindow opens the main window as it was last closed: maximized, or at its size, centered; 1400 by 900 on the
-// first run. Its close is held and sent to the frontend as window:closing, until CloseWindow lets it through, and then
-// its state is saved and the app quits.
+// OpenMainWindow opens the main window as it was last closed, maximized or at its size; 1400 by 900 on the first run.
+// Closing it is held back and reported to the frontend as window:closing until CloseWindow lets it through. Then the
+// window's state is saved and the app quits.
 //
 //wails:ignore
 func (app *Service) OpenMainWindow() {
 	pmt := application.Get()
-	left := app.Config.Config().Window
+	lastWindow := app.Config.Config().Window
 	window := newWindow(application.WebviewWindowOptions{
 		Name:       mainWindow,
 		Title:      "Paradox Modding Tools",
-		Width:      cmp.Or(left.Width, 1400),
-		Height:     cmp.Or(left.Height, 900),
-		StartState: lo.Ternary(left.Maximized, application.WindowStateMaximised, application.WindowStateNormal),
+		Width:      cmp.Or(lastWindow.Width, 1400),
+		Height:     cmp.Or(lastWindow.Height, 900),
+		StartState: lo.Ternary(lastWindow.Maximized, application.WindowStateMaximised, application.WindowStateNormal),
 		URL:        "/",
 	})
 	window.RegisterHook(events.Common.WindowClosing, func(event *application.WindowEvent) {
@@ -371,8 +371,8 @@ func resolveMark(dirs Dirs) string { return filepath.Join(dirs.Log, "running") }
 // resolveLog returns the path of pmt.log.
 func resolveLog(dirs Dirs) string { return filepath.Join(dirs.Log, "pmt.log") }
 
-// newWindow opens a window with the given options and no frame of the system's, since the page draws its own title bar
-// and buttons.
+// newWindow opens a window with the given options and no system frame, since the page draws its own title bar and
+// buttons.
 func newWindow(options application.WebviewWindowOptions) *application.WebviewWindow {
 	options.Frameless = true
 	return application.Get().Window.NewWithOptions(options)

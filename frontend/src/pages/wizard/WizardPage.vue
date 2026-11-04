@@ -33,7 +33,7 @@ const gameId = computed({
   get: () => selectedGame.value || games.value?.[0]?.id || "",
   set: (id: string) => (selectedGame.value = id),
 });
-const current = computed(() => games.value?.find((one) => one.id === gameId.value));
+const current = computed(() => games.value?.find((game) => game.id === gameId.value));
 const { data: installs } = useQuery(() => installsQuery(gameId.value));
 const installId = computed({
   get: () =>
@@ -42,7 +42,7 @@ const installId = computed({
 });
 const { data: languages } = useQuery(() => ({ ...languagesQuery(installId.value), enabled: !!installId.value }));
 
-const gameItems = computed(() => (games.value ?? []).map((one) => ({ label: one.name, value: one.id })));
+const gameItems = computed(() => (games.value ?? []).map((game) => ({ label: game.name, value: game.id })));
 const steps = computed<StepperItem[]>(() =>
   STEPS.map((heading, index) => ({
     title: heading,
@@ -51,7 +51,7 @@ const steps = computed<StepperItem[]>(() =>
     disabled: index > 1 && !installId.value,
   })),
 );
-// A step goes on once what it asks for is set. The mods step asks for nothing.
+// Whether the current step still lacks what it asks for: one entry per step, in order. The mods step asks for nothing.
 const blocked = computed(() => [!gameId.value, !installId.value, false, !title.value.trim()][step.value]);
 
 useSortable(useTemplateRef<HTMLElement>("list"), mods, { handle: ".mod-handle", animation: 150, watchElement: true });
@@ -78,7 +78,7 @@ function addNewMod(): void {
 
 /** removeMod takes a mod out of the load order. */
 function removeMod(mod: { id: string }): void {
-  mods.value = mods.value.filter((one) => one.id !== mod.id);
+  mods.value = mods.value.filter((other) => other.id !== mod.id);
 }
 
 /** setStep shows one step of the wizard. It ignores a value that is not a number. */

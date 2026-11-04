@@ -40,8 +40,8 @@ const EventChanged = "agent:changed"
 // init registers the agent event with the application.
 func init() { application.RegisterEvent[string](EventChanged) }
 
-// Service is the agent service. It holds a running agent's program only while a window's stream to it is open, and
-// the start of each install while it runs.
+// Service is the Wails service that lists, installs and starts the coding agents. It keeps when each running install
+// started.
 type Service struct {
 	Workspace *workspace.Service // the open workspace, for an agent's folder
 	MCP       *mcp.Service       // PMT's tools, whose address and token the register texts carry
@@ -92,9 +92,9 @@ type release struct {
 	LTS     any    `json:"lts"` // false, or the name of its long-term line
 }
 
-// agents holds the agents PMT offers: the coding agents whose makers stand behind an ACP agent for them. Each row has
-// its registry id, how PMT's tools are registered with it for use outside PMT, with {url} and {token} to fill in, and
-// the instruction files and folders it reads in a mod.
+// agents are the agents PMT offers: the coding agents whose makers publish an ACP agent. A row has the registry id,
+// the Register text that adds PMT's tools to the agent outside PMT ({url} and {token} are filled in), and the
+// instruction files and folders the agent reads in a mod.
 var agents = []app.Agent{
 	{ID: "claude-acp", Name: "Claude",
 		Register: `claude mcp add --transport http pmt {url} --header "Authorization: Bearer {token}"`,
@@ -113,7 +113,7 @@ const (
 	nodeURL     = "https://nodejs.org/dist/"
 )
 
-// windowsOS is Windows as runtime.GOOS names it, where Node's archive and its program are laid out apart from Linux.
+// windowsOS is runtime.GOOS on Windows, where Node's archive and program differ from Linux's.
 const windowsOS = "windows"
 
 // minNode is the oldest Node version the agents run on, the floor Claude's adapter sets.
@@ -130,11 +130,11 @@ func ListFiles() []string {
 	return lo.Uniq(lo.FlatMap(agents, func(agent app.Agent, _ int) []string { return agent.Files }))
 }
 
-// ListAgents returns the agents PMT offers, then the user's own. Each one PMT offers has its registry version and
-// words, and its register text with PMT's address and token filled in. One being installed has the time its install
-// started. One installed, with a Node new enough, has the program and arguments that start it: its package's script
-// on Node, with the registry's arguments. The registry is fetched at most once a day; without a network its last copy
-// is used, and with no copy the agents have no version and cannot be installed.
+// ListAgents returns the agents PMT offers, then the user's own. An offered agent gets the registry's version and
+// description, its Register text with PMT's address and token filled in, and the start time of its running install.
+// If it is installed and a Node is new enough, it also gets the Program and Args that start it. The registry is
+// fetched at most once a day, and the last copy is used when the fetch fails. With no copy, the agents have no
+// version and cannot be installed.
 func (agt *Service) ListAgents() []Agent {
 	listing, _ := agt.loadRegistry()
 	node := agt.DescribeNode()
@@ -148,7 +148,7 @@ func (agt *Service) ListAgents() []Agent {
 		agent := Agent{Agent: row, Version: entry.Version, Installed: lo.LastOr(versions, ""), Description: entry.Description}
 		started, _ := agt.installs.Load(row.ID)
 		agent.Installing, _ = started.(time.Time)
-		script, err := findScript(filepath.Join(agt.findDir(), row.ID+"@"+agent.Installed))
+		script, err := findScript(filepath.Join(agt.resolveDir(), row.ID+"@"+agent.Installed))
 		canStart := agent.Installed != "" && err == nil && node.Path != ""
 		if canStart {
 			agent.Program, agent.Args = node.Path, append([]string{script}, lo.FromPtr(entry.Distribution.Npx).Args...)
@@ -196,7 +196,7 @@ func (agt *Service) DescribeNode() Node {
 			return node
 		}
 	}
-	dir := filepath.Join(agt.findDir(), "node")
+	dir := filepath.Join(agt.resolveDir(), "node")
 	own := lo.Ternary(runtime.GOOS == windowsOS, filepath.Join(dir, "node.exe"), filepath.Join(dir, "bin", "node"))
 	if files.IsFile(own) {
 		node.Path, node.Own = own, true
@@ -208,15 +208,15 @@ func (agt *Service) DescribeNode() Node {
 // sums nodejs.org publishes. It returns an error if a download fails, the sum does not match, or the archive cannot
 // be unpacked.
 func (agt *Service) InstallNode() error {
-	index, err := app.FetchURL(nodeURL+"index.json", fetchTimeout)
+	listing, err := app.FetchURL(nodeURL+"index.json", fetchTimeout)
 	if err != nil {
 		return err
 	}
 	var releases []release
-	if err := json.Unmarshal(index, &releases); err != nil {
+	if err := json.Unmarshal(listing, &releases); err != nil {
 		return err
 	}
-	newest, ok := lo.Find(releases, func(release release) bool { return release.LTS != false })
+	newest, ok := lo.Find(releases, func(candidate release) bool { return candidate.LTS != false })
 	if !ok {
 		return errors.New("nodejs.org lists no long-term release")
 	}
@@ -230,7 +230,7 @@ func (agt *Service) InstallNode() error {
 	if err := checkSum(newest.Version, asset, archive); err != nil {
 		return err
 	}
-	dir := filepath.Join(agt.findDir(), "node")
+	dir := filepath.Join(agt.resolveDir(), "node")
 	if err := os.RemoveAll(dir); err != nil {
 		return err
 	}
@@ -270,7 +270,7 @@ func (agt *Service) InstallAgent(id string) error {
 		agt.installs.Delete(id)
 		application.Get().Event.Emit(EventChanged, id)
 	}()
-	dir := filepath.Join(agt.findDir(), id+"@"+entry.Version)
+	dir := filepath.Join(agt.resolveDir(), id+"@"+entry.Version)
 	modules := filepath.Join(filepath.Dir(node.Path), "node_modules")
 	if runtime.GOOS != windowsOS {
 		modules = filepath.Join(filepath.Dir(node.Path), "..", "lib", "node_modules")
@@ -285,14 +285,14 @@ func (agt *Service) InstallAgent(id string) error {
 	}
 	for _, version := range agt.listInstalled(id) {
 		if version != entry.Version {
-			_ = os.RemoveAll(filepath.Join(agt.findDir(), id+"@"+version))
+			_ = os.RemoveAll(filepath.Join(agt.resolveDir(), id+"@"+version))
 		}
 	}
 	return nil
 }
 
-// findAgent returns the agent with the given id, which can start. It returns an error if PMT has no such agent, or it
-// is not installed, or no Node is new enough to run it.
+// findAgent returns the agent with the given id, if it can start. It returns an error if there is no such agent, it is
+// not installed, or no Node is new enough to run it.
 func (agt *Service) findAgent(id string) (Agent, error) {
 	agent, ok := lo.Find(agt.ListAgents(), func(other Agent) bool { return other.ID == id })
 	switch {
@@ -310,7 +310,7 @@ func (agt *Service) findAgent(id string) (Agent, error) {
 // replaces the copy. It falls back to the copy when the registry cannot be fetched. It returns an error if there is
 // neither.
 func (agt *Service) loadRegistry() (registry, error) {
-	path := filepath.Join(agt.findDir(), "registry.json")
+	path := filepath.Join(agt.resolveDir(), "registry.json")
 	content, err := os.ReadFile(path)
 	if info, statErr := os.Stat(path); statErr != nil || time.Since(info.ModTime()) > registryAge {
 		if fetched, fetchErr := app.FetchURL(registryURL, fetchTimeout); fetchErr == nil {
@@ -326,7 +326,7 @@ func (agt *Service) loadRegistry() (registry, error) {
 
 // listInstalled returns each version of an agent that PMT's folder holds whole.
 func (agt *Service) listInstalled(id string) []string {
-	matches, _ := filepath.Glob(filepath.Join(agt.findDir(), id+"@*"))
+	matches, _ := filepath.Glob(filepath.Join(agt.resolveDir(), id+"@*"))
 	return lo.FilterMap(matches, func(match string, _ int) (string, bool) {
 		_, version, _ := strings.Cut(filepath.Base(match), "@")
 		_, err := findScript(match)
@@ -334,9 +334,9 @@ func (agt *Service) listInstalled(id string) []string {
 	})
 }
 
-// findDir returns the folder that holds the agents, Node and the registry's copy. It is under PMT's cache folder, so
+// resolveDir returns the folder that holds the agents, Node and the registry's copy. It is under PMT's cache folder, so
 // that resetting PMT's data removes them.
-func (agt *Service) findDir() string {
+func (agt *Service) resolveDir() string {
 	return filepath.Join(agt.Workspace.Config.Dirs.Cache, "agents")
 }
 
@@ -368,8 +368,8 @@ func findScript(dir string) (string, error) {
 	return filepath.Join(packageDir, filepath.FromSlash(script)), nil
 }
 
-// checkSum checks a Node archive, a release's file of the given version, against the sum nodejs.org publishes for it.
-// It returns an error if the sums cannot be fetched, list no sum for the file, or list another.
+// checkSum checks the archive of a Node release's asset against the SHA-256 sum nodejs.org publishes for it. It returns
+// an error if the sums cannot be fetched, have no sum for the asset, or list a different one.
 func checkSum(version, asset string, archive []byte) error {
 	sums, err := app.FetchURL(nodeURL+version+"/SHASUMS256.txt", fetchTimeout)
 	if err != nil {
@@ -388,9 +388,9 @@ func checkSum(version, asset string, archive []byte) error {
 	return fmt.Errorf("nodejs.org publishes no sum for %s", asset)
 }
 
-// untar unpacks the files of a gzipped tar archive into a folder, without the archive's one top folder. Its links are
-// left out, since PMT runs Node's program and npm's script by their own paths, and so is a file that would land
-// outside the folder.
+// untar unpacks a gzipped tar archive into a folder, dropping the archive's one top folder from each path. It skips
+// everything but regular files, since PMT runs Node and npm by their own paths and needs no links. It also skips a file
+// that would land outside the folder.
 func untar(archive []byte, dir string) error {
 	unpacked, err := gzip.NewReader(bytes.NewReader(archive))
 	if err != nil {

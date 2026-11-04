@@ -1,6 +1,6 @@
 <!--
-  The new coat dialog: a mod, an id and a script, the game designer's copy pasted or left empty for a plain coat on the
-  game's solid pattern. The coat file is created and shown.
+  The dialog for a new coat of arms: a mod, an id and a script. The script is a copy from the game's coat designer, or
+  empty for a plain coat on the game's solid pattern. The coat file is created and shown.
 -->
 <script setup lang="ts">
 import { useMutation } from "@pinia/colada";
@@ -17,12 +17,12 @@ const emit = defineEmits<{ close: [result: { modId: string; name: string } | nul
 const editor = useEditorStore();
 const workspaceStore = useWorkspaceStore();
 const mods = computed(() => listMods(workspaceStore.listWritableMods()));
-const choice = shallowRef("");
+const chosenMod = shallowRef("");
 const id = shallowRef("");
 const script = shallowRef("");
 const modId = computed({
-  get: () => choice.value || (mods.value[0]?.value ?? ""),
-  set: (mod: string) => (choice.value = mod),
+  get: () => chosenMod.value || (mods.value[0]?.value ?? ""),
+  set: (mod: string) => (chosenMod.value = mod),
 });
 
 const { mutate: create } = useMutation({

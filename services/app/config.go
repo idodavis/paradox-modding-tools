@@ -52,16 +52,16 @@ func ResolveDirs() (Dirs, error) {
 // LoadJSON reads a JSON file into a value. A missing file gives the zero value and no error. A file that is not valid
 // JSON for the value is an error.
 func LoadJSON[T any](path string) (T, error) {
-	var value T
+	var value, zero T
 	content, err := os.ReadFile(path)
 	if errors.Is(err, fs.ErrNotExist) {
-		return value, nil
+		return zero, nil
 	}
 	if err != nil {
-		return value, err
+		return zero, err
 	}
 	if err := json.Unmarshal(content, &value); err != nil {
-		return *new(T), err
+		return zero, err
 	}
 	return value, nil
 }
@@ -355,16 +355,16 @@ func openConfig(dirs Dirs) *ConfigFile {
 	return file
 }
 
-// Config returns the config. Update never changes it in place, so the caller may keep it, and only reads it.
+// Config returns the config, which Update replaces whole. The caller may keep it but must not change it.
 func (file *ConfigFile) Config() Config {
 	file.mu.RLock()
 	defer file.mu.RUnlock()
 	return file.config
 }
 
-// Update changes the config, saves it and emits config:changed with a section, or "" for all. If the change fails,
-// nothing is saved and its error is returned. It also returns an error if the config is read-only or cannot be saved.
-// The change gets a copy of the config, so a failed change or save leaves the config as it was.
+// Update runs a change on a copy of the config, saves the result and emits config:changed with the given section
+// ("" means all). It returns the change's error, or an error if the config is read-only or cannot be saved. A failed
+// change or save leaves the config as it was.
 func (file *ConfigFile) Update(section string, change func(config *Config) error) error {
 	file.mu.Lock()
 	defer file.mu.Unlock()

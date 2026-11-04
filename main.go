@@ -79,8 +79,8 @@ func main() {
 	}
 }
 
-// listServices returns the app's services, the given app service first. Each other service reads the given config
-// through the workspace service, which holds the open workspace.
+// listServices returns the app's services, the given app service first. Most of the others reach the config and the
+// open workspace through the workspace service.
 func listServices(config *app.ConfigFile, appService *app.Service) []application.Service {
 	wsp := &workspace.Service{Config: config, Build: version}
 	gitService := &git.Service{Workspace: wsp}

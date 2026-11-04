@@ -23,7 +23,7 @@ import WikiArticle from "../../ui/WikiArticle.vue";
 
 const props = defineProps<{ place: Place | null }>();
 
-/** How many pages the strip shows as tabs before the rest go in a menu. */
+/** PAGE_TABS is how many pages show as tabs before the rest go in a menu. */
 const PAGE_TABS = 3;
 const TABS = [
   { label: "Pages", value: "pages" },
@@ -43,8 +43,8 @@ const filter = shallowRef("");
 const file = shallowRef<Place | null>(null);
 watch(
   () => props.place,
-  (open) => {
-    if (open && (!file.value || settings.isOn("ide.wikiFollow"))) file.value = open;
+  (place) => {
+    if (place && (!file.value || settings.isOn("ide.wikiFollow"))) file.value = place;
   },
   { immediate: true },
 );
@@ -73,7 +73,7 @@ const more = computed<DropdownMenuItem[]>(() =>
   })),
 );
 
-/** follow shows the page a link in the article is to, when it is to one. */
+/** follow shows the wiki page that a clicked link in the article points to, if it points to one. */
 function follow(event: MouseEvent): void {
   const link = event.target instanceof Element ? event.target.closest("a") : null;
   if (link?.dataset.page) title.value = link.dataset.page;
@@ -114,16 +114,14 @@ const visible = computed(() => (rows.value ?? []).filter((row) => matchQuery(fil
 // the letter index beside the list: each first letter with the first row it begins, and the letter at the top of view
 const list = useTemplateRef("list");
 const letters = computed(() =>
-  visible.value.reduce<{ letter: string; index: number }[]>((found, row, index) => {
+  visible.value.reduce<{ letter: string; index: number }[]>((starts, row, index) => {
     const letter = row.name.charAt(0).toUpperCase();
-    return found.at(-1)?.letter === letter ? found : [...found, { letter, index }];
+    return starts.at(-1)?.letter === letter ? starts : [...starts, { letter, index }];
   }, []),
 );
 const topLetter = shallowRef("");
 
-/**
- * markLetter marks the letter of the first row in view. The rows drawn above the view to scroll smoothly are skipped.
- */
+/** markLetter sets topLetter to the first letter of the first row in view, skipping the rows drawn above the view. */
 function markLetter(): void {
   const virtualizer = list.value?.virtualizer;
   const top = virtualizer?.scrollOffset ?? 0;
@@ -131,7 +129,7 @@ function markLetter(): void {
   topLetter.value = visible.value[first]?.name.charAt(0).toUpperCase() ?? "";
 }
 
-/** jump scrolls the list to the first row that begins with a letter. */
+/** jump scrolls the lexicon list to the row at the given index. */
 function jump(index: number): void {
   list.value?.virtualizer?.scrollToIndex(index, { align: "start" });
 }

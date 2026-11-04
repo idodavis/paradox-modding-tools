@@ -24,8 +24,6 @@ const (
 
 // Parse parses a text into its tree. Statement 0 is the file itself, and the top-level statements are its children.
 // It never fails: a malformed text gives the statements it could parse, and the problems go into the tree's Errors.
-// A tagged block such as `rgb { … }` or `list "x"` is one value with a tag, `?=` is an operator like `=`, and a `#`
-// comment runs to the end of its line.
 func Parse(text string) *Tree {
 	tree := NewTree(text)
 	tokens := scan(text)
@@ -55,7 +53,7 @@ func NewTree(text string) *Tree {
 // scan splits a text into its tokens. A quoted string is one token, quotes included.
 func scan(text string) []token {
 	var tokens []token
-	// A byte order mark at the start of the text is not a scalar.
+	// The scan starts after a byte order mark, which is not a scalar.
 	for i := len(text) - len(strings.TrimPrefix(text, "\xEF\xBB\xBF")); i < len(text); {
 		ch := text[i]
 		if ch <= ' ' {
@@ -104,9 +102,9 @@ func countLine(text string, offset int) int {
 	return len(text) - offset
 }
 
-// countQuoted returns how many bytes the quoted scalar starting at the given quote runs, its closing quote
-// included, line endings between the quotes kept. A character after a backslash is part of the text, so an escaped
-// quote does not close it. Without a closing quote it runs to the text's end.
+// countQuoted returns how many bytes the quoted scalar starting at the given quote has, its closing quote included.
+// A backslash escapes the next character, so an escaped quote does not close the scalar. Without a closing quote it
+// runs to the end of the text.
 func countQuoted(text string, offset int) int {
 	for i := offset + 1; i < len(text); i++ {
 		switch text[i] {
@@ -119,8 +117,8 @@ func countQuoted(text string, offset int) int {
 	return len(text) - offset
 }
 
-// countScalar returns how many bytes the scalar starting at the given offset runs. A `[ … ]` inside it keeps
-// everything to its `]`.
+// countScalar returns how many bytes the scalar starting at the given offset has. A `[ … ]` inside it is part of the
+// scalar, spaces and all.
 func countScalar(text string, offset int) int {
 	end := offset
 	for end < len(text) && !isScalarEnd(text, end) {
@@ -160,9 +158,9 @@ func CountBrackets(text string, offset int) int {
 	return len(text) - offset
 }
 
-// parseStatements parses statements into the tree as children of the given parent until the tokens end or a
-// closing brace closes the parent. It returns the index of the token it stopped at. At the file's level, a closing
-// brace closes nothing: it is reported and skipped.
+// parseStatements parses statements into the tree as children of the given parent, from the given token on, until the
+// tokens end or a closing brace ends the parent. It returns the index of the token it stopped at. A closing brace in
+// the file itself closes nothing, so it is reported and skipped.
 func parseStatements(tree *Tree, tokens []token, cursor int, parent int32) int {
 	for cursor < len(tokens) {
 		switch tokens[cursor].class {
@@ -182,9 +180,9 @@ func parseStatements(tree *Tree, tokens []token, cursor int, parent int32) int {
 	return cursor
 }
 
-// parseStatement parses one statement starting at the given token: `key op value`, a tagged block, a bare value or
-// a bare block. It appends the statement and its descendants to the tree and returns the index of the token after
-// it. A key and an operator with no value are reported at the operator.
+// parseStatement parses one statement from the given token: `key op value`, a tagged block, a bare value or a bare
+// block. It appends the statement and its descendants to the tree and returns the index of the token after it. A key
+// and operator with no value are reported at the operator.
 func parseStatement(tree *Tree, tokens []token, cursor int, parent int32) int {
 	index := int32(len(tree.Statements))
 	tree.Statements = append(tree.Statements, Statement{Parent: parent, Span: Span{Start: tokens[cursor].span.Start}})
@@ -208,10 +206,11 @@ func parseStatement(tree *Tree, tokens []token, cursor int, parent int32) int {
 	return cursor
 }
 
-// parseValue parses the value of a statement at the given token. A value is a block, a scalar, a scalar that tags a
-// block, the tag `list` with its quoted name, or an operator such as `<=`. It fills the statement's Tag, Value and
-// Block and returns the index of the token after the value. The statement gets no value before a closing brace, at the
-// end of the tokens or before a scalar that an operator follows. That scalar starts the next statement.
+// parseValue parses the value of the given statement from the given token. A value is a block, a scalar, a scalar
+// that tags a block, the tag `list` with its quoted name, or an operator such as `<=`. It sets the statement's Tag,
+// Value and Block and returns the index of the token after the value. It sets nothing and returns the same token when
+// a closing brace or the end of the tokens comes first, or when the scalar is followed by an operator, which makes it
+// the key of the next statement.
 func parseValue(tree *Tree, tokens []token, cursor int, statement int32) int {
 	if cursor >= len(tokens) {
 		return cursor
@@ -243,9 +242,9 @@ func parseValue(tree *Tree, tokens []token, cursor int, statement int32) int {
 	return cursor + 1
 }
 
-// parseBlock parses the block at the given opening brace, its statements as children of the given statement, and
-// returns the index of the token after the closing brace. A block never closed runs to the text's end and is
-// reported at its opening brace.
+// parseBlock parses the block that opens at the given token as the block of the given statement. It returns the index
+// of the token after the closing brace. A block that is never closed runs to the end of the text and is reported at
+// its opening brace.
 func parseBlock(tree *Tree, tokens []token, cursor int, statement int32) int {
 	open := tokens[cursor].span
 	cursor = parseStatements(tree, tokens, cursor+1, statement)

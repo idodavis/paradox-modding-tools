@@ -55,10 +55,10 @@ func (client *Client) Refresh(progress func(done, total int)) error {
 	}
 	stale := client.listStale(listing)
 	var errs []error
-	for done, title := range stale {
+	for position, title := range stale {
 		_, err := client.FetchPage(title)
 		errs = append(errs, err)
-		progress(done+1, len(stale))
+		progress(position+1, len(stale))
 	}
 	return errors.Join(errs...)
 }

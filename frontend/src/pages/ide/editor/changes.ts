@@ -1,6 +1,5 @@
 /**
- * The change bars: the lines of a file changed since its last commit, marked in an editor's gutter and in its ruler
- * on the right, as VS Code marks them.
+ * The change bars: the lines of a file changed since its last commit, marked in an editor's gutter and right ruler.
  */
 import { useDebounceFn } from "@vueuse/core";
 import { Events } from "@wailsio/runtime";
@@ -11,19 +10,19 @@ import * as gitApi from "@services/git/service";
 import { useGitStore } from "../../../stores/git";
 import type { Model } from "./models";
 
-// how each kind of run is drawn: its class in the gutter (themes.css) and its color in the ruler (monaco.ts)
+// the gutter class (themes.css) and the ruler color (monaco.ts) of each kind of changed run
 const KINDS = {
   added: { className: "pmt-change-added", color: "pmt.changeAdded" },
   changed: { className: "pmt-change-changed", color: "pmt.changeChanged" },
   removed: { className: "pmt-change-removed", color: "pmt.changeRemoved" },
 };
-// how long the text rests, in milliseconds, before its bars are asked for again
+// how many milliseconds the text must rest after an edit before the bars are asked for again
 const WAIT = 400;
 
 /**
- * markChanges keeps an editor's change bars: it asks for them when the editor opens, when the text has rested after a
- * change, and when git changes a repository. A file in no mod's repository has none. It returns a function that stops
- * them.
+ * markChanges draws the change bars of an editor. It refreshes them when the editor opens, when the text rests after
+ * an edit, and when git changes. A file outside every mod's repository has none. It returns a function that stops the
+ * refreshing and clears the bars.
  */
 export function markChanges(codeEditor: monaco.editor.IStandaloneCodeEditor, model: Model): () => void {
   const bars = codeEditor.createDecorationsCollection();
@@ -44,7 +43,7 @@ export function markChanges(codeEditor: monaco.editor.IStandaloneCodeEditor, mod
   };
 }
 
-/** toDecoration returns how a run of changed lines is drawn: its bar beside the lines and its mark in the ruler. */
+/** toDecoration returns the gutter bar and ruler mark for one run of changed lines. */
 function toDecoration(change: LineChange): monaco.editor.IModelDeltaDecoration {
   const kind = KINDS[change.kind as keyof typeof KINDS];
   return {

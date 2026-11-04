@@ -69,9 +69,9 @@ var fourCCs = map[string]uint32{
 	"DXT1": 70, "DXT3": 73, "DXT5": 76, "ATI1": 79, "BC4U": 79, "ATI2": 82, "BC5U": 82,
 }
 
-// dxgiCompressions are the block compressions, each by the DXGI formats from its typeless one to its last variant,
-// with the bytes of one of its 4 by 4 blocks and its block decoder. BC6H's signed format decodes apart from its
-// unsigned ones.
+// dxgiCompressions lists the block compressions. A row gives the range of DXGI formats of one compression, from its
+// typeless format to its last variant, the bytes of one 4 by 4 block and the decoder of a block. BC6H has two rows
+// because its signed format decodes differently from its unsigned ones.
 var dxgiCompressions = []dxgiCompression{
 	{70, 72, "BC1", 8, decodeBC1}, {73, 75, "BC2", 16, decodeBC2}, {76, 78, "BC3", 16, decodeBC3},
 	{79, 81, "BC4", 8, decodeBC4}, {82, 84, "BC5", 16, decodeBC5},
@@ -193,9 +193,9 @@ func describeDDSFormat(bytes []byte) string {
 	return fmt.Sprintf("pixel format of %d bits per pixel", binary.LittleEndian.Uint32(bytes[ddsDepthOffset:]))
 }
 
-// decodeBlocks decodes a block-compressed image one 4 by 4 block at a time, each block through the given decoder.
-// The block size is in bytes. A block's pixels past the right or bottom edge are dropped. It returns an error if the
-// data ends before the last block.
+// decodeBlocks decodes a block-compressed image one 4 by 4 block at a time, with the given decoder for blocks of the
+// given size in bytes. A block's pixels past the right or bottom edge are dropped. It returns an error if the data
+// ends before the last block.
 func decodeBlocks(
 	data []byte, header Header, blockBytes int, decodeBlock func(block []byte, pixels *[16][4]uint8),
 ) (image.Image, error) {
@@ -222,7 +222,7 @@ func decodeBlocks(
 // decodeBC1 decodes one BC1 block: four colors interpolated from its two, or three and a transparent black when
 // the first color is not above the second.
 func decodeBC1(block []byte, pixels *[16][4]uint8) {
-	palette := resolveBC1Palette(block)
+	palette := buildBC1Palette(block)
 	if binary.LittleEndian.Uint16(block) <= binary.LittleEndian.Uint16(block[2:]) {
 		for c := range 3 {
 			palette[2][c] = uint8((int(palette[0][c]) + int(palette[1][c]) + 1) / 2)
@@ -232,9 +232,9 @@ func decodeBC1(block []byte, pixels *[16][4]uint8) {
 	decodeBC1Indices(block[4:], palette, pixels)
 }
 
-// resolveBC1Palette builds the four colors of a BC1 color block: its two 5-6-5 colors scaled to bytes and the
+// buildBC1Palette builds the four colors of a BC1 color block: its two 5-6-5 colors scaled to bytes and the
 // two a third and two thirds of the way between them.
-func resolveBC1Palette(block []byte) [4][4]uint8 {
+func buildBC1Palette(block []byte) [4][4]uint8 {
 	var palette [4][4]uint8
 	for e := range 2 {
 		packed := uint32(binary.LittleEndian.Uint16(block[2*e:]))
@@ -264,7 +264,7 @@ func decodeBC1Indices(indices []byte, palette [4][4]uint8, pixels *[16][4]uint8)
 // decodeBC2 decodes one BC2 block: a BC1 color block always in its four-color mode, with four bits of alpha per
 // pixel before it.
 func decodeBC2(block []byte, pixels *[16][4]uint8) {
-	decodeBC1Indices(block[12:], resolveBC1Palette(block[8:]), pixels)
+	decodeBC1Indices(block[12:], buildBC1Palette(block[8:]), pixels)
 	for i := range 16 {
 		pixels[i][3] = (block[i/2] >> (4 * (i % 2)) & 15) * 17
 	}
@@ -273,7 +273,7 @@ func decodeBC2(block []byte, pixels *[16][4]uint8) {
 // decodeBC3 decodes one BC3 block: a BC1 color block always in its four-color mode, with a BC4 block of alpha
 // before it.
 func decodeBC3(block []byte, pixels *[16][4]uint8) {
-	decodeBC1Indices(block[12:], resolveBC1Palette(block[8:]), pixels)
+	decodeBC1Indices(block[12:], buildBC1Palette(block[8:]), pixels)
 	for i, alpha := range decodeBC4Channel(block) {
 		pixels[i][3] = alpha
 	}
@@ -281,7 +281,7 @@ func decodeBC3(block []byte, pixels *[16][4]uint8) {
 
 // decodeBC4Channel decodes one BC4 block to its sixteen values, each picked from its palette by a three-bit index.
 func decodeBC4Channel(block []byte) [16]uint8 {
-	palette := resolveBC4Palette(int(block[0]), int(block[1]))
+	palette := buildBC4Palette(int(block[0]), int(block[1]))
 	indices := binary.LittleEndian.Uint64(block[:8]) >> 16
 	var values [16]uint8
 	for i := range 16 {
@@ -290,9 +290,9 @@ func decodeBC4Channel(block []byte) [16]uint8 {
 	return values
 }
 
-// resolveBC4Palette builds the eight values of a BC4 block from the two it stores: six interpolated between them
+// buildBC4Palette builds the eight values of a BC4 block from the two it stores: six interpolated between them
 // when the first is above the second, else four with 0 and 255.
-func resolveBC4Palette(first, second int) [8]int {
+func buildBC4Palette(first, second int) [8]int {
 	palette := [8]int{first, second}
 	if first > second {
 		for i := 2; i < 8; i++ {
@@ -341,9 +341,9 @@ func resolveDDSMasks(bytes []byte) (int, [4]uint32) {
 	return depth, masks
 }
 
-// decodeMasked decodes uncompressed pixels of the given bits each, every channel read through its mask and
-// scaled to a byte. A channel without a mask is 0, or 255 for alpha. It returns an error if the data ends before
-// the last row.
+// decodeMasked decodes uncompressed pixels of the given depth in bits. Each channel is read through its mask and
+// scaled to a byte. A channel without a mask is 0, or 255 for alpha. It returns an error if the data ends before the
+// last row.
 func decodeMasked(data []byte, header Header, depth int, masks [4]uint32) (image.Image, error) {
 	size := depth / 8
 	stride := header.Width * size

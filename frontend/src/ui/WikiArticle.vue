@@ -1,6 +1,6 @@
 <!--
-  A wiki article: its HTML with the article styles, a table of contents over its headings, and find, which can start
-  with a text its holder gives.
+  A wiki article: its HTML with the article styles, a table of contents over its headings and a find bar. The find
+  prop starts the find with the given text.
 -->
 <script setup lang="ts">
 import { computed, shallowRef, useTemplateRef, watch } from "vue";
@@ -59,7 +59,7 @@ watch(
   },
   { flush: "post" },
 );
-// a text the holder asks to find is found once the article's texts are read
+// the find prop becomes the term once the article's texts are read
 watch(
   [() => find, texts],
   () => {
@@ -79,7 +79,7 @@ function markActive(): void {
   active.value = headings.value.findLastIndex((heading) => heading.getBoundingClientRect().top <= top);
 }
 
-/** show marks the text at the given position as the find's current hit and scrolls to it. */
+/** show marks the text at the given index as the find's current hit and scrolls to it. */
 function show(index: number): void {
   marked?.classList.remove(...MARKED);
   marked = blocks.value[index];
@@ -94,7 +94,7 @@ function clear(): void {
   term.value = "";
 }
 
-/** follow follows a link: an anchor scrolls, a web address opens outside, a wiki page's link is left to the holder. */
+/** follow handles a click on a link: an anchor scrolls, a web address opens in the browser, a wiki link is skipped. */
 function follow(event: MouseEvent): void {
   const link = event.target instanceof Element ? event.target.closest("a") : null;
   const href = link?.getAttribute("href");

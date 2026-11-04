@@ -52,7 +52,7 @@ const { data: comparison } = useQuery(() => ({
 }));
 
 // The mod's group in Health's report, its own problems as Health lists them. An older listing has none.
-const group = computed(() => (listingKey ? undefined : report.value?.mods?.find((one) => one.mod === modId)));
+const group = computed(() => (listingKey ? undefined : report.value?.mods?.find((modGroup) => modGroup.mod === modId)));
 
 const attempt = computed(() => uploads.find(modId, listingKey));
 // The route that opens Health at the mod.

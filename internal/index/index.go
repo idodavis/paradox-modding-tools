@@ -125,12 +125,12 @@ func (index *Index) Narrow(origins []string) *Index {
 	return &narrowed
 }
 
-// hasFile reports whether an index answers for a file: one of the install's, or one of a mod it answers for.
+// hasFile reports whether the index answers for the file at a position: the install's, or a mod's it answers for.
 func (index *Index) hasFile(position int32) bool {
 	return position < index.countInstallFiles() || index.hasMod(index.Files[position].Origin)
 }
 
-// hasMod reports whether an index answers for a mod. An index that is not narrowed answers for every mod.
+// hasMod reports whether the index answers for a mod. An index that is not narrowed answers for every mod.
 func (index *Index) hasMod(origin string) bool {
 	_, ok := index.origins[origin]
 	return index.origins == nil || ok
@@ -169,16 +169,16 @@ func (index *Index) FindFile(path string) (int32, bool) {
 	return position, ok
 }
 
-// IsListed reports whether a position in Files is still a listed file. It is not when the file was deleted after the
+// IsListed reports whether a position in Files is still a listed file. It is not if the file was deleted after the
 // scan.
 func (index *Index) IsListed(position int32) bool {
 	listed, ok := index.byKey[index.Files[position].Key]
 	return ok && listed == position
 }
 
-// ListOwnFiles returns the positions in Files of the files this index scanned itself, in order: for a mods' index,
-// the mods' files, and for the install's, all of them. A file deleted since the scan is left out, and so is a file of
-// a mod a narrowed index does not answer for.
+// ListOwnFiles returns the positions in Files of the files this index scanned itself, in order. For a mods' index these
+// are the mods' files, and for the install's index, all of them. It leaves out a file deleted since the scan, and a
+// file of a mod that a narrowed index does not answer for.
 func (index *Index) ListOwnFiles() []int32 {
 	var positions []int32
 	for position := index.countInstallFiles(); int(position) < len(index.Files); position++ {
@@ -189,8 +189,8 @@ func (index *Index) ListOwnFiles() []int32 {
 	return positions
 }
 
-// FindRoot returns the root that holds a path: the innermost one, since a DLC's folder is a root inside the game's.
-// A root's own folder is held by that root. It returns false if no root holds the path.
+// FindRoot returns the root that holds a path. It is the innermost one, since a DLC's folder is a root inside the
+// game's. A root's own folder is held by that root. It returns false if no root holds the path.
 func (index *Index) FindRoot(path string) (files.Root, bool) {
 	position, ok := findRoot(index.rootKeys, files.ToKey(path)+"/")
 	if !ok {
@@ -199,8 +199,8 @@ func (index *Index) FindRoot(path string) (files.Root, bool) {
 	return index.Roots[position], true
 }
 
-// countInstallFiles returns how many of the files are the install's, which is where this index's own files begin.
-// It is 0 for the install's own index.
+// countInstallFiles returns how many of the files are the install's, so this index's own files begin after them. It is
+// 0 for the install's own index.
 func (index *Index) countInstallFiles() int32 {
 	if index.install == nil {
 		return 0

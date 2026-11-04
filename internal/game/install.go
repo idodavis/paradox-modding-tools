@@ -1,5 +1,5 @@
 // install.go finds where a game is on this machine: its installs through Steam's libraries, their version and
-// age, the user-data and dump folders, the mod descriptor file, and the program that starts the game.
+// age, the user-data and dump folders, and the program that starts the game.
 
 package game
 
@@ -50,7 +50,7 @@ var (
 
 // FindInstalls returns the installs of the game that Steam's libraries hold.
 func (game *Game) FindInstalls() []DetectedInstall {
-	var out []DetectedInstall
+	var installs []DetectedInstall
 	for _, library := range findSteamLibraries() {
 		manifest := filepath.Join(library, "steamapps", "appmanifest_"+strconv.Itoa(game.SteamAppID)+".acf")
 		data, err := os.ReadFile(manifest)
@@ -65,13 +65,13 @@ func (game *Game) FindInstalls() []DetectedInstall {
 		if !files.IsFolder(path) {
 			continue
 		}
-		out = append(out, DetectedInstall{
+		installs = append(installs, DetectedInstall{
 			Name:    game.Name,
 			Path:    path,
 			Version: game.LoadVersion(path),
 		})
 	}
-	return out
+	return installs
 }
 
 // IsWorkshopFolder reports whether a folder is under the game's Steam Workshop folder in one of Steam's libraries,

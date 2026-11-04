@@ -46,7 +46,7 @@ const (
 // copyTurn lets only one second copy of the app run at a time.
 var copyTurn sync.Mutex
 
-// copyWork maps each flag to the work a second copy does. Each work prints its answer on standard output.
+// copyWork maps each flag to the work a second copy does. A work prints any result on standard output.
 var copyWork = map[string]func(client *Client, params Params) error{
 	publishFlag:  publish,
 	downloadFlag: download,
@@ -80,7 +80,7 @@ func StartPublish(ctx context.Context, params Params, progress func(Progress), l
 
 // startCopy starts a second copy of the app for one kind of work and hands each line it prints to a function, if any.
 // One copy runs at a time. A canceled context kills the copy. It returns an error if the copy cannot start or fails.
-func startCopy(ctx context.Context, flag string, params Params, onLine func(line string)) error {
+func startCopy(ctx context.Context, flag string, params Params, handle func(line string)) error {
 	copyTurn.Lock()
 	defer copyTurn.Unlock()
 	executable, err := os.Executable()
@@ -108,8 +108,8 @@ func startCopy(ctx context.Context, flag string, params Params, onLine func(line
 	}
 	lines := bufio.NewScanner(stdout)
 	for lines.Scan() {
-		if onLine != nil {
-			onLine(lines.Text())
+		if handle != nil {
+			handle(lines.Text())
 		}
 	}
 	scanErr := lines.Err()
@@ -162,8 +162,8 @@ func publish(client *Client, params Params) error {
 	return client.Submit(workshopID, params, func(step Progress) { _ = lines.Encode(step) })
 }
 
-// download has Steam download an item and keeps a copy of its files in PMT's cache as the item's snapshot. A failed
-// download leaves the copy kept before as it was.
+// download has Steam download an item and keeps a copy of its files in PMT's cache as the item's snapshot. If Steam's
+// download fails, the earlier snapshot stays.
 func download(client *Client, params Params) error {
 	folder, err := client.fetchFolder(params.WorkshopID, params.UpdatedAt)
 	if err != nil {
@@ -181,11 +181,11 @@ func download(client *Client, params Params) error {
 	if err != nil {
 		return err
 	}
-	kept := resolveSnapshotDir(dirs.Cache, params.WorkshopID)
-	if err := moveCacheDir(dirs.Cache, dir, kept); err != nil {
+	snapshotDir := resolveSnapshotDir(dirs.Cache, params.WorkshopID)
+	if err := moveCacheDir(dirs.Cache, dir, snapshotDir); err != nil {
 		return err
 	}
-	if walked, err = files.Walk(files.Root{Dir: kept}); err != nil {
+	if walked, err = files.Walk(files.Root{Dir: snapshotDir}); err != nil {
 		return err
 	}
 	snapshot := Snapshot{WorkshopID: params.WorkshopID, UpdatedAt: params.UpdatedAt, Files: buildHashes(walked)}

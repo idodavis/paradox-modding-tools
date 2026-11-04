@@ -42,7 +42,6 @@ const STATUSES: Record<string, { label: string; color: "success" | "neutral" }> 
   new: { label: "Not on the Workshop yet", color: "neutral" },
   unknown: { label: "Not compared with Steam", color: "neutral" },
 };
-/** ASKING is the badge shown while Steam is asked. */
 const ASKING = { label: "Asking Steam…", color: "neutral" } as const;
 /** TWO_LINES lets a picker row grow to show its second line. */
 const TWO_LINES = "h-auto py-1.5";
@@ -73,8 +72,8 @@ const older = shallowRef(false);
 const linking = shallowRef(false);
 const workshopItem = shallowRef("");
 const filesOpen = shallowRef(false);
-// The page starts from the route, and another route or workspace starts over, since a listing picked here is the last
-// one's.
+// The page starts from what the route names. Another route or workspace starts over, since the picks made here belong
+// to the last one.
 watch(
   [() => mod, () => listingProp, () => compare, () => id],
   ([nextMod, nextKey, nextCompare, nextId]) => {
@@ -87,11 +86,11 @@ watch(
 );
 
 const { data: state } = useQuery(stateQuery);
-const mods = computed(() => workspace.listMods().filter((one) => !one.broken));
+const mods = computed(() => workspace.listMods().filter((workspaceMod) => !workspaceMod.broken));
 const modId = computed(() =>
-  mods.value.some((one) => one.id === selectedMod.value) ? selectedMod.value : (mods.value[0]?.id ?? ""),
+  mods.value.some((candidate) => candidate.id === selectedMod.value) ? selectedMod.value : (mods.value[0]?.id ?? ""),
 );
-const current = computed(() => mods.value.find((one) => one.id === modId.value));
+const current = computed(() => mods.value.find((candidate) => candidate.id === modId.value));
 const target = computed(() => ({ modId: modId.value, key: listingKey.value }));
 const enabled = computed(() => workspace.isOpen() && !!modId.value);
 // The shown mod is kept once this workspace's state has come, not while the last one's still shows.
@@ -117,7 +116,7 @@ const { data: comparison, isLoading: asking } = useQuery(() => ({
 // The picked difference while the comparison still holds it, else the first one. Both the rail and the compare show it.
 const shown = computed(() => {
   const ids = [...(comparison.value?.page ?? []), ...(comparison.value?.files ?? [])].map(toDifferenceId);
-  return ids.find((one) => one === picked.value) ?? ids[0] ?? "";
+  return ids.includes(picked.value) ? picked.value : (ids[0] ?? "");
 });
 
 // The listing as typed while it is unsaved, else as saved.
@@ -137,28 +136,28 @@ const picker = computed(
         ? [
             [
               { type: "label" as const, label: "Mods" },
-              ...mods.value.map((one) => ({
-                label: one.descriptor.name,
-                description: describeMod(one),
+              ...mods.value.map((workspaceMod) => ({
+                label: workspaceMod.descriptor.name,
+                description: describeMod(workspaceMod),
                 class: TWO_LINES,
                 slot: "mod" as const,
-                mod: one,
-                active: one.id === modId.value,
-                onSelect: () => openListing(one.id, ""),
+                mod: workspaceMod,
+                active: workspaceMod.id === modId.value,
+                onSelect: () => openListing(workspaceMod.id, ""),
               })),
             ],
           ]
         : []),
       [
         { type: "label" as const, label: "Listings of this mod" },
-        ...(listings.value ?? []).map((one) => ({
-          label: one.title,
-          description: describeListing(one),
+        ...(listings.value ?? []).map((modListing) => ({
+          label: modListing.title,
+          description: describeListing(modListing),
           class: TWO_LINES,
           slot: "mod" as const,
           mod: current.value,
-          active: one.key === listingKey.value,
-          onSelect: () => openListing(modId.value, one.key),
+          active: modListing.key === listingKey.value,
+          onSelect: () => openListing(modId.value, modListing.key),
         })),
       ],
       [
@@ -230,7 +229,7 @@ const { mutate: link, isLoading: linkingItem } = useMutation({
     workshopItem.value = "";
   },
 });
-// The status bar says while the edits are being written, and when they are not.
+// The status bar shows "Saving…" while an edit waits or is being written, and "Not saved" if the write failed.
 const facts = computed(() => {
   if (writeError.value) return [{ label: "Not saved", value: writeError.value.message }];
   return unsaved.value || writing.value ? [{ label: "Saving…", value: "" }] : [];
@@ -264,8 +263,8 @@ function submitLink(): void {
 }
 
 /** openListing shows one listing of a mod and leaves the compare. */
-function openListing(mod: string, key: string): void {
-  selectedMod.value = mod;
+function openListing(nextMod: string, key: string): void {
+  selectedMod.value = nextMod;
   listingKey.value = key;
   comparing.value = false;
   picked.value = "";
@@ -278,15 +277,16 @@ function openOlder(mode: "create" | "import"): void {
 }
 
 /** describeMod returns a mod's version for the picker, with its state on Steam if it was already compared. */
-function describeMod(one: Mod): string {
-  const asked = queryCache.getQueryData(comparisonQuery({ modId: one.id, key: "" }).key);
-  return [one.descriptor.version, asked && STATUSES[asked.status]?.label].filter(Boolean).join(" · ");
+function describeMod(workspaceMod: Mod): string {
+  const asked = queryCache.getQueryData(comparisonQuery({ modId: workspaceMod.id, key: "" }).key);
+  return [workspaceMod.descriptor.version, asked && STATUSES[asked.status]?.label].filter(Boolean).join(" · ");
 }
 
 /** describeListing returns a listing's second line in the picker. */
-function describeListing(one: Listing): string {
-  const where = one.source ? `from ${one.source}` : "from the mod's folder";
-  return `For game ${one.supportedVersion} · ${one.workshopId ? `item ${one.workshopId}` : "not on the Workshop"} · ${where}`;
+function describeListing(modListing: Listing): string {
+  const where = modListing.source ? `from ${modListing.source}` : "from the mod's folder";
+  const item = modListing.workshopId ? `item ${modListing.workshopId}` : "not on the Workshop";
+  return `For game ${modListing.supportedVersion} · ${item} · ${where}`;
 }
 
 /** keepFocus stops a closing menu from taking the focus back from a dialog it opened. */
@@ -295,8 +295,8 @@ function keepFocus(event: Event): void {
 }
 
 /** openCompare shows the compare with Steam at one difference. */
-function openCompare(id: string): void {
-  picked.value = id;
+function openCompare(differenceId: string): void {
+  picked.value = differenceId;
   comparing.value = true;
 }
 </script>

@@ -28,11 +28,11 @@ type declarer struct {
 // parameterRe matches a parameter that a scripted definition's body writes, with its default if it has one.
 var parameterRe = regexp.MustCompile(`\$([A-Za-z0-9_]+)(?:\|([^$]*))?\$`)
 
-// SetScripted reads the scripted definitions and the modifier types that the given files of the workspace's mods
-// declare, in place of what they declared before, so that a call to one is a known call, as a call to one of the
-// game's is, and a modifier type's name takes what its definition says. It reads the script files of the databases
-// that script calls by name or whose definitions say what their names take, parsed with the given function. A file
-// that cannot be parsed, or is gone, declares nothing.
+// SetScripted reads the scripted definitions and modifier types that the given files of the workspace's mods declare.
+// It replaces what those files declared before. A call to a mod's definition is then a known call, as a call to one of
+// the game's is, and a mod's modifier type takes what its definition says. It parses with the given function only the
+// script files whose database is called by name or says what its names take. A file that cannot be parsed, or is gone,
+// declares nothing.
 func (schema *Schema) SetScripted(changed []files.File, parse func(path string) (*jomini.Tree, error)) {
 	declaring := slices.DeleteFunc(slices.Clone(changed), func(file files.File) bool {
 		return file.Format != files.FormatScript || !schema.declares(file)
@@ -75,19 +75,19 @@ func (schema *Schema) listDeclarers(declaring []files.File, parse func(path stri
 	return declarers
 }
 
-// resolveSaves gives each scripted definition of a table the parameters it saves by passing them on to a call of
-// another one that saves them, until no more are found. A call finds the game's definitions, then the given mods'. A
-// parameter keeps the first link found.
+// resolveSaves fills in the saves of each scripted definition in a table: the parameters it passes on to a call of
+// another definition that saves them. It repeats until nothing is added. A call finds the game's definitions, then the
+// given mods'. A parameter keeps the first link it gets.
 func (schema *Schema) resolveSaves(table, mods map[string]ScriptedDefinition) {
-	for found := true; found; {
-		found = false
+	for added := true; added; {
+		added = false
 		for _, scripted := range table {
 			for _, relay := range scripted.relays {
 				_, saved := scripted.Saves[relay.Parameter]
 				callee, _, ok := schema.findScripted(mods, relay.Callee)
 				if link, saves := callee.Saves[relay.Argument]; ok && saves && !saved {
 					scripted.Saves[relay.Parameter] = link
-					found = true
+					added = true
 				}
 			}
 		}
@@ -106,8 +106,8 @@ func (schema *Schema) findScripted(mods map[string]ScriptedDefinition, key strin
 }
 
 // lookupScripted returns the scripted definition of a name called through the given word: the game's, else one of the
-// given mods'. A mod's never takes the place of a command the dumps declare by that name. A name in another case finds
-// the definition only in a database that ignores case.
+// given mods'. A mod's never takes the place of a command the dumps declare by that name. Case matters as in
+// lookupDefinition.
 func (schema *Schema) lookupScripted(mods map[string]ScriptedDefinition, caller, key string) (ScriptedDefinition, bool) {
 	if callee, ok := schema.lookupDefinition(schema.ScriptedDefinitions, caller, key); ok {
 		return callee, true
@@ -119,7 +119,7 @@ func (schema *Schema) lookupScripted(mods map[string]ScriptedDefinition, caller,
 }
 
 // lookupDefinition returns the scripted definition of a name called through the given word in one table. A name in
-// another case finds the definition only in a database that ignores case.
+// another case finds the definition only if its database ignores case.
 func (schema *Schema) lookupDefinition(table map[string]ScriptedDefinition, caller, key string) (ScriptedDefinition, bool) {
 	if callee, ok := table[caller+":"+key]; ok {
 		return callee, true
@@ -139,9 +139,9 @@ func (schema *Schema) declares(file files.File) bool {
 	return ok && (len(database.Callable.Callers) > 0 || database.Row.BoolKey != "")
 }
 
-// eachParsed parses each file of a listing in parallel with the first given function, and calls the second on each
-// parse with the worker's number and the file's position. A file that cannot be parsed is skipped. It returns the
-// errors of the files that could not be parsed.
+// eachParsed parses the listed files in parallel with parse, and calls visit on each result with the number of the
+// worker that parsed it and the file's position. A file that cannot be parsed is skipped. It returns the errors of
+// those files.
 func eachParsed[T any](listing []files.File, parse func(path string) (T, error), visit func(worker, index int, parsed T)) []error {
 	failures := make([]error, len(listing))
 	var next atomic.Int64

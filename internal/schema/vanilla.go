@@ -23,17 +23,17 @@ import (
 type counter struct {
 	schema      *Schema
 	holders     []holder
-	path        string // the file being counted
-	colorSuffix string // the ending of the keys that hold an untagged color in the file being counted
-	fields      map[*Field]*Field
-	arguments   map[*Command]*Field
+	path        string                     // the file being counted
+	colorSuffix string                     // the ending of the keys that hold an untagged color in the file being counted
+	fields      map[*Field]*Field          // by the schema's field: what this worker counted at it
+	arguments   map[*Command]*Field        // by command: what this worker counted in its arguments
 	definitions map[string]*Field          // by database
 	defined     map[string]map[string]bool // the names each database defines, by database
 	messages    map[string]bool            // every message key the localization files write, in any language
 	unlisted    map[string]bool            // the steps of data calls no dump declares that the text writes, as Type.step
 	gui         bool                       // the file being counted is a GUI file
-	prefixed    map[string]map[string]int
-	examples    map[string][]Example // by the name written: a command's, or a data function's as Type.Function
+	prefixed    map[string]map[string]int  // by link prefix: each name written after it, with its count
+	examples    map[string][]Example       // by the name written: a command's, or a data function's as Type.Function
 }
 
 // A holder is where the keys of one statement are counted while the counter is inside the statement.
@@ -56,8 +56,8 @@ const shapeAmbiguous = "ambiguous"
 // CountVanilla counts what the game's own files write and adds it to the schema. A key written under a database's
 // definitions becomes a field with game.SourceVanilla. The count also gives each field its shape, its value and the
 // database its block's keys name, resolves the names written after each prefix, and finds the colors. It parses the
-// script files of the given listing in parallel with the given function, which must be safe to call at once. It reads
-// the localization files for their message keys. It returns an error only if no file of the listing can be parsed.
+// listing's script files in parallel with the given parser, which must be safe to call at once. It reads the
+// localization files for their message keys. It returns an error only if no file of the listing can be parsed.
 func (schema *Schema) CountVanilla(listing []files.File, parse func(path string) (*jomini.Tree, error)) error {
 	localizing := slices.DeleteFunc(slices.Clone(listing), func(file files.File) bool {
 		return file.Format != files.FormatLocalization
@@ -162,9 +162,7 @@ func (counter *counter) Enter(tree *jomini.Tree, statement int32, context *Conte
 		next.field = mirror(counter.fields, context.Field)
 		block = false
 	}
-	if next.field != nil && block {
-		next.shaped = true
-	}
+	next.shaped = next.field != nil && block
 	counter.holders = append(counter.holders, next)
 	return true
 }
@@ -178,8 +176,8 @@ func (counter *counter) countDefinition(context *Context) {
 	mirrorSet(counter.defined, context.Definition.Database)[context.Definition.Name] = true
 }
 
-// isVoted reports whether the names written after a link prefix are counted for the vote that finds its database: a
-// prefix that has none yet is, except one whose link leads to a literal, as flag:the_boss's does.
+// isVoted reports whether the names written after a link prefix count toward the vote for its database. They do if the
+// prefix has no database yet, unless its link leads to a literal, as flag:the_boss's does.
 func (schema *Schema) isVoted(prefix string) bool {
 	database, exists := schema.Prefixes[prefix]
 	command := schema.Commands[prefix]
@@ -454,7 +452,7 @@ func (counter *counter) isFrame(context *Context) bool {
 	return database != nil && context.Field == database.Definition && context.Definition == nil
 }
 
-// Leave ends a statement.
+// Leave drops the statement's holder.
 func (counter *counter) Leave(tree *jomini.Tree, statement int32, context *Context) {
 	counter.holders = counter.holders[:len(counter.holders)-1]
 }
@@ -536,8 +534,8 @@ func (counter *counter) resolveCounts() {
 	counter.schema.UnlistedCalls = counter.unlisted
 }
 
-// resolvePatterns finds the command patterns. A pattern is a database's where the names of all its definitions,
-// two or more, make commands the dumps declare, each with one definition's name in the place of the pattern's star.
+// resolvePatterns finds the command patterns. A database makes a pattern if the names of all its definitions, two or
+// more, each fill the pattern's star in a command the dumps declare.
 func (counter *counter) resolvePatterns() {
 	owners := map[string][]string{}
 	for database, labels := range counter.defined {
@@ -545,20 +543,21 @@ func (counter *counter) resolvePatterns() {
 			owners[label] = append(owners[label], database)
 		}
 	}
-	members := map[[2]string][]string{} // by pattern and database: the commands with a name of it in the star's place
+	type patternKey struct{ pattern, database string }
+	members := map[patternKey][]string{} // by pattern and database: the commands with a name of it in the star's place
 	for _, command := range slices.Sorted(maps.Keys(counter.schema.Commands)) {
 		for pattern, label := range splitPattern(command) {
 			for _, database := range owners[label] {
-				key := [2]string{pattern, database}
+				key := patternKey{pattern, database}
 				members[key] = append(members[key], command)
 			}
 		}
 	}
 	for key, commands := range members {
 		// one command for each definition: a name written twice, or in an entry mode, makes no pattern
-		if len(commands) >= 2 && len(commands) == counter.schema.Databases[key[1]].Definition.Vanilla.Definitions {
+		if len(commands) >= 2 && len(commands) == counter.schema.Databases[key.database].Definition.Vanilla.Definitions {
 			counter.schema.CommandPatterns = append(counter.schema.CommandPatterns,
-				CommandPattern{Key: key[0], Database: key[1], Commands: commands})
+				CommandPattern{Key: key.pattern, Database: key.database, Commands: commands})
 			for _, command := range commands {
 				counter.schema.Commands[command].Patterned = true
 			}
@@ -603,16 +602,14 @@ func (schema *Schema) walkFields(visit func(field *Field, held bool)) {
 }
 
 // resolveClaims gives a field the claims its counts support: its shape, the database its block's keys name and its
-// value. A shape or a value that a source states is kept, except for three kinds of stated value. A reference with no
-// database, as the docs' "key" is, takes the reference vanilla shows. A block takes it too, as a culture's traditions
-// list their values, and so does a text, as a title's capital names one. Neither a block nor a text takes a reference
-// to the game concepts, whose names are common words. The value is a reference if one database defines every value
-// written and none is a number, a date or a yes-or-no word. Otherwise a field always written as a block is a block,
-// or a color if every block was one. A field written only as scalars gets the first type in valueTests that all its
-// values fit. A field a command holds names nothing by its keys: what a command's block takes is its arguments, which
-// the dumps declare and the game's files add to, and one name the keys share with a database is no evidence. A target
-// that names a database stays a stated claim only where that database defines every name the game's own files write
-// there; otherwise it is inferred.
+// value. A stated shape or value is kept, except a reference with no database, a block and a text. These take the
+// reference that vanilla shows, as the docs' "key", a culture's traditions and a title's capital do. A block or a text
+// never takes a reference to the game concepts, whose names are common words. The value is a reference if one database
+// defines every value written and none is a number, a date or a yes-or-no word. Otherwise a field always written as a
+// block is a block, or a color if every block was one, and a field written only as scalars gets the first type in
+// valueTests that all its values fit. A field a command holds names nothing by its keys, since its block takes the
+// command's arguments. A stated target that names a database stays firm only if that database defines every name the
+// game's own files write there, and else it is inferred.
 func (counter *counter) resolveClaims(field *Field, held bool) {
 	vanilla := field.Vanilla
 	if shape := resolveShapeClaim(vanilla); shape != "" {
@@ -645,13 +642,12 @@ func (counter *counter) resolveClaims(field *Field, held bool) {
 		field.Value = Claim[Expected]{Value: expected, Source: game.SourceVanilla}
 		return
 	}
-	// a command's argument counts its values but not its writes
 	if valued {
 		field.Value.resolve(Expected{Type: ValueNumber, Values: true}, game.SourceVanilla)
 		return
 	}
 	switch {
-	case vanilla.Count == 0:
+	case vanilla.Count == 0: // a command's argument counts its values but not its writes
 	case vanilla.Blocks == vanilla.Count && vanilla.Colors == vanilla.Count:
 		field.Value.resolve(Expected{Type: ValueColor}, game.SourceVanilla)
 	case vanilla.Blocks == vanilla.Count:
@@ -708,11 +704,11 @@ func resolveShapeClaim(vanilla Vanilla) string {
 	return shapes[0]
 }
 
-// resolveKeys gives a field the database its block's keys name, where every key that only vanilla writes there is a
-// definition of one database, as a culture's opinions name cultures. The fields of those keys are then folded into
-// the field of any key. A key a source declares stays as it is. A block whose shape holds commands names nothing by
-// its keys. Neither do keys that are game concepts or messages, the definitions of a GUI database (whose formats and
-// blocks have common words for names, such as value), or the definitions of a database and those nested in it.
+// resolveKeys sets the database that a field's block's keys name, as a culture's opinions name cultures. It does so if
+// every key that only vanilla writes there is a definition of one database, and folds those keys' fields into the
+// <any> field. A key a source declares stays as it is. A block whose shape holds commands names nothing by its keys.
+// Neither do keys that are game concepts or messages, definitions of a GUI database (whose names are common words,
+// such as value), or definitions of a database with nested ones.
 func (counter *counter) resolveKeys(field *Field) {
 	if len(game.Shapes[field.Shape.Value].Allows) > 0 {
 		return
@@ -736,14 +732,13 @@ func (counter *counter) resolveKeys(field *Field) {
 	field.Keys.resolve(expected.Database, game.SourceVanilla)
 }
 
-// resolveReference returns the reference that every given value makes: to the one database that defines them all. A
-// quoted value names what it names unquoted. A value that holds a parameter is left out, and so is a link, as
-// scope:target is, since it leads to a scope rather than naming a definition. A database named for another that
-// defines them too does not count apart from it. Where no database defines them all, a database and those nested in it
-// may, as a language and its dialects do, and the reference names the nested ones too. A game concept or a message key
-// is text, not a definition: the concepts database counts only if nothing else defines every value, and the
-// localization only if the concepts do not either. It returns false if there are no values, if nothing defines them
-// all or if more than one does.
+// resolveReference returns the reference that every given value makes: to the one database that defines them all. It
+// returns false if there are no values, or if no database or more than one defines them all. A quoted value names what
+// it names unquoted. A value that holds a parameter is left out, and so is a link such as scope:target, which leads to
+// a scope instead of naming a definition. A database named for another that defines them too does not count apart from
+// it. If no database defines them all, a database together with its nested ones may, as a language and its dialects
+// do, and the reference names the nested ones too. The game concepts count only if nothing else does, and the
+// localization only if neither does, since their names are text, not definitions.
 func (counter *counter) resolveReference(values map[string]int) (Expected, bool) {
 	labels := counter.listLabels(values)
 	if len(labels) == 0 {
@@ -809,10 +804,10 @@ func hasAll(values map[string]int, sets ...map[string]bool) bool {
 
 // isNamedFor reports whether the definitions of a database are named for those of another of the given databases,
 // which all define the values: its row names one of them as its target, or it mirrors others and is not alone.
-func (counter *counter) isNamedFor(database string, others []string) bool {
-	row := counter.schema.Databases[database]
-	return row != nil && (row.Row.Target != "" && slices.Contains(others, row.Row.Target) ||
-		row.Row.Mirrors && len(others) > 1)
+func (counter *counter) isNamedFor(label string, others []string) bool {
+	database := counter.schema.Databases[label]
+	return database != nil && (database.Row.Target != "" && slices.Contains(others, database.Row.Target) ||
+		database.Row.Mirrors && len(others) > 1)
 }
 
 // isLiteral reports whether a value is one of the language's own: a number, a date or a yes-or-no word.
@@ -822,10 +817,10 @@ func (counter *counter) isLiteral(value string) bool {
 	})
 }
 
-// takesValues reports whether a field takes a number that a script value may give, by the values the game's own files
-// write in it: at least one names a script value, as add_stability = stability_mild_bonus does, and each other is a
-// number, a parameter, a chain of links or a command the dumps declare. It is false if a value is any other name, such
-// as a flag or a relation level, which a script value's name in the field only shares by chance.
+// takesValues reports whether a field takes a number that a script value may give, judging by the values the game's
+// own files write in it. At least one must name a script value, as add_stability = stability_mild_bonus does, and each
+// other must be a number, a parameter, a chain of links or a command the dumps declare. Any other name, such as a flag
+// or a relation level, makes it false, since a script value's name there would match only by chance.
 func (counter *counter) takesValues(values map[string]int) bool {
 	names := counter.defined[counter.schema.Values]
 	named := false
@@ -835,7 +830,7 @@ func (counter *counter) takesValues(values map[string]int) bool {
 		switch {
 		case names[text]:
 			named = true
-		case jomini.IsNumber(text) || jomini.IsParameter(text) || counter.schema.IsLink(text) || declared:
+		case jomini.IsNumber(text) || jomini.IsParameter(text) || counter.schema.IsLink(text) || declared: // allowed
 		default:
 			return false
 		}
@@ -843,10 +838,10 @@ func (counter *counter) takesValues(values map[string]int) bool {
 	return named
 }
 
-// resolvePrefix sets the database whose definitions the names after a prefix are. A prefix that leads to a scope from
-// any scope names the database of that scope, where every name the game's own files write after it is defined there.
-// Otherwise it is the one database that defines every name written after it, and none where no database or several
-// do. The link's arguments record the names counted.
+// resolvePrefix sets the database whose definitions the names after a prefix are, and records the names counted in the
+// link's arguments. A prefix that leads to a scope from any scope names the database of that scope, if it defines every
+// name the game's own files write after the prefix. Otherwise it is the one database that defines every name written
+// after it, and none if no database or several do.
 func (counter *counter) resolvePrefix(prefix string, labels map[string]int) {
 	database := counter.schema.findScopeDatabase(prefix)
 	expected, ok := Expected{Type: ValueReference, Database: database}, database != ""

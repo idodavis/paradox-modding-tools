@@ -197,7 +197,7 @@ export function isPage(name: string): name is PageName {
   return name in PAGES;
 }
 
-/** isWorkspacePage reports whether a route is one of a workspace's pages. */
+/** isWorkspacePage reports whether a page is one of a workspace's pages, which take its id. */
 export function isWorkspacePage(name: PageName): name is WorkspacePage {
   return "workspace" in PAGES[name];
 }

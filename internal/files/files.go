@@ -38,7 +38,7 @@ const (
 	FormatBinary       Format = "binary"       // anything the binary test flags
 )
 
-// formats holds the format each extension says by itself.
+// formats maps an extension to the format it gives a file, once Classify's folder rules have not decided.
 var formats = map[string]Format{
 	".txt": FormatScript, ".gui": FormatGUI, ".asset": FormatAsset, ".font": FormatFont, ".gfx": FormatGFX,
 	".dds": FormatImage, ".png": FormatImage, ".tga": FormatImage,
@@ -49,9 +49,9 @@ var formats = map[string]Format{
 	".pdx": FormatBinary, ".ttf": FormatBinary, ".otf": FormatBinary, ".zip": FormatBinary, ".pak": FormatBinary,
 }
 
-// Classify returns the format of a file from its path under its root. It looks at the extension and the folder only.
-// It returns FormatText for an extension it does not know, and for script written directly in a root, which the games
-// never read.
+// Classify returns the format of a file from its path relative to its root. It looks at the extension and the folder
+// only. It returns FormatText for an extension it does not know, and for a script file directly in the root, which
+// the games never read.
 func Classify(rel string) Format {
 	folder, base := path.Split(strings.ToLower(rel))
 	ext := path.Ext(base)
@@ -62,7 +62,7 @@ func Classify(rel string) Format {
 		return FormatDescriptor
 	}
 	format, ok := formats[ext]
-	if !ok || folder == "" && format.IsScript() {
+	if !ok || (folder == "" && format.IsScript()) {
 		return FormatText
 	}
 	return format
@@ -99,17 +99,17 @@ type File struct {
 func Walk(root Root) ([]File, error) {
 	var mu sync.Mutex
 	var list []File
-	visitor := func(path string, entry fs.DirEntry, err error) error {
+	visitor := func(filePath string, entry fs.DirEntry, err error) error {
 		if err != nil {
 			return err
 		}
-		rel, ok := ToRel(root.Dir, path)
+		rel, ok := ToRel(root.Dir, filePath)
 		if !ok {
 			return nil
 		}
 		dir := entry.IsDir()
 		if entry.Type()&fs.ModeSymlink != 0 {
-			target, err := fastwalk.StatDirEntry(path, entry)
+			target, err := fastwalk.StatDirEntry(filePath, entry)
 			if err != nil {
 				return nil
 			}
@@ -121,7 +121,7 @@ func Walk(root Root) ([]File, error) {
 		case !dir:
 			mu.Lock()
 			defer mu.Unlock()
-			list = append(list, File{Path: path, Key: ToKey(path), Rel: rel, Origin: root.Origin, Format: Classify(rel)})
+			list = append(list, File{Path: filePath, Key: ToKey(filePath), Rel: rel, Origin: root.Origin, Format: Classify(rel)})
 		}
 		return nil
 	}
@@ -138,7 +138,7 @@ func IsHiddenDir(name string) bool {
 	return strings.HasPrefix(name, ".") && name != ".metadata"
 }
 
-// IsBinary reports whether the bytes are not text, which means a NUL byte in the first kilobyte.
+// IsBinary reports whether the bytes are not text: they hold a NUL byte in the first kilobyte.
 func IsBinary(bytes []byte) bool {
 	return slices.Contains(bytes[:min(len(bytes), 1024)], 0)
 }
@@ -174,8 +174,8 @@ func ParseIgnore(text string) Ignore {
 	return ignore
 }
 
-// Match reports whether the rules cover a path. The path is relative to the root with forward slashes, and the
-// flag says whether it is a folder.
+// Match reports whether the rules cover the given path, which is relative to the root, with forward slashes. The flag
+// says whether the path is a folder.
 func (ignore Ignore) Match(rel string, dir bool) bool {
 	// A folder the rules cover takes everything inside it, so each folder above the path is judged first.
 	for folder := path.Dir(rel); folder != "."; folder = path.Dir(folder) {
@@ -186,8 +186,8 @@ func (ignore Ignore) Match(rel string, dir bool) bool {
 	return ignore.matchRel(rel, dir)
 }
 
-// matchRel reports whether the rules cover one path by itself, the last matching rule winning. A folder-only
-// rule never covers a file.
+// matchRel reports whether the rules cover the given path alone, without judging the folders above it. The last
+// matching rule wins. A folder-only rule never covers a file.
 func (ignore Ignore) matchRel(rel string, dir bool) bool {
 	result := false
 	for _, rule := range ignore {

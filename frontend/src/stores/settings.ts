@@ -1,7 +1,6 @@
 /**
- * The settings store: every value through the settings query for the active workspace, written through one mutation,
- * and the theme put on `<html>` from the settings. This store keeps no copy of a value.
- * GAMES is the frontend's one table keyed by Go's game ids, holding each game's icon, since icons are the frontend's.
+ * The settings store: reads every setting from the settings query for the active workspace and writes one through a
+ * mutation. It also puts the theme on `<html>` from the settings. It keeps no copy of a value.
  */
 import { defineStore } from "pinia";
 import { useMutation, useQuery } from "@pinia/colada";
@@ -87,13 +86,13 @@ export const useSettingsStore = defineStore("settings", () => {
   const isGuided = (): boolean => isOn("guidance.newModders");
 
   /** write writes a setting. The config:changed event then refreshes the query. */
-  const write = (key: string, value: string): void => mutate({ key, value });
+  const write = (key: string, text: string): void => mutate({ key, value: text });
 
   /** writeItem puts an item in a setting that lists items with commas, or takes it out. A new item goes last, once. */
   const writeItem = (key: string, item: string, listed: boolean): void => {
     const items = value(key)
       .split(",")
-      .filter((one) => one && one !== item);
+      .filter((other) => other && other !== item);
     write(key, (listed ? [...items, item] : items).join(","));
   };
 
@@ -103,10 +102,7 @@ export const useSettingsStore = defineStore("settings", () => {
     return { family: game?.id ?? (value("appearance.theme") || "pmt"), dark: isOn("appearance.dark") };
   };
 
-  /**
-   * codeFont returns how every code view sets its code, under Monaco's option keys: the font, text size and line
-   * height, the padding above the first line in pixels, and how many digits the line numbers keep room for.
-   */
+  /** codeFont returns the Monaco options every code view uses: font, text size, line height and padding. */
   const codeFont = (): {
     fontFamily: string;
     fontSize: number;
@@ -124,7 +120,7 @@ export const useSettingsStore = defineStore("settings", () => {
   /** toPixels returns a length given in rem as pixels at the app's scale. */
   const toPixels = (rem: number): number => (rem * 16 * (Number(value("appearance.scale")) || 100)) / 100;
 
-  // the one place the theme and the scale reach the page; nothing is drawn over the page's own until they are read
+  // Puts the theme, the text scale and the panel text size on the page once the settings are read.
   watchEffect(() => {
     if (!values.value) return;
     const { family, dark } = theme();

@@ -12,7 +12,7 @@ import * as gitApi from "@services/git/service";
 import type { Place } from "@services/workspace/models";
 import { gitInstalledQuery, keys, repositoriesQuery } from "../queries";
 
-// the lines kept, the newest last
+/** OUTPUT_LINES is how many lines of git's output the store keeps. */
 const OUTPUT_LINES = 300;
 /** STAGE is the git command that stages the files whose paths follow it. */
 export const STAGE = ["add", "--"] as const;
@@ -41,7 +41,7 @@ export const useGitStore = defineStore("git", () => {
 
   /** findRoot returns the root of the repository that holds a file's mod, or "" when the file is in no mod with one. */
   const findRoot = (place: Pick<Place, "origin"> | null | undefined): string =>
-    repositories.value.find((one) => one.mods?.includes(place?.origin ?? ""))?.root ?? "";
+    repositories.value.find((repository) => repository.mods?.includes(place?.origin ?? ""))?.root ?? "";
 
   /** output returns the lines git printed, newest last, from git:output. */
   const output = (): readonly string[] => lines.value;

@@ -1,8 +1,8 @@
 <!--
-  The file explorer: the roots in the workspace's load order and their folders, with rename, drag and drop, git marks,
-  the context menu, and a box, shown on asking, that filters the tree to the paths holding its text, in folders opened
-  or not. A folder's listing is fetched when it expands, and a double click pins a preview tab. Resting on a folder of
-  a database shows what the game keeps in it and how mods change it.
+  The file explorer: the roots in the workspace's load order and their folders, with rename, drag and drop, git marks
+  and a context menu. A filter box, shown on request, narrows the tree to the paths that contain its text. A folder is
+  listed when it expands, and a double click pins a preview tab. Resting on a folder of a database shows what the game
+  keeps in it and how mods change it.
 -->
 <script setup lang="ts">
 import { computed, onBeforeUnmount, onMounted, shallowRef, useTemplateRef, watch } from "vue";
@@ -50,7 +50,7 @@ const emit = defineEmits<{ open: [place: Place, preview: boolean] }>();
 const filtering = defineModel<boolean>("filtering", { default: false });
 defineExpose({ collapseAll, reveal });
 
-/** The mark each status git reports gets in the tree. */
+/** GIT_MARKS maps each git status to the mark the tree shows. */
 const GIT_MARKS: Record<string, GitStatus> = {
   modified: "modified",
   added: "added",
@@ -59,7 +59,7 @@ const GIT_MARKS: Record<string, GitStatus> = {
   untracked: "untracked",
   conflict: "modified",
 };
-/** The symbol of the tree's sprite that draws each file icon. */
+/** SYMBOLS maps each file icon to its symbol id in the tree's sprite. */
 const SYMBOLS = new Map(listIcons().map((icon, index) => [icon, `pmt-${index}`]));
 const SPRITE = `<svg xmlns="http://www.w3.org/2000/svg" width="0" height="0" style="position: absolute">${[...SYMBOLS]
   .map(
@@ -67,7 +67,7 @@ const SPRITE = `<svg xmlns="http://www.w3.org/2000/svg" width="0" height="0" sty
       `<symbol id="${id}" viewBox="0 0 800 800"><image href="${icon}" width="800" height="800"/></symbol>`,
   )
   .join("")}</svg>`;
-/** How many files the filter asks the file search for. The search lists the mods' files before the game's. */
+/** FILTER_HITS is how many files the filter asks the file search for. It lists mod files before the game's. */
 const FILTER_HITS = 500;
 /** How long the pointer rests on a folder before its card shows, in milliseconds. */
 const CARD_DELAY = 400;
@@ -97,8 +97,8 @@ const filter = shallowRef("");
 
 // every row of the tree is a path with its root's label first and a slash after each folder
 const places = new Map<string, Place>(); // a row's place: each root's, and each row a folder listing gave
-const members = new Map<string, Set<string>>(); // a listed folder row's rows
-// a new row's path on disk, and its way to stop watching for its rename to be cancelled
+const members = new Map<string, Set<string>>(); // the rows of each listed folder row
+// each new row's path on disk, and the function that stops watching for its rename to be cancelled
 const drafts = new Map<string, { path: string; stop: () => void }>();
 const icons: Record<string, { name: string; viewBox: string }> = {}; // a file's icon by its name
 // the rows git ignores, dimmed; a git status would count them as changes in every folder above
@@ -143,6 +143,7 @@ const labels = computed(() => {
   });
 });
 const writable = computed(() => roots.some((root) => !root.readOnly));
+// changes whenever the tree must be built again
 const shape = computed(() =>
   [
     roots.map((root) => root.path).join("|"),
@@ -230,10 +231,7 @@ function mount(): void {
   void filterRows(filter.value);
 }
 
-/**
- * buildStyles builds the styles of the root rows: a bar in the origin's color at the start, and the name in it if
- * asked.
- */
+/** buildStyles returns the CSS of the root rows: a bar in the origin's color, and the name too if root colors on. */
 function buildStyles(): string {
   return roots
     .map((root, index) => {
@@ -247,7 +245,9 @@ function buildStyles(): string {
 
 /** rootIndex returns the index of the root a row is under. */
 const rootIndex = (row: string) => labels.value.indexOf(row.slice(0, row.indexOf("/")));
+/** isRoot reports whether a row is a root's own row. */
 const isRoot = (row: string) => row.indexOf("/") === row.length - 1;
+/** isWritable reports whether a row is under a root that can be changed: a mod's, not the game's or Steam's. */
 const isWritable = (row: string) => roots[rootIndex(row)]?.readOnly === false;
 
 /** rowOf returns the row of a path the tree hands out. The tree leaves off the slash a folder's row ends in. */
@@ -275,7 +275,7 @@ function findFolder(row: string): string {
   return row.endsWith("/") ? row : findParent(row);
 }
 
-/** takeName takes the last part of a row. */
+/** takeName returns the last part of a row, without the slash a folder's row ends in. */
 function takeName(row: string): string {
   return row.replace(/\/$/, "").split("/").at(-1) ?? "";
 }
@@ -293,9 +293,8 @@ function loadExpanded(): void {
 }
 
 /**
- * load lists a folder row and puts its rows in the tree. A listing already on its way is shared, and one that no change
- * on disk has made stale is read from the cache. A folder gone from disk lists nothing and changes nothing: its
- * parent's listing takes its row away.
+ * load lists a folder row and puts its rows in the tree. A folder gone from disk lists nothing and changes nothing;
+ * its parent's listing removes its row.
  */
 async function load(row: string): Promise<void> {
   const children = await loadQuery(folderQuery(findPath(row))).then(
@@ -326,20 +325,22 @@ function apply(row: string, children: Place[]): void {
   dimUndrawable();
 }
 
-/** forget forgets a row and the rows under it, which the tree has moved or removed. */
+/** forget drops a row and the rows under it from places and members, after the tree moved or removed them. */
 function forget(row: string): void {
   for (const map of [places, members]) for (const path of [...map.keys()]) if (path.startsWith(row)) map.delete(path);
 }
 
+// the listed folder rows to list again once changes pause
+const pending = new Set<string>();
 const refresh = useDebounceFn(() => {
   const rows = [...pending];
   pending.clear();
   rows.forEach((row) => void load(row));
 }, 150);
-const pending = new Set<string>();
 
-/** changed lists again the listed folders that hold a changed path. */
+/** changed queues the listed folders that hold a changed path to be listed again. */
 function changed(change: FileChange): void {
+  // "\0" stands in for a row with no path, so that it matches no change
   for (const row of members.keys()) if (change.path.startsWith(findPath(row) || "\0")) pending.add(row);
   void refresh();
 }
@@ -351,7 +352,7 @@ async function markGit(): Promise<void> {
   const marks: GitStatusEntry[] = [];
   const dimmed: string[] = [];
   for (const { root: dir } of git.repositories) {
-    // a read on its way is shared; after git:changed the events table has made the status stale already
+    // loadQuery shares a fetch already under way, and git:changed has marked the status stale already
     const data = await loadQuery(gitStatusQuery(dir));
     for (const change of data?.changes ?? []) {
       const row = buildRow(change.place);
@@ -368,7 +369,7 @@ async function markGit(): Promise<void> {
   dim(ignoredSheet, dimmed);
 }
 
-/** dim dims the rows in a sheet that the given selectors match, or no row for none. */
+/** dim sets a sheet to dim the rows the given selectors match. No selectors clear the sheet. */
 function dim(sheet: CSSStyleSheet, selectors: string[]): void {
   sheet.replaceSync(selectors.length ? `${selectors.join(",")} { color: var(--fg-3); }` : "");
 }
@@ -388,8 +389,8 @@ function dimUndrawable(): void {
 }
 
 /**
- * buildRow builds the row of a place, without the slash a folder's row ends in. The row is relative to the root that
- * holds the place, so in a folder's window it is relative to that folder. It is "" for a place under none of the roots.
+ * buildRow returns the row of a place, with no trailing slash even for a folder. The row is relative to the root that
+ * holds the place, so in a folder's window it is relative to that folder. It is "" if no root holds the place.
  */
 function buildRow(place: Place): string {
   const index = roots.findIndex(
@@ -401,8 +402,8 @@ function buildRow(place: Place): string {
 }
 
 /**
- * select keeps the files the user selected, and opens a file selected alone as a preview tab. A folder or the file
- * already shown opens nothing.
+ * select records the selected files with the editor store, and opens a file selected alone as a preview tab. A folder,
+ * or the file already shown, opens nothing.
  */
 function select(paths: readonly string[]): void {
   const files = paths.flatMap((path) => (path.endsWith("/") ? [] : (places.get(path) ?? [])));
@@ -411,7 +412,7 @@ function select(paths: readonly string[]): void {
   if (paths.length === 1 && place && place.key !== editor.activeFile()?.key) emit("open", place, true);
 }
 
-/** pin pins the selected file's tab. */
+/** pin opens the selected file as a pinned tab instead of a preview. */
 function pin(): void {
   const [only] = view.value?.getSelectedPaths() ?? [];
   const place = only && !only.endsWith("/") ? places.get(only) : undefined;
@@ -436,19 +437,16 @@ async function reveal(): Promise<void> {
 }
 
 /**
- * loadFolders lists the folders down to a file, so the tree holds the file's row, and returns their rows, the root's
- * first. A file under none of the tree's roots gives none, and so does a file under a folder gone from disk, such as a
- * deleted one.
+ * loadFolders lists the folders from the root down to a file's folder, so the tree holds the file's row, and returns
+ * their rows, the root's first. It returns none for a file under none of the roots or under a folder gone from disk.
  */
 async function loadFolders(place: Place): Promise<string[]> {
   const row = buildRow(place);
   if (!row) return [];
-  const folders = row
-    .split("/")
-    .slice(0, -1)
-    .reduce<string[]>((rows, part) => [...rows, `${rows.at(-1) ?? ""}${part}/`], []);
+  const parts = row.split("/").slice(0, -1);
+  const folders = parts.map((_, index) => `${parts.slice(0, index + 1).join("/")}/`);
   for (const folder of folders) {
-    // a folder has a row once the listing of its parent found it on disk
+    // a folder has a path once its parent's listing has included it
     if (!findPath(folder)) return [];
     if (!members.has(folder)) await load(folder);
   }
@@ -456,8 +454,8 @@ async function loadFolders(place: Place): Promise<string[]> {
 }
 
 /**
- * filterRows shows only the rows whose path holds the given query. The file search finds the files first and their
- * folders are listed, so a file in a folder not opened yet shows too. An empty query shows every row again.
+ * filterRows shows only the rows whose path contains the given query. It searches files first and lists their folders,
+ * so a match in a folder not yet opened shows too. An empty query shows every row.
  */
 async function filterRows(query: string): Promise<void> {
   const text = query.trim();
@@ -499,15 +497,15 @@ const { mutate: replay } = useMutation({
 });
 
 /**
- * step steps the history back for Ctrl Z, and forward for Ctrl Y or Ctrl Shift Z. A key typed in an input is left
- * alone.
+ * step moves through the rename history: back for Ctrl Z, forward for Ctrl Y or Ctrl Shift Z. Keys typed in an input
+ * are ignored.
  */
 function step(event: KeyboardEvent): void {
   const key = event.key.toLowerCase();
-  const typing = event
+  const isTyping = event
     .composedPath()
     .some((node) => node instanceof HTMLInputElement || node instanceof HTMLTextAreaElement);
-  if (!event.ctrlKey || typing || (key !== "z" && key !== "y")) return;
+  if (!event.ctrlKey || isTyping || (key !== "z" && key !== "y")) return;
   event.preventDefault();
   replay(key === "z" && !event.shiftKey);
 }
@@ -567,8 +565,8 @@ const { mutate: remove } = useMutation({
   },
 });
 
-// what the menu's rows of the command table do to the row clicked, whether they change the files, and on which rows
-// they show when not on every one
+// what each command of the command table does in the context menu: `run` acts on the clicked row, `writes` marks it as
+// changing files, and `shows`, where present, limits it to some rows
 const ACTIONS: Record<string, { writes: boolean; shows?: (row: string) => boolean; run: (row: string) => void }> = {
   "file.new": { writes: true, run: (row) => (afterClose = () => create({ folder: findFolder(row), dir: false })) },
   "file.newFolder": { writes: true, run: (row) => (afterClose = () => create({ folder: findFolder(row), dir: true })) },
@@ -584,7 +582,7 @@ const ACTIONS: Record<string, { writes: boolean; shows?: (row: string) => boolea
   },
 };
 
-/** onPlace makes a menu row's action that acts on the place of the row clicked, when the explorer has it. */
+/** onPlace returns a menu action that runs the given function on the clicked row's place, or nothing without one. */
 function onPlace(act: (place: Place) => void): (row: string) => void {
   return (row) => {
     const place = places.get(row);
@@ -592,7 +590,7 @@ function onPlace(act: (place: Place) => void): (row: string) => void {
   };
 }
 
-/** buildMenu builds the menu of a row. It is built when the menu opens, so it reads the selection as it is then. */
+/** buildMenu returns the context menu of a row. It is built when the menu opens, so it reads the current state. */
 function buildMenu(row: string): ContextMenuItem[][] {
   const place = places.get(row);
   const file = row.endsWith("/") ? undefined : place;
@@ -678,10 +676,10 @@ function buildOpenItems(file: Place | undefined, dir: string): ContextMenuItem[]
 function findRowElement(event: MouseEvent): HTMLElement | undefined {
   return event
     .composedPath()
-    .find((one): one is HTMLElement => one instanceof HTMLElement && one.dataset.itemPath !== undefined);
+    .find((node): node is HTMLElement => node instanceof HTMLElement && node.dataset.itemPath !== undefined);
 }
 
-/** pick finds the row under a right click and builds its menu. Off a row there is no menu. */
+/** pick finds the row under a right click and builds its menu. A click off every row opens no menu. */
 function pick(event: MouseEvent): void {
   const element = findRowElement(event);
   menu.value = element?.dataset.itemPath ? buildMenu(element.dataset.itemPath) : [];
@@ -718,7 +716,7 @@ function closeCard(): void {
   restingRow = "";
 }
 
-/** resume starts what the menu chose to do in a row, which needs the keyboard the menu held until it closed. */
+/** resume runs the action the menu deferred in afterClose, now that the menu has closed and released the keyboard. */
 function resume(event: Event): void {
   if (!afterClose) return;
   event.preventDefault();
@@ -732,7 +730,7 @@ function resume(event: Event): void {
     <div v-if="filtering" class="shrink-0 px-2 pt-1 pb-1.5" @keydown.esc="filtering = false">
       <UInput v-model="filter" placeholder="Filter files" icon="i-lucide-search" size="xs" autofocus class="w-full" />
     </div>
-    <!-- the menu's trigger takes its child's ref, so the tree's element is the one inside it -->
+    <!-- the menu's trigger takes its child's ref, so the tree's element sits inside the wrapper div -->
     <UContextMenu :items="menu" :content="{ onCloseAutoFocus: resume }">
       <div class="flex min-h-0 flex-1 flex-col">
         <div

@@ -1,15 +1,16 @@
 /**
- * The placeholders PMT draws where a picture has no file: a shape for each kind of object, which Go names, tinted in a
- * syntax color of its own so that placeholders side by side stay apart. Also the colors of the sample text that Go puts
- * in place of a data call in a text.
+ * The placeholders PMT draws where a picture has no file: a shape for each kind of object Go names, tinted in a syntax
+ * color so that neighbors stay apart. Also the colors of the sample text Go puts in place of a data call.
  */
+
+/** FILES holds the URL of each shape's SVG file, by its path. */
 const FILES = import.meta.glob<string>("../assets/placeholders/*.svg", {
   eager: true,
   query: "?url",
   import: "default",
 });
 
-/** The syntax color of each shape: a game's portrait and its coat of arms share their kind's. */
+/** COLORS holds the syntax color of each shape. Shapes of one kind, such as a portrait and a coat of arms, share it. */
 const COLORS: Record<string, string> = {
   "crowned-ruler": "entry",
   "top-hat": "entry",
@@ -31,7 +32,7 @@ const COLORS: Record<string, string> = {
   icon: "comment",
 };
 
-/** The syntax color of the sample text of a data call, by the kind Go gives the sample. */
+/** SAMPLE_COLORS holds the syntax color of a data call's sample text, by the kind Go gives the sample. */
 export const SAMPLE_COLORS: Record<string, string> = {
   number: "var(--syn-number)",
   date: "var(--syn-literal)",
@@ -39,9 +40,8 @@ export const SAMPLE_COLORS: Record<string, string> = {
 };
 
 /**
- * Finds the placeholder of the given shape, as the CSS that draws the shape over a box in its color and nothing else
- * of the box. A shape with no file draws the plain icon. Given the URL of an image, the shape is cut to the image's
- * outline.
+ * findPlaceholder returns the CSS that draws the given shape over a box in the shape's color. A shape with no file
+ * draws the plain icon. Given the URL of an image, the shape is cut to the image's outline.
  */
 export function findPlaceholder(shape: string, cut = ""): Record<string, string> {
   const known = FILES[`../assets/placeholders/${shape}.svg`] ? shape : "icon";

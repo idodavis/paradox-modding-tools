@@ -15,20 +15,20 @@ import (
 )
 
 // Resolve returns the definitions that a reference names, in load order. A local definition never counts. A reference
-// with no database names the definitions of every database that defines its name: each database's in load order, the
-// databases by name. The result is empty if the name is undefined.
+// with no database names the definitions in every database that defines its name, ordered by database name and then in
+// load order. The result is empty if the name is undefined.
 func (index *Index) Resolve(reference schema.Reference) []Site {
 	return index.listResolved(reference, func(Site) bool { return false })
 }
 
-// ResolveLocal is Resolve for a reference written in the file at the given position in Files: that file's local
-// definitions count too. A file the index does not list has the position -1, which counts none.
+// ResolveLocal is Resolve for a reference written in the file at a position in Files: that file's local definitions
+// count too. A file the index does not list has the position -1, which counts none.
 func (index *Index) ResolveLocal(reference schema.Reference, file int32) []Site {
 	return index.listResolved(reference, func(site Site) bool { return site.File == file })
 }
 
-// listResolved returns the definitions that a reference names, as Resolve orders them. A local definition counts where
-// the given function says it does.
+// listResolved returns the definitions that a reference names, as Resolve orders them. A local definition counts only
+// if isVisible accepts its site.
 func (index *Index) listResolved(reference schema.Reference, isVisible func(Site) bool) []Site {
 	if reference.Database != "" {
 		return lo.FlatMap(ListCallees(reference), func(callee schema.Reference, _ int) []Site {
@@ -60,9 +60,9 @@ func (index *Index) ListUses(database, name string) []Site {
 	return slices.SortedFunc(slices.Values(slices.Concat(uses, index.listPosting(RoleRefers, game.AnyCall, name))), compareSites)
 }
 
-// ListCallees returns the references that a reference stands for. A call that may name any callable database, one
-// written in game.AnyCall, stands for the name in each database whose definitions script calls by name, in the order
-// of their names. Any other reference stands for itself.
+// ListCallees returns the references that a reference stands for. A reference in game.AnyCall may name any callable
+// database, so it stands for the name in each database whose definitions script calls by name, in database name order.
+// Any other reference stands for itself.
 func ListCallees(reference schema.Reference) []schema.Reference {
 	if reference.Database != game.AnyCall {
 		return []schema.Reference{reference}
@@ -123,8 +123,8 @@ func (index *Index) CountDefinitions(file int32) map[string]int {
 	return counts
 }
 
-// listDefining returns the sites that define a name in a database, less the local ones that the given function does
-// not accept. A key of the localization database is defined by its messages.
+// listDefining returns the sites that define a name in a database. A local definition counts only if isVisible accepts
+// its site. A key of the localization database is defined by its messages.
 func (index *Index) listDefining(database, name string, isVisible func(Site) bool) []Site {
 	return lo.Filter(index.listPosting(toRole(database), database, name), func(site Site, _ int) bool {
 		return !index.Occurrence(site).Local || isVisible(site)
@@ -151,24 +151,24 @@ func (index *Index) listPosting(role Role, database, name string) []Site {
 	return index.listKey(Posting{Role: role, Database: uint16(databaseOrdinal)}, nameOrdinal)
 }
 
-// listKey returns the sites of a name in a posting, the install's first and then this index's own.
-func (index *Index) listKey(key Posting, name uint32) []Site {
-	own := index.narrowSites(index.postings[key][name])
+// listKey returns the sites of a name's ordinal in a posting, the install's first and then this index's own.
+func (index *Index) listKey(posting Posting, name uint32) []Site {
+	own := index.narrowSites(index.postings[posting][name])
 	if index.install == nil {
 		return own
 	}
-	fromInstall := index.install.listKey(key, name)
+	installSites := index.install.listKey(posting, name)
 	switch {
-	case len(fromInstall) == 0:
+	case len(installSites) == 0:
 		return own
 	case len(own) == 0:
-		return fromInstall
+		return installSites
 	}
-	return slices.Concat(fromInstall, own)
+	return slices.Concat(installSites, own)
 }
 
-// narrowSites returns the sites of the files the index answers for. An index that is not narrowed returns the given
-// sites themselves.
+// narrowSites returns the given sites that are in files the index answers for. An index that is not narrowed returns
+// them all.
 func (index *Index) narrowSites(sites []Site) []Site {
 	if index.origins == nil {
 		return sites

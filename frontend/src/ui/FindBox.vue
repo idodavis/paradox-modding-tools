@@ -1,6 +1,6 @@
 <!--
-  A find bar over a list of texts: the term, the count, the current hit, next, previous and close. It tells its holder
-  which text is current. A bar its holder opens on a key takes the keys at once.
+  A find bar over a list of texts: the term, the hit count, next, previous and close. It emits the index of the text
+  each hit moves to. Set autofocus for a bar opened from the keyboard.
 -->
 <script setup lang="ts">
 import { computed, useId, useTemplateRef, watch } from "vue";
@@ -26,10 +26,10 @@ watch(hits, (indexes) => {
   if (indexes.length) emit("hit", indexes[0]);
 });
 
-/** step moves to the next hit, or the previous one for a negative step, and tells the holder. */
-function step(by: number): void {
+/** step moves to the next hit, or the previous one for a negative direction, and emits it. */
+function step(direction: number): void {
   if (!hits.value.length) return;
-  if (by > 0) next();
+  if (direction > 0) next();
   else prev();
   emit("hit", state.value);
 }

@@ -49,8 +49,8 @@ type Site struct {
 	Holder  string          `json:"holder,omitempty"` // the name of the definition that holds a copy the game keeps whole
 }
 
-// MakeSite returns the site of an occurrence, as the given index of the mods lists it: its place and its line. It
-// reads no file, so it has no range and no text.
+// MakeSite returns the site of an occurrence in the mods index: its place and its line. It reads no file, so the
+// site has no range and no text.
 func MakeSite(ws *workspace.Session, mods *index.Index, site index.Site) Site {
 	return Site{Place: ws.Locate(mods, mods.File(site).Path), Line: int(mods.Occurrence(site).Line) + 1}
 }

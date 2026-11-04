@@ -34,10 +34,21 @@ type Status struct {
 	Ignored []workspace.Place `json:"ignored"`
 }
 
+// A Ref is one branch, remote branch or tag.
+type Ref struct {
+	Name string `json:"name"`
+	Type string `json:"type"` // branch, remote, tag; "" for another name a commit is decorated with
+	Hash string `json:"hash"`
+	// Date is when the commit it points to was made, or when an annotated tag was. It is the zero time for a ref to
+	// an object with no date, such as a tag of a tree.
+	Date    time.Time `json:"date"`
+	Current bool      `json:"current"`
+}
+
 // refTypes is the type of a ref by the prefix of its full name.
 var refTypes = map[string]string{"refs/heads/": "branch", "refs/remotes/": "remote", "refs/tags/": "tag"}
 
-// fieldCounts is the count of fields before the path, which may hold spaces, in each status record.
+// fieldCounts is how many fields precede the path (which may hold spaces) in a status record, by its first letter.
 var fieldCounts = map[byte]int{'1': 8, '2': 9, 'u': 10, '?': 1, '!': 1}
 
 // statuses is the word for what was done to a file, by the letters git prints for it.
@@ -73,17 +84,6 @@ func (git *Service) ReadStatus(root string) (Status, error) {
 	git.locateChanges(root, status.Changes)
 	status.Ignored = git.locate(root, ignored)
 	return status, nil
-}
-
-// A Ref is one branch, remote branch or tag.
-type Ref struct {
-	Name string `json:"name"`
-	Type string `json:"type"` // branch, remote, tag; "" for another name a commit is decorated with
-	Hash string `json:"hash"`
-	// Date is when the commit it points to was made, or when an annotated tag was. It is the zero time for a ref to
-	// an object with no date, such as a tag of a tree.
-	Date    time.Time `json:"date"`
-	Current bool      `json:"current"`
 }
 
 // ListRefs returns a repository's branches, remote branches and tags, each with the date of its commit. The error is

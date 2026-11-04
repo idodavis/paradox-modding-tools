@@ -33,8 +33,8 @@ func findPicture(ws *workspace.Session, mods *index.Index, site index.Site, pict
 	return ""
 }
 
-// resolveChain returns the path of the picture a chain of definitions ends in. It returns "" if the chain reaches no
-// picture.
+// resolveChain returns the path of the picture a chain of definitions ends in, from the given values for its first
+// step. If the last definition names no file, the chain's Fallback key names another to try. It returns "" if none.
 func resolveChain(ws *workspace.Session, mods *index.Index, chain game.PictureChain, values []string) string {
 	var tree *jomini.Tree
 	var statement int32

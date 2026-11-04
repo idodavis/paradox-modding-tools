@@ -46,17 +46,17 @@ import type { PictureNode } from "./picture";
 const { model } = defineProps<{ model: Model }>();
 
 /**
- * An instance being dragged across the coat: its layer, its place among the layer's instances, the key its position is
- * written by, where the press began and how far it has moved, in the picture's pixels. Once dropped, it is kept until
- * the coat is drawn again with the instance where it was dropped.
+ * A Drag is a coat's instance being dragged across the picture. The start is where the press began and the offset is
+ * how far it has moved, in the picture's pixels. A dropped drag is kept until the coat is drawn again with the
+ * instance in its new place.
  */
 type Drag = {
   layer: number;
   copy: number;
   instance: Instance;
   key: string;
-  from: DOMPoint;
-  by: DOMPoint;
+  start: DOMPoint;
+  offset: DOMPoint;
   isDropped: boolean;
 };
 
@@ -92,7 +92,7 @@ const floor = useTemplateRef<HTMLElement>("floor");
 const canvas = useTemplateRef<HTMLCanvasElement>("canvas");
 const nodes = shallowRef<PictureNode[]>([]);
 const windowRects = shallowRef(new Map<number, DOMRect[]>());
-// the window lay wholly off the screen and is drawn at the screen's edge it passed
+// isPlaced is true when the window lay wholly off the screen and was moved to the edge it passed.
 const isPlaced = shallowRef(false);
 const renderedMs = shallowRef(0);
 const drag = shallowRef<Drag | null>(null);
@@ -223,7 +223,7 @@ const lists = computed(() => [
     }),
   },
 ]);
-// a frame's value is its label, and the field, which no frame is called, draws the coat unframed
+// A frame's value is its label. The "Field" option, which no frame is called, draws the coat unframed.
 const frameOptions = computed(() => [
   { label: "Field", value: "Field" },
   ...(frames.value ?? []).map(({ label, place }) => ({
@@ -325,7 +325,7 @@ useEventListener(pane, "click", applyClick);
 useEventListener(pane, "contextmenu", openMenu);
 useEventListener(pane, "keydown", applyKey);
 useEventListener(pane, "pointermove", applyPointer);
-useEventListener(pane, "pointerleave", leave);
+useEventListener(pane, "pointerleave", () => store.hover(model.place.path, null));
 useEventListener(canvas, "pointerdown", startDrag);
 useEventListener(canvas, "pointermove", moveDrag);
 useEventListener(canvas, "pointerup", dropDrag);
@@ -368,9 +368,8 @@ watch(
 );
 
 /**
- * readPicture reads the rects of the drawn widgets after layout. The texts that their boxes cut are first fitted to
- * them, each placeholder to the part of its box inside its holder, and a window that lies wholly off the screen is
- * moved to the screen's edge it passed.
+ * readPicture fits the picture and then reads the rects of the drawn widgets. It fits the texts their boxes cut and
+ * each placeholder to its holder, and moves a window that lies wholly off the screen to the edge it passed.
  */
 function readPicture(element: HTMLElement): void {
   fitTexts(nodes.value);
@@ -414,8 +413,8 @@ const contains = (box: DOMRect, point: DOMPoint) =>
   point.x >= box.left && point.x <= box.right && point.y >= box.top && point.y <= box.bottom;
 
 /**
- * findCopy finds the copy of a widget in a list's rows, or the instance of a layer, that the pointer is on: its place
- * among the boxes it covers. It is null for none.
+ * findCopy returns the index of the copy of a widget (one for each row of a list), or of the instance of a layer, that
+ * the pointer is on. It returns null if the pointer is on none.
  */
 function findCopy(id: number | null, event: MouseEvent): number | null {
   const point = findPoint(event);
@@ -423,18 +422,15 @@ function findCopy(id: number | null, event: MouseEvent): number | null {
   return copy < 0 ? null : copy;
 }
 
-/**
- * sortHits sorts the hits at a point in the order clicks there go through them: smallest first, the topmost of equal
- * ones.
- */
+/** sortHits sorts the hits at a point in click order: the smallest first, and the topmost first among equal ones. */
 function sortHits(hits: number[]): number[] {
   const area = (id: number) => Math.min(...(boxes.value.get(id) ?? []).map((box) => box.width * box.height));
   return hits.toSorted((first, second) => area(first) - area(second));
 }
 
 /**
- * findTarget finds the one hit that a click at a point selects: the one after the selected one in the order clicks go
- * through them, else the first, so clicks on one spot reach every widget drawn there. It is null for none.
+ * findTarget returns the hit a click selects: the one after the selected hit in click order, else the first, so
+ * repeated clicks on one spot reach every widget there. It returns null for no hits.
  */
 function findTarget(hits: number[]): number | null {
   const order = sortHits(hits);
@@ -472,8 +468,8 @@ function findEntry(position: IPosition): Symbol | undefined {
 
 /** openDrawable opens the code of the drawn drawable. */
 function openDrawable(): void {
-  const found = drawables.value?.find(({ name }) => name === drawable.value);
-  if (found) store.showCode(model.place, found.range);
+  const entry = drawables.value?.find(({ name }) => name === drawable.value);
+  if (entry) store.showCode(model.place, entry.range);
 }
 
 /** showHidden shows every widget the session hides. */
@@ -482,9 +478,8 @@ function showHidden(): void {
 }
 
 /**
- * applyClick selects what is clicked, the next widget under the pointer with each click on one spot, or nothing for a
- * click off the picture. A widget or a layer selected opens a closed panel on its Properties tab, which is Layers for
- * a coat.
+ * applyClick selects what is clicked: the next widget under the pointer with each click on one spot, or nothing for a
+ * click off the picture. Selecting a widget or layer opens a closed panel on its Properties tab, or Layers for a coat.
  */
 function applyClick(event: MouseEvent): void {
   if (event.currentTarget instanceof HTMLElement) event.currentTarget.focus({ preventScroll: true });
@@ -498,8 +493,8 @@ function applyClick(event: MouseEvent): void {
 }
 
 /**
- * togglePane opens the pane of the given button, or closes it when it is open. The panel opens on a window's States or
- * a coat's Layers, or closes when it is open on any tab.
+ * togglePane opens the pane of the given button, or closes it if it is open. A panel that opens shows a window's States
+ * tab or a coat's Layers.
  */
 function togglePane(button: (typeof PANE_BUTTONS)[number]): void {
   if (button.pane === "panel" && !isPanelOpen.value) file.value.tab = isCoat.value ? "layers" : "states";
@@ -507,9 +502,9 @@ function togglePane(button: (typeof PANE_BUTTONS)[number]): void {
 }
 
 /**
- * followPane keeps what the user does to the edge of the pane at the given place in the splitter, dragged or moved by
- * its keys: a code pane or panel at no size is closed. A pane's first size, read from the splitter's saved layout, is
- * left alone, since the session decides whether the pane opens.
+ * followPane keeps the button of a pane in step with the user resizing the pane, by drag or keys: a pane resized to no
+ * size is closed. The first size of a pane, read from the splitter's saved layout, is ignored, since the session
+ * decides whether the pane opens.
  */
 function followPane(index: number, size: number, previous: number | undefined): void {
   const button = PANE_BUTTONS.find(({ pane }) => pane === PANES[index]?.id);
@@ -517,8 +512,8 @@ function followPane(index: number, size: number, previous: number | undefined): 
 }
 
 /**
- * openMenu selects what is right-clicked, whose menu then opens: the selected widget where it is under the pointer,
- * else the first.
+ * openMenu selects the widget that is right-clicked, so that its menu opens: the selected widget if it is under the
+ * pointer, else the first hit.
  */
 function openMenu(event: MouseEvent): void {
   const hits = sortHits(findHits(event));
@@ -532,29 +527,24 @@ function applyPointer(event: PointerEvent): void {
   store.hover(model.place.path, target, findCopy(target, event));
 }
 
-/** leave leaves the picture: nothing is under the pointer. */
-function leave(): void {
-  store.hover(model.place.path, null);
-}
-
 /**
- * startDrag starts a drag of the coat's instance under a press, where this file writes it: the selected layer's where
- * it is under the pointer, else the one a click there would select. The camera then does not pan. A default instance,
- * which no block writes, is not dragged.
+ * startDrag starts dragging the coat's instance under a press, if this file writes it: the selected layer's if it is
+ * under the pointer, else the one a click there would select. The camera then does not pan. A default instance, which
+ * no block writes, is not dragged.
  */
 function startDrag(event: PointerEvent): void {
   const coat = drawnCoat.value;
   const hits = sortHits(findHits(event));
   const layer = hits.find((id) => id === file.value.selected) ?? findTarget(hits);
   const copy = findCopy(layer, event);
-  const found = layer === null ? undefined : coat?.layers?.[layer];
-  const instance = copy === null ? undefined : found?.instances?.[copy];
-  const key = POSITION_KEYS.find((one) => found?.inputs?.[one]);
-  if (event.button !== 0 || layer === null || copy === null || !coat || !found || !instance || !key) return;
-  if (!instance.range.startLineNumber || !isOwn(coat, found, model.place.key)) return;
+  const layerData = layer === null ? undefined : coat?.layers?.[layer];
+  const instance = copy === null ? undefined : layerData?.instances?.[copy];
+  const key = POSITION_KEYS.find((candidate) => layerData?.inputs?.[candidate]);
+  if (event.button !== 0 || layer === null || copy === null || !coat || !layerData || !instance || !key) return;
+  if (!instance.range.startLineNumber || !isOwn(coat, layerData, model.place.key)) return;
   event.stopPropagation();
   canvas.value?.setPointerCapture(event.pointerId);
-  drag.value = { layer, copy, instance, key, from: findPoint(event), by: new DOMPoint(), isDropped: false };
+  drag.value = { layer, copy, instance, key, start: findPoint(event), offset: new DOMPoint(), isDropped: false };
 }
 
 /** moveDrag moves the dragged instance's box with the pointer. Once the press is a drag, the instance is selected. */
@@ -562,7 +552,7 @@ function moveDrag(event: PointerEvent): void {
   const moving = drag.value;
   if (!moving || moving.isDropped) return;
   const point = findPoint(event);
-  drag.value = { ...moving, by: new DOMPoint(point.x - moving.from.x, point.y - moving.from.y) };
+  drag.value = { ...moving, offset: new DOMPoint(point.x - moving.start.x, point.y - moving.start.y) };
   if (isDragged(drag.value)) store.select(model.place.path, moving.layer, moving.copy);
 }
 
@@ -579,24 +569,24 @@ function dropDrag(): void {
   }
   drag.value = { ...moving, isDropped: true };
   const [across, down] = moving.instance.position;
-  const position = [across + moving.by.x / canvas.value.width, down + moving.by.y / canvas.value.height];
+  const position = [across + moving.offset.x / canvas.value.width, down + moving.offset.y / canvas.value.height];
   writePosition({ moving, text: `{ ${position.map((part) => Number(part.toFixed(3))).join(" ")} }` });
 }
 
 /** isDragged reports whether a press has moved far enough on the screen to be a drag. */
 function isDragged(moving: Drag): boolean {
-  return Math.hypot(moving.by.x, moving.by.y) * findScale() >= DRAG;
+  return Math.hypot(moving.offset.x, moving.offset.y) * findScale() >= DRAG;
 }
 
-/** moveBox moves the box of the instance being dragged by the drag, so its mark follows the pointer. */
-function moveBox(found: Map<number, DOMRect[]>): Map<number, DOMRect[]> {
+/** moveBox moves the box of the instance being dragged by the drag's offset, so its mark follows the pointer. */
+function moveBox(layerBoxes: Map<number, DOMRect[]>): Map<number, DOMRect[]> {
   const moving = drag.value;
-  const list = moving ? found.get(moving.layer) : undefined;
+  const list = moving ? layerBoxes.get(moving.layer) : undefined;
   const box = moving && list?.[moving.copy];
   if (moving && list && box) {
-    list[moving.copy] = new DOMRect(box.x + moving.by.x, box.y + moving.by.y, box.width, box.height);
+    list[moving.copy] = new DOMRect(box.x + moving.offset.x, box.y + moving.offset.y, box.width, box.height);
   }
-  return found;
+  return layerBoxes;
 }
 
 /** applyKey acts on a key: Escape, the arrows, Enter, h, H or f. A key with Ctrl, Alt or Meta is left alone. */

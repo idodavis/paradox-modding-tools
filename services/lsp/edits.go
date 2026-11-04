@@ -56,7 +56,6 @@ func (lsp *Service) Format(path string, tabSize int, insertSpaces bool) ([]Edit,
 	if err != nil {
 		return nil, err
 	}
-	// a game file, and a file that does not parse, are left as they are
 	if place := ws.Locate(ws.Mods.Load(), path); place.ReadOnly || !place.Format.IsScript() || len(tree.Errors) > 0 {
 		return []Edit{}, nil
 	}
@@ -227,10 +226,10 @@ func (lsp *Service) ListFixes(path string, diagnostics []Diagnostic) ([]Fix, err
 	return fixes, nil
 }
 
-// buildKeysFix returns the fix that adds the localization keys a file uses with no base-language text, each with an
-// empty text, to the localization file PMT makes for the file's mod. The fix writes that file first if it is missing
-// or empty, and leaves the caret inside the first new quotes. It returns false for a file of the game, a mod with no
-// name, a game with no localization folder, and a file that lacks no text.
+// buildKeysFix returns the fix that adds an empty message for each localization key the file uses but has no
+// base-language text for. The messages go in the localization file PMT makes for the file's mod, which the fix creates
+// first if it is missing or empty. The caret ends inside the first new quotes. It returns false for a game file, a mod
+// with no name, a game with no localization folder, or a file that lacks no text.
 func (lsp *Service) buildKeysFix(
 	ws *workspace.Session, mods *index.Index, place workspace.Place, code string,
 ) (Fix, bool) {

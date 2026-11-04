@@ -1,8 +1,8 @@
 <!--
   The Entries view of the sidebar, which Visual calls Structure. In Code it lists the active file's entries under a
   heading for each kind, each with its title in the workspace's language, its key and its line. In Visual it lists what
-  the file draws: a GUI file's windows to pick from over the drawn window's widgets as a tree, a coat file's coats with
-  their pictures.
+  the file draws: a GUI file's windows over a tree of the drawn window's widgets, or a coat file's coats with their
+  pictures.
 -->
 <script setup lang="ts">
 import type { TreeItem } from "@nuxt/ui";
@@ -21,9 +21,9 @@ import { useWorkspaceStore } from "../../stores/workspace";
 import CoatDialog from "./draw/CoatDialog.vue";
 import { drawCoat } from "./draw/coat";
 
-/** A Heading is the row over a kind of entry, with how many entries of the list it heads. */
+/** A Heading is the row over one kind of entry, with the count of its entries. */
 type Heading = { heading: string; count: number };
-/** A Row is a row of the list: a heading, or an entry. */
+/** A Row is one row of the list: a Heading or an entry. */
 type Row = Heading | { entry: Symbol };
 
 const store = useDrawStore();
@@ -56,7 +56,7 @@ const { data: drawnWindow } = useQuery(() => ({
 // the drawn window's widgets as rows of a tree, each under the widget that holds it; widget 0 is the window
 const widgets = computed(() => {
   const list = drawnWindow.value?.widgets ?? [];
-  const rows = list.map(({ id, name, type, role }) => ({
+  const nodes = list.map(({ id, name, type, role }) => ({
     value: String(id),
     label: name || type,
     role,
@@ -64,10 +64,10 @@ const widgets = computed(() => {
     children: [] as TreeItem[],
   }));
   for (const { id, parent } of list) {
-    const row = rows[id];
-    if (id && row) rows[parent]?.children.push(row);
+    const node = nodes[id];
+    if (id && node) nodes[parent]?.children.push(node);
   }
-  return rows;
+  return nodes;
 });
 // the names the window picker lists
 const windowNames = computed(() => entries.value.map(({ name }) => name));
@@ -80,7 +80,7 @@ const query = refDebounced(search, 150);
 const rows = computed<Row[]>(() => {
   const matches = entries.value.filter(({ name, title }) => matchQuery(query.value, name, title));
   const groups = [...Map.groupBy(matches, ({ database }) => database).values()];
-  // a script file's rows do not say their kind, so its list has a heading even where it holds one kind
+  // a coat list of one kind has no heading; any other list keeps its headings even for one kind
   if (isCoat.value && groups.length < 2) return matches.map((entry) => ({ entry }));
   return groups.flatMap((group) => [
     { heading: group[0].what, count: group.length },
@@ -97,9 +97,8 @@ const pinned = computed(() => {
 const canvases = new WeakSet<HTMLCanvasElement>();
 
 /**
- * flatten lists symbols with the symbols nested in each that are of its own database, such as a kingdom in an
- * empire, in the order they are written. A name script saves inside an entry, such as a saved scope, is left to the
- * outline.
+ * flatten lists symbols together with the symbols nested in them that are of the same database, such as a kingdom
+ * inside an empire, in file order. Nested symbols of another database, such as a saved scope, are not listed.
  */
 function flatten(symbols: Symbol[]): Symbol[] {
   return symbols.flatMap((symbol) => [
@@ -129,8 +128,8 @@ function selectWidget(row: TreeItem | undefined): void {
   if (place.value && row) store.select(place.value.path, Number(row.value));
 }
 
-/** buildThumbnail draws a coat's picture on a canvas in the list. A canvas drawn already is left as it is. */
-async function buildThumbnail(canvas: unknown, name: string): Promise<void> {
+/** drawThumbnail draws a coat's picture on a canvas in the list. A canvas that already has one is left alone. */
+async function drawThumbnail(canvas: unknown, name: string): Promise<void> {
   if (!(canvas instanceof HTMLCanvasElement) || canvases.has(canvas) || !place.value) return;
   canvases.add(canvas);
   const result = await loadQuery(coatQuery({ path: place.value.path, name, picks: {} }));
@@ -211,7 +210,7 @@ async function buildThumbnail(canvas: unknown, name: string): Promise<void> {
             >
               <canvas
                 :key="item.entry.name"
-                :ref="(element) => void buildThumbnail(element, item.entry.name)"
+                :ref="(element) => void drawThumbnail(element, item.entry.name)"
                 class="h-16 w-24 shrink-0 object-contain"
               />
               <span class="flex min-w-0 grow flex-col">

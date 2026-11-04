@@ -92,7 +92,7 @@ func readMountLog(ws *workspace.Session) ([]string, bool) {
 	return folders, true
 }
 
-// sortRunMods sorts the workspace's mods into those the game's last run read, read from another copy, or did not read.
+// sortRunMods sorts the workspace's mods into those the game's last run read, read another copy of, or did not read.
 func sortRunMods(ws *workspace.Session, folders []string) (read map[string]bool, copies map[string]string, unloaded []string) {
 	read, copies = map[string]bool{}, map[string]string{}
 	others := map[string]string{} // a folder of another copy, by the name its descriptor gives
@@ -207,9 +207,9 @@ func findLogOwner(mods *index.Index, message string) (identifier, origin string,
 	return "", "", false
 }
 
-// describeRow fills in a log row's words as describeFinding does, but for two. Its message is the line the game logged,
-// its lines trimmed and joined by a dot, with the name or file that ties the row to a mod drawn apart where the line
-// writes it. Its why says what ties the row to its mod.
+// describeRow fills in a log row's wording as describeFinding does, except the message and the why. The message is the
+// line the game logged: its lines trimmed and joined by a dot, with the name or file that ties the row to a mod drawn
+// apart. The why says what ties the row to its mod.
 func describeRow(ws *workspace.Session, row *Finding) {
 	describeFinding(row)
 	lines := lo.Map(strings.Split(row.Facts["message"], "\n"), func(line string, _ int) string {

@@ -36,10 +36,10 @@ const range = computed(() => (min || max ? { min, max } : {}));
 const size = computed(() => (label ? "md" : "xs"));
 const toggled = computed(() => value.split(" ").filter(Boolean));
 
-/** toggle emits the toggles on once the given one is switched. */
+/** toggle emits the toggles that are on after the given toggle is switched. */
 function toggle(choice: string): void {
   const on = toggled.value.includes(choice)
-    ? toggled.value.filter((one) => one !== choice)
+    ? toggled.value.filter((other) => other !== choice)
     : [...toggled.value, choice];
   emit("update:value", on.toSorted().join(" "));
 }

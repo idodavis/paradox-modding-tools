@@ -31,7 +31,7 @@ const items = computed(() =>
 );
 // the picked install's version and scan; the counts are known only for the install of the open workspace
 const scanLine = computed(() => {
-  const install = installs.value?.find((one) => one.id === installId.value);
+  const install = installs.value?.find((row) => row.id === installId.value);
   if (!install) return "";
   const line = `${toSentence(installLine("", install.version, install.scannedAt))}.`;
   const open = state.value?.open && state.value.install.id === install.id ? state.value : undefined;
@@ -128,7 +128,7 @@ async function removeInstall(id: string): Promise<void> {
             <span class="text-12 font-medium">{{ install.name }} {{ install.version }}</span>
             <span class="truncate font-mono text-12 text-dimmed">{{ install.path }}</span>
           </div>
-          <UBadge v-if="installs?.some((one) => one.path === install.path)" label="Added" />
+          <UBadge v-if="installs?.some((added) => added.path === install.path)" label="Added" />
           <UButton
             v-else
             label="Add"

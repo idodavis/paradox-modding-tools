@@ -44,8 +44,8 @@ const (
 	communityFileType = 0              // the file type of a mod's item
 	imagePreviewType  = 0              // the type of preview that is a picture
 	videoPreviewType  = 1              // the type of preview that is a YouTube video
-	invalidHandle     = math.MaxUint64 // what an update or a query handle is when Steam made none
-	invalidCall       = 0              // what a call is when Steam started none
+	invalidHandle     = math.MaxUint64 // the update or query handle Steam returns when it could not create one
+	invalidCall       = 0              // the call Steam returns when it did not start one
 	pollInterval      = 100 * time.Millisecond
 	downloadTimeout   = 10 * time.Minute
 	watchLink         = "https://www.youtube.com/watch?v=" // the link to watch a video, before its id
@@ -493,8 +493,8 @@ func (client *Client) setDependencies(id uint64, listing Listing, details Detail
 	return errors.Join(errs...)
 }
 
-// diffTags returns the tags that an upload adds to an item and the ones it removes. Two tags that differ only in case
-// are the same tag, as they are to Steam, which keeps a tag in the case it already knows.
+// diffTags returns the tags that an upload adds to an item and the ones it removes. Tags that differ only in case
+// count as the same tag, because Steam keeps a tag in the case it already has.
 func diffTags(sent, steam []string) (added, removed []string) {
 	missing := func(tags []string) func(string, int) bool {
 		return func(tag string, _ int) bool {
@@ -532,12 +532,12 @@ func diffLabels(previews, steam []Preview) (added, removed []string) {
 // applyChanges calls one of Steam's functions that change what an item requires, once per id, and waits for each
 // result. It returns an error if an id is not a number or Steam fails a call.
 func (client *Client) applyChanges(ids []string, change func(id uint64) uint64, callbackID, size int32) error {
-	for _, text := range ids {
-		value, err := strconv.ParseUint(text, 10, 64)
+	for _, steamID := range ids {
+		number, err := strconv.ParseUint(steamID, 10, 64)
 		if err != nil {
-			return fmt.Errorf("%q is not a Steam id", text)
+			return fmt.Errorf("%q is not a Steam id", steamID)
 		}
-		if _, err := client.fetchOK(change(value), callbackID, size, nil); err != nil {
+		if _, err := client.fetchOK(change(number), callbackID, size, nil); err != nil {
 			return err
 		}
 	}

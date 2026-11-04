@@ -1,6 +1,6 @@
 <!--
-  Settings, over any page of any window: the workspace's, the IDE's and the app's, each part of the catalog a section.
-  It opens on the command bus's settings.open, at the section it names if any.
+  Settings, a dialog over any page of any window. It lists the workspace's, the IDE's and the app's settings in
+  sections, and opens when the command bus sends settings.open, at the section it names if any.
 -->
 <script setup lang="ts">
 import { computed, nextTick, shallowRef, useTemplateRef, watch } from "vue";
@@ -39,8 +39,8 @@ import * as workspace from "@services/workspace/service";
 import type { Mod } from "@services/workspace/models";
 
 /**
- * The sections in the order they are listed, grouped by what they apply to. A group of the workspace shows while one
- * is open. A catalog group's sections are its rows alone, each section with a button that resets them.
+ * GROUPS holds the sections in listed order, grouped by what they apply to. A workspace group shows only while one is
+ * open. A catalog group's sections are drawn from the settings catalog alone, each with a button that resets it.
  */
 const GROUPS = [
   {
@@ -81,7 +81,7 @@ const GROUPS = [
     ],
   },
 ];
-/** The help Settings gives, a paragraph each. */
+/** HELP holds the paragraphs of Settings' help. */
 const HELP = [
   "General: the workspace's name, its localization language, the page it opens on, the IDE's tabs, start page and explorer, and the first-mod checklist.",
   "Game install: the install this workspace reads, and how to make the game write its documentation.",
@@ -122,7 +122,7 @@ const HEADING = {
     label: "flex flex-col items-start gap-0.5 overflow-hidden",
   },
 };
-// the load order and the mod picked; the splitter keeps the list's width
+// the splitter's two panes: the load order and the picked mod's card; the list keeps its width
 const PANES = [
   { slot: "list", sizeUnit: "px" as const, defaultSize: 420, minSize: 320, maxSize: 640 },
   { slot: "card" },
@@ -213,11 +213,11 @@ const chips = computed(() => [VANILLA, ...mods.value.map((mod) => mod.id)]);
 
 // a section is listed when its title or one of its settings matches what was typed
 const sections = computed(() => {
-  const matches = (one: { value: string; label: string }) =>
+  const matches = (item: { value: string; label: string }) =>
     matchQuery(
       search.value,
-      one.label,
-      ...(catalog.value ?? []).filter((row) => row.section === one.value).map((row) => `${row.label} ${row.words}`),
+      item.label,
+      ...(catalog.value ?? []).filter((row) => row.section === item.value).map((row) => `${row.label} ${row.words}`),
     );
   return GROUPS.filter((group) => !group.workspace || record.value)
     .map((group) => ({ ...group, sections: group.sections.filter(matches) }))
@@ -235,15 +235,15 @@ const tabs = computed<TabsItem[]>(() =>
       ...HEADING,
     },
     // a catalog group's sections draw in the content slot, the others in a slot of their own
-    ...group.sections.map((one) => ({
-      label: one.label,
-      value: one.value,
-      slot: group.catalog ? undefined : one.value,
+    ...group.sections.map((tab) => ({
+      label: tab.label,
+      value: tab.value,
+      slot: group.catalog ? undefined : tab.value,
     })),
   ]),
 );
 const current = computed({
-  get: () => (listed.value.find((one) => one.value === section.value) ?? listed.value[0])?.value ?? "appearance",
+  get: () => (listed.value.find((item) => item.value === section.value) ?? listed.value[0])?.value ?? "appearance",
   set: (value: string | number) => (section.value = `${value}`),
 });
 

@@ -12,12 +12,12 @@ export enum Reason {
     $zero = "",
 
     /**
-     * The reasons: the last copy, the first, the playset's last, the one with the highest priority, the one an entry
-     * mode puts in place, the first of copies merged into one, the copy left when another mod's replace_path or a path
-     * the game does not read drops the one that would win, and a localization key's in a replace folder; a copy merged
-     * into the winner by an entry mode or by its database; a choice no source settles; and a copy in a file the game does
-     * not read, because a file at the same path later in the load order replaces its file, or a mod's replace_path drops
-     * its folder.
+     * The reasons. Last, First, Playset, Priority and Mode say why a copy wins. Merge is the first of copies merged into
+     * one. Replace and Path say that a copy wins because another mod's replace_path or an unread path drops the one that
+     * would. ReplaceFolder is a localization key in a replace folder. Injected and Combined are copies merged into the
+     * winner by an entry mode or by its database. Unsettled is a choice no source settles. Shadowed and Dropped are a copy
+     * in a file the game does not read: a file at the same path later in the load order replaces its file, or a mod's
+     * replace_path drops its folder.
      */
     ReasonLast = "last",
     ReasonFirst = "first",

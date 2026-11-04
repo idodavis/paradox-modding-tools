@@ -26,7 +26,7 @@ type Position struct {
 	Column int `json:"column"`
 }
 
-// An Error is one error a parse found in a text, with the span it covers.
+// An Error is one problem a parse found in a text, with the span it covers.
 type Error struct {
 	// Code is unclosed-block, unexpected-brace, unclosed-string or missing-value from a script parse. The loc parser's
 	// codes are malformed-line, loc-content-before-header and loc-unterminated-value.
@@ -135,8 +135,8 @@ func (tree *Tree) UnquotedSpan(span Span) Span {
 	return span
 }
 
-// ParseBracketed parses the data call that a value of the tree writes between brackets, without its quotes. The
-// call's spans are the tree's offsets. It returns false if the value is no call.
+// ParseBracketed parses the text of the given span as a data call written between brackets, such as [Root.GetName],
+// with its quotes removed. The call's spans are offsets in the tree's text. It returns false if the text is no call.
 func (tree *Tree) ParseBracketed(span Span) (Call, bool) {
 	return ParseBracketed(tree.Unquoted(span), tree.UnquotedSpan(span).Start)
 }
@@ -155,8 +155,8 @@ func (tree *Tree) Children(statement int32) iter.Seq[int32] {
 	}
 }
 
-// FindPrevious returns the statement written just before a statement in the block that holds it. It returns false if
-// the statement is the block's first.
+// FindPrevious returns the statement just before the given one in the same block. It returns false if the given
+// statement is the block's first.
 func (tree *Tree) FindPrevious(statement int32) (int32, bool) {
 	previous := int32(0)
 	for child := range tree.Children(tree.Statements[statement].Parent) {

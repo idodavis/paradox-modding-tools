@@ -18,8 +18,8 @@ export interface Program {
 }
 
 /**
- * A Screen is a shell's screen as a window drew it: the terminal's own text for it, which draws it again, and the
- * offset of the output it holds. It also carries the shell's size.
+ * A Screen is what a window drew of a shell: the text that redraws it, the offset of the output it shows, and the
+ * shell's size.
  */
 export interface Screen {
     "text": string;
@@ -29,9 +29,8 @@ export interface Screen {
 }
 
 /**
- * A Shell is one program running under a pseudo-terminal, together with the output it has written. Its starter fills
- * in the id, the program and its arguments, the folder and the origin, then calls Start. No exported field changes
- * after that.
+ * A Shell is one program running under a pseudo-terminal, with the output it has written. The caller sets ID, Program,
+ * Args, Folder and Origin and then calls Start, which sets Name and Build. After Start no exported field changes.
  */
 export interface Shell {
     "id": string;

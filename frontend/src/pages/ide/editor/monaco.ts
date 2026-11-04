@@ -1,7 +1,7 @@
 /**
- * Monaco's setup, done once: the Paradox languages with their grammars, the providers over the editor service and the
- * editor options the settings give. Each page theme gets a Monaco theme when it comes into force, its token colors
- * read from the theme's `--syn-<category>` variables.
+ * Monaco's setup, done once: the Paradox languages and their grammars, the providers, and the editor options from the
+ * settings. Each page theme gets a Monaco theme the first time it applies, its token colors read from the page theme's
+ * `--syn-<category>` variables.
  */
 import { useEventBus } from "@vueuse/core";
 import Color from "colorjs.io";
@@ -22,13 +22,13 @@ import { LOCALIZATION, SCRIPT } from "./grammars";
 import { openModel, setupModels } from "./models";
 import { labelService, registerProviders } from "./providers";
 
-/** LANGUAGES holds each Paradox language with its name, its grammar and its characters of a word. */
+/** LANGUAGES lists each Paradox language with its label, grammar and word pattern. */
 export const LANGUAGES = [
   { id: "paradox-script", label: "Paradox Script", grammar: SCRIPT, word: /[\w.:@$-]+/ },
   { id: "paradox-gui", label: "Paradox GUI", grammar: SCRIPT, word: /[\w.:@$-]+/ },
   { id: "paradox-localization", label: "Paradox localization", grammar: LOCALIZATION, word: /[\w$.-]+/ },
 ];
-// the pairs typed together, and what every language shares of its configuration
+// the bracket and quote pairs typed together, and the configuration every language shares
 const PAIRS = [
   { open: "{", close: "}" },
   { open: "[", close: "]" },
@@ -50,7 +50,7 @@ const CONFIGURATION: languages.LanguageConfiguration = {
   ],
 };
 
-// each token the grammars and the legend name, with the `--syn-<token>` of the themes that colors it
+// each token the grammars and the legend use, with the `--syn-<name>` theme variable that colors it
 const SYNTAX: Record<string, string> = {
   comment: "comment",
   string: "string",
@@ -75,12 +75,12 @@ const SYNTAX: Record<string, string> = {
 const defined = new Set<string>();
 
 /**
- * setupMonaco sets Monaco up, once, before the first editor: its worker, the text model and label services, the
- * languages, the palette's and the history's keys inside an editor, the providers and the conflict links.
+ * setupMonaco sets Monaco up once, before the first editor is created. It sets the worker, the text model and label
+ * services, the languages, the palette and history keybindings, the providers and the conflict links.
  */
 export function setupMonaco(): void {
   self.MonacoEnvironment = { getWorker: () => new EditorWorker() };
-  // Monaco takes its services from the first editor made, so a throwaway one carries the app's own
+  // Monaco takes its services from the first editor created, so a throwaway editor passes in the app's own
   monaco.editor
     .create(
       document.createElement("div"),
@@ -130,7 +130,7 @@ export function setupMonaco(): void {
   });
 }
 
-/** applyTheme makes Monaco's theme for the page theme in force, if it does not exist yet, and applies it. */
+/** applyTheme applies Monaco's theme for the given page theme, defining the theme first if it is new. */
 function applyTheme(family: string, dark: boolean): void {
   const id = `pmt-${family}-${dark ? "dark" : "light"}`;
   if (!defined.has(id)) {
@@ -141,8 +141,8 @@ function applyTheme(family: string, dark: boolean): void {
 }
 
 /**
- * editorOptions returns the editor options from the settings: the code font, the indentation and the features they
- * turn on or off.
+ * editorOptions returns the Monaco editor options built from the settings: the code font, the indentation and each
+ * feature's switch.
  */
 export function editorOptions(): editor.IStandaloneEditorConstructionOptions {
   const settings = useSettingsStore();
@@ -178,8 +178,8 @@ export function editorOptions(): editor.IStandaloneEditorConstructionOptions {
 }
 
 /**
- * makeTheme makes a Monaco theme from the tokens of the given page theme: the colors of the syntax and the editor's
- * own. Monaco takes no CSS variables, so the tokens are read from an element of that page theme.
+ * makeTheme makes a Monaco theme from the given page theme's tokens, for the syntax and for the editor's own colors.
+ * Monaco takes no CSS variables, so it reads them from a temporary element under that page theme.
  */
 function makeTheme(pageTheme: string, dark: boolean): editor.IStandaloneThemeData {
   const probe = document.body.appendChild(document.createElement("div"));
@@ -204,11 +204,11 @@ function makeTheme(pageTheme: string, dark: boolean): editor.IStandaloneThemeDat
   return theme;
 }
 
-/** buildColors builds the editor's colors in a theme, from the page's tokens. */
+/** buildColors builds the editor colors of a Monaco theme from the page theme's tokens. */
 function buildColors(token: (key: string) => string, dark: boolean): Record<string, string> {
   const accent = token("accent");
   const clear = `${token("bg-0")}00`;
-  // a theme may give its diffs a pair of their own, else they are its green and red
+  // a page theme may define diff-add and diff-del; otherwise diffs use its green and red
   const added = token("diff-add") || token("green");
   const removed = token("diff-del") || token("red");
   return {

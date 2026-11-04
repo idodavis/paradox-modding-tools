@@ -15,7 +15,7 @@ const { level, parts } = defineProps<{
 const emit = defineEmits<{ open: [] }>();
 
 const { data: levels } = useQuery(levelsQuery);
-const mark = computed(() => levels.value?.find((one) => one.id === level));
+const mark = computed(() => levels.value?.find((candidate) => candidate.id === level));
 </script>
 
 <template>

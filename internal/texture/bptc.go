@@ -18,8 +18,8 @@ var weights = [5][]int{
 	4: {0, 4, 9, 13, 17, 21, 26, 30, 34, 38, 43, 47, 51, 55, 60, 64},
 }
 
-// bc7Modes are the eight BC7 block modes: the subsets, the bits of the partition, rotation and index selection
-// fields, the bits of a color and of an alpha endpoint, whether each endpoint or each subset carries a P-bit, and
+// bc7Modes holds the eight BC7 block modes. A row gives the subsets; the bits of the partition, rotation and index
+// selection fields; the bits of a color and of an alpha endpoint; whether each endpoint or each subset has a P-bit; and
 // the bits of an index and of a secondary index.
 var bc7Modes = [8]struct {
 	subsets, partitionBits, rotationBits, selectionBits int
@@ -36,11 +36,10 @@ var bc7Modes = [8]struct {
 	{2, 6, 0, 0, 5, 5, 1, 0, 2, 0},
 }
 
-// bc6hModes are the BC6H block modes by mode number: whether the other endpoints are deltas from the first, the
-// subsets, the bits of the partition field, the bits of an index, the bits of an endpoint, the bits of each
-// channel's delta, and the fields of the mode and the endpoints in the order the block stores them, as the
-// specification writes them. A field written high bit first is stored reversed. A mode the format reserves has
-// no fields.
+// bc6hModes holds the BC6H block modes by mode number. A row gives whether the other endpoints are deltas from the
+// first; the subsets; the bits of the partition field, of an index, of an endpoint and of each channel's delta; and
+// the fields of the mode and the endpoints in the order the block stores them, as the specification writes them. A
+// field written high bit first is stored reversed. A mode the format reserves has no row.
 var bc6hModes = [32]struct {
 	transformed                                     bool
 	subsets, partitionBits, indexBits, endpointBits int
@@ -77,8 +76,8 @@ var bc6hModes = [32]struct {
 		"g0[10:15],b1[3:0],b0[10:15]"},
 }
 
-// bc6hFields are the fields of each BC6H mode parsed from its row: for each, the endpoint it fills, the channel,
-// and the high and low bit of the field, in the order the block stores them. The mode field is not among them.
+// bc6hFields holds the fields of each BC6H mode, parsed from its row of bc6hModes. A field is the endpoint it fills,
+// its channel, and its high and low bit, in the order the block stores them. The mode field is left out.
 var bc6hFields = parseBC6HFields()
 
 // partitions says which subset each pixel of a block is in, by the count of subsets, then by partition and pixel. A
@@ -252,11 +251,11 @@ var anchorPixels = [4][][64]uint8{
 	}},
 }
 
-// decodeBC6H decodes one BC6H block in any of its fourteen modes, each channel's half float clamped to 0 to 1
-// and scaled to a byte, with alpha 255. A block in a reserved mode decodes to black. The flag says whether the
-// format is the signed one.
+// decodeBC6H decodes one BC6H block in any of its fourteen modes. Each channel's half float is clamped to 0 to 1 and
+// scaled to a byte, and alpha is 255. A block in a reserved mode decodes to black. The flag says whether the format is
+// the signed one.
 func decodeBC6H(block []byte, pixels *[16][4]uint8, signed bool) {
-	mode := int(block[0] & 3)
+	mode := int(block[0] & 3) // modes 0 and 1 have a 2-bit mode field, the others a 5-bit one
 	if mode >= 2 {
 		mode = int(block[0] & 31)
 	}
@@ -274,7 +273,7 @@ func decodeBC6H(block []byte, pixels *[16][4]uint8, signed bool) {
 	var palettes [2][16][3]uint16
 	for subset := range row.subsets {
 		pair := [2][3]int{endpoints[2*subset], endpoints[2*subset+1]}
-		palettes[subset] = resolveBC6HPalette(pair, mode, signed)
+		palettes[subset] = buildBC6HPalette(pair, mode, signed)
 	}
 	for i := range 16 {
 		half := palettes[partitions[row.subsets][partition][i]][indices[i]]
@@ -338,7 +337,7 @@ func readBits(block []byte, position, count int) uint32 {
 	return value
 }
 
-// toSigned reads a value of the given bits as two's complement.
+// toSigned sign-extends a value that is the given number of bits wide, read as two's complement.
 func toSigned(value, width int) int {
 	if value&(1<<(width-1)) != 0 {
 		return value - 1<<width
@@ -346,9 +345,9 @@ func toSigned(value, width int) int {
 	return value
 }
 
-// readIndices reads the sixteen indices of a block from the given bit position, each of the given bits except
-// the anchors, pixel 0 and the given others, which have one bit fewer. It returns the indices and the bit
-// position after them.
+// readIndices reads the sixteen indices of a block from the given bit position, each the given number of bits wide.
+// The anchors have one bit fewer: pixel 0 and the given other pixels. It returns the indices and the bit position
+// after them.
 func readIndices(block []byte, position, width int, anchors []int) ([16]uint8, int) {
 	var indices [16]uint8
 	for i := range 16 {
@@ -371,9 +370,9 @@ func lookupAnchors(subsets, partition int) []int {
 	return pixels
 }
 
-// resolveBC6HPalette builds the colors a subset's indices pick: the two endpoints unquantized to sixteen bits,
+// buildBC6HPalette builds the colors a subset's indices pick: the two endpoints unquantized to sixteen bits,
 // interpolated with the mode's weights, and scaled to half floats.
-func resolveBC6HPalette(endpoints [2][3]int, mode int, signed bool) [16][3]uint16 {
+func buildBC6HPalette(endpoints [2][3]int, mode int, signed bool) [16][3]uint16 {
 	row := bc6hModes[mode]
 	var palette [16][3]uint16
 	for c := range 3 {
@@ -445,7 +444,7 @@ func toFloat(half uint16) float32 {
 
 // decodeBC7 decodes one BC7 block in any of its eight modes. A block in the reserved mode decodes to zeros.
 func decodeBC7(block []byte, pixels *[16][4]uint8) {
-	mode := bits.TrailingZeros8(block[0])
+	mode := bits.TrailingZeros8(block[0]) // the position of the first byte's lowest set bit
 	if mode == 8 {
 		*pixels = [16][4]uint8{}
 		return
@@ -461,6 +460,8 @@ func decodeBC7(block []byte, pixels *[16][4]uint8) {
 	endpoints, position := readBC7Endpoints(block, position, mode)
 	anchors := lookupAnchors(row.subsets, partition)
 	primary, position := readIndices(block, position, row.indexBits, anchors)
+	// Color and alpha share the primary indices. A mode with secondary indices gives them to alpha, or to color when the
+	// selection bit is set, and alpha then takes the primary ones.
 	colorIndices, colorBits, alphaIndices, alphaBits := primary, row.indexBits, primary, row.indexBits
 	if row.indexBits2 > 0 {
 		secondary, _ := readIndices(block, position, row.indexBits2, anchors)

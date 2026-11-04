@@ -33,8 +33,8 @@ const (
 	LevelInfo             = "info"          // only how things are
 )
 
-// A Level is one level of a finding: its words, its look on the page, and whether it counts as a problem and means
-// the game loses something.
+// A Level is one level of a finding: its wording, its icon and color on the page, whether it counts as a problem and
+// whether the game loses something.
 type Level struct {
 	ID      string `json:"id"`
 	Label   string `json:"label"`
@@ -65,7 +65,7 @@ const unresolvedCode = "unresolved-reference"
 // keyFacts are the codes of a localization key with no base-language text, each with the fact that names the key.
 var keyFacts = map[string]string{"missing-message": "key", "unknown-loc-key": "name"}
 
-// elsewhereMessage is the message of a name the file's mod does not define that a mod it does not depend on does.
+// elsewhereMessage is the message for a name that the file's mod does not define but a mod it does not depend on does.
 const elsewhereMessage = "{mod} uses this {database}, but the game doesn't define it: {other} does. {mod} doesn't " +
 	"list {other} as a dependency, so in a game without {other} the {database} doesn't exist, and every place that " +
 	"uses it finds nothing."
@@ -451,7 +451,7 @@ func Plural(count int, noun, nouns string) string {
 // A diagnoseVisitor collects the problems of one file.
 type diagnoseVisitor struct {
 	ws          *workspace.Session
-	index       *index.Index // the mods' index, narrowed to a mod's file's mod and the mods it depends on
+	index       *index.Index // the mods' index, narrowed to the file's mod and the mods it depends on
 	whole       *index.Index // the mods' index, every mod of the workspace
 	place       workspace.Place
 	parseOnly   bool // the file is the game's, so only its parse errors are judged
@@ -492,16 +492,16 @@ func (visitor *diagnoseVisitor) diagnoseTree(document workspace.Document) []Diag
 	return diagnostics
 }
 
-// diagnoseDescriptor returns the problems of a mod's descriptor, read as the workspace reads one: a supported version
-// the game's version does not match, at the line that writes it. A descriptor has none if it writes no supported
-// version, writes one in a form no source shows the games matching, or cannot be read.
+// diagnoseDescriptor returns a problem if a mod's descriptor names a supported version the game's version does not
+// match, at the text that writes it. It returns none if the descriptor writes no supported version, writes it in a form
+// no source shows the game matching, or cannot be read.
 func (visitor *diagnoseVisitor) diagnoseDescriptor(tree *jomini.Tree) []Diagnostic {
 	descriptor, err := workspace.ParseDescriptor(visitor.place.Path, tree.Src)
 	version := visitor.ws.Schema.Version
 	if matches, judged := workspace.MatchVersion(descriptor.SupportedVersion, version); err != nil || matches || !judged {
 		return []Diagnostic{}
 	}
-	// the version's line is the first after the word supported, which both descriptor forms write it under
+	// the version is the first copy of its text after the word supported, which both descriptor forms write it under
 	span := jomini.Span{}
 	if key := strings.Index(tree.Src, "supported"); key >= 0 {
 		if value := strings.Index(tree.Src[key:], descriptor.SupportedVersion); value >= 0 {
@@ -599,9 +599,9 @@ func (visitor *diagnoseVisitor) diagnoseMissing(tree *jomini.Tree, references []
 	}
 }
 
-// classifyMissing returns the code of a name nothing defines, by the databases of the references that are its
-// alternatives: an unknown localization key, or an unknown text icon or format, where every alternative is of that
-// kind, and an unresolved reference otherwise.
+// classifyMissing returns the code for a name nothing defines, from the databases of its alternative references. It is
+// an unknown localization key if every alternative is one, an unknown text icon or format if every alternative is one,
+// and an unresolved reference otherwise.
 func classifyMissing(alternatives []schema.Reference) string {
 	codes := lo.Uniq(lo.Map(alternatives, func(reference schema.Reference, _ int) string {
 		switch reference.Database {
@@ -645,16 +645,16 @@ func (visitor *diagnoseVisitor) isKnown(reference schema.Reference) bool {
 	})
 }
 
-// findElsewhere returns the definition the game takes a name from in the whole workspace, for a name the file's mod
-// does not define: the copy the game keeps of the first alternative it keeps one of, in a file the game reads. It
-// returns false where the file is judged with every mod, or where the game keeps no copy of any alternative.
+// findElsewhere returns the definition that the whole workspace supplies for a name the file's mod does not define:
+// the first alternative's kept copy that is in a file the game reads. It returns false if the file is judged with
+// every mod, or if no alternative has such a copy.
 func (visitor *diagnoseVisitor) findElsewhere(alternatives []schema.Reference) (index.Site, bool) {
 	if visitor.whole == visitor.index {
 		return index.Site{}, false
 	}
 	for _, reference := range alternatives {
-		if winner, ok := findKept(visitor.ws, visitor.whole, reference, visitor.place.Position); ok &&
-			visitor.whole.IsLoaded(winner.Site.File) {
+		winner, ok := findKept(visitor.ws, visitor.whole, reference, visitor.place.Position)
+		if ok && visitor.whole.IsLoaded(winner.Site.File) {
 			return winner.Site, true
 		}
 	}
@@ -776,8 +776,8 @@ func (visitor *diagnoseVisitor) diagnoseNamespace(tree *jomini.Tree, current jom
 	visitor.diagnostics = append(visitor.diagnostics, makeDiagnostic(tree, current.Key, "wrong-namespace", facts))
 }
 
-// diagnoseFollows records a keyword such as else that is not written right after one of the keys it must follow, in
-// any case.
+// diagnoseFollows records a keyword such as else that does not come right after one of the keys it must follow. The
+// previous key's case is ignored.
 func (visitor *diagnoseVisitor) diagnoseFollows(tree *jomini.Tree, statement int32, context *schema.Context) {
 	current := tree.Statements[statement]
 	keyword := context.Keyword
@@ -829,8 +829,8 @@ func (visitor *diagnoseVisitor) diagnoseScope(tree *jomini.Tree, statement int32
 	}))
 }
 
-// isScripted reports whether the block that holds a statement holds effects or triggers. The arguments of a command are
-// not effects or triggers.
+// isScripted reports whether the block that holds a statement holds effects or triggers. A command's own block does
+// only if the command leads to a scope or walks a list, else it holds arguments.
 func isScripted(context *schema.Context) bool {
 	holder := context.Parent
 	return (holder.Shape == game.ShapeEffects || holder.Shape == game.ShapeTriggers) && !holder.HoldsArguments()
@@ -904,7 +904,7 @@ func (visitor *diagnoseVisitor) diagnoseDate(tree *jomini.Tree, statement int32,
 
 // diagnoseCall records the arguments a call to a scripted definition gives that its body does not read, and the
 // parameters with no default that the call does not give, at the call. The definition judged is the copy the game
-// keeps of the one the walk decided at the call. A call inside another scripted definition is given that
+// keeps of the definition the walk found at the call. A call inside another scripted definition is given that
 // definition's own parameters too, since they reach it.
 func (visitor *diagnoseVisitor) diagnoseCall(tree *jomini.Tree, statement int32, context *schema.Context) {
 	current := tree.Statements[statement]
@@ -938,9 +938,9 @@ func (visitor *diagnoseVisitor) diagnoseCall(tree *jomini.Tree, statement int32,
 	}
 }
 
-// listCalleeParameters returns the parameters of the copy the game keeps of the scripted definition a call names, read
-// from its body in the judged index, or those the walk knows where the index keeps no copy. It returns nil if the
-// call names no scripted definition that takes parameters.
+// listCalleeParameters returns the parameters of the scripted definition a call names, read from the body of the copy
+// the game keeps in the judged index. If the index keeps no copy, it returns the parameters the walk knows. It returns
+// nil if the call names no scripted definition that takes parameters.
 func (visitor *diagnoseVisitor) listCalleeParameters(key string, callee *schema.ScriptedDefinition) *schema.Field {
 	if callee == nil || callee.Parameters == nil {
 		return nil

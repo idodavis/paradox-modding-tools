@@ -45,8 +45,8 @@ var (
 	headerLine = regexp.MustCompile(`(?i)^[ \t]*l_([a-z_]+):[ \t]*(#.*)?$`)
 	// messageStart matches a message line up to its opening quote: the key, an optional version and the colon.
 	messageStart = regexp.MustCompile(`^[ \t]*([\p{L}\p{N}_.'-]+):(\d*)[ \t]*"`)
-	// languageSuffix matches a file name that ends in `_l_<language>.yml`, without case. It captures what comes before
-	// the language, the language, which is letters and underscores, and the ending.
+	// languageSuffix matches a file name ending in `_l_<language>.yml`, in any case. It captures the part up to and
+	// including `_l_`, the language and the `.yml`.
 	languageSuffix = regexp.MustCompile(`(?i)^(.*_l_)([a-z_]+)(\.yml)$`)
 )
 
@@ -57,10 +57,10 @@ var languageLabels = map[string]string{
 	"braz_por": "Brazilian Portuguese", "japanese": "Japanese",
 }
 
-// Parse parses the text of a localization file. It takes the language from the `l_<language>:` header, else from the
-// `_l_<language>` ending of the file's name, else from its folder, all without case. The language is "" if none of
-// them says. A line above the header is an error. A message with no closing quote is an error, and its text runs to
-// the end of the line.
+// Parse parses the text of the localization file at the given path. The language comes from the `l_<language>:`
+// header, else from the `_l_<language>` ending of the file's name, else from its folder, in lower case. It is "" if
+// none of them says. A line above the header is an error. A message with no closing quote is an error, and its text
+// runs to the end of the line.
 func Parse(text, path string) *File {
 	file := &File{Lines: jomini.NewLines(text)}
 	language := ""
@@ -104,9 +104,9 @@ func Parse(text, path string) *File {
 	return file
 }
 
-// ParseMessage parses one message line. The offset is where the line's first byte sits in its file, so the spans of
-// the message come out in the file's offsets. A message with no closing quote has its text to the end of the line,
-// and its span ends there too. It returns false if the line is not a message.
+// ParseMessage parses one message line. The given offset is where the line starts in its file, so the spans are
+// offsets in the file. A message with no closing quote has its text and its span run to the end of the line. It
+// returns false if the line is not a message.
 func ParseMessage(line string, base int) (Message, bool) {
 	match := messageStart.FindStringSubmatchIndex(line)
 	if match == nil {
@@ -128,8 +128,8 @@ func ParseMessage(line string, base int) (Message, bool) {
 }
 
 // ToLanguageRel returns the path, relative to a mod's root, of the file that holds the same messages as the given
-// localization file in the given language. It sets the language in the file's folder and in the end of its name,
-// where the file has them.
+// localization file, in the given language. It sets the language in the file's folder and in the ending of its
+// name, where the file has them.
 func ToLanguageRel(rel, language string) string {
 	folders := strings.Split(rel, "/")
 	last := len(folders) - 1
@@ -142,8 +142,8 @@ func ToLanguageRel(rel, language string) string {
 	return strings.Join(folders, "/")
 }
 
-// FindSuffixLanguage returns the language that the name of the given file ends in before `.yml`, as in
-// `events_l_english.yml`, without case. It returns "" if the name is not a `.yml` file or has no such suffix.
+// FindSuffixLanguage returns the language in the `_l_<language>.yml` ending of the given file's name, as in
+// `events_l_english.yml`, in lower case. It returns "" if the name has no such ending.
 func FindSuffixLanguage(filePath string) string {
 	match := languageSuffix.FindStringSubmatch(filepath.Base(filePath))
 	if match == nil {
@@ -152,9 +152,9 @@ func FindSuffixLanguage(filePath string) string {
 	return strings.ToLower(match[2])
 }
 
-// FindFolderLanguage returns the name of the folder under `localization` that holds the file, whether a `replace`
-// folder comes before it or after it, without case. A path that ends in a slash is a folder's, which holds nothing
-// yet. It returns "" if the file has no such folder.
+// FindFolderLanguage returns the language folder in the given file path, in lower case. It is the first folder under
+// `localization`, skipping `replace` folders. A path that ends in a slash is a folder's, which holds nothing yet. It
+// returns "" if the path has none.
 func FindFolderLanguage(filePath string) string {
 	folders := strings.Split(filepath.ToSlash(filePath), "/")
 	folders = folders[:len(folders)-1]
@@ -164,9 +164,9 @@ func FindFolderLanguage(filePath string) string {
 	return ""
 }
 
-// findLanguageFolder returns the position of the folder that names the language among the given folders of a path: the
-// first under the last `localization` folder that is not a `replace` folder, whatever their case. It returns false
-// if there is none.
+// findLanguageFolder returns the position of the language folder among the given folders of a path. It is the first
+// folder after the last `localization` folder that is not a `replace` folder, in any case. It returns false if there
+// is none.
 func findLanguageFolder(folders []string) (int, bool) {
 	lower := lo.Map(folders, func(folder string, _ int) string { return strings.ToLower(folder) })
 	root := lo.LastIndexOf(lower, "localization")
@@ -195,8 +195,8 @@ func EncodeMessages(messages []Message, ending string) string {
 	return text.String()
 }
 
-// EncodeAddition returns the text that adds messages at the end of a localization file's text: a line break first
-// if the text does not end in one, then one line for each message, all in the text's own line ending.
+// EncodeAddition returns the text that adds the messages to the end of the given localization text: a line break
+// first if the text does not end in one, then one line for each message, in the text's own line ending.
 func EncodeAddition(text string, messages []Message) string {
 	ending := jomini.LineEnding(text)
 	if text == "" || strings.HasSuffix(text, "\n") {
@@ -205,7 +205,7 @@ func EncodeAddition(text string, messages []Message) string {
 	return ending + EncodeMessages(messages, ending)
 }
 
-// ToLanguageKey returns the word the game writes a language as: its name after l_, as in l_english.
+// ToLanguageKey returns the key the game writes a language as: its name after l_, as in l_english.
 func ToLanguageKey(language string) string {
 	return "l_" + language
 }

@@ -103,8 +103,8 @@ func sampleNumber(seed uint32, codes string) string {
 	return number
 }
 
-// isDate reports whether a data function writes a date, as game.GUI.DateCalls knows one: by the type it returns and the
-// ending of its name.
+// isDate reports whether a data function writes a date: it returns the type, and its name has an ending, that
+// game.GUI.DateCalls lists.
 func isDate(function schema.DataFunction) bool {
 	calls := game.GUI.DateCalls
 	return function.Returns == calls.Returns && slices.ContainsFunc(calls.Endings, func(ending string) bool {
@@ -138,12 +138,12 @@ func (library *library) lookupText(key string) string {
 	return lo.Ternary(ok, text, key)
 }
 
-// sampleWords returns the given count of the first words of one lorem sentence, which the given seed picks.
+// sampleWords returns the first words, as many as the given count, of the lorem sentence the seed picks.
 func sampleWords(seed uint32, count int) string {
 	return strings.Join(strings.Fields(sampleSentences(seed, 1))[:count], " ")
 }
 
-// sampleSentences returns the given count of lorem sentences in order, the first of which the given seed picks.
+// sampleSentences returns the given count of lorem sentences in order, starting at the one the seed picks.
 func sampleSentences(seed uint32, count int) string {
 	first := int(seed % uint32(len(loremSentences)))
 	sentences := make([]string, count)

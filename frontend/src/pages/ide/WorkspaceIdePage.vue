@@ -52,9 +52,9 @@ import { findModel } from "./editor/models";
 
 const { id } = defineProps<{ id: string }>();
 
-/** A Problem is one problem in the list, an editor diagnostic or a Health finding, which Health marks. */
+/** A Problem is one entry in the problems list: an editor diagnostic, or a Health finding marked with `health`. */
 type Problem = { problem: Diagnostic; health?: true };
-/** A Row is one row of the problems list, a file or one of its problems. */
+/** A Row is one row of the problems list: a file with its problem count, or one of its problems. */
 type Row = { place: Place; count: number } | ({ place: Place } & Problem);
 
 const PIXELS = "px" as const;
@@ -81,7 +81,7 @@ const ENCODINGS: Record<string, string> = {
   "utf-8-bom": "UTF-8 BOM",
   "windows-1252": "Windows-1252",
 };
-/** The numbers a mouse event gives the back and forward buttons. */
+/** MOUSE_BACK and MOUSE_FORWARD are the button numbers of a mouse event for the back and forward buttons. */
 const MOUSE_BACK = 3;
 const MOUSE_FORWARD = 4;
 
@@ -94,7 +94,7 @@ const coatDialog = useOverlay().create(CoatDialog);
 const saveDds = useOverlay().create(SaveDdsModal);
 const sidebar = useLocalStorage("pmt.ide.sidebar", "explorer");
 const isVisual = computed(() => editor.mode === "visual");
-// in Visual, the tabs it has under their own labels, and Structure where the saved tab is not one of them
+// Visual keeps only the tabs with a visual label, under that label; a saved tab it hides falls back to Entries
 const modeTabs = computed(() =>
   isVisual.value ? SIDEBAR.flatMap(({ visual, ...tab }) => (visual ? [{ ...tab, label: visual }] : [])) : SIDEBAR,
 );
@@ -108,12 +108,12 @@ const tabs = computed(() =>
 // Visual shows the active group alone
 const visualGroup = computed(() => (isVisual.value ? editor.activeGroup() : null));
 const gameOpen = useLocalStorage("pmt.ide.gameOpen", true);
-/** Which trees show their filter box. It is never saved. */
+/** filtering says which trees show their filter box. It is not saved. */
 const filtering = reactive({ mods: false, game: false, own: false });
 const [DefineFilterButton, FilterButton] = createReusableTemplate<{ tree: keyof typeof filtering }>();
 const visible = useShown();
-// the active file, with its selected lines, goes with an agent's prompt; while the active tab is one Follow the agent
-// showed, the chip stays the file the user had before
+// the active file and its selected lines go with an agent's prompt as a chip; while the active tab is one Follow the
+// agent opened, the chip keeps the file the user had before
 const fileChip = computed<Chip | null>((previous) => {
   if (editor.isFollowed()) return previous ?? null;
   const place = editor.activeFile();
@@ -182,7 +182,7 @@ const { data: folderPlace } = useQuery(() => ({
 }));
 const mods = computed(() => (roots.value ?? []).filter((root) => root.origin !== VANILLA));
 const game = computed(() => (roots.value ?? []).filter((root) => root.origin === VANILLA));
-// the setting alone decides, as a pane the roots bring back while the explorer is hidden gets no room
+// only the setting decides, because a pane that appears when the roots load, while the explorer is hidden, gets no room
 const gameShown = computed(() => settings.isOn("ide.gameFiles"));
 const own = computed(() => {
   if (part === "game") return game.value;
@@ -266,28 +266,28 @@ const panelTab = computed(() =>
 const problemFilter = shallowRef("");
 const output = useTemplateRef("output");
 const { data: levels } = useQuery(levelsQuery);
-/** The levels that count as problems, the worst first. */
+/** problemLevels are the levels that count as problems, the worst first. */
 const problemLevels = computed(() => (levels.value ?? []).filter((level) => level.problem));
 const { data: codes } = useQuery(codesQuery);
-/** What to do about a problem, by its code. */
+/** advice maps a problem's code to what to do about it. */
 const advice = computed(() => new Map((codes.value ?? []).map((code) => [code.id, code.advice])));
-// Health's report for the workspace's own load order, built only while the panel shows Problems, as building one
-// checks every mod; the status bar counts what the report holds
+// Health's report for the workspace's load order, built only while the panel shows Problems because building it
+// checks every mod; the status bar counts what it holds
 const { data: report } = useQuery(() => ({
   ...reportQuery(workspace.listModIds()),
   enabled: panelTab.value === "problems" && !!editor.panel && workspace.isOpen(),
 }));
 const panelProblems = computed(listProblems);
-const problems = computed(() =>
+const problemCounts = computed(() =>
   countBy(
     panelProblems.value.flatMap((file) => file.problems),
-    (one) => one.problem.level,
+    (entry) => entry.problem.level,
   ),
 );
 const rows = computed<Row[]>(() =>
   panelProblems.value.flatMap(({ place, problems: listed }) => {
     const shown = listed
-      .map((one) => ({ place, ...one }))
+      .map((entry) => ({ place, ...entry }))
       .filter(({ problem }) => matchQuery(problemFilter.value, problem.message, problem.code, place.rel));
     return shown.length ? [{ place, count: shown.length }, ...shown] : [];
   }),
@@ -303,12 +303,11 @@ const { data: status } = useQuery(() => ({
   ...gitStatusQuery(git.findRoot(editor.activeFile())),
   enabled: !!git.findRoot(editor.activeFile()),
 }));
-const open = computed(() => {
-  const active = editor.activeFile();
-  return active ? findModel(active.key) : null;
-});
+const activeModel = computed(() => findModel(editor.activeFile()?.key ?? ""));
 const languageName = computed(
-  () => LANGUAGES.find((one) => one.id === EDITOR_LANGUAGES[open.value?.place.format ?? ""])?.label ?? "Plain text",
+  () =>
+    LANGUAGES.find((language) => language.id === EDITOR_LANGUAGES[activeModel.value?.place.format ?? ""])?.label ??
+    "Plain text",
 );
 // the open files laid out in rows of columns, with the sizes remembered per workspace
 const groupRows = computed(() =>
@@ -325,8 +324,8 @@ const layoutKey = computed(() => `pmt.ide.layout.${workspace.activeId()}`);
 watch(
   () => groupRows.value.map((row) => row.id),
   (ids, before) => {
-    for (const id of before.filter((one) => !ids.includes(one)))
-      localStorage.removeItem(`reka:${layoutKey.value}.${id}`);
+    for (const staleId of before.filter((previousId) => !ids.includes(previousId)))
+      localStorage.removeItem(`reka:${layoutKey.value}.${staleId}`);
   },
 );
 // the two files of the compare, read while it is open
@@ -335,8 +334,8 @@ const rightFile = useQuery(() => ({ ...fileQuery(comparing.value?.right.path ?? 
 const diff = computed(() => editor.activeTab()?.side);
 // the status bar shows the indentation of a file open as code, never of a diff
 const { data: indentation } = useQuery(() => ({
-  ...indentationQuery(open.value?.place.path ?? ""),
-  enabled: !diff.value && !!open.value,
+  ...indentationQuery(activeModel.value?.place.path ?? ""),
+  enabled: !diff.value && !!activeModel.value,
 }));
 
 const { mutate: addMod } = useMutation({ mutation: (dir: string) => workspaceApi.AddMod(id, dir) });
@@ -408,7 +407,7 @@ function toggleWiki(): void {
  * left out.
  */
 function listProblems(): { place: Place; problems: Problem[] }[] {
-  const places = editor.listTabs().flatMap((one) => editor.placeOf(one.key) ?? []);
+  const places = editor.listTabs().flatMap((tab) => editor.placeOf(tab.key) ?? []);
   return [...new Map(places.map((place) => [place.key, place])).values()].flatMap((place) => {
     const editorProblems = (findModel(place.key)?.problems ?? []).map((problem) => ({ problem }));
     const listed = [...editorProblems, ...listFindings(place)];
@@ -416,7 +415,7 @@ function listProblems(): { place: Place; problems: Problem[] }[] {
   });
 }
 
-/** listFindings returns a file's findings about the mods together as problems. Checks turned off are left out. */
+/** listFindings returns Health's compatibility findings in a file, as problems. Disabled checks are skipped. */
 function listFindings(place: Place): Problem[] {
   const off = settings.value("ide.checks").split(",");
   return (report.value?.compatibility.findings ?? []).flatMap((finding) => {
@@ -429,7 +428,7 @@ function listFindings(place: Place): Problem[] {
   });
 }
 
-/** describePlace returns a file's label above its side of the compare, its origin's name and its path. */
+/** describePlace returns the label of a file in the compare: its origin's name and its path. */
 function describePlace(place: Place): string {
   return `${workspace.originName(place.origin)} · ${place.rel}`;
 }
@@ -639,8 +638,8 @@ function collapseAll(): void {
                     <template v-if="item.value === 'problems'">
                       <template v-for="level in problemLevels" :key="level.id">
                         <UBadge
-                          v-if="problems[level.id]"
-                          :label="String(problems[level.id])"
+                          v-if="problemCounts[level.id]"
+                          :label="String(problemCounts[level.id])"
                           :color="level.color"
                           size="sm"
                         />
@@ -783,7 +782,7 @@ function collapseAll(): void {
         :style="{ color: `var(--ui-${level.color})` }"
         @click="toggleProblems"
       >
-        <UIcon :name="level.icon" class="size-3" />{{ problems[level.id] ?? 0 }}
+        <UIcon :name="level.icon" class="size-3" />{{ problemCounts[level.id] ?? 0 }}
       </button>
       <button v-if="status" class="flex items-center gap-1 hover:text-highlighted" @click="showSidebar('git')">
         <UIcon name="i-lucide-git-branch" class="size-3" />{{ status.branch || "detached HEAD" }}
@@ -794,11 +793,11 @@ function collapseAll(): void {
     </Teleport>
     <Teleport v-if="!['terminal', 'wiki'].includes(layout) && visible" defer to="#status-end">
       <span v-if="diff">{{ COMPARES[diff] }}</span>
-      <template v-else-if="open">
-        <span>Ln {{ open.caret.line }}, Col {{ open.caret.column }}</span>
+      <template v-else-if="activeModel">
+        <span>Ln {{ activeModel.caret.line }}, Col {{ activeModel.caret.column }}</span>
         <span v-if="indentation">{{ indentation }}</span>
         <span>{{ languageName }}</span>
-        <span>{{ ENCODINGS[open.encoding] ?? open.encoding }}</span>
+        <span>{{ ENCODINGS[activeModel.encoding] ?? activeModel.encoding }}</span>
       </template>
     </Teleport>
     <UModal :open="!!comparing" title="Compare" fullscreen @update:open="comparing = undefined">

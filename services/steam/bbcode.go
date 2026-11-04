@@ -74,8 +74,7 @@ func writeChildren(bbcode *strings.Builder, parent *html.Node) {
 		switch {
 		case node.Type == html.TextNode:
 			writeText(bbcode, node.Data)
-		case node.Type != html.ElementNode:
-			// a comment or a doctype writes nothing
+		case node.Type != html.ElementNode: // a comment or a doctype writes nothing
 		case node.DataAtom == atom.Br:
 			bbcode.WriteString("\n")
 		case node.DataAtom == atom.P:
@@ -219,7 +218,7 @@ func trimBreaks(text string, closed bool, next string, block bool) string {
 	if !block || !strings.HasSuffix(trimmed, "\n") {
 		return trimmed
 	}
-	// the line before the break is blank when the break is the one left after a block's or follows another break
+	// the text ends in a blank line if it ends in two breaks, or in one break left once the closed block's is trimmed
 	blank := strings.HasSuffix(trimmed, "\n\n") || (trimmed == "\n" && text != trimmed)
 	if slices.Contains(listEnds, next) || (!strings.HasPrefix(next, "/") && !blank) {
 		return strings.TrimSuffix(trimmed, "\n")
@@ -236,7 +235,7 @@ func drawTag(parts []string) string {
 	}
 	switch argument := parts[3]; {
 	case parts[1] != "":
-		// a closing tag takes no argument; one left over from a link drawn as text alone is ignored by the browser
+		// a closing tag has no argument; the </a> of a link whose opening tag drew nothing is ignored by the browser
 		return "</" + row.element + ">"
 	case row.address && !webAddress.MatchString(argument):
 		return ""

@@ -1,6 +1,6 @@
 <!--
-  A Monaco editor over one model, with the hover card, the merge conflict marks and a context menu. It exposes the
-  editor it creates.
+  A Monaco editor over one Model, with the hover card, merge conflict links and a context menu. It exposes the editor
+  as `view`.
 -->
 <script setup lang="ts">
 import { computed, onBeforeUnmount, onMounted, shallowRef, useTemplateRef, watch } from "vue";
@@ -40,11 +40,11 @@ import { SHOW_DETAILS } from "./editor/providers";
 
 const { model, active } = defineProps<{ model: Model; active: boolean }>();
 
-/** How many lines the caret must move in one go for the history to keep the place it left. */
+/** JUMP_LINES is how many lines the caret must move at once for the history to record the place it left. */
 const JUMP_LINES = 10;
 /**
- * Where the hover card sits: flush on the word, so the pointer crosses no other line on its way to the card. The focus
- * stays in the editor as the card opens and closes.
+ * CARD_CONTENT places the hover card flush against the word, so the pointer crosses no other line on its way to the
+ * card. It keeps the focus in the editor as the card opens and closes.
  */
 const CARD_CONTENT: PopoverProps["content"] = {
   side: "top",
@@ -68,7 +68,7 @@ const anchor = { getBoundingClientRect: () => hovering.value?.hover.value?.ancho
 let stopChanges = () => {};
 defineExpose({ view });
 
-const { mutate: ask, data: asked } = useMutation({
+const { mutate: loadCaret, data: caretFacts } = useMutation({
   mutation: async () => {
     const caret = view.value?.getPosition() ?? { lineNumber: 1, column: 1 };
     const covering = model.problems.filter((problem) => Range.containsPosition(problem.range, caret));
@@ -80,7 +80,7 @@ const { mutate: ask, data: asked } = useMutation({
     return { card, fixes: fixes ?? [], override };
   },
 });
-const card = computed(() => asked.value?.card);
+const card = computed(() => caretFacts.value?.card);
 const { mutate: findAll } = useMutation({
   mutation: async () => {
     const caret = view.value?.getPosition() ?? { lineNumber: 1, column: 1 };
@@ -91,7 +91,7 @@ const { mutate: findAll } = useMutation({
     listReferences(`References to ${hovered?.title ?? "the name"}`, sites ?? []);
   },
 });
-// the places that fire a name the Event Graph draws, from the name's detail there
+// lists the places that fire the card's name, from the name's detail in the Event Graph
 const { mutate: findFirers } = useMutation({
   mutation: async (subject: Card) => {
     const detail = await loadQuery(detailQuery(subject.node ?? ""));
@@ -99,7 +99,7 @@ const { mutate: findFirers } = useMutation({
     listReferences(`What fires ${subject.title}`, sites);
   },
 });
-// a definition the lexicon does not list looks up the first wiki page of the file it is defined in
+// a card with no lexicon row falls back to the first wiki page of the file that defines it
 const { data: pages } = useQuery(() => ({
   ...wikiPagesQuery(card.value?.sites?.[0]?.place.path ?? ""),
   enabled: workspace.isOpen() && !card.value?.lexicon && !!card.value?.sites?.length,
@@ -110,7 +110,7 @@ const lookup = computed((): WikiLookup | undefined => {
   const title = pages.value?.[0]?.title;
   return title ? { title } : undefined;
 });
-// the menu offers the compare with the game's copy only for a mod's file the game has too
+// the game's copy is offered for comparison only for a mod file the game also has
 const { data: copies } = useQuery(() => ({
   ...copiesQuery(model.place.path),
   enabled: model.place.origin !== VANILLA,
@@ -129,13 +129,13 @@ onMounted(() => {
   const caret = { lineNumber: model.caret.line, column: model.caret.column };
   codeEditor.setPosition(caret);
   codeEditor.revealPositionInCenterIfOutsideViewport(caret);
-  codeEditor.onDidChangeCursorPosition(({ position: caret, reason, source }) => {
-    // the user moving the caret far in one go is a jump the history keeps; a move the app makes is kept by its jump
-    const far = Math.abs(caret.lineNumber - model.caret.line) > JUMP_LINES;
+  codeEditor.onDidChangeCursorPosition(({ position, reason, source }) => {
+    // the history records only a far move the user makes; the app records its own jumps
+    const far = Math.abs(position.lineNumber - model.caret.line) > JUMP_LINES;
     if (active && far && reason === editor.CursorChangeReason.Explicit && source !== "api")
-      editorStore.record({ place: model.place, position: caret });
+      editorStore.record({ place: model.place, position });
     // eslint-disable-next-line vue/no-mutating-props -- the model is state shared by every group that shows the file
-    model.caret = { line: caret.lineNumber, column: caret.column };
+    model.caret = { line: position.lineNumber, column: position.column };
   });
   codeEditor.onDidChangeCursorSelection(({ selection }) => {
     // eslint-disable-next-line vue/no-mutating-props -- the model is state shared by every group that shows the file
@@ -163,14 +163,14 @@ watch(
   () => editorOptions(),
   (options) => view.value?.updateOptions(options),
 );
-// a range the file was shown with is selected once in the active group's editor, which takes the focus unless Follow
-// the agent showed the file: the user's focus stays where they are typing
+// a range requested when the file was shown is selected once, in the active group's editor. That editor takes focus
+// unless Follow the agent opened the file, so the focus stays where the user is typing
 watch(
   [view, () => (active ? editorStore.findRequest(model.place.key) : undefined)],
-  ([codeEditor, wanted]) => {
-    if (!codeEditor || !wanted) return;
-    codeEditor.setSelection(wanted);
-    codeEditor.revealRangeInCenterIfOutsideViewport(wanted);
+  ([codeEditor, range]) => {
+    if (!codeEditor || !range) return;
+    codeEditor.setSelection(range);
+    codeEditor.revealRangeInCenterIfOutsideViewport(range);
     if (!editorStore.isFollowed()) codeEditor.focus();
     editorStore.clearRequest();
   },
@@ -178,8 +178,8 @@ watch(
 );
 
 /**
- * listReferences lists places in the sidebar's references under the given heading, which every window's list shows. It
- * also shows the main window's sidebar search.
+ * listReferences puts the sites in the references list under the given heading, which every window shows. It also has
+ * the main window show its search sidebar.
  */
 function listReferences(heading: string, sites: Site[]): void {
   useSearchStore().showReferences(heading, sites);
@@ -193,15 +193,15 @@ function describeReadOnly(place: Place): string {
 }
 
 /**
- * keepMovedFocus keeps the focus in the text box a row of the menu moved it to, such as the editor of the file a fix
- * opened or the agent's prompt box.
+ * keepMovedFocus stops the menu from taking focus back after an item moved it to another text box, such as the editor
+ * of the file a fix opened or the agent's prompt box.
  */
 function keepMovedFocus(event: Event): void {
   const focused = document.activeElement;
   if (focused?.tagName === "TEXTAREA" && !host.value?.contains(focused)) event.preventDefault();
 }
 
-/** run runs one of Monaco's own actions in this editor. */
+/** run triggers one of Monaco's actions in this editor, by its id. */
 function run(action: string): void {
   view.value?.focus();
   view.value?.trigger("menu", action, null);
@@ -225,7 +225,7 @@ const entry = computed(() => card.value?.within?.[0] ?? "");
 
 const groups = computed<ContextMenuItem[][]>(() => [
   [
-    ...(asked.value?.override
+    ...(caretFacts.value?.override
       ? [
           {
             label: `Override ${entry.value || "this entry"} in a mod`,
@@ -237,7 +237,7 @@ const groups = computed<ContextMenuItem[][]>(() => [
           },
         ]
       : []),
-    ...(asked.value?.fixes ?? []).map((fix) => ({
+    ...(caretFacts.value?.fixes ?? []).map((fix) => ({
       label: fix.title,
       icon: "i-lucide-lightbulb",
       onSelect: () => editorStore.applyFix(fix),
@@ -320,12 +320,12 @@ const menu = computed(() => groups.value.filter((group) => group.length));
 </script>
 
 <template>
-  <!-- the menu's trigger takes its child's ref, so the editor's element is the one inside it -->
+  <!-- the menu's trigger takes its child's ref, so the editor's element sits inside the wrapper div -->
   <UContextMenu
     :items="menu"
     :ui="{ content: 'min-w-79 max-w-130' }"
     :content="{ onCloseAutoFocus: keepMovedFocus }"
-    @update:open="(open) => open && ask()"
+    @update:open="(open) => open && loadCaret()"
   >
     <div class="flex min-h-0 flex-1">
       <div ref="host" class="min-w-0 flex-1 border-s-12 border-(--bg-0)" />

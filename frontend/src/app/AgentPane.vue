@@ -1,7 +1,7 @@
 <!--
-  The agent pane, docked at the right of the main window's workspace pages or alone in a window of its own: a session,
-  with the session menu, the files it edited and its own buttons in its header, and over the whole window on ⤢. With
-  no session it offers the installed agents, the recent sessions to resume and the starter tasks.
+  The agent pane, docked beside the main window's workspace pages or alone in a window of its own. Its header holds
+  the session menu, the files the session edited and the pane's buttons; ⤢ shows the session over the whole window.
+  With no session the pane offers the installed agents, the recent sessions to resume and the starter tasks.
 -->
 <script setup lang="ts">
 import type { DropdownMenuItem } from "@nuxt/ui";
@@ -35,7 +35,7 @@ const recent = computed(() =>
   agent.records
     .filter((record) => !record.isArchived)
     .flatMap((record) => {
-      const row = agent.ready.find((one) => one.id === record.agent);
+      const row = agent.ready.find((candidate) => candidate.id === record.agent);
       return row ? [{ record, line: `${row.name} · ${describeAge(new Date(record.updatedAt), "short")}` }] : [];
     })
     .slice(0, 8),

@@ -19,15 +19,15 @@ import "./styles/nuxt-ui.css";
 // how many lines after an error's first one its toast shows
 const TOAST_LINES = 3;
 
-/** writeLog writes an error to pmt.log with the place it came from. */
+/** writeLog writes an error to pmt.log, tagged with the given source. */
 function writeLog(error: unknown, source: string): void {
   const failure = error instanceof Error ? error : new Error(String(error));
   void logError(failure.message, "source", source, "stack", failure.stack ?? "");
 }
 
 /**
- * isCancelled reports whether an error is a cancelled system dialog. Its promise rejects, which only ends the action
- * that asked, so it is no error to show or log.
+ * isCancelled reports whether an error is the user cancelling a system dialog. That only ends the action that opened
+ * the dialog, so it is neither shown nor logged.
  */
 function isCancelled(error: unknown): boolean {
   return String((error as { message?: unknown } | null | undefined)?.message).includes("cancelled by user");

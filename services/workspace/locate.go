@@ -31,10 +31,10 @@ type Place struct {
 	Readme   string `json:"readme"`   // the full path of that readme; "" where it has none
 }
 
-// Locate returns the place of the file with the given path, as the given index of the mods lists its files. A path
-// under none of the roots gives a place with only the path and its key set. A file of the game or of a mod in Steam's
-// Workshop folder is read only. A GUI file is drawable, and so is a file or folder of the coats' database. A file in a
-// database the game documents has the first paragraph of that readme and its path. A file the index does not list has
+// Locate returns the place of the file with the given path, found in the given index of the mods. A path under none
+// of the roots gives a place with only its path, key and name. A file of the game or of a mod in Steam's Workshop
+// folder is read only. A GUI file is drawable, and so is a file or folder of the coats' database. A file in a database
+// the game documents has the first paragraph of its readme and the readme's path. A file the index does not list has
 // the position -1.
 func (ws *Session) Locate(mods *index.Index, path string) Place {
 	place := Place{File: files.File{Path: path, Key: files.ToKey(path)}, Name: filepath.Base(path), Position: -1}
@@ -67,30 +67,31 @@ func (ws *Session) Locate(mods *index.Index, path string) Place {
 // ListCopies returns every copy of a file in load order, the given one too, the game's first. The game reads the last,
 // unless a replace_path drops them all. It returns none for a file under no root or while no workspace is open.
 func (wsp *Service) ListCopies(path string) []Place {
-	session, err := wsp.Session()
+	ws, err := wsp.Session()
 	if err != nil {
 		return nil
 	}
-	mods := session.Mods.Load()
-	loaded, copies, ok := mods.FindLoaded(session.Locate(mods, path).Rel)
+	mods := ws.Mods.Load()
+	loaded, copies, ok := mods.FindLoaded(ws.Locate(mods, path).Rel)
 	if ok {
 		copies = append(slices.Clip(copies), loaded)
 	}
-	return lo.Map(copies, func(file files.File, _ int) Place { return session.Locate(mods, file.Path) })
+	return lo.Map(copies, func(file files.File, _ int) Place { return ws.Locate(mods, file.Path) })
 }
 
 // ListRoots returns the place of each folder the workspace's files are listed from: the mods' in load order, then the
 // game's own folder. The install's other folders are left out. It returns none if no workspace is open.
 func (wsp *Service) ListRoots() []Place {
-	session, err := wsp.Session()
+	ws, err := wsp.Session()
 	if err != nil {
 		return nil
 	}
-	roots := slices.Clone(session.Mods.Load().Roots[len(session.Install.Roots):])
-	if position := slices.IndexFunc(session.Install.Roots, func(root files.Root) bool {
+	roots := slices.Clone(ws.Mods.Load().Roots[len(ws.Install.Roots):])
+	scriptRoot, ok := lo.Find(ws.Install.Roots, func(root files.Root) bool {
 		return filepath.Base(root.Dir) == game.ScriptRoot
-	}); position >= 0 {
-		roots = append(roots, session.Install.Roots[position])
+	})
+	if ok {
+		roots = append(roots, scriptRoot)
 	}
 	return lo.Map(roots, func(root files.Root, _ int) Place { return wsp.Locate(root.Dir) })
 }

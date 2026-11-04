@@ -1,7 +1,7 @@
 <!--
-  One session with an agent, in a chat palette: its transcript, the requests it waits on, and the prompt box with the
-  page's chip, the files added with @, the agent's commands picked with / and the agent's settings.
-  The agent pane shows it narrow, and over the whole window or in a window of its own wide.
+  One session with an agent, in a chat palette: the transcript and the requests the agent waits on. The prompt box adds
+  the page's chip, files picked with @, commands picked with / and the agent's settings. It is narrow in the agent
+  pane, and wide over the whole window or in a window of its own.
 -->
 <script setup lang="ts">
 import type {
@@ -44,6 +44,7 @@ const STATUSES: Record<string, { icon: string; color: string; text?: string }> =
   failed: { icon: "i-lucide-x", color: "text-error" },
   cancelled: { icon: "i-lucide-ban", color: "text-dimmed" },
 };
+const PATCH_LINE_COLORS: Record<string, string> = { "+": "text-success", "-": "text-error" };
 // a permission's options, each drawn by its kind
 const OPTIONS: Record<string, { color: "primary" | "neutral"; variant: "solid" | "outline" | "ghost" }> = {
   allow_once: { color: "primary", variant: "solid" },
@@ -72,11 +73,11 @@ const { data: places } = useQuery(() => ({
   enabled: picking.value,
 }));
 const comparing = shallowRef<FileEdit | null>(null);
-// the answer just copied, whose button shows a tick for a moment
+// the id of the answer just copied, whose button shows a tick for a moment
 const copied = shallowRef("");
 const { start: clearCopied } = useTimeoutFn(() => (copied.value = ""), 1500, { immediate: false });
 
-// each entry is a message of its own, with what its view reads from it worked out once
+// each entry is one chat message, with its tool title or split link worked out once
 const messages = computed(() =>
   session.entries.map((entry) => ({
     id: entry.id,
@@ -99,7 +100,6 @@ const placeholder = computed(() =>
     ? `Ask ${session.agent.name}, type @ to add a file or / for a command`
     : `Ask ${session.agent.name}, or type @ to add a file`,
 );
-// the workspace's files the file list offers
 const fileGroups = computed(() => [
   { id: "files", items: (places.value ?? []).map((place) => ({ label: place.rel, onSelect: () => pick(place) })) },
 ]);
@@ -117,7 +117,7 @@ const commands = computed(() => [
     })),
   },
 ]);
-// the agent's main settings, a picker each with its values, and its other settings as one menu lists them
+// the agent's main settings, one picker each, with the setting's values as its items
 const pickers = computed(() =>
   CATEGORIES.flatMap((category) =>
     session.options.filter(
@@ -182,20 +182,20 @@ async function copyAnswer(entry: Entry): Promise<void> {
   clearCopied();
 }
 
-/** focusBox puts the caret back in the prompt box when the command list closes, in place of the Command button. */
+/** focusBox puts the caret back in the prompt box, not on the Command button, when the command list closes. */
 function focusBox(event: Event): void {
   event.preventDefault();
   box.value?.textareaRef?.focus();
 }
 
 /**
- * listValues returns the values of one of the agent's settings, each made an item by the given function, in their
- * groups, each group led by its name. Values in no group make one group with no name. A value an agent sends twice
- * is listed once.
+ * listValues returns the values of an agent's setting as items, one list for each group. The given function makes
+ * each item. A named group starts with its label, values in no group make one list with no label, and a value the
+ * agent sends twice is listed once.
  */
 function listValues<T>(option: SelectOption, toItem: (value: SessionConfigSelectOption) => T): (T | Label)[][] {
   const values = option.options as (SessionConfigSelectOption | SessionConfigSelectGroup)[];
-  // a group holds values, and a value holds none; the versions name a group's id apart
+  // a group has `options` and a plain value has none; Pick keeps just the two fields the code reads
   const groups: Pick<SessionConfigSelectGroup, "name" | "options">[] = values.some((value) => "options" in value)
     ? (values as SessionConfigSelectGroup[])
     : [{ name: "", options: values as SessionConfigSelectOption[] }];
@@ -229,8 +229,8 @@ function describeSetting(option: SessionConfigOption): DropdownMenuItem {
 
 /** describeTool returns a tool call's title, with PMT's server named apart from the agent's own tools. */
 function describeTool(entry: Extract<Entry, { kind: "tool" }>): Tool {
-  const own = /^mcp__pmt__|^pmt[_:/]/.exec(entry.title);
-  return { text: own ? entry.title.slice(own[0].length) : entry.title || "A tool", suffix: own ? "PMT" : "" };
+  const prefix = /^mcp__pmt__|^pmt[_:/]/.exec(entry.title);
+  return { text: prefix ? entry.title.slice(prefix[0].length) : entry.title || "A tool", suffix: prefix ? "PMT" : "" };
 }
 
 /** splitUrl splits a link into what comes before its host, its host, and the rest, so the host can stand out. */
@@ -482,7 +482,7 @@ function stripControls(output: string): string {
         <pre v-else-if="comparing" class="font-mono text-12 leading-5"><span
             v-for="(line, index) in comparing.patch.split('\n')"
             :key="index"
-            :class="line.startsWith('+') ? 'text-success' : line.startsWith('-') ? 'text-error' : 'text-toned'"
+            :class="PATCH_LINE_COLORS[line.charAt(0)] ?? 'text-toned'"
           >{{ line }}
 </span></pre>
       </template>

@@ -1,5 +1,5 @@
 <!--
-  This is one mod's card in a workspace's settings, where the mod's details are edited.
+  One mod's card in Settings' Mods and load order, where the mod's details are edited.
 -->
 <script setup lang="ts">
 import { computed, shallowRef } from "vue";
@@ -19,7 +19,7 @@ import * as workspace from "@services/workspace/service";
 import type { Era, Mod as ModRecord } from "@services/app/models";
 import type { Mod } from "@services/workspace/models";
 
-/** The swatches of a mod's color, one for each slot of the theme. */
+/** SLOT_COLORS holds the swatches of a mod's color, one for each slot of the theme. */
 const SLOT_COLORS = SLOTS.map((slot) => ({ value: slot, background: `var(--${slot})`, label: `Color ${slot}` }));
 
 const { workspaceId, mod } = defineProps<{ workspaceId: string; mod: Mod }>();
@@ -178,7 +178,7 @@ function updateMonth(index: number, text: string): void {
               variant="ghost"
               square
               aria-label="Remove this era"
-              @click="updateEras(eras.filter((_, at) => at !== index))"
+              @click="updateEras(eras.filter((_, position) => position !== index))"
             />
           </div>
           <div class="flex items-end gap-2.5">
@@ -242,7 +242,7 @@ function updateMonth(index: number, text: string): void {
             class="flex items-center gap-2 text-12 text-toned"
           >
             <OriginChip
-              v-for="other in finding.mods?.filter((one) => one !== mod.id) ?? []"
+              v-for="other in finding.mods?.filter((modId) => modId !== mod.id) ?? []"
               :key="other"
               :origin="other"
             />

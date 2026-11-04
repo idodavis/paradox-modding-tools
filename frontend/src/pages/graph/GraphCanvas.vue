@@ -1,6 +1,6 @@
 <!--
-  The canvas the graph draws on: its columns and wires, with a minimap, zoom buttons and a legend. It reports a node's
-  click and double click, and exports the picture as SVG or PNG.
+  The canvas the graph draws on: its columns and wires, a minimap, zoom buttons and a legend. It emits select for a
+  click on a node and draw for a double click, and exports the picture as SVG or PNG.
 -->
 <script setup lang="ts">
 import { computed, useTemplateRef } from "vue";
@@ -45,9 +45,9 @@ const emit = defineEmits<{ select: [id: string]; draw: [id: string] }>();
 
 type Point = { x: number; y: number };
 
-/** The room left around the graph in an exported picture. */
+/** MARGIN is the space around the graph in an exported picture. */
 const MARGIN = 24;
-/** The legend: a sample's classes and its words. */
+/** LEGEND is the legend's entries: each has its label and the classes of its sample. */
 const LEGEND = [
   { label: "Event", sample: "h-3 w-5.5 rounded-xs border border-(--line-2) bg-(--bg-3)" },
   {
@@ -70,7 +70,7 @@ let lastView = "";
 let following = true;
 useResizeObserver(canvas, () => following && void fit());
 
-/** Fits the canvas once for each view. The same view with other filters keeps where the user moved it. */
+/** fitOnce fits the canvas the first time it sees a view. The same view with other filters stays where it is. */
 function fitOnce(): void {
   if (lastView === view) return;
   lastView = view;
@@ -78,17 +78,17 @@ function fitOnce(): void {
   void fit();
 }
 
-/** Stops following the canvas's size once the user pans or zooms. */
+/** stopFollowing stops fitting the view to the canvas's size once the user pans or zooms. */
 function stopFollowing({ event }: FlowEvents["moveStart"]): void {
   if ("sourceEvent" in event && event.sourceEvent) following = false;
 }
 
-/** Fits everything drawn in the canvas. */
+/** fit fits the view to everything drawn. */
 function fit(): Promise<boolean> {
   return fitView({ padding: 0.15, maxZoom: 1 });
 }
 
-/** Builds the path of a fire and the place of its label. A fire back follows its route, else it is a curve. */
+/** buildPath builds a firing's path and label place: a loop over its node, ELK's route if it goes back, or a curve. */
 function buildPath(edge: EdgeProps): { path: string; x: number; y: number } {
   const points: Point[] = edge.data.points;
   if (edge.source === edge.target) {
@@ -109,17 +109,17 @@ function buildPath(edge: EdgeProps): { path: string; x: number; y: number } {
   return { path, x: middle.x, y: middle.y };
 }
 
-/** Returns the minimap's color for a node: the accent for the root, a quiet line for the rest. */
+/** resolveColor returns the minimap color of a node: the accent for the root, a quiet line for the rest. */
 function resolveColor(node: FlowNode): string {
   return node.id === root ? "var(--accent)" : "var(--line-2)";
 }
 
-/** Reports a click on a node: an entry is selected, and a column's head does nothing. */
+/** click selects the node that was clicked. A column's head is not selected. */
 function click(node: FlowNode): void {
   if (node.type === "graph") emit("select", node.id);
 }
 
-/** Saves the whole canvas as a picture, drawn by the given function, in a file with the given extension. */
+/** save saves the whole canvas as a picture made by the given function, in a file with the given extension. */
 async function save(draw: typeof toSvg, extension: string): Promise<void> {
   const flow = canvas.value?.querySelector<HTMLElement>(".vue-flow__viewport");
   if (!canvas.value || !flow) return;

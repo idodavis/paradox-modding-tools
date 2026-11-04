@@ -45,7 +45,7 @@ export const useWorkspaceStore = defineStore("workspace", () => {
   Events.On("workspace:failed", ({ data }) => (failure.value = { id: id.value, reason: data }));
   Events.On("workspace:opened", () => (failure.value = null));
 
-  /** activeId returns the active workspace's id, or "" when there is none. The router's guard writes it. */
+  /** activeId returns the active workspace's id, or "" when there is none. */
   const activeId = (): string => id.value;
 
   /** isOpen reports whether the active workspace is open in Go, from the state query. */
@@ -132,7 +132,7 @@ export const useWorkspaceStore = defineStore("workspace", () => {
 
   /** updateMod writes some fields of a mod's record over its latest copy. It rejects if the mod has no record. */
   async function updateMod(workspaceId: string, modId: string, changes: Partial<ModRecord>): Promise<void> {
-    const row = workspaces.value?.find((one) => one.record.id === workspaceId);
+    const row = workspaces.value?.find((listed) => listed.record.id === workspaceId);
     const record = row?.record.mods?.find((mod) => mod.id === modId);
     if (!record) throw new Error("The mod's record was not found, so the change was not saved.");
     await workspace.UpdateMod(workspaceId, { ...record, ...changes });

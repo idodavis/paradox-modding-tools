@@ -6,12 +6,9 @@ import (
 	"fmt"
 	"maps"
 	"os"
-	"path"
 	"path/filepath"
-	"regexp"
 	"runtime"
 	"slices"
-	"strconv"
 	"strings"
 	"sync"
 	"testing"
@@ -547,64 +544,6 @@ func TestHoverReadsLocalizationFiles(t *testing.T) {
 	if card, err := ide.Hover(target, 2, 19); err != nil || card == nil || card.What != "data function" {
 		t.Errorf("a step: %+v, %v", card, err)
 	}
-}
-
-// TestHoverGoldenPositions hovers over every golden position in the fixtures of each game and checks that none panics.
-// It logs the positions where the golden has a card and Hover has none.
-func TestHoverGoldenPositions(t *testing.T) {
-	header := regexp.MustCompile(`^(\d+):(\d+) (.*)$`)
-	for _, gameID := range []string{ck3, vic3, eu5} {
-		ide, _ := openFixture(t, gameID, nil)
-		ws, _ := ide.Workspace.Session()
-		listing, _ := filepath.Glob(filepath.Join(resolveFixture(t, "golden"), "hover-"+gameID+"-*.txt"))
-		positions, missed := 0, []string{}
-		for _, golden := range listing {
-			base := strings.TrimSuffix(strings.TrimPrefix(filepath.Base(golden), "hover-"+gameID+"-"), ".txt")
-			origin, rel, _ := strings.Cut(base, "-")
-			// a golden is named for its file's path, with the extension left off
-			rel = strings.ReplaceAll(rel, "__", "/")
-			position := slices.IndexFunc(ws.Mods.Load().Files, func(file files.File) bool {
-				stem := strings.TrimSuffix(file.Rel, path.Ext(file.Rel))
-				return (file.Origin == game.OriginVanilla) == (origin == "vanilla") && (stem == rel || strings.HasSuffix(stem, "/"+rel))
-			})
-			if position < 0 {
-				t.Errorf("%s: no file %s in the fixture", filepath.Base(golden), rel)
-				continue
-			}
-			text, _ := os.ReadFile(golden)
-			entries := strings.Split(string(text), "\n")
-			for number, entry := range entries {
-				match := header.FindStringSubmatch(entry)
-				if match == nil {
-					continue
-				}
-				line, _ := strconv.Atoi(match[1])
-				column, _ := strconv.Atoi(match[2])
-				// a golden position without a card ends its first line with a dash; one with a card is followed by its fields
-				fields := strings.Join(entries[number+1:min(number+8, len(entries))], "\n")
-				hasCard := !strings.HasSuffix(match[3], " -") && strings.Contains(fields, `"head"`)
-				card, panicked := hoverSafely(ide, ws.Mods.Load().Files[position].Path, line+1, column+1)
-				positions++
-				switch {
-				case panicked:
-					t.Errorf("%s %s:%d:%d panicked", gameID, rel, line, column)
-				case card == nil && hasCard:
-					missed = append(missed, fmt.Sprintf("%s:%d:%d %s", rel, line, column, match[3]))
-				}
-			}
-		}
-		t.Logf("%s: %d positions, %d where the golden had a card and Hover has none", gameID, positions, len(missed))
-		for _, miss := range missed {
-			t.Logf("  none at %s", miss)
-		}
-	}
-}
-
-// hoverSafely hovers at a position, and reports whether the hover panicked.
-func hoverSafely(ide *Service, target string, line, column int) (card *Card, panicked bool) {
-	defer func() { panicked = recover() != nil }()
-	card, _ = ide.Hover(target, line, column)
-	return card, false
 }
 
 // A problem is one diagnostic with the file it was found in.

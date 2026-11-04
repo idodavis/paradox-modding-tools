@@ -218,29 +218,28 @@ func (mcp *Service) checkDrawable(place workspace.Place, drawable string, picks 
 	var errs []error
 	for _, id := range slices.Sorted(maps.Keys(picks)) {
 		group, ok := lo.Find(window.Groups, func(group draw.Group) bool { return group.ID == id })
-		switch {
-		case !ok:
+		if !ok {
 			ids := lo.Map(window.Groups, func(group draw.Group, _ int) string { return group.ID })
 			errs = append(errs, fmt.Errorf("%s has no state group %q; its groups are %s", window.Name, id, strings.Join(ids, ", ")))
-		default:
-			if option, isOption := findOption(group, picks[id]); isOption {
-				picks[id] = option
-				continue
-			}
-			words := lo.Map(group.Options, func(option string, _ int) string { return describeOption(group, option) })
-			errs = append(errs, fmt.Errorf("%s's group %q takes %s, not %q", window.Name, id, health.JoinList(words, "or"), picks[id]))
+			continue
 		}
+		if option, isOption := findOption(group, picks[id]); isOption {
+			picks[id] = option
+			continue
+		}
+		words := lo.Map(group.Options, func(option string, _ int) string { return describeOption(group, option) })
+		errs = append(errs, fmt.Errorf("%s's group %q takes %s, not %q", window.Name, id, health.JoinList(words, "or"), picks[id]))
 	}
 	return errors.Join(errs...)
 }
 
-// findOption returns the option of a group that a word names: an option itself, else the option whose caption in the
-// States panel is the word, in any case. It returns false if the word names none.
-func findOption(group draw.Group, word string) (string, bool) {
-	if slices.Contains(group.Options, word) {
-		return word, true
+// findOption returns the option of a group that the given text names: an option itself, else the option whose caption
+// in the States panel matches the text, ignoring case. It returns false if the text names none.
+func findOption(group draw.Group, text string) (string, bool) {
+	if slices.Contains(group.Options, text) {
+		return text, true
 	}
-	return lo.Find(group.Options, func(option string) bool { return strings.EqualFold(group.Captions[option], word) })
+	return lo.Find(group.Options, func(option string) bool { return strings.EqualFold(group.Captions[option], text) })
 }
 
 // describeOption returns an option of a group as the States panel writes it, followed by the option itself in

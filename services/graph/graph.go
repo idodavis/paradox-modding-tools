@@ -150,8 +150,8 @@ func (gph *Service) BuildGraph(root string, filter Filter) (Graph, error) {
 }
 
 // resolveNode returns the definition the game keeps of the node with the given id, `database:name`. Where no source
-// says which copy the game keeps, it returns one of the copies. Where the game keeps no definition for every file,
-// it returns one a single file keeps for itself, in a file the game loads. It returns an error if there is neither.
+// says which copy the game keeps, it returns one of the copies. Where the game keeps none for every file, it returns
+// the one a file the game loads keeps for itself. It returns an error if there is neither.
 func resolveNode(ws *workspace.Session, mods *index.Index, id string) (index.Site, error) {
 	database, name, _ := strings.Cut(id, ":")
 	reference := schema.Reference{Database: database, Name: name}
@@ -338,14 +338,14 @@ func (reach *reach) fold(site index.Site, fires []index.Fire, forward bool, step
 	return fires[:reach.filter.Fanout]
 }
 
-// isFolded reports whether the filter folds the rest of a node's firings, or of its rows, past the fan-out into the
-// fold with the given id, given how many there are. It folds none if the fan-out is 0, if there are no more than the
-// fan-out, or if the filter opens that fold.
+// isFolded reports whether the filter folds the given count of a node's firings or rows past the fan-out into the fold
+// with the given id. It folds none if the fan-out is 0, the count is no more than the fan-out, or the filter opens that
+// fold.
 func (reach *reach) isFolded(count int, id string) bool {
 	return reach.filter.Fanout > 0 && count > reach.filter.Fanout && !slices.Contains(reach.filter.Expand, id)
 }
 
-// listFires returns what a node fires, including what the scripted effects it calls fire if the flag is set.
+// listFires returns what a node fires. When following, it includes what the scripted effects the node calls fire.
 func listFires(ws *workspace.Session, mods *index.Index, site index.Site, follow bool) []index.Fire {
 	return lo.FlatMap(listActing(ws, mods, site), func(part index.Site, _ int) []index.Fire {
 		return mods.ListFires(ws.Schema, part, follow)
@@ -415,15 +415,15 @@ func (reach *reach) add(site index.Site, step int, parent index.Site) bool {
 	return true
 }
 
-// isHidden reports whether the filter hides a definition's node by its origin or its kind.
+// isHidden reports whether the filter hides a definition's node by its origin or its kind. Only a kind that Defaults
+// lists can be hidden; a node of any other kind is always drawn.
 func (reach *reach) isHidden(site index.Site) bool {
 	database := reach.mods.ToReference(site).Database
-	picked := slices.Contains(reach.filter.Databases, database) || !slices.Contains(listKinds(reach.ws.Schema), database)
-	return !picked || !slices.Contains(reach.filter.Origins, reach.mods.File(site).Origin)
+	hiddenKind := !slices.Contains(reach.filter.Databases, database) && slices.Contains(listKinds(reach.ws.Schema), database)
+	return hiddenKind || !slices.Contains(reach.filter.Origins, reach.mods.File(site).Origin)
 }
 
-// listKinds returns the databases whose nodes the filter picks among: the events, on_actions, decisions and messages,
-// and the scripted effects.
+// listKinds returns the databases whose nodes the filter picks among: the fired databases and the scripted effects.
 func listKinds(schema *schema.Schema) []string {
 	kinds := slices.Clone(schema.FireDatabases)
 	if schema.Effects != "" {
@@ -440,7 +440,7 @@ func (reach *reach) splice() {
 		var rest, incoming, outgoing []Edge
 		for _, edge := range reach.edges {
 			switch {
-			case edge.From == node.ID && edge.To == node.ID:
+			case edge.From == node.ID && edge.To == node.ID: // a loop on the node goes with it
 			case edge.To == node.ID:
 				incoming = append(incoming, edge)
 			case edge.From == node.ID:

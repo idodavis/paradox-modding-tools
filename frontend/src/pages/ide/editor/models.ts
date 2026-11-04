@@ -1,7 +1,7 @@
 /**
- * The open files of this window, each a model around a Monaco text model that its tabs share. A model shows Go's
- * problems as markers and follows its file on disk; a change under unsaved text is kept beside it, for the user to keep
- * either text.
+ * The open files of this window. A Model wraps a Monaco text model that every tab showing the file shares. It shows
+ * Go's problems as markers and follows its file on disk. A disk change under unsaved text is kept beside the model's
+ * text until the user picks one.
  */
 import { useQueryCache } from "@pinia/colada";
 import { useDebounceFn } from "@vueuse/core";
@@ -27,11 +27,11 @@ export type Model = {
   encoding: Encoding;
   unsaved: boolean;
   caret: { line: number; column: number };
-  lines: { start: number; end: number } | null; // the lines selected, or null when nothing is
+  lines: { start: number; end: number } | null; // the selected lines; null when nothing is selected
   problems: Diagnostic[];
-  diskText: Text | null; // the disk's text after the file changed on disk under unsaved text; null while none did
-  disk: { version: number; text: string }; // the version and text last agreed with on disk
-  sync: () => Promise<Diagnostic[]>; // the send of the text to Go once the edits pause
+  diskText: Text | null; // the new disk text when the file changed on disk under unsaved text; null otherwise
+  disk: { version: number; text: string }; // the version and text last loaded from or saved to disk
+  sync: () => Promise<Diagnostic[]>; // sends the text to Go once edits pause
 };
 
 /** SEVERITIES holds the Monaco severity of each level. Monaco has one severity for both critical and error. */
@@ -90,16 +90,16 @@ export function applyEdits(model: Model, edits: Edit[]): void {
 }
 
 /**
- * syncText sends a model's text to Go once the edits pause, and returns the problems found. A call that a later call
- * replaces returns none.
+ * syncText sends a model's text to Go once edits pause and returns its problems. A call that a later call replaces
+ * returns none.
  */
 export async function syncText(model: Model): Promise<Diagnostic[]> {
   return (await model.sync()) ?? [];
 }
 
 /**
- * save writes a model's text to disk and marks it saved, unless it was edited meanwhile. It drops a disk text the
- * model kept. The other models are checked again.
+ * save writes a model's text to disk. The model stays unsaved if it was edited during the write. It clears any kept
+ * disk text, then checks the other models again.
  */
 export async function save(model: Model): Promise<void> {
   const text = model.model.getValue();
@@ -111,7 +111,7 @@ export async function save(model: Model): Promise<void> {
   await Promise.all([...models.values()].filter((other) => other !== model).map(diagnose));
 }
 
-/** closeModel closes a file's model and has Go drop its text. A model still loading closes when it lands. */
+/** closeModel closes a file's model and has Go drop its text. A model still loading closes once it has loaded. */
 export function closeModel(key: string): void {
   const model = models.get(key);
   if (!model) {
@@ -142,17 +142,17 @@ export function renameModel(key: string, place: Place): void {
 }
 
 /**
- * saveUnsaved asks whether to save the unsaved models before an action such as "Closing PMT" drops them. It returns
- * false if the user cancels.
+ * saveUnsaved asks whether to save the unsaved models before the given action, such as "Closing PMT", drops them. It
+ * returns false if the user cancels.
  */
-export async function saveUnsaved(going: string): Promise<boolean> {
+export async function saveUnsaved(action: string): Promise<boolean> {
   const unsaved = unsavedModels();
   if (!unsaved.length) return true;
   const names = unsaved.slice(0, 4).map((model) => model.place.rel);
   if (unsaved.length > 4) names.push(`${unsaved.length - 4} more`);
   const choice = await confirm.open({
     title: `Save ${plural(unsaved.length, "file")}?`,
-    body: `${list(names)} ${unsaved.length === 1 ? "has" : "have"} changes not saved. ${going} without saving drops them.`,
+    body: `${list(names)} ${unsaved.length === 1 ? "has" : "have"} changes not saved. ${action} without saving drops them.`,
     confirm: "Save",
     alternative: "Don't save",
   });
@@ -182,32 +182,32 @@ async function load(place: Place): Promise<Model> {
 }
 
 /**
- * buildModel makes a file's model and keeps it up to date. It takes the Monaco text model the file's address has, or
- * makes one in the file's language from the start text. An unsaved model matches no version of the disk.
+ * buildModel makes a file's Model. It reuses the Monaco text model already at the file's URI, else creates one from
+ * the start text in the file's language. An unsaved start matches no disk version.
  */
 function buildModel(place: Place, start: { text: string; disk: string; encoding: Encoding; unsaved: boolean }): Model {
   const uri = monaco.Uri.file(place.path);
-  const text =
+  const textModel =
     monaco.editor.getModel(uri) ?? monaco.editor.createModel(start.text, EDITOR_LANGUAGES[place.format], uri);
   const model: Model = shallowReactive<Model>({
     uri: uri.toString(),
     place,
-    model: text,
+    model: textModel,
     encoding: start.encoding,
     unsaved: start.unsaved,
     caret: { line: 1, column: 1 },
     lines: null,
     problems: [],
     diskText: null,
-    disk: { version: start.unsaved ? -1 : text.getAlternativeVersionId(), text: start.disk },
+    disk: { version: start.unsaved ? -1 : textModel.getAlternativeVersionId(), text: start.disk },
     sync: useDebounceFn((): Promise<Diagnostic[]> => sendText(model), 300),
   });
-  text.onDidChangeContent(() => {
+  textModel.onDidChangeContent(() => {
     // a file no change is written to is never unsaved
-    model.unsaved = !place.readOnly && text.getAlternativeVersionId() !== model.disk.version;
+    model.unsaved = !place.readOnly && textModel.getAlternativeVersionId() !== model.disk.version;
     void syncText(model);
   });
-  text.onWillDispose(() => models.delete(place.key));
+  textModel.onWillDispose(() => models.delete(place.key));
   models.set(place.key, model);
   return model;
 }
@@ -217,7 +217,7 @@ async function sendText(model: Model): Promise<Diagnostic[]> {
   if (model.model.isDisposed()) return [];
   const diagnostics = (await lsp.SetText(model.place.path, model.model.getValue())) ?? [];
   setMarkers(model, diagnostics);
-  // the file's pictures are drawn again from the new text
+  // the file's drawn pictures are fetched again from the new text
   void useQueryCache().invalidateQueries({ key: keys.draw(model.place.path) });
   return diagnostics;
 }
@@ -241,9 +241,9 @@ function setMarkers(model: Model, diagnostics: Diagnostic[]): void {
 }
 
 /**
- * applyChange brings a change on disk into its file's model, at once if the model has no unsaved text. Otherwise the
- * model keeps the disk's text beside its own until the user keeps one; a disk back at the text the model last agreed
- * with drops it.
+ * applyChange applies a change on disk to its file's model. A model with no unsaved text takes the disk text at once.
+ * Otherwise it keeps the disk text in diskText until the user picks one. A disk text equal to the last loaded or saved
+ * text clears diskText.
  */
 export async function applyChange(path: string): Promise<void> {
   const place = await loadQuery(placeQuery(path));
@@ -258,10 +258,7 @@ export async function applyChange(path: string): Promise<void> {
   else setText(model, file.text);
 }
 
-/**
- * setText puts text from disk in a model as one undoable edit. The model then matches the disk, and drops a disk text
- * it kept.
- */
+/** setText replaces a model's text with text from disk, as one undoable edit. The model is then saved. */
 export function setText(model: Model, text: Text): void {
   applyEdits(model, [{ range: model.model.getFullModelRange(), text: text.text }]);
   model.encoding = text.encoding;

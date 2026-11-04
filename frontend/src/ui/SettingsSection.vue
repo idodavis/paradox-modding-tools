@@ -3,7 +3,7 @@
   and disabled.
 -->
 <script lang="ts">
-/** SETTING_ROWS holds the classes of a list of settings, each row with room above and below and a faint line under. */
+/** SETTING_ROWS holds the classes of a list of settings: padding on each row and a faint line under it. */
 export const SETTING_ROWS = "flex flex-col *:border-b *:border-accented *:py-2.5";
 /** SETTING_HIGHLIGHT holds the classes of the row of the setting the palette opened Settings at. */
 export const SETTING_HIGHLIGHT = "rounded-md bg-(--accent-soft)";

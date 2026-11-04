@@ -3,7 +3,7 @@
   replace both with a button of its own.
 -->
 <script lang="ts">
-/** IMAGES lists the picture files a picker for a thumbnail or a picture takes. */
+/** IMAGES lists the file patterns of the picture files a picker offers. */
 export const IMAGES = ["*.png", "*.jpg", "*.jpeg", "*.gif", "*.webp"];
 </script>
 

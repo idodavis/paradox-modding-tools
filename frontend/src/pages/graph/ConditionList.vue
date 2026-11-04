@@ -1,16 +1,16 @@
 <!--
-  Conditions in words: each on its line, a block's head ending in a colon with the conditions it holds under it, or
-  all on one line, a block's conditions shown as "…". Its module also sorts conditions into the ones that must be true
-  and the ones that must be false, and puts the blocks a firing is written in into words.
+  Shows conditions as words, one line each. A condition that holds others ends in a colon with them under it. With
+  inline, all conditions share one line and a nested block shows as "…". The file also exports groupConditions and
+  describeStep, which make the conditions this list shows.
 -->
 <script lang="ts">
 import type { Condition, Step } from "@services/graph/models";
 
-/** The classes of a subject or a value in a line of words; a long one wraps. */
+/** CODE is the classes of a subject or a value; a long one wraps. */
 const CODE = "font-mono text-11 wrap-anywhere";
-/** The classes that mark a value, the thing a condition checks for: one color, on a soft tag of it. */
+/** VALUE is the classes that mark a value, what a condition checks for, as colored text on a soft tag. */
 const VALUE = "rounded-[4px] bg-(--link-soft) px-1 text-(--link) box-decoration-clone";
-/** The phrase each kind of step starts with; a block says nothing. */
+/** STEP_PHRASES is the phrase each kind of step starts with. A block has none. */
 const STEP_PHRASES: Record<string, string> = {
   branch: "if",
   weight: "weight",
@@ -20,9 +20,8 @@ const STEP_PHRASES: Record<string, string> = {
 };
 
 /**
- * Sorts the conditions a trigger, a limit or a when holds under two heads, "must be true" and "must be false", the
- * second's no longer marked negated, where something must be false. A list with nothing that must be false is returned
- * as it is.
+ * groupConditions groups conditions under "must be true" and "must be false", the second without the negated mark. If
+ * no condition is negated it returns the conditions as they are.
  */
 export function groupConditions(conditions: Condition[]): Condition[] {
   const failed = conditions.filter((condition) => condition.negated);
@@ -34,8 +33,9 @@ export function groupConditions(conditions: Condition[]): Condition[] {
 }
 
 /**
- * Describes one block a firing is written in as conditions: an if with its conditions under it, "for random_player"
- * with "where" and the list's limit under it, an option by its name where it has one, chosen.
+ * describeStep describes one block a firing is written in as conditions. A branch is "if" or "else" with its
+ * conditions under it. A list is "for" its key with "where" and its limit under it. An option is "option" with its
+ * title, if it has one, and "chosen". It returns none for a block.
  */
 export function describeStep(step: Step): Condition[] {
   const phrase = STEP_PHRASES[step.kind];
@@ -55,13 +55,13 @@ export function describeStep(step: Step): Condition[] {
 import { createReusableTemplate } from "@vueuse/core";
 
 const { conditions, inline = false } = defineProps<{ conditions: Condition[]; inline?: boolean }>();
-// a subject or a value: its in-game name where it has one, the text as written on hover, else the text; a value
-// marked as one
+// Code shows a subject or a value: its in-game name if it has one (the text as written shows on hover), else the text
+// split at its prefix. isValue marks it as a value.
 const [DefineCode, Code] = createReusableTemplate<{ text: string; name?: string; isValue?: boolean }>();
 
 /**
- * Splits a subject or a value as written into the prefix that names its kind, such as estate_type:, and the name after
- * it. One with no such prefix is all name.
+ * splitValue splits a subject or a value into its prefix, such as estate_type:, and the rest. Without a prefix, all of
+ * it is the rest.
  */
 function splitValue(value: string): [string, string] {
   const match = /^([\w.]+:)(.+)$/.exec(value);
@@ -115,7 +115,7 @@ function splitValue(value: string): [string, string] {
 </template>
 
 <style scoped>
-/* a block's head ends in a colon, the conditions it holds under it */
+/* a condition that holds others ends in a colon */
 .head::after {
   content: ":";
 }

@@ -86,9 +86,9 @@ func (trm *Service) ListEnvironment() []terminal.Variable {
 	return append(slices.Clone(mcp.Variables), terminal.ListEnvironment()...)
 }
 
-// Start starts a shell of the given size running the program at the given path, or for "" the default shell, in the
-// folder ResolveFolder gives for the file at the given path, which may be "". It returns an error if this system has
-// no shell or the program cannot be started.
+// Start starts a shell of the given size. It starts in the folder ResolveFolder gives for the given file path, which
+// may be "". It runs the program at the given program path, or the default shell for "". It returns an error if this
+// system has no shell or the program cannot be started.
 func (trm *Service) Start(path, program string, columns, rows int) (*terminal.Shell, error) {
 	program, args, err := trm.resolveProgram(program)
 	if err != nil {
@@ -97,9 +97,9 @@ func (trm *Service) Start(path, program string, columns, rows int) (*terminal.Sh
 	return trm.Run(path, append([]string{program}, args...), columns, rows)
 }
 
-// Run starts a shell of the given size that runs a command, a program and its arguments as given, in the folder
-// ResolveFolder gives for the file at the given path, which may be "". It returns an error if the command is empty or
-// its program cannot be started.
+// Run starts a shell of the given size that runs the given command, a program followed by its arguments. It starts in
+// the folder ResolveFolder gives for the given file path, which may be "". It returns an error if the command is empty
+// or its program cannot be started.
 func (trm *Service) Run(path string, command []string, columns, rows int) (*terminal.Shell, error) {
 	if len(command) == 0 {
 		return nil, errors.New("no program was given to run")
@@ -126,9 +126,9 @@ func (trm *Service) Run(path string, command []string, columns, rows int) (*term
 	return shell, nil
 }
 
-// resolveProgram returns the program at the given path, or for "" the default shell (the setting's, else PMT's pick),
-// with the arguments ListPrograms gives it; any other program has none. It returns an error if no program is named
-// and this system has no shell.
+// resolveProgram returns the path of the program to run and its arguments. For "" the program is the one the setting
+// names, else the first that ListPrograms lists. A program that ListPrograms lists gets that row's arguments, and any
+// other program gets none. It returns an error if no program is named and this system has no shell.
 func (trm *Service) resolveProgram(program string) (string, []string, error) {
 	if program == "" {
 		program, _ = trm.Config.LookupSetting("", settingShell)

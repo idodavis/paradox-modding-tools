@@ -63,10 +63,10 @@ var (
 	alternatives    = regexp.MustCompile(`^([A-Za-z0-9_.+-]+(?:[/|][A-Za-z0-9_.+-]+)+)$`)
 )
 
-// buildDocs reads the docs in the given listing into the databases they describe. A database keeps the path of its
-// blurb's doc from the install's folder. A doc is an .info, readme or .md file, or a .txt file named like one, that
-// belongs to one of the given database folders. A later doc only fills in what an earlier one left out. A doc that
-// describes one part of its database gives it no blurb. It returns an error if a doc cannot be read.
+// buildDocs reads the docs in the listing into the databases they describe. A database keeps the path of its blurb's
+// doc from the install's folder. A doc is an .info, readme or .md file, or a .txt file named like one, that belongs to
+// one of the given database folders. A later doc only fills what an earlier one left out. A doc that describes one part
+// of its database gives it no blurb. It returns an error if a doc cannot be read.
 func (schema *Schema) buildDocs(installPath string, listing []files.File, folders []string) error {
 	for _, file := range listing {
 		label, partial, ok := findDocDatabase(file.Rel, folders)
@@ -91,7 +91,7 @@ func (schema *Schema) buildDocs(installPath string, listing []files.File, folder
 
 // findDocDatabase returns the database that a doc file describes: the database of the folder the file sits in, else
 // of the nearest folder above it that is one, else the one the file's own name gives. It also reports whether the doc
-// describes only one part of that database, as a doc tied by a folder above its own does. It returns false if the
+// describes only part of that database, which is so when a folder above the doc's own ties it. It returns false if the
 // file is no doc or describes no database.
 func findDocDatabase(rel string, folders []string) (string, bool, bool) {
 	base := strings.ToLower(path.Base(rel))
@@ -119,8 +119,8 @@ func findDocDatabase(rel string, folders []string) (string, bool, bool) {
 	return "", false, false
 }
 
-// parseDoc returns a reader that has read one doc file of the given database. It returns false for a file that is
-// data, not prose: one with no line of prose and no comment, or a .txt file with more script lines than prose lines.
+// parseDoc reads one doc file into a reader, given the row of the database it describes. It returns false for a file
+// that is data: one with no prose and no comment, or a .txt file with more script lines than prose lines.
 func (schema *Schema) parseDoc(text, rel string, row game.Database) (*docReader, bool) {
 	reader := &docReader{schema: schema, root: &Field{}}
 	// a definition named by its file is the whole file, so the doc is read as already inside it
@@ -158,10 +158,10 @@ func (reader *docReader) build(database *Database, readme string) {
 	buildDocFields(game.LookupGame(reader.schema.Game), definition, reader.root, "")
 }
 
-// buildDocFields gives a field each field a doc writes below it, with its claims, and those below them in turn. It
-// goes no deeper than a field whose block holds script, where the docs write a sample, such as debug_only = yes in a
-// trigger. It is given the key the field is written at, "" for the definition itself, and the game whose keywords
-// count.
+// buildDocFields copies the fields that the given doc writes onto the given field, each with its claims, then the
+// fields below them. It stops at a field whose block holds script, where the docs write a sample, such as
+// debug_only = yes in a trigger. The holder is the key the doc is written at, "" for the definition itself. The given
+// game's keywords tell which blocks hold script.
 func buildDocFields(row *game.Game, field, doc *Field, holder string) {
 	for key, child := range doc.Children {
 		target := field.buildChild(key, game.SourceDocs)
@@ -172,9 +172,8 @@ func buildDocFields(row *game.Game, field, doc *Field, holder string) {
 	}
 }
 
-// holdsScript reports whether the block written for a field holds script rather than fields: the field states a
-// shape or a number to work out, or its key is a keyword of the given game that gives its block a shape in the block
-// of the key above.
+// holdsScript reports whether a field's block holds script rather than fields. It does if the field states a shape or a
+// number to work out, or if its key is a keyword of the given game that gives its block a shape under the holder's key.
 func holdsScript(row *game.Game, holder, key string, field *Field) bool {
 	keyword, ok := row.LookupKeyword("", holder, key)
 	return field.Shape.IsStated() || field.Value.Value.Type == ValueNumber || ok && keyword.Shape != ""
@@ -198,7 +197,7 @@ func (reader *docReader) readLine(raw string, heading bool) {
 	case line == "":
 		reader.comments, reader.list = nil, ""
 		reader.ended = reader.ended || len(reader.blurb) > 0
-	case text == "":
+	case text == "": // only hashes
 	case strings.HasPrefix(line, "#") && briefLine.MatchString(text):
 		brief := briefLine.FindStringSubmatch(text)
 		reader.readHeader(brief[1], brief[2])
@@ -275,7 +274,7 @@ func splitComment(line string) (code, comment string) {
 // brace. Such a line that is not a comment is script. Any other line with text is prose.
 func (reader *docReader) countLine(line string, isCode bool) {
 	switch {
-	case line == "":
+	case line == "": // blank lines count toward neither
 	case isCode && !strings.HasPrefix(line, "#"):
 		reader.script++
 	default:
@@ -295,21 +294,21 @@ func (reader *docReader) readHeader(key, text string) {
 // readField reads a `key: text` line or a keyed bullet. The key is a field at the top of the definition, and the text
 // describes it.
 func (reader *docReader) readField(key, text string) {
-	field := reader.field(key)
+	field := reader.buildField(key)
 	reader.resolveText(field, text)
 	reader.current, reader.headed = field, false
 }
 
-// field returns the field of the given key at the top of the definition, and makes it if it does not exist. It marks
-// the doc as begun.
-func (reader *docReader) field(key string) *Field {
+// buildField returns the field of the given key at the top of the definition, adding it if there is none. It marks the
+// doc as begun.
+func (reader *docReader) buildField(key string) *Field {
 	reader.started = true
 	return reader.root.buildChild(key, game.SourceDocs)
 }
 
-// readStatement reads a line of script. The block at the top of the example is the entry and has no key, and neither
-// does a key that stands for names. Any other key is a field of the block that holds it. The comment after it and the
-// comments above it are its text, its value is its type, and a header just before it gives its claims.
+// readStatement reads a line of script. The block at the top of the example is the entry, and it and a key that stands
+// for names make no field. Any other key is a field of the block that holds it. The comments above it and after it are
+// its text, its value gives its type, and a header just before it gives its claims.
 func (reader *docReader) readStatement(key, value, text string, opens int) {
 	reader.started = true
 	holder := reader.root
@@ -346,7 +345,7 @@ func (reader *docReader) readStatement(key, value, text string, opens int) {
 // followed it. It is called when a statement of another key or the end of the doc comes first.
 func (reader *docReader) closeHeader() {
 	if reader.header != "" {
-		reader.field(reader.header).take(reader.current.Claims)
+		reader.buildField(reader.header).take(reader.current.Claims)
 		reader.header = ""
 	}
 }
@@ -408,10 +407,9 @@ func (reader *docReader) readProse(text string) {
 	reader.comments = append(reader.comments, text)
 }
 
-// resolveText reads the text written about a field, given as one or more lines. A placeholder at its start is the
-// field's value. The rest is the blurb, and any type, requirement and default it states. A start such as "Effect run
-// when…" or "The localization key, …" gives the type it names. A type in parentheses or brackets counts if the docs
-// know the term.
+// resolveText reads the lines of text written about a field. A placeholder at the start is the field's value. The rest
+// is the blurb, and any type, requirement and default it states. A start such as "Effect run when…" or "The
+// localization key, …" gives the type it names. A type in parentheses or brackets counts if the docs know the term.
 func (reader *docReader) resolveText(field *Field, lines ...string) {
 	text := strings.TrimSpace(strings.Join(lines, " "))
 	if value, rest := splitValue(text); strings.HasPrefix(value, "<") {
@@ -438,8 +436,8 @@ func (reader *docReader) resolveText(field *Field, lines ...string) {
 	}
 }
 
-// findDocType returns the longest type term that opens the text, after an article. It returns false if no term opens
-// the text, or if the term names no shape, no yes-or-no type and no database.
+// findDocType returns the longest type term that opens the text, after an article such as "the". It returns false if
+// no term opens the text, or if the term names no shape, no bool type and no database.
 func findDocType(text string) (string, bool) {
 	words := strings.Fields(text)
 	for position, word := range words {
@@ -518,11 +516,11 @@ func (reader *docReader) resolveValue(field *Field, value string) {
 	words, keyed := strings.CutSuffix(inner, "_key")
 	database, named := reader.schema.ResolveTypeDatabase(words)
 	switch {
-	case value == "":
+	case value == "": // nothing is written
 	case strings.HasPrefix(value, "{"):
 		resolveDocType(field, "block", game.SourceDocs)
 	case alternatives.MatchString(inner):
-		// Alternatives such as number/scripted name types, not values, so they state no choices.
+		// Alternatives of types, such as number/scripted, state no choices. Alternatives of other terms do.
 		parts := strings.FieldsFunc(inner, func(r rune) bool { return r == '/' || r == '|' })
 		if !slices.ContainsFunc(parts, func(part string) bool { _, ok := game.DocTypes[ToPhrase(part)]; return ok }) {
 			resolveChoices(field, parts, game.SourceDocs)
@@ -542,9 +540,9 @@ func (reader *docReader) resolveValue(field *Field, value string) {
 	}
 }
 
-// resolveChoices adds the given values to the choices of a field, as the given source states them. They outrank a type
-// stated before them. The one marked as the default is the default. If the choices are only the two yes-or-no terms,
-// the field is a bool.
+// resolveChoices adds the given values to the choices of a field, as the given source states them. They replace any
+// value the field had before. The one marked "(default" is the default. If the choices are only the two bool terms, the
+// field is a bool.
 func resolveChoices(field *Field, values []string, source game.Source) {
 	var choices []string
 	if field.Value.Value.Type == ValueChoice {

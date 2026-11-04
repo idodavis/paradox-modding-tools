@@ -1,7 +1,7 @@
 <!--
-  The IDE panel's Terminal tab: the active shell's screen, with a find box over it, and the list of shells beside it,
-  which can be resized and folded away. New shell starts the default shell, and the menu beside it any other. Showing
-  the tab with no shell starts one.
+  The IDE panel's Terminal tab: the active shell's screen with a find box over it, and a resizable, collapsible list of
+  shells beside it. New shell starts the default shell, and the menu beside it starts any other. Showing the tab with no
+  shell starts one.
 -->
 <script setup lang="ts">
 import { computed, onMounted, shallowRef, useTemplateRef, watch } from "vue";
@@ -16,8 +16,8 @@ import { useWindowsStore } from "../../../stores/windows";
 import { useWorkspaceStore } from "../../../stores/workspace";
 import FindBox from "../../../ui/FindBox.vue";
 
-// the screen, and the list of shells in pixels, which folds to a rail of their icons past its least width, as the
-// sidebar's does
+// the screen, and the shell list: a pixel-sized pane that collapses to a rail of icons below its minimum width, as the
+// sidebar does
 const PANES: SplitterItem[] = [
   { slot: "screen" },
   {
@@ -30,7 +30,7 @@ const PANES: SplitterItem[] = [
     collapsedSize: 36,
   },
 ];
-// each shell's icon by its program's name, VS Code's own; any other shell takes the plain terminal
+// VS Code's icon for each shell program by name; any other program gets the plain terminal icon
 const ICONS: Record<string, string> = {
   pwsh: "i-codicon-terminal-powershell",
   powershell: "i-codicon-terminal-powershell",
@@ -47,7 +47,7 @@ const term = shallowRef("");
 // the active shell's rows as text, read while the find box is open
 const rows = shallowRef<string[]>([]);
 
-const current = computed(() => terminal.consoles.find((open) => open.shell.id === terminal.active));
+const current = computed(() => terminal.consoles.find((session) => session.shell.id === terminal.active));
 const hasFile = computed(() => !!terminal.findFile());
 const windows = useWindowsStore();
 const { data: programs } = useQuery(programsQuery);
@@ -55,7 +55,7 @@ const { data: programs } = useQuery(programsQuery);
 const programItems = computed<DropdownMenuItem[]>(() =>
   (programs.value ?? []).map((program) => ({ label: program.name, onSelect: () => terminal.start(program.path) })),
 );
-const readRows = useThrottleFn(() => {
+const loadRows = useThrottleFn(() => {
   const buffer = current.value?.xterm.buffer.active;
   rows.value = buffer
     ? Array.from({ length: buffer.length }, (_, row) => buffer.getLine(row)?.translateToString(true) ?? "")
@@ -79,21 +79,21 @@ useResizeObserver(host, () => void fitShell());
 // while the find box is open, its rows follow the shell's output
 watch(
   [() => terminal.findOpen, current],
-  ([findOpen, open], _, onCleanup) => {
-    if (!findOpen || !open) return;
-    void readRows();
-    const listener = open.xterm.onWriteParsed(() => void readRows());
+  ([findOpen, session], _, onCleanup) => {
+    if (!findOpen || !session) return;
+    void loadRows();
+    const listener = session.xterm.onWriteParsed(() => void loadRows());
     onCleanup(() => listener.dispose());
   },
   { immediate: true },
 );
 
-/** describeShell names where a shell started: its mod, else its folder. */
+/** describeShell returns where a shell started: its mod's name, else its folder. */
 function describeShell(shell: Shell): string {
   return workspace.originName(shell.origin) || shell.folder;
 }
 
-/** showHit scrolls the active shell to a row the find box hit, and selects the term in it. */
+/** showHit scrolls the active shell to the given row and selects the find term in it. */
 function showHit(row: number): void {
   const xterm = current.value?.xterm;
   const needle = term.value.trim().toLowerCase();
@@ -102,7 +102,7 @@ function showHit(row: number): void {
   xterm.select(Math.max((rows.value[row] ?? "").toLowerCase().indexOf(needle), 0), row, needle.length);
 }
 
-/** closeFind closes the find box and gives the shell back the keys. */
+/** closeFind closes the find box and returns the focus to the shell. */
 function closeFind(): void {
   terminal.findOpen = false;
   term.value = "";
@@ -153,24 +153,24 @@ function closeFind(): void {
         :class="collapsed ? 'items-center px-1 py-2' : 'p-2'"
       >
         <div
-          v-for="open in terminal.consoles"
-          :key="open.shell.id"
+          v-for="session in terminal.consoles"
+          :key="session.shell.id"
           role="button"
           class="group flex min-h-7 shrink-0 cursor-pointer items-center gap-1.5 rounded-md text-12"
           :class="[
             collapsed ? 'size-7 justify-center' : 'py-1 ps-2.5 pe-1',
-            open.shell.id === terminal.active
+            session.shell.id === terminal.active
               ? 'bg-elevated text-highlighted ring ring-accented ring-inset'
               : 'text-dimmed hover:text-toned',
           ]"
-          :title="collapsed ? `${open.shell.name}, ${describeShell(open.shell)}` : open.shell.folder"
-          @click="terminal.active = open.shell.id"
+          :title="collapsed ? `${session.shell.name}, ${describeShell(session.shell)}` : session.shell.folder"
+          @click="terminal.active = session.shell.id"
         >
-          <UIcon :name="ICONS[open.shell.name] ?? 'i-codicon-terminal'" class="size-3.5 shrink-0" />
+          <UIcon :name="ICONS[session.shell.name] ?? 'i-codicon-terminal'" class="size-3.5 shrink-0" />
           <template v-if="!collapsed">
             <span class="flex min-w-0 grow flex-col">
-              <span class="truncate">{{ open.shell.name }}</span>
-              <span class="truncate text-11 text-dimmed">{{ describeShell(open.shell) }}</span>
+              <span class="truncate">{{ session.shell.name }}</span>
+              <span class="truncate text-11 text-dimmed">{{ describeShell(session.shell) }}</span>
             </span>
             <UButton
               icon="i-lucide-x"
@@ -178,8 +178,8 @@ function closeFind(): void {
               size="xs"
               square
               aria-label="Close the shell"
-              :class="open.shell.id !== terminal.active && 'invisible group-hover:visible'"
-              @click.stop="terminal.close(open.shell.id)"
+              :class="session.shell.id !== terminal.active && 'invisible group-hover:visible'"
+              @click.stop="terminal.close(session.shell.id)"
             />
           </template>
         </div>

@@ -17,9 +17,8 @@ import (
 	"github.com/samber/lo"
 )
 
-// A Shell is one program running under a pseudo-terminal, together with the output it has written. Its starter fills
-// in the id, the program and its arguments, the folder and the origin, then calls Start. No exported field changes
-// after that.
+// A Shell is one program running under a pseudo-terminal, with the output it has written. The caller sets ID, Program,
+// Args, Folder and Origin and then calls Start, which sets Name and Build. After Start no exported field changes.
 type Shell struct {
 	ID      string   `json:"id"`
 	Program string   `json:"program"` // the program's path
@@ -31,13 +30,13 @@ type Shell struct {
 
 	console   *console
 	consoleMu sync.Mutex // serializes the writes, the resizes and the close of the console
-	closed    bool       // set under both locks, so that either one guards a read of it
+	closed    bool       // set with both locks held, so holding either lock is enough to read it
 
 	outputMu sync.Mutex    // guards the fields below
-	output   []byte        // the newest output, from historyBytes to twice that
+	output   []byte        // the newest output, up to twice historyBytes
 	end      int64         // the offset just past the newest byte of output
 	ack      int64         // the furthest offset of the output that a window has drawn
-	change   chan struct{} // closed and made again at each change of the output, the ack or closed
+	change   chan struct{} // closed and replaced at each change of the output, the ack or closed
 	ended    bool
 	screen   Screen
 	columns  int
@@ -45,8 +44,8 @@ type Shell struct {
 	done     chan struct{} // closed once the output is read to its end
 }
 
-// A Screen is a shell's screen as a window drew it: the terminal's own text for it, which draws it again, and the
-// offset of the output it holds. It also carries the shell's size.
+// A Screen is what a window drew of a shell: the text that redraws it, the offset of the output it shows, and the
+// shell's size.
 type Screen struct {
 	Text    string `json:"text"`
 	Offset  int64  `json:"offset"`
@@ -96,8 +95,8 @@ func ListEnvironment() []Variable {
 	})
 }
 
-// Start starts the shell's program in its folder, under a new pseudo-terminal of the given size. It returns an error
-// if the program cannot be started.
+// Start starts the shell's program in its folder, under a new pseudo-terminal of the given size, and sets Name and
+// Build. It returns an error if the program cannot be started.
 func (shell *Shell) Start(columns, rows int) error {
 	shell.Name = strings.TrimSuffix(filepath.Base(shell.Program), filepath.Ext(shell.Program))
 	shell.columns, shell.rows = columns, rows
@@ -109,7 +108,7 @@ func (shell *Shell) Start(columns, rows int) error {
 	}
 	shell.console = console
 	go shell.receive()
-	// the program's exit closes the console, which ends the output
+	// The program's exit closes the console, which ends the output.
 	go func() {
 		console.wait()
 		shell.Close()
@@ -124,7 +123,7 @@ func buildEnvironment() []string {
 	for _, row := range ListEnvironment() {
 		env = slices.DeleteFunc(env, func(entry string) bool {
 			name, _, _ := strings.Cut(entry, "=")
-			return name == row.Name || runtime.GOOS == "windows" && strings.EqualFold(name, row.Name)
+			return name == row.Name || (runtime.GOOS == "windows" && strings.EqualFold(name, row.Name))
 		})
 		env = append(env, row.Name+"="+row.Value)
 	}
@@ -138,15 +137,15 @@ func (shell *Shell) receive() {
 	chunk := make([]byte, 32<<10)
 	for {
 		shell.waitWindow()
-		n, err := shell.console.read(chunk)
-		if n > 0 {
+		count, err := shell.console.read(chunk)
+		if count > 0 {
 			shell.outputMu.Lock()
-			shell.output = append(shell.output, chunk[:n]...)
-			// cut only past twice the history, so a flood of output does not copy the history for every chunk
+			shell.output = append(shell.output, chunk[:count]...)
+			// Cut only past twice the history, so a flood of output does not copy the history for every chunk.
 			if len(shell.output) > 2*historyBytes {
 				shell.output = bytes.Clone(shell.output[len(shell.output)-historyBytes:])
 			}
-			shell.end += int64(n)
+			shell.end += int64(count)
 			shell.emitChange()
 			shell.outputMu.Unlock()
 		}
@@ -278,7 +277,7 @@ func (shell *Shell) Close() {
 	if shell.closed {
 		return
 	}
-	// wakes a read that waits for a window, since a pseudo console does not close until its output is read
+	// This wakes a read that waits for a window, since a pseudo console does not close until its output is read.
 	shell.outputMu.Lock()
 	shell.closed = true
 	shell.emitChange()

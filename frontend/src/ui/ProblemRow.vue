@@ -32,7 +32,7 @@ const {
 const emit = defineEmits<{ open: [] }>();
 
 const { data: levels } = useQuery(levelsQuery);
-const mark = computed(() => levels.value?.find((one) => one.id === level));
+const mark = computed(() => levels.value?.find((row) => row.id === level));
 // a path shortens in its folders so its file name stays whole; any other second line is all "folder"
 const folder = computed(() => (mono ? detail.slice(0, Math.max(detail.lastIndexOf("/"), 0)) : detail));
 const file = computed(() => detail.slice(folder.value.length));

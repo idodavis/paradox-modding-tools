@@ -62,8 +62,8 @@ const (
 // releaseNumber matches the major and minor numbers that a version or a version tag starts with.
 var releaseNumber = regexp.MustCompile(`^\d+\.\d+`)
 
-// ListRules returns the rules that say what every upload leaves out. One rule names the coding agents' instruction
-// files that start with no dot, as the agents' rows name them.
+// ListRules returns the rules for the files every upload leaves out. The last rule lists the coding agents'
+// instruction files, except the ones that start with a dot, which the first rule already covers.
 func (stm *Service) ListRules() []Rule {
 	instructions := lo.Reject(agent.ListFiles(), func(file string, _ int) bool { return strings.HasPrefix(file, ".") })
 	return []Rule{
@@ -159,8 +159,8 @@ func (stm *Service) ListTags() (Tags, error) {
 	declared, err := fetchTags(ws.Game.SteamAppID)
 	if err == nil {
 		err = app.SaveJSON(resolveTagsPath(cacheDir, ws.Game.SteamAppID), declared)
-	} else if kept := loadTags(cacheDir, ws.Game.SteamAppID); hasTags(kept) {
-		declared, err = kept, nil
+	} else if saved := loadTags(cacheDir, ws.Game.SteamAppID); hasTags(saved) {
+		declared, err = saved, nil
 	}
 	if err != nil {
 		return Tags{}, err
@@ -175,8 +175,8 @@ func (stm *Service) ListTags() (Tags, error) {
 // failed fetch leaves none until ListTags fetches again.
 func (stm *Service) listVersionTags(appID int) []string {
 	cacheDir := stm.Workspace.Config.Dirs.Cache
-	if kept := loadTags(cacheDir, appID); hasTags(kept) {
-		return kept.Versions
+	if saved := loadTags(cacheDir, appID); hasTags(saved) {
+		return saved.Versions
 	}
 	shared, _, _ := stm.flight.Do("tags "+strconv.Itoa(appID), func() (any, error) {
 		stm.mu.Lock()

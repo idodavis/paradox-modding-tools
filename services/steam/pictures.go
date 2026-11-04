@@ -85,7 +85,7 @@ func resolvePicture(dir, file string) (string, error) {
 }
 
 // encodePicture encodes a picture under Steam's limit, as a PNG if it has transparency and a JPEG otherwise. It returns
-// an error if even one pixel a side is too big.
+// an error if the picture is still too big at one pixel a side.
 func encodePicture(picture image.Image, transparent bool) ([]byte, error) {
 	for smaller := picture; ; smaller = buildSmaller(smaller, shrinkFactor) {
 		var buffer bytes.Buffer

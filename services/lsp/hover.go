@@ -41,16 +41,16 @@ type Card struct {
 	Takes    schema.Expected `json:"takes"`             // what the key's value may be
 	Need     string          `json:"need,omitempty"`    // whether a field is required: optional, always or conditional
 	About    string          `json:"about,omitempty"`   // what the database says of its definitions
-	Writes   []string        `json:"writes,omitempty"`  // the values the game writes most for a field nothing declares, up to eight
+	Writes   []string        `json:"writes,omitempty"`  // the game's eight most written values for an undeclared field
 	Returns  string          `json:"returns,omitempty"` // what a call of a scripted definition gives
-	Command  string          `json:"command,omitempty"` // the kind of command a scripted definition the workspace has acts as
+	Command  string          `json:"command,omitempty"` // the kind of command a workspace's scripted definition acts as
 	Lexicon  string          `json:"lexicon,omitempty"` // the id of the lexicon class that lists it; "" for none
 	Holds    string          `json:"holds,omitempty"`   // what its block holds, in words
-	Leads    string          `json:"leads,omitempty"`   // the scope its block runs in, for a command or link that switches
-	Target   string          `json:"target,omitempty"`  // the scope its value must be, for a command or link with no block
+	Leads    string          `json:"leads,omitempty"`   // the scope its block runs in, where a command or link moves it
+	Target   string          `json:"target,omitempty"`  // the scope its value must be for a command or link with no block
 	Stale    bool            `json:"stale,omitempty"`   // a fact comes from dumps older than the install
 	Weight   int             `json:"weight,omitempty"`  // a branch of a random list: its percent of the branches' numbers
-	Node     string          `json:"node,omitempty"`    // the event graph's id of the name; "" if the graph does not draw it
+	Node     string          `json:"node,omitempty"`    // the Event Graph's id of the name; "" if it is not drawn
 	Within   []string        `json:"within,omitempty"`  // the definition the position is in, then the blocks inside it
 	Runs     string          `json:"runs,omitempty"`    // the scopes the dumps give a command, else "no restriction declared"
 	Date     *CardDate       `json:"date,omitempty"`
@@ -117,8 +117,8 @@ func (lsp *Service) Hover(path string, line, column int) (*Card, error) {
 	return card, nil
 }
 
-// describeHit returns the hover card for what the given visitor found at the cursor in a script file, as the given
-// index finds its names. It returns nil if the cursor is on nothing a card can describe.
+// describeHit returns the hover card for the key or value the visitor stopped on in a script file. It returns nil if
+// the cursor is on nothing a card can describe.
 func (lsp *Service) describeHit(ws *workspace.Session, mods *index.Index, place workspace.Place, visitor *hoverVisitor) *Card {
 	span, reference := findHit(visitor)
 	if span.IsEmpty() {
@@ -283,8 +283,7 @@ func describeFunction(card *Card, ws *workspace.Session, tree *jomini.Tree, call
 	return true
 }
 
-// findNestedCall returns the call, written as an argument of a step of the given call, that covers an offset. It
-// returns false if none does.
+// findNestedCall returns the call in an argument of the given call that covers an offset, or false if none does.
 func findNestedCall(call jomini.Call, offset int) (jomini.Call, bool) {
 	arguments := lo.FlatMap(call.Steps, func(step jomini.Step, _ int) []jomini.Argument { return step.Arguments })
 	argument, ok := lo.Find(arguments, func(argument jomini.Argument) bool {
@@ -296,8 +295,8 @@ func findNestedCall(call jomini.Call, offset int) (jomini.Call, bool) {
 	return *argument.Call, true
 }
 
-// listSites returns the definitions a reference names, as seen from the file at the given place, the ones the game
-// keeps first, and the definition it keeps. The winner is nil if the game keeps none.
+// listSites returns the definitions a reference names as seen from the given place, with the kept ones first. It also
+// returns the winner the game keeps, which is nil if it keeps none.
 func listSites(ws *workspace.Session, mods *index.Index, place workspace.Place, reference schema.Reference) ([]index.Site, *index.Winner) {
 	sites := dropTranslations(ws, mods, place, mods.ResolveLocal(reference, place.Position))
 	winner, ok := findKept(ws, mods, reference, place.Position)
@@ -311,7 +310,8 @@ func listSites(ws *workspace.Session, mods *index.Index, place workspace.Place, 
 	return slices.Concat(keeping, others), &winner
 }
 
-// dropTranslations returns the sites without the messages in other languages than the one the key is shown in.
+// dropTranslations returns the sites without the messages in languages other than the key's. That is the file's own
+// language, else the workspace's, else the base language, whichever first has a message among the sites.
 func dropTranslations(ws *workspace.Session, mods *index.Index, place workspace.Place, sites []index.Site) []index.Site {
 	for _, language := range []string{loc.FindSuffixLanguage(place.Path), ws.Language, game.BaseLanguage} {
 		hasMessage := slices.ContainsFunc(sites, func(site index.Site) bool {
@@ -327,8 +327,8 @@ func dropTranslations(ws *workspace.Session, mods *index.Index, place workspace.
 	return sites
 }
 
-// findKept returns the definition the game keeps of a reference written in the file at the given position, and why.
-// The position -1, a file the index does not list, sees no local definition. It returns false if the game keeps none.
+// findKept returns the winner the game keeps for a reference, as the file at the given index position sees it. The
+// position -1, a file the index does not list, sees no local definition. It returns false if the game keeps none.
 func findKept(ws *workspace.Session, mods *index.Index, reference schema.Reference, file int32) (index.Winner, bool) {
 	if reference.Database == game.Localization {
 		_, winner, ok := ws.LookupText(mods, reference.Name)
@@ -498,8 +498,8 @@ func describeTakes(card *Card, field *schema.Field) {
 	}
 }
 
-// resolveWeight returns the number a branch of a random list is written with, as a percent of the numbers of all its
-// siblings. It returns 0 if the numbers add up to nothing.
+// resolveWeight returns a random-list branch's number as a percent of the numbers of all its siblings, rounded. It
+// returns 0 if the numbers add up to 0.
 func resolveWeight(tree *jomini.Tree, statement int32) int {
 	own, sum := 0.0, 0.0
 	for sibling := range tree.Children(tree.Statements[statement].Parent) {

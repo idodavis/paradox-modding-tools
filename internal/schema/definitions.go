@@ -14,8 +14,8 @@ import (
 	"paradox-modding-tools/internal/jomini"
 )
 
-// findDefinition returns the definition that a statement makes. It is a constant, a name that a nesting defines, or
-// what the file's format or database says is defined here. It returns false if the statement defines nothing.
+// findDefinition returns the definition that a statement makes: a constant, a name that a nesting defines, or what the
+// file's format and database say is defined there. It returns false if the statement defines nothing.
 func (walker *walker) findDefinition(statement int32, level int, pending string) (Definition, bool) {
 	if label := walker.frames[level].label; strings.HasPrefix(label, "@") {
 		return Definition{Database: game.Constant, Name: label, Span: walker.frames[level].span, Statement: statement, Local: true}, true
@@ -76,15 +76,15 @@ func (walker *walker) findScriptDefinition(statement int32, level int, pending s
 	}, true
 }
 
-// findNameSpan returns the span of the value of the given key in a statement's block, without quotes. It returns false
-// if the block writes no such key.
+// findNameSpan returns the span of the value written at a key in a statement's block, without quotes. It returns false
+// if the block has no such key.
 func (walker *walker) findNameSpan(statement int32, nameKey string) (jomini.Span, bool) {
 	child, ok := walker.tree.FindChild(statement, nameKey)
 	return walker.tree.UnquotedSpan(walker.tree.Statements[child].Value), ok
 }
 
-// isEvent reports whether the label is the name of an event in the file. It is a namespace that the file declares above
-// the statement, a dot and an id.
+// isEvent reports whether a label names an event: a namespace that the file declares above the statement, a dot and an
+// id.
 func (walker *walker) isEvent(label string, statement int32) bool {
 	return slices.ContainsFunc(walker.frames[0].context.Namespaces, func(declaring int32) bool {
 		namespace := walker.tree.Unquoted(walker.tree.Statements[declaring].Value)
@@ -191,7 +191,7 @@ func (walker *walker) findNested(statement int32, level int) (Definition, bool) 
 	return Definition{}, false
 }
 
-// findNestedDatabase returns the database that a nesting defines in. It also reports whether that is the holder's own.
+// findNestedDatabase returns the database that a nesting defines in, and whether it is the holder's own database.
 func (walker *walker) findNestedDatabase(nesting game.Nesting) (string, bool) {
 	if nesting.Database != "" {
 		return nesting.Label(), false

@@ -320,12 +320,13 @@ func (mcp *Service) describePages() string {
 		fmt.Fprintf(&guide, "# %s (%s)\n\n%s\n\n", page.Title, page.ID, strings.Join(page.Help, "\n\n"))
 	}
 	guide.WriteString(guideShow)
-	for _, page := range lo.Uniq(lo.Map(queryKeys, func(row queryKey, _ int) string { return row.Page })) {
-		keys := lo.FilterMap(queryKeys, func(row queryKey, _ int) (string, bool) {
+	pages := lo.PartitionBy(queryKeys, func(row queryKey) string { return row.Page })
+	for _, rows := range pages {
+		keys := lo.Map(rows, func(row queryKey, _ int) string {
 			values := lo.Ternary(len(row.Values) > 0, health.JoinList(row.Values, "or")+": ", "")
-			return fmt.Sprintf("%s (%s%s)", row.Key, values, row.Help), row.Page == page
+			return fmt.Sprintf("%s (%s%s)", row.Key, values, row.Help)
 		})
-		fmt.Fprintf(&guide, "\n- %s: %s.", page, strings.Join(keys, "; "))
+		fmt.Fprintf(&guide, "\n- %s: %s.", rows[0].Page, strings.Join(keys, "; "))
 	}
 	return guide.String()
 }
@@ -450,9 +451,8 @@ func (mcp *Service) searchText(ctx context.Context, _ *sdk.CallToolRequest, requ
 	return nil, hits, err
 }
 
-// rename previews giving the name at a position a new name in every mod file, or makes the change a token names. It
-// returns an error if the file is outside the workspace's mods or the game's own, or if no name that only the mods
-// define is at the position.
+// rename previews renaming the name at a position in every mod file, or makes the change a token names. It returns
+// an error if the file is not one of the workspace's mods, or if no name that only the mods define is at the position.
 func (mcp *Service) rename(request renaming) (any, error) {
 	if request.Token != "" {
 		return mcp.confirm(request.Token)
@@ -501,9 +501,9 @@ func collectEntries(symbols []lsp.Symbol, entry string) []lsp.Symbol {
 	return entries
 }
 
-// writeScaffold previews writing the localization keys a mod lacks in a language, by how many keys each file gets, or
-// writes those a token names. It returns an error if the workspace has no such mod, the game no such language, the
-// mod lacks no key, or a file it would change has text the user has not saved.
+// writeScaffold previews writing the localization keys a mod lacks in a language, as how many keys each file would
+// get, or makes the change a token names. It returns an error if the workspace has no such mod, the game no such
+// language, the mod lacks no key, or a file it would change has text the user has not saved.
 func (mcp *Service) writeScaffold(request scaffolding) (any, error) {
 	if request.Token != "" {
 		return mcp.confirm(request.Token)

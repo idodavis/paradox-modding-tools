@@ -21,8 +21,8 @@ type element struct {
 	attributes []string // the attributes it keeps
 }
 
-// anchor is the attributes that may carry the target of a link inside the page. A heading or an element directly in
-// one keeps them. span is the attributes a table's cell keeps.
+// anchor is the attribute a link inside the page can point to. Only a heading, and an element directly inside a
+// heading, keeps it. span is the attributes a table cell keeps.
 var (
 	anchor = []string{"id"}
 	span   = []string{"colspan", "rowspan"}
@@ -101,7 +101,7 @@ func sanitize(parent *html.Node, origin *url.URL) {
 	for child := parent.FirstChild; child != nil; {
 		next := child.NextSibling
 		switch _, kept := elements[child.DataAtom]; {
-		case child.Type == html.TextNode:
+		case child.Type == html.TextNode: // text stays as it is
 		case child.Type != html.ElementNode || isDropped(child):
 			parent.RemoveChild(child)
 		case kept:
@@ -175,7 +175,7 @@ func arrangeSections(root *html.Node) {
 	for start := 0; start < len(nodes); start++ {
 		title := strings.ToLower(strings.TrimSpace(textOf(nodes[start])))
 		level := levelOf(nodes[start])
-		if level == 0 || !slices.Contains(droppedSections, title) && !slices.Contains(lastSections, title) {
+		if level == 0 || (!slices.Contains(droppedSections, title) && !slices.Contains(lastSections, title)) {
 			continue
 		}
 		end := start + 1

@@ -8,7 +8,7 @@ import { describeCount } from "../lib/format";
 import { levelsQuery } from "../queries";
 
 const { levels = undefined } = defineProps<{
-  /** How many problems there are of each level, by Go's level. Without counts it says there are none. */
+  /** How many problems there are of each level id. Without counts it shows "No problems". */
   levels?: Tally["counts"];
 }>();
 

@@ -28,7 +28,7 @@ const (
 	SourceDocs                   // the prose the install ships beside its script (.info, .md, readme.txt)
 	SourceWiki                   // the community wiki, taken where no game source contradicts it
 	SourceVanilla                // the install's own files: evidence, never a claim that accuses
-	SourceInferred               // no source states it: written as inferred, it never fails a verdict
+	SourceInferred               // no source states it, so it never fails a verdict
 	// SourceDefinitions is what a definition in the files says its name takes. It claims on fields of its own, so its
 	// rank among the others is never tried.
 	SourceDefinitions
@@ -75,7 +75,7 @@ type Game struct {
 	// LogsRepeatedKey says whether the game logs a localization key that a mod and the game both write outside a
 	// replace folder.
 	LogsRepeatedKey bool `json:"-"`
-	// DecisionEffects is the effects that run the decision they name, as its dumps declare them. With none, no effect
+	// DecisionEffects are the effects that run the decision they name, as its dumps declare them. With none, no effect
 	// fires a decision.
 	DecisionEffects []string `json:"-"`
 	// MessageTitle is the localization key of a message's title where the message writes none, with its name at %s.
@@ -225,7 +225,7 @@ var games = map[string]*Game{
 			// common/defines/graphic/00_graphics.txt:812-813: GOVERNMENT_TYPE_REALM_MASK_PATH with
 			// GOVERNMENT_TYPE_REALM_FRAME_MASK_SUFFIX
 			SuffixStems: map[string]string{"GOVERNMENT_TYPE_REALM_MASK": "GOVERNMENT_TYPE_REALM_FRAME_MASK"},
-			// common/defines/graphic/00_graphics.txt:782 writes TRAIT_ICON_PATH in it, and :812 the realm mask's path
+			// common/defines/graphic/00_graphics.txt:782 writes TRAIT_ICON_PATH in NGameIcons, and :812 the realm mask's path
 			DefineGroup: "NGameIcons",
 			// seven tiers: cell 3 for a count, 4 for a duke, from 5 for a king or an emperor
 			Tiers: TierFrames{
@@ -244,28 +244,10 @@ var games = map[string]*Game{
 			// the frames of gui/shared/coa_designer.gui, without the unit's 3D banner. Each define is named in full, as
 			// common/defines/graphic/00_graphics.txt:309,319 write them in NCoatOfArms.
 			Frames: []CoatFrame{
-				{
-					Label: "Dynasty", Define: "NCoatOfArms|DEFAULT_DYNASTY_COA_FRAME_NAME",
-					Override: CoatOverride{
-						Frame: "NCoatOfArms|OVERRIDE_DYNASTY_COA_FRAME_NAME", Offset: "NCoatOfArms|OVERRIDE_DYNASTY_COA_FRAME_OFFSET",
-						Scale: "NCoatOfArms|OVERRIDE_DYNASTY_COA_FRAME_SCALE",
-					},
-				},
-				{
-					Label: "House", Define: "NCoatOfArms|DEFAULT_HOUSE_COA_FRAME_NAME",
-					Override: CoatOverride{
-						Frame: "NCoatOfArms|OVERRIDE_HOUSE_COA_FRAME_NAME", Offset: "NCoatOfArms|OVERRIDE_HOUSE_COA_FRAME_OFFSET",
-						Scale: "NCoatOfArms|OVERRIDE_HOUSE_COA_FRAME_SCALE",
-					},
-				},
+				{Label: "Dynasty", Define: "NCoatOfArms|DEFAULT_DYNASTY_COA_FRAME_NAME"},
+				{Label: "House", Define: "NCoatOfArms|DEFAULT_HOUSE_COA_FRAME_NAME"},
 				{Label: "Title", Mask: "gfx/interface/coat_of_arms/title_mask.dds"},
-				{
-					Label: "Realm", Mask: "gfx/interface/icons/realm_frames/_default_mask.dds",
-					Override: CoatOverride{
-						Enabled: "NCoatOfArms|OVERRIDE_REALM_MASK_ENABLED", Offset: "NCoatOfArms|OVERRIDE_REALM_MASK_OFFSET",
-						Scale: "NCoatOfArms|OVERRIDE_REALM_MASK_SCALE",
-					},
-				},
+				{Label: "Realm", Mask: "gfx/interface/icons/realm_frames/_default_mask.dds"},
 			},
 			ColorForm: jomini.ColorForm{Tag: "rgb", Example: []float64{255, 255, 255}},
 		},
@@ -298,7 +280,7 @@ var games = map[string]*Game{
 			}},
 		}},
 		TakesModes: true,
-		// localization/english/content_304_l_english.yml:228 names arranged_accident_failed's title so
+		// localization/english/content_304_l_english.yml:228 titles arranged_accident_failed by this form
 		MessageTitle: "notification_%s_name",
 		// victoria3.exe matches the path part /replace/; no source says which form wins
 		LocReplaceFolders: []string{"localization/%s/replace", "localization/replace/%s"},
@@ -359,7 +341,7 @@ var games = map[string]*Game{
 		GUI: GameGUI{
 			Holders:    map[string]string{"lateralview": "lateralview_left_layer"},
 			Undeclared: []string{"axis", "plotline", "screen_grab", "newsfeed_carousel"},
-			// loading_screen/common/defines/graphic/00_graphics.txt writes its kinds' icon paths in it
+			// loading_screen/common/defines/graphic/00_graphics.txt writes its kinds' icon paths in NGameIcons
 			DefineGroup: "NGameIcons",
 		},
 		Coat: GameCoat{

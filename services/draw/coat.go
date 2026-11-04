@@ -166,7 +166,7 @@ func (drw *Service) findCoat(path, name string, picks map[string]string) (*coatR
 	}
 	mods := resolveIndex(ws, path)
 	isCoat := func(database string) bool { return database == game.Coat.Database }
-	definition, _, err := (&library{ws: ws, mods: mods}).findDrawn(path, name, isCoat)
+	definition, _, err := makeLibrary(ws, mods).findDrawn(path, name, isCoat)
 	if err != nil {
 		return nil, err
 	}
@@ -193,7 +193,8 @@ func findFieldSize(ws *workspace.Session, mods *index.Index) (width, height int)
 			continue
 		}
 		if numbers := listNumbers(size); len(numbers) > 0 {
-			return int(numbers[0]), int(numbers[min(1, len(numbers)-1)])
+			pair := toPair(numbers)
+			return int(pair[0]), int(pair[1])
 		}
 	}
 	return 0, 0
@@ -465,17 +466,16 @@ func (resolver *coatResolver) resolveColors(fields []clause, base, baseNames []s
 	return colors, names, lists
 }
 
-// resolveColor returns the CSS of the color a statement writes and the named color's name: a color block, which has
-// no name, the name of a named color, or the name of a slot, which is the base's color and name in it. It also
-// returns the list the color is drawn from.
+// resolveColor returns the CSS of the color a statement writes, the color's name and the list it is drawn from. The
+// statement writes a color block, which has no name, the name of a named color, or the key of a slot, which takes the
+// base color and name of that slot.
 func (resolver *coatResolver) resolveColor(field clause, base, baseNames []string) (string, string, []Group) {
 	if css := makeColor(field); css != "" {
 		return css, "", nil
 	}
 	label, lists := resolver.resolveValue(field)
-	if position := slices.IndexFunc(game.Coat.Slots, func(slot game.CoatSlot) bool {
-		return strings.EqualFold(slot.Key, label)
-	}); position >= 0 {
+	position := slices.IndexFunc(game.Coat.Slots, func(slot game.CoatSlot) bool { return strings.EqualFold(slot.Key, label) })
+	if position >= 0 {
 		return lo.NthOr(base, position+1, ""), lo.NthOr(baseNames, position+1, ""), lists
 	}
 	css, ok := resolver.colors[label]
@@ -536,17 +536,23 @@ func setPlacement(instance *Instance, part game.CoatPart, numbers []float64) {
 	if len(numbers) == 0 {
 		return
 	}
-	pair := [2]float64{numbers[0], numbers[min(1, len(numbers)-1)]}
 	switch part {
 	case game.CoatPartCenter, game.CoatPartCorner:
-		instance.Position = pair
+		instance.Position = toPair(numbers)
 	case game.CoatPartSize:
-		instance.Scale = pair
+		instance.Scale = toPair(numbers)
 	case game.CoatPartTurn:
 		instance.Rotation = numbers[0]
 	case game.CoatPartDepth:
 		instance.Depth = numbers[0]
 	}
+}
+
+// toPair returns the first two of the given numbers, or the one number twice if there is only one. The numbers are not
+// empty.
+// toPair returns the first two of the given numbers, the first twice where there is only one.
+func toPair(numbers []float64) [2]float64 {
+	return [2]float64{numbers[0], numbers[min(1, len(numbers)-1)]}
 }
 
 // listNumbers returns the numbers a statement writes: its value and the bare values inside its block, each as the
@@ -641,11 +647,11 @@ func listImages(ws *workspace.Session, mods *index.Index, folder string) []Image
 	return slices.CompactFunc(images, func(first, second Image) bool { return first.Label == second.Label })
 }
 
-// AddLayer inserts a new layer into a coat at the given position among its layers, 0 being first, and returns the
-// edits that do it. The new layer is the game's template for the given role. It returns an error if the file does not
-// define the coat, the coat is written as the name of another, or a pattern is added to a coat that has one. It also
-// returns an error if the game has no template for the role or nothing to start the layer from, or if the layer before
-// the position does not exist or comes from a parent coat.
+// AddLayer returns the edits that insert a new layer into a coat at the given position among its layers, 0 being first.
+// The new layer is the game's template for the given role. It returns an error if the file does not define the coat,
+// the coat is written as the name of another, or a pattern is added to a coat that has one. It also returns an error if
+// the game has no template for the role or nothing to start the layer from, or if the layer before the position does
+// not exist or comes from a parent coat.
 func (drw *Service) AddLayer(path, coat, role string, position int) ([]lsp.Edit, error) {
 	resolver, err := drw.findCoat(path, coat, nil)
 	if err != nil {
@@ -657,7 +663,7 @@ func (drw *Service) AddLayer(path, coat, role string, position int) ([]lsp.Edit,
 		return nil, fmt.Errorf("the coat %q is written as the name of another coat", coat)
 	}
 	layers := resolver.listLayers()
-	if role == game.Coat.PatternKey && slices.ContainsFunc(layers, isPattern) {
+	if _, hasPattern := findField(layers, game.Coat.PatternKey); hasPattern && role == game.Coat.PatternKey {
 		return nil, fmt.Errorf("the coat %q has a pattern already", coat)
 	}
 	lines, err := makeLayerLines(resolver.ws, resolver.mods, role, coat)
@@ -687,15 +693,9 @@ func (drw *Service) AddLayer(path, coat, role string, position int) ([]lsp.Edit,
 	return lsp.ToEdits(tree.Src, tree.Lines, []jomini.Edit{edit}), nil
 }
 
-// isPattern reports whether a statement writes a coat's pattern.
-func isPattern(field clause) bool {
-	key, _, _ := splitField(field)
-	return key == game.Coat.PatternKey
-}
-
-// makeLayerLines returns the lines of the game's template for a layer with the given role. The layer starts from the
-// role's first texture, the template's pattern first, or for a sub from the first coat other than the given one. It
-// returns an error for a role the template has no layer for, or a game with nothing to start one from.
+// makeLayerLines returns the lines of the game's template for a layer with the given role, filled in by
+// findTemplateFill. The given coat is the one the layer is added to. It returns an error for a role the template has no
+// layer for, or a game with nothing to start one from.
 func makeLayerLines(ws *workspace.Session, mods *index.Index, role, coat string) ([]string, error) {
 	lines, ok := game.Coat.Template.Layers[role]
 	if !ok {
@@ -708,9 +708,9 @@ func makeLayerLines(ws *workspace.Session, mods *index.Index, role, coat string)
 	return lo.Map(lines, func(line string, _ int) string { return strings.ReplaceAll(line, "%s", fill) }), nil
 }
 
-// findTemplateFill returns what a new layer with the given role starts from: for a sub, the first coat by name other
-// than the given one; for another role, the role's first texture file whose name starts with the template's pattern,
-// else its first. It returns an error if the game has none.
+// findTemplateFill returns what a new layer with the given role starts from. For a sub it is the first coat by name
+// other than the given one. For any other role it is the role's first texture file whose name starts with the
+// template's pattern, else its first texture file. It returns an error if the game has none.
 func findTemplateFill(ws *workspace.Session, mods *index.Index, role, coat string) (string, error) {
 	if role == game.Coat.SubKey {
 		names := lo.FilterMap(mods.ListKept(ws.Schema, game.Coat.Database), func(winner index.Winner, _ int) (string, bool) {

@@ -19,8 +19,8 @@ func ToKey(path string) string {
 	return strings.ToLower(toSlash(path))
 }
 
-// ToRel returns a path relative to a root, with forward slashes. It returns false if the path is not under the
-// root.
+// ToRel returns the path relative to the given root, with forward slashes. It returns false if the path is not under
+// the root.
 func ToRel(root, path string) (string, bool) {
 	key := ToKey(root)
 	if !strings.HasPrefix(ToKey(path), key+"/") {
@@ -36,7 +36,7 @@ func Join(root, rel string) string {
 	return filepath.Join(root, filepath.FromSlash(rel))
 }
 
-// IsUnder reports whether a path lies inside a root, comparing their keys.
+// IsUnder reports whether the path is under the given root, comparing their keys.
 func IsUnder(root, path string) bool {
 	_, ok := ToRel(root, path)
 	return ok
@@ -77,7 +77,7 @@ func IsFolder(path string) bool {
 	return err == nil && stat.IsDir()
 }
 
-// IsFile reports whether a path is a file that exists, a folder not counting.
+// IsFile reports whether a path is an existing file. A folder is not one.
 func IsFile(path string) bool {
 	stat, err := os.Stat(path)
 	return err == nil && !stat.IsDir()

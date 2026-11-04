@@ -378,7 +378,7 @@ func (stm *Service) ListListings(modID string) ([]Listing, error) {
 
 // CreateListing makes an older listing of a mod for a game version from a zip. It returns an error if the version is
 // not valid or taken, or the zip holds no descriptor.
-func (stm *Service) CreateListing(modID, supportedVersion, zip string) (Listing, error) {
+func (stm *Service) CreateListing(modID, supportedVersion, zipPath string) (Listing, error) {
 	ws, mod, own, err := stm.findListing(modID, "")
 	if err != nil {
 		return Listing{}, err
@@ -387,13 +387,13 @@ func (stm *Service) CreateListing(modID, supportedVersion, zip string) (Listing,
 	if err != nil {
 		return Listing{}, err
 	}
-	_, descriptor, err := loadZip(ws.Game, stm.Workspace.Config.Dirs.Cache, mod.ID+"/"+key, zip)
+	_, descriptor, err := loadZip(ws.Game, stm.Workspace.Config.Dirs.Cache, mod.ID+"/"+key, zipPath)
 	if err != nil {
 		return Listing{}, err
 	}
 	return stm.createListing(ws, mod, Listing{
 		Key: key, Title: own.Title + " (" + key + ")", Version: descriptor.Version, SupportedVersion: supported,
-		Tags: own.Tags, Thumbnail: own.Thumbnail, Description: own.Description, DLC: own.DLC, Source: zip,
+		Tags: own.Tags, Thumbnail: own.Thumbnail, Description: own.Description, DLC: own.DLC, Source: zipPath,
 	})
 }
 
@@ -429,7 +429,7 @@ func (stm *Service) createListing(ws *workspace.Session, mod workspace.Mod, list
 
 // ImportListing makes an older listing of a mod from a Workshop item, saving its files as a zip. It returns an error
 // if Steam has no such item or its version is taken.
-func (stm *Service) ImportListing(modID, item, zip string) (Listing, error) {
+func (stm *Service) ImportListing(modID, item, zipPath string) (Listing, error) {
 	ws, mod, err := stm.findMod(modID)
 	if err != nil {
 		return Listing{}, err
@@ -458,7 +458,7 @@ func (stm *Service) ImportListing(modID, item, zip string) (Listing, error) {
 	}
 	walked, err := files.Walk(files.Root{Dir: snapshotDir})
 	if err == nil {
-		err = writeArchive(zip, walked)
+		err = writeArchive(zipPath, walked)
 	}
 	if err != nil {
 		return Listing{}, err
@@ -468,7 +468,7 @@ func (stm *Service) ImportListing(modID, item, zip string) (Listing, error) {
 		Key: key, WorkshopID: workshopID, Title: details.Title, Description: details.Description,
 		Tags:     toCategoryTags(stm.listVersionTags(ws.Game.SteamAppID), details.Tags),
 		Previews: details.Previews, DLC: details.DLC, Version: descriptor.Version, SupportedVersion: supported,
-		Source: zip,
+		Source: zipPath,
 	})
 }
 
@@ -535,8 +535,8 @@ func (stm *Service) ListUpload(modID, key string) (Upload, error) {
 	return upload, err
 }
 
-// buildUpload returns the files that the next upload of a listing of a mod sends and leaves out, and the ignores
-// that part them. It returns an error if the listing's zip or a file cannot be read.
+// buildUpload returns the files that the next upload of a mod's listing sends and leaves out, and the ignores that
+// decide which are left out. It returns an error if the listing's zip or a file cannot be read.
 func (stm *Service) buildUpload(
 	ws *workspace.Session, mod workspace.Mod, listing Listing,
 ) (Upload, []files.Ignore, error) {
@@ -609,19 +609,19 @@ func (stm *Service) resolveSource(ws *workspace.Session, mod workspace.Mod, list
 	return dir, workspace.WriteDescriptor(ws.Game, dir, descriptor)
 }
 
-// loadZip returns the cache folder holding a zip's files and the mod's descriptor in it, extracting the zip if it
+// loadZip returns the cache folder that holds a zip's files and the descriptor in them, extracting the zip if it
 // changed. It returns an error if the zip cannot be read or holds no descriptor.
-func loadZip(row *game.Game, cacheDir, listing, zip string) (string, workspace.Descriptor, error) {
+func loadZip(row *game.Game, cacheDir, cacheKey, zip string) (string, workspace.Descriptor, error) {
 	extractTurn.Lock()
 	defer extractTurn.Unlock()
 	stat, err := os.Stat(zip)
 	if err != nil {
 		return "", workspace.Descriptor{}, err
 	}
-	digest := sha256.Sum256([]byte(listing))
+	digest := sha256.Sum256([]byte(cacheKey))
 	dir := filepath.Join(cacheDir, "listing-"+hex.EncodeToString(digest[:8]))
 	stamp := fmt.Sprintf("%s\n%d\n%d\n", files.ToKey(zip), stat.Size(), stat.ModTime().UnixNano())
-	if kept, err := os.ReadFile(dir + ".stamp"); err != nil || string(kept) != stamp || !files.IsFolder(dir) {
+	if saved, err := os.ReadFile(dir + ".stamp"); err != nil || string(saved) != stamp || !files.IsFolder(dir) {
 		if err := extractZip(cacheDir, zip, dir, stamp); err != nil {
 			return "", workspace.Descriptor{}, err
 		}
@@ -654,18 +654,18 @@ func extractZip(cacheDir, zipFile, dir, stamp string) error {
 	return os.WriteFile(dir+".stamp", []byte(stamp), 0o644)
 }
 
-// WriteZip writes the files of a mod's next upload as a zip. A zip it fails to write is removed.
-func (stm *Service) WriteZip(modID, path string) error {
+// WriteZip writes the files of a mod's next upload as a zip. It removes the zip if writing fails.
+func (stm *Service) WriteZip(modID, target string) error {
 	upload, err := stm.ListUpload(modID, "")
 	if err != nil {
 		return err
 	}
-	return writeArchive(path, upload.Files)
+	return writeArchive(target, upload.Files)
 }
 
-// writeArchive writes files as a zip, each at its path from its own folder. A zip it fails to write is removed.
-func writeArchive(path string, list []files.File) error {
-	zipFile, err := os.Create(path)
+// writeArchive writes the files as a zip, each stored under its Rel path. It removes the zip if writing fails.
+func writeArchive(target string, list []files.File) error {
+	zipFile, err := os.Create(target)
 	if err != nil {
 		return err
 	}
@@ -676,7 +676,7 @@ func writeArchive(path string, list []files.File) error {
 		}
 	}
 	if err = errors.Join(err, archive.Close(), zipFile.Close()); err != nil {
-		return errors.Join(err, os.Remove(path))
+		return errors.Join(err, os.Remove(target))
 	}
 	return nil
 }

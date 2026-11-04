@@ -16,14 +16,14 @@ import type { Mod } from "@services/workspace/models";
 const { mod } = defineProps<{ mod: Mod }>();
 const open = defineModel<boolean>("open", { required: true });
 
-const store = useWorkspaceStore();
+const workspace = useWorkspaceStore();
 const settings = useSettingsStore();
 const toast = useToast();
 const tab = shallowRef("included");
 // The latest write of the mod's record, which an export waits for.
 let lastUpdate: Promise<void> | undefined;
 
-const enabled = computed(() => open.value && store.isOpen());
+const enabled = computed(() => open.value && workspace.isOpen());
 const { data: rules } = useQuery(rulesQuery);
 const { data: upload } = useQuery(() => ({ ...uploadQuery({ modId: mod.id, key: "" }), enabled: enabled.value }));
 // the text of the mod's .workshop-ignore file, or "" when the folder has none
@@ -38,7 +38,7 @@ const tabs = computed(() => [
 ]);
 
 const { mutate: update } = useMutation({
-  mutation: (changes: Partial<ModRecord>) => (lastUpdate = store.updateMod(store.activeId(), mod.id, changes)),
+  mutation: (changes: Partial<ModRecord>) => (lastUpdate = workspace.updateMod(workspace.activeId(), mod.id, changes)),
 });
 const { mutate: exportIgnore } = useMutation({
   mutation: async () => {

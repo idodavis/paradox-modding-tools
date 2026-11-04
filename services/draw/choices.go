@@ -40,8 +40,8 @@ type Row struct {
 	Choices    map[int32][]Choice `json:"choices"`
 }
 
-// A PictureList is where the pictures are listed that a picture binding may draw: the images that one definition
-// writes, or, where Name is "", what the binding shows of each definition of a database, which a pick of one sets.
+// A PictureList says where the pictures a picture binding may draw are listed. With a Name it lists the images that one
+// definition writes. With no Name it lists what the binding shows of each definition of a database.
 type PictureList struct {
 	Key      string `json:"key"` // the key of the property whose binding draws them
 	Database string `json:"database"`
@@ -76,7 +76,7 @@ func (drw *Service) ListPictures(path string, list PictureList) ([]Picture, erro
 	}
 	mods := resolveIndex(ws, path)
 	if list.Name == "" {
-		library := &library{ws: ws, mods: mods}
+		library := makeLibrary(ws, mods)
 		pictures := []Picture{}
 		for _, reference := range library.listObjects(list) {
 			if file := library.findShown(list, reference); file != "" {
@@ -185,12 +185,11 @@ func pickColors(opened opening, picks map[string]string, choices map[int32][]Cho
 	}
 }
 
-// listRows returns, by the item of a data model in a window as it opens, the rows its list draws: one for each of the
-// first definitions of the database of the objects the list holds, up to the count the window opens with, in load
-// order and each name once. That is the database of the first list, among those listDatabaseLists finds for the
-// item's widgets, its nested items' apart, whose binding reads its object as an element, as readsElement says. Each
-// row gives the widgets that read the database the pictures and colors of its definition. An item that reads no such
-// list is left out, and its list draws the page's sample rows.
+// listRows returns, by the item of a data model in a window as it opens, the rows its list draws. A row is one of the
+// first definitions of the item's database, in load order with each name once, up to the number of rows the window
+// opens with. The database is that of the first list, among those of the item's widgets, whose binding reads its
+// object as an element (readsElement). Each row gives the widgets that read the database the pictures and colors of its
+// definition. An item that reads no such list is left out, and its list draws the page's sample rows.
 func listRows(opened opening) map[int32][]Row {
 	library, window, contexts := opened.library, &opened.evaluator.window, opened.evaluator.contexts
 	items := listItems(window.Widgets)
@@ -202,10 +201,11 @@ func listRows(opened opening) map[int32][]Row {
 		lists, database := map[int32][]PictureList{}, ""
 		for _, widget := range members {
 			lists[widget.ID] = listDatabaseLists(widget, opened.colorLists[widget.ID])
-			if element, ok := lo.Find(lists[widget.ID], func(list PictureList) bool {
-				return library.readsElement(window, widget, list, contexts[widget.ID])
-			}); ok {
-				database = cmp.Or(database, element.Database)
+			for _, list := range lists[widget.ID] {
+				if library.readsElement(window, widget, list, contexts[widget.ID]) {
+					database = cmp.Or(database, list.Database)
+					break
+				}
 			}
 		}
 		if database != "" {
@@ -249,13 +249,13 @@ func listDatabaseLists(widget Widget, colorLists []PictureList) []PictureList {
 func (library *library) pickDefinitions(widgets []Widget, lists map[int32][]PictureList,
 	definitions map[string]string) map[int32][]Choice {
 	choices := map[int32][]Choice{}
-	for id := range lists {
-		for _, list := range lists[id] {
+	for id, widgetLists := range lists {
+		for _, list := range widgetLists {
 			definition, ok := definitions[list.Database]
 			if !ok {
 				continue
 			}
-			if choice, chosen := library.pickDefinition(widgets[id], list, definition); chosen {
+			if choice, ok := library.pickDefinition(widgets[id], list, definition); ok {
 				choices[id] = append(choices[id], choice)
 			}
 		}

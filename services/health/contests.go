@@ -1,5 +1,5 @@
-// contests.go finds the names and files that the mods and the game both write, which copy the game keeps of each, and
-// the ones whose kept copy the sources leave open. It also lists what another load order changes.
+// contests.go finds the names and files that two or more mods, or a mod and the game, both write. It reports which copy
+// the game keeps, and the names whose kept copy the sources leave open. It also lists what another load order changes.
 
 package health
 
@@ -26,11 +26,11 @@ const (
 	sharedMessageCode = "shared-message"    // two or more mods define one localization key in one language
 )
 
-// listDefinitionFindings lists the findings about the loaded copies of one name, given the copy the game keeps. A
-// block that merged copies cannot both write is an undecided contest where copies in two files write it. A name whose
-// kept copy no source settles is an undecided contest too. Any other name is a contest where two or more mods define
-// it, and an override or an unused copy where the game defines it as well. A database that keeps every copy has
-// neither.
+// listDefinitionFindings lists the findings about the loaded copies of one name, given the winner. A contested block,
+// one that merged copies cannot both write, makes an undecided contest if copies in two files write it. A name whose
+// kept copy no source settles is an undecided contest too. Any other name is a contest if two or more mods define it,
+// and an override or an unused copy if the game defines it as well. A database that keeps every copy has none of
+// these.
 func listDefinitionFindings(ws *workspace.Session, mods *index.Index, reference schema.Reference, winner index.Winner) []Finding {
 	sites := listLoaded(mods, mods.Resolve(reference))
 	precedence := ws.Schema.Databases[reference.Database].Precedence
@@ -126,8 +126,8 @@ func describeCause(mods *index.Index, sites []index.Site, winner index.Winner, p
 	return "it is not documented whether a replace_path drops another mod's files"
 }
 
-// findModePrefix returns the prefix of the first entry mode among definitions that a test of the mode accepts. It
-// returns "" if none does.
+// findModePrefix returns the prefix of the first site's entry mode that the given test accepts. It returns "" if none
+// does.
 func findModePrefix(mods *index.Index, sites []index.Site, accepts func(game.EntryMode) bool) string {
 	for _, site := range sites {
 		if mode, known := mods.FindMode(site); known && accepts(mode) {
@@ -188,8 +188,8 @@ func listSharedMessages(ws *workspace.Session, mods *index.Index, messages []ind
 	return findings
 }
 
-// isGameFolder reports whether the game reads a mod's file at a path: whether its first folder, less the stage folder
-// that opens it, is one the game's own files lie in. A file at the top of the mod or of its stage lies in none.
+// isGameFolder reports whether the first folder of a mod file's path, after any stage folder, is one the game's own
+// files lie in. A file at the top of the mod or of its stage is in none.
 func isGameFolder(ws *workspace.Session, rel string) bool {
 	_, rest := ws.Game.SplitStage(strings.ToLower(rel))
 	folder, _, nested := strings.Cut(rest, "/")
@@ -242,7 +242,7 @@ func resolveForgiven(finding *Finding, forgiven map[[2]string]bool) {
 	}
 }
 
-// listEveryPair returns every two of some ids, each pair in their order.
+// listEveryPair returns each pair of the given ids, in the order the ids come in.
 func listEveryPair(ids []string) [][2]string {
 	return lo.FlatMap(ids, func(first string, position int) [][2]string {
 		return lo.Map(ids[position+1:], func(second string, _ int) [2]string { return [2]string{first, second} })

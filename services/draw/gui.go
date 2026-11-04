@@ -157,8 +157,8 @@ type gathering struct {
 	missing   []Property // the types and templates it uses that no file defines
 	states    []clause   // the states it has
 	overlays  []int32    // the positions of the textures it overlays among its window's overlays
-	// triggers is the states that its opening and its holders' run on the widgets under it, by their names, which
-	// those widgets open with
+	// triggers holds, by the name of a widget under it, the labels of the states that an opening call of this widget
+	// or one above it starts on that widget with FindChild and TriggerAnimation. The widget opens with them.
 	triggers map[string][]string
 }
 
@@ -295,7 +295,7 @@ func (drw *Service) ResolveWindow(path, name string) (Window, error) {
 	}
 	drw.mu.Lock()
 	defer drw.mu.Unlock()
-	opened, err := drw.resolveOpening(ws, path, name)
+	opened, err := drw.openWindow(ws, path, name)
 	if err != nil {
 		return Window{}, err
 	}
@@ -332,12 +332,12 @@ func (drw *Service) findWindow(path, name string) (opening, error) {
 		kept.evaluator.rows == drw.lookupRows(ws) {
 		return kept, nil
 	}
-	return drw.resolveOpening(ws, path, name)
+	return drw.openWindow(ws, path, name)
 }
 
-// resolveOpening resolves a window of a GUI file as it opens, without its rows, and keeps it. It returns an error if
-// the file is not in the workspace or does not define the window. It runs under the service's lock.
-func (drw *Service) resolveOpening(ws *workspace.Session, path, name string) (opening, error) {
+// openWindow resolves a window of a GUI file as it opens, without its rows, and keeps it. It returns an error if the
+// file is not in the workspace or does not define the window. It runs under the service's lock.
+func (drw *Service) openWindow(ws *workspace.Session, path, name string) (opening, error) {
 	mods := resolveIndex(ws, path)
 	resolver := makeResolver(ws, mods, path)
 	window, err := resolver.resolveWindow(path, name)
@@ -397,11 +397,11 @@ func makeResolver(ws *workspace.Session, mods *index.Index, path string) *resolv
 	file, _ := mods.FindFile(path)
 	return &resolver{ws: ws, mods: mods, file: file, isRead: mods.IsLoaded(file),
 		places: &table[string, workspace.Place]{}, properties: &table[Property, Property]{}, overlays: &table[string, Overlay]{},
-		definitions: map[string]clause{}, library: &library{ws: ws, mods: mods}}
+		definitions: map[string]clause{}, library: makeLibrary(ws, mods)}
 }
 
-// resolveWindow resolves a window that a file defines, as ResolveWindow does, but leaves its places to the caller. It
-// keeps what each widget reads its bindings in, and the lists of its bindings of a definition's color.
+// resolveWindow resolves the window a file defines under the given name. Unlike ResolveWindow, it leaves the window's
+// places, fonts, conditions, missing types and groups to the caller. It keeps each widget's context and color lists.
 func (resolver *resolver) resolveWindow(path, name string) (Window, error) {
 	ws, mods := resolver.ws, resolver.mods
 	definition, site, err := resolver.library.findDrawn(path, name,
@@ -417,7 +417,7 @@ func (resolver *resolver) resolveWindow(path, name string) (Window, error) {
 	if root.statement == absentStatement {
 		widgets[0].Range, widgets[0].Place = toRange(definition), resolver.locate(path)
 	}
-	// the holders are resolved first, since their properties join the window's
+	// The holders come first, since resolving them adds to the properties the window takes below.
 	window := Window{Name: name, Widgets: widgets, Holders: resolver.findHolders(key, root)}
 	window.Properties, window.Overlays = resolver.properties.values, resolver.overlays.values
 	resolver.contexts, resolver.colorLists = listContexts(ws.Schema, window), map[int32][]PictureList{}
@@ -462,10 +462,10 @@ func (resolver *resolver) intern(properties []Property) []int32 {
 	})
 }
 
-// findDrawn returns the first definition of a name in a file and the site it is at, among the databases the first
-// given function accepts, else those the next one accepts. The name matches without regard to case. It returns an
-// error if the file is not in the library's index, defines the name in no such database, or has changed since the
-// index read it.
+// findDrawn returns the first definition in a file under the given label, with its site. The label matches without
+// regard to case. The definition's database must pass the first of the given tests, and only if none does, the next
+// test is tried. It returns an error if the file is not in the library's index, defines the label in no database that
+// passes, or has changed since the index scanned it.
 func (library *library) findDrawn(path, label string, tests ...func(database string) bool) (clause, index.Site, error) {
 	file, ok := library.mods.FindFile(path)
 	if !ok {
@@ -503,8 +503,7 @@ func (resolver *resolver) findRoot(definition clause, database, label string) (r
 	return definition, key
 }
 
-// locate returns the position among the window's places of the place of a file, located the first time the file is
-// met.
+// locate returns the position of a file's place among the window's places. The file is located when first met.
 func (resolver *resolver) locate(path string) int32 {
 	return resolver.places.add(path, func() workspace.Place { return resolver.ws.Locate(resolver.mods, path) })
 }
@@ -517,20 +516,21 @@ func (resolver *resolver) buildWidget(own child, parent int32, key string) {
 	}
 	slotKey := strings.ToLower(key)
 	slot, slotted := game.GUI.Slots[slotKey]
-	applied := cmp.Or(slot.Type, key)
+	widgetType := cmp.Or(slot.Type, key)
 	id := int32(len(resolver.widgets))
 	resolver.widgets = append(resolver.widgets, Widget{
-		ID: id, Parent: parent, Type: applied, Slot: lo.Ternary(slotted, slotKey, ""), Role: own.slot.Role,
+		ID: id, Parent: parent, Type: widgetType, Slot: lo.Ternary(slotted, slotKey, ""), Role: own.slot.Role,
 		Item: own.item, Place: resolver.locate(own.path), Range: toRange(own.clause),
 	})
 	outer, outerAncestors := resolver.gathered, resolver.ancestors
-	resolver.gathered = gathering{overrides: map[string]clause{}, triggers: maps.Clone(outer.triggers)}
+	resolver.gathered = gathering{overrides: map[string]clause{}, triggers: map[string][]string{}}
 	maps.Copy(resolver.gathered.overrides, outer.overrides)
+	maps.Copy(resolver.gathered.triggers, outer.triggers)
 	if own.statement != absentStatement {
 		resolver.ancestors = append(resolver.ancestors, own.clause)
 	}
 	defer func() { resolver.gathered, resolver.ancestors = outer, outerAncestors }()
-	builtin, chain := resolver.listTypes(applied, own.clause)
+	builtin, chain := resolver.listTypes(widgetType, own.clause)
 	resolver.widgets[id].TypeDefined = len(chain) > 0
 	links := slices.Concat(chain, []clause{own.clause})
 	resolver.listOverrides(links)
@@ -571,8 +571,8 @@ func (resolver *resolver) listTypes(label string, owner clause) (string, []claus
 	return label, nil
 }
 
-// findCalled returns the definition the game keeps of a type or a template that the given caller names: the widget's
-// own word for a type, using for a template. A definition local to the file of the given clause is tried first.
+// findCalled returns the definition the game keeps of a type or a template, or false if there is none. The caller is
+// the word that names it: the widget's own word for a type, using for a template. The given clause's file goes first.
 func (resolver *resolver) findCalled(owner clause, caller, label string) (clause, bool) {
 	cacheKey := strings.Join([]string{caller, label, owner.path}, "\x00")
 	definition, ok := resolver.definitions[cacheKey]
@@ -585,12 +585,12 @@ func (resolver *resolver) findCalled(owner clause, caller, label string) (clause
 }
 
 // findDeclared returns the definition the game keeps of a label, local ones first. Its statement is absentStatement
-// if the game keeps none.
+// if the game keeps none, and dropped is set if files define the label but the game keeps none of them.
 func (resolver *resolver) findDeclared(owner clause, caller, label string) clause {
 	exists := false
 	position, ok := resolver.mods.FindFile(owner.path)
 	file := lo.Ternary(ok, position, -1)
-	// Callees lists a caller's databases by name, and a local one's name sorts before the shared one's
+	// The caller's databases are listed by name, and the name of a local database sorts before the shared one's.
 	for _, database := range resolver.ws.Schema.Callees[caller] {
 		sites := resolver.mods.ResolveLocal(schema.Reference{Database: database, Name: label}, file)
 		if kept, ok := resolver.findWinner(sites, resolver.ws.Schema.Databases[database].Precedence); ok {
@@ -626,7 +626,7 @@ func (resolver *resolver) isBuiltin(owner clause, label string) bool {
 	return resolver.ws.Schema.WidgetTypes[label] && !definition.dropped
 }
 
-// makeMissing returns the property that marks a type or template the game does not define, used by a clause.
+// makeMissing returns the property that marks the named type or template, which no file defines, used by a clause.
 func (resolver *resolver) makeMissing(key, value string, source clause) Property {
 	return Property{
 		Key: key, Value: value, Origin: originMissing, Source: describeSource(originMissing, ""),
@@ -634,10 +634,9 @@ func (resolver *resolver) makeMissing(key, value string, source clause) Property
 	}
 }
 
-// describeSource returns where a property comes from, in words, by the kind of block it is written in and the type or
-// template that wrote that block: "type" and the type's name, the template's name, "this widget" for the widget's own
-// block, or "in" and the type or template that holds the widget. It returns "missing" for a property that marks what
-// no file defines.
+// describeSource returns in words where a property comes from. One from a type reads "type" and the type's name, and
+// one from a template reads the template's name. One in a widget's own block reads "this widget", or "in" and the name
+// of the type or template that holds the widget. One that marks what no file defines reads "missing".
 func describeSource(origin, writer string) string {
 	switch {
 	case origin == originMissing:
@@ -652,7 +651,7 @@ func describeSource(origin, writer string) string {
 	return "this widget"
 }
 
-// listOverrides notes the blocks that the given clauses replace, a later clause over an earlier one.
+// listOverrides notes the labeled blocks that the given clauses replace, a later clause over an earlier one.
 func (resolver *resolver) listOverrides(links []clause) {
 	for _, link := range links {
 		if link.statement == absentStatement {
@@ -666,8 +665,8 @@ func (resolver *resolver) listOverrides(links []clause) {
 	}
 }
 
-// listFields yields each field of a clause and the bare value before it, in the order the game applies them. A using
-// yields its template's fields, and a labeled block the fields of the block that replaces it, or its own.
+// listFields yields each field of a clause with its lead, as findLead says, in the order the game applies them. A using
+// yields the fields of its template, and a labeled block the fields of the block that replaces it, or its own.
 func (resolver *resolver) listFields(holder clause, depth int) iter.Seq2[string, clause] {
 	return func(yield func(string, clause) bool) {
 		if depth > maxDepth {
@@ -680,7 +679,7 @@ func (resolver *resolver) listFields(holder clause, depth int) iter.Seq2[string,
 			field := clause{tree: holder.tree, path: holder.path, statement: statement, writer: holder.writer, origin: holder.origin}
 			lead := findLead(holder.tree, siblings, position)
 			switch {
-			case current.IsListed():
+			case current.IsListed(): // a bare value is only the lead of the field after it
 			case holder.tree.Unquoted(current.Key) == game.GUI.TemplateCalls:
 				if !current.IsBlock() && !resolver.listTemplate(field, depth, yield) {
 					return
@@ -715,12 +714,12 @@ func (resolver *resolver) listTemplate(using clause, depth int, yield func(strin
 	return true
 }
 
-// findLead returns the lower-case word that opens a labeled block, block or blockoverride. It returns "" for any other
-// statement.
+// findLead returns the lead of the sibling at the given position: the lower-case word that opens a labeled block, block
+// or blockoverride, else the bare value written just before the sibling. It returns "" for any other statement.
 func findLead(tree *jomini.Tree, siblings []int32, position int) string {
 	current := tree.Statements[siblings[position]]
-	if key := strings.ToLower(tree.Unquoted(current.Key)); tree.Unquoted(current.Tag) != "" &&
-		(key == game.GUI.BlockKey || key == game.GUI.BlockCalls) {
+	key := strings.ToLower(tree.Unquoted(current.Key))
+	if tree.Unquoted(current.Tag) != "" && (key == game.GUI.BlockKey || key == game.GUI.BlockCalls) {
 		return key
 	}
 	if position == 0 {
@@ -741,7 +740,7 @@ func (resolver *resolver) resolveBlock(holder clause, depth int) []Property {
 		key := cmp.Or(field.tree.Unquoted(current.Key), field.tree.Unquoted(current.Tag))
 		slot, slotted := game.GUI.Slots[strings.ToLower(key)]
 		switch {
-		case lead == game.GUI.BlockCalls:
+		case lead == game.GUI.BlockCalls: // a blockoverride gives no property; listOverrides took it
 		case current.IsBlock() && (key == game.GUI.ItemKey || slot.Labels):
 			resolver.gatherInner(field, slot, depth)
 		case current.IsBlock() && slotted:
@@ -807,8 +806,9 @@ func (resolver *resolver) classifyState(state clause) (label string, opens, leav
 		if key == game.GUI.WidgetKey && label == "" {
 			label = value
 		}
-		opens = opens || key == game.GUI.WidgetKey && slices.Contains(game.GUI.OpeningStates, value) ||
-			value != "" && strings.EqualFold(game.GUI.OpeningTriggers[key], value)
+		runsByName := key == game.GUI.WidgetKey && slices.Contains(game.GUI.OpeningStates, value)
+		runsByValue := value != "" && strings.EqualFold(game.GUI.OpeningTriggers[key], value)
+		opens = opens || runsByName || runsByValue
 		alpha, err := strconv.ParseFloat(value, 64)
 		fades = fades || key == rules.AlphaKey && err == nil && alpha == 0
 		ends = ends || key == rules.FinishKey && value != ""
@@ -947,25 +947,24 @@ func (resolver *resolver) runState(state clause, states map[string]clause) (prop
 	return properties, after
 }
 
-// triggerStates returns the states that a call in a state triggers by name. It returns none for any other call.
+// triggerStates returns the states that a call in a state triggers by name. A call on a child found by FindChild is
+// noted in the gathering for that child instead. It returns none for any other call.
 func (resolver *resolver) triggerStates(source string, states map[string]clause) []clause {
 	rules := game.GUI.Animation
 	call, ok := jomini.ParseBracketed(source, 0)
-	if !ok || call.Steps[len(call.Steps)-1].Text != rules.Trigger {
+	if !ok {
 		return nil
 	}
 	last := len(call.Steps) - 1
 	labels := listQuoted(call.Steps[last])
-	if len(labels) != 1 {
+	if call.Steps[last].Text != rules.Trigger || len(labels) != 1 {
 		return nil
 	}
-	if children := listQuoted(call.Steps[max(last-1, 0)]); last > 0 && call.Steps[last-1].Text == rules.FindChild &&
-		len(children) == 1 {
-		if resolver.gathered.triggers == nil {
-			resolver.gathered.triggers = map[string][]string{}
+	if last > 0 && call.Steps[last-1].Text == rules.FindChild {
+		if children := listQuoted(call.Steps[last-1]); len(children) == 1 {
+			resolver.gathered.triggers[children[0]] = slices.Concat(resolver.gathered.triggers[children[0]], labels)
+			return nil
 		}
-		resolver.gathered.triggers[children[0]] = slices.Concat(resolver.gathered.triggers[children[0]], labels)
-		return nil
 	}
 	state, ok := states[labels[0]]
 	return lo.Ternary(ok, []clause{state}, nil)
@@ -999,26 +998,26 @@ func (resolver *resolver) resolveWidget(id int32, builtin string, properties []P
 
 // isDropping reports whether the hidden children of a widget take no room. The type's row or the game's list of types
 // can say so, and so can the widget by writing the game's key as yes. Writing the key as no turns it off.
-func (resolver *resolver) isDropping(row game.WidgetType, builtin, ignore string) bool {
-	literal, isLiteral := game.GUI.Literals[strings.ToLower(ignore)]
+func (resolver *resolver) isDropping(row game.WidgetType, builtin, setting string) bool {
+	literal, isLiteral := game.GUI.Literals[strings.ToLower(setting)]
 	if isLiteral && !literal {
 		return false
 	}
 	return row.DropsHidden || slices.Contains(resolver.ws.Game.GUI.DropsHidden, builtin) ||
-		isLiteral && !row.KeepsHidden
+		(isLiteral && !row.KeepsHidden)
 }
 
 // resolveValue returns the text a key's value shows or the image file it names. A localization key shows its message,
 // or itself where it has none, and a raw text shows as written. Both are empty if it leads to neither.
 func (library *library) resolveValue(key, value string) (text []loc.Segment, texture string) {
 	switch {
-	case value == "":
+	case value == "": // an empty value shows nothing
 	case slices.Contains(game.GUI.PictureKeys, key) || slices.Contains(game.GUI.MaskKeys, key):
 		texture = library.resolveTexture(value)
 	case isLocalized(key):
 		message, _, ok := library.ws.LookupText(library.mods, value)
 		text = resolveSegments(library.ws, library.mods, loc.Segments(lo.Ternary(ok, message, value), 0), 0)
-	case key == game.GUI.TextKeys[1]:
+	case key == game.GUI.TextKeys[1]: // the key that writes a text as shown
 		text = resolveSegments(library.ws, library.mods, loc.Segments(value, 0), 0)
 	}
 	return text, texture
@@ -1065,8 +1064,9 @@ func compareChildren(first, second child) int {
 	return cmp.Compare(rank(first), rank(second))
 }
 
-// findHolders returns the game window that a window of the given type is laid out in, as its own widget: the one the
-// game names for the last type of its chain that has one, if the install defines it. It returns none otherwise.
+// findHolders returns the game window that a window of the given type is laid out in, as its own widget alone. It tries
+// the types in the type's chain from the last, and takes the first window that the game names for one of them and the
+// install defines. It returns none if there is none.
 func (resolver *resolver) findHolders(key string, root clause) []Widget {
 	_, chain := resolver.listTypes(key, root)
 	for _, link := range slices.Backward(chain) {
@@ -1076,7 +1076,7 @@ func (resolver *resolver) findHolders(key string, root clause) []Widget {
 		if !ok || !defined {
 			continue
 		}
-		// the holder's own resolver shares the places, the definitions and the library
+		// The copy starts with no widgets and shares the places, properties, overlays, definitions and library.
 		other := *resolver
 		other.ancestors, other.gathered, other.widgets = nil, gathering{}, nil
 		if holder, err := other.resolveWindow(resolver.mods.Files[winner.Site.File].Path, name); err == nil {

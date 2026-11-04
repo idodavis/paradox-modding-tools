@@ -21,7 +21,7 @@ const { data: dlc } = useQuery(dlcQuery);
 
 const categories = computed(() => [...new Set([...(tags.value?.categories ?? []), ...(listing.value.tags ?? [])])]);
 const requirement = computed(() => {
-  const mods = (listing.value.dependencies ?? []).map((one) => one.name);
+  const mods = (listing.value.dependencies ?? []).map((dependency) => dependency.name);
   const count = listing.value.dlc?.length ?? 0;
   const needs = [...mods, ...(count ? [plural(count, "DLC", "DLC")] : [])];
   return needs.length ? `Requires ${list(needs)}` : "Nothing else needed";
@@ -39,7 +39,7 @@ function addTag(tag: string): void {
 
 /** toggleDLC adds a DLC to the listing's requirements when it is ticked, and removes it otherwise. */
 function toggleDLC(id: string, required: boolean | "indeterminate"): void {
-  const others = (listing.value.dlc ?? []).filter((one) => one !== id);
+  const others = (listing.value.dlc ?? []).filter((dlcId) => dlcId !== id);
   update({ dlc: required === true ? [...others, id] : others });
 }
 </script>
@@ -103,7 +103,7 @@ function toggleDLC(id: string, required: boolean | "indeterminate"): void {
                 variant="link"
                 class="p-0"
                 :aria-label="`Remove ${tag}`"
-                @click="update({ tags: (listing.tags ?? []).filter((one) => one !== tag) })"
+                @click="update({ tags: (listing.tags ?? []).filter((other) => other !== tag) })"
               />
             </UTooltip>
           </template>
@@ -145,24 +145,24 @@ function toggleDLC(id: string, required: boolean | "indeterminate"): void {
               <span class="text-11 font-medium text-dimmed">Required mods</span>
               <p v-if="!listing.dependencies?.length" class="text-12 text-dimmed">The descriptor names none.</p>
               <UCheckbox
-                v-for="one in listing.dependencies ?? []"
-                :key="one.name"
-                :model-value="!!one.workshopId"
+                v-for="mod in listing.dependencies ?? []"
+                :key="mod.name"
+                :model-value="!!mod.workshopId"
                 disabled
-                :label="one.name"
-                :description="one.workshopId ? 'From the descriptor' : 'Not on the Workshop, so not sent to Steam'"
+                :label="mod.name"
+                :description="mod.workshopId ? 'From the descriptor' : 'Not on the Workshop, so not sent to Steam'"
                 :ui="{ label: 'text-13 font-normal break-all', description: 'text-11' }"
               />
               <template v-if="dlc?.length">
                 <USeparator class="my-1.5" />
                 <span class="text-11 font-medium text-dimmed">Required DLC</span>
                 <UCheckbox
-                  v-for="one in dlc"
-                  :key="one.id"
-                  :model-value="listing.dlc?.includes(one.id) ?? false"
-                  :label="one.name"
+                  v-for="pack in dlc"
+                  :key="pack.id"
+                  :model-value="listing.dlc?.includes(pack.id) ?? false"
+                  :label="pack.name"
                   :ui="{ label: 'text-13 font-normal' }"
-                  @update:model-value="toggleDLC(one.id, $event)"
+                  @update:model-value="toggleDLC(pack.id, $event)"
                 />
               </template>
             </div>

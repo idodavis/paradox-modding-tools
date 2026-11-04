@@ -107,8 +107,7 @@ type Placeholder struct {
 }
 
 // Illustrations is where the pictures are that a definition names by a path below a folder: the key that names the
-// folder, and the folder where the definition names none. A picture written in a block with a trigger is drawn only
-// where its condition holds; the others are the fallback.
+// folder, and the folder where the definition names none.
 type Illustrations struct {
 	FolderKey string
 	Folder    string
@@ -127,9 +126,9 @@ type GameGUI struct {
 	Illustrations Illustrations // where the pictures are that a definition names by a path below a folder
 }
 
-// Levels is where the pictures are of a kind of level, one for each level: the last word of the kind, which says it is
-// a level, and the start of each file's name before the kind's other words. The folder is the kind's define, with the
-// folder define's ending.
+// Levels says how a kind of level, such as prestige_level, finds its pictures. Word is the last word of the kind's
+// name, which marks it as a level. The folder is the kind's define with the folder define's ending. The picture is the
+// first file in it, in name order, that starts with Prefix and the kind's other words.
 type Levels struct {
 	Word   string
 	Prefix string
@@ -256,10 +255,7 @@ type GUIRules struct {
 	ShownFirst string
 }
 
-// The words that GUI and another table both name. Its Declares names the words that declare a type and a labeled
-// block, and its CallTargets the data function that reads a define. The callable databases name the words that call
-// a type, a template and a block override. The last three are the key that names a widget, the key that names a
-// widget's font, and the database of fonts.
+// The words that GUI shares with another table or with another of its own fields, each written once.
 const (
 	guiType          = "type"
 	guiBlock         = "block"
@@ -440,9 +436,8 @@ var GUI = GUIRules{
 	ShownFirst: "gui.widget",
 }
 
-// Placeholders are the shapes drawn where a picture has no file, tried in order, a game's own before every game's:
-// a character's silhouette from its period, and its coat of arms as a shield or a flag. The last is the plain icon,
-// which stands for any picture of no listed kind.
+// Placeholders are the shapes drawn where a picture has no file, tried in order, a game's own before every game's. Each
+// has the kinds of picture it stands for. The last is the plain icon, for a picture of no listed kind.
 var Placeholders = []Placeholder{
 	{Games: []string{ck3}, Shape: "crowned-ruler", Kinds: []string{"portrait texture"}, Runtime: true},
 	{Games: []string{ck3}, Shape: "shield", Kinds: []string{"coat of arms"}, Runtime: true},
@@ -465,9 +460,8 @@ var Placeholders = []Placeholder{
 	{Shape: "icon"},
 }
 
-// FindPlaceholder returns the placeholder of a picture, given a phrase that says what the picture is of: the first
-// placeholder, the game's own first, one of whose kinds the phrase holds as whole words. It returns the plain icon
-// where the phrase holds none.
+// FindPlaceholder returns the first placeholder for the game with a kind that the given phrase names as whole words,
+// such as "coat of arms". The phrase says what the picture is of. It returns the plain icon if no kind is named.
 func (game *Game) FindPlaceholder(phrase string) Placeholder {
 	padded := " " + phrase + " "
 	for _, placeholder := range Placeholders {

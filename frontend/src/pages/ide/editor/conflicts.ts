@@ -1,6 +1,6 @@
 /**
- * Merge conflicts in the editor: finding the conflict blocks in a text, marking them, and resolving a block by one
- * side with a single edit.
+ * Merge conflicts in the editor: finding the conflict blocks in a text, marking them, and resolving a block by keeping
+ * one side or both.
  */
 import * as monaco from "monaco-editor/editor/editor.api";
 
@@ -8,12 +8,12 @@ import { useEditorStore } from "../../../stores/editor";
 import { useGitStore } from "../../../stores/git";
 import { applyEdits, type Model } from "./models";
 
-/** One conflict block: its lines and the two sides' line ranges. */
+/** One conflict block: its first and last lines, and the line range of each side. */
 type Conflict = { start: number; end: number; ours: [number, number]; theirs: [number, number] };
 
 type Side = "ours" | "theirs" | "both";
 
-// the links over a block, and the side each one keeps
+// the code lens links over each block, and the side each one keeps; Compare opens the conflict diff instead
 const LINKS: { title: string; side: Side | "compare" }[] = [
   { title: "Accept current", side: "ours" },
   { title: "Accept incoming", side: "theirs" },
@@ -21,7 +21,7 @@ const LINKS: { title: string; side: Side | "compare" }[] = [
   { title: "Compare", side: "compare" },
 ];
 
-// the blocks of each decorated model, by the model's address, and the decorations that band them
+// the conflict blocks of each decorated model and the ids of the decorations that band them, by the model's URI
 const decorations = new Map<string, { model: Model; conflicts: Conflict[]; bands: string[] }>();
 const lensChange = new monaco.Emitter<monaco.languages.CodeLensProvider>();
 
@@ -41,7 +41,7 @@ const lenses: monaco.languages.CodeLensProvider = {
   },
 };
 
-/** registerConflicts registers the links over the conflict blocks and the command each one runs. */
+/** registerConflicts registers the code lens links over conflict blocks and the command they run. */
 export function registerConflicts(): void {
   monaco.languages.registerCodeLensProvider("*", lenses);
   monaco.editor.registerCommand("pmt.conflict", (_accessor, uri: string, line: number, side: Side | "compare") => {
@@ -81,7 +81,7 @@ function findConflicts(model: Model): Conflict[] {
   return conflicts;
 }
 
-/** resolve resolves a block by keeping a side, or both, as one undoable edit. */
+/** resolve replaces a conflict block with one side or both, as one undoable edit. */
 function resolve(model: Model, conflict: Conflict, side: Side): void {
   const lines = model.model.getLinesContent();
   const sideLines = ([first, last]: [number, number]) => lines.slice(first - 1, Math.max(last, first - 1));
@@ -93,7 +93,7 @@ function resolve(model: Model, conflict: Conflict, side: Side): void {
   applyEdits(model, [{ range, text }]);
 }
 
-/** decorate draws the blocks' decorations and the resolve links over them. The drawing follows the model's edits. */
+/** decorate marks the conflict blocks of a model and redraws them after each edit of it. */
 export function decorate(model: Model): void {
   if (!decorations.has(model.uri)) {
     model.model.onDidChangeContent(() => decorate(model));

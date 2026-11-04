@@ -1,5 +1,5 @@
-// app.go keeps what the MCP server knows of the app: the page each window shows and the pages the guide describes. It
-// also hands the main window what an agent asks it to show.
+// app.go keeps what the MCP server knows of the app: the page the user looked at last and the pages the guide
+// describes. It also hands the main window what an agent asks it to show.
 
 package mcp
 

@@ -538,18 +538,18 @@ var Precedences = []Precedence{
 	{Databases: []string{"defines.define"}, Keeps: "last"},
 	// Vic3 Behavior and EU5 l.92: INJECT acts as REPLACE
 	{Games: vic3AndEU5, Databases: []string{"scripted_effects", "scripted_triggers"}, Keeps: "first", Modes: "entry", Injects: "replaces"},
-	// Vic3 the list of folders: REPLACE only. It does not say whether a mode that adds, such as INJECT, is refused or
-	// acts as REPLACE.
+	// the Vic3 wiki's list of folders: REPLACE only. It does not say whether a mode that adds, such as INJECT, is
+	// refused or acts as REPLACE.
 	{Games: []string{vic3}, Databases: []string{"scripted_rules", "script_values"}, Keeps: "first", Modes: "entry", Injects: "unsettled"},
 	// Vic3 Genes: modes at the second level, and victoria3.exe "If you're replacing or injecting this error is shown";
 	// EU5 dlc/D008_fate_of_the_phoenix/in_game/common/genes/D008_genes_accessories.txt:1-3 writes INJECT_OR_CREATE
 	// inside accessory_genes
 	{Games: vic3AndEU5, Databases: []string{"genes"}, Keeps: "first", Modes: "wrapped"},
-	// Vic3 DNA data: defined character DNAs do not overwrite each other; the list of folders gives it entry modes
+	// Vic3 DNA data: defined character DNAs do not overwrite each other; the wiki's list of folders gives it entry modes
 	{Games: []string{vic3}, Databases: []string{"dna_data"}, Keeps: "merged", Modes: "entry"},
 	// the EU5 wiki's Flag modding, l.126
 	{Games: []string{eu5}, Databases: []string{"coat_of_arms/coat_of_arms"}, Keeps: "last"},
-	// Vic3 the list of folders: the first plain copy stays
+	// the Vic3 wiki's list of folders: the first plain copy stays
 	{
 		Games: []string{vic3}, Keeps: "first", Modes: "entry",
 		Folders: []string{
@@ -808,9 +808,9 @@ func (precedence Precedence) holds(database, folder string) bool {
 		matched, _ := path.Match(pattern, database)
 		return matched
 	})
-	return named || folder != "" && slices.ContainsFunc(precedence.Folders, func(listed string) bool {
+	return named || (folder != "" && slices.ContainsFunc(precedence.Folders, func(listed string) bool {
 		return folder == listed || strings.HasPrefix(folder, listed+"/")
-	})
+	}))
 }
 
 // SplitMode splits a mode prefix off a written key, so REPLACE:x gives the name x with the mode REPLACE. A game whose

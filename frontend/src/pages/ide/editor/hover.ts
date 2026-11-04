@@ -1,7 +1,7 @@
 /**
- * The hover card over an editor, in place of Monaco's own. When the pointer rests on a word or on a step of a data
- * call, its card and the problems on it show above it until the pointer moves away, so the lines below stay free to
- * hover and right-click. Any card the pointer can move onto is kept the same way.
+ * The hover card over an editor, in place of Monaco's own. When the pointer rests on a word, its card and problems show
+ * above it until the pointer moves away, so the lines below stay free to hover and right-click. Any card the pointer
+ * can move onto is kept the same way.
  */
 import { useDebounceFn } from "@vueuse/core";
 import * as monaco from "monaco-editor/editor/editor.api";
@@ -13,13 +13,13 @@ import type { editor } from "monaco-editor";
 import { useSettingsStore } from "../../../stores/settings";
 import type { Model } from "./models";
 
-/** A Hover is the card on show: the facts of a word, the problems on it, and the rectangle of the word in the page. */
+/** A Hover is the card on show: the word's card (null if none), the problems on it, and its rectangle on the page. */
 type Hover = { card: Card | null; problems: Diagnostic[]; anchor: DOMRect };
 
 /**
- * attachHover shows a hover card over the word the pointer rests on in an editor of a file's model, with the model's
- * problems on the word. It returns the card on show, which is null while there is none, the functions that take the
- * card down and hold it while the pointer is on it, and the function that detaches the card from the editor.
+ * attachHover shows a hover card over the word the pointer rests on in an editor, with the model's problems on the
+ * word. It returns the card on show (null while there is none), a function that closes the card, a function that holds
+ * it open while the pointer is on it, and a function that detaches all of this from the editor.
  */
 export function attachHover(
   codeEditor: editor.IStandaloneCodeEditor,
@@ -27,12 +27,12 @@ export function attachHover(
 ): {
   hover: ShallowRef<Hover | null>;
   close: () => void;
-  hold: (on: boolean) => void;
+  hold: (isOverCard: boolean) => void;
   detach: () => void;
 } {
   const settings = useSettingsStore();
   const { card: hover, close: closeCard, closeLater, keep, hold, isHeld } = useHeldCard<Hover>();
-  // the position of the pointer a card is asked for, and what the answer on show is about
+  // target is where the pointer rests, shown is the range the card covers
   let target: monaco.IPosition | null = null;
   let shown: monaco.IRange | null = null;
 
@@ -43,9 +43,8 @@ export function attachHover(
     shown = null;
   };
   /**
-   * findCard finds the card at the pointer in a word and the problems on it and shows them, unless the pointer has
-   * moved on meanwhile. The card is about one step of a data call or one name, and sits over it. A card the pointer is
-   * on is never replaced.
+   * findCard asks for the card at the pointer, collects the problems on the card's range and shows both. The range is
+   * the card's own, else the word's. It shows nothing if the pointer has moved on or is over the card on show.
    */
   const findCard = useDebounceFn(async (word: editor.IWordAtPosition, pointer: monaco.IPosition) => {
     const card = await lsp.Hover(model.place.path, pointer.lineNumber, pointer.column);

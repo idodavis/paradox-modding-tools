@@ -1,6 +1,6 @@
 <!--
-  The one picker of Visual's panel: the current choice with its name and place, which opens a search and a
-  grid of every choice, for a widget's pictures and a coat layer's texture and colors alike.
+  The one picker of the Visual panel. It shows the current choice with its name and position, and opens a search and a
+  grid of every choice. It serves a widget's pictures and a coat layer's textures and colors alike.
 -->
 <script setup lang="ts">
 import { refDebounced } from "@vueuse/core";
@@ -41,7 +41,7 @@ defineSlots<{
   extra?: () => unknown;
 }>();
 
-// the most tiles drawn at once; a search finds the rest
+// SHOWN is the most tiles drawn at once; a search finds the rest.
 const SHOWN = 60;
 const SIZES = {
   wide: { preview: "h-14 w-25", tile: "aspect-video", columns: "grid-cols-4" },

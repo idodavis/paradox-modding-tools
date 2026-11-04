@@ -48,9 +48,9 @@ const version = computed({
 });
 /** The list's items: the versions, a sub-version indented. */
 const versions = computed(() =>
-  (notes.value ?? []).map((one) => ({ ...one, class: one.parent ? "h-6.5 ps-5.5 text-12" : undefined })),
+  (notes.value ?? []).map((wikiNote) => ({ ...wikiNote, class: wikiNote.parent ? "h-6.5 ps-5.5 text-12" : undefined })),
 );
-const note = computed(() => notes.value?.find((one) => one.version === version.value));
+const note = computed(() => notes.value?.find((wikiNote) => wikiNote.version === version.value));
 const { data: page, isLoading } = useQuery(() => ({
   ...wikiPageQuery(note.value?.title ?? ""),
   enabled: workspace.isOpen() && !!note.value,

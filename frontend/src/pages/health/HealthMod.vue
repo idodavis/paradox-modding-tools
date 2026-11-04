@@ -103,7 +103,7 @@ const coverage = computed(() =>
     const name = language.facts?.name ?? "";
     return {
       name,
-      label: installLanguages.value?.find((one) => one.folder === name)?.label ?? name,
+      label: installLanguages.value?.find((installed) => installed.folder === name)?.label ?? name,
       percent: (have / total) * 100,
       text: have === total ? `all ${describeCount(total)}` : `${describeCount(have)} of ${describeCount(total)}`,
       missing: total - have,

@@ -1,10 +1,8 @@
 /**
- * The draw store: what Visual remembers for the session, one record per file: the drawn drawable, the selected and
- * hovered widgets, the widgets outlined for a state, the widgets hidden for the session, the layers checked for an
- * action on several and the panel's tab, and the colors copied from a layer. Whether the panel and the code beside the
- * picture are open is one choice for every file of the open workspace. The picks are kept per workspace between
- * sessions, shared by every window that asks the same thing, and so are the coat frame and the backdrop. What Go
- * answers (the window, the states, the coat) is read through queries and never stored here.
+ * The draw store: what Visual remembers for the session about each file, such as its drawn drawable and its selected,
+ * hovered, outlined and hidden widgets. It also holds whether the panel and the code beside the picture are open, and
+ * the colors copied from a layer. The picks, the coat frame and the backdrop persist per workspace in local storage.
+ * What Go answers (the window, the states, the coat) is read through queries and never stored here.
  */
 import { useLocalStorage } from "@vueuse/core";
 import { Range } from "monaco-editor/editor/editor.api";
@@ -45,7 +43,7 @@ export const useDrawStore = defineStore("draw", () => {
   const isPanelOpen = shallowRef(false);
   /** Whether the code beside the picture is open. It starts closed, and closes again when another workspace opens. */
   const isCodeOpen = shallowRef(false);
-  // by workspace: the value picked for each group, by the group's ID
+  // The value picked for each group, by group ID, by workspace ID.
   const saved = useLocalStorage<Record<string, Record<string, string>>>("pmt.draw.picks", {});
   /** The open workspace's picks, by the ID of each group. */
   const picks = computed(() => saved.value[workspace.activeId()] ?? {});
@@ -59,10 +57,7 @@ export const useDrawStore = defineStore("draw", () => {
     },
   );
 
-  /**
-   * file returns a file's record. The record is made on the first ask, and changing it changes what every reader
-   * sees.
-   */
+  /** file returns a file's record. It makes the record on the first call. */
   const file = (path: string): DrawFile => {
     const record = files.get(path);
     if (record) return record;
@@ -77,10 +72,7 @@ export const useDrawStore = defineStore("draw", () => {
     Object.assign(file(path), { selected: widget, instance });
   };
 
-  /**
-   * hover marks a file's widget as the one under the pointer, or none for null. A layer's instance can be marked with
-   * it.
-   */
+  /** hover marks a file's widget as the one under the pointer, or none for null. A layer's instance can go with it. */
   const hover = (path: string, widget: number | null, instance: number | null = null): void => {
     Object.assign(file(path), { hovered: widget, hoveredInstance: instance });
   };
@@ -98,7 +90,7 @@ export const useDrawStore = defineStore("draw", () => {
       : record.hidden.filter((other) => other !== widget);
   };
 
-  /** pick picks the options groups are drawn at in the open workspace, by the ID of each group. */
+  /** pick saves the option chosen for each group in the open workspace, by group ID. Undefined options are skipped. */
   const pick = (options: Partial<Record<string, string>>): void => {
     const chosen = Object.entries(options).filter((entry): entry is [string, string] => entry[1] !== undefined);
     saved.value = { ...saved.value, [workspace.activeId()]: { ...picks.value, ...Object.fromEntries(chosen) } };
@@ -110,10 +102,7 @@ export const useDrawStore = defineStore("draw", () => {
     saved.value = { ...saved.value, [workspace.activeId()]: kept };
   };
 
-  /**
-   * draw draws a file's drawable, or the first one for null. Widgets belong to one drawable, so the rest is
-   * forgotten.
-   */
+  /** draw draws a file's drawable, or the first one for null. Drawing another drawable resets the file's record. */
   const draw = (path: string, drawable: string | null): void => {
     const record = file(path);
     if (record.drawable === drawable) return;

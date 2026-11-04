@@ -158,7 +158,7 @@ func (collector *collector) isFiring(context *schema.Context, reference schema.R
 	}
 	keys := context.Path
 	if context.Label != "" {
-		keys = append(keys[:len(keys):len(keys)], context.Label)
+		keys = slices.Concat(keys, []string{context.Label})
 	}
 	return slices.ContainsFunc(row.ListFiringFields(), func(field game.Reference) bool {
 		return field.Database == context.Database && jomini.MatchKeyPath(field.KeyPath, keys)

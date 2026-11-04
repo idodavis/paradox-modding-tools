@@ -1,7 +1,7 @@
 <!--
-  The detail of a graph node: its head, then an overview of how it triggers, the rule it reads, the game's copy it
-  replaces and its properties, its texts, its firings both ways, and its script as written.
-  Below the canvas, the overview lays its parts out in columns.
+  The detail of a graph node: a head, then four tabs. Overview shows how the node triggers, the rule it reads, the
+  game's copy it replaces and its properties. Text shows its texts, Links its firings both ways, and Script its
+  definition as written. Below the canvas, the overview lays its parts out in columns.
 -->
 <script setup lang="ts">
 import { computed, shallowRef, watch } from "vue";
@@ -21,7 +21,7 @@ import SourceLink from "../../ui/SourceLink.vue";
 import ConditionList, { describeStep, groupConditions } from "./ConditionList.vue";
 import { listRoute, lookupLook } from "./layout";
 
-// the chip a data call and a key are drawn as; a long one is cut, its whole text on hover
+// CHIP is the classes of the chip a data call or a key in a text is drawn as; a long one is cut.
 const CHIP =
   "inline-block h-4.5 max-w-[18em] truncate rounded-chip bg-(--bg-4) px-1.5 align-[-3px] text-[11.5px] leading-4.5";
 
@@ -33,11 +33,11 @@ const router = useRouter();
 const editor = useEditorStore();
 const workspace = useWorkspaceStore();
 const { copy, copied } = useClipboard();
-// a section's head: its title, a count if it has one, and what its slot puts at the row's end
+// SectionHead is a section's head: its title, a count if given, and the slot's content at the end.
 const [DefineSectionHead, SectionHead] = createReusableTemplate<{ title: string; count?: number }>();
-// the tabs of the head, which sit in one place when the detail is below the canvas and in another when it is beside it
+// Tabs are the head's tabs. They sit in the head's row when the detail is below the canvas, else under it.
 const [DefineTabs, Tabs] = createReusableTemplate();
-// one firing on the Links tab, by the node at its given end
+// Link is one firing on the Links tab, shown by the node at the given end.
 const [DefineLink, Link] = createReusableTemplate<{ edge: Edge; end: "from" | "to" }>();
 
 const { data: detail, error } = useQuery(() => ({ ...detailQuery(id), enabled: workspace.isOpen() }));
@@ -52,7 +52,7 @@ watch(
 const versions = computed(() =>
   [...(detail.value?.sections ?? []), ...(detail.value?.options ?? [])].flatMap((section) => section.texts ?? []),
 );
-// the statements at the top of the definition that write one value and show no text; its blocks are in its script
+// The top-level statements of the definition that set one value and show no text. Its blocks are in the script.
 const properties = computed(() =>
   (detail.value?.sections ?? []).filter((section) => section.value && !section.texts?.length),
 );
@@ -66,28 +66,28 @@ const tabs = computed(() => [
   { label: "Script", value: "script" },
 ]);
 
-/** The nodes the selected one comes up through, the first cause first: the root's caller, the route, and the node. */
+/** The chain of nodes that leads to the selected one, the first cause first: the root's caller, the route, the node. */
 const way = computed(() => {
   if (!graph) return [];
-  const nodes = new Map((graph.nodes ?? []).map((one) => [one.id, one]));
-  const chain = listRoute(graph, id).flatMap((one) => nodes.get(one) ?? []);
+  const nodes = new Map((graph.nodes ?? []).map((entry) => [entry.id, entry]));
+  const chain = listRoute(graph, id).flatMap((routeId) => nodes.get(routeId) ?? []);
   if ((nodes.get(id)?.step ?? 0) >= 0) {
     chain.reverse();
-    const callers = (graph?.nodes ?? []).filter((one) => one.step === -1);
-    const caller = callers.find((one) => one.hardcoded) ?? callers[0];
-    if (caller && chain[0]?.id === graph?.root && id !== caller.id) chain.unshift(caller);
+    const callers = (graph.nodes ?? []).filter((entry) => entry.step === -1);
+    const caller = callers.find((entry) => entry.hardcoded) ?? callers[0];
+    if (caller && chain[0]?.id === graph.root && id !== caller.id) chain.unshift(caller);
   }
   const edges = graph.edges ?? [];
-  return chain.map((one, position) => ({
-    node: one,
-    edge: edges.find((edge) => edge.from === one.id && edge.to === chain[position + 1]?.id),
+  return chain.map((stop, position) => ({
+    node: stop,
+    edge: edges.find((edge) => edge.from === stop.id && edge.to === chain[position + 1]?.id),
   }));
 });
-// what the way says under each of its nodes: its own trigger under "when", then the blocks its next firing sits in
-// under "then"
+// The conditions under each node of the way: its own trigger under "when", then the blocks its firing to the next
+// node is written in under "then".
 const wayConditions = computed(() =>
-  way.value.map(({ node: one, edge }) => {
-    const trigger = groupConditions(one.trigger ?? []);
+  way.value.map(({ node: stop, edge }) => {
+    const trigger = groupConditions(stop.trigger ?? []);
     const steps = (edge?.steps ?? []).flatMap(describeStep);
     return [
       ...(trigger.length ? [{ text: "when", conditions: trigger, line: 0 }] : []),
@@ -95,15 +95,13 @@ const wayConditions = computed(() =>
     ];
   }),
 );
-/**
- * describeHow describes the blocks a firing is written in, as a row reads them: "option · trigger_event, days = 30".
- */
+/** describeHow describes a firing for a row, such as "option · trigger_event, days = 30": blocks, effect, delay. */
 function describeHow(edge: Edge): string {
   const blocks = (edge.steps ?? []).filter((step) => step.kind !== "block").map((step) => step.weight ?? step.key);
   return [...blocks, [edge.effect, edge.delay].filter(Boolean).join(", ")].filter(Boolean).join(" · ");
 }
 
-/** findLinked returns the node at the other end of a firing, as the detail names it. */
+/** findLinked returns the node at the given end of a firing, or undefined if the detail does not list it. */
 function findLinked(edge: Edge, end: "from" | "to"): Node | undefined {
   return detail.value?.linked?.[edge[end]];
 }
@@ -113,7 +111,7 @@ function setRoot(root: string): void {
   void router.replace({ query: { root } });
 }
 
-/** show shows a file at a line. */
+/** show opens the given file in the editor at the given line. */
 function show(place: Place, line: number): void {
   editor.show(place, { lineNumber: line, column: 1 });
 }
@@ -235,27 +233,27 @@ function show(place: Place, line: number): void {
           <section>
             <SectionHead title="How it triggers" />
             <ol class="flex flex-col px-4 pt-2">
-              <li v-for="({ node: one }, position) in way" :key="one.id" class="relative flex gap-2.5 pb-3 last:pb-0">
+              <li v-for="({ node: stop }, position) in way" :key="stop.id" class="relative flex gap-2.5 pb-3 last:pb-0">
                 <span
                   v-if="position < way.length - 1"
                   class="absolute start-2.75 top-6.5 bottom-0.5 w-px bg-(--line-2)"
                 />
                 <span
                   class="grid size-5.75 shrink-0 place-items-center rounded-[7px] border bg-(--bg-3)"
-                  :class="one.id === id ? 'border-(--link) ring-3 ring-(--link-soft)' : 'border-(--line-2)'"
+                  :class="stop.id === id ? 'border-(--link) ring-3 ring-(--link-soft)' : 'border-(--line-2)'"
                 >
                   <UIcon
-                    :name="one.display === 'hidden' ? 'i-lucide-eye-off' : lookupLook(one.database).icon"
+                    :name="stop.display === 'hidden' ? 'i-lucide-eye-off' : lookupLook(stop.database).icon"
                     class="size-3.25"
-                    :style="{ color: lookupLook(one.database).color }"
+                    :style="{ color: lookupLook(stop.database).color }"
                   />
                 </span>
                 <div class="flex min-w-0 flex-1 flex-col gap-1 pt-0.5">
                   <span class="flex items-center gap-1.5 text-12 leading-4.5 whitespace-nowrap text-dimmed">
-                    <code class="font-mono font-semibold text-highlighted">{{ one.name }}</code>
-                    {{ one.id === id ? "here" : one.display === "hidden" ? "hidden event" : one.what }}
+                    <code class="font-mono font-semibold text-highlighted">{{ stop.name }}</code>
+                    {{ stop.id === id ? "here" : stop.display === "hidden" ? "hidden event" : stop.what }}
                     <span
-                      v-if="one.hardcoded"
+                      v-if="stop.hardcoded"
                       class="inline-flex h-4 items-center gap-0.75 rounded-sm bg-(--bg-4) px-1.25 text-[10px]"
                       ><UIcon name="i-lucide-cog" class="size-2.5" />the game calls it</span
                     >
@@ -265,7 +263,7 @@ function show(place: Place, line: number): void {
                     :conditions="wayConditions[position] ?? []"
                     class="text-12 leading-4.5"
                   />
-                  <span v-if="one.id === id && !one.trigger?.length" class="text-12 leading-4.5 text-dimmed"
+                  <span v-if="stop.id === id && !stop.trigger?.length" class="text-12 leading-4.5 text-dimmed"
                     >with no trigger of its own</span
                   >
                 </div>

@@ -36,8 +36,8 @@ export function describeCount(count: number): string {
 }
 
 /** plural returns a count with its noun, such as "1 file" or "1,350 files". Without a plural form it adds an s. */
-export function plural(count: number, noun: string, plural?: string): string {
-  return `${describeCount(count)} ${PLURALS.select(count) === "one" ? noun : (plural ?? `${noun}s`)}`;
+export function plural(count: number, noun: string, pluralNoun?: string): string {
+  return `${describeCount(count)} ${PLURALS.select(count) === "one" ? noun : (pluralNoun ?? `${noun}s`)}`;
 }
 
 /** toSentence returns words with a capital first letter, such as "Has landed titles". */
@@ -70,9 +70,8 @@ export function describeError(error: unknown): string {
 }
 
 /**
- * splitError returns an error's message in two parts: its first line, which says what failed, and the lines after it,
- * at most the given count of them. Without a count it keeps every line. The second part is "" for a message of one
- * line.
+ * splitError splits an error's message into its first line, which says what failed, and the lines after it. It keeps
+ * at most the given count of those lines, or all of them without a count. The second part is "" for a one-line message.
  */
 export function splitError(error: unknown, count = Infinity): [summary: string, details: string] {
   const [summary = "", ...details] = describeError(error).split("\n");
@@ -80,33 +79,30 @@ export function splitError(error: unknown, count = Infinity): [summary: string, 
 }
 
 /**
- * matchQuery says whether the texts, joined by spaces, hold the query, ignoring case and the spaces around the query.
- * So a query can span two texts, such as a key and its value. An empty query matches everything.
+ * matchQuery says whether the query occurs in the texts joined by spaces, ignoring case and the spaces around the
+ * query. So a query can span two texts, such as a key and its value. An empty query matches everything.
  */
 export function matchQuery(query: string, ...texts: (string | null | undefined)[]): boolean {
   const needle = query.trim().toLowerCase();
   return !needle || texts.join(" ").toLowerCase().includes(needle);
 }
 
-/**
- * day returns a date as the user reads it, such as "21 April". It is "" for a time that does not parse or that Go
- * never set.
- */
+/** day returns a date as the user reads it, such as "21 April". It is "" for a time that does not parse or is unset. */
 export function day(date: Date | string): string {
   const parsed = parseTime(date);
   return parsed ? DAYS.format(parsed) : "";
 }
 
-/** parseTime returns a time as a Date. It returns undefined for a time that does not parse or that Go never set. */
+/** parseTime returns a time as a Date. It returns undefined for a time that does not parse or is unset. */
 export function parseTime(time: Date | string): Date | undefined {
   const parsed = new Date(time);
-  // Go writes a time it never set as the year 1, and one that does not parse has no year
+  // Go writes an unset time as the year 1, and one that does not parse has no year
   return parsed.getFullYear() > 1 ? parsed : undefined;
 }
 
 /**
  * describeAge returns how long ago a time was, short as "4 min ago" or long as "4 minutes ago". It is "" for a time
- * that does not parse or that Go never set.
+ * that does not parse or is unset.
  */
 export function describeAge(time: Date | string, wording: "short" | "long"): string {
   const parsed = parseTime(time);
@@ -133,12 +129,12 @@ export function joinParts(parts: readonly Part[] | null | undefined): string {
   return (parts ?? []).map((part) => part.text).join("");
 }
 
-/** splitSubject returns the thing a finding is about, as a part: its name, or the path of a file. */
+/** splitSubject returns what a finding is about as one part: its name, styled as a path for a file. */
 export function splitSubject(finding: Finding): Part[] {
   return [{ text: finding.name, style: finding.database === "file" ? "path" : "" }];
 }
 
-/** findOwner returns the id of the mod a finding is about. It is the first mod it concerns, else its origin. */
+/** findOwner returns the id of the mod a finding is about: the first mod it names, else its origin. */
 export function findOwner(finding: Finding): string {
   return finding.mods?.[0] ?? finding.origin;
 }
@@ -148,7 +144,7 @@ export function toSiteKey(finding: Finding): string {
   return describeSiteKey(finding.sites?.[0]);
 }
 
-/** listSiteKeys returns the keys of a finding's first site and of the sites of the findings folded into it. */
+/** listSiteKeys returns the keys of a finding's first site and of the sites of its repeats. */
 export function listSiteKeys(finding: Finding): string[] {
   return [finding.sites?.[0], ...(finding.repeats ?? [])].map(describeSiteKey).filter(Boolean);
 }
@@ -163,7 +159,7 @@ export function countFindings(findings: readonly Finding[]): number {
   return sumBy(findings, (finding) => finding.count);
 }
 
-/** countFindingsBy returns how many findings there are for each key the given function gives, repeats included. */
+/** countFindingsBy returns the findings count, repeats included, for each key that the key function gives. */
 export function countFindingsBy(
   findings: readonly Finding[],
   key: (finding: Finding) => string,
@@ -173,7 +169,7 @@ export function countFindingsBy(
 
 /**
  * describeTime returns a time such as "today at 14:02" or "21 April at 14:02". It is "" for a time that does not parse
- * or that Go never set.
+ * or is unset.
  */
 export function describeTime(time: Date | string): string {
   const parsed = parseTime(time);
@@ -210,8 +206,8 @@ export function describeLexicon(state: State): string {
 }
 
 /**
- * MARKS holds, for each status Go gives a difference, its mark and color, the word a count of files uses, and the
- * words a sentence uses. The rows are in the order a count lists them.
+ * MARKS holds, for each status of a difference, the mark and color it is drawn with, its word in a count of files
+ * ("3 new") and its words in a sentence ("is new"). A count lists the statuses in this order.
  */
 export const MARKS: Readonly<Record<string, { mark: string; color: string; count: string; sentence: string }>> = {
   changed: { mark: "~", color: "text-warning", count: "changed", sentence: "changed" },
@@ -219,7 +215,7 @@ export const MARKS: Readonly<Record<string, { mark: string; color: string; count
   removed: { mark: "−", color: "text-error", count: "removed", sentence: "was removed" },
 };
 
-/** DIFFERENCE_FIELDS holds each field of a listing that a difference names, in words. A file is named by its path. */
+/** DIFFERENCE_FIELDS holds the label of each listing field a difference can name. A file is labeled by its path. */
 const DIFFERENCE_FIELDS: Readonly<Record<string, string>> = {
   title: "Title",
   description: "Description",
@@ -230,19 +226,19 @@ const DIFFERENCE_FIELDS: Readonly<Record<string, string>> = {
   version: "Version",
 };
 
-/** toDifferenceId returns what names a difference in a list: its field and, for a file, its path. */
+/** toDifferenceId returns the key of a difference in a list: its field, then its path for a file. */
 export function toDifferenceId({ field, rel = "" }: Difference): string {
   return `${field}:${rel}`;
 }
 
-/** describeDifferenceLabel returns the name of what a difference changes: a file's path, else the field in words. */
+/** describeDifferenceLabel returns the label of what a difference changes: a file's path, else the field's label. */
 export function describeDifferenceLabel({ field, rel = "" }: Difference): string {
   return field === "file" ? rel : (DIFFERENCE_FIELDS[field] ?? field);
 }
 
-/** describeDifference returns a short summary of what a difference changes. */
+/** describeDifference summarizes a difference: the items added and removed, else the line counts, else the values. */
 export function describeDifference({ added, removed, gained, lost, before, after }: Difference): string {
-  const items = [...(added ?? []).map((one) => `+${one}`), ...(removed ?? []).map((one) => `−${one}`)];
+  const items = [...(added ?? []).map((item) => `+${item}`), ...(removed ?? []).map((item) => `−${item}`)];
   const lines = [gained ? `+${gained}` : "", lost ? `−${lost}` : ""].filter(Boolean);
   const values = before || after ? `${before ?? ""} → ${after ?? ""}` : "";
   return (items.length ? items : lines).join(" ") || values;

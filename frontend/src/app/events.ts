@@ -13,7 +13,7 @@ type EventRow<E extends keyof Events.CustomEvents> = {
   forgets?: true;
 };
 
-// the reads that hang on the open workspace, so any change of it makes them stale
+/** WORKSPACE_KEYS holds the queries that depend on the open workspace. */
 const WORKSPACE_KEYS = [
   keys.state,
   keys.roots,
@@ -30,7 +30,7 @@ const WORKSPACE_KEYS = [
   keys.search,
 ] as const;
 
-// what each section of config.json feeds
+/** SECTIONS holds the queries each section of config.json feeds. */
 const SECTIONS: Record<string, readonly (readonly unknown[])[]> = {
   settings: [keys.settings, keys.folders],
   workspaces: [keys.workspaces, keys.state, keys.health, keys.gits, keys.releases],
@@ -38,7 +38,7 @@ const SECTIONS: Record<string, readonly (readonly unknown[])[]> = {
   agents: [keys.agents],
 };
 
-/** Every event Go sends to the pages that makes a query stale. */
+/** EVENTS holds each event Go sends that makes queries stale. */
 const EVENTS: { [E in keyof Events.CustomEvents]?: EventRow<E> } = {
   "config:changed": { stale: (section) => (section ? (SECTIONS[section] ?? []) : Object.values(SECTIONS).flat()) },
   "workspace:opened": { stale: () => [...WORKSPACE_KEYS, keys.workspaces] },

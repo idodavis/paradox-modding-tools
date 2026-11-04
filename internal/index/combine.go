@@ -29,12 +29,12 @@ type Winner struct {
 // keeps.
 type Reason string
 
-// The reasons: the last copy, the first, the playset's last, the one with the highest priority, the one an entry
-// mode puts in place, the first of copies merged into one, the copy left when another mod's replace_path or a path
-// the game does not read drops the one that would win, and a localization key's in a replace folder; a copy merged
-// into the winner by an entry mode or by its database; a choice no source settles; and a copy in a file the game does
-// not read, because a file at the same path later in the load order replaces its file, or a mod's replace_path drops
-// its folder.
+// The reasons. Last, First, Playset, Priority and Mode say why a copy wins. Merge is the first of copies merged into
+// one. Replace and Path say that a copy wins because another mod's replace_path or an unread path drops the one that
+// would. ReplaceFolder is a localization key in a replace folder. Injected and Combined are copies merged into the
+// winner by an entry mode or by its database. Unsettled is a choice no source settles. Shadowed and Dropped are a copy
+// in a file the game does not read: a file at the same path later in the load order replaces its file, or a mod's
+// replace_path drops its folder.
 const (
 	ReasonLast          Reason = "last"
 	ReasonFirst         Reason = "first"
@@ -52,9 +52,10 @@ const (
 	ReasonDropped       Reason = "dropped"
 )
 
-// Reasons holds each reason in words: its label, and for a reason a contest's winner can have, why the winner wins at
-// length, as a template the contest's facts fill: {folder}, {file}, {winner}, {beaten} and {beatenFile}. The label of
-// a reason for a copy the game does not read is a template too, filled with {mod}, the mod that hides the copy.
+// Reasons holds each reason in words: a label, and for a reason a contest's winner can have, a longer text saying why
+// it wins. That text is a template the contest's facts fill: {folder}, {file}, {winner}, {beaten} and {beatenFile}.
+// The label of a reason for a copy the game does not read is a template too, filled with {mod}, the mod that hides
+// the copy.
 var Reasons = map[Reason]struct{ Label, Why string }{
 	ReasonLast: {Label: "Last file by name", Why: "The game reads every file in {folder} in order of file name and " +
 		"keeps the copy it reads last. {winner}'s file, {file}, comes after {beaten}'s {beatenFile}, so its copy " +
@@ -134,8 +135,8 @@ func (index *Index) FindHider(file int32) (Reason, string) {
 	return ReasonShadowed, loaded.Origin
 }
 
-// FindWinner returns the definition of a name that the game keeps, by the database's precedence. It returns false if
-// the game keeps none.
+// FindWinner returns the definition the game keeps among the given sites, all definitions of one name, by the
+// database's precedence. It returns false if the game keeps none.
 func (index *Index) FindWinner(sites []Site, precedence game.Precedence) (Winner, bool) {
 	ordered := lo.Reject(index.listLoadOrder(sites, precedence.ByPlayset), func(site Site, _ int) bool {
 		return index.placements[site.File].unmounted
@@ -166,8 +167,8 @@ func (index *Index) FindKeptLocal(schema *schema.Schema, reference schema.Refere
 	return index.findKept(schema, reference, func(site Site) bool { return site.File == file })
 }
 
-// findKept returns the definition the game keeps of a name in a database. A local definition counts where a test of
-// its site says it is visible.
+// findKept returns the definition the game keeps of a name in a database. A local definition counts only if isVisible
+// accepts its site.
 func (index *Index) findKept(schema *schema.Schema, reference schema.Reference, isVisible func(Site) bool) (Winner, bool) {
 	database, ok := schema.Databases[reference.Database]
 	if !ok {
@@ -207,14 +208,14 @@ func (index *Index) ListImages(folder string) []files.File {
 	return images
 }
 
-// FindLoaded returns the file the game reads at a relative path, and the files it hides. It returns false if the game
-// reads none.
+// FindLoaded returns the file the game reads at a relative path, and the files it hides, including the ones a
+// replace_path drops. It returns false if the game reads none.
 func (index *Index) FindLoaded(rel string) (loaded files.File, hidden []files.File, ok bool) {
 	var kept []files.File
 	for _, position := range index.byRel[toRelKey(index.row, rel)] {
 		file := index.Files[position]
 		switch {
-		case !index.IsListed(position), index.placements[position].unmounted, !index.hasFile(position):
+		case !index.IsListed(position), index.placements[position].unmounted, !index.hasFile(position): // not in play
 		case index.isDropped(position):
 			hidden = append(hidden, file)
 		default:
@@ -243,7 +244,7 @@ func (index *Index) ResolveTexture(rel string) (string, bool) {
 	})
 }
 
-// IsLoaded reports whether the game reads a file at all.
+// IsLoaded reports whether the game reads the file at a position in Files at all.
 func (index *Index) IsLoaded(file int32) bool {
 	current := index.Files[file]
 	loaded, _, ok := index.FindLoaded(current.Rel)
@@ -343,7 +344,7 @@ func (index *Index) resolveModes(ordered []Site, precedence game.Precedence) (Wi
 		return Winner{}, false
 	}
 	switch {
-	case len(ordered) == 1:
+	case len(ordered) == 1: // a lone copy has no reason
 	case hasAdding && precedence.Injects == "unsettled":
 		winner.Reason, winner.Cause = ReasonUnsettled, CauseInject
 	case modeWins:
@@ -408,9 +409,9 @@ func (index *Index) isReplacedLater(position int32) bool {
 		func(replacer int) bool { return replacer > place.root })
 }
 
-// listReplacers returns the positions among the roots of the mods whose replace_path names the folder of a path,
-// given as its group's key. A replace_path names one folder exactly, not the folders below it. A mod a narrowed index
-// does not answer for replaces nothing.
+// listReplacers returns the positions in Roots of the mods whose replace_path names the folder of a file, given the
+// file's group key. A replace_path names one folder exactly, not the folders below it. A mod that a narrowed index does
+// not answer for replaces nothing.
 func (index *Index) listReplacers(key string) []int {
 	folder := path.Dir(key)
 	if folder == "." {

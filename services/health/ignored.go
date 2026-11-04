@@ -1,5 +1,5 @@
-// ignored.go keeps the pairs of mods whose conflicts the open workspace ignores, and lists a finding for each pair. It
-// also lists the mods its compatibility checks judge, which are all but those the workspace leaves out.
+// ignored.go adds and removes the pairs of mods whose conflicts the open workspace ignores, and lists a finding for
+// each pair. It also lists the mods the compatibility checks judge: all but those the workspace leaves out.
 
 package health
 

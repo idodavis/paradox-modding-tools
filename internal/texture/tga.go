@@ -81,8 +81,8 @@ func readTGAPalette(bytes []byte, offset int) ([][4]uint8, int, error) {
 	return palette, offset + length*size, nil
 }
 
-// readTGAPixels reads the given count of pixel bytes, each pixel of the given size, unpacking run-length packets
-// when the image is encoded. It returns an error if the data ends before the last pixel.
+// readTGAPixels reads the given total of pixel bytes from the data, each pixel the given size in bytes, unpacking
+// run-length packets if the image is encoded. It returns an error if the data ends before the last pixel.
 func readTGAPixels(data []byte, total, size int, encoded bool) ([]byte, error) {
 	if !encoded {
 		if len(data) < total {
@@ -119,9 +119,9 @@ func readTGAPixels(data []byte, total, size int, encoded bool) ([]byte, error) {
 	return pixels[:total], nil
 }
 
-// toColor converts one stored pixel to a color by the image type, its run-length bit cleared. A color-mapped
-// pixel is an index into the given palette, a truecolor pixel is 5-5-5, BGR or BGRA by its size, and a gray
-// pixel is one byte with an alpha byte after it when it has two. A 5-5-5 pixel's attribute bit is not alpha. It
+// toColor converts one stored pixel to a color. The image type is the TGA type without its run-length bit. A
+// color-mapped pixel is an index into the given palette, a truecolor pixel is 5-5-5, BGR or BGRA by its size, and a
+// gray pixel is one byte, with an alpha byte after it if it has two. A 5-5-5 pixel's attribute bit is not alpha. It
 // returns an error for a pixel size the type does not define, or an index past the palette.
 func toColor(pixel []byte, imageType byte, palette [][4]uint8) ([4]uint8, error) {
 	switch {

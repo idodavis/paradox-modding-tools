@@ -10,7 +10,7 @@ import OriginChip from "../../ui/OriginChip.vue";
 import { EDITOR_LANGUAGES } from "../../ui/ScriptSnippet.vue";
 import { findModel } from "./editor/models";
 
-// the tab's side and its repository's root come apart from it, since only a diff tab has them
+// side and root are props of their own because only a diff tab has them
 const { tab, side, root = "" } = defineProps<{ tab: Tab; side: DiffSide; root?: string }>();
 
 const editor = useEditorStore();
@@ -23,7 +23,7 @@ const { data: log } = useQuery(() => ({
   ...commitsQuery({ dir: root, refs: [], limit: 1 }),
   enabled: !!root,
 }));
-const entry = computed(() => status.value?.changes?.find((one) => one.place.key === tab.key));
+const entry = computed(() => status.value?.changes?.find((change) => change.place.key === tab.key));
 const deleted = computed(() => entry.value?.status === "deleted");
 const gitPath = computed(() => entry.value?.path ?? place.value?.rel ?? "");
 const sides = computed(() => {

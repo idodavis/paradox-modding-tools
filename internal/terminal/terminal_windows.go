@@ -110,8 +110,8 @@ func hasWSL() bool {
 	return ok
 }
 
-// lookupRegistry returns the text of the given value of the registry key at the given path under the given key. It
-// returns false if that key cannot be opened, or has no such value as text.
+// lookupRegistry returns the string value with the given name from the registry key at the given path under the given
+// parent key. It returns false if that key cannot be opened or has no such string value.
 func lookupRegistry(key registry.Key, path, value string) (string, bool) {
 	subkey, err := registry.OpenKey(key, path, registry.QUERY_VALUE)
 	if err != nil {
@@ -221,19 +221,19 @@ func setUTF8(processID uint32) {
 
 // read reads the console's output. Once the output has ended, it lets go of the pipe and returns the error.
 func (console *console) read(chunk []byte) (int, error) {
-	var n uint32
-	err := windows.ReadFile(console.output, chunk, &n, nil)
+	var count uint32
+	err := windows.ReadFile(console.output, chunk, &count, nil)
 	if err != nil {
 		closeHandles(console.output)
 	}
-	return int(n), err
+	return int(count), err
 }
 
 // write writes the given bytes to the console's input.
 func (console *console) write(input []byte) (int, error) {
-	var n uint32
-	err := windows.WriteFile(console.input, input, &n, nil)
-	return int(n), err
+	var count uint32
+	err := windows.WriteFile(console.input, input, &count, nil)
+	return int(count), err
 }
 
 // resize changes the size of the pseudo console, which then draws its screen again.

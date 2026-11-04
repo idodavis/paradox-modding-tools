@@ -1,6 +1,6 @@
 <!--
-  The Properties tab of a window's panel: the selected widget, the pictures it may draw where it lists them, and one
-  table of its properties with where each comes from, a row opening an editor that writes it on the widget.
+  The Properties tab of a window's panel: the selected widget, a picker for the pictures it may draw if it lists any,
+  and a table of its properties with where each comes from. A row opens an editor that writes it on the widget.
 -->
 <script setup lang="ts">
 import { useMutation, useQuery } from "@pinia/colada";
@@ -21,7 +21,7 @@ import { findTypeIcon, splitColor, toCss } from "./properties";
 
 const { path, window } = defineProps<{ path: string; window: Window }>();
 
-// the list a widget with no pictures queries, which the query never runs for
+// NO_PICTURES stands in for the picture list of a widget that has none. The query is disabled then, so it never runs.
 const NO_PICTURES: PictureList = {
   key: "",
   database: "",
@@ -41,7 +41,7 @@ const file = computed(() => store.file(path));
 const widgets = computed(() => window.widgets ?? []);
 const places = computed(() => window.places ?? []);
 const widget = computed(() => widgets.value[file.value.selected ?? -1]);
-// whether the widget's file is read only, where a property's editor shows its value alone
+// A property's editor only shows its value when the widget's file is read-only.
 const isReadOnly = computed(() => !!places.value[widget.value?.place ?? -1]?.readOnly);
 const crumbs = computed(() => {
   const chain: Widget[] = [];

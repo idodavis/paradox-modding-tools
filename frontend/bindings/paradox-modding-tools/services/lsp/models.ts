@@ -58,7 +58,7 @@ export interface Card {
     "about"?: string;
 
     /**
-     * the values the game writes most for a field nothing declares, up to eight
+     * the game's eight most written values for an undeclared field
      */
     "writes"?: string[] | null;
 
@@ -68,7 +68,7 @@ export interface Card {
     "returns"?: string;
 
     /**
-     * the kind of command a scripted definition the workspace has acts as
+     * the kind of command a workspace's scripted definition acts as
      */
     "command"?: string;
 
@@ -83,12 +83,12 @@ export interface Card {
     "holds"?: string;
 
     /**
-     * the scope its block runs in, for a command or link that switches
+     * the scope its block runs in, where a command or link moves it
      */
     "leads"?: string;
 
     /**
-     * the scope its value must be, for a command or link with no block
+     * the scope its value must be for a command or link with no block
      */
     "target"?: string;
 
@@ -103,7 +103,7 @@ export interface Card {
     "weight"?: number;
 
     /**
-     * the event graph's id of the name; "" if the graph does not draw it
+     * the Event Graph's id of the name; "" if it is not drawn
      */
     "node"?: string;
 
@@ -361,8 +361,8 @@ export interface Legend {
 }
 
 /**
- * A Level is one level of a finding: its words, its look on the page, and whether it counts as a problem and means
- * the game loses something.
+ * A Level is one level of a finding: its wording, its icon and color on the page, whether it counts as a problem and
+ * whether the game loses something.
  */
 export interface Level {
     "id": string;

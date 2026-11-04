@@ -1,7 +1,7 @@
 /**
- * The search store: the running search's query and its hits per file, taken in once a frame as they arrive, a name's
- * references when those are listed instead, and the results sent from another window. The search view and the panel
- * draw from it; nothing else holds hits.
+ * The search store: the current search's query and its hits per file, or a name's references listed instead. Hits are
+ * added once per frame as they arrive. It also takes in the results another window sends. The search view and the
+ * panel read from it; nothing else holds hits.
  */
 import { defineStore } from "pinia";
 import { useMutation } from "@pinia/colada";
@@ -14,7 +14,7 @@ import * as searchApi from "@services/search/service";
 import type { Site } from "@services/lsp/models";
 import type { Hits, Query } from "@services/search/models";
 
-/** How the search of the window that started it stands, sent on the channel every window hears. */
+/** Results is the standing of a search, which the window that started it sends on the channel every window hears. */
 type Results = {
   type: "results";
   query: Query | null;
@@ -27,13 +27,13 @@ type Results = {
 
 export const useSearchStore = defineStore("search", () => {
   const query = shallowRef<Query | null>(null);
-  // what the results are, when they are not a search's, such as a name's references
+  // the heading of the results when they are a name's references, not a search's
   const title = shallowRef("");
   const running = shallowRef(false);
   // whether the search stopped at the most hits Go sends
   const capped = shallowRef(false);
   const files = shallowRef<Hits[]>([]);
-  // the hits that arrived since the last frame, which the next frame takes in
+  // the hits that arrived since the last frame
   let arrived: Hits[] = [];
   // whether the hits that arrive belong to this window's own search
   let started = false;
@@ -54,14 +54,14 @@ export const useSearchStore = defineStore("search", () => {
     },
   });
 
-  /** Sends the search's standing to the other windows. A message carries no new hits unless it is given some. */
+  /** sendResults sends the search's standing to the other windows. It carries no hits unless the change gives some. */
   function sendResults(change: Partial<Pick<Results, "reset" | "hits">>): void {
-    const current = query.value && { ...query.value, origins: [...(query.value.origins ?? [])] };
-    const message = { query: current, title: title.value, running: running.value, capped: capped.value };
+    const plainQuery = query.value && { ...query.value, origins: [...(query.value.origins ?? [])] };
+    const message = { query: plainQuery, title: title.value, running: running.value, capped: capped.value };
     post({ type: "results", ...message, reset: false, hits: [], ...change });
   }
 
-  /** Takes in the hits that arrived since the last frame, and sends them to the other windows. */
+  /** takeArrived adds the hits that arrived since the last frame to the files, and sends them to the other windows. */
   function takeArrived(): void {
     if (!arrived.length) return;
     files.value.push(...arrived);
@@ -70,10 +70,7 @@ export const useSearchStore = defineStore("search", () => {
     arrived = [];
   }
 
-  /**
-   * The results: the search's query or what else they are, whether the search still runs or stopped at the most hits
-   * Go sends, and the hits per file.
-   */
+  /** current returns the results: the query or title, whether the search runs or hit Go's limit, and the hits. */
   const current = (): { query: Query | null; title: string; running: boolean; capped: boolean; files: Hits[] } => ({
     query: query.value,
     title: title.value,
@@ -82,7 +79,7 @@ export const useSearchStore = defineStore("search", () => {
     files: files.value,
   });
 
-  /** Starts a search, stopping the last one. The hits arrive through the search:hits event. */
+  /** search starts a search and stops the last one. The hits arrive through the search:hits event. */
   const search = (next: Query): void => {
     started = false;
     query.value = next;
@@ -93,7 +90,7 @@ export const useSearchStore = defineStore("search", () => {
     mutate(next);
   };
 
-  /** Lists places as the results under the given title, as a name's references, in place of a search's hits. */
+  /** showReferences lists the given sites as the results under the given heading, in place of a search's hits. */
   const showReferences = (heading: string, sites: Site[]): void => {
     started = false;
     void searchApi.StopSearch();
@@ -107,7 +104,7 @@ export const useSearchStore = defineStore("search", () => {
     sendResults({ reset: true, hits: files.value });
   };
 
-  /** Subscribes to search:hits and to the results other windows send. Called once at startup. */
+  /** subscribe listens for search:hits and for the results other windows send. Call it once at startup. */
   const subscribe = (): void => {
     Events.On("search:hits", ({ data }) => {
       if (!started) return;

@@ -23,11 +23,11 @@ type Hunk struct {
 const tabSpaces = "  "
 
 // RevertHunks gives a file of the open workspace back its text from before an agent's edits, given as each edit's
-// hunks, the earliest edit first. A file the earliest edit made goes to PMT's trash when it ends empty; any other is
-// written in its own line endings. It returns an error, and changes nothing, if no workspace is open, the file cannot
-// be read, it has unsaved text in the editor, an edit has no hunk, or a hunk's lines are not in the file once.
+// hunks, the earliest edit first. If the edits created the file and it ends up empty, it goes to PMT's trash; else it
+// is written in its own line endings. It returns an error, and changes nothing, if no workspace is open, the file
+// cannot be read, it has unsaved text in the editor, an edit has no hunk, or a hunk's lines are not in the file once.
 func (wsp *Service) RevertHunks(path string, edits [][]Hunk, isNew bool) error {
-	session, err := wsp.Session()
+	ws, err := wsp.Session()
 	if err != nil {
 		return err
 	}
@@ -35,7 +35,7 @@ func (wsp *Service) RevertHunks(path string, edits [][]Hunk, isNew bool) error {
 	if err != nil {
 		return err
 	}
-	if draft, open := session.LookupBuffer(path); open && draft != text.Text {
+	if draft, open := ws.LookupBuffer(path); open && draft != text.Text {
 		return errors.New("it has unsaved text in the editor: save or revert it first")
 	}
 	// an empty text has no lines, and a line that ends in \r\n reads as one that ends in \n
@@ -61,10 +61,10 @@ func (wsp *Service) RevertHunks(path string, edits [][]Hunk, isNew bool) error {
 	return wsp.Write(path, files.Text{Text: strings.Join(lines, jomini.LineEnding(text.Text)), Encoding: text.Encoding})
 }
 
-// revertHunk returns a file's lines with one hunk taken back: its lines after the change, found once in the file, in
-// place of its lines before. A hunk whose lines before are in the file once, and its lines after nowhere, is undone
-// already, and the lines come back as they are. It returns an error when the lines after are in the file more than
-// once, or when neither are.
+// revertHunk returns a file's lines with one hunk undone: the hunk's lines after the edit are replaced by its lines
+// before. The lines after must be in the file exactly once. If they are nowhere and the lines before are there once,
+// the hunk is undone already and the lines come back unchanged. It returns an error if the lines after are in the
+// file more than once, or if neither are there.
 func revertHunk(lines []string, hunk Hunk) ([]string, error) {
 	starts := listStarts(lines, hunk.After)
 	switch {
@@ -79,8 +79,8 @@ func revertHunk(lines []string, hunk Hunk) ([]string, error) {
 	return nil, errors.New("it changed since the agent's edit")
 }
 
-// listStarts lists where a run of a diff's lines starts in a file's lines, each place it is. An empty run starts at
-// every line.
+// listStarts returns every index in a file's lines where a run of a diff's lines starts. An empty run starts at every
+// line.
 func listStarts(lines, run []string) []int {
 	var starts []int
 	for start := range lines {
@@ -91,14 +91,14 @@ func listStarts(lines, run []string) []int {
 	return starts
 }
 
-// isSameLine reports whether a file's line is a diff's line, each tab of the file's read as the spaces a diff writes.
+// isSameLine reports whether a file's line equals a diff's line, reading the file's tabs as two spaces.
 func isSameLine(fileLine, diffLine string) bool {
 	return fileLine == diffLine || strings.ReplaceAll(fileLine, "\t", tabSpaces) == diffLine
 }
 
-// restoreLines returns a hunk's lines before the change as the file writes them, from the file's lines that hold its
-// lines after. A line the change kept is the file's own. A line it took out gets the file's tabs back in its indent
-// when the file wrote tabs where the diff wrote spaces.
+// restoreLines returns a hunk's lines from before the edit, written as the file writes them. It is given the file's
+// lines that match the hunk's lines after the edit. A line the edit kept is taken from the file. Any other line gets
+// tabs back in its indent if the file writes tabs where the diff writes spaces.
 func restoreLines(hunk Hunk, fileLines []string) []string {
 	own := make(map[string]string, len(hunk.After))
 	hasTabs := false

@@ -73,8 +73,8 @@ const windowButtons = computed(() => [
   { region: "close", label: "Close", glyph: "M.5.5l9 9M9.5.5l-9 9", press: () => Window.Close() },
 ]);
 
-// a narrow window keeps the inactive tabs' icons: every label, the pop-out button and the least space to drag by
-// take 1110px at a scale of 100%
+// Below 1110px at a scale of 100% the bar is compact: inactive tabs show only their icons. That is the width that
+// every label, the pop-out button and the least space to drag by need.
 const bar = useTemplateRef("bar");
 const { width } = useElementSize(bar);
 const compact = computed(
@@ -82,11 +82,11 @@ const compact = computed(
 );
 
 // a page in a window of its own: its tab brings that window up, and the main window shows another page
-/** pageWindow returns the name of the window of its own that shows a page. */
-const pageWindow = (name: WorkspacePage) => `page:${name}`;
-/** popped reports whether a page is shown in a window of its own. */
-const popped = (name: WorkspacePage) =>
-  pageWindow(name) !== THIS_WINDOW && windows.listWindows().includes(pageWindow(name));
+/** resolvePageWindow returns the name of the window of its own that shows a page. */
+const resolvePageWindow = (name: WorkspacePage) => `page:${name}`;
+/** isPopped reports whether a page is shown in a window of its own. */
+const isPopped = (name: WorkspacePage) =>
+  resolvePageWindow(name) !== THIS_WINDOW && windows.listWindows().includes(resolvePageWindow(name));
 /** canPopOut reports whether a page can open in a window of its own. The IDE stays in the main window. */
 const canPopOut = (name: WorkspacePage) => name !== "workspace-ide";
 
@@ -98,7 +98,7 @@ watch(
   { immediate: true },
 );
 
-// the light and dark item offers the colors the theme is not in
+// the menu item that switches to the other of light and dark
 const mode = computed(() =>
   settings.theme().dark
     ? { label: "Switch to light", icon: "i-lucide-sun" }
@@ -147,12 +147,12 @@ const switcher = computed(
     ] satisfies DropdownMenuItem[][],
 );
 
-/** writeDark writes the theme's other colors, dark or light. */
+/** writeDark switches to the other of light and dark. */
 function writeDark(): void {
   settings.write("appearance.dark", String(!settings.theme().dark));
 }
 
-/** resolveLink returns a workspace's link in the switcher: the page open now, where it is one of a workspace's. */
+/** resolveLink returns the switcher's link to a workspace: the page shown now if it is a workspace page, else home. */
 function resolveLink(id: string) {
   const name = route.name;
   if (name && isWorkspacePage(name)) return { name, params: { id } };
@@ -160,8 +160,8 @@ function resolveLink(id: string) {
 }
 
 /**
- * resolveTabLink returns where a page's tab goes. It goes back to where the page was last shown, with its view, row
- * or root. The tab of the page shown goes to the page's first state, such as Health's summary.
+ * resolveTabLink returns the link of a page's tab: where the page was last shown, with its view, row or root. The tab
+ * of the page now shown links to the page's first state instead, such as Health's summary.
  */
 function resolveTabLink(name: WorkspacePage) {
   const first = { name, params: { id: workspace.activeId() } };
@@ -176,15 +176,15 @@ function tabClass(on: boolean): string[] {
 /** tabMenu returns a tab's context menu: the IDE stays in the main window, a page opens in a window of its own. */
 function tabMenu(name: WorkspacePage): ContextMenuItem[] {
   if (!canPopOut(name)) return [];
-  if (!popped(name))
+  if (!isPopped(name))
     return [{ label: "Open in a new window", icon: "i-lucide-app-window", onSelect: () => popOut(name) }];
   return [
-    { label: "Show window", icon: "i-lucide-app-window", onSelect: () => windows.showWindow(pageWindow(name)) },
+    { label: "Show window", icon: "i-lucide-app-window", onSelect: () => windows.showWindow(resolvePageWindow(name)) },
     {
       label: "Back into the main window",
       icon: "i-lucide-panel-top-close",
       onSelect: () => {
-        windows.closeOther(pageWindow(name));
+        windows.closeOther(resolvePageWindow(name));
         void router.push({ name, params: { id: workspace.activeId() } });
       },
     },
@@ -193,8 +193,8 @@ function tabMenu(name: WorkspacePage): ContextMenuItem[] {
 
 /** popOut opens a page in a window of its own, and shows another page here if it was the one shown. */
 function popOut(name: WorkspacePage): void {
-  windows.popOut(pageWindow(name));
-  const next = tools.value.find((tool) => tool !== name && !popped(tool));
+  windows.popOut(resolvePageWindow(name));
+  const next = tools.value.find((tool) => tool !== name && !isPopped(tool));
   if (route.name === name && next) void router.push({ name: next, params: { id: workspace.activeId() } });
 }
 
@@ -307,11 +307,11 @@ function styleButton(region: string): string[] {
       <nav v-if="active" class="-my-px ms-1 flex min-w-0 gap-0.5 self-stretch">
         <UContextMenu v-for="name in tools" :key="name" :items="tabMenu(name)" :disabled="!canPopOut(name)">
           <button
-            v-if="popped(name)"
+            v-if="isPopped(name)"
             type="button"
             :class="tabClass(false)"
             :aria-label="`${PAGES[name].title}, in its own window`"
-            @click="windows.showWindow(pageWindow(name))"
+            @click="windows.showWindow(resolvePageWindow(name))"
           >
             <UIcon :name="PAGES[name].icon" class="size-4" />
             <span v-if="!compact">{{ PAGES[name].title }}</span>

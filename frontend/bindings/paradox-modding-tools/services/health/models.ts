@@ -247,7 +247,7 @@ export interface Overview {
     "messages": number;
 
     /**
-     * Judged is the ids of the workspace's mods its own problems are judged with: those it depends on, all the way down.
+     * Judged holds the ids of the mods this mod's own problems are judged with: the mods it depends on, directly or not.
      */
     "judged": string[] | null;
 }

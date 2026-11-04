@@ -34,8 +34,8 @@ const (
 	jpegMagic = "\xff\xd8\xff"
 )
 
-// sideLimit is the most pixels an image may have on a side, Direct3D's limit on a texture. Decode refuses an image past
-// it.
+// sideLimit is the most pixels an image may have on a side, Direct3D's limit on a texture. Decode and EncodeDDS
+// refuse an image past it.
 const sideLimit = 16384
 
 // extensions are the image extensions the game accepts, in the order they are tried.
@@ -98,8 +98,8 @@ func decodeHeader(file []byte) (Header, bool) {
 	return decodeTGAHeader(file)
 }
 
-// Decode decodes one mip level of an image to pixels, 0 being the whole image. It returns an error if the image or
-// the level cannot be read.
+// Decode decodes one mip level of the image in the given bytes to pixels, 0 being the whole image. It returns an
+// error if the image or the level cannot be read.
 func Decode(file []byte, level int) (image.Image, error) {
 	header, ok := decodeHeader(file)
 	if err := checkSides(header.Width, header.Height); ok && err != nil {
@@ -114,7 +114,7 @@ func Decode(file []byte, level int) (image.Image, error) {
 		return decodeTGA(file, header)
 	case hasMagic(file, pngMagic):
 		return png.Decode(bytes.NewReader(file))
-	case hasMagic(file, ddsMagic):
+	case hasMagic(file, ddsMagic): // a DDS whose header decodeHeader refused
 		if len(file) < ddsDataOffset ||
 			(string(file[ddsFourCCOffset:ddsDepthOffset]) == "DX10" && len(file) < ddsDX10DataOffset) {
 			return nil, errTruncated
@@ -132,15 +132,15 @@ func checkSides(width, height int) error {
 	return nil
 }
 
-// Resolve finds the file a path in script names, trying each image extension the game accepts. It returns false if
-// none exists.
-func Resolve(written string, lookup func(rel string) (path string, ok bool)) (path string, ok bool) {
-	written = strings.TrimPrefix(written, "/")
-	if path, ok = lookup(written); ok {
+// Resolve finds the image file a path written in script names, trying it as written and then with each other image
+// extension the game accepts, through the given lookup of a relative path. It returns false if none exists.
+func Resolve(scriptPath string, lookup func(rel string) (path string, ok bool)) (path string, ok bool) {
+	scriptPath = strings.TrimPrefix(scriptPath, "/")
+	if path, ok = lookup(scriptPath); ok {
 		return path, true
 	}
-	extension := filepath.Ext(written)
-	stem := strings.TrimSuffix(written, extension)
+	extension := filepath.Ext(scriptPath)
+	stem := strings.TrimSuffix(scriptPath, extension)
 	for _, candidate := range extensions {
 		if strings.EqualFold(candidate, extension) {
 			continue
@@ -153,9 +153,9 @@ func Resolve(written string, lookup func(rel string) (path string, ok bool)) (pa
 }
 
 // IsImage reports whether a path written in script ends in the extension of an image the game accepts, in any case.
-func IsImage(written string) bool {
+func IsImage(scriptPath string) bool {
 	return slices.ContainsFunc(extensions, func(extension string) bool {
-		return strings.EqualFold(filepath.Ext(written), extension)
+		return strings.EqualFold(filepath.Ext(scriptPath), extension)
 	})
 }
 

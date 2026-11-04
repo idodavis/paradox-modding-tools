@@ -28,23 +28,23 @@ const {
 } = defineProps<{
   id: string;
   root?: string;
-  /** The node selected, its path drawn, as the route names it. */
+  /** The selected node, as the route names it. */
   node?: string;
-  /** The filter the graph is drawn with, as JSON, as the route gives it. */
+  /** Changes to the default filter, as JSON from the route. */
   filters?: string;
 }>();
 
-/** A root kept in the recent list, with what the start page shows of it. */
+/** Recent is a root in the recent list: the fields the start page shows. */
 type Recent = Pick<Node, "id" | "database" | "name" | "what" | "title" | "display" | "background">;
 
 const NO_FILTER: Filter = { databases: [], origins: [], depth: 0, limit: 0, fanout: 0, expand: [], follow: false };
-/** The canvas with nothing drawn. */
+/** EMPTY is the canvas with nothing drawn. */
 const EMPTY = { nodes: [], edges: [] };
-/** How many roots the recent list keeps. */
+/** RECENT is how many roots the recent list keeps. */
 const RECENT = 8;
-/** How many roots each list of the start page shows. */
+/** START_SHOWN is how many roots each list of the start page shows. */
 const START_SHOWN = 4;
-/** The classes of one root's row on the start page. */
+/** START_ROW is the classes of a root's row on the start page. */
 const START_ROW = "flex h-8.5 w-full items-center gap-2.5 rounded-md px-2 text-start hover:bg-elevated";
 const LAYOUTS = [
   { label: "Detail below", icon: "i-lucide-panel-bottom", value: "panel" },
@@ -63,7 +63,7 @@ const CHECKBOX_UI = {
   wrapper: "flex grow items-center gap-2",
   label: "flex grow items-center gap-2 text-12",
 };
-/** The words that say how the chain is laid out, for each choice of the nodes that open. */
+/** LAID_OUT is the words for how the graph is laid out, for each value of branches. */
 const LAID_OUT: Record<string, string> = {
   path: "left to right by step, the path's branches open",
   all: "left to right by step, every node that fires open",
@@ -91,6 +91,7 @@ watch(
 // the roots drawn on this page, and where Back and Forward stand among them
 const history = shallowRef<string[]>([]);
 const position = shallowRef(-1);
+const backLabel = computed(() => (position.value > 0 ? `Back to ${history.value[position.value - 1]}` : "Back"));
 watch(
   () => root,
   (next) => {
@@ -102,7 +103,7 @@ watch(
 );
 
 const { data: defaults } = useQuery(() => ({ ...graphDefaultsQuery, enabled: workspace.isOpen() }));
-// the filter is Go's defaults, with the parts the user or the route changed laid over them
+// The filter is Go's defaults with the user's and the route's edits laid over them.
 const edits = shallowRef<Partial<Filter> | null>(null);
 watch(
   () => id,
@@ -128,20 +129,20 @@ const flow = computedAsync(() => {
 }, EMPTY);
 const kinds = computed(() =>
   (defaults.value?.databases ?? []).map((database) => {
-    const nodes = graph.value?.nodes?.filter((one) => one.database === database) ?? [];
+    const nodes = graph.value?.nodes?.filter((entry) => entry.database === database) ?? [];
     return { database, what: defaults.value?.labels?.[database] ?? database, count: nodes.length };
   }),
 );
 const changes = computed(() => {
   const [now, base] = [filter.value, defaults.value];
   if (!now || !base) return 0;
-  const differences = [
-    xor(now.databases ?? [], base.databases ?? []).length,
-    xor(now.origins ?? [], base.origins ?? []).length,
-    now.depth - base.depth,
-    now.limit - base.limit,
+  const differs = [
+    xor(now.databases ?? [], base.databases ?? []).length > 0,
+    xor(now.origins ?? [], base.origins ?? []).length > 0,
+    now.depth !== base.depth,
+    now.limit !== base.limit,
   ];
-  return differences.filter(Boolean).length;
+  return differs.filter(Boolean).length;
 });
 const origins = computed(() =>
   (defaults.value?.origins ?? []).map((origin) => ({
@@ -155,17 +156,16 @@ const count = computed(() => {
   const total = graph.value?.total ?? 0;
   return total > drawn ? `${drawn} of ${plural(total, "node")}` : plural(total, "node");
 });
-const facts = computed(() =>
-  graph.value
-    ? [
-        {
-          label: "Drawn",
-          value: `${count.value}${graph.value.truncated ? ", stopped at the node limit" : ""}${graph.value.nodes?.some((one) => one.deep) ? ", the depth limit" : ""}`,
-        },
-        { label: "Laid out", value: LAID_OUT[branches.value] ?? "" },
-      ]
-    : [{ label: "No root", value: "pick one to draw" }],
-);
+const facts = computed(() => {
+  if (!graph.value) return [{ label: "No root", value: "pick one to draw" }];
+  const drawn = [count.value];
+  if (graph.value.truncated) drawn.push("stopped at the node limit");
+  if (graph.value.nodes?.some((entry) => entry.deep)) drawn.push("the depth limit");
+  return [
+    { label: "Drawn", value: drawn.join(", ") },
+    { label: "Laid out", value: LAID_OUT[branches.value] ?? "" },
+  ];
+});
 
 const term = shallowRef("");
 const search = refDebounced(term, 200);
@@ -180,21 +180,21 @@ const { data: roots, isLoading: searching } = useQuery(() => ({
   enabled: workspace.isOpen() && !!search.value,
   placeholderData: (previous) => (search.value ? previous : undefined),
 }));
-// the hits under a head per kind, the root first when the search does not hold it
+// The hits grouped under a label for each kind. The current root comes first if the hits do not include it.
 const items = computed(() => {
   const head = (label: string) => ({ id: label, name: label, type: "label" as const });
   if (showingOwn.value) return [[head("From your mods"), ...(own.value ?? [])]];
-  const heads = Object.entries(groupBy(roots.value ?? [], (one) => one.what)).map(([what, nodes]) => [
+  const groups = Object.entries(groupBy(roots.value ?? [], (entry) => entry.what)).map(([what, nodes]) => [
     head(what),
     ...nodes,
   ]);
-  const shown = { id: root, name: rootNode.value?.name ?? root };
-  return root && !roots.value?.some((one) => one.id === root) ? [[shown], ...heads] : heads;
+  const current = { id: root, name: rootNode.value?.name ?? root };
+  return root && !roots.value?.some((entry) => entry.id === root) ? [[current], ...groups] : groups;
 });
-const rootNode = computed(() => graph.value?.nodes?.find((one) => one.id === root));
-// the node selected goes with an agent's prompt
+const rootNode = computed(() => graph.value?.nodes?.find((entry) => entry.id === root));
+// The selected node goes with an agent's prompt.
 useChip(() => {
-  const selectedNode = graph.value?.nodes?.find((one) => one.id === selected.value);
+  const selectedNode = graph.value?.nodes?.find((entry) => entry.id === selected.value);
   return selectedNode
     ? makeChip(
         selectedNode.name,
@@ -203,45 +203,38 @@ useChip(() => {
     : null;
 });
 const rootLook = computed(() => lookupLook(rootNode.value?.database ?? ""));
-// the root's kind sits over the field's end, as wide as its words: a long id stops before it
+// The root's kind badge sits at the end of the field; the field's padding leaves room for the badge's width.
 const { width: whatWidth } = useElementSize(useTemplateRef("whatBadge"), undefined, { box: "border-box" });
-// the root drawn joins the recent list, newest first
+// The root drawn joins the recent list, newest first.
 watch(rootNode, (drawn) => {
   if (!drawn) return;
   const { id: rootId, database, name, what, title, display, background } = drawn;
-  const kept = recent.value.filter((one) => one.id !== rootId);
+  const kept = recent.value.filter((entry) => entry.id !== rootId);
   recent.value = [{ id: rootId, database, name, what, title, display, background }, ...kept].slice(0, RECENT);
 });
 
 // the detail opens beside the graph or below it; full screen keeps it beside
 const layout = useLocalStorage<string | number>("pmt.graph.layout", "drawer");
 const below = computed(() => layout.value === "panel" && !isFullscreen.value);
-const panes = computed(() => [
-  { id: "graph", slot: "graph", order: 1, minSize: below.value ? undefined : 50 },
-  ...(selected.value && root
-    ? [
-        // in percent: a pane in pixels that appears after the splitter is made is taken as a share
-        {
-          id: "detail",
-          slot: "detail",
-          order: 2,
-          ...(below.value
-            ? { defaultSize: 35, minSize: 20, maxSize: 60 }
-            : { defaultSize: 30, minSize: 20, maxSize: 50 }),
-        },
-      ]
-    : []),
-]);
+const panes = computed(() => {
+  const graphPane = { id: "graph", slot: "graph", order: 1, minSize: below.value ? undefined : 50 };
+  if (!selected.value || !root) return [graphPane];
+  // Sizes are percentages: a pane added after the splitter exists would read a pixel size as a share.
+  const sizes = below.value
+    ? { defaultSize: 35, minSize: 20, maxSize: 60 }
+    : { defaultSize: 30, minSize: 20, maxSize: 50 };
+  return [graphPane, { id: "detail", slot: "detail", order: 2, ...sizes }];
+});
 
 /** draw draws the graph from the node with the given id. */
-function draw(next: string): void {
+function draw(rootId: string): void {
   update({ expand: [] });
-  void router.replace({ query: { root: next } });
+  void router.replace({ query: { root: rootId } });
 }
 
-/** step goes back to the root drawn before this one, or forward again for a positive step. */
-function step(by: number): void {
-  position.value += by;
+/** step moves through the history by the given offset: a negative one goes back, a positive one forward again. */
+function step(offset: number): void {
+  position.value += offset;
   void router.replace({ query: { root: history.value[position.value] } });
 }
 
@@ -252,8 +245,8 @@ function showOwn(): void {
 }
 
 /**
- * select selects the node with the given id. A fold is opened instead, and a node the depth stopped at is opened as
- * well.
+ * select selects the node with the given id. A fold, a node with a count or an "N more" row, is opened and not
+ * selected. A node beyond the depth limit is selected and opened.
  */
 function select(nodeId: string): void {
   const picked = graph.value?.nodes?.find((candidate) => candidate.id === nodeId);
@@ -283,12 +276,12 @@ function setNumber(key: "depth" | "limit", value: number | null | undefined): vo
           : 'border-b border-default bg-muted ps-3 pe-3'
       "
     >
-      <UTooltip :text="position > 0 ? `Back to ${history[position - 1]}` : 'Back'">
+      <UTooltip :text="backLabel">
         <UButton
           icon="i-lucide-arrow-left"
           variant="ghost"
           square
-          :aria-label="position > 0 ? `Back to ${history[position - 1]}` : 'Back'"
+          :aria-label="backLabel"
           :disabled="position <= 0"
           @click="step(-1)"
         />
@@ -483,20 +476,20 @@ function setNumber(key: "depth" | "limit", value: number | null | undefined): vo
         <div class="flex items-start gap-7">
           <section v-if="recent.length" class="flex flex-1 flex-col gap-1" aria-label="Recent roots">
             <span class="px-2 pb-1.5 text-11 font-semibold tracking-wide text-dimmed uppercase">Recent</span>
-            <button v-for="one in recent.slice(0, START_SHOWN)" :key="one.id" :class="START_ROW" @click="draw(one.id)">
+            <button v-for="row in recent.slice(0, START_SHOWN)" :key="row.id" :class="START_ROW" @click="draw(row.id)">
               <span
-                v-if="one.display === 'window' && one.background"
+                v-if="row.display === 'window' && row.background"
                 class="h-4 w-5.5 shrink-0 rounded-[3px] bg-cover bg-center"
-                :style="{ backgroundImage: `url(&quot;${fileUrl(one.background)}&quot;)` }"
+                :style="{ backgroundImage: `url(&quot;${fileUrl(row.background)}&quot;)` }"
               />
               <UIcon
                 v-else
-                :name="one.display === 'hidden' ? 'i-lucide-eye-off' : lookupLook(one.database).icon"
+                :name="row.display === 'hidden' ? 'i-lucide-eye-off' : lookupLook(row.database).icon"
                 class="size-4 shrink-0"
-                :style="{ color: lookupLook(one.database).color }"
+                :style="{ color: lookupLook(row.database).color }"
               />
-              <span class="font-mono text-12 text-highlighted">{{ one.name }}</span>
-              <span class="min-w-0 grow truncate text-12 text-dimmed">{{ one.title || one.what }}</span>
+              <span class="font-mono text-12 text-highlighted">{{ row.name }}</span>
+              <span class="min-w-0 grow truncate text-12 text-dimmed">{{ row.title || row.what }}</span>
             </button>
           </section>
           <section v-if="own?.length" class="flex flex-1 flex-col gap-1" aria-label="Events from your mods">
@@ -505,15 +498,15 @@ function setNumber(key: "depth" | "limit", value: number | null | undefined): vo
               <span class="grow" />
               <UButton :label="`Show all ${own.length}`" variant="link" size="xs" class="p-0" @click="showOwn()" />
             </span>
-            <button v-for="one in own.slice(0, START_SHOWN)" :key="one.id" :class="START_ROW" @click="draw(one.id)">
-              <OriginChip :origin="one.site.place.origin" dot />
-              <span class="font-mono text-12 text-highlighted">{{ one.name }}</span>
+            <button v-for="row in own.slice(0, START_SHOWN)" :key="row.id" :class="START_ROW" @click="draw(row.id)">
+              <OriginChip :origin="row.site.place.origin" dot />
+              <span class="font-mono text-12 text-highlighted">{{ row.name }}</span>
               <span class="min-w-0 grow truncate text-12 text-dimmed">{{
-                one.display === "hidden" ? "hidden" : one.title || one.what
+                row.display === "hidden" ? "hidden" : row.title || row.what
               }}</span>
               <UBadge
-                :label="one.copyOrigin ? 'replaces' : 'added'"
-                :color="one.copyOrigin ? 'warning' : 'success'"
+                :label="row.copyOrigin ? 'replaces' : 'added'"
+                :color="row.copyOrigin ? 'warning' : 'success'"
                 variant="subtle"
                 size="sm"
               />

@@ -40,8 +40,8 @@ const choices = shallowRef<CommandPaletteGroup | null>(null);
 // the ids of the commands the palette ran last, the latest first
 const recent = useLocalStorage<string[]>("pmt.palette.recent", []);
 
-// what the search looks through: a command's list while one is shown, else by the search's first character: ">"
-// the commands, "@" or "#" the definitions, else the files
+// What the search looks through: a command's list while one is shown, else by the first character of the search: > for
+// commands, @ or # for definitions, anything else for files.
 const mode = computed(() => {
   if (choices.value) return "choices";
   if (term.value.startsWith(">")) return "commands";
@@ -68,9 +68,9 @@ const available = computed((): { id: string; label: string; items: CommandPalett
   const activeId = workspace.activeId();
   // each row shows its first shortcut as the user set it
   const applicable = COMMANDS.filter((row) => row.when()).map((row) => ({ ...row, kbds: listBindings(row)[0] }));
-  const recentRows = recent.value.flatMap((one) => applicable.find((row) => row.id === one) ?? []);
-  const names: PageName[] = ["library", "new-mod", "wizard", ...(activeId ? listShownTools() : [])];
-  const pages = names.map((name) => {
+  const recentRows = recent.value.flatMap((id) => applicable.find((row) => row.id === id) ?? []);
+  const pageNames: PageName[] = ["library", "new-mod", "wizard", ...(activeId ? listShownTools() : [])];
+  const pages = pageNames.map((name) => {
     const page: Page = PAGES[name];
     return {
       id: `page.${name}`,
@@ -220,12 +220,12 @@ function listValues(): CommandPaletteItem[] {
 }
 
 /**
- * pick closes the palette once a row has run. A command that handed the palette a list under its own id leaves it
- * open on that list. A command is kept among the ones run last; a row that is no command, such as a file, is not.
+ * pick closes the palette after a row is picked, except for a command that just handed the palette a list: the palette
+ * stays open on that list. A command is added to the recently used ones; other rows, such as a file, are not.
  */
 function pick(row: CommandPaletteItem): void {
   if (typeof row.id === "string" && findCommand(row.id)) {
-    recent.value = [row.id, ...recent.value.filter((one) => one !== row.id)].slice(0, RECENT);
+    recent.value = [row.id, ...recent.value.filter((id) => id !== row.id)].slice(0, RECENT);
   }
   if (!choices.value || row.id !== choices.value.id) open.value = false;
 }

@@ -97,18 +97,18 @@ func findChangelogNote(dir, version string) (ChangeNote, bool, error) {
 	if err != nil || version == "" {
 		return ChangeNote{}, false, err
 	}
-	name, ok := lo.Find(changelogFiles, func(name string) bool {
-		return slices.ContainsFunc(entries, func(entry os.DirEntry) bool { return entry.Name() == name })
+	file, ok := lo.Find(changelogFiles, func(candidate string) bool {
+		return slices.ContainsFunc(entries, func(entry os.DirEntry) bool { return entry.Name() == candidate })
 	})
 	if !ok {
 		return ChangeNote{}, false, nil
 	}
-	text, err := files.ReadText(files.Join(dir, name))
+	text, err := files.ReadText(files.Join(dir, file))
 	if err != nil {
 		return ChangeNote{}, false, err
 	}
 	section, ok := findSection(text.Text, version)
-	return ChangeNote{Source: name, Text: section}, ok, nil
+	return ChangeNote{Source: file, Text: section}, ok, nil
 }
 
 // findSection returns the section of a Markdown text under the first heading that holds a version. Version 1.2 is in

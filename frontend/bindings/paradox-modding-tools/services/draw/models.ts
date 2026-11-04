@@ -177,7 +177,7 @@ export interface Group {
     "reach"?: number;
 
     /**
-     * the data model item whose rows alone read it; 0 where the window does
+     * the data model item whose rows alone read it; 0 for the window
      */
     "item"?: number;
 
@@ -374,8 +374,8 @@ export interface PictureFiles {
 }
 
 /**
- * A PictureList is where the pictures are listed that a picture binding may draw: the images that one definition
- * writes, or, where Name is "", what the binding shows of each definition of a database, which a pick of one sets.
+ * A PictureList says where the pictures a picture binding may draw are listed. With a Name it lists the images that one
+ * definition writes. With no Name it lists what the binding shows of each definition of a database.
  */
 export interface PictureList {
     /**

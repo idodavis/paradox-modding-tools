@@ -18,11 +18,11 @@ import {
   type Command,
 } from "../commands";
 
-// the keys pressed only with another
+/** MODIFIERS holds the keys that cannot be a shortcut alone. */
 const MODIFIERS = new Set(["Control", "Shift", "Alt", "Meta"]);
 
 const { getKbdKey } = useKbd();
-// the shortcut taking new keys: its command and its place among the command's shortcuts
+// the shortcut taking new keys: its command and its slot among the command's shortcuts
 const recording = shallowRef<{ command: Command; slot: number }>();
 // the last shortcut that was refused, with why, until the next recording starts
 const refused = shallowRef<{ command: Command; slot: number; reason: string }>();
@@ -30,13 +30,13 @@ const refused = shallowRef<{ command: Command; slot: number; reason: string }>()
 /** One row per shortcut of every command: its keys as set, the command's own, and whether they differ. */
 const rows = computed(() =>
   COMMANDS.flatMap((command) => {
-    const set = listBindings(command);
+    const bindings = listBindings(command);
     return listDefaultBindings(command).map((own, slot) => ({
       command,
       slot,
-      kbds: set[slot] ?? own,
+      kbds: bindings[slot] ?? own,
       own,
-      changed: joinShortcut(set[slot] ?? own) !== joinShortcut(own),
+      changed: joinShortcut(bindings[slot] ?? own) !== joinShortcut(own),
     }));
   }),
 );

@@ -23,7 +23,7 @@ import textIcon from "../fileicons/paradox-text.svg?url";
 import textureIcon from "../fileicons/paradox-texture.svg?url";
 import videoIcon from "../fileicons/paradox-video.svg?url";
 
-/** VIEWS holds how each file format is shown, as code or as an image, or not at all for null, and its icon. */
+/** VIEWS gives the view and the icon of each file format. A null view means the format is not opened. */
 export const VIEWS: Readonly<Record<Format, { view: "code" | "image" | null; icon: string }>> = {
   "": { view: "code", icon: textIcon },
   script: { view: "code", icon: scriptIcon },
@@ -41,7 +41,7 @@ export const VIEWS: Readonly<Record<Format, { view: "code" | "image" | null; ico
   binary: { view: null, icon: binaryIcon },
 };
 
-/** EXTENSION_ICONS holds the icons of the extensions that have one of their own, by the format they are in. */
+/** EXTENSION_ICONS gives some extensions an icon of their own, within one file format. */
 const EXTENSION_ICONS: Partial<Record<Format, Readonly<Record<string, string>>>> = {
   text: { ".json": jsonIcon, ".info": infoIcon, ".md": mdIcon, ".bbcode": bbcodeIcon, ".log": logIcon },
   binary: {
@@ -54,7 +54,7 @@ const EXTENSION_ICONS: Partial<Record<Format, Readonly<Record<string, string>>>>
   },
 };
 
-/** findIcon returns the icon of a file: its extension's where its format has one for it, else its format's. */
+/** findIcon returns the icon of a file: its extension's icon if its format has one, else its format's icon. */
 export function findIcon(place: Place): string {
   const name = place.name.toLowerCase();
   const extensions = Object.entries(EXTENSION_ICONS[place.format] ?? {});

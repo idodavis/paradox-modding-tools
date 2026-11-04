@@ -162,7 +162,7 @@ func listVersions(ws *workspace.Session, mods *index.Index, tree *jomini.Tree, s
 func makeVersion(ws *workspace.Session, mods *index.Index, tree *jomini.Tree, statement int32) (Version, bool) {
 	label := statement
 	if tree.Statements[statement].IsBlock() {
-		// a desc or text that is not found leaves 0, the file, which has no value
+		// FindChild leaves 0 when there is no desc; statement 0 is the file, which has no value
 		label, _ = tree.FindChild(statement, game.DescriptionKey)
 		if label == 0 {
 			label, _ = tree.FindChild(statement, game.LabelKey)
@@ -174,7 +174,7 @@ func makeVersion(ws *workspace.Session, mods *index.Index, tree *jomini.Tree, st
 	}
 	key := tree.Unquoted(value)
 	text, winner, ok := ws.LookupText(mods, key)
-	// a key that is no identifier is shown as written, so it misses nothing
+	// A key that is not an identifier is shown as written, so it is never missing.
 	missing := jomini.IsIdentifier(key) && (!ok || mods.Language(winner.Site) != resolveLanguage(ws))
 	return Version{
 		Key: key, Text: text, Segments: describeCalls(ws, mods, text), Missing: missing,

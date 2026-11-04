@@ -40,8 +40,9 @@ export type Mode = "code" | "visual";
 export type DiffSide = "changes" | "staged" | "conflict" | "commit";
 
 /**
- * A Tab is one tab: a file by its key, or a diff of the file on one side, in its repository and at its commit for a
- * commit's diff, or the start page, whose key is empty. It also says whether it is the preview tab.
+ * A Tab is one tab in a group. It shows a file by its key, a diff of that file on one side, with the repository root
+ * and commit hash for a commit's diff, or the start page, whose key is empty. The next file shown replaces a preview
+ * tab.
  */
 export type Tab = {
   id: string;
@@ -73,7 +74,7 @@ export type Source = "explorer" | "navigate" | "history" | "agent" | "edit";
 /** A Visit is one place the user was in: a file and a caret position in it. */
 type Visit = { place: Place; position: IPosition };
 
-/** How many places the history keeps. */
+/** HISTORY is how many places the history keeps. */
 const HISTORY = 50;
 /** How many files the start page lists as recent. */
 const RECENT = 5;
@@ -102,8 +103,7 @@ export const useEditorStore = defineStore("editor", () => {
     {},
     { listenToStorageChanges: false },
   );
-  // the flags every part of the IDE and every window shares: the Wiki pane and the bottom panel shown, and the file
-  // selected for a compare
+  // shared by every window: whether the Wiki pane is shown, the bottom panel's tab, and the file selected for a compare
   const wiki = useLocalStorage("pmt.ide.wiki", false);
   const panel = useLocalStorage("pmt.ide.panel", "");
   const compareFile = useLocalStorage<Place | null>("pmt.ide.compare", null, { serializer: StorageSerializers.object });
@@ -115,23 +115,23 @@ export const useEditorStore = defineStore("editor", () => {
   const activeId = shallowRef(state.value.rows[0]?.columns[0]?.id ?? "");
   // the place of each file a tab holds, by key: a tab holds only the key, which is not a path
   const places = shallowReactive(new Map<string, Place>());
-  // whether changes are written down: not while a workspace's layout is being brought back, and in the main window only
+  // whether layout changes are saved: not while a workspace's layout loads, and only in the main window
   const tracking = shallowRef(false);
   // the range a file was shown with, which the active group's editor of that file selects once
   const request = shallowRef<{ key: string; range: IRange } | null>(null);
   // the tab Follow the agent showed last, until the user picks a tab or a group
   const agentTab = shallowRef("");
   // the files the explorer's last selection holds, for the compare of two
-  const selection = shallowRef<Place[]>([]);
+  const selectedFiles = shallowRef<Place[]>([]);
   // the places the user jumped between, the oldest first, and the index of the one the user is at
   const visits = shallowRef<Visit[]>([]);
   const current = shallowRef(-1);
 
   // a file that cannot open is taken out of the recent files
   const { mutate: openPlace } = useMutation({
-    mutation: (request: { place: Place; range?: IRange }) => openFile(request.place, request.range),
-    onError: (_error, request) => {
-      recent.value = recent.value.filter((one) => one.key !== request.place.key);
+    mutation: ({ place, range }: { place: Place; range?: IRange }) => openFile(place, range),
+    onError: (_error, { place }) => {
+      recent.value = recent.value.filter((candidate) => candidate.key !== place.key);
     },
   });
   // a file that cannot open is closed and forgotten
@@ -149,10 +149,10 @@ export const useEditorStore = defineStore("editor", () => {
   });
 
   /**
-   * applyFixAsync applies a quick fix: it creates the file the fix creates, a localization file with its header and any
-   * other as an empty script file, applies its edits to each file's model as one undoable step, then shows the place
-   * it reveals in the group to the right of the active one, made when there is none. It resolves once all of that is
-   * done.
+   * applyFixAsync applies a quick fix. It creates the file the fix needs, a localization file with its header and any
+   * other as an empty script file, applies the fix's edits to each file's model as one undoable step, then shows the
+   * place the fix reveals in the group to the right of the active one. It splits a new group if there is none. It
+   * resolves once all of that is done.
    */
   async function applyFixAsync(fix: Fix): Promise<void> {
     if (fix.creates) {
@@ -193,8 +193,8 @@ export const useEditorStore = defineStore("editor", () => {
     },
     { deep: true },
   );
-  // a file changed on disk is read into its model; a deleted file, or every file in a deleted folder, closes its tabs,
-  // unless it has edits not saved, which stay to be saved again
+  // A file changed on disk is read into its model. A deleted file, or every file in a deleted folder, has its tabs
+  // closed unless it has unsaved edits.
   Events.On("fs:changed", ({ data }) => {
     if (!data.deleted) {
       void applyChange(data.path);
@@ -209,7 +209,7 @@ export const useEditorStore = defineStore("editor", () => {
     });
   });
 
-  /** listUnder lists the places of the open files whose key is the given one or lies under it, as in a folder. */
+  /** listUnder lists the places of the open files at the given key or under it, as in a folder. */
   function listUnder(key: string): Place[] {
     return [...places.values()].filter((place) => place.key === key || place.key.startsWith(`${key}/`));
   }
@@ -230,7 +230,7 @@ export const useEditorStore = defineStore("editor", () => {
     tracking.value = false;
     for (const key of places.keys()) closeModel(key);
     places.clear();
-    selection.value = [];
+    selectedFiles.value = [];
     visits.value = [];
     current.value = -1;
     state.value = makeLayout();
@@ -288,12 +288,12 @@ export const useEditorStore = defineStore("editor", () => {
   }
 
   /**
-   * find returns the tab with the given id and the group holding it, looked for in the given group first, the active
-   * group unless one is given. It is null when none holds it.
+   * find locates the tab with the given id and returns its group and index. It looks in the given group first, the
+   * active group by default. It returns null if no group holds the tab.
    */
-  function find(tabId: string, first = activeGroup()): { group: Group; index: number } | null {
+  function find(id: string, first = activeGroup()): { group: Group; index: number } | null {
     for (const group of [first, ...listGroups()]) {
-      const index = group?.tabs.findIndex((tab) => tab.id === tabId) ?? -1;
+      const index = group?.tabs.findIndex((tab) => tab.id === id) ?? -1;
       if (group && index >= 0) return { group, index };
     }
     return null;
@@ -307,8 +307,8 @@ export const useEditorStore = defineStore("editor", () => {
   }
 
   /**
-   * add makes a tab the active one of a group, adding it after the active tab when the group lacks it. A new preview
-   * tab takes the place of the one already there, unless that one has unsaved edits: those keep it as a tab of its own.
+   * add makes a tab the active tab of a group. If the group lacks the tab, it goes after the active tab. A new preview
+   * tab replaces the group's preview tab, unless that one has unsaved edits: it then stops being a preview.
    */
   function add(group: Group, tab: Tab): void {
     if (!group.tabs.some((other) => other.id === tab.id)) {
@@ -325,7 +325,7 @@ export const useEditorStore = defineStore("editor", () => {
     group.active = tab.id;
   }
 
-  /** closeGroup closes a group left with no tab, unless it is the last. The group that takes its place is focused. */
+  /** closeGroup removes a group that has no tabs, unless it is the last. If it was active, the group after it is. */
   function closeGroup(group: Group): void {
     const all = listGroups();
     const row = state.value.rows.find((candidate) => candidate.columns.includes(group));
@@ -357,7 +357,7 @@ export const useEditorStore = defineStore("editor", () => {
   /** layout returns the layout of groups in rows of columns. */
   const layout = (): Layout => state.value;
 
-  /** placeOf returns the place of the file with the given key, or null when no open tab, file or diff, shows it. */
+  /** placeOf returns the place of the file with the given key, or null if no open tab shows it. */
   const placeOf = (key: string): Place | null => places.get(key) ?? null;
 
   /** activeFile returns the place of the active tab's file, for a diff tab too, or null when there is none. */
@@ -374,7 +374,7 @@ export const useEditorStore = defineStore("editor", () => {
     return !!tab && !tab.side && !!placeOf(tab.key)?.drawable;
   }
 
-  // Visual draws only a drawable file: when the active file is not one, by any way it got there, the mode is Code
+  // Visual draws only a drawable file, so the mode goes back to Code whenever the active tab is not one.
   watch(
     () => isDrawable(activeTab()),
     (drawable) => {
@@ -389,13 +389,13 @@ export const useEditorStore = defineStore("editor", () => {
   const isFollowed = (): boolean => !!agentTab.value && activeTab()?.id === agentTab.value;
 
   /**
-   * open makes a tab of a file, a diff or the start page the active one, as the user's pick. It switches to the group
-   * that holds the tab, the given or active group first, or adds the tab there. The history keeps the switch to a
-   * file. The start page has no place.
+   * open makes a tab of a file, a diff or the start page the active one, as the user's pick. It uses the group that
+   * holds the tab, else the given group, else the active group, which gets the tab. It records the jump to a file in
+   * the history. The start page has no place.
    */
   const open = (target: Omit<Tab, "id" | "preview">, place?: Place | null, groupId?: string): void => {
     const id = tabId(target);
-    const preferred = listGroups().find((one) => one.id === groupId) ?? activeGroup();
+    const preferred = listGroups().find((candidate) => candidate.id === groupId) ?? activeGroup();
     const group = find(id, preferred)?.group ?? preferred;
     if (!group) return;
     if (place) {
@@ -408,10 +408,10 @@ export const useEditorStore = defineStore("editor", () => {
   };
 
   /**
-   * show opens a file at a position or range. It opens in the window that holds the file, else in this one, or in the
-   * main window if this one has no editors; the main window switches to the IDE first. The source's row in SOURCES
-   * decides the preview tab, the history and Follow the agent. A drawable file opens in Visual when the setting is on,
-   * unless it was active already or the agent showed it. A folder is not shown.
+   * show opens a file at a position or range. The window that holds the file shows it, else this window, else the main
+   * window if this one has no editors. The main window switches to the IDE page first. The source's row in SOURCES
+   * decides the preview tab, the history and Follow the agent. A drawable file opens in Visual if the setting is on,
+   * unless it was already active or the agent showed it. A folder is not shown.
    */
   const show = (place: Place, selection?: IPosition | IRange, source: Source = "navigate"): void => {
     if (place.isDir) return;
@@ -433,10 +433,10 @@ export const useEditorStore = defineStore("editor", () => {
     const isShown = activeTab()?.id === id;
     // Follow replaces only its own preview tab, so the user's is pinned
     if (row.follow && row.preview) {
-      group.tabs.filter((one) => one.preview && one.id !== agentTab.value).forEach((one) => pin(one.id));
+      group.tabs.filter((tab) => tab.preview && tab.id !== agentTab.value).forEach((tab) => pin(tab.id));
     }
     agentTab.value = row.follow ? id : "";
-    const tab = group.tabs.find((one) => one.id === id);
+    const tab = group.tabs.find((candidate) => candidate.id === id);
     if (tab && !row.preview) tab.preview = false;
     places.set(place.key, place);
     add(group, { id, key: place.key, preview: !!row.preview });
@@ -456,8 +456,8 @@ export const useEditorStore = defineStore("editor", () => {
   };
 
   /**
-   * findRequest returns the range a file was last shown with, to select, or empty to put the caret at, that no editor
-   * has moved to yet. It is undefined when there is none.
+   * findRequest returns the range a file was shown with, if no editor has moved to it yet. The editor selects the
+   * range, or only puts the caret at it if the range is empty. It is undefined if there is none.
    */
   const findRequest = (key: string): IRange | undefined =>
     request.value?.key === key ? request.value.range : undefined;
@@ -468,14 +468,12 @@ export const useEditorStore = defineStore("editor", () => {
   };
 
   /** listSelection lists the files selected in the explorer, in the order the tree lists them. A folder is left out. */
-  const listSelection = (): Place[] => selection.value;
+  const listSelection = (): Place[] => selectedFiles.value;
 
   /** listRecent lists the last files shown in the active workspace, the newest first. */
   const listRecent = (): Place[] => recent.value;
 
-  /**
-   * showPanel shows the bottom panel on the given tab. Visual hides the panel, so the window goes back to Code first.
-   */
+  /** showPanel shows the bottom panel on the given tab. Visual hides it, so the window goes back to Code first. */
   const showPanel = (tab: string): void => {
     mode.value = "code";
     panel.value = tab;
@@ -489,7 +487,7 @@ export const useEditorStore = defineStore("editor", () => {
 
   /** selectFiles keeps the files the explorer has selected. */
   const selectFiles = (files: Place[]): void => {
-    selection.value = files;
+    selectedFiles.value = files;
   };
 
   /**
@@ -508,12 +506,12 @@ export const useEditorStore = defineStore("editor", () => {
   };
 
   /**
-   * go goes the given number of places through the history: -1 back, 1 forward. A place whose file has closed opens
-   * it again. Past either end it does nothing.
+   * go moves through the history by the given number of places: -1 is back and 1 is forward. It reopens a place whose
+   * file has closed, and does nothing past either end.
    */
   const go = (steps: number): void => {
     const here = locate();
-    // where the user is now is kept, so going the other way comes back to it; a place no jump led to is a jump
+    // Save the current position, so going the other way returns to it. A place no jump led to is recorded as a jump.
     if (here && visits.value[current.value]?.place.key === here.place.key) {
       visits.value = visits.value.with(current.value, here);
     } else if (here) {
@@ -538,26 +536,24 @@ export const useEditorStore = defineStore("editor", () => {
 
   /** activate makes the given group the active one, as the user's pick. A group the layout lacks changes nothing. */
   const activate = (groupId: string): void => {
-    const group = listGroups().find((one) => one.id === groupId);
+    const group = listGroups().find((candidate) => candidate.id === groupId);
     if (!group) return;
     activeId.value = groupId;
     release(group.active);
   };
 
   /**
-   * release ends Follow the agent's hold on the tab it showed, as the user picks a tab. The tab Follow showed stays
-   * open when it is the one the user picks.
+   * release ends Follow the agent's hold on its tab when the user picks a tab. If the picked tab is the one Follow
+   * showed, it is pinned so it stays open.
    */
-  function release(tabId: string | null): void {
-    if (tabId && tabId === agentTab.value) pin(tabId);
+  function release(id: string | null): void {
+    if (id && id === agentTab.value) pin(id);
     agentTab.value = "";
   }
 
   /** pin keeps a preview tab: it is no longer replaced by the next file shown. */
-  const pin = (tabId: string): void => {
-    listGroups().forEach((group) =>
-      group.tabs.filter((tab) => tab.id === tabId).forEach((tab) => (tab.preview = false)),
-    );
+  const pin = (id: string): void => {
+    listGroups().forEach((group) => group.tabs.filter((tab) => tab.id === id).forEach((tab) => (tab.preview = false)));
   };
 
   /**
@@ -571,20 +567,20 @@ export const useEditorStore = defineStore("editor", () => {
     return !unsaved.length || (await confirm.open(question)) === true;
   };
 
-  /** listUnsaved lists the paths of the files with changes that are not saved that no tab but the given ones shows. */
+  /** listUnsaved lists the relative paths of the given tabs' files that have unsaved changes and no other tab. */
   function listUnsaved(tabs: Tab[]): string[] {
     const others = listTabs()
       .filter((tab) => !tabs.includes(tab))
       .map((tab) => tab.key);
     return [...new Set(tabs.map((tab) => tab.key))].flatMap((key) => {
-      const open = findModel(key);
-      return open?.unsaved && !others.includes(key) ? [open.place.rel] : [];
+      const model = findModel(key);
+      return model?.unsaved && !others.includes(key) ? [model.place.rel] : [];
     });
   }
 
   /** close closes a tab. The model of its file closes too when no other tab shows the file. */
-  const close = (tabId: string): void => {
-    const home = find(tabId);
+  const close = (id: string): void => {
+    const home = find(id);
     if (!home) return;
     const tab = remove(home.group, home.index);
     closeGroup(home.group);
@@ -618,19 +614,19 @@ export const useEditorStore = defineStore("editor", () => {
   };
 
   /**
-   * move moves a tab by drag, to the given index of a group, or into a new group on the given side of the group. A tab
-   * no group holds stays where it is.
+   * move moves a tab, as a drag does, to the given index of a group, or into a new group on the given side of the
+   * group. A tab no group holds stays where it is.
    */
-  const move = (tabId: string, groupId: string, place: number | Side): void => {
-    const home = find(tabId);
-    const group = listGroups().find((one) => one.id === groupId);
+  const move = (id: string, groupId: string, place: number | Side): void => {
+    const home = find(id);
+    const group = listGroups().find((candidate) => candidate.id === groupId);
     const tab = home && group && remove(home.group, home.index);
     if (!home || !group || !tab) return;
     const target = typeof place === "number" ? group : insertGroup(group, place, [], null);
-    const twin = target.tabs.findIndex((other) => other.id === tabId);
-    if (twin >= 0) target.tabs.splice(twin, 1);
+    const existing = target.tabs.findIndex((other) => other.id === id);
+    if (existing >= 0) target.tabs.splice(existing, 1);
     target.tabs.splice(Math.min(typeof place === "number" ? place : 0, target.tabs.length), 0, tab);
-    target.active = tabId;
+    target.active = id;
     activeId.value = target.id;
     closeGroup(home.group);
   };
@@ -652,7 +648,7 @@ export const useEditorStore = defineStore("editor", () => {
   /** retarget moves the tabs, the place and the model of a renamed file to its new place. */
   function retarget(key: string, place: Place): void {
     for (const group of listGroups()) {
-      for (const tab of group.tabs.filter((one) => one.key === key)) {
+      for (const tab of group.tabs.filter((candidate) => candidate.key === key)) {
         tab.key = place.key;
         const id = tabId(tab);
         if (group.active === tab.id) group.active = id;
@@ -665,7 +661,7 @@ export const useEditorStore = defineStore("editor", () => {
     renameModel(key, place);
   }
 
-  // a file a rename or a fix edited where no tab shows it gets a tab after the shown one, which stays shown
+  // A file with unsaved edits that no tab shows, as a rename or a fix can leave, gets a tab after the active one.
   watch(
     () => unsavedModels().filter((model) => !find(tabId({ key: model.place.key }))),
     (untabbed) => {

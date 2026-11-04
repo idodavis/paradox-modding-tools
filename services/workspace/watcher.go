@@ -20,8 +20,8 @@ import (
 
 // A Watcher watches folders for files that change or are deleted.
 type Watcher struct {
-	watcher *fsnotify.Watcher
-	done    chan struct{} // closed when run ends
+	notifier *fsnotify.Watcher
+	done     chan struct{} // closed when run ends
 }
 
 // watchedFolders holds the dot folders the watcher watches, so that an edit there reaches an open tab and the
@@ -41,13 +41,13 @@ func startWatcher(dirs []string, change func(changes []FileChange)) (*Watcher, e
 			return nil, errors.Join(err, notifier.Close())
 		}
 	}
-	watcher := &Watcher{watcher: notifier, done: make(chan struct{})}
+	watcher := &Watcher{notifier: notifier, done: make(chan struct{})}
 	go watcher.run(change)
 	return watcher, nil
 }
 
-// addFolders makes a notifier watch a folder and every folder under it but the hidden ones, the watched dot folders
-// all the same. A file adds nothing.
+// addFolders makes a notifier watch a folder and every folder under it, skipping the folders isWatched refuses. The
+// folder itself is always watched.
 func addFolders(notifier *fsnotify.Watcher, dir string) error {
 	return filepath.WalkDir(dir, func(path string, entry fs.DirEntry, err error) error {
 		switch {
@@ -62,8 +62,8 @@ func addFolders(notifier *fsnotify.Watcher, dir string) error {
 	})
 }
 
-// isWatched reports whether the watcher watches a folder, by its name: any but a hidden one, and the watched dot
-// folders.
+// isWatched reports whether the watcher watches a folder of the given name: any folder that is not hidden, and the
+// watched dot folders.
 func isWatched(folder string) bool {
 	return !files.IsHiddenDir(folder) || slices.Contains(watchedFolders, folder)
 }
@@ -76,22 +76,22 @@ func (watcher *Watcher) run(change func(changes []FileChange)) {
 	var batch <-chan time.Time   // fires when the burst ends; nil while none is pending
 	for {
 		select {
-		case event, ok := <-watcher.watcher.Events:
+		case event, ok := <-watcher.notifier.Events:
 			if !ok {
 				return
 			}
-			if event.Op == fsnotify.Chmod || files.IsFolder(event.Name) && !isWatched(filepath.Base(event.Name)) {
+			if event.Op == fsnotify.Chmod || (files.IsFolder(event.Name) && !isWatched(filepath.Base(event.Name))) {
 				continue
 			}
 			if event.Has(fsnotify.Create) {
 				// a folder made later is watched from its first event; one that cannot be watched is skipped
-				_ = addFolders(watcher.watcher, event.Name)
+				_ = addFolders(watcher.notifier, event.Name)
 			}
 			if len(pending) == 0 {
 				batch = time.After(200 * time.Millisecond)
 			}
 			pending[event.Name] = true
-		case _, ok := <-watcher.watcher.Errors:
+		case _, ok := <-watcher.notifier.Errors:
 			if !ok {
 				return
 			}
@@ -109,7 +109,7 @@ func (watcher *Watcher) run(change func(changes []FileChange)) {
 
 // Close stops the watcher. It returns once no report is under way.
 func (watcher *Watcher) Close() {
-	_ = watcher.watcher.Close()
+	_ = watcher.notifier.Close()
 	<-watcher.done
 }
 
@@ -120,15 +120,15 @@ func (watcher *Watcher) Move(source string, move func() error) error {
 		return move()
 	}
 	// Windows refuses to move a folder while a folder inside it is watched
-	for _, dir := range watcher.watcher.WatchList() {
+	for _, dir := range watcher.notifier.WatchList() {
 		if files.ToKey(dir) == files.ToKey(source) || files.IsUnder(source, dir) {
-			_ = watcher.watcher.Remove(dir)
+			_ = watcher.notifier.Remove(dir)
 		}
 	}
 	err := move()
 	if err != nil {
 		// a folder that cannot be watched again is skipped
-		_ = addFolders(watcher.watcher, source)
+		_ = addFolders(watcher.notifier, source)
 	}
 	return err
 }

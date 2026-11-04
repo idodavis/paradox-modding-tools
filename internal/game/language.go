@@ -32,7 +32,7 @@ type ShapeRule struct {
 // A Keyword is a key of the language itself: one it gives a fixed shape to, or one of its operators. The first row
 // that fits a key wins.
 type Keyword struct {
-	// Key is a key path in lower case: the commands that must hold the key, then the key.
+	// Key is a key path in lower case. Written command/key, it fits the key only in that command's block.
 	Key    string
 	Games  []string // the games it holds for; none means every game
 	Holder string   // fits only in a block of this shape; "" means any
@@ -60,8 +60,8 @@ type Keyword struct {
 	Preview bool
 	// Values is the database of the text it shows, written as its value or as the text key in its block; "" means none.
 	Values string
-	// Entries is the database of the entry its text key names, by what declares the keyword as a command. The game does
-	// not need the entry defined. Nil means none.
+	// Entries is the database of the entry its text key names, by the dumps' word that declares the keyword
+	// (DeclaredEffect or DeclaredTrigger). The game does not need the entry defined. Nil means none.
 	Entries map[string]string
 }
 
@@ -341,8 +341,8 @@ var DumpCorrections = []DumpCorrection{
 	{Games: []string{vic3}, Command: "any_province", Scopes: []string{"state"}, Target: "province"},
 }
 
-// LinkMakers are the commands that save a name of one of the Links, by the command, or by command/key for a key in
-// its block: each with the link that reads the name back.
+// LinkMakers are the commands that save a name for one of the Links. A row is a command, or command/key for a key
+// inside the command's block, and its value is the link that reads the name back.
 var LinkMakers = map[string]string{
 	"save_scope_as": SavedScopes, "save_temporary_scope_as": SavedScopes, "save_scope_value_as/name": SavedScopes,
 	"save_temporary_scope_value_as/name": SavedScopes, "save_opinion_value_as/name": SavedScopes,
@@ -364,9 +364,9 @@ var LinkMakers = map[string]string{
 	"add_character_flag": Flags, "add_character_flag/flag": Flags, "add_dead_character_flag/flag": Flags,
 }
 
-// LinkUsers are the triggers and lists that use a name of one of the Links, in LinkMakers' shape: each with the link
-// whose name it uses. Each is in its game's triggers.log or effects.log. The variable maps are Vic3's and EU5's,
-// and a character's flags are CK3's.
+// LinkUsers are the triggers and lists that read a name saved for one of the Links. A row is shaped like LinkMakers',
+// and its value is the link whose names it reads. Each is in its game's triggers.log or effects.log. The variable
+// maps are Vic3's and EU5's, and a character's flags are CK3's.
 var LinkUsers = map[string]string{
 	"has_variable": Variables, "has_variable/name": Variables, "has_all_variables/name": Variables,
 	"has_none_of_variables/name": Variables, "has_dead_character_variable": Variables, "has_variable_list": Variables,
@@ -400,8 +400,8 @@ var LinkUsers = map[string]string{
 	"has_character_flag": Flags, "has_dead_character_flag": Flags, "remove_character_flag": Flags,
 }
 
-// LocStems are the arguments whose value is the stem of the localization key it names, in LinkMakers' shape: each
-// with that key, the stem at %s.
+// LocStems are the arguments whose value is the stem of a localization key. A row is shaped like LinkMakers', and its
+// value is that key with the stem at %s.
 var LocStems = map[string]string{
 	// CK3: ActivityLogEntry.GetTitle shows <key>_title, which every key the game's files log defines; the description,
 	// GetDescription, is <key> itself where one is written
@@ -434,11 +434,11 @@ var keywordPositions = func() map[string][]int {
 	return positions
 }()
 
-// LookupKeyword returns the first keyword of the game that fits a key in a block's shape and command, the key and the
-// command in any case. It returns false if none fits.
+// LookupKeyword returns the keyword of the game that fits a key in a block of the given shape and command, the key and
+// the command in any case. Where several fit, it is the first row of Keywords. It returns false if none fits.
 func (game *Game) LookupKeyword(shape, command, key string) (Keyword, bool) {
 	command, key = strings.ToLower(command), strings.ToLower(key)
-	candidates := append(make([]string, 0, 3), key, AnyKey)
+	candidates := []string{key, AnyKey}
 	if jomini.IsNumberKey(key) {
 		candidates = append(candidates, jomini.NumberKey)
 	}
@@ -468,8 +468,8 @@ func IsOperator(key string) bool {
 	return slices.ContainsFunc(Keywords, func(row Keyword) bool { return row.Holder == "value" && row.Key == key })
 }
 
-// MatchListIterator returns the keyword whose prefix a key starts with: a call that iterates a scripted list, whose
-// block runs in the list's item scope. It returns false if the key starts with none.
+// MatchListIterator returns the prefix keyword, such as every_*, that a key starts with. Such a key iterates over a
+// scripted list, and its block runs in the list's item scope. It returns false if the key starts with none.
 func MatchListIterator(key string) (Keyword, bool) {
 	return lo.Find(Keywords, func(row Keyword) bool {
 		prefix, ok := strings.CutSuffix(row.Key, "*")

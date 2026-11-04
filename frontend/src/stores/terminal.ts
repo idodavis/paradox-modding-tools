@@ -1,8 +1,8 @@
 /**
  * The terminal store: the shells of this window. The terminal's own window holds them while it is open, else the main
- * window. The holder keeps one xterm for each shell, fed by the shell's stream from Go, for as long as it holds the
- * shells, shown or not; the other windows keep none. Before the shells go to another window, each xterm's screen goes
- * to Go, which gives it to the next holder with the output that came after it.
+ * window does. The holder keeps one xterm per shell, fed by the shell's stream from Go, whether shown or not; other
+ * windows keep none. Before the shells move to another window, each xterm's screen goes to Go, which hands it to the
+ * next holder with the output that came after it.
  */
 import { defineStore } from "pinia";
 import { useMutation, useQuery } from "@pinia/colada";
@@ -37,15 +37,14 @@ type Console = {
 };
 
 /**
- * A Message is a message to Go on a shell's stream: the shell's id first, then what is typed, the terminal's new size
- * or how far xterm has drawn the output, which Go waits for once it is far ahead.
+ * A Message is what this window sends Go on a shell's stream: the shell's id first, then typed input, a new terminal
+ * size, or the offset xterm has drawn up to, which Go waits for once it is far ahead.
  */
 type Message = { shell?: string; input?: string; binary?: string; columns?: number; rows?: number; offset?: number };
 
 /** ANSI holds the eight ANSI colors, as xterm's theme names them; each has a bright one too. */
 const ANSI = ["black", "red", "green", "yellow", "blue", "magenta", "cyan", "white"] as const;
-// the commands whose shortcuts still reach the app from a terminal, as VS Code keeps its palette and its Go to file
-// from its shells
+/** APP_COMMANDS holds the commands whose shortcuts still reach the app from a terminal, as in VS Code. */
 const APP_COMMANDS = ["palette.open", "editor.goToFile"];
 const decoder = new TextDecoder();
 
@@ -54,11 +53,11 @@ export const useTerminalStore = defineStore("terminal", () => {
   const settings = useSettingsStore();
   const windows = useWindowsStore();
   const consoles = shallowReactive(new Map<string, Console>());
-  // the shell shown, kept for the windows together, so that the next window to hold the shells shows the same one
+  // the id of the shell shown, shared by all windows, so the next window to hold the shells shows the same one
   const active = useLocalStorage("pmt.terminal.active", "");
-  // the find box over the active shell is open
+  // whether the find box over the active shell is open
   const findOpen = shallowRef(false);
-  // the shells went to another window, and stay there until the terminal moves again
+  // whether the shells went to another window, where they stay until the terminal moves again
   const away = shallowRef(false);
   const holding = computed(() => !away.value && windows.resolveTerminal() === THIS_WINDOW);
   const { data: shells } = useQuery(() => ({ ...shellsQuery, enabled: holding.value }));
@@ -75,10 +74,10 @@ export const useTerminalStore = defineStore("terminal", () => {
   const { mutate: sendFile } = useMutation({
     mutation: async () => {
       const place = findFile();
-      const open = consoles.get(active.value);
-      if (!place || !open) return;
-      open.xterm.paste(await terminal.ResolveReference(open.shell.id, place.path));
-      open.xterm.focus();
+      const shellConsole = consoles.get(active.value);
+      if (!place || !shellConsole) return;
+      shellConsole.xterm.paste(await terminal.ResolveReference(shellConsole.shell.id, place.path));
+      shellConsole.xterm.focus();
     },
   });
 
@@ -105,16 +104,13 @@ export const useTerminalStore = defineStore("terminal", () => {
     if (shell) active.value = shell.id;
   }
 
-  /**
-   * syncConsoles makes a console for each shell this window holds, and lets go of the consoles of the shells it no
-   * longer does.
-   */
+  /** syncConsoles makes a console for each shell this window holds and closes the consoles of other shells. */
   function syncConsoles(): void {
     const running = holding.value ? (shells.value ?? []).flatMap((shell) => (shell ? [shell] : [])) : [];
-    for (const [id, open] of consoles) {
+    for (const [id, shellConsole] of consoles) {
       if (running.some((shell) => shell.id === id)) continue;
-      open.stream.close();
-      open.xterm.dispose();
+      shellConsole.stream.close();
+      shellConsole.xterm.dispose();
       consoles.delete(id);
     }
     for (const shell of running) if (!consoles.has(shell.id)) consoles.set(shell.id, attach(shell));
@@ -130,7 +126,7 @@ export const useTerminalStore = defineStore("terminal", () => {
       linkHandler: { activate: (_event, uri) => openAddress(uri) },
     });
     // never proxied: xterm's objects are not Vue's to watch
-    const open: Console = markRaw({
+    const shellConsole: Console = markRaw({
       shell,
       xterm,
       fit: new FitAddon(),
@@ -138,43 +134,50 @@ export const useTerminalStore = defineStore("terminal", () => {
       stream: Stream("terminal"),
       offset: 0,
     });
-    applyStyle(open);
-    const addons = [open.fit, open.serialize, new Unicode11Addon(), new WebLinksAddon((_, uri) => openAddress(uri))];
+    applyStyle(shellConsole);
+    const addons = [
+      shellConsole.fit,
+      shellConsole.serialize,
+      new Unicode11Addon(),
+      new WebLinksAddon((_, uri) => openAddress(uri)),
+    ];
     addons.forEach((addon) => xterm.loadAddon(addon));
     xterm.unicode.activeVersion = "11";
-    xterm.registerLinkProvider({ provideLinks: (row, callback) => void listLinks(open, row).then(callback) });
-    xterm.attachCustomKeyEventHandler((event) => applyKey(open, event));
+    xterm.registerLinkProvider({ provideLinks: (row, callback) => void listLinks(shellConsole, row).then(callback) });
+    xterm.attachCustomKeyEventHandler((event) => applyKey(shellConsole, event));
     const send = (message: Message): void => {
-      if (open.stream.readyState === open.stream.OPEN) open.stream.send(JSON.stringify(message));
+      if (shellConsole.stream.readyState === shellConsole.stream.OPEN) {
+        shellConsole.stream.send(JSON.stringify(message));
+      }
     };
     xterm.onData((input) => send({ input }));
     xterm.onBinary((binary) => send({ binary }));
     xterm.onResize(({ cols, rows }) => send({ columns: cols, rows }));
-    open.stream.addEventListener("open", () => open.stream.send(JSON.stringify({ shell: shell.id })));
+    shellConsole.stream.addEventListener("open", () => shellConsole.stream.send(JSON.stringify({ shell: shell.id })));
     let isScreen = true;
-    open.stream.addEventListener("message", (event) => {
+    shellConsole.stream.addEventListener("message", (event) => {
       const bytes = new Uint8Array((event as MessageEvent<ArrayBuffer>).data);
       if (isScreen) {
         isScreen = false;
-        writeScreen(open, JSON.parse(decoder.decode(bytes)) as Screen);
+        writeScreen(shellConsole, JSON.parse(decoder.decode(bytes)) as Screen);
         return;
       }
       xterm.write(bytes, () => {
-        open.offset += bytes.length;
-        send({ offset: open.offset });
+        shellConsole.offset += bytes.length;
+        send({ offset: shellConsole.offset });
       });
     });
-    return open;
+    return shellConsole;
   }
 
   /**
    * writeScreen writes the screen Go sent for a shell at the size it was drawn at, then fits the terminal to its
    * element if it is shown.
    */
-  function writeScreen(open: Console, screen: Screen): void {
-    open.offset = screen.offset;
-    open.xterm.resize(screen.columns, screen.rows);
-    open.xterm.write(screen.text, () => fitConsole(open));
+  function writeScreen(shellConsole: Console, screen: Screen): void {
+    shellConsole.offset = screen.offset;
+    shellConsole.xterm.resize(screen.columns, screen.rows);
+    shellConsole.xterm.write(screen.text, () => fitConsole(shellConsole));
   }
 
   /**
@@ -182,39 +185,39 @@ export const useTerminalStore = defineStore("terminal", () => {
    * no width or height, as while its panel is laid out or hidden: a fit then makes the terminal two columns wide, and
    * the shell would wrap its own screen to them for good.
    */
-  function fitConsole(open: Console): void {
-    const box = open.xterm.element?.parentElement;
-    if (box && box.clientWidth > 0 && box.clientHeight > 0) open.fit.fit();
+  function fitConsole(shellConsole: Console): void {
+    const box = shellConsole.xterm.element?.parentElement;
+    if (box && box.clientWidth > 0 && box.clientHeight > 0) shellConsole.fit.fit();
   }
 
   /** applyStyle sets a console's colors and font from the settings again, and fits it to its element if it is shown. */
-  function applyStyle(open: Console): void {
-    open.xterm.options.theme = resolveTheme();
-    open.xterm.options.fontFamily = settings.codeFont().fontFamily;
-    open.xterm.options.fontSize = Number(settings.value("ide.panelTextSize"));
-    fitConsole(open);
+  function applyStyle(shellConsole: Console): void {
+    shellConsole.xterm.options.theme = resolveTheme();
+    shellConsole.xterm.options.fontFamily = settings.codeFont().fontFamily;
+    shellConsole.xterm.options.fontSize = Number(settings.value("ide.panelTextSize"));
+    fitConsole(shellConsole);
   }
 
   /**
-   * applyKey applies a key pressed in a shell's terminal and returns whether it goes on to the shell. The shortcuts of
-   * the palette and Go to file reach the app, and Ctrl F opens the find. Ctrl C copies a selection, else goes to the
-   * shell, and Ctrl Shift C copies. Ctrl V and Ctrl Shift V paste, through the page's own paste. Shift Enter sends ESC
-   * CR, which adds a line in Claude Code, as its terminal setup makes VS Code send it. A key the terminal takes for
-   * itself goes no further, so that no shortcut of the app's acts on it too.
+   * applyKey handles a key pressed in a shell's terminal. It returns true if xterm should go on to handle the key.
+   * Ctrl F opens the find box. Ctrl C copies a selection, else goes to the shell, and Ctrl Shift C always copies.
+   * Ctrl V and Ctrl Shift V paste through the page's own paste. Shift Enter sends ESC CR, which adds a line in Claude
+   * Code. The shortcuts of the palette and Go to file reach the app. A key the terminal handles itself is not passed
+   * on, so no app shortcut acts on it too.
    */
-  function applyKey(open: Console, event: KeyboardEvent): boolean {
+  function applyKey(shellConsole: Console, event: KeyboardEvent): boolean {
     const isShiftEnter = event.key === "Enter" && event.shiftKey && !event.ctrlKey && !event.altKey && !event.metaKey;
     // xterm asks again for the key's keypress, which would send a CR of its own
     if (isShiftEnter) {
-      if (event.type === "keydown") open.xterm.input("\x1b\r");
+      if (event.type === "keydown") shellConsole.xterm.input("\x1b\r");
       return false;
     }
     if (event.type !== "keydown" || !event.ctrlKey || event.altKey || event.metaKey) return true;
     const key = event.key.toLowerCase();
-    if (key === "c" && (event.shiftKey || open.xterm.hasSelection())) {
+    if (key === "c" && (event.shiftKey || shellConsole.xterm.hasSelection())) {
       event.preventDefault();
       event.stopPropagation();
-      void Clipboard.SetText(open.xterm.getSelection());
+      void Clipboard.SetText(shellConsole.xterm.getSelection());
       return false;
     }
     if (key === "f" && !event.shiftKey) {
@@ -226,11 +229,11 @@ export const useTerminalStore = defineStore("terminal", () => {
     return key !== "v" && !isAppKey(event);
   }
 
-  /** listLinks lists the files a shell's output names at a line, on the line of the given row; Go finds them. */
-  async function listLinks(open: Console, row: number): Promise<ILink[] | undefined> {
-    const { text, cells } = readLine(open.xterm, row);
+  /** listLinks returns the file links that Go finds in the line of the given row. It is undefined for a blank line. */
+  async function listLinks(shellConsole: Console, row: number): Promise<ILink[] | undefined> {
+    const { text, cells } = readLine(shellConsole.xterm, row);
     if (!text.trim()) return undefined;
-    return ((await terminal.FindLinks(open.shell.id, text)) ?? []).flatMap((link) => {
+    return ((await terminal.FindLinks(shellConsole.shell.id, text)) ?? []).flatMap((link) => {
       const [start, end] = [cells[link.start], cells[link.end - 1]];
       if (!start || !end) return [];
       const position = { lineNumber: link.site.line, column: Math.max(link.site.range.startColumn, 1) };
@@ -239,36 +242,33 @@ export const useTerminalStore = defineStore("terminal", () => {
     });
   }
 
-  /**
-   * findFile finds the file the shells work on: the active file of this window, or of the main window from the
-   * terminal's own. It is null when there is none.
-   */
+  /** findFile returns the file the shells work on: this window's active file, else the main window's. Null if none. */
   const findFile = (): Place | null => editor.activeFile() ?? windows.findActive("main");
 
   /** show draws a shell's terminal in the given element, opening it there the first time, and fits it to it. */
   const show = (id: string, host: HTMLElement): void => {
-    const open = consoles.get(id);
-    if (!open) return;
+    const shellConsole = consoles.get(id);
+    if (!shellConsole) return;
     // the element shows one terminal at a time; xterm opens once, and after that its element moves
     host.replaceChildren();
-    if (open.xterm.element) host.append(open.xterm.element);
-    else open.xterm.open(host);
-    fitConsole(open);
-    open.xterm.refresh(0, open.xterm.rows - 1);
+    if (shellConsole.xterm.element) host.append(shellConsole.xterm.element);
+    else shellConsole.xterm.open(host);
+    fitConsole(shellConsole);
+    shellConsole.xterm.refresh(0, shellConsole.xterm.rows - 1);
   };
 
   /**
-   * handOver gives every shell's screen to Go for the next window that shows the shells, and lets go of them here. A
-   * shell that ended meanwhile is passed over.
+   * handOver gives every shell's screen to Go for the next window that holds the shells, and stops holding them here.
+   * A failure, such as a shell that has ended, is ignored.
    */
   const handOver = async (): Promise<void> => {
-    const screens = [...consoles.values()].map((open) => ({
-      id: open.shell.id,
+    const screens = [...consoles.values()].map((shellConsole) => ({
+      id: shellConsole.shell.id,
       screen: {
-        text: open.serialize.serialize(),
-        offset: open.offset,
-        columns: open.xterm.cols,
-        rows: open.xterm.rows,
+        text: shellConsole.serialize.serialize(),
+        offset: shellConsole.offset,
+        columns: shellConsole.xterm.cols,
+        rows: shellConsole.xterm.rows,
       },
     }));
     away.value = true;
@@ -294,7 +294,7 @@ export const useTerminalStore = defineStore("terminal", () => {
 /** resolveTheme resolves the terminal's colors from the page theme's tokens, which xterm cannot read as variables. */
 function resolveTheme(): ITheme {
   const style = getComputedStyle(document.documentElement);
-  const token = (name: string): string => style.getPropertyValue(`--${name}`).trim();
+  const token = (suffix: string): string => style.getPropertyValue(`--${suffix}`).trim();
   return {
     background: token("bg-0"),
     foreground: token("fg-1"),
@@ -302,9 +302,9 @@ function resolveTheme(): ITheme {
     cursorAccent: token("bg-0"),
     selectionBackground: `${token("accent")}40`,
     ...Object.fromEntries(
-      ANSI.flatMap((name) => [
-        [name, token(`ansi-${name}`)],
-        [`bright${upperFirst(name)}`, token(`ansi-bright-${name}`)],
+      ANSI.flatMap((color) => [
+        [color, token(`ansi-${color}`)],
+        [`bright${upperFirst(color)}`, token(`ansi-bright-${color}`)],
       ]),
     ),
   };
@@ -317,8 +317,8 @@ function isAppKey(event: KeyboardEvent): boolean {
 }
 
 /**
- * readLine reads the line of a terminal's buffer that the given row is part of, its wrapped rows joined, with the cell
- * each UTF-16 unit of its text sits in. The row and the cells count from one, as xterm's links do.
+ * readLine returns the text of the line that holds the given row, with its wrapped rows joined, and the cell of each
+ * UTF-16 unit of the text. The row and the cells count from one, as xterm's links do.
  */
 function readLine(xterm: Terminal, row: number): { text: string; cells: IBufferCellPosition[] } {
   const buffer = xterm.buffer.active;

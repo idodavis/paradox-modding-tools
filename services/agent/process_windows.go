@@ -21,9 +21,9 @@ func prepareCommand(command *exec.Cmd) {
 	command.SysProcAttr = &syscall.SysProcAttr{HideWindow: true, CreationFlags: windows.CREATE_NO_WINDOW}
 }
 
-// startGroup starts a command in a job object that ends every program in it when it closes. The programs the command
-// starts join the job too; an agent starts none before it reads its first message, which comes after it joins. It
-// returns an error if the job cannot be made or the command cannot be started or join it.
+// startGroup starts a command in a new job object, which ends every program in it when it closes. Programs the
+// command starts join the job. The command joins just after it starts, but an agent starts none before its first
+// message arrives. It returns an error if the job cannot be made or the command cannot be started or joined.
 func startGroup(command *exec.Cmd) (group, error) {
 	job, err := windows.CreateJobObject(nil, nil)
 	if err != nil {

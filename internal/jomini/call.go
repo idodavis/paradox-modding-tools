@@ -34,9 +34,9 @@ type Argument struct {
 	Call   *Call  `json:"call,omitempty"`
 }
 
-// ParseBracketed parses a data call written between brackets, as a value writes one. The offset is where the text's
-// first byte sits in its file, so the spans come out in the file's offsets. It returns false if the text does not
-// open with [ and close with ], or if what is between them is not a call.
+// ParseBracketed parses a data call written between brackets, such as [Root.GetName]. The given offset is where the
+// text starts in its file, so the spans are offsets in the file. It returns false if the text does not open with [ and
+// close with ], or if what is between them is not a call.
 func ParseBracketed(text string, base int) (Call, bool) {
 	inner, opens := strings.CutPrefix(text, "[")
 	inner, closes := strings.CutSuffix(inner, "]")
@@ -46,8 +46,8 @@ func ParseBracketed(text string, base int) (Call, bool) {
 	return ParseCall(inner, base+1)
 }
 
-// ParseCall parses the text of one data call, given without its brackets. The offset is where the text's first byte
-// sits in its file, so the spans come out in the file's offsets. It returns false if the text is not a call.
+// ParseCall parses the text of one data call, without its brackets. The given offset is where the text starts in its
+// file, so the spans are offsets in the file. It returns false if the text is not a call.
 func ParseCall(text string, base int) (Call, bool) {
 	cursor := countSpaces(text, 0)
 	call := Call{Span: Span{Start: base + cursor}}
@@ -80,8 +80,8 @@ func countSpaces(text string, offset int) int {
 	return len(text[offset:]) - len(strings.TrimLeftFunc(text[offset:], unicode.IsSpace))
 }
 
-// parseStep parses one step at the given offset. It reads a cast in parentheses, then the name, then the argument list
-// if one follows. It returns the step and the offset after it, or false if no name starts there.
+// parseStep parses one step from the given offset: an optional cast in parentheses, the name, then the argument list if
+// one follows. It returns the step and the offset after it, or false if no name starts there.
 func parseStep(text string, base, cursor int) (Step, int, bool) {
 	var step Step
 	if cursor < len(text) && text[cursor] == '(' {
@@ -117,7 +117,7 @@ func splitArguments(text string, cursor int) ([]Span, int) {
 		switch ch := text[i]; {
 		case ch == '\'':
 			quoted = !quoted
-		case quoted:
+		case quoted: // parentheses and commas inside single quotes are plain text
 		case ch == '(':
 			depth++
 		case ch == ')' && depth > 1:
@@ -133,8 +133,8 @@ func splitArguments(text string, cursor int) ([]Span, int) {
 	return append(spans, Span{Start: start, End: len(text)}), len(text)
 }
 
-// parseArgument parses the argument in the given span of the text, without the white space around it. It is a text in
-// single quotes, a number or a nested call. It returns false if the span holds only white space.
+// parseArgument parses the argument that the given span of the text holds, leaving out the white space around it. The
+// argument is a text in single quotes, a number or a nested call. It returns false if the span holds only white space.
 func parseArgument(text string, span Span, base int) (Argument, bool) {
 	start := span.Start + countSpaces(text[:span.End], span.Start)
 	raw := strings.TrimRightFunc(text[start:span.End], unicode.IsSpace)
@@ -147,7 +147,7 @@ func parseArgument(text string, span Span, base int) (Argument, bool) {
 	case quoted:
 		argument.Text, argument.Quoted = raw[1:len(raw)-1], true
 		argument.Span = Span{Start: argument.Span.Start + 1, End: argument.Span.End - 1}
-	case IsNumber(raw):
+	case IsNumber(raw): // a number stays as it is written
 	default:
 		if call, ok := ParseCall(raw, base+start); ok {
 			argument.Call = &call
@@ -157,21 +157,21 @@ func parseArgument(text string, span Span, base int) (Argument, bool) {
 }
 
 // SubstituteCall returns a macro's call with its parameters filled in. The map holds the argument for each parameter
-// name. A step named like a parameter is replaced by that argument's steps. The spans the macro wrote itself are
+// name. A step named like a parameter is replaced by that argument's steps. The spans of the macro's own text are
 // emptied, since they lie in another file.
-func SubstituteCall(call Call, given map[string]Argument) Call {
+func SubstituteCall(call Call, arguments map[string]Argument) Call {
 	var steps []Step
 	for _, step := range call.Steps {
-		argument, replaced := given[step.Text]
+		argument, ok := arguments[step.Text]
 		switch {
-		case replaced && argument.Call != nil:
+		case ok && argument.Call != nil:
 			steps = append(steps, argument.Call.Steps...)
-		case replaced:
+		case ok:
 			steps = append(steps, Step{Text: argument.Text, Span: argument.Span})
 		default:
 			step.Span = Span{}
 			for i, inner := range step.Arguments {
-				step.Arguments[i] = substituteArgument(inner, given)
+				step.Arguments[i] = substituteArgument(inner, arguments)
 			}
 			steps = append(steps, step)
 		}
@@ -179,15 +179,15 @@ func SubstituteCall(call Call, given map[string]Argument) Call {
 	return Call{Steps: steps, Suffix: call.Suffix}
 }
 
-// substituteArgument fills in one argument of a macro's call. An unquoted parameter's name gives the argument
-// written for it. Any other argument loses its span, and the call inside it is filled in the same way.
-func substituteArgument(argument Argument, given map[string]Argument) Argument {
-	if value, ok := given[argument.Text]; ok && !argument.Quoted {
+// substituteArgument fills in one argument of a macro's call. An unquoted argument named like a parameter is replaced
+// by the argument given for it. Any other argument loses its span, and the call inside it is filled in the same way.
+func substituteArgument(argument Argument, arguments map[string]Argument) Argument {
+	if value, ok := arguments[argument.Text]; ok && !argument.Quoted {
 		return value
 	}
 	argument.Span = Span{}
 	if argument.Call != nil {
-		call := SubstituteCall(*argument.Call, given)
+		call := SubstituteCall(*argument.Call, arguments)
 		argument.Call = &call
 	}
 	return argument

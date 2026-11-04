@@ -1,7 +1,7 @@
 <!--
-  Settings' Agents and tools: the agents the agent pane runs, with Node and each one's install, the port and token of
-  PMT's tools for coding agents, the text that registers them with each agent run outside PMT, and the agents of the
-  user's own.
+  Settings' Agents and tools section: the agents the agent pane runs, with Node and each one's install; the port and
+  token of PMT's tools for coding agents; the text that registers PMT with an agent run outside PMT; and the user's own
+  agents.
 -->
 <script lang="ts">
 import { shallowRef } from "vue";
@@ -25,9 +25,9 @@ import { useAgentStore } from "../../stores/agent";
 import FileSelector from "../../ui/FileSelector.vue";
 import SettingsSection from "../../ui/SettingsSection.vue";
 
-// a register text shows the token as dots; Copy copies it whole
+/** DOTS replaces the token in the register text shown. Copy copies the whole text. */
 const DOTS = "••••••••";
-// where Codex reads the register text from, since it is a config entry, not a command
+/** NOTES holds the line shown above an agent's register text, by agent id: Codex's is a config entry, not a command. */
 const NOTES: Record<string, string> = { "codex-acp": "# add to ~/.codex/config.toml" };
 
 const cache = useQueryCache();
@@ -44,7 +44,7 @@ const now = useNow({ scheduler: (tick) => useIntervalFn(tick, 1000) });
 const offered = computed(() =>
   (agents.value ?? []).filter((row) => row.version).map((row) => ({ row, line: describeAgent(row) })),
 );
-const offers = computed(() => (agents.value ?? []).filter((row) => row.register));
+const registrable = computed(() => (agents.value ?? []).filter((row) => row.register));
 const own = computed(() =>
   (agents.value ?? [])
     .filter((row) => !row.version && row.program)
@@ -97,9 +97,9 @@ function describeAgent(row: Agent): { text: string; dot: string } {
     const seconds = Math.max(0, Math.round((now.value.getTime() - started.getTime()) / 1000));
     return { text: `${row.installed ? "Updating to" : "Installing"} ${row.version} with npm · ${seconds} s`, dot: "" };
   }
-  const live = agent.sessions.filter((one) => one.agent.id === row.id);
-  if (live.some((one) => one.state === "sign-in")) return { text: "Needs sign-in", dot: "bg-warning" };
-  if (live.some((one) => one.state === "idle" || one.state === "running"))
+  const live = agent.sessions.filter((session) => session.agent.id === row.id);
+  if (live.some((session) => session.state === "sign-in")) return { text: "Needs sign-in", dot: "bg-warning" };
+  if (live.some((session) => session.state === "idle" || session.state === "running"))
     return { text: "Signed in", dot: "bg-success" };
   if (!row.installed) return { text: `Not installed; version ${row.version} from the registry`, dot: "" };
   return row.installed === row.version
@@ -223,7 +223,7 @@ function quote(path: string): string {
       Once for each agent, in any terminal or its own settings file. Each carries this computer's port and token, so
       after New token you register again. Sessions in the agent pane need none of this.
     </p>
-    <div v-for="row in offers" :key="row.id" class="flex flex-col gap-1">
+    <div v-for="row in registrable" :key="row.id" class="flex flex-col gap-1">
       <span class="text-12 font-medium">{{ row.name }}</span>
       <div class="flex items-start gap-2 rounded-md border border-default bg-muted px-3 py-2">
         <pre class="min-w-0 grow font-mono text-11 leading-4.5 whitespace-pre-wrap text-toned"><span

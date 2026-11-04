@@ -345,7 +345,7 @@ export interface Section {
  */
 export interface Step {
     /**
-     * as written, such as if, random_list, option or scope:child.dynasty
+     * as written, such as if, random_list or scope:child.dynasty
      */
     "key": string;
 

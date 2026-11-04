@@ -125,7 +125,6 @@ const TOOLBAR: EditorToolbarItem<typeof TABLE_HANDLERS>[][] = [
   ],
   [{ slot: "link" as const }, { slot: "image" as const }],
 ];
-/** What an empty description shows. */
 const PLACEHOLDER = "Describe the mod for players. While this is empty, an upload leaves Steam's description as it is.";
 /** The description's two views. */
 const VIEWS: TabsItem[] = [
@@ -172,7 +171,8 @@ const html = shallowRef<string>();
 // counts the drawings, so one that ends late is dropped
 let drawing = 0;
 const address = shallowRef("");
-const addressing = shallowRef("");
+// the slot of the toolbar button whose address popover is open
+const openSlot = shallowRef("");
 const copied = refAutoReset(false, 2000);
 const visual = useTemplateRef<{ editor?: Editor }>("visual");
 const editor = computed(() => visual.value?.editor);
@@ -222,11 +222,11 @@ async function showDescription(bbcode: string): Promise<void> {
   const drawn = await loadQuery(htmlQuery(bbcode));
   html.value = drawn;
   await nextTick();
-  const kept = await until(editor).toBeTruthy({ timeout: 2000 });
-  if (!kept) return;
-  const back = await loadQuery(htmlQuery((await loadQuery(bbcodeQuery(kept.getHTML()))) ?? ""));
+  const visualEditor = await until(editor).toBeTruthy({ timeout: 2000 });
+  if (!visualEditor) return;
+  const roundTrip = await loadQuery(htmlQuery((await loadQuery(bbcodeQuery(visualEditor.getHTML()))) ?? ""));
   if (turn !== drawing) return;
-  lossy.value = back !== drawn;
+  lossy.value = roundTrip !== drawn;
   if (lossy.value && !chosen.value) view.value = "bbcode";
 }
 
@@ -236,7 +236,7 @@ function choose(choice: string | number): void {
   view.value = `${choice}`;
 }
 
-/** change keeps the editor's text and writes its BBCode to the listing. The description is then the editor's own. */
+/** change keeps the visual editor's HTML and writes its BBCode to the listing. It clears the lossy notice. */
 function change(text: string): void {
   html.value = text;
   lossy.value = false;
@@ -261,7 +261,7 @@ async function copyDescription(): Promise<void> {
 function insert(target: Editor, run: (target: Editor, address: string) => unknown): void {
   run(target, address.value.trim());
   address.value = "";
-  addressing.value = "";
+  openSlot.value = "";
 }
 </script>
 
@@ -314,7 +314,7 @@ function insert(target: Editor, run: (target: Editor, address: string) => unknow
       <Teleport defer :to="toolbarSpot">
         <UEditorToolbar v-if="editor" :editor="editor" :items="TOOLBAR">
           <template v-for="row in ADDRESSES" :key="row.slot" #[row.slot]>
-            <UPopover :open="addressing === row.slot" @update:open="addressing = $event ? row.slot : ''">
+            <UPopover :open="openSlot === row.slot" @update:open="openSlot = $event ? row.slot : ''">
               <UTooltip :text="row.label">
                 <UButton :icon="row.icon" color="neutral" variant="ghost" size="sm" square :aria-label="row.label" />
               </UTooltip>

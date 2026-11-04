@@ -112,7 +112,7 @@ func resolveReleased(root *html.Node) string {
 }
 
 // compareVersions orders two patch versions as semver does, except that a minor version's hotfix notes, "1.20.X",
-// come before every numbered patch of that minor version, so a list newest first shows them after the release.
+// sort below every other version of that minor version, so a list newest first shows them last.
 func compareVersions(first, second string) int {
 	hotfixFirst, hotfixSecond := strings.HasSuffix(first, ".X"), strings.HasSuffix(second, ".X")
 	first, second = strings.TrimSuffix(first, ".X"), strings.TrimSuffix(second, ".X")

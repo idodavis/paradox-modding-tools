@@ -14,7 +14,7 @@ import (
 type Color struct {
 	Tag   string  // the tag before the block (rgb { 255 0 0 }); "" means none
 	HSV   bool    // hue, saturation, value; else red, green, blue
-	Hex   bool    // one hex word, given as its bytes
+	Hex   bool    // one number holding the bytes of red, green, blue and alpha
 	Hue   float64 // what the hue is out of; 0 means 1
 	Parts float64 // what the other parts are out of; 0 means 1
 }
@@ -36,21 +36,21 @@ type RGBA struct {
 	A float64 `json:"a"` // alpha, 0 to 1
 }
 
-// A ColorForm is how a color is written that a block does not write yet: the tag before the block, and the numbers of
-// an example, which give the scale and whether an alpha is written.
+// A ColorForm is the way to write a color where there is no block to copy: the tag before the block, and the numbers
+// of an example block. The example gives the scale and whether an alpha is written.
 type ColorForm struct {
 	Tag     string
 	Example []float64
 }
 
-// ParseColor returns the color that a block's tag and numbers write. The tag must match a row of Colors exactly. A
-// hex row takes one number, the bytes of red, green, blue and alpha. It returns false for a tag no row has and for
-// fewer than three numbers, a hex row's one number apart.
+// ParseColor returns the color that a block with the given tag and numbers writes. The tag must match a row of Colors
+// exactly. A hex row takes one number holding the bytes of red, green, blue and alpha. Any other row takes at least
+// three numbers. It returns false for a tag no row has and for too few numbers.
 func ParseColor(tag string, parts []float64) (RGBA, bool) {
 	row, known := lookupColorRow(tag)
 	if known && row.Hex && len(parts) == 1 {
-		word := uint32(parts[0])
-		return RGBA{float64(word>>24) / 255, float64(word>>16&0xff) / 255, float64(word>>8&0xff) / 255, float64(word&0xff) / 255}, true
+		packed := uint32(parts[0])
+		return RGBA{float64(packed>>24) / 255, float64(packed>>16&0xff) / 255, float64(packed>>8&0xff) / 255, float64(packed&0xff) / 255}, true
 	}
 	if !known || len(parts) < 3 {
 		return RGBA{}, false
@@ -79,10 +79,10 @@ func ToColor(tree *Tree, statement int32) (RGBA, bool) {
 	return ParseColor(tag, parts)
 }
 
-// EncodeColor returns the numbers that write a color the way an existing block wrote its own: in the same scale, and
-// with an alpha only if that block had one. The tag and the parts are that block's. A hex row gives one 0x number;
-// other rows give two decimals when out of 1 and whole numbers otherwise. It returns false for a tag no row has and
-// for fewer than three parts.
+// EncodeColor returns the numbers that write the given color the way an existing block wrote its own. The tag and the
+// parts are that block's. The numbers use its scale, and carry an alpha only if it had one. A hex row gives one 0x
+// number; other rows give whole numbers, or two decimals when the scale is 1. It returns false for a tag no row has
+// and for fewer than three parts.
 func EncodeColor(tag string, parts []float64, color RGBA) ([]string, bool) {
 	row, known := lookupColorRow(tag)
 	if !known || len(parts) < 3 {
@@ -169,7 +169,7 @@ func rgbToHSV(red, green, blue float64) (hue, saturation, value float64) {
 		saturation = chroma / value
 	}
 	switch {
-	case chroma == 0:
+	case chroma == 0: // a gray has no hue
 	case value == red:
 		hue = math.Mod((green-blue)/chroma+6, 6) / 6
 	case value == green:

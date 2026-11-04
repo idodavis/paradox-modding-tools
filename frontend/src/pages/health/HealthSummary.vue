@@ -125,7 +125,7 @@ const infoChecks = computed(() =>
     return count ? [plural(count, row.one, row.many)] : [];
   }).join(" · "),
 );
-/** Compatibility's worst level that needs a fix, which its headline counts, or "" for none. */
+/** Compatibility's worst level if that level needs a fix, else "". */
 const worstFix = computed(() =>
   fixLevels.value.includes(report.compatibility.worst) ? report.compatibility.worst : "",
 );

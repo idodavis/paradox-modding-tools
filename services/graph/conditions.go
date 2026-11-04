@@ -49,12 +49,11 @@ func listConditions(ws *workspace.Session, mods *index.Index, tree *jomini.Tree,
 }
 
 // makeCondition returns one statement of a block of triggers in words. A keyword of the language reads its own words,
-// and one whose text is shown in place of what it holds reads that text alone. A key that names a scope, or a parameter
-// that stands for one, stays as written. Any other key is its words, underscores as spaces: a yes after it is dropped
-// and a no makes it negated.
-// A value stays as written, read first where its keyword says so. A value written prefix:name has the in-game name of
-// the definition it names, the title its node shows. It has none where the prefix names no database or the game keeps
-// no such definition. A block holds its statements, and one that only wraps one of them folds into it.
+// and one that covers what it holds reads the text shown in its place. A key that names a scope, or a parameter that
+// stands for one, stays as written. Any other key is its words: a yes after it is dropped and a no makes it negated.
+// A value stays as written, read first where its keyword says so. A value written prefix:name also has the in-game
+// name of the definition it names, unless the prefix names no database or the game keeps no such definition. A block
+// holds its statements, and one that only wraps one of them folds into it.
 func makeCondition(ws *workspace.Session, mods *index.Index, tree *jomini.Tree, statement int32) Condition {
 	current := tree.Statements[statement]
 	key := tree.Unquoted(current.Key)

@@ -1,7 +1,7 @@
 <!--
-  The code beside the picture. It marks the selected and hovered widgets' lines, or those of the nearest widget above
-  them written in this file, shows the drawn size on each widget's first line, flags what the game's files did not
-  give, outlines the widget under the pointer in the picture, and scrolls to a selection.
+  Links the code editor beside the picture to it; it renders nothing itself. It marks the lines of the selected and
+  hovered widgets, shows each one's drawn size and a gutter eye to hide it, flags what the game's files did not give,
+  and scrolls a selection into view. Hovering code hovers the widget, and the caret selects it.
 -->
 <script setup lang="ts">
 import { refDebounced } from "@vueuse/core";
@@ -39,13 +39,13 @@ const {
   name: string;
 }>();
 
-const MISSING = "pmt.draw";
+const MARKER_OWNER = "pmt.draw";
 
 const draw = useDrawStore();
 const file = computed(() => draw.file(model.place.path));
 
 const own = computed(() => blocks.filter(({ place }) => place.key === model.place.key));
-// one eye hides every widget whose block starts on its line
+// The widgets by the line their block starts on. One eye hides every widget of a line.
 const firstLines = computed(() => Map.groupBy(own.value, ({ range }) => range.startLineNumber));
 const dimmed = computed(() => {
   const all = new Set<number>();
@@ -58,20 +58,23 @@ const toLines = (range: IRange) => new Range(range.startLineNumber, 1, range.end
 
 /**
  * findBlock returns the block of the given widget if it is written in this file. Otherwise it returns the block of the
- * nearest widget above it that is, or undefined for none.
+ * nearest ancestor that is, or undefined if there is none.
  */
 function findBlock(id: number | null): (typeof blocks)[number] | undefined {
-  for (let at = id; at !== null && at >= 0; at = at === 0 ? null : (blocks[at]?.parent ?? null)) {
-    if (blocks[at]?.place.key === model.place.key) return blocks[at];
+  let current = id;
+  while (current !== null && current >= 0) {
+    const block = blocks[current];
+    if (block?.place.key === model.place.key) return block;
+    current = current === 0 ? null : (block?.parent ?? null);
   }
   return undefined;
 }
 
-/** findWidget returns the deepest widget whose block holds the given position, or undefined for none. */
+/** findWidget returns the id of the deepest widget whose block holds the given position, or undefined if none does. */
 const findWidget = (position: IPosition) =>
   own.value.findLast(({ range }) => Range.containsPosition(range, position))?.id;
 
-/** findEye returns the widgets whose eye the pointer is on, or undefined when it is on no eye. */
+/** findEye returns the widgets whose eye the pointer is on, or undefined if it is on no eye. */
 const findEye = ({ type, position }: monacoEditor.IMouseTarget) =>
   type === monacoEditor.MouseTargetType.GUTTER_GLYPH_MARGIN
     ? firstLines.value.get(position?.lineNumber ?? 0)
@@ -85,10 +88,10 @@ const marks = computed<monacoEditor.IModelDeltaDecoration[]>(() => [
       : []),
     ...(dimmed.value.has(id) ? [{ range: toLines(range), options: { inlineClassName: "pmt-hidden-widget" } }] : []),
   ]),
-  ...[...firstLines.value].flatMap(([line, onLine]) => {
-    const copies = boxes.get(onLine[0].id) ?? [];
+  ...[...firstLines.value].flatMap(([line, widgets]) => {
+    const copies = boxes.get(widgets[0].id) ?? [];
     const box = copies[0];
-    const isOff = onLine.every(({ id }) => file.value.hidden.includes(id));
+    const isOff = widgets.every(({ id }) => file.value.hidden.includes(id));
     const end = model.model.getLineMaxColumn(line);
     return [
       {
@@ -139,10 +142,10 @@ watchEffect(() => {
       },
     ];
   });
-  monacoEditor.setModelMarkers(model.model, MISSING, markers);
+  monacoEditor.setModelMarkers(model.model, MARKER_OWNER, markers);
 });
 
-onBeforeUnmount(() => monacoEditor.setModelMarkers(model.model, MISSING, []));
+onBeforeUnmount(() => monacoEditor.setModelMarkers(model.model, MARKER_OWNER, []));
 
 watch(
   () => codeEditor,
@@ -157,17 +160,14 @@ watch(
     });
     const subscriptions = [
       editor.onMouseMove(({ target }) => {
-        const onLine = findEye(target);
-        draw.hover(
-          model.place.path,
-          onLine?.[0].id ?? (target.position ? (findWidget(target.position) ?? null) : null),
-        );
+        const eyed = findEye(target);
+        draw.hover(model.place.path, eyed?.[0].id ?? (target.position ? (findWidget(target.position) ?? null) : null));
       }),
       editor.onMouseLeave(() => draw.hover(model.place.path, null)),
       editor.onMouseDown(({ target }) => {
-        const onLine = findEye(target) ?? [];
-        const isOff = onLine.every(({ id }) => file.value.hidden.includes(id));
-        for (const { id } of onLine) draw.hide(model.place.path, id, !isOff);
+        const eyed = findEye(target) ?? [];
+        const isOff = eyed.every(({ id }) => file.value.hidden.includes(id));
+        for (const { id } of eyed) draw.hide(model.place.path, id, !isOff);
       }),
     ];
     onCleanup(() => {
@@ -207,7 +207,7 @@ watch(
   () => name,
   () => (isSwitching = true),
 );
-// the widget at the caret is selected once the blocks of a newly drawn drawable arrive
+// Once the blocks of a newly drawn drawable arrive, the widget at the caret is selected.
 watch(own, () => {
   if (!isSwitching || !own.value.length) return;
   isSwitching = false;

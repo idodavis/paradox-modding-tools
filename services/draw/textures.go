@@ -35,6 +35,14 @@ type library struct {
 	objects map[PictureList][]string // the folder objects of each list walked
 }
 
+// makeLibrary returns a library of what the files of the given index define and show.
+func makeLibrary(ws *workspace.Session, mods *index.Index) *library {
+	return &library{
+		ws: ws, mods: mods, defines: map[string]string{}, firsts: map[PictureList]string{}, colors: map[PictureList]string{},
+		kinds: map[string]string{}, objects: map[PictureList][]string{},
+	}
+}
+
 // ExportPNG writes a PNG that the page made, such as a coat as drawn or one mip level of an image, to the given file,
 // which the user chose. It returns an error if the data is not a PNG or the file cannot be written.
 func (drw *Service) ExportPNG(target string, data []byte) error {
@@ -44,8 +52,7 @@ func (drw *Service) ExportPNG(target string, data []byte) error {
 	return os.WriteFile(target, data, 0o644)
 }
 
-// lookupDefineDatabase returns the database of the defines that the data call reading a define names: the one its
-// last argument names.
+// lookupDefineDatabase returns the database that the GetDefine call reads: the last one the call's arguments name.
 func lookupDefineDatabase() string {
 	targets := game.GUI.CallTargets[game.GUI.DefineCall]
 	return targets[len(targets)-1]
@@ -53,10 +60,10 @@ func lookupDefineDatabase() string {
 
 // resolveTexture returns the image file for a texture value as a GUI or coat file writes it: a path under the game's
 // gfx folders, an icon name looked up in the icon folders, or a texture binding. It returns "" if no file is found.
-func (library *library) resolveTexture(written string) string {
-	call, ok := jomini.ParseBracketed(written, 0)
+func (library *library) resolveTexture(value string) string {
+	call, ok := jomini.ParseBracketed(value, 0)
 	if !ok {
-		return library.findFile(written, "")
+		return library.findFile(value, "")
 	}
 	list, references := library.makePictureList("", call)
 	for _, reference := range references {
@@ -116,8 +123,8 @@ func (library *library) findKind(parts []string, object, argument string) (Pictu
 	return PictureList{}, false
 }
 
-// resolveKind returns the kind that parts of a data function's name name, and its database. It returns false if they
-// name none.
+// resolveKind returns the kind that the given words of a data function's name stand for, and its database. It returns
+// false if they stand for none.
 func (library *library) resolveKind(parts []string, object string) (kind, database string, ok bool) {
 	phrase := strings.Join(parts, " ")
 	kinds := []string{phrase}
@@ -163,9 +170,6 @@ func (library *library) findLevelPicture(list PictureList) string {
 // listFolderObjects returns the subfolders of a list's folder that hold the image its argument names, one per object,
 // in the order of their names.
 func (library *library) listFolderObjects(list PictureList) []string {
-	if library.objects == nil {
-		library.objects = map[PictureList][]string{}
-	}
 	if objects, ok := library.objects[list]; ok {
 		return objects
 	}
@@ -260,12 +264,12 @@ func (library *library) findPicture(definition clause, icon, preferred string) s
 // findFirstShown returns the first object a list picks among that the list's binding shows a picture of, with that
 // picture. It returns "" for both if none shows one.
 func (library *library) findFirstShown(list PictureList) (name, file string) {
-	if library.firsts == nil {
-		library.firsts = map[PictureList]string{}
-	}
 	name, known := library.firsts[list]
 	if known {
-		return name, lo.Ternary(name == "", "", library.findShown(list, schema.Reference{Database: list.Database, Name: name}))
+		if name == "" {
+			return "", ""
+		}
+		return name, library.findShown(list, schema.Reference{Database: list.Database, Name: name})
 	}
 	for _, reference := range library.listObjects(list) {
 		if file = library.findShown(list, reference); file != "" {
@@ -289,8 +293,8 @@ func (library *library) listObjects(list PictureList) []schema.Reference {
 	return lo.Map(sites, func(site index.Site, _ int) schema.Reference { return library.mods.ToReference(site) })
 }
 
-// pickPicture returns what picking a value of a list gives the widget whose list it is: the file picked, for a list
-// of one definition's images, else what the widget's binding shows of the definition picked.
+// pickPicture returns the choice that picking a value of a list gives its widget. In a list of one definition's images
+// the value is the image file. In any other list it is a definition, and the choice is the file the binding shows.
 func (library *library) pickPicture(list PictureList, picked string) Choice {
 	texture := picked
 	if list.Name == "" {
@@ -315,9 +319,6 @@ func (library *library) writesField(list PictureList) bool {
 // lookupDefine returns the value of the define with a key in a group, as the game reads it, or "" if the game has
 // none.
 func (library *library) lookupDefine(group, key string) string {
-	if library.defines == nil {
-		library.defines = map[string]string{}
-	}
 	define := library.ws.Schema.JoinNested(lookupDefineDatabase(), group, key)
 	value, known := library.defines[define]
 	if !known {
@@ -331,14 +332,14 @@ func (library *library) lookupDefine(group, key string) string {
 }
 
 // findFile returns the image file a texture value names as a path or an icon name, or "" if there is none.
-func (library *library) findFile(written, preferred string) string {
-	if file, ok := library.mods.ResolveTexture(written); ok {
+func (library *library) findFile(value, preferred string) string {
+	if file, ok := library.mods.ResolveTexture(value); ok {
 		return file
 	}
-	if written == "" || strings.Contains(written, "[") {
+	if value == "" || strings.Contains(value, "[") {
 		return ""
 	}
-	return library.findIcon(written, preferred)
+	return library.findIcon(value, preferred)
 }
 
 // findIcon returns the image file of an icon name: its file in the first of the icon folders that has one, or the path
@@ -364,9 +365,6 @@ func (library *library) findIcon(icon, preferred string) string {
 // findIconDefine returns the define that names the icon folder of a kind of object, which it writes in the singular or
 // the plural: GRAPHICAL_CULTURES_ICON_PATH for a graphical culture. It returns "" where no define does.
 func (library *library) findIconDefine(kind string) string {
-	if library.kinds == nil {
-		library.kinds = map[string]string{}
-	}
 	define, known := library.kinds[kind]
 	if known {
 		return define
@@ -501,8 +499,8 @@ func (resolver *resolver) resolveListedPicture(widget *Widget, key string, call 
 			return
 		}
 	}
-	isNamed := slices.ContainsFunc(references, func(reference schema.Reference) bool { return reference.Database == list.Database })
-	if widget.Pictures != nil || isNamed && list.Database != "" {
+	namesDefinition := slices.ContainsFunc(references, func(reference schema.Reference) bool { return reference.Database == list.Database })
+	if widget.Pictures != nil || (namesDefinition && list.Database != "") {
 		return
 	}
 	for _, candidate := range references {
@@ -542,6 +540,7 @@ func listDefinitionImages(ws *workspace.Session, mods *index.Index, definition c
 	for _, part := range listChildren(definition) {
 		_, isConditional := part.tree.FindChild(part.statement, game.TriggerKey)
 		last := part.tree.Statements[part.statement].Last
+		// The part's own statement and every statement inside its block.
 		for _, inner := range part.tree.Statements[part.statement:max(last, part.statement+1)] {
 			value := part.tree.Unquoted(inner.Value)
 			if !texture.IsImage(value) {
@@ -552,7 +551,7 @@ func listDefinitionImages(ws *workspace.Session, mods *index.Index, definition c
 				file, ok = mods.ResolveTexture(path.Join(folder, value))
 			}
 			switch {
-			case !ok:
+			case !ok: // no file has this image, so it adds nothing
 			case isConditional:
 				conditional = append(conditional, file)
 			default:
@@ -583,9 +582,6 @@ func (library *library) findColor(call jomini.Call) (string, PictureList) {
 
 // findFirstColor returns the first CSS color a list's definitions write in its field, or "" if there is none.
 func (library *library) findFirstColor(list PictureList) string {
-	if library.colors == nil {
-		library.colors = map[PictureList]string{}
-	}
 	color, known := library.colors[list]
 	if known || !library.writesField(list) {
 		return color
@@ -614,5 +610,8 @@ func (library *library) findFieldColor(list PictureList, reference schema.Refere
 	}
 	reference = schema.Reference{Name: definition.tree.Unquoted(definition.tree.Statements[field].Value)}
 	definition, ok = findKeptClause(library.ws, library.mods, reference)
-	return lo.Ternary(ok, makeColor(definition), "")
+	if !ok {
+		return ""
+	}
+	return makeColor(definition)
 }

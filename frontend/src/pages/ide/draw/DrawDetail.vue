@@ -1,5 +1,5 @@
 <!--
-  Visual's panel: a window's Properties and States tabs, or a coat's Layers.
+  The Visual panel: a window's Properties and States tabs, or a coat's Layers tab, with the actions on a coat.
 -->
 <script setup lang="ts">
 import { useMutation, useQuery } from "@pinia/colada";
@@ -96,8 +96,8 @@ const { mutate: copy } = useMutation({
 });
 
 /**
- * findBody finds the script inside the braces of a coat and where it is. It returns null for a coat written as
- * another's name.
+ * findBody finds the script inside the braces of a coat and its range. It returns null for a coat written as another
+ * coat's name, which has no braces.
  */
 function findBody(model: Model, span: Span): { text: string; range: Range } | null {
   const text = model.model.getValueInRange(span);
@@ -126,18 +126,18 @@ async function pasteScript(): Promise<void> {
 /** deleteCoat deletes the coat from the file once the user confirms. */
 async function deleteCoat(): Promise<void> {
   const coat = props.coat;
-  const choice = await confirm.open({
+  const answer = await confirm.open({
     title: "Delete the coat",
     body: `${coat?.name} is removed from the file.`,
     confirm: "Delete",
     destructive: true,
   });
-  if (coat && choice) edit({ place: coat.place, request: () => draw.RemoveBlock(props.model.place.path, coat.range) });
+  if (coat && answer) edit({ place: coat.place, request: () => draw.RemoveBlock(props.model.place.path, coat.range) });
 }
 
 /** selectTab shows the given tab of the panel. */
 function selectTab(value: string | number): void {
-  const next = tabs.value.find((one) => one.value === value);
+  const next = tabs.value.find((candidate) => candidate.value === value);
   if (next) file.value.tab = next.value;
 }
 </script>

@@ -169,7 +169,7 @@ type Overview struct {
 	Counts   map[string]int `json:"counts"` // definitions, by what a database calls them
 	Files    int            `json:"files"`
 	Messages int            `json:"messages"`
-	// Judged is the ids of the workspace's mods its own problems are judged with: those it depends on, all the way down.
+	// Judged holds the ids of the mods this mod's own problems are judged with: the mods it depends on, directly or not.
 	Judged []string `json:"judged"`
 }
 
@@ -256,10 +256,10 @@ func (hlt *Service) BuildReport(order []string) (Report, error) {
 	return report, nil
 }
 
-// resolveFindings grades the contests and shared localization keys of a load order. A contest the mods' declared
+// resolveFindings grades the contests and shared localization keys of a load order. A contest that the mods' declared
 // dependencies or an ignored pair settle is lowered, and a contest the order decides gets the order that fixes it.
-// Each finding then lists the pairs of mods it sets against each other. A pair is forgiven where the winner depends on
-// the other mod, or where the workspace ignores the two in either order.
+// Each of these findings also lists the pairs of mods it sets against each other. A pair is forgiven if the winner
+// depends on the other mod, or if the workspace ignores the two in either order.
 func resolveFindings(ws *workspace.Session, findings []Finding, order []string, declared map[[2]string]bool, pairs [][2]string) {
 	forgiven := maps.Clone(declared)
 	for _, pair := range pairs {
@@ -305,10 +305,9 @@ func groupReport(findings []Finding, order []string) Report {
 	}
 }
 
-// describeFinding fills in a finding's words from its code, its facts and its sites: its code's title and topic, its
-// message, the line under its name in a list, its place, and why the winner's copy wins. Its place is its first
-// site's, such as a.txt:12, which is the one the game keeps where it keeps one. A log row with no site names what it
-// is about instead, and one that names nothing has no place.
+// describeFinding fills in a finding's wording from its code, facts and sites: the code's title and topic, the message,
+// the brief, why the winner's copy wins, and the place. The place is the first site's, such as a.txt:12, which is the
+// kept one where there is one. A log row with no site names what it is about, if it names anything.
 func describeFinding(finding *Finding) {
 	code := lsp.LookupCode(finding.Code)
 	finding.Label, finding.Topic = code.Label, code.Topic
@@ -320,9 +319,9 @@ func describeFinding(finding *Finding) {
 	}
 }
 
-// splitBrief returns the line under a finding's name in a list, as parts, its pieces apart by a dot. It says what kind
+// splitBrief returns the line under a finding's name in a list, as parts separated by dots. The pieces are what kind
 // of thing the name is, how many names a replaced file leaves out that are still used and how often, the mod that
-// alone defines the name, and why the game keeps its copy. It is empty if the finding holds none of these.
+// alone defines the name, and why the game keeps its copy. It is empty if the finding has none of these.
 func splitBrief(finding Finding) []lsp.Part {
 	var parts []lsp.Part
 	add := func(piece ...lsp.Part) {
@@ -633,7 +632,7 @@ func makeFinding(mods *index.Index, id string, facts map[string]string, sites []
 	}
 }
 
-// listMods returns mods, each once, in load order. The game is left out.
+// listMods returns those of the given sources that are mods, each once, in load order. The game is not a mod.
 func listMods(mods *index.Index, origins []string) []string {
 	return lo.FilterMap(mods.Roots, func(root files.Root, _ int) (string, bool) {
 		return root.Origin, root.Origin != game.OriginVanilla && slices.Contains(origins, root.Origin)
@@ -668,13 +667,15 @@ func listShippedPaths(ws *workspace.Session, mods *index.Index) []string {
 	groups := map[string]bool{} // by the key of the first file at a path
 	for _, position := range mods.ListOwnFiles() {
 		file := mods.Files[position]
-		loaded, hidden, ok := mods.FindLoaded(file.Rel)
-		group := lo.Ternary(ok, append(hidden, loaded), hidden)
+		loaded, copies, ok := mods.FindLoaded(file.Rel)
+		if ok {
+			copies = append(copies, loaded)
+		}
 		if !isGameFolder(ws, file.Rel) ||
-			!slices.ContainsFunc(group, func(other files.File) bool { return other.Key == file.Key }) || groups[group[0].Key] {
+			!slices.ContainsFunc(copies, func(other files.File) bool { return other.Key == file.Key }) || groups[copies[0].Key] {
 			continue
 		}
-		groups[group[0].Key] = true
+		groups[copies[0].Key] = true
 		paths = append(paths, file.Rel)
 	}
 	slices.SortFunc(paths, func(a, b string) int { return cmp.Compare(strings.ToLower(a), strings.ToLower(b)) })
@@ -718,8 +719,8 @@ func listFileDefinitions(mods *index.Index, position int32) []index.Occurrence {
 	})
 }
 
-// listUnused returns an unused copy for each mod none of whose copies of a name the game uses, where it keeps its own.
-// Each points at the game's copies and that mod's. The game is its winner and the mod its beaten one.
+// listUnused returns a finding for each mod whose copies of a name the game never uses because it keeps its own. Each
+// points at the game's copies and that mod's, with the game as the winner and the mod as the beaten one.
 func listUnused(ws *workspace.Session, mods *index.Index, sites []index.Site, winner index.Winner) []Finding {
 	reference := mods.ToReference(sites[0])
 	byMod := lo.GroupBy(lo.Filter(sites, func(site index.Site, _ int) bool { return isMod(mods, site) }),
@@ -737,10 +738,10 @@ func listUnused(ws *workspace.Session, mods *index.Index, sites []index.Site, wi
 	return findings
 }
 
-// describeRemoved fills in the finding of a mod's file that removes names in use. It sets the names still used, and
-// the facts the message counts: the mod, how many names the game's copy defines and what they are called, how many of
-// them the mod's copy leaves out, and how many of those are still used and how often. They are called by their kind in
-// the plural, such as "scripted triggers", or "names" where they are of more than one kind.
+// describeRemoved fills in the finding for a mod file that removes names in use. It sets the finding's Uses and the
+// facts its message counts: the mod, how many names the game's copy defines, how many of them the mod's copy leaves
+// out, and how many of those are still used and how often. The "definitions" fact names them by kind in the plural,
+// such as "scripted triggers", or "names" if there is more than one kind.
 func describeRemoved(ws *workspace.Session, mods *index.Index, finding *Finding, uses []Use) {
 	original, _ := lo.Find(finding.Sites, func(site lsp.Site) bool { return site.Place.Origin == game.OriginVanilla })
 	kept, _ := lo.Find(finding.Sites, func(site lsp.Site) bool { return site.Kept })
@@ -770,9 +771,9 @@ func listRemovedUses(ws *workspace.Session, mods *index.Index, path string) []Us
 	}
 	var uses []Use
 	seen := map[schema.Reference]bool{}
-	for occurrence, written := range mods.Occurrences[position] {
-		reference := mods.ToReference(index.Site{File: position, Occurrence: int32(occurrence)})
-		if written.Role != index.RoleDefines || written.Alias || written.Local || seen[reference] ||
+	for number, occurrence := range mods.Occurrences[position] {
+		reference := mods.ToReference(index.Site{File: position, Occurrence: int32(number)})
+		if occurrence.Role != index.RoleDefines || occurrence.Alias || occurrence.Local || seen[reference] ||
 			slices.Contains(game.Links, reference.Database) ||
 			len(listLoaded(mods, mods.Resolve(reference))) > 0 {
 			continue
@@ -871,9 +872,8 @@ func listCoverage(ws *workspace.Session, mods *index.Index, messages []index.Sit
 			facts["have"] = strconv.Itoa(len(base) - len(listUntranslated(mods, byLanguage, language)))
 			facts["of"] = strconv.Itoa(len(base))
 			positions := lo.Uniq(lo.Map(byLanguage[language], func(site index.Site, _ int) int32 { return site.File }))
-			findings = append(findings, makeFinding(mods, coverageCode, facts, lo.Map(positions, func(position int32, _ int) lsp.Site {
-				return makeFileSite(ws, mods, position)
-			})))
+			sites := lo.Map(positions, func(position int32, _ int) lsp.Site { return makeFileSite(ws, mods, position) })
+			findings = append(findings, makeFinding(mods, coverageCode, facts, sites))
 		}
 	}
 	return findings

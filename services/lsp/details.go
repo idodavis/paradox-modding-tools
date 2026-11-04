@@ -175,10 +175,10 @@ func (lsp *Service) ListColorSites(path string) ([]ColorSite, error) {
 	return sites, nil
 }
 
-// PresentColor returns the text that writes a color into a file, in the same form as the color written in the given
-// range: the same tag and scale, with an alpha only if that color has one. A range that holds no color, such as a
-// coat's layer that does not write the color yet, gets it in the form the game's own coats write their colors in
-// (game.Game.Coat.ColorForm). It returns an error if the form cannot be written.
+// PresentColor returns the text that writes a color into a file. It copies the form of the color already written at
+// the given range: its tag and scale, with an alpha only if that color has one. If the range holds no color, such as a
+// coat layer that has none yet, it uses the form the game's coats write colors in (game.Game.Coat.ColorForm). It
+// returns an error if the form cannot be written.
 func (lsp *Service) PresentColor(path string, colorRange Range, color jomini.RGBA) (string, error) {
 	ws, tree, err := lsp.loadTree(path)
 	if err != nil {
@@ -196,8 +196,7 @@ func (lsp *Service) PresentColor(path string, colorRange Range, color jomini.RGB
 	return strings.TrimSpace(tag + " { " + strings.Join(encoded, " ") + " }"), nil
 }
 
-// Signature returns the signature help for a call at a position in a file, or nil if the position is not inside
-// a call.
+// Signature returns the signature help for the call at a position, or nil if the position is not inside a call.
 func (lsp *Service) Signature(path string, line, column int) (*Signature, error) {
 	ws, tree, err := lsp.loadTree(path)
 	if err != nil {
@@ -215,8 +214,8 @@ func (lsp *Service) Signature(path string, line, column int) (*Signature, error)
 	})
 	var active *int
 	for child := range tree.Children(call) {
-		if position := slices.Index(parameters, tree.Unquoted(tree.Statements[child].Key)); position >= 0 &&
-			tree.Statements[child].Span.Contains(offset) {
+		position := slices.Index(parameters, tree.Unquoted(tree.Statements[child].Key))
+		if position >= 0 && tree.Statements[child].Span.Contains(offset) {
 			active = &position
 		}
 	}
@@ -231,11 +230,12 @@ func findCall(ws *workspace.Session, visitor *hoverVisitor) (int32, *schema.Fiel
 		current := visitor.tree.Statements[statement]
 		if current.IsBlock() && visitor.offset > current.Block.Start && visitor.offset < current.Block.End &&
 			context.Category == schema.CategoryCall && context.Field != nil {
-			for _, reference := range lo.FlatMap(context.References, func(reference schema.Reference, _ int) []schema.Reference {
+			callees := lo.FlatMap(context.References, func(reference schema.Reference, _ int) []schema.Reference {
 				return index.ListCallees(reference)
-			}) {
-				if database := ws.Schema.Databases[reference.Database]; reference.Name == visitor.tree.Unquoted(current.Key) &&
-					database != nil && database.Callable.Parameters {
+			})
+			for _, reference := range callees {
+				database := ws.Schema.Databases[reference.Database]
+				if reference.Name == visitor.tree.Unquoted(current.Key) && database != nil && database.Callable.Parameters {
 					return statement, context.Field, reference.Name, true
 				}
 			}

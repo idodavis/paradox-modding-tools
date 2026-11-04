@@ -1,6 +1,6 @@
 <!--
-  The Source Control view: a section for each git repository of the workspace's mods, in load order, then the Graph
-  of the log of the repository picked in its header.
+  The Source Control view: a section for each git repository of the workspace's mods, in load order, then the Graph,
+  the commit log of the repository picked in its header.
 -->
 <script setup lang="ts">
 import { computed, shallowRef, useTemplateRef, watch } from "vue";
@@ -45,7 +45,7 @@ const LANE_COLORS = [
   "var(--green)",
   "var(--red)",
 ];
-/** REF_COLORS holds a ref's chip color by its type: a remote branch is info, a tag plain, any other the accent. */
+/** REF_COLORS gives a ref chip's color by ref type. A type not listed, such as a local branch, is primary. */
 const REF_COLORS: Partial<Record<string, "info" | "neutral">> = { remote: "info", tag: "neutral" };
 
 const git = useGitStore();
@@ -53,18 +53,18 @@ const editor = useEditorStore();
 const workspace = useWorkspaceStore();
 const [DefineLane, Lane] = createReusableTemplate<{ entry: Entry }>();
 
-// the mods in no repository, each of which can start one
+// the mods in no repository, each of which can initialize one
 const bare = computed(() =>
-  workspace.listMods().filter((mod) => !mod.broken && !git.repositories.some((one) => one.mods?.includes(mod.id))),
+  workspace.listMods().filter((mod) => !mod.broken && !git.repositories.some((repo) => repo.mods?.includes(mod.id))),
 );
 // the repository the Graph shows: the one picked in its header, else the active file's, else the first
 const dir = computed(
   () =>
-    git.repositories.find((one) => one.root === git.graphRoot)?.root ||
+    git.repositories.find((repo) => repo.root === git.graphRoot)?.root ||
     git.findRoot(editor.activeFile()) ||
     (git.repositories[0]?.root ?? ""),
 );
-// each repository is offered under its first mod in load order
+// each repository is labeled by its first mod in load order
 const options = computed(() =>
   git.repositories.map(({ root, mods }) => ({
     label: workspace.originName(mods?.[0] ?? ""),
@@ -72,7 +72,7 @@ const options = computed(() =>
     origin: mods?.[0] ?? "",
   })),
 );
-const graphOrigin = computed(() => options.value.find((one) => one.value === dir.value)?.origin ?? "");
+const graphOrigin = computed(() => options.value.find((option) => option.value === dir.value)?.origin ?? "");
 // the view opens with the first repository's commit box focused, unless the commit command asked for another
 git.commitTarget ||= git.repositories[0]?.root ?? "";
 const { data: status } = useQuery(() => ({ ...gitStatusQuery(dir.value), enabled: !!dir.value }));
@@ -132,19 +132,19 @@ const initializeMenu = computed<DropdownMenuItem[]>(() =>
 );
 
 /**
- * buildGraph gives each commit its lane and the lanes that touch its row. A lane waits for the commit its line leads
- * to.
+ * buildGraph returns a GraphRow for each commit of the log: its lane and the other lanes that touch its row. A lane
+ * holds the hash of the commit its line leads to, until that commit arrives.
  */
 function buildGraph(log: readonly Commit[]): GraphRow[] {
   const lanes: string[] = [];
   const freeLane = () => (lanes.includes("") ? lanes.indexOf("") : lanes.length);
-  return log.map((one) => {
-    const waiting = lanes.indexOf(one.hash);
+  return log.map((commit) => {
+    const waiting = lanes.indexOf(commit.hash);
     const lane = waiting >= 0 ? waiting : freeLane();
-    const through = lanes.flatMap((hash, i) => (hash && i !== lane && hash !== one.hash ? [i] : []));
-    const joins = lanes.flatMap((hash, i) => (hash === one.hash && i !== lane ? [i] : []));
+    const through = lanes.flatMap((hash, i) => (hash && i !== lane && hash !== commit.hash ? [i] : []));
+    const joins = lanes.flatMap((hash, i) => (hash === commit.hash && i !== lane ? [i] : []));
     joins.forEach((i) => (lanes[i] = ""));
-    const [first = "", ...rest] = one.parents ?? [];
+    const [first = "", ...rest] = commit.parents ?? [];
     lanes[lane] = first;
     const merges = rest.map((parent) => {
       const merged = lanes.includes(parent) ? lanes.indexOf(parent) : freeLane();
@@ -153,7 +153,7 @@ function buildGraph(log: readonly Commit[]): GraphRow[] {
     });
     while (lanes.at(-1) === "") lanes.pop();
     const below = lanes.flatMap((hash, i) => (hash ? [i] : []));
-    return { commit: one, lane, arrives: waiting >= 0, through, joins, merges, below };
+    return { commit, lane, arrives: waiting >= 0, through, joins, merges, below };
   });
 }
 
@@ -163,8 +163,8 @@ const laneX = (lane: number) => LANE_WIDTH / 2 + 2 + lane * LANE_WIDTH;
 const laneColor = (lane: number) => LANE_COLORS[lane % LANE_COLORS.length];
 
 /**
- * buildLines returns the lines of a graph row, each in its lane's color: lanes passing, joining, going on and leaving
- * for a merge.
+ * buildLines returns the SVG paths of a graph row, each with its lane: lanes passing through, lanes joining the
+ * commit's dot, the line arriving, the line going on to a parent, and the lines leaving for a merge.
  */
 function buildLines(row: GraphRow): { path: string; lane: number }[] {
   const middle = ROW_HEIGHT / 2;

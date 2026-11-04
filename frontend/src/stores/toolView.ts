@@ -1,6 +1,6 @@
 /**
- * PMT's view for its tools: the page the user has in front of them and the chip that page offers a prompt, which Go
- * sends on to the agents' tools, and the pages, files, windows and look-ups those tools ask PMT to show.
+ * The tool view store: tells Go which page the user has open and the chip that page offers a prompt, so the agents'
+ * tools can see them. It also shows the pages, files, windows and look-ups those tools ask for.
  */
 import { useEventListener } from "@vueuse/core";
 import { Events } from "@wailsio/runtime";
@@ -23,7 +23,7 @@ export const useToolViewStore = defineStore("toolView", () => {
   const editor = useEditorStore();
   const windows = useWindowsStore();
   const workspace = useWorkspaceStore();
-  // what each page offers a prompt, by the page's name; the chip is the page shown's, and the user can leave it out
+  // the chip each page offers a prompt, by the page's name; the shown page's chip is `chip`
   const chips = reactive(new Map<string, Chip | null>());
   const chip = computed(() => chips.get(String(route.name)) ?? null);
   const chipLeftOut = shallowRef(false);
@@ -31,7 +31,7 @@ export const useToolViewStore = defineStore("toolView", () => {
   const promptChip = computed(() => (chipLeftOut.value ? null : chip.value));
 
   watch(chip, () => (chipLeftOut.value = false));
-  // Go's tools say what the user has in front of them: the page and its chip, sent again when the window has focus
+  // sendView tells Go the page, its query and its chip. It runs again when the window gets focus.
   const sendView = (): void =>
     void mcp.SetView({
       page: String(route.name ?? ""),
@@ -45,14 +45,14 @@ export const useToolViewStore = defineStore("toolView", () => {
     onScopeDispose(Events.On("mcp:show", ({ data }: { data: Show }) => void show(data)));
   }
 
-  /** setChip keeps what a page offers a prompt, or null for nothing. */
+  /** setChip sets the chip a page offers a prompt, or none for null. */
   const setChip = (page: string, next: Chip | null): void => {
     chips.set(page, next);
   };
 
   /**
-   * followFile opens a file an agent's tool call names at a line, in the main window's IDE, as a file the agent reads
-   * or one it edits. The file is the agent's, so the chip stays the user's own and the focus stays where it is.
+   * followFile shows a file an agent's tool call names, at the given line. The source says whether the agent reads or
+   * edits the file. It does not change the chip or the focus. It does nothing if Go has no place for the path.
    */
   async function followFile(path: string, line: number, source: "agent" | "edit"): Promise<void> {
     const place = await loadQuery(placeQuery(path)).catch(() => undefined);
@@ -94,8 +94,8 @@ export const useToolViewStore = defineStore("toolView", () => {
 });
 
 /**
- * useChip keeps what the calling page offers a prompt, which the prompt takes while the page is shown. The source
- * gives the chip, or null for none.
+ * useChip sets the chip the calling page offers a prompt, and updates it when the source changes. The source returns
+ * the chip, or null for none.
  */
 export function useChip(source: () => Chip | null): void {
   const toolView = useToolViewStore();

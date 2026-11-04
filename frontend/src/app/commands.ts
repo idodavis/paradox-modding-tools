@@ -1,7 +1,7 @@
 /**
- * The command table: each command of the app is one row, in the menu item shape, with the area it belongs to and when
- * it applies. A command that the IDE page or the palette carries out, because it needs their state, is sent on the
- * command bus with the row's id.
+ * The command table: each command of the app is one row, shaped as a menu item, with an id that names its area and a
+ * `when` that says if it applies. A command that needs the IDE page's or the palette's state is sent to them on the
+ * command bus by its id.
  */
 import type { CommandPaletteGroup, CommandPaletteItem } from "@nuxt/ui";
 import { useMutation, useQueryCache } from "@pinia/colada";
@@ -41,9 +41,9 @@ export type Command = Omit<CommandPaletteItem, "kbds"> & {
   secondKbds?: string[];
 };
 
-// the commands a focused editor or input keeps for itself, so their shortcuts stay off while one is typed in
+/** OWN_KEYS holds the commands a focused editor or input handles itself. Their shortcuts are off while typing. */
 const OWN_KEYS = new Set(["editor.undo", "editor.redo", "editor.find"]);
-// the setting that holds the shortcuts the user changed: each changed command's shortcuts, as Nuxt UI writes them
+/** BINDINGS is the setting that holds the shortcuts the user changed, each command's as Nuxt UI writes them. */
 const BINDINGS = "shortcuts.bindings";
 
 const commandBus = useEventBus(COMMAND_BUS);
@@ -60,8 +60,8 @@ const changedBindings = computed<Record<string, string[]>>(() => {
   }
 });
 
-// a write run as the one mutation, so a failure reaches the app's error handler; it is made when the shortcuts are
-// registered, inside the app
+// Runs work as a mutation, so a failure reaches the app's error handler. It is set when the shortcuts are registered,
+// inside the app.
 let run: (work: () => Promise<unknown>) => void = () => undefined;
 
 const activeTab = () => useEditorStore().activeTab();
@@ -493,15 +493,16 @@ export function registerShortcuts(): void {
   const { mutate } = useMutation({ mutation: (work: () => Promise<unknown>) => work() });
   run = mutate;
   defineShortcuts(
-    computed(() =>
-      Object.fromEntries(
-        COMMANDS.filter((row) => row.when()).flatMap((row) =>
-          Object.entries(extractShortcuts(listBindings(row).map((kbds) => ({ ...row, kbds })))).map(
-            ([keys, handler]) => [keys, { handler, usingInput: !OWN_KEYS.has(row.id) }],
-          ),
-        ),
-      ),
-    ),
+    computed(() => {
+      const shortcuts: Record<string, { handler: () => void; usingInput: boolean }> = {};
+      for (const row of COMMANDS.filter((command) => command.when())) {
+        const handlers = extractShortcuts(listBindings(row).map((kbds) => ({ ...row, kbds })));
+        for (const [keys, handler] of Object.entries(handlers)) {
+          shortcuts[keys] = { handler, usingInput: !OWN_KEYS.has(row.id) };
+        }
+      }
+      return shortcuts;
+    }),
   );
 }
 
@@ -517,8 +518,8 @@ export function listBindings(command: Command): string[][] {
 }
 
 /**
- * writeBinding sets one of a command's shortcuts, the given place among them, to the given keys. With no keys it puts
- * the command's own back. A command whose shortcuts are all its own again leaves the setting.
+ * writeBinding sets the shortcut in the given slot of a command to the given keys. With no keys it restores the
+ * command's own. A command whose shortcuts are all its own again is removed from the setting.
  */
 export function writeBinding(command: Command, slot: number, kbds?: string[]): void {
   const own = listDefaultBindings(command);
@@ -529,7 +530,7 @@ export function writeBinding(command: Command, slot: number, kbds?: string[]): v
   useSettingsStore().write(BINDINGS, JSON.stringify(changed));
 }
 
-/** findBinding returns the command one of whose shortcuts is the given keys, or undefined when none is. */
+/** findBinding returns the command that has the given keys as one of its shortcuts. It is undefined if none does. */
 export function findBinding(kbds: string[]): Command | undefined {
   const shortcut = joinShortcut(kbds);
   return COMMANDS.find((command) => listBindings(command).some((keys) => joinShortcut(keys) === shortcut));
@@ -704,8 +705,8 @@ export function canSaveAsDds(place: Place | null | undefined): boolean {
 }
 
 /**
- * findGameCopy finds the game's copy of a mod's file among the file's copies, which come in load order. It is
- * undefined for a file of the game, which is no copy of itself, and when the game has no copy.
+ * findGameCopy returns the game's copy of a mod's file: the first of the file's copies, which come in load order, if
+ * it is the game's. It is undefined for a file of the game itself and when the game has no copy.
  */
 export function findGameCopy(place: Place, copies: Place[] | null | undefined): Place | undefined {
   const [first] = copies ?? [];
@@ -739,10 +740,7 @@ function actOn<T>(find: () => T | null | undefined, act: (value: T) => void): ()
   };
 }
 
-/**
- * canChange reports whether the active tab's file is one a mod holds, which can be created beside, renamed and
- * deleted.
- */
+/** canChange reports whether the active tab's file is a mod's, so a user can rename it, delete it or add beside it. */
 function canChange(): boolean {
   const place = useEditorStore().activeFile();
   return !!place && !place.readOnly;
@@ -763,24 +761,22 @@ function canUseGit(): boolean {
 }
 
 /**
- * chooseRepository runs a git command's action on the repository it acts on: the active file's, else the only one
- * listed. When the active file is in none and several are listed, the palette first asks which, under the given
- * command id and question.
+ * chooseRepository runs an action on a repository's root: the active file's repository, else the only one listed. If
+ * the active file is in none and several are listed, the palette asks which, with the given command id and question.
  */
 function chooseRepository(id: string, label: string, act: (root: string) => void): void {
   const repositories = useGitStore().repositories;
-  const root =
-    useGitStore().findRoot(useEditorStore().activeFile()) ||
-    (repositories.length === 1 ? (repositories[0]?.root ?? "") : "");
+  let root = useGitStore().findRoot(useEditorStore().activeFile());
+  if (!root && repositories.length === 1) root = repositories[0]?.root ?? "";
   if (root) {
     act(root);
     return;
   }
-  const items = repositories.map((one) => ({
-    label: (one.mods ?? []).map(useWorkspaceStore().originName).join(", "),
-    suffix: one.root,
+  const items = repositories.map((repository) => ({
+    label: (repository.mods ?? []).map(useWorkspaceStore().originName).join(", "),
+    suffix: repository.root,
     icon: "i-lucide-folder-git-2",
-    onSelect: () => act(one.root),
+    onSelect: () => act(repository.root),
   }));
   choicesBus.emit({ id, label, items });
 }

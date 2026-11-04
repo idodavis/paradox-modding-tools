@@ -32,7 +32,7 @@ export async function loadQuery<T>(options: UseQueryOptions<T>): Promise<T | und
 /** GIT_STATUS is the last part of the key of a repository's status. */
 const GIT_STATUS = "status";
 
-// the key of every query of a kind that takes a path, a folder, a repository or a mod
+// the first key part shared by every query of one kind, so one key refreshes the whole kind
 const KINDS = {
   files: ["file"],
   folders: ["folder"],
@@ -42,7 +42,7 @@ const KINDS = {
   releases: ["release"],
 } as const;
 
-/** keys holds the query keys that an event or a mutation refreshes. A kind's plural is the key of all of them. */
+/** keys holds the query keys that events and mutations refresh. A kind's plural, such as `files`, covers its kind. */
 export const keys = {
   ...KINDS,
   settings: ["app", "settings"] as const,
@@ -134,10 +134,7 @@ export const headerQuery = defineQueryOptions((path: string) => ({
   key: [...keys.file(path), "header"],
   query: () => workspace.ReadHeader(path),
 }));
-/**
- * ddsPicturesQuery lists the pictures Save as DDS writes, a picture or those directly in a folder, and the DDS whose
- * settings each keeps.
- */
+/** ddsPicturesQuery lists the pictures Save as DDS saves for a picture or a folder, with the DDS each reuses. */
 export const ddsPicturesQuery = defineQueryOptions((path: string) => ({
   key: [...keys.file(path), "dds-pictures"],
   query: () => draw.FindPictureFiles(path),

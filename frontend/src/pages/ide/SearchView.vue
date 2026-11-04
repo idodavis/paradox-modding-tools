@@ -1,6 +1,6 @@
 <!--
   The sidebar's search: the query form, the hits grouped by file, and Replace behind a confirmation. A hit opens its
-  place in the editor, at the match.
+  file in the editor, at the match.
 -->
 <script setup lang="ts">
 import { computed, shallowRef } from "vue";
@@ -19,7 +19,7 @@ import { useSearchStore } from "../../stores/search";
 import { useWorkspaceStore } from "../../stores/workspace";
 import OriginChip from "../../ui/OriginChip.vue";
 
-/** How many hits are listed open before the next files are folded. */
+/** OPEN_HITS is how many hits are listed open before the remaining files start folded. */
 const OPEN_HITS = 500;
 
 const editor = useEditorStore();
@@ -35,7 +35,7 @@ const wholeWord = shallowRef(false);
 const include = shallowRef("");
 const exclude = shallowRef("");
 const disabled = shallowRef(new Set<string>());
-// the files clicked, which are folded if they would be open and open if they would be folded
+// the files the user clicked; each shows the opposite of its default fold
 const flips = shallowRef(new Set<string>());
 
 const { data: roots } = useQuery(() => ({ ...rootsQuery, enabled: workspace.isOpen() }));
@@ -63,9 +63,9 @@ const files = computed(() => {
 const count = computed(() => files.value.reduce((sum, file) => sum + file.count, 0));
 
 const TOGGLES = [
-  { label: "Regular expression", icon: "i-lucide-regex", on: regex },
-  { label: "Match case", icon: "i-lucide-case-sensitive", on: matchCase },
-  { label: "Whole word", icon: "i-lucide-whole-word", on: wholeWord },
+  { label: "Regular expression", icon: "i-lucide-regex", state: regex },
+  { label: "Match case", icon: "i-lucide-case-sensitive", state: matchCase },
+  { label: "Whole word", icon: "i-lucide-whole-word", state: wholeWord },
 ];
 const GLOBS = [
   { label: "Files to include", text: include, placeholder: "common/**, *.txt" },
@@ -79,10 +79,10 @@ function run(): void {
   if (text.value.trim()) search.search(query.value);
 }
 
-/** tick ticks or unticks an origin in the search. */
-function tick(origin: string, on: boolean): void {
+/** tick includes an origin in the search if ticked, else excludes it. */
+function tick(origin: string, isTicked: boolean): void {
   const next = new Set(disabled.value);
-  if (on) next.delete(origin);
+  if (isTicked) next.delete(origin);
   else next.add(origin);
   disabled.value = next;
 }
@@ -112,8 +112,8 @@ const { mutate: replaceAll } = useMutation({
     if (!(await confirm.open({ title: "Replace all?", body, confirm: "Replace all" }))) return 0;
     return searchApi.ReplaceText(query.value, replacement.value);
   },
-  onSuccess: (count) => {
-    if (count) toast.add({ title: `Replaced ${plural(count, "match", "matches")}` });
+  onSuccess: (replaced) => {
+    if (replaced) toast.add({ title: `Replaced ${plural(replaced, "match", "matches")}` });
   },
 });
 </script>
@@ -137,11 +137,11 @@ const { mutate: replaceAll } = useMutation({
               :icon="option.icon"
               size="xs"
               square
-              :color="option.on.value ? 'primary' : 'neutral'"
-              :variant="option.on.value ? 'soft' : 'ghost'"
+              :color="option.state.value ? 'primary' : 'neutral'"
+              :variant="option.state.value ? 'soft' : 'ghost'"
               :aria-label="option.label"
-              :aria-pressed="option.on.value"
-              @click="option.on.value = !option.on.value"
+              :aria-pressed="option.state.value"
+              @click="option.state.value = !option.state.value"
             />
           </UTooltip>
         </template>

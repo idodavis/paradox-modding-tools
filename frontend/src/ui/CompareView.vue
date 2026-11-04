@@ -1,7 +1,6 @@
 <!--
-  Two texts side by side in a diff editor, with a label above each and a header row that holds the holder's content,
-  the steps between changes, Show all lines and the switch between split and unified. It tells its holder how many
-  lines were added and removed.
+  Two texts in a diff editor, with a label above each. The header row holds the header slot, buttons to step between
+  changes, Show all lines and the split or unified switch. It emits how many lines were added and removed.
 -->
 <script setup lang="ts">
 import { computed, onBeforeUnmount, onMounted, shallowRef, useTemplateRef, watch } from "vue";
@@ -68,13 +67,13 @@ onMounted(() => {
     // an empty text has no lines, though Monaco gives its model one
     emit(
       "changes",
-      right ? lines.reduce((sum, one) => sum + count(one.modifiedStartLineNumber, one.modifiedEndLineNumber), 0) : 0,
-      left ? lines.reduce((sum, one) => sum + count(one.originalStartLineNumber, one.originalEndLineNumber), 0) : 0,
+      right ? lines.reduce((sum, line) => sum + count(line.modifiedStartLineNumber, line.modifiedEndLineNumber), 0) : 0,
+      left ? lines.reduce((sum, line) => sum + count(line.originalStartLineNumber, line.originalEndLineNumber), 0) : 0,
     );
   });
 });
 
-// Monaco keeps which unchanged lines are folded as marks in each text, and a text set whole loses them
+// setValue loses the marks Monaco keeps of which unchanged regions are folded, so a new text compares again
 watch(
   () => left,
   (text) => {
@@ -96,7 +95,7 @@ watch(
     editor.setModelLanguage(modified, id);
   },
 );
-watch(split, (side) => view?.updateOptions({ renderSideBySide: side }));
+watch(split, (sideBySide) => view?.updateOptions({ renderSideBySide: sideBySide }));
 watch(all, (shown) => {
   view?.updateOptions({ hideUnchangedRegions: { enabled: !shown } });
   if (!shown) compareAgain();

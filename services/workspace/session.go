@@ -149,7 +149,7 @@ func resolveVersion(row *game.Game, install app.Install) string {
 }
 
 // loadInstall sets the session's schema and install index from the caches' folder. It builds what a cache lacks and
-// saves it there, a new schema under the given version of the install.
+// saves it there. A schema it builds gets the given version.
 func (ws *Session) loadInstall(installPath, version string, progress func(stage string, percent int)) error {
 	schemaCache, indexCache := filepath.Join(ws.caches, schemaFile), filepath.Join(ws.caches, indexFile)
 	language, hasSchema := files.LoadGob[*schema.Schema](schemaCache)
@@ -336,8 +336,8 @@ func (ws *Session) LoadSource(path string) (string, error) {
 	return text.Text, err
 }
 
-// LookupText returns a localization key's text and the message the game keeps. It returns false if no message has
-// the key.
+// LookupText returns a localization key's text in the session's language, else in the base language, with the message
+// the game keeps. It returns false if neither language has the key.
 func (ws *Session) LookupText(mods *index.Index, key string) (text string, winner index.Winner, ok bool) {
 	messages := mods.ListMessages(key)
 	for _, language := range []string{ws.Language, game.BaseLanguage} {
@@ -365,8 +365,9 @@ func (ws *Session) LookupText(mods *index.Index, key string) (text string, winne
 	return "", index.Winner{}, false
 }
 
-// findText returns the text of the message at a site, in the given language, as the given index of the mods lists it.
-// It returns "" if the file cannot be read or no longer has the message at that line.
+// findText returns the text of the message at a site in the given language. The install keeps only the base language's
+// texts, so a game file's text in another language is read from its file. It returns "" if the file cannot be read or
+// no longer has the message at that line.
 func (ws *Session) findText(mods *index.Index, site index.Site, language string) string {
 	file := mods.File(site)
 	if file.Origin != game.OriginVanilla || language == game.BaseLanguage {
@@ -408,9 +409,8 @@ func (ws *Session) LookupTitle(mods *index.Index, site index.Site) string {
 	return text
 }
 
-// FindTitleKey returns the localization key that a definition writes as its title, as the given index of the mods lists
-// the definition. A title written as a block is the first text in it. It returns false if the definition writes none
-// or its statement cannot be found.
+// FindTitleKey returns the localization key a definition writes as its title. A title written as a block gives the
+// first text in it. It returns false if the definition writes none or its statement cannot be found.
 func (ws *Session) FindTitleKey(mods *index.Index, site index.Site) (string, bool) {
 	tree, statement, err := ws.FindStatement(mods, site)
 	if err != nil {
@@ -419,10 +419,10 @@ func (ws *Session) FindTitleKey(mods *index.Index, site index.Site) (string, boo
 	return FindTextKey(tree, statement, game.TitleKey)
 }
 
-// FindTextKey returns the localization key a statement writes under the given key, such as an event's title. Where it
-// writes a block there, it is the first desc in the block that has a value, as in a first_valid of triggered descs, or
-// a text written directly in the block, as in an option's triggered name. It returns false if the statement writes no
-// such key, or a block that holds neither.
+// FindTextKey returns the localization key a statement writes under the given key, such as an event's title. The key
+// is the value of the given key itself, else of the first desc in its block, as in a first_valid of triggered descs,
+// or of a text written directly in its block, as in an option's triggered name. It returns false if the statement
+// writes no such key, or a block that holds neither.
 func FindTextKey(tree *jomini.Tree, statement int32, key string) (string, bool) {
 	child, ok := tree.FindChild(statement, key)
 	if !ok {
@@ -432,7 +432,7 @@ func FindTextKey(tree *jomini.Tree, statement int32, key string) (string, bool) 
 	for position := child; position < tree.Statements[child].Last; position++ {
 		current := tree.Statements[position]
 		field := tree.Text(current.Key)
-		isText := field == game.DescriptionKey || field == game.LabelKey && current.Parent == child
+		isText := field == game.DescriptionKey || (field == game.LabelKey && current.Parent == child)
 		if (position == child || isText) && !current.Value.IsEmpty() {
 			return tree.Unquoted(current.Value), true
 		}
@@ -449,16 +449,15 @@ func (ws *Session) FindStatement(mods *index.Index, site index.Site) (*jomini.Tr
 		return nil, 0, err
 	}
 	occurrence := mods.Occurrence(site)
-	if statement := occurrence.Statement; int(statement) < len(tree.Statements) &&
-		tree.Statements[statement].Span.Contains(occurrence.Span.Start) {
+	statement := occurrence.Statement
+	if int(statement) < len(tree.Statements) && tree.Statements[statement].Span.Contains(occurrence.Span.Start) {
 		return tree, statement, nil
 	}
 	return nil, 0, fmt.Errorf("%s has no statement where the index read one", path)
 }
 
-// Rescan brings the mods' index up to date with a batch of file changes. It reads a mod's descriptor again and marks
-// the change in the batch when the change is the descriptor. It returns the error of a change it cannot read, after the
-// others.
+// Rescan brings the mods' index up to date with a batch of file changes. A change to a mod's descriptor reads the
+// descriptor again and is marked in the batch. It returns the errors of the changes it cannot read, after the others.
 func (ws *Session) Rescan(changes []FileChange) error {
 	ws.mu.Lock()
 	defer ws.mu.Unlock()

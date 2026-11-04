@@ -5,10 +5,7 @@
 import * as workspaceApi from "@services/workspace/service";
 import type { Session } from "./agent";
 
-/**
- * A FileEdit is one file a tool call changes, by its path and the file's own name, with its text before and after, or
- * the patch between them and how many lines the patch adds and removes. Its hunks are what an undo takes back.
- */
+/** A FileEdit is the change one tool call makes to one file. An undo takes back its hunks. */
 export type FileEdit = {
   path: string;
   label: string;
@@ -18,7 +15,7 @@ export type FileEdit = {
   added: number;
   removed: number;
   hunks: Hunk[];
-  isNew: boolean; // the change made the file
+  isNew: boolean; // the change creates the file
   isUndone: boolean;
 };
 
@@ -45,9 +42,9 @@ export function listLatestEdits(session: Session): FileEdit[] {
 }
 
 /**
- * undoFile gives one file back its text from before the given edits, all of the file's, the earliest first, through
- * Go. It rejects with Go's error when the file has unsaved text in the editor, an edit came with no lines, or a
- * change's lines are not in the file once.
+ * undoFile gives a file back the text it had before the given edits, through Go. The edits are all of that file's,
+ * earliest first. It rejects with Go's error if the file has unsaved text in the editor, an edit has no lines, or a
+ * hunk's lines are not in the file exactly once.
  */
 export function undoFile(edits: FileEdit[]): Promise<void> {
   const hunks = edits.map((edit) => edit.hunks);
@@ -55,26 +52,24 @@ export function undoFile(edits: FileEdit[]): Promise<void> {
 }
 
 /**
- * toEdits reads the files a diff of either version changes. A file's own name is its path's last part. A version 1
- * diff is one hunk, its old and new text; a version 2 patch's hunks, and the lines they add and remove, are read
- * from the file's part of it.
+ * toEdits returns the files a diff changes. A file's label is the last part of its path. A version 1 diff gives one
+ * hunk of old and new text. A version 2 patch gives each file's hunks and its counts of added and removed lines.
  */
 export function toEdits(diff: DiffContent): FileEdit[] {
   const label = (path: string): string => path.split(/[\\/]/).at(-1) ?? path;
-  const marks = { isUndone: false };
   if (diff.path) {
-    const texts = { before: diff.oldText ?? null, after: diff.newText ?? null, patch: "" };
-    const hunks = [{ before: splitLines(diff.oldText ?? ""), after: splitLines(diff.newText ?? "") }];
     return [
       {
         path: diff.path,
         label: label(diff.path),
-        ...texts,
+        before: diff.oldText ?? null,
+        after: diff.newText ?? null,
+        patch: "",
         added: 0,
         removed: 0,
-        hunks,
+        hunks: [{ before: splitLines(diff.oldText ?? ""), after: splitLines(diff.newText ?? "") }],
         isNew: !diff.oldText,
-        ...marks,
+        isUndone: false,
       },
     ];
   }
@@ -91,15 +86,15 @@ export function toEdits(diff: DiffContent): FileEdit[] {
       removed: lines.filter((line) => line.startsWith("-")).length,
       hunks: toHunks(lines),
       isNew: change.operation === "add",
-      ...marks,
+      isUndone: false,
     };
   });
 }
 
 /**
- * splitPatch returns the lines of one file's part of a unified patch, from its first hunk on, by the file's own name:
- * the part whose +++ line names it, or the whole patch when it holds one file. A patch that holds no such part gives
- * none.
+ * splitPatch returns the lines of one file's part of a unified patch, from its first hunk on. The part is the one
+ * whose +++ line ends with the label, or the whole patch if it has only one part. It returns no lines if no part
+ * matches.
  */
 function splitPatch(patch: string, label: string): string[] {
   const parts = patch.split(/^(?=--- )/m);
@@ -116,8 +111,8 @@ function splitPatch(patch: string, label: string): string[] {
 }
 
 /**
- * toHunks reads the hunks of one file's part of a unified patch: each one's lines before the change, its context and
- * the lines it removes, and after, its context and the lines it adds.
+ * toHunks returns the hunks of the lines of one file's patch. A hunk's before lines are its context and removed
+ * lines, and its after lines are its context and added lines.
  */
 function toHunks(lines: string[]): Hunk[] {
   const hunks: Hunk[] = [];
@@ -134,7 +129,7 @@ function toHunks(lines: string[]): Hunk[] {
   return hunks;
 }
 
-/** splitLines returns a text's lines, a line that ends in \r\n read as one that ends in \n. An empty text has none. */
+/** splitLines returns a text's lines, reading \r\n as \n. An empty text has no lines. */
 function splitLines(text: string): string[] {
   return text ? text.replace(/\r\n/g, "\n").split("\n") : [];
 }

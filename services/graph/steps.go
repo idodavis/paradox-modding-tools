@@ -18,7 +18,7 @@ import (
 
 // A Step is one block a firing is written inside, as the page shows it.
 type Step struct {
-	Key       string      `json:"key"`                 // as written, such as if, random_list, option or scope:child.dynasty
+	Key       string      `json:"key"`                 // as written, such as if, random_list or scope:child.dynasty
 	Kind      string      `json:"kind"`                // branch, weight, list, scope, option or block
 	Weight    string      `json:"weight,omitempty"`    // a weighted branch's number as written
 	Modifiers int         `json:"modifiers,omitempty"` // the blocks in a weighted branch that change its weight
@@ -37,10 +37,10 @@ const (
 	kindBlock  = "block"  // any other block
 )
 
-// makeEdge returns the edge of one firing: where it is written, with the range of the name it fires and the text of
-// its line, the blocks it sits in, its delay, and the effect that writes it with the title that effect gives it. A
-// firing written as one weighted entry of a list that picks one, such as an on_action's random_events, has that entry
-// as its last step. An edge whose file cannot be read has only its ends, its place and its line.
+// makeEdge returns the edge of one firing: its ends, where it is written, the blocks around it, its delay, and the
+// effect that writes it with the title that effect gives it. A firing written as a weighted entry of a list that picks
+// one, such as an on_action's random_events, has that entry as its last step. An edge whose file cannot be read has
+// only its ends and its place.
 func makeEdge(ws *workspace.Session, mods *index.Index, fire index.Fire) Edge {
 	edge := Edge{
 		From: toID(mods, fire.Source), To: toID(mods, fire.Target),

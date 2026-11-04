@@ -8,7 +8,7 @@ import ModAvatar from "./ModAvatar.vue";
 const { origin } = defineProps<{ origin: string }>();
 
 const workspace = useWorkspaceStore();
-const mod = computed(() => workspace.listMods().find((one) => one.id === origin));
+const mod = computed(() => workspace.listMods().find((row) => row.id === origin));
 </script>
 
 <template>

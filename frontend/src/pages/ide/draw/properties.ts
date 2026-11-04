@@ -1,6 +1,6 @@
 /**
- * The tables of what a holding and a property mean in CSS, each row sourced to the wiki or marked observed, and the
- * builders of their rows. It also holds the icon of a widget's type and the reading of a GUI file's colors.
+ * The tables of what each holding and property mean in CSS, each row sourced to the wiki or marked observed, and the
+ * functions that build their rows. It also holds the icon of each widget type and the parsing of a GUI file's colors.
  */
 
 type Apply = (value: string, style: CSSStyleDeclaration) => void;
@@ -9,21 +9,21 @@ const WIKI = "the wiki's Interface page";
 const GAME_FILES = "the game's own GUI files";
 
 /**
- * TEXT and PICTURE are the prefixes of the custom properties a row writes for its widget's text or pictures, copied on
- * without them.
+ * TEXT and PICTURE are the prefixes of the custom properties a row writes for its widget's text or its pictures. They
+ * are copied onto those elements without the prefix.
  */
 export const TEXT = "--text-";
 export const PICTURE = "--picture-";
 
-/** Each anchor term's place across and then down, as a fraction. */
+/** ANCHORS maps each anchor term to its place as a fraction, across first and then down. */
 const ANCHORS: Record<string, number>[] = [
   { left: 0, hcenter: 0.5, center: 0.5, right: 1 },
   { top: 0, vcenter: 0.5, center: 0.5, bottom: 1 },
 ];
 
 /**
- * The wiki's five layout policies: whether each grows into free room, shrinks, or takes it before the others.
- * Expanding is preferred that takes free room first, so it shrinks as preferred does.
+ * POLICIES is the wiki's five layout policies, each as whether it grows into free room, shrinks, or takes the free
+ * room before the others (expands). Expanding is preferred plus first claim on the free room.
  */
 const POLICIES: Record<string, { grow: string; shrink: string; expand: string }> = {
   fixed: { grow: "0", shrink: "0", expand: "0" },
@@ -33,10 +33,10 @@ const POLICIES: Record<string, { grow: string; shrink: string; expand: string }>
   expanding: { grow: "1", shrink: "1", expand: "1" },
 };
 
-/** The text cut with "…" where it is too long for its box. */
+/** ELIDED cuts a text with "…" where it is too long for its box. */
 const ELIDED = { [`${TEXT}text-overflow`]: "ellipsis" };
 
-/** The icon of a widget's type: what it shows, or how it holds its children. */
+/** TYPE_ICONS is the icon of each widget type: what it shows, or how it holds its children. */
 const TYPE_ICONS: Record<string, string> = {
   window: "i-lucide-app-window",
   textbox: "i-lucide-type",
@@ -59,10 +59,10 @@ const TYPE_ICONS: Record<string, string> = {
   dynamicgridbox: "i-lucide-grid-3x3",
 };
 
-/** A color as a GUI file writes it: red, green, blue and an optional alpha, each from 0 to 1, in braces. */
+/** COLOR matches a color as a GUI file writes it: red, green, blue and optional alpha, each from 0 to 1, in braces. */
 const COLOR = /^\{\s*([\d.]+)\s+([\d.]+)\s+([\d.]+)(?:\s+([\d.]+))?\s*\}$/;
 
-/** HOLDS holds how a holding lays its children out, as CSS. */
+/** HOLDS is how each holding lays its children out, as CSS, with the source of the meaning. */
 export const HOLDS: Readonly<Record<string, { css: Record<string, string>; source: string }>> = {
   row: {
     css: { display: "flex", "flex-direction": "row", "align-items": "center", "justify-content": "space-evenly" },
@@ -90,9 +90,7 @@ export const HOLDS: Readonly<Record<string, { css: Record<string, string>; sourc
 };
 
 /** PROPERTIES holds what a property means, as CSS on the widget, with the source of the meaning. */
-export const PROPERTIES: Readonly<
-  Record<string, { apply: (value: string, style: CSSStyleDeclaration) => void; source: string }>
-> = {
+export const PROPERTIES: Readonly<Record<string, { apply: Apply; source: string }>> = {
   size: makeWikiRow(makeLength("width", "height")),
   minimumsize: makeWikiRow(makeLength("min-width", "min-height")),
   maximumsize: makeWikiRow(makeLength("max-width", "max-height")),
@@ -125,7 +123,7 @@ export const PROPERTIES: Readonly<
   righttoleft: makeWikiRow(makeChoice({ yes: { "flex-direction": "row-reverse" } })),
   bottomtotop: makeWikiRow(makeChoice({ yes: { "flex-direction": "column-reverse" } })),
   direction: makeWikiRow(makeChoice({ vertical: { "flex-direction": "column" } })),
-  // a column written as a share is a share of the grid's holder, so the grid spans its holder: EU5's building_view
+  // A column written as a share is a share of the grid's holder, so the grid spans its holder (EU5's building_view).
   addcolumn: makeWikiRow((value, style) => {
     makeLength("grid-auto-columns")(value, style);
     if (value.trim().endsWith("%") && !style.getPropertyValue("width")) style.setProperty("width", "100%");
@@ -169,8 +167,8 @@ export const PROPERTIES: Readonly<
       colordodge: { [`${PICTURE}mix-blend-mode`]: "color-dodge" },
       darken: { [`${PICTURE}mix-blend-mode`]: "darken" },
       lighten: { [`${PICTURE}mix-blend-mode`]: "lighten" },
-      // these two draw nothing of their own: alphamultiply keeps the widget's texture where it is opaque, and mask
-      // keeps each overlay after it where it is bright
+      // These two draw nothing of their own: alphamultiply keeps the widget's texture where it is opaque, and mask
+      // keeps each overlay after it where it is bright.
       alphamultiply: { "--mask": "alpha" },
       mask: { "--mask": "luminance" },
     }),
@@ -217,8 +215,8 @@ export function toCss([red, green, blue, alpha]: string[], opacity = alpha): str
 }
 
 /**
- * makeLength makes a row that sets lengths: the parts of the value in order for the given properties, the first if
- * short.
+ * makeLength makes a row that sets the given properties to the parts of the value, in order. A property with no part
+ * of its own takes the first part.
  */
 function makeLength(...properties: string[]): Apply {
   return (value, style) => {
@@ -235,7 +233,7 @@ function makeChoice(choices: Record<string, Record<string, string>>): Apply {
   return (value, style) => applyCss(style, choices[value.trim().toLowerCase()] ?? {});
 }
 
-/** makeSides makes a row that writes the four sides of the given prefix from an across and a down amount. */
+/** makeSides makes a row that writes the four sides of the given prefix from an across and a down value. */
 function makeSides(prefix: string): Apply {
   return (value, style) => {
     const [across, down = across] = splitValue(value);
@@ -244,14 +242,12 @@ function makeSides(prefix: string): Apply {
   };
 }
 
-/** makeSide makes a row that writes one side of the given prefix in pixels. A margin lets it be negative. */
+/** makeSide makes a row that writes one side of the given prefix in pixels. The value may be negative. */
 function makeSide(prefix: string, side: string): Apply {
   return (value, style) => style.setProperty(`${prefix}-${side}`, `${Number(splitValue(value)[0]) || 0}px`);
 }
 
-/**
- * makeAnchor makes a row that writes the fractions its anchor terms name, across and down, as two custom properties.
- */
+/** makeAnchor makes a row that writes the fractions its anchor terms name as the custom properties prefix-x and -y. */
 function makeAnchor(prefix: string): Apply {
   return (value, style) => {
     const terms = value.toLowerCase().split(/[|\s]+/);
@@ -262,9 +258,7 @@ function makeAnchor(prefix: string): Apply {
   };
 }
 
-/**
- * makeOffset makes a row that writes the parts of a position as the offsets on the given axes, in pixels or percent.
- */
+/** makeOffset makes a row that writes the parts of a position as offsets on the given axes, in pixels or percent. */
 function makeOffset(axes: string[]): Apply {
   return (value, style) => {
     const parts = splitValue(value);
@@ -290,7 +284,7 @@ function makeStretch(axis: string): Apply {
 
 /**
  * makeColor makes a row that sets a color written as red, green, blue and alpha, each out of one, or a CSS color that
- * Go found for a binding. Given a second property, a written color is set opaque and its alpha goes to that property.
+ * Go resolved for a binding. With an alpha property, a written color is set opaque and its alpha goes to that property.
  */
 function makeColor(property: string, alphaProperty = ""): Apply {
   return (value, style) => {
@@ -325,7 +319,8 @@ function splitValue(value: string): string[] {
 }
 
 /**
- * toLength converts text to a CSS length: a number in pixels, a percent as it is, and undefined for -1, 0 or a binding.
+ * toLength converts text to a CSS length: a positive number in pixels, or a percent as it is. It returns undefined for
+ * -1, 0 or a binding.
  */
 function toLength(text: string | undefined): string | undefined {
   if (!text) return undefined;

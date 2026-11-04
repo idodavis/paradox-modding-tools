@@ -595,6 +595,10 @@ func TestEncodeInstall(t *testing.T) {
 	if testing.Short() {
 		t.Skip("real installs are skipped under -short")
 	}
+	// encoding every picture of three installs takes most of half an hour, so it runs only when asked for
+	if os.Getenv("PMT_TEST_ENCODE") == "" {
+		t.Skip("PMT_TEST_ENCODE is not set")
+	}
 	for _, game := range []string{"CK3", "VIC3", "EU5"} {
 		t.Run(game, func(t *testing.T) {
 			encodeInstall(t, game)

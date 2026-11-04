@@ -27,8 +27,8 @@ type Group struct {
 	// ID is the group's call. A call that reads the object of a data context is written from the window down to that
 	// object, so the same call about two objects is two groups.
 	ID string `json:"id"`
-	// Subject is the kind of object it asks about, such as Character or Relation; Game for a call of one step, and ""
-	// for a coat's list.
+	// Subject is the kind of object it asks about, such as Character or Relation; Game for a call of one step, Pictures
+	// for a list of pictures, and "" for a coat's list.
 	Subject string `json:"subject,omitempty"`
 	Key     string `json:"key,omitempty"` // the key that picks its object out of its kind, such as a relation's lover
 	Label   string `json:"label"`         // what it asks, in words
@@ -720,7 +720,7 @@ func toNumbers(schema *schema.Schema, context context, argument jomini.Argument,
 		switch {
 		case len(steps) == 1 && steps[0].Text == game.GUI.ModelSize:
 			return []float64{float64(count)}
-		case len(steps) > 1 && game.GUI.CallKinds[function.Returns] == kindNumber:
+		case len(steps) > 1 && game.GUI.CallOutputs[function.Returns] == kindNumber:
 			return []float64{minSample, math.Inf(1)}
 		}
 		return nil

@@ -5,8 +5,6 @@ package app
 import (
 	"cmp"
 	"context"
-	"encoding/json"
-	"errors"
 	"fmt"
 	"io"
 	"log/slog"
@@ -17,6 +15,7 @@ import (
 	"slices"
 	"strconv"
 	"strings"
+	"sync"
 	"sync/atomic"
 	"time"
 
@@ -49,13 +48,19 @@ const DevBuild = "dev"
 
 // Service is the Wails service for the app itself: its version and updates, its settings, its log and its windows.
 type Service struct {
-	Config       *ConfigFile // config.json, which carries PMT's folders
-	Build        string      // the version the build set
-	mainClosable atomic.Bool // the frontend let the main window close
+	Config       *ConfigFile    // config.json, which carries PMT's folders
+	Build        string         // the version the build set
+	mainClosable atomic.Bool    // the frontend let the main window close
+	source       *releaseSource // the updater's provider
+	updating     sync.Mutex     // one check or install of an update at a time
 }
 
-// ServiceStartup empties the trash and writes the running mark, which CrashedLastRun reads.
+// ServiceStartup sets up the updater, empties the trash and writes the running mark, which CrashedLastRun reads. It
+// returns an error if the updater refuses its setup.
 func (app *Service) ServiceStartup(ctx context.Context, options application.ServiceOptions) error {
+	if err := app.startUpdater(); err != nil {
+		return err
+	}
 	_ = os.RemoveAll(app.Config.Dirs.Trash)
 	mark := resolveMark(app.Config.Dirs)
 	_, err := os.Stat(mark)
@@ -65,22 +70,6 @@ func (app *Service) ServiceStartup(ctx context.Context, options application.Serv
 
 // ServiceShutdown removes the running mark, so the next start knows the shutdown was clean.
 func (app *Service) ServiceShutdown() error { return os.Remove(resolveMark(app.Config.Dirs)) }
-
-// An Update is the result of a check for a newer version of the app. It is the data of the app:update event.
-type Update struct {
-	Version   string `json:"version"`
-	Available bool   `json:"available"`
-}
-
-// A Release is one published version of the app, with its notes as the Markdown they are written in.
-type Release struct {
-	Version string    `json:"version"`
-	Date    time.Time `json:"date"`
-	Notes   string    `json:"notes"`
-}
-
-// releasesURL is where GitHub lists the app's releases, the newest first.
-const releasesURL = "https://api.github.com/repos/idodavis/paradox-modding-tools/releases"
 
 // userAgent is how PMT names itself to the sites it fetches from.
 const userAgent = "paradox-modding-tools (+https://github.com/idodavis/paradox-modding-tools)"
@@ -114,68 +103,6 @@ func OpenLog(config *ConfigFile, version string) (*slog.Logger, error) {
 
 // Version returns the version the build set.
 func (app *Service) Version() string { return app.Build }
-
-// CheckUpdate asks the project's GitHub releases whether a newer version exists, and emits app:update if one does.
-// It returns an empty Update if none does.
-func (app *Service) CheckUpdate() (Update, error) {
-	release, err := application.Get().Updater.Check(context.Background())
-	if err != nil || release == nil {
-		return Update{}, err
-	}
-	update := Update{Version: release.Version, Available: true}
-	application.Get().Event.Emit(EventAppUpdate, update)
-	return update, nil
-}
-
-// ApplyUpdate downloads the newer version beside the app and restarts into it. It returns an error if there is
-// none.
-func (app *Service) ApplyUpdate() error {
-	update, err := app.CheckUpdate()
-	if err != nil {
-		return err
-	}
-	if !update.Available {
-		return errors.New("no update is available")
-	}
-	updater := application.Get().Updater
-	if err := updater.DownloadAndInstall(context.Background()); err != nil {
-		return err
-	}
-	return updater.Restart(context.Background())
-}
-
-// ListReleases returns the app's published releases from the newest down to the one running, each with its notes. A
-// build that is no release, such as a dev build, gets the newest only. It returns an error if GitHub cannot be reached
-// or answers with an error.
-func (app *Service) ListReleases() ([]Release, error) {
-	body, err := FetchURL(releasesURL, 15*time.Second)
-	if err != nil {
-		return nil, err
-	}
-	var listed []struct {
-		Tag        string    `json:"tag_name"`
-		Body       string    `json:"body"`
-		Published  time.Time `json:"published_at"`
-		Draft      bool      `json:"draft"`
-		Prerelease bool      `json:"prerelease"`
-	}
-	if err := json.Unmarshal(body, &listed); err != nil {
-		return nil, err
-	}
-	running := strings.TrimPrefix(app.Build, "v")
-	var releases []Release
-	for _, published := range listed {
-		if published.Draft || published.Prerelease {
-			continue
-		}
-		version := strings.TrimPrefix(published.Tag, "v")
-		releases = append(releases, Release{Version: version, Date: published.Published, Notes: published.Body})
-		if version == running {
-			return releases, nil
-		}
-	}
-	return releases[:min(len(releases), 1)], nil
-}
 
 // FetchURL downloads a web address within the given time and returns the body of the answer. It sends PMT's user
 // agent. It returns an error if the request fails or the answer is not 200.

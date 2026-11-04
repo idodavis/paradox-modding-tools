@@ -120,7 +120,7 @@ func walkFixtureTo(t *testing.T, built *Schema, install, rel string, offset int)
 	return seen
 }
 
-// TestReadDumpsFixtures checks that the dumps of each game's fixture are read in the form that game writes them.
+// TestReadDumpsFixtures checks that the dumps of each game's fixture are read.
 func TestReadDumpsFixtures(t *testing.T) {
 	for _, gameID := range []string{"ck3", "vic3", "eu5"} {
 		dumps, err := ReadDumps([]string{filepath.Join("..", "testdata", gameID, "docs")})
@@ -156,7 +156,7 @@ const (
 	readmeDoc = "x/readme.txt"
 )
 
-// TestParseDoc checks that each way the games' doc files are written gives its facts as claims.
+// TestParseDoc checks that each way the games write doc files gives its facts as claims.
 func TestParseDoc(t *testing.T) {
 	docs := &Schema{}
 	cases := []struct {
@@ -214,8 +214,7 @@ func TestParseDoc(t *testing.T) {
 	}
 }
 
-// findField returns the field written at a key path below the given field, its keys joined by slashes. It returns nil
-// if no field is written there.
+// findField returns the field written at a key path below the given field, its keys joined by slashes, or nil.
 func findField(field *Field, path string) *Field {
 	for key := range strings.SplitSeq(path, "/") {
 		field = field.findChild(key)
@@ -223,8 +222,7 @@ func findField(field *Field, path string) *Field {
 	return field
 }
 
-// TestParseDocDatabase checks what a doc file says of its database as a whole: its blurb, and that a data file named
-// like a doc is not read as one.
+// TestParseDocDatabase checks a doc file's blurb, and that a data file named like a doc is not read as one.
 func TestParseDocDatabase(t *testing.T) {
 	docs := &Schema{}
 	text := "# Reference\nA building of a state.\n\nexample = {\n\tgroup = x\n}\n"
@@ -237,8 +235,7 @@ func TestParseDocDatabase(t *testing.T) {
 	}
 }
 
-// TestBuildFixtureLearns checks what Build learns from the fixture install: the events database and the docs of a
-// database.
+// TestBuildFixtureLearns checks the events database and the docs that Build learns from the fixture install.
 func TestBuildFixtureLearns(t *testing.T) {
 	built, _ := buildFixture(t)
 	if built.Events != "events" {
@@ -295,8 +292,7 @@ func TestWalkToKeepsSaved(t *testing.T) {
 	}
 }
 
-// TestResolveMacroReplacesParameters checks that a call to a macro stands for its text, the parameter replaced by
-// the argument written for it.
+// TestResolveMacroReplacesParameters checks that a call to a macro expands with its parameters replaced.
 func TestResolveMacroReplacesParameters(t *testing.T) {
 	macros := &Schema{DataTypes: map[string]DataType{game.GlobalType: {Functions: map[string]DataFunction{
 		"IsZero": {Name: "IsZero", Arguments: []string{"Value"}, Expansion: "EqualTo_int32(Value, '(int32)0')"},

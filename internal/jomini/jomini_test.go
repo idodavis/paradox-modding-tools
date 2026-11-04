@@ -344,15 +344,15 @@ func TestColorParts(t *testing.T) {
 	tests := []struct {
 		text  string
 		tag   string
-		parts []float64
+		parts []string
 		ok    bool
 	}{
-		{"color = rgb { 255 0 0 }", "rgb", []float64{255, 0, 0}, true},
-		{"color = hsv { 0.66 1 1 }", "hsv", []float64{0.66, 1, 1}, true},
-		{"color = hsv360 { 240 100 100 }", "hsv360", []float64{240, 100, 100}, true},
-		{"color = hex { 0xffff0055 }", "hex", []float64{0xffff0055}, true},
-		{"color = { 1 0 0 }", "", []float64{1, 0, 0}, true},
-		{"color = { 200 30 30 128 }", "", []float64{200, 30, 30, 128}, true},
+		{"color = rgb { 255 0 0 }", "rgb", []string{"255", "0", "0"}, true},
+		{"color = hsv { 0.66 1 1 }", "hsv", []string{"0.66", "1", "1"}, true},
+		{"color = hsv360 { 240 100 100 }", "hsv360", []string{"240", "100", "100"}, true},
+		{"color = hex { 0xffff0055 }", "hex", []string{"0xffff0055"}, true},
+		{"color = { 1 0 0 }", "", []string{"1", "0", "0"}, true},
+		{"color = { 200 30 30 128 }", "", []string{"200", "30", "30", "128"}, true},
 		{"color = { 1 0 }", "", nil, false},
 		{"color = { 1 0 0 0 0 }", "", nil, false},
 		{"color = { r = 1 g = 0 b = 0 }", "", nil, false},
@@ -360,7 +360,7 @@ func TestColorParts(t *testing.T) {
 		{"color = { NaN 1 0 }", "", nil, false},
 		{"color = v_red", "", nil, false},
 		{"size = { 10 10 }", "", nil, false},
-		{"color = cmyk { 1 0 0 }", "cmyk", []float64{1, 0, 0}, true},
+		{"color = cmyk { 1 0 0 }", "cmyk", []string{"1", "0", "0"}, true},
 	}
 	for _, test := range tests {
 		tag, parts, ok := ColorParts(Parse(test.text), 1)

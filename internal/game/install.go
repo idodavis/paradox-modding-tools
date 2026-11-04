@@ -1,5 +1,4 @@
-// install.go finds where a game is on this machine: its installs through Steam's libraries, their version and
-// age, the user-data and dump folders, and the program that starts the game.
+// install.go finds where a game is on this machine: its installs, version, user-data and dump folders, and program.
 
 package game
 
@@ -74,8 +73,7 @@ func (game *Game) FindInstalls() []DetectedInstall {
 	return installs
 }
 
-// IsWorkshopFolder reports whether a folder is under the game's Steam Workshop folder in one of Steam's libraries,
-// where Steam keeps the mods it downloads.
+// IsWorkshopFolder reports whether a folder is under the game's Steam Workshop folder in one of Steam's libraries.
 func (game *Game) IsWorkshopFolder(dir string) bool {
 	appID := strconv.Itoa(game.SteamAppID)
 	return slices.ContainsFunc(findSteamLibraries(), func(library string) bool {
@@ -83,11 +81,11 @@ func (game *Game) IsWorkshopFolder(dir string) bool {
 	})
 }
 
-// findSteamLibraries returns the Steam library roots that libraryfolders.vdf names in each default Steam folder.
+// findSteamLibraries returns each default Steam folder and the library roots its libraryfolders.vdf names.
 func findSteamLibraries() []string {
 	seen := map[string]bool{}
 	var libraries []string
-	// Resolved before dedup: ~/.steam/steam is usually a link to ~/.local/share/Steam.
+	// links are resolved before dedup: ~/.steam/steam is usually a link to ~/.local/share/Steam
 	add := func(path string) {
 		if path == "" {
 			return
@@ -136,10 +134,8 @@ func listDefaultSteamRoots() []string {
 	}
 }
 
-// LoadVersion returns the version of an install of the game. The launcher settings come first, then the game's
-// revision log, which gives the part of its release branch after release/, then the Steam manifest, which gives
-// "build <id>". The revision log counts only when the game started after the install's last update, since until then
-// the game has not run as the new version. It returns "" if none of them says.
+// LoadVersion returns the version of an install of the game, from its launcher settings, else its revision log if the
+// game started since the last update, else its Steam manifest as "build <id>". It returns "" if none of them says.
 func (game *Game) LoadVersion(installPath string) string {
 	settings := loadLauncher(installPath)
 	if settings.RawVersion != "" {
@@ -177,9 +173,8 @@ func loadLauncher(installPath string) (settings launcherSettings) {
 	return settings
 }
 
-// ListInstallRoots returns the folders of an install that the game reads, in the order it mounts them: the install's
-// own folders that exist, then the folder of each DLC. It returns an error if the DLC folder exists and cannot be
-// read.
+// ListInstallRoots returns the folders of an install that the game reads, in the order it mounts them, with each DLC's
+// last. It returns an error if the DLC folder exists and cannot be read.
 func ListInstallRoots(installPath string) ([]files.Root, error) {
 	var roots []files.Root
 	for _, folder := range InstallRoots {
@@ -213,8 +208,7 @@ func (game *Game) FindDumpDirs(installPath string) []string {
 	return dirs
 }
 
-// FindUserDataDir returns the game's user-data folder: the first candidate that exists, or else the most likely
-// one.
+// FindUserDataDir returns the game's user-data folder, or the most likely one if none exists.
 func (game *Game) FindUserDataDir(installPath string) string {
 	candidates := game.listUserDataCandidates(installPath)
 	for _, candidate := range candidates {
@@ -228,8 +222,7 @@ func (game *Game) FindUserDataDir(installPath string) string {
 	return ""
 }
 
-// listUserDataCandidates returns the folders a game may keep its user data in, most likely first: the launcher's
-// setting, then the OS's conventions.
+// listUserDataCandidates returns the folders a game may keep its user data in, most likely first.
 func (game *Game) listUserDataCandidates(installPath string) []string {
 	name := game.Name
 	var candidates []string
@@ -285,10 +278,8 @@ func expandGameDataPath(path string) string {
 	return filepath.Clean(filepath.FromSlash(path))
 }
 
-// ResolveProgram returns the executable that starts a game on this machine and the arguments to start it in debug
-// mode, from an install's folder. Where the game's row names the launcher settings, their executable and arguments
-// win over the row's; the row's debug flags always come last. It returns false when the game has no executable on
-// this operating system.
+// ResolveProgram returns the executable that starts a game from an install and its debug arguments, the row's flags
+// last; the launcher settings win over the row. It returns false if the game has no executable on this system.
 func (game *Game) ResolveProgram(installPath string) (path string, args []string, ok bool) {
 	program := game.Program[runtime.GOOS]
 	if program.Executable != "" {
@@ -305,13 +296,13 @@ func (game *Game) ResolveProgram(installPath string) (path string, args []string
 	return path, append(args, program.DebugArgs...), path != ""
 }
 
-// ReadInstallUpdatedAt returns when an install was last updated: the newest file in its binaries folder, else among
-// its top-level files. A dump older than that is stale. A zero time means unknown, which never counts as stale.
+// ReadInstallUpdatedAt returns when an install was last updated. A dump older than that is stale. It returns the zero
+// time if that is unknown, which never counts as stale.
 func ReadInstallUpdatedAt(installPath string) time.Time {
 	if installPath == "" {
 		return time.Time{}
 	}
-	// a folder's own time is no use, because replacing a file in place leaves it unchanged
+	// a folder's own time is no use: replacing a file in place leaves it unchanged
 	for _, dir := range []string{filepath.Join(installPath, "binaries"), installPath} {
 		entries, err := os.ReadDir(dir)
 		if err != nil {
@@ -337,8 +328,7 @@ func ReadInstallUpdatedAt(installPath string) time.Time {
 	return time.Time{}
 }
 
-// LoadChecksum returns the hash an install's build writes beside its executable, which changes with every build. It
-// returns "" if the install has none.
+// LoadChecksum returns the hash an install's build writes beside its executable. It returns "" if the install has none.
 func LoadChecksum(installPath string) string {
 	data, err := os.ReadFile(filepath.Join(installPath, checksumRel))
 	if err != nil {

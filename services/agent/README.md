@@ -1,61 +1,93 @@
 # agent
 
-The package starts the coding agents PMT chats with. It lists the agents, installs them from the ACP registry with npm
-on Node, and pipes each running agent to the window that chats with it.
+[Architecture](../../ARCHITECTURE.md) › [Services](../../ARCHITECTURE.md#the-services) › agent
 
-Go holds none of the Agent Client Protocol: the page speaks it, through the official TypeScript SDK, over the stream
-this package serves. Go starts the program, carries its lines both ways and ends it.
+The agent service starts the coding agents the assistant pane chats with. It lists them, installs them from the ACP
+registry with npm on Node, and pipes each running agent to the window that chats with it.
 
-| file | holds |
-|---|---|
-| `agent.go` | `Service`, `Agent`, `Node`; the agents table; listing, adding and removing agents; installing Node and agents; the registry |
-| `process.go` | `Start`; the stream and the program with its pipes |
-| `process_windows.go`, `process_linux.go` | the group each agent runs in: a job object on Windows, a process group on Linux |
+Go holds none of the Agent Client Protocol (ACP). The page speaks it, so Go only starts the program, carries its lines
+both ways and ends it. The page is the assistant pane and its session view (see the
+[frontend](../../frontend/src/README.md)). The tools an agent calls back are [mcp](../mcp/README.md)'s.
+
+**Uses** [app](../app/README.md), [files](../../internal/files/README.md), [mcp](../mcp/README.md),
+[workspace](../workspace/README.md) · **Used by** [steam](../steam/README.md), which leaves the agents' instruction files
+out of an upload.
+
+```mermaid
+sequenceDiagram
+  participant Page as Assistant pane
+  participant Go as agent service
+  participant Agent as Agent program
+  participant MCP as mcp service
+  Page->>Go: opens the stream, naming the agent and the active file
+  Go->>Agent: starts it in the mod's folder
+  Go-->>Page: Start, with the folder or the error
+  loop until either side ends
+    Page->>Go: one ACP message
+    Go->>Agent: written as one line
+    Agent->>Go: one line
+    Go-->>Page: sent as one message
+  end
+  Agent->>MCP: tool calls, with the address and token the page gave it
+```
 
 ## The agents
 
-`agents` is the table of the agents PMT offers: Claude, GitHub Copilot and Codex, the coding agents whose makers stand
-behind an ACP agent for them. A row is an `app.Agent` with its registry id, the text that registers PMT's tools with
-it for use outside PMT, and the instruction files and folders it reads in a mod. `ListFiles` gives those files to
-Publish, which leaves them out of an upload.
+`agents` is the table of the agents PMT offers: Claude, GitHub Copilot and Codex. A row has the registry's id, the
+command that registers PMT's tools with that agent outside PMT, and the instruction files and folders it reads in a mod.
 
-The user's own agents are `Config.Agents`, written by `AddAgent` and `RemoveAgent` as the config section `agents`.
-One is a name with a program and its arguments.
-
-`ListAgents` returns both, each an `Agent`: its record, the registry's version and words, and the version installed.
-An agent PMT offers has its register text with PMT's address and token filled in, and once installed with a Node new
-enough, the program and arguments that start it: its package's script on Node, with the registry's arguments.
+The user's own agents are kept in `config.json` as the `agents` section: a name, a program and its arguments.
+`ListAgents` returns both kinds. An agent PMT offers also gets the registry's version and description, its register
+command with PMT's address and token filled in, and, once it is installed and a Node is new enough, the program and
+arguments that start it: the package's script run by Node, with the arguments the registry gives.
 
 ## Installing
 
-The registry is fetched from the ACP project at most once a day and kept as `registry.json`; without a network the
-last copy is used. Everything lives under `Dirs.Cache/agents/`, so resetting PMT's data removes it:
+Everything is kept under `agents/` in PMT's cache folder, so Reset data removes it.
 
-- `<id>@<version>/` holds one agent, installed by `InstallAgent` with npm at the registry's version; its other
-  versions are removed. Its program is the one script its package declares. An agent has one install at a time,
-  since two npm runs in one folder delete each other's files: while npm runs, a second is refused, `ListAgents` gives
-  the agent the time its install started as `Installing`, and `EventChanged` is sent when the install starts and when
-  it ends. A failed install's error names the package on its first line, and what npm wrote follows.
-- `node/` holds PMT's own Node, which `InstallNode` downloads: the newest long-term release from nodejs.org, checked
-  against the sums nodejs.org publishes, a zip on Windows and a gzipped tar on Linux.
+- **The registry** is fetched from the ACP project at most once a day and saved as `registry.json`. With no network the
+  last copy is used.
+- **An agent** goes in `<id>@<version>/`, installed with npm at the registry's version. Its other versions are removed.
+  The program it runs is the one script its package declares.
+- **Node** is the system's if it is version 22 or newer, else the copy in `node/`, else none. `InstallNode` downloads
+  that copy: the newest long-term release from nodejs.org, checked against the sums nodejs.org publishes. It is a zip
+  on Windows and a gzipped tar on Linux.
+- **One install per agent at a time.** Two npm runs in one folder delete each other's files, so a second is refused.
+  `ListAgents` gives a running install's start time as `Installing`, and `agent:changed` marks its start and end.
 
-`DescribeNode` says which Node the agents run on: the system's if it is 22 or newer, the floor Claude's adapter sets,
-else PMT's own, else none.
+npm runs on the Node the agents use, so its install scripts do too. That Node is also first on the PATH of every agent
+program.
 
 ## The stream
 
-Each session opens the Wails stream `agent`; no port is opened. The window's first message names the agent and the
-active file. Go starts the agent in the folder of the mod that holds the file, else the workspace's first mod
-(`workspace.ResolveFolder`, the terminal's rule), with PMT's own environment and the agents' Node first on its PATH.
-It answers with a `Start`: the folder and the workspace's other mod folders, or the error that kept the agent from
-starting.
+Each chat opens the Wails stream `agent`. No port is opened. The window's first message names the agent and the active
+file. Go starts the program in the folder of the mod that holds that file, else the first mod whose folder exists, else
+the home folder (`workspace.ResolveFolder`, the same rule the Terminal uses), then answers with a `Start`: that folder
+and the workspace's other mod folders, or the error that kept the agent from starting.
 
-Each later message is one JSON-RPC message, written to the agent's input as one line, and each line of its output goes
-back as one message. What it writes as errors goes to PMT's log under its id. The agent runs in a group of its own, so
-closing the stream ends it and every program it started; its end closes the stream.
+After that each message is one JSON-RPC message. The page's go to the agent's input as one line, and each line the agent
+writes comes back as one message. What it writes to its error output goes to PMT's log under its id.
+
+The program runs in a group of its own: a job object on Windows, a process group on Linux. Closing the stream ends the
+program and everything it started, and the program's own end closes the stream.
+
+## Files
+
+| file | what it holds |
+|---|---|
+| `agent.go` | The service: the agents table, the user's own agents, the registry, and installing Node and the agents. |
+| `process.go` | The stream a window opens to an agent, and the agent's running program. |
+| `process_windows.go`, `process_linux.go` | The group that holds an agent's programs, so they end together. |
 
 ## Events
 
 | event | data | sent when |
 |---|---|---|
 | `agent:changed` | the agent's id | npm starts or ends installing the agent |
+
+## Terms
+
+- **Agent**: one agent as Settings and the assistant pane list it: its record, with what the registry and PMT's folder
+  say of it.
+- **Node**: the Node that PMT's agents run on, and the system's own version.
+- **Start**: Go's first message on an agent's stream, the folder the agent started in or the error.

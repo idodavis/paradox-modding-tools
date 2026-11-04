@@ -1,4 +1,4 @@
-// shipped.go loads the backup of each game's dumps that is embedded in the app, for an install that lacks a dump file.
+// shipped.go loads the backup of each game's dumps that is embedded in the app.
 
 package schema
 
@@ -10,8 +10,8 @@ import (
 
 //go:generate go run ./gen ck3 vic3 eu5
 
-// shipped holds a backup of what each game's dumps declare, one gob file per game. It stands in for a dump file an
-// install lacks. It never holds the game's own words or a built schema.
+// shipped holds one gob backup of each game's dumps, for an install that lacks a dump file. It holds no game text and
+// no built schema.
 //
 //go:embed shipped/*.gob
 var shipped embed.FS

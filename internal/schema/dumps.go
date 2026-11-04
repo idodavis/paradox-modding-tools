@@ -1,5 +1,4 @@
-// dumps.go reads the dump files a game writes of its own script language: the effects, triggers, links, scopes,
-// modifiers and data types it declares. The schema starts from what they say.
+// dumps.go reads the dump files a game writes of its own script language, and builds the schema's commands from them.
 
 package schema
 
@@ -50,11 +49,10 @@ type Dumps struct {
 // yes is the term the dumps write for true.
 const yes = "yes"
 
-// savedTitle is the title of the list at the end of the event targets dump. It holds the targets the game saves from
-// code.
+// savedTitle is the title of the list of targets saved from code at the end of the event targets dump.
 const savedTitle = "Event Targets Saved from Code:"
 
-// dumpFiles lists the dump files that are read.
+// dumpFiles lists the dump files read.
 var dumpFiles = []string{
 	"effects.log", "triggers.log", "event_targets.log", "modifiers.log", "on_actions.log", "event_scopes.log",
 	"custom_localization.log", "data_types_common.txt", "data_types_gui.txt", "data_types_internalclausewitzgui.txt",
@@ -76,9 +74,12 @@ var (
 	usageToken = regexp.MustCompile(`[{}]|[<>!=?]=|<[^<>\n]*>|\[[^\[\]\n]*\]|[=<>]|[^\s{}=<>\[\]]+`)
 	// usageComment is a comment in a usage, as CK3's stress_impact writes "# multiple 'trait = value' lines".
 	usageComment = regexp.MustCompile(`#[^\n]*`)
+	// describedLine is a line that closes a block and then describes it after a dash, as CK3's
+	// "random_traits_list = { count = { 1 5 } … } - A number of traits …" does.
+	describedLine = regexp.MustCompile(`\}\s+-\s+\S`)
 )
 
-// The forms of a trigger's Traits line, as the dumps write them after its colon.
+// The forms of a trigger's Traits line.
 var (
 	comparisonTraits = regexp.MustCompile(`^<, <=, =, (?:!=, )?>, >=( valid date)?$`)
 	classTraits      = regexp.MustCompile(`^class (C\w+) key$`)
@@ -91,8 +92,8 @@ var (
 var usageOperators = []string{"=", "==", "!=", "<", ">", "<=", ">=", "?="}
 
 // FindDumpsAt returns when the dumps under the given folders were last written, which is the time of the newest dump
-// file. It reads no file. The time is zero if no folder holds a dump. The error is that of a dump file whose time
-// cannot be read.
+// file. It reads no file. The time is zero if no folder holds a dump. It returns an error if a dump file's time cannot
+// be read.
 func FindDumpsAt(dirs []string) (time.Time, error) {
 	var newest time.Time
 	for _, file := range dumpFiles {
@@ -142,8 +143,8 @@ func ReadDumps(dirs []string) (*Dumps, error) {
 	return dumps, nil
 }
 
-// findDump returns the path and the time of the newest file with the given base name in the folders. The path is "" and
-// the time zero if no folder holds the file.
+// findDump returns the path and time of the newest file with the given base name in the folders, "" and zero if there
+// is none.
 func findDump(dirs []string, file string) (string, time.Time, error) {
 	newest, newestAt := "", time.Time{}
 	for _, dir := range dirs {
@@ -160,7 +161,7 @@ func findDump(dirs []string, file string) (string, time.Time, error) {
 	return newest, newestAt, nil
 }
 
-// parseFile parses the text of one dump file, chosen by its base name, into the dumps.
+// parseFile parses the text of the dump file with the given base name into the dumps.
 func (dumps *Dumps) parseFile(file, text string) {
 	switch file {
 	case "effects.log":
@@ -187,7 +188,7 @@ func (dumps *Dumps) parseFile(file, text string) {
 }
 
 // parseSections yields the entries of a dump, each as its head and the lines after it. A line of dashes or a markdown
-// heading starts an entry. The head is the heading's word, or the first line after the dashes. If the flag is set, the
+// heading starts an entry. The head is the heading's text, or the first line after the dashes. If the flag is set, the
 // dump opens with a title, and the lines before the first entry are skipped.
 func parseSections(text string, titled bool) iter.Seq2[string, []string] {
 	return func(yield func(string, []string) bool) {
@@ -217,8 +218,8 @@ func parseSections(text string, titled bool) iter.Seq2[string, []string] {
 	}
 }
 
-// parseCommands parses the effects, triggers or links of one script_docs dump, in the order it lists them. The event
-// targets dump ends with a list of the targets that the game saves from code, which are names only.
+// parseCommands parses the effects, triggers or links of one script_docs dump in the order it lists them, and the
+// targets saved from code that the event targets dump ends with.
 func (dumps *Dumps) parseCommands(text, declaration string) {
 	for head, body := range parseSections(text, true) {
 		if head == savedTitle {
@@ -247,7 +248,7 @@ func (dumps *Dumps) parseCommands(text, declaration string) {
 			case scope[1] == "Supported Scopes" || scope[1] == "Input Scopes":
 				command.Scopes = splitScopes(scope[2])
 			default:
-				// A line that names several scopes gives no single target.
+				// several scopes give no single target
 				if targets := splitScopes(scope[2]); len(targets) == 1 {
 					command.Target = targets[0]
 				}
@@ -269,7 +270,7 @@ func splitList(text string) []string {
 	return parts
 }
 
-// splitScopes splits a comma list of scope names. A name the dumps use for no scope is left out.
+// splitScopes splits a comma list of scope names, leaving out the names the dumps use for no scope.
 func splitScopes(text string) []string {
 	return slices.DeleteFunc(splitList(text), func(scope string) bool {
 		return slices.Contains(game.DumpPhrases.NoScope, scope)
@@ -331,8 +332,8 @@ func (dumps *Dumps) parseScopes(text string) {
 	flush()
 }
 
-// parseModifiers parses the modifiers dump. The games write it in three layouts: a "Tag:" line with a "Use areas:" line
-// below it, a "Tag:" line with its categories, or a title with an indented description.
+// parseModifiers parses the modifiers dump, which the games write in three layouts: a "Tag:" line with a "Use areas:"
+// line below it, a "Tag:" line with its categories, or a title with an indented description.
 func (dumps *Dumps) parseModifiers(text string) {
 	last := ""
 	for line := range strings.Lines(text) {
@@ -409,6 +410,7 @@ func (schema *Schema) buildDumps(row *game.Game, installPath string) error {
 	schema.Scopes, schema.Saved, schema.Modifiers, schema.Customs = dumps.Scopes, dumps.Saved, dumps.Modifiers, dumps.Customs
 	schema.OnActions, schema.DataTypes = dumps.OnActions, dumps.DataTypes
 	schema.buildCommands(dumps.Commands)
+	schema.buildCommandKeys(row)
 	schema.buildKeywordShapes(row)
 	schema.buildFamilies()
 	return nil
@@ -441,8 +443,8 @@ func (dumps *Dumps) resolveMissing(backup *Dumps) bool {
 	return missing || slices.Contains(tables, true)
 }
 
-// applyCorrections sets the scopes and the target of each command that one of the game's dump corrections names to
-// the correction's. The correction outranks the dump.
+// applyCorrections sets the scopes and target of each command that one of the game's dump corrections names. The
+// correction outranks the dump.
 func (dumps *Dumps) applyCorrections(row *game.Game) {
 	for position, command := range dumps.Commands {
 		for _, correction := range game.DumpCorrections {
@@ -464,8 +466,7 @@ func takeMissing[T any](table *map[string]T, backup map[string]T) bool {
 
 // buildCommands builds the commands the dumps declare. A name that several dumps list is one command, which takes the
 // arguments each dump gives it where that dump declares it. A link that requires data is a prefix. A trigger whose
-// Traits line says what its value is takes that as its value. The keys of a command that game.CommandKeys names are
-// names in its database.
+// Traits line says what its value is takes that as its value.
 func (schema *Schema) buildCommands(dumps []DumpCommand) {
 	for _, dump := range dumps {
 		command := schema.Commands[dump.Name]
@@ -485,19 +486,62 @@ func (schema *Schema) buildCommands(dumps []DumpCommand) {
 		if expected, ok := schema.resolveTraits(dump.Traits); ok {
 			command.makeArguments(dump.Declared, game.SourceDumps).Value.resolve(expected, game.SourceDumps)
 		}
+		schema.resolveTitleValue(command, dump)
 		if _, reserved := schema.Prefixes[dump.Name]; dump.Declared == game.DeclaredLink && !reserved && dump.Prefixed {
 			schema.Prefixes[dump.Name] = ""
 		}
 	}
-	for name, database := range game.CommandKeys {
-		if command := schema.Commands[name]; command != nil {
-			command.makeArguments("", game.SourceRegistry).Keys.resolve(database, game.SourceRegistry)
+}
+
+// buildCommandKeys gives each command, or key of a command's block, that a game.CommandKeys row names the database
+// its block's keys name, for the rows that hold for the given game. A row whose command the dumps do not declare is
+// skipped.
+func (schema *Schema) buildCommandKeys(row *game.Game) {
+	for _, commandKey := range game.CommandKeys {
+		title, key, nested := strings.Cut(commandKey.Command, "/")
+		command := schema.Commands[title]
+		if command == nil || !row.Matches(commandKey.Games) {
+			continue
 		}
+		field := command.makeArguments("", game.SourceRegistry)
+		if nested {
+			field = field.buildChild(key, game.SourceRegistry)
+		}
+		field.Keys.resolve(commandKey.Database, game.SourceRegistry)
 	}
 }
 
-// build adds what one dump says about a command, but its arguments. Its scopes are the union of its dumps' scopes, and
-// a dump that names none leaves it with none. The first target, blurb and usage are kept.
+// resolveTitleValue gives a command the value that a line of its dump writes after its name, as add_trait =
+// <trait_key> does; a Traits line's value outranks it. Where the dump also writes the command's keys, a value that
+// names a shape gives a name of that shape's values' database instead, or nothing.
+func (schema *Schema) resolveTitleValue(command *Command, dump DumpCommand) {
+	arguments := command.Arguments[dump.Declared]
+	keyed := arguments != nil && len(arguments.Children) > 0
+	for line := range strings.SplitSeq(usageComment.ReplaceAllString(dump.Description, ""), "\n") {
+		tokens := usageToken.FindAllString(line, -1)
+		if len(tokens) < 3 || tokens[0] != dump.Name || !slices.Contains(usageOperators, tokens[1]) || tokens[2] == "{" {
+			continue
+		}
+		value := &Field{}
+		schema.parseUsageValue(tokens, 2, value)
+		// a block with keys, as change_first_name = { template_character = … }, holds the command's arguments
+		if keyed && value.Shape.IsStated() {
+			database := game.Shapes[value.Shape.Value].Values
+			value.Shape, value.Value = Claim[string]{}, Claim[Expected]{}
+			if database != "" {
+				value.Value.resolve(Expected{Type: ValueReference, Database: database}, game.SourceDumps)
+			}
+		}
+		if !value.Value.IsStated() {
+			continue
+		}
+		command.makeArguments(dump.Declared, game.SourceDumps).take(value.Claims)
+		return
+	}
+}
+
+// build adds what one dump says about a command, but its arguments. The command's scopes are the union of its dumps',
+// and none if any dump names none. The first target, blurb and usage are kept.
 func (command *Command) build(dump DumpCommand) {
 	switch {
 	case len(command.Declared) == 0:
@@ -522,29 +566,30 @@ func (command *Command) build(dump DumpCommand) {
 }
 
 // splitUsage returns a dump's description as its prose and its usage, which starts at the first line that opens a
-// block, such as "key = {". The usage is "" where no line opens one.
+// block, such as "key = {". A line that describes its block after a dash is prose, as "key = value - a description"
+// is. The usage is "" if no line opens a block.
 func splitUsage(description string) (prose, usage string) {
 	lines := strings.Split(description, "\n")
-	cut := slices.IndexFunc(lines, usageLine.MatchString)
+	cut := slices.IndexFunc(lines, func(line string) bool {
+		return usageLine.MatchString(line) && !describedLine.MatchString(line)
+	})
 	if cut < 0 {
 		return description, ""
 	}
 	return strings.Join(lines[:cut], "\n"), strings.Join(lines[cut:], "\n")
 }
 
-// parseArguments returns the keys a command takes as fields, and the command's argument key. The keys come from each
-// usage block written as title = { … }, on a line of its own or inside a sentence, and from each line of the prose
-// that opens with key = value. The words after a value, such as "- must be defined", declare nothing. The argument key
-// is the first key of the first block that opens with an identifier and an operator, else "". It returns nil if the
-// description gives the command no key and no shape.
+// parseArguments returns the keys a command takes as fields, from its usage blocks and the prose lines that open with
+// key = value, and its argument key, "" if none. It returns nil if the description gives the command no key and no
+// shape.
 func (schema *Schema) parseArguments(title, prose, usage string) (*Field, string) {
 	arguments, first := &Field{Source: game.SourceDumps}, ""
 	prose, usage = usageComment.ReplaceAllString(prose, ""), usageComment.ReplaceAllString(usage, "")
 	lines := strings.Split(prose, "\n")
 	for position, line := range lines {
 		tokens := usageToken.FindAllString(line, -1)
-		// A key with nothing after it whose block opens on the next line is the scope the usage runs in, as Vic3's
-		// "power_bloc =" is, and no argument.
+		// a key with nothing after it whose block opens on the next line is the scope the usage runs in, as Vic3's
+		// "power_bloc =" is, and no argument
 		opens := len(tokens) == 2 && position+1 < len(lines) && strings.HasPrefix(strings.TrimSpace(lines[position+1]), "{")
 		if len(tokens) > 1 && tokens[0] != title && jomini.IsIdentifier(tokens[0]) && tokens[1] == "=" && !opens {
 			schema.parseUsageStatement(tokens, 0, arguments, false)
@@ -592,13 +637,13 @@ func (schema *Schema) parseUsageBlock(tokens []string, cursor int, field *Field)
 }
 
 // parseUsageStatement reads the key = value statement of a usage that starts at a token into a field's children. It
-// adds a child for each key that slashes join, and marks it optional if the statement was written in brackets. It
-// returns the position after the statement, or the next position if no statement starts there.
+// adds a child for each key that slashes join, and marks it optional if the given flag says so. It returns the
+// position after the statement, or the next position if no statement starts there.
 func (schema *Schema) parseUsageStatement(tokens []string, cursor int, field *Field, optional bool) int {
 	if cursor+1 >= len(tokens) || !slices.Contains(usageOperators, tokens[cursor+1]) {
 		return cursor + 1
 	}
-	// A key written with nothing after it, as create_character's "age =", is declared all the same.
+	// a key with no value, as create_character's "age =", is declared all the same
 	valued := cursor+2 < len(tokens) && tokens[cursor+2] != "}"
 	next := cursor + 2
 	for part := range strings.SplitSeq(tokens[cursor], "/") {
@@ -616,10 +661,8 @@ func (schema *Schema) parseUsageStatement(tokens []string, cursor int, field *Fi
 	return next
 }
 
-// parseUsageValue gives an argument what the value at a token says. A block gives the argument its keys, a list such as
-// [yes|no] or <A|B> gives its choices, a docs' type word, bare or in angle brackets, gives its type, and any other
-// placeholder gives what resolvePlaceholder finds. Any other value is a sample and says nothing. It returns the
-// position after the value.
+// parseUsageValue gives an argument what the value at a token says: its keys, its choices, its type or what its
+// placeholder takes. A sample value says nothing. It returns the position after the value.
 func (schema *Schema) parseUsageValue(tokens []string, cursor int, argument *Field) int {
 	value := tokens[cursor]
 	term := strings.TrimSuffix(strings.TrimPrefix(value, "<"), ">")
@@ -639,10 +682,9 @@ func (schema *Schema) parseUsageValue(tokens []string, cursor int, argument *Fie
 	return cursor + 1
 }
 
-// resolvePlaceholder returns what a value the dumps write as a placeholder takes. Words that end in key or name, as
-// <effect_localization_key> does, give a name of the database the other words name. Any other words give a target of
-// the scope type they name, with or without a closing scope or target, which may also be a name of that scope's
-// database. It returns false where the words name no such database or scope type.
+// resolvePlaceholder returns what a placeholder in the dumps takes: a name of the database it names before a closing
+// key or name, as <effect_localization_key> does, else a target of the scope type it names, or a name of that scope's
+// database. It returns false if it names neither.
 func (schema *Schema) resolvePlaceholder(term string) (Expected, bool) {
 	words := strings.Fields(ToPhrase(term))
 	if len(words) == 0 {
@@ -664,8 +706,8 @@ func (schema *Schema) resolvePlaceholder(term string) (Expected, bool) {
 	return Expected{Type: ValueTarget, Scope: scope, Database: database}, true
 }
 
-// findPlaceholderShape returns the shape that a placeholder names, such as <triggers>, <effect> or <display_triggers>.
-// It returns false if the placeholder names none.
+// findPlaceholderShape returns the shape that a placeholder names, such as <triggers> or <display_triggers>. It returns
+// false if it names none.
 func findPlaceholderShape(placeholder string) (string, bool) {
 	shape := strings.TrimSuffix(placeholder, ">")
 	shape = shape[strings.LastIndex(shape, "_")+1:]
@@ -676,11 +718,9 @@ func findPlaceholderShape(placeholder string) (string, bool) {
 	return shape, ok
 }
 
-// resolveTraits returns what a trigger's value must be, as its Traits line says. A comparison takes a number or a
-// script value, or a date if the line says so. A yes/no line takes yes or no. A class takes a name from the database
-// that holds its keys. A scope or a target takes a link to that scope. A tag or an id takes such a link, or a name from
-// the database of that scope's names. A list takes one of its words. It returns false for an empty line, a line in no
-// known form, and a class whose database the game does not have.
+// resolveTraits returns what a trigger's value must be, as its Traits line says: a number or a date, yes or no, a
+// name, a link to a scope, or one of the line's values. It returns false for an empty line, a line in no known form
+// and a class whose database the game lacks.
 func (schema *Schema) resolveTraits(traits string) (Expected, bool) {
 	comparison, class := comparisonTraits.FindStringSubmatch(traits), classTraits.FindStringSubmatch(traits)
 	target, tag := targetTraits.FindStringSubmatch(traits), tagTraits.FindStringSubmatch(traits)
@@ -711,8 +751,8 @@ func (schema *Schema) resolveTraits(traits string) (Expected, bool) {
 	return Expected{}, false
 }
 
-// makeArguments returns the field of the keys a command takes where it is declared as the given word, as ArgumentsOf
-// finds it. If the command has none there, it adds an empty one with the given source.
+// makeArguments returns the field of the keys a command takes where it is declared as the given declaration. If the
+// command has none there, it adds an empty one from the given source.
 func (command *Command) makeArguments(declaration string, source game.Source) *Field {
 	declaration = command.resolveDeclaration(declaration)
 	if command.Arguments == nil {
@@ -724,9 +764,8 @@ func (command *Command) makeArguments(declaration string, source game.Source) *F
 	return command.Arguments[declaration]
 }
 
-// buildKeywordShapes gives a command an argument for each keyword row written under it, such as the numbered branches
-// of random_list. The argument gets the shape that the row gives its block. Only the rows that hold for the given game
-// count.
+// buildKeywordShapes gives a command an argument with the row's shape for each keyword row written under it, such as
+// the numbered branches of random_list, for the rows that hold for the given game.
 func (schema *Schema) buildKeywordShapes(row *game.Game) {
 	for _, keyword := range game.Keywords {
 		title, key, nested := strings.Cut(keyword.Key, "/")
@@ -762,14 +801,53 @@ func (schema *Schema) buildFamilies() {
 	}
 }
 
-// unite returns one field that merges the given fields. It has one child for each key they write, merged the same way,
-// and takes all their claims.
+// buildUnions gives each command the dumps declare as both an effect and a trigger the keys of both together. The
+// effect's claims win where the two state the same rank, but a shape stays only where both state it, or where it
+// allows effects and triggers alike. A command where neither takes keys gets an empty union.
+func (schema *Schema) buildUnions() {
+	for _, command := range schema.Commands {
+		if slices.Contains(command.Declared, game.DeclaredEffect) && slices.Contains(command.Declared, game.DeclaredTrigger) {
+			fields := []*Field{command.Arguments[game.DeclaredEffect], command.Arguments[game.DeclaredTrigger]}
+			fields = slices.DeleteFunc(fields, func(field *Field) bool { return field == nil })
+			command.Union = unite(fields)
+			keepSharedShapes(command.Union, fields)
+		}
+	}
+}
+
+// keepSharedShapes clears the shape of a united field, and of each key below it, where the given fields it merges do
+// not all state it, unless the shape allows effects and triggers alike, as value does.
+func keepSharedShapes(united *Field, fields []*Field) {
+	allowed := game.Shapes[united.Shape.Value].Allows
+	mixed := slices.Contains(allowed, game.DeclaredEffect) && slices.Contains(allowed, game.DeclaredTrigger)
+	if slices.ContainsFunc(fields, func(field *Field) bool {
+		return field.Shape.Value != united.Shape.Value && (field.Shape.IsStated() || !mixed)
+	}) {
+		united.Shape = Claim[string]{}
+	}
+	for key, child := range united.Children {
+		var children []*Field
+		for _, field := range fields {
+			if field.Children[key] != nil {
+				children = append(children, field.Children[key])
+			}
+		}
+		keepSharedShapes(child, children)
+	}
+}
+
+// unite returns one field that merges the given fields. It has one child for each key they write, merged the same way.
+// It takes all their claims and counts, and the highest-ranked source that writes any of them.
 func unite(fields []*Field) *Field {
 	united := &Field{}
 	keyed := map[string][]*Field{}
 	for _, field := range fields {
-		united.Source = cmp.Or(united.Source, field.Source)
+		if field.Source != game.SourceNone && (united.Source == game.SourceNone || field.Source < united.Source) {
+			united.Source = field.Source
+		}
 		united.take(field.Claims)
+		united.Keys.take(field.Keys)
+		united.Vanilla.add(field.Vanilla)
 		for key, child := range field.Children {
 			keyed[key] = append(keyed[key], child)
 		}

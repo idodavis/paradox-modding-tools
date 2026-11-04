@@ -1,6 +1,5 @@
-// language.go holds the script language's own rules: the shapes a block can hold and how each reads its keys, the
-// keywords with the sentence a hover card shows for each and the words a condition reads, and the words that name a
-// scope, a variable or a yes-or-no.
+// language.go holds the script language's own rules: shapes, keywords, how a condition reads in English, and the names
+// script saves and reads back.
 
 package game
 
@@ -17,7 +16,7 @@ import (
 // A ShapeRule is how a block of one shape reads its keys.
 type ShapeRule struct {
 	Rules  []string // the key rules tried in order; the first that fits wins
-	Caller string   // the word a call here resolves by; AnyCall every callable
+	Caller string   // the caller a call here is looked up by, among Callable.Callers; AnyCall means every callable
 	Allows []string // the declared commands it holds; inside a trigger, never an effect
 	// Values is the database every value written in a block of this shape names; "" means none.
 	Values string
@@ -37,18 +36,18 @@ type Keyword struct {
 	Games  []string // the games it holds for; none means every game
 	Holder string   // fits only in a block of this shape; "" means any
 	Shape  string   // what its block holds, a Shapes key or "enclosing"; "" means what the key's rule gives
-	Caller string   // the word its calls resolve by; "" means the shape's own
+	Caller string   // the caller its calls are looked up by; "" means the shape's own
 	Shows  string   // a description marker: which of its texts it shows, first, random or leaf
 	Class  string   // the operator class: logical, conditional, flow, display, saving, math, list; "" means none
 	Blurb  string   // the one line a hover card shows
-	// Says is what a condition in words reads for it, a * in it the rest of a prefix key; "" means its key in words.
+	// Says is how a condition in English reads it, a * standing for the rest of a prefix key; "" means its key with
+	// spaces for underscores.
 	Says string
 	// Covers marks a keyword whose own text is shown in place of the conditions written inside it.
 	Covers bool
-	// ValueFirst marks a keyword whose value a condition in words reads first, as what it is about: X exists.
+	// ValueFirst marks a keyword whose value a condition in English reads first, as what it is about: X exists.
 	ValueFirst bool
-	// Negates marks a keyword that is true when what it holds is false; around one condition, it reads as that
-	// condition, negated.
+	// Negates marks a keyword that is true when what it holds is false.
 	Negates bool
 	// Follows are the keys, in lower case, one of which must be written just before it in its block; empty means any.
 	Follows []string
@@ -72,17 +71,15 @@ const AnyKey = "<any>"
 // history file.
 const DocDateKey = "date"
 
-// The dumps' words for what declares a command, by the file that declares it. Command.Declared lists them in dump
-// order.
+// The declarations a command can have, as the dumps call them, with the log that declares each.
 const (
 	DeclaredEffect  = "effect"       // effects.log
 	DeclaredTrigger = "trigger"      // triggers.log
 	DeclaredLink    = "event target" // event_targets.log
 )
 
-// The databases of the names script saves and reads back: saved scopes (scope:x), the variables of a scope (var:x), of
-// the effect being run (local_var:x) and of the game (global_var:x), the lists add_to_list makes, and the flags CK3
-// gives a character.
+// The databases of the names script saves and reads back: saved scopes (scope:x), variables of a scope (var:x), of the
+// running effect (local_var:x) and of the game (global_var:x), lists, and a CK3 character's flags.
 const (
 	SavedScopes     = "scope"
 	Variables       = "var"
@@ -109,7 +106,7 @@ var ScopeLinks = struct{ Root, Previous, This string }{"root", "prev", "this"}
 // of a game concept, as in [faith|E]. It is written in either case.
 const ConceptFormat = "E"
 
-// A DocType is what a type word in the games' own docs stands for.
+// A DocType is what a type in the games' own docs stands for, such as bool or localization key.
 type DocType struct {
 	Value    string // bool, number, date, text, reference, color, block, or unknown for a key or a block
 	Database string // the database a reference names; "" means unknown
@@ -117,8 +114,7 @@ type DocType struct {
 	Values   bool   // the term takes a script value
 }
 
-// DocTypes are the words the games' own docs write a type with, as the installs' .info, .md and readme files
-// write them, each with what it means.
+// DocTypes are the types the games' own docs (.info, .md and readme files) write, each with what it stands for.
 var DocTypes = map[string]DocType{
 	"bool": {Value: "bool"}, "boolean": {Value: "bool"}, "yes/no": {Value: "bool"},
 	"int": {Value: "number"}, "integer": {Value: "number"}, "int32": {Value: "number"}, "number": {Value: "number"},
@@ -146,11 +142,11 @@ var DocTypes = map[string]DocType{
 
 // The shapes that Go code names. Each is the key of its row in Shapes.
 const (
-	ShapeUnknown   = "unknown"   // a block whose keys can be of any kind
+	ShapeUnknown   = "unknown"   // a block whose keys may be fields, commands, links or calls
 	ShapeFields    = "fields"    // a block of a definition's own fields
 	ShapeArguments = "arguments" // a block of what a command takes
-	// ShapeEffectArguments and ShapeTriggerArguments are the block of an effect and of a trigger: what it takes, and
-	// the commands of its own kind it runs.
+	// ShapeEffectArguments and ShapeTriggerArguments are the block of an effect and of a trigger: what the command
+	// takes, and the effects or the triggers it runs.
 	ShapeEffectArguments  = "effect arguments"
 	ShapeTriggerArguments = "trigger arguments"
 	ShapeTriggers         = "triggers"    // a block of triggers
@@ -161,9 +157,8 @@ const (
 	ShapeDescription      = "description" // a block that writes a text with its trigger
 )
 
-// Shapes is the table of shapes a block can hold, each with how it reads its keys. A description block reads its
-// keys by the Keywords alone, and "enclosing" in a keyword or a claim means the holder's Encloses, else its shape. The
-// "scope-link" rule is "link" except for a plain name written with a plain value, which is an argument or a call.
+// Shapes is the shapes a block can hold, each with how it reads its keys; a description block reads them by the
+// Keywords alone. "enclosing" means the holder's Encloses, else its shape.
 var Shapes = map[string]ShapeRule{
 	ShapeFields: {Rules: []string{"field"}},
 	ShapeTriggers: {
@@ -178,8 +173,8 @@ var Shapes = map[string]ShapeRule{
 		Rules:  []string{"known-call", "declared", "command", "observed", "link", "call"},
 		Caller: AnyCall, Allows: []string{DeclaredEffect, DeclaredTrigger},
 	},
-	// A key no rule explains in a command's block is a call of any kind, which is never judged: it may be an argument
-	// that neither the dumps nor the game's files write.
+	// A key no rule explains in a command's block is a call of any callable, never judged: it may be an argument no
+	// dump or file writes.
 	ShapeEffectArguments: {
 		Rules:  []string{"known-call", "declared", "command", "observed", "scope-link", "call"},
 		Caller: AnyCall, Allows: []string{DeclaredEffect}, Encloses: ShapeEffects,
@@ -302,13 +297,13 @@ const LimitKey = "limit"
 // TriggerKey is the key of the conditions a block holds for itself, such as an event's or an option's trigger.
 const TriggerKey = "trigger"
 
-// OperatorSays is what a condition in words reads for each operator between a key and a value.
+// OperatorSays is how a condition in English reads each operator between a key and a value.
 var OperatorSays = map[string]string{
 	"=": "is", "==": "is", "!=": "is not", ">": "more than", ">=": "at least", "<": "less than", "<=": "at most",
 	"?=": "is, if it exists",
 }
 
-// DumpPhrases are the dumps' own words that the engine decides by.
+// DumpPhrases are the phrases in the dumps that the engine decides by.
 var DumpPhrases = struct {
 	Iterates string   // a blurb opening with it and naming no target walks a list or variable map: scope unknown
 	NoScope  []string // scope names that name no scope
@@ -316,8 +311,8 @@ var DumpPhrases = struct {
 	Unnamed  string   // the return type of a data function whose type the dumps do not name
 }{"Iterate through", []string{"none", "all", "none/any"}, "flag", "[unregistered]"}
 
-// A DumpCorrection is a command whose dump row contradicts the text of its own entry. It carries the scopes and the
-// target that the text says. The schema applies it to the dumps after reading them, so it outranks the dump.
+// A DumpCorrection is a command whose dump row contradicts its own entry's text. It carries the scopes and target the
+// text says, and outranks the dump.
 type DumpCorrection struct {
 	Games   []string // the games it holds for; none means every game
 	Command string   // the command's name
@@ -325,8 +320,7 @@ type DumpCorrection struct {
 	Target  string   // the scope it leads to
 }
 
-// DumpCorrections are the dump rows that contradict their own text. A row's comment cites the lines of the entry's
-// text and of its Supported Scopes and Supported Targets.
+// DumpCorrections are the dump rows that contradict their own text.
 var DumpCorrections = []DumpCorrection{
 	// Vic3 docs/effects.log:3521 says "Iterate through all Provinces in the scoped State"; :3523-3524 swap the two
 	{Games: []string{vic3}, Command: "every_province", Scopes: []string{"state"}, Target: "province"},
@@ -361,9 +355,8 @@ var LinkMakers = map[string]string{
 	"add_character_flag": Flags, "add_character_flag/flag": Flags, "add_dead_character_flag/flag": Flags,
 }
 
-// LinkUsers are the triggers and lists that read a name saved for one of the Links. A row is shaped like LinkMakers',
-// and its value is the link whose names it reads. Each is in its game's triggers.log or effects.log. The variable
-// maps are Vic3's and EU5's, and a character's flags are CK3's.
+// LinkUsers are the triggers and lists that read a name saved for one of the Links, keyed like LinkMakers, each with
+// that link; each is in its game's triggers.log or effects.log. Variable maps are Vic3's and EU5's, flags CK3's.
 var LinkUsers = map[string]string{
 	"has_variable": Variables, "has_variable/name": Variables, "has_all_variables/name": Variables,
 	"has_none_of_variables/name": Variables, "has_dead_character_variable": Variables, "has_variable_list": Variables,
@@ -405,14 +398,23 @@ var LocStems = map[string]string{
 	"add_activity_log_entry/key": "%s_title",
 }
 
-// CommandKeys are the commands whose block's keys, beside the arguments the dumps declare, are names of a database:
-// each with that database.
-var CommandKeys = map[string]string{
-	// CK3 effects.log, stress_impact: "trait = value # add this stress if the character has this trait"
-	"stress_impact": "traits", "stress_and_fulfillment_impact": "traits",
+// A CommandKey is a command, or a key of a command's block, whose block's keys, beside the arguments the dumps
+// declare, are names of a database.
+type CommandKey struct {
+	Games    []string // the games it holds for; none means every game
+	Command  string   // the command, or command/key for a key inside the command's block
+	Database string   // the database the block's keys name
 }
 
-// Bools are the words a yes-or-no value is written with.
+// CommandKeys are the commands and command keys whose block's keys are names of a database.
+var CommandKeys = []CommandKey{
+	// CK3 effects.log, stress_impact: "trait = value # add this stress if the character has this trait"
+	{Command: "stress_impact", Database: "traits"}, {Command: "stress_and_fulfillment_impact", Database: "traits"},
+	// CK3 effects.log:349: "random_traits_list = { count = { 1 5 } traitID = { some triggers } … }"
+	{Games: []string{ck3}, Command: "create_character/random_traits_list", Database: "traits"},
+}
+
+// Bools are the values a yes-or-no is written with.
 var Bools = []string{"yes", "no"}
 
 // keywordPositions holds where each keyword sits in Keywords, by the key it fits. A keyword written under a command
@@ -431,8 +433,8 @@ var keywordPositions = func() map[string][]int {
 	return positions
 }()
 
-// LookupKeyword returns the keyword of the game that fits a key in a block of the given shape and command, the key and
-// the command in any case. Where several fit, it is the first row of Keywords. It returns false if none fits.
+// LookupKeyword returns the game's keyword for a key in a block of the given shape and command, the key and the command
+// in any letter case. Where several fit, it is the first row of Keywords. It returns false if none fits.
 func (game *Game) LookupKeyword(shape, command, key string) (Keyword, bool) {
 	command, key = strings.ToLower(command), strings.ToLower(key)
 	candidates := []string{key, AnyKey}

@@ -122,8 +122,8 @@ export interface Group {
     "id": string;
 
     /**
-     * Subject is the kind of object it asks about, such as Character or Relation; Game for a call of one step, and ""
-     * for a coat's list.
+     * Subject is the kind of object it asks about, such as Character or Relation; Game for a call of one step, Pictures
+     * for a list of pictures, and "" for a coat's list.
      */
     "subject"?: string;
 

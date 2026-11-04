@@ -148,8 +148,9 @@ type Config struct {
 	Installs   []Install         `json:"installs"`
 	Workspaces []Workspace       `json:"workspaces"`
 	Settings   map[string]string `json:"settings"`
-	Agents     []Agent           `json:"agents"` // the agents the user adds
-	Window     Window            `json:"window"` // the main window as it was last closed
+	Agents     []Agent           `json:"agents"`  // the agents the user adds
+	Window     Window            `json:"window"`  // the main window as it was last closed
+	Skipped    string            `json:"skipped"` // the release the user went back from, which the updater skips
 }
 
 // A Setting is one row of the catalog of settings.

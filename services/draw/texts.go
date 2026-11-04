@@ -71,7 +71,7 @@ func (library *library) sampleCall(source string, context context, properties it
 	call, _ := jomini.ParseCall(source, 0)
 	path := context.expand(library.ws.Schema, call)
 	function, _ := library.ws.Schema.FindFunction(path, "", len(path.Steps)-1)
-	kind, known := game.GUI.CallKinds[function.Returns]
+	kind, known := game.GUI.CallOutputs[function.Returns]
 	switch {
 	case kind == kindNumber:
 		return sampleNumber(seed, call.Suffix), kind

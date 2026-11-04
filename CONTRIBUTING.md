@@ -1,136 +1,116 @@
 # Contributing
 
-Paradox Modding Tools is a desktop app for Windows and Linux. This page is for people who build it from source.
-macOS is not supported. What the app does and how to install it is in [README.md](README.md); where it is going is in
-[ROADMAP.md](ROADMAP.md).
+How to build Paradox Modding Tools from source, run its tests and send a first change. What the app does is in
+[README.md](README.md) and [FEATURES.md](FEATURES.md). How it is built is in [ARCHITECTURE.md](ARCHITECTURE.md), and
+the code's conventions are in [AGENTS.md](AGENTS.md). PMT runs on Windows and Linux; macOS is not supported.
 
 ## What you need
 
-| Tool | Notes |
-|------|-------|
-| [Go](https://go.dev/dl/) | The version `go.mod` names |
-| [Node.js](https://nodejs.org/) with npm | Version 24 or later |
-| [Task](https://taskfile.dev/installation/) | With `task` on your `PATH` |
-| [Wails CLI](https://v3.wails.io/) | The same version as the Go module, installed with the command below |
+| Tool | Version |
+|---|---|
+| [Go](https://go.dev/dl/) | The one `go.mod` names |
+| [Node.js](https://nodejs.org/) with npm | 24 or later |
+| [Task](https://taskfile.dev/installation/) | Any recent one, on your `PATH` |
+| [Wails CLI](https://v3.wails.io/) | The same version as the Go module (below) |
+| [staticcheck](https://staticcheck.dev/) and [golangci-lint](https://golangci-lint.run/) v2 | For `task check` (below) |
 
-Run this from the repository root, so Go reads the Wails version from `go.mod`:
+From the repository root, install the Wails CLI at the version `go.mod` names, then the two linters:
 
 ```bash
 go install "github.com/wailsapp/wails/v3/cmd/wails3@$(go list -m -f '{{.Version}}' github.com/wailsapp/wails/v3)"
+go install honnef.co/go/tools/cmd/staticcheck@latest
+go install github.com/golangci/golangci-lint/v2/cmd/golangci-lint@latest
+npm ci --prefix frontend
 ```
 
-Check that `wails3` is on your `PATH`: Go installs it into `$(go env GOPATH)/bin`.
+Go installs the tools into `$(go env GOPATH)/bin`; make sure it is on your `PATH`.
 
-## Windows
+### Windows
 
-The script parser (`internal/jomini`) is written in Go alone, and `task build` builds without C code
-(`CGO_ENABLED=0`), so a normal Windows build needs no C compiler. To run the app, Windows needs WebView2 (Windows 11
-usually has it).
+Nothing more. The parser is pure Go, so Windows builds without a C compiler (`CGO_ENABLED=0`). Running the app needs
+WebView2, which Windows 11 has.
 
-## Linux
+### Linux
 
-A Linux build needs a C compiler, GTK 4 and WebKitGTK 6, with their development packages (the headers, not only the
-libraries the app runs on).
+A C compiler, GTK 4 and WebKitGTK 6, with their development packages:
 
-| Distro family | Packages to install for a build |
-|---------------|---------------------------------|
-| Debian / Ubuntu | `build-essential` `pkg-config` `libgtk-4-dev` `libwebkitgtk-6.0-dev` |
-| Fedora / RHEL | `gcc` `pkg-config` `gtk4-devel` `webkitgtk6.0-devel` |
+| Distro family | Packages |
+|---|---|
+| Debian, Ubuntu | `build-essential` `pkg-config` `libgtk-4-dev` `libwebkitgtk-6.0-dev` |
+| Fedora, RHEL | `gcc` `pkg-config` `gtk4-devel` `webkitgtk6.0-devel` |
 | Arch | `base-devel` `gtk4` `webkitgtk-6.0` |
-| openSUSE | `gcc` `pkg-config` `gtk4-devel` plus the distro's WebKitGTK 6 `-devel` package |
-| Gentoo | `gtk4` `webkit-gtk` (and a C toolchain) |
+| openSUSE | `gcc` `pkg-config` `gtk4-devel` and the distro's WebKitGTK 6 `-devel` package |
+| Gentoo | `gtk4` `webkit-gtk` and a C toolchain |
 
-On Debian or Ubuntu:
+Linux builds with cgo (`CGO_ENABLED=1`). Without a C compiler, the Linux Taskfile falls back to Docker
+(`wails-cross`).
 
-```bash
-sudo apt-get update
-sudo apt-get install build-essential pkg-config libgtk-4-dev libwebkitgtk-6.0-dev
-```
-
-`task build` on Linux builds with C code (`CGO_ENABLED=1`). If no C compiler is found, the Linux Taskfile tries
-Docker (`wails-cross`), which this repository does not build ahead of time in CI.
-
-## Steam Workshop in dev
-
-There is nothing to install. Publish to Steam starts a second copy of the app, which loads the game's own copy of
-Steam's library from the game's install (`binaries/steam_api64.dll`, or `binaries/libsteam_api.so` for CK3 and Vic3
-on Linux; EU5 has no Linux build).
-
-## Run the app with live reload
-
-From the repository root:
+## Run the app
 
 ```bash
 task dev
 ```
 
-This starts `wails3 dev` with `build/config.yml`: the frontend, the bindings and the desktop window. If port 9245 is
-taken, pick another for the frontend's dev server:
+This runs `wails3 dev`: the frontend with live reload, the bindings and the window. If port 9245 is taken, pick
+another with `WAILS_VITE_PORT=9246 task dev`. To let a tool drive the running app, start it with
+`WAILS_MCP=1 wails3 dev`, which turns on Wails' MCP server.
+
+Publishing to the Workshop works in a dev run too, with nothing to install: PMT loads the copy of Steam's library that
+the game ships.
+
+## Build it
 
 ```bash
-WAILS_VITE_PORT=9246 task dev
+task build                 # bin/paradox-modding-tools(.exe)
+task build VERSION=x.y.z   # the version the app shows and its updater compares
 ```
 
-To let a tool drive the running app, start it with `WAILS_MCP=1 wails3 dev`, which turns on Wails' MCP server.
-
-## Build the app
-
-```bash
-task build
-```
-
-This writes `bin/paradox-modding-tools.exe` on Windows and `bin/paradox-modding-tools` on Linux. The version shown in
-the app and used by its updater comes from `VERSION`:
-
-```bash
-task build VERSION=x.y.z
-```
-
-To build for Windows from Linux (without C code, as the Windows Taskfile does by default):
-
-```bash
-wails3 task windows:build VERSION=x.y.z ARCH=amd64
-```
-
-GitHub Releases ship zips.
+To build for Windows from Linux: `wails3 task windows:build VERSION=x.y.z ARCH=amd64`.
 
 ## Bindings
 
-After you change a Go payload type or a service method, regenerate the frontend's bindings:
+After you change a Go service method or a type the frontend sees, regenerate the frontend's bindings:
 
 ```bash
 task common:generate:bindings
 ```
 
-Never edit `frontend/bindings/**` by hand.
+Never edit `frontend/bindings/` by hand.
 
 ## Tests
 
 Each Go package keeps its tests in one file, `<package>_test.go`.
 
 | Task | What it runs |
-|------|--------------|
-| `task test` | The fast tests of the engine and the services (`go test -short -timeout 60s ./...` from the repository root) |
-| `task test:race` | The same tests under the race detector. This is what CI runs, and it works on Windows |
-| `task check` | Everything a commit must pass: gofmt, the vets, staticcheck, golangci-lint and the fast tests, then the frontend's type check, lint and tests. Needs staticcheck 0.8.2 or later (`go install honnef.co/go/tools/cmd/staticcheck@latest`): older ones cannot read this Go version's export data |
-| `task test:gate` | The tests over real installs of CK3, Victoria 3 and EU5. Set `PMT_TEST_INSTALL_CK3`, `PMT_TEST_INSTALL_VIC3` and `PMT_TEST_INSTALL_EU5` to each game's root folder (the one that holds `game/`); a game whose variable is unset is skipped |
-| `task test:full` | `test:gate`, then the frontend's type check: run it before a commit that touches the engine |
+|---|---|
+| `task check` | Everything a commit must pass: gofmt, the vets, staticcheck, golangci-lint and the fast tests, then the frontend's type check, lint and tests |
+| `task test` | The fast Go tests alone (`go test -short -timeout 60s ./...`) |
+| `task test:race` | The same tests under the race detector, as CI runs them |
+| `task test:gate` | The tests over real installs of CK3, Victoria 3 and EU5 |
+| `task test:full` | `test:gate`, then the frontend's type check: run it before a change to the engine |
 
-## Layout
+The install gates read each game from the folder its variable names, the one that holds `game/`:
+`PMT_TEST_INSTALL_CK3`, `PMT_TEST_INSTALL_VIC3` and `PMT_TEST_INSTALL_EU5`. A game whose variable is unset is
+skipped. The game's dumps are read from its folder under Documents. `task test:gate PKGS="./internal/schema/..."`
+runs only the gates of the packages you name: those your change reaches, which `go list -deps` shows. Encoding every
+picture of the installs takes most of half an hour, so that gate also needs `PMT_TEST_ENCODE` set; set it when you
+change `internal/texture`.
 
-| Path | What it holds |
-|------|---------------|
-| `main.go` | The app's start: Wails, the updater (checked against `SHA256SUMS`) and the single main window |
-| `internal/` | The engine: the script and localization parsers, files, textures, the games' tables, the schema and the index |
-| `services/` | The Wails services, one package each, which the frontend calls |
-| `frontend/` | Vue 3, Nuxt UI, Pinia and Pinia Colada; `monaco-editor` (the editor), `@pierre/trees` (the explorer), Vue Flow and dagre (the Event Graph) |
-| `build/` | The Wails Taskfiles, icons and the Windows version info |
+## Your first change
 
-How the backend fits together: [services/README.md](services/README.md). How the frontend is written:
-[frontend/src/README.md](frontend/src/README.md). Notes for coding agents: [AGENTS.md](AGENTS.md).
+1. Fork the repository and make a branch.
+2. Run `task dev` and find your way around; [ARCHITECTURE.md](ARCHITECTURE.md) is the map, and each package's README
+   explains its part.
+3. Pick an issue. Those marked [good first issue](https://github.com/idodavis/paradox-modding-tools/labels/good%20first%20issue)
+   are a good start.
+4. Make the change, following [AGENTS.md](AGENTS.md). Run `task check`.
+5. Open a pull request. Its template asks what you changed and why, which games and system you tried it on, and for
+   a screenshot when something on screen changed.
 
-## Issues and license
+Questions are welcome in [Discussions](https://github.com/idodavis/paradox-modding-tools/discussions). How a release
+goes out is in [RELEASING.md](RELEASING.md).
 
-Use the issue templates for bugs and features; blank issues are turned off.
+## License
 
-This project is licensed under **GPL-3.0-or-later**. See [LICENSE](LICENSE).
+PMT is licensed under [Apache-2.0](LICENSE). By sending a change, you agree that it is licensed the same way, as
+section 5 of the license says.

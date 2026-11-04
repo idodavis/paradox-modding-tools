@@ -29,13 +29,12 @@ const (
 	SourceWiki                   // the community wiki, taken where no game source contradicts it
 	SourceVanilla                // the install's own files: evidence, never a claim that accuses
 	SourceInferred               // no source states it, so it never fails a verdict
-	// SourceDefinitions is what a definition in the files says its name takes. It claims on fields of its own, so its
-	// rank among the others is never tried.
+	// SourceDefinitions is what a definition in the files says its name takes. It claims on fields of its own, so
+	// its rank is never tried.
 	SourceDefinitions
 )
 
-// A Program is how a game is started on one operating system: its executable and the flags for debug mode. A game
-// whose row has no executable cannot be started.
+// A Program is how a game is started on one operating system: its executable and the flags for debug mode.
 type Program struct {
 	Executable string   // from the install root (binaries/ck3.exe); "" means none is known, so the game is not started
 	DebugArgs  []string // the flags that start it in debug mode, which hot-loads script
@@ -70,7 +69,7 @@ type Game struct {
 	TakesModes    bool   `json:"-"`
 	ConceptPrefix string `json:"-"` // a concept's loc key prefix; "" means none
 	// LocReplaceFolders are the forms of the folder whose localization overrides every other, with the language at %s,
-	// the one that wins first.
+	// the winning one first.
 	LocReplaceFolders []string `json:"-"`
 	// LogsRepeatedKey says whether the game logs a localization key that a mod and the game both write outside a
 	// replace folder.
@@ -104,7 +103,7 @@ type Example struct {
 type Guide struct {
 	Hint    string `json:"hint"`    // what the load order decides, in one sentence
 	Files   string `json:"files"`   // which of a mod's files the game reads
-	Kept    string `json:"kept"`    // which copy each kind of definition keeps
+	Kept    string `json:"kept"`    // which copy of a definition each database keeps
 	Changes string `json:"changes"` // what the load order changes
 }
 
@@ -122,8 +121,7 @@ var (
 	vic3AndEU5 = []string{vic3, eu5}
 )
 
-// ScriptRoot is the folder under an install where the game's files start. Every scan and every relative path
-// begins there.
+// ScriptRoot is the folder under an install where the game's files start.
 const ScriptRoot = "game"
 
 // InstallRoots are the folders under an install that the game mounts, in the order it mounts them. A relative
@@ -145,16 +143,14 @@ var PictureExtensions = []string{".png", ".gif", ".jpg", ".jpeg", ".webp"}
 // WikiAPI is the address of a game's wiki API, with %s for the game's id.
 const WikiAPI = "https://%s.paradoxwikis.com/api.php"
 
-// A WikiTopic gives the files of a format, or the files under a folder, the terms the games' wikis title their pages
-// on them with.
+// A WikiTopic gives the files of a format, or under a folder, the terms the games' wikis title their pages with.
 type WikiTopic struct {
 	Format files.Format // "" for files of any format
 	Folder string       // "" for files in any folder
 	Terms  []string
 }
 
-// WikiTopics are the topics the games' wikis write pages on beside a file format's own name, each with the pages it
-// finds.
+// WikiTopics are the topics the games' wikis write pages on beside a file format's own name.
 var WikiTopics = []WikiTopic{
 	// CK3's Interface, Vic3's Interface modding and EU5's Interface modding guide, which also write of gfx/interface
 	{Format: files.FormatGUI, Terms: []string{"interface"}},
@@ -182,18 +178,17 @@ var ErrorLog = Log{
 	regexp.MustCompile(`^\[(\d\d):(\d\d):(\d\d)\](?:\[([A-Z])\])?\[([A-Za-z0-9_]+\.(?:cpp|h|hpp|inl)):(\d+)\]: ?(.*)$`),
 }
 
-// The forms in which an error log names a line of a script file, each with the groups path and line. None matches a
-// bare path and line: every log line's header holds its source as [file.cpp:N], so a path must follow a space.
+// The forms in which an error log names a line of a script file. None matches a bare path and line: every log line's
+// header holds its source as [file.cpp:N], so a path must follow a space.
 var (
 	// errorLogFileLine is CK3's "file: P line: N", after "Script location:", "at", "location '" or "from database".
 	errorLogFileLine = regexp.MustCompile(`file: *(?P<path>\S+) line: *(?P<line>\d+)`)
-	// errorLogQuotedLine is the line a quoted message names before its file, as in "Unknown effect: x, near line: 3501"
-	// in file: "P" near line: 3502. All three games write it. The quoted line is the statement's. The file's line after
-	// it is where the reader stopped, often the end of the statement's block.
+	// errorLogQuotedLine is the statement's line that a quoted message names, as all three games write in "Unknown
+	// effect: x, near line: 3501" in file: "P" near line: 3502, where the last line is where the reader stopped.
 	errorLogQuotedLine = regexp.MustCompile(`near line: (?P<line>\d+)" in file: "(?P<path>[^"]+)"`)
 	// errorLogNearLine is the reader's "in file: "P" near line: N", written by all three games.
 	errorLogNearLine = regexp.MustCompile(`in file: "(?P<path>[^"]+)" near line: (?P<line>\d+)`)
-	// errorLogPathLine is "P:N" after other words, as in "Script location: P:N" and "]: P:N - Missing file".
+	// errorLogPathLine is "P:N" after other text, as in "Script location: P:N" and "]: P:N - Missing file".
 	errorLogPathLine = regexp.MustCompile(`(?:^|\s)(?P<path>[^\s\[\]:'"]+\.\w+):(?P<line>\d+)\b`)
 	// errorLogLineColumn is EU5's "line N and column C in P".
 	errorLogLineColumn = regexp.MustCompile(`line (?P<line>\d+) and column \d+ in (?P<path>\S+)`)
@@ -272,7 +267,7 @@ var games = map[string]*Game{
 				{Label: "Title", Mask: "gfx/interface/coat_of_arms/title_mask.dds"},
 				{Label: "Realm", Mask: "gfx/interface/icons/realm_frames/_default_mask.dds"},
 			},
-			ColorForm: jomini.ColorForm{Tag: "rgb", Example: []float64{255, 255, 255}},
+			ColorForm: jomini.ColorForm{Tag: "rgb", Example: []string{"255", "255", "255"}},
 		},
 		Guide: Guide{
 			Hint:    "The load order decides only files that two mods ship at the same path.",
@@ -313,12 +308,12 @@ var games = map[string]*Game{
 		},
 		Coat: GameCoat{
 			Folder:    "common/coat_of_arms/coat_of_arms",
-			ColorForm: jomini.ColorForm{Tag: jomini.TagHSV360, Example: []float64{360, 100, 100}},
+			ColorForm: jomini.ColorForm{Tag: jomini.TagHSV360, Example: []string{"360", "100", "100"}},
 		},
 		Guide: Guide{
 			Hint:    "The load order decides only files that two mods ship at the same path.",
 			Files:   "A mod's replace_path makes the game skip its own files in that folder. This is documented for CK3 and EU5, whose engine Vic3 shares; whether it also skips the folder's subfolders is not documented.",
-			Kept:    "Most things keep the copy read last; events and GUI types keep the first; where a folder takes INJECT: and REPLACE:, the first plain copy stays and a later one is refused, so mods change it with those keywords, which act after every plain copy whatever their file's name, by kind (INJECT_OR_CREATE first, REPLACE last) and then by file name; character DNA copies all exist.",
+			Kept:    "Most things keep the copy read last; events and GUI types keep the first; where a folder takes INJECT: and REPLACE:, the first plain copy stays and a later one is refused, so mods change it with those keywords, which act after every plain copy whatever their file's name, by mode (INJECT_OR_CREATE first, REPLACE last) and then by file name; character DNA copies all exist.",
 			Changes: "Only files at the same path.",
 		},
 		// common/buildings/01_industry.txt
@@ -348,8 +343,7 @@ var games = map[string]*Game{
 				Steps: []PictureStep{
 					{Key: "illustration_tags", Database: "gfx/illustrations/database", Match: "tags"},
 					{Key: "scene", Database: "gfx/scenes"},
-					// a scene's layers are written front to back, and its backdrop is the one drawn on background2_mesh,
-					// as in_game/gfx/scenes/00_scenes_events.txt writes each of its characters_ scenes
+					// a scene's backdrop is the layer drawn on background2_mesh (in_game/gfx/scenes/00_scenes_events.txt)
 					{Key: "ecs_illustration_image[pdxmesh=background2_mesh]/list", Database: "gfx/images", Match: "tag"},
 				},
 				FileKey: "illustration_image/texture_file",
@@ -364,17 +358,18 @@ var games = map[string]*Game{
 		GUI: GameGUI{
 			Holders:    map[string]string{"lateralview": "lateralview_left_layer"},
 			Undeclared: []string{"axis", "plotline", "screen_grab", "newsfeed_carousel"},
-			// loading_screen/common/defines/graphic/00_graphics.txt writes its kinds' icon paths in NGameIcons
+			// loading_screen/common/defines/graphic/00_graphics.txt writes its icon paths in NGameIcons, such as :851
+			// UNIT_STATUS_ICON_PATH
 			DefineGroup: "NGameIcons",
 		},
 		Coat: GameCoat{
 			Folder:    "main_menu/common/coat_of_arms/coat_of_arms",
-			ColorForm: jomini.ColorForm{Tag: jomini.TagHSV360, Example: []float64{360, 100, 100}},
+			ColorForm: jomini.ColorForm{Tag: jomini.TagHSV360, Example: []string{"360", "100", "100"}},
 		},
 		Guide: Guide{
 			Hint:    "The load order decides only files that two mods ship at the same path, and GUI types and templates.",
 			Files:   "A mod's files count only inside its in_game, main_menu or loading_screen folder. A mod's replace_path makes the game skip its own files in that folder, not in its subfolders.",
-			Kept:    "Under common/ the first plain copy stays and mods change it with INJECT: and REPLACE:, which act after every plain copy whatever their file's name, by kind (INJECT_OR_CREATE first, REPLACE last) and then by file name; events keep the first; GUI types and templates follow the load order; coats of arms and defines keep the last.",
+			Kept:    "Under common/ the first plain copy stays and mods change it with INJECT: and REPLACE:, which act after every plain copy whatever their file's name, by mode (INJECT_OR_CREATE first, REPLACE last) and then by file name; events keep the first; GUI types and templates follow the load order; coats of arms and defines keep the last.",
 			Changes: "Only files at the same path and GUI types and templates.",
 		},
 		// in_game/common/traits/00_ruler.txt

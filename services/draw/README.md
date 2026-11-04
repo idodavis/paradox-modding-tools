@@ -1,207 +1,225 @@
 # draw
 
-The package builds what the Visual view shows. It resolves a GUI window into its widgets and a coat of arms into its
-layers, and it produces the text edits the view's panels make.
+[Architecture](../../ARCHITECTURE.md) › [Services](../../ARCHITECTURE.md#the-services) › draw
 
-Go resolves and the browser lays out. A `Window` is a flat list of widgets, each with every property as written, its
-built-in type's row, its texts and its pictures, and the page draws them; no coordinate is computed here. The game's
-inheritance rules are this package's own, read from `game`'s GUI and coat rows. What a file defines, and which
-definition the game keeps, come from the index the file is drawn from (`index.FindWinner`, `index.FindKept`,
-`index.FindLoaded`); what a data call reads and returns comes from the schema; every range is `lsp`'s.
+The draw service builds what the Visual view shows. It resolves a GUI window into its widgets and a coat of arms into
+its layers, and it makes the text edits the view's panels ask for. It also saves pictures as DDS files.
 
-**The index a file is drawn from** (`resolveIndex`). A file of the game is drawn from the game's own index
-(`Session.Install`), so its types, templates, pictures, colors, fonts and texts are the game's, as the game draws it
-with no mod loaded. Any other file is drawn from the mods' index, on top of the game's. Every entry point for a file
-picks its index there.
+Go resolves and the browser lays out. A `Window` is a flat list of widgets, each with its properties as the game reads
+them, its texts and its pictures. The page builds the window as DOM from them (`pages/ide/draw/picture.ts`) and draws a
+coat on a canvas (`coat.ts`), as [the frontend](../../frontend/src/README.md) describes; no coordinate is computed here.
+The game's inheritance rules are this package's, read from `game`'s GUI and coat rows. What a file defines, and which
+definition the game keeps, come from the [index](../../internal/index/README.md). What a data call reads and returns
+comes from the [schema](../../internal/schema/README.md). Every range is the [lsp](../lsp/README.md) service's.
 
-**Each thing sent once.** A window's properties and the textures laid over its widgets are tables on the `Window`
-(`Properties`, `Overlays`); a widget and an overlay hold the positions of their own, as a widget holds its place's.
-A widget's row (`game.WidgetType`) leaves its empty fields out.
+**Uses** [files](../../internal/files/README.md), [game](../../internal/game/README.md),
+[index](../../internal/index/README.md), [jomini](../../internal/jomini/README.md), [loc](../../internal/loc/README.md),
+[schema](../../internal/schema/README.md), [texture](../../internal/texture/README.md), [lsp](../lsp/README.md),
+[workspace](../workspace/README.md) · **Used by** [mcp](../mcp/README.md).
 
-| file | holds |
-|---|---|
-| `gui.go` | the package comment; `Service`; `Property`, `Widget`, `Overlay`, `Missing`, `Window`, `Setting`; `ListDrawables`, `ResolveWindow`; the `resolver` of a window; the edit `EditProperties` |
-| `texts.go` | the text a value in a GUI file shows and the sample text a data call in it shows |
-| `states.go` | `Group`, `Box`, `States`; `EvaluateStates`, `Reveal`; the `opening` and the `evaluator` |
-| `choices.go` | `Choice`, `Row`, `PictureList`, `Picture`; `ListPictures`; the groups of picture lists, the choices between two values, the rows of a data model's list |
-| `textures.go` | the `library` of what definitions show: the image file of a written path, an icon name or a texture binding; the colors of definitions; `ExportPNG` |
-| `coat.go` | `Instance`, `Blend`, `Recolor`, `Shading`, `Layer`, `Coat`, `Image`, `NamedColor`; `ResolveCoat`; `ListColors`, `ListTextures`, `ListFrames`; the edits `AddLayer`, `MoveLayer`, `RemoveBlock`, `AddInstance`; `CreateCoatFile`, `CopyCoat` |
-| `fonts.go` | `Font`: each style of a font a window names, with the file the game reads it from in the session's language |
-| `dds.go` | `PictureFiles`, `DDS`; Save as DDS: `FindPictureFiles`, `WriteDDS` |
+## Which index a file is drawn from
+
+A file of the game is drawn from the game's own index, so its types, templates, pictures, colors, fonts and texts are
+the game's, as the game draws it with no mod loaded. Any other file is drawn from the mods' index, on top of the game's.
+`resolveIndex` makes that choice, and every entry point for a file calls it.
+
+## Windows
+
+```mermaid
+flowchart TD
+  request["ResolveWindow, with a file and a window name"] --> pick["Pick the index the file is drawn from"]
+  pick --> build["Build the widgets from each type chain,<br/>its templates and its own block"]
+  build --> bindings["Resolve each widget's bindings:<br/>texts, pictures, colors and samples"]
+  bindings --> extras["Add the fonts, conditions,<br/>missing types and groups"]
+  extras --> opening[("The opening,<br/>kept by the service")]
+  opening --> window["Window"]
+  opening -->|EvaluateStates, with picks| states["States"]
+```
+
+`ListDrawables` lists what a GUI or coat file defines that the view can draw: a window, a type, a template or a coat,
+nested ones included. The entry the view opens on comes first: the one named as the file, else the first window
+(`game.GUI.ShownFirst`), else the first type or template that draws something. The rest follow in document order.
+
+`ResolveWindow` resolves one window. A widget's properties come from its type's chain, its templates and its own block,
+and the last written of each key wins, keys matching without regard to case. A labeled block is read as written, or as
+the widget's `blockoverride` replaces it. Of several definitions of a type or a template, the one the game keeps wins,
+as it would if the game read the file being drawn. A constant, an expression or a `GetDefine` call is replaced by what
+the game reads.
+
+- A `Property` carries where it is written (`Origin`: widget, template or type), the type or template whose block wrote
+  it (`Writer`), and both in words (`Source`).
+- A type or template that no file defines is a property with the origin `missing`, and `Window.Missing` lists them
+  widget by widget so the page can flag them.
+- A window's `Holders` are the game windows it is laid out in, each its own widget alone.
+- The window's properties and the textures laid over its widgets (`Overlays`) are tables on the `Window`. A widget holds
+  the positions of its own, so each is sent once.
+
+**Opening animations.** A widget opens as it looks once the animation it opens with has run. The states it opens in, and
+those its holders' opening runs on it by name, each give their end values and the calls they run as they start, then
+lead to the state their `next` names and to those their calls run by name (`game.GUI.Animation`). A state that fades the
+widget out and runs calls as it ends takes it off the screen, so it is left out with all that would follow it. Each
+state runs once.
 
 ## Edits, not writes
 
 A method that changes an existing file does not write it. It returns `[]lsp.Edit`, which the editor applies to its own
 model, so there is only ever one copy of the text and undo goes through the editor. Every edit is made against the text
-before any of them. `EditProperties` makes `Setting`s in any blocks, a widget's or a coat's. A `Setting` names its block
-by the range where the block starts, and gives a key and a value. Where the block writes the key, its value is
-replaced. The keys a block does not write are added together as its last statements, in the order given
-(`jomini.Tree.BuildInsertion`). Only `CreateCoatFile` and `CopyCoat` write a script file, since they make a new one;
-`WriteDDS` writes the DDS files it makes, and `ExportPNG` writes a PNG the page made to a file the user chose.
+before any of them.
 
-## Windows
+`EditProperties` makes `Setting`s in any blocks, a widget's or a coat's. A `Setting` names its block by the range where
+the block starts, and gives a key and a value. Where the block writes the key, its value is replaced. The keys a block
+does not write are added together as its last statements, in the order given.
 
-`ListDrawables` lists what a GUI or coat file defines that the view can draw: a window, a type, a template or a coat,
-nested ones included. The entry the view opens on comes first: the one named as the file, else its first window
-(`game.GUI.ShownFirst`), else its first type or template that draws something; the rest follow in document order. A
-window at the top of a file that writes no name is named after its file where it is the file's only keyed block, as the
-walk names it, so the view lists it and `ResolveWindow` finds it by that name.
-
-`ResolveWindow` resolves one window. A widget's properties come from its type's chain, its templates and its own block,
-and the last written of each key wins, keys matching without regard to case. A labeled block is read as written, or as
-the widget's `blockoverride` replaces it, whether either is written `block "x" { }` or `block = "x" { }`
-(`findLead`). A `blockoverride` written inside the block that replaces a labeled block applies too, as the game's files
-write them. Of several definitions of a type or a template, the one the game keeps wins, as it would if the game read
-the file being drawn; a file another file at its path replaces is drawn as if the game read it.
-
-A `Property` carries where it is written (`Origin`: widget, template or type), the type or template whose block wrote
-it (`Writer`), and both in words (`Source`). A type or template no file defines is a property with the origin
-`missing`, and `Window.Missing` lists them widget by widget so the page can flag them. A constant, an expression or a
-`GetDefine` call is replaced by what the game reads. A window's `Holders` are the game windows it is laid out in, each
-its own widget alone. Its `Conditions` are, by widget, the conditions each is shown on, as written, and its `TextFont`
-and `TextSize` the font and size of the game's own type of a text (`game.GUI.Fonts.TextType`), which a text with none
-of its own is drawn in.
-
-**Opening animations** (`resolveOpening`). A widget opens as it looks once the animation it opens with has run. From
-the states it opens in, and those its holders' opening runs on it by name, each state gives its end values and the calls
-it runs as it starts, then leads to the state its `next` names and to those its calls run by name (`TriggerAnimation`
-on the widget, or on a child that `FindChild` finds, which opens with it; `game.GUI.Animation`). A state that fades the
-widget out and runs calls as it ends takes it off the screen, so it is left out with all that would follow it. Each
-state runs once.
+Only `CreateCoatFile` and `CopyCoat` write a script file, since they make a new one. `WriteDDS` writes the DDS files it
+makes, and `ExportPNG` writes a PNG the page made to a file the user chose.
 
 ## Texts and their samples
 
 A widget's `Texts` hold, by property key, the plain text and the data calls of each text it shows. A localization key
 becomes its message's text in the session's language, each `$key$` inside it replaced by its own message's text.
 
-A data call in a text shows sample text of its kind, in place of data the running game would give (`sampleCall`). The
-kind comes from the type the call's last function returns, as the dumps declare it, after the call's macros are
-expanded and its data contexts followed. `game.GUI.CallKinds` maps a type to `number` or `text`:
+A data call in a text shows sample text of its kind, in place of data the running game would give. The kind comes from
+the type the call's last function returns, after the call's macros are expanded and its data contexts followed.
+`game.GUI.CallKinds` maps a type to `number` or `text`.
 
-- A number is digits shaped by the call's format codes. A digit among them is how many decimals it has,
-  `game.GUI.PercentCode` makes it a percent, and `game.GUI.SignCode` shows its plus sign.
-- A call that `game.GUI.DateCalls` knows, a `CString` call whose last function's name ends in `Date` or `DateString`,
-  shows a date in the game's own form (`game.GUI.DateForm`), its month in the session's language.
-- A text is lorem words, as many as the widget's box holds: two or three on one line, a sentence or two where the box
-  has several lines and resizes to fit them, and a paragraph where its size is fixed.
-- A call whose last function the dumps do not declare shows two words of text.
+- A number is digits shaped by the call's format codes: a digit is how many decimals, `game.GUI.PercentCode` makes it a
+  percent and `game.GUI.SignCode` shows its plus sign.
+- A call that `game.GUI.DateCalls` knows shows a date in the game's own form (`game.GUI.DateForm`), its month in the
+  session's language.
+- A text is lorem words: two or three where the widget is not multiline, a sentence or two where it is multiline and
+  resizes to fit, and a paragraph where it is fixed. A call of any other kind shows two words.
 
-The text of the call itself seeds the sample, so the same call always shows the same sample. Each sample's kind,
-number, date or text, is written in its `loc.Segment.Kind`, and the page colors a sample by it. A sample that follows
-text or another sample with no space between them starts with one, since the game's own functions bring their
-spacing; a sample at the start of the text, or after a space or an opening bracket, has none.
+The text of the call seeds the sample, so the same call always shows the same sample. Each sample's kind is written in
+`loc.Segment.Kind`. A sample that follows text with no space between them starts with one, since the game's own
+functions bring their spacing.
 
 ## Pictures
 
-The `library` finds the image file a picture leads to, and keeps what it looks up. A texture written as a path is a
-file under the game's gfx folders. An icon name is looked up in the icon folders that the game's defines name, and in a
-folder's overrides file. A texture binding reads a field of a definition: its last step reads a field of the object the
-step before leads to (`[GovernmentType.GetRealmFrame('(int32)62')]` reads `realm_frame` with the argument 62), or its
-name's first words name a kind of object (`GetConceptTexture('tax_base')` reads the texture of the concept `tax_base`).
-A definition's picture is, in order, the field the binding reads, the file the defines for its kind and field name
-(`<KIND>_<FIELD>_PATH`, `_PREFIX` and `_SUFFIX`, with a folder's `_default`), its picture by the game's picture keys or
-its name as an icon, and the one image it writes. A suffix define the game writes under another stem is read there
-(`game.Game.GUI.SuffixStems`), as CK3 writes its realm mask's. A define is named by its group and key. The defines that
-say where pictures are sit in the game's `GUI.DefineGroup` (CK3's and EU5's `NGameIcons`, as in
-`NGameIcons|TRAIT_ICON_PATH`), and `GetDefine('NGroup', 'KEY')` names both.
+The `library` finds the image file a picture leads to, and keeps what it looks up. A picture is written as a path, an
+icon name or a texture binding.
 
-A mask, a coat of arms' or the widget's own (`game.GUI.MaskKeys`), written as a path or as a binding, is found as a
-picture is, with no placeholder of its own; it is no texture of the widget's, and the page cuts the placeholder to its
-outline.
+- A path is looked up among the files the game reads.
+- An icon name is looked up in the icon folders that the game's defines name, and in a folder's overrides file.
+- A texture binding reads a field of a definition. Its last step reads a field of the object the step before leads to,
+  or its name's first words name a kind of object.
 
-A binding of a kind of level (`game.GUI.Levels`), such as `GetPrestigeLevelTexture`, draws the first file, in name
-order, of the folder that the kind's define names (`PRESTIGE_LEVEL_PATH`) whose name starts with `icon_` and the kind's
-other words (`icon_prestige_`); where the folder has none, it draws its placeholder.
+A definition's picture is, in order, the field the binding reads, the file the defines for its kind and field give (a
+folder, a prefix and a suffix), its picture keys or its name as an icon, and the one image it writes. A binding of a
+kind of level (`game.GUI.Levels`) draws the first file of the folder that the kind's define names whose name starts
+with the level prefix.
+
+A mask, a coat of arms' or the widget's own (`game.GUI.MaskKeys`), is found as a picture is. It is no texture of the
+widget's.
 
 Where a binding names no definition of its kind, the widget draws the first definition that shows a picture, and its
-`Pictures` is a `PictureList` the panel picks among. `ListPictures` lists the pictures a list may draw. The images one
-definition writes are its image paths, each as written or below the folder that its folder key names, else the game's
-illustrations folder (`game.Game.GUI.Illustrations`); those written in a block with a trigger come last.
+`Pictures` is a `PictureList` that the panel picks among. `ListPictures` lists the pictures a list may draw.
 
-**Placeholders.** A picture that leads to no file draws a shape by what it is of. `describePicture` writes a phrase of
-the picture's key, the object its binding reads and the step without its getter (`Location.GetRankIcon` under
-`texture` is "texture location rank icon"), or the path's folders and name for a picture written as a path.
-`game.Game.FindPlaceholder` picks the first placeholder, the game's own first, one of whose kinds the phrase holds as
-whole words, and the plain icon where none does. A placeholder that only the running game can fill, such as a portrait
-or a coat of arms, looks for no file at all. A background, which only dresses its holder, gets none. The widget's
-`Placeholder` is the shape's name, and the page tints it.
+**Placeholders.** A picture that leads to no file draws a shape by what it is of. `describePicture` writes a phrase from
+the picture's key, the object its binding reads and the step without its getter, or from the path's folders and name.
+`game.Game.FindPlaceholder` picks the first placeholder one of whose kinds the phrase holds as whole words, else the
+plain icon. A placeholder that only the running game can fill, such as a portrait or a coat of arms, looks for no file
+at all, and a background, which only dresses its holder, gets none. The widget's `Placeholder` is the shape's name.
 
-## Colors from definitions
+## Colors and rows from definitions
 
-A binding whose last function returns a color (`game.GUI.ColorType`) gets the color of a definition (`findColor`). It
-is the color that the field the binding reads (`GetColor` reads `color`) writes in the definition the binding names, or
-else in the first definition of its kind that writes one, looked for once per window and kind, and only where the
-game's own definitions write the field. A binding that names a definition of its kind never takes another's color. The
-field is a color block, or the name of a definition that is one, such as a named color. The widget's `Colors` hold the
-CSS color by property key. When a picture group picks a definition of a kind, the bindings of that kind's color take
-the picked definition's color too (`pickColors`).
+A binding whose last function returns a color (`game.GUI.ColorType`) gets the color of a definition. It is the color
+that the field the binding reads writes in the definition the binding names, else in the first definition of its
+database that writes one. The field is a color block, or the name of a definition that is one. The widget's `Colors`
+hold the CSS color by property key.
 
-**Rows from definitions.** A data model's list that reads a database draws one `Row` for each of the database's first
-definitions, in load order and each name once, as many as the workspace's "Rows per list" setting (`draw.rows`) says,
-the same count the page draws a list's sample rows by. `ResolveWindow` finds them once per window (`Window.Rows`), so
-a state change does not list them again. The database is that of the first binding among the item's widgets that
-reads its object as an element (`readsElement`): the binding starts at a data type that no data context of the window
-reaches, as `[Trait.GetIcon]` does inside a list of traits. Each row gives the widgets that read the database the
-pictures and colors of its definition, and their texts keep their samples. A list whose item reads no database draws
-the page's sample rows.
+A data model's list that reads a database draws one `Row` for each of the database's first definitions, each name once
+in load order, as many as the workspace's "Rows per list" setting (`draw.rows`) says. `ResolveWindow` finds them once
+per window (`Window.Rows`), so a change of states does not list them again. Each row gives the widgets that read the
+database the pictures and colors of its definition. A list whose item reads no database draws the page's sample rows.
 
 ## States
 
-`EvaluateStates` works out which widgets of a window are hidden, and `Reveal` which picks make a hidden widget show. A
-`Group` is one choice the panel lets the user switch: a data call the window's conditions read, a coat's template
-list, or a list of pictures. Its value is a pick, the value chosen for its id; `*every` stands for every value at once
-and `none` for none. The `evaluator` reads every boolean data function the dumps declare, any arity, through And, Or,
-Not and Nor. A call that reads the object of a data context is written from the window down to that object, so the
-same call about two objects is two groups.
+`EvaluateStates` works out which widgets of a window are hidden, and `Reveal` which picks make a hidden widget show.
 
-Each of a window's groups carries how the panel writes its options (`Captions`): the text of the widget whose press
-sets an option, All or None for `*every` and `none`, else the value as a GUI file writes it, begun with a capital. Its
-`Box` is the box of the States tab it starts in (`chooseBox`): the rows of the list whose item alone reads it, the
-window's own where a press of one of its widgets sets it, what an object has where it asks whether that object exists,
-else its object's.
+A `Group` is one choice the panel lets the user switch: a data call the window's conditions read, a list of pictures, a
+title's tier, or a coat's template list. A pick is the value chosen for a group, by its ID; `*every` stands for every
+value at once and `none` for none. The `evaluator` works out a condition through And, Or, Not and Nor of any number of
+operands. A call that reads the object of a data context is written from the window down to that object, so the same
+call about two objects is two groups.
+
+Each group carries how the panel writes its options (`Captions`): the text of the widget whose press sets an option,
+All or None for `*every` and `none`, else the value as a GUI file writes it. Its `Box` is the box of the States tab it
+starts in.
 
 **Once per window.** The service keeps the window it resolved last as an `opening`: its index, file and name, its
-evaluator at the values it opens with, its groups classified, and the library that found its pictures, whose lookups
-later picks reuse. Each call that reads the kept window holds the service's lock. `ResolveWindow` always resolves anew
-and replaces it; a change of states starts from it (`applyPicks`) and resolves the window again only where its index,
-its file, its name or the rows setting differs. A group's fixed fields are the `Window`'s (`Groups`), and `States`
-carries what the picks change: each group's value (`Values`), the hidden widgets, what each group decides and the
-choices.
+evaluator at the values it opens with, its groups, and the library whose lookups later picks reuse. Each call that reads
+the kept window holds the service's lock. `ResolveWindow` always resolves anew and replaces it. A change of states
+starts from it, and resolves the window again only where its index, file, name or the rows setting differs. `States`
+carries what the picks change: each group's value, the hidden widgets, what each group decides and the `Choice`s.
 
-**Data models' sizes** (`computeFact`). As the window opens, each data model's list draws "Rows per list" rows, so
-`GetDataModelSize` is that number, `IsDataModelEmpty` is false, and a comparison of numbers (`game.GUI.Comparisons`) is
-worked out from them. Such a fact is no group.
+**How a window opens.** Every group is at `none`, except what holds as a window opens (`holdsOnOpening`), which is at
+every value: an object exists or a list has items (`game.GUI.OpeningFacts`), and the facts of the sample the window is
+drawn for (`game.GUI.SampleFacts`). Then come the values its opening states' calls set, and the first widget of each
+strip of tabs pressed. A press runs the widget's clicks: a call such as `SelectTab('x')` selects `x` of the group on the
+same object, and a call to the GUI's variable system sets, clears or toggles a variable.
 
-A window opens with every group at none, except what holds as a window opens (`holdsOnOpening`) at every value, however
-far the object is reached: an object exists or a list has items (`game.GUI.OpeningFacts`), and the facts of the sample
-(`game.GUI.SampleFacts`), the player's own living, landed ruler as in the owner's `character-window.png`, who shows
-their legitimacy and sits on a council they may change as in `council-window.png`. A name joins the sample only where a
-screenshot shows that it holds. A call that reaches an object the sample lacks (`game.GUI.SampleAbsent`) holds none of
-these. A test of what the window shows holds and the test of its absence fails, so the two arms of a yes/no pair
-never draw together. Then what its opening states' calls set, and the first widget of each strip of tabs pressed. A
-`DataModelHasItems` call (`game.GUI.ModelHas`) is worked out from the rows, as `IsDataModelEmpty` is. A press runs the
-widget's clicks: a call such as `SelectTab('x')` selects `x` of the group on the same object, and a call to the GUI's
-variable system sets, clears or toggles a variable. A property written as a choice between two values, a function named
-with `game.GUI.SelectPrefix` such as `Select_float(cond, a, b)`, takes the value its condition gives, as a `Choice`.
+A data model's size as the window opens is the "Rows per list" count, so `GetDataModelSize` is that number and
+`IsDataModelEmpty` is false (`computeFact`). Such a fact is no group.
 
-**The variable query.** `game.GUI.Variables` names the functions of the GUI's own variable system, each taking the
-variable's name first, and a variable's name stays part of its group. `UnsetOrValue`, EU5's
-`NotExistOrHasValue('x', 'v')`, holds while a variable is unset or set to the given value. `expandVariableQuery`
-reads it as `Or(Not(Exists('x')), HasValue('x', 'v'))`, so it asks the same two groups that `Exists` and `HasValue` ask.
+A property written as a choice between two values, a function named with `game.GUI.SelectPrefix` such as
+`Select_float(cond, a, b)`, takes the value its condition gives, as a `Choice`.
 
-**Tiers.** Where the game draws a title's tier from a sheet of cells (`game.Game.GUI.Tiers`, CK3's `GetTierFrame`),
-each call of that function is a group whose options are the game's tiers, with the widgets that write it as its
-readers (`listTierGroups`). A tier picked gives each reader's property its cell, counted from one (`pickTiers`).
+**Tiers.** Where the game draws a title's tier from a sheet of cells (`game.Game.GUI.Tiers`), each call of that function
+is a group whose options are the game's tiers, with the widgets that write it as its readers. A tier picked gives each
+reader's property its cell, counted from one.
 
 ## Coats of arms
 
-`ResolveCoat` resolves a coat into its layers on its field, from the `game.Coat` rows: the pattern, each emblem and each
-sub-coat, a parent coat's statements under the coat's own. A `Layer` carries its texture's file, its colors as CSS with
-their names, how the game recolors its texture (`Recolor`), its mask and regions, and its `Instance`s, each a placement
-with the game's defaults where the file sets none and its rank in the order the coat draws them. A value drawn from a
-template list draws the option picked for that list, else its heaviest option. The `Coat` carries its field's size,
-the game's `Shading` and its color slots. `ListColors`, `ListTextures` and `ListFrames` give the panel the named colors,
-the textures of a role and the designer's frames.
+```mermaid
+flowchart TD
+  coat["The coat asked for"] -->|written as another coat's name| named["The coat it names"]
+  coat --> fields["Its statements, a parent coat's first"]
+  named --> fields
+  fields --> pattern["The pattern"]
+  fields --> emblems["Each emblem"]
+  fields --> subs["Each sub-coat, resolved the same way"]
+  pattern --> layers["Layers: texture file, colors,<br/>recolor and instances"]
+  emblems --> layers
+  subs --> layers
+  layers --> rank["Rank the instances by depth"]
+  rank --> result["Coat, with its field size and shading"]
+```
+
+`ResolveCoat` resolves a coat into its layers on its field, from the `game.Coat` rows. A parent coat's statements come
+before the coat's own, without the parent's instances, and without its emblems where the coat writes emblems of its own.
+
+- A `Layer` carries its texture's file, its colors as CSS with their names, how the game recolors its texture
+  (`Recolor`), its mask and regions, and its `Instance`s.
+- An `Instance` is one placement, with the game's defaults where the file sets none. Its `Rank` is its place among every
+  instance of the coat in the order they draw: a larger depth is further back, and equal depths keep the order written.
+- A value drawn from a template list draws the option picked for that list, else its heaviest option.
+- The `Coat` carries its field's size, the game's `Shading` and its color slots.
+
+`ListColors`, `ListTextures` and `ListFrames` give the panel the named colors, the textures of a role and the designer's
+frames. `AddLayer`, `MoveLayer`, `RemoveBlock` and `AddInstance` make the layer edits. `CreateCoatFile` starts a coat
+file in a mod, and `CopyCoat` copies a coat into one.
+
+## Fonts and Save as DDS
+
+A `Font` is one style of a font a window's texts are written in, with the file the game reads it from in the session's
+language, else the base language, else the font's first group.
+
+`FindPictureFiles` finds the pictures Save as DDS saves for a path: the picture, or the images directly in a folder that
+are not DDS files. Each keeps the settings of the DDS beside it, else of the game's own DDS at the place its DDS will
+have. `WriteDDS` writes each picture beside itself as a DDS, compressed or not, with or without mip levels.
+
+## Files
+
+| file | what it holds |
+|---|---|
+| `gui.go` | The service, the `Window` and its parts, listing what a file draws, resolving a window, property edits. |
+| `texts.go` | The text a value in a GUI file shows, and the sample text a data call in it shows. |
+| `states.go` | Groups, picks and the evaluator: which widgets the picks hide and which picks show a hidden widget. |
+| `choices.go` | The values the picks give properties, the pictures a list may draw, and a data model's rows. |
+| `textures.go` | The library of what definitions show: image files, icons, texture bindings and colors. |
+| `coat.go` | Resolving a coat into layers, and the coat panel's edits and new files. |
+| `fonts.go` | The files of the fonts a window names. |
+| `dds.go` | Save as DDS. |
 
 ## Terms
 

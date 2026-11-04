@@ -7,10 +7,11 @@ import { computed, onScopeDispose, shallowRef, watch } from "vue";
 import { useRoute } from "vue-router";
 
 import * as app from "@services/app/service";
+import type { Release } from "@services/app/models";
 import type { Progress } from "@services/wiki/models";
 import * as wikiApi from "@services/wiki/service";
 import type { Scanning } from "@services/workspace/models";
-import { copyText } from "../lib/feedback";
+import { confirm, copyText } from "../lib/feedback";
 import { day, installLine } from "../lib/format";
 import { crashedQuery, levelsQuery, releasesQuery, stateQuery, updateQuery, versionQuery } from "../queries";
 import { useAgentStore } from "../stores/agent";
@@ -42,6 +43,20 @@ const terms = computed(() => [
   ...(levels.value ?? []).map((level) => ({ term: level.id, meaning: level.cost })),
 ]);
 const { mutate: applyUpdate } = useMutation({ mutation: () => app.ApplyUpdate() });
+const { mutate: installRelease } = useMutation({ mutation: (target: string) => app.InstallRelease(target) });
+
+/** installOlder asks before it installs an older release, as PMT restarts into it. */
+async function installOlder(release: Release): Promise<void> {
+  const target = release.version;
+  const confirmed = await confirm.open({
+    title: `Install ${target}?`,
+    body:
+      `PMT restarts into ${target}. Your settings and workspaces stay. If ${target} cannot read them, it starts empty ` +
+      `and leaves them alone until you update again. Update passes ${version.value} by until a newer version is out.`,
+    confirm: `Install ${target}`,
+  });
+  if (confirmed) installRelease(target);
+}
 const { mutate: copyDiagnostics } = useMutation({
   mutation: async () =>
     copyText(await app.BuildDiagnostics(), "Diagnostics", "Paste them into a bug report on GitHub."),
@@ -210,9 +225,20 @@ const ITEM = "flex h-6 items-center gap-1.25 hover:text-highlighted";
       <template #body>
         <div class="flex flex-col gap-5">
           <section v-for="release in releases ?? []" :key="release.version" class="flex flex-col gap-1.5">
-            <h3 class="text-13 font-semibold text-highlighted">
-              {{ release.version }} <span class="font-normal text-dimmed">{{ day(release.date) }}</span>
-            </h3>
+            <div class="flex items-center gap-2">
+              <h3 class="text-13 font-semibold text-highlighted">
+                {{ release.version }} <span class="font-normal text-dimmed">{{ day(release.date) }}</span>
+              </h3>
+              <UBadge v-if="release.running" label="Running" color="primary" variant="subtle" size="sm" />
+              <UButton
+                v-else-if="release.older"
+                label="Install this version"
+                size="xs"
+                variant="soft"
+                class="ml-auto"
+                @click="installOlder(release)"
+              />
+            </div>
             <UEditor :model-value="release.notes" content-type="markdown" :editable="false" :mention="false" />
           </section>
         </div>

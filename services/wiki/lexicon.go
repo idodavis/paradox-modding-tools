@@ -1,4 +1,4 @@
-// lexicon.go builds the lexicon of a class of script commands, each with example uses.
+// lexicon.go builds the lexicon of a class of script commands, each with places the game's files write it.
 
 package wiki
 
@@ -19,7 +19,8 @@ import (
 )
 
 // A LexiconRow is one effect, trigger, link, scope or data function the game's dumps declare, or one scripted effect or
-// trigger. It carries example uses from the index.
+// trigger. Its examples are the first places the game's own files write it, as the schema keeps them. A scripted row's
+// are the first uses the index finds.
 type LexiconRow struct {
 	Class    string     `json:"class"` // effect, trigger, link, scope, function
 	Name     string     `json:"name"`

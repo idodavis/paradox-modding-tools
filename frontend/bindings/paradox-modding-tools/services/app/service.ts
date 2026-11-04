@@ -55,9 +55,19 @@ export function CrashedLastRun(): $CancellablePromise<boolean> {
 }
 
 /**
- * ListReleases returns the app's published releases from the newest down to the one running, each with its notes. A
- * build that is no release, such as a dev build, gets the newest only. It returns an error if GitHub cannot be reached
- * or answers with an error.
+ * InstallRelease installs the release with the given version, newer or older than the one running, and restarts into
+ * it. Going back to an older one skips the version running until a newer one is out. It returns an error if the
+ * version is the one running, has no file for this platform or no line in SHA256SUMS, or cannot be downloaded or
+ * verified.
+ */
+export function InstallRelease(version: string): $CancellablePromise<void> {
+    return $Call.ByID(1927212819, version);
+}
+
+/**
+ * ListReleases returns every published release, the newest first, each with its notes. A build that is no release,
+ * such as a dev build, gets the newest only. It returns an error if GitHub cannot be reached or answers with an
+ * error.
  */
 export function ListReleases(): $CancellablePromise<$models.Release[] | null> {
     return $Call.ByID(449327985);

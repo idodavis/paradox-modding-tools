@@ -121,10 +121,12 @@ tasks:
       EU5. A gate skips under -short and again when its game's variable is
       unset, so these variables are what turn the tier on. Set
       PMT_TEST_INSTALL_{CK3,VIC3,EU5} to the three game roots; the console
-      dumps are read from each game's Documents folder.
+      dumps are read from each game's Documents folder. PKGS limits the run
+      to some packages (PKGS="./internal/schema/... ./services/lsp"), and
+      PMT_TEST_ENCODE turns on texture's encoding of every picture.
     cmds:
       # not 60s: each gate here scans three real installs
-      - go test -count=1 -timeout 1800s ./...
+      - go test -count=1 -timeout 1800s {{.PKGS | default "./..."}}
 
   test:sweep:
     summary: >

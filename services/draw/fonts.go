@@ -36,7 +36,7 @@ func findFonts(ws *workspace.Session, mods *index.Index, window *Window) []Font 
 		}
 		for _, style := range listChildren(definition) {
 			key, _, _ := splitField(style)
-			words, _ := style.tree.FindChildValue(style.statement, rules.StyleWords)
+			words, _ := style.tree.FindChildValue(style.statement, rules.StyleValueKey)
 			files, _ := style.tree.FindChildValue(style.statement, rules.FilesKey)
 			if path := findFontFile(ws, mods, files); key == rules.StyleKey && path != "" {
 				fonts = append(fonts, Font{Name: label, Style: words, Path: path})

@@ -1,6 +1,5 @@
-// Package schema models the language of one game version: which databases exist, what each key takes and which
-// commands run in which scope. It builds the model from the dumps, the docs and the game's own files, and it owns the
-// one walk over a file that every reader of script is a visitor on.
+// Package schema models the language of one game version, built from its dumps, docs and own files. It owns the one
+// walk over a file that every reader of script is a visitor on.
 package schema
 
 import (
@@ -18,7 +17,7 @@ import (
 	"paradox-modding-tools/internal/jomini"
 )
 
-// A Claim is one fact about a field as its best source states it.
+// A Claim is one fact about a field, as its best source states it.
 type Claim[T any] struct {
 	Value  T
 	Source game.Source // game.SourceNone when no source states it
@@ -27,7 +26,7 @@ type Claim[T any] struct {
 // IsStated reports whether any source states the claim.
 func (claim Claim[T]) IsStated() bool { return claim.Source != game.SourceNone }
 
-// A ValueType says what kind of value a field takes.
+// A ValueType is the type of value a field takes.
 type ValueType string
 
 // The types a field's value can have.
@@ -51,8 +50,8 @@ type Expected struct {
 	Database string    `json:"database,omitempty"`
 	Scope    string    `json:"scope,omitempty"` // the scope a target's link leads to
 	Choices  []string  `json:"choices,omitempty"`
-	Values   bool      `json:"values,omitempty"` // a number written as a script value too, as a docs' type term says
-	Nested   bool      `json:"nested,omitempty"` // a name of a database nested in Database too, as a language's dialect
+	Values   bool      `json:"values,omitempty"` // a number that may be a script value too
+	Nested   bool      `json:"nested,omitempty"` // a name of a database nested in Database too
 }
 
 // Vanilla is what the game's own files write at a field.
@@ -61,9 +60,9 @@ type Vanilla struct {
 	Blocks      int            // how many of those writes are a block
 	Colors      int            // how many of those blocks are a color
 	Definitions int            // how many plain definitions of its database write it
-	Values      map[string]int // each value written, with its count
-	Shapes      map[string]int // each shape a key written directly in its blocks tells, with its count
-	Proofs      map[string]int // each set of shapes a call in its blocks allows, joined by spaces, with its count
+	Values      map[string]int // the count of each value written
+	Shapes      map[string]int // the count of each shape that a key written directly in its blocks tells
+	Proofs      map[string]int // the count of each set of shapes that a call in its blocks allows, joined by spaces
 }
 
 // Claims holds every fact the sources state about one field.
@@ -73,7 +72,7 @@ type Claims struct {
 	Required Claim[string] // optional, always or conditional
 	Default  Claim[string]
 	Blurb    Claim[string]
-	Keys     Claim[string] // the database whose definitions its block's keys name, as a culture's opinions name cultures
+	Keys     Claim[string] // the database that its block's keys name
 }
 
 // A Field is one key that may be written in a definition, with what it takes and the fields that may be written
@@ -81,39 +80,41 @@ type Claims struct {
 type Field struct {
 	Children map[string]*Field // by written key, or by a pattern such as <number> or <any>
 	Claims
-	Source  game.Source // the highest-ranked declared source that writes the field; SourceNone for none
+	Source  game.Source // the highest-ranked declared source that writes the field; SourceNone if none
 	Vanilla Vanilla
 }
 
 // A Command is one effect, trigger or link the dumps declare.
 type Command struct {
 	Declared []string // what declares it: game.DeclaredEffect, DeclaredTrigger, DeclaredLink, in dump order
-	Scopes   []string // the scopes the dumps say it runs in; empty where they name none
+	Scopes   []string // the scopes the dumps say it runs in; empty if they name none
 	Target   string   // the scope a link leads to; "" for none
-	// Arguments are the keys it takes, as fields, by the word that declares it: an effect and a trigger of one name
-	// each take their own.
+	// Arguments are the keys it takes, as fields, by declaration: an effect and a trigger of one name each take their
+	// own.
 	Arguments map[string]*Field
-	// ArgumentKey is the first key of the first block form its usage writes, which the argument in parentheses after
-	// its name stands for, as the court position of aptitude(court_jester_court_position) does. It is "" where its
-	// usage writes none.
+	// Union is the keys of its effect and its trigger together, which it takes in a block that allows either. It is
+	// nil unless the dumps declare it as both.
+	Union *Field
+	// ArgumentKey is the key that the argument in parentheses after its name stands for, as in
+	// aptitude(court_jester_court_position); "" if none.
 	ArgumentKey string
 	Blurb       string
-	Usage       string    // the dump's usage lines, which show how it is written; "" if the dump gives none
+	Usage       string    // the dump's usage lines; "" if none
 	Examples    []Example // the first places the game's own files write it, by path and then line
 	Wild        bool      // a link that is a pattern, so it is never matched by a written name
-	Bare        bool      // a link the dumps let script write as its name alone, not only as name:data
+	Bare        bool      // a link that script may write as its name alone, not only as name:data
 	Lists       bool      // it iterates a list and has no target, so the scope inside its block is unknown
 	Patterned   bool      // some pattern lists it
 }
 
-// ArgumentsOf returns the keys a command takes where it is declared as the given word, or as its first word where the
-// dumps do not declare it as the given one. It returns nil if it takes none there.
+// ArgumentsOf returns the keys a command takes under the given declaration, or under its first one if the dumps do not
+// declare it as the given one. It returns nil if it takes none there.
 func (command *Command) ArgumentsOf(declaration string) *Field {
 	return command.Arguments[command.resolveDeclaration(declaration)]
 }
 
-// resolveDeclaration returns the given word if the dumps declare the command as it or declare it as nothing, else the
-// first word they declare it as.
+// resolveDeclaration returns the given declaration if the dumps declare the command as it or as nothing, else the first
+// one they declare it as.
 func (command *Command) resolveDeclaration(declaration string) string {
 	if slices.Contains(command.Declared, declaration) || len(command.Declared) == 0 {
 		return declaration
@@ -121,19 +122,19 @@ func (command *Command) resolveDeclaration(declaration string) string {
 	return command.Declared[0]
 }
 
-// An Example is one place where the game's own files write a command or call a data function: the file's path and
-// the line, counted from zero.
+// An Example is one place where the game's own files write a command or call a data function. Its line counts from
+// zero.
 type Example struct {
 	Path string
 	Line int
 }
 
 // A CommandPattern is a family of commands that the dumps declare once for each definition of a database, as
-// has_relation_* is for the scripted relations. The name of a definition stands in the place of the star.
+// has_relation_* is for the scripted relations.
 type CommandPattern struct {
 	Key      string   // the commands' name with a star in the place of a definition's name
 	Database string   // the database whose definitions' names fill the star
-	Commands []string // the commands the dumps declare by it, one for each definition, sorted
+	Commands []string // the commands the dumps declare by it, sorted
 }
 
 // A Database is one database of the game: the field tree of its definitions and the game's rows that govern it.
@@ -142,13 +143,13 @@ type Database struct {
 	Nested     []string // the databases whose definitions are keys inside its own
 	Definition *Field
 	Row        game.Database   // where its definitions are written and how each is named
-	Callable   game.Callable   // the words that call its definitions; zero when nothing calls them
+	Callable   game.Callable   // what calls its definitions; zero if nothing does
 	Precedence game.Precedence // how several definitions of one name combine
 	Documented map[string]bool // every key the docs mention for its definitions
-	Readme     string          // the game doc its blurb was read from, else the first that describes all of it; "" if none
+	Readme     string          // the game doc its blurb was read from, else the first that describes it all; "" if none
 }
 
-// A ScopeType is one kind of scope the game runs script in, and what script can do there.
+// A ScopeType is one type of scope the game runs script in, and what script can do there.
 type ScopeType struct {
 	Name     string
 	Triggers bool
@@ -161,8 +162,7 @@ type DataFunction struct {
 	Returns   string
 	Arguments []string
 	Blurb     string
-	// Expansion is the text of a data binding macro. It is "" for a function the game has itself.
-	Expansion string
+	Expansion string    // the text of a data binding macro; "" for a function the game has itself
 	Promote   bool      // the dumps define it as a promote, which leads to an object of its type rather than a value
 	Examples  []Example // the first places the game's own files call it, by path and then line
 }
@@ -190,7 +190,7 @@ type OnAction struct {
 // takes.
 type ScriptedDefinition struct {
 	Database   string
-	Parameters *Field            // nil when the database's definitions take no parameters
+	Parameters *Field            // nil if the database's definitions take no parameters
 	Saves      map[string]string // by parameter: the link its body saves the argument's name under, such as scope
 	relays     []relay           // the parameters its body passes on to calls of other scripted definitions
 }
@@ -202,8 +202,7 @@ type relay struct {
 	Parameter string // the parameter of the body that the argument writes
 }
 
-// modScripted is what the files of the workspace's mods declare: each file's declarer, and the scripted
-// definitions and the modifier types of all of them together.
+// modScripted is what the files of the workspace's mods declare, by file and all together.
 type modScripted struct {
 	byFile    map[string]*declarer          // by a file's key
 	all       map[string]ScriptedDefinition // as ScriptedDefinitions holds them
@@ -221,7 +220,7 @@ type SourceState struct {
 // A Schema is the language of one game version, as built from the dumps, the docs and the game's own files.
 type Schema struct {
 	Game      string
-	Version   string // the install's version; Build leaves it "", as only the install's record may know it
+	Version   string // the install's version; Build leaves it ""
 	Dumps     SourceState
 	Databases map[string]*Database
 	// Setups holds the folders that the game's bookmarks name for their start setups, without the stage folder. A game
@@ -231,13 +230,13 @@ type Schema struct {
 	Commands map[string]*Command
 	Scopes   map[string]ScopeType
 	Saved    map[string]bool // scope names the game saves from code
-	// Customs are the customizable localizations the dumps name, which the game has though its files may define none.
+	// Customs are the customizable localizations the dumps name, though the game's files may define none.
 	Customs             map[string]bool
 	Modifiers           map[string]Modifier
 	OnActions           map[string]OnAction
 	DataTypes           map[string]DataType
 	Prefixes            map[string]string // by link prefix: the database its names are in; "" for none
-	TypeDatabases       map[string]string // by the words of a data type: the database of its names; "" where several are
+	TypeDatabases       map[string]string // by the phrase of a data type: the database of its names; "" if several
 	InlineDatabases     map[string]string // by a key that declares a definition inline in an events file: its database
 	ModifierFields      map[string]*Field // by modifier type the game defines: what its name takes in a modifiers block
 	ScriptedDefinitions map[string]ScriptedDefinition
@@ -245,20 +244,19 @@ type Schema struct {
 	// UnlistedCalls holds the data call steps that no dump declares for the type before them, though the game's own
 	// localization and GUI text write them. A key is Type.step.
 	UnlistedCalls map[string]bool
-	// CommandPatterns holds the patterns the dumps name commands by, one for each database that makes one, sorted by
-	// key and database.
+	// CommandPatterns holds the patterns the dumps name commands by, sorted by key and database.
 	CommandPatterns []CommandPattern
-	// TopFolders holds the first folder of each of the game's files in lower case, without the stage folder. These are
-	// the folders under which the game reads a mod's files.
+	// TopFolders holds the first folder of each of the game's files in lower case, without the stage folder: the
+	// folders under which the game reads a mod's files.
 	TopFolders    map[string]bool
-	Lists         string   // the database of scripted lists, or "" if the game has none
-	Events        string   // the database of events, or "" if the game has none
-	Messages      string   // the database of the messages an effect sends the player, or "" if the game has none
-	Concepts      string   // the database of game concepts, or "" if the game has none
-	ModifierTypes string   // the database of modifier types, or "" if the game has none
-	Effects       string   // the database of scripted effects, or "" if the game has none
-	Values        string   // the database of script values: the callable whose definitions hold a value; "" if none
-	FireDatabases []string // the databases that are fired: those whose row holds a game.FireContents word
+	Lists         string   // the database of scripted lists; "" if none
+	Events        string   // the database of events; "" if none
+	Messages      string   // the database of the messages an effect sends the player; "" if none
+	Concepts      string   // the database of game concepts; "" if none
+	ModifierTypes string   // the database of modifier types; "" if none
+	Effects       string   // the database of scripted effects; "" if none
+	Values        string   // the database of script values; "" if none
+	FireDatabases []string // the databases that are fired: those whose row's contents are one of game.FireContents
 	// mods is the mods' scripted definitions, which a call finds after the game's. No cache keeps them, and a rescan
 	// puts a new table in place.
 	mods atomic.Pointer[modScripted]
@@ -302,8 +300,7 @@ func Build(row *game.Game, installPath string, listing []files.File, parse func(
 	}
 	schema.Setups = listSetups(row, listing, parse)
 	folders := listFolders(row, listing)
-	// Dumps first, then docs, then the game's own files. Last, a blurb the docs give a key is shared with the same key
-	// elsewhere in its database.
+	// the count reads the unions as every later walk does, so they are built before it and again after
 	schema.buildDatabases(row, folders)
 	if err := schema.buildDumps(row, installPath); err != nil {
 		return nil, err
@@ -311,9 +308,11 @@ func Build(row *game.Game, installPath string, listing []files.File, parse func(
 	if err := schema.buildDocs(installPath, listing, folders); err != nil {
 		return nil, err
 	}
+	schema.buildUnions()
 	if err := schema.CountVanilla(listing, parse); err != nil {
 		return nil, err
 	}
+	schema.buildUnions()
 	schema.buildDocBlurbs()
 	return schema, nil
 }
@@ -452,7 +451,7 @@ func (schema *Schema) buildDatabase(row *game.Game, label string, rule game.Data
 	if rule.Target != "" {
 		return
 	}
-	// Where two databases have the same words, the one named exactly by them keeps them, and otherwise neither does.
+	// of two databases with the same phrase, the one named exactly by it keeps it, else neither
 	phrase := game.DescribeDefinition(label, false)
 	owner := label
 	if earlier, ok := schema.TypeDatabases[phrase]; ok && !isNamedExactly(label, phrase) {
@@ -464,13 +463,13 @@ func (schema *Schema) buildDatabase(row *game.Game, label string, rule game.Data
 	schema.TypeDatabases[phrase] = owner
 }
 
-// isNamedExactly reports whether a database's name is the given words of a data type, with an underscore for each
-// space. The database institution is named exactly by "institution", and setup/1337.institution is not.
+// isNamedExactly reports whether a database's name is the given phrase with underscores. The database institution is
+// named exactly by "institution", and setup/1337.institution is not.
 func isNamedExactly(label, phrase string) bool {
 	return label == strings.ReplaceAll(phrase, " ", "_")
 }
 
-// listCallees fills Callees: for each word a call is written with, the databases whose definitions it can call.
+// listCallees fills Callees: for each caller, the databases whose definitions it can call.
 func (schema *Schema) listCallees() {
 	for label, callable := range game.Callables {
 		if schema.Databases[label] == nil {
@@ -485,8 +484,8 @@ func (schema *Schema) listCallees() {
 	}
 }
 
-// FindDatabase returns the database that a file belongs to, going by its relative path and the game's folder
-// rules. It returns false if no database claims the file.
+// FindDatabase returns the database that a file belongs to, going by its relative path and the game's folder rules. It
+// returns false if no database claims the file.
 func (schema *Schema) FindDatabase(rel string) (*Database, bool) {
 	_, rel = game.LookupGame(schema.Game).SplitStage(rel)
 	for folder := rel; folder != "."; folder = path.Dir(folder) {
@@ -497,8 +496,8 @@ func (schema *Schema) FindDatabase(rel string) (*Database, bool) {
 	return nil, false
 }
 
-// FindDatabaseByClass returns the database that a class in the dumps refers to, such as CTraitDatabase or
-// CDecisionTypeDatabase. It returns false if there is no such database.
+// FindDatabaseByClass returns the database that a class in the dumps refers to, such as CTraitDatabase. It returns
+// false if there is none.
 func (schema *Schema) FindDatabaseByClass(class string) (*Database, bool) {
 	words := strings.TrimPrefix(class, "C")
 	if lower := strings.ToLower(words); strings.HasSuffix(lower, "database") {
@@ -523,7 +522,7 @@ func (schema *Schema) FindCommand(key string) (*Command, bool) {
 }
 
 // findKeyCall parses a key written as a command's name with one argument in parentheses, such as
-// squared_distance(root). It returns the call's step and the command. The step's spans are offsets in the file, where
+// squared_distance(root), and returns the call's step and the command. The step's spans are offsets in the file, where
 // the key starts at the given offset. It returns false for any other key, and when the name is no command.
 func (schema *Schema) findKeyCall(key string, start int) (jomini.Step, *Command, bool) {
 	if !strings.HasSuffix(key, ")") {
@@ -548,8 +547,8 @@ func (schema *Schema) findStatementCall(tree *jomini.Tree, statement int32) (jom
 	return schema.findKeyCall(tree.Text(span), span.Start)
 }
 
-// findCallee returns the name a statement's key calls: the command's name where the key writes a call with an argument
-// in parentheses, else the unquoted key.
+// findCallee returns the name a statement's key calls: the command's name for a key with an argument in parentheses,
+// else the unquoted key.
 func (schema *Schema) findCallee(tree *jomini.Tree, statement int32) string {
 	if step, _, ok := schema.findStatementCall(tree, statement); ok {
 		return step.Text
@@ -567,10 +566,9 @@ func (pattern CommandPattern) findStar(key string) (start, end int, fits bool) {
 		strings.HasSuffix(key, suffix)
 }
 
-// findPatterns returns the command patterns that make a key, or none if no pattern does. A key the dumps declare as a
-// command is made by the patterns that list it. Any other key is made by the fitting pattern with the shortest text in
-// its star. If several fit equally, the first key in the table's order wins, and every database's pattern with that
-// key makes it.
+// findPatterns returns the command patterns that make a key, or none. A command the dumps declare is made by the
+// patterns that list it, and any other key by the fitting pattern with the shortest star, the first on a tie, in
+// every database that has it.
 func (schema *Schema) findPatterns(key string) []CommandPattern {
 	key = strings.ToLower(key)
 	command := schema.Commands[key]
@@ -610,7 +608,7 @@ func (schema *Schema) ResolveLink(link, scope string) (string, bool) {
 }
 
 // isScope reports whether a name is a scope type that script runs in, meaning the dumps declare triggers or effects for
-// it. It returns false for the words the dumps use for no scope, such as none, though they declare them like a scope.
+// it. It is false for names the dumps use for no scope, such as none, though they declare them like one.
 func (schema *Schema) isScope(scope string) bool {
 	scopeType := schema.Scopes[scope]
 	return (scopeType.Triggers || scopeType.Effects) && !slices.Contains(game.DumpPhrases.NoScope, scope)
@@ -627,15 +625,15 @@ func (schema *Schema) IsLink(key string) bool {
 	return command != nil && !command.Wild && slices.Contains(command.Declared, game.DeclaredLink)
 }
 
-// isKeyLink reports whether a key starts with a scope link, as IsLink does. A link that requires data, as EU5's
-// modifier:<key> does, is none where a key writes it alone.
+// isKeyLink reports whether a key starts with a scope link, as IsLink does, but a link that requires data, as EU5's
+// modifier:<key> does, is none when written alone.
 func (schema *Schema) isKeyLink(key string) bool {
 	head, prefixed := splitLinkHead(key)
 	return schema.IsLink(key) && (prefixed || schema.Commands[head].Bare)
 }
 
-// splitLinkHead returns the first link of a chain, in lower case. For a link written with a prefix, as scope:target
-// is, it returns the prefix alone, and true.
+// splitLinkHead returns the first link of a chain in lower case, or only the prefix of one such as scope:target, with
+// true.
 func splitLinkHead(key string) (string, bool) {
 	head := strings.ToLower(jomini.SplitChain(key)[0])
 	if prefix, _, ok := jomini.SplitPrefixed(head); ok {
@@ -698,9 +696,9 @@ func ReturnType(function DataFunction) string {
 	return function.Returns
 }
 
-// FindUnlisted finds the first step of a data call that the dumps do not declare. It returns the step's position and
-// the type before it, which for the first step is the data context's type, else Global. It returns false if the dumps
-// declare every step or the type before the step is unknown.
+// FindUnlisted returns the position of the first step of a data call that the dumps do not declare, and the type before
+// it, which for the first step is the data context's type, else Global. It returns false if the dumps declare every
+// step or the type before the step is unknown.
 func (schema *Schema) FindUnlisted(call jomini.Call, datacontext string) (int, string, bool) {
 	owners, functions := schema.listCallOwners(call, datacontext)
 	step := slices.Index(owners, "")
@@ -714,8 +712,8 @@ func (schema *Schema) FindUnlisted(call jomini.Call, datacontext string) (int, s
 	return step, before, before != ""
 }
 
-// ResolveMacro returns a data call with its leading data binding macros expanded. The data context's own functions are
-// never macros. A macro that expands into itself gives an empty call.
+// ResolveMacro returns a data call with its leading macros expanded. The data context's own functions are never
+// macros. A macro that expands into itself gives an empty call.
 func (schema *Schema) ResolveMacro(call jomini.Call, datacontext string) jomini.Call {
 	expanded := map[string]bool{}
 	for len(call.Steps) > 0 {
@@ -744,8 +742,8 @@ func (schema *Schema) ResolveMacro(call jomini.Call, datacontext string) jomini.
 	return call
 }
 
-// ResolveDatacontext returns the data context type of a GUI block. It takes the data call that the block's datacontext
-// key writes, and the data context of the block around it. It returns "" if the dumps do not resolve the call.
+// ResolveDatacontext returns the data context type of a GUI block, given the call its datacontext key writes and the
+// data context around it. It returns "" if the dumps do not resolve the call.
 func (schema *Schema) ResolveDatacontext(call jomini.Call, datacontext string) string {
 	types := schema.ResolveCallTypes(schema.ResolveMacro(call, datacontext), datacontext)
 	if len(types) == 0 {
@@ -783,11 +781,11 @@ func (schema *Schema) ListCallReferences(call jomini.Call, datacontext string) [
 				references = append(references, schema.ListCallReferences(*argument.Call, "")...)
 			}
 			reference := Reference{Database: database, Name: argument.Text, Span: argument.Span}
-			// A nested definition's holder is the argument before it, as in GetDefine('NAI', 'X').
+			// a nested definition's holder is the argument before it, as in GetDefine('NAI', 'X')
 			if listed && position > 0 {
 				reference.Name = schema.JoinNested(database, step.Arguments[position-1].Text, argument.Text)
 			}
-			// An argument whose position the row leaves empty names nothing.
+			// a position the row leaves empty names nothing
 			if argument.Quoted && !argument.Span.IsEmpty() && (!listed || database != "") {
 				references = append(references, reference)
 			}
@@ -796,8 +794,8 @@ func (schema *Schema) ListCallReferences(call jomini.Call, datacontext string) [
 	return references
 }
 
-// isScopeType reports whether a data type is the type of a scope the dumps declare, as game.AnyScopeType's getter for
-// that scope gives it: Scope.GetCharacter gives Character.
+// isScopeType reports whether a data type is the type of a scope the dumps declare, as Character is for the getter
+// Scope.GetCharacter.
 func (schema *Schema) isScopeType(dataType string) bool {
 	for name, getter := range schema.DataTypes[game.AnyScopeType].Functions {
 		if getter.Returns == dataType && schema.isScope(strings.ReplaceAll(ToPhrase(DropGetter(name)), " ", "_")) {
@@ -807,8 +805,8 @@ func (schema *Schema) isScopeType(dataType string) bool {
 	return false
 }
 
-// JoinNested returns the name of a nested definition from its holder's name and its key, such as NAI|X. Without a
-// separator or a holder it is the key.
+// JoinNested returns the name of a nested definition from its holder's name and its key, such as NAI|X. It is the key
+// if there is no separator or holder.
 func (schema *Schema) JoinNested(database, holder, key string) string {
 	separator := schema.findSeparator(database)
 	if separator == "" || holder == "" {
@@ -817,8 +815,7 @@ func (schema *Schema) JoinNested(database, holder, key string) string {
 	return holder + separator + key
 }
 
-// SplitNested returns the key of a definition's name in a nested database: the part after the holding database's
-// separator, X for NAI|X. Any other name is its own key.
+// SplitNested returns the key of a definition's name in a nested database, X for NAI|X. Any other name is its own key.
 func (schema *Schema) SplitNested(database, nested string) string {
 	separator := schema.findSeparator(database)
 	if _, key, ok := strings.Cut(nested, separator); ok && separator != "" {
@@ -828,7 +825,7 @@ func (schema *Schema) SplitNested(database, nested string) string {
 }
 
 // findSeparator returns the separator that the holder of a nested database writes, such as the | of NAI|X. It returns
-// "" if the database is not nested or its holder writes none.
+// "" if there is none.
 func (schema *Schema) findSeparator(database string) string {
 	dot := strings.LastIndex(database, ".")
 	if dot < 0 {
@@ -841,7 +838,7 @@ func (schema *Schema) findSeparator(database string) string {
 }
 
 // ResolveTypeDatabase returns the database that holds a data type's names, such as governments for GovernmentType. It
-// returns false if there is not exactly one.
+// returns false unless there is exactly one.
 func (schema *Schema) ResolveTypeDatabase(dataType string) (string, bool) {
 	phrase := ToPhrase(dataType)
 	label, ok := schema.TypeDatabases[phrase]
@@ -868,9 +865,9 @@ func ToPhrase(text string) string {
 	return words.String()
 }
 
-// DescribeStep returns one step of a data call in words, followed by its quoted arguments. If the flag is set, the
-// getter word is dropped from the step's name. A step whose function takes a name, such as Custom('GetDaughterSon'),
-// reads as its last quoted argument instead, without the getter word: "daughter son".
+// DescribeStep returns one step of a data call in words, followed by its quoted arguments. The flag says whether to
+// drop the getter from the step's name. A step that takes a name, as Custom('GetDaughterSon') does, reads as its last
+// quoted argument without the getter: "daughter son".
 func DescribeStep(step jomini.Step, reaches bool) string {
 	var quoted []string
 	for _, argument := range step.Arguments {
@@ -888,8 +885,8 @@ func DescribeStep(step jomini.Step, reaches bool) string {
 	return strings.Join(append([]string{ToPhrase(name)}, quoted...), " ")
 }
 
-// DropGetter returns a function's name without the getter word it starts with, such as FirstName for GetFirstName. A
-// name that is only the word, or where the word is followed by a lower-case letter, is returned as it is.
+// DropGetter returns a function's name without the getter it starts with, such as FirstName for GetFirstName. A name
+// that is only the getter, or where the getter is followed by a lower-case letter, is returned as it is.
 func DropGetter(name string) string {
 	for _, getter := range game.GUI.Getters {
 		if rest, ok := strings.CutPrefix(name, getter); ok && rest != "" && unicode.IsUpper([]rune(rest)[0]) {
@@ -962,8 +959,7 @@ func (field *Field) take(other Claims) {
 	field.Blurb.take(other.Blurb)
 }
 
-// walkField calls the given function on each field below a field, with the key it is written at. It goes depth first,
-// with each field's children in key order.
+// walkField calls the given function on each field below a field with its key, depth first in key order.
 func walkField(field *Field, visit func(key string, child *Field)) {
 	for _, key := range slices.Sorted(maps.Keys(field.Children)) {
 		child := field.Children[key]
@@ -972,8 +968,8 @@ func walkField(field *Field, visit func(key string, child *Field)) {
 	}
 }
 
-// buildChild returns the field's child for a key, adding an empty one if there is none. A child with no source takes
-// the given source.
+// buildChild returns the field's child for a key, adding one if there is none. A child with no source takes the given
+// source.
 func (field *Field) buildChild(key string, source game.Source) *Field {
 	if field.Children == nil {
 		field.Children = map[string]*Field{}
@@ -994,7 +990,7 @@ func (field *Field) findChild(key string) *Field {
 	return field.Children[key]
 }
 
-// findPatternChild returns the field's child for a key, else the <number> child if the key is a number, else the <any>
+// findPatternChild returns the field's child for a key, else its <number> child if the key is a number, else its <any>
 // child. It returns nil if there is none.
 func (field *Field) findPatternChild(key string) *Field {
 	if child := field.findChild(key); child != nil {

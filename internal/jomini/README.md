@@ -1,83 +1,122 @@
 # jomini
 
-The package parses Paradox script, GUI and asset files into a flat tree and tells what shape a written key or value
-has. It knows nothing about any game.
+[Architecture](../../ARCHITECTURE.md) › [Engine](../../ARCHITECTURE.md#the-engine) › jomini
 
-What a key means is the schema's question, and what a game reads is `game`'s. This package answers only what the text
-says: where each statement starts and ends, what its parts are, and whether a word is a number, a date, a parameter or a
-data call. It never imports `game`.
+The jomini package parses Paradox script, GUI and asset files into a flat tree. It also tells what shape a written word
+has: a number, a date, a parameter, a color or a data call. It answers only what the text says, such as where each
+statement starts and ends and what its parts are.
 
-| file | holds |
-|---|---|
-| `tree.go` | `Span` with `IsEmpty` and `Contains`, `Position`, `Error`, `Lines` with `NewLines`, `CountLines`, `ToPosition` and `LineSpan`; `Statement` with `IsBlock`, `IsListed` and `ResolveValueSpan`; `Tree` with `Text`, `Unquoted`, `UnquotedSpan`, `ParseBracketed`, `Children`, `FindStatement`, `FindPrevious`, `LookupStatement`, `FindChild` and `FindChildValue` |
-| `parse.go` | the lexer and the parser: `Parse`, `NewTree`, `CountBrackets` |
-| `shapes.go` | `NumberKey`; the predicates on a written word (`IsIdentifier`, `IsNumber`, `IsEventID`, `IsParameter`, `IsConstant`, `IsNumberKey`); `Date` with `IsValid`, and `ParseDate`; `SplitPrefixed`, `SplitChain`, `MatchKeyPath`, `ColorParts`; the constants and expressions a file writes (`Tree.ResolveNumber`, `ListConstants`) |
-| `colors.go` | `Color`, `Colors`, `TagHSV360`, `RGBA` with `ToCSS`, `ColorForm`; `ParseColor`, `ToColor`, `EncodeColor` |
-| `call.go` | the data calls: `Call`, `Step`, `Argument`; `ParseBracketed`, `ParseCall`, `SubstituteCall` |
-| `edit.go` | `Edit`, `ApplyEdits`, `DiffEdits`, `LineEnding`, `Tree.Indentation`, `Tree.IndentLines`, `Tree.BuildInsertion` |
+What a key means is the [schema](../schema/README.md)'s question, and what a game reads is [game](../game/README.md)'s.
+This package never imports `game`.
+
+**Uses** nothing else of PMT · **Used by** the rest of the engine ([loc](../loc/README.md), [game](../game/README.md),
+[schema](../schema/README.md), [index](../index/README.md)) and the services that read script.
+
+```mermaid
+flowchart LR
+  text["Text"] --> lexer["Lexer"]
+  lexer -->|tokens| parser["Parser"]
+  parser --> tree["Tree"]
+  tree --- parts["Statements, comments,<br/>errors, lines"]
+```
 
 ## The tree
 
-A `Tree` is the parse of one text. Its `Statements` are one flat slice in document order, and a block's children sit
-right after it. Statement 0 is the file itself, and the top-level statements are its children. A `Statement` knows its
-`Parent` and `Last`, one past its last descendant, so its children are the statements between it and `Last`.
+A `Tree` is the parse of one text. Its statements are one flat slice in document order, and a block's children sit right
+after it. Statement 0 is the file itself. A statement knows its `Parent` and its `Last`, one past its last descendant,
+so its children are the statements between it and `Last`.
 
-Every part of a statement is a `Span` into the source, never a copied string: its `Key`, `Op`, `Tag`, `Value` and
-`Block`, and its whole `Span`. A scalar's `Value` keeps its quotes. A block's `Block` runs from its opening brace to its
-closing one. A bare value in a list has a `Value` and no key, which `IsListed` reports.
+```text
+a = { b = 1 c = 2 } d = 3
 
-The tree also keeps the comments as spans, the parse errors, and the line index. A line ends at `\n`, `\r\n` or a lone
+0  the file    children 1, 4
+1  a = { … }   Last 4, children 2, 3
+2  b = 1       Last 3
+3  c = 2       Last 4
+4  d = 3       Last 5
+```
+
+Every part of a statement is a `Span` into the source, never a copied string: its key, operator, tag, value and block,
+and the whole statement. A scalar's value keeps its quotes. A block runs from its opening brace to its closing one. A
+bare value in a list has a value and no key.
+
+The tree also keeps the comments as spans, the parse errors and the line index. A line ends at `\n`, `\r\n` or a lone
 `\r`. Every offset is a UTF-8 byte offset, and a `Position` counts its column in bytes too. Monaco's lines and UTF-16
 columns are `lsp`'s, which converts at its edge.
 
 `FindStatement` returns the innermost statement that covers an offset. `LookupStatement` returns the one that starts at
-an offset, as an edit names a block by where it starts. Where several children have the key, `FindChild` and
-`FindChildValue` take the last one.
+an offset, which is how an edit names a block. Where several children have a key, `FindChild` takes the last one.
 
 ## The parse
 
-`NewTree` gives the tree of a text before any script is read from it, as a localization file's tree is. `Parse` never
-fails. A malformed text gives the statements it could parse, and each problem is an `Error` on the tree with a code:
-`unclosed-block`, `unexpected-brace`, `unclosed-string` or `missing-value`. A block that is never closed runs to the end
-of the text. A closing brace at the file's level closes nothing and is reported.
+`Parse` never fails. A malformed text gives the statements it could parse, and each problem is an `Error` on the tree
+with a code: `unclosed-block`, `unexpected-brace`, `unclosed-string` or `missing-value`. A block that is never closed
+runs to the end of the text. A closing brace at the file's level closes nothing and is reported. [loc](../loc/README.md)
+reports its own problems as the same `Error`.
 
-The lexer splits the text into scalars, operators, braces and comments. A quoted string is one scalar, a backslash
-escaping the character after it, and so is a `[ … ]` inside a word, which keeps everything to its `]`. A `#` comment
-runs to the end of its line. The operators are `=`, `==`, `!=`, `<`, `>`, `<=`, `>=` and `?=`. A tagged block such as
-`rgb { … }` is one value with a `Tag`, and so is `list "x"`.
+`NewTree` gives the tree of a text before any script is read from it, which is all a localization file needs.
+
+The lexer splits the text into scalars, operators, braces and comments:
+
+- A quoted string is one scalar, a backslash escaping the character after it.
+- A `[ … ]` inside a word is part of that word, spaces and all. It ends at its closing `]` or at the end of the line.
+- A `#` comment runs to the end of its line.
+- The operators are `=`, `==`, `!=`, `<`, `>`, `<=`, `>=` and `?=`.
+
+A tagged block such as `rgb { … }` is one value with a tag, and so is `list "x"`.
 
 ## The shapes of a word
 
-`IsParameter` finds a scripted parameter, `$NAME$`, anywhere in a word. `IsConstant` is a script constant, `@name`, or
-an expression, `@[…]`. `SplitChain` splits a dotted chain of links, keeping a dot inside brackets or quotes.
-`Tree.ResolveNumber` works out the number a value stands for: a number, a constant the file declared earlier, or an
-expression of numbers, constants, the four operators and brackets. `IsNumberKey` asks whether a key is written as a
-number or a date, the keys `NumberKey` (`<number>`) stands for. `MatchKeyPath` asks whether the keys that lead to a
-statement fit a key path, each segment a glob, `<number>` or `**` for any depth.
+- **Parameter.** `$NAME$`, with or without a `|default`, anywhere in a word.
+- **Constant.** `@name`, or an expression `@[…]`. `Tree.ResolveNumber` works out the number a value stands for: a
+  number, a constant the file declared earlier, or an expression of numbers, constants, the four operators and
+  brackets.
+- **Dotted chain.** `SplitChain` splits `scope:x.var:y.z` into its links, keeping a dot inside brackets or quotes.
+- **Prefixed name.** `SplitPrefixed` splits `prefix:name`.
+- **Number key.** A key written as a number or a date. `NumberKey` (`<number>`) stands for it in a key path.
+- **Key path.** `MatchKeyPath` asks whether the keys that lead to a statement fit a path of segments, each a glob,
+  `<number>` or `**` for any depth.
 
 ## Colors
 
-`Colors` lists the ways script writes a color, each a `Color`: an `rgb` block, a block with no tag, `hsv`, `hsv360`
-(`TagHSV360`) and `hex`. A part of rgb, or of a block with no tag, is out of 255, or out of 1 when red, green and blue
-are each at most 1, and a fourth part is the alpha. `ParseColor` turns a tag and its numbers into an `RGBA`, and
-`ToColor` reads a statement's color block that way. `EncodeColor` writes a color back the way an existing block wrote
-its own: in the same scale, with an alpha only where that block had one. A `ColorForm` is how a color is written that
-no block writes yet: a tag and an example's numbers, which give the scale.
+`Colors` lists the ways script writes a color, each a `Color`: an `rgb` block, a block with no tag, `hsv`, `hsv360` and
+`hex`. A part of rgb, or of a block with no tag, is out of 255, or out of 1 when red, green and blue are each at most 1.
+A fourth part is the alpha. A hex block holds one number: six hex digits for red, green and blue, or eight with the
+alpha last, written with or without `0x` (CK3 writes `hex{ 50779b }`, EU5 `hex{ 0xffbcb6b1 }`).
+
+`ColorParts` gives a block's parts as written, and `ParseColor` turns a tag and its parts into an `RGBA`; `ToColor`
+reads a statement's color block that way. `EncodeColor` writes a color back the way an existing block wrote its own:
+in the same scale, with an alpha only where that block had one, and a hex number with its digits and its `0x` as they
+were. A `ColorForm` is how to write a color where there is no block to copy: a tag and an example's parts, which give
+the scale.
 
 ## Data calls
 
 A `Call` is one data call as a GUI file or a localization text writes it between brackets, such as
-`Root.GetCharacter.GetName`. It is a list of `Step`s, each with its `Arguments` and any cast written before it, and the
-`Suffix` a localization call writes after `|`. An `Argument` is a quoted text, a number or a nested call. Every span
-is in the file's own offsets, so the parser takes the offset where the text starts. `SubstituteCall` fills in a macro's
-parameters with the arguments written for them. Which function a step calls, and what it returns, is the schema's.
+`Root.GetCharacter.GetName`. It is a list of `Step`s, each with its arguments and any cast written before it, and the
+suffix a localization call writes after `|`. An `Argument` is a quoted text, a number or a nested call.
+
+Every span is in the file's own offsets, so the parser takes the offset where its text starts. `SubstituteCall` fills in
+a macro's parameters with the arguments written for them. Which function a step calls, and what it returns, is the
+schema's.
 
 ## Edits
 
 An `Edit` replaces a span with a text, so an empty span inserts and an empty text deletes. `DiffEdits` gives the
-smallest list that turns one text into another, through `go-diff`, and replaces the whole text where either text is not
-valid UTF-8. `Tree.BuildInsertion` adds lines as the last statements of a block, indented the way the file indents. A
-file with no indentation of its own indents with a tab.
+smallest list that turns one text into another, and replaces the whole text where either one is not valid UTF-8.
+`Tree.BuildInsertion` adds lines as the last statements of a block, indented the way the file indents, with a tab where
+the file has no indentation of its own.
+
+## Files
+
+| file | what it holds |
+|---|---|
+| `tree.go` | The tree: spans, positions, errors, the line index, statements and the lookups over them. |
+| `parse.go` | The lexer and the parser. |
+| `shapes.go` | The shapes of a word, dates, dotted chains, key paths, and constants with the numbers they resolve to. |
+| `colors.go` | The color blocks script writes: reading them, and writing a color back. |
+| `call.go` | Data calls and filling in a macro's call. |
+| `edit.go` | Edits to a text, the diff between two texts, and inserting lines into a block. |
 
 ## Terms
 
@@ -91,7 +130,7 @@ file with no indentation of its own indents with a tab.
 - **Date**: a date as the game writes one, `year.month.day`.
 - **Color**: one way script writes a color, such as an rgb block or a hex number.
 - **RGBA**: a color as red, green, blue and alpha channels, each from 0 to 1.
-- **ColorForm**: how a color is written that no block writes yet.
+- **ColorForm**: how a color is written where there is no block to copy.
 - **Call**: one data call, its steps and its suffix.
 - **Step**: one step of a call, with its arguments and its cast.
 - **Argument**: one argument of a step: a quoted text, a number or a nested call.

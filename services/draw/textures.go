@@ -146,7 +146,7 @@ func (library *library) resolveKind(parts []string, object string) (kind, databa
 // findLevelFolder returns the folder the defines name for a level's pictures, or "" if there is none.
 func (library *library) findLevelFolder(kind string) string {
 	words := strings.Fields(schema.ToPhrase(kind))
-	if len(words) < 2 || words[len(words)-1] != game.GUI.Levels.Word {
+	if len(words) < 2 || words[len(words)-1] != game.GUI.Levels.Ending {
 		return ""
 	}
 	key := toDefineWords(kind) + game.GUI.FolderDefineSuffix

@@ -16,7 +16,7 @@ type CoatLerp struct {
 	Slot    int    // the color slot blended in
 }
 
-// A CoatRecolor is how one kind of texture is colored.
+// A CoatRecolor is how the textures of one texture key are colored, such as a pattern's.
 type CoatRecolor struct {
 	Start   int          // the slot it starts from; 0 means the fallback color
 	Lerps   []CoatLerp   // the blends toward a slot, in order
@@ -79,7 +79,7 @@ type CoatRules struct {
 	ListsDatabase  string                 // the template lists that a list "x" value names
 	FieldFile      string                 // the file whose first atlas' tile_size sizes the field
 	TextureFolders map[string]string      // the folder each texture key's files are under
-	Recolors       map[string]CoatRecolor // how each kind of texture is colored; none keeps its pixels
+	Recolors       map[string]CoatRecolor // how each texture key's files are colored; none keeps their pixels
 	Regions        []string               // the pattern channel of each mask region, region n at n-1
 	Fallback       string                 // the color a pattern starts from, as CSS
 	// Slots are the color slots a coat or a layer writes, in order; the shaders read the first three.

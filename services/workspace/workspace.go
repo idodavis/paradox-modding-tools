@@ -497,7 +497,8 @@ func (wsp *Service) LookupMod(modID string) (Mod, bool) {
 }
 
 // ResolveFolder returns the folder a shell or an agent starts in, and the id of its mod. It is the folder of the mod
-// that holds the given file, else of the workspace's first mod. With no mod it is the home folder, and the id is "".
+// that holds the given file, else of the workspace's first mod. A mod whose folder is missing is passed over. With no
+// mod left it is the home folder, and the id is "".
 //
 //wails:ignore
 func (wsp *Service) ResolveFolder(path string) (string, string) {

@@ -88,7 +88,7 @@ export interface Guide {
     "files": string;
 
     /**
-     * which copy each kind of definition keeps
+     * which copy of a definition each database keeps
      */
     "kept": string;
 

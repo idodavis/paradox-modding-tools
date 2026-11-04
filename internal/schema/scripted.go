@@ -1,5 +1,4 @@
-// scripted.go reads the scripted definitions and the modifier types that the workspace's files declare. It also finds
-// the parameters a definition takes and the scopes it saves.
+// scripted.go reads the scripted definitions and the modifier types that the workspace's files declare.
 
 package schema
 
@@ -20,19 +19,17 @@ import (
 // It reads only the top statements.
 type declarer struct {
 	schema    *Schema
-	scripted  map[string]ScriptedDefinition // by the word that calls it and its name
+	scripted  map[string]ScriptedDefinition // by caller and name
 	widgets   []string                      // the widget types the file defines or builds on
-	modifiers map[string]*Field             // by modifier type the file defines: what its name takes
+	modifiers map[string]*Field             // by modifier type: what its name takes
 }
 
-// parameterRe matches a parameter that a scripted definition's body writes, with its default if it has one.
+// parameterRe matches a parameter in a scripted definition's body, with its default if it has one.
 var parameterRe = regexp.MustCompile(`\$([A-Za-z0-9_]+)(?:\|([^$]*))?\$`)
 
-// SetScripted reads the scripted definitions and modifier types that the given files of the workspace's mods declare.
-// It replaces what those files declared before. A call to a mod's definition is then a known call, as a call to one of
-// the game's is, and a mod's modifier type takes what its definition says. It parses with the given function only the
-// script files whose database is called by name or says what its names take. A file that cannot be parsed, or is gone,
-// declares nothing.
+// SetScripted reads, with the given parser, the scripted definitions and modifier types that the given files of the
+// workspace's mods declare, in place of what those files declared before, so calls to them are known calls. A file
+// that cannot be parsed, or is gone, declares nothing.
 func (schema *Schema) SetScripted(changed []files.File, parse func(path string) (*jomini.Tree, error)) {
 	declaring := slices.DeleteFunc(slices.Clone(changed), func(file files.File) bool {
 		return file.Format != files.FormatScript || !schema.declares(file)
@@ -94,8 +91,8 @@ func (schema *Schema) resolveSaves(table, mods map[string]ScriptedDefinition) {
 	}
 }
 
-// findScripted returns the scripted definition of a name and the word it is called through, trying each word that
-// calls definitions in alphabetical order. It returns false if no word finds one.
+// findScripted returns the scripted definition of a name and the caller it is called through, trying each caller in
+// alphabetical order. It returns false if no caller finds one.
 func (schema *Schema) findScripted(mods map[string]ScriptedDefinition, key string) (ScriptedDefinition, string, bool) {
 	for _, caller := range slices.Sorted(maps.Keys(schema.Callees)) {
 		if callee, ok := schema.lookupScripted(mods, caller, key); ok {
@@ -105,8 +102,8 @@ func (schema *Schema) findScripted(mods map[string]ScriptedDefinition, key strin
 	return ScriptedDefinition{}, "", false
 }
 
-// lookupScripted returns the scripted definition of a name called through the given word: the game's, else one of the
-// given mods'. A mod's never takes the place of a command the dumps declare by that name. Case matters as in
+// lookupScripted returns the scripted definition of a name called by the given caller, from the game or else from the
+// given mods. A mod's never takes the place of a command the dumps declare by that name. Case matters as in
 // lookupDefinition.
 func (schema *Schema) lookupScripted(mods map[string]ScriptedDefinition, caller, key string) (ScriptedDefinition, bool) {
 	if callee, ok := schema.lookupDefinition(schema.ScriptedDefinitions, caller, key); ok {
@@ -118,8 +115,8 @@ func (schema *Schema) lookupScripted(mods map[string]ScriptedDefinition, caller,
 	return schema.lookupDefinition(mods, caller, key)
 }
 
-// lookupDefinition returns the scripted definition of a name called through the given word in one table. A name in
-// another case finds the definition only if its database ignores case.
+// lookupDefinition returns the scripted definition of a name called by the given caller in one table. A name in another
+// case finds it only if its database ignores case.
 func (schema *Schema) lookupDefinition(table map[string]ScriptedDefinition, caller, key string) (ScriptedDefinition, bool) {
 	if callee, ok := table[caller+":"+key]; ok {
 		return callee, true
@@ -139,9 +136,8 @@ func (schema *Schema) declares(file files.File) bool {
 	return ok && (len(database.Callable.Callers) > 0 || database.Row.BoolKey != "")
 }
 
-// eachParsed parses the listed files in parallel with parse, and calls visit on each result with the number of the
-// worker that parsed it and the file's position. A file that cannot be parsed is skipped. It returns the errors of
-// those files.
+// eachParsed parses the listed files in parallel and calls visit on each result with the worker's number and the file's
+// position. It skips a file that cannot be parsed and returns the errors of those files.
 func eachParsed[T any](listing []files.File, parse func(path string) (T, error), visit func(worker, index int, parsed T)) []error {
 	failures := make([]error, len(listing))
 	var next atomic.Int64
@@ -171,7 +167,7 @@ func (declarer *declarer) Enter(tree *jomini.Tree, statement int32, context *Con
 	return statement == 0 || !context.Defines && tree.Statements[statement].Parent == 0
 }
 
-// declare records a definition that is called by name. For each word that calls its database it records the scripted
+// declare records a definition that is called by name. For each caller of its database it records the scripted
 // definition with the parameters its body writes. If a widget calls it, it also records the widget type, and the type
 // that widget is built on. It also records what the name of a modifier type takes.
 func (declarer *declarer) declare(definition Definition, tree *jomini.Tree, statement int32) {
@@ -201,8 +197,8 @@ func (declarer *declarer) declare(definition Definition, tree *jomini.Tree, stat
 	}
 }
 
-// makeModifierField returns what the name of a modifier type takes in a modifiers block, as the type's definition
-// says: yes or no where it writes yes at the given key, else a number or a script value.
+// makeModifierField returns what the name of a modifier type takes: yes or no if its definition writes yes at the given
+// key, else a number or a script value.
 func makeModifierField(tree *jomini.Tree, statement int32, key string) *Field {
 	expected := Expected{Type: ValueNumber, Values: true}
 	if value, _ := tree.FindChildValue(statement, key); value == yes {
@@ -211,8 +207,8 @@ func makeModifierField(tree *jomini.Tree, statement int32, key string) *Field {
 	return &Field{Claims: Claims{Value: Claim[Expected]{Value: expected, Source: game.SourceDefinitions}}}
 }
 
-// makeScripted returns the scripted definition that a statement makes. If the database's definitions take parameters,
-// it has the parameters the statement's body writes and those the body saves names under.
+// makeScripted returns the scripted definition that a statement makes, with its parameters and saves if the database's
+// definitions take parameters.
 func makeScripted(database *Database, tree *jomini.Tree, statement int32) ScriptedDefinition {
 	scripted := ScriptedDefinition{Database: database.Name}
 	if database.Callable.Parameters {
@@ -247,9 +243,9 @@ func ListParameters(tree *jomini.Tree, statement int32) *Field {
 	return parameters
 }
 
-// listSaves returns the parameters a scripted definition's body saves a name under, with the link that reads each
-// name, and the parameters it passes on to calls of other scripted definitions. Only a value that is one whole
-// parameter counts.
+// listSaves returns the parameters a scripted definition's body saves a name under, with the link that reads each name,
+// and the parameters it passes on to calls of other scripted definitions. Only a value that is one whole parameter
+// counts.
 func listSaves(tree *jomini.Tree, statement int32) (map[string]string, []relay) {
 	saves := map[string]string{}
 	var relays []relay

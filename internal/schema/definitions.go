@@ -1,5 +1,4 @@
-// definitions.go finds the definition that a statement makes during a walk. It is a constant, a name that a nesting
-// defines, or what the file's format and database say is defined there.
+// definitions.go finds the definition that a statement makes during a walk.
 
 package schema
 
@@ -76,8 +75,8 @@ func (walker *walker) findScriptDefinition(statement int32, level int, pending s
 	}, true
 }
 
-// findNameSpan returns the span of the value written at a key in a statement's block, without quotes. It returns false
-// if the block has no such key.
+// findNameSpan returns the span of a key's value in a statement's block, without quotes. It returns false if the block
+// lacks the key.
 func (walker *walker) findNameSpan(statement int32, nameKey string) (jomini.Span, bool) {
 	child, ok := walker.tree.FindChild(statement, nameKey)
 	return walker.tree.UnquotedSpan(walker.tree.Statements[child].Value), ok
@@ -110,8 +109,8 @@ func (walker *walker) findGUIDefinition(statement int32, level int, pending stri
 	return Definition{}, false
 }
 
-// findWindowLabel returns the name of a window at the top of a GUI file, else its file's name if it is the file's
-// only window. It returns "" otherwise.
+// findWindowLabel returns the name of a window at the top of a GUI file, or the file's name if it is the only window.
+// It returns "" otherwise.
 func (walker *walker) findWindowLabel(statement int32) string {
 	if value, _ := walker.tree.FindChildValue(statement, game.GUI.WidgetKey); value != "" {
 		return value
@@ -137,7 +136,8 @@ func (walker *walker) makeGUIDefinition(database, label string, span jomini.Span
 }
 
 // findAssetDefinition returns the definition that a top block of an asset or font file makes. Its database is named
-// for the file's extension and the block's key, and its name is the value of the key that the file type names.
+// for the file's extension and the block's key, and its name is the value of the key that the file type names. It
+// returns false if the statement is no keyed top block or its name is empty.
 func (walker *walker) findAssetDefinition(statement int32, level int) (Definition, bool) {
 	current := walker.tree.Statements[statement]
 	key, span := walker.frames[level].label, walker.frames[level].span

@@ -1,5 +1,4 @@
-// vanilla.go counts what the game's own files write and adds it to the schema: the fields of each database's
-// definitions, their shapes and values, the names written after each prefix, and where the game uses each command.
+// vanilla.go counts what the game's own files write and adds it to the schema.
 
 package schema
 
@@ -18,25 +17,24 @@ import (
 	"paradox-modding-tools/internal/loc"
 )
 
-// A counter is the visitor of one worker's counting walk. It counts what the files write into fields of its own, apart
-// from the schema.
+// A counter is the visitor of one worker's counting walk. It counts into fields of its own, apart from the schema.
 type counter struct {
 	schema      *Schema
 	holders     []holder
 	path        string                     // the file being counted
-	colorSuffix string                     // the ending of the keys that hold an untagged color in the file being counted
+	colorSuffix string                     // the ending of the keys that hold an untagged color in the file
 	fields      map[*Field]*Field          // by the schema's field: what this worker counted at it
 	arguments   map[argumentsKey]*Field    // by command and declaration: what this worker counted in its arguments
 	definitions map[string]*Field          // by database
 	defined     map[string]map[string]bool // the names each database defines, by database
 	messages    map[string]bool            // every message key the localization files write, in any language
 	unlisted    map[string]bool            // the steps of data calls no dump declares that the text writes, as Type.step
-	gui         bool                       // the file being counted is a GUI file
-	prefixed    map[string]map[string]int  // by link prefix: each name written after it, with its count
+	gui         bool                       // the file is a GUI file
+	prefixed    map[string]map[string]int  // by link prefix: the count of each name written after it
 	examples    map[string][]Example       // by the name written: a command's, or a data function's as Type.Function
 }
 
-// An argumentsKey is one command as one word declares it, whose arguments a worker counts apart.
+// An argumentsKey is one command under one declaration, whose arguments a worker counts apart.
 type argumentsKey struct {
 	command     *Command
 	declaration string
@@ -44,9 +42,9 @@ type argumentsKey struct {
 
 // A holder is where the keys of one statement are counted while the counter is inside the statement.
 type holder struct {
-	field  *Field          // nil where the keys are no fields
+	field  *Field          // nil if the keys are no fields
 	shaped bool            // the keys of the statement tell the shape of its field's blocks
-	keys   map[string]bool // the keys a plain definition has written; nil where the statement is no plain definition
+	keys   map[string]bool // the keys a plain definition has written; nil if the statement is no plain definition
 }
 
 // valueTests are the types a count can give a field, in the order they are tried. A field gets the first type that
@@ -56,20 +54,18 @@ var valueTests = []ValueType{ValueBool, ValueNumber, ValueDate, ValueCall, Value
 // ExampleCount is how many places of a name are kept as its examples.
 const ExampleCount = 5
 
-// shapeAmbiguous is the shape of a key that fits more than one kind of block. It is no real shape.
+// shapeAmbiguous is the shape of a key that fits more than one shape. It is no real shape.
 const shapeAmbiguous = "ambiguous"
 
-// CountVanilla counts what the game's own files write and adds it to the schema. A key written under a database's
-// definitions becomes a field with game.SourceVanilla. The count also gives each field its shape, its value and the
-// database its block's keys name, resolves the names written after each prefix, and finds the colors. It parses the
-// listing's script files in parallel with the given parser, which must be safe to call at once. It reads the
-// localization files for their message keys. It returns an error only if no file of the listing can be parsed.
+// CountVanilla counts what the game's own files write and adds it to the schema: fields, their claims, the prefixes'
+// databases and the colors. It parses with the given parser in parallel, so the parser must be safe to call at once.
+// It returns an error only if no file of the listing can be parsed.
 func (schema *Schema) CountVanilla(listing []files.File, parse func(path string) (*jomini.Tree, error)) error {
 	localizing := slices.DeleteFunc(slices.Clone(listing), func(file files.File) bool {
 		return file.Format != files.FormatLocalization
 	})
 	listing = slices.DeleteFunc(slices.Clone(listing), func(file files.File) bool { return !file.Format.IsScript() })
-	// Files that declare callables and widget types are read first, so that a key under a call counts as a call.
+	// the files that declare callables are read first, so a key under a call counts as a call
 	declaring := slices.DeleteFunc(slices.Clone(listing), func(file files.File) bool { return !schema.declares(file) })
 	for _, declarer := range schema.listDeclarers(declaring, parse) {
 		if declarer != nil {
@@ -93,7 +89,7 @@ func (schema *Schema) CountVanilla(listing []files.File, parse func(path string)
 		return loc.Parse(text.Text, path), nil
 	}, func(worker, _ int, file *loc.File) {
 		for _, message := range file.Messages {
-			// The copy keeps the key from holding the file's text in memory.
+			// the copy keeps the key from holding the file's text in memory
 			if !counters[worker].messages[message.Key] {
 				counters[worker].messages[strings.Clone(message.Key)] = true
 			}
@@ -111,15 +107,14 @@ func (schema *Schema) CountVanilla(listing []files.File, parse func(path string)
 		counters[0].add(other)
 	}
 	counters[0].resolveCounts()
-	// A file that cannot be parsed is left out. It is an error only if none can be parsed.
 	if len(failures) == len(listing) && len(failures) > 0 {
 		return errors.Join(failures...)
 	}
 	return nil
 }
 
-// Enter counts a statement. It counts the name the statement defines, the names it writes after prefixes, the command
-// it writes, its value and, under a definition's fields, the field it is.
+// Enter counts a statement: the name it defines, the names it writes after prefixes, its command, its value and its
+// field.
 func (counter *counter) Enter(tree *jomini.Tree, statement int32, context *Context) bool {
 	var parent holder
 	if last := len(counter.holders) - 1; last >= 0 {
@@ -150,8 +145,8 @@ func (counter *counter) Enter(tree *jomini.Tree, statement int32, context *Conte
 		valueField.Vanilla.Values = addCounts(valueField.Vanilla.Values, map[string]int{tree.Text(current.Value): 1})
 	}
 	switch {
-	// A color block's numbers are its parts, not values of its field. Leaving them out lets a field that is written as
-	// a named color or as a color block name the named colors.
+	// a color block's numbers are its parts, not values, so a field written as a named color or a color block can name
+	// the named colors
 	case field != nil && (!block || !counter.isColor(tree, statement, tree.Text(current.Key))):
 		next.field = field
 	case context.Defines && context.Category == CategoryDefinition && context.Definition.Mode == "":
@@ -160,11 +155,11 @@ func (counter *counter) Enter(tree *jomini.Tree, statement int32, context *Conte
 	case context.Defines && context.Category == CategoryDefinition, counter.isFrame(context):
 		next.field = mirror(counter.definitions, context.Database)
 	case context.Category == CategoryCommand && block:
-		// A command's block holds its arguments and has no shape of its own.
+		// a command's block holds its arguments and has no shape of its own
 		next.field = mirror(counter.arguments, toArgumentsKey(context))
 		block = false
 	case context.Category == CategoryKeyword && block && context.Field != nil:
-		// A keyword's block, such as a random_list branch, holds fields of the form its holder gives.
+		// a keyword's block, such as a random_list branch, holds fields of the shape its holder gives
 		next.field = mirror(counter.fields, context.Field)
 		block = false
 	}
@@ -173,8 +168,8 @@ func (counter *counter) Enter(tree *jomini.Tree, statement int32, context *Conte
 	return true
 }
 
-// countDefinition records the name a statement defines, if it defines one. The second name that a value at an alias key
-// gives its definition counts too, as a trait's group does.
+// countDefinition records the name a statement defines, if any, and the second name that an alias key gives it, as a
+// trait's group does.
 func (counter *counter) countDefinition(context *Context) {
 	if !context.Defines || context.Category != CategoryDefinition && !context.Definition.Alias {
 		return
@@ -182,16 +177,15 @@ func (counter *counter) countDefinition(context *Context) {
 	mirrorSet(counter.defined, context.Definition.Database)[context.Definition.Name] = true
 }
 
-// isVoted reports whether the names written after a link prefix count toward the vote for its database. They do if the
-// prefix has no database yet, unless its link leads to a literal, as flag:the_boss's does.
+// isVoted reports whether the names written after a link prefix count toward its database: only if it has none yet and
+// its link leads to no literal, as flag:the_boss's does.
 func (schema *Schema) isVoted(prefix string) bool {
 	database, exists := schema.Prefixes[prefix]
 	command := schema.Commands[prefix]
 	return exists && database == "" && (command == nil || command.Target != game.DumpPhrases.Literal)
 }
 
-// addCounts adds each count of the second map to the same key of the first and returns the first. It makes the first
-// map if it is nil and the second has counts.
+// addCounts adds each count of the second map to the first and returns the first, making it if it is nil.
 func addCounts(total, added map[string]int) map[string]int {
 	if len(added) > 0 && total == nil {
 		total = map[string]int{}
@@ -218,7 +212,7 @@ func (counter *counter) countCommand(tree *jomini.Tree, statement int32, context
 // keepExample adds a place to a list of places. It returns the first places by path and then line, up to ExampleCount.
 // A place already in the list is not added twice.
 func keepExample(examples []Example, example Example) []Example {
-	// Sorting by path keeps the result the same whichever worker read which file.
+	// sorted by path, so the result is the same whichever worker read which file
 	position, exists := slices.BinarySearchFunc(examples, example, func(kept, added Example) int {
 		return cmp.Or(strings.Compare(kept.Path, added.Path), cmp.Compare(kept.Line, added.Line))
 	})
@@ -247,8 +241,7 @@ func (counter *counter) countCalls(tree *jomini.Tree, statement int32, context *
 	}
 }
 
-// countUnlisted records the step of each data call a text writes that no dump declares for the type before it, read in
-// the given data context.
+// countUnlisted records the step of each data call in a text that no dump declares, read in the given data context.
 func (counter *counter) countUnlisted(text, datacontext string) {
 	for _, call := range loc.ListCalls(loc.Segments(text, 0)) {
 		if step, before, ok := counter.schema.FindUnlisted(call, datacontext); ok {
@@ -302,7 +295,7 @@ func (counter *counter) resolveProofs(key string) (string, bool) {
 
 // resolveKeyShape returns the shape of the block that holds the given key. A keyword gives its holder, and a command
 // declared as one of triggers or effects gives that. A key nothing else explains gives modifiers or fields. A command
-// that fits more than one kind gives shapeAmbiguous. A link, a list iterator, a parameter and a call give "".
+// that fits more than one shape gives shapeAmbiguous. A link, a list iterator, a parameter and a call give "".
 func (counter *counter) resolveKeyShape(key string, context *Context) string {
 	lower := strings.ToLower(key)
 	row := game.LookupGame(counter.schema.Game)
@@ -359,8 +352,8 @@ func (counter *counter) isUnexplained(key string, context *Context) bool {
 	return false
 }
 
-// resolveFieldShape returns the shape of the block that holds a key nothing else explains. A modifier that is no
-// command gives modifiers, one that is a command too gives shapeAmbiguous, and any other key gives fields.
+// resolveFieldShape returns the shape of the block that holds a key nothing else explains: modifiers, fields, or
+// shapeAmbiguous for a modifier that is a command too.
 func (counter *counter) resolveFieldShape(key string) string {
 	_, modifier := counter.schema.Modifiers[key]
 	_, command := counter.schema.FindCommand(key)
@@ -401,8 +394,7 @@ func (counter *counter) countField(parent holder, tree *jomini.Tree, statement i
 	return field
 }
 
-// isOwnDefinition reports whether a statement defines a name of its own. An alias is only a second name of the
-// definition it sits in, so it does not count.
+// isOwnDefinition reports whether a statement defines a name of its own, which an alias does not.
 func isOwnDefinition(context *Context) bool {
 	return context.Defines && !context.Definition.Alias
 }
@@ -432,12 +424,12 @@ func (counter *counter) findValueField(parent holder, field *Field, current jomi
 	return nil
 }
 
-// toArgumentsKey returns the key of the arguments a statement's command takes where its block declares it.
+// toArgumentsKey returns the key of the arguments that a statement's command takes.
 func toArgumentsKey(context *Context) argumentsKey {
 	return argumentsKey{command: context.Command, declaration: context.Command.resolveDeclaration(context.Declaration)}
 }
 
-// mirror returns the field that a worker counts into for the given key. It makes the field if there is none.
+// mirror returns the field that a worker counts into for the given key, making it if there is none.
 func mirror[K comparable](fields map[K]*Field, key K) *Field {
 	if fields[key] == nil {
 		fields[key] = &Field{}
@@ -445,7 +437,7 @@ func mirror[K comparable](fields map[K]*Field, key K) *Field {
 	return fields[key]
 }
 
-// mirrorSet returns the set that a worker counts into for the given key. It makes the set if there is none.
+// mirrorSet returns the set that a worker counts into for the given key, making it if there is none.
 func mirrorSet(sets map[string]map[string]bool, key string) map[string]bool {
 	if sets[key] == nil {
 		sets[key] = map[string]bool{}
@@ -465,7 +457,7 @@ func (counter *counter) Leave(tree *jomini.Tree, statement int32, context *Conte
 	counter.holders = counter.holders[:len(counter.holders)-1]
 }
 
-// add adds the count of another worker to this one's.
+// add adds the counts of another worker to this one's.
 func (counter *counter) add(other *counter) {
 	for field, counted := range other.fields {
 		mirror(counter.fields, field).add(counted)
@@ -494,22 +486,25 @@ func (counter *counter) add(other *counter) {
 // add adds the counts of another field and its children to this field's. A child that no source declared gets
 // game.SourceVanilla.
 func (field *Field) add(counted *Field) {
-	field.Vanilla.Count += counted.Vanilla.Count
-	field.Vanilla.Blocks += counted.Vanilla.Blocks
-	field.Vanilla.Colors += counted.Vanilla.Colors
-	field.Vanilla.Definitions += counted.Vanilla.Definitions
-	field.Vanilla.Values = addCounts(field.Vanilla.Values, counted.Vanilla.Values)
-	field.Vanilla.Shapes = addCounts(field.Vanilla.Shapes, counted.Vanilla.Shapes)
-	field.Vanilla.Proofs = addCounts(field.Vanilla.Proofs, counted.Vanilla.Proofs)
+	field.Vanilla.add(counted.Vanilla)
 	for key, child := range counted.Children {
 		field.buildChild(key, game.SourceVanilla).add(child)
 	}
 }
 
-// resolveCounts gives the schema what the count found. Counted fields join the databases and commands, each with the
-// claims its counts support, and the prefixes are resolved from the names defined. A database that only the walk
-// names, such as an asset file's entity, is made here. Each command and data function gets its examples, and the
-// schema its command patterns.
+// add adds the given counts to these.
+func (vanilla *Vanilla) add(counted Vanilla) {
+	vanilla.Count += counted.Count
+	vanilla.Blocks += counted.Blocks
+	vanilla.Colors += counted.Colors
+	vanilla.Definitions += counted.Definitions
+	vanilla.Values = addCounts(vanilla.Values, counted.Values)
+	vanilla.Shapes = addCounts(vanilla.Shapes, counted.Shapes)
+	vanilla.Proofs = addCounts(vanilla.Proofs, counted.Proofs)
+}
+
+// resolveCounts gives the schema what the count found: fields with their claims, the databases only the walk names,
+// the prefixes, the examples and the command patterns.
 func (counter *counter) resolveCounts() {
 	row := game.LookupGame(counter.schema.Game)
 	for field, counted := range counter.fields {
@@ -542,8 +537,8 @@ func (counter *counter) resolveCounts() {
 	counter.schema.UnlistedCalls = counter.unlisted
 }
 
-// resolvePatterns finds the command patterns. A database makes a pattern if the names of all its definitions, two or
-// more, each fill the pattern's star in a command the dumps declare.
+// resolvePatterns finds the command patterns. A database makes one if two or more definitions, all it has, each fill
+// the pattern's star in a command the dumps declare.
 func (counter *counter) resolvePatterns() {
 	owners := map[string][]string{}
 	for database, labels := range counter.defined {
@@ -552,7 +547,7 @@ func (counter *counter) resolvePatterns() {
 		}
 	}
 	type patternKey struct{ pattern, database string }
-	members := map[patternKey][]string{} // by pattern and database: the commands with a name of it in the star's place
+	members := map[patternKey][]string{} // the commands that fit the pattern with a name of the database in the star
 	for _, command := range slices.Sorted(maps.Keys(counter.schema.Commands)) {
 		for pattern, label := range splitPattern(command) {
 			for _, database := range owners[label] {
@@ -576,8 +571,8 @@ func (counter *counter) resolvePatterns() {
 	})
 }
 
-// splitPattern yields each way a command's name splits into a pattern and a label: the label is a run of the
-// name's words, and the pattern is the name with a star in the label's place. The whole name is never a label.
+// splitPattern yields each way a command's name splits into a pattern, with a star in the place of a run of its
+// underscore parts, and the label that run is. The whole name is never a label.
 func splitPattern(command string) iter.Seq2[string, string] {
 	return func(yield func(string, string) bool) {
 		parts := strings.Split(command, "_")
@@ -592,8 +587,8 @@ func splitPattern(command string) iter.Seq2[string, string] {
 	}
 }
 
-// walkFields calls the function on every field of every database's definitions and of every command's arguments, with
-// whether a command holds the field.
+// walkFields calls the function on every field of the databases' definitions and the commands' arguments, with whether
+// a command holds the field.
 func (schema *Schema) walkFields(visit func(field *Field, held bool)) {
 	each := func(root *Field, held bool) {
 		visit(root, held)
@@ -610,20 +605,15 @@ func (schema *Schema) walkFields(visit func(field *Field, held bool)) {
 }
 
 // resolveClaims gives a field the claims its counts support: its shape, the database its block's keys name and its
-// value. A stated shape or value is kept, except a reference with no database, a block and a text. These take the
-// reference that vanilla shows, as the docs' "key", a culture's traditions and a title's capital do. A block or a text
-// never takes a reference to the game concepts, whose names are common words. The value is a reference if one database
-// defines every value written and none is a number, a date or a yes-or-no word. Otherwise a field always written as a
-// block is a block, or a color if every block was one, and a field written only as scalars gets the first type in
-// valueTests that all its values fit. A field a command holds names nothing by its keys, since its block takes the
-// command's arguments. A stated target that names a database stays firm only if that database defines every name the
-// game's own files write there, and else it is inferred.
+// value. The flag says whether a command holds the field. A stated claim is kept, but a reference with no database, a
+// block or a text takes the reference vanilla shows.
 func (counter *counter) resolveClaims(field *Field, held bool) {
 	vanilla := field.Vanilla
 	if shape := resolveShapeClaim(vanilla); shape != "" {
 		field.Shape.resolve(shape, game.SourceVanilla)
 	}
-	if !held {
+	// a command's own block, whose shape no source states, takes its arguments and the effects or triggers it runs
+	if !held || field.Keys.IsStated() && field.Shape.IsStated() {
 		counter.resolveKeys(field)
 	}
 	stated := field.Value.Value
@@ -633,10 +623,10 @@ func (counter *counter) resolveClaims(field *Field, held bool) {
 		!hasAll(counter.listLabels(vanilla.Values), counter.defined[stated.Database]) {
 		field.Value.Source = game.SourceVanilla
 	}
-	// A field written as numbers, script values and script value blocks takes a script value.
+	// a field written as numbers, script values and script value blocks takes a script value
 	valued := (vanilla.Blocks == 0 || field.Shape.Value == game.ShapeValue) && counter.takesValues(vanilla.Values)
-	// A number a source states takes a script value too where the game's files write one, as EU5's add_cooldown does in
-	// years = INTERNATIONAL_ORGANIZATION_SAME_AGENDA_COOLDOWN_YEARS.
+	// a stated number takes a script value too if the game's files write one, as EU5's add_cooldown does in
+	// years = INTERNATIONAL_ORGANIZATION_SAME_AGENDA_COOLDOWN_YEARS
 	if field.Value.IsStated() && stated.Type == ValueNumber && valued {
 		field.Value.Value.Values = true
 	}
@@ -652,6 +642,7 @@ func (counter *counter) resolveClaims(field *Field, held bool) {
 		isName := named && jomini.IsNumber(value) && counter.defined[expected.Database][value]
 		return counter.isLiteral(value) && !isName
 	})
+	// a game concept's name is a common word, so a block or a text never refers to one
 	concept := expected.Database == counter.schema.Concepts
 	// a GUI database's names are common words, such as value, as they are for the keys (resolveKeys)
 	gui := strings.HasPrefix(expected.Database, game.GUI.DatabasePrefix)
@@ -683,10 +674,8 @@ func (counter *counter) resolveClaims(field *Field, held bool) {
 	}
 }
 
-// resolveShapeClaim returns the shape that the blocks of a field were written in. If they call scripted definitions,
-// it is the one shape every call allows. Otherwise it is the one shape the keys told. Where a key told value, value
-// wins over triggers. It is unknown if the shapes disagree or a key told shapeAmbiguous, and "" if the blocks tell
-// nothing.
+// resolveShapeClaim returns the one shape the blocks of a field were written in, value winning over triggers. It
+// returns game.ShapeUnknown if the shapes disagree, and "" if the blocks tell nothing.
 func resolveShapeClaim(vanilla Vanilla) string {
 	_, valued := vanilla.Shapes[game.ShapeValue]
 	var shapes []string
@@ -721,11 +710,9 @@ func resolveShapeClaim(vanilla Vanilla) string {
 	return shapes[0]
 }
 
-// resolveKeys sets the database that a field's block's keys name, as a culture's opinions name cultures. It does so if
-// every key that only vanilla writes there is a definition of one database, and folds those keys' fields into the
-// <any> field. A key a source declares stays as it is. A block whose shape holds commands names nothing by its keys.
-// Neither do keys that are game concepts or messages, definitions of a GUI database (whose names are common words,
-// such as value), or definitions of a database with nested ones.
+// resolveKeys sets the database that a field's block's keys name, as a culture's opinions name cultures, and folds the
+// keys only vanilla writes there into the <any> field. A stated database is kept; else the keys name one only if every
+// key is a definition of it.
 func (counter *counter) resolveKeys(field *Field) {
 	if len(game.Shapes[field.Shape.Value].Allows) > 0 {
 		return
@@ -736,7 +723,12 @@ func (counter *counter) resolveKeys(field *Field) {
 			keys[key] = child.Vanilla.Count
 		}
 	}
-	expected, ok := counter.resolveReference(keys)
+	expected, ok := Expected{Database: field.Keys.Value}, len(keys) > 0
+	if !field.Keys.IsStated() {
+		expected, ok = counter.resolveReference(keys)
+	}
+	// keys never name the game concepts, localization, a GUI database, whose names are common words such as value, or
+	// a database with nested ones
 	if !ok || expected.Nested || expected.Database == counter.schema.Concepts || expected.Database == game.Localization ||
 		strings.HasPrefix(expected.Database, game.GUI.DatabasePrefix) {
 		return
@@ -749,13 +741,9 @@ func (counter *counter) resolveKeys(field *Field) {
 	field.Keys.resolve(expected.Database, game.SourceVanilla)
 }
 
-// resolveReference returns the reference that every given value makes: to the one database that defines them all. It
-// returns false if there are no values, or if no database or more than one defines them all. A quoted value names what
-// it names unquoted. A value that holds a parameter is left out, and so is a link such as scope:target, which leads to
-// a scope instead of naming a definition. A database named for another that defines them too does not count apart from
-// it. If no database defines them all, a database together with its nested ones may, as a language and its dialects
-// do, and the reference names the nested ones too. The game concepts count only if nothing else does, and the
-// localization only if neither does, since their names are text, not definitions.
+// resolveReference returns the reference that every given value makes, to the one database, or a database with its
+// nested ones, that defines them all. The game concepts count only if nothing else does, and the localization only if
+// neither does. It returns false if no database or several do.
 func (counter *counter) resolveReference(values map[string]int) (Expected, bool) {
 	labels := counter.listLabels(values)
 	if len(labels) == 0 {
@@ -795,9 +783,9 @@ func (counter *counter) resolveReference(values map[string]int) (Expected, bool)
 	return Expected{Type: ValueReference, Database: databases[0], Nested: nested}, true
 }
 
-// listLabels returns the labels that the given values write, each with its count. A quoted value counts as the
-// label inside its quotes. A value that holds a parameter is left out, and so is a link, which leads to a scope
-// rather than naming a definition.
+// listLabels returns the labels that the given values write, each with its count. A quoted value counts as the label
+// inside its quotes. A value that holds a parameter is left out, and so is a link, which leads to a scope rather than
+// naming a definition.
 func (counter *counter) listLabels(values map[string]int) map[string]int {
 	labels := map[string]int{}
 	for value, count := range values {
@@ -834,10 +822,9 @@ func (counter *counter) isLiteral(value string) bool {
 	})
 }
 
-// takesValues reports whether a field takes a number that a script value may give, judging by the values the game's
-// own files write in it. At least one must name a script value, as add_stability = stability_mild_bonus does, and each
-// other must be a number, a parameter, a chain of links or a command the dumps declare. Any other name, such as a flag
-// or a relation level, makes it false, since a script value's name there would match only by chance.
+// takesValues reports whether a field takes a number that a script value may give: of the values the game's own files
+// write in it, one names a script value, as add_stability = stability_mild_bonus does, and every other is a number, a
+// parameter, a chain of links or a command.
 func (counter *counter) takesValues(values map[string]int) bool {
 	names := counter.defined[counter.schema.Values]
 	named := false
@@ -855,10 +842,9 @@ func (counter *counter) takesValues(values map[string]int) bool {
 	return named
 }
 
-// resolvePrefix sets the database whose definitions the names after a prefix are, and records the names counted in the
-// link's arguments. A prefix that leads to a scope from any scope names the database of that scope, if it defines every
-// name the game's own files write after the prefix. Otherwise it is the one database that defines every name written
-// after it, and none if no database or several do.
+// resolvePrefix sets the database that defines every name the game's own files write after a prefix, none if no
+// database or several do, and records the names counted in its link's arguments. A prefix that leads to a scope from
+// any scope tries that scope's database first.
 func (counter *counter) resolvePrefix(prefix string, labels map[string]int) {
 	database := counter.schema.findScopeDatabase(prefix)
 	expected, ok := Expected{Type: ValueReference, Database: database}, database != ""
@@ -881,7 +867,7 @@ func (counter *counter) resolvePrefix(prefix string, labels map[string]int) {
 }
 
 // findScopeDatabase returns the database whose definitions the names after a link prefix are, where the prefix leads to
-// a scope from any scope: the database of the type the scope's own getter gives, else of the scope's words. It returns
+// a scope from any scope: the database of the type the scope's own getter gives, else of the scope's phrase. It returns
 // "" for any other prefix, and where neither gives one.
 func (schema *Schema) findScopeDatabase(prefix string) string {
 	command := schema.Commands[prefix]

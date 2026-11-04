@@ -1,6 +1,4 @@
-// gui.go holds the rules for GUI files that every game shares: the words that declare databases, the keys that name
-// widgets, how each built-in type draws, how a definition names its picture, and the shapes drawn where a picture has
-// no file. What differs by game is on the game's row.
+// gui.go holds the rules for GUI files that every game shares. What differs by game is on the game's row.
 
 package game
 
@@ -33,9 +31,8 @@ type WidgetSlot struct {
 	Labels bool
 }
 
-// An Animation is how one state of a widget leads to others: the key that names the state run after it, the key of
-// the calls it runs as it ends, the key of the widget's alpha, and the data functions that run a state by its name, on
-// the widget itself or on a child found by its name.
+// An Animation is how one state of a widget leads to others: the keys of the next state, the calls run as it ends
+// and the alpha, and the data functions that run a state by its name, on the widget or on a child.
 type Animation struct {
 	NextKey   string
 	FinishKey string
@@ -56,18 +53,17 @@ type VariableSystem struct {
 	Toggle       string // sets a variable that is unset and unsets one that is set
 }
 
-// FontRules is how a font file lays out the files of a font. A font has a block for each of its styles, which names a
-// definition of files. That definition has groups of languages, each with the files those languages read, the font's
-// own file first.
+// FontRules is how a font file names the files of a font: a block for each style, naming a definition of files, which
+// has groups of languages, each with the files they read, the font's own file first.
 type FontRules struct {
 	Key     string // the key of a widget that names its font
 	SizeKey string // the key of a widget that sets the size of its text
-	// TextType is the built-in type of a text, whose own type in the game's files gives a text with no font of its
-	// own its font and size.
+	// TextType is the built-in type of a text, whose own type in the game's files gives a text with no font its font
+	// and size.
 	TextType      string
 	Database      string // the database of fonts
 	StyleKey      string // the key of a font's block for one of its styles
-	StyleWords    string // the key in that block of the style's words, such as bold|italic
+	StyleValueKey string // the key in that block whose value is the style, such as regular or bold|italic
 	FilesKey      string // the key in that block that names the definition of the style's files
 	FilesDatabase string // the database of those definitions
 	GroupKey      string // the key of a definition's block for a group of languages
@@ -97,13 +93,14 @@ type TierFrames struct {
 	Tiers    []string
 }
 
-// A Placeholder is a shape PMT draws where a picture has no file, for the kinds of object it stands for. The shape is
-// a file among the page's placeholders, and the page tints each in a color of its own.
+// A Placeholder is a shape PMT draws where a picture has no file, for the things the picture can be of.
 type Placeholder struct {
-	Games   []string // the games it holds for; none means every game
-	Shape   string
-	Kinds   []string // the kinds as keys, data types and data functions write them, in lower-case words ("coat of arms")
-	Runtime bool     // only the running game draws its pictures, from what it holds, so no file is looked for
+	Games []string // the games it holds for; none means every game
+	Shape string
+	// Terms are what the picture can be of, as keys, data types and data functions write it, in lower case with
+	// spaces ("coat of arms").
+	Terms   []string
+	Runtime bool // only the running game draws its pictures, from what it holds, so no file is looked for
 }
 
 // Illustrations is where the pictures are that a definition names by a path below a folder: the key that names the
@@ -118,38 +115,37 @@ type GameGUI struct {
 	Holders     map[string]string // the window a window made from a type is laid out in, by the type
 	Undeclared  []string          // the widget types it draws though no file of its install declares them
 	DropsHidden []string          // the types beyond GUI.Types in which a hidden child takes no room
-	// SuffixStems is, by the stem of the defines for a kind and a field of its pictures, the stem its suffix define is
-	// written under instead, where the game names it so.
+	// SuffixStems maps the stem of the defines for a picture field to the stem its suffix define is written under, where
+	// the two differ.
 	SuffixStems   map[string]string
 	DefineGroup   string        // the define group whose defines say where its icons and pictures are
 	Tiers         TierFrames    // how it draws a title's tier from a sheet of cells; zero for none
 	Illustrations Illustrations // where the pictures are that a definition names by a path below a folder
 }
 
-// Levels says how a kind of level, such as prestige_level, finds its pictures. Word is the last word of the kind's
-// name, which marks it as a level. The folder is the kind's define with the folder define's ending. The picture is the
-// first file in it, in name order, that starts with Prefix and the kind's other words.
+// Levels says how a level, such as prestige_level, finds its pictures: Ending marks a name as a level, and Prefix
+// starts the names of its files.
 type Levels struct {
-	Word   string
+	Ending string
 	Prefix string
 }
 
 // GUIRules is the rules for GUI files beyond their syntax. GUI is its one row.
 type GUIRules struct {
-	// Declares is the words before a top block that declare a definition of gui.<word>, or group definitions
+	// Declares is the keys before a top block that declare a definition of gui.<key>, or that group definitions
 	// (types x { }).
 	Declares  []string
-	TypeKey   string            // the word that declares a type; a type no file defines is marked missing under it
-	BlockKey  string            // the word that declares a labeled block, which a widget's BlockCalls block replaces
+	TypeKey   string            // the key that declares a type; a type no file defines is marked missing under it
+	BlockKey  string            // the key that declares a labeled block, which a widget's BlockCalls block replaces
 	NameKeyOf map[string]string // a block key at any depth, and the key whose value names its definition
 	// WidgetKey is the key that names every other top block, a definition of WidgetDatabase. The file's only block
 	// written under a key that writes none is named after the file.
 	WidgetKey      string
-	DatabasePrefix string // what a GUI database's name starts with, before the word that declares it
-	WidgetDatabase string // the database of every top block that no declaring word declares
-	TagCalls       string // the word that calls the tag a block is written with
-	TemplateCalls  string // the word that calls a template
-	BlockCalls     string // the word that calls the block a template or type leaves for a widget to replace
+	DatabasePrefix string // what a GUI database's name starts with, before the key that declares it
+	WidgetDatabase string // the database of every top block that no key of Declares declares
+	TagCalls       string // the caller of the type a block's key names, as Callable.Callers lists it
+	TemplateCalls  string // the key that calls a template
+	BlockCalls     string // the key that calls the block a template or type leaves for a widget to replace
 	ContextKey     string // the key whose value is the data call its block's bindings read in
 	TextFormats    string // the database a text's #format names
 	TextIcons      string // the database an icon in a text, @icon!, names
@@ -180,16 +176,13 @@ type GUIRules struct {
 	// that texture.
 	OverlayKey        string
 	OverlayTextureKey string
-	// CallKinds is what a data call in a text shows, by the type its last function returns: number or text. A type
-	// with no row shows two words of text. A call that DateCalls knows shows a date. draw's sampleCall reads the
-	// words, number, text and date, and writes each sample's word in its loc.Segment.Kind, by which placeholders.ts
-	// colors it.
-	CallKinds map[string]string
-	DateCalls DateCalls
-	DateForm  DateForm
-	// PercentCode and SignCode are format codes a data call in a text writes after |. The first shows its number as a
-	// percent, and the second shows a plus sign before a number above zero. A digit among the codes is how many
-	// decimals the number has.
+	// CallOutputs is what a data call in a text writes, a number or text, by the type its last function returns. A
+	// type with no row writes text, and a call that DateCalls knows writes a date.
+	CallOutputs map[string]string
+	DateCalls   DateCalls
+	DateForm    DateForm
+	// PercentCode and SignCode are format codes a data call in a text writes after |: a percent, and a plus sign before
+	// a number above zero. A digit among the codes is the number's decimals.
 	PercentCode string
 	SignCode    string
 	ColorType   string // the data type that a binding of a color returns
@@ -205,9 +198,8 @@ type GUIRules struct {
 	// OpeningFacts is the data functions, called with no arguments, that hold as a window opens whatever it is about:
 	// an object exists, or a list has the items the window draws.
 	OpeningFacts []string
-	// SampleFacts is the data functions, called with no arguments, that hold of the sample the Visual view draws: the
-	// player's own living, landed ruler, who shows their legitimacy and sits on a council of councilors they may
-	// replace.
+	// SampleFacts is the data functions, called with no arguments, that hold of the Visual view's sample: the player's
+	// own living, landed ruler with legitimacy, on a council whose councilors can be replaced.
 	SampleFacts []string
 	// SampleAbsent is the data functions that reach an object the sample lacks, so that an existence test of it, or of
 	// anything past it, fails.
@@ -218,7 +210,7 @@ type GUIRules struct {
 	// MaskKeys is the keys whose image cuts a widget's picture to its shape: a coat of arms' mask, and a widget's own.
 	MaskKeys []string
 	Fonts    FontRules
-	Getters  []string // the words a data function that only reaches an object starts with
+	Getters  []string // how the name of a data function that only reaches an object starts, such as Get
 	// HiddenKeys is the keys whose no hides a widget. The first one a widget writes decides: visible_at_creation only
 	// says how a widget starts until its visible condition is read.
 	HiddenKeys     []string
@@ -241,9 +233,8 @@ type GUIRules struct {
 	IconPathFile   string   // the file in an icon folder that names the paths its icons are read from
 	PictureKeys    []string // the keys a definition names its picture by, tried in this order
 	IconPathSuffix string   // the ending of the defines that name a folder of icons
-	// FolderDefineSuffix, PrefixDefineSuffix and NameDefineSuffix end the defines that say where a data function finds
-	// its pictures, after the kind of object and the field it reads: the folder, the start of each file's name and its
-	// ending.
+	// FolderDefineSuffix, PrefixDefineSuffix and NameDefineSuffix end, after a database and field, the defines that say
+	// where a data function finds its pictures: their folder, the start of each file's name and its ending.
 	FolderDefineSuffix string
 	PrefixDefineSuffix string
 	NameDefineSuffix   string
@@ -255,7 +246,8 @@ type GUIRules struct {
 	ShownFirst string
 }
 
-// The words that GUI shares with another table or with another of its own fields, each written once.
+// The keys, callers and values that GUI shares with another table or with another of its own fields, each written
+// once.
 const (
 	guiType          = "type"
 	guiBlock         = "block"
@@ -334,7 +326,7 @@ var GUI = GUIRules{
 	OverlayKey:   "modify_texture", OverlayTextureKey: "texture",
 	// the dumps' Return type of the last function of every data call in the three installs' GUI texts;
 	// CPdxStringView is EU5's alone and int64 Vic3's
-	CallKinds: map[string]string{
+	CallOutputs: map[string]string{
 		"CString": "text", "CUTF8String": "text", "CPdxStringView": "text",
 		"int32": "number", "int64": "number", "uint32": "number", "uint64": "number", "CFixedPoint": "number",
 		"float": "number", "double": "number",
@@ -352,11 +344,9 @@ var GUI = GUIRules{
 			"CW_DATE_December",
 		},
 	},
-	// each game's English localization, by keys named for the formats they write: CK3 core_l_english.yml:493
-	// KEY_VALUE_PERCENT $VALUE|V0%$ and :830 BASE_VALUE_FORMAT_DECIMALS $VALUE|V2$; Vic3 interfaces_l_english.yml:20
-	// VALUE_PERCENT_GOOD $VALUE|%0$ and :2040 FORMATION_COMMANDER_STAT_DECIMAL_BASE_ENTRY $VALUE|v1$; EU5
-	// diplomacy_l_english.yml:380-383 TWO_DP_ENTRY_FORMAT $VALUE|+=2$, _PERCENT $VALUE|+2%$ and _MULTIPLIER_SIGNED
-	// $VALUE|=$. CK3 core_l_english.yml:831 writes its own plus before $VALUE|2$.
+	// each game's English localization: CK3 core_l_english.yml:493 $VALUE|V0%$, :830 $VALUE|V2$, and :831 its own plus
+	// before $VALUE|2$; Vic3 interfaces_l_english.yml:20 $VALUE|%0$ and :2040 $VALUE|v1$; EU5
+	// diplomacy_l_english.yml:380-383 $VALUE|+=2$, $VALUE|+2%$ and $VALUE|=$
 	PercentCode:   "%",
 	SignCode:      "=",
 	ColorType:     "CVector4f", // the dumps' Return type of GetColor in the three installs
@@ -367,16 +357,14 @@ var GUI = GUIRules{
 	ValidFunction: "IsValid",
 	// CK3 gui/window_council.gui:465 and :484 (IsValid), gui/window_character_finder.gui:51 (HasItems)
 	OpeningFacts: []string{"IsValid", "HasItems"},
-	// the owner's CK3 character-window.png shows a living ruler with soldiers and legitimacy 2/5
-	// (gui/window_character.gui:5440 IsAlive, :5722 HasLandedTitles, :5633 ShouldShowLegitimacy), EU5's event
-	// portraits are living (in_game/gui/shared/cards.gui:1038 and :1054), and council-window.png shows each seat's
-	// replace button and main skill (gui/window_council.gui:609 CanPotentiallySelectCouncillor, :662 HasMainSkill, :671
-	// HasCouncillor)
+	// CK3's character window shows a living, landed ruler with legitimacy (window_character.gui:5440, :5722, :5633),
+	// EU5's event portraits are living (cards.gui:1038, :1054), and CK3's council window shows each seat's replace
+	// button and main skill (window_council.gui:609, :662, :671)
 	SampleFacts: []string{
 		"IsAlive", "HasLandedTitles", "ShouldShowLegitimacy", "CanPotentiallySelectCouncillor", "HasMainSkill",
 		"HasCouncillor", "IsVisible", "CanSelect",
 	},
-	// council-window.png shows no forced next councilor, which window_council.gui:925 marks with a debug square
+	// CK3's council window shows no forced next councilor, which window_council.gui:925 marks with a debug square
 	SampleAbsent: []string{"GetNextForcedCouncillor"},
 	Variables: VariableSystem{ // EU5's data_types_uncategorized.txt declares NotExistOrHasValue( Arg0, Arg1 )
 		Type: "VariableSystem", Exists: "Exists", HasValue: "HasValue", UnsetOrValue: "NotExistOrHasValue", Set: "Set",
@@ -388,7 +376,7 @@ var GUI = GUIRules{
 	MaskKeys: []string{"coat_of_arms_mask", "mask"},
 	Fonts: FontRules{ // CK3 and Vic3 fonts/fonts.font, EU5 in_game/fonts/in_game_fonts.font
 		Key: guiFontKey, SizeKey: "fontsize", TextType: "textbox", Database: guiFontDatabase, StyleKey: "fontstyle",
-		StyleWords: "style", FilesKey: "fontfiles",
+		StyleValueKey: "style", FilesKey: "fontfiles",
 		FilesDatabase: "font.fontfiles", GroupKey: "group", LanguagesKey: "languages", PathsKey: "files",
 	},
 	Getters:        []string{"Get", "Access"},
@@ -426,47 +414,46 @@ var GUI = GUIRules{
 	FolderDefineSuffix: "_PATH",
 	PrefixDefineSuffix: "_PREFIX",
 	NameDefineSuffix:   "_SUFFIX",
-	// CK3 gfx/interface/icons/realm_frames/_default_62_frame.dds, which feudal_government, with no frames of its own,
-	// draws in the game
+	// CK3 gfx/interface/icons/realm_frames/_default_62_frame.dds, drawn for frameless feudal_government
 	DefaultPicture: "_default",
 	// CK3 common/defines/graphic/00_graphics.txt:846-851, PRESTIGE_LEVEL_PATH and the piety, influence and merit ones,
 	// name gfx/interface/icons/modifiers, where the files are icon_prestige_00 to _05 and icon_piety_christian_00
-	Levels: Levels{Word: "level", Prefix: "icon_"},
+	Levels: Levels{Ending: "level", Prefix: "icon_"},
 	// a file's first entry is a window in 88% of CK3's GUI files with one, 57% of Vic3's and 52% of EU5's
 	ShownFirst: "gui.widget",
 }
 
-// Placeholders are the shapes drawn where a picture has no file, tried in order, a game's own before every game's. Each
-// has the kinds of picture it stands for. The last is the plain icon, for a picture of no listed kind.
+// Placeholders are the shapes drawn where a picture has no file, a game's own first. The last is the plain icon, for a
+// picture no term fits.
 var Placeholders = []Placeholder{
-	{Games: []string{ck3}, Shape: "crowned-ruler", Kinds: []string{"portrait texture"}, Runtime: true},
-	{Games: []string{ck3}, Shape: "shield", Kinds: []string{"coat of arms"}, Runtime: true},
-	{Games: []string{vic3}, Shape: "top-hat", Kinds: []string{"portrait texture"}, Runtime: true},
-	{Games: []string{eu5}, Shape: "plumed-hat", Kinds: []string{"portrait texture"}, Runtime: true},
-	{Games: vic3AndEU5, Shape: "flag", Kinds: []string{"coat of arms"}, Runtime: true},
-	{Shape: "illustration", Kinds: []string{"illustration", "image", "picture"}},
-	{Shape: "flag", Kinds: []string{"flag"}},
-	{Shape: "faith", Kinds: []string{"faith", "religion", "religious", "rite", "tenet", "doctrine"}},
-	{Shape: "goods", Kinds: []string{"goods", "resource"}},
-	{Shape: "action", Kinds: []string{"action", "actions", "interaction", "task"}},
-	{Shape: "military", Kinds: []string{"unit", "formation", "battle", "war", "military"}},
-	{Shape: "building", Kinds: []string{"building", "holding", "domicile", "construction", "great project"}},
-	{Shape: "trait", Kinds: []string{"trait", "perk", "role", "tradition", "pillar"}},
-	{Shape: "modifier", Kinds: []string{"modifier"}},
-	{Shape: "concept", Kinds: []string{"concept", "encyclopedia", "article"}},
-	{Shape: "rank", Kinds: []string{"rank", "level", "status"}},
-	{Shape: "map", Kinds: []string{"map", "terrain", "strait", "location"}},
-	{Shape: "message", Kinds: []string{"message", "alert", "notification"}},
+	{Games: []string{ck3}, Shape: "crowned-ruler", Terms: []string{"portrait texture"}, Runtime: true},
+	{Games: []string{ck3}, Shape: "shield", Terms: []string{"coat of arms"}, Runtime: true},
+	{Games: []string{vic3}, Shape: "top-hat", Terms: []string{"portrait texture"}, Runtime: true},
+	{Games: []string{eu5}, Shape: "plumed-hat", Terms: []string{"portrait texture"}, Runtime: true},
+	{Games: vic3AndEU5, Shape: "flag", Terms: []string{"coat of arms"}, Runtime: true},
+	{Shape: "illustration", Terms: []string{"illustration", "image", "picture"}},
+	{Shape: "flag", Terms: []string{"flag"}},
+	{Shape: "faith", Terms: []string{"faith", "religion", "religious", "rite", "tenet", "doctrine"}},
+	{Shape: "goods", Terms: []string{"goods", "resource"}},
+	{Shape: "action", Terms: []string{"action", "actions", "interaction", "task"}},
+	{Shape: "military", Terms: []string{"unit", "formation", "battle", "war", "military"}},
+	{Shape: "building", Terms: []string{"building", "holding", "domicile", "construction", "great project"}},
+	{Shape: "trait", Terms: []string{"trait", "perk", "role", "tradition", "pillar"}},
+	{Shape: "modifier", Terms: []string{"modifier"}},
+	{Shape: "concept", Terms: []string{"concept", "encyclopedia", "article"}},
+	{Shape: "rank", Terms: []string{"rank", "level", "status"}},
+	{Shape: "map", Terms: []string{"map", "terrain", "strait", "location"}},
+	{Shape: "message", Terms: []string{"message", "alert", "notification"}},
 	{Shape: "icon"},
 }
 
-// FindPlaceholder returns the first placeholder for the game with a kind that the given phrase names as whole words,
-// such as "coat of arms". The phrase says what the picture is of. It returns the plain icon if no kind is named.
+// FindPlaceholder returns the first placeholder for the game with a term that a phrase holds whole, such as "coat of
+// arms". The phrase says what the picture is of. It returns the plain icon if no term fits.
 func (game *Game) FindPlaceholder(phrase string) Placeholder {
 	padded := " " + phrase + " "
 	for _, placeholder := range Placeholders {
-		isNamed := game.Matches(placeholder.Games) && slices.ContainsFunc(placeholder.Kinds, func(kind string) bool {
-			return strings.Contains(padded, " "+kind+" ")
+		isNamed := game.Matches(placeholder.Games) && slices.ContainsFunc(placeholder.Terms, func(term string) bool {
+			return strings.Contains(padded, " "+term+" ")
 		})
 		if isNamed {
 			return placeholder

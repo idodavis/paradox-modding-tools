@@ -48,7 +48,7 @@ export interface Check {
 }
 
 /**
- * Compared is the texts of two statements, as the two sides of a compare.
+ * A Compared is the texts of two statements, as the two sides of a compare.
  */
 export interface Compared {
     "left": string;

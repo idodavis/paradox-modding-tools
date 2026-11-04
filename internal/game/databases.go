@@ -32,11 +32,10 @@ type Database struct {
 	Mirrors   bool
 	FoldsCase bool     // its references match without regard to case
 	Prefixes  []string // the link prefixes script writes before a definition's name, as in dynasty:<key>
-	// Separator is the character between a definition's name and a key nested in it, as | in define:NAI|X. A prefixed
-	// reference names the definition up to it, and a nested definition is named across it. An empty one means neither.
+	// Separator is the character between a definition's name and a key nested in it, as | in define:NAI|X. "" means none.
 	Separator string
-	// BoolKey is the key a definition writes as yes to say that the name it defines takes yes or no where it is
-	// written, and a number otherwise. "" means the database's definitions say nothing of that.
+	// BoolKey is the key a definition writes as yes when the name it defines takes yes or no, and a number otherwise.
+	// "" means none.
 	BoolKey string
 	// Optional marks a database whose names need no definition: where one is missing, the game reads the localization
 	// keys built on the name. A reference to such a name never accuses.
@@ -46,8 +45,7 @@ type Database struct {
 // A Contents is what a database holds beyond definitions. The zero Contents is definitions alone.
 type Contents string
 
-// The contents a database can hold beyond definitions: events, on_actions, decisions, the messages an effect sends,
-// lists, game concepts and modifier types.
+// The contents a database can hold beyond definitions.
 const (
 	ContentsEvents    Contents = "events"
 	ContentsOnActions Contents = "on_actions"
@@ -73,8 +71,7 @@ type Nesting struct {
 	Sets    bool   // its keys switch a name on or give a definition a second name; they define nothing
 }
 
-// Label returns the name of the database a nesting defines in: the parent's name, then a dot and its own Database. It
-// is the parent's name alone where the nesting has no database of its own.
+// Label returns the name of the database a nesting defines: the parent's name, then a dot and its own Database, if any.
 func (nesting Nesting) Label() string {
 	if nesting.Database == "" {
 		return ToDatabase(nesting.Parent)
@@ -84,13 +81,13 @@ func (nesting Nesting) Label() string {
 
 // A Callable is a database whose definitions script or a GUI file calls by name.
 type Callable struct {
-	Callers    []string // the words that call a definition by name
+	Callers    []string // where a definition is called from: a trigger, effect or value block, or a GUI key
 	Shape      string   // what a definition's block holds, a Shapes key; "" means the caller's shape
 	Parameters bool     // a call passes parameters
 	Local      bool     // its definitions answer only in the file that declares them
 	FoldsCase  bool     // its references match without regard to case
 	Proves     []string // the shapes a block that calls one of its definitions can have
-	// Command is the kind of command a definition acts as where it is called, effect or trigger, or "" for neither.
+	// Command is the command a definition acts as where it is called, an effect or a trigger, or "" for neither.
 	Command string
 }
 
@@ -104,8 +101,7 @@ type FileType struct {
 // A Precedence is how definitions of one name combine in the databases it holds for.
 type Precedence struct {
 	Games []string // the games it holds for; none means every game
-	// Databases is the databases it holds for, by name or by a pattern path.Match reads, as setup/* holds every
-	// database under setup, nested ones included.
+	// Databases is the databases it holds for, by name or by a path.Match pattern, as setup/* for those under setup.
 	Databases   []string
 	Folders     []string // the folders it holds for, each with everything below it
 	Keeps       string   // which definition the game keeps: first, last, highest or merged
@@ -120,18 +116,18 @@ type Precedence struct {
 	Contested []string
 }
 
-// A Reference is a key path whose words name definitions.
+// A Reference is a key path whose values name definitions.
 type Reference struct {
 	Games []string // the games it holds for; none means every game
 	// Database is the database whose definitions hold the key path. "" means a GUI file's widgets, where the key path
 	// is one key.
 	Database string
 	KeyPath  string // the key path from the definition; <number> matches a number key
-	Target   string // the database the words name; "" means the row's own
+	Target   string // the database the values name; "" means the row's own
 	Folder   string // the folder a file named with no folder of its own is in; "" means none
 }
 
-// An EntryMode is a word written before a definition's name, and what it does to a definition already loaded.
+// An EntryMode is a prefix written before a definition's name, and what it does to a definition already loaded.
 type EntryMode struct {
 	Prefix   string // INJECT, REPLACE, TRY_INJECT…
 	Replaces bool   // takes the earlier definition's place; else it adds to it
@@ -145,7 +141,7 @@ type PictureStep struct {
 	// of that key, the one that writes the value at the field.
 	Key      string
 	Database string // the database whose definition the key's value names
-	Match    string // the key path whose words match the value in each definition; "" means the definition's name
+	Match    string // the key path in each definition whose values are matched with the value; "" means its name
 }
 
 // A PictureChain is the hops from an event to a picture file.
@@ -188,9 +184,8 @@ const GlobalType = "Global"
 // Scope.GetCountry gives Country.
 const AnyScopeType = "Scope"
 
-// TopScopeType is the data type the SCOPE global gives. Its promotes that lead to a scope read the scope saved under
-// the name they are given, as SCOPE.sC('heir') does. CK3 logs/data_types/data_types_script.txt:797-800, Vic3's and
-// EU5's data_types_script.txt:54-57.
+// TopScopeType is the data type the SCOPE global gives. Its promotes read the scope saved under a name, as
+// SCOPE.sC('heir') does: data_types_script.txt:797-800 in CK3's logs, :54-57 in Vic3's and EU5's.
 const TopScopeType = "TopScope"
 
 // SelfFunctions are the data functions that return the object they are called on, such as EU5's Goods.Self. The dumps
@@ -227,9 +222,8 @@ var EventDelay = struct {
 	Block string   // the key of a block that holds the delay of every firing written after it
 }{[]string{"days", "weeks", "months", "years"}, "delay"} // Vic3 effects.log:38529
 
-// GameRules is how the game rules are written and named. The three games write them alike: CK3
-// common/game_rules/_game_rules.info:1-20, Vic3 common/game_rules/game_rules.md:1-12 and EU5
-// main_menu/common/game_rules/_game_rules.info:1-19.
+// GameRules is how the game rules are written and named, alike in the three games: CK3 _game_rules.info:1-20, Vic3
+// game_rules.md:1-12 and EU5 main_menu/common/game_rules/_game_rules.info:1-19.
 var GameRules = struct {
 	Database      string // the database of the rules, each a block holding a block per setting
 	Trigger       string // the trigger that asks whether a rule is set to the setting it names
@@ -239,9 +233,8 @@ var GameRules = struct {
 	Description   string // the localization key of a setting's description, with the setting at %s
 }{"game_rules", "has_game_rule", "default", "categories", "setting_%s", "setting_%s_desc"}
 
-// CustomTexts is how a customizable localization is written: a block for each text it can show, which names the
-// text's localization key. The three games write it alike: CK3 common/customizable_localization/_custom_loc.info:18-38,
-// EU5 in_game/common/customizable_localization/customizable_localization.info:1-10, and Vic3's own files there.
+// CustomTexts is how a customizable localization is written, alike in the three games: a block for each text it can
+// show, naming the text's key (CK3 _custom_loc.info:18-38, EU5 customizable_localization.info:1-10, Vic3's files).
 var CustomTexts = struct {
 	Block string // the key of a block that holds one of the texts
 	Key   string // the key in that block that names the text's localization key
@@ -258,8 +251,8 @@ var ClassDatabases = map[string]string{
 	"CTravelPointOfInterestTypeDatabase": "travel/point_of_interest_types",
 }
 
-// definitionWords are the singular and plural words for a definition of some databases, by database.
-var definitionWords = map[string]struct{ One, Many string }{
+// definitionNouns are the singular and plural nouns for a definition of some databases, by database.
+var definitionNouns = map[string]struct{ One, Many string }{
 	"messages":      {"player message", "player messages"},
 	SavedScopes:     {"saved scope", "saved scopes"},
 	Variables:       {"variable", "variables"},
@@ -269,7 +262,7 @@ var definitionWords = map[string]struct{ One, Many string }{
 	Flags:           {"flag", "flags"},
 }
 
-// plurals are the plural endings of a word, each with its singular ending. The first ending that fits wins.
+// plurals are the plural endings of an English noun, each with its singular ending. The first ending that fits wins.
 var plurals = []struct{ Plural, One string }{
 	// the same in the singular and the plural
 	{"arms", "arms"}, {"goods", "goods"}, {"belli", "belli"}, {"criteria", "criteria"}, {"data", "data"},
@@ -292,11 +285,11 @@ var FireContents = []Contents{ContentsEvents, ContentsOnActions, ContentsDecisio
 // TableSyntax is how a table file such as CK3's map_data/definition.csv writes its rows. The first column names a row.
 var TableSyntax = struct{ Separator, Comment string }{";", "#"}
 
-// SetupFolder is the folder the start setup's rows are written for. Each folder a bookmark names as the folder of its
-// start setup is read by them as if its files were here.
+// SetupFolder is the folder the start setup's rows are written for. A bookmark's start setup folder is read as if its
+// files were here.
 const SetupFolder = "setup/start"
 
-// The words that call a scripted database's definitions.
+// The callers of the scripted databases' definitions: a trigger block, an effect block and a value block.
 const (
 	callTrigger = "trigger"
 	callEffect  = "effect"
@@ -348,9 +341,12 @@ var Databases = []Database{
 	{Folder: "common/coat_of_arms/dynamic_definitions", Games: []string{ck3}, Target: "landed_titles"},
 	// scene_settings_byzantine_1_g1.txt:1-6 writes one setting's fields
 	{Folder: "gfx/court_scene/scene_settings", Games: []string{ck3}, NamedBy: "file"},
-	{Folder: "gfx/map/environment", Games: []string{ck3}, NamedBy: "file"},                         // gfx/map/environment/environment.info:1
-	{Folder: "common/dynasties", Games: []string{ck3}, Prefixes: []string{"dynasty"}},              // _dynasties.info:3
-	{Folder: "common/situation/situations", Games: []string{ck3}, Prefixes: []string{"situation"}}, // _situations.info:206
+	// gfx/map/environment/environment.info:1
+	{Folder: "gfx/map/environment", Games: []string{ck3}, NamedBy: "file"},
+	// _dynasties.info:3
+	{Folder: "common/dynasties", Games: []string{ck3}, Prefixes: []string{"dynasty"}},
+	// _situations.info:206
+	{Folder: "common/situation/situations", Games: []string{ck3}, Prefixes: []string{"situation"}},
 	// Vic3 _on_actions.md
 	{Folder: "common/on_actions", Games: []string{vic3}, Contents: ContentsOnActions, RunOrder: onActionOrder},
 	// the Vic3 wiki and EU5 _events.info
@@ -360,7 +356,8 @@ var Databases = []Database{
 		Folder: "gfx/map/post_effects", Games: []string{vic3}, NamedBy: "field", NameKey: "name",
 		WrapperKeys: []string{"posteffect_volumes"},
 	},
-	{Folder: "common/history", Games: []string{vic3}, NamedBy: "nothing", Shape: "effects"}, // COUNTRIES = { … }: effects
+	// COUNTRIES = { … }: effects
+	{Folder: "common/history", Games: []string{vic3}, NamedBy: "nothing", Shape: "effects"},
 	// scripted_tests.md:2 "Every file is a test suite"
 	{Folder: "tools/scripted_tests", Games: []string{vic3}, NamedBy: "file"},
 	// Vic3 modifier_types.md:1-3,16-17 and EU5 00_modifier_types.txt:1,3
@@ -400,9 +397,8 @@ var Databases = []Database{
 	{Folder: "common/scripted_effects", DeclaringKeys: []string{"scripted_effect"}},
 	{Folder: "common/scripted_triggers", DeclaringKeys: []string{"scripted_trigger"}},
 	{Folder: "common/scripted_lists", Contents: ContentsLists},
-	// CK3 common/effect_localization/_effect_localization.info:9-17 and common/trigger_localization/
-	// _trigger_localization.info:15: an entry is optional, and the game then reads the localization keys built on the
-	// name; EU5 in_game/common/scripted_effects/international_organization_effects.txt:169 names one no entry defines
+	// without an entry the game reads the keys built on the name (CK3 _effect_localization.info:9-17,
+	// _trigger_localization.info:15); EU5 international_organization_effects.txt:169 names one no entry defines
 	{Folder: "common/effect_localization", Optional: true},
 	{Folder: "common/trigger_localization", Optional: true},
 	// its subfolders write the same define groups. define:Namespace|Name reads one (CK3 event_targets.log:109, the
@@ -433,7 +429,8 @@ var Databases = []Database{
 
 // Nestings holds the nested databases, a game's own before every game's.
 var Nestings = []Nesting{
-	{Games: []string{ck3}, Parent: "common/landed_titles", Keys: "[ekdcb]_*"}, // a title inside a title is a title; its key opens with its tier
+	// a title inside a title is a title; its key opens with its tier
+	{Games: []string{ck3}, Parent: "common/landed_titles", Keys: "[ekdcb]_*"},
 	{Games: []string{ck3}, Parent: "common/activities/activity_types", KeyPath: "options", Database: "option_category"},
 	{Games: []string{ck3}, Parent: "common/activities/activity_types", KeyPath: "phases", Database: "phase"},
 	// common/confederation_types/10_house_bloc_types.txt:21-24 switches parameters on with `name = yes`
@@ -475,7 +472,7 @@ var Nestings = []Nesting{
 	},
 	{Games: []string{eu5}, Parent: SetupFolder, KeyPath: "situation_manager", Database: "situation", Target: "situations"},
 	{Parent: "common/defines", Database: "define"},
-	// each kind of block is named by its name key, as CK3 afr.txt:11-12 writes, and two kinds may share a name
+	// each of the three blocks is named by its name key, as CK3 afr.txt:11-12 writes, and two of them may share a name
 	{Parent: "gfx/portraits/accessory_variations", Database: "pattern_textures", Keys: "pattern_textures", NameKey: "name"},
 	{Parent: "gfx/portraits/accessory_variations", Database: "pattern_layout", Keys: "pattern_layout", NameKey: "name"},
 	{Parent: "gfx/portraits/accessory_variations", Database: "variation", Keys: "variation", NameKey: "name"},
@@ -509,9 +506,8 @@ var FileTypes = map[string]FileType{
 	".gui":   {Shape: ShapeWidget, ColorSuffix: "color"},
 }
 
-// Precedences holds how definitions combine, in the order they are tried: the first row that holds for a database
-// wins. The Vic3 rows cite the wiki's Mod compatibility page, verified for 1.13, by its section, and the EU5 rows the
-// same page by line, unless noted.
+// Precedences holds how definitions combine; the first row that holds for a database wins. The Vic3 rows cite the
+// wiki's Mod compatibility page (1.13) by section, and the EU5 rows the same page by line, unless noted.
 var Precedences = []Precedence{
 	// their lists merge, and two trigger or effect blocks conflict
 	{Databases: []string{"on_action", "on_actions"}, Keeps: "merged", Contested: []string{"trigger", "effect"}},
@@ -532,14 +528,12 @@ var Precedences = []Precedence{
 	{Games: ck3AndVic3, Databases: []string{"gui.type", "gui.template"}, Keeps: "first"},
 	// EU5 l.155: the last by playlist position
 	{Games: []string{eu5}, Databases: []string{"gui.type", "gui.template"}, Keeps: "last", ByPlayset: true},
-	// a group of defines is opened in several files: CK3 common/defines/00_defines.txt:1793 and
-	// graphic/00_graphics.txt:1124, Vic3 common/defines/00_defines.txt:1382,1749, the EU5 wiki's Defines, l.86. A block
-	// belongs to its type, so many types write a block of the same name.
+	// a group of defines is opened in several files (CK3 00_defines.txt:1793 and 00_graphics.txt:1124, Vic3
+	// 00_defines.txt:1382,1749, the EU5 wiki's Defines, l.86); a GUI block belongs to its type, so many share a name
 	{Databases: []string{"defines", "gui.block"}, Keeps: "merged"},
-	// CK3 common/religion/doctrine_types/20_doctrines.txt:2066,2079,2102 set coronation_artifact in three doctrines;
-	// each activity holds its own categories, which need unique names only within it (_activity_type.info:138-141);
-	// history/_history.info:3-13: dated entries stack, as history/titles/01_admin_titles_tgp.txt:6339,6435 write
-	// c_nf_wang_738b_7 twice
+	// CK3 20_doctrines.txt:2066,2079,2102 set coronation_artifact in three doctrines; an activity's categories are
+	// unique only within it (_activity_type.info:138-141); dated history entries stack (_history.info:3-13), as
+	// 01_admin_titles_tgp.txt:6339,6435 write c_nf_wang_738b_7 twice
 	{
 		Games: []string{ck3}, Databases: []string{"common.parameter", "activities/activity_types.option_category", "history/*"},
 		Keeps: "merged",
@@ -551,12 +545,10 @@ var Precedences = []Precedence{
 	{Databases: []string{"defines.define"}, Keeps: "last"},
 	// Vic3 Behavior and EU5 l.92: INJECT acts as REPLACE
 	{Games: vic3AndEU5, Databases: []string{"scripted_effects", "scripted_triggers"}, Keeps: "first", Modes: "entry", Injects: "replaces"},
-	// the Vic3 wiki's list of folders: REPLACE only. It does not say whether a mode that adds, such as INJECT, is
-	// refused or acts as REPLACE.
+	// the Vic3 wiki's list of folders: REPLACE only; it does not say whether INJECT is refused or acts as REPLACE
 	{Games: []string{vic3}, Databases: []string{"scripted_rules", "script_values"}, Keeps: "first", Modes: "entry", Injects: "unsettled"},
-	// Vic3 Genes: modes at the second level, and victoria3.exe "If you're replacing or injecting this error is shown";
-	// EU5 dlc/D008_fate_of_the_phoenix/in_game/common/genes/D008_genes_accessories.txt:1-3 writes INJECT_OR_CREATE
-	// inside accessory_genes
+	// modes at the second level: the Vic3 wiki's Genes and victoria3.exe's "If you're replacing or injecting this error
+	// is shown"; EU5 D008_genes_accessories.txt:1-3 writes INJECT_OR_CREATE inside accessory_genes
 	{Games: vic3AndEU5, Databases: []string{"genes"}, Keeps: "first", Modes: "wrapped"},
 	// Vic3 DNA data: defined character DNAs do not overwrite each other; the wiki's list of folders gives it entry modes
 	{Games: []string{vic3}, Databases: []string{"dna_data"}, Keeps: "merged", Modes: "entry"},
@@ -608,7 +600,7 @@ var Precedences = []Precedence{
 	{Games: []string{eu5}, Folders: []string{"common"}, Keeps: "first", Modes: "entry"},
 }
 
-// References holds the key paths whose words name definitions or files, in the order they are tried: those of GUI
+// References holds the key paths whose values name definitions or files, in the order they are tried: those of GUI
 // files, then every game's, then a game's own.
 var References = []Reference{
 	{KeyPath: guiTemplateCalls, Target: "gui.template"}, {KeyPath: "layer", Target: "gui.layer"},
@@ -707,8 +699,7 @@ func (game *Game) IsSet(database string) bool {
 	return slices.ContainsFunc(game.ListNestings(), func(row Nesting) bool { return row.Sets && row.Label() == database })
 }
 
-// ListSetupNestings returns the nestings written for the start setup, once for each of the given start setups, with
-// the folder of each as its parent.
+// ListSetupNestings returns the start setup's nestings once for each given start setup, its folder as the parent.
 func (game *Game) ListSetupNestings(setups ...string) []Nesting {
 	var nestings []Nesting
 	for _, setup := range setups {
@@ -729,9 +720,8 @@ var gameReferences = func() map[string][]Reference {
 	return references
 }()
 
-// ListReferences returns the key paths in the game's definitions whose words name definitions, in the order they are
-// tried: those of GUI files first, then every game's, then the game's own. It returns none for a game the package does
-// not list.
+// ListReferences returns the key paths in the game's definitions whose values name definitions, GUI files' first,
+// then every game's, then the game's own. It returns none for a game the package does not list.
 func (game *Game) ListReferences() []Reference {
 	return gameReferences[game.ID]
 }
@@ -745,8 +735,8 @@ func (game *Game) ListFiringFields() []Reference {
 // KeepsEvery reports whether the game keeps every copy of a name, merged into one.
 func (precedence Precedence) KeepsEvery() bool { return precedence.Keeps == "merged" }
 
-// Describe returns, in plain words, which copy the game keeps when several definitions share a name: one or two
-// sentences for the way the game picks, and for what changes it, such as the entry modes a mod can write.
+// Describe returns, in plain sentences, which copy the game keeps when several definitions share a name and what a mod
+// can do about it.
 func (precedence Precedence) Describe() string {
 	var sentences []string
 	switch {
@@ -779,8 +769,8 @@ func (precedence Precedence) Describe() string {
 	return strings.Join(sentences, " ")
 }
 
-// describeOverrides returns the words that say a higher priority replaces only some keys: ", for name and dna, and
-// combines the rest". It returns "" where a higher priority replaces the whole definition.
+// describeOverrides returns the clause saying a higher priority replaces only some keys. It returns "" if it replaces
+// the whole definition.
 func (precedence Precedence) describeOverrides() string {
 	if len(precedence.Overrides) == 0 {
 		return ""
@@ -788,8 +778,8 @@ func (precedence Precedence) describeOverrides() string {
 	return " for " + strings.Join(precedence.Overrides, ", ") + ", and combines the rest"
 }
 
-// describeModes returns the sentence that says how a mod changes a definition with an entry mode, and what the mode
-// that adds does where the sources say.
+// describeModes returns the sentence saying how a mod changes a definition with an entry mode, and what the mode that
+// adds does where the sources say.
 func (precedence Precedence) describeModes() string {
 	where := "in front of the name"
 	if precedence.Modes == "wrapped" {
@@ -805,8 +795,8 @@ func (precedence Precedence) describeModes() string {
 	return sentence + ", or INJECT: to add to it."
 }
 
-// LookupPrecedence returns how a database's definitions combine: the first row that holds for the database, by its
-// name or by its folder. Where no row holds, the last copy by file name wins.
+// LookupPrecedence returns how a database's definitions combine, from the first row that holds for it by its name or
+// folder. Where no row holds, the last copy by file name wins.
 func (game *Game) LookupPrecedence(database, folder string) Precedence {
 	row, ok := lo.Find(Precedences, func(row Precedence) bool { return game.Matches(row.Games) && row.holds(database, folder) })
 	if !ok {
@@ -815,8 +805,8 @@ func (game *Game) LookupPrecedence(database, folder string) Precedence {
 	return row
 }
 
-// holds reports whether a precedence row holds for a database, by the database's name or by its folder. A database
-// with no folder, such as a nested one, is held by its name only.
+// holds reports whether a precedence row holds for a database, by its name or its folder. A database with no folder,
+// such as a nested one, is held by its name only.
 func (precedence Precedence) holds(database, folder string) bool {
 	named := slices.ContainsFunc(precedence.Databases, func(pattern string) bool {
 		matched, _ := path.Match(pattern, database)
@@ -837,7 +827,7 @@ func (game *Game) SplitMode(key string) (mode, name string) {
 	return "", key
 }
 
-// LookupEntryMode returns the entry mode a prefix names. It returns false for "" and for a word no game uses.
+// LookupEntryMode returns the entry mode a prefix names. It returns false for "" and for a prefix no game uses.
 func LookupEntryMode(prefix string) (EntryMode, bool) {
 	return lo.Find(EntryModes, func(mode EntryMode) bool { return mode.Prefix == prefix })
 }
@@ -845,10 +835,10 @@ func LookupEntryMode(prefix string) (EntryMode, bool) {
 // DescribeDefinition returns what a definition of a database is called, such as "scripted effect", in the plural if
 // asked. It returns "" for a database with no name.
 func DescribeDefinition(database string, plural bool) string {
-	if words, ok := definitionWords[database]; ok && plural {
-		return words.Many
+	if nouns, ok := definitionNouns[database]; ok && plural {
+		return nouns.Many
 	} else if ok {
-		return words.One
+		return nouns.One
 	}
 	last := database[strings.LastIndexAny(database, "/.")+1:]
 	one := last
@@ -861,7 +851,7 @@ func DescribeDefinition(database string, plural bool) string {
 	if !plural {
 		return strings.ReplaceAll(one, "_", " ")
 	}
-	// a word already in the singular takes the plural of its ending
+	// a name already in the singular takes the plural of its ending
 	if one == last && last != "" {
 		for _, ending := range plurals {
 			if stem, cut := strings.CutSuffix(last, ending.One); cut {

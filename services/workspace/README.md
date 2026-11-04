@@ -1,140 +1,117 @@
 # workspace
 
-The package holds the one open workspace: the install's schema and index, the mods' index on top of it, the open files
-and the watcher. Its service also keeps the records of installs, workspaces and mods.
+[Architecture](../../ARCHITECTURE.md) › [Services](../../ARCHITECTURE.md#the-services) › workspace
 
-It is where the engine meets the services. It loads or builds the install's `schema.Schema` and `index.Index`, scans
-the mods with `index.ScanMods`, keeps the trees `jomini` parses, and serves files to the page. Every other service
-holds the `*Service` and asks it for the session at each call.
+The workspace service holds the one open workspace: a game install and the mods being edited, in load order. Opening
+one loads the install's schema and index, or builds them, scans the mods on top and watches their folders. Every other
+service asks it for the open session at each call, so the workspace's state exists once.
 
-| file | holds |
-|---|---|
-| `workspace.go` | the service: the events, the games and installs, the workspaces, `Open`, `Launch`, the reading and writing of files, `ServeHTTP` |
-| `session.go` | `Session` and `Document`; the open; the documents, trees and buffers; the texts and titles; `Rescan` |
-| `mod.go` | `Descriptor`, `Dependency` and `Mod`; a workspace's mods and their color slots; the descriptors; a new mod's skeleton |
-| `locate.go` | `Place`, `Session.Locate`, `ListCopies`, `ListRoots` |
-| `revert.go` | `Hunk`; `RevertHunks`, an agent's edits to a file taken back |
-| `watcher.go` | `Watcher` and its `Move` |
+It also keeps the records of installs, workspaces and mods, reads and writes the mods' files, and serves files to the
+page. What a key means is the [schema](../../internal/schema/README.md)'s; where a name is defined is the
+[index](../../internal/index/README.md)'s.
 
-## The one open session
+**Uses** [app](../app/README.md), [files](../../internal/files/README.md), [game](../../internal/game/README.md),
+[jomini](../../internal/jomini/README.md), [loc](../../internal/loc/README.md), [schema](../../internal/schema/README.md),
+[index](../../internal/index/README.md), [texture](../../internal/texture/README.md) · **Used by** every other service
+but app.
 
-The service holds at most one open `Session`. `Session()` returns it, or the error "no workspace is open"; it is Go's
-alone and not bound to the page. `Open` closes the session that was open and opens the new one in the background. It
-holds the service's lock for the whole open, so a call to `Session`, `State` or `Close` while a workspace opens waits
-for it. `install:scanning` reports each stage, and `workspace:opened` or `workspace:failed` ends the open.
+## Opening a workspace
 
-A change to a workspace's record that alters what its open read, which is its install, its language, or its mods and
-their folders in load order, opens it again. So does moving the install it uses, or rescanning it.
+```mermaid
+flowchart TD
+  open["Open"] --> close["Close the session that was open"]
+  close --> fresh{"Caches for this install version,<br/>these dumps and this build?"}
+  fresh -->|yes| load["Load the schema and the install's index"]
+  fresh -->|no| build["Build the schema, scan the install,<br/>save both"]
+  load --> mods["Scan the mods on top of the install's index"]
+  build --> mods
+  mods --> watch["Watch the mods' folders"]
+  watch --> opened(["workspace:opened"])
+```
 
-`ResolveFolder` gives the folder a shell or a coding agent starts in: the folder of the mod that holds a file, else
-the workspace's first mod whose folder exists, else the home folder. It is Go's alone and not bound to the page.
-
-## The caches
-
-An install's schema and index are cached as two gob files in one folder. The folder is named for the install's
-version, the time of its dumps and the app's version, so a new game version, fresher dumps or a new build each scan
-again. The open deletes everything else in the game's cache folder. It loads both caches, or builds what one lacks and
-saves it: the schema with `schema.Build`, then the index with `index.Scan` over the same listing. An install's version
-is the one its files say, else the one its record holds. `ListReadyInstalls` names the installs whose next open scans
-nothing.
+- The open runs in the background and holds the service's lock, so a call that needs the session waits for it.
+  `install:scanning` reports each stage, and `workspace:opened` or `workspace:failed` ends it.
+- The schema and the install's index are cached as two gob files, in a folder named for the install's version, the
+  time of its dumps and PMT's version. A game patch, fresh dumps or a new build of PMT each scan again, and the open
+  deletes the game's older cache folders.
+- Changing what the open read (the install, the language, or the mods and their order) opens the workspace again. So
+  does moving or rescanning its install.
 
 ## The session
 
-A `Session` holds the game's row, the install's folder, the schema, the install's index, the mods' index, the mods in
-load order, and the language shown beside the base language. The mods' index sits in an atomic pointer. A reader loads
-it once and keeps that copy to its end. A rescan changes a `Clone` and stores it, so no reader takes a lock.
+A `Session` is the open workspace as the services read it: the game's row, the schema, the install's index, the mods'
+index, the mods in load order and the language.
 
-A `Document` is one file parsed once in the dialect of its format (`ParseDocument`): a localization file's tree holds
-its text and lines, and its messages are what it says; any other file's tree is its script. An open file's buffer is
-the document of the editor's text, which `SetText` parses and keeps. Any other file's document is read and parsed when
-asked, and kept in a bounded LRU. `LoadDocument` returns the buffer's document, else the cached one, else it parses the
-file, and `LoadTree` returns that document's tree. `LookupBuffer` gives the editor's text of an open file, and
-`LoadSource` that text, else the text on disk.
-
-`ScanOrder` scans the mods on the install's index in another load order, and saves the result nowhere. The open scans
-through it too. A broken mod, whose folder is missing, is left out.
-
-`LookupText` returns a localization key's text in the session's language, else in the base language, with the message
-the game keeps: one in a replace folder wins, for the reason `replace-folder`, in the game's form of the folder that
-wins first (`LocReplaceFolders`). Where several messages share the best place, which the game shows is not documented,
-so the first loaded comes back with the reason `unsettled`. The install keeps only the base language's texts, so a
-game file's text in another language is read from its file when asked.
-
-`LookupTitle` returns the text a definition is shown by: its title key's message, else the message named like it, for
-a game concept the message of the game's concept prefix and its name, and for a message the game's message title key
-(`game.Game.MessageTitle`, Vic3's `notification_<name>_name`). `FindTextKey` gives the key a statement writes under a
-text's key, such as `title` or `desc`: its value, or for a block such as a `first_valid` of triggered descs the first
-desc in it, which every block title of the three games holds, or a `text` written directly in it (`game.LabelKey`), as
-an option's triggered name holds (the events write `name = {` 3,071 times in CK3, 9 in Vic3, 25 in EU5).
+- **No locks for readers.** The mods' index sits in an atomic pointer. A reader loads it once and keeps that copy to
+  its end, and a rescan changes a clone and swaps it in.
+- **Each file parsed once.** A `Document` is one file parsed in its format's dialect. An open file's document is the
+  editor's text, its buffer, which the lsp service hands over as the user types. Any other file is parsed when asked
+  and kept in a bounded cache.
+- **Texts.** A localization key's text comes in the workspace's language, else the base language, with the message
+  the game keeps. A definition's title is the text the game shows it by.
+- **Other load orders.** `ScanOrder` scans the mods in another order and keeps the result nowhere, for Health's
+  preview of a load order.
 
 ## Places
 
-A `Place` is where one file sits in the workspace: the `files.File` as its root lists it, with its name, its folder, its
-root, its database, whether it is read only, where the index lists it (`Position`, Go's alone) and whether Visual
-draws it. The game's own files and a Workshop mod's are read only. A GUI file is drawable, and so is a file or folder
-of the coats' database. Every answer that names a file carries a place, and the page renders its fields as they are.
-`Locate` makes one, and `ListCopies` lists the place of every copy of a file's path in load order, the game's first. A
-place can be of a folder too, which `IsDir` says: a folder's listing sets it for each entry, git's status for an
-ignored folder, and `Service.Locate` for the path it is given, each root `ListRoots` lists or a folder an agent names.
+A `Place` is where one file sits in the workspace: its root (the game or a mod), its path from that root, its
+database, whether it is read only and whether the Visual view draws it. Every payload that names a file carries a
+place, and the page shows its fields as they are. The game's own files and a Workshop mod's copy are read only.
 
-## Files
+## Reading and writing
 
-Every write is refused outside the workspace's mods and in the game's own files. `Write` writes a text in its own
-encoding, atomically, and `WriteBytes` writes bytes the same way for Go's callers. `CreateCopy` copies a file of the
-game or of another mod to the same place in a mod, the place the game needs for the copy to replace it, and refuses
-when the mod has a file there already. `Delete` moves a file or a folder into PMT's trash and returns where it went, for
-`Restore`. Deleting a mod's root folder removes the mod from the workspace too. `ListFolder` lists a folder with the
-place of each entry, and leaves out binary files unless the workspace shows them. `Read` gives a file that is not text
-back as binary, with no text, so the editor says it cannot show it.
-
-`RevertHunks` gives a file back its text from before an agent's edits, which the page reads from the agent's diffs as
-each edit's hunks. It refuses a file with unsaved text in the editor and an edit with no hunk. It takes the edits back
-the latest first: each hunk's lines after are found once in the file, a tab read as the two spaces a diff writes, and
-replaced by its lines before with the file's tabs restored; a hunk already undone is passed over. The file is written
-in its own line endings, or goes to the trash when the edits made it and it ends empty.
-
-`ServeHTTP` serves to the page the file a request names, whether or not a workspace is open, and refuses a path outside
-every recorded install and mod. A DDS or TGA is decoded to PNG first, since the browser cannot show it, and so is one
-frame of a sprite sheet or one of a DDS's smaller mip levels.
+- Writes are refused outside the workspace's mods. A write is atomic and keeps the file's encoding.
+- `CreateCopy` copies a file of the game or of another mod to the same path in a mod, where it overrides the original.
+- `Delete` moves a file into PMT's trash, which empties at the next start, so `Restore` can bring it back.
+- `RevertHunks` gives a file back its text from before a coding agent's edits.
+- `ServeHTTP` serves files to the page at `/files`. A DDS or TGA is decoded to PNG first, since the browser cannot
+  show it.
 
 ## The watcher
 
-A `Watcher` watches the mods' folders and every folder made under them. It leaves out the hidden ones, but watches the
-dot folders the explorer shows files of (`watchedFolders`): the coding agents' `.claude`, `.codex` and `.github`, and
-the Workshop listing's `.workshop`. The first event of a burst starts a timer that later events do not reset. When it
-ends, every path the burst touched is reported once, as deleted where it no longer exists. The session scans the batch
-again through `index.Index.ScanFiles`, the watched dot folders left out, since the index skips every dot folder, then
-emits `fs:changed` for each path. The watcher judges nothing.
+The watcher reports a burst of changes on disk together:
 
-`Rename` and `Delete` move through `Watcher.Move`. It stops watching the folders under the source while the move runs,
-since Windows refuses to move a folder while a folder inside it is watched, and watches them again if the move fails.
+```mermaid
+sequenceDiagram
+  participant Disk as A mod's folder
+  participant Watcher
+  participant Session
+  participant Page as The frontend
+  Disk->>Watcher: a burst of changes
+  Note over Watcher: the first change starts a timer,<br/>later ones do not reset it
+  Watcher->>Session: every path the burst touched, once
+  Session->>Session: scan them again into a clone of the mods' index
+  Session-->>Page: fs:changed for each path
+```
 
-## Mods and their descriptors
+It watches the mods' folders and every folder made under them. Hidden folders are left out, but for the dot folders
+the explorer shows: the coding agents' `.claude`, `.codex` and `.github`, and the Workshop listing's `.workshop`.
+Renaming or deleting a folder stops watching under it for the move, since Windows refuses to move a folder that is
+being watched.
 
-A `Mod` is the config's record (`app.Mod`) with its `Descriptor`, its thumbnail, and whether it is broken or a Workshop
-mod's copy. A `Descriptor` is the mod's own description as its game writes it: CK3's `.mod` file, or Vic3's and EU5's
-`.metadata/metadata.json`, as the game's `ModDescriptor` row says. `ReadDescriptor` reads either form; metadata.json
-also gives each `Dependency` its title, its relationship's `display_name`, beside its id. `WriteDescriptor` writes it
-back and keeps the fields a `Descriptor` does not model. A mod's thumbnail is a thumbnail picture where the game keeps
-one, else the picture the descriptor names.
+## Mods
 
-`CreateMod` makes a new mod's skeleton: its folder, the folders the game expects, a descriptor that supports the game's
-release, a launcher file beside the folder for a game that lists mods by one, and a localization file that holds only
-its header. `FindLocalizationFile` names that file. lsp's quick fix adds keys to it in the base language.
-`CreateLocalization` is the one writer of a localization file's header: the fix calls it when the mod lacks the file,
-and Health's scaffold for a file it creates. `MatchVersion` says whether a mod made for a supported version runs on a
-game version, part by part, a `*` matching the rest, and whether any source shows the games matching such a version at
-all.
+A `Mod` is the config's record of a mod with its `Descriptor`, its thumbnail, and whether it is broken (its folder is
+missing) or a Workshop mod's copy. The descriptor is the mod's own description: CK3's `.mod` file, or Vic3's and EU5's
+`.metadata/metadata.json`. Writing it back keeps the fields PMT does not model.
 
-`checkModFolder` is the one rule for a folder that can be a mod: it is a folder, it is not the game's own or inside it,
-and it has the game's descriptor. `AddMod` calls it, and `CheckModFolder` lets the new-mod form call it for a folder
-picked. `ResolveModFolder` names the folder a mod's name makes and refuses a name with no letter or digit and a folder
-that exists.
+- `CreateMod` makes a new mod's skeleton: its folder, the folders the game expects, a descriptor, a launcher file
+  where the game needs one, and a localization file with only its header.
+- `ResolveFolder` gives the folder a shell or a coding agent starts in: the mod that holds the active file, else the
+  first mod whose folder exists, else the home folder.
+- `Launch` starts the game with its debug flag. When the game exits, `game:exited` says whether it wrote fresher dumps
+  than the schema's.
 
-## Launch
+## Files
 
-`Launch` starts the game with its debug flag, as `game.ResolveProgram` gives it. When the game exits, `game:exited` says
-whether it wrote dumps fresher than the schema's.
+| file | what it holds |
+|---|---|
+| `workspace.go` | The service: installs, workspaces, the open, Launch, reading and writing files, serving them. |
+| `session.go` | The open session: its documents, buffers, texts and rescans. |
+| `mod.go` | Mods, their descriptors, and a new mod's skeleton. |
+| `locate.go` | Places: where a file sits, and every copy of a path in load order. |
+| `revert.go` | Taking a coding agent's edits back. |
+| `watcher.go` | The watcher on the mods' folders. |
 
 ## Events
 
@@ -153,11 +130,11 @@ whether it wrote dumps fresher than the schema's.
 - **Session**: the open workspace as every service reads it.
 - **Document**: one file parsed once in the dialect of its format.
 - **Buffer**: the document of the editor's text for one open file.
-- **Workspace**: one recorded workspace as the pages list it, with its install, its game and its mods.
 - **Place**: where one file sits in the workspace.
+- **Workspace**: one recorded workspace as the pages list it: its install, its game and its mods.
 - **Mod**: one mod of the open workspace: the recorded mod with its descriptor.
 - **Descriptor**: a mod's own description, as its game writes it.
-- **Broken**: what a mod is when its folder is missing.
+- **Broken**: a mod whose folder is missing.
 - **Watcher**: what watches the mods' folders and reports a burst of changes together.
 - **State**: the open workspace as the frontend sees it.
 - **FileText**: a file's text in its encoding, with its place and the editor's draft.

@@ -4,17 +4,19 @@ package jomini
 
 import (
 	"cmp"
+	"encoding/hex"
 	"fmt"
 	"math"
 	"slices"
 	"strconv"
+	"strings"
 )
 
 // A Color is one way script writes a color, such as an rgb block or a hex number.
 type Color struct {
 	Tag   string  // the tag before the block (rgb { 255 0 0 }); "" means none
 	HSV   bool    // hue, saturation, value; else red, green, blue
-	Hex   bool    // one number holding the bytes of red, green, blue and alpha
+	Hex   bool    // one part holding the bytes of red, green and blue, and of the alpha where it has eight digits
 	Hue   float64 // what the hue is out of; 0 means 1
 	Parts float64 // what the other parts are out of; 0 means 1
 }
@@ -23,7 +25,8 @@ type Color struct {
 const TagHSV360 = "hsv360"
 
 // Colors lists the ways script writes a color. A part of rgb, or of a block with no tag, is out of 255, or out of
-// 1 when red, green and blue are each at most 1. A fourth part is the alpha.
+// 1 when red, green and blue are each at most 1. A fourth part is the alpha. A hex block's one part is six hex digits
+// for red, green and blue, or eight with the alpha last, written with or without 0x.
 var Colors = []Color{
 	{Tag: "rgb"}, {Tag: ""}, {Tag: "hsv", HSV: true}, {Tag: TagHSV360, HSV: true, Hue: 360, Parts: 100}, {Tag: "hex", Hex: true},
 }
@@ -36,34 +39,31 @@ type RGBA struct {
 	A float64 `json:"a"` // alpha, 0 to 1
 }
 
-// A ColorForm is the way to write a color where there is no block to copy: the tag before the block, and the numbers
-// of an example block. The example gives the scale and whether an alpha is written.
+// A ColorForm is the way to write a color where there is no block to copy: the tag before the block, and the parts
+// of an example block as written. The example gives the scale and whether an alpha is written.
 type ColorForm struct {
 	Tag     string
-	Example []float64
+	Example []string
 }
 
-// ParseColor returns the color that a block with the given tag and numbers writes. It returns false for a tag no row
-// of Colors has and for too few numbers.
-func ParseColor(tag string, parts []float64) (RGBA, bool) {
+// ParseColor returns the color that a block with the given tag and parts writes, each part as written. It returns
+// false for a tag no row of Colors has, for a part that is no number, and for too few numbers.
+func ParseColor(tag string, parts []string) (RGBA, bool) {
 	row, known := lookupColorRow(tag)
-	if known && row.Hex && len(parts) == 1 {
-		packed := uint32(parts[0])
-		return RGBA{float64(packed>>24) / 255, float64(packed>>16&0xff) / 255, float64(packed>>8&0xff) / 255, float64(packed&0xff) / 255}, true
-	}
-	if !known || len(parts) < 3 {
+	numbers, ok := toNumbers(row, parts)
+	if !known || !ok || len(numbers) < 3 {
 		return RGBA{}, false
 	}
-	scale := findScale(row, parts)
+	scale := findScale(row, numbers)
 	var red, green, blue float64
 	if row.HSV {
-		red, green, blue = hsvToRGB(parts[0]/cmp.Or(row.Hue, 1), parts[1]/scale, parts[2]/scale)
+		red, green, blue = hsvToRGB(numbers[0]/cmp.Or(row.Hue, 1), numbers[1]/scale, numbers[2]/scale)
 	} else {
-		red, green, blue = parts[0]/scale, parts[1]/scale, parts[2]/scale
+		red, green, blue = numbers[0]/scale, numbers[1]/scale, numbers[2]/scale
 	}
 	alpha := 1.0
-	if len(parts) > 3 {
-		alpha = parts[3] / scale
+	if len(numbers) > 3 {
+		alpha = numbers[3] / scale
 	}
 	return RGBA{clamp(red), clamp(green), clamp(blue), clamp(alpha)}, true
 }
@@ -78,28 +78,33 @@ func ToColor(tree *Tree, statement int32) (RGBA, bool) {
 	return ParseColor(tag, parts)
 }
 
-// EncodeColor returns the numbers that write the given color the way an existing block wrote its own, given that
-// block's tag and parts. It returns false for a tag no row of Colors has and for fewer than three parts.
-func EncodeColor(tag string, parts []float64, color RGBA) ([]string, bool) {
+// EncodeColor returns the parts that write the given color the way an existing block wrote its own, given that
+// block's tag and parts. A hex part keeps its number of digits, and its 0x where it has one. It returns false for a
+// tag no row of Colors has and for parts that write no color.
+func EncodeColor(tag string, parts []string, color RGBA) ([]string, bool) {
 	row, known := lookupColorRow(tag)
-	if !known || len(parts) < 3 {
+	written, ok := toNumbers(row, parts)
+	if !known || !ok || len(written) < 3 {
 		return nil, false
 	}
-	scale := findScale(row, parts)
+	scale := findScale(row, written)
 	numbers := []float64{color.R * scale, color.G * scale, color.B * scale}
 	if row.HSV {
 		hue, saturation, value := rgbToHSV(color.R, color.G, color.B)
 		numbers = []float64{hue * cmp.Or(row.Hue, 1), saturation * scale, value * scale}
 	}
-	if len(parts) > 3 {
+	if len(written) > 3 {
 		numbers = append(numbers, color.A*scale)
 	}
 	if row.Hex {
-		hex := "0x"
-		for _, number := range numbers {
-			hex += fmt.Sprintf("%02x", int(math.Round(number)))
+		encoded := ""
+		if strings.HasPrefix(parts[0], "0x") {
+			encoded = "0x"
 		}
-		return []string{hex}, true
+		for _, number := range numbers {
+			encoded += fmt.Sprintf("%02x", int(math.Round(number)))
+		}
+		return []string{encoded}, true
 	}
 	precision := 1.0
 	if scale == 1 {
@@ -127,13 +132,42 @@ func lookupColorRow(tag string) (Color, bool) {
 	return Colors[i], true
 }
 
-// findScale returns what a block's parts are out of: an hsv row's own scale, else 255, or 1 when red, green and
+// toNumbers returns the numbers that the parts of a color block of the given row write. A hex block's one part gives
+// its bytes, with or without 0x before them: red, green and blue, and the alpha where it has eight digits. It returns
+// false for a part that is no number, and for a hex block that is not one part of six or eight digits.
+func toNumbers(row Color, parts []string) ([]float64, bool) {
+	if row.Hex {
+		if len(parts) != 1 {
+			return nil, false
+		}
+		channels, err := hex.DecodeString(strings.TrimPrefix(parts[0], "0x"))
+		if err != nil || len(channels) != 3 && len(channels) != 4 {
+			return nil, false
+		}
+		numbers := make([]float64, len(channels))
+		for i, channel := range channels {
+			numbers[i] = float64(channel)
+		}
+		return numbers, true
+	}
+	numbers := make([]float64, len(parts))
+	for i, part := range parts {
+		number, ok := parseNumber(part)
+		if !ok {
+			return nil, false
+		}
+		numbers[i] = number
+	}
+	return numbers, true
+}
+
+// findScale returns what a block's numbers are out of: an hsv row's own scale, else 255, or 1 when red, green and
 // blue are each at most 1. A hex row's bytes are always out of 255.
-func findScale(row Color, parts []float64) float64 {
+func findScale(row Color, numbers []float64) float64 {
 	switch {
 	case row.HSV:
 		return cmp.Or(row.Parts, 1)
-	case !row.Hex && max(parts[0], parts[1], parts[2]) <= 1:
+	case !row.Hex && max(numbers[0], numbers[1], numbers[2]) <= 1:
 		return 1
 	}
 	return 255

@@ -456,7 +456,7 @@ func describeCommand(card *Card, visitor *hoverVisitor) {
 		card.Leads = command.Target
 	} else {
 		card.Target = command.Target
-		describeTakes(card, command.ArgumentsOf(visitor.context.Declaration))
+		describeTakes(card, visitor.context.Parent.FindArguments(command, visitor.context.Declaration))
 	}
 }
 

@@ -1,6 +1,9 @@
-NOTICE — third-party syntax grammars
+Paradox Modding Tools
+Copyright 2025-2026 Ian Davis
 
-TextMate grammars under frontend/src/syntaxes/ are adapted from:
-https://github.com/JDeffner/paradox-modding-toolkit (packages/vscode/syntaxes)
-Copyright (c) Joël Deffner and contributors
-Licensed under GPL-3.0-or-later — same license as this project.
+Licensed under the Apache License, Version 2.0. See LICENSE.
+
+Paradox Modding Tools is unofficial and is not affiliated with Paradox Interactive.
+
+The games' data that Paradox Modding Tools reads belongs to Paradox Interactive, and so do the schemas built from the
+games' script_docs that this repository holds (internal/schema/shipped and internal/testdata).

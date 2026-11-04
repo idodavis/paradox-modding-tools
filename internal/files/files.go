@@ -33,7 +33,7 @@ const (
 	FormatTable        Format = "table"        // .csv
 	FormatDescriptor   Format = "descriptor"   // .mod, metadata.json
 	FormatShader       Format = "shader"       // .fxh, .shader
-	FormatReadme       Format = "readme"       // .info, and .txt named readme: a game's notes on a folder, in prose
+	FormatReadme       Format = "readme"       // .info, and .txt whose name starts with readme: a game's notes, in prose
 	FormatMarkdown     Format = "markdown"     // .md
 	FormatText         Format = "text"         // any other text, such as .json
 	FormatBinary       Format = "binary"       // anything the binary test flags

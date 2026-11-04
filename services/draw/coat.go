@@ -624,7 +624,7 @@ func (drw *Service) ListFrames() []Image {
 }
 
 // listImages returns the image files the game reads directly in a folder, letter case aside, each labeled with its file
-// name and sorted by label.
+// name and sorted by label. Files with the same label are listed once.
 func listImages(ws *workspace.Session, mods *index.Index, folder string) []Image {
 	images := []Image{}
 	for _, file := range mods.ListImages(folder + "/") {

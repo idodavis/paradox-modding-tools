@@ -139,7 +139,7 @@ func sendLines(conn *application.StreamConn, output io.Reader) {
 	}
 }
 
-// logLines writes each line an agent writes as an error to PMT's log, under the agent's id, until the agent ends.
+// logLines writes each line of an agent's error output to PMT's log, under the agent's id, until the agent ends.
 func logLines(id string, stderr io.Reader) {
 	scanner := bufio.NewScanner(stderr)
 	scanner.Buffer(nil, 1<<20)

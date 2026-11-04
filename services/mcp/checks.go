@@ -1,5 +1,5 @@
 // checks.go checks what an agent asks the app to show before the app shows it: the page, each key of its query, and the
-// node, mod, file or lookup the query names.
+// node, mod, file or lookup the query names. It also gives an agent one Event Graph node's detail.
 
 package mcp
 

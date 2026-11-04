@@ -9,8 +9,6 @@ import (
 
 	"github.com/wailsapp/wails/v3/pkg/application"
 	logservice "github.com/wailsapp/wails/v3/pkg/services/log"
-	"github.com/wailsapp/wails/v3/pkg/updater"
-	"github.com/wailsapp/wails/v3/pkg/updater/providers/github"
 
 	"paradox-modding-tools/services/agent"
 	"paradox-modding-tools/services/app"
@@ -71,7 +69,6 @@ func main() {
 			},
 		},
 	})
-	initUpdater(pmt)
 	appService.OpenMainWindow()
 
 	if err := pmt.Run(); err != nil {
@@ -108,22 +105,5 @@ func listServices(config *app.ConfigFile, appService *app.Service) []application
 		application.NewService(&agent.Service{Workspace: wsp, MCP: mcpService}),
 		application.NewService(gitService),
 		application.NewService(&steam.Service{Workspace: wsp, Git: gitService}),
-	}
-}
-
-// initUpdater points the updater at the project's GitHub releases, verified by SHA256SUMS.
-func initUpdater(pmt *application.App) {
-	gh, err := github.New(github.Config{
-		Repository:    "idodavis/paradox-modding-tools",
-		ChecksumAsset: "SHA256SUMS",
-	})
-	if err != nil {
-		log.Fatalf("github.New: %v", err)
-	}
-	if err := pmt.Updater.Init(updater.Config{
-		CurrentVersion: version,
-		Providers:      []updater.Provider{gh},
-	}); err != nil {
-		log.Fatalf("updater.Init: %v", err)
 	}
 }

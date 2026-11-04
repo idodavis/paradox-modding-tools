@@ -161,21 +161,22 @@ func MatchKeyPath(pattern string, keys []string) bool {
 	return matchSegments(strings.Split(pattern, "/"), keys)
 }
 
-// ColorParts returns the tag and the numbers of a block statement such as `rgb { 1 2 3 }`. It returns false if the
-// statement is not a block of plain numbers, or has no tag and not three or four numbers.
-func ColorParts(tree *Tree, statement int32) (tag string, parts []float64, ok bool) {
+// ColorParts returns the tag and the parts of a block statement such as `rgb { 1 2 3 }`, each part as written. It
+// returns false if the statement is not a block of plain numbers, or of one hex number after a hex tag, or has no tag
+// and not three or four numbers.
+func ColorParts(tree *Tree, statement int32) (tag string, parts []string, ok bool) {
 	if !tree.Statements[statement].IsBlock() {
 		return "", nil, false
 	}
 	for child := range tree.Children(statement) {
-		part, ok := parseNumber(tree.Text(tree.Statements[child].Value))
-		if !tree.Statements[child].IsListed() || !ok {
+		if !tree.Statements[child].IsListed() {
 			return "", nil, false
 		}
-		parts = append(parts, part)
+		parts = append(parts, tree.Text(tree.Statements[child].Value))
 	}
 	tag = tree.Text(tree.Statements[statement].Tag)
-	if tag == "" && (len(parts) < 3 || len(parts) > 4) {
+	row, _ := lookupColorRow(tag)
+	if _, ok := toNumbers(row, parts); !ok || tag == "" && (len(parts) < 3 || len(parts) > 4) {
 		return "", nil, false
 	}
 	return tag, parts, true

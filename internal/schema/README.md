@@ -11,12 +11,12 @@ and the walk reads directly. A schema is built once for each version of an insta
 | file | holds |
 |---|---|
 | `schema.go` | the shape: `Claim` and `Claims`, `ValueType` and its constants, `Expected`, `Vanilla`, `Field`, `Command`, `Example`, `CommandPattern`, `Database`, `ScopeType`, `DataFunction`, `DataType`, `Modifier`, `OnAction`, `ScriptedDefinition`, `SourceState`, `Schema`; `Build`; the start setups, the databases and their callees; `JoinNested` and `SplitNested`; the lookups (`FindDatabase`, `FindDatabaseByClass`, `FindCommand`, `ResolveLink`, `IsLink`, the key's link test `isKeyLink`, a command's name with an argument in parentheses `findKeyCall`, the command patterns that make a key `findPatterns`); the data calls (`ResolveCallTypes`, `FindFunction`, `FindUnlisted`, `ResolveMacro`, `ResolveDatacontext`, `ListCallReferences`, `ResolveTypeDatabase`); the databases each `game.Contents` kind names (`Events`, `Messages`, `Lists`, `Concepts`, `ModifierTypes`, `FireDatabases`); the folders under which the game reads a mod's files (`TopFolders`: the first folder of each of the game's files, less its stage folder, in lower case); `ToPhrase`, `DropGetter` (a function's name without its getter's word), `DescribeStep` (a data call's step in words, a call that names a definition read as that name), `MatchValue`, `Database.IsCaseless` |
-| `dumps.go` | the dumps reader: `DumpCommand`, `Dumps`, `ReadDumps`, `FindDumpsAt`; the commands, the arguments a usage writes, a trigger's Traits line (`resolveTraits`), `game.CommandKeys`, the keyword rows under a command, the list families' shared arguments; the backup for a missing section |
+| `dumps.go` | the dumps reader: `DumpCommand`, `Dumps`, `ReadDumps`, `FindDumpsAt`; the commands, the arguments a usage writes, a trigger's Traits line (`resolveTraits`), `game.CommandKeys`, the keyword rows under a command, the list families' shared arguments, the union of an effect's and a trigger's; the backup for a missing section |
 | `docs.go` | the docs reader, `docReader`: which files are docs and which database each describes, and the blurbs, types, requirements, defaults and choices their prose states |
 | `vanilla.go` | the vanilla count, `CountVanilla`: the `counter` and its `holder`s that count what the game's own files write, and the claims the counts support (`resolveClaims`); the command patterns, the prefixes' databases, and how many places of a name are kept as examples (`ExampleCount`) |
 | `scripted.go` | the scripted definitions and the modifier types that files declare: the `declarer`, `parameterRe`; the mods' (`SetScripted`); a call's lookup through the game's and the mods'; the parameters a body writes (`ListParameters`) and those it saves names under; what a modifier type's name takes |
 | `definitions.go` | what a statement defines: a constant, a script definition named as its database's row says, an event of a declared namespace, a GUI declaration or window, a top block of an asset file, and a nested definition |
-| `walk.go` | the walk: `Category` and its constants, `Definition`, `Reference` with `ToID`, `Saved`, `Context` with `FindDeclaration` and `HoldsArguments`, `Visitor`; `Walk`, `WalkTo`; the `walker`, its `frame`s and the `match` a key fits by the rules of its block's shape; the scopes, the saved names and the aliases; the references a key and a value make |
+| `walk.go` | the walk: `Category` and its constants, `Definition`, `Reference` with `ToID`, `Saved`, `Context` with `FindDeclaration`, `FindArguments` and `HoldsArguments`, `Visitor`; `Walk`, `WalkTo`; the `walker`, its `frame`s and the `match` a key fits by the rules of its block's shape; the scopes, the saved names and the aliases; the references a key and a value make |
 | `shipped.go` | the shipped backup of each game's dumps, `LoadShipped`, embedded from `shipped/*.gob` |
 | `gen/main.go` | the program that writes `shipped/<game>.gob` from the dumps of an install that `PMT_TEST_INSTALL_<GAME>` names |
 
@@ -67,7 +67,12 @@ which holds one value and the `game.Source` that states it. A higher-ranked sour
 that states nothing takes any source (`Claim.resolve`). `Field.take` gives a field another field's claims where they
 outrank its own, all but `Keys`. The docs reader gives a database's fields what a doc says through it, and the dumps
 reader unites the arguments of one list family (any_, every_, random_ and ordered_) through it (`unite`): the members
-share one tree of argument keys, and each keeps its own arguments field and shape.
+share one tree of argument keys, and each keeps its own arguments field and shape. A command declared as both an
+effect and a trigger gets the two declarations' arguments united, claims, keys and counts alike, as `Command.Union`
+(`buildUnions`). The unions are built before the count, so it reads the blocks that take one as every later walk
+does, and again after it, with what it counted. The union keeps a shape only where each declaration that writes the key states
+that shape, or where the shape allows effects and triggers alike, as value does, so a shape that holds one kind never
+reaches a block of the other kind (`keepSharedShapes`).
 
 `CountVanilla` states what no source does, field by field, in `resolveClaims`. First comes the shape its blocks tell
 (`resolveShapeClaim`). Where its blocks call scripted definitions, it is the one shape every call allows. Otherwise it
@@ -102,7 +107,11 @@ an argument and names nothing. Left out are a block whose shape holds commands (
 that are game concepts or messages, definitions of a GUI database (whose names are common words, such as value), or
 the definitions of a database with its nested ones. A field a command holds names nothing by its keys: what a
 command's block takes is its arguments, which the dumps declare and the game's files add to. The commands whose keys
-do name a database are `game.CommandKeys` rows, as `stress_impact`'s keys are traits.
+do name a database are `game.CommandKeys` rows, as `stress_impact`'s keys are traits (`buildCommandKeys`). A row may
+name a key of a command's block, as CK3's `create_character/random_traits_list` makes each key but `count` a trait.
+Where a source states the shape of such a block, the count folds the keys only vanilla writes there into `<any>`, as
+it does for a definition's, so every trait's block takes the `trigger` and `weight` that vanilla writes in them. A
+command's own block, whose shape no source states, keeps its keys apart, as `stress_impact`'s does.
 
 ## The dumps
 
@@ -121,7 +130,9 @@ backup.
 A command named by several dumps is one `Command`, which keeps each dump's arguments under the word that declares it
 there (`ArgumentsOf`), so an effect and a trigger of one name take their own. Its arguments are the keys of every usage
 block written under its name, on a line of its own or inside a sentence, and the key each line of its prose opens with,
-as in `key = value`. A usage's comments are dropped. A key written with nothing after it is declared all the same, unless the block it
+as in `key = value`. The usage starts at the first line that opens a block (`splitUsage`), but a line that closes its
+block and then describes it after a dash is prose, as create_character's `random_traits_list = { count = … } - A
+number of traits …` is (`describedLine`). A usage's comments are dropped. A key written with nothing after it is declared all the same, unless the block it
 opens starts on the next line, where it is the scope the usage runs in. A statement written in `[ ]` or `< >` is
 optional, and a value written as `[a|b]` or `<A|B>` gives the choices. A placeholder such as `<triggers>` gives the
 block the shape it names, and a docs' type word gives the type. Any other placeholder value names what its words name
@@ -129,7 +140,12 @@ exactly (`resolvePlaceholder`): words that end in key or name, a name of the dat
 `<effect_localization_key>` does; any other words, a target of the scope type they name, with or without a closing
 scope or target, or a name of that scope's database, as `<country>` does. `ArgumentKey` is the first key of the first
 block form, which an argument in parentheses after the command's name stands for. A link that the dump says requires
-data is a prefix, written with a name after a colon. A trigger's Traits line says what its value takes
+data is a prefix, written with a name after a colon. A line that writes a value after the command's own name, as
+`add_trait = <trait_key>` does, gives the command's value as an argument's value is read (`resolveTitleValue`), unless
+its Traits line says otherwise. A value that gives a block's shape, as `<dynamic_description>` does, gives no shape
+where the dump also writes keys of the command's block, as `change_first_name = { template_character = … }` does: that
+block holds the command's arguments. A value written alone there names what the shape's values name
+(`game.Shapes[…].Values`), as a description's localization key does. A trigger's Traits line says what its value takes
 (`resolveTraits`): a comparison takes a number or a script value, or a date where the line says so; yes/no takes yes
 or no; a class key takes a name of the database that holds its keys; a scope or a target takes a link to that scope (`ValueTarget`,
 `Expected.Scope`); a tag or an id takes such a link or a name of the database of the scope's names; a list takes one of
@@ -215,8 +231,10 @@ Each statement is resolved in one of two ways.
   shape, and how its scope follows. A keyword of the language (`game.Keywords`) adjusts what the rule gave.
 
 A command fits only where the block's shape allows the kind it is declared as, and an effect never fits inside a
-trigger block (`Context.FindDeclaration`). A command's block holds its arguments and the commands of its own kind: the
-shape its arguments state, else the effect arguments or the trigger arguments. A statement below a block of triggers,
+trigger block (`Context.FindDeclaration`). In a block that allows both, a command declared as both takes its
+`Union`, else it takes the arguments of the word it fits as (`Context.FindArguments`). A command's block holds its
+arguments and the commands of its own kind: the shape its arguments state, else unknown for a union, which takes
+effects and triggers alike, else the effect arguments or the trigger arguments. A statement below a block of triggers,
 a trigger's arguments included, is `Context.Conditional` (`holdsConditions`), and one below a keyword whose block is
 shown in the tooltip and never run (`game.Keyword.Preview`, as `show_as_tooltip`'s is) is `Context.Preview`. A key the
 links test takes (`isKeyLink`) is a link: a link that requires data, as EU5's `modifier:<key>` does, is none where a key

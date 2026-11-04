@@ -1,109 +1,97 @@
-**My Discord User:** https://discord.com/users/168438474905616386
-
 # Paradox Modding Tools
 
-![Paradox Modding Tools — Alpha · CK3 · Vic3 · EU5](banner.png)
+![Paradox Modding Tools — Alpha · CK3 · Vic3 · EU5](docs/images/banner.png)
 
-Desktop workspace for **Crusader Kings III**, **Victoria 3**, and **Europa Universalis V** (partial) modders. One workspace is one game install plus the mods you are editing: script-aware IDE, event graph, compatibility and loc health, wiki patch notes, and Steam Workshop / Paradox Mods publish.
+A desktop workspace for modding **Crusader Kings III**, **Victoria 3** and **Europa Universalis V** (partial). Open a
+game install with the mods you are working on, and PMT gives you an editor that knows the game's script, a graph of
+your events, a health check of your load order, the wiki's patch notes and Workshop publishing, in one window.
 
-**Alpha.** Expect bugs. **Windows and Linux** (traditional desktop distros). **macOS is not supported.**
+**Alpha: expect bugs.** Windows and Linux. Unofficial, and not affiliated with Paradox Interactive.
 
-[Download](https://github.com/idodavis/paradox-modding-tools/releases) · [Roadmap](ROADMAP.md) · [License](LICENSE)
-
-Unofficial. Not affiliated with Paradox Interactive. Licensed **GPL-3.0-or-later**.
-
-## What's in the app
-
-| Page | What it does |
-|------|----------------|
-| **Library** | Workspaces by game, the active one in full; New workspace / New mod; Reset all PMT data |
-| **New workspace** | Game → install (found or added) → mods in load order → name and language |
-| **IDE** | Monaco editors in groups and splits; hover cards, completion, checks; a Visual view of GUI files; search and replace; git source control with a graph and inline merge conflicts; the Wiki pane; game files read only |
-| **Event Graph** | Events and on_actions and what fires them, by origin; open from the IDE with Ctrl Shift G |
-| **Health** | Which mod's definition wins (first or last loaded), overrides, dependencies, dangling references, untranslated and misplaced localization, the editor's findings |
-| **Patch Notes** | The game's patch notes from its wiki |
-| **Publish** | Descriptor, Markdown/BBCode/Steam description, screenshots and videos, Steam Workshop upload and compare, Paradox Mods copy |
-| **Settings** | The workspace (name, language, install, mods, upload exclusions) and the app's appearance (seven theme families, scale, pages) |
-
-## Supported games
-
-| Game | Coverage |
-|------|----------|
-| Crusader Kings III | Script, loc, events, health, wiki, publish |
-| Victoria 3 | Same |
-| Europa Universalis V | **Partial** — stage roots and `INJECT:` / `REPLACE:` |
-
-## Supported OS
-
-| OS | Notes |
-|----|--------|
-| **Windows** 10 / 11 | amd64 zip; Windows on ARM runs it under x64 emulation. Needs WebView2. |
-| **Linux** amd64 | Debian/Ubuntu, Fedora/RHEL, Arch, openSUSE, Gentoo — GTK4 + WebKitGTK 6. |
-| **macOS** | **Not supported.** |
-
-Steam Deck, Flatpak, and AppImage are unsupported.
+[Download](https://github.com/idodavis/paradox-modding-tools/releases) · [Features](FEATURES.md) ·
+[Roadmap](ROADMAP.md) · [Contributing](CONTRIBUTING.md) · [Architecture](ARCHITECTURE.md)
 
 ## Download
 
-[GitHub Releases](https://github.com/idodavis/paradox-modding-tools/releases) publish zips:
+Get the latest zip from [Releases](https://github.com/idodavis/paradox-modding-tools/releases):
+`paradox-modding-tools-windows-amd64.zip` or `paradox-modding-tools-linux-amd64.zip`. Each release has a
+`SHA256SUMS` file to check the zip against.
 
-- `paradox-modding-tools-windows-amd64.zip`
-- `paradox-modding-tools-linux-amd64.zip`
+## Getting started
 
-plus a `SHA256SUMS` sidecar. Extract and run. Steam Workshop publish uses the game's own copy of Steam's library, so nothing extra ships.
+1. Unzip PMT into a folder you can write to, such as one in your home folder, not Program Files. PMT downloads its
+   updates beside itself.
+2. Run `paradox-modding-tools.exe` on Windows, or `paradox-modding-tools` on Linux.
+3. Make a workspace: pick the game and its install, then your mods in load order. PMT finds Steam's installs itself,
+   and you can add one by hand.
 
-In the app, the **footer version button** checks for updates against those zips. Steam client must be running to publish to Workshop.
+PMT keeps itself up to date: the version in the status bar checks for a newer release.
 
-Unzip the app into a folder you can write to (not Program Files): updates are downloaded beside it.
+### Windows
 
-Windows zips are **unsigned** (SmartScreen will warn).
+Windows 10 or 11. The zip is not signed yet, so SmartScreen may warn about it: click **More info**, then **Run
+anyway**. PMT needs Microsoft Edge WebView2, which Windows 11 has; on Windows 10, install it from Microsoft if PMT does
+not start. Windows on ARM runs the amd64 zip under emulation.
 
-## Develop locally
+### Linux
 
-**Windows and Linux only.** The build steps and the distro packages are in [CONTRIBUTING.md](CONTRIBUTING.md).
+A desktop distro with GTK 4 and WebKitGTK 6:
 
-### Prerequisites
+| Distro family | Install |
+|---|---|
+| Debian, Ubuntu | `sudo apt install libgtk-4-1 libwebkitgtk-6.0-4` |
+| Fedora, RHEL | `sudo dnf install gtk4 webkitgtk6.0` |
+| Arch | `sudo pacman -S gtk4 webkitgtk-6.0` |
+| openSUSE | `sudo zypper install libgtk-4-1 libwebkitgtk-6_0-4` |
+| Gentoo | `sudo emerge gui-libs/gtk net-libs/webkit-gtk:6` |
 
-You need Go, Node.js, Task and the Wails command line tool; [CONTRIBUTING.md](CONTRIBUTING.md) says which versions
-and how to install them.
+The Steam Deck, Flatpak and AppImage are not supported, and neither is macOS.
 
-Windows builds use `CGO_ENABLED=0`. Linux needs GTK4 + WebKitGTK 6 **dev** packages (e.g. Debian/Ubuntu: `build-essential pkg-config libgtk-4-dev libwebkitgtk-6.0-dev`).
+## Troubleshooting
 
-Workshop publish in `task dev` needs nothing extra: it loads the game's own copy of Steam's library.
+- **Report a bug.** Open Help in the status bar and press **Copy diagnostics**: your version, your system, your
+  installs and the end of PMT's log. Paste them into a bug report.
+- **The log** is `pmt.log`, in `%LocalAppData%\paradox-modding-tools` on Windows and in
+  `~/.cache/paradox-modding-tools` on Linux.
+- **Start over.** On the Library page, **Reset all PMT data** in the status bar removes every workspace, install
+  record and cache. Your mods, the game's files and your settings stay.
+- **Publishing to the Workshop** needs Steam running and signed in.
 
-### Commands
+## Uninstall
 
-```bash
-task dev
-WAILS_VITE_PORT=9246 task dev   # if 9245 is taken
-task build                      # bin/paradox-modding-tools[.exe]
-task common:generate:bindings   # after Go DTO / service changes — never hand-edit frontend/bindings/**
-go test ./...
-```
+PMT installs nothing, so Reset data is not the whole of it. To remove PMT completely:
 
-## Project layout
+1. Close PMT and delete the folder you unzipped it into.
+2. Delete its two data folders:
 
-| Path | Role |
-|------|------|
-| `main.go` | Wails entry, updater, single window |
-| `internal/` | The engine: `jomini` (the script parser), `loc`, `files`, `texture`, `game` (each game's tables), `schema` and `index` |
-| `services/` | The Wails services, one package each: `app`, `workspace`, `lsp`, `draw`, `health`, `graph`, `search`, `wiki`, `git`, `steam` |
-| `frontend/` | Vue 3 + Nuxt UI + Pinia + Pinia Colada; `monaco-editor`, `@pierre/trees`, Vue Flow |
-| `build/` | Wails Taskfiles and icons |
+   | | Windows | Linux |
+   |---|---|---|
+   | Your settings and workspaces | `%AppData%\paradox-modding-tools` | `~/.config/paradox-modding-tools` |
+   | The log and the caches | `%LocalAppData%\paradox-modding-tools` | `~/.cache/paradox-modding-tools` |
 
-How the backend fits together: [services/README.md](services/README.md). The frontend's conventions:
-[frontend/src/README.md](frontend/src/README.md). Notes for coding agents: [AGENTS.md](AGENTS.md).
+   On Linux, these are under `$XDG_CONFIG_HOME` and `$XDG_CACHE_HOME` instead if you set them. The second folder is
+   the large one: it holds the game's scanned files, the coding agents PMT installed for its assistant, and PMT's
+   copy of each Workshop item you compared.
+3. If you added PMT's tools to a coding agent, remove the `pmt` server from it the way you added it, such as
+   `claude mcp remove pmt` for Claude Code.
+
+Your mods stay as they are. A mod you published through PMT keeps its Workshop page in a `.workshop` folder inside
+it, which you can delete if you no longer want it.
+
+## Community
+
+- Questions and ideas: [Discussions](https://github.com/idodavis/paradox-modding-tools/discussions).
+- Bugs and feature requests: [the issue forms](https://github.com/idodavis/paradox-modding-tools/issues/new/choose).
+- The author on Discord: [discord.com/users/168438474905616386](https://discord.com/users/168438474905616386).
+
+Building PMT from source is in [CONTRIBUTING.md](CONTRIBUTING.md), and how it is made is in
+[ARCHITECTURE.md](ARCHITECTURE.md).
 
 ## License
 
-[GNU GPL v3.0 or later](LICENSE).
-
----
+[Apache-2.0](LICENSE). See also [NOTICE](NOTICE).
 
 ## Other Paradox projects
 
-### CK3 Quieter Events
-
-Successor to **Less Event Spam**: turns several full-screen or intrusive vanilla events into smaller toasts or messages.
-
-[idodavis/ck3-quieter-events](https://github.com/idodavis/ck3-quieter-events)
+**[CK3 Quieter Events](https://github.com/idodavis/ck3-quieter-events)**, the successor to Less Event Spam: it turns
+several full-screen or intrusive vanilla events into smaller toasts or messages.

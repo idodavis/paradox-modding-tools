@@ -173,7 +173,7 @@ type Overview struct {
 	Judged []string `json:"judged"`
 }
 
-// Compared is the texts of two statements, as the two sides of a compare.
+// A Compared is the texts of two statements, as the two sides of a compare.
 type Compared struct {
 	Left  string `json:"left"`
 	Right string `json:"right"`

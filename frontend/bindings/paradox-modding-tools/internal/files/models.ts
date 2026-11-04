@@ -108,7 +108,7 @@ export enum Format {
     FormatShader = "shader",
 
     /**
-     * .info, and .txt named readme: a game's notes on a folder, in prose
+     * .info, and .txt whose name starts with readme: a game's notes, in prose
      */
     FormatReadme = "readme",
 

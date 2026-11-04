@@ -96,6 +96,16 @@ export interface Release {
     "version": string;
     "date": string;
     "notes": string;
+
+    /**
+     * it is the version running
+     */
+    "running": boolean;
+
+    /**
+     * it is older than the version running
+     */
+    "older": boolean;
 }
 
 /**

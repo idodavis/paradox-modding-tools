@@ -9,6 +9,7 @@ import (
 	"time"
 )
 
+// writeLauncher writes a launcher settings file into a new install folder and returns the folder.
 func writeLauncher(t *testing.T, body string) string {
 	t.Helper()
 	dir := t.TempDir()
@@ -22,6 +23,7 @@ func writeLauncher(t *testing.T, body string) string {
 	return dir
 }
 
+// TestLoadGameVersion checks that an install's version comes from its launcher settings.
 func TestLoadGameVersion(t *testing.T) {
 	if got := LookupGame("ck3").LoadVersion(writeLauncher(t,
 		`{ "rawVersion": "1.12.5", "version": "Scythe v1.12.5" }`)); got != "1.12.5" {
@@ -41,7 +43,7 @@ func TestLoadGameVersion(t *testing.T) {
 	}
 }
 
-// TestUserDataDirLauncherSetting holds the case every OS shares: the launcher's own setting names the user-data folder.
+// TestUserDataDirLauncherSetting checks that the launcher's setting names the user-data folder on every OS.
 func TestUserDataDirLauncherSetting(t *testing.T) {
 	t.Run("game_data_path", func(t *testing.T) {
 		userData := t.TempDir()
@@ -57,7 +59,7 @@ func TestUserDataDirLauncherSetting(t *testing.T) {
 	})
 }
 
-// TestUserDataDirLinux holds the cases that follow Linux's conventions: XDG and Proton.
+// TestUserDataDirLinux checks Linux's conventions, XDG and Proton.
 func TestUserDataDirLinux(t *testing.T) {
 	t.Run("xdg_beats_missing_documents", func(t *testing.T) {
 		if runtime.GOOS != "linux" {
@@ -99,7 +101,7 @@ func TestUserDataDirLinux(t *testing.T) {
 	})
 }
 
-// findSteamLibraries resolves links before dedup: ~/.steam/steam usually links ~/.local/share/Steam.
+// TestSteamLibrariesLinkedRoots checks that a link to a Steam root counts once.
 func TestSteamLibrariesLinkedRoots(t *testing.T) {
 	if runtime.GOOS == "windows" {
 		t.Skip("the ~/.steam/steam convention is Linux's")
@@ -128,8 +130,8 @@ func TestSteamLibrariesLinkedRoots(t *testing.T) {
 	}
 }
 
-// ReadInstallUpdatedAt must answer for every game, so the binaries decide, not
-// launcher/launcher-settings.json, which EU5 lacks and which lags the update on CK3.
+// TestInstallUpdatedAt checks that the binaries decide, not launcher-settings.json, which EU5 lacks and which lags the
+// update on CK3.
 func TestInstallUpdatedAt(t *testing.T) {
 	if got := ReadInstallUpdatedAt(""); !got.IsZero() {
 		t.Errorf("empty path = %v, want zero", got)
@@ -143,7 +145,6 @@ func TestInstallUpdatedAt(t *testing.T) {
 	if err := os.MkdirAll(bin, 0o755); err != nil {
 		t.Fatal(err)
 	}
-	// A launcher file far in the future must not win: the binaries decide.
 	launcher := filepath.Join(root, "launcher")
 	if err := os.MkdirAll(launcher, 0o755); err != nil {
 		t.Fatal(err)
@@ -170,8 +171,7 @@ func TestInstallUpdatedAt(t *testing.T) {
 		t.Fatalf("ReadInstallUpdatedAt = %v, want the binary's %v", got, old)
 	}
 
-	// A downgrade rewrites the binaries, so the timestamp moves forward even
-	// though the version went backwards.
+	// a downgrade rewrites the binaries, so the timestamp still moves forward
 	now := time.Now()
 	if err := os.Chtimes(exe, now, now); err != nil {
 		t.Fatal(err)
@@ -180,7 +180,6 @@ func TestInstallUpdatedAt(t *testing.T) {
 		t.Errorf("rewriting the binary did not move the timestamp: %v then %v", got, updated)
 	}
 
-	// No binaries directory: fall back to the install root's own files.
 	flat := t.TempDir()
 	if err := os.WriteFile(filepath.Join(flat, "game.exe"), []byte("x"), 0o644); err != nil {
 		t.Fatal(err)

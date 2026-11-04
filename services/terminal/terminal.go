@@ -50,6 +50,7 @@ const streamName = "terminal"
 // settingShell is the setting that names the default shell.
 const settingShell = "terminal.shell"
 
+// init registers the terminal events with the application.
 func init() {
 	application.RegisterEvent[string](EventShellStarted)
 	application.RegisterEvent[string](EventShellExited)

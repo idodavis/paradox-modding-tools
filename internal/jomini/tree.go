@@ -29,7 +29,7 @@ type Position struct {
 // An Error is one problem a parse found in a text, with the span it covers.
 type Error struct {
 	// Code is unclosed-block, unexpected-brace, unclosed-string or missing-value from a script parse. The loc parser's
-	// codes are malformed-line, loc-content-before-header and loc-unterminated-value.
+	// codes are malformed-line, loc-content-before-header, loc-unterminated-value and loc-markup.
 	Code    string `json:"code"`
 	Message string `json:"message"`
 	Span    Span   `json:"span"`

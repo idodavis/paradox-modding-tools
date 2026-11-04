@@ -1,5 +1,4 @@
-// sanitize.go strips the HTML of a wiki page down to what the article pane shows: it keeps the elements and attributes
-// the pane draws, makes links absolute, drops the page's chrome and folds a long table.
+// sanitize.go strips the HTML of a wiki page down to what the article pane shows.
 
 package wiki
 
@@ -21,15 +20,14 @@ type element struct {
 	attributes []string // the attributes it keeps
 }
 
-// anchor is the attribute a link inside the page can point to. Only a heading, and an element directly inside a
-// heading, keeps it. span is the attributes a table cell keeps.
+// anchor is the attribute that links inside the page point to; only a heading and an element directly inside one keep
+// it. span is the attributes a table cell keeps.
 var (
 	anchor = []string{"id"}
 	span   = []string{"colspan", "rowspan"}
 )
 
-// elements are the HTML elements a page may hold, by what a sanitized page does with each. Images go with the wiki's
-// other chrome, as the article pane shows the text.
+// elements are the HTML elements a sanitized page treats specially. Images are dropped, as the article pane shows text.
 var elements = map[atom.Atom]element{
 	atom.H1: {heading: true, attributes: anchor}, atom.H2: {heading: true, attributes: anchor},
 	atom.H3: {heading: true, attributes: anchor}, atom.H4: {heading: true, attributes: anchor},
@@ -45,27 +43,25 @@ var elements = map[atom.Atom]element{
 	atom.Nav: {dropped: true}, atom.Head: {dropped: true},
 }
 
-// droppedClasses are the classes of the wiki's chrome, which a sanitized page loses with everything inside them: its
-// navigation and info boxes, pictures, notices, citations and edit links.
+// droppedClasses are the classes of the wiki's chrome, dropped with everything inside them.
 var droppedClasses = []string{
 	"navbox", "infobox", "eu4box", "thumb", "noprint", "metadata", "reference", "references", "mw-editsection",
 }
 
-// The headings of the sections a sanitized page loses, and of those it moves to its end, in lower case.
+// The headings, in lower case, of the sections a sanitized page drops and of those it moves to its end.
 var (
 	droppedSections = []string{"see also", "references", "external links", "further reading"}
 	lastSections    = []string{"scripting tools"}
 )
 
-// openRows is the most rows a table shows open; a longer one is folded under a line that says how long it is.
+// openRows is the most rows a table shows open; a longer one is folded.
 const openRows = 2
 
 // fragmentParent is the element a page's HTML is parsed as the content of.
 var fragmentParent = &html.Node{Type: html.ElementNode, Data: atom.Div.String(), DataAtom: atom.Div}
 
-// Sanitize strips a wiki page's HTML down to what the article pane shows. Links are made absolute against the given
-// origin, the wiki's address. The wiki's chrome, its citations and the sections of links to elsewhere are dropped, the
-// scripting tools go last, and a long table is folded. It returns "" if the HTML cannot be parsed.
+// Sanitize strips a wiki page's HTML down to what the article pane shows, with links made absolute against the given
+// origin, the wiki's address. It returns "" if the HTML cannot be parsed.
 func Sanitize(text string, origin *url.URL) string {
 	root, err := parseFragment(text)
 	if err != nil {
@@ -80,8 +76,7 @@ func Sanitize(text string, origin *url.URL) string {
 	return strings.TrimSpace(sanitized.String())
 }
 
-// parseFragment parses a page's HTML into the children of one element. It returns an error if the HTML cannot be
-// parsed.
+// parseFragment parses a page's HTML into the children of one root node.
 func parseFragment(text string) (*html.Node, error) {
 	nodes, err := html.ParseFragment(strings.NewReader(text), fragmentParent)
 	if err != nil {
@@ -94,9 +89,7 @@ func parseFragment(text string) (*html.Node, error) {
 	return root, nil
 }
 
-// sanitize cuts the children of a node down to what a sanitized page keeps. A dropped element goes with its
-// contents, an element with no row gives way to its children, and a kept element has only the attributes it keeps. An
-// empty superscript goes, and a long table is folded.
+// sanitize cuts the children of a node down to what a sanitized page keeps.
 func sanitize(parent *html.Node, origin *url.URL) {
 	for child := parent.FirstChild; child != nil; {
 		next := child.NextSibling
@@ -124,8 +117,7 @@ func sanitize(parent *html.Node, origin *url.URL) {
 	}
 }
 
-// isDropped reports whether an element is one that a sanitized page loses with everything inside it: a dropped kind
-// of element, the table of contents, a citation, a link back to the top, or an element of the wiki's chrome.
+// isDropped reports whether a sanitized page loses an element with everything inside it.
 func isDropped(node *html.Node) bool {
 	id := LookupAttribute(node, "id")
 	switch {
@@ -156,7 +148,7 @@ func countRows(node *html.Node) int {
 	return rows
 }
 
-// foldTable puts a table of the given number of rows in a closed fold, under a line that says how long it is.
+// foldTable puts a table of the given number of rows in a closed fold that says how long it is.
 func foldTable(table *html.Node, count int) {
 	fold := &html.Node{Type: html.ElementNode, Data: atom.Details.String(), DataAtom: atom.Details}
 	summary := &html.Node{Type: html.ElementNode, Data: atom.Summary.String(), DataAtom: atom.Summary}
@@ -167,8 +159,7 @@ func foldTable(table *html.Node, count int) {
 	fold.AppendChild(table)
 }
 
-// arrangeSections drops the sections a sanitized page loses and moves those it shows last to its end. A section is a
-// heading of the page's top level and what follows it up to the next heading of its level or higher.
+// arrangeSections drops the sections a sanitized page loses and moves those it shows last to its end.
 func arrangeSections(root *html.Node) {
 	nodes := slices.Collect(root.ChildNodes())
 	var moved []*html.Node
@@ -203,9 +194,8 @@ func levelOf(node *html.Node) int {
 	return int(node.Data[1] - '0')
 }
 
-// resolveAttributes returns the attributes of an element that a sanitized page keeps. A link is kept with an absolute
-// address, and only if that address is on the web. A link to another page of the wiki also gets the page's title as
-// data-page. A cell keeps its spans only when they are numbers.
+// resolveAttributes returns the attributes of an element that a sanitized page keeps. A link keeps only a web address,
+// made absolute, and one to another wiki page also gets that page's title as data-page.
 func resolveAttributes(node *html.Node, origin *url.URL) []html.Attribute {
 	row := elements[node.DataAtom]
 	var kept []html.Attribute
@@ -237,8 +227,7 @@ func resolveAttributes(node *html.Node, origin *url.URL) []html.Attribute {
 	return kept
 }
 
-// resolveTitle returns the title of the page of the wiki that an absolute address names. It returns "" if the address
-// is on another site or names no page.
+// resolveTitle returns the title of the wiki page an address names, or "" if it is on another site or names no page.
 func resolveTitle(target string, origin *url.URL) string {
 	address, err := url.Parse(target)
 	if err != nil || address.Host != origin.Host {
@@ -251,8 +240,8 @@ func resolveTitle(target string, origin *url.URL) string {
 	return strings.ReplaceAll(title, "_", " ")
 }
 
-// resolveLink returns a link's address made absolute against the given origin. A link inside the page stays as it is.
-// It returns false if the address is not a web address.
+// resolveLink returns a link's address made absolute against the given origin, or false if it is not a web address. A
+// link inside the page stays as it is.
 func resolveLink(target string, origin *url.URL) (string, bool) {
 	if strings.HasPrefix(target, "#") {
 		return target, true

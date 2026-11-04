@@ -1,8 +1,4 @@
-/**
- * Builds the picture of a window as DOM from Go's widgets, using the tables in `properties.ts` for what each holding
- * and property means in CSS. The browser lays it out and each widget's rect is read back for the marks, the panel and
- * the code link. Go measures nothing and the page computes no layout.
- */
+/** Builds the picture of a window as DOM from Go's widgets. The browser lays it out and the rects are read back. */
 import { Markup, type Segment } from "@internal/loc/models";
 import type { Choice, Font, Overlay, Property, Row, States, Widget, Window } from "@services/draw/models";
 
@@ -10,19 +6,13 @@ import { SAMPLE_COLORS, findPlaceholder } from "../../../lib/placeholders";
 import { fileUrl } from "../../../queries";
 import { HOLDS, PICTURE, PROPERTIES, TEXT, applyCss } from "./properties";
 
-/**
- * A Drawing is how a window is drawn: which widgets are hidden, which values the states choose, and how many rows a
- * list that reads no database draws.
- */
+/** A Drawing is how a window is drawn: its hidden widgets, the values the states choose and the sample row count. */
 type Drawing = { hidden: ReadonlySet<number>; choices: States["choices"]; rows: number };
 
-/** A Scene is a window being built into the DOM: its drawing, its lists' rows by item, its widgets' kids and nodes. */
+/** A Scene is a window being built into the DOM. */
 type Scene = Drawing & { lists: Window["rows"]; children: Map<number, Drawn[]>; nodes: PictureNode[] };
 
-/**
- * A Drawn is a widget with its properties and its overlays' properties looked up in its window's tables, where Go gives
- * only their positions.
- */
+/** A Drawn is a widget with its and its overlays' properties looked up in its window's tables. */
 type Drawn = Omit<Widget, "properties" | "overlays"> & {
   properties: Property[];
   overlays: (Omit<Overlay, "properties"> & { properties: Property[] })[];
@@ -34,25 +24,22 @@ type Sprite = { url: string; border: number[]; density: number; isTiled: boolean
 /** A Mask is a sprite that keeps part of a layer, by its alpha or by its brightness. */
 type Mask = [sprite: Sprite, mode: "alpha" | "luminance"];
 
-/**
- * WRITTEN_SIZES lists the built-in types that are as large as they write, or 0 where they write nothing, whatever their
- * children's size: the plain widget, which EU5 builds as uberwidget. Other types grow to their children.
- */
+/** WRITTEN_SIZES lists the built-in types that are as large as they write whatever their children's size. */
 const WRITTEN_SIZES = ["widget", "uberwidget"];
 
-/** MASKS lists the texture keys whose image is a mask, not a picture: a coat of arms' mask or the widget's own. */
+/** MASKS lists the texture keys whose image is a mask, not a picture. */
 const MASKS = ["coat_of_arms_mask", "mask"];
 
 const SIDES = ["top", "right", "bottom", "left"];
 const PLACES = ["start", "center", "end"] as const;
 
-/** GRID_AXES is the CSS of a grid's tracks on each axis: its auto flow, and the properties for their count and size. */
+/** GRID_AXES is the CSS of a grid's tracks on each axis. */
 const GRID_AXES = {
   x: { flow: "row", template: "grid-template-columns", track: "grid-auto-columns" },
   y: { flow: "column", template: "grid-template-rows", track: "grid-auto-rows" },
 };
 
-/** FITS is how a texture lies in its widget for each fittype. Any other fittype fills the widget. */
+/** FITS is how a texture lies in its widget for each fittype. Any other fittype fills it. */
 const FITS: Record<string, { size: string; position: string }> = {
   centercrop: { size: "cover", position: "center" },
   start: { size: "contain", position: "left top" },
@@ -61,19 +48,18 @@ const FITS: Record<string, { size: string; position: string }> = {
 };
 const FILL = { size: "100% 100%", position: "0 0" };
 
-/** CUTS lists the custom properties sent with an image's path, from which Go cuts one frame out of a sprite sheet. */
+/** CUTS lists the custom properties sent with an image's path, so Go cuts one frame out of a sprite sheet. */
 const CUTS = ["frame", "framesize", "framegrid", "density"];
 
 /** A PictureNode is one drawn widget: its element and its id. */
 export type PictureNode = { id: number; element: HTMLElement };
 
-/** faces is the font faces the page has, by the font's name and style, with the file each is loaded from. */
+/** faces holds the font faces the page has, by the font's name and style. */
 const faces = new Map<string, { path: string; face: FontFace }>();
 
 /**
- * buildPicture builds the DOM of a window's widgets inside the given floor element, as the given drawing says. The
- * window sits inside its holders, nested boxes with the holders' own properties, the outermost on the floor. It returns
- * a node for each widget built; a hidden widget that takes no room has none.
+ * buildPicture builds the DOM of a window's widgets inside the given floor element, as the given drawing says. It
+ * returns a node for each widget built; a hidden widget that takes no room has none.
  */
 export function buildPicture(window: Window, drawing: Drawing, floor: HTMLElement): PictureNode[] {
   const widgets = (window.widgets ?? []).map((widget) =>
@@ -115,10 +101,7 @@ export function buildPicture(window: Window, drawing: Drawing, floor: HTMLElemen
   return scene.nodes;
 }
 
-/**
- * readRects reads the rect of each node relative to the floor, after layout. A widget has one rect for each copy of it
- * in the rows of an item.
- */
+/** readRects reads the rect of each node relative to the floor. A widget has one rect for each copy of it. */
 export function readRects(nodes: PictureNode[], floor: HTMLElement): Map<number, DOMRect[]> {
   const origin = floor.getBoundingClientRect();
   const scale = floor.offsetWidth ? origin.width / floor.offsetWidth : 1;
@@ -137,9 +120,8 @@ export function readRects(nodes: PictureNode[], floor: HTMLElement): Map<number,
 }
 
 /**
- * placeOnScreen moves the window's root widget flush with the floor's edge it lies wholly past, so that it can be
- * seen. The game places such a window by code, next to what opened it. A window partly on the floor stays where its
- * properties put it, cut by the floor's edge. It returns whether the window was moved.
+ * placeOnScreen moves the window's root widget flush with the floor's edge it lies wholly past, so it can be seen. The
+ * game places such a window by code. It returns whether the window was moved.
  */
 export function placeOnScreen(nodes: PictureNode[], floor: HTMLElement): boolean {
   const root = nodes[0];
@@ -154,17 +136,15 @@ export function placeOnScreen(nodes: PictureNode[], floor: HTMLElement): boolean
   return true;
 }
 
-/** findShift returns how far to move a span to make it flush with the floor's edge it lies wholly past, else 0. */
+/** findShift returns how far to move a span flush with the floor's edge it lies wholly past, else 0. */
 function findShift(start: number, end: number, length: number): number {
   if (start >= length) return length - end;
   return end <= 0 ? -start : 0;
 }
 
 /**
- * fitTexts fits each text that its box cuts. It first gives each text back its written size and whole samples, so the
- * picture can be fitted again once its fonts and images load. Then it trims the samples to the words that fit, one word
- * of each at least, so a box that holds one line gets a short sample. A text still cut shrinks, where its widget writes
- * a least font size, as far as it needs and never below that size, as the game shrinks it.
+ * fitTexts fits each text that its box cuts: it trims the samples to the words that fit and shrinks a text whose
+ * widget writes a least font size. It resets every text first, so the picture can be fitted again once fonts load.
  */
 export function fitTexts(nodes: PictureNode[]): void {
   const spans = nodes.flatMap(({ element }) => element.querySelector<HTMLElement>(":scope > span") ?? []);
@@ -177,10 +157,7 @@ export function fitTexts(nodes: PictureNode[]): void {
   shrinkTexts(spans.filter(isCut));
 }
 
-/**
- * fitPlaceholders fits each placeholder to the part of its widget's box that lies inside the widget's holder, the box
- * the game draws the picture in, so the placeholder's whole shape shows. A widget wholly outside its holder shows none.
- */
+/** fitPlaceholders fits each placeholder to the part of its widget's box inside the widget's holder. */
 export function fitPlaceholders(nodes: PictureNode[]): void {
   const fits = nodes.flatMap(({ element }) => {
     const placeholder = element.querySelector<HTMLElement>(":scope > [data-placeholder]");
@@ -193,18 +170,12 @@ export function fitPlaceholders(nodes: PictureNode[]): void {
   for (const { placeholder, inset } of fits) placeholder.style.setProperty("inset", inset);
 }
 
-/**
- * listProperties looks up the properties at the given positions in a window's property table, where Go gives a widget
- * or an overlay only the positions. No positions give no properties.
- */
+/** listProperties looks up the properties at the given positions in a window's property table. */
 export function listProperties(window: Window, positions: number[] | null): Property[] {
   return (positions ?? []).map((position) => (window.properties ?? [])[position]);
 }
 
-/**
- * applyProperties applies the given properties to a style, each through its row in PROPERTIES, in the order of that
- * table. If a key is written twice, the last value wins.
- */
+/** applyProperties applies the given properties to a style through their rows in PROPERTIES. The last of a key wins. */
 export function applyProperties(properties: Property[] | null, style: CSSStyleDeclaration): void {
   const values = new Map((properties ?? []).map((property) => [property.key.toLowerCase(), property.value]));
   for (const [key, row] of Object.entries(PROPERTIES)) {
@@ -213,10 +184,7 @@ export function applyProperties(properties: Property[] | null, style: CSSStyleDe
   }
 }
 
-/**
- * loadFonts adds a font face to the page for each style of the given fonts, named by its font and loaded from its
- * file. A face of the same font and style loaded from another file, such as another game's, is replaced.
- */
+/** loadFonts adds a font face to the page for each style of the given fonts. A face from another file is replaced. */
 function loadFonts(fonts: Font[]): void {
   for (const { name, style, path } of fonts) {
     const key = `${name}|${style}`;
@@ -234,14 +202,11 @@ function loadFonts(fonts: Font[]): void {
   }
 }
 
-/**
- * buildWidget builds the element of a widget with its pictures, text and children. It returns null for a hidden widget
- * that takes no room. In a row of a list that reads a database, the widget takes the values of the row's definition.
- */
+/** buildWidget builds the element of a widget with its pictures, text and children. It returns null if hidden. */
 function buildWidget(scene: Scene, widget: Drawn, holder: Drawn | null, row: Row | null): HTMLElement | null {
   widget = applyChoices(widget, row?.choices?.[`${widget.id}`] ?? []);
   const isHidden = scene.hidden.has(widget.id);
-  // a hidden window takes no room, and a hidden child takes none where its holder drops hidden children
+  // A hidden window takes no room, and a hidden child takes none where its holder drops hidden children.
   if (isHidden && (!holder || holder.row.dropsHidden)) return null;
   const element = document.createElement("div");
   element.dataset.element = String(widget.id);
@@ -262,17 +227,13 @@ function buildWidget(scene: Scene, widget: Drawn, holder: Drawn | null, row: Row
   return element;
 }
 
-/**
- * listRows lists the rows to draw a child of a widget in. An item of a list that reads a database gets a row for each
- * definition. Any other item gets the scene's sample number of copies of the given row. Any other child gets the given
- * row once.
- */
+/** listRows lists the rows to draw a child of a widget in. Only an item of a list has more than the given row. */
 function listRows(scene: Scene, kid: Drawn, row: Row | null): (Row | null)[] {
   if (!kid.item) return [row];
   return scene.lists?.[`${kid.id}`] ?? Array.from({ length: scene.rows }, () => row);
 }
 
-/** toDrawn makes a Drawn of a widget by looking up its and its overlays' properties in the window's tables. */
+/** toDrawn makes a Drawn of a widget. */
 function toDrawn(window: Window, widget: Widget): Drawn {
   const overlays = (widget.overlays ?? []).map((position) => (window.overlays ?? [])[position]);
   return {
@@ -283,9 +244,8 @@ function toDrawn(window: Window, widget: Widget): Drawn {
 }
 
 /**
- * applyChoices returns the widget with the values the states choose. Each property takes the value chosen for its key.
- * The texts, textures and colors the choices lead to replace those of the same key, and a chosen texture that is not a
- * mask removes the placeholder. It returns the widget as it is when there are no choices.
+ * applyChoices returns the widget with the values the states choose. A chosen texture that is not a mask removes the
+ * placeholder. It returns the widget as it is when there are no choices.
  */
 function applyChoices(widget: Drawn, choices: Choice[]): Drawn {
   if (!choices.length) return widget;
@@ -306,15 +266,12 @@ function applyChoices(widget: Drawn, choices: Choice[]): Drawn {
   };
 }
 
-/**
- * applyStyle applies a widget's CSS to its element: its holding, each property through its row, and what its role
- * makes of it.
- */
+/** applyStyle applies a widget's CSS to its element: its holding, its properties and what its role makes of it. */
 function applyStyle(element: HTMLElement, widget: Drawn, holder: Drawn | null): void {
   const { style } = element;
   applyCss(style, { position: "relative", "box-sizing": "border-box", "min-width": "0", "min-height": "0" });
   applyCss(style, HOLDS[widget.row.holding || "cell"].css);
-  // custom properties are inherited, so a widget with no margin of its own starts from none
+  // Custom properties are inherited, so a widget with no margin of its own starts from none.
   for (const side of SIDES) style.setProperty(`--margin-${side}`, "0px");
   applyProperties(widget.properties, style);
   // A color Go resolved for a binding goes through the row of the property it belongs to.
@@ -352,10 +309,9 @@ function applyStyle(element: HTMLElement, widget: Drawn, holder: Drawn | null): 
 }
 
 /**
- * applyLayout applies the layout of the given children inside their holder, from what their properties wrote: anchors,
- * policies and fits. A child that sizes its holder to its minimum makes the holder as large as what it holds, and the
- * child's own maximum does not cut it. EU5's basic_dialog caps its box at 300 high, and the agenda inside it stands 885
- * high and whole in the game.
+ * applyLayout applies the layout of the given children inside their holder: anchors, policies and fits. A child that
+ * sizes its holder to its minimum makes the holder as large as what it holds, whatever the child's own maximum. EU5's
+ * basic_dialog caps its box at 300 high, and the agenda inside it stands 885 high and whole in the game.
  */
 function applyLayout(holder: HTMLElement, children: HTMLElement[]): void {
   const holding = holder.dataset.holds;
@@ -370,7 +326,7 @@ function applyLayout(holder: HTMLElement, children: HTMLElement[]): void {
     }
     if (holding === "flow") child.style.setProperty("flex-shrink", "0");
     if (holding === "cell") applyCell(child);
-    // a grid that sizes its items from its cells gives a plain item the cell where the item writes no size
+    // A grid that sizes its items from its cells gives a plain item the cell where the item writes no size.
     if (holding === "grid" && findVariable(holder, "--cell-items")) {
       const unsized = child.dataset.unsized?.split(" ").filter(Boolean) ?? [];
       for (const length of unsized) child.style.setProperty(length, "100%");
@@ -381,10 +337,8 @@ function applyLayout(holder: HTMLElement, children: HTMLElement[]): void {
 }
 
 /**
- * applyGrid applies how a grid fills its cells. It fills down a column, then the next, or across a row, then the next,
- * when it is flipped. A line holds as many cells as the grid's wrap, or its most slots along the fill if that is
- * fewer. A grid that writes neither, but writes its most slots across the fill, fills that many lines. Any other grid
- * fills one line.
+ * applyGrid applies how a grid fills its cells: down a column, or across a row when flipped. A line holds as many
+ * cells as the grid's wrap, or its most slots along the fill if that is fewer.
  */
 function applyGrid(grid: HTMLElement): void {
   const [along, across] = findVariable(grid, "--flip") === "1" ? (["x", "y"] as const) : (["y", "x"] as const);
@@ -400,10 +354,7 @@ function applyGrid(grid: HTMLElement): void {
   if (count > 0) style.setProperty(template, `repeat(${count}, ${style.getPropertyValue(track) || "max-content"})`);
 }
 
-/**
- * applyCell applies the place of a child in a cell: a grid item at its holder's anchor, shifted by its own anchor, or
- * positioned over the cell if the child is ignored by layout.
- */
+/** applyCell applies the place of a child in a cell, at its holder's anchor shifted by its own anchor. */
 function applyCell(child: HTMLElement): void {
   const { style } = child;
   if (child.dataset.free !== "true") {
@@ -463,9 +414,8 @@ function applyBox(children: HTMLElement[], along: "x" | "y"): void {
 }
 
 /**
- * buildPictures builds a widget's textures, then its placeholder over them, then its text. The placeholder is the
- * stand-in Go names for a picture that has no file, such as a portrait's silhouette over its transparent texture. A
- * mask is not a texture: it cuts the placeholder to its shape. A line draws no picture.
+ * buildPictures builds a widget's textures, then its placeholder over them, then its text. The placeholder stands in
+ * for a picture that has no file. A mask is not a texture: it cuts the placeholder to its shape.
  */
 function buildPictures(widget: Drawn, element: HTMLElement): HTMLElement[] {
   const isLine = findVariable(element, "--line") !== "";
@@ -505,7 +455,7 @@ function buildPictures(widget: Drawn, element: HTMLElement): HTMLElement[] {
   return text ? [...pictures, text] : pictures;
 }
 
-/** makeSprite makes a sprite of an image file, reading its cut, border, density, tiling and fit from a style. */
+/** makeSprite makes a sprite of an image file, reading how it is cut and laid from a style. */
 function makeSprite(path: string, style: CSSStyleDeclaration): Sprite {
   const query = new URLSearchParams();
   for (const key of CUTS) {
@@ -523,9 +473,7 @@ function makeSprite(path: string, style: CSSStyleDeclaration): Sprite {
 
 /**
  * buildTextures builds a widget's own texture and its overlays as one group over the widget, in the order the game
- * lays them on. The group uses the own texture's blend and shows only where every alphamultiply overlay is opaque. Each
- * other overlay blends with the own texture alone, kept to the own texture's shape and to where the last luminance
- * mask overlay before it is bright. An overlay with visible = no is left out.
+ * lays them on. An overlay with visible = no is left out.
  */
 function buildTextures(own: Sprite, overlays: Drawn["overlays"], style: CSSStyleDeclaration): HTMLElement {
   const group = document.createElement("div");
@@ -559,11 +507,7 @@ function buildTextures(own: Sprite, overlays: Drawn["overlays"], style: CSSStyle
   return group;
 }
 
-/**
- * buildLayer builds one texture as a layer over its widget, at the given alpha and kept to the given masks. A tint is
- * multiplied over the whole layer, which is then kept to the image's shape, as the game's shader multiplies each pixel
- * by the tint's color. The tint's alpha scales the layer.
- */
+/** buildLayer builds one texture as a layer over its widget, at the given alpha and kept to the given masks. */
 function buildLayer(sprite: Sprite, style: CSSStyleDeclaration, alpha: number, masks: Mask[]): HTMLElement {
   const layer = document.createElement("div");
   copyVariables(style, PICTURE, layer.style);
@@ -580,7 +524,7 @@ function buildLayer(sprite: Sprite, style: CSSStyleDeclaration, alpha: number, m
   return layer;
 }
 
-/** toPaint converts a sprite to the CSS that paints its box: by its nine slices if it has a border. */
+/** toPaint converts a sprite to the CSS that paints its box. */
 function toPaint(sprite: Sprite): Record<string, string> {
   if (isSliced(sprite)) return { "border-style": "solid", "border-width": "0", "border-image": toSlices(sprite) };
   const placement = toPlacement(sprite);
@@ -592,10 +536,7 @@ function toPaint(sprite: Sprite): Record<string, string> {
   };
 }
 
-/**
- * toMask converts masks to the CSS that keeps only what every mask keeps, each by its alpha or its brightness. A sprite
- * with a border masks by its nine slices, and the browser takes only one of those.
- */
+/** toMask converts masks to the CSS that keeps only what every mask keeps. The browser takes only one sliced mask. */
 function toMask(masks: Mask[]): Record<string, string> {
   const sliced = masks.find(([sprite]) => isSliced(sprite));
   const layers = masks.filter((mask) => mask !== sliced).map(([sprite, mode]) => ({ ...toPlacement(sprite), mode }));
@@ -612,7 +553,7 @@ function toMask(masks: Mask[]): Record<string, string> {
   };
 }
 
-/** toPlacement converts a sprite to how its image lies in its box: tiled at its size on the screen, else by its fit. */
+/** toPlacement converts a sprite to how its image lies in its box. */
 function toPlacement(sprite: Sprite): { image: string; size: string; position: string; repeat: string } {
   if (sprite.isTiled) {
     return {
@@ -625,12 +566,9 @@ function toPlacement(sprite: Sprite): { image: string; size: string; position: s
   return { image: `url("${sprite.url}")`, ...(FITS[sprite.fit] ?? FILL), repeat: "no-repeat" };
 }
 
-/**
- * toSlices converts a sprite's border to a CSS nine-slice, as the game's shader cuts it. Each side is cut at its
- * border in image pixels and drawn at that border divided by the density. The middle is tiled or stretched.
- */
+/** toSlices converts a sprite's border to a CSS nine-slice, as the game's shader cuts it. */
 function toSlices(sprite: Sprite): string {
-  // measured: EU5's paper_card.dds is 400x212 with a border of 100 at density 2, which only fits in image pixels
+  // Measured: EU5's paper_card.dds is 400x212 with a border of 100 at density 2, which only fits in image pixels.
   const widths = sprite.border.map((side) => `${side / sprite.density}px`).join(" ");
   const middle = sprite.isTiled ? "repeat" : "stretch";
   return `url("${sprite.url}") ${sprite.border.join(" ")} fill / ${widths} / 0 ${middle}`;
@@ -641,7 +579,7 @@ function isSliced(sprite: Sprite): boolean {
   return sprite.border.some(Boolean);
 }
 
-/** buildText builds a widget's texts as a span in its cell, placed by its align values. Null if it has none. */
+/** buildText builds a widget's texts as a span in its cell. It returns null for a widget with none. */
 function buildText(widget: Drawn, element: HTMLElement): HTMLElement | null {
   const texts = Object.values(widget.texts ?? {}).flatMap((text) => (text?.length ? [text] : []));
   if (!texts.length) return null;
@@ -668,7 +606,7 @@ function buildText(widget: Drawn, element: HTMLElement): HTMLElement | null {
   return span;
 }
 
-/** buildSegment builds one piece of a text: plain text as it is, or a data call's sample in the color of its kind. */
+/** buildSegment builds one piece of a text: plain text, or a data call's sample in the color of its kind. */
 function buildSegment(segment: Segment): Node | string {
   if (segment.markup !== Markup.MarkupCall) return segment.text;
   const sample = document.createElement("span");
@@ -678,7 +616,7 @@ function buildSegment(segment: Segment): Node | string {
   return sample;
 }
 
-/** listSamples lists the samples in a text, the spans that show the sample text of its data calls. */
+/** listSamples lists the spans in a text that show the sample text of its data calls. */
 function listSamples(span: HTMLElement): HTMLElement[] {
   return [...span.querySelectorAll<HTMLElement>("[data-sample]")];
 }
@@ -688,11 +626,7 @@ function isCut(span: HTMLElement): boolean {
   return span.scrollWidth > span.clientWidth || span.scrollHeight > span.clientHeight;
 }
 
-/**
- * trimSamples trims the samples of the given texts to the words that fit their boxes, one word of each sample at
- * least. The first word count is the share of the text the box shows. Then one word at a time is dropped while the box
- * still cuts the text.
- */
+/** trimSamples trims the samples of the given texts to the words that fit their boxes, one word of each at least. */
 function trimSamples(spans: HTMLElement[]): void {
   let texts = spans.map((span) => {
     const words = listSamples(span).reduce((sum, sample) => sum + (sample.dataset.sample ?? "").split(" ").length, 0);
@@ -706,15 +640,14 @@ function trimSamples(spans: HTMLElement[]): void {
 }
 
 /**
- * findShare returns the share of a text that shows in its box: 1 for a text shown whole. The share of the height is
- * raised to the given power: 1 for the number of words that fit, 0.5 for the font size, since a wrapped text grows both
- * longer and taller with its size.
+ * findShare returns the share of a text that shows in its box, 1 for a text shown whole. The height's share is raised
+ * to the given power: 1 for words, 0.5 for font size, since a wrapped text grows both longer and taller with its size.
  */
 function findShare(span: HTMLElement, power: number): number {
   return Math.min(1, span.clientWidth / span.scrollWidth, (span.clientHeight / span.scrollHeight) ** power);
 }
 
-/** keepWords keeps the given number of sample words in a text, in order, and at least one word of each sample. */
+/** keepWords keeps the given number of sample words in a text, at least one word of each sample. */
 function keepWords(span: HTMLElement, count: number): void {
   const samples = listSamples(span);
   let remaining = count;
@@ -726,11 +659,7 @@ function keepWords(span: HTMLElement, count: number): void {
   });
 }
 
-/**
- * shrinkTexts shrinks the given texts, where their widgets write a least font size, as far as each needs and never
- * below that size. The first size comes from the share of the text the box shows, then one pixel lower where the text
- * is still cut.
- */
+/** shrinkTexts shrinks the given texts as far as each needs, never below the least font size its widget writes. */
 function shrinkTexts(spans: HTMLElement[]): void {
   const texts = spans.flatMap((span) => {
     const least = span.parentElement ? parseFloat(findVariable(span.parentElement, "--least-font-size")) : 0;
@@ -754,7 +683,7 @@ function isBarOff(holder: Drawn, bar: Drawn): boolean {
   return findValue(holder, `scrollbarpolicy_${findAxis(bar)}`).toLowerCase() === "always_off";
 }
 
-/** toPlace converts a fraction of the free room to the place a grid or a box aligns to: start, center or end. */
+/** toPlace converts a fraction of the free room to start, center or end. */
 function toPlace(fraction: number): string {
   return PLACES[Math.round(fraction * 2)] ?? "start";
 }
@@ -775,7 +704,7 @@ function findNumber(element: HTMLElement, property: string, fallback: number): n
   return text ? Number(text) : fallback;
 }
 
-/** copyVariables copies the custom properties of a style that start with a prefix to another, minus the prefix. */
+/** copyVariables copies the custom properties of a style that start with a prefix to another, dropping the prefix. */
 function copyVariables(source: CSSStyleDeclaration, prefix: string, target: CSSStyleDeclaration): void {
   for (const property of Array.from(source)) {
     if (property.startsWith(prefix))

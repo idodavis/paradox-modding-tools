@@ -1,7 +1,4 @@
-<!--
-  Settings, a dialog over any page of any window. It lists the workspace's, the IDE's and the app's settings in
-  sections, and opens when the command bus sends settings.open, at the section it names if any.
--->
+<!-- Settings, a dialog over any page of any window. It opens on the command bus's settings.open. -->
 <script setup lang="ts">
 import { computed, nextTick, shallowRef, useTemplateRef, watch } from "vue";
 import { useRouter } from "vue-router";
@@ -39,10 +36,7 @@ import WorkspaceModCard from "./WorkspaceModCard.vue";
 import * as workspace from "@services/workspace/service";
 import type { Mod } from "@services/workspace/models";
 
-/**
- * GROUPS holds the sections in listed order, grouped by what they apply to. A workspace group shows only while one is
- * open. A catalog group's sections are drawn from the settings catalog alone, each with a button that resets it.
- */
+/** GROUPS holds the sections in listed order. A workspace group shows only while a workspace is open. */
 const GROUPS = [
   {
     label: "App",
@@ -92,7 +86,6 @@ const HELP = [
   "Guidance applies to every workspace: one switch for the parts of PMT that only teach modding, and a list of what stays whichever way it is set.",
   "Agents and tools: the port and token of PMT's tools for coding agents, the text that registers PMT with an agent you run yourself, and agents of your own.",
 ];
-// the parts of PMT that the Guidance switch hides, and the ones that stay whatever it says
 const GUIDED = [
   {
     icon: "i-lucide-target",
@@ -123,7 +116,6 @@ const HEADING = {
     label: "flex flex-col items-start gap-0.5 overflow-hidden",
   },
 };
-// the splitter's two panes: the load order and the picked mod's card; the list keeps its width
 const PANES = [
   { slot: "list", sizeUnit: "px" as const, defaultSize: 420, minSize: 320, maxSize: 640 },
   { slot: "card" },
@@ -131,13 +123,12 @@ const PANES = [
 const LAUNCH = findCommand("game.launch");
 const ROW = "relative flex h-14 min-w-0 items-center gap-2.5 border-b border-default ps-2 pe-3 text-start";
 const PICKED = "bg-(--accent-soft) before:absolute before:inset-y-0 before:start-0 before:w-0.5 before:bg-primary";
-// the game's one swatch: its automatic color, which the record holds as ""
+// The record holds the game's automatic color as "".
 const GAME_COLORS = [{ value: "", background: "var(--game)", label: "Automatic" }];
-// the shell picker's two choices that are no path: PMT's own choice, which the setting holds as "", and a program
-// chosen with the file dialog
+// The shell picker's two choices that are no path: PMT's own choice, which the setting holds as "", and a program
+// chosen with the file dialog.
 const DEFAULT_SHELL = "default";
 const OTHER_SHELL = "other";
-// the rows of a theme tile's sidebar: a file or an origin's name, and the origin's color if it is one
 const SIDEBAR = [
   { label: "Sunset Invasion", origin: "--o1" },
   { label: "sir_events.txt" },
@@ -145,13 +136,11 @@ const SIDEBAR = [
   { label: "Crusader Kings III", origin: "--game" },
 ];
 
-// a section's page: its title and note, the buttons beside the title if any, and its content
 const [DefinePage, Page] = createReusableTemplate<
   { title: string; note: string; term?: string },
   { default: undefined; actions: undefined }
 >();
-// a two-column row of a page: its title and note on the left and its control on the right, the line above it and not
-// below when it is the page's last; the key of the setting it edits, if any, makes it a row the palette can open at
+// A row's setting key makes it a row the palette can open Settings at.
 const [DefineRow, Row] = createReusableTemplate<{ title: string; note: string; last?: boolean; setting?: string }>();
 
 const router = useRouter();
@@ -165,14 +154,14 @@ const creating = shallowRef(false);
 const guiding = shallowRef(false);
 const origin = shallowRef("");
 const preview = shallowRef<Mod[]>();
-// the key of the setting the palette opened Settings at, whose row is drawn in the highlight color until the next click
+// The row of the setting the palette opened Settings at is highlighted until the next click.
 const highlighted = shallowRef("");
 
 const { data: state } = useQuery(stateQuery);
 const { data: workspaces } = useQuery(workspacesQuery);
 const { data: catalog } = useQuery(settingsCatalogQuery);
 
-// the command's target is a setting's key, else a section
+// The command's target is a setting's key, else a section.
 commandBus.on((command, target) => {
   if (command !== "settings.open") return;
   const setting = catalog.value?.find((row) => row.key === target);
@@ -187,7 +176,6 @@ commandBus.on((command, target) => {
 useEventListener(document, "pointerdown", () => (highlighted.value = ""), { capture: true });
 
 const id = computed(() => store.activeId());
-// the open workspace's record; Settings shows the app's sections alone while none is open
 const record = computed(() =>
   store.isOpen() ? workspaces.value?.find((row) => row.record.id === id.value)?.record : undefined,
 );
@@ -210,10 +198,8 @@ const dumps = computed(() => state.value && describeDumps(state.value.dumps));
 const custom = computed(() => !!record.value?.gameColor || mods.value.some((mod) => store.isCustom(mod.color)));
 const theme = computed(() => settings.theme());
 const pickedFamily = computed(() => settings.value("appearance.theme"));
-// the chips of the mod colors: the game's files, then each mod
 const chips = computed(() => [VANILLA, ...mods.value.map((mod) => mod.id)]);
 
-// a section is listed when its title or one of its settings matches what was typed
 const sections = computed(() => {
   const matches = (item: { value: string; label: string }) =>
     matchQuery(
@@ -236,7 +222,6 @@ const tabs = computed<TabsItem[]>(() =>
       disabled: true,
       ...HEADING,
     },
-    // a catalog group's sections draw in the content slot, the others in a slot of their own
     ...group.sections.map((tab) => ({
       label: tab.label,
       value: tab.value,
@@ -270,7 +255,6 @@ const { data: environment } = useQuery(() => ({
   enabled: open.value && current.value === "terminal",
 }));
 const shellRow = computed(() => catalog.value?.find((row) => row.key === "terminal.shell"));
-// PMT's own choice, each shell of the system, the program the setting names if it is none of them, and another
 const shellChoices = computed<SelectItem[]>(() => {
   const system = programs.value ?? [];
   const chosen = settings.value("terminal.shell");
@@ -292,12 +276,12 @@ const { mutate: writeShell } = useMutation({
   },
 });
 
-/** resetSection puts every setting of the given catalog section back to its default for this workspace. */
+/** resetSection puts every setting of the given section back to its default. */
 function resetSection(value: string): void {
   for (const row of catalog.value ?? []) if (row.section === value) settings.write(row.key, row.default);
 }
 
-/** remove removes the workspace after asking, then closes Settings and goes to the Library. Cancelling stays. */
+/** remove removes the workspace after asking, then goes to the Library. */
 async function remove(): Promise<void> {
   if (!record.value || !(await store.remove(record.value))) return;
   open.value = false;

@@ -1,8 +1,4 @@
-<!--
-  An image file in a viewport, fit to the pane until zoomed, on the chosen backdrop, with its header facts above. A DDS
-  with mip levels lists them beside the image: a click shows a level, and Export writes the shown level as PNG. A mod's
-  PNG or TGA can be saved as a DDS.
--->
+<!-- An image file in a viewport with its header facts above, and a DDS's mip levels listed beside it. -->
 <script setup lang="ts">
 import { computed, shallowRef, watch } from "vue";
 import { useQuery } from "@pinia/colada";
@@ -21,7 +17,7 @@ const { place } = defineProps<{ place: Place }>();
 const saveDds = useOverlay().create(SaveDdsModal);
 const failed = shallowRef(false);
 const level = shallowRef(0);
-// only the formats the games read have a header Go reads; a web image has no facts line
+// Go reads headers only for the formats the games read, so a web image has no facts line.
 const { data: header } = useQuery(() => ({ ...headerQuery(place.path), enabled: place.format === Format.FormatImage }));
 const facts = computed(() => {
   if (!header.value) return "";
@@ -29,7 +25,6 @@ const facts = computed(() => {
   const mipText = mipmaps > 1 ? `${mipmaps} mip levels` : "";
   return [`${width} × ${height}`, format.toUpperCase(), compression, mipText, bytes(size)].filter(Boolean).join(" · ");
 });
-// each mip level with its size: half the one before on each side, never under a pixel
 const levels = computed(() => {
   const { width = 0, height = 0, mipmaps = 1 } = header.value ?? {};
   return Array.from({ length: mipmaps }, (_, index) => ({

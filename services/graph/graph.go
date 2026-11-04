@@ -19,12 +19,12 @@ import (
 	"paradox-modding-tools/services/workspace"
 )
 
-// Service is the Wails service behind the Event Graph. It finds the roots a search names and builds a graph from one.
+// Service is the Wails service behind the Event Graph.
 type Service struct {
 	Workspace *workspace.Service
 }
 
-// A Node is one entry of the event graph, or a fold that stands for the rest of a node's firings.
+// A Node is one entry of the event graph, or a fold standing for the rest of a node's firings.
 type Node struct {
 	ID       string `json:"id"` // database:name; more:<id> or more-in:<id> for a fold
 	Database string `json:"database"`
@@ -48,8 +48,8 @@ type Node struct {
 	Deep       bool       `json:"deep"`   // the depth stopped at it, and it links further to a next step
 	// Fires is every firing it makes, in the order written. It is nil for a fold and outside a graph and a detail.
 	Fires []Edge `json:"fires,omitempty"`
-	// Rows are the lines it shows open: its firings grouped by the blocks that decide them, the rest folded past the
-	// fan-out. They are nil for a fold and outside a graph.
+	// Rows are the lines it shows open, its firings grouped by the blocks that decide them. They are nil for a fold and
+	// outside a graph.
 	Rows []Row `json:"rows,omitempty"`
 }
 
@@ -66,11 +66,11 @@ type Edge struct {
 	Site lsp.Site `json:"site"` // where the firing is written
 }
 
-// A Row is one line of an open node: the firings written in the same blocks, a block the rows under it share, or the
-// fold of the firings past the fan-out.
+// A Row is one line of an open node: firings written in the same blocks, a header for a block the rows under it share,
+// or the fold of the firings past the fan-out.
 type Row struct {
-	// Step is the block that decides its firings, or the one a header row stands for. It is nil for a firing written
-	// plainly and for a fold.
+	// Step is the block that decides its firings, or the one a header row stands for. It is nil for a plain firing and
+	// for a fold.
 	Step   *Step  `json:"step,omitempty"`
 	Scopes []Step `json:"scopes,omitempty"` // the links to other scopes its firings are written in
 	Fires  []Edge `json:"fires,omitempty"`  // nil for a header row and a fold
@@ -108,7 +108,7 @@ const (
 	displayMessage = "message" // a message sent to the player
 )
 
-// A reach holds one graph while it is built from its root.
+// A reach is one graph while it is built from its root.
 type reach struct {
 	ws     *workspace.Session
 	mods   *index.Index
@@ -120,8 +120,8 @@ type reach struct {
 	cut    map[string]bool // the ids of the nodes the limit kept out
 }
 
-// BuildGraph builds the graph of what a root fires and what fires it, under a filter. Each definition's node holds
-// every firing it makes and the rows it shows open. It returns an error if the game keeps no definition of the root.
+// BuildGraph builds the graph of what the root fires and what fires it, under the given filter. It returns an error if
+// the game keeps no definition of the root.
 func (gph *Service) BuildGraph(root string, filter Filter) (Graph, error) {
 	ws, err := gph.Workspace.Session()
 	if err != nil {
@@ -149,9 +149,8 @@ func (gph *Service) BuildGraph(root string, filter Filter) (Graph, error) {
 	}, nil
 }
 
-// resolveNode returns the definition the game keeps of the node with the given id, `database:name`. Where no source
-// says which copy the game keeps, it returns one of the copies. Where the game keeps none for every file, it returns
-// the one a file the game loads keeps for itself. It returns an error if there is neither.
+// resolveNode returns the definition the game keeps of the node with the given id, `database:name`. It returns an
+// error if the game keeps none.
 func resolveNode(ws *workspace.Session, mods *index.Index, id string) (index.Site, error) {
 	database, name, _ := strings.Cut(id, ":")
 	reference := schema.Reference{Database: database, Name: name}
@@ -169,8 +168,7 @@ func resolveNode(ws *workspace.Session, mods *index.Index, id string) (index.Sit
 	return index.Site{}, fmt.Errorf("the game keeps no definition %q", id)
 }
 
-// makeNode returns the node of a definition, at the given step from the root, without its picture. An event's node
-// says how the player sees it, and an on_action's says whether the game calls it from its code.
+// makeNode returns the node of a definition, at the given step from the root, without its picture.
 func makeNode(ws *workspace.Session, mods *index.Index, site index.Site, step int) Node {
 	reference := mods.ToReference(site)
 	node := Node{
@@ -204,8 +202,8 @@ func makeNode(ws *workspace.Session, mods *index.Index, site index.Site, step in
 	return node
 }
 
-// drawNode returns the node of a definition as the page draws it, at the given step from the root: makeNode's, with
-// an event's picture and its own trigger in words. Its trigger is nil if its file cannot be read.
+// drawNode returns the node of a definition as the page draws it, at the given step from the root: makeNode's, with an
+// event's picture and trigger.
 func drawNode(ws *workspace.Session, mods *index.Index, site index.Site, step int) Node {
 	node := makeNode(ws, mods, site, step)
 	if node.Display == displayWindow || node.Display == displayHidden {
@@ -217,8 +215,8 @@ func drawNode(ws *workspace.Session, mods *index.Index, site index.Site, step in
 	return node
 }
 
-// findComment returns the comment lines written just above a statement, with no blank line between, joined by
-// newlines. A comment after code on its line is not one of them. It returns "" if there is none.
+// findComment returns the comment lines written just above a statement, joined by newlines, or "" if there are none. A
+// comment after code on its line is not one of them.
 func findComment(tree *jomini.Tree, statement int32) string {
 	start := tree.Statements[statement].Span.Start
 	line := tree.Lines.ToPosition(start).Line
@@ -237,8 +235,7 @@ func findComment(tree *jomini.Tree, statement int32) string {
 	return strings.Join(lines, "\n")
 }
 
-// findCopy returns the latest-loaded copy of a definition's name that the definition hides: a copy that is neither
-// the one the game keeps nor merged into it. It returns false if there is none.
+// findCopy returns the latest-loaded copy of a definition's name that the definition hides, or false if it hides none.
 func findCopy(ws *workspace.Session, mods *index.Index, site index.Site) (index.Site, bool) {
 	reference := mods.ToReference(site)
 	acting := listActing(ws, mods, site)
@@ -288,8 +285,8 @@ func toParents(nodes []Node) map[string]string {
 	return lo.SliceToMap(nodes, func(node Node) (string, string) { return node.ID, node.Parent })
 }
 
-// findDrawn returns the id of the nearest drawn node at or before the node with the given id. It goes up through the
-// hidden nodes, whose parents are given by id.
+// findDrawn returns the id of the nearest drawn node at or before the node with the given id, going up through the
+// given parents of the hidden nodes.
 func findDrawn(parents map[string]string, id string) string {
 	for next, ok := parents[id]; ok; next, ok = parents[id] {
 		id = next
@@ -297,8 +294,7 @@ func findDrawn(parents map[string]string, id string) string {
 	return id
 }
 
-// markDeep marks as deep each of the given nodes that links further: one that fires more going forward, or that more
-// fires going backward.
+// markDeep marks as deep each of the given nodes that links further in the given direction.
 func (reach *reach) markDeep(sites []index.Site, forward bool) {
 	for _, site := range sites {
 		id := toID(reach.mods, site)
@@ -317,8 +313,8 @@ func (reach *reach) listLinks(site index.Site, forward bool) []index.Fire {
 	return reach.mods.ListFiredBy(reach.ws.Schema, site, reach.filter.Follow)
 }
 
-// fold returns a node's firings up to the filter's fan-out and draws the rest as one fold joined to the node, at the
-// given step from the root. A node the filter opens, or with no more firings than the fan-out, keeps them all.
+// fold returns a node's firings up to the filter's fan-out and adds the rest to the graph as one fold node, at the
+// given step from the root.
 func (reach *reach) fold(site index.Site, fires []index.Fire, forward bool, step int) []index.Fire {
 	parent := toID(reach.mods, site)
 	id := lo.Ternary(forward, "more:", "more-in:") + parent
@@ -338,9 +334,7 @@ func (reach *reach) fold(site index.Site, fires []index.Fire, forward bool, step
 	return fires[:reach.filter.Fanout]
 }
 
-// isFolded reports whether the filter folds the given count of a node's firings or rows past the fan-out into the fold
-// with the given id. It folds none if the fan-out is 0, the count is no more than the fan-out, or the filter opens that
-// fold.
+// isFolded reports whether the filter folds the given count of a node's firings or rows into the given fold.
 func (reach *reach) isFolded(count int, id string) bool {
 	return reach.filter.Fanout > 0 && count > reach.filter.Fanout && !slices.Contains(reach.filter.Expand, id)
 }
@@ -352,16 +346,13 @@ func listFires(ws *workspace.Session, mods *index.Index, site index.Site, follow
 	})
 }
 
-// listActing returns the copies of a node's name that the game runs, as seen from the file of the given copy. It
-// returns none if the game keeps no copy.
+// listActing returns the copies of a node's name that the game runs, as seen from the file of the given copy.
 func listActing(ws *workspace.Session, mods *index.Index, site index.Site) []index.Site {
 	return mods.ListActing(ws.Schema, mods.ToReference(site), site.File)
 }
 
 // addFire puts a firing in the graph, with its nodes, at the given step from the root. It returns the node of the
-// firing that is farther from the root, and whether the graph is new to it. Nothing past the node limit is added. A
-// firing through scripted effects the filter draws is an edge for each effect, and only the last holds the firing's
-// blocks and delay.
+// firing that is farther from the root, and whether the graph is new to it. Nothing past the node limit is added.
 func (reach *reach) addFire(fire index.Fire, forward bool, step int) (index.Site, bool) {
 	path := []index.Site{fire.Source, fire.Target}
 	if slices.Contains(reach.filter.Databases, reach.ws.Schema.Effects) {
@@ -395,7 +386,7 @@ func (reach *reach) addFire(fire index.Fire, forward bool, step int) (index.Site
 }
 
 // add puts the node of a definition in the graph, at the given step from the root, reached from the given parent. A
-// name has one node, whichever of its copies reaches it. It returns false if the node limit keeps it out.
+// name has one node, whichever copy reaches it. It returns false if the node limit keeps it out.
 func (reach *reach) add(site index.Site, step int, parent index.Site) bool {
 	id := toID(reach.mods, site)
 	if reach.ids[id] {
@@ -415,8 +406,8 @@ func (reach *reach) add(site index.Site, step int, parent index.Site) bool {
 	return true
 }
 
-// isHidden reports whether the filter hides a definition's node by its origin or its kind. Only a kind that Defaults
-// lists can be hidden; a node of any other kind is always drawn.
+// isHidden reports whether the filter hides a definition's node by its origin or its kind. Only the kinds Defaults
+// lists can be hidden.
 func (reach *reach) isHidden(site index.Site) bool {
 	database := reach.mods.ToReference(site).Database
 	hiddenKind := !slices.Contains(reach.filter.Databases, database) && slices.Contains(listKinds(reach.ws.Schema), database)
@@ -433,7 +424,7 @@ func listKinds(schema *schema.Schema) []string {
 }
 
 // splice removes the hidden nodes, joining the edges through each. A joined edge keeps the first firing's delay and
-// blocks. The root and the folds stay.
+// blocks.
 func (reach *reach) splice() {
 	hidden := reach.listHidden()
 	for _, node := range hidden {
@@ -466,8 +457,8 @@ func (reach *reach) splice() {
 	}
 }
 
-// passDeep gives the deep mark of each of the given hidden nodes to the nearest drawn node before it, so that opening
-// that node goes on past the hidden one. The parents are the hidden nodes', by id.
+// passDeep gives the deep mark of each hidden node to the nearest drawn node before it, so that opening that node goes
+// on past the hidden one.
 func (reach *reach) passDeep(hidden []Node, parents map[string]string) {
 	for _, node := range hidden {
 		if !node.Deep {
@@ -480,9 +471,8 @@ func (reach *reach) passDeep(hidden []Node, parents map[string]string) {
 	}
 }
 
-// listRows returns the rows a node shows open, in the order its firings are written, one row for each group of its
-// firings. A row weighted or listed inside a branch of an if sits under a header row for that branch. Past the
-// fan-out, the rest are one fold row, unless the filter opens the node's fold.
+// listRows returns the rows a node shows open, one for each group of its firings. Past the fan-out, the rest are one
+// fold row, unless the filter opens the node's fold.
 func (reach *reach) listRows(id string, fires []Edge) []Row {
 	groups := groupFires(fires)
 	var rest [][]Edge
@@ -512,9 +502,8 @@ func (reach *reach) listRows(id string, fires []Edge) []Row {
 	return rows
 }
 
-// groupFires returns a node's firings in groups, the groups in the order of their first firings. The firings a block
-// decides, written inside the blocks at the same lines, are one group, and a firing written plainly is a group of its
-// own.
+// groupFires returns a node's firings in groups, in the order written. Firings inside the same blocks are one group,
+// and a firing written plainly is a group of its own.
 func groupFires(fires []Edge) [][]Edge {
 	var groups [][]Edge
 	positions := map[string]int{} // the position of each group a block decides, by the lines of its blocks
@@ -541,13 +530,12 @@ func isDeciding(step Step) bool {
 	return step.Kind == kindBranch || step.Kind == kindWeight || step.Kind == kindList
 }
 
-// toKey returns a text that is the same for two edges exactly when they go between the same nodes with the same delay
-// and through the same scripted effects.
+// toKey returns a text that is the same for two edges exactly when they join the same nodes the same way.
 func toKey(edge Edge) string {
 	return strings.Join(slices.Concat([]string{edge.From, edge.To, edge.Delay}, edge.Via), "\x00")
 }
 
-// FindRoots returns up to a limit of the nodes whose name holds the query, best matches first. It returns nil if no
+// FindRoots returns up to the given limit of nodes whose name holds the query, best first. It returns nil if no
 // workspace is open.
 func (gph *Service) FindRoots(query string, limit int) []Node {
 	ws, err := gph.Workspace.Session()
@@ -578,8 +566,7 @@ func (gph *Service) FindRoots(query string, limit int) []Node {
 	})
 }
 
-// rankRoot returns where a name that holds a query sorts among a search's roots: 0 for the query itself, 1 for a name
-// that starts with it, 2 for any other.
+// rankRoot returns where a name that holds the query sorts among a search's roots, best first.
 func rankRoot(name, query string) int {
 	switch {
 	case name == query:
@@ -597,8 +584,8 @@ func isKept(ws *workspace.Session, mods *index.Index, site index.Site) bool {
 	return ok && winner.Site == site
 }
 
-// ListOwnRoots returns the events the workspace's mods define that the game keeps, in load order and then by line,
-// each with the origin of the copy it hides. It returns nil if no workspace is open.
+// ListOwnRoots returns the events the workspace's mods define that the game keeps. It returns nil if no workspace is
+// open.
 func (gph *Service) ListOwnRoots() []Node {
 	ws, err := gph.Workspace.Session()
 	if err != nil {

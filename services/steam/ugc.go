@@ -1,5 +1,5 @@
-// ugc.go calls the Workshop functions of Steam's library: it opens the library, uploads or updates an item and fetches
-// an item's details and previews.
+// ugc.go calls the Workshop functions of Steam's library: it opens the library, uploads an item and fetches an item's
+// details.
 
 package steam
 
@@ -352,8 +352,8 @@ func (client *Client) fetchDLC(id uint64) ([]string, int, error) {
 	return dlc, max(total, len(dlc)), nil
 }
 
-// fetchFolder has Steam download an item and returns its folder once the copy is up to date. It returns an error if the
-// id is not a number, or Steam refuses or does not finish the download.
+// fetchFolder has Steam download an item and returns its folder once the copy is up to date. It returns an error if
+// Steam refuses or does not finish the download.
 func (client *Client) fetchFolder(workshopID string, updatedAt time.Time) (string, error) {
 	id, err := toItemID(workshopID)
 	if err != nil {
@@ -464,8 +464,8 @@ func (client *Client) Submit(workshopID string, params Params, progress func(Pro
 	return nil
 }
 
-// setDependencies sets the DLC and the items that an item requires to the listing's. What Steam's library cannot read
-// is left as it is. It returns an error if Steam fails a change.
+// setDependencies sets the DLC and the items that an item requires to the listing's. It returns an error if Steam
+// fails a change.
 func (client *Client) setDependencies(id uint64, listing Listing, details Details, modIDs []string) error {
 	var errs []error
 	if details.DLC != nil {
@@ -575,8 +575,8 @@ func (client *Client) setVisibility(update uint64, visibility string) error {
 	return toError(api.setVisibility(client.ugc, update, int32(number)), "visibility")
 }
 
-// setFiles sets the content folder, the thumbnail and the gallery of an update. A changed gallery replaces all of
-// Steam's previews. It returns an error if Steam refuses a part.
+// setFiles sets the content folder, the thumbnail and the gallery of an update. A changed gallery replaces Steam's. It
+// returns an error if Steam refuses a part.
 func (client *Client) setFiles(update uint64, listing Listing, previous []Preview, uploadDir string) error {
 	errs := []error{toError(api.setContent(client.ugc, update, uploadDir), "content folder")}
 	if listing.Thumbnail != "" {
@@ -621,8 +621,8 @@ func toVideoID(link string) string {
 	return link
 }
 
-// fetchResult waits for one of Steam's calls to finish and returns its result. While it waits it calls a function, if
-// any. It returns an error if Steam started no call or the call failed.
+// fetchResult waits for one of Steam's calls to finish and returns its result, calling the given function, if any,
+// while it waits. It returns an error if Steam started no call or the call failed.
 func (client *Client) fetchResult(call uint64, callbackID, size int32, poll func()) ([]byte, error) {
 	if call == invalidCall {
 		return nil, errors.New("steam did not start the call")
@@ -650,8 +650,7 @@ func (client *Client) fetchResult(call uint64, callbackID, size int32, poll func
 	return result, nil
 }
 
-// fetchOK waits for one of Steam's calls to finish and returns its result. While it waits it calls a function, if
-// any. It returns an error if Steam started no call, the call failed, or the result's code says it did not work.
+// fetchOK is fetchResult that also returns an error if the result's code says the call did not work.
 func (client *Client) fetchOK(call uint64, callbackID, size int32, poll func()) ([]byte, error) {
 	result, err := client.fetchResult(call, callbackID, size, poll)
 	if err != nil {

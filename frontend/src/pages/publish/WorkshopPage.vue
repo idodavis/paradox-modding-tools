@@ -1,7 +1,4 @@
-<!--
-  This shows a listing's thumbnail, title, tags and requirements as players see them on its Workshop page, and edits
-  each part where it shows.
--->
+<!-- A listing as players see it on its Workshop page, with each part edited where it shows. -->
 <script setup lang="ts">
 import { computed, shallowRef } from "vue";
 import { useQuery } from "@pinia/colada";
@@ -13,7 +10,6 @@ import type { Listing } from "@services/steam/models";
 
 const listing = defineModel<Listing>("listing", { required: true });
 
-// The thumbnail the browser could not show. Its tile says so instead.
 const brokenThumbnail = shallowRef("");
 
 const { data: tags } = useQuery(tagsQuery);
@@ -37,7 +33,7 @@ function addTag(tag: string): void {
   if (!listing.value.tags?.includes(tag)) update({ tags: [...(listing.value.tags ?? []), tag] });
 }
 
-/** toggleDLC adds a DLC to the listing's requirements when it is ticked, and removes it otherwise. */
+/** toggleDLC adds a DLC to the listing's requirements, or removes it. */
 function toggleDLC(id: string, required: boolean | "indeterminate"): void {
   const others = (listing.value.dlc ?? []).filter((dlcId) => dlcId !== id);
   update({ dlc: required === true ? [...others, id] : others });

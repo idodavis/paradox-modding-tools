@@ -15,9 +15,8 @@ terminal.md`). It knows no workspace and no Wails, so its Linux half builds and 
 
 ## A shell's life
 
-A `Shell` is filled in and then started, as an `exec.Cmd` is: its starter sets the id, the program and its arguments,
-the folder and the mod it is the folder of, and `Start` opens the pseudo-terminal at a size and starts the program in
-it. No exported field changes after `Start`, so a `Shell` is what the page is sent.
+A `Shell` is filled in and then started, as an `exec.Cmd` is. No exported field changes after `Start`, so a `Shell` is
+what the page is sent.
 
 - **Output.** One goroutine reads the pseudo-terminal for as long as it is open, and keeps the newest 4 MiB with the
   offset of every byte the shell has written. `Read` returns the output past an offset, waiting until there is some,
@@ -38,8 +37,7 @@ it. No exported field changes after `Start`, so a `Shell` is what the page is se
 ## Windows
 
 The pseudo console is `CreatePseudoConsole` over two pipes, and the program starts with the console as a process
-attribute. `STARTF_USESTDHANDLES` is set, or the program writes to PMT's own handles rather than to the console. Closing
-the pseudo console ends the process tree.
+attribute. `STARTF_USESTDHANDLES` is set, or the program writes to PMT's own handles rather than to the console.
 
 A console starts on the system's code page, such as 437, which turns a program's raw UTF-8 bytes, as git and rg write
 them, into mojibake. Right after the program starts, PMT attaches to its console for a moment and sets both code pages
@@ -59,7 +57,7 @@ The shells `ListPrograms` gives, as VS Code finds them:
 
 The pty is `/dev/ptmx`, unlocked, with its other side as the program's three standard files. The program leads a
 session of its own with the pty as its controlling terminal. Every ioctl goes through `SyscallConn`, which keeps the
-file non-blocking, so that `Close` wakes a reader that is waiting. Closing the pty hangs up on the session.
+file non-blocking, so that `Close` wakes a reader that is waiting.
 
 The shells `ListPrograms` gives: `$SHELL`, then each shell `/etc/shells` lists, then `sh`, each file once.
 

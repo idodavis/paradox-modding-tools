@@ -14,7 +14,7 @@ export interface Language {
 }
 
 /**
- * A Markup is the class of a segment of a localization text: plain text, a key, a call, a format, an icon or a break.
+ * A Markup is the class of a segment of a localization text.
  */
 export enum Markup {
     /**

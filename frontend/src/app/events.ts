@@ -1,13 +1,10 @@
-/**
- * The events table: each event Go sends and the queries it makes stale. The editor store reads fs:changed for the open
- * files and the search store reads search:hits.
- */
+/** The events table: each event Go sends and the queries it makes stale. */
 import { useQueryCache, type EntryKey } from "@pinia/colada";
 import { Events } from "@wailsio/runtime";
 
 import { errorLogQuery, isGitStatus, keys, updateQuery } from "../queries";
 
-/** An EventRow is what an event makes stale, from its data. A row that forgets also empties the cached data first. */
+/** An EventRow is what an event makes stale, from its data. A row that forgets empties the cached data first. */
 type EventRow<E extends keyof Events.CustomEvents> = {
   stale: (data: Events.CustomEvents[E]) => readonly (readonly unknown[])[];
   forgets?: true;
@@ -44,8 +41,6 @@ const EVENTS: { [E in keyof Events.CustomEvents]?: EventRow<E> } = {
   "workspace:opened": { stale: () => [...WORKSPACE_KEYS, keys.workspaces] },
   "workspace:closed": { stale: () => WORKSPACE_KEYS, forgets: true },
   "install:scanned": { stale: () => [keys.installs, keys.state] },
-  // a changed file is read again, with the listings and places that name it, the pictures drawn from files and the
-  // git statuses, what the start page reads of them, and the mods' descriptors when a descriptor changed
   "fs:changed": {
     stale: ({ path, descriptor }) => [
       keys.file(path),
@@ -60,7 +55,7 @@ const EVENTS: { [E in keyof Events.CustomEvents]?: EventRow<E> } = {
       keys.repositoryWork,
     ],
   },
-  // what the start page reads of the repositories is made stale last, after the reads it is made of
+  // The start page's reads of the repositories go stale last, after the reads they are made of.
   "git:changed": { stale: (dir) => [keys.git(dir), keys.repositoryWork] },
   "release:changed": { stale: (modId) => [keys.release(modId), keys.ownListings] },
   "wiki:updated": { stale: () => [keys.wiki] },
@@ -82,13 +77,13 @@ export function subscribeEvents(): void {
     Events.On(event, ({ data }) => {
       const affected = stale(data);
       if (forgets) affected.forEach((key) => forget(cache, key));
-      // a query that fails keeps its error for the page that shows it, so the refresh's rejection says nothing more
+      // A query that fails keeps its error for the page that shows it.
       for (const key of affected) cache.invalidateQueries({ key: key as EntryKey }).catch(() => undefined);
     });
   }
 }
 
-/** forget empties the data of every cached query under a key, so no page shows what a closed workspace gave it. */
+/** forget empties the data of every cached query under a key. */
 function forget(cache: ReturnType<typeof useQueryCache>, key: readonly unknown[]): void {
   for (const entry of cache.getEntries({ key: key as EntryKey })) {
     cache.setEntryState(entry, { status: "pending", data: undefined, error: null });

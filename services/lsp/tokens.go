@@ -68,7 +68,6 @@ func (visitor *tokensVisitor) Leave(tree *jomini.Tree, statement int32, context 
 // encodeTokens returns the given tokens as five integers each: the line and column deltas, the length, the type's place
 // in the legend and the modifiers. It leaves out a token Monaco cannot draw.
 func encodeTokens(text string, lines jomini.Lines, tokens []token) []uint32 {
-	// a span with no text or no category in the legend is left out
 	tokens = lo.Filter(tokens, func(current token, _ int) bool {
 		return !current.span.IsEmpty() && slices.Contains(legend, current.category)
 	})

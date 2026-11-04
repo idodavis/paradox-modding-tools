@@ -1,6 +1,6 @@
 <!--
-  The Properties tab of a window's panel: the selected widget, a picker for the pictures it may draw if it lists any,
-  and a table of its properties with where each comes from. A row opens an editor that writes it on the widget.
+  The Properties tab of a window's panel: the selected widget, a picker for its pictures and a table of its properties.
+  A row opens an editor that writes the property on the widget.
 -->
 <script setup lang="ts">
 import { useMutation, useQuery } from "@pinia/colada";
@@ -21,7 +21,7 @@ import { findTypeIcon, splitColor, toCss } from "./properties";
 
 const { path, window } = defineProps<{ path: string; window: Window }>();
 
-// NO_PICTURES stands in for the picture list of a widget that has none. The query is disabled then, so it never runs.
+// NO_PICTURES stands in for the picture list of a widget that has none. The query is disabled then.
 const NO_PICTURES: PictureList = {
   key: "",
   database: "",
@@ -100,7 +100,7 @@ const { mutate: write } = useMutation({
   },
 });
 
-/** open opens a property's editor with its value, or closes it when it is open. */
+/** open opens a property's editor, or closes it when it is open. */
 function open(ordinal: number, property: Property): void {
   openRow.value = openRow.value === ordinal ? null : ordinal;
   draft.value = property.value;

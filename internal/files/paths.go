@@ -1,5 +1,4 @@
-// paths.go turns paths into keys and relative paths and back, and tells whether a path is a file or a folder. It also
-// turns a user's text into a file name.
+// paths.go turns paths into keys and relative paths and back, and turns a user's text into a file name.
 
 package files
 
@@ -26,7 +25,7 @@ func ToRel(root, path string) (string, bool) {
 	if !strings.HasPrefix(ToKey(path), key+"/") {
 		return "", false
 	}
-	// The root is cut off by its count of segments, since lower-casing can change a text's length.
+	// The root is cut off by segment count, because lower-casing can change a text's length.
 	segments := strings.Count(key, "/") + 1
 	return strings.SplitN(toSlash(path), "/", segments+1)[segments], true
 }
@@ -45,7 +44,6 @@ func IsUnder(root, path string) bool {
 // ToSlug turns a user's text into a file or folder name: lower case, ASCII only, words joined by `_`. It returns ""
 // if the text has no letter or digit.
 func ToSlug(text string) string {
-	// A letter outside ASCII is folded to its plain form first: decomposed, then its marks removed.
 	text, _, _ = transform.String(transform.Chain(norm.NFD, runes.Remove(runes.In(unicode.Mn))), text)
 	var slug strings.Builder
 	separate := false
@@ -66,7 +64,7 @@ func ToSlug(text string) string {
 	return slug.String()
 }
 
-// toSlash returns a path cleaned and with forward slashes, whichever platform's spelling it came in.
+// toSlash returns a path cleaned and with forward slashes, from either platform's spelling.
 func toSlash(path string) string {
 	return filepath.ToSlash(filepath.Clean(strings.ReplaceAll(path, `\`, "/")))
 }

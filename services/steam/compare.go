@@ -134,8 +134,7 @@ func (stm *Service) FetchItem(modID, key string) (Comparison, error) {
 	return stm.CompareUpload(modID, key)
 }
 
-// resolveAnswer returns Steam's answer about a Workshop item, kept or fetched. Calls for one item while Steam is asked
-// wait for the same answer.
+// resolveAnswer returns Steam's answer about a Workshop item, kept or fetched. Calls for one item share one fetch.
 func (stm *Service) resolveAnswer(ws *workspace.Session, workshopID string) Comparison {
 	stm.mu.Lock()
 	answer, ok := stm.answers[workshopID]
@@ -147,8 +146,7 @@ func (stm *Service) resolveAnswer(ws *workspace.Session, workshopID string) Comp
 	return shared.(Comparison)
 }
 
-// fetchAnswer asks Steam about a Workshop item, keeps the answer and returns it. A failure is kept as the answer's
-// reason.
+// fetchAnswer asks Steam about a Workshop item, keeps the answer and returns it. A failure becomes the answer's reason.
 func (stm *Service) fetchAnswer(ws *workspace.Session, workshopID string) Comparison {
 	answer := Comparison{CheckedAt: time.Now()}
 	params, err := stm.buildParams(ws)
@@ -183,8 +181,7 @@ func (stm *Service) removeAnswer(workshopID string) {
 	delete(stm.answers, workshopID)
 }
 
-// refreshSnapshot downloads an item's files into PMT's kept copy, unless that copy is up to date. It returns an error
-// if the download fails.
+// refreshSnapshot downloads an item's files into PMT's kept copy, unless that copy is up to date.
 func refreshSnapshot(cacheDir string, params Params) error {
 	if snapshot, ok := LoadSnapshot(cacheDir, params.WorkshopID); ok && snapshot.UpdatedAt.Equal(params.UpdatedAt) {
 		return nil
@@ -203,8 +200,7 @@ func (stm *Service) listSteamNames() map[string]string {
 	return names
 }
 
-// comparePage lists what an upload of a listing changes on its item's page. An empty description changes nothing. The
-// description's counts are of paragraphs.
+// comparePage lists what an upload of a listing changes on its item's page. An empty description changes nothing.
 func comparePage(listing Listing, details Details, modIDs []string, names func() map[string]string) []Difference {
 	differences := []Difference{}
 	if listing.Title != details.Title {
@@ -222,8 +218,8 @@ func comparePage(listing Listing, details Details, modIDs []string, names func()
 	return append(differences, compareLists(listing, details, modIDs, names)...)
 }
 
-// compareLists lists what an upload of a listing changes in the lists of its item's page. Each difference holds Steam's
-// list and the list after the upload, one entry a line. A list that Steam's library cannot read is left out.
+// compareLists lists what an upload of a listing changes in the lists of its item's page. A list that Steam's library
+// cannot read is left out.
 func compareLists(listing Listing, details Details, modIDs []string, names func() map[string]string) []Difference {
 	tagsAdded, tagsRemoved := diffTags(toSentTags(listing), details.Tags)
 	labelsAdded, labelsRemoved := diffLabels(listing.Previews, details.Previews)
@@ -233,7 +229,7 @@ func compareLists(listing Listing, details Details, modIDs []string, names func(
 	if missing := details.DLCCount - len(details.DLC); missing > 0 {
 		dlcNote = []string{fmt.Sprintf("and %d more that Steam did not list", missing)}
 	}
-	// per list: Steam's entries, the changes, a closing note, and whether Steam's side is known and holds Steam ids
+	// a list is known when Steam's side could be read, and named when its entries are Steam ids
 	lists := []struct {
 		field                       string
 		steam, added, removed, note []string
@@ -272,8 +268,7 @@ func listLabels(previews []Preview) []string {
 	return lo.Map(previews, func(preview Preview, _ int) string { return toLabel(preview) })
 }
 
-// toPlainText returns a text without Windows line ends, trailing spaces or trailing blank lines, so that two copies of
-// it compare equal.
+// toPlainText returns a text without Windows line ends, trailing spaces or trailing blank lines.
 func toPlainText(text string) string {
 	lines := strings.Split(strings.ReplaceAll(text, "\r\n", "\n"), "\n")
 	for position, line := range lines {
@@ -319,7 +314,6 @@ func (stm *Service) compareFiles(
 	maps.DeleteFunc(snapshot.Files, func(rel, _ string) bool { return isExcluded(ignores, rel) })
 	snapshotDir := resolveSnapshotDir(cacheDir, listing.WorkshopID)
 	differences := []Difference{}
-	// a kept copy with no descriptor has no version
 	if descriptor, _ := workspace.ReadDescriptor(row, snapshotDir); descriptor.Version != listing.Version {
 		differences = append(differences, Difference{
 			Field: "version", Status: changeChanged, Before: descriptor.Version, After: listing.Version,
@@ -352,8 +346,8 @@ func (stm *Service) compareFiles(
 	return differences, nil
 }
 
-// buildUploadHashes returns the SHA-256 of each file of an upload by its Rel path. It hashes only the files whose path,
-// size or time changed since an earlier call.
+// buildUploadHashes returns the SHA-256 of each file of an upload by its Rel path. It hashes only the files that
+// changed since an earlier call.
 func (stm *Service) buildUploadHashes(list []files.File) map[string]string {
 	keys := make([]string, len(list))
 	for position, file := range list {
@@ -388,7 +382,7 @@ func (stm *Service) buildUploadHashes(list []files.File) map[string]string {
 }
 
 // countChange returns how many lines a file gains and loses from Steam's copy to the upload's. A side without the file
-// has "" for its path and hash. The counts are kept for each pair of hashes.
+// has "" for its path and hash.
 func (stm *Service) countChange(steamFile, steamHash, file, hash string) Difference {
 	key := steamHash + " " + hash
 	stm.mu.Lock()

@@ -1,6 +1,4 @@
-<!--
-  One changed file: its status, its path, and the buttons its section offers to stage, unstage, discard and open.
--->
+<!-- One changed file: its status, its path, and the buttons its section offers. -->
 <script setup lang="ts">
 import type { Change } from "@services/git/models";
 

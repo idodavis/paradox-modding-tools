@@ -10,7 +10,6 @@ import OriginChip from "../../ui/OriginChip.vue";
 import { EDITOR_LANGUAGES } from "../../ui/ScriptSnippet.vue";
 import { findModel } from "./editor/models";
 
-// side and root are props of their own because only a diff tab has them
 const { tab, side, root = "" } = defineProps<{ tab: Tab; side: DiffSide; root?: string }>();
 
 const editor = useEditorStore();
@@ -45,7 +44,7 @@ const { data: revised } = useQuery(() => ({
   ...gitFileQuery({ dir: root, revision: sides.value.revisions[1] ?? "", path: gitPath.value }),
   enabled: !!root && !!place.value && side !== "changes",
 }));
-// the working tree is read once git status says the file is there; a deleted file's side stays empty
+// The working tree is read once git status says the file is there. A deleted file's side stays empty.
 const { data: file, error: unreadable } = useQuery(() => ({
   ...fileQuery(place.value?.path ?? ""),
   enabled: !!place.value && side === "changes" && !!status.value && !deleted.value,

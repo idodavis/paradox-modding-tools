@@ -1,5 +1,5 @@
-// Package terminal is the IDE's terminal service. It starts and keeps the shells of the IDE's panel, streams each one
-// to the window that shows it, and finds the files that the shells' output names.
+// Package terminal is the IDE's terminal service. It starts and keeps the shells of the IDE's panel, streams each to
+// its window, and finds the files that the shells' output names.
 package terminal
 
 import (
@@ -28,8 +28,7 @@ type Service struct {
 	count     int                // how many shells have started, which numbers the next
 }
 
-// A message is one message that a window sends on a shell's stream. The first names the shell; each of the others
-// carries what was typed, the window's new size or how far the window has drawn the output.
+// A message is one message that a window sends on a shell's stream. The first names the shell.
 type message struct {
 	Shell   string `json:"shell"`
 	Input   string `json:"input"`
@@ -80,15 +79,15 @@ func (trm *Service) ListShells() []*terminal.Shell {
 // ListPrograms returns the shells this system has, PMT's pick first.
 func (trm *Service) ListPrograms() []terminal.Program { return terminal.ListPrograms() }
 
-// ListEnvironment returns the variables every shell is given on this system: PMT's address and token for coding
-// agents, which PMT's own environment carries, then the terminal's own.
+// ListEnvironment returns the variables every shell is given: PMT's address and token for coding agents, then the
+// terminal's own.
 func (trm *Service) ListEnvironment() []terminal.Variable {
 	return append(slices.Clone(mcp.Variables), terminal.ListEnvironment()...)
 }
 
-// Start starts a shell of the given size. It starts in the folder ResolveFolder gives for the given file path, which
-// may be "". It runs the program at the given program path, or the default shell for "". It returns an error if this
-// system has no shell or the program cannot be started.
+// Start starts a shell of the given size in the folder ResolveFolder gives for the given file path, which may be "". It
+// runs the program at the given path, or the default shell for "". It returns an error if this system has no shell or
+// the program cannot be started.
 func (trm *Service) Start(path, program string, columns, rows int) (*terminal.Shell, error) {
 	program, args, err := trm.resolveProgram(program)
 	if err != nil {
@@ -97,9 +96,9 @@ func (trm *Service) Start(path, program string, columns, rows int) (*terminal.Sh
 	return trm.Run(path, append([]string{program}, args...), columns, rows)
 }
 
-// Run starts a shell of the given size that runs the given command, a program followed by its arguments. It starts in
-// the folder ResolveFolder gives for the given file path, which may be "". It returns an error if the command is empty
-// or its program cannot be started.
+// Run starts a shell of the given size that runs the given command, a program followed by its arguments, in the folder
+// ResolveFolder gives for the given file path, which may be "". It returns an error if the command is empty or its
+// program cannot be started.
 func (trm *Service) Run(path string, command []string, columns, rows int) (*terminal.Shell, error) {
 	if len(command) == 0 {
 		return nil, errors.New("no program was given to run")
@@ -127,8 +126,8 @@ func (trm *Service) Run(path string, command []string, columns, rows int) (*term
 }
 
 // resolveProgram returns the path of the program to run and its arguments. For "" the program is the one the setting
-// names, else the first that ListPrograms lists. A program that ListPrograms lists gets that row's arguments, and any
-// other program gets none. It returns an error if no program is named and this system has no shell.
+// names, else the first that ListPrograms lists. A program that ListPrograms lists gets that row's arguments. It
+// returns an error if no program is named and this system has no shell.
 func (trm *Service) resolveProgram(program string) (string, []string, error) {
 	if program == "" {
 		program, _ = trm.Config.LookupSetting("", settingShell)
@@ -180,9 +179,8 @@ func (trm *Service) findShell(id string) (*terminal.Shell, error) {
 	return nil, fmt.Errorf("no shell %s is running", id)
 }
 
-// serve serves one window's stream to a shell. The window names the shell, then sends what is typed, its size and how
-// far it has drawn. It is sent the shell's screen as JSON, then the shell's output from that screen's offset on, until
-// the window or the shell closes the stream.
+// serve serves one window's stream to a shell. The window is sent the shell's screen, then its output from the screen's
+// offset on, until the window or the shell closes the stream.
 func (trm *Service) serve(conn *application.StreamConn) {
 	defer func() { _ = conn.Close() }()
 	var first message

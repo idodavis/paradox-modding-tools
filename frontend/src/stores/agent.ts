@@ -1,7 +1,6 @@
 /**
- * The agent store: this window's chats with coding agents, and what the agent pane and the status bar see of them.
- * Each session runs over its own stream to the agent's program, and the page speaks the Agent Client Protocol
- * with the agent through the official SDK: version 2 first, and version 1 on a new stream when the agent answers 1.
+ * The agent store: this window's chats with coding agents, and what the agent pane and the status bar show of them.
+ * Each session speaks the Agent Client Protocol over its own stream, version 2 first and version 1 if the agent asks.
  */
 import * as v1 from "@agentclientprotocol/sdk";
 import * as v2 from "@agentclientprotocol/sdk/experimental/v2";
@@ -28,7 +27,7 @@ type Protocol = 1 | 2;
 /** A Start is Go's first message on an agent's stream: the session's folder and the other mods', or an error. */
 type Start = { folder: string; directories: string[] | null; error: string };
 
-/** A SignIn is one way to sign in to an agent: a command PMT's terminal runs, or a request to the agent itself. */
+/** A SignIn is one way to sign in to an agent: a command for PMT's terminal, or a request to the agent. */
 type SignIn = { id: string; name: string; description: string; command: string[] };
 
 /** An Entry is one item of a session's transcript. */
@@ -44,7 +43,7 @@ export type Entry =
       paths: string[];
       edits: FileEdit[];
       text: string;
-      terminals: string[]; // the agent's display-only terminals the call shows, by id
+      terminals: string[];
     }
   | { kind: "plan"; id: string; steps: { text: string; status: string }[] }
   | { kind: "permission"; id: string; title: string; options: { id: string; name: string; kind: string }[] }
@@ -58,23 +57,20 @@ export type Session = {
   protocol: Protocol;
   id: string; // the agent's id for it, "" until the agent gives one
   title: string;
-  isRenamed: boolean; // the title is the user's, which the agent's titles do not replace
+  isRenamed: boolean; // the agent's titles do not replace a title the user gave
   state: "starting" | "sign-in" | "idle" | "running" | "ended";
   entries: Entry[];
-  terminals: Record<string, string>; // what each of the agent's display-only terminals shows, its command first
-  options: v2.SessionConfigOption[]; // the settings the agent offers, such as its model, with their values
-  commands: v2.AvailableCommand[]; // the commands the agent runs for a prompt that starts with "/"
+  terminals: Record<string, string>;
+  options: v2.SessionConfigOption[];
+  commands: v2.AvailableCommand[];
   methods: SignIn[];
   resumable: boolean;
-  deletable: boolean; // whether the agent deletes its own copy of a session
-  directories: boolean; // whether the agent takes the other mods' folders with a session
+  deletable: boolean;
+  directories: boolean;
   error: string;
 };
 
-/**
- * A SessionRecord is one session as every window's sessions list remembers it, and whether the user archived it or
- * gave it a title of their own.
- */
+/** A SessionRecord is one session as every window's sessions list remembers it. */
 export type SessionRecord = {
   agent: string;
   id: string;
@@ -86,11 +82,7 @@ export type SessionRecord = {
   isRenamed: boolean;
 };
 
-/**
- * A Dialect is one version of the protocol as a session speaks it: the same steps, in that version's words. A
- * prompt resolves when the agent takes it in version 2, and when the turn ends in version 1. Initializing writes what
- * the agent answered onto the session.
- */
+/** A Dialect is one version of the protocol as a session speaks it: the same steps in that version's words. */
 type Dialect = {
   initialize: () => Promise<void>;
   create: (start: Start) => Promise<string>;
@@ -103,7 +95,7 @@ type Dialect = {
   close: () => void;
 };
 
-/** A Method is one way to sign in as either version declares it, its id under one name. */
+/** A Method is one way to sign in, as either version declares it. */
 type Method = {
   id: string;
   name: string;
@@ -113,33 +105,30 @@ type Method = {
   _meta?: { "terminal-auth"?: { command: string; args?: string[] } } | null;
 };
 
-/** An HttpServer is an MCP server reached over HTTP, as both versions give one to a session. */
+/** An HttpServer is an MCP server reached over HTTP. */
 type HttpServer = { type: "http"; name: string; url: string; headers: { name: string; value: string }[] };
 
-/** A PermissionAnswer is the user's answer to a permission request, as both versions take it. */
+/** A PermissionAnswer is the user's answer to a permission request. */
 type PermissionAnswer = { outcome: { outcome: "cancelled" } | { outcome: "selected"; optionId: string } };
 
 /** Answers are what a session's open requests wait for, by the id of the entry that shows each. */
 type Answers = Map<string, (answer: string | null) => void>;
 
-/** A Link is what a session holds that is never shown: its dialect and the answers its open requests wait for. */
+/** A Link is what a session holds that is never shown. */
 type Link = { dialect: Dialect; answers: Answers };
 
-/** Offers are the settings and commands an agent offers a session, in either version's words. */
+/** Offers are the settings and commands an agent offers a session. */
 type Offers = {
   configOptions?: (v1.SessionConfigOption | v2.SessionConfigOption)[] | null;
   availableCommands?: v2.AvailableCommand[];
 };
 
-/**
- * A MessageUpdate is what one kind of update about a message writes: the kind of the message's entry, and whether
- * it holds the whole message rather than a chunk of it.
- */
+/** A MessageUpdate is what one kind of update about a message writes: an entry's kind, and a whole text or a chunk. */
 type MessageUpdate = { kind: "user" | "agent" | "thought"; isWhole: boolean };
 
-/** PROTOCOLS is the local storage key of the version each agent answered last, so its next session starts on it. */
+/** PROTOCOLS is the local storage key of the version each agent answered last. */
 const PROTOCOLS = "pmt.agent.protocol";
-/** AUTH_REQUIRED is the error code an agent answers a session with while the user has not signed in. */
+/** AUTH_REQUIRED is the error code an agent answers with while the user has not signed in. */
 const AUTH_REQUIRED = -32000;
 /** CLIENT is how PMT names itself to an agent. */
 const CLIENT = { name: "pmt", title: "Paradox Modding Tools", version: "1" };
@@ -155,30 +144,23 @@ export const useAgentStore = defineStore("agent", () => {
   const links = new Map<string, Link>();
   const protocols = useLocalStorage<Record<string, Protocol>>(PROTOCOLS, {});
   const records = useLocalStorage<SessionRecord[]>("pmt.agent.sessions", []);
-  // the id of the agent a session was started with last
   const lastAgent = useLocalStorage("pmt.agent.last", "");
-  // the session the pane shows, by its key
   const activeKey = shallowRef("");
-  // the pane starts closed, and stays as it is from page to page
   const isPaneOpen = shallowRef(false);
-  // whether to open the files the agent's tool calls name
+  // Follow the agent: whether to open the files the agent's tool calls name.
   const follow = useLocalStorage("pmt.agent.follow", true);
   let count = 0;
 
-  // whether the prompt box should take the focus as soon as its session can be typed in
   const isPromptWanted = shallowRef(false);
 
   const active = computed(() => sessions.find((session) => session.key === activeKey.value));
-  // the agents that can start
   const ready = computed(() => (agents.value ?? []).filter((row) => row.program));
-  // the agent the pane talks to: the shown session's, else the one used last, else the first that can start
   const current = computed(
     () => active.value?.agent ?? ready.value.find((row) => row.id === lastAgent.value) ?? ready.value[0],
   );
   /** isWaiting reports whether a session waits for the user: a permission to give or a link to open. */
   const isWaiting = (session: Session): boolean =>
     session.entries.some((entry) => entry.kind === "permission" || entry.kind === "link");
-  // the status bar's line: what the active session's agent is doing
   const status = computed(() => {
     const session = active.value;
     if (!session) return "";
@@ -193,10 +175,7 @@ export const useAgentStore = defineStore("agent", () => {
     return fileCount ? `${name} is done: ${plural(fileCount, "file")} edited` : "";
   });
 
-  /**
-   * start starts a session with an agent: a new one, or for a record, the agent's replay of it. It shows the session
-   * here and returns it.
-   */
+  /** start starts a session with an agent, or the agent's replay of a record, and shows it. */
   function start(agentId: string, record?: SessionRecord): Session {
     const agent = agents.value?.find((candidate) => candidate.id === agentId);
     if (!agent) throw new Error("PMT does not list that agent");
@@ -208,10 +187,7 @@ export const useAgentStore = defineStore("agent", () => {
     return session;
   }
 
-  /**
-   * makeSession makes a session with an agent, a new one or a record's, on the version the agent answered last. It
-   * is not shown.
-   */
+  /** makeSession makes a session with an agent, new or from a record, without showing it. */
   function makeSession(agent: Agent, record?: SessionRecord): Session {
     return reactive<Session>({
       key: `s${++count}`,
@@ -233,10 +209,7 @@ export const useAgentStore = defineStore("agent", () => {
     });
   }
 
-  /**
-   * connect opens a session's stream and has the agent create or resume the session. An agent that does not speak
-   * the session's version is tried once more on the other.
-   */
+  /** connect opens a session's stream and has the agent create or resume the session. */
   async function connect(session: Session, step: "create" | "resume"): Promise<void> {
     try {
       const { start: startMessage, dialect } = await openDialect(session);
@@ -263,11 +236,11 @@ export const useAgentStore = defineStore("agent", () => {
     }
   }
 
-  /** openDialect opens a stream to a session's agent and wraps it as the SDK's message stream, in its version. */
+  /** openDialect opens a stream to a session's agent and wraps it for the SDK. */
   async function openDialect(session: Session): Promise<{ start: Start; dialect: Dialect }> {
     const socket = JSONStream("agent");
     let controller!: ReadableStreamDefaultController<v2.AnyWireMessage>;
-    // the SDK cancels the stream it reads when its connection closes, and the stream takes nothing after that
+    // The SDK cancels the stream it reads when its connection closes, and the stream takes nothing after that.
     let isCancelled = false;
     const readable = new ReadableStream<v2.AnyWireMessage>({
       start: (streamController) => (controller = streamController),
@@ -286,7 +259,7 @@ export const useAgentStore = defineStore("agent", () => {
         if (first.error) reject(new Error(first.error));
         else resolve(first);
       };
-      // a stream closed to start the agent again is not the session's end
+      // A stream closed to start the agent again is not the session's end.
       socket.onclose = () => {
         if (!isCancelled) controller.close();
         if (!first) reject(new Error(`${session.agent.name} stopped before it started`));
@@ -300,13 +273,13 @@ export const useAgentStore = defineStore("agent", () => {
     return { start: await started, dialect };
   }
 
-  /** unlink closes a session's stream and forgets its link. A session without a link is left as it is. */
+  /** unlink closes a session's stream and forgets its link. */
   function unlink(session: Session): void {
     links.get(session.key)?.dialect.close();
     links.delete(session.key);
   }
 
-  /** VERSIONS holds what the protocol's two versions say differently. Every other step is the same call in both. */
+  /** VERSIONS holds what the protocol's two versions say differently. */
   const VERSIONS = {
     2: {
       client: () => v2.client(CLIENT),
@@ -374,7 +347,6 @@ export const useAgentStore = defineStore("agent", () => {
         "session/load",
         { sessionId: id, cwd: start.folder, mcpServers: listServers(), ...folders } satisfies v1.LoadSessionRequest,
       ],
-      // version 1 sends a value of the list as it is, and a switch's with its type
       configure: (id: string, configId: string, value: string | boolean) =>
         (typeof value === "boolean"
           ? { sessionId: id, configId, type: "boolean", value }
@@ -384,10 +356,10 @@ export const useAgentStore = defineStore("agent", () => {
     },
   };
 
-  /** makeDialect makes the Dialect for a session's version of the protocol over a stream. It closes the socket too. */
+  /** makeDialect makes the Dialect for a session's version of the protocol over a stream. */
   function makeDialect(session: Session, stream: v2.Stream, socket: { close: () => void }, answers: Answers): Dialect {
     const row = VERSIONS[session.protocol];
-    // both versions' clients and agents take a method by its name, its params in each version's own shape
+    // Both versions' clients take a method by its name, with params in each version's own shape.
     const client: {
       onNotification(method: string, handler: (context: { params: unknown }) => void): unknown;
       onRequest(method: string, handler: (context: { params: unknown }) => unknown): unknown;
@@ -447,14 +419,14 @@ export const useAgentStore = defineStore("agent", () => {
     };
   }
 
-  /** listServers lists the MCP servers a session is given: PMT's own, over HTTP with its token. */
+  /** listServers lists the MCP servers a session is given, which is PMT's own. */
   function listServers(): HttpServer[] {
     if (!access.value) return [];
     const headers = [{ name: "Authorization", value: `Bearer ${access.value.token}` }];
     return [{ type: "http", name: "pmt", url: access.value.url, headers }];
   }
 
-  /** applyUpdate applies one update an agent sent about a session to its transcript, in either version's words. */
+  /** applyUpdate applies one update an agent sent about a session to its transcript. */
   function applyUpdate(session: Session, update: v2.SessionUpdate): void {
     const kind = update.sessionUpdate;
     const message = MESSAGES[kind];
@@ -480,7 +452,7 @@ export const useAgentStore = defineStore("agent", () => {
       if (state.state === "running") session.state = "running";
       else if (state.state === "idle") finishTurn(session, state.stopReason ?? "end_turn");
     } else if (kind === "terminal_update") {
-      // an update with output holds the terminal's whole output so far
+      // An update with output holds the terminal's whole output so far.
       const terminal = update as v2.TerminalUpdate;
       const command = terminal.command ? `$ ${terminal.command}\n` : "";
       const previous = session.terminals[terminal.terminalId] ?? command;
@@ -493,16 +465,12 @@ export const useAgentStore = defineStore("agent", () => {
     }
   }
 
-  /**
-   * applyMessage applies an update about a message to the message's entry, making the entry on the first update. A
-   * whole message replaces the entry's text, and a chunk adds to it. The texts of a whole message are joined as
-   * paragraphs, and the files a user's message links become its chips. A whole message with no content changes nothing.
-   */
+  /** applyMessage applies an update about a message to its entry, making the entry on the first update. */
   function applyMessage(session: Session, update: v2.ContentChunk | v2.UserMessage, row: MessageUpdate): void {
     if (row.isWhole && !("content" in update)) return;
     const blocks = row.isWhole ? ((update as v2.UserMessage).content ?? []) : [(update as v2.ContentChunk).content];
     const id = update.messageId ?? "";
-    // an update with an id belongs to the entry with that id; one without belongs to the last entry, if it has the kind
+    // An update without an id belongs to the last entry, if that has the kind.
     const candidates = id ? session.entries : session.entries.slice(-1);
     let entry = candidates.find((candidate) => candidate.kind === row.kind && (!id || candidate.id === id)) as
       Extract<Entry, { kind: MessageUpdate["kind"] }> | undefined;
@@ -520,10 +488,7 @@ export const useAgentStore = defineStore("agent", () => {
     }
   }
 
-  /**
-   * applyTool applies an update about a tool call to its entry, making the entry on the first update. An update's
-   * content replaces the entry's and a chunk adds to it. If the user follows the agent, it opens the first file named.
-   */
+  /** applyTool applies an update about a tool call to its entry, making the entry on the first update. */
   function applyTool(session: Session, update: v2.ToolCallUpdate | v2.ToolCallContentChunk): void {
     let entry = session.entries.find((candidate) => candidate.kind === "tool" && candidate.id === update.toolCallId);
     if (entry?.kind !== "tool") {
@@ -546,7 +511,7 @@ export const useAgentStore = defineStore("agent", () => {
     if (whole?.status) entry.status = whole.status;
     if (whole?.kind) entry.type = whole.kind;
     if (Array.isArray(update.content)) Object.assign(entry, { text: "", edits: [], terminals: [] });
-    const contents = [update.content ?? []].flat(); // one content, a list of them, or none
+    const contents = [update.content ?? []].flat(); // the update's content is one item, a list, or absent
     for (const content of contents) {
       if (content.type === "content") entry.text += toText((content as { content: v2.ContentBlock }).content);
       else if (content.type === "diff") entry.edits.push(...toEdits(content as unknown as DiffContent));
@@ -559,7 +524,7 @@ export const useAgentStore = defineStore("agent", () => {
       void toolView.followFile(locations[0].path, locations[0].line ?? 1, entry.type === "edit" ? "edit" : "agent");
   }
 
-  /** finishTurn marks a session's turn over. Unless the turn ended normally, it adds a notice that says why. */
+  /** finishTurn marks a session's turn over, with a notice if the turn did not end normally. */
   function finishTurn(session: Session, reason: string): void {
     session.state = "idle";
     if (reason !== "end_turn")
@@ -590,10 +555,7 @@ export const useAgentStore = defineStore("agent", () => {
     );
   }
 
-  /**
-   * askLink shows a link an agent asks to open in a session, and answers with what the user chooses. Only the URL
-   * mode is offered; a form is declined.
-   */
+  /** askLink shows a link an agent asks to open and answers with the user's choice. It declines a form. */
   function askLink(
     session: Session,
     answers: Answers,
@@ -611,7 +573,7 @@ export const useAgentStore = defineStore("agent", () => {
     );
   }
 
-  /** closeEntry answers a session's open request and takes it out of the transcript. An unknown id is ignored. */
+  /** closeEntry answers a session's open request and removes it from the transcript. */
   function closeEntry(session: Session, answers: Answers, id: string, answer: string | null): void {
     answers.get(id)?.(answer);
     answers.delete(id);
@@ -626,10 +588,7 @@ export const useAgentStore = defineStore("agent", () => {
     if (link) closeEntry(session, link.answers, id, choice);
   };
 
-  /**
-   * prompt sends the user's text to a session, with the picked files and the page's chip unless the user left it out.
-   * Each goes as a link; the chip's line range is in its name and its address, as some agents keep only the address.
-   */
+  /** prompt sends the user's text to a session, with the picked files and the page's chip as links. */
   const prompt = async (session: Session, text: string, files: Place[]): Promise<void> => {
     const link = links.get(session.key);
     if (!link || session.state !== "idle") return;
@@ -645,7 +604,7 @@ export const useAgentStore = defineStore("agent", () => {
         name: pageChip.label + lines,
       });
     } else if (pageChip?.text) blocks.push({ type: "text", text: pageChip.text });
-    // a version 2 agent sends the prompt back, and that is the transcript's copy; a version 1 agent does not
+    // A version 2 agent sends the prompt back, but a version 1 agent does not.
     if (session.protocol === 1) {
       const chips = [...files.map((file) => file.rel), ...(pageChip ? [pageChip.label] : [])];
       session.entries.push({ kind: "user", id: `u${session.entries.length}`, text, chips });
@@ -657,10 +616,7 @@ export const useAgentStore = defineStore("agent", () => {
     }
   };
 
-  /**
-   * configure sets one of a session's settings to a value the agent offers, and shows the settings the agent answers
-   * with. If the agent refuses, the error goes in the transcript as a notice.
-   */
+  /** configure sets one of a session's settings. If the agent refuses, the error goes in the transcript. */
   const configure = async (session: Session, configId: string, value: string | boolean): Promise<void> => {
     const link = links.get(session.key);
     if (!link) return;
@@ -681,13 +637,10 @@ export const useAgentStore = defineStore("agent", () => {
     if (activeKey.value === session.key) activeKey.value = sessions.at(-1)?.key ?? "";
   };
 
-  /**
-   * signIn signs in to a session's agent: a command in PMT's terminal, which the user finishes there, or the agent's
-   * own sign-in, after which the session starts again.
-   */
+  /** signIn signs in to a session's agent, in PMT's terminal or through the agent, and starts the session again. */
   const signIn = async (session: Session, method: SignIn): Promise<void> => {
     if (method.command.length) {
-      // imported here, as the windows store does, because the terminal store needs the command table
+      // Imported here because the terminal store needs the command table.
       await (await import("./terminal")).useTerminalStore().run(method.command);
       windows.sendCommand("terminal.show", windows.resolveTerminal());
       return;
@@ -705,7 +658,7 @@ export const useAgentStore = defineStore("agent", () => {
     void connect(session, session.id ? "resume" : "create");
   };
 
-  /** remember writes a session to every window's sessions list, newest first. An archived session stays archived. */
+  /** remember writes a session to every window's sessions list, newest first. */
   function remember(session: Session): void {
     if (!session.id) return;
     const record = {
@@ -721,10 +674,7 @@ export const useAgentStore = defineStore("agent", () => {
     records.value = [record, ...records.value.filter((other) => other.id !== session.id)].slice(0, 50);
   }
 
-  /**
-   * rename gives the session with the given id a title of the user's own, in the sessions list and in the running
-   * session. The agent's later titles do not replace it. A blank title changes nothing.
-   */
+  /** rename gives the session with the given id a title of the user's own. A blank title changes nothing. */
   const rename = (id: string, title: string): void => {
     const text = title.trim();
     if (!text) return;
@@ -735,25 +685,19 @@ export const useAgentStore = defineStore("agent", () => {
     if (live) Object.assign(live, { title: text, isRenamed: true });
   };
 
-  /**
-   * open shows a remembered session here: the one this window runs, else the agent's replay of it. A session whose
-   * agent cannot replay it starts anew.
-   */
+  /** open shows a remembered session here, replayed by its agent if it is not running. */
   const open = (record: SessionRecord): void => {
     const live = sessions.find((session) => session.id === record.id);
     if (live) activeKey.value = live.key;
     else start(record.agent, record.resumable ? record : undefined);
   };
 
-  /** archive moves a session into its agent's archived sessions, or back out of them. The agent is not told. */
+  /** archive moves a session into its agent's archived sessions, or back out of them. */
   const archive = (record: SessionRecord, isArchived: boolean): void => {
     records.value = records.value.map((other) => (other.id === record.id ? { ...other, isArchived } : other));
   };
 
-  /**
-   * deleteSession asks, then removes a session from every window's sessions list and closes it here if it runs here.
-   * If the agent can delete its own copy it does, otherwise it keeps the copy, as the question says.
-   */
+  /** deleteSession asks, then removes a session from every window's list. The agent deletes its copy if it can. */
   const deleteSession = async (record: SessionRecord): Promise<void> => {
     const agent = agents.value?.find((candidate) => candidate.id === record.agent);
     const agentName = agent?.name ?? "The agent";
@@ -783,10 +727,7 @@ export const useAgentStore = defineStore("agent", () => {
     }
   };
 
-  /**
-   * undo gives each file the given edits changed its text from before them, and marks the edits undone. A file it
-   * cannot restore is left as it is, and a toast says why.
-   */
+  /** undo restores each file the given edits changed and marks the edits undone. A toast says why one cannot. */
   const undo = async (edits: FileEdit[]): Promise<void> => {
     const files = groupBy(
       edits.filter((change) => !change.isUndone),
@@ -806,7 +747,7 @@ export const useAgentStore = defineStore("agent", () => {
   /** isUndoable reports whether a session made a change that is not undone yet. */
   const isUndoable = (session: Session): boolean => listEdits(session).some((change) => !change.isUndone);
 
-  /** undoAll asks first, then undoes every change of a session's that is not undone yet. */
+  /** undoAll asks first, then undoes every change of a session's that is not undone. */
   const undoAll = async (session: Session): Promise<void> => {
     const changes = listEdits(session).filter((change) => !change.isUndone);
     const fileCount = new Set(changes.map((change) => change.path)).size;
@@ -820,26 +761,20 @@ export const useAgentStore = defineStore("agent", () => {
     if (confirmed === true) await undo(changes);
   };
 
-  /**
-   * popOut opens the agent pane in a window of its own and closes the pane here. The session shown here, if any, ends
-   * here, and that window opens it again.
-   */
+  /** popOut opens the agent pane in a window of its own, which takes over the session shown here. */
   const popOut = (shown: Session | undefined): void => {
     if (shown) close(shown);
     isPaneOpen.value = false;
     windows.popOut("agent", [], shown ? { session: shown.id } : {});
   };
 
-  /** showPane shows the agent pane. While the agent's window is open it comes to the front, else the pane opens. */
+  /** showPane shows the agent pane, or brings the agent's window to the front if it is open. */
   const showPane = (): void => {
     if (windows.listWindows().includes("agent")) windows.showWindow("agent");
     else isPaneOpen.value = true;
   };
 
-  /**
-   * focusPrompt shows the agent pane with its prompt box ready to type in, starting a session with the current agent
-   * if the pane shows none. While the agent's window is open it comes to the front instead.
-   */
+  /** focusPrompt shows the agent pane with its prompt box ready, starting a session if the pane shows none. */
   const focusPrompt = (): void => {
     showPane();
     if (!isPaneOpen.value) return;
@@ -847,13 +782,12 @@ export const useAgentStore = defineStore("agent", () => {
     isPromptWanted.value = !!active.value;
   };
 
-  /** togglePane hides the agent pane when it is open here, else shows it as showPane does. */
+  /** togglePane hides the agent pane if it is open here, else shows it. */
   const togglePane = (): void => {
     if (isPaneOpen.value) isPaneOpen.value = false;
     else showPane();
   };
 
-  // the agent's window opens the session its URL names, once the agents are listed
   const sessionId = WINDOW_QUERY.get("session");
   if (sessionId) {
     void until(agents)
@@ -902,10 +836,7 @@ export const useAgentStore = defineStore("agent", () => {
 /** TITLE_WORDS is how many words of an agent's title a list shows. */
 const TITLE_WORDS = 4;
 
-/**
- * describeTitle returns a session's title as a list shows it. A title the user gave is whole. Otherwise it is the
- * first line of the agent's title cut to its first words, with "…" if it was cut.
- */
+/** describeTitle returns a session's title as a list shows it: the user's whole, the agent's cut to a few words. */
 export function describeTitle(item: { title: string; isRenamed: boolean }): string {
   if (item.isRenamed) return item.title;
   const words = (item.title.split("\n")[0] ?? "").trim().split(/\s+/);
@@ -920,7 +851,7 @@ const STOPS: Record<string, string> = {
   refusal: "The agent declined to go on.",
 };
 
-/** MESSAGES holds what each kind of update about a message writes, in either version's words. */
+/** MESSAGES holds what each kind of update about a message writes. */
 const MESSAGES: Partial<Record<string, MessageUpdate>> = {
   user_message_chunk: { kind: "user", isWhole: false },
   user_message: { kind: "user", isWhole: true },
@@ -930,13 +861,9 @@ const MESSAGES: Partial<Record<string, MessageUpdate>> = {
   agent_thought: { kind: "thought", isWhole: true },
 };
 
-/**
- * applyOffers stores the settings and commands an agent offers a session. They come from the agent's answer to a new,
- * resumed or configured session, or from an update. A list the answer leaves out is kept, since an update may have
- * set it first.
- */
+/** applyOffers stores the settings and commands an agent offers a session. A list the offers leave out is kept. */
 function applyOffers(session: Session, offers: Offers): void {
-  // version 1 names a setting's id "id"
+  // Version 1 names a setting's id "id".
   const options = offers.configOptions?.map((option) =>
     "configId" in option ? option : ({ ...option, configId: option.id } as unknown as v2.SessionConfigOption),
   );
@@ -944,10 +871,7 @@ function applyOffers(session: Session, offers: Offers): void {
   if (offers.availableCommands) session.commands = offers.availableCommands;
 }
 
-/**
- * toSignIn returns how to sign in with a method. The command is the one the method names, else the agent's own
- * program with the method's arguments, else empty, and then PMT asks the agent itself.
- */
+/** toSignIn returns how to sign in with a method. Its command is empty if PMT asks the agent itself. */
 function toSignIn(agent: Agent, method: Method): SignIn {
   const terminalAuth = method._meta?.["terminal-auth"];
   let command: string[] = [];
@@ -957,7 +881,7 @@ function toSignIn(agent: Agent, method: Method): SignIn {
   return { id: method.id, name: method.name, description: method.description ?? "", command };
 }
 
-/** folders returns the other mods' folders to start a session with, if its agent takes them. */
+/** folders returns the other mods' folders for a session, if its agent takes them. */
 function folders(session: Session, start: Start): { additionalDirectories?: string[] } {
   return session.directories && start.directories?.length ? { additionalDirectories: start.directories } : {};
 }
@@ -970,10 +894,7 @@ function toText(block: v2.ContentBlock | undefined): string {
   return "";
 }
 
-/**
- * toUri returns a file's address as an agent reads it, percent-encoded. When the first and last selected lines are
- * given, they follow it as "#L3-10", or "#L3" for one line.
- */
+/** toUri returns a file's percent-encoded address, with the selected lines as "#L3-10" if they are given. */
 function toUri(path: string, startLine = 0, endLine = 0): string {
   const url = new URL("file://");
   url.pathname = path.replace(/\\/g, "/");

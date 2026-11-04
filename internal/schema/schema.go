@@ -87,10 +87,12 @@ type Field struct {
 
 // A Command is one effect, trigger or link the dumps declare.
 type Command struct {
-	Declared  []string // what declares it: game.DeclaredEffect, DeclaredTrigger, DeclaredLink, in dump order
-	Scopes    []string // the scopes the dumps say it runs in; empty where they name none
-	Target    string   // the scope a link leads to; "" for none
-	Arguments *Field   // the keys it takes, as fields
+	Declared []string // what declares it: game.DeclaredEffect, DeclaredTrigger, DeclaredLink, in dump order
+	Scopes   []string // the scopes the dumps say it runs in; empty where they name none
+	Target   string   // the scope a link leads to; "" for none
+	// Arguments are the keys it takes, as fields, by the word that declares it: an effect and a trigger of one name
+	// each take their own.
+	Arguments map[string]*Field
 	// ArgumentKey is the first key of the first block form its usage writes, which the argument in parentheses after
 	// its name stands for, as the court position of aptitude(court_jester_court_position) does. It is "" where its
 	// usage writes none.
@@ -102,6 +104,21 @@ type Command struct {
 	Bare        bool      // a link the dumps let script write as its name alone, not only as name:data
 	Lists       bool      // it iterates a list and has no target, so the scope inside its block is unknown
 	Patterned   bool      // some pattern lists it
+}
+
+// ArgumentsOf returns the keys a command takes where it is declared as the given word, or as its first word where the
+// dumps do not declare it as the given one. It returns nil if it takes none there.
+func (command *Command) ArgumentsOf(declaration string) *Field {
+	return command.Arguments[command.resolveDeclaration(declaration)]
+}
+
+// resolveDeclaration returns the given word if the dumps declare the command as it or declare it as nothing, else the
+// first word they declare it as.
+func (command *Command) resolveDeclaration(declaration string) string {
+	if slices.Contains(command.Declared, declaration) || len(command.Declared) == 0 {
+		return declaration
+	}
+	return command.Declared[0]
 }
 
 // An Example is one place where the game's own files write a command or call a data function: the file's path and
@@ -128,7 +145,7 @@ type Database struct {
 	Callable   game.Callable   // the words that call its definitions; zero when nothing calls them
 	Precedence game.Precedence // how several definitions of one name combine
 	Documented map[string]bool // every key the docs mention for its definitions
-	Readme     string          // the game file its blurb was read from, from the install's folder; "" if it has none
+	Readme     string          // the game doc its blurb was read from, else the first that describes all of it; "" if none
 }
 
 // A ScopeType is one kind of scope the game runs script in, and what script can do there.
@@ -146,6 +163,7 @@ type DataFunction struct {
 	Blurb     string
 	// Expansion is the text of a data binding macro. It is "" for a function the game has itself.
 	Expansion string
+	Promote   bool      // the dumps define it as a promote, which leads to an object of its type rather than a value
 	Examples  []Example // the first places the game's own files call it, by path and then line
 }
 
@@ -208,11 +226,13 @@ type Schema struct {
 	Databases map[string]*Database
 	// Setups holds the folders that the game's bookmarks name for their start setups, without the stage folder. A game
 	// with a single start has none.
-	Setups              []string
-	Callees             map[string][]string // by caller: the databases a call through it resolves in
-	Commands            map[string]*Command
-	Scopes              map[string]ScopeType
-	Saved               map[string]bool // scope names the game saves from code
+	Setups   []string
+	Callees  map[string][]string // by caller: the databases a call through it resolves in
+	Commands map[string]*Command
+	Scopes   map[string]ScopeType
+	Saved    map[string]bool // scope names the game saves from code
+	// Customs are the customizable localizations the dumps name, which the game has though its files may define none.
+	Customs             map[string]bool
 	Modifiers           map[string]Modifier
 	OnActions           map[string]OnAction
 	DataTypes           map[string]DataType
@@ -735,16 +755,21 @@ func (schema *Schema) ResolveDatacontext(call jomini.Call, datacontext string) s
 }
 
 // ListCallReferences returns a reference for each quoted argument of a data call, calls inside its arguments included.
-// Its database is the one game.GUI.CallTargets lists for the argument's position, or none, else the step's type's.
+// Its database is the one game.GUI.CallTargets lists for the argument's position, or none, else the saved scopes for a
+// promote of game.TopScopeType that leads to a scope, else the step's type's.
 func (schema *Schema) ListCallReferences(call jomini.Call, datacontext string) []Reference {
 	var references []Reference
 	call = schema.ResolveMacro(call, datacontext)
-	types := schema.ResolveCallTypes(call, datacontext)
+	owners, functions := schema.listCallOwners(call, datacontext)
 	for i, step := range call.Steps {
 		targets, listed := game.GUI.CallTargets[step.Text]
 		typed := ""
-		if i < len(types) && types[i] != "" {
-			typed, _ = schema.ResolveTypeDatabase(types[i])
+		switch {
+		case i >= len(functions) || functions[i].Returns == "":
+		case owners[i] == game.TopScopeType && functions[i].Promote && schema.isScopeType(functions[i].Returns):
+			typed = game.SavedScopes
+		default:
+			typed, _ = schema.ResolveTypeDatabase(functions[i].Returns)
 		}
 		for position, argument := range step.Arguments {
 			database := typed
@@ -769,6 +794,17 @@ func (schema *Schema) ListCallReferences(call jomini.Call, datacontext string) [
 		}
 	}
 	return references
+}
+
+// isScopeType reports whether a data type is the type of a scope the dumps declare, as game.AnyScopeType's getter for
+// that scope gives it: Scope.GetCharacter gives Character.
+func (schema *Schema) isScopeType(dataType string) bool {
+	for name, getter := range schema.DataTypes[game.AnyScopeType].Functions {
+		if getter.Returns == dataType && schema.isScope(strings.ReplaceAll(ToPhrase(DropGetter(name)), " ", "_")) {
+			return true
+		}
+	}
+	return false
 }
 
 // JoinNested returns the name of a nested definition from its holder's name and its key, such as NAI|X. Without a

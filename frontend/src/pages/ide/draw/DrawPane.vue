@@ -1,6 +1,6 @@
 <!--
   The pane of Visual: the picture on the viewport, the marks over it, the code beside it and the panel, with the tools
-  above them in the group's top row. A coat's instance dragged on the picture moves there.
+  in the group's top row.
 -->
 <script setup lang="ts">
 import type { ContextMenuItem, SplitterItem } from "@nuxt/ui";
@@ -46,9 +46,8 @@ import type { PictureNode } from "./picture";
 const { model } = defineProps<{ model: Model }>();
 
 /**
- * A Drag is a coat's instance being dragged across the picture. The start is where the press began and the offset is
- * how far it has moved, in the picture's pixels. A dropped drag is kept until the coat is drawn again with the
- * instance in its new place.
+ * A Drag is a coat's instance being dragged across the picture. A dropped drag is kept until the coat is drawn again
+ * with the instance in its new place.
  */
 type Drag = {
   layer: number;
@@ -60,15 +59,14 @@ type Drag = {
   isDropped: boolean;
 };
 
-// the keys an instance's position is written by: an emblem's position, a sub's offset
+// The keys an instance's position is written by: an emblem's position, a sub's offset.
 const POSITION_KEYS = ["position", "offset"];
-// the panes side by side: the code and the panel close when dragged past their least size
+// The code and the panel close when dragged past their least size.
 const PANES: SplitterItem[] = [
   { id: "code", slot: "code", defaultSize: 35, minSize: 15, collapsible: true, collapsedSize: 0 },
   { id: "picture", slot: "picture", defaultSize: 40, minSize: 20 },
   { id: "panel", slot: "panel", defaultSize: 25, minSize: 15, collapsible: true, collapsedSize: 0 },
 ];
-// the command that saves the file in the group's active tab, which this pane draws
 const SAVE = findCommand("editor.save");
 
 const store = useDrawStore();
@@ -79,7 +77,6 @@ const isCoat = computed(() => model.place.format !== Format.FormatGUI);
 const isBounded = shallowRef(false);
 const hasGrid = useLocalStorage("pmt.draw.grid", false);
 const { isCodeOpen, isPanelOpen } = storeToRefs(store);
-// the buttons that open and close the code and the panel
 const PANE_BUTTONS = [
   { pane: "code", icon: "i-lucide-panel-left", tooltip: "The code beside the picture", on: isCodeOpen },
   { pane: "panel", icon: "i-lucide-panel-right", tooltip: "The panel", on: isPanelOpen },
@@ -92,7 +89,6 @@ const floor = useTemplateRef<HTMLElement>("floor");
 const canvas = useTemplateRef<HTMLCanvasElement>("canvas");
 const nodes = shallowRef<PictureNode[]>([]);
 const windowRects = shallowRef(new Map<number, DOMRect[]>());
-// isPlaced is true when the window lay wholly off the screen and was moved to the edge it passed.
 const isPlaced = shallowRef(false);
 const renderedMs = shallowRef(0);
 const drag = shallowRef<Drag | null>(null);
@@ -112,7 +108,7 @@ const screen = computed(() => {
   return { width, height };
 });
 
-// the caret settles before the entry it is in is drawn, so moving through the file does not draw each entry passed
+// The caret settles before its entry is drawn, so moving through the file does not draw each entry passed.
 const caret = refDebounced(
   computed(() => ({ lineNumber: model.caret.line, column: model.caret.column })),
   300,
@@ -125,7 +121,6 @@ const drawable = computed(() => {
 watchEffect(() => {
   if (drawable.value && file.value.drawable !== drawable.value) store.draw(model.place.path, drawable.value);
 });
-// the entry the caret moves into is drawn, as is the entry at the caret once the file's entries are known
 watch(
   [caret, () => !!drawables.value],
   () => {
@@ -134,7 +129,6 @@ watch(
   },
   { immediate: true },
 );
-// a newly drawn entry is fitted, wherever the camera was left
 watch(drawable, () => viewport.value?.fit());
 
 const {
@@ -235,14 +229,12 @@ const framePlace = computed(() => frames.value?.find(({ label }) => label === st
 const mask = computed(() =>
   framePlace.value ? { maskImage: `url("${fileUrl(framePlace.value.path)}")`, maskSize: "100% 100%" } : {},
 );
-// the switches over the picture: a window's widget bounds, and the grid over a window or a coat
 const toggles = computed(() => [
   ...(isCoat.value
     ? []
     : [{ label: "Bounds", tooltip: "Outline every widget's bounds", icon: "i-lucide-square-dashed", on: isBounded }]),
   { label: "Grid", tooltip: "Draw a grid over the picture", icon: "i-lucide-grid-3x3", on: hasGrid },
 ]);
-// a cell of the grid is ten of a window's pixels, or a tenth of a coat each way
 const gridCell = computed(() => (isCoat.value ? "10%" : "10px"));
 const caretKey = computed(() => {
   const caret = { lineNumber: model.caret.line, column: model.caret.column };
@@ -304,7 +296,7 @@ const menu = computed<ContextMenuItem[][]>(() => {
 
 watchPostEffect(() => {
   const element = floor.value;
-  // the picture waits for the states, so what they hide never shows first
+  // The picture waits for the states, so what they hide never shows first.
   if (!element || !drawnWindow.value || !states.value) return;
   const started = performance.now();
   const drawing = { hidden: hidden.value, choices: states.value.choices, rows: Number(settings.value("draw.rows")) };
@@ -316,10 +308,10 @@ const readAgain = useDebounceFn(() => {
   if (floor.value) readPicture(floor.value);
 }, 50);
 useEventListener(floor, "load", () => void readAgain(), { capture: true });
-// a pane hidden while the app's scale changed lays out again once shown
+// A pane hidden while the app's scale changed lays out again once shown.
 useResizeObserver(floor, () => void readAgain());
 
-// the camera's pane takes the pointer and the keys, so a click off the picture selects nothing
+// The camera's pane takes the pointer and the keys, so a click off the picture selects nothing.
 const pane = computed(() => viewport.value?.pane);
 useEventListener(pane, "click", applyClick);
 useEventListener(pane, "contextmenu", openMenu);
@@ -330,7 +322,6 @@ useEventListener(canvas, "pointerdown", startDrag);
 useEventListener(canvas, "pointermove", moveDrag);
 useEventListener(canvas, "pointerup", dropDrag);
 useEventListener(canvas, "pointercancel", () => (drag.value = null));
-// the coat drawn again ends a drag, a dropped instance now drawn where it was dropped
 watch(drawnCoat, () => (drag.value = null));
 useEventListener(
   () => document.fonts,
@@ -347,7 +338,7 @@ watchPostEffect(() => {
   });
 });
 
-// the code and the panel are open or closed as the session chose, once the splitter has laid its panes out
+// The splitter must have laid its panes out before the code and the panel can open or close.
 watch([isCodeOpen, isPanelOpen, splitter], () =>
   nextTick(() => {
     for (const button of PANE_BUTTONS) {
@@ -367,10 +358,7 @@ watch(
   },
 );
 
-/**
- * readPicture fits the picture and then reads the rects of the drawn widgets. It fits the texts their boxes cut and
- * each placeholder to its holder, and moves a window that lies wholly off the screen to the edge it passed.
- */
+/** readPicture fits the texts and placeholders of the picture, then reads the rects of the drawn widgets. */
 function readPicture(element: HTMLElement): void {
   fitTexts(nodes.value);
   fitPlaceholders(nodes.value);
@@ -391,9 +379,7 @@ function findPoint(event: MouseEvent): DOMPoint {
   return new DOMPoint((event.clientX - origin.left) / scale, (event.clientY - origin.top) / scale);
 }
 
-/**
- * findHits finds the widgets or layers drawn under the pointer. A skin or a label stands for the widget it is part of.
- */
+/** findHits finds the widgets or layers drawn under the pointer. A skin or a label stands for its widget. */
 function findHits(event: MouseEvent): number[] {
   if (isCoat.value) {
     const point = findPoint(event);
@@ -412,38 +398,32 @@ function findHits(event: MouseEvent): number[] {
 const contains = (box: DOMRect, point: DOMPoint) =>
   point.x >= box.left && point.x <= box.right && point.y >= box.top && point.y <= box.bottom;
 
-/**
- * findCopy returns the index of the copy of a widget (one for each row of a list), or of the instance of a layer, that
- * the pointer is on. It returns null if the pointer is on none.
- */
+/** findCopy returns the index of the copy of a widget, or of the instance of a layer, under the pointer. */
 function findCopy(id: number | null, event: MouseEvent): number | null {
   const point = findPoint(event);
   const copy = id === null ? -1 : (boxes.value.get(id)?.findIndex((box) => contains(box, point)) ?? -1);
   return copy < 0 ? null : copy;
 }
 
-/** sortHits sorts the hits at a point in click order: the smallest first, and the topmost first among equal ones. */
+/** sortHits sorts the hits at a point in click order, the smallest first. */
 function sortHits(hits: number[]): number[] {
   const area = (id: number) => Math.min(...(boxes.value.get(id) ?? []).map((box) => box.width * box.height));
   return hits.toSorted((first, second) => area(first) - area(second));
 }
 
-/**
- * findTarget returns the hit a click selects: the one after the selected hit in click order, else the first, so
- * repeated clicks on one spot reach every widget there. It returns null for no hits.
- */
+/** findTarget returns the hit a click selects, so repeated clicks on one spot reach every widget there. */
 function findTarget(hits: number[]): number | null {
   const order = sortHits(hits);
   return order.length ? order[(order.indexOf(file.value.selected ?? -1) + 1) % order.length] : null;
 }
 
-/** openType opens the definition of the type of the widget written in a file at the given range. */
+/** openType opens the definition of the type of the widget written at the given range. */
 async function openType(place: Place, range: Widget["range"]): Promise<void> {
   const [type] = (await lsp.Definition(place.path, range.startLineNumber, range.startColumn)) ?? [];
   if (type) store.showCode(type.place, type.range);
 }
 
-/** snapshotCoat makes a PNG of the coat as drawn, cut to the frame where one is chosen, its transparent pixels kept. */
+/** snapshotCoat makes a PNG of the coat as drawn, cut to the chosen frame. */
 async function snapshotCoat(): Promise<Blob | null> {
   const source = canvas.value;
   const sheet = document.createElement("canvas");
@@ -461,7 +441,7 @@ async function snapshotCoat(): Promise<Blob | null> {
   return new Promise((resolve) => sheet.toBlob(resolve, "image/png"));
 }
 
-/** findEntry finds the entry of the file written at a position, or undefined where none is. */
+/** findEntry finds the entry of the file written at a position. */
 function findEntry(position: IPosition): Symbol | undefined {
   return drawables.value?.findLast(({ range }) => Range.containsPosition(range, position));
 }
@@ -478,12 +458,12 @@ function showHidden(): void {
 }
 
 /**
- * applyClick selects what is clicked: the next widget under the pointer with each click on one spot, or nothing for a
- * click off the picture. Selecting a widget or layer opens a closed panel on its Properties tab, or Layers for a coat.
+ * applyClick selects what is clicked, or nothing for a click off the picture. Selecting a widget or layer opens a
+ * closed panel.
  */
 function applyClick(event: MouseEvent): void {
   if (event.currentTarget instanceof HTMLElement) event.currentTarget.focus({ preventScroll: true });
-  // the click that ends a drag selects nothing more
+  // The click that ends a drag selects nothing more.
   if (drag.value) return;
   const target = findTarget(findHits(event));
   store.select(model.place.path, target, findCopy(target, event));
@@ -492,45 +472,37 @@ function applyClick(event: MouseEvent): void {
   isPanelOpen.value = true;
 }
 
-/**
- * togglePane opens the pane of the given button, or closes it if it is open. A panel that opens shows a window's States
- * tab or a coat's Layers.
- */
+/** togglePane opens the pane of the given button, or closes it if it is open. */
 function togglePane(button: (typeof PANE_BUTTONS)[number]): void {
   if (button.pane === "panel" && !isPanelOpen.value) file.value.tab = isCoat.value ? "layers" : "states";
   button.on.value = !button.on.value;
 }
 
 /**
- * followPane keeps the button of a pane in step with the user resizing the pane, by drag or keys: a pane resized to no
- * size is closed. The first size of a pane, read from the splitter's saved layout, is ignored, since the session
- * decides whether the pane opens.
+ * followPane keeps the button of a pane in step with the user resizing it. The first size of a pane, read from the
+ * splitter's saved layout, is ignored since the session decides whether the pane opens.
  */
 function followPane(index: number, size: number, previous: number | undefined): void {
   const button = PANE_BUTTONS.find(({ pane }) => pane === PANES[index]?.id);
   if (button && previous !== undefined) button.on.value = size > 0;
 }
 
-/**
- * openMenu selects the widget that is right-clicked, so that its menu opens: the selected widget if it is under the
- * pointer, else the first hit.
- */
+/** openMenu selects the widget that is right-clicked, so that its menu opens. */
 function openMenu(event: MouseEvent): void {
   const hits = sortHits(findHits(event));
   const target = hits.find((id) => id === file.value.selected) ?? hits.at(0);
   if (target !== undefined) store.select(model.place.path, target, findCopy(target, event));
 }
 
-/** applyPointer follows the pointer: it hovers what a click there would select. */
+/** applyPointer hovers what a click at the pointer would select. */
 function applyPointer(event: PointerEvent): void {
   const target = findTarget(findHits(event));
   store.hover(model.place.path, target, findCopy(target, event));
 }
 
 /**
- * startDrag starts dragging the coat's instance under a press, if this file writes it: the selected layer's if it is
- * under the pointer, else the one a click there would select. The camera then does not pan. A default instance, which
- * no block writes, is not dragged.
+ * startDrag starts dragging the coat's instance under a press, if this file writes it. A default instance, which no
+ * block writes, is not dragged.
  */
 function startDrag(event: PointerEvent): void {
   const coat = drawnCoat.value;
@@ -547,7 +519,7 @@ function startDrag(event: PointerEvent): void {
   drag.value = { layer, copy, instance, key, start: findPoint(event), offset: new DOMPoint(), isDropped: false };
 }
 
-/** moveDrag moves the dragged instance's box with the pointer. Once the press is a drag, the instance is selected. */
+/** moveDrag moves the dragged instance's box with the pointer, and selects the instance once the press is a drag. */
 function moveDrag(event: PointerEvent): void {
   const moving = drag.value;
   if (!moving || moving.isDropped) return;
@@ -556,10 +528,7 @@ function moveDrag(event: PointerEvent): void {
   if (isDragged(drag.value)) store.select(model.place.path, moving.layer, moving.copy);
 }
 
-/**
- * dropDrag ends a press on the coat. After a drag, the instance's new position is written in the file as one edit; a
- * press that never became a drag is a click.
- */
+/** dropDrag ends a press on the coat. After a drag, the instance's new position is written as one edit. */
 function dropDrag(): void {
   const moving = drag.value;
   if (!moving || moving.isDropped) return;
@@ -573,12 +542,12 @@ function dropDrag(): void {
   writePosition({ moving, text: `{ ${position.map((part) => Number(part.toFixed(3))).join(" ")} }` });
 }
 
-/** isDragged reports whether a press has moved far enough on the screen to be a drag. */
+/** isDragged reports whether a press has moved far enough to be a drag. */
 function isDragged(moving: Drag): boolean {
   return Math.hypot(moving.offset.x, moving.offset.y) * findScale() >= DRAG;
 }
 
-/** moveBox moves the box of the instance being dragged by the drag's offset, so its mark follows the pointer. */
+/** moveBox moves the box of the instance being dragged, so its mark follows the pointer. */
 function moveBox(layerBoxes: Map<number, DOMRect[]>): Map<number, DOMRect[]> {
   const moving = drag.value;
   const list = moving ? layerBoxes.get(moving.layer) : undefined;
@@ -589,7 +558,7 @@ function moveBox(layerBoxes: Map<number, DOMRect[]>): Map<number, DOMRect[]> {
   return layerBoxes;
 }
 
-/** applyKey acts on a key: Escape, the arrows, Enter, h, H or f. A key with Ctrl, Alt or Meta is left alone. */
+/** applyKey acts on Escape, the arrows, Enter, h, H or f. A key with Ctrl, Alt or Meta is left alone. */
 function applyKey(event: KeyboardEvent): void {
   if (event.ctrlKey || event.altKey || event.metaKey) return;
   const path = model.place.path;

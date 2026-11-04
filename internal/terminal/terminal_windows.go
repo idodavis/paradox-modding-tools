@@ -153,8 +153,8 @@ func startConsole(shell *Shell, env []string) (*console, error) {
 	return console, nil
 }
 
-// startProcess starts the shell's program with its arguments in its folder, with the given environment, attached to
-// the given pseudo console. It returns the process and its id. It returns an error if the program cannot be started.
+// startProcess starts the shell's program attached to the given pseudo console, with the given environment. It returns
+// the process, or an error if the program cannot be started.
 func startProcess(handle windows.Handle, shell *Shell, env []string) (windows.ProcessInformation, error) {
 	var process windows.ProcessInformation
 	attributes, err := windows.NewProcThreadAttributeList(1)
@@ -253,8 +253,7 @@ func (console *console) wait() {
 	closeHandles(console.process)
 }
 
-// closeHandles closes the given handles. An error is passed over, since nothing can be done about a handle that will
-// not close.
+// closeHandles closes the given handles. A handle that will not close is ignored.
 func closeHandles(handles ...windows.Handle) {
 	for _, handle := range handles {
 		_ = windows.CloseHandle(handle)

@@ -1,8 +1,6 @@
 <!--
-  The file explorer: the roots in the workspace's load order and their folders, with rename, drag and drop, git marks
-  and a context menu. A filter box, shown on request, narrows the tree to the paths that contain its text. A folder is
-  listed when it expands, and a double click pins a preview tab. Resting on a folder of a database shows what the game
-  keeps in it and how mods change it.
+  The file explorer: the roots in the workspace's load order and their folders, with rename, drag and drop, git marks,
+  a filter box and a context menu.
 -->
 <script setup lang="ts">
 import { computed, onBeforeUnmount, onMounted, shallowRef, useTemplateRef, watch } from "vue";
@@ -17,7 +15,7 @@ import {
   type GitStatus,
   type GitStatusEntry,
 } from "@pierre/trees";
-import type { ContextMenuItem, PopoverProps } from "@nuxt/ui";
+import type { ContextMenuItem } from "@nuxt/ui";
 
 import * as app from "@services/app/service";
 import * as lsp from "@services/lsp/service";
@@ -25,28 +23,18 @@ import * as service from "@services/workspace/service";
 import type { FileChange, Place } from "@services/workspace/models";
 
 import { canCopyToMod, canSaveAsDds, COMMANDS, compare, copyToMod, findCommand, trashFile } from "../../app/commands";
-import {
-  fileSearchQuery,
-  folderQuery,
-  gitStatusQuery,
-  loadQuery,
-  placeQuery,
-  precedenceQuery,
-  workspacesQuery,
-} from "../../queries";
+import { fileSearchQuery, folderQuery, gitStatusQuery, loadQuery, placeQuery, workspacesQuery } from "../../queries";
 import { tabId, useEditorStore } from "../../stores/editor";
 import { useGitStore } from "../../stores/git";
 import { useSettingsStore } from "../../stores/settings";
 import { COMMAND_BUS, useWindowsStore } from "../../stores/windows";
 import { useWorkspaceStore, VANILLA } from "../../stores/workspace";
-import OriginChip from "../../ui/OriginChip.vue";
-import { useHeldCard } from "./editor/hover";
 import { findIcon, listIcons } from "./editor/tabs";
 import SaveDdsModal from "./SaveDdsModal.vue";
 
 const { roots } = defineProps<{ roots: Place[] }>();
 const emit = defineEmits<{ open: [place: Place, preview: boolean] }>();
-// whether the filter box shows; hiding it clears the filter, so a hidden box hides no row
+// Hiding the filter box clears the filter, so a hidden box hides no row.
 const filtering = defineModel<boolean>("filtering", { default: false });
 defineExpose({ collapseAll, reveal });
 
@@ -68,19 +56,9 @@ const SPRITE = `<svg xmlns="http://www.w3.org/2000/svg" width="0" height="0" sty
       `<symbol id="${id}" viewBox="0 0 800 800"><image href="${icon}" width="800" height="800"/></symbol>`,
   )
   .join("")}</svg>`;
-/** FILTER_HITS is how many files the filter asks the file search for. The search lists mod files before the game's. */
+/** FILTER_HITS is how many files the filter asks the file search for. */
 const FILTER_HITS = 500;
-/** CARD_DELAY is how long the pointer rests on a folder before its card shows, in milliseconds. */
-const CARD_DELAY = 400;
-/** CARD_CONTENT places a folder's card beside the folder's row and leaves the keyboard focus where it was. */
-const CARD_CONTENT: PopoverProps["content"] = {
-  side: "right",
-  sideOffset: 6,
-  align: "start",
-  onOpenAutoFocus: (event) => event.preventDefault(),
-  onCloseAutoFocus: (event) => event.preventDefault(),
-};
-/** MENU_CONTENT is the context menu's content options. It is one object so a card showing does not render the menu. */
+/** MENU_CONTENT is the context menu's content options, one object so the menu is not drawn again on each render. */
 const MENU_CONTENT = { onCloseAutoFocus: resume };
 
 /** A Move is one rename or move done in the explorer, with the path on disk before it and the path after it. */
@@ -98,50 +76,24 @@ const view = shallowRef<FileTree>();
 const menu = shallowRef<ContextMenuItem[][]>([]);
 const filter = shallowRef("");
 
-// every row of the tree is a path with its root's label first and a slash after each folder
+// Every row of the tree is a path with its root's label first and a slash after each folder.
 const places = new Map<string, Place>(); // a row's place: each root's, and each row a folder listing gave
 const members = new Map<string, Set<string>>(); // the rows of each listed folder row
-// each new row's path on disk, and the function that stops watching for its rename to be cancelled
+// Each new row's path on disk, and the function that stops watching for its rename to be cancelled.
 const drafts = new Map<string, { path: string; stop: () => void }>();
 const icons: Record<string, { name: string; viewBox: string }> = {}; // a file's icon by its name
-// the rows git ignores, dimmed; a git status would count them as changes in every folder above
+// The rows git ignores are dimmed; a git status would count them as changes in every folder above.
 const ignoredSheet = new CSSStyleSheet();
-// in Visual, the files it cannot draw are dimmed too
 const undrawableSheet = new CSSStyleSheet();
 const history = { done: [] as Move[], undone: [] as Move[] };
-// what a menu item chose to do, run once the menu has closed and released the keyboard
+// What a menu item chose to do, run once the menu has closed and released the keyboard.
 let deferred: (() => void) | undefined;
-// the folder whose card shows, with the rectangle of its row; the card stays while the pointer is on it
-const {
-  card: folderCard,
-  close: closeHeldCard,
-  closeLater: closeCardLater,
-  keep: keepCard,
-  hold: holdCard,
-} = useHeldCard<{ place: Place; anchor: DOMRect }>();
-// the card is placed against the rectangle its folder's row had when the card came up
-const cardAnchor = { getBoundingClientRect: () => folderCard.value?.anchor ?? new DOMRect() };
-// the row the pointer rests on
-let restingRow = "";
 
 const { data: workspaces } = useQuery(workspacesQuery);
-// the folder card's readme, as a place to open, and the sentence that says how the game keeps its folder's entries
-const { data: readme } = useQuery(() => ({
-  ...placeQuery(folderCard.value?.place.readme ?? ""),
-  enabled: !!folderCard.value?.place.readme,
-}));
-const { data: precedence } = useQuery(() => ({
-  ...precedenceQuery({
-    gameId: workspace.active()?.game?.id ?? "",
-    database: folderCard.value?.place.database ?? "",
-    folder: folderCard.value?.place.rel ?? "",
-  }),
-  enabled: !!folderCard.value,
-}));
 const labels = computed(() => {
   const counts = new Map<string, number>();
   return roots.map((root) => {
-    // the tree reads a "/" as a folder, so a mod's name writes it as a look-alike slash
+    // The tree reads a "/" as a folder, so a mod's name writes it as a look-alike slash.
     const label = workspace.originName(root.origin).replaceAll("/", "∕");
     const count = (counts.get(label) ?? 0) + 1;
     counts.set(label, count);
@@ -149,7 +101,7 @@ const labels = computed(() => {
   });
 });
 const writable = computed(() => roots.some((root) => !root.readOnly));
-// changes whenever the tree must be built again
+// Changes whenever the tree must be built again.
 const shape = computed(() =>
   [
     roots.map((root) => root.path).join("|"),
@@ -165,7 +117,6 @@ const shape = computed(() =>
 const stops = [Events.On("fs:changed", ({ data }) => changed(data)), Events.On("git:changed", () => void markGit())];
 onMounted(mount);
 onBeforeUnmount(() => {
-  closeHeldCard();
   stops.forEach((stop) => stop());
   view.value?.cleanUp();
 });
@@ -182,7 +133,7 @@ watch(filtering, (shown) => {
 
 /** mount builds the tree of the roots, with nothing listed yet. */
 function mount(): void {
-  // cleaning up leaves the old tree's element in the host
+  // Cleaning up leaves the old tree's element in the host.
   view.value?.getFileTreeContainer()?.remove();
   view.value?.cleanUp();
   [places, members, drafts].forEach((map) => map.clear());
@@ -190,7 +141,7 @@ function mount(): void {
   if (!host.value || !roots.length) return;
   roots.forEach((root, index) => places.set(`${labels.value[index]}/`, root));
   const tree = new FileTree({
-    // the roots stay in the order they come, the workspace's load order; what a root holds the tree sorts itself
+    // The roots stay in the workspace's load order; the tree sorts what each root holds.
     preparedInput: preparePresortedFileTreeInput(labels.value.map((label) => `${label}/`)),
     initialExpansion: "closed",
     icons: { set: "none", spriteSheet: SPRITE },
@@ -253,7 +204,7 @@ function buildStyles(): string {
 const rootIndex = (row: string) => labels.value.indexOf(row.slice(0, row.indexOf("/")));
 /** isRoot reports whether a row is a root's own row. */
 const isRoot = (row: string) => row.indexOf("/") === row.length - 1;
-/** isWritable reports whether a row is under a root that can be changed: a mod's, not the game's or Steam's. */
+/** isWritable reports whether a row is under a root that can be changed. */
 const isWritable = (row: string) => roots[rootIndex(row)]?.readOnly === false;
 
 /** rowOf returns the row of a path the tree hands out. The tree leaves off the slash a folder's row ends in. */
@@ -261,7 +212,7 @@ function rowOf(path: string, isFolder: boolean): string {
   return isFolder && !path.endsWith("/") ? `${path}/` : path;
 }
 
-/** findPath finds a row's path on disk: its place's, or a new row's. It is "" for a row the tree lacks. */
+/** findPath finds a row's path on disk. It is "" for a row the tree lacks. */
 function findPath(row: string): string {
   return places.get(row)?.path ?? drafts.get(row)?.path ?? "";
 }
@@ -298,10 +249,7 @@ function loadExpanded(): void {
     if (row.endsWith("/") && !members.has(row) && findHandle(row)?.isExpanded()) void load(row);
 }
 
-/**
- * load lists a folder row and puts its rows in the tree. A folder gone from disk lists nothing and changes nothing;
- * its parent's listing removes its row.
- */
+/** load lists a folder row and puts its rows in the tree. A folder gone from disk changes nothing. */
 async function load(row: string): Promise<void> {
   let children: Place[];
   try {
@@ -338,7 +286,6 @@ function forget(row: string): void {
   for (const map of [places, members]) for (const path of map.keys()) if (path.startsWith(row)) map.delete(path);
 }
 
-// the listed folder rows to list again once changes pause
 const pending = new Set<string>();
 const refresh = useDebounceFn(() => {
   const rows = [...pending];
@@ -362,7 +309,7 @@ async function markGit(): Promise<void> {
   const marks: GitStatusEntry[] = [];
   const dimmed: string[] = [];
   for (const { root: dir } of git.repositories) {
-    // loadQuery shares a fetch already under way, and git:changed has marked the status stale already
+    // git:changed has already marked the status stale, and loadQuery shares a fetch under way.
     const data = await loadQuery(gitStatusQuery(dir));
     for (const change of data?.changes ?? []) {
       const row = buildRow(change.place);
@@ -371,7 +318,7 @@ async function markGit(): Promise<void> {
     for (const place of data?.ignored ?? []) {
       const row = buildRow(place);
       if (!row) continue;
-      // a folder's row ends in a slash, and the folder stands for every row under it
+      // A folder stands for every row under it.
       dimmed.push(buildSelector(row + (place.isDir ? "/" : ""), place.isDir));
     }
   }
@@ -398,10 +345,7 @@ function dimUndrawable(): void {
   );
 }
 
-/**
- * buildRow returns the row of a place, with no trailing slash even for a folder. The row is relative to the root that
- * holds the place, so in a folder's window it is relative to that folder. It is "" if no root holds the place.
- */
+/** buildRow returns the row of a place, with no trailing slash for a folder. It is "" if no root holds the place. */
 function buildRow(place: Place): string {
   const index = roots.findIndex(
     (root) =>
@@ -411,10 +355,7 @@ function buildRow(place: Place): string {
   return root ? `${labels.value[index]}/${place.rel.slice(root.rel ? root.rel.length + 1 : 0)}` : "";
 }
 
-/**
- * select records the selected files with the editor store, and opens a file selected alone as a preview tab. A folder,
- * or the file already shown, opens nothing.
- */
+/** select records the selected files with the editor store, and opens a file selected alone as a preview tab. */
 function select(paths: readonly string[]): void {
   const files = paths.flatMap((path) => (path.endsWith("/") ? [] : (places.get(path) ?? [])));
   editor.selectFiles(files);
@@ -434,7 +375,7 @@ function follow(): void {
   if (settings.isOn("ide.followFile")) void reveal();
 }
 
-/** reveal opens the folders down to the active file and selects it. A file the tree has no row for changes nothing. */
+/** reveal opens the folders down to the active file and selects it. A file with no row changes nothing. */
 async function reveal(): Promise<void> {
   const place = editor.activeFile();
   const folders = place ? await loadFolders(place) : [];
@@ -447,8 +388,8 @@ async function reveal(): Promise<void> {
 }
 
 /**
- * loadFolders lists the folders from the root down to a file's folder, so the tree holds the file's row, and returns
- * their rows, the root's first. It returns none for a file under none of the roots or under a folder gone from disk.
+ * loadFolders lists the folders from the root down to a file's folder and returns their rows, the root's first. It
+ * returns none for a file under none of the roots or under a folder gone from disk.
  */
 async function loadFolders(place: Place): Promise<string[]> {
   const row = buildRow(place);
@@ -456,7 +397,7 @@ async function loadFolders(place: Place): Promise<string[]> {
   const parts = row.split("/").slice(0, -1);
   const folders = parts.map((_, index) => `${parts.slice(0, index + 1).join("/")}/`);
   for (const folder of folders) {
-    // a folder has a path once its parent's listing has included it
+    // A folder has a path once its parent's listing has included it.
     if (!findPath(folder)) return [];
     if (!members.has(folder)) await load(folder);
   }
@@ -464,14 +405,14 @@ async function loadFolders(place: Place): Promise<string[]> {
 }
 
 /**
- * filterRows shows only the rows whose path contains the given query. It searches files first and lists their folders,
- * so a match in a folder not yet opened shows too. An empty query shows every row.
+ * filterRows shows only the rows whose path contains the given query, in folders not yet opened too. An empty query
+ * shows every row.
  */
 async function filterRows(query: string): Promise<void> {
   const text = query.trim();
   const hits = text ? await loadQuery(fileSearchQuery({ query: text, limit: FILTER_HITS })) : [];
   await Promise.all((hits ?? []).map(loadFolders));
-  // a query typed since this one began is filtered by its own call
+  // A query typed since this one began is filtered by its own call.
   if (filter.value.trim() === text) view.value?.setSearch(text || null);
 }
 
@@ -480,7 +421,7 @@ function collapseAll(): void {
   for (const row of listRows()) findHandle(row)?.collapse();
 }
 
-// the tree has moved the row already; a move Go refuses puts it back
+// The tree has moved the row already; a move Go refuses puts it back.
 const { mutate: rename } = useMutation({
   mutation: async ({ source, destination }: { source: string; destination: string }): Promise<Move> => {
     const move = {
@@ -510,10 +451,7 @@ const { mutate: replay } = useMutation({
   },
 });
 
-/**
- * step moves through the rename history: back for Ctrl Z, forward for Ctrl Y or Ctrl Shift Z. Keys typed in an input
- * are ignored.
- */
+/** step moves through the rename history: back for Ctrl Z, forward for Ctrl Y or Ctrl Shift Z. */
 function step(event: KeyboardEvent): void {
   const key = event.key.toLowerCase();
   const isTyping = event
@@ -524,10 +462,7 @@ function step(event: KeyboardEvent): void {
   replay(key === "z" && !event.shiftKey);
 }
 
-/**
- * create makes a new file or folder in a folder row and asks for its name in the tree. A new file's name and first text
- * come from Go, which knows the folder. A new folder is numbered when its name is taken.
- */
+/** create makes a new file or folder in a folder row and asks for its name in the tree. */
 const { mutate: create } = useMutation({
   mutation: async ({ folder, dir }: { folder: string; dir: boolean }) => {
     if (!members.has(folder)) await load(folder);
@@ -546,7 +481,7 @@ const { mutate: create } = useMutation({
     const tree = view.value;
     if (!tree) return;
     tree.add(row);
-    // a name left empty or cancelled takes the new row away, and the file with it
+    // A name left empty or cancelled takes the new row away, and the file with it.
     const stop = tree.onMutation("remove", (event) => {
       if (event.path !== row) return;
       stop();
@@ -557,10 +492,7 @@ const { mutate: create } = useMutation({
   },
 });
 
-/**
- * remove moves a row to PMT's trash once the user agrees, and offers to bring it back. A mod's root leaves the
- * workspace. A new row that never got a name is deleted without a question.
- */
+/** remove moves a row to PMT's trash once the user agrees. A new row that never got a name is deleted unasked. */
 const { mutate: remove } = useMutation({
   mutation: async (row: string) => {
     const path = findPath(row);
@@ -577,24 +509,45 @@ const { mutate: remove } = useMutation({
   },
 });
 
-// what each command of the command table does in the context menu: `run` acts on the clicked row, `writes` marks it as
-// changing files, and `shows`, where present, limits it to some rows
-const ACTIONS: Record<string, { writes: boolean; shows?: (row: string) => boolean; run: (row: string) => void }> = {
+// What each command of the command table does in the context menu. `writes` marks one that changes files, `shows`
+// limits one to some rows, and `label` names it otherwise on some.
+const ACTIONS: Record<
+  string,
+  {
+    writes: boolean;
+    shows?: (row: string) => boolean;
+    label?: (row: string) => string | undefined;
+    run: (row: string) => void;
+  }
+> = {
   "file.new": { writes: true, run: (row) => (deferred = () => create({ folder: findFolder(row), dir: false })) },
   "file.newFolder": { writes: true, run: (row) => (deferred = () => create({ folder: findFolder(row), dir: true })) },
   "file.rename": { writes: true, run: (row) => (deferred = () => view.value?.startRenaming(row)) },
-  "file.delete": { writes: true, run: (row) => remove(row) },
+  "file.delete": {
+    writes: true,
+    label: (row) => (isRoot(row) ? "Delete the mod's folder" : undefined),
+    run: (row) => remove(row),
+  },
   "file.copyPath": { writes: false, run: (row) => void Clipboard.SetText(findPath(row)) },
   "file.reveal": { writes: false, run: (row) => void app.ShowFolder(findPath(row)) },
   "file.copyToMod": { writes: false, shows: (row) => canCopyToMod(places.get(row)), run: onPlace(copyToMod) },
   "image.saveDds": {
     writes: true,
-    shows: (row) => row.endsWith("/") || canSaveAsDds(places.get(row)),
+    shows: (row) => (row.endsWith("/") ? holdsPictures(row) : canSaveAsDds(places.get(row))),
+    label: (row) => (row.endsWith("/") ? "Save its pictures as DDS…" : undefined),
     run: onPlace((place) => void saveDds.open({ place })),
   },
 };
 
-/** onPlace returns a menu action that runs the given function on the clicked row's place, or nothing without one. */
+/**
+ * holdsPictures reports whether a folder row directly holds a picture Save as DDS takes. A folder not yet listed holds
+ * none, since the explorer does not know what is in it.
+ */
+function holdsPictures(row: string): boolean {
+  return [...(members.get(row) ?? [])].some((child) => canSaveAsDds(places.get(child)));
+}
+
+/** onPlace returns a menu action that runs the given function on the clicked row's place. */
 function onPlace(act: (place: Place) => void): (row: string) => void {
   return (row) => {
     const place = places.get(row);
@@ -602,7 +555,7 @@ function onPlace(act: (place: Place) => void): (row: string) => void {
   };
 }
 
-/** buildMenu returns the context menu of a row. It is built when the menu opens, so it reads the current state. */
+/** buildMenu returns the context menu of a row. */
 function buildMenu(row: string): ContextMenuItem[][] {
   const place = places.get(row);
   const file = row.endsWith("/") ? undefined : place;
@@ -611,14 +564,22 @@ function buildMenu(row: string): ContextMenuItem[][] {
     const action = ACTIONS[command.id];
     if (!action || (action.writes && !isWritable(row)) || (action.shows && !action.shows(row))) return [];
     const disabled = command.id === "file.rename" && isRoot(row);
-    const label = command.id === "file.delete" && isRoot(row) ? "Delete the mod's folder" : command.label;
+    const label = action.label?.(row) ?? command.label;
     return [{ label, icon: command.icon, kbds: command.kbds, disabled, onSelect: () => action.run(row) }];
   });
+  const readme: ContextMenuItem[] = place?.readme
+    ? [
+        {
+          label: "Open the game's readme/info",
+          icon: "i-lucide-book-open",
+          onSelect: () => void loadQuery(placeQuery(place.readme)).then((doc) => doc && emit("open", doc, false)),
+        },
+      ]
+    : [];
   const coat: ContextMenuItem[] =
     !file && place?.drawable && isWritable(row)
       ? [{ label: "New coat of arms", icon: "i-lucide-shield-plus", onSelect: () => commandBus.emit("draw.newCoat") }]
       : [];
-  // a mod's root that is in no repository offers one, while git is installed
   const init: ContextMenuItem[] =
     git.isInstalled && isRoot(row) && isWritable(row) && !git.findRoot(roots[rootIndex(row)])
       ? [
@@ -641,13 +602,10 @@ function buildMenu(row: string): ContextMenuItem[][] {
         ...(selected?.when() ? [{ label: "Compare the two selected", onSelect: selected.onSelect }] : []),
       ]
     : [];
-  return [buildOpenItems(file, dir), coat, init, commands, comparisons].filter((group) => group.length);
+  return [buildOpenItems(file, dir), readme, coat, init, commands, comparisons].filter((group) => group.length);
 }
 
-/**
- * buildOpenItems builds the menu items that open a row elsewhere. A file opens to the side, in a new window, and in
- * Visual when it can be drawn. A folder opens in a window of its own, or closes it when it is open already.
- */
+/** buildOpenItems builds the menu items that open a row elsewhere: beside the editor, in a window or in Visual. */
 function buildOpenItems(file: Place | undefined, dir: string): ContextMenuItem[] {
   if (file) {
     return [
@@ -700,42 +658,6 @@ function pick(event: MouseEvent): void {
   event.stopPropagation();
 }
 
-/** showCard shows the card of a folder row once the pointer has rested on it a moment. */
-const showCard = useDebounceFn((row: string, anchor: DOMRect) => {
-  const place = places.get(row);
-  if (restingRow === row && place) folderCard.value = { place, anchor };
-}, CARD_DELAY);
-
-/**
- * rest follows the pointer over the tree: a folder of a database gets its card, and any other row takes it down. The
- * pointer coming back to the folder whose card is up keeps the card.
- */
-function rest(event: MouseEvent): void {
-  const element = findRowElement(event);
-  const row = element?.dataset.itemPath ?? "";
-  if (row === restingRow) return;
-  restingRow = row;
-  const place = places.get(row);
-  if (place && place.key === folderCard.value?.place.key) {
-    keepCard();
-    return;
-  }
-  closeCardLater();
-  if (element && place?.database && row.endsWith("/")) void showCard(row, element.getBoundingClientRect());
-}
-
-/** leaveTree takes the card down after a moment once the pointer is out of the tree. */
-function leaveTree(): void {
-  restingRow = "";
-  closeCardLater();
-}
-
-/** closeCard takes the card down at once and forgets where the pointer was. */
-function closeCard(): void {
-  closeHeldCard();
-  restingRow = "";
-}
-
 /** resume runs the action the menu deferred, now that the menu has closed and released the keyboard. */
 function resume(event: Event): void {
   if (!deferred) return;
@@ -750,7 +672,7 @@ function resume(event: Event): void {
     <div v-if="filtering" class="shrink-0 px-2 pt-1 pb-1.5" @keydown.esc="filtering = false">
       <UInput v-model="filter" placeholder="Filter files" icon="i-lucide-search" size="xs" autofocus class="w-full" />
     </div>
-    <!-- the menu's trigger takes its child's ref, so the tree's element sits inside the wrapper div -->
+    <!-- The menu's trigger takes its child's ref, so the tree's element sits inside the wrapper div. -->
     <UContextMenu :items="menu" :content="MENU_CONTENT">
       <div class="flex min-h-0 flex-1 flex-col">
         <div
@@ -776,54 +698,8 @@ function resume(event: Event): void {
           @contextmenu.capture="pick"
           @keydown="step"
           @dblclick="pin"
-          @mousemove.passive="rest"
-          @mouseleave="leaveTree"
         />
       </div>
     </UContextMenu>
-    <UPopover
-      :open="!!folderCard"
-      :reference="cardAnchor"
-      :content="CARD_CONTENT"
-      @update:open="(open) => open || closeCard()"
-    >
-      <template #content>
-        <div
-          v-if="folderCard"
-          class="flex w-96 max-w-full flex-col gap-2.5 p-3.5 text-12"
-          @mouseenter="holdCard(true)"
-          @mouseleave="holdCard(false)"
-        >
-          <div class="flex items-center gap-2">
-            <UIcon name="i-lucide-folder" class="size-3.5 shrink-0 text-dimmed" />
-            <span class="min-w-0 truncate font-mono text-highlighted">{{ folderCard.place.rel }}</span>
-            <span class="grow" />
-            <OriginChip :origin="VANILLA" />
-          </div>
-          <div
-            v-if="folderCard.place.about"
-            class="flex flex-col gap-1 rounded-md bg-(--bg-2) px-2.5 py-2 shadow-[inset_3px_0_0_color-mix(in_srgb,var(--blue)_50%,transparent)]"
-          >
-            <span v-if="readme" class="text-11 text-dimmed">From the game's readme/info, {{ readme.name }}</span>
-            <span class="text-highlighted">{{ folderCard.place.about }}</span>
-          </div>
-          <UButton
-            v-if="readme"
-            label="Open the game's readme/info"
-            icon="i-lucide-book-open"
-            size="xs"
-            color="neutral"
-            variant="outline"
-            class="self-start"
-            @click="emit('open', readme, false)"
-          />
-          <div class="flex flex-col gap-1">
-            <span class="font-semibold text-highlighted">How mods change this folder</span>
-            <span v-if="precedence" class="text-toned">{{ precedence }}</span>
-            <span class="text-dimmed">To change one of the game's entries, open its file and use Override.</span>
-          </div>
-        </div>
-      </template>
-    </UPopover>
   </div>
 </template>

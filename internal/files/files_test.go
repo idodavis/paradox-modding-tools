@@ -34,8 +34,9 @@ func TestClassifyFormat(t *testing.T) {
 		"binaries/ck3.exe":                     FormatBinary,
 		"fonts/Go-Regular.ttf":                 FormatBinary,
 		"gfx/models/v_shared.mesh":             FormatBinary,
-		"common/traits/_traits.info":           FormatText,
-		"README.md":                            FormatText,
+		"common/traits/_traits.info":           FormatReadme,
+		"common/advances/readme.txt":           FormatReadme,
+		"README.md":                            FormatMarkdown,
 		"fonts/LICENSE":                        FormatText,
 	}
 	for rel, format := range formats {
@@ -45,8 +46,8 @@ func TestClassifyFormat(t *testing.T) {
 	}
 }
 
-// TestDecodeText checks that each encoding is told apart and round-trips through Encode and the disk byte for
-// byte, and that a rune Windows-1252 lacks is written as a question mark.
+// TestDecodeText checks that each encoding is told apart and round-trips byte for byte, and that a rune Windows-1252
+// lacks is written as a question mark.
 func TestDecodeText(t *testing.T) {
 	samples := map[Encoding][]byte{
 		EncodingUTF8:        []byte("name = \"caf\xC3\xA9\"\r\n"),
@@ -178,8 +179,7 @@ func TestMatchIgnore(t *testing.T) {
 	}
 }
 
-// TestWalkRoot checks the walk of the fixture install: every file once in order with its format, a dot folder
-// skipped and `.metadata` kept.
+// TestWalkRoot checks the walk of the fixture install: every file once, in order, with a dot folder skipped.
 func TestWalkRoot(t *testing.T) {
 	dir, err := filepath.Abs(filepath.Join("..", "testdata", "ck3", "game"))
 	if err != nil {

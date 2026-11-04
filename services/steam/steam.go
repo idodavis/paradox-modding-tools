@@ -1,5 +1,4 @@
-// steam.go is the Wails service that publishes mods to the Steam Workshop. It uploads a mod's listing, keeps the
-// previews of a listing and says why Steam cannot take an upload.
+// steam.go is the Wails service that publishes mods to the Steam Workshop.
 
 package steam
 
@@ -180,8 +179,8 @@ func (stm *Service) writeVideos(dir string, urls []string) error {
 	return stm.writeFile(files.Join(dir, videosFile), strings.Join(urls, "\n")+"\n")
 }
 
-// FetchPreviews copies the gallery of a listing's Workshop item into the listing, adding what it lacks. It asks Steam
-// about the item again. It returns an error if the listing has no item, Steam cannot be asked or a download fails.
+// FetchPreviews copies the gallery of a listing's Workshop item into the listing, adding what it lacks. It returns an
+// error if the listing has no item, Steam cannot be asked or a download fails.
 func (stm *Service) FetchPreviews(modID, key string) error {
 	ws, _, listing, err := stm.findListing(modID, key)
 	if err != nil {
@@ -221,8 +220,8 @@ func (stm *Service) addPreviews(dir string, steamPreviews []Preview) error {
 	return nil
 }
 
-// toLabel returns what tells one preview from another. That is a video's watch link, or a picture's file name without
-// its extension.
+// toLabel returns what tells one preview from another: a video's watch link, or a picture's file name without its
+// extension.
 func toLabel(preview Preview) string {
 	if preview.Type == previewVideo {
 		return watchLink + toVideoID(preview.URL)
@@ -363,7 +362,7 @@ func removeCacheDir(cacheDir, dir string) error {
 	return os.RemoveAll(dir)
 }
 
-// moveCacheDir moves the source folder to the target's place in PMT's cache, replacing the target. If that fails, it
+// moveCacheDir moves the source folder to the target's place in PMT's cache, replacing the target. A failed move
 // deletes the source.
 func moveCacheDir(cacheDir, source, target string) error {
 	if err := errors.Join(removeCacheDir(cacheDir, target), os.Rename(source, target)); err != nil {

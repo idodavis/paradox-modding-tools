@@ -46,8 +46,7 @@ func writeFile(t *testing.T, dir, rel string, bytes []byte) {
 }
 
 // openService opens a workspace on the CK3 fixture install with a copy of the fixture mod, after the given function
-// adds files to it. It returns the search service, the open session and the mod's folder. The workspace closes when the
-// test ends.
+// adds files to it. It returns the search service, the open session and the mod's folder.
 func openService(t *testing.T, prepare func(dir string)) (*Service, *workspace.Session, string) {
 	t.Helper()
 	newApp()
@@ -56,7 +55,7 @@ func openService(t *testing.T, prepare func(dir string)) (*Service, *workspace.S
 		t.Fatal(err)
 	}
 	prepare(dir)
-	// the folders PMT uses come from the XDG variables, read again now and once more when the test ends
+	// PMT reads its folders from these variables, so the test points them at temporary ones.
 	for _, variable := range []string{"APPDATA", "LOCALAPPDATA", "XDG_CONFIG_HOME", "XDG_CACHE_HOME"} {
 		t.Setenv(variable, t.TempDir())
 	}
@@ -102,7 +101,7 @@ func listHits(t *testing.T, ws *workspace.Session, query Query, fileCount int) [
 }
 
 // TestRunFindsRegexAndWholeWordHits checks the ranges and lines of the hits of a whole-word search and of a regular
-// expression. The whole-word search ignores case and counts a letter beyond ASCII as part of a word.
+// expression.
 func TestRunFindsRegexAndWholeWordHits(t *testing.T) {
 	include := "search_a.txt"
 	_, ws, _ := openService(t, func(dir string) {
@@ -138,8 +137,7 @@ func TestRunSearchesOpenBufferText(t *testing.T) {
 	}
 }
 
-// TestReplaceTextKeepsEncodingAndSkipsOpenFile checks that a Windows-1252 file keeps its encoding, that an open file is
-// left as it is, and that the error counts it.
+// TestReplaceTextKeepsEncodingAndSkipsOpenFile checks that a replace keeps a file's encoding and skips an open file.
 func TestReplaceTextKeepsEncodingAndSkipsOpenFile(t *testing.T) {
 	sch, ws, dir := openService(t, func(dir string) {
 		writeFile(t, dir, "common/closed.txt", []byte("caf\xe9 = 1\n"))
@@ -159,8 +157,7 @@ func TestReplaceTextKeepsEncodingAndSkipsOpenFile(t *testing.T) {
 	}
 }
 
-// TestReplaceTextCountsTheHitsShown checks that a replace changes exactly what a search shows. An expression that
-// matches empty text or spans two lines replaces nothing, and an end of line before a CRLF is a match.
+// TestReplaceTextCountsTheHitsShown checks that a replace changes exactly what a search shows.
 func TestReplaceTextCountsTheHitsShown(t *testing.T) {
 	sch, ws, dir := openService(t, func(dir string) {
 		writeFile(t, dir, "common/empty.txt", []byte("ab\n"))
@@ -190,8 +187,7 @@ func TestReplaceTextCountsTheHitsShown(t *testing.T) {
 	}
 }
 
-// TestSearchFilesListsModsFirst checks that a path matches if it holds the characters in order, that the mods' files
-// come first, and that the limit cuts the list.
+// TestSearchFilesListsModsFirst checks the file search's match, its order and its limit.
 func TestSearchFilesListsModsFirst(t *testing.T) {
 	sch, _, _ := openService(t, func(string) {})
 	places := sch.SearchFiles("EVT", 1000)

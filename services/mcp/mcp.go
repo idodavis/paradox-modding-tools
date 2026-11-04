@@ -101,15 +101,15 @@ const (
 	variableToken = "PMT_MCP_TOKEN"
 )
 
-// Variables holds the environment variables of PMT's address and token, as the Terminal's settings list them. Their
-// values are PMT's own environment's, so the rows carry none.
+// Variables holds the environment variables of PMT's address and token, as the Terminal's settings list them. The rows
+// carry no values.
 var Variables = []terminal.Variable{
 	{Name: variableURL, Help: "The address of PMT's tools, for an agent run in the shell"},
 	{Name: variableToken, Help: "The token those tools ask for"},
 }
 
 // instructions is what the server tells an agent when it connects. Its first paragraph stands alone, since Codex may
-// read no more, and the whole stays under Claude's 4,096 characters.
+// read no more, and the whole stays under Claude's limit of 4,096 characters.
 const instructions = `PMT (Paradox Modding Tools) is the user's IDE for modding Crusader Kings III, Victoria 3 and ` +
 	`Europa Universalis V. Their workspace is open in it: one game install and the mods loaded with it. PMT's tools ` +
 	`answer from PMT's own reading of the game's script, the one behind its editor and its Health page. Find a name ` +
@@ -131,9 +131,9 @@ Working rules:
 Call read_guide for PMT's pages and their controls, how to make a change with PMT, and the open workspace's mods and ` +
 	`folders.`
 
-// ServiceStartup reads the token, making one at the first start, and starts listening on the port the settings
-// name. A port another program holds leaves the server off until the next start, and PMT's log says so. It returns
-// an error if the token cannot be read or made.
+// ServiceStartup reads the token, making one at the first start, and starts listening. If another program holds the
+// port, the server stays off until the next start and PMT's log says so. It returns an error if the token cannot be
+// read or made.
 func (mcp *Service) ServiceStartup(context.Context, application.ServiceOptions) error {
 	content, err := os.ReadFile(filepath.Join(mcp.Workspace.Config.Dirs.App, tokenFile))
 	switch {
@@ -163,19 +163,17 @@ func (mcp *Service) ServiceShutdown() error {
 	return mcp.server.Close()
 }
 
-// ResolveAccess returns the address an agent reaches the server at, on the port the settings name, and the token it
-// sends.
+// ResolveAccess returns the address an agent reaches the server at and the token it sends.
 func (mcp *Service) ResolveAccess() Access {
 	return Access{URL: mcp.readURL(), Token: mcp.readToken()}
 }
 
-// readURL returns the address an agent reaches the server at, on the port the settings name.
+// readURL returns the address an agent reaches the server at.
 func (mcp *Service) readURL() string {
 	return "http://" + mcp.readAddress() + "/mcp"
 }
 
-// readAddress returns the host and port the server listens on: this computer's loopback address, at the port the
-// settings name.
+// readAddress returns the host and port the server listens on: this computer's loopback address and the settings' port.
 func (mcp *Service) readAddress() string {
 	port, _ := mcp.Workspace.Config.LookupSetting("", settingPort)
 	return net.JoinHostPort("127.0.0.1", port)
@@ -202,8 +200,8 @@ func (mcp *Service) CreateToken() (string, error) {
 // ListTasks returns the starter tasks, which an empty session offers as buttons.
 func (mcp *Service) ListTasks() []Task { return Tasks }
 
-// setToken keeps the token the server asks for. PMT's own environment carries it and the server's address, so every
-// program PMT starts, a shell or an agent, has them.
+// setToken keeps the token the server asks for. It also puts the token and the server's address in PMT's environment,
+// for every program PMT starts.
 func (mcp *Service) setToken(token string) {
 	mcp.mu.Lock()
 	mcp.token = token
@@ -212,8 +210,8 @@ func (mcp *Service) setToken(token string) {
 	_ = os.Setenv(variableToken, token)
 }
 
-// newHandler returns the server's HTTP handler. It answers MCP at /mcp. A request without the token is refused, as is
-// one sent from a web page of another site; the SDK refuses one whose Host is not this computer.
+// newHandler returns the server's HTTP handler, which answers MCP at /mcp. It refuses a request without the token and
+// one sent from a web page of another site.
 func (mcp *Service) newHandler() http.Handler {
 	server := sdk.NewServer(
 		&sdk.Implementation{Name: ServerName, Title: "Paradox Modding Tools", Version: mcp.Build},

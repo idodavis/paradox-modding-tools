@@ -1,7 +1,4 @@
-<!--
-  One place a finding points at: a line with its mod and its file at the line, which opens it in the IDE, over the
-  code there. A copy shows its whole definition, and a copy the game ignores is dimmed.
--->
+<!-- One place a finding points at: a link to its file and line over the code there. -->
 <script lang="ts">
 import type { Site } from "@services/lsp/models";
 

@@ -65,7 +65,7 @@ func (index *Index) ListFiredBy(schema *schema.Schema, site Site, follow bool) [
 		return nil
 	}
 	var fires []Fire
-	// The scripted effects on the way from the definition are open, so that effects calling each other end the walk.
+	// As in ListFires, the scripted effects on the way are open so that a cycle ends the walk.
 	open := map[Site]bool{}
 	// The use passed down is the reference that names the fired definition, found at the first step.
 	var walk func(current Site, effectSites []Site, use Site)

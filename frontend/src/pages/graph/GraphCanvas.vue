@@ -1,7 +1,4 @@
-<!--
-  The canvas the graph draws on: its columns and wires, a minimap, zoom buttons and a legend. It emits select for a
-  click on a node and draw for a double click, and exports the picture as SVG or PNG.
--->
+<!-- The canvas the graph draws on, with a minimap, zoom buttons and a legend. It exports the picture as SVG or PNG. -->
 <script setup lang="ts">
 import { computed, useTemplateRef } from "vue";
 import {
@@ -35,7 +32,7 @@ const {
 } = defineProps<{
   nodes: FlowInput[];
   edges: FlowEdge[];
-  /** What the canvas shows; the view is fitted again when it changes, such as for another root. */
+  /** What the canvas shows. The view is fitted again when it changes. */
   view: string;
   root: string;
   full?: boolean;
@@ -47,7 +44,7 @@ type Point = { x: number; y: number };
 
 /** MARGIN is the space around the graph in an exported picture. */
 const MARGIN = 24;
-/** LEGEND is the legend's entries: each has its label and the classes of its sample. */
+/** LEGEND is the legend's entries. */
 const LEGEND = [
   { label: "Event", sample: "h-3 w-5.5 rounded-xs border border-(--line-2) bg-(--bg-3)" },
   {
@@ -66,11 +63,10 @@ const canvas = useTemplateRef("canvas");
 const zoom = computed(() => Math.round(viewport.value.zoom * 100));
 
 let lastView = "";
-// the view is fitted again as the canvas changes size, until the user moves it
 let following = true;
 useResizeObserver(canvas, () => following && void fit());
 
-/** fitOnce fits the canvas the first time it sees a view. The same view with other filters stays where it is. */
+/** fitOnce fits the canvas the first time it sees a view. */
 function fitOnce(): void {
   if (lastView === view) return;
   lastView = view;
@@ -78,7 +74,7 @@ function fitOnce(): void {
   void fit();
 }
 
-/** stopFollowing stops fitting the view to the canvas's size once the user pans or zooms. */
+/** stopFollowing stops fitting the view to the canvas's size once the user moves it. */
 function stopFollowing({ event }: FlowEvents["moveStart"]): void {
   if ("sourceEvent" in event && event.sourceEvent) following = false;
 }
@@ -88,7 +84,7 @@ function fit(): Promise<boolean> {
   return fitView({ padding: 0.15, maxZoom: 1 });
 }
 
-/** buildPath builds a firing's path and label place: a loop over its node, ELK's route if it goes back, or a curve. */
+/** buildPath builds a firing's path and label place. */
 function buildPath(edge: EdgeProps): { path: string; x: number; y: number } {
   const points: Point[] = edge.data.points;
   if (edge.source === edge.target) {
@@ -109,7 +105,7 @@ function buildPath(edge: EdgeProps): { path: string; x: number; y: number } {
   return { path, x: middle.x, y: middle.y };
 }
 
-/** resolveColor returns the minimap color of a node: the accent for the root, a quiet line for the rest. */
+/** resolveColor returns the minimap color of a node. */
 function resolveColor(node: FlowNode): string {
   return node.id === root ? "var(--accent)" : "var(--line-2)";
 }
@@ -119,7 +115,7 @@ function click(node: FlowNode): void {
   if (node.type === "graph") emit("select", node.id);
 }
 
-/** save saves the whole canvas as a picture made by the given function, in a file with the given extension. */
+/** save saves the whole canvas as a picture made by the given function. */
 async function save(draw: typeof toSvg, extension: string): Promise<void> {
   const flow = canvas.value?.querySelector<HTMLElement>(".vue-flow__viewport");
   if (!canvas.value || !flow) return;

@@ -117,8 +117,8 @@ func sortRunMods(ws *workspace.Session, folders []string) (read map[string]bool,
 	return read, copies, unloaded
 }
 
-// readCopyName returns the name that a mod's descriptor gives it, for a folder a run read or the mod folder that holds
-// it as a stage folder. It returns "" if neither is a mod's folder.
+// readCopyName returns the name a mod's descriptor gives it, for a folder a run read or the mod folder above a stage
+// folder. It returns "" if neither is a mod's folder.
 func readCopyName(ws *workspace.Session, folder string) string {
 	for _, dir := range []string{folder, filepath.Dir(folder)} {
 		if descriptor, err := workspace.ReadDescriptor(ws.Game, dir); err == nil {
@@ -157,8 +157,8 @@ func parseRows(ws *workspace.Session, mods *index.Index, text string) []Finding 
 	return findings
 }
 
-// findLogSite returns the line of a mod's file that a line of the log names, in the first of the given forms that
-// names one. It returns false if the line names none, or only files of the game.
+// findLogSite returns the line of a mod's file that a line of the log names. It returns false if the line names none,
+// or only files of the game.
 func findLogSite(ws *workspace.Session, mods *index.Index, locations []*regexp.Regexp, line string) (lsp.Site, bool) {
 	for _, location := range locations {
 		for _, match := range location.FindAllStringSubmatch(line, -1) {
@@ -187,8 +187,7 @@ func resolveOrigin(mods *index.Index, read map[string]bool, row *Finding) {
 	}
 }
 
-// findLogOwner returns the first name in a message that only one mod defines, with that mod. It returns false if there
-// is none.
+// findLogOwner returns the first name in a message that only one mod defines, with that mod. It returns false if none.
 func findLogOwner(mods *index.Index, message string) (identifier, origin string, ok bool) {
 	for _, candidate := range lo.Uniq(identifierPattern.FindAllString(message, -1)) {
 		candidate = strings.TrimRight(candidate, ".:")
@@ -207,9 +206,8 @@ func findLogOwner(mods *index.Index, message string) (identifier, origin string,
 	return "", "", false
 }
 
-// describeRow fills in a log row's wording as describeFinding does, except the message and the why. The message is the
-// line the game logged: its lines trimmed and joined by a dot, with the name or file that ties the row to a mod drawn
-// apart. The why says what ties the row to its mod.
+// describeRow fills in a log row's wording as describeFinding does, except the message and the why. The message keeps
+// the name or file that ties the row to a mod apart in its own style. The why says what ties the row to its mod.
 func describeRow(ws *workspace.Session, row *Finding) {
 	describeFinding(row)
 	lines := lo.Map(strings.Split(row.Facts["message"], "\n"), func(line string, _ int) string {

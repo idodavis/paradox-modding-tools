@@ -16,7 +16,6 @@ import { useToolViewStore } from "./stores/toolView";
 import { setupMonaco } from "./pages/ide/editor/monaco";
 import "./styles/nuxt-ui.css";
 
-// how many lines after an error's first one its toast shows
 const TOAST_LINES = 3;
 
 /** writeLog writes an error to pmt.log, tagged with the given source. */
@@ -25,16 +24,13 @@ function writeLog(error: unknown, source: string): void {
   void logError(failure.message, "source", source, "stack", failure.stack ?? "");
 }
 
-/**
- * isCancelled reports whether an error is the user cancelling a system dialog. That only ends the action that opened
- * the dialog, so it is neither shown nor logged.
- */
+/** isCancelled reports whether an error is the user cancelling a system dialog, which is neither shown nor logged. */
 function isCancelled(error: unknown): boolean {
   return String((error as { message?: unknown } | null | undefined)?.message).includes("cancelled by user");
 }
 
 window.addEventListener("error", (event) => {
-  // the browser's notice that a resize observer changed the layout again within one frame is harmless
+  // The browser's notice that a resize observer changed the layout again within one frame is harmless.
   if (event.message.startsWith("ResizeObserver loop")) return;
   writeLog(event.error ?? event.message, "window");
 });
@@ -54,7 +50,7 @@ app.use(createPinia());
 app.use(PiniaColada, {
   queryOptions: { staleTime: 30_000, refetchOnWindowFocus: false },
   mutationOptions: {
-    /** The one place a failed mutation is reported: a toast of the error's first lines, and a log line of all of it. */
+    /** The one place a failed mutation is reported, as a toast and a log line. */
     onError: (error: unknown) => {
       if (isCancelled(error)) return;
       const [summary, details] = splitError(error, TOAST_LINES);
@@ -68,9 +64,8 @@ app.use(router);
 app.runWithContext(() => {
   subscribeEvents();
   useSearchStore().subscribe();
-  // the window that shows the panel holds the shells from its start, whichever page or tab it shows
+  // The window that shows the panel holds the shells from its start, whichever page it shows.
   useTerminalStore();
-  // every window tells PMT's tools what it shows, and the main window shows what an agent asks it to
   useToolViewStore();
   setupMonaco();
 });

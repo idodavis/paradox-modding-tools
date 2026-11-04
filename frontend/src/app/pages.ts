@@ -4,7 +4,7 @@ import type { RouteRecordInfo } from "vue-router";
 
 import { useSettingsStore } from "../stores/settings";
 
-/** A Page is one page of the catalog. Its start, when it has one, is three steps for someone new to the page. */
+/** A Page is one page of the catalog. */
 export type Page = {
   title: string;
   help: readonly string[];
@@ -34,7 +34,7 @@ export const TERMS: readonly { term: string; meaning: string }[] = [
   {
     term: "game readme/info",
     meaning:
-      "A note the game keeps in a folder, such as _traits.info or readme.txt, on what the folder holds and how its files are written. Resting on a folder in the explorer shows its first paragraph.",
+      "A note the game keeps in a folder, such as _traits.info or readme.txt, on what the folder holds and how its files are written. A folder's menu in the explorer opens it, and so does the Wiki pane for the file you are in.",
   },
   {
     term: "scope",
@@ -170,7 +170,7 @@ export const PAGES = {
   },
 } as const satisfies Record<string, Page>;
 
-/** PANE_HELP is the agent pane's help, which every workspace page's Help shows after its own. */
+/** PANE_HELP is the agent pane's help, shown after every workspace page's own help. */
 export const PANE_HELP = [
   "The agent pane chats with coding agents: Claude, GitHub Copilot and Codex, and agents of your own that Settings adds. Each runs on your computer and signs in to its own account; PMT never sees it. The button beside search (Ctrl Alt I) shows it beside any workspace page; ⤢ shows the session over the whole window, and the window button moves it into a window of its own.",
   "Settings, Agents and tools, sets an agent up. PMT installs it from the Agent Client Protocol's registry into its own folder, with Node when your system has none new enough. An agent signs in its own way: in PMT's Terminal, or in your browser.",
@@ -197,12 +197,12 @@ export function isPage(name: string): name is PageName {
   return name in PAGES;
 }
 
-/** isWorkspacePage reports whether a page is one of a workspace's pages, which take its id. */
+/** isWorkspacePage reports whether a page is one of a workspace's pages. */
 export function isWorkspacePage(name: PageName): name is WorkspacePage {
   return "workspace" in PAGES[name];
 }
 
-/** WORKSPACE_TOOLS holds the workspace pages, which have a tab in the top bar, in the catalog's order. */
+/** WORKSPACE_TOOLS holds the workspace pages that have a tab in the top bar. */
 export const WORKSPACE_TOOLS = (Object.keys(PAGES) as PageName[]).filter(isWorkspacePage);
 
 /** TOOL_CHOICES holds the top bar's tabs as the choices of a select. */
@@ -217,10 +217,7 @@ export function listShownTools(): WorkspacePage[] {
   return WORKSPACE_TOOLS.filter((tool) => pages.includes(tool));
 }
 
-/**
- * useShown returns whether the kept-alive page that calls it is the one shown. A page stays mounted behind the others,
- * so the flag is false from the time it is deactivated until it is activated again.
- */
+/** useShown returns whether the kept-alive page that calls it is the one shown. */
 export function useShown(): Readonly<ShallowRef<boolean>> {
   const shown = shallowRef(true);
   onActivated(() => (shown.value = true));
@@ -228,10 +225,7 @@ export function useShown(): Readonly<ShallowRef<boolean>> {
   return shown;
 }
 
-/**
- * homeRoute returns the route a workspace opens on. It is the home page if shown, else the first shown page, else the
- * IDE when no page is shown.
- */
+/** homeRoute returns the route a workspace opens on: its home page if shown, else the first shown page. */
 export function homeRoute(workspaceId: string, homePage: string) {
   const visible = listShownTools();
   const name = visible.find((tool) => tool === homePage) ?? visible[0] ?? "workspace-ide";

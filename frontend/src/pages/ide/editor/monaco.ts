@@ -1,14 +1,11 @@
-/**
- * Monaco's setup, done once: the Paradox languages and their grammars, the providers, and the editor options from the
- * settings. Each page theme gets a Monaco theme the first time it applies, its token colors read from the page theme's
- * `--syn-<category>` variables.
- */
+/** Monaco's setup, done once: the Paradox languages, their providers, the themes and the editor options. */
 import { useEventBus } from "@vueuse/core";
 import Color from "colorjs.io";
 import * as monaco from "monaco-editor/editor/editor.api";
 import "monaco-editor/features/register.all";
-// the one editor feature register.all leaves out: asking a provider for a model's semantic tokens
+// The one editor feature register.all leaves out: asking a provider for a model's semantic tokens.
 import "monaco-editor/editor/contrib/semanticTokens/browser/documentSemanticTokens";
+import "monaco-editor/languages/definitions/markdown/register";
 import EditorWorker from "monaco-editor/editor/editor.worker?worker";
 import { watch } from "vue";
 
@@ -23,12 +20,14 @@ import { openModel, setupModels } from "./models";
 import { labelService, registerProviders } from "./providers";
 
 /** LANGUAGES lists each Paradox language with its label, grammar and word pattern. */
-export const LANGUAGES = [
+const LANGUAGES = [
   { id: "paradox-script", label: "Paradox Script", grammar: SCRIPT, word: /[\w.:@$-]+/ },
   { id: "paradox-gui", label: "Paradox GUI", grammar: SCRIPT, word: /[\w.:@$-]+/ },
   { id: "paradox-localization", label: "Paradox localization", grammar: LOCALIZATION, word: /[\w$.-]+/ },
+  // a game's readme/info is prose around script examples: the script's colors, and Go's answers where an example
+  // names something, though Go reports no problem in it
+  { id: "paradox-readme", label: "Game readme/info", grammar: SCRIPT, word: /[\w.:@$-]+/ },
 ];
-// the bracket and quote pairs typed together, and the configuration every language shares
 const PAIRS = [
   { open: "{", close: "}" },
   { open: "[", close: "]" },
@@ -50,7 +49,7 @@ const CONFIGURATION: languages.LanguageConfiguration = {
   ],
 };
 
-// each token the grammars and the legend use, with the `--syn-<name>` theme variable that colors it
+// Each token the grammars and the legend use, with the `--syn-<name>` theme variable that colors it.
 const SYNTAX: Record<string, string> = {
   comment: "comment",
   string: "string",
@@ -74,13 +73,10 @@ const SYNTAX: Record<string, string> = {
 
 const defined = new Set<string>();
 
-/**
- * setupMonaco sets Monaco up once, before the first editor is created. It sets the worker, the text model and label
- * services, the languages, the palette and history keybindings, the providers and the conflict links.
- */
+/** setupMonaco sets Monaco up once, before the first editor is created. */
 export function setupMonaco(): void {
   self.MonacoEnvironment = { getWorker: () => new EditorWorker() };
-  // Monaco takes its services from the first editor created, so a throwaway editor passes in the app's own
+  // Monaco takes its services from the first editor created, so a throwaway editor passes in the app's own.
   monaco.editor
     .create(
       document.createElement("div"),
@@ -97,8 +93,8 @@ export function setupMonaco(): void {
       },
     )
     .dispose();
-  for (const { id, grammar, word } of LANGUAGES) {
-    monaco.languages.register({ id });
+  for (const { id, label, grammar, word } of LANGUAGES) {
+    monaco.languages.register({ id, aliases: [label] });
     monaco.languages.setMonarchTokensProvider(id, grammar);
     monaco.languages.setLanguageConfiguration(id, { ...CONFIGURATION, wordPattern: word });
   }
@@ -130,6 +126,11 @@ export function setupMonaco(): void {
   });
 }
 
+/** describeLanguage returns the name Monaco knows an editor language by, such as Paradox Script or Markdown. */
+export function describeLanguage(id: string): string {
+  return monaco.languages.getLanguages().find((language) => language.id === id)?.aliases?.[0] ?? "Plain text";
+}
+
 /** applyTheme applies Monaco's theme for the given page theme, defining the theme first if it is new. */
 function applyTheme(family: string, dark: boolean): void {
   const id = `pmt-${family}-${dark ? "dark" : "light"}`;
@@ -140,10 +141,7 @@ function applyTheme(family: string, dark: boolean): void {
   monaco.editor.setTheme(id);
 }
 
-/**
- * editorOptions returns the Monaco editor options built from the settings: the code font, the indentation and each
- * feature's switch.
- */
+/** editorOptions returns the Monaco editor options built from the settings. */
 export function editorOptions(): editor.IStandaloneEditorConstructionOptions {
   const settings = useSettingsStore();
   return {
@@ -160,7 +158,7 @@ export function editorOptions(): editor.IStandaloneEditorConstructionOptions {
     unicodeHighlight: { ambiguousCharacters: false, invisibleCharacters: false },
     scrollBeyondLastLine: false,
     glyphMargin: false,
-    // Monaco underlines problems only where the file can be typed in; a read only file shows them too
+    // Without this Monaco underlines problems only in files that can be typed in.
     renderValidationDecorations: "on",
     renderLineHighlight: "all",
     wordWrap: settings.isOn("ide.wordWrap") ? "on" : "off",
@@ -178,8 +176,8 @@ export function editorOptions(): editor.IStandaloneEditorConstructionOptions {
 }
 
 /**
- * makeTheme makes a Monaco theme from the given page theme's tokens, for the syntax and for the editor's own colors.
- * Monaco takes no CSS variables, so it reads them from a temporary element under that page theme.
+ * makeTheme makes a Monaco theme from the given page theme's tokens. Monaco takes no CSS variables, so it reads them
+ * from a temporary element under that page theme.
  */
 function makeTheme(pageTheme: string, dark: boolean): editor.IStandaloneThemeData {
   const probe = document.body.appendChild(document.createElement("div"));
@@ -208,7 +206,7 @@ function makeTheme(pageTheme: string, dark: boolean): editor.IStandaloneThemeDat
 function buildColors(token: (key: string) => string, dark: boolean): Record<string, string> {
   const accent = token("accent");
   const clear = `${token("bg-0")}00`;
-  // a page theme may define diff-add and diff-del; otherwise diffs use its green and red
+  // A page theme may define diff-add and diff-del; otherwise diffs use its green and red.
   const added = token("diff-add") || token("green");
   const removed = token("diff-del") || token("red");
   return {
@@ -238,7 +236,6 @@ function buildColors(token: (key: string) => string, dark: boolean): Record<stri
     "editorWarning.foreground": token("orange"),
     "editorInfo.foreground": token("blue"),
     "editorInlayHint.foreground": token("fg-3"),
-    // an inlay hint sits on the editor's background a step darker in every theme, so it reads as an inlay
     "editorInlayHint.background": new Color(token("bg-0"))
       .set("oklch.l", (lightness: number) => lightness - 0.04)
       .to("srgb")
@@ -295,7 +292,7 @@ function buildColors(token: (key: string) => string, dark: boolean): Record<stri
     "diffEditor.diagonalFill": token("line-1"),
     "diffEditor.unchangedRegionBackground": token("bg-1"),
     "diffEditor.unchangedRegionForeground": token("fg-3"),
-    // the change bars' marks in the ruler (ide/editor/changes.ts)
+    // The change bars' marks in the ruler (changes.ts).
     "pmt.changeAdded": added,
     "pmt.changeChanged": token("blue"),
     "pmt.changeRemoved": removed,

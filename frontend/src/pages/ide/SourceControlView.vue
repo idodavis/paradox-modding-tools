@@ -1,7 +1,4 @@
-<!--
-  The Source Control view: a section for each git repository of the workspace's mods, in load order, then the Graph,
-  the commit log of the repository picked in its header.
--->
+<!-- The Source Control view: a section for each git repository of the workspace's mods, then the commit Graph. -->
 <script setup lang="ts">
 import { computed, shallowRef, useTemplateRef, watch } from "vue";
 import { useQuery } from "@pinia/colada";
@@ -53,18 +50,16 @@ const editor = useEditorStore();
 const workspace = useWorkspaceStore();
 const [DefineLane, Lane] = createReusableTemplate<{ entry: Entry }>();
 
-// the mods in no repository, each of which can initialize one
 const bare = computed(() =>
   workspace.listMods().filter((mod) => !mod.broken && !git.repositories.some((repo) => repo.mods?.includes(mod.id))),
 );
-// the repository the Graph shows: the one picked in its header, else the active file's, else the first
+// The repository the Graph shows: the one picked, else the active file's, else the first.
 const dir = computed(
   () =>
     git.repositories.find((repo) => repo.root === git.graphRoot)?.root ||
     git.findRoot(editor.activeFile()) ||
     (git.repositories[0]?.root ?? ""),
 );
-// each repository is labeled by its first mod in load order
 const options = computed(() =>
   git.repositories.map(({ root, mods }) => ({
     label: workspace.originName(mods?.[0] ?? ""),
@@ -73,7 +68,7 @@ const options = computed(() =>
   })),
 );
 const graphOrigin = computed(() => options.value.find((option) => option.value === dir.value)?.origin ?? "");
-// the view opens with the first repository's commit box focused, unless the commit command asked for another
+// The commit box of the first repository is focused, unless the commit command asked for another.
 git.commitTarget ||= git.repositories[0]?.root ?? "";
 const { data: status } = useQuery(() => ({ ...gitStatusQuery(dir.value), enabled: !!dir.value }));
 const limit = shallowRef(PAGE);
@@ -101,7 +96,7 @@ useInfiniteScroll(
   },
   { distance: 80, canLoadMore: () => (commits.value?.length ?? 0) >= limit.value },
 );
-// another repository's log starts from its first page, with no commit open
+// Another repository's log starts from its first page.
 watch(dir, () => {
   limit.value = PAGE;
   opened.value = "";
@@ -131,10 +126,7 @@ const initializeMenu = computed<DropdownMenuItem[]>(() =>
   })),
 );
 
-/**
- * buildGraph returns a GraphRow for each commit of the log: its lane and the other lanes that touch its row. A lane
- * holds the hash of the commit its line leads to, until that commit arrives.
- */
+/** buildGraph returns a GraphRow for each commit of the log: its lane and the other lanes that touch its row. */
 function buildGraph(log: readonly Commit[]): GraphRow[] {
   const lanes: string[] = [];
   const freeLane = () => (lanes.includes("") ? lanes.indexOf("") : lanes.length);
@@ -162,10 +154,7 @@ const laneX = (lane: number) => LANE_WIDTH / 2 + 2 + lane * LANE_WIDTH;
 /** laneColor returns the color of a lane. The colors repeat after the last. */
 const laneColor = (lane: number) => LANE_COLORS[lane % LANE_COLORS.length];
 
-/**
- * buildLines returns the SVG paths of a graph row, each with its lane: lanes passing through, lanes joining the
- * commit's dot, the line arriving, the line going on to a parent, and the lines leaving for a merge.
- */
+/** buildLines returns the SVG paths of a graph row, each with its lane. */
 function buildLines(row: GraphRow): { path: string; lane: number }[] {
   const middle = ROW_HEIGHT / 2;
   const dot = laneX(row.lane);

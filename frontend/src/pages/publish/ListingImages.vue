@@ -1,7 +1,4 @@
-<!--
-  This shows a listing's pictures and videos, with a line about its thumbnail under them. Adding or removing one
-  changes the mod's files at once.
--->
+<!-- A listing's pictures and videos. Adding or removing one changes the mod's files at once. -->
 <script setup lang="ts">
 import { computed, shallowRef } from "vue";
 import { useMutation, useQuery } from "@pinia/colada";
@@ -36,13 +33,12 @@ const {
 const workspace = useWorkspaceStore();
 const link = shallowRef("");
 const linking = shallowRef(false);
-// The picture or video shown large. It stays set while the dialog closes.
+// The picture stays set while the dialog closes.
 const viewing = shallowRef<{ preview: Preview; place: number }>();
-// Whether the large view is open.
 const viewed = shallowRef(false);
 
 const previews = computed(() => listing.previews ?? []);
-// An oversized picture takes two places with its warning beside it. At a row's end it takes one, with a tooltip.
+// An oversized picture takes two places for its warning, or one with a tooltip at a row's end.
 const tiles = computed(() => {
   let column = 0;
   return previews.value.map((preview) => {
@@ -52,7 +48,6 @@ const tiles = computed(() => {
     return { preview, warning, wide };
   });
 });
-// How many pictures Steam has that the gallery lacks.
 const missing = computed(
   () => comparison?.page?.find((difference) => difference.field === "previews")?.removed?.length ?? 0,
 );
@@ -89,7 +84,7 @@ function addImage(path: string): void {
   add({ path, type: "image", url: "", video: "", bytes: 0 });
 }
 
-/** addVideo adds the typed YouTube link to the end of the gallery. A blank link adds nothing. */
+/** addVideo adds the typed YouTube link to the end of the gallery, unless it is blank. */
 function addVideo(): void {
   const url = link.value.trim();
   link.value = "";
@@ -103,7 +98,7 @@ function describeSize(path: string, size: number): string {
   return path.toLowerCase().endsWith(".gif") ? RESIZE_GIF : RESIZED;
 }
 
-/** view shows a picture or video large, with its place in the gallery counted from one. */
+/** view shows a picture or video large. */
 function view(preview: Preview, place: number): void {
   viewing.value = { preview, place };
   viewed.value = true;

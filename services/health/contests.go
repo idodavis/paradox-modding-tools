@@ -26,11 +26,8 @@ const (
 	sharedMessageCode = "shared-message"    // two or more mods define one localization key in one language
 )
 
-// listDefinitionFindings lists the findings about the loaded copies of one name, given the winner. A contested block,
-// one that merged copies cannot both write, makes an undecided contest if copies in two files write it. A name whose
-// kept copy no source settles is an undecided contest too. Any other name is a contest if two or more mods define it,
-// and an override or an unused copy if the game defines it as well. A database that keeps every copy has none of
-// these.
+// listDefinitionFindings lists the findings about the loaded copies of one name, given the winner: contests, undecided
+// contests, overrides and unused copies. A database that keeps every copy has none.
 func listDefinitionFindings(ws *workspace.Session, mods *index.Index, reference schema.Reference, winner index.Winner) []Finding {
 	sites := listLoaded(mods, mods.Resolve(reference))
 	precedence := ws.Schema.Databases[reference.Database].Precedence
@@ -78,9 +75,8 @@ func listDefinitionFindings(ws *workspace.Session, mods *index.Index, reference 
 	return findings
 }
 
-// listPathFindings lists the findings about the files the mods ship at one path. Where two or more mods ship it and
-// the game reads one of their copies, it is a file contest. Where the game has a copy too, it is an override, or a
-// removed-names where the mod's copy leaves out names still used.
+// listPathFindings lists the findings about the files the mods ship at one path: file contests, overrides and
+// removed-names.
 func listPathFindings(ws *workspace.Session, mods *index.Index, path string) []Finding {
 	installed, shipped := lo.FilterReject(makeFileSites(ws, mods, path), func(site lsp.Site, _ int) bool {
 		return site.Place.Origin == game.OriginVanilla
@@ -126,8 +122,7 @@ func describeCause(mods *index.Index, sites []index.Site, winner index.Winner, p
 	return "it is not documented whether a replace_path drops another mod's files"
 }
 
-// findModePrefix returns the prefix of the first site's entry mode that the given test accepts. It returns "" if none
-// does.
+// findModePrefix returns the prefix of the first site's entry mode that the given test accepts, or "" if none does.
 func findModePrefix(mods *index.Index, sites []index.Site, accepts func(game.EntryMode) bool) string {
 	for _, site := range sites {
 		if mode, known := mods.FindMode(site); known && accepts(mode) {
@@ -189,15 +184,15 @@ func listSharedMessages(ws *workspace.Session, mods *index.Index, messages []ind
 }
 
 // isGameFolder reports whether the first folder of a mod file's path, after any stage folder, is one the game's own
-// files lie in. A file at the top of the mod or of its stage is in none.
+// files lie in.
 func isGameFolder(ws *workspace.Session, rel string) bool {
 	_, rest := ws.Game.SplitStage(strings.ToLower(rel))
 	folder, _, nested := strings.Cut(rest, "/")
 	return nested && ws.Schema.TopFolders[folder]
 }
 
-// resolveContest names a contest's winner and beaten mods, sets its level and lists its pairs: the winner with each
-// beaten mod, in load order. The level is info if every beaten mod is forgiven, and critical otherwise.
+// resolveContest names a contest's winner and beaten mods, lists its pairs of the winner with each beaten mod, and sets
+// its level: info if every beaten mod is forgiven, critical otherwise.
 func resolveContest(ws *workspace.Session, finding *Finding, forgiven map[[2]string]bool) {
 	winner, beaten := findWinner(*finding), listBeaten(*finding)
 	finding.Facts["winner"] = ws.DescribeMod(winner)
@@ -212,9 +207,8 @@ func resolveContest(ws *workspace.Session, finding *Finding, forgiven map[[2]str
 	})
 }
 
-// splitWhy returns why the game keeps the winner's copy of a name, as parts: the long form of the winner's reason,
-// filled with the finding's facts and with the folder and the files of the copies. It is empty for a file, for a
-// finding with no winner, and for a reason with no long form.
+// splitWhy returns why the game keeps the winner's copy of a name, as parts. It is empty for a file, a finding with no
+// winner, and a reason with no long form.
 func splitWhy(finding Finding) []lsp.Part {
 	winner, ok := lo.Find(finding.Sites, func(site lsp.Site) bool {
 		return site.Kept && index.Reasons[site.Reason].Why != ""
@@ -232,8 +226,8 @@ func splitWhy(finding Finding) []lsp.Part {
 	return lsp.SplitMessage(index.Reasons[winner.Reason].Why, facts)
 }
 
-// resolveForgiven sets a finding's level to info if every two of the mods and the game among its sites are a forgiven
-// pair, in either order. A pair with the game never is.
+// resolveForgiven sets a finding's level to info if every pair of the mods and the game among its sites is forgiven.
+// A pair with the game never is.
 func resolveForgiven(finding *Finding, forgiven map[[2]string]bool) {
 	if lo.EveryBy(listEveryPair(listParties(finding.Sites)), func(pair [2]string) bool {
 		return forgiven[pair] || forgiven[[2]string{pair[1], pair[0]}]
@@ -265,8 +259,7 @@ func listBeaten(finding Finding) []string {
 	})
 }
 
-// describeMods returns the titles of mods joined as in a sentence: "A", "A and B", "A, B and C". The game is called by
-// its name. It returns "" for none.
+// describeMods returns the titles of mods joined as in a sentence, such as "A, B and C". It returns "" for none.
 func describeMods(ws *workspace.Session, modIDs []string) string {
 	return JoinList(lo.Map(modIDs, func(id string, _ int) string { return ws.DescribeMod(id) }), "and")
 }
@@ -280,8 +273,8 @@ func JoinList(texts []string, conjunction string) string {
 	return strings.Join(texts[:len(texts)-1], ", ") + " " + conjunction + " " + texts[len(texts)-1]
 }
 
-// resolveOrder gives a critical contest that the load order decides the order that fixes it. It moves the one beaten
-// mod just after the winner, where that mod declares the winner as a dependency.
+// resolveOrder gives a critical contest that the load order decides the order that fixes it: the beaten mod moved just
+// after the winner it depends on.
 func resolveOrder(finding *Finding, order []string, declared map[[2]string]bool) {
 	winner, beaten := findWinner(*finding), listBeaten(*finding)
 	if !isOrderDecided(*finding) || finding.Level != lsp.LevelCritical || len(beaten) != 1 ||
@@ -293,7 +286,7 @@ func resolveOrder(finding *Finding, order []string, declared map[[2]string]bool)
 }
 
 // isOrderDecided reports whether the load order decides a contest: a file two mods ship, or a name the game keeps by
-// the load order. File names, priorities and entry modes decide every other name, whatever the order.
+// the load order.
 func isOrderDecided(finding Finding) bool {
 	return finding.Code == fileContestCode ||
 		lo.SomeBy(finding.Sites, func(site lsp.Site) bool { return site.Kept && site.Reason == index.ReasonPlayset })
@@ -320,8 +313,8 @@ func listDefinitionChanges(ws *workspace.Session, base, mods *index.Index, kept 
 	return changes
 }
 
-// listPathChanges lists the paths whose loaded file lies in another mod than in the workspace's index. A path nothing
-// loads has "" as its mod.
+// listPathChanges lists the paths whose loaded file lies in another mod than in the workspace's own order. A path
+// nothing loads has "" as its mod.
 func listPathChanges(base, mods *index.Index, paths []string) []Change {
 	changes := []Change{}
 	for _, path := range paths {

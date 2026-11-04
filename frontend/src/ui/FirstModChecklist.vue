@@ -1,7 +1,4 @@
-<!--
-  The first-mod checklist on the Library's active card. It has five steps, from making a mod to writing its Workshop
-  listing, and each is done when the workspace's mods show it. It shows while a step is not done, until it is hidden.
--->
+<!-- The first-mod checklist on the Library's active card, from making a mod to writing its Workshop listing. -->
 <script setup lang="ts">
 import { computed, onActivated, shallowRef } from "vue";
 import { useQuery } from "@pinia/colada";
@@ -99,7 +96,7 @@ const rows = computed(() => {
 const current = computed(() => rows.value.find((row) => !row.done));
 const done = computed(() => rows.value.filter((row) => row.done).length);
 
-// the Library stays mounted behind the other pages, so what the steps are judged by is read again when it is shown
+// The Library stays mounted behind the other pages, so what the steps are judged by is read again when it shows.
 onActivated(() => {
   if (wanted.value) void Promise.all([refreshReport(), refreshOverview(), refreshListings()]);
 });

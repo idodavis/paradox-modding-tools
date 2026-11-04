@@ -14,14 +14,13 @@ import (
 	"github.com/charlievieth/fastwalk"
 )
 
-// Workers is how many goroutines a parallel pass over files runs: every core but two, which stay free for the rest of
-// the machine, and at least one.
+// Workers is how many goroutines a parallel pass over files runs: every core but two, and at least one.
 var Workers = max(runtime.NumCPU()-2, 1)
 
 // A Format is the class of a file: script, image, localization and so on.
 type Format string
 
-// The formats a file can have, each told by its extension and the folder it sits in.
+// The formats a file can have.
 const (
 	FormatScript       Format = "script"       // .txt
 	FormatGUI          Format = "gui"          // .gui
@@ -34,30 +33,35 @@ const (
 	FormatTable        Format = "table"        // .csv
 	FormatDescriptor   Format = "descriptor"   // .mod, metadata.json
 	FormatShader       Format = "shader"       // .fxh, .shader
-	FormatText         Format = "text"         // any other text: .info, .md, .json
+	FormatReadme       Format = "readme"       // .info, and .txt named readme: a game's notes on a folder, in prose
+	FormatMarkdown     Format = "markdown"     // .md
+	FormatText         Format = "text"         // any other text, such as .json
 	FormatBinary       Format = "binary"       // anything the binary test flags
 )
 
-// formats maps an extension to the format it gives a file, once Classify's folder rules have not decided.
+// formats maps an extension to its format, where Classify's folder rules have not decided.
 var formats = map[string]Format{
 	".txt": FormatScript, ".gui": FormatGUI, ".asset": FormatAsset, ".font": FormatFont, ".gfx": FormatGFX,
 	".dds": FormatImage, ".png": FormatImage, ".tga": FormatImage,
 	".jpg": FormatWebImage, ".jpeg": FormatWebImage, ".gif": FormatWebImage, ".webp": FormatWebImage,
 	".csv": FormatTable, ".fxh": FormatShader, ".shader": FormatShader, ".hlsl": FormatShader,
+	".info": FormatReadme, ".md": FormatMarkdown,
 	".dll": FormatBinary, ".exe": FormatBinary, ".so": FormatBinary, ".bin": FormatBinary, ".ogg": FormatBinary,
 	".wav": FormatBinary, ".mp3": FormatBinary, ".bk2": FormatBinary, ".mesh": FormatBinary, ".anim": FormatBinary,
 	".pdx": FormatBinary, ".ttf": FormatBinary, ".otf": FormatBinary, ".zip": FormatBinary, ".pak": FormatBinary,
 }
 
-// Classify returns the format of a file from its path relative to its root. It looks at the extension and the folder
-// only. It returns FormatText for an extension it does not know, and for a script file directly in the root, which
-// the games never read.
+// Classify returns the format of a file from its path relative to its root. It returns FormatText for an unknown
+// extension and for a script file directly in the root. A .txt file whose name starts with readme is a readme: the
+// games' are comments only.
 func Classify(rel string) Format {
 	folder, base := path.Split(strings.ToLower(rel))
 	ext := path.Ext(base)
 	switch {
 	case ext == ".yml" && slices.Contains(strings.Split(folder, "/"), "localization"):
 		return FormatLocalization
+	case ext == ".txt" && strings.HasPrefix(base, "readme"):
+		return FormatReadme
 	case ext == ".mod" && folder == "", base == "metadata.json" && path.Base(folder) == ".metadata":
 		return FormatDescriptor
 	}
@@ -68,13 +72,12 @@ func Classify(rel string) Format {
 	return format
 }
 
-// IsScript reports whether files of the format are written in the script language: .txt, .gui, .asset, .font and
-// .gfx files.
+// IsScript reports whether files of the format are written in the script language.
 func (format Format) IsScript() bool {
 	return slices.Contains([]Format{FormatScript, FormatGUI, FormatAsset, FormatFont, FormatGFX}, format)
 }
 
-// IsText reports whether files of the format are text: every format but images and binaries.
+// IsText reports whether files of the format are text: all but images and binaries.
 func (format Format) IsText() bool {
 	return !slices.Contains([]Format{FormatImage, FormatWebImage, FormatBinary}, format)
 }
@@ -94,8 +97,8 @@ type File struct {
 	Format Format `json:"format"`
 }
 
-// Walk lists every file under a root, sorted by relative path. It skips the folders IsHiddenDir reports and follows
-// a link to a folder once. A link that leads nowhere lists nothing.
+// Walk lists every file under a root, sorted by relative path. It skips the folders IsHiddenDir reports. A link that
+// leads nowhere lists nothing.
 func Walk(root Root) ([]File, error) {
 	var mu sync.Mutex
 	var list []File
@@ -147,7 +150,7 @@ func IsBinary(bytes []byte) bool {
 // folders. A nil Ignore has no rules.
 type Ignore []pattern
 
-// A pattern is one ignore rule: its glob and the three flags gitignore gives a rule.
+// A pattern is one ignore rule.
 type pattern struct {
 	glob     string
 	negates  bool
@@ -174,10 +177,9 @@ func ParseIgnore(text string) Ignore {
 	return ignore
 }
 
-// Match reports whether the rules cover the given path, which is relative to the root, with forward slashes. The flag
-// says whether the path is a folder.
+// Match reports whether the rules cover the given path, relative to the root with forward slashes. The flag says
+// whether the path is a folder.
 func (ignore Ignore) Match(rel string, dir bool) bool {
-	// A folder the rules cover takes everything inside it, so each folder above the path is judged first.
 	for folder := path.Dir(rel); folder != "."; folder = path.Dir(folder) {
 		if ignore.matchRel(folder, true) {
 			return true
@@ -186,8 +188,7 @@ func (ignore Ignore) Match(rel string, dir bool) bool {
 	return ignore.matchRel(rel, dir)
 }
 
-// matchRel reports whether the rules cover the given path alone, without judging the folders above it. The last
-// matching rule wins. A folder-only rule never covers a file.
+// matchRel reports whether the rules cover the given path alone, not the folders above it.
 func (ignore Ignore) matchRel(rel string, dir bool) bool {
 	result := false
 	for _, rule := range ignore {

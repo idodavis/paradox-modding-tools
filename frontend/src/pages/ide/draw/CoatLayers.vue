@@ -1,6 +1,6 @@
 <!--
-  The Layers panel of a coat: a sortable list of layers with tiles and checks for acting on several, then the selected
-  layer's texture, colors, mask, lists and instances. Every change is an edit to the file.
+  The Layers panel of a coat: a sortable list of layers, then the selected layer's texture, colors, mask and instances.
+  Every change is an edit to the file.
 -->
 <script setup lang="ts">
 import { useMutation, useQuery } from "@pinia/colada";
@@ -34,7 +34,7 @@ const { model, coat } = defineProps<{ model: Model; coat: Coat }>();
 type Row = { layer: Layer; index: number };
 
 const SORTING = { handle: ".pmt-grip", animation: 150, watchElement: true };
-// COLUMNS are the instance columns; a column with isPair holds two numbers, across and down, that can be locked.
+// The instance columns. A column with isPair holds two numbers, across and down, that can be locked.
 const COLUMNS = [
   { key: "position", title: "Position", isPair: true },
   { key: "offset", title: "Offset", isPair: true },
@@ -73,9 +73,9 @@ const { data: textures } = useQuery(() => ({
 const textureChoices = computed<GalleryChoice[]>(() =>
   (textures.value ?? []).map(({ label, place }) => ({ value: label, label, path: place.path })),
 );
-// slot is the key of the color slot the gallery picks for; the first slot while empty.
+// The key of the color slot the gallery picks for. The first slot while empty.
 const slot = shallowRef("");
-// locks holds the keys whose two numbers change together.
+// The keys whose two numbers change together.
 const locks = shallowRef(new Set<string>());
 const slotKey = computed(() => (listKeys("color").includes(slot.value) ? slot.value : (listKeys("color")[0] ?? "")));
 const colorChoices = computed<GalleryChoice[]>(() => {
@@ -95,23 +95,23 @@ const { mutate: edit } = useMutation({
   mutation: async (request: () => Promise<Edit[] | null>) => applyEdits(model, (await request()) ?? []),
 });
 
-/** canEdit reports whether a layer may be changed: it is written in this file, inside this coat's own block. */
+/** canEdit reports whether a layer may be changed. */
 const canEdit = (layer: Layer) => isOwn(coat, layer, model.place.key);
 
-/** listKeys lists the keys the selected layer's role may write that the panel edits as the given kind of input. */
+/** listKeys lists the keys of the selected layer that the panel edits as the given kind of input. */
 function listKeys(input: string): string[] {
   return Object.entries(current.value?.layer.inputs ?? {})
     .filter(([, kind]) => kind === input)
     .map(([key]) => key);
 }
 
-/** findSlot returns the index in a layer's colors of the color slot a key writes, or 0 if the key is no slot. */
+/** findSlot returns the index in a layer's colors of the slot a key writes, or 0 if the key is no slot. */
 const findSlot = (key: string) => (coat.slots ?? []).indexOf(key) + 1;
 
 /** findColor returns the color a layer has in a slot, as CSS, or "" if it has none. */
 const findColor = (layer: Layer, key: string) => layer.colors?.[findSlot(key)] ?? "";
 
-/** findColorName returns the name of the game's color a layer has in a slot, or "" if it has none or numbers. */
+/** findColorName returns the name of the game's color a layer has in a slot, or "" if it has none. */
 const findColorName = (layer: Layer, key: string) => layer.colorNames?.[findSlot(key)] ?? "";
 
 /** findNumbers returns the numbers an instance has for a key. */
@@ -120,7 +120,7 @@ function findNumbers(instance: Instance, key: string): number[] {
   return key === "rotation" || key === "depth" ? [instance[key]] : instance.position;
 }
 
-/** findBlock returns the range of the block that writes a layer: the coat's own for the pattern, else the layer's. */
+/** findBlock returns the range of the block that writes a layer. */
 const findBlock = (layer: Layer) => (layer.role === "pattern" ? coat.range : layer.range);
 
 /** writeLayer writes one key of the block that writes the selected layer. */
@@ -129,12 +129,12 @@ function writeLayer(key: string, text: string): void {
   if (layer) edit(() => draw.EditProperties(model.place.path, [{ block: findBlock(layer), key, value: text }]));
 }
 
-/** writeQuoted writes a name or a file of the selected layer as the game writes it: in quotes. */
+/** writeQuoted writes a name or a file of the selected layer in quotes. */
 function writeQuoted(key: string, text: string): void {
   writeLayer(key, `"${text}"`);
 }
 
-/** writeColor writes a color picked as #rrggbb in one slot of the selected layer, as a custom color. */
+/** writeColor writes a color picked as #rrggbb in one slot of the selected layer. */
 function writeColor(key: string, hex: string): void {
   const layer = current.value?.layer;
   if (!layer) return;
@@ -145,10 +145,7 @@ function writeColor(key: string, hex: string): void {
   );
 }
 
-/**
- * toCoatColor converts a layer's color in a slot to how a coat writes it: the game's color by name, else a custom
- * color. It returns "" for a slot with no color.
- */
+/** toCoatColor converts a layer's color in a slot to how a coat writes it. It returns "" for a slot with no color. */
 async function toCoatColor(layer: Layer, key: string): Promise<string> {
   const name = findColorName(layer, key);
   const color = findColor(layer, key);
@@ -156,19 +153,19 @@ async function toCoatColor(layer: Layer, key: string): Promise<string> {
   return presentColor(layer, toRgba(color));
 }
 
-/** presentColor returns the text the editor service writes for a custom color in the block that writes a layer. */
+/** presentColor returns the text to write for a custom color in the block of a layer. */
 function presentColor(layer: Layer, [red, green, blue, alpha]: Rgba): Promise<string> {
   return lsp.PresentColor(model.place.path, findBlock(layer), { r: red, g: green, b: blue, a: alpha });
 }
 
-/** copyColors copies a layer's colors, each slot's as the coat writes it, for pasting onto other layers. */
+/** copyColors copies a layer's colors for pasting onto other layers. */
 async function copyColors(layer: Layer): Promise<void> {
   const keys = Object.entries(layer.inputs ?? {}).flatMap(([key, input]) => (input === "color" ? [key] : []));
   const texts = await Promise.all(keys.map((key) => toCoatColor(layer, key)));
   store.colors = Object.fromEntries(keys.flatMap((key, position) => (texts[position] ? [[key, texts[position]]] : [])));
 }
 
-/** pasteColors pastes the copied colors onto the given layers as one edit. A layer without a slot skips its color. */
+/** pasteColors pastes the copied colors onto the given layers as one edit. */
 function pasteColors(layers: Layer[]): void {
   const settings = layers.filter(canEdit).flatMap((layer) =>
     Object.entries(store.colors)
@@ -178,12 +175,12 @@ function pasteColors(layers: Layer[]): void {
   edit(() => draw.EditProperties(model.place.path, settings));
 }
 
-/** writeRegions writes the regions the selected layer's mask keeps, as space-separated numbers. At least one stays. */
+/** writeRegions writes the regions the selected layer's mask keeps. At least one stays. */
 function writeRegions(regions: string): void {
   if (regions) writeLayer("mask", `{ ${regions} }`);
 }
 
-/** writeInstance writes an instance's numbers for a key, one changed and its pair too if locked. Unwritten adds. */
+/** writeInstance writes an instance's numbers for a key. An instance not yet written is added. */
 function writeInstance(instance: Instance, key: string, axis: number, number: number): void {
   if (!instance.range.startLineNumber) return addInstance();
   const before = findNumbers(instance, key);
@@ -195,9 +192,8 @@ function writeInstance(instance: Instance, key: string, axis: number, number: nu
 }
 
 /**
- * changeTogether returns a pair of numbers with the one on the given axis set to the given number and the other changed
- * to match: a scale keeps the ratio between them, so the layer keeps its shape and its flips, and a position or an
- * offset moves both by the same step. A scale of 0 gives both the number.
+ * changeTogether returns a pair of numbers with the one on the given axis set and the other changed to match. A scale
+ * keeps the ratio between them, so the layer keeps its shape; a position or an offset moves both by the same step.
  */
 function changeTogether(key: string, numbers: number[], axis: number, number: number): number[] {
   const [mine = 0, other = 0] = axis === 0 ? numbers : numbers.toReversed();
@@ -213,7 +209,7 @@ function toggleLock(key: string): void {
   locks.value = next;
 }
 
-/** add adds a layer of the given role after the coat's last layer of its kind: emblems before subs. */
+/** add adds a layer of the given role after the coat's last layer of its kind. */
 function add(role: string): void {
   const layers = coat.layers ?? [];
   const position = role === "sub" ? layers.length : layers.findLastIndex((layer) => layer.role !== "sub") + 1;
@@ -231,7 +227,7 @@ function remove(range: IRange): void {
   edit(() => draw.RemoveBlock(model.place.path, range));
 }
 
-/** removeBatch removes the checked layers from the file, except the pattern and the layers written elsewhere. */
+/** removeBatch removes the checked layers from the file, except the pattern and those written elsewhere. */
 function removeBatch(): void {
   const ranges = batchRows.value
     .filter(({ layer }) => layer.role !== "pattern" && canEdit(layer))
@@ -256,7 +252,7 @@ function check(index: number, isChecked: boolean): void {
 
 /** drop moves the layer of a dragged row to where it was dropped. */
 function drop(list: Row[], event: SortableEvent): void {
-  // The edit moves the layer, so the row is put back where it was.
+  // The edit moves the layer, so the row goes back where it was.
   removeNode(event.item);
   insertNodeAt(event.from, event.item, event.oldIndex ?? 0);
   const source = list[event.oldIndex ?? 0];

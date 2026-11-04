@@ -33,7 +33,7 @@ export interface Blend {
 }
 
 /**
- * A Box is one of the boxes that the States tab sorts a window's groups into: the window's own, what an object has, an
+ * A Box is one of the boxes the States tab sorts a window's groups into: the window's own, what an object has, an
  * object's, or the rows of a list.
  */
 export interface Box {
@@ -48,9 +48,7 @@ export interface Box {
 }
 
 /**
- * A Choice is the value that the picks give one property of a widget, with what it leads to: the text where its key
- * writes a text, the image file where it names a picture, and the CSS color where it binds a definition's color. The
- * text is as Widget.Texts holds one.
+ * A Choice is the value the picks give one property of a widget, with the text, image file or CSS color it leads to.
  */
 export interface Choice {
     "key": string;
@@ -100,7 +98,7 @@ export interface DDS {
 }
 
 /**
- * A Font is one style of a font that a window's texts are written in, with the file the game reads it from.
+ * A Font is one style of a font a window's texts are written in, with the file the game reads it from.
  */
 export interface Font {
     "name": string;
@@ -113,8 +111,8 @@ export interface Font {
 }
 
 /**
- * A Group is one choice the page lets the user switch. It is either a data call that a window's conditions read, or
- * a template list that a coat's value is drawn from.
+ * A Group is one choice the page lets the user switch: a data call a window's conditions read, or a template list a
+ * coat's value is drawn from.
  */
 export interface Group {
     /**
@@ -124,8 +122,8 @@ export interface Group {
     "id": string;
 
     /**
-     * Subject is the kind of object it asks about, in words, such as Character or Relation; Game for a call of one
-     * step, and "" for a coat's list.
+     * Subject is the kind of object it asks about, such as Character or Relation; Game for a call of one step, and ""
+     * for a coat's list.
      */
     "subject"?: string;
 
@@ -140,7 +138,7 @@ export interface Group {
     "label": string;
 
     /**
-     * Exists is true when it asks whether an object further on than its subject exists, which its label names.
+     * Exists is true when it asks whether an object further on than its subject exists.
      */
     "exists"?: boolean;
 
@@ -151,7 +149,7 @@ export interface Group {
     "options": string[] | null;
 
     /**
-     * by option, how the panel writes it, as listCaptions says
+     * by option, how the panel writes it
      */
     "captions"?: { [_ in string]?: string } | null;
 
@@ -161,8 +159,8 @@ export interface Group {
     "box": Box;
 
     /**
-     * Picked is the option a coat's list draws now. A window's group leaves it empty, since its value is the states'
-     * (States.Values).
+     * Picked is the option a coat's list draws now. A window's group leaves it empty, as its value is in
+     * States.Values.
      */
     "picked"?: string;
 
@@ -355,8 +353,8 @@ export interface Overlay {
 }
 
 /**
- * A Picture is one picture that a picture binding may draw: its image file, labeled by its file or its definition, and
- * the value that picking it sets: its file, or its definition's name.
+ * A Picture is one picture a picture binding may draw, labeled by its file or its definition. Picking it sets its file,
+ * or its definition's name.
  */
 export interface Picture {
     "label": string;
@@ -365,8 +363,7 @@ export interface Picture {
 }
 
 /**
- * A PictureFiles is the pictures Save as DDS saves, and for each the DDS whose settings it keeps, by the picture's
- * path.
+ * A PictureFiles is the pictures Save as DDS saves, with the DDS whose settings each keeps, by the picture's path.
  */
 export interface PictureFiles {
     "pictures": workspace$0.Place[] | null;
@@ -374,7 +371,7 @@ export interface PictureFiles {
 }
 
 /**
- * A PictureList says where the pictures a picture binding may draw are listed. With a Name it lists the images that one
+ * A PictureList says where the pictures a picture binding may draw are listed. With a Name it lists the images one
  * definition writes. With no Name it lists what the binding shows of each definition of a database.
  */
 export interface PictureList {
@@ -394,8 +391,8 @@ export interface PictureList {
     "argument": string;
 
     /**
-     * Folder is, for a kind whose objects are the subfolders of its icon folder rather than definitions, that folder:
-     * each subfolder holds the object's images, named by the argument (graphical_cultures/european_gfx).
+     * Folder is, for a kind whose objects are the subfolders of its icon folder rather than definitions, that folder
+     * (graphical_cultures/european_gfx); each subfolder holds the object's images, named by the argument.
      */
     "folder": string;
 
@@ -413,8 +410,7 @@ export interface Property {
     "key": string;
 
     /**
-     * Value is what the game reads. A constant or an expression is worked out, and a GetDefine call is replaced by the
-     * value of its define. The same holds for each value inside a block. Any other value is as written.
+     * Value is what the game reads: a constant, an expression or a GetDefine call is worked out, also inside a block.
      */
     "value": string;
     "range": lsp$0.Range;
@@ -435,7 +431,7 @@ export interface Property {
     "writer": string;
 
     /**
-     * where it comes from, in words, as describeSource writes it
+     * where it comes from, in words
      */
     "source": string;
 }
@@ -466,8 +462,8 @@ export interface Recolor {
 }
 
 /**
- * A Row is one row that a data model's list draws for one definition of the database its widgets read: the
- * definition, and the values it gives the properties of the widgets in the row, by widget.
+ * A Row is one row a data model's list draws for one definition of the database its widgets read, with the values the
+ * definition gives the properties of the widgets in the row, by widget.
  */
 export interface Row {
     "definition": string;
@@ -487,7 +483,7 @@ export interface Setting {
 }
 
 /**
- * A Shading is the texture that shades the cloth of a coat, with how it lies over the coat and its emblems.
+ * A Shading is the texture that shades the cloth of a coat.
  */
 export interface Shading {
     /**
@@ -511,8 +507,7 @@ export interface Shading {
  */
 export interface States {
     /**
-     * Values is, by group, the value each of the window's groups is at. A list of pictures or a tier that no pick sets
-     * is left out.
+     * Values is, by group, the value each of the window's groups is at.
      */
     "values": { [_ in string]?: string } | null;
 
@@ -522,14 +517,12 @@ export interface States {
     "hidden": number[] | null;
 
     /**
-     * Applies is, by group, the widgets whose own condition its value decides, under no hidden widget. A group that
-     * decides none is left out.
+     * Applies is, by group, the widgets under no hidden widget whose own condition its value decides.
      */
     "applies": { [_ in string]?: number[] | null } | null;
 
     /**
-     * Choices is, by widget, the values that the values of the groups give its properties. A widget given none is
-     * left out.
+     * Choices is, by widget, the values the groups give its properties.
      */
     "choices": { [_ in `${number}`]?: Choice[] | null } | null;
 }
@@ -553,8 +546,7 @@ export interface Widget {
     "row": game$0.WidgetType;
 
     /**
-     * Builtin is the engine's type that its type comes down to through the chain of types it is made on, such as
-     * widget, hbox or icon.
+     * Builtin is the engine's type its type comes down to, such as widget, hbox or icon.
      */
     "builtin": string;
 
@@ -579,14 +571,12 @@ export interface Widget {
     "item": boolean;
 
     /**
-     * Properties is the positions of its properties among its window's properties: the last written of each key, in
-     * the order the keys are first written.
+     * Properties is the positions of its properties among its window's properties, the last written of each key.
      */
     "properties": number[] | null;
 
     /**
-     * Texts is, by property key, the plain text and the data calls of each text it shows. A data call's text is
-     * sample text of the kind the call returns, as sampleCall makes it.
+     * Texts is, by property key, the plain text and the data calls of each text it shows.
      */
     "texts": { [_ in string]?: loc$0.Segment[] | null } | null;
 
@@ -596,13 +586,13 @@ export interface Widget {
     "textures": { [_ in string]?: string } | null;
 
     /**
-     * Colors is, by property key, the CSS color that a binding of a definition's color leads to, as findColor finds it.
+     * Colors is, by property key, the CSS color that a binding of a definition's color leads to.
      */
     "colors": { [_ in string]?: string } | null;
 
     /**
-     * Placeholder is the shape among the page's placeholders that it draws where its picture has no file, by what the
-     * picture is of, as game.FindPlaceholder says. It is "" for a widget with a picture, a background or no picture.
+     * Placeholder is the shape among the page's placeholders that it draws where its picture has no file; "" for a
+     * widget with a picture, a background or no picture.
      */
     "placeholder": string;
 
@@ -644,8 +634,7 @@ export interface Window {
     "fonts": Font[] | null;
 
     /**
-     * Rows is, by the item of a data model, the rows its list draws, one for each of the first definitions of the
-     * database its widgets read. An item whose widgets read none is left out.
+     * Rows is, by the item of a data model, the rows its list draws; an item whose widgets read no database is left out.
      */
     "rows": { [_ in `${number}`]?: Row[] | null } | null;
 
@@ -655,13 +644,13 @@ export interface Window {
     "conditions": { [_ in `${number}`]?: string[] | null } | null;
 
     /**
-     * Missing is the types and templates its widgets use that no file defines, widget by widget in document order.
+     * Missing is the types and templates its widgets use that no file defines.
      */
     "missing": Missing[] | null;
 
     /**
      * Groups is what the panel lets the user switch: the groups its widgets' conditions read, its lists of pictures,
-     * then its tiers. The value each is at is the states' (States.Values).
+     * then its tiers. The value each is at is in States.Values.
      */
     "groups": Group[] | null;
 
@@ -672,13 +661,12 @@ export interface Window {
     "textSize": string;
 
     /**
-     * Properties is the properties of its widgets, its holders and their overlays, each once. A widget and an overlay
-     * hold the positions of their own.
+     * Properties is the properties of its widgets, its holders and their overlays, each once.
      */
     "properties": Property[] | null;
 
     /**
-     * Overlays is the textures laid over its widgets' own, each once. A widget holds the positions of its own.
+     * Overlays is the textures laid over its widgets' own, each once.
      */
     "overlays": Overlay[] | null;
 }

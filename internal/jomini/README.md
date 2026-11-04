@@ -21,28 +21,25 @@ data call. It never imports `game`.
 A `Tree` is the parse of one text. Its `Statements` are one flat slice in document order, and a block's children sit
 right after it. Statement 0 is the file itself, and the top-level statements are its children. A `Statement` knows its
 `Parent` and `Last`, one past its last descendant, so its children are the statements between it and `Last`.
-`Children` yields them, skipping each child's own descendants.
 
 Every part of a statement is a `Span` into the source, never a copied string: its `Key`, `Op`, `Tag`, `Value` and
 `Block`, and its whole `Span`. A scalar's `Value` keeps its quotes. A block's `Block` runs from its opening brace to its
 closing one. A bare value in a list has a `Value` and no key, which `IsListed` reports.
 
-The tree also keeps the comments as spans, the parse errors, and the line index. `Lines` turns a byte offset into a
-`Position` and back, and gives the span of a line without its line ending. A line ends at `\n`, `\r\n` or a lone `\r`.
-Every offset is a UTF-8 byte offset, and a `Position` counts its column in bytes too. Monaco's lines and UTF-16 columns
-are `lsp`'s, which converts at its edge.
+The tree also keeps the comments as spans, the parse errors, and the line index. A line ends at `\n`, `\r\n` or a lone
+`\r`. Every offset is a UTF-8 byte offset, and a `Position` counts its column in bytes too. Monaco's lines and UTF-16
+columns are `lsp`'s, which converts at its edge.
 
 `FindStatement` returns the innermost statement that covers an offset. `LookupStatement` returns the one that starts at
-an offset, as an edit names a block by where it starts. `FindChild` and `FindChildValue` read a child by its key, and
-where several children have the key, the last one wins.
+an offset, as an edit names a block by where it starts. Where several children have the key, `FindChild` and
+`FindChildValue` take the last one.
 
 ## The parse
 
-`NewTree` gives the tree of a text before any script is read from it: the text, its lines and the file's own
-statement, which holds nothing, as a localization file's tree is. `Parse` never fails. A malformed text gives the
-statements it could parse, and each problem is an `Error` on the tree with a code: `unclosed-block`,
-`unexpected-brace`, `unclosed-string` or `missing-value`. A block that is never closed runs to the end of the text.
-A closing brace at the file's level closes nothing and is reported.
+`NewTree` gives the tree of a text before any script is read from it, as a localization file's tree is. `Parse` never
+fails. A malformed text gives the statements it could parse, and each problem is an `Error` on the tree with a code:
+`unclosed-block`, `unexpected-brace`, `unclosed-string` or `missing-value`. A block that is never closed runs to the end
+of the text. A closing brace at the file's level closes nothing and is reported.
 
 The lexer splits the text into scalars, operators, braces and comments. A quoted string is one scalar, a backslash
 escaping the character after it, and so is a `[ … ]` inside a word, which keeps everything to its `]`. A `#` comment
@@ -51,14 +48,12 @@ runs to the end of its line. The operators are `=`, `==`, `!=`, `<`, `>`, `<=`, 
 
 ## The shapes of a word
 
-The predicates in `shapes.go` tell what shape a written key or value has, one predicate each. `IsParameter` finds a
-scripted parameter, `$NAME$`, anywhere in a word. `IsConstant` is a script constant, `@name`, or an expression, `@[…]`.
-`SplitPrefixed` splits `scope:x`, and `SplitChain` splits a dotted chain of links, keeping a dot inside brackets or
-quotes. `ColorParts` reads a block of plain numbers, with its tag. `Tree.ResolveNumber` works out the number a value
-stands for: a number, a constant the file declared earlier, or an expression of numbers, constants, the four operators
-and brackets. `IsNumberKey` asks whether a key is written as a number or a date, the keys `NumberKey` (`<number>`)
-stands for. `MatchKeyPath` asks whether the keys that lead to a statement fit a key path, each segment a glob,
-`<number>` or `**` for any depth.
+`IsParameter` finds a scripted parameter, `$NAME$`, anywhere in a word. `IsConstant` is a script constant, `@name`, or
+an expression, `@[…]`. `SplitChain` splits a dotted chain of links, keeping a dot inside brackets or quotes.
+`Tree.ResolveNumber` works out the number a value stands for: a number, a constant the file declared earlier, or an
+expression of numbers, constants, the four operators and brackets. `IsNumberKey` asks whether a key is written as a
+number or a date, the keys `NumberKey` (`<number>`) stands for. `MatchKeyPath` asks whether the keys that lead to a
+statement fit a key path, each segment a glob, `<number>` or `**` for any depth.
 
 ## Colors
 
@@ -67,7 +62,7 @@ stands for. `MatchKeyPath` asks whether the keys that lead to a statement fit a 
 are each at most 1, and a fourth part is the alpha. `ParseColor` turns a tag and its numbers into an `RGBA`, and
 `ToColor` reads a statement's color block that way. `EncodeColor` writes a color back the way an existing block wrote
 its own: in the same scale, with an alpha only where that block had one. A `ColorForm` is how a color is written that
-no block writes yet: a tag and an example's numbers, which give the scale. `RGBA.ToCSS` gives the color as CSS.
+no block writes yet: a tag and an example's numbers, which give the scale.
 
 ## Data calls
 
@@ -79,11 +74,10 @@ parameters with the arguments written for them. Which function a step calls, and
 
 ## Edits
 
-An `Edit` replaces a span with a text, so an empty span inserts and an empty text deletes. `ApplyEdits` applies a list
-of them. `DiffEdits` gives the smallest list that turns one text into another, through `go-diff`, and replaces the whole
-text where either text is not valid UTF-8. `Tree.BuildInsertion` adds lines as the last statements of a block, indented
-the way the file indents, which `Tree.Indentation` reads from the file itself. A file with no indentation of its own
-indents with a tab.
+An `Edit` replaces a span with a text, so an empty span inserts and an empty text deletes. `DiffEdits` gives the
+smallest list that turns one text into another, through `go-diff`, and replaces the whole text where either text is not
+valid UTF-8. `Tree.BuildInsertion` adds lines as the last statements of a block, indented the way the file indents. A
+file with no indentation of its own indents with a tab.
 
 ## Terms
 

@@ -111,8 +111,8 @@ func createMod(t *testing.T, gameID, id string, added map[string]string) app.Mod
 	return app.Mod{ID: id, Dir: dir}
 }
 
-// createInstall copies a game's fixture install into a temporary folder, with user data that holds an error log. It
-// returns the install's folder.
+// createInstall copies a game's fixture install into a temporary folder, with user data that holds an error log, and
+// returns the folder.
 func createInstall(t *testing.T, gameID, errorLog string) string {
 	t.Helper()
 	install, userData := t.TempDir(), t.TempDir()
@@ -128,8 +128,7 @@ func createInstall(t *testing.T, gameID, errorLog string) string {
 	return install
 }
 
-// openService opens a workspace on an install and returns a Health service over it. The workspace has a config and
-// caches of its own. It closes when the test ends.
+// openService opens a workspace on an install and returns a Health service over it.
 func openService(t *testing.T, gameID, installPath string, mods ...app.Mod) *Service {
 	t.Helper()
 	createApp()
@@ -282,8 +281,8 @@ func assertLocalization(t *testing.T, findings []Finding) {
 	}
 }
 
-// TestListErrorLogAddsContinuationLines checks that the lines after a message are part of it. A location on one of
-// them gives the message its place. A blank line adds nothing.
+// TestListErrorLogAddsContinuationLines checks that the lines after a message are part of it, and that a location on
+// one of them gives the message its place.
 func TestListErrorLogAddsContinuationLines(t *testing.T) {
 	hlt := openService(t, "vic3", createInstall(t, "vic3", errorLogText), createMod(t, "vic3", modA, nil))
 	gameLog, err := hlt.ListErrorLog()
@@ -304,9 +303,8 @@ func TestListErrorLogAddsContinuationLines(t *testing.T) {
 	}
 }
 
-// TestWriteScaffoldWritesMissingKeys checks that a scaffold writes each key a language lacks. A missing file is written
-// whole, with a byte order mark, and an existing one gets the keys at its end. A name that is no language writes
-// nothing.
+// TestWriteScaffoldWritesMissingKeys checks that a scaffold writes each key a language lacks, and nothing for a name
+// that is no language.
 func TestWriteScaffoldWritesMissingKeys(t *testing.T) {
 	mod := createMod(t, "ck3", modA, modAFiles)
 	hlt := openService(t, "ck3", resolveFixture(t, "ck3"), mod)

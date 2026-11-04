@@ -51,9 +51,8 @@ func ListPrograms() []Program {
 	return programs
 }
 
-// startConsole starts the shell's program with its arguments on a new pseudo-terminal of the shell's size, with the
-// given environment. The program leads a session of its own, with the terminal as its controlling terminal. It returns
-// an error if any step fails.
+// startConsole starts the shell's program on a new pseudo-terminal of the shell's size, with the given environment. It
+// returns an error if any step fails.
 func startConsole(shell *Shell, env []string) (*console, error) {
 	master, err := os.OpenFile("/dev/ptmx", os.O_RDWR|unix.O_NOCTTY|unix.O_CLOEXEC, 0)
 	if err != nil {

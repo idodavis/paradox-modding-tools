@@ -12,13 +12,13 @@ HTML of the description's editor.
 
 | file | holds |
 |---|---|
-| `steam.go` | the events; `Service`; `ServePublish`; the gallery (`AddPreview`, `RemovePreview`, `FetchPreviews`); `DescribeSteam`; `Publish` and the copies of the files Steam is sent |
-| `listing.go` | the package comment; `Preview`, `Dependency`, `Listing`, `Upload`; `ReadListing`, `WriteListing`, `ListListings`, `CreateListing`, `ImportListing`, `LinkItem`; the upload set (`ListUpload`, `WriteZip`, `ReadIgnore`, `WriteIgnore`) and an older listing's zip |
-| `compare.go` | `Snapshot`, `Details`, `Difference`, `Comparison`; `CompareUpload`, `FetchItem`, `CompareFile`; Steam's kept answers; the snapshots (`LoadSnapshot`, `SaveSnapshot`) |
+| `steam.go` | the events and `Service`; `ServePublish`; the gallery; `DescribeSteam`; `Publish` and the copies of the files Steam is sent |
+| `listing.go` | `Preview`, `Dependency`, `Listing`, `Upload`; reading, writing, creating and importing listings; the upload set; an older listing's zip |
+| `compare.go` | `Snapshot`, `Details`, `Difference`, `Comparison`; the compare; Steam's kept answers; the snapshots |
 | `notes.go` | `ChangeNote`; `ListChangeNotes` |
 | `pictures.go` | the smaller copies of pictures Steam refuses for their size |
-| `workshop.go` | `DLC`, `Rule`, `Tags`; `ListRules`, with the agents' rule; `ListDLC`, `ListTags` |
-| `ugc.go` | `Progress`, `Client`: Steam's library bound once through purego, its UGC calls and their call results; `Open`, `Close`, `FetchDetails`, `CreateItem`, `Submit` |
+| `workshop.go` | `DLC`, `Rule`, `Tags`; `ListRules`, `ListDLC`, `ListTags` |
+| `ugc.go` | `Progress`, `Client`: Steam's library bound once through purego, its UGC calls and their call results |
 | `bbcode.go` | `ToBBCode`, `ToHTML`, over one table of Steam's tags |
 | `publish.go` | `Params`; the second copy: its flags, `StartPublish`, the work each flag does, its run |
 | `steam_windows.go`, `steam_linux.go` | how each system loads the library and finds its functions, and the packing of Steam's structs there |
@@ -37,22 +37,21 @@ where the game reads it. `.workshop` starts with a dot, so no upload sends it.
 
 An older listing is a folder `.workshop/<key>/`. Its `listing.json` holds its record: the Workshop id, the title, the
 two versions, the tags, the thumbnail and the zip its files come from, those two as paths from the mod's folder when
-they are inside it, so the file travels with the mod. The rest is the same page files. The key is the
-game version without a closing `.*`: `1.19` and `1.19.*` give the key `1.19` and the supported version `1.19.*`, and a
-patch such as `1.19.2` stays exact. `CreateListing` makes one from a zip, with the own listing's title followed by the
-game version, its tags, thumbnail, description and DLC, and the version of the zip's descriptor. `ImportListing`
-makes one from an existing item: a second copy reads the item's details and has Steam download it, its files are
-written as a zip where the user picks, and the listing gets Steam's title, description, tags, gallery and DLC, the
-downloaded descriptor's versions and the item's id, so its first upload changes nothing that nobody edited. Both
-refuse a game version the mod has a listing for. `ListListings` returns the own listing first, then the older ones,
-the newest game version first. Every method that takes a key works on either.
+they are inside it, so the file travels with the mod. The rest is the same page files. The key is the game version
+without a closing `.*`: `1.19` and `1.19.*` give the key `1.19` and the supported version `1.19.*`, and a patch such as
+`1.19.2` stays exact. `CreateListing` makes one from a zip, with the own listing's title followed by the game version,
+its tags, thumbnail, description and DLC, and the version of the zip's descriptor. `ImportListing` makes one from an
+existing item: a second copy reads the item's details and has Steam download it, its files are written as a zip where
+the user picks, and the listing gets Steam's title, description, tags, gallery and DLC, the downloaded descriptor's
+versions and the item's id, so its first upload changes nothing that nobody edited. Both refuse a game version the mod
+has a listing for. `ListListings` returns the own listing first, then the older ones, the newest game version first.
+Every method that takes a key works on either.
 
 `ReadListing` reads a listing. Its `Tags` are the category tags: a version tag in the descriptor is left out, and the
 listing's `VersionTag` is the one of Steam's version tags that starts with the supported version's major and minor
-numbers, or "" when none does. Steam's tags are fetched once a run when none are kept for the game, and kept. Its
-`Dependencies` are the descriptor's, each with the Workshop id of the workspace mod that answers it, as
-`workspace.FindMod` finds it, "" when none has one. A mod's Workshop id is its record's, else its descriptor's
-(`workspace.Mod.ResolveWorkshopID`). Each gallery picture carries its size.
+numbers, or "" when none does. Its `Dependencies` are the descriptor's, each with the Workshop id of the workspace mod
+that answers it, as `workspace.FindMod` finds it, "" when none has one. A mod's Workshop id is its record's, else its
+descriptor's (`workspace.Mod.ResolveWorkshopID`). Each gallery picture carries its size.
 
 `WriteListing` is called as the user types. It writes only the files whose text changed, each through the workspace,
 which refuses a path outside the mods. It never writes the gallery, which only `AddPreview`, `RemovePreview` and
@@ -67,10 +66,9 @@ An `Upload` is the set of files a listing's next upload sends. The own listing s
 sends the files of its zip, extracted once into PMT's cache folder and kept until the zip's path, size or time changes,
 with the extracted descriptor's name, versions and Workshop id set to the listing's; the zip itself is never changed.
 Either way `ListUpload` leaves out what the rules name: files that start with a dot, though the `.metadata` folder
-stays, the coding agents' instruction files the agents' rows name (`agent.ListFiles`), and what the mod's
-`.gitignore` and its own exclusions cover, each read as a `files.Ignore`. `WriteZip` writes
-the own listing's set as a zip. Before an upload, the set is copied into a folder of its own, so Steam is sent those
-files and no others.
+stays, the coding agents' instruction files the agents' rows name (`agent.ListFiles`), and what the mod's `.gitignore`
+and its own exclusions cover, each read as a `files.Ignore`. `WriteZip` writes the own listing's set as a zip. Before an
+upload, the set is copied into a folder of its own, so Steam is sent those files and no others.
 
 ## The compare
 
@@ -86,13 +84,13 @@ A `Comparison` lists each `Difference` the next upload makes, each page differen
 this side as `After`, the texts it compares. The page: the title, the description (compared with its line ends and
 trailing spaces made plain, its paragraphs counted by `go-diff`; an empty description is not sent), and the lists, one
 entry a line, `After` being the list as Steam has it after the upload: the tags with the version tag, the gallery (by
-each preview's label: a picture's file name without its extension, a video's link), the DLC and the required items.
-The files: the version first, against the version in the snapshot's descriptor, then each file added, changed or
-removed, by its rel, with the lines a text file gains and loses. Both sides are filtered by the upload's rules, so a
-file the upload leaves out never shows. Each file's hash is kept by its path, size and time, and each pair of hashes'
-line counts by the pair, so a comparison hashes and counts again only what changed. The status is `new` with no item,
-`unknown` with the reason when Steam could not be asked or its files could not be downloaded, else `same` or
-`changed`. `CompareFile` returns one file as the snapshot has it and as the upload sends it.
+each preview's label), the DLC and the required items. The files: the version first, against the version in the
+snapshot's descriptor, then each file added, changed or removed, by its rel, with the lines a text file gains and
+loses. Both sides are filtered by the upload's rules, so a file the upload leaves out never shows. Each file's hash is
+kept by its path, size and time, and each pair of hashes' line counts by the pair, so a comparison hashes and counts
+again only what changed. The status is `new` with no item, `unknown` with the reason when Steam could not be asked or
+its files could not be downloaded, else `same` or `changed`. `CompareFile` returns one file as the snapshot has it and
+as the upload sends it.
 
 ## The second copy
 
@@ -124,7 +122,8 @@ Steam cannot take an upload now, or nothing if it can.
 (`declaredTags.readytouse_tags`), leaving out those only Steam's admins may set, and keeps them in PMT's cache folder
 per app id; when the fetch fails the kept ones are used. The version group is the one whose tags start with a version
 number: CK3's "Compatible Version" and Vic3's "Update Compatibility". EU5's page declares none today. The category tags
-add those the workspace's mods carry, without version tags.
+add those the workspace's mods carry, without version tags. Steam's tags are fetched once a run when none are kept for
+the game.
 
 ## Change notes
 

@@ -1,8 +1,6 @@
 <!--
-  The Entries view of the sidebar, which Visual calls Structure. In Code it lists the active file's entries under a
-  heading for each kind, each with its title in the workspace's language, its key and its line. In Visual it lists what
-  the file draws: a GUI file's windows over a tree of the drawn window's widgets, or a coat file's coats with their
-  pictures.
+  The Entries view of the sidebar, which Visual calls Structure. In Code it lists the active file's entries by kind. In
+  Visual it lists what the file draws: a GUI file's windows and widgets, or a coat file's coats.
 -->
 <script setup lang="ts">
 import type { TreeItem } from "@nuxt/ui";
@@ -35,7 +33,6 @@ const [DefineHeading, ReuseHeading] = createReusableTemplate<{ row: Heading }>()
 
 const place = computed(() => editor.activeFile());
 const isVisual = computed(() => editor.mode === "visual");
-// in Visual a GUI file lists its windows over the widgets of the drawn one, and any other file lists its coats
 const isWindow = computed(() => isVisual.value && place.value?.format === Format.FormatGUI);
 const isCoat = computed(() => isVisual.value && !isWindow.value);
 const { data: drawables } = useQuery(() => ({
@@ -53,7 +50,7 @@ const { data: drawnWindow } = useQuery(() => ({
   enabled: workspace.isOpen() && isWindow.value && !!drawn.value,
 }));
 
-// the drawn window's widgets as rows of a tree, each under the widget that holds it; widget 0 is the window
+// The drawn window's widgets as a tree, each under the widget that holds it. Widget 0 is the window.
 const widgets = computed(() => {
   const list = drawnWindow.value?.widgets ?? [];
   const nodes = list.map(({ id, name, type, role }) => ({
@@ -69,9 +66,7 @@ const widgets = computed(() => {
   }
   return nodes;
 });
-// the names the window picker lists
 const windowNames = computed(() => entries.value.map(({ name }) => name));
-// the tree starts at the window, whose row holds every other widget
 const windowRow = computed(() => widgets.value.slice(0, 1));
 const selectedWidget = computed(() => widgets.value[store.file(place.value?.path ?? "").selected ?? -1]);
 
@@ -80,15 +75,14 @@ const query = refDebounced(search, 150);
 const rows = computed<Row[]>(() => {
   const matches = entries.value.filter(({ name, title }) => matchQuery(query.value, name, title));
   const groups = [...Map.groupBy(matches, ({ database }) => database).values()];
-  // a coat list of one kind has no heading; any other list keeps its headings even for one kind
+  // A coat list of one kind has no heading.
   if (isCoat.value && groups.length < 2) return matches.map((entry) => ({ entry }));
   return groups.flatMap((group) => [
     { heading: group[0].what, count: group.length },
     ...group.map((entry) => ({ entry })),
   ]);
 });
-// the heading of the top row's kind, drawn over the list so that it stays at the top while its rows scroll; none while
-// the top row is that heading itself
+// The heading of the top row's kind, drawn over the list so it stays at the top while its rows scroll.
 const pinned = computed(() => {
   const top = scroll.value?.virtualizer?.range?.startIndex ?? 0;
   if (rows.value[top] && "heading" in rows.value[top]) return undefined;
@@ -96,10 +90,7 @@ const pinned = computed(() => {
 });
 const canvases = new WeakSet<HTMLCanvasElement>();
 
-/**
- * flatten lists symbols together with the symbols nested in them that are of the same database, such as a kingdom
- * inside an empire, in file order. Nested symbols of another database, such as a saved scope, are not listed.
- */
+/** flatten lists symbols together with the symbols nested in them of the same database, in file order. */
 function flatten(symbols: Symbol[]): Symbol[] {
   return symbols.flatMap((symbol) => [
     symbol,
@@ -107,10 +98,7 @@ function flatten(symbols: Symbol[]): Symbol[] {
   ]);
 }
 
-/**
- * openEntry opens an entry of the active file. A coat listed in Visual is drawn. Any other entry is shown in the code
- * at its first line.
- */
+/** openEntry opens an entry of the active file: a coat is drawn, any other entry is shown in the code. */
 function openEntry(entry: Symbol): void {
   if (!place.value) return;
   if (isCoat.value) {
@@ -120,15 +108,12 @@ function openEntry(entry: Symbol): void {
   editor.show(place.value, { lineNumber: entry.range.startLineNumber, column: entry.range.startColumn });
 }
 
-/**
- * selectWidget selects the widget of a tree row in the drawn window. A click that would clear the row leaves the
- * selection as it is.
- */
+/** selectWidget selects the widget of a tree row. A click that would clear the row leaves the selection alone. */
 function selectWidget(row: TreeItem | undefined): void {
   if (place.value && row) store.select(place.value.path, Number(row.value));
 }
 
-/** drawThumbnail draws a coat's picture on a canvas in the list. A canvas that already has one is left alone. */
+/** drawThumbnail draws a coat's picture on a canvas in the list, once per canvas. */
 async function drawThumbnail(canvas: unknown, name: string): Promise<void> {
   if (!(canvas instanceof HTMLCanvasElement) || canvases.has(canvas) || !place.value) return;
   canvases.add(canvas);

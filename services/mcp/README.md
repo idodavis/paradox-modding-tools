@@ -9,10 +9,10 @@ Its tools answer through the other services' methods, the ones that answer the p
 
 | file | holds |
 |---|---|
-| `mcp.go` | the package comment; `Service`; `Task` and `Tasks`; `Access`; `Variables`; the instructions; `ServiceStartup`, `ServiceShutdown`; `ResolveAccess`, `CreateToken`, `ListTasks`; the handler and its checks; the prompts |
-| `tools.go` | the tools' inputs; `Preview`; the guide's texts; the editor's, the pages' and the app's tools; `read_guide`, with the guide's lines on `show` written from `queryKeys`; `build_report`'s filter and its checks; the write tools' previews and tokens |
-| `app.go` | `EventShow`; `View`, `Chip`, `Page`, `Show`, `Lookup`; `SetView`, `SetPages`; `describe_view` and `show` |
-| `checks.go` | `queryKeys`, the queries `show` takes; the checks of what the tools and `show` are given: a page and its query, a node, a filter, a mod, a check, a patch, a language, a file, a drawable and its picks, and a look-up |
+| `mcp.go` | `Service`, the starter tasks, the instructions, the token and the HTTP handler |
+| `tools.go` | the tools' inputs, the guide's texts, the tools, and the write tools' previews and tokens |
+| `app.go` | the view and the pages the app sent, and `show` |
+| `checks.go` | `queryKeys`, the queries `show` takes, and the checks of what the tools and `show` are given |
 
 ## The server
 
@@ -22,12 +22,12 @@ next start, and PMT's log says so. It is stateless: each request stands alone.
 
 A request is answered only with the token in its `Authorization` header (`Bearer <token>`). The token is the file
 `mcp-token` in PMT's app folder, made at the first start; `CreateToken` makes a new one, after which every agent
-registered with the old one must be registered again. The SDK refuses a request whose `Host` is not this computer, and
+must be registered again. The SDK refuses a request whose `Host` is not this computer, and
 `http.CrossOriginProtection` refuses one sent from a web page of another site; a request with no `Origin`, as an
 agent's is, passes.
 
-PMT's own environment carries `PMT_MCP_URL` and `PMT_MCP_TOKEN`, so every program PMT starts, a shell or an agent,
-has them. `Variables` lists the two as the Terminal's settings show them.
+PMT's own environment carries `PMT_MCP_URL` and `PMT_MCP_TOKEN`, so every program PMT starts has them. `Variables`
+lists the two as the Terminal's settings show them.
 
 ## The assistant
 
@@ -40,11 +40,10 @@ no more, and the whole stays under Claude's 4,096 characters. `read_guide` holds
 - `pages`: each page's help as the page catalog gives it, which the main window sends once (`SetPages`), then what
   `show` can bring to the front on each page;
 - `workflow`: how a change is made with PMT's tools, from finding a name to checking the file;
-- `rules`: which copy the game keeps when several definitions share a name and the entry modes a mod can write
-  (`Precedence.Describe`), each with the game's folders where it holds, the way that holds for the most folders first;
-- `workspace`: the open workspace's game and install, a line saying the user has Guidance for new modders on while that
-  setting is on, its mods in load order with their folders, and the game's folders with what each holds, read from the
-  schema's databases.
+- `rules`: which copy the game keeps when several definitions share a name (`Precedence.Describe`), each way with the
+  game's folders where it holds;
+- `workspace`: the open workspace's game and install, whether the user has Guidance for new modders on, its mods in
+  load order with their folders, and the game's folders with what each holds.
 
 The starter tasks are `Tasks`, served as MCP prompts and listed by `ListTasks` for the agent pane: fix this file's
 problems, explain this file, explain this page, write the missing localization, and why this event fires. Each text
@@ -72,10 +71,8 @@ Positions are lines and columns from one, as the editor counts them. A tool's er
 tool's result, not as a protocol error.
 
 A tool given a name the workspace does not have answers with an error that says where the right one comes from,
-never with an empty answer that reads as "none": a node id (`find_roots`), a mod's id (`read_guide`'s workspace
-topic), a check's id (`list_codes`), a level, a language of the install, a file of the mods or the game (not a
-folder). The checks are in `checks.go`, each the one place its rule is written; `build_report` checks its filter's
-level against `lsp.Levels` where it reads the filter.
+never with an empty answer that reads as "none". The checks are in `checks.go`, each the one place its rule is
+written; `build_report` checks its filter's level against `lsp.Levels`.
 
 The three write tools preview first: without a token, a call answers with the change it would make and a token, and
 called again with that token, it makes the change once. They write only in the workspace's mods, through
@@ -87,12 +84,10 @@ called again with that token, it makes the change once. They write only in the w
 with the states it is drawn at, or a Wiki look-up. The main window's agent store carries it out. The pages take what
 an agent sets as their route's query.
 
-`show` checks the request first and sends nothing when any part is wrong: the page against the pages the main window
-sent, each query key and value against `queryKeys`, the file (it exists, is a file, and is in the mods or the game),
-its lines, its drawable against `draw.ListDrawables` and a window's picks against its groups and their options, and
-a look-up against the wiki's pages and the Lexicon. `queryKeys` has a row per page and key, with its help, the values
-it takes where they are few, and its check; the guide's lines on `show` are written from it, so the two cannot
-differ. A key no tool can give a value for (Health's open row, Publish's older listings) is left out of it.
+`show` checks the whole request first and sends nothing when any part is wrong. `queryKeys` has a row per page and key,
+with its help, the values it takes where they are few, and its check; the guide's lines on `show` are written from it,
+so the two cannot differ. A key no tool can give a value for (Health's open row, Publish's older listings) is left out
+of it.
 
 ## Events
 

@@ -1,9 +1,4 @@
-/**
- * The draw store: what Visual remembers for the session about each file, such as its drawn drawable and its selected,
- * hovered, outlined and hidden widgets. It also holds whether the panel and the code beside the picture are open, and
- * the colors copied from a layer. The picks, the coat frame and the backdrop persist per workspace in local storage.
- * What Go answers (the window, the states, the coat) is read through queries and never stored here.
- */
+/** The draw store: what Visual remembers for the session about each file, and the picks it keeps per workspace. */
 import { useLocalStorage } from "@vueuse/core";
 import { Range } from "monaco-editor/editor/editor.api";
 import type { IRange } from "monaco-editor";
@@ -15,7 +10,7 @@ import type { Place } from "@services/workspace/models";
 import { useEditorStore } from "./editor";
 import { useWorkspaceStore } from "./workspace";
 
-/** A DrawFile is what Visual remembers about one file for the session. It is never written to disk. */
+/** A DrawFile is what Visual remembers about one file for the session. */
 export type DrawFile = {
   drawable: string | null;
   selected: number | null;
@@ -39,9 +34,9 @@ export const useDrawStore = defineStore("draw", () => {
   const backdrop = useLocalStorage("pmt.draw.backdrop", "dark");
   /** The colors copied from a layer, each as a coat writes it, by the key of its slot. */
   const colors = shallowRef<Record<string, string>>({});
-  /** Whether the panel beside the picture is open. It starts closed, and closes again when another workspace opens. */
+  /** Whether the panel beside the picture is open. It closes when another workspace opens. */
   const isPanelOpen = shallowRef(false);
-  /** Whether the code beside the picture is open. It starts closed, and closes again when another workspace opens. */
+  /** Whether the code beside the picture is open. It closes when another workspace opens. */
   const isCodeOpen = shallowRef(false);
   // The value picked for each group, by group ID, by workspace ID.
   const saved = useLocalStorage<Record<string, Record<string, string>>>("pmt.draw.picks", {});
@@ -62,17 +57,17 @@ export const useDrawStore = defineStore("draw", () => {
     const record = files.get(path);
     if (record) return record;
     const created = reactive<DrawFile>({ ...makeRecord(null), tab: "properties" });
-    // set on the raw map, so the reader making its record does not trigger itself
+    // Set on the raw map, so the reader making its record does not trigger itself.
     toRaw(files).set(path, created);
     return created;
   };
 
-  /** select selects a file's widget, or none for null. A layer's instance can be selected with it. */
+  /** select selects a file's widget, or none for null. */
   const select = (path: string, widget: number | null, instance: number | null = null): void => {
     Object.assign(file(path), { selected: widget, instance });
   };
 
-  /** hover marks a file's widget as the one under the pointer, or none for null. A layer's instance can go with it. */
+  /** hover marks a file's widget as the one under the pointer, or none for null. */
   const hover = (path: string, widget: number | null, instance: number | null = null): void => {
     Object.assign(file(path), { hovered: widget, hoveredInstance: instance });
   };
@@ -90,26 +85,26 @@ export const useDrawStore = defineStore("draw", () => {
       : record.hidden.filter((other) => other !== widget);
   };
 
-  /** pick saves the option chosen for each group in the open workspace, by group ID. Undefined options are skipped. */
+  /** pick saves the option chosen for each group in the open workspace. Undefined options are skipped. */
   const pick = (options: Partial<Record<string, string>>): void => {
     const chosen = Object.entries(options).filter((entry): entry is [string, string] => entry[1] !== undefined);
     saved.value = { ...saved.value, [workspace.activeId()]: { ...picks.value, ...Object.fromEntries(chosen) } };
   };
 
-  /** unpick forgets the picks of the given groups, which are then drawn as their window opens. */
+  /** unpick forgets the picks of the given groups. */
   const unpick = (groups: string[]): void => {
     const kept = Object.fromEntries(Object.entries(picks.value).filter(([group]) => !groups.includes(group)));
     saved.value = { ...saved.value, [workspace.activeId()]: kept };
   };
 
-  /** draw draws a file's drawable, or the first one for null. Drawing another drawable resets the file's record. */
+  /** draw draws a file's drawable, or the first one for null. Another drawable resets the file's record. */
   const draw = (path: string, drawable: string | null): void => {
     const record = file(path);
     if (record.drawable === drawable) return;
     Object.assign(record, makeRecord(drawable));
   };
 
-  /** showCode puts the caret where something is written, and opens the code pane beside the picture to show it. */
+  /** showCode opens the code pane beside the picture with the caret where something is written. */
   const showCode = (place: Place, range: IRange): void => {
     isCodeOpen.value = true;
     editor.show(place, Range.getStartPosition(range));
@@ -134,7 +129,7 @@ export const useDrawStore = defineStore("draw", () => {
   };
 });
 
-/** makeRecord returns a file's record of a drawable with nothing selected, hovered, outlined, hidden or checked. */
+/** makeRecord returns a file's record of a drawable with nothing selected, hovered or hidden. */
 function makeRecord(drawable: string | null): Omit<DrawFile, "tab"> {
   return {
     drawable,

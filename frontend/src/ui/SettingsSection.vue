@@ -1,9 +1,6 @@
-<!--
-  One section of the settings catalog as fields, as Settings shows it. A setting the simple interface hides shows off
-  and disabled.
--->
+<!-- One section of the settings catalog as fields. A setting the simple interface hides shows off and disabled. -->
 <script lang="ts">
-/** SETTING_ROWS holds the classes of a list of settings: padding on each row and a faint line under it. */
+/** SETTING_ROWS holds the classes of a list of settings. */
 export const SETTING_ROWS = "flex flex-col *:border-b *:border-accented *:py-2.5";
 /** SETTING_HIGHLIGHT holds the classes of the row of the setting the palette opened Settings at. */
 export const SETTING_HIGHLIGHT = "rounded-md bg-(--accent-soft)";
@@ -20,11 +17,10 @@ import { useSettingsStore } from "../stores/settings";
 import ValueField from "./ValueField.vue";
 import type { Setting } from "@services/app/models";
 
-const CONTROLS = ["switch", "choice", "number", "text"] as const;
-// the settings the Appearance page draws apart: the theme as tiles, and the simple interface's switch above them
+const CONTROLS = ["switch", "choice", "number", "port", "text"] as const;
+// The Appearance page draws these apart: the theme as tiles, and the simple interface's switch above them.
 const DRAWN_APART = ["appearance.theme", "appearance.simple"];
 
-// the key of the setting whose row is drawn in the highlight color, and the keys of the only settings shown, when any
 const { section, highlight = "", keys = [] } = defineProps<{ section: string; highlight?: string; keys?: string[] }>();
 
 const settings = useSettingsStore();
@@ -36,7 +32,6 @@ const rows = computed(() =>
     (row) => row.section === section && (keys.length ? keys.includes(row.key) : !DRAWN_APART.includes(row.key)),
   ),
 );
-// the checks turned off, by id
 const off = computed(() => settings.value("ide.checks").split(",").filter(Boolean));
 /** The checks' switches, grouped by topic. */
 const groups = computed(() =>
@@ -46,22 +41,22 @@ const groups = computed(() =>
   })),
 );
 
-/** markRow returns the attributes of a setting's row: the id Settings scrolls to, and the highlight if it has one. */
+/** markRow returns the attributes of a setting's row: the id Settings scrolls to, and any highlight. */
 function markRow(key: string) {
   return { id: `setting-${key}`, class: key === highlight ? SETTING_HIGHLIGHT : undefined };
 }
 
-/** describeRow returns what a setting's row says under its label: its help, led by why it is off if hidden. */
+/** describeRow returns what a setting's row says under its label. */
 function describeRow(row: Setting): string {
   return settings.isHidden(row.key) ? `Off in the simple interface. ${row.help}` : row.help;
 }
 
-/** classifyControl returns the control that edits a setting of the given type. A type with no control is text. */
+/** classifyControl returns the control that edits a setting of the given type, text by default. */
 function classifyControl(type: string) {
   return CONTROLS.find((control) => control === type) ?? "text";
 }
 
-/** describeScales returns one tab for each size of the interface the given setting allows, ten percent apart. */
+/** describeScales returns one tab for each size of the interface the given setting allows. */
 function describeScales(row: Setting) {
   return range(row.min ?? 0, (row.max ?? 0) + 1, 10).map((size) => ({ label: `${size}%`, value: `${size}` }));
 }

@@ -16,13 +16,12 @@ const KINDS = {
   changed: { className: "pmt-change-changed", color: "pmt.changeChanged" },
   removed: { className: "pmt-change-removed", color: "pmt.changeRemoved" },
 };
-// how many milliseconds the text must rest after an edit before the bars are asked for again
+// How long the text must rest after an edit, in milliseconds, before the bars refresh.
 const WAIT = 400;
 
 /**
- * markChanges draws the change bars of an editor. It refreshes them when the editor opens, when the text rests after
- * an edit, and when git changes. A file outside every mod's repository has none. It returns a function that stops the
- * refreshing and clears the bars.
+ * markChanges draws the change bars of an editor and keeps them current. A file outside every mod's repository has
+ * none. It returns a function that stops the refreshing and clears the bars.
  */
 export function markChanges(codeEditor: monaco.editor.IStandaloneCodeEditor, model: Model): () => void {
   const bars = codeEditor.createDecorationsCollection();

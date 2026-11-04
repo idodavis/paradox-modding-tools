@@ -1,7 +1,4 @@
-<!--
-  The app's frame: the top bar, the page with the agent pane beside it in the main window, or the pane alone in a
-  window of its own, the status bar, and the palette and Settings over them.
--->
+<!-- The app's frame: the top bar, the page with the agent pane, the status bar, and the palette and Settings. -->
 <script setup lang="ts">
 import type { SplitterItem } from "@nuxt/ui";
 import { computed } from "vue";

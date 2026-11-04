@@ -1,8 +1,4 @@
-/**
- * The hover card over an editor, in place of Monaco's own. When the pointer rests on a word, its card and problems show
- * above it until the pointer moves away, so the lines below stay free to hover and right-click. Any card the pointer
- * can move onto is kept the same way.
- */
+/** The hover card over an editor, in place of Monaco's own. It shows above the word so the lines below stay free. */
 import { useDebounceFn } from "@vueuse/core";
 import * as monaco from "monaco-editor/editor/editor.api";
 import { shallowRef, type ShallowRef } from "vue";
@@ -18,8 +14,7 @@ type Hover = { card: Card | null; problems: Diagnostic[]; anchor: DOMRect };
 
 /**
  * attachHover shows a hover card over the word the pointer rests on in an editor, with the model's problems on the
- * word. It returns the card on show (null while there is none), a function that closes the card, a function that holds
- * it open while the pointer is on it, and a function that detaches all of this from the editor.
+ * word. It returns the card on show and functions to close it, hold it open and detach from the editor.
  */
 export function attachHover(
   codeEditor: editor.IStandaloneCodeEditor,
@@ -32,20 +27,17 @@ export function attachHover(
 } {
   const settings = useSettingsStore();
   const { card: hover, close: closeCard, closeLater, keep, hold, isHeld } = useHeldCard<Hover>();
-  // target is where the pointer rests, shown is the range the card covers
+  // Where the pointer rests, and the range the card on show covers.
   let target: monaco.IPosition | null = null;
   let shown: monaco.IRange | null = null;
 
-  /** close takes the card down at once and forgets where the pointer was. */
+  /** close takes the card down at once. */
   const close = (): void => {
     closeCard();
     target = null;
     shown = null;
   };
-  /**
-   * findCard asks for the card at the pointer, collects the problems on the card's range and shows both. The range is
-   * the card's own, else the word's. It shows nothing if the pointer has moved on or is over the card on show.
-   */
+  /** findCard shows the card and problems at the pointer. It shows nothing if the pointer has moved on. */
   const findCard = useDebounceFn(async (word: editor.IWordAtPosition, pointer: monaco.IPosition) => {
     const card = await lsp.Hover(model.place.path, pointer.lineNumber, pointer.column);
     if (isHeld() || target?.lineNumber !== pointer.lineNumber || target.column !== pointer.column) return;
@@ -96,10 +88,8 @@ export function attachHover(
   };
 }
 
-/**
- * useHeldCard keeps a card up while the pointer is on it. It returns the card on show (null if none) and its controls.
- */
-export function useHeldCard<T>(): {
+/** useHeldCard keeps a card up while the pointer is on it. It returns the card on show and its controls. */
+function useHeldCard<T>(): {
   card: ShallowRef<T | null>;
   close: () => void;
   closeLater: () => void;

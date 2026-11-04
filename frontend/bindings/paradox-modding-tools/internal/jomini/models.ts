@@ -36,7 +36,7 @@ export interface RGBA {
 }
 
 /**
- * A Span is a half-open range of bytes in a text. It includes its first byte and not the byte at its end.
+ * A Span is a half-open range of bytes in a text.
  */
 export interface Span {
     "start": number;

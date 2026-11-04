@@ -17,16 +17,14 @@ function its caller passes.
 
 ## Headers and pixels
 
-A `Header` is what an image file says about itself before its pixels: its format, its size, its mip levels and its
-block compression. `ReadHeader` reads only the start of a file, and adds the file's size in bytes. The bytes say the
-format, whatever the extension. It reads a JPEG's header too, for a web image, from the start of the file, since a
-JPEG keeps its size past its first bytes; a JPEG is never decoded.
+`ReadHeader` reads only the start of a file and adds the file's size in bytes. The bytes say the format, whatever the
+extension. It reads a JPEG's header too, for a web image, from the start of the file, since a JPEG keeps its size past
+its first bytes; a JPEG is never decoded.
 
 `Decode` takes an image's bytes and one mip level: 0 is the whole image, and each level after it is half the size of
-the one before. The bytes say which format it is. A DDS opens with its magic, a PNG with its own, and anything else is
-read as a TGA. Only a DDS has more than one level. `Decode` refuses an image past Direct3D's limit on a side, a level
-the image does not have, an image whose data ends before its last pixel, and a DDS pixel format it does not decode,
-which the error names.
+the one before. A DDS opens with its magic, a PNG with its own, and anything else is read as a TGA. Only a DDS has more
+than one level. `Decode` refuses an image past Direct3D's limit on a side, a level the image does not have, an image
+whose data ends before its last pixel, and a DDS pixel format it does not decode, which the error names.
 
 ## Writing a DDS
 
@@ -42,14 +40,13 @@ a block decodes to the colors it was fitted to. PMT writes no BC1 and no BC7.
 
 ## Resolving a written path
 
-`Resolve` finds the file that a path written in script names. It tries the path as written, then with each other image
-extension the game accepts, `.dds`, `.png` and `.tga` in that order, in place of the written one. A leading slash is
-ignored. The lookup function the caller passes says whether a relative path exists in the workspace and where, so the
-game's own rule for which file is read stays `index`'s, in `index.ResolveTexture`. `IsImage` reports whether a written
-path ends in one of those extensions.
+`Resolve` tries a path as written, then with each other image extension the game accepts, `.dds`, `.png` and `.tga` in
+that order. A leading slash is ignored. The lookup function the caller passes says whether a relative path exists in
+the workspace and where, so the game's own rule for which file is read stays `index`'s, in `index.ResolveTexture`.
 
 ## Terms
 
-- **Header**: what an image file says about itself before its pixels.
+- **Header**: what an image file says about itself before its pixels: its format, its size, its mip levels and its
+  block compression.
 - **Mip level**: one of a DDS's smaller copies of its image, each half the size of the one before.
 - **Compression**: the block compression of a DDS, BC1 to BC7, or none.

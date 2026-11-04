@@ -22,8 +22,8 @@ var firstShares = [4]float64{1, 0, 2.0 / 3, 1.0 / 3}
 var channels565 = [3][2]int{{5, 11}, {6, 5}, {5, 0}}
 
 // EncodeDDS writes a picture as a DDS file, in BC3 blocks when compressed and else uncompressed. With mipmaps, the
-// mip levels follow the picture down to one pixel; without, the picture is the only level. It returns an error for a
-// picture with no pixels or a side past Direct3D's limit.
+// mip levels follow the picture down to one pixel. It returns an error for a picture with no pixels or a side past
+// Direct3D's limit.
 func EncodeDDS(picture image.Image, compressed, mipmaps bool) ([]byte, error) {
 	size := picture.Bounds().Size()
 	if size.X < 1 || size.Y < 1 {
@@ -37,7 +37,6 @@ func EncodeDDS(picture image.Image, compressed, mipmaps bool) ([]byte, error) {
 		levels = bits.Len(uint(max(size.X, size.Y)))
 	}
 	file := encodeDDSHeader(size, levels, compressed)
-	// A picture that is already NRGBA and starts at (0, 0) is used as it is, without a copy.
 	level, ok := picture.(*image.NRGBA)
 	if !ok || level.Rect.Min != (image.Point{}) {
 		level = image.NewNRGBA(image.Rectangle{Max: size})
@@ -56,8 +55,7 @@ func EncodeDDS(picture image.Image, compressed, mipmaps bool) ([]byte, error) {
 	return file, nil
 }
 
-// encodeDDSHeader writes the magic and the header of a DDS with the given size and number of mip levels, as BC3 or
-// uncompressed.
+// encodeDDSHeader writes the magic and the header of a DDS with the given size and number of mip levels.
 func encodeDDSHeader(size image.Point, levels int, compressed bool) []byte {
 	file := make([]byte, ddsDataOffset)
 	copy(file, ddsMagic)
@@ -87,9 +85,8 @@ func encodeDDSHeader(size image.Point, levels int, compressed bool) []byte {
 	return file
 }
 
-// buildMip returns the mip level after the picture: half its size on each side, rounded down and never under a
-// pixel. Each pixel is the average of the two by two pixels it covers, their colors mixed in linear light and their
-// alpha as it is. A side of one pixel uses that pixel twice.
+// buildMip returns the mip level after the picture: half its size on each side, never under a pixel. Each pixel
+// averages the four it covers, their colors in linear light and their alpha as it is.
 func buildMip(picture *image.NRGBA) *image.NRGBA {
 	var linear [256]float64
 	for value := range linear {
@@ -150,10 +147,9 @@ func encodeBGRA(picture *image.NRGBA) []byte {
 }
 
 // encodeBC3 writes a picture as BC3 blocks of 4 by 4 pixels, row by row, each an alpha block and then a color block.
-// A block past the right or bottom edge repeats the last column or row.
 func encodeBC3(picture *image.NRGBA) []byte {
 	size := picture.Rect.Size()
-	// A BC3 block of 16 pixels is 16 bytes: a byte for each pixel of the size rounded up to whole blocks.
+	// A byte for each pixel of the size rounded up to whole blocks.
 	data := make([]byte, 0, (size.X+3)/4*4*((size.Y+3)/4*4))
 	var block [16][4]uint8
 	for top := 0; top < size.Y; top += 4 {
@@ -193,8 +189,7 @@ func encodeAlphaBlock(block *[16][4]uint8) []byte {
 }
 
 // encodeColorBlock writes the colors of a block as a BC1 color block, its first color above its second so that it
-// reads in the four-color mode. It starts from the block's two pixels farthest apart, takes each pixel's nearest
-// palette color, then fits the two colors to those once by least squares.
+// reads in the four-color mode.
 func encodeColorBlock(block *[16][4]uint8) []byte {
 	farthest := findFarthest(block, block[0])
 	opposite := findFarthest(block, block[farthest])
@@ -202,7 +197,7 @@ func encodeColorBlock(block *[16][4]uint8) []byte {
 	first, second = resolveEndpoints(block, resolveIndices(block, first, second))
 	indices := resolveIndices(block, first, second)
 	if first < second {
-		// Swapping the colors swaps the indices 0 with 1 and 2 with 3, which flipping each index's low bit does.
+		// Swapping the colors swaps indices 0 with 1 and 2 with 3, which is each index's low bit flipped.
 		first, second, indices = second, first, indices^0x55555555
 	}
 	out := binary.LittleEndian.AppendUint16(nil, first)

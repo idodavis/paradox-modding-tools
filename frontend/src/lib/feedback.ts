@@ -1,4 +1,4 @@
-/** The ways any part of the app talks to the user outside a page: the confirmation dialog, the toasts and copying. */
+/** The ways any part of the app talks to the user outside a page: confirmations, toasts and copying. */
 import { Clipboard } from "@wailsio/runtime";
 
 import ConfirmModal from "../ui/ConfirmModal.vue";
@@ -14,7 +14,7 @@ export function takeToasts(): void {
   toast = useToast();
 }
 
-/** copyText puts a text on the clipboard and shows a toast, "<what> copied", with the given note under it. */
+/** copyText puts a text on the clipboard and shows a toast saying what was copied. */
 export async function copyText(text: string, what: string, note = ""): Promise<void> {
   await Clipboard.SetText(text);
   toast?.add({ title: `${what} copied`, description: note, color: "success" });

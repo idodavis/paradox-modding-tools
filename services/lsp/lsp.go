@@ -13,8 +13,7 @@ import (
 	"paradox-modding-tools/services/workspace"
 )
 
-// Service is the language service. Each method asks the workspace service for the open session when it is called
-// and keeps nothing between calls.
+// Service is the language service. It asks the workspace service for the open session at each call and keeps nothing.
 type Service struct {
 	Workspace *workspace.Service
 }
@@ -34,9 +33,9 @@ type Edit struct {
 	Text  string `json:"text"`
 }
 
-// A Site is one place in a file that an answer points at: where the file sits and a line. Where the answer has them,
-// it also has a range in the editor's form and the text of the line. Where the answer judged a definition, it says
-// whether the game keeps it and why. A whole-file site lists the names the file defines.
+// A Site is one place in a file that an answer points at: the file's place and a line. Where the answer has them, it
+// also has a range, the text of the line, and whether the game keeps the definition and why. A whole-file site lists
+// the names the file defines.
 type Site struct {
 	Place   workspace.Place `json:"place"`
 	Line    int             `json:"line"`           // counted from one
@@ -55,10 +54,9 @@ func MakeSite(ws *workspace.Session, mods *index.Index, site index.Site) Site {
 	return Site{Place: ws.Locate(mods, mods.File(site).Path), Line: int(mods.Occurrence(site).Line) + 1}
 }
 
-// MakeSites returns the sites of a name's definitions, each with whether a winner keeps it and why, as
-// index.ResolveSite says, and the reason in words. A nil winner keeps none, but a copy in a file the game does not read
-// still has its reason, as index.FindHider gives it. A definition written inside another one, in a database whose
-// copies the game all keeps, also has the name of the one that holds it.
+// MakeSites returns the sites of a name's definitions, each with whether the winner keeps it, why, and the reason in
+// words. A nil winner keeps none. A definition written inside another one, in a database whose copies the game all
+// keeps, also has the name of the one that holds it.
 func MakeSites(ws *workspace.Session, mods *index.Index, definitions []index.Site, winner *index.Winner) []Site {
 	return lo.Map(definitions, func(definition index.Site, _ int) Site {
 		site := MakeSite(ws, mods, definition)
@@ -74,9 +72,8 @@ func MakeSites(ws *workspace.Session, mods *index.Index, definitions []index.Sit
 	})
 }
 
-// findHolder returns the name of the definition that holds a definition, where the game keeps every copy of the name in
-// the definition's database. It returns "" for a definition at the top of its file, or in a database that keeps one
-// copy.
+// findHolder returns the name of the definition that holds a definition, where the game keeps every copy of the name.
+// It returns "" for a definition at the top of its file or in a database that keeps one copy.
 func findHolder(ws *workspace.Session, mods *index.Index, definition index.Site) string {
 	database := ws.Schema.Databases[mods.ToReference(definition).Database]
 	holder, nested := mods.FindDefinition(definition)
@@ -86,8 +83,8 @@ func findHolder(ws *workspace.Session, mods *index.Index, definition index.Site)
 	return mods.ToReference(holder).Name
 }
 
-// LocateSite returns the site of an occurrence with the range of its name and the text of the line it starts on,
-// read from the file's tree. The range stays empty and the text "" if the file cannot be read.
+// LocateSite returns the site of an occurrence with the range of its name and the text of its line. The range stays
+// empty and the text "" if the file cannot be read.
 func LocateSite(ws *workspace.Session, mods *index.Index, handle index.Site) Site {
 	site := MakeSite(ws, mods, handle)
 	if tree, err := ws.LoadTree(site.Place.Path); err == nil {
@@ -167,16 +164,15 @@ func (lsp *Service) SetText(path, text string) ([]Diagnostic, error) {
 	return lsp.Diagnose(path)
 }
 
-// CloseFile drops an open file's text from the session. It does nothing if no workspace is open, since closing the
-// workspace dropped every text.
+// CloseFile drops an open file's text from the session. It does nothing if no workspace is open.
 func (lsp *Service) CloseFile(path string) {
 	if ws, err := lsp.Workspace.Session(); err == nil {
 		ws.CloseBuffer(path)
 	}
 }
 
-// loadTree returns the open session and the tree of a file. It parses the editor's text if the file is open. It returns
-// an error if there is no session or the file cannot be read.
+// loadTree returns the open session and the tree of a file, from the editor's text if the file is open. It returns an
+// error if there is no session or the file cannot be read.
 func (lsp *Service) loadTree(path string) (*workspace.Session, *jomini.Tree, error) {
 	ws, err := lsp.Workspace.Session()
 	if err != nil {

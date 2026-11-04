@@ -22,10 +22,10 @@ type Hunk struct {
 // tabSpaces is what an agent's diff can write in place of each tab of a file's line.
 const tabSpaces = "  "
 
-// RevertHunks gives a file of the open workspace back its text from before an agent's edits, given as each edit's
-// hunks, the earliest edit first. If the edits created the file and it ends up empty, it goes to PMT's trash; else it
-// is written in its own line endings. It returns an error, and changes nothing, if no workspace is open, the file
-// cannot be read, it has unsaved text in the editor, an edit has no hunk, or a hunk's lines are not in the file once.
+// RevertHunks gives a file back its text from before an agent's edits, given as each edit's hunks, the earliest edit
+// first. A file the edits created goes to PMT's trash once it is empty. It returns an error, and changes nothing, if no
+// workspace is open, the file cannot be read, it has unsaved text in the editor, an edit has no hunk, or a hunk's
+// lines are not in the file once.
 func (wsp *Service) RevertHunks(path string, edits [][]Hunk, isNew bool) error {
 	ws, err := wsp.Session()
 	if err != nil {
@@ -38,12 +38,11 @@ func (wsp *Service) RevertHunks(path string, edits [][]Hunk, isNew bool) error {
 	if draft, open := ws.LookupBuffer(path); open && draft != text.Text {
 		return errors.New("it has unsaved text in the editor: save or revert it first")
 	}
-	// an empty text has no lines, and a line that ends in \r\n reads as one that ends in \n
 	var lines []string
 	if text.Text != "" {
 		lines = strings.Split(strings.ReplaceAll(text.Text, "\r\n", "\n"), "\n")
 	}
-	// the edits go back the latest first, and each edit's hunks the last first
+	// the latest edit and the last hunk go back first
 	for _, hunks := range slices.Backward(edits) {
 		if len(hunks) == 0 {
 			return errors.New("the agent sent no lines for one of its edits")
@@ -61,10 +60,9 @@ func (wsp *Service) RevertHunks(path string, edits [][]Hunk, isNew bool) error {
 	return wsp.Write(path, files.Text{Text: strings.Join(lines, jomini.LineEnding(text.Text)), Encoding: text.Encoding})
 }
 
-// revertHunk returns a file's lines with one hunk undone: the hunk's lines after the edit are replaced by its lines
-// before. The lines after must be in the file exactly once. If they are nowhere and the lines before are there once,
-// the hunk is undone already and the lines come back unchanged. It returns an error if the lines after are in the
-// file more than once, or if neither are there.
+// revertHunk returns a file's lines with one hunk undone. The lines come back unchanged if the hunk is undone already.
+// It returns an error if the hunk's lines after the edit are in the file more than once, or if neither its lines
+// after nor its lines before are there.
 func revertHunk(lines []string, hunk Hunk) ([]string, error) {
 	starts := listStarts(lines, hunk.After)
 	switch {
@@ -79,8 +77,7 @@ func revertHunk(lines []string, hunk Hunk) ([]string, error) {
 	return nil, errors.New("it changed since the agent's edit")
 }
 
-// listStarts returns every index in a file's lines where a run of a diff's lines starts. An empty run starts at every
-// line.
+// listStarts returns every index in a file's lines where a run of a diff's lines starts.
 func listStarts(lines, run []string) []int {
 	var starts []int
 	for start := range lines {
@@ -97,8 +94,7 @@ func isSameLine(fileLine, diffLine string) bool {
 }
 
 // restoreLines returns a hunk's lines from before the edit, written as the file writes them. It is given the file's
-// lines that match the hunk's lines after the edit. A line the edit kept is taken from the file. Any other line gets
-// tabs back in its indent if the file writes tabs where the diff writes spaces.
+// lines that match the hunk's lines after the edit.
 func restoreLines(hunk Hunk, fileLines []string) []string {
 	own := make(map[string]string, len(hunk.After))
 	hasTabs := false
@@ -113,7 +109,6 @@ func restoreLines(hunk Hunk, fileLines []string) []string {
 		if !hasTabs {
 			return line
 		}
-		// each pair of spaces at the start of the line is one of the file's tabs
 		pairs := (len(line) - len(strings.TrimLeft(line, " "))) / len(tabSpaces)
 		return strings.Repeat("\t", pairs) + line[pairs*len(tabSpaces):]
 	})

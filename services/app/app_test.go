@@ -45,7 +45,6 @@ func TestOpenConfig(t *testing.T) {
 	if file.readOnly {
 		t.Fatal("a first run gave a read-only config")
 	}
-	// a folder named config.json cannot be read as a file
 	dirs := Dirs{App: t.TempDir()}
 	if err := os.Mkdir(filepath.Join(dirs.App, "config.json"), 0o755); err != nil {
 		t.Fatal(err)
@@ -100,7 +99,7 @@ func TestListSettings(t *testing.T) {
 		}
 		keys[setting.Key] = true
 		switch setting.Type {
-		case "number":
+		case "number", "port":
 			if setting.Min >= setting.Max || len(setting.Choices) != 0 {
 				t.Errorf("number %q has the range %d to %d and %d choices",
 					setting.Key, setting.Min, setting.Max, len(setting.Choices))

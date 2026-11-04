@@ -1,5 +1,5 @@
-// shapes.go tells what shape a written key or value has: an identifier, a number, a date, a parameter or a constant.
-// It also splits prefixed names and dotted chains, matches key paths and resolves the numbers a file writes.
+// shapes.go tells what shape a written key or value has, splits prefixed names and dotted chains, matches key paths
+// and resolves the numbers a file writes.
 
 package jomini
 
@@ -14,7 +14,7 @@ import (
 	"github.com/samber/lo"
 )
 
-// precedences holds how tightly each operator of an expression binds. An operator that is not here binds nothing.
+// precedences holds how tightly each operator of an expression binds.
 var precedences = map[string]int{"+": 1, "-": 1, "*": 2, "/": 2}
 
 // NumberKey is the key that matches a key written as a number or a date, such as random_list's branches.
@@ -86,8 +86,8 @@ type Date struct {
 	Day   int `json:"day"`
 }
 
-// ParseDate parses a text shaped like a date, `year.month.day`. A minus before the year makes it negative, and a
-// missing day is 0. It does not check the ranges, which IsValid does. It returns false for any other shape.
+// ParseDate parses a text shaped like a date, `year.month.day`. A missing day is 0. It does not check the ranges,
+// which IsValid does. It returns false for any other shape.
 func ParseDate(text string) (Date, bool) {
 	text, negative := strings.CutPrefix(text, "-")
 	parts := strings.Split(text, ".")
@@ -108,8 +108,7 @@ func ParseDate(text string) (Date, bool) {
 	return date, true
 }
 
-// IsValid reports whether the date's month is from 1 to 12 and its day from 0 to 31. A day of 0 is a date written
-// without a day.
+// IsValid reports whether the date's month is from 1 to 12 and its day from 0 to 31, where 0 means no day.
 func (date Date) IsValid() bool {
 	return date.Month >= 1 && date.Month <= 12 && date.Day >= 0 && date.Day <= 31
 }
@@ -130,8 +129,8 @@ func SplitPrefixed(text string) (prefix, name string, ok bool) {
 	return prefix, name, true
 }
 
-// SplitChain splits a dotted chain such as `scope:x.var:y.z` into its links. Each link is a prefixed or a plain
-// name. A dot inside brackets or quotes does not split.
+// SplitChain splits a dotted chain such as `scope:x.var:y.z` into its links. A dot inside brackets or quotes does not
+// split.
 func SplitChain(text string) []string {
 	var links []string
 	depth, quoted, start := 0, false, 0
@@ -153,8 +152,8 @@ func SplitChain(text string) []string {
 	return append(links, text[start:])
 }
 
-// MatchKeyPath reports whether the keys that lead to a statement fit a key path of segments joined by "/". A
-// segment is a glob, NumberKey, or ** for any number of keys. An empty path fits only the file's top level.
+// MatchKeyPath reports whether the names above a statement, outermost first, fit a path of segments joined by "/".
+// A segment is a glob, NumberKey, or ** for any depth. An empty path fits only the file's top level.
 func MatchKeyPath(pattern string, keys []string) bool {
 	if pattern == "" {
 		return len(keys) == 0
@@ -162,8 +161,8 @@ func MatchKeyPath(pattern string, keys []string) bool {
 	return matchSegments(strings.Split(pattern, "/"), keys)
 }
 
-// ColorParts returns the tag and the numbers of a block statement such as `rgb { 1 2 3 }`. The tag is "" for a block
-// with none, which must hold three or four numbers. It returns false if the statement is not a block of plain numbers.
+// ColorParts returns the tag and the numbers of a block statement such as `rgb { 1 2 3 }`. It returns false if the
+// statement is not a block of plain numbers, or has no tag and not three or four numbers.
 func ColorParts(tree *Tree, statement int32) (tag string, parts []float64, ok bool) {
 	if !tree.Statements[statement].IsBlock() {
 		return "", nil, false
@@ -182,9 +181,8 @@ func ColorParts(tree *Tree, statement int32) (tag string, parts []float64, ok bo
 	return tag, parts, true
 }
 
-// ResolveNumber returns the number the text of the given span stands for. The text is a number, a constant declared
-// earlier in the file, or an expression @[…] of numbers, constants, + - * / and brackets. It returns false for any
-// other text, for an undeclared constant and for an expression it cannot compute.
+// ResolveNumber returns the number the text of the given span stands for: a number, a constant declared earlier in the
+// file, or an expression @[…] of them. It returns false for any other text and for an expression it cannot compute.
 func (tree *Tree) ResolveNumber(span Span) (float64, bool) {
 	text := tree.Text(span)
 	if number, ok := parseNumber(text); ok {
@@ -202,8 +200,8 @@ func (tree *Tree) ResolveNumber(span Span) (float64, bool) {
 }
 
 // ListConstants returns the span of each constant that the expression @[…] uses, without the @. The given offset is
-// where the text starts in its file. It returns nothing for a text that is no expression, or that holds anything but
-// numbers, names, + - * / and brackets, such as a data call.
+// where the text starts in its file. It returns nothing for a text that is no expression, or that holds a data call or
+// anything else but numbers, names, operators and brackets.
 func ListConstants(text string, base int) []Span {
 	var spans []Span
 	for _, token := range splitExpression(text, base) {
@@ -219,8 +217,7 @@ func ListConstants(text string, base int) []Span {
 	return spans
 }
 
-// isIdentifierRune reports whether the rune may be written in an identifier: a letter, a digit, one of `_ - . ' :`
-// or any rune beyond ASCII.
+// isIdentifierRune reports whether the rune may be written in an identifier.
 func isIdentifierRune(r rune) bool {
 	return r >= utf8.RuneSelf || unicode.IsLetter(r) || unicode.IsDigit(r) || strings.ContainsRune("_-.':", r)
 }
@@ -254,8 +251,8 @@ func parseNumber(text string) (float64, bool) {
 	return number, err == nil
 }
 
-// resolveConstant returns the number of the last `@name = value` with the given name, at any depth, in a statement
-// that ends at or before the given offset. It returns false if there is none or its value is no number.
+// resolveConstant returns the number of the last `@name = value` with the given name that ends at or before the given
+// offset. It returns false if there is none or its value is no number.
 func (tree *Tree) resolveConstant(name string, offset int) (float64, bool) {
 	declared := "@" + name
 	count := sort.Search(len(tree.Statements), func(i int) bool { return tree.Statements[i].Span.Start >= offset })
@@ -268,9 +265,8 @@ func (tree *Tree) resolveConstant(name string, offset int) (float64, bool) {
 	return 0, false
 }
 
-// splitExpression splits an expression @[…] into the span of each token, leaving out white space. A token is a run of
-// digits and dots, a run of letters, digits and underscores, or one other character. The given offset is where the
-// text starts in its file. It returns nothing for a text that is no expression.
+// splitExpression splits an expression @[…] into the span of each token, leaving out white space. The given offset is
+// where the text starts in its file. It returns nothing for a text that is no expression.
 func splitExpression(text string, base int) []Span {
 	inner, ok := strings.CutPrefix(text, "@[")
 	if !ok {
@@ -301,8 +297,8 @@ func splitExpression(text string, base int) []Span {
 }
 
 // evaluate computes the expression from the given token on, as far as its operators bind at least as tightly as the
-// given precedence. It returns the number and the index of the token after the computed part. It returns false for
-// anything it cannot compute, such as a division by zero.
+// given precedence. It returns the number and the index of the token after the computed part, or false for anything it
+// cannot compute, such as a division by zero.
 func (tree *Tree) evaluate(tokens []Span, cursor, precedence int) (float64, int, bool) {
 	left, cursor, ok := tree.evaluateOperand(tokens, cursor)
 	for ok && cursor < len(tokens) {
@@ -329,8 +325,8 @@ func (tree *Tree) evaluate(tokens []Span, cursor, precedence int) (float64, int,
 	return left, cursor, ok
 }
 
-// evaluateOperand computes the operand that starts at the given token: a number, a constant, a bracketed expression or
-// an operand with a minus before it. It returns the number and the index of the token after it.
+// evaluateOperand computes the operand that starts at the given token. It returns the number and the index of the token
+// after it.
 func (tree *Tree) evaluateOperand(tokens []Span, cursor int) (float64, int, bool) {
 	if cursor >= len(tokens) {
 		return 0, cursor, false

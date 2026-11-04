@@ -1,8 +1,4 @@
-<!--
-  One session with an agent, in a chat palette: the transcript and the requests the agent waits on. The prompt box adds
-  the page's chip, files picked with @, commands picked with / and the agent's settings. It is narrow in the agent
-  pane, and wide over the whole window or in a window of its own.
--->
+<!-- One session with an agent: the transcript, the requests the agent waits on and the prompt box. -->
 <script setup lang="ts">
 import type {
   SessionConfigOption,
@@ -23,20 +19,19 @@ import type { FileEdit } from "../stores/edits";
 import { useToolViewStore } from "../stores/toolView";
 import CompareView from "./CompareView.vue";
 
-/** A Tool is a tool call's title as the transcript shows it, and PMT's name after it when it is PMT's own. */
+/** A Tool is a tool call's title as the transcript shows it. */
 type Tool = { text: string; suffix: string };
-/** A Url is a link split around its host, and whether the host is written with look-alike letters. */
+/** A Url is a link split around its host. */
 type Url = { before: string; host: string; after: string; lookalike: boolean };
-/** A ShownEntry is one entry of the transcript with what its view reads from it. */
+/** A ShownEntry is one entry of the transcript with what its view needs. */
 type ShownEntry = { entry: Entry; tool?: Tool; link?: Url };
-/** A SelectOption is one of the agent's settings whose value is one of a list, such as its model. */
+/** A SelectOption is one of the agent's settings whose value is one of a list. */
 type SelectOption = Extract<SessionConfigOption, { type: "select" }>;
-/** A Label is the name a group of a setting's values is listed under. */
+/** A Label names a group of a setting's values. */
 type Label = { type: "label"; label: string };
 
 const { session, narrow = false } = defineProps<{ session: Session; narrow?: boolean }>();
 
-// the icon and color of a tool call and of a plan's step, by status, and the look of a plan step's text
 const STATUSES: Record<string, { icon: string; color: string; text?: string }> = {
   pending: { icon: "i-lucide-circle", color: "text-dimmed" },
   in_progress: { icon: "i-lucide-loader-circle", color: "text-primary", text: "text-highlighted" },
@@ -45,14 +40,12 @@ const STATUSES: Record<string, { icon: string; color: string; text?: string }> =
   cancelled: { icon: "i-lucide-ban", color: "text-dimmed" },
 };
 const PATCH_LINE_COLORS: Record<string, string> = { "+": "text-success", "-": "text-error" };
-// a permission's options, each drawn by its kind
 const OPTIONS: Record<string, { color: "primary" | "neutral"; variant: "solid" | "outline" | "ghost" }> = {
   allow_once: { color: "primary", variant: "solid" },
   allow_always: { color: "neutral", variant: "outline" },
 };
-// the kinds of setting drawn as a picker each, in this order; the agent's other settings are in one menu
+// The kinds of setting drawn as a picker each. The agent's other settings are in one menu.
 const CATEGORIES = ["model", "thought_level", "mode"];
-// the palette's padding around the transcript and the prompt, narrow in the pane and wide elsewhere
 const FRAMES = {
   narrow: { content: "px-3.5 py-4", prompt: "border-t-0 px-3 pb-3" },
   wide: { content: "px-7 py-5", prompt: "border-t-0 px-7 pb-4.5" },
@@ -73,11 +66,9 @@ const { data: places } = useQuery(() => ({
   enabled: picking.value,
 }));
 const comparing = shallowRef<FileEdit | null>(null);
-// the id of the answer just copied, whose button shows a tick for a moment
 const copied = shallowRef("");
 const { start: clearCopied } = useTimeoutFn(() => (copied.value = ""), 1500, { immediate: false });
 
-// each entry is one chat message, with its tool title or split link worked out once
 const messages = computed(() =>
   session.entries.map((entry) => ({
     id: entry.id,
@@ -103,7 +94,6 @@ const placeholder = computed(() =>
 const fileGroups = computed(() => [
   { id: "files", items: (places.value ?? []).map((place) => ({ label: place.rel, onSelect: () => pick(place) })) },
 ]);
-// the agent's commands, as the command list shows them: each on one line, its description dimmed after its name
 const commands = computed(() => [
   {
     id: "commands",
@@ -117,7 +107,6 @@ const commands = computed(() => [
     })),
   },
 ]);
-// the agent's main settings, one picker each, with the setting's values as its items
 const pickers = computed(() =>
   CATEGORIES.flatMap((category) =>
     session.options.filter(
@@ -135,7 +124,7 @@ const settings = computed(() =>
     .map(describeSetting),
 );
 
-// typing @ picks a file, as the File button does, and typing / in an empty box picks one of the agent's commands
+// Typing @ picks a file, and typing / in an empty box picks a command.
 watch(text, (next, previous) => {
   if (next.length !== previous.length + 1) return;
   if (next.endsWith("@")) {
@@ -147,7 +136,6 @@ watch(text, (next, previous) => {
   }
 });
 
-// a question asked from the editor focuses the prompt box as soon as the session can be typed in
 watch(
   [() => agent.isPromptWanted, () => session.state, box],
   ([isWanted, state, field]) => {
@@ -174,7 +162,7 @@ function pick(place: Place): void {
   term.value = "";
 }
 
-/** copyAnswer puts an answer of the agent's on the clipboard, and ticks its button for a moment. */
+/** copyAnswer puts an answer of the agent's on the clipboard. */
 async function copyAnswer(entry: Entry): Promise<void> {
   if (entry.kind !== "agent") return;
   await Clipboard.SetText(entry.text);
@@ -182,20 +170,16 @@ async function copyAnswer(entry: Entry): Promise<void> {
   clearCopied();
 }
 
-/** focusBox puts the caret back in the prompt box, not on the Command button, when the command list closes. */
+/** focusBox puts the caret back in the prompt box when the command list closes. */
 function focusBox(event: Event): void {
   event.preventDefault();
   box.value?.textareaRef?.focus();
 }
 
-/**
- * listValues returns the values of an agent's setting as items, one list for each group. The given function makes
- * each item. A named group starts with its label, values in no group make one list with no label, and a value the
- * agent sends twice is listed once.
- */
+/** listValues returns the values of an agent's setting as items, one list for each group. */
 function listValues<T>(option: SelectOption, toItem: (value: SessionConfigSelectOption) => T): (T | Label)[][] {
   const values = option.options as (SessionConfigSelectOption | SessionConfigSelectGroup)[];
-  // a group has `options` and a plain value has none; Pick keeps just the two fields the code reads
+  // A group has `options` and a plain value has none.
   const groups: Pick<SessionConfigSelectGroup, "name" | "options">[] = values.some((value) => "options" in value)
     ? (values as SessionConfigSelectGroup[])
     : [{ name: "", options: values as SessionConfigSelectOption[] }];
@@ -205,7 +189,7 @@ function listValues<T>(option: SelectOption, toItem: (value: SessionConfigSelect
   ]);
 }
 
-/** describeSetting returns one of the agent's other settings as the settings menu lists it: a switch, or its values. */
+/** describeSetting returns one of the agent's other settings as the settings menu lists it. */
 function describeSetting(option: SessionConfigOption): DropdownMenuItem {
   const configure = (value: string | boolean): void => void agent.configure(session, option.configId, value);
   if (option.type === "boolean")
@@ -227,13 +211,13 @@ function describeSetting(option: SessionConfigOption): DropdownMenuItem {
   };
 }
 
-/** describeTool returns a tool call's title, with PMT's server named apart from the agent's own tools. */
+/** describeTool returns a tool call's title, naming PMT's server apart from the agent's own tools. */
 function describeTool(entry: Extract<Entry, { kind: "tool" }>): Tool {
   const prefix = /^mcp__pmt__|^pmt[_:/]/.exec(entry.title);
   return { text: prefix ? entry.title.slice(prefix[0].length) : entry.title || "A tool", suffix: prefix ? "PMT" : "" };
 }
 
-/** splitUrl splits a link into what comes before its host, its host, and the rest, so the host can stand out. */
+/** splitUrl splits a link around its host, so the host can stand out. */
 function splitUrl(url: string): Url {
   try {
     const parsed = new URL(url);
@@ -249,7 +233,7 @@ function splitUrl(url: string): Url {
   }
 }
 
-/** stripControls returns a terminal's output without its color and cursor codes, for a view that only shows text. */
+/** stripControls returns a terminal's output without its color and cursor codes. */
 function stripControls(output: string): string {
   return output.replace(/\u001b\[[0-9;?]*[ -/]*[@-~]|\u001b\][^\u0007]*\u0007/g, "");
 }
@@ -453,7 +437,6 @@ function stripControls(output: string): string {
             <p v-else-if="entry.kind === 'notice'" class="text-12 text-dimmed">{{ entry.text }}</p>
           </template>
         </template>
-        <!-- an answer of the agent's can be copied; the other entries have no actions -->
         <template #actions="{ message }">
           <UButton
             v-if="(message.parts as ShownEntry[])[0]?.entry.kind === 'agent'"
@@ -559,7 +542,7 @@ function stripControls(output: string): string {
           >
             <UButton label="Command" icon="i-lucide-square-slash" variant="ghost" size="xs" />
             <template #content>
-              <!-- every command is listed, where the palette would list its first 12 -->
+              <!-- Every command is listed, where the palette would list only its first 12. -->
               <UCommandPalette
                 :groups="commands"
                 :fuse="{ resultLimit: session.commands.length }"
@@ -568,7 +551,6 @@ function stripControls(output: string): string {
               />
             </template>
           </UPopover>
-          <!-- a picker's list is as wide as its values, each on one line with its description dimmed after it -->
           <USelect
             v-for="{ option, items } in pickers"
             :key="option.configId"

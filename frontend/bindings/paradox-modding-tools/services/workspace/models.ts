@@ -24,7 +24,7 @@ export interface Dependency {
     "id": string;
 
     /**
-     * the title metadata.json gives it; "" where the descriptor gives none
+     * the title metadata.json gives it; "" if none
      */
     "title": string;
 }
@@ -36,7 +36,7 @@ export interface Descriptor {
     "path": string;
 
     /**
-     * the id metadata.json gives the mod; "" means none
+     * the id metadata.json gives the mod; "" if none
      */
     "id": string;
     "name": string;
@@ -56,7 +56,7 @@ export interface Descriptor {
     "workshopId": string;
 
     /**
-     * Dependencies are the mods it needs. They are read and never written.
+     * Dependencies are the mods it needs. They are never written.
      */
     "dependencies": Dependency[] | null;
 }
@@ -135,7 +135,7 @@ export interface Mod {
     "broken": boolean;
 
     /**
-     * the full path of the picture shown for it; "" when it has none
+     * the full path of the picture shown for it; "" if none
      */
     "thumbnail": string;
 
@@ -146,8 +146,8 @@ export interface Mod {
 }
 
 /**
- * A Place is where one file sits in the workspace: the file as its root lists it, with the root it is under and what
- * the workspace knows about it. Every answer that names a file carries one.
+ * A Place is where one file sits in the workspace, with the root it is under and what the workspace knows about it.
+ * Every answer that names a file carries one.
  */
 export interface Place {
     "path": string;
@@ -177,27 +177,22 @@ export interface Place {
     "database": string;
 
     /**
-     * true for a file no change is written to: the game's own, and a Workshop mod's
+     * true for the game's files and a Workshop mod's
      */
     "readOnly": boolean;
 
     /**
-     * true for a folder: a root, an entry of a folder's listing, or git's or an agent's
+     * true for a folder
      */
     "isDir": boolean;
 
     /**
-     * true for a GUI file and for the coats' files and folder, which Visual draws
+     * true for a file Visual draws
      */
     "drawable": boolean;
 
     /**
-     * the first paragraph of the game's readme for its database; "" where it has none
-     */
-    "about": string;
-
-    /**
-     * the full path of that readme; "" where it has none
+     * the path of the game's readme/info for its database; "" if none
      */
     "readme": string;
 }

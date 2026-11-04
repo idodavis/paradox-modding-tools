@@ -58,8 +58,7 @@ type Lookup struct {
 	Name  string `json:"name,omitempty" jsonschema:"the Lexicon entry's name"`
 }
 
-// SetView keeps the page a window shows and its chip. A window sends them whenever either changes and when it gains
-// focus, so the view kept is the one the user looked at last.
+// SetView keeps the page a window shows and its chip. A window sends them when either changes and when it gains focus.
 func (mcp *Service) SetView(view View) {
 	mcp.mu.Lock()
 	defer mcp.mu.Unlock()
@@ -84,7 +83,7 @@ func (mcp *Service) describeView(struct{}) (View, error) {
 }
 
 // show sends the main window what an agent asks it to show. It returns an error, which says what to give instead, if
-// the request names nothing, or a page, a query, a file, a window or a look-up the workspace does not have.
+// the request names nothing or names a page, query, file, window or look-up the workspace does not have.
 func (mcp *Service) show(request Show) (string, error) {
 	namesNothing := request.Page == "" && request.Path == "" && request.LookUp == nil
 	if namesNothing {

@@ -21,8 +21,8 @@ const (
 	RoleLocalizes             // it is a localization message with the name as its key
 )
 
-// An Occurrence is the stored form of one definition, reference or message, compact enough to keep for every file
-// of the game. Each string is stored as an ordinal into one of the index's tables.
+// An Occurrence is the stored form of one definition, reference or message. Each string is stored as an ordinal into
+// one of the index's tables.
 type Occurrence struct {
 	Span      jomini.Span
 	Line      int32
@@ -33,9 +33,9 @@ type Occurrence struct {
 	Language  uint8  // into Index.Languages; a localization file's
 	Role      Role
 	Local     bool
-	Alias     bool  // whether it is a second name of the definition it sits in, not a definition of its own
-	Nested    bool  // whether it sits inside a definition, the one Parent names
-	Firing    bool  // whether a reference fires the event, on_action or decision it names
+	Alias     bool  // a second name of the definition it sits in
+	Nested    bool  // sits inside a definition, the one Parent names
+	Firing    bool  // a reference that fires the event, on_action or decision it names
 	Parent    int32 // the defining occurrence this one sits inside
 	Statement int32 // the statement that writes it; 0, the file, for a definition named by its file, a message or a row
 }
@@ -176,9 +176,9 @@ func (index *Index) IsListed(position int32) bool {
 	return ok && listed == position
 }
 
-// ListOwnFiles returns the positions in Files of the files this index scanned itself, in order. For a mods' index these
-// are the mods' files, and for the install's index, all of them. It leaves out a file deleted since the scan, and a
-// file of a mod that a narrowed index does not answer for.
+// ListOwnFiles returns the positions in Files of the files this index scanned itself, in order: the mods' files for a
+// mods' index, all of them for the install's. It leaves out a file deleted since the scan, and a file of a mod that a
+// narrowed index does not answer for.
 func (index *Index) ListOwnFiles() []int32 {
 	var positions []int32
 	for position := index.countInstallFiles(); int(position) < len(index.Files); position++ {
@@ -189,8 +189,8 @@ func (index *Index) ListOwnFiles() []int32 {
 	return positions
 }
 
-// FindRoot returns the root that holds a path. It is the innermost one, since a DLC's folder is a root inside the
-// game's. A root's own folder is held by that root. It returns false if no root holds the path.
+// FindRoot returns the innermost root that holds a path, since a DLC's folder is a root inside the game's. It returns
+// false if no root holds the path.
 func (index *Index) FindRoot(path string) (files.Root, bool) {
 	position, ok := findRoot(index.rootKeys, files.ToKey(path)+"/")
 	if !ok {

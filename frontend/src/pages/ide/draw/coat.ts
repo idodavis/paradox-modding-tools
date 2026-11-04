@@ -1,8 +1,4 @@
-/**
- * Draws a coat of arms on a canvas, the one pixel computation the page makes. It colors each layer's texture by its
- * channels the way the game's shaders do, with the colors Go resolved, and composites the layers in their instances
- * onto the field.
- */
+/** Draws a coat of arms on a canvas, coloring each layer's texture the way the game's shaders do. */
 import Color from "colorjs.io";
 import { Range } from "monaco-editor/editor/editor.api";
 
@@ -15,17 +11,17 @@ import { fileUrl } from "../../../queries";
 /** An Rgba is a color as red, green, blue and alpha, each out of one. */
 export type Rgba = [number, number, number, number];
 
-/** CHANNELS names the channels of a pixel in the order of its bytes. A region mask uses the first REGION_CHANNELS. */
+/** CHANNELS names the channels of a pixel in the order of its bytes. A region mask uses the first three. */
 const CHANNELS = "rgba";
 const REGION_CHANNELS = 3;
 
 /** TILE is the size in pixels of a texture's tile in the picker. */
 const TILE = 96;
 
-/** images holds the textures loaded, by path, so a coat drawn again does not fetch them again. */
+/** images holds the textures loaded, by path. */
 const images = new Map<string, Promise<HTMLImageElement>>();
 
-/** latest holds the newest drawing of each canvas, so a drawing that finishes after a newer one began is dropped. */
+/** latest holds the newest drawing of each canvas, so an older drawing that finishes later is dropped. */
 const latest = new WeakMap<HTMLCanvasElement, object>();
 
 /** tiles holds the canvases that already show a tile. */
@@ -44,10 +40,7 @@ export function drawCoat(canvas: HTMLCanvasElement, coat: Coat, size: number): P
   });
 }
 
-/**
- * drawTile draws a texture on a canvas as the game colors it, at tile size. A canvas that already shows a tile is left
- * as it is.
- */
+/** drawTile draws a texture on a canvas as the game colors it, at tile size, once per canvas. */
 export async function drawTile(canvas: unknown, path: string, rule: Recolor | null): Promise<void> {
   if (!(canvas instanceof HTMLCanvasElement) || tiles.has(canvas)) return;
   tiles.add(canvas);
@@ -56,23 +49,17 @@ export async function drawTile(canvas: unknown, path: string, rule: Recolor | nu
   if (texture) canvas.getContext("2d")?.drawImage(texture, 0, 0, TILE, TILE);
 }
 
-/**
- * isOwn reports whether a layer may be changed: it is not read-only, its place has the given key, and it lies inside
- * the coat's own block.
- */
+/** isOwn reports whether a layer may be changed: it is writable, in the given file, and in the coat's own block. */
 export function isOwn(coat: Coat, layer: Layer, key: string): boolean {
   return !layer.place.readOnly && layer.place.key === key && Range.containsRange(coat.range, layer.range);
 }
 
-/** listMods lists the given mods, which a coat can be written into, as select items. */
+/** listMods lists the given mods as select items. */
 export function listMods(mods: readonly Mod[] | null | undefined): { label: string; value: string }[] {
   return (mods ?? []).map((mod) => ({ label: mod.descriptor.name || mod.id, value: mod.id }));
 }
 
-/**
- * findBoxes finds the boxes the instances of each layer cover on the coat's canvas, by the layer's index in the coat. A
- * layer with no instance covers the whole canvas.
- */
+/** findBoxes finds the boxes each layer's instances cover on the coat's canvas. A layer with none covers it all. */
 export function findBoxes(coat: Coat, size: number): Map<number, DOMRect[]> {
   const { width, height } = findSize(coat, size);
   const corners = [new DOMPoint(-1, -1), new DOMPoint(1, -1), new DOMPoint(1, 1), new DOMPoint(-1, 1)];
@@ -107,19 +94,13 @@ export function recolor(pixels: ImageData, channels: readonly string[], colors: 
   return result;
 }
 
-/**
- * findSize finds the size of the canvas a coat is drawn on: its field scaled so that the longer side is the given
- * size.
- */
+/** findSize finds the size of the canvas a coat is drawn on, its longer side being the given size. */
 function findSize(coat: Coat, size: number): { width: number; height: number } {
   const scale = size / (Math.max(coat.width, coat.height) || size);
   return { width: Math.round(coat.width * scale) || size, height: Math.round(coat.height * scale) || size };
 }
 
-/**
- * buildCoat draws a coat's layers in drawing order onto a canvas the size of its field, then lays the cloth's shading
- * over them.
- */
+/** buildCoat draws a coat's layers onto a canvas the size of its field, then lays the cloth's shading over them. */
 async function buildCoat(
   coat: Coat,
   shading: Shading | null,
@@ -146,11 +127,7 @@ async function buildCoat(
   return field;
 }
 
-/**
- * listPasses lists the layers to draw a coat with, in order. A layer with no instance comes first, as a pattern draws
- * under everything. Then all instances are sorted by rank, and each run of neighboring instances of one layer is one
- * pass: that layer with only those instances.
- */
+/** listPasses lists the layers to draw a coat with, in order. A layer with no instance, such as a pattern, is first. */
 function listPasses(coat: Coat): Layer[] {
   const layers = coat.layers ?? [];
   const spots = layers
@@ -167,7 +144,7 @@ function listPasses(coat: Coat): Layer[] {
   return passes.map(({ layer, instances }) => (instances.length ? { ...layer, instances } : layer));
 }
 
-/** buildLayer builds one layer on a canvas the size of its field: its texture or sub-coat in each instance, masked. */
+/** buildLayer builds one layer on a canvas the size of its field. */
 async function buildLayer(
   layer: Layer,
   shading: Shading | null,
@@ -218,11 +195,11 @@ async function buildTexture(path: string, rule: Recolor | null): Promise<HTMLCan
   return toCanvas(resolveRecolor(pixels, rule));
 }
 
-/** buildMatrix builds the transform that places an instance on a field of the given size, from the field's middle. */
+/** buildMatrix builds the transform that places an instance on a field of the given size. */
 function buildMatrix(instance: Instance, isSub: boolean, width: number, height: number): DOMMatrix {
   const [scaleX, scaleY] = instance.scale;
   const [across, down] = instance.position;
-  // a sub is placed by its corner, and any other layer by its center
+  // A sub is placed by its corner, and any other layer by its center.
   const [centerX, centerY] = isSub ? [across + Math.abs(scaleX) / 2, down + Math.abs(scaleY) / 2] : [across, down];
   const aspect = width / height;
   return new DOMMatrix()
@@ -258,10 +235,7 @@ function resolveRecolor(pixels: ImageData, rule: Recolor): ImageData {
   return result;
 }
 
-/**
- * buildRegionMask builds the alpha a mask keeps of a pattern's pixel: each kept channel less every channel after it,
- * summed.
- */
+/** buildRegionMask builds the alpha a mask keeps of a pattern's pixel. */
 function buildRegionMask(channels: readonly string[]): (pixels: ImageData, offset: number) => number {
   return (pixels, offset) =>
     channels.reduce((sum, channel) => {
@@ -271,10 +245,7 @@ function buildRegionMask(channels: readonly string[]): (pixels: ImageData, offse
     }, 0);
 }
 
-/**
- * buildGrainMask builds the alpha the cloth's grain gives an emblem's pixel: its channel times its strength, at most
- * one.
- */
+/** buildGrainMask builds the alpha the cloth's grain gives an emblem's pixel. */
 function buildGrainMask(grain: CoatStrength): (pixels: ImageData, offset: number) => number {
   return (pixels, offset) => Math.min(1, findChannel(pixels, offset, grain.channel) * grain.strength);
 }
@@ -322,10 +293,7 @@ function writeColor(pixels: ImageData, offset: number, color: Rgba): void {
   color.forEach((value, part) => (pixels.data[offset + part] = Math.round(Math.min(1, Math.max(0, value)) * 255)));
 }
 
-/**
- * toRgba converts a CSS color to four numbers out of one. The color is Go's rgba(red, green, blue, alpha) or a picked
- * #rrggbb. An empty color is clear.
- */
+/** toRgba converts a CSS color, Go's rgba() or a picked #rrggbb, to four numbers out of one. "" is clear. */
 export function toRgba(css: string): Rgba {
   if (!css) return [0, 0, 0, 0];
   const color = new Color(css).to("srgb");

@@ -107,25 +107,31 @@ do name a database are `game.CommandKeys` rows, as `stress_impact`'s keys are tr
 ## The dumps
 
 `ReadDumps` reads the script_docs and data types dumps under the given folders: the effects, triggers and event
-targets logs, the modifiers, the on_actions, the event scopes, and the data types files. `FindDumpsAt` gives when they
-were written, the time of the newest dump file, without reading one. A section the install lacks is taken from the
-shipped backup, one section at a time. The schema's `Dumps` is a `SourceState`: whether the dumps came from the install,
-the shipped backup or neither, when they were written, and whether they are older than the install.
+targets logs, the modifiers, the on_actions, the event scopes, the customizable localizations' names (`Customs`, which
+lsp counts as known though no file defines some), and the data types files. `FindDumpsAt` gives when they were
+written, the time of the newest dump file, without reading one. A section the install lacks is taken from the shipped
+backup, one section at a time; a dump file that cannot be read as text, such as one over 32 MiB or in UTF-16, counts
+as lacking. The schema's `Dumps` is a `SourceState`: whether the dumps came from the install, the shipped backup or
+neither, when they were written, and whether they are older than the install.
 
 A command that a `game.DumpCorrections` row names, for a dump row that contradicts its own text, takes the scopes and
 the target of the row in place of the dump's (`applyCorrections`), whether the dumps came from the install or the
 backup.
 
-A command named by several dumps is one `Command`. Its arguments are the keys of every usage block written under its
-name, on a line of its own or inside a sentence, and the key each line of its prose opens with, as in `key = value`.
-A usage's comments are dropped. A key written with nothing after it is declared all the same, unless the block it
+A command named by several dumps is one `Command`, which keeps each dump's arguments under the word that declares it
+there (`ArgumentsOf`), so an effect and a trigger of one name take their own. Its arguments are the keys of every usage
+block written under its name, on a line of its own or inside a sentence, and the key each line of its prose opens with,
+as in `key = value`. A usage's comments are dropped. A key written with nothing after it is declared all the same, unless the block it
 opens starts on the next line, where it is the scope the usage runs in. A statement written in `[ ]` or `< >` is
 optional, and a value written as `[a|b]` or `<A|B>` gives the choices. A placeholder such as `<triggers>` gives the
-block the shape it names, and a docs' type word gives the type. `ArgumentKey` is the first key of the first block form,
-which an argument in parentheses after the command's name stands for. A link that the dump says requires data is a
-prefix, written with a name after a colon. A trigger's Traits line says what its value takes (`resolveTraits`): a
-comparison takes a number or a script value, or a date where the line says so; yes/no takes yes or no; a class key
-takes a name of the database that holds its keys; a scope or a target takes a link to that scope (`ValueTarget`,
+block the shape it names, and a docs' type word gives the type. Any other placeholder value names what its words name
+exactly (`resolvePlaceholder`): words that end in key or name, a name of the database the others name, as
+`<effect_localization_key>` does; any other words, a target of the scope type they name, with or without a closing
+scope or target, or a name of that scope's database, as `<country>` does. `ArgumentKey` is the first key of the first
+block form, which an argument in parentheses after the command's name stands for. A link that the dump says requires
+data is a prefix, written with a name after a colon. A trigger's Traits line says what its value takes
+(`resolveTraits`): a comparison takes a number or a script value, or a date where the line says so; yes/no takes yes
+or no; a class key takes a name of the database that holds its keys; a scope or a target takes a link to that scope (`ValueTarget`,
 `Expected.Scope`); a tag or an id takes such a link or a name of the database of the scope's names; a list takes one of
 its words. A keyword row written under a command, such as random_list's numbered branches, gives the command an
 argument of that shape.
@@ -230,11 +236,13 @@ silently in that order, so that a block starts with the scopes saved by the bloc
 `opinion(scope:ruler)` is, stands for the command's number, and its argument makes the references.
 
 The references a statement makes are found here and nowhere else: the names its key calls, the names after a link's
-prefixes, the database its field claims, the database a key path row gives (`game.Game.ListReferences`), a step of the
-game's event pictures (`findPictureDatabase`), a coat's template list, an event id, a script value, a quoted data-call
-argument, a macro's expansion and a `list "x"` value. The text a keyword shows names the database of its row's
-`Values`, and its text key the entry its `Entries` names (`findTextDatabases`). An argument `game.LocStems` names gives
-the localization key built on its value, as an activity log entry's `key` names `<key>_title`. A name after a prefix
+prefixes, the database its field claims, the modifier type a modifier the dumps declare names, which never accuses
+since nothing says every modifier has a definition, the database a key path row gives (`game.Game.ListReferences`), a
+step of the game's event pictures (`findPictureDatabase`), a coat's template list, named color and images, as
+`game.Coat` places them (`findCoatDatabase`), an event id, a script value, a quoted data-call argument, a macro's
+expansion and a `list "x"` value. The text a keyword shows names the database of its row's `Values`
+(`findTextDatabase`). An argument `game.LocStems` names gives the localization key built on its value, as an activity
+log entry's `key` names `<key>_title`. A name after a prefix
 that is itself a chain of links, as `scope:overlord` is in `relations:scope:overlord`, names no definition: it makes the
 references of its own prefixes (`listPrefixed`). A value names a script value where it is a chain of links ending in a
 name, a math keyword's value, or a value whose field takes a script value; a link key's field is its holder's, so it
@@ -246,8 +254,9 @@ A data call's steps are read by the dumps' data types. `ResolveMacro` expands a 
 data binding macros. `ResolveCallTypes` gives the type each step leads to from a GUI block's data context, and
 `FindFunction` the function one step calls. `ResolveDatacontext` gives the data context type a block's datacontext key
 sets. `ListCallReferences` gives the names a call's quoted arguments hold, each in the database of the type its step
-returns, or as `game.GUI.CallTargets` says. `ResolveTypeDatabase` finds the database that holds a data type's names by
-the type's words, as `ToPhrase` writes them. Where two databases have the same words, the one whose own name is those
+returns, or as `game.GUI.CallTargets` says; a promote of `game.TopScopeType` that leads to a scope (`isScopeType`) reads
+a saved scope, as `SCOPE.sC('heir')` does, so its name never accuses. `ResolveTypeDatabase` finds the database that
+holds a data type's names by the type's words, as `ToPhrase` writes them. Where two databases have the same words, the one whose own name is those
 words takes them (`isNamedExactly`: EU5's `institution` over `setup/1337.institution`), and else they name neither.
 
 ## The shipped backup

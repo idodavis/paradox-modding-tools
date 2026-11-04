@@ -62,8 +62,8 @@ export function FetchItem(modID: string, key: string): $CancellablePromise<$mode
 }
 
 /**
- * FetchPreviews copies the gallery of a listing's Workshop item into the listing, adding what it lacks. It asks Steam
- * about the item again. It returns an error if the listing has no item, Steam cannot be asked or a download fails.
+ * FetchPreviews copies the gallery of a listing's Workshop item into the listing, adding what it lacks. It returns an
+ * error if the listing has no item, Steam cannot be asked or a download fails.
  */
 export function FetchPreviews(modID: string, key: string): $CancellablePromise<void> {
     return $Call.ByID(502807331, modID, key);
@@ -110,8 +110,7 @@ export function ListListings(modID: string): $CancellablePromise<$models.Listing
 }
 
 /**
- * ListRules returns the rules for the files every upload leaves out. The last rule lists the coding agents'
- * instruction files, except the ones that start with a dot, which the first rule already covers.
+ * ListRules returns the rules for the files every upload leaves out.
  */
 export function ListRules(): $CancellablePromise<$models.Rule[] | null> {
     return $Call.ByID(770400553);
@@ -149,8 +148,8 @@ export function ReadIgnore(modID: string): $CancellablePromise<string> {
 }
 
 /**
- * ReadListing returns one of a mod's listings. The mod's own listing comes from its descriptor, and an older one from
- * its listing.json. It returns an error if the workspace has no such mod or listing, or a file cannot be read.
+ * ReadListing returns one of a mod's listings. It returns an error if the workspace has no such mod or listing, or a
+ * file cannot be read.
  */
 export function ReadListing(modID: string, key: string): $CancellablePromise<$models.Listing> {
     return $Call.ByID(1516292290, modID, key);
@@ -196,7 +195,7 @@ export function WriteListing(modID: string, key: string, listing: $models.Listin
 }
 
 /**
- * WriteZip writes the files of a mod's next upload as a zip. It removes the zip if writing fails.
+ * WriteZip writes the files of a mod's next upload as a zip.
  */
 export function WriteZip(modID: string, target: string): $CancellablePromise<void> {
     return $Call.ByID(1036300132, modID, target);

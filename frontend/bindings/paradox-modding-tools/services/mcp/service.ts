@@ -31,8 +31,7 @@ export function ListTasks(): $CancellablePromise<$models.Task[] | null> {
 }
 
 /**
- * ResolveAccess returns the address an agent reaches the server at, on the port the settings name, and the token it
- * sends.
+ * ResolveAccess returns the address an agent reaches the server at and the token it sends.
  */
 export function ResolveAccess(): $CancellablePromise<$models.Access> {
     return $Call.ByID(3157914132);
@@ -46,8 +45,7 @@ export function SetPages(pages: $models.Page[] | null): $CancellablePromise<void
 }
 
 /**
- * SetView keeps the page a window shows and its chip. A window sends them whenever either changes and when it gains
- * focus, so the view kept is the one the user looked at last.
+ * SetView keeps the page a window shows and its chip. A window sends them when either changes and when it gains focus.
  */
 export function SetView(view: $models.View): $CancellablePromise<void> {
     return $Call.ByID(946472075, view);

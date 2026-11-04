@@ -19,8 +19,8 @@ import * as workspace$0 from "../workspace/models.js";
 import * as $models from "./models.js";
 
 /**
- * ReplaceText replaces every match of a query in the mods' files and returns how many it replaced. Each file keeps its
- * encoding. A file open in the editor is skipped, and the error says how many were.
+ * ReplaceText replaces every match of a query in the mods' files and returns how many it replaced. A file open in the
+ * editor is skipped, and the error says how many were.
  */
 export function ReplaceText(query: $models.Query, replacement: string): $CancellablePromise<number> {
     return $Call.ByID(3204296503, query, replacement);
@@ -35,9 +35,8 @@ export function SearchFiles(query: string, limit: number): $CancellablePromise<w
 }
 
 /**
- * SearchText runs a text search over the files the query names. It sends each file's hits as a search:hits event, at
- * most maxHits in all, and returns when the search ends or a newer search stops it. It returns whether the search
- * stopped at maxHits. It returns an error if the query is empty or is a regular expression that does not parse.
+ * SearchText runs a text search and sends each file's hits as a search:hits event, at most maxHits in all. It returns
+ * whether it stopped at maxHits, and an error if the query is empty or is a regular expression that does not parse.
  */
 export function SearchText(query: $models.Query): $CancellablePromise<boolean> {
     return $Call.ByID(3197255683, query);

@@ -1,10 +1,9 @@
 <!--
-  A pan and zoom viewport over a picture: drag to pan, Ctrl and the wheel to zoom, and Fit. A bar under it holds the
-  zoom, a toolbar slot and, when asked, the backdrop and an Export PNG button. The pane around the picture takes focus,
-  so the page can listen there for clicks and keys that land off the picture.
+  A pan and zoom viewport over a picture. A bar under it holds the zoom, a toolbar slot and, when asked, the backdrop
+  and an Export PNG button.
 -->
 <script lang="ts">
-/** How far a press must move on the screen, in pixels, to be a drag rather than a click. */
+/** How far a press must move, in pixels, to be a drag rather than a click. */
 export const DRAG = 4;
 </script>
 
@@ -21,10 +20,9 @@ import { useDrawStore } from "../../../stores/draw";
 
 const MIN_ZOOM = 0.02;
 const MAX_ZOOM = 32;
-// MARGIN is the space around a fitted box.
 const MARGIN = 32;
 const CHECKS = "repeating-conic-gradient(var(--bg-0) 0 25%, var(--bg-4) 0 50%) 0 0 / 16px 16px";
-// BACKDROPS are the backdrops a coat or an image can sit on, with what each paints. Any other value is a color.
+// Any backdrop value not listed here is a color.
 const BACKDROPS = [
   { value: "dark", label: "Dark", paint: "var(--bg-0)" },
   { value: "light", label: "Light", paint: "#e6e4df" },
@@ -36,9 +34,9 @@ const {
   snapshot = null,
   title = "picture",
 } = defineProps<{
-  /** Whether the picture sits on the backdrop chosen in the bar, rather than on checks. */
+  /** Whether the picture sits on the backdrop chosen in the bar instead of on checks. */
   backdrop?: boolean;
-  /** Makes the PNG that Export writes, or null when there is nothing to export. With none, there is no Export. */
+  /** Makes the PNG that Export writes. With none, there is no Export. */
   snapshot?: (() => Promise<Blob | null>) | null;
   /** The name an exported PNG is offered under, without its extension. */
   title?: string;
@@ -70,7 +68,7 @@ const { mutate: exportPng, isLoading: isExporting } = useMutation({
 
 let camera: PanzoomObject | null = null;
 const zoom = shallowRef(1);
-// fitBox is the box kept in view: undefined fits the whole picture, null means the user has moved the camera.
+// The box kept in view. Undefined fits the whole picture, and null means the user has moved the camera.
 const fitBox = shallowRef<DOMRect | null | undefined>(undefined);
 let isPanning = false;
 let hasDragged = false;
@@ -88,10 +86,7 @@ const sharpen = useDebounceFn(() => {
   requestAnimationFrame(() => requestAnimationFrame(() => layer.style.removeProperty("will-change")));
 }, 250);
 
-/**
- * fit shows a box of the picture whole in the middle of the pane, no larger than it is, or all of the picture with no
- * box, and keeps showing it as they change size. A box with no size is not shown.
- */
+/** fit shows a box of the picture whole in the middle of the pane, or all of the picture with no box. */
 function fit(box?: DOMRect): void {
   const room = pane.value;
   const picture = content.value;
@@ -108,7 +103,7 @@ function fit(box?: DOMRect): void {
   fitBox.value = box;
 }
 
-/** reveal pans the camera to put a box in the middle of the pane if it is not wholly in view. A pan ends the fit. */
+/** reveal pans the camera to put a box in the middle of the pane if it is not wholly in view. */
 function reveal(box: DOMRect): void {
   const room = pane.value?.getBoundingClientRect();
   const origin = content.value?.getBoundingClientRect();
@@ -122,13 +117,13 @@ function reveal(box: DOMRect): void {
   fitBox.value = null;
 }
 
-/** applyZoom zooms to the given level, which ends the fit. */
+/** applyZoom zooms to the given level. */
 function applyZoom(level: number): void {
   camera?.zoom(level, { animate: false });
   fitBox.value = null;
 }
 
-/** onWheel zooms around the pointer with Ctrl and the wheel, and pans with the wheel alone. Both end the fit. */
+/** onWheel zooms around the pointer with Ctrl and the wheel, and pans with the wheel alone. */
 function onWheel(event: WheelEvent): void {
   if (event.ctrlKey) camera?.zoomWithWheel(event, { step: 0.25 });
   else camera?.pan(-event.deltaX / zoom.value, -event.deltaY / zoom.value, { relative: true, animate: false });

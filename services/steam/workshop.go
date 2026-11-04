@@ -62,8 +62,7 @@ const (
 // releaseNumber matches the major and minor numbers that a version or a version tag starts with.
 var releaseNumber = regexp.MustCompile(`^\d+\.\d+`)
 
-// ListRules returns the rules for the files every upload leaves out. The last rule lists the coding agents'
-// instruction files, except the ones that start with a dot, which the first rule already covers.
+// ListRules returns the rules for the files every upload leaves out.
 func (stm *Service) ListRules() []Rule {
 	instructions := lo.Reject(agent.ListFiles(), func(file string, _ int) bool { return strings.HasPrefix(file, ".") })
 	return []Rule{
@@ -97,8 +96,8 @@ func (stm *Service) ListDLC() ([]DLC, error) {
 	return dlcs, nil
 }
 
-// loadDLC returns the DLC that a folder holds, read from its descriptor. Its id is "" if the descriptor is missing or
-// has no Steam id. It returns an error if a file cannot be read.
+// loadDLC returns the DLC that a folder holds. Its id is "" if the descriptor is missing or has no Steam id. It returns
+// an error if a file cannot be read.
 func loadDLC(ws *workspace.Session, mods *index.Index, dir string) (DLC, error) {
 	entries, err := os.ReadDir(dir)
 	if err != nil {
@@ -171,8 +170,7 @@ func (stm *Service) ListTags() (Tags, error) {
 	return Tags{Categories: categories, Versions: declared.Versions}, nil
 }
 
-// listVersionTags returns Steam's version tags for a game. With none kept, it fetches them at most once per run. A
-// failed fetch leaves none until ListTags fetches again.
+// listVersionTags returns Steam's version tags for a game. With none kept, it fetches them at most once per run.
 func (stm *Service) listVersionTags(appID int) []string {
 	cacheDir := stm.Workspace.Config.Dirs.Cache
 	if saved := loadTags(cacheDir, appID); hasTags(saved) {

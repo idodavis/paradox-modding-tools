@@ -162,21 +162,17 @@ const {
 const listing = defineModel<Listing>("listing", { required: true });
 
 const view = shallowRef("visual");
-// whether the user picked the view, which then never switches on its own
+// Once the user picks the view, it never switches on its own.
 const chosen = shallowRef(false);
-// whether the visual editor would change the description
 const lossy = shallowRef(false);
-// the description's HTML, undefined until it is drawn
 const html = shallowRef<string>();
-// counts the drawings, so one that ends late is dropped
+// Counts the drawings, so one that ends late is dropped.
 let drawing = 0;
 const address = shallowRef("");
-// the slot of the toolbar button whose address popover is open
 const openSlot = shallowRef("");
 const copied = refAutoReset(false, 2000);
 const visual = useTemplateRef<{ editor?: Editor }>("visual");
 const editor = computed(() => visual.value?.editor);
-// where the toolbar shows, in the card's header
 const toolbarSpot = useTemplateRef<HTMLElement>("toolbarSpot");
 
 const description = computed({
@@ -194,30 +190,25 @@ const steamText = computed(() => (description.value ? "" : (comparison?.steam?.d
 
 const { mutate: convert } = useMutation({
   mutation: (text: string) => steam.ToBBCode(text),
-  // an out-of-date conversion, or one that changes nothing, writes nothing
   onSuccess: (bbcode, text) => {
     if (text === html.value && bbcode !== description.value) description.value = bbcode;
   },
 });
 
-// another listing starts over in the visual view
 watch([() => modId, () => listingKey], () => {
   html.value = undefined;
   lossy.value = false;
   chosen.value = false;
   view.value = "visual";
 });
-// the description is drawn again when the listing or the view changes, never while the user types
+// The description is drawn again when the listing or the view changes, never while the user types.
 watch([() => modId, () => listingKey, view], () => showDescription(description.value), { immediate: true });
 
-/**
- * showDescription draws BBCode in the visual editor and notes whether the editor would change it. Unless the user
- * picked the view, such a description shows as BBCode.
- */
+/** showDescription draws BBCode in the visual editor and notes whether the editor would change it. */
 async function showDescription(bbcode: string): Promise<void> {
   if (view.value !== "visual") return;
   const turn = ++drawing;
-  // an open editor would take the new text as an edit
+  // An open editor would take the new text as an edit.
   html.value = undefined;
   const drawn = await loadQuery(htmlQuery(bbcode));
   html.value = drawn;
@@ -236,7 +227,7 @@ function choose(choice: string | number): void {
   view.value = `${choice}`;
 }
 
-/** change keeps the visual editor's HTML and writes its BBCode to the listing. It clears the lossy notice. */
+/** change keeps the visual editor's HTML and writes its BBCode to the listing. */
 function change(text: string): void {
   html.value = text;
   lossy.value = false;
@@ -292,7 +283,7 @@ function insert(target: Editor, run: (target: Editor, address: string) => unknow
       <UTabs :model-value="view" :items="VIEWS" :content="false" size="xs" @update:model-value="choose" />
     </div>
     <p v-if="lossy" class="border-b border-default px-5.5 py-1.5 text-12 text-warning">{{ LOSSY_NOTES[view] }}</p>
-    <!-- no empty line after a last heading or list, so a click rewrites nothing -->
+    <!-- No empty line after a last heading or list, so a click rewrites nothing. -->
     <UEditor
       v-if="view === 'visual' && html !== undefined"
       ref="visual"
@@ -310,7 +301,7 @@ function insert(target: Editor, run: (target: Editor, address: string) => unknow
       :ui="{ content: 'min-h-96 px-5.5 py-4' }"
       @update:model-value="change"
     >
-      <!-- inside the editor, so it gets the table handlers; shown in the card's header -->
+      <!-- Inside the editor, so it gets the table handlers, and shown in the card's header. -->
       <Teleport defer :to="toolbarSpot">
         <UEditorToolbar v-if="editor" :editor="editor" :items="TOOLBAR">
           <template v-for="row in ADDRESSES" :key="row.slot" #[row.slot]>

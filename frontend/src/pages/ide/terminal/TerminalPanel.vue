@@ -1,8 +1,4 @@
-<!--
-  The IDE panel's Terminal tab: the active shell's screen with a find box over it, and a resizable, collapsible list of
-  shells beside it. New shell starts the default shell, and the menu beside it starts any other. Showing the tab with no
-  shell starts one.
--->
+<!-- The IDE panel's Terminal tab: the active shell's screen with a find box, and the list of shells beside it. -->
 <script setup lang="ts">
 import { computed, onMounted, shallowRef, useTemplateRef, watch } from "vue";
 import { useQuery } from "@pinia/colada";
@@ -16,8 +12,7 @@ import { useWindowsStore } from "../../../stores/windows";
 import { useWorkspaceStore } from "../../../stores/workspace";
 import FindBox from "../../../ui/FindBox.vue";
 
-// the screen, and the shell list: a pixel-sized pane that collapses to a rail of icons below its minimum width, as the
-// sidebar does
+// The shell list collapses to a rail of icons below its minimum width, as the sidebar does.
 const PANES: SplitterItem[] = [
   { slot: "screen" },
   {
@@ -30,7 +25,7 @@ const PANES: SplitterItem[] = [
     collapsedSize: 36,
   },
 ];
-// VS Code's icon for each shell program by name; any other program gets the plain terminal icon
+// VS Code's icon for each shell program by name. Any other program gets the plain terminal icon.
 const ICONS: Record<string, string> = {
   pwsh: "i-codicon-terminal-powershell",
   powershell: "i-codicon-terminal-powershell",
@@ -44,14 +39,13 @@ const terminal = useTerminalStore();
 const workspace = useWorkspaceStore();
 const host = useTemplateRef("host");
 const term = shallowRef("");
-// the active shell's rows as text, read while the find box is open
+// The active shell's rows as text, read while the find box is open.
 const rows = shallowRef<string[]>([]);
 
 const current = computed(() => terminal.consoles.find((session) => session.shell.id === terminal.active));
 const hasFile = computed(() => !!terminal.findFile());
 const windows = useWindowsStore();
 const { data: programs } = useQuery(programsQuery);
-// the menu beside New shell: a shell of each program this system has
 const programItems = computed<DropdownMenuItem[]>(() =>
   (programs.value ?? []).map((program) => ({ label: program.name, onSelect: () => terminal.start(program.path) })),
 );
@@ -76,7 +70,6 @@ const fitShell = useThrottleFn(() => {
   if (current.value) terminal.fitConsole(current.value);
 }, 50);
 useResizeObserver(host, () => void fitShell());
-// while the find box is open, its rows follow the shell's output
 watch(
   [() => terminal.findOpen, current],
   ([findOpen, session], _, onCleanup) => {
@@ -129,7 +122,7 @@ function closeFind(): void {
         />
       </Teleport>
       <div class="relative size-full min-h-0 min-w-0 bg-(--bg-0)">
-        <!-- the padding sits outside the terminal's element, which the fit measures -->
+        <!-- The padding stays outside the terminal's element, which the fit measures. -->
         <div class="absolute inset-0 py-2 ps-3.5">
           <div ref="host" class="size-full" />
         </div>

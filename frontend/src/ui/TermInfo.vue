@@ -1,7 +1,4 @@
-<!--
-  An (i) button that opens a popover with the meaning of a term PMT uses. It shows the meaning it is given, else the
-  term's row in the terms table. Its slot replaces the (i) as the thing to press.
--->
+<!-- An (i) button that opens a popover with the meaning of a term PMT uses. -->
 <script setup lang="ts">
 import { computed } from "vue";
 

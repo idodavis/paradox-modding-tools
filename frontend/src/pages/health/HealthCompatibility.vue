@@ -1,7 +1,4 @@
-<!--
-  Health's view of workspace compatibility. It shows a guide to how the game picks a copy, the load order to drag for a
-  preview, with a switch per mod that leaves it out of these checks, and the findings with the open one's detail.
--->
+<!-- Health's view of workspace compatibility: a guide, the load order to preview, and the findings. -->
 <script setup lang="ts">
 import { computed, shallowRef } from "vue";
 import { useMutation, useQuery } from "@pinia/colada";

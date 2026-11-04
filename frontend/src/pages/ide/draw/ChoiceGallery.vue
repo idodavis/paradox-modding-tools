@@ -1,7 +1,4 @@
-<!--
-  The one picker of the Visual panel. It shows the current choice with its name and position, and opens a search and a
-  grid of every choice. It serves a widget's pictures and a coat layer's textures and colors alike.
--->
+<!-- The one picker of the Visual panel: the current choice, opening to a search and a grid of every choice. -->
 <script setup lang="ts">
 import { refDebounced } from "@vueuse/core";
 import { computed, shallowRef } from "vue";
@@ -27,9 +24,9 @@ const {
   title: string;
   /** How a choice is shown: a wide picture, a square texture or a color swatch. */
   shape: "wide" | "square" | "swatch";
-  /** Whether the current choice was picked here rather than written, which Back to the default undoes. */
+  /** Whether the current choice was picked here rather than written. */
   isPicked?: boolean;
-  /** Whether the choice cannot be changed, which shows the current choice alone. */
+  /** Whether the choice cannot be changed. */
   disabled?: boolean;
 }>();
 const emit = defineEmits<{ pick: [value: string]; reset: [] }>();
@@ -41,7 +38,7 @@ defineSlots<{
   extra?: () => unknown;
 }>();
 
-// SHOWN is the most tiles drawn at once; a search finds the rest.
+// SHOWN is the most tiles drawn at once. A search finds the rest.
 const SHOWN = 60;
 const SIZES = {
   wide: { preview: "h-14 w-25", tile: "aspect-video", columns: "grid-cols-4" },

@@ -1,7 +1,4 @@
-<!--
-  A dialog that shows, with one of the game's own definitions as the example, how the game reads a mod beside its own
-  files: three columns, then three rules.
--->
+<!-- A dialog that shows with an example how the game reads a mod beside its own files. -->
 <script setup lang="ts">
 import { computed } from "vue";
 import { useRouter } from "vue-router";
@@ -17,7 +14,6 @@ const { gameId, modTitle } = defineProps<{ gameId: string; modTitle: string }>()
 const router = useRouter();
 const workspace = useWorkspaceStore();
 const { data: games } = useQuery(gamesQuery);
-// with no game given, the first one is the example
 const game = computed(() => games.value?.find((row) => row.id === gameId) ?? games.value?.[0]);
 const example = computed(() => game.value?.example);
 const { data: precedence } = useQuery(() => ({
@@ -30,7 +26,6 @@ const { data: precedence } = useQuery(() => ({
 }));
 
 const title = computed(() => modTitle.trim() || "Your mod");
-// the mod changes the example's first name and adds one of its own, which the game uses from the mod
 const newEntry = computed(() => `${title.value.toLowerCase().replace(/\W+/g, "_")}_new`);
 const uses = computed(() => [
   ...(example.value?.names ?? []).map((entry, index) => ({ entry, modCopy: index === 0 })),

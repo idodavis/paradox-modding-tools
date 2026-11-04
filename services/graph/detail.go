@@ -1,5 +1,4 @@
-// detail.go builds what the page shows about one node of the Event Graph: its texts with their triggers, its keys, its
-// firings and the game rules it reads.
+// detail.go builds what the page shows about one node of the Event Graph.
 
 package graph
 
@@ -68,13 +67,11 @@ type RuleOption struct {
 // callKind is the kind of a data call's segment once it holds the call's words.
 const callKind = "text"
 
-// textKeys are the keys at the top of a definition whose value is always a localization key. Each is shown as a text
-// even when no message has its key.
+// textKeys are the keys at the top of a definition whose value is always a localization key.
 var textKeys = []string{game.TitleKey, game.DescriptionKey}
 
-// BuildDetail returns the detail of the node with the given id, read from the definition the game keeps of it, with
-// the copy that definition hides. It returns an error if no workspace is open, if the game keeps no definition of the
-// node, or if its file cannot be read.
+// BuildDetail returns the detail of the node with the given id. It returns an error if no workspace is open, the game
+// keeps no definition of the node or its file cannot be read.
 func (gph *Service) BuildDetail(id string) (Detail, error) {
 	ws, err := gph.Workspace.Session()
 	if err != nil {
@@ -138,8 +135,7 @@ func makeSection(ws *workspace.Session, mods *index.Index, tree *jomini.Tree, st
 	return section
 }
 
-// listVersions returns the texts a block can show in the order it writes them. A text is a desc or a name, or a block
-// with its own trigger that holds one. A first_valid or random_valid block holds several.
+// listVersions returns the texts a block can show, in the order written.
 func listVersions(ws *workspace.Session, mods *index.Index, tree *jomini.Tree, statement int32) []Version {
 	var versions []Version
 	for child := range tree.Children(statement) {
@@ -162,7 +158,7 @@ func listVersions(ws *workspace.Session, mods *index.Index, tree *jomini.Tree, s
 func makeVersion(ws *workspace.Session, mods *index.Index, tree *jomini.Tree, statement int32) (Version, bool) {
 	label := statement
 	if tree.Statements[statement].IsBlock() {
-		// FindChild leaves 0 when there is no desc; statement 0 is the file, which has no value
+		// FindChild leaves 0 when there is no desc, and statement 0 is the file, which has no value.
 		label, _ = tree.FindChild(statement, game.DescriptionKey)
 		if label == 0 {
 			label, _ = tree.FindChild(statement, game.LabelKey)
@@ -182,9 +178,8 @@ func makeVersion(ws *workspace.Session, mods *index.Index, tree *jomini.Tree, st
 	}, true
 }
 
-// describeCalls returns a text's pieces with each data call replaced by its words, read from the call's last step. A
-// call that names a customizable localization reads as the texts it can show, one that names any other definition as
-// that name, and any other call as its function. A call keeps its markup and has the kind callKind.
+// describeCalls returns a text's pieces with each data call replaced by its words. A call keeps its markup and has the
+// kind callKind.
 func describeCalls(ws *workspace.Session, mods *index.Index, text string) []loc.Segment {
 	segments := loc.Segments(text, 0)
 	for position, segment := range segments {
@@ -199,8 +194,8 @@ func describeCalls(ws *workspace.Session, mods *index.Index, text string) []loc.
 	return segments
 }
 
-// describeCustom returns the texts a call's customizable localization can show, each once in the order written, joined
-// by slashes, such as "daughter/son". It returns "" for a call that names none, or one the workspace does not define.
+// describeCustom returns the texts a call's customizable localization can show, joined by slashes, such as
+// "daughter/son". It returns "" for a call that names none, or one the workspace does not define.
 func describeCustom(ws *workspace.Session, mods *index.Index, step jomini.Step) string {
 	position := slices.Index(game.GUI.CallTargets[step.Text], game.CustomLocalization)
 	if position < 0 || position >= len(step.Arguments) || !step.Arguments[position].Quoted {
@@ -227,8 +222,7 @@ func describeCustom(ws *workspace.Session, mods *index.Index, step jomini.Step) 
 	return strings.Join(lo.Uniq(lo.Compact(texts)), "/")
 }
 
-// toTitle returns a text as the one line a player reads, each data call in its words. Its keys, formats, icons and
-// breaks are left out.
+// toTitle returns a text as the one line a player reads, each data call in its words.
 func toTitle(ws *workspace.Session, mods *index.Index, text string) string {
 	var title strings.Builder
 	for _, segment := range describeCalls(ws, mods, text) {
@@ -239,8 +233,7 @@ func toTitle(ws *workspace.Session, mods *index.Index, text string) string {
 	return strings.TrimSpace(title.String())
 }
 
-// resolveLanguage returns the language the detail shows its texts in: the workspace's own, or the game's base language
-// if the workspace has none.
+// resolveLanguage returns the workspace's language, or the game's base language if it has none.
 func resolveLanguage(ws *workspace.Session) string {
 	return cmp.Or(ws.Language, game.BaseLanguage)
 }
@@ -250,8 +243,7 @@ func toSourceLine(tree *jomini.Tree, span jomini.Span) int {
 	return tree.Lines.ToPosition(span.Start).Line + 1
 }
 
-// listRules returns the game rules a definition reads, each once, in the order first read. A setting that no rule the
-// game keeps holds is left out.
+// listRules returns the game rules a definition reads, each once.
 func listRules(ws *workspace.Session, mods *index.Index, tree *jomini.Tree, statement int32) []Rule {
 	rules := []Rule{}
 	for child := statement + 1; child < tree.Statements[statement].Last; child++ {
@@ -266,8 +258,7 @@ func listRules(ws *workspace.Session, mods *index.Index, tree *jomini.Tree, stat
 	return rules
 }
 
-// findRule returns the game rule the game keeps that holds a setting, with its settings. It returns false if no such
-// rule holds it.
+// findRule returns the game rule that holds the given setting, or false if none does.
 func findRule(ws *workspace.Session, mods *index.Index, setting string) (Rule, bool) {
 	for _, winner := range mods.ListKept(ws.Schema, game.GameRules.Database) {
 		tree, statement, err := ws.FindStatement(mods, winner.Site)
@@ -281,8 +272,7 @@ func findRule(ws *workspace.Session, mods *index.Index, setting string) (Rule, b
 	return Rule{}, false
 }
 
-// makeRule returns the game rule a statement defines, with its settings in the order written and its default marked:
-// the setting it names as its default, else its first.
+// makeRule returns the game rule a statement defines. Its default is the setting it names as one, else its first.
 func makeRule(ws *workspace.Session, mods *index.Index, tree *jomini.Tree, statement int32) Rule {
 	preset, hasDefault := tree.FindChildValue(statement, game.GameRules.DefaultKey)
 	options := []RuleOption{}

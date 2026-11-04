@@ -52,8 +52,8 @@ type Reference struct {
 	Name     string      `json:"name"`
 	Span     jomini.Span `json:"span"`             // the name alone: no quotes, no prefix
 	Caller   string      `json:"caller,omitempty"` // the scripted call it is resolved through; "" if none
-	// Inferred is set when the reference rests only on what the game's own files write, and no declared source or
-	// rule makes it.
+	// Inferred is set when the reference never accuses: it rests only on what the game's own files write, or it names
+	// a database whose names need no definition (game.Database.Optional).
 	Inferred bool `json:"inferred,omitempty"`
 }
 
@@ -493,7 +493,8 @@ func (walker *walker) resolveKey(context *Context, statement int32, level int) {
 		walker.resolveCallReferences(context, fit, key, span)
 	}
 	if isCall {
-		context.References = append(context.References, walker.listArgumentReferences(command, step.Arguments[0])...)
+		context.References = append(context.References,
+			walker.listArgumentReferences(command, context.Declaration, step.Arguments[0])...)
 	}
 	// An operator's value is a number or a script value, as its row says, so it takes no field the game's files taught.
 	if keyword != nil && keyword.Class != "math" && context.Field == nil {
@@ -588,8 +589,12 @@ func (walker *walker) matchRule(rule string, parent *Context, key string, block 
 		plain := rule == "scope-link" && !block && !strings.ContainsAny(key, ":.")
 		return match{category: CategoryLink, field: holder, shape: findEnclosing(parent)}, !plain && walker.schema.isKeyLink(key)
 	case "modifier":
+		// a modifier the dumps declare is named by its type, but nothing says that every one has a definition
 		_, declared := walker.schema.Modifiers[key]
-		return match{category: CategoryField, field: walker.findModifierField(holder, key)}, declared
+		return match{
+			category: CategoryField, field: walker.findModifierField(holder, key), database: walker.schema.ModifierTypes,
+			inferred: true,
+		}, declared
 	case "modifier-type":
 		return match{
 			category: CategoryReference, field: walker.findModifierField(holder, key), database: walker.schema.ModifierTypes,
@@ -661,7 +666,7 @@ func (walker *walker) matchCommand(parent *Context, key string) (match, bool) {
 		return match{}, false
 	}
 	fit.declaration, ok = parent.FindDeclaration(fit.command)
-	fit.field = fit.command.Arguments
+	fit.field = fit.command.ArgumentsOf(fit.declaration)
 	switch {
 	case fit.field != nil && fit.field.Shape.IsStated():
 		fit.shape = fit.field.Shape.Value
@@ -903,7 +908,7 @@ func (walker *walker) resolveValueReferences(context *Context, statement int32, 
 	// The value of a math keyword that is a command's name with an argument in parentheses, as "opinion(scope:ruler)"
 	// is, stands for the command's number: its argument makes the references.
 	if step, command, ok := walker.schema.findKeyCall(text, span.Start); ok && context.isMath() {
-		context.References = append(context.References, walker.listArgumentReferences(command, step.Arguments[0])...)
+		context.References = append(context.References, walker.listArgumentReferences(command, "", step.Arguments[0])...)
 		return
 	}
 	claim, databases := walker.listClaimed(context, text)
@@ -911,14 +916,13 @@ func (walker *walker) resolveValueReferences(context *Context, statement int32, 
 	if database, valueFolder, ok := walker.findValueDatabase(context, level, text); ok {
 		databases, placed, folder = append(databases, database), database, valueFolder
 	}
-	values, entry := findTextDatabases(context)
+	if database, valueFolder, ok := walker.findCoatDatabase(statement, level, text); ok && placed == "" {
+		databases, placed, folder = append(databases, database), database, valueFolder
+	}
 	// A value with a space is literal text, since a message key has none.
-	database := cmp.Or(values, game.Shapes[findShape(context)].Values)
+	database := cmp.Or(findTextDatabase(context), game.Shapes[findShape(context)].Values)
 	if database != "" && placed == "" && !strings.Contains(text, " ") {
 		databases = append(databases, database)
-	}
-	if !walker.tree.Statements[statement].Tag.IsEmpty() && walker.database != nil && walker.database.Name == game.Coat.Database {
-		databases = append(databases, game.Coat.ListsDatabase)
 	}
 	// A value shaped like an event id may name an event, unless its field claims another database.
 	if walker.schema.Events != "" && walker.file.Format == files.FormatScript && jomini.IsEventID(text) &&
@@ -937,15 +941,13 @@ func (walker *walker) resolveValueReferences(context *Context, statement int32, 
 			case database == game.Localization && stem != "":
 				name = fmt.Sprintf(stem, text)
 			}
-			context.References = append(context.References,
-				Reference{Database: database, Name: name, Span: span, Inferred: position == 0 && inferred})
+			context.References = append(context.References, Reference{
+				Database: database, Name: name, Span: span, Inferred: position == 0 && inferred || walker.isOptional(database),
+			})
 		}
 	}
 	if value, ok := walker.findScriptValue(context, span); ok {
 		context.References = append(context.References, value)
-	}
-	if entry != "" {
-		context.References = append(context.References, Reference{Database: entry, Name: text, Span: span, Inferred: true})
 	}
 	context.References = append(context.References, walker.listPrefixed(text, span.Start)...)
 }
@@ -969,9 +971,10 @@ func (context *Context) isMath() bool {
 
 // listArgumentReferences returns the references that the argument in parentheses after a command's name makes. It
 // fills the command's ArgumentKey. If that key takes a name from a database, the argument is such a name, unless it is
-// a link. Any other argument is read as a chain of links.
-func (walker *walker) listArgumentReferences(command *Command, argument jomini.Argument) []Reference {
-	field := command.Arguments.findChild(command.ArgumentKey)
+// a link. Any other argument is read as a chain of links. The command takes its arguments as the given word declares
+// it.
+func (walker *walker) listArgumentReferences(command *Command, declaration string, argument jomini.Argument) []Reference {
+	field := command.ArgumentsOf(declaration).findChild(command.ArgumentKey)
 	if field != nil && field.Value.Value.Type == ValueReference && field.Value.Value.Database != "" &&
 		!walker.schema.IsLink(argument.Text) {
 		return []Reference{{
@@ -1051,6 +1054,30 @@ func (walker *walker) findValueDatabase(context *Context, level int, text string
 	return "", "", false
 }
 
+// findCoatDatabase returns the database that a statement's value names in a coat of arms, and the folder of the image
+// it names: a template list after a list tag, a named color at a color slot unless it names a slot, and an image at
+// a pattern key or at the texture key of an emblem. It returns false anywhere else.
+func (walker *walker) findCoatDatabase(statement int32, level int, text string) (string, string, bool) {
+	if walker.database == nil || walker.database.Name != game.Coat.Database {
+		return "", "", false
+	}
+	isSlot := func(key string) bool {
+		return slices.ContainsFunc(game.Coat.Slots, func(slot game.CoatSlot) bool { return strings.EqualFold(slot.Key, key) })
+	}
+	key, holder := walker.frames[level].label, walker.frames[level-1].label
+	switch {
+	case !walker.tree.Statements[statement].Tag.IsEmpty():
+		return game.Coat.ListsDatabase, "", true
+	case isSlot(key) && !isSlot(text):
+		return game.Coat.ColorsDatabase, "", true
+	case key == game.Coat.PatternKey:
+		return game.File, game.Coat.TextureFolders[key], true
+	case key == game.Coat.TextureKey && game.Coat.TextureFolders[holder] != "":
+		return game.File, game.Coat.TextureFolders[holder], true
+	}
+	return "", "", false
+}
+
 // findPictureDatabase returns the database whose definition a value names as one step of the game's event pictures,
 // given the database the value is written in and the keys that lead to it. A step that picks its block by a field,
 // or matches the value elsewhere than in a name, names none here. It returns false if no step reads the value.
@@ -1068,17 +1095,23 @@ func (walker *walker) findPictureDatabase(database string, keys []string) (strin
 	return "", false
 }
 
-// findTextDatabases returns the databases that a keyword names for the text a value writes: the one whose definitions
-// the text must be, and the one whose entry it names, which the game does not need defined. The keyword is the one the
-// statement's key is, or its block's where the key is the text key. Both are "" if no keyword shows the text.
-func findTextDatabases(context *Context) (values, entry string) {
+// findTextDatabase returns the database whose definitions the text a keyword shows must be, written as a value. The
+// keyword is the one the statement's key is, or its block's where the key is the text key. It is "" if no keyword
+// shows the text.
+func findTextDatabase(context *Context) string {
 	if context.Label == game.LabelKey {
 		context = context.Parent
 	}
 	if keyword := context.Keyword; keyword != nil {
-		return keyword.Values, keyword.Entries[context.Declaration]
+		return keyword.Values
 	}
-	return "", ""
+	return ""
+}
+
+// isOptional reports whether a database's names need no definition, as its row says.
+func (walker *walker) isOptional(label string) bool {
+	database := walker.schema.Databases[label]
+	return database != nil && database.Row.Optional
 }
 
 // listPrefixed returns the references a chain of links makes after prefixes that have a database. A name after a prefix

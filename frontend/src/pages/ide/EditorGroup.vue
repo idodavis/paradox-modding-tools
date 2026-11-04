@@ -1,9 +1,4 @@
-<!--
-  One editor group: its tab strip, whose tabs can be dragged between groups and windows, and the active tab shown as
-  code, an image, a diff or the start page, or in Visual as the picture it draws. A group with no tab shows the start
-  page. A file changed on disk under unsaved text shows a notice and a compare. A read only file shows a notice that
-  says how to change it.
--->
+<!-- One editor group: its tab strip and the active tab, as code, an image, a diff, a picture or the start page. -->
 <script setup lang="ts">
 import { computed, shallowReactive, shallowRef, useTemplateRef, watch } from "vue";
 import { useMutation, useQuery } from "@pinia/colada";
@@ -60,7 +55,6 @@ const MODES = [
   { label: "Code", icon: "i-lucide-code", value: "code" },
   { label: "Visual", icon: "i-lucide-eye", value: "visual" },
 ];
-/** REVEAL and SAVE_ALL are the commands that reveal the active file in the explorer and save every unsaved file. */
 const REVEAL = findCommand("explorer.reveal");
 const SAVE_ALL = findCommand("editor.saveAll");
 
@@ -68,7 +62,7 @@ const editor = useEditorStore();
 const windows = useWindowsStore();
 const workspace = useWorkspaceStore();
 const strip = useTemplateRef("strip");
-// the index in the group a tab dragged over the strip would land at, while one is
+// The index a tab dragged over the strip would land at.
 const landing = shallowRef<number | null>(null);
 const isDraggedOver = shallowRef(false);
 const zone = shallowRef<Zone | null>(null);
@@ -78,16 +72,13 @@ const place = computed(() => (activeTab.value ? editor.placeOf(activeTab.value.k
 const model = computed(() => (activeTab.value && !activeTab.value.side ? findModel(activeTab.value.key) : null));
 const hasCode = computed(() => !activeTab.value?.side && !!place.value && VIEWS[place.value.format].view === "code");
 const { data: file } = useQuery(() => ({ ...fileQuery(place.value?.path ?? ""), enabled: hasCode.value }));
-// a file with no view of its own, or whose bytes are not text, says so rather than stay blank
 const isUnshown = computed(() => !!place.value && (!VIEWS[place.value.format].view || !!file.value?.binary));
 const isDrawable = computed(() => editor.isDrawable(activeTab.value));
-// this group is the one Visual shows, and its active file is drawn
 const isVisual = computed(() => active && editor.mode === "visual" && isDrawable.value);
 const isTopRight = computed(() => THIS_WINDOW === "main" && editor.layout().rows[0]?.columns.at(-1)?.id === group.id);
 const rows = computed(() => group.tabs.map(describe));
 
-// the hover card at the caret, which names the definition it is in and the blocks around it, and the fix that
-// overrides the entry it is in
+// The hover card at the caret, and the fix that overrides the entry it is in.
 const { mutate: locateCaret, data: located } = useMutation({
   mutation: async (fileModel: Model) => {
     const [card, override] = await Promise.all([
@@ -100,7 +91,7 @@ const { mutate: locateCaret, data: located } = useMutation({
 const card = computed(() => located.value?.card);
 const crumbs = computed(() => [...(place.value?.rel.split("/") ?? []), ...(card.value?.within ?? [])]);
 const folderCount = computed(() => (place.value?.rel.split("/").length ?? 1) - 1);
-// a game file that a mod replaces shows the replacing mod; the copies of a mod's own file are not fetched
+// A game file that a mod replaces shows the replacing mod.
 const { data: copies } = useQuery(() => ({
   ...copiesQuery(place.value?.path ?? ""),
   enabled: place.value?.origin === VANILLA && !activeTab.value?.side,
@@ -108,18 +99,16 @@ const { data: copies } = useQuery(() => ({
 const replacement = computed(() =>
   place.value?.origin === VANILLA && copies.value && copies.value.length > 1 ? copies.value.at(-1) : undefined,
 );
-// the file of the tab whose menu is open; its copies are fetched when the menu opens
+// The file of the tab whose menu is open.
 const menuPlace = shallowRef<Place | null>(null);
 const { data: menuCopies } = useQuery(() => ({
   ...copiesQuery(menuPlace.value?.path ?? ""),
   enabled: !!menuPlace.value && menuPlace.value.origin !== VANILLA,
 }));
 const menuGameCopy = computed(() => menuPlace.value && findGameCopy(menuPlace.value, menuCopies.value));
-// the tabs whose read only notice was closed, and whether the form that makes a mod for the changes is open
 const closedNotices = shallowReactive(new Set<string>());
 const creating = shallowRef(false);
-// the other ways to change a read only file when the caret is in no entry to override: put the caret in one, write a
-// localization key again in the replace folder, or copy the file into a mod; null until the caret's place is known
+// The other ways to change a read only file when the caret is in no entry to override. Null until the caret is known.
 const hint = computed(() => {
   const activePlace = place.value;
   if (!activePlace || !located.value || located.value.override) return null;
@@ -132,12 +121,13 @@ const hint = computed(() => {
   }
   return { text: "To change this file, copy it into a mod.", copy: canCopyToMod(activePlace) };
 });
-// what the notice over a read only file says: the game's own files, or Steam's copy of a Workshop mod, and where Steam
-// puts it; null for a file a mod can write to
+// What the notice over a read only file says. Null for a file a mod can write to, and for the game's readmes/info,
+// which a mod has no reason to override.
 const notice = computed(() => {
   const activePlace = place.value;
   if (!activePlace?.readOnly || activeTab.value?.side || closedNotices.has(group.active ?? "")) return null;
   if (activePlace.origin === VANILLA) {
+    if (activePlace.format === Format.FormatReadme || activePlace.format === Format.FormatMarkdown) return null;
     return {
       text: "Game files are read only. Your mod changes an entry by overriding it.",
       detail: "",
@@ -161,10 +151,9 @@ watchDebounced(
   () => model.value && locateCaret(model.value),
   { debounce: 300, immediate: true },
 );
-// a tab drag ends with a drop or a drag end that reaches the window wherever it lands, so every group stops showing it
+// A tab drag ends with a drop or a drag end that reaches the window wherever it lands.
 useEventListener(window, ["drop", "dragend"], endDrag);
 const { mutate: saveModel } = useMutation({ mutation: save });
-// whether the compare of the unsaved text with the disk's text is open
 const comparing = shallowRef(false);
 
 /** saveMine saves a model's text over the disk's text, and closes the compare. */
@@ -179,10 +168,7 @@ function applyDisk(fileModel: Model): void {
   comparing.value = false;
 }
 
-/**
- * overrideHere overrides the entry at a model's caret in the mod the notice's button names, then finds the caret's
- * place again, so the button goes once the entry is overridden.
- */
+/** overrideHere overrides the entry at a model's caret in the mod the notice's button names. */
 function overrideHere(fileModel: Model): void {
   const modId = located.value?.override?.reveal?.place.origin;
   void overrideEntry(
@@ -208,13 +194,12 @@ function describe(tab: Tab) {
     suffix: tab.side ? (tab.hash?.slice(0, 7) ?? tab.side) : "",
     readOnly: !!tabPlace?.readOnly && !tab.side,
     unsaved: !!findModel(tab.key)?.unsaved,
-    // the file changed on disk under its unsaved text
     stale: !!findModel(tab.key)?.diskText,
   };
 }
 type Row = ReturnType<typeof describe>;
 
-/** setMode activates this group, then sets the editor mode to the one the switch picked. */
+/** setMode activates this group and sets the editor mode to the one the switch picked. */
 function setMode(choice: string | number): void {
   editor.activate(group.id);
   editor.mode = choice === "visual" ? "visual" : "code";
@@ -226,18 +211,12 @@ function select(row: Row): void {
   else editor.activate(group.id);
 }
 
-/**
- * activateGroup makes this group active when the pointer goes down in it. On a tab it waits for the click, so the
- * history records the place the user leaves in the previously active group.
- */
+/** activateGroup makes this group active when the pointer goes down in it. On a tab it waits for the click. */
 function activateGroup(event: PointerEvent): void {
   if (!(event.target instanceof Element && event.target.closest("[data-tab]"))) editor.activate(group.id);
 }
 
-/**
- * closeTabs closes the given tabs of this group. If that would leave a file with unsaved changes in no tab, it first
- * asks once about all such files, and closes none if the user says no.
- */
+/** closeTabs closes the given tabs of this group. It asks about unsaved files first and closes none on a no. */
 async function closeTabs(tabs: Tab[]): Promise<void> {
   if (!(await editor.confirmClose(tabs))) return;
   editor.activate(group.id);
@@ -255,17 +234,14 @@ function split(row: Row, direction: "row" | "column"): void {
   editor.split(direction);
 }
 
-/** startDrag starts the drag of a tab. The drag carries the tab's id, so a drop in this window or another moves it. */
+/** startDrag starts the drag of a tab. The drag carries the tab's id. */
 function startDrag(event: DragEvent, row: Row): void {
   if (!event.dataTransfer) return;
   event.dataTransfer.setData(TAB, row.tab.id);
   event.dataTransfer.effectAllowed = "move";
 }
 
-/**
- * dropOutside moves a tab into a window of its own when it was dropped outside this window. The start tab stays where
- * it was.
- */
+/** dropOutside moves a tab into a window of its own when it was dropped outside this window. The start tab stays. */
 function dropOutside(event: DragEvent): void {
   const id = event.target instanceof HTMLElement ? event.target.closest<HTMLElement>("[data-tab]")?.dataset.tab : "";
   const outside =
@@ -277,10 +253,7 @@ function dropOutside(event: DragEvent): void {
   if (id && !isStart && outside && event.dataTransfer?.dropEffect === "none") windows.popOut("editor", [id]);
 }
 
-/**
- * dropTab brings a dragged tab to this group: it asks the other windows for the tab, and moves it here if this window
- * holds it, to the given index of the group or into a new group on the given side.
- */
+/** dropTab brings a dragged tab, from this window or another, to this group or to a new group beside it. */
 function dropTab(event: DragEvent, destination: number | Side): void {
   const id = event.dataTransfer?.getData(TAB);
   if (!id) return;
@@ -289,10 +262,7 @@ function dropTab(event: DragEvent, destination: number | Side): void {
   editor.move(id, group.id, destination);
 }
 
-/**
- * findLanding returns the index in this group a tab dragged over the strip would land at: before the first tab whose
- * middle is past the pointer, else the end.
- */
+/** findLanding returns the index in this group a tab dragged over the strip would land at. */
 function findLanding(event: DragEvent): number {
   const tabs = [...(strip.value?.querySelectorAll("[data-tab]") ?? [])];
   const index = tabs.findIndex((tab) => {
@@ -302,17 +272,14 @@ function findLanding(event: DragEvent): number {
   return index < 0 ? tabs.length : index;
 }
 
-/**
- * dropOnStrip drops a tab on the strip where the line shows. A tab of this group is taken out before it goes back in,
- * so one moved to the right lands a slot earlier.
- */
+/** dropOnStrip drops a tab on the strip where the line shows. */
 function dropOnStrip(event: DragEvent): void {
   const index = findLanding(event);
   const start = group.tabs.findIndex((tab) => tab.id === event.dataTransfer?.getData(TAB));
   dropTab(event, start >= 0 && start < index ? index - 1 : index);
 }
 
-/** overStrip lets a dragged tab be dropped on the strip, and keeps where it would land. */
+/** overStrip lets a dragged tab be dropped on the strip. */
 function overStrip(event: DragEvent): void {
   if (!event.dataTransfer?.types.includes(TAB)) return;
   event.preventDefault();
@@ -359,13 +326,13 @@ function lightZone(event: DragEvent): void {
   else zone.value = "middle";
 }
 
-/** dropOnEditor drops a tab on the lit zone: into this group in the middle, else into a new group on that side. */
+/** dropOnEditor drops a tab on the lit zone. */
 function dropOnEditor(event: DragEvent): void {
   const target = zone.value;
   dropTab(event, !target || target === "middle" ? group.tabs.length : target);
 }
 
-/** endDrag stops showing a tab drag in this group: the line in the strip, the editor's drop layer and its lit zone. */
+/** endDrag stops showing a tab drag in this group. */
 function endDrag(): void {
   landing.value = null;
   isDraggedOver.value = false;
@@ -417,7 +384,7 @@ function buildMenu(row: Row): ContextMenuItem[][] {
     [
       {
         label: "Compare with the game's copy",
-        // menuGameCopy belongs to the tab whose menu opened last, so it counts only for that tab's file
+        // menuGameCopy belongs to the tab whose menu opened last.
         disabled: !!row.tab.side || menuPlace.value?.key !== filePlace?.key || !menuGameCopy.value,
         onSelect: () => filePlace && compareWithGame(filePlace),
       },
@@ -428,7 +395,7 @@ function buildMenu(row: Row): ContextMenuItem[][] {
         onSelect: () => filePlace && editor.compareFile && compare(editor.compareFile, filePlace),
       },
     ],
-    // the start page never leaves the main window
+    // The start page never leaves the main window.
     ...(row.tab.start
       ? []
       : [

@@ -1,7 +1,4 @@
-<!--
-  One section of a finding's detail: a header with its count and its Open button over its content, and a hairline
-  under it. A section that folds starts folded, and its header unfolds it.
--->
+<!-- One section of a finding's detail: a header over its content. A section that folds starts folded. -->
 <script setup lang="ts">
 import { shallowRef } from "vue";
 

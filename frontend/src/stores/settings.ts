@@ -1,7 +1,4 @@
-/**
- * The settings store: reads every setting from the settings query for the active workspace and writes one through a
- * mutation. It also puts the theme on `<html>` from the settings. It keeps no copy of a value.
- */
+/** The settings store: reads every setting for the active workspace, writes one, and puts the theme on `<html>`. */
 import { defineStore } from "pinia";
 import { useMutation, useQuery } from "@pinia/colada";
 import { useColorMode } from "@vueuse/core";
@@ -14,17 +11,14 @@ import * as app from "@services/app/service";
 import { settingsQuery, stateQuery } from "../queries";
 import { useWorkspaceStore } from "./workspace";
 
-/** GAMES holds the games as the frontend draws them, by Go's id: each game's icon. A game's theme family has its id. */
+/** GAMES holds each game's icon, by Go's id. */
 export const GAMES: readonly { id: string; icon: string }[] = [
   { id: "ck3", icon: ck3Icon },
   { id: "vic3", icon: vic3Icon },
   { id: "eu5", icon: eu5Icon },
 ];
 
-/**
- * THEME_FAMILIES holds the theme families: pmt, catppuccin, one, pierre, and one per GAMES row. Each has the note the
- * Appearance page shows under its name.
- */
+/** THEME_FAMILIES holds the theme families, with the note the Appearance page shows under each name. */
 export const THEME_FAMILIES: readonly { id: string; label: string; note: string }[] = [
   { id: "pmt", label: "PMT", note: "PMT's own" },
   { id: "catppuccin", label: "Catppuccin", note: "Mocha and Latte" },
@@ -35,12 +29,7 @@ export const THEME_FAMILIES: readonly { id: string; label: string; note: string 
   { id: "vic3", label: "Victoria", note: "Vic3 workspaces" },
 ];
 
-/**
- * SIMPLE_HIDES holds what the simple interface hides, each by its id and the label the start page names it by: the
- * settings `ide.minimap`, `ide.predict` and `ide.signature`, the sidebar views `git` and `entries`, the panel tabs
- * `output` and `terminal`, and `hover.details`, the hover card's facts beyond its title, blurb, problems and where its
- * name is defined.
- */
+/** SIMPLE_HIDES holds what the simple interface hides, each by its id and the label the start page names it by. */
 export const SIMPLE_HIDES: readonly { id: string; label: string }[] = [
   { id: "ide.minimap", label: "Minimap" },
   { id: "ide.predict", label: "Predicted text" },
@@ -52,15 +41,14 @@ export const SIMPLE_HIDES: readonly { id: string; label: string }[] = [
   { id: "hover.details", label: "Hover card details" },
 ];
 
-/** gameIcon returns the URL of a game's icon. It is "" for a game the app has no icon for. */
+/** gameIcon returns the URL of a game's icon, or "" if the app has none. */
 export function gameIcon(id: string): string {
   return GAMES.find((row) => row.id === id)?.icon ?? "";
 }
 
 export const useSettingsStore = defineStore("settings", () => {
   const workspace = useWorkspaceStore();
-  // Go answers each setting for the active workspace: the IDE's are kept per workspace, the rest for the app. The last
-  // workspace's values stand in while the next one's are read, so no setting reads as "" during a switch.
+  // The last workspace's values stand in while the next one's are read, so no setting reads as "" during a switch.
   const { data: values } = useQuery(() => ({
     ...settingsQuery(workspace.activeId()),
     placeholderData: (previous) => previous,
@@ -72,23 +60,23 @@ export const useSettingsStore = defineStore("settings", () => {
   });
   const colorMode = useColorMode();
 
-  /** value returns a setting's value, its default if never set. It is "" for a key the catalog lacks. */
+  /** value returns a setting's value, or "" for a key the catalog lacks. */
   const value = (key: string): string => values.value?.[key] ?? "";
 
   /** isHidden reports whether the simple interface is on and hides the part with the given id. */
   const isHidden = (id: string): boolean =>
     value("appearance.simple") === "true" && SIMPLE_HIDES.some((row) => row.id === id);
 
-  /** isOn reports whether a setting that is a switch is on. It is off for a setting the simple interface hides. */
+  /** isOn reports whether a switch is on. A setting the simple interface hides is off. */
   const isOn = (key: string): boolean => value(key) === "true" && !isHidden(key);
 
-  /** isGuided reports whether Guidance for new modders is on: the parts of the app that only teach. */
+  /** isGuided reports whether Guidance for new modders is on. */
   const isGuided = (): boolean => isOn("guidance.newModders");
 
   /** write writes a setting. The config:changed event then refreshes the query. */
   const write = (key: string, text: string): void => mutate({ key, value: text });
 
-  /** writeItem puts an item in a setting that lists items with commas, or takes it out. A new item goes last, once. */
+  /** writeItem adds an item to a comma-separated setting, or removes it. */
   const writeItem = (key: string, item: string, listed: boolean): void => {
     const items = value(key)
       .split(",")
@@ -96,13 +84,13 @@ export const useSettingsStore = defineStore("settings", () => {
     write(key, (listed ? [...items, item] : items).join(","));
   };
 
-  /** theme returns the theme in force: the family and whether it is dark, from the settings. */
+  /** theme returns the theme in force: the family and whether it is dark. */
   const theme = (): { family: string; dark: boolean } => {
     const game = isOn("appearance.matchGame") ? GAMES.find((row) => row.id === state.value?.game?.id) : undefined;
     return { family: game?.id ?? (value("appearance.theme") || "pmt"), dark: isOn("appearance.dark") };
   };
 
-  /** codeFont returns the Monaco options every code view uses: font, text size, line height and padding. */
+  /** codeFont returns the Monaco options every code view uses. */
   const codeFont = (): {
     fontFamily: string;
     fontSize: number;

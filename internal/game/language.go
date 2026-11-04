@@ -60,9 +60,6 @@ type Keyword struct {
 	Preview bool
 	// Values is the database of the text it shows, written as its value or as the text key in its block; "" means none.
 	Values string
-	// Entries is the database of the entry its text key names, by the dumps' word that declares the keyword
-	// (DeclaredEffect or DeclaredTrigger). The game does not need the entry defined. Nil means none.
-	Entries map[string]string
 }
 
 // AnyCall is the Caller of a block that resolves a call in every callable.
@@ -142,6 +139,9 @@ var DocTypes = map[string]DocType{
 	"modifier":            {Value: "block", Shape: ShapeModifiers}, "modifiers": {Value: "block", Shape: ShapeModifiers},
 	"modifier(s)": {Value: "block", Shape: ShapeModifiers}, "block": {Value: "block"}, "mtth": {Value: "block"},
 	"scripted cost": {Value: "block"}, "cost": {Value: "block"}, "vector 2": {Value: "block"}, "vector2": {Value: "block"},
+
+	// EU5 in_game/common/estate_privileges/readme.txt:17 and 22 more lines of its readmes
+	"scaled and triggered modifier": {Value: "block", Shape: ShapeModifiers},
 }
 
 // The shapes that Go code names. Each is the key of its row in Shapes.
@@ -283,10 +283,7 @@ var Keywords = []Keyword{
 	{Key: "hidden_effect", Shape: "effects", Class: "display", Blurb: "Runs its effects without showing them in the tooltip."},
 	{Key: "show_as_tooltip", Shape: "effects", Class: "display", Blurb: "Shows its effects in the tooltip without running them.", Preview: true},
 	{Key: "custom_tooltip", Class: "display", Covers: true, Values: Localization, Blurb: "Shows a text of your own in place of the tooltip of what is inside."},
-	// CK3 common/effect_localization/_effect_localization.info:9-17 and common/trigger_localization/
-	// _trigger_localization.info:15 say an entry need not be defined: the game then reads the localization keys that
-	// start with the entry's name
-	{Key: "custom_description", Class: "display", Covers: true, Entries: map[string]string{DeclaredEffect: "effect_localization", DeclaredTrigger: "trigger_localization"}, Blurb: "Shows a text of your own in place of the generated description."},
+	{Key: "custom_description", Class: "display", Covers: true, Blurb: "Shows a text of your own in place of the generated description."},
 	{Key: "custom_label", Class: "display", Values: Localization, Blurb: "Shows a text of your own in the tooltip, with this scope as its subject."},
 	{Key: "save_scope_as", Class: "saving", Blurb: "Remembers the current scope under a name for the rest of the event chain."},
 	{Key: "save_temporary_scope_as", Class: "saving", Blurb: "Remembers the current scope under a name until this effect ends."},

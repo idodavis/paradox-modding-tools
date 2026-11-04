@@ -1,6 +1,4 @@
-<!--
-  This shows the upload button, the mod's problems before an upload, and its progress until it ends.
--->
+<!-- The upload button, the mod's problems before an upload, and the upload's progress. -->
 <script setup lang="ts">
 import { computed, shallowRef, watch } from "vue";
 import { useQuery } from "@pinia/colada";
@@ -33,9 +31,8 @@ const router = useRouter();
 const workspace = useWorkspaceStore();
 const uploads = useUploadStore();
 const now = useNow({ scheduler: (tick) => useIntervalFn(tick, 15_000) });
-// "" keeps the item's own visibility. A new item starts private.
+// "" keeps the item's own visibility.
 const picked = shallowRef("");
-// Whether the upload waits for the modder to confirm the mod's problems.
 const confirming = shallowRef(false);
 
 const enabled = computed(() => workspace.isOpen());
@@ -51,11 +48,10 @@ const { data: comparison } = useQuery(() => ({
   enabled: enabled.value,
 }));
 
-// The mod's group in Health's report, its own problems as Health lists them. An older listing has none.
+// An older listing has no group in Health's report.
 const group = computed(() => (listingKey ? undefined : report.value?.mods?.find((modGroup) => modGroup.mod === modId)));
 
 const attempt = computed(() => uploads.find(modId, listingKey));
-// The route that opens Health at the mod.
 const healthRoute = computed(() => ({
   name: "health" as const,
   params: { id: workspace.activeId() },
@@ -70,17 +66,14 @@ const sentence = computed(() =>
     (levels.value ?? []).filter((level) => level.problem).flatMap((level) => group.value?.phrases?.[level.id] ?? []),
   ),
 );
-// Each finding that needs a fix, once with its repeats folded in, as Health lists them.
 const faults = computed(() =>
   (group.value?.findings ?? []).filter((finding) => levels.value?.find((level) => level.id === finding.level)?.fix),
 );
-// The worst level among the problems, or none if the mod has none.
 const worst = computed(() => levels.value?.find((level) => level.problem && level.id === group.value?.worst));
 const label = computed(() => {
   if (reason.value) return "Start Steam to upload";
   return listing.workshopId ? "Upload to Steam" : "Create on Steam";
 });
-// Why the upload button is off, when Steam is not the reason. Steam's reason has its own line.
 const obstacle = computed(() => {
   if (!listing.title) return "Give the listing a title to upload it.";
   return uploads.active ? "Another listing is uploading. This one can start when it ends." : "";
@@ -104,7 +97,7 @@ watch(
   },
 );
 
-/** start uploads the listing. It asks about the mod's problems first if the mod has any. */
+/** start uploads the listing, after asking about the mod's problems if it has any. */
 function start(): void {
   if (worst.value) confirming.value = true;
   else submit();
@@ -116,7 +109,7 @@ function open(finding: Finding): void {
   void router.push({ ...healthRoute.value, query: { ...healthRoute.value.query, row } });
 }
 
-/** submit writes the listing and uploads it, with the picked visibility or the item's own. */
+/** submit writes the listing and uploads it. */
 function submit(): void {
   confirming.value = false;
   void uploads.start(modId, listingKey, listing, picked.value || (listing.workshopId ? "" : "private"));

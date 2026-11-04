@@ -1,8 +1,4 @@
-<!--
-  The IDE's start page. It shows the workspace, the switch for the simple interface, a line for each page that has
-  mods needing the user, ways to begin, the files opened last and a few keys worth knowing. An editor group with no
-  tab shows it too.
--->
+<!-- The IDE's start page: what needs the user, ways to begin, the files opened last and a few keys worth knowing. -->
 <script setup lang="ts">
 import { computed, onActivated, shallowRef } from "vue";
 import { useQuery } from "@pinia/colada";
@@ -29,14 +25,14 @@ type Line = { id: string; color: string; title: string; note: string; action: Ac
 
 /** The most mods a line names; the rest are counted. */
 const MODS_NAMED = 3;
-/** The Start list: each row runs a command of the app. */
+/** The Start list. Each row runs a command of the app. */
 const STARTS = [
   { id: "editor.goToFile", label: "Open a file…" },
   { id: "editor.findInFiles", label: "Search the files…" },
   { id: "palette.open", label: "Commands and settings…" },
   { id: "game.launch", label: "Launch the game" },
 ].map((start) => ({ ...start, command: findCommand(start.id) }));
-/** Worth knowing: the keys the editor owns, and the commands whose keys are shown as the user set them. */
+/** Worth knowing: keys the editor owns, and commands shown with the keys the user set. */
 const KNOWN: { note: string; keys?: string[]; command?: string }[] = [
   { keys: ["Hover"], note: "what a word is" },
   { keys: ["Ctrl", "Click"], note: "where it is defined" },
@@ -81,7 +77,7 @@ const lines = computed<Line[]>(() =>
   ),
 );
 
-// the page stays mounted behind the others, so it loads again what it shows each time it is shown
+// The page stays mounted behind the others, so it loads again each time it is shown.
 onActivated(() => {
   if (!workspace.isOpen()) return;
   void refreshReport();
@@ -93,7 +89,7 @@ function levelColor(id: string | undefined): string {
   return `var(--ui-${levels.value?.find((level) => level.id === id)?.color ?? "info"})`;
 }
 
-/** describeMods names the given mods: the first three, then "and N more…" with the count of the rest. */
+/** describeMods names the given mods, then counts the rest. */
 function describeMods(ids: string[]): string {
   const names = ids.slice(0, MODS_NAMED).map((id) => workspace.originName(id));
   return ids.length > MODS_NAMED ? `${names.join(", ")} and ${ids.length - MODS_NAMED} more…` : list(names);

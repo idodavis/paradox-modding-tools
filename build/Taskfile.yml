@@ -174,6 +174,9 @@ tasks:
     sources:
       - "**/*.[jt]s"
       - exclude: frontend/**/*
+      # agents' worktrees and plans hold whole copies of the repo, node_modules included, that the app never builds
+      - exclude: .claude/**/*
+      - exclude: .superpowers/**/*
       - frontend/bindings/**/* # Rerun when switching between dev/production mode causes changes in output
       - "**/*.go"
       - go.mod

@@ -1,8 +1,4 @@
-<!--
-  One node of the canvas. A closed event is a frame with its scene and an origin dot, a message is a toast, any other
-  entry is a pill, and a fold is a dashed pill. An open node is a head, with the scene behind it for a window, and a row
-  for each firing, each with its own handle. A node beyond the depth limit is dashed until the user opens it.
--->
+<!-- One node of the canvas: a frame, a toast or a pill, or when open a head with a row for each firing. -->
 <script setup lang="ts">
 import { computed } from "vue";
 import { Handle, Position } from "@vue-flow/core";
@@ -15,7 +11,7 @@ import type { Drawn, Row } from "./layout";
 const { drawn, labels = {} } = defineProps<{ drawn: Drawn; labels?: Record<string, string | undefined> }>();
 const emit = defineEmits<{ fold: [id: string] }>();
 
-/** STATE is the classes that fade a node off the lit route and ring the root and the selected node. */
+/** STATE is the classes that fade a node off the lit route and ring the root and the selection. */
 const STATE =
   "in-[.dim]:opacity-40 in-[.root]:border-primary in-[.root]:ring-3 in-[.root]:ring-(--accent-soft) in-[.selected]:border-secondary in-[.selected]:ring-3 in-[.selected]:ring-(--link-soft)";
 /** HATCHED is the hatching of a hidden event's scene and head. */
@@ -25,12 +21,12 @@ const KEYS: Record<string, string> = { branch: "var(--syn-block)", list: "var(--
 
 const node = computed(() => drawn.node);
 const hidden = computed(() => node.value.display === "hidden");
-/** dashed is true when the node is drawn dashed: it is beyond the depth limit and is not the root. */
+/** dashed is true for a node beyond the depth limit that is not the root. */
 const dashed = computed(() => node.value.deep && node.value.step !== 0);
-/** fill is the colors of a pill: stronger when its look is filled. */
+/** fill is the colors of a pill. */
 const fill = computed(() => (drawn.look.filled ? "bg-muted text-highlighted" : "bg-default text-muted"));
 const icon = computed(() => (hidden.value ? "i-lucide-eye-off" : drawn.look.icon));
-/** isLit is true when a row is lit by the selection; the rows that are not lit fade. */
+/** isLit is true when the selection lights a row. */
 const isLit = computed(() => drawn.rows.some((row) => row.lit));
 const scene = computed(() =>
   node.value.background ? { backgroundImage: `url("${fileUrl(node.value.background)}")` } : undefined,
@@ -40,10 +36,7 @@ const caption = computed(() => {
   if (dashed.value) return "Beyond depth, expand to load";
   return node.value.title || (hidden.value ? "hidden event" : node.value.what);
 });
-/**
- * describeTarget describes what a row fires. For one node it is the node's title, else its id without the database.
- * For several it is their count and the database's label, such as "3 events".
- */
+/** describeTarget describes what a row fires: one node's title or id, or a count such as "3 events". */
 function describeTarget(row: Row): string {
   const fires = row.fires ?? [];
   if (fires.length > 1) {
@@ -53,12 +46,12 @@ function describeTarget(row: Row): string {
   return fires[0].title || fires[0].to.slice(fires[0].to.indexOf(":") + 1);
 }
 
-/** describePlain describes a row with no step of its own: the key of its first firing's first step, else its effect. */
+/** describePlain describes a row with no step of its own. */
 function describePlain(row: Row): string {
   return row.fires?.[0]?.steps?.[0]?.key ?? row.fires?.[0]?.effect ?? "";
 }
 
-/** openMore opens the node's "N more" fold. The click stops there, so it does not also select the node. */
+/** openMore opens the node's "N more" fold without also selecting the node. */
 function openMore(event: MouseEvent): void {
   event.stopPropagation();
   emit("fold", `more:${node.value.id}`);

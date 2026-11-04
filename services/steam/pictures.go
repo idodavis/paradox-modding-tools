@@ -1,4 +1,4 @@
-// pictures.go makes the smaller copies of a listing's pictures that Steam takes. The mod's own files stay as they are.
+// pictures.go makes the smaller copies of a listing's pictures that Steam takes.
 
 package steam
 
@@ -107,12 +107,12 @@ func encodePicture(picture image.Image, transparent bool) ([]byte, error) {
 	}
 }
 
-// buildSmaller returns a copy of a picture with its sides scaled down, each at least one pixel.
+// buildSmaller returns a copy of a picture with its sides scaled down, each at least one pixel. Each pixel of the copy
+// is the average of the pixels it covers.
 func buildSmaller(picture image.Image, scale float64) image.Image {
 	bounds := picture.Bounds()
 	width, height := max(int(float64(bounds.Dx())*scale), 1), max(int(float64(bounds.Dy())*scale), 1)
 	smaller := image.NewRGBA(image.Rect(0, 0, width, height))
-	// each pixel of the copy is the average of the pixels of the picture it covers
 	for y := range height {
 		top, bottom := bounds.Min.Y+y*bounds.Dy()/height, bounds.Min.Y+(y+1)*bounds.Dy()/height
 		for x := range width {

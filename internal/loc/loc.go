@@ -57,10 +57,9 @@ var languageLabels = map[string]string{
 	"braz_por": "Brazilian Portuguese", "japanese": "Japanese",
 }
 
-// Parse parses the text of the localization file at the given path. The language comes from the `l_<language>:`
-// header, else from the `_l_<language>` ending of the file's name, else from its folder, in lower case. It is "" if
-// none of them says. A line above the header is an error. A message with no closing quote is an error, and its text
-// runs to the end of the line.
+// Parse parses the text of the localization file at the given path. The language comes from the header, else from the
+// file's name, else from its folder, in lower case. It is "" if none of them says. A line above the header and a
+// message with no closing quote are errors.
 func Parse(text, path string) *File {
 	file := &File{Lines: jomini.NewLines(text)}
 	language := ""
@@ -104,9 +103,8 @@ func Parse(text, path string) *File {
 	return file
 }
 
-// ParseMessage parses one message line. The given offset is where the line starts in its file, so the spans are
-// offsets in the file. A message with no closing quote has its text and its span run to the end of the line. It
-// returns false if the line is not a message.
+// ParseMessage parses one message line. The given offset is where the line starts in its file. A message with no
+// closing quote runs to the end of the line. It returns false if the line is not a message.
 func ParseMessage(line string, base int) (Message, bool) {
 	match := messageStart.FindStringSubmatchIndex(line)
 	if match == nil {
@@ -128,8 +126,7 @@ func ParseMessage(line string, base int) (Message, bool) {
 }
 
 // ToLanguageRel returns the path, relative to a mod's root, of the file that holds the same messages as the given
-// localization file, in the given language. It sets the language in the file's folder and in the ending of its
-// name, where the file has them.
+// localization file, in the given language.
 func ToLanguageRel(rel, language string) string {
 	folders := strings.Split(rel, "/")
 	last := len(folders) - 1
@@ -152,9 +149,9 @@ func FindSuffixLanguage(filePath string) string {
 	return strings.ToLower(match[2])
 }
 
-// FindFolderLanguage returns the language folder in the given file path, in lower case. It is the first folder under
-// `localization`, skipping `replace` folders. A path that ends in a slash names a folder, so its last part counts too.
-// It returns "" if the path has none.
+// FindFolderLanguage returns the language folder in the given file path, in lower case: the first folder under
+// `localization` that is not `replace`. A path that ends in a slash names a folder, so its last part counts too. It
+// returns "" if the path has none.
 func FindFolderLanguage(filePath string) string {
 	folders := strings.Split(filepath.ToSlash(filePath), "/")
 	folders = folders[:len(folders)-1]
@@ -164,9 +161,8 @@ func FindFolderLanguage(filePath string) string {
 	return ""
 }
 
-// findLanguageFolder returns the position of the language folder among the given folders of a path. It is the first
-// folder after the last `localization` folder that is not a `replace` folder, in any case. It returns false if there
-// is none.
+// findLanguageFolder returns the position of the language folder among the given folders of a path: the first folder
+// after the last `localization` that is not `replace`. It returns false if there is none.
 func findLanguageFolder(folders []string) (int, bool) {
 	lower := lo.Map(folders, func(folder string, _ int) string { return strings.ToLower(folder) })
 	root := lo.LastIndexOf(lower, "localization")
@@ -195,8 +191,8 @@ func EncodeMessages(messages []Message, ending string) string {
 	return text.String()
 }
 
-// EncodeAddition returns the text that adds the messages to the end of the given localization text: a line break
-// first if the text does not end in one, then one line for each message, in the text's own line ending.
+// EncodeAddition returns the text that adds the messages to the end of the given localization text, in the text's own
+// line ending.
 func EncodeAddition(text string, messages []Message) string {
 	ending := jomini.LineEnding(text)
 	if text == "" || strings.HasSuffix(text, "\n") {
@@ -210,8 +206,8 @@ func ToLanguageKey(language string) string {
 	return "l_" + language
 }
 
-// DescribeLanguage returns a localization language's name in English, from the folder the game keeps it in, such as
-// Simplified Chinese for simp_chinese. It returns the folder itself for a language it does not know.
+// DescribeLanguage returns a localization language's name in English, from the folder the game keeps it in. It
+// returns the folder itself for a language it does not know.
 func DescribeLanguage(folder string) string {
 	return lo.ValueOr(languageLabels, folder, folder)
 }

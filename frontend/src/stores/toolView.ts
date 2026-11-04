@@ -1,7 +1,4 @@
-/**
- * The tool view store: tells Go which page the user has open and the chip that page offers a prompt, so the agents'
- * tools can see them. It also shows the pages, files, windows and look-ups those tools ask for.
- */
+/** The tool view store: tells Go the open page and its chip for the agents' tools, and shows what the tools ask for. */
 import { useEventListener } from "@vueuse/core";
 import { Events } from "@wailsio/runtime";
 import { defineStore } from "pinia";
@@ -23,15 +20,12 @@ export const useToolViewStore = defineStore("toolView", () => {
   const editor = useEditorStore();
   const windows = useWindowsStore();
   const workspace = useWorkspaceStore();
-  // the chip each page offers a prompt, by the page's name; the shown page's chip is `chip`
   const chips = reactive(new Map<string, Chip | null>());
   const chip = computed(() => chips.get(String(route.name)) ?? null);
   const chipLeftOut = shallowRef(false);
-  // the chip the next prompt takes: the page's, unless the user left it out
   const promptChip = computed(() => (chipLeftOut.value ? null : chip.value));
 
   watch(chip, () => (chipLeftOut.value = false));
-  // sendView tells Go the page, its query and its chip. It runs again when the window gets focus.
   const sendView = (): void =>
     void mcp.SetView({
       page: String(route.name ?? ""),
@@ -50,17 +44,14 @@ export const useToolViewStore = defineStore("toolView", () => {
     chips.set(page, next);
   };
 
-  /**
-   * followFile shows a file an agent's tool call names, at the given line. The source says whether the agent reads or
-   * edits the file. It does not change the chip or the focus. It does nothing if Go has no place for the path.
-   */
+  /** followFile shows a file an agent's tool call names, at the given line, without changing the chip or the focus. */
   async function followFile(path: string, line: number, source: "agent" | "edit"): Promise<void> {
     const place = await loadQuery(placeQuery(path)).catch(() => undefined);
     if (!place?.root) return;
     editor.show(place, { lineNumber: line, column: 1 }, source);
   }
 
-  /** show brings to the front what an agent asked to show: a page with its query, a file, a window or a look-up. */
+  /** show brings to the front what an agent asked to show. */
   async function show(request: Show): Promise<void> {
     if (request.page && isPage(request.page)) {
       const name = request.page;
@@ -70,12 +61,12 @@ export const useToolViewStore = defineStore("toolView", () => {
     if (request.path) {
       const place = await loadQuery(placeQuery(request.path));
       if (!place) return;
-      // the editor ends a selection at its line's end
+      // The editor ends a selection at its line's end.
       const start = request.startLine ?? 1;
       const end = { endLineNumber: request.endLine ?? start, endColumn: Number.MAX_SAFE_INTEGER };
       const range = { startLineNumber: start, startColumn: 1, ...end };
       if (request.drawable) {
-        // the window's own lines are selected, so the caret is in the window Visual draws
+        // The window's own lines are selected, so the caret is in the window Visual draws.
         const entry = (await loadQuery(drawablesQuery(place.path)))?.find(({ name }) => name === request.drawable);
         editor.showVisual(place, entry?.range ?? range);
         useDrawStore().draw(place.path, request.drawable);
@@ -93,13 +84,10 @@ export const useToolViewStore = defineStore("toolView", () => {
   return { chip, chipLeftOut, promptChip, setChip, followFile };
 });
 
-/**
- * useChip sets the chip the calling page offers a prompt, and updates it when the source changes. The source returns
- * the chip, or null for none.
- */
+/** useChip sets the chip the calling page offers a prompt, and updates it when the source changes. */
 export function useChip(source: () => Chip | null): void {
   const toolView = useToolViewStore();
-  // a kept-alive page is made on its own route, whose name is the page's
+  // A kept-alive page is made on its own route, whose name is the page's.
   const page = String(useRoute().name);
   watch(source, (next) => toolView.setChip(page, next), { immediate: true });
 }

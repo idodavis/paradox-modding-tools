@@ -23,27 +23,26 @@ import * as workspace$0 from "../workspace/models.js";
 import * as $models from "./models.js";
 
 /**
- * AddInstance returns the edits that add a placement to a layer of a coat. It returns an error if the file is not in
- * the workspace, no block starts at the given range, or the layer takes no placement.
+ * AddInstance returns the edits that add a placement to a layer of a coat. It returns an error if no block starts where
+ * the given range does or the layer takes no placement.
  */
 export function AddInstance(path: string, layer: lsp$0.Range): $CancellablePromise<lsp$0.Edit[] | null> {
     return $Call.ByID(781711686, path, layer);
 }
 
 /**
- * AddLayer returns the edits that insert a new layer into a coat at the given position among its layers, 0 being first.
- * The new layer is the game's template for the given role. It returns an error if the file does not define the coat,
- * the coat is written as the name of another, or a pattern is added to a coat that has one. It also returns an error if
- * the game has no template for the role or nothing to start the layer from, or if the layer before the position does
- * not exist or comes from a parent coat.
+ * AddLayer returns the edits that insert a new layer from the game's template for the given role into a coat at the
+ * given position among its layers, 0 being first. It returns an error if the file does not define the coat, the coat is
+ * written as the name of another, a pattern is added to a coat that has one, the game has no template for the role, or
+ * the layer before the position does not exist or comes from a parent coat.
  */
 export function AddLayer(path: string, coat: string, role: string, position: number): $CancellablePromise<lsp$0.Edit[] | null> {
     return $Call.ByID(1704294882, path, coat, role, position);
 }
 
 /**
- * CopyCoat copies a coat that a file defines into the given mod, as a new coat of arms file with the coat's own name,
- * and returns its place. It returns an error if the file does not define the coat, or as CreateCoatFile does.
+ * CopyCoat copies a coat a file defines into the given mod as a new coat of arms file and returns its place. It returns
+ * an error if the file does not define the coat, or as CreateCoatFile does.
  */
 export function CopyCoat(path: string, name: string, modID: string): $CancellablePromise<workspace$0.Place> {
     return $Call.ByID(943421932, path, name, modID);
@@ -51,9 +50,8 @@ export function CopyCoat(path: string, name: string, modID: string): $Cancellabl
 
 /**
  * CreateCoatFile writes a new coat of arms file into the given mod and returns its place. The coat is named after the
- * given text as a slug, and holds the given script, as the game's coat designer copies it, or the game's coat template
- * when the script is "". It returns an error if the workspace has no such mod, the game keeps coats of arms in no
- * folder, the text has no slug, the file exists already or the game has no pattern.
+ * given text as a slug and holds the given script, or the game's coat template if the script is "". It returns an error
+ * if the mod does not exist, the game keeps no coats of arms, the name has no slug or the file exists already.
  */
 export function CreateCoatFile(modID: string, name: string, script: string): $CancellablePromise<workspace$0.Place> {
     return $Call.ByID(3933983011, modID, name, script);
@@ -61,8 +59,7 @@ export function CreateCoatFile(modID: string, name: string, script: string): $Ca
 
 /**
  * EditProperties returns the edits that make the given settings in a file. A key a block writes has its value
- * replaced. The keys a block does not write are added together as its last statements, in the order given. Every edit
- * is made against the file's text before any of them. It returns an error if the file is not in the workspace or no
+ * replaced, and the rest are added at the block's end. It returns an error if the file is not in the workspace or no
  * block starts where a setting's range does.
  */
 export function EditProperties(path: string, settings: $models.Setting[] | null): $CancellablePromise<lsp$0.Edit[] | null> {
@@ -71,27 +68,26 @@ export function EditProperties(path: string, settings: $models.Setting[] | null)
 
 /**
  * EvaluateStates works out which widgets of one window in a GUI file are hidden. Each group is at the value the window
- * opens with, unless the given picks pick another: a pick is the value chosen for the ID of a group. It returns an
- * error if no workspace is open, or if the file is not in the workspace or does not define the window.
+ * opens with, unless the given picks, by the ID of a group, pick another. It returns an error if no workspace is open
+ * or the file does not define the window.
  */
 export function EvaluateStates(path: string, name: string, picks: { [_ in string]?: string } | null): $CancellablePromise<$models.States> {
     return $Call.ByID(3372888275, path, name, picks);
 }
 
 /**
- * ExportPNG writes a PNG that the page made, such as a coat as drawn or one mip level of an image, to the given file,
- * which the user chose. It returns an error if the data is not a PNG or the file cannot be written.
+ * ExportPNG writes a PNG the page made to the given file. It returns an error if the data is not a PNG or the file
+ * cannot be written.
  */
 export function ExportPNG(target: string, data: string | null): $CancellablePromise<void> {
     return $Call.ByID(732861063, target, data);
 }
 
 /**
- * FindPictureFiles returns the pictures that Save as DDS saves for the given path: the picture itself, or for a folder
- * the pictures directly in it, by name, which are its images that are not DDS files. Each picture keeps the settings
- * of the DDS of the same name beside it, else of the game's own DDS at the place its DDS will have. A picture with
- * neither, or whose DDS has a header that cannot be read, has no reference. It returns an error if no workspace is
- * open, or a folder is outside it or cannot be read.
+ * FindPictureFiles returns the pictures Save as DDS saves for the given path: the picture itself, or for a folder the
+ * images directly in it that are not DDS files. Each keeps the settings of the DDS beside it, else of the game's own
+ * DDS at the place its DDS will have. A picture with neither has no reference. It returns an error if no workspace is
+ * open or a folder is outside it or cannot be read.
  */
 export function FindPictureFiles(path: string): $CancellablePromise<$models.PictureFiles> {
     return $Call.ByID(2619042612, path);
@@ -106,52 +102,47 @@ export function ListColors(): $CancellablePromise<$models.NamedColor[] | null> {
 
 /**
  * ListDrawables lists the windows, types, templates and coats a file defines, the one the view opens on first. It
- * lists none for a file that is not a GUI or coat file, or not text.
+ * lists none for a file that is not text.
  */
 export function ListDrawables(path: string): $CancellablePromise<lsp$0.Symbol[] | null> {
     return $Call.ByID(1197751465, path);
 }
 
 /**
- * ListFrames returns the shapes the game's coat designer previews a coat in, in the designer's order, each with where
- * its mask is. A frame is left out if its define is not defined or the game loads no file at its mask's path. It is
- * empty if no workspace is open or the game has no designer.
+ * ListFrames returns the shapes the game's coat designer previews a coat in, each with where its mask is. It is empty
+ * if no workspace is open or the game has no designer.
  */
 export function ListFrames(): $CancellablePromise<$models.Image[] | null> {
     return $Call.ByID(1929556180);
 }
 
 /**
- * ListPictures lists the pictures that a picture binding of a widget in the given file may draw, as the widget's
- * Pictures says where: each image that the named definition writes, labeled by its file, or, for a list with no name,
- * what the binding shows of each definition of the database, labeled by the definition. It returns an error if no
- * workspace is open.
+ * ListPictures lists the pictures a picture binding of a widget in the given file may draw, as the given list says. It
+ * returns an error if no workspace is open.
  */
 export function ListPictures(path: string, list: $models.PictureList): $CancellablePromise<$models.Picture[] | null> {
     return $Call.ByID(2369529877, path, list);
 }
 
 /**
- * ListTextures returns the texture files that a layer with the given role can use, from the game's coat folders. Each
- * is labeled with the name a coat writes for it. It returns an empty list if no workspace is open or the game's coats
- * have no folder for the role.
+ * ListTextures returns the texture files a layer with the given role can use, each labeled with the name a coat writes
+ * for it. It returns an empty list if no workspace is open or the game has no folder for the role.
  */
 export function ListTextures(role: string): $CancellablePromise<$models.Image[] | null> {
     return $Call.ByID(3076933526, role);
 }
 
 /**
- * MoveLayer moves one layer of a coat to another position among its layers and returns the edits that do it. It
- * returns no edits if both positions are the same. It returns an error if either position has no layer or has a layer
- * that comes from a parent coat.
+ * MoveLayer returns the edits that move one layer of a coat to another position among its layers, none if both
+ * positions are the same. It returns an error if either position has no layer or has one from a parent coat.
  */
 export function MoveLayer(path: string, coat: string, source: number, target: number): $CancellablePromise<lsp$0.Edit[] | null> {
     return $Call.ByID(3796674032, path, coat, source, target);
 }
 
 /**
- * RemoveBlock deletes one layer or instance of a coat, including its line, and returns the edits that do it. It
- * returns an error if the file is not in the workspace or no statement starts where the range does.
+ * RemoveBlock returns the edits that delete one layer or instance of a coat, including its line. It returns an error if
+ * no statement starts where the given range does.
  */
 export function RemoveBlock(path: string, block: lsp$0.Range): $CancellablePromise<lsp$0.Edit[] | null> {
     return $Call.ByID(1657945347, path, block);
@@ -159,9 +150,8 @@ export function RemoveBlock(path: string, block: lsp$0.Range): $CancellablePromi
 
 /**
  * ResolveCoat resolves one coat of arms in a file into its layers. A coat written as the name of another is that coat,
- * and one whose name no coat answers has no layers. A layer whose value is a template list draws the option the given
- * picks hold for that list, else the list's heaviest option. A pick is the option chosen for the ID of a group. It
- * returns an error if the file is not in the workspace or does not define the coat.
+ * and one whose name no coat answers has no layers. The given picks are the option chosen for each list, by the ID of
+ * its group. It returns an error if the file does not define the coat.
  */
 export function ResolveCoat(path: string, name: string, picks: { [_ in string]?: string } | null): $CancellablePromise<$models.Coat> {
     return $Call.ByID(1245723553, path, name, picks);
@@ -176,20 +166,18 @@ export function ResolveWindow(path: string, name: string): $CancellablePromise<$
 }
 
 /**
- * Reveal returns the picks that make a hidden widget of one window in a GUI file visible under the given picks. Each
- * condition on the way down to the widget that hides it is set to values that make it hold, and every other pick
- * stays as it is. It returns nil if those conditions contradict each other, or if the widget stays hidden anyway. It
- * returns an error if no workspace is open, the file does not define the window, or the window has no widget with
- * the given ID.
+ * Reveal returns the picks that make a hidden widget of one window in a GUI file visible under the given picks, leaving
+ * every other pick as it is. It returns nil if the conditions that hide the widget contradict each other or the widget
+ * stays hidden anyway. It returns an error if no workspace is open, the file does not define the window, or the window
+ * has no widget with the given ID.
  */
 export function Reveal(path: string, name: string, picks: { [_ in string]?: string } | null, widget: number): $CancellablePromise<{ [_ in string]?: string } | null> {
     return $Call.ByID(3826975671, path, name, picks, widget);
 }
 
 /**
- * WriteDDS writes each picture beside itself as a DDS, in BC3 blocks when compressed and else uncompressed, with or
- * without its mip levels, replacing a DDS of that name. It returns the files written. On an error it returns the ones
- * written before it, and the error names the picture and, if any were written, how many.
+ * WriteDDS writes each picture beside itself as a DDS, compressed in BC3 blocks or not, with or without mip levels,
+ * replacing a DDS of that name. It returns the files written, and on an error the ones written before it.
  */
 export function WriteDDS(paths: string[] | null, compressed: boolean, mipmaps: boolean): $CancellablePromise<string[] | null> {
     return $Call.ByID(3500940746, paths, compressed, mipmaps);

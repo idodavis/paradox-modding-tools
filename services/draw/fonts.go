@@ -1,5 +1,4 @@
-// fonts.go finds the files of the fonts that a window's texts are written in, so the page draws them in the game's
-// own type.
+// fonts.go finds the files of the fonts a window's texts are written in.
 
 package draw
 
@@ -15,16 +14,15 @@ import (
 	"paradox-modding-tools/services/workspace"
 )
 
-// A Font is one style of a font that a window's texts are written in, with the file the game reads it from.
+// A Font is one style of a font a window's texts are written in, with the file the game reads it from.
 type Font struct {
 	Name  string `json:"name"`
 	Style string `json:"style"` // the style's words: regular, bold, italic or bold|italic
 	Path  string `json:"path"`
 }
 
-// findFonts returns every style of each font that the widgets of a window name, and of the font a text with none of
-// its own is drawn in (Window.TextFont), each with its file. A font the game does not define, and a style whose file
-// the workspace does not have, are left out.
+// findFonts returns every style of each font the widgets of a window name, and of the font a text with none of its own
+// is drawn in, each with its file. A font the game does not define and a style with no file are left out.
 func findFonts(ws *workspace.Session, mods *index.Index, window *Window) []Font {
 	rules := game.GUI.Fonts
 	labels := lo.Uniq(lo.Compact(append(lo.Map(window.Widgets, func(widget Widget, _ int) string {
@@ -48,9 +46,8 @@ func findFonts(ws *workspace.Session, mods *index.Index, window *Window) []Font 
 	return fonts
 }
 
-// findFontFile returns the file that a definition of a font's files gives the session's language: the first file of
-// the group of that language, else of the base language, else of the first group. It returns "" if the game does not
-// define the files or the workspace does not have the file.
+// findFontFile returns the file a definition of a font's files gives the session's language, else the base language,
+// else the first group. It returns "" if the game does not define the files or the workspace has no such file.
 func findFontFile(ws *workspace.Session, mods *index.Index, label string) string {
 	rules := game.GUI.Fonts
 	definition, ok := findKeptClause(ws, mods, schema.Reference{Database: rules.FilesDatabase, Name: label})
@@ -80,8 +77,8 @@ func findFontFile(ws *workspace.Session, mods *index.Index, label string) string
 	return lo.Ternary(isLoaded, loaded.Path, "")
 }
 
-// listValues returns the values written inside the block that a clause holds under the given key, without their
-// quotes, in order. It returns none if the clause holds no such block.
+// listValues returns the values written inside the block a clause holds under the given key, or none if it holds no
+// such block.
 func listValues(holder clause, key string) []string {
 	field, ok := findField(listChildren(holder), key)
 	if !ok {

@@ -1,7 +1,4 @@
-<!--
-  Two texts in a diff editor, with a label above each. The header row holds the header slot, buttons to step between
-  changes, Show all lines and the split or unified switch. It emits how many lines were added and removed.
--->
+<!-- Two texts in a diff editor, with a label above each and controls in a header row. -->
 <script setup lang="ts">
 import { computed, onBeforeUnmount, onMounted, shallowRef, useTemplateRef, watch } from "vue";
 import { useLocalStorage } from "@vueuse/core";
@@ -25,7 +22,6 @@ const STYLES = [
 ];
 
 const style = useLocalStorage("pmt.compare.style", "split");
-// every line is shown, rather than the unchanged ones folded away
 const all = useLocalStorage("pmt.compare.all", false);
 const changes = shallowRef(0);
 const split = computed(() => style.value !== "unified");
@@ -49,7 +45,6 @@ onMounted(() => {
     readOnly: true,
     automaticLayout: true,
     renderSideBySide: split.value,
-    // a change of whitespace alone is a change of the file
     ignoreTrimWhitespace: false,
     useInlineViewWhenSpaceIsLimited: false,
     hideUnchangedRegions: { enabled: !all.value },
@@ -64,7 +59,7 @@ onMounted(() => {
     const lines = view?.getLineChanges() ?? [];
     changes.value = lines.length;
     const count = (start: number, end: number) => (end ? end - start + 1 : 0);
-    // an empty text has no lines, though Monaco gives its model one
+    // An empty text has no lines, though Monaco gives its model one.
     emit(
       "changes",
       right ? lines.reduce((sum, line) => sum + count(line.modifiedStartLineNumber, line.modifiedEndLineNumber), 0) : 0,
@@ -73,7 +68,7 @@ onMounted(() => {
   });
 });
 
-// setValue loses the marks Monaco keeps of which unchanged regions are folded, so a new text compares again
+// setValue loses the marks Monaco keeps of the folded regions, so a new text compares again.
 watch(
   () => left,
   (text) => {
@@ -107,7 +102,7 @@ onBeforeUnmount(() => {
   modified.dispose();
 });
 
-/** compareAgain compares the two texts anew, which folds every unchanged region again unless all lines are shown. */
+/** compareAgain compares the two texts anew, folding the unchanged regions again. */
 function compareAgain(): void {
   view?.setModel({ original, modified });
 }

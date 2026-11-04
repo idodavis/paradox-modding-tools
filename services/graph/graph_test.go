@@ -37,8 +37,8 @@ const (
 	delayMonths = "1–3 months"
 )
 
-// modAFiles are the files the first mod adds: events and on_actions that fire each other, with and without delays, an
-// event that fires through a scripted effect, and a second definition of a vanilla on_action.
+// modAFiles are the files the first mod adds: events and on_actions that fire each other, one through a scripted
+// effect, and a second definition of a vanilla on_action.
 var modAFiles = map[string]string{
 	filepath.Join("events", "d_events.txt"): `namespace = d
 
@@ -91,8 +91,7 @@ b.1 = {
 `,
 }
 
-// modCFiles are the files the third mod adds: a file that replaces a vanilla file and defines v.2 again, with an event
-// that fires it.
+// modCFiles are the files the third mod adds: a file that replaces a vanilla file, with an event that fires it.
 var modCFiles = map[string]string{
 	filepath.Join("events", "v_events.txt"): `namespace = v
 namespace = vc
@@ -118,8 +117,7 @@ func resolveFixture(t *testing.T, parts ...string) string {
 	return dir
 }
 
-// createMod copies the CK3 fixture mod into a temporary folder, writes the given files into it and returns its
-// record.
+// createMod copies the CK3 fixture mod into a temporary folder, adds the given files and returns its record.
 func createMod(t *testing.T, id string, added map[string]string) app.Mod {
 	t.Helper()
 	dir := t.TempDir()
@@ -138,8 +136,7 @@ func createMod(t *testing.T, id string, added map[string]string) app.Mod {
 	return app.Mod{ID: id, Dir: dir}
 }
 
-// openService opens a workspace on an install with the given mods and returns the graph service over it. The workspace
-// closes when the test ends.
+// openService opens a workspace on an install with the given mods and returns the graph service over it.
 func openService(t *testing.T, gameID, installPath string, mods ...app.Mod) *Service {
 	t.Helper()
 	createApp()
@@ -173,8 +170,8 @@ func openFixture(t *testing.T) *Service {
 	return openService(t, "ck3", resolveFixture(t, "ck3"), createMod(t, modA, modAFiles), createMod(t, modB, modBFiles))
 }
 
-// TestBuildGraphSplicesHiddenNodes checks that a graph goes forward and backward from its root, with signed steps and
-// the delay of each firing, and that a node hidden by origin or by database becomes one edge that passes through it.
+// TestBuildGraphSplicesHiddenNodes checks the reach forward and backward from a root, and that a node hidden by origin
+// or by database becomes one edge through it.
 func TestBuildGraphSplicesHiddenNodes(t *testing.T) {
 	gph := openFixture(t)
 	filter := gph.Defaults()
@@ -237,7 +234,7 @@ func TestBuildGraphSplicesHiddenNodes(t *testing.T) {
 }
 
 // TestBuildGraphDrawsEffects checks that a scripted effect between two nodes is a node if the filter draws effects, and
-// is the label of the edge if it does not.
+// an edge's label if it does not.
 func TestBuildGraphDrawsEffects(t *testing.T) {
 	gph := openFixture(t)
 	filter := gph.Defaults()
@@ -260,8 +257,7 @@ func TestBuildGraphDrawsEffects(t *testing.T) {
 	}
 }
 
-// TestBuildGraphMergesDefinitions checks that a node whose database merges definitions fires what each fires: an
-// on_action that a mod defines again fires the events of both.
+// TestBuildGraphMergesDefinitions checks that an on_action a mod defines again fires the events of both definitions.
 func TestBuildGraphMergesDefinitions(t *testing.T) {
 	gph := openFixture(t)
 	graph, err := gph.BuildGraph("on_action:on_birth", gph.Defaults())
@@ -278,7 +274,7 @@ func TestBuildGraphMergesDefinitions(t *testing.T) {
 }
 
 // TestBuildGraphSkipsReplacedFirer checks that an event only a replaced vanilla file defines is not drawn as a firer,
-// and that an event the mod defines again carries the game's copy it hides, where a new one carries none.
+// and that an event the mod defines again carries the copy it hides.
 func TestBuildGraphSkipsReplacedFirer(t *testing.T) {
 	gph := openService(t, "ck3", resolveFixture(t, "ck3"), createMod(t, modC, modCFiles))
 	graph := buildGraph(t, gph, "events:v.2", gph.Defaults())
@@ -301,8 +297,7 @@ func TestBuildGraphSkipsReplacedFirer(t *testing.T) {
 	}
 }
 
-// TestBuildDetailReadsDefinition checks the detail of an event: its text, what it fires and what fires it, and that
-// an id nothing defines is an error.
+// TestBuildDetailReadsDefinition checks the detail of an event, and that an id nothing defines is an error.
 func TestBuildDetailReadsDefinition(t *testing.T) {
 	gph := openFixture(t)
 	detail, err := gph.BuildDetail(eventD1)
@@ -332,9 +327,8 @@ func TestBuildDetailReadsDefinition(t *testing.T) {
 }
 
 // TestBuildGraphOnInstalls builds the graph of each real install that PMT_TEST_INSTALL_<GAME> names, with no mods and
-// the default filter, from the on_actions that start a game and that fire each year. It fails if a node has no detail,
-// if an event that picks one branch of a weighted list fires with no weighted step, and if CK3's birth chain is not
-// read as its script writes it.
+// the default filter. It fails if a node has no detail, if a weighted firing has no weighted step, or if CK3's birth
+// chain is not read as its script writes it.
 func TestBuildGraphOnInstalls(t *testing.T) {
 	installs := []struct {
 		game        string
@@ -384,8 +378,8 @@ func TestBuildGraphOnInstalls(t *testing.T) {
 	}
 }
 
-// checkBirth checks CK3's birth chain: the blocks birth.0001's firings sit in, which events show a window and with
-// what picture, the on_action the game calls from its code, and a message sent with its title.
+// checkBirth checks CK3's birth chain: the blocks birth.0001's firings sit in, the events' windows and pictures, the
+// on_action the game calls from its code, and a message with its title.
 func checkBirth(t *testing.T, gph *Service, filter Filter) {
 	t.Helper()
 	graph := buildGraph(t, gph, "events:birth.0001", filter)
@@ -424,8 +418,7 @@ func checkBirth(t *testing.T, gph *Service, filter Filter) {
 	}
 }
 
-// logDetails builds the detail of every node of a graph but its folds and logs what they hold, with each window that
-// shows no background. It fails the test if a detail is an error.
+// logDetails builds and logs the detail of every node of a graph but its folds, and fails if one is an error.
 func logDetails(t *testing.T, gph *Service, root string, graph Graph) {
 	t.Helper()
 	started := time.Now()

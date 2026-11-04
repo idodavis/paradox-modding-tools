@@ -1,5 +1,4 @@
-// process.go serves the stream each window opens to an agent. It starts the agent's program, passes the window's
-// messages to it and its output back, and ends the program when the stream closes.
+// process.go serves the stream each window opens to an agent and runs the agent's program.
 
 package agent
 
@@ -51,10 +50,8 @@ func (agt *Service) ServiceStartup(context.Context, application.ServiceOptions) 
 	return nil
 }
 
-// serve serves one window's stream to an agent. The window's first message names the agent and the active file. Go
-// starts the agent and sends a Start, then writes each later message to the agent's input as one line, and sends each
-// line of the agent's output back as one message. Closing the stream ends the agent and every program it started;
-// the agent's end closes the stream. What the agent writes as errors goes to PMT's log under its id.
+// serve serves one window's stream to an agent. The window's first message names the agent and the active file. Closing
+// the stream ends the agent and every program it started, and the agent's end closes the stream.
 func (agt *Service) serve(conn *application.StreamConn) {
 	defer func() { _ = conn.Close() }()
 	var first opening
@@ -87,8 +84,8 @@ func (agt *Service) serve(conn *application.StreamConn) {
 	}
 }
 
-// startProgram starts an agent's program in a folder, with PMT's own environment and the Node the agents run on first
-// on its PATH. It returns an error if findAgent fails or the program cannot be started.
+// startProgram starts an agent's program in a folder, with the Node the agents run on first on its PATH. It returns an
+// error if findAgent fails or the program cannot be started.
 func (agt *Service) startProgram(id, folder string) (*program, error) {
 	agent, err := agt.findAgent(id)
 	if err != nil {
@@ -127,8 +124,7 @@ func addToPath(env []string, dir string) []string {
 	return append(env, "PATH="+dir+string(os.PathListSeparator)+os.Getenv("PATH"))
 }
 
-// sendLines sends each line an agent writes as one message, until the agent ends or the stream closes. Then it closes
-// the stream.
+// sendLines sends each line an agent writes as one message, then closes the stream when the agent ends.
 func sendLines(conn *application.StreamConn, output io.Reader) {
 	defer func() { _ = conn.Close() }()
 	reader := bufio.NewReaderSize(output, 1<<16)

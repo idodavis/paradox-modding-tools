@@ -1,4 +1,4 @@
-/** This file holds Steam's Workshop addresses and saves a mod's upload as a zip. */
+/** Steam's Workshop addresses, and saving a mod's upload as a zip. */
 import { toValue, type MaybeRefOrGetter } from "vue";
 import { useMutation } from "@pinia/colada";
 import { Dialogs } from "@wailsio/runtime";

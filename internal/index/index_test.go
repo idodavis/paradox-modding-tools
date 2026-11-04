@@ -186,9 +186,8 @@ func TestScanInstalls(t *testing.T) {
 }
 
 // dumpInstall writes an install's schema and index to two files whose paths start with the given prefix: the schema
-// as indented JSON, whose maps come out sorted by key, and the index as one line per file, which also gives the group
-// of copies the file belongs to and its place in their load order. Two dumps of one install differ only where the
-// schema or the index does.
+// as indented JSON, and the index as one line per file. Two dumps of one install differ only where the schema or the
+// index does.
 func dumpInstall(t *testing.T, prefix string, built *schema.Schema, scanned *Index) {
 	t.Helper()
 	text, err := json.MarshalIndent(built, "", " ")
@@ -217,9 +216,9 @@ func dumpInstall(t *testing.T, prefix string, built *schema.Schema, scanned *Ind
 	}
 }
 
-// describeFile returns the dump's line for one file of an index: its key, its origin, its definitions, references and
-// messages, and a hash of its occurrences and texts. An ordinal is hashed as the text it stands for, since the scan
-// interns texts in no fixed order; a mode only counts for a definition and a language only for a message.
+// describeFile returns the dump's line for one file of an index: its key, its origin, its counts, and a hash of its
+// occurrences and texts. An ordinal is hashed as the text it stands for, since the scan interns texts in no fixed
+// order.
 func describeFile(scanned *Index, position int32) string {
 	hash, counts := fnv.New64a(), map[Role]int{}
 	for _, occurrence := range scanned.Occurrences[position] {

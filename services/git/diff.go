@@ -20,12 +20,10 @@ type LineChange struct {
 }
 
 // DiffFile returns the runs of lines a text changes from its file's text at the last commit, for the editor's change
-// bars. A line that ends in \r\n is read as one that ends in \n in both texts. It returns an error if the file is in
-// no repository or git does not track it.
+// bars. It returns an error if the file is in no repository or git does not track it.
 func (git *Service) DiffFile(path, text string) ([]LineChange, error) {
 	// git reads a path that starts with ./ from the folder it runs in
 	dir, rel := filepath.Dir(path), "./"+filepath.Base(path)
-	// a file git does not track is not in the last commit, which --quiet keeps git from printing as an error
 	if _, err := git.run(dir, "rev-parse", "--verify", "--quiet", "HEAD:"+rel); err != nil {
 		return nil, err
 	}
@@ -40,7 +38,6 @@ func (git *Service) DiffFile(path, text string) ([]LineChange, error) {
 		strings.ReplaceAll(text, "\r\n", "\n"),
 	)
 	changes := []LineChange{}
-	// the text's line where the pieces since the last unchanged run start, and the lines they add and remove
 	line, added, removed := 1, 0, 0
 	for _, piece := range diff.DiffMainRunes(first, second, false) {
 		count := utf8.RuneCountInString(piece.Text)
@@ -57,9 +54,8 @@ func (git *Service) DiffFile(path, text string) ([]LineChange, error) {
 	return appendRun(changes, line, added, removed), nil
 }
 
-// appendRun appends the change that starts at the given line and adds and removes the given numbers of lines. Added
-// lines are a run of their own, marked changed if lines were removed too. Lines only removed are marked on the line
-// before them, or on the first. It appends nothing if no line is added or removed.
+// appendRun appends the change that starts at the given line and adds and removes the given numbers of lines. It
+// appends nothing if no line is added or removed.
 func appendRun(changes []LineChange, line, added, removed int) []LineChange {
 	switch {
 	case added > 0:

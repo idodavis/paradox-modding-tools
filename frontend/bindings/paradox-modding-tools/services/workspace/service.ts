@@ -48,9 +48,8 @@ export function AddMod(workspaceID: string, dir: string): $CancellablePromise<$m
 }
 
 /**
- * CheckModFolder returns an error if a folder cannot be added as a mod of the given install's game: it is no folder, it
- * is the game's own folder or inside it, or it lacks the game's descriptor. It returns an error if the install is not
- * recorded.
+ * CheckModFolder returns an error if a folder cannot be added as a mod of the given install's game, or if the install
+ * is not recorded.
  */
 export function CheckModFolder(installID: string, dir: string): $CancellablePromise<void> {
     return $Call.ByID(2659390721, installID, dir);
@@ -64,8 +63,8 @@ export function Close(): $CancellablePromise<void> {
 }
 
 /**
- * Create makes an empty file or a folder, and the folders it goes in that are not there yet. The watcher sends
- * fs:changed for it. It returns an error if it exists already or is outside the workspace's mods.
+ * Create makes an empty file or a folder, and the folders above it. It returns an error if it exists already or is
+ * outside the workspace's mods.
  */
 export function Create(path: string, dir: boolean): $CancellablePromise<void> {
     return $Call.ByID(4164671313, path, dir);
@@ -73,8 +72,8 @@ export function Create(path: string, dir: boolean): $CancellablePromise<void> {
 
 /**
  * CreateCopy copies a file of the game or of another mod to the same place in a mod, and returns the copy's path. It
- * returns an error if no workspace is open, the mod is not in it or has no folder, the file is under none of its
- * roots, or the mod has a file there already.
+ * returns an error if the mod is not in the workspace or has no folder, the file is outside the workspace, or the mod
+ * has a file there already.
  */
 export function CreateCopy(path: string, modID: string): $CancellablePromise<string> {
     return $Call.ByID(1678022200, path, modID);
@@ -97,8 +96,8 @@ export function CreateMod(workspaceID: string, dir: string, name: string, langua
 }
 
 /**
- * CreateWorkspace records a workspace of the given install, with the given name and localization language, under an
- * id of its own, and returns it. It has no mods yet.
+ * CreateWorkspace records a workspace of the given install, with the given name and localization language, and returns
+ * it. It has no mods yet.
  */
 export function CreateWorkspace(name: string, install: string, language: string): $CancellablePromise<app$0.Workspace> {
     return $Call.ByID(217270578, name, install, language);
@@ -128,8 +127,8 @@ export function DeleteWorkspace(id: string): $CancellablePromise<void> {
 
 /**
  * DescribePrecedence returns, in plain words, which copy the game with the given id keeps when several definitions of a
- * database share a name. The folder is the database's folder in the game's folder, with its stage folder in front where
- * the game has stages. It returns "" for a game this build does not support.
+ * database share a name. The folder is the database's folder in the game's folder. It returns "" for a game this build
+ * does not support.
  */
 export function DescribePrecedence(gameID: string, database: string, folder: string): $CancellablePromise<string> {
     return $Call.ByID(3701070192, gameID, database, folder);
@@ -151,8 +150,8 @@ export function Launch(): $CancellablePromise<void> {
 }
 
 /**
- * ListCopies returns every copy of a file in load order, the given one too, the game's first. The game reads the last,
- * unless a replace_path drops them all. It returns none for a file under no root or while no workspace is open.
+ * ListCopies returns every copy of a file in load order, the given one too, the game's first. It returns none for a
+ * file under no root or while no workspace is open.
  */
 export function ListCopies(path: string): $CancellablePromise<$models.Place[] | null> {
     return $Call.ByID(26420408, path);
@@ -196,8 +195,8 @@ export function ListReadyInstalls(): $CancellablePromise<string[] | null> {
 }
 
 /**
- * ListRoots returns the place of each folder the workspace's files are listed from: the mods' in load order, then the
- * game's own folder. The install's other folders are left out. It returns none if no workspace is open.
+ * ListRoots returns the place of each root of the workspace: the mods' in load order, then the game's own folder. It
+ * returns none if no workspace is open.
  */
 export function ListRoots(): $CancellablePromise<$models.Place[] | null> {
     return $Call.ByID(1315421210);
@@ -250,8 +249,8 @@ export function RemoveMod(workspaceID: string, modID: string): $CancellablePromi
 }
 
 /**
- * Rename moves a file or a folder to a new path. The watcher sends fs:changed for both paths. It returns an error if
- * the new path exists already or either path is outside the workspace's mods.
+ * Rename moves a file or a folder to a new path. It returns an error if the new path exists already or either path is
+ * outside the workspace's mods.
  */
 export function Rename(source: string, target: string): $CancellablePromise<void> {
     return $Call.ByID(3575852159, source, target);
@@ -305,10 +304,10 @@ export function Restore(trashed: string, path: string): $CancellablePromise<void
 }
 
 /**
- * RevertHunks gives a file of the open workspace back its text from before an agent's edits, given as each edit's
- * hunks, the earliest edit first. If the edits created the file and it ends up empty, it goes to PMT's trash; else it
- * is written in its own line endings. It returns an error, and changes nothing, if no workspace is open, the file
- * cannot be read, it has unsaved text in the editor, an edit has no hunk, or a hunk's lines are not in the file once.
+ * RevertHunks gives a file back its text from before an agent's edits, given as each edit's hunks, the earliest edit
+ * first. A file the edits created goes to PMT's trash once it is empty. It returns an error, and changes nothing, if no
+ * workspace is open, the file cannot be read, it has unsaved text in the editor, an edit has no hunk, or a hunk's
+ * lines are not in the file once.
  */
 export function RevertHunks(path: string, edits: ($models.Hunk[] | null)[] | null, isNew: boolean): $CancellablePromise<void> {
     return $Call.ByID(1562964112, path, edits, isNew);
@@ -323,8 +322,7 @@ export function State(): $CancellablePromise<$models.State> {
 
 /**
  * UpdateInstall moves an install to another folder and reads its version again. A workspace open on the install
- * opens again. It returns an error if the install is not recorded, its game is not supported or the folder does not
- * exist.
+ * opens again. It returns an error if the install is not recorded or the folder does not exist.
  */
 export function UpdateInstall(id: string, path: string): $CancellablePromise<void> {
     return $Call.ByID(2552603427, id, path);
@@ -346,8 +344,7 @@ export function UpdateWorkspace(workspace: app$0.Workspace): $CancellablePromise
 }
 
 /**
- * Write writes a file's text in its encoding, making its folder if it is missing. The watcher sends fs:changed once
- * the index has the text. It returns an error for a file outside the workspace's mods.
+ * Write writes a file's text in its encoding. It returns an error for a file outside the workspace's mods.
  */
 export function Write(path: string, text: files$0.Text): $CancellablePromise<void> {
     return $Call.ByID(3195239336, path, text);

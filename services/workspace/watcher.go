@@ -1,5 +1,4 @@
-// watcher.go watches folders and reports the files that change or are deleted in them. It stops watching the folders of
-// a move the app makes while the move runs.
+// watcher.go watches folders and reports the files that change or are deleted in them.
 
 package workspace
 
@@ -24,13 +23,12 @@ type Watcher struct {
 	done     chan struct{} // closed when run ends
 }
 
-// watchedFolders holds the dot folders the watcher watches, so that an edit there reaches an open tab and the
-// explorer: the ones coding agents keep their instructions in, and the Workshop listing's page. The index and the
-// search still skip them.
+// watchedFolders holds the dot folders the watcher watches: the ones coding agents keep their instructions in, and the
+// Workshop listing's page.
 var watchedFolders = []string{".claude", ".codex", ".github", ".workshop"}
 
-// startWatcher watches folders and any folder made under them. It reports the files changed in each burst together.
-// It returns an error if a folder cannot be watched.
+// startWatcher watches folders and any folder made under them. It reports the files changed in each burst together. It
+// returns an error if a folder cannot be watched.
 func startWatcher(dirs []string, change func(changes []FileChange)) (*Watcher, error) {
 	notifier, err := fsnotify.NewWatcher()
 	if err != nil {
@@ -46,8 +44,7 @@ func startWatcher(dirs []string, change func(changes []FileChange)) (*Watcher, e
 	return watcher, nil
 }
 
-// addFolders makes a notifier watch a folder and every folder under it, skipping the folders isWatched refuses. The
-// folder itself is always watched.
+// addFolders makes a notifier watch a folder and every folder under it that isWatched accepts.
 func addFolders(notifier *fsnotify.Watcher, dir string) error {
 	return filepath.WalkDir(dir, func(path string, entry fs.DirEntry, err error) error {
 		switch {
@@ -62,8 +59,7 @@ func addFolders(notifier *fsnotify.Watcher, dir string) error {
 	})
 }
 
-// isWatched reports whether the watcher watches a folder of the given name: any folder that is not hidden, and the
-// watched dot folders.
+// isWatched reports whether the watcher watches a folder of the given name.
 func isWatched(folder string) bool {
 	return !files.IsHiddenDir(folder) || slices.Contains(watchedFolders, folder)
 }
@@ -71,7 +67,6 @@ func isWatched(folder string) bool {
 // run reports the changes the watcher sees until it is closed.
 func (watcher *Watcher) run(change func(changes []FileChange)) {
 	defer close(watcher.done)
-	// a burst's first event starts a timer that later events do not reset. A file gone when it fires counts as deleted
 	pending := map[string]bool{} // the paths the burst touched
 	var batch <-chan time.Time   // fires when the burst ends; nil while none is pending
 	for {
@@ -84,7 +79,6 @@ func (watcher *Watcher) run(change func(changes []FileChange)) {
 				continue
 			}
 			if event.Has(fsnotify.Create) {
-				// a folder made later is watched from its first event; one that cannot be watched is skipped
 				_ = addFolders(watcher.notifier, event.Name)
 			}
 			if len(pending) == 0 {
@@ -113,8 +107,8 @@ func (watcher *Watcher) Close() {
 	<-watcher.done
 }
 
-// Move runs a function that moves a file or a folder, and returns its error. It stops watching the folders being
-// moved while the move runs, and watches them again if the move fails. A nil watcher only runs the move.
+// Move runs a function that moves a file or a folder, and returns its error. The folders being moved are not watched
+// while it runs. A nil watcher only runs the move.
 func (watcher *Watcher) Move(source string, move func() error) error {
 	if watcher == nil {
 		return move()
@@ -127,7 +121,6 @@ func (watcher *Watcher) Move(source string, move func() error) error {
 	}
 	err := move()
 	if err != nil {
-		// a folder that cannot be watched again is skipped
 		_ = addFolders(watcher.notifier, source)
 	}
 	return err

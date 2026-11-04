@@ -43,9 +43,8 @@ type ColorForm struct {
 	Example []float64
 }
 
-// ParseColor returns the color that a block with the given tag and numbers writes. The tag must match a row of Colors
-// exactly. A hex row takes one number holding the bytes of red, green, blue and alpha. Any other row takes at least
-// three numbers. It returns false for a tag no row has and for too few numbers.
+// ParseColor returns the color that a block with the given tag and numbers writes. It returns false for a tag no row
+// of Colors has and for too few numbers.
 func ParseColor(tag string, parts []float64) (RGBA, bool) {
 	row, known := lookupColorRow(tag)
 	if known && row.Hex && len(parts) == 1 {
@@ -79,10 +78,8 @@ func ToColor(tree *Tree, statement int32) (RGBA, bool) {
 	return ParseColor(tag, parts)
 }
 
-// EncodeColor returns the numbers that write the given color the way an existing block wrote its own. The tag and the
-// parts are that block's. The numbers use its scale, and carry an alpha only if it had one. A hex row gives one 0x
-// number; other rows give whole numbers, or two decimals when the scale is 1. It returns false for a tag no row has
-// and for fewer than three parts.
+// EncodeColor returns the numbers that write the given color the way an existing block wrote its own, given that
+// block's tag and parts. It returns false for a tag no row of Colors has and for fewer than three parts.
 func EncodeColor(tag string, parts []float64, color RGBA) ([]string, bool) {
 	row, known := lookupColorRow(tag)
 	if !known || len(parts) < 3 {
@@ -121,7 +118,7 @@ func (color RGBA) ToCSS() string {
 		strconv.FormatFloat(color.A, 'f', -1, 64))
 }
 
-// lookupColorRow returns the Colors row for a tag, matched exactly, or false if there is none.
+// lookupColorRow returns the Colors row for a tag, or false if there is none.
 func lookupColorRow(tag string) (Color, bool) {
 	i := slices.IndexFunc(Colors, func(row Color) bool { return row.Tag == tag })
 	if i < 0 {

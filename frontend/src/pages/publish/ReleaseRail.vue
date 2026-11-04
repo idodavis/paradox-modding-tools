@@ -1,6 +1,4 @@
-<!--
-  This rail edits the next update of a listing, shows what it changes on Steam and uploads it.
--->
+<!-- The rail that edits a listing's next update, shows what it changes on Steam and uploads it. -->
 <script setup lang="ts">
 import { computed } from "vue";
 import { useQuery } from "@pinia/colada";
@@ -31,7 +29,7 @@ const { modId, listingKey, comparing, picked } = defineProps<{
   modId: string;
   listingKey: string;
   comparing: boolean;
-  /** The id of the difference the compare shows, or "" when there is none. */
+  /** The id of the difference the compare shows, or "". */
   picked: string;
 }>();
 const emit = defineEmits<{ compare: [id: string]; link: [] }>();
@@ -76,7 +74,6 @@ const hint = computed(() => {
   return `Drafted from the ${plural(note.count, "commit")} ${since}. Edit it before you upload.`;
 });
 
-// The page's differences and the version's are listed. The file differences fold into one summary row after them.
 const groups = computed(() => {
   const page = comparison.value?.page ?? [];
   const version = (comparison.value?.files ?? []).filter((difference) => difference.field === "version");

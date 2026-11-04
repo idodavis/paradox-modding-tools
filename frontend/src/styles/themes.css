@@ -20,11 +20,9 @@
 @theme {
   --font-sans: "Geist", ui-sans-serif, system-ui, sans-serif;
   --font-mono: "Geist Mono", ui-monospace, monospace;
-  /* the type scale: 11 caption, 12 dense, 13 body, 14 reading, 16 section, 18 a description's heading 2 and
-     an event's title, 20 page, 28 stat */
+  /* The type scale: 11 caption, 12 dense, 13 body, 14 reading, 16 section, 18 heading, 20 page, 28 stat. */
   --text-11: 0.6875rem;
   --text-11--line-height: 1rem;
-  /* compact mono: a widget tree's names */
   --text-11\.5: 0.71875rem;
   --text-11\.5--line-height: 1rem;
   --text-12: 0.75rem;
@@ -45,17 +43,13 @@
   --text-20--line-height: 1.75rem;
   --text-20--font-weight: 600;
   --text-20--letter-spacing: -0.015em;
-  /* badges and keys */
   --text-tiny: 0.65625rem;
   --text-tiny--line-height: 1;
   --radius-chip: 0.3125rem;
-  /* the theme tiles in Appearance */
   --radius-tile: 0.625rem;
 }
 
-/* The syntax colors most themes take from their palette; a theme sets its own where it differs. In every theme only
-   the variables are red or pink. The operators and the keys are on every line, so they never are, and the colors a
-   file shows most each keep a hue of their own. */
+/* The syntax colors most themes take from their palette. In every theme only the variables are red or pink. */
 [data-theme] {
   --syn-entry: var(--purple);
   --syn-variable: var(--red);
@@ -353,11 +347,8 @@
   color-scheme: light;
 }
 
-/* Pierre: Pierre Dark Soft and Pierre Light Soft, after @pierre/theme (Apache-2.0): each token from the key that
-   plays its part there (the editor, the bars and sidebars, menus, inputs; text, the sidebar's, the line numbers'),
-   its git colors as the status ones; the light link is Pierre Light's, the soft one reading too faint on white; the
-   diffs take Pierre's own (the regular theme's) green and red; the terminal's colors are the Soft themes' own
-   (2.0.0) */
+/* Pierre: Pierre Dark Soft and Pierre Light Soft, after @pierre/theme (Apache-2.0) 2.0.0. The light link is Pierre
+   Light's, since the soft one reads too faint on white, and the diffs take the regular theme's green and red. */
 [data-theme="pierre-dark"] {
   --bg-0: #171717;
   --bg-1: #101010;
@@ -758,8 +749,7 @@
   color-scheme: light;
 }
 
-/* Mixed from the theme's tokens on the element that sets it; a theme never sets these. The yellow of a warning is the
-   terminal's. */
+/* Mixed from the theme's tokens on the element that sets it; a theme never sets these. */
 [data-theme] {
   --yellow: var(--ansi-yellow);
   --yellow-soft: color-mix(in srgb, var(--yellow) 16%, transparent);
@@ -770,10 +760,8 @@
   --blue-soft: color-mix(in srgb, var(--blue) 16%, transparent);
   --green-soft: color-mix(in srgb, var(--green) 16%, transparent);
 
-  /* origin slots: one lightness and chroma per theme, a hue per slot: mint, a leaf green and a dark violet, the
-     others where they sit farthest from every theme's accent, link and colors (the kinds' and tags'); 5 to
-     7 a little lighter, 8 darker; 9 to 16 repeat 1 to 8 darker. A slot's chroma is the theme's --oc times what its hue
-     holds in sRGB beside the others'; each theme's --oc is the most all sixteen hold there. */
+  /* Origin slots share one lightness and chroma per theme, with a hue each chosen to sit far from the theme's accent
+     and syntax colors. Slots 9 to 16 repeat 1 to 8 darker. */
   --game: oklch(var(--ol) 0.025 220);
   --o1: oklch(var(--ol) calc(var(--oc) * 0.91) 165);
   --o2: oklch(var(--ol) calc(var(--oc) * 1.04) 345);
@@ -792,10 +780,9 @@
   --o15: oklch(calc(var(--ol) - 0.04) calc(var(--oc) * 0.82) 268);
   --o16: oklch(calc(var(--ol) - 0.18) calc(var(--oc) * 1.48) 295);
 
-  /* the window's close button under the pointer on Windows, the red Windows gives its own in every theme */
+  /* The red Windows gives its own close button, in every theme. */
   --window-close: #c42b1c;
 
-  /* Nuxt UI: radius-sm, md, lg and xl are 4, 6, 8 and 12 */
   --ui-radius: 0.25rem;
   --ui-bg: var(--bg-1);
   --ui-bg-muted: var(--bg-2);
@@ -837,7 +824,7 @@
     cursor: pointer;
   }
 
-  /* Thin scrollbars: a line-2 thumb that shows while its scroller is hovered. */
+  /* Thin scrollbars that show a thumb only while their scroller is hovered. */
   * {
     scrollbar-width: thin;
     scrollbar-color: transparent transparent;
@@ -866,7 +853,7 @@
   }
 }
 
-/* a peek's file rows in the editor: a dot in their origin's color before the name */
+/* A peek's file rows get a dot in their origin's color. */
 .monaco-editor .reference-file .label-name::before {
   content: "";
   display: inline-block;
@@ -877,15 +864,14 @@
   vertical-align: 1px;
   background: var(--origin, transparent);
 }
-/* a merge conflict's sides: the current in green, the incoming in blue */
+/* A merge conflict's sides. */
 .monaco-editor .pmt-conflict-current {
   background: var(--green-soft);
 }
 .monaco-editor .pmt-conflict-incoming {
   background: var(--blue-soft);
 }
-/* the lines changed since the last commit: a bar beside the line numbers, green for lines added and blue for lines
-   changed, and a wedge under the line where lines were removed */
+/* The lines changed since the last commit get a bar beside the line numbers, and a wedge where lines were removed. */
 .monaco-editor .pmt-change-added,
 .monaco-editor .pmt-change-changed {
   margin-inline-start: 4px;
@@ -903,8 +889,7 @@
   border-inline-start: 4px solid var(--diff-del, var(--red));
   z-index: 1;
 }
-/* a GUI file's code beside its picture: the selected widget's lines, the hovered one's, a hidden one's text dimmed and
-   the eye before each widget's first line */
+/* A GUI file's code beside its picture marks the selected, hovered and hidden widgets. */
 .monaco-editor .pmt-marked-widget {
   background: color-mix(in srgb, var(--accent) 12%, transparent);
 }
@@ -922,7 +907,7 @@
   color: var(--accent);
   cursor: pointer;
 }
-/* the chip after a line: a widget's size (a size of nothing in orange) */
+/* The chip after a line shows a widget's size. */
 .monaco-editor .pmt-size {
   margin-inline-start: 8px;
   padding: 0 5px;

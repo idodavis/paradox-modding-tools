@@ -26,7 +26,7 @@ type counter struct {
 	path        string                     // the file being counted
 	colorSuffix string                     // the ending of the keys that hold an untagged color in the file being counted
 	fields      map[*Field]*Field          // by the schema's field: what this worker counted at it
-	arguments   map[*Command]*Field        // by command: what this worker counted in its arguments
+	arguments   map[argumentsKey]*Field    // by command and declaration: what this worker counted in its arguments
 	definitions map[string]*Field          // by database
 	defined     map[string]map[string]bool // the names each database defines, by database
 	messages    map[string]bool            // every message key the localization files write, in any language
@@ -34,6 +34,12 @@ type counter struct {
 	gui         bool                       // the file being counted is a GUI file
 	prefixed    map[string]map[string]int  // by link prefix: each name written after it, with its count
 	examples    map[string][]Example       // by the name written: a command's, or a data function's as Type.Function
+}
+
+// An argumentsKey is one command as one word declares it, whose arguments a worker counts apart.
+type argumentsKey struct {
+	command     *Command
+	declaration string
 }
 
 // A holder is where the keys of one statement are counted while the counter is inside the statement.
@@ -74,7 +80,7 @@ func (schema *Schema) CountVanilla(listing []files.File, parse func(path string)
 	counters := make([]*counter, files.Workers)
 	for worker := range counters {
 		counters[worker] = &counter{
-			schema: schema, fields: map[*Field]*Field{}, arguments: map[*Command]*Field{},
+			schema: schema, fields: map[*Field]*Field{}, arguments: map[argumentsKey]*Field{},
 			definitions: map[string]*Field{}, defined: map[string]map[string]bool{}, messages: map[string]bool{},
 			unlisted: map[string]bool{}, prefixed: map[string]map[string]int{}, examples: map[string][]Example{},
 		}
@@ -155,7 +161,7 @@ func (counter *counter) Enter(tree *jomini.Tree, statement int32, context *Conte
 		next.field = mirror(counter.definitions, context.Database)
 	case context.Category == CategoryCommand && block:
 		// A command's block holds its arguments and has no shape of its own.
-		next.field = mirror(counter.arguments, context.Command)
+		next.field = mirror(counter.arguments, toArgumentsKey(context))
 		block = false
 	case context.Category == CategoryKeyword && block && context.Field != nil:
 		// A keyword's block, such as a random_list branch, holds fields of the form its holder gives.
@@ -411,22 +417,24 @@ func (counter *counter) isColor(tree *jomini.Tree, statement int32, key string) 
 
 // findValueField returns the field that counts the value a statement writes. That is the field its key names, the
 // arguments of the command its key names, or the field of the block that holds a value written alone. It returns nil
-// if the statement writes no value, the value is a definition, or the database names no definitions, since its files
-// list instances.
+// if the statement writes no value or the value is a definition.
 func (counter *counter) findValueField(parent holder, field *Field, current jomini.Statement, context *Context) *Field {
-	database := counter.schema.Databases[context.Database]
 	switch {
-	case current.IsBlock() || current.Value.IsEmpty() || isOwnDefinition(context) ||
-		database != nil && database.Row.NamedBy == "nothing":
+	case current.IsBlock() || current.Value.IsEmpty() || isOwnDefinition(context):
 		return nil
 	case field != nil:
 		return field
 	case context.Category == CategoryCommand && context.Command != nil:
-		return mirror(counter.arguments, context.Command)
+		return mirror(counter.arguments, toArgumentsKey(context))
 	case current.IsListed():
 		return parent.field
 	}
 	return nil
+}
+
+// toArgumentsKey returns the key of the arguments a statement's command takes where its block declares it.
+func toArgumentsKey(context *Context) argumentsKey {
+	return argumentsKey{command: context.Command, declaration: context.Command.resolveDeclaration(context.Declaration)}
 }
 
 // mirror returns the field that a worker counts into for the given key. It makes the field if there is none.
@@ -516,8 +524,8 @@ func (counter *counter) resolveCounts() {
 			dataType.Functions[name] = function
 		}
 	}
-	for command, counted := range counter.arguments {
-		command.makeArguments(game.SourceVanilla).add(counted)
+	for key, counted := range counter.arguments {
+		key.command.makeArguments(key.declaration, game.SourceVanilla).add(counted)
 	}
 	for _, database := range slices.Sorted(maps.Keys(counter.defined)) {
 		counter.schema.buildDatabase(row, database, game.Database{})
@@ -595,8 +603,8 @@ func (schema *Schema) walkFields(visit func(field *Field, held bool)) {
 		each(database.Definition, false)
 	}
 	for _, command := range schema.Commands {
-		if command.Arguments != nil {
-			each(command.Arguments, true)
+		for _, arguments := range command.Arguments {
+			each(arguments, true)
 		}
 	}
 }
@@ -635,10 +643,19 @@ func (counter *counter) resolveClaims(field *Field, held bool) {
 	if field.Value.IsStated() && !open {
 		return
 	}
-	literal := slices.ContainsFunc(slices.Collect(maps.Keys(vanilla.Values)), counter.isLiteral)
 	expected, ok := counter.resolveReference(vanilla.Values)
+	// a number names a definition where the database every label names also names a label that is no number, as
+	// CK3's character ids are written beside character keys
+	labels := slices.Collect(maps.Keys(counter.listLabels(vanilla.Values)))
+	named := ok && slices.ContainsFunc(labels, func(label string) bool { return !jomini.IsNumber(label) })
+	literal := slices.ContainsFunc(slices.Collect(maps.Keys(vanilla.Values)), func(value string) bool {
+		isName := named && jomini.IsNumber(value) && counter.defined[expected.Database][value]
+		return counter.isLiteral(value) && !isName
+	})
 	concept := expected.Database == counter.schema.Concepts
-	if ok && !literal && (!field.Value.IsStated() || stated.Type == ValueReference || !concept) {
+	// a GUI database's names are common words, such as value, as they are for the keys (resolveKeys)
+	gui := strings.HasPrefix(expected.Database, game.GUI.DatabasePrefix)
+	if ok && !literal && !gui && (!field.Value.IsStated() || stated.Type == ValueReference || !concept) {
 		field.Value = Claim[Expected]{Value: expected, Source: game.SourceVanilla}
 		return
 	}
@@ -853,7 +870,7 @@ func (counter *counter) resolvePrefix(prefix string, labels map[string]int) {
 	if command == nil {
 		return
 	}
-	arguments := command.makeArguments(game.SourceVanilla)
+	arguments := command.makeArguments(game.DeclaredLink, game.SourceVanilla)
 	arguments.Vanilla = Vanilla{Values: labels}
 	for _, count := range labels {
 		arguments.Vanilla.Count += count

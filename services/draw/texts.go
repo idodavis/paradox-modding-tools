@@ -1,4 +1,4 @@
-// texts.go finds the text that a value in a GUI file shows, and the sample text that a data call in it shows.
+// texts.go finds the text a value in a GUI file shows, and the sample text a data call in it shows.
 
 package draw
 
@@ -103,8 +103,7 @@ func sampleNumber(seed uint32, codes string) string {
 	return number
 }
 
-// isDate reports whether a data function writes a date: it returns the type, and its name has an ending, that
-// game.GUI.DateCalls lists.
+// isDate reports whether a data function writes a date, as game.GUI.DateCalls says.
 func isDate(function schema.DataFunction) bool {
 	calls := game.GUI.DateCalls
 	return function.Returns == calls.Returns && slices.ContainsFunc(calls.Endings, func(ending string) bool {
@@ -131,14 +130,13 @@ func (library *library) sampleDate(seed uint32) string {
 	return date.String()
 }
 
-// lookupText returns the text of the message with the given key in the workspace's language, or the key where there is
-// no such message.
+// lookupText returns the text of the message with the given key, or the key if there is no such message.
 func (library *library) lookupText(key string) string {
 	text, _, ok := library.ws.LookupText(library.mods, key)
 	return lo.Ternary(ok, text, key)
 }
 
-// sampleWords returns the first words, as many as the given count, of the lorem sentence the seed picks.
+// sampleWords returns the given number of first words of the lorem sentence the seed picks.
 func sampleWords(seed uint32, count int) string {
 	return strings.Join(strings.Fields(sampleSentences(seed, 1))[:count], " ")
 }

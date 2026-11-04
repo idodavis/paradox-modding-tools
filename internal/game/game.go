@@ -145,6 +145,29 @@ var PictureExtensions = []string{".png", ".gif", ".jpg", ".jpeg", ".webp"}
 // WikiAPI is the address of a game's wiki API, with %s for the game's id.
 const WikiAPI = "https://%s.paradoxwikis.com/api.php"
 
+// A WikiTopic gives the files of a format, or the files under a folder, the terms the games' wikis title their pages
+// on them with.
+type WikiTopic struct {
+	Format files.Format // "" for files of any format
+	Folder string       // "" for files in any folder
+	Terms  []string
+}
+
+// WikiTopics are the topics the games' wikis write pages on beside a file format's own name, each with the pages it
+// finds.
+var WikiTopics = []WikiTopic{
+	// CK3's Interface, Vic3's Interface modding and EU5's Interface modding guide, which also write of gfx/interface
+	{Format: files.FormatGUI, Terms: []string{"interface"}},
+	{Folder: "gfx/interface", Terms: []string{"interface"}},
+	// CK3's 3D models and Vic3's Model modding, which write of .asset files, meshes and gfx/models
+	{Format: files.FormatAsset, Terms: []string{"model"}},
+	{Folder: "gfx/models", Terms: []string{"model"}},
+	// CK3's Graphical assets and Vic3's Graphical asset modding, which write of .dds textures
+	{Format: files.FormatImage, Terms: []string{"graphical asset"}},
+	// the three games' Map modding, which write of gfx/map
+	{Folder: "gfx/map", Terms: []string{"map modding"}},
+}
+
 // The revision log every start writes, the launcher's settings file and the build's checksum.
 const (
 	revisionLogRel = "logs/code_revisions.log"

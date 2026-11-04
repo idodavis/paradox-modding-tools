@@ -72,9 +72,8 @@ type tally struct {
 	receive func(Hits) // takes one file's hits, one file at a time
 }
 
-// SearchText runs a text search over the files the query names. It sends each file's hits as a search:hits event, at
-// most maxHits in all, and returns when the search ends or a newer search stops it. It returns whether the search
-// stopped at maxHits. It returns an error if the query is empty or is a regular expression that does not parse.
+// SearchText runs a text search and sends each file's hits as a search:hits event, at most maxHits in all. It returns
+// whether it stopped at maxHits, and an error if the query is empty or is a regular expression that does not parse.
 func (sch *Service) SearchText(query Query) (bool, error) {
 	sch.setStop(nil)
 	ws, err := sch.Workspace.Session()
@@ -89,8 +88,8 @@ func (sch *Service) SearchText(query Query) (bool, error) {
 }
 
 // CollectText runs a text search over a workspace's files and returns each file's hits, at most the given count in
-// all. It stops early when the given channel closes. It returns whether the search stopped at the count, and an error
-// if the query is empty or is a regular expression that does not parse.
+// all. It stops when the given channel closes. It returns whether it stopped at the count, and an error if the query
+// is empty or is a regular expression that does not parse.
 func CollectText(ws *workspace.Session, query Query, limit int, stop <-chan struct{}) ([]Hits, bool, error) {
 	collected := []Hits{}
 	full, err := run(ws, query, stop, &tally{limit: limit, receive: func(hits Hits) {
@@ -102,8 +101,8 @@ func CollectText(ws *workspace.Session, query Query, limit int, stop <-chan stru
 // StopSearch ends the running search, if any.
 func (sch *Service) StopSearch() { sch.setStop(nil) }
 
-// ReplaceText replaces every match of a query in the mods' files and returns how many it replaced. Each file keeps its
-// encoding. A file open in the editor is skipped, and the error says how many were.
+// ReplaceText replaces every match of a query in the mods' files and returns how many it replaced. A file open in the
+// editor is skipped, and the error says how many were.
 func (sch *Service) ReplaceText(query Query, replacement string) (int, error) {
 	ws, err := sch.Workspace.Session()
 	if err != nil {
@@ -171,9 +170,9 @@ func (sch *Service) SearchFiles(query string, limit int) []workspace.Place {
 	return places
 }
 
-// run runs one text search over the files the query names, giving each file's hits to the tally. It returns when the
-// search finishes, reaches the tally's limit or the given channel closes. It returns whether the limit was reached,
-// and an error if the query is empty or is a regular expression that does not parse.
+// run runs one text search, giving each file's hits to the tally. It stops at the tally's limit or when the given
+// channel closes. It returns whether the limit was reached, and an error if the query is empty or is a regular
+// expression that does not parse.
 func run(ws *workspace.Session, query Query, stop <-chan struct{}, tally *tally) (bool, error) {
 	expression, err := parseQuery(query)
 	if err != nil {
@@ -212,8 +211,8 @@ func run(ws *workspace.Session, query Query, stop <-chan struct{}, tally *tally)
 	return tally.isFull(), nil
 }
 
-// makeTest returns the quick test a file's whole text must pass before it is searched line by line: that it holds a
-// plain query's text, in any case unless the query matches case. A regular expression passes every file.
+// makeTest returns the quick test a file's text must pass before it is searched line by line. A regular expression
+// passes every file.
 func makeTest(query Query) func(text string) bool {
 	lower := strings.ToLower(query.Text)
 	switch {
@@ -227,7 +226,7 @@ func makeTest(query Query) func(text string) bool {
 	return func(text string) bool { return containsFold(text, lower) }
 }
 
-// containsFold reports whether a text holds a piece of lower-case ASCII in any case, without copying the text.
+// containsFold reports whether a text holds a piece of lower-case ASCII in any case.
 func containsFold(text, piece string) bool {
 	first := piece[:1] + strings.ToUpper(piece[:1])
 	for len(text) >= len(piece) {
@@ -243,7 +242,7 @@ func containsFold(text, piece string) bool {
 	return false
 }
 
-// send gives one file's hits at the given place to the tally's receiver, as many as its limit leaves room for.
+// send gives one file's hits to the tally's receiver, as many as the limit leaves room for.
 func (tally *tally) send(place workspace.Place, hits []lsp.Site) {
 	tally.mu.Lock()
 	defer tally.mu.Unlock()
@@ -265,8 +264,7 @@ func (tally *tally) isFull() bool {
 	return tally.count >= tally.limit
 }
 
-// setStop ends the running search, if any, and keeps the given channel as the one that ends the next. A nil channel
-// means no search runs.
+// setStop ends the running search, if any, and keeps the given channel as the next one's. A nil channel means none.
 func (sch *Service) setStop(stop chan struct{}) {
 	sch.mu.Lock()
 	defer sch.mu.Unlock()
@@ -292,8 +290,7 @@ func parseQuery(query Query) (*regexp.Regexp, error) {
 	return regexp.Compile(expression)
 }
 
-// listFiles returns the text files a query names: those of its origins, or of the mods if it names none, that its
-// include and exclude globs let through.
+// listFiles returns the text files a query names: those of its origins that its globs let through.
 func listFiles(mods *index.Index, query Query) []files.File {
 	include, exclude := parseGlobs(query.Include), parseGlobs(query.Exclude)
 	return lo.Filter(mods.Files, func(file files.File, position int) bool {
@@ -308,8 +305,7 @@ func listFiles(mods *index.Index, query Query) []files.File {
 	})
 }
 
-// parseGlobs parses a list of glob patterns into ignore rules. The patterns are separated by commas outside braces and
-// by line breaks, so "*.{txt,yml}" is one pattern.
+// parseGlobs parses glob patterns separated by commas outside braces, or by line breaks, into ignore rules.
 func parseGlobs(text string) files.Ignore {
 	var rules strings.Builder
 	depth := 0
@@ -327,8 +323,8 @@ func parseGlobs(text string) files.Ignore {
 	return files.ParseIgnore(rules.String())
 }
 
-// findMatches returns the matches of an expression in a text, line by line, each as byte offsets. A match never spans
-// two lines and is never empty. With the whole-word flag, a match must stand apart from the letters around it.
+// findMatches returns the matches of an expression in a text as byte offsets. A match never spans two lines and is
+// never empty. With the whole-word flag, a match must stand apart from the letters around it.
 func findMatches(text string, lines jomini.Lines, expression *regexp.Regexp, wholeWord bool) [][]int {
 	var matches [][]int
 	for line := range lines.CountLines() {
@@ -338,7 +334,7 @@ func findMatches(text string, lines jomini.Lines, expression *regexp.Regexp, who
 			if match[0] == match[1] || (wholeWord && !isWholeWord(content, match[0], match[1])) {
 				continue
 			}
-			// The offsets are in the line. Shift them to offsets in the text, leaving the -1 of a group that did not match.
+			// Shift the offsets from the line to the text, leaving the -1 of a group that did not match.
 			for position, offset := range match {
 				if offset >= 0 {
 					match[position] = offset + span.Start
@@ -350,8 +346,7 @@ func findMatches(text string, lines jomini.Lines, expression *regexp.Regexp, who
 	return matches
 }
 
-// isWholeWord reports whether the characters on each side of a match in a line are neither letters, digits nor an
-// underscore. The start and end of the line count as neither.
+// isWholeWord reports whether the characters on each side of a match are neither letters, digits nor an underscore.
 func isWholeWord(content string, start, end int) bool {
 	inWord := func(character rune) bool {
 		return unicode.IsLetter(character) || unicode.IsDigit(character) || character == '_'

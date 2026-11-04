@@ -35,12 +35,10 @@ func resolveFixture(t *testing.T, parts ...string) string {
 	return dir
 }
 
-// openService opens a workspace on the CK3 fixture install and returns the wiki service over it with its session. The
-// workspace is closed when the test ends.
+// openService opens a workspace on the CK3 fixture install and returns the wiki service over it with its session.
 func openService(t *testing.T) (*Service, *workspace.Session) {
 	t.Helper()
 	newApp()
-	// the folders PMT uses come from the XDG variables, read again now and once more when the test ends
 	for _, variable := range []string{"APPDATA", "LOCALAPPDATA", "XDG_CONFIG_HOME", "XDG_CACHE_HOME"} {
 		t.Setenv(variable, t.TempDir())
 	}
@@ -66,7 +64,7 @@ func openService(t *testing.T) (*Service, *workspace.Session) {
 	return &Service{Workspace: wsp}, ws
 }
 
-// keepPage caches a page with the given title and HTML in a client's folder, as a refresh would have.
+// keepPage caches a page with the given title and HTML in a client's folder.
 func keepPage(t *testing.T, client *Client, html, title string) {
 	t.Helper()
 	root, _ := parseFragment(html)
@@ -78,8 +76,7 @@ func keepPage(t *testing.T, client *Client, html, title string) {
 	}
 }
 
-// TestSanitizeKeepsAndDropsElements checks each kept element, each dropped one, the attributes that survive, an anchor
-// on a heading's span, a relative link made absolute, the dropped sections and the folded table.
+// TestSanitizeKeepsAndDropsElements checks what Sanitize keeps and drops from a page of every kind of element.
 func TestSanitizeKeepsAndDropsElements(t *testing.T) {
 	input := `<script>alert(1)</script><style>p{}</style><noscript>none</noscript><nav>menu</nav>` +
 		`<div class="navbox"><p>navigation</p></div><div id="toc"><ul><li>contents</li></ul></div><!-- comment -->` +
@@ -109,8 +106,7 @@ func TestSanitizeKeepsAndDropsElements(t *testing.T) {
 	}
 }
 
-// TestFindPagesRanksTitles checks the order of the pages for a script file in a database and for a GUI file, through
-// the service over a kept listing.
+// TestFindPagesRanksTitles checks the order of the pages for a script file and for a GUI file.
 func TestFindPagesRanksTitles(t *testing.T) {
 	wik, ws := openService(t)
 	titles := []string{
@@ -147,8 +143,8 @@ func TestFindPagesRanksTitles(t *testing.T) {
 	}
 }
 
-// TestListNotesOrdersNewestFirst checks the order of the patch notes, newest first, which lists a minor version's
-// hotfix notes after its release and 1.10 before 1.9, and marks the pages that have a Modding heading.
+// TestListNotesOrdersNewestFirst checks that the patch notes come newest first, a hotfix note after its release, and
+// that the pages with a Modding heading are marked.
 func TestListNotesOrdersNewestFirst(t *testing.T) {
 	wik, ws := openService(t)
 	client := wik.resolveClient(ws)
@@ -185,8 +181,8 @@ func TestResolveClientFollowsGame(t *testing.T) {
 	}
 }
 
-// TestClientRefreshesFromServer checks the client against a wiki that serves the modding category in two answers, a
-// patch category, the pages' HTML and a missing page. A page that is already cached is not fetched again.
+// TestClientRefreshesFromServer checks a refresh against a test wiki. A page that is already cached is not fetched
+// again.
 func TestClientRefreshesFromServer(t *testing.T) {
 	server := httptest.NewServer(http.HandlerFunc(func(writer http.ResponseWriter, request *http.Request) {
 		query := request.URL.Query()
@@ -236,8 +232,7 @@ func TestClientRefreshesFromServer(t *testing.T) {
 	}
 }
 
-// TestRefreshEmitsUpdatedWithoutWorkspace checks that a refresh with no workspace open returns the error and still
-// sends wiki:updated.
+// TestRefreshEmitsUpdatedWithoutWorkspace checks that a refresh with no workspace open still sends wiki:updated.
 func TestRefreshEmitsUpdatedWithoutWorkspace(t *testing.T) {
 	newApp()
 	sent := make(chan struct{}, 1)
@@ -254,9 +249,8 @@ func TestRefreshEmitsUpdatedWithoutWorkspace(t *testing.T) {
 	}
 }
 
-// TestBuildLexiconListsEffectsAndFunctions checks the rows of effects, of scopes and of data functions over the CK3
-// fixture install: one row for each declared effect or function and each scripted effect, in name order, with the
-// usage and the places of its examples, counted from one; and an error for a class the lexicon does not have.
+// TestBuildLexiconListsEffectsAndFunctions checks the effect, scope and function rows over the CK3 fixture install,
+// and the error for an unknown class.
 func TestBuildLexiconListsEffectsAndFunctions(t *testing.T) {
 	wik, ws := openService(t)
 	effects, err := wik.BuildLexicon("effect")
@@ -310,7 +304,7 @@ func TestBuildLexiconListsEffectsAndFunctions(t *testing.T) {
 	}
 }
 
-// checkFunctions checks that the function rows are one for each data function of the schema, named by their type.
+// checkFunctions checks that there is a function row for each data function of the schema.
 func checkFunctions(t *testing.T, wik *Service, ws *workspace.Session) {
 	t.Helper()
 	rows, err := wik.BuildLexicon("function")

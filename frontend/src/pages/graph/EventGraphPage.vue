@@ -1,7 +1,4 @@
-<!--
-  The Event Graph page: Back and Forward, the root search and the filters in the toolbar, the canvas, and the detail
-  in a side panel or below. With no root it shows where to start. Full screen floats the toolbar over the canvas.
--->
+<!-- The Event Graph page: a toolbar, the canvas and the selected node's detail, or a start page without a root. -->
 <script setup lang="ts">
 import { computed, onDeactivated, shallowRef, useTemplateRef, watch } from "vue";
 import { useQuery } from "@pinia/colada";
@@ -88,7 +85,6 @@ watch(
   (value) => (selected.value = value || selected.value),
 );
 
-// the roots drawn on this page, and where Back and Forward stand among them
 const history = shallowRef<string[]>([]);
 const position = shallowRef(-1);
 const backLabel = computed(() => (position.value > 0 ? `Back to ${history.value[position.value - 1]}` : "Back"));
@@ -103,7 +99,6 @@ watch(
 );
 
 const { data: defaults } = useQuery(() => ({ ...graphDefaultsQuery, enabled: workspace.isOpen() }));
-// The filter is Go's defaults with the user's and the route's edits laid over them.
 const edits = shallowRef<Partial<Filter> | null>(null);
 watch(
   () => id,
@@ -122,7 +117,7 @@ const { data: graph, error } = useQuery(() => ({
 }));
 const { data: own } = useQuery(() => ({ ...ownRootsQuery, enabled: workspace.isOpen() }));
 const unit = computed(() => Number(settings.value("appearance.scale")) / 100 || 1);
-// ELK lays the graph out in a worker; the canvas keeps the last layout until the next one arrives
+// The canvas keeps the last layout until the next one arrives.
 const flow = computedAsync(() => {
   if (!graph.value) return EMPTY;
   return buildLayout(graph.value, { branches: branches.value, selected: selected.value, unit: unit.value });
@@ -169,10 +164,9 @@ const facts = computed(() => {
 
 const term = shallowRef("");
 const search = refDebounced(term, 200);
-// the root's menu closes when another page is shown, since a kept page's menu would stay over it
+// A kept page's menu would stay over another page, so it closes when the page is deactivated.
 const menuOpen = shallowRef(false);
 onDeactivated(() => (menuOpen.value = false));
-// the menu lists the mods' own events, as the start page's Show all asks, until the user types
 const showingOwn = shallowRef(false);
 watch(term, () => (showingOwn.value = false));
 const { data: roots, isLoading: searching } = useQuery(() => ({
@@ -180,7 +174,6 @@ const { data: roots, isLoading: searching } = useQuery(() => ({
   enabled: workspace.isOpen() && !!search.value,
   placeholderData: (previous) => (search.value ? previous : undefined),
 }));
-// The hits grouped under a label for each kind. The current root comes first if the hits do not include it.
 const items = computed(() => {
   const head = (label: string) => ({ id: label, name: label, type: "label" as const });
   if (showingOwn.value) return [[head("From your mods"), ...(own.value ?? [])]];
@@ -192,7 +185,6 @@ const items = computed(() => {
   return root && !roots.value?.some((entry) => entry.id === root) ? [[current], ...groups] : groups;
 });
 const rootNode = computed(() => graph.value?.nodes?.find((entry) => entry.id === root));
-// The selected node goes with an agent's prompt.
 useChip(() => {
   const selectedNode = graph.value?.nodes?.find((entry) => entry.id === selected.value);
   return selectedNode
@@ -203,9 +195,8 @@ useChip(() => {
     : null;
 });
 const rootLook = computed(() => lookupLook(rootNode.value?.database ?? ""));
-// The root's kind badge sits at the end of the field; the field's padding leaves room for the badge's width.
+// The field's padding leaves room for the badge at its end.
 const { width: whatWidth } = useElementSize(useTemplateRef("whatBadge"), undefined, { box: "border-box" });
-// The root drawn joins the recent list, newest first.
 watch(rootNode, (drawn) => {
   if (!drawn) return;
   const { id: rootId, database, name, what, title, display, background } = drawn;
@@ -213,13 +204,12 @@ watch(rootNode, (drawn) => {
   recent.value = [{ id: rootId, database, name, what, title, display, background }, ...kept].slice(0, RECENT);
 });
 
-// the detail opens beside the graph or below it; full screen keeps it beside
 const layout = useLocalStorage<string | number>("pmt.graph.layout", "drawer");
 const below = computed(() => layout.value === "panel" && !isFullscreen.value);
 const panes = computed(() => {
   const graphPane = { id: "graph", slot: "graph", order: 1, minSize: below.value ? undefined : 50 };
   if (!selected.value || !root) return [graphPane];
-  // Sizes are percentages: a pane added after the splitter exists would read a pixel size as a share.
+  // Sizes are percentages, since a pane added after the splitter exists would read a pixel size as a share.
   const sizes = below.value
     ? { defaultSize: 35, minSize: 20, maxSize: 60 }
     : { defaultSize: 30, minSize: 20, maxSize: 50 };
@@ -232,7 +222,7 @@ function draw(rootId: string): void {
   void router.replace({ query: { root: rootId } });
 }
 
-/** step moves through the history by the given offset: a negative one goes back, a positive one forward again. */
+/** step moves through the history by the given offset, back if negative. */
 function step(offset: number): void {
   position.value += offset;
   void router.replace({ query: { root: history.value[position.value] } });
@@ -244,10 +234,7 @@ function showOwn(): void {
   menuOpen.value = true;
 }
 
-/**
- * select selects the node with the given id. A fold, a node with a count or an "N more" row, is opened and not
- * selected. A node beyond the depth limit is selected and opened.
- */
+/** select selects the node with the given id. A fold is opened instead of selected. */
 function select(nodeId: string): void {
   const picked = graph.value?.nodes?.find((candidate) => candidate.id === nodeId);
   const fold = nodeId.startsWith("more:") || !!picked?.count;
@@ -255,7 +242,7 @@ function select(nodeId: string): void {
   if (fold || picked?.deep) update({ expand: union(filter.value?.expand ?? [], [nodeId]) });
 }
 
-/** update changes parts of the filter. Nothing changes until Go's defaults have arrived. */
+/** update changes parts of the filter once Go's defaults have arrived. */
 function update(change: Partial<Filter>): void {
   if (filter.value) edits.value = { ...filter.value, ...change };
 }

@@ -1,7 +1,4 @@
-<!--
-  The dialog for a new coat of arms: a mod, an id and a script. The script is a copy from the game's coat designer, or
-  empty for a plain coat on the game's solid pattern. The coat file is created and shown.
--->
+<!-- The dialog for a new coat of arms: a mod, an id and an optional script copied from the game's coat designer. -->
 <script setup lang="ts">
 import { useMutation } from "@pinia/colada";
 import { computed, shallowRef } from "vue";

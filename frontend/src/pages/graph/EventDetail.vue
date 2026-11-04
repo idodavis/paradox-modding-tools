@@ -1,8 +1,4 @@
-<!--
-  The detail of a graph node: a head, then four tabs. Overview shows how the node triggers, the rule it reads, the
-  game's copy it replaces and its properties. Text shows its texts, Links its firings both ways, and Script its
-  definition as written. Below the canvas, the overview lays its parts out in columns.
--->
+<!-- The detail of a graph node: a head, then the Overview, Text, Links and Script tabs. -->
 <script setup lang="ts">
 import { computed, shallowRef, watch } from "vue";
 import { useQuery } from "@pinia/colada";
@@ -21,7 +17,7 @@ import SourceLink from "../../ui/SourceLink.vue";
 import ConditionList, { describeStep, groupConditions } from "./ConditionList.vue";
 import { listRoute, lookupLook } from "./layout";
 
-// CHIP is the classes of the chip a data call or a key in a text is drawn as; a long one is cut.
+// CHIP is the classes of the chip a data call or a key in a text is drawn as.
 const CHIP =
   "inline-block h-4.5 max-w-[18em] truncate rounded-chip bg-(--bg-4) px-1.5 align-[-3px] text-[11.5px] leading-4.5";
 
@@ -33,17 +29,16 @@ const router = useRouter();
 const editor = useEditorStore();
 const workspace = useWorkspaceStore();
 const { copy, copied } = useClipboard();
-// SectionHead is a section's head: its title, a count if given, and the slot's content at the end.
+// SectionHead is a section's head.
 const [DefineSectionHead, SectionHead] = createReusableTemplate<{ title: string; count?: number }>();
-// Tabs are the head's tabs. They sit in the head's row when the detail is below the canvas, else under it.
+// Tabs are the head's tabs.
 const [DefineTabs, Tabs] = createReusableTemplate();
-// Link is one firing on the Links tab, shown by the node at the given end.
+// Link is one firing on the Links tab.
 const [DefineLink, Link] = createReusableTemplate<{ edge: Edge; end: "from" | "to" }>();
 
 const { data: detail, error } = useQuery(() => ({ ...detailQuery(id), enabled: workspace.isOpen() }));
 const node = computed(() => detail.value?.node);
 const look = computed(() => lookupLook(node.value?.database ?? ""));
-// each node opens on its overview
 const tab = shallowRef("overview");
 watch(
   () => id,
@@ -52,7 +47,6 @@ watch(
 const versions = computed(() =>
   [...(detail.value?.sections ?? []), ...(detail.value?.options ?? [])].flatMap((section) => section.texts ?? []),
 );
-// The top-level statements of the definition that set one value and show no text. Its blocks are in the script.
 const properties = computed(() =>
   (detail.value?.sections ?? []).filter((section) => section.value && !section.texts?.length),
 );
@@ -66,7 +60,7 @@ const tabs = computed(() => [
   { label: "Script", value: "script" },
 ]);
 
-/** The chain of nodes that leads to the selected one, the first cause first: the root's caller, the route, the node. */
+/** The chain of nodes that leads to the selected one, the first cause first. */
 const way = computed(() => {
   if (!graph) return [];
   const nodes = new Map((graph.nodes ?? []).map((entry) => [entry.id, entry]));
@@ -83,8 +77,6 @@ const way = computed(() => {
     edge: edges.find((edge) => edge.from === stop.id && edge.to === chain[position + 1]?.id),
   }));
 });
-// The conditions under each node of the way: its own trigger under "when", then the blocks its firing to the next
-// node is written in under "then".
 const wayConditions = computed(() =>
   way.value.map(({ node: stop, edge }) => {
     const trigger = groupConditions(stop.trigger ?? []);
@@ -95,13 +87,13 @@ const wayConditions = computed(() =>
     ];
   }),
 );
-/** describeHow describes a firing for a row, such as "option · trigger_event, days = 30": blocks, effect, delay. */
+/** describeHow describes a firing for a row, such as "option · trigger_event, days = 30". */
 function describeHow(edge: Edge): string {
   const blocks = (edge.steps ?? []).filter((step) => step.kind !== "block").map((step) => step.weight ?? step.key);
   return [...blocks, [edge.effect, edge.delay].filter(Boolean).join(", ")].filter(Boolean).join(" · ");
 }
 
-/** findLinked returns the node at the given end of a firing, or undefined if the detail does not list it. */
+/** findLinked returns the node at the given end of a firing, or undefined. */
 function findLinked(edge: Edge, end: "from" | "to"): Node | undefined {
   return detail.value?.linked?.[edge[end]];
 }
@@ -155,7 +147,7 @@ function show(place: Place, line: number): void {
             :color="edge.via?.length ? 'warning' : 'neutral'"
             size="sm"
           />
-          <!-- the source link opens its file without selecting the row -->
+          <!-- The source link opens its file without selecting the row. -->
           <span class="flex max-w-40 min-w-0 shrink" @click.stop @dblclick.stop>
             <SourceLink :place="edge.site.place" :line="edge.site.line" class="min-w-0" />
           </span>

@@ -9,8 +9,7 @@ import (
 	"slices"
 )
 
-// decodeTGA decodes a TGA with the given header to RGBA. It handles raw and run-length encoded data from 8 to 32
-// bits per pixel.
+// decodeTGA decodes a TGA with the given header to RGBA.
 func decodeTGA(bytes []byte, header Header) (image.Image, error) {
 	imageType, descriptor := bytes[2], bytes[17]
 	size := (int(bytes[16]) + 7) / 8
@@ -55,9 +54,9 @@ func decodeTGAHeader(bytes []byte) (Header, bool) {
 	return Header{Format: "tga", Width: width, Height: height, Mipmaps: 1}, true
 }
 
-// readTGAPalette reads the color map of an image that has one, starting at the given offset. It returns the
-// colors by the index the pixels write, and the offset where the pixels begin. An image without a color map gets
-// nil. It returns an error if the bytes end before the map does.
+// readTGAPalette reads the color map that starts at the given offset. It returns the colors by index and the offset
+// where the pixels begin. An image without a color map gets nil. It returns an error if the bytes end before the map
+// does.
 func readTGAPalette(bytes []byte, offset int) ([][4]uint8, int, error) {
 	if offset > len(bytes) {
 		return nil, 0, errTruncated
@@ -119,10 +118,9 @@ func readTGAPixels(data []byte, total, size int, encoded bool) ([]byte, error) {
 	return pixels[:total], nil
 }
 
-// toColor converts one stored pixel to a color. The image type is the TGA type without its run-length bit. A
-// color-mapped pixel is an index into the given palette, a truecolor pixel is 5-5-5, BGR or BGRA by its size, and a
-// gray pixel is one byte, with an alpha byte after it if it has two. A 5-5-5 pixel's attribute bit is not alpha. It
-// returns an error for a pixel size the type does not define, or an index past the palette.
+// toColor converts one stored pixel to a color. The image type is the TGA type without its run-length bit. A 5-5-5
+// pixel's attribute bit is not alpha. It returns an error for a pixel size the type does not define, or an index past
+// the palette.
 func toColor(pixel []byte, imageType byte, palette [][4]uint8) ([4]uint8, error) {
 	switch {
 	case imageType == 1 && len(pixel) <= 2:

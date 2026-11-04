@@ -79,7 +79,7 @@ func StartPublish(ctx context.Context, params Params, progress func(Progress), l
 }
 
 // startCopy starts a second copy of the app for one kind of work and hands each line it prints to a function, if any.
-// One copy runs at a time. A canceled context kills the copy. It returns an error if the copy cannot start or fails.
+// A canceled context kills the copy. It returns an error if the copy cannot start or fails.
 func startCopy(ctx context.Context, flag string, params Params, handle func(line string)) error {
 	copyTurn.Lock()
 	defer copyTurn.Unlock()
@@ -145,7 +145,7 @@ func runCopy(work func(client *Client, params Params) error) int {
 }
 
 // publish uploads a mod, creating its item if it has none. It prints a created item's id at once, even on an error,
-// then the progress as JSON lines. It returns an error if the item cannot be created or the upload fails.
+// then the progress as JSON lines.
 func publish(client *Client, params Params) error {
 	workshopID := params.WorkshopID
 	if workshopID == "" {

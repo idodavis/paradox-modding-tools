@@ -1,5 +1,4 @@
-// status.go reads a repository's status from git: its changed files and where it stands. It also lists the branches,
-// remote branches and tags.
+// status.go reads a repository's status from git, and lists its branches, remote branches and tags.
 
 package git
 
@@ -29,8 +28,8 @@ type Status struct {
 	Ahead    int      `json:"ahead"`
 	Behind   int      `json:"behind"`
 	Changes  []Change `json:"changes"`
-	// Ignored is where the files and folders git ignores are in the open workspace; a folder stands for everything in
-	// it. They are empty places while none is open.
+	// Ignored is where the files and folders git ignores are in the open workspace. They are empty places while none
+	// is open.
 	Ignored []workspace.Place `json:"ignored"`
 }
 
@@ -39,8 +38,8 @@ type Ref struct {
 	Name string `json:"name"`
 	Type string `json:"type"` // branch, remote, tag; "" for another name a commit is decorated with
 	Hash string `json:"hash"`
-	// Date is when the commit it points to was made, or when an annotated tag was. It is the zero time for a ref to
-	// an object with no date, such as a tag of a tree.
+	// Date is when the commit it points to was made, or when an annotated tag was. It is the zero time if the object
+	// has no date.
 	Date    time.Time `json:"date"`
 	Current bool      `json:"current"`
 }
@@ -86,8 +85,8 @@ func (git *Service) ReadStatus(root string) (Status, error) {
 	return status, nil
 }
 
-// ListRefs returns a repository's branches, remote branches and tags, each with the date of its commit. The error is
-// git's if the folder is in no repository.
+// ListRefs returns a repository's branches, remote branches and tags. The error is git's if the folder is in no
+// repository.
 func (git *Service) ListRefs(dir string) ([]Ref, error) {
 	stdout, err := git.run(dir, "for-each-ref",
 		"--format=%(refname)%00%(objectname)%00%(creatordate:iso-strict)%00%(HEAD)")
@@ -111,8 +110,7 @@ func splitRecords(stdout string) []string {
 	return records[:len(records)-1]
 }
 
-// parseHeader sets what one header of the status says: the branch, its upstream, or how far they differ. Any
-// other header says nothing a Status holds.
+// parseHeader sets what one header of the status says: the branch, its upstream, or how far they differ.
 func parseHeader(status *Status, record string) {
 	fields := strings.Fields(record)
 	switch fields[1] {
@@ -128,8 +126,7 @@ func parseHeader(status *Status, record string) {
 	}
 }
 
-// parseChange returns the change one status record describes: its path, which sides hold it and what was done to
-// it. A rename record names only the new path.
+// parseChange returns the change one status record describes. A rename record names only the new path.
 func parseChange(record string) Change {
 	fields := strings.SplitN(record, " ", fieldCounts[record[0]]+1)
 	change := Change{Path: fields[len(fields)-1]}
@@ -146,8 +143,8 @@ func parseChange(record string) Change {
 	return change
 }
 
-// classifyStatus returns the word for what was done to a file, from the letters git prints for it, the index's
-// letter first. Letters that mark no change give "".
+// classifyStatus returns the word for what was done to a file, from the letters git prints for it. Letters that mark
+// no change give "".
 func classifyStatus(letters string) string {
 	for _, letter := range letters {
 		for _, row := range statuses {
@@ -159,8 +156,8 @@ func classifyStatus(letters string) string {
 	return ""
 }
 
-// classifyRef returns the short name of a full ref, such as main for refs/heads/main, and its type: branch, remote or
-// tag. A ref under none of their prefixes comes back whole, with no type.
+// classifyRef returns the short name of a full ref, such as main for refs/heads/main, and its type. A ref of no known
+// type comes back whole, with no type.
 func classifyRef(ref string) (string, string) {
 	for prefix, refType := range refTypes {
 		if short, ok := strings.CutPrefix(ref, prefix); ok {

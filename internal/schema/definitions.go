@@ -102,8 +102,8 @@ func (walker *walker) findGUIDefinition(statement int32, level int, pending stri
 	case slices.Contains(game.GUI.Declares, label) && !current.Tag.IsEmpty():
 		return walker.makeGUIDefinition(game.GUI.DatabasePrefix+label, walker.tree.Text(current.Tag), current.Tag, statement)
 	case nameKey != "":
-		value, _ := walker.tree.FindChildValue(statement, nameKey)
-		return walker.makeGUIDefinition(game.GUI.DatabasePrefix+label, value, span, statement)
+		name, _ := walker.findNameSpan(statement, nameKey)
+		return walker.makeGUIDefinition(game.GUI.DatabasePrefix+label, walker.tree.Text(name), name, statement)
 	case level == 1 && !current.Key.IsEmpty() && current.IsBlock():
 		return walker.makeGUIDefinition(game.GUI.WidgetDatabase, walker.findWindowLabel(statement), span, statement)
 	}

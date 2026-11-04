@@ -1,5 +1,4 @@
-/* A wiki article: sanitized wiki HTML, styled by descendant rules.
-   Tags the article's own styles do not name take the same scale. Sizes are rem, so it follows the app's text size. */
+/* A wiki article: sanitized wiki HTML, styled by descendant rules. Sizes are rem, so it follows the app's text size. */
 @layer components {
   .art {
     @apply text-14;
@@ -9,7 +8,6 @@
   .art > :first-child {
     margin-top: 0;
   }
-  /* each level by its size, so none reads as bold text: h2 ruled, h4 a caps label */
   .art :is(h1, h2, h3) {
     color: var(--fg-1);
   }
@@ -84,7 +82,7 @@
     padding: 0.0625rem 0.3125rem;
     border-radius: 4px;
   }
-  /* a table wider than the article scrolls sideways on its own; a narrower one keeps its natural width */
+  /* A table wider than the article scrolls sideways on its own. */
   .art table {
     display: block;
     width: max-content;

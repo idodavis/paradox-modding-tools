@@ -16,6 +16,8 @@ export const EDITOR_LANGUAGES: Readonly<Record<Format, string>> = {
   table: "plaintext",
   descriptor: "plaintext",
   shader: "plaintext",
+  readme: "paradox-readme",
+  markdown: "markdown",
   text: "plaintext",
   binary: "plaintext",
 };
@@ -46,26 +48,22 @@ const {
 
 const settings = useSettingsStore();
 const html = shallowRef("");
-// the height of a line, which Monaco rounds to whole pixels
+// Monaco rounds the height of a line to whole pixels.
 const lineHeight = computed(() => {
   const { fontSize, lineHeight: factor } = settings.codeFont();
   return Math.round(fontSize * factor);
 });
-// the editor's font and top padding
 const style = computed(() => {
   const { fontFamily, fontSize, padding } = settings.codeFont();
   return { fontFamily, fontSize: `${fontSize}px`, lineHeight: `${lineHeight.value}px`, paddingTop: `${padding.top}px` };
 });
-// the text without its trailing line breaks, which Monaco would draw as an empty line
+// Trailing line breaks are dropped, since Monaco would draw them as an empty line.
 const code = computed(() => text.replace(/(\r\n|\r|\n)+$/, ""));
-// the file's line number of each line of the text
 const lineNumbers = computed(() => (line ? code.value.split(/\r\n|\r|\n/).map((_text, index) => line + index) : []));
-// the gutter, as wide as the editor's or as the longest number
 const gutter = computed(() => ({
   width: `${Math.max(settings.codeFont().lineNumbersMinChars, String(lineNumbers.value.at(-1)).length)}ch`,
   marginInlineEnd: `${editor.EditorOptions.lineDecorationsWidth.defaultValue}px`,
 }));
-// the band behind the highlighted lines
 const band = computed(() => {
   const numbers = lineNumbers.value;
   if (!focus || !numbers.length) return undefined;
@@ -78,7 +76,7 @@ const band = computed(() => {
   };
 });
 
-// colors the text with the editor's colorizer, dropping a stale answer
+// A stale answer is dropped.
 watch(
   [code, () => language, () => settings.theme()],
   async (_sources, _previous, onCleanup) => {
@@ -92,13 +90,14 @@ watch(
 </script>
 
 <template>
-  <!-- eslint-disable-next-line vue/no-v-html -- Monaco escapes the text it colors -->
+  <!-- eslint-disable vue/no-v-html -- Monaco escapes the text it colors -->
   <span
     v-if="inline"
     class="inline-snippet whitespace-pre-wrap"
     :style="{ fontFamily: style.fontFamily }"
     v-html="html"
   />
+  <!-- eslint-enable vue/no-v-html -->
   <div v-else class="relative flex bg-(--bg-0) text-(--fg-1)" :style="style">
     <div
       v-if="band"

@@ -1,5 +1,5 @@
 // links.go finds the files that a line of a shell's output names, such as a compiler's file and line, so the page can
-// turn each into a link. It reports where each name sits in the line and which file in the workspace it means.
+// turn each into a link.
 
 package terminal
 
@@ -21,10 +21,9 @@ type Link struct {
 	Site  lsp.Site `json:"site"`  // the empty range at the column the line names; the zero range where it names none
 }
 
-// linkPattern matches a path with a file extension, followed by a line in one of the forms VS Code's terminal links:
-// path:L, path:L:C, path:L.C, path#L, path#L:C, path(L), path(L,C), path[L, C], "path", line L and path, line L,
-// column C. A path on a Windows drive may have spaces in its folders; any other has none. The submatches after the
-// path are the line and column of each form, in that order.
+// linkPattern matches a path with a file extension, followed by a line in one of the forms VS Code's terminal links,
+// such as path:L:C, path(L,C) and path, line L. A path on a Windows drive may have spaces in its folders. The
+// submatches after the path are the line and column of each form, in order.
 var linkPattern = regexp.MustCompile(
 	`([A-Za-z]:[\\/](?:[^\\/:*?"<>|\r\n]+[\\/])*[^\\/:*?"<>|\s]+\.\w+|[\\/]?(?:[^\s"'<>|:*?()\[\],]+[\\/])*` +
 		`[^\s\\/"'<>|:*?()\[\],]+\.\w+)` +
@@ -37,9 +36,8 @@ const (
 	maxLinks    = 10   // the names looked up in one line
 )
 
-// FindLinks returns the links in the given line of the output of the shell with the given id. A name resolves as a
-// full path or a path from the shell's folder, else as a path the workspace loads. A name under no root of the
-// workspace is left out. It returns none for a line longer than a listing's, or if no shell has the id.
+// FindLinks returns the links in the given line of the output of the shell with the given id. A name under no root of
+// the workspace is left out. It returns none for a line longer than a listing's, or if no shell has the id.
 func (trm *Service) FindLinks(id, text string) []Link {
 	shell, err := trm.findShell(id)
 	if err != nil || len(text) > maxLinkLine {
@@ -92,8 +90,8 @@ func (trm *Service) resolveLink(shell *terminal.Shell, name string) (workspace.P
 }
 
 // ResolveReference returns the text that names a file to an agent in a shell, as Claude Code and Copilot CLI read it:
-// `@`, the file's path from the shell's folder with forward slashes, or its full path for a file outside that folder,
-// and a space. It returns an error if no shell has the given id.
+// an @ and the file's path from the shell's folder, or its full path for a file outside it. It returns an error if no
+// shell has the given id.
 func (trm *Service) ResolveReference(id, path string) (string, error) {
 	shell, err := trm.findShell(id)
 	if err != nil {

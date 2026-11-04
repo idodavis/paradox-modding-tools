@@ -1,7 +1,4 @@
-<!--
-  One repository's section of the Source Control view: a header with its mods, its branch and its actions, then the
-  commit box and the files changed, staged and in conflict.
--->
+<!-- One repository's section of the Source Control view: its header, the commit box and the changed files. -->
 <script setup lang="ts">
 import { computed, nextTick, shallowRef, useTemplateRef, watch } from "vue";
 import { useMutation, useQuery, useQueryCache } from "@pinia/colada";
@@ -32,7 +29,7 @@ type Section = {
   all: { label: string; icon: string; color?: "error"; run: (rows: Change[]) => void }[];
 };
 
-// how many of the newest commits the branch menu offers to check out
+/** CHECKOUT_COMMITS is how many of the newest commits the branch menu offers to check out. */
 const CHECKOUT_COMMITS = 200;
 const PLACEHOLDERS: Record<Mode, string> = {
   main: "Switch branch, or type a name to create one",
@@ -66,7 +63,7 @@ const base = shallowRef("");
 const remotesOpen = shallowRef(false);
 const remote = shallowRef({ label: "origin", url: "" });
 const box = useTemplateRef("box");
-// the log is read only while the branch menu lists the commits to check out
+// The log is read only while the branch menu lists the commits to check out.
 const { data: commits } = useQuery(() => ({
   ...commitsQuery({
     dir: root,
@@ -76,11 +73,11 @@ const { data: commits } = useQuery(() => ({
   enabled: !!status.value && mode.value === "tag",
 }));
 const folded = computed(() => git.folded.has(root));
-// the section is named for the repository's first mod in load order; the header counts the others after it
+// The section is named for the repository's first mod; the header counts the others after it.
 const origin = computed(() => mods[0] ?? "");
 const others = computed(() => mods.slice(1).map(workspace.originName));
 
-// the commit box takes the focus when the commit command targets this repository
+// The commit box takes the focus when the commit command targets this repository.
 watch(
   () => git.commitTarget,
   async (target) => {
@@ -214,7 +211,7 @@ const groups = computed<CommandPaletteGroup[]>(() => {
 
 /**
  * buildCreateItems returns the menu item that creates a branch with the typed name from the given start. It returns
- * none for an empty name or the name of an existing local branch.
+ * none for an empty name or an existing branch.
  */
 function buildCreateItems(typed: string, start: string): CommandPaletteItem[] {
   if (!typed || local.value.some((ref) => ref.name === typed)) return [];
@@ -222,10 +219,7 @@ function buildCreateItems(typed: string, start: string): CommandPaletteItem[] {
   return [{ label: `Create branch ${typed} from ${start}`, icon: "i-lucide-plus", onSelect: () => act(create) }];
 }
 
-/**
- * buildMainGroups returns the branch menu's main groups: the item that creates the typed branch, or the other ways to
- * start when nothing is typed, then the local and remote branches.
- */
+/** buildMainGroups returns the branch menu's main groups: ways to start a branch, then the local and remote ones. */
 function buildMainGroups(typed: string): CommandPaletteGroup[] {
   const ways = [
     {
@@ -261,11 +255,7 @@ function buildMainGroups(typed: string): CommandPaletteGroup[] {
   ];
 }
 
-/**
- * describeBranch returns the suffix a branch shows in the branch menu. The current branch shows how far it is ahead of
- * and behind its upstream, and the upstream how many commits the current branch lacks. Any other branch shows the age
- * of its last commit, and a remote branch also what picking it does.
- */
+/** describeBranch returns the suffix a branch shows in the branch menu: its state if current, else its age. */
 function describeBranch(ref: Ref): string {
   const age = describeAge(ref.date, "long");
   const upstream = status.value?.upstream;
@@ -315,7 +305,7 @@ function act(work: () => Promise<unknown>): void {
   run(work);
 }
 
-/** show switches the branch menu to the given mode and clears its search. It keeps the branch a new one starts from. */
+/** show switches the branch menu to the given mode and clears its search. */
 function show(next: Mode, start = ""): void {
   mode.value = next;
   base.value = start;
@@ -347,7 +337,7 @@ function isLit(side: Section["side"], row: Change): boolean {
   return tab?.side === side && tab.key === row.place.key;
 }
 
-/** change runs the given git command, which stages or unstages files, on the paths of the given changes. */
+/** change stages or unstages the given files, by the given git command. */
 function change(command: readonly string[], files: Change[]): void {
   run(() => gitApi.Run(root, ...command, ...files.map((file) => file.path)));
 }
@@ -364,10 +354,7 @@ function discard(files: Change[]): void {
   });
 }
 
-/**
- * sync pulls and pushes the branch, or publishes it where it has no upstream. A repository with no remote asks for
- * one.
- */
+/** sync pulls and pushes the branch, or publishes it if it has no upstream. With no remote it asks for one. */
 function sync(): void {
   run(async () => {
     const label = (await gitApi.ListRemotes(root))?.[0]?.label;
@@ -379,10 +366,7 @@ function sync(): void {
   });
 }
 
-/**
- * saveRemote adds a remote, or changes the address of one with the same label. It lists the remotes again, then pushes
- * to the remote if it is the first, so a failed push leaves the list right.
- */
+/** saveRemote adds a remote, or changes the address of one with the same label. The first remote also gets a push. */
 function saveRemote(): void {
   const { label, url } = remote.value;
   const exists = !!remoteList.value?.some((row) => row.label === label);
@@ -463,7 +447,7 @@ async function deleteBranch(branch: string): Promise<void> {
       <UTooltip v-if="status?.upstream" :text="`${status.ahead} to push, ${status.behind} to pull`">
         <UButton :label="`${status.ahead}↑ ${status.behind}↓`" variant="ghost" size="xs" @click="sync" />
       </UTooltip>
-      <!-- the actions show while the pointer is on the header, and stay while their menu is open -->
+      <!-- The actions show while the pointer is on the header, and stay while their menu is open. -->
       <span class="hidden group-hover:flex has-[[data-state=open]]:flex">
         <UTooltip text="Commit">
           <UButton

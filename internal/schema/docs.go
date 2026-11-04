@@ -63,10 +63,11 @@ var (
 	alternatives    = regexp.MustCompile(`^([A-Za-z0-9_.+-]+(?:[/|][A-Za-z0-9_.+-]+)+)$`)
 )
 
-// buildDocs reads the docs in the listing into the databases they describe. A database keeps the path of its blurb's
-// doc from the install's folder. A doc is an .info, readme or .md file, or a .txt file named like one, that belongs to
-// one of the given database folders. A later doc only fills what an earlier one left out. A doc that describes one part
-// of its database gives it no blurb. It returns an error if a doc cannot be read.
+// buildDocs reads the docs in the listing into the databases they describe. A database keeps the path of the doc its
+// blurb was read from, else of the first doc that describes all of it, from the install's folder. A doc is an .info,
+// readme or .md file, or a .txt file named like one, that belongs to one of the given database folders. A later doc
+// only fills what an earlier one left out. A doc that describes one part of its database gives it no blurb. It returns
+// an error if a doc cannot be read.
 func (schema *Schema) buildDocs(installPath string, listing []files.File, folders []string) error {
 	for _, file := range listing {
 		label, partial, ok := findDocDatabase(file.Rel, folders)
@@ -84,6 +85,9 @@ func (schema *Schema) buildDocs(installPath string, listing []files.File, folder
 			}
 			readme, _ := files.ToRel(installPath, file.Path)
 			reader.build(database, readme)
+			if !partial && database.Readme == "" {
+				database.Readme = readme
+			}
 		}
 	}
 	return nil
@@ -507,10 +511,15 @@ func resolveDefault(field *Field, value string) {
 }
 
 // resolveValue reads a field's type from the value its example writes. The value may be a placeholder, alternatives,
-// a type term, a sample key such as innovation_key that names the database of its words, or a sample value.
+// a type term, a sample key such as innovation_key that names the database of its words, or a sample value. A
+// placeholder's words in parentheses describe its term and are no part of it.
 func (reader *docReader) resolveValue(field *Field, value string) {
 	inner, placeholder := strings.CutPrefix(value, "<")
 	inner = strings.ToLower(strings.TrimSuffix(inner, ">"))
+	if placeholder {
+		inner, _, _ = strings.Cut(inner, "(")
+		inner = strings.TrimSpace(inner)
+	}
 	_, known := game.DocTypes[ToPhrase(inner)]
 	_, date := jomini.ParseDate(value)
 	words, keyed := strings.CutSuffix(inner, "_key")

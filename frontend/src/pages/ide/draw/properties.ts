@@ -1,17 +1,11 @@
-/**
- * The tables of what each holding and property mean in CSS, each row sourced to the wiki or marked observed, and the
- * functions that build their rows. It also holds the icon of each widget type and the parsing of a GUI file's colors.
- */
+/** The tables of what each holding and property mean in CSS, each row sourced to the wiki or marked observed. */
 
 type Apply = (value: string, style: CSSStyleDeclaration) => void;
 
 const WIKI = "the wiki's Interface page";
 const GAME_FILES = "the game's own GUI files";
 
-/**
- * TEXT and PICTURE are the prefixes of the custom properties a row writes for its widget's text or its pictures. They
- * are copied onto those elements without the prefix.
- */
+/** TEXT and PICTURE prefix the custom properties a row writes for its widget's text or pictures. */
 export const TEXT = "--text-";
 export const PICTURE = "--picture-";
 
@@ -21,10 +15,7 @@ const ANCHORS: Record<string, number>[] = [
   { top: 0, vcenter: 0.5, center: 0.5, bottom: 1 },
 ];
 
-/**
- * POLICIES is the wiki's five layout policies, each as whether it grows into free room, shrinks, or takes the free
- * room before the others (expands). Expanding is preferred plus first claim on the free room.
- */
+/** POLICIES is the wiki's five layout policies, each as whether it grows, shrinks or expands. */
 const POLICIES: Record<string, { grow: string; shrink: string; expand: string }> = {
   fixed: { grow: "0", shrink: "0", expand: "0" },
   growing: { grow: "1", shrink: "0", expand: "0" },
@@ -36,7 +27,7 @@ const POLICIES: Record<string, { grow: string; shrink: string; expand: string }>
 /** ELIDED cuts a text with "…" where it is too long for its box. */
 const ELIDED = { [`${TEXT}text-overflow`]: "ellipsis" };
 
-/** TYPE_ICONS is the icon of each widget type: what it shows, or how it holds its children. */
+/** TYPE_ICONS is the icon of each widget type. */
 const TYPE_ICONS: Record<string, string> = {
   window: "i-lucide-app-window",
   textbox: "i-lucide-type",
@@ -59,7 +50,7 @@ const TYPE_ICONS: Record<string, string> = {
   dynamicgridbox: "i-lucide-grid-3x3",
 };
 
-/** COLOR matches a color as a GUI file writes it: red, green, blue and optional alpha, each from 0 to 1, in braces. */
+/** COLOR matches a color as a GUI file writes it, such as { 1 0.5 0 }. */
 const COLOR = /^\{\s*([\d.]+)\s+([\d.]+)\s+([\d.]+)(?:\s+([\d.]+))?\s*\}$/;
 
 /** HOLDS is how each holding lays its children out, as CSS, with the source of the meaning. */
@@ -200,24 +191,18 @@ export function findTypeIcon(type: string): string {
   return TYPE_ICONS[type] ?? "i-lucide-square-dashed";
 }
 
-/**
- * splitColor splits a color as a GUI file writes it into its four channels, the alpha being 1 if it is not written. It
- * returns null for any other value.
- */
+/** splitColor splits a color as a GUI file writes it into four channels. It returns null for any other value. */
 export function splitColor(value: string): string[] | null {
   const parts = COLOR.exec(value.trim());
   return parts ? [parts[1], parts[2], parts[3], parts[4] ?? "1"] : null;
 }
 
-/** toCss converts a color's channels, each from 0 to 1, to CSS. The given opacity takes the place of the alpha. */
+/** toCss converts a color's channels to CSS. The given opacity replaces the alpha. */
 export function toCss([red, green, blue, alpha]: string[], opacity = alpha): string {
   return `color(srgb ${red} ${green} ${blue} / ${opacity})`;
 }
 
-/**
- * makeLength makes a row that sets the given properties to the parts of the value, in order. A property with no part
- * of its own takes the first part.
- */
+/** makeLength makes a row that sets the given properties to the parts of the value, in order. */
 function makeLength(...properties: string[]): Apply {
   return (value, style) => {
     const parts = splitValue(value);
@@ -228,12 +213,12 @@ function makeLength(...properties: string[]): Apply {
   };
 }
 
-/** makeChoice makes a row that applies the CSS of the choice the value is, and nothing for any other value. */
+/** makeChoice makes a row that applies the CSS of the choice the value names. */
 function makeChoice(choices: Record<string, Record<string, string>>): Apply {
   return (value, style) => applyCss(style, choices[value.trim().toLowerCase()] ?? {});
 }
 
-/** makeSides makes a row that writes the four sides of the given prefix from an across and a down value. */
+/** makeSides makes a row that writes the four sides of the given prefix. */
 function makeSides(prefix: string): Apply {
   return (value, style) => {
     const [across, down = across] = splitValue(value);
@@ -247,7 +232,7 @@ function makeSide(prefix: string, side: string): Apply {
   return (value, style) => style.setProperty(`${prefix}-${side}`, `${Number(splitValue(value)[0]) || 0}px`);
 }
 
-/** makeAnchor makes a row that writes the fractions its anchor terms name as the custom properties prefix-x and -y. */
+/** makeAnchor makes a row that writes the fractions its anchor terms name, as the given prefix with -x and -y. */
 function makeAnchor(prefix: string): Apply {
   return (value, style) => {
     const terms = value.toLowerCase().split(/[|\s]+/);
@@ -258,7 +243,7 @@ function makeAnchor(prefix: string): Apply {
   };
 }
 
-/** makeOffset makes a row that writes the parts of a position as offsets on the given axes, in pixels or percent. */
+/** makeOffset makes a row that writes the parts of a position as offsets on the given axes. */
 function makeOffset(axes: string[]): Apply {
   return (value, style) => {
     const parts = splitValue(value);
@@ -283,8 +268,8 @@ function makeStretch(axis: string): Apply {
 }
 
 /**
- * makeColor makes a row that sets a color written as red, green, blue and alpha, each out of one, or a CSS color that
- * Go resolved for a binding. With an alpha property, a written color is set opaque and its alpha goes to that property.
+ * makeColor makes a row that sets a color, written in the GUI file's way or as a CSS color Go resolved for a binding.
+ * With an alpha property, the color is set opaque and its alpha goes to that property.
  */
 function makeColor(property: string, alphaProperty = ""): Apply {
   return (value, style) => {
@@ -298,7 +283,7 @@ function makeColor(property: string, alphaProperty = ""): Apply {
   };
 }
 
-/** makeVariable makes a row that writes the parts of its value, separated by spaces, as a custom property. */
+/** makeVariable makes a row that writes its value as a custom property. */
 function makeVariable(property: string): Apply {
   return (value, style) => style.setProperty(property, splitValue(value).join(" "));
 }
@@ -318,10 +303,7 @@ function splitValue(value: string): string[] {
   return value.replace(/[{}]/g, " ").trim().split(/\s+/);
 }
 
-/**
- * toLength converts text to a CSS length: a positive number in pixels, or a percent as it is. It returns undefined for
- * -1, 0 or a binding.
- */
+/** toLength converts text to a CSS length. It returns undefined for -1, 0 or a binding. */
 function toLength(text: string | undefined): string | undefined {
   if (!text) return undefined;
   if (text.endsWith("%")) return text;

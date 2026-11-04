@@ -31,7 +31,6 @@ const { data: modDir, error: nameError } = useQuery(() => ({
   enabled: open.value && !!install() && !!title.value.trim(),
 }));
 
-// makes the mod, then writes the form's description and thumbnail into its listing
 const { mutate: create, isLoading: creating } = useMutation({
   mutation: async () => {
     const mod = await workspace.CreateMod(workspaceId, folder.value, title.value.trim(), language.value ?? "");
@@ -48,7 +47,6 @@ const { mutate: create, isLoading: creating } = useMutation({
   onSuccess: () => (open.value = false),
 });
 
-// the form starts empty each time the dialog opens
 watch(open, (opened) => {
   if (!opened) return;
   title.value = description.value = folder.value = thumbnail.value = "";

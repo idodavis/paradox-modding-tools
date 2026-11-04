@@ -15,7 +15,7 @@ import StatusFacts from "../../ui/StatusFacts.vue";
 
 const STEPS = ["Game", "Install", "Mods", "Details"];
 
-// The route may name the game. The wizard then starts at its install.
+// A game named by the route starts the wizard at its install.
 const { game: routeGame = "" } = defineProps<{ game?: string }>();
 
 const store = useWorkspaceStore();
@@ -23,7 +23,6 @@ const step = shallowRef(routeGame ? 1 : 0);
 const selectedGame = shallowRef(routeGame);
 const selectedInstall = shallowRef("");
 const newMod = shallowRef("");
-// Each mod is an existing folder, or a title for a mod made with the workspace.
 const mods = shallowRef<{ id: string; dir: string; title: string }[]>([]);
 const title = shallowRef("");
 const language = shallowRef<string>();
@@ -51,7 +50,7 @@ const steps = computed<StepperItem[]>(() =>
     disabled: index > 1 && !installId.value,
   })),
 );
-// Whether the current step still lacks what it asks for: one entry per step, in order. The mods step asks for nothing.
+// One entry per step, in order. The mods step asks for nothing.
 const blocked = computed(() => [!gameId.value, !installId.value, false, !title.value.trim()][step.value]);
 
 useSortable(useTemplateRef<HTMLElement>("list"), mods, { handle: ".mod-handle", animation: 150, watchElement: true });
@@ -69,7 +68,7 @@ function addFolder(dir: string): void {
     mods.value = [...mods.value, { id: crypto.randomUUID(), dir, title: "" }];
 }
 
-/** addNewMod adds a mod to create, with the typed title. A blank title adds nothing. */
+/** addNewMod adds a mod to create, with the typed title, unless it is blank. */
 function addNewMod(): void {
   const text = newMod.value.trim();
   newMod.value = "";

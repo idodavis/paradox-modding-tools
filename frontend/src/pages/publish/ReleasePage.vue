@@ -1,7 +1,4 @@
-<!--
-  The Publish page shows a mod's Workshop listing, or its compare with Steam, beside the rail that uploads it.
-  Edits are saved to the mod's files when the typing stops.
--->
+<!-- The Publish page: a mod's Workshop listing or its compare with Steam, beside the rail that uploads it. -->
 <script setup lang="ts">
 import { computed, onBeforeUnmount, shallowRef, watch } from "vue";
 import { useLocalStorage, useTimeoutFn } from "@vueuse/core";
@@ -48,7 +45,6 @@ const TWO_LINES = "h-auto py-1.5";
 /** SAVE_DELAY is how long after the last edit the listing is written, in milliseconds. */
 const SAVE_DELAY = 400;
 
-// The route may name the mod and listing to show, and ask for the compare with Steam.
 const {
   id,
   mod = "",
@@ -60,7 +56,6 @@ const workspace = useWorkspaceStore();
 const queryCache = useQueryCache();
 /** The mod last shown in each workspace, by workspace id. */
 const shownMods = useLocalStorage<Record<string, string>>("pmt.publish.mods", {});
-// The route's mod, else the one last shown here. One the workspace no longer has gives way to its first mod.
 const selectedMod = shallowRef("");
 // "" is the mod's own listing. An older listing's key is its game version.
 const listingKey = shallowRef("");
@@ -72,8 +67,7 @@ const older = shallowRef(false);
 const linking = shallowRef(false);
 const workshopItem = shallowRef("");
 const filesOpen = shallowRef(false);
-// The page starts from what the route names. Another route or workspace starts over, since the picks made here belong
-// to the last one.
+// Another route or workspace starts over, since the picks made here belong to the last one.
 watch(
   [() => mod, () => listingProp, () => compare, () => id],
   ([nextMod, nextKey, nextCompare, nextId]) => {
@@ -93,7 +87,7 @@ const modId = computed(() =>
 const current = computed(() => mods.value.find((candidate) => candidate.id === modId.value));
 const target = computed(() => ({ modId: modId.value, key: listingKey.value }));
 const enabled = computed(() => workspace.isOpen() && !!modId.value);
-// The shown mod is kept once this workspace's state has come, not while the last one's still shows.
+// The shown mod is kept only once this workspace's state has come, not while the last one's still shows.
 watch(
   [modId, () => state.value?.id],
   ([shown, stateId]) => {
@@ -113,17 +107,14 @@ const { data: comparison, isLoading: asking } = useQuery(() => ({
   enabled: enabled.value,
 }));
 
-// The picked difference while the comparison still holds it, else the first one. Both the rail and the compare show it.
 const shown = computed(() => {
   const ids = [...(comparison.value?.page ?? []), ...(comparison.value?.files ?? [])].map(toDifferenceId);
   return ids.includes(picked.value) ? picked.value : (ids[0] ?? "");
 });
 
-// The listing as typed while it is unsaved, else as saved.
 const draft = computed(() =>
   unsaved.value?.modId === modId.value && unsaved.value.key === listingKey.value ? unsaved.value.listing : saved.value,
 );
-// A listing not yet on the Workshop gets no badge.
 const badge = computed(() => {
   if (!comparison.value) return asking.value ? ASKING : undefined;
   return comparison.value.status === "new" ? undefined : STATUSES[comparison.value.status];
@@ -229,13 +220,12 @@ const { mutate: link, isLoading: linkingItem } = useMutation({
     workshopItem.value = "";
   },
 });
-// The status bar shows "Saving…" while an edit waits or is being written, and "Not saved" if the write failed.
 const facts = computed(() => {
   if (writeError.value) return [{ label: "Not saved", value: writeError.value.message }];
   return unsaved.value || writing.value ? [{ label: "Saving…", value: "" }] : [];
 });
 
-// An unsaved edit is written before another listing shows or the page closes. A failure belongs to the listing it hit.
+// An unsaved edit is written before another listing shows or the page closes.
 watch(target, flush);
 watch([target, () => id], resetWrite);
 onBeforeUnmount(flush);
@@ -257,7 +247,7 @@ function flush(): void {
   save();
 }
 
-/** submitLink links the Workshop item typed in the dialog. It does nothing if the field is blank. */
+/** submitLink links the Workshop item typed in the dialog, unless the field is blank. */
 function submitLink(): void {
   if (workshopItem.value.trim()) link(workshopItem.value);
 }
@@ -270,13 +260,13 @@ function openListing(nextMod: string, key: string): void {
   picked.value = "";
 }
 
-/** openOlder opens the dialog that adds an older listing, made from a zip or imported. */
+/** openOlder opens the dialog that adds an older listing. */
 function openOlder(mode: "create" | "import"): void {
   olderMode.value = mode;
   older.value = true;
 }
 
-/** describeMod returns a mod's version for the picker, with its state on Steam if it was already compared. */
+/** describeMod returns a mod's version for the picker, with its state on Steam if compared. */
 function describeMod(workspaceMod: Mod): string {
   const asked = queryCache.getQueryData(comparisonQuery({ modId: workspaceMod.id, key: "" }).key);
   return [workspaceMod.descriptor.version, asked && STATUSES[asked.status]?.label].filter(Boolean).join(" · ");

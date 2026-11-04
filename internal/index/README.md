@@ -21,9 +21,7 @@ schema's databases.
 An `Occurrence` is the stored form of one definition, reference or message, compact enough to keep for every file of
 the game. Its `Role` says which of the three it is. Its database, name, entry mode and language are ordinals into the
 index's four `Table`s, `Databases`, `Names`, `Modes` and `Languages`. `Table.Intern` gives a text its one ordinal, and
-ordinal 0 of each table is the empty text. An occurrence also keeps its span, its line, CK3's override priority, whether
-it is local to its file or an alias of the definition it sits in, the defining occurrence it sits inside (`Parent`,
-where `Nested` is set), whether a reference fires what it names (`Firing`), and the statement that writes it.
+ordinal 0 of each table is the empty text.
 
 `Occurrences` holds a list per file, in the order `Files` lists the files, each in source order with a definition before
 what it holds. So the references inside a definition follow it without a break. `Texts` runs beside it and holds each
@@ -40,10 +38,9 @@ file's position and an ordinal mean the same in both, and a `Site` names one fil
 posts only the mods' own files. A lookup reads the install's postings first and its own after them, so the result is in
 load order.
 
-`ScanFiles` scans changed files again after they change on disk, and refuses a file of the install. A file deleted
-since the scan keeps its position, which a new file at the same path takes again. `IsListed` tells a listed file from a
-deleted one. `Clone` copies what `ScanFiles` writes, so a rescan changes a copy while readers go on reading the
-original.
+`ScanFiles` scans changed files again, and refuses a file of the install. A file deleted since the scan keeps its
+position, which a new file at the same path takes again; `IsListed` tells a listed file from a deleted one. `Clone`
+copies what `ScanFiles` writes, so a rescan changes a copy while readers go on reading the original.
 
 ## The scan
 
@@ -52,29 +49,27 @@ goroutines.
 
 - A script, GUI, asset, font or GFX file is walked once by `schema.Walk` with the `collector`, which turns each
   statement's definition and references into occurrences.
-- A localization file is read by `loc.Parse`. Each message is an occurrence, followed by what its text refers to: the
-  keys between dollar signs, the text formats and icons it names, the names each data call's quoted arguments hold, and
-  a game concept that a call names in the concept format.
+- A localization file is read by `loc.Parse`. Each message is an occurrence, followed by what its text refers to: keys,
+  text formats and icons, the names its data calls refer to, and a game concept that a call names in the concept
+  format.
 - A table file of a database named by its first column gives a definition for each row.
 
-A file is built against tables of its own, so building takes no lock. Its ordinals move into the index's tables
-afterwards, under a lock taken a few times for the whole file.
+A file is built against tables of its own so building takes no lock, and its ordinals move into the index's tables
+afterwards.
 
 The install keeps the texts of its base-language messages only, since another language's text can be read from its
 file when asked. The mods keep every language's texts. A database whose names match without regard to case is listed
 in `Caseless`, and its names are stored in lower case; `ToCaseless` writes a name as the index stores it.
 
 `ListFiles` lists the files under a list of roots, in root order. A file under a root that sits inside another root is
-listed once, under the inner one. `FindRoot` applies the same rule to any path.
+listed once, under the inner one, as `FindRoot` finds it for any path.
 
 ## Lookups
 
 `Resolve` returns the definitions that a reference names, in load order. A local definition never counts;
-`ResolveLocal` lets the definitions local to the reference's own file count too. A reference with no database names
-the definitions in every database that defines its name. A reference in `game.AnyCall`, a call that may name any
-callable database, stands for one reference per callable database, as `ListCallees` lists them. `ListUses` returns the
-references to a name, and for a callable database the `game.AnyCall` references to it as well.
-
+`ResolveLocal` lets the definitions local to the reference's own file count too. A reference in `game.AnyCall`, a call
+that may name any callable database, stands for one reference per callable database, as `ListCallees` lists them.
+`ListUses` returns the references to a name, and for a callable database the `game.AnyCall` references to it as well.
 A localization key is defined by its messages, so its role is `RoleLocalizes` where every other database's is
 `RoleDefines`.
 
@@ -125,9 +120,8 @@ it, and, where the winner is unsettled, no copy kept and each loaded one `unsett
 read it. A copy in a file the game does not read is never kept, whatever the winner: its reason is `shadowed` where a
 file at the same path later in the load order replaces its file, or `dropped` where a mod's `replace_path` names its
 folder, and `ResolveSite` gives the origin of that mod too (`FindHider`). `Reasons` holds each reason in words, written
-once: its label, and for a reason a contest's winner can have, why the winner wins at length, as a template the
-contest's facts fill; the label of `shadowed` and `dropped` is a template too, filled with the mod that hides the copy.
-`FindKept` finds the winner of a name in a database, and `ListKept` the winner of every name.
+once, as templates the contest's facts fill. `FindKept` finds the winner of a name in a database, and `ListKept` the
+winner of every name.
 
 ## Fires
 
@@ -160,8 +154,7 @@ is unsettled, every copy in a file the game reads fires and is fired, since no s
 ## The cache
 
 `LoadIndex` loads an install's index from its gob file. The gob holds the exported fields only, so the load builds the
-tables' lookups, the paths and the postings again. The workspace saves the index beside the schema, in a folder named
-for the install's version, its dumps and the app's version.
+tables' lookups, the paths and the postings again. The workspace saves the index beside the schema.
 
 ## Terms
 

@@ -1,5 +1,4 @@
-// states.go works out which widgets of a window the picks hide, and which picks show a hidden widget. It also finds
-// the groups the panel lets the user switch and what the window opens with.
+// states.go works out which widgets of a window the picks hide, and which picks show a hidden widget.
 
 package draw
 
@@ -22,26 +21,26 @@ import (
 	"paradox-modding-tools/internal/schema"
 )
 
-// A Group is one choice the page lets the user switch. It is either a data call that a window's conditions read, or
-// a template list that a coat's value is drawn from.
+// A Group is one choice the page lets the user switch: a data call a window's conditions read, or a template list a
+// coat's value is drawn from.
 type Group struct {
 	// ID is the group's call. A call that reads the object of a data context is written from the window down to that
 	// object, so the same call about two objects is two groups.
 	ID string `json:"id"`
-	// Subject is the kind of object it asks about, in words, such as Character or Relation; Game for a call of one
-	// step, and "" for a coat's list.
+	// Subject is the kind of object it asks about, such as Character or Relation; Game for a call of one step, and ""
+	// for a coat's list.
 	Subject string `json:"subject,omitempty"`
 	Key     string `json:"key,omitempty"` // the key that picks its object out of its kind, such as a relation's lover
 	Label   string `json:"label"`         // what it asks, in words
-	// Exists is true when it asks whether an object further on than its subject exists, which its label names.
+	// Exists is true when it asks whether an object further on than its subject exists.
 	Exists bool `json:"exists,omitempty"`
 	// Options is the values it can take: the values the window asks of it, then every value at once where it has
 	// none or several, then none.
 	Options  []string          `json:"options"`
-	Captions map[string]string `json:"captions,omitempty"` // by option, how the panel writes it, as listCaptions says
+	Captions map[string]string `json:"captions,omitempty"` // by option, how the panel writes it
 	Box      Box               `json:"box"`                // the box of the States tab that it starts in
-	// Picked is the option a coat's list draws now. A window's group leaves it empty, since its value is the states'
-	// (States.Values).
+	// Picked is the option a coat's list draws now. A window's group leaves it empty, as its value is in
+	// States.Values.
 	Picked    string  `json:"picked,omitempty"`
 	Clickable bool    `json:"clickable,omitempty"` // a press of a widget of the window sets it
 	Reach     int     `json:"reach,omitempty"`     // how many widgets that draw something it shows or hides
@@ -51,7 +50,7 @@ type Group struct {
 	Pictures *PictureList `json:"pictures,omitempty"`
 }
 
-// A Box is one of the boxes that the States tab sorts a window's groups into: the window's own, what an object has, an
+// A Box is one of the boxes the States tab sorts a window's groups into: the window's own, what an object has, an
 // object's, or the rows of a list.
 type Box struct {
 	ID    string `json:"id"`
@@ -62,15 +61,12 @@ type Box struct {
 
 // States is one way of drawing a window: as it opens, changed by the picks.
 type States struct {
-	// Values is, by group, the value each of the window's groups is at. A list of pictures or a tier that no pick sets
-	// is left out.
+	// Values is, by group, the value each of the window's groups is at.
 	Values map[string]string `json:"values"`
 	Hidden []int32           `json:"hidden"` // the IDs of the widgets that the values hide
-	// Applies is, by group, the widgets whose own condition its value decides, under no hidden widget. A group that
-	// decides none is left out.
+	// Applies is, by group, the widgets under no hidden widget whose own condition its value decides.
 	Applies map[string][]int32 `json:"applies"`
-	// Choices is, by widget, the values that the values of the groups give its properties. A widget given none is
-	// left out.
+	// Choices is, by widget, the values the groups give its properties.
 	Choices map[int32][]Choice `json:"choices"`
 }
 
@@ -92,8 +88,7 @@ type evaluator struct {
 	strips   map[int32][]int32  // for each widget in a strip, the widgets of its strip in order
 	values   map[string]string  // the value each group is at
 	rows     int                // how many rows a data model's list draws, which is its size as the window opens
-	// parsed holds each condition text once it has been parsed
-	parsed map[string]parsedCondition
+	parsed   map[string]parsedCondition
 }
 
 // A parsedCondition is a condition's text parsed once: its call, and whether it is a call at all.
@@ -102,8 +97,7 @@ type parsedCondition struct {
 	isCall bool
 }
 
-// An opening is one window as it opens: the evaluator of the window, at the values it opens with and its groups
-// classified, its lists of pictures and its tiers, with the index, the file and the name it was resolved from.
+// An opening is one window as it opens, with the index, file and name it was resolved from.
 type opening struct {
 	mods       *index.Index
 	path       string
@@ -129,8 +123,8 @@ var pickCaptions = map[string]string{pickEvery: "All", pickNone: "None"}
 const directSteps = 3
 
 // EvaluateStates works out which widgets of one window in a GUI file are hidden. Each group is at the value the window
-// opens with, unless the given picks pick another: a pick is the value chosen for the ID of a group. It returns an
-// error if no workspace is open, or if the file is not in the workspace or does not define the window.
+// opens with, unless the given picks, by the ID of a group, pick another. It returns an error if no workspace is open
+// or the file does not define the window.
 func (drw *Service) EvaluateStates(path, name string, picks map[string]string) (States, error) {
 	drw.mu.Lock()
 	defer drw.mu.Unlock()
@@ -166,11 +160,10 @@ func (drw *Service) EvaluateStates(path, name string, picks map[string]string) (
 	return States{Values: values, Hidden: hidden, Applies: applies, Choices: choices}, nil
 }
 
-// Reveal returns the picks that make a hidden widget of one window in a GUI file visible under the given picks. Each
-// condition on the way down to the widget that hides it is set to values that make it hold, and every other pick
-// stays as it is. It returns nil if those conditions contradict each other, or if the widget stays hidden anyway. It
-// returns an error if no workspace is open, the file does not define the window, or the window has no widget with
-// the given ID.
+// Reveal returns the picks that make a hidden widget of one window in a GUI file visible under the given picks, leaving
+// every other pick as it is. It returns nil if the conditions that hide the widget contradict each other or the widget
+// stays hidden anyway. It returns an error if no workspace is open, the file does not define the window, or the window
+// has no widget with the given ID.
 func (drw *Service) Reveal(path, name string, picks map[string]string, widget int32) (map[string]string, error) {
 	drw.mu.Lock()
 	defer drw.mu.Unlock()
@@ -205,9 +198,8 @@ func (drw *Service) Reveal(path, name string, picks map[string]string, widget in
 	return required, nil
 }
 
-// openEvaluator returns the evaluator of a resolved window, set to the values the window opens with and with its groups
-// classified. The given contexts are what its widgets read their bindings in, and each data model's list draws the
-// given number of rows.
+// openEvaluator returns the evaluator of a resolved window at the values it opens with. The given contexts are what its
+// widgets read their bindings in, and each data model's list draws the given number of rows.
 func openEvaluator(schema *schema.Schema, window Window, contexts []context, count int) *evaluator {
 	groups := listGroups(schema, window, contexts, count)
 	objects := lo.GroupBy(groups, func(group Group) string {
@@ -227,8 +219,7 @@ func openEvaluator(schema *schema.Schema, window Window, contexts []context, cou
 	return evaluator
 }
 
-// applyPicks returns a copy of an evaluator at the values it opens with, each group at the value picked for it in the
-// given picks, else at its own. The evaluator itself is left as it is.
+// applyPicks returns a copy of an evaluator with each group at the value the given picks hold for it, else its own.
 func (evaluator *evaluator) applyPicks(picks map[string]string) *evaluator {
 	picked := *evaluator
 	picked.values = maps.Clone(evaluator.values)
@@ -240,9 +231,8 @@ func (evaluator *evaluator) applyPicks(picks map[string]string) *evaluator {
 	return &picked
 }
 
-// open sets the values the window opens with: every group at none, and a check of what holds as a window opens
-// (holdsOnOpening) at every value; then what the calls of the window's opening states set; then the first widget of
-// each strip pressed.
+// open sets the values the window opens with: every group at none, except what holds as a window opens at every value;
+// then what the calls of the opening states set; then the first widget of each strip pressed.
 func (evaluator *evaluator) open() {
 	for _, group := range evaluator.groups {
 		evaluator.values[group.ID] = lo.Ternary(holdsOnOpening(group.ID), pickEvery, pickNone)
@@ -264,8 +254,7 @@ func (evaluator *evaluator) open() {
 }
 
 // press adds to the given required values what a press of a widget sets. A widget drawn down or checked by a condition
-// runs only the GUI variable calls of its clicks, then makes its condition hold (or fail, if it is in no strip and
-// already holds) and the other widgets of its strip fail. Any other widget runs all its clicks.
+// makes the condition hold and the other widgets of its strip fail.
 func (evaluator *evaluator) press(required map[string]string, widget int32) {
 	context, window := evaluator.contexts[widget], &evaluator.window
 	condition, hasCondition := findPressCondition(window, window.Widgets[widget])
@@ -289,8 +278,8 @@ func (evaluator *evaluator) press(required map[string]string, widget int32) {
 	}
 }
 
-// click adds to the given required values what a call that a click runs sets, read in the given context: the value
-// of the group on the same object that the call names, or a GUI variable set, cleared or toggled.
+// click adds to the given required values what a call a click runs sets, read in the given context: a value of a group
+// on the same object, or a GUI variable.
 func (evaluator *evaluator) click(required map[string]string, context context, call jomini.Call) {
 	call = context.expand(evaluator.schema, call)
 	if group, value, ok := evaluator.findSelected(call); ok {
@@ -300,9 +289,9 @@ func (evaluator *evaluator) click(required map[string]string, context context, c
 	evaluator.setVariable(required, call)
 }
 
-// findSelected returns the group on the same object as a call of one quoted argument, and the value of it that the
-// argument names: SelectTab('x') selects x of the IsTabSelected group beside it. The last result is false if no group
-// of the window offers that value.
+// findSelected returns the group on the same object as a call of one quoted argument, and the value the argument
+// names: SelectTab('x') selects x of the IsTabSelected group beside it. The last result is false if no group offers
+// that value.
 func (evaluator *evaluator) findSelected(call jomini.Call) (group, value string, ok bool) {
 	last := len(call.Steps) - 1
 	if last < 1 {
@@ -320,8 +309,8 @@ func (evaluator *evaluator) findSelected(call jomini.Call) (group, value string,
 	return "", "", false
 }
 
-// setVariable adds to the given required values what a call to the GUI's variable system sets: a variable set, with
-// its value where one is given, cleared, or toggled between set and unset. Any other call sets nothing.
+// setVariable adds to the given required values what a call to the GUI's variable system sets. Any other call sets
+// nothing.
 func (evaluator *evaluator) setVariable(required map[string]string, call jomini.Call) {
 	variables := game.GUI.Variables
 	last := len(call.Steps) - 1
@@ -363,8 +352,8 @@ func (evaluator *evaluator) listStrips() map[int32][]int32 {
 	return strips
 }
 
-// isTab reports whether a widget is a tab: it is drawn down by a condition that reads a group of the window, or a click
-// on it selects a value of one.
+// isTab reports whether a widget is a tab: a condition that reads a group of the window draws it down, or a click on it
+// selects a value of one.
 func (evaluator *evaluator) isTab(widget Widget) bool {
 	context := evaluator.contexts[widget.ID]
 	down := findProperty(evaluator.window.listProperties(widget), game.GUI.DownKey).Value
@@ -380,9 +369,8 @@ func (evaluator *evaluator) isTab(widget Widget) bool {
 	})
 }
 
-// classifyGroups fills in what each of the evaluator's groups is to its window: the data model item whose rows alone
-// read it, how many widgets that draw something it shows or hides, whether a press sets it, and the text of the widget
-// whose press sets each value. A widget that its own condition hides as written counts for no reach.
+// classifyGroups fills in what each of the evaluator's groups is to its window: its item, its reach, and whether and by
+// what text a press sets it. A widget its own condition hides as written counts for no reach.
 func classifyGroups(evaluator *evaluator) {
 	groups, widgets := evaluator.groups, evaluator.window.Widgets
 	items, ends := listItems(widgets), make([]int32, len(widgets))
@@ -415,8 +403,7 @@ func classifyGroups(evaluator *evaluator) {
 	}
 }
 
-// listItems returns, for each widget of a window, the item of a data model that it is drawn in: itself where it is
-// one, else the one its holder is drawn in, and 0 for none.
+// listItems returns, for each widget of a window, the item of a data model it is drawn in, or 0 for none.
 func listItems(widgets []Widget) []int32 {
 	items := make([]int32, len(widgets))
 	for _, widget := range widgets {
@@ -425,9 +412,8 @@ func listItems(widgets []Widget) []int32 {
 	return items
 }
 
-// listPresses returns, by group and then by value, the text of the first widget written whose press sets that value. A
-// widget's text is that of the first widget with a text among itself and the widgets under it, as toCaption writes it.
-// The given ends are, for each widget, the ID after its last descendant.
+// listPresses returns, by group and then by value, the text of the first widget whose press sets that value. The given
+// ends are, for each widget, the ID after its last descendant.
 func listPresses(evaluator *evaluator, ends []int32) map[string]map[string]string {
 	widgets := evaluator.window.Widgets
 	captions := map[string]map[string]string{}
@@ -451,8 +437,8 @@ func listPresses(evaluator *evaluator, ends []int32) map[string]map[string]strin
 	return captions
 }
 
-// toCaption returns the texts of a widget as one caption, sorted and joined by spaces. It returns "" where one of them
-// shows a data call, which names nothing.
+// toCaption returns the texts of a widget as one caption, or "" where one of them shows a data call, which names
+// nothing.
 func toCaption(widget Widget) string {
 	captions := make([]string, 0, len(widget.Texts))
 	for _, text := range widget.Texts {
@@ -465,8 +451,8 @@ func toCaption(widget Widget) string {
 	return strings.Join(captions, " ")
 }
 
-// isDrawing reports whether one of a window's widgets draws something of its own: a picture, found or bound, a
-// portrait, a coat of arms or a text.
+// isDrawing reports whether one of a window's widgets draws something of its own: a picture, portrait, coat of arms or
+// text.
 func isDrawing(window *Window, widget Widget) bool {
 	keys := append(slices.Clone(game.GUI.PictureKeys), game.GUI.PortraitKey, game.GUI.CoatKey)
 	return len(widget.Texts) > 0 || slices.ContainsFunc(keys, func(key string) bool {
@@ -474,10 +460,8 @@ func isDrawing(window *Window, widget Widget) bool {
 	})
 }
 
-// listCaptions returns how the panel writes each of a group's options. It is the text of the widget whose press sets
-// the option, else All or None for the picks of every value and of none, else the value as a GUI file writes it, with
-// a capital letter. A group of fewer than two values is a yes or no: Yes is on its one value, or on every value
-// where it has none, and No is on none.
+// listCaptions returns how the panel writes each of a group's options: the text of the widget whose press sets it, else
+// All or None, else the value as written with a capital letter. A group of fewer than two values is a Yes or No.
 func listCaptions(group Group) map[string]string {
 	captions := map[string]string{}
 	for _, option := range group.Options {
@@ -496,9 +480,8 @@ func toSentence(text string) string {
 	return strings.ToUpper(text[:size]) + text[size:]
 }
 
-// chooseBox returns the box of the States tab that a group starts in. It is the rows of the list whose item alone reads
-// the group, else the window's own box where a press of one of the window's widgets sets it, else what an object has
-// where the group asks whether that object exists, else its object's box. The given widgets are the window's.
+// chooseBox returns the box of the States tab that a group starts in, given the window's widgets. Its order of choice
+// is the rows of its item, the window's own box where a press sets it, what an object has, and its object's box.
 func chooseBox(group Group, widgets []Widget) Box {
 	object, title := group.Subject+"|"+group.Key, strings.Join(lo.Compact([]string{group.Subject, group.Key}), " ")
 	switch {
@@ -514,10 +497,8 @@ func chooseBox(group Group, widgets []Widget) Box {
 	return Box{ID: "object:" + object, Title: title, Icon: "i-lucide-circle-dot", Look: "rows"}
 }
 
-// listApplies returns, by group, the widgets whose own condition or choices the group's value decides. These are the
-// widgets that read the group and lie under no hidden widget, and whose condition or choices give one answer with every
-// value of the group and another with none, every other group at its own value. The given hidden widgets are the ones
-// the values hide.
+// listApplies returns, by group, the widgets whose own condition or choices the group's value decides, leaving out
+// those under the given hidden widgets.
 func listApplies(evaluator *evaluator, hidden []int32) map[string][]int32 {
 	widgets := evaluator.window.Widgets
 	hides := lo.Keyify(hidden)
@@ -553,14 +534,13 @@ func (evaluator *evaluator) isFalse(widget int32) bool {
 	})
 }
 
-// expand returns a call as the context reads it: its macros expanded, as the given schema declares them, then written
-// from the window down, as reach writes it.
+// expand returns a call as the context reads it: its macros expanded, then written from the window down.
 func (context context) expand(schema *schema.Schema, call jomini.Call) jomini.Call {
 	return context.reach(schema.ResolveMacro(call, context.latest))
 }
 
-// reach returns a call written from the window down: a first step that names the type of one of the context's
-// objects becomes the call that reaches that object. Any other call is returned as it is.
+// reach returns a call written from the window down: a first step that names the type of one of the context's objects
+// becomes the call that reaches that object.
 func (context context) reach(call jomini.Call) jomini.Call {
 	if len(call.Steps) == 0 {
 		return call
@@ -573,8 +553,7 @@ func (context context) reach(call jomini.Call) jomini.Call {
 }
 
 // listContexts returns what each widget of a window reads its bindings in: what its holder reads, then each data
-// context it writes, in the order written, each reached from the ones before. A data context that opens with the
-// name of a type reads the object of that type, as the game does.
+// context it writes.
 func listContexts(schema *schema.Schema, window Window) []context {
 	contexts := make([]context, len(window.Widgets))
 	for _, widget := range window.Widgets {
@@ -607,8 +586,8 @@ func listCalls(window *Window, widget Widget, keys ...string) []jomini.Call {
 	return calls
 }
 
-// findPressCondition returns the condition that one of a window's widgets is drawn down by, else the one it is drawn
-// checked by. The last result is false if it writes neither as a data call.
+// findPressCondition returns the condition that draws a widget down, else the one that draws it checked. The last
+// result is false if it writes neither as a data call.
 func findPressCondition(window *Window, widget Widget) (string, bool) {
 	for _, key := range []string{game.GUI.DownKey, game.GUI.CheckedKey} {
 		value := findProperty(window.listProperties(widget), key).Value
@@ -619,11 +598,9 @@ func findPressCondition(window *Window, widget Widget) (string, bool) {
 	return "", false
 }
 
-// listGroups returns the groups that the widgets of a window read, in the order they are first read, each with its
-// readers. A widget reads a group in its conditions, and in the conditions of the choices between two values that its
-// properties write. A group offers the values the window asks of it, then every value where it has none or several,
-// then none. The window's own widget is always drawn, so its conditions are not read. Each data model's list draws
-// the given number of rows.
+// listGroups returns the groups the widgets of a window read, each with its readers. A widget reads a group in its
+// conditions and in the conditions of the choices its properties write. The window's own widget is always drawn, so its
+// conditions are not read. Each data model's list draws the given number of rows.
 func listGroups(schema *schema.Schema, window Window, contexts []context, count int) []Group {
 	var groups table[string, Group]
 	for _, widget := range window.Widgets[1:] {
@@ -659,10 +636,8 @@ func listGroups(schema *schema.Schema, window Window, contexts []context, count 
 	return groups.values
 }
 
-// makeGroup returns the group of a call. The call's first steps, at most directSteps-1 of them, reach the object the
-// group asks about. The last of them gives the Subject, the kind of object, and their quoted arguments give the Key,
-// which picks one object of that kind. The Label is the rest of the call in words. A call of one step asks about the
-// game. A check that an object further on is valid is labeled by that object alone.
+// makeGroup returns the group of a call. The call's first steps reach the object the group asks about, giving its
+// Subject and Key, and the Label is the rest of the call in words. A call of one step asks about the game.
 func makeGroup(id string) Group {
 	call, _ := jomini.ParseCall(id, 0)
 	last := len(call.Steps) - 1
@@ -688,9 +663,8 @@ func makeGroup(id string) Group {
 	return Group{ID: id, Subject: subject, Key: strings.Join(keys, " "), Label: strings.Join(path, " › "), Exists: exists}
 }
 
-// listFacts returns the calls that a condition reads. A boolean function reads its operands, so it looks through And,
-// Or and the rest, and any other call reads itself. A macro that expands into itself reads nothing. Each data model's
-// list draws the given number of rows.
+// listFacts returns the calls a condition reads, looking through boolean functions to their operands. A fact the data
+// models decide is no group. Each data model's list draws the given number of rows.
 func listFacts(schema *schema.Schema, call jomini.Call, context context, count int) []jomini.Call {
 	call = expandVariableQuery(schema.ResolveMacro(call, context.latest))
 	if len(call.Steps) == 0 {
@@ -701,7 +675,6 @@ func listFacts(schema *schema.Schema, call jomini.Call, context context, count i
 			return listFacts(schema, operand, context, count)
 		})
 	}
-	// A fact the data models decide at that many rows is computed, so it belongs to no group.
 	if _, computed := computeFact(schema, context, call, count); computed {
 		return nil
 	}
@@ -709,10 +682,8 @@ func listFacts(schema *schema.Schema, call jomini.Call, context context, count i
 }
 
 // computeFact decides a fact about the window's data models as the window opens, each model drawing the given number of
-// rows. Such a fact asks whether a model is empty (game.GUI.ModelEmpty) or has items (game.GUI.ModelHas), or compares
-// two numbers (game.GUI.Comparisons). Each number is a model's size (game.GUI.ModelSize), a number a data object holds,
-// or a number written in the call, as toNumbers says. The last result is false for any other fact, and for a comparison
-// that the numbers do not decide.
+// rows: whether a model is empty or has items, or a comparison of two numbers. The last result is false for any other
+// fact, and for a comparison the numbers do not decide.
 func computeFact(schema *schema.Schema, context context, call jomini.Call, count int) (holds, computed bool) {
 	if len(call.Steps) != 1 {
 		return false, false
@@ -738,10 +709,9 @@ func computeFact(schema *schema.Schema, context context, call jomini.Call, count
 	return outcomes[true], len(outcomes) == 1
 }
 
-// toNumbers returns the numbers that an argument of a comparison may be. A data model's size (game.GUI.ModelSize) is
-// the given number of rows. A number a data object holds is shown as a sample of at least one (sampleNumber), so it
-// may be one or any number above. A number written as it is or quoted after its type, as '(int32)3', is itself. It
-// returns none for any other argument.
+// toNumbers returns the numbers an argument of a comparison may be. A data model's size is the given number of rows. A
+// number a data object holds is shown as a sample of at least one (sampleNumber), so it may be one or any number above.
+// It returns none for any other argument.
 func toNumbers(schema *schema.Schema, context context, argument jomini.Argument, count int) []float64 {
 	if argument.Call != nil {
 		steps := argument.Call.Steps
@@ -764,8 +734,7 @@ func toNumbers(schema *schema.Schema, context context, argument jomini.Argument,
 }
 
 // expandVariableQuery rewrites a call that asks whether a GUI variable is unset or set to a value, such as
-// NotExistOrHasValue('x', 'v'), as Or(Not(Exists('x')), HasValue('x', 'v')) on the same variable. Any other call is
-// returned as it is.
+// NotExistOrHasValue('x', 'v'), as Or(Not(Exists('x')), HasValue('x', 'v')) on the same variable.
 func expandVariableQuery(call jomini.Call) jomini.Call {
 	variables, last := game.GUI.Variables, len(call.Steps)-1
 	if last < 1 || call.Steps[last].Text != variables.UnsetOrValue || len(listQuoted(call.Steps[last])) != 2 {
@@ -780,7 +749,7 @@ func expandVariableQuery(call jomini.Call) jomini.Call {
 }
 
 // splitBoolean returns what a boolean function combines: whether it needs all its operands or just one, whether it
-// flips the result, and its operands. The last result is false if the call is no boolean function. And3 counts as And.
+// flips the result, and its operands. The last result is false if the call is no boolean function.
 func splitBoolean(call jomini.Call) (conjunction, negated bool, operands []jomini.Call, ok bool) {
 	if len(call.Steps) != 1 {
 		return false, false, nil, false
@@ -803,10 +772,8 @@ func splitBoolean(call jomini.Call) (conjunction, negated bool, operands []jomin
 	return conjunction, negated, operands, true
 }
 
-// splitFact splits a call into the group it reads and the value it asks of the group. The value is the last quoted
-// argument of the call's last step, and the group is the call's text with that argument blanked. A quoted argument of
-// an earlier step names the object the group asks about, and a GUI variable's name stays in its group too. A call with
-// no such argument is its own group with no value.
+// splitFact splits a call into the group it reads and the value it asks of the group, the last quoted argument of the
+// call's last step. A call with no such argument is its own group with no value.
 func splitFact(schema *schema.Schema, call jomini.Call) (group, value string) {
 	last := len(call.Steps) - 1
 	if last < 0 {
@@ -836,8 +803,7 @@ func isVariables(schema *schema.Schema, steps []jomini.Step) bool {
 
 // holdsOnOpening reports whether a group asks what holds as the window opens: an object exists or a list has items
 // (game.GUI.OpeningFacts), or a fact of the sample the window is drawn for (game.GUI.SampleFacts). It is false if the
-// call reaches an object the sample lacks (game.GUI.SampleAbsent). Such a test holds at any depth, and the test of its
-// absence fails.
+// call reaches an object the sample lacks (game.GUI.SampleAbsent).
 func holdsOnOpening(id string) bool {
 	call, ok := jomini.ParseCall(id, 0)
 	if !ok || len(call.Steps) == 0 {
@@ -885,8 +851,8 @@ func toCallText(call jomini.Call) string {
 	return strings.Join(steps, ".")
 }
 
-// evaluateCondition works out whether a condition, read in the given context, holds under the values of the groups. It
-// is unknown, which the second result says, for a condition that is no data call.
+// evaluateCondition works out whether a condition, read in the given context, holds under the values of the groups. The
+// second result is false for a condition that is no data call.
 func (evaluator *evaluator) evaluateCondition(context context, condition string) (value, known bool) {
 	if literal, ok := game.GUI.Literals[strings.ToLower(condition)]; ok {
 		return literal, true
@@ -898,8 +864,7 @@ func (evaluator *evaluator) evaluateCondition(context context, condition string)
 	return evaluator.evaluateCall(context, call)
 }
 
-// parse returns a condition's call, parsed the first time the condition is met and kept since. The second result
-// is false for a condition that is no data call.
+// parse returns a condition's call, parsed once. The second result is false for a condition that is no data call.
 func (evaluator *evaluator) parse(condition string) (jomini.Call, bool) {
 	if parsed, ok := evaluator.parsed[condition]; ok {
 		return parsed.call, parsed.isCall
@@ -909,10 +874,8 @@ func (evaluator *evaluator) parse(condition string) (jomini.Call, bool) {
 	return call, ok
 }
 
-// evaluateCall works out whether a call, read in the given context, holds under the values of the groups. A fact holds
-// when its group is at its value or at every value, and fails when the group is at none or at another value. A boolean
-// function combines its operands. It is unknown when the known operands do not decide it, or for a fact of a group the
-// window does not have.
+// evaluateCall works out whether a call, read in the given context, holds under the values of the groups. The second
+// result is false when the known operands do not decide it, or for a fact of a group the window does not have.
 func (evaluator *evaluator) evaluateCall(context context, call jomini.Call) (value, known bool) {
 	call = expandVariableQuery(evaluator.schema.ResolveMacro(call, context.latest))
 	if len(call.Steps) == 0 {
@@ -950,9 +913,9 @@ func (evaluator *evaluator) evaluateCall(context context, call jomini.Call) (val
 	return value != negated, true
 }
 
-// revealCondition adds to the given required values the ones that make a condition, read in the given context, give the
-// wanted result: hold or fail. It returns false if a group is already required to be at another value, which means the
-// conditions contradict. A condition that is no data call asks for nothing.
+// revealCondition adds to the given required values the ones that make a condition, read in the given context, hold or
+// fail as wanted. It returns false if a group is already required to be at another value, so the conditions
+// contradict. A condition that is no data call asks for nothing.
 func (evaluator *evaluator) revealCondition(required map[string]string, context context, condition string, holds bool) bool {
 	if literal, ok := game.GUI.Literals[strings.ToLower(condition)]; ok {
 		return literal == holds
@@ -961,10 +924,8 @@ func (evaluator *evaluator) revealCondition(required map[string]string, context 
 	return !ok || evaluator.revealCall(required, context, call, holds)
 }
 
-// revealCall adds to the given required values those that make a call, read in the given context, give the wanted
-// result: hold or fail. A fact is required at its value, or at none to fail. To make an And hold, every operand is made
-// to hold, and to make it fail, only the first is made to fail. Or is the reverse. Not and Nor flip the result they ask
-// of their operands. It returns false if no values give that result.
+// revealCall adds to the given required values those that make a call, read in the given context, hold or fail as
+// wanted. It returns false if no values give that result.
 func (evaluator *evaluator) revealCall(required map[string]string, context context, call jomini.Call, holds bool) bool {
 	call = expandVariableQuery(evaluator.schema.ResolveMacro(call, context.latest))
 	if len(call.Steps) == 0 {

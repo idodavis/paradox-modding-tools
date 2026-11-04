@@ -1,7 +1,4 @@
-<!--
-  The Health page. A rail switches between the summary and the views of workspace compatibility, of each mod and of
-  the game's log.
--->
+<!-- The Health page: a rail switches between the summary and the views of compatibility, each mod and the log. -->
 <script setup lang="ts">
 import { computed, onActivated, onDeactivated, shallowRef, watch } from "vue";
 import { useMutation, useQuery, useQueryCache } from "@pinia/colada";
@@ -91,11 +88,11 @@ const { data: report, error } = useQuery(() => ({
 }));
 const { data: gameLog, error: logError } = useQuery(() => ({ ...errorLogQuery, enabled: workspace.isOpen() }));
 const visible = useShown();
-// the mods' files may have changed while the page was away
+// The mods' files may have changed while the page was away.
 onActivated(() => {
   if (report.value) void cache.invalidateQueries({ key: keys.health });
 });
-// a row another page opens counts in the workspace's own order
+// A row another page opens counts in the workspace's own order.
 onDeactivated(() => (preview.value = []));
 
 const compatibility = computed(() => report.value?.compatibility.findings ?? []);
@@ -131,7 +128,6 @@ watch(wanted, (next) => (filter.value = next));
 /** The findings of the view shown, where the route's row is the index of the open one. */
 const shownFindings = computed(() => listFindings(shown.value, current.value?.id));
 const openFinding = computed((): Finding | undefined => (row ? shownFindings.value[Number(row)] : undefined));
-// the open row's finding goes with an agent's prompt
 useChip(() => {
   const finding = openFinding.value;
   const site = finding?.sites?.[0];
@@ -155,7 +151,7 @@ const { mutate: reorder, isLoading: saving } = useMutation({
 watch([() => id, () => ids.value.join()], () => {
   preview.value = [];
 });
-// a row's index points at another finding in another order's report
+// A row's index points at another finding in another order's report.
 watch(order, (next, previous) => {
   if (visible.value && row && !isEqual(next, previous))
     void router.replace({ query: { ...router.currentRoute.value.query, row: undefined } });
@@ -204,14 +200,14 @@ function isShown(railRow: RailRow): boolean {
   return railRow.view === shown.value && (!railRow.mod || railRow.mod.id === current.value?.id);
 }
 
-/** listFindings returns the findings the given view lists, in row order. A mod view lists that mod's findings. */
+/** listFindings returns the findings the given view lists, in row order. */
 function listFindings(view: string, modId?: string): Finding[] {
   if (view === "compatibility") return compatibility.value;
   if (view === "log") return logRows.value;
   return view === "mod" ? (groups.value[modId ?? ""]?.findings ?? []) : [];
 }
 
-/** show shows a view, with a mod and a finding open in it if given. It clears the filter. */
+/** show shows a view, with a mod and a finding open if given. It clears the filter. */
 function show(next: string, modId?: string, finding?: Finding): void {
   filter.value = "";
   void router.replace({
@@ -219,12 +215,12 @@ function show(next: string, modId?: string, finding?: Finding): void {
   });
 }
 
-/** showCheck shows workspace compatibility with its rows filtered to one check. */
+/** showCheck shows compatibility with its rows filtered to one check. */
 function showCheck(check: string): void {
   void router.replace({ query: { view: "compatibility", code: check } });
 }
 
-/** keepRailWidth keeps the rail's width from the panes' sizes. The summary has no rail. */
+/** keepRailWidth keeps the rail's width from the panes' sizes. */
 function keepRailWidth(sizes: number[]): void {
   if (sizes.length === 2 && sizes[0]) railWidth.value = Math.round(sizes[0]);
 }

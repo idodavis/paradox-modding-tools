@@ -81,9 +81,9 @@ export function ListReaders(key: string): $CancellablePromise<lsp$0.Site[] | nul
 }
 
 /**
- * ListSnippets returns the code at each finding site, at most ten lines of it: the lines of its range, or the statement
- * that starts on its line if it has no range. A site of one line also gets the two lines on each side. An open file's
- * code is the editor's text. It returns an error if a file cannot be read.
+ * ListSnippets returns the code at each finding site, at most ten lines of it: the site's range, or the statement on
+ * its line if it has none. A site of one line also gets two lines on each side. It returns an error if a file cannot
+ * be read.
  */
 export function ListSnippets(sites: lsp$0.Site[] | null): $CancellablePromise<$models.Snippet[] | null> {
     return $Call.ByID(354852256, sites);
@@ -106,9 +106,9 @@ export function RemoveIgnoredPair(first: string, second: string): $CancellablePr
 
 /**
  * WriteScaffold writes the localization keys a mod lacks in a language, with the base text as the placeholder, and
- * returns the files it wrote. A key goes at the end of the language's file that matches the base-language file it is
- * in, in that file's line ending and encoding. A file that is missing or holds nothing gets its header first. It
- * returns an error if the mod or the language is not valid, or a file cannot be read or written.
+ * returns the files it wrote. Each key goes at the end of the language's matching file, which gets its header first if
+ * it is missing or empty. It returns an error if the mod or the language is not valid, or a file cannot be read or
+ * written.
  */
 export function WriteScaffold(modID: string, language: string): $CancellablePromise<string[] | null> {
     return $Call.ByID(1632703803, modID, language);

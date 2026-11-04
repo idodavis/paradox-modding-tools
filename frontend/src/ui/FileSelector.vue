@@ -1,7 +1,4 @@
-<!--
-  A file or folder picker: the chosen path in a field, with a button that opens the system dialog. A caller can
-  replace both with a button of its own.
--->
+<!-- A file or folder picker: the chosen path in a field, with a button that opens the system dialog. -->
 <script lang="ts">
 /** IMAGES lists the file patterns of the picture files a picker offers. */
 export const IMAGES = ["*.png", "*.jpg", "*.jpeg", "*.gif", "*.webp"];

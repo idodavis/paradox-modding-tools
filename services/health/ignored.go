@@ -39,8 +39,8 @@ func (hlt *Service) RemoveIgnoredPair(first, second string) error {
 	})
 }
 
-// updatePairs changes the ignored pairs in the open workspace's record, which keeps each pair sorted. It returns an
-// error if the mods are not two of the workspace's, or the change or the save fails.
+// updatePairs changes the ignored pairs in the open workspace's record. It returns an error if the mods are not two of
+// the workspace's, or the change or the save fails.
 func (hlt *Service) updatePairs(first, second string, change func(pairs [][2]string, pair [2]string) ([][2]string, error)) error {
 	ws, err := hlt.Workspace.Session()
 	if err != nil {
@@ -62,8 +62,8 @@ func (hlt *Service) updatePairs(first, second string, change func(pairs [][2]str
 	})
 }
 
-// listChecked returns the mods of a load order that the compatibility checks judge: every one the workspace's record
-// does not leave out.
+// listChecked returns the mods of a load order that the compatibility checks judge: all but those the workspace leaves
+// out.
 func listChecked(order []string, record app.Workspace) []string {
 	leftOut := lo.FilterMap(record.Mods, func(mod app.Mod, _ int) (string, bool) { return mod.ID, mod.LeftOut })
 	return lo.Without(order, leftOut...)

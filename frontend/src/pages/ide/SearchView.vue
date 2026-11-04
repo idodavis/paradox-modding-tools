@@ -1,7 +1,4 @@
-<!--
-  The sidebar's search: the query form, the hits grouped by file, and Replace behind a confirmation. A hit opens its
-  file in the editor, at the match.
--->
+<!-- The sidebar's search: the query form, the hits grouped by file, and Replace behind a confirmation. -->
 <script setup lang="ts">
 import { computed, shallowRef } from "vue";
 import { useMutation, useQuery } from "@pinia/colada";
@@ -35,7 +32,7 @@ const wholeWord = shallowRef(false);
 const include = shallowRef("");
 const exclude = shallowRef("");
 const disabled = shallowRef(new Set<string>());
-// the files the user clicked; each shows the opposite of its default fold
+// The files the user clicked. Each shows the opposite of its default fold.
 const flips = shallowRef(new Set<string>());
 
 const { data: roots } = useQuery(() => ({ ...rootsQuery, enabled: workspace.isOpen() }));
@@ -49,7 +46,7 @@ const query = computed<Query>(() => ({
   exclude: exclude.value,
   origins: origins.value.filter((origin) => !disabled.value.has(origin)),
 }));
-// a folded file's lines are not split around their match until it opens
+// A folded file's lines are not split around their match until it opens.
 const files = computed(() => {
   let lineCount = 0;
   return search.current().files.map(({ place, hits }) => {

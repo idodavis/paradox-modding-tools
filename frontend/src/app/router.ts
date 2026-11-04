@@ -1,7 +1,4 @@
-/**
- * The router: one route per page of the catalog. A workspace's pages are children of one `/workspace/:id`
- * route, pages load lazily, and the one guard sets the active workspace from the route.
- */
+/** The router: one route per page of the catalog, loaded lazily, with one guard that sets the active workspace. */
 import {
   createRouter,
   createWebHashHistory,
@@ -15,7 +12,6 @@ import { THIS_WINDOW, useWindowsStore } from "../stores/windows";
 import { useWorkspaceStore } from "../stores/workspace";
 import { WORKSPACE_TOOLS, type PageName } from "./pages";
 
-// each page's path, under /workspace/:id for a workspace's, and the file it loads from
 const ROUTES = {
   library: { path: "/library", component: () => import("../pages/library/LibraryPage.vue") },
   "new-mod": { path: "/new-mod", component: () => import("../pages/newmod/NewModPage.vue") },
@@ -57,10 +53,7 @@ function makeRoute(name: PageName): RouteRecordRaw {
   return { name, path: ROUTES[name].path, component: ROUTES[name].component, props: resolveProps };
 }
 
-/**
- * resolveProps returns the props a page takes: the workspace's id and whatever the query names, such as a section or
- * a root.
- */
+/** resolveProps returns the props a page takes: the workspace's id and whatever the query names. */
 function resolveProps(route: RouteLocationNormalized): Record<string, unknown> {
   return { ...route.params, ...route.query };
 }

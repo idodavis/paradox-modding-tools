@@ -15,8 +15,7 @@ const (
 	oneMessage = " a:0 \"x\"\n"
 )
 
-// TestParseFile checks the messages, their spans and the one malformed line of a file with a header, a comment, a
-// blank line, versions and a text that holds quotes.
+// TestParseFile checks the messages, their spans and the one malformed line of a file.
 func TestParseFile(t *testing.T) {
 	text := "l_english:\n# a comment\n\n key_a:0 \"Hello\"\n key_b: \"No version\"\n key_c:12 \"He said \"hi\" twice\"\nnot a message\n"
 	file := Parse(text, "localization/english/x.yml")

@@ -34,8 +34,8 @@ const (
 	jpegMagic = "\xff\xd8\xff"
 )
 
-// sideLimit is the most pixels an image may have on a side, Direct3D's limit on a texture. Decode and EncodeDDS
-// refuse an image past it.
+// sideLimit is the most pixels an image may have on a side, Direct3D's limit. Decode and EncodeDDS refuse an image
+// past it.
 const sideLimit = 16384
 
 // extensions are the image extensions the game accepts, in the order they are tried.
@@ -132,8 +132,8 @@ func checkSides(width, height int) error {
 	return nil
 }
 
-// Resolve finds the image file a path written in script names, trying it as written and then with each other image
-// extension the game accepts, through the given lookup of a relative path. It returns false if none exists.
+// Resolve finds the image file a path written in script names, through the given lookup of a relative path. It tries
+// the path as written, then with each other image extension. It returns false if none exists.
 func Resolve(scriptPath string, lookup func(rel string) (path string, ok bool)) (path string, ok bool) {
 	scriptPath = strings.TrimPrefix(scriptPath, "/")
 	if path, ok = lookup(scriptPath); ok {

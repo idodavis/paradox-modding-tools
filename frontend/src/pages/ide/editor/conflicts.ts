@@ -1,7 +1,4 @@
-/**
- * Merge conflicts in the editor: finding the conflict blocks in a text, marking them, and resolving a block by keeping
- * one side or both.
- */
+/** Merge conflicts in the editor: marking the conflict blocks and resolving each by keeping one side or both. */
 import * as monaco from "monaco-editor/editor/editor.api";
 
 import { useEditorStore } from "../../../stores/editor";
@@ -13,7 +10,7 @@ type Conflict = { start: number; end: number; ours: [number, number]; theirs: [n
 
 type Side = "ours" | "theirs" | "both";
 
-// the code lens links over each block, and the side each one keeps; Compare opens the conflict diff instead
+// The code lens links over each block. Compare opens the conflict diff instead of keeping a side.
 const LINKS: { title: string; side: Side | "compare" }[] = [
   { title: "Accept current", side: "ours" },
   { title: "Accept incoming", side: "theirs" },
@@ -21,7 +18,7 @@ const LINKS: { title: string; side: Side | "compare" }[] = [
   { title: "Compare", side: "compare" },
 ];
 
-// the conflict blocks of each decorated model and the ids of the decorations that band them, by the model's URI
+// Each decorated model with its conflict blocks and their band decorations, by the model's URI.
 const decorations = new Map<string, { model: Model; conflicts: Conflict[]; bands: string[] }>();
 const lensChange = new monaco.Emitter<monaco.languages.CodeLensProvider>();
 
@@ -56,10 +53,7 @@ export function registerConflicts(): void {
   });
 }
 
-/**
- * findConflicts finds the conflict blocks in a model's text. A side with no line has a range that ends before it
- * starts.
- */
+/** findConflicts finds the conflict blocks in a model's text. An empty side has a range that ends before it starts. */
 function findConflicts(model: Model): Conflict[] {
   const conflicts: Conflict[] = [];
   let start = 0;

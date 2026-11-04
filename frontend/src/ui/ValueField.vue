@@ -1,7 +1,4 @@
-<!--
-  One value edited by its kind: a switch, a choice, a number, a text, a color or a set of toggles, with its label and
-  help. The caller writes the value where it belongs.
--->
+<!-- One value edited by its kind, with its label and help. The caller writes the value where it belongs. -->
 <script setup lang="ts">
 import { computed } from "vue";
 
@@ -18,7 +15,8 @@ const {
   step = 1,
   disabled = false,
 } = defineProps<{
-  kind: "switch" | "choice" | "number" | "text" | "color" | "toggles";
+  /** A port is a number written as its digits alone, with no buttons to step it. */
+  kind: "switch" | "choice" | "number" | "port" | "text" | "color" | "toggles";
   value: string;
   /** What the value is called. With none, the field is its control alone, small. */
   label: string;
@@ -68,13 +66,14 @@ function toggle(choice: string): void {
       @update:model-value="(choice) => emit('update:value', String(choice))"
     />
     <UInputNumber
-      v-else-if="kind === 'number'"
+      v-else-if="kind === 'number' || kind === 'port'"
       :model-value="Number(value)"
       v-bind="range"
       :step="step"
       :size="size"
-      :increment="!!label"
-      :decrement="!!label"
+      :increment="kind === 'number' && !!label"
+      :decrement="kind === 'number' && !!label"
+      :format-options="kind === 'port' ? { useGrouping: false } : undefined"
       :disabled="disabled"
       class="w-full"
       @update:model-value="(number) => number !== null && emit('update:value', String(number))"

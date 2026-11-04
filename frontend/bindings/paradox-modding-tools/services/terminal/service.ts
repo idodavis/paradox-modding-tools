@@ -27,17 +27,16 @@ export function Close(id: string): $CancellablePromise<void> {
 }
 
 /**
- * FindLinks returns the links in the given line of the output of the shell with the given id. A name resolves as a
- * full path or a path from the shell's folder, else as a path the workspace loads. A name under no root of the
- * workspace is left out. It returns none for a line longer than a listing's, or if no shell has the id.
+ * FindLinks returns the links in the given line of the output of the shell with the given id. A name under no root of
+ * the workspace is left out. It returns none for a line longer than a listing's, or if no shell has the id.
  */
 export function FindLinks(id: string, text: string): $CancellablePromise<$models.Link[] | null> {
     return $Call.ByID(828924320, id, text);
 }
 
 /**
- * ListEnvironment returns the variables every shell is given on this system: PMT's address and token for coding
- * agents, which PMT's own environment carries, then the terminal's own.
+ * ListEnvironment returns the variables every shell is given: PMT's address and token for coding agents, then the
+ * terminal's own.
  */
 export function ListEnvironment(): $CancellablePromise<terminal$0.Variable[] | null> {
     return $Call.ByID(2938101957);
@@ -59,17 +58,17 @@ export function ListShells(): $CancellablePromise<(terminal$0.Shell | null)[] | 
 
 /**
  * ResolveReference returns the text that names a file to an agent in a shell, as Claude Code and Copilot CLI read it:
- * `@`, the file's path from the shell's folder with forward slashes, or its full path for a file outside that folder,
- * and a space. It returns an error if no shell has the given id.
+ * an @ and the file's path from the shell's folder, or its full path for a file outside it. It returns an error if no
+ * shell has the given id.
  */
 export function ResolveReference(id: string, path: string): $CancellablePromise<string> {
     return $Call.ByID(533427813, id, path);
 }
 
 /**
- * Run starts a shell of the given size that runs the given command, a program followed by its arguments. It starts in
- * the folder ResolveFolder gives for the given file path, which may be "". It returns an error if the command is empty
- * or its program cannot be started.
+ * Run starts a shell of the given size that runs the given command, a program followed by its arguments, in the folder
+ * ResolveFolder gives for the given file path, which may be "". It returns an error if the command is empty or its
+ * program cannot be started.
  */
 export function Run(path: string, command: string[] | null, columns: number, rows: number): $CancellablePromise<terminal$0.Shell | null> {
     return $Call.ByID(2499983721, path, command, columns, rows);
@@ -84,9 +83,9 @@ export function SetScreen(id: string, screen: terminal$0.Screen): $CancellablePr
 }
 
 /**
- * Start starts a shell of the given size. It starts in the folder ResolveFolder gives for the given file path, which
- * may be "". It runs the program at the given program path, or the default shell for "". It returns an error if this
- * system has no shell or the program cannot be started.
+ * Start starts a shell of the given size in the folder ResolveFolder gives for the given file path, which may be "". It
+ * runs the program at the given path, or the default shell for "". It returns an error if this system has no shell or
+ * the program cannot be started.
  */
 export function Start(path: string, program: string, columns: number, rows: number): $CancellablePromise<terminal$0.Shell | null> {
     return $Call.ByID(2994279040, path, program, columns, rows);

@@ -1,7 +1,4 @@
-<!--
-  The keyboard shortcuts of every command that has one, a row each. A shortcut changes to the keys pressed after a
-  click on it, and a changed one has a button that puts the command's own back.
--->
+<!-- The keyboard shortcuts of every command that has one. A click on one records new keys for it. -->
 <script setup lang="ts">
 import { useEventListener } from "@vueuse/core";
 import { computed, shallowRef } from "vue";
@@ -22,12 +19,10 @@ import {
 const MODIFIERS = new Set(["Control", "Shift", "Alt", "Meta"]);
 
 const { getKbdKey } = useKbd();
-// the shortcut taking new keys: its command and its slot among the command's shortcuts
 const recording = shallowRef<{ command: Command; slot: number }>();
-// the last shortcut that was refused, with why, until the next recording starts
 const refused = shallowRef<{ command: Command; slot: number; reason: string }>();
 
-/** One row per shortcut of every command: its keys as set, the command's own, and whether they differ. */
+/** One row per shortcut of every command. */
 const rows = computed(() =>
   COMMANDS.flatMap((command) => {
     const bindings = listBindings(command);
@@ -48,16 +43,13 @@ function isRecording(command: Command, slot: number): boolean {
   return recording.value?.command === command && recording.value.slot === slot;
 }
 
-/** record makes the given shortcut of a command take the next keys pressed, and forgets the last refusal. */
+/** record makes the given shortcut of a command take the next keys pressed. */
 function record(command: Command, slot: number): void {
   recording.value = { command, slot };
   refused.value = undefined;
 }
 
-/**
- * captureKeys gives the shortcut taking new keys the ones pressed, before any shortcut runs. Escape stops without a
- * change, a modifier alone waits for its key, and keys another command has are refused under the shortcut.
- */
+/** captureKeys gives the shortcut taking new keys the ones pressed, before any shortcut runs. */
 function captureKeys(event: KeyboardEvent): void {
   const target = recording.value;
   if (!target) return;

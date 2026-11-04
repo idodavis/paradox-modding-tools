@@ -52,7 +52,7 @@ type Card struct {
 	Weight   int             `json:"weight,omitempty"`  // a branch of a random list: its percent of the branches' numbers
 	Node     string          `json:"node,omitempty"`    // the Event Graph's id of the name; "" if it is not drawn
 	Within   []string        `json:"within,omitempty"`  // the definition the position is in, then the blocks inside it
-	Runs     string          `json:"runs,omitempty"`    // the scopes the dumps give a command, else "no restriction declared"
+	Runs     string          `json:"runs,omitempty"`    // the scopes the dumps give a command, else "The game does not say"
 	Date     *CardDate       `json:"date,omitempty"`
 	Color    string          `json:"color,omitempty"`  // a CSS color
 	Number   *float64        `json:"number,omitempty"` // the number a constant stands for
@@ -62,8 +62,7 @@ type Card struct {
 	Range    Range           `json:"range"`    // what the card is about
 }
 
-// A Class is one class of the wiki's lexicon. A card and a completion call a command the game declares by the id of
-// its class.
+// A Class is one class of the wiki's lexicon, by which a card and a completion name the commands the game declares.
 type Class struct {
 	ID       string `json:"id"`    // such as effect
 	Label    string `json:"label"` // the lexicon tab's, such as Effects
@@ -175,8 +174,7 @@ func (lsp *Service) describeHit(ws *workspace.Session, mods *index.Index, place 
 }
 
 // listEntries returns the given definitions that really define their name. It leaves out a second name of a definition,
-// such as a trait's group, a name that a command makes, such as a saved scope or a flag, and a name that a definition
-// only switches on, such as a parameter.
+// such as a trait's group, a name a command makes, such as a saved scope, and a name a definition only switches on.
 func listEntries(ws *workspace.Session, mods *index.Index, sites []index.Site) []index.Site {
 	return lo.Reject(sites, func(site index.Site, _ int) bool {
 		occurrence := mods.Occurrence(site)
@@ -194,8 +192,8 @@ type hoverVisitor struct {
 	ancestors []string // the definition's name, then the keys of the blocks that hold the offset
 }
 
-// Enter keeps the context when the statement covers the offset. It also keeps the name of the definition the offset is
-// in and the keys of the blocks inside it.
+// Enter keeps the context when the statement covers the offset, with the name of the definition the offset is in and
+// the keys of the blocks inside it.
 func (visitor *hoverVisitor) Enter(tree *jomini.Tree, statement int32, context *schema.Context) bool {
 	current := tree.Statements[statement]
 	if !current.Span.Contains(visitor.offset) {
@@ -303,8 +301,8 @@ func listSites(ws *workspace.Session, mods *index.Index, place workspace.Place, 
 	return slices.Concat(keeping, others), &winner
 }
 
-// dropTranslations returns the sites without the messages in languages other than the key's. That is the file's own
-// language, else the workspace's, else the base language, whichever first has a message among the sites.
+// dropTranslations returns the sites without the messages in languages other than the key's: the file's own language,
+// else the workspace's, else the base language, whichever first has a message among the sites.
 func dropTranslations(ws *workspace.Session, mods *index.Index, place workspace.Place, sites []index.Site) []index.Site {
 	for _, language := range []string{loc.FindSuffixLanguage(place.Path), ws.Language, game.BaseLanguage} {
 		hasMessage := slices.ContainsFunc(sites, func(site index.Site) bool {
@@ -320,7 +318,7 @@ func dropTranslations(ws *workspace.Session, mods *index.Index, place workspace.
 	return sites
 }
 
-// findKept returns the winner the game keeps for a reference, as one file sees it, given by where the index lists it.
+// findKept returns the winner the game keeps for a reference, as the file at the given position in the index sees it.
 // A file the index does not list, -1, sees no local definition. It returns false if the game keeps none.
 func findKept(ws *workspace.Session, mods *index.Index, reference schema.Reference, position int32) (index.Winner, bool) {
 	if reference.Database == game.Localization {
@@ -337,7 +335,8 @@ func findHit(visitor *hoverVisitor) (jomini.Span, schema.Reference) {
 		return jomini.Span{}, schema.Reference{}
 	}
 	context, offset, current := &visitor.context, visitor.offset, visitor.tree.Statements[visitor.statement]
-	if definition := context.Definition; context.Defines && definition.Span.Contains(offset) {
+	// a definition named by a value in its block, as a texticon by its icon, has its name in a statement of its own
+	if definition := context.Definition; definition != nil && definition.Span.Contains(offset) {
 		return definition.Span, schema.Reference{Database: definition.Database, Name: definition.Name, Span: definition.Span}
 	}
 	for _, reference := range context.References {
@@ -444,21 +443,20 @@ func resolveDate(calendar app.Calendar, date jomini.Date) *CardDate {
 	return card
 }
 
-// describeCommand fills a card for an effect, a trigger or a link: what it does, the scopes the dumps say it runs in,
-// or that they name none, what its value takes and the scope it takes or switches to. A command the schema does not
-// know gets only what it is.
+// describeCommand fills a card for an effect, a trigger or a link. A command the schema does not know gets only what
+// it is.
 func describeCommand(card *Card, visitor *hoverVisitor) {
 	card.What = findClass(visitor.context.Declaration).ID
 	command := visitor.context.Command
 	if command == nil {
 		return
 	}
-	card.Blurb, card.Runs = command.Blurb, cmp.Or(strings.Join(command.Scopes, ", "), "no restriction declared")
+	card.Blurb, card.Runs = command.Blurb, cmp.Or(strings.Join(command.Scopes, ", "), "The game does not say")
 	if visitor.tree.Statements[visitor.statement].IsBlock() {
 		card.Leads = command.Target
 	} else {
 		card.Target = command.Target
-		describeTakes(card, command.Arguments)
+		describeTakes(card, command.ArgumentsOf(visitor.context.Declaration))
 	}
 }
 
@@ -483,7 +481,7 @@ func describeField(card *Card, context *schema.Context) {
 	card.Inferred = card.Inferred || field.Shape.Source == game.SourceVanilla
 }
 
-// describeTakes gives a card the type that a field's value takes, where a source states one. The card is inferred
+// describeTakes gives a card the type a field's value takes, where a source states one, and marks the card inferred
 // where the game's own files state it. A nil field takes nothing.
 func describeTakes(card *Card, field *schema.Field) {
 	if field != nil && field.Value.IsStated() {
@@ -521,8 +519,7 @@ func describeBlock(card *Card, visitor *hoverVisitor) {
 	}
 }
 
-// findLexicon returns the id of the lexicon class that lists what a card is about: what the card says it is, where
-// that is a class, else the kind of command a scripted definition acts as.
+// findLexicon returns the id of the lexicon class that lists what a card is about, or "" if none does.
 func findLexicon(card *Card) string {
 	if slices.ContainsFunc(Classes, func(class Class) bool { return class.ID == card.What }) {
 		return card.What

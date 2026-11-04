@@ -29,7 +29,7 @@ const items = computed(() =>
     ready: isReady(install.id),
   })),
 );
-// the picked install's version and scan; the counts are known only for the install of the open workspace
+// The counts are known only for the install of the open workspace.
 const scanLine = computed(() => {
   const install = installs.value?.find((row) => row.id === installId.value);
   if (!install) return "";
@@ -38,7 +38,6 @@ const scanLine = computed(() => {
   return open ? `${line} ${describeLexicon(open)}.` : line;
 });
 
-// Go fills an empty name with the game's and an empty version with the one the install's files say
 const { mutate: addInstall, isLoading: adding } = useMutation({
   mutation: (install: { path: string; name: string; version: string }) =>
     workspace.AddInstall(gameId, install.path, install.name, install.version),
@@ -57,12 +56,12 @@ const { mutate: updateInstall } = useMutation({
   },
 });
 
-/** isReady says whether an install's caches are saved, so its next open scans nothing. */
+/** isReady says whether an install's caches are saved. */
 function isReady(id: string): boolean {
   return !!ready.value?.includes(id);
 }
 
-/** removeInstall asks before an install's record is deleted. Go refuses while a workspace uses the install. */
+/** removeInstall asks before deleting an install's record. Go refuses while a workspace uses it. */
 async function removeInstall(id: string): Promise<void> {
   const confirmed = await confirm.open({
     title: "Delete this install?",

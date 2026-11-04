@@ -129,8 +129,8 @@ func TestListCommits(t *testing.T) {
 	}
 }
 
-// createRepository makes a throwaway repository on the fixture's branch, read with no global or system git
-// config, and returns the service and the repository's folder. The test is skipped when git is not installed.
+// createRepository makes a throwaway repository on the fixture's branch and returns the service and the repository's
+// folder. The test is skipped when git is not installed.
 func createRepository(t *testing.T) (*Service, string) {
 	t.Helper()
 	if _, err := findGit(); err != nil {

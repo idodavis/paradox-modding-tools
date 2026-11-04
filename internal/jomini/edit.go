@@ -1,5 +1,4 @@
-// edit.go applies changes to a text and finds the changes between two texts. It also reads a text's line ending and
-// indentation, and builds the change that adds lines to a block.
+// edit.go applies edits to a text, finds the edits between two texts and builds the edit that adds lines to a block.
 
 package jomini
 
@@ -68,8 +67,8 @@ func LineEnding(text string) string {
 	return "\n"
 }
 
-// Indentation returns the string that one level of nesting is indented with in the tree's text, such as a tab or four
-// spaces. It returns "" if no statement is indented.
+// Indentation returns the string one level of nesting is indented with in the tree's text. It returns "" if no
+// statement is indented.
 func (tree *Tree) Indentation() string {
 	for statement := int32(1); int(statement) < len(tree.Statements); statement++ {
 		start := tree.Statements[statement].Span.Start
@@ -85,8 +84,8 @@ func (tree *Tree) Indentation() string {
 	return ""
 }
 
-// IndentLines joins the lines with the tree's line ending, each starting with the given indent. A line inside braces
-// goes one level deeper. A level is the tree's own indentation, or a tab if it has none.
+// IndentLines joins the lines with the tree's line ending, each starting with the given indent and one more level for
+// each brace open above it. A level is the tree's own indentation, or a tab if it has none.
 func (tree *Tree) IndentLines(lines []string, indent string) string {
 	unit, depth := cmp.Or(tree.Indentation(), "\t"), 0
 	indented := make([]string, len(lines))
@@ -101,9 +100,8 @@ func (tree *Tree) IndentLines(lines []string, indent string) string {
 	return strings.Join(indented, LineEnding(tree.Src))
 }
 
-// BuildInsertion returns the edit that adds the lines as the last statements of the given block statement. The lines
-// go before the closing brace, each on its own line, one level deeper than the brace's line. If other text comes
-// before the brace on its line, the lines go on that line instead, separated by spaces.
+// BuildInsertion returns the edit that adds the lines as the last statements of the given block statement. If other
+// text comes before the closing brace on its line, the lines go on that line instead of their own.
 func (tree *Tree) BuildInsertion(block int32, lines []string) Edit {
 	closing := tree.Statements[block].Block.End - 1
 	row := tree.Lines.LineSpan(tree.Lines.ToPosition(closing).Line)

@@ -331,9 +331,8 @@ func (mcp *Service) describePages() string {
 	return guide.String()
 }
 
-// describeWorkspace returns the guide's workspace topic: the open workspace's game, install and language, whether the
-// user has guidance for new modders on, its mods in load order with their folders, and the game's folders with what
-// each holds. It returns an error if no workspace is open.
+// describeWorkspace returns the guide's workspace topic: the open workspace's game, language and mods, and the game's
+// folders. It returns an error if no workspace is open.
 func (mcp *Service) describeWorkspace() (string, error) {
 	ws, err := mcp.Workspace.Session()
 	if err != nil {
@@ -359,9 +358,8 @@ func (mcp *Service) describeWorkspace() (string, error) {
 	return guide.String(), nil
 }
 
-// describeRules returns the guide's rules topic: each way the open game keeps one copy when several definitions
-// share a name, and what a mod writes to override one, followed by the folders where the game does so. The way that
-// holds for the most folders comes first. It returns an error if no workspace is open.
+// describeRules returns the guide's rules topic: each way the open game keeps one copy when several definitions share
+// a name, with the folders where it does so. It returns an error if no workspace is open.
 func (mcp *Service) describeRules() (string, error) {
 	ws, err := mcp.Workspace.Session()
 	if err != nil {
@@ -392,9 +390,9 @@ func listFolderDatabases(ws *workspace.Session) []*schema.Database {
 	return databases
 }
 
-// buildReport returns Health's report for the workspace's load order, with the findings of its groups that pass the
-// filter, at most its limit of them in all. The tallies and checks still count every finding. It returns an error if
-// the filter names a mod, a check or a level PMT does not have.
+// buildReport returns Health's report for the workspace's load order, with the findings that pass the filter, at most
+// its limit of them in all. The tallies still count every finding. It returns an error if the filter names a mod, check
+// or level PMT does not have.
 func (mcp *Service) buildReport(filter findingFilter) (health.Report, error) {
 	var errs []error
 	if filter.Mod != "" {
@@ -452,7 +450,7 @@ func (mcp *Service) searchText(ctx context.Context, _ *sdk.CallToolRequest, requ
 }
 
 // rename previews renaming the name at a position in every mod file, or makes the change a token names. It returns
-// an error if the file is not one of the workspace's mods, or if no name that only the mods define is at the position.
+// an error if the file is not a mod's, or if no name that only the mods define is at the position.
 func (mcp *Service) rename(request renaming) (any, error) {
 	if request.Token != "" {
 		return mcp.confirm(request.Token)
@@ -501,9 +499,9 @@ func collectEntries(symbols []lsp.Symbol, entry string) []lsp.Symbol {
 	return entries
 }
 
-// writeScaffold previews writing the localization keys a mod lacks in a language, as how many keys each file would
-// get, or makes the change a token names. It returns an error if the workspace has no such mod, the game no such
-// language, the mod lacks no key, or a file it would change has text the user has not saved.
+// writeScaffold previews writing the localization keys a mod lacks in a language, or makes the change a token names.
+// It returns an error if the mod or language does not exist, the mod lacks no key, or a file it would change has text
+// the user has not saved.
 func (mcp *Service) writeScaffold(request scaffolding) (any, error) {
 	if request.Token != "" {
 		return mcp.confirm(request.Token)
@@ -526,8 +524,8 @@ func (mcp *Service) writeScaffold(request scaffolding) (any, error) {
 	})
 }
 
-// writeEdits applies the edits to each file's text on disk and writes it in its encoding, and returns the files
-// written. It returns an error, with the files written so far, if a file cannot be read or written.
+// writeEdits applies the edits to each file on disk, keeping its encoding, and returns the files written. It returns
+// an error, with the files written so far, if a file cannot be read or written.
 func (mcp *Service) writeEdits(edits map[string][]lsp.Edit) ([]string, error) {
 	paths := slices.Sorted(maps.Keys(edits))
 	for position, target := range paths {
@@ -546,9 +544,8 @@ func (mcp *Service) writeEdits(edits map[string][]lsp.Edit) ([]string, error) {
 	return paths, nil
 }
 
-// preview keeps a change to the given files under a new token, and returns what the change would be with the token
-// that makes it. It returns an error, and keeps nothing, if one of the files is outside the workspace's mods or the
-// game's own, or if the user has not saved it.
+// preview keeps a change to the given files under a new token, and returns the change with that token. It returns an
+// error, and keeps nothing, if a file is not one the workspace's mods may write or has text the user has not saved.
 func (mcp *Service) preview(paths []string, change any, apply func() (any, error)) (any, error) {
 	if _, err := mcp.Workspace.FindWritable(paths...); err != nil {
 		return nil, err

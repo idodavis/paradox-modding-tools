@@ -1,8 +1,4 @@
-/**
- * The command table: each command of the app is one row, shaped as a menu item, with an id that names its area and a
- * `when` that says if it applies. A command that needs the IDE page's or the palette's state is sent to them on the
- * command bus by its id.
- */
+/** The command table: each command of the app is one row, shaped as a menu item, with an id and a `when`. */
 import type { CommandPaletteGroup, CommandPaletteItem } from "@nuxt/ui";
 import { useMutation, useQueryCache } from "@pinia/colada";
 import { useEventBus } from "@vueuse/core";
@@ -29,7 +25,7 @@ import { useWorkspaceStore, VANILLA } from "../stores/workspace";
 import { isWorkspacePage, type PageName } from "./pages";
 import { router } from "./router";
 
-/** A Command is one command: a menu item whose id names its area, such as `editor.save`, and whether it applies now. */
+/** A Command is one command: a menu item whose id names its area, such as `editor.save`. */
 export type Command = Omit<CommandPaletteItem, "kbds"> & {
   /** `<area>.<verb>`: editor.save, file.rename, graph.open, window.popOut … */
   id: string;
@@ -37,21 +33,18 @@ export type Command = Omit<CommandPaletteItem, "kbds"> & {
   when: () => boolean;
   /** The keys of the command's shortcut, such as meta and K. */
   kbds?: string[];
-  /** The keys of a second shortcut that runs the command too. */
+  /** The keys of a second shortcut. */
   secondKbds?: string[];
 };
 
 /** OWN_KEYS holds the commands a focused editor or input handles itself. Their shortcuts are off while typing. */
 const OWN_KEYS = new Set(["editor.undo", "editor.redo", "editor.find"]);
-/** BINDINGS is the setting that holds the shortcuts the user changed, each command's as Nuxt UI writes them. */
+/** BINDINGS is the setting that holds the shortcuts the user changed. */
 const BINDINGS = "shortcuts.bindings";
 
 const commandBus = useEventBus(COMMAND_BUS);
 const compareBus = useEventBus<{ left: Place; right: Place }>("pmt.compare");
-// a list a command hands the palette to pick one from, under the command's id
 const choicesBus = useEventBus<CommandPaletteGroup>("pmt.choices");
-// the shortcuts the user changed, by command, parsed from the setting once per change; a setting that is not JSON
-// counts as none
 const changedBindings = computed<Record<string, string[]>>(() => {
   try {
     return JSON.parse(useSettingsStore().value(BINDINGS) || "{}") as Record<string, string[]>;
@@ -60,8 +53,7 @@ const changedBindings = computed<Record<string, string[]>>(() => {
   }
 });
 
-// Runs work as a mutation, so a failure reaches the app's error handler. It is set when the shortcuts are registered,
-// inside the app.
+// Runs work as a mutation, so a failure reaches the app's error handler. It is set when the shortcuts are registered.
 let run: (work: () => Promise<unknown>) => void = () => undefined;
 
 const activeTab = () => useEditorStore().activeTab();
@@ -297,7 +289,7 @@ export const COMMANDS: readonly Command[] = [
     label: "Reveal in explorer",
     prefix: "IDE:",
     icon: "i-lucide-list-tree",
-    // only the main window has both the editors and the explorer
+    // Only the main window has both the editors and the explorer.
     when: () => THIS_WINDOW === "main" && hasFile(),
     onSelect: () => useWindowsStore().sendCommand("explorer.reveal"),
   },
@@ -347,7 +339,6 @@ export const COMMANDS: readonly Command[] = [
     label: "Compare this mod with Steam",
     prefix: "Publish:",
     icon: "i-lucide-cloud",
-    // the mod is the active file's
     when: canChange,
     onSelect: actOn(activeFile, (place) => {
       const params = { id: useWorkspaceStore().activeId() };
@@ -399,7 +390,7 @@ export const COMMANDS: readonly Command[] = [
         if (await saveUnsaved("Reloading the window")) location.reload();
       }),
   },
-  // carried out by the window that shows the panel, which holds the shells
+  // The window that shows the panel carries this out, since it holds the shells.
   {
     id: "terminal.sendFile",
     label: "Send the file to the shell",
@@ -474,7 +465,6 @@ export const COMMANDS: readonly Command[] = [
     when: isOpen,
     onSelect: () => run(() => workspaceApi.Launch()),
   },
-  // the pane sits in the main window, beside a workspace's pages
   {
     id: "agent.togglePane",
     label: "Show or hide the agent pane",
@@ -485,10 +475,7 @@ export const COMMANDS: readonly Command[] = [
   },
 ];
 
-/**
- * registerShortcuts registers every command's keyboard shortcuts as the user set them. A command's shortcuts are on
- * while its `when` holds.
- */
+/** registerShortcuts registers every command's keyboard shortcuts, on while the command's `when` holds. */
 export function registerShortcuts(): void {
   const { mutate } = useMutation({ mutation: (work: () => Promise<unknown>) => work() });
   run = mutate;
@@ -506,21 +493,18 @@ export function registerShortcuts(): void {
   );
 }
 
-/** listDefaultBindings returns a command's own shortcuts: its kbds, then its second. It is empty when it has none. */
+/** listDefaultBindings returns a command's own shortcuts. It is empty when it has none. */
 export function listDefaultBindings(command: Command): string[][] {
   return [command.kbds, command.secondKbds].filter((kbds) => kbds !== undefined);
 }
 
-/** listBindings returns a command's shortcuts as the user set them: each changed one as changed, the others its own. */
+/** listBindings returns a command's shortcuts as the user set them. */
 export function listBindings(command: Command): string[][] {
   const changed = changedBindings.value[command.id];
   return listDefaultBindings(command).map((own, slot) => (changed?.[slot] ? splitShortcut(changed[slot]) : own));
 }
 
-/**
- * writeBinding sets the shortcut in the given slot of a command to the given keys. With no keys it restores the
- * command's own. A command whose shortcuts are all its own again is removed from the setting.
- */
+/** writeBinding sets the shortcut in a slot of a command to the given keys, or restores its own if there are none. */
 export function writeBinding(command: Command, slot: number, kbds?: string[]): void {
   const own = listDefaultBindings(command);
   const next = listBindings(command).map((keys, index) => (index === slot ? (kbds ?? own[index]) : keys));
@@ -536,10 +520,7 @@ export function findBinding(kbds: string[]): Command | undefined {
   return COMMANDS.find((command) => listBindings(command).some((keys) => joinShortcut(keys) === shortcut));
 }
 
-/**
- * listPressedKeys returns the keys of a key press as a command row writes them, Ctrl as meta and a letter in
- * capitals.
- */
+/** listPressedKeys returns the keys of a key press as a command row writes them. */
 export function listPressedKeys(event: KeyboardEvent): string[] {
   const key = event.key.length === 1 ? event.key.toUpperCase() : event.key.toLowerCase();
   return [event.ctrlKey && "meta", event.shiftKey && "shift", event.altKey && "alt", key].filter(
@@ -552,7 +533,7 @@ export function findCommand(id: string): Command | undefined {
   return COMMANDS.find((row) => row.id === id);
 }
 
-/** findKbds returns the keys of a command's first shortcut as the user set it. It is empty for an unknown command. */
+/** findKbds returns the keys of a command's first shortcut. It is empty for an unknown command. */
 export function findKbds(id: string): string[] {
   const command = findCommand(id);
   return (command && listBindings(command)[0]) ?? [];
@@ -563,22 +544,19 @@ export function joinShortcut(kbds: string[]): string {
   return kbds.join("_").toLowerCase();
 }
 
-/** splitShortcut returns a shortcut's keys, a letter or a function key in capitals as the command rows write them. */
+/** splitShortcut returns a shortcut's keys as the command rows write them. */
 function splitShortcut(shortcut: string): string[] {
   return shortcut.split("_").map((key) => (key.length === 1 || /^f\d+$/.test(key) ? key.toUpperCase() : key));
 }
 
-/** compare shows the IDE page, then opens the compare of two files in it, the first on the left. */
+/** compare opens the compare of two files in the IDE page, the first on the left. */
 export function compare(left: Place, right: Place): void {
   void useWindowsStore()
     .showIde()
     .then(() => compareBus.emit({ left, right }));
 }
 
-/**
- * compareWithGame opens the compare of a mod's file with the game's copy of it. It does nothing for a file the game
- * has no copy of.
- */
+/** compareWithGame opens the compare of a mod's file with the game's copy. It does nothing if there is none. */
 export function compareWithGame(place: Place): void {
   run(async () => {
     const copy = findGameCopy(place, await loadQuery(copiesQuery(place.path)));
@@ -586,10 +564,7 @@ export function compareWithGame(place: Place): void {
   });
 }
 
-/**
- * compareWithFile asks for another file and opens the compare of the given file with it. The dialog starts in the
- * file's mod, and cancelling it does nothing.
- */
+/** compareWithFile asks for another file and opens the compare of the given file with it. */
 export function compareWithFile(place: Place): void {
   run(async () => {
     const path = await Dialogs.OpenFile({ Title: "Compare with", Directory: place.root, CanChooseFiles: true });
@@ -603,10 +578,7 @@ export function canCopyToMod(place: Place | null | undefined): boolean {
   return !!place && !place.isDir && listCopyTargets(place).length > 0;
 }
 
-/**
- * copyToMod copies a file of the game or of another mod to the same place in a mod, and opens the copy. When it can
- * go into more than one mod, the palette asks which.
- */
+/** copyToMod copies a file of the game or of another mod into a mod and opens the copy. */
 export function copyToMod(place: Place): void {
   chooseMod("file.copyToMod", "Choose the mod to copy into", listCopyTargets(place), (modId) =>
     run(async () => {
@@ -616,10 +588,7 @@ export function copyToMod(place: Place): void {
   );
 }
 
-/**
- * chooseMod runs an action on the only mod of the given ids. When there are more, or none, the palette asks which,
- * under the given command id and question.
- */
+/** chooseMod runs an action on the only mod of the given ids, or has the palette ask which when there are more. */
 function chooseMod(id: string, label: string, mods: string[], act: (modId: string) => void): void {
   const [only] = mods;
   if (mods.length === 1 && only) {
@@ -630,7 +599,7 @@ function chooseMod(id: string, label: string, mods: string[], act: (modId: strin
   choicesBus.emit({ id, label, items });
 }
 
-/** listCopyTargets lists the mods a file can be copied into: every mod PMT writes into but the file's own. */
+/** listCopyTargets lists the mods a file can be copied into: every writable mod but the file's own. */
 function listCopyTargets(place: Place): string[] {
   return useWorkspaceStore()
     .listWritableMods()
@@ -638,24 +607,18 @@ function listCopyTargets(place: Place): string[] {
     .map((mod) => mod.id);
 }
 
-/**
- * findOverride returns the fix that overrides the entry at a position of a file in the first mod that can hold the
- * copy. It is null for a file a mod can write to, and for a position where no entry can be overridden.
- */
+/** findOverride returns the fix that overrides the entry at a position. It is null if there is nothing to override. */
 export async function findOverride(place: Place, line: number, column: number): Promise<Fix | null> {
   if (!place.readOnly) return null;
   return lsp.BuildOverride(place.path, line, column, "").catch(() => null);
 }
 
-// whether an override is under way, so that a second one asked for meanwhile is not made
 let overriding = false;
 
 /**
- * overrideEntry copies the entry at a position of a read-only file into a mod, saves and opens the copy, and says where
- * the copy went and what the game does with it. The copy goes into the mod with the given id, else into the only mod
- * the file can be copied into, else into the one the palette asks for. The given text names the entry, or is empty
- * when it is not known. It does nothing while another override is under way. The promise settles when the override is
- * done or refused; if the palette's question is closed unanswered, it stays unsettled.
+ * overrideEntry copies the entry at a position of a read-only file into a mod, saves and opens the copy, and says
+ * where it went. It does nothing while another override is under way. The promise stays unsettled if the palette's
+ * question is closed unanswered.
  */
 export function overrideEntry(place: Place, line: number, column: number, text: string, modId?: string): Promise<void> {
   return new Promise((settle) => {
@@ -675,7 +638,7 @@ export function overrideEntry(place: Place, line: number, column: number, text: 
             await useEditorStore().applyFixAsync(fix);
             const copy = fix.reveal?.place;
             if (!copy) return;
-            // saved, so the copy is in the index and the entry cannot be overridden into the mod a second time
+            // Saving puts the copy in the index, so the entry cannot be overridden into the mod a second time.
             const model = findModel(copy.key);
             if (model) await save(model);
             const gameId = useWorkspaceStore().active()?.game?.id ?? "";
@@ -697,24 +660,18 @@ export function overrideEntry(place: Place, line: number, column: number, text: 
   });
 }
 
-/** canSaveAsDds reports whether a file can be saved as a DDS: it is a mod's picture that is not a DDS already. */
+/** canSaveAsDds reports whether a file is a mod's picture that is not a DDS already. */
 export function canSaveAsDds(place: Place | null | undefined): boolean {
   return !!place && !place.readOnly && place.format === Format.FormatImage && !/\.dds$/i.test(place.name);
 }
 
-/**
- * findGameCopy returns the game's copy of a mod's file: the first of the file's copies, which come in load order, if
- * it is the game's. It is undefined for a file of the game itself and when the game has no copy.
- */
+/** findGameCopy returns the game's copy of a mod's file, or undefined if there is none. */
 export function findGameCopy(place: Place, copies: Place[] | null | undefined): Place | undefined {
   const [first] = copies ?? [];
   return place.origin !== VANILLA && first?.origin === VANILLA ? first : undefined;
 }
 
-/**
- * trashFile asks whether to move a file or folder to PMT's trash under the given label, moves it, and offers to
- * bring it back. A note, when given, is added to the question. It returns false when the user says no.
- */
+/** trashFile asks whether to move a file or folder to PMT's trash, moves it and offers to bring it back. */
 export async function trashFile(path: string, label: string, note = ""): Promise<boolean> {
   const body = `${label} goes to PMT's trash.${note}`;
   if (!(await confirm.open({ title: "Delete?", body, confirm: "Delete", destructive: true }))) return false;
@@ -724,13 +681,13 @@ export async function trashFile(path: string, label: string, note = ""): Promise
   return true;
 }
 
-/** activeModel returns the model of the active tab's file, or null when the tab shows none. */
+/** activeModel returns the model of the active tab's file, or null. */
 function activeModel(): Model | null {
   const tab = activeTab();
   return tab ? findModel(tab.key) : null;
 }
 
-/** actOn makes a handler that calls the given action on what the given lookup finds, if it finds anything. */
+/** actOn makes a handler that calls an action on what a lookup finds, if anything. */
 function actOn<T>(find: () => T | null | undefined, act: (value: T) => void): () => void {
   return () => {
     const value = find();
@@ -738,16 +695,13 @@ function actOn<T>(find: () => T | null | undefined, act: (value: T) => void): ()
   };
 }
 
-/** canChange reports whether the active tab's file is a mod's, so a user can rename it, delete it or add beside it. */
+/** canChange reports whether the active tab's file is a mod's. */
 function canChange(): boolean {
   const place = useEditorStore().activeFile();
   return !!place && !place.readOnly;
 }
 
-/**
- * hasGameCopy reports whether the active tab's file is a mod's and the game's copy is among its copies that the
- * editor has already read.
- */
+/** hasGameCopy reports whether the active tab's file is a mod's with a game copy already loaded. */
 function hasGameCopy(): boolean {
   const place = useEditorStore().activeFile();
   return !!place && !!findGameCopy(place, useQueryCache().getQueryData(copiesQuery(place.path).key));
@@ -758,10 +712,7 @@ function canUseGit(): boolean {
   return canChange() && !!useGitStore().findRoot(useEditorStore().activeFile());
 }
 
-/**
- * chooseRepository runs an action on a repository's root: the active file's repository, else the only one listed. If
- * the active file is in none and several are listed, the palette asks which, with the given command id and question.
- */
+/** chooseRepository runs an action on the active file's repository, or has the palette ask which. */
 function chooseRepository(id: string, label: string, act: (root: string) => void): void {
   const repositories = useGitStore().repositories;
   let root = useGitStore().findRoot(useEditorStore().activeFile());
@@ -779,7 +730,7 @@ function chooseRepository(id: string, label: string, act: (root: string) => void
   choicesBus.emit({ id, label, items });
 }
 
-/** showCommit shows the IDE's Source Control view with the commit box of the given repository unfolded and focused. */
+/** showCommit shows the IDE's Source Control view with the given repository's commit box focused. */
 function showCommit(root: string): void {
   void useWindowsStore()
     .showIde()
@@ -790,7 +741,7 @@ function showCommit(root: string): void {
     });
 }
 
-/** moveToNextGroup moves a tab into the group after its own. The last group has none after it, so nothing moves. */
+/** moveToNextGroup moves a tab into the group after its own, if there is one. */
 function moveToNextGroup(tab: Tab): void {
   const editor = useEditorStore();
   const groups = editor.listGroups();
@@ -798,7 +749,7 @@ function moveToNextGroup(tab: Tab): void {
   if (next) editor.move(tab.id, next.id, next.tabs.length);
 }
 
-/** runAction runs one of Monaco's actions in the editor with the focus, else in the one showing the active file. */
+/** runAction runs one of Monaco's actions in the focused editor, or the one showing the active file. */
 function runAction(id: string): void {
   const editors = monaco.editor.getEditors();
   const model = activeModel()?.model;
@@ -820,10 +771,7 @@ export function openPage(name: PageName): void {
     : router.push({ name }));
 }
 
-/**
- * openGraph opens the Event Graph on the name under the model's caret. A caret on a name the graph lacks does
- * nothing.
- */
+/** openGraph opens the Event Graph on the name under the model's caret, if the graph has it. */
 async function openGraph(model: Model): Promise<void> {
   const card = await lsp.Hover(model.place.path, model.caret.line, model.caret.column);
   if (card?.node) {
@@ -835,7 +783,7 @@ async function openGraph(model: Model): Promise<void> {
   }
 }
 
-/** createPath asks where to make a new file or folder, starting in the active file's mod. Cancelling does nothing. */
+/** createPath asks where to make a new file or folder. Cancelling does nothing. */
 async function createPath(place: Place, folder: boolean): Promise<void> {
   const title = folder ? "New folder" : "New file";
   const path = await Dialogs.SaveFile({ Title: title, Directory: place.root, ButtonText: "Create" });

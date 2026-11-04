@@ -9,29 +9,26 @@ It lists the files from the mods' index (`index.Index`), reads each one as the e
 
 | file | holds |
 |---|---|
-| `search.go` | the package comment; `EventHits`, `maxHits`; `Service` with `ServiceShutdown`; `Query`, `Hits`; `SearchText`, `CollectText`, `StopSearch`, `ReplaceText`, `SearchFiles`; the run, the quick test before a file is read line by line, the globs and the matches |
+| `search.go` | the service, `Query` and `Hits`; the text search, the replace and the file search; the globs and the matches |
 
 ## Text search
 
 A `Query` is one text search: the text, as a plain text or a regular expression, whether case and whole words count,
 the include and exclude globs, and the origins searched, the mods' when it names none. `SearchText` searches the text
-files the query names in parallel on `files.Workers` goroutines, and sends each file's hits as a `search:hits` event
-as it finds them. A file is first tested whole for a plain query's text before it is read line by line. A match never
-spans two lines. Each hit is an `lsp.Site`: the file's place, the range of the match and the text of its line. A
-search stops at `maxHits` and says so.
+files the query names in parallel on `files.Workers` goroutines, and sends each file's hits as a `search:hits` event.
+A match never spans two lines. Each hit is an `lsp.Site`: the file's place, the range of the match and the text of its
+line. A search stops at `maxHits` and says so.
 
-The service runs one search at a time. Starting a new one stops the last, and `StopSearch` stops it. `ServiceShutdown`
-stops a running search.
+The service runs one search at a time. Starting a new one, `StopSearch` or `ServiceShutdown` stops the last.
 
-The run gives each file's hits to a receiver, up to a limit. `SearchText` sends them as events, up to `maxHits`;
-`CollectText`, which PMT's tools for coding agents call, collects and returns them, up to its caller's limit, and
-stops when its caller's channel closes.
+`CollectText`, which PMT's tools for coding agents call, runs the same search but returns the hits, up to its
+caller's limit, and stops when its caller's channel closes.
 
 ## Replace
 
 `ReplaceText` replaces every match of a query in the mods' files and returns how many it replaced. Each file keeps its
-encoding, and a file with no match is not written. A file open in the editor is skipped, and the error says how many
-were, since its text belongs to the editor's model.
+encoding. A file open in the editor is skipped, since its text belongs to the editor's model, and the error says how
+many were.
 
 ## File search
 

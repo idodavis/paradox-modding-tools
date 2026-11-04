@@ -38,7 +38,7 @@ export interface Change {
 }
 
 /**
- * A Commit is one commit of the log, with what the graph draws of it.
+ * A Commit is one commit of the log.
  */
 export interface Commit {
     "hash": string;
@@ -83,8 +83,8 @@ export interface Ref {
     "hash": string;
 
     /**
-     * Date is when the commit it points to was made, or when an annotated tag was. It is the zero time for a ref to
-     * an object with no date, such as a tag of a tree.
+     * Date is when the commit it points to was made, or when an annotated tag was. It is the zero time if the object
+     * has no date.
      */
     "date": string;
     "current": boolean;
@@ -128,8 +128,8 @@ export interface Status {
     "changes": Change[] | null;
 
     /**
-     * Ignored is where the files and folders git ignores are in the open workspace; a folder stands for everything in
-     * it. They are empty places while none is open.
+     * Ignored is where the files and folders git ignores are in the open workspace. They are empty places while none
+     * is open.
      */
     "ignored": workspace$0.Place[] | null;
 }

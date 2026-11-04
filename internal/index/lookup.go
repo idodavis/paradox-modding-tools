@@ -16,8 +16,8 @@ import (
 )
 
 // Resolve returns the definitions that a reference names, in load order. A local definition never counts. A reference
-// with no database names the definitions in every database that defines its name, ordered by database name and then in
-// load order. The result is empty if the name is undefined.
+// with no database names the definitions in every database that defines its name. The result is empty if the name is
+// undefined.
 func (index *Index) Resolve(reference schema.Reference) []Site {
 	return index.listResolved(reference, func(Site) bool { return false })
 }
@@ -44,7 +44,7 @@ func (index *Index) listResolved(reference schema.Reference, isVisible func(Site
 }
 
 // ListDatabases returns the databases with a definition of a name, local ones included, in the order of the index's
-// table. A key of the localization database is defined by its messages. It is empty if nothing defines the name.
+// table. It is empty if nothing defines the name.
 func (index *Index) ListDatabases(name string) []string {
 	return lo.Filter(index.Databases.Texts, func(database string, _ int) bool {
 		return len(index.listPosting(toRole(database), database, name)) > 0
@@ -61,9 +61,8 @@ func (index *Index) ListUses(database, name string) []Site {
 	return slices.SortedFunc(slices.Values(slices.Concat(uses, index.listPosting(RoleRefers, game.AnyCall, name))), compareSites)
 }
 
-// ListCallees returns the references that a reference stands for. A reference in game.AnyCall may name any callable
-// database, so it stands for the name in each database whose definitions script calls by name, in database name order.
-// Any other reference stands for itself.
+// ListCallees returns the references that a reference stands for. A reference in game.AnyCall stands for the name in
+// each callable database, in database name order. Any other reference stands for itself.
 func ListCallees(reference schema.Reference) []schema.Reference {
 	if reference.Database != game.AnyCall {
 		return []schema.Reference{reference}

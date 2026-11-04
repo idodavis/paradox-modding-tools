@@ -1,5 +1,5 @@
-// call.go parses the data calls that GUI files and localization texts write between brackets. It also fills in a
-// macro's call with the arguments it was given.
+// call.go parses the data calls that GUI files and localization texts write between brackets, and fills in a macro's
+// call with its arguments.
 
 package jomini
 
@@ -35,8 +35,7 @@ type Argument struct {
 }
 
 // ParseBracketed parses a data call written between brackets, such as [Root.GetName]. The given offset is where the
-// text starts in its file, so the spans are offsets in the file. It returns false if the text does not open with [ and
-// close with ], or if what is between them is not a call.
+// text starts in its file. It returns false if the text is not a bracketed call.
 func ParseBracketed(text string, base int) (Call, bool) {
 	inner, opens := strings.CutPrefix(text, "[")
 	inner, closes := strings.CutSuffix(inner, "]")
@@ -47,7 +46,7 @@ func ParseBracketed(text string, base int) (Call, bool) {
 }
 
 // ParseCall parses the text of one data call, without its brackets. The given offset is where the text starts in its
-// file, so the spans are offsets in the file. It returns false if the text is not a call.
+// file. It returns false if the text is not a call.
 func ParseCall(text string, base int) (Call, bool) {
 	cursor := countSpaces(text, 0)
 	call := Call{Span: Span{Start: base + cursor}}
@@ -80,8 +79,8 @@ func countSpaces(text string, offset int) int {
 	return len(text[offset:]) - len(strings.TrimLeftFunc(text[offset:], unicode.IsSpace))
 }
 
-// parseStep parses one step from the given offset: an optional cast in parentheses, the name, then the argument list if
-// one follows. It returns the step and the offset after it, or false if no name starts there.
+// parseStep parses one step from the given offset. It returns the step and the offset after it, or false if no name
+// starts there.
 func parseStep(text string, base, cursor int) (Step, int, bool) {
 	var step Step
 	if cursor < len(text) && text[cursor] == '(' {
@@ -107,9 +106,8 @@ func parseStep(text string, base, cursor int) (Step, int, bool) {
 	return step, end, true
 }
 
-// splitArguments splits the argument list that opens at the given `(` into one span per argument. A comma inside
-// nested parentheses or single quotes does not split. It returns the offset after the closing `)`, or the text's end
-// if the list is never closed.
+// splitArguments splits the argument list that opens at the given `(` into one span per argument. It returns the
+// offset after the closing `)`, or the text's end if the list is never closed.
 func splitArguments(text string, cursor int) ([]Span, int) {
 	var spans []Span
 	depth, quoted, start := 0, false, cursor+1
@@ -133,8 +131,7 @@ func splitArguments(text string, cursor int) ([]Span, int) {
 	return append(spans, Span{Start: start, End: len(text)}), len(text)
 }
 
-// parseArgument parses the argument that the given span of the text holds, leaving out the white space around it. The
-// argument is a text in single quotes, a number or a nested call. It returns false if the span holds only white space.
+// parseArgument parses the argument in the given span of the text. It returns false if the span holds only white space.
 func parseArgument(text string, span Span, base int) (Argument, bool) {
 	start := span.Start + countSpaces(text[:span.End], span.Start)
 	raw := strings.TrimRightFunc(text[start:span.End], unicode.IsSpace)
@@ -147,7 +144,7 @@ func parseArgument(text string, span Span, base int) (Argument, bool) {
 	case quoted:
 		argument.Text, argument.Quoted = raw[1:len(raw)-1], true
 		argument.Span = Span{Start: argument.Span.Start + 1, End: argument.Span.End - 1}
-	case IsNumber(raw): // a number stays as it is written
+	case IsNumber(raw):
 	default:
 		if call, ok := ParseCall(raw, base+start); ok {
 			argument.Call = &call
@@ -156,9 +153,8 @@ func parseArgument(text string, span Span, base int) (Argument, bool) {
 	return argument, true
 }
 
-// SubstituteCall returns a macro's call with its parameters filled in. The map holds the argument for each parameter
-// name. A step named like a parameter is replaced by that argument's steps. The spans of the macro's own text are
-// emptied, since they lie in another file.
+// SubstituteCall returns a macro's call with its parameters filled in from the given arguments, by parameter name. The
+// spans of the macro's own text are emptied, since they lie in another file.
 func SubstituteCall(call Call, arguments map[string]Argument) Call {
 	var steps []Step
 	for _, step := range call.Steps {
@@ -179,8 +175,7 @@ func SubstituteCall(call Call, arguments map[string]Argument) Call {
 	return Call{Steps: steps, Suffix: call.Suffix}
 }
 
-// substituteArgument fills in one argument of a macro's call. An unquoted argument named like a parameter is replaced
-// by the argument given for it. Any other argument loses its span, and the call inside it is filled in the same way.
+// substituteArgument fills in one argument of a macro's call, as SubstituteCall does for a step.
 func substituteArgument(argument Argument, arguments map[string]Argument) Argument {
 	if value, ok := arguments[argument.Text]; ok && !argument.Quoted {
 		return value

@@ -29,12 +29,10 @@ type Winner struct {
 // keeps.
 type Reason string
 
-// The reasons. Last, First, Playset, Priority and Mode say why a copy wins. Merge is the first of copies merged into
-// one. Replace and Path say that a copy wins because another mod's replace_path or an unread path drops the one that
-// would. ReplaceFolder is a localization key in a replace folder. Injected and Combined are copies merged into the
-// winner by an entry mode or by its database. Unsettled is a choice no source settles. Shadowed and Dropped are a copy
-// in a file the game does not read: a file at the same path later in the load order replaces its file, or a mod's
-// replace_path drops its folder.
+// The reasons. Merge is the first of copies merged into one. Replace and Path say a copy wins because another mod's
+// replace_path or an unread path drops the one that would. ReplaceFolder is a localization key in a replace folder.
+// Injected and Combined are copies merged into the winner by an entry mode or by its database. Shadowed and Dropped
+// are a copy in a file the game does not read.
 const (
 	ReasonLast          Reason = "last"
 	ReasonFirst         Reason = "first"
@@ -53,9 +51,8 @@ const (
 )
 
 // Reasons holds each reason in words: a label, and for a reason a contest's winner can have, a longer text saying why
-// it wins. That text is a template the contest's facts fill: {folder}, {file}, {winner}, {beaten} and {beatenFile}.
-// The label of a reason for a copy the game does not read is a template too, filled with {mod}, the mod that hides
-// the copy.
+// it wins. That text is a template filled with {folder}, {file}, {winner}, {beaten} and {beatenFile}. The label of a
+// copy the game does not read takes {mod}, the mod that hides it.
 var Reasons = map[Reason]struct{ Label, Why string }{
 	ReasonLast: {Label: "Last file by name", Why: "The game reads every file in {folder} in order of file name and " +
 		"keeps the copy it reads last. {winner}'s file, {file}, comes after {beaten}'s {beatenFile}, so its copy " +
@@ -87,7 +84,7 @@ var Reasons = map[Reason]struct{ Label, Why string }{
 // mode, an INJECT no source settles, or a later mod's replace_path.
 type Cause string
 
-// The causes, in the order Cause's comment gives them.
+// The causes.
 const (
 	CausePriority Cause = "priority"
 	CauseKeyword  Cause = "keyword"
@@ -231,8 +228,8 @@ func toRelKey(row *game.Game, rel string) string {
 	return rest
 }
 
-// ResolveTexture returns the file the game reads for a texture's path as script writes it, trying each image
-// extension the game accepts in place of the written one. It returns false if the game reads no such file.
+// ResolveTexture returns the file the game reads for a texture's path as script writes it. It returns false if the
+// game reads no such file.
 func (index *Index) ResolveTexture(rel string) (string, bool) {
 	return texture.Resolve(rel, func(candidate string) (string, bool) {
 		loaded, _, ok := index.FindLoaded(candidate)
@@ -406,8 +403,7 @@ func (index *Index) isReplacedLater(position int32) bool {
 }
 
 // listReplacers returns the positions in Roots of the mods whose replace_path names the folder of a file, given the
-// file's group key. A replace_path names one folder exactly, not the folders below it. A mod that a narrowed index does
-// not answer for replaces nothing.
+// file's group key. A replace_path names one folder exactly, not the folders below it.
 func (index *Index) listReplacers(key string) []int {
 	folder := path.Dir(key)
 	if folder == "." {

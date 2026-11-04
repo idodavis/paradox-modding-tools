@@ -1,4 +1,4 @@
-// log.go lists the commits of a repository's log, with what the graph draws of each, and the files a commit changed.
+// log.go lists the commits of a repository's log and the files a commit changed.
 
 package git
 
@@ -11,7 +11,7 @@ import (
 	"github.com/samber/lo"
 )
 
-// A Commit is one commit of the log, with what the graph draws of it.
+// A Commit is one commit of the log.
 type Commit struct {
 	Hash    string    `json:"hash"`
 	Short   string    `json:"short"` // the abbreviated hash git chose
@@ -22,7 +22,7 @@ type Commit struct {
 }
 
 // ListCommits returns the commits reachable from the given refs, newest first, up to the given limit. With no refs
-// it starts from HEAD. It returns an empty list for a repository with no commit and for a folder in no repository.
+// it starts from HEAD. It returns an empty list for a repository with no commit.
 func (git *Service) ListCommits(dir string, limit int, refs []string) ([]Commit, error) {
 	// the closing "--" keeps a ref named like a file from being read as a path
 	args := slices.Concat([]string{
@@ -30,7 +30,6 @@ func (git *Service) ListCommits(dir string, limit int, refs []string) ([]Commit,
 	}, refs, []string{"--"})
 	stdout, err := git.run(dir, args...)
 	if err != nil {
-		// a repository before its first commit has no log, which is not an error
 		if _, headErr := git.run(dir, "rev-parse", "--verify", "-q", "HEAD"); headErr != nil {
 			return []Commit{}, nil
 		}
@@ -52,8 +51,7 @@ func (git *Service) ListCommits(dir string, limit int, refs []string) ([]Commit,
 			Parents: strings.Fields(fields[2]),
 			Date:    date,
 			Subject: fields[4],
-			// the decoration writes full names, the current branch as "HEAD -> refs/heads/main" and a tag after "tag: ";
-			// a remote's HEAD, which names its default branch, is left out, and a detached HEAD is kept with no type
+			// a remote's HEAD, which names its default branch, is left out
 			Refs: lo.FilterMap(strings.Split(fields[5], ", "), func(decoration string, _ int) (Ref, bool) {
 				name, current := strings.CutPrefix(decoration, "HEAD -> ")
 				name, refType := classifyRef(strings.TrimPrefix(name, "tag: "))
@@ -66,14 +64,14 @@ func (git *Service) ListCommits(dir string, limit int, refs []string) ([]Commit,
 }
 
 // ListCommitFiles returns the files changed by the commit with the given hash, in the repository at the given root
-// folder. A renamed file carries its old path. The error is git's if the repository has no such commit.
+// folder. The error is git's if the repository has no such commit.
 func (git *Service) ListCommitFiles(root, hash string) ([]Change, error) {
 	stdout, err := git.run(root, "show", "--name-status", "--format=", "-z", hash)
 	if err != nil {
 		return nil, err
 	}
 	changes := []Change{}
-	// a record is a letter then the path; a rename's letter is followed by its old path, then its new one
+	// a rename's letter is followed by its old path, then its new one
 	records := splitRecords(stdout)
 	for len(records) >= 2 {
 		change := Change{Status: classifyStatus(records[0]), Path: records[1]}

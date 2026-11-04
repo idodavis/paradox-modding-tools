@@ -1,8 +1,4 @@
-/**
- * The search store: the current search's query and its hits per file, or a name's references listed instead. Hits are
- * added once per frame as they arrive. It also takes in the results another window sends. The search view and the
- * panel read from it; nothing else holds hits.
- */
+/** The search store: the current search's query and its hits per file, or a name's references listed instead. */
 import { defineStore } from "pinia";
 import { useMutation } from "@pinia/colada";
 import { useBroadcastChannel, useEventListener } from "@vueuse/core";
@@ -14,7 +10,7 @@ import * as searchApi from "@services/search/service";
 import type { Site } from "@services/lsp/models";
 import type { Hits, Query } from "@services/search/models";
 
-/** Results is the standing of a search, which the window that started it sends on the channel every window hears. */
+/** Results is the standing of a search, which the window that started it sends to the others. */
 type Results = {
   type: "results";
   query: Query | null;
@@ -27,15 +23,11 @@ type Results = {
 
 export const useSearchStore = defineStore("search", () => {
   const query = shallowRef<Query | null>(null);
-  // the heading of the results when they are a name's references, not a search's
   const title = shallowRef("");
   const running = shallowRef(false);
-  // whether the search stopped at the most hits Go sends
   const capped = shallowRef(false);
   const files = shallowRef<Hits[]>([]);
-  // the hits that arrived since the last frame
   let arrived: Hits[] = [];
-  // whether the hits that arrive belong to this window's own search
   let started = false;
   const { channel, post } = useBroadcastChannel<Results, Results>({ name: "pmt.windows" });
   const { mutate } = useMutation({
@@ -54,14 +46,14 @@ export const useSearchStore = defineStore("search", () => {
     },
   });
 
-  /** sendResults sends the search's standing to the other windows. It carries no hits unless the change gives some. */
+  /** sendResults sends the search's standing to the other windows. */
   function sendResults(change: Partial<Pick<Results, "reset" | "hits">>): void {
     const plainQuery = query.value && { ...query.value, origins: [...(query.value.origins ?? [])] };
     const message = { query: plainQuery, title: title.value, running: running.value, capped: capped.value };
     post({ type: "results", ...message, reset: false, hits: [], ...change });
   }
 
-  /** takeArrived adds the hits that arrived since the last frame to the files, and sends them to the other windows. */
+  /** takeArrived adds the hits that arrived since the last frame and sends them to the other windows. */
   function takeArrived(): void {
     if (!arrived.length) return;
     files.value.push(...arrived);
@@ -70,7 +62,7 @@ export const useSearchStore = defineStore("search", () => {
     arrived = [];
   }
 
-  /** current returns the results: the query or title, whether the search runs or hit Go's limit, and the hits. */
+  /** current returns the results: the query or title, the search's state, and the hits. */
   const current = (): { query: Query | null; title: string; running: boolean; capped: boolean; files: Hits[] } => ({
     query: query.value,
     title: title.value,
@@ -90,7 +82,7 @@ export const useSearchStore = defineStore("search", () => {
     mutate(next);
   };
 
-  /** showReferences lists the given sites as the results under the given heading, in place of a search's hits. */
+  /** showReferences lists the given sites under the given heading in place of a search's hits. */
   const showReferences = (heading: string, sites: Site[]): void => {
     started = false;
     void searchApi.StopSearch();

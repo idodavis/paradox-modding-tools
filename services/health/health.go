@@ -256,10 +256,8 @@ func (hlt *Service) BuildReport(order []string) (Report, error) {
 	return report, nil
 }
 
-// resolveFindings grades the contests and shared localization keys of a load order. A contest that the mods' declared
-// dependencies or an ignored pair settle is lowered, and a contest the order decides gets the order that fixes it.
-// Each of these findings also lists the pairs of mods it sets against each other. A pair is forgiven if the winner
-// depends on the other mod, or if the workspace ignores the two in either order.
+// resolveFindings grades the contests and shared localization keys of a load order, and lists the pairs of mods each
+// sets against each other. A pair is forgiven if the winner depends on the other mod or the workspace ignores the two.
 func resolveFindings(ws *workspace.Session, findings []Finding, order []string, declared map[[2]string]bool, pairs [][2]string) {
 	forgiven := maps.Clone(declared)
 	for _, pair := range pairs {
@@ -278,9 +276,8 @@ func resolveFindings(ws *workspace.Session, findings []Finding, order []string, 
 	}
 }
 
-// groupReport fills in the words of a report's findings, folds them and groups them: the workspace's compatibility,
-// then each mod of the load order. A health finding about a mod outside the order is left out. The report has no
-// changes.
+// groupReport fills in the words of the findings, folds them and groups them into the workspace's compatibility and
+// each mod of the load order. A finding about a mod outside the order is left out. The report has no changes.
 func groupReport(findings []Finding, order []string) Report {
 	for position := range findings {
 		describeFinding(&findings[position])
@@ -305,9 +302,8 @@ func groupReport(findings []Finding, order []string) Report {
 	}
 }
 
-// describeFinding fills in a finding's wording from its code, facts and sites: the code's title and topic, the message,
-// the brief, why the winner's copy wins, and the place. The place is the first site's, such as a.txt:12, which is the
-// kept one where there is one. A log row with no site names what it is about, if it names anything.
+// describeFinding fills in a finding's wording from its code, facts and sites. Its place is the first site's, such as
+// a.txt:12. A log row with no site names what it is about, if it names anything.
 func describeFinding(finding *Finding) {
 	code := lsp.LookupCode(finding.Code)
 	finding.Label, finding.Topic = code.Label, code.Topic
@@ -319,9 +315,8 @@ func describeFinding(finding *Finding) {
 	}
 }
 
-// splitBrief returns the line under a finding's name in a list, as parts separated by dots. The pieces are what kind
-// of thing the name is, how many names a replaced file leaves out that are still used and how often, the mod that
-// alone defines the name, and why the game keeps its copy. It is empty if the finding has none of these.
+// splitBrief returns the line under a finding's name in a list, as parts separated by dots. It is empty if the finding
+// has nothing to say there.
 func splitBrief(finding Finding) []lsp.Part {
 	var parts []lsp.Part
 	add := func(piece ...lsp.Part) {
@@ -348,9 +343,8 @@ func splitBrief(finding Finding) []lsp.Part {
 	return parts
 }
 
-// foldFindings folds each finding that has the key of an earlier one into that one. The earlier finding counts the
-// other in its Count, and the given function adds whatever else the earlier one keeps of it. The folded findings stay
-// in the order of their first.
+// foldFindings folds each finding into the earlier one with the same key, which counts it in its Count. The given
+// function adds whatever else the earlier one keeps of it.
 func foldFindings[Key comparable](
 	findings []Finding, key func(Finding) Key, merge func(first *Finding, repeat Finding),
 ) []Finding {
@@ -367,9 +361,8 @@ func foldFindings[Key comparable](
 // findOwner returns the id of the mod a finding is about: the first mod it concerns, else its origin.
 func findOwner(finding Finding) string { return lo.FirstOr(finding.Mods, finding.Origin) }
 
-// makeGroup returns a group of a mod's findings, or of the workspace's compatibility for the mod "". Its checks come
-// the worst level first, and within a level the one with the most findings first; checks with as many stay in the
-// order of their first finding. Its findings follow their checks, and within a check the heaviest come first.
+// makeGroup returns the group of a mod's findings, or of the workspace's compatibility for the mod "". Its findings
+// and checks are sorted as Group says.
 func makeGroup(mod string, findings, languages []Finding) Group {
 	checks := lo.PartitionBy(findings, func(finding Finding) [2]string { return [2]string{finding.Level, finding.Code} })
 	slices.SortStableFunc(checks, func(first, second []Finding) int {
@@ -416,8 +409,8 @@ func makeTally(findings []Finding) Tally {
 	return tally
 }
 
-// weigh returns how bad a finding is among those of its check: how often the files the game reads use the names a
-// replaced file leaves out, else 1, as many times as the finding's Count says.
+// weigh returns how bad a finding is among those of its check: how often the game's files use the names it removes, or
+// 1 if none, times its Count.
 func weigh(finding Finding) int {
 	return finding.Count * max(1, lo.SumBy(finding.Uses, func(use Use) int { return use.Count }))
 }
@@ -473,9 +466,9 @@ func (hlt *Service) CompareStatements(left, right lsp.Site) (Compared, error) {
 	return Compared{Left: first, Right: second}, err
 }
 
-// ListSnippets returns the code at each finding site, at most ten lines of it: the lines of its range, or the statement
-// that starts on its line if it has no range. A site of one line also gets the two lines on each side. An open file's
-// code is the editor's text. It returns an error if a file cannot be read.
+// ListSnippets returns the code at each finding site, at most ten lines of it: the site's range, or the statement on
+// its line if it has none. A site of one line also gets two lines on each side. It returns an error if a file cannot
+// be read.
 func (hlt *Service) ListSnippets(sites []lsp.Site) ([]Snippet, error) {
 	ws, err := hlt.Workspace.Session()
 	if err != nil {
@@ -529,9 +522,9 @@ func findStatementText(ws *workspace.Session, site lsp.Site) (string, error) {
 }
 
 // WriteScaffold writes the localization keys a mod lacks in a language, with the base text as the placeholder, and
-// returns the files it wrote. A key goes at the end of the language's file that matches the base-language file it is
-// in, in that file's line ending and encoding. A file that is missing or holds nothing gets its header first. It
-// returns an error if the mod or the language is not valid, or a file cannot be read or written.
+// returns the files it wrote. Each key goes at the end of the language's matching file, which gets its header first if
+// it is missing or empty. It returns an error if the mod or the language is not valid, or a file cannot be read or
+// written.
 func (hlt *Service) WriteScaffold(modID, language string) ([]string, error) {
 	ws, err := hlt.Workspace.Session()
 	if err != nil {
@@ -567,7 +560,7 @@ func (hlt *Service) WriteScaffold(modID, language string) ([]string, error) {
 }
 
 // ListScaffolds returns the base-language messages of a mod whose key has no message in a language, by the file of
-// that language they belong in. That file may exist already.
+// that language they belong in.
 func ListScaffolds(mods *index.Index, mod workspace.Mod, language string) map[string][]loc.Message {
 	messages := lo.Filter(listMessages(mods), func(site index.Site, _ int) bool { return mods.File(site).Origin == mod.ID })
 	scaffolds := map[string][]loc.Message{}
@@ -738,10 +731,9 @@ func listUnused(ws *workspace.Session, mods *index.Index, sites []index.Site, wi
 	return findings
 }
 
-// describeRemoved fills in the finding for a mod file that removes names in use. It sets the finding's Uses and the
-// facts its message counts: the mod, how many names the game's copy defines, how many of them the mod's copy leaves
-// out, and how many of those are still used and how often. The "definitions" fact names them by kind in the plural,
-// such as "scripted triggers", or "names" if there is more than one kind.
+// describeRemoved fills in the finding for a mod file that removes names in use: its Uses and the facts its message
+// counts. The "definitions" fact names the kind of definition in the plural, such as "scripted triggers", or is "names"
+// for several kinds.
 func describeRemoved(ws *workspace.Session, mods *index.Index, finding *Finding, uses []Use) {
 	original, _ := lo.Find(finding.Sites, func(site lsp.Site) bool { return site.Place.Origin == game.OriginVanilla })
 	kept, _ := lo.Find(finding.Sites, func(site lsp.Site) bool { return site.Kept })
@@ -762,8 +754,8 @@ func describeRemoved(ws *workspace.Session, mods *index.Index, finding *Finding,
 }
 
 // listRemovedUses returns the names the game's copy of a file defines that no file the game reads defines, each with
-// the uses the files the game reads make of it, the most used first. A name they do not use is left out, and so is a
-// name the copy defines for itself alone or saves while the game runs.
+// the uses the game's files make of it, the most used first. A name nothing uses is left out, and so is one the copy
+// defines for itself alone or saves while the game runs.
 func listRemovedUses(ws *workspace.Session, mods *index.Index, path string) []Use {
 	position, ok := mods.FindFile(path)
 	if !ok {

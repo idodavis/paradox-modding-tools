@@ -1,7 +1,4 @@
-<!--
-  The IDE page, with the sidebar, the editors, the bottom panel and the Wiki pane. A window of its own shows one part
-  alone.
--->
+<!-- The IDE page: the sidebar, the editors, the bottom panel and the Wiki pane. A pop-out shows one part alone. -->
 <script setup lang="ts">
 import { computed, nextTick, reactive, shallowRef, useTemplateRef, watch } from "vue";
 import { useMutation, useQuery } from "@pinia/colada";
@@ -47,7 +44,7 @@ import SearchView from "./SearchView.vue";
 import SourceControlView from "./SourceControlView.vue";
 import TerminalPanel from "./terminal/TerminalPanel.vue";
 import WikiPane from "./WikiPane.vue";
-import { LANGUAGES } from "./editor/monaco";
+import { describeLanguage } from "./editor/monaco";
 import { findModel } from "./editor/models";
 
 const { id } = defineProps<{ id: string }>();
@@ -58,7 +55,7 @@ type Problem = { problem: Diagnostic; health?: true };
 type Row = { place: Place; count: number } | ({ place: Place } & Problem);
 
 const PIXELS = "px" as const;
-/** The sidebar's tabs. A tab with a `visual` label is also shown in Visual, under that label. */
+/** The sidebar's tabs. A tab with a `visual` label also shows in Visual, under that label. */
 const SIDEBAR: { value: string; icon: string; label: string; visual?: string }[] = [
   { value: "explorer", icon: "i-lucide-files", label: "Explorer", visual: "Explorer" },
   { value: "search", icon: "i-lucide-search", label: "Search" },
@@ -81,7 +78,7 @@ const ENCODINGS: Record<string, string> = {
   "utf-8-bom": "UTF-8 BOM",
   "windows-1252": "Windows-1252",
 };
-/** MOUSE_BACK and MOUSE_FORWARD are the button numbers of a mouse event for the back and forward buttons. */
+/** MOUSE_BACK and MOUSE_FORWARD are the button numbers of the mouse's back and forward buttons. */
 const MOUSE_BACK = 3;
 const MOUSE_FORWARD = 4;
 
@@ -94,26 +91,25 @@ const coatDialog = useOverlay().create(CoatDialog);
 const saveDds = useOverlay().create(SaveDdsModal);
 const sidebar = useLocalStorage("pmt.ide.sidebar", "explorer");
 const isVisual = computed(() => editor.mode === "visual");
-// Visual keeps only the tabs with a visual label, under that label; a saved tab it hides falls back to Entries
+// A saved tab that Visual hides falls back to Entries.
 const modeTabs = computed(() =>
   isVisual.value ? SIDEBAR.flatMap(({ visual, ...tab }) => (visual ? [{ ...tab, label: visual }] : [])) : SIDEBAR,
 );
 const shownSidebar = computed(() =>
   modeTabs.value.some((tab) => tab.value === sidebar.value) ? sidebar.value : "entries",
 );
-// the simple interface leaves out the tabs it hides, unless one is the open one
+// The simple interface leaves out the tabs it hides, unless one is the open one.
 const tabs = computed(() =>
   modeTabs.value.filter((tab) => tab.value === shownSidebar.value || !settings.isHidden(tab.value)),
 );
-// Visual shows the active group alone
 const visualGroup = computed(() => (isVisual.value ? editor.activeGroup() : null));
 const gameOpen = useLocalStorage("pmt.ide.gameOpen", true);
-/** filtering says which trees show their filter box. It is not saved. */
+/** filtering says which trees show their filter box. */
 const filtering = reactive({ mods: false, game: false, own: false });
 const [DefineFilterButton, FilterButton] = createReusableTemplate<{ tree: keyof typeof filtering }>();
 const visible = useShown();
-// the active file and its selected lines go with an agent's prompt as a chip; while the active tab is one Follow the
-// agent opened, the chip keeps the file the user had before
+// The active file and its selected lines go with an agent's prompt as a chip. While the active tab is one Follow the
+// agent opened, the chip keeps the file the user had before.
 const fileChip = computed<Chip | null>((previous) => {
   if (editor.isFollowed()) return previous ?? null;
   const place = editor.activeFile();
@@ -159,14 +155,13 @@ defineShortcuts(
       : {},
   ),
 );
-// the mouse's back and forward buttons walk the IDE's history, not the page's
+// The mouse's back and forward buttons walk the IDE's history, not the page's.
 useEventListener(document, "mouseup", (event) => {
   if (!visible.value || (event.button !== MOUSE_BACK && event.button !== MOUSE_FORWARD)) return;
   event.preventDefault();
   editor.go(event.button === MOUSE_BACK ? -1 : 1);
 });
 
-/** part is the part of the IDE this window holds. */
 const part = THIS_WINDOW.split(":")[0];
 const layout = computed(() => {
   if (part === "terminal") return "terminal";
@@ -182,7 +177,7 @@ const { data: folderPlace } = useQuery(() => ({
 }));
 const mods = computed(() => (roots.value ?? []).filter((root) => root.origin !== VANILLA));
 const game = computed(() => (roots.value ?? []).filter((root) => root.origin === VANILLA));
-// only the setting decides, because a pane that appears when the roots load, while the explorer is hidden, gets no room
+// Only the setting decides, because a pane that appears as the roots load, while the explorer is hidden, gets no room.
 const gameShown = computed(() => settings.isOn("ide.gameFiles"));
 const own = computed(() => {
   if (part === "game") return game.value;
@@ -207,7 +202,7 @@ const panes = computed<SplitterItem[]>(() => [
   ...(layout.value === "files" || layout.value === "wiki"
     ? []
     : [{ id: "editors", slot: "editors", order: 2, minSize: 33 }]),
-  // the Wiki pane leaves the main window while it has a window of its own, and while Visual takes the screen
+  // The Wiki pane leaves the main window while it has a window of its own, and while Visual takes the screen.
   ...((layout.value === "full" && editor.wiki && !isVisual.value && !windows.listWindows().includes("wiki")) ||
   layout.value === "wiki"
     ? [{ id: "wiki", slot: "wiki", order: 3, sizeUnit: PIXELS, defaultSize: 440, minSize: 320 }]
@@ -215,7 +210,7 @@ const panes = computed<SplitterItem[]>(() => [
 ]);
 const editorPanes = computed<SplitterItem[]>(() => [
   ...(layout.value === "terminal" ? [] : [{ id: "code", slot: "code", order: 1, minSize: 50 }]),
-  // the terminal's own window shows the panel on the Terminal tab alone, and Visual hides the panel
+  // The terminal's own window shows the panel on the Terminal tab alone, and Visual hides the panel.
   ...(layout.value === "terminal" || (editor.panel && !isVisual.value)
     ? [
         {
@@ -231,7 +226,6 @@ const editorPanes = computed<SplitterItem[]>(() => [
       ]
     : []),
 ]);
-// the panel opens again at the size it had when it was dragged closed
 const editorSplitter = useTemplateRef("editorSplitter");
 watch(
   () => editor.panel,
@@ -250,8 +244,8 @@ const explorerPanes = computed<SplitterItem[]>(() => [
       ? [{ id: "game", slot: "game", order: 2, sizeUnit: PIXELS, minSize: 120 }]
       : [{ id: "folded", slot: "game", order: 2, sizeUnit: PIXELS, defaultSize: 33, minSize: 33, maxSize: 33 }]),
 ]);
-// the terminal's own window shows the Terminal tab alone; the simple interface leaves out the tabs it hides, unless one
-// is the open one
+// The terminal's own window shows the Terminal tab alone. The simple interface leaves out the tabs it hides, unless
+// one is the open one.
 const panelTabs = computed(() =>
   PANEL.filter((tab) =>
     layout.value === "terminal"
@@ -266,13 +260,10 @@ const panelTab = computed(() =>
 const problemFilter = shallowRef("");
 const output = useTemplateRef("output");
 const { data: levels } = useQuery(levelsQuery);
-/** problemLevels are the levels that count as problems, the worst first. */
 const problemLevels = computed(() => (levels.value ?? []).filter((level) => level.problem));
 const { data: codes } = useQuery(codesQuery);
-/** advice maps a problem's code to what to do about it. */
 const advice = computed(() => new Map((codes.value ?? []).map((code) => [code.id, code.advice])));
-// Health's report for the workspace's load order, built only while the panel shows Problems because building it
-// checks every mod; the status bar counts what it holds
+// Health's report is built only while the panel shows Problems, because building it checks every mod.
 const { data: report } = useQuery(() => ({
   ...reportQuery(workspace.listModIds()),
   enabled: panelTab.value === "problems" && !!editor.panel && workspace.isOpen(),
@@ -292,7 +283,6 @@ const rows = computed<Row[]>(() =>
     return shown.length ? [{ place, count: shown.length }, ...shown] : [];
   }),
 );
-// the Output keeps its newest line in view
 watch(
   () => git.output().length,
   () => output.value?.scrollTo({ top: output.value.scrollHeight }),
@@ -304,12 +294,7 @@ const { data: status } = useQuery(() => ({
   enabled: !!git.findRoot(editor.activeFile()),
 }));
 const activeModel = computed(() => findModel(editor.activeFile()?.key ?? ""));
-const languageName = computed(
-  () =>
-    LANGUAGES.find((language) => language.id === EDITOR_LANGUAGES[activeModel.value?.place.format ?? ""])?.label ??
-    "Plain text",
-);
-// the open files laid out in rows of columns, with the sizes remembered per workspace
+const languageName = computed(() => describeLanguage(EDITOR_LANGUAGES[activeModel.value?.place.format ?? ""]));
 const groupRows = computed(() =>
   editor.layout().rows.map((row, order) => ({
     id: row.columns[0]?.id ?? String(order),
@@ -320,7 +305,7 @@ const groupRows = computed(() =>
   })),
 );
 const layoutKey = computed(() => `pmt.ide.layout.${workspace.activeId()}`);
-// a row's splitter keeps its sizes under its first group's id, which never comes back once the row loses that group
+// A row's splitter keeps its sizes under its first group's id, which never comes back once the row loses that group.
 watch(
   () => groupRows.value.map((row) => row.id),
   (ids, previousIds) => {
@@ -328,11 +313,9 @@ watch(
       localStorage.removeItem(`reka:${layoutKey.value}.${staleId}`);
   },
 );
-// the two files of the compare, read while it is open
 const leftFile = useQuery(() => ({ ...fileQuery(comparing.value?.left.path ?? ""), enabled: !!comparing.value }));
 const rightFile = useQuery(() => ({ ...fileQuery(comparing.value?.right.path ?? ""), enabled: !!comparing.value }));
 const side = computed(() => editor.activeTab()?.side);
-// the status bar shows the indentation of a file open as code, never of a diff
 const { data: indentation } = useQuery(() => ({
   ...indentationQuery(activeModel.value?.place.path ?? ""),
   enabled: !side.value && !!activeModel.value,
@@ -345,27 +328,21 @@ function show(place: Place, preview: boolean): void {
   editor.show(place, undefined, preview ? "explorer" : "navigate");
 }
 
-/**
- * choosePanelTab shows a tab of the panel. While the terminal has a window of its own, its tab brings that window to
- * the front instead. The terminal's own window has only the one tab.
- */
+/** choosePanelTab shows a tab of the panel. The Terminal tab brings the terminal's own window to the front if open. */
 function choosePanelTab(value: string): void {
   if (layout.value !== "full") return;
   if (value === "terminal" && windows.listWindows().includes("terminal")) windows.showWindow("terminal");
   else editor.panel = value;
 }
 
-/**
- * popOutTerminal puts the terminal in a window of its own, and shows Problems here. Its shells' screens go to Go first,
- * for that window to draw.
- */
+/** popOutTerminal puts the terminal in a window of its own, and shows Problems here. */
 async function popOutTerminal(): Promise<void> {
   await useTerminalStore().handOver();
   windows.popOut("terminal");
   editor.panel = "problems";
 }
 
-/** showSidebar shows a sidebar tab, unfolding the sidebar if it is folded. A tab Visual hides brings Code back. */
+/** showSidebar shows a sidebar tab, unfolding the sidebar. A tab Visual hides brings Code back. */
 function showSidebar(value: string): void {
   if (!modeTabs.value.some((tab) => tab.value === value)) editor.mode = "code";
   sidebar.value = value;
@@ -390,7 +367,7 @@ function toggleProblems(): void {
   else editor.showPanel("problems");
 }
 
-/** togglePanel shows the panel, on Problems unless it has a tab already, or closes it if it shows. */
+/** togglePanel shows the panel, or closes it if it shows. */
 function togglePanel(): void {
   if (editor.panel && !isVisual.value) editor.panel = "";
   else editor.showPanel(editor.panel || "problems");
@@ -402,10 +379,7 @@ function toggleWiki(): void {
   else editor.showWiki();
 }
 
-/**
- * listProblems lists the editor's problems and Health's findings for each file open in a tab. A file with no problem is
- * left out.
- */
+/** listProblems lists the editor's problems and Health's findings for each file open in a tab. */
 function listProblems(): { place: Place; problems: Problem[] }[] {
   const places = editor.listTabs().flatMap((tab) => editor.placeOf(tab.key) ?? []);
   return [...new Map(places.map((place) => [place.key, place])).values()].flatMap((place) => {
@@ -415,20 +389,25 @@ function listProblems(): { place: Place; problems: Problem[] }[] {
   });
 }
 
-/** listFindings returns Health's compatibility findings in a file, as problems. Disabled checks are skipped. */
+/** listFindings returns Health's compatibility findings in a file, as problems. */
 function listFindings(place: Place): Problem[] {
   const disabled = settings.value("ide.checks").split(",");
   return (report.value?.compatibility.findings ?? []).flatMap((finding) => {
     if (finding.question !== "compatibility" || disabled.includes(finding.code)) return [];
     const { code, level, facts } = finding;
     const message = joinParts(finding.message);
-    return [...(finding.sites ?? []), ...(finding.repeats ?? [])].flatMap(({ place: site, range }) =>
-      site.key === place.key ? [{ problem: { code, level, message, range, facts }, health: true as const }] : [],
-    );
+    return [...(finding.sites ?? []), ...(finding.repeats ?? [])].flatMap(({ place: site, line, range }) => {
+      if (site.key !== place.key) return [];
+      // a definition's site carries its line but no range, since Go reads no file to make it
+      const shown = range.startLineNumber
+        ? range
+        : { startLineNumber: line, startColumn: 1, endLineNumber: line, endColumn: 1 };
+      return [{ problem: { code, level, message, range: shown, facts }, health: true as const }];
+    });
   });
 }
 
-/** describePlace returns the label of a file in the compare: its origin's name and its relative path. */
+/** describePlace returns the label of a file in the compare. */
 function describePlace(place: Place): string {
   return `${workspace.originName(place.origin)} · ${place.rel}`;
 }
@@ -490,7 +469,7 @@ function collapseAll(): void {
               />
             </UTooltip>
           </div>
-          <!-- the explorer turns invisible, not hidden, behind another view, so its splitter keeps its height -->
+          <!-- The explorer turns invisible, not hidden, behind another view, so its splitter keeps its height. -->
           <div v-if="!collapsed" class="relative flex min-h-0 flex-1 flex-col">
             <USplitter
               :items="explorerPanes"
@@ -649,7 +628,6 @@ function collapseAll(): void {
                 </UTabs>
                 <span class="grow" />
                 <span id="panel-actions" class="contents" />
-                <!-- the terminal's own window closes by the window's own button -->
                 <template v-if="layout === 'full'">
                   <UTooltip v-if="panelTab === 'terminal'" text="Open the terminal in its own window">
                     <UButton
@@ -695,7 +673,7 @@ function collapseAll(): void {
                     :virtualize="{ estimateSize: settings.toPixels(1.5), skipMeasurement: true }"
                     class="min-h-0 flex-1 py-1"
                   >
-                    <!-- the row's tooltip holds its whole message and what to do, so the message takes no title -->
+                    <!-- The row's tooltip holds its whole message, so the message takes no title. -->
                     <UTooltip
                       v-if="'problem' in item"
                       :content="{ side: 'top', align: 'start' }"
@@ -767,7 +745,7 @@ function collapseAll(): void {
         </USplitter>
       </template>
       <template #wiki>
-        <!-- in a window of its own, the Wiki pane follows the main window's active file -->
+        <!-- In a window of its own, the Wiki pane follows the main window's active file. -->
         <WikiPane
           :place="layout === 'wiki' ? windows.findActive('main') : editor.activeFile()"
           class="min-w-0 flex-1"

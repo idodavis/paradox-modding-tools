@@ -9,12 +9,12 @@ holds the `*Service` and asks it for the session at each call.
 
 | file | holds |
 |---|---|
-| `workspace.go` | `FileChange`, `Service` with `ServiceShutdown`, `State`, `Scanning`, `FileText`, `Workspace`; the events; the games and installs (`ListGames`, `DescribePrecedence`, `ListInstalls`, `ListReadyInstalls`, `DetectInstalls`, `AddInstall`, `UpdateInstall`, `ListLanguages`, `DeleteInstall`, `RescanInstall`); `ResetData`; the workspaces (`ListWorkspaces`, `CreateWorkspace`, `UpdateWorkspace`, `DeleteWorkspace`); `Open`, `Session`, `Close`, `State`, `LookupMod`, `ResolveFolder`; `Launch`; the files (`Read`, `ReadHeader`, `Write`, `WriteBytes`, `CreateCopy`, `ListFolder`, `Create`, `Rename`, `Delete`, `Restore`, `Locate`); `ServeHTTP` |
-| `session.go` | the package comment; `Session`, `Document`; the open: the install's caches, the mods' scan and the watcher; `ScanOrder`; `Close`; the documents, trees and buffers (`ParseDocument`, `LoadDocument`, `LoadTree`, `SetText`, `CloseBuffer`, `LookupBuffer`, `LoadSource`); the texts (`LookupText`, `LookupTitle` with a concept's and a message's title keys, `FindTitleKey`, `FindTextKey`); `FindStatement`; `Rescan` |
-| `mod.go` | `Descriptor`, `Dependency` and `Mod`; a workspace's mods (`AddMod`, `ListMods`, `CreateMod`, `ResolveModFolder`, `CheckModFolder`, `RemoveMod`, `ReorderMods`, `ResetColors`, `UpdateMod`) and their color slots; `ReadDescriptor`, `ParseDescriptor` (the one reader of a descriptor's text, script or JSON), `WriteDescriptor`; `ListDependencies` (a mod's dependencies, all the way down), `Session.DescribeMod` (a mod's title), `MatchVersion` (whether a supported version fits the game's); `FindMod` (the mod a descriptor's dependency names, by its id or its name); `Mod.ResolveWorkshopID` (the record's Workshop id, else the descriptor's); a new mod's skeleton and its localization file (`FindLocalizationFile`, `CreateLocalization`); the thumbnail |
+| `workspace.go` | the service: the events, the games and installs, the workspaces, `Open`, `Launch`, the reading and writing of files, `ServeHTTP` |
+| `session.go` | `Session` and `Document`; the open; the documents, trees and buffers; the texts and titles; `Rescan` |
+| `mod.go` | `Descriptor`, `Dependency` and `Mod`; a workspace's mods and their color slots; the descriptors; a new mod's skeleton |
 | `locate.go` | `Place`, `Session.Locate`, `ListCopies`, `ListRoots` |
 | `revert.go` | `Hunk`; `RevertHunks`, an agent's edits to a file taken back |
-| `watcher.go` | `Watcher`: the folders it watches, the bursts of changes it reports together, and `Move` |
+| `watcher.go` | `Watcher` and its `Move` |
 
 ## The one open session
 
@@ -56,16 +56,16 @@ through it too. A broken mod, whose folder is missing, is left out.
 
 `LookupText` returns a localization key's text in the session's language, else in the base language, with the message
 the game keeps: one in a replace folder wins, for the reason `replace-folder`, in the game's form of the folder that
-wins first (`LocReplaceFolders`). Where several messages share the best place, in one form of the folder or outside
-it, which the game shows is not documented, so the first loaded comes back with the reason `unsettled`. The install
-keeps only the base language's texts, so a game file's text in another language is read from its file when asked.
+wins first (`LocReplaceFolders`). Where several messages share the best place, which the game shows is not documented,
+so the first loaded comes back with the reason `unsettled`. The install keeps only the base language's texts, so a
+game file's text in another language is read from its file when asked.
+
 `LookupTitle` returns the text a definition is shown by: its title key's message, else the message named like it, for
 a game concept the message of the game's concept prefix and its name, and for a message the game's message title key
-(`game.Game.MessageTitle`, Vic3's `notification_<name>_name`). `FindTextKey` gives the key a statement writes under
-a text's key, such as `title` or `desc`: its value, or for a block such as a `first_valid` of triggered descs the first
+(`game.Game.MessageTitle`, Vic3's `notification_<name>_name`). `FindTextKey` gives the key a statement writes under a
+text's key, such as `title` or `desc`: its value, or for a block such as a `first_valid` of triggered descs the first
 desc in it, which every block title of the three games holds, or a `text` written directly in it (`game.LabelKey`), as
 an option's triggered name holds (the events write `name = {` 3,071 times in CK3, 9 in Vic3, 25 in EU5).
-`FindStatement` returns the tree and the statement of a site.
 
 ## Places
 
@@ -83,10 +83,9 @@ Every write is refused outside the workspace's mods and in the game's own files.
 encoding, atomically, and `WriteBytes` writes bytes the same way for Go's callers. `CreateCopy` copies a file of the
 game or of another mod to the same place in a mod, the place the game needs for the copy to replace it, and refuses
 when the mod has a file there already. `Delete` moves a file or a folder into PMT's trash and returns where it went, for
-`Restore`.
-Deleting a mod's root folder removes the mod from the workspace too. `ListFolder` lists a folder with the place of each
-entry, and leaves out binary files unless the workspace shows them. `Read` gives a file that is not text back as
-binary, with no text, so the editor says it cannot show it.
+`Restore`. Deleting a mod's root folder removes the mod from the workspace too. `ListFolder` lists a folder with the
+place of each entry, and leaves out binary files unless the workspace shows them. `Read` gives a file that is not text
+back as binary, with no text, so the editor says it cannot show it.
 
 `RevertHunks` gives a file back its text from before an agent's edits, which the page reads from the agent's diffs as
 each edit's hunks. It refuses a file with unsaved text in the editor and an edit with no hunk. It takes the edits back
@@ -102,38 +101,35 @@ frame of a sprite sheet or one of a DDS's smaller mip levels.
 
 A `Watcher` watches the mods' folders and every folder made under them. It leaves out the hidden ones, but watches the
 dot folders the explorer shows files of (`watchedFolders`): the coding agents' `.claude`, `.codex` and `.github`, and
-the Workshop listing's `.workshop`. So an edit there reaches an open tab and the explorer. The first event of a burst
-starts a timer that later events do not reset. When it ends, every path the burst touched is reported once, as
-deleted where it no longer exists. The session scans the batch again through `index.Index.ScanFiles`, the watched
-dot folders left out, since the index skips every dot folder, then emits `fs:changed` for each path. The watcher
-judges nothing.
+the Workshop listing's `.workshop`. The first event of a burst starts a timer that later events do not reset. When it
+ends, every path the burst touched is reported once, as deleted where it no longer exists. The session scans the batch
+again through `index.Index.ScanFiles`, the watched dot folders left out, since the index skips every dot folder, then
+emits `fs:changed` for each path. The watcher judges nothing.
 
 `Rename` and `Delete` move through `Watcher.Move`. It stops watching the folders under the source while the move runs,
 since Windows refuses to move a folder while a folder inside it is watched, and watches them again if the move fails.
-A renamed folder is watched again from its first event.
 
 ## Mods and their descriptors
 
 A `Mod` is the config's record (`app.Mod`) with its `Descriptor`, its thumbnail, and whether it is broken or a Workshop
-mod's copy. A
-`Descriptor` is the mod's own description as its game writes it: CK3's `.mod` file, or Vic3's and EU5's
+mod's copy. A `Descriptor` is the mod's own description as its game writes it: CK3's `.mod` file, or Vic3's and EU5's
 `.metadata/metadata.json`, as the game's `ModDescriptor` row says. `ReadDescriptor` reads either form; metadata.json
-also gives each `Dependency` its title, its relationship's `display_name`, beside its id.
-`WriteDescriptor` writes it back and keeps the fields a `Descriptor` does not model. A mod's thumbnail is a thumbnail
-picture where the game keeps one, else the picture the descriptor names.
+also gives each `Dependency` its title, its relationship's `display_name`, beside its id. `WriteDescriptor` writes it
+back and keeps the fields a `Descriptor` does not model. A mod's thumbnail is a thumbnail picture where the game keeps
+one, else the picture the descriptor names.
 
 `CreateMod` makes a new mod's skeleton: its folder, the folders the game expects, a descriptor that supports the game's
 release, a launcher file beside the folder for a game that lists mods by one, and a localization file that holds only
-its header. `FindLocalizationFile` names that file: the mod's name as a slug, with the language's suffix, in the
-language's folder. lsp's quick fix adds keys to it in the base language. `CreateLocalization` is the one writer of a
-localization file's header: the fix calls it when the mod lacks the file, and Health's scaffold for a file it creates.
-`MatchVersion` says whether a mod made for a supported version runs on a game version, part by part, a `*` matching
-the rest, and whether any source shows the games matching such a version at all.
+its header. `FindLocalizationFile` names that file. lsp's quick fix adds keys to it in the base language.
+`CreateLocalization` is the one writer of a localization file's header: the fix calls it when the mod lacks the file,
+and Health's scaffold for a file it creates. `MatchVersion` says whether a mod made for a supported version runs on a
+game version, part by part, a `*` matching the rest, and whether any source shows the games matching such a version at
+all.
 
-`ResolveModFolder` names the folder a mod's name makes and refuses a name with no letter or digit and a folder that
-exists. `checkModFolder` is the one rule for a folder that can be a mod: it is a folder, it is not the game's own or
-inside it, and it has the game's descriptor. `AddMod` calls it, and `CheckModFolder` lets the new-mod form call it
-for a folder picked.
+`checkModFolder` is the one rule for a folder that can be a mod: it is a folder, it is not the game's own or inside it,
+and it has the game's descriptor. `AddMod` calls it, and `CheckModFolder` lets the new-mod form call it for a folder
+picked. `ResolveModFolder` names the folder a mod's name makes and refuses a name with no letter or digit and a folder
+that exists.
 
 ## Launch
 

@@ -1,5 +1,5 @@
-// Package app is the service for the app itself, such as its updates, settings and windows. It also holds
-// config.json, which every other service reads and writes.
+// Package app is the service for the app itself, such as its updates, settings and windows. It also holds config.json,
+// which every other service reads and writes.
 package app
 
 import (
@@ -49,8 +49,7 @@ func ResolveDirs() (Dirs, error) {
 	return dirs, nil
 }
 
-// LoadJSON reads a JSON file into a value. A missing file gives the zero value and no error. A file that is not valid
-// JSON for the value is an error.
+// LoadJSON reads a JSON file into a value. A missing file gives the zero value and no error.
 func LoadJSON[T any](path string) (T, error) {
 	var value, zero T
 	content, err := os.ReadFile(path)
@@ -66,7 +65,7 @@ func LoadJSON[T any](path string) (T, error) {
 	return value, nil
 }
 
-// SaveJSON writes a value to a file as indented JSON. The file is replaced whole, so a failed write leaves the old one.
+// SaveJSON writes a value to a file as indented JSON. A failed write leaves the old file.
 func SaveJSON(path string, value any) error {
 	content, err := json.MarshalIndent(value, "", "  ")
 	if err != nil {
@@ -127,8 +126,7 @@ type Workspace struct {
 	IgnoredPairs [][2]string `json:"ignoredPairs"`
 }
 
-// An Agent is one coding agent PMT can start for a chat: one PMT offers, which the ACP registry describes, or one the
-// user adds as a program of their own.
+// An Agent is one coding agent PMT can start for a chat: one PMT offers, or one the user adds as their own program.
 type Agent struct {
 	ID       string   `json:"id"` // the registry's id of one PMT offers
 	Name     string   `json:"name"`
@@ -161,7 +159,7 @@ type Setting struct {
 	Help      string   `json:"help"`
 	Section   string   `json:"section"`   // appearance, terminal, or an IDE area (editor, language, checks, …)
 	Workspace bool     `json:"workspace"` // it is kept per workspace
-	Type      string   `json:"type"`      // switch, choice, number, text
+	Type      string   `json:"type"`      // switch, choice, number, port (a number written as its digits), text
 	Default   string   `json:"default"`
 	Choices   []string `json:"choices,omitempty"`
 	Min       int      `json:"min,omitempty"` // a number's range; both 0 when it has none
@@ -207,7 +205,7 @@ var Catalog = []Setting{
 			"Windows: pwsh on the PATH, then PowerShell 7, then Windows PowerShell. On Linux: your $SHELL, else sh.",
 		Words: "terminal shell pwsh powershell bash zsh wsl program console default"},
 	{Key: "agents.port", Label: "Port",
-		Section: "agents", Type: "number", Default: "47820", Min: 1024, Max: 65535,
+		Section: "agents", Type: "port", Default: "47820", Min: 1024, Max: 65535,
 		Help: "Fixed, so an agent registers PMT once. PMT's tools listen on 127.0.0.1 only. A new port takes " +
 			"effect when PMT starts again, and each agent is registered again.",
 		Words: "mcp agents server port claude copilot codex"},
@@ -337,8 +335,8 @@ var Catalog = []Setting{
 		Words: "gui preview mode code coat"},
 }
 
-// A ConfigFile is config.json held in memory for every service. A missing file means a first run. A file that cannot be
-// read gives an empty, read-only config, so the real file is never overwritten.
+// A ConfigFile is config.json held in memory for every service. A file that cannot be read gives an empty, read-only
+// config, so the real file is never overwritten.
 type ConfigFile struct {
 	Dirs     Dirs // PMT's folders
 	path     string
@@ -363,7 +361,7 @@ func (file *ConfigFile) Config() Config {
 }
 
 // Update runs a change on a copy of the config, saves the result and emits config:changed with the given section
-// ("" means all). It returns the change's error, or an error if the config is read-only or cannot be saved. A failed
+// ("" for all). It returns the change's error, or an error if the config is read-only or cannot be saved. A failed
 // change or save leaves the config as it was.
 func (file *ConfigFile) Update(section string, change func(config *Config) error) error {
 	file.mu.Lock()

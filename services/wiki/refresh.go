@@ -1,5 +1,4 @@
-// refresh.go fetches the wiki's listing of modding pages and patch versions, then every page the listing names that the
-// cache lacks or holds stale.
+// refresh.go fetches the wiki's listing, then every page it names that the cache lacks or holds stale.
 
 package wiki
 
@@ -15,7 +14,7 @@ import (
 	"paradox-modding-tools/services/app"
 )
 
-// A Summary is one page in the listing: its title and the category it is in.
+// A Summary is one page in the listing.
 type Summary struct {
 	Title    string `json:"title"`
 	Category string `json:"category"`
@@ -28,8 +27,18 @@ type Listing struct {
 	RefreshedAt time.Time `json:"refreshedAt"`
 }
 
-// The wiki's two categories this package lists, the file the listing is cached in, how old a cached page may be and
-// how the title of a patch page begins.
+// An answer is one reply of the wiki's API to a query for a category's members, and how to ask for the rest.
+type answer struct {
+	Continue map[string]string `json:"continue"`
+	Query    struct {
+		CategoryMembers []struct {
+			Title string `json:"title"`
+		} `json:"categorymembers"`
+	} `json:"query"`
+}
+
+// The wiki's two listed categories, the listing's cache file, the age at which a cached page is stale and the start of
+// a patch page's title.
 const (
 	moddingCategory = "Modding"
 	patchCategory   = "Patches"
@@ -38,13 +47,11 @@ const (
 	patchPrefix     = "Patch "
 )
 
-// patchTitle matches the title of one patch's page, such as "Patch 1.20", or of a minor version's hotfix notes, such
-// as "Patch 1.20.X", and holds the version.
+// patchTitle matches the title of a patch's page, such as "Patch 1.20" or "Patch 1.20.X", and holds the version.
 var patchTitle = regexp.MustCompile(`^` + patchPrefix + `(\d+(?:\.\d+)*(?:\.X)?)$`)
 
 // Refresh fetches the listing and every page it names that is missing or stale, calling the given function after each
-// page. It returns an error if the listing cannot be fetched or cached. A page that cannot be fetched does not stop
-// the others, and the errors of such pages are joined and returned.
+// page. It returns an error if the listing fails. A page that fails does not stop the others; their errors are joined.
 func (client *Client) Refresh(progress func(done, total int)) error {
 	listing, err := client.fetchListing()
 	if err != nil {
@@ -69,8 +76,7 @@ func (client *Client) LoadListing() (Listing, bool) {
 	return listing, err == nil && !listing.RefreshedAt.IsZero()
 }
 
-// fetchListing fetches the modding pages and the patch versions the wiki has. It returns an error if either category
-// cannot be fetched.
+// fetchListing fetches the modding pages and the patch versions the wiki has.
 func (client *Client) fetchListing() (Listing, error) {
 	listing := Listing{RefreshedAt: time.Now()}
 	titles, err := client.listCategory(moddingCategory)
@@ -92,8 +98,7 @@ func (client *Client) fetchListing() (Listing, error) {
 	return listing, nil
 }
 
-// listCategory returns the titles of the articles in one of the wiki's categories. It returns an error if a request
-// to the wiki fails.
+// listCategory returns the titles of the articles in one of the wiki's categories.
 func (client *Client) listCategory(category string) ([]string, error) {
 	params := url.Values{
 		"action":      {"query"},
@@ -103,25 +108,27 @@ func (client *Client) listCategory(category string) ([]string, error) {
 		"cmlimit":     {"500"},
 	}
 	var titles []string
-	for {
-		var response struct {
-			Continue map[string]string `json:"continue"`
-			Query    struct {
-				CategoryMembers []struct {
-					Title string `json:"title"`
-				} `json:"categorymembers"`
-			} `json:"query"`
-		}
-		if err := client.fetch(params, &response); err != nil {
-			return nil, err
-		}
-		for _, member := range response.Query.CategoryMembers {
+	err := client.queryAll(params, func(reply answer) {
+		for _, member := range reply.Query.CategoryMembers {
 			titles = append(titles, member.Title)
 		}
-		if response.Continue == nil {
-			return titles, nil
+	})
+	return titles, err
+}
+
+// queryAll sends a query to the wiki's API, then each query for the rest of its answer, and hands every reply to the
+// given function. It returns an error if a request fails.
+func (client *Client) queryAll(params url.Values, each func(reply answer)) error {
+	for {
+		var reply answer
+		if err := client.fetch(params, &reply); err != nil {
+			return err
 		}
-		for key, value := range response.Continue {
+		each(reply)
+		if reply.Continue == nil {
+			return nil
+		}
+		for key, value := range reply.Continue {
 			params.Set(key, value)
 		}
 	}

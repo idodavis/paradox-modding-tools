@@ -1,7 +1,6 @@
 <!--
   Links the code editor beside the picture to it; it renders nothing itself. It marks the lines of the selected and
-  hovered widgets, shows each one's drawn size and a gutter eye to hide it, flags what the game's files did not give,
-  and scrolls a selection into view. Hovering code hovers the widget, and the caret selects it.
+  hovered widgets, shows each one's drawn size and a gutter eye, and flags what the game's files did not give.
 -->
 <script setup lang="ts">
 import { refDebounced } from "@vueuse/core";
@@ -56,10 +55,7 @@ const dimmed = computed(() => {
 /** toLines returns the whole lines of a block, from its first to its last. */
 const toLines = (range: IRange) => new Range(range.startLineNumber, 1, range.endLineNumber, 1);
 
-/**
- * findBlock returns the block of the given widget if it is written in this file. Otherwise it returns the block of the
- * nearest ancestor that is, or undefined if there is none.
- */
+/** findBlock returns the block of the given widget, or of its nearest ancestor written in this file. */
 function findBlock(id: number | null): (typeof blocks)[number] | undefined {
   let current = id;
   while (current !== null && current >= 0) {
@@ -70,11 +66,11 @@ function findBlock(id: number | null): (typeof blocks)[number] | undefined {
   return undefined;
 }
 
-/** findWidget returns the id of the deepest widget whose block holds the given position, or undefined if none does. */
+/** findWidget returns the id of the deepest widget whose block holds the given position. */
 const findWidget = (position: IPosition) =>
   own.value.findLast(({ range }) => Range.containsPosition(range, position))?.id;
 
-/** findEye returns the widgets whose eye the pointer is on, or undefined if it is on no eye. */
+/** findEye returns the widgets whose eye the pointer is on. */
 const findEye = ({ type, position }: monacoEditor.IMouseTarget) =>
   type === monacoEditor.MouseTargetType.GUTTER_GLYPH_MARGIN
     ? firstLines.value.get(position?.lineNumber ?? 0)

@@ -1,5 +1,4 @@
-// contents.go reads and writes the contents of files. It decodes a text file into a Text that remembers how the file
-// was stored, writes files whole or not at all, keeps gob caches and unpacks zip archives.
+// contents.go reads and writes the contents of files: text in its encoding, atomic writes, gob caches and zips.
 
 package files
 
@@ -80,8 +79,7 @@ func LoadText(path string) (Text, error) {
 	return text, err
 }
 
-// DecodeText decodes the bytes of a text file. A byte order mark means UTF-8 with one. Without it, valid UTF-8 is
-// UTF-8 and any other bytes are Windows-1252.
+// DecodeText decodes the bytes of a text file. Bytes that are not UTF-8 are read as Windows-1252.
 func DecodeText(content []byte) Text {
 	text := string(content)
 	switch {
@@ -94,8 +92,7 @@ func DecodeText(content []byte) Text {
 	return Text{Text: string(decoded), Encoding: EncodingWindows1252}
 }
 
-// Encode returns the bytes of the text in its encoding, with the byte order mark if it had one. A character that
-// Windows-1252 cannot hold becomes `?`.
+// Encode returns the bytes of the text in its encoding. A character Windows-1252 cannot hold becomes `?`.
 func (text Text) Encode() []byte {
 	switch text.Encoding {
 	case EncodingUTF8BOM:
@@ -119,13 +116,12 @@ func WriteText(path string, text Text) error {
 	return WriteAtomic(path, text.Encode())
 }
 
-// WriteAtomic writes the bytes to the file at the given path so that the file is replaced whole or not at all. It
-// makes the file's folder first. A failed write leaves no temporary file behind.
+// WriteAtomic writes the bytes to the file at the given path, replacing the file whole or not at all. It makes the
+// file's folder first.
 func WriteAtomic(path string, content []byte) error {
 	if err := os.MkdirAll(filepath.Dir(path), 0o755); err != nil {
 		return err
 	}
-	// The bytes go to a temporary file beside the target, which is then renamed over it.
 	temp, err := os.CreateTemp(filepath.Dir(path), filepath.Base(path)+".*")
 	if err != nil {
 		return err
@@ -162,9 +158,8 @@ func SaveGob(path string, value any) error {
 	return WriteAtomic(path, buffer.Bytes())
 }
 
-// Unzip writes the files of a zip into the given folder. A top folder that holds every file is left out of their
-// paths, and links are skipped. It returns an error if a file cannot be read or written, or if the zip names a path
-// outside the folder.
+// Unzip writes the files of a zip into the given folder, without a top folder that holds every file, and skips links.
+// It returns an error if a file cannot be written or the zip names a path outside the folder.
 func Unzip(archive *zip.Reader, dir string) error {
 	entries := lo.Filter(archive.File, func(entry *zip.File, _ int) bool {
 		return !entry.FileInfo().IsDir() && entry.Mode()&fs.ModeSymlink == 0

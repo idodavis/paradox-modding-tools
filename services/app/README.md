@@ -8,8 +8,8 @@ opens, and reads and writes the config through it.
 
 | file | holds |
 |---|---|
-| `app.go` | the events; `DevBuild`; `Service` with `ServiceStartup` and `ServiceShutdown`; `Update`, `Release`; `OpenConfig`, `OpenLog`; the version and the updater (`Version`, `CheckUpdate`, `ApplyUpdate`, `ListReleases`); `FetchURL`; the settings (`ListSettings`, `ReadSettings`, `WriteSetting`); the log (`CrashedLastRun`, `BuildDiagnostics`); `ShowFolder`; the windows (`OpenMainWindow`, `OpenWindow`, `ShowWindow`, `CloseWindow`) |
-| `config.go` | the package comment; `Dirs` and `ResolveDirs`; `LoadJSON`, `SaveJSON`; the records (`Install`, `Era`, `Calendar`, `Mod`, `Workspace`, `Agent`, `Window`, `Config`); `Setting` and `Catalog`; `ConfigFile` with `Config`, `Update` and `LookupSetting` |
+| `app.go` | the events and `Service`; the updater and `FetchURL`; the settings; the log and the running mark; the windows |
+| `config.go` | `Dirs`; the records; `Setting` and `Catalog`; `ConfigFile` |
 
 ## PMT's folders
 
@@ -33,14 +33,9 @@ by its splitter as a share of the window, so a window opened at its closing size
 A missing file is a first run. Any other read failure gives an empty config that is read-only, so a passing fault never
 overwrites the real file. The config carries no format version: a changed record means Reset data, never a migration.
 
-The records are plain. An `Install` is one game install PMT has recorded, with its version and when it was last
-scanned. A `Workspace` is an install and its mods in load order, with its language, its home page, the color of the
-game's files, whether the IDE opens with no tabs and the explorer lists binary files, whether the first-mod checklist
-and the IDE's start page are hidden, its own settings and the pairs of mods whose conflicts it ignores. A `Mod` is a
-mod's folder with its color, its `Calendar`, its Workshop id, its upload exclusions and whether it is left out of the
-compatibility checks. The open workspace's view of a mod, with its descriptor, is `workspace.Mod`, which embeds this
-record. An `Agent` is a coding agent: one the user adds, a name with a program and its arguments, or a row of the
-agents PMT offers, which the `agent` package holds.
+The records are plain, and the fields of each say what it holds. The open workspace's view of a mod, with its
+descriptor, is `workspace.Mod`, which embeds `Mod`. An `Agent` is one the user adds, a name with a program and its
+arguments, or a row of the agents PMT offers, which the `agent` package holds.
 
 ## Settings
 
@@ -61,9 +56,8 @@ the log.
 
 `CheckUpdate` asks the project's GitHub releases through Wails's updater, and emits `app:update` when a newer version
 exists. `ApplyUpdate` downloads it beside the app and restarts into it. `ListReleases` lists the releases from the
-newest down to the one running, with their notes, and leaves out drafts and prereleases; a build that is no release,
-such as a dev build, gets the newest alone. `FetchURL` downloads a web address within a time limit, with PMT's user
-agent, for this service and the others that read the web.
+newest down to the one running, with their notes, and leaves out drafts and prereleases. `FetchURL` downloads a web
+address with PMT's user agent, for this service and the others that read the web.
 
 ## Windows
 
@@ -73,7 +67,7 @@ the bar's empty space, which `--wails-draggable` marks.
 Wails's JavaScript runtime acts only on the window that calls it, so showing or closing another window goes through
 this service. The main window's close is held and sent to the page as `window:closing`, until `CloseWindow` lets it
 through and the app quits. A window that `OpenWindow` opens gets one `window:closing` before it closes, so the page can
-hand its tabs back. It closes when the page closes it again, or when a timer ends, and `window:closed` follows.
+hand its tabs back. It closes when the page closes it again, or after a timeout, and `window:closed` follows.
 
 ## Events
 

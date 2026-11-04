@@ -16,7 +16,7 @@ const {
   find = "",
 } = defineProps<{
   id: string;
-  /** The version whose notes are shown, as the route names it; the newest when it names none. */
+  /** The version whose notes are shown, as the route names it. */
   patch?: string;
   /** Text to find in the notes shown. */
   find?: string;
@@ -31,7 +31,6 @@ const workspace = useWorkspaceStore();
 const { data: state } = useQuery(stateQuery);
 const { data: notes } = useQuery(() => ({ ...notesQuery, enabled: workspace.isOpen() }));
 
-// the version shown is the one chosen or the route names, else the newest, which Go lists first
 const choice = shallowRef<string>();
 watch(
   () => id,

@@ -67,14 +67,14 @@ func (stm *Service) ToBBCode(markup string) string {
 	return strings.TrimRight(bbcode.String(), "\n")
 }
 
-// writeChildren writes the children of an HTML node as BBCode. An HTML comment writes nothing, and so does an empty
-// paragraph that is alone in its parent, such as an empty table cell's.
+// writeChildren writes the children of an HTML node as BBCode. An empty paragraph that is alone in its parent, such as
+// an empty table cell's, writes nothing.
 func writeChildren(bbcode *strings.Builder, parent *html.Node) {
 	for node := range parent.ChildNodes() {
 		switch {
 		case node.Type == html.TextNode:
 			writeText(bbcode, node.Data)
-		case node.Type != html.ElementNode: // a comment or a doctype writes nothing
+		case node.Type != html.ElementNode: // a comment or a doctype
 		case node.DataAtom == atom.Br:
 			bbcode.WriteString("\n")
 		case node.DataAtom == atom.P:

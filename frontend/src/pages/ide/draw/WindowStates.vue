@@ -1,7 +1,6 @@
 <!--
-  The States tab of a window's panel. It shows the conditions on the way down to the selected widget, with a Show it
-  button, then the states that change what is drawn under it. The states are grouped by what they are about: the window
-  itself, each object, what an object has, and the rows of each list.
+  The States tab of a window's panel: the conditions on the way down to the selected widget, then the states that change
+  what is drawn under it.
 -->
 <script setup lang="ts">
 import { useMutation, useQuery } from "@pinia/colada";
@@ -26,7 +25,7 @@ type Box = Group["box"] & { groups: Group[] };
 // EVERY and NONE are Go's picks for every value of a group at once and for none.
 const EVERY = "*every";
 const NONE = "none";
-// FIRST is the rows a box shows before More. SEGMENTS is the most values a segmented control holds before a select.
+// FIRST is the rows a box shows before More. SEGMENTS is the most values a segmented control holds.
 const FIRST = 6;
 const SEGMENTS = 5;
 
@@ -42,7 +41,6 @@ const { data: states } = useQuery(() => ({
   enabled: workspace.isOpen(),
 }));
 const groups = computed(() => window.groups ?? []);
-// The picked value of each group, by group id.
 const values = computed(() => states.value?.values ?? {});
 const hidden = computed(() => new Set(states.value?.hidden ?? []));
 const changes = computed(() => groups.value.filter((group) => group.id in store.picks).map(({ id }) => id));
@@ -64,10 +62,8 @@ const isHidden = computed(() => chain.value.some((id) => hidden.value.has(id)));
 
 const search = shallowRef("");
 const query = refDebounced(search, 150);
-// changedOnly limits the boxes to the states changed from the window's opening, wherever they apply.
 const changedOnly = shallowRef(false);
-// The groups the search finds, the widest reach first. They change what is drawn under the selection, or anywhere if
-// nothing is selected. A list of pictures is left out, as it is picked in Properties.
+// The groups the search finds, the widest reach first. A list of pictures is left out, as it is picked in Properties.
 const candidates = computed(() => {
   const selected = file.value.selected ?? 0;
   const applies = (group: Group) =>
@@ -79,8 +75,7 @@ const candidates = computed(() => {
     .filter((group) => matchQuery(query.value, group.subject, group.key, group.label, group.id))
     .toSorted((first, second) => (second.reach ?? 0) - (first.reach ?? 0));
 });
-// The candidates in the boxes Go puts them in: the window's own first, then the objects' with their kinds merged and
-// the widest reach first, then the rows of each list.
+// The candidates in the boxes Go puts them in: the window's own, then the objects', then the rows of each list.
 const boxes = computed<Box[]>(() => {
   const grouping = Map.groupBy(candidates.value, (group) => group.box.id);
   const shown = [...grouping.values()].map((members): Box => ({ ...members[0].box, groups: members }));
@@ -91,7 +86,7 @@ const boxes = computed<Box[]>(() => {
   ];
 });
 
-// The boxes folded or opened by hand (a list's rows start folded, the rest open), and the boxes showing all their rows.
+// The boxes folded or opened by hand, and the boxes showing all their rows.
 const overrides = shallowRef(new Set<string>());
 const wholeBoxes = shallowRef(new Set<string>());
 
@@ -107,8 +102,7 @@ watch(() => file.value.selected, reset);
 
 /**
  * mergeKinds merges boxes that ask the same thing of objects of one kind, told apart only by their key, into one box of
- * chips with a chip for each key, such as a character's relations to the player. Each such box holds one group of two
- * values at most. The result is sorted by reach.
+ * chips, such as a character's relations to the player. The result is sorted by reach.
  */
 function mergeKinds(list: Box[]): Box[] {
   const isSingle = (box: Box) =>
@@ -134,19 +128,19 @@ function isList(box: Box): boolean {
   return box.id.startsWith("item:");
 }
 
-/** isFolded reports whether a box is folded: a list's rows start folded, the rest open, and a fold flips that. */
+/** isFolded reports whether a box is folded. A list's rows start folded, the rest open. */
 function isFolded(box: Box): boolean {
   return isList(box) !== overrides.value.has(box.id);
 }
 
-/** fold folds a box that is open, and opens one that is folded. */
+/** fold folds a box, or opens it if folded. */
 function fold(box: Box): void {
   const next = new Set(overrides.value);
   if (!next.delete(box.id)) next.add(box.id);
   overrides.value = next;
 }
 
-/** listRows lists the groups a box shows: its first rows, or every row once opened whole or while searching. */
+/** listRows lists the groups a box shows: its first rows, or all once opened whole or while searching. */
 function listRows(box: Box): Group[] {
   return wholeBoxes.value.has(box.id) || query.value ? box.groups : box.groups.slice(0, FIRST);
 }
@@ -164,29 +158,29 @@ function isUnder(id: number, holder: number): boolean {
   }
 }
 
-/** listValues lists the values a group can be picked at, without every value and none. */
+/** listValues lists the values a group can be picked at, without the every and none picks. */
 function listValues(group: Group): string[] {
   return (group.options ?? []).filter((option) => option !== EVERY && option !== NONE);
 }
 
-/** toTitle converts a group's object to words: its kind and the key that picks it. */
+/** toTitle converts a group's object to words. */
 function toTitle(group: Group): string {
   return [group.subject, group.key].filter(Boolean).join(" ");
 }
 
-/** listChoices lists a group's choices in two sections: the values the window asks of it, then all and none. */
+/** listChoices lists a group's choices in two sections: its values, then every and none. */
 function listChoices(group: Group): { label?: string; value: string }[][] {
   const toChoice = (value: string) => ({ label: group.captions?.[value], value });
   const lists = [listValues(group), [EVERY, NONE].filter((option) => group.options?.includes(option))];
   return lists.filter((list) => list.length).map((list) => list.map(toChoice));
 }
 
-/** isOn reports whether a group of one value is on: its picked value is not none. */
+/** isOn reports whether a group of one value is on. */
 function isOn(group: Group): boolean {
   return values.value[group.id] !== NONE;
 }
 
-/** yesOption returns the option that Yes picks for a group of one value: its value, else every value. */
+/** yesOption returns the option that Yes picks for a group of one value. */
 function yesOption(group: Group): string {
   return listValues(group)[0] ?? EVERY;
 }

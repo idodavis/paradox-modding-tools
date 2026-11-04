@@ -14,10 +14,9 @@ offsets. It knows no game and no index: what a key names, and which message the 
 
 ## The file
 
-A `File` is one parsed localization file: its `Language`, its `Messages`, its parse errors and its line index. A
-`Message` is one line of it: a key, its version and its text, with the span of the whole message, of the key and of
-the text without its quotes. `ParseMessage` reads one line, given where the line starts in its file, so that the spans
-come out in the file's offsets.
+A `File` is one parsed localization file. A `Message` is one line of it: a key, its version and its text, with the span
+of the whole message, of the key and of the text without its quotes. `ParseMessage` reads one line, given where the
+line starts in its file, so that the spans come out in the file's offsets.
 
 `Parse` never fails. A line above the header is an error, `loc-content-before-header`, and is not read. A line that is
 neither a header, a comment nor a message is `malformed-line`. A message with no closing quote is
@@ -25,13 +24,13 @@ neither a header, a comment nor a message is `malformed-line`. A message with no
 
 ## The language
 
-A file's language is decided once, by the first of three that says: the `l_<language>:` header, then the
+A file's language is decided by the first of three that says: the `l_<language>:` header, then the
 `_l_<language>.yml` ending of the file's name, then the folder under `localization` that holds the file, a `replace`
 folder skipped. Each is read without regard to case. The language is "" if none of them says. `ToLanguageRel` gives the
 path of the file that holds the same messages in another language, setting the language in the folder and in the name
-where the file has them. `ToLanguageKey` writes a language as the game does, `l_english`. A `Language` is one
-language's folder and its name in English; `DescribeLanguage` gives that name for a folder, such as Simplified Chinese
-for `simp_chinese`, or the folder itself for a language it does not know.
+where the file has them. `ToLanguageKey` writes a language as the game does, `l_english`. `DescribeLanguage` gives a
+folder's name in English, such as Simplified Chinese for `simp_chinese`, or the folder itself for a language it does
+not know.
 
 ## Markup
 
@@ -41,17 +40,14 @@ markups are plain text, `$key$` (another message's text, or a value the game fil
 without its markers, and its `TextSpan` is where that text sits. A format's segment is followed by the segments of the
 calls and keys written inside it.
 
-`ToPlain` joins the plain pieces into the text a player reads, the markup dropped and each break a newline.
-
 A segment's `Kind` is empty as parsed. It says what kind of value a data call shows, number or text, where the
 segment's `Text` holds a sample of that value instead of the call.
 
 ## The writer
 
 `Encode` writes the text of a localization file for one language: the header, then its messages. `EncodeMessages`
-writes the messages alone, each as its key, its version and its quoted text, in the layout the game reads, with the
-line ending of the file they join. `EncodeAddition` writes what adds messages at the end of a file's text: a line break
-first where the text lacks a final one, then the messages, in the text's own line ending.
+writes the messages alone, in the layout the game reads. `EncodeAddition` writes what adds messages at the end of a
+file's text, with a line break first where the text lacks a final one, in the text's own line ending.
 
 ## Terms
 

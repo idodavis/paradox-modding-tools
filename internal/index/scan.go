@@ -36,8 +36,8 @@ type collector struct {
 }
 
 // Scan builds the index of an install's files, in parallel. The roots are the game's, then each DLC's, in load order,
-// and the listing is the files under them, as ListFiles returns. The progress function is called with the name of each
-// stage, and during indexing with the percent of the files done.
+// and the listing is what ListFiles returns for them. The progress function is called with the name of each stage, and
+// with the percent done during indexing.
 func Scan(schema *schema.Schema, roots []files.Root, listing []files.File, progress func(stage string, percent int)) *Index {
 	index := newIndex(schema, nil, roots, listing)
 	progress("indexing", 0)
@@ -69,9 +69,8 @@ func ParseFile(path string) (*jomini.Tree, error) {
 	return jomini.Parse(text.Text), nil
 }
 
-// ScanMods builds the index of a workspace's mods on top of the install's, so a lookup in it also reads the install's
-// postings. It first gives the schema the mods' scripted definitions. The replaced folders are one list for each of the
-// given roots, holding the folders that the mod's replace_path names. It returns an error if a root cannot be walked.
+// ScanMods builds the index of a workspace's mods on top of the install's. The replaced folders are one list for each
+// of the given roots, holding the folders its mod's replace_path names. It returns an error if a root cannot be walked.
 func ScanMods(schema *schema.Schema, install *Index, roots []files.Root, replaced [][]string) (*Index, error) {
 	listing, err := ListFiles(roots)
 	if err != nil {
@@ -132,9 +131,8 @@ func (index *Index) ScanFiles(schema *schema.Schema, changed []files.File) error
 	return nil
 }
 
-// Clone returns a copy of an index that ScanFiles can change while the original is still being read. The copy has its
-// own lists of files, occurrences and texts, its own paths and its own tables, which are what ScanFiles writes. It
-// shares the rest with the original.
+// Clone returns a copy of an index that ScanFiles can change while the original is still being read. It shares with
+// the original everything ScanFiles does not write.
 func (index *Index) Clone() *Index {
 	next := *index
 	next.Files = slices.Clone(index.Files)
@@ -157,7 +155,6 @@ func ListFiles(roots []files.Root) ([]files.File, error) {
 		if err != nil {
 			return nil, err
 		}
-		// A file under a root inside this one belongs to the inner root.
 		listing = append(listing, lo.Filter(list, func(file files.File, _ int) bool {
 			owner, ok := findRoot(keys, file.Key)
 			return ok && owner == position
@@ -299,8 +296,8 @@ func (index *Index) scanFiles(schema *schema.Schema, progress func(percent int))
 // buildFile builds the occurrences of one file, and the texts of a localization file's messages. A format that has
 // no occurrences, and a file that cannot be read, get none.
 func (index *Index) buildFile(lock *sync.RWMutex, schema *schema.Schema, position int32) {
-	// The file is built against tables of its own, so that building takes no lock; its ordinals move to the index's
-	// tables afterwards, which takes the lock a few times for the whole file, not once for each occurrence.
+	// The file is built against tables of its own so that building takes no lock; its ordinals move to the index's
+	// tables afterwards.
 	tables := &Index{Files: index.Files, Caseless: index.Caseless, row: index.row}
 	tables.buildTables()
 	var occurrences []Occurrence
@@ -385,8 +382,8 @@ func (index *Index) internFile(lock *sync.RWMutex, tables *Index, occurrences []
 
 // internAll returns the ordinal in a table of each of the given texts, adding the ones the table lacks.
 func internAll(lock *sync.RWMutex, table *Table, texts []string) []uint32 {
-	// Most texts are in the table already, so they are looked up under a shared lock, and only the missing ones are
-	// added under the whole lock. An added text is a copy, so that it does not keep its file's text alive.
+	// Most texts are in the table already, so only the missing ones are added under the whole lock. An added text is a
+	// copy, so that it does not keep its file's text alive.
 	ordinals := make([]uint32, len(texts))
 	var missing []int
 	lock.RLock()
@@ -458,9 +455,8 @@ func (index *Index) buildMessages(schema *schema.Schema, position int32, source 
 	return occurrences, texts
 }
 
-// ListTextReferences returns what a message's text refers to: the localization keys written between dollar signs, the
-// text formats and icons it names, and the names that each data call in it refers to. A call also holds the keys its
-// own text writes between dollar signs.
+// ListTextReferences returns what a message's text refers to: localization keys, text formats and icons, and the
+// names its data calls refer to.
 func ListTextReferences(schema *schema.Schema, message loc.Message) (references []schema.Reference) {
 	for _, segment := range loc.Segments(message.Text, message.TextSpan.Start) {
 		references = append(references, listMarkup(segment)...)
@@ -480,8 +476,8 @@ func ListTextReferences(schema *schema.Schema, message loc.Message) (references 
 	return references
 }
 
-// listMarkup returns what one segment of a message's text refers to: a localization key between dollar signs, each text
-// format of a format segment (semicolons separate them), or an icon. Any other segment refers to nothing.
+// listMarkup returns what one segment of a message's text refers to: a localization key, each text format of a format
+// segment, or an icon. Any other segment refers to nothing.
 func listMarkup(segment loc.Segment) []schema.Reference {
 	switch segment.Markup {
 	case loc.MarkupKey:
@@ -503,9 +499,8 @@ func listMarkup(segment loc.Segment) []schema.Reference {
 	return nil
 }
 
-// listConcepts returns the game concept that a data call of a localization text names in the concept format, as a
-// reference to the given database. A call of one step with no arguments and the concept format after its bar names its
-// step. Any other call names none.
+// listConcepts returns the game concept that a data call of a localization text names, as a reference to the given
+// database. Only a call of one step with no arguments and the concept format as its suffix names one.
 func listConcepts(database string, call jomini.Call) []schema.Reference {
 	onlyStep := len(call.Steps) == 1 && len(call.Steps[0].Arguments) == 0
 	if !onlyStep || !strings.EqualFold(call.Suffix, game.ConceptFormat) {

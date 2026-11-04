@@ -51,7 +51,7 @@ export enum Format {
     $zero = "",
 
     /**
-     * The formats a file can have, each told by its extension and the folder it sits in.
+     * The formats a file can have.
      *
      * .txt
      */
@@ -108,7 +108,17 @@ export enum Format {
     FormatShader = "shader",
 
     /**
-     * any other text: .info, .md, .json
+     * .info, and .txt named readme: a game's notes on a folder, in prose
+     */
+    FormatReadme = "readme",
+
+    /**
+     * .md
+     */
+    FormatMarkdown = "markdown",
+
+    /**
+     * any other text, such as .json
      */
     FormatText = "text",
 

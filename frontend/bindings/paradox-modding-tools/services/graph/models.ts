@@ -167,7 +167,7 @@ export interface Graph {
 }
 
 /**
- * A Node is one entry of the event graph, or a fold that stands for the rest of a node's firings.
+ * A Node is one entry of the event graph, or a fold standing for the rest of a node's firings.
  */
 export interface Node {
     /**
@@ -244,20 +244,20 @@ export interface Node {
     "fires"?: Edge[] | null;
 
     /**
-     * Rows are the lines it shows open: its firings grouped by the blocks that decide them, the rest folded past the
-     * fan-out. They are nil for a fold and outside a graph.
+     * Rows are the lines it shows open, its firings grouped by the blocks that decide them. They are nil for a fold and
+     * outside a graph.
      */
     "rows"?: Row[] | null;
 }
 
 /**
- * A Row is one line of an open node: the firings written in the same blocks, a block the rows under it share, or the
- * fold of the firings past the fan-out.
+ * A Row is one line of an open node: firings written in the same blocks, a header for a block the rows under it share,
+ * or the fold of the firings past the fan-out.
  */
 export interface Row {
     /**
-     * Step is the block that decides its firings, or the one a header row stands for. It is nil for a firing written
-     * plainly and for a fold.
+     * Step is the block that decides its firings, or the one a header row stands for. It is nil for a plain firing and
+     * for a fold.
      */
     "step"?: Step | null;
 

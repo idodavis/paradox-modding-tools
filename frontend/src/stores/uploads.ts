@@ -18,7 +18,7 @@ type Attempt = {
   listing: Listing;
 };
 
-/** STAGES holds each stage of an upload by Go's name. Stall is how many idle minutes count as stalled. */
+/** STAGES holds each stage of an upload by Go's name, and how many idle minutes count as stalled. */
 export const STAGES: Record<string, { words: string; pip: number; stall: number }> = {
   preparing: { words: "Preparing the upload", pip: 0, stall: 15 },
   uploading: { words: "Sending files to Steam", pip: 2, stall: 5 },
@@ -30,7 +30,6 @@ export const STAGES: Record<string, { words: string; pip: number; stall: number 
 export const useUploadStore = defineStore("upload", () => {
   const cache = useQueryCache();
   const attempts = ref<Record<string, Attempt>>({});
-  // the id of the upload that runs, or "" when none does
   const active = ref("");
   let running: CancellablePromise<void> | undefined;
 
@@ -41,13 +40,10 @@ export const useUploadStore = defineStore("upload", () => {
     attempt.progress = data;
   });
 
-  /** find returns the upload of a mod's listing. It is undefined if there is none. */
+  /** find returns the upload of a mod's listing, or undefined. */
   const find = (modId: string, key: string): Attempt | undefined => attempts.value[toId(modId, key)];
 
-  /**
-   * start writes a mod's listing and uploads it to Steam. A visibility of "" keeps the item's own. It does nothing
-   * while another upload runs, and a failure is kept in the upload's state.
-   */
+  /** start writes a mod's listing and uploads it to Steam. It does nothing while another upload runs. */
   async function start(modId: string, key: string, listing: Listing, visibility: string): Promise<void> {
     if (active.value) return;
     const id = toId(modId, key);
@@ -86,7 +82,7 @@ export const useUploadStore = defineStore("upload", () => {
   return { active, find, start, stop, keepWaiting, clear };
 });
 
-/** isAhead reports whether a progress is further than the last one. It is true if there is no last one. */
+/** isAhead reports whether a progress is further than the last one, if there is one. */
 function isAhead(progress: Progress, last: Progress | null): boolean {
   if (!last) return true;
   if (progress.stage !== last.stage) return STAGES[progress.stage].pip > STAGES[last.stage].pip;

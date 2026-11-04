@@ -6,8 +6,8 @@
 import * as lsp$0 from "../lsp/models.js";
 
 /**
- * A LexiconRow is one effect, trigger, link, scope or data function: one the game's dumps declare, with the dump's
- * text, or a scripted effect or trigger, with how a call to it is written. Each has example uses from the index.
+ * A LexiconRow is one effect, trigger, link, scope or data function the game's dumps declare, or one scripted effect or
+ * trigger. It carries example uses from the index.
  */
 export interface LexiconRow {
     /**
@@ -22,13 +22,13 @@ export interface LexiconRow {
     "examples": lsp$0.Site[] | null;
 
     /**
-     * Defined is where the copy the game keeps of a scripted effect or trigger is, or nil for what the dumps declare.
+     * Defined is where the game's copy of a scripted effect or trigger is; nil for what the dumps declare.
      */
     "defined"?: lsp$0.Site | null;
 }
 
 /**
- * A Note is one patch's notes page: its version and whether the page has a Modding section.
+ * A Note is one patch's notes page.
  */
 export interface Note {
     "version": string;
@@ -43,6 +43,10 @@ export interface Note {
      */
     "released": string;
     "title": string;
+
+    /**
+     * the page has a Modding section
+     */
     "modding": boolean;
 }
 
@@ -86,7 +90,7 @@ export interface Progress {
 }
 
 /**
- * A Summary is one page in the listing: its title and the category it is in.
+ * A Summary is one page in the listing.
  */
 export interface Summary {
     "title": string;

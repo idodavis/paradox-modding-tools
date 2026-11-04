@@ -1,5 +1,4 @@
-// mod.go adds, makes, orders and removes a workspace's mods, and reads and writes their descriptors. It also tells a
-// mod's title, its dependencies and its Workshop id.
+// mod.go adds, makes, orders and removes a workspace's mods, and reads and writes their descriptors.
 
 package workspace
 
@@ -28,7 +27,7 @@ import (
 // A Descriptor is a mod's own description, read from its game's descriptor file.
 type Descriptor struct {
 	Path             string   `json:"path"`
-	ID               string   `json:"id"` // the id metadata.json gives the mod; "" means none
+	ID               string   `json:"id"` // the id metadata.json gives the mod; "" if none
 	Name             string   `json:"name"`
 	Version          string   `json:"version"`
 	SupportedVersion string   `json:"supportedVersion"`
@@ -36,14 +35,14 @@ type Descriptor struct {
 	ReplacePaths     []string `json:"replacePaths"` // folders whose earlier files the game does not load
 	Thumbnail        string   `json:"thumbnail"`    // the full path of the picture file the descriptor names
 	WorkshopID       string   `json:"workshopId"`
-	// Dependencies are the mods it needs. They are read and never written.
+	// Dependencies are the mods it needs. They are never written.
 	Dependencies []Dependency `json:"dependencies"`
 }
 
 // A Dependency is one mod a descriptor says its mod needs.
 type Dependency struct {
 	ID    string `json:"id"`    // the mod's id or name, as the descriptor writes it
-	Title string `json:"title"` // the title metadata.json gives it; "" where the descriptor gives none
+	Title string `json:"title"` // the title metadata.json gives it; "" if none
 }
 
 // A Mod is one mod of a workspace, with its descriptor.
@@ -51,7 +50,7 @@ type Mod struct {
 	app.Mod
 	Descriptor Descriptor `json:"descriptor"`
 	Broken     bool       `json:"broken"`    // its folder is missing
-	Thumbnail  string     `json:"thumbnail"` // the full path of the picture shown for it; "" when it has none
+	Thumbnail  string     `json:"thumbnail"` // the full path of the picture shown for it; "" if none
 	Workshop   bool       `json:"workshop"`  // its folder is Steam's copy of a Workshop mod
 }
 
@@ -88,8 +87,8 @@ func ReadDescriptor(row *game.Game, dir string) (Descriptor, error) {
 	return descriptor, nil
 }
 
-// ParseDescriptor parses a descriptor's text as JSON if the given file name is a .json file, else as script. The
-// thumbnail stays as written. It returns an error if the JSON cannot be parsed.
+// ParseDescriptor parses a descriptor's text as JSON if the given file name is a .json file, else as script. It returns
+// an error if the JSON cannot be parsed.
 func ParseDescriptor(file, text string) (Descriptor, error) {
 	if path.Ext(file) == ".json" {
 		return decodeDescriptorMetadata(text)
@@ -97,8 +96,8 @@ func ParseDescriptor(file, text string) (Descriptor, error) {
 	return parseDescriptorScript(text), nil
 }
 
-// findThumbnail returns the full path of the picture shown for a mod. It is the mod's thumbnail file, else the given
-// picture, which the mod's descriptor names. It returns "" if neither exists.
+// findThumbnail returns the full path of the picture shown for a mod: its thumbnail file, else the given picture its
+// descriptor names. It returns "" if neither exists.
 func findThumbnail(row *game.Game, dir, picture string) string {
 	folders := []string{row.ThumbnailDir, ""}
 	if row.ThumbnailDir == "" {
@@ -168,7 +167,7 @@ func FindMod(mods []Mod, dependency Dependency) (Mod, bool) {
 }
 
 // ListDependencies returns the ids of the workspace's mods that a mod depends on, directly or through other
-// dependencies, in the order they are reached. A dependency the workspace lacks is left out, and so is the mod itself.
+// dependencies. A dependency the workspace lacks is left out.
 func (ws *Session) ListDependencies(modID string) []string {
 	order := *ws.Order.Load()
 	var dependencies []string
@@ -297,9 +296,8 @@ func (wsp *Service) ResolveModFolder(installID, dir, name string) (string, error
 	return resolveModFolder(parent, name)
 }
 
-// CheckModFolder returns an error if a folder cannot be added as a mod of the given install's game: it is no folder, it
-// is the game's own folder or inside it, or it lacks the game's descriptor. It returns an error if the install is not
-// recorded.
+// CheckModFolder returns an error if a folder cannot be added as a mod of the given install's game, or if the install
+// is not recorded.
 func (wsp *Service) CheckModFolder(installID, dir string) error {
 	install, row, err := findInstall(wsp.Config.Config(), installID)
 	if err != nil {
@@ -371,9 +369,8 @@ func (wsp *Service) UpdateMod(workspaceID string, mod app.Mod) error {
 	})
 }
 
-// createModFolder makes a mod's folder with its descriptor and the folders the game expects, and returns it. A game
-// that lists mods by a launcher file gets one beside the folder. It returns an error if the name makes no folder name
-// or the folder exists already.
+// createModFolder makes a mod's folder with its descriptor and the folders the game expects, and returns it. It returns
+// an error if the name makes no folder name or the folder exists already.
 func createModFolder(row *game.Game, dir, name, version string) (string, error) {
 	folder, err := resolveModFolder(dir, name)
 	if err != nil {
@@ -397,15 +394,14 @@ func createModFolder(row *game.Game, dir, name, version string) (string, error) 
 	if _, metadata := resolveDescriptor(row, folder); metadata {
 		return folder, nil
 	}
-	// the launcher lists a mod by a .mod file beside its folder
+	// a game with a script descriptor lists its mods by a .mod file beside the folder
 	launcher := encodeDescriptorScript("", descriptor) + `path="` + filepath.ToSlash(folder) + "\"\n"
 	err = files.WriteText(filepath.Join(dir, files.ToSlug(name)+".mod"), files.Text{Text: launcher, Encoding: files.EncodingUTF8})
 	return folder, err
 }
 
-// FindLocalizationFile returns the path of a mod's localization file in the given language: the slug of the mod's name
-// with the language's suffix, in the language's folder under the game's localization folder. An empty language means
-// the base language. It returns false for a game with no localization folder.
+// FindLocalizationFile returns the path of a mod's localization file in the given language, which is the base language
+// if empty. It returns false for a game with no localization folder.
 func FindLocalizationFile(row *game.Game, folder, name, language string) (string, bool) {
 	language = cmp.Or(language, game.BaseLanguage)
 	rel, ok := findLocalizationFolder(row)
@@ -451,8 +447,7 @@ func toSupportedVersion(version string) string {
 
 // MatchVersion reports whether a mod made for a supported version runs on a game version. It matches them part by
 // part, as EU5's and Vic3's logs show the games doing, and a * matches the rest. Its second result is false where no
-// source shows how the games match: a supported version that is empty or has a * inside a part, such as 1.4*, or a
-// game version that is not numbers between dots, such as a build id.
+// source shows how the games match, such as a supported version with a * inside a part, or a build id.
 func MatchVersion(supported, version string) (matches, judged bool) {
 	wanted, actual := strings.Split(supported, "."), strings.Split(version, ".")
 	isWanted := func(part string) bool { return part == "*" || jomini.IsNumber(part) }
@@ -469,7 +464,7 @@ func MatchVersion(supported, version string) (matches, judged bool) {
 }
 
 // resolveModFolder returns the folder for a mod inside a folder of mods, named after the mod. It returns an error for
-// a name with no letter or digit to make the folder's name from, and for a folder that exists already.
+// a name with no letter or digit, and for a folder that exists already.
 func resolveModFolder(dir, name string) (string, error) {
 	slug := files.ToSlug(name)
 	if slug == "" {
@@ -482,8 +477,8 @@ func resolveModFolder(dir, name string) (string, error) {
 	return folder, nil
 }
 
-// checkModFolder returns an error if a folder cannot be a mod of the given install's game: it is no folder, it is the
-// game's own folder or inside it, or it lacks the game's descriptor.
+// checkModFolder returns an error if a folder is no folder, is the game's own folder or inside it, or lacks the game's
+// descriptor.
 func checkModFolder(row *game.Game, install app.Install, dir string) error {
 	switch {
 	case !files.IsFolder(dir):

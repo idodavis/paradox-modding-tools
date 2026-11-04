@@ -1,7 +1,4 @@
-<!--
-  A wiki article: its HTML with the article styles, a table of contents over its headings and a find bar. The find
-  prop starts the find with the given text.
--->
+<!-- A wiki article: its HTML with a table of contents over its headings and a find bar. -->
 <script setup lang="ts">
 import { computed, shallowRef, useTemplateRef, watch } from "vue";
 import { useEventListener, useLocalStorage } from "@vueuse/core";
@@ -32,7 +29,6 @@ const headings = shallowRef<HTMLElement[]>([]);
 const blocks = shallowRef<HTMLElement[]>([]);
 const active = shallowRef(-1);
 const texts = shallowRef<string[]>([]);
-// the article's code blocks, each with its text, which a snippet draws inside it
 const codeBlocks = shallowRef<{ pre: HTMLElement; text: string }[]>([]);
 const panes = computed(() => [
   ...(headings.value.length && !contentsHidden.value
@@ -52,14 +48,13 @@ watch(
     blocks.value = [...root.querySelectorAll<HTMLElement>(BLOCKS)].filter((block) => !block.querySelector(BLOCKS));
     texts.value = blocks.value.map((block) => block.textContent ?? "");
     codeBlocks.value = [...root.querySelectorAll("pre")].map((pre) => ({ pre, text: pre.textContent ?? "" }));
-    // the snippets take the place of the code blocks' own text, which find has kept
+    // The snippets replace the code blocks' own text, which find has kept.
     for (const { pre } of codeBlocks.value) pre.replaceChildren();
     body.value?.scrollTo({ top: 0 });
     active.value = -1;
   },
   { flush: "post" },
 );
-// the find prop becomes the term once the article's texts are read
 watch(
   [() => find, texts],
   () => {
@@ -68,7 +63,6 @@ watch(
   { flush: "post" },
 );
 useEventListener(body, "scroll", markActive, { passive: true });
-// the contents follow the reading: the heading being read stays in their view
 watch(active, (index) =>
   contents.value?.querySelector(`[data-heading="${index}"]`)?.scrollIntoView({ block: "nearest" }),
 );
@@ -94,7 +88,7 @@ function clear(): void {
   term.value = "";
 }
 
-/** follow handles a click on a link: an anchor scrolls, a web address opens in the browser, a wiki link is skipped. */
+/** follow handles a click on a link: an anchor scrolls, a web address opens in the browser. */
 function follow(event: MouseEvent): void {
   const link = event.target instanceof Element ? event.target.closest("a") : null;
   const href = link?.getAttribute("href");
@@ -134,7 +128,7 @@ function follow(event: MouseEvent): void {
             v-for="(heading, index) in headings"
             :key="index"
             type="button"
-            class="shrink-0 border-s-2 py-1.25 pe-2.5 text-start leading-4 line-clamp-2"
+            class="shrink-0 border-s-2 py-1.25 pe-2.5 text-start leading-4"
             :data-heading="index"
             :title="heading.textContent ?? ''"
             :class="[
@@ -143,7 +137,8 @@ function follow(event: MouseEvent): void {
             ]"
             @click="heading.scrollIntoView({ block: 'start' })"
           >
-            {{ heading.textContent }}
+            <!-- the clamp sits inside the padding, which would otherwise show the top of a third line -->
+            <span class="line-clamp-2">{{ heading.textContent }}</span>
           </button>
         </nav>
       </template>

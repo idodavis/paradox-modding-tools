@@ -1,7 +1,4 @@
-<!--
-  The marks over the picture: the selected and hovered widgets, the widgets a state decides, what is missing, and the
-  caret's property guide.
--->
+<!-- The marks over the picture: selected and hovered widgets, missing properties and the caret's property guide. -->
 <script setup lang="ts">
 import { computed } from "vue";
 
@@ -18,11 +15,11 @@ const props = defineProps<{
   outlined: number[];
   /** The drawn window, or null for a coat. */
   window: Window | null;
-  /** The widgets that lack a property the game's files did not give, one row for each such property. */
+  /** The widgets that lack a property the game's files did not give. */
   missing: Missing[];
   /** The key of the property on the caret's line, or "". */
   property: string;
-  /** Whether the window lay wholly off the screen and is drawn at the screen's edge it passed. */
+  /** Whether the window lay wholly off the screen and is drawn at its edge. */
   isPlaced: boolean;
 }>();
 

@@ -1,8 +1,4 @@
-/**
- * The open files of this window. A Model wraps a Monaco text model that every tab showing the file shares. It shows
- * Go's problems as markers and follows its file on disk. A disk change under unsaved text is kept beside the model's
- * text until the user picks one.
- */
+/** The open files of this window: Monaco text models that show Go's problems and follow their files on disk. */
 import { useQueryCache } from "@pinia/colada";
 import { useDebounceFn } from "@vueuse/core";
 import { Events } from "@wailsio/runtime";
@@ -89,18 +85,12 @@ export function applyEdits(model: Model, edits: Edit[]): void {
   model.model.pushStackElement();
 }
 
-/**
- * syncText sends a model's text to Go once edits pause and returns its problems. A call that a later call replaces
- * returns none.
- */
+/** syncText sends a model's text to Go once edits pause and returns its problems. A replaced call returns none. */
 export async function syncText(model: Model): Promise<Diagnostic[]> {
   return (await model.sync()) ?? [];
 }
 
-/**
- * save writes a model's text to disk. The model stays unsaved if it was edited during the write. It clears any kept
- * disk text, then checks the other models again.
- */
+/** save writes a model's text to disk. The model stays unsaved if it was edited during the write. */
 export async function save(model: Model): Promise<void> {
   const text = model.model.getValue();
   const version = model.model.getAlternativeVersionId();
@@ -122,10 +112,7 @@ export function closeModel(key: string): void {
   void lsp.CloseFile(model.place.path);
 }
 
-/**
- * renameModel moves a file's model to the file's new place. It keeps its text, caret and unsaved state in a new
- * Monaco model.
- */
+/** renameModel moves a file's model to the file's new place, keeping its text, caret and unsaved state. */
 export function renameModel(key: string, place: Place): void {
   const old = models.get(key);
   if (!old) return;
@@ -142,8 +129,8 @@ export function renameModel(key: string, place: Place): void {
 }
 
 /**
- * saveUnsaved asks whether to save the unsaved models before the given action, such as "Closing PMT", drops them. It
- * returns false if the user cancels.
+ * saveUnsaved asks whether to save the unsaved models before the given action, such as "Closing PMT". It returns false
+ * if the user cancels.
  */
 export async function saveUnsaved(action: string): Promise<boolean> {
   const unsaved = unsavedModels();
@@ -181,10 +168,7 @@ async function load(place: Place): Promise<Model> {
   return model;
 }
 
-/**
- * buildModel makes a file's Model. It reuses the Monaco text model already at the file's URI, else creates one from
- * the start text in the file's language. An unsaved start matches no disk version.
- */
+/** buildModel makes a file's Model, reusing the Monaco text model already at the file's URI if there is one. */
 function buildModel(place: Place, start: { text: string; disk: string; encoding: Encoding; unsaved: boolean }): Model {
   const uri = monaco.Uri.file(place.path);
   const textModel =
@@ -217,7 +201,7 @@ async function sendText(model: Model): Promise<Diagnostic[]> {
   if (model.model.isDisposed()) return [];
   const diagnostics = (await lsp.SetText(model.place.path, model.model.getValue())) ?? [];
   setMarkers(model, diagnostics);
-  // the file's drawn pictures are fetched again from the new text
+  // The drawn pictures follow the new text.
   void useQueryCache().invalidateQueries({ key: keys.draw(model.place.path) });
   return diagnostics;
 }
@@ -241,9 +225,8 @@ function setMarkers(model: Model, diagnostics: Diagnostic[]): void {
 }
 
 /**
- * applyChange applies a change on disk to its file's model. A model with no unsaved text takes the disk text at once.
- * Otherwise it keeps the disk text in diskText until the user picks one. A disk text equal to the last loaded or saved
- * text clears diskText.
+ * applyChange applies a change on disk to its file's model. A model with unsaved text keeps the disk text beside its
+ * own until the user picks one.
  */
 export async function applyChange(path: string): Promise<void> {
   const place = await loadQuery(placeQuery(path));
@@ -252,7 +235,7 @@ export async function applyChange(path: string): Promise<void> {
   const cache = useQueryCache();
   const { data: file } = await cache.fetch(cache.ensure(fileQuery(path)));
   if (!file) return;
-  // a write this window made reaches it as a change too
+  // A write this window made arrives as a change too.
   if (file.text.text === model.disk.text) model.diskText = null;
   else if (model.unsaved) model.diskText = file.text;
   else setText(model, file.text);

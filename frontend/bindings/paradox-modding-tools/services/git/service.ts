@@ -15,9 +15,8 @@ import { Call as $Call, CancellablePromise as $CancellablePromise } from "@wails
 import * as $models from "./models.js";
 
 /**
- * DeleteBranch deletes a branch of the repository at the given root folder, and emits git:changed. Unless forced, git
- * refuses a branch with commits no other branch has: DeleteBranch then returns false and no error. Any other failure
- * returns git's error.
+ * DeleteBranch deletes a branch of the repository at the given root folder, and emits git:changed. Unless forced, it
+ * returns false and no error for a branch with commits no other branch has. Any other failure returns git's error.
  */
 export function DeleteBranch(root: string, name: string, force: boolean): $CancellablePromise<boolean> {
     return $Call.ByID(361097653, root, name, force);
@@ -25,8 +24,7 @@ export function DeleteBranch(root: string, name: string, force: boolean): $Cance
 
 /**
  * DiffFile returns the runs of lines a text changes from its file's text at the last commit, for the editor's change
- * bars. A line that ends in \r\n is read as one that ends in \n in both texts. It returns an error if the file is in
- * no repository or git does not track it.
+ * bars. It returns an error if the file is in no repository or git does not track it.
  */
 export function DiffFile(path: string, text: string): $CancellablePromise<$models.LineChange[] | null> {
     return $Call.ByID(297592599, path, text);
@@ -34,8 +32,7 @@ export function DiffFile(path: string, text: string): $CancellablePromise<$model
 
 /**
  * Discard throws away the working changes of the given files in the repository at the given root folder, and emits
- * git:changed. A file git does not track is deleted. A file's path is absolute or from the root. With no files it does
- * nothing. It returns git's error if a command fails.
+ * git:changed. A file git does not track is deleted. It returns git's error if a command fails.
  */
 export function Discard(root: string, paths: string[] | null): $CancellablePromise<void> {
     return $Call.ByID(1247901612, root, paths);
@@ -57,7 +54,7 @@ export function IsInstalled(): $CancellablePromise<boolean> {
 
 /**
  * ListCommitFiles returns the files changed by the commit with the given hash, in the repository at the given root
- * folder. A renamed file carries its old path. The error is git's if the repository has no such commit.
+ * folder. The error is git's if the repository has no such commit.
  */
 export function ListCommitFiles(root: string, hash: string): $CancellablePromise<$models.Change[] | null> {
     return $Call.ByID(4034782106, root, hash);
@@ -65,23 +62,23 @@ export function ListCommitFiles(root: string, hash: string): $CancellablePromise
 
 /**
  * ListCommits returns the commits reachable from the given refs, newest first, up to the given limit. With no refs
- * it starts from HEAD. It returns an empty list for a repository with no commit and for a folder in no repository.
+ * it starts from HEAD. It returns an empty list for a repository with no commit.
  */
 export function ListCommits(dir: string, limit: number, refs: string[] | null): $CancellablePromise<$models.Commit[] | null> {
     return $Call.ByID(1962290112, dir, limit, refs);
 }
 
 /**
- * ListRefs returns a repository's branches, remote branches and tags, each with the date of its commit. The error is
- * git's if the folder is in no repository.
+ * ListRefs returns a repository's branches, remote branches and tags. The error is git's if the folder is in no
+ * repository.
  */
 export function ListRefs(dir: string): $CancellablePromise<$models.Ref[] | null> {
     return $Call.ByID(135811164, dir);
 }
 
 /**
- * ListRemotes returns the remotes of the repository at the given root folder, each with the address it fetches from,
- * in the order git lists them. The error is git's if the folder is in no repository.
+ * ListRemotes returns the remotes of the repository at the given root folder, each with the address it fetches from.
+ * The error is git's if the folder is in no repository.
  */
 export function ListRemotes(root: string): $CancellablePromise<$models.Remote[] | null> {
     return $Call.ByID(1243968453, root);
@@ -89,8 +86,7 @@ export function ListRemotes(root: string): $CancellablePromise<$models.Remote[] 
 
 /**
  * ListRepositories returns the repositories the open workspace's mods are in, in the load order of their first mod,
- * each with the mods in it. A mod in none is left out, and so is one whose folder is missing. It is empty while no
- * workspace is open.
+ * each with the mods in it. A mod in no repository is left out. It is empty while no workspace is open.
  */
 export function ListRepositories(): $CancellablePromise<$models.Repository[] | null> {
     return $Call.ByID(1749972734);
@@ -114,8 +110,8 @@ export function Pull(root: string, ref: string): $CancellablePromise<void> {
 }
 
 /**
- * ReadFile returns a file's text at a revision, as `git show <revision>:<path>` prints it, decoded as the files on disk
- * are. The path is from the repository's root. The revision `:0` reads the staged version.
+ * ReadFile returns a file's text at a revision, decoded as the files on disk are. The path is from the repository's
+ * root. The revision `:0` reads the staged version.
  */
 export function ReadFile(dir: string, revision: string, path: string): $CancellablePromise<string> {
     return $Call.ByID(1380440404, dir, revision, path);
@@ -129,8 +125,8 @@ export function ReadStatus(root: string): $CancellablePromise<$models.Status> {
 }
 
 /**
- * Run runs git in a folder with the given arguments and returns its standard output, as run does. It then emits
- * git:changed with the folder, also when git failed, since a failed command can leave the repository changed.
+ * Run runs git in a folder with the given arguments, as run does, then emits git:changed with the folder. It emits it
+ * also when git failed, since a failed command can leave the repository changed.
  */
 export function Run(dir: string, ...args: string[]): $CancellablePromise<string> {
     return $Call.ByID(2670563755, dir, args);

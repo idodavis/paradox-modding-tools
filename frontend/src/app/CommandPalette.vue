@@ -1,7 +1,4 @@
-<!--
-  The command palette. It lists the commands by group, the ones run last first, and runs the one picked. A command
-  can also hand it a list to pick one from.
--->
+<!-- The command palette. It searches files, definitions and commands, or lists choices a command hands it. -->
 <script setup lang="ts">
 import type { CommandPaletteGroup, CommandPaletteItem } from "@nuxt/ui";
 import { useQuery } from "@pinia/colada";
@@ -25,9 +22,8 @@ const open = defineModel<boolean>("open", { default: false });
 
 /** How many files the palette lists for a search. */
 const FILE_HITS = 50;
-// how many commands the palette's Recently used lists
 const RECENT = 5;
-// the settings that hold a list, each item of which the palette switches on a row of its own
+// The settings that hold a list. The palette switches each item on a row of its own.
 const LISTS = ["appearance.pages", "ide.checks"];
 
 const editor = useEditorStore();
@@ -35,13 +31,10 @@ const settings = useSettingsStore();
 const workspace = useWorkspaceStore();
 const commandBus = useEventBus(COMMAND_BUS);
 const term = shallowRef("");
-// the list a command handed the palette to pick from, under the command's id, or null when there is none
 const choices = shallowRef<CommandPaletteGroup | null>(null);
-// the ids of the commands the palette ran last, the latest first
 const recent = useLocalStorage<string[]>("pmt.palette.recent", []);
 
-// What the search looks through: a command's list while one is shown, else by the first character of the search: > for
-// commands, @ or # for definitions, anything else for files.
+// What the search looks through: > for commands, @ or # for definitions, anything else for files.
 const mode = computed(() => {
   if (choices.value) return "choices";
   if (term.value.startsWith(">")) return "commands";
@@ -66,7 +59,6 @@ const { data: symbols } = useQuery(() => ({
 const available = computed((): { id: string; label: string; items: CommandPaletteItem[] }[] => {
   if (mode.value !== "commands") return [];
   const activeId = workspace.activeId();
-  // each row shows its first shortcut as the user set it
   const applicable = COMMANDS.filter((row) => row.when()).map((row) => ({ ...row, kbds: listBindings(row)[0] }));
   const recentRows = recent.value.flatMap((id) => applicable.find((row) => row.id === id) ?? []);
   const pageNames: PageName[] = ["library", "new-mod", "wizard", ...(activeId ? listShownTools() : [])];
@@ -105,7 +97,6 @@ const { results } = useFuse(
 );
 
 const groups = computed<CommandPaletteGroup[]>(() => {
-  // the palette's own filter narrows a command's list
   if (choices.value) return [{ id: choices.value.id, items: choices.value.items }];
   if (mode.value === "files") {
     const items = (files.value ?? []).map((place) => ({
@@ -146,11 +137,7 @@ useEventBus<CommandPaletteGroup>("pmt.choices").on((group) => {
   open.value = true;
 });
 
-/**
- * listSwitches lists the palette's switches: each setting that is one, each page a workspace can show and each of
- * the checks. The IDE's settings and the checks are left out while no workspace is open, and so is a setting the
- * simple interface hides, since flipping it would show nothing.
- */
+/** listSwitches lists the palette's switches: settings, pages and checks. It leaves out what would show nothing. */
 function listSwitches(): CommandPaletteItem[] {
   const settingRows = catalog.value ?? [];
   const findSetting = (key: string) => settingRows.find((setting) => setting.key === key);
@@ -174,7 +161,7 @@ function listSwitches(): CommandPaletteItem[] {
       (on) => settings.writeItem("appearance.pages", tool, on),
     ),
   );
-  // the setting lists the checks turned off
+  // The setting lists the checks turned off.
   const off = settings.value("ide.checks").split(",");
   const checks = (isOpen ? (codes.value ?? []) : []).map((code) =>
     makeToggle(
@@ -187,10 +174,7 @@ function listSwitches(): CommandPaletteItem[] {
   return [...switches, ...pages, ...checks];
 }
 
-/**
- * makeToggle makes a row of the palette that flips a setting. It shows whether the setting is on, and picking it
- * flips it.
- */
+/** makeToggle makes a row of the palette that flips a setting. */
 function makeToggle(
   id: string,
   row: CommandPaletteItem,
@@ -200,10 +184,7 @@ function makeToggle(
   return { ...row, id, prefix: "Toggle:", icon: "i-lucide-check", slot: "setting", on, onSelect: () => write(!on) };
 }
 
-/**
- * listValues lists the palette's settings with a value. Each opens Settings at its row. The IDE's settings are left out
- * while no workspace is open.
- */
+/** listValues lists the palette's settings with a value. Each opens Settings at its row. */
 function listValues(): CommandPaletteItem[] {
   const isOpen = !!workspace.activeId();
   return (catalog.value ?? [])
@@ -219,10 +200,7 @@ function listValues(): CommandPaletteItem[] {
     }));
 }
 
-/**
- * pick closes the palette after a row is picked, except for a command that just handed the palette a list: the palette
- * stays open on that list. A command is added to the recently used ones; other rows, such as a file, are not.
- */
+/** pick closes the palette after a row is picked, unless a command just handed it a list. */
 function pick(row: CommandPaletteItem): void {
   if (typeof row.id === "string" && findCommand(row.id)) {
     recent.value = [row.id, ...recent.value.filter((id) => id !== row.id)].slice(0, RECENT);
@@ -230,7 +208,7 @@ function pick(row: CommandPaletteItem): void {
   if (!choices.value || row.id !== choices.value.id) open.value = false;
 }
 
-/** goBack goes back from a command's list to the commands when Backspace is pressed on an empty search. */
+/** goBack returns from a command's list to the commands on Backspace in an empty search. */
 function goBack(event: KeyboardEvent): void {
   if (!choices.value || term.value) return;
   event.preventDefault();
@@ -242,7 +220,7 @@ function goBack(event: KeyboardEvent): void {
 <template>
   <UModal v-model:open="open" :ui="{ content: 'top-14 translate-y-0 sm:max-w-160' }">
     <template #content>
-      <!-- the search box's keys pass through here on their way up -->
+      <!-- The search box's keys pass through here on their way up. -->
       <div class="contents" @keydown.backspace="goBack">
         <UCommandPalette
           v-model:search-term="term"

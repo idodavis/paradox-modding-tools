@@ -1,8 +1,4 @@
-/**
- * Monaco's language providers for the Paradox languages, one registration per feature. Each hands the lsp service's
- * answer to Monaco as it is, since Go answers in Monaco's ranges. It also records the place of every file a peek lists,
- * so the peek can label its folder and color its origin.
- */
+/** Monaco's language providers for the Paradox languages, each handing the lsp service's answer to Monaco. */
 import * as monaco from "monaco-editor/editor/editor.api";
 import type { languages } from "monaco-editor";
 import { watch } from "vue";
@@ -20,7 +16,7 @@ import { openModel, findModel } from "./models";
 const FIX_COMMAND = "pmt.applyFix";
 /** HINT_SETTINGS holds the setting that turns off each kind of inlay hint, by Go's kind. Other kinds always show. */
 const HINT_SETTINGS: Record<string, string> = { text: "ide.textHints" };
-/** PICTURE_WIDTH is the widest a picture beside a completion that names an image file is drawn, in pixels. */
+/** PICTURE_WIDTH is the widest a completion's picture is drawn, in pixels. */
 const PICTURE_WIDTH = 96;
 
 /** SHOW_DETAILS is the editor action that opens the details beside the completion list while they are closed. */
@@ -34,16 +30,13 @@ export const SHOW_DETAILS: monaco.editor.IActionDescriptor = {
 /** An ImageCompletion is a completion item that names an image file, kept with the file's full path. */
 type ImageCompletion = languages.CompletionItem & { image?: string };
 
-// the place of one file in each folder a peek lists, by the folder's URI
+// The place of one file in each folder a peek lists, by the folder's URI.
 const folders = new Map<string, Place>();
-// the CSS rule that colors the dot before each listed file's name in a peek, by file path, and the sheet holding them
+// The CSS rule that colors the dot before each file's name in a peek, by file path, and the sheet holding them.
 const dots = new Map<string, string>();
 const dotSheet = new CSSStyleSheet();
 
-/**
- * labelService gives Monaco its labels for files and folders. A folder a peek lists is labeled as the workspace store
- * describes its place. Any other file or folder is labeled by its path.
- */
+/** labelService gives Monaco its labels for files and folders. A folder a peek lists is labeled by its place. */
 export const labelService = {
   getUriLabel: (uri: monaco.Uri): string => {
     const place = folders.get(uri.toString());
@@ -53,10 +46,7 @@ export const labelService = {
   getUriBasenameLabel: (uri: monaco.Uri): string => uri.path.slice(uri.path.lastIndexOf("/") + 1),
 };
 
-/**
- * registerProviders registers every provider for the given languages, which must already be registered, and adds the
- * peek dots' sheet to the document.
- */
+/** registerProviders registers every provider for the given languages, which must already be registered. */
 export function registerProviders(languageIds: string[], legend: languages.SemanticTokensLegend): void {
   const selector = languageIds.map((language) => ({ language, scheme: "file" }));
   document.adoptedStyleSheets = [...document.adoptedStyleSheets, dotSheet];
@@ -91,7 +81,7 @@ function registerNavigation(selector: languages.LanguageFilter[]): void {
   monaco.languages.registerDocumentSymbolProvider(selector, {
     provideDocumentSymbols: async (model) => ((await lsp.ListSymbols(model.uri.fsPath)) ?? []).map(toSymbol),
   });
-  // an editor holds one model, so a definition in another file opens in the IDE
+  // An editor holds one model, so a definition in another file opens in the IDE.
   monaco.editor.registerEditorOpener({
     openCodeEditor: (_source, resource, selection) => {
       void show(resource, selection);
@@ -110,7 +100,7 @@ function registerCompletion(selector: languages.LanguageFilter[]): void {
       const range = new monaco.Range(position.lineNumber, word.startColumn, position.lineNumber, word.endColumn);
       const snippet = monaco.languages.CompletionItemInsertTextRule.InsertAsSnippet;
       return {
-        // Go lists localization keys by what is typed, so the editor asks again as typing goes on
+        // Go lists localization keys by what is typed, so Monaco must ask again as typing goes on.
         incomplete: true,
         suggestions: completions.map((completion): ImageCompletion => ({
           label: completion.label,
@@ -119,15 +109,13 @@ function registerCompletion(selector: languages.LanguageFilter[]): void {
           insertTextRules: completion.snippet ? snippet : undefined,
           detail: completion.detail,
           documentation: completion.blurb,
-          // the completion the game writes most sorts first
           sortText: String(Number.MAX_SAFE_INTEGER - completion.rank).padStart(16, "0"),
           range,
           image: completion.image,
         })),
       };
     },
-    // the picture of an image file is read when its item is on show, and put in the details beside the list. Monaco
-    // opens the details only when asked, so the editor being typed in is asked to; it then keeps them open
+    // Monaco opens the details beside the list only when asked, so the editor being typed in is asked to.
     resolveCompletionItem: async (item: ImageCompletion) => {
       const picture = item.image && settings.isOn("ide.completionPictures") ? await fetchPicture(item.image) : "";
       if (!picture) return item;
@@ -196,7 +184,7 @@ function registerWriting(selector: languages.LanguageFilter[]): void {
       return { actions, dispose: () => undefined };
     },
   });
-  // the editor store runs a fix, so that it can create a file and place the caret
+  // The editor store runs a fix because a fix may create a file and place the caret.
   monaco.editor.registerCommand(FIX_COMMAND, (_accessor, fix: Fix) => useEditorStore().applyFix(fix));
 }
 
@@ -215,7 +203,7 @@ function registerDecoration(selector: languages.LanguageFilter[], legend: langua
   monaco.languages.registerInlayHintsProvider(selector, {
     onDidChangeInlayHints: hintsChanged.event,
     provideInlayHints: async (model) => ({
-      // Monaco's own padding is a few pixels, so an em space sets the hint further apart from the code
+      // An em space sets the hint further from the code than Monaco's own padding does.
       hints: ((await lsp.ListHints(model.uri.fsPath)) ?? [])
         .filter((hint) => {
           const key = HINT_SETTINGS[hint.kind];
@@ -266,9 +254,9 @@ async function resolveCompletions(
 }
 
 /**
- * fetchPicture returns the picture of an image file as a data URL, since Monaco's markdown refuses a relative one. The
- * picture is drawn at most PICTURE_WIDTH wide, a smaller one at its own size, so the URL stays under the 100,000
- * characters Monaco's markdown takes. It is "" if the file cannot be read.
+ * fetchPicture returns the picture of an image file as a data URL, since Monaco's markdown refuses a relative one. It
+ * is scaled down to keep the URL under the 100,000 characters Monaco's markdown takes, and is "" if the file cannot be
+ * read.
  */
 async function fetchPicture(path: string): Promise<string> {
   const response = await fetch(fileUrl(path));
@@ -302,9 +290,8 @@ function toLocations(sites: Site[] | null): languages.Location[] {
 }
 
 /**
- * markPlace records the place of a file a peek may list and returns the file's URI. The place gives the peek its
- * folder label and the dot before the file name its origin color. Monaco gives a peek's rows no hook, so the dot's
- * rule finds the row by the full path its label ends with.
+ * markPlace records the place of a file a peek may list and returns the file's URI. Monaco gives a peek's rows no hook,
+ * so the dot's rule finds the row by the full path its label ends with.
  */
 function markPlace(place: Place): monaco.Uri {
   const uri = monaco.Uri.file(place.path);

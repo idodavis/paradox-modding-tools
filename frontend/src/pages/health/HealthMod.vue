@@ -1,8 +1,4 @@
-<!--
-  One mod's health, with what it holds, its problems and how much of each language is written. The open problem's
-  detail links to the game's log lines at its place, and to the finding of workspace compatibility about the file
-  that defines its name.
--->
+<!-- One mod's health: what it holds, its problems and how much of each language is written. -->
 <script setup lang="ts">
 import { computed, shallowRef } from "vue";
 import { useMutation, useQuery, useQueryCache } from "@pinia/colada";
@@ -68,7 +64,6 @@ const { data: installLanguages } = useQuery(() => ({
   enabled: !!state.value?.install.id,
 }));
 const allDatabases = shallowRef(false);
-// the tabs give their values as text or numbers
 const topic = shallowRef<string | number>("");
 
 const subtitle = computed(() => {
@@ -138,10 +133,7 @@ const related = computed(() => {
       )
     : undefined;
 });
-/**
- * The related compatibility finding, as parts: the file it is about, then its message. It is empty if there is no
- * such finding.
- */
+/** The related compatibility finding as parts, or none if there is no such finding. */
 const relation = computed((): Part[] => {
   const other = related.value;
   return other
@@ -177,21 +169,6 @@ function listHits(finding: Finding): Finding[] {
           <span class="truncate text-16 text-highlighted">{{ mod.descriptor.name }}</span>
           <span v-if="subtitle" class="truncate text-11 text-dimmed">{{ subtitle }}</span>
         </span>
-        <span class="grow" />
-        <UButton
-          label="Publish"
-          icon="i-lucide-upload"
-          variant="ghost"
-          color="neutral"
-          :to="{ name: 'release', params: { id: workspace.activeId() }, query: { mod: mod.id } }"
-        />
-        <UButton
-          label="Open in the IDE"
-          icon="i-lucide-code"
-          variant="ghost"
-          color="neutral"
-          :to="{ name: 'workspace-ide', params: { id: workspace.activeId() } }"
-        />
       </div>
       <div class="flex flex-wrap items-center gap-1.5 text-12 text-muted">
         <span v-for="fact in facts" :key="fact.label" class="rounded-chip border border-default bg-muted px-2 py-0.5">

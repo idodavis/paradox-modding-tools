@@ -1,7 +1,4 @@
-<!--
-  The frame of a detail in Health: a fixed head with an icon, a title on up to two lines, a pill and a line under it,
-  and buttons, over a body of sections that scrolls.
--->
+<!-- The frame of a detail in Health: a fixed head over a body of sections that scrolls. -->
 <script setup lang="ts">
 const {
   icon,

@@ -1,8 +1,6 @@
 <!--
-  The top bar of every window: the PMT menu, then the workspace switcher and the workspace's page tabs in the main
-  window or what another window shows, then the agent pane button in the main window, search and the window's buttons.
-  Its empty space moves the window. The main window also tells, when the launched game closes, what the game's error
-  log says about the workspace's mods.
+  The top bar of every window: the PMT menu, the workspace switcher and page tabs, search and the window's buttons.
+  The main window also reports what the game's error log says about the mods when the launched game closes.
 -->
 <script setup lang="ts">
 import type { ContextMenuItem, DropdownMenuItem } from "@nuxt/ui";
@@ -25,14 +23,12 @@ import { findKbds } from "./commands";
 import { homeRoute, isWorkspacePage, listShownTools, PAGES, type WorkspacePage } from "./pages";
 
 const IS_MAIN = THIS_WINDOW === "main";
-// whether the window's buttons are Linux's round ones rather than Windows' square ones
 const ROUND = System.IsLinux();
 const SQUARE_BUTTON = "flex w-11.5 items-center justify-center text-toned";
 const ROUND_BUTTON =
   "flex size-6 items-center justify-center rounded-full bg-accented text-toned hover:text-highlighted";
-// a tab's line on top matches its highlight below, so its icon and label center on the bar's middle
+// A tab's line on top matches its highlight below, so its icon and label center on the bar's middle.
 const TAB = "flex items-center gap-1.5 px-2.5 border-y-2 border-transparent text-13 font-medium whitespace-nowrap";
-// the window moves by dragging this space
 const CAPTION = "self-stretch [--wails-draggable:drag]";
 
 const route = useRoute();
@@ -60,7 +56,7 @@ const checkMaximized = useDebounceFn(async () => (maximized.value = await Window
 useEventListener(window, "resize", () => void checkMaximized());
 void checkMaximized();
 
-// the window's buttons in order: the name of each, its label, its glyph on a 10 by 10 grid and what it does
+// Each glyph is drawn on a 10 by 10 grid.
 const windowButtons = computed(() => [
   { region: "minimize", label: "Minimize", glyph: "M0 5.5h10", press: () => Window.Minimise() },
   {
@@ -72,15 +68,14 @@ const windowButtons = computed(() => [
   { region: "close", label: "Close", glyph: "M.5.5l9 9M9.5.5l-9 9", press: () => Window.Close() },
 ]);
 
-// Below 1110px at a scale of 100% the bar is compact: inactive tabs show only their icons. That width fits every label,
-// the pop-out button and some space to drag the window by.
+// Below 1110px at a scale of 100% the bar is compact: that width fits every label, the pop-out button and some space
+// to drag the window by.
 const bar = useTemplateRef("bar");
 const { width } = useElementSize(bar);
 const compact = computed(
   () => width.value > 0 && width.value < (1110 * (Number(settings.value("appearance.scale")) || 100)) / 100,
 );
 
-// a page in a window of its own: its tab brings that window up, and the main window shows another page
 /** resolvePageWindow returns the name of the window of its own that shows a page. */
 const resolvePageWindow = (name: WorkspacePage) => `page:${name}`;
 /** isPopped reports whether a page is shown in a window of its own. */
@@ -89,7 +84,7 @@ const isPopped = (name: WorkspacePage) =>
 /** canPopOut reports whether a page can open in a window of its own. The IDE stays in the main window. */
 const canPopOut = (name: WorkspacePage) => name !== "workspace-ide";
 
-// the full path each page was last shown at, by its path without the query
+// The full path each page was last shown at, by its path without the query.
 const paths = reactive(new Map<string, string>());
 watch(
   () => route.fullPath,
@@ -97,14 +92,12 @@ watch(
   { immediate: true },
 );
 
-// the menu item that switches to the other of light and dark
 const mode = computed(() =>
   settings.theme().dark
     ? { label: "Switch to light", icon: "i-lucide-sun" }
     : { label: "Switch to dark", icon: "i-lucide-moon" },
 );
 
-// the PMT menu, in the main window alone: the Library, then Settings, the keyboard shortcuts and light or dark
 const menu = computed(
   () =>
     [
@@ -126,7 +119,6 @@ const menu = computed(
     ] satisfies DropdownMenuItem[][],
 );
 
-// the switcher's menu: each game's workspaces, then New workspace
 const switcher = computed(
   () =>
     [
@@ -146,33 +138,30 @@ const switcher = computed(
     ] satisfies DropdownMenuItem[][],
 );
 
-/** toggleDark switches to the other of light and dark. */
+/** toggleDark switches between light and dark. */
 function toggleDark(): void {
   settings.write("appearance.dark", String(!settings.theme().dark));
 }
 
-/** resolveLink returns the switcher's link to a workspace: the page shown now if it is a workspace page, else home. */
+/** resolveLink returns the switcher's link to a workspace, on the page shown now or else home. */
 function resolveLink(id: string) {
   const name = route.name;
   if (name && isWorkspacePage(name)) return { name, params: { id } };
   return homeRoute(id, workspaces.value?.find((row) => row.record.id === id)?.record.homePage ?? "");
 }
 
-/**
- * resolveTabLink returns the link of a page's tab: where the page was last shown, with its view, row or root. The tab
- * of the page now shown links to the page's first state instead, such as Health's summary.
- */
+/** resolveTabLink returns the link of a page's tab: where the page was last shown, or its start if it is shown now. */
 function resolveTabLink(name: WorkspacePage) {
   const first = { name, params: { id: workspace.activeId() } };
   return route.name === name ? first : (paths.get(router.resolve(first).path) ?? first);
 }
 
-/** tabClass returns the classes of a page's tab, marked when its page is the one shown. */
+/** tabClass returns the classes of a page's tab. */
 function tabClass(isShown: boolean): string[] {
   return [TAB, isShown ? "border-b-primary text-highlighted" : "text-toned hover:text-highlighted"];
 }
 
-/** tabMenu returns a tab's context menu: the IDE stays in the main window, a page opens in a window of its own. */
+/** tabMenu returns a tab's context menu. The IDE stays in the main window. */
 function tabMenu(name: WorkspacePage): ContextMenuItem[] {
   if (!canPopOut(name)) return [];
   if (!isPopped(name))
@@ -190,18 +179,14 @@ function tabMenu(name: WorkspacePage): ContextMenuItem[] {
   ];
 }
 
-/** popOut opens a page in a window of its own, and shows another page here if it was the one shown. */
+/** popOut opens a page in a window of its own and shows another page here. */
 function popOut(name: WorkspacePage): void {
   windows.popOut(resolvePageWindow(name));
   const next = tools.value.find((tool) => tool !== name && !isPopped(tool));
   if (route.name === name && next) void router.push({ name: next, params: { id: workspace.activeId() } });
 }
 
-/**
- * announceExit toasts that the launched game closed, with what its error log says about the workspace's mods and a way
- * to open the log. When the game wrote fresher documentation it also offers to scan the install again, and the toast
- * stays until it is closed.
- */
+/** announceExit toasts that the launched game closed. If the game wrote fresher documentation, the toast stays. */
 async function announceExit(dumpsFresher: boolean): Promise<void> {
   const install = active.value?.record.install;
   toast.add({
@@ -222,10 +207,7 @@ async function announceExit(dumpsFresher: boolean): Promise<void> {
   });
 }
 
-/**
- * describeLog returns what the game's error log says about the workspace's mods. It is undefined if the log cannot be
- * read.
- */
+/** describeLog returns what the game's error log says about the mods, or undefined if it cannot be read. */
 async function describeLog(): Promise<string | undefined> {
   try {
     const { findings } = await health.ListErrorLog();
@@ -239,7 +221,7 @@ async function describeLog(): Promise<string | undefined> {
   }
 }
 
-/** styleButton returns a window button's classes: round on Linux, square on Windows, close red under the pointer. */
+/** styleButton returns a window button's classes, round on Linux and square on Windows. */
 function styleButton(region: string): string[] {
   if (ROUND) return [ROUND_BUTTON];
   const hover =
@@ -249,7 +231,7 @@ function styleButton(region: string): string[] {
 </script>
 
 <template>
-  <!-- the bar's line on top matches its line below, and what fills its height reaches over both -->
+  <!-- The bar's line on top matches its line below, and what fills its height reaches over both. -->
   <header
     ref="bar"
     class="flex h-9 shrink-0 items-center gap-3 border-y border-default border-t-transparent bg-muted ps-3.5"

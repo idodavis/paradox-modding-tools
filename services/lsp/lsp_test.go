@@ -88,11 +88,11 @@ func writeFiles(t *testing.T, dir string, texts map[string]string) {
 }
 
 // openService opens a workspace of English on an install with the given mods, and returns the language service
-// over it. The workspace is closed when the test ends.
+// over it.
 func openService(t *testing.T, gameID, installPath string, mods ...app.Mod) *Service {
 	t.Helper()
 	startApp.Do(func() { application.New(application.Options{}) })
-	// the folders PMT uses come from the XDG variables, read again now and once more when the test ends
+	// PMT reads its folders from these variables, so the test points them at temporary ones.
 	for _, variable := range []string{"APPDATA", "LOCALAPPDATA", "XDG_CONFIG_HOME", "XDG_CACHE_HOME"} {
 		t.Setenv(variable, t.TempDir())
 	}
@@ -163,8 +163,8 @@ func checkCodes(t *testing.T, ide *Service, dir string, want map[string][]string
 	}
 }
 
-// TestToRangeCountsUtf16Units checks that a range counts its columns in UTF-16 code units, one for a character of
-// two bytes and two for a character above U+FFFF, and that its lines and columns start from one.
+// TestToRangeCountsUtf16Units checks that a range counts its columns in UTF-16 code units, and that its lines and
+// columns start from one.
 func TestToRangeCountsUtf16Units(t *testing.T) {
 	text := "a = \"é😀x\"\nnext = 1\n"
 	lines := jomini.NewLines(text)
@@ -182,7 +182,7 @@ func TestToRangeCountsUtf16Units(t *testing.T) {
 }
 
 // TestToOffsetInvertsToRange checks that every character boundary of a text converts to a range start and back to
-// the same offset, and that a position past the end of its line or of the text gives the nearest offset.
+// the same offset, and that a position past the end gives the nearest offset.
 func TestToOffsetInvertsToRange(t *testing.T) {
 	text := "a = \"é😀x\"\nnext = 1\n"
 	lines := jomini.NewLines(text)
@@ -225,7 +225,7 @@ func TestSetTextAnswersWithProblemsUntilFileCloses(t *testing.T) {
 }
 
 // TestDiagnoseReportsEachVerdict checks the code of each problem in the CK3 fixture's files and in two mods written
-// for it, including the codes of the parser and of localization.
+// for it.
 func TestDiagnoseReportsEachVerdict(t *testing.T) {
 	ide, dirs := openFixtures(t, ck3, map[string]string{
 		eventsPath: "namespace = t\n\nt.1 = {\n\ttype = character_event\n\ttrigger_event = t.99\n" +
@@ -260,8 +260,8 @@ func TestDiagnoseReportsEachVerdict(t *testing.T) {
 	})
 }
 
-// TestDiagnoseGradesEntryModesAndFirstDefinitions checks in the Vic3 fixture that an entry mode in its place is quiet
-// and one out of place is reported. It checks that the later of two definitions is a duplicate only within one mod.
+// TestDiagnoseGradesEntryModesAndFirstDefinitions checks in the Vic3 fixture that only an entry mode out of place is
+// reported, and that the later of two definitions is a duplicate only within one mod.
 func TestDiagnoseGradesEntryModesAndFirstDefinitions(t *testing.T) {
 	event := "namespace = ww\n\nww.1 = {\n\ttype = country_event\n}\n"
 	ide, dirs := openFixtures(t, vic3, map[string]string{
@@ -298,8 +298,7 @@ func TestDiagnoseReportsKeysEveryShippedDefinitionWrites(t *testing.T) {
 	}
 }
 
-// TestHoverNamesWhatItIs checks the card of each kind of thing a position can be on in the CK3 fixture: a definition, a
-// reference, an effect, a keyword, a field, a saved scope, an image path and nothing.
+// TestHoverNamesWhatItIs checks the card of each kind of thing a position can be on in the CK3 fixture.
 func TestHoverNamesWhatItIs(t *testing.T) {
 	ide, dir := openFixture(t, ck3, nil)
 	target := filepath.Join(dir, "events", "m_events.txt")
@@ -319,7 +318,7 @@ func TestHoverNamesWhatItIs(t *testing.T) {
 		card.Sites[0].Place.Origin != game.OriginVanilla || !card.Sites[0].Place.ReadOnly {
 		t.Errorf("a reference: %+v", card)
 	}
-	if card := hover(14, 5); card == nil || card.What != "effect" || card.Runs != "no restriction declared" {
+	if card := hover(14, 5); card == nil || card.What != "effect" || card.Runs != "The game does not say" {
 		t.Errorf("an effect: %+v", card)
 	}
 	if card := hover(13, 5); card == nil || card.What != "keyword" || card.Class != "saving" || card.Blurb == "" {
@@ -377,8 +376,7 @@ func TestDiagnoseJudgesOnlySyntaxOfGameFiles(t *testing.T) {
 	}
 }
 
-// TestEncodeTokensWritesDeltas checks that tokens are sorted and written as deltas, and that a token on two lines is
-// left out.
+// TestEncodeTokensWritesDeltas checks that tokens are sorted and written as deltas.
 func TestEncodeTokensWritesDeltas(t *testing.T) {
 	text := "ab cd\nef\n  gh😀i\n\"x\ny\" z\n"
 	tokens := []token{
@@ -406,8 +404,8 @@ func TestTokensEncodeWholeFile(t *testing.T) {
 	}
 }
 
-// TestFormatKeepsLinesAndStaysIdempotent checks that Format only indents and spaces: every line break and comment
-// stays where it is, and formatting the result changes nothing.
+// TestFormatKeepsLinesAndStaysIdempotent checks that Format only indents and spaces, and that formatting the result
+// changes nothing.
 func TestFormatKeepsLinesAndStaysIdempotent(t *testing.T) {
 	ide, dir := openFixture(t, ck3, nil)
 	target := filepath.Join(dir, "common", "traits", "m_traits.txt")
@@ -500,9 +498,7 @@ func TestCompleteListsKeysAndValues(t *testing.T) {
 	}
 }
 
-// TestNavigationFollowsNamesAcrossFiles checks that Definition puts the kept definition first, that References lists
-// the definition and the uses, that PrepareRename refuses a name of the game, and that Rename edits each place in the
-// mod.
+// TestNavigationFollowsNamesAcrossFiles checks Definition, References, PrepareRename and Rename across files.
 func TestNavigationFollowsNamesAcrossFiles(t *testing.T) {
 	ide, dir := openFixture(t, ck3, nil)
 	target := filepath.Join(dir, "events", "m_events.txt")

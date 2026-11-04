@@ -1,5 +1,4 @@
-// dds.go reads a DDS file's header and decodes its levels into an image, whether they are uncompressed or in blocks of
-// the BC1 to BC5 compressions. It also names the file's format.
+// dds.go reads a DDS file's header and decodes its levels into an image, whether uncompressed or in BC1 to BC5 blocks.
 
 package texture
 
@@ -28,9 +27,7 @@ const (
 	ddsAlphaPixels = 0x1
 )
 
-// The offsets of a DDS file's fields, counted from its magic: the header's size and flags, the image's height, width
-// and mip levels, the pixel format with its flags, FourCC, bits per pixel and masks, the caps, and the DXGI format of
-// a DX10 header.
+// The offsets of a DDS file's fields, counted from its magic.
 const (
 	ddsSizeOffset        = 4
 	ddsFlagsOffset       = 8
@@ -46,8 +43,7 @@ const (
 	ddsDXGIOffset        = 128
 )
 
-// The sizes of a DDS header without its magic and of its pixel format, and where a file's data starts without a
-// DX10 header and with one.
+// The sizes of a DDS header and its pixel format, and where the data starts without a DX10 header and with one.
 const (
 	ddsHeaderSize     = 124
 	ddsFormatSize     = 32
@@ -58,7 +54,7 @@ const (
 // ddsHeaderFlags are the fields a DDS header fills: caps, height, width, pixel format and mipmap count.
 const ddsHeaderFlags = 0x21007
 
-// The caps of a DDS: a texture, and the two a texture with a chain of mip levels adds, complex and mipmap.
+// The caps of a DDS: a texture, and a texture with a chain of mip levels.
 const (
 	ddsTexture = 0x1000
 	ddsChain   = 0x400008
@@ -69,9 +65,8 @@ var fourCCs = map[string]uint32{
 	"DXT1": 70, "DXT3": 73, "DXT5": 76, "ATI1": 79, "BC4U": 79, "ATI2": 82, "BC5U": 82,
 }
 
-// dxgiCompressions lists the block compressions. A row gives the range of DXGI formats of one compression, from its
-// typeless format to its last variant, the bytes of one 4 by 4 block and the decoder of a block. BC6H has two rows
-// because its signed format decodes differently from its unsigned ones.
+// dxgiCompressions lists the block compressions, each with the range of DXGI formats it covers, the bytes of one 4 by
+// 4 block and its block decoder. BC6H has two rows because its signed format decodes differently.
 var dxgiCompressions = []dxgiCompression{
 	{70, 72, "BC1", 8, decodeBC1}, {73, 75, "BC2", 16, decodeBC2}, {76, 78, "BC3", 16, decodeBC3},
 	{79, 81, "BC4", 8, decodeBC4}, {82, 84, "BC5", 16, decodeBC5},
@@ -95,8 +90,8 @@ var dxgiMasks = map[uint32][5]uint32{
 	93: {32, 0xff0000, 0xff00, 0xff, 0},          // B8G8R8X8_UNORM_SRGB
 }
 
-// decodeDDS decodes one mip level of a DDS with the given header to RGBA. It handles BC1 to BC7 and uncompressed data.
-// It returns an error if the data ends before the level's last pixel.
+// decodeDDS decodes one mip level of a DDS with the given header to RGBA. It returns an error if the data ends before
+// the level's last pixel.
 func decodeDDS(bytes []byte, header Header, level int) (image.Image, error) {
 	data := bytes[ddsDataOffset:]
 	if _, dx10 := lookupDXGI(bytes); dx10 {
@@ -175,8 +170,7 @@ func lookupDXGI(bytes []byte) (uint32, bool) {
 	return binary.LittleEndian.Uint32(bytes[ddsDXGIOffset:]), true
 }
 
-// describeDDSFormat names the format a DDS header declares, for an error about it: its DXGI format, its FourCC
-// as text or as the number a Direct3D 9 format code is, or its bits per pixel.
+// describeDDSFormat names the format a DDS header declares, for an error about it.
 func describeDDSFormat(bytes []byte) string {
 	if dxgi, ok := lookupDXGI(bytes); ok {
 		return fmt.Sprintf("DXGI format %d", dxgi)
@@ -194,8 +188,7 @@ func describeDDSFormat(bytes []byte) string {
 }
 
 // decodeBlocks decodes a block-compressed image one 4 by 4 block at a time, with the given decoder for blocks of the
-// given size in bytes. A block's pixels past the right or bottom edge are dropped. It returns an error if the data
-// ends before the last block.
+// given size in bytes. It returns an error if the data ends before the last block.
 func decodeBlocks(
 	data []byte, header Header, blockBytes int, decodeBlock func(block []byte, pixels *[16][4]uint8),
 ) (image.Image, error) {
@@ -232,8 +225,7 @@ func decodeBC1(block []byte, pixels *[16][4]uint8) {
 	decodeBC1Indices(block[4:], palette, pixels)
 }
 
-// buildBC1Palette builds the four colors of a BC1 color block: its two 5-6-5 colors scaled to bytes and the
-// two a third and two thirds of the way between them.
+// buildBC1Palette builds the four colors of a BC1 color block from its two 5-6-5 colors.
 func buildBC1Palette(block []byte) [4][4]uint8 {
 	var palette [4][4]uint8
 	for e := range 2 {
@@ -279,7 +271,7 @@ func decodeBC3(block []byte, pixels *[16][4]uint8) {
 	}
 }
 
-// decodeBC4Channel decodes one BC4 block to its sixteen values, each picked from its palette by a three-bit index.
+// decodeBC4Channel decodes one BC4 block to its sixteen values.
 func decodeBC4Channel(block []byte) [16]uint8 {
 	palette := buildBC4Palette(int(block[0]), int(block[1]))
 	indices := binary.LittleEndian.Uint64(block[:8]) >> 16
@@ -322,9 +314,8 @@ func decodeBC5(block []byte, pixels *[16][4]uint8) {
 	}
 }
 
-// resolveDDSMasks returns the bits per pixel and the red, green, blue and alpha masks of an uncompressed DDS,
-// from its DX10 header's format or from its pixel format. A luminance format gets its one mask for red, green
-// and blue.
+// resolveDDSMasks returns the bits per pixel and the red, green, blue and alpha masks of an uncompressed DDS. A
+// luminance format gets its one mask for red, green and blue.
 func resolveDDSMasks(bytes []byte) (int, [4]uint32) {
 	if dxgi, ok := lookupDXGI(bytes); ok {
 		row := dxgiMasks[dxgi]
@@ -341,9 +332,8 @@ func resolveDDSMasks(bytes []byte) (int, [4]uint32) {
 	return depth, masks
 }
 
-// decodeMasked decodes uncompressed pixels of the given depth in bits. Each channel is read through its mask and
-// scaled to a byte. A channel without a mask is 0, or 255 for alpha. It returns an error if the data ends before the
-// last row.
+// decodeMasked decodes uncompressed pixels of the given depth in bits through the given masks. A channel without a
+// mask is 0, or 255 for alpha. It returns an error if the data ends before the last row.
 func decodeMasked(data []byte, header Header, depth int, masks [4]uint32) (image.Image, error) {
 	size := depth / 8
 	stride := header.Width * size
@@ -362,7 +352,6 @@ func decodeMasked(data []byte, header Header, depth int, masks [4]uint32) (image
 				value |= uint32(data[y*stride+x*size+i]) << (8 * i)
 			}
 			pixel := nrgba.Pix[nrgba.PixOffset(x, y):]
-			// Alpha is full unless a mask says otherwise.
 			pixel[3] = 255
 			for c, mask := range masks {
 				if mask == 0 {

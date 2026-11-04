@@ -1,7 +1,4 @@
-<!--
-  Save as DDS: writes a picture, or the pictures directly in a folder, as DDS files beside them. The choices start as
-  the settings of the DDS files being replaced, when those agree.
--->
+<!-- Save as DDS: writes a picture, or the pictures directly in a folder, as DDS files beside them. -->
 <script setup lang="ts">
 import { computed, shallowRef, watch } from "vue";
 import { useMutation, useQuery } from "@pinia/colada";
@@ -29,7 +26,7 @@ const mipmaps = shallowRef(false);
 const likeness = shallowRef("");
 const { data } = useQuery(() => ddsPicturesQuery(place.path));
 const pictures = computed(() => data.value?.pictures ?? []);
-// a mod's root folder, or a picture directly in it, has no path inside the mod, so the mod's name labels it
+// A mod's root folder has no path inside the mod, so the mod's name labels it.
 const folder = computed(() => (place.isDir ? place.rel : place.folder) || workspace.originName(place.origin));
 const summary = computed(() => {
   const [first] = pictures.value;
@@ -68,8 +65,8 @@ function toDDS(name: string): string {
 }
 
 /**
- * preselect sets the dialog's choices to the settings of the DDS files the pictures replace, when every picture has
- * one and they agree, and says so under the choices. Otherwise the choices keep the defaults: uncompressed, no mipmaps.
+ * preselect sets the choices to the settings of the DDS files the pictures replace, when every picture has one and they
+ * all agree. Otherwise the choices keep their defaults.
  */
 function preselect(): void {
   const references = pictures.value.flatMap((picture) => data.value?.references?.[picture.path] ?? []);

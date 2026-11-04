@@ -130,8 +130,7 @@ func buildEnvironment() []string {
 	return env
 }
 
-// receive keeps the console's output until the console closes, then marks the shell ended. Before each read it waits
-// for a window that has fallen behind.
+// receive keeps the console's output until the console closes, then marks the shell ended.
 func (shell *Shell) receive() {
 	defer close(shell.done)
 	chunk := make([]byte, 32<<10)
@@ -277,7 +276,7 @@ func (shell *Shell) Close() {
 	if shell.closed {
 		return
 	}
-	// This wakes a read that waits for a window, since a pseudo console does not close until its output is read.
+	// This wakes a read that waits for a window.
 	shell.outputMu.Lock()
 	shell.closed = true
 	shell.emitChange()

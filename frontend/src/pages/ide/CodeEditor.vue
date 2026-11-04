@@ -1,7 +1,4 @@
-<!--
-  A Monaco editor over one Model, with the hover card, merge conflict links and a context menu. It exposes the editor
-  as `view`.
--->
+<!-- A Monaco editor over one Model, with the hover card, merge conflict links and a context menu. -->
 <script setup lang="ts">
 import { computed, onBeforeUnmount, onMounted, shallowRef, useTemplateRef, watch } from "vue";
 import { useRouter } from "vue-router";
@@ -42,10 +39,7 @@ const { model, active } = defineProps<{ model: Model; active: boolean }>();
 
 /** JUMP_LINES is how many lines the caret must move at once for the history to record the place it left. */
 const JUMP_LINES = 10;
-/**
- * CARD_CONTENT places the hover card flush against the word, so the pointer crosses no other line on its way to the
- * card. It keeps the focus in the editor as the card opens and closes.
- */
+/** CARD_CONTENT places the hover card flush against the word and keeps the focus in the editor. */
 const CARD_CONTENT: PopoverProps["content"] = {
   side: "top",
   sideOffset: 0,
@@ -63,7 +57,6 @@ const commandBus = useEventBus(COMMAND_BUS);
 const host = useTemplateRef("host");
 const view = shallowRef<editor.IStandaloneCodeEditor>();
 const hovering = shallowRef<ReturnType<typeof attachHover>>();
-// the hover card is anchored on the rectangle of the word the pointer rests on
 const anchor = { getBoundingClientRect: () => hovering.value?.hover.value?.anchor ?? new DOMRect() };
 let stopChanges = () => {};
 defineExpose({ view });
@@ -91,7 +84,6 @@ const { mutate: findAll } = useMutation({
     listReferences(`References to ${hovered?.title ?? "the name"}`, sites ?? []);
   },
 });
-// lists the places that fire the card's name, from the name's detail in the Event Graph
 const { mutate: findFirers } = useMutation({
   mutation: async (subject: Card) => {
     const detail = await loadQuery(detailQuery(subject.node ?? ""));
@@ -99,7 +91,6 @@ const { mutate: findFirers } = useMutation({
     listReferences(`What fires ${subject.title}`, sites);
   },
 });
-// a card with no lexicon row falls back to the first wiki page of the file that defines it
 const { data: pages } = useQuery(() => ({
   ...wikiPagesQuery(card.value?.sites?.[0]?.place.path ?? ""),
   enabled: workspace.isOpen() && !card.value?.lexicon && !!card.value?.sites?.length,
@@ -110,7 +101,6 @@ const lookup = computed((): WikiLookup | undefined => {
   const title = pages.value?.[0]?.title;
   return title ? { title } : undefined;
 });
-// the game's copy is offered for comparison only for a mod file the game also has
 const { data: copies } = useQuery(() => ({
   ...copiesQuery(model.place.path),
   enabled: model.place.origin !== VANILLA,
@@ -125,12 +115,11 @@ onMounted(() => {
     readOnly: model.place.readOnly,
     readOnlyMessage: { value: describeReadOnly(model.place) },
   });
-  // a file shown again opens at the caret it had
   const caret = { lineNumber: model.caret.line, column: model.caret.column };
   codeEditor.setPosition(caret);
   codeEditor.revealPositionInCenterIfOutsideViewport(caret);
   codeEditor.onDidChangeCursorPosition(({ position, reason, source }) => {
-    // the history records only a far move the user makes; the app records its own jumps
+    // The history records only a far move the user makes. The app records its own jumps.
     const far = Math.abs(position.lineNumber - model.caret.line) > JUMP_LINES;
     if (active && far && reason === editor.CursorChangeReason.Explicit && source !== "api")
       editorStore.record({ place: model.place, position });
@@ -160,8 +149,8 @@ onBeforeUnmount(() => {
 });
 
 watch(editorOptions, (options) => view.value?.updateOptions(options));
-// a range requested when the file was shown is selected once, in the active group's editor. That editor takes focus
-// unless Follow the agent opened the file, so the focus stays where the user is typing
+// A range requested when the file was shown is selected once, in the active group's editor. The editor takes focus
+// unless Follow the agent opened the file, so the focus stays where the user is typing.
 watch(
   [view, () => (active ? editorStore.findRequest(model.place.key) : undefined)],
   ([codeEditor, range]) => {
@@ -174,25 +163,19 @@ watch(
   { immediate: true },
 );
 
-/**
- * listReferences puts the sites in the references list under the given heading, which every window shows. It also has
- * the main window show its search sidebar.
- */
+/** listReferences puts the sites in the references list under the given heading and shows it in the main window. */
 function listReferences(heading: string, sites: Site[]): void {
   useSearchStore().showReferences(heading, sites);
   windows.sendCommand("editor.findInFiles", "main");
 }
 
-/** describeReadOnly returns what the editor says when typing is tried in a read only file: why, and what to do. */
+/** describeReadOnly returns what the editor says when typing is tried in a read only file. */
 function describeReadOnly(place: Place): string {
   if (place.origin === VANILLA) return "Game files are read only. To change this, use Override, or Copy into a mod.";
   return `${workspace.originName(place.origin)} is Steam's copy of a Workshop mod, so PMT keeps it read only. Make a mod for your changes.`;
 }
 
-/**
- * keepMovedFocus stops the menu from taking focus back after an item moved it to another text box, such as the editor
- * of the file a fix opened or the agent's prompt box.
- */
+/** keepMovedFocus stops the menu from taking focus back after an item moved it to another text box. */
 function keepMovedFocus(event: Event): void {
   const focused = document.activeElement;
   if (focused?.tagName === "TEXTAREA" && !host.value?.contains(focused)) event.preventDefault();
@@ -217,7 +200,7 @@ function replaceSelections(text: string): void {
   );
 }
 
-// the name of the entry the caret is in, which is the first of the blocks the card names; "" if it names none
+// The name of the entry the caret is in, or "" if the card names none.
 const entry = computed(() => card.value?.within?.[0] ?? "");
 
 const groups = computed<ContextMenuItem[][]>(() => [
@@ -317,7 +300,7 @@ const menu = computed(() => groups.value.filter((group) => group.length));
 </script>
 
 <template>
-  <!-- the menu's trigger takes its child's ref, so the editor's element sits inside the wrapper div -->
+  <!-- The menu's trigger takes its child's ref, so the editor's element sits inside the wrapper div. -->
   <UContextMenu
     :items="menu"
     :ui="{ content: 'min-w-79 max-w-130' }"
@@ -333,7 +316,7 @@ const menu = computed(() => groups.value.filter((group) => group.length));
         @update:open="(open) => open || hovering?.close()"
       >
         <template #content>
-          <!-- never taller than the room beside the word: a long card scrolls inside itself -->
+          <!-- A long card scrolls inside itself instead of outgrowing the room beside the word. -->
           <div
             v-if="hovering?.hover.value"
             class="max-h-(--reka-popover-content-available-height) overflow-y-auto"

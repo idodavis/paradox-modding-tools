@@ -1,7 +1,4 @@
-<!--
-  A confirmation dialog with a title, a description and its buttons. It resolves with the choice made: true for the
-  confirm, "alternative" for the second action when it has one, and false for Cancel. A destructive confirm is red.
--->
+<!-- A confirmation dialog. It resolves true to confirm, "alternative" for a second action, false to cancel. -->
 <script setup lang="ts">
 const {
   title,

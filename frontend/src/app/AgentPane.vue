@@ -1,8 +1,4 @@
-<!--
-  The agent pane, docked beside the main window's workspace pages or alone in a window of its own. Its header holds
-  the session menu, the files the session edited and the pane's buttons; ⤢ shows the session over the whole window.
-  With no session the pane offers the installed agents, the recent sessions to resume and the starter tasks.
--->
+<!-- The agent pane, docked beside the workspace pages or in a window of its own. -->
 <script setup lang="ts">
 import type { DropdownMenuItem } from "@nuxt/ui";
 import { useQuery } from "@pinia/colada";
@@ -17,20 +13,17 @@ import { listLatestEdits } from "../stores/edits";
 import { COMMAND_BUS, THIS_WINDOW } from "../stores/windows";
 import AgentSession from "../ui/AgentSession.vue";
 
-// whether the pane is a window of its own, which has no pane to close or pop out
 const IS_WINDOW = THIS_WINDOW === "agent";
 
 const agent = useAgentStore();
 const commandBus = useEventBus(COMMAND_BUS);
 const { data: tasks } = useQuery(tasksQuery);
 const field = useTemplateRef("field");
-// whether the session shows over the whole window, and the title being typed while it is renamed
 const isFullscreen = shallowRef(false);
 const draft = shallowRef<string | null>(null);
 
 const session = computed(() => agent.active);
 const changes = computed(() => (session.value ? listLatestEdits(session.value) : []));
-// the sessions to resume, the latest first: those not archived whose agent can start, each with its agent's name
 const recent = computed(() =>
   agent.records
     .filter((record) => !record.isArchived)
@@ -41,10 +34,7 @@ const recent = computed(() =>
     .slice(0, 8),
 );
 
-/**
- * The session menu: the shown agent's sessions, each with Rename, Archive and Delete, and its archived ones in a menu
- * of their own; then a new session, another agent and the agents' settings; then what the session speaks.
- */
+/** The session menu. */
 const menu = computed(() => {
   const shown = session.value;
   const own = agent.records.filter((record) => record.agent === shown?.agent.id);
@@ -83,12 +73,12 @@ const menu = computed(() => {
   ] satisfies DropdownMenuItem[][];
 });
 
-/** openSettings shows Settings at the agents' section, where agents are installed and updated. */
+/** openSettings shows Settings at the agents' section. */
 function openSettings(): void {
   commandBus.emit("settings.open", "agents");
 }
 
-/** startRename shows a session, the shown one unless one is given, with its title ready to be typed over. */
+/** startRename readies a session's title, the shown one's by default, to be typed over. */
 async function startRename(record?: SessionRecord): Promise<void> {
   if (record) agent.open(record);
   draft.value = record?.title ?? session.value?.title ?? "";
@@ -96,7 +86,7 @@ async function startRename(record?: SessionRecord): Promise<void> {
   field.value?.inputRef?.select();
 }
 
-/** endRename gives the shown session the title typed, unless the rename is cancelled. */
+/** endRename gives the shown session the typed title, unless the rename is cancelled. */
 function endRename(isKept: boolean): void {
   if (isKept && session.value?.id && draft.value !== null) agent.rename(session.value.id, draft.value);
   draft.value = null;
@@ -120,7 +110,6 @@ async function runTask(task: Task): Promise<void> {
     <div class="flex h-10 shrink-0 items-center gap-1 border-b border-default ps-2.5 pe-1.5">
       <template v-if="session">
         <UAvatar :text="abbreviate(session.agent.name)" size="xs" class="rounded-sm" />
-        <!-- Enter keeps the title typed and Escape drops it; leaving the field keeps it too -->
         <form
           v-if="draft !== null"
           class="min-w-0 grow"
@@ -137,7 +126,6 @@ async function runTask(task: Task): Promise<void> {
           />
         </form>
         <UDropdownMenu v-else :items="menu" :content="{ align: 'start' }">
-          <!-- a double-click renames the session; the whole title shows on hover when the label is cut -->
           <span class="flex min-w-0" :title="session.title" @dblclick="session.id && startRename()">
             <UButton
               :label="describeTitle(session)"
@@ -151,7 +139,7 @@ async function runTask(task: Task): Promise<void> {
           <template #session-label="{ item }">
             <span class="truncate" :title="item.record.title">{{ item.label }}</span>
           </template>
-          <!-- the buttons keep their pointer to themselves, so the item does not open the session too -->
+          <!-- The buttons keep their pointer to themselves, so the item does not open the session too. -->
           <template #session-trailing="{ item }">
             <span class="ms-auto flex" @pointerdown.stop @pointerup.stop @click.stop>
               <UButton

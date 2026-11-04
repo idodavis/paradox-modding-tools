@@ -1,7 +1,4 @@
-<!--
-  Groups of the differences the next upload makes on Steam, one row each with its mark, its name and what changes.
-  Pressing a row picks it, and the lit one is marked.
--->
+<!-- The differences the next upload makes on Steam, in groups of one row each. Pressing a row picks it. -->
 <script setup lang="ts">
 import { describeDifference, describeDifferenceLabel, MARKS, toDifferenceId } from "../../lib/format";
 import type { Difference } from "@services/steam/models";

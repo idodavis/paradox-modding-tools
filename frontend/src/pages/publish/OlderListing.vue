@@ -1,6 +1,4 @@
-<!--
-  This dialog adds a listing for an older game version to a mod. It is made from a zip, or imported from the Workshop.
--->
+<!-- A dialog that adds a listing for an older game version to a mod, from a zip or the Workshop. -->
 <script setup lang="ts">
 import { computed, shallowRef } from "vue";
 import { useMutation } from "@pinia/colada";

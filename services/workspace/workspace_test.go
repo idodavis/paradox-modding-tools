@@ -65,7 +65,7 @@ func copyMod(t *testing.T, gameID string) string {
 func openConfig(t *testing.T, gameID, installPath string, mods ...app.Mod) *app.ConfigFile {
 	t.Helper()
 	createApp()
-	// the folders PMT uses come from the XDG variables, read again now and once more when the test ends
+	// PMT's folders come from these variables
 	for _, variable := range []string{"APPDATA", "LOCALAPPDATA", "XDG_CONFIG_HOME", "XDG_CACHE_HOME"} {
 		t.Setenv(variable, t.TempDir())
 	}
@@ -124,8 +124,8 @@ func openFixture(t *testing.T) (*Session, string) {
 }
 
 // TestOpenLoadsCachesOnSecondOpen checks that a first open scans the install and writes both caches, that a second
-// open reads them and scans only the mods, that everything else in the game's cache folder is deleted, a file too,
-// and that a mod whose folder is missing is broken and not scanned.
+// open reads them and scans only the mods, that nothing else is kept in the game's cache folder, and that a mod whose
+// folder is missing is broken and not scanned.
 func TestOpenLoadsCachesOnSecondOpen(t *testing.T) {
 	missing := filepath.Join(t.TempDir(), "gone")
 	config := openConfig(t, ck3, resolveFixture(t, ck3),
@@ -142,7 +142,6 @@ func TestOpenLoadsCachesOnSecondOpen(t *testing.T) {
 	if want := []string{"listing", "schema", "indexing", "postings", "mods"}; !slices.Equal(stages, want) {
 		t.Errorf("first open stages: %v, want %v", stages, want)
 	}
-	// the folder is built from the session's own version, build and dumps, as the install record update builds it
 	dumpsAt := ws.Schema.Dumps.WrittenAt.Unix()
 	checksum := game.LoadChecksum(resolveFixture(t, ck3))
 	folder := filepath.Join(config.Dirs.Cache, ck3, fmt.Sprintf("%s-%s-%d-test", ws.Schema.Version, checksum, dumpsAt))
@@ -241,8 +240,8 @@ func TestListRootsPutsModsBeforeGame(t *testing.T) {
 }
 
 // TestLookupTextPrefersReplaceFolder checks that a message in a replace folder wins over the install's, that the
-// base language answers where the session's language has none, that a key nobody writes is not found, and that a file
-// a mod replaces gives no message.
+// base language answers where the session's language has none, and that a key nobody writes or a file a mod replaces
+// gives no message.
 func TestLookupTextPrefersReplaceFolder(t *testing.T) {
 	ws, dir := openFixture(t)
 	mods := ws.Mods.Load()
@@ -260,7 +259,6 @@ func TestLookupTextPrefersReplaceFolder(t *testing.T) {
 	if _, _, ok = ws.LookupText(mods, "no_such_key"); ok {
 		t.Error("a key nobody writes was found")
 	}
-	// a mod's file at the install file's path replaces it whole, so the install's messages are no longer loaded
 	replacing := filepath.Join(dir, "localization", "english", "v_l_english.yml")
 	if err := os.MkdirAll(filepath.Dir(replacing), 0o755); err != nil {
 		t.Fatal(err)
@@ -276,8 +274,8 @@ func TestLookupTextPrefersReplaceFolder(t *testing.T) {
 	}
 }
 
-// TestLookupTitleReadsTitleKey checks that a definition's title is the message its title key names where it writes
-// one, else the message of its name, and a game concept's the message of its name after the concept prefix.
+// TestLookupTitleReadsTitleKey checks that a definition's title is the message its title key names, else the message of
+// its name, and that a game concept's has the concept prefix in front.
 func TestLookupTitleReadsTitleKey(t *testing.T) {
 	ws, _ := openFixture(t)
 	mods := ws.Mods.Load()
@@ -349,8 +347,8 @@ func TestLoadTreeUsesBufferThenCache(t *testing.T) {
 }
 
 // TestRescanFollowsDisk checks that a new file and a folder copied into a mod each give a new mods' index, and that the
-// copy a reader holds does not change. It also checks that the folder is indexed without its hidden folders, and that
-// a change to a file of the install does nothing.
+// copy a reader holds does not change. It also checks that hidden folders are not indexed, and that a change to a file
+// of the install does nothing.
 func TestRescanFollowsDisk(t *testing.T) {
 	ws, dir := openFixture(t)
 	before := ws.Mods.Load()
@@ -584,9 +582,8 @@ func TestWriteDescriptorKeepsOtherFields(t *testing.T) {
 	}
 }
 
-// TestCreateModFolderMakesSkeleton checks that a new mod gets its folder, the game's folders and a descriptor with
-// version 1.0 and the supported release of the game version, that CK3 also gets the launcher's file beside the
-// folder, and that an existing folder is an error.
+// TestCreateModFolderMakesSkeleton checks that a new mod gets its folder, the game's folders and a descriptor, that
+// CK3 also gets the launcher's file beside the folder, and that an existing folder is an error.
 func TestCreateModFolderMakesSkeleton(t *testing.T) {
 	versions := map[string]string{ck3: "1.20.1.2", eu5: "build 12345"}
 	supported := map[string]string{ck3: "1.20.*", eu5: ""}
@@ -625,8 +622,7 @@ func TestCreateModFolderMakesSkeleton(t *testing.T) {
 }
 
 // TestServiceReadsOpenWorkspace checks the service's methods that read: with no workspace open they answer with
-// nothing, and with one open they list a folder with its folders first and its binaries hidden by the setting, read a
-// file with its place, and serve the files under the roots, a texture as PNG, and refuse the others.
+// nothing, and with one open they list a folder, read a file and serve the files under the roots, a texture as PNG.
 func TestServiceReadsOpenWorkspace(t *testing.T) {
 	config := openConfig(t, ck3, resolveFixture(t, ck3), app.Mod{ID: fixtureModID, Dir: copyMod(t, ck3)})
 	wsp := &Service{Config: config}

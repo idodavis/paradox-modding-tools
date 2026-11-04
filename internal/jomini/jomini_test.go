@@ -10,8 +10,7 @@ import (
 	"testing"
 )
 
-// outline writes one line per statement of the tree after the file, numbered from 0: its key, operator, tag and
-// value as written, a block as `{}`, indented two spaces per level of nesting.
+// outline writes one numbered line per statement of the tree after the file, indented by nesting, with a block as `{}`.
 func outline(tree *Tree) []string {
 	var lines []string
 	for i, statement := range tree.Statements[1:] {

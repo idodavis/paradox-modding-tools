@@ -15,7 +15,7 @@ const LISTS = new Intl.ListFormat("en-GB");
 const DAYS = new Intl.DateTimeFormat(undefined, { day: "numeric", month: "long" });
 const CLOCK = new Intl.DateTimeFormat(undefined, { hour: "numeric", minute: "2-digit" });
 
-// short units, so the install line stays on one line
+// Short units keep the install line on one line.
 const AGO: UseTimeAgoMessages = {
   justNow: "just now",
   past: (text) => (/\d/.test(String(text)) ? `${text} ago` : String(text)),
@@ -45,10 +45,7 @@ export function toSentence(text: string): string {
   return text.charAt(0).toUpperCase() + text.slice(1);
 }
 
-/**
- * abbreviate returns the letters an avatar shows for a name: the first letters of its first two words, such as GC for
- * GitHub Copilot, or the first two letters of a one-word name, such as Cl for Claude.
- */
+/** abbreviate returns the letters an avatar shows for a name, such as GC for GitHub Copilot or Cl for Claude. */
 export function abbreviate(name: string): string {
   const words = name.split(/\s+/).filter(Boolean);
   return words.length > 1 ? `${words[0]?.[0]}${words[1]?.[0]}` : name.slice(0, 2);
@@ -59,57 +56,48 @@ export function list(items: readonly string[]): string {
   return LISTS.format(items);
 }
 
-/** listLeftOut returns the names of the given mods that the workspace leaves out of its compatibility checks. */
+/** listLeftOut returns the names of the given mods that the workspace leaves out of its checks. */
 export function listLeftOut(mods: readonly Mod[]): string[] {
   return mods.filter((mod) => mod.leftOut).map((mod) => mod.descriptor.name);
 }
 
-/** describeError returns an error's message. For a thrown value that is not an Error, it returns the value as text. */
+/** describeError returns an error's message, or the value as text if it is not an Error. */
 export function describeError(error: unknown): string {
   return error instanceof Error ? error.message : String(error);
 }
 
-/**
- * splitError splits an error's message into its first line, which says what failed, and the lines after it. It keeps
- * at most the given count of those lines, or all of them without a count. The second part is "" for a one-line message.
- */
+/** splitError splits an error's message into its first line and up to the given count of lines after it. */
 export function splitError(error: unknown, count = Infinity): [summary: string, details: string] {
   const [summary = "", ...details] = describeError(error).split("\n");
   return [summary, details.slice(0, count).join("\n")];
 }
 
-/**
- * matchQuery says whether the query occurs in the texts joined by spaces, ignoring case and the spaces around the
- * query. So a query can span two texts, such as a key and its value. An empty query matches everything.
- */
+/** matchQuery reports whether the query occurs in the texts joined by spaces, ignoring case. */
 export function matchQuery(query: string, ...texts: (string | null | undefined)[]): boolean {
   const needle = query.trim().toLowerCase();
   return !needle || texts.join(" ").toLowerCase().includes(needle);
 }
 
-/** day returns a date as the user reads it, such as "21 April". It is "" for a time that does not parse or is unset. */
+/** day returns a date as the user reads it, such as "21 April", or "" if the time is unset. */
 export function day(date: Date | string): string {
   const parsed = parseTime(date);
   return parsed ? DAYS.format(parsed) : "";
 }
 
-/** parseTime returns a time as a Date. It returns undefined for a time that does not parse or is unset. */
+/** parseTime returns a time as a Date, or undefined if it is unset. */
 export function parseTime(time: Date | string): Date | undefined {
   const parsed = new Date(time);
-  // Go writes an unset time as the year 1, and one that does not parse has no year
+  // Go writes an unset time as the year 1.
   return parsed.getFullYear() > 1 ? parsed : undefined;
 }
 
-/**
- * describeAge returns how long ago a time was, short as "4 min ago" or long as "4 minutes ago". It is "" for a time
- * that does not parse or is unset.
- */
+/** describeAge returns how long ago a time was, short as "4 min ago" or long as "4 minutes ago". */
 export function describeAge(time: Date | string, wording: "short" | "long"): string {
   const parsed = parseTime(time);
   return parsed ? formatTimeAgo(parsed, wording === "short" ? { messages: AGO } : {}) : "";
 }
 
-/** bytes returns a size as the user reads it, such as "1.2 MB". A size under a megabyte is in kilobytes. */
+/** bytes returns a size as the user reads it, such as "1.2 MB". */
 export function bytes(count: number): string {
   const megabytes = count >= 1048576;
   return new Intl.NumberFormat(undefined, {
@@ -124,12 +112,12 @@ export function describePicture(header: Header): string {
   return `${header.width} by ${header.height}, ${bytes(header.bytes)}`;
 }
 
-/** joinParts returns parts as one plain sentence. It is "" for no parts. */
+/** joinParts returns parts as one plain sentence. */
 export function joinParts(parts: readonly Part[] | null | undefined): string {
   return (parts ?? []).map((part) => part.text).join("");
 }
 
-/** splitSubject returns what a finding is about as one part: its name, styled as a path for a file. */
+/** splitSubject returns what a finding is about as one part. */
 export function splitSubject(finding: Finding): Part[] {
   return [{ text: finding.name, style: finding.database === "file" ? "path" : "" }];
 }
@@ -139,27 +127,27 @@ export function findOwner(finding: Finding): string {
   return finding.mods?.[0] ?? finding.origin;
 }
 
-/** toSiteKey returns the key of a finding's first site, such as "path:line". It is "" for a finding with no site. */
+/** toSiteKey returns the key of a finding's first site, such as "path:line", or "" if it has none. */
 export function toSiteKey(finding: Finding): string {
   return describeSiteKey(finding.sites?.[0]);
 }
 
-/** listSiteKeys returns the keys of a finding's first site and of the sites of its repeats. */
+/** listSiteKeys returns the keys of a finding's first site and its repeats' sites. */
 export function listSiteKeys(finding: Finding): string[] {
   return [finding.sites?.[0], ...(finding.repeats ?? [])].map(describeSiteKey).filter(Boolean);
 }
 
-/** describeSiteKey returns the key of a site, such as "path:line". It is "" for no site. */
+/** describeSiteKey returns the key of a site, such as "path:line", or "" for none. */
 function describeSiteKey(site: Site | undefined): string {
   return site ? `${site.place.path}:${site.line}` : "";
 }
 
-/** countFindings returns how many findings or log lines a set of rows stands for, repeats included. */
+/** countFindings returns how many findings a set of rows stands for, repeats included. */
 export function countFindings(findings: readonly Finding[]): number {
   return sumBy(findings, (finding) => finding.count);
 }
 
-/** countFindingsBy returns the findings count, repeats included, for each key that the key function gives. */
+/** countFindingsBy returns the findings count for each key the key function gives. */
 export function countFindingsBy(
   findings: readonly Finding[],
   key: (finding: Finding) => string,
@@ -167,10 +155,7 @@ export function countFindingsBy(
   return mapValues(groupBy(findings, key), countFindings);
 }
 
-/**
- * describeTime returns a time such as "today at 14:02" or "21 April at 14:02". It is "" for a time that does not parse
- * or is unset.
- */
+/** describeTime returns a time such as "today at 14:02" or "21 April at 14:02", or "" if it is unset. */
 export function describeTime(time: Date | string): string {
   const parsed = parseTime(time);
   if (!parsed) return "";
@@ -187,7 +172,7 @@ export function installLine(game: string, version: string, scannedAt: string): s
   return [[game, version].filter(Boolean).join(" "), scanned].filter(Boolean).join(", ");
 }
 
-/** describeDumps describes the game's documentation a workspace reads, and whether it is the game's own and current. */
+/** describeDumps describes the game's documentation a workspace reads, and whether it is current. */
 export function describeDumps(dumps: SourceState): { current: boolean; label: string } {
   if (dumps.origin === "install" && !dumps.stale) return { current: true, label: "The game's own documentation" };
   if (dumps.origin === "install") return { current: false, label: "The game's documentation, older than the game" };
@@ -205,17 +190,14 @@ export function describeLexicon(state: State): string {
   return counts.join(", ");
 }
 
-/**
- * MARKS holds, for each status of a difference, the mark and color it is drawn with, its word in a count of files
- * ("3 new") and its words in a sentence ("is new"). A count lists the statuses in this order.
- */
+/** MARKS holds, for each status of a difference, its mark, color, and words in a count ("3 new") and a sentence. */
 export const MARKS: Readonly<Record<string, { mark: string; color: string; count: string; sentence: string }>> = {
   changed: { mark: "~", color: "text-warning", count: "changed", sentence: "changed" },
   added: { mark: "+", color: "text-success", count: "new", sentence: "is new" },
   removed: { mark: "−", color: "text-error", count: "removed", sentence: "was removed" },
 };
 
-/** DIFFERENCE_FIELDS holds the label of each listing field a difference can name. A file is labeled by its path. */
+/** DIFFERENCE_FIELDS holds the label of each listing field a difference can name. */
 const DIFFERENCE_FIELDS: Readonly<Record<string, string>> = {
   title: "Title",
   description: "Description",
@@ -226,17 +208,17 @@ const DIFFERENCE_FIELDS: Readonly<Record<string, string>> = {
   version: "Version",
 };
 
-/** toDifferenceId returns the key of a difference in a list: its field, then its path for a file. */
+/** toDifferenceId returns the key of a difference in a list. */
 export function toDifferenceId({ field, rel = "" }: Difference): string {
   return `${field}:${rel}`;
 }
 
-/** describeDifferenceLabel returns the label of what a difference changes: a file's path, else the field's label. */
+/** describeDifferenceLabel returns the label of what a difference changes. */
 export function describeDifferenceLabel({ field, rel = "" }: Difference): string {
   return field === "file" ? rel : (DIFFERENCE_FIELDS[field] ?? field);
 }
 
-/** describeDifference summarizes a difference: the items added and removed, else the line counts, else the values. */
+/** describeDifference summarizes a difference in a few characters. */
 export function describeDifference({ added, removed, gained, lost, before, after }: Difference): string {
   const items = [...(added ?? []).map((item) => `+${item}`), ...(removed ?? []).map((item) => `−${item}`)];
   const lines = [gained ? `+${gained}` : "", lost ? `−${lost}` : ""].filter(Boolean);

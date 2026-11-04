@@ -1,12 +1,8 @@
-<!--
-  Settings' Agents and tools section: the agents the agent pane runs, with Node and each one's install; the port and
-  token of PMT's tools for coding agents; the text that registers PMT with an agent run outside PMT; and the user's own
-  agents.
--->
+<!-- Settings' Agents and tools section: the agents the pane runs, and PMT's tools for coding agents. -->
 <script lang="ts">
 import { shallowRef } from "vue";
 
-// whether the token was renewed since PMT started, which outlasts this section being closed and opened again
+// Outlasts this section being closed and opened again.
 const tokenChanged = shallowRef(false);
 </script>
 
@@ -25,9 +21,9 @@ import { useAgentStore } from "../../stores/agent";
 import FileSelector from "../../ui/FileSelector.vue";
 import SettingsSection from "../../ui/SettingsSection.vue";
 
-/** DOTS replaces the token in the register text shown. Copy copies the whole text. */
+/** DOTS replaces the token in the register text shown. */
 const DOTS = "••••••••";
-/** NOTES holds the line shown above an agent's register text, by agent id: Codex's is a config entry, not a command. */
+/** NOTES holds the line shown above an agent's register text, by agent id. */
 const NOTES: Record<string, string> = { "codex-acp": "# add to ~/.codex/config.toml" };
 
 const cache = useQueryCache();
@@ -37,10 +33,8 @@ const { data: agents } = useQuery(agentsQuery);
 const { data: node } = useQuery(nodeQuery);
 const name = shallowRef("");
 const command = shallowRef("");
-// the clock an install's line counts its seconds by
 const now = useNow({ scheduler: (tick) => useIntervalFn(tick, 1000) });
 
-// the agents PMT offers, each with the line that says how it stands
 const offered = computed(() =>
   (agents.value ?? []).filter((row) => row.version).map((row) => ({ row, line: describeAgent(row) })),
 );
@@ -58,7 +52,6 @@ const {
   variables: installed,
   error: installError,
 } = useMutation({ mutation: (id: string) => agentApi.InstallAgent(id), onSettled: refresh });
-// a failed install's error: its first line, the alert's title, and npm's output after it
 const installFailure = computed(() => (installError.value ? splitError(installError.value) : undefined));
 const {
   mutate: installNode,
@@ -86,14 +79,11 @@ const { mutate: add } = useMutation({
 });
 const { mutate: remove } = useMutation({ mutation: (id: string) => agentApi.RemoveAgent(id) });
 
-/**
- * describeAgent returns the line under an agent's name: its install and the seconds since it started while npm runs
- * it, else how its sessions here stand, else whether it is installed.
- */
+/** describeAgent returns the line under an agent's name: its install progress, its sessions, or its install. */
 function describeAgent(row: Agent): { text: string; dot: string } {
   if (isInstalling(row)) {
     const started = parseTime(row.installing) ?? now.value;
-    // the clock ticks once a second, so it can read just before the start
+    // The clock ticks once a second, so it can read just before the start.
     const seconds = Math.max(0, Math.round((now.value.getTime() - started.getTime()) / 1000));
     return { text: `${row.installed ? "Updating to" : "Installing"} ${row.version} with npm · ${seconds} s`, dot: "" };
   }
@@ -107,10 +97,7 @@ function describeAgent(row: Agent): { text: string; dot: string } {
     : { text: `Version ${row.installed}; ${row.version} is out`, dot: "bg-primary" };
 }
 
-/**
- * isInstalling reports whether npm is installing an agent: Go's list says so, or this view asked for the install and
- * Go's list has not come back since.
- */
+/** isInstalling reports whether npm is installing an agent, as Go's list says or this view just asked. */
 function isInstalling(row: Agent): boolean {
   return !!parseTime(row.installing) || (installing.value && installed.value === row.id);
 }
@@ -120,12 +107,12 @@ function mask(text: string): string {
   return access.value?.token ? text.replaceAll(access.value.token, DOTS) : text;
 }
 
-/** splitCommand splits a command line into its program and arguments; double quotes keep spaces inside one. */
+/** splitCommand splits a command line into its program and arguments. */
 function splitCommand(line: string): string[] {
   return [...line.matchAll(/"([^"]*)"|(\S+)/g)].map((match) => match[1] ?? match[2] ?? "");
 }
 
-/** quote returns a path as a command line writes it, quoted when it holds a space. */
+/** quote returns a path as a command line writes it. */
 function quote(path: string): string {
   return path.includes(" ") ? `"${path}"` : path;
 }

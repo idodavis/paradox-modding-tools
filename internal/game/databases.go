@@ -38,6 +38,9 @@ type Database struct {
 	// BoolKey is the key a definition writes as yes to say that the name it defines takes yes or no where it is
 	// written, and a number otherwise. "" means the database's definitions say nothing of that.
 	BoolKey string
+	// Optional marks a database whose names need no definition: where one is missing, the game reads the localization
+	// keys built on the name. A reference to such a name never accuses.
+	Optional bool
 }
 
 // A Contents is what a database holds beyond definitions. The zero Contents is definitions alone.
@@ -184,6 +187,11 @@ const GlobalType = "Global"
 // AnyScopeType is the data type of a scope of any type. Its getters give each type of scope its own data type, as
 // Scope.GetCountry gives Country.
 const AnyScopeType = "Scope"
+
+// TopScopeType is the data type the SCOPE global gives. Its promotes that lead to a scope read the scope saved under
+// the name they are given, as SCOPE.sC('heir') does. CK3 logs/data_types/data_types_script.txt:797-800, Vic3's and
+// EU5's data_types_script.txt:54-57.
+const TopScopeType = "TopScope"
 
 // SelfFunctions are the data functions that return the object they are called on, such as EU5's Goods.Self. The dumps
 // say they return [unregistered].
@@ -392,6 +400,11 @@ var Databases = []Database{
 	{Folder: "common/scripted_effects", DeclaringKeys: []string{"scripted_effect"}},
 	{Folder: "common/scripted_triggers", DeclaringKeys: []string{"scripted_trigger"}},
 	{Folder: "common/scripted_lists", Contents: ContentsLists},
+	// CK3 common/effect_localization/_effect_localization.info:9-17 and common/trigger_localization/
+	// _trigger_localization.info:15: an entry is optional, and the game then reads the localization keys built on the
+	// name; EU5 in_game/common/scripted_effects/international_organization_effects.txt:169 names one no entry defines
+	{Folder: "common/effect_localization", Optional: true},
+	{Folder: "common/trigger_localization", Optional: true},
 	// its subfolders write the same define groups. define:Namespace|Name reads one (CK3 event_targets.log:109, the
 	// Vic3 wiki's Event target page)
 	{Folder: "common/defines", Prefixes: []string{"define", "array_define"}, Separator: "|"},
@@ -629,10 +642,11 @@ var References = []Reference{
 	{Games: vic3AndEU5, Database: "events", KeyPath: "option/name", Target: Localization},
 	// EU5 in_game/gfx/map/map_modes/readme.txt:6: a map mode's tooltip_key is a script string, whose values are keys
 	{Games: []string{eu5}, Database: "gfx/map/map_modes", KeyPath: "tooltip_key/**/value", Target: Localization},
-	// Vic3 common/flag_definitions/00_flag_definitions.txt:5,7,10
-	{Games: []string{vic3}, Database: "flag_definitions", KeyPath: "flag_definition/coa", Target: Coat.Database},
-	{Games: []string{vic3}, Database: "flag_definitions", KeyPath: "flag_definition/coa_with_overlord_canton", Target: Coat.Database},
-	{Games: []string{vic3}, Database: "flag_definitions", KeyPath: "flag_definition/subject_canton", Target: Coat.Database},
+	// Vic3 common/flag_definitions/00_flag_definitions.txt:5,7,10 and EU5
+	// main_menu/common/flag_definitions/00_flag_definitions.txt:5,7,10
+	{Games: vic3AndEU5, Database: "flag_definitions", KeyPath: "flag_definition/coa", Target: Coat.Database},
+	{Games: vic3AndEU5, Database: "flag_definitions", KeyPath: "flag_definition/coa_with_overlord_canton", Target: Coat.Database},
+	{Games: vic3AndEU5, Database: "flag_definitions", KeyPath: "flag_definition/subject_canton", Target: Coat.Database},
 }
 
 // FiringFields holds the key paths in the games' definitions where a name fires the event, on_action or decision it

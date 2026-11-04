@@ -1,5 +1,4 @@
-// coat.go resolves a coat of arms into the layers the Visual view draws. It also lists what the coat panel offers,
-// makes the panel's edits to a coat and writes new coat files.
+// coat.go resolves a coat of arms into the layers the Visual view draws, and makes the coat panel's edits.
 
 package draw
 
@@ -48,7 +47,7 @@ type Recolor struct {
 	Alpha   string            `json:"alpha"`   // the channel that is its alpha; "" means the blends' own
 }
 
-// A Shading is the texture that shades the cloth of a coat, with how it lies over the coat and its emblems.
+// A Shading is the texture that shades the cloth of a coat.
 type Shading struct {
 	Path    string            `json:"path"`    // the image file of the texture
 	Overlay game.CoatStrength `json:"overlay"` // the channel overlaid on each coat and sub
@@ -121,9 +120,8 @@ type coatResolver struct {
 const missingList = "missing:"
 
 // ResolveCoat resolves one coat of arms in a file into its layers. A coat written as the name of another is that coat,
-// and one whose name no coat answers has no layers. A layer whose value is a template list draws the option the given
-// picks hold for that list, else the list's heaviest option. A pick is the option chosen for the ID of a group. It
-// returns an error if the file is not in the workspace or does not define the coat.
+// and one whose name no coat answers has no layers. The given picks are the option chosen for each list, by the ID of
+// its group. It returns an error if the file does not define the coat.
 func (drw *Service) ResolveCoat(path, name string, picks map[string]string) (Coat, error) {
 	resolver, err := drw.findCoat(path, name, picks)
 	if err != nil {
@@ -157,8 +155,8 @@ func (drw *Service) ResolveCoat(path, name string, picks map[string]string) (Coa
 	return coat, nil
 }
 
-// findCoat returns the resolver for the coat that a file defines under the given name, with the given picks. It
-// returns an error if the file is not in the workspace or does not define the coat.
+// findCoat returns the resolver for the coat a file defines under the given name, with the given picks. It returns an
+// error if the file does not define the coat.
 func (drw *Service) findCoat(path, name string, picks map[string]string) (*coatResolver, error) {
 	ws, err := drw.Workspace.Session()
 	if err != nil {
@@ -176,8 +174,8 @@ func (drw *Service) findCoat(path, name string, picks map[string]string) (*coatR
 	}, nil
 }
 
-// findFieldSize returns the width and the height in pixels of the field a coat is drawn on: the tile size of the first
-// atlas the game lists. It returns 0 and 0 if the game lists none.
+// findFieldSize returns the width and height in pixels of the field a coat is drawn on, or 0 and 0 if the game lists
+// none.
 func findFieldSize(ws *workspace.Session, mods *index.Index) (width, height int) {
 	loaded, _, ok := mods.FindLoaded(game.Coat.FieldFile)
 	if !ok {
@@ -200,9 +198,9 @@ func findFieldSize(ws *workspace.Session, mods *index.Index) (width, height int)
 	return 0, 0
 }
 
-// listCoatFields returns the statements that apply to a coat, in the order they apply: its parent's first, then its
-// own. The parent's instances are left out, and so are its emblems where the coat writes emblems of its own. The given
-// depth is how many parents lie between the coat and the one asked for.
+// listCoatFields returns the statements that apply to a coat: its parent's first, then its own. The parent's instances
+// are left out, and so are its emblems where the coat writes emblems of its own. The given depth is how many parents
+// lie between the coat and the one asked for.
 func (resolver *coatResolver) listCoatFields(coat clause, depth int) []clause {
 	own := listChildren(coat)
 	parentField, ok := findField(own, game.Coat.ParentKey)
@@ -236,7 +234,7 @@ func splitField(field clause) (key, value, tag string) {
 	return strings.ToLower(field.tree.Unquoted(current.Key)), field.tree.Unquoted(current.Value), field.tree.Text(current.Tag)
 }
 
-// findField returns the last of the given statements that has the given key. It returns false if none has.
+// findField returns the last of the given statements that has the given key, or false if none has.
 func findField(fields []clause, key string) (clause, bool) {
 	for _, field := range slices.Backward(fields) {
 		if candidate, _, _ := splitField(field); candidate == key {
@@ -246,16 +244,15 @@ func findField(fields []clause, key string) (clause, bool) {
 	return clause{}, false
 }
 
-// isEmblem reports whether a statement writes an emblem: a key the game gives a texture folder, other than the pattern.
+// isEmblem reports whether a statement writes an emblem.
 func isEmblem(field clause) bool {
 	key, _, _ := splitField(field)
 	_, hasFolder := game.Coat.TextureFolders[key]
 	return hasFolder && key != game.Coat.PatternKey
 }
 
-// listLayerFields returns the statements that write the layers of a coat, in the order the layers draw: the pattern,
-// each emblem and, for the coat asked for only, each sub. The given depth is how many coats lie between the coat and
-// the one asked for.
+// listLayerFields returns the statements that write the layers of a coat in the order they draw. A sub is a layer only
+// of the coat asked for, which has the given depth 0.
 func listLayerFields(fields []clause, depth int) []clause {
 	var layers []clause
 	if pattern, ok := findField(fields, game.Coat.PatternKey); ok {
@@ -274,8 +271,8 @@ func listLayerFields(fields []clause, depth int) []clause {
 	return layers
 }
 
-// resolveLayers returns the layers of a coat from its statements, in the order written, each instance ranked in the
-// order the coat draws them. The given depth is how many coats lie between the coat and the one asked for.
+// resolveLayers returns the layers of a coat from its statements, each instance ranked in the order the coat draws
+// them. The given depth is how many coats lie between the coat and the one asked for.
 func (resolver *coatResolver) resolveLayers(fields []clause, depth int) []Layer {
 	colors, names, lists := resolver.resolveColors(fields, nil, nil)
 	layers := []Layer{}
@@ -314,9 +311,8 @@ func (resolver *coatResolver) resolveLayers(fields []clause, depth int) []Layer 
 	return layers
 }
 
-// rankInstances sets each instance's rank in the order the game draws a coat's layers: every instance of every layer
-// by its depth, a larger depth further back, and in the order written where depths are equal. A pattern has no
-// instance and draws under them all.
+// rankInstances sets each instance's rank in the order the game draws them: by depth, a larger depth further back, and
+// as written where depths are equal. A pattern has no instance and draws under them all.
 func rankInstances(layers []Layer) {
 	type spot struct{ layer, instance int }
 	var spots []spot
@@ -332,8 +328,8 @@ func rankInstances(layers []Layer) {
 	}
 }
 
-// listMaskChannels returns the pattern channel of each region a layer shows in, all of them if it names none. It
-// returns none for a layer with no mask.
+// listMaskChannels returns the pattern channel of each region a layer shows in, all of them if it names none, or none
+// for a layer with no mask.
 func listMaskChannels(layer Layer) []string {
 	if layer.Mask == "" {
 		return []string{}
@@ -347,7 +343,7 @@ func listMaskChannels(layer Layer) []string {
 }
 
 // listInputs returns how the panel edits each key a layer with the given role may write, including the keys inside its
-// instances. A key the game gives no input is left out.
+// instances.
 func listInputs(role string) map[string]string {
 	keys := []string{role}
 	if _, colored := game.Coat.Recolors[role]; colored {
@@ -370,8 +366,8 @@ func listInputs(role string) map[string]string {
 	return inputs
 }
 
-// resolveEmblem returns the layer of an emblem: its texture, its colors over the coat's colors and their names, its
-// mask and its instances. The mask is the coat's pattern file, with the regions the emblem shows in.
+// resolveEmblem returns the layer of an emblem. Its mask is the coat's pattern file, with the regions the emblem shows
+// in.
 func (resolver *coatResolver) resolveEmblem(field clause, colors, names []string, patternFile string) Layer {
 	children := listChildren(field)
 	key, _, _ := splitField(field)
@@ -393,8 +389,7 @@ func (resolver *coatResolver) resolveEmblem(field clause, colors, names []string
 	return layer
 }
 
-// resolveSub returns the layer of a sub: the coat its parent names, laid under the sub's own statements, and the
-// places it fills.
+// resolveSub returns the layer of a sub: the coat its parent names, laid under the sub's own statements.
 func (resolver *coatResolver) resolveSub(field clause) Layer {
 	children := listChildren(field)
 	parentField, _ := findField(children, game.Coat.ParentKey)
@@ -411,7 +406,7 @@ func (resolver *coatResolver) resolveSub(field clause) Layer {
 }
 
 // resolveValue returns the text a statement of a coat writes as its value, and the list it draws from. A value written
-// as a list is the option picked for that list, else its heaviest option. It is "missing:x" if no list is named x.
+// as a list is the option picked for it, else its heaviest option, or "missing:x" if no list is named x.
 func (resolver *coatResolver) resolveValue(field clause) (string, []Group) {
 	key, value, tag := splitField(field)
 	if tag != game.Coat.ListTag {
@@ -437,8 +432,8 @@ func (resolver *coatResolver) resolveValue(field clause) (string, []Group) {
 	return list.Picked, []Group{list}
 }
 
-// findCoatFile returns the image file of a coat's texture, under the folder of the key that writes it. It returns ""
-// if there is no texture, a list gave none, or no file has the name.
+// findCoatFile returns the image file of a coat's texture under the folder of the key that writes it, or "" if there
+// is none.
 func (resolver *coatResolver) findCoatFile(key, texture string) string {
 	if texture == "" || strings.HasPrefix(texture, missingList) {
 		return ""
@@ -448,8 +443,8 @@ func (resolver *coatResolver) findCoatFile(key, texture string) string {
 }
 
 // resolveColors returns the colors a coat's or an emblem's statements give its slots as CSS, with the fallback at 0,
-// the named color of each ("" for one written as numbers), and the lists they are drawn from. A slot that is not
-// written has the base's color and name.
+// the named color of each ("" for one written as numbers), and the lists they are drawn from. A slot not written takes
+// the base's color and name.
 func (resolver *coatResolver) resolveColors(fields []clause, base, baseNames []string) ([]string, []string, []Group) {
 	colors := make([]string, len(game.Coat.Slots)+1)
 	names := make([]string, len(colors))
@@ -466,9 +461,8 @@ func (resolver *coatResolver) resolveColors(fields []clause, base, baseNames []s
 	return colors, names, lists
 }
 
-// resolveColor returns the CSS of the color a statement writes, the color's name and the list it is drawn from. The
-// statement writes a color block, which has no name, the name of a named color, or the key of a slot, which takes the
-// base color and name of that slot.
+// resolveColor returns the CSS of the color a statement writes, the color's name and the list it is drawn from. A
+// statement that names a slot takes that slot's base color and name.
 func (resolver *coatResolver) resolveColor(field clause, base, baseNames []string) (string, string, []Group) {
 	if css := makeColor(field); css != "" {
 		return css, "", nil
@@ -488,8 +482,7 @@ func (resolver *coatResolver) resolveColor(field clause, base, baseNames []strin
 	return css, label, lists
 }
 
-// makeColor returns the CSS of the color that a clause writes as a color block, such as a named color's definition. It
-// returns "" if the clause writes no color.
+// makeColor returns the CSS of the color a clause writes as a color block, or "" if it writes none.
 func makeColor(definition clause) string {
 	color, ok := jomini.ToColor(definition.tree, definition.statement)
 	if !ok {
@@ -498,8 +491,8 @@ func makeColor(definition clause) string {
 	return color.ToCSS()
 }
 
-// resolveInstances returns the instances the given statements write, in the given row of the game's placements, in the
-// order written. Where they write none, it returns the one default instance the game draws, which has no range.
+// resolveInstances returns the instances the given statements write, in the given row of the game's placements. Where
+// they write none, it returns the one default instance the game draws, which has no range.
 func (resolver *coatResolver) resolveInstances(children []clause, row string) []Instance {
 	instances := []Instance{}
 	for _, field := range children {
@@ -513,7 +506,7 @@ func (resolver *coatResolver) resolveInstances(children []clause, row string) []
 	return instances
 }
 
-// resolveInstance returns the instance an instance block writes: each key it writes over the game's default for it.
+// resolveInstance returns the instance an instance block writes, over the game's defaults.
 func (resolver *coatResolver) resolveInstance(field clause, row string) Instance {
 	var instance Instance
 	for _, place := range game.Coat.Placement[row] {
@@ -531,7 +524,7 @@ func (resolver *coatResolver) resolveInstance(field clause, row string) Instance
 }
 
 // setPlacement sets the part of an instance that the given part of a placement moves, sizes or turns, to the given
-// numbers. A turn is set in degrees clockwise. An unknown part, or no numbers, sets nothing.
+// numbers. It sets nothing for an unknown part or no numbers.
 func setPlacement(instance *Instance, part game.CoatPart, numbers []float64) {
 	if len(numbers) == 0 {
 		return
@@ -548,15 +541,13 @@ func setPlacement(instance *Instance, part game.CoatPart, numbers []float64) {
 	}
 }
 
-// toPair returns the first two of the given numbers, or the one number twice if there is only one. The numbers are not
-// empty.
-// toPair returns the first two of the given numbers, the first twice where there is only one.
+// toPair returns the first two of the given numbers, the first twice where there is only one. It needs at least one.
 func toPair(numbers []float64) [2]float64 {
 	return [2]float64{numbers[0], numbers[min(1, len(numbers)-1)]}
 }
 
-// listNumbers returns the numbers a statement writes: its value and the bare values inside its block, each as the
-// file stands for it. It returns none if a value is no number.
+// listNumbers returns the numbers a statement writes, its value and the bare values inside its block. It returns none
+// if a value is no number.
 func listNumbers(field clause) []float64 {
 	current := field.tree.Statements[field.statement]
 	spans := []jomini.Span{current.Value}
@@ -597,9 +588,8 @@ func (drw *Service) ListColors() []NamedColor {
 	return colors
 }
 
-// ListTextures returns the texture files that a layer with the given role can use, from the game's coat folders. Each
-// is labeled with the name a coat writes for it. It returns an empty list if no workspace is open or the game's coats
-// have no folder for the role.
+// ListTextures returns the texture files a layer with the given role can use, each labeled with the name a coat writes
+// for it. It returns an empty list if no workspace is open or the game has no folder for the role.
 func (drw *Service) ListTextures(role string) []Image {
 	ws, err := drw.Workspace.Session()
 	if err != nil {
@@ -608,9 +598,8 @@ func (drw *Service) ListTextures(role string) []Image {
 	return listImages(ws, ws.Mods.Load(), game.Coat.TextureFolders[role])
 }
 
-// ListFrames returns the shapes the game's coat designer previews a coat in, in the designer's order, each with where
-// its mask is. A frame is left out if its define is not defined or the game loads no file at its mask's path. It is
-// empty if no workspace is open or the game has no designer.
+// ListFrames returns the shapes the game's coat designer previews a coat in, each with where its mask is. It is empty
+// if no workspace is open or the game has no designer.
 func (drw *Service) ListFrames() []Image {
 	frames := []Image{}
 	ws, err := drw.Workspace.Session()
@@ -634,8 +623,8 @@ func (drw *Service) ListFrames() []Image {
 	return frames
 }
 
-// listImages returns the image files the game reads directly in a folder, each labeled with its file name, sorted by
-// label. The folder matches without regard to case. It returns an empty list if the folder has none.
+// listImages returns the image files the game reads directly in a folder, letter case aside, each labeled with its file
+// name and sorted by label.
 func listImages(ws *workspace.Session, mods *index.Index, folder string) []Image {
 	images := []Image{}
 	for _, file := range mods.ListImages(folder + "/") {
@@ -647,11 +636,10 @@ func listImages(ws *workspace.Session, mods *index.Index, folder string) []Image
 	return slices.CompactFunc(images, func(first, second Image) bool { return first.Label == second.Label })
 }
 
-// AddLayer returns the edits that insert a new layer into a coat at the given position among its layers, 0 being first.
-// The new layer is the game's template for the given role. It returns an error if the file does not define the coat,
-// the coat is written as the name of another, or a pattern is added to a coat that has one. It also returns an error if
-// the game has no template for the role or nothing to start the layer from, or if the layer before the position does
-// not exist or comes from a parent coat.
+// AddLayer returns the edits that insert a new layer from the game's template for the given role into a coat at the
+// given position among its layers, 0 being first. It returns an error if the file does not define the coat, the coat is
+// written as the name of another, a pattern is added to a coat that has one, the game has no template for the role, or
+// the layer before the position does not exist or comes from a parent coat.
 func (drw *Service) AddLayer(path, coat, role string, position int) ([]lsp.Edit, error) {
 	resolver, err := drw.findCoat(path, coat, nil)
 	if err != nil {
@@ -693,9 +681,8 @@ func (drw *Service) AddLayer(path, coat, role string, position int) ([]lsp.Edit,
 	return lsp.ToEdits(tree.Src, tree.Lines, []jomini.Edit{edit}), nil
 }
 
-// makeLayerLines returns the lines of the game's template for a layer with the given role, filled in by
-// findTemplateFill. The given coat is the one the layer is added to. It returns an error for a role the template has no
-// layer for, or a game with nothing to start one from.
+// makeLayerLines returns the lines of the game's template for a layer with the given role, to add to the given coat. It
+// returns an error for a role the template has no layer for, or a game with nothing to start one from.
 func makeLayerLines(ws *workspace.Session, mods *index.Index, role, coat string) ([]string, error) {
 	lines, ok := game.Coat.Template.Layers[role]
 	if !ok {
@@ -708,9 +695,8 @@ func makeLayerLines(ws *workspace.Session, mods *index.Index, role, coat string)
 	return lo.Map(lines, func(line string, _ int) string { return strings.ReplaceAll(line, "%s", fill) }), nil
 }
 
-// findTemplateFill returns what a new layer with the given role starts from. For a sub it is the first coat by name
-// other than the given one. For any other role it is the role's first texture file whose name starts with the
-// template's pattern, else its first texture file. It returns an error if the game has none.
+// findTemplateFill returns what a new layer with the given role starts from: for a sub, a coat other than the given
+// one, else a texture file. It returns an error if the game has none.
 func findTemplateFill(ws *workspace.Session, mods *index.Index, role, coat string) (string, error) {
 	if role == game.Coat.SubKey {
 		names := lo.FilterMap(mods.ListKept(ws.Schema, game.Coat.Database), func(winner index.Winner, _ int) (string, bool) {
@@ -731,14 +717,13 @@ func findTemplateFill(ws *workspace.Session, mods *index.Index, role, coat strin
 	}).Label, nil
 }
 
-// listLayers returns the statements that write the layers of the coat asked for, in the order the layers draw, the
-// ones it has from its parents included.
+// listLayers returns the statements that write the layers of the coat asked for, those from its parents included.
 func (resolver *coatResolver) listLayers() []clause {
 	return listLayerFields(resolver.listCoatFields(resolver.definition, 0), 0)
 }
 
 // findLayer returns the statement of one of the given layers of the coat asked for. It returns an error for a layer
-// that does not exist, or that the coat has from a parent, in its file or another.
+// that does not exist or that the coat has from a parent.
 func (resolver *coatResolver) findLayer(layers []clause, layer int) (clause, error) {
 	if layer < 0 || layer >= len(layers) {
 		return clause{}, fmt.Errorf("the coat has no layer %d", layer)
@@ -754,9 +739,8 @@ func (resolver *coatResolver) isOwn(layer clause) bool {
 	return layer.path == resolver.definition.path && layer.tree.Statements[layer.statement].Parent == resolver.definition.statement
 }
 
-// MoveLayer moves one layer of a coat to another position among its layers and returns the edits that do it. It
-// returns no edits if both positions are the same. It returns an error if either position has no layer or has a layer
-// that comes from a parent coat.
+// MoveLayer returns the edits that move one layer of a coat to another position among its layers, none if both
+// positions are the same. It returns an error if either position has no layer or has one from a parent coat.
 func (drw *Service) MoveLayer(path, coat string, source, target int) ([]lsp.Edit, error) {
 	resolver, err := drw.findCoat(path, coat, nil)
 	if err != nil {
@@ -783,8 +767,8 @@ func (drw *Service) MoveLayer(path, coat string, source, target int) ([]lsp.Edit
 	return lsp.ToEdits(tree.Src, tree.Lines, edits), nil
 }
 
-// RemoveBlock deletes one layer or instance of a coat, including its line, and returns the edits that do it. It
-// returns an error if the file is not in the workspace or no statement starts where the range does.
+// RemoveBlock returns the edits that delete one layer or instance of a coat, including its line. It returns an error if
+// no statement starts where the given range does.
 func (drw *Service) RemoveBlock(path string, block lsp.Range) ([]lsp.Edit, error) {
 	tree, statement, err := drw.findStatement(path, block)
 	if err != nil {
@@ -794,8 +778,8 @@ func (drw *Service) RemoveBlock(path string, block lsp.Range) ([]lsp.Edit, error
 	return lsp.ToEdits(tree.Src, tree.Lines, []jomini.Edit{edit}), nil
 }
 
-// AddInstance returns the edits that add a placement to a layer of a coat. It returns an error if the file is not in
-// the workspace, no block starts at the given range, or the layer takes no placement.
+// AddInstance returns the edits that add a placement to a layer of a coat. It returns an error if no block starts where
+// the given range does or the layer takes no placement.
 func (drw *Service) AddInstance(path string, layer lsp.Range) ([]lsp.Edit, error) {
 	tree, statement, err := drw.findBlock(path, layer)
 	if err != nil {
@@ -810,8 +794,8 @@ func (drw *Service) AddInstance(path string, layer lsp.Range) ([]lsp.Edit, error
 	return lsp.ToEdits(tree.Src, tree.Lines, []jomini.Edit{edit}), nil
 }
 
-// findBlock returns the tree of a file and the block that starts where the given range does. It returns an error if
-// the file is not in the workspace or no block starts there.
+// findBlock returns the tree of a file and the block that starts where the given range does. It returns an error if no
+// block starts there.
 func (drw *Service) findBlock(path string, block lsp.Range) (*jomini.Tree, int32, error) {
 	tree, statement, err := drw.findStatement(path, block)
 	if err == nil && !tree.Statements[statement].IsBlock() {
@@ -821,7 +805,7 @@ func (drw *Service) findBlock(path string, block lsp.Range) (*jomini.Tree, int32
 }
 
 // findStatement returns the tree of a file and the statement that starts where the given range does. It returns an
-// error if the file is not in the workspace or no statement starts there.
+// error if no statement starts there.
 func (drw *Service) findStatement(path string, block lsp.Range) (*jomini.Tree, int32, error) {
 	ws, err := drw.Workspace.Session()
 	if err != nil {
@@ -846,8 +830,8 @@ func toIndented(tree *jomini.Tree, offset int, lines []string) string {
 	return tree.IndentLines(lines, text[:len(text)-len(strings.TrimLeft(text, " \t"))])
 }
 
-// toLineSpan returns the span of the whole lines a statement takes, with the line ending of the last. A statement
-// that shares a line with another is the span itself.
+// toLineSpan returns the span of the whole lines a statement takes, or the span itself if it shares a line with another
+// statement.
 func toLineSpan(tree *jomini.Tree, span jomini.Span) jomini.Span {
 	first, last := tree.Lines.ToPosition(span.Start).Line, tree.Lines.ToPosition(span.End).Line
 	start, end := tree.Lines.LineSpan(first).Start, tree.Lines.LineSpan(last).End
@@ -861,9 +845,8 @@ func toLineSpan(tree *jomini.Tree, span jomini.Span) jomini.Span {
 }
 
 // CreateCoatFile writes a new coat of arms file into the given mod and returns its place. The coat is named after the
-// given text as a slug, and holds the given script, as the game's coat designer copies it, or the game's coat template
-// when the script is "". It returns an error if the workspace has no such mod, the game keeps coats of arms in no
-// folder, the text has no slug, the file exists already or the game has no pattern.
+// given text as a slug and holds the given script, or the game's coat template if the script is "". It returns an error
+// if the mod does not exist, the game keeps no coats of arms, the name has no slug or the file exists already.
 func (drw *Service) CreateCoatFile(modID, name, script string) (workspace.Place, error) {
 	ws, err := drw.Workspace.Session()
 	if err != nil {
@@ -884,8 +867,8 @@ func (drw *Service) CreateCoatFile(modID, name, script string) (workspace.Place,
 	return drw.writeCoatFile(ws, modID, slug, strings.Join(append(lines, "}"), "\n"))
 }
 
-// CopyCoat copies a coat that a file defines into the given mod, as a new coat of arms file with the coat's own name,
-// and returns its place. It returns an error if the file does not define the coat, or as CreateCoatFile does.
+// CopyCoat copies a coat a file defines into the given mod as a new coat of arms file and returns its place. It returns
+// an error if the file does not define the coat, or as CreateCoatFile does.
 func (drw *Service) CopyCoat(path, name, modID string) (workspace.Place, error) {
 	resolver, err := drw.findCoat(path, name, nil)
 	if err != nil {
@@ -896,9 +879,8 @@ func (drw *Service) CopyCoat(path, name, modID string) (workspace.Place, error) 
 	return drw.writeCoatFile(resolver.ws, modID, files.ToSlug(name), text)
 }
 
-// writeCoatFile writes the given coat text as a file named after the given slug in the coat folder of the given mod,
-// and returns its place. It returns an error if the workspace has no such mod, the game keeps coats of arms in no
-// folder, the slug is "" or the file exists already.
+// writeCoatFile writes the given coat text as a file named after the given slug in the given mod's coat folder and
+// returns its place. It returns an error as CreateCoatFile does.
 func (drw *Service) writeCoatFile(ws *workspace.Session, modID, slug, coat string) (workspace.Place, error) {
 	mod, ok := drw.Workspace.LookupMod(modID)
 	if !ok || ws.Game.Coat.Folder == "" || slug == "" {

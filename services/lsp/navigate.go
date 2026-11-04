@@ -77,10 +77,9 @@ func findReference(ws *workspace.Session, mods *index.Index, tree *jomini.Tree, 
 	return span, resolveHit(mods, place, reference, visitor.context.References)
 }
 
-// resolveHit returns the reference the name under the cursor stands for. The candidates are the references written at
-// the given reference's span, such as both a language and a dialect, or for a call that may name any callable database
-// one per callable database. The first whose database defines the name, as seen from the place's file, wins. If none
-// does, the given reference comes back, with no database for such a call.
+// resolveHit returns the reference the name under the cursor stands for: the first of the references written at the
+// given reference's span whose database defines the name, as seen from the place's file. A call that may name any
+// callable database is tried against each. If none defines it, the given reference comes back.
 func resolveHit(mods *index.Index, place workspace.Place, reference schema.Reference, references []schema.Reference) schema.Reference {
 	candidates := lo.Filter(references, func(other schema.Reference, _ int) bool { return other.Span == reference.Span })
 	if reference.Database == game.AnyCall {
@@ -186,8 +185,8 @@ func (lsp *Service) ListSymbols(path string) ([]Symbol, error) {
 }
 
 // ListFileSymbols returns the definitions of a file in the given session, nested as they are written, or the keys of
-// a localization file. Each has its title in the session's language. It returns none for a file that is neither
-// script nor localization, and an error if the file cannot be read.
+// a localization file, each with its title in the session's language. It returns none for a file that is neither, and
+// an error if the file cannot be read.
 func ListFileSymbols(ws *workspace.Session, mods *index.Index, path string) ([]Symbol, error) {
 	document, err := ws.LoadDocument(path)
 	if err != nil {
@@ -247,8 +246,7 @@ func makeSymbol(tree *jomini.Tree, reference schema.Reference, span jomini.Span,
 }
 
 // lookupTitle returns the text the game shows for a definition, in the session's language. It returns "" if there is
-// no such text, or if the mods index does not list the definition in the given file, as for one added since the file
-// was last saved.
+// none, or if the mods index does not list the definition in the given file yet.
 func lookupTitle(ws *workspace.Session, mods *index.Index, file int32, definition schema.Definition) string {
 	sites := mods.ResolveLocal(schema.Reference{Database: definition.Database, Name: definition.Name}, file)
 	site, ok := lo.Find(sites, func(site index.Site) bool { return site.File == file })
@@ -278,7 +276,6 @@ func (lsp *Service) FindSymbols(query string, limit int) ([]WorkspaceSymbol, err
 	if lower == "" || limit <= 0 {
 		return symbols, nil
 	}
-	// each name is matched once a call, however many times it occurs
 	checked, matches := make([]bool, len(mods.Names.Texts)), make([]bool, len(mods.Names.Texts))
 	isMatch := func(name uint32) bool {
 		if !checked[name] {

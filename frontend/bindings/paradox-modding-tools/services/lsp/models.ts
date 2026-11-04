@@ -113,7 +113,7 @@ export interface Card {
     "within"?: string[] | null;
 
     /**
-     * the scopes the dumps give a command, else "no restriction declared"
+     * the scopes the dumps give a command, else "The game does not say"
      */
     "runs"?: string;
     "date"?: CardDate | null;
@@ -151,8 +151,7 @@ export interface CardDate {
 }
 
 /**
- * A Class is one class of the wiki's lexicon. A card and a completion call a command the game declares by the id of
- * its class.
+ * A Class is one class of the wiki's lexicon, by which a card and a completion name the commands the game declares.
  */
 export interface Class {
     /**
@@ -438,9 +437,9 @@ export interface Signature {
 }
 
 /**
- * A Site is one place in a file that an answer points at: where the file sits and a line. Where the answer has them,
- * it also has a range in the editor's form and the text of the line. Where the answer judged a definition, it says
- * whether the game keeps it and why. A whole-file site lists the names the file defines.
+ * A Site is one place in a file that an answer points at: the file's place and a line. Where the answer has them, it
+ * also has a range, the text of the line, and whether the game keeps the definition and why. A whole-file site lists
+ * the names the file defines.
  */
 export interface Site {
     "place": workspace$0.Place;

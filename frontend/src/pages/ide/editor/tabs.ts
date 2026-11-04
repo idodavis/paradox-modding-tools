@@ -37,13 +37,15 @@ export const VIEWS: Readonly<Record<Format, { view: "code" | "image" | null; ico
   table: { view: "code", icon: csvIcon },
   descriptor: { view: "code", icon: modIcon },
   shader: { view: "code", icon: shaderIcon },
+  readme: { view: "code", icon: infoIcon },
+  markdown: { view: "code", icon: mdIcon },
   text: { view: "code", icon: textIcon },
   binary: { view: null, icon: binaryIcon },
 };
 
 /** EXTENSION_ICONS gives some extensions an icon of their own, within one file format. */
 const EXTENSION_ICONS: Partial<Record<Format, Readonly<Record<string, string>>>> = {
-  text: { ".json": jsonIcon, ".info": infoIcon, ".md": mdIcon, ".bbcode": bbcodeIcon, ".log": logIcon },
+  text: { ".json": jsonIcon, ".bbcode": bbcodeIcon, ".log": logIcon },
   binary: {
     ".ogg": audioIcon,
     ".wav": audioIcon,

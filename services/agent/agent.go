@@ -40,8 +40,7 @@ const EventChanged = "agent:changed"
 // init registers the agent event with the application.
 func init() { application.RegisterEvent[string](EventChanged) }
 
-// Service is the Wails service that lists, installs and starts the coding agents. It keeps when each running install
-// started.
+// Service is the Wails service that lists, installs and starts the coding agents.
 type Service struct {
 	Workspace *workspace.Service // the open workspace, for an agent's folder
 	MCP       *mcp.Service       // PMT's tools, whose address and token the register texts carry
@@ -92,9 +91,8 @@ type release struct {
 	LTS     any    `json:"lts"` // false, or the name of its long-term line
 }
 
-// agents are the agents PMT offers: the coding agents whose makers publish an ACP agent. A row has the registry id,
-// the Register text that adds PMT's tools to the agent outside PMT ({url} and {token} are filled in), and the
-// instruction files and folders the agent reads in a mod.
+// agents are the agents PMT offers. A row has the registry id, the Register text that adds PMT's tools to the agent
+// outside PMT ({url} and {token} are filled in), and the instruction files and folders the agent reads in a mod.
 var agents = []app.Agent{
 	{ID: "claude-acp", Name: "Claude",
 		Register: `claude mcp add --transport http pmt {url} --header "Authorization: Bearer {token}"`,
@@ -131,10 +129,8 @@ func ListFiles() []string {
 }
 
 // ListAgents returns the agents PMT offers, then the user's own. An offered agent gets the registry's version and
-// description, its Register text with PMT's address and token filled in, and the start time of its running install.
-// If it is installed and a Node is new enough, it also gets the Program and Args that start it. The registry is
-// fetched at most once a day, and the last copy is used when the fetch fails. With no copy, the agents have no
-// version and cannot be installed.
+// description, its Register text with PMT's address and token filled in, and, once installed with a Node new enough,
+// the Program and Args that start it. With no registry copy, the agents have no version and cannot be installed.
 func (agt *Service) ListAgents() []Agent {
 	listing, _ := agt.loadRegistry()
 	node := agt.DescribeNode()
@@ -204,9 +200,8 @@ func (agt *Service) DescribeNode() Node {
 	return node
 }
 
-// InstallNode downloads the newest long-term release of Node from nodejs.org into PMT's folder, checked against the
-// sums nodejs.org publishes. It returns an error if a download fails, the sum does not match, or the archive cannot
-// be unpacked.
+// InstallNode downloads the newest long-term release of Node from nodejs.org into PMT's folder. It returns an error if
+// a download fails, the sum nodejs.org publishes does not match, or the archive cannot be unpacked.
 func (agt *Service) InstallNode() error {
 	listing, err := app.FetchURL(nodeURL+"index.json", fetchTimeout)
 	if err != nil {
@@ -247,7 +242,7 @@ func (agt *Service) InstallNode() error {
 // InstallAgent installs an agent PMT offers into PMT's folder at the registry's version, with npm on the Node that
 // DescribeNode gives, and removes its other versions. It sends EventChanged when npm starts and when it ends. It
 // returns an error if the registry lacks the agent, no Node is new enough, npm is installing it already, or npm
-// fails. npm's error names the package on its first line, and what npm wrote follows.
+// fails.
 func (agt *Service) InstallAgent(id string) error {
 	listing, err := agt.loadRegistry()
 	if err != nil {
@@ -292,7 +287,7 @@ func (agt *Service) InstallAgent(id string) error {
 }
 
 // findAgent returns the agent with the given id, if it can start. It returns an error if there is no such agent, it is
-// not installed, or no Node is new enough to run it.
+// not installed, or no Node is new enough.
 func (agt *Service) findAgent(id string) (Agent, error) {
 	agent, ok := lo.Find(agt.ListAgents(), func(other Agent) bool { return other.ID == id })
 	switch {
@@ -307,8 +302,7 @@ func (agt *Service) findAgent(id string) (Agent, error) {
 }
 
 // loadRegistry returns the registry: the copy in PMT's folder while it is less than a day old, else a new one, which
-// replaces the copy. It falls back to the copy when the registry cannot be fetched. It returns an error if there is
-// neither.
+// replaces the copy. The old copy is used if the fetch fails. It returns an error if there is neither.
 func (agt *Service) loadRegistry() (registry, error) {
 	path := filepath.Join(agt.resolveDir(), "registry.json")
 	content, err := os.ReadFile(path)
@@ -334,8 +328,7 @@ func (agt *Service) listInstalled(id string) []string {
 	})
 }
 
-// resolveDir returns the folder that holds the agents, Node and the registry's copy. It is under PMT's cache folder, so
-// that resetting PMT's data removes them.
+// resolveDir returns the folder that holds the agents, Node and the registry's copy, under PMT's cache folder.
 func (agt *Service) resolveDir() string {
 	return filepath.Join(agt.Workspace.Config.Dirs.Cache, "agents")
 }
@@ -389,8 +382,7 @@ func checkSum(version, asset string, archive []byte) error {
 }
 
 // untar unpacks a gzipped tar archive into a folder, dropping the archive's one top folder from each path. It skips
-// everything but regular files, since PMT runs Node and npm by their own paths and needs no links. It also skips a file
-// that would land outside the folder.
+// everything but regular files, and a file that would land outside the folder.
 func untar(archive []byte, dir string) error {
 	unpacked, err := gzip.NewReader(bytes.NewReader(archive))
 	if err != nil {

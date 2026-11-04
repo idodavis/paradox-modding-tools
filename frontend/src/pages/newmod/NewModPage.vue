@@ -1,8 +1,4 @@
-<!--
-  Make a new mod. With Guidance on, a first screen asks what you want to make; one form then takes the game, the
-  folders of the mods the goal works on, and the new mod's name and language, and makes the workspace on the page that
-  suits the goal.
--->
+<!-- Make a new mod. With Guidance on, a first screen asks what to make, and then one form makes the workspace. -->
 <script setup lang="ts">
 import { computed, ref, shallowRef } from "vue";
 import { useMutation, useQuery } from "@pinia/colada";
@@ -19,10 +15,7 @@ import GameInstalls from "../../ui/GameInstalls.vue";
 import HowModWorks from "../../ui/HowModWorks.vue";
 import StatusFacts from "../../ui/StatusFacts.vue";
 
-/**
- * GOALS lists what a modder may want to make, in the order the first screen shows them. Each has its texts, how many
- * existing mod folders it works on, whether it makes a new mod, and the page the workspace opens on.
- */
+/** GOALS lists what a modder may want to make, in the order the first screen shows them. */
 const GOALS = [
   {
     id: "change",
@@ -87,7 +80,6 @@ const GOALS = [
   },
 ] as const;
 
-// the route may name a goal, which starts the form with it
 const { goal: routeGoal = "" } = defineProps<{ goal?: string }>();
 
 const settings = useSettingsStore();
@@ -96,7 +88,6 @@ const goalId = shallowRef<(typeof GOALS)[number]["id"]>(GOALS.find((goal) => goa
 const chosen = shallowRef(!!routeGoal);
 const gameId = shallowRef("");
 const installId = shallowRef("");
-// the folders of the existing mods, as many as the goal takes
 const folders = ref(["", ""]);
 const title = shallowRef("");
 const language = shallowRef<string>();
@@ -108,12 +99,10 @@ const { data: parent } = useQuery(() => ({
   ...modFolderQuery({ installId: installId.value, dir: "", name: "" }),
   enabled: !!installId.value,
 }));
-// the folder the new mod's title makes, or why it cannot be made
 const { data: modDir, error: nameError } = useQuery(() => ({
   ...modFolderQuery({ installId: installId.value, dir: "", name: title.value.trim() }),
   enabled: !!installId.value && !!title.value.trim(),
 }));
-// whether each picked folder can be a mod, as Go checks it
 const checks = [0, 1].map((position) =>
   useQuery(() => ({
     ...modCheckQuery({ installId: installId.value, dir: folders.value[position] ?? "" }),
@@ -124,7 +113,6 @@ const checks = [0, 1].map((position) =>
 const selected = computed(() => GOALS.find((goal) => goal.id === goalId.value) ?? GOALS[1]);
 const current = computed(() => games.value?.find((game) => game.id === gameId.value));
 const picked = computed(() => folders.value.slice(0, selected.value.existing));
-// the new mod, else the first folder picked, else the game's files
 const workspaceName = computed(
   () =>
     (selected.value.makes ? title.value.trim() : "") ||
@@ -141,7 +129,6 @@ const blocked = computed(
     (selected.value.id === "translate" && !language.value),
 );
 
-// picking a game takes its recorded install, else records the first install found on this computer
 const { mutate: pick } = useMutation({
   mutation: async ({ game, recorded, local }: { game: Game; recorded?: Install; local?: DetectedInstall }) => {
     const install =

@@ -38,8 +38,8 @@ export function CheckUpdate(): $CancellablePromise<$models.Update> {
 }
 
 /**
- * CloseWindow closes the window with the given name. A window opened by OpenWindow first gets a window:closing event.
- * It closes when the frontend closes it again, or when a timer ends. The main window's close quits the app. It returns
+ * CloseWindow closes the window with the given name. A window opened by OpenWindow first gets a window:closing event
+ * and closes when the frontend closes it again, or after a timeout. The main window's close quits the app. It returns
  * an error if no window has the name.
  */
 export function CloseWindow(name: string): $CancellablePromise<void> {
@@ -56,8 +56,8 @@ export function CrashedLastRun(): $CancellablePromise<boolean> {
 
 /**
  * ListReleases returns the app's published releases from the newest down to the one running, each with its notes. A
- * build that is no release, such as a dev build, gets the newest only. Drafts and prereleases are left out. It returns
- * an error if GitHub cannot be reached or answers with an error.
+ * build that is no release, such as a dev build, gets the newest only. It returns an error if GitHub cannot be reached
+ * or answers with an error.
  */
 export function ListReleases(): $CancellablePromise<$models.Release[] | null> {
     return $Call.ByID(449327985);

@@ -1,7 +1,4 @@
-<!--
-  Shows a message's parts, each fact in its style: a mod's name and a count in bold, code in the code font, and a
-  path with its file brighter than its folder. A fact the message names again shows as plain text.
--->
+<!-- Shows a message's parts, each fact in its own style. A fact named again shows as plain text. -->
 <script setup lang="ts">
 import { computed } from "vue";
 

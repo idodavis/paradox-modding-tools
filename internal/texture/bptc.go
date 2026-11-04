@@ -1,5 +1,4 @@
-// bptc.go decodes the blocks of the BC6H and BC7 compressions into pixels. It holds the mode and partition tables those
-// compressions use.
+// bptc.go decodes the blocks of the BC6H and BC7 compressions into pixels, with the mode and partition tables they use.
 
 package texture
 
@@ -251,9 +250,8 @@ var anchorPixels = [4][][64]uint8{
 	}},
 }
 
-// decodeBC6H decodes one BC6H block in any of its fourteen modes. Each channel's half float is clamped to 0 to 1 and
-// scaled to a byte, and alpha is 255. A block in a reserved mode decodes to black. The flag says whether the format is
-// the signed one.
+// decodeBC6H decodes one BC6H block in any of its fourteen modes, with alpha 255. A block in a reserved mode decodes to
+// black. The flag says whether the format is the signed one.
 func decodeBC6H(block []byte, pixels *[16][4]uint8, signed bool) {
 	mode := int(block[0] & 3) // modes 0 and 1 have a 2-bit mode field, the others a 5-bit one
 	if mode >= 2 {
@@ -288,7 +286,6 @@ func decodeBC6H(block []byte, pixels *[16][4]uint8, signed bool) {
 func readBC6HEndpoints(block []byte, mode int, signed bool) ([4][3]int, int) {
 	row := bc6hModes[mode]
 	var endpoints [4][3]int
-	// The mode field comes first, 2 bits for the modes 0 and 1 and 5 bits for the rest.
 	position := 2
 	if mode >= 2 {
 		position = 5
@@ -444,7 +441,7 @@ func toFloat(half uint16) float32 {
 
 // decodeBC7 decodes one BC7 block in any of its eight modes. A block in the reserved mode decodes to zeros.
 func decodeBC7(block []byte, pixels *[16][4]uint8) {
-	mode := bits.TrailingZeros8(block[0]) // the position of the first byte's lowest set bit
+	mode := bits.TrailingZeros8(block[0])
 	if mode == 8 {
 		*pixels = [16][4]uint8{}
 		return
@@ -529,8 +526,7 @@ func readBC7Endpoints(block []byte, position, mode int) ([6][4]uint8, int) {
 }
 
 // parseBC6HFields parses the field strings of every BC6H mode, such as "r0[9:0]" or "g2[4]", into the endpoint
-// and channel each fills and its high and low bit, equal for one bit and swapped when the field is stored
-// reversed. The mode field is left out, and a reserved mode gets no fields.
+// and channel each fills and its high and low bit. The mode field is left out, and a reserved mode gets no fields.
 func parseBC6HFields() [32][][4]int {
 	var modes [32][][4]int
 	for mode, row := range bc6hModes {

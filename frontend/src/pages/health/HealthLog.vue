@@ -1,7 +1,4 @@
-<!--
-  The game's error log, with the lines about your mods set apart from the game's own. It lists them by mod, each mod's
-  section folding, or by message, with the open line's detail beside them.
--->
+<!-- The game's error log, with the lines about your mods set apart, listed by mod or by message. -->
 <script setup lang="ts">
 import { computed, shallowRef } from "vue";
 import { useMutation, useQuery } from "@pinia/colada";
@@ -57,7 +54,7 @@ const {
 const emit = defineEmits<{ open: [finding: Finding]; fix: [mod: string, finding: Finding] }>();
 const filter = defineModel<string>("filter", { default: "" });
 
-/** A HeadRow is the row above one mod's lines. With no mod, it is the row that stands for the game's own lines. */
+/** A HeadRow is the row above one mod's lines, or above the game's own lines. */
 type HeadRow = { mod: string; count: number; folded: boolean };
 
 const GROUPINGS = [
@@ -68,7 +65,6 @@ const GROUPINGS = [
 const workspace = useWorkspaceStore();
 const editor = useEditorStore();
 const { data: levels } = useQuery(levelsQuery);
-// the tabs give their values as text or numbers
 const scope = shallowRef<string | number>("mods");
 const grouping = shallowRef<string | number>("mod");
 /** The mods whose sections are folded. */
@@ -76,7 +72,7 @@ const folded = shallowRef<string[]>([]);
 
 const logRows = computed(() => log?.findings ?? []);
 const gameRows = computed(() => logRows.value.filter((row) => !row.origin));
-/** Whether any line repeats. Every row then gets a column for its count. */
+/** Whether any line repeats, which gives every row a column for its count. */
 const repeated = computed(() => logRows.value.some((row) => row.count > 1));
 const modRows = computed(() => logRows.value.filter((row) => row.origin));
 const scopes = computed(() => [
@@ -106,7 +102,7 @@ const empty = computed(() => {
   return scope.value === "mods" ? "No line of the game's last run names your mods." : "Every line names your mods.";
 });
 const lastRun = computed(() => (log?.writtenAt ? describeTime(log.writtenAt) : ""));
-/** A warning that the run that wrote the log did not read every mod from its own folder, or "" if it did. */
+/** A warning that the run did not read every mod from its own folder, or "". */
 const runNote = computed(() => {
   const unloaded = (log?.unloaded ?? []).map((mod) => workspace.originName(mod));
   const copies = Object.entries(log?.copies ?? {}).map(([mod, folder]) => `${workspace.originName(mod)} (${folder})`);
@@ -134,7 +130,7 @@ const faults = computed(() => {
   }
   return byPlace;
 });
-/** The mod's problem at the open row's place, if any, with a sentence saying the mod's own check finds it too. */
+/** The mod's problem at the open row's place, if any, with a sentence saying its own check finds it too. */
 const fault = computed(() => {
   const shared = opened && faults.value.get(toSiteKey(opened));
   if (!shared) return undefined;
@@ -157,7 +153,7 @@ const { mutate: openFile } = useMutation({
   },
 });
 
-/** fold folds a mod's section, or unfolds it if it is folded. */
+/** fold folds a mod's section, or unfolds it. */
 function fold(mod: string): void {
   folded.value = folded.value.includes(mod) ? folded.value.filter((id) => id !== mod) : [...folded.value, mod];
 }

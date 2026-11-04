@@ -1,5 +1,4 @@
-// app.go is the Wails service for the app itself: its version and updates, its settings and log, and its windows. It
-// also opens the config file and the log.
+// app.go is the Wails service for the app itself: its version and updates, its settings and log, and its windows.
 
 package app
 
@@ -55,8 +54,7 @@ type Service struct {
 	mainClosable atomic.Bool // the frontend let the main window close
 }
 
-// ServiceStartup empties the trash and writes the running mark. The mark holds whether the last run left one behind,
-// which CrashedLastRun reads.
+// ServiceStartup empties the trash and writes the running mark, which CrashedLastRun reads.
 func (app *Service) ServiceStartup(ctx context.Context, options application.ServiceOptions) error {
 	_ = os.RemoveAll(app.Config.Dirs.Trash)
 	mark := resolveMark(app.Config.Dirs)
@@ -97,12 +95,11 @@ func OpenConfig() (*ConfigFile, error) {
 	return openConfig(dirs), nil
 }
 
-// OpenLog opens pmt.log in the log folder and returns the logger that the app and the services write through. It
-// starts the file over if it has grown too large. It returns an error if the file cannot be opened.
+// OpenLog opens pmt.log in the log folder and returns the logger that the app and the services write through. A log
+// that has grown too large starts over. It returns an error if the file cannot be opened.
 func OpenLog(config *ConfigFile, version string) (*slog.Logger, error) {
 	path := resolveLog(config.Dirs)
 	flags := os.O_CREATE | os.O_WRONLY | os.O_APPEND
-	// a log that has grown too large starts over
 	if stat, err := os.Stat(path); err == nil && stat.Size() > 4<<20 {
 		flags |= os.O_TRUNC
 	}
@@ -148,8 +145,8 @@ func (app *Service) ApplyUpdate() error {
 }
 
 // ListReleases returns the app's published releases from the newest down to the one running, each with its notes. A
-// build that is no release, such as a dev build, gets the newest only. Drafts and prereleases are left out. It returns
-// an error if GitHub cannot be reached or answers with an error.
+// build that is no release, such as a dev build, gets the newest only. It returns an error if GitHub cannot be reached
+// or answers with an error.
 func (app *Service) ListReleases() ([]Release, error) {
 	body, err := FetchURL(releasesURL, 15*time.Second)
 	if err != nil {
@@ -283,9 +280,9 @@ func (app *Service) ShowFolder(path string) error {
 	return application.Get().Env.OpenFileManager(path, !stat.IsDir())
 }
 
-// OpenMainWindow opens the main window as it was last closed, maximized or at its size; 1400 by 900 on the first run.
-// Closing it is held back and reported to the frontend as window:closing until CloseWindow lets it through. Then the
-// window's state is saved and the app quits.
+// OpenMainWindow opens the main window as it was last closed; 1400 by 900 on the first run. Closing it waits for the
+// frontend, which is sent window:closing, until CloseWindow lets it through. Then the window's state is saved and the
+// app quits.
 //
 //wails:ignore
 func (app *Service) OpenMainWindow() {
@@ -350,8 +347,8 @@ func (app *Service) ShowWindow(name string) error {
 	return nil
 }
 
-// CloseWindow closes the window with the given name. A window opened by OpenWindow first gets a window:closing event.
-// It closes when the frontend closes it again, or when a timer ends. The main window's close quits the app. It returns
+// CloseWindow closes the window with the given name. A window opened by OpenWindow first gets a window:closing event
+// and closes when the frontend closes it again, or after a timeout. The main window's close quits the app. It returns
 // an error if no window has the name.
 func (app *Service) CloseWindow(name string) error {
 	window, err := lookupWindow(name)
@@ -371,8 +368,7 @@ func resolveMark(dirs Dirs) string { return filepath.Join(dirs.Log, "running") }
 // resolveLog returns the path of pmt.log.
 func resolveLog(dirs Dirs) string { return filepath.Join(dirs.Log, "pmt.log") }
 
-// newWindow opens a window with the given options and no system frame, since the page draws its own title bar and
-// buttons.
+// newWindow opens a window with the given options and no system frame, as the page draws its own title bar.
 func newWindow(options application.WebviewWindowOptions) *application.WebviewWindow {
 	options.Frameless = true
 	return application.Get().Window.NewWithOptions(options)

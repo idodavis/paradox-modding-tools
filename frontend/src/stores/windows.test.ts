@@ -7,7 +7,6 @@ import { inApp } from "../../vitest.setup";
 import { useEditorStore } from "./editor";
 import { THIS_WINDOW, useWindowsStore, type WindowState } from "./windows";
 
-// the broadcast channels by name, so a test can say what another window announced
 const channels = vi.hoisted(() => new Map<string, EventTarget>());
 vi.mock("@vueuse/core", async (importOriginal) => {
   const actual = await importOriginal<typeof import("@vueuse/core")>();
@@ -72,7 +71,6 @@ describe("the windows", () => {
       readOnly: false,
       isDir: false,
       drawable: false,
-      about: "",
       readme: "",
     };
     editor.show(place);

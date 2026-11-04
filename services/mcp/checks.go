@@ -24,8 +24,8 @@ import (
 	"paradox-modding-tools/services/workspace"
 )
 
-// A queryKey is one key of a page's query that show takes: what it holds, in the guide's words, the values it takes
-// where they are few, and the check of a value that names something of the workspace.
+// A queryKey is one key of a page's query that show takes, with its help in the guide's words, the values it takes
+// where they are few, and the check of a value.
 type queryKey struct {
 	Page   string
 	Key    string
@@ -34,8 +34,7 @@ type queryKey struct {
 	Check  func(*Service, string) error
 }
 
-// queryKeys holds every key of the pages' queries that show takes, in the order the guide lists them. A page with
-// none takes no query.
+// queryKeys holds every key of the pages' queries that show takes, in the order the guide lists them.
 var queryKeys = []queryKey{
 	{Page: "event-graph", Key: "root", Help: "a node's id from find_roots, such as events:my_mod.0001",
 		Check: (*Service).checkNode},
@@ -56,8 +55,8 @@ var queryKeys = []queryKey{
 // nodeHint says where an Event Graph node's id comes from, for an error about one.
 const nodeHint = "find_roots gives node ids, such as events:my_mod.0001"
 
-// checkPage returns an error if PMT has no page of the given id, if its query has a key the page does not take, or if
-// a value is not one the key takes or names nothing the workspace has. A query needs a page.
+// checkPage returns an error if PMT has no page of the given id, or if the query has a key the page does not take or a
+// value the key does not accept. A query needs a page.
 func (mcp *Service) checkPage(page string, query map[string]string) error {
 	if page == "" {
 		return lo.Ternary(len(query) > 0, errors.New("a query needs a page"), nil)
@@ -157,8 +156,8 @@ func (mcp *Service) checkLanguage(language string) error {
 	return nil
 }
 
-// checkFile returns an error if a request's lines, window or picks come without a file, or if it names a file PMT
-// cannot open, lines that count from less than one, or a window or states the file does not draw.
+// checkFile returns an error if a request's lines, window or picks come without a file, or if the file, lines, window
+// or states it names are not valid.
 func (mcp *Service) checkFile(request Show) error {
 	if request.Path == "" {
 		hasFileParts := request.StartLine != 0 || request.EndLine != 0 || request.Drawable != "" || len(request.Picks) > 0
@@ -177,8 +176,8 @@ func (mcp *Service) checkFile(request Show) error {
 	return mcp.checkDrawable(place, request.Drawable, request.Picks)
 }
 
-// locateFile returns the place of a file of the workspace's mods or the game. It returns an error if there is no file
-// at the path, or it is a folder, or it is in neither.
+// locateFile returns the place of a file of the workspace's mods or the game. It returns an error if the path is not
+// a file in either.
 func (mcp *Service) locateFile(path string) (workspace.Place, error) {
 	place := mcp.Workspace.Locate(path)
 	info, err := os.Stat(path)
@@ -193,9 +192,9 @@ func (mcp *Service) locateFile(path string) (workspace.Place, error) {
 	return place, nil
 }
 
-// checkDrawable returns an error if a file draws nothing of the given name, naming what it draws, and one for each
-// pick that names a group or an option a window of a .gui file does not have, naming those it has. A pick may be an
-// option or its caption in the States panel, and the given picks then hold the option. A coat's picks are not checked.
+// checkDrawable returns an error, naming what the file does draw, if it draws nothing of the given name. It returns
+// one for each pick that names a state group or option the window of a .gui file lacks. A pick given as an option's
+// caption is replaced by the option. A coat's picks are not checked.
 func (mcp *Service) checkDrawable(place workspace.Place, drawable string, picks map[string]string) error {
 	symbols, err := mcp.Draw.ListDrawables(place.Path)
 	if err != nil {
@@ -233,8 +232,8 @@ func (mcp *Service) checkDrawable(place workspace.Place, drawable string, picks 
 	return errors.Join(errs...)
 }
 
-// findOption returns the option of a group that the given text names: an option itself, else the option whose caption
-// in the States panel matches the text, ignoring case. It returns false if the text names none.
+// findOption returns the option of a group that the given text names, either itself or by its caption in the States
+// panel. It returns false if the text names none.
 func findOption(group draw.Group, text string) (string, bool) {
 	if slices.Contains(group.Options, text) {
 		return text, true
@@ -242,8 +241,8 @@ func findOption(group draw.Group, text string) (string, bool) {
 	return lo.Find(group.Options, func(option string) bool { return strings.EqualFold(group.Captions[option], text) })
 }
 
-// describeOption returns an option of a group as the States panel writes it, followed by the option itself in
-// brackets where that is another word.
+// describeOption returns an option of a group as the States panel writes it, with the option itself in brackets if
+// that is another word.
 func describeOption(group draw.Group, option string) string {
 	caption := group.Captions[option]
 	return lo.Ternary(strings.EqualFold(caption, option), caption, fmt.Sprintf("%s (%s)", caption, option))

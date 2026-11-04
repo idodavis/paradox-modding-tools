@@ -1,8 +1,4 @@
-<!--
-  The status bar: the install and its scan, the page's own facts, what the agent is doing, the wiki download and its
-  failure, the windows, Help and the version with its update check. Help starts with the page's three steps and the
-  terms PMT uses.
--->
+<!-- The status bar: the install and its scan, the page's facts, the agent, the windows, Help and the version. -->
 <script setup lang="ts">
 import type { ToastProps } from "@nuxt/ui";
 import { useMutation, useQuery } from "@pinia/colada";
@@ -30,7 +26,6 @@ const agent = useAgentStore();
 
 const page = computed<Page | undefined>(() => (route.name ? PAGES[route.name] : undefined));
 const explaining = shallowRef(false);
-// the dot of the agent's line: waiting for the user, working, or done
 const agentDot = computed(() => {
   if (!agent.active) return "";
   if (agent.isWaiting(agent.active)) return "bg-warning";
@@ -42,7 +37,6 @@ const { data: update, refetch: checkUpdate, isLoading: checking } = useQuery({ .
 const { data: releases, refetch: refetchReleases } = useQuery({ ...releasesQuery, enabled: false });
 const { data: crashed } = useQuery(crashedQuery);
 const { data: levels } = useQuery(levelsQuery);
-// the terms PMT uses: the table's, then each level of a problem with what it costs
 const terms = computed(() => [
   ...TERMS,
   ...(levels.value ?? []).map((level) => ({ term: level.id, meaning: level.cost })),
@@ -54,7 +48,6 @@ const { mutate: copyDiagnostics } = useMutation({
 });
 
 const wiki = shallowRef<Progress | null>(null);
-// why the last wiki fetch failed, or "" when it worked
 const wikiFailure = shallowRef("");
 onScopeDispose(Events.On("wiki:progress", ({ data }) => (wiki.value = data)));
 onScopeDispose(
@@ -64,14 +57,12 @@ onScopeDispose(
   }),
 );
 
-// the install's scan while a workspace opens, as the last stage it reported
 const scan = shallowRef<Scanning | null>(null);
 onScopeDispose(Events.On("install:scanning", ({ data }) => (scan.value = data)));
 for (const event of ["install:scanned", "workspace:opened", "workspace:failed"] as const) {
   onScopeDispose(Events.On(event, () => (scan.value = null)));
 }
 
-// the other windows, each brought to the front from the menu of the main window
 const others = computed(() =>
   windows
     .listWindows()
@@ -79,7 +70,6 @@ const others = computed(() =>
     .map((name) => ({ label: describeWindow(name), onSelect: () => windows.showWindow(name) })),
 );
 
-// what the main window toasts once: a run that ended unclean and a game updated
 const toasted = new Set<string>();
 watch(
   [crashed, state],
@@ -137,7 +127,6 @@ const ITEM = "flex h-6 items-center gap-1.25 hover:text-highlighted";
           {{ installLine(state.game?.shortName ?? "", state.install.version, state.install.scannedAt) }}
         </span>
       </span>
-      <!-- the line before the page's own facts, shown when the page has some -->
       <span class="hidden h-3 w-px shrink-0 bg-accented [&:has(+#status-start>*)]:block" />
     </template>
     <div id="status-start" class="contents" />
@@ -196,7 +185,6 @@ const ITEM = "flex h-6 items-center gap-1.25 hover:text-highlighted";
             </div>
           </section>
           <p v-for="(paragraph, index) in page?.help ?? []" :key="index">{{ paragraph }}</p>
-          <!-- the agent pane sits beside every workspace page, so each one's help ends with the pane's -->
           <template v-if="route.name && isWorkspacePage(route.name)">
             <h3 class="mt-2 text-13 font-semibold text-highlighted">The agent pane</h3>
             <p v-for="(paragraph, index) in PANE_HELP" :key="`pane${index}`">{{ paragraph }}</p>

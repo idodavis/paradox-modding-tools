@@ -18,8 +18,8 @@ import (
 	"paradox-modding-tools/services/workspace"
 )
 
-// diagnoseMessages returns the problems of a localization file, only parse errors for a game file. It judges each
-// message's markup, the names it uses and its data calls, and flags duplicate keys, except in a replace folder.
+// diagnoseMessages returns the problems of a localization file: its messages' markup, names and data calls, and
+// duplicate keys outside a replace folder. A game file gets only its parse errors.
 func (visitor *diagnoseVisitor) diagnoseMessages(document workspace.Document) []Diagnostic {
 	place, mods := visitor.place, visitor.index
 	tree, file := document.Tree, document.Messages
@@ -85,10 +85,8 @@ func diagnoseFolders(tree *jomini.Tree, place workspace.Place) []Diagnostic {
 	return diagnostics
 }
 
-// diagnoseCalls records a problem for each data call in the segments of a text that has a step no dump declares for
-// the type before it, read in the given data context. A first step in lower case is a saved scope, so it is not a
-// problem. A step is also known if the judged index defines its name in one of game.GUI.StepDatabases, or if the game's
-// own text writes it after the same type.
+// diagnoseCalls records a problem for each data call in the segments of a text that has a step unknown after the type
+// before it, read in the given data context. A first step in lower case is a saved scope, not a problem.
 func (visitor *diagnoseVisitor) diagnoseCalls(tree *jomini.Tree, segments []loc.Segment, datacontext string) {
 	for _, call := range loc.ListCalls(segments) {
 		step, before, ok := visitor.ws.Schema.FindUnlisted(call, datacontext)

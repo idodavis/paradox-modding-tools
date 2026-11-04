@@ -1,7 +1,4 @@
-<!--
-  Shows one problem as a row with its level's mark, its message and a second line. Slots can draw the message and the
-  second line instead.
--->
+<!-- One problem as a row with its level's mark, its message and a second line. -->
 <script setup lang="ts">
 import { computed } from "vue";
 import { useQuery } from "@pinia/colada";

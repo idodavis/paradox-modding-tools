@@ -1,8 +1,4 @@
-/**
- * The Monarch grammars. They color shapes only: comments, strings, numbers, dates, yes and no, braces, operators and
- * a key before `=`, so a file reads instantly. Meaning comes from the semantic tokens on top. No pattern here
- * mirrors a Go rule.
- */
+/** The Monarch grammars. They color shapes only; meaning comes from the semantic tokens on top. */
 import type { languages } from "monaco-editor";
 
 /** The script grammar, for .txt, .gui, .asset, .font and .gfx. */
@@ -29,10 +25,7 @@ export const SCRIPT: languages.IMonarchLanguage = {
   },
 };
 
-/**
- * The localization grammar: the language line, a key with its version, and the quoted text with the markup inside:
- * `$variables$`, `[scopes]`, `#formats` and `@icons!`.
- */
+/** The localization grammar: the language line, a key with its version, and the quoted text with its markup. */
 export const LOCALIZATION: languages.IMonarchLanguage = {
   tokenizer: {
     root: [

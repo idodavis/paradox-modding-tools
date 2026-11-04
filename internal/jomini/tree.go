@@ -8,7 +8,7 @@ import (
 	"strings"
 )
 
-// A Span is a half-open range of bytes in a text. It includes its first byte and not the byte at its end.
+// A Span is a half-open range of bytes in a text.
 type Span struct {
 	Start int `json:"start"`
 	End   int `json:"end"`
@@ -35,8 +35,8 @@ type Error struct {
 	Span    Span   `json:"span"`
 }
 
-// Lines is the line index of a text. It records where each line starts, so a byte offset converts to a line and a
-// column. A line ends at \n, \r\n or a lone \r.
+// Lines is the line index of a text, which turns a byte offset into a line and a column. A line ends at \n, \r\n or a
+// lone \r.
 type Lines struct {
 	starts []int
 	ends   []int
@@ -76,7 +76,7 @@ func (lines Lines) LineSpan(line int) Span {
 }
 
 // A Statement is one statement of the file: `key op value`, a bare value inside a list, or a block with or
-// without a tag. Each part is a span into the source, never a copied string.
+// without a tag. Each part is a span into the source.
 type Statement struct {
 	Parent int32 // the statement that holds it; 0, the file, for a top-level statement and for the file itself
 	Last   int32 // one past the last descendant, so the children are Statements[i+1:Last]
@@ -141,8 +141,8 @@ func (tree *Tree) ParseBracketed(span Span) (Call, bool) {
 	return ParseBracketed(tree.Unquoted(span), tree.UnquotedSpan(span).Start)
 }
 
-// Children yields the direct children of a statement in document order. For the file, which is the first statement,
-// they are the top-level statements.
+// Children yields the direct children of a statement in document order. The file's children are the top-level
+// statements.
 func (tree *Tree) Children(statement int32) iter.Seq[int32] {
 	return func(yield func(int32) bool) {
 		child, last := statement+1, tree.Statements[statement].Last
@@ -199,8 +199,8 @@ func (tree *Tree) FindChild(statement int32, key string) (int32, bool) {
 	return match, ok
 }
 
-// FindChildValue returns the unquoted value of a statement's child with the given key. Where several children have the
-// key, the last one counts. It returns false if there is none or the key is empty.
+// FindChildValue returns the unquoted value of the child FindChild finds. It returns false if there is none or the key
+// is empty.
 func (tree *Tree) FindChildValue(statement int32, key string) (string, bool) {
 	if key == "" {
 		return "", false

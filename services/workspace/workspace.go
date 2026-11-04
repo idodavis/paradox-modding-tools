@@ -119,8 +119,8 @@ func (wsp *Service) ServiceShutdown() error {
 func (wsp *Service) ListGames() []game.Game { return game.ListGames() }
 
 // DescribePrecedence returns, in plain words, which copy the game with the given id keeps when several definitions of a
-// database share a name. The folder is the database's folder in the game's folder, with its stage folder in front where
-// the game has stages. It returns "" for a game this build does not support.
+// database share a name. The folder is the database's folder in the game's folder. It returns "" for a game this build
+// does not support.
 func (wsp *Service) DescribePrecedence(gameID, database, folder string) string {
 	row := game.LookupGame(gameID)
 	if row == nil {
@@ -180,8 +180,7 @@ func (wsp *Service) AddInstall(gameID, path, name, version string) (app.Install,
 }
 
 // UpdateInstall moves an install to another folder and reads its version again. A workspace open on the install
-// opens again. It returns an error if the install is not recorded, its game is not supported or the folder does not
-// exist.
+// opens again. It returns an error if the install is not recorded or the folder does not exist.
 func (wsp *Service) UpdateInstall(id, path string) error {
 	if !files.IsFolder(path) {
 		return fmt.Errorf("%s is not a folder", path)
@@ -301,8 +300,8 @@ func (wsp *Service) ListWorkspaces() []Workspace {
 	})
 }
 
-// CreateWorkspace records a workspace of the given install, with the given name and localization language, under an
-// id of its own, and returns it. It has no mods yet.
+// CreateWorkspace records a workspace of the given install, with the given name and localization language, and returns
+// it. It has no mods yet.
 func (wsp *Service) CreateWorkspace(name, install, language string) (app.Workspace, error) {
 	record := app.Workspace{
 		ID: rand.Text(), Name: name, Install: install, Language: language, Mods: []app.Mod{}, IgnoredPairs: [][2]string{},
@@ -498,8 +497,7 @@ func (wsp *Service) LookupMod(modID string) (Mod, bool) {
 }
 
 // ResolveFolder returns the folder a shell or an agent starts in, and the id of its mod. It is the folder of the mod
-// that holds the given file, else of the workspace's first mod whose folder exists. With neither it is the home
-// folder, and the id is "".
+// that holds the given file, else of the workspace's first mod. With no mod it is the home folder, and the id is "".
 //
 //wails:ignore
 func (wsp *Service) ResolveFolder(path string) (string, string) {
@@ -571,8 +569,7 @@ func (wsp *Service) ReadHeader(path string) (texture.Header, error) {
 	return texture.ReadHeader(path)
 }
 
-// Write writes a file's text in its encoding, making its folder if it is missing. The watcher sends fs:changed once
-// the index has the text. It returns an error for a file outside the workspace's mods.
+// Write writes a file's text in its encoding. It returns an error for a file outside the workspace's mods.
 func (wsp *Service) Write(path string, text files.Text) error {
 	if _, err := wsp.FindWritable(path); err != nil {
 		return err
@@ -580,8 +577,7 @@ func (wsp *Service) Write(path string, text files.Text) error {
 	return files.WriteText(path, text)
 }
 
-// WriteBytes writes a file's bytes, making its folder if it is missing. The watcher sends fs:changed once the index
-// has the file. It returns an error for a file outside the workspace's mods.
+// WriteBytes writes a file's bytes. It returns an error for a file outside the workspace's mods.
 //
 //wails:ignore
 func (wsp *Service) WriteBytes(path string, bytes []byte) error {
@@ -592,8 +588,8 @@ func (wsp *Service) WriteBytes(path string, bytes []byte) error {
 }
 
 // CreateCopy copies a file of the game or of another mod to the same place in a mod, and returns the copy's path. It
-// returns an error if no workspace is open, the mod is not in it or has no folder, the file is under none of its
-// roots, or the mod has a file there already.
+// returns an error if the mod is not in the workspace or has no folder, the file is outside the workspace, or the mod
+// has a file there already.
 func (wsp *Service) CreateCopy(path, modID string) (string, error) {
 	ws, err := wsp.Session()
 	if err != nil {
@@ -666,8 +662,8 @@ func (wsp *Service) ListFolder(dir string) ([]Place, error) {
 	return places, nil
 }
 
-// Create makes an empty file or a folder, and the folders it goes in that are not there yet. The watcher sends
-// fs:changed for it. It returns an error if it exists already or is outside the workspace's mods.
+// Create makes an empty file or a folder, and the folders above it. It returns an error if it exists already or is
+// outside the workspace's mods.
 func (wsp *Service) Create(path string, dir bool) error {
 	if _, err := wsp.FindWritable(path); err != nil {
 		return err
@@ -685,8 +681,8 @@ func (wsp *Service) Create(path string, dir bool) error {
 	return file.Close()
 }
 
-// Rename moves a file or a folder to a new path. The watcher sends fs:changed for both paths. It returns an error if
-// the new path exists already or either path is outside the workspace's mods.
+// Rename moves a file or a folder to a new path. It returns an error if the new path exists already or either path is
+// outside the workspace's mods.
 func (wsp *Service) Rename(source, target string) error {
 	ws, err := wsp.FindWritable(source, target)
 	if err != nil {
@@ -804,8 +800,8 @@ func (wsp *Service) ServeHTTP(writer http.ResponseWriter, request *http.Request)
 	_ = png.Encode(writer, cutFrame(picture, query))
 }
 
-// cutFrame returns the frame of a sprite sheet that a query names, counted from 1 across and then down. It returns
-// the whole image if the query gives no frame size or one larger than the image. A frame past the end is the last.
+// cutFrame returns the frame of a sprite sheet that a query names, counted from 1 across and then down. A frame past
+// the end is the last. It returns the whole image if the query gives no frame size or one larger than the image.
 func cutFrame(picture image.Image, query url.Values) image.Image {
 	bounds := picture.Bounds()
 	var width, height, columns, rows float64

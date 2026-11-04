@@ -1,18 +1,26 @@
 <!--
-  The Wiki pane: the pages for the active file, a search of the game's wiki, the article, and the Lexicon tab. It sits
-  beside the editors or in a window of its own, and shows the page or lexicon entry the editor looks up.
+  The Wiki pane: the wiki's pages for the active file and the game's readme/info on it, a search of the game's wiki,
+  the article, and the Lexicon tab.
 -->
 <script setup lang="ts">
 import { computed, shallowRef, useTemplateRef, watch } from "vue";
 import { useQuery } from "@pinia/colada";
-import { refDebounced, useEventBus } from "@vueuse/core";
+import { refDebounced, useEventBus, useResizeObserver } from "@vueuse/core";
 import { Browser } from "@wailsio/runtime";
 import type { DropdownMenuItem } from "@nuxt/ui";
 
 import type { Place } from "@services/workspace/models";
 
 import { matchQuery } from "../../lib/format";
-import { classesQuery, lexiconQuery, stateQuery, wikiPageQuery, wikiPagesQuery, wikiSearchQuery } from "../../queries";
+import {
+  classesQuery,
+  lexiconQuery,
+  placeQuery,
+  stateQuery,
+  wikiPageQuery,
+  wikiPagesQuery,
+  wikiSearchQuery,
+} from "../../queries";
 import { useEditorStore } from "../../stores/editor";
 import { useSettingsStore } from "../../stores/settings";
 import { THIS_WINDOW, useWindowsStore, type WikiLookup } from "../../stores/windows";
@@ -23,8 +31,6 @@ import WikiArticle from "../../ui/WikiArticle.vue";
 
 const props = defineProps<{ place: Place | null }>();
 
-/** PAGE_TABS is how many pages show as tabs before the rest go in a menu. */
-const PAGE_TABS = 3;
 const TABS = [
   { label: "Pages", value: "pages" },
   { label: "Lexicon", value: "lexicon" },
@@ -55,11 +61,14 @@ const {
   isPending,
 } = useQuery(() => ({ ...wikiPagesQuery(file.value?.path ?? ""), enabled: !!file.value && workspace.isOpen() }));
 const pages = computed(() => summaries.value ?? []);
+const { data: readme } = useQuery(() => ({
+  ...placeQuery(file.value?.readme ?? ""),
+  enabled: !!file.value?.readme,
+}));
 watch(
   () => file.value?.key,
   () => (title.value = ""),
 );
-// the page on show: the one picked or linked to, else the file's first
 const current = computed(() => title.value || pages.value[0]?.title || "");
 const { data: article } = useQuery(() => ({
   ...wikiPageQuery(current.value),
@@ -73,14 +82,28 @@ const morePages = computed<DropdownMenuItem[]>(() =>
     onSelect: () => (title.value = summary.title),
   })),
 );
+// The page tabs that fit in the strip whole; the menu holds every page once some do not.
+const strip = useTemplateRef("strip");
+const fitting = shallowRef(Infinity);
+useResizeObserver(strip, measureTabs);
+watch(pages, measureTabs, { flush: "post" });
 
-/** follow shows the wiki page that a clicked link in the article points to, if it points to one. */
+/** measureTabs counts the page tabs, from the first, that fit in the strip whole. */
+function measureTabs(): void {
+  const element = strip.value;
+  if (!element) return;
+  const tabs = [...element.children] as HTMLElement[];
+  const overflow = tabs.findIndex((tab) => tab.offsetLeft + tab.offsetWidth > element.clientWidth);
+  fitting.value = overflow < 0 ? tabs.length : overflow;
+}
+
+/** follow shows the wiki page a clicked link in the article points to, if it points to one. */
 function follow(event: MouseEvent): void {
   const link = event.target instanceof Element ? event.target.closest("a") : null;
   if (link?.dataset.page) title.value = link.dataset.page;
 }
 
-// a look-up from the editor shows its page, or its lexicon entry with the lexicon filtered to its name
+// A look-up from the editor shows its page, or its lexicon entry.
 useEventBus<WikiLookup>("pmt.wiki").on((lookup) => {
   if ("title" in lookup) {
     view.value = "pages";
@@ -92,7 +115,6 @@ useEventBus<WikiLookup>("pmt.wiki").on((lookup) => {
   filter.value = lookup.name;
 });
 
-// the search finds the game's wiki pages by their titles, then by their text; the page picked is shown here
 const term = shallowRef("");
 const search = refDebounced(term, 200);
 const {
@@ -112,7 +134,7 @@ const { data: rows } = useQuery(() => ({
 }));
 const visible = computed(() => (rows.value ?? []).filter((row) => matchQuery(filter.value, row.name, row.blurb)));
 
-// the letter index beside the list: each first letter with the first row it begins, and the letter at the top of view
+// The letter index beside the list: each first letter with the first row it begins.
 const list = useTemplateRef("list");
 const letters = computed(() =>
   visible.value.reduce<{ letter: string; index: number }[]>((starts, row, index) => {
@@ -127,7 +149,7 @@ function initial(text: string): string {
   return text.charAt(0).toUpperCase();
 }
 
-/** markLetter marks the first letter of the first row in view. It skips the rows drawn above the view. */
+/** markLetter marks the first letter of the first row in view. */
 function markLetter(): void {
   const virtualizer = list.value?.virtualizer;
   const top = virtualizer?.scrollOffset ?? 0;
@@ -173,23 +195,36 @@ function jump(index: number): void {
       />
     </div>
     <template v-if="view === 'pages'">
-      <div class="flex h-7.5 shrink-0 items-stretch overflow-hidden border-b border-default">
-        <button
-          v-for="summary in pages.slice(0, PAGE_TABS)"
-          :key="summary.title"
-          type="button"
-          class="relative flex h-7.5 shrink-0 items-center border-e border-default ps-2.5 pe-1.5 text-12 whitespace-nowrap"
-          :class="
-            summary.title === current
-              ? 'bg-default text-highlighted before:absolute before:inset-x-0 before:bottom-0 before:h-0.5 before:bg-primary'
-              : 'text-dimmed hover:text-toned'
-          "
-          @click="title = summary.title"
-        >
-          {{ summary.title }}
-        </button>
-        <span class="grow" />
-        <UDropdownMenu v-if="pages.length > PAGE_TABS" :items="morePages">
+      <div class="flex h-7.5 shrink-0 items-stretch border-b border-default">
+        <div ref="strip" class="relative flex min-w-0 flex-1 items-stretch overflow-hidden">
+          <button
+            v-for="(summary, index) in pages"
+            :key="summary.title"
+            type="button"
+            class="relative flex h-7.5 shrink-0 items-center border-e border-default ps-2.5 pe-1.5 text-12 whitespace-nowrap"
+            :class="[
+              summary.title === current
+                ? 'bg-default text-highlighted before:absolute before:inset-x-0 before:bottom-0 before:h-0.5 before:bg-primary'
+                : 'text-dimmed hover:text-toned',
+              index >= fitting && 'invisible',
+            ]"
+            @click="title = summary.title"
+          >
+            {{ summary.title }}
+          </button>
+        </div>
+        <UTooltip v-if="readme" :text="`Open the game's readme/info, ${readme.name}`">
+          <UButton
+            label="From the game"
+            icon="i-lucide-book-open"
+            color="neutral"
+            variant="ghost"
+            size="xs"
+            class="me-1 shrink-0 self-center"
+            @click="editor.show(readme)"
+          />
+        </UTooltip>
+        <UDropdownMenu v-if="fitting < pages.length" :items="morePages">
           <UButton
             icon="i-lucide-chevron-down"
             variant="ghost"
@@ -200,7 +235,7 @@ function jump(index: number): void {
           />
         </UDropdownMenu>
       </div>
-      <!-- the field keeps no value: the page picked shows in the article below, as a link followed does -->
+      <!-- The field keeps no value; the page picked shows in the article below. -->
       <div class="shrink-0 border-b border-default px-3 pt-2.5 pb-2">
         <UInputMenu
           v-model:search-term="term"
@@ -269,14 +304,16 @@ function jump(index: number): void {
           class="min-h-0 flex-1"
           @scroll="markLetter"
         >
-          <!-- one entry: its name with where it runs and leads, where a scripted one is defined, then what it does
-               and how a call that takes parameters is written -->
           <div class="flex flex-col gap-1.5 border-b border-default px-3.5 py-2.5">
-            <div class="flex flex-wrap items-center gap-x-2 gap-y-1">
-              <span class="font-mono text-13 font-semibold break-all text-highlighted">{{ item.name }}</span>
-              <UBadge v-for="scope in item.scopes ?? []" :key="scope" :label="scope" size="sm" />
-              <span v-if="item.target" class="font-mono text-11 text-dimmed">→ {{ item.target }}</span>
-              <SourceLink v-if="item.defined" :place="item.defined.place" :line="item.defined.line" class="ms-auto" />
+            <div class="flex items-baseline gap-2">
+              <div class="flex min-w-0 flex-1 flex-wrap items-center gap-x-2 gap-y-1">
+                <span class="font-mono text-13 font-semibold break-all text-highlighted">{{ item.name }}</span>
+                <UBadge v-for="scope in item.scopes ?? []" :key="scope" :label="scope" size="sm" />
+                <span v-if="item.target" class="font-mono text-11 text-dimmed">→ {{ item.target }}</span>
+              </div>
+              <UTooltip v-if="item.defined" :text="item.defined.place.rel">
+                <SourceLink :place="item.defined.place" :line="item.defined.line" short class="shrink-0" />
+              </UTooltip>
             </div>
             <p v-if="item.blurb" class="text-12 text-toned">{{ item.blurb }}</p>
             <ScriptSnippet

@@ -75,8 +75,8 @@ func (lsp *Service) ListFolds(path string) ([]Fold, error) {
 	return folds, nil
 }
 
-// ListHints returns a file's inlay hints: each date in the file read in the mod's calendar, and the text of each
-// localization key it names in the workspace's language. A value is a date only where its field expects one.
+// ListHints returns a file's inlay hints: each date read in the mod's calendar, and the text of each localization key
+// in the workspace's language.
 func (lsp *Service) ListHints(path string) ([]Hint, error) {
 	ws, tree, err := lsp.loadTree(path)
 	if err != nil {
@@ -142,9 +142,8 @@ func (visitor *hintsVisitor) add(tree *jomini.Tree, offset int, kind, text strin
 	visitor.hints = append(visitor.hints, Hint{Line: point.StartLine, Column: point.StartColumn, Text: text, Kind: kind})
 }
 
-// describeText returns what a hint shows after a localization key: the key's text in quotes, cut at hintTextLength
-// characters with "…", or "no text yet" where no language has a message with the key. It returns "" for a key that
-// only other languages than the workspace's write.
+// describeText returns what a hint shows after a localization key: its text in quotes, cut at hintTextLength
+// characters, or "no text yet" if no language has it. It returns "" for a key only other languages write.
 func (visitor *hintsVisitor) describeText(key string) string {
 	text, _, ok := visitor.ws.LookupText(visitor.mods, key)
 	if !ok {
@@ -175,10 +174,9 @@ func (lsp *Service) ListColorSites(path string) ([]ColorSite, error) {
 	return sites, nil
 }
 
-// PresentColor returns the text that writes a color into a file. It copies the form of the color already written at
-// the given range: its tag and scale, with an alpha only if that color has one. If the range holds no color, such as a
-// coat layer that has none yet, it uses the form the game's coats write colors in (game.Game.Coat.ColorForm). It
-// returns an error if the form cannot be written.
+// PresentColor returns the text that writes a color into a file, in the form of the color already written at the given
+// range. If the range holds no color, it uses the form the game's coats write colors in. It returns an error if the
+// form cannot be written.
 func (lsp *Service) PresentColor(path string, colorRange Range, color jomini.RGBA) (string, error) {
 	ws, tree, err := lsp.loadTree(path)
 	if err != nil {
@@ -223,8 +221,8 @@ func (lsp *Service) Signature(path string, line, column int) (*Signature, error)
 }
 
 // findCall returns the call to a scripted definition that holds the visited position: its statement, the field that
-// lists the parameters the definition takes, and the key it is called by. It returns false if the position is in no
-// such call, or if the definition takes no parameters.
+// lists the definition's parameters, and the key it is called by. It returns false if the position is in no such call
+// or the definition takes no parameters.
 func findCall(ws *workspace.Session, visitor *hoverVisitor) (int32, *schema.Field, string, bool) {
 	for statement, context := visitor.statement, &visitor.context; statement > 0; {
 		current := visitor.tree.Statements[statement]

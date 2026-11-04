@@ -1,5 +1,5 @@
-// Package wiki reads the community wiki for the open workspace's game. It fetches and caches the pages, finds the
-// ones that belong to a file, lists the patch notes and builds the lexicon of the game's commands.
+// Package wiki reads the community wiki for the open workspace's game. It caches the pages, lists the patch notes and
+// builds the lexicon of the game's commands.
 package wiki
 
 import (
@@ -28,7 +28,7 @@ type Page struct {
 	Released  string    `json:"released"` // the release date a patch note gives in its opening text; "" if none
 }
 
-// A Client fetches one game's wiki, rate limited, and caches each page in the cache folder.
+// A Client fetches one game's wiki, rate limited, and caches its pages.
 type Client struct {
 	game    *game.Game
 	api     string // the address of the wiki's API
@@ -36,7 +36,7 @@ type Client struct {
 	dir     string
 }
 
-// What a client asks of the wiki: how long a request may take and how many it may send each second.
+// The limits on a client's requests.
 const (
 	requestTimeout    = 30 * time.Second
 	requestsPerSecond = 2
@@ -52,8 +52,8 @@ func NewClient(cacheDir string, row *game.Game) *Client {
 	}
 }
 
-// FetchPage fetches a page through the wiki's API, sanitizes it and caches it. It returns an error if the request
-// fails, the wiki has no such page or the page cannot be parsed or cached.
+// FetchPage fetches a page, sanitizes it and caches it. It returns an error if the fetch fails or the wiki has no such
+// page.
 func (client *Client) FetchPage(title string) (Page, error) {
 	params := url.Values{"action": {"parse"}, "page": {title}, "prop": {"text"}}
 	var response struct {
@@ -99,7 +99,7 @@ func (client *Client) LoadPage(title string) (Page, bool) {
 }
 
 // fetch sends the given query to the wiki's API and decodes the JSON answer into the given value. It returns an error
-// if the request fails, the wiki answers with anything but OK or the answer is not JSON.
+// if the request fails or the answer is not JSON.
 func (client *Client) fetch(params url.Values, target any) error {
 	params.Set("format", "json")
 	params.Set("formatversion", "2")

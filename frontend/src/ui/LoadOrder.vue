@@ -1,7 +1,4 @@
-<!--
-  Shows the load order as mod chips, a mod left out of the compatibility checks dashed. When editing is allowed, the
-  chips can be dragged into another order and each has a switch that leaves its mod out or checks it again.
--->
+<!-- The load order as mod chips. When editing is allowed, chips can be dragged and each mod can be left out. -->
 <script setup lang="ts">
 import { computed, useTemplateRef } from "vue";
 import { useSortable } from "@vueuse/integrations/useSortable";
@@ -41,7 +38,6 @@ const chips = computed(() =>
 </script>
 
 <template>
-  <!-- the chips wrap, so every mod shows at any width -->
   <div class="flex min-w-0 items-start gap-2">
     <span :class="CHIP">
       <span class="w-3 text-center font-mono text-11 text-dimmed">0</span>

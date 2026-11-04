@@ -1,5 +1,4 @@
-// wiki.go is the Wails service that reads the wiki. It makes one client for the open workspace's game, serves pages and
-// patch notes, and refreshes the cache in the background.
+// wiki.go is the Wails service that serves wiki pages and patch notes and refreshes the cache in the background.
 
 package wiki
 
@@ -35,14 +34,13 @@ type Progress struct {
 	Total int `json:"total"` // the pages it fetches in all
 }
 
-// Service is the Wails service that reads the wiki. It makes one client for the open workspace's game on first use,
-// and a new one when a workspace of another game opens.
+// Service is the Wails service that reads the wiki.
 type Service struct {
 	Workspace *workspace.Service
 	mu        sync.Mutex              // held while the client, the lexicon and its index are read or replaced
-	client    *Client                 // made on first use for the open workspace's game
-	lexicon   map[string][]LexiconRow // the rows built for each class, for the index they were built from
-	mods      *index.Index            // the mods' index the lexicon was built from; another index empties it
+	client    *Client                 // the open workspace's game's client
+	lexicon   map[string][]LexiconRow // the rows of each class, built from mods
+	mods      *index.Index            // the index the lexicon was built from
 }
 
 // ServiceStartup refreshes the wiki of the open workspace's game in the background each time a workspace opens.
@@ -67,8 +65,8 @@ func (wik *Service) ReadPage(title string) (Page, error) {
 	return client.FetchPage(title)
 }
 
-// ListNotes returns the patch notes, newest first. A note whose page is not cached yet shows no Modding section. It
-// returns an error if no workspace is open or a refresh has not fetched the wiki's listing yet.
+// ListNotes returns the patch notes, newest first. A note whose page is not cached has no Modding section. It returns
+// an error if no workspace is open or no refresh has fetched the listing yet.
 func (wik *Service) ListNotes() ([]Note, error) {
 	ws, err := wik.Workspace.Session()
 	if err != nil {
@@ -92,9 +90,8 @@ func (wik *Service) ListNotes() ([]Note, error) {
 	}), nil
 }
 
-// Refresh fetches the page listing and every page that is missing or stale. The wiki:progress event reports each
-// page fetched and wiki:updated the end, with the error's text if there was one. It returns when the refresh ends,
-// with an error if no workspace is open or the listing or a page could not be fetched.
+// Refresh fetches the page listing and every page that is missing or stale. It sends wiki:progress for each page and
+// wiki:updated at the end. It returns an error if no workspace is open or a fetch fails.
 func (wik *Service) Refresh() error {
 	ws, err := wik.Workspace.Session()
 	if err == nil {
@@ -110,8 +107,7 @@ func (wik *Service) Refresh() error {
 	return err
 }
 
-// resolveClient returns the client for the open workspace's game. It makes one on first use and again when the
-// workspace's game is not the client's.
+// resolveClient returns the client for the open workspace's game, making a new one when the game changes.
 func (wik *Service) resolveClient(ws *workspace.Session) *Client {
 	wik.mu.Lock()
 	defer wik.mu.Unlock()

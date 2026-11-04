@@ -1,7 +1,4 @@
-<!--
-  A find bar over a list of texts: the term, the hit count, next, previous and close. It emits the index of the text
-  each hit moves to. Set autofocus for a bar opened from the keyboard.
--->
+<!-- A find bar over a list of texts. It emits the index of the text each hit moves to. -->
 <script setup lang="ts">
 import { computed, useId, useTemplateRef, watch } from "vue";
 import { useCycleList } from "@vueuse/core";

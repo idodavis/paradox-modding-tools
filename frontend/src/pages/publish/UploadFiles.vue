@@ -1,6 +1,4 @@
-<!--
-  This modal shows the files a mod's upload leaves out, and edits the mod's own patterns for them.
--->
+<!-- A modal that shows the files a mod's upload leaves out and edits the patterns for them. -->
 <script setup lang="ts">
 import { computed, shallowRef } from "vue";
 import { useMutation, useQuery } from "@pinia/colada";

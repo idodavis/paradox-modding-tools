@@ -1,6 +1,4 @@
-<!--
-  The Visual panel: a window's Properties and States tabs, or a coat's Layers tab, with the actions on a coat.
--->
+<!-- The Visual panel: a window's Properties and States tabs, or a coat's Layers tab, with the actions on a coat. -->
 <script setup lang="ts">
 import { useMutation, useQuery } from "@pinia/colada";
 import { Clipboard } from "@wailsio/runtime";
@@ -95,10 +93,7 @@ const { mutate: copy } = useMutation({
   onSuccess: (place) => editor.show(place),
 });
 
-/**
- * findBody finds the script inside the braces of a coat and its range. It returns null for a coat written as another
- * coat's name, which has no braces.
- */
+/** findBody finds the script inside the braces of a coat and its range. It returns null for a coat with no braces. */
 function findBody(model: Model, span: Span): { text: string; range: Range } | null {
   const text = model.model.getValueInRange(span);
   const open = text.indexOf("{");
@@ -109,13 +104,13 @@ function findBody(model: Model, span: Span): { text: string; range: Range } | nu
   return { text: text.slice(open + 1, text.lastIndexOf("}")).trim(), range: Range.fromPositions(start, end) };
 }
 
-/** copyScript copies the coat's script to the clipboard, as the game's coat designer pastes it. */
+/** copyScript copies the coat's script to the clipboard. */
 function copyScript(): void {
   const body = props.coat && findBody(props.model, props.coat.range);
   if (body) void Clipboard.SetText(body.text);
 }
 
-/** pasteScript replaces the coat's script with the one on the clipboard, which the game's coat designer copies. */
+/** pasteScript replaces the coat's script with the one on the clipboard. */
 async function pasteScript(): Promise<void> {
   const body = props.coat && findBody(props.model, props.coat.range);
   if (!body || !props.coat) return;

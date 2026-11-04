@@ -1,7 +1,4 @@
-<!--
-  The detail of one finding: a fixed head with its title, its level and its buttons, over sections that scroll. The
-  sections say what is wrong, where it is, and which copy the game uses and why.
--->
+<!-- The detail of one finding: a fixed head over sections on what is wrong, where, and which copy the game uses. -->
 <script setup lang="ts">
 import { computed, shallowRef } from "vue";
 import { useQuery } from "@pinia/colada";
@@ -39,14 +36,14 @@ const { data: codes } = useQuery(codesQuery);
 const { data: levels } = useQuery(levelsQuery);
 const mark = computed(() => levels.value?.find((level) => level.id === finding.level));
 const code = computed(() => codes.value?.find((row) => row.id === finding.code));
-/** Whether the finding is about a name nothing defines. Its places are where the name is used. */
+/** Whether the finding is about a name nothing defines. */
 const isMissing = computed(() => !!code.value?.elsewhere);
-/** The line under the title, after the level and the check: what the name is, and how often it is used or found. */
+/** The line under the title: what the name is, and how often it is used or found. */
 const subtitle = computed(() => {
   const frequency = isMissing.value ? `used ${describeCount(finding.count)} times` : plural(finding.count, "place");
   return [finding.database, finding.count > 1 ? frequency : ""].filter(Boolean).join(" · ");
 });
-/** The places drawn as code: the finding's own. The places of the findings folded into it are listed as lines. */
+/** The places drawn as code. The places of the findings folded into it are listed as lines. */
 const sites = computed(() => finding.sites ?? []);
 /** The file the finding is about, or undefined for a finding of a name. */
 const file = computed(() => (finding.database === "file" ? sites.value[0]?.place : undefined));
@@ -54,9 +51,9 @@ const copies = computed(() => sites.value.filter((site) => site.defines?.length)
 const places = computed(() => sites.value.filter((site) => !site.defines?.length));
 const kept = computed(() => places.value.filter((site) => site.kept));
 const ignored = computed(() => places.value.filter((site) => !site.kept));
-/** Whether the game uses one of a file's copies, so each copy says whether it is used. */
+/** Whether the game uses one of a file's copies. */
 const hasKeptCopy = computed(() => copies.value.some((copy) => copy.kept));
-/** The folded places grouped by file. The first place's file shows as "this file", any other by its relative path. */
+/** The folded places grouped by file. */
 const others = computed(() =>
   Object.values(groupBy(finding.repeats ?? [], (site) => site.place.path)).map((group) => ({
     file: group[0]?.place.path === places.value[0]?.place.path ? "this file" : (group[0]?.place.rel ?? ""),
@@ -115,7 +112,6 @@ function describeSite(site: Site): string {
 <template>
   <HealthFrame :icon="mark?.icon ?? 'i-lucide-info'" :label="mark?.label ?? ''" :color="mark?.color">
     <template #title>
-      <!-- a file's folder is dimmed, and the title breaks after its slashes -->
       <span :title="finding.name" :class="{ 'font-mono': finding.name }">
         <template v-if="file">
           <span class="font-normal text-dimmed"

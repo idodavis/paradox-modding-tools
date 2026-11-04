@@ -1,14 +1,10 @@
-<!--
-  Shows conditions as words, one line each. A condition that holds others ends in a colon with them under it. With
-  inline, all conditions share one line and a nested block shows as "…". The file also exports groupConditions and
-  describeStep, which make the conditions this list shows.
--->
+<!-- Shows conditions as words, one line each, or all on one line when inline. -->
 <script lang="ts">
 import type { Condition, Step } from "@services/graph/models";
 
 /** CODE is the classes of a subject or a value; a long one wraps. */
 const CODE = "font-mono text-11 wrap-anywhere";
-/** VALUE is the classes that mark a value, what a condition checks for, as colored text on a soft tag. */
+/** VALUE is the classes that mark a value as colored text on a soft tag. */
 const VALUE = "rounded-[4px] bg-(--link-soft) px-1 text-(--link) box-decoration-clone";
 /** STEP_PHRASES is the phrase each kind of step starts with. A block has none. */
 const STEP_PHRASES: Record<string, string> = {
@@ -19,10 +15,7 @@ const STEP_PHRASES: Record<string, string> = {
   option: "option",
 };
 
-/**
- * groupConditions groups conditions under "must be true" and "must be false", the second without the negated mark. If
- * no condition is negated it returns the conditions as they are.
- */
+/** groupConditions groups conditions under "must be true" and "must be false", or returns them as they are. */
 export function groupConditions(conditions: Condition[]): Condition[] {
   const failed = conditions.filter((condition) => condition.negated);
   if (!failed.length) return conditions;
@@ -32,11 +25,7 @@ export function groupConditions(conditions: Condition[]): Condition[] {
   ].filter((group) => group.conditions.length);
 }
 
-/**
- * describeStep describes one block a firing is written in as conditions. A branch is "if" or "else" with its
- * conditions under it. A list is "for" its key with "where" and its limit under it. An option is "option" with its
- * title, if it has one, and "chosen". It returns none for a block.
- */
+/** describeStep describes one block a firing is written in as conditions. It returns none for a plain block. */
 export function describeStep(step: Step): Condition[] {
   const phrase = STEP_PHRASES[step.kind];
   if (!phrase) return [];
@@ -55,14 +44,10 @@ export function describeStep(step: Step): Condition[] {
 import { createReusableTemplate } from "@vueuse/core";
 
 const { conditions, inline = false } = defineProps<{ conditions: Condition[]; inline?: boolean }>();
-// Code shows a subject or a value: its in-game name if it has one (the text as written shows on hover), else the text
-// split at its prefix. isValue marks it as a value.
+// Code shows a subject or a value by its in-game name, with the text as written on hover.
 const [DefineCode, Code] = createReusableTemplate<{ text: string; name?: string; isValue?: boolean }>();
 
-/**
- * splitValue splits a subject or a value into its prefix, such as estate_type:, and the rest. Without a prefix, all of
- * it is the rest.
- */
+/** splitValue splits a subject or a value into its prefix, such as estate_type:, and the rest. */
 function splitValue(value: string): [string, string] {
   const match = /^([\w.]+:)(.+)$/.exec(value);
   return match ? [match[1], match[2]] : ["", value];
@@ -115,11 +100,9 @@ function splitValue(value: string): [string, string] {
 </template>
 
 <style scoped>
-/* a condition that holds others ends in a colon */
 .head::after {
   content: ":";
 }
-/* a condition that holds no others is a bullet point */
 .item {
   position: relative;
   padding-inline-start: 0.875rem;

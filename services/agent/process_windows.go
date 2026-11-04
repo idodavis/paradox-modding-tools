@@ -1,5 +1,4 @@
-// process_windows.go holds an agent's programs in a job object, so that they all end together. It starts them without
-// a console window.
+// process_windows.go holds an agent's programs in a job object, so that they all end together.
 
 package agent
 
@@ -21,9 +20,9 @@ func prepareCommand(command *exec.Cmd) {
 	command.SysProcAttr = &syscall.SysProcAttr{HideWindow: true, CreationFlags: windows.CREATE_NO_WINDOW}
 }
 
-// startGroup starts a command in a new job object, which ends every program in it when it closes. Programs the
-// command starts join the job. The command joins just after it starts, but an agent starts none before its first
-// message arrives. It returns an error if the job cannot be made or the command cannot be started or joined.
+// startGroup starts a command in a new job object, which ends every program in it when it closes. The command joins
+// the job just after it starts, but an agent starts no program before its first message arrives. It returns an error
+// if the job cannot be made or the command cannot be started or joined.
 func startGroup(command *exec.Cmd) (group, error) {
 	job, err := windows.CreateJobObject(nil, nil)
 	if err != nil {

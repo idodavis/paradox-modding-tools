@@ -31,9 +31,8 @@ type Completion struct {
 // keyLimit is the most localization keys a completion lists. The editor asks again as typing narrows them.
 const keyLimit = 200
 
-// Complete returns the completion candidates at a position in a file. At a key they are the language's operators,
-// commands and fields. At a value they are the field's choices, the names the game loads, the links to the scope a
-// target needs or the image files a path could name. It returns an empty list for a file that is not script.
+// Complete returns the completion candidates at a position in a file: at a key the language's operators, commands and
+// fields, at a value what the field allows. It returns an empty list for a file that is not script.
 func (lsp *Service) Complete(path string, line, column int) ([]Completion, error) {
 	ws, tree, err := lsp.loadTree(path)
 	if err != nil {
@@ -63,11 +62,9 @@ func (lsp *Service) Complete(path string, line, column int) ([]Completion, error
 	return listKeys(ws.Schema, ws.Game, &visitor.context), nil
 }
 
-// findValue returns the statement whose value the given offset is writing. That is a statement with an operator before
-// the offset on the same line and no value yet, or a value the offset is inside or at the end of. It returns false if
-// the offset is not writing a value.
+// findValue returns the statement whose value the given offset is writing. It returns false if the offset is not
+// writing a value.
 func findValue(tree *jomini.Tree, offset int) (int32, bool) {
-	// the last byte before the offset that is not a space decides which statement the offset follows
 	prefix := strings.TrimRight(tree.Src[:offset], " \t")
 	if prefix == "" {
 		return 0, false
@@ -82,10 +79,9 @@ func findValue(tree *jomini.Tree, offset int) (int32, bool) {
 	return statement, !pastLine && !pastValue
 }
 
-// listValues returns the values a statement's field may take: its choices, yes and no, the loaded names of a
-// database, the links that lead to the scope it needs, or the image files under the folder typed so far. The given
-// text is what is typed, with the quote it may begin with. A localization key is one of the given language's that
-// contain what is typed, up to keyLimit of them. It returns an empty list if the field states no value.
+// listValues returns the values a statement's field may take, given the text typed so far, with the quote it may begin
+// with, and the language. Localization keys are those that contain the typed text, up to keyLimit. It returns an empty
+// list if the field states no value.
 func listValues(mods *index.Index, row *game.Game, context *schema.Context, typed, language string) []Completion {
 	field := context.Field
 	if field == nil || !field.Value.IsStated() {
@@ -136,9 +132,8 @@ func listValues(mods *index.Index, row *game.Game, context *schema.Context, type
 	return lo.UniqBy(values, func(candidate Completion) string { return candidate.Label })
 }
 
-// listScopeLinks returns the links that lead to the given scope type where a statement is written: this, root and prev
-// where they are of that type, then the scopes saved earlier in the definition that are, the latest saved first. The
-// given function ranks a link. It returns none for an empty scope type.
+// listScopeLinks returns the links that lead to the given scope type from where a statement is written, the latest
+// saved scope first. The given function ranks a link. It returns none for an empty scope type.
 func listScopeLinks(context *schema.Context, scope string, rank func(string) int) []Completion {
 	if scope == "" {
 		return nil
@@ -183,9 +178,8 @@ func (visitor *completeVisitor) Enter(tree *jomini.Tree, statement int32, contex
 // Leave does nothing.
 func (visitor *completeVisitor) Leave(tree *jomini.Tree, statement int32, context *schema.Context) {}
 
-// listKeys returns the keys a block takes: the language's operators that fit it, then its commands, then its fields,
-// each kind ranked above the next. A key listed twice is kept once, as the first kind. Only the operators of the given
-// game count.
+// listKeys returns the keys a block takes: the language's operators, then its commands, then its fields, each kind
+// ranked above the next. A key listed twice is kept once, as the first kind.
 func listKeys(schema *schema.Schema, row *game.Game, holder *schema.Context) []Completion {
 	fields := listFields(holder)
 	commands := listCommands(schema.Commands, holder, findTopRank(fields)+1)
@@ -199,8 +193,8 @@ func findTopRank(candidates []Completion) int {
 	return lo.MaxBy(candidates, func(first, second Completion) bool { return first.Rank > second.Rank }).Rank
 }
 
-// listFields returns the keys the block's field declares, in alphabetical order, leaving out keys that begin with "<".
-// It returns nil if the block has no field.
+// listFields returns the keys the block's field declares, in alphabetical order, except those that begin with "<". It
+// returns nil if the block has no field.
 func listFields(holder *schema.Context) []Completion {
 	if holder.Field == nil {
 		return nil
@@ -219,9 +213,8 @@ func listFields(holder *schema.Context) []Completion {
 	return fields
 }
 
-// listOperators returns the language's keys that fit a block, ranked above the given floor. They are grouped by
-// class, in the order each class first appears in game.Keywords, and keep the table's order within a class. A key
-// that is written with a block is inserted with one. Only the keywords of the given game count.
+// listOperators returns the given game's keywords that fit a block, grouped by class and ranked above the given floor.
+// A key written with a block is inserted with one.
 func listOperators(row *game.Game, commands map[string]*schema.Command, holder *schema.Context, floor int) []Completion {
 	fitting := lo.Filter(game.Keywords, func(keyword game.Keyword, _ int) bool {
 		return !strings.ContainsAny(keyword.Key, "/*<") && row.Matches(keyword.Games) &&
@@ -269,8 +262,7 @@ func isOperatorFit(keyword game.Keyword, command *schema.Command, holder *schema
 	return len(game.Shapes[holder.Shape].Allows) > 0
 }
 
-// listCommands returns the commands a block takes, in alphabetical order. Each is ranked above the given floor by how
-// often the game writes it in the block's field.
+// listCommands returns the commands a block takes, in alphabetical order, ranked above the given floor.
 func listCommands(commands map[string]*schema.Command, holder *schema.Context, floor int) []Completion {
 	var candidates []Completion
 	for _, key := range slices.Sorted(maps.Keys(commands)) {
@@ -294,11 +286,12 @@ func listCommands(commands map[string]*schema.Command, holder *schema.Context, f
 // isBlockCommand reports whether a command is written with a block: it takes block arguments, leads to a scope or
 // walks a list.
 func isBlockCommand(command *schema.Command) bool {
-	return isBlockField(command.Arguments) || command.Target != "" || command.Lists
+	return slices.ContainsFunc(slices.Collect(maps.Values(command.Arguments)), isBlockField) || command.Target != "" ||
+		command.Lists
 }
 
-// makeKey returns the given candidate with its insert text set: the key and an equals sign, followed by an empty block
-// if the flag is set.
+// makeKey returns the given candidate with its insert text set: the key and an equals sign, and an empty block if the
+// flag is set.
 func makeKey(candidate Completion, block bool) Completion {
 	candidate.Insert = candidate.Label + " = "
 	if block {

@@ -1,8 +1,6 @@
 /**
  * The terminal store: the shells of this window. The terminal's own window holds them while it is open, else the main
- * window does. The holder keeps one xterm per shell, fed by the shell's stream from Go, whether shown or not; other
- * windows keep none. Before the shells move to another window, each xterm's screen goes to Go, which hands it to the
- * next holder with the output that came after it.
+ * window does, with one xterm per shell.
  */
 import { defineStore } from "pinia";
 import { useMutation, useQuery } from "@pinia/colada";
@@ -26,25 +24,22 @@ import { useEditorStore } from "./editor";
 import { useSettingsStore } from "./settings";
 import { THIS_WINDOW, useWindowsStore } from "./windows";
 
-/** A Console is one shell as this window draws it: its xterm, the addons the store calls, and its stream from Go. */
+/** A Console is one shell as this window draws it: its xterm and its stream from Go. */
 type Console = {
   shell: Shell;
   xterm: Terminal;
   fit: FitAddon;
   serialize: SerializeAddon;
   stream: ReturnType<typeof Stream>;
-  offset: number; // the offset of the output that xterm has drawn up to
+  offset: number; // the output xterm has drawn up to
 };
 
-/**
- * A Message is what this window sends Go on a shell's stream: the shell's id first, then typed input, a new terminal
- * size, or the offset xterm has drawn up to, which Go waits for once it is far ahead.
- */
+/** A Message is what this window sends Go on a shell's stream. */
 type Message = { shell?: string; input?: string; binary?: string; columns?: number; rows?: number; offset?: number };
 
-/** ANSI holds the eight ANSI colors, as xterm's theme names them; each has a bright one too. */
+/** ANSI holds the eight ANSI colors, as xterm's theme names them. */
 const ANSI = ["black", "red", "green", "yellow", "blue", "magenta", "cyan", "white"] as const;
-/** APP_COMMANDS holds the commands whose shortcuts still reach the app from a terminal, as in VS Code. */
+/** APP_COMMANDS holds the commands whose shortcuts still reach the app from a terminal. */
 const APP_COMMANDS = ["palette.open", "editor.goToFile"];
 const decoder = new TextDecoder();
 
@@ -53,20 +48,16 @@ export const useTerminalStore = defineStore("terminal", () => {
   const settings = useSettingsStore();
   const windows = useWindowsStore();
   const consoles = shallowReactive(new Map<string, Console>());
-  // the id of the shell shown, shared by all windows, so the next window to hold the shells shows the same one
+  // Shared by all windows, so the next window to hold the shells shows the same one.
   const active = useLocalStorage("pmt.terminal.active", "");
-  // whether the find box over the active shell is open
   const findOpen = shallowRef(false);
-  // whether the shells went to another window, where they stay until the terminal moves again
   const away = shallowRef(false);
   const holding = computed(() => !away.value && windows.resolveTerminal() === THIS_WINDOW);
   const { data: shells } = useQuery(() => ({ ...shellsQuery, enabled: holding.value }));
 
-  // starts the given program's shell, or the default shell for ""
   const { mutate: start } = useMutation({
     mutation: (program: string) => launch((path, columns, rows) => terminal.Start(path, program, columns, rows)),
   });
-  // runs a command, a program and its arguments as given, in a new shell
   const { mutateAsync: run } = useMutation({
     mutation: (command: string[]) => launch((path, columns, rows) => terminal.Run(path, command, columns, rows)),
   });
@@ -86,7 +77,7 @@ export const useTerminalStore = defineStore("terminal", () => {
     () => (away.value = false),
   );
   watch([holding, shells], syncConsoles, { immediate: true });
-  // the theme reaches <html> before this runs
+  // The theme reaches <html> before this runs.
   watch(
     () =>
       `${JSON.stringify(settings.theme())} ${settings.codeFont().fontFamily} ${settings.value("ide.panelTextSize")}`,
@@ -94,17 +85,14 @@ export const useTerminalStore = defineStore("terminal", () => {
     { flush: "post" },
   );
 
-  /**
-   * launch starts a shell through the given call, which takes the active file's path and the size of the shell shown,
-   * and shows the new shell.
-   */
+  /** launch starts a shell through the given call and shows it. */
   async function launch(begin: (path: string, columns: number, rows: number) => Promise<Shell | null>): Promise<void> {
     const size = consoles.get(active.value)?.xterm;
     const shell = await begin(findFile()?.path ?? "", size?.cols ?? 80, size?.rows ?? 24);
     if (shell) active.value = shell.id;
   }
 
-  /** syncConsoles makes a console for each shell this window holds and closes the consoles of other shells. */
+  /** syncConsoles keeps one console for each shell this window holds. */
   function syncConsoles(): void {
     const running = holding.value ? (shells.value ?? []).flatMap((shell) => (shell ? [shell] : [])) : [];
     for (const [id, shellConsole] of consoles) {
@@ -114,18 +102,18 @@ export const useTerminalStore = defineStore("terminal", () => {
       consoles.delete(id);
     }
     for (const shell of running) if (!consoles.has(shell.id)) consoles.set(shell.id, attach(shell));
-    // the shell shown stays until the list has loaded and lacks it
+    // The shell shown stays until the list has loaded and lacks it.
     if (holding.value && shells.value && !consoles.has(active.value)) active.value = running.at(-1)?.id ?? "";
   }
 
-  /** attach makes a shell's console: its xterm, and its stream from Go, which sends the screen to write first. */
+  /** attach makes a shell's console. Go sends the screen to write first on its stream. */
   function attach(shell: Shell): Console {
     const xterm = new Terminal({
       allowProposedApi: true,
       windowsPty: shell.build ? { backend: "conpty", buildNumber: shell.build } : undefined,
       linkHandler: { activate: (_event, uri) => openAddress(uri) },
     });
-    // never proxied: xterm's objects are not Vue's to watch
+    // xterm's objects are not Vue's to watch.
     const shellConsole: Console = markRaw({
       shell,
       xterm,
@@ -170,10 +158,7 @@ export const useTerminalStore = defineStore("terminal", () => {
     return shellConsole;
   }
 
-  /**
-   * writeScreen writes the screen Go sent for a shell at the size it was drawn at, then fits the terminal to its
-   * element if it is shown.
-   */
+  /** writeScreen writes the screen Go sent for a shell at the size it was drawn at. */
   function writeScreen(shellConsole: Console, screen: Screen): void {
     shellConsole.offset = screen.offset;
     shellConsole.xterm.resize(screen.columns, screen.rows);
@@ -181,16 +166,15 @@ export const useTerminalStore = defineStore("terminal", () => {
   }
 
   /**
-   * fitConsole fits a console's terminal to its host, and so the shell to it. It does nothing while the host has no
-   * width or height, as while its panel is laid out or hidden: a fit then makes the terminal two columns wide, and the
-   * shell would wrap its own screen to them for good.
+   * fitConsole fits a console's terminal to its host. It does nothing while the host has no size: a fit then makes the
+   * terminal two columns wide, and the shell would wrap its own screen to them for good.
    */
   function fitConsole(shellConsole: Console): void {
     const host = shellConsole.xterm.element?.parentElement;
     if (host && host.clientWidth > 0 && host.clientHeight > 0) shellConsole.fit.fit();
   }
 
-  /** applyStyle sets a console's colors and font from the settings again, and fits it to its element if it is shown. */
+  /** applyStyle sets a console's colors and font from the settings. */
   function applyStyle(shellConsole: Console): void {
     shellConsole.xterm.options.theme = resolveTheme();
     shellConsole.xterm.options.fontFamily = settings.codeFont().fontFamily;
@@ -198,16 +182,11 @@ export const useTerminalStore = defineStore("terminal", () => {
     fitConsole(shellConsole);
   }
 
-  /**
-   * applyKey handles a key pressed in a shell's terminal. It returns true if xterm should go on to handle the key.
-   * Ctrl F opens the find box. Ctrl C copies a selection, else goes to the shell, and Ctrl Shift C always copies.
-   * Ctrl V and Ctrl Shift V paste through the page's own paste. Shift Enter sends ESC CR, which adds a line in Claude
-   * Code. The shortcuts of the palette and Go to file reach the app. A key the terminal handles itself is not passed
-   * on, so no app shortcut acts on it too.
-   */
+  /** applyKey handles a key pressed in a shell's terminal. It returns true if xterm should handle the key too. */
   function applyKey(shellConsole: Console, event: KeyboardEvent): boolean {
     const isShiftEnter = event.key === "Enter" && event.shiftKey && !event.ctrlKey && !event.altKey && !event.metaKey;
-    // xterm asks again for the key's keypress, which would send a CR of its own
+    // Shift Enter sends ESC CR, which adds a line in Claude Code. xterm asks again for the keypress, which would send
+    // a CR of its own.
     if (isShiftEnter) {
       if (event.type === "keydown") shellConsole.xterm.input("\x1b\r");
       return false;
@@ -229,7 +208,7 @@ export const useTerminalStore = defineStore("terminal", () => {
     return key !== "v" && !isAppKey(event);
   }
 
-  /** listLinks returns the file links that Go finds in the line of the given row. It is undefined for a blank line. */
+  /** listLinks returns the file links Go finds in the line of the given row, or undefined for a blank line. */
   async function listLinks(shellConsole: Console, row: number): Promise<ILink[] | undefined> {
     const { text, cells } = readLine(shellConsole.xterm, row);
     if (!text.trim()) return undefined;
@@ -242,14 +221,14 @@ export const useTerminalStore = defineStore("terminal", () => {
     });
   }
 
-  /** findFile returns the file the shells work on: this window's active file, else the main window's. Null if none. */
+  /** findFile returns the file the shells work on: this window's active file, else the main window's, or null. */
   const findFile = (): Place | null => editor.activeFile() ?? windows.findActive("main");
 
-  /** show draws a shell's terminal in the given element, opening it there the first time, and fits it to it. */
+  /** show draws a shell's terminal in the given element. */
   const show = (id: string, host: HTMLElement): void => {
     const shellConsole = consoles.get(id);
     if (!shellConsole) return;
-    // the element shows one terminal at a time; xterm opens once, and after that its element moves
+    // xterm opens once, and after that its element moves.
     host.replaceChildren();
     if (shellConsole.xterm.element) host.append(shellConsole.xterm.element);
     else shellConsole.xterm.open(host);
@@ -257,10 +236,7 @@ export const useTerminalStore = defineStore("terminal", () => {
     shellConsole.xterm.refresh(0, shellConsole.xterm.rows - 1);
   };
 
-  /**
-   * handOver gives every shell's screen to Go for the next window that holds the shells, and stops holding them here.
-   * A failure, such as a shell that has ended, is ignored.
-   */
+  /** handOver gives every shell's screen to Go for the next window that holds the shells. Failures are ignored. */
   const handOver = async (): Promise<void> => {
     const screens = [...consoles.values()].map((shellConsole) => ({
       id: shellConsole.shell.id,
@@ -291,7 +267,7 @@ export const useTerminalStore = defineStore("terminal", () => {
   };
 });
 
-/** resolveTheme resolves the terminal's colors from the page theme's tokens, which xterm cannot read as variables. */
+/** resolveTheme returns the terminal's colors from the page theme's tokens, which xterm cannot read as variables. */
 function resolveTheme(): ITheme {
   const style = getComputedStyle(document.documentElement);
   const token = (suffix: string): string => style.getPropertyValue(`--${suffix}`).trim();
@@ -316,10 +292,7 @@ function isAppKey(event: KeyboardEvent): boolean {
   return !!command && APP_COMMANDS.includes(command.id);
 }
 
-/**
- * readLine returns the text of the line that holds the given row, with its wrapped rows joined, and the cell of each
- * UTF-16 unit of the text. The row and the cells count from one, as xterm's links do.
- */
+/** readLine returns the text of the line that holds the given row, and the cell of each UTF-16 unit of it. */
 function readLine(xterm: Terminal, row: number): { text: string; cells: IBufferCellPosition[] } {
   const buffer = xterm.buffer.active;
   let first = row - 1;
@@ -331,7 +304,7 @@ function readLine(xterm: Terminal, row: number): { text: string; cells: IBufferC
     if (!line) break;
     for (let x = 0; x < line.length; x++) {
       const cell = line.getCell(x);
-      // the second half of a wide character has no text of its own
+      // The second half of a wide character has no text of its own.
       if (!cell || cell.getWidth() === 0) continue;
       const chars = cell.getChars() || " ";
       text += chars;
@@ -341,7 +314,7 @@ function readLine(xterm: Terminal, row: number): { text: string; cells: IBufferC
   return { text, cells };
 }
 
-/** openAddress opens a web address in the system's browser. An address that is not http or https is left alone. */
+/** openAddress opens a web address in the system's browser. Only http and https addresses open. */
 function openAddress(uri: string): void {
   if (/^https?:\/\//i.test(uri)) void Browser.OpenURL(uri);
 }

@@ -46,9 +46,8 @@ type Session struct {
 	caches      string // the folder the install's schema and index were loaded from or saved in
 }
 
-// A Document is one file as the session holds it, parsed once in the dialect of its format. A localization file's
-// tree holds its text and lines and no statement, and its messages are what it says. Any other file's tree is its
-// script, and it has no messages.
+// A Document is one file as the session holds it, parsed once in the dialect of its format. A localization file's tree
+// holds its text and lines only, and its messages are what it says. Any other file has no messages.
 type Document struct {
 	Tree     *jomini.Tree
 	Messages *loc.File
@@ -60,8 +59,8 @@ const (
 	indexFile  = "index.gob"
 )
 
-// openSession opens a workspace: it loads or scans the install, scans the mods and starts the watcher. It returns an
-// error if the workspace or its install is not recorded, or a scan fails.
+// openSession opens a workspace and starts its watcher. It returns an error if the workspace or its install is not
+// recorded, or a scan fails.
 func (wsp *Service) openSession(workspaceID string, progress func(stage string, percent int), change func(changes []FileChange)) (*Session, error) {
 	record, install, row, err := findRecords(wsp.Config.Config(), workspaceID)
 	if err != nil {
@@ -131,8 +130,8 @@ func findInstall(records app.Config, installID string) (app.Install, *game.Game,
 	return install, row, nil
 }
 
-// resolveCaches returns the folder of an install's caches. Its name changes with the install's version and build, the
-// game's dumps and the app's version. It returns an error if the dumps cannot be listed.
+// resolveCaches returns the folder of an install's caches. A new version of the install, the dumps or the app gets a
+// new folder. It returns an error if the dumps cannot be listed.
 func resolveCaches(cacheDir string, row *game.Game, install app.Install, build string) (string, error) {
 	dumpsAt, err := schema.FindDumpsAt(row.FindDumpDirs(install.Path))
 	if err != nil {
@@ -142,8 +141,7 @@ func resolveCaches(cacheDir string, row *game.Game, install app.Install, build s
 	return filepath.Join(cacheDir, row.ID, folder), nil
 }
 
-// resolveVersion returns an install's version: the one its files say, else the one its record holds, such as a version
-// typed when the install was added.
+// resolveVersion returns an install's version: the one its files say, else the one its record holds.
 func resolveVersion(row *game.Game, install app.Install) string {
 	return cmp.Or(row.LoadVersion(install.Path), install.Version)
 }
@@ -204,8 +202,7 @@ func removeEntries(dir, base string) error {
 }
 
 // readMod returns a recorded mod with its descriptor and thumbnail, read by the given game's rule. A mod whose folder
-// is missing is broken, and one whose descriptor cannot be read has an empty one. A mod in the game's Steam Workshop
-// folder is marked as one.
+// is missing is broken, and one whose descriptor cannot be read has an empty one.
 func readMod(row *game.Game, record app.Mod) Mod {
 	mod := Mod{Mod: record, Workshop: row.IsWorkshopFolder(record.Dir)}
 	if files.IsFolder(record.Dir) {
@@ -217,8 +214,7 @@ func readMod(row *game.Game, record app.Mod) Mod {
 	return mod
 }
 
-// refreshMod reads a mod's descriptor and thumbnail again and puts a new copy of the load order in place. A mod the
-// session does not hold leaves the order as it was.
+// refreshMod reads a mod's descriptor and thumbnail again and puts a new copy of the load order in place.
 func (ws *Session) refreshMod(modID string) {
 	order := lo.Map(*ws.Order.Load(), func(mod Mod, _ int) Mod {
 		if mod.ID == modID {
@@ -249,7 +245,7 @@ func (ws *Session) ScanOrder(modIDs []string) (*index.Index, error) {
 
 // Close stops the watcher and drops the open files' buffers and documents.
 func (ws *Session) Close() {
-	// the watcher's loop may be inside a rescan that waits for the lock, so it is stopped before the lock is taken
+	// the watcher may be inside a rescan that waits for the lock, so it stops first
 	if ws.watcher != nil {
 		ws.watcher.Close()
 		ws.watcher = nil
@@ -273,8 +269,7 @@ func ParseDocument(format files.Format, path, text string) Document {
 // file open, else the cached one, else the file is read and parsed. It returns an error if the file cannot be read.
 func (ws *Session) LoadDocument(path string) (Document, error) {
 	key := files.ToKey(path)
-	// the lock is held through the parse, so that no rescan runs between the parse and the document's place in the
-	// cache
+	// the lock is held through the parse, so no rescan runs before the document is cached
 	ws.mu.RLock()
 	defer ws.mu.RUnlock()
 	if document, open := ws.buffers[key]; open {
@@ -292,8 +287,8 @@ func (ws *Session) LoadDocument(path string) (Document, error) {
 	return document, nil
 }
 
-// LoadTree returns the tree of the file with the given path, as LoadDocument finds it. A localization file's tree
-// holds its text and lines only. It returns an error if the file cannot be read.
+// LoadTree returns the tree of the file with the given path, as LoadDocument finds it. It returns an error if the file
+// cannot be read.
 func (ws *Session) LoadTree(path string) (*jomini.Tree, error) {
 	document, err := ws.LoadDocument(path)
 	return document.Tree, err
@@ -367,7 +362,7 @@ func (ws *Session) LookupText(mods *index.Index, key string) (text string, winne
 
 // findText returns the text of the message at a site in the given language. The install keeps only the base language's
 // texts, so a game file's text in another language is read from its file. It returns "" if the file cannot be read or
-// no longer has the message at that line.
+// has no such message.
 func (ws *Session) findText(mods *index.Index, site index.Site, language string) string {
 	file := mods.File(site)
 	if file.Origin != game.OriginVanilla || language == game.BaseLanguage {
@@ -389,8 +384,8 @@ func (ws *Session) findText(mods *index.Index, site index.Site, language string)
 	return message.Text
 }
 
-// LookupTitle returns the title of a definition, or "" if it has none. A definition that writes no title key is
-// titled by its name, by its concept key for a game concept, and by the game's message title for a message.
+// LookupTitle returns the title of a definition, or "" if it has none. A definition with no title key is titled by its
+// name, or by the game's own key for a concept or a message.
 func (ws *Session) LookupTitle(mods *index.Index, site index.Site) string {
 	if key, ok := ws.FindTitleKey(mods, site); ok {
 		if text, _, ok := ws.LookupText(mods, key); ok {
@@ -409,8 +404,8 @@ func (ws *Session) LookupTitle(mods *index.Index, site index.Site) string {
 	return text
 }
 
-// FindTitleKey returns the localization key a definition writes as its title. A title written as a block gives the
-// first text in it. It returns false if the definition writes none or its statement cannot be found.
+// FindTitleKey returns the localization key a definition writes as its title. It returns false if the definition
+// writes none or its statement cannot be found.
 func (ws *Session) FindTitleKey(mods *index.Index, site index.Site) (string, bool) {
 	tree, statement, err := ws.FindStatement(mods, site)
 	if err != nil {
@@ -419,16 +414,14 @@ func (ws *Session) FindTitleKey(mods *index.Index, site index.Site) (string, boo
 	return FindTextKey(tree, statement, game.TitleKey)
 }
 
-// FindTextKey returns the localization key a statement writes under the given key, such as an event's title. The key
-// is the value of the given key itself, else of the first desc in its block, as in a first_valid of triggered descs,
-// or of a text written directly in its block, as in an option's triggered name. It returns false if the statement
-// writes no such key, or a block that holds neither.
+// FindTextKey returns the localization key a statement writes under the given key, such as an event's title. A key
+// written as a block, such as a triggered desc, gives the first text in it. It returns false if the statement writes
+// no such key.
 func FindTextKey(tree *jomini.Tree, statement int32, key string) (string, bool) {
 	child, ok := tree.FindChild(statement, key)
 	if !ok {
 		return "", false
 	}
-	// the child itself, then each statement inside its block
 	for position := child; position < tree.Statements[child].Last; position++ {
 		current := tree.Statements[position]
 		field := tree.Text(current.Key)
@@ -492,8 +485,8 @@ func (ws *Session) Rescan(changes []FileChange) error {
 	return failure
 }
 
-// listChanged returns the files a changed path stands for: the file itself, or every file under it where the path is
-// a folder. For a deleted path they are the files of the mods' index that were the path or under it.
+// listChanged returns the files a changed path stands for: the file itself, or every file under it for a folder. For
+// a deleted path they are the files the mods' index had at or under it.
 func (ws *Session) listChanged(mods *index.Index, place Place, deleted bool) ([]files.File, error) {
 	switch {
 	case deleted:

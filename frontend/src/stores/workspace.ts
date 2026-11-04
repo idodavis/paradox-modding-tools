@@ -1,7 +1,4 @@
-/**
- * The workspace store holds the active workspace's id, why the last open failed, and what every page reads of the open
- * workspace: its mods and the names and colors of its origins. It also creates, opens and removes workspaces.
- */
+/** The workspace store holds the active workspace's id and what every page reads of the open workspace. */
 import { defineStore } from "pinia";
 import { useMutation, useQuery } from "@pinia/colada";
 import { useLocalStorage } from "@vueuse/core";
@@ -18,7 +15,7 @@ import { stateQuery, workspacesQuery } from "../queries";
 
 /** VANILLA is Go's name for the game's own files as an origin. */
 export const VANILLA = "vanilla";
-/** SLOTS lists the theme's color slots a mod picks from, the only colors Go writes as a slot. */
+/** SLOTS lists the theme's color slots a mod picks from. */
 export const SLOTS = Array.from({ length: 16 }, (_, index) => `o${index + 1}`);
 
 export const useWorkspaceStore = defineStore("workspace", () => {
@@ -28,9 +25,7 @@ export const useWorkspaceStore = defineStore("workspace", () => {
   const { data: state } = useQuery(stateQuery);
   const { data: workspaces } = useQuery(workspacesQuery);
   const { mutate: openWorkspace } = useMutation({ mutation: (workspaceId: string) => workspace.Open(workspaceId) });
-  // update writes a workspace's record whole, with the fields the caller changed
   const { mutate: update } = useMutation({ mutation: (record: Workspace) => workspace.UpdateWorkspace(record) });
-  // removing the active workspace leaves none active, and no other one opens
   const { mutate: deleteWorkspace } = useMutation({
     mutation: (record: Workspace) => workspace.DeleteWorkspace(record.id),
     onSuccess: (_, record) => {
@@ -39,37 +34,32 @@ export const useWorkspaceStore = defineStore("workspace", () => {
     },
   });
 
-  // why the workspace being opened could not open, until a workspace opens
   const failure = shallowRef<{ id: string; reason: string } | null>(null);
   Events.On("workspace:failed", ({ data }) => (failure.value = { id: id.value, reason: data }));
   Events.On("workspace:opened", () => (failure.value = null));
 
-  /** activeId returns the active workspace's id, or "" when there is none. */
+  /** activeId returns the active workspace's id, or "" if there is none. */
   const activeId = (): string => id.value;
 
-  /** isOpen reports whether the active workspace is open in Go, from the state query. */
+  /** isOpen reports whether the active workspace is open in Go. */
   const isOpen = (): boolean => !!id.value && !!state.value?.open && state.value.id === id.value;
 
-  /** active returns the active workspace as Go lists it, or undefined when there is none. */
+  /** active returns the active workspace as Go lists it, or undefined. */
   const active = () => workspaces.value?.find((row) => row.record.id === id.value);
 
-  /** findMod returns a mod of the active workspace as Go reads it, open or not. It is undefined for an unknown mod. */
+  /** findMod returns a mod of the active workspace, or undefined for an unknown mod. */
   const findMod = (modId: string) => active()?.mods?.find((mod) => mod.id === modId);
 
-  /** originName returns the name of the active workspace's game or one of its mods. It is the origin when unknown. */
+  /** originName returns the name of the active workspace's game or one of its mods, or the origin if unknown. */
   const originName = (origin: string): string => {
     if (origin !== VANILLA) return findMod(origin)?.descriptor.name || origin;
     return active()?.game?.name ?? origin;
   };
 
-  /** describeFolder returns a file's folder as a list shows it: its origin's name, then the folder if not the root. */
+  /** describeFolder returns a file's folder as a list shows it, after its origin's name. */
   const describeFolder = (place: Place): string => [originName(place.origin), place.folder].filter(Boolean).join(" › ");
 
-  /**
-   * originColor returns an origin's color as CSS: a slot as its variable, a custom color as it is. The game's files
-   * take the active workspace's game color. An origin with no color gets the game's own. The second parameter is the
-   * mod's color when the caller has it, as for a workspace that is not the active one.
-   */
+  /** originColor returns an origin's color as CSS. The given color is the mod's own, for another workspace. */
   const originColor = (origin: string, recorded?: string): string => {
     const color = recorded ?? (origin === VANILLA ? active()?.record.gameColor : findMod(origin)?.color);
     if (!color) return "var(--game)";
@@ -79,19 +69,13 @@ export const useWorkspaceStore = defineStore("workspace", () => {
   /** isLeftOut reports whether the active workspace leaves a mod out of its compatibility checks. */
   const isLeftOut = (modId: string): boolean => !!findMod(modId)?.leftOut;
 
-  /** isCustom reports whether a mod's color was picked by hand: a CSS color rather than one of the theme's slots. */
+  /** isCustom reports whether a mod's color is a CSS color rather than one of the theme's slots. */
   const isCustom = (color: string | undefined): boolean => !!color && !SLOTS.includes(color);
 
-  /**
-   * listMods returns the active workspace's mods in load order, as Go reads them. It is empty when there is no active
-   * workspace.
-   */
+  /** listMods returns the active workspace's mods in load order. */
   const listMods = (): Mod[] => active()?.mods ?? [];
 
-  /**
-   * listWritableMods returns the active workspace's mods that PMT writes changes into, in load order: every mod but
-   * Steam's copies of Workshop mods, which are read only, and mods whose folder is missing.
-   */
+  /** listWritableMods returns the mods PMT writes into: all but Steam's read-only Workshop copies and broken mods. */
   const listWritableMods = (): Mod[] => listMods().filter((mod) => !mod.workshop && !mod.broken);
 
   /** listModIds returns the ids of the active workspace's mods in load order. */
@@ -103,12 +87,7 @@ export const useWorkspaceStore = defineStore("workspace", () => {
     openWorkspace(workspaceId);
   }
 
-  /**
-   * create records a workspace with the given name, install and localization language, adds its mods in the given
-   * order, opens it and shows the given page of it. A mod with a folder is added; one with none is made, named by its
-   * title. It returns the workspace. When a mod's step fails, the workspace it recorded is deleted again and the error
-   * is thrown.
-   */
+  /** create records a workspace with its mods, opens it and shows a page. If a mod fails, it deletes the workspace. */
   async function create(
     record: Pick<Workspace, "name" | "install" | "language">,
     mods: { dir?: string; title: string }[],
@@ -129,7 +108,7 @@ export const useWorkspaceStore = defineStore("workspace", () => {
     return row;
   }
 
-  /** updateMod writes some fields of a mod's record over its latest copy. It rejects if the mod has no record. */
+  /** updateMod writes some fields of a mod's record. It rejects if the mod has no record. */
   async function updateMod(workspaceId: string, modId: string, changes: Partial<ModRecord>): Promise<void> {
     const row = workspaces.value?.find((listed) => listed.record.id === workspaceId);
     const record = row?.record.mods?.find((mod) => mod.id === modId);
@@ -137,10 +116,7 @@ export const useWorkspaceStore = defineStore("workspace", () => {
     await workspace.UpdateMod(workspaceId, { ...record, ...changes });
   }
 
-  /**
-   * remove asks before the given workspace leaves PMT, then removes it. Its mod folders stay on disk. If it was the
-   * active one, no workspace is active afterwards. It returns whether the user confirmed.
-   */
+  /** remove asks, then removes a workspace but not its mod folders. It returns the user's answer. */
   async function remove(record: Workspace): Promise<boolean> {
     const confirmed = await confirm.open({
       title: `Remove ${record.name}?`,

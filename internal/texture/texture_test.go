@@ -503,9 +503,9 @@ func TestResolvePath(t *testing.T) {
 	}
 }
 
-// TestDecodeInstall decodes every DDS and TGA of each real install. A file of a format PMT does not know is listed
-// by path and counted; a file whose header PMT reads but whose pixels it cannot decode fails the test. It runs
-// only where PMT_TEST_INSTALL_CK3, _VIC3 or _EU5 names the install.
+// TestDecodeInstall decodes every DDS and TGA of each real install. A file of a format PMT does not know is listed;
+// a file whose header PMT reads but whose pixels it cannot decode fails the test. It runs only where
+// PMT_TEST_INSTALL_CK3, _VIC3 or _EU5 names the install.
 func TestDecodeInstall(t *testing.T) {
 	if testing.Short() {
 		t.Skip("real installs are skipped under -short")
@@ -589,9 +589,8 @@ func decodeFile(path string) (bool, error) {
 	return true, nil
 }
 
-// TestEncodeInstall writes every PNG of each real install as a BC3 DDS with every mip level and decodes each level
-// again, and checks that an uncompressed DDS keeps its pixels. It runs only where PMT_TEST_INSTALL_CK3, _VIC3 or
-// _EU5 names the install.
+// TestEncodeInstall writes every PNG of each real install as a BC3 DDS and as an uncompressed one, and decodes them
+// again. It runs only where PMT_TEST_INSTALL_CK3, _VIC3 or _EU5 names the install.
 func TestEncodeInstall(t *testing.T) {
 	if testing.Short() {
 		t.Skip("real installs are skipped under -short")
@@ -604,7 +603,7 @@ func TestEncodeInstall(t *testing.T) {
 }
 
 // encodeInstall encodes every PNG of one game's install, two at a time since a terrain map takes hundreds of
-// megabytes, printing its progress, or skips when the game's variable is not set.
+// megabytes, or skips when the game's variable is not set.
 func encodeInstall(t *testing.T, game string) {
 	paths := listInstall(t, game, ".png")
 	start := time.Now()
@@ -628,7 +627,7 @@ func encodeInstall(t *testing.T, game string) {
 
 // encodeFile writes one picture as a BC3 DDS with every mip level, and as an uncompressed DDS of one level. It
 // returns an error if a level does not decode at its size, or the uncompressed picture does not decode to the same
-// pixels. A picture past Direct3D's limit on a side, which no DDS holds, is passed over.
+// pixels. A picture past Direct3D's limit on a side is passed over.
 func encodeFile(path string) error {
 	file, err := os.ReadFile(path)
 	if err != nil {

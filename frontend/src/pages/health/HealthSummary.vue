@@ -1,7 +1,4 @@
-<!--
-  The summary of Health, with the load order and three panels side by side. Each panel gives a verdict, its worst rows
-  or its checks, and a link into its view.
--->
+<!-- The summary of Health: the load order and three panels, each with a verdict and a link into its view. -->
 <script setup lang="ts">
 import { computed } from "vue";
 import { useQuery } from "@pinia/colada";
@@ -49,7 +46,7 @@ const emit = defineEmits<{ open: [view: string, mod?: string, finding?: Finding]
 
 /** How many rows a panel lists. */
 const ROWS_SHOWN = 4;
-/** The plain words for compatibility's info, one row for each kind of finding and the checks it counts. */
+/** The plain words for compatibility's info. */
 const INFO_WORDS: readonly { checks: readonly string[]; one: string; many: string }[] = [
   { checks: ["override"], one: "override of the game", many: "overrides of the game" },
   {
@@ -77,7 +74,7 @@ const rows = computed(() => log?.findings ?? []);
 const loggedPlaces = computed(() => new Set(rows.value.map(toSiteKey)));
 /** The report's group of each mod, by mod id. */
 const groups = computed(() => keyBy(report.mods ?? [], (group) => group.mod));
-/** Each mod with its group and its lead, the first problem of its worst level, which Go sorts first. */
+/** Each mod with its group and its lead, the first problem of its worst level. */
 const modRows = computed(() =>
   mods.map((mod) => {
     const group = groups.value[mod.id];
@@ -111,7 +108,7 @@ const top = computed(() =>
 );
 /** Whether one of those rows repeats. Each then gets a column for its count. */
 const topRepeated = computed(() => top.value.some((row) => row.count > 1));
-/** Each check of workspace compatibility with problems, at one level, with how many it found, the worst first. */
+/** Each compatibility check with problems, the worst first. */
 const checks = computed(() => (report.compatibility.checks ?? []).filter((check) => check.level !== "info"));
 /** The mods left out of the compatibility checks, as a phrase, or "" for none. */
 const leftOut = computed(() => list(listLeftOut(mods)));
@@ -172,10 +169,7 @@ const panels = computed(() => [
   },
 ]);
 
-/**
- * describeVerdict returns a panel's headline: the given words where something needs a fix. Otherwise it is "Nothing
- * needs a fix" where there are warnings, and "No problems" where there are none.
- */
+/** describeVerdict returns a panel's headline: the given words if something needs a fix. */
 function describeVerdict(tally: Tally, fix: string): string {
   if (fixLevels.value.includes(tally.worst)) return fix;
   return tally.counts?.warning ? "Nothing needs a fix" : "No problems";
@@ -196,13 +190,10 @@ function describeRing(color: string): Record<string, string> {
   };
 }
 
-/**
- * describeMeter returns the segments of a mod's meter, one for each level of problem. A mod with no problem gets one
- * full segment.
- */
+/** describeMeter returns the segments of a mod's meter, one for each level of problem. */
 function describeMeter(counts: Tally["counts"] | undefined): { color: string; width: string }[] {
   if (!problemLevels.value.some((level) => counts?.[level.id])) return [{ color: "success", width: "100%" }];
-  // a level with any problem keeps a sliver, so it never reads as clean
+  // A level with any problem keeps a sliver, so it never reads as clean.
   const share = (count: number): string => `${count ? Math.max(3, (count / busiest.value) * 100) : 0}%`;
   return problemLevels.value.map((level) => ({ color: level.color, width: share(counts?.[level.id] ?? 0) }));
 }

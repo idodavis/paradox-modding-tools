@@ -1,6 +1,4 @@
-<!--
-  One mod's card in Settings' Mods and load order, where the mod's details are edited.
--->
+<!-- One mod's card in Settings' Mods and load order, where its details are edited. -->
 <script setup lang="ts">
 import { computed, shallowRef } from "vue";
 import { useMutation, useQuery } from "@pinia/colada";
@@ -26,7 +24,6 @@ const { workspaceId, mod } = defineProps<{ workspaceId: string; mod: Mod }>();
 
 const store = useWorkspaceStore();
 const newEra = shallowRef<Era>({ name: "", year: 0 });
-// The Workshop item being typed, as its id or its page's address.
 const item = shallowRef("");
 
 const { data: listing } = useQuery(() => ({ ...listingQuery({ modId: mod.id, key: "" }), enabled: store.isOpen() }));
@@ -60,7 +57,7 @@ const { mutate: link, isLoading: linking } = useMutation({
 const { mutate: removeMod } = useMutation({ mutation: () => workspace.RemoveMod(workspaceId, mod.id) });
 const { mutate: showFolder } = useMutation({ mutation: () => app.ShowFolder(mod.dir) });
 
-/** remove asks before taking the mod out of the workspace. Its folder stays on disk. */
+/** remove asks, then takes the mod out of the workspace but not off the disk. */
 async function remove(): Promise<void> {
   const confirmed = await confirm.open({
     title: `Remove ${mod.descriptor.name || "this mod"}?`,

@@ -11,10 +11,10 @@ game's error log says, each as findings that point at their sites.
 
 | file | holds |
 |---|---|
-| `health.go` | the package comment; `EventErrorLogChanged`; `Service` with `ServiceStartup` and `ServiceShutdown`; `Use`, `Finding`, `Change`, `Tally`, `Check`, `Group`, `Report`, `GameLog`, `Overview`, `Compared`, `Snippet`; `BuildReport`, `groupReport`, a finding's words, and the findings of unused copies, removed names, descriptors, unmounted folders, localization and the editor's checks; `ListCodes`, `ListLevels`, `ListTopics`, `ListOverview`, `CompareStatements`, `ListSnippets`, `ListReaders`, `WriteScaffold`, `ListScaffolds` |
-| `contests.go` | the findings of one name's copies and of the files at one path: contests, undecided contests and overrides; their winner, beaten mods, level, pairs and suggested order; why the winner's copy wins; `JoinList`; what a previewed order changes |
-| `ignored.go` | `AddIgnoredPair`, `RemoveIgnoredPair`; the ignored pairs and their findings; the mods the compatibility checks judge (`listChecked`) |
-| `errorlog.go` | `ListErrorLog`: the rows of the game's error log, folded, told apart and worded; the mods the last run read, from the debug log; the log's watch |
+| `health.go` | the service and its payload types; `BuildReport`, the grouping and the findings other than contests; the page's reads and `WriteScaffold` |
+| `contests.go` | the findings of one name's copies and of the files at one path; their winner, level, pairs and suggested order; what a previewed order changes |
+| `ignored.go` | the ignored pairs and their findings; the mods the compatibility checks judge |
+| `errorlog.go` | the rows of the game's error log, folded, told apart and worded; the log's watch |
 
 ## Questions, levels and topics
 
@@ -29,16 +29,14 @@ question, the level and the topic. Three rules decide per finding:
   beaten. A name whose every mod's copy is kept is no contest and has no finding, and neither is one whose kept copy
   is the game's own: each mod whose copies the game does not use then has an `unused-copy`. The contest is `info`
   when the winner declares every beaten mod as a dependency, or the workspace ignores the pair; otherwise it is
-  `critical`. A contest is never a warning. The facts `winner` and `beaten` hold the mods' names, several written "A
-  and B" or "A, B and C". A declared dependency forgiving a contest is Health's judgment, not a game rule.
+  `critical`. A contest is never a warning. A declared dependency forgiving a contest is Health's judgment, not a game
+  rule.
 - **An undecided contest.** Where `index.FindWinner` gives the reason `unsettled`, no source says which copy the game
   keeps, so the copies of the mods and the game are one `undecided-contest` finding, with no site kept and each site's
   reason `unsettled`. So are two copies of a block that merged copies cannot both write (`game.Precedence.Contested`,
-  an on_action's trigger and effect) in two files. The fact `mods` names the mods and the game, and `why` is the
-  sentence that says what leaves it open: a shared override priority, a mode keyword in a folder no
-  source says takes it, a mode that adds in a folder that takes REPLACE only, a replace_path, or the block. It is
-  `info` when every two of its mods are a declared dependency or an ignored pair, and `critical` otherwise; a pair
-  with the game is never forgiven.
+  an on_action's trigger and effect) in two files. The fact `why` says what leaves it open. It is `info` when every
+  two of its mods are a declared dependency or an ignored pair, and `critical` otherwise; a pair with the game is
+  never forgiven.
 - **A shared localization key.** A key that two or more mods define in one language is one `shared-message` finding,
   with no winner, since which copy the game shows is not settled; a copy in a replace folder wins. It is `info` when
   every two of its mods are a declared dependency or an ignored pair, and `warning` otherwise. A key one mod defines
@@ -58,17 +56,14 @@ others into (see The report's groups).
 The other findings are plain facts. An **override** is a name a mod defines that the game defines too, both in files
 the game reads, where the game keeps the mod's copy, or a file a mod ships over the game's own. Where the game keeps
 its own copy of the name, each mod none of whose copies it uses has an `unused-copy` (critical), beside any other mod's
-override; its facts `winner` and `beaten` name the game and that one mod, as a contest's do, and the kept copy's
-reason says why the game's copy wins. A name whose kept copy no source settles is an undecided contest instead. A
-mod's file the game reads over its own copy at the same path is a `removed-names` instead of an override where the
-game's copy defines names that no file the game reads defines and one still uses: `Uses` lists them, the most used
-first, and the facts count the names the game's copy defines (`total`, called `definitions`, such as "scripted
-triggers"), the ones the mod's copy leaves out (`removed`), those still used (`count`) and their uses (`uses`). A
-`missing-message` is a definition whose title has no message in the base language, and `coverage` says how many of a
-mod's base-language messages another language has. An `unmounted-folder` is a top folder of a mod outside the stage
-folders of a game that keeps its files under stages: the game never reads its files, and the finding counts them and
-points at the first. The problems in a mod's files are the editor's: each file is
-judged by `lsp.DiagnoseFile`, in parallel on `files.Workers` goroutines.
+override. A name whose kept copy no source settles is an undecided contest instead. A mod's file the game reads over
+its own copy at the same path is a `removed-names` instead of an override where the game's copy defines names that no
+file the game reads defines and one still uses: `Uses` lists them, the most used first. A `missing-message` is a
+definition whose title has no message in the base language, and `coverage` says how many of a mod's base-language
+messages another language has. An `unmounted-folder` is a top folder of a mod outside the stage folders of a game that
+keeps its files under stages: the game never reads its files, and the finding counts them and points at the first. The
+problems in a mod's files are the editor's: each file is judged by `lsp.DiagnoseFile`, in parallel on `files.Workers`
+goroutines.
 
 ## Dependencies
 
@@ -100,14 +95,10 @@ once and shared by the checks, which then run side by side.
 - **Changes.** For a previewed order, `Report.Changes` lists every name and every shipped path whose kept copy lies in
   another mod than in the workspace's own order, with both mods' ids and the game's `vanilla` where it is the game's.
   A database that merges its definitions has none, nor has a name whose kept copy is unsettled in either order, and a
-  path counts only in a folder the game's own files lie in, after the stage folder in a game that keeps its files
-  under stages. The list is sorted by database, then by name. The workspace's own order
-  has an empty list.
+  path counts only in a folder the game's own files lie in. The workspace's own order has an empty list.
 - **Ignored pairs.** `AddIgnoredPair` and `RemoveIgnoredPair` change the open workspace's record (`IgnoredPairs`, each
-  pair sorted). They return an error if either mod is not in the workspace, the two are one mod, or the pair is not
-  there to remove. The report reads the pairs at each call. Each pair whose two mods are in the workspace is an
-  `ignored-pair` finding, with the two mods in the report's load order, that counts the findings whose `Pairs` hold
-  the two.
+  pair sorted). Each pair whose two mods are in the workspace is an `ignored-pair` finding, with the two mods in the
+  report's load order, that counts the findings whose `Pairs` hold the two.
 
 ## The report's groups
 
@@ -116,11 +107,9 @@ once and shared by the checks, which then run side by side.
 
 - **The words** (`describeFinding`). A finding takes its code's `Label` and `Topic`, and its `Message` is the code's
   template filled with its facts as `lsp.Part`s, the code's elsewhere template where it has one and another mod
-  defines the name (`lsp.SplitMessage`). Its `Brief` is the line under its name in a list: what kind of thing the
-  name is, how many names a replaced file leaves out that are still used and how often, the mod that alone defines
-  the name, and why the game keeps its copy. Its `Detail` is its first site's place, such as `a.txt:12`. Its `Why` is
-  the long form of the winner's reason (`index.Reasons`), filled with the facts and the files of the copies; a file,
-  a finding with no winner and a reason with no long form have none.
+  defines the name (`lsp.SplitMessage`). Its `Brief` is the line under its name in a list. Its `Detail` is its first
+  site's place, such as `a.txt:12`. Its `Why` is the long form of the winner's reason (`index.Reasons`); a file, a
+  finding with no winner and a reason with no long form have none.
 - **The fold.** Findings with the same code, the same owner (the first of `Mods`, else `Origin`), the same name and
   the same message are one. The first finding stands for them: its `Count` adds theirs and its `Repeats` holds their
   sites. The game log's rows fold the same way by message and place
@@ -130,8 +119,7 @@ once and shared by the checks, which then run side by side.
   `Languages`. A health finding about a mod outside the order is left out.
 - **The sort.** A group's `Checks` are its findings' codes at a level, counted with the folded findings in: the worst
   level first (`lsp.Levels`), and within a level the check with the most findings. `Findings` follow the order of
-  their checks, and within a check the heaviest first: a finding's weight is its `Count` times how often the files the
-  game reads use the names a replaced file leaves out, else times 1.
+  their checks, and within a check the heaviest first (`weigh`).
 - **The tallies.** A `Tally` counts findings by level, every level present, as `Count` says, words each count as a
   phrase (`Phrases`, such as "235 critical problems", by `lsp.Plural`), and names the worst level that has a finding.
   A group, the report (the compatibility and the mods together) and `Own` (the mods together) each have one.
@@ -145,18 +133,16 @@ the last one's. `WrittenAt` is the log file's modification time. A row names its
 say how:
 
 - `file`: the row names a line of a file that the game loads from the mod; `named` is the file's path in the mod. The
-  game's `ErrorLocations` are the forms its log names a line in, each with a `path` and a `line` group: `file: P
-  line: N` (CK3), a quoted message's `near line: N" in file: "P"`, the reader's `in file: "P" near line: N` and `P:N`
-  after other words (all three), and `line N and column C in P` (EU5). The first form that names a line of a mod's
-  file gives the row's place, on the message's line or one after.
+  forms a log names a line in are the game's `ErrorLocations`. The first that names a line of a mod's file gives the
+  row's place, on the message's line or one after.
 - `name`: an identifier in the message, not a plain word, is the name of a definition in some database, and all of that
   definition's loaded copies lie in one mod and none in the game; `named` is the name.
 
 Any other row is the game's own and has no origin. The game's debug log (`game.MountLog`) names each folder the last
 run read. A row goes to a mod only if that run read it: `Unloaded` lists the workspace's mods it did not read, and
 `Copies` the folder of another copy it read in a mod's place, found by the name the copy's descriptor gives. Without a
-debug log, every mod counts as read. A row's `Message` is the line the game logged, its lines joined by a dot, with
-the name or file that ties it to its mod drawn apart, and its `Why` is the sentence that says what ties it.
+debug log, every mod counts as read. A row's `Message` keeps the name or file that ties it to its mod apart, and its
+`Why` says what ties it.
 
 While a workspace is open, the service watches the log, from the nearest folder above it that exists while its own
 folder does not, and emits `errorlog:changed` once each burst of writes to it ends. The watch stops when the workspace
@@ -165,18 +151,17 @@ closes, and at shutdown.
 ## Reading a finding
 
 `CompareStatements` returns the texts of two sites' statements, so a kept definition and one it replaces show side by
-side. `ListSnippets` returns each site's lines as a `Snippet`, its text, the line it begins at and the last line of
-the site's own code, an open file's from the editor's text: a site of one line with two lines around it, a longer one
-from its own first line. `ListReaders` lists every place in script and localization that reads a localization key.
-`ListOverview` counts what each mod holds. `ListCodes`, `ListLevels` and `ListTopics` give the page `lsp`'s tables.
+side. `ListSnippets` returns the code at each site as a `Snippet`, an open file's from the editor's text. `ListReaders`
+lists every place in script and localization that reads a localization key. `ListOverview` counts what each mod
+holds. `ListCodes`, `ListLevels` and `ListTopics` give the page `lsp`'s tables.
 
 ## The translation scaffold
 
 `WriteScaffold` writes the localization keys a mod lacks in a language: each of its base-language messages whose key
 has no message of the mod in that language, once, with the base text as the placeholder. These are the keys
 `coverage` counts as missing (`listUntranslated`). A key goes at the end of the language's file that matches the
-base-language file it is in (`loc.ToLanguageRel`), in that file's line ending (`loc.EncodeAddition`); a matching file
-that is missing or empty is first made with only its header (`workspace.Service.CreateLocalization`).
+base-language file it is in (`loc.ToLanguageRel`); a matching file that is missing or empty is first made with only
+its header (`workspace.Service.CreateLocalization`).
 `ListScaffolds` gives those messages by the file they go in, which PMT's tools for coding agents preview.
 
 ## Events

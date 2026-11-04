@@ -1,6 +1,4 @@
-<!--
-  This lists every difference the next upload makes on Steam, and shows the picked one beside Steam's copy.
--->
+<!-- Every difference the next upload makes on Steam, with the picked one beside Steam's copy. -->
 <script setup lang="ts">
 import { computed } from "vue";
 import { useQuery } from "@pinia/colada";
@@ -51,7 +49,6 @@ const { data: sides } = useQuery(() => ({
   ...comparedFileQuery({ modId, key: listingKey, rel: current.value?.rel ?? "" }),
   enabled: enabled.value && current.value?.field === "file" && textual.value,
 }));
-// Steam's text first, then the mod's.
 const texts = computed(() => {
   const difference = current.value;
   if (!difference) return ["", ""];
@@ -59,7 +56,7 @@ const texts = computed(() => {
   return [difference.before ?? "", difference.after ?? ""];
 });
 
-// Escape goes back, unless a dialog is open over the page or something has used the key already.
+// Escape goes back, unless a dialog is open over the page or something has used the key.
 onKeyStroke("Escape", (event) => {
   if (visible.value && !event.defaultPrevented && !document.querySelector("[role=dialog]")) emit("back");
 });

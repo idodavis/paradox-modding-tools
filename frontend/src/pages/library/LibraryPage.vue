@@ -1,7 +1,4 @@
-<!--
-  The Library page shows the workspaces as cards, the active one first, with the first-mod checklist on its card. With
-  none, it offers the two ways into modding and the game installs found on this computer.
--->
+<!-- The Library page: the workspaces as cards, or the ways into modding and the installs found when there are none. -->
 <script setup lang="ts">
 import { computed, shallowRef } from "vue";
 import { useRouter } from "vue-router";
@@ -81,12 +78,12 @@ const { mutate: resetData, isLoading: resettingData } = useMutation({
   },
 });
 
-/** open goes to a workspace's home page, which makes it the active one. It returns the failure if cancelled. */
+/** open goes to a workspace's home page, which makes it the active one. */
 function open(record: Workspace) {
   return router.push(homeRoute(record.id, record.homePage));
 }
 
-/** openSettings opens Settings on a workspace. A workspace that is not the open one is opened first. */
+/** openSettings opens Settings on a workspace, opening the workspace first if it is not the open one. */
 async function openSettings(record: Workspace): Promise<void> {
   const isCurrent = record.id === store.activeId() && store.isOpen();
   if (!isCurrent && (await open(record))) return;

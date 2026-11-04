@@ -1,7 +1,4 @@
-<!--
-  The findings of one view in rows grouped by level and then by check, with the open one's detail beside them. Each
-  row names the thing it is about, the worst first, and chips and filters above them narrow the rows.
--->
+<!-- The findings of one view in rows grouped by level and check, with filters above and the open one's detail. -->
 <script lang="ts">
 /** PANES are the splitter's two panes, the list and the detail. */
 export const PANES = [{ slot: "list", defaultSize: 56, minSize: 20, maxSize: 80 }, { slot: "detail" }];
@@ -49,7 +46,7 @@ const filter = defineModel<string>("filter", { default: "" });
 
 /** A LevelHead is the head row of one level, with the level's words and color. */
 type LevelHead = { level: string; label: string; color: string; count: number };
-/** A CheckHead is the head row of one check within a level: its title, its topic, and the mod all its rows share. */
+/** A CheckHead is the head row of one check within a level. */
 type CheckHead = { key: string; label: string; topic: string; count: number; open: boolean; shared: Part[] };
 
 const SORTS = [
@@ -61,9 +58,9 @@ const SORTS = [
 const workspace = useWorkspaceStore();
 const { data: levels } = useQuery(levelsQuery);
 const { data: topics } = useQuery(topicsQuery);
-/** The levels the user chose to show the rows of, or undefined until they choose. */
+/** The levels the user chose to show, or undefined until they choose. */
 const selection = shallowRef<string[]>();
-/** The levels whose rows show: the user's choice, else those that count as problems, so info starts folded. */
+/** The levels whose rows show: the user's choice, else the problems, so info starts folded. */
 const shown = computed({
   get: () => selection.value ?? (levels.value ?? []).filter((level) => level.problem).map((level) => level.id),
   set: (next: string[]) => (selection.value = next),
@@ -72,13 +69,13 @@ const shown = computed({
 const pressed = shallowRef<Record<string, boolean>>({});
 const checks = shallowRef<string[]>([]);
 const sort = shallowRef("level");
-// a check picked among other findings, such as another topic's, is dropped once no finding has it
+// A check picked among other findings is dropped once no finding has it.
 watch(
   () => findings,
   (next) => (checks.value = checks.value.filter((check) => next.some((finding) => finding.code === check))),
 );
 
-/** The level chips' items, each level with how many findings it has, the ones folded into a row included. */
+/** The level chips' items, each with its findings count. */
 const levelItems = computed(() =>
   (levels.value ?? []).map((level) => ({
     label: `${level.label} ${describeCount(counts.value[level.id] ?? 0)}`,
@@ -131,16 +128,12 @@ function listCheck(level: string, check: string, members: Finding[], siblings: n
   const label = members[0]?.label ?? "";
   const head = { key, label, topic, count: countFindings(members), open, shared: describeShared(members) };
   if (!open) return [head];
-  // the worst first is the order Go sent them in
   if (sort.value === "level") return [head, ...members];
   const order = sort.value === "name" ? (finding: Finding) => finding.name : toSiteKey;
   return [head, ...sortBy(members, [order])];
 }
 
-/**
- * describeShared returns the one mod all the findings of a check share, as parts. It is the mod that alone defines the
- * names a mod lacks, or for a compatibility check the mod the findings are about. It is empty if there is no such mod.
- */
+/** describeShared returns the one mod all the findings of a check share, as parts, or none if there is no such mod. */
 function describeShared(members: Finding[]): Part[] {
   const others = uniq(members.map((finding) => finding.facts?.other ?? ""));
   if (others.length === 1 && others[0])
@@ -152,7 +145,7 @@ function describeShared(members: Finding[]): Part[] {
   return owners.length === 1 && owners[0] ? [{ text: workspace.originName(owners[0]), style: "mod" }] : [];
 }
 
-/** describePlace returns where a mod's own problem is, as its file's name and line. It is "" for any other finding. */
+/** describePlace returns where a mod's own problem is, as its file's name and line, or "" for any other. */
 function describePlace(finding: Finding): string {
   const site = finding.sites?.[0];
   return finding.question === "health" && site ? `${site.place.name}:${site.line}` : "";
@@ -203,7 +196,6 @@ function toggleCheck(head: CheckHead): void {
         class="w-36"
         :ui="{ content: 'min-w-fit' }"
       />
-      <!-- the sort and the filter wrap to the next line together -->
       <span class="ms-auto flex items-center gap-1.5">
         <USelect v-model="sort" :items="SORTS" size="xs" class="w-28" />
         <UInput v-model="filter" icon="i-lucide-filter" size="xs" placeholder="Filter" class="w-36" />

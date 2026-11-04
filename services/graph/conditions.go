@@ -1,5 +1,4 @@
-// conditions.go puts a block of triggers into words: each statement as one line, read by the language's keywords and
-// its operators, with the statements of its block under it.
+// conditions.go puts a block of triggers into words.
 
 package graph
 
@@ -30,8 +29,7 @@ type Condition struct {
 	Conditions []Condition `json:"conditions,omitempty"` // the statements of its block, in the order written
 }
 
-// findCondition returns the condition of a block in words: its limit, else its trigger. It returns nil if it holds
-// neither as a block.
+// findCondition returns the limit of a block in words, else its trigger. It returns nil if it holds neither.
 func findCondition(ws *workspace.Session, mods *index.Index, tree *jomini.Tree, statement int32) []Condition {
 	for _, key := range []string{game.LimitKey, game.TriggerKey} {
 		if child, ok := tree.FindChild(statement, key); ok && tree.Statements[child].IsBlock() {
@@ -48,12 +46,9 @@ func listConditions(ws *workspace.Session, mods *index.Index, tree *jomini.Tree,
 	})
 }
 
-// makeCondition returns one statement of a block of triggers in words. A keyword of the language reads its own words,
-// and one that covers what it holds reads the text shown in its place. A key that names a scope, or a parameter that
-// stands for one, stays as written. Any other key is its words: a yes after it is dropped and a no makes it negated.
-// A value stays as written, read first where its keyword says so. A value written prefix:name also has the in-game
-// name of the definition it names, unless the prefix names no database or the game keeps no such definition. A block
-// holds its statements, and one that only wraps one of them folds into it.
+// makeCondition returns one statement of a block of triggers in words. A value written prefix:name also has the in-game
+// name of the definition it names, if the game keeps one. A block holds its statements, and one that only wraps one of
+// them folds into it.
 func makeCondition(ws *workspace.Session, mods *index.Index, tree *jomini.Tree, statement int32) Condition {
 	current := tree.Statements[statement]
 	key := tree.Unquoted(current.Key)
@@ -99,9 +94,8 @@ func makeCondition(ws *workspace.Session, mods *index.Index, tree *jomini.Tree, 
 	return foldCondition(condition, keyword)
 }
 
-// foldCondition folds a block that only wraps one condition into it. A negation around one condition is that
-// condition negated, and a scope around one plain condition is that condition with the scope as its subject. Any
-// other condition is returned as it is.
+// foldCondition folds a block that only wraps one condition into it: a negation makes it negated, and a scope becomes
+// its subject.
 func foldCondition(condition Condition, keyword game.Keyword) Condition {
 	if len(condition.Conditions) != 1 {
 		return condition
@@ -118,9 +112,8 @@ func foldCondition(condition Condition, keyword game.Keyword) Condition {
 	return condition
 }
 
-// describeCover returns the text a statement shows in place of the conditions it holds, as a player reads it: the
-// message its value or its text field names, from the given index. Where no message has that key, it returns the
-// statement's own key in words and the key it names.
+// describeCover returns the text a statement shows in place of the conditions it holds. If no message has the key it
+// names, it returns the statement's own key in words and that key.
 func describeCover(ws *workspace.Session, mods *index.Index, tree *jomini.Tree, statement int32) (string, string) {
 	key := tree.Unquoted(tree.Statements[statement].Value)
 	if label, ok := tree.FindChildValue(statement, game.LabelKey); ok {
@@ -138,9 +131,8 @@ func toWords(key string) string {
 	return strings.ReplaceAll(key, "_", " ")
 }
 
-// describeOperator returns the words an operator reads after a key. An = reads nothing before a block or after a key
-// that names no scope, where the key's words say what it checks; a ?= before a block reads "if it exists". Any other
-// reads its comparison's words.
+// describeOperator returns the words an operator reads after a key. An = reads nothing where the key's words already
+// say what it checks.
 func describeOperator(operator string, isBlock, isScope bool) string {
 	switch {
 	case operator == "=" && (isBlock || !isScope):

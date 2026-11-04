@@ -107,8 +107,8 @@ var listingVersion = regexp.MustCompile(`^\d+\.\d+(\.\d+){0,2}(\.\*)?$`)
 // extractTurn keeps two extractions of a listing's zip from running at once.
 var extractTurn sync.Mutex
 
-// ReadListing returns one of a mod's listings. The mod's own listing comes from its descriptor, and an older one from
-// its listing.json. It returns an error if the workspace has no such mod or listing, or a file cannot be read.
+// ReadListing returns one of a mod's listings. It returns an error if the workspace has no such mod or listing, or a
+// file cannot be read.
 func (stm *Service) ReadListing(modID, key string) (Listing, error) {
 	_, _, listing, err := stm.findListing(modID, key)
 	return listing, err
@@ -156,8 +156,7 @@ func findListingDir(modDir, key string) (string, error) {
 	return dir, nil
 }
 
-// isListing reports whether a mod has an older listing for a game version: a folder in its .workshop folder that
-// holds a listing.json.
+// isListing reports whether a mod has an older listing for a game version.
 func isListing(modDir, key string) bool {
 	return files.IsFile(files.Join(resolveListingDir(modDir, key), listingFile))
 }
@@ -199,8 +198,7 @@ func toRecord(listing Listing) Listing {
 	}
 }
 
-// loadPage returns a listing with its page files read from its folder. A missing file reads as no text. It returns an
-// error if a file cannot be read.
+// loadPage returns a listing with its page files read from its folder. It returns an error if a file cannot be read.
 func loadPage(dir string, listing Listing) (Listing, error) {
 	texts := map[string]*string{descriptionFile: &listing.Description, changelogFile: &listing.Changelog}
 	for file, text := range texts {
@@ -265,8 +263,8 @@ func (stm *Service) WriteListing(modID, key string, listing Listing) error {
 	return nil
 }
 
-// writeChanges writes the files of a listing whose text differs from the current listing's. A thumbnail from outside
-// the mod is copied into it first. It returns an error if a file cannot be read or written.
+// writeChanges writes the files of a listing whose text differs from the current listing's. It returns an error if a
+// file cannot be read or written.
 func (stm *Service) writeChanges(ws *workspace.Session, mod workspace.Mod, current, listing Listing) error {
 	listing.Key = current.Key
 	dir := resolveListingDir(mod.Dir, listing.Key)
@@ -304,8 +302,7 @@ func (stm *Service) writeChanges(ws *workspace.Session, mod workspace.Mod, curre
 	return nil
 }
 
-// writeRecord writes a listing's record to its descriptor or listing.json if it changed. It returns an error if a
-// file cannot be written.
+// writeRecord writes a listing's record to its descriptor or listing.json if it changed.
 func (stm *Service) writeRecord(ws *workspace.Session, mod workspace.Mod, current, listing Listing) error {
 	if reflect.DeepEqual(toRecord(listing), toRecord(current)) {
 		return nil
@@ -492,8 +489,7 @@ func (stm *Service) LinkItem(modID, key, item string) error {
 	return stm.removeItemCopy(current.WorkshopID)
 }
 
-// removeItemCopy deletes PMT's copy of a Workshop item, unless a mod in any workspace still links it. It does nothing
-// for an empty id.
+// removeItemCopy deletes PMT's copy of a Workshop item, unless a mod in any workspace still links it.
 func (stm *Service) removeItemCopy(workshopID string) error {
 	mods := lo.FlatMap(stm.Workspace.Config.Config().Workspaces, func(ws app.Workspace, _ int) []app.Mod { return ws.Mods })
 	if workshopID == "" || slices.ContainsFunc(mods, func(mod app.Mod) bool { return mod.WorkshopID == workshopID }) {
@@ -569,7 +565,7 @@ func (stm *Service) buildUpload(
 }
 
 // buildIgnores returns what every upload of a mod leaves out, by the rules, the mod's .gitignore and its own
-// exclusions. The rules keep the .metadata folder. It returns an error if the .gitignore cannot be read.
+// exclusions. It returns an error if the .gitignore cannot be read.
 func (stm *Service) buildIgnores(mod workspace.Mod) ([]files.Ignore, error) {
 	gitignore, err := files.LoadText(files.Join(mod.Dir, gitignoreFile))
 	if err != nil {
@@ -654,7 +650,7 @@ func extractZip(cacheDir, zipFile, dir, stamp string) error {
 	return os.WriteFile(dir+".stamp", []byte(stamp), 0o644)
 }
 
-// WriteZip writes the files of a mod's next upload as a zip. It removes the zip if writing fails.
+// WriteZip writes the files of a mod's next upload as a zip.
 func (stm *Service) WriteZip(modID, target string) error {
 	upload, err := stm.ListUpload(modID, "")
 	if err != nil {
@@ -681,8 +677,8 @@ func writeArchive(target string, list []files.File) error {
 	return nil
 }
 
-// writeArchiveFile writes one file into a zip, compressed, keeping its modified time. It returns an error if the file
-// cannot be read or the zip cannot take it.
+// writeArchiveFile writes one file into a zip, keeping its modified time. It returns an error if the file cannot be
+// read or the zip cannot take it.
 func writeArchiveFile(archive *zip.Writer, file files.File) error {
 	stat, err := os.Stat(file.Path)
 	if err != nil {

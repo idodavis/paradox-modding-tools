@@ -1,5 +1,5 @@
 // Package git is the IDE's source control service. It runs the git installed on this machine over each mod's
-// repository: status, refs and log, a file at a revision, and the commands the Source Control view offers.
+// repository.
 package git
 
 import (
@@ -65,17 +65,17 @@ func (git *Service) IsInstalled() bool {
 	return err == nil
 }
 
-// Run runs git in a folder with the given arguments and returns its standard output, as run does. It then emits
-// git:changed with the folder, also when git failed, since a failed command can leave the repository changed.
+// Run runs git in a folder with the given arguments, as run does, then emits git:changed with the folder. It emits it
+// also when git failed, since a failed command can leave the repository changed.
 func (git *Service) Run(dir string, args ...string) (string, error) {
 	stdout, err := git.run(dir, args...)
 	application.Get().Event.Emit(EventChanged, dir)
 	return stdout, err
 }
 
-// run runs git in a folder with the given arguments and returns its standard output. Each line of standard
-// error is also sent as a git:output event as it arrives. A nonzero exit is an error that carries the text of
-// standard error, and so is git not being installed. It sends no git:changed.
+// run runs git in a folder with the given arguments and returns its standard output. Each line of standard error is
+// sent as a git:output event as it arrives. A nonzero exit is an error that carries the text of standard error. It
+// sends no git:changed.
 func (git *Service) run(dir string, args ...string) (string, error) {
 	path, err := findGit()
 	if err != nil {
@@ -123,8 +123,7 @@ func (git *Service) FindRepository(dir string) (string, bool) {
 }
 
 // ListRepositories returns the repositories the open workspace's mods are in, in the load order of their first mod,
-// each with the mods in it. A mod in none is left out, and so is one whose folder is missing. It is empty while no
-// workspace is open.
+// each with the mods in it. A mod in no repository is left out. It is empty while no workspace is open.
 func (git *Service) ListRepositories() []Repository {
 	var repositories []Repository
 	for _, mod := range git.Workspace.ListMods() {
@@ -145,21 +144,21 @@ func (git *Service) ListRepositories() []Repository {
 	return repositories
 }
 
-// ReadFile returns a file's text at a revision, as `git show <revision>:<path>` prints it, decoded as the files on disk
-// are. The path is from the repository's root. The revision `:0` reads the staged version.
+// ReadFile returns a file's text at a revision, decoded as the files on disk are. The path is from the repository's
+// root. The revision `:0` reads the staged version.
 func (git *Service) ReadFile(dir, revision, path string) (string, error) {
 	stdout, err := git.run(dir, "show", revision+":"+filepath.ToSlash(path))
 	return files.DecodeText([]byte(stdout)).Text, err
 }
 
-// ListRemotes returns the remotes of the repository at the given root folder, each with the address it fetches from,
-// in the order git lists them. The error is git's if the folder is in no repository.
+// ListRemotes returns the remotes of the repository at the given root folder, each with the address it fetches from.
+// The error is git's if the folder is in no repository.
 func (git *Service) ListRemotes(root string) ([]Remote, error) {
 	stdout, err := git.run(root, "remote", "-v")
 	if err != nil {
 		return nil, err
 	}
-	// each remote has a line "<label>\t<address> (fetch)", and its push line after it
+	// each remote has a fetch line and a push line
 	remotes := []Remote{}
 	for line := range strings.Lines(stdout) {
 		label, rest, _ := strings.Cut(strings.TrimSuffix(line, "\n"), "\t")
@@ -171,8 +170,7 @@ func (git *Service) ListRemotes(root string) ([]Remote, error) {
 }
 
 // Discard throws away the working changes of the given files in the repository at the given root folder, and emits
-// git:changed. A file git does not track is deleted. A file's path is absolute or from the root. With no files it does
-// nothing. It returns git's error if a command fails.
+// git:changed. A file git does not track is deleted. It returns git's error if a command fails.
 func (git *Service) Discard(root string, paths []string) error {
 	if len(paths) == 0 {
 		return nil
@@ -212,20 +210,17 @@ func (git *Service) Pull(root, ref string) error {
 	return err
 }
 
-// DeleteBranch deletes a branch of the repository at the given root folder, and emits git:changed. Unless forced, git
-// refuses a branch with commits no other branch has: DeleteBranch then returns false and no error. Any other failure
-// returns git's error.
+// DeleteBranch deletes a branch of the repository at the given root folder, and emits git:changed. Unless forced, it
+// returns false and no error for a branch with commits no other branch has. Any other failure returns git's error.
 func (git *Service) DeleteBranch(root, name string, force bool) (bool, error) {
 	_, err := git.Run(root, "branch", lo.Ternary(force, "-D", "-d"), name)
-	// git says such a branch is "not fully merged"
 	if err != nil && strings.Contains(err.Error(), "not fully merged") {
 		return false, nil
 	}
 	return err == nil, err
 }
 
-// locateChanges sets the Place of each change. Git writes a change's path from the repository's root folder, so the
-// place is found from there. The places stay empty if no workspace is open.
+// locateChanges sets the Place of each change. The places stay empty if no workspace is open.
 func (git *Service) locateChanges(root string, changes []Change) {
 	paths := lo.Map(changes, func(change Change, _ int) string { return change.Path })
 	for position, place := range git.locate(root, paths) {
@@ -233,8 +228,8 @@ func (git *Service) locateChanges(root string, changes []Change) {
 	}
 }
 
-// locate returns the place in the open workspace of each given path. Git writes the paths from the repository's root
-// folder. A path ending in a slash is a folder. The places are empty if no workspace is open.
+// locate returns the place in the open workspace of each given path, which git writes from the repository's root
+// folder. The places are empty if no workspace is open.
 func (git *Service) locate(root string, paths []string) []workspace.Place {
 	places := make([]workspace.Place, len(paths))
 	ws, err := git.Workspace.Session()

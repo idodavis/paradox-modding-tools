@@ -1,7 +1,4 @@
-<!--
-  The card shown when the pointer rests on a word in the editor, with the word's facts and problems. The simple
-  interface keeps it to the title, the blurb, the problems and where the word is defined.
--->
+<!-- The card shown when the pointer rests on a word in the editor, with the word's facts and problems. -->
 <script setup lang="ts">
 import { computed } from "vue";
 import { useQuery } from "@pinia/colada";
@@ -28,7 +25,7 @@ const { data: codes } = useQuery(codesQuery);
 const { data: levels } = useQuery(levelsQuery);
 const short = computed(() => settings.isHidden("hover.details"));
 
-/** describeProblem returns the label and text of a problem's cost, from its level, and of its advice, from its code. */
+/** describeProblem returns the label and text of a problem's cost and its advice. */
 function describeProblem(problem: Diagnostic): [string, string][] {
   const all = [
     ["What it costs", levels.value?.find((level) => level.id === problem.level)?.cost],
@@ -37,7 +34,6 @@ function describeProblem(problem: Diagnostic): [string, string][] {
   return all.filter((row): row is [string, string] => !!row[1]);
 }
 
-// what the word takes, such as its type and its choices
 const takes = computed(() => {
   const expected = card?.takes;
   if (!expected) return "";
@@ -52,7 +48,11 @@ const takes = computed(() => {
     .filter(Boolean)
     .join(" ");
 });
-// the label and value of each fact the card holds
+// What a block holds and the scope it runs in, as "effects, on a landed_title".
+const inside = computed(() => {
+  const scope = card?.leads && `on ${/^[aeio]/.test(card.leads) ? "an" : "a"} ${card.leads}`;
+  return [card?.holds, scope].filter(Boolean).join(", ");
+});
 const rows = computed(() => {
   const stamp = card?.date;
   const header = card?.image;
@@ -60,12 +60,11 @@ const rows = computed(() => {
   const mips = header && header.mipmaps > 1 && `${header.mipmaps} mip levels`;
   const all: [string, string | null | undefined][] = [
     ["Needed", card?.need],
-    ["Works in", card?.runs],
+    ["Supported scopes", card?.runs],
     ["Takes", takes.value || card?.target],
     ["Usually", card?.writes?.join(", ")],
     ["Returns", card?.returns],
-    ["Switches to", card?.leads],
-    ["Its block", card?.holds],
+    ["Inside its block", inside.value],
     ["Date", stamp && [stamp.date.day, stamp.month, stamp.date.year, stamp.era].filter(Boolean).join(" ")],
     ["Number", card?.number?.toString()],
     ["Weight", card?.weight ? `${card.weight}% of its siblings` : undefined],
@@ -78,7 +77,6 @@ const sites = computed(() => (card?.sites ?? []).slice(0, SITES_SHOWN));
 
 <template>
   <div class="flex w-max max-w-198 flex-col divide-y divide-default overflow-hidden">
-    <!-- the problems are set apart from the facts below them by a line that shows on the card's background -->
     <div v-if="problems.length" class="flex flex-col py-1" :class="card && 'border-b border-accented'">
       <div v-for="(problem, index) in problems" :key="index" class="flex flex-col">
         <ProblemRow dense plain :level="problem.level" :message="problem.message" :detail="problem.code" mono>
@@ -88,7 +86,7 @@ const sites = computed(() => (card?.sites ?? []).slice(0, SITES_SHOWN));
             >
           </template>
         </ProblemRow>
-        <div class="grid grid-cols-[78px_minmax(0,1fr)] gap-x-2.5 gap-y-1 px-3 pt-1 pb-1.5 text-12">
+        <div class="grid grid-cols-[max-content_minmax(0,1fr)] gap-x-2.5 gap-y-1 px-3 pt-1 pb-1.5 text-12">
           <template v-for="[label, text] in describeProblem(problem)" :key="label">
             <span class="text-dimmed">{{ label }}</span>
             <span class="text-toned">{{ text }}</span>
@@ -111,7 +109,7 @@ const sites = computed(() => (card?.sites ?? []).slice(0, SITES_SHOWN));
         </div>
       </div>
       <div v-if="!short && (rows.length || card.color)" class="px-3.5 py-2.5">
-        <div class="grid grid-cols-[78px_minmax(0,1fr)] items-baseline gap-x-2.5 gap-y-1 text-12">
+        <div class="grid grid-cols-[max-content_minmax(0,1fr)] items-baseline gap-x-2.5 gap-y-1 text-12">
           <template v-for="[label, value] in rows" :key="label">
             <span class="text-dimmed">{{ label }}</span>
             <span class="line-clamp-3 font-mono text-11 break-words text-toned" :title="value">{{ value }}</span>
@@ -126,7 +124,6 @@ const sites = computed(() => (card?.sites ?? []).slice(0, SITES_SHOWN));
         </div>
       </div>
       <div v-if="card.quote || card.blurb || (!short && card.about)" class="flex flex-col gap-1.5 px-3.5 py-2.5">
-        <!-- the game's own text, set apart from what PMT says of the word -->
         <blockquote v-if="card.quote" class="border-l-2 border-accented ps-2.5 text-12 whitespace-pre-line text-toned">
           {{ card.quote }}
         </blockquote>
@@ -137,7 +134,6 @@ const sites = computed(() => (card?.sites ?? []).slice(0, SITES_SHOWN));
         <div v-for="site in sites" :key="`${site.place.key}:${site.line}`" class="flex min-w-0 items-center gap-2">
           <SourceLink :place="site.place" :line="site.line" />
           <UBadge v-if="site.holder" :label="site.holder" size="sm" class="font-mono" />
-          <!-- the holder stands for a kept copy's badges; a skipped copy still says why -->
           <template v-if="!site.holder || !site.kept">
             <UBadge v-if="site.kept && (card.sites?.length ?? 0) > 1" label="Kept" color="success" size="sm" />
             <UBadge v-if="site.label" :label="site.label" size="sm" />

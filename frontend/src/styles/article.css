@@ -84,7 +84,12 @@
     padding: 0.0625rem 0.3125rem;
     border-radius: 4px;
   }
+  /* a table wider than the article scrolls sideways on its own; a narrower one keeps its natural width */
   .art table {
+    display: block;
+    width: max-content;
+    max-width: 100%;
+    overflow-x: auto;
     margin: 0.75rem 0;
     border-collapse: collapse;
     @apply text-13;

@@ -153,8 +153,8 @@ func FindSuffixLanguage(filePath string) string {
 }
 
 // FindFolderLanguage returns the language folder in the given file path, in lower case. It is the first folder under
-// `localization`, skipping `replace` folders. A path that ends in a slash is a folder's, which holds nothing yet. It
-// returns "" if the path has none.
+// `localization`, skipping `replace` folders. A path that ends in a slash names a folder, so its last part counts too.
+// It returns "" if the path has none.
 func FindFolderLanguage(filePath string) string {
 	folders := strings.Split(filepath.ToSlash(filePath), "/")
 	folders = folders[:len(folders)-1]

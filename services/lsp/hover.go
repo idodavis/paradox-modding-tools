@@ -133,7 +133,19 @@ func (lsp *Service) describeHit(ws *workspace.Session, mods *index.Index, place 
 	case reference.Database == game.Localization:
 		describeKey(ws, mods, place, card, reference)
 	case reference.Name != "":
-		describeReference(ws, mods, place, card, visitor, reference)
+		sites, winner := listSites(ws, mods, place, reference)
+		card.What, card.Sites, card.Image, card.Color = game.DescribeDefinition(reference.Database, false),
+			MakeSites(ws, mods, listEntries(ws, mods, sites), winner), describeImage(mods, reference), findDefinedColor(ws, mods, winner)
+		if slices.Contains(ws.Schema.FireDatabases, reference.Database) {
+			card.Node = reference.ToID()
+		}
+		if database := ws.Schema.Databases[reference.Database]; database != nil {
+			card.About, card.Returns, card.Command = database.Definition.Blurb.Value, returnsLabels[database.Callable.Shape],
+				lo.Ternary(len(sites) > 0, database.Callable.Command, "")
+		}
+		if reference.Database == game.Constant {
+			describeNumber(card, tree, reference.Span)
+		}
 	case tree.Statements[visitor.statement].Value.Contains(visitor.offset):
 		describeValue(card, ws, visitor)
 		if date, ok := findDate(tree, visitor.statement, context); ok {
@@ -160,25 +172,6 @@ func (lsp *Service) describeHit(ws *workspace.Session, mods *index.Index, place 
 		return nil
 	}
 	return card
-}
-
-// describeReference fills a card for a name that refers to a definition: what kind it is, the entries that define it,
-// its image and color, and what its database says of it. A constant also gets its number.
-func describeReference(ws *workspace.Session, mods *index.Index, place workspace.Place, card *Card, visitor *hoverVisitor,
-	reference schema.Reference) {
-	sites, winner := listSites(ws, mods, place, reference)
-	card.What, card.Sites, card.Image, card.Color = game.DescribeDefinition(reference.Database, false),
-		MakeSites(ws, mods, listEntries(ws, mods, sites), winner), describeImage(mods, reference), findDefinedColor(ws, mods, winner)
-	if slices.Contains(ws.Schema.FireDatabases, reference.Database) {
-		card.Node = reference.ToID()
-	}
-	if database := ws.Schema.Databases[reference.Database]; database != nil {
-		card.About, card.Returns, card.Command = database.Definition.Blurb.Value, returnsLabels[database.Callable.Shape],
-			lo.Ternary(len(sites) > 0, database.Callable.Command, "")
-	}
-	if reference.Database == game.Constant {
-		describeNumber(card, visitor.tree, reference.Span)
-	}
 }
 
 // listEntries returns the given definitions that really define their name. It leaves out a second name of a definition,
@@ -327,14 +320,14 @@ func dropTranslations(ws *workspace.Session, mods *index.Index, place workspace.
 	return sites
 }
 
-// findKept returns the winner the game keeps for a reference, as the file at the given index position sees it. The
-// position -1, a file the index does not list, sees no local definition. It returns false if the game keeps none.
-func findKept(ws *workspace.Session, mods *index.Index, reference schema.Reference, file int32) (index.Winner, bool) {
+// findKept returns the winner the game keeps for a reference, as one file sees it, given by where the index lists it.
+// A file the index does not list, -1, sees no local definition. It returns false if the game keeps none.
+func findKept(ws *workspace.Session, mods *index.Index, reference schema.Reference, position int32) (index.Winner, bool) {
 	if reference.Database == game.Localization {
 		_, winner, ok := ws.LookupText(mods, reference.Name)
 		return winner, ok
 	}
-	return mods.FindKeptLocal(ws.Schema, reference, file)
+	return mods.FindKeptLocal(ws.Schema, reference, position)
 }
 
 // findHit returns the span the cursor is on in the visited statement, and its reference if it names one. The span is

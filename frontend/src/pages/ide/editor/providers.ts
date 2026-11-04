@@ -18,9 +18,9 @@ import { openModel, findModel } from "./models";
 
 /** FIX_COMMAND is the id of the command a quick fix runs. */
 const FIX_COMMAND = "pmt.applyFix";
-/** The setting that turns off each kind of inlay hint, by the kind Go gives it. A kind with none is always shown. */
+/** HINT_SETTINGS holds the setting that turns off each kind of inlay hint, by Go's kind. Other kinds always show. */
 const HINT_SETTINGS: Record<string, string> = { text: "ide.textHints" };
-/** The widest a picture beside a completion that names an image file is drawn, in pixels. */
+/** PICTURE_WIDTH is the widest a picture beside a completion that names an image file is drawn, in pixels. */
 const PICTURE_WIDTH = 96;
 
 /** SHOW_DETAILS is the editor action that opens the details beside the completion list while they are closed. */
@@ -126,8 +126,8 @@ function registerCompletion(selector: languages.LanguageFilter[]): void {
         })),
       };
     },
-    // the picture of an image file is read when its item is the one on show, and shown in the details beside the list,
-    // which open for the editor being typed in; Monaco opens them only once asked, and keeps them open
+    // the picture of an image file is read when its item is on show, and put in the details beside the list. Monaco
+    // opens the details only when asked, so the editor being typed in is asked to; it then keeps them open
     resolveCompletionItem: async (item: ImageCompletion) => {
       const picture = item.image && settings.isOn("ide.completionPictures") ? await fetchPicture(item.image) : "";
       if (!picture) return item;
@@ -266,9 +266,8 @@ async function resolveCompletions(
 }
 
 /**
- * fetchPicture returns the picture of an image file as a data URL, which Monaco's markdown shows where it refuses a
- * relative one.
- * The picture is drawn at most PICTURE_WIDTH wide, a smaller one at its own size, so the URL stays under the 100,000
+ * fetchPicture returns the picture of an image file as a data URL, since Monaco's markdown refuses a relative one. The
+ * picture is drawn at most PICTURE_WIDTH wide, a smaller one at its own size, so the URL stays under the 100,000
  * characters Monaco's markdown takes. It is "" if the file cannot be read.
  */
 async function fetchPicture(path: string): Promise<string> {
@@ -284,7 +283,7 @@ async function fetchPicture(path: string): Promise<string> {
   return canvas.toDataURL();
 }
 
-/** show opens the file at a resource in the IDE, at the given selection or position. */
+/** show opens the file a Monaco resource names in the IDE, at the given selection or position. */
 async function show(resource: monaco.Uri, selection?: monaco.IRange | monaco.IPosition): Promise<void> {
   const place = await loadQuery(placeQuery(resource.fsPath));
   if (!place) return;

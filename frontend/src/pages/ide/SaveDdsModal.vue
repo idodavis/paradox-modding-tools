@@ -69,7 +69,7 @@ function toDDS(name: string): string {
 
 /**
  * preselect sets the dialog's choices to the settings of the DDS files the pictures replace, when every picture has
- * one and they agree, and notes it in likeness. Otherwise the choices keep their defaults: uncompressed, no mipmaps.
+ * one and they agree, and says so under the choices. Otherwise the choices keep the defaults: uncompressed, no mipmaps.
  */
 function preselect(): void {
   const references = pictures.value.flatMap((picture) => data.value?.references?.[picture.path] ?? []);

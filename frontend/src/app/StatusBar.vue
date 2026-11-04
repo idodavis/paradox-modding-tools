@@ -1,7 +1,7 @@
 <!--
   The status bar: the install and its scan, the page's own facts, what the agent is doing, the wiki download and its
   failure, the windows, Help and the version with its update check. Help starts with the page's three steps and the
-  words PMT uses.
+  terms PMT uses.
 -->
 <script setup lang="ts">
 import type { ToastProps } from "@nuxt/ui";
@@ -42,8 +42,8 @@ const { data: update, refetch: checkUpdate, isLoading: checking } = useQuery({ .
 const { data: releases, refetch: refetchReleases } = useQuery({ ...releasesQuery, enabled: false });
 const { data: crashed } = useQuery(crashedQuery);
 const { data: levels } = useQuery(levelsQuery);
-// the words PMT uses: the table's, then each level of a problem with what it costs
-const words = computed(() => [
+// the terms PMT uses: the table's, then each level of a problem with what it costs
+const terms = computed(() => [
   ...TERMS,
   ...(levels.value ?? []).map((level) => ({ term: level.id, meaning: level.cost })),
 ]);
@@ -188,7 +188,7 @@ const ITEM = "flex h-6 items-center gap-1.25 hover:text-highlighted";
             <div class="flex flex-col gap-2" :class="page?.start && 'border-t border-default pt-2.5'">
               <span class="text-12 text-dimmed">Words PMT uses</span>
               <div class="flex flex-wrap gap-1.5">
-                <TermInfo v-for="row in words" :key="row.term" :term="row.term" :meaning="row.meaning">
+                <TermInfo v-for="row in terms" :key="row.term" :term="row.term" :meaning="row.meaning">
                   <UBadge :label="row.term" />
                 </TermInfo>
               </div>
@@ -209,7 +209,7 @@ const ITEM = "flex h-6 items-center gap-1.25 hover:text-highlighted";
         <UButton label="Copy diagnostics" icon="i-lucide-clipboard-copy" @click="copyDiagnostics()" />
       </template>
     </UModal>
-    <HowModWorks v-model:open="explaining" :game-id="state?.game?.id ?? ''" mod-name="" />
+    <HowModWorks v-model:open="explaining" :game-id="state?.game?.id ?? ''" mod-title="" />
     <UModal
       title="Releases"
       :ui="{ content: 'h-130 sm:max-w-2xl' }"

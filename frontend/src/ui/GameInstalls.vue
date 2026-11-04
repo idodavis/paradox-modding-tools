@@ -8,12 +8,12 @@ import { useQuery } from "@pinia/colada";
 
 import { detectedInstallsQuery, installsQuery } from "../queries";
 
-const { game } = defineProps<{ game: string }>();
+const { gameId } = defineProps<{ gameId: string }>();
 
-const { data: recorded } = useQuery(() => installsQuery(game));
-const { data: found } = useQuery(() => detectedInstallsQuery(game));
+const { data: recorded } = useQuery(() => installsQuery(gameId));
+const { data: scanned } = useQuery(() => detectedInstallsQuery(gameId));
 const detected = computed(() =>
-  (found.value ?? []).filter((one) => !recorded.value?.some((install) => install.path === one.path)),
+  (scanned.value ?? []).filter((candidate) => !recorded.value?.some((install) => install.path === candidate.path)),
 );
 </script>
 

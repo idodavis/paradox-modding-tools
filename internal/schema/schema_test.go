@@ -133,11 +133,11 @@ func TestReadDumpsFixtures(t *testing.T) {
 	}
 	dumps, _ := ReadDumps([]string{filepath.Join("..", "testdata", "ck3", "docs")})
 	lookup := func(name string) DumpCommand {
-		i := slices.IndexFunc(dumps.Commands, func(command DumpCommand) bool { return command.Name == name })
-		if i < 0 {
+		position := slices.IndexFunc(dumps.Commands, func(command DumpCommand) bool { return command.Name == name })
+		if position < 0 {
 			t.Fatalf("ck3: no command %s", name)
 		}
-		return dumps.Commands[i]
+		return dumps.Commands[position]
 	}
 	if root := lookup("root"); strings.Contains(root.Description, "Global Link") {
 		t.Errorf("root: description %q", root.Description)
@@ -156,12 +156,9 @@ const (
 	readmeDoc = "x/readme.txt"
 )
 
-// newDocSchema returns an empty schema for the doc tests to read docs into.
-func newDocSchema() *Schema { return &Schema{} }
-
 // TestParseDoc checks that each way the games' doc files are written gives its facts as claims.
 func TestParseDoc(t *testing.T) {
-	docs := newDocSchema()
+	docs := &Schema{}
 	cases := []struct {
 		name, rel, text, key string
 		check                func(*Field) bool
@@ -229,7 +226,7 @@ func findField(field *Field, path string) *Field {
 // TestParseDocDatabase checks what a doc file says of its database as a whole: its blurb, and that a data file named
 // like a doc is not read as one.
 func TestParseDocDatabase(t *testing.T) {
-	docs := newDocSchema()
+	docs := &Schema{}
 	text := "# Reference\nA building of a state.\n\nexample = {\n\tgroup = x\n}\n"
 	reader, ok := docs.parseDoc(text, "x/x.md", game.Database{})
 	if !ok || strings.Join(reader.blurb, " ") != "A building of a state." {

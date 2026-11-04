@@ -58,7 +58,7 @@ export const keys = {
   graph: ["graph"] as const,
   wiki: ["wiki"] as const,
   git: (dir: string) => [...KINDS.gits, dir] as const,
-  leftOff: [...KINDS.gits, "left-off"] as const,
+  repositoryWork: [...KINDS.gits, "repository-work"] as const,
   ownListings: [...KINDS.releases, "own"] as const,
   gitStatus: (dir: string) => [...KINDS.gits, dir, GIT_STATUS] as const,
   release: (modId: string) => [...KINDS.releases, modId] as const,
@@ -211,9 +211,9 @@ export const errorLogQuery = defineQueryOptions({
   key: [...keys.health, "errorlog"],
   query: () => health.ListErrorLog(),
 });
-export const comparedQuery = defineQueryOptions(({ a, b }: { a: Site; b: Site }) => ({
-  key: [...keys.health, "compared", a, b],
-  query: () => health.CompareStatements(a, b),
+export const comparedQuery = defineQueryOptions(({ left, right }: { left: Site; right: Site }) => ({
+  key: [...keys.health, "compared", left, right],
+  query: () => health.CompareStatements(left, right),
 }));
 export const snippetsQuery = defineQueryOptions((sites: Site[]) => ({
   key: [...keys.health, "snippets", sites],
@@ -317,7 +317,7 @@ export const commitFilesQuery = defineQueryOptions(({ dir, hash }: { dir: string
 }));
 /** repositoryWorkQuery reads the status and the last commit of each of the given repositories, in their order. */
 export const repositoryWorkQuery = defineQueryOptions((roots: string[]) => ({
-  key: [...keys.leftOff, roots],
+  key: [...keys.repositoryWork, roots],
   query: () =>
     Promise.all(
       roots.map(async (dir) => ({

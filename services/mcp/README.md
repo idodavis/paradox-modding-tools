@@ -40,16 +40,15 @@ no more, and the whole stays under Claude's 4,096 characters. `read_guide` holds
 - `pages`: each page's help as the page catalog gives it, which the main window sends once (`SetPages`), then what
   `show` can bring to the front on each page;
 - `workflow`: how a change is made with PMT's tools, from finding a name to checking the file;
-- `rules`: for each of the game's folders, which copy the game keeps when several definitions share a name and the
-  entry modes a mod can write (`Precedence.Describe`), then the first paragraph of the game's readme for the folder
-  where it has one;
+- `rules`: which copy the game keeps when several definitions share a name and the entry modes a mod can write
+  (`Precedence.Describe`), each with the game's folders where it holds, the way that holds for the most folders first;
 - `workspace`: the open workspace's game and install, a line saying the user has Guidance for new modders on while that
   setting is on, its mods in load order with their folders, and the game's folders with what each holds, read from the
   schema's databases.
 
-The starter tasks are `Tasks`, served as MCP prompts and listed by `ListTasks` for the agent pane: fix
-this file's problems, explain this file, explain this page, write the missing localization, and why this event fires. Each text works
-with the page's chip attached and, outside PMT, through `describe_view`.
+The starter tasks are `Tasks`, served as MCP prompts and listed by `ListTasks` for the agent pane: fix this file's
+problems, explain this file, explain this page, write the missing localization, and why this event fires. Each text
+works with the page's chip attached and, outside PMT, through `describe_view`.
 
 ## The tools
 

@@ -269,9 +269,10 @@ func (index *Index) buildGroup(position int32) {
 
 // compareLoaded orders two files, given by their positions in Files, the way the game loads them: by their roots in
 // load order, then by their stages, then as listed.
-func (index *Index) compareLoaded(a, b int32) int {
-	first, second := index.placements[a], index.placements[b]
-	return cmp.Or(cmp.Compare(first.root, second.root), cmp.Compare(first.stage, second.stage), cmp.Compare(a, b))
+func (index *Index) compareLoaded(first, second int32) int {
+	firstPlacement, secondPlacement := index.placements[first], index.placements[second]
+	return cmp.Or(cmp.Compare(firstPlacement.root, secondPlacement.root),
+		cmp.Compare(firstPlacement.stage, secondPlacement.stage), cmp.Compare(first, second))
 }
 
 // scanFiles builds the occurrences of every file the index scans itself, in parallel on files.Workers goroutines. The

@@ -347,13 +347,13 @@ func (ws *Session) LookupText(mods *index.Index, key string) (text string, winne
 		if len(candidates) == 0 {
 			continue
 		}
-		// every form of the replace folder ranks before a file outside one
+		// a file in a replace folder ranks before one outside them, and the earlier folder ranks first
 		unreplaced := len(ws.Game.LocReplaceFolders)
 		rank := func(candidate index.Site) int {
 			position, replaces := ws.Game.FindLocReplacement(mods.File(candidate).Rel, language)
 			return lo.Ternary(replaces, position, unreplaced)
 		}
-		winner = index.Winner{Site: slices.MinFunc(candidates, func(a, b index.Site) int { return cmp.Compare(rank(a), rank(b)) })}
+		winner = index.Winner{Site: slices.MinFunc(candidates, func(first, second index.Site) int { return cmp.Compare(rank(first), rank(second)) })}
 		switch {
 		case lo.CountBy(candidates, func(candidate index.Site) bool { return rank(candidate) == rank(winner.Site) }) > 1:
 			winner.Reason = index.ReasonUnsettled

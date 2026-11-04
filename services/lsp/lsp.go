@@ -167,14 +167,12 @@ func (lsp *Service) SetText(path, text string) ([]Diagnostic, error) {
 	return lsp.Diagnose(path)
 }
 
-// CloseFile drops an open file's text from the session.
-func (lsp *Service) CloseFile(path string) error {
-	ws, err := lsp.Workspace.Session()
-	if err != nil {
-		return err
+// CloseFile drops an open file's text from the session. It does nothing if no workspace is open, since closing the
+// workspace dropped every text.
+func (lsp *Service) CloseFile(path string) {
+	if ws, err := lsp.Workspace.Session(); err == nil {
+		ws.CloseBuffer(path)
 	}
-	ws.CloseBuffer(path)
-	return nil
 }
 
 // loadTree returns the open session and the tree of a file. It parses the editor's text if the file is open. It returns

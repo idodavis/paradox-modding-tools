@@ -97,34 +97,34 @@ export function attachHover(
 }
 
 /**
- * useHeldCard keeps a card that the pointer can move onto. It returns the card on show, which is null while there is
- * none, and the functions that take it down at once, take it down after a moment unless the pointer is on it by then,
- * keep it up when the pointer comes back to what it is about, hold it while the pointer is on it, and tell whether the
- * pointer is on it.
+ * useHeldCard keeps a card up while the pointer is on it. It returns the card on show (null if none) and its controls.
  */
 export function useHeldCard<T>(): {
   card: ShallowRef<T | null>;
   close: () => void;
   closeLater: () => void;
   keep: () => void;
-  hold: (on: boolean) => void;
+  hold: (isOverCard: boolean) => void;
   isHeld: () => boolean;
 } {
   const card = shallowRef<T | null>(null);
   let onCard = false;
   let timer: ReturnType<typeof setTimeout> | undefined;
+  /** close takes the card down at once. */
   const close = (): void => {
     clearTimeout(timer);
     onCard = false;
     card.value = null;
   };
+  /** closeLater takes the card down after a moment, unless the pointer is on it by then. */
   const closeLater = (): void => {
     clearTimeout(timer);
     timer = setTimeout(() => onCard || (card.value = null), 300);
   };
-  const hold = (on: boolean): void => {
-    onCard = on;
-    if (!on) closeLater();
+  /** hold records whether the pointer is on the card. Once it leaves, the card goes after a moment. */
+  const hold = (isOverCard: boolean): void => {
+    onCard = isOverCard;
+    if (!isOverCard) closeLater();
   };
   return { card, close, closeLater, keep: () => clearTimeout(timer), hold, isHeld: () => onCard };
 }

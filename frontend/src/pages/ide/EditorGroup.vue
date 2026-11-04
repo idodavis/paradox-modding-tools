@@ -118,26 +118,26 @@ const menuGameCopy = computed(() => menuPlace.value && findGameCopy(menuPlace.va
 // the tabs whose read only notice was closed, and whether the form that makes a mod for the changes is open
 const closedNotices = shallowReactive(new Set<string>());
 const creating = shallowRef(false);
-// how else to change a read only file where the caret is in no entry Override can take: put the caret in one, write a
-// localization key again in the replace folder, or copy the file into a mod; none while the caret is not located
+// the other ways to change a read only file when the caret is in no entry to override: put the caret in one, write a
+// localization key again in the replace folder, or copy the file into a mod; null until the caret's place is known
 const hint = computed(() => {
-  const open = place.value;
-  if (!open || !located.value || located.value.override) return null;
-  if (open.database) return { text: "Put the caret in an entry to override it.", copy: false };
-  if (open.format === Format.FormatLocalization) {
+  const activePlace = place.value;
+  if (!activePlace || !located.value || located.value.override) return null;
+  if (activePlace.database) return { text: "Put the caret in an entry to override it.", copy: false };
+  if (activePlace.format === Format.FormatLocalization) {
     return {
       text: "To change a line, write its key again in your mod's localization replace folder, which the game reads first.",
       copy: false,
     };
   }
-  return { text: "To change this file, copy it into a mod.", copy: canCopyToMod(open) };
+  return { text: "To change this file, copy it into a mod.", copy: canCopyToMod(activePlace) };
 });
 // what the notice over a read only file says: the game's own files, or Steam's copy of a Workshop mod, and where Steam
-// puts it; none for a file a mod can write to
+// puts it; null for a file a mod can write to
 const notice = computed(() => {
-  const open = place.value;
-  if (!open?.readOnly || activeTab.value?.side || closedNotices.has(group.active ?? "")) return null;
-  if (open.origin === VANILLA) {
+  const activePlace = place.value;
+  if (!activePlace?.readOnly || activeTab.value?.side || closedNotices.has(group.active ?? "")) return null;
+  if (activePlace.origin === VANILLA) {
     return {
       text: "Game files are read only. Your mod changes an entry by overriding it.",
       detail: "",
@@ -145,8 +145,8 @@ const notice = computed(() => {
     };
   }
   return {
-    text: `${workspace.originName(open.origin)} is from the Steam Workshop, so PMT keeps it read only.`,
-    detail: `Steam replaces ${open.root} each time its author updates it.`,
+    text: `${workspace.originName(activePlace.origin)} is from the Steam Workshop, so PMT keeps it read only.`,
+    detail: `Steam replaces ${activePlace.root} each time its author updates it.`,
     workshop: true,
   };
 });
@@ -163,7 +163,7 @@ watchDebounced(
 );
 // a tab drag ends with a drop or a drag end that reaches the window wherever it lands, so every group stops showing it
 useEventListener(window, ["drop", "dragend"], endDrag);
-const { mutate: saveModel } = useMutation({ mutation: (fileModel: Model) => save(fileModel) });
+const { mutate: saveModel } = useMutation({ mutation: save });
 // whether the compare of the unsaved text with the disk's text is open
 const comparing = shallowRef(false);
 
@@ -194,7 +194,7 @@ function overrideHere(fileModel: Model): void {
   ).then(() => locateCaret(fileModel));
 }
 
-/** describe describes a tab for the strip: its label, its icon and what marks it. */
+/** describe returns what the strip shows for a tab: its file, label, icon and marks. */
 function describe(tab: Tab) {
   const tabPlace = editor.placeOf(tab.key);
   const path = tabPlace?.rel ?? tab.key;
@@ -220,7 +220,7 @@ function setMode(choice: string | number): void {
   editor.mode = choice === "visual" ? "visual" : "code";
 }
 
-/** select shows a row's tab and makes this group active. A tab with no file only activates the group. */
+/** select makes this group active and shows a row's tab, if the tab has a file or is the start tab. */
 function select(row: Row): void {
   if (row.tabPlace || row.tab.start) editor.open(row.tab, row.tabPlace, group.id);
   else editor.activate(group.id);
@@ -281,12 +281,12 @@ function dropOutside(event: DragEvent): void {
  * dropTab brings a dragged tab to this group: it asks the other windows for the tab, and moves it here if this window
  * holds it, to the given index of the group or into a new group on the given side.
  */
-function dropTab(event: DragEvent, place: number | Side): void {
+function dropTab(event: DragEvent, destination: number | Side): void {
   const id = event.dataTransfer?.getData(TAB);
   if (!id) return;
   editor.activate(group.id);
   windows.requestTab(id);
-  editor.move(id, group.id, place);
+  editor.move(id, group.id, destination);
 }
 
 /**

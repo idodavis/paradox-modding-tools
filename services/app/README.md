@@ -21,26 +21,26 @@ it.
 
 ## config.json
 
-A `ConfigFile` is config.json held in memory for every service. `Config` returns a copy that shares no slice or map
-with the file's own. `Update` changes the config under its lock, saves it whole and emits `config:changed` with the
+A `ConfigFile` is config.json held in memory for every service. `Config` returns the config as it is held, which the
+caller must not change. `Update` changes the config under its lock, saves it whole and emits `config:changed` with the
 section it wrote: `installs`, `workspaces`, `settings`, `agents`, `window`, or "" for all of them. A change that
 returns an error saves and emits nothing.
 
 The `Window` record is the main window as it was last closed: its size and whether it was maximized, saved as it
 closes. `OpenMainWindow` opens it so, centered, and at 1400 by 900 on the first run. A pane sized in pixels is saved
-by its splitter as a share of the window, so a window that opens at the size it closed at brings each pane back at its
-own size.
+by its splitter as a share of the window, so a window opened at its closing size brings each pane back at its own size.
 
 A missing file is a first run. Any other read failure gives an empty config that is read-only, so a passing fault never
 overwrites the real file. The config carries no format version: a changed record means Reset data, never a migration.
 
 The records are plain. An `Install` is one game install PMT has recorded, with its version and when it was last
 scanned. A `Workspace` is an install and its mods in load order, with its language, its home page, the color of the
-game's files, whether the IDE opens with no tabs and the explorer lists binary files, its own settings and the pairs
-of mods whose conflicts it ignores. A `Mod` is a mod's folder with its color, its `Calendar`, its Workshop id, its
-upload exclusions and whether it is left out of the compatibility checks. The open workspace's view of a mod, with its
-descriptor, is `workspace.Mod`, which embeds this record. An `Agent` is a coding agent: one the user adds, a name with
-a program and its arguments, or a row of the agents PMT offers, which the `agent` package holds.
+game's files, whether the IDE opens with no tabs and the explorer lists binary files, whether the first-mod checklist
+and the IDE's start page are hidden, its own settings and the pairs of mods whose conflicts it ignores. A `Mod` is a
+mod's folder with its color, its `Calendar`, its Workshop id, its upload exclusions and whether it is left out of the
+compatibility checks. The open workspace's view of a mod, with its descriptor, is `workspace.Mod`, which embeds this
+record. An `Agent` is a coding agent: one the user adds, a name with a program and its arguments, or a row of the
+agents PMT offers, which the `agent` package holds.
 
 ## Settings
 
@@ -54,8 +54,8 @@ config's own `Settings`. `LookupSetting` reads a value by that rule, and falls b
 `OpenLog` opens pmt.log in the log folder, and starts it over once it has grown too large. `ServiceStartup` writes a
 running mark beside it and `ServiceShutdown` removes it, so a mark found at the next start means the last run never shut
 down. `CrashedLastRun` reports that, except in a dev build (`DevBuild`), which stops without a clean shutdown each time
-it is rebuilt. `BuildDiagnostics` writes what a bug report needs: the version, the system, the
-installs and the end of the log.
+it is rebuilt. `BuildDiagnostics` writes what a bug report needs: the version, the system, the installs and the end of
+the log.
 
 ## Updates
 
@@ -67,8 +67,8 @@ agent, for this service and the others that read the web.
 
 ## Windows
 
-Every window has no frame of the system's: the page draws its own title bar and buttons, and the window moves by
-dragging the bar's empty space, which `--wails-draggable` marks.
+No window has a frame of the system's: the page draws its own title bar and buttons, and the window moves by dragging
+the bar's empty space, which `--wails-draggable` marks.
 
 Wails's JavaScript runtime acts only on the window that calls it, so showing or closing another window goes through
 this service. The main window's close is held and sent to the page as `window:closing`, until `CloseWindow` lets it

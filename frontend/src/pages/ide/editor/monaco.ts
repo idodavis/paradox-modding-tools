@@ -160,7 +160,7 @@ export function editorOptions(): editor.IStandaloneEditorConstructionOptions {
     unicodeHighlight: { ambiguousCharacters: false, invisibleCharacters: false },
     scrollBeyondLastLine: false,
     glyphMargin: false,
-    // Monaco underlines problems only where the file can be typed in; a read-only file shows them too
+    // Monaco underlines problems only where the file can be typed in; a read only file shows them too
     renderValidationDecorations: "on",
     renderLineHighlight: "all",
     wordWrap: settings.isOn("ide.wordWrap") ? "on" : "off",

@@ -76,7 +76,7 @@ type Visit = { place: Place; position: IPosition };
 
 /** HISTORY is how many places the history keeps. */
 const HISTORY = 50;
-/** How many files the start page lists as recent. */
+/** RECENT is how many recent files are kept for the start page. */
 const RECENT = 5;
 /** START is the start page's tab. A window holds at most one. */
 const START = { key: "", start: true } as const;
@@ -421,7 +421,7 @@ export const useEditorStore = defineStore("editor", () => {
     const group = activeGroup();
     if (!group) return;
     const row = SOURCES[source];
-    recent.value = [place, ...recent.value.filter((one) => one.key !== place.key)].slice(0, RECENT);
+    recent.value = [place, ...recent.value.filter((candidate) => candidate.key !== place.key)].slice(0, RECENT);
     const range = selection && toRange(selection);
     const start = range && { lineNumber: range.startLineNumber, column: range.startColumn };
     if (row.record !== false) record(start ? { place, position: start } : locate(place));
@@ -599,7 +599,7 @@ export const useEditorStore = defineStore("editor", () => {
     if (side === "left" || side === "right") row.columns.splice(row.columns.indexOf(group) + offset, 0, newGroup);
     else rows.splice(rows.indexOf(row) + offset, 0, { columns: [newGroup] });
     // the reactive copy, so a tab added to it later is drawn at once and stored as plain data the layout can save
-    return listGroups().find((one) => one.id === newGroup.id) ?? newGroup;
+    return listGroups().find((candidate) => candidate.id === newGroup.id) ?? newGroup;
   }
 
   /**
@@ -617,15 +617,15 @@ export const useEditorStore = defineStore("editor", () => {
    * move moves a tab, as a drag does, to the given index of a group, or into a new group on the given side of the
    * group. A tab no group holds stays where it is.
    */
-  const move = (id: string, groupId: string, place: number | Side): void => {
+  const move = (id: string, groupId: string, destination: number | Side): void => {
     const home = find(id);
     const group = listGroups().find((candidate) => candidate.id === groupId);
     const tab = home && group && remove(home.group, home.index);
     if (!home || !group || !tab) return;
-    const target = typeof place === "number" ? group : insertGroup(group, place, [], null);
+    const target = typeof destination === "number" ? group : insertGroup(group, destination, [], null);
     const existing = target.tabs.findIndex((other) => other.id === id);
     if (existing >= 0) target.tabs.splice(existing, 1);
-    target.tabs.splice(Math.min(typeof place === "number" ? place : 0, target.tabs.length), 0, tab);
+    target.tabs.splice(Math.min(typeof destination === "number" ? destination : 0, target.tabs.length), 0, tab);
     target.active = id;
     activeId.value = target.id;
     closeGroup(home.group);

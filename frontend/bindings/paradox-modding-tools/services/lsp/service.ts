@@ -31,7 +31,8 @@ export function BuildOverride(path: string, line: number, column: number, modID:
 }
 
 /**
- * CloseFile drops an open file's text from the session.
+ * CloseFile drops an open file's text from the session. It does nothing if no workspace is open, since closing the
+ * workspace dropped every text.
  */
 export function CloseFile(path: string): $CancellablePromise<void> {
     return $Call.ByID(934988783, path);
@@ -92,9 +93,9 @@ export function FindSymbols(query: string, limit: number): $CancellablePromise<$
 }
 
 /**
- * Format returns the edits that format a file's text. It keeps the file's own indentation, or else indents with the
- * given tab size, in spaces if the flag is set. It returns no edits for a game file, a file that is not script or does
- * not parse, or one that would change in more than its spacing.
+ * Format returns the edits that format a file's text. It keeps the file's own indentation, or else indents with a tab,
+ * or with as many spaces as the given tab size if spaces are asked for. It returns no edits for a read-only file, a
+ * file that is not script or does not parse, or one that would change in more than its spacing.
  */
 export function Format(path: string, tabSize: number, insertSpaces: boolean): $CancellablePromise<$models.Edit[] | null> {
     return $Call.ByID(331973468, path, tabSize, insertSpaces);

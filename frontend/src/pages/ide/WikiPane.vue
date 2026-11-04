@@ -35,6 +35,7 @@ const settings = useSettingsStore();
 const windows = useWindowsStore();
 const workspace = useWorkspaceStore();
 const { data: state } = useQuery(stateQuery);
+const ownWindow = THIS_WINDOW === "wiki";
 const view = shallowRef("pages");
 const title = shallowRef("");
 const lexiconClass = shallowRef("effect");
@@ -65,7 +66,7 @@ const { data: article } = useQuery(() => ({
   enabled: !!current.value && view.value === "pages",
 }));
 const host = computed(() => (article.value ? new URL(article.value.url).host : ""));
-const more = computed<DropdownMenuItem[]>(() =>
+const morePages = computed<DropdownMenuItem[]>(() =>
   pages.value.map((summary) => ({
     label: summary.title,
     icon: summary.title === current.value ? "i-lucide-check" : undefined,
@@ -115,18 +116,23 @@ const visible = computed(() => (rows.value ?? []).filter((row) => matchQuery(fil
 const list = useTemplateRef("list");
 const letters = computed(() =>
   visible.value.reduce<{ letter: string; index: number }[]>((starts, row, index) => {
-    const letter = row.name.charAt(0).toUpperCase();
+    const letter = initial(row.name);
     return starts.at(-1)?.letter === letter ? starts : [...starts, { letter, index }];
   }, []),
 );
 const topLetter = shallowRef("");
 
-/** markLetter sets topLetter to the first letter of the first row in view, skipping the rows drawn above the view. */
+/** initial returns the given text's first letter in upper case. */
+function initial(text: string): string {
+  return text.charAt(0).toUpperCase();
+}
+
+/** markLetter marks the first letter of the first row in view. It skips the rows drawn above the view. */
 function markLetter(): void {
   const virtualizer = list.value?.virtualizer;
   const top = virtualizer?.scrollOffset ?? 0;
   const first = virtualizer?.getVirtualItems().find((item) => item.end > top)?.index ?? 0;
-  topLetter.value = visible.value[first]?.name.charAt(0).toUpperCase() ?? "";
+  topLetter.value = initial(visible.value[first]?.name ?? "");
 }
 
 /** jump scrolls the lexicon list to the row at the given index. */
@@ -147,7 +153,7 @@ function jump(index: number): void {
         @update:model-value="view = String($event)"
       />
       <span class="grow" />
-      <UTooltip v-if="THIS_WINDOW !== 'wiki'" text="Open in its own window">
+      <UTooltip v-if="!ownWindow" text="Open in its own window">
         <UButton
           icon="i-lucide-app-window"
           variant="ghost"
@@ -162,8 +168,8 @@ function jump(index: number): void {
         variant="ghost"
         size="sm"
         square
-        :aria-label="THIS_WINDOW === 'wiki' ? 'Back into the main window' : 'Close the Wiki pane'"
-        @click="THIS_WINDOW === 'wiki' ? windows.dockBack() : (editor.wiki = false)"
+        :aria-label="ownWindow ? 'Back into the main window' : 'Close the Wiki pane'"
+        @click="ownWindow ? windows.dockBack() : (editor.wiki = false)"
       />
     </div>
     <template v-if="view === 'pages'">
@@ -183,7 +189,7 @@ function jump(index: number): void {
           {{ summary.title }}
         </button>
         <span class="grow" />
-        <UDropdownMenu v-if="pages.length > PAGE_TABS" :items="more">
+        <UDropdownMenu v-if="pages.length > PAGE_TABS" :items="morePages">
           <UButton
             icon="i-lucide-chevron-down"
             variant="ghost"

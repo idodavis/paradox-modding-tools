@@ -660,8 +660,8 @@ func (wsp *Service) ListFolder(dir string) ([]Place, error) {
 		place.IsDir = entry.IsDir()
 		return place, place.IsDir || record.ShowBinaries || place.Format.IsText()
 	})
-	slices.SortStableFunc(places, func(a, b Place) int {
-		return cmp.Compare(lo.Ternary(a.IsDir, 0, 1), lo.Ternary(b.IsDir, 0, 1)) // folders first
+	slices.SortStableFunc(places, func(first, second Place) int {
+		return cmp.Compare(lo.Ternary(first.IsDir, 0, 1), lo.Ternary(second.IsDir, 0, 1)) // folders first
 	})
 	return places, nil
 }
@@ -768,8 +768,8 @@ func (wsp *Service) Locate(path string) Place {
 
 // ServeHTTP serves the file the request's path names. A DDS or TGA, or a request for a frame or a mip level, is
 // served as PNG. A file outside the recorded installs and mods is refused.
-func (wsp *Service) ServeHTTP(w http.ResponseWriter, r *http.Request) {
-	query := r.URL.Query()
+func (wsp *Service) ServeHTTP(writer http.ResponseWriter, request *http.Request) {
+	query := request.URL.Query()
 	path := query.Get("path")
 	records := wsp.Config.Config()
 	dirs := lo.Map(records.Installs, func(install app.Install, _ int) string { return install.Path })
@@ -781,27 +781,27 @@ func (wsp *Service) ServeHTTP(w http.ResponseWriter, r *http.Request) {
 		return ok
 	})
 	if !isRecorded {
-		http.Error(w, "the path is outside every recorded install and mod", http.StatusForbidden)
+		http.Error(writer, "the path is outside every recorded install and mod", http.StatusForbidden)
 		return
 	}
 	isCut := query.Has("framesize") || query.Has("framegrid") || query.Has("level")
 	if ext := strings.ToLower(filepath.Ext(path)); ext != ".dds" && ext != ".tga" && !isCut {
-		http.ServeFile(w, r, path)
+		http.ServeFile(writer, request, path)
 		return
 	}
 	bytes, err := os.ReadFile(path)
 	if err != nil {
-		http.Error(w, err.Error(), http.StatusNotFound)
+		http.Error(writer, err.Error(), http.StatusNotFound)
 		return
 	}
 	level, _ := strconv.Atoi(query.Get("level"))
 	picture, err := texture.Decode(bytes, level)
 	if err != nil {
-		http.Error(w, err.Error(), http.StatusUnprocessableEntity)
+		http.Error(writer, err.Error(), http.StatusUnprocessableEntity)
 		return
 	}
-	w.Header().Set("Content-Type", "image/png")
-	_ = png.Encode(w, cutFrame(picture, query))
+	writer.Header().Set("Content-Type", "image/png")
+	_ = png.Encode(writer, cutFrame(picture, query))
 }
 
 // cutFrame returns the frame of a sprite sheet that a query names, counted from 1 across and then down. It returns

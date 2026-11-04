@@ -1,8 +1,8 @@
 <!--
   The top bar of every window: the PMT menu, then the workspace switcher and the workspace's page tabs in the main
-  window or what another window shows, then the Launch and agent pane buttons in the main window, search and the
-  window's buttons. Its empty space moves the window. The main window also tells, when the launched game closes, what
-  the game's error log says about the workspace's mods.
+  window or what another window shows, then the agent pane button in the main window, search and the window's buttons.
+  Its empty space moves the window. The main window also tells, when the launched game closes, what the game's error
+  log says about the workspace's mods.
 -->
 <script setup lang="ts">
 import type { ContextMenuItem, DropdownMenuItem } from "@nuxt/ui";
@@ -21,7 +21,7 @@ import { useAgentStore } from "../stores/agent";
 import { gameIcon, useSettingsStore } from "../stores/settings";
 import { COMMAND_BUS, describeWindow, THIS_WINDOW, useWindowsStore } from "../stores/windows";
 import { useWorkspaceStore } from "../stores/workspace";
-import { findCommand, findKbds } from "./commands";
+import { findKbds } from "./commands";
 import { homeRoute, isWorkspacePage, listShownTools, PAGES, type WorkspacePage } from "./pages";
 
 const IS_MAIN = THIS_WINDOW === "main";
@@ -34,7 +34,6 @@ const ROUND_BUTTON =
 const TAB = "flex items-center gap-1.5 px-2.5 border-y-2 border-transparent text-13 font-medium whitespace-nowrap";
 // the window moves by dragging this space
 const CAPTION = "self-stretch [--wails-draggable:drag]";
-const LAUNCH = findCommand("game.launch");
 
 const route = useRoute();
 const router = useRouter();
@@ -73,8 +72,8 @@ const windowButtons = computed(() => [
   { region: "close", label: "Close", glyph: "M.5.5l9 9M9.5.5l-9 9", press: () => Window.Close() },
 ]);
 
-// Below 1110px at a scale of 100% the bar is compact: inactive tabs show only their icons. That is the width that
-// every label, the pop-out button and the least space to drag by need.
+// Below 1110px at a scale of 100% the bar is compact: inactive tabs show only their icons. That width fits every label,
+// the pop-out button and some space to drag the window by.
 const bar = useTemplateRef("bar");
 const { width } = useElementSize(bar);
 const compact = computed(
@@ -122,7 +121,7 @@ const menu = computed(
           icon: "i-lucide-keyboard",
           onSelect: () => commandBus.emit("settings.open", "shortcuts"),
         },
-        { ...mode.value, onSelect: writeDark },
+        { ...mode.value, onSelect: toggleDark },
       ],
     ] satisfies DropdownMenuItem[][],
 );
@@ -147,8 +146,8 @@ const switcher = computed(
     ] satisfies DropdownMenuItem[][],
 );
 
-/** writeDark switches to the other of light and dark. */
-function writeDark(): void {
+/** toggleDark switches to the other of light and dark. */
+function toggleDark(): void {
   settings.write("appearance.dark", String(!settings.theme().dark));
 }
 
@@ -169,8 +168,8 @@ function resolveTabLink(name: WorkspacePage) {
 }
 
 /** tabClass returns the classes of a page's tab, marked when its page is the one shown. */
-function tabClass(on: boolean): string[] {
-  return [TAB, on ? "border-b-primary text-highlighted" : "text-toned hover:text-highlighted"];
+function tabClass(isShown: boolean): string[] {
+  return [TAB, isShown ? "border-b-primary text-highlighted" : "text-toned hover:text-highlighted"];
 }
 
 /** tabMenu returns a tab's context menu: the IDE stays in the main window, a page opens in a window of its own. */
@@ -352,15 +351,6 @@ function styleButton(region: string): string[] {
       <span class="truncate text-dimmed">{{ active?.record.name }}</span>
     </span>
 
-    <UButton
-      v-if="IS_MAIN && workspace.isOpen()"
-      label="Launch"
-      icon="i-lucide-play"
-      size="sm"
-      :ui="{ leadingIcon: 'text-success' }"
-      :aria-label="`Launch ${active?.game?.name ?? 'the game'}`"
-      @click="LAUNCH?.onSelect?.($event)"
-    />
     <UTooltip v-if="IS_MAIN && active" text="Agent pane" :kbds="findKbds('agent.togglePane')">
       <UChip :show="agent.sessions.some(agent.isWaiting)" color="warning" inset size="sm">
         <UButton

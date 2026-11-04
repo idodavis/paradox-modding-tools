@@ -180,7 +180,7 @@ func (dumps *Dumps) parseFile(file, text string) {
 }
 
 // parseSections yields the entries of a dump, each as its head and the lines after it. A line of dashes or a markdown
-// heading starts an entry. The head is the heading's word, or the first line after the dashes. If titled is set, the
+// heading starts an entry. The head is the heading's word, or the first line after the dashes. If the flag is set, the
 // dump opens with a title, and the lines before the first entry are skipped.
 func parseSections(text string, titled bool) iter.Seq2[string, []string] {
 	return func(yield func(string, []string) bool) {

@@ -12,7 +12,7 @@ import { gamesQuery, precedenceQuery } from "../queries";
 import { useWorkspaceStore } from "../stores/workspace";
 
 const open = defineModel<boolean>("open", { required: true });
-const { gameId, modName } = defineProps<{ gameId: string; modName: string }>();
+const { gameId, modTitle } = defineProps<{ gameId: string; modTitle: string }>();
 
 const router = useRouter();
 const workspace = useWorkspaceStore();
@@ -29,12 +29,12 @@ const { data: precedence } = useQuery(() => ({
   enabled: open.value && !!example.value,
 }));
 
-const title = computed(() => modName.trim() || "Your mod");
+const title = computed(() => modTitle.trim() || "Your mod");
 // the mod changes the example's first name and adds one of its own, which the game uses from the mod
 const newEntry = computed(() => `${title.value.toLowerCase().replace(/\W+/g, "_")}_new`);
 const uses = computed(() => [
-  ...(example.value?.names ?? []).map((name, index) => ({ name, modCopy: index === 0 })),
-  { name: newEntry.value, modCopy: true },
+  ...(example.value?.names ?? []).map((entry, index) => ({ entry, modCopy: index === 0 })),
+  { entry: newEntry.value, modCopy: true },
 ]);
 const rules = computed(() => [
   "Mods load after the game, in the workspace's load order, top to bottom.",
@@ -68,7 +68,7 @@ function openCompatibility(): void {
             </div>
             <span class="font-mono text-12 text-dimmed">{{ example?.folder }}</span>
             <div class="flex flex-col items-start gap-1">
-              <UBadge v-for="name in example?.names ?? []" :key="name" :label="name" class="font-mono" />
+              <UBadge v-for="entry in example?.names ?? []" :key="entry" :label="entry" class="font-mono" />
             </div>
           </div>
           <UIcon name="i-lucide-arrow-right" class="size-5 shrink-0 self-center text-dimmed" />
@@ -96,8 +96,8 @@ function openCompatibility(): void {
             <span class="text-13 font-semibold">What the game uses</span>
             <span class="text-12 text-dimmed">One copy of each entry</span>
             <div class="flex flex-col gap-1">
-              <span v-for="use in uses" :key="use.name" class="flex min-w-0 items-center gap-2">
-                <span class="w-32 shrink-0 truncate font-mono text-12">{{ use.name }}</span>
+              <span v-for="use in uses" :key="use.entry" class="flex min-w-0 items-center gap-2">
+                <span class="w-32 shrink-0 truncate font-mono text-12">{{ use.entry }}</span>
                 <UBadge :label="use.modCopy ? title : game?.name" />
               </span>
             </div>

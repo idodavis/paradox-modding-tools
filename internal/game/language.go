@@ -36,7 +36,7 @@ type Keyword struct {
 	Key    string
 	Games  []string // the games it holds for; none means every game
 	Holder string   // fits only in a block of this shape; "" means any
-	Shape  string   // what its block holds, a Shapes key; enclosing the holder's; "" means what the key's rule gives
+	Shape  string   // what its block holds, a Shapes key or "enclosing"; "" means what the key's rule gives
 	Caller string   // the word its calls resolve by; "" means the shape's own
 	Shows  string   // a description marker: which of its texts it shows, first, random or leaf
 	Class  string   // the operator class: logical, conditional, flow, display, saving, math, list; "" means none

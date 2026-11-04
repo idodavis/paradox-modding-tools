@@ -21,8 +21,8 @@ type Edit struct {
 
 // ApplyEdits returns the text with the edits applied. It panics if two edits overlap.
 func ApplyEdits(text string, edits []Edit) string {
-	edits = slices.SortedStableFunc(slices.Values(edits), func(a, b Edit) int {
-		return cmp.Or(cmp.Compare(a.Span.Start, b.Span.Start), cmp.Compare(a.Span.End, b.Span.End))
+	edits = slices.SortedStableFunc(slices.Values(edits), func(first, second Edit) int {
+		return cmp.Or(cmp.Compare(first.Span.Start, second.Span.Start), cmp.Compare(first.Span.End, second.Span.End))
 	})
 	var result strings.Builder
 	cursor := 0

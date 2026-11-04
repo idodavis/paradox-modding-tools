@@ -24,8 +24,7 @@ const CONTROLS = ["switch", "choice", "number", "text"] as const;
 // the settings the Appearance page draws apart: the theme as tiles, and the simple interface's switch above them
 const DRAWN_APART = ["appearance.theme", "appearance.simple"];
 
-// highlight is the key of the setting whose row is drawn in the highlight color; keys, when it lists any, limits the
-// rows to those settings
+// the key of the setting whose row is drawn in the highlight color, and the keys of the only settings shown, when any
 const { section, highlight = "", keys = [] } = defineProps<{ section: string; highlight?: string; keys?: string[] }>();
 
 const settings = useSettingsStore();

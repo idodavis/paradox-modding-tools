@@ -48,9 +48,9 @@ const fixDistance = 3
 // maxPrefix is how many characters of z or 0 a file's name may start with to load after or before the others.
 const maxPrefix = 8
 
-// Format returns the edits that format a file's text. It keeps the file's own indentation, or else indents with the
-// given tab size, in spaces if the flag is set. It returns no edits for a game file, a file that is not script or does
-// not parse, or one that would change in more than its spacing.
+// Format returns the edits that format a file's text. It keeps the file's own indentation, or else indents with a tab,
+// or with as many spaces as the given tab size if spaces are asked for. It returns no edits for a read-only file, a
+// file that is not script or does not parse, or one that would change in more than its spacing.
 func (lsp *Service) Format(path string, tabSize int, insertSpaces bool) ([]Edit, error) {
 	ws, tree, err := lsp.loadTree(path)
 	if err != nil {
@@ -212,7 +212,7 @@ func (lsp *Service) ListFixes(path string, diagnostics []Diagnostic) ([]Fix, err
 		case "missing-key":
 			title, edits = buildMissingFix(ws.Schema, walk(diagnostic), diagnostic)
 		case "misplaced-mode":
-			title, edits = "Remove mode", []Edit{{Range: diagnostic.Range, Text: ""}}
+			title, edits = "Remove mode", []Edit{{Range: diagnostic.Range}}
 		}
 		if len(edits) > 0 {
 			fixes = append(fixes, Fix{Title: title, Code: diagnostic.Code, Edits: map[string][]Edit{path: edits}})
@@ -228,8 +228,8 @@ func (lsp *Service) ListFixes(path string, diagnostics []Diagnostic) ([]Fix, err
 
 // buildKeysFix returns the fix that adds an empty message for each localization key the file uses but has no
 // base-language text for. The messages go in the localization file PMT makes for the file's mod, which the fix creates
-// first if it is missing or empty. The caret ends inside the first new quotes. It returns false for a game file, a mod
-// with no name, a game with no localization folder, or a file that lacks no text.
+// first if it is missing or empty. The caret ends inside the first new quotes. It returns false for a read-only file, a
+// mod with no name, a game with no localization folder, or a file that lacks no text.
 func (lsp *Service) buildKeysFix(
 	ws *workspace.Session, mods *index.Index, place workspace.Place, code string,
 ) (Fix, bool) {
@@ -265,13 +265,13 @@ func (lsp *Service) buildKeysFix(
 	return fix, true
 }
 
-// buildAppendFix returns the fix that adds text to the end of a file's text, and leaves the caret at the given offset
-// of the added text.
+// buildAppendFix returns the fix that adds text to the end of a file's text, and puts the editor's caret the given
+// number of characters into the added text.
 func buildAppendFix(ws *workspace.Session, mods *index.Index, target, source, addition string, caret int) Fix {
 	end := jomini.Span{Start: len(source), End: len(source)}
 	whole := source + addition
-	at := jomini.Span{Start: len(source) + caret, End: len(source) + caret}
-	reveal := ToRange(whole, jomini.NewLines(whole), at)
+	point := jomini.Span{Start: len(source) + caret, End: len(source) + caret}
+	reveal := ToRange(whole, jomini.NewLines(whole), point)
 	return Fix{
 		Edits:  map[string][]Edit{target: {{Range: ToRange(source, jomini.NewLines(source), end), Text: addition}}},
 		Reveal: &Site{Place: ws.Locate(mods, target), Line: reveal.StartLine, Range: reveal},
@@ -349,9 +349,9 @@ func (lsp *Service) DraftFile(folder string) (Draft, error) {
 	if database := ws.Schema.Databases[place.Database]; hasFolder(database) {
 		// the mod's own name for its files is its namespace, as the part before an event's dot is
 		namespace := buildNamespace(database, resolveModStem(mod), "")
-		name := path.Base(resolveEntryRel(mod, place.Rel, ""))
+		base := path.Base(resolveEntryRel(mod, place.Rel, ""))
 		return Draft{
-			Name: findFreeName(folder, name, path.Ext(name)),
+			Name: findFreeName(folder, base, path.Ext(base)),
 			Text: files.Text{Text: namespace, Encoding: files.EncodingUTF8},
 		}, nil
 	}
@@ -368,17 +368,17 @@ func (lsp *Service) DraftFile(folder string) (Draft, error) {
 
 // findFreeName returns a name for a new file in a folder that nothing in the folder has: the given name, else the name
 // numbered from 2 before the given ending, the part the game reads at the end of a name, such as _l_english.yml.
-func findFreeName(folder, name, ending string) string {
-	stem := strings.TrimSuffix(name, ending)
-	free := name
+func findFreeName(folder, base, ending string) string {
+	stem := strings.TrimSuffix(base, ending)
+	free := base
 	for count := 2; files.IsFile(files.Join(folder, free)) || files.IsFolder(files.Join(folder, free)); count++ {
 		free = stem + "_" + strconv.Itoa(count) + ending
 	}
 	return free
 }
 
-// findLanguage returns the localization language of a folder, given from a root, if the install has localization in
-// that language. It returns "" for a folder in no language folder, and for a language the install lacks.
+// findLanguage returns the localization language of a folder, given by its path from its root, if the install has
+// localization in it. It returns "" for a folder in no language folder, and for a language the install lacks.
 func (lsp *Service) findLanguage(folder string) string {
 	language := loc.FindFolderLanguage(folder + "/")
 	languages, _ := lsp.Workspace.ListLanguages(lsp.Workspace.State().Install.ID)
@@ -388,8 +388,8 @@ func (lsp *Service) findLanguage(folder string) string {
 	return ""
 }
 
-// findScriptExtension returns the script extension the game's files directly in a folder use, given from a root. It
-// returns .txt for a folder where they use none or more than one.
+// findScriptExtension returns the script extension the game's files directly in a folder use, the folder given by its
+// path from its root. It returns .txt for a folder where they use none or more than one.
 func findScriptExtension(ws *workspace.Session, folder string) string {
 	extensions := lo.Uniq(lo.FilterMap(ws.Install.Files, func(file files.File, _ int) (string, bool) {
 		extension := strings.ToLower(path.Ext(file.Rel))
@@ -413,8 +413,8 @@ func resolveEntryRel(mod workspace.Mod, folder, prefix string) string {
 func resolveModStem(mod workspace.Mod) string { return files.ToSlug(filepath.Base(mod.Dir)) }
 
 // buildNamespace returns the line that declares the namespace of an event with the given key, the key's part before
-// its dot, and a blank line after it, for a file that does not declare the namespace yet. It returns "" for a database
-// whose definitions are not events.
+// its dot, and a blank line after it. It returns "" if the given text of the file already declares the namespace, and
+// for a database whose definitions are not events.
 func buildNamespace(database *schema.Database, key, source string) string {
 	if database == nil || database.Row.Contents != game.ContentsEvents {
 		return ""
@@ -471,8 +471,8 @@ func (lsp *Service) BuildOverride(path string, line, column int, modID string) (
 		return Fix{}, fmt.Errorf("%s defines the %s %s already", ws.DescribeMod(mod.ID),
 			game.DescribeDefinition(definition.Database, false), definition.Name)
 	}
-	entry, side, rivals :=
-		tree.Text(tree.Statements[definition.Statement].Span), 0, listRivals(mods, sites, database.Precedence)
+	entry, side := tree.Text(tree.Statements[definition.Statement].Span), 0
+	rivals := listRivals(mods, sites, database.Precedence)
 	switch precedence := database.Precedence; {
 	case precedence.Modes != "":
 		entry, side = buildModeCopy(tree, definition, precedence), 1
@@ -527,8 +527,8 @@ func resolveOverrideFolder(
 	row *game.Game, mods *index.Index, place workspace.Place, database *schema.Database, rivals []index.Site, side int,
 ) string {
 	if side > 0 && len(rivals) > 0 {
-		last := slices.MaxFunc(rivals, func(a, b index.Site) int {
-			return index.CompareLoadOrder(stripStage(row, mods.File(a).Rel), stripStage(row, mods.File(b).Rel))
+		last := slices.MaxFunc(rivals, func(first, second index.Site) int {
+			return index.CompareLoadOrder(stripStage(row, mods.File(first).Rel), stripStage(row, mods.File(second).Rel))
 		})
 		return path.Dir(mods.File(last).Rel)
 	}
@@ -566,8 +566,8 @@ func (lsp *Service) findOverrideMod(place workspace.Place, modID string) (worksp
 
 // findPrefix returns the shortest prefix for a mod's file in a folder that makes the game load the file before every
 // one of the given rivals if the side is negative, or after every one if it is positive: a run of zeros or of z, then
-// an underscore. A file that loads so with no prefix gets "", and so does one that needs to load on no side. It
-// returns false if no prefix of up to maxPrefix characters does.
+// an underscore. A file that already loads so gets "", and so does a side of zero. It returns false if no prefix of up
+// to maxPrefix characters does.
 func findPrefix(
 	row *game.Game, mods *index.Index, mod workspace.Mod, folder string, side int, rivals []index.Site,
 ) (string, bool) {

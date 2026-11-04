@@ -1,7 +1,6 @@
 /**
- * The workspace store: the active workspace id, kept in local storage, why the last open failed, and the facts of the
- * open workspace that every page reads: whether it is open, each origin's name and color, which mods its compatibility
- * checks leave out, and a file's folder as lists show it. It also makes a workspace with its mods and opens it.
+ * The workspace store holds the active workspace's id, why the last open failed, and what every page reads of the open
+ * workspace: its mods and the names and colors of its origins. It also creates, opens and removes workspaces.
  */
 import { defineStore } from "pinia";
 import { useMutation, useQuery } from "@pinia/colada";
@@ -28,15 +27,15 @@ export const useWorkspaceStore = defineStore("workspace", () => {
   const router = useRouter();
   const { data: state } = useQuery(stateQuery);
   const { data: workspaces } = useQuery(workspacesQuery);
-  const { mutate } = useMutation({ mutation: (workspaceId: string) => workspace.Open(workspaceId) });
-  // writes a workspace's record whole, with the fields the caller changed
+  const { mutate: openWorkspace } = useMutation({ mutation: (workspaceId: string) => workspace.Open(workspaceId) });
+  // update writes a workspace's record whole, with the fields the caller changed
   const { mutate: update } = useMutation({ mutation: (record: Workspace) => workspace.UpdateWorkspace(record) });
+  // removing the active workspace leaves none active, and no other one opens
   const { mutate: deleteWorkspace } = useMutation({
     mutation: (record: Workspace) => workspace.DeleteWorkspace(record.id),
     onSuccess: (_, record) => {
       toast.add({ title: `${record.name} removed`, color: "success" });
-      const first = workspaces.value?.find((other) => other.record.id !== record.id);
-      if (first && id.value === record.id) open(first.record.id);
+      if (id.value === record.id) id.value = "";
     },
   });
 
@@ -101,7 +100,7 @@ export const useWorkspaceStore = defineStore("workspace", () => {
   /** open makes a workspace active and asks Go to open it. */
   function open(workspaceId: string): void {
     id.value = workspaceId;
-    mutate(workspaceId);
+    openWorkspace(workspaceId);
   }
 
   /**
@@ -140,7 +139,7 @@ export const useWorkspaceStore = defineStore("workspace", () => {
 
   /**
    * remove asks before the given workspace leaves PMT, then removes it. Its mod folders stay on disk. If it was the
-   * active one, the first workspace left becomes active. It returns whether the user confirmed.
+   * active one, no workspace is active afterwards. It returns whether the user confirmed.
    */
   async function remove(record: Workspace): Promise<boolean> {
     const confirmed = await confirm.open({

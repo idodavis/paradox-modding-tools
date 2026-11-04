@@ -90,9 +90,8 @@ func diagnoseFolders(tree *jomini.Tree, place workspace.Place) []Diagnostic {
 // problem. A step is also known if the judged index defines its name in one of game.GUI.StepDatabases, or if the game's
 // own text writes it after the same type.
 func (visitor *diagnoseVisitor) diagnoseCalls(tree *jomini.Tree, segments []loc.Segment, datacontext string) {
-	language := visitor.ws.Schema
 	for _, call := range loc.ListCalls(segments) {
-		step, before, ok := language.FindUnlisted(call, datacontext)
+		step, before, ok := visitor.ws.Schema.FindUnlisted(call, datacontext)
 		if !ok {
 			continue
 		}
@@ -101,7 +100,7 @@ func (visitor *diagnoseVisitor) diagnoseCalls(tree *jomini.Tree, segments []loc.
 		isDefined := func(database string) bool {
 			return len(visitor.index.Resolve(schema.Reference{Database: database, Name: name})) > 0
 		}
-		if saved || language.UnlistedCalls[before+"."+name] || lo.SomeBy(game.GUI.StepDatabases, isDefined) {
+		if saved || visitor.ws.Schema.UnlistedCalls[before+"."+name] || lo.SomeBy(game.GUI.StepDatabases, isDefined) {
 			continue
 		}
 		facts := DescribeReference(schema.Reference{Name: name})

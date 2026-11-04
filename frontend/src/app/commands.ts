@@ -630,9 +630,7 @@ function chooseMod(id: string, label: string, mods: string[], act: (modId: strin
   choicesBus.emit({ id, label, items });
 }
 
-/**
- * listCopyTargets lists the mods a file can be copied into: every mod PMT writes into but the file's own.
- */
+/** listCopyTargets lists the mods a file can be copied into: every mod PMT writes into but the file's own. */
 function listCopyTargets(place: Place): string[] {
   return useWorkspaceStore()
     .listWritableMods()
@@ -655,11 +653,11 @@ let overriding = false;
 /**
  * overrideEntry copies the entry at a position of a read-only file into a mod, saves and opens the copy, and says where
  * the copy went and what the game does with it. The copy goes into the mod with the given id, else into the only mod
- * the file can be copied into, else into the one the palette asks for. The given name is the entry's, or empty when it
- * is not known. It does nothing while another override is under way. The promise settles when the override is done or
- * refused; if the palette's question is closed unanswered, it stays unsettled.
+ * the file can be copied into, else into the one the palette asks for. The given text names the entry, or is empty
+ * when it is not known. It does nothing while another override is under way. The promise settles when the override is
+ * done or refused; if the palette's question is closed unanswered, it stays unsettled.
  */
-export function overrideEntry(place: Place, line: number, column: number, name: string, modId?: string): Promise<void> {
+export function overrideEntry(place: Place, line: number, column: number, text: string, modId?: string): Promise<void> {
   return new Promise((settle) => {
     chooseMod(
       "editor.override",
@@ -685,7 +683,7 @@ export function overrideEntry(place: Place, line: number, column: number, name: 
               precedenceQuery({ gameId, database: copy.database, folder: copy.folder }),
             );
             toast?.add({
-              title: `${name || "The entry"} copied into ${copy.rel}`,
+              title: `${text || "The entry"} copied into ${copy.rel}`,
               description: precedence,
               color: "success",
             });

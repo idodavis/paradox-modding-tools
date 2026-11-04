@@ -832,7 +832,7 @@ func ToPhrase(text string) string {
 	return words.String()
 }
 
-// DescribeStep returns one step of a data call in words, followed by its quoted arguments. If reaches is true, the
+// DescribeStep returns one step of a data call in words, followed by its quoted arguments. If the flag is set, the
 // getter word is dropped from the step's name. A step whose function takes a name, such as Custom('GetDaughterSon'),
 // reads as its last quoted argument instead, without the getter word: "daughter son".
 func DescribeStep(step jomini.Step, reaches bool) string {
@@ -926,8 +926,8 @@ func (field *Field) take(other Claims) {
 	field.Blurb.take(other.Blurb)
 }
 
-// walkField calls visit on each field below a field, with the field's key. It goes depth first, with each field's
-// children in key order.
+// walkField calls the given function on each field below a field, with the key it is written at. It goes depth first,
+// with each field's children in key order.
 func walkField(field *Field, visit func(key string, child *Field)) {
 	for _, key := range slices.Sorted(maps.Keys(field.Children)) {
 		child := field.Children[key]

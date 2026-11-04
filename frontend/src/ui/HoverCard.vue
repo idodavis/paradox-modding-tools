@@ -28,11 +28,11 @@ const { data: codes } = useQuery(codesQuery);
 const { data: levels } = useQuery(levelsQuery);
 const short = computed(() => settings.isHidden("hover.details"));
 
-// the label and text of what a problem costs, from its level, and what to do about it, from its code
+/** describeProblem returns the label and text of a problem's cost, from its level, and of its advice, from its code. */
 function describeProblem(problem: Diagnostic): [string, string][] {
   const all = [
-    ["What it costs", levels.value?.find((one) => one.id === problem.level)?.cost],
-    ["What to do", codes.value?.find((one) => one.id === problem.code)?.advice],
+    ["What it costs", levels.value?.find((level) => level.id === problem.level)?.cost],
+    ["What to do", codes.value?.find((code) => code.id === problem.code)?.advice],
   ];
   return all.filter((row): row is [string, string] => !!row[1]);
 }

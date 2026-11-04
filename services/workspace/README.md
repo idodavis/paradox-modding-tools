@@ -71,12 +71,11 @@ an option's triggered name holds (the events write `name = {` 3,071 times in CK3
 
 A `Place` is where one file sits in the workspace: the `files.File` as its root lists it, with its name, its folder, its
 root, its database, whether it is read only, where the index lists it (`Position`, Go's alone) and whether Visual
-draws it. The game's own
-files are read only. A GUI file is drawable, and so is a file or folder of the coats' database. Every answer that
-names a file carries a place, and the page renders its fields as they are. `Locate` makes one, and `ListCopies` lists
-the place of every copy of a file's path in load order, the game's first. A place can be of a folder too, which
-`IsDir` says: a folder's listing sets it for each entry, git's status for an ignored folder, and `Service.Locate` for
-the path it is given, each root `ListRoots` lists or a folder an agent names.
+draws it. The game's own files and a Workshop mod's are read only. A GUI file is drawable, and so is a file or folder
+of the coats' database. Every answer that names a file carries a place, and the page renders its fields as they are.
+`Locate` makes one, and `ListCopies` lists the place of every copy of a file's path in load order, the game's first. A
+place can be of a folder too, which `IsDir` says: a folder's listing sets it for each entry, git's status for an
+ignored folder, and `Service.Locate` for the path it is given, each root `ListRoots` lists or a folder an agent names.
 
 ## Files
 
@@ -115,7 +114,8 @@ A renamed folder is watched again from its first event.
 
 ## Mods and their descriptors
 
-A `Mod` is the config's record (`app.Mod`) with its `Descriptor`, its thumbnail, and whether it is broken. A
+A `Mod` is the config's record (`app.Mod`) with its `Descriptor`, its thumbnail, and whether it is broken or a Workshop
+mod's copy. A
 `Descriptor` is the mod's own description as its game writes it: CK3's `.mod` file, or Vic3's and EU5's
 `.metadata/metadata.json`, as the game's `ModDescriptor` row says. `ReadDescriptor` reads either form; metadata.json
 also gives each `Dependency` its title, its relationship's `display_name`, beside its id.

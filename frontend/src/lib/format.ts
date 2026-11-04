@@ -40,9 +40,9 @@ export function plural(count: number, noun: string, pluralNoun?: string): string
   return `${describeCount(count)} ${PLURALS.select(count) === "one" ? noun : (pluralNoun ?? `${noun}s`)}`;
 }
 
-/** toSentence returns words with a capital first letter, such as "Has landed titles". */
-export function toSentence(words: string): string {
-  return words.charAt(0).toUpperCase() + words.slice(1);
+/** toSentence returns a text with a capital first letter, such as "Has landed titles". */
+export function toSentence(text: string): string {
+  return text.charAt(0).toUpperCase() + text.slice(1);
 }
 
 /**

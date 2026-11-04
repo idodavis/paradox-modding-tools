@@ -16,7 +16,7 @@ and the walk reads directly. A schema is built once for each version of an insta
 | `vanilla.go` | the vanilla count, `CountVanilla`: the `counter` and its `holder`s that count what the game's own files write, and the claims the counts support (`resolveClaims`); the command patterns, the prefixes' databases, and how many places of a name are kept as examples (`ExampleCount`) |
 | `scripted.go` | the scripted definitions and the modifier types that files declare: the `declarer`, `parameterRe`; the mods' (`SetScripted`); a call's lookup through the game's and the mods'; the parameters a body writes (`ListParameters`) and those it saves names under; what a modifier type's name takes |
 | `definitions.go` | what a statement defines: a constant, a script definition named as its database's row says, an event of a declared namespace, a GUI declaration or window, a top block of an asset file, and a nested definition |
-| `walk.go` | the walk: `Category` and its constants, `Definition`, `Reference` with `ToID`, `Saved`, `Context` with `FindDeclaration`, `Visitor`; `Walk`, `WalkTo`; the `walker`, its `frame`s and the `match` a key fits by the rules of its block's shape; the scopes, the saved names and the aliases; the references a key and a value make |
+| `walk.go` | the walk: `Category` and its constants, `Definition`, `Reference` with `ToID`, `Saved`, `Context` with `FindDeclaration` and `HoldsArguments`, `Visitor`; `Walk`, `WalkTo`; the `walker`, its `frame`s and the `match` a key fits by the rules of its block's shape; the scopes, the saved names and the aliases; the references a key and a value make |
 | `shipped.go` | the shipped backup of each game's dumps, `LoadShipped`, embedded from `shipped/*.gob` |
 | `gen/main.go` | the program that writes `shipped/<game>.gob` from the dumps of an install that `PMT_TEST_INSTALL_<GAME>` names |
 
@@ -43,9 +43,8 @@ be: a `ValueTarget` is a link to the scope in `Expected.Scope`, or a name of `Ex
 
 A `Command` is one effect, trigger or link the dumps declare: what declares it, the scopes it runs in, the scope a link
 leads to, the keys it takes as a field, the key its parenthesized argument stands for (`ArgumentKey`), its blurb and
-usage and the places the game's own files write it. A link may be `Wild` (a pattern no
-written name matches) and `Bare` (written as its name alone, not only as `name:data`). The rest of the schema is the
-dumps' tables as they are: `Scopes`, `Saved`, `Modifiers`, `OnActions` and `DataTypes`, and the link `Prefixes` with
+usage and the places the game's own files write it. A link may be `Wild` (a pattern no written name matches) and `Bare`
+(written as its name alone, not only as `name:data`). The rest of the schema is the dumps' tables as they are: `Scopes`, `Saved`, `Modifiers`, `OnActions` and `DataTypes`, and the link `Prefixes` with
 the database each one's names are in. The databases add `TypeDatabases` and `InlineDatabases`, and the count and the
 declarers add `ModifierFields`, `CommandPatterns`, `ScriptedDefinitions`, `WidgetTypes` and `UnlistedCalls`.
 
@@ -149,9 +148,10 @@ field, but a block it opens is still a level of the example; written with prose 
 the actor` is, it is a note. That text states a blurb, a type by the words of `game.DocTypes`, a requirement, a
 default and choices. It states no scope: a list of scopes under a label is read as no field's text. A sample value such
 as `innovation_key` names the database of its words, by `ResolveTypeDatabase`, and the key `date` stands for a date
-key, as a dated history block's. The example's first block is the definition, but a definition named by its file is the whole file, so such a doc is read as already inside it. A
-definition whose block holds script, as a scripted effect's does, takes no field. A later doc only fills what an
-earlier one left out. A database of records, such as `history/titles`, gives no data type its words: "title" names a
+key, as a dated history block's. The example's first block is the definition, but a definition named by its file is the
+whole file, so such a doc is read as already inside it. A definition whose block holds script, as a scripted effect's
+does, takes no field. A later doc only fills what an earlier one left out. A database that gets a blurb from a doc keeps
+the doc's path from the install (`Database.Readme`). A database of records, such as `history/titles`, gives no data type its words: "title" names a
 landed title, not its history.
 
 ## The vanilla count

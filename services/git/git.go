@@ -59,7 +59,7 @@ var findGit = sync.OnceValues(func() (string, error) {
 	return path, nil
 })
 
-// IsInstalled reports whether git is on the PATH. It looks once a run.
+// IsInstalled reports whether git is on the PATH.
 func (git *Service) IsInstalled() bool {
 	_, err := findGit()
 	return err == nil

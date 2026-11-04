@@ -173,10 +173,10 @@ type Overview struct {
 	Judged []string `json:"judged"`
 }
 
-// Compared is the texts of two statements.
+// Compared is the texts of two statements, as the two sides of a compare.
 type Compared struct {
-	A string `json:"a"`
-	B string `json:"b"`
+	Left  string `json:"left"`
+	Right string `json:"right"`
 }
 
 // A Snippet is the code around one finding site.
@@ -372,12 +372,12 @@ func findOwner(finding Finding) string { return lo.FirstOr(finding.Mods, finding
 // order of their first finding. Its findings follow their checks, and within a check the heaviest come first.
 func makeGroup(mod string, findings, languages []Finding) Group {
 	checks := lo.PartitionBy(findings, func(finding Finding) [2]string { return [2]string{finding.Level, finding.Code} })
-	slices.SortStableFunc(checks, func(a, b []Finding) int {
-		levels := cmp.Compare(rankLevel(a[0].Level), rankLevel(b[0].Level))
-		return cmp.Or(levels, cmp.Compare(countFindings(b), countFindings(a)))
+	slices.SortStableFunc(checks, func(first, second []Finding) int {
+		levels := cmp.Compare(rankLevel(first[0].Level), rankLevel(second[0].Level))
+		return cmp.Or(levels, cmp.Compare(countFindings(second), countFindings(first)))
 	})
 	for _, check := range checks {
-		slices.SortStableFunc(check, func(a, b Finding) int { return cmp.Compare(weigh(b), weigh(a)) })
+		slices.SortStableFunc(check, func(first, second Finding) int { return cmp.Compare(weigh(second), weigh(first)) })
 	}
 	return Group{
 		Tally: makeTally(findings), Mod: mod, Findings: lo.Flatten(checks), Languages: lo.CoalesceSliceOrEmpty(languages),
@@ -460,17 +460,17 @@ func (hlt *Service) ListOverview() ([]Overview, error) {
 
 // CompareStatements returns the texts of the statements at two sites. It returns an error if a file cannot be read or
 // no statement starts at a site.
-func (hlt *Service) CompareStatements(a, b lsp.Site) (Compared, error) {
+func (hlt *Service) CompareStatements(left, right lsp.Site) (Compared, error) {
 	ws, err := hlt.Workspace.Session()
 	if err != nil {
 		return Compared{}, err
 	}
-	first, err := findStatementText(ws, a)
+	first, err := findStatementText(ws, left)
 	if err != nil {
 		return Compared{}, err
 	}
-	second, err := findStatementText(ws, b)
-	return Compared{A: first, B: second}, err
+	second, err := findStatementText(ws, right)
+	return Compared{Left: first, Right: second}, err
 }
 
 // ListSnippets returns the code at each finding site, at most ten lines of it: the lines of its range, or the statement
@@ -678,7 +678,7 @@ func listShippedPaths(ws *workspace.Session, mods *index.Index) []string {
 		groups[copies[0].Key] = true
 		paths = append(paths, file.Rel)
 	}
-	slices.SortFunc(paths, func(a, b string) int { return cmp.Compare(strings.ToLower(a), strings.ToLower(b)) })
+	slices.SortFunc(paths, func(first, second string) int { return cmp.Compare(strings.ToLower(first), strings.ToLower(second)) })
 	return paths
 }
 
@@ -784,7 +784,7 @@ func listRemovedUses(ws *workspace.Session, mods *index.Index, path string) []Us
 			uses = append(uses, Use{Name: reference.Name, Count: len(loaded), First: lsp.MakeSite(ws, mods, loaded[0])})
 		}
 	}
-	slices.SortStableFunc(uses, func(a, b Use) int { return cmp.Compare(b.Count, a.Count) })
+	slices.SortStableFunc(uses, func(first, second Use) int { return cmp.Compare(second.Count, first.Count) })
 	return uses
 }
 

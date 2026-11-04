@@ -337,6 +337,6 @@ func listPathChanges(base, mods *index.Index, paths []string) []Change {
 }
 
 // compareChanges orders two changes by database, then by name.
-func compareChanges(a, b Change) int {
-	return cmp.Or(cmp.Compare(a.Database, b.Database), cmp.Compare(a.Name, b.Name))
+func compareChanges(first, second Change) int {
+	return cmp.Or(cmp.Compare(first.Database, second.Database), cmp.Compare(first.Name, second.Name))
 }

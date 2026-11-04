@@ -101,10 +101,8 @@ func (winner Winner) IsKept(site Site) bool {
 	return winner.Site == site || slices.Contains(winner.Merged, site)
 }
 
-// ResolveSite reports whether the game keeps a copy of a winner's name, and why. If the winner is unsettled, no copy
-// is kept, and a copy in a file the game reads has the reason unsettled. A copy in a file the game does not read is
-// never kept: its reason is shadowed or dropped, and the third result is the origin of the mod that hides its file, as
-// FindHider gives it. A beaten copy in a file the game reads has no reason.
+// ResolveSite reports whether the game keeps a copy of a winner's name, why, and the mod that hides the copy's file if
+// the game does not read it. An unsettled winner keeps none.
 func (index *Index) ResolveSite(winner Winner, site Site) (bool, Reason, string) {
 	unsettled := winner.Reason == ReasonUnsettled
 	switch {
@@ -119,10 +117,8 @@ func (index *Index) ResolveSite(winner Winner, site Site) (bool, Reason, string)
 	return false, reason, hider
 }
 
-// FindHider returns why the game does not read a file and the origin of the mod that hides it. The reason is dropped
-// and the mod is the first whose replace_path names the file's folder, or shadowed and the mod is the one whose file at
-// the same path comes later in the load order. It returns "" and "" if the game reads the file, or the index lists no
-// such file for the game to read.
+// FindHider returns why the game does not read a file, dropped or shadowed, and the origin of the mod that hides it.
+// It returns "" and "" for a file nothing hides.
 func (index *Index) FindHider(file int32) (Reason, string) {
 	current := index.Files[file]
 	loaded, hidden, _ := index.FindLoaded(current.Rel)
@@ -167,8 +163,8 @@ func (index *Index) FindKeptLocal(schema *schema.Schema, reference schema.Refere
 	return index.findKept(schema, reference, func(site Site) bool { return site.File == file })
 }
 
-// findKept returns the definition the game keeps of a name in a database. A local definition counts only if isVisible
-// accepts its site.
+// findKept returns the definition the game keeps of a name in a database. A local definition counts only if the given
+// test accepts its site.
 func (index *Index) findKept(schema *schema.Schema, reference schema.Reference, isVisible func(Site) bool) (Winner, bool) {
 	database, ok := schema.Databases[reference.Database]
 	if !ok {
@@ -254,33 +250,33 @@ func (index *Index) IsLoaded(file int32) bool {
 // listLoadOrder returns sites in the order the game loads their definitions: by their files' load order, or by
 // their files' roots where the playset decides, and within one file as written.
 func (index *Index) listLoadOrder(sites []Site, byPlayset bool) []Site {
-	return slices.SortedStableFunc(slices.Values(sites), func(a, b Site) int {
-		first, second := index.placements[a.File], index.placements[b.File]
+	return slices.SortedStableFunc(slices.Values(sites), func(first, second Site) int {
+		firstPlacement, secondPlacement := index.placements[first.File], index.placements[second.File]
 		if byPlayset {
-			return cmp.Or(cmp.Compare(first.root, second.root), compareSites(a, b))
+			return cmp.Or(cmp.Compare(firstPlacement.root, secondPlacement.root), compareSites(first, second))
 		}
-		return cmp.Or(CompareLoadOrder(first.rest, second.rest), compareSites(a, b))
+		return cmp.Or(CompareLoadOrder(firstPlacement.rest, secondPlacement.rest), compareSites(first, second))
 	})
 }
 
 // CompareLoadOrder orders two relative paths the way the game loads files, a folder's files before its subfolders'. It
 // returns a negative number if the first path loads first, a positive one if it loads last, and 0 if they are equal.
-func CompareLoadOrder(a, b string) int {
+func CompareLoadOrder(first, second string) int {
 	for {
-		first, restA, moreA := strings.Cut(a, "/")
-		second, restB, moreB := strings.Cut(b, "/")
+		firstHead, firstRest, firstMore := strings.Cut(first, "/")
+		secondHead, secondRest, secondMore := strings.Cut(second, "/")
 		switch {
-		case moreA != moreB:
-			if moreA {
+		case firstMore != secondMore:
+			if firstMore {
 				return 1
 			}
 			return -1
-		case first != second:
-			return strings.Compare(first, second)
-		case !moreA:
+		case firstHead != secondHead:
+			return strings.Compare(firstHead, secondHead)
+		case !firstMore:
 			return 0
 		}
-		a, b = restA, restB
+		first, second = firstRest, secondRest
 	}
 }
 
@@ -319,7 +315,7 @@ func (index *Index) resolveModes(ordered []Site, precedence game.Precedence) (Wi
 	}
 	// the modes act after the plain copies, kind by kind, then in load order (the Vic3 and EU5 wikis' Mod
 	// compatibility, Processing order)
-	slices.SortStableFunc(modes, func(a, b Site) int { return cmp.Compare(rank(a), rank(b)) })
+	slices.SortStableFunc(modes, func(first, second Site) int { return cmp.Compare(rank(first), rank(second)) })
 	var winner Winner
 	defined, modeWins, hasAdding := len(plain) > 0, false, false
 	if defined {
@@ -358,7 +354,7 @@ func (index *Index) resolveModes(ordered []Site, precedence game.Precedence) (Wi
 // resolvePriority keeps the copy with the highest override priority. A tie is unsettled.
 func (index *Index) resolvePriority(ordered []Site, precedence game.Precedence) Winner {
 	priority := func(site Site) int16 { return index.Occurrence(site).Priority }
-	top := slices.MaxFunc(ordered, func(a, b Site) int { return cmp.Compare(priority(a), priority(b)) })
+	top := slices.MaxFunc(ordered, func(first, second Site) int { return cmp.Compare(priority(first), priority(second)) })
 	winner := Winner{Site: top, Reason: ReasonPriority}
 	if lo.CountBy(ordered, func(site Site) bool { return priority(site) == priority(top) }) > 1 {
 		winner.Reason, winner.Cause = ReasonUnsettled, CausePriority

@@ -331,8 +331,9 @@ func (mcp *Service) describePages() string {
 	return guide.String()
 }
 
-// describeWorkspace returns the guide's workspace topic: the open workspace's game and install, its mods in load
-// order with their folders, and the game's folders with what each holds. It returns an error if no workspace is open.
+// describeWorkspace returns the guide's workspace topic: the open workspace's game, install and language, whether the
+// user has guidance for new modders on, its mods in load order with their folders, and the game's folders with what
+// each holds. It returns an error if no workspace is open.
 func (mcp *Service) describeWorkspace() (string, error) {
 	ws, err := mcp.Workspace.Session()
 	if err != nil {
@@ -371,8 +372,8 @@ func (mcp *Service) describeRules() (string, error) {
 		sentence := database.Precedence.Describe()
 		folders[sentence] = append(folders[sentence], database.Row.Folder)
 	}
-	sentences := slices.SortedFunc(maps.Keys(folders), func(a, b string) int {
-		return cmp.Or(len(folders[b])-len(folders[a]), strings.Compare(a, b))
+	sentences := slices.SortedFunc(maps.Keys(folders), func(first, second string) int {
+		return cmp.Or(len(folders[second])-len(folders[first]), strings.Compare(first, second))
 	})
 	var guide strings.Builder
 	guide.WriteString("Which copy the game keeps when several definitions share a name, and the folders where it does so:\n")
@@ -387,7 +388,7 @@ func listFolderDatabases(ws *workspace.Session) []*schema.Database {
 	databases := lo.Filter(slices.Collect(maps.Values(ws.Schema.Databases)), func(database *schema.Database, _ int) bool {
 		return database.Row.Folder != ""
 	})
-	slices.SortFunc(databases, func(a, b *schema.Database) int { return strings.Compare(a.Row.Folder, b.Row.Folder) })
+	slices.SortFunc(databases, func(first, second *schema.Database) int { return strings.Compare(first.Row.Folder, second.Row.Folder) })
 	return databases
 }
 
@@ -441,8 +442,7 @@ func (mcp *Service) buildLexicon(filter lexiconFilter) ([]wiki.LexiconRow, error
 // searchText answers search_text: each file's hits, at most the request's limit in all. It stops when the agent
 // cancels the call.
 func (mcp *Service) searchText(ctx context.Context, _ *sdk.CallToolRequest, request textSearch) (
-	*sdk.CallToolResult, any, error,
-) {
+	*sdk.CallToolResult, any, error) {
 	ws, err := mcp.Workspace.Session()
 	if err != nil {
 		return nil, nil, err

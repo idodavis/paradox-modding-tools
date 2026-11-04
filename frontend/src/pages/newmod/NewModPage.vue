@@ -20,8 +20,8 @@ import HowModWorks from "../../ui/HowModWorks.vue";
 import StatusFacts from "../../ui/StatusFacts.vue";
 
 /**
- * GOALS holds what a modder may want to make, in the order the first screen lists them: its words, how many mod folders
- * it works on, whether it makes a new mod, and the page the workspace opens on.
+ * GOALS lists what a modder may want to make, in the order the first screen shows them. Each has its texts, how many
+ * existing mod folders it works on, whether it makes a new mod, and the page the workspace opens on.
  */
 const GOALS = [
   {
@@ -92,13 +92,13 @@ const { goal: routeGoal = "" } = defineProps<{ goal?: string }>();
 
 const settings = useSettingsStore();
 const store = useWorkspaceStore();
-const goalId = shallowRef<(typeof GOALS)[number]["id"]>(GOALS.find((one) => one.id === routeGoal)?.id ?? "add");
+const goalId = shallowRef<(typeof GOALS)[number]["id"]>(GOALS.find((goal) => goal.id === routeGoal)?.id ?? "add");
 const chosen = shallowRef(!!routeGoal);
 const gameId = shallowRef("");
 const installId = shallowRef("");
 // the folders of the existing mods, as many as the goal takes
 const folders = ref(["", ""]);
-const name = shallowRef("");
+const title = shallowRef("");
 const language = shallowRef<string>();
 const explaining = shallowRef(false);
 
@@ -108,12 +108,12 @@ const { data: parent } = useQuery(() => ({
   ...modFolderQuery({ installId: installId.value, dir: "", name: "" }),
   enabled: !!installId.value,
 }));
-// the folder the new mod's name makes, or why it cannot be made
+// the folder the new mod's title makes, or why it cannot be made
 const { data: modDir, error: nameError } = useQuery(() => ({
-  ...modFolderQuery({ installId: installId.value, dir: "", name: name.value.trim() }),
-  enabled: !!installId.value && !!name.value.trim(),
+  ...modFolderQuery({ installId: installId.value, dir: "", name: title.value.trim() }),
+  enabled: !!installId.value && !!title.value.trim(),
 }));
-// whether each picked folder can be a mod, which Go tells
+// whether each picked folder can be a mod, as Go checks it
 const checks = [0, 1].map((position) =>
   useQuery(() => ({
     ...modCheckQuery({ installId: installId.value, dir: folders.value[position] ?? "" }),
@@ -121,13 +121,13 @@ const checks = [0, 1].map((position) =>
   })),
 );
 
-const selected = computed(() => GOALS.find((one) => one.id === goalId.value) ?? GOALS[1]);
-const current = computed(() => games.value?.find((one) => one.id === gameId.value));
+const selected = computed(() => GOALS.find((goal) => goal.id === goalId.value) ?? GOALS[1]);
+const current = computed(() => games.value?.find((game) => game.id === gameId.value));
 const picked = computed(() => folders.value.slice(0, selected.value.existing));
 // the new mod, else the first folder picked, else the game's files
 const workspaceName = computed(
   () =>
-    (selected.value.makes ? name.value.trim() : "") ||
+    (selected.value.makes ? title.value.trim() : "") ||
     picked.value[0]?.split(/[\\/]/).findLast(Boolean) ||
     `${current.value?.name ?? "Game"} files`,
 );
@@ -137,15 +137,15 @@ const blocked = computed(
     picked.value.some((folder) => !folder) ||
     new Set(picked.value).size < picked.value.length ||
     checks.slice(0, selected.value.existing).some((check) => !!check.error.value) ||
-    (selected.value.makes && (!name.value.trim() || !!nameError.value)) ||
+    (selected.value.makes && (!title.value.trim() || !!nameError.value)) ||
     (selected.value.id === "translate" && !language.value),
 );
 
-// a game's install is the one PMT has recorded, else the first found on this computer, which is recorded now
+// picking a game takes its recorded install, else records the first install found on this computer
 const { mutate: pick } = useMutation({
-  mutation: async ({ game, recorded, found }: { game: Game; recorded?: Install; found?: DetectedInstall }) => {
+  mutation: async ({ game, recorded, local }: { game: Game; recorded?: Install; local?: DetectedInstall }) => {
     const install =
-      recorded ?? (found ? await workspace.AddInstall(game.id, found.path, found.name, found.version) : undefined);
+      recorded ?? (local ? await workspace.AddInstall(game.id, local.path, local.name, local.version) : undefined);
     return { gameId: game.id, installId: install?.id ?? "" };
   },
   onSuccess: (choice) => {
@@ -160,7 +160,7 @@ const { mutate: make, isLoading: making } = useMutation({
       { name: workspaceName.value, install: installId.value, language: language.value ?? "" },
       [
         ...picked.value.map((dir) => ({ dir, title: "" })),
-        ...(selected.value.makes ? [{ title: name.value.trim() }] : []),
+        ...(selected.value.makes ? [{ title: title.value.trim() }] : []),
       ],
       selected.value.opens,
     ),
@@ -229,7 +229,7 @@ const { mutate: make, isLoading: making } = useMutation({
         <div class="flex flex-col gap-2.5">
           <h2 class="text-16">Which game is it for?</h2>
           <div class="grid grid-cols-3 gap-2.5">
-            <GameInstalls v-for="game in games ?? []" v-slot="{ recorded, detected }" :key="game.id" :game="game.id">
+            <GameInstalls v-for="game in games ?? []" v-slot="{ recorded, detected }" :key="game.id" :game-id="game.id">
               <button
                 type="button"
                 class="flex items-center gap-2.5 rounded-md border bg-muted p-3 text-start disabled:cursor-not-allowed disabled:opacity-60"
@@ -239,7 +239,7 @@ const { mutate: make, isLoading: making } = useMutation({
                     : 'border-default enabled:hover:border-accented'
                 "
                 :disabled="!recorded.length && !detected.length"
-                @click="pick({ game, recorded: recorded[0], found: detected[0] })"
+                @click="pick({ game, recorded: recorded[0], local: detected[0] })"
               >
                 <img :src="gameIcon(game.id)" :alt="game.name" class="size-7 rounded-sm object-contain" />
                 <span class="flex min-w-0 flex-col gap-px">
@@ -270,7 +270,7 @@ const { mutate: make, isLoading: making } = useMutation({
 
           <div v-if="selected.makes" class="grid grid-cols-2 gap-5">
             <UFormField label="Mod name" help="Shown in the game's launcher and on the Workshop.">
-              <UInput v-model="name" class="w-full" autofocus />
+              <UInput v-model="title" class="w-full" autofocus />
             </UFormField>
             <UFormField
               :label="selected.id === 'translate' ? 'Language of the translation' : 'Language'"
@@ -325,7 +325,7 @@ const { mutate: make, isLoading: making } = useMutation({
         </div>
       </form>
 
-      <HowModWorks v-model:open="explaining" :game-id="gameId" :mod-name="name" />
+      <HowModWorks v-model:open="explaining" :game-id="gameId" :mod-title="title" />
     </div>
 
     <StatusFacts :facts="[{ label: 'Making a mod for', value: current?.name ?? '' }]" />

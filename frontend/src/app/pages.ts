@@ -56,7 +56,7 @@ export const PAGES = {
     help: [
       "A workspace is one game install plus the mods you load with it. The active one is at the top; open another's card to make it active.",
       "Remove from PMT, in a workspace's menu, takes it out of PMT. Mod folders on disk stay.",
-      "New mod opens Make a new mod, or adds a mod to the open workspace. New workspace starts the setup. Launch starts the game with its debug flag. When the game closes, a message says what your mods logged, and offers to scan the install again if the game wrote fresher documentation.",
+      "New mod opens Make a new mod, or adds a mod to the open workspace. New workspace starts the setup. Launch, in a workspace's menu, on the IDE's start page and in Settings under Game install, starts the game with its debug flag. When the game closes, a message says what your mods logged, and offers to scan the install again if the game wrote fresher documentation.",
       "Reset all PMT data, in the status bar, removes every workspace, install record and cache. Mods, game files and your settings stay.",
     ],
   },

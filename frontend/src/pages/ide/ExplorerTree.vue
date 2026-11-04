@@ -61,17 +61,18 @@ const GIT_MARKS: Record<string, GitStatus> = {
 };
 /** SYMBOLS maps each file icon to its symbol id in the tree's sprite. */
 const SYMBOLS = new Map(listIcons().map((icon, index) => [icon, `pmt-${index}`]));
+/** SPRITE is the SVG sheet of the file icons, one symbol for each. */
 const SPRITE = `<svg xmlns="http://www.w3.org/2000/svg" width="0" height="0" style="position: absolute">${[...SYMBOLS]
   .map(
     ([icon, id]) =>
       `<symbol id="${id}" viewBox="0 0 800 800"><image href="${icon}" width="800" height="800"/></symbol>`,
   )
   .join("")}</svg>`;
-/** FILTER_HITS is how many files the filter asks the file search for. It lists mod files before the game's. */
+/** FILTER_HITS is how many files the filter asks the file search for. The search lists mod files before the game's. */
 const FILTER_HITS = 500;
-/** How long the pointer rests on a folder before its card shows, in milliseconds. */
+/** CARD_DELAY is how long the pointer rests on a folder before its card shows, in milliseconds. */
 const CARD_DELAY = 400;
-/** Where a folder's card sits: beside the folder's row, with the focus left where it was. */
+/** CARD_CONTENT places a folder's card beside the folder's row and leaves the keyboard focus where it was. */
 const CARD_CONTENT: PopoverProps["content"] = {
   side: "right",
   sideOffset: 6,
@@ -79,9 +80,11 @@ const CARD_CONTENT: PopoverProps["content"] = {
   onOpenAutoFocus: (event) => event.preventDefault(),
   onCloseAutoFocus: (event) => event.preventDefault(),
 };
+/** MENU_CONTENT is the context menu's content options. It is one object so a card showing does not render the menu. */
+const MENU_CONTENT = { onCloseAutoFocus: resume };
 
-/** A Move is a rename or a move done in the explorer. */
-type Move = { from: string; to: string };
+/** A Move is one rename or move done in the explorer, with the path on disk before it and the path after it. */
+type Move = { oldPath: string; newPath: string };
 
 const editor = useEditorStore();
 const git = useGitStore();
@@ -106,14 +109,17 @@ const ignoredSheet = new CSSStyleSheet();
 // in Visual, the files it cannot draw are dimmed too
 const undrawableSheet = new CSSStyleSheet();
 const history = { done: [] as Move[], undone: [] as Move[] };
-let afterClose: (() => void) | undefined;
+// what a menu item chose to do, run once the menu has closed and released the keyboard
+let deferred: (() => void) | undefined;
 // the folder whose card shows, with the rectangle of its row; the card stays while the pointer is on it
 const {
   card: folderCard,
   close: closeHeldCard,
   closeLater: closeCardLater,
+  keep: keepCard,
   hold: holdCard,
 } = useHeldCard<{ place: Place; anchor: DOMRect }>();
+// the card is placed against the rectangle its folder's row had when the card came up
 const cardAnchor = { getBoundingClientRect: () => folderCard.value?.anchor ?? new DOMRect() };
 // the row the pointer rests on
 let restingRow = "";
@@ -152,7 +158,7 @@ const shape = computed(() =>
     settings.isOn("ide.stickyFolders"),
     settings.isOn("ide.rootColors"),
     settings.value("ide.density"),
-    workspaces.value?.find((row) => row.record.id === workspace.activeId())?.record.showBinaries,
+    workspaces.value?.find((entry) => entry.record.id === workspace.activeId())?.record.showBinaries,
   ].join("\n"),
 );
 
@@ -211,12 +217,12 @@ function mount(): void {
         rename({ source: rowOf(sourcePath, isFolder), destination: rowOf(destinationPath, isFolder) }),
     },
     dragAndDrop: writable.value && {
-      canDrop: ({ target: drop }) => drop.kind === "directory" && isWritable(drop.directoryPath ?? ""),
-      onDropComplete: ({ draggedPaths, target: drop }) => {
+      canDrop: ({ target }) => target.kind === "directory" && isWritable(target.directoryPath ?? ""),
+      onDropComplete: ({ draggedPaths, target }) => {
         for (const path of draggedPaths)
           rename({
             source: path,
-            destination: `${drop.directoryPath}${takeName(path)}${path.endsWith("/") ? "/" : ""}`,
+            destination: `${target.directoryPath}${takeName(path)}${path.endsWith("/") ? "/" : ""}`,
           });
       },
     },
@@ -243,7 +249,7 @@ function buildStyles(): string {
     .join("\n");
 }
 
-/** rootIndex returns the index of the root a row is under. */
+/** rootIndex returns the index of the root a row is under, or -1 for a row under none. */
 const rootIndex = (row: string) => labels.value.indexOf(row.slice(0, row.indexOf("/")));
 /** isRoot reports whether a row is a root's own row. */
 const isRoot = (row: string) => row.indexOf("/") === row.length - 1;
@@ -297,37 +303,39 @@ function loadExpanded(): void {
  * its parent's listing removes its row.
  */
 async function load(row: string): Promise<void> {
-  const children = await loadQuery(folderQuery(findPath(row))).then(
-    (listed) => listed ?? [],
-    () => undefined,
-  );
-  if (children) apply(row, children);
+  let children: Place[];
+  try {
+    children = (await loadQuery(folderQuery(findPath(row)))) ?? [];
+  } catch {
+    return;
+  }
+  apply(row, children);
 }
 
 /** apply makes a folder row hold the listed rows, adding the new ones and removing those that are gone. */
 function apply(row: string, children: Place[]): void {
-  const next = new Set<string>();
+  const listing = new Set<string>();
   for (const child of children) {
     const path = `${row}${child.name}${child.isDir ? "/" : ""}`;
-    next.add(path);
+    listing.add(path);
     places.set(path, child);
     if (!child.isDir) icons[child.name] = { name: SYMBOLS.get(findIcon(child)) ?? "", viewBox: "0 0 800 800" };
   }
   const tree = view.value;
-  const gone = [...(members.get(row) ?? [])].filter((path) => !next.has(path) && tree?.getItem(path));
-  const added = [...next].filter((path) => !tree?.getItem(path));
+  const removed = [...(members.get(row) ?? [])].filter((path) => !listing.has(path) && tree?.getItem(path));
+  const added = [...listing].filter((path) => !tree?.getItem(path));
   tree?.batch([
-    ...gone.map((path) => ({ type: "remove" as const, path, recursive: true })),
+    ...removed.map((path) => ({ type: "remove" as const, path, recursive: true })),
     ...added.map((path) => ({ type: "add" as const, path })),
   ]);
   tree?.setIcons({ set: "none", spriteSheet: SPRITE, byFileName: icons });
-  members.set(row, next);
+  members.set(row, listing);
   dimUndrawable();
 }
 
 /** forget drops a row and the rows under it from places and members, after the tree moved or removed them. */
 function forget(row: string): void {
-  for (const map of [places, members]) for (const path of [...map.keys()]) if (path.startsWith(row)) map.delete(path);
+  for (const map of [places, members]) for (const path of map.keys()) if (path.startsWith(row)) map.delete(path);
 }
 
 // the listed folder rows to list again once changes pause
@@ -340,8 +348,10 @@ const refresh = useDebounceFn(() => {
 
 /** changed queues the listed folders that hold a changed path to be listed again. */
 function changed(change: FileChange): void {
-  // "\0" stands in for a row with no path, so that it matches no change
-  for (const row of members.keys()) if (change.path.startsWith(findPath(row) || "\0")) pending.add(row);
+  for (const row of members.keys()) {
+    const dir = findPath(row);
+    if (dir && change.path.startsWith(dir)) pending.add(row);
+  }
   void refresh();
 }
 
@@ -473,8 +483,11 @@ function collapseAll(): void {
 // the tree has moved the row already; a move Go refuses puts it back
 const { mutate: rename } = useMutation({
   mutation: async ({ source, destination }: { source: string; destination: string }): Promise<Move> => {
-    const move = { from: findPath(source), to: `${findPath(findParent(destination))}/${takeName(destination)}` };
-    await editor.rename(move.from, move.to);
+    const move = {
+      oldPath: findPath(source),
+      newPath: `${findPath(findParent(destination))}/${takeName(destination)}`,
+    };
+    await editor.rename(move.oldPath, move.newPath);
     return move;
   },
   onSuccess: (move, { source }) => {
@@ -488,11 +501,12 @@ const { mutate: rename } = useMutation({
 });
 
 const { mutate: replay } = useMutation({
-  mutation: async (back: boolean) => {
-    const move = (back ? history.done : history.undone).pop();
+  mutation: async (isUndo: boolean) => {
+    const [stack, opposite] = isUndo ? [history.done, history.undone] : [history.undone, history.done];
+    const move = stack.pop();
     if (!move) return;
-    await (back ? editor.rename(move.to, move.from) : editor.rename(move.from, move.to));
-    (back ? history.undone : history.done).push(move);
+    await (isUndo ? editor.rename(move.newPath, move.oldPath) : editor.rename(move.oldPath, move.newPath));
+    opposite.push(move);
   },
 });
 
@@ -511,9 +525,8 @@ function step(event: KeyboardEvent): void {
 }
 
 /**
- * create makes a new file or folder in a folder row and asks for its name in the tree. The file's name and first text
- * are Go's: named for the mod and the folder in a folder of a database, for the mod and the language in a localization
- * folder, and new_file in any other folder.
+ * create makes a new file or folder in a folder row and asks for its name in the tree. A new file's name and first text
+ * come from Go, which knows the folder. A new folder is numbered when its name is taken.
  */
 const { mutate: create } = useMutation({
   mutation: async ({ folder, dir }: { folder: string; dir: boolean }) => {
@@ -521,9 +534,8 @@ const { mutate: create } = useMutation({
     const draft = dir ? undefined : await lsp.DraftFile(findPath(folder));
     const occupied = (label: string) =>
       view.value?.getItem(`${folder}${label}`) ?? view.value?.getItem(`${folder}${label}/`);
-    // Go names a file with a name the folder does not have; a new folder takes the first free number
     let label = draft?.name ?? "new_folder";
-    for (let count = 2; dir && occupied(label); count++) label = `new_folder_${count}`;
+    if (dir) for (let count = 2; occupied(label); count++) label = `new_folder_${count}`;
     const row = `${folder}${label}${dir ? "/" : ""}`;
     const path = `${findPath(folder)}/${label}`;
     await service.Create(path, dir);
@@ -547,7 +559,7 @@ const { mutate: create } = useMutation({
 
 /**
  * remove moves a row to PMT's trash once the user agrees, and offers to bring it back. A mod's root leaves the
- * workspace. A row made a moment ago and left unnamed goes without a question.
+ * workspace. A new row that never got a name is deleted without a question.
  */
 const { mutate: remove } = useMutation({
   mutation: async (row: string) => {
@@ -568,9 +580,9 @@ const { mutate: remove } = useMutation({
 // what each command of the command table does in the context menu: `run` acts on the clicked row, `writes` marks it as
 // changing files, and `shows`, where present, limits it to some rows
 const ACTIONS: Record<string, { writes: boolean; shows?: (row: string) => boolean; run: (row: string) => void }> = {
-  "file.new": { writes: true, run: (row) => (afterClose = () => create({ folder: findFolder(row), dir: false })) },
-  "file.newFolder": { writes: true, run: (row) => (afterClose = () => create({ folder: findFolder(row), dir: true })) },
-  "file.rename": { writes: true, run: (row) => (afterClose = () => view.value?.startRenaming(row)) },
+  "file.new": { writes: true, run: (row) => (deferred = () => create({ folder: findFolder(row), dir: false })) },
+  "file.newFolder": { writes: true, run: (row) => (deferred = () => create({ folder: findFolder(row), dir: true })) },
+  "file.rename": { writes: true, run: (row) => (deferred = () => view.value?.startRenaming(row)) },
   "file.delete": { writes: true, run: (row) => remove(row) },
   "file.copyPath": { writes: false, run: (row) => void Clipboard.SetText(findPath(row)) },
   "file.reveal": { writes: false, run: (row) => void app.ShowFolder(findPath(row)) },
@@ -694,14 +706,22 @@ const showCard = useDebounceFn((row: string, anchor: DOMRect) => {
   if (restingRow === row && place) folderCard.value = { place, anchor };
 }, CARD_DELAY);
 
-/** rest follows the pointer over the tree: a folder of a database gets its card, and any other row takes it down. */
+/**
+ * rest follows the pointer over the tree: a folder of a database gets its card, and any other row takes it down. The
+ * pointer coming back to the folder whose card is up keeps the card.
+ */
 function rest(event: MouseEvent): void {
   const element = findRowElement(event);
   const row = element?.dataset.itemPath ?? "";
   if (row === restingRow) return;
   restingRow = row;
+  const place = places.get(row);
+  if (place && place.key === folderCard.value?.place.key) {
+    keepCard();
+    return;
+  }
   closeCardLater();
-  if (element && row.endsWith("/") && places.get(row)?.database) void showCard(row, element.getBoundingClientRect());
+  if (element && place?.database && row.endsWith("/")) void showCard(row, element.getBoundingClientRect());
 }
 
 /** leaveTree takes the card down after a moment once the pointer is out of the tree. */
@@ -716,12 +736,12 @@ function closeCard(): void {
   restingRow = "";
 }
 
-/** resume runs the action the menu deferred in afterClose, now that the menu has closed and released the keyboard. */
+/** resume runs the action the menu deferred, now that the menu has closed and released the keyboard. */
 function resume(event: Event): void {
-  if (!afterClose) return;
+  if (!deferred) return;
   event.preventDefault();
-  afterClose();
-  afterClose = undefined;
+  deferred();
+  deferred = undefined;
 }
 </script>
 
@@ -731,7 +751,7 @@ function resume(event: Event): void {
       <UInput v-model="filter" placeholder="Filter files" icon="i-lucide-search" size="xs" autofocus class="w-full" />
     </div>
     <!-- the menu's trigger takes its child's ref, so the tree's element sits inside the wrapper div -->
-    <UContextMenu :items="menu" :content="{ onCloseAutoFocus: resume }">
+    <UContextMenu :items="menu" :content="MENU_CONTENT">
       <div class="flex min-h-0 flex-1 flex-col">
         <div
           ref="host"

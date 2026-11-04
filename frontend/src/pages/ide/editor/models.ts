@@ -43,9 +43,9 @@ const SEVERITIES: Record<string, monaco.MarkerSeverity> = {
 };
 
 const models = shallowReactive(new Map<string, Model>());
-/** The loads under way, by file key. */
+/** opening holds the loads under way, by file key. */
 const opening = new Map<string, Promise<Model>>();
-/** The keys closed while their model was loading. */
+/** doomed holds the keys closed while their model was loading. */
 const doomed = new Set<string>();
 
 /** setupModels keeps the models in step with the workspace and the settings. */
@@ -258,7 +258,7 @@ export async function applyChange(path: string): Promise<void> {
   else setText(model, file.text);
 }
 
-/** setText replaces a model's text with text from disk, as one undoable edit. The model is then saved. */
+/** setText replaces a model's text with text from disk, as one undoable edit. The model then counts as saved. */
 export function setText(model: Model, text: Text): void {
   applyEdits(model, [{ range: model.model.getFullModelRange(), text: text.text }]);
   model.encoding = text.encoding;

@@ -92,7 +92,7 @@ export function findBoxes(coat: Coat, size: number): Map<number, DOMRect[]> {
   );
 }
 
-/** recolor recolors a texture's pixels as the shader does: from the first color toward each other by its channel. */
+/** recolor recolors pixels as the shader does: the first color blends toward each other color by its channel. */
 export function recolor(pixels: ImageData, channels: readonly string[], colors: readonly string[]): ImageData {
   const [start, ...targets] = colors.map(toRgba);
   const result = new ImageData(pixels.width, pixels.height);

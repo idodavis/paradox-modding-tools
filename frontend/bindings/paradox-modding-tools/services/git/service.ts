@@ -49,7 +49,7 @@ export function FindRepository(dir: string): $CancellablePromise<[string, boolea
 }
 
 /**
- * IsInstalled reports whether git is on the PATH. It looks once a run.
+ * IsInstalled reports whether git is on the PATH.
  */
 export function IsInstalled(): $CancellablePromise<boolean> {
     return $Call.ByID(3286040172);

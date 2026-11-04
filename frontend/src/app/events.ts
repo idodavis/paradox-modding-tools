@@ -57,11 +57,11 @@ const EVENTS: { [E in keyof Events.CustomEvents]?: EventRow<E> } = {
         .getEntries({ key: keys.gits })
         .filter((entry) => isGitStatus(entry.key))
         .map((entry) => entry.key),
-      keys.leftOff,
+      keys.repositoryWork,
     ],
   },
   // what the start page reads of the repositories is made stale last, after the reads it is made of
-  "git:changed": { stale: (dir) => [keys.git(dir), keys.leftOff] },
+  "git:changed": { stale: (dir) => [keys.git(dir), keys.repositoryWork] },
   "release:changed": { stale: (modId) => [keys.release(modId), keys.ownListings] },
   "wiki:updated": { stale: () => [keys.wiki] },
   "errorlog:changed": { stale: () => [errorLogQuery.key] },

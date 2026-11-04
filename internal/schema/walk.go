@@ -508,8 +508,8 @@ func findShape(context *Context) string {
 	return cmp.Or(context.Shape, game.ShapeUnknown)
 }
 
-// findEnclosing returns the shape of the block that a link or an enclosing keyword gives, written in the block of a
-// context. It is the shape its holder's shape says, else the holder's own.
+// findEnclosing returns the shape of the block that a link or an "enclosing" keyword written in the block of a context
+// holds. It is the Encloses of the context's shape, else the context's own shape.
 func findEnclosing(context *Context) string {
 	return cmp.Or(game.Shapes[findShape(context)].Encloses, findShape(context))
 }

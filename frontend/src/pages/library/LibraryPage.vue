@@ -52,7 +52,7 @@ const rows = computed(() =>
       active: row.record.id === store.activeId(),
       line: row.install.id ? installLine(row.install.name, row.install.version, row.install.scannedAt) : "",
     }))
-    .sort((a, b) => Number(b.active) - Number(a.active)),
+    .sort((first, second) => Number(second.active) - Number(first.active)),
 );
 const active = computed(() => rows.value.find((row) => row.active));
 const groups = computed(() =>
@@ -181,7 +181,7 @@ function describeMenu(record: Workspace, leading: DropdownMenuItem[]): DropdownM
             </span>
           </div>
           <div class="flex flex-col divide-y divide-default rounded-lg border border-default bg-muted">
-            <GameInstalls v-for="game in games" v-slot="{ recorded, detected }" :key="game.id" :game="game.id">
+            <GameInstalls v-for="game in games" v-slot="{ recorded, detected }" :key="game.id" :game-id="game.id">
               <div
                 v-for="install in [...recorded, ...detected]"
                 :key="install.path"

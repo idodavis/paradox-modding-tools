@@ -218,9 +218,7 @@ func TestSetTextAnswersWithProblemsUntilFileCloses(t *testing.T) {
 	if card, err := ide.Hover(target, 3, 3); err != nil || card == nil || card.Title != "diplomacy" || card.What != "field" {
 		t.Errorf("Hover over the open text: %+v, %v", card, err)
 	}
-	if err := ide.CloseFile(target); err != nil {
-		t.Fatal(err)
-	}
+	ide.CloseFile(target)
 	if diagnostics, err = ide.Diagnose(target); err != nil || len(diagnostics) != 0 {
 		t.Errorf("the closed file's own text: %+v, %v", diagnostics, err)
 	}

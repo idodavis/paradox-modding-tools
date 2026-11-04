@@ -18,11 +18,10 @@ as a string.
 ## Running git
 
 git is found on the PATH on the first call, and kept. `run` runs it in a folder and returns its standard output, on a
-failure too. Each
-line of standard error is sent as a `git:output` event as it arrives, and a nonzero exit is an error that carries the
-text of standard error. A missing git is an error too. `FindRepository` gives the root of the repository that holds a
-folder; `Discard`, `Merge`, `Pull`, `DeleteBranch`, `ReadStatus`, `ListRemotes` and `ListCommitFiles` take that root,
-the others any folder of the repository.
+failure too. Each line of standard error is sent as a `git:output` event as it arrives, and a nonzero exit is an error
+that carries the text of standard error. A missing git is an error too; `IsInstalled` reports whether it is there.
+`FindRepository` gives the root of the repository that holds a folder; `Discard`, `Merge`, `Pull`, `DeleteBranch`,
+`ReadStatus`, `ListRemotes` and `ListCommitFiles` take that root, the others any folder of the repository.
 
 `Run` is the one the frontend calls for every command it names (staging, a commit, a branch, a pull, a push, a
 checkout): it calls `run` and then emits `git:changed` with the folder, so what shows a repository's state reads it

@@ -22,7 +22,7 @@ import OriginChip from "../../ui/OriginChip.vue";
 
 const { root, mods } = defineProps<{ root: string; mods: string[] }>();
 
-/** A Mode is what the branch menu lists. */
+/** A Mode is which list the branch menu shows. */
 type Mode = "main" | "name" | "start" | "tag" | "pull" | "merge" | "delete";
 /** A Section is a list of changed files with the buttons that act on all of them. */
 type Section = {
@@ -121,12 +121,16 @@ const canCommit = computed(() => !!message.value.trim() && stagedCount.value > 0
 
 const current = computed(() => status.value?.branch || "HEAD");
 const local = computed(() => (refs.value ?? []).filter((ref) => ref.type === "branch"));
-const remotes = computed(() => (refs.value ?? []).filter((ref) => ref.type === "remote"));
+const remoteBranches = computed(() => (refs.value ?? []).filter((ref) => ref.type === "remote"));
 
 const { mutate: run } = useMutation({
   mutation: (work: () => Promise<unknown>) => work(),
 });
-const { mutate: listRemotes, data: remoteList } = useMutation({ mutation: () => gitApi.ListRemotes(root) });
+const {
+  mutate: listRemotes,
+  mutateAsync: listRemotesAsync,
+  data: remoteList,
+} = useMutation({ mutation: () => gitApi.ListRemotes(root) });
 const { mutate: commit } = useMutation({
   mutation: async ({ amend = false, push = false }: { amend?: boolean; push?: boolean }) => {
     if (amend) await gitApi.Run(root, "commit", "--amend", "-m", message.value);
@@ -178,10 +182,10 @@ const footer = computed(() => {
   ] as const;
 });
 const picks = computed(() => {
-  const all = [...local.value, ...remotes.value];
+  const all = [...local.value, ...remoteBranches.value];
   return {
     start: { label: "Make the new branch from", refs: all, pick: (ref: string) => show("name", ref) },
-    pull: { label: "Pull from", refs: remotes.value, pick: (ref: string) => act(() => gitApi.Pull(root, ref)) },
+    pull: { label: "Pull from", refs: remoteBranches.value, pick: (ref: string) => act(() => gitApi.Pull(root, ref)) },
     merge: {
       label: `Merge into ${current.value}`,
       refs: all.filter((ref) => !ref.current),
@@ -214,8 +218,8 @@ const groups = computed<CommandPaletteGroup[]>(() => {
  */
 function buildCreateItems(typed: string, start: string): CommandPaletteItem[] {
   if (!typed || local.value.some((ref) => ref.name === typed)) return [];
-  const make = () => gitApi.Run(root, "switch", "-c", typed, start);
-  return [{ label: `Create branch ${typed} from ${start}`, icon: "i-lucide-plus", onSelect: () => act(make) }];
+  const create = () => gitApi.Run(root, "switch", "-c", typed, start);
+  return [{ label: `Create branch ${typed} from ${start}`, icon: "i-lucide-plus", onSelect: () => act(create) }];
 }
 
 /**
@@ -247,7 +251,7 @@ function buildMainGroups(typed: string): CommandPaletteGroup[] {
     {
       id: "remote",
       label: "Remote branches",
-      items: remotes.value.map((ref) => ({
+      items: remoteBranches.value.map((ref) => ({
         label: ref.name,
         icon: "i-lucide-cloud",
         suffix: describeBranch(ref),
@@ -311,7 +315,7 @@ function act(work: () => Promise<unknown>): void {
   run(work);
 }
 
-/** show switches the branch menu to the given mode and clears its search. The start is the base of a new branch. */
+/** show switches the branch menu to the given mode and clears its search. It keeps the branch a new one starts from. */
 function show(next: Mode, start = ""): void {
   mode.value = next;
   base.value = start;
@@ -366,23 +370,27 @@ function discard(files: Change[]): void {
  */
 function sync(): void {
   run(async () => {
-    const existing = (await gitApi.ListRemotes(root))?.[0]?.label;
-    if (!existing) remotesOpen.value = true;
+    const label = (await gitApi.ListRemotes(root))?.[0]?.label;
+    if (!label) remotesOpen.value = true;
     else if (status.value?.upstream) {
       await gitApi.Run(root, "pull");
       await gitApi.Run(root, "push");
-    } else await gitApi.Run(root, "push", "-u", existing, status.value?.branch ?? "");
+    } else await gitApi.Run(root, "push", "-u", label, status.value?.branch ?? "");
   });
 }
 
-/** saveRemote adds a remote, or changes the address of one with the same label, and pushes to it if it is the first. */
+/**
+ * saveRemote adds a remote, or changes the address of one with the same label. It lists the remotes again, then pushes
+ * to the remote if it is the first, so a failed push leaves the list right.
+ */
 function saveRemote(): void {
   const { label, url } = remote.value;
   const exists = !!remoteList.value?.some((row) => row.label === label);
+  const isFirst = !remoteList.value?.length;
   run(async () => {
     await gitApi.Run(root, "remote", exists ? "set-url" : "add", label, url.trim());
-    if (!remoteList.value?.length) await gitApi.Run(root, "push", "-u", label, status.value?.branch ?? "");
-    listRemotes();
+    await listRemotesAsync();
+    if (isFirst) await gitApi.Run(root, "push", "-u", label, status.value?.branch ?? "");
   });
   remote.value = { label: "origin", url: "" };
 }

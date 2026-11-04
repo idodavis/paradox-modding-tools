@@ -35,12 +35,12 @@ and adds the range of the name and the text of its line. `MakeSites` makes the s
 whether the game keeps it and why (`Kept`, `Reason`, as `index.ResolveSite` says) and the reason in words (`Label`; for
 a copy in a file the game does not read, it names the mod that hides the file). With no winner a site is never kept,
 but a copy in a file the game does not read still has its reason and label, as `index.FindHider` gives them. The card
-shows Kept only where it lists two or more sites. A definition written inside another
-one, in a database whose copies the game all keeps, also has the name of the one that holds it (`Holder`). A card
-lists only what files define, wherever it is written: a title inside a title, a GUI block, an EU5 province in
-`definitions.txt`. It lists no second name of a definition (a trait's `group`), no name that a command makes (a saved
-scope, a variable, a list, a flag), and no key that only switches a name on or gives a second name (a CK3 parameter, a
-game concept's `alias`). Peek and Find references reach every site.
+shows Kept only where it lists two or more sites. A definition written inside another one, in a database whose copies
+the game all keeps, also has the name of the one that holds it (`Holder`). A card lists only what files define,
+wherever it is written: a title inside a title, a GUI block, an EU5 province in `definitions.txt`. It lists no second
+name of a definition (a trait's `group`), no name that a command makes (a saved scope, a variable, a list, a flag), and
+no key that only switches a name on or gives a second name (a CK3 parameter, a game concept's `alias`). Peek and Find
+references reach every site.
 
 ## The open file
 
@@ -51,13 +51,13 @@ file is read as the editor holds it.
 ## The answers
 
 - **Hover.** `Hover` walks to the position and returns a `Card`: what the key or value is, what it takes, what it
-  returns or leads to, a date in the mod's calendar (`CardDate`), a color, an image's header, and the sites that define
-  the name (`Site`), the one the game keeps first and why. A command's card shows the scopes the dumps give it
-  (`Runs`, the same list the `wrong-scope` check reads), or "no restriction declared" where they name none, what its
-  value takes and the scope it needs where it writes no block, and the scope it leads to where it does. A command the
-  game declares is named by its `Class`'s id. `Classes` is the wiki lexicon's classes in the order of its tabs, and `Card.Lexicon`
-  is the id of the class that lists what the card is about (`findLexicon`). A fact learned only from the game's files
-  marks the card inferred.
+  returns or leads to, a date in the mod's calendar (`CardDate`), a color, an image's header, a localization key's text
+  (`Quote`), and the sites that define the name (`Site`), the one the game keeps first and why. A command's card shows
+  the scopes the dumps give it (`Runs`, the same list the `wrong-scope` check reads), or "no restriction declared"
+  where they name none, what its value takes and the scope it needs where it writes no block, and the scope it leads to
+  where it does. A command the game declares is named by its `Class`'s id. `Classes` is the wiki lexicon's classes in
+  the order of its tabs, and `Card.Lexicon` is the id of the class that lists what the card is about (`findLexicon`). A
+  fact learned only from the game's files marks the card inferred.
 - **Completion.** `Complete` returns what fits at a key: the language's operators that fit the block, then its
   commands, ranked by how often the game writes each in that field, then its fields. At a value it returns the field's
   choices, yes and no, the names the game loads of its database, or the image files under the folder typed so far. A
@@ -71,14 +71,14 @@ file is read as the editor holds it.
   workspace's definitions and keys.
 - **Tokens.** `Tokens` returns the color category of every key and value, from the walk's `schema.Category`, encoded as
   Monaco's semantic tokens against `ListLegend`.
-- **Edits.** `Format` keeps the file's own indentation, else the given one, and gives no edits for a game file, a file
-  that is not script or does not parse, or one that would change in more than its spacing. Its edits come from
+- **Edits.** `Format` keeps the file's own indentation, else the given one, and gives no edits for a read-only file, a
+  file that is not script or does not parse, or one that would change in more than its spacing. Its edits come from
   `jomini.DiffEdits`. `ListFixes` gives the quick fixes: the nearest defined name for one that nothing defines, a
   missing key with its default, an entry mode out of place removed, and the file's localization keys with no
   base-language text added. That last fix adds every such key of the file, each with an empty text, to the
   localization file PMT makes for the mod (`workspace.FindLocalizationFile`). It works from the text the editor holds
   where that file is open. It writes the file first when it is missing or empty (`Fix.Creates`), and says where the
-  caret goes (`Fix.Reveal`).
+  caret goes (`Fix.Reveal`). `BuildOverride` copies an entry into a mod; `DraftFile` names and starts a new file.
 - **Details.** `ListFolds` returns every block that spans lines. `ListHints` reads each date in the mod's calendar,
   where its field expects a date, and the text of each localization key a script file names (`Hint.Kind` says which).
   `ListColorSites` lists the colors a file writes, and `PresentColor` writes a color in

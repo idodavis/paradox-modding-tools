@@ -11,6 +11,7 @@ import { useSortable } from "@vueuse/integrations/useSortable";
 import { Dialogs } from "@wailsio/runtime";
 import type { SelectItem, TabsItem } from "@nuxt/ui";
 
+import { findCommand } from "../commands";
 import { TOOL_CHOICES } from "../pages";
 import { describeDumps, matchQuery } from "../../lib/format";
 import {
@@ -84,7 +85,7 @@ const GROUPS = [
 /** HELP holds the paragraphs of Settings' help. */
 const HELP = [
   "General: the workspace's name, its localization language, the page it opens on, the IDE's tabs, start page and explorer, and the first-mod checklist.",
-  "Game install: the install this workspace reads, and how to make the game write its documentation.",
+  "Game install: the install this workspace reads, Launch, which starts the game, and how to make the game write its documentation.",
   "Mods and load order: drag to reorder. When two mods ship a file at the same path, the game reads the one lower in the order; Health's Compatibility view explains how each game picks between copies. Colors stay with the mod, not its position. Each mod's calendar, Workshop link and upload exclusions are on its card. Changes save as you make them.",
   "IDE: the editor, the explorer, the language features, the checks, the Visual view and the wiki, kept for this workspace.",
   "Appearance applies to every workspace: the theme, light and dark, matching the game's theme, the interface scale, the pages shown and the simple interface, which hides the IDE's more advanced parts.",
@@ -127,6 +128,7 @@ const PANES = [
   { slot: "list", sizeUnit: "px" as const, defaultSize: 420, minSize: 320, maxSize: 640 },
   { slot: "card" },
 ];
+const LAUNCH = findCommand("game.launch");
 const ROW = "relative flex h-14 min-w-0 items-center gap-2.5 border-b border-default ps-2 pe-3 text-start";
 const PICKED = "bg-(--accent-soft) before:absolute before:inset-y-0 before:start-0 before:w-0.5 before:bg-primary";
 // the game's one swatch: its automatic color, which the record holds as ""
@@ -507,6 +509,13 @@ async function remove(): Promise<void> {
             <p v-if="!state.installFound" class="text-12 text-error">
               The install's folder was not found. Pick where the game is now with Change folder.
             </p>
+            <div class="flex flex-col gap-3 border-t border-accented pt-5">
+              <div class="flex flex-col gap-0.75">
+                <h2 class="text-13 font-semibold">Launch</h2>
+                <p class="text-12 text-dimmed">Starts {{ state.game?.name }} with its debug flag.</p>
+              </div>
+              <UButton label="Launch" icon="i-lucide-play" class="self-start" @click="LAUNCH?.onSelect?.($event)" />
+            </div>
             <div class="flex flex-col gap-3 border-t border-accented pt-5">
               <div class="flex flex-col gap-0.75">
                 <h2 class="flex items-center gap-1.5 text-13 font-semibold">

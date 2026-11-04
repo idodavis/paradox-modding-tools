@@ -199,8 +199,8 @@ func (index *Index) narrowSites(sites []Site) []Site {
 }
 
 // compareSites orders two sites by their files' positions, then by their places in a file.
-func compareSites(a, b Site) int {
-	return cmp.Or(cmp.Compare(a.File, b.File), cmp.Compare(a.Occurrence, b.Occurrence))
+func compareSites(first, second Site) int {
+	return cmp.Or(cmp.Compare(first.File, second.File), cmp.Compare(first.Occurrence, second.Occurrence))
 }
 
 // buildPostings fills the postings from the occurrences after a scan or a load.

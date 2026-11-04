@@ -155,7 +155,7 @@ export const useAgentStore = defineStore("agent", () => {
   const links = new Map<string, Link>();
   const protocols = useLocalStorage<Record<string, Protocol>>(PROTOCOLS, {});
   const records = useLocalStorage<SessionRecord[]>("pmt.agent.sessions", []);
-  // the agent a task in the pane starts a session with
+  // the id of the agent a session was started with last
   const lastAgent = useLocalStorage("pmt.agent.last", "");
   // the session the pane shows, by its key
   const activeKey = shallowRef("");
@@ -274,7 +274,7 @@ export const useAgentStore = defineStore("agent", () => {
       cancel: () => void (isCancelled = true),
     });
     const writable = new WritableStream<v2.AnyWireMessage>({ write: (message) => socket.send(message) });
-    const ready = new Promise<Start>((resolve, reject) => {
+    const started = new Promise<Start>((resolve, reject) => {
       let first: Start | null = null;
       socket.onopen = () => socket.send({ agent: session.agent.id, path: editor.activeFile()?.path ?? "" });
       socket.onmessage = (event) => {
@@ -297,7 +297,7 @@ export const useAgentStore = defineStore("agent", () => {
     const dialect = markRaw(makeDialect(session, { readable, writable }, socket, answers));
     const link: Link = { dialect, answers };
     links.set(session.key, link);
-    return { start: await ready, dialect };
+    return { start: await started, dialect };
   }
 
   /** unlink closes a session's stream and forgets its link. A session without a link is left as it is. */

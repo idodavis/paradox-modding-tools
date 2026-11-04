@@ -1,6 +1,6 @@
 <!--
-  The first-mod checklist on the Library's active card: five steps from making a mod to a Workshop listing for it, each
-  done by a fact about the workspace's mods. It shows while a step is left, until it is hidden.
+  The first-mod checklist on the Library's active card. It has five steps, from making a mod to writing its Workshop
+  listing, and each is done when the workspace's mods show it. It shows while a step is not done, until it is hidden.
 -->
 <script setup lang="ts">
 import { computed, onActivated, shallowRef } from "vue";
@@ -55,9 +55,9 @@ const rows = computed(() => {
     const phrases = fixes.flatMap((level) => groups[mod.id]?.phrases?.[level.id] ?? []);
     return phrases.length ? [`Health finds ${list(phrases)} in ${workspace.originName(mod.id)}.`] : [];
   });
-  const defined = overview.value.flatMap((one) =>
-    mods.value.some((mod) => mod.id === one.mod)
-      ? Object.entries(one.counts ?? {}).flatMap(([name, count]) => (count && count > 0 ? name : []))
+  const defined = overview.value.flatMap((entry) =>
+    mods.value.some((mod) => mod.id === entry.mod)
+      ? Object.entries(entry.counts ?? {}).flatMap(([database, count]) => (count && count > 0 ? database : []))
       : [],
   );
   const unlisted = mods.value.filter((_, index) => {

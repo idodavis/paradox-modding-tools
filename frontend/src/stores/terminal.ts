@@ -181,13 +181,13 @@ export const useTerminalStore = defineStore("terminal", () => {
   }
 
   /**
-   * fitConsole fits a console's terminal to its element, and so the shell to it. It does nothing while the element has
-   * no width or height, as while its panel is laid out or hidden: a fit then makes the terminal two columns wide, and
-   * the shell would wrap its own screen to them for good.
+   * fitConsole fits a console's terminal to its host, and so the shell to it. It does nothing while the host has no
+   * width or height, as while its panel is laid out or hidden: a fit then makes the terminal two columns wide, and the
+   * shell would wrap its own screen to them for good.
    */
   function fitConsole(shellConsole: Console): void {
-    const box = shellConsole.xterm.element?.parentElement;
-    if (box && box.clientWidth > 0 && box.clientHeight > 0) shellConsole.fit.fit();
+    const host = shellConsole.xterm.element?.parentElement;
+    if (host && host.clientWidth > 0 && host.clientHeight > 0) shellConsole.fit.fit();
   }
 
   /** applyStyle sets a console's colors and font from the settings again, and fits it to its element if it is shown. */

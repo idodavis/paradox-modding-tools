@@ -182,9 +182,9 @@ func makeVersion(ws *workspace.Session, mods *index.Index, tree *jomini.Tree, st
 	}, true
 }
 
-// describeCalls returns a text's pieces with each data call made its words, as the call's last step reads: a call that
-// names a customizable localization reads as the texts it can show, one that names any other definition as that
-// name, and any other call as its function. A call keeps its markup and has the kind callKind.
+// describeCalls returns a text's pieces with each data call replaced by its words, read from the call's last step. A
+// call that names a customizable localization reads as the texts it can show, one that names any other definition as
+// that name, and any other call as its function. A call keeps its markup and has the kind callKind.
 func describeCalls(ws *workspace.Session, mods *index.Index, text string) []loc.Segment {
 	segments := loc.Segments(text, 0)
 	for position, segment := range segments {

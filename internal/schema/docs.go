@@ -112,7 +112,7 @@ func findDocDatabase(rel string, folders []string) (string, bool, bool) {
 			return candidate != folder && !strings.HasSuffix(candidate, "/"+folder)
 		})
 		if len(matches) > 0 {
-			longest := slices.MaxFunc(matches, func(a, b string) int { return len(a) - len(b) })
+			longest := slices.MaxFunc(matches, func(first, second string) int { return len(first) - len(second) })
 			return game.ToDatabase(longest), position > 0 && position < len(candidates), true
 		}
 	}
@@ -160,7 +160,7 @@ func (reader *docReader) build(database *Database, readme string) {
 
 // buildDocFields copies the fields that the given doc writes onto the given field, each with its claims, then the
 // fields below them. It stops at a field whose block holds script, where the docs write a sample, such as
-// debug_only = yes in a trigger. The holder is the key the doc is written at, "" for the definition itself. The given
+// debug_only = yes in a trigger. It is given the key the doc is written at, "" for the definition itself. The given
 // game's keywords tell which blocks hold script.
 func buildDocFields(row *game.Game, field, doc *Field, holder string) {
 	for key, child := range doc.Children {
@@ -173,7 +173,7 @@ func buildDocFields(row *game.Game, field, doc *Field, holder string) {
 }
 
 // holdsScript reports whether a field's block holds script rather than fields. It does if the field states a shape or a
-// number to work out, or if its key is a keyword of the given game that gives its block a shape under the holder's key.
+// number to work out, or if its key is a keyword of the given game that gives its block a shape under the key above.
 func holdsScript(row *game.Game, holder, key string, field *Field) bool {
 	keyword, ok := row.LookupKeyword("", holder, key)
 	return field.Shape.IsStated() || field.Value.Value.Type == ValueNumber || ok && keyword.Shape != ""

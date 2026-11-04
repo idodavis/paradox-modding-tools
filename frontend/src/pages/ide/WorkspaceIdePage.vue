@@ -166,7 +166,7 @@ useEventListener(document, "mouseup", (event) => {
   editor.go(event.button === MOUSE_BACK ? -1 : 1);
 });
 
-/** The part of the IDE this window holds. */
+/** part is the part of the IDE this window holds. */
 const part = THIS_WINDOW.split(":")[0];
 const layout = computed(() => {
   if (part === "terminal") return "terminal";
@@ -323,19 +323,19 @@ const layoutKey = computed(() => `pmt.ide.layout.${workspace.activeId()}`);
 // a row's splitter keeps its sizes under its first group's id, which never comes back once the row loses that group
 watch(
   () => groupRows.value.map((row) => row.id),
-  (ids, before) => {
-    for (const staleId of before.filter((previousId) => !ids.includes(previousId)))
+  (ids, previousIds) => {
+    for (const staleId of previousIds.filter((rowId) => !ids.includes(rowId)))
       localStorage.removeItem(`reka:${layoutKey.value}.${staleId}`);
   },
 );
 // the two files of the compare, read while it is open
 const leftFile = useQuery(() => ({ ...fileQuery(comparing.value?.left.path ?? ""), enabled: !!comparing.value }));
 const rightFile = useQuery(() => ({ ...fileQuery(comparing.value?.right.path ?? ""), enabled: !!comparing.value }));
-const diff = computed(() => editor.activeTab()?.side);
+const side = computed(() => editor.activeTab()?.side);
 // the status bar shows the indentation of a file open as code, never of a diff
 const { data: indentation } = useQuery(() => ({
   ...indentationQuery(activeModel.value?.place.path ?? ""),
-  enabled: !diff.value && !!activeModel.value,
+  enabled: !side.value && !!activeModel.value,
 }));
 
 const { mutate: addMod } = useMutation({ mutation: (dir: string) => workspaceApi.AddMod(id, dir) });
@@ -417,9 +417,9 @@ function listProblems(): { place: Place; problems: Problem[] }[] {
 
 /** listFindings returns Health's compatibility findings in a file, as problems. Disabled checks are skipped. */
 function listFindings(place: Place): Problem[] {
-  const off = settings.value("ide.checks").split(",");
+  const disabled = settings.value("ide.checks").split(",");
   return (report.value?.compatibility.findings ?? []).flatMap((finding) => {
-    if (finding.question !== "compatibility" || off.includes(finding.code)) return [];
+    if (finding.question !== "compatibility" || disabled.includes(finding.code)) return [];
     const { code, level, facts } = finding;
     const message = joinParts(finding.message);
     return [...(finding.sites ?? []), ...(finding.repeats ?? [])].flatMap(({ place: site, range }) =>
@@ -428,7 +428,7 @@ function listFindings(place: Place): Problem[] {
   });
 }
 
-/** describePlace returns the label of a file in the compare: its origin's name and its path. */
+/** describePlace returns the label of a file in the compare: its origin's name and its relative path. */
 function describePlace(place: Place): string {
   return `${workspace.originName(place.origin)} · ${place.rel}`;
 }
@@ -628,7 +628,7 @@ function collapseAll(): void {
               <div class="flex h-8 shrink-0 items-center gap-0.5 border-b border-default ps-2 pe-1.5">
                 <UTabs
                   :model-value="panelTab"
-                  :items="[...panelTabs]"
+                  :items="panelTabs"
                   :content="false"
                   variant="link"
                   size="sm"
@@ -792,7 +792,7 @@ function collapseAll(): void {
       </button>
     </Teleport>
     <Teleport v-if="!['terminal', 'wiki'].includes(layout) && visible" defer to="#status-end">
-      <span v-if="diff">{{ COMPARES[diff] }}</span>
+      <span v-if="side">{{ COMPARES[side] }}</span>
       <template v-else-if="activeModel">
         <span>Ln {{ activeModel.caret.line }}, Col {{ activeModel.caret.column }}</span>
         <span v-if="indentation">{{ indentation }}</span>

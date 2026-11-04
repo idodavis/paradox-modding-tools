@@ -38,8 +38,8 @@ export function BuildReport(order: string[] | null): $CancellablePromise<$models
  * CompareStatements returns the texts of the statements at two sites. It returns an error if a file cannot be read or
  * no statement starts at a site.
  */
-export function CompareStatements(a: lsp$0.Site, b: lsp$0.Site): $CancellablePromise<$models.Compared> {
-    return $Call.ByID(17702159, a, b);
+export function CompareStatements(left: lsp$0.Site, right: lsp$0.Site): $CancellablePromise<$models.Compared> {
+    return $Call.ByID(17702159, left, right);
 }
 
 /**

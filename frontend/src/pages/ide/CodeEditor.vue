@@ -104,7 +104,7 @@ const { data: pages } = useQuery(() => ({
   ...wikiPagesQuery(card.value?.sites?.[0]?.place.path ?? ""),
   enabled: workspace.isOpen() && !card.value?.lexicon && !!card.value?.sites?.length,
 }));
-/** The card's look-up: its lexicon row, else its file's first wiki page, else none. */
+/** lookup is the card's wiki look-up: its lexicon row, else its file's first wiki page, else undefined. */
 const lookup = computed((): WikiLookup | undefined => {
   if (card.value?.lexicon) return { class: card.value.lexicon, name: card.value.title };
   const title = pages.value?.[0]?.title;
@@ -125,7 +125,7 @@ onMounted(() => {
     readOnly: model.place.readOnly,
     readOnlyMessage: { value: describeReadOnly(model.place) },
   });
-  // a file shown again opens where its caret was left
+  // a file shown again opens at the caret it had
   const caret = { lineNumber: model.caret.line, column: model.caret.column };
   codeEditor.setPosition(caret);
   codeEditor.revealPositionInCenterIfOutsideViewport(caret);
@@ -159,10 +159,7 @@ onBeforeUnmount(() => {
   view.value?.dispose();
 });
 
-watch(
-  () => editorOptions(),
-  (options) => view.value?.updateOptions(options),
-);
+watch(editorOptions, (options) => view.value?.updateOptions(options));
 // a range requested when the file was shown is selected once, in the active group's editor. That editor takes focus
 // unless Follow the agent opened the file, so the focus stays where the user is typing
 watch(
@@ -220,7 +217,7 @@ function replaceSelections(text: string): void {
   );
 }
 
-// the entry the caret is in, which the card names first among the blocks around the caret; "" where it names none
+// the name of the entry the caret is in, which is the first of the blocks the card names; "" if it names none
 const entry = computed(() => card.value?.within?.[0] ?? "");
 
 const groups = computed<ContextMenuItem[][]>(() => [

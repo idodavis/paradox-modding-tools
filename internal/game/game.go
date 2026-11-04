@@ -382,7 +382,7 @@ func ListGames() []Game {
 	return rows
 }
 
-// Matches reports whether the game is among the given games. An empty list names every game. A nil game is among none.
+// Matches reports whether the game is among the given games. An empty list names every game, even a nil one.
 func (game *Game) Matches(games []string) bool {
 	return len(games) == 0 || game != nil && slices.Contains(games, game.ID)
 }

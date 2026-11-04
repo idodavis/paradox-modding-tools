@@ -17,13 +17,11 @@ games it holds for (`Games`, none meaning every game, as `Game.Matches` reads it
 | file | holds |
 |---|---|
 | `game.go` | the package comment; `Source` and its constants, `CanAccuse`; `Program`, `Log`; `Game`: a game's names, stages in the order it mounts them (`StageRoots`), descriptor, thumbnail folder, Steam app id and library, new-mod folders, how each OS starts it (`Program`), the forms in which its error log names a file's line (`ErrorLocations`), its `Events` (a `GameEvents`), whether its definitions take entry modes (`TakesModes`), its concept prefix, its forms of the localization replace folder in the order they win (`LocReplaceFolders`), whether it logs a localization key a mod and the game both write outside a replace folder (`LogsRepeatedKey`), the effects that run a decision (`DecisionEffects`), the localization key of a message's title where it writes none (`MessageTitle`), its bookmarks' folder and the key that names a start setup (`BookmarkFolder`, `SetupKey`), its `GUI` (a `GameGUI`), its `Coat` (a `GameCoat`), and its `Guide`; `Guide` and `Example`; the three rows; `ScriptRoot`, `InstallRoots`, `BaseLanguage`, `OriginVanilla`, `MetadataDir`, `PictureExtensions`, `WikiAPI`; `ErrorLog` and `MountLog`, `DumpFolders`; `LookupGame`, `ListGames`, `Matches`, `SplitStage`, `FindLocReplacement`, `IsUnmounted` |
-| `databases.go` | the row types `Database`, `Contents` and its constants, `Nesting`, `Callable`, `FileType`, `Precedence`, `Reference`, `EntryMode`, and the picture types `PictureStep`, `PictureChain`, `Picture` with `GameEvents`; the tables `Databases`, `Nestings`, `Callables`, `FileTypes`, `Precedences`, `References`, `FiringFields`, `EntryModes`, `FireContents`, `ClassDatabases`, `MisspelledFolders`; the databases no definition carries (`Localization`, `File`), `CustomLocalization`, `Constant`, `GlobalType`, `AnyScopeType`, `SelfFunctions`; the event keys (`EventNamespaceKey`, `TitleKey`, `DescriptionKey`, `OptionKey`, `OptionTitleKey`, `LabelKey`, `HiddenKey`), `EventDelay`, `GameRules`, `CustomTexts`, `TableSyntax`, `SetupFolder`; the words for some databases' definitions (`definitionWords`); `ToDatabase`, `FindDatabase`, `ListDatabaseFolders`, `FindNestings`, `ListNestings`, `ListSetupNestings`, `ListReferences`, `ListFiringFields`, `Precedence.KeepsEvery`, `Precedence.Describe` (which copy it keeps, in plain words),
-`LookupPrecedence`, `SplitMode`, `LookupEntryMode`, `DescribeDefinition` |
+| `databases.go` | the row types `Database`, `Contents` and its constants, `Nesting`, `Callable`, `FileType`, `Precedence`, `Reference`, `EntryMode`, and the picture types `PictureStep`, `PictureChain`, `Picture` with `GameEvents`; the tables `Databases`, `Nestings`, `Callables`, `FileTypes`, `Precedences`, `References`, `FiringFields`, `EntryModes`, `FireContents`, `ClassDatabases`, `MisspelledFolders`; the databases no definition carries (`Localization`, `File`), `CustomLocalization`, `Constant`, `GlobalType`, `AnyScopeType`, `SelfFunctions`; the event keys (`EventNamespaceKey`, `TitleKey`, `DescriptionKey`, `OptionKey`, `OptionTitleKey`, `LabelKey`, `HiddenKey`), `EventDelay`, `GameRules`, `CustomTexts`, `TableSyntax`, `SetupFolder`; the words for some databases' definitions (`definitionWords`); `ToDatabase`, `FindDatabase`, `ListDatabaseFolders`, `Nesting.Label`, `FindNestings`, `ListNestings`, `IsSet`, `ListSetupNestings`, `ListReferences`, `ListFiringFields`, `Precedence.KeepsEvery`, `Precedence.Describe` (which copy it keeps, in plain words), `LookupPrecedence`, `SplitMode`, `LookupEntryMode`, `DescribeDefinition` |
 | `language.go` | the language: `ShapeRule` and `Shapes` (how a block of each shape reads its keys, by the key rules' words) with the `Shape…` names Go code writes (`ShapeUnknown`, `ShapeFields`, `ShapeArguments`, `ShapeEffectArguments`, `ShapeTriggerArguments`, `ShapeTriggers`, `ShapeEffects`, `ShapeValue`, `ShapeWidget`, `ShapeModifiers`, `ShapeDescription`); `Keyword` and `Keywords` (the keys the language gives a shape to and its operators, each with the sentence a hover card shows), `LimitKey`, `TriggerKey`, `OperatorSays`; `AnyCall`, `AnyKey`, `DocDateKey`, the dumps' `Declared…` words; `Links` and their words (`SavedScopes`, `Variables`, `LocalVariables`, `GlobalVariables`, `Lists`, `Flags`), `ScopeLinks`, `LinkMakers`, `LinkUsers`, `LocStems`, `CommandKeys`; `ConceptFormat`; `DocType` and `DocTypes`; `DumpPhrases`, `DumpCorrection` and `DumpCorrections`; `Bools`; `Game.LookupKeyword`, `IsOperator`, `MatchListIterator` |
 | `gui.go` | `GUIRules` and its one row `GUI`: which words declare a GUI file's databases and what their names start with, which keys name its widgets, the slots, how each built-in `WidgetType` draws, the opening states, the hidden keys, the calls the Visual view answers, the GUI's own variables (`VariableSystem`), the text keys and the keys that let a text run over several lines and resize its box, what a data call in a text shows (`CallKinds`, `DateCalls`, `DateForm`, `PercentCode`, `SignCode`), the data type of a color (`ColorType`), the keys of a mask (`MaskKeys`), how a state leads to others (`Animation`), the functions that compare numbers and ask a data model's size (`Comparisons`, `ModelSize`, `ModelEmpty`, `ModelHas`), the facts of a window's opening and of its sample (`OpeningFacts`, `SampleFacts`, `SampleAbsent`), the font rules (`FontRules`), the picture keys and the defines that say where a picture is, the pictures of a kind of level (`Levels`); `GameGUI`, what one game does beyond them; `TierFrames`, `Illustrations`; `Placeholder`, `Placeholders` and `FindPlaceholder` |
 | `coat.go` | the coat types (`CoatStrength`, `CoatLerp`, `CoatRecolor`, `CoatShade`, `CoatSlot`, `CoatPlace`, `CoatPart` and its constants, `CoatFrame`, `CoatOverride`, `CoatTemplate`); `CoatRules` and its one row `Coat`: the databases a coat reads, its texture folders, how each texture kind is colored, the mask regions, the color slots, the placement keys, how a key is edited, what a new coat writes; `GameCoat`, what one game does beyond them: its coat folder, shading, designer frames and the form of a new layer color |
-| `install.go` | where a game is on this machine: `DetectedInstall` and `FindInstalls`, its installs through Steam's library folders; `LoadVersion` (the launcher's settings, else the revision log of the game's last start when that came after the install's last update, else Steam's build); `ListInstallRoots`; its user-data and dump folders (`FindUserDataDir`, `FindDumpDirs`); whether a folder is Steam's copy of a Workshop
-mod (`IsWorkshopFolder`); when an install was last updated (`ReadInstallUpdatedAt`) and its build's checksum (`LoadChecksum`); the program that starts it in debug mode (`ResolveProgram`); `DLCFolder`, `LauncherModFolder` |
+| `install.go` | where a game is on this machine: `DetectedInstall` and `FindInstalls`, its installs through Steam's library folders; `LoadVersion` (the launcher's settings, else the revision log of the game's last start when that came after the install's last update, else Steam's build); `ListInstallRoots`; its user-data and dump folders (`FindUserDataDir`, `FindDumpDirs`); whether a folder is Steam's copy of a Workshop mod (`IsWorkshopFolder`); when an install was last updated (`ReadInstallUpdatedAt`) and its build's checksum (`LoadChecksum`); the program that starts it in debug mode (`ResolveProgram`); `DLCFolder`, `LauncherModFolder` |
 
 ## Lookups
 
@@ -45,16 +43,16 @@ an entry mode off a name only in a game whose row `TakesModes`.
 Each word column's comment lists its words and its reader. `Shape` (on a `Database`, a `Callable`, a `FileType`, a
 `Keyword`, the schema's claims and the walk's context) is a `Shapes` key: fields, triggers, effects, arguments, effect
 arguments, trigger arguments, value, unknown, setup, widget, modifiers, description; `enclosing` in a keyword means the
-holder's. `ShapeRule.Rules` are the key rules a block of the shape tries in order, the first that fits winning, read
+holder's `Encloses`, else its shape. `ShapeRule.Rules` are the key rules a block of the shape tries in order, the first that fits winning, read
 by the walk's `matchRule`: `known-call`, `declared`, `documented`, `command`, `operator`, `link`, `scope-link` (a
 `link` that leaves out a plain name written with a plain value), `modifier`, `modifier-type`, `observed`, `field`,
 `field-or-call` and `call`. The two argument shapes are the block of an effect and of a trigger: what the command takes,
 and the commands of its own kind it runs; `ShapeRule.Encloses` gives the shape of the block a link or an `enclosing`
-keyword written in them holds (effects and triggers). `ShapeRule.Values` and
-`ShapeRule.Blocks` are the walk's: the database every value in a block of the shape names, and the shape of a block
-whose key gives none. `Precedence.Keeps`, `Modes` and `Injects` (what a mode that adds does: adds, `replaces`, or
-`unsettled` where the wiki lists a folder as REPLACE only) are `index.FindWinner`'s; `Precedence.Contested`, the
-blocks two merged copies cannot both write (an on_action's trigger and effect), is the Health service's.
+keyword written in them holds (effects and triggers). `ShapeRule.Values` and `ShapeRule.Blocks` are the walk's: the
+database every value in a block of the shape names, and the shape of a block whose key gives none. `Precedence.Keeps`,
+`Modes` and `Injects` (what a mode that adds does: adds, `replaces`, or `unsettled` where the wiki lists a folder as
+REPLACE only) are `index.FindWinner`'s; `Precedence.Contested`, the blocks two merged copies cannot both write (an
+on_action's trigger and effect), is the Health service's.
 `Database.NamedBy` is the walk's and the scan's (`call` names a definition by the first step of the call its
 `NameKey` writes), and so are `Database.RunOrder` (the order the walk follows to know the scopes a block starts
 with), `Database.RootKey` (the key whose value names the scope a definition's script starts in, as CK3's events write
@@ -67,10 +65,10 @@ each such kind by it, and `FireContents` names the kinds that fire and are fired
 the key a definition writes as yes to say that the name it defines takes yes or no where it is written, and a number
 otherwise, as the modifier types' `boolean` does; such a claim's source is `SourceDefinitions`, which can accuse.
 `DocType.Values` marks the docs' terms that take a script value. `WidgetType.Holding` and `WidgetSlot.Role` are
-`picture.ts`'s. `CoatPlace.Part` is draw's `setPlacement`'s. `Keyword.Shows` is the graph detail's. `Keyword.Games` names the games a keyword holds for, as every table's does,
-and every reader of `Keywords` skips the rows of other games (`Game.LookupKeyword`, `Matches`); the one row that sets it
-is EU5's `ai_biases`. `Keyword.Preview`
-is the walk's, and marks a block shown in the tooltip and never run; so are `Keyword.Values`, the database of the text
+`picture.ts`'s. `CoatPlace.Part` is draw's `setPlacement`'s. `Keyword.Shows` is the graph detail's. `Keyword.Games`
+names the games a keyword holds for, as every table's does, and every reader of `Keywords` skips the rows of other
+games (`Game.LookupKeyword`, `Matches`); the one row that sets it is EU5's `ai_biases`. `Keyword.Preview` is the walk's,
+and marks a block shown in the tooltip and never run; so are `Keyword.Values`, the database of the text
 a keyword shows (`custom_tooltip`'s localization key), and `Keyword.Entries`, the database of the entry its text key
 names by what declares the keyword, which the game does not need defined (`custom_description`'s effect and trigger
 localizations). `Keyword.Follows` is lsp's. `Keyword.Weighted` and `Keyword.Modifies` are the graph's steps.
@@ -105,7 +103,9 @@ effect, and `gui.type` gives types.
 
 `Game.Guide` is how a game picks which copy of a file or a definition it keeps, in the sentences where the games
 differ: what the load order decides, which of a mod's files the game reads, which copy each kind of definition keeps,
-and what the load order changes. Health's compatibility page shows it.
+and what the load order changes. Health's compatibility page shows it. `Game.Example` is three definitions of one
+database that show how a mod and the game's files work together; `ListGames` fills its `Modes` from the database's
+precedence row.
 
 ## The Visual view's facts
 

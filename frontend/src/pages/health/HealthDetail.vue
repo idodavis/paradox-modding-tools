@@ -96,7 +96,7 @@ const { data: readers } = useQuery(() => ({
   enabled: workspace.isOpen() && MESSAGE_CODES.includes(finding.code),
 }));
 
-const pair = computed(() => ({ a: sites.value[0], b: sites.value[1] }));
+const pair = computed(() => ({ left: sites.value[0], right: sites.value[1] }));
 const {
   data: compared,
   error,
@@ -339,12 +339,12 @@ function describeSite(site: Site): string {
           :description="error.message"
         />
         <CompareView
-          v-else-if="compared && pair.a && pair.b"
-          :left="compared.a"
-          :right="compared.b"
+          v-else-if="compared && pair.left && pair.right"
+          :left="compared.left"
+          :right="compared.right"
           language="paradox-script"
-          :left-label="describeSite(pair.a)"
-          :right-label="describeSite(pair.b)"
+          :left-label="describeSite(pair.left)"
+          :right-label="describeSite(pair.right)"
           class="h-[70vh]"
         />
         <p v-else-if="isLoading" class="text-12 text-dimmed">Reading the two definitions.</p>

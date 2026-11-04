@@ -1,16 +1,17 @@
 <!--
-  The IDE's start page: the workspace, the simple interface's switch, what needs the user in its mods now, ways to
-  begin, the files shown last and a few keys worth knowing. A group with no tab shows it too.
+  The IDE's start page. It shows the workspace, the switch for the simple interface, a line for each page that has
+  mods needing the user, ways to begin, the files opened last and a few keys worth knowing. An editor group with no
+  tab shows it too.
 -->
 <script setup lang="ts">
 import { computed, onActivated, shallowRef } from "vue";
 import { useQuery } from "@pinia/colada";
-import { keyBy } from "es-toolkit";
+import { keyBy, sumBy } from "es-toolkit";
 import type { RouteLocationRaw } from "vue-router";
 
 import type { Mod } from "@services/workspace/models";
 import { findCommand, findKbds } from "../../app/commands";
-import { day, describeDumps, joinParts, list, plural } from "../../lib/format";
+import { describeDumps, findOwner, list, plural } from "../../lib/format";
 import { levelsQuery, reportQuery, repositoryWorkQuery, stateQuery } from "../../queries";
 import { useEditorStore } from "../../stores/editor";
 import { useGitStore } from "../../stores/git";
@@ -21,18 +22,20 @@ import OriginChip from "../../ui/OriginChip.vue";
 import ScriptDocsGuide from "../../ui/ScriptDocsGuide.vue";
 import SettingsSection from "../../ui/SettingsSection.vue";
 
-/** An Action is a button on a line of Where you left off: a page to open or a thing to do, with the keys that do it. */
-type Action = { label: string; kbds?: string[]; to?: RouteLocationRaw; onSelect?: () => void };
-/** A Line is one thing that needs the user: the color of its dot, what it says and what can be done about it. */
-type Line = { id: string; color: string; title: string; note: string; actions: Action[] };
+/** An Action is the button on a line of Where you left off: a page to open or a thing to do. */
+type Action = { label: string; to?: RouteLocationRaw; onSelect?: () => void };
+/** A Line is one page, or the game's documentation, that needs the user: its dot's color, what it says, its action. */
+type Line = { id: string; color: string; title: string; note: string; action: Action };
 
+/** The most mods a line names; the rest are counted. */
+const MODS_NAMED = 3;
 /** The Start list: each row runs a command of the app. */
 const STARTS = [
   { id: "editor.goToFile", label: "Open a file…" },
   { id: "editor.findInFiles", label: "Search the files…" },
   { id: "palette.open", label: "Commands and settings…" },
   { id: "game.launch", label: "Launch the game" },
-].map((row) => ({ ...row, command: findCommand(row.id) }));
+].map((start) => ({ ...start, command: findCommand(start.id) }));
 /** Worth knowing: the keys the editor owns, and the commands whose keys are shown as the user set them. */
 const KNOWN: { note: string; keys?: string[]; command?: string }[] = [
   { keys: ["Hover"], note: "what a word is" },
@@ -68,94 +71,97 @@ const groups = computed(() => keyBy(report.value?.mods ?? [], (group) => group.m
 const problemLevels = computed(() => (levels.value ?? []).filter((level) => level.problem));
 const recent = computed(() => editor.listRecent());
 const known = computed(() =>
-  KNOWN.map((one) => ({ note: one.note, keys: one.command ? findKbds(one.command) : (one.keys ?? []) })).filter(
-    (one) => one.keys.length,
+  KNOWN.map((hint) => ({ note: hint.note, keys: hint.command ? findKbds(hint.command) : (hint.keys ?? []) })).filter(
+    (hint) => hint.keys.length,
   ),
 );
-const lines = computed<Line[]>(() => [
-  ...mods.value.flatMap(describeVersion),
-  ...describeKnowledge(),
-  ...mods.value.flatMap(describeProblems),
-  ...mods.value.flatMap(describeChanges),
-]);
+const lines = computed<Line[]>(() =>
+  [describePatchNotes(), describeKnowledge(), describeHealth(), describeSourceControl()].filter(
+    (line) => line !== undefined,
+  ),
+);
 
-// the page stays mounted behind the others, so what it reads is read again when it is shown
+// the page stays mounted behind the others, so it loads again what it shows each time it is shown
 onActivated(() => {
   if (!workspace.isOpen()) return;
   void refreshReport();
   if (roots.value.length) void refreshWork();
 });
 
-/** levelColor returns the color a level is painted in. */
-function levelColor(id: string): string {
+/** levelColor returns the color a level is painted in. It is the info color for an unknown level. */
+function levelColor(id: string | undefined): string {
   return `var(--ui-${levels.value?.find((level) => level.id === id)?.color ?? "info"})`;
 }
 
-/** describeVersion returns the line for a mod made for another game version, or none when the report has no finding. */
-function describeVersion(mod: Mod): Line[] {
-  const finding = groups.value[mod.id]?.findings?.find((one) => one.code === "supported-version");
-  if (!finding) return [];
-  const to = { name: "patch-notes", params: { id: workspace.activeId() } } as const;
-  const actions = [{ label: "Open Patch Notes", to }];
-  return [
-    {
-      id: `version:${mod.id}`,
-      color: levelColor(finding.level),
-      title: finding.label,
-      note: joinParts(finding.message),
-      actions,
-    },
-  ];
+/** describeMods names the given mods: the first three, then "and N more…" with the count of the rest. */
+function describeMods(ids: string[]): string {
+  const names = ids.slice(0, MODS_NAMED).map((id) => workspace.originName(id));
+  return ids.length > MODS_NAMED ? `${names.join(", ")} and ${ids.length - MODS_NAMED} more…` : list(names);
+}
+
+/** describePatchNotes returns the line for the mods made for another game version, or none when the report has none. */
+function describePatchNotes(): Line | undefined {
+  const findings = mods.value.flatMap(
+    (mod) => groups.value[mod.id]?.findings?.filter((finding) => finding.code === "supported-version") ?? [],
+  );
+  const [first] = findings;
+  if (!first) return undefined;
+  return {
+    id: "patch-notes",
+    color: levelColor(first.level),
+    title: first.label,
+    note: describeMods(findings.map(findOwner)),
+    action: { label: "Open Patch Notes", to: { name: "patch-notes", params: { id: workspace.activeId() } } },
+  };
 }
 
 /** describeKnowledge returns the line for the game's documentation not being its own and current, or none. */
-function describeKnowledge(): Line[] {
+function describeKnowledge(): Line | undefined {
   const dumps = state.value?.open ? describeDumps(state.value.dumps) : undefined;
-  if (!dumps || dumps.current) return [];
-  const version = state.value?.install.version || "the game";
-  const actions = [{ label: "Show me how", onSelect: () => (guiding.value = true) }];
-  return [
-    {
-      id: "knowledge",
-      color: "var(--ui-warning)",
-      title: dumps.label,
-      note: `It may be older than ${version}.`,
-      actions,
-    },
-  ];
+  if (!dumps || dumps.current) return undefined;
+  return {
+    id: "knowledge",
+    color: "var(--ui-warning)",
+    title: dumps.label,
+    note: `It may be older than ${state.value?.install.version || "the game"}.`,
+    action: { label: "Show me how", onSelect: () => (guiding.value = true) },
+  };
 }
 
-/** describeProblems returns the line for a mod's errors and warnings, or none when the last scan found no problem. */
-function describeProblems(mod: Mod): Line[] {
-  const group = groups.value[mod.id];
-  const phrases = problemLevels.value.flatMap((level) => group?.phrases?.[level.id] ?? []);
-  if (!group || !phrases.length) return [];
-  const to = { name: "health", params: { id: workspace.activeId() } } as const;
-  const actions = [
-    { label: "Problems", kbds: ["meta", "J"], onSelect: () => editor.showPanel("problems") },
-    { label: "Open Health", to },
-  ];
-  const scan = `From the last scan of ${workspace.originName(mod.id)} against ${state.value?.install.version || "the game"}.`;
-  return [{ id: `problems:${mod.id}`, color: levelColor(group.worst), title: list(phrases), note: scan, actions }];
+/** describeHealth returns the line for the mods with errors or warnings in the last scan, or none when none has. */
+function describeHealth(): Line | undefined {
+  const flagged = mods.value.filter((mod) =>
+    problemLevels.value.some((level) => groups.value[mod.id]?.phrases?.[level.id]),
+  );
+  if (!flagged.length) return undefined;
+  const worst = problemLevels.value.find((level) => flagged.some((mod) => groups.value[mod.id]?.worst === level.id));
+  return {
+    id: "health",
+    color: levelColor(worst?.id),
+    title: `Problems in the last scan against ${state.value?.install.version || "the game"}`,
+    note: describeMods(flagged.map((mod) => mod.id)),
+    action: { label: "Open Health", to: { name: "health", params: { id: workspace.activeId() } } },
+  };
 }
 
-/** describeChanges returns the line for a mod's files changed since its last commit, or none when it has none. */
-function describeChanges(mod: Mod): Line[] {
+/** describeSourceControl returns the line for the mods with files changed since their last commit, or none. */
+function describeSourceControl(): Line | undefined {
+  const changed = mods.value.filter((mod) => countChanges(mod));
+  if (!changed.length) return undefined;
+  return {
+    id: "source-control",
+    color: "var(--fg-3)",
+    title: `${plural(sumBy(changed, countChanges), "file")} changed since your last commit`,
+    note: describeMods(changed.map((mod) => mod.id)),
+    action: { label: "Open Source control", onSelect: () => windows.sendCommand("git.commit") },
+  };
+}
+
+/** countChanges returns how many files of the given mod changed since its repository's last commit. It is 0 if none. */
+function countChanges(mod: Mod): number {
   const repository = work.value?.[roots.value.indexOf(git.findRoot({ origin: mod.id }))];
-  const changed = repository?.status?.changes?.filter((change) => change.place.origin === mod.id) ?? [];
-  const commit = repository?.commit;
-  if (!changed.length || !commit) return [];
-  const named = mods.value.length > 1 ? ` in ${workspace.originName(mod.id)}` : "";
-  const actions = [{ label: "Open Source control", onSelect: () => windows.sendCommand("git.commit") }];
-  return [
-    {
-      id: `changes:${mod.id}`,
-      color: "var(--fg-3)",
-      title: `${plural(changed.length, "file")} changed${named} since your last commit`,
-      note: `Last commit ${day(commit.date)}: ${commit.subject}`,
-      actions,
-    },
-  ];
+  if (!repository?.commit) return 0;
+  return repository.status?.changes?.filter((change) => change.place.origin === mod.id).length ?? 0;
 }
 </script>
 
@@ -192,19 +198,13 @@ function describeChanges(mod: Mod): Line[] {
             <span class="text-12 text-dimmed">{{ line.note }}</span>
           </div>
           <UButton
-            v-for="action in line.actions"
-            :key="action.label"
-            :label="action.label"
-            :to="action.to"
+            :label="line.action.label"
+            :to="line.action.to"
             size="sm"
             color="neutral"
             variant="outline"
-            @click="action.onSelect?.()"
-          >
-            <template v-if="action.kbds" #trailing>
-              <UKbd v-for="key in action.kbds" :key="key" :value="key" />
-            </template>
-          </UButton>
+            @click="line.action.onSelect?.()"
+          />
         </div>
       </section>
 
@@ -252,9 +252,9 @@ function describeChanges(mod: Mod): Line[] {
       <section v-if="known.length" class="flex flex-col gap-2.5">
         <h2 class="text-12 font-semibold text-dimmed">Worth knowing</h2>
         <div class="grid grid-cols-3 gap-x-6 gap-y-2.5">
-          <span v-for="one in known" :key="one.note" class="flex items-center gap-2 text-12 text-toned">
-            <span class="flex shrink-0 gap-1"><UKbd v-for="key in one.keys" :key="key" :value="key" /></span>
-            {{ one.note }}
+          <span v-for="hint in known" :key="hint.note" class="flex items-center gap-2 text-12 text-toned">
+            <span class="flex shrink-0 gap-1"><UKbd v-for="key in hint.keys" :key="key" :value="key" /></span>
+            {{ hint.note }}
           </span>
         </div>
       </section>

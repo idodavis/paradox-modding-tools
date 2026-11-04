@@ -1,16 +1,19 @@
 /**
- * The workspace store: the active workspace id, kept in local storage, and the facts of the open workspace that
- * every page reads: whether it is open, each origin's name and color, which mods its compatibility checks leave out,
- * and a file's folder as lists show it.
+ * The workspace store: the active workspace id, kept in local storage, why the last open failed, and the facts of the
+ * open workspace that every page reads: whether it is open, each origin's name and color, which mods its compatibility
+ * checks leave out, and a file's folder as lists show it. It also makes a workspace with its mods and opens it.
  */
 import { defineStore } from "pinia";
 import { useMutation, useQuery } from "@pinia/colada";
 import { useLocalStorage } from "@vueuse/core";
 import { Events } from "@wailsio/runtime";
+import { shallowRef } from "vue";
+import { useRouter, type LocationQueryRaw } from "vue-router";
 
 import * as workspace from "@services/workspace/service";
 import type { Mod as ModRecord, Workspace } from "@services/app/models";
 import type { Mod, Place } from "@services/workspace/models";
+import type { WorkspacePage } from "../app/pages";
 import { confirm } from "../lib/feedback";
 import { stateQuery, workspacesQuery } from "../queries";
 
@@ -22,9 +25,12 @@ export const SLOTS = Array.from({ length: 16 }, (_, index) => `o${index + 1}`);
 export const useWorkspaceStore = defineStore("workspace", () => {
   const id = useLocalStorage("pmt.workspace.activeId", "");
   const toast = useToast();
+  const router = useRouter();
   const { data: state } = useQuery(stateQuery);
   const { data: workspaces } = useQuery(workspacesQuery);
   const { mutate } = useMutation({ mutation: (workspaceId: string) => workspace.Open(workspaceId) });
+  // writes a workspace's record whole, with the fields the caller changed
+  const { mutate: update } = useMutation({ mutation: (record: Workspace) => workspace.UpdateWorkspace(record) });
   const { mutate: deleteWorkspace } = useMutation({
     mutation: (record: Workspace) => workspace.DeleteWorkspace(record.id),
     onSuccess: (_, record) => {
@@ -34,9 +40,10 @@ export const useWorkspaceStore = defineStore("workspace", () => {
     },
   });
 
-  Events.On("workspace:failed", ({ data }) =>
-    toast.add({ title: "The workspace could not be opened", description: data, color: "error" }),
-  );
+  // why the workspace being opened could not open, until a workspace opens
+  const failure = shallowRef<{ id: string; reason: string } | null>(null);
+  Events.On("workspace:failed", ({ data }) => (failure.value = { id: id.value, reason: data }));
+  Events.On("workspace:opened", () => (failure.value = null));
 
   /** activeId returns the active workspace's id, or "" when there is none. The router's guard writes it. */
   const activeId = (): string => id.value;
@@ -82,6 +89,12 @@ export const useWorkspaceStore = defineStore("workspace", () => {
    */
   const listMods = (): Mod[] => active()?.mods ?? [];
 
+  /**
+   * listWritableMods returns the active workspace's mods that PMT writes changes into, in load order: every mod but
+   * Steam's copies of Workshop mods, which are read only, and mods whose folder is missing.
+   */
+  const listWritableMods = (): Mod[] => listMods().filter((mod) => !mod.workshop && !mod.broken);
+
   /** listModIds returns the ids of the active workspace's mods in load order. */
   const listModIds = (): string[] => listMods().map((mod) => mod.id);
 
@@ -89,6 +102,32 @@ export const useWorkspaceStore = defineStore("workspace", () => {
   function open(workspaceId: string): void {
     id.value = workspaceId;
     mutate(workspaceId);
+  }
+
+  /**
+   * create records a workspace with the given name, install and localization language, adds its mods in the given
+   * order, opens it and shows the given page of it. A mod with a folder is added; one with none is made, named by its
+   * title. It returns the workspace. When a mod's step fails, the workspace it recorded is deleted again and the error
+   * is thrown.
+   */
+  async function create(
+    record: Pick<Workspace, "name" | "install" | "language">,
+    mods: { dir?: string; title: string }[],
+    page: { name: WorkspacePage; query?: LocationQueryRaw },
+  ): Promise<Workspace> {
+    const row = await workspace.CreateWorkspace(record.name, record.install, record.language);
+    try {
+      for (const mod of mods) {
+        if (mod.dir) await workspace.AddMod(row.id, mod.dir);
+        else await workspace.CreateMod(row.id, "", mod.title, record.language);
+      }
+    } catch (error) {
+      await workspace.DeleteWorkspace(row.id);
+      throw error;
+    }
+    open(row.id);
+    void router.replace({ ...page, params: { id: row.id } });
+    return row;
   }
 
   /** updateMod writes some fields of a mod's record over its latest copy. It rejects if the mod has no record. */
@@ -115,16 +154,21 @@ export const useWorkspaceStore = defineStore("workspace", () => {
   }
 
   return {
+    failure,
     activeId,
     isOpen,
+    active,
+    update,
     originName,
     describeFolder,
     originColor,
     isLeftOut,
     isCustom,
     listMods,
+    listWritableMods,
     listModIds,
     open,
+    create,
     updateMod,
     remove,
   };

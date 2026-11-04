@@ -44,17 +44,19 @@ type Level struct {
 	Nouns   string `json:"nouns"`
 	Problem bool   `json:"problem"` // it counts as a problem; info does not
 	Fix     bool   `json:"fix"`     // the game loses something, so a mod needs a fix
+	Cost    string `json:"cost"`    // what the player loses, in a sentence
 }
 
 // Levels holds the levels of a finding, the worst first.
 var Levels = []Level{
 	{ID: LevelCritical, Label: "Critical", Icon: "i-lucide-circle-x", Color: "error", Noun: "critical problem",
-		Nouns: "critical problems", Problem: true, Fix: true},
+		Nouns: "critical problems", Problem: true, Fix: true, Cost: "The game may fail to read the rest of the file."},
 	{ID: LevelError, Label: "Error", Icon: "i-lucide-circle-alert", Color: "warning", Noun: "error", Nouns: "errors",
-		Problem: true, Fix: true},
+		Problem: true, Fix: true, Cost: "The game skips this line and keeps running, so the mod plays without it."},
 	{ID: LevelWarning, Label: "Warning", Icon: "i-lucide-triangle-alert", Color: "yellow", Noun: "warning",
-		Nouns: "warnings", Problem: true},
-	{ID: LevelInfo, Label: "Info", Icon: "i-lucide-info", Color: "info", Noun: "info", Nouns: "info"},
+		Nouns: "warnings", Problem: true, Cost: "The game reads it, but it may not do what you meant."},
+	{ID: LevelInfo, Label: "Info", Icon: "i-lucide-info", Color: "info", Noun: "info", Nouns: "info",
+		Cost: "Nothing breaks; it is a note."},
 }
 
 // unresolvedCode is the code of a name nothing defines that is of no narrower kind.
@@ -76,6 +78,7 @@ type Code struct {
 	Topic    string `json:"topic"`    // such as syntax or localization, or "" for the log
 	Label    string `json:"label"`    // the code's title
 	Message  string `json:"message"`  // a template the facts fill, such as {name}
+	Advice   string `json:"advice"`   // what to do about it, in plain words; it repeats no fact of the message
 	// Elsewhere is the message where a mod the file's mod does not depend on defines the name, or "" if the code has
 	// none.
 	Elsewhere string `json:"elsewhere,omitempty"`
@@ -84,113 +87,157 @@ type Code struct {
 // Codes holds every problem code.
 var Codes = []Code{
 	{ID: "unclosed-block", Question: QuestionHealth, Level: LevelWarning, Topic: "syntax",
-		Label: "Unclosed block", Message: "This block is opened and never closed."},
+		Label: "Unclosed block", Message: "This block is opened and never closed.",
+		Advice: "Add the closing brace where the block ends."},
 	{ID: "unexpected-brace", Question: QuestionHealth, Level: LevelCritical, Topic: "syntax",
-		Label: "Unexpected brace", Message: "This closing brace has no block to close."},
+		Label: "Unexpected brace", Message: "This closing brace has no block to close.",
+		Advice: "Delete this brace, or add the opening brace it belongs to."},
 	{ID: "unclosed-string", Question: QuestionHealth, Level: LevelCritical, Topic: "syntax",
-		Label: "Unclosed string", Message: "This string is opened and never closed."},
+		Label: "Unclosed string", Message: "This string is opened and never closed.",
+		Advice: "Add the closing quote."},
 	{ID: "missing-value", Question: QuestionHealth, Level: LevelError, Topic: "syntax",
-		Label: "Missing value", Message: "This key has an operator and no value."},
+		Label: "Missing value", Message: "This key has an operator and no value.",
+		Advice: "Write the value after the operator, or delete the key."},
 	{ID: "else-without-if", Question: QuestionHealth, Level: LevelError, Topic: "syntax",
-		Label: "An else with no if before it", Message: "{name} must come right after {follows}."},
+		Label: "An else with no if before it", Message: "{name} must come right after {follows}.",
+		Advice: "Move it right after the block it belongs to, or delete it."},
 	{ID: "malformed-line", Question: QuestionHealth, Level: LevelError, Topic: "localization",
-		Label: "Malformed line", Message: "The game cannot read this line as a localization key and its text."},
+		Label: "Malformed line", Message: "The game cannot read this line as a localization key and its text.",
+		Advice: "Write the line as the key, a colon and the text in quotes."},
 	{ID: "loc-content-before-header", Question: QuestionHealth, Level: LevelError, Topic: "localization",
 		Label:   "Line above the header",
-		Message: "This line is above the localization header, so the game does not read it."},
+		Message: "This line is above the localization header, so the game does not read it.",
+		Advice:  "Move the line below the header, or delete it."},
 	{ID: "loc-unterminated-value", Question: QuestionHealth, Level: LevelError, Topic: "localization",
 		Label:   "Text without a closing quote",
-		Message: "This localization key's text has no closing quote, so it runs to the end of the line."},
+		Message: "This localization key's text has no closing quote, so it runs to the end of the line.",
+		Advice:  "Add the closing quote at the end of the text."},
 	{ID: "missing-bom", Question: QuestionHealth, Level: LevelCritical, Topic: "localization",
 		Label:   "Missing byte order mark",
-		Message: "The game reads a localization file only with a UTF-8 byte order mark."},
+		Message: "The game reads a localization file only with a UTF-8 byte order mark.",
+		Advice:  "Save the file again as UTF-8 with a byte order mark."},
 	{ID: "wrong-localization-folder", Question: QuestionHealth, Level: LevelCritical, Topic: "localization",
-		Label: "Wrong localization folder", Message: "The game reads the folder {right}, not {wrong}."},
+		Label: "Wrong localization folder", Message: "The game reads the folder {right}, not {wrong}.",
+		Advice: "Move the file into the folder the game reads."},
 	{ID: "loc-header-mismatch", Question: QuestionHealth, Level: LevelWarning, Topic: "localization",
-		Label: "Header of another language", Message: "The file is named for {language}, but its header says {header}."},
+		Label: "Header of another language", Message: "The file is named for {language}, but its header says {header}.",
+		Advice: "Make the file name and the header use the same language."},
 	{ID: "duplicate-message", Question: QuestionHealth, Level: LevelWarning, Topic: "localization",
 		Label:   "Duplicate localization key",
-		Message: "The localization key {name} is defined more than once in {language}."},
+		Message: "The localization key {name} is defined more than once in {language}.",
+		Advice:  "Delete the extra lines, or give each its own key."},
 	{ID: "missing-message", Question: QuestionHealth, Level: LevelWarning, Topic: "localization",
 		Label:   "Missing title localization",
-		Message: "The {database} {name} has no localization key for its title in the base language."},
+		Message: "The {database} {name} has no localization key for its title in the base language.",
+		Advice:  "Add the key and its text to your mod's localization file."},
 	{ID: "unknown-loc-key", Question: QuestionHealth, Level: LevelWarning, Topic: "localization",
 		Label: "Unknown localization key", Message: "Nothing defines the localization key {name}.",
+		Advice: "Add the key and its text to your mod's localization file, or fix the spelling here. " +
+			"If another mod defines it, list that mod as a dependency.",
 		Elsewhere: elsewhereMessage},
 	{ID: "loc-markup", Question: QuestionHealth, Level: LevelWarning, Topic: "localization",
-		Label: "Unknown text markup", Message: "This is not text markup the game reads: {why}."},
+		Label: "Unknown text markup", Message: "This is not text markup the game reads: {why}.",
+		Advice: "Fix the spelling of the markup, or take it out."},
 	{ID: "coverage", Question: QuestionHealth, Level: LevelInfo, Topic: "localization",
-		Label: "Language coverage", Message: "{mod} has {have} of its {of} localization keys in {name}."},
+		Label: "Language coverage", Message: "{mod} has {have} of its {of} localization keys in {name}.",
+		Advice: "Translate the keys that are missing, or leave them if the mod does not need that language."},
 	{ID: unresolvedCode, Question: QuestionHealth, Level: LevelError, Topic: "references",
-		Label: "Unresolved reference", Message: "Nothing defines the {database} {name}.", Elsewhere: elsewhereMessage},
+		Label: "Unresolved reference", Message: "Nothing defines the {database} {name}.",
+		Advice: "Fix the spelling, or add the missing one to your mod. " +
+			"If another mod defines it, list that mod as a dependency.",
+		Elsewhere: elsewhereMessage},
 	{ID: "unknown-data-call", Question: QuestionHealth, Level: LevelWarning, Topic: "references",
-		Label: "Unknown data function", Message: "{type} has no data function {name}."},
+		Label: "Unknown data function", Message: "{type} has no data function {name}.",
+		Advice: "Fix the spelling, or use a function the type has."},
 	{ID: "wrong-scope", Question: QuestionHealth, Level: LevelError, Topic: "values",
-		Label: "Wrong scope", Message: "{name} runs in {allowed}, not in {scope}."},
+		Label: "Wrong scope", Message: "{name} runs in {allowed}, not in {scope}.",
+		Advice: "Move the line to a scope where it works, or switch to a scope that allows it first."},
 	{ID: "wrong-value", Question: QuestionHealth, Level: LevelError, Topic: "values",
-		Label: "Wrong value", Message: "{name} takes {expected}."},
+		Label: "Wrong value", Message: "{name} takes {expected}.",
+		Advice: "Write a value of the kind the key takes."},
 	{ID: "invalid-date", Question: QuestionHealth, Level: LevelError, Topic: "values",
-		Label: "Impossible date", Message: "{name} is no date: a month runs from 1 to 12, and a day from 1 to 31."},
+		Label: "Impossible date", Message: "{name} is no date: a month runs from 1 to 12, and a day from 1 to 31.",
+		Advice: "Write a real date as year.month.day."},
 	{ID: "missing-key", Question: QuestionHealth, Level: LevelError, Topic: "values",
-		Label: "Missing key", Message: "The {database} {name} does not write {key}, which it must."},
+		Label: "Missing key", Message: "The {database} {name} does not write {key}, which it must.",
+		Advice: "Add the key to the entry."},
 	{ID: "unknown-key", Question: QuestionHealth, Level: LevelWarning, Topic: "values",
-		Label: "Unknown key", Message: "{name} is not a key a {database} takes here."},
+		Label: "Unknown key", Message: "{name} is not a key a {database} takes here.",
+		Advice: "Fix the spelling, or delete the key."},
 	{ID: "unused-argument", Question: QuestionHealth, Level: LevelWarning, Topic: "values",
-		Label: "Argument not read or not given", Message: "The argument {name} {why} {callee}."},
+		Label: "Argument not read or not given", Message: "The argument {name} {why} {callee}.",
+		Advice: "Fix the argument's spelling, or add or delete it so the call and the definition match."},
 	{ID: "wrong-namespace", Question: QuestionHealth, Level: LevelCritical, Topic: "definitions",
 		Label:   "Wrong namespace",
-		Message: "The {database} {name} is not in a namespace this file declares ({namespace})."},
+		Message: "The {database} {name} is not in a namespace this file declares ({namespace}).",
+		Advice:  "Declare the namespace at the top of the file, or rename the event to start with one the file declares."},
 	{ID: "misplaced-mode", Question: QuestionHealth, Level: LevelCritical, Topic: "definitions",
-		Label: "Misplaced entry mode", Message: "The {database} {name} cannot be written with {mode} here."},
+		Label: "Misplaced entry mode", Message: "The {database} {name} cannot be written with {mode} here.",
+		Advice: "Delete the mode."},
 	{ID: "inject-without-target", Question: QuestionHealth, Level: LevelCritical, Topic: "definitions",
 		Label:   "Entry mode with nothing to change",
-		Message: "The {database} {name} is written with {mode}, and no {database} {name} is loaded for it to change."},
+		Message: "The {database} {name} is written with {mode}, and no {database} {name} is loaded for it to change.",
+		Advice:  "Fix the name, or load the mod that defines it before this one."},
 	{ID: "duplicate-definition", Question: QuestionHealth, Level: LevelCritical, Topic: "definitions",
 		Label:   "Duplicate definition",
-		Message: "The {database} {name} is defined more than once, and the game keeps only one."},
+		Message: "The {database} {name} is defined more than once, and the game keeps only one.",
+		Advice:  "Delete one copy, or give one a new name."},
 	{ID: "conflicting-priority", Question: QuestionHealth, Level: LevelCritical, Topic: "definitions",
 		Label: "Conflicting priority",
 		Message: "{name} has the same override priority in two files. The game logs an error and keeps one copy; " +
-			"which one is not documented. Give one a higher {key}."},
+			"which one is not documented. Give one a higher {key}.",
+		Advice: "Decide which copy should win and raise its number."},
 	{ID: "unmounted-folder", Question: QuestionHealth, Level: LevelWarning, Topic: "definitions",
 		Label: "Folder the game never reads",
 		Message: "{name} is outside the in_game, main_menu and loading_screen folders, " +
-			"so the game never reads the files in it: {count}."},
+			"so the game never reads the files in it: {count}.",
+		Advice: "Move the files into one of those folders."},
 	{ID: "supported-version", Question: QuestionHealth, Level: LevelWarning, Topic: "descriptor",
-		Label: "Made for another game version", Message: "{name} is made for game {supported}; the game is {version}."},
+		Label: "Made for another game version", Message: "{name} is made for game {supported}; the game is {version}.",
+		Advice: "Test the mod in this version, then set the version it supports to match."},
 	{ID: "contest", Question: QuestionCompatibility, Level: LevelCritical, Topic: "definitions",
 		Label: "Contested definition",
 		Message: "{winner} and {beaten} each define this {database}. The game uses only {winner}'s copy, so " +
-			"{beaten}'s never takes effect."},
+			"{beaten}'s never takes effect.",
+		Advice: "Rename one of the two copies, or delete the one you do not want."},
 	{ID: "file-contest", Question: QuestionCompatibility, Level: LevelCritical, Topic: "definitions",
 		Label: "Contested file",
 		Message: "{winner} and {beaten} both ship {name}. The game reads {winner}'s, which is lower in the load order, " +
-			"so {beaten}'s is never used."},
+			"so {beaten}'s is never used.",
+		Advice: "Rename your file, or delete the copy you do not want."},
 	{ID: "undecided-contest", Question: QuestionCompatibility, Level: LevelCritical, Topic: "definitions",
 		Label:   "Undecided contest",
-		Message: "{mods} each write {name}. Which copy the game uses, or whether they combine, is not documented: {why}."},
+		Message: "{mods} each write {name}. Which copy the game uses, or whether they combine, is not documented: {why}.",
+		Advice:  "Keep one copy and rename or delete the others."},
 	{ID: "shared-message", Question: QuestionCompatibility, Level: LevelWarning, Topic: "localization",
 		Label: "Localization key in several mods",
 		Message: "{mods} define the localization key {name} in {language}. The game shows one copy's text, " +
-			"and a copy in a replace folder wins."},
+			"and a copy in a replace folder wins.",
+		Advice: "Give each mod its own key."},
 	{ID: "missing-dependency", Question: QuestionCompatibility, Level: LevelCritical, Topic: "descriptor",
 		Label:   "Missing dependency",
-		Message: "{mod} depends on {name}, which the workspace does not have."},
+		Message: "{mod} depends on {name}, which the workspace does not have.",
+		Advice:  "Add that mod to the workspace, or delete it from the descriptor."},
 	{ID: "override", Question: QuestionCompatibility, Level: LevelInfo, Topic: "definitions",
 		Label:   "Override of the game",
-		Message: "{name}: a mod and the game both define this {database}, and the game keeps {kept}."},
+		Message: "{name}: a mod and the game both define this {database}, and the game keeps {kept}.",
+		Advice:  "Check that the copy the game keeps is the one you want."},
 	{ID: "removed-names", Question: QuestionCompatibility, Level: LevelCritical, Topic: "definitions",
 		Label: "Replaced file removes names in use",
 		Message: "{mod} replaces the game's copy of this file with its own. Its copy leaves out {removed} of the " +
 			"{total} {definitions} the game's copy defines. {count} of them are defined nowhere else and still used, " +
-			"{uses} times in all, and each of those uses now finds nothing."},
+			"{uses} times in all, and each of those uses now finds nothing.",
+		Advice: "Put the missing definitions back into your copy, or stop using them."},
 	{ID: "unused-copy", Question: QuestionCompatibility, Level: LevelCritical, Topic: "definitions",
 		Label:   "Copy never used",
-		Message: "{beaten}'s copy of {name} is never used: the game keeps its own."},
+		Message: "{beaten}'s copy of {name} is never used: the game keeps its own.",
+		Advice:  "Delete the copy, or rename it if it should be a new entry."},
 	{ID: "ignored-pair", Question: QuestionCompatibility, Level: LevelInfo, Topic: "definitions",
 		Label:   "Ignored conflicts",
-		Message: "Conflicts between {name} and {other} are ignored in this workspace: {count}."},
-	{ID: "game-error", Question: QuestionLog, Label: "Game error", Message: "The game logged: {message}"},
+		Message: "Conflicts between {name} and {other} are ignored in this workspace: {count}.",
+		Advice:  "Nothing to fix. Stop ignoring the pair to see them again."},
+	{ID: "game-error", Question: QuestionLog, Label: "Game error", Message: "The game logged: {message}",
+		Advice: "Open the file the error names and fix what it says."},
 }
 
 // A Topic is one topic of the checks, in words.
@@ -301,7 +348,7 @@ func isDiagnosed(place workspace.Place) bool {
 		return false
 	}
 	return place.Format == files.FormatLocalization || place.Format.IsScript() || place.Format == files.FormatDescriptor ||
-		place.Format == files.FormatText && !place.ReadOnly && strings.HasSuffix(rel, ".yml")
+		place.Format == files.FormatText && place.Origin != game.OriginVanilla && strings.HasSuffix(rel, ".yml")
 }
 
 // listEnabled drops the diagnostics of the checks the user turned off in a workspace.
@@ -407,14 +454,18 @@ type diagnoseVisitor struct {
 	index       *index.Index // the mods' index, narrowed to a mod's file's mod and the mods it depends on
 	whole       *index.Index // the mods' index, every mod of the workspace
 	place       workspace.Place
+	parseOnly   bool // the file is the game's, so only its parse errors are judged
 	diagnostics []Diagnostic
 }
 
 // newVisitor returns the visitor that judges a file of a workspace. A mod's file is judged with the index narrowed to
-// its mod and the mods it depends on, so it is judged as the mod on its own.
+// its mod and the mods it depends on, so it is judged as the mod on its own. A file of the game is judged for its parse
+// errors only.
 func newVisitor(ws *workspace.Session, mods *index.Index, place workspace.Place) *diagnoseVisitor {
-	visitor := &diagnoseVisitor{ws: ws, index: mods, whole: mods, place: place}
-	if !place.ReadOnly && place.Origin != "" && place.Origin != game.OriginVanilla {
+	visitor := &diagnoseVisitor{
+		ws: ws, index: mods, whole: mods, place: place, parseOnly: place.Origin == game.OriginVanilla,
+	}
+	if place.Origin != "" && place.Origin != game.OriginVanilla {
 		visitor.index = mods.Narrow(append([]string{place.Origin}, ws.ListDependencies(place.Origin)...))
 	}
 	return visitor
@@ -434,7 +485,7 @@ func (visitor *diagnoseVisitor) diagnoseTree(document workspace.Document) []Diag
 		return diagnoseFolders(tree, place)
 	}
 	diagnostics := toDiagnostics(tree, tree.Errors)
-	if !place.ReadOnly {
+	if !visitor.parseOnly {
 		visitor.ws.Schema.Walk(tree, place.File, visitor)
 		diagnostics = append(diagnostics, visitor.diagnostics...)
 	}
@@ -756,8 +807,8 @@ func (visitor *diagnoseVisitor) diagnoseUnknown(tree *jomini.Tree, statement int
 	visitor.diagnostics = append(visitor.diagnostics, makeDiagnostic(tree, key, "unknown-key", facts))
 }
 
-// diagnoseScope records a command or a link written in a scope the game does not allow for it. It records none at the
-// top of a definition or outside effects and triggers.
+// diagnoseScope records a command or a link written in a scope the dumps do not list for it. It records none at the top
+// of a definition, outside effects and triggers, or for a command whose dumps list no scope.
 func (visitor *diagnoseVisitor) diagnoseScope(tree *jomini.Tree, statement int32, context *schema.Context) {
 	if context.Category != schema.CategoryLink && context.Category != schema.CategoryCommand {
 		return
@@ -767,18 +818,14 @@ func (visitor *diagnoseVisitor) diagnoseScope(tree *jomini.Tree, statement int32
 	if context.Category == schema.CategoryLink {
 		key = jomini.SplitChain(key)[0]
 	}
-	if command == nil || len(command.Scopes) == 0 {
-		return
-	}
 	// a starting scope is stated, not followed, so only a followed scope counts
 	scope, followed := context.Parent.Scope, len(context.Parent.Previous)
-	if scope == "" || followed == 0 || slices.Contains(command.Scopes, scope) || slices.Contains(command.VanillaScopes, scope) ||
-		!isScripted(context) {
+	if command == nil || len(command.Scopes) == 0 || scope == "" || followed == 0 ||
+		slices.Contains(command.Scopes, scope) || !isScripted(context) {
 		return
 	}
-	allowed := lo.Uniq(slices.Concat(command.Scopes, command.VanillaScopes))
 	visitor.diagnostics = append(visitor.diagnostics, makeDiagnostic(tree, span, "wrong-scope", map[string]string{
-		"name": key, "scope": scope, "allowed": strings.Join(allowed, ", "),
+		"name": key, "scope": scope, "allowed": strings.Join(command.Scopes, ", "),
 	}))
 }
 
@@ -786,13 +833,7 @@ func (visitor *diagnoseVisitor) diagnoseScope(tree *jomini.Tree, statement int32
 // not effects or triggers.
 func isScripted(context *schema.Context) bool {
 	holder := context.Parent
-	if holder.Shape != game.ShapeEffects && holder.Shape != game.ShapeTriggers {
-		return false
-	}
-	if holder.Category != schema.CategoryCommand {
-		return true
-	}
-	return holder.Command != nil && (holder.Command.Target != "" || holder.Command.Lists)
+	return (holder.Shape == game.ShapeEffects || holder.Shape == game.ShapeTriggers) && !holder.HoldsArguments()
 }
 
 // diagnoseValue records a value that is not the type its key takes. References, and names where a number is expected,

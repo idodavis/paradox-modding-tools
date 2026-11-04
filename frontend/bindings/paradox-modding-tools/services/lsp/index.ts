@@ -9,12 +9,12 @@ export {
 export type {
     Card,
     CardDate,
-    CardScope,
     Class,
     Code,
     ColorSite,
     Completion,
     Diagnostic,
+    Draft,
     Edit,
     Fix,
     Fold,

@@ -21,10 +21,11 @@ import {
 // the keys pressed only with another
 const MODIFIERS = new Set(["Control", "Shift", "Alt", "Meta"]);
 
-const toast = useToast();
 const { getKbdKey } = useKbd();
 // the shortcut taking new keys: its command and its place among the command's shortcuts
 const recording = shallowRef<{ command: Command; slot: number }>();
+// the last shortcut that was refused, with why, until the next recording starts
+const refused = shallowRef<{ command: Command; slot: number; reason: string }>();
 
 /** One row per shortcut of every command: its keys as set, the command's own, and whether they differ. */
 const rows = computed(() =>
@@ -47,9 +48,15 @@ function isRecording(command: Command, slot: number): boolean {
   return recording.value?.command === command && recording.value.slot === slot;
 }
 
+/** record makes the given shortcut of a command take the next keys pressed, and forgets the last refusal. */
+function record(command: Command, slot: number): void {
+  recording.value = { command, slot };
+  refused.value = undefined;
+}
+
 /**
  * captureKeys gives the shortcut taking new keys the ones pressed, before any shortcut runs. Escape stops without a
- * change, a modifier alone waits for its key, and keys another command has are refused with a toast.
+ * change, a modifier alone waits for its key, and keys another command has are refused under the shortcut.
  */
 function captureKeys(event: KeyboardEvent): void {
   const target = recording.value;
@@ -65,7 +72,8 @@ function captureKeys(event: KeyboardEvent): void {
   const holder = findBinding(kbds);
   recording.value = undefined;
   if (holder && holder !== target.command) {
-    toast.add({ title: `${kbds.map(getKbdKey).join(" ")} already runs ${holder.label}`, color: "warning" });
+    const reason = `${kbds.map(getKbdKey).join(" ")} already runs ${holder.label}`;
+    refused.value = { command: target.command, slot: target.slot, reason };
     return;
   }
   writeBinding(target.command, target.slot, kbds);
@@ -74,33 +82,38 @@ function captureKeys(event: KeyboardEvent): void {
 
 <template>
   <div :class="SETTING_ROWS">
-    <div v-for="row in rows" :key="`${row.command.id}:${row.slot}`" class="flex items-center gap-2.5 text-13">
-      <UIcon v-if="row.command.icon" :name="row.command.icon" class="size-4 shrink-0 text-dimmed" />
-      <span v-if="row.command.prefix" class="text-dimmed">{{ row.command.prefix }}</span>
-      <span class="min-w-0 grow truncate">{{ row.command.label }}</span>
-      <UButton
-        variant="outline"
-        size="sm"
-        class="min-w-36 justify-center"
-        :aria-label="`Change the shortcut of ${row.command.label}`"
-        @click="recording = { command: row.command, slot: row.slot }"
-      >
-        <span v-if="isRecording(row.command, row.slot)" class="text-12 text-dimmed">Press the keys…</span>
-        <span v-else class="flex gap-0.5">
-          <UKbd v-for="(key, index) in row.kbds" :key="index" :value="key" />
-        </span>
-      </UButton>
-      <UTooltip text="Back to" :kbds="row.own" :disabled="!row.changed">
+    <div v-for="row in rows" :key="`${row.command.id}:${row.slot}`" class="flex flex-col gap-1">
+      <div class="flex items-center gap-2.5 text-13">
+        <UIcon v-if="row.command.icon" :name="row.command.icon" class="size-4 shrink-0 text-dimmed" />
+        <span v-if="row.command.prefix" class="text-dimmed">{{ row.command.prefix }}</span>
+        <span class="min-w-0 grow truncate">{{ row.command.label }}</span>
         <UButton
-          icon="i-lucide-rotate-ccw"
-          variant="ghost"
+          variant="outline"
           size="sm"
-          square
-          :disabled="!row.changed"
-          :aria-label="`Put back the shortcut of ${row.command.label}`"
-          @click="writeBinding(row.command, row.slot)"
-        />
-      </UTooltip>
+          class="min-w-36 justify-center"
+          :aria-label="`Change the shortcut of ${row.command.label}`"
+          @click="record(row.command, row.slot)"
+        >
+          <span v-if="isRecording(row.command, row.slot)" class="text-12 text-dimmed">Press the keys…</span>
+          <span v-else class="flex gap-0.5">
+            <UKbd v-for="(key, index) in row.kbds" :key="index" :value="key" />
+          </span>
+        </UButton>
+        <UTooltip text="Back to" :kbds="row.own" :disabled="!row.changed">
+          <UButton
+            icon="i-lucide-rotate-ccw"
+            variant="ghost"
+            size="sm"
+            square
+            :disabled="!row.changed"
+            :aria-label="`Put back the shortcut of ${row.command.label}`"
+            @click="writeBinding(row.command, row.slot)"
+          />
+        </UTooltip>
+      </div>
+      <p v-if="refused?.command === row.command && refused.slot === row.slot" class="text-end text-12 text-warning">
+        {{ refused.reason }}
+      </p>
     </div>
   </div>
 </template>

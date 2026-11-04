@@ -147,6 +147,17 @@ watch(text, (next, previous) => {
   }
 });
 
+// a question asked from the editor focuses the prompt box as soon as the session can be typed in
+watch(
+  [() => agent.isPromptWanted, () => session.state, box],
+  ([isWanted, state, field]) => {
+    if (!isWanted || !field || (state !== "idle" && state !== "running")) return;
+    field.textareaRef?.focus();
+    agent.isPromptWanted = false;
+  },
+  { immediate: true, flush: "post" },
+);
+
 /** send sends the prompt box's text with the files picked, then empties the box. */
 function send(): void {
   const prompt = text.value.trim();

@@ -49,6 +49,13 @@ export function FindRepository(dir: string): $CancellablePromise<[string, boolea
 }
 
 /**
+ * IsInstalled reports whether git is on the PATH. It looks once a run.
+ */
+export function IsInstalled(): $CancellablePromise<boolean> {
+    return $Call.ByID(3286040172);
+}
+
+/**
  * ListCommitFiles returns the files changed by the commit with the given hash, in the repository at the given root
  * folder. A renamed file carries its old path. The error is git's if the repository has no such commit.
  */

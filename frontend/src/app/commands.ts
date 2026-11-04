@@ -4,7 +4,7 @@
  * command bus with the row's id.
  */
 import type { CommandPaletteGroup, CommandPaletteItem } from "@nuxt/ui";
-import { useMutation } from "@pinia/colada";
+import { useMutation, useQueryCache } from "@pinia/colada";
 import { useEventBus } from "@vueuse/core";
 import { Dialogs } from "@wailsio/runtime";
 import * as monaco from "monaco-editor/editor/editor.api";
@@ -15,16 +15,17 @@ import * as appApi from "@services/app/service";
 import * as git from "@services/git/service";
 import * as lsp from "@services/lsp/service";
 import * as workspaceApi from "@services/workspace/service";
+import type { Fix } from "@services/lsp/models";
 import type { Place } from "@services/workspace/models";
 import { confirm, copyText, toast } from "../lib/feedback";
 import { findModel, save, saveUnsaved, unsavedModels, type Model } from "../pages/ide/editor/models";
-import { copiesQuery, loadQuery, placeQuery } from "../queries";
+import { copiesQuery, loadQuery, placeQuery, precedenceQuery } from "../queries";
 import { useAgentStore } from "../stores/agent";
-import { useEditorStore, type Tab } from "../stores/editor";
+import { canSplit, useEditorStore, type Tab } from "../stores/editor";
 import { STAGE, UNSTAGE, useGitStore } from "../stores/git";
 import { useSettingsStore } from "../stores/settings";
 import { COMMAND_BUS, THIS_WINDOW, useWindowsStore } from "../stores/windows";
-import { useWorkspaceStore } from "../stores/workspace";
+import { useWorkspaceStore, VANILLA } from "../stores/workspace";
 import { isWorkspacePage, type PageName } from "./pages";
 import { router } from "./router";
 
@@ -118,7 +119,7 @@ export const COMMANDS: readonly Command[] = [
     prefix: "IDE:",
     icon: "i-lucide-columns-2",
     kbds: ["meta", "\\"],
-    when: hasTab,
+    when: () => canSplit(activeTab()),
     onSelect: () => useEditorStore().split("row"),
   },
   {
@@ -126,7 +127,7 @@ export const COMMANDS: readonly Command[] = [
     label: "Split down",
     prefix: "IDE:",
     icon: "i-lucide-rows-2",
-    when: hasTab,
+    when: () => canSplit(activeTab()),
     onSelect: () => useEditorStore().split("column"),
   },
   {
@@ -202,7 +203,7 @@ export const COMMANDS: readonly Command[] = [
     id: "editor.toggleWiki",
     label: "Show or hide the Wiki pane",
     prefix: "IDE:",
-    icon: "i-lucide-book-open",
+    icon: "i-lucide-book-text",
     kbds: ["meta", "shift", "W"],
     when: isOpen,
     onSelect: () => useWindowsStore().sendCommand("editor.toggleWiki"),
@@ -330,7 +331,7 @@ export const COMMANDS: readonly Command[] = [
     label: "Active file with the game's copy",
     prefix: "Compare:",
     icon: "i-lucide-diff",
-    when: canChange,
+    when: hasGameCopy,
     onSelect: actOn(activeFile, compareWithGame),
   },
   {
@@ -369,7 +370,10 @@ export const COMMANDS: readonly Command[] = [
     id: "window.popOut",
     label: "Open the group in a new window",
     icon: "i-lucide-app-window",
-    when: () => !!useEditorStore().activeGroup()?.tabs.length,
+    when: () =>
+      !!useEditorStore()
+        .activeGroup()
+        ?.tabs.some((tab) => !tab.start),
     onSelect: () =>
       useWindowsStore().popOut(
         "editor",
@@ -462,6 +466,13 @@ export const COMMANDS: readonly Command[] = [
     kbds: ["meta", ","],
     when: () => true,
     onSelect: () => commandBus.emit("settings.open"),
+  },
+  {
+    id: "game.launch",
+    label: "Launch the game",
+    icon: "i-lucide-play",
+    when: isOpen,
+    onSelect: () => run(() => workspaceApi.Launch()),
   },
   // the pane sits in the main window, beside a workspace's pages
   {
@@ -564,14 +575,13 @@ export function compare(left: Place, right: Place): void {
 }
 
 /**
- * compareWithGame opens the compare of a mod's file with the game's copy of it. A file the game has no copy of gets a
- * message.
+ * compareWithGame opens the compare of a mod's file with the game's copy of it. It does nothing for a file the game
+ * has no copy of.
  */
 export function compareWithGame(place: Place): void {
   run(async () => {
     const copy = findGameCopy(place, await loadQuery(copiesQuery(place.path)));
     if (copy) compare(copy, place);
-    else toast?.add({ title: `The game has no ${place.rel}` });
   });
 }
 
@@ -597,26 +607,95 @@ export function canCopyToMod(place: Place | null | undefined): boolean {
  * go into more than one mod, the palette asks which.
  */
 export function copyToMod(place: Place): void {
-  const copy = (modId: string) =>
+  chooseMod("file.copyToMod", "Choose the mod to copy into", listCopyTargets(place), (modId) =>
     run(async () => {
       const target = await loadQuery(placeQuery(await workspaceApi.CreateCopy(place.path, modId)));
       if (target) useEditorStore().show(target);
-    });
-  const mods = listCopyTargets(place);
-  const [only] = mods;
-  if (mods.length === 1 && only) {
-    copy(only);
-    return;
-  }
-  const items = mods.map((id) => ({ label: useWorkspaceStore().originName(id), onSelect: () => copy(id) }));
-  choicesBus.emit({ id: "file.copyToMod", label: "Choose the mod to copy into", items });
+    }),
+  );
 }
 
-/** listCopyTargets lists the mods a file can be copied into: every mod of the workspace but the file's own. */
+/**
+ * chooseMod runs an action on the only mod of the given ids. When there are more, or none, the palette asks which,
+ * under the given command id and question.
+ */
+function chooseMod(id: string, label: string, mods: string[], act: (modId: string) => void): void {
+  const [only] = mods;
+  if (mods.length === 1 && only) {
+    act(only);
+    return;
+  }
+  const items = mods.map((modId) => ({ label: useWorkspaceStore().originName(modId), onSelect: () => act(modId) }));
+  choicesBus.emit({ id, label, items });
+}
+
+/**
+ * listCopyTargets lists the mods a file can be copied into: every mod PMT writes into but the file's own.
+ */
 function listCopyTargets(place: Place): string[] {
   return useWorkspaceStore()
-    .listModIds()
-    .filter((id) => id !== place.origin);
+    .listWritableMods()
+    .filter((mod) => mod.id !== place.origin)
+    .map((mod) => mod.id);
+}
+
+/**
+ * findOverride returns the fix that overrides the entry at a position of a file in the first mod that can hold the
+ * copy. It is null for a file a mod can write to, and for a position where no entry can be overridden.
+ */
+export async function findOverride(place: Place, line: number, column: number): Promise<Fix | null> {
+  if (!place.readOnly) return null;
+  return lsp.BuildOverride(place.path, line, column, "").catch(() => null);
+}
+
+// whether an override is under way, so that a second one asked for meanwhile is not made
+let overriding = false;
+
+/**
+ * overrideEntry copies the entry at a position of a read-only file into a mod, saves and opens the copy, and says where
+ * the copy went and what the game does with it. The copy goes into the mod with the given id, else into the only mod
+ * the file can be copied into, else into the one the palette asks for. The given name is the entry's, or empty when it
+ * is not known. It does nothing while another override is under way. The promise settles when the override is done or
+ * refused; if the palette's question is closed unanswered, it stays unsettled.
+ */
+export function overrideEntry(place: Place, line: number, column: number, name: string, modId?: string): Promise<void> {
+  return new Promise((settle) => {
+    chooseMod(
+      "editor.override",
+      "Choose the mod to override in",
+      modId ? [modId] : listCopyTargets(place),
+      (target) => {
+        if (overriding) {
+          settle();
+          return;
+        }
+        overriding = true;
+        run(async () => {
+          try {
+            const fix = await lsp.BuildOverride(place.path, line, column, target);
+            await useEditorStore().applyFixAsync(fix);
+            const copy = fix.reveal?.place;
+            if (!copy) return;
+            // saved, so the copy is in the index and the entry cannot be overridden into the mod a second time
+            const model = findModel(copy.key);
+            if (model) await save(model);
+            const gameId = useWorkspaceStore().active()?.game?.id ?? "";
+            const precedence = await loadQuery(
+              precedenceQuery({ gameId, database: copy.database, folder: copy.folder }),
+            );
+            toast?.add({
+              title: `${name || "The entry"} copied into ${copy.rel}`,
+              description: precedence,
+              color: "success",
+            });
+          } finally {
+            overriding = false;
+            settle();
+          }
+        });
+      },
+    );
+  });
 }
 
 /** canSaveAsDds reports whether a file can be saved as a DDS: it is a mod's picture that is not a DDS already. */
@@ -630,7 +709,7 @@ export function canSaveAsDds(place: Place | null | undefined): boolean {
  */
 export function findGameCopy(place: Place, copies: Place[] | null | undefined): Place | undefined {
   const [first] = copies ?? [];
-  return !place.readOnly && first?.readOnly ? first : undefined;
+  return place.origin !== VANILLA && first?.origin === VANILLA ? first : undefined;
 }
 
 /**
@@ -667,6 +746,15 @@ function actOn<T>(find: () => T | null | undefined, act: (value: T) => void): ()
 function canChange(): boolean {
   const place = useEditorStore().activeFile();
   return !!place && !place.readOnly;
+}
+
+/**
+ * hasGameCopy reports whether the active tab's file is a mod's and the game's copy is among its copies that the
+ * editor has already read.
+ */
+function hasGameCopy(): boolean {
+  const place = useEditorStore().activeFile();
+  return !!place && !!findGameCopy(place, useQueryCache().getQueryData(copiesQuery(place.path).key));
 }
 
 /** canUseGit reports whether the active tab's file is a mod's, and that mod is in a repository. */

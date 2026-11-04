@@ -9,7 +9,7 @@ offsets. It knows no game and no index: what a key names, and which message the 
 
 | file | holds |
 |---|---|
-| `loc.go` | `Message`, `File` and `Language`; `Parse`, `ParseMessage`; the language rule (`FindSuffixLanguage`, `ToLanguageRel`, `ToLanguageKey`) and the languages' names (`DescribeLanguage`); the writer, `Encode`, `EncodeMessages` and `EncodeAddition` |
+| `loc.go` | `Message`, `File` and `Language`; `Parse`, `ParseMessage`; the language rule (`FindSuffixLanguage`, `FindFolderLanguage`, `ToLanguageRel`, `ToLanguageKey`) and the languages' names (`DescribeLanguage`); the writer, `Encode`, `EncodeMessages` and `EncodeAddition` |
 | `markup.go` | `Markup` and its constants, `Segment`; `Segments`, `ToPlain`; the data calls a text writes (`ListCalls`) and the markup it gets wrong (`ListMarkupFaults`) |
 
 ## The file

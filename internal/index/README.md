@@ -13,7 +13,7 @@ schema's databases.
 | `index.go` | `Role` and its constants, `Occurrence`, `Table` with `Intern` and `Lookup`, `Site`, `Posting`, `Index`; the accessors of a site (`Occurrence`, `File`, `Language`, `Text`, `FindMode`); `FindFile`, `IsListed`, `ListOwnFiles`, `FindRoot`; `Narrow` (a copy that answers for the install and the given mods only) |
 | `scan.go` | the scan and the load: `Scan`, `ScanMods`, `LoadIndex`, `Index.ScanFiles`, `Index.Clone`, `ListFiles`, `ParseFile`; the scan's visitor, `collector`; the messages of a localization file, the references in their text (`ListTextReferences`), and the rows of a table file; `ToCaseless` |
 | `lookup.go` | the lookups by name: `Resolve`, `ResolveLocal`, `ListDatabases`, `ListUses`, `ListCallees`, `ListDefinitions`, `ListMessages`, `FindDefinition`, `ToReference`, `CountDefinitions`; the postings |
-| `combine.go` | what the game keeps: `Winner` with `IsKept`, `Reason` and its constants, `Reasons`, `Cause` and its constants, `ResolveSite`, `FindWinner`, `FindKept`, `FindKeptLocal`, `ListKept`; the file the game reads at a path, `FindLoaded`, `IsLoaded`, `ListImages`, `ResolveTexture`; the load order, the entry modes, the priorities and the replace_path |
+| `combine.go` | what the game keeps: `Winner` with `IsKept`, `Reason` and its constants, `Reasons`, `Cause` and its constants, `ResolveSite`, `FindHider`, `FindWinner`, `FindKept`, `FindKeptLocal`, `ListKept`; the file the game reads at a path, `FindLoaded`, `IsLoaded`, `ListImages`, `ResolveTexture`; the load order, the entry modes, the priorities and the replace_path |
 | `fires.go` | `Fire`, `ListFires`, `ListFiredBy`, `ListActing`; the rule that marks a reference `Firing` |
 
 ## Occurrences and tables
@@ -122,9 +122,12 @@ key's winner, which the workspace's `LookupText` finds, is `replace-folder` wher
 reason is unsettled, `Site` is one of the copies in question, for the features that need one to show. `ResolveSite`
 is the one place a copy's own reason is decided: the winner's reason, `injected` or `combined` for a copy merged into
 it, and, where the winner is unsettled, no copy kept and each loaded one `unsettled`; Health's sites and hover's both
-read it. `Reasons` holds each reason in words, written once: its label, and for a reason a contest's winner can have,
-why the winner wins at length, as a template the contest's facts fill. `FindKept` finds the winner of a name in a
-database, and `ListKept` the winner of every name.
+read it. A copy in a file the game does not read is never kept, whatever the winner: its reason is `shadowed` where a
+file at the same path later in the load order replaces its file, or `dropped` where a mod's `replace_path` names its
+folder, and `ResolveSite` gives the origin of that mod too (`FindHider`). `Reasons` holds each reason in words, written
+once: its label, and for a reason a contest's winner can have, why the winner wins at length, as a template the
+contest's facts fill; the label of `shadowed` and `dropped` is a template too, filled with the mod that hides the copy.
+`FindKept` finds the winner of a name in a database, and `ListKept` the winner of every name.
 
 ## Fires
 

@@ -41,10 +41,19 @@ export function AddInstall(gameID: string, path: string, name: string, version: 
 
 /**
  * AddMod adds a mod folder to a workspace and gives the mod a color slot. It returns an error if the workspace is not
- * recorded, there is no such folder, or the workspace has the mod already.
+ * recorded, the folder cannot be a mod of its game (see CheckModFolder), or the workspace has the mod already.
  */
 export function AddMod(workspaceID: string, dir: string): $CancellablePromise<$models.Mod> {
     return $Call.ByID(4245476076, workspaceID, dir);
+}
+
+/**
+ * CheckModFolder returns an error if a folder cannot be added as a mod of the given install's game: it is no folder, it
+ * is the game's own folder or inside it, or it lacks the game's descriptor. It returns an error if the install is not
+ * recorded.
+ */
+export function CheckModFolder(installID: string, dir: string): $CancellablePromise<void> {
+    return $Call.ByID(2659390721, installID, dir);
 }
 
 /**
@@ -55,8 +64,8 @@ export function Close(): $CancellablePromise<void> {
 }
 
 /**
- * Create makes an empty file or a folder. The watcher sends fs:changed for it. It returns an error if it exists
- * already or is outside the workspace's mods.
+ * Create makes an empty file or a folder, and the folders it goes in that are not there yet. The watcher sends
+ * fs:changed for it. It returns an error if it exists already or is outside the workspace's mods.
  */
 export function Create(path: string, dir: boolean): $CancellablePromise<void> {
     return $Call.ByID(4164671313, path, dir);
@@ -81,7 +90,7 @@ export function CreateLocalization(path: string): $CancellablePromise<void> {
 
 /**
  * CreateMod makes a mod with a localization file and adds it to a workspace. It returns an error if the workspace is
- * not recorded or the folder exists.
+ * not recorded, the name has no letter or digit to make a folder name from, or the folder exists.
  */
 export function CreateMod(workspaceID: string, dir: string, name: string, language: string): $CancellablePromise<$models.Mod> {
     return $Call.ByID(186126879, workspaceID, dir, name, language);
@@ -115,6 +124,15 @@ export function DeleteInstall(id: string): $CancellablePromise<void> {
  */
 export function DeleteWorkspace(id: string): $CancellablePromise<void> {
     return $Call.ByID(2766637015, id);
+}
+
+/**
+ * DescribePrecedence returns, in plain words, which copy the game with the given id keeps when several definitions of a
+ * database share a name. The folder is the database's folder in the game's folder, with its stage folder in front where
+ * the game has stages. It returns "" for a game this build does not support.
+ */
+export function DescribePrecedence(gameID: string, database: string, folder: string): $CancellablePromise<string> {
+    return $Call.ByID(3701070192, gameID, database, folder);
 }
 
 /**
@@ -270,10 +288,12 @@ export function ResetData(): $CancellablePromise<void> {
 }
 
 /**
- * ResolveModFolder returns the folder CreateMod would make. With no name, it returns the folder the mod goes in.
+ * ResolveModFolder returns the folder CreateMod would make for a mod of the given install. With no name, it returns
+ * the folder the mod goes in. It returns an error if the install is not recorded, the name has no letter or digit to
+ * make a folder name from, or the folder exists already.
  */
-export function ResolveModFolder(workspaceID: string, dir: string, name: string): $CancellablePromise<string> {
-    return $Call.ByID(3355031669, workspaceID, dir, name);
+export function ResolveModFolder(installID: string, dir: string, name: string): $CancellablePromise<string> {
+    return $Call.ByID(3355031669, installID, dir, name);
 }
 
 /**

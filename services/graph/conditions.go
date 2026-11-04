@@ -59,7 +59,7 @@ func makeCondition(ws *workspace.Session, mods *index.Index, tree *jomini.Tree, 
 	current := tree.Statements[statement]
 	key := tree.Unquoted(current.Key)
 	condition := Condition{Value: tree.Unquoted(current.Value), Line: toSourceLine(tree, current.Span)}
-	keyword, ok := game.LookupKeyword(game.ShapeTriggers, "", key)
+	keyword, ok := ws.Game.LookupKeyword(game.ShapeTriggers, "", key)
 	if !ok {
 		keyword, _ = game.MatchListIterator(strings.ToLower(key))
 	}

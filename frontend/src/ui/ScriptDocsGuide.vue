@@ -1,39 +1,37 @@
-<!-- A dialog with the steps that make the given game print its script_docs, and what PMT gains from them. -->
+<!-- A dialog with the steps that make the given game write its own documentation, and what PMT gains from it. -->
 <script setup lang="ts">
 import { computed } from "vue";
-import { useQuery } from "@pinia/colada";
+import { useMutation, useQuery } from "@pinia/colada";
 
 import { gamesQuery } from "../queries";
+import * as workspace from "@services/workspace/service";
 
 const open = defineModel<boolean>("open", { default: false });
 const { game } = defineProps<{ game: string }>();
 
 const STEPS = [
   {
-    title: "Add the -debug_mode launch option",
-    body: "In Steam: right-click the game, Properties, Launch Options. In the Paradox launcher there is no equivalent, so use Steam.",
+    title: "Launch the game from PMT",
+    body: "PMT starts it with the debug switch the console needs.",
+    launches: true,
   },
   {
-    title: "Start the game and open a save or a new game",
-    body: "The console is only available in-game, not from the main menu.",
+    title: "Start or load a game",
+    body: "The console opens in a game, not in the main menu.",
   },
   {
-    title: "Open the console with ` or ~",
-    body: "The key depends on your keyboard layout; both are worth trying.",
+    title: "Open the console and type script_docs, then dump_data_types",
+    body: "The console key is ` or ~, by keyboard layout. Each prints nothing; that is expected.",
   },
   {
-    title: "Run script_docs",
-    body: "It runs instantly and prints nothing. That is expected.",
-  },
-  {
-    title: "Come back and reopen the workspace",
-    body: "The files are read from the game's logs or docs folder when the workspace next opens.",
+    title: "Quit the game",
+    body: "PMT sees the new files and offers to read them.",
   },
 ];
 
 const COLUMNS = [
   {
-    title: "With script_docs",
+    title: "With the game's documentation",
     icon: "i-lucide-check",
     color: "text-success",
     lines: [
@@ -57,15 +55,17 @@ const COLUMNS = [
 ];
 
 const { data: games } = useQuery(gamesQuery);
+const { mutate: launch } = useMutation({ mutation: () => workspace.Launch() });
 const name = computed(() => games.value?.find((row) => row.id === game)?.name ?? "the game");
 </script>
 
 <template>
-  <UModal v-model:open="open" title="Generate script_docs" :ui="{ content: 'sm:max-w-2xl' }">
+  <UModal v-model:open="open" title="Get the game's own knowledge" :ui="{ content: 'sm:max-w-2xl' }">
     <template #body>
       <div class="flex flex-col gap-5 text-13">
         <p class="text-dimmed">
-          {{ name }} can print its own scripting documentation. PMT reads it as the type system, and never guesses it.
+          {{ name }} writes a list of every effect, trigger and scope it has when asked. PMT reads it for completion,
+          hover and the checks.
         </p>
         <ol class="space-y-3">
           <li v-for="(step, i) in STEPS" :key="step.title" class="flex gap-3">
@@ -74,10 +74,18 @@ const name = computed(() => games.value?.find((row) => row.id === game)?.name ??
             >
               {{ i + 1 }}
             </span>
-            <div class="min-w-0">
+            <div class="min-w-0 grow">
               <p class="font-medium text-highlighted">{{ step.title }}</p>
               <p class="break-words text-toned">{{ step.body }}</p>
             </div>
+            <UButton
+              v-if="step.launches"
+              label="Launch"
+              icon="i-lucide-play"
+              color="primary"
+              variant="solid"
+              @click="launch()"
+            />
           </li>
         </ol>
         <div class="grid gap-4 sm:grid-cols-2">

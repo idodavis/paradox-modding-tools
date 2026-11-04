@@ -54,7 +54,6 @@ const git = useGitStore();
 const editor = useEditorStore();
 const workspace = useWorkspaceStore();
 const queryCache = useQueryCache();
-const toast = useToast();
 
 const { data: status, error } = useQuery(() => gitStatusQuery(root));
 const { data: refs } = useQuery(() => ({ ...refsQuery(root), enabled: !!status.value }));
@@ -397,16 +396,16 @@ function removeRemote(label: string): void {
   });
 }
 
-/** deleteBranch deletes a branch. One with commits no other branch has is deleted only when the user asks again. */
+/** deleteBranch deletes a branch. One with commits no other branch has is deleted only when the user confirms. */
 async function deleteBranch(branch: string): Promise<void> {
   if (await gitApi.DeleteBranch(root, branch, false)) return;
-  const force = {
-    label: "Delete anyway",
-    color: "error",
-    variant: "soft",
-    onClick: () => run(() => gitApi.DeleteBranch(root, branch, true)),
-  };
-  toast.add({ title: `${branch} has commits no other branch has`, actions: [force] });
+  const confirmed = await confirm.open({
+    title: `Delete ${branch}?`,
+    body: `${branch} has commits no other branch has. Deleting it loses them.`,
+    confirm: "Delete anyway",
+    destructive: true,
+  });
+  if (confirmed) run(() => gitApi.DeleteBranch(root, branch, true));
 }
 </script>
 

@@ -194,7 +194,7 @@ func (walker *walker) findNested(statement int32, level int) (Definition, bool) 
 // findNestedDatabase returns the database that a nesting defines in. It also reports whether that is the holder's own.
 func (walker *walker) findNestedDatabase(nesting game.Nesting) (string, bool) {
 	if nesting.Database != "" {
-		return game.ToDatabase(nesting.Parent) + "." + nesting.Database, false
+		return nesting.Label(), false
 	}
 	if walker.database == nil {
 		return "", true

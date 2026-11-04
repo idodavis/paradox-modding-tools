@@ -324,8 +324,7 @@ func TestHoverNamesWhatItIs(t *testing.T) {
 		card.Sites[0].Place.Origin != game.OriginVanilla || !card.Sites[0].Place.ReadOnly {
 		t.Errorf("a reference: %+v", card)
 	}
-	if card := hover(14, 5); card == nil || card.What != "effect" || len(card.Scopes) == 0 ||
-		card.Scopes[0].Link != "this" || card.Scopes[0].Type != "character" {
+	if card := hover(14, 5); card == nil || card.What != "effect" || card.Runs != "no restriction declared" {
 		t.Errorf("an effect: %+v", card)
 	}
 	if card := hover(13, 5); card == nil || card.What != "keyword" || card.Class != "saving" || card.Blurb == "" {
@@ -334,7 +333,7 @@ func TestHoverNamesWhatItIs(t *testing.T) {
 	if card := hover(4, 3); card == nil || card.What != "field" || card.Takes.Type == "" || !card.Inferred {
 		t.Errorf("a field: %+v", card)
 	}
-	if card := hover(15, 10); card == nil || card.What != "saved scope" || card.Title != "made" || len(card.Sites) != 1 {
+	if card := hover(15, 10); card == nil || card.What != "saved scope" || card.Title != "made" || len(card.Sites) != 0 {
 		t.Errorf("a saved scope: %+v", card)
 	}
 	if card := hover(2, 1); card != nil {
@@ -539,10 +538,10 @@ func TestHoverReadsLocalizationFiles(t *testing.T) {
 		messagesPath: "l_english:\n a:0 \"Hello $b$ [Root.GetName]\"\n b:0 \"Bee\"\n",
 	})
 	target := filepath.Join(dir, "localization", "english", "t_l_english.yml")
-	if card, err := ide.Hover(target, 3, 2); err != nil || card == nil || card.What != "localization key" || card.Blurb != "Bee" || len(card.Sites) != 1 {
+	if card, err := ide.Hover(target, 3, 2); err != nil || card == nil || card.What != "localization key" || card.Quote != "Bee" || len(card.Sites) != 1 {
 		t.Errorf("a key: %+v, %v", card, err)
 	}
-	if card, err := ide.Hover(target, 2, 14); err != nil || card == nil || card.Title != "b" || card.Blurb != "Bee" {
+	if card, err := ide.Hover(target, 2, 14); err != nil || card == nil || card.Title != "b" || card.Quote != "Bee" {
 		t.Errorf("a key in a text: %+v, %v", card, err)
 	}
 	if card, err := ide.Hover(target, 2, 19); err != nil || card == nil || card.What != "data function" {
@@ -690,7 +689,6 @@ func judgeAsMod(ws *workspace.Session) func(path string) ([]Diagnostic, error) {
 	mods := ws.Mods.Load()
 	return func(path string) ([]Diagnostic, error) {
 		place := ws.Locate(mods, path)
-		place.ReadOnly = false
 		if !isDiagnosed(place) {
 			return nil, nil
 		}
@@ -698,7 +696,9 @@ func judgeAsMod(ws *workspace.Session) func(path string) ([]Diagnostic, error) {
 		if err != nil {
 			return nil, err
 		}
-		return newVisitor(ws, mods, place).diagnoseTree(document), nil
+		visitor := newVisitor(ws, mods, place)
+		visitor.parseOnly = false
+		return visitor.diagnoseTree(document), nil
 	}
 }
 

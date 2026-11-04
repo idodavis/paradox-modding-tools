@@ -1,11 +1,11 @@
 /**
  * The settings store: every value through the settings query for the active workspace, written through one mutation,
- * and the theme put on `<html>` from the settings and the system's preference. This store keeps no copy of a value.
+ * and the theme put on `<html>` from the settings. This store keeps no copy of a value.
  * GAMES is the frontend's one table keyed by Go's game ids, holding each game's icon, since icons are the frontend's.
  */
 import { defineStore } from "pinia";
 import { useMutation, useQuery } from "@pinia/colada";
-import { useColorMode, usePreferredDark } from "@vueuse/core";
+import { useColorMode } from "@vueuse/core";
 import { watchEffect } from "vue";
 
 import ck3Icon from "@assets/Icon_CK3.png";
@@ -36,6 +36,23 @@ export const THEME_FAMILIES: readonly { id: string; label: string; note: string 
   { id: "vic3", label: "Victoria", note: "Vic3 workspaces" },
 ];
 
+/**
+ * SIMPLE_HIDES holds what the simple interface hides, each by its id and the label the start page names it by: the
+ * settings `ide.minimap`, `ide.predict` and `ide.signature`, the sidebar views `git` and `entries`, the panel tabs
+ * `output` and `terminal`, and `hover.details`, the hover card's facts beyond its title, blurb, problems and where its
+ * name is defined.
+ */
+export const SIMPLE_HIDES: readonly { id: string; label: string }[] = [
+  { id: "ide.minimap", label: "Minimap" },
+  { id: "ide.predict", label: "Predicted text" },
+  { id: "ide.signature", label: "Signature help" },
+  { id: "git", label: "Source control" },
+  { id: "entries", label: "Entries" },
+  { id: "output", label: "Output" },
+  { id: "terminal", label: "Terminal" },
+  { id: "hover.details", label: "Hover card details" },
+];
+
 /** gameIcon returns the URL of a game's icon. It is "" for a game the app has no icon for. */
 export function gameIcon(id: string): string {
   return GAMES.find((row) => row.id === id)?.icon ?? "";
@@ -54,14 +71,20 @@ export const useSettingsStore = defineStore("settings", () => {
     mutation: (change: { key: string; value: string }) =>
       app.WriteSetting(workspace.activeId(), change.key, change.value),
   });
-  const systemDark = usePreferredDark();
   const colorMode = useColorMode();
 
   /** value returns a setting's value, its default if never set. It is "" for a key the catalog lacks. */
   const value = (key: string): string => values.value?.[key] ?? "";
 
-  /** isOn reports whether a setting that is a switch is on. */
-  const isOn = (key: string): boolean => value(key) === "true";
+  /** isHidden reports whether the simple interface is on and hides the part with the given id. */
+  const isHidden = (id: string): boolean =>
+    value("appearance.simple") === "true" && SIMPLE_HIDES.some((row) => row.id === id);
+
+  /** isOn reports whether a setting that is a switch is on. It is off for a setting the simple interface hides. */
+  const isOn = (key: string): boolean => value(key) === "true" && !isHidden(key);
+
+  /** isGuided reports whether Guidance for new modders is on: the parts of the app that only teach. */
+  const isGuided = (): boolean => isOn("guidance.newModders");
 
   /** write writes a setting. The config:changed event then refreshes the query. */
   const write = (key: string, value: string): void => mutate({ key, value });
@@ -74,13 +97,10 @@ export const useSettingsStore = defineStore("settings", () => {
     write(key, (listed ? [...items, item] : items).join(","));
   };
 
-  /** theme returns the theme in force: the family and whether it is dark, from the settings and the system. */
+  /** theme returns the theme in force: the family and whether it is dark, from the settings. */
   const theme = (): { family: string; dark: boolean } => {
     const game = isOn("appearance.matchGame") ? GAMES.find((row) => row.id === state.value?.game?.id) : undefined;
-    return {
-      family: game?.id ?? (value("appearance.theme") || "pmt"),
-      dark: isOn("appearance.followSystem") ? systemDark.value : isOn("appearance.dark"),
-    };
+    return { family: game?.id ?? (value("appearance.theme") || "pmt"), dark: isOn("appearance.dark") };
   };
 
   /**
@@ -101,6 +121,9 @@ export const useSettingsStore = defineStore("settings", () => {
     lineNumbersMinChars: 4,
   });
 
+  /** toPixels returns a length given in rem as pixels at the app's scale. */
+  const toPixels = (rem: number): number => (rem * 16 * (Number(value("appearance.scale")) || 100)) / 100;
+
   // the one place the theme and the scale reach the page; nothing is drawn over the page's own until they are read
   watchEffect(() => {
     if (!values.value) return;
@@ -108,9 +131,9 @@ export const useSettingsStore = defineStore("settings", () => {
     const root = document.documentElement;
     root.dataset.theme = `${family}-${dark ? "dark" : "light"}`;
     colorMode.value = dark ? "dark" : "light";
-    root.style.fontSize = `${(16 * (Number(value("appearance.scale")) || 100)) / 100}px`;
+    root.style.fontSize = `${toPixels(1)}px`;
     root.style.setProperty("--ide-ui-font", `${value("ide.panelTextSize")}px`);
   });
 
-  return { value, isOn, write, writeItem, theme, codeFont };
+  return { value, isHidden, isOn, isGuided, write, writeItem, theme, codeFont, toPixels };
 });

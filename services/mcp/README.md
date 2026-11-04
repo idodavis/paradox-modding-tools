@@ -33,17 +33,22 @@ has them. `Variables` lists the two as the Terminal's settings show them.
 
 The instructions say what PMT is and give the working rules: find a name with PMT's tools and never invent one,
 diagnose a file before calling a change done, write only in the workspace's mods, and leave saving, uploading and
-Settings to the user. Their first paragraph stands alone, since Codex may read no more, and the whole stays under
-Claude's 4,096 characters. `read_guide` holds the rest:
+Settings to the user. They also say to read `read_guide`'s rules before overriding or adding a definition, and its
+workspace topic to learn whether the user is new to modding. Their first paragraph stands alone, since Codex may read
+no more, and the whole stays under Claude's 4,096 characters. `read_guide` holds the rest:
 
 - `pages`: each page's help as the page catalog gives it, which the main window sends once (`SetPages`), then what
   `show` can bring to the front on each page;
 - `workflow`: how a change is made with PMT's tools, from finding a name to checking the file;
-- `workspace`: the open workspace's game and install, its mods in load order with their folders, and the game's
-  folders with what each holds, read from the schema's databases.
+- `rules`: for each of the game's folders, which copy the game keeps when several definitions share a name and the
+  entry modes a mod can write (`Precedence.Describe`), then the first paragraph of the game's readme for the folder
+  where it has one;
+- `workspace`: the open workspace's game and install, a line saying the user has Guidance for new modders on while that
+  setting is on, its mods in load order with their folders, and the game's folders with what each holds, read from the
+  schema's databases.
 
 The starter tasks are `Tasks`, served as MCP prompts and listed by `ListTasks` for the agent pane: fix
-this file's problems, explain this page, write the missing localization, and why this event fires. Each text works
+this file's problems, explain this file, explain this page, write the missing localization, and why this event fires. Each text works
 with the page's chip attached and, outside PMT, through `describe_view`.
 
 ## The tools
@@ -57,7 +62,7 @@ with the page's chip attached and, outside PMT, through `describe_view`.
 | `build_report`, `list_overview`, `list_codes` | the `health` methods of those names; a report's groups are filtered by mod, check and level, and keep their tallies |
 | `find_roots`, `build_graph`, `build_detail` | the `graph` methods of those names |
 | `search_pages`, `read_page`, `build_lexicon` | the `wiki` methods of those names; the Lexicon is filtered by name |
-| `read_guide` | the guide above |
+| `read_guide` | the guide above: the topics pages, workflow, rules and workspace |
 | `describe_view` | the view the window the user looked at last sent (`SetView`) |
 | `rename` | `lsp.PrepareRename` and `lsp.Rename` |
 | `apply_edit` | an entry's range from `lsp.ListSymbols`, its text replaced |

@@ -204,9 +204,10 @@ func removeEntries(dir, base string) error {
 }
 
 // readMod returns a recorded mod with its descriptor and thumbnail, read by the given game's rule. A mod whose folder
-// is missing is broken, and one whose descriptor cannot be read has an empty one.
+// is missing is broken, and one whose descriptor cannot be read has an empty one. A mod in the game's Steam Workshop
+// folder is marked as one.
 func readMod(row *game.Game, record app.Mod) Mod {
-	mod := Mod{Mod: record}
+	mod := Mod{Mod: record, Workshop: row.IsWorkshopFolder(record.Dir)}
 	if files.IsFolder(record.Dir) {
 		mod.Descriptor, _ = ReadDescriptor(row, record.Dir)
 		mod.Thumbnail = findThumbnail(row, record.Dir, mod.Descriptor.Thumbnail)
@@ -471,7 +472,7 @@ func (ws *Session) Rescan(changes []FileChange) error {
 			changes[position].Descriptor = true
 		}
 		// the index skips the watched dot folders, as it skips every dot folder
-		if place.Root == "" || place.ReadOnly || lo.Some(strings.Split(place.Rel, "/"), watchedFolders) {
+		if place.Root == "" || place.Origin == game.OriginVanilla || lo.Some(strings.Split(place.Rel, "/"), watchedFolders) {
 			continue
 		}
 		listed, err := ws.listChanged(mods, place, change.Deleted)

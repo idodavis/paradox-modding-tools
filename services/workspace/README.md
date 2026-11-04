@@ -9,9 +9,9 @@ holds the `*Service` and asks it for the session at each call.
 
 | file | holds |
 |---|---|
-| `workspace.go` | `FileChange`, `Service` with `ServiceShutdown`, `State`, `Scanning`, `FileText`, `Workspace`; the events; the installs (`ListGames`, `ListInstalls`, `ListReadyInstalls`, `DetectInstalls`, `AddInstall`, `UpdateInstall`, `ListLanguages`, `DeleteInstall`, `RescanInstall`); `ResetData`; the workspaces (`ListWorkspaces`, `CreateWorkspace`, `UpdateWorkspace`, `DeleteWorkspace`); the mods (`AddMod`, `ListMods`, `CreateMod`, `ResolveModFolder`, `RemoveMod`, `ReorderMods`, `ResetColors`, `UpdateMod`); `Open`, `Session`, `Close`, `State`, `LookupMod`, `ResolveFolder`; `Launch`; the files (`Read`, `ReadHeader`, `Write`, `WriteBytes`, `CreateCopy`, `ListFolder`, `Create`, `Rename`, `Delete`, `Restore`, `Locate`); `ServeHTTP` |
+| `workspace.go` | `FileChange`, `Service` with `ServiceShutdown`, `State`, `Scanning`, `FileText`, `Workspace`; the events; the games and installs (`ListGames`, `DescribePrecedence`, `ListInstalls`, `ListReadyInstalls`, `DetectInstalls`, `AddInstall`, `UpdateInstall`, `ListLanguages`, `DeleteInstall`, `RescanInstall`); `ResetData`; the workspaces (`ListWorkspaces`, `CreateWorkspace`, `UpdateWorkspace`, `DeleteWorkspace`); `Open`, `Session`, `Close`, `State`, `LookupMod`, `ResolveFolder`; `Launch`; the files (`Read`, `ReadHeader`, `Write`, `WriteBytes`, `CreateCopy`, `ListFolder`, `Create`, `Rename`, `Delete`, `Restore`, `Locate`); `ServeHTTP` |
 | `session.go` | the package comment; `Session`, `Document`; the open: the install's caches, the mods' scan and the watcher; `ScanOrder`; `Close`; the documents, trees and buffers (`ParseDocument`, `LoadDocument`, `LoadTree`, `SetText`, `CloseBuffer`, `LookupBuffer`, `LoadSource`); the texts (`LookupText`, `LookupTitle` with a concept's and a message's title keys, `FindTitleKey`, `FindTextKey`); `FindStatement`; `Rescan` |
-| `mod.go` | `Descriptor`, `Dependency` and `Mod`; `ReadDescriptor`, `ParseDescriptor` (the one reader of a descriptor's text, script or JSON), `WriteDescriptor`; `ListDependencies` (a mod's dependencies, all the way down), `Session.DescribeMod` (a mod's title), `MatchVersion` (whether a supported version fits the game's); `FindMod` (the mod a descriptor's dependency names, by its id or its name); `Mod.ResolveWorkshopID` (the record's Workshop id, else the descriptor's); a new mod's skeleton and its localization file (`FindLocalizationFile`, `CreateLocalization`); the thumbnail |
+| `mod.go` | `Descriptor`, `Dependency` and `Mod`; a workspace's mods (`AddMod`, `ListMods`, `CreateMod`, `ResolveModFolder`, `CheckModFolder`, `RemoveMod`, `ReorderMods`, `ResetColors`, `UpdateMod`) and their color slots; `ReadDescriptor`, `ParseDescriptor` (the one reader of a descriptor's text, script or JSON), `WriteDescriptor`; `ListDependencies` (a mod's dependencies, all the way down), `Session.DescribeMod` (a mod's title), `MatchVersion` (whether a supported version fits the game's); `FindMod` (the mod a descriptor's dependency names, by its id or its name); `Mod.ResolveWorkshopID` (the record's Workshop id, else the descriptor's); a new mod's skeleton and its localization file (`FindLocalizationFile`, `CreateLocalization`); the thumbnail |
 | `locate.go` | `Place`, `Session.Locate`, `ListCopies`, `ListRoots` |
 | `revert.go` | `Hunk`; `RevertHunks`, an agent's edits to a file taken back |
 | `watcher.go` | `Watcher`: the folders it watches, the bursts of changes it reports together, and `Move` |
@@ -129,6 +129,11 @@ language's folder. lsp's quick fix adds keys to it in the base language. `Create
 localization file's header: the fix calls it when the mod lacks the file, and Health's scaffold for a file it creates.
 `MatchVersion` says whether a mod made for a supported version runs on a game version, part by part, a `*` matching
 the rest, and whether any source shows the games matching such a version at all.
+
+`ResolveModFolder` names the folder a mod's name makes and refuses a name with no letter or digit and a folder that
+exists. `checkModFolder` is the one rule for a folder that can be a mod: it is a folder, it is not the game's own or
+inside it, and it has the game's descriptor. `AddMod` calls it, and `CheckModFolder` lets the new-mod form call it
+for a folder picked.
 
 ## Launch
 

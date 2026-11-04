@@ -203,7 +203,8 @@ function buildModel(place: Place, start: { text: string; disk: string; encoding:
     sync: useDebounceFn((): Promise<Diagnostic[]> => sendText(model), 300),
   });
   text.onDidChangeContent(() => {
-    model.unsaved = text.getAlternativeVersionId() !== model.disk.version;
+    // a file no change is written to is never unsaved
+    model.unsaved = !place.readOnly && text.getAlternativeVersionId() !== model.disk.version;
     void syncText(model);
   });
   text.onWillDispose(() => models.delete(place.key));

@@ -11,7 +11,7 @@ import type { Place } from "@services/workspace/models";
 import { plural } from "../../lib/format";
 import { ddsPicturesQuery, loadQuery, placeQuery } from "../../queries";
 import { useEditorStore } from "../../stores/editor";
-import { useWorkspaceStore } from "../../stores/workspace";
+import { useWorkspaceStore, VANILLA } from "../../stores/workspace";
 
 const { place } = defineProps<{ place: Place }>();
 const emit = defineEmits<{ close: [] }>();
@@ -84,7 +84,7 @@ function preselect(): void {
   format.value = first.format;
   mipmaps.value = first.mipmaps;
   if (references.length > 1) likeness.value = `Set like the ${references.length} DDS files these replace`;
-  else if (reference.place.readOnly) likeness.value = `Set like the game's ${reference.place.rel}`;
+  else if (reference.place.origin === VANILLA) likeness.value = `Set like the game's ${reference.place.rel}`;
   else likeness.value = `Set like ${reference.place.name} beside it`;
 }
 

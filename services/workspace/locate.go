@@ -23,16 +23,19 @@ type Place struct {
 	Folder   string `json:"folder"` // "" for a file at its root
 	Root     string `json:"root"`
 	Database string `json:"database"`
-	ReadOnly bool   `json:"readOnly"` // true for the game's own files
+	ReadOnly bool   `json:"readOnly"` // true for a file no change is written to: the game's own, and a Workshop mod's
 	Position int32  `json:"-"`        // where the index lists the file; -1 where it does not
 	IsDir    bool   `json:"isDir"`    // true for a folder: a root, an entry of a folder's listing, or git's or an agent's
 	Drawable bool   `json:"drawable"` // true for a GUI file and for the coats' files and folder, which Visual draws
+	About    string `json:"about"`    // the first paragraph of the game's readme for its database; "" where it has none
+	Readme   string `json:"readme"`   // the full path of that readme; "" where it has none
 }
 
 // Locate returns the place of the file with the given path, as the given index of the mods lists its files. A path
-// under none of the roots gives a place with only the path and its key set. A file of the game is read only. A GUI
-// file is drawable, and so is a file or folder of the coats' database. A file the index does not list has the
-// position -1.
+// under none of the roots gives a place with only the path and its key set. A file of the game or of a mod in Steam's
+// Workshop folder is read only. A GUI file is drawable, and so is a file or folder of the coats' database. A file in a
+// database the game documents has the first paragraph of that readme and its path. A file the index does not list has
+// the position -1.
 func (ws *Session) Locate(mods *index.Index, path string) Place {
 	place := Place{File: files.File{Path: path, Key: files.ToKey(path)}, Name: filepath.Base(path), Position: -1}
 	root, ok := mods.FindRoot(path)
@@ -46,9 +49,13 @@ func (ws *Session) Locate(mods *index.Index, path string) Place {
 		place.Folder = rel[:cut]
 	}
 	place.Root = root.Dir
-	place.ReadOnly = root.Origin == game.OriginVanilla
+	place.ReadOnly = root.Origin == game.OriginVanilla ||
+		lo.ContainsBy(*ws.Order.Load(), func(mod Mod) bool { return mod.ID == root.Origin && mod.Workshop })
 	if database, ok := ws.Schema.FindDatabase(rel); ok {
-		place.Database = database.Name
+		place.Database, place.About = database.Name, database.Definition.Blurb.Value
+		if database.Readme != "" {
+			place.Readme = files.Join(ws.InstallPath, database.Readme)
+		}
 	}
 	place.Drawable = place.Format == files.FormatGUI || place.Database == game.Coat.Database
 	if position, ok := mods.FindFile(path); ok {

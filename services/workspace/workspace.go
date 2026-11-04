@@ -1,5 +1,5 @@
-// workspace.go is the workspace service: the games, installs, workspaces and mods the app records, the one open
-// session, and the reading, writing and moving of the files in the workspace's mods.
+// workspace.go is the workspace service: the games, installs and workspaces the app records, the one open session,
+// and the reading, writing and moving of the files in the workspace's mods.
 
 package workspace
 
@@ -98,9 +98,6 @@ const (
 	EventGameExited      = "game:exited"      // the launched game exited. The data is true if the dumps are fresher
 )
 
-// slotCount is how many color slots there are for mods.
-const slotCount = 16
-
 // init registers the workspace events.
 func init() {
 	application.RegisterEvent[string](EventOpened)
@@ -120,6 +117,18 @@ func (wsp *Service) ServiceShutdown() error {
 
 // ListGames returns the supported games.
 func (wsp *Service) ListGames() []game.Game { return game.ListGames() }
+
+// DescribePrecedence returns, in plain words, which copy the game with the given id keeps when several definitions of a
+// database share a name. The folder is the database's folder in the game's folder, with its stage folder in front where
+// the game has stages. It returns "" for a game this build does not support.
+func (wsp *Service) DescribePrecedence(gameID, database, folder string) string {
+	row := game.LookupGame(gameID)
+	if row == nil {
+		return ""
+	}
+	_, folder = row.SplitStage(folder)
+	return row.LookupPrecedence(database, folder).Describe()
+}
 
 // ListInstalls returns every recorded install of the given game.
 func (wsp *Service) ListInstalls(gameID string) []app.Install {
@@ -355,157 +364,6 @@ func (wsp *Service) DeleteWorkspace(id string) error {
 	wsp.mu.Unlock()
 	return wsp.Config.Update("workspaces", func(records *app.Config) error {
 		records.Workspaces = slices.DeleteFunc(records.Workspaces, func(record app.Workspace) bool { return record.ID == id })
-		return nil
-	})
-}
-
-// AddMod adds a mod folder to a workspace and gives the mod a color slot. It returns an error if the workspace is not
-// recorded, there is no such folder, or the workspace has the mod already.
-func (wsp *Service) AddMod(workspaceID, dir string) (Mod, error) {
-	_, _, row, err := findRecords(wsp.Config.Config(), workspaceID)
-	if err != nil {
-		return Mod{}, err
-	}
-	if !files.IsFolder(dir) {
-		return Mod{}, fmt.Errorf("%s is not a folder", dir)
-	}
-	record := app.Mod{ID: rand.Text(), Dir: dir}
-	err = wsp.updateWorkspace(workspaceID, func(workspace *app.Workspace) error {
-		if lo.ContainsBy(workspace.Mods, func(mod app.Mod) bool { return files.ToKey(mod.Dir) == files.ToKey(dir) }) {
-			return fmt.Errorf("%s is a mod of the workspace already", dir)
-		}
-		record.Color = resolveSlot(workspace.Mods)
-		workspace.Mods = append(workspace.Mods, record)
-		return nil
-	})
-	if err != nil {
-		return Mod{}, err
-	}
-	return readMod(row, record), nil
-}
-
-// ListMods returns the open workspace's mods in load order, each with its descriptor as the session holds it and
-// its record as config.json holds it now. It is empty while no workspace is open.
-//
-//wails:ignore
-func (wsp *Service) ListMods() []Mod {
-	session, err := wsp.Session()
-	if err != nil {
-		return nil
-	}
-	record, _, _, _ := findRecords(wsp.Config.Config(), session.ID)
-	return lo.Map(*session.Order.Load(), func(mod Mod, _ int) Mod {
-		if position := slices.IndexFunc(record.Mods, func(other app.Mod) bool { return other.ID == mod.ID }); position >= 0 {
-			mod.Mod = record.Mods[position]
-		}
-		return mod
-	})
-}
-
-// resolveSlot returns the first color slot that no mod has. If all are taken, it returns the slot of the next place
-// in the load order.
-func resolveSlot(mods []app.Mod) string {
-	for position := range slotCount {
-		slot := makeSlot(position)
-		if !lo.ContainsBy(mods, func(mod app.Mod) bool { return mod.Color == slot }) {
-			return slot
-		}
-	}
-	return makeSlot(len(mods))
-}
-
-// makeSlot returns the color slot of a place in the load order, wrapping around after the last slot.
-func makeSlot(position int) string {
-	return fmt.Sprintf("o%d", position%slotCount+1)
-}
-
-// CreateMod makes a mod with a localization file and adds it to a workspace. It returns an error if the workspace is
-// not recorded or the folder exists.
-func (wsp *Service) CreateMod(workspaceID, dir, name, language string) (Mod, error) {
-	_, install, row, err := findRecords(wsp.Config.Config(), workspaceID)
-	if err != nil {
-		return Mod{}, err
-	}
-	folder, err := createModFolder(row, resolveModDir(row, install, dir), name, resolveVersion(row, install))
-	if err != nil {
-		return Mod{}, err
-	}
-	if file, ok := FindLocalizationFile(row, folder, name, language); ok {
-		if err := createLocalization(file); err != nil {
-			return Mod{}, err
-		}
-	}
-	return wsp.AddMod(workspaceID, folder)
-}
-
-// ResolveModFolder returns the folder CreateMod would make. With no name, it returns the folder the mod goes in.
-func (wsp *Service) ResolveModFolder(workspaceID, dir, name string) (string, error) {
-	_, install, row, err := findRecords(wsp.Config.Config(), workspaceID)
-	if err != nil {
-		return "", err
-	}
-	return resolveModFolder(resolveModDir(row, install, dir), name), nil
-}
-
-// resolveModDir returns the folder a mod is made in. With no folder, it is the game's mod folder.
-func resolveModDir(row *game.Game, install app.Install, dir string) string {
-	return cmp.Or(dir, filepath.Join(row.FindUserDataDir(install.Path), game.LauncherModFolder))
-}
-
-// RemoveMod takes a mod out of a workspace. Its folder stays.
-func (wsp *Service) RemoveMod(workspaceID, modID string) error {
-	return wsp.updateWorkspace(workspaceID, func(workspace *app.Workspace) error {
-		workspace.Mods = slices.DeleteFunc(workspace.Mods, func(mod app.Mod) bool { return mod.ID == modID })
-		return nil
-	})
-}
-
-// ReorderMods sets a workspace's load order. It returns an error unless the order names each of its mods once.
-func (wsp *Service) ReorderMods(workspaceID string, modIDs []string) error {
-	return wsp.updateWorkspace(workspaceID, func(workspace *app.Workspace) error {
-		ordered, err := reorderMods(workspace.Mods, modIDs, func(mod app.Mod) string { return mod.ID })
-		if err == nil {
-			workspace.Mods = ordered
-		}
-		return err
-	})
-}
-
-// reorderMods returns mods in the order of a list of ids. It returns an error unless the list names each mod once.
-func reorderMods[T any](mods []T, modIDs []string, id func(mod T) string) ([]T, error) {
-	remaining := slices.Clone(mods)
-	var ordered []T
-	for _, modID := range modIDs {
-		position := slices.IndexFunc(remaining, func(mod T) bool { return id(mod) == modID })
-		if position < 0 {
-			return nil, fmt.Errorf("the mod %s is not in the workspace or is named twice", modID)
-		}
-		ordered = append(ordered, remaining[position])
-		remaining = slices.Delete(remaining, position, position+1)
-	}
-	if len(remaining) > 0 {
-		return nil, fmt.Errorf("the order leaves out %d of the workspace's mods", len(remaining))
-	}
-	return ordered, nil
-}
-
-// ResetColors gives a workspace's mods the color slots of their places in the load order and clears the game's color.
-func (wsp *Service) ResetColors(workspaceID string) error {
-	return wsp.updateWorkspace(workspaceID, func(workspace *app.Workspace) error {
-		workspace.GameColor = ""
-		for position := range workspace.Mods {
-			workspace.Mods[position].Color = makeSlot(position)
-		}
-		return nil
-	})
-}
-
-// UpdateMod replaces a mod's record in a workspace. A mod the workspace does not have is ignored.
-func (wsp *Service) UpdateMod(workspaceID string, mod app.Mod) error {
-	return wsp.updateWorkspace(workspaceID, func(workspace *app.Workspace) error {
-		if position := slices.IndexFunc(workspace.Mods, func(other app.Mod) bool { return other.ID == mod.ID }); position >= 0 {
-			workspace.Mods[position] = mod
-		}
 		return nil
 	})
 }
@@ -761,7 +619,7 @@ func (wsp *Service) CreateCopy(path, modID string) (string, error) {
 }
 
 // FindWritable returns the open session if every given file or folder is in one of its mods. It returns an error if no
-// workspace is open, or if one is outside the mods or among the game's own files.
+// workspace is open, or if one is outside the mods, among the game's own files or in a Workshop mod.
 //
 //wails:ignore
 func (wsp *Service) FindWritable(paths ...string) (*Session, error) {
@@ -774,8 +632,11 @@ func (wsp *Service) FindWritable(paths ...string) (*Session, error) {
 		switch place := session.Locate(mods, path); {
 		case place.Root == "":
 			return nil, fmt.Errorf("%s is outside the workspace", path)
-		case place.ReadOnly:
+		case place.Origin == game.OriginVanilla:
 			return nil, errors.New("the game's own files are not changed")
+		case place.ReadOnly:
+			return nil, fmt.Errorf("%s is Steam's copy of a Workshop mod; Steam replaces it when its author updates it",
+				session.DescribeMod(place.Origin))
 		}
 	}
 	return session, nil
@@ -811,10 +672,13 @@ func (wsp *Service) ListFolder(dir string) ([]Place, error) {
 	return places, nil
 }
 
-// Create makes an empty file or a folder. The watcher sends fs:changed for it. It returns an error if it exists
-// already or is outside the workspace's mods.
+// Create makes an empty file or a folder, and the folders it goes in that are not there yet. The watcher sends
+// fs:changed for it. It returns an error if it exists already or is outside the workspace's mods.
 func (wsp *Service) Create(path string, dir bool) error {
 	if _, err := wsp.FindWritable(path); err != nil {
+		return err
+	}
+	if err := os.MkdirAll(filepath.Dir(path), 0o755); err != nil {
 		return err
 	}
 	if dir {

@@ -69,7 +69,7 @@ const available = computed((): { id: string; label: string; items: CommandPalett
   // each row shows its first shortcut as the user set it
   const applicable = COMMANDS.filter((row) => row.when()).map((row) => ({ ...row, kbds: listBindings(row)[0] }));
   const recentRows = recent.value.flatMap((one) => applicable.find((row) => row.id === one) ?? []);
-  const names: PageName[] = ["library", "wizard", ...(activeId ? listShownTools() : [])];
+  const names: PageName[] = ["library", "new-mod", "wizard", ...(activeId ? listShownTools() : [])];
   const pages = names.map((name) => {
     const page: Page = PAGES[name];
     return {
@@ -90,8 +90,8 @@ const available = computed((): { id: string; label: string; items: CommandPalett
     { id: "commands", label: "Commands", items: applicable.filter((row) => !recentRows.includes(row)) },
     { id: "pages", label: "Pages", items: pages },
     { id: "workspaces", label: "Workspaces", items: records },
-    { id: "switches", label: "Settings you can switch", items: activeId ? listSwitches() : [] },
-    { id: "values", label: "Settings with a value", items: activeId ? listValues() : [] },
+    { id: "switches", label: "Settings you can switch", items: listSwitches() },
+    { id: "values", label: "Settings with a value", items: listValues() },
   ];
 });
 const { results } = useFuse(
@@ -148,13 +148,15 @@ useEventBus<CommandPaletteGroup>("pmt.choices").on((group) => {
 
 /**
  * listSwitches lists the palette's switches: each setting that is one, each page a workspace can show and each of
- * the checks.
+ * the checks. The IDE's settings and the checks are left out while no workspace is open, and so is a setting the
+ * simple interface hides, since flipping it would show nothing.
  */
 function listSwitches(): CommandPaletteItem[] {
   const settingRows = catalog.value ?? [];
   const findSetting = (key: string) => settingRows.find((setting) => setting.key === key);
+  const isOpen = !!workspace.activeId();
   const switches = settingRows
-    .filter((setting) => setting.type === "switch")
+    .filter((setting) => setting.type === "switch" && (isOpen || !setting.workspace) && !settings.isHidden(setting.key))
     .map((setting) =>
       makeToggle(
         `setting.${setting.key}`,
@@ -174,7 +176,7 @@ function listSwitches(): CommandPaletteItem[] {
   );
   // the setting lists the checks turned off
   const off = settings.value("ide.checks").split(",");
-  const checks = (codes.value ?? []).map((code) =>
+  const checks = (isOpen ? (codes.value ?? []) : []).map((code) =>
     makeToggle(
       `setting.ide.checks.${code.id}`,
       { label: `Check: ${code.label}`, words: [code.id, findSetting("ide.checks")?.words].join(" "), scope: "IDE" },
@@ -198,10 +200,14 @@ function makeToggle(
   return { ...row, id, prefix: "Toggle:", icon: "i-lucide-check", slot: "setting", on, onSelect: () => write(!on) };
 }
 
-/** listValues lists the palette's settings with a value. Each opens Settings at its section. */
+/**
+ * listValues lists the palette's settings with a value. Each opens Settings at its row. The IDE's settings are left out
+ * while no workspace is open.
+ */
 function listValues(): CommandPaletteItem[] {
+  const isOpen = !!workspace.activeId();
   return (catalog.value ?? [])
-    .filter((setting) => setting.type !== "switch" && !LISTS.includes(setting.key))
+    .filter((setting) => setting.type !== "switch" && !LISTS.includes(setting.key) && (isOpen || !setting.workspace))
     .map((setting) => ({
       id: `setting.${setting.key}`,
       label: setting.label,
@@ -209,7 +215,7 @@ function listValues(): CommandPaletteItem[] {
       icon: "i-lucide-settings",
       slot: "setting",
       opens: `opens ${toSentence(setting.section)}`,
-      onSelect: () => commandBus.emit("settings.open", setting.section),
+      onSelect: () => commandBus.emit("settings.open", setting.key),
     }));
 }
 

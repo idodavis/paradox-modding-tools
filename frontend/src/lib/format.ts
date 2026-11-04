@@ -191,12 +191,12 @@ export function installLine(game: string, version: string, scannedAt: string): s
   return [[game, version].filter(Boolean).join(" "), scanned].filter(Boolean).join(", ");
 }
 
-/** describeDumps describes the script_docs a workspace reads, and whether they are the game's own and current. */
+/** describeDumps describes the game's documentation a workspace reads, and whether it is the game's own and current. */
 export function describeDumps(dumps: SourceState): { current: boolean; label: string } {
-  if (dumps.origin === "install" && !dumps.stale) return { current: true, label: "script_docs loaded" };
-  if (dumps.origin === "install") return { current: false, label: "script_docs older than the game" };
-  if (dumps.origin === "shipped") return { current: false, label: "Using PMT's copy of script_docs" };
-  return { current: false, label: "No script_docs" };
+  if (dumps.origin === "install" && !dumps.stale) return { current: true, label: "The game's own documentation" };
+  if (dumps.origin === "install") return { current: false, label: "The game's documentation, older than the game" };
+  if (dumps.origin === "shipped") return { current: false, label: "PMT's copy of the game's documentation" };
+  return { current: false, label: "No documentation of the game" };
 }
 
 /** describeLexicon returns what a workspace's schema declares, such as "612 effects, 981 triggers, 44 scope types". */

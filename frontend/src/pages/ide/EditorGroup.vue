@@ -1,31 +1,44 @@
 <!--
   One editor group: its tab strip, with tabs dragged between groups and windows, and the active tab shown as code, an
-  image or a diff, or in Visual as the picture it draws. A file that changed on disk under unsaved text shows a notice
-  and a compare.
+  image, a diff or the start page, or in Visual as the picture it draws. A group with no tab shows the start page. A
+  file that changed on disk under unsaved text shows a notice and a compare. A read only file shows a notice that says
+  how to change it.
 -->
 <script setup lang="ts">
-import { computed, shallowRef, useTemplateRef, watch } from "vue";
+import { computed, shallowReactive, shallowRef, useTemplateRef, watch } from "vue";
 import { useMutation, useQuery } from "@pinia/colada";
-import { watchDebounced } from "@vueuse/core";
-import { insertNodeAt, removeNode, useSortable } from "@vueuse/integrations/useSortable";
+import { useEventListener, watchDebounced } from "@vueuse/core";
 import { Clipboard } from "@wailsio/runtime";
 import type { ContextMenuItem, DropdownMenuItem } from "@nuxt/ui";
 
+import { Format } from "@internal/files/models";
 import * as lsp from "@services/lsp/service";
 import type { Place } from "@services/workspace/models";
 
-import { compare, compareWithGame, findCommand, findGameCopy, findKbds } from "../../app/commands";
+import {
+  canCopyToMod,
+  compare,
+  compareWithGame,
+  copyToMod,
+  findCommand,
+  findGameCopy,
+  findKbds,
+  findOverride,
+  overrideEntry,
+} from "../../app/commands";
 import { copiesQuery, fileQuery } from "../../queries";
-import { useEditorStore, type Group, type Tab } from "../../stores/editor";
+import { canSplit, useEditorStore, type Group, type Side, type Tab } from "../../stores/editor";
 import { THIS_WINDOW, useWindowsStore } from "../../stores/windows";
-import { useWorkspaceStore } from "../../stores/workspace";
+import { useWorkspaceStore, VANILLA } from "../../stores/workspace";
 import CompareView from "../../ui/CompareView.vue";
+import CreateModForm from "../../ui/CreateModForm.vue";
 import OriginChip from "../../ui/OriginChip.vue";
 import { EDITOR_LANGUAGES } from "../../ui/ScriptSnippet.vue";
 import CodeEditor from "./CodeEditor.vue";
 import DrawPane from "./draw/DrawPane.vue";
 import GitDiff from "./GitDiff.vue";
 import ImageView from "./ImageView.vue";
+import StartPage from "./StartPage.vue";
 import { findModel, save, setText, type Model } from "./editor/models";
 import { findIcon, VIEWS } from "./editor/tabs";
 
@@ -33,7 +46,7 @@ const { group, active } = defineProps<{ group: Group; active: boolean }>();
 
 /** The data a dragged tab carries to another window. */
 const TAB = "application/x-pmt-tab";
-type Zone = "left" | "right" | "up" | "down" | "middle";
+type Zone = Side | "middle";
 /** The half of the editor each drop zone lights. */
 const ZONES: Record<Zone, string> = {
   left: "inset-y-0 left-0 w-1/2",
@@ -55,8 +68,8 @@ const editor = useEditorStore();
 const windows = useWindowsStore();
 const workspace = useWorkspaceStore();
 const strip = useTemplateRef("strip");
-// the tabs as the strip draws them: sortable moves them, and the store hears of it when the drag ends
-const order = shallowRef<Tab[]>([]);
+// the index in the group a tab dragged over the strip would land at, while one is
+const landing = shallowRef<number | null>(null);
 const over = shallowRef(false);
 const zone = shallowRef<Zone | null>(null);
 
@@ -71,35 +84,72 @@ const isDrawable = computed(() => editor.isDrawable(activeTab.value));
 // this group is the one Visual shows, and its active file is drawn
 const isVisual = computed(() => active && editor.mode === "visual" && isDrawable.value);
 const corner = computed(() => THIS_WINDOW === "main" && editor.layout().rows[0]?.columns.at(-1)?.id === group.id);
-const rows = computed(() => order.value.map(describe));
+const rows = computed(() => group.tabs.map(describe));
 
-// where the caret is, as the definition and the blocks around it
-const { mutate: locateCaret, data: card } = useMutation({
-  mutation: (open: Model) => lsp.Hover(open.place.path, open.caret.line, open.caret.column),
+// where the caret is, as the definition and the blocks around it, and the fix that overrides the entry it is in
+const { mutate: locateCaret, data: located } = useMutation({
+  mutation: async (open: Model) => {
+    const [card, override] = await Promise.all([
+      lsp.Hover(open.place.path, open.caret.line, open.caret.column),
+      findOverride(open.place, open.caret.line, open.caret.column),
+    ]);
+    return { card, override };
+  },
 });
+const card = computed(() => located.value?.card);
 const crumbs = computed(() => [...(place.value?.rel.split("/") ?? []), ...(card.value?.within ?? [])]);
 const folders = computed(() => (place.value?.rel.split("/").length ?? 1) - 1);
 // a file of the game that a mod replaces shows the mod's name; a mod file's copies, which the cache may hold, do not
 const { data: copies } = useQuery(() => ({
   ...copiesQuery(place.value?.path ?? ""),
-  enabled: !!place.value?.readOnly && !activeTab.value?.side,
+  enabled: place.value?.origin === VANILLA && !activeTab.value?.side,
 }));
 const replacement = computed(() =>
-  place.value?.readOnly && copies.value && copies.value.length > 1 ? copies.value.at(-1) : undefined,
+  place.value?.origin === VANILLA && copies.value && copies.value.length > 1 ? copies.value.at(-1) : undefined,
 );
 // the file of the tab whose menu is open, with the game's copy of it, read when the menu opens
 const menuPlace = shallowRef<Place | null>(null);
 const { data: menuCopies } = useQuery(() => ({
   ...copiesQuery(menuPlace.value?.path ?? ""),
-  enabled: !!menuPlace.value && !menuPlace.value.readOnly,
+  enabled: !!menuPlace.value && menuPlace.value.origin !== VANILLA,
 }));
 const menuGameCopy = computed(() => menuPlace.value && findGameCopy(menuPlace.value, menuCopies.value));
+// the tabs whose read only notice was closed, and whether the form that makes a mod for the changes is open
+const closedNotices = shallowReactive(new Set<string>());
+const creating = shallowRef(false);
+// how else to change a read only file where the caret is in no entry Override can take: put the caret in one, write a
+// localization key again in the replace folder, or copy the file into a mod; none while the caret is not located
+const hint = computed(() => {
+  const open = place.value;
+  if (!open || !located.value || located.value.override) return null;
+  if (open.database) return { text: "Put the caret in an entry to override it.", copy: false };
+  if (open.format === Format.FormatLocalization) {
+    return {
+      text: "To change a line, write its key again in your mod's localization replace folder, which the game reads first.",
+      copy: false,
+    };
+  }
+  return { text: "To change this file, copy it into a mod.", copy: canCopyToMod(open) };
+});
+// what the notice over a read only file says: the game's own files, or Steam's copy of a Workshop mod, and where Steam
+// puts it; none for a file a mod can write to
+const notice = computed(() => {
+  const open = place.value;
+  if (!open?.readOnly || activeTab.value?.side || closedNotices.has(group.active ?? "")) return null;
+  if (open.origin === VANILLA) {
+    return {
+      text: "Game files are read only. Your mod changes an entry by overriding it.",
+      detail: "",
+      workshop: false,
+    };
+  }
+  return {
+    text: `${workspace.originName(open.origin)} is from the Steam Workshop, so PMT keeps it read only.`,
+    detail: `Steam replaces ${open.root} each time its author updates it.`,
+    workshop: true,
+  };
+});
 
-watch(
-  () => group.tabs,
-  (tabs) => (order.value = [...tabs]),
-  { immediate: true, deep: true },
-);
 watch(
   () => group.active,
   (id) => strip.value?.querySelector(`[data-tab="${CSS.escape(id ?? "")}"]`)?.scrollIntoView({ inline: "nearest" }),
@@ -110,23 +160,8 @@ watchDebounced(
   () => model.value && locateCaret(model.value),
   { debounce: 300, immediate: true },
 );
-useSortable(strip, order, {
-  group: "pmt-tabs",
-  animation: 120,
-  draggable: "[data-tab]",
-  watchElement: true,
-  setData: (data, item) => data.setData(TAB, item.dataset.tab ?? ""),
-  onEnd: ({ item, from, to, oldIndex, newIndex }) => {
-    if (from !== to) {
-      removeNode(item);
-      insertNodeAt(from, item, oldIndex ?? 0);
-    }
-    const id = item.dataset.tab;
-    if (id && to.dataset.group && newIndex !== undefined && (from !== to || oldIndex !== newIndex))
-      editor.move(id, to.dataset.group, newIndex);
-  },
-});
-
+// a tab drag ends with a drop or a drag end that reaches the window wherever it lands, so every group stops showing it
+useEventListener(window, ["drop", "dragend"], endDrag);
 const { mutate: saveModel } = useMutation({ mutation: (open: Model) => save(open) });
 // the compare of the active file's unsaved text with the disk's is open
 const comparing = shallowRef(false);
@@ -143,6 +178,17 @@ function applyDisk(open: Model): void {
   comparing.value = false;
 }
 
+/**
+ * overrideHere overrides the entry at a model's caret in the mod the notice's button names, then finds the caret's
+ * place again, so the button goes once the entry is overridden.
+ */
+function overrideHere(open: Model): void {
+  const modId = located.value?.override?.reveal?.place.origin;
+  void overrideEntry(open.place, open.caret.line, open.caret.column, card.value?.within?.[0] ?? "", modId).then(() =>
+    locateCaret(open),
+  );
+}
+
 /** describe describes a tab for the strip: its label, its icon and what marks it. */
 function describe(tab: Tab) {
   const tabPlace = editor.placeOf(tab.key);
@@ -151,7 +197,8 @@ function describe(tab: Tab) {
     tab,
     tabPlace,
     path,
-    label: tabPlace?.name ?? path,
+    label: tab.start ? "Start" : (tabPlace?.name ?? path),
+    symbol: tab.start ? "i-lucide-house" : tab.side ? "i-lucide-git-compare" : "",
     icon: tabPlace ? findIcon(tabPlace) : "",
     suffix: tab.side ? (tab.hash?.slice(0, 7) ?? tab.side) : "",
     readOnly: !!tabPlace?.readOnly && !tab.side,
@@ -173,7 +220,7 @@ function setMode(choice: string | number): void {
 
 /** select shows a tab of this group, which makes the group the active one. */
 function select(row: Row): void {
-  if (row.tabPlace) editor.open(row.tab, row.tabPlace, group.id);
+  if (row.tabPlace || row.tab.start) editor.open(row.tab, row.tabPlace, group.id);
   else editor.activate(group.id);
 }
 
@@ -206,7 +253,17 @@ function split(row: Row, direction: "row" | "column"): void {
   editor.split(direction);
 }
 
-/** dropOutside moves a tab into a window of its own when it was dropped outside this window. */
+/** startDrag starts the drag of a tab. The drag carries the tab's id, so a drop in this window or another moves it. */
+function startDrag(event: DragEvent, row: Row): void {
+  if (!event.dataTransfer) return;
+  event.dataTransfer.setData(TAB, row.tab.id);
+  event.dataTransfer.effectAllowed = "move";
+}
+
+/**
+ * dropOutside moves a tab into a window of its own when it was dropped outside this window. The start tab stays where
+ * it was.
+ */
 function dropOutside(event: DragEvent): void {
   const id = event.target instanceof HTMLElement ? event.target.closest<HTMLElement>("[data-tab]")?.dataset.tab : "";
   const outside =
@@ -214,20 +271,55 @@ function dropOutside(event: DragEvent): void {
     event.screenX > window.screenX + window.outerWidth ||
     event.screenY < window.screenY ||
     event.screenY > window.screenY + window.outerHeight;
-  if (id && outside && event.dataTransfer?.dropEffect === "none") windows.popOut("editor", [id]);
+  const isStart = group.tabs.some((tab) => tab.id === id && tab.start);
+  if (id && !isStart && outside && event.dataTransfer?.dropEffect === "none") windows.popOut("editor", [id]);
 }
 
-/** drop asks the window that holds a dragged tab for it. */
-function drop(event: DragEvent): void {
+/**
+ * dropTab brings a dragged tab to this group: it asks the other windows for the tab, and moves it here if this window
+ * holds it, to the given index of the group or into a new group on the given side.
+ */
+function dropTab(event: DragEvent, place: number | Side): void {
   const id = event.dataTransfer?.getData(TAB);
   if (!id) return;
   editor.activate(group.id);
   windows.requestTab(id);
+  editor.move(id, group.id, place);
 }
 
-/** allow lets a tab from another window be dropped on the strip. */
-function allow(event: DragEvent): void {
-  if (event.dataTransfer?.types.includes(TAB)) event.preventDefault();
+/**
+ * findLanding returns the index in this group a tab dragged over the strip would land at: before the first tab whose
+ * middle is past the pointer, else the end.
+ */
+function findLanding(event: DragEvent): number {
+  const tabs = [...(strip.value?.querySelectorAll("[data-tab]") ?? [])];
+  const index = tabs.findIndex((tab) => {
+    const box = tab.getBoundingClientRect();
+    return event.clientX < box.left + box.width / 2;
+  });
+  return index < 0 ? tabs.length : index;
+}
+
+/**
+ * dropOnStrip drops a tab on the strip where the line shows. A tab of this group is taken out before it goes back in,
+ * so one moved to the right lands a slot earlier.
+ */
+function dropOnStrip(event: DragEvent): void {
+  const index = findLanding(event);
+  const start = group.tabs.findIndex((tab) => tab.id === event.dataTransfer?.getData(TAB));
+  dropTab(event, start >= 0 && start < index ? index - 1 : index);
+}
+
+/** overStrip lets a dragged tab be dropped on the strip, and keeps where it would land. */
+function overStrip(event: DragEvent): void {
+  if (!event.dataTransfer?.types.includes(TAB)) return;
+  event.preventDefault();
+  landing.value = findLanding(event);
+}
+
+/** leaveStrip takes the line away once the pointer is out of the strip. */
+function leaveStrip(event: DragEvent): void {
+  if (!isEnteringChild(event)) landing.value = null;
 }
 
 /** enter starts to show where a dragged tab would land in the editor. */
@@ -235,14 +327,18 @@ function enter(event: DragEvent): void {
   if (event.dataTransfer?.types.includes(TAB)) over.value = true;
 }
 
-/** leave stops showing where a dragged tab would land once the pointer is out of the group. */
-function leave(event: DragEvent): void {
-  if (
+/** isEnteringChild tells whether a leaving drag goes to an element inside the one that handles the event. */
+function isEnteringChild(event: DragEvent): boolean {
+  return (
     event.currentTarget instanceof Node &&
     event.relatedTarget instanceof Node &&
     event.currentTarget.contains(event.relatedTarget)
-  )
-    return;
+  );
+}
+
+/** leave stops showing where a dragged tab would land once the pointer is out of the group. */
+function leave(event: DragEvent): void {
+  if (isEnteringChild(event)) return;
   over.value = false;
   zone.value = null;
 }
@@ -257,14 +353,17 @@ function lightZone(event: DragEvent): void {
   zone.value = x < 0.25 ? "left" : x > 0.75 ? "right" : y < 0.25 ? "up" : y > 0.75 ? "down" : "middle";
 }
 
-/** dropOnEditor drops a tab on the lit zone: into this group in the middle, else into a new group. */
+/** dropOnEditor drops a tab on the lit zone: into this group in the middle, else into a new group on that side. */
 function dropOnEditor(event: DragEvent): void {
-  const id = event.dataTransfer?.getData(TAB);
-  const middle = zone.value === "middle" || !zone.value;
+  const target = zone.value;
+  dropTab(event, !target || target === "middle" ? group.tabs.length : target);
+}
+
+/** endDrag stops showing a tab drag in this group: the line in the strip, the editor's drop layer and its lit zone. */
+function endDrag(): void {
+  landing.value = null;
   over.value = false;
   zone.value = null;
-  drop(event);
-  if (id) editor.move(id, middle ? group.id : crypto.randomUUID(), middle ? group.tabs.length : 0);
 }
 
 /** buildMenu builds the menu of a tab. */
@@ -299,9 +398,15 @@ function buildMenu(row: Row): ContextMenuItem[][] {
         label: "Split right",
         icon: "i-lucide-columns-2",
         kbds: findKbds("editor.splitRight"),
+        disabled: !canSplit(row.tab),
         onSelect: () => split(row, "row"),
       },
-      { label: "Split down", icon: "i-lucide-rows-2", onSelect: () => split(row, "column") },
+      {
+        label: "Split down",
+        icon: "i-lucide-rows-2",
+        disabled: !canSplit(row.tab),
+        onSelect: () => split(row, "column"),
+      },
     ],
     [
       {
@@ -317,27 +422,32 @@ function buildMenu(row: Row): ContextMenuItem[][] {
         onSelect: () => mine && editor.compareFile && compare(editor.compareFile, mine),
       },
     ],
-    [
-      {
-        label: "Move into a new window",
-        icon: "i-lucide-app-window",
-        onSelect: () => windows.popOut("editor", [row.tab.id]),
-      },
-      ...(THIS_WINDOW === "main"
-        ? []
-        : [
+    // the start page never leaves the main window
+    ...(row.tab.start
+      ? []
+      : [
+          [
             {
-              label: "Back into the main window",
-              icon: "i-lucide-panel-top-close",
-              onSelect: () => windows.dockBack(),
+              label: "Move into a new window",
+              icon: "i-lucide-app-window",
+              onSelect: () => windows.popOut("editor", [row.tab.id]),
             },
-          ]),
-    ],
+            ...(THIS_WINDOW === "main"
+              ? []
+              : [
+                  {
+                    label: "Back into the main window",
+                    icon: "i-lucide-panel-top-close",
+                    onSelect: () => windows.dockBack(),
+                  },
+                ]),
+          ],
+        ]),
     [
-      { label: "Copy path", onSelect: () => void Clipboard.SetText(mine?.path ?? row.path) },
+      { label: "Copy path", disabled: !mine, onSelect: () => mine && void Clipboard.SetText(mine.path) },
       {
         label: "Reveal in explorer",
-        disabled: !REVEAL?.when(),
+        disabled: !mine || !REVEAL?.when(),
         onSelect: (event) => {
           select(row);
           REVEAL?.onSelect?.(event);
@@ -352,7 +462,7 @@ const actions = computed<DropdownMenuItem[]>(() => [
     label: "Split right",
     icon: "i-lucide-columns-2",
     kbds: findKbds("editor.splitRight"),
-    disabled: !activeTab.value,
+    disabled: !canSplit(activeTab.value),
     onSelect: () => editor.split("row"),
   },
   { label: "Close the others", onSelect: () => void closeTabs(listOthers(group.active)) },
@@ -372,15 +482,15 @@ const actions = computed<DropdownMenuItem[]>(() => [
       <template v-if="!isVisual">
         <div
           ref="strip"
-          :data-group="group.id"
           class="flex min-w-0 items-start overflow-x-auto overflow-y-hidden [scrollbar-color:auto] [scrollbar-width:auto]"
           @wheel.passive="strip && !$event.deltaX && (strip.scrollLeft += $event.deltaY)"
-          @dragover="allow"
-          @drop="drop"
+          @dragover="overStrip"
+          @dragleave="leaveStrip"
+          @drop="dropOnStrip"
           @dragend="dropOutside"
         >
           <UContextMenu
-            v-for="row in rows"
+            v-for="(row, index) in rows"
             :key="row.tab.id"
             :items="buildMenu(row)"
             :ui="{ content: 'w-64' }"
@@ -395,11 +505,23 @@ const actions = computed<DropdownMenuItem[]>(() => [
                   : 'text-dimmed hover:text-toned'
               "
               :title="row.path"
+              draggable="true"
+              @dragstart="startDrag($event, row)"
               @click="select(row)"
               @dblclick="editor.pin(row.tab.id)"
               @auxclick.middle="closeTabs([row.tab])"
             >
-              <UIcon v-if="row.tab.side" name="i-lucide-git-compare" class="size-3.5 shrink-0 text-dimmed" />
+              <span
+                v-if="landing === index || (landing === rows.length && index === rows.length - 1)"
+                class="pointer-events-none absolute inset-y-0 z-10 w-0.5 bg-primary"
+                :class="landing === index ? 'left-0' : 'right-0'"
+              />
+              <UIcon
+                v-if="row.symbol"
+                :name="row.symbol"
+                class="size-3.5 shrink-0"
+                :class="row.tab.start ? 'text-primary' : 'text-dimmed'"
+              />
               <img v-else-if="row.icon" :src="row.icon" alt="" class="size-3.5 shrink-0" />
               <UIcon v-else name="i-lucide-file" class="size-3.5 shrink-0 text-dimmed" />
               <span class="truncate" :class="{ italic: row.tab.preview }">{{ row.label }}</span>
@@ -434,7 +556,7 @@ const actions = computed<DropdownMenuItem[]>(() => [
           </UDropdownMenu>
           <UTooltip v-if="corner" text="Wiki pane" :kbds="findKbds('editor.toggleWiki')">
             <UButton
-              icon="i-lucide-book-open"
+              icon="i-lucide-book-text"
               square
               size="sm"
               :color="editor.wiki ? 'primary' : 'neutral'"
@@ -527,6 +649,44 @@ const actions = computed<DropdownMenuItem[]>(() => [
         <UButton label="Compare" variant="ghost" size="xs" @click="compare(place, replacement)" />
       </template>
     </div>
+    <div
+      v-if="notice"
+      class="flex shrink-0 items-center gap-2.5 border-b border-default bg-(--bg-3) py-1.5 ps-3.5 pe-2.5 text-12"
+    >
+      <UIcon name="i-lucide-lock" class="size-3.5 shrink-0 text-dimmed" />
+      <div class="flex min-w-0 grow flex-col gap-0.5">
+        <span class="text-toned">{{ notice.text }}</span>
+        <span v-if="notice.detail" class="truncate text-dimmed">{{ notice.detail }}</span>
+        <span v-if="hint" class="text-dimmed">{{ hint.text }}</span>
+      </div>
+      <UButton
+        v-if="model && located?.override"
+        :label="located.override.title"
+        icon="i-lucide-copy-plus"
+        size="xs"
+        @click="overrideHere(model)"
+      />
+      <UButton
+        v-if="place && hint?.copy"
+        label="Copy into a mod"
+        icon="i-lucide-copy-plus"
+        size="xs"
+        @click="copyToMod(place)"
+      />
+      <template v-if="notice.workshop">
+        <UButton label="New mod for my changes…" size="xs" color="neutral" variant="outline" @click="creating = true" />
+        <CreateModForm v-model:open="creating" :workspace-id="workspace.activeId()" />
+      </template>
+      <UButton
+        icon="i-lucide-x"
+        size="xs"
+        color="neutral"
+        variant="ghost"
+        square
+        aria-label="Close the notice"
+        @click="closedNotices.add(group.active ?? '')"
+      />
+    </div>
     <div class="relative flex min-h-0 min-w-0 flex-1 flex-col">
       <GitDiff
         v-if="activeTab?.side"
@@ -545,9 +705,7 @@ const actions = computed<DropdownMenuItem[]>(() => [
           PMT can't show this file.
         </p>
       </template>
-      <div v-else-if="!activeTab" class="flex flex-1 items-center justify-center bg-(--bg-0) text-12 text-dimmed">
-        Open a file from the explorer, or Ctrl P
-      </div>
+      <StartPage v-else-if="!activeTab || activeTab.start" />
       <div
         v-if="over"
         class="absolute inset-0 z-20"

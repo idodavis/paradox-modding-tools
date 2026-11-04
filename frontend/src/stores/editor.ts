@@ -9,6 +9,7 @@ import { Events } from "@wailsio/runtime";
 import { ref, shallowReactive, shallowRef, toRaw, watch } from "vue";
 import { useRouter } from "vue-router";
 
+import { Format } from "@internal/files/models";
 import type { Fix } from "@services/lsp/models";
 import type { Place } from "@services/workspace/models";
 import * as workspaceApi from "@services/workspace/service";
@@ -40,11 +41,22 @@ export type DiffSide = "changes" | "staged" | "conflict" | "commit";
 
 /**
  * A Tab is one tab: a file by its key, or a diff of the file on one side, in its repository and at its commit for a
- * commit's diff, and whether it is the preview tab.
+ * commit's diff, or the start page, whose key is empty. It also says whether it is the preview tab.
  */
-export type Tab = { id: string; key: string; side?: DiffSide; root?: string; hash?: string; preview: boolean };
+export type Tab = {
+  id: string;
+  key: string;
+  side?: DiffSide;
+  root?: string;
+  hash?: string;
+  start?: true;
+  preview: boolean;
+};
 /** A Group is one group of tabs with its active one. A group is one column of the layout. */
 export type Group = { id: string; tabs: Tab[]; active: string | null };
+
+/** A Side is a side of a group where a new group goes: left or right in its row, up or down in a row of its own. */
+export type Side = "left" | "right" | "up" | "down";
 
 /** A Layout is the groups laid out in rows of columns. */
 export type Layout = { rows: { columns: Group[] }[] };
@@ -63,6 +75,10 @@ type Visit = { place: Place; position: IPosition };
 
 /** How many places the history keeps. */
 const HISTORY = 50;
+/** How many files the start page lists as recent. */
+const RECENT = 5;
+/** START is the start page's tab. A window holds at most one. */
+const START = { key: "", start: true } as const;
 
 /**
  * SOURCES holds what each source does to the place it shows: whether it opens the preview tab, whether the history
@@ -91,6 +107,8 @@ export const useEditorStore = defineStore("editor", () => {
   const wiki = useLocalStorage("pmt.ide.wiki", false);
   const panel = useLocalStorage("pmt.ide.panel", "");
   const compareFile = useLocalStorage<Place | null>("pmt.ide.compare", null, { serializer: StorageSerializers.object });
+  // the last files shown in the active workspace, the newest first
+  const recent = useLocalStorage<Place[]>(() => `pmt.ide.recent.${workspace.activeId()}`, []);
   // this window's mode, which is never saved: every window opens in Code
   const mode = shallowRef<Mode>("code");
   const state = ref<Layout>(makeLayout());
@@ -109,8 +127,12 @@ export const useEditorStore = defineStore("editor", () => {
   const visits = shallowRef<Visit[]>([]);
   const current = shallowRef(-1);
 
+  // a file that cannot open is taken out of the recent files
   const { mutate: openPlace } = useMutation({
     mutation: (request: { place: Place; range?: IRange }) => openFile(request.place, request.range),
+    onError: (_error, request) => {
+      recent.value = recent.value.filter((one) => one.key !== request.place.key);
+    },
   });
   // a file that cannot open is closed and forgotten
   const { mutateAsync: openPath } = useMutation({
@@ -127,26 +149,32 @@ export const useEditorStore = defineStore("editor", () => {
   });
 
   /**
-   * applyFix applies a quick fix: it writes the file the fix creates, applies its edits to each file's model as one
-   * undoable step, then shows the place it reveals in the group to the right of the active one, made when there is
-   * none.
+   * applyFixAsync applies a quick fix: it creates the file the fix creates, a localization file with its header and any
+   * other as an empty script file, applies its edits to each file's model as one undoable step, then shows the place
+   * it reveals in the group to the right of the active one, made when there is none. It resolves once all of that is
+   * done.
    */
-  const { mutate: applyFix } = useMutation({
-    mutation: async (fix: Fix) => {
-      if (fix.creates) await workspaceApi.CreateLocalization(fix.creates);
-      for (const [path, edits] of Object.entries(fix.edits ?? {})) {
-        const place = await loadQuery(placeQuery(path));
-        if (place) applyEdits(await openModel(place), edits ?? []);
-      }
-      if (!fix.reveal) return;
-      const group = activeGroup();
-      const row = state.value.rows.find((candidate) => !!group && candidate.columns.includes(group));
-      const beside = group && row?.columns[row.columns.indexOf(group) + 1];
-      if (beside) activate(beside.id);
-      else split("row");
-      show(fix.reveal.place, fix.reveal.range);
-    },
-  });
+  async function applyFixAsync(fix: Fix): Promise<void> {
+    if (fix.creates) {
+      const place = await loadQuery(placeQuery(fix.creates));
+      if (place?.format === Format.FormatLocalization) await workspaceApi.CreateLocalization(fix.creates);
+      else await workspaceApi.Create(fix.creates, false);
+    }
+    for (const [path, edits] of Object.entries(fix.edits ?? {})) {
+      const place = await loadQuery(placeQuery(path));
+      if (place) applyEdits(await openModel(place), edits ?? []);
+    }
+    if (!fix.reveal) return;
+    const group = activeGroup();
+    const row = state.value.rows.find((candidate) => !!group && candidate.columns.includes(group));
+    const neighbor = group && row?.columns[row.columns.indexOf(group) + 1];
+    if (neighbor) activate(neighbor.id);
+    else split("row");
+    show(fix.reveal.place, fix.reveal.range);
+  }
+
+  // a fix that fails is reported once, by the mutation
+  const { mutate: applyFix } = useMutation({ mutation: applyFixAsync });
 
   watch(() => workspace.activeId(), loadLayout, { immediate: true });
   watch(
@@ -193,8 +221,9 @@ export const useEditorStore = defineStore("editor", () => {
 
   /**
    * loadLayout brings the given workspace's saved layout back, or starts an empty one. Tabs are reopened unless the
-   * workspace's record says to reset them. Only the main window keeps a layout; another window starts empty. The
-   * layout is written again only once every reopened tab's file is found or dropped.
+   * workspace's record says to reset them. Then the start tab is put in front of the first group, unless the record
+   * says to leave it out. Only the main window keeps a layout; another window starts empty. The layout is written again
+   * only once every reopened tab's file is found or dropped.
    */
   async function loadLayout(id: string): Promise<void> {
     const saved = layouts.value[id];
@@ -219,7 +248,19 @@ export const useEditorStore = defineStore("editor", () => {
       await Promise.allSettled(Object.values(saved.paths).map((path) => openPath(path)));
       if (workspace.activeId() !== id) return;
     }
+    if (!record.hideStartPage) showStart();
     tracking.value = true;
+  }
+
+  /** showStart puts the start tab in front of the first group and makes it the active one, moving a kept tab there. */
+  function showStart(): void {
+    const group = listGroups()[0];
+    const id = tabId(START);
+    if (!group) return;
+    if (find(id)) move(id, group.id, 0);
+    else group.tabs.unshift({ ...START, id, preview: false });
+    group.active = id;
+    activeId.value = group.id;
   }
 
   /**
@@ -348,16 +389,19 @@ export const useEditorStore = defineStore("editor", () => {
   const isFollowed = (): boolean => !!agentTab.value && activeTab()?.id === agentTab.value;
 
   /**
-   * open makes a tab of a file or a diff the active one, as the user's pick. It switches to the group that holds the
-   * tab, the given or active group first, or adds the tab there. The history keeps the switch.
+   * open makes a tab of a file, a diff or the start page the active one, as the user's pick. It switches to the group
+   * that holds the tab, the given or active group first, or adds the tab there. The history keeps the switch to a
+   * file. The start page has no place.
    */
-  const open = (target: Omit<Tab, "id" | "preview">, place: Place, groupId?: string): void => {
+  const open = (target: Omit<Tab, "id" | "preview">, place?: Place | null, groupId?: string): void => {
     const id = tabId(target);
-    places.set(place.key, place);
     const preferred = listGroups().find((one) => one.id === groupId) ?? activeGroup();
     const group = find(id, preferred)?.group ?? preferred;
     if (!group) return;
-    record(locate(place));
+    if (place) {
+      places.set(place.key, place);
+      record(locate(place));
+    }
     add(group, { ...target, id, preview: false });
     activeId.value = group.id;
     release(id);
@@ -377,6 +421,7 @@ export const useEditorStore = defineStore("editor", () => {
     const group = activeGroup();
     if (!group) return;
     const row = SOURCES[source];
+    recent.value = [place, ...recent.value.filter((one) => one.key !== place.key)].slice(0, RECENT);
     const range = selection && toRange(selection);
     const start = range && { lineNumber: range.startLineNumber, column: range.startColumn };
     if (row.record !== false) record(start ? { place, position: start } : locate(place));
@@ -424,6 +469,9 @@ export const useEditorStore = defineStore("editor", () => {
 
   /** listSelection lists the files selected in the explorer, in the order the tree lists them. A folder is left out. */
   const listSelection = (): Place[] => selection.value;
+
+  /** listRecent lists the last files shown in the active workspace, the newest first. */
+  const listRecent = (): Place[] => recent.value;
 
   /**
    * showPanel shows the bottom panel on the given tab. Visual hides the panel, so the window goes back to Code first.
@@ -544,37 +592,44 @@ export const useEditorStore = defineStore("editor", () => {
   };
 
   /**
+   * insertGroup adds a group with the given tabs and active tab on a side of a group: left or right, a column before or
+   * after it in its row; up or down, a row before or after its row. It returns the new group as the layout holds it.
+   */
+  function insertGroup(group: Group, side: Side, tabs: Tab[], active: string | null): Group {
+    const rows = state.value.rows;
+    const row = rows.find((candidate) => candidate.columns.includes(group)) ?? rows[0];
+    const newGroup: Group = { id: crypto.randomUUID(), tabs, active };
+    const offset = side === "right" || side === "down" ? 1 : 0;
+    if (side === "left" || side === "right") row.columns.splice(row.columns.indexOf(group) + offset, 0, newGroup);
+    else rows.splice(rows.indexOf(row) + offset, 0, { columns: [newGroup] });
+    // the reactive copy, so a tab added to it later is drawn at once and stored as plain data the layout can save
+    return listGroups().find((one) => one.id === newGroup.id) ?? newGroup;
+  }
+
+  /**
    * split splits the active group: a copy of its active tab in a new group beside it ("row") or below it ("column").
+   * It does nothing when the active tab cannot be split (canSplit).
    */
   const split = (direction: "row" | "column"): void => {
     const group = activeGroup();
-    const rows = state.value.rows;
-    const row = group && rows.find((candidate) => candidate.columns.includes(group));
-    if (!group || !row) return;
+    if (!group || !canSplit(activeTab())) return;
     const active = group.tabs.filter((tab) => tab.id === group.active).map((tab) => ({ ...tab, preview: false }));
-    const copy: Group = { id: crypto.randomUUID(), tabs: active, active: group.active };
-    if (direction === "row") row.columns.splice(row.columns.indexOf(group) + 1, 0, copy);
-    else rows.splice(rows.indexOf(row) + 1, 0, { columns: [copy] });
-    activeId.value = copy.id;
+    activeId.value = insertGroup(group, direction === "row" ? "right" : "down", active, group.active).id;
   };
 
   /**
-   * move moves a tab to a group, or into a new one, by drag. The tab lands at the given place in the group. The id of
-   * a group the layout lacks makes a new group right after the tab's own. A tab no group holds stays where it is.
+   * move moves a tab by drag, to the given index of a group, or into a new group on the given side of the group. A tab
+   * no group holds stays where it is.
    */
-  const move = (tabId: string, groupId: string, index: number): void => {
+  const move = (tabId: string, groupId: string, place: number | Side): void => {
     const home = find(tabId);
-    if (!home) return;
-    if (!listGroups().some((group) => group.id === groupId)) {
-      const row = state.value.rows.find((candidate) => candidate.columns.includes(home.group));
-      row?.columns.splice(row.columns.indexOf(home.group) + 1, 0, { id: groupId, tabs: [], active: null });
-    }
-    const target = listGroups().find((group) => group.id === groupId);
-    const tab = target && remove(home.group, home.index);
-    if (!target || !tab) return;
+    const group = listGroups().find((one) => one.id === groupId);
+    const tab = home && group && remove(home.group, home.index);
+    if (!home || !group || !tab) return;
+    const target = typeof place === "number" ? group : insertGroup(group, place, [], null);
     const twin = target.tabs.findIndex((other) => other.id === tabId);
     if (twin >= 0) target.tabs.splice(twin, 1);
-    target.tabs.splice(Math.min(index, target.tabs.length), 0, tab);
+    target.tabs.splice(Math.min(typeof place === "number" ? place : 0, target.tabs.length), 0, tab);
     target.active = tabId;
     activeId.value = target.id;
     closeGroup(home.group);
@@ -646,6 +701,7 @@ export const useEditorStore = defineStore("editor", () => {
     findRequest,
     clearRequest,
     listSelection,
+    listRecent,
     showPanel,
     showWiki,
     selectFiles,
@@ -659,15 +715,25 @@ export const useEditorStore = defineStore("editor", () => {
     move,
     rename,
     applyFix,
+    applyFixAsync,
   };
 });
 
 /**
- * tabId returns the id of the tab that opens the given file or diff. The DOM, a drag between windows and the saved
- * layout know a tab by its id.
+ * tabId returns the id of the tab that opens the given file, diff or start page. The DOM, a drag between windows and
+ * the saved layout know a tab by its id.
  */
-export function tabId({ key, side, root = "", hash = "" }: Omit<Tab, "id" | "preview">): string {
+export function tabId({ key, side, start, root = "", hash = "" }: Omit<Tab, "id" | "preview">): string {
+  if (start) return "start";
   return side ? `diff:${side}@${hash}:${root}:${key}` : `file:${key}`;
+}
+
+/**
+ * canSplit reports whether a group can be split from the given tab: a file or a diff can, the start page cannot, since
+ * a window holds one start page and a group left with no tab has nothing to close it by. It is false for no tab.
+ */
+export function canSplit(tab: Tab | null | undefined): boolean {
+  return !!tab && !tab.start;
 }
 
 /** toRange returns what the editor selects as a range: a position as the empty range at it. */

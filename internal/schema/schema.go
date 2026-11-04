@@ -70,7 +70,6 @@ type Vanilla struct {
 type Claims struct {
 	Value    Claim[Expected]
 	Shape    Claim[string] // a game.Shapes key
-	Scope    Claim[string]
 	Required Claim[string] // optional, always or conditional
 	Default  Claim[string]
 	Blurb    Claim[string]
@@ -89,21 +88,20 @@ type Field struct {
 // A Command is one effect, trigger or link the dumps declare.
 type Command struct {
 	Declared  []string // what declares it: game.DeclaredEffect, DeclaredTrigger, DeclaredLink, in dump order
-	Scopes    []string // the scopes it runs in; empty for any
+	Scopes    []string // the scopes the dumps say it runs in; empty where they name none
 	Target    string   // the scope a link leads to; "" for none
 	Arguments *Field   // the keys it takes, as fields
 	// ArgumentKey is the first key of the first block form its usage writes, which the argument in parentheses after
 	// its name stands for, as the court position of aptitude(court_jester_court_position) does. It is "" where its
 	// usage writes none.
-	ArgumentKey   string
-	Blurb         string
-	Usage         string    // the dump's usage lines, which show how it is written; "" if the dump gives none
-	Examples      []Example // the first places the game's own files write it, by path and then line
-	VanillaScopes []string  // the scopes the game's own files run it in, sorted
-	Wild          bool      // a link that is a pattern, so it is never matched by a written name
-	Bare          bool      // a link the dumps let script write as its name alone, not only as name:data
-	Lists         bool      // it iterates a list and has no target, so the scope inside its block is unknown
-	Patterned     bool      // some pattern lists it
+	ArgumentKey string
+	Blurb       string
+	Usage       string    // the dump's usage lines, which show how it is written; "" if the dump gives none
+	Examples    []Example // the first places the game's own files write it, by path and then line
+	Wild        bool      // a link that is a pattern, so it is never matched by a written name
+	Bare        bool      // a link the dumps let script write as its name alone, not only as name:data
+	Lists       bool      // it iterates a list and has no target, so the scope inside its block is unknown
+	Patterned   bool      // some pattern lists it
 }
 
 // An Example is one place where the game's own files write a command or call a data function: the file's path and
@@ -130,6 +128,7 @@ type Database struct {
 	Callable   game.Callable   // the words that call its definitions; zero when nothing calls them
 	Precedence game.Precedence // how several definitions of one name combine
 	Documented map[string]bool // every key the docs mention for its definitions
+	Readme     string          // the game file its blurb was read from, from the install's folder; "" if it has none
 }
 
 // A ScopeType is one kind of scope the game runs script in, and what script can do there.
@@ -289,7 +288,7 @@ func Build(row *game.Game, installPath string, listing []files.File, parse func(
 	if err := schema.buildDumps(row, installPath); err != nil {
 		return nil, err
 	}
-	if err := schema.buildDocs(listing, folders); err != nil {
+	if err := schema.buildDocs(installPath, listing, folders); err != nil {
 		return nil, err
 	}
 	if err := schema.CountVanilla(listing, parse); err != nil {
@@ -372,7 +371,7 @@ func (schema *Schema) buildDatabases(row *game.Game, folders []string) {
 		if nesting.Database == "" || nesting.Parent == game.SetupFolder {
 			continue
 		}
-		label := game.ToDatabase(nesting.Parent) + "." + nesting.Database
+		label := nesting.Label()
 		schema.buildDatabase(row, label, game.Database{Target: nesting.Target})
 		if parent := schema.Databases[game.ToDatabase(nesting.Parent)]; parent != nil && !slices.Contains(parent.Nested, label) {
 			parent.Nested = append(parent.Nested, label)
@@ -921,7 +920,6 @@ func (claim *Claim[T]) take(other Claim[T]) {
 func (field *Field) take(other Claims) {
 	field.Value.take(other.Value)
 	field.Shape.take(other.Shape)
-	field.Scope.take(other.Scope)
 	field.Required.take(other.Required)
 	field.Default.take(other.Default)
 	field.Blurb.take(other.Blurb)

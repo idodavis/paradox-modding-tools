@@ -6,7 +6,8 @@ import { computed, shallowRef } from "vue";
 import { useMutation, useQuery } from "@pinia/colada";
 
 import { describeCount } from "../../lib/format";
-import { rulesQuery, uploadQuery } from "../../queries";
+import { ignoreQuery, rulesQuery, uploadQuery } from "../../queries";
+import { useSettingsStore } from "../../stores/settings";
 import { useWorkspaceStore } from "../../stores/workspace";
 import * as steam from "@services/steam/service";
 import type { Mod as ModRecord } from "@services/app/models";
@@ -16,6 +17,7 @@ const { mod } = defineProps<{ mod: Mod }>();
 const open = defineModel<boolean>("open", { required: true });
 
 const store = useWorkspaceStore();
+const settings = useSettingsStore();
 const toast = useToast();
 const tab = shallowRef("included");
 // The latest write of the mod's record, which an export waits for.
@@ -24,6 +26,8 @@ let lastUpdate: Promise<void> | undefined;
 const enabled = computed(() => open.value && store.isOpen());
 const { data: rules } = useQuery(rulesQuery);
 const { data: upload } = useQuery(() => ({ ...uploadQuery({ modId: mod.id, key: "" }), enabled: enabled.value }));
+// the text of the mod's .workshop-ignore file, or "" when the folder has none
+const { data: ignore, refetch: refetchIgnore } = useQuery(() => ({ ...ignoreQuery(mod.id), enabled: enabled.value }));
 
 const included = computed(() => upload.value?.files?.map((file) => file.rel) ?? []);
 const excluded = computed(() => upload.value?.excluded ?? []);
@@ -36,20 +40,15 @@ const tabs = computed(() => [
 const { mutate: update } = useMutation({
   mutation: (changes: Partial<ModRecord>) => (lastUpdate = store.updateMod(store.activeId(), mod.id, changes)),
 });
-const { mutate: importIgnore } = useMutation({
-  mutation: () => steam.ReadIgnore(mod.id),
-  onSuccess: (text) => {
-    if (text) update({ ignore: text });
-    else toast.add({ title: "The mod's folder has no .workshop-ignore file to import." });
-  },
-});
 const { mutate: exportIgnore } = useMutation({
   mutation: async () => {
     await lastUpdate?.catch(() => undefined);
     await steam.WriteIgnore(mod.id);
   },
-  onSuccess: () =>
-    toast.add({ title: "Wrote the patterns to .workshop-ignore in the mod's folder.", color: "success" }),
+  onSuccess: () => {
+    toast.add({ title: "Wrote the patterns to .workshop-ignore in the mod's folder.", color: "success" });
+    void refetchIgnore();
+  },
 });
 </script>
 
@@ -72,13 +71,18 @@ const { mutate: exportIgnore } = useMutation({
           @update:model-value="update({ ignore: `${$event}` })"
         />
         <div class="flex gap-1">
-          <UButton
-            label="Import .workshop-ignore"
-            icon="i-lucide-file-down"
-            variant="ghost"
-            size="sm"
-            @click="importIgnore()"
-          />
+          <UTooltip text="The mod's folder has no .workshop-ignore file" :disabled="!!ignore">
+            <span>
+              <UButton
+                label="Import .workshop-ignore"
+                icon="i-lucide-file-down"
+                variant="ghost"
+                size="sm"
+                :disabled="!ignore"
+                @click="update({ ignore })"
+              />
+            </span>
+          </UTooltip>
           <UButton
             label="Export .workshop-ignore"
             icon="i-lucide-file-up"
@@ -102,7 +106,7 @@ const { mutate: exportIgnore } = useMutation({
         <UScrollArea
           v-slot="{ item }"
           :items="rows"
-          :virtualize="{ estimateSize: 24, skipMeasurement: true }"
+          :virtualize="{ estimateSize: settings.toPixels(1.5), skipMeasurement: true }"
           class="h-48 shrink-0 rounded-lg border border-default bg-muted"
         >
           <div class="h-6 truncate px-3 font-mono text-12 leading-6 text-toned">{{ item }}</div>

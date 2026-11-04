@@ -3,10 +3,17 @@
   PMT's tools for coding agents, the text that registers them with each agent run outside PMT, and the agents of the
   user's own.
 -->
+<script lang="ts">
+import { shallowRef } from "vue";
+
+// whether the token was renewed since PMT started, which outlasts this section being closed and opened again
+const tokenChanged = shallowRef(false);
+</script>
+
 <script setup lang="ts">
 import { useMutation, useQuery, useQueryCache } from "@pinia/colada";
 import { useIntervalFn, useNow } from "@vueuse/core";
-import { computed, shallowRef } from "vue";
+import { computed } from "vue";
 
 import type { Agent } from "@services/agent/models";
 import * as agentApi from "@services/agent/service";
@@ -23,7 +30,6 @@ const DOTS = "••••••••";
 // where Codex reads the register text from, since it is a config entry, not a command
 const NOTES: Record<string, string> = { "codex-acp": "# add to ~/.codex/config.toml" };
 
-const toast = useToast();
 const cache = useQueryCache();
 const agent = useAgentStore();
 const { data: access } = useQuery(accessQuery);
@@ -65,7 +71,7 @@ const { mutate: renewToken } = useMutation({
   onSuccess: () => {
     void cache.invalidateQueries({ key: accessQuery.key });
     void cache.invalidateQueries({ key: keys.agents });
-    toast.add({ title: "New token made", description: "Register PMT again with each agent you run yourself." });
+    tokenChanged.value = true;
   },
 });
 const { mutate: add } = useMutation({
@@ -235,6 +241,9 @@ function quote(path: string): string {
         />
       </div>
     </div>
+    <p v-if="tokenChanged" class="text-12 text-warning">
+      The token changed: register PMT again with each agent you run yourself.
+    </p>
   </section>
   <section class="flex flex-col gap-2.5">
     <h2 class="text-13 font-semibold">Your own agents</h2>

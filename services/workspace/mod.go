@@ -1,11 +1,13 @@
-// mod.go reads and writes the descriptors of a workspace's mods. It also tells a mod's title, its dependencies and its
-// Workshop id.
+// mod.go adds, makes, orders and removes a workspace's mods, and reads and writes their descriptors. It also tells a
+// mod's title, its dependencies and its Workshop id.
 
 package workspace
 
 import (
 	"cmp"
+	"crypto/rand"
 	"encoding/json"
+	"errors"
 	"fmt"
 	"os"
 	"path"
@@ -50,10 +52,14 @@ type Mod struct {
 	Descriptor Descriptor `json:"descriptor"`
 	Broken     bool       `json:"broken"`    // its folder is missing
 	Thumbnail  string     `json:"thumbnail"` // the full path of the picture shown for it; "" when it has none
+	Workshop   bool       `json:"workshop"`  // its folder is Steam's copy of a Workshop mod
 }
 
 // thumbnailName is the name, without its extension, of a mod's thumbnail file.
 const thumbnailName = "thumbnail"
+
+// slotCount is how many color slots there are for mods.
+const slotCount = 16
 
 // scriptKeys are the keys of a script descriptor that a Descriptor models.
 var scriptKeys = []string{
@@ -198,10 +204,182 @@ func (mod Mod) ResolveWorkshopID() string {
 	return cmp.Or(mod.WorkshopID, mod.Descriptor.WorkshopID)
 }
 
+// AddMod adds a mod folder to a workspace and gives the mod a color slot. It returns an error if the workspace is not
+// recorded, the folder cannot be a mod of its game (see CheckModFolder), or the workspace has the mod already.
+func (wsp *Service) AddMod(workspaceID, dir string) (Mod, error) {
+	_, install, row, err := findRecords(wsp.Config.Config(), workspaceID)
+	if err != nil {
+		return Mod{}, err
+	}
+	if err = checkModFolder(row, install, dir); err != nil {
+		return Mod{}, err
+	}
+	record := app.Mod{ID: rand.Text(), Dir: dir}
+	err = wsp.updateWorkspace(workspaceID, func(workspace *app.Workspace) error {
+		if lo.ContainsBy(workspace.Mods, func(mod app.Mod) bool { return files.ToKey(mod.Dir) == files.ToKey(dir) }) {
+			return fmt.Errorf("%s is a mod of the workspace already", dir)
+		}
+		record.Color = resolveSlot(workspace.Mods)
+		workspace.Mods = append(workspace.Mods, record)
+		return nil
+	})
+	if err != nil {
+		return Mod{}, err
+	}
+	return readMod(row, record), nil
+}
+
+// ListMods returns the open workspace's mods in load order, each with its descriptor as the session holds it and
+// its record as config.json holds it now. It is empty while no workspace is open.
+//
+//wails:ignore
+func (wsp *Service) ListMods() []Mod {
+	session, err := wsp.Session()
+	if err != nil {
+		return nil
+	}
+	record, _, _, _ := findRecords(wsp.Config.Config(), session.ID)
+	return lo.Map(*session.Order.Load(), func(mod Mod, _ int) Mod {
+		if position := slices.IndexFunc(record.Mods, func(other app.Mod) bool { return other.ID == mod.ID }); position >= 0 {
+			mod.Mod = record.Mods[position]
+		}
+		return mod
+	})
+}
+
+// resolveSlot returns the first color slot that no mod has. If all are taken, it returns the slot of the next place
+// in the load order.
+func resolveSlot(mods []app.Mod) string {
+	for position := range slotCount {
+		slot := makeSlot(position)
+		if !lo.ContainsBy(mods, func(mod app.Mod) bool { return mod.Color == slot }) {
+			return slot
+		}
+	}
+	return makeSlot(len(mods))
+}
+
+// makeSlot returns the color slot of a place in the load order, wrapping around after the last slot.
+func makeSlot(position int) string {
+	return fmt.Sprintf("o%d", position%slotCount+1)
+}
+
+// CreateMod makes a mod with a localization file and adds it to a workspace. It returns an error if the workspace is
+// not recorded, the name has no letter or digit to make a folder name from, or the folder exists.
+func (wsp *Service) CreateMod(workspaceID, dir, name, language string) (Mod, error) {
+	_, install, row, err := findRecords(wsp.Config.Config(), workspaceID)
+	if err != nil {
+		return Mod{}, err
+	}
+	folder, err := createModFolder(row, resolveModDir(row, install, dir), name, resolveVersion(row, install))
+	if err != nil {
+		return Mod{}, err
+	}
+	if file, ok := FindLocalizationFile(row, folder, name, language); ok {
+		if err := createLocalization(file); err != nil {
+			return Mod{}, err
+		}
+	}
+	return wsp.AddMod(workspaceID, folder)
+}
+
+// ResolveModFolder returns the folder CreateMod would make for a mod of the given install. With no name, it returns
+// the folder the mod goes in. It returns an error if the install is not recorded, the name has no letter or digit to
+// make a folder name from, or the folder exists already.
+func (wsp *Service) ResolveModFolder(installID, dir, name string) (string, error) {
+	install, row, err := findInstall(wsp.Config.Config(), installID)
+	if err != nil {
+		return "", err
+	}
+	parent := resolveModDir(row, install, dir)
+	if name == "" {
+		return parent, nil
+	}
+	return resolveModFolder(parent, name)
+}
+
+// CheckModFolder returns an error if a folder cannot be added as a mod of the given install's game: it is no folder, it
+// is the game's own folder or inside it, or it lacks the game's descriptor. It returns an error if the install is not
+// recorded.
+func (wsp *Service) CheckModFolder(installID, dir string) error {
+	install, row, err := findInstall(wsp.Config.Config(), installID)
+	if err != nil {
+		return err
+	}
+	return checkModFolder(row, install, dir)
+}
+
+// resolveModDir returns the folder a mod is made in. With no folder, it is the game's mod folder.
+func resolveModDir(row *game.Game, install app.Install, dir string) string {
+	return cmp.Or(dir, filepath.Join(row.FindUserDataDir(install.Path), game.LauncherModFolder))
+}
+
+// RemoveMod takes a mod out of a workspace. Its folder stays.
+func (wsp *Service) RemoveMod(workspaceID, modID string) error {
+	return wsp.updateWorkspace(workspaceID, func(workspace *app.Workspace) error {
+		workspace.Mods = slices.DeleteFunc(workspace.Mods, func(mod app.Mod) bool { return mod.ID == modID })
+		return nil
+	})
+}
+
+// ReorderMods sets a workspace's load order. It returns an error unless the order names each of its mods once.
+func (wsp *Service) ReorderMods(workspaceID string, modIDs []string) error {
+	return wsp.updateWorkspace(workspaceID, func(workspace *app.Workspace) error {
+		ordered, err := reorderMods(workspace.Mods, modIDs, func(mod app.Mod) string { return mod.ID })
+		if err == nil {
+			workspace.Mods = ordered
+		}
+		return err
+	})
+}
+
+// reorderMods returns mods in the order of a list of ids. It returns an error unless the list names each mod once.
+func reorderMods[T any](mods []T, modIDs []string, id func(mod T) string) ([]T, error) {
+	remaining := slices.Clone(mods)
+	var ordered []T
+	for _, modID := range modIDs {
+		position := slices.IndexFunc(remaining, func(mod T) bool { return id(mod) == modID })
+		if position < 0 {
+			return nil, fmt.Errorf("the mod %s is not in the workspace or is named twice", modID)
+		}
+		ordered = append(ordered, remaining[position])
+		remaining = slices.Delete(remaining, position, position+1)
+	}
+	if len(remaining) > 0 {
+		return nil, fmt.Errorf("the order leaves out %d of the workspace's mods", len(remaining))
+	}
+	return ordered, nil
+}
+
+// ResetColors gives a workspace's mods the color slots of their places in the load order and clears the game's color.
+func (wsp *Service) ResetColors(workspaceID string) error {
+	return wsp.updateWorkspace(workspaceID, func(workspace *app.Workspace) error {
+		workspace.GameColor = ""
+		for position := range workspace.Mods {
+			workspace.Mods[position].Color = makeSlot(position)
+		}
+		return nil
+	})
+}
+
+// UpdateMod replaces a mod's record in a workspace. A mod the workspace does not have is ignored.
+func (wsp *Service) UpdateMod(workspaceID string, mod app.Mod) error {
+	return wsp.updateWorkspace(workspaceID, func(workspace *app.Workspace) error {
+		if position := slices.IndexFunc(workspace.Mods, func(other app.Mod) bool { return other.ID == mod.ID }); position >= 0 {
+			workspace.Mods[position] = mod
+		}
+		return nil
+	})
+}
+
 // createModFolder makes a mod's folder with its descriptor and the folders the game expects, and returns it. A game
-// that lists mods by a launcher file gets one beside the folder. It returns an error if the folder exists already.
+// that lists mods by a launcher file gets one beside the folder. It returns an error if the name makes no folder name
+// or the folder exists already.
 func createModFolder(row *game.Game, dir, name, version string) (string, error) {
-	folder := resolveModFolder(dir, name)
+	folder, err := resolveModFolder(dir, name)
+	if err != nil {
+		return "", err
+	}
 	if err := os.MkdirAll(dir, 0o755); err != nil {
 		return "", err
 	}
@@ -222,7 +400,7 @@ func createModFolder(row *game.Game, dir, name, version string) (string, error) 
 	}
 	// the launcher lists a mod by a .mod file beside its folder
 	launcher := encodeDescriptorScript("", descriptor) + `path="` + filepath.ToSlash(folder) + "\"\n"
-	err := files.WriteText(filepath.Join(dir, files.ToSlug(name)+".mod"), files.Text{Text: launcher, Encoding: files.EncodingUTF8})
+	err = files.WriteText(filepath.Join(dir, files.ToSlug(name)+".mod"), files.Text{Text: launcher, Encoding: files.EncodingUTF8})
 	return folder, err
 }
 
@@ -291,8 +469,34 @@ func MatchVersion(supported, version string) (matches, judged bool) {
 	return len(wanted) == len(actual), judged
 }
 
-// resolveModFolder returns the folder for a mod inside a folder of mods, named after the mod.
-func resolveModFolder(dir, name string) string { return filepath.Join(dir, files.ToSlug(name)) }
+// resolveModFolder returns the folder for a mod inside a folder of mods, named after the mod. It returns an error for
+// a name with no letter or digit to make the folder's name from, and for a folder that exists already.
+func resolveModFolder(dir, name string) (string, error) {
+	slug := files.ToSlug(name)
+	if slug == "" {
+		return "", errors.New("use a letter A to Z or a digit in the name; the mod's folder is named from it")
+	}
+	folder := filepath.Join(dir, slug)
+	if _, err := os.Stat(folder); err == nil {
+		return "", fmt.Errorf("%s exists already; pick another name", folder)
+	}
+	return folder, nil
+}
+
+// checkModFolder returns an error if a folder cannot be a mod of the given install's game: it is no folder, it is the
+// game's own folder or inside it, or it lacks the game's descriptor.
+func checkModFolder(row *game.Game, install app.Install, dir string) error {
+	switch {
+	case !files.IsFolder(dir):
+		return fmt.Errorf("%s is not a folder", dir)
+	case files.ToKey(dir) == files.ToKey(install.Path) || files.IsUnder(install.Path, dir):
+		return fmt.Errorf("%s is the game's own folder; a mod is a folder of its own, such as one in %s",
+			dir, resolveModDir(row, install, ""))
+	case !files.IsFile(files.Join(dir, row.ModDescriptor)):
+		return fmt.Errorf("%s has no %s, so it is not a mod's folder", dir, row.ModDescriptor)
+	}
+	return nil
+}
 
 // resolveDescriptor returns the path of a mod's descriptor and whether it is metadata.json rather than script.
 func resolveDescriptor(row *game.Game, dir string) (file string, metadata bool) {

@@ -17,6 +17,7 @@ import type { Place } from "@services/workspace/models";
 import { useShown } from "../../app/pages";
 import { joinParts, matchQuery, plural } from "../../lib/format";
 import {
+  codesQuery,
   fileQuery,
   gitStatusQuery,
   indentationQuery,
@@ -94,11 +95,15 @@ const saveDds = useOverlay().create(SaveDdsModal);
 const sidebar = useLocalStorage("pmt.ide.sidebar", "explorer");
 const isVisual = computed(() => editor.mode === "visual");
 // in Visual, the tabs it has under their own labels, and Structure where the saved tab is not one of them
-const tabs = computed(() =>
+const modeTabs = computed(() =>
   isVisual.value ? SIDEBAR.flatMap(({ visual, ...tab }) => (visual ? [{ ...tab, label: visual }] : [])) : SIDEBAR,
 );
 const shownSidebar = computed(() =>
-  tabs.value.some((tab) => tab.value === sidebar.value) ? sidebar.value : "entries",
+  modeTabs.value.some((tab) => tab.value === sidebar.value) ? sidebar.value : "entries",
+);
+// the simple interface leaves out the tabs it hides, unless one is the open one
+const tabs = computed(() =>
+  modeTabs.value.filter((tab) => tab.value === shownSidebar.value || !settings.isHidden(tab.value)),
 );
 // Visual shows the active group alone
 const visualGroup = computed(() => (isVisual.value ? editor.activeGroup() : null));
@@ -135,7 +140,7 @@ commandBus.on((command) => {
   }
   if (command === "explorer.reveal") {
     showSidebar("explorer");
-    if (editor.activeFile()?.readOnly) gameOpen.value = true;
+    if (editor.activeFile()?.origin === VANILLA) gameOpen.value = true;
     void nextTick().then(() => Promise.all([modTree.value?.reveal(), gameTree.value?.reveal()]));
   }
   if (command === "terminal.sendFile") {
@@ -245,8 +250,14 @@ const explorerPanes = computed<SplitterItem[]>(() => [
       ? [{ id: "game", slot: "game", order: 2, sizeUnit: PIXELS, minSize: 120 }]
       : [{ id: "folded", slot: "game", order: 2, sizeUnit: PIXELS, defaultSize: 33, minSize: 33, maxSize: 33 }]),
 ]);
+// the terminal's own window shows the Terminal tab alone; the simple interface leaves out the tabs it hides, unless one
+// is the open one
 const panelTabs = computed(() =>
-  layout.value === "terminal" ? PANEL.filter((tab) => tab.value === "terminal") : PANEL,
+  PANEL.filter((tab) =>
+    layout.value === "terminal"
+      ? tab.value === "terminal"
+      : tab.value === editor.panel || !settings.isHidden(tab.value),
+  ),
 );
 const panelTab = computed(() =>
   layout.value === "terminal" ? "terminal" : (PANEL.find((tab) => tab.value === editor.panel)?.value ?? "problems"),
@@ -257,6 +268,9 @@ const output = useTemplateRef("output");
 const { data: levels } = useQuery(levelsQuery);
 /** The levels that count as problems, the worst first. */
 const problemLevels = computed(() => (levels.value ?? []).filter((level) => level.problem));
+const { data: codes } = useQuery(codesQuery);
+/** What to do about a problem, by its code. */
+const advice = computed(() => new Map((codes.value ?? []).map((code) => [code.id, code.advice])));
 // Health's report for the workspace's own load order, built only while the panel shows Problems, as building one
 // checks every mod; the status bar counts what the report holds
 const { data: report } = useQuery(() => ({
@@ -354,7 +368,7 @@ async function popOutTerminal(): Promise<void> {
 
 /** showSidebar shows a sidebar tab, unfolding the sidebar if it is folded. A tab Visual hides brings Code back. */
 function showSidebar(value: string): void {
-  if (!tabs.value.some((tab) => tab.value === value)) editor.mode = "code";
+  if (!modeTabs.value.some((tab) => tab.value === value)) editor.mode = "code";
   sidebar.value = value;
   splitter.value?.panelsRef[0]?.expand();
 }
@@ -679,38 +693,53 @@ function collapseAll(): void {
                     v-if="rows.length"
                     v-slot="{ item }"
                     :items="rows"
-                    :virtualize="{ estimateSize: 24, skipMeasurement: true }"
+                    :virtualize="{ estimateSize: settings.toPixels(1.5), skipMeasurement: true }"
                     class="min-h-0 flex-1 py-1"
                   >
-                    <ProblemRow
+                    <!-- the row's tooltip holds its whole message and what to do, so the message takes no title -->
+                    <UTooltip
                       v-if="'problem' in item"
-                      dense
-                      class="ps-7.5"
-                      :level="item.problem.level"
-                      :message="item.problem.message"
-                      @open="
-                        editor.show(
-                          item.place,
-                          { lineNumber: item.problem.range.startLineNumber, column: item.problem.range.startColumn },
-                          'navigate',
-                        )
-                      "
+                      :content="{ side: 'top', align: 'start' }"
+                      :ui="{ content: 'h-auto bg-elevated shadow-lg ring-accented' }"
                     >
-                      <template #trailing>
-                        <span class="shrink-0 font-mono text-11 text-dimmed">{{ item.problem.code }}</span>
-                        <span class="shrink-0 font-mono text-11 text-dimmed">
-                          {{ item.problem.range.startLineNumber }}:{{ item.problem.range.startColumn }}
-                        </span>
-                        <UBadge
-                          v-if="item.health"
-                          label="Health"
-                          color="neutral"
-                          variant="subtle"
-                          size="sm"
-                          class="shrink-0"
-                        />
+                      <ProblemRow
+                        dense
+                        class="ps-7.5"
+                        :level="item.problem.level"
+                        :message="item.problem.message"
+                        @open="
+                          editor.show(
+                            item.place,
+                            { lineNumber: item.problem.range.startLineNumber, column: item.problem.range.startColumn },
+                            'navigate',
+                          )
+                        "
+                      >
+                        <template #message>{{ item.problem.message }}</template>
+                        <template #trailing>
+                          <span class="shrink-0 font-mono text-11 text-dimmed">{{ item.problem.code }}</span>
+                          <span class="shrink-0 font-mono text-11 text-dimmed">
+                            {{ item.problem.range.startLineNumber }}:{{ item.problem.range.startColumn }}
+                          </span>
+                          <UBadge
+                            v-if="item.health"
+                            label="Health"
+                            color="neutral"
+                            variant="subtle"
+                            size="sm"
+                            class="shrink-0"
+                          />
+                        </template>
+                      </ProblemRow>
+                      <template #content>
+                        <div class="flex max-w-120 flex-col gap-1 py-0.5 text-12 whitespace-normal">
+                          <span>{{ item.problem.message }}</span>
+                          <span v-if="advice.get(item.problem.code)"
+                            ><span class="text-dimmed">What to do:</span> {{ advice.get(item.problem.code) }}</span
+                          >
+                        </div>
                       </template>
-                    </ProblemRow>
+                    </UTooltip>
                     <div
                       v-else
                       class="flex h-6 items-center gap-1.5 px-3 text-12 font-medium whitespace-nowrap text-highlighted"

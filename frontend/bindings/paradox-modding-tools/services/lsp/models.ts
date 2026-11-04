@@ -3,6 +3,9 @@
 
 // eslint-disable-next-line @typescript-eslint/ban-ts-comment
 // @ts-ignore: Unused imports
+import * as files$0 from "../../internal/files/models.js";
+// eslint-disable-next-line @typescript-eslint/ban-ts-comment
+// @ts-ignore: Unused imports
 import * as index$0 from "../../internal/index/models.js";
 // eslint-disable-next-line @typescript-eslint/ban-ts-comment
 // @ts-ignore: Unused imports
@@ -33,6 +36,11 @@ export interface Card {
      */
     "class"?: string;
     "blurb"?: string;
+
+    /**
+     * the game's own text for the word: a localization key's
+     */
+    "quote"?: string;
 
     /**
      * what the key's value may be
@@ -103,7 +111,11 @@ export interface Card {
      * the definition the position is in, then the blocks inside it
      */
     "within"?: string[] | null;
-    "scopes"?: CardScope[] | null;
+
+    /**
+     * the scopes the dumps give a command, else "no restriction declared"
+     */
+    "runs"?: string;
     "date"?: CardDate | null;
 
     /**
@@ -136,16 +148,6 @@ export interface CardDate {
     "date": jomini$0.Date;
     "era"?: string;
     "month": string;
-}
-
-/**
- * A CardScope is one scope that script can name where a statement is written: the link that names it, such as root or
- * scope:target, the type the game gives it, and what it is.
- */
-export interface CardScope {
-    "link": string;
-    "type": string;
-    "about": string;
 }
 
 /**
@@ -199,6 +201,11 @@ export interface Code {
     "message": string;
 
     /**
+     * what to do about it, in plain words; it repeats no fact of the message
+     */
+    "advice": string;
+
+    /**
      * Elsewhere is the message where a mod the file's mod does not depend on defines the name, or "" if the code has
      * none.
      */
@@ -248,6 +255,11 @@ export interface Completion {
      * Insert is a snippet with placeholders
      */
     "snippet": boolean;
+
+    /**
+     * the full path of the image file it names; "" if it names none
+     */
+    "image"?: string;
 }
 
 /**
@@ -275,6 +287,18 @@ export interface Diagnostic {
 }
 
 /**
+ * A Draft is the file New file makes in a folder of a mod: the name it suggests and the text the file starts with.
+ */
+export interface Draft {
+    "name": string;
+
+    /**
+     * the header of a localization file, the namespace line in an events folder, else empty
+     */
+    "text": files$0.Text;
+}
+
+/**
  * An Edit is one change to a file's text: the range replaced and the text that replaces it.
  */
 export interface Edit {
@@ -295,7 +319,7 @@ export interface Fix {
     "edits": { [_ in string]?: Edit[] | null } | null;
 
     /**
-     * a localization file written first, with only its header
+     * a file written first: a localization file has only its header
      */
     "creates"?: string;
 
@@ -321,6 +345,11 @@ export interface Hint {
     "line": number;
     "column": number;
     "text": string;
+
+    /**
+     * HintDate or HintText
+     */
+    "kind": string;
 }
 
 /**
@@ -364,6 +393,11 @@ export interface Level {
      * the game loses something, so a mod needs a fix
      */
     "fix": boolean;
+
+    /**
+     * what the player loses, in a sentence
+     */
+    "cost": string;
 }
 
 /**
@@ -433,10 +467,15 @@ export interface Site {
     "reason"?: index$0.Reason;
 
     /**
-     * the reason in words
+     * the reason in words, naming the mod that hides a copy
      */
     "label"?: string;
     "defines"?: string[] | null;
+
+    /**
+     * the name of the definition that holds a copy the game keeps whole
+     */
+    "holder"?: string;
 }
 
 /**

@@ -5,17 +5,34 @@
  */
 import * as monaco from "monaco-editor/editor/editor.api";
 import type { languages } from "monaco-editor";
+import { watch } from "vue";
 
 import * as lsp from "@services/lsp/service";
 import type { Completion, Edit, Fix, Site, Symbol } from "@services/lsp/models";
 import type { Place } from "@services/workspace/models";
-import { loadQuery, placeQuery } from "../../../queries";
+import { fileUrl, loadQuery, placeQuery } from "../../../queries";
 import { useEditorStore } from "../../../stores/editor";
+import { useSettingsStore } from "../../../stores/settings";
 import { useWorkspaceStore } from "../../../stores/workspace";
 import { openModel, findModel } from "./models";
 
 /** The id of the command a quick fix of the lightbulb runs. */
 const FIX_COMMAND = "pmt.applyFix";
+/** The setting that turns off each kind of inlay hint, by the kind Go gives it. A kind with none is always shown. */
+const HINT_SETTINGS: Record<string, string> = { text: "ide.textHints" };
+/** The widest a picture beside a completion that names an image file is drawn, in pixels. */
+const PICTURE_WIDTH = 96;
+
+/** SHOW_DETAILS is the editor action that opens the details beside the completion list while they are closed. */
+export const SHOW_DETAILS: monaco.editor.IActionDescriptor = {
+  id: "pmt.showSuggestionDetails",
+  label: "Show the details beside the completion list",
+  precondition: "suggestWidgetVisible && !suggestWidgetDetailsVisible",
+  run: (codeEditor) => codeEditor.trigger("pmt", "toggleSuggestionDetails", null),
+};
+
+/** An ImageCompletion is a completion item that names an image file, kept with the file's full path. */
+type ImageCompletion = languages.CompletionItem & { image?: string };
 
 // the place of a file in each folder that definitions or references were found in, by the folder's address
 const folders = new Map<string, Place>();
@@ -85,6 +102,7 @@ function registerNavigation(selector: languages.LanguageFilter[]): void {
 
 /** Registers completion, predicted text and signature help. */
 function registerCompletion(selector: languages.LanguageFilter[]): void {
+  const settings = useSettingsStore();
   monaco.languages.registerCompletionItemProvider(selector, {
     triggerCharacters: [".", "@", "$", ":", "["],
     provideCompletionItems: async (model, position) => {
@@ -92,7 +110,7 @@ function registerCompletion(selector: languages.LanguageFilter[]): void {
       const range = new monaco.Range(position.lineNumber, word.startColumn, position.lineNumber, word.endColumn);
       const snippet = monaco.languages.CompletionItemInsertTextRule.InsertAsSnippet;
       return {
-        suggestions: completions.map((completion) => ({
+        suggestions: completions.map((completion): ImageCompletion => ({
           label: completion.label,
           kind: monaco.languages.CompletionItemKind.Property,
           insertText: completion.insert,
@@ -102,8 +120,22 @@ function registerCompletion(selector: languages.LanguageFilter[]): void {
           // the completion the game writes most sorts first
           sortText: String(Number.MAX_SAFE_INTEGER - completion.rank).padStart(16, "0"),
           range,
+          image: completion.image,
         })),
       };
+    },
+    // the picture of an image file is read when its item is the one on show, and shown in the details beside the list,
+    // which open for the editor being typed in; Monaco opens them only once asked, and keeps them open
+    resolveCompletionItem: async (item: ImageCompletion) => {
+      const picture = item.image && settings.isOn("ide.completionPictures") ? await fetchPicture(item.image) : "";
+      if (!picture) return item;
+      item.documentation = { value: `<img src="${picture}">`, supportHtml: true };
+      void monaco.editor
+        .getEditors()
+        .find((codeEditor) => codeEditor.hasTextFocus())
+        ?.getAction(SHOW_DETAILS.id)
+        ?.run();
+      return item;
     },
   });
   monaco.languages.registerInlineCompletionsProvider(selector, {
@@ -172,14 +204,26 @@ function registerDecoration(selector: languages.LanguageFilter[], legend: langua
     provideFoldingRanges: async (model) =>
       ((await lsp.ListFolds(model.uri.fsPath)) ?? []).map(({ start, end }) => ({ start, end })),
   });
+  const settings = useSettingsStore();
+  const hintsChanged = new monaco.Emitter<void>();
+  watch(
+    () => Object.values(HINT_SETTINGS).map((key) => settings.isOn(key)),
+    () => hintsChanged.fire(),
+  );
   monaco.languages.registerInlayHintsProvider(selector, {
+    onDidChangeInlayHints: hintsChanged.event,
     provideInlayHints: async (model) => ({
-      // Monaco's own padding is a few pixels, so an em space sets the date further apart from the code
-      hints: ((await lsp.ListHints(model.uri.fsPath)) ?? []).map((hint) => ({
-        label: `\u{2003}${hint.text}`,
-        paddingLeft: true,
-        position: { lineNumber: hint.line, column: hint.column },
-      })),
+      // Monaco's own padding is a few pixels, so an em space sets the hint further apart from the code
+      hints: ((await lsp.ListHints(model.uri.fsPath)) ?? [])
+        .filter((hint) => {
+          const key = HINT_SETTINGS[hint.kind];
+          return !key || settings.isOn(key);
+        })
+        .map((hint) => ({
+          label: `\u{2003}${hint.text}`,
+          paddingLeft: true,
+          position: { lineNumber: hint.line, column: hint.column },
+        })),
       dispose: () => undefined,
     }),
   });
@@ -217,6 +261,24 @@ async function resolveCompletions(
   const word = model.getWordUntilPosition(position);
   const completions = await lsp.Complete(model.uri.fsPath, position.lineNumber, position.column);
   return { word, completions: completions ?? [] };
+}
+
+/**
+ * Fetches the picture of an image file as a data URL, which Monaco's markdown shows where it refuses a relative one.
+ * The picture is drawn at most PICTURE_WIDTH wide, a smaller one at its own size, so the URL stays under the 100,000
+ * characters Monaco's markdown takes. It is "" if the file cannot be read.
+ */
+async function fetchPicture(path: string): Promise<string> {
+  const response = await fetch(fileUrl(path));
+  const bitmap = response.ok ? await createImageBitmap(await response.blob()).catch(() => null) : null;
+  if (!bitmap) return "";
+  const scale = Math.min(1, PICTURE_WIDTH / bitmap.width);
+  const canvas = document.createElement("canvas");
+  canvas.width = Math.round(bitmap.width * scale);
+  canvas.height = Math.max(1, Math.round(bitmap.height * scale));
+  canvas.getContext("2d")?.drawImage(bitmap, 0, 0, canvas.width, canvas.height);
+  bitmap.close();
+  return canvas.toDataURL();
 }
 
 /** Shows the file at a resource in the IDE, at the given selection. */

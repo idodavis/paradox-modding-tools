@@ -117,7 +117,7 @@ func (index *Index) ListActing(schema *schema.Schema, reference schema.Reference
 // isActing reports whether a definition of the name a winner won takes part in what the game runs: the one it keeps,
 // one merged into it, or, where no source says which it keeps, any copy in a file it reads.
 func (index *Index) isActing(winner Winner, site Site) bool {
-	kept, reason := index.ResolveSite(winner, site)
+	kept, reason, _ := index.ResolveSite(winner, site)
 	return kept || reason == ReasonUnsettled
 }
 

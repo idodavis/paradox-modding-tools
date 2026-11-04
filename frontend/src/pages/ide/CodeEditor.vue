@@ -13,19 +13,30 @@ import type { ContextMenuItem, PopoverProps } from "@nuxt/ui";
 
 import * as lsp from "@services/lsp/service";
 import type { Card, Site } from "@services/lsp/models";
+import type { Place } from "@services/workspace/models";
 
-import { compareWithFile, compareWithGame, findCommand, findGameCopy, findKbds } from "../../app/commands";
+import {
+  compareWithFile,
+  compareWithGame,
+  findCommand,
+  findGameCopy,
+  findKbds,
+  findOverride,
+  overrideEntry,
+} from "../../app/commands";
 import { copiesQuery, detailQuery, loadQuery, wikiPagesQuery } from "../../queries";
+import { useAgentStore } from "../../stores/agent";
 import { useEditorStore } from "../../stores/editor";
 import { useSearchStore } from "../../stores/search";
 import { COMMAND_BUS, useWindowsStore, type WikiLookup } from "../../stores/windows";
-import { useWorkspaceStore } from "../../stores/workspace";
+import { useWorkspaceStore, VANILLA } from "../../stores/workspace";
 import HoverCard from "../../ui/HoverCard.vue";
 import { markChanges } from "./editor/changes";
 import { decorate } from "./editor/conflicts";
 import { attachHover } from "./editor/hover";
 import type { Model } from "./editor/models";
 import { editorOptions } from "./editor/monaco";
+import { SHOW_DETAILS } from "./editor/providers";
 
 const { model, active } = defineProps<{ model: Model; active: boolean }>();
 
@@ -45,6 +56,7 @@ const CARD_CONTENT: PopoverProps["content"] = {
 
 const router = useRouter();
 const editorStore = useEditorStore();
+const agent = useAgentStore();
 const windows = useWindowsStore();
 const workspace = useWorkspaceStore();
 const commandBus = useEventBus(COMMAND_BUS);
@@ -60,11 +72,12 @@ const { mutate: ask, data: asked } = useMutation({
   mutation: async () => {
     const caret = view.value?.getPosition() ?? { lineNumber: 1, column: 1 };
     const covering = model.problems.filter((problem) => Range.containsPosition(problem.range, caret));
-    const [card, fixes] = await Promise.all([
+    const [card, fixes, override] = await Promise.all([
       lsp.Hover(model.place.path, caret.lineNumber, caret.column),
       covering.length ? lsp.ListFixes(model.place.path, covering) : null,
+      findOverride(model.place, caret.lineNumber, caret.column),
     ]);
-    return { card, fixes: fixes ?? [] };
+    return { card, fixes: fixes ?? [], override };
   },
 });
 const card = computed(() => asked.value?.card);
@@ -98,12 +111,20 @@ const lookup = computed((): WikiLookup | undefined => {
   return title ? { title } : undefined;
 });
 // the menu offers the compare with the game's copy only for a mod's file the game has too
-const { data: copies } = useQuery(() => ({ ...copiesQuery(model.place.path), enabled: !model.place.readOnly }));
+const { data: copies } = useQuery(() => ({
+  ...copiesQuery(model.place.path),
+  enabled: model.place.origin !== VANILLA,
+}));
 const gameCopy = computed(() => findGameCopy(model.place, copies.value));
 
 onMounted(() => {
   if (!host.value) return;
-  const codeEditor = editor.create(host.value, { ...editorOptions(), model: model.model });
+  const codeEditor = editor.create(host.value, {
+    ...editorOptions(),
+    model: model.model,
+    readOnly: model.place.readOnly,
+    readOnlyMessage: { value: describeReadOnly(model.place) },
+  });
   // a file shown again opens where its caret was left
   const caret = { lineNumber: model.caret.line, column: model.caret.column };
   codeEditor.setPosition(caret);
@@ -126,6 +147,7 @@ onMounted(() => {
     keybindings: [KeyMod.Shift | KeyMod.Alt | KeyCode.F12],
     run: () => findAll(),
   });
+  codeEditor.addAction(SHOW_DETAILS);
   hovering.value = attachHover(codeEditor, model);
   view.value = codeEditor;
   decorate(model);
@@ -164,10 +186,19 @@ function listReferences(heading: string, sites: Site[]): void {
   windows.sendCommand("editor.findInFiles", "main");
 }
 
-/** keepMovedFocus keeps the focus in the editor a row of the menu moved it to, such as the file a fix opened. */
+/** describeReadOnly returns what the editor says when typing is tried in a read only file: why, and what to do. */
+function describeReadOnly(place: Place): string {
+  if (place.origin === VANILLA) return "Game files are read only. To change this, use Override, or Copy into a mod.";
+  return `${workspace.originName(place.origin)} is Steam's copy of a Workshop mod, so PMT keeps it read only. Make a mod for your changes.`;
+}
+
+/**
+ * keepMovedFocus keeps the focus in the text box a row of the menu moved it to, such as the editor of the file a fix
+ * opened or the agent's prompt box.
+ */
 function keepMovedFocus(event: Event): void {
   const focused = document.activeElement;
-  if (focused?.closest(".monaco-editor") && !host.value?.contains(focused)) event.preventDefault();
+  if (focused?.tagName === "TEXTAREA" && !host.value?.contains(focused)) event.preventDefault();
 }
 
 /** run runs one of Monaco's own actions in this editor. */
@@ -189,12 +220,29 @@ function replaceSelections(text: string): void {
   );
 }
 
+// the entry the caret is in, which the card names first among the blocks around the caret; "" where it names none
+const entry = computed(() => card.value?.within?.[0] ?? "");
+
 const groups = computed<ContextMenuItem[][]>(() => [
-  (asked.value?.fixes ?? []).map((fix) => ({
-    label: fix.title,
-    icon: "i-lucide-lightbulb",
-    onSelect: () => editorStore.applyFix(fix),
-  })),
+  [
+    ...(asked.value?.override
+      ? [
+          {
+            label: `Override ${entry.value || "this entry"} in a mod`,
+            icon: "i-lucide-copy-plus",
+            onSelect: () => {
+              const caret = view.value?.getPosition() ?? { lineNumber: 1, column: 1 };
+              void overrideEntry(model.place, caret.lineNumber, caret.column, entry.value);
+            },
+          },
+        ]
+      : []),
+    ...(asked.value?.fixes ?? []).map((fix) => ({
+      label: fix.title,
+      icon: "i-lucide-lightbulb",
+      onSelect: () => editorStore.applyFix(fix),
+    })),
+  ],
   [
     { label: "Go to definition", kbds: ["F12"], onSelect: () => run("editor.action.revealDefinition") },
     { label: "Go to references", kbds: ["Shift F12"], onSelect: () => run("editor.action.goToReferences") },
@@ -228,6 +276,11 @@ const groups = computed<ContextMenuItem[][]>(() => [
       label: "Look up in the wiki",
       disabled: !lookup.value,
       onSelect: () => lookup.value && windows.lookUp(lookup.value),
+    },
+    {
+      label: `Ask ${agent.current?.name ?? "an agent"} about this`,
+      icon: "i-lucide-sparkles",
+      onSelect: () => agent.focusPrompt(),
     },
   ],
   [

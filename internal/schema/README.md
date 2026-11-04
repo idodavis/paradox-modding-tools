@@ -12,7 +12,7 @@ and the walk reads directly. A schema is built once for each version of an insta
 |---|---|
 | `schema.go` | the shape: `Claim` and `Claims`, `ValueType` and its constants, `Expected`, `Vanilla`, `Field`, `Command`, `Example`, `CommandPattern`, `Database`, `ScopeType`, `DataFunction`, `DataType`, `Modifier`, `OnAction`, `ScriptedDefinition`, `SourceState`, `Schema`; `Build`; the start setups, the databases and their callees; `JoinNested` and `SplitNested`; the lookups (`FindDatabase`, `FindDatabaseByClass`, `FindCommand`, `ResolveLink`, `IsLink`, the key's link test `isKeyLink`, a command's name with an argument in parentheses `findKeyCall`, the command patterns that make a key `findPatterns`); the data calls (`ResolveCallTypes`, `FindFunction`, `FindUnlisted`, `ResolveMacro`, `ResolveDatacontext`, `ListCallReferences`, `ResolveTypeDatabase`); the databases each `game.Contents` kind names (`Events`, `Messages`, `Lists`, `Concepts`, `ModifierTypes`, `FireDatabases`); the folders under which the game reads a mod's files (`TopFolders`: the first folder of each of the game's files, less its stage folder, in lower case); `ToPhrase`, `DropGetter` (a function's name without its getter's word), `DescribeStep` (a data call's step in words, a call that names a definition read as that name), `MatchValue`, `Database.IsCaseless` |
 | `dumps.go` | the dumps reader: `DumpCommand`, `Dumps`, `ReadDumps`, `FindDumpsAt`; the commands, the arguments a usage writes, a trigger's Traits line (`resolveTraits`), `game.CommandKeys`, the keyword rows under a command, the list families' shared arguments; the backup for a missing section |
-| `docs.go` | the docs reader, `docReader`: which files are docs and which database each describes, and the blurbs, types, requirements, defaults, choices and scopes their prose states |
+| `docs.go` | the docs reader, `docReader`: which files are docs and which database each describes, and the blurbs, types, requirements, defaults and choices their prose states |
 | `vanilla.go` | the vanilla count, `CountVanilla`: the `counter` and its `holder`s that count what the game's own files write, and the claims the counts support (`resolveClaims`); the command patterns, the prefixes' databases, and how many places of a name are kept as examples (`ExampleCount`) |
 | `scripted.go` | the scripted definitions and the modifier types that files declare: the `declarer`, `parameterRe`; the mods' (`SetScripted`); a call's lookup through the game's and the mods'; the parameters a body writes (`ListParameters`) and those it saves names under; what a modifier type's name takes |
 | `definitions.go` | what a statement defines: a constant, a script definition named as its database's row says, an event of a declared namespace, a GUI declaration or window, a top block of an asset file, and a nested definition |
@@ -43,7 +43,7 @@ be: a `ValueTarget` is a link to the scope in `Expected.Scope`, or a name of `Ex
 
 A `Command` is one effect, trigger or link the dumps declare: what declares it, the scopes it runs in, the scope a link
 leads to, the keys it takes as a field, the key its parenthesized argument stands for (`ArgumentKey`), its blurb and
-usage, the places the game's own files write it and the scopes they run it in. A link may be `Wild` (a pattern no
+usage and the places the game's own files write it. A link may be `Wild` (a pattern no
 written name matches) and `Bare` (written as its name alone, not only as `name:data`). The rest of the schema is the
 dumps' tables as they are: `Scopes`, `Saved`, `Modifiers`, `OnActions` and `DataTypes`, and the link `Prefixes` with
 the database each one's names are in. The databases add `TypeDatabases` and `InlineDatabases`, and the count and the
@@ -63,7 +63,7 @@ same key elsewhere in its database.
 
 ## Claims
 
-A field's `Claims` are its facts: its value, shape, scope, requirement, default, blurb and keys. Each is a `Claim`,
+A field's `Claims` are its facts: its value, shape, requirement, default, blurb and keys. Each is a `Claim`,
 which holds one value and the `game.Source` that states it. A higher-ranked source replaces a lower one, and a claim
 that states nothing takes any source (`Claim.resolve`). `Field.take` gives a field another field's claims where they
 outrank its own, all but `Keys`. The docs reader gives a database's fields what a doc says through it, and the dumps
@@ -113,6 +113,10 @@ were written, the time of the newest dump file, without reading one. A section t
 shipped backup, one section at a time. The schema's `Dumps` is a `SourceState`: whether the dumps came from the install,
 the shipped backup or neither, when they were written, and whether they are older than the install.
 
+A command that a `game.DumpCorrections` row names, for a dump row that contradicts its own text, takes the scopes and
+the target of the row in place of the dump's (`applyCorrections`), whether the dumps came from the install or the
+backup.
+
 A command named by several dumps is one `Command`. Its arguments are the keys of every usage block written under its
 name, on a line of its own or inside a sentence, and the key each line of its prose opens with, as in `key = value`.
 A usage's comments are dropped. A key written with nothing after it is declared all the same, unless the block it
@@ -143,9 +147,9 @@ example's statements are fields, except below a block that holds script (`holdsS
 above them are their text. A key that stands for names (`<key>`, `scope:actor`, `trigger/effect`, `$target$`) makes no
 field, but a block it opens is still a level of the example; written with prose instead of a block, as `scope:actor =
 the actor` is, it is a note. That text states a blurb, a type by the words of `game.DocTypes`, a requirement, a
-default, choices and a scope. A sample value such as `innovation_key` names the database of its words, by
-`ResolveTypeDatabase`, and the key `date` stands for a date key, as a dated history block's. The example's first block
-is the definition, but a definition named by its file is the whole file, so such a doc is read as already inside it. A
+default and choices. It states no scope: a list of scopes under a label is read as no field's text. A sample value such
+as `innovation_key` names the database of its words, by `ResolveTypeDatabase`, and the key `date` stands for a date
+key, as a dated history block's. The example's first block is the definition, but a definition named by its file is the whole file, so such a doc is read as already inside it. A
 definition whose block holds script, as a scripted effect's does, takes no field. A later doc only fills what an
 earlier one left out. A database of records, such as `history/titles`, gives no data type its words: "title" names a
 landed title, not its history.
@@ -160,7 +164,7 @@ widget types, and the modifier types. The `counter` pass then counts, on `files.
 its own, what the files write: the keys under each database's definitions, each value with its count, the shapes and
 proofs a block's keys tell, the names after each prefix, and where each command and data function is written. The
 workers' counts are added together, and `resolveCounts` gives the schema what they support: the claims above, the
-command patterns, the prefixes' databases, each command's examples and the scopes the game runs it in.
+command patterns, the prefixes' databases and each command's examples.
 
 **Command patterns** (`resolvePatterns`). A `CommandPattern` is a family of commands that the dumps declare once for
 each definition of a database, as `has_relation_*` is for the scripted relations. A database makes one where the names
@@ -210,11 +214,11 @@ shape its arguments state, else the effect arguments or the trigger arguments. A
 a trigger's arguments included, is `Context.Conditional` (`holdsConditions`), and one below a keyword whose block is
 shown in the tooltip and never run (`game.Keyword.Preview`, as `show_as_tooltip`'s is) is `Context.Preview`. A key the
 links test takes (`isKeyLink`) is a link: a link that requires data, as EU5's `modifier:<key>` does, is none where a key
-writes it alone (`Command.Bare`). A link or a command that leads to a scope moves the scope there and pushes the one it
-leaves onto `Previous`, and a chain of links is followed link by link. A field that states a scope starts its block in
-that scope, which is also the block's root where the walk knows none. A definition's root scope is the one its row's
-root key names (`game.Database.RootKey`, as CK3's events write `scope`), else its event type's, the dumps' for an
-on_action, or its docs' for the rest. Where a database gives its blocks a run order, the walk first reads the blocks
+writes it alone (`Command.Bare`), and in a block of effects or of a command's arguments a plain name with a plain value
+is none either (`scope-link`). A link or a command that leads to a scope moves the scope there and pushes the one it
+leaves onto `Previous`, and a chain of links is followed link by link. A definition's root scope is the one its row's
+root key names (`game.Database.RootKey`, as CK3's events write `scope`), else its event type's, or the dumps' for an
+on_action; it is unknown for the rest. Where a database gives its blocks a run order, the walk first reads the blocks
 silently in that order, so that a block starts with the scopes saved by the blocks that run before it.
 
 **A command's name with an argument in parentheses** (`findKeyCall`). A key written so, as

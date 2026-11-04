@@ -18,6 +18,7 @@ import { WORKSPACE_TOOLS, type PageName } from "./pages";
 // each page's path, under /workspace/:id for a workspace's, and the file it loads from
 const ROUTES = {
   library: { path: "/library", component: () => import("../pages/library/LibraryPage.vue") },
+  "new-mod": { path: "/new-mod", component: () => import("../pages/newmod/NewModPage.vue") },
   wizard: { path: "/wizard", component: () => import("../pages/wizard/WizardPage.vue") },
   "workspace-ide": { path: "", component: () => import("../pages/ide/WorkspaceIdePage.vue") },
   "event-graph": { path: "graph", component: () => import("../pages/graph/EventGraphPage.vue") },
@@ -32,6 +33,7 @@ export const router: Router = createRouter({
   routes: [
     { path: "/", redirect: { name: "library" } },
     makeRoute("library"),
+    makeRoute("new-mod"),
     makeRoute("wizard"),
     { path: "/workspace/:id", children: WORKSPACE_TOOLS.map(makeRoute) },
   ],

@@ -1,7 +1,6 @@
 <!-- This wizard creates a workspace from a game install, its mods in load order and a name. -->
 <script setup lang="ts">
 import { computed, shallowRef, useTemplateRef } from "vue";
-import { useRouter } from "vue-router";
 import { useMutation, useQuery } from "@pinia/colada";
 import { useSortable } from "@vueuse/integrations/useSortable";
 import type { StepperItem } from "@nuxt/ui";
@@ -11,15 +10,14 @@ import { gameIcon } from "../../stores/settings";
 import { useWorkspaceStore } from "../../stores/workspace";
 import FileSelector from "../../ui/FileSelector.vue";
 import InstallPicker from "../../ui/InstallPicker.vue";
+import SettingsSection from "../../ui/SettingsSection.vue";
 import StatusFacts from "../../ui/StatusFacts.vue";
-import * as workspace from "@services/workspace/service";
 
 const STEPS = ["Game", "Install", "Mods", "Details"];
 
 // The route may name the game. The wizard then starts at its install.
 const { game: routeGame = "" } = defineProps<{ game?: string }>();
 
-const router = useRouter();
 const store = useWorkspaceStore();
 const step = shallowRef(routeGame ? 1 : 0);
 const selectedGame = shallowRef(routeGame);
@@ -59,19 +57,10 @@ const blocked = computed(() => [!gameId.value, !installId.value, false, !title.v
 useSortable(useTemplateRef<HTMLElement>("list"), mods, { handle: ".mod-handle", animation: 150, watchElement: true });
 
 const { mutate: create, isLoading: creating } = useMutation({
-  mutation: async () => {
-    const record = await workspace.CreateWorkspace(title.value.trim(), installId.value, language.value ?? "");
-    // The mods are added one at a time, in load order.
-    for (const mod of mods.value) {
-      if (mod.dir) await workspace.AddMod(record.id, mod.dir);
-      else await workspace.CreateMod(record.id, "", mod.title, language.value ?? "");
-    }
-    return record;
-  },
-  onSuccess: (record) => {
-    store.open(record.id);
-    void router.replace({ name: "workspace-ide", params: { id: record.id } });
-  },
+  mutation: () =>
+    store.create({ name: title.value.trim(), install: installId.value, language: language.value ?? "" }, mods.value, {
+      name: "workspace-ide",
+    }),
 });
 
 /** addFolder adds a mod folder to the load order, unless it is there already. */
@@ -140,7 +129,7 @@ function setStep(index: string | number | undefined): void {
           <div class="flex flex-col gap-1">
             <h2 class="text-16">Which {{ current?.name }} install should this workspace use?</h2>
             <p class="text-13 text-dimmed">
-              PMT reads game files from it and scans its script_docs. You can add more installs later.
+              PMT reads game files from it and scans the game's documentation. You can add more installs later.
             </p>
           </div>
           <InstallPicker v-model="installId" :game-id="gameId" />
@@ -208,6 +197,7 @@ function setStep(index: string | number | undefined): void {
               />
             </UFormField>
           </div>
+          <SettingsSection section="appearance" :keys="['appearance.simple']" />
         </template>
       </UStepper>
 

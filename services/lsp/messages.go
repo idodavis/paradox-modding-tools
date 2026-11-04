@@ -25,7 +25,7 @@ func (visitor *diagnoseVisitor) diagnoseMessages(document workspace.Document) []
 	place, mods := visitor.place, visitor.index
 	tree, file := document.Tree, document.Messages
 	visitor.diagnostics = toDiagnostics(tree, file.Errors)
-	if place.ReadOnly {
+	if visitor.parseOnly {
 		return visitor.diagnostics
 	}
 	visitor.diagnostics = append(visitor.diagnostics, diagnoseLocalizationFile(tree, file, place)...)

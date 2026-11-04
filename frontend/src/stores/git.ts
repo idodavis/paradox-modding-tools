@@ -1,7 +1,7 @@
 /**
- * The git store: the git repositories of the workspace's mods, each its root with the mods it holds, in load order,
- * and the lines git printed. For the session it also keeps the repository picked for the Graph, the folded sections
- * and the commit box to focus. What a repository holds comes from the git queries.
+ * The git store: whether git is installed, the git repositories of the workspace's mods, each its root with the mods
+ * it holds, in load order, and the lines git printed. For the session it also keeps the repository picked for the
+ * Graph, the folded sections and the commit box to focus. What a repository holds comes from the git queries.
  */
 import { defineStore } from "pinia";
 import { useMutation, useQuery, useQueryCache } from "@pinia/colada";
@@ -10,7 +10,7 @@ import { computed, reactive, shallowRef } from "vue";
 
 import * as gitApi from "@services/git/service";
 import type { Place } from "@services/workspace/models";
-import { keys, repositoriesQuery } from "../queries";
+import { gitInstalledQuery, keys, repositoriesQuery } from "../queries";
 
 // the lines kept, the newest last
 const OUTPUT_LINES = 300;
@@ -22,6 +22,9 @@ export const UNSTAGE = ["reset", "-q", "--"] as const;
 export const useGitStore = defineStore("git", () => {
   const cache = useQueryCache();
   const { data: listed } = useQuery(repositoriesQuery);
+  const { data: installed } = useQuery(gitInstalledQuery);
+  /** Whether git is on the PATH. It counts as installed until Go answers, so the views draw no flash of its absence. */
+  const isInstalled = computed(() => installed.value ?? true);
   /** Each repository of the workspace's mods: its root and the mods in it, in the load order of their first mod. */
   const repositories = computed(() => listed.value ?? []);
   /** The root of the repository picked in the Graph's header, or "" until one is picked. */
@@ -49,5 +52,5 @@ export const useGitStore = defineStore("git", () => {
     onSuccess: () => cache.invalidateQueries({ key: keys.gits }),
   });
 
-  return { repositories, graphRoot, folded, commitTarget, findRoot, output, initialize };
+  return { isInstalled, repositories, graphRoot, folded, commitTarget, findRoot, output, initialize };
 });

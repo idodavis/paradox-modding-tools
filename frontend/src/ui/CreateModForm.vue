@@ -3,6 +3,7 @@
 import { shallowRef, watch } from "vue";
 import { useMutation, useQuery } from "@pinia/colada";
 
+import { toSentence } from "../lib/format";
 import { fileUrl, languagesQuery, modFolderQuery, workspacesQuery } from "../queries";
 import FileSelector, { IMAGES } from "./FileSelector.vue";
 import * as steam from "@services/steam/service";
@@ -22,12 +23,12 @@ const { data: workspaces } = useQuery(workspacesQuery);
 const install = () => workspaces.value?.find((row) => row.record.id === workspaceId)?.record.install ?? "";
 const { data: languages } = useQuery(() => ({ ...languagesQuery(install()), enabled: open.value && !!install() }));
 const { data: parent } = useQuery(() => ({
-  ...modFolderQuery({ workspaceId, dir: folder.value, name: "" }),
-  enabled: open.value,
+  ...modFolderQuery({ installId: install(), dir: folder.value, name: "" }),
+  enabled: open.value && !!install(),
 }));
-const { data: modDir } = useQuery(() => ({
-  ...modFolderQuery({ workspaceId, dir: folder.value, name: title.value.trim() }),
-  enabled: open.value && !!title.value.trim(),
+const { data: modDir, error: nameError } = useQuery(() => ({
+  ...modFolderQuery({ installId: install(), dir: folder.value, name: title.value.trim() }),
+  enabled: open.value && !!install() && !!title.value.trim(),
 }));
 
 // makes the mod, then writes the form's description and thumbnail into its listing
@@ -76,7 +77,7 @@ watch(open, (opened) => {
             class="w-full"
           />
         </UFormField>
-        <UFormField label="Folder" :help="modDir && `Creates ${modDir}`">
+        <UFormField label="Folder" :help="modDir && `Creates ${modDir}`" :error="toSentence(nameError?.message ?? '')">
           <FileSelector :path="folder || parent" folder :filter="[]" @update:path="folder = $event" />
         </UFormField>
         <div class="grid grid-cols-2 gap-4">
@@ -102,7 +103,7 @@ watch(open, (opened) => {
             label="Create mod"
             color="primary"
             variant="solid"
-            :disabled="!title.trim()"
+            :disabled="!title.trim() || !!nameError"
             :loading="creating"
           />
         </div>

@@ -10,7 +10,7 @@ as a string.
 
 | file | holds |
 |---|---|
-| `git.go` | the package comment; the events; `Service`, `Repository`, `Remote`; `Run` and `run`, which run git; `FindRepository`, `ListRepositories`, `ReadFile`, `ListRemotes`; the commands (`Discard`, `Merge`, `Pull`, `DeleteBranch`); the locating of paths |
+| `git.go` | the package comment; the events; `Service`, `Repository`, `Remote`; `IsInstalled`, whether git is on the PATH; `Run` and `run`, which run git; `FindRepository`, `ListRepositories`, `ReadFile`, `ListRemotes`; the commands (`Discard`, `Merge`, `Pull`, `DeleteBranch`); the locating of paths |
 | `status.go` | `Change`, `Status`, `Ref`; `ReadStatus`, `ListRefs`; the parser of the status records; a full ref's type by its prefix |
 | `log.go` | `Commit`; `ListCommits`, `ListCommitFiles` |
 | `diff.go` | `LineChange`; `DiffFile`, the editor's change bars |

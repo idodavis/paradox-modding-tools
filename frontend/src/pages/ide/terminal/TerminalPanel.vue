@@ -73,7 +73,7 @@ watch(
   { flush: "post" },
 );
 const fitShell = useThrottleFn(() => {
-  if (current.value?.xterm.element) current.value.fit.fit();
+  if (current.value) terminal.fitConsole(current.value);
 }, 50);
 useResizeObserver(host, () => void fitShell());
 // while the find box is open, its rows follow the shell's output

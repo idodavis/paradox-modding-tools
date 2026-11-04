@@ -1,23 +1,27 @@
 <!--
   The top bar of every window: the PMT menu, then the workspace switcher and the workspace's page tabs in the main
-  window or what another window shows, then the agent pane's button in the main window, search and the window's
-  buttons. Its empty space moves the window.
+  window or what another window shows, then the Launch and agent pane buttons in the main window, search and the
+  window's buttons. Its empty space moves the window. The main window also tells, when the launched game closes, what
+  the game's error log says about the workspace's mods.
 -->
 <script setup lang="ts">
 import type { ContextMenuItem, DropdownMenuItem } from "@nuxt/ui";
-import { useQuery } from "@pinia/colada";
+import { useMutation, useQuery } from "@pinia/colada";
 import { useDebounceFn, useElementSize, useEventBus, useEventListener } from "@vueuse/core";
-import { System, Window } from "@wailsio/runtime";
-import { computed, reactive, shallowRef, useTemplateRef, watch } from "vue";
+import { Events, System, Window } from "@wailsio/runtime";
+import { computed, onScopeDispose, reactive, shallowRef, useTemplateRef, watch } from "vue";
 import { useRoute, useRouter } from "vue-router";
 
 import logoIcon from "@assets/PMT-Logo-Icon.svg?url";
+import * as health from "@services/health/service";
+import * as workspaceApi from "@services/workspace/service";
+import { countFindings, list, plural } from "../lib/format";
 import { gamesQuery, workspacesQuery } from "../queries";
 import { useAgentStore } from "../stores/agent";
 import { gameIcon, useSettingsStore } from "../stores/settings";
 import { COMMAND_BUS, describeWindow, THIS_WINDOW, useWindowsStore } from "../stores/windows";
 import { useWorkspaceStore } from "../stores/workspace";
-import { findKbds } from "./commands";
+import { findCommand, findKbds } from "./commands";
 import { homeRoute, isWorkspacePage, listShownTools, PAGES, type WorkspacePage } from "./pages";
 
 const IS_MAIN = THIS_WINDOW === "main";
@@ -28,11 +32,13 @@ const ROUND_BUTTON =
   "flex size-6 items-center justify-center rounded-full bg-accented text-toned hover:text-highlighted";
 // a tab's line on top matches its highlight below, so its icon and label center on the bar's middle
 const TAB = "flex items-center gap-1.5 px-2.5 border-y-2 border-transparent text-13 font-medium whitespace-nowrap";
-// the window moves by this space: Windows reads the region, Linux the drag
-const CAPTION = "self-stretch [--wails-draggable:drag] [--wails-non-client-region:caption]";
+// the window moves by dragging this space
+const CAPTION = "self-stretch [--wails-draggable:drag]";
+const LAUNCH = findCommand("game.launch");
 
 const route = useRoute();
 const router = useRouter();
+const toast = useToast();
 const workspace = useWorkspaceStore();
 const settings = useSettingsStore();
 const windows = useWindowsStore();
@@ -46,13 +52,16 @@ const active = computed(() => workspaces.value?.find((row) => row.record.id === 
 const activeGame = computed(() => active.value?.game?.id ?? "");
 const tools = computed(listShownTools);
 const activeIcon = computed(() => gameIcon(activeGame.value));
+const { mutate: rescan } = useMutation({ mutation: (installId: string) => workspaceApi.RescanInstall(installId) });
+
+if (IS_MAIN) onScopeDispose(Events.On("game:exited", ({ data: dumpsFresher }) => void announceExit(dumpsFresher)));
 
 const maximized = shallowRef(false);
 const checkMaximized = useDebounceFn(async () => (maximized.value = await Window.IsMaximised()), 100);
 useEventListener(window, "resize", () => void checkMaximized());
 void checkMaximized();
 
-// the window's buttons in order: the system's name for each, its label, its glyph on a 10 by 10 grid and what it does
+// the window's buttons in order: the name of each, its label, its glyph on a 10 by 10 grid and what it does
 const windowButtons = computed(() => [
   { region: "minimize", label: "Minimize", glyph: "M0 5.5h10", press: () => Window.Minimise() },
   {
@@ -138,9 +147,8 @@ const switcher = computed(
     ] satisfies DropdownMenuItem[][],
 );
 
-/** writeDark writes the theme's other colors, dark or light, which stops following the system's. */
+/** writeDark writes the theme's other colors, dark or light. */
 function writeDark(): void {
-  settings.write("appearance.followSystem", "false");
   settings.write("appearance.dark", String(!settings.theme().dark));
 }
 
@@ -190,6 +198,48 @@ function popOut(name: WorkspacePage): void {
   if (route.name === name && next) void router.push({ name: next, params: { id: workspace.activeId() } });
 }
 
+/**
+ * announceExit toasts that the launched game closed, with what its error log says about the workspace's mods and a way
+ * to open the log. When the game wrote fresher documentation it also offers to scan the install again, and the toast
+ * stays until it is closed.
+ */
+async function announceExit(dumpsFresher: boolean): Promise<void> {
+  const install = active.value?.record.install;
+  toast.add({
+    title: `${active.value?.game?.name ?? "The game"} closed`,
+    description: await describeLog(),
+    actions: [
+      {
+        label: "Open the game log",
+        icon: "i-lucide-activity",
+        onClick: () =>
+          void router.push({ name: "health", params: { id: workspace.activeId() }, query: { view: "log" } }),
+      },
+      ...(dumpsFresher && install
+        ? [{ label: "Rescan the install", icon: "i-lucide-refresh-cw", onClick: () => rescan(install) }]
+        : []),
+    ],
+    duration: dumpsFresher ? 0 : undefined,
+  });
+}
+
+/**
+ * describeLog returns what the game's error log says about the workspace's mods. It is undefined if the log cannot be
+ * read.
+ */
+async function describeLog(): Promise<string | undefined> {
+  try {
+    const { findings } = await health.ListErrorLog();
+    const modFindings = (findings ?? []).filter((finding) => finding.origin);
+    const lines = countFindings(modFindings);
+    if (!lines) return "Your mods logged nothing in the game's error log.";
+    const names = list([...new Set(modFindings.map((finding) => workspace.originName(finding.origin)))]);
+    return `${names} logged ${plural(lines, "line")} in the game's error log this run.`;
+  } catch {
+    return undefined;
+  }
+}
+
 /** styleButton returns a window button's classes: round on Linux, square on Windows, close red under the pointer. */
 function styleButton(region: string): string[] {
   if (ROUND) return [ROUND_BUTTON];
@@ -210,7 +260,7 @@ function styleButton(region: string): string[] {
         type="button"
         :aria-label="IS_MAIN ? 'PMT menu' : 'PMT'"
         class="-my-px flex shrink-0 items-center gap-1.5 self-stretch border-y-2 border-transparent px-1 text-13 font-semibold text-highlighted"
-        :class="(route.name === 'library' || route.name === 'wizard') && 'border-b-primary'"
+        :class="(route.name === 'library' || route.name === 'new-mod' || route.name === 'wizard') && 'border-b-primary'"
         data-art
       >
         <span
@@ -223,7 +273,6 @@ function styleButton(region: string): string[] {
           }"
         />
         PMT
-        <UIcon v-if="IS_MAIN" name="i-lucide-chevron-down" class="size-3.5 text-dimmed" />
       </button>
     </UDropdownMenu>
     <span class="mx-1 h-4.5 w-px shrink-0 bg-accented" />
@@ -303,6 +352,15 @@ function styleButton(region: string): string[] {
       <span class="truncate text-dimmed">{{ active?.record.name }}</span>
     </span>
 
+    <UButton
+      v-if="IS_MAIN && workspace.isOpen()"
+      label="Launch"
+      icon="i-lucide-play"
+      size="sm"
+      :ui="{ leadingIcon: 'text-success' }"
+      :aria-label="`Launch ${active?.game?.name ?? 'the game'}`"
+      @click="LAUNCH?.onSelect?.($event)"
+    />
     <UTooltip v-if="IS_MAIN && active" text="Agent pane" :kbds="findKbds('agent.togglePane')">
       <UChip :show="agent.sessions.some(agent.isWaiting)" color="warning" inset size="sm">
         <UButton
@@ -332,7 +390,6 @@ function styleButton(region: string): string[] {
         type="button"
         :aria-label="button.label"
         :class="styleButton(button.region)"
-        :style="{ '--wails-non-client-region': button.region }"
         @click="button.press()"
       >
         <svg

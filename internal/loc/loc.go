@@ -100,7 +100,7 @@ func Parse(text, path string) *File {
 			}
 		}
 	}
-	file.Language = cmp.Or(language, FindSuffixLanguage(path), findFolderLanguage(path))
+	file.Language = cmp.Or(language, FindSuffixLanguage(path), FindFolderLanguage(path))
 	return file
 }
 
@@ -152,9 +152,10 @@ func FindSuffixLanguage(filePath string) string {
 	return strings.ToLower(match[2])
 }
 
-// findFolderLanguage returns the name of the folder under `localization` that holds the file, whether a `replace`
-// folder comes before it or after it, without case. It returns "" if the file has no such folder.
-func findFolderLanguage(filePath string) string {
+// FindFolderLanguage returns the name of the folder under `localization` that holds the file, whether a `replace`
+// folder comes before it or after it, without case. A path that ends in a slash is a folder's, which holds nothing
+// yet. It returns "" if the file has no such folder.
+func FindFolderLanguage(filePath string) string {
 	folders := strings.Split(filepath.ToSlash(filePath), "/")
 	folders = folders[:len(folders)-1]
 	if position, ok := findLanguageFolder(folders); ok {

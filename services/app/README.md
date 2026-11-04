@@ -67,9 +67,8 @@ agent, for this service and the others that read the web.
 
 ## Windows
 
-Every window has no frame of the system's: the page draws its own title bar and buttons. On Windows the page marks
-them with `--wails-non-client-region` and the window is hosted through composition, so Windows treats them as its
-own and dragging, snapping, the system menu and the Snap Layouts work; Linux drags by `--wails-draggable`.
+Every window has no frame of the system's: the page draws its own title bar and buttons, and the window moves by
+dragging the bar's empty space, which `--wails-draggable` marks.
 
 Wails's JavaScript runtime acts only on the window that calls it, so showing or closing another window goes through
 this service. The main window's close is held and sent to the page as `window:closing`, until `CloseWindow` lets it

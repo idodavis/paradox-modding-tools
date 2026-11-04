@@ -25,6 +25,7 @@ type Completion struct {
 	Blurb    string          `json:"blurb,omitempty"`  // the one line shown beside it
 	Rank     int             `json:"rank"`             // how often the game writes it there, for the order
 	Snippet  bool            `json:"snippet"`          // Insert is a snippet with placeholders
+	Image    string          `json:"image,omitempty"`  // the full path of the image file it names; "" if it names none
 }
 
 // Complete returns the completion candidates at a position in a file. At a key they are the language's operators,
@@ -57,7 +58,7 @@ func (lsp *Service) Complete(path string, line, column int) ([]Completion, error
 	if visitor.context.Shape == "" {
 		return []Completion{}, nil
 	}
-	return listKeys(ws.Schema, &visitor.context), nil
+	return listKeys(ws.Schema, ws.Game, &visitor.context), nil
 }
 
 // findValue returns the statement whose value the given offset is writing. That is a statement with an operator before
@@ -106,7 +107,7 @@ func listValues(mods *index.Index, row *game.Game, context *schema.Context, type
 		for _, file := range mods.ListImages(typed[:strings.LastIndex(typed, "/")+1]) {
 			// script writes a path without the stage folder it sits in
 			_, rel := row.SplitStage(file.Rel)
-			values = append(values, Completion{Label: rel, Insert: rel, Category: schema.CategoryReference})
+			values = append(values, Completion{Label: rel, Insert: rel, Category: schema.CategoryReference, Image: file.Path})
 		}
 	case expected.Type == schema.ValueReference || expected.Type == schema.ValueTarget && expected.Database != "":
 		for _, site := range mods.ListDefinitions(expected.Database) {
@@ -119,15 +120,39 @@ func listValues(mods *index.Index, row *game.Game, context *schema.Context, type
 		}
 	}
 	if expected.Type == schema.ValueTarget {
-		for _, scope := range listScopes(context) {
-			if scope.Type == expected.Scope {
-				values = append(values, Completion{
-					Label: scope.Link, Insert: scope.Link, Category: schema.CategoryLink, Blurb: scope.About, Rank: rank(scope.Link),
-				})
-			}
-		}
+		values = append(values, listScopeLinks(context, expected.Scope, rank)...)
 	}
 	return lo.UniqBy(values, func(candidate Completion) string { return candidate.Label })
+}
+
+// listScopeLinks returns the links that lead to the given scope type where a statement is written: this, root and prev
+// where they are of that type, then the scopes saved earlier in the definition that are, the latest saved first. The
+// given function ranks a link. It returns none for an empty scope type.
+func listScopeLinks(context *schema.Context, scope string, rank func(string) int) []Completion {
+	if scope == "" {
+		return nil
+	}
+	holder := context.Parent
+	if context.Defines || holder == nil {
+		holder = context
+	}
+	var links []Completion
+	offer := func(link, target, blurb string) {
+		if target == scope {
+			links = append(links, Completion{
+				Label: link, Insert: link, Category: schema.CategoryLink, Blurb: blurb, Rank: rank(link),
+			})
+		}
+	}
+	offer(game.ScopeLinks.This, holder.Scope, "the scope this line runs in")
+	offer(game.ScopeLinks.Root, holder.Root, "the scope the definition starts in")
+	offer(game.ScopeLinks.Previous, lo.FirstOrEmpty(holder.Previous), "the scope before this one")
+	latest := slices.Clone(context.Saved)
+	slices.Reverse(latest)
+	for _, saved := range lo.UniqBy(latest, func(saved schema.Saved) string { return saved.Name }) {
+		offer(game.SavedScopes+":"+saved.Name, saved.Type, "saved earlier in the definition")
+	}
+	return links
 }
 
 // A completeVisitor finds the context of the innermost block that holds an offset.
@@ -148,11 +173,12 @@ func (visitor *completeVisitor) Enter(tree *jomini.Tree, statement int32, contex
 func (visitor *completeVisitor) Leave(tree *jomini.Tree, statement int32, context *schema.Context) {}
 
 // listKeys returns the keys a block takes: the language's operators that fit it, then its commands, then its fields,
-// each kind ranked above the next. A key listed twice is kept once, as the first kind.
-func listKeys(schema *schema.Schema, holder *schema.Context) []Completion {
+// each kind ranked above the next. A key listed twice is kept once, as the first kind. Only the operators of the given
+// game count.
+func listKeys(schema *schema.Schema, row *game.Game, holder *schema.Context) []Completion {
 	fields := listFields(holder)
 	commands := listCommands(schema.Commands, holder, findTopRank(fields)+1)
-	operators := listOperators(schema.Commands, holder, findTopRank(commands)+1)
+	operators := listOperators(row, schema.Commands, holder, findTopRank(commands)+1)
 	candidates := slices.Concat(operators, commands, fields)
 	return lo.UniqBy(candidates, func(candidate Completion) string { return candidate.Label })
 }
@@ -183,10 +209,11 @@ func listFields(holder *schema.Context) []Completion {
 
 // listOperators returns the keys of the language that fit a block, ranked above the given floor. They come grouped
 // by class, the classes in the order they first come in game.Keywords and each class's keys in the table's order. A
-// key that is written with a block is inserted with one.
-func listOperators(commands map[string]*schema.Command, holder *schema.Context, floor int) []Completion {
+// key that is written with a block is inserted with one. Only the keywords of the given game count.
+func listOperators(row *game.Game, commands map[string]*schema.Command, holder *schema.Context, floor int) []Completion {
 	fitting := lo.Filter(game.Keywords, func(keyword game.Keyword, _ int) bool {
-		return !strings.ContainsAny(keyword.Key, "/*<") && isOperatorFit(keyword, commands[keyword.Key], holder)
+		return !strings.ContainsAny(keyword.Key, "/*<") && row.Matches(keyword.Games) &&
+			isOperatorFit(keyword, commands[keyword.Key], holder)
 	})
 	classes := lo.Uniq(lo.Map(fitting, func(keyword game.Keyword, _ int) string { return keyword.Class }))
 	slices.SortStableFunc(fitting, func(first, second game.Keyword) int {

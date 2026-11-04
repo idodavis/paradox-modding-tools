@@ -1,7 +1,8 @@
 <!--
   The file explorer: the roots in the workspace's load order and their folders, with rename, drag and drop, git marks,
   the context menu, and a box, shown on asking, that filters the tree to the paths holding its text, in folders opened
-  or not. A folder's listing is fetched when it expands, and a double click pins a preview tab.
+  or not. A folder's listing is fetched when it expands, and a double click pins a preview tab. Resting on a folder of
+  a database shows what the game keeps in it and how mods change it.
 -->
 <script setup lang="ts">
 import { computed, onBeforeUnmount, onMounted, shallowRef, useTemplateRef, watch } from "vue";
@@ -16,19 +17,30 @@ import {
   type GitStatus,
   type GitStatusEntry,
 } from "@pierre/trees";
-import type { ContextMenuItem } from "@nuxt/ui";
+import type { ContextMenuItem, PopoverProps } from "@nuxt/ui";
 
 import * as app from "@services/app/service";
+import * as lsp from "@services/lsp/service";
 import * as service from "@services/workspace/service";
 import type { FileChange, Place } from "@services/workspace/models";
 
 import { canCopyToMod, canSaveAsDds, COMMANDS, compare, copyToMod, findCommand, trashFile } from "../../app/commands";
-import { fileSearchQuery, folderQuery, gitStatusQuery, loadQuery, workspacesQuery } from "../../queries";
+import {
+  fileSearchQuery,
+  folderQuery,
+  gitStatusQuery,
+  loadQuery,
+  placeQuery,
+  precedenceQuery,
+  workspacesQuery,
+} from "../../queries";
 import { tabId, useEditorStore } from "../../stores/editor";
 import { useGitStore } from "../../stores/git";
 import { useSettingsStore } from "../../stores/settings";
 import { COMMAND_BUS, useWindowsStore } from "../../stores/windows";
 import { useWorkspaceStore, VANILLA } from "../../stores/workspace";
+import OriginChip from "../../ui/OriginChip.vue";
+import { useHeldCard } from "./editor/hover";
 import { findIcon, listIcons } from "./editor/tabs";
 import SaveDdsModal from "./SaveDdsModal.vue";
 
@@ -57,6 +69,16 @@ const SPRITE = `<svg xmlns="http://www.w3.org/2000/svg" width="0" height="0" sty
   .join("")}</svg>`;
 /** How many files the filter asks the file search for. The search lists the mods' files before the game's. */
 const FILTER_HITS = 500;
+/** How long the pointer rests on a folder before its card shows, in milliseconds. */
+const CARD_DELAY = 400;
+/** Where a folder's card sits: beside the folder's row, with the focus left where it was. */
+const CARD_CONTENT: PopoverProps["content"] = {
+  side: "right",
+  sideOffset: 6,
+  align: "start",
+  onOpenAutoFocus: (event) => event.preventDefault(),
+  onCloseAutoFocus: (event) => event.preventDefault(),
+};
 
 /** A Move is a rename or a move done in the explorer. */
 type Move = { from: string; to: string };
@@ -85,8 +107,31 @@ const ignoredSheet = new CSSStyleSheet();
 const undrawableSheet = new CSSStyleSheet();
 const history = { done: [] as Move[], undone: [] as Move[] };
 let afterClose: (() => void) | undefined;
+// the folder whose card shows, with the rectangle of its row; the card stays while the pointer is on it
+const {
+  card: folderCard,
+  close: closeHeldCard,
+  closeLater: closeCardLater,
+  hold: holdCard,
+} = useHeldCard<{ place: Place; anchor: DOMRect }>();
+const cardAnchor = { getBoundingClientRect: () => folderCard.value?.anchor ?? new DOMRect() };
+// the row the pointer rests on
+let restingRow = "";
 
 const { data: workspaces } = useQuery(workspacesQuery);
+// the folder card's readme, as a place to open, and the sentence that says how the game keeps its folder's entries
+const { data: readme } = useQuery(() => ({
+  ...placeQuery(folderCard.value?.place.readme ?? ""),
+  enabled: !!folderCard.value?.place.readme,
+}));
+const { data: precedence } = useQuery(() => ({
+  ...precedenceQuery({
+    gameId: workspace.active()?.game?.id ?? "",
+    database: folderCard.value?.place.database ?? "",
+    folder: folderCard.value?.place.rel ?? "",
+  }),
+  enabled: !!folderCard.value,
+}));
 const labels = computed(() => {
   const counts = new Map<string, number>();
   return roots.map((root) => {
@@ -97,7 +142,7 @@ const labels = computed(() => {
     return count > 1 ? `${label} (${count})` : label;
   });
 });
-const writable = computed(() => roots.some((root) => root.origin !== VANILLA));
+const writable = computed(() => roots.some((root) => !root.readOnly));
 const shape = computed(() =>
   [
     roots.map((root) => root.path).join("|"),
@@ -113,6 +158,7 @@ const shape = computed(() =>
 const stops = [Events.On("fs:changed", ({ data }) => changed(data)), Events.On("git:changed", () => void markGit())];
 onMounted(mount);
 onBeforeUnmount(() => {
+  closeHeldCard();
   stops.forEach((stop) => stop());
   view.value?.cleanUp();
 });
@@ -145,7 +191,15 @@ function mount(): void {
     stickyFolders: settings.isOn("ide.stickyFolders"),
     unsafeCSS: buildStyles(),
     renderRowDecoration: ({ item }) =>
-      isRoot(item.path) && !isWritable(item.path) ? { icon: "file-tree-icon-lock", title: "Read only" } : null,
+      isRoot(item.path) && !isWritable(item.path)
+        ? {
+            icon: "file-tree-icon-lock",
+            title:
+              roots[rootIndex(item.path)]?.origin === VANILLA
+                ? "Read only"
+                : "Read only: Steam's copy of a Workshop mod",
+          }
+        : null,
     onSelectionChange: select,
     renaming: writable.value && {
       canRename: ({ path, isFolder }) => {
@@ -194,7 +248,7 @@ function buildStyles(): string {
 /** rootIndex returns the index of the root a row is under. */
 const rootIndex = (row: string) => labels.value.indexOf(row.slice(0, row.indexOf("/")));
 const isRoot = (row: string) => row.indexOf("/") === row.length - 1;
-const isWritable = (row: string) => (roots[rootIndex(row)]?.origin ?? VANILLA) !== VANILLA;
+const isWritable = (row: string) => roots[rootIndex(row)]?.readOnly === false;
 
 /** rowOf returns the row of a path the tree hands out. The tree leaves off the slash a folder's row ends in. */
 function rowOf(path: string, isFolder: boolean): string {
@@ -458,17 +512,24 @@ function step(event: KeyboardEvent): void {
   replay(key === "z" && !event.shiftKey);
 }
 
-/** create makes a new file or folder in a folder row and asks for its name in the tree. */
+/**
+ * create makes a new file or folder in a folder row and asks for its name in the tree. The file's name and first text
+ * are Go's: named for the mod and the folder in a folder of a database, for the mod and the language in a localization
+ * folder, and new_file in any other folder.
+ */
 const { mutate: create } = useMutation({
   mutation: async ({ folder, dir }: { folder: string; dir: boolean }) => {
     if (!members.has(folder)) await load(folder);
+    const draft = dir ? undefined : await lsp.DraftFile(findPath(folder));
     const occupied = (label: string) =>
       view.value?.getItem(`${folder}${label}`) ?? view.value?.getItem(`${folder}${label}/`);
-    let label = dir ? "new_folder" : "new_file.txt";
-    for (let count = 2; occupied(label); count++) label = dir ? `new_folder_${count}` : `new_file_${count}.txt`;
+    // Go names a file with a name the folder does not have; a new folder takes the first free number
+    let label = draft?.name ?? "new_folder";
+    for (let count = 2; dir && occupied(label); count++) label = `new_folder_${count}`;
     const row = `${folder}${label}${dir ? "/" : ""}`;
     const path = `${findPath(folder)}/${label}`;
     await service.Create(path, dir);
+    if (draft?.text.text) await service.Write(path, draft.text);
     return { row, path };
   },
   onSuccess: ({ row, path }) => {
@@ -547,9 +608,9 @@ function buildMenu(row: string): ContextMenuItem[][] {
     !file && place?.drawable && isWritable(row)
       ? [{ label: "New coat of arms", icon: "i-lucide-shield-plus", onSelect: () => commandBus.emit("draw.newCoat") }]
       : [];
-  // a mod's root that is in no repository offers one
+  // a mod's root that is in no repository offers one, while git is installed
   const init: ContextMenuItem[] =
-    isRoot(row) && isWritable(row) && !git.findRoot(roots[rootIndex(row)])
+    git.isInstalled && isRoot(row) && isWritable(row) && !git.findRoot(roots[rootIndex(row)])
       ? [
           {
             label: "Initialize a git repository",
@@ -613,15 +674,48 @@ function buildOpenItems(file: Place | undefined, dir: string): ContextMenuItem[]
     : [{ label: "Open in a new window", icon: "i-lucide-app-window", onSelect: () => windows.popOut(folderWindow) }];
 }
 
-/** pick finds the row under a right click and builds its menu. Off a row there is no menu. */
-function pick(event: MouseEvent): void {
-  const element = event
+/** findRowElement finds the element of the row under a mouse event. It is undefined off a row. */
+function findRowElement(event: MouseEvent): HTMLElement | undefined {
+  return event
     .composedPath()
     .find((one): one is HTMLElement => one instanceof HTMLElement && one.dataset.itemPath !== undefined);
+}
+
+/** pick finds the row under a right click and builds its menu. Off a row there is no menu. */
+function pick(event: MouseEvent): void {
+  const element = findRowElement(event);
   menu.value = element?.dataset.itemPath ? buildMenu(element.dataset.itemPath) : [];
   if (element) return;
   event.preventDefault();
   event.stopPropagation();
+}
+
+/** showCard shows the card of a folder row once the pointer has rested on it a moment. */
+const showCard = useDebounceFn((row: string, anchor: DOMRect) => {
+  const place = places.get(row);
+  if (restingRow === row && place) folderCard.value = { place, anchor };
+}, CARD_DELAY);
+
+/** rest follows the pointer over the tree: a folder of a database gets its card, and any other row takes it down. */
+function rest(event: MouseEvent): void {
+  const element = findRowElement(event);
+  const row = element?.dataset.itemPath ?? "";
+  if (row === restingRow) return;
+  restingRow = row;
+  closeCardLater();
+  if (element && row.endsWith("/") && places.get(row)?.database) void showCard(row, element.getBoundingClientRect());
+}
+
+/** leaveTree takes the card down after a moment once the pointer is out of the tree. */
+function leaveTree(): void {
+  restingRow = "";
+  closeCardLater();
+}
+
+/** closeCard takes the card down at once and forgets where the pointer was. */
+function closeCard(): void {
+  closeHeldCard();
+  restingRow = "";
 }
 
 /** resume starts what the menu chose to do in a row, which needs the keyboard the menu held until it closed. */
@@ -664,8 +758,54 @@ function resume(event: Event): void {
           @contextmenu.capture="pick"
           @keydown="step"
           @dblclick="pin"
+          @mousemove.passive="rest"
+          @mouseleave="leaveTree"
         />
       </div>
     </UContextMenu>
+    <UPopover
+      :open="!!folderCard"
+      :reference="cardAnchor"
+      :content="CARD_CONTENT"
+      @update:open="(open) => open || closeCard()"
+    >
+      <template #content>
+        <div
+          v-if="folderCard"
+          class="flex w-96 max-w-full flex-col gap-2.5 p-3.5 text-12"
+          @mouseenter="holdCard(true)"
+          @mouseleave="holdCard(false)"
+        >
+          <div class="flex items-center gap-2">
+            <UIcon name="i-lucide-folder" class="size-3.5 shrink-0 text-dimmed" />
+            <span class="min-w-0 truncate font-mono text-highlighted">{{ folderCard.place.rel }}</span>
+            <span class="grow" />
+            <OriginChip :origin="VANILLA" />
+          </div>
+          <div
+            v-if="folderCard.place.about"
+            class="flex flex-col gap-1 rounded-md bg-(--bg-2) px-2.5 py-2 shadow-[inset_3px_0_0_color-mix(in_srgb,var(--blue)_50%,transparent)]"
+          >
+            <span v-if="readme" class="text-11 text-dimmed">From the game's readme/info, {{ readme.name }}</span>
+            <span class="text-highlighted">{{ folderCard.place.about }}</span>
+          </div>
+          <UButton
+            v-if="readme"
+            label="Open the game's readme/info"
+            icon="i-lucide-book-open"
+            size="xs"
+            color="neutral"
+            variant="outline"
+            class="self-start"
+            @click="emit('open', readme, false)"
+          />
+          <div class="flex flex-col gap-1">
+            <span class="font-semibold text-highlighted">How mods change this folder</span>
+            <span v-if="precedence" class="text-toned">{{ precedence }}</span>
+            <span class="text-dimmed">To change one of the game's entries, open its file and use Override.</span>
+          </div>
+        </div>
+      </template>
+    </UPopover>
   </div>
 </template>

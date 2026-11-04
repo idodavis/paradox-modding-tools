@@ -67,6 +67,16 @@ type Nesting struct {
 	Keys    string
 	NameKey string // the key whose value names a definition; "" means the key that defines it
 	Target  string // the database whose definitions its own set up; "" means none
+	Sets    bool   // its keys switch a name on or give a definition a second name; they define nothing
+}
+
+// Label returns the name of the database a nesting defines in: the parent's name, then a dot and its own Database. It
+// is the parent's name alone where the nesting has no database of its own.
+func (nesting Nesting) Label() string {
+	if nesting.Database == "" {
+		return ToDatabase(nesting.Parent)
+	}
+	return ToDatabase(nesting.Parent) + "." + nesting.Database
 }
 
 // A Callable is a database whose definitions script or a GUI file calls by name.
@@ -413,9 +423,12 @@ var Nestings = []Nesting{
 	{Games: []string{ck3}, Parent: "common/landed_titles", Keys: "[ekdcb]_*"}, // a title inside a title is a title; its key opens with its tier
 	{Games: []string{ck3}, Parent: "common/activities/activity_types", KeyPath: "options", Database: "option_category"},
 	{Games: []string{ck3}, Parent: "common/activities/activity_types", KeyPath: "phases", Database: "phase"},
-	{Games: []string{ck3}, Parent: "common", KeyPath: "**/parameters", Database: "parameter"},
-	{Games: []string{ck3}, Parent: "common", KeyPath: "**/*_parameters", Database: "parameter"},
-	{Games: ck3AndEU5, Parent: "common/game_concepts", KeyPath: "alias"}, // an alias is a concept
+	// common/confederation_types/10_house_bloc_types.txt:21-24 switches parameters on with `name = yes`
+	{Games: []string{ck3}, Parent: "common", KeyPath: "**/parameters", Database: "parameter", Sets: true},
+	// common/accolade_types/04_ep2_common_attributes.txt:416-418 lists the names it switches on
+	{Games: []string{ck3}, Parent: "common", KeyPath: "**/*_parameters", Database: "parameter", Sets: true},
+	// common/game_concepts/00_game_concepts.txt:2 gives vassal the second names of an alias
+	{Games: ck3AndEU5, Parent: "common/game_concepts", KeyPath: "alias", Sets: true},
 	// EU5's start setup's managers each set up the database their Target names
 	{Games: []string{eu5}, Parent: "gfx/defines", Database: "define"},
 	{Games: []string{eu5}, Parent: "common/laws", Database: "policy"},
@@ -674,6 +687,12 @@ func (game *Game) ListNestings() []Nesting {
 	return lo.Filter(Nestings, func(row Nesting, _ int) bool { return game.Matches(row.Games) })
 }
 
+// IsSet reports whether a nested definition of the given database only switches a name on or gives a definition a
+// second name, as a parameter or a game concept's alias does.
+func (game *Game) IsSet(database string) bool {
+	return slices.ContainsFunc(game.ListNestings(), func(row Nesting) bool { return row.Sets && row.Label() == database })
+}
+
 // ListSetupNestings returns the nestings written for the start setup, once for each of the given start setups, with
 // the folder of each as its parent.
 func (game *Game) ListSetupNestings(setups ...string) []Nesting {
@@ -711,6 +730,66 @@ func (game *Game) ListFiringFields() []Reference {
 
 // KeepsEvery reports whether the game keeps every copy of a name, merged into one.
 func (precedence Precedence) KeepsEvery() bool { return precedence.Keeps == "merged" }
+
+// Describe returns, in plain words, which copy the game keeps when several definitions share a name: one or two
+// sentences for the way the game picks, and for what changes it, such as the entry modes a mod can write.
+func (precedence Precedence) Describe() string {
+	var sentences []string
+	switch {
+	case precedence.KeepsEvery():
+		sentences = append(sentences, "The game keeps every copy and combines them into one.")
+		if len(precedence.Contested) > 0 {
+			sentences = append(sentences, "Two copies cannot both write a "+strings.Join(precedence.Contested, " or ")+
+				" block; the game does not say which one it keeps.")
+		}
+	case precedence.Keeps == "highest":
+		sentences = append(sentences, "The game keeps the copy with the highest "+precedence.PriorityKey+precedence.describeOverrides()+
+			". If two tie, it does not say which one it keeps.")
+	case precedence.ByPlayset:
+		sentences = append(sentences, "The game keeps the copy from the mod that loads last, so moving a mod in the load order "+
+			"changes which one it is.")
+	case precedence.Keeps == "first":
+		sentences = append(sentences, "The game reads the files in a folder in order of file name and keeps the first copy it reads.")
+		if precedence.Modes == "" {
+			sentences = append(sentences, "A mod's copy wins when its file name sorts before the others.")
+		}
+	default:
+		sentences = append(sentences, "The game reads the files in a folder in order of file name and keeps the last copy it reads.")
+		if precedence.Modes == "" {
+			sentences = append(sentences, "A mod's copy wins when its file name sorts after the others.")
+		}
+	}
+	if precedence.Modes != "" {
+		sentences = append(sentences, precedence.describeModes())
+	}
+	return strings.Join(sentences, " ")
+}
+
+// describeOverrides returns the words that say a higher priority replaces only some keys: ", for name and dna, and
+// combines the rest". It returns "" where a higher priority replaces the whole definition.
+func (precedence Precedence) describeOverrides() string {
+	if len(precedence.Overrides) == 0 {
+		return ""
+	}
+	return " for " + strings.Join(precedence.Overrides, ", ") + ", and combines the rest"
+}
+
+// describeModes returns the sentence that says how a mod changes a definition with an entry mode, and what the mode
+// that adds does where the sources say.
+func (precedence Precedence) describeModes() string {
+	where := "in front of the name"
+	if precedence.Modes == "wrapped" {
+		where += " inside the block that holds it"
+	}
+	sentence := "A mod changes an entry by writing REPLACE: " + where + " to take its place"
+	switch precedence.Injects {
+	case "replaces":
+		return sentence + "; INJECT: does the same here."
+	case "unsettled":
+		return sentence + "; the game does not say what INJECT: does here."
+	}
+	return sentence + ", or INJECT: to add to it."
+}
 
 // LookupPrecedence returns how a database's definitions combine: the first row that holds for the database, by its
 // name or by its folder. Where no row holds, the last copy by file name wins.

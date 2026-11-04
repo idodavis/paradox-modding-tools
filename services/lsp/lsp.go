@@ -3,6 +3,7 @@
 package lsp
 
 import (
+	"strings"
 	"unicode/utf16"
 
 	"github.com/samber/lo"
@@ -43,8 +44,9 @@ type Site struct {
 	Text    string          `json:"text,omitempty"` // the text of the line, where the answer read the file
 	Kept    bool            `json:"kept"`
 	Reason  index.Reason    `json:"reason,omitempty"` // as index.ResolveSite gives it; unsettled where no source says
-	Label   string          `json:"label,omitempty"`  // the reason in words
+	Label   string          `json:"label,omitempty"`  // the reason in words, naming the mod that hides a copy
 	Defines []string        `json:"defines,omitempty"`
+	Holder  string          `json:"holder,omitempty"` // the name of the definition that holds a copy the game keeps whole
 }
 
 // MakeSite returns the site of an occurrence, as the given index of the mods lists it: its place and its line. It
@@ -54,16 +56,34 @@ func MakeSite(ws *workspace.Session, mods *index.Index, site index.Site) Site {
 }
 
 // MakeSites returns the sites of a name's definitions, each with whether a winner keeps it and why, as
-// index.ResolveSite says, and the reason in words. A nil winner keeps none.
+// index.ResolveSite says, and the reason in words. A nil winner keeps none, but a copy in a file the game does not read
+// still has its reason, as index.FindHider gives it. A definition written inside another one, in a database whose
+// copies the game all keeps, also has the name of the one that holds it.
 func MakeSites(ws *workspace.Session, mods *index.Index, definitions []index.Site, winner *index.Winner) []Site {
 	return lo.Map(definitions, func(definition index.Site, _ int) Site {
 		site := MakeSite(ws, mods, definition)
+		site.Holder = findHolder(ws, mods, definition)
+		var hider string
 		if winner != nil {
-			site.Kept, site.Reason = mods.ResolveSite(*winner, definition)
-			site.Label = index.Reasons[site.Reason].Label
+			site.Kept, site.Reason, hider = mods.ResolveSite(*winner, definition)
+		} else {
+			site.Reason, hider = mods.FindHider(definition.File)
 		}
+		site.Label = strings.ReplaceAll(index.Reasons[site.Reason].Label, "{mod}", ws.DescribeMod(hider))
 		return site
 	})
+}
+
+// findHolder returns the name of the definition that holds a definition, where the game keeps every copy of the name in
+// the definition's database. It returns "" for a definition at the top of its file, or in a database that keeps one
+// copy.
+func findHolder(ws *workspace.Session, mods *index.Index, definition index.Site) string {
+	database := ws.Schema.Databases[mods.ToReference(definition).Database]
+	holder, nested := mods.FindDefinition(definition)
+	if database == nil || !database.Precedence.KeepsEvery() || !nested {
+		return ""
+	}
+	return mods.ToReference(holder).Name
 }
 
 // LocateSite returns the site of an occurrence with the range of its name and the text of the line it starts on,

@@ -3,10 +3,10 @@
   It opens on the command bus's settings.open, at the section it names if any.
 -->
 <script setup lang="ts">
-import { computed, shallowRef, useTemplateRef, watch } from "vue";
+import { computed, nextTick, shallowRef, useTemplateRef, watch } from "vue";
 import { useRouter } from "vue-router";
 import { useMutation, useQuery } from "@pinia/colada";
-import { createReusableTemplate, useEventBus } from "@vueuse/core";
+import { createReusableTemplate, useEventBus, useEventListener } from "@vueuse/core";
 import { useSortable } from "@vueuse/integrations/useSortable";
 import { Dialogs } from "@wailsio/runtime";
 import type { SelectItem, TabsItem } from "@nuxt/ui";
@@ -30,12 +30,12 @@ import FileSelector from "../../ui/FileSelector.vue";
 import InstallPicker from "../../ui/InstallPicker.vue";
 import OriginChip from "../../ui/OriginChip.vue";
 import ScriptDocsGuide from "../../ui/ScriptDocsGuide.vue";
-import SettingsSection, { SETTING_ROWS } from "../../ui/SettingsSection.vue";
+import SettingsSection, { SETTING_HIGHLIGHT, SETTING_ROWS } from "../../ui/SettingsSection.vue";
+import TermInfo from "../../ui/TermInfo.vue";
 import AgentsSection from "./AgentsSection.vue";
 import ShortcutsSection from "./ShortcutsSection.vue";
 import WorkspaceModCard from "./WorkspaceModCard.vue";
 import * as workspace from "@services/workspace/service";
-import type { Workspace } from "@services/app/models";
 import type { Mod } from "@services/workspace/models";
 
 /**
@@ -49,6 +49,7 @@ const GROUPS = [
     sub: "Every workspace on this computer",
     sections: [
       { value: "appearance", label: "Appearance" },
+      { value: "guidance", label: "Guidance" },
       { value: "shortcuts", label: "Keyboard shortcuts" },
       { value: "terminal", label: "Terminal" },
       { value: "agents", label: "Agents and tools" },
@@ -63,7 +64,7 @@ const GROUPS = [
     sections: [
       { value: "editor", label: "Editor" },
       { value: "explorer", label: "Explorer" },
-      { value: "language", label: "Language" },
+      { value: "language", label: "Language features" },
       { value: "checks", label: "Checks" },
       { value: "visual", label: "Visual view" },
       { value: "wiki", label: "Wiki" },
@@ -82,12 +83,37 @@ const GROUPS = [
 ];
 /** The help Settings gives, a paragraph each. */
 const HELP = [
-  "General: the workspace's name, its localization language, the page it opens on, and the IDE's tabs and explorer.",
-  "Game install: the install this workspace reads, and how to make the game print its script_docs.",
+  "General: the workspace's name, its localization language, the page it opens on, the IDE's tabs, start page and explorer, and the first-mod checklist.",
+  "Game install: the install this workspace reads, and how to make the game write its documentation.",
   "Mods and load order: drag to reorder. When two mods ship a file at the same path, the game reads the one lower in the order; Health's Compatibility view explains how each game picks between copies. Colors stay with the mod, not its position. Each mod's calendar, Workshop link and upload exclusions are on its card. Changes save as you make them.",
-  "IDE: the editor, the explorer, the language's help, the checks, the Visual view and the wiki, kept for this workspace.",
-  "Appearance applies to every workspace: the theme, light and dark, matching the game's theme, the interface scale and the pages shown.",
+  "IDE: the editor, the explorer, the language features, the checks, the Visual view and the wiki, kept for this workspace.",
+  "Appearance applies to every workspace: the theme, light and dark, matching the game's theme, the interface scale, the pages shown and the simple interface, which hides the IDE's more advanced parts.",
+  "Guidance applies to every workspace: one switch for the parts of PMT that only teach modding, and a list of what stays whichever way it is set.",
   "Agents and tools: the port and token of PMT's tools for coding agents, the text that registers PMT with an agent you run yourself, and agents of your own.",
+];
+// the parts of PMT that the Guidance switch hides, and the ones that stay whatever it says
+const GUIDED = [
+  {
+    icon: "i-lucide-target",
+    title: "What do you want to make?",
+    note: "The first screen of Make a new mod. Turned off, the form opens on the game and the name.",
+  },
+  { icon: "i-lucide-layers", title: "How a mod works", note: "A link on Make a new mod. Help keeps it either way." },
+  {
+    icon: "i-lucide-list-checks",
+    title: "Your first mod",
+    note: "The checklist on the Library's card, while a step is left. Its Hide takes it off one workspace only.",
+  },
+];
+const ALWAYS_THERE = [
+  "Override one entry",
+  "Launch and the game's log",
+  "The start page",
+  "Where you left off",
+  "What to do, on every problem",
+  "Game readme/info on folders",
+  "Workshop mods read only",
+  "Help's Start here",
 ];
 const HEADING = {
   ui: {
@@ -119,12 +145,12 @@ const SIDEBAR = [
 
 // a section's page: its title and note, the buttons beside the title if any, and its content
 const [DefinePage, Page] = createReusableTemplate<
-  { title: string; note: string },
+  { title: string; note: string; term?: string },
   { default: undefined; actions: undefined }
 >();
 // a two-column row of a page: its title and note on the left and its control on the right, the line above it and not
-// below when it is the page's last
-const [DefineRow, Row] = createReusableTemplate<{ title: string; note: string; last?: boolean }>();
+// below when it is the page's last; the key of the setting it edits, if any, makes it a row the palette can open at
+const [DefineRow, Row] = createReusableTemplate<{ title: string; note: string; last?: boolean; setting?: string }>();
 
 const router = useRouter();
 const settings = useSettingsStore();
@@ -137,16 +163,26 @@ const creating = shallowRef(false);
 const guiding = shallowRef(false);
 const origin = shallowRef("");
 const preview = shallowRef<Mod[]>();
-
-commandBus.on((command, target) => {
-  if (command !== "settings.open") return;
-  if (target) section.value = target;
-  open.value = true;
-});
+// the key of the setting the palette opened Settings at, whose row is drawn in the highlight color until the next click
+const highlighted = shallowRef("");
 
 const { data: state } = useQuery(stateQuery);
 const { data: workspaces } = useQuery(workspacesQuery);
 const { data: catalog } = useQuery(settingsCatalogQuery);
+
+// the command's target is a setting's key, else a section
+commandBus.on((command, target) => {
+  if (command !== "settings.open") return;
+  const setting = catalog.value?.find((row) => row.key === target);
+  if (target) section.value = setting?.section ?? target;
+  highlighted.value = setting?.key ?? "";
+  if (setting) search.value = "";
+  open.value = true;
+  if (setting) {
+    void nextTick().then(() => document.getElementById(`setting-${setting.key}`)?.scrollIntoView({ block: "center" }));
+  }
+});
+useEventListener(document, "pointerdown", () => (highlighted.value = ""), { capture: true });
 
 const id = computed(() => store.activeId());
 // the open workspace's record; Settings shows the app's sections alone while none is open
@@ -214,7 +250,7 @@ const current = computed({
 useSortable(useTemplateRef<HTMLElement>("list"), order, { handle: ".mod-handle", animation: 150, watchElement: true });
 watch(mods, () => (preview.value = undefined));
 
-const { mutate: update } = useMutation({ mutation: (next: Workspace) => workspace.UpdateWorkspace(next) });
+const { update } = store;
 const { mutate: reorder } = useMutation({
   mutation: (ids: string[]) => workspace.ReorderMods(id.value, ids),
   onError: () => (preview.value = undefined),
@@ -290,11 +326,14 @@ async function remove(): Promise<void> {
       </UPopover>
     </template>
     <template #body>
-      <DefinePage v-slot="{ title, note, $slots }">
+      <DefinePage v-slot="{ title, note, term, $slots }">
         <div class="flex h-full flex-col gap-4 overflow-y-auto px-8 py-6">
           <div class="flex items-center gap-3">
             <div class="flex min-w-0 grow flex-col gap-0.5">
-              <h1 class="text-20">{{ title }}</h1>
+              <h1 class="flex items-center gap-2 text-20">
+                {{ title }}
+                <TermInfo v-if="term" :term="term" />
+              </h1>
               <p class="text-13 text-dimmed">{{ note }}</p>
             </div>
             <component :is="$slots.actions" />
@@ -302,10 +341,11 @@ async function remove(): Promise<void> {
           <component :is="$slots.default" />
         </div>
       </DefinePage>
-      <DefineRow v-slot="{ title, note, last, $slots }">
+      <DefineRow v-slot="{ title, note, last, setting, $slots }">
         <section
+          :id="setting && `setting-${setting}`"
           class="grid grid-cols-[260px_minmax(0,1fr)] gap-8 border-accented"
-          :class="last ? 'border-t pt-5' : 'border-b pb-5'"
+          :class="[last ? 'border-t pt-5' : 'border-b pb-5', setting && setting === highlighted && SETTING_HIGHLIGHT]"
         >
           <div class="min-w-0">
             <h2 class="text-13 font-semibold">{{ title }}</h2>
@@ -364,7 +404,7 @@ async function remove(): Promise<void> {
                 @click="resetSection(String(item.value))"
               />
             </template>
-            <SettingsSection :section="String(item.value)" />
+            <SettingsSection :section="String(item.value)" :highlight="highlighted" />
           </Page>
         </template>
 
@@ -420,6 +460,26 @@ async function remove(): Promise<void> {
                 />
               </UFormField>
               <UFormField
+                label="Open the start page"
+                description="Opens it as a tab, in front of the reopened ones, each time the workspace opens. With no tab open, the editor shows it either way."
+                orientation="horizontal"
+              >
+                <USwitch
+                  :model-value="!record.hideStartPage"
+                  @update:model-value="update({ ...record, hideStartPage: !$event })"
+                />
+              </UFormField>
+              <UFormField
+                label="Show the first-mod checklist"
+                description="On the Library's card while a step is left, with Guidance for new modders on."
+                orientation="horizontal"
+              >
+                <USwitch
+                  :model-value="!record.hideChecklist"
+                  @update:model-value="update({ ...record, hideChecklist: !$event })"
+                />
+              </UFormField>
+              <UFormField
                 label="Hide binaries in the explorer"
                 description="Leaves images, fonts and other binary files out of the explorer's tree."
                 orientation="horizontal"
@@ -449,15 +509,22 @@ async function remove(): Promise<void> {
             </p>
             <div class="flex flex-col gap-3 border-t border-accented pt-5">
               <div class="flex flex-col gap-0.75">
-                <h2 class="text-13 font-semibold">script_docs</h2>
+                <h2 class="flex items-center gap-1.5 text-13 font-semibold">
+                  Game documentation
+                  <TermInfo term="game documentation" />
+                </h2>
                 <p class="text-12 text-dimmed">
-                  The game prints its own scripting documentation once you ask it to. PMT reads it rather than guessing,
-                  and keeps its own copy for when it is missing.
+                  The game writes its own documentation once you ask it to. PMT reads it rather than guessing, and keeps
+                  its own copy for when it is missing.
                 </p>
               </div>
               <UBadge :label="dumps?.label" :color="dumps?.current ? 'success' : 'warning'" class="self-start" />
               <div class="flex gap-2">
-                <UButton label="How to make script_docs" icon="i-lucide-book-open" @click="guiding = true" />
+                <UButton
+                  label="How to get the game's documentation"
+                  icon="i-lucide-book-open"
+                  @click="guiding = true"
+                />
                 <UButton label="Rescan the install" icon="i-lucide-refresh-cw" @click="rescan()" />
               </div>
             </div>
@@ -466,7 +533,12 @@ async function remove(): Promise<void> {
         </template>
 
         <template #mods>
-          <Page v-if="state?.open && record" title="Mods and load order" note="Mods load top to bottom after the game.">
+          <Page
+            v-if="state?.open && record"
+            title="Mods and load order"
+            term="load order"
+            note="Mods load top to bottom after the game."
+          >
             <template #actions>
               <UButton label="Create a new mod" size="md" @click="creating = true" />
               <FileSelector path="" folder :filter="[]" @update:path="addMod">
@@ -578,7 +650,9 @@ async function remove(): Promise<void> {
 
         <template #appearance>
           <Page title="Appearance" note="Applies to every workspace and every PMT window.">
+            <SettingsSection section="appearance" :keys="['appearance.simple']" :highlight="highlighted" />
             <Row
+              setting="appearance.theme"
               title="Theme"
               note="Every theme is the same set of tokens with different values, so all pages and the editor change together. Each comes dark and light."
             >
@@ -652,7 +726,7 @@ async function remove(): Promise<void> {
                 </button>
               </div>
             </Row>
-            <SettingsSection section="appearance" />
+            <SettingsSection section="appearance" :highlight="highlighted" />
             <Row
               v-if="record"
               title="Mod colors"
@@ -668,6 +742,31 @@ async function remove(): Promise<void> {
           </Page>
         </template>
 
+        <template #guidance>
+          <Page title="Guidance" note="Applies to every workspace and every PMT window.">
+            <SettingsSection section="guidance" :highlight="highlighted" />
+            <section class="flex flex-col gap-2.5">
+              <h2 class="text-13 font-semibold">What it shows</h2>
+              <div class="flex flex-col divide-y divide-default rounded-lg border border-default bg-muted">
+                <div v-for="part in GUIDED" :key="part.title" class="flex items-center gap-3.5 px-3.5 py-2.5">
+                  <UIcon :name="part.icon" class="size-4 shrink-0 text-dimmed" />
+                  <div class="flex min-w-0 flex-col gap-px">
+                    <span class="text-13 font-medium">{{ part.title }}</span>
+                    <span class="text-12 text-dimmed">{{ part.note }}</span>
+                  </div>
+                </div>
+              </div>
+            </section>
+            <section class="flex flex-col gap-2.5">
+              <h2 class="text-13 font-semibold">Always there</h2>
+              <p class="text-12 text-dimmed">These are part of PMT and stay whatever the switch says.</p>
+              <div class="flex flex-wrap gap-1.5">
+                <UBadge v-for="name in ALWAYS_THERE" :key="name" :label="name" />
+              </div>
+            </section>
+          </Page>
+        </template>
+
         <template #shortcuts>
           <Page
             title="Keyboard shortcuts"
@@ -679,7 +778,7 @@ async function remove(): Promise<void> {
 
         <template #terminal>
           <Page title="Terminal" note="The shells in the IDE's panel and in their own window.">
-            <Row :title="shellRow?.label ?? ''" :note="shellRow?.help ?? ''">
+            <Row setting="terminal.shell" :title="shellRow?.label ?? ''" :note="shellRow?.help ?? ''">
               <USelect
                 :model-value="settings.value('terminal.shell') || DEFAULT_SHELL"
                 :items="shellChoices"

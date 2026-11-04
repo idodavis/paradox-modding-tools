@@ -160,6 +160,8 @@ export function editorOptions(): editor.IStandaloneEditorConstructionOptions {
     unicodeHighlight: { ambiguousCharacters: false, invisibleCharacters: false },
     scrollBeyondLastLine: false,
     glyphMargin: false,
+    // Monaco underlines problems only where the file can be typed in; a read-only file shows them too
+    renderValidationDecorations: "on",
     renderLineHighlight: "all",
     wordWrap: settings.isOn("ide.wordWrap") ? "on" : "off",
     autoClosingBrackets: settings.isOn("ide.closeBrackets") ? "languageDefined" : "never",
@@ -236,7 +238,11 @@ function buildColors(token: (key: string) => string, dark: boolean): Record<stri
     "editorWarning.foreground": token("orange"),
     "editorInfo.foreground": token("blue"),
     "editorInlayHint.foreground": token("fg-3"),
-    "editorInlayHint.background": clear,
+    // an inlay hint sits on the editor's background a step darker in every theme, so it reads as an inlay
+    "editorInlayHint.background": new Color(token("bg-0"))
+      .set("oklch.l", (lightness: number) => lightness - 0.04)
+      .to("srgb")
+      .toString({ format: "hex" }),
     "editorGhostText.foreground": token("fg-3"),
     "editorLink.activeForeground": token("link"),
     "editorLightBulb.foreground": token("orange"),

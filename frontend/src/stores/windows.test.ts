@@ -72,6 +72,8 @@ describe("the windows", () => {
       readOnly: false,
       isDir: false,
       drawable: false,
+      about: "",
+      readme: "",
     };
     editor.show(place);
     expect(windows.holderOf("m")).toBe("main");

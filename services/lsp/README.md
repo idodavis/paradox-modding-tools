@@ -12,13 +12,13 @@ lists and the problems in words.
 | file | holds |
 |---|---|
 | `lsp.go` | the package comment, `Service`; Monaco's ranges: `Range`, `Edit`, and the one conversion with byte spans (`ToRange`, `ToSpan`, `ToLineRange`, `ToOffset`, `ToEdits`, and `CountUnits`, a text's length in UTF-16 code units); `Site`, `MakeSite`, `MakeSites`, `LocateSite`; `SetText`, `CloseFile` |
-| `hover.go` | `Card`, `CardScope`, `CardDate`, `Class`, `Classes`; `Hover` |
+| `hover.go` | `Card`, `CardDate`, `Class`, `Classes`; `Hover` |
 | `complete.go` | `Completion`; `Complete` |
 | `navigate.go` | `Symbol`, `WorkspaceSymbol`; `Definition`, `References`, `PrepareRename`, `Rename`, `ListSymbols`, `ListFileSymbols`, `FindSymbols` |
 | `diagnostics.go` | the questions and levels; `Level`, `Levels`, `Code`, `Codes`, `Topic`, `Topics`, `Part`, `Diagnostic`; `Diagnose`, `DiagnoseText`, `DiagnoseFile`, `DescribeReference`; `LookupCode`, `Code.Template`, `SplitMessage`, `DescribeCount`, `JoinParts`, `Plural`; the checks of a script file |
 | `messages.go` | the checks of a localization file: the file as a whole, its messages, and the markup, names and data calls each message's text writes |
 | `tokens.go` | `Legend`; `Tokens`, `ListLegend` |
-| `edits.go` | `Fix`; `Format`, `DescribeIndentation`, `ListFixes` |
+| `edits.go` | `Fix`, `Draft`; `Format`, `DescribeIndentation`, `ListFixes`, `BuildOverride`, `DraftFile` |
 | `details.go` | `Fold`, `Hint`, `ColorSite`, `Signature`; `ListFolds`, `ListHints`, `ListColorSites`, `PresentColor`, `Signature` |
 
 ## Positions and ranges
@@ -32,7 +32,15 @@ Monaco's. No other package converts.
 A `Site` is one place in a file that an answer points at: the file's `workspace.Place` and a line. `MakeSite` makes
 one from an index's occurrence and reads no file, so it has no range and no text. `LocateSite` reads the file's tree
 and adds the range of the name and the text of its line. `MakeSites` makes the sites of a name's definitions, each with
-whether the game keeps it and why (`Kept`, `Reason`, as `index.ResolveSite` says) and the reason in words (`Label`).
+whether the game keeps it and why (`Kept`, `Reason`, as `index.ResolveSite` says) and the reason in words (`Label`; for
+a copy in a file the game does not read, it names the mod that hides the file). With no winner a site is never kept,
+but a copy in a file the game does not read still has its reason and label, as `index.FindHider` gives them. The card
+shows Kept only where it lists two or more sites. A definition written inside another
+one, in a database whose copies the game all keeps, also has the name of the one that holds it (`Holder`). A card
+lists only what files define, wherever it is written: a title inside a title, a GUI block, an EU5 province in
+`definitions.txt`. It lists no second name of a definition (a trait's `group`), no name that a command makes (a saved
+scope, a variable, a list, a flag), and no key that only switches a name on or gives a second name (a CK3 parameter, a
+game concept's `alias`). Peek and Find references reach every site.
 
 ## The open file
 
@@ -43,17 +51,19 @@ file is read as the editor holds it.
 ## The answers
 
 - **Hover.** `Hover` walks to the position and returns a `Card`: what the key or value is, what it takes, what it
-  returns or leads to, the scopes script can name there (`CardScope`), a date in the mod's calendar (`CardDate`), a
-  color, an image's header, and the sites that define the name (`Site`), the one the game keeps first and why. A
-  command's card shows what its value takes and the scope it needs where it writes no block, and the scope it leads to
-  where it does. A command the game declares is named by its `Class`'s id. `Classes` is the wiki lexicon's classes in
-  the order of its tabs, and `Card.Lexicon` is the id of the class that lists what the card is about (`findLexicon`).
-  A fact learned only from the game's files marks the card inferred.
+  returns or leads to, a date in the mod's calendar (`CardDate`), a color, an image's header, and the sites that define
+  the name (`Site`), the one the game keeps first and why. A command's card shows the scopes the dumps give it
+  (`Runs`, the same list the `wrong-scope` check reads), or "no restriction declared" where they name none, what its
+  value takes and the scope it needs where it writes no block, and the scope it leads to where it does. A command the
+  game declares is named by its `Class`'s id. `Classes` is the wiki lexicon's classes in the order of its tabs, and `Card.Lexicon`
+  is the id of the class that lists what the card is about (`findLexicon`). A fact learned only from the game's files
+  marks the card inferred.
 - **Completion.** `Complete` returns what fits at a key: the language's operators that fit the block, then its
   commands, ranked by how often the game writes each in that field, then its fields. At a value it returns the field's
   choices, yes and no, the names the game loads of its database, or the image files under the folder typed so far. A
-  value that takes a target also gets the links that lead to the scope it needs. A choice with a space in it is
-  quoted, unless the text typed opens a quote already.
+  value that takes a target also gets the links that lead to the scope it needs (`listScopeLinks`): `this`, `root` and
+  `prev` where they are of that scope, and the scopes saved earlier in the definition, the latest first. A choice with
+  a space in it is quoted, unless the text typed opens a quote already.
 - **Navigation.** `Definition` returns where a name is defined, the kept definition first, and an image path's file.
   `References` adds where it is used, a localization key's translations left out. `Rename` returns the edits of a
   rename, grouped by the mod file they change; `PrepareRename` refuses a name the game defines too, or one no mod
@@ -70,7 +80,8 @@ file is read as the editor holds it.
   where that file is open. It writes the file first when it is missing or empty (`Fix.Creates`), and says where the
   caret goes (`Fix.Reveal`).
 - **Details.** `ListFolds` returns every block that spans lines. `ListHints` reads each date in the mod's calendar,
-  where its field expects a date. `ListColorSites` lists the colors a file writes, and `PresentColor` writes a color in
+  where its field expects a date, and the text of each localization key a script file names (`Hint.Kind` says which).
+  `ListColorSites` lists the colors a file writes, and `PresentColor` writes a color in
   the form the file already wrote it in; a color not written yet, such as a coat's layer's, takes the form the game's
   own coats write their colors in (`game.Game.Coat.ColorForm`). `Signature` returns the parameters of the scripted
   definition a call names.
@@ -120,7 +131,6 @@ or not, and why, as `index.ResolveSite` says: where no source says which copy th
   keeps it where the answer has them.
 - **Edit**: one change to a file's text, as a range and the text that replaces it.
 - **Card**: a hover card: the facts about a key or a value, for the page to lay out.
-- **CardScope**: one scope script can name at a statement.
 - **CardDate**: a date read in the mod's calendar.
 - **Class**: one class of the wiki's lexicon, which names the commands the game declares in one way.
 - **Completion**: one candidate in the completion list.

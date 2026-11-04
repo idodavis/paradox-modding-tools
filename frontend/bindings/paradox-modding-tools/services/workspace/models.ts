@@ -138,6 +138,11 @@ export interface Mod {
      * the full path of the picture shown for it; "" when it has none
      */
     "thumbnail": string;
+
+    /**
+     * its folder is Steam's copy of a Workshop mod
+     */
+    "workshop": boolean;
 }
 
 /**
@@ -172,7 +177,7 @@ export interface Place {
     "database": string;
 
     /**
-     * true for the game's own files
+     * true for a file no change is written to: the game's own, and a Workshop mod's
      */
     "readOnly": boolean;
 
@@ -185,6 +190,16 @@ export interface Place {
      * true for a GUI file and for the coats' files and folder, which Visual draws
      */
     "drawable": boolean;
+
+    /**
+     * the first paragraph of the game's readme for its database; "" where it has none
+     */
+    "about": string;
+
+    /**
+     * the full path of that readme; "" where it has none
+     */
+    "readme": string;
 }
 
 /**

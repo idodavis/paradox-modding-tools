@@ -165,7 +165,16 @@ export const useAgentStore = defineStore("agent", () => {
   const follow = useLocalStorage("pmt.agent.follow", true);
   let count = 0;
 
+  // whether the prompt box should take the focus as soon as its session can be typed in
+  const isPromptWanted = shallowRef(false);
+
   const active = computed(() => sessions.find((session) => session.key === activeKey.value));
+  // the agents that can start
+  const ready = computed(() => (agents.value ?? []).filter((row) => row.program));
+  // the agent the pane talks to: the shown session's, else the one used last, else the first that can start
+  const current = computed(
+    () => active.value?.agent ?? ready.value.find((row) => row.id === lastAgent.value) ?? ready.value[0],
+  );
   /** isWaiting reports whether a session waits for the user: a permission to give or a link to open. */
   const isWaiting = (session: Session): boolean =>
     session.entries.some((entry) => entry.kind === "permission" || entry.kind === "link");
@@ -828,6 +837,17 @@ export const useAgentStore = defineStore("agent", () => {
     else isPaneOpen.value = true;
   };
 
+  /**
+   * focusPrompt shows the agent pane with its prompt box ready to type in, starting a session with the current agent
+   * if the pane shows none. While the agent's window is open it comes to the front instead.
+   */
+  const focusPrompt = (): void => {
+    showPane();
+    if (!isPaneOpen.value) return;
+    if (!active.value && current.value) start(current.value.id);
+    isPromptWanted.value = !!active.value;
+  };
+
   /** togglePane hides the agent pane when it is open here, else shows it as showPane does. */
   const togglePane = (): void => {
     if (isPaneOpen.value) isPaneOpen.value = false;
@@ -852,6 +872,9 @@ export const useAgentStore = defineStore("agent", () => {
     active,
     lastAgent,
     isPaneOpen,
+    isPromptWanted,
+    ready,
+    current,
     follow,
     status,
     isWaiting,
@@ -872,6 +895,7 @@ export const useAgentStore = defineStore("agent", () => {
     retry,
     popOut,
     showPane,
+    focusPrompt,
     togglePane,
   };
 });

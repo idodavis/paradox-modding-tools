@@ -110,15 +110,17 @@ type Mod struct {
 
 // A Workspace is one recorded workspace, a game install and the mods loaded with it.
 type Workspace struct {
-	ID           string `json:"id"`
-	Name         string `json:"name"`
-	Install      string `json:"install"`
-	Mods         []Mod  `json:"mods"`
-	Language     string `json:"language"`     // the localization language beside the game's base language
-	HomePage     string `json:"homePage"`     // the page it opens on
-	GameColor    string `json:"gameColor"`    // the color of the game's files, as a slot or a CSS color; "" for its own
-	ResetTabs    bool   `json:"resetTabs"`    // the IDE opens with no tabs rather than those left open
-	ShowBinaries bool   `json:"showBinaries"` // the explorer lists images, fonts and other binary files
+	ID            string `json:"id"`
+	Name          string `json:"name"`
+	Install       string `json:"install"`
+	Mods          []Mod  `json:"mods"`
+	Language      string `json:"language"`      // the localization language beside the game's base language
+	HomePage      string `json:"homePage"`      // the page it opens on
+	GameColor     string `json:"gameColor"`     // the color of the game's files, as a slot or a CSS color; "" for its own
+	ResetTabs     bool   `json:"resetTabs"`     // the IDE opens with no tabs rather than those left open
+	ShowBinaries  bool   `json:"showBinaries"`  // the explorer lists images, fonts and other binary files
+	HideChecklist bool   `json:"hideChecklist"` // the Library's card does not show the first-mod checklist
+	HideStartPage bool   `json:"hideStartPage"` // the IDE does not open the start page
 	// Settings holds the user's values of the per-workspace settings, by key.
 	Settings map[string]string `json:"settings"`
 	// IgnoredPairs holds the sorted pairs of mods whose conflicts the workspace ignores.
@@ -169,6 +171,11 @@ type Setting struct {
 
 // Catalog lists every setting.
 var Catalog = []Setting{
+	{Key: "appearance.simple", Label: "Simple interface",
+		Section: "appearance", Type: "switch", Default: "false",
+		Help: "Hides Source control, Entries, Output, Terminal, the minimap, predicted text and signature help, and keeps " +
+			"hover cards short. Off shows everything.",
+		Words: "beginner novice minimal clutter hide advanced everything"},
 	{Key: "appearance.theme", Label: "Theme",
 		Section: "appearance", Type: "choice", Default: "pmt",
 		Choices: []string{"pmt", "catppuccin", "one", "pierre", "ck3", "eu5", "vic3"},
@@ -178,10 +185,6 @@ var Catalog = []Setting{
 		Section: "appearance", Type: "switch", Default: "true",
 		Help:  "Draws the theme in its dark colors rather than its light ones.",
 		Words: "light mode night"},
-	{Key: "appearance.followSystem", Label: "Follow the system's light and dark",
-		Section: "appearance", Type: "switch", Default: "false",
-		Help:  "Switches between light and dark as the system does.",
-		Words: "os automatic"},
 	{Key: "appearance.matchGame", Label: "Match the workspace's game theme",
 		Section: "appearance", Type: "switch", Default: "false",
 		Help:  "Draws the app in the theme of the open workspace's game.",
@@ -192,8 +195,12 @@ var Catalog = []Setting{
 		Words: "zoom size percent"},
 	{Key: "appearance.pages", Label: "Pages a workspace shows",
 		Section: "appearance", Type: "text", Default: "workspace-ide,event-graph,health,patch-notes,release",
-		Help:  "The pages the sidebar offers, in order, separated by commas.",
+		Help:  "The pages the top bar offers, in order, separated by commas.",
 		Words: "sidebar navigation hide"},
+	{Key: "guidance.newModders", Label: "Guidance for new modders",
+		Section: "guidance", Type: "switch", Default: "true",
+		Help:  "Shows What do you want to make?, How a mod works on Make a new mod and the first-mod checklist.",
+		Words: "tutorial onboarding beginner learn checklist"},
 	{Key: "terminal.shell", Label: "Default shell",
 		Section: "terminal", Type: "text", Default: "",
 		Help: "The shell New shell starts; the arrow beside it starts another. Found by PMT unless you pick one. On " +
@@ -262,7 +269,7 @@ var Catalog = []Setting{
 		Words: "braces rainbow"},
 	{Key: "ide.whitespace", Label: "Show spaces and tabs",
 		Section: "editor", Workspace: true, Type: "switch", Default: "false",
-		Help:  "Off: only in the selection.",
+		Help:  "Draws every space and tab. Off draws only those in the selection.",
 		Words: "whitespace invisible characters"},
 	{Key: "ide.folding", Label: "Folding",
 		Section: "editor", Workspace: true, Type: "switch", Default: "true",
@@ -270,20 +277,29 @@ var Catalog = []Setting{
 		Words: "collapse fold gutter"},
 	{Key: "ide.hover", Label: "Hover cards",
 		Section: "language", Workspace: true, Type: "switch", Default: "true",
-		Help:  "What a word is, when the pointer rests on it.",
+		Help:  "Shows a card on the word under the pointer: what it is, where it is defined and its problems.",
 		Words: "tooltip documentation"},
 	{Key: "ide.complete", Label: "Completion list while typing",
 		Section: "language", Workspace: true, Type: "switch", Default: "true",
-		Help:  "Off: only Ctrl Space opens it.",
+		Help:  "Shows the list of suggestions as you type. Off, only Ctrl Space opens it.",
 		Words: "autocomplete suggestions intellisense"},
 	{Key: "ide.predict", Label: "Predicted text",
 		Section: "language", Workspace: true, Type: "switch", Default: "true",
-		Help:  "The likeliest completion in grey; Tab takes it.",
+		Help:  "Shows the likeliest suggestion in grey ahead of the cursor. Tab takes it.",
 		Words: "inline ghost suggestion"},
 	{Key: "ide.signature", Label: "Signature help",
 		Section: "language", Workspace: true, Type: "switch", Default: "true",
-		Help:  "What an effect or macro takes, while you fill it in.",
+		Help:  "Shows what an effect or scripted macro takes while you fill in its arguments.",
 		Words: "parameters arguments"},
+	{Key: "ide.textHints", Label: "Text after localization keys",
+		Section: "language", Workspace: true, Type: "switch", Default: "true",
+		Help: "Shows a localization key's text in grey after the key, in the workspace's language. A key no language " +
+			"has text for shows no text yet.",
+		Words: "localization loc yml inline hint preview"},
+	{Key: "ide.completionPictures", Label: "Pictures in the completion list",
+		Section: "language", Workspace: true, Type: "switch", Default: "true",
+		Help:  "Shows the picture of each image file beside the suggestions while you type a path.",
+		Words: "image texture dds icon preview thumbnail"},
 	{Key: "ide.stickyFolders", Label: "Sticky folders",
 		Section: "explorer", Workspace: true, Type: "switch", Default: "true",
 		Help:  "A folder's name stays on top while you scroll its files.",

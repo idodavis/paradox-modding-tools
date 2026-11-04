@@ -102,6 +102,7 @@ function updateMonth(index: number, text: string): void {
         <span class="truncate text-16">{{ mod.descriptor.name }}</span>
         <span class="truncate font-mono text-12 text-dimmed">{{ mod.dir }}</span>
         <span v-if="mod.broken" class="text-12 text-error">Its folder was not found. Pick where it is now.</span>
+        <span v-if="mod.workshop" class="text-12 text-dimmed">Workshop copy, read only</span>
       </div>
       <UButton label="Open folder" icon="i-lucide-folder" :disabled="mod.broken" @click="showFolder()" />
       <UButton label="Remove from workspace" variant="ghost" class="text-error" @click="remove" />

@@ -24,6 +24,9 @@ type ShapeRule struct {
 	// Blocks is the shape of a block written in a block of this shape where its key gives none; "" means the key's rule
 	// decides.
 	Blocks string
+	// Encloses is the shape of the block that a link or an "enclosing" keyword written in a block of this shape holds;
+	// "" means the shape itself.
+	Encloses string
 }
 
 // A Keyword is a key of the language itself: one it gives a fixed shape to, or one of its operators. The first row
@@ -31,12 +34,13 @@ type ShapeRule struct {
 type Keyword struct {
 	// Key is a key path in lower case: the commands that must hold the key, then the key.
 	Key    string
-	Holder string // fits only in a block of this shape; "" means any
-	Shape  string // what its block holds, a Shapes key; enclosing the holder's; "" means what the key's rule gives
-	Caller string // the word its calls resolve by; "" means the shape's own
-	Shows  string // a description marker: which of its texts it shows, first, random or leaf
-	Class  string // the operator class: logical, conditional, flow, display, saving, math, list; "" means none
-	Blurb  string // the one line a hover card shows
+	Games  []string // the games it holds for; none means every game
+	Holder string   // fits only in a block of this shape; "" means any
+	Shape  string   // what its block holds, a Shapes key; enclosing the holder's; "" means what the key's rule gives
+	Caller string   // the word its calls resolve by; "" means the shape's own
+	Shows  string   // a description marker: which of its texts it shows, first, random or leaf
+	Class  string   // the operator class: logical, conditional, flow, display, saving, math, list; "" means none
+	Blurb  string   // the one line a hover card shows
 	// Says is what a condition in words reads for it, a * in it the rest of a prefix key; "" means its key in words.
 	Says string
 	// Covers marks a keyword whose own text is shown in place of the conditions written inside it.
@@ -158,7 +162,8 @@ const (
 )
 
 // Shapes is the table of shapes a block can hold, each with how it reads its keys. A description block reads its
-// keys by the Keywords alone, and "enclosing" in a keyword or a claim means the holder's shape.
+// keys by the Keywords alone, and "enclosing" in a keyword or a claim means the holder's Encloses, else its shape. The
+// "scope-link" rule is "link" except for a plain name written with a plain value, which is an argument or a call.
 var Shapes = map[string]ShapeRule{
 	ShapeFields: {Rules: []string{"field"}},
 	ShapeTriggers: {
@@ -166,7 +171,7 @@ var Shapes = map[string]ShapeRule{
 		Caller: callTrigger, Allows: []string{DeclaredTrigger},
 	},
 	ShapeEffects: {
-		Rules:  []string{"known-call", "declared", "command", "observed", "link", "call"},
+		Rules:  []string{"known-call", "declared", "command", "observed", "scope-link", "call"},
 		Caller: callEffect, Allows: []string{DeclaredEffect},
 	},
 	ShapeArguments: {
@@ -176,12 +181,12 @@ var Shapes = map[string]ShapeRule{
 	// A key no rule explains in a command's block is a call of any kind, which is never judged: it may be an argument
 	// that neither the dumps nor the game's files write.
 	ShapeEffectArguments: {
-		Rules:  []string{"known-call", "declared", "command", "observed", "link", "call"},
-		Caller: AnyCall, Allows: []string{DeclaredEffect},
+		Rules:  []string{"known-call", "declared", "command", "observed", "scope-link", "call"},
+		Caller: AnyCall, Allows: []string{DeclaredEffect}, Encloses: ShapeEffects,
 	},
 	ShapeTriggerArguments: {
-		Rules:  []string{"known-call", "declared", "command", "observed", "link", "call"},
-		Caller: AnyCall, Allows: []string{DeclaredTrigger},
+		Rules:  []string{"known-call", "declared", "command", "observed", "scope-link", "call"},
+		Caller: AnyCall, Allows: []string{DeclaredTrigger}, Encloses: ShapeTriggers,
 	},
 	ShapeValue: {
 		Rules:  []string{"known-call", "declared", "command", "operator", "observed", "link", "call"},
@@ -290,6 +295,8 @@ var Keywords = []Keyword{
 	{Key: "add_to_list", Class: "saving", Blurb: "Adds the current scope to a named list for the rest of the event chain."},
 	{Key: "add_to_temporary_list", Class: "saving", Blurb: "Adds the current scope to a named list until this effect ends."},
 	{Key: "exists", Class: "saving", ValueFirst: true, Blurb: "True when the scope named is there and is not nothing."},
+	// EU5 in_game/common/subject_types/readme.txt:80 writes it as goal keys, each holding a type and a bias
+	{Games: []string{eu5}, Holder: "fields", Key: "ai_biases", Shape: "fields", Blurb: "The weight the AI adds to certain goals, one block for each goal with its type and its bias."},
 }
 
 // LimitKey is the key of the conditions an if, a list or a while checks first.
@@ -311,6 +318,28 @@ var DumpPhrases = struct {
 	Literal  string   // the scope of a link whose name is a literal, as flag:the_boss's
 	Unnamed  string   // the return type of a data function whose type the dumps do not name
 }{"Iterate through", []string{"none", "all", "none/any"}, "flag", "[unregistered]"}
+
+// A DumpCorrection is a command whose dump row contradicts the text of its own entry. It carries the scopes and the
+// target that the text says. The schema applies it to the dumps after reading them, so it outranks the dump.
+type DumpCorrection struct {
+	Games   []string // the games it holds for; none means every game
+	Command string   // the command's name
+	Scopes  []string // the scopes it runs in
+	Target  string   // the scope it leads to
+}
+
+// DumpCorrections are the dump rows that contradict their own text. A row's comment cites the lines of the entry's
+// text and of its Supported Scopes and Supported Targets.
+var DumpCorrections = []DumpCorrection{
+	// Vic3 docs/effects.log:3521 says "Iterate through all Provinces in the scoped State"; :3523-3524 swap the two
+	{Games: []string{vic3}, Command: "every_province", Scopes: []string{"state"}, Target: "province"},
+	// Vic3 docs/effects.log:14240 says the same; :14249-14250 swap the two too
+	{Games: []string{vic3}, Command: "ordered_province", Scopes: []string{"state"}, Target: "province"},
+	// Vic3 docs/effects.log:29483 says the same; :29485-29486 swap the two too
+	{Games: []string{vic3}, Command: "random_province", Scopes: []string{"state"}, Target: "province"},
+	// Vic3 docs/triggers.log:2360 says the same; :2363-2364 swap the two too
+	{Games: []string{vic3}, Command: "any_province", Scopes: []string{"state"}, Target: "province"},
+}
 
 // LinkMakers are the commands that save a name of one of the Links, by the command, or by command/key for a key in
 // its block: each with the link that reads the name back.
@@ -405,9 +434,9 @@ var keywordPositions = func() map[string][]int {
 	return positions
 }()
 
-// LookupKeyword returns the first keyword that fits a key in a block's shape and command, the key and the command in
-// any case. It returns false if none fits.
-func LookupKeyword(shape, command, key string) (Keyword, bool) {
+// LookupKeyword returns the first keyword of the game that fits a key in a block's shape and command, the key and the
+// command in any case. It returns false if none fits.
+func (game *Game) LookupKeyword(shape, command, key string) (Keyword, bool) {
 	command, key = strings.ToLower(command), strings.ToLower(key)
 	candidates := append(make([]string, 0, 3), key, AnyKey)
 	if jomini.IsNumberKey(key) {
@@ -422,7 +451,7 @@ func LookupKeyword(shape, command, key string) (Keyword, bool) {
 			row := Keywords[position]
 			holder, _, held := strings.Cut(row.Key, "/")
 			fits, _ := path.Match(holder, command)
-			if (row.Holder == "" || row.Holder == shape) && (!held || fits) {
+			if (row.Holder == "" || row.Holder == shape) && (!held || fits) && game.Matches(row.Games) {
 				best, ok = position, true
 				break
 			}

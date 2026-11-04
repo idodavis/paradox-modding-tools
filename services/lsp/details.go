@@ -11,6 +11,7 @@ import (
 
 	"github.com/samber/lo"
 
+	"paradox-modding-tools/internal/game"
 	"paradox-modding-tools/internal/index"
 	"paradox-modding-tools/internal/jomini"
 	"paradox-modding-tools/internal/schema"
@@ -24,13 +25,23 @@ type Fold struct {
 	End   int `json:"end"`
 }
 
+// The kinds of Hint.
+const (
+	HintDate = "date" // a date read in the mod's calendar
+	HintText = "text" // the text of a localization key
+)
+
 // A Hint is a text drawn inline beside the code, such as a date read in the mod's calendar. Its line and column are
 // Monaco's, counted from one, the column in UTF-16 code units.
 type Hint struct {
 	Line   int    `json:"line"`
 	Column int    `json:"column"`
 	Text   string `json:"text"`
+	Kind   string `json:"kind"` // HintDate or HintText
 }
+
+// hintTextLength is how many characters of a localization key's text a hint shows.
+const hintTextLength = 60
 
 // A ColorSite is one color written in a file: where it is and the color it stands for.
 type ColorSite struct {
@@ -64,16 +75,17 @@ func (lsp *Service) ListFolds(path string) ([]Fold, error) {
 	return folds, nil
 }
 
-// ListHints returns a file's inlay hints: each date in the file read in the mod's calendar. A value is a date only
-// where its field expects one.
+// ListHints returns a file's inlay hints: each date in the file read in the mod's calendar, and the text of each
+// localization key it names in the workspace's language. A value is a date only where its field expects one.
 func (lsp *Service) ListHints(path string) ([]Hint, error) {
 	ws, tree, err := lsp.loadTree(path)
 	if err != nil {
 		return nil, err
 	}
-	place := ws.Locate(ws.Mods.Load(), path)
+	mods := ws.Mods.Load()
+	place := ws.Locate(mods, path)
 	mod, _ := lsp.Workspace.LookupMod(place.Origin)
-	visitor := &hintsVisitor{calendar: mod.Calendar, hints: []Hint{}}
+	visitor := &hintsVisitor{ws: ws, mods: mods, calendar: mod.Calendar, hints: []Hint{}}
 	if place.Format.IsScript() {
 		ws.Schema.Walk(tree, place.File, visitor)
 	}
@@ -82,12 +94,27 @@ func (lsp *Service) ListHints(path string) ([]Hint, error) {
 
 // A hintsVisitor collects the hints of a file.
 type hintsVisitor struct {
+	ws       *workspace.Session
+	mods     *index.Index // where the texts of the localization keys are looked up
 	calendar app.Calendar
 	hints    []Hint
 }
 
-// Enter records the hint for the statement's value if it is a date.
+// Enter records the hint for the statement's value if it is a date, and a hint after each localization key the
+// statement names.
 func (visitor *hintsVisitor) Enter(tree *jomini.Tree, statement int32, context *schema.Context) bool {
+	for _, reference := range context.References {
+		if reference.Database != game.Localization {
+			continue
+		}
+		end := reference.Span.End
+		if strings.HasPrefix(tree.Src[end:], `"`) {
+			end++
+		}
+		if text := visitor.describeText(reference.Name); text != "" {
+			visitor.add(tree, end, HintText, text)
+		}
+	}
 	if date, ok := findDate(tree, statement, context); ok {
 		card := resolveDate(visitor.calendar, date)
 		parts := []string{}
@@ -101,16 +128,36 @@ func (visitor *hintsVisitor) Enter(tree *jomini.Tree, statement int32, context *
 		if card.Era != "" {
 			parts = append(parts, card.Era)
 		}
-		end := tree.Statements[statement].Value.End
-		point := ToRange(tree.Src, tree.Lines, jomini.Span{Start: end, End: end})
-		visitor.hints = append(visitor.hints,
-			Hint{Line: point.StartLine, Column: point.StartColumn, Text: strings.Join(parts, " ")})
+		visitor.add(tree, tree.Statements[statement].Value.End, HintDate, strings.Join(parts, " "))
 	}
 	return true
 }
 
 // Leave does nothing.
 func (visitor *hintsVisitor) Leave(tree *jomini.Tree, statement int32, context *schema.Context) {}
+
+// add records a hint of the given kind and text at the given offset in the tree's source.
+func (visitor *hintsVisitor) add(tree *jomini.Tree, offset int, kind, text string) {
+	point := ToRange(tree.Src, tree.Lines, jomini.Span{Start: offset, End: offset})
+	visitor.hints = append(visitor.hints, Hint{Line: point.StartLine, Column: point.StartColumn, Text: text, Kind: kind})
+}
+
+// describeText returns what a hint shows after a localization key: the key's text in quotes, cut at hintTextLength
+// characters with "…", or "no text yet" where no language has a message with the key. It returns "" for a key that
+// only other languages than the workspace's write.
+func (visitor *hintsVisitor) describeText(key string) string {
+	text, _, ok := visitor.ws.LookupText(visitor.mods, key)
+	if !ok {
+		if lo.ContainsBy(visitor.mods.ListMessages(key), func(site index.Site) bool { return visitor.mods.IsLoaded(site.File) }) {
+			return ""
+		}
+		return "no text yet"
+	}
+	if characters := []rune(text); len(characters) > hintTextLength {
+		text = string(characters[:hintTextLength]) + "…"
+	}
+	return `"` + text + `"`
+}
 
 // ListColorSites returns every color written in a file, with the color it makes.
 func (lsp *Service) ListColorSites(path string) ([]ColorSite, error) {

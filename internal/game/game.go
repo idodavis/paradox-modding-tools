@@ -87,6 +87,17 @@ type Game struct {
 	GUI                      GameGUI  `json:"-"`
 	Coat                     GameCoat `json:"-"`
 	Guide                    Guide    `json:"guide"`
+	Example                  Example  `json:"example"`
+}
+
+// An Example is three definitions of one database that show how a mod and the game's files work together.
+type Example struct {
+	Database string   `json:"database"`
+	Folder   string   `json:"folder"` // from the game's folder
+	Names    []string `json:"names"`
+	// Modes is true where a mod changes one of the definitions by writing REPLACE: in front of its name, as the
+	// database's precedence row says. ListGames fills it.
+	Modes bool `json:"modes"`
 }
 
 // A Guide is how a game picks which copy of a file or a definition it keeps, in the sentences where the games differ.
@@ -264,6 +275,8 @@ var games = map[string]*Game{
 			Kept:    "Most things keep the copy read last; events keep the highest override priority, and on a tie the game logs an error and keeps one copy without saying which; a character takes its name, traits, skills, parents and birth from the copy with the highest override priority and combines the rest, and the game calls a tie an error without saying what it keeps; on_actions combine their lists.",
 			Changes: "Only files at the same path.",
 		},
+		// common/traits/00_traits.txt
+		Example: Example{Database: "traits", Folder: "common/traits", Names: []string{"gregarious", "shy", "brave"}},
 	},
 	vic3: {
 		ID:            vic3,
@@ -302,6 +315,11 @@ var games = map[string]*Game{
 			Files:   "A mod's replace_path makes the game skip its own files in that folder. This is documented for CK3 and EU5, whose engine Vic3 shares; whether it also skips the folder's subfolders is not documented.",
 			Kept:    "Most things keep the copy read last; events and GUI types keep the first; where a folder takes INJECT: and REPLACE:, the first plain copy stays and a later one is refused, so mods change it with those keywords, which act after every plain copy whatever their file's name, by kind (INJECT_OR_CREATE first, REPLACE last) and then by file name; character DNA copies all exist.",
 			Changes: "Only files at the same path.",
+		},
+		// common/buildings/01_industry.txt
+		Example: Example{
+			Database: "buildings", Folder: "common/buildings",
+			Names: []string{"building_food_industry", "building_textile_mill", "building_furniture_manufactory"},
 		},
 	},
 	eu5: {
@@ -354,6 +372,8 @@ var games = map[string]*Game{
 			Kept:    "Under common/ the first plain copy stays and mods change it with INJECT: and REPLACE:, which act after every plain copy whatever their file's name, by kind (INJECT_OR_CREATE first, REPLACE last) and then by file name; events keep the first; GUI types and templates follow the load order; coats of arms and defines keep the last.",
 			Changes: "Only files at the same path and GUI types and templates.",
 		},
+		// in_game/common/traits/00_ruler.txt
+		Example: Example{Database: "traits", Folder: "in_game/common/traits", Names: []string{"righteous", "cruel", "tolerant"}},
 	},
 }
 
@@ -368,14 +388,21 @@ func LookupGame(id string) *Game {
 	return games[id]
 }
 
-// ListGames returns the supported games in the order the app shows them.
+// ListGames returns the supported games in the order the app shows them, each example's Modes filled from its
+// database's precedence row.
 func ListGames() []Game {
-	return []Game{*games[ck3], *games[eu5], *games[vic3]}
+	rows := []Game{*games[ck3], *games[eu5], *games[vic3]}
+	for position := range rows {
+		row := &rows[position]
+		_, folder := row.SplitStage(row.Example.Folder)
+		row.Example.Modes = row.LookupPrecedence(row.Example.Database, folder).Modes != ""
+	}
+	return rows
 }
 
-// Matches reports whether the game is among the given games. An empty list names every game.
+// Matches reports whether the game is among the given games. An empty list names every game. A nil game is among none.
 func (game *Game) Matches(games []string) bool {
-	return len(games) == 0 || slices.Contains(games, game.ID)
+	return len(games) == 0 || game != nil && slices.Contains(games, game.ID)
 }
 
 // SplitStage splits a path into the stage folder that opens it and the rest, for the games that keep their files

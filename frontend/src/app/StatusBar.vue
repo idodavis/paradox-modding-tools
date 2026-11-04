@@ -1,6 +1,7 @@
 <!--
-  The status bar: the install and its scan, the page's own facts, what the agent is doing, the wiki download, the
-  windows, Help and the version with its update check.
+  The status bar: the install and its scan, the page's own facts, what the agent is doing, the wiki download and its
+  failure, the windows, Help and the version with its update check. Help starts with the page's three steps and the
+  words PMT uses.
 -->
 <script setup lang="ts">
 import type { ToastProps } from "@nuxt/ui";
@@ -11,20 +12,24 @@ import { useRoute } from "vue-router";
 
 import * as app from "@services/app/service";
 import type { Progress } from "@services/wiki/models";
+import * as wikiApi from "@services/wiki/service";
 import type { Scanning } from "@services/workspace/models";
 import { copyText } from "../lib/feedback";
 import { day, installLine } from "../lib/format";
-import { crashedQuery, releasesQuery, stateQuery, updateQuery, versionQuery } from "../queries";
+import { crashedQuery, levelsQuery, releasesQuery, stateQuery, updateQuery, versionQuery } from "../queries";
 import { useAgentStore } from "../stores/agent";
 import { describeWindow, THIS_WINDOW, useWindowsStore } from "../stores/windows";
-import { isWorkspacePage, PAGES, PANE_HELP } from "./pages";
+import HowModWorks from "../ui/HowModWorks.vue";
+import TermInfo from "../ui/TermInfo.vue";
+import { isWorkspacePage, PAGES, PANE_HELP, TERMS, type Page } from "./pages";
 
 const route = useRoute();
 const toast = useToast();
 const windows = useWindowsStore();
 const agent = useAgentStore();
 
-const page = computed(() => (route.name ? PAGES[route.name] : undefined));
+const page = computed<Page | undefined>(() => (route.name ? PAGES[route.name] : undefined));
+const explaining = shallowRef(false);
 // the dot of the agent's line: waiting for the user, working, or done
 const agentDot = computed(() => {
   if (!agent.active) return "";
@@ -36,6 +41,12 @@ const { data: version } = useQuery(versionQuery);
 const { data: update, refetch: checkUpdate, isLoading: checking } = useQuery({ ...updateQuery, staleTime: 3_600_000 });
 const { data: releases, refetch: refetchReleases } = useQuery({ ...releasesQuery, enabled: false });
 const { data: crashed } = useQuery(crashedQuery);
+const { data: levels } = useQuery(levelsQuery);
+// the words PMT uses: the table's, then each level of a problem with what it costs
+const words = computed(() => [
+  ...TERMS,
+  ...(levels.value ?? []).map((level) => ({ term: level.id, meaning: level.cost })),
+]);
 const { mutate: applyUpdate } = useMutation({ mutation: () => app.ApplyUpdate() });
 const { mutate: copyDiagnostics } = useMutation({
   mutation: async () =>
@@ -43,11 +54,13 @@ const { mutate: copyDiagnostics } = useMutation({
 });
 
 const wiki = shallowRef<Progress | null>(null);
+// why the last wiki fetch failed, or "" when it worked
+const wikiFailure = shallowRef("");
 onScopeDispose(Events.On("wiki:progress", ({ data }) => (wiki.value = data)));
 onScopeDispose(
   Events.On("wiki:updated", ({ data }) => {
     wiki.value = null;
-    if (data && THIS_WINDOW === "main") toast.add({ title: "Wiki fetch failed", description: data, color: "error" });
+    wikiFailure.value = data;
   }),
 );
 
@@ -66,7 +79,7 @@ const others = computed(() =>
     .map((name) => ({ label: describeWindow(name), onSelect: () => windows.showWindow(name) })),
 );
 
-// what the main window toasts once: a run that ended unclean, a game updated, and an install without script_docs
+// what the main window toasts once: a run that ended unclean and a game updated
 const toasted = new Set<string>();
 watch(
   [crashed, state],
@@ -89,15 +102,6 @@ watch(
         description: `Game updated from ${current.updatedFrom} to ${current.install.version} — rescanned.`,
         color: "warning",
         icon: "i-lucide-refresh-cw",
-      });
-    }
-    if (current.dumps.origin === "none") {
-      showToast(`dumps ${current.install.id}`, {
-        title: "No script_docs for this game",
-        description:
-          "Definitions, references, conflicts and localization still work. Scope-aware completion, typed hover and scope diagnostics need the game to print its documentation once.",
-        color: "warning",
-        icon: "i-lucide-triangle-alert",
       });
     }
   },
@@ -147,6 +151,17 @@ const ITEM = "flex h-6 items-center gap-1.25 hover:text-highlighted";
       <span class="size-1.5 shrink-0 animate-pulse rounded-full bg-primary" />
       {{ state?.game?.name ?? "Game" }} wiki: {{ wiki.done }} of {{ wiki.total }}
     </span>
+    <UPopover v-if="wikiFailure && !wiki" :content="{ side: 'top' }">
+      <button type="button" :class="[ITEM, 'text-warning']">
+        <UIcon name="i-lucide-triangle-alert" class="size-3" />Wiki not fetched
+      </button>
+      <template #content>
+        <div class="flex max-w-80 flex-col items-start gap-2 p-3 text-12 whitespace-normal">
+          <p class="text-toned">{{ wikiFailure }}</p>
+          <UButton label="Retry" size="xs" @click="wikiApi.Refresh()" />
+        </div>
+      </template>
+    </UPopover>
     <UDropdownMenu v-if="THIS_WINDOW === 'main' && others.length" :items="others" :content="{ side: 'top' }">
       <button type="button" :class="ITEM">
         <UIcon name="i-lucide-app-window" class="size-3" />{{ others.length + 1 }} windows
@@ -156,12 +171,37 @@ const ITEM = "flex h-6 items-center gap-1.25 hover:text-highlighted";
       <button type="button" :class="ITEM">Help</button>
       <template #body>
         <div class="flex flex-col gap-3 text-13 text-toned">
+          <section class="flex flex-col gap-3 rounded-lg bg-elevated p-3.5">
+            <template v-if="page?.start">
+              <h3 class="text-13 font-semibold text-highlighted">Start here</h3>
+              <ol class="flex flex-col gap-2.5">
+                <li v-for="(step, index) in page.start" :key="index" class="flex items-start gap-2.5">
+                  <span
+                    class="mt-0.5 flex size-5 shrink-0 items-center justify-center rounded-full bg-accented text-11 font-medium"
+                  >
+                    {{ index + 1 }}
+                  </span>
+                  <span>{{ step }}</span>
+                </li>
+              </ol>
+            </template>
+            <div class="flex flex-col gap-2" :class="page?.start && 'border-t border-default pt-2.5'">
+              <span class="text-12 text-dimmed">Words PMT uses</span>
+              <div class="flex flex-wrap gap-1.5">
+                <TermInfo v-for="row in words" :key="row.term" :term="row.term" :meaning="row.meaning">
+                  <UBadge :label="row.term" />
+                </TermInfo>
+              </div>
+              <span class="text-11 text-dimmed">The same words show beside an (i) on the pages that use them.</span>
+            </div>
+          </section>
           <p v-for="(paragraph, index) in page?.help ?? []" :key="index">{{ paragraph }}</p>
           <!-- the agent pane sits beside every workspace page, so each one's help ends with the pane's -->
           <template v-if="route.name && isWorkspacePage(route.name)">
             <h3 class="mt-2 text-13 font-semibold text-highlighted">The agent pane</h3>
             <p v-for="(paragraph, index) in PANE_HELP" :key="`pane${index}`">{{ paragraph }}</p>
           </template>
+          <UButton label="How a mod works" icon="i-lucide-layers" class="mt-2 self-start" @click="explaining = true" />
         </div>
       </template>
       <template #footer>
@@ -169,6 +209,7 @@ const ITEM = "flex h-6 items-center gap-1.25 hover:text-highlighted";
         <UButton label="Copy diagnostics" icon="i-lucide-clipboard-copy" @click="copyDiagnostics()" />
       </template>
     </UModal>
+    <HowModWorks v-model:open="explaining" :game-id="state?.game?.id ?? ''" mod-name="" />
     <UModal
       title="Releases"
       :ui="{ content: 'h-130 sm:max-w-2xl' }"

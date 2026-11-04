@@ -6,6 +6,7 @@
 import { computed, shallowRef, useTemplateRef, watch } from "vue";
 import { useQuery } from "@pinia/colada";
 import { createReusableTemplate, useInfiniteScroll, useLocalStorage } from "@vueuse/core";
+import { Browser } from "@wailsio/runtime";
 import type { DropdownMenuItem } from "@nuxt/ui";
 
 import type { Change, Commit } from "@services/git/models";
@@ -31,6 +32,7 @@ type GraphRow = {
 /** An Entry is one row of the log: a commit, or a file the open commit changed. */
 type Entry = { key: string; row: GraphRow; change?: Change; paths: { path: string; lane: number }[] };
 
+const GIT_DOWNLOADS = "https://git-scm.com/downloads";
 const LANE_WIDTH = 12;
 const ROW_HEIGHT = 28;
 const PAGE = 200;
@@ -201,7 +203,7 @@ function buildLines(row: GraphRow): { path: string; lane: number }[] {
         />
       </svg>
     </DefineLane>
-    <Teleport v-if="git.repositories.length && bare.length" defer to="#sidebar-actions">
+    <Teleport v-if="git.isInstalled && git.repositories.length && bare.length" defer to="#sidebar-actions">
       <UDropdownMenu :items="initializeMenu" :content="{ align: 'end' }">
         <UButton icon="i-lucide-git-branch-plus" variant="ghost" square aria-label="Initialize a repository" />
         <template #item-leading="{ item }">
@@ -210,7 +212,26 @@ function buildLines(row: GraphRow): { path: string; lane: number }[] {
       </UDropdownMenu>
       <USeparator orientation="vertical" class="mx-0.5 h-4" />
     </Teleport>
-    <div v-if="!git.repositories.length" class="flex flex-col gap-1 px-3 py-2.5">
+    <div v-if="!git.isInstalled" class="p-3">
+      <div class="flex flex-col gap-3 rounded-lg border border-accented bg-elevated p-3.5">
+        <div class="flex items-center gap-2">
+          <UIcon name="i-lucide-info" class="size-3.5 shrink-0 text-toned" />
+          <span class="text-13 font-semibold text-highlighted">Git isn't installed on this computer</span>
+        </div>
+        <p class="text-12 text-toned">
+          Source control shows your mods' git history: what you changed, and every earlier version of a file. It runs
+          the git on your computer, which PMT doesn't include.
+        </p>
+        <UButton
+          label="Get git"
+          icon="i-lucide-external-link"
+          class="self-start"
+          @click="Browser.OpenURL(GIT_DOWNLOADS)"
+        />
+        <p class="text-12 text-dimmed">PMT looks for git again when it starts. Nothing else in PMT needs it.</p>
+      </div>
+    </div>
+    <div v-else-if="!git.repositories.length" class="flex flex-col gap-1 px-3 py-2.5">
       <p class="pb-1.5 text-dimmed">None of this workspace's mods is in a git repository.</p>
       <div v-for="mod in bare" :key="mod.id" class="flex items-center gap-2">
         <OriginChip :origin="mod.id" dot />

@@ -64,13 +64,9 @@ export function isOwn(coat: Coat, layer: Layer, key: string): boolean {
   return !layer.place.readOnly && layer.place.key === key && Range.containsRange(coat.range, layer.range);
 }
 
-/**
- * listMods lists the mods a coat can be written into, each with its name. A mod whose folder is missing is left out.
- */
+/** listMods lists the given mods, which a coat can be written into, each with its name. */
 export function listMods(mods: readonly Mod[] | null | undefined): { label: string; value: string }[] {
-  return (mods ?? [])
-    .filter((mod) => !mod.broken)
-    .map((mod) => ({ label: mod.descriptor.name || mod.id, value: mod.id }));
+  return (mods ?? []).map((mod) => ({ label: mod.descriptor.name || mod.id, value: mod.id }));
 }
 
 /**

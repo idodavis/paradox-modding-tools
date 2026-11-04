@@ -4,19 +4,67 @@ import type { RouteRecordInfo } from "vue-router";
 
 import { useSettingsStore } from "../stores/settings";
 
-/** A Page is one page of the catalog. */
-export type Page = { title: string; help: readonly string[]; icon?: string; workspace?: true };
+/** A Page is one page of the catalog. Its start, when it has one, is three steps for someone new to the page. */
+export type Page = {
+  title: string;
+  help: readonly string[];
+  start?: readonly string[];
+  icon?: string;
+  workspace?: true;
+};
+
+/** TERMS holds the words PMT uses that a new modder may not know, each with its meaning. */
+export const TERMS: readonly { term: string; meaning: string }[] = [
+  { term: "workspace", meaning: "One game install and the mods you load with it. PMT reads them together." },
+  { term: "install", meaning: "The game's folder on this computer. PMT only reads it." },
+  {
+    term: "load order",
+    meaning:
+      "The order the game reads your mods in, after its own files. When two mods have the same file, the later one's copy is used.",
+  },
+  {
+    term: "game files",
+    meaning: "The game's own files. They are read only; a mod changes them by overriding. Modders call them vanilla.",
+  },
+  {
+    term: "game documentation",
+    meaning:
+      "The lists the game writes of its own effects, triggers, scopes, modifiers and data types when you type script_docs, then dump_data_types, in its console. Wikis call them the script docs and the data type dumps. PMT checks your script against them.",
+  },
+  {
+    term: "game readme/info",
+    meaning:
+      "A note the game keeps in a folder, such as _traits.info or readme.txt, on what the folder holds and how its files are written. Resting on a folder in the explorer shows its first paragraph.",
+  },
+  {
+    term: "scope",
+    meaning:
+      "What a line of script acts on, such as a character or a country. Each effect and trigger works only in some scopes, and a link such as root moves to another.",
+  },
+];
 
 /** PAGES holds every page of the app by its route name. */
 export const PAGES = {
   library: {
     title: "Library",
     icon: "i-lucide-layout-grid",
+    start: [
+      "A workspace is one game install plus the mods you load with it.",
+      "The active workspace is at the top. Open another's card to make it active.",
+      "Open IDE on the active card to start working in it.",
+    ],
     help: [
       "A workspace is one game install plus the mods you load with it. The active one is at the top; open another's card to make it active.",
       "Remove from PMT, in a workspace's menu, takes it out of PMT. Mod folders on disk stay.",
-      "New mod makes a mod skeleton and adds it to a workspace. New workspace starts the setup. Launch starts the game with its debug flag, and when the game exits having written fresher script_docs, PMT offers to scan the install again.",
+      "New mod opens Make a new mod, or adds a mod to the open workspace. New workspace starts the setup. Launch starts the game with its debug flag. When the game closes, a message says what your mods logged, and offers to scan the install again if the game wrote fresher documentation.",
       "Reset all PMT data, in the status bar, removes every workspace, install record and cache. Mods, game files and your settings stay.",
+    ],
+  },
+  "new-mod": {
+    title: "Make a new mod",
+    help: [
+      "With Guidance for new modders on, the first screen asks what you want to make, and PMT opens the place that does it. Pick the closest; nothing here is fixed. Set it up myself goes to the New workspace setup.",
+      "Then pick the game, the folders of any mods the goal works on, and a name for the new mod. PMT shows the folder it makes, and the workspace opens on the page that suits the goal.",
     ],
   },
   wizard: {
@@ -31,6 +79,11 @@ export const PAGES = {
     title: "IDE",
     icon: "i-lucide-code",
     workspace: true,
+    start: [
+      "Open a file of your mod in the explorer on the left. The game files below it are read only.",
+      "Rest the pointer on any word to see what it is. Ctrl click goes to where it is defined.",
+      "Save with Ctrl S. Problems show as squiggles, and all of them in the Problems panel, Ctrl J.",
+    ],
     help: [
       "The explorer shows this workspace's mods in load order, then the game's files, which are read only; edit in a mod folder. The filter button in each tree's header shows a box that filters that tree's files by path, in folders you have not opened too; pressing it again or Escape hides the box and clears the filter. Ctrl P finds a file by its path, Ctrl Shift F searches the files' text and can replace it.",
       "A single click opens a file in a preview tab that the next single click replaces; a double click or an edit keeps it. Drag a tab to another group, or out to a window of its own. A tab's right-click menu closes the others, the tabs to its right, the saved ones or all of them, asking once before it drops changes not saved; Reveal in explorer selects its file in the explorer. The open tabs come back when you reopen the workspace, unless you turn that off in Settings.",
@@ -49,6 +102,11 @@ export const PAGES = {
     title: "Event Graph",
     icon: "i-lucide-git-branch",
     workspace: true,
+    start: [
+      "Type an id, a namespace or a number in Root.",
+      "The graph shows what that event, on_action, decision, message or scripted effect fires, and what fires it.",
+      "With no root, the page lists the roots you drew last and the events your mods define. Back and Forward step through the roots you drew.",
+    ],
     help: [
       "Type an id, a namespace or a number in Root to see what that event, on_action, decision, message or scripted effect fires and what fires it. With no root, the page lists the roots you drew last and the events your mods define; Back and Forward step through the roots you drew.",
       "The graph lays the chain out left to right by step. An event shows as its scene, with its origin's dot; a hidden one is hatched, and a message is a toast. Path opens the nodes on the way from the root to the one you select into a row per firing, with the block each sits in, its weight and its delay; All opens every node that fires anything.",
@@ -64,6 +122,11 @@ export const PAGES = {
     title: "Health",
     icon: "i-lucide-activity",
     workspace: true,
+    start: [
+      "Compatibility shows how your mods touch the same things.",
+      "Mods shows whether each mod is sound on its own, and Game log what the game's last run logged.",
+      "Each panel lists its worst rows first. Open a panel for its view; the rail on the left switches between them.",
+    ],
     help: [
       "The summary has three panels, one for each question: Compatibility, how the mods touch the same things; Mods, whether each mod is sound on its own; and Game log, what the game's last run logged. Each lists its worst rows first. Open a panel for its view; the rail on the left switches between them, and its edge drags to make it wider.",
       "Every row is critical, an error, a warning or info, by how much the game loses. Critical means the game loses a whole file, folder, definition or mod: it never reads it, or keeps another copy. An error means the game skips one statement, line or value and keeps running, so the mod plays while that part of it is lost. A warning may be fine, or only shows a player the wrong text. Info is only how things are, and is folded until you open it.",
@@ -77,6 +140,11 @@ export const PAGES = {
     title: "Patch Notes",
     icon: "i-lucide-newspaper",
     workspace: true,
+    start: [
+      "These are the game's patch notes, from its wiki, for the game this workspace uses.",
+      "Pick a version to read its notes. A dot marks a note with a Modding section.",
+      "Ctrl F finds in the note shown.",
+    ],
     help: [
       "The game's patch notes from its wiki, read when PMT starts and kept, for the game this workspace uses.",
       "Pick a version to read its notes; a dot marks a note with a Modding section. Ctrl F finds in the note shown.",
@@ -86,6 +154,11 @@ export const PAGES = {
     title: "Publish",
     icon: "i-lucide-upload",
     workspace: true,
+    start: [
+      "Publish shows the mod's Workshop page as players see it.",
+      "Click the name, tags, requirements, pictures or description to change them.",
+      "Every change is saved in the mod's files as soon as you stop typing, so there is nothing to save.",
+    ],
     help: [
       "Publish shows the mod's Workshop page as players see it. Click the name, tags, requirements, pictures or description to change them. Every change is saved in the mod's files as soon as you stop typing, so there is nothing to save.",
       "The description is written as it looks on Steam, or as BBCode with the BBCode switch. It is kept as BBCode in the mod's .workshop folder, and Steam gets it as written. A description the visual editor cannot hold without losing markup opens as BBCode.",

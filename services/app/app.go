@@ -371,12 +371,10 @@ func resolveMark(dirs Dirs) string { return filepath.Join(dirs.Log, "running") }
 // resolveLog returns the path of pmt.log.
 func resolveLog(dirs Dirs) string { return filepath.Join(dirs.Log, "pmt.log") }
 
-// newWindow opens a window with the given options and no frame of the system's, since the page draws its own. On
-// Windows the page marks its title bar and buttons, and Windows treats them as its own, so dragging, snapping and the
-// system menu work as they do on any window.
+// newWindow opens a window with the given options and no frame of the system's, since the page draws its own title bar
+// and buttons.
 func newWindow(options application.WebviewWindowOptions) *application.WebviewWindow {
 	options.Frameless = true
-	options.Windows.WebView2CompositionHosting = true
 	return application.Get().Window.NewWithOptions(options)
 }
 

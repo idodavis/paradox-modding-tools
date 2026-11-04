@@ -1,7 +1,7 @@
 /**
  * The hover card over an editor, in place of Monaco's own. When the pointer rests on a word or on a step of a data
  * call, its card and the problems on it show above it until the pointer moves away, so the lines below stay free to
- * hover and right-click.
+ * hover and right-click. Any card the pointer can move onto is kept the same way.
  */
 import { useDebounceFn } from "@vueuse/core";
 import * as monaco from "monaco-editor/editor/editor.api";
@@ -31,31 +31,16 @@ export function attachHover(
   detach: () => void;
 } {
   const settings = useSettingsStore();
-  const hover = shallowRef<Hover | null>(null);
-  // the position of the pointer a card is asked for, what the answer on show is about, and whether the pointer is on
-  // the card
+  const { card: hover, close: closeCard, closeLater, keep, hold, isHeld } = useHeldCard<Hover>();
+  // the position of the pointer a card is asked for, and what the answer on show is about
   let target: monaco.IPosition | null = null;
   let shown: monaco.IRange | null = null;
-  let onCard = false;
-  let timer: ReturnType<typeof setTimeout> | undefined;
 
   /** close takes the card down at once and forgets where the pointer was. */
   const close = (): void => {
-    clearTimeout(timer);
+    closeCard();
     target = null;
     shown = null;
-    onCard = false;
-    hover.value = null;
-  };
-  /** closeLater takes the card down after a moment, unless the pointer is on it by then. */
-  const closeLater = (): void => {
-    clearTimeout(timer);
-    timer = setTimeout(() => onCard || (hover.value = null), 300);
-  };
-  /** hold holds the card while the pointer is on it, and takes it down after a moment once the pointer leaves it. */
-  const hold = (on: boolean): void => {
-    onCard = on;
-    if (!on) closeLater();
   };
   /**
    * findCard finds the card at the pointer in a word and the problems on it and shows them, unless the pointer has
@@ -64,7 +49,7 @@ export function attachHover(
    */
   const findCard = useDebounceFn(async (word: editor.IWordAtPosition, pointer: monaco.IPosition) => {
     const card = await lsp.Hover(model.place.path, pointer.lineNumber, pointer.column);
-    if (onCard || target?.lineNumber !== pointer.lineNumber || target.column !== pointer.column) return;
+    if (isHeld() || target?.lineNumber !== pointer.lineNumber || target.column !== pointer.column) return;
     const { lineNumber } = pointer;
     const span = card?.range ?? new monaco.Range(lineNumber, word.startColumn, lineNumber, word.endColumn);
     shown = span;
@@ -86,7 +71,7 @@ export function attachHover(
       const position = event.target.type === monaco.editor.MouseTargetType.CONTENT_TEXT ? event.target.position : null;
       const word = position && codeEditor.getModel()?.getWordAtPosition(position);
       if (position && word && shown && monaco.Range.containsPosition(shown, position)) {
-        clearTimeout(timer);
+        keep();
         return;
       }
       target = position && word ? position : null;
@@ -110,4 +95,37 @@ export function attachHover(
       close();
     },
   };
+}
+
+/**
+ * useHeldCard keeps a card that the pointer can move onto. It returns the card on show, which is null while there is
+ * none, and the functions that take it down at once, take it down after a moment unless the pointer is on it by then,
+ * keep it up when the pointer comes back to what it is about, hold it while the pointer is on it, and tell whether the
+ * pointer is on it.
+ */
+export function useHeldCard<T>(): {
+  card: ShallowRef<T | null>;
+  close: () => void;
+  closeLater: () => void;
+  keep: () => void;
+  hold: (on: boolean) => void;
+  isHeld: () => boolean;
+} {
+  const card = shallowRef<T | null>(null);
+  let onCard = false;
+  let timer: ReturnType<typeof setTimeout> | undefined;
+  const close = (): void => {
+    clearTimeout(timer);
+    onCard = false;
+    card.value = null;
+  };
+  const closeLater = (): void => {
+    clearTimeout(timer);
+    timer = setTimeout(() => onCard || (card.value = null), 300);
+  };
+  const hold = (on: boolean): void => {
+    onCard = on;
+    if (!on) closeLater();
+  };
+  return { card, close, closeLater, keep: () => clearTimeout(timer), hold, isHeld: () => onCard };
 }

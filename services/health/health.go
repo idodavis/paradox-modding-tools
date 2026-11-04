@@ -742,7 +742,7 @@ func listUnused(ws *workspace.Session, mods *index.Index, sites []index.Site, wi
 // them the mod's copy leaves out, and how many of those are still used and how often. They are called by their kind in
 // the plural, such as "scripted triggers", or "names" where they are of more than one kind.
 func describeRemoved(ws *workspace.Session, mods *index.Index, finding *Finding, uses []Use) {
-	original, _ := lo.Find(finding.Sites, func(site lsp.Site) bool { return site.Place.ReadOnly })
+	original, _ := lo.Find(finding.Sites, func(site lsp.Site) bool { return site.Place.Origin == game.OriginVanilla })
 	kept, _ := lo.Find(finding.Sites, func(site lsp.Site) bool { return site.Kept })
 	position, _ := mods.FindFile(original.Place.Path)
 	databases := lo.Uniq(lo.Map(listFileDefinitions(mods, position), func(occurrence index.Occurrence, _ int) string {

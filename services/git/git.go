@@ -59,6 +59,12 @@ var findGit = sync.OnceValues(func() (string, error) {
 	return path, nil
 })
 
+// IsInstalled reports whether git is on the PATH. It looks once a run.
+func (git *Service) IsInstalled() bool {
+	_, err := findGit()
+	return err == nil
+}
+
 // Run runs git in a folder with the given arguments and returns its standard output, as run does. It then emits
 // git:changed with the folder, also when git failed, since a failed command can leave the repository changed.
 func (git *Service) Run(dir string, args ...string) (string, error) {

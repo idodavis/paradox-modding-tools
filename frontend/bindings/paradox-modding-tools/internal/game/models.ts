@@ -34,6 +34,25 @@ export interface DetectedInstall {
 }
 
 /**
+ * An Example is three definitions of one database that show how a mod and the game's files work together.
+ */
+export interface Example {
+    "database": string;
+
+    /**
+     * from the game's folder
+     */
+    "folder": string;
+    "names": string[] | null;
+
+    /**
+     * Modes is true where a mod changes one of the definitions by writing REPLACE: in front of its name, as the
+     * database's precedence row says. ListGames fills it.
+     */
+    "modes": boolean;
+}
+
+/**
  * A Game is one supported game with every fact that is its own. The tables beside it hold the facts it shares, each
  * row naming the games it holds for.
  */
@@ -51,6 +70,7 @@ export interface Game {
      */
     "descriptor"?: string;
     "guide": Guide;
+    "example": Example;
 }
 
 /**

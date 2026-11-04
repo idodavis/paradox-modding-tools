@@ -1,5 +1,5 @@
-// hover.go builds the hover card for a key or a value at a position in a file: what it is, what it takes or says, where
-// the game defines it and the scopes its statement runs in.
+// hover.go builds the hover card for a key or a value at a position in a file: what it is, what it takes or says and
+// where the game defines it.
 
 package lsp
 
@@ -24,14 +24,6 @@ import (
 	"paradox-modding-tools/services/workspace"
 )
 
-// A CardScope is one scope that script can name where a statement is written: the link that names it, such as root or
-// scope:target, the type the game gives it, and what it is.
-type CardScope struct {
-	Link  string `json:"link"`
-	Type  string `json:"type"`
-	About string `json:"about"`
-}
-
 // A CardDate is a date read in the mod's calendar: its era and the month's name as the mod names it.
 type CardDate struct {
 	Date  jomini.Date `json:"date"`
@@ -45,6 +37,7 @@ type Card struct {
 	What     string          `json:"what"`            // what it is: the database's singular, "effect", "keyword"
 	Class    string          `json:"class,omitempty"` // an operator's class
 	Blurb    string          `json:"blurb,omitempty"`
+	Quote    string          `json:"quote,omitempty"`   // the game's own text for the word: a localization key's
 	Takes    schema.Expected `json:"takes"`             // what the key's value may be
 	Need     string          `json:"need,omitempty"`    // whether a field is required: optional, always or conditional
 	About    string          `json:"about,omitempty"`   // what the database says of its definitions
@@ -59,7 +52,7 @@ type Card struct {
 	Weight   int             `json:"weight,omitempty"`  // a branch of a random list: its percent of the branches' numbers
 	Node     string          `json:"node,omitempty"`    // the event graph's id of the name; "" if the graph does not draw it
 	Within   []string        `json:"within,omitempty"`  // the definition the position is in, then the blocks inside it
-	Scopes   []CardScope     `json:"scopes,omitempty"`
+	Runs     string          `json:"runs,omitempty"`    // the scopes the dumps give a command, else "no restriction declared"
 	Date     *CardDate       `json:"date,omitempty"`
 	Color    string          `json:"color,omitempty"`  // a CSS color
 	Number   *float64        `json:"number,omitempty"` // the number a constant stands for
@@ -81,7 +74,7 @@ type Class struct {
 var Classes = []Class{
 	{ID: "effect", Label: "Effects", Declared: game.DeclaredEffect},
 	{ID: "trigger", Label: "Triggers", Declared: game.DeclaredTrigger},
-	{ID: "link", Label: "Links", Declared: game.DeclaredLink},
+	{ID: "link", Label: "Event targets", Declared: game.DeclaredLink},
 	{ID: "scope", Label: "Scopes"},
 	{ID: "function", Label: "Functions"},
 }
@@ -134,26 +127,13 @@ func (lsp *Service) describeHit(ws *workspace.Session, mods *index.Index, place 
 	tree, context := visitor.tree, &visitor.context
 	reference = resolveHit(mods, place, reference, context.References)
 	card := &Card{
-		Title: tree.Unquoted(span), Range: ToRange(tree.Src, tree.Lines, span), Scopes: listScopes(context),
-		Within: visitor.ancestors,
+		Title: tree.Unquoted(span), Range: ToRange(tree.Src, tree.Lines, span), Within: visitor.ancestors,
 	}
 	switch {
 	case reference.Database == game.Localization:
 		describeKey(ws, mods, place, card, reference)
 	case reference.Name != "":
-		sites, winner := listSites(ws, mods, place, reference)
-		card.What, card.Sites, card.Image, card.Color = game.DescribeDefinition(reference.Database, false),
-			MakeSites(ws, mods, sites, winner), describeImage(mods, reference), findDefinedColor(ws, mods, winner)
-		if slices.Contains(ws.Schema.FireDatabases, reference.Database) {
-			card.Node = reference.ToID()
-		}
-		if database := ws.Schema.Databases[reference.Database]; database != nil {
-			card.About, card.Returns, card.Command = database.Definition.Blurb.Value, returnsLabels[database.Callable.Shape],
-				lo.Ternary(len(card.Sites) > 0, database.Callable.Command, "")
-		}
-		if reference.Database == game.Constant {
-			describeNumber(card, tree, reference.Span)
-		}
+		describeReference(ws, mods, place, card, visitor, reference)
 	case tree.Statements[visitor.statement].Value.Contains(visitor.offset):
 		describeValue(card, ws, visitor)
 		if date, ok := findDate(tree, visitor.statement, context); ok {
@@ -180,6 +160,36 @@ func (lsp *Service) describeHit(ws *workspace.Session, mods *index.Index, place 
 		return nil
 	}
 	return card
+}
+
+// describeReference fills a card for a name that refers to a definition: what kind it is, the entries that define it,
+// its image and color, and what its database says of it. A constant also gets its number.
+func describeReference(ws *workspace.Session, mods *index.Index, place workspace.Place, card *Card, visitor *hoverVisitor,
+	reference schema.Reference) {
+	sites, winner := listSites(ws, mods, place, reference)
+	card.What, card.Sites, card.Image, card.Color = game.DescribeDefinition(reference.Database, false),
+		MakeSites(ws, mods, listEntries(ws, mods, sites), winner), describeImage(mods, reference), findDefinedColor(ws, mods, winner)
+	if slices.Contains(ws.Schema.FireDatabases, reference.Database) {
+		card.Node = reference.ToID()
+	}
+	if database := ws.Schema.Databases[reference.Database]; database != nil {
+		card.About, card.Returns, card.Command = database.Definition.Blurb.Value, returnsLabels[database.Callable.Shape],
+			lo.Ternary(len(sites) > 0, database.Callable.Command, "")
+	}
+	if reference.Database == game.Constant {
+		describeNumber(card, visitor.tree, reference.Span)
+	}
+}
+
+// listEntries returns the given definitions that really define their name. It leaves out a second name of a definition,
+// such as a trait's group, a name that a command makes, such as a saved scope or a flag, and a name that a definition
+// only switches on, such as a parameter.
+func listEntries(ws *workspace.Session, mods *index.Index, sites []index.Site) []index.Site {
+	return lo.Reject(sites, func(site index.Site, _ int) bool {
+		occurrence := mods.Occurrence(site)
+		database := mods.Databases.Texts[occurrence.Database]
+		return occurrence.Alias || slices.Contains(game.Links, database) || occurrence.Nested && ws.Game.IsSet(database)
+	})
 }
 
 // A hoverVisitor finds the innermost statement of a tree at an offset, and its context.
@@ -255,8 +265,7 @@ func describeMessage(ws *workspace.Session, tree *jomini.Tree, place workspace.P
 func describeKey(ws *workspace.Session, mods *index.Index, place workspace.Place, card *Card, reference schema.Reference) {
 	text, _, _ := ws.LookupText(mods, reference.Name)
 	sites, winner := listSites(ws, mods, place, reference)
-	card.What, card.Blurb, card.Sites = "localization key", text, MakeSites(ws, mods, sites, winner)
-	card.Scopes = nil
+	card.What, card.Quote, card.Sites = "localization key", text, MakeSites(ws, mods, sites, winner)
 }
 
 // describeFunction fills a card for the step of a data call at an offset, and returns false if there is none. A step of
@@ -296,7 +305,7 @@ func listSites(ws *workspace.Session, mods *index.Index, place workspace.Place, 
 		return sites, nil
 	}
 	keeping, others := lo.FilterReject(sites, func(site index.Site, _ int) bool {
-		kept, _ := mods.ResolveSite(winner, site)
+		kept, _, _ := mods.ResolveSite(winner, site)
 		return kept
 	})
 	return slices.Concat(keeping, others), &winner
@@ -361,26 +370,6 @@ func findHit(visitor *hoverVisitor) (jomini.Span, schema.Reference) {
 		return current.Tag, schema.Reference{}
 	}
 	return jomini.Span{}, schema.Reference{}
-}
-
-// listScopes returns the scopes script can name where a statement is written, the latest saved first.
-func listScopes(context *schema.Context) []CardScope {
-	holder := context.Parent
-	if context.Defines || holder == nil {
-		holder = context
-	}
-	scopes := []CardScope{
-		{Link: game.ScopeLinks.This, Type: holder.Scope, About: "the scope this line runs in"},
-		{Link: game.ScopeLinks.Root, Type: holder.Root, About: "the scope the definition starts in"},
-		{Link: game.ScopeLinks.Previous, Type: lo.FirstOrEmpty(holder.Previous), About: "the scope before this one"},
-	}
-	latest := slices.Clone(context.Saved)
-	slices.Reverse(latest)
-	for _, saved := range lo.UniqBy(latest, func(saved schema.Saved) string { return saved.Name }) {
-		link := game.SavedScopes + ":" + saved.Name
-		scopes = append(scopes, CardScope{Link: link, Type: saved.Type, About: "saved earlier in the definition"})
-	}
-	return lo.Filter(scopes, func(scope CardScope, _ int) bool { return scope.Type != "" })
 }
 
 // describeImage returns the header of the image file a reference names. It returns nil if the reference is not to a
@@ -462,15 +451,16 @@ func resolveDate(calendar app.Calendar, date jomini.Date) *CardDate {
 	return card
 }
 
-// describeCommand fills a card for an effect, a trigger or a link: what it does, what its value takes and the scope it
-// takes or switches to.
+// describeCommand fills a card for an effect, a trigger or a link: what it does, the scopes the dumps say it runs in,
+// or that they name none, what its value takes and the scope it takes or switches to. A command the schema does not
+// know gets only what it is.
 func describeCommand(card *Card, visitor *hoverVisitor) {
 	card.What = findClass(visitor.context.Declaration).ID
 	command := visitor.context.Command
 	if command == nil {
 		return
 	}
-	card.Blurb = command.Blurb
+	card.Blurb, card.Runs = command.Blurb, cmp.Or(strings.Join(command.Scopes, ", "), "no restriction declared")
 	if visitor.tree.Statements[visitor.statement].IsBlock() {
 		card.Leads = command.Target
 	} else {

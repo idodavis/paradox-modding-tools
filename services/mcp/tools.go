@@ -3,6 +3,7 @@
 package mcp
 
 import (
+	"cmp"
 	"context"
 	"crypto/rand"
 	"errors"
@@ -90,7 +91,7 @@ type textSearch struct {
 
 // A guideTopic names one topic of PMT's guide.
 type guideTopic struct {
-	Topic string `json:"topic,omitempty" jsonschema:"pages, workflow or workspace; leave it out for the list"`
+	Topic string `json:"topic,omitempty" jsonschema:"pages, workflow, rules or workspace; leave it out for the list"`
 }
 
 // A renaming is a rename of the name at a position.
@@ -129,9 +130,11 @@ const defaultLimit = 50
 
 // The guide's topics. Each says what PMT does in the words its pages use.
 const (
-	guideTopics = `PMT's guide has three topics:
+	guideTopics = `PMT's guide has four topics:
 - pages: each page of PMT and its controls, and what show can bring to the front on it.
 - workflow: how to make a change with PMT's tools, from finding a name to checking the file.
+- rules: for each of the game's folders, which copy the game keeps when several definitions share a name, and what a ` +
+		`mod writes to override one.
 - workspace: the open workspace's game, its mods in load order with their folders, and the game's folders.`
 	guideWorkflow = `How to make a change with PMT:
 1. Find what to change. find_symbols finds a definition by its name in the mods and the game; definition and ` +
@@ -254,7 +257,8 @@ func (mcp *Service) addPageTools(server *sdk.Server) {
 // show, and the changes that preview first.
 func (mcp *Service) addAppTools(server *sdk.Server) {
 	sdk.AddTool(server, &sdk.Tool{Name: "read_guide", Description: "Reads PMT's guide: its pages and their " +
-		"controls, how to make a change with PMT, or the open workspace's mods and folders."}, answer(mcp.readGuide))
+		"controls, how to make a change with PMT, which copy the game keeps of a definition in each folder, or the " +
+		"open workspace's mods and folders."}, answer(mcp.readGuide))
 	sdk.AddTool(server, &sdk.Tool{Name: "describe_view", Description: "Says what the user has in front of them in " +
 		"PMT: the page shown, what it shows, and the file, lines or item they have selected."}, answer(mcp.describeView))
 	sdk.AddTool(server, &sdk.Tool{Name: "rename", Description: "Renames the name at a position in every mod " +
@@ -298,10 +302,12 @@ func (mcp *Service) readGuide(request guideTopic) (string, error) {
 		return mcp.describePages(), nil
 	case "workflow":
 		return guideWorkflow, nil
+	case "rules":
+		return mcp.describeRules()
 	case "workspace":
 		return mcp.describeWorkspace()
 	}
-	return "", fmt.Errorf("PMT's guide has no topic %q; its topics are pages, workflow and workspace", request.Topic)
+	return "", fmt.Errorf("PMT's guide has no topic %q; its topics are pages, workflow, rules and workspace", request.Topic)
 }
 
 // describePages returns the guide's pages topic: each page's help as the page itself gives it, then what show can
@@ -335,21 +341,53 @@ func (mcp *Service) describeWorkspace() (string, error) {
 	var guide strings.Builder
 	fmt.Fprintf(&guide, "Game: %s %s, installed at %s. Its files are read only.\n", state.Game.Name,
 		state.Install.Version, state.Install.Path)
-	fmt.Fprintf(&guide, "Language: %s, beside the base language, %s.\n\nMods in load order:\n", ws.Language,
-		game.BaseLanguage)
+	fmt.Fprintf(&guide, "Language: %s, beside the base language, %s.\n", ws.Language, game.BaseLanguage)
+	if guided, _ := mcp.Workspace.Config.LookupSetting("", settingGuidance); guided == "true" {
+		guide.WriteString("The user has Guidance for new modders on: explain the game's terms when you use them.\n")
+	}
+	guide.WriteString("\nMods in load order:\n")
 	for _, mod := range mcp.Workspace.ListMods() {
 		fmt.Fprintf(&guide, "- %s (id %s): %s%s\n", mod.Descriptor.Name, mod.ID, mod.Dir,
 			lo.Ternary(mod.Broken, ", a folder that is missing", ""))
 	}
 	guide.WriteString("\nThe game's folders and what each holds:\n")
+	for _, database := range listFolderDatabases(ws) {
+		fmt.Fprintf(&guide, "- %s: %s\n", database.Row.Folder, game.DescribeDefinition(database.Name, true))
+	}
+	return guide.String(), nil
+}
+
+// describeRules returns the guide's rules topic: each way the open game keeps one copy when several definitions
+// share a name, and what a mod writes to override one, followed by the folders where the game does so. The way that
+// holds for the most folders comes first. It returns an error if no workspace is open.
+func (mcp *Service) describeRules() (string, error) {
+	ws, err := mcp.Workspace.Session()
+	if err != nil {
+		return "", err
+	}
+	folders := map[string][]string{}
+	for _, database := range listFolderDatabases(ws) {
+		sentence := database.Precedence.Describe()
+		folders[sentence] = append(folders[sentence], database.Row.Folder)
+	}
+	sentences := slices.SortedFunc(maps.Keys(folders), func(a, b string) int {
+		return cmp.Or(len(folders[b])-len(folders[a]), strings.Compare(a, b))
+	})
+	var guide strings.Builder
+	guide.WriteString("Which copy the game keeps when several definitions share a name, and the folders where it does so:\n")
+	for _, sentence := range sentences {
+		fmt.Fprintf(&guide, "\n%s\n%s\n", sentence, strings.Join(folders[sentence], ", "))
+	}
+	return guide.String(), nil
+}
+
+// listFolderDatabases returns the databases of a session's game that have a folder, sorted by folder.
+func listFolderDatabases(ws *workspace.Session) []*schema.Database {
 	databases := lo.Filter(slices.Collect(maps.Values(ws.Schema.Databases)), func(database *schema.Database, _ int) bool {
 		return database.Row.Folder != ""
 	})
 	slices.SortFunc(databases, func(a, b *schema.Database) int { return strings.Compare(a.Row.Folder, b.Row.Folder) })
-	for _, database := range databases {
-		fmt.Fprintf(&guide, "- %s: %s\n", database.Row.Folder, game.DescribeDefinition(database.Name, true))
-	}
-	return guide.String(), nil
+	return databases
 }
 
 // buildReport returns Health's report for the workspace's load order, with the findings of its groups that pass the

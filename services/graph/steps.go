@@ -162,7 +162,7 @@ func listSteps(ws *workspace.Session, mods *index.Index, tree *jomini.Tree, firi
 func makeStep(ws *workspace.Session, mods *index.Index, tree *jomini.Tree, statement, definition int32) Step {
 	current := tree.Statements[statement]
 	key, holder := tree.Text(current.Key), tree.Text(tree.Statements[current.Parent].Key)
-	keyword, isKeyword := game.LookupKeyword("", holder, key)
+	keyword, isKeyword := ws.Game.LookupKeyword("", holder, key)
 	_, iterates := game.MatchListIterator(key)
 	_, isCommand := ws.Schema.FindCommand(key)
 	step := Step{
@@ -174,7 +174,7 @@ func makeStep(ws *workspace.Session, mods *index.Index, tree *jomini.Tree, state
 	case keyword.Weighted:
 		step.Key, step.Kind, step.Weight = holder, kindWeight, key
 		step.Modifiers = lo.CountBy(slices.Collect(tree.Children(statement)), func(child int32) bool {
-			row, _ := game.LookupKeyword(game.ShapeValue, "", tree.Text(tree.Statements[child].Key))
+			row, _ := ws.Game.LookupKeyword(game.ShapeValue, "", tree.Text(tree.Statements[child].Key))
 			return row.Modifies
 		})
 	case iterates && !isKeyword && isCommand:

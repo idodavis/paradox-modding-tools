@@ -122,10 +122,11 @@ func listScripted(ws *workspace.Session, mods *index.Index, class string) []Lexi
 	return rows
 }
 
-// makeScripted returns the lexicon row of a scripted definition: how a call to the copy the game keeps is written,
-// with the parameters its body reads, where that copy is and the first places that use the name.
+// makeScripted returns the lexicon row of a scripted definition: where the copy the game keeps is, the first places
+// that use the name, and how a call to it is written with the parameters its body reads. A definition that reads no
+// parameter has no usage, since it is called as name = yes.
 func makeScripted(ws *workspace.Session, mods *index.Index, class string, reference schema.Reference, kept index.Site) LexiconRow {
-	usage := reference.Name + " = yes"
+	usage := ""
 	if tree, statement, err := ws.FindStatement(mods, kept); err == nil {
 		parameters := lo.Filter(slices.Sorted(maps.Keys(schema.ListParameters(tree, statement).Children)), func(key string, _ int) bool {
 			return !strings.HasPrefix(key, "<")

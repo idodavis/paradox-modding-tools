@@ -66,6 +66,10 @@ var Tasks = []Task{
 	{Name: "fix-problems", Title: "Fix this file's problems", Chip: "file",
 		Text: "Fix the problems of the file I have open in PMT: the attached file, or the one describe_view names. " +
 			"List them with diagnose, change only what each one needs, and diagnose the file again before you finish."},
+	{Name: "explain-file", Title: "Explain this file", Chip: "file",
+		Text: "Explain the file I have open in PMT: the attached file, or the one describe_view names. Go through it " +
+			"entry by entry and say what each one does, in the game's own words. Use hover and definition for each " +
+			"name you explain."},
 	{Name: "explain-page", Title: "Explain this page", Chip: "page",
 		Text: "Explain the PMT page I have in front of me: what it shows here and what its controls do. " +
 			"describe_view says which page and what it shows, and read_guide's pages topic describes each page."},
@@ -84,6 +88,9 @@ const ServerName = "pmt"
 
 // settingPort is the setting that holds the port the server listens on.
 const settingPort = "agents.port"
+
+// settingGuidance is the setting that says the user is new to modding.
+const settingGuidance = "guidance.newModders"
 
 // tokenFile is the file in PMT's app folder that holds the token.
 const tokenFile = "mcp-token"
@@ -118,6 +125,8 @@ Working rules:
 - The user's own: saving the editor's text, uploading to Steam and Settings. Never do these for them.
 - Showing: show brings a file, a page or a Wiki look-up to the front in PMT; describe_view says what the user has in ` +
 	`front of them.
+- Before overriding or adding a definition, read_guide rules says which copy the game keeps; read_guide workspace ` +
+	`says whether the user is new to modding.
 
 Call read_guide for PMT's pages and their controls, how to make a change with PMT, and the open workspace's mods and ` +
 	`folders.`

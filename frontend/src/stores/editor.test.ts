@@ -22,6 +22,8 @@ function place(key: string, format = Format.FormatScript): Place {
     readOnly: false,
     isDir: false,
     drawable: false,
+    about: "",
+    readme: "",
   };
 }
 
@@ -99,7 +101,7 @@ describe("groups", () => {
     expect(first?.tabs.map((tab) => tab.id)).toEqual(["file:b", "file:c"]);
     expect(second?.tabs.map((tab) => tab.id)).toEqual(["file:a", "file:c"]);
     editor.activate(first?.id ?? "");
-    editor.move("file:b", "new", 0);
+    editor.move("file:b", first?.id ?? "", "right");
     expect(editor.layout().rows[0]?.columns.map((group) => group.tabs.map((tab) => tab.id))).toEqual([
       ["file:c"],
       ["file:b"],

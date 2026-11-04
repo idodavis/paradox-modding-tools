@@ -156,14 +156,8 @@ const (
 	readmeDoc = "x/readme.txt"
 )
 
-// newDocSchema returns a schema that knows the scope types the doc tests resolve the docs' scope phrases to.
-func newDocSchema() *Schema {
-	docs := &Schema{Scopes: map[string]ScopeType{}}
-	for _, scope := range []string{"character", "location", "country", "interest_group", "story_cycle"} {
-		docs.Scopes[scope] = ScopeType{Name: scope}
-	}
-	return docs
-}
+// newDocSchema returns an empty schema for the doc tests to read docs into.
+func newDocSchema() *Schema { return &Schema{} }
 
 // TestParseDoc checks that each way the games' doc files are written gives its facts as claims.
 func TestParseDoc(t *testing.T) {
@@ -186,8 +180,6 @@ func TestParseDoc(t *testing.T) {
 			}},
 		{"key and text", readmeDoc, "# fire_only_once: yes/no - whether the disaster can occur again\n",
 			"fire_only_once", func(field *Field) bool { return strings.Contains(field.Blurb.Value, "occur again") }},
-		{"inline root", readmeDoc, "#trait = {\n#\tallow = { } # trigger to decide if it is allowed (root = character)\n#}\n",
-			"allow", func(field *Field) bool { return field.Scope.Value == "character" }},
 		{"comment run above", briefDoc, "key = {\n\t# full path to the icon. Required, an error is logged if missing\n\ticon = \"gfx/x.dds\"\n}\n",
 			"icon", func(field *Field) bool {
 				return field.Required.Value == "always" && field.Value.Value.Type == ValueText
@@ -205,13 +197,9 @@ func TestParseDoc(t *testing.T) {
 		{"type term with underscores", readmeDoc, "#\ttraded_quantity = fixed_point # how many units are moved\n",
 			"traded_quantity", func(field *Field) bool { return field.Value.Value.Type == ValueNumber }},
 		{"placeholder opening a bullet", readmeDoc, "# - allow: <trigger> can the building be built (root = location)\n",
-			"allow", func(field *Field) bool {
-				return field.Shape.Value == game.ShapeTriggers && field.Scope.Value == "location"
-			}},
+			"allow", func(field *Field) bool { return field.Shape.Value == game.ShapeTriggers }},
 		{"shape opening the text above", briefDoc, "key = {\n\t# Effect is executed when the owner dies\n\t# root - active story cycle\n\ton_owner_death = {}\n}\n",
-			"on_owner_death", func(field *Field) bool {
-				return field.Shape.Value == game.ShapeEffects && field.Scope.Value == "story_cycle"
-			}},
+			"on_owner_death", func(field *Field) bool { return field.Shape.Value == game.ShapeEffects }},
 		{"nested at its path", briefDoc, "key = {\n\tranks = {\n\t\tliege_modifier = { } # what the liege gets\n\t}\n}\n",
 			"ranks/liege_modifier", func(field *Field) bool { return field.Blurb.Value == "what the liege gets" }},
 		{"header heads a nested statement", briefDoc, "key = {\n\toption = {\n\t\t# ### Brief: weight ( int )\n\t\tweight = 1\n\t}\n}\n",
@@ -238,20 +226,17 @@ func findField(field *Field, path string) *Field {
 	return field
 }
 
-// TestParseDocDatabase checks what a doc file says of its database as a whole: its blurb and root scope, and that a
-// data file named like a doc is not read as one.
+// TestParseDocDatabase checks what a doc file says of its database as a whole: its blurb, and that a data file named
+// like a doc is not read as one.
 func TestParseDocDatabase(t *testing.T) {
 	docs := newDocSchema()
-	text := "# Reference\nA building of a state.\n\nexample = {\n\t# root = owning country or no scope\n\tgroup = x\n}\n"
+	text := "# Reference\nA building of a state.\n\nexample = {\n\tgroup = x\n}\n"
 	reader, ok := docs.parseDoc(text, "x/x.md", game.Database{})
-	if !ok || strings.Join(reader.blurb, " ") != "A building of a state." || reader.scope != "country" {
-		t.Fatalf("database blurb and root: %v", reader)
+	if !ok || strings.Join(reader.blurb, " ") != "A building of a state." {
+		t.Fatalf("database blurb: %v", reader)
 	}
 	if _, ok := docs.parseDoc("a = 1\nb = 2\nc = { d = 3 }\n", "x/00_example_templates.txt", game.Database{}); ok {
 		t.Error("a data file named like a doc is read as one")
-	}
-	if scope, _ := docs.resolveScopePhrase("interest group"); scope != "interest_group" {
-		t.Errorf("a scope of two terms: %q", scope)
 	}
 }
 
@@ -358,7 +343,7 @@ func TestBuildInstalls(t *testing.T) {
 				sources[field.Source]++
 				for name, claim := range map[string]game.Source{
 					"blurb": field.Blurb.Source, "value": field.Value.Source, "default": field.Default.Source,
-					"required": field.Required.Source, "scope": field.Scope.Source,
+					"required": field.Required.Source,
 				} {
 					if claim == game.SourceDocs {
 						facts[name]++

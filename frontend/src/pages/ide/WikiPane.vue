@@ -25,8 +25,6 @@ const props = defineProps<{ place: Place | null }>();
 
 /** How many pages the strip shows as tabs before the rest go in a menu. */
 const PAGE_TABS = 3;
-/** How many example uses a lexicon row lists. */
-const EXAMPLES = 3;
 const TABS = [
   { label: "Pages", value: "pages" },
   { label: "Lexicon", value: "lexicon" },
@@ -267,33 +265,22 @@ function jump(index: number): void {
           class="min-h-0 flex-1"
           @scroll="markLetter"
         >
+          <!-- one entry: its name with where it runs and leads, where a scripted one is defined, then what it does
+               and how a call that takes parameters is written -->
           <div class="flex flex-col gap-1.5 border-b border-default px-3.5 py-2.5">
-            <div class="flex flex-wrap items-center gap-1.5">
+            <div class="flex flex-wrap items-center gap-x-2 gap-y-1">
               <span class="font-mono text-13 font-semibold break-all text-highlighted">{{ item.name }}</span>
               <UBadge v-for="scope in item.scopes ?? []" :key="scope" :label="scope" size="sm" />
               <span v-if="item.target" class="font-mono text-11 text-dimmed">→ {{ item.target }}</span>
+              <SourceLink v-if="item.defined" :place="item.defined.place" :line="item.defined.line" class="ms-auto" />
             </div>
             <p v-if="item.blurb" class="text-12 text-toned">{{ item.blurb }}</p>
-            <p v-if="item.defined" class="flex flex-wrap items-center gap-1 text-11 text-dimmed">
-              Scripted, in <SourceLink :place="item.defined.place" :line="item.defined.line" />
-            </p>
             <ScriptSnippet
               v-if="item.usage"
               :text="item.usage"
               language="paradox-script"
               class="rounded-md border border-default px-2.5 pb-1.5"
             />
-            <div v-if="item.examples?.length" class="flex flex-col items-start gap-0.5">
-              <SourceLink
-                v-for="example in item.examples.slice(0, EXAMPLES)"
-                :key="`${example.place.key}:${example.line}`"
-                :place="example.place"
-                :line="example.line"
-              />
-              <span v-if="item.examples.length > EXAMPLES" class="text-11 text-dimmed"
-                >+{{ item.examples.length - EXAMPLES }} more</span
-              >
-            </div>
           </div>
         </UScrollArea>
         <nav class="flex w-6 shrink-0 flex-col items-center overflow-y-auto border-s border-default py-1 text-10">

@@ -45,7 +45,7 @@ const EVENTS: { [E in keyof Events.CustomEvents]?: EventRow<E> } = {
   "workspace:closed": { stale: () => WORKSPACE_KEYS, forgets: true },
   "install:scanned": { stale: () => [keys.installs, keys.state] },
   // a changed file is read again, with the listings and places that name it, the pictures drawn from files and the
-  // git statuses, and the mods' descriptors when a descriptor changed
+  // git statuses, what the start page reads of them, and the mods' descriptors when a descriptor changed
   "fs:changed": {
     stale: ({ path, descriptor }) => [
       keys.file(path),
@@ -57,10 +57,12 @@ const EVENTS: { [E in keyof Events.CustomEvents]?: EventRow<E> } = {
         .getEntries({ key: keys.gits })
         .filter((entry) => isGitStatus(entry.key))
         .map((entry) => entry.key),
+      keys.leftOff,
     ],
   },
-  "git:changed": { stale: (dir) => [keys.git(dir)] },
-  "release:changed": { stale: (modId) => [keys.release(modId)] },
+  // what the start page reads of the repositories is made stale last, after the reads it is made of
+  "git:changed": { stale: (dir) => [keys.git(dir), keys.leftOff] },
+  "release:changed": { stale: (modId) => [keys.release(modId), keys.ownListings] },
   "wiki:updated": { stale: () => [keys.wiki] },
   "errorlog:changed": { stale: () => [errorLogQuery.key] },
   "game:exited": { stale: () => [keys.state] },

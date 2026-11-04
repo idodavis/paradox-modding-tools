@@ -11,7 +11,7 @@ import { computed, nextTick, shallowRef, useTemplateRef } from "vue";
 
 import type { Task } from "@services/mcp/models";
 import { abbreviate, describeAge, plural } from "../lib/format";
-import { agentsQuery, tasksQuery } from "../queries";
+import { tasksQuery } from "../queries";
 import { describeTitle, useAgentStore, type SessionRecord } from "../stores/agent";
 import { listLatestEdits } from "../stores/edits";
 import { COMMAND_BUS, THIS_WINDOW } from "../stores/windows";
@@ -22,7 +22,6 @@ const IS_WINDOW = THIS_WINDOW === "agent";
 
 const agent = useAgentStore();
 const commandBus = useEventBus(COMMAND_BUS);
-const { data: agents } = useQuery(agentsQuery);
 const { data: tasks } = useQuery(tasksQuery);
 const field = useTemplateRef("field");
 // whether the session shows over the whole window, and the title being typed while it is renamed
@@ -30,16 +29,13 @@ const isFullscreen = shallowRef(false);
 const draft = shallowRef<string | null>(null);
 
 const session = computed(() => agent.active);
-const ready = computed(() => (agents.value ?? []).filter((row) => row.program));
 const changes = computed(() => (session.value ? listLatestEdits(session.value) : []));
-// the agent a task starts with: the one used last, else the first that can start
-const taskAgent = computed(() => ready.value.find((row) => row.id === agent.lastAgent) ?? ready.value[0]);
 // the sessions to resume, the latest first: those not archived whose agent can start, each with its agent's name
 const recent = computed(() =>
   agent.records
     .filter((record) => !record.isArchived)
     .flatMap((record) => {
-      const row = ready.value.find((one) => one.id === record.agent);
+      const row = agent.ready.find((one) => one.id === record.agent);
       return row ? [{ record, line: `${row.name} · ${describeAge(new Date(record.updatedAt), "short")}` }] : [];
     })
     .slice(0, 8),
@@ -72,7 +68,7 @@ const menu = computed(() => {
       {
         label: "Another agent",
         icon: "i-lucide-bot",
-        children: ready.value.map((row) => ({ label: row.name, onSelect: () => agent.start(row.id) })),
+        children: agent.ready.map((row) => ({ label: row.name, onSelect: () => agent.start(row.id) })),
       },
       { label: "Agents and tools", icon: "i-lucide-settings", onSelect: openSettings },
     ],
@@ -108,8 +104,8 @@ function endRename(isKept: boolean): void {
 
 /** runTask starts a session with the agent used last and sends a starter task once the agent is ready. */
 async function runTask(task: Task): Promise<void> {
-  if (!taskAgent.value) return;
-  const taskSession = agent.start(taskAgent.value.id);
+  if (!agent.current) return;
+  const taskSession = agent.start(agent.current.id);
   await until(() => taskSession.state).not.toBe("starting");
   if (taskSession.state === "idle") await agent.prompt(taskSession, task.text, []);
 }
@@ -264,7 +260,7 @@ async function runTask(task: Task): Promise<void> {
     <div v-else-if="!session" class="flex min-h-0 flex-1 flex-col gap-2 overflow-y-auto px-3.5 py-4">
       <span class="text-12 text-dimmed">Start a session with an agent, or with a task.</span>
       <div
-        v-for="row in ready"
+        v-for="row in agent.ready"
         :key="row.id"
         class="flex items-center gap-2.5 rounded-md border border-default bg-muted px-2.5 py-2"
       >
@@ -289,7 +285,7 @@ async function runTask(task: Task): Promise<void> {
           </span>
         </button>
       </template>
-      <template v-if="taskAgent">
+      <template v-if="agent.current">
         <UButton
           v-for="task in tasks ?? []"
           :key="task.name"

@@ -139,12 +139,15 @@ export const useWindowsStore = defineStore("windows", () => {
     },
   });
 
-  /** What this window holds, as the others see it. The active file goes as a copy, since a message carries no proxy. */
+  /**
+   * What this window holds, as the others see it. The start page is no file. The active file goes as a copy, since a
+   * message carries no proxy.
+   */
   const state = computed<WindowState>(() => {
     const active = editor.activeFile();
     return {
       name: THIS_WINDOW,
-      files: [...new Set(editor.listTabs().map((tab) => tab.key))],
+      files: [...new Set(editor.listTabs().flatMap((tab) => (tab.start ? [] : tab.key)))],
       active: active ? { ...active } : null,
     };
   });
@@ -154,7 +157,7 @@ export const useWindowsStore = defineStore("windows", () => {
     if (data.type === "state") updateWindow(data.state);
     else if (data.type === "tab-requested") {
       const tab = editor.listTabs().find((other) => other.id === data.tab);
-      if (!tab) return;
+      if (!tab || tab.start) return;
       link(data.from).post({ type: "tab-handed", from: THIS_WINDOW, tabs: toHanded(tab) });
       editor.close(tab.id);
     } else if (data.type === "closing" && THIS_WINDOW === "main") receive(data);
@@ -253,7 +256,8 @@ export const useWindowsStore = defineStore("windows", () => {
 
   /**
    * popOut opens the window of the given name, or brings it to the front if it is open. The name "editor" is the next
-   * free editor window. A window it opens takes the tabs with the given ids, and its URL carries the given query.
+   * free editor window. A window it opens takes the tabs with the given ids, and its URL carries the given query. The
+   * start page stays in the main window.
    */
   const popOut = (name: WindowName, tabIds: string[] = [], query: Record<string, string> = {}): void => {
     const target = name === "editor" ? resolveEditor() : name;
@@ -264,7 +268,7 @@ export const useWindowsStore = defineStore("windows", () => {
     const tool = WORKSPACE_TOOLS.find((candidate) => `page:${candidate}` === target);
     const route = router.resolve({ name: tool ?? "workspace-ide", params: { id: workspace.activeId() } });
     const url = `/?${new URLSearchParams({ window: target, ...query })}${route.href}`;
-    const tabs = tabIds.flatMap((id) => editor.listTabs().find((tab) => tab.id === id) ?? []);
+    const tabs = tabIds.flatMap((id) => editor.listTabs().find((tab) => tab.id === id && !tab.start) ?? []);
     open({ name: target, url, tabs: tabs.flatMap(toHanded) });
   };
 

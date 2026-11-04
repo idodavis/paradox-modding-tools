@@ -61,8 +61,10 @@ const file = computed(() => detail.slice(folder.value.length));
       :style="{ color: `var(--ui-${mark.color})` }"
     />
     <span class="flex min-w-0 grow" :class="dense ? 'items-center gap-2' : 'flex-col'">
-      <span :title="message" :class="dense ? 'min-w-0 truncate' : 'line-clamp-2 text-13 break-words text-highlighted'">
-        <slot name="message">{{ message }}</slot>
+      <span :class="dense ? 'min-w-0 truncate' : 'line-clamp-2 text-13 break-words text-highlighted'">
+        <slot name="message"
+          ><span :title="message">{{ message }}</span></slot
+        >
       </span>
       <span v-if="detail || $slots.detail" class="flex min-w-0 items-center gap-1.5">
         <slot name="detail">

@@ -38,11 +38,12 @@ const workspace = useWorkspaceStore();
 const { data: codes } = useQuery(codesQuery);
 const { data: levels } = useQuery(levelsQuery);
 const mark = computed(() => levels.value?.find((one) => one.id === finding.level));
+const code = computed(() => codes.value?.find((one) => one.id === finding.code));
 /**
  * Whether the finding is of a name nothing defines, the one check whose codes have an elsewhere message. Its places
  * use the name.
  */
-const isMissing = computed(() => !!codes.value?.find((one) => one.id === finding.code)?.elsewhere);
+const isMissing = computed(() => !!code.value?.elsewhere);
 /** The line under the title, after the level and the check: what the name is, and how often it is used or found. */
 const subtitle = computed(() => {
   const frequency = isMissing.value ? `used ${describeCount(finding.count)} times` : plural(finding.count, "place");
@@ -150,6 +151,9 @@ function describeSite(site: Site): string {
     </template>
     <HealthSection title="What's wrong">
       <p class="max-w-[74ch] text-13 leading-5.5 text-toned"><FactText :parts="finding.message" /></p>
+      <p v-if="code?.advice" class="max-w-[74ch] text-12 leading-5 text-dimmed">
+        <span class="font-medium text-toned">What to do:</span> {{ code.advice }}
+      </p>
       <p v-if="!sites.length" class="text-12 text-dimmed">This finding points at no place.</p>
     </HealthSection>
     <HealthSection v-if="finding.why?.length" :title="`Why ${finding.facts?.winner}'s copy wins`">

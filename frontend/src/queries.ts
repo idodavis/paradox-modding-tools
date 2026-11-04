@@ -58,6 +58,8 @@ export const keys = {
   graph: ["graph"] as const,
   wiki: ["wiki"] as const,
   git: (dir: string) => [...KINDS.gits, dir] as const,
+  leftOff: [...KINDS.gits, "left-off"] as const,
+  ownListings: [...KINDS.releases, "own"] as const,
   gitStatus: (dir: string) => [...KINDS.gits, dir, GIT_STATUS] as const,
   release: (modId: string) => [...KINDS.releases, modId] as const,
   lsp: ["lsp"] as const,
@@ -145,9 +147,19 @@ export const copiesQuery = defineQueryOptions((path: string) => ({
   query: () => workspace.ListCopies(path),
 }));
 export const modFolderQuery = defineQueryOptions(
-  ({ workspaceId, dir, name }: { workspaceId: string; dir: string; name: string }) => ({
-    key: ["workspace", "mod-folder", workspaceId, dir, name],
-    query: () => workspace.ResolveModFolder(workspaceId, dir, name),
+  ({ installId, dir, name }: { installId: string; dir: string; name: string }) => ({
+    key: ["workspace", "mod-folder", installId, dir, name],
+    query: () => workspace.ResolveModFolder(installId, dir, name),
+  }),
+);
+export const modCheckQuery = defineQueryOptions(({ installId, dir }: { installId: string; dir: string }) => ({
+  key: ["workspace", "mod-check", installId, dir],
+  query: () => workspace.CheckModFolder(installId, dir),
+}));
+export const precedenceQuery = defineQueryOptions(
+  ({ gameId, database, folder }: { gameId: string; database: string; folder: string }) => ({
+    key: ["workspace", "precedence", gameId, database, folder],
+    query: () => workspace.DescribePrecedence(gameId, database, folder),
   }),
 );
 
@@ -280,6 +292,10 @@ export const lexiconQuery = defineQueryOptions((cls: string) => ({
 export const classesQuery = defineQueryOptions({ key: [...keys.wiki, "classes"], query: () => wiki.ListClasses() });
 
 // git
+export const gitInstalledQuery = defineQueryOptions({
+  key: [...keys.gits, "installed"],
+  query: () => git.IsInstalled(),
+});
 export const repositoriesQuery = defineQueryOptions({
   key: [...keys.gits, "repositories"],
   query: () => git.ListRepositories(),
@@ -301,6 +317,17 @@ export const commitsQuery = defineQueryOptions(
 export const commitFilesQuery = defineQueryOptions(({ dir, hash }: { dir: string; hash: string }) => ({
   key: [...keys.git(dir), "commit", hash],
   query: () => git.ListCommitFiles(dir, hash),
+}));
+/** repositoryWorkQuery reads the status and the last commit of each of the given repositories, in their order. */
+export const repositoryWorkQuery = defineQueryOptions((roots: string[]) => ({
+  key: [...keys.leftOff, roots],
+  query: () =>
+    Promise.all(
+      roots.map(async (dir) => ({
+        status: await loadQuery(gitStatusQuery(dir)),
+        commit: (await loadQuery(commitsQuery({ dir, refs: [], limit: 1 })))?.[0],
+      })),
+    ),
 }));
 export const gitFileQuery = defineQueryOptions(
   ({ dir, revision, path }: { dir: string; revision: string; path: string }) => ({
@@ -335,9 +362,18 @@ export const listingQuery = defineQueryOptions(({ modId, key }: { modId: string;
   key: [...keys.release(modId), "listing", key],
   query: () => steam.ReadListing(modId, key),
 }));
+/** ownListingsQuery reads the mod's own listing of each of the given mods, in their order. */
+export const ownListingsQuery = defineQueryOptions((modIds: string[]) => ({
+  key: [...keys.ownListings, modIds],
+  query: () => Promise.all(modIds.map((modId) => steam.ReadListing(modId, ""))),
+}));
 export const uploadQuery = defineQueryOptions(({ modId, key }: { modId: string; key: string }) => ({
   key: [...keys.release(modId), "upload", key],
   query: () => steam.ListUpload(modId, key),
+}));
+export const ignoreQuery = defineQueryOptions((modId: string) => ({
+  key: [...keys.release(modId), "ignore"],
+  query: () => steam.ReadIgnore(modId),
 }));
 export const comparisonQuery = defineQueryOptions(({ modId, key }: { modId: string; key: string }) => ({
   key: [...keys.release(modId), "comparison", key],

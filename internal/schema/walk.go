@@ -75,7 +75,7 @@ type Context struct {
 	Defines     bool        // the statement itself defines Definition
 	References  []Reference // the names the key and the value refer to
 	Scope       string      // the scope script runs in here; "" if unknown
-	Root        string      // the definition's root scope, else the one its block's field claims; "" if unknown
+	Root        string      // the definition's root scope; "" if unknown
 	Previous    []string    // the scopes entered before this one, innermost first
 	Saved       []Saved     // the scopes the definition saved before this statement
 	Path        []string    // the keys that lead to the block holding the statement, from its definition or the top
@@ -416,8 +416,8 @@ func (walker *walker) findDefinitionShape(database *Database) string {
 }
 
 // findRootScope returns the scope a definition's script starts in. It is the scope the definition's root key names,
-// else the one its event type gives, the dumps give its on_action, or its database's docs give. It returns "" where
-// nothing says, and where the root key names no scope.
+// else the one its event type gives, or the dumps give its on_action. It returns "" where nothing says, and where the
+// root key names no scope.
 func (walker *walker) findRootScope(database *Database, definition Definition) string {
 	if database == nil {
 		return ""
@@ -436,7 +436,7 @@ func (walker *walker) findRootScope(database *Database, definition Definition) s
 	case game.ContentsOnActions:
 		return walker.schema.OnActions[definition.Name].Scope
 	}
-	return database.Definition.Scope.Value
+	return ""
 }
 
 // resolveKey fills the context of a keyed statement from the first rule that its key fits in the block that holds it.
@@ -456,14 +456,18 @@ func (walker *walker) resolveKey(context *Context, statement int32, level int) {
 		key, span = step.Text, step.Span
 	}
 	var keyword *game.Keyword
-	if row, ok := game.LookupKeyword(findShape(parent), walker.frames[level-1].label, key); ok {
+	if row, ok := walker.row.LookupKeyword(findShape(parent), walker.frames[level-1].label, key); ok {
 		keyword = new(row)
 	}
-	fit, fits := walker.findMatch(parent, key)
+	fit, fits := walker.findMatch(parent, key, walker.tree.Statements[statement].IsBlock())
+	// A case of a switch is a value of the switch's trigger, so no rule of the block explains its key.
+	if keyword != nil && strings.HasSuffix(keyword.Key, game.AnyKey) {
+		fit, fits = match{}, false
+	}
 	// A link that requires data takes it in parentheses too, as relations(scope:overlord) does, though its name
 	// written alone is no link.
 	if isCall && fit.category == CategoryCall && fit.callee == nil && walker.schema.IsLink(key) {
-		fit, fits = match{category: CategoryLink, field: parent.Field, shape: findShape(parent)}, true
+		fit, fits = match{category: CategoryLink, field: parent.Field, shape: findEnclosing(parent)}, true
 	}
 	// A key that starts an iterator and is no word of its own runs its block in the scope of the list's item.
 	if iterator, ok := game.MatchListIterator(key); ok && keyword == nil &&
@@ -503,12 +507,18 @@ func findShape(context *Context) string {
 	return cmp.Or(context.Shape, game.ShapeUnknown)
 }
 
+// findEnclosing returns the shape of the block that a link or an enclosing keyword gives, written in the block of a
+// context. It is the shape its holder's shape says, else the holder's own.
+func findEnclosing(context *Context) string {
+	return cmp.Or(game.Shapes[findShape(context)].Encloses, findShape(context))
+}
+
 // findMatch returns the first rule of the block's shape that the key fits, and whether one fits. A key that a claim
 // fits takes its field's stated shape, else unknown. A field's key in a block whose keys name definitions also refers
-// to one.
-func (walker *walker) findMatch(parent *Context, key string) (match, bool) {
+// to one. The given flag is whether the statement of the key is a block.
+func (walker *walker) findMatch(parent *Context, key string, block bool) (match, bool) {
 	for _, rule := range game.Shapes[findShape(parent)].Rules {
-		if fit, ok := walker.matchRule(rule, parent, key); ok {
+		if fit, ok := walker.matchRule(rule, parent, key, block); ok {
 			switch {
 			case fit.shape != "":
 			case fit.field != nil && fit.field.Shape.IsStated():
@@ -536,16 +546,22 @@ func (context *Context) findCaller() string {
 	return game.Shapes[findShape(context)].Caller
 }
 
-// isArgument reports whether a key in the block of a command is one of the command's arguments. The command must lead
-// to no scope and iterate no list, and its arguments must hold the key.
-func isArgument(parent *Context, key string) bool {
-	command := parent.Command
-	return parent.Category == CategoryCommand && command != nil && command.Target == "" && !command.Lists &&
-		parent.Field.findChild(key) != nil
+// HoldsArguments reports whether the block of a context holds a command's arguments. It does when the command leads
+// to no scope and iterates no list, so what is written in the block is read in the scope the command is written in.
+func (context *Context) HoldsArguments() bool {
+	command := context.Command
+	return context.Category == CategoryCommand && (command == nil || command.Target == "" && !command.Lists)
 }
 
-// matchRule reports whether a key fits one rule of its block's shape. It returns what the key fit.
-func (walker *walker) matchRule(rule string, parent *Context, key string) (match, bool) {
+// isArgument reports whether a key in the block of a command is one of the command's arguments. The block must hold
+// arguments, and the command's arguments must hold the key.
+func isArgument(parent *Context, key string) bool {
+	return parent.HoldsArguments() && parent.Field.findChild(key) != nil
+}
+
+// matchRule reports whether a key fits one rule of its block's shape. It returns what the key fit. The given flag is
+// whether the statement of the key is a block.
+func (walker *walker) matchRule(rule string, parent *Context, key string, block bool) (match, bool) {
 	holder := parent.Field
 	switch rule {
 	case "known-call":
@@ -566,8 +582,10 @@ func (walker *walker) matchRule(rule string, parent *Context, key string) (match
 		return walker.matchCommand(parent, key)
 	case "operator":
 		return match{shape: game.ShapeArguments}, game.IsOperator(key)
-	case "link":
-		return match{category: CategoryLink, field: holder, shape: findShape(parent)}, walker.schema.isKeyLink(key)
+	case "link", "scope-link":
+		// The scope-link rule leaves out a plain name written with a plain value: that is an argument, or a call.
+		plain := rule == "scope-link" && !block && !strings.ContainsAny(key, ":.")
+		return match{category: CategoryLink, field: holder, shape: findEnclosing(parent)}, !plain && walker.schema.isKeyLink(key)
 	case "modifier":
 		_, declared := walker.schema.Modifiers[key]
 		return match{category: CategoryField, field: walker.findModifierField(holder, key)}, declared
@@ -666,7 +684,7 @@ func (walker *walker) resolveMatch(context *Context, parent *Context, fit match,
 	stays := fits && !fit.observed
 	if keyword != nil {
 		if keyword.Shape == "enclosing" {
-			context.Shape = findShape(parent)
+			context.Shape = findEnclosing(parent)
 		} else {
 			context.Shape = cmp.Or(keyword.Shape, context.Shape)
 		}
@@ -681,9 +699,8 @@ func (walker *walker) resolveMatch(context *Context, parent *Context, fit match,
 	walker.resolveScope(context, parent, fit, stays)
 }
 
-// resolveScope sets the scope inside a block. A link, an iterator or a command that leads to a scope moves it there. A
-// field that states a scope, as the docs do, starts its block in that scope. That scope is also the block's root where
-// the walk knows none. Any other block keeps the scope it is written in, or has none where the walk cannot tell.
+// resolveScope sets the scope inside a block. A link, an iterator or a command that leads to a scope moves it there.
+// Any other block keeps the scope it is written in, or has none where the walk cannot tell.
 func (walker *walker) resolveScope(context *Context, parent *Context, fit match, stays bool) {
 	moves := fit.iterator != nil || fit.category == CategoryLink ||
 		fit.command != nil && (fit.command.Target != "" || fit.command.Lists)
@@ -694,9 +711,6 @@ func (walker *walker) resolveScope(context *Context, parent *Context, fit match,
 			context.Scope = fit.target
 		}
 		context.Previous = slices.Concat([]string{parent.Scope}, parent.Previous)
-	case context.Field != nil && context.Field.Scope.IsStated():
-		context.Scope = context.Field.Scope.Value
-		context.Root = cmp.Or(context.Root, context.Scope)
 	case stays && context.Shape != "" && context.Shape != game.ShapeUnknown:
 		context.Scope = parent.Scope
 	default:
@@ -779,7 +793,8 @@ func (walker *walker) resolveChain(chain string, parent *Context) string {
 
 // resolveSaved resolves a statement that saves a name of one of game.Links, or reads one back. A save makes the name a
 // definition: a command that saves, or an argument of a scripted call whose body saves it. A read makes it a
-// reference. A saved scope is also added to the scopes the definition saved. A name with a parameter is none yet.
+// reference. A saved scope is also added to the scopes the definition saved. A name with a parameter is none yet. A
+// save written in the block of a command that makes no scope names what the command makes, so its type is unknown.
 func (walker *walker) resolveSaved(context *Context, statement int32, level int) {
 	current := walker.tree.Statements[statement]
 	span := walker.tree.UnquotedSpan(current.Value)
@@ -794,7 +809,7 @@ func (walker *walker) resolveSaved(context *Context, statement int32, level int)
 	}
 	link, inBlock, ok := findLinked(game.LinkMakers, holder, key)
 	scope := parent.Scope
-	if inBlock || isArgument(parent, key) {
+	if inBlock || parent.HoldsArguments() {
 		scope = ""
 	}
 	if !ok && parent.Callee != nil {

@@ -174,9 +174,17 @@ export const useTerminalStore = defineStore("terminal", () => {
   function writeScreen(open: Console, screen: Screen): void {
     open.offset = screen.offset;
     open.xterm.resize(screen.columns, screen.rows);
-    open.xterm.write(screen.text, () => {
-      if (open.xterm.element) open.fit.fit();
-    });
+    open.xterm.write(screen.text, () => fitConsole(open));
+  }
+
+  /**
+   * fitConsole fits a console's terminal to its element, and so the shell to it. It does nothing while the element has
+   * no width or height, as while its panel is laid out or hidden: a fit then makes the terminal two columns wide, and
+   * the shell would wrap its own screen to them for good.
+   */
+  function fitConsole(open: Console): void {
+    const box = open.xterm.element?.parentElement;
+    if (box && box.clientWidth > 0 && box.clientHeight > 0) open.fit.fit();
   }
 
   /** applyStyle sets a console's colors and font from the settings again, and fits it to its element if it is shown. */
@@ -184,7 +192,7 @@ export const useTerminalStore = defineStore("terminal", () => {
     open.xterm.options.theme = resolveTheme();
     open.xterm.options.fontFamily = settings.codeFont().fontFamily;
     open.xterm.options.fontSize = Number(settings.value("ide.panelTextSize"));
-    if (open.xterm.element) open.fit.fit();
+    fitConsole(open);
   }
 
   /**
@@ -245,7 +253,7 @@ export const useTerminalStore = defineStore("terminal", () => {
     host.replaceChildren();
     if (open.xterm.element) host.append(open.xterm.element);
     else open.xterm.open(host);
-    open.fit.fit();
+    fitConsole(open);
     open.xterm.refresh(0, open.xterm.rows - 1);
   };
 
@@ -278,6 +286,7 @@ export const useTerminalStore = defineStore("terminal", () => {
     sendFile,
     findFile,
     show,
+    fitConsole,
     handOver,
   };
 });

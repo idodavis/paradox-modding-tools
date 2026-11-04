@@ -1,5 +1,5 @@
 // docs.go reads the documentation files a game ships beside its script, such as the readme of a folder, into the
-// fields, scopes and defaults they describe. It tells such a file from a data file by its name and its lines.
+// fields, types and defaults they describe. It tells such a file from a data file by its name and its lines.
 
 package schema
 
@@ -30,7 +30,6 @@ type docReader struct {
 	comments []string // the comment lines directly above the next statement
 	list     string   // what a label opened for the current field: choices, scopes, or ""
 	blurb    []string // the first paragraph of prose before the first statement
-	scope    string   // the scope type of the root the prose before the first field gives
 	started  bool     // a statement, header or field has been read
 	ended    bool     // the first paragraph has ended
 	script   int      // the live script lines, which tell a data file from a doc
@@ -54,23 +53,21 @@ var (
 	fieldLine       = regexp.MustCompile(`^([a-z_][a-z0-9_]*):\s+(\S.*)$`)
 	bulletLine      = regexp.MustCompile(`^[-*]\s+(.*)$`)
 	bulletKey       = regexp.MustCompile(`^([A-Za-z_][A-Za-z0-9_.]*)\s*(?:[:-]\s+(.*))?$`)
-	scopeBullet     = regexp.MustCompile(`^(?:root|scope:\w+)\s*\(\s*([A-Za-z_]+)\s*\)`)
 	typeParens      = regexp.MustCompile(`\(\s*([a-z][a-z0-9 _]*?)\s*(?:,\s*([a-z ,]+?)\s*)?\)`)
 	typeBrackets    = regexp.MustCompile(`(?i)\[(string|boolean|bool|integer|int|float|number|trigger|effect|date)\]`)
 	requiredLevel   = regexp.MustCompile(`(?i)\b(optional|required|mandatory)\b`)
 	conditionPhrase = regexp.MustCompile(`(?i)\b(?:only (?:used|needed|valid|applies|relevant) (?:when|if|for)|required (?:if|when)|ignored (?:if|when|unless)|needed (?:if|when))\b`)
 	defaultPhrase   = regexp.MustCompile(`(?i)(?:^|[\s(\[,])default(?:s\s+to|\s+is|\s+value(?:\s+is)?|\s*[:=]|\s+)\s*["']?([A-Za-z0-9_.+-]+)`)
-	rootPhrase      = regexp.MustCompile(`(?i)\broot(?:\s+scope)?\s*(?:=|:|-|\bis\b)\s*([a-z_][a-z_ /]*)`)
 	choiceLabel     = regexp.MustCompile(`(?i)^(?:possible|valid|available|allowed|supported) \w+$`)
 	scopeLabel      = regexp.MustCompile(`(?i)^(?:supported |available )?scopes?$`)
 	alternatives    = regexp.MustCompile(`^([A-Za-z0-9_.+-]+(?:[/|][A-Za-z0-9_.+-]+)+)$`)
 )
 
-// buildDocs reads the docs in the given listing into the databases they describe. A doc is an .info, readme or .md
-// file, or a .txt file named like one, that belongs to one of the given database folders. A later doc only fills in
-// what an earlier one left out. A doc that describes one part of its database gives it no blurb. It returns an error
-// if a doc cannot be read.
-func (schema *Schema) buildDocs(listing []files.File, folders []string) error {
+// buildDocs reads the docs in the given listing into the databases they describe. A database keeps the path of its
+// blurb's doc from the install's folder. A doc is an .info, readme or .md file, or a .txt file named like one, that
+// belongs to one of the given database folders. A later doc only fills in what an earlier one left out. A doc that
+// describes one part of its database gives it no blurb. It returns an error if a doc cannot be read.
+func (schema *Schema) buildDocs(installPath string, listing []files.File, folders []string) error {
 	for _, file := range listing {
 		label, partial, ok := findDocDatabase(file.Rel, folders)
 		database := schema.Databases[label]
@@ -85,7 +82,8 @@ func (schema *Schema) buildDocs(listing []files.File, folders []string) error {
 			if partial {
 				reader.blurb = nil
 			}
-			reader.build(database)
+			readme, _ := files.ToRel(installPath, file.Path)
+			reader.build(database, readme)
 		}
 	}
 	return nil
@@ -140,16 +138,15 @@ func (schema *Schema) parseDoc(text, rel string, row game.Database) (*docReader,
 	return reader, true
 }
 
-// build gives a database what one doc file states: its blurb, its root scope and the fields its example writes, each
-// with its claims. It does not replace a claim that is already stated. A key written at the top of a definition
-// counts as documented. A definition whose block holds script, as a scripted effect's does, takes no field.
-func (reader *docReader) build(database *Database) {
+// build gives a database what one doc file states: its blurb and the fields its example writes, each with its claims.
+// The given readme is the doc's path from the install, and the database keeps it with the blurb. It does not replace a
+// claim that is already stated. A key written at the top of a definition counts as documented. A definition whose block
+// holds script, as a scripted effect's does, takes no field.
+func (reader *docReader) build(database *Database, readme string) {
 	definition := database.Definition
-	if blurb := strings.Join(reader.blurb, " "); blurb != "" {
+	if blurb := strings.Join(reader.blurb, " "); blurb != "" && !definition.Blurb.IsStated() {
 		definition.Blurb.resolve(blurb, game.SourceDocs)
-	}
-	if reader.scope != "" {
-		definition.Scope.resolve(reader.scope, game.SourceDocs)
+		database.Readme = readme
 	}
 	for key := range reader.root.Children {
 		database.Documented[key] = true
@@ -158,26 +155,28 @@ func (reader *docReader) build(database *Database) {
 	case game.ShapeTriggers, game.ShapeEffects, game.ShapeValue:
 		return
 	}
-	buildDocFields(definition, reader.root, "")
+	buildDocFields(game.LookupGame(reader.schema.Game), definition, reader.root, "")
 }
 
 // buildDocFields gives a field each field a doc writes below it, with its claims, and those below them in turn. It
 // goes no deeper than a field whose block holds script, where the docs write a sample, such as debug_only = yes in a
-// trigger. It is given the key the field is written at, "" for the definition itself.
-func buildDocFields(field, doc *Field, holder string) {
+// trigger. It is given the key the field is written at, "" for the definition itself, and the game whose keywords
+// count.
+func buildDocFields(row *game.Game, field, doc *Field, holder string) {
 	for key, child := range doc.Children {
 		target := field.buildChild(key, game.SourceDocs)
 		target.take(child.Claims)
-		if !holdsScript(holder, key, child) {
-			buildDocFields(target, child, key)
+		if !holdsScript(row, holder, key, child) {
+			buildDocFields(row, target, child, key)
 		}
 	}
 }
 
 // holdsScript reports whether the block written for a field holds script rather than fields: the field states a
-// shape or a number to work out, or its key is a keyword that gives its block a shape in the block of the key above.
-func holdsScript(holder, key string, field *Field) bool {
-	keyword, ok := game.LookupKeyword("", holder, key)
+// shape or a number to work out, or its key is a keyword of the given game that gives its block a shape in the block
+// of the key above.
+func holdsScript(row *game.Game, holder, key string, field *Field) bool {
+	keyword, ok := row.LookupKeyword("", holder, key)
 	return field.Shape.IsStated() || field.Value.Value.Type == ValueNumber || ok && keyword.Shape != ""
 }
 
@@ -242,7 +241,8 @@ func splitValue(value string) (string, string) {
 	return first, strings.TrimSpace(rest)
 }
 
-// isFact reports whether the given key states a fact, the root scope or a default, rather than naming a field.
+// isFact reports whether the given key is the root or a default, which a doc writes as a line of its own and which
+// names no field.
 func isFact(key string) bool {
 	lower := strings.ToLower(key)
 	return lower == game.ScopeLinks.Root || lower == "default"
@@ -357,8 +357,8 @@ func isStandIn(key string) bool {
 	return strings.HasPrefix(key, "<") || strings.ContainsAny(key, ":/$")
 }
 
-// readLabel reads a `Label: text` line. It gives the field above a default or a scope, opens a list of its values or
-// scopes for the lines after it, or is prose.
+// readLabel reads a `Label: text` line. It gives the field above a default, opens a list of its values or scopes for
+// the lines after it, or is prose.
 func (reader *docReader) readLabel(title, text string) {
 	label := strings.ToLower(title)
 	switch {
@@ -368,7 +368,6 @@ func (reader *docReader) readLabel(title, text string) {
 		resolveDefault(reader.current, findTerm(text))
 	case scopeLabel.MatchString(label):
 		reader.list = "scopes"
-		reader.resolveScope(reader.current, findTerm(text))
 	case choiceLabel.MatchString(label):
 		reader.list = "choices"
 		resolveChoices(reader.current, strings.Split(text, ","), game.SourceDocs)
@@ -377,8 +376,8 @@ func (reader *docReader) readLabel(title, text string) {
 	}
 }
 
-// readBullet reads a bullet. It is a value or a scope of the field above if a label opened a list, a field if it has a
-// snake-case key, and prose otherwise.
+// readBullet reads a bullet. It is a value of the field above if a label opened a list of choices, a scope of it that
+// states nothing if a label opened a list of scopes, a field if it has a snake-case key, and prose otherwise.
 func (reader *docReader) readBullet(bullet string) {
 	key, text := "", bullet
 	if keyed := bulletKey.FindStringSubmatch(bullet); keyed != nil {
@@ -388,9 +387,7 @@ func (reader *docReader) readBullet(bullet string) {
 	case reader.list == "choices" && reader.current != nil:
 		resolveChoices(reader.current, []string{cmp.Or(key, text)}, game.SourceDocs)
 	case reader.list == "scopes" && reader.current != nil:
-		if scope := scopeBullet.FindStringSubmatch(key + text); scope != nil {
-			reader.resolveScope(reader.current, scope[1])
-		}
+		// a scope in the list is no field and no blurb of the next one
 	case key != "" && text != "" && strings.ToLower(key) == key && !strings.Contains(key, "."):
 		reader.readField(key, text)
 	default:
@@ -398,15 +395,11 @@ func (reader *docReader) readBullet(bullet string) {
 	}
 }
 
-// readProse reads a line of prose. Before anything else it is the database's first paragraph, and it may name the
-// root scope. After a header it is the text of that field. Otherwise it joins the comments above the next statement.
+// readProse reads a line of prose. Before anything else it is the database's first paragraph. After a header it is the
+// text of that field. Otherwise it joins the comments above the next statement.
 func (reader *docReader) readProse(text string) {
 	if !reader.started && !reader.ended {
 		reader.blurb = append(reader.blurb, text)
-	}
-	if rootMatch := rootPhrase.FindStringSubmatch(text); rootMatch != nil && reader.current == nil {
-		scope, _ := reader.schema.resolveScopePhrase(rootMatch[1])
-		reader.scope = cmp.Or(reader.scope, scope)
 	}
 	if reader.headed && reader.current != nil {
 		reader.resolveText(reader.current, text)
@@ -416,9 +409,9 @@ func (reader *docReader) readProse(text string) {
 }
 
 // resolveText reads the text written about a field, given as one or more lines. A placeholder at its start is the
-// field's value. The rest is the blurb, and any type, requirement, default and scope it states. A start such as
-// "Effect run when…" or "The localization key, …" gives the type it names. A type in parentheses or brackets counts if
-// the docs know the term. The root scope is read from the first line that names one, so it never runs into the next.
+// field's value. The rest is the blurb, and any type, requirement and default it states. A start such as "Effect run
+// when…" or "The localization key, …" gives the type it names. A type in parentheses or brackets counts if the docs
+// know the term.
 func (reader *docReader) resolveText(field *Field, lines ...string) {
 	text := strings.TrimSpace(strings.Join(lines, " "))
 	if value, rest := splitValue(text); strings.HasPrefix(value, "<") {
@@ -442,12 +435,6 @@ func (reader *docReader) resolveText(field *Field, lines ...string) {
 	if defaultMatch := defaultPhrase.FindStringSubmatch(text); defaultMatch != nil &&
 		!slices.Contains(defaultStops, strings.ToLower(defaultMatch[1])) {
 		resolveDefault(field, defaultMatch[1])
-	}
-	for _, line := range lines {
-		if rootMatch := rootPhrase.FindStringSubmatch(line); rootMatch != nil {
-			reader.resolveScope(field, rootMatch[1])
-			break
-		}
 	}
 }
 
@@ -518,15 +505,6 @@ func resolveRequired(field *Field, text string) {
 func resolveDefault(field *Field, value string) {
 	if value != "" {
 		field.Default.resolve(value, game.SourceDocs)
-	}
-}
-
-// resolveScope gives a field the scope type that the given phrase names, where that scope ends the phrase, as in
-// "root = interest group". A phrase that goes on past its scope, as "character trying to host this activity" does,
-// gives none.
-func (reader *docReader) resolveScope(field *Field, phrase string) {
-	if scope, ends := reader.schema.resolveScopePhrase(phrase); ends {
-		field.Scope.resolve(scope, game.SourceDocs)
 	}
 }
 
@@ -601,29 +579,6 @@ func findTerm(text string) string {
 		return ""
 	}
 	return terms[0]
-}
-
-// resolveScopePhrase returns the scope type that a phrase names, such as "interest group" or "owning country or no
-// scope": the longest run of terms before its first "or" that is a scope type the dumps declare, the first written
-// where two are as long. It also reports whether that run ends those terms. It returns "" if there is none, and for a
-// phrase that gives its scope as alternatives or on a condition, as country/international_organization and country
-// if type = country do.
-func (schema *Schema) resolveScopePhrase(phrase string) (string, bool) {
-	terms := strings.Fields(strings.ToLower(phrase))
-	if strings.Contains(phrase, "/") || slices.Contains(terms, "if") {
-		return "", false
-	}
-	if cut := slices.Index(terms, "or"); cut >= 0 {
-		terms = terms[:cut]
-	}
-	for length := len(terms); length > 0; length-- {
-		for start := 0; start+length <= len(terms); start++ {
-			if scope := strings.Join(terms[start:start+length], "_"); schema.Scopes[scope].Name != "" {
-				return scope, start+length == len(terms)
-			}
-		}
-	}
-	return "", false
 }
 
 // buildDocBlurbs gives each field that has no blurb the blurb the docs write for the same key elsewhere in its

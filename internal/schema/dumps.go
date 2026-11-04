@@ -389,6 +389,7 @@ func (schema *Schema) buildDumps(row *game.Game, installPath string) error {
 	}
 	backup, hasBackup := LoadShipped(row.ID)
 	filled := hasBackup && dumps.resolveMissing(backup)
+	dumps.applyCorrections(row)
 	state := SourceState{Origin: originNone, WrittenAt: dumps.WrittenAt, Folders: dumps.Folders}
 	switch {
 	case !dumps.WrittenAt.IsZero():
@@ -399,7 +400,7 @@ func (schema *Schema) buildDumps(row *game.Game, installPath string) error {
 	}
 	schema.Dumps = state
 	schema.buildCommands(dumps.Commands)
-	schema.buildKeywordShapes()
+	schema.buildKeywordShapes(row)
 	schema.buildFamilies()
 	schema.Scopes, schema.Saved, schema.Modifiers = dumps.Scopes, dumps.Saved, dumps.Modifiers
 	schema.OnActions, schema.DataTypes = dumps.OnActions, dumps.DataTypes
@@ -430,6 +431,18 @@ func (dumps *Dumps) resolveMissing(backup *Dumps) bool {
 		takeMissing(&dumps.OnActions, backup.OnActions), takeMissing(&dumps.DataTypes, backup.DataTypes),
 	}
 	return missing || slices.Contains(tables, true)
+}
+
+// applyCorrections sets the scopes and the target of each command that one of the game's dump corrections names to
+// the correction's. The correction outranks the dump.
+func (dumps *Dumps) applyCorrections(row *game.Game) {
+	for position, command := range dumps.Commands {
+		for _, correction := range game.DumpCorrections {
+			if correction.Command == command.Name && row.Matches(correction.Games) {
+				dumps.Commands[position].Scopes, dumps.Commands[position].Target = correction.Scopes, correction.Target
+			}
+		}
+	}
 }
 
 // takeMissing gives the dumps the backup's table where they have none of it, and reports whether it did.
@@ -467,7 +480,7 @@ func (schema *Schema) buildCommands(dumps []DumpCommand) {
 }
 
 // build adds what one dump says about a command. Its scopes are the union of the scopes of its dumps, and a dump that
-// names none makes it run in any scope. The first target, blurb and arguments are kept. The dump's usage starts at
+// names none leaves it with none. The first target, blurb and arguments are kept. The dump's usage starts at
 // the first line of its description written as `<scope> = { … }`.
 func (command *Command) build(dump DumpCommand) {
 	switch {
@@ -658,15 +671,16 @@ func (command *Command) makeArguments(source game.Source) *Field {
 }
 
 // buildKeywordShapes gives a command an argument for each keyword row written under it, such as the numbered branches
-// of random_list. The argument gets the shape that the row gives its block.
-func (schema *Schema) buildKeywordShapes() {
-	for _, row := range game.Keywords {
-		title, key, held := strings.Cut(row.Key, "/")
+// of random_list. The argument gets the shape that the row gives its block. Only the rows that hold for the given game
+// count.
+func (schema *Schema) buildKeywordShapes(row *game.Game) {
+	for _, keyword := range game.Keywords {
+		title, key, held := strings.Cut(keyword.Key, "/")
 		command := schema.Commands[title]
-		if !held || command == nil || row.Shape == "" || row.Shape == "enclosing" {
+		if !held || command == nil || keyword.Shape == "" || keyword.Shape == "enclosing" || !row.Matches(keyword.Games) {
 			continue
 		}
-		command.makeArguments(game.SourceDumps).buildChild(key, game.SourceNone).Shape.resolve(row.Shape, game.SourceRegistry)
+		command.makeArguments(game.SourceDumps).buildChild(key, game.SourceNone).Shape.resolve(keyword.Shape, game.SourceRegistry)
 	}
 }
 

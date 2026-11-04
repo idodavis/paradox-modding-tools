@@ -33,8 +33,7 @@ type counter struct {
 	unlisted    map[string]bool            // the steps of data calls no dump declares that the text writes, as Type.step
 	gui         bool                       // the file being counted is a GUI file
 	prefixed    map[string]map[string]int
-	examples    map[string][]Example       // by the name written: a command's, or a data function's as Type.Function
-	scopes      map[string]map[string]bool // by command: the scopes the game's own files run it in
+	examples    map[string][]Example // by the name written: a command's, or a data function's as Type.Function
 }
 
 // A holder is where the keys of one statement are counted while the counter is inside the statement.
@@ -78,7 +77,6 @@ func (schema *Schema) CountVanilla(listing []files.File, parse func(path string)
 			schema: schema, fields: map[*Field]*Field{}, arguments: map[*Command]*Field{},
 			definitions: map[string]*Field{}, defined: map[string]map[string]bool{}, messages: map[string]bool{},
 			unlisted: map[string]bool{}, prefixed: map[string]map[string]int{}, examples: map[string][]Example{},
-			scopes: map[string]map[string]bool{},
 		}
 	}
 	eachParsed(localizing, func(path string) (*loc.File, error) {
@@ -200,9 +198,9 @@ func addCounts(total, added map[string]int) map[string]int {
 	return total
 }
 
-// countCommand keeps the place of a statement whose key is a command or a link the dumps declare. It also keeps the
-// scope the command runs in there, if known. A chain of links counts as its first link, a prefixed link as its
-// prefix, each in lower case, and a command's name with an argument in parentheses as the name.
+// countCommand keeps the place of a statement whose key is a command or a link the dumps declare. A chain of links
+// counts as its first link, a prefixed link as its prefix, each in lower case, and a command's name with an argument in
+// parentheses as the name.
 func (counter *counter) countCommand(tree *jomini.Tree, statement int32, context *Context) {
 	if context.Command == nil || context.Category != CategoryCommand && context.Category != CategoryLink {
 		return
@@ -211,9 +209,6 @@ func (counter *counter) countCommand(tree *jomini.Tree, statement int32, context
 	name, _ := splitLinkHead(counter.schema.findCallee(tree, statement))
 	example := Example{Path: counter.path, Line: tree.Lines.ToPosition(key.Start).Line}
 	counter.examples[name] = keepExample(counter.examples[name], example)
-	if scope := context.Parent.Scope; scope != "" {
-		mirrorSet(counter.scopes, name)[scope] = true
-	}
 }
 
 // keepExample adds a place to a list of places. It returns the first places by path and then line, up to ExampleCount.
@@ -306,8 +301,9 @@ func (counter *counter) resolveProofs(key string) (string, bool) {
 // that fits more than one kind gives shapeAmbiguous. A link, a list iterator, a parameter and a call give "".
 func (counter *counter) resolveKeyShape(key string, context *Context) string {
 	lower := strings.ToLower(key)
+	row := game.LookupGame(counter.schema.Game)
 	for _, keyword := range game.Keywords {
-		if keyword.Holder != "" && keyword.Key == lower {
+		if keyword.Holder != "" && keyword.Key == lower && row.Matches(keyword.Games) {
 			if keyword.Class == "" {
 				return ""
 			}
@@ -487,9 +483,6 @@ func (counter *counter) add(other *counter) {
 			counter.examples[name] = keepExample(counter.examples[name], example)
 		}
 	}
-	for name, scopes := range other.scopes {
-		maps.Copy(mirrorSet(counter.scopes, name), scopes)
-	}
 }
 
 // add adds the counts of another field and its children to this field's. A child that no source declared gets
@@ -509,8 +502,8 @@ func (field *Field) add(counted *Field) {
 
 // resolveCounts gives the schema what the count found. Counted fields join the databases and commands, each with the
 // claims its counts support, and the prefixes are resolved from the names defined. A database that only the walk
-// names, such as an asset file's entity, is made here. Each command and data function gets its examples, each
-// command the scopes it runs in, and the schema its command patterns.
+// names, such as an asset file's entity, is made here. Each command and data function gets its examples, and the
+// schema its command patterns.
 func (counter *counter) resolveCounts() {
 	row := game.LookupGame(counter.schema.Game)
 	for field, counted := range counter.fields {
@@ -518,7 +511,6 @@ func (counter *counter) resolveCounts() {
 	}
 	for name, command := range counter.schema.Commands {
 		command.Examples = counter.examples[name]
-		command.VanillaScopes = slices.Sorted(maps.Keys(counter.scopes[name]))
 	}
 	for typeName, dataType := range counter.schema.DataTypes {
 		for name, function := range dataType.Functions {

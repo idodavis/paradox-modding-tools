@@ -25,13 +25,16 @@ type Winner struct {
 	Merged []Site `json:"merged,omitempty"`
 }
 
-// A Reason is why the game keeps a copy of a name, or that no source says which copy it keeps.
+// A Reason is why the game keeps a copy of a name, why it does not read a copy, or that no source says which copy it
+// keeps.
 type Reason string
 
 // The reasons: the last copy, the first, the playset's last, the one with the highest priority, the one an entry
 // mode puts in place, the first of copies merged into one, the copy left when another mod's replace_path or a path
 // the game does not read drops the one that would win, and a localization key's in a replace folder; a copy merged
-// into the winner by an entry mode or by its database; and a choice no source settles.
+// into the winner by an entry mode or by its database; a choice no source settles; and a copy in a file the game does
+// not read, because a file at the same path later in the load order replaces its file, or a mod's replace_path drops
+// its folder.
 const (
 	ReasonLast          Reason = "last"
 	ReasonFirst         Reason = "first"
@@ -45,10 +48,13 @@ const (
 	ReasonInjected      Reason = "injected"
 	ReasonCombined      Reason = "combined"
 	ReasonUnsettled     Reason = "unsettled"
+	ReasonShadowed      Reason = "shadowed"
+	ReasonDropped       Reason = "dropped"
 )
 
 // Reasons holds each reason in words: its label, and for a reason a contest's winner can have, why the winner wins at
-// length, as a template the contest's facts fill: {folder}, {file}, {winner}, {beaten} and {beatenFile}.
+// length, as a template the contest's facts fill: {folder}, {file}, {winner}, {beaten} and {beatenFile}. The label of
+// a reason for a copy the game does not read is a template too, filled with {mod}, the mod that hides the copy.
 var Reasons = map[Reason]struct{ Label, Why string }{
 	ReasonLast: {Label: "Last file by name", Why: "The game reads every file in {folder} in order of file name and " +
 		"keeps the copy it reads last. {winner}'s file, {file}, comes after {beaten}'s {beatenFile}, so its copy " +
@@ -72,6 +78,8 @@ var Reasons = map[Reason]struct{ Label, Why string }{
 		"makes the game skip the game's files in that folder. Of the copies the game reads, it keeps {winner}'s."},
 	ReasonReplaceFolder: {Label: "In a replace folder"},
 	ReasonUnsettled:     {Label: "Not documented"},
+	ReasonShadowed:      {Label: "The copy of this file in {mod} replaces it"},
+	ReasonDropped:       {Label: "A replace_path in {mod} drops this folder"},
 }
 
 // A Cause is what leaves the choice of a kept copy open: a tie of priorities, a key the game may read as an entry
@@ -93,17 +101,37 @@ func (winner Winner) IsKept(site Site) bool {
 }
 
 // ResolveSite reports whether the game keeps a copy of a winner's name, and why. If the winner is unsettled, no copy
-// is kept, and a copy in a file the game reads has the reason unsettled.
-func (index *Index) ResolveSite(winner Winner, site Site) (bool, Reason) {
+// is kept, and a copy in a file the game reads has the reason unsettled. A copy in a file the game does not read is
+// never kept: its reason is shadowed or dropped, and the third result is the origin of the mod that hides its file, as
+// FindHider gives it. A beaten copy in a file the game reads has no reason.
+func (index *Index) ResolveSite(winner Winner, site Site) (bool, Reason, string) {
+	unsettled := winner.Reason == ReasonUnsettled
 	switch {
-	case winner.Reason == ReasonUnsettled:
-		return false, lo.Ternary(index.IsLoaded(site.File), ReasonUnsettled, "")
-	case site == winner.Site:
-		return true, winner.Reason
-	case slices.Contains(winner.Merged, site):
-		return true, lo.Ternary(index.Occurrence(site).Mode != 0, ReasonInjected, ReasonCombined)
+	case !unsettled && site == winner.Site:
+		return true, winner.Reason, ""
+	case !unsettled && slices.Contains(winner.Merged, site):
+		return true, lo.Ternary(index.Occurrence(site).Mode != 0, ReasonInjected, ReasonCombined), ""
+	case index.IsLoaded(site.File):
+		return false, lo.Ternary(unsettled, ReasonUnsettled, ""), ""
 	}
-	return false, ""
+	reason, hider := index.FindHider(site.File)
+	return false, reason, hider
+}
+
+// FindHider returns why the game does not read a file and the origin of the mod that hides it. The reason is dropped
+// and the mod is the first whose replace_path names the file's folder, or shadowed and the mod is the one whose file at
+// the same path comes later in the load order. It returns "" and "" if the game reads the file, or the index lists no
+// such file for the game to read.
+func (index *Index) FindHider(file int32) (Reason, string) {
+	current := index.Files[file]
+	loaded, hidden, _ := index.FindLoaded(current.Rel)
+	if !slices.ContainsFunc(hidden, func(other files.File) bool { return other.Key == current.Key }) {
+		return "", ""
+	}
+	if index.isDropped(file) {
+		return ReasonDropped, index.Roots[index.listReplacers(index.placements[file].key)[0]].Origin
+	}
+	return ReasonShadowed, loaded.Origin
 }
 
 // FindWinner returns the definition of a name that the game keeps, by the database's precedence. It returns false if
@@ -230,12 +258,13 @@ func (index *Index) listLoadOrder(sites []Site, byPlayset bool) []Site {
 		if byPlayset {
 			return cmp.Or(cmp.Compare(first.root, second.root), compareSites(a, b))
 		}
-		return cmp.Or(compareLoadOrder(first.rest, second.rest), compareSites(a, b))
+		return cmp.Or(CompareLoadOrder(first.rest, second.rest), compareSites(a, b))
 	})
 }
 
-// compareLoadOrder orders two relative paths the way the game loads files, a folder's files before its subfolders'.
-func compareLoadOrder(a, b string) int {
+// CompareLoadOrder orders two relative paths the way the game loads files, a folder's files before its subfolders'. It
+// returns a negative number if the first path loads first, a positive one if it loads last, and 0 if they are equal.
+func CompareLoadOrder(a, b string) int {
 	for {
 		first, restA, moreA := strings.Cut(a, "/")
 		second, restB, moreB := strings.Cut(b, "/")

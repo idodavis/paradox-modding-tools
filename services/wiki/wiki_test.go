@@ -281,7 +281,7 @@ func TestBuildLexiconListsEffectsAndFunctions(t *testing.T) {
 	examples := 0
 	for _, row := range effects {
 		if row.Defined != nil {
-			if !scripted[row.Name] || !strings.HasPrefix(row.Usage, row.Name+" = ") {
+			if !scripted[row.Name] || row.Usage != "" && !strings.HasPrefix(row.Usage, row.Name+" = { ") {
 				t.Errorf("scripted row %+v", row)
 			}
 			continue

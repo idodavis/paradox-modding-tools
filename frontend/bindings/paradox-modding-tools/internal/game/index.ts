@@ -4,6 +4,7 @@
 export type {
     CoatStrength,
     DetectedInstall,
+    Example,
     Game,
     Guide,
     WidgetType

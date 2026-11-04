@@ -20,6 +20,17 @@ import * as jomini$0 from "../../internal/jomini/models.js";
 import * as $models from "./models.js";
 
 /**
+ * BuildOverride returns the fix that overrides the entry at a position of a file: a copy of the entry, written as the
+ * game keeps it over the others, at the end of the mod's file for that kind of definition. The mod is the one with the
+ * given id, or else the first that can be written to and is not the file's own. It returns an error if the position is
+ * in no entry, if the mod defines the entry already, if the game combines every copy of that kind of entry, or if no
+ * mod can hold the copy.
+ */
+export function BuildOverride(path: string, line: number, column: number, modID: string): $CancellablePromise<$models.Fix> {
+    return $Call.ByID(112820297, path, line, column, modID);
+}
+
+/**
  * CloseFile drops an open file's text from the session.
  */
 export function CloseFile(path: string): $CancellablePromise<void> {
@@ -58,6 +69,19 @@ export function DescribeIndentation(path: string): $CancellablePromise<string> {
  */
 export function Diagnose(path: string): $CancellablePromise<$models.Diagnostic[] | null> {
     return $Call.ByID(3833762539, path);
+}
+
+/**
+ * DraftFile returns the file New file makes in a folder of a mod. In a folder of a database it is named for the mod and
+ * the folder, as the file Override copies an entry into, so it sorts with the mod's other files of the folder in the
+ * load order; a file in an events folder starts with the namespace line, the namespace named for the mod. In a
+ * localization folder of a language the install has, it is the mod's file of that language, with the header such files
+ * take. In any other folder it is new_file with the script extension the game's files there use, else .txt. A name the
+ * folder has already is numbered from 2 before the part the game reads at its end. It returns an error if no
+ * workspace is open or the folder is not in a mod that can be written to.
+ */
+export function DraftFile(folder: string): $CancellablePromise<$models.Draft> {
+    return $Call.ByID(48556312, folder);
 }
 
 /**
@@ -107,8 +131,8 @@ export function ListFolds(path: string): $CancellablePromise<$models.Fold[] | nu
 }
 
 /**
- * ListHints returns a file's inlay hints: each date in the file read in the mod's calendar. A value is a date only
- * where its field expects one.
+ * ListHints returns a file's inlay hints: each date in the file read in the mod's calendar, and the text of each
+ * localization key it names in the workspace's language. A value is a date only where its field expects one.
  */
 export function ListHints(path: string): $CancellablePromise<$models.Hint[] | null> {
     return $Call.ByID(1184030859, path);

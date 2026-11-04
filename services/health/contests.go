@@ -83,7 +83,7 @@ func listDefinitionFindings(ws *workspace.Session, mods *index.Index, reference 
 // removed-names where the mod's copy leaves out names still used.
 func listPathFindings(ws *workspace.Session, mods *index.Index, path string) []Finding {
 	installed, shipped := lo.FilterReject(makeFileSites(ws, mods, path), func(site lsp.Site, _ int) bool {
-		return site.Place.ReadOnly
+		return site.Place.Origin == game.OriginVanilla
 	})
 	kept := lo.SomeBy(shipped, func(site lsp.Site) bool { return site.Kept })
 	var findings []Finding
@@ -225,7 +225,7 @@ func splitWhy(finding Finding) []lsp.Part {
 	folder := winner.Place.Folder
 	beaten := lo.FilterMap(finding.Sites, func(site lsp.Site, _ int) (string, bool) {
 		return lo.Ternary(site.Place.Folder == folder, site.Place.Name, site.Place.Rel),
-			!site.Kept && !site.Place.ReadOnly
+			!site.Kept && site.Place.Origin != game.OriginVanilla
 	})
 	facts := maps.Clone(finding.Facts)
 	facts["folder"], facts["file"], facts["beatenFile"] = folder+"/", winner.Place.Name, JoinList(beaten, "and")

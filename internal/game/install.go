@@ -9,6 +9,7 @@ import (
 	"path/filepath"
 	"regexp"
 	"runtime"
+	"slices"
 	"strconv"
 	"strings"
 	"time"
@@ -71,6 +72,15 @@ func (game *Game) FindInstalls() []DetectedInstall {
 		})
 	}
 	return out
+}
+
+// IsWorkshopFolder reports whether a folder is under the game's Steam Workshop folder in one of Steam's libraries,
+// where Steam keeps the mods it downloads.
+func (game *Game) IsWorkshopFolder(dir string) bool {
+	appID := strconv.Itoa(game.SteamAppID)
+	return slices.ContainsFunc(findSteamLibraries(), func(library string) bool {
+		return files.IsUnder(filepath.Join(library, "steamapps", "workshop", "content", appID), dir)
+	})
 }
 
 // findSteamLibraries returns the Steam library roots that libraryfolders.vdf names in each default Steam folder.

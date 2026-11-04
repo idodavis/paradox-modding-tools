@@ -182,6 +182,16 @@ export interface Workspace {
     "showBinaries": boolean;
 
     /**
+     * the Library's card does not show the first-mod checklist
+     */
+    "hideChecklist": boolean;
+
+    /**
+     * the IDE does not open the start page
+     */
+    "hideStartPage": boolean;
+
+    /**
      * Settings holds the user's values of the per-workspace settings, by key.
      */
     "settings": { [_ in string]?: string } | null;

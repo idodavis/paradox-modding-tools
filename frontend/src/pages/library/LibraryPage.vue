@@ -1,12 +1,15 @@
-<!-- The Library page shows the workspaces as cards, the active one first. -->
+<!--
+  The Library page shows the workspaces as cards, the active one first, with the first-mod checklist on its card. With
+  none, it offers the two ways into modding and the game installs found on this computer.
+-->
 <script setup lang="ts">
-import { computed, onScopeDispose, shallowRef } from "vue";
+import { computed, shallowRef } from "vue";
 import { useRouter } from "vue-router";
 import { useMutation, useQuery } from "@pinia/colada";
 import { useEventBus } from "@vueuse/core";
-import { Events } from "@wailsio/runtime";
 import type { DropdownMenuItem } from "@nuxt/ui";
 
+import { findCommand } from "../../app/commands";
 import { homeRoute, useShown } from "../../app/pages";
 import { describeDumps, describeLexicon, installLine, plural } from "../../lib/format";
 import { gamesQuery, reportQuery, stateQuery, workspacesQuery } from "../../queries";
@@ -14,13 +17,18 @@ import { gameIcon } from "../../stores/settings";
 import { COMMAND_BUS } from "../../stores/windows";
 import { useWorkspaceStore, VANILLA } from "../../stores/workspace";
 import CreateModForm from "../../ui/CreateModForm.vue";
+import FirstModChecklist from "../../ui/FirstModChecklist.vue";
+import GameInstalls from "../../ui/GameInstalls.vue";
 import LevelCounts from "../../ui/LevelCounts.vue";
 import ModAvatar from "../../ui/ModAvatar.vue";
 import OriginChip from "../../ui/OriginChip.vue";
 import ScriptDocsGuide from "../../ui/ScriptDocsGuide.vue";
 import StatusFacts from "../../ui/StatusFacts.vue";
+import TermInfo from "../../ui/TermInfo.vue";
 import * as workspace from "@services/workspace/service";
 import type { Workspace } from "@services/app/models";
+
+const LAUNCH = findCommand("game.launch");
 
 const router = useRouter();
 const toast = useToast();
@@ -64,8 +72,6 @@ const lexicon = computed(() => {
   return `${describeLexicon(state.value)}${folders}.`;
 });
 
-const { mutate: launch } = useMutation({ mutation: () => workspace.Launch() });
-const { mutate: rescan } = useMutation({ mutation: (id: string) => workspace.RescanInstall(id) });
 const { mutate: resetData, isLoading: resettingData } = useMutation({
   mutation: () => workspace.ResetData(),
   onSuccess: () => {
@@ -74,19 +80,6 @@ const { mutate: resetData, isLoading: resettingData } = useMutation({
     toast.add({ title: "PMT's data was reset", color: "success" });
   },
 });
-
-onScopeDispose(
-  Events.On("game:exited", ({ data }) => {
-    const install = active.value?.record.install;
-    if (data && install) {
-      toast.add({
-        title: "The game wrote fresher script_docs",
-        description: "Scan the install again to read them.",
-        actions: [{ label: "Rescan the install", onClick: () => rescan(install) }],
-      });
-    }
-  }),
-);
 
 /** open goes to a workspace's home page, which makes it the active one. It resolves to a failure if cancelled. */
 function open(record: Workspace) {
@@ -100,10 +93,10 @@ async function openSettings(record: Workspace): Promise<void> {
   commandBus.emit("settings.open");
 }
 
-/** openModDialog opens the new mod dialog, or the wizard if no workspace is open. */
+/** openModDialog opens the new mod dialog, or Make a new mod if no workspace is open. */
 function openModDialog(): void {
   if (state.value?.open) creatingMod.value = true;
-  else void router.push({ name: "wizard" });
+  else void router.push({ name: "new-mod" });
 }
 
 /** describeMenu returns a workspace's menu, with Remove after the other entries. */
@@ -137,15 +130,76 @@ function describeMenu(record: Workspace, leading: DropdownMenuItem[]): DropdownM
         />
       </div>
 
-      <UEmpty
-        v-if="!isPending && !rows.length"
-        icon="i-lucide-folder-plus"
-        title="No workspaces yet"
-        description="A workspace is one game install plus the mods you load with it."
-        :actions="[
-          { label: 'New workspace', icon: 'i-lucide-plus', color: 'primary', variant: 'solid', to: { name: 'wizard' } },
-        ]"
-      />
+      <template v-if="!isPending && !rows.length">
+        <section class="grid grid-cols-2 gap-4">
+          <div class="flex flex-col gap-3.5 rounded-lg border border-default bg-muted p-6">
+            <UIcon name="i-lucide-file-plus" class="size-5 text-dimmed" />
+            <div class="flex flex-col gap-1">
+              <h2 class="text-16">Make a new mod</h2>
+              <p class="text-13 text-toned">
+                Pick the game and name your mod. PMT makes its folders, its descriptor and a localization file, then
+                opens it in the IDE.
+              </p>
+            </div>
+            <div class="flex flex-wrap gap-3.5">
+              <span v-for="game in games" :key="game.id" class="flex items-center gap-1.5 text-12 text-toned">
+                <img :src="gameIcon(game.id)" :alt="game.name" class="size-4.5 rounded-sm" />{{ game.name }}
+              </span>
+            </div>
+            <UButton
+              label="Make a new mod"
+              trailing-icon="i-lucide-arrow-right"
+              color="primary"
+              variant="solid"
+              size="md"
+              class="self-start"
+              :to="{ name: 'new-mod' }"
+            />
+          </div>
+          <div class="flex flex-col gap-3.5 rounded-lg border border-default bg-muted p-6">
+            <UIcon name="i-lucide-folder" class="size-5 text-dimmed" />
+            <div class="flex flex-col gap-1">
+              <h2 class="text-16">Work on a mod I have</h2>
+              <p class="text-13 text-toned">
+                Choose your mod's folder. PMT reads it with its game's files and opens Health, which lists its problems.
+              </p>
+            </div>
+            <UButton
+              label="Choose a mod folder"
+              size="md"
+              class="mt-auto self-start"
+              :to="{ name: 'new-mod', query: { goal: 'fix' } }"
+            />
+          </div>
+        </section>
+
+        <section class="flex flex-col gap-2.5">
+          <div class="flex items-center gap-2">
+            <span class="text-13 font-semibold">Found on this computer</span>
+            <span class="text-12 text-dimmed">
+              PMT reads each game's files from its install. Nothing is changed in them.
+            </span>
+          </div>
+          <div class="flex flex-col divide-y divide-default rounded-lg border border-default bg-muted">
+            <GameInstalls v-for="game in games" v-slot="{ recorded, detected }" :key="game.id" :game="game.id">
+              <div
+                v-for="install in [...recorded, ...detected]"
+                :key="install.path"
+                class="flex h-11 items-center gap-2.5 px-3.5"
+              >
+                <img :src="gameIcon(game.id)" :alt="game.name" class="size-4.5 rounded-sm" />
+                <span class="w-45 shrink-0 text-13 font-medium">{{ game.name }}</span>
+                <span class="w-20 shrink-0 text-12 text-dimmed">{{ install.version }}</span>
+                <span class="min-w-0 grow truncate font-mono text-12 text-dimmed">{{ install.path }}</span>
+              </div>
+            </GameInstalls>
+          </div>
+          <p class="text-12 text-dimmed">
+            To pick an install, its language and several mods yourself, use
+            <RouterLink :to="{ name: 'wizard' }" class="text-secondary hover:underline">New workspace</RouterLink>.
+          </p>
+        </section>
+      </template>
 
       <section v-if="active" class="flex flex-col gap-4 rounded-lg border border-accented bg-elevated p-5">
         <div class="flex items-center gap-3">
@@ -171,23 +225,34 @@ function describeMenu(record: Workspace, leading: DropdownMenuItem[]): DropdownM
           <UDropdownMenu
             :items="
               describeMenu(active.record, [
-                { label: 'Launch the game', icon: 'i-lucide-play', onSelect: () => launch() },
+                { label: 'Launch the game', icon: 'i-lucide-play', onSelect: (event) => LAUNCH?.onSelect?.(event) },
               ])
             "
           >
             <UButton icon="i-lucide-ellipsis" size="md" square aria-label="More" />
           </UDropdownMenu>
         </div>
+        <div v-if="store.failure?.id === active.record.id" class="flex items-start gap-2 text-12 text-error">
+          <UIcon name="i-lucide-circle-alert" class="mt-0.5 size-3.5 shrink-0" />
+          <span class="min-w-0 grow whitespace-pre-wrap">{{ store.failure.reason }}</span>
+          <UButton label="Try again" size="xs" @click="store.open(active.record.id)" />
+        </div>
         <div class="grid grid-cols-3 gap-6">
           <div class="flex min-w-0 flex-col gap-2">
-            <span class="text-12 font-medium text-toned">Load order</span>
+            <span class="flex items-center gap-1 text-12 font-medium text-toned">
+              Load order
+              <TermInfo term="load order" />
+            </span>
             <div class="flex flex-wrap gap-1.5">
               <OriginChip :origin="VANILLA" />
               <OriginChip v-for="mod in active.mods ?? []" :key="mod.id" :origin="mod.id" />
             </div>
           </div>
           <div class="flex min-w-0 flex-col gap-2">
-            <span class="text-12 font-medium text-toned">Language</span>
+            <span class="flex items-center gap-1 text-12 font-medium text-toned">
+              Game knowledge
+              <TermInfo term="game documentation" />
+            </span>
             <button
               v-if="dumps"
               type="button"
@@ -201,7 +266,18 @@ function describeMenu(record: Workspace, leading: DropdownMenuItem[]): DropdownM
               />
               {{ dumps.label }}
             </button>
-            <span class="text-12 text-dimmed">{{ dumps ? lexicon : "Read when the workspace opens." }}</span>
+            <span v-if="dumps && !dumps.current" class="text-12 text-dimmed">
+              It may be older than {{ state?.install.version || "the game" }}.
+              <UButton
+                label="Get the game's own"
+                variant="link"
+                color="secondary"
+                size="xs"
+                class="p-0"
+                @click="guiding = true"
+              />
+            </span>
+            <span v-else class="text-12 text-dimmed">{{ dumps ? lexicon : "Read when the workspace opens." }}</span>
           </div>
           <div class="flex min-w-0 flex-col gap-2">
             <span class="text-12 font-medium text-toned">Health</span>
@@ -212,6 +288,7 @@ function describeMenu(record: Workspace, leading: DropdownMenuItem[]): DropdownM
             <span v-else class="text-12 text-dimmed">Counted once the workspace is open.</span>
           </div>
         </div>
+        <FirstModChecklist />
       </section>
 
       <section v-for="group in groups" :key="group.game?.id ?? ''" class="flex flex-col gap-3">

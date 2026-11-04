@@ -75,12 +75,12 @@ export interface Expected {
     "choices"?: string[] | null;
 
     /**
-     * a number written as a script value too, as a docs' type term says
+     * a number that may be a script value too
      */
     "values"?: boolean;
 
     /**
-     * a name of a database nested in Database too, as a language's dialect
+     * a name of a database nested in Database too
      */
     "nested"?: boolean;
 }
@@ -107,7 +107,7 @@ export interface SourceState {
 }
 
 /**
- * A ValueType says what kind of value a field takes.
+ * A ValueType is the type of value a field takes.
  */
 export enum ValueType {
     /**

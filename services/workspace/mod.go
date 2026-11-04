@@ -90,7 +90,7 @@ func ReadDescriptor(row *game.Game, dir string) (Descriptor, error) {
 // ParseDescriptor parses a descriptor's text as JSON if the given file name is a .json file, else as script. It returns
 // an error if the JSON cannot be parsed.
 func ParseDescriptor(file, text string) (Descriptor, error) {
-	if path.Ext(file) == ".json" {
+	if isMetadata(file) {
 		return decodeDescriptorMetadata(text)
 	}
 	return parseDescriptorScript(text), nil
@@ -119,7 +119,7 @@ func findThumbnail(row *game.Game, dir, picture string) string {
 // WriteDescriptor writes a mod's descriptor in its game's format, making the file if it is missing. Fields a
 // Descriptor does not model keep their values. It returns an error if the thumbnail is outside the mod's folder.
 func WriteDescriptor(row *game.Game, dir string, descriptor Descriptor) error {
-	file, metadata := resolveDescriptor(row, dir)
+	file, _ := resolveDescriptor(row, dir)
 	existing, err := files.LoadText(file)
 	if err != nil {
 		return err
@@ -132,15 +132,20 @@ func WriteDescriptor(row *game.Game, dir string, descriptor Descriptor) error {
 		}
 		descriptor.Thumbnail = strings.TrimPrefix(rel, path.Join(row.ThumbnailDir, "")+"/")
 	}
-	if metadata {
-		existing.Text, err = encodeDescriptorMetadata(existing.Text, descriptor)
-	} else {
-		existing.Text = encodeDescriptorScript(existing.Text, descriptor)
-	}
-	if err != nil {
+	if existing.Text, err = EncodeDescriptor(file, existing.Text, descriptor); err != nil {
 		return err
 	}
 	return files.WriteText(file, existing)
+}
+
+// EncodeDescriptor returns a descriptor's text as JSON if the given file name is a .json file, else as script. Fields
+// a Descriptor does not model keep their values in the existing text. It returns an error if that JSON cannot be
+// parsed.
+func EncodeDescriptor(file, existing string, descriptor Descriptor) (string, error) {
+	if isMetadata(file) {
+		return encodeDescriptorMetadata(existing, descriptor)
+	}
+	return encodeDescriptorScript(existing, descriptor), nil
 }
 
 // WriteDescriptor writes a mod's descriptor and refreshes the session's copy of it in the same call. It returns an
@@ -494,7 +499,12 @@ func checkModFolder(row *game.Game, install app.Install, dir string) error {
 
 // resolveDescriptor returns the path of a mod's descriptor and whether it is metadata.json rather than script.
 func resolveDescriptor(row *game.Game, dir string) (file string, metadata bool) {
-	return files.Join(dir, row.ModDescriptor), path.Ext(row.ModDescriptor) == ".json"
+	return files.Join(dir, row.ModDescriptor), isMetadata(row.ModDescriptor)
+}
+
+// isMetadata reports whether a descriptor's file name is a .json file, which holds it as JSON rather than script.
+func isMetadata(file string) bool {
+	return path.Ext(file) == ".json"
 }
 
 // parseDescriptorScript parses a descriptor written as script.

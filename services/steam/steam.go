@@ -7,6 +7,7 @@ import (
 	"context"
 	"errors"
 	"fmt"
+	"io"
 	"net/http"
 	"os"
 	"path"
@@ -32,6 +33,14 @@ import (
 const (
 	EventProgress       = "steam:progress"  // the progress of an upload, as a Progress
 	EventListingChanged = "release:changed" // a mod's listing files were written, with the mod's id
+)
+
+// The names of what the service keeps in PMT's cache: an item's snapshot, and the folders an upload copies its files
+// and pictures into, which it deletes when it ends.
+const (
+	snapshotPrefix = "snapshot-"
+	copyPrefix     = "copy-"
+	picturesPrefix = "pictures-"
 )
 
 // init registers the type of each event's data with Wails.
@@ -60,6 +69,62 @@ func ServePublish(args []string) (exitCode int, served bool) {
 		}
 	}
 	return 0, false
+}
+
+// ServiceStartup deletes, in the background, what the service left in PMT's cache that nothing needs: the snapshot of
+// each item that no listing of a recorded mod names, and the copies an upload left when the app stopped during it. A
+// cache folder it cannot read stays as it is.
+func (stm *Service) ServiceStartup(context.Context, application.ServiceOptions) error {
+	cacheDir := stm.Workspace.Config.Dirs.Cache
+	entries, err := os.ReadDir(cacheDir)
+	if err != nil {
+		return nil
+	}
+	linked := stm.listLinkedItems()
+	stale := lo.FilterMap(entries, func(entry os.DirEntry, _ int) (string, bool) {
+		return filepath.Join(cacheDir, entry.Name()), isStale(entry.Name(), linked)
+	})
+	go func() {
+		for _, dir := range stale {
+			_ = removeCacheDir(cacheDir, dir)
+		}
+	}()
+	return nil
+}
+
+// listLinkedItems returns the Workshop ids that the listings of the mods in every workspace name: each mod's own, by
+// its record or its descriptor, and its older listings'. A file that cannot be read names none.
+func (stm *Service) listLinkedItems() map[string]bool {
+	config := stm.Workspace.Config.Config()
+	linked := map[string]bool{}
+	for _, ws := range config.Workspaces {
+		install, _ := lo.Find(config.Installs, func(install app.Install) bool { return install.ID == ws.Install })
+		row := game.LookupGame(install.Game)
+		for _, mod := range ws.Mods {
+			linked[mod.WorkshopID] = true
+			if row != nil {
+				descriptor, _ := workspace.ReadDescriptor(row, mod.Dir)
+				linked[descriptor.WorkshopID] = true
+			}
+			keys, _ := os.ReadDir(files.Join(mod.Dir, workshopDir))
+			for _, key := range keys {
+				listing, _ := app.LoadJSON[Listing](filepath.Join(resolveListingDir(mod.Dir, key.Name()), listingFile))
+				linked[listing.WorkshopID] = true
+			}
+		}
+	}
+	delete(linked, "")
+	return linked
+}
+
+// isStale reports whether an entry of PMT's cache is one the service made and nothing needs: the snapshot of an item no
+// listing names, or an upload's copy, which only an upload that ended early leaves.
+func isStale(name string, linked map[string]bool) bool {
+	if snapshot, ok := strings.CutPrefix(name, snapshotPrefix); ok {
+		workshopID, isJSON := strings.CutSuffix(snapshot, ".json")
+		return isJSON && !linked[workshopID]
+	}
+	return strings.HasPrefix(name, copyPrefix) || strings.HasPrefix(name, picturesPrefix)
 }
 
 // findMod returns the open workspace and one of its mods. It returns an error if no workspace is open or it has no
@@ -272,7 +337,12 @@ func (stm *Service) Publish(ctx context.Context, modID, key, visibility string) 
 	if err != nil {
 		return err
 	}
-	upload, _, err := stm.buildUpload(ws, mod, listing)
+	src, err := stm.openSource(ws, mod, listing)
+	if err != nil {
+		return err
+	}
+	defer func() { _ = src.close() }()
+	upload, _, err := stm.buildUpload(mod, src)
 	if err != nil {
 		return err
 	}
@@ -282,7 +352,7 @@ func (stm *Service) Publish(ctx context.Context, modID, key, visibility string) 
 	}
 	// Steam gets copies of the upload's files and pictures, and no others
 	cacheDir := stm.Workspace.Config.Dirs.Cache
-	pictures, err := os.MkdirTemp(cacheDir, "pictures-")
+	pictures, err := os.MkdirTemp(cacheDir, picturesPrefix)
 	if err != nil {
 		return err
 	}
@@ -290,7 +360,7 @@ func (stm *Service) Publish(ctx context.Context, modID, key, visibility string) 
 	if listing, err = resolvePictures(pictures, listing); err != nil {
 		return err
 	}
-	if params.UploadDir, err = copyFiles(cacheDir, upload.Files); err != nil {
+	if params.UploadDir, err = copyFiles(cacheDir, src, upload.Files); err != nil {
 		return err
 	}
 	defer func() { _ = removeCacheDir(cacheDir, params.UploadDir) }()
@@ -330,27 +400,37 @@ func (stm *Service) buildParams(ws *workspace.Session) (Params, error) {
 	}, nil
 }
 
-// copyFiles copies the files into a new folder in PMT's cache, each under its Rel path, and returns the folder. If a
-// copy fails, it deletes the folder and returns the error.
-func copyFiles(cacheDir string, list []files.File) (string, error) {
-	dir, err := os.MkdirTemp(cacheDir, "copy-")
+// copyFiles copies files of a source into a new folder in PMT's cache, each under its Rel path, and returns the
+// folder. If a copy fails, it deletes the folder and returns the error.
+func copyFiles(cacheDir string, src source, list []files.File) (string, error) {
+	dir, err := os.MkdirTemp(cacheDir, copyPrefix)
 	if err != nil {
 		return "", err
 	}
 	for _, file := range list {
-		target := files.Join(dir, file.Rel)
-		content, err := os.ReadFile(file.Path)
-		if err == nil {
-			err = os.MkdirAll(filepath.Dir(target), 0o755)
-		}
-		if err == nil {
-			err = os.WriteFile(target, content, 0o644)
-		}
-		if err != nil {
+		if err := copyFile(src, file.Rel, files.Join(dir, file.Rel)); err != nil {
 			return "", errors.Join(err, removeCacheDir(cacheDir, dir))
 		}
 	}
 	return dir, nil
+}
+
+// copyFile copies one file of a source to the target path, making its folder first.
+func copyFile(src source, rel, target string) error {
+	if err := os.MkdirAll(filepath.Dir(target), 0o755); err != nil {
+		return err
+	}
+	content, err := src.open(rel)
+	if err != nil {
+		return err
+	}
+	defer func() { _ = content.Close() }()
+	file, err := os.Create(target)
+	if err != nil {
+		return err
+	}
+	_, err = io.Copy(file, content)
+	return errors.Join(err, file.Close())
 }
 
 // removeCacheDir deletes a file or a folder in PMT's cache. A missing one is no error. It returns an error and deletes
@@ -360,13 +440,4 @@ func removeCacheDir(cacheDir, dir string) error {
 		return fmt.Errorf("%s is not in PMT's cache folder, so it is not deleted", dir)
 	}
 	return os.RemoveAll(dir)
-}
-
-// moveCacheDir moves the source folder to the target's place in PMT's cache, replacing the target. A failed move
-// deletes the source.
-func moveCacheDir(cacheDir, source, target string) error {
-	if err := errors.Join(removeCacheDir(cacheDir, target), os.Rename(source, target)); err != nil {
-		return errors.Join(err, removeCacheDir(cacheDir, source))
-	}
-	return nil
 }

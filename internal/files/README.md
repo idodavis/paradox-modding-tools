@@ -55,7 +55,7 @@ so a file is replaced whole or not at all. A gob cache that is missing or does n
 builds it again.
 
 `Unzip` leaves out a top folder that holds every file, skips links, and refuses a zip that names a path outside the
-folder.
+folder. `FindZipFolder` finds that top folder, so a zip read in place starts from it too.
 
 ## Paths and keys
 

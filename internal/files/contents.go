@@ -161,14 +161,8 @@ func SaveGob(path string, value any) error {
 // Unzip writes the files of a zip into the given folder, without a top folder that holds every file, and skips links.
 // It returns an error if a file cannot be written or the zip names a path outside the folder.
 func Unzip(archive *zip.Reader, dir string) error {
-	entries := lo.Filter(archive.File, func(entry *zip.File, _ int) bool {
-		return !entry.FileInfo().IsDir() && entry.Mode()&fs.ModeSymlink == 0
-	})
-	top, _, _ := strings.Cut(lo.FirstOr(entries, &zip.File{}).Name, "/")
-	if !lo.EveryBy(entries, func(entry *zip.File) bool { return strings.HasPrefix(entry.Name, top+"/") }) {
-		top = ""
-	}
-	for _, entry := range entries {
+	top := FindZipFolder(archive)
+	for _, entry := range listZipFiles(archive) {
 		target := Join(dir, strings.TrimPrefix(entry.Name, top+"/"))
 		if !IsUnder(dir, target) {
 			return fmt.Errorf("the zip names %s, which is outside its own folder", entry.Name)
@@ -178,6 +172,23 @@ func Unzip(archive *zip.Reader, dir string) error {
 		}
 	}
 	return nil
+}
+
+// FindZipFolder returns the top folder that holds every file of a zip, or "" if no one folder does.
+func FindZipFolder(archive *zip.Reader) string {
+	entries := listZipFiles(archive)
+	top, _, _ := strings.Cut(lo.FirstOr(entries, &zip.File{}).Name, "/")
+	if !lo.EveryBy(entries, func(entry *zip.File) bool { return strings.HasPrefix(entry.Name, top+"/") }) {
+		return ""
+	}
+	return top
+}
+
+// listZipFiles returns the files of a zip, leaving out its folders and links.
+func listZipFiles(archive *zip.Reader) []*zip.File {
+	return lo.Filter(archive.File, func(entry *zip.File, _ int) bool {
+		return !entry.FileInfo().IsDir() && entry.Mode()&fs.ModeSymlink == 0
+	})
 }
 
 // writeEntry writes one file of a zip to disk, making its folder first.

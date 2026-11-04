@@ -4,12 +4,12 @@ package steam
 
 import (
 	"archive/zip"
+	"bytes"
 	"cmp"
-	"crypto/sha256"
-	"encoding/hex"
 	"encoding/json"
 	"errors"
 	"fmt"
+	"io"
 	"io/fs"
 	"net/url"
 	"os"
@@ -20,7 +20,6 @@ import (
 	"slices"
 	"strconv"
 	"strings"
-	"sync"
 
 	"github.com/samber/lo"
 	"github.com/wailsapp/wails/v3/pkg/application"
@@ -72,6 +71,16 @@ type Upload struct {
 	Excluded []string     `json:"excluded"` // the paths that the rules leave out
 }
 
+// A source is a folder, or an older listing's zip, whose files are read where they are, by their Rel paths. An upload
+// sends a zip's descriptor with the listing's name, versions and Workshop id.
+type source struct {
+	files      fs.FS     // the files, by their Rel paths
+	root       string    // the folder, or the zip
+	descriptor string    // the Rel path of the descriptor the upload sends in place of the zip's; "" for a folder
+	text       []byte    // that descriptor's text
+	archive    io.Closer // the open zip; nil for a folder
+}
+
 // The types of preview.
 const (
 	previewImage = "image"
@@ -103,9 +112,6 @@ var contentExtensions = map[string]string{"image/png": ".png", "image/jpeg": ".j
 
 // listingVersion matches the game version of an older listing, such as 1.19, 1.19.2 or 1.19.*.
 var listingVersion = regexp.MustCompile(`^\d+\.\d+(\.\d+){0,2}(\.\*)?$`)
-
-// extractTurn keeps two extractions of a listing's zip from running at once.
-var extractTurn sync.Mutex
 
 // ReadListing returns one of a mod's listings. It returns an error if the workspace has no such mod or listing, or a
 // file cannot be read.
@@ -384,8 +390,11 @@ func (stm *Service) CreateListing(modID, supportedVersion, zipPath string) (List
 	if err != nil {
 		return Listing{}, err
 	}
-	_, descriptor, err := loadZip(ws.Game, stm.Workspace.Config.Dirs.Cache, mod.ID+"/"+key, zipPath)
+	src, descriptor, err := openZip(ws.Game, zipPath)
 	if err != nil {
+		return Listing{}, err
+	}
+	if err := src.close(); err != nil {
 		return Listing{}, err
 	}
 	return stm.createListing(ws, mod, Listing{
@@ -440,12 +449,11 @@ func (stm *Service) ImportListing(modID, item, zipPath string) (Listing, error) 
 	if answer.Reason != "" {
 		return Listing{}, errors.New(answer.Reason)
 	}
-	cacheDir := stm.Workspace.Config.Dirs.Cache
-	if _, ok := LoadSnapshot(cacheDir, workshopID); !ok {
-		return Listing{}, errors.New("PMT has no copy of the item's files: try the import again")
+	snapshot, err := stm.loadSnapshot(ws, workshopID)
+	if err != nil {
+		return Listing{}, err
 	}
-	snapshotDir := resolveSnapshotDir(cacheDir, workshopID)
-	descriptor, err := workspace.ReadDescriptor(ws.Game, snapshotDir)
+	descriptor, err := workspace.ReadDescriptor(ws.Game, snapshot.Dir)
 	if err != nil {
 		return Listing{}, fmt.Errorf("the item holds no descriptor of a mod: %w", err)
 	}
@@ -453,7 +461,7 @@ func (stm *Service) ImportListing(modID, item, zipPath string) (Listing, error) 
 	if err != nil {
 		return Listing{}, fmt.Errorf("PMT cannot make a listing for the game version the item supports: %w", err)
 	}
-	walked, err := files.Walk(files.Root{Dir: snapshotDir})
+	walked, err := files.Walk(files.Root{Dir: snapshot.Dir})
 	if err == nil {
 		err = writeArchive(zipPath, walked)
 	}
@@ -486,21 +494,7 @@ func (stm *Service) LinkItem(modID, key, item string) error {
 		return err
 	}
 	application.Get().Event.Emit(EventListingChanged, modID)
-	return stm.removeItemCopy(current.WorkshopID)
-}
-
-// removeItemCopy deletes PMT's copy of a Workshop item, unless a mod in any workspace still links it.
-func (stm *Service) removeItemCopy(workshopID string) error {
-	mods := lo.FlatMap(stm.Workspace.Config.Config().Workspaces, func(ws app.Workspace, _ int) []app.Mod { return ws.Mods })
-	if workshopID == "" || slices.ContainsFunc(mods, func(mod app.Mod) bool { return mod.WorkshopID == workshopID }) {
-		return nil
-	}
-	stm.removeAnswer(workshopID)
-	cacheDir := stm.Workspace.Config.Dirs.Cache
-	return errors.Join(
-		removeCacheDir(cacheDir, resolveSnapshotDir(cacheDir, workshopID)),
-		removeCacheDir(cacheDir, resolveSnapshotPath(cacheDir, workshopID)),
-	)
+	return nil
 }
 
 // toWorkshopID returns the id of the Workshop item that a text names by its id or its page's address. It returns ""
@@ -527,24 +521,23 @@ func (stm *Service) ListUpload(modID, key string) (Upload, error) {
 	if err != nil {
 		return Upload{}, err
 	}
-	upload, _, err := stm.buildUpload(ws, mod, listing)
+	src, err := stm.openSource(ws, mod, listing)
+	if err != nil {
+		return Upload{}, err
+	}
+	defer func() { _ = src.close() }()
+	upload, _, err := stm.buildUpload(mod, src)
 	return upload, err
 }
 
-// buildUpload returns the files that the next upload of a mod's listing sends and leaves out, and the ignores that
-// decide which are left out. It returns an error if the listing's zip or a file cannot be read.
-func (stm *Service) buildUpload(
-	ws *workspace.Session, mod workspace.Mod, listing Listing,
-) (Upload, []files.Ignore, error) {
-	dir, err := stm.resolveSource(ws, mod, listing)
-	if err != nil {
-		return Upload{}, nil, err
-	}
+// buildUpload returns the files that the next upload of a mod sends from a source and those it leaves out, and the
+// ignores that decide which are left out. It returns an error if a file cannot be read.
+func (stm *Service) buildUpload(mod workspace.Mod, src source) (Upload, []files.Ignore, error) {
 	ignores, err := stm.buildIgnores(mod)
 	if err != nil {
 		return Upload{}, nil, err
 	}
-	walked, err := files.Walk(files.Root{Dir: dir, Origin: mod.ID})
+	walked, err := src.list(mod.ID)
 	if err != nil {
 		return Upload{}, nil, err
 	}
@@ -554,7 +547,7 @@ func (stm *Service) buildUpload(
 			upload.Excluded = append(upload.Excluded, file.Rel)
 			continue
 		}
-		stat, err := os.Stat(file.Path)
+		stat, err := fs.Stat(src.files, file.Rel)
 		if err != nil {
 			return Upload{}, nil, err
 		}
@@ -583,71 +576,123 @@ func isExcluded(ignores []files.Ignore, rel string) bool {
 	return slices.ContainsFunc(ignores, func(ignore files.Ignore) bool { return ignore.Match(rel, false) })
 }
 
-// resolveSource returns the folder a mod's listing uploads from. It returns an error if an older listing's zip is
-// missing or unreadable.
-func (stm *Service) resolveSource(ws *workspace.Session, mod workspace.Mod, listing Listing) (string, error) {
+// openSource opens the files a mod's listing uploads: the mod's folder, or an older listing's zip. The caller closes
+// the source. It returns an error if an older listing names no zip, or its zip cannot be read or holds no descriptor.
+func (stm *Service) openSource(ws *workspace.Session, mod workspace.Mod, listing Listing) (source, error) {
 	if listing.Key == "" {
-		return mod.Dir, nil
+		return source{files: os.DirFS(mod.Dir), root: mod.Dir}, nil
 	}
 	if listing.Source == "" {
-		return "", fmt.Errorf("the listing for game %s names no zip to take its files from", listing.Key)
+		return source{}, fmt.Errorf("the listing for game %s names no zip to take its files from", listing.Key)
 	}
-	dir, descriptor, err := loadZip(ws.Game, stm.Workspace.Config.Dirs.Cache, mod.ID+"/"+listing.Key, listing.Source)
+	src, descriptor, err := openZip(ws.Game, listing.Source)
 	if err != nil {
-		return "", err
-	}
-	if descriptor.Name == listing.Title && descriptor.Version == listing.Version &&
-		descriptor.SupportedVersion == listing.SupportedVersion && descriptor.WorkshopID == listing.WorkshopID {
-		return dir, nil
+		return source{}, err
 	}
 	descriptor.Name, descriptor.Version, descriptor.SupportedVersion, descriptor.WorkshopID =
 		listing.Title, listing.Version, listing.SupportedVersion, listing.WorkshopID
-	return dir, workspace.WriteDescriptor(ws.Game, dir, descriptor)
+	text := files.DecodeText(src.text)
+	if text.Text, err = workspace.EncodeDescriptor(src.descriptor, text.Text, descriptor); err != nil {
+		return source{}, errors.Join(err, src.close())
+	}
+	src.text = text.Encode()
+	return src, nil
 }
 
-// loadZip returns the cache folder that holds a zip's files and the descriptor in them, extracting the zip if it
-// changed. It returns an error if the zip cannot be read or holds no descriptor.
-func loadZip(row *game.Game, cacheDir, cacheKey, zip string) (string, workspace.Descriptor, error) {
-	extractTurn.Lock()
-	defer extractTurn.Unlock()
-	stat, err := os.Stat(zip)
+// openZip opens a zip of a mod's files as a source, from the one folder that holds them all, and reads the descriptor
+// in it. The caller closes the source. It returns an error if the zip cannot be read or holds no descriptor.
+func openZip(row *game.Game, zipPath string) (source, workspace.Descriptor, error) {
+	archive, err := zip.OpenReader(zipPath)
 	if err != nil {
-		return "", workspace.Descriptor{}, err
+		return source{}, workspace.Descriptor{}, err
 	}
-	digest := sha256.Sum256([]byte(cacheKey))
-	dir := filepath.Join(cacheDir, "listing-"+hex.EncodeToString(digest[:8]))
-	stamp := fmt.Sprintf("%s\n%d\n%d\n", files.ToKey(zip), stat.Size(), stat.ModTime().UnixNano())
-	if saved, err := os.ReadFile(dir + ".stamp"); err != nil || string(saved) != stamp || !files.IsFolder(dir) {
-		if err := extractZip(cacheDir, zip, dir, stamp); err != nil {
-			return "", workspace.Descriptor{}, err
+	folder, err := fs.Sub(&archive.Reader, cmp.Or(files.FindZipFolder(&archive.Reader), "."))
+	src := source{files: folder, root: zipPath, descriptor: row.ModDescriptor, archive: archive}
+	if err == nil {
+		src.text, err = fs.ReadFile(folder, row.ModDescriptor)
+	}
+	var descriptor workspace.Descriptor
+	if err == nil {
+		descriptor, err = workspace.ParseDescriptor(row.ModDescriptor, files.DecodeText(src.text).Text)
+	}
+	if err != nil {
+		return source{}, workspace.Descriptor{}, errors.Join(
+			fmt.Errorf("the zip holds no descriptor of a mod: %w", err), archive.Close(),
+		)
+	}
+	return src, descriptor, nil
+}
+
+// list returns the files of the source as an upload's, from the given origin. It skips the folders files.IsHiddenDir
+// reports, as files.Walk does.
+func (src source) list(origin string) ([]files.File, error) {
+	if src.archive == nil {
+		return files.Walk(files.Root{Dir: src.root, Origin: origin})
+	}
+	list := []files.File{}
+	err := fs.WalkDir(src.files, ".", func(rel string, entry fs.DirEntry, err error) error {
+		switch {
+		case err != nil:
+			return err
+		case entry.IsDir() && rel != "." && files.IsHiddenDir(entry.Name()):
+			return fs.SkipDir
+		case !entry.IsDir():
+			filePath := files.Join(src.root, rel)
+			list = append(list, files.File{
+				Path: filePath, Key: files.ToKey(filePath), Rel: rel, Origin: origin, Format: files.Classify(rel),
+			})
 		}
-	}
-	descriptor, err := workspace.ReadDescriptor(row, dir)
-	if err != nil {
-		return "", workspace.Descriptor{}, fmt.Errorf("the zip holds no descriptor of a mod: %w", err)
-	}
-	return dir, descriptor, nil
+		return nil
+	})
+	slices.SortFunc(list, func(file, other files.File) int { return strings.Compare(file.Rel, other.Rel) })
+	return list, err
 }
 
-// extractZip extracts a zip into a listing's cache folder. It returns an error if the zip cannot be read or names a
-// file outside its folder.
-func extractZip(cacheDir, zipFile, dir, stamp string) error {
-	archive, err := zip.OpenReader(zipFile)
+// hashKey returns what the hash of one of the source's files is kept by: its path, size and time. It returns "" for a
+// file it cannot read, and for the descriptor a zip's upload rewrites, whose hash is never kept.
+func (src source) hashKey(file files.File) string {
+	stat, err := fs.Stat(src.files, file.Rel)
+	if err != nil || file.Rel == src.descriptor {
+		return ""
+	}
+	return fmt.Sprintf("%s %d %d", file.Path, stat.Size(), stat.ModTime().UnixNano())
+}
+
+// open opens one of the source's files as the upload sends it.
+func (src source) open(rel string) (io.ReadCloser, error) {
+	if rel == src.descriptor {
+		return io.NopCloser(bytes.NewReader(src.text)), nil
+	}
+	return src.files.Open(rel)
+}
+
+// loadText reads one of the source's files into its text as the upload sends it. A missing file, or no Rel path,
+// gives empty text and no error, as files.LoadText does.
+func (src source) loadText(rel string) (files.Text, error) {
+	switch {
+	case rel == "":
+		return files.Text{}, nil
+	case src.archive == nil:
+		return files.LoadText(files.Join(src.root, rel))
+	}
+	file, err := src.open(rel)
+	if errors.Is(err, fs.ErrNotExist) {
+		return files.Text{}, nil
+	}
 	if err != nil {
-		return err
+		return files.Text{}, err
 	}
-	defer func() { _ = archive.Close() }()
-	temp, err := os.MkdirTemp(cacheDir, "copy-")
-	if err != nil {
-		return err
+	defer func() { _ = file.Close() }()
+	content, err := io.ReadAll(file)
+	return files.DecodeText(content), err
+}
+
+// close closes the source's zip, if it has one.
+func (src source) close() error {
+	if src.archive == nil {
+		return nil
 	}
-	if err := files.Unzip(&archive.Reader, temp); err != nil {
-		return errors.Join(err, removeCacheDir(cacheDir, temp))
-	}
-	if err := moveCacheDir(cacheDir, temp, dir); err != nil {
-		return err
-	}
-	return os.WriteFile(dir+".stamp", []byte(stamp), 0o644)
+	return src.archive.Close()
 }
 
 // WriteZip writes the files of a mod's next upload as a zip.

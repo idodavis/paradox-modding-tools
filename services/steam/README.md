@@ -89,9 +89,8 @@ Workshop item, and its key is that game version.
 ## The upload set
 
 An `Upload` is the set of files a listing's next upload sends. The own listing sends the mod's folder. An older one
-sends the files of its zip, extracted once into the cache and extracted again when the zip's path, size or time
-changes. The extracted descriptor's name, versions and Workshop id are set to the listing's, and the zip itself is
-never changed.
+sends the files of its zip, read where they are, from the one folder in the zip that holds them all, if there is one.
+Its descriptor goes with the listing's name, versions and Workshop id, and the zip itself is never changed.
 
 Either way, `ListUpload` leaves out what the rules name: files that start with a dot, though the `.metadata` folder
 stays, the coding agents' instruction files, and what the mod's `.gitignore` and its own exclusions cover. The upload
@@ -99,21 +98,30 @@ sends copies of the set, made in a folder of their own, so Steam gets those file
 
 ## The compare
 
-Steam is the compare's reference. A `Snapshot` is PMT's kept copy of an item's files as Steam has them, with the time
-Steam last updated the item. The service also keeps Steam's answer about each item, its `Details` or why they could not
-be read, with when it asked.
+Steam is the compare's reference. A `Snapshot` is the hashes of an item's files as Steam has them, the folder Steam
+keeps them in and the time Steam last updated the item. PMT keeps no copy of the files. The service also keeps Steam's
+answer about each item, its `Details` or why they could not be read, with when it asked.
 
 - `CompareUpload` asks Steam only when no answer is kept for the item, a failed one included, so the page can compare at
   every save. Comparisons that need the same item while Steam is asked wait for that one answer. `FetchItem` drops the
   answer and compares again, and so does an upload.
-- When Steam is asked, a second copy reads the details. The item's files are downloaded into the snapshot only when
-  Steam's time differs from the snapshot's.
+- When Steam is asked, a second copy reads the details. Steam downloads the item, and its files are hashed again, only
+  when Steam's time differs from the snapshot's. A file's diff, its lines and an import read Steam's own folder, and
+  Steam downloads the item again if that folder is gone.
 - A `Comparison` lists each `Difference` the next upload makes. The page: the title, the description, and the lists of
   tags, gallery, DLC and required items. The files: the version, then each file added, changed or removed, with the
   lines a text file gains and loses. Both sides are filtered by the upload's rules.
 - Hashes are kept by a file's path, size and time, so a comparison hashes again only what changed.
 - The status is `new` with no item, `unknown` with a reason when Steam could not be asked or its files could not be
   downloaded, else `same` or `changed`.
+
+## The cache
+
+The service keeps in PMT's cache a snapshot for each item, as `snapshot-<id>.json`, the tags of each app id, and the
+`copy-` and `pictures-` folders an upload sends from, which it deletes when it ends. At each start, `ServiceStartup`
+deletes in the background the snapshot of each item that no listing of a recorded mod names, by the mod's record, its
+descriptor or an older listing's `listing.json`, and every `copy-` and `pictures-` folder, which only an upload that
+was stopped with the app leaves.
 
 ## Tags, change notes and BBCode
 
@@ -159,7 +167,8 @@ be read, with when it asked.
 - **Dependency**: one mod a listing's mod depends on, with the Workshop id of the workspace mod that answers it.
 - **Upload**: the set of files a listing's next upload sends.
 - **Rule**: one pattern of files an upload leaves out, with its reason.
-- **Snapshot**: PMT's kept copy of an item's files as Steam has them.
+- **Snapshot**: the hashes of an item's files as Steam has them, and the folder Steam keeps them in.
+- **Source**: where an upload reads its files: the mod's folder, or an older listing's zip.
 - **Details**: what Steam reports about an item.
 - **Answer**: Steam's details of an item, or why they are missing, kept with when Steam was asked.
 - **Comparison**: what the next upload changes against what Steam has.

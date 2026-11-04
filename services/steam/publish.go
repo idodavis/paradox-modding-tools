@@ -162,8 +162,8 @@ func publish(client *Client, params Params) error {
 	return client.Submit(workshopID, params, func(step Progress) { _ = lines.Encode(step) })
 }
 
-// download has Steam download an item and keeps a copy of its files in PMT's cache as the item's snapshot. If Steam's
-// download fails, the earlier snapshot stays.
+// download has Steam download an item, and saves the hashes of its files and the folder Steam keeps them in as the
+// item's snapshot. If Steam's download fails, the earlier snapshot stays.
 func download(client *Client, params Params) error {
 	folder, err := client.fetchFolder(params.WorkshopID, params.UpdatedAt)
 	if err != nil {
@@ -177,19 +177,10 @@ func download(client *Client, params Params) error {
 	if err != nil {
 		return err
 	}
-	dir, err := copyFiles(dirs.Cache, walked)
-	if err != nil {
-		return err
-	}
-	snapshotDir := resolveSnapshotDir(dirs.Cache, params.WorkshopID)
-	if err := moveCacheDir(dirs.Cache, dir, snapshotDir); err != nil {
-		return err
-	}
-	if walked, err = files.Walk(files.Root{Dir: snapshotDir}); err != nil {
-		return err
-	}
-	snapshot := Snapshot{WorkshopID: params.WorkshopID, UpdatedAt: params.UpdatedAt, Files: buildHashes(walked)}
-	return SaveSnapshot(dirs.Cache, snapshot)
+	return SaveSnapshot(dirs.Cache, Snapshot{
+		WorkshopID: params.WorkshopID, UpdatedAt: params.UpdatedAt, Dir: folder,
+		Files: buildHashes(source{files: os.DirFS(folder), root: folder}, walked),
+	})
 }
 
 // toExitCode prints an error on standard error as one JSON line and returns 1. It returns 0 for no error.

@@ -24,7 +24,7 @@ export function AddPreview(modID: string, key: string, preview: $models.Preview)
 
 /**
  * CompareFile returns one file as Steam has it and as the upload sends it, "" for a missing side. It returns an error
- * if there is no such mod or listing, or a file cannot be read.
+ * if there is no such mod or listing, PMT has no snapshot of the item, or a file cannot be read.
  */
 export function CompareFile(modID: string, key: string, rel: string): $CancellablePromise<string[] | null> {
     return $Call.ByID(2982231799, modID, key, rel);

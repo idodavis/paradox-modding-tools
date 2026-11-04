@@ -221,17 +221,18 @@ func TestCompareReportsChanges(t *testing.T) {
 		{Path: filepath.Join(dir, changedRel), Rel: changedRel},
 		{Path: filepath.Join(dir, extraRel), Rel: extraRel},
 	}}
-	hashes := buildHashes(upload.Files)
-	steamDir := resolveSnapshotDir(stm.Workspace.Config.Dirs.Cache, "1")
+	src := source{files: os.DirFS(dir), root: dir}
+	hashes := buildHashes(src, upload.Files)
+	steamDir := t.TempDir()
 	writeFiles(t, steamDir, map[string]string{"descriptor.mod": "version=\"0.9\"\n", changedRel: "old\n", goneRel: "x"})
 	err = SaveSnapshot(stm.Workspace.Config.Dirs.Cache, Snapshot{
-		WorkshopID: "1",
-		Files:      map[string]string{sameRel: hashes[sameRel], changedRel: "old", goneRel: "x"},
+		WorkshopID: "1", Dir: steamDir,
+		Files: map[string]string{sameRel: hashes[sameRel], changedRel: "old", goneRel: "x"},
 	})
 	if err != nil {
 		t.Fatal(err)
 	}
-	got, err := stm.compareFiles(ws.Game, nil, Listing{WorkshopID: "1", Version: "1.0"}, upload)
+	got, err := stm.compareFiles(ws, nil, Listing{WorkshopID: "1", Version: "1.0"}, src, upload)
 	if err != nil {
 		t.Fatal(err)
 	}

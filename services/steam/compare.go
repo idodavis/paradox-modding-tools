@@ -12,7 +12,6 @@ import (
 	"fmt"
 	"io"
 	"maps"
-	"os"
 	"path/filepath"
 	"regexp"
 	"slices"
@@ -26,15 +25,16 @@ import (
 	"golang.org/x/sync/errgroup"
 
 	"paradox-modding-tools/internal/files"
-	"paradox-modding-tools/internal/game"
 	"paradox-modding-tools/services/app"
 	"paradox-modding-tools/services/workspace"
 )
 
-// A Snapshot is PMT's kept copy of a Workshop item's files as Steam has them.
+// A Snapshot is what PMT keeps of a Workshop item's files as Steam has them: their hashes, and the folder Steam keeps
+// them in.
 type Snapshot struct {
 	WorkshopID string            `json:"workshopId"`
 	UpdatedAt  time.Time         `json:"updatedAt"` // when Steam last updated the item, as of the download
+	Dir        string            `json:"dir"`       // Steam's own folder of the item
 	Files      map[string]string `json:"files"`     // the SHA-256 of each file, by its Rel path
 }
 
@@ -100,7 +100,12 @@ func (stm *Service) CompareUpload(modID, key string) (Comparison, error) {
 	if err != nil {
 		return Comparison{}, err
 	}
-	upload, ignores, err := stm.buildUpload(ws, mod, listing)
+	src, err := stm.openSource(ws, mod, listing)
+	if err != nil {
+		return Comparison{}, err
+	}
+	defer func() { _ = src.close() }()
+	upload, ignores, err := stm.buildUpload(mod, src)
 	if err != nil {
 		return Comparison{}, err
 	}
@@ -115,7 +120,7 @@ func (stm *Service) CompareUpload(modID, key string) (Comparison, error) {
 		comparison.Page = comparePage(listing, *answer.Steam, modIDs, sync.OnceValue(stm.listSteamNames))
 	}
 	if answer.Reason == "" {
-		if comparison.Files, err = stm.compareFiles(ws.Game, ignores, listing, upload); err != nil {
+		if comparison.Files, err = stm.compareFiles(ws, ignores, listing, src, upload); err != nil {
 			return Comparison{}, err
 		}
 	}
@@ -302,25 +307,23 @@ func countLines(before, after string) (gained, lost int) {
 	return gained, lost
 }
 
-// compareFiles lists what an upload changes in its item's files. It returns an error if there is no kept copy.
+// compareFiles lists what an upload from a source changes in its item's files. It returns an error if PMT has no
+// snapshot of the item, or Steam cannot download the item again.
 func (stm *Service) compareFiles(
-	row *game.Game, ignores []files.Ignore, listing Listing, upload Upload,
+	ws *workspace.Session, ignores []files.Ignore, listing Listing, src source, upload Upload,
 ) ([]Difference, error) {
-	cacheDir := stm.Workspace.Config.Dirs.Cache
-	snapshot, ok := LoadSnapshot(cacheDir, listing.WorkshopID)
-	if !ok {
-		return nil, errors.New("PMT has no copy of the item's files: check again to download them")
+	snapshot, err := stm.loadSnapshot(ws, listing.WorkshopID)
+	if err != nil {
+		return nil, err
 	}
 	maps.DeleteFunc(snapshot.Files, func(rel, _ string) bool { return isExcluded(ignores, rel) })
-	snapshotDir := resolveSnapshotDir(cacheDir, listing.WorkshopID)
 	differences := []Difference{}
-	if descriptor, _ := workspace.ReadDescriptor(row, snapshotDir); descriptor.Version != listing.Version {
+	if descriptor, _ := workspace.ReadDescriptor(ws.Game, snapshot.Dir); descriptor.Version != listing.Version {
 		differences = append(differences, Difference{
 			Field: "version", Status: changeChanged, Before: descriptor.Version, After: listing.Version,
 		})
 	}
-	sent := lo.SliceToMap(upload.Files, func(file files.File) (string, string) { return file.Rel, file.Path })
-	hashes := stm.buildUploadHashes(upload.Files)
+	hashes := stm.buildUploadHashes(src, upload.Files)
 	rels := lo.Uniq(slices.Concat(slices.Collect(maps.Keys(hashes)), slices.Collect(maps.Keys(snapshot.Files))))
 	slices.Sort(rels)
 	for _, rel := range rels {
@@ -338,7 +341,9 @@ func (stm *Service) compareFiles(
 			continue
 		}
 		if files.Classify(rel).IsText() {
-			counts := stm.countChange(lo.Ternary(theirs, files.Join(snapshotDir, rel), ""), last, sent[rel], hash)
+			counts := stm.countChange(
+				lo.Ternary(theirs, files.Join(snapshot.Dir, rel), ""), last, src, lo.Ternary(ours, rel, ""), hash,
+			)
 			difference.Gained, difference.Lost = counts.Gained, counts.Lost
 		}
 		differences = append(differences, difference)
@@ -346,14 +351,12 @@ func (stm *Service) compareFiles(
 	return differences, nil
 }
 
-// buildUploadHashes returns the SHA-256 of each file of an upload by its Rel path. It hashes only the files that
-// changed since an earlier call.
-func (stm *Service) buildUploadHashes(list []files.File) map[string]string {
+// buildUploadHashes returns the SHA-256 of each file of an upload from a source, by its Rel path. It hashes only the
+// files that changed since an earlier call.
+func (stm *Service) buildUploadHashes(src source, list []files.File) map[string]string {
 	keys := make([]string, len(list))
 	for position, file := range list {
-		if stat, err := os.Stat(file.Path); err == nil {
-			keys[position] = fmt.Sprintf("%s %d %d", file.Path, stat.Size(), stat.ModTime().UnixNano())
-		}
+		keys[position] = src.hashKey(file)
 	}
 	hashes := make(map[string]string, len(list))
 	var changed []files.File
@@ -366,7 +369,7 @@ func (stm *Service) buildUploadHashes(list []files.File) map[string]string {
 		}
 	}
 	stm.mu.Unlock()
-	fresh := buildHashes(changed)
+	fresh := buildHashes(src, changed)
 	stm.mu.Lock()
 	defer stm.mu.Unlock()
 	if stm.hashes == nil {
@@ -375,15 +378,17 @@ func (stm *Service) buildUploadHashes(list []files.File) map[string]string {
 	for position, file := range list {
 		if hash, ok := fresh[file.Rel]; ok {
 			hashes[file.Rel] = hash
-			stm.hashes[keys[position]] = hash
+			if keys[position] != "" {
+				stm.hashes[keys[position]] = hash
+			}
 		}
 	}
 	return hashes
 }
 
-// countChange returns how many lines a file gains and loses from Steam's copy to the upload's. A side without the file
-// has "" for its path and hash.
-func (stm *Service) countChange(steamFile, steamHash, file, hash string) Difference {
+// countChange returns how many lines a file gains and loses from Steam's copy, at its path, to the upload's, at its Rel
+// path in a source. A side without the file has "" for its path and hash.
+func (stm *Service) countChange(steamFile, steamHash string, src source, rel, hash string) Difference {
 	key := steamHash + " " + hash
 	stm.mu.Lock()
 	counts, ok := stm.lines[key]
@@ -392,7 +397,7 @@ func (stm *Service) countChange(steamFile, steamHash, file, hash string) Differe
 		return counts
 	}
 	steamText, _ := files.LoadText(steamFile)
-	text, _ := files.LoadText(file)
+	text, _ := src.loadText(rel)
 	counts.Gained, counts.Lost = countLines(steamText.Text, text.Text)
 	stm.mu.Lock()
 	defer stm.mu.Unlock()
@@ -415,26 +420,53 @@ func toStatus(comparison Comparison) string {
 }
 
 // CompareFile returns one file as Steam has it and as the upload sends it, "" for a missing side. It returns an error
-// if there is no such mod or listing, or a file cannot be read.
+// if there is no such mod or listing, PMT has no snapshot of the item, or a file cannot be read.
 func (stm *Service) CompareFile(modID, key, rel string) ([]string, error) {
 	ws, mod, listing, err := stm.findListing(modID, key)
 	if err != nil {
 		return nil, err
 	}
-	dir, err := stm.resolveSource(ws, mod, listing)
+	src, err := stm.openSource(ws, mod, listing)
 	if err != nil {
 		return nil, err
 	}
-	snapshotDir := resolveSnapshotDir(stm.Workspace.Config.Dirs.Cache, listing.WorkshopID)
-	sides := make([]string, 2)
-	for position, folder := range []string{snapshotDir, dir} {
-		text, err := files.LoadText(files.Join(folder, rel))
-		if err != nil {
-			return nil, err
-		}
-		sides[position] = text.Text
+	defer func() { _ = src.close() }()
+	snapshot, err := stm.loadSnapshot(ws, listing.WorkshopID)
+	if err != nil {
+		return nil, err
 	}
-	return sides, nil
+	steamText, err := files.LoadText(files.Join(snapshot.Dir, rel))
+	if err != nil {
+		return nil, err
+	}
+	text, err := src.loadText(rel)
+	if err != nil {
+		return nil, err
+	}
+	return []string{steamText.Text, text.Text}, nil
+}
+
+// loadSnapshot loads the snapshot of a Workshop item, with Steam downloading the item again if the folder it kept the
+// files in is gone. It returns an error if PMT has no snapshot of the item, or Steam cannot download it.
+func (stm *Service) loadSnapshot(ws *workspace.Session, workshopID string) (Snapshot, error) {
+	cacheDir := stm.Workspace.Config.Dirs.Cache
+	snapshot, ok := LoadSnapshot(cacheDir, workshopID)
+	if !ok {
+		return Snapshot{}, errors.New("PMT has not read the item's files from Steam: check again to download them")
+	}
+	if files.IsFolder(snapshot.Dir) {
+		return snapshot, nil
+	}
+	params, err := stm.buildParams(ws)
+	if err != nil {
+		return Snapshot{}, err
+	}
+	params.WorkshopID, params.UpdatedAt = workshopID, snapshot.UpdatedAt
+	if err := startCopy(context.Background(), downloadFlag, params, nil); err != nil {
+		return Snapshot{}, err
+	}
+	snapshot, _ = LoadSnapshot(cacheDir, workshopID)
+	return snapshot, nil
 }
 
 // LoadSnapshot loads the snapshot saved for a Workshop item. It returns false if there is none or the id is empty.
@@ -450,22 +482,17 @@ func SaveSnapshot(cacheDir string, snapshot Snapshot) error {
 
 // resolveSnapshotPath returns the path of the file that keeps the snapshot of a Workshop item.
 func resolveSnapshotPath(cacheDir, workshopID string) string {
-	return resolveSnapshotDir(cacheDir, workshopID) + ".json"
+	return filepath.Join(cacheDir, snapshotPrefix+workshopID+".json")
 }
 
-// resolveSnapshotDir returns the folder that keeps PMT's copy of a Workshop item's files.
-func resolveSnapshotDir(cacheDir, workshopID string) string {
-	return filepath.Join(cacheDir, "snapshot-"+workshopID)
-}
-
-// buildHashes returns the SHA-256 of each file by its Rel path. A file that cannot be read has the hash "".
-func buildHashes(list []files.File) map[string]string {
+// buildHashes returns the SHA-256 of each file of a source by its Rel path. A file that cannot be read has the hash "".
+func buildHashes(src source, list []files.File) map[string]string {
 	hashes := make([]string, len(list))
 	var group errgroup.Group
 	group.SetLimit(files.Workers)
 	for position, file := range list {
 		group.Go(func() error {
-			handle, err := os.Open(file.Path)
+			handle, err := src.open(file.Rel)
 			if err != nil {
 				return nil
 			}

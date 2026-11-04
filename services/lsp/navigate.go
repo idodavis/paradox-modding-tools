@@ -278,13 +278,21 @@ func (lsp *Service) FindSymbols(query string, limit int) ([]WorkspaceSymbol, err
 	if lower == "" || limit <= 0 {
 		return symbols, nil
 	}
+	// each name is matched once a call, however many times it occurs
+	checked, matches := make([]bool, len(mods.Names.Texts)), make([]bool, len(mods.Names.Texts))
+	isMatch := func(name uint32) bool {
+		if !checked[name] {
+			checked[name], matches[name] = true, strings.Contains(strings.ToLower(mods.Names.Texts[name]), lower)
+		}
+		return matches[name]
+	}
 	// the mods' files are searched first, and a key is listed once, not once for each language
 	for _, role := range []index.Role{index.RoleDefines, index.RoleLocalizes} {
 		listed := map[string]bool{}
 		for _, position := range slices.Concat(mods.ListOwnFiles(), ws.Install.ListOwnFiles()) {
 			for number, occurrence := range mods.Occurrences[position] {
 				name := mods.Names.Texts[occurrence.Name]
-				if occurrence.Role != role || !strings.Contains(strings.ToLower(name), lower) || role == index.RoleLocalizes && listed[name] {
+				if occurrence.Role != role || !isMatch(occurrence.Name) || role == index.RoleLocalizes && listed[name] {
 					continue
 				}
 				listed[name] = true

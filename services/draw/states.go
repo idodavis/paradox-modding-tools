@@ -209,7 +209,7 @@ func (drw *Service) Reveal(path, name string, picks map[string]string, widget in
 // classified. The given contexts are what its widgets read their bindings in, and each data model's list draws the
 // given number of rows.
 func openEvaluator(schema *schema.Schema, window Window, contexts []context, count int) *evaluator {
-	groups := listGroups(schema, window, contexts)
+	groups := listGroups(schema, window, contexts, count)
 	objects := lo.GroupBy(groups, func(group Group) string {
 		call, ok := jomini.ParseCall(group.ID, 0)
 		if !ok || len(call.Steps) < 2 {
@@ -369,7 +369,7 @@ func (evaluator *evaluator) isTab(widget Widget) bool {
 	context := evaluator.contexts[widget.ID]
 	down := findProperty(evaluator.window.listProperties(widget), game.GUI.DownKey).Value
 	if call, ok := jomini.ParseBracketed(down, 0); ok {
-		return slices.ContainsFunc(listFacts(evaluator.schema, call, context), func(fact jomini.Call) bool {
+		return slices.ContainsFunc(listFacts(evaluator.schema, call, context, evaluator.rows), func(fact jomini.Call) bool {
 			group, _ := splitFact(evaluator.schema, context.reach(fact))
 			return slices.ContainsFunc(evaluator.groups, func(known Group) bool { return known.ID == group })
 		})
@@ -622,8 +622,9 @@ func findPressCondition(window *Window, widget Widget) (string, bool) {
 // listGroups returns the groups that the widgets of a window read, in the order they are first read, each with its
 // readers. A widget reads a group in its conditions, and in the conditions of the choices between two values that its
 // properties write. A group offers the values the window asks of it, then every value where it has none or several,
-// then none. The window's own widget is always drawn, so its conditions are not read.
-func listGroups(schema *schema.Schema, window Window, contexts []context) []Group {
+// then none. The window's own widget is always drawn, so its conditions are not read. Each data model's list draws
+// the given number of rows.
+func listGroups(schema *schema.Schema, window Window, contexts []context, count int) []Group {
 	var groups table[string, Group]
 	for _, widget := range window.Widgets[1:] {
 		calls := lo.FilterMap(window.Conditions[widget.ID], func(condition string, _ int) (jomini.Call, bool) {
@@ -635,7 +636,7 @@ func listGroups(schema *schema.Schema, window Window, contexts []context) []Grou
 			}
 		}
 		for _, call := range calls {
-			for _, fact := range listFacts(schema, call, contexts[widget.ID]) {
+			for _, fact := range listFacts(schema, call, contexts[widget.ID], count) {
 				id, value := splitFact(schema, contexts[widget.ID].reach(fact))
 				position := groups.add(id, func() Group { return makeGroup(id) })
 				group := &groups.values[position]
@@ -688,19 +689,20 @@ func makeGroup(id string) Group {
 }
 
 // listFacts returns the calls that a condition reads. A boolean function reads its operands, so it looks through And,
-// Or and the rest, and any other call reads itself. A macro that expands into itself reads nothing.
-func listFacts(schema *schema.Schema, call jomini.Call, context context) []jomini.Call {
+// Or and the rest, and any other call reads itself. A macro that expands into itself reads nothing. Each data model's
+// list draws the given number of rows.
+func listFacts(schema *schema.Schema, call jomini.Call, context context, count int) []jomini.Call {
 	call = expandVariableQuery(schema.ResolveMacro(call, context.latest))
 	if len(call.Steps) == 0 {
 		return nil
 	}
 	if _, _, operands, ok := splitBoolean(call); ok {
 		return lo.FlatMap(operands, func(operand jomini.Call, _ int) []jomini.Call {
-			return listFacts(schema, operand, context)
+			return listFacts(schema, operand, context, count)
 		})
 	}
-	// A fact the data models decide is computed, so it belongs to no group.
-	if _, computed := computeFact(schema, context, call, 0); computed {
+	// A fact the data models decide at that many rows is computed, so it belongs to no group.
+	if _, computed := computeFact(schema, context, call, count); computed {
 		return nil
 	}
 	return []jomini.Call{call}

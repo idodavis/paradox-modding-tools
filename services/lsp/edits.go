@@ -237,13 +237,16 @@ func (lsp *Service) buildKeysFix(
 	if !ok || place.ReadOnly || mod.Descriptor.Name == "" {
 		return Fix{}, false
 	}
-	diagnostics, _ := DiagnoseFile(ws, mods, place.Path)
 	target, ok := workspace.FindLocalizationFile(ws.Game, mod.Dir, mod.Descriptor.Name, game.BaseLanguage)
+	if !ok {
+		return Fix{}, false
+	}
+	diagnostics, _ := DiagnoseFile(ws, mods, place.Path)
 	keys := lo.Uniq(lo.FilterMap(lsp.listEnabled(ws.ID, diagnostics), func(diagnostic Diagnostic, _ int) (string, bool) {
 		fact, ok := keyFacts[diagnostic.Code]
 		return diagnostic.Facts[fact], ok
 	}))
-	if !ok || len(keys) == 0 {
+	if len(keys) == 0 {
 		return Fix{}, false
 	}
 	text, _ := ws.LoadSource(target)

@@ -7,6 +7,7 @@ import (
 	"cmp"
 	"maps"
 	"slices"
+	"strings"
 
 	"github.com/samber/lo"
 
@@ -98,6 +99,27 @@ func (index *Index) ListDefinitions(database string) []Site {
 // ListMessages returns every message with the given key, one per language and file, in load order.
 func (index *Index) ListMessages(key string) []Site {
 	return index.listPosting(RoleLocalizes, game.Localization, key)
+}
+
+// ListKeys returns up to the given limit of the localization keys that contain the given text, in any case, and have
+// a loaded message in the given language. Each key comes once, in the order the index first met it.
+func (index *Index) ListKeys(language, text string, limit int) []string {
+	ordinal, ok := index.Databases.Lookup(game.Localization)
+	if !ok {
+		return nil
+	}
+	posting, lower := Posting{Role: RoleLocalizes, Database: uint16(ordinal)}, strings.ToLower(text)
+	var keys []string
+	for name, key := range index.Names.Texts {
+		if len(keys) == limit {
+			break
+		}
+		if strings.Contains(strings.ToLower(key), lower) && slices.ContainsFunc(index.listKey(posting, uint32(name)),
+			func(site Site) bool { return index.IsLoaded(site.File) && index.Language(site) == language }) {
+			keys = append(keys, key)
+		}
+	}
+	return keys
 }
 
 // FindDefinition returns the definition that a site sits inside, or false if the site is at the top of its file.

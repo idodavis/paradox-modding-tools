@@ -110,6 +110,8 @@ function registerCompletion(selector: languages.LanguageFilter[]): void {
       const range = new monaco.Range(position.lineNumber, word.startColumn, position.lineNumber, word.endColumn);
       const snippet = monaco.languages.CompletionItemInsertTextRule.InsertAsSnippet;
       return {
+        // Go lists localization keys by what is typed, so the editor asks again as typing goes on
+        incomplete: true,
         suggestions: completions.map((completion): ImageCompletion => ({
           label: completion.label,
           kind: monaco.languages.CompletionItemKind.Property,

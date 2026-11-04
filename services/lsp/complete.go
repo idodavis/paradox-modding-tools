@@ -28,6 +28,9 @@ type Completion struct {
 	Image    string          `json:"image,omitempty"`  // the full path of the image file it names; "" if it names none
 }
 
+// keyLimit is the most localization keys a completion lists. The editor asks again as typing narrows them.
+const keyLimit = 200
+
 // Complete returns the completion candidates at a position in a file. At a key they are the language's operators,
 // commands and fields. At a value they are the field's choices, the names the game loads, the links to the scope a
 // target needs or the image files a path could name. It returns an empty list for a file that is not script.
@@ -50,7 +53,7 @@ func (lsp *Service) Complete(path string, line, column int) ([]Completion, error
 		if !current.Value.IsEmpty() && offset >= current.Value.Start {
 			typed = tree.Src[current.Value.Start:offset]
 		}
-		return listValues(mods, ws.Game, &visitor.context, typed), nil
+		return listValues(mods, ws.Game, &visitor.context, typed, cmp.Or(ws.Language, game.BaseLanguage)), nil
 	}
 	visitor := &completeVisitor{offset: offset}
 	ws.Schema.WalkTo(tree, place.File, offset, visitor)
@@ -81,8 +84,9 @@ func findValue(tree *jomini.Tree, offset int) (int32, bool) {
 
 // listValues returns the values a statement's field may take: its choices, yes and no, the loaded names of a
 // database, the links that lead to the scope it needs, or the image files under the folder typed so far. The given
-// text is what is typed, with the quote it may begin with. It returns an empty list if the field states no value.
-func listValues(mods *index.Index, row *game.Game, context *schema.Context, typed string) []Completion {
+// text is what is typed, with the quote it may begin with. A localization key is one of the given language's that
+// contain what is typed, up to keyLimit of them. It returns an empty list if the field states no value.
+func listValues(mods *index.Index, row *game.Game, context *schema.Context, typed, language string) []Completion {
 	field := context.Field
 	if field == nil || !field.Value.IsStated() {
 		return []Completion{}
@@ -108,6 +112,13 @@ func listValues(mods *index.Index, row *game.Game, context *schema.Context, type
 			// script writes a path without the stage folder it sits in
 			_, rel := row.SplitStage(file.Rel)
 			values = append(values, Completion{Label: rel, Insert: rel, Category: schema.CategoryReference, Image: file.Path})
+		}
+	case expected.Type == schema.ValueReference && expected.Database == game.Localization:
+		for _, key := range mods.ListKeys(language, typed, keyLimit) {
+			values = append(values, Completion{
+				Label: key, Insert: key, Category: schema.CategoryReference,
+				Detail: game.DescribeDefinition(game.Localization, false), Rank: rank(key),
+			})
 		}
 	case expected.Type == schema.ValueReference || expected.Type == schema.ValueTarget && expected.Database != "":
 		for _, site := range mods.ListDefinitions(expected.Database) {

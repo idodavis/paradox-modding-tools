@@ -239,20 +239,20 @@ export const useAgentStore = defineStore("agent", () => {
   /** openDialect opens a stream to a session's agent and wraps it for the SDK. */
   async function openDialect(session: Session): Promise<{ start: Start; dialect: Dialect }> {
     const socket = JSONStream("agent");
-    let controller!: ReadableStreamDefaultController<v2.AnyWireMessage>;
+    let controller!: ReadableStreamDefaultController<v2.AnyMessage>;
     // The SDK cancels the stream it reads when its connection closes, and the stream takes nothing after that.
     let isCancelled = false;
-    const readable = new ReadableStream<v2.AnyWireMessage>({
+    const readable = new ReadableStream<v2.AnyMessage>({
       start: (streamController) => (controller = streamController),
       cancel: () => void (isCancelled = true),
     });
-    const writable = new WritableStream<v2.AnyWireMessage>({ write: (message) => socket.send(message) });
+    const writable = new WritableStream<v2.AnyMessage>({ write: (message) => socket.send(message) });
     const started = new Promise<Start>((resolve, reject) => {
       let first: Start | null = null;
       socket.onopen = () => socket.send({ agent: session.agent.id, path: editor.activeFile()?.path ?? "" });
       socket.onmessage = (event) => {
         if (first) {
-          if (!isCancelled) controller.enqueue(event.data as v2.AnyWireMessage);
+          if (!isCancelled) controller.enqueue(event.data as v2.AnyMessage);
           return;
         }
         first = event.data as Start;

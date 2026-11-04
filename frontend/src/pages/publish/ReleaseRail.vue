@@ -102,12 +102,12 @@ function change(changes: Partial<Listing>): void {
 </script>
 
 <template>
-  <aside class="flex h-full w-86 shrink-0 flex-col border-s border-default bg-muted">
+  <aside class="flex h-full w-100 shrink-0 flex-col border-s border-default bg-muted">
     <div class="flex min-h-0 grow flex-col gap-3.5 overflow-y-auto px-4.5 py-4">
       <span class="text-13 font-semibold text-highlighted">This update</span>
 
-      <div class="flex items-start gap-3">
-        <div class="flex w-37 shrink-0 flex-col gap-1.5">
+      <div class="grid grid-cols-2 items-start gap-5">
+        <div class="flex min-w-0 flex-col gap-1.5">
           <UFormField label="Version" :ui="{ label: 'text-12 text-toned' }">
             <UInput
               :model-value="listing.version"
@@ -133,7 +133,7 @@ function change(changes: Partial<Listing>): void {
             />
           </span>
         </div>
-        <div class="flex min-w-0 grow flex-col gap-1.5">
+        <div class="flex min-w-0 flex-col gap-1.5">
           <UFormField
             label="For game version"
             :help="state?.install.version ? `Installed game is ${state.install.version}` : undefined"

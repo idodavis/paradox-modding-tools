@@ -1,0 +1,11 @@
+pdxmesh = {
+	name = "v_temple_mesh"
+	file = "v_temple.mesh"
+	meshsettings = {
+		texture_diffuse = "v_temple_diffuse.dds"
+	}
+}
+entity = {
+	name = "v_temple_entity"
+	pdxmesh = "v_temple_mesh"
+}

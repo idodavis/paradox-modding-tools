@@ -1,0 +1,70 @@
+Event Target Documentation:
+
+--------------------
+
+root - the root scope
+Global Link: yes
+Output Scopes: none
+
+--------------------
+
+scope - a saved scope
+Requires Data: yes
+Global Link: yes
+Output Scopes: none
+
+--------------------
+
+define - a define
+Requires Data: yes
+Global Link: yes
+Output Scopes: value
+
+--------------------
+
+value - A numeric literal value
+Wild Card: yes
+Global Link: yes
+Output Scopes: value
+
+--------------------
+
+c - Get the country with the specified tag
+Requires Data: yes
+Global Link: yes
+Output Scopes: country
+
+--------------------
+
+continent - Get the continent with the specified key
+Requires Data: yes
+Global Link: yes
+Output Scopes: continent
+
+--------------------
+
+sub_continent - Get the sub-continent with the specified key
+Requires Data: yes
+Global Link: yes
+Output Scopes: sub_continent
+
+--------------------
+
+region - Get the region with the specified key
+Requires Data: yes
+Global Link: yes
+Output Scopes: region
+
+--------------------
+
+area - Get the area with the specified key
+Requires Data: yes
+Global Link: yes
+Output Scopes: area
+
+--------------------
+
+Event Targets Saved from Code:
+
+actor
+recipient

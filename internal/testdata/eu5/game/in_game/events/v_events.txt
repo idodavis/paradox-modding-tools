@@ -1,0 +1,7 @@
+namespace = ev
+ev.1 = {
+	type = country_event
+	select_trigger = {
+		show_if = { }
+	}
+}

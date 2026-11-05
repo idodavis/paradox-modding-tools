@@ -1,0 +1,8 @@
+adult_child = {
+	base = child
+	conditions = { is_adult = yes }
+}
+rich_vassal = {
+	base = vassal
+	conditions = { gold > big_value }
+}

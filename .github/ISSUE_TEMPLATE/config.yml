@@ -1,0 +1,12 @@
+# Routes issues to the forms, and questions and ideas to Discussions.
+blank_issues_enabled: false
+contact_links:
+  - name: Questions and ideas
+    url: https://github.com/idodavis/paradox-modding-tools/discussions
+    about: Ask how something works, or talk an idea through before it becomes a request
+  - name: README
+    url: https://github.com/idodavis/paradox-modding-tools
+    about: What the app does, how to install it, and troubleshooting
+  - name: Download releases
+    url: https://github.com/idodavis/paradox-modding-tools/releases
+    about: Windows and Linux zips (macOS is not supported)

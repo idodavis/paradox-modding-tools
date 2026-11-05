@@ -1,0 +1,8 @@
+atlas = {
+	tile_size = { 230 230 }
+	nr_of_tiles = 64
+}
+atlas = {
+	tile_size = { 124 124 }
+	nr_of_tiles = 512
+}

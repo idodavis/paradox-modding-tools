@@ -1,0 +1,73 @@
+Effect Documentation:
+
+--------------------
+
+if - Executes enclosed effects if limit criteria are met
+if = { limit = { <triggers> } <effects> }
+Supported Scopes: none
+
+--------------------
+
+else - Executes enclosed effects if the if before it failed
+else = { limit = { <triggers> } <effects> }
+Supported Scopes: none
+
+--------------------
+
+hidden_effect - Effect not shown in tooltips
+Supported Scopes: none
+
+--------------------
+
+random_list - a random list effect
+Supported Scopes: none
+
+--------------------
+
+trigger_event - triggers an event
+trigger_event = { id = X days = Y }
+Supported Scopes: none
+
+--------------------
+
+save_scope_as - saves the current scope
+save_scope_as = name
+Supported Scopes: none
+
+--------------------
+
+set_variable - sets a variable
+set_variable = { name = X value = Y }
+Supported Scopes: none
+
+--------------------
+
+add_to_variable_list - adds the target to a variable list
+add_to_variable_list = { name = X target = Y }
+Supported Scopes: none
+
+--------------------
+
+every_in_list - Iterate through all items in a list
+every_in_list = { list = X variable = Y limit = { <triggers> } <effects> }
+Supported Scopes: none
+
+--------------------
+
+create_pop - creates a pop
+create_pop = { culture = X size = Y }
+Supported Scopes: state
+
+--------------------
+
+set_tax_level - sets the tax level
+Supported Scopes: country
+
+--------------------
+
+every_scope_state - Iterate through all states
+every_scope_state = { limit = { <triggers> } <effects> }
+Supported Scopes: country
+Supported Targets: state
+
+--------------------

@@ -1,0 +1,232 @@
+// Package terminal is the IDE's terminal service. It starts and keeps the shells of the IDE's panel, streams each to
+// its window, and finds the files that the shells' output names.
+package terminal
+
+import (
+	"context"
+	"errors"
+	"fmt"
+	"slices"
+	"strconv"
+	"sync"
+
+	"github.com/samber/lo"
+	"github.com/wailsapp/wails/v3/pkg/application"
+
+	"paradox-modding-tools/internal/terminal"
+	"paradox-modding-tools/services/app"
+	"paradox-modding-tools/services/mcp"
+	"paradox-modding-tools/services/workspace"
+)
+
+// Service is the terminal service. It holds every shell PMT runs until the shell ends.
+type Service struct {
+	Workspace *workspace.Service // the open workspace, for a shell's folder and the files its output names
+	Config    *app.ConfigFile    // the settings, for the program a shell runs
+	mu        sync.Mutex         // guards the fields below
+	shells    []*terminal.Shell  // in the order they started
+	count     int                // how many shells have started, which numbers the next
+}
+
+// A message is one message that a window sends on a shell's stream. The first names the shell.
+type message struct {
+	Shell   string `json:"shell"`
+	Input   string `json:"input"`
+	Binary  string `json:"binary"` // bytes, a character each, as xterm sends a mouse report
+	Columns int    `json:"columns"`
+	Rows    int    `json:"rows"`
+	Offset  int64  `json:"offset"` // the offset of the output that the window has drawn up to
+}
+
+// The events the terminal service sends.
+const (
+	EventShellStarted = "shell:started" // a shell started; the data is its id
+	EventShellExited  = "shell:exited"  // a shell ended; the data is its id
+)
+
+// streamName is the name a window opens a shell's stream by.
+const streamName = "terminal"
+
+// settingShell is the setting that names the default shell.
+const settingShell = "terminal.shell"
+
+// init registers the terminal events with the application.
+func init() {
+	application.RegisterEvent[string](EventShellStarted)
+	application.RegisterEvent[string](EventShellExited)
+}
+
+// ServiceStartup serves the stream that each window opens to a shell.
+func (trm *Service) ServiceStartup(context.Context, application.ServiceOptions) error {
+	application.Get().HandleStream(streamName, trm.serve)
+	return nil
+}
+
+// ServiceShutdown ends every shell.
+func (trm *Service) ServiceShutdown() error {
+	for _, shell := range trm.ListShells() {
+		shell.Close()
+	}
+	return nil
+}
+
+// ListShells returns the shells that are running, the first started first.
+func (trm *Service) ListShells() []*terminal.Shell {
+	trm.mu.Lock()
+	defer trm.mu.Unlock()
+	return slices.Clone(trm.shells)
+}
+
+// ListPrograms returns the shells this system has, PMT's pick first.
+func (trm *Service) ListPrograms() []terminal.Program { return terminal.ListPrograms() }
+
+// ListEnvironment returns the variables every shell is given: PMT's address and token for coding agents, then the
+// terminal's own.
+func (trm *Service) ListEnvironment() []terminal.Variable {
+	return append(slices.Clone(mcp.Variables), terminal.ListEnvironment()...)
+}
+
+// Start starts a shell of the given size in the folder ResolveFolder gives for the given file path, which may be "". It
+// runs the program at the given path, or the default shell for "". It returns an error if this system has no shell or
+// the program cannot be started.
+func (trm *Service) Start(path, program string, columns, rows int) (*terminal.Shell, error) {
+	program, args, err := trm.resolveProgram(program)
+	if err != nil {
+		return nil, err
+	}
+	return trm.Run(path, append([]string{program}, args...), columns, rows)
+}
+
+// Run starts a shell of the given size that runs the given command, a program followed by its arguments, in the folder
+// ResolveFolder gives for the given file path, which may be "". It returns an error if the command is empty or its
+// program cannot be started.
+func (trm *Service) Run(path string, command []string, columns, rows int) (*terminal.Shell, error) {
+	if len(command) == 0 {
+		return nil, errors.New("no program was given to run")
+	}
+	folder, origin := trm.Workspace.ResolveFolder(path)
+	trm.mu.Lock()
+	trm.count++
+	shell := &terminal.Shell{ID: strconv.Itoa(trm.count), Program: command[0], Args: command[1:], Folder: folder, Origin: origin}
+	trm.mu.Unlock()
+	if err := shell.Start(columns, rows); err != nil {
+		return nil, fmt.Errorf("%s could not be started: %w", command[0], err)
+	}
+	trm.mu.Lock()
+	trm.shells = append(trm.shells, shell)
+	trm.mu.Unlock()
+	go func() {
+		shell.Wait()
+		trm.mu.Lock()
+		trm.shells = slices.DeleteFunc(trm.shells, func(other *terminal.Shell) bool { return other == shell })
+		trm.mu.Unlock()
+		application.Get().Event.Emit(EventShellExited, shell.ID)
+	}()
+	application.Get().Event.Emit(EventShellStarted, shell.ID)
+	return shell, nil
+}
+
+// resolveProgram returns the path of the program to run and its arguments. For "" the program is the one the setting
+// names, else the first that ListPrograms lists. A program that ListPrograms lists gets that row's arguments. It
+// returns an error if no program is named and this system has no shell.
+func (trm *Service) resolveProgram(program string) (string, []string, error) {
+	if program == "" {
+		program, _ = trm.Config.LookupSetting("", settingShell)
+	}
+	programs := terminal.ListPrograms()
+	for _, row := range programs {
+		if row.Path == program {
+			return row.Path, row.Args, nil
+		}
+	}
+	if program != "" {
+		return program, nil, nil
+	}
+	if len(programs) == 0 {
+		return "", nil, errors.New("no shell was found on this system")
+	}
+	return programs[0].Path, programs[0].Args, nil
+}
+
+// Close ends the shell with the given id, and on Windows every process it started. It returns an error if no shell
+// has that id.
+func (trm *Service) Close(id string) error {
+	shell, err := trm.findShell(id)
+	if err != nil {
+		return err
+	}
+	shell.Close()
+	return nil
+}
+
+// SetScreen keeps the screen a window drew for a shell, which the next window to show the shell draws first. It
+// returns an error if no shell has the given id.
+func (trm *Service) SetScreen(id string, screen terminal.Screen) error {
+	shell, err := trm.findShell(id)
+	if err != nil {
+		return err
+	}
+	shell.SetScreen(screen)
+	return nil
+}
+
+// findShell returns the running shell with the given id. It returns an error if no shell has it.
+func (trm *Service) findShell(id string) (*terminal.Shell, error) {
+	trm.mu.Lock()
+	defer trm.mu.Unlock()
+	if shell, ok := lo.Find(trm.shells, func(shell *terminal.Shell) bool { return shell.ID == id }); ok {
+		return shell, nil
+	}
+	return nil, fmt.Errorf("no shell %s is running", id)
+}
+
+// serve serves one window's stream to a shell. The window is sent the shell's screen, then its output from the screen's
+// offset on, until the window or the shell closes the stream.
+func (trm *Service) serve(conn *application.StreamConn) {
+	defer func() { _ = conn.Close() }()
+	var first message
+	if conn.ReceiveJSON(&first) != nil {
+		return
+	}
+	shell, err := trm.findShell(first.Shell)
+	if err != nil {
+		return
+	}
+	screen := shell.Screen()
+	if conn.SendJSON(screen) != nil {
+		return
+	}
+	go send(conn, shell, screen.Offset)
+	for {
+		var next message
+		if conn.ReceiveJSON(&next) != nil {
+			return
+		}
+		if next.Columns > 0 && next.Rows > 0 {
+			_ = shell.Resize(next.Columns, next.Rows)
+		}
+		shell.Acknowledge(next.Offset)
+		input := []byte(next.Input)
+		for _, char := range next.Binary {
+			input = append(input, byte(char))
+		}
+		if len(input) == 0 {
+			continue
+		}
+		if _, err := shell.Write(input); err != nil {
+			return
+		}
+	}
+}
+
+// send sends a shell's output from the given offset on, until the shell ends or the stream closes.
+func send(conn *application.StreamConn, shell *terminal.Shell, offset int64) {
+	defer func() { _ = conn.Close() }()
+	for {
+		output, next, err := shell.Read(conn.Context(), offset)
+		if err != nil || conn.Send(output) != nil {
+			return
+		}
+		offset = next
+	}
+}

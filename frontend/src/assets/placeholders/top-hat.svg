@@ -1,0 +1,18 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 -40 200 280" preserveAspectRatio="xMidYMax meet">
+  <defs>
+    <mask id="cut">
+      <rect width="200" height="240" fill="#fff" />
+      <path d="M74 50h52M74 168l26 46 26-46M100 214v26" stroke="#000" stroke-width="3" fill="none" />
+      <circle cx="100" cy="227" r="3" fill="#000" />
+    </mask>
+  </defs>
+  <g mask="url(#cut)">
+    <path d="M72 62l4-52q24-6 48 0l4 52z" />
+    <ellipse cx="100" cy="64" rx="46" ry="8" />
+    <ellipse cx="100" cy="100" rx="29" ry="35" />
+    <path d="M71 92c-1 20 5 36 15 42l2-14c-8-6-10-18-10-28zM129 92c1 20-5 36-15 42l-2-14c8-6 10-18 10-28z" />
+    <rect x="88" y="128" width="24" height="26" />
+    <path d="M86 150l14 9-14 9zM114 150l-14 9 14 9z" />
+    <path d="M8 240c4-38 32-64 66-74h52c34 10 62 36 66 74z" />
+  </g>
+</svg>

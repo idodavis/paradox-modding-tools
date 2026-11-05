@@ -1,0 +1,26 @@
+namespace = vmore
+
+vmore.1 = {
+	type = country_event
+	trigger = {
+		NOT = { any_owned_location = { exists = c:ENG } }
+		exists = continent:europe
+		exists = continent:asia
+		exists = region:france_region
+		exists = region:china_region
+		exists = area:paris_area
+		exists = area:thames_area
+		exists = area:loire_area
+		exists = sub_continent:western_europe
+		exists = sub_continent:east_asia
+		exists = region:britain_region
+	}
+	immediate = {
+		every_owned_location = { add_prestige = 1 }
+		c:FRA = { add_prestige = 1 }
+	}
+}
+vmore.2 = {
+	type = country_event
+	trigger = { is_ai = yes }
+}

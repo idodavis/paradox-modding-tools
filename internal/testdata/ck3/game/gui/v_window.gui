@@ -1,0 +1,158 @@
+types VTypes {
+	type v_button = button {
+		size = { 10 10 }
+		texture = "v_frame.dds"
+	}
+	type v_label = textbox {
+		text = "[GetPlayer.GetName]"
+	}
+}
+template v_plain {
+	alpha = 1
+}
+template v_faded {
+	alpha = 0.5
+}
+window = {
+	name = "v_window"
+	v_button = { }
+	icon = {
+		texture = "gfx/interface/v_bg.tga"
+	}
+}
+window = {
+	name = "v_other_window"
+	v_label = { }
+}
+template v_sized {
+	size = { 100 20 }
+}
+type v_box = vbox {
+	block "rows" {
+		v_button = { }
+	}
+}
+window = {
+	name = "v_layout_window"
+	size = { 200 100 }
+	v_box = {
+		using = v_sized
+		spacing = 4
+		blockoverride "rows" {
+			v_button = { size = { 50 20 } }
+			v_button = { size = { 50 20 } layoutpolicy_vertical = expanding }
+		}
+		v_label = { text = "v_key" font = "v_font" fontsize = 16 }
+		icon = {
+			texture = "gfx/interface/v_frame.dds"
+			framesize = { 2 2 }
+			upframe = 2
+			modify_texture = { texture = "gfx/interface/v_bg.dds" framesize = { 2 2 } block "v_pick" { frame = 3 } }
+		}
+		vbox = {
+			datamodel = "[GetPlayer.GetVassals]"
+			item = { v_label = { } }
+		}
+		widget = { visible = "[GetVariableSystem.Exists('v_flag')]" size = { 10 10 } }
+		widget = { visible = "[GetPlayer.IsAlive]" size = { 10 10 } }
+	}
+}
+type window = window { }
+type widget = widget { }
+type icon = icon { }
+type scrollarea = scrollarea { }
+type scrollbar = scrollbar { }
+type v_tab = button {
+	layoutpolicy_horizontal = expanding
+}
+type v_textbox = textbox { }
+window = {
+	name = "v_layout_rules"
+	size = { 400 300 }
+	container = {
+		name = "v_container"
+		icon = { size = { 10 10 } parentanchor = right }
+		icon = { size = { 10 10 } position = { 0 20 } }
+	}
+	background = { name = "v_background" }
+	vbox = {
+		size = { 300 40 }
+		hbox = {
+			name = "v_row"
+			layoutpolicy_horizontal = expanding
+			v_tab = { size = { 100% 10 } }
+			v_tab = { size = { 100% 10 } }
+			v_tab = { size = { 100% 10 } }
+		}
+	}
+	flowcontainer = {
+		name = "v_flow"
+		icon = { size = { 10 10 } }
+		icon = { size = { 10 10 } }
+		icon = { size = { 10 10 } }
+		icon = { size = { 10 10 } }
+	}
+	widget = { name = "v_nothing" }
+	hbox = {
+		name = "v_backed"
+		background = { name = "v_backing" }
+		icon = { size = { 10 10 } }
+		icon = { size = { 10 10 } }
+	}
+	hbox = {
+		name = "v_unset"
+		size = { 100 10 }
+		icon = { name = "v_unset_icon" size = { -1 10 } layoutpolicy_horizontal = expanding }
+	}
+	vbox = {
+		name = "v_wrapped"
+		size = { 60 100 }
+		textbox = { name = "v_multi" text = "v_long" font = "v_font" fontsize = 16 multiline = yes layoutpolicy_horizontal = expanding }
+	}
+	vbox = {
+		name = "v_spanning"
+		icon = { size = { 10 10 } layoutpolicy_horizontal = expanding }
+	}
+	hbox = {
+		name = "v_footer"
+		parentanchor = bottom|hcenter
+		icon = { size = { 10 10 } }
+	}
+	scrollarea = {
+		name = "v_scroll"
+		size = { 50 50 }
+		scrollbar_vertical = { name = "v_bar" }
+		tooltipwidget = { name = "v_tip" }
+		vbox = { }
+	}
+	vbox = {
+		name = "v_either"
+		icon = { name = "v_yes" size = { 10 10 } visible = "[GetPlayer.IsAlive]" }
+		icon = { name = "v_no" size = { 10 30 } visible = "[Not( GetPlayer.IsAlive )]" }
+		icon = { name = "v_after" size = { 10 10 } }
+	}
+}
+window = {
+	name = "v_hidden_entry"
+	size = { 100 50 }
+	parentanchor = top|right
+	visible = "[GetVariableSystem.Exists('x')]"
+}
+window = {
+	name = "v_default_text"
+	v_textbox = { text = "v_key" }
+	button = { text = "v_key" }
+}
+window = {
+	name = "v_concepts"
+	textbox = { text = "[v_concept|E] rules" }
+	textbox = { text = "[v_nothing|E]" }
+}
+texticon = {
+	icon = v_icon
+	iconsize = { texture = "gfx/interface/v_bg.dds" size = { 8 8 } }
+}
+format = {
+	name = "v_format"
+	format = "bold"
+}

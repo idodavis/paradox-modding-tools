@@ -1,24 +1,35 @@
 name: Bug report
-description: Report a problem with Paradox Modding Tools so it can be fixed quickly
+description: Something in Paradox Modding Tools is broken
 title: "[Bug] "
 labels: [bug]
 body:
   - type: markdown
     attributes:
       value: |
-        Thanks for helping improve Paradox Modding Tools. Please fill out this form as completely as you can so we can reproduce and fix the issue faster.
+        Thanks for the report. Fill this in so we can reproduce it.
+        Questions and ideas go to [Discussions](https://github.com/idodavis/paradox-modding-tools/discussions).
 
   - type: dropdown
     id: area
     attributes:
       label: Which part of the app was affected?
-      description: Select the area where the issue occurred.
       options:
-        - Compare tool
-        - Merge tool
-        - Inventory
-        - Modding docs
+        - Library
+        - New workspace
+        - IDE
+        - Source control
+        - Wiki pane
+        - Terminal
+        - Assistant
+        - Save as DDS
+        - Event Graph
+        - Health
+        - Patch Notes
+        - Publish / Steam Workshop
         - Settings
+        - Appearance / themes
+        - Language / scan / cache
+        - Build / updater
         - Other
     validations:
       required: true
@@ -26,16 +37,64 @@ body:
   - type: input
     id: area-other
     attributes:
-      label: If you selected Other, please specify
-      placeholder: e.g. Startup, updater, UI layout
+      label: If you selected Other, specify
+      placeholder: e.g. startup crash, file watcher
+
+  - type: dropdown
+    id: game
+    attributes:
+      label: Game
+      options:
+        - Crusader Kings III
+        - Victoria 3
+        - Europa Universalis V
+        - None / not game-specific
+    validations:
+      required: true
+
+  - type: dropdown
+    id: os
+    attributes:
+      label: Operating system
+      options:
+        - Windows 10
+        - Windows 11
+        - Linux
+    validations:
+      required: true
+
+  - type: input
+    id: distro
+    attributes:
+      label: If Linux, which distribution?
+      placeholder: e.g. Ubuntu 26.04, Fedora 44, Arch
+
+  - type: input
+    id: version
+    attributes:
+      label: PMT version
+      description: The footer of the app shows it.
+      placeholder: e.g. 0.5.0
+    validations:
+      required: true
+
+  - type: dropdown
+    id: build-source
+    attributes:
+      label: Build source
+      options:
+        - GitHub Release zip
+        - task dev
+        - Local task build
+    validations:
+      required: true
 
   - type: textarea
     id: what-happened
     attributes:
       label: What happened?
-      description: Describe the bug clearly. What did you expect to happen, and what actually happened?
-      placeholder: Describe the issue in detail.
-      render: text
+      description: What did you expect, and what actually happened?
+      placeholder: Describe the issue.
     validations:
       required: true
 
@@ -43,70 +102,32 @@ body:
     id: steps
     attributes:
       label: Steps to reproduce
-      description: List the exact steps to reproduce the issue.
       placeholder: |
         1. Open the app
-        2. Go to ...
-        3. Click ...
-        4. See the problem
+        2. Open a CK3 workspace
+        3. …
+    validations:
+      required: true
+
+  - type: textarea
+    id: diagnostics
+    attributes:
+      label: Diagnostics
+      description: In the app, click Copy diagnostics (in Help, the ? in the top bar or F1, or on the notice after a crash) and paste it here.
       render: text
-    validations:
-      required: true
 
-  - type: input
-    id: os
+  - type: textarea
+    id: log-file
     attributes:
-      label: Operating system
-      placeholder: e.g. Windows 11, macOS 14, Ubuntu 22.04
-    validations:
-      required: true
-
-  - type: input
-    id: app-version
-    attributes:
-      label: App version
-      description: If known, include the version shown in the app footer.
-      placeholder: e.g. 0.8.1
-
-  - type: dropdown
-    id: build-source
-    attributes:
-      label: Build source
-      options:
-        - Official release
-        - Local build
-    validations:
-      required: true
-
-  - type: checkboxes
-    id: games
-    attributes:
-      label: Games affected
-      description: Select all that apply.
-      options:
-        - label: Crusader Kings III
-          required: false
-        - label: Europa Universalis V
-          required: false
-        - label: Other
-          required: false
-
-  - type: upload
-    id: files
-    attributes:
-      label: Files or data involved
-      description: If relevant, share file paths, sample files, or folders involved in the issue.
-
-  - type: upload
-    id: screenshots
-    attributes:
-      label: Screenshots or recordings
-      description: Attach screenshots or paste links if available.
+      label: Log file
+      description: |
+        If the app won't open, drag pmt.log here.
+        Windows: `%LOCALAPPDATA%\paradox-modding-tools\pmt.log`
+        Linux: `~/.cache/paradox-modding-tools/pmt.log`
 
   - type: textarea
     id: additional-context
     attributes:
       label: Additional context
-      description: Add any other context that may help us reproduce or fix the issue.
-      placeholder: Anything else we should know?
-      render: text
+      description: Paths (relative is fine) and anything else. Do not paste secrets.
+      placeholder: Workspace game, install pin, whether the session was live…

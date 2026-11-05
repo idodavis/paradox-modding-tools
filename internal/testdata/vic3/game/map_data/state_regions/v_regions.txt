@@ -1,0 +1,10 @@
+STATE_HOME = {
+	id = 1
+	provinces = { "x0974E5" "x216569" }
+	city = "x0974E5"
+}
+STATE_AWAY = {
+	id = 2
+	provinces = { "x4A0B1C" "x5D2E3F" }
+	city = "x4A0B1C"
+}

@@ -1,0 +1,32 @@
+v_decision_1 = {
+	is_shown = { is_adult = yes }
+	selection_tooltip = v_decision_1_tooltip
+}
+v_decision_2 = {
+	is_shown = { is_adult = yes }
+	selection_tooltip = v_decision_2_tooltip
+}
+v_decision_3 = {
+	is_shown = { is_adult = yes }
+	selection_tooltip = v_decision_3_tooltip
+}
+v_decision_4 = {
+	is_shown = { is_adult = yes }
+	selection_tooltip = v_decision_4_tooltip
+}
+v_decision_5 = {
+	is_shown = { is_adult = yes }
+	selection_tooltip = v_decision_5_tooltip
+}
+v_decision_6 = {
+	is_shown = { is_adult = yes }
+	selection_tooltip = v_decision_6_tooltip
+}
+v_decision_7 = {
+	is_shown = { is_adult = yes }
+	selection_tooltip = v_decision_7_tooltip
+}
+v_decision_8 = {
+	is_shown = { is_adult = yes }
+	selection_tooltip = v_decision_8_tooltip
+}

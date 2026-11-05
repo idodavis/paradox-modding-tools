@@ -1,0 +1,311 @@
+// app.go is the Wails service for the app itself: its version and updates, its settings and log, and its windows.
+
+package app
+
+import (
+	"cmp"
+	"context"
+	"fmt"
+	"io"
+	"log/slog"
+	"net/http"
+	"os"
+	"path/filepath"
+	"runtime"
+	"slices"
+	"strconv"
+	"strings"
+	"sync"
+	"sync/atomic"
+	"time"
+
+	"github.com/samber/lo"
+	"github.com/wailsapp/wails/v3/pkg/application"
+	"github.com/wailsapp/wails/v3/pkg/events"
+)
+
+// The events the app sends.
+const (
+	EventConfigChanged = "config:changed" // config.json was written; the data is the section
+	EventAppUpdate     = "app:update"     // a newer version exists; the data is the Update
+	EventWindowClosing = "window:closing" // a window waits to close for the frontend's answer; the data is its name
+	EventWindowClosed  = "window:closed"  // a window closed; the data is its name
+)
+
+// init registers the app events with the application.
+func init() {
+	application.RegisterEvent[string](EventConfigChanged)
+	application.RegisterEvent[Update](EventAppUpdate)
+	application.RegisterEvent[string](EventWindowClosing)
+	application.RegisterEvent[string](EventWindowClosed)
+}
+
+// mainWindow is the name of the main window, whose close quits the app.
+const mainWindow = "main"
+
+// DevBuild is the version of a build run from the source, which no release has.
+const DevBuild = "dev"
+
+// Service is the Wails service for the app itself: its version and updates, its settings, its log and its windows.
+type Service struct {
+	Config       *ConfigFile    // config.json, which carries PMT's folders
+	Build        string         // the version the build set
+	mainClosable atomic.Bool    // the frontend let the main window close
+	source       *releaseSource // the updater's provider
+	updating     sync.Mutex     // one check or install of an update at a time
+}
+
+// ServiceStartup sets up the updater, empties the trash and writes the running mark, which CrashedLastRun reads. It
+// returns an error if the updater refuses its setup.
+func (app *Service) ServiceStartup(ctx context.Context, options application.ServiceOptions) error {
+	if err := app.startUpdater(); err != nil {
+		return err
+	}
+	_ = os.RemoveAll(app.Config.Dirs.Trash)
+	mark := resolveMark(app.Config.Dirs)
+	_, err := os.Stat(mark)
+	// a mark still there means the last run never shut down
+	return os.WriteFile(mark, []byte(strconv.FormatBool(err == nil)), 0o644)
+}
+
+// ServiceShutdown removes the running mark, so the next start knows the shutdown was clean.
+func (app *Service) ServiceShutdown() error { return os.Remove(resolveMark(app.Config.Dirs)) }
+
+// userAgent is how PMT names itself to the sites it fetches from.
+const userAgent = "paradox-modding-tools (+https://github.com/idodavis/paradox-modding-tools)"
+
+// OpenConfig finds PMT's folders on this machine and loads config.json. It returns an error if a folder cannot be
+// made.
+func OpenConfig() (*ConfigFile, error) {
+	dirs, err := ResolveDirs()
+	if err != nil {
+		return nil, err
+	}
+	return openConfig(dirs), nil
+}
+
+// OpenLog opens pmt.log in the log folder and returns the logger that the app and the services write through. A log
+// that has grown too large starts over. It returns an error if the file cannot be opened.
+func OpenLog(config *ConfigFile, version string) (*slog.Logger, error) {
+	path := resolveLog(config.Dirs)
+	flags := os.O_CREATE | os.O_WRONLY | os.O_APPEND
+	if stat, err := os.Stat(path); err == nil && stat.Size() > 4<<20 {
+		flags |= os.O_TRUNC
+	}
+	file, err := os.OpenFile(path, flags, 0o644)
+	if err != nil {
+		return nil, err
+	}
+	logger := slog.New(slog.NewTextHandler(file, nil))
+	logger.Info("started", "version", version)
+	return logger, nil
+}
+
+// Version returns the version the build set.
+func (app *Service) Version() string { return app.Build }
+
+// FetchURL downloads a web address within the given time and returns the body of the answer. It sends PMT's user
+// agent. It returns an error if the request fails or the answer is not 200.
+func FetchURL(address string, timeout time.Duration) ([]byte, error) {
+	request, err := http.NewRequest(http.MethodGet, address, nil)
+	if err != nil {
+		return nil, err
+	}
+	request.Header.Set("User-Agent", userAgent)
+	request.Header.Set("Accept", "*/*") // some wikis answer a challenge page to a request that sends no Accept header
+	response, err := (&http.Client{Timeout: timeout}).Do(request)
+	if err != nil {
+		return nil, err
+	}
+	defer func() { _ = response.Body.Close() }()
+	if response.StatusCode != http.StatusOK {
+		return nil, fmt.Errorf("%s answered %s", request.URL.Host, response.Status)
+	}
+	return io.ReadAll(response.Body)
+}
+
+// ListSettings returns the settings catalog.
+func (app *Service) ListSettings() []Setting { return Catalog }
+
+// ReadSettings returns every setting's value by key in the given workspace, using the catalog's default for a setting
+// that was never set.
+func (app *Service) ReadSettings(workspaceID string) map[string]string {
+	return lo.SliceToMap(Catalog, func(setting Setting) (string, string) {
+		value, _ := app.Config.LookupSetting(workspaceID, setting.Key)
+		return setting.Key, value
+	})
+}
+
+// WriteSetting sets one setting to the given value, in the given workspace's record for a setting kept per workspace,
+// and emits config:changed for the settings. It returns an error if the catalog has no such setting, the workspace is
+// not recorded, or the config is read-only or cannot be saved.
+func (app *Service) WriteSetting(workspaceID, key, value string) error {
+	setting, ok := lo.Find(Catalog, func(setting Setting) bool { return setting.Key == key })
+	if !ok {
+		return fmt.Errorf("the catalog has no setting %q", key)
+	}
+	return app.Config.Update("settings", func(config *Config) error {
+		values := &config.Settings
+		if setting.Workspace {
+			position := slices.IndexFunc(config.Workspaces, func(record Workspace) bool { return record.ID == workspaceID })
+			if position < 0 {
+				return fmt.Errorf("the workspace %s is not recorded", workspaceID)
+			}
+			values = &config.Workspaces[position].Settings
+		}
+		if *values == nil {
+			*values = map[string]string{}
+		}
+		(*values)[key] = value
+		return nil
+	})
+}
+
+// CrashedLastRun reports whether the last run ended without a clean shutdown. It is false on the first run, and in a
+// dev build, which is stopped without a clean shutdown each time it is rebuilt.
+func (app *Service) CrashedLastRun() bool {
+	if app.Build == DevBuild {
+		return false
+	}
+	mark, err := os.ReadFile(resolveMark(app.Config.Dirs))
+	if err != nil {
+		return false
+	}
+	crashed, _ := strconv.ParseBool(string(mark))
+	return crashed
+}
+
+// BuildDiagnostics returns what a bug report needs: the version, the system, the installs and the end of pmt.log.
+func (app *Service) BuildDiagnostics() string {
+	var report strings.Builder
+	system := runtime.GOOS + "/" + runtime.GOARCH
+	env := application.Get().Env.Info()
+	if env.OSInfo != nil {
+		// Windows 11 still names itself Windows 10 in the registry; its branding says 11
+		system = fmt.Sprintf("%s %s, %s", cmp.Or(env.OSInfo.Branding, env.OSInfo.Name), env.OSInfo.Version, system)
+	}
+	if webview, ok := env.PlatformInfo["WebView2"]; ok {
+		system += fmt.Sprintf(", WebView2 %v", webview)
+	}
+	fmt.Fprintf(&report, "Paradox Modding Tools %s\nSystem: %s\n", app.Build, system)
+	for _, install := range app.Config.Config().Installs {
+		fmt.Fprintf(&report, "Install: %s, version %s\n", install.Game, install.Version)
+	}
+	text, _ := os.ReadFile(resolveLog(app.Config.Dirs))
+	lines := strings.Split(strings.TrimRight(string(text), "\n"), "\n")
+	fmt.Fprintf(&report, "\npmt.log, its last 200 lines:\n%s\n", strings.Join(lines[max(0, len(lines)-200):], "\n"))
+	return report.String()
+}
+
+// ShowFolder opens a folder in the system's file manager, or a file's folder with the file selected. It returns an
+// error if the path does not exist.
+func (app *Service) ShowFolder(path string) error {
+	stat, err := os.Stat(path)
+	if err != nil {
+		return err
+	}
+	return application.Get().Env.OpenFileManager(path, !stat.IsDir())
+}
+
+// OpenMainWindow opens the main window as it was last closed; 1400 by 900 on the first run. Closing it waits for the
+// frontend, which is sent window:closing, until CloseWindow lets it through. Then the window's state is saved and the
+// app quits.
+//
+//wails:ignore
+func (app *Service) OpenMainWindow() {
+	pmt := application.Get()
+	lastWindow := app.Config.Config().Window
+	window := newWindow(application.WebviewWindowOptions{
+		Name:       mainWindow,
+		Title:      "Paradox Modding Tools",
+		Width:      cmp.Or(lastWindow.Width, 1400),
+		Height:     cmp.Or(lastWindow.Height, 900),
+		StartState: lo.Ternary(lastWindow.Maximized, application.WindowStateMaximised, application.WindowStateNormal),
+		URL:        "/",
+	})
+	window.RegisterHook(events.Common.WindowClosing, func(event *application.WindowEvent) {
+		if !app.mainClosable.Load() {
+			event.Cancel()
+			pmt.Event.Emit(EventWindowClosing, mainWindow)
+		}
+	})
+	window.OnWindowEvent(events.Common.WindowClosing, func(*application.WindowEvent) {
+		maximized, bounds := window.IsMaximised(), window.Bounds()
+		_ = app.Config.Update("window", func(config *Config) error {
+			config.Window.Maximized = maximized
+			if !maximized {
+				config.Window.Width, config.Window.Height = bounds.Width, bounds.Height
+			}
+			return nil
+		})
+		pmt.Quit()
+	})
+}
+
+// OpenWindow opens a new window with the given name on a page of the app. It returns an error if a window already
+// has the name.
+func (app *Service) OpenWindow(name, url string) error {
+	pmt := application.Get()
+	if _, open := pmt.Window.Get(name); open {
+		return fmt.Errorf("a window named %q is already open", name)
+	}
+	window := newWindow(application.WebviewWindowOptions{Name: name, URL: url})
+	// the first close waits for the frontend; the next one goes through
+	var unhook func()
+	unhook = window.RegisterHook(events.Common.WindowClosing, func(event *application.WindowEvent) {
+		event.Cancel()
+		unhook()
+		pmt.Event.Emit(EventWindowClosing, name)
+		time.AfterFunc(5*time.Second, window.Close)
+	})
+	window.OnWindowEvent(events.Common.WindowClosing, func(*application.WindowEvent) {
+		pmt.Event.Emit(EventWindowClosed, name)
+	})
+	return nil
+}
+
+// ShowWindow brings the window with the given name to the front. It returns an error if no window has the name.
+func (app *Service) ShowWindow(name string) error {
+	window, err := lookupWindow(name)
+	if err != nil {
+		return err
+	}
+	window.Focus()
+	return nil
+}
+
+// CloseWindow closes the window with the given name. A window opened by OpenWindow first gets a window:closing event
+// and closes when the frontend closes it again, or after a timeout. The main window's close quits the app. It returns
+// an error if no window has the name.
+func (app *Service) CloseWindow(name string) error {
+	window, err := lookupWindow(name)
+	if err != nil {
+		return err
+	}
+	if name == mainWindow {
+		app.mainClosable.Store(true)
+	}
+	window.Close()
+	return nil
+}
+
+// resolveMark returns the path of the running mark, which sits beside the log.
+func resolveMark(dirs Dirs) string { return filepath.Join(dirs.Log, "running") }
+
+// resolveLog returns the path of pmt.log.
+func resolveLog(dirs Dirs) string { return filepath.Join(dirs.Log, "pmt.log") }
+
+// newWindow opens a window with the given options and no system frame, as the page draws its own title bar.
+func newWindow(options application.WebviewWindowOptions) *application.WebviewWindow {
+	options.Frameless = true
+	return application.Get().Window.NewWithOptions(options)
+}
+
+// lookupWindow returns the open window with the given name. It returns an error when no window has it.
+func lookupWindow(name string) (application.Window, error) {
+	window, open := application.Get().Window.Get(name)
+	if !open {
+		return nil, fmt.Errorf("no window is named %q", name)
+	}
+	return window, nil
+}

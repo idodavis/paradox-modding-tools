@@ -1,0 +1,137 @@
+<!-- Shows read-only code as the editor draws it. It can number its lines and highlight a run of them. -->
+<script lang="ts">
+import type { Format } from "@internal/files/models";
+
+/** EDITOR_LANGUAGES holds the editor language a file is colored in, by Go's format. */
+export const EDITOR_LANGUAGES: Readonly<Record<Format, string>> = {
+  "": "plaintext",
+  script: "paradox-script",
+  gui: "paradox-gui",
+  asset: "paradox-script",
+  font: "paradox-script",
+  gfx: "paradox-script",
+  localization: "paradox-localization",
+  image: "plaintext",
+  "web-image": "plaintext",
+  table: "plaintext",
+  descriptor: "plaintext",
+  shader: "plaintext",
+  readme: "paradox-readme",
+  markdown: "markdown",
+  text: "plaintext",
+  binary: "plaintext",
+};
+</script>
+
+<script setup lang="ts">
+import { computed, shallowRef, watch } from "vue";
+import { editor } from "monaco-editor/editor/editor.api";
+
+import { useSettingsStore } from "../stores/settings";
+
+const {
+  text,
+  language,
+  line = 0,
+  focus = undefined,
+  inline = false,
+} = defineProps<{
+  text: string;
+  language: string;
+  /** The file line the text begins at, from 1. Without it, no line numbers show. */
+  line?: number;
+  /** The first and last file lines to highlight. */
+  focus?: [number, number];
+  /** Whether it shows as a piece of a line, in the line's text size, with no gutter, band or padding. */
+  inline?: boolean;
+}>();
+
+const settings = useSettingsStore();
+const html = shallowRef("");
+// Monaco rounds the height of a line to whole pixels.
+const lineHeight = computed(() => {
+  const { fontSize, lineHeight: factor } = settings.codeFont();
+  return Math.round(fontSize * factor);
+});
+const style = computed(() => {
+  const { fontFamily, fontSize, padding } = settings.codeFont();
+  return { fontFamily, fontSize: `${fontSize}px`, lineHeight: `${lineHeight.value}px`, paddingTop: `${padding.top}px` };
+});
+// Trailing line breaks are dropped, since Monaco would draw them as an empty line, and so is the indent every line
+// shares, so deeply nested code starts at the left.
+const code = computed(() => {
+  const rows = text.replace(/[\r\n]+$/, "").split(/\r\n|\r|\n/);
+  const indents = rows.filter((row) => row.trim()).map((row) => /^[\t ]*/.exec(row)?.[0] ?? "");
+  const shared = indents.reduce((common, indent) => {
+    let end = 0;
+    while (end < common.length && common[end] === indent[end]) end++;
+    return common.slice(0, end);
+  }, indents[0] ?? "");
+  return rows.map((row) => row.slice(shared.length)).join("\n");
+});
+const lineNumbers = computed(() => (line ? code.value.split(/\r\n|\r|\n/).map((_text, index) => line + index) : []));
+const gutter = computed(() => ({
+  width: `${Math.max(settings.codeFont().lineNumbersMinChars, String(lineNumbers.value.at(-1)).length)}ch`,
+  marginInlineEnd: `${editor.EditorOptions.lineDecorationsWidth.defaultValue}px`,
+}));
+const band = computed(() => {
+  const numbers = lineNumbers.value;
+  if (!focus || !numbers.length) return undefined;
+  const first = Math.max(focus[0], numbers[0] ?? 0);
+  const last = Math.min(focus[1], numbers.at(-1) ?? 0);
+  if (first > last) return undefined;
+  return {
+    top: `calc(${style.value.paddingTop} + ${(first - line) * lineHeight.value}px)`,
+    height: `${(last - first + 1) * lineHeight.value}px`,
+  };
+});
+
+// A stale answer is dropped.
+watch(
+  [code, () => language, () => settings.theme()],
+  async (_sources, _previous, onCleanup) => {
+    let stale = false;
+    onCleanup(() => (stale = true));
+    const colored = await editor.colorize(code.value, language, {});
+    if (!stale) html.value = colored;
+  },
+  { immediate: true, flush: "post" },
+);
+</script>
+
+<template>
+  <!-- eslint-disable vue/no-v-html -- Monaco escapes the text it colors -->
+  <span
+    v-if="inline"
+    class="inline-snippet whitespace-pre-wrap"
+    :style="{ fontFamily: style.fontFamily }"
+    v-html="html"
+  />
+  <!-- eslint-enable vue/no-v-html -->
+  <div v-else class="relative flex bg-(--bg-0) text-(--fg-1)" :style="style">
+    <div
+      v-if="band"
+      class="pointer-events-none absolute inset-x-0 bg-(--bg-3) shadow-[inset_2px_0_0_var(--accent)]"
+      :style="band"
+    />
+    <div
+      v-if="lineNumbers.length"
+      class="relative box-content shrink-0 ps-3 text-right text-(--fg-3) tabular-nums select-none"
+      :style="gutter"
+    >
+      <div v-for="number in lineNumbers" :key="number">{{ number }}</div>
+    </div>
+    <!-- eslint-disable-next-line vue/no-v-html -- Monaco escapes the text it colors -->
+    <div class="relative min-w-0 flex-1 overflow-x-auto whitespace-pre" v-html="html" />
+  </div>
+</template>
+
+<style scoped>
+/* Monaco sends its colored text as a block of lines, which a piece of a line shows on its own line */
+.inline-snippet :deep(div) {
+  display: inline;
+}
+.inline-snippet :deep(br) {
+  display: none;
+}
+</style>

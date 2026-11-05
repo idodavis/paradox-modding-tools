@@ -1,0 +1,10 @@
+v_template = {
+	age = RANGE { 16 40 }
+	culture = culture:norse
+	trait = brave
+}
+v_old_template = {
+	age = RANGE { 50 70 }
+	culture = culture:english
+	trait = craven
+}

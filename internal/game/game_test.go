@@ -1,0 +1,190 @@
+package game
+
+import (
+	"encoding/json"
+	"os"
+	"path/filepath"
+	"runtime"
+	"testing"
+	"time"
+)
+
+// writeLauncher writes a launcher settings file into a new install folder and returns the folder.
+func writeLauncher(t *testing.T, body string) string {
+	t.Helper()
+	dir := t.TempDir()
+	if err := os.MkdirAll(filepath.Join(dir, "launcher"), 0o755); err != nil {
+		t.Fatal(err)
+	}
+	path := filepath.Join(dir, "launcher", "launcher-settings.json")
+	if err := os.WriteFile(path, []byte(body), 0o644); err != nil {
+		t.Fatal(err)
+	}
+	return dir
+}
+
+// TestLoadGameVersion checks that an install's version comes from its launcher settings.
+func TestLoadGameVersion(t *testing.T) {
+	if got := LookupGame("ck3").LoadVersion(writeLauncher(t,
+		`{ "rawVersion": "1.12.5", "version": "Scythe v1.12.5" }`)); got != "1.12.5" {
+		t.Fatalf("version = %q want 1.12.5", got)
+	}
+	// the user-data folder is an empty one of the test's, so this machine's own revision log is not read
+	empty, err := json.Marshal(map[string]string{"gameDataPath": t.TempDir()})
+	if err != nil {
+		t.Fatal(err)
+	}
+	if got := LookupGame("ck3").LoadVersion(writeLauncher(t, string(empty))); got != "" {
+		t.Fatalf("missing file version = %q want empty", got)
+	}
+	if got := LookupGame("ck3").LoadVersion(writeLauncher(t,
+		`{ "version": "1.13.11 (Chamomile)" }`)); got != "1.13.11" {
+		t.Fatalf("codename strip = %q want 1.13.11", got)
+	}
+}
+
+// TestUserDataDirLauncherSetting checks that the launcher's setting names the user-data folder on every OS.
+func TestUserDataDirLauncherSetting(t *testing.T) {
+	t.Run("game_data_path", func(t *testing.T) {
+		userData := t.TempDir()
+		raw, err := json.Marshal(map[string]string{"gameDataPath": userData})
+		if err != nil {
+			t.Fatal(err)
+		}
+		install := writeLauncher(t, string(raw))
+		got := LookupGame("ck3").FindUserDataDir(install)
+		if got != filepath.Clean(userData) {
+			t.Fatalf("FindUserDataDir = %q want %q", got, userData)
+		}
+	})
+}
+
+// TestUserDataDirLinux checks Linux's conventions, XDG and Proton.
+func TestUserDataDirLinux(t *testing.T) {
+	t.Run("xdg_beats_missing_documents", func(t *testing.T) {
+		if runtime.GOOS != "linux" {
+			t.Skip("XDG is Linux")
+		}
+		home := t.TempDir()
+		t.Setenv("HOME", home)
+		xdgHome := filepath.Join(home, "xdg")
+		t.Setenv("XDG_DATA_HOME", xdgHome)
+		want := filepath.Join(xdgHome, "Paradox Interactive", "Crusader Kings III")
+		if err := os.MkdirAll(want, 0o755); err != nil {
+			t.Fatal(err)
+		}
+		got := LookupGame("ck3").FindUserDataDir("")
+		if got != want {
+			t.Fatalf("FindUserDataDir = %q want %q", got, want)
+		}
+	})
+
+	t.Run("proton_when_xdg_absent", func(t *testing.T) {
+		if runtime.GOOS != "linux" {
+			t.Skip("Proton prefixes are Linux")
+		}
+		home := t.TempDir()
+		t.Setenv("HOME", home)
+		t.Setenv("XDG_DATA_HOME", "")
+		want := filepath.Join(
+			home, ".local", "share", "Steam", "steamapps", "compatdata", "1158310",
+			"pfx", "drive_c", "users", "steamuser",
+			"Documents", "Paradox Interactive", "Crusader Kings III",
+		)
+		if err := os.MkdirAll(want, 0o755); err != nil {
+			t.Fatal(err)
+		}
+		got := LookupGame("ck3").FindUserDataDir("")
+		if got != want {
+			t.Fatalf("FindUserDataDir = %q want %q", got, want)
+		}
+	})
+}
+
+// TestSteamLibrariesLinkedRoots checks that a link to a Steam root counts once.
+func TestSteamLibrariesLinkedRoots(t *testing.T) {
+	if runtime.GOOS == "windows" {
+		t.Skip("the ~/.steam/steam convention is Linux's")
+	}
+	home := t.TempDir()
+	t.Setenv("HOME", home)
+	real := filepath.Join(home, ".local", "share", "Steam")
+	if err := os.MkdirAll(real, 0o755); err != nil {
+		t.Fatal(err)
+	}
+	if err := os.MkdirAll(filepath.Join(home, ".steam"), 0o755); err != nil {
+		t.Fatal(err)
+	}
+	if err := os.Symlink(real, filepath.Join(home, ".steam", "steam")); err != nil {
+		t.Skipf("cannot symlink here: %v", err)
+	}
+	got := findSteamLibraries()
+	count := 0
+	for _, library := range got {
+		if library == real {
+			count++
+		}
+	}
+	if count != 1 {
+		t.Fatalf("findSteamLibraries() = %v, want %q exactly once", got, real)
+	}
+}
+
+// TestInstallUpdatedAt checks that the binaries decide, not launcher-settings.json, which EU5 lacks and which lags the
+// update on CK3.
+func TestInstallUpdatedAt(t *testing.T) {
+	if got := ReadInstallUpdatedAt(""); !got.IsZero() {
+		t.Errorf("empty path = %v, want zero", got)
+	}
+	if got := ReadInstallUpdatedAt(filepath.Join(t.TempDir(), "nope")); !got.IsZero() {
+		t.Errorf("missing install = %v, want zero", got)
+	}
+
+	root := t.TempDir()
+	bin := filepath.Join(root, "binaries")
+	if err := os.MkdirAll(bin, 0o755); err != nil {
+		t.Fatal(err)
+	}
+	launcher := filepath.Join(root, "launcher")
+	if err := os.MkdirAll(launcher, 0o755); err != nil {
+		t.Fatal(err)
+	}
+	future := time.Now().Add(72 * time.Hour)
+	settings := filepath.Join(launcher, "launcher-settings.json")
+	if err := os.WriteFile(settings, []byte("{}"), 0o644); err != nil {
+		t.Fatal(err)
+	}
+	if err := os.Chtimes(settings, future, future); err != nil {
+		t.Fatal(err)
+	}
+
+	exe := filepath.Join(bin, "game.exe")
+	if err := os.WriteFile(exe, []byte("x"), 0o644); err != nil {
+		t.Fatal(err)
+	}
+	old := time.Now().Add(-48 * time.Hour)
+	if err := os.Chtimes(exe, old, old); err != nil {
+		t.Fatal(err)
+	}
+	got := ReadInstallUpdatedAt(root)
+	if got.Sub(old).Abs() > time.Minute {
+		t.Fatalf("ReadInstallUpdatedAt = %v, want the binary's %v", got, old)
+	}
+
+	// a downgrade rewrites the binaries, so the timestamp still moves forward
+	now := time.Now()
+	if err := os.Chtimes(exe, now, now); err != nil {
+		t.Fatal(err)
+	}
+	if updated := ReadInstallUpdatedAt(root); !updated.After(got) {
+		t.Errorf("rewriting the binary did not move the timestamp: %v then %v", got, updated)
+	}
+
+	flat := t.TempDir()
+	if err := os.WriteFile(filepath.Join(flat, "game.exe"), []byte("x"), 0o644); err != nil {
+		t.Fatal(err)
+	}
+	if ReadInstallUpdatedAt(flat).IsZero() {
+		t.Error("no binaries/ dir should fall back to the install root")
+	}
+}

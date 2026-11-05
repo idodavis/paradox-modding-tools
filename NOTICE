@@ -1,0 +1,9 @@
+Paradox Modding Tools
+Copyright 2025-2026 Ian Davis
+
+Licensed under the Apache License, Version 2.0. See LICENSE.
+
+Paradox Modding Tools is unofficial and is not affiliated with Paradox Interactive.
+
+The games' data that Paradox Modding Tools reads belongs to Paradox Interactive, and so do the schemas built from the
+games' script_docs that this repository holds (internal/schema/shipped and internal/testdata).

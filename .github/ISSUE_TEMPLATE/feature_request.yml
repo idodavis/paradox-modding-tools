@@ -1,19 +1,20 @@
 name: Feature request
-description: Suggest a new feature or improvement for Paradox Modding Tools
+description: Suggest a feature or improvement for the current product
 title: "[Feature] "
 labels: [enhancement]
 body:
   - type: markdown
     attributes:
       value: |
-        Thanks for suggesting an improvement. The more specific you are, the easier it is to evaluate and prioritize.
+        Check the [roadmap](https://github.com/idodavis/paradox-modding-tools/blob/main/docs/ROADMAP.md) first: if
+        your idea is on it, give its issue a 👍 instead. Questions go to
+        [Discussions](https://github.com/idodavis/paradox-modding-tools/discussions).
 
   - type: textarea
     id: summary
     attributes:
       label: Summary
-      description: What feature or improvement would you like to see?
-      placeholder: e.g. Add support for exporting merge results to a file.
+      description: What do you want?
     validations:
       required: true
 
@@ -22,8 +23,6 @@ body:
     attributes:
       label: Why this would be useful
       description: How would this help you or other modders?
-      placeholder: Explain the benefit and impact.
-      render: text
     validations:
       required: true
 
@@ -31,13 +30,23 @@ body:
     id: area
     attributes:
       label: Related area
-      description: Which part of the app does this relate to?
       options:
-        - Compare tool
-        - Merge tool
-        - Inventory
-        - Modding docs
+        - Library
+        - New workspace
+        - IDE
+        - Source control
+        - Wiki pane
+        - Terminal
+        - Assistant
+        - Save as DDS
+        - Event Graph
+        - Health
+        - Patch Notes
+        - Publish / Steam Workshop
         - Settings
+        - Appearance / themes
+        - Language / scan / cache
+        - Build / updater
         - Other
     validations:
       required: true
@@ -45,19 +54,22 @@ body:
   - type: input
     id: area-other
     attributes:
-      label: If you selected Other, please specify
-      placeholder: e.g. Startup experience, updater, UI polish
+      label: If you selected Other, specify
+
+  - type: dropdown
+    id: game
+    attributes:
+      label: Game
+      options:
+        - Crusader Kings III
+        - Victoria 3
+        - Europa Universalis V
+        - All / not game-specific
+    validations:
+      required: true
 
   - type: textarea
     id: alternatives
     attributes:
       label: Alternatives considered
-      description: Have you considered any other ways to handle this?
-      placeholder: Describe any alternative approaches or workarounds.
-      render: text
-
-  - type: upload
-    id: files
-    attributes:
-      label: Upload files or mockups
-      description: If relevant, attach files, mockups, or screenshots to illustrate your request.
+      description: Workarounds or other ways to handle this.

@@ -5,15 +5,15 @@ vars:
   BIN_DIR: "bin"
   PACKAGE_MANAGER: '{{.PACKAGE_MANAGER | default "npm"}}'
   VITE_PORT: "{{.WAILS_VITE_PORT | default 9245}}"
-  # Target OS for build/package/run. Defaults to the host OS, and is overridden
-  # by `wails3 build GOOS=...` (or the GOOS env var) for cross-compilation. The
-  # tasks below dispatch to the matching platform Taskfile via this variable.
+  # Target OS for build/package/run, and the platform Taskfile the tasks below dispatch to: the
+  # host OS unless `wails3 build GOOS=...` or the GOOS env var sets it for cross-compilation.
   GOOS: "{{.GOOS | default OS}}"
+  # the app's Go packages; ./... would also take the Go that npm packages ship in frontend/node_modules
+  PACKAGES: ". ./internal/... ./services/..."
 
 includes:
   common: ./build/Taskfile.yml
   windows: ./build/windows/Taskfile.yml
-  darwin: ./build/darwin/Taskfile.yml
   linux: ./build/linux/Taskfile.yml
 
 tasks:
@@ -21,31 +21,11 @@ tasks:
     summary: Builds the application
     cmds:
       - task: "{{.GOOS}}:build"
-        vars:
-          VERSION: "{{.VERSION}}"
-          DEV: "{{.DEV}}"
-          EXTRA_TAGS: "{{.EXTRA_TAGS}}"
-          OBFUSCATED: "{{.OBFUSCATED}}"
-          GARBLE_ARGS: "{{.GARBLE_ARGS}}"
-
-  package:
-    summary: Packages a production build of the application
-    cmds:
-      - task: "{{.GOOS}}:package"
-        vars:
-          VERSION: "{{.VERSION}}"
-          FORMAT: "{{.FORMAT}}"
-          INSTALL_SCOPE: "{{.INSTALL_SCOPE}}"
-          CERT_PATH: "{{.CERT_PATH}}"
-          PUBLISHER: "{{.PUBLISHER}}"
-          USE_MSIX_TOOL: "{{.USE_MSIX_TOOL}}"
 
   run:
     summary: Runs the application
     cmds:
       - task: "{{.GOOS}}:run"
-        vars:
-          VERSION: "{{.VERSION}}"
 
   dev:
     summary: Runs the application in development mode
@@ -57,22 +37,107 @@ tasks:
     cmds:
       - task: common:setup:docker
 
-  build:server:
-    summary: Builds the application in server mode (no GUI, HTTP server only)
+  test:
+    summary: Fast tests of the engine and the services. Skips the real-install tier.
     cmds:
-      - task: common:build:server
+      # -timeout 60s is the contract: a test that needs longer belongs behind an opt-in task, so
+      # move the test, do not raise the number
+      - go test -short -timeout 60s {{.PACKAGES}}
 
-  run:server:
-    summary: Runs the application in server mode
+  test:race:
+    summary: >
+      The fast tests under the race detector, which CI runs after task check before a release. It is the only thing
+      that can catch a lock-discipline regression, such as the open workspace's rescans against its readers.
     cmds:
-      - task: common:run:server
+      - go test -short -race -timeout 5m {{.PACKAGES}}
 
-  build:docker:
-    summary: Builds a Docker image for server mode deployment
+  check:
+    summary: Everything a commit must pass, Go and frontend. Run it before every commit.
     cmds:
-      - task: common:build:docker
+      - task: check:go
+      - task: check:frontend
 
-  run:docker:
-    summary: Builds and runs the Docker image
+  check:go:
+    summary: gofmt, the four vets, staticcheck, golangci-lint and the short tests.
+    vars:
+      # the engine's packages that build without Wails, whose files for other systems need no cgo
+      ENGINE: ./internal/files/... ./internal/game/... ./internal/jomini/... ./internal/loc/... ./internal/schema/... ./internal/texture/... ./internal/index/... ./internal/terminal/...
     cmds:
-      - task: common:run:docker
+      - task: check:dist
+      - test -z "$(gofmt -l main.go internal services)"
+      # plain vet skips the files of other systems; these three cover them. Wails' server tag leaves out its Linux
+      # window code, which needs cgo, so that the services' Linux files are vetted too
+      - go vet {{.PACKAGES}}
+      - GOOS=linux go vet {{.ENGINE}}
+      - GOOS=windows go vet {{.ENGINE}}
+      - GOOS=linux go vet -tags server ./services/...
+      - staticcheck {{.PACKAGES}}
+      - golangci-lint run {{.PACKAGES}}
+      - task: test
+
+  check:dist:
+    summary: Builds the frontend if it has never been built, since main.go embeds frontend/dist and go vet needs it.
+    internal: true
+    status:
+      - test -f frontend/dist/index.html
+    cmds:
+      - task: common:build:frontend
+
+  check:frontend:
+    summary: The typecheck (~30s, .vue files included), eslint with prettier, and vitest.
+    dir: frontend
+    cmds:
+      - task: check:types
+      - npm run lint
+      - npm test
+
+  check:types:
+    summary: >
+      Type-check the frontend, .vue files included (~30s). vue-tsc wraps the
+      JavaScript tsc, which TypeScript 7 no longer ships, so it drives the
+      `tsc-js` alias instead — see frontend/scripts/check.mjs.
+    dir: frontend
+    cmds:
+      - npm run check
+
+  test:gate:
+    summary: >
+      The real-install tier: each package's gate over CK3, Victoria 3 and
+      EU5. A gate skips under -short and again when its game's variable is
+      unset, so these variables are what turn the tier on. Set
+      PMT_TEST_INSTALL_{CK3,VIC3,EU5} to the three game roots; the console
+      dumps are read from each game's Documents folder. PKGS limits the run
+      to some packages (PKGS="./internal/schema/... ./services/lsp"), and
+      PMT_TEST_ENCODE turns on texture's encoding of every picture. A .env
+      beside this file, kept out of git, can set the variables.
+    dotenv: ["{{.TASKFILE_DIR}}/.env"]
+    cmds:
+      # not 60s: each gate here scans three real installs
+      - go test -count=1 -timeout 1800s {{.PKGS | default .PACKAGES}}
+
+  test:sweep:
+    summary: >
+      The mod sweep: the editor's checks over every mod in the folder that
+      PMT_TEST_MODS_{CK3,VIC3,EU5} names, each over its game's install in
+      PMT_TEST_INSTALL_*, with every stricter check on. It logs each check's
+      problems by code, to be read.
+    cmds:
+      - go test -count=1 -timeout 1800s -run TestSweepMods -v ./services/lsp
+
+  test:full:
+    summary: The real-install gates and then the frontend typecheck. What to run before a commit that touches the engine.
+    cmds:
+      - task: test:gate
+      - task: check:types
+
+  schema:shipped:
+    summary: >
+      Brings the shipped backup of each game's dumps up to date: for each game
+      whose install PMT_TEST_INSTALL_{CK3,VIC3,EU5} names, a backup older than
+      the install's dumps is written again from them. It prints one line per
+      game: up to date, rebuilt, skipped, or the dumps still to make in the game.
+      A .env beside this file, kept out of git, can set the variables.
+    dotenv: ["{{.TASKFILE_DIR}}/.env"]
+    dir: internal/schema
+    cmds:
+      - go run ./gen ck3 vic3 eu5

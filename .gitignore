@@ -1,7 +1,24 @@
 .vscode
 .task
+.cursor
+.claude
+.agents
 bin
 frontend/dist
 frontend/node_modules
-build/linux/appimage/build
-build/windows/nsis/MicrosoftEdgeWebview2Setup.exe
+frontend/auto-imports.d.ts
+frontend/components.d.ts
+
+# `go test -c` output: <pkg>.test.exe next to the package
+*.test
+*.test.exe
+
+# Wails writes bindings to a .bindings-tmp-<pid> dir and moves them into place;
+# an interrupted run leaves one behind. 13 of these were committed once.
+frontend/.bindings-tmp-*/
+
+# To ignore binaries generated during dev runs
+*.syso
+
+# the machine's own variables for the tasks, such as the game installs
+.env

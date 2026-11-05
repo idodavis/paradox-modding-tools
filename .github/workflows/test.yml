@@ -1,0 +1,105 @@
+# Checks every pull request to main, and every release before it builds: `task check` on Windows and Linux, the full
+# build, and the built app starting; a release and a run by hand also run the race detector. The real-install gates
+# need the three games installed, so they stay with the maintainer: `task test:gate`.
+name: Test
+
+on:
+  pull_request:
+    branches: [main]
+    paths-ignore:
+      - "**/*.md"
+  workflow_dispatch:
+  workflow_call:
+
+permissions:
+  contents: read
+
+concurrency:
+  group: test-${{ github.workflow }}-${{ github.ref }}-${{ github.event_name }}
+  cancel-in-progress: true
+
+jobs:
+  check:
+    name: task check (${{ matrix.os }})
+    runs-on: ${{ matrix.os }}
+    strategy:
+      fail-fast: false
+      matrix:
+        os: [ubuntu-latest, windows-latest]
+    defaults:
+      run:
+        shell: bash
+    steps:
+      - uses: actions/checkout@v7
+
+      - uses: actions/setup-go@v7
+        with:
+          go-version-file: go.mod
+
+      - uses: actions/setup-node@v7
+        with:
+          node-version: "24"
+          cache: npm
+          cache-dependency-path: frontend/package-lock.json
+
+      - name: Linux GTK4 / WebKitGTK 6
+        if: runner.os == 'Linux'
+        run: |
+          sudo apt-get update
+          sudo apt-get install -y build-essential pkg-config libgtk-4-dev libwebkitgtk-6.0-dev xvfb
+
+      # the versions `task check` is written against
+      - name: Install Task, the Wails CLI, staticcheck and golangci-lint
+        run: |
+          set -euo pipefail
+          go install github.com/go-task/task/v3/cmd/task@latest
+          go install "github.com/wailsapp/wails/v3/cmd/wails3@$(go list -m -f '{{.Version}}' github.com/wailsapp/wails/v3)"
+          go install honnef.co/go/tools/cmd/staticcheck@2026.2.2
+          go install github.com/golangci/golangci-lint/v2/cmd/golangci-lint@v2.14.0
+          echo "$(go env GOPATH)/bin" >> "$GITHUB_PATH"
+
+      - name: npm ci
+        working-directory: frontend
+        run: npm ci
+
+      - name: task check
+        run: task check
+
+      # the race detector runs before a release and by hand, not on every pull request; it needs cgo, which Windows
+      # has only where the image ships gcc
+      - name: task test:race
+        if: github.event_name != 'pull_request'
+        run: |
+          set -euo pipefail
+          if [[ "${RUNNER_OS}" == "Windows" ]] && ! command -v gcc > /dev/null; then
+            echo "No gcc on this image, so task check's tests stand for the race run."
+            exit 0
+          fi
+          CGO_ENABLED=1 task test:race
+
+      - name: Build
+        run: |
+          set -euo pipefail
+          task build VERSION=0.0.0-ci
+          ls bin
+
+      # passes when the built app writes its start line to pmt.log within 60 s and is still running 10 s later
+      - name: Launch the app
+        run: |
+          set -euo pipefail
+          if [[ "${RUNNER_OS}" == "Windows" ]]; then
+            log="${LOCALAPPDATA}/paradox-modding-tools/pmt.log"
+            ./bin/paradox-modding-tools.exe &
+          else
+            log="${HOME}/.cache/paradox-modding-tools/pmt.log"
+            xvfb-run --auto-servernum ./bin/paradox-modding-tools &
+          fi
+          app=$!
+          for _ in $(seq 60); do
+            if grep -q "msg=started" "${log}" 2> /dev/null; then break; fi
+            sleep 1
+          done
+          grep -q "msg=started" "${log}" || { echo "::error::no start line in pmt.log within 60 s"; exit 1; }
+          sleep 10
+          kill -0 "${app}" || { echo "::error::the app stopped after starting"; cat "${log}"; exit 1; }
+          kill "${app}" || true

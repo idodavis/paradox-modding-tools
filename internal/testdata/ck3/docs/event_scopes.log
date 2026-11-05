@@ -1,0 +1,65 @@
+Scope Types:
+
+none:
+Evaluate Triggers: yes
+Execute Effects: yes
+Change Scopes: yes
+Save Token: none
+Stores Variables: yes
+
+value:
+Evaluate Triggers: no
+Execute Effects: no
+Change Scopes: yes
+Save Token: value
+Stores Variables: yes
+
+boolean:
+Evaluate Triggers: no
+Execute Effects: no
+Change Scopes: yes
+Save Token: boolean
+Stores Variables: yes
+
+character:
+Evaluate Triggers: yes
+Execute Effects: yes
+Change Scopes: yes
+Save Token: character
+Stores Variables: yes
+
+landed_title:
+Evaluate Triggers: yes
+Execute Effects: yes
+Change Scopes: yes
+Save Token: landed_title
+Stores Variables: yes
+
+province:
+Evaluate Triggers: yes
+Execute Effects: yes
+Change Scopes: yes
+Save Token: province
+Stores Variables: yes
+
+culture:
+Evaluate Triggers: yes
+Execute Effects: yes
+Change Scopes: yes
+Save Token: culture
+Stores Variables: yes
+
+faith:
+Evaluate Triggers: yes
+Execute Effects: yes
+Change Scopes: yes
+Save Token: faith
+Stores Variables: yes
+
+dynasty:
+Evaluate Triggers: yes
+Execute Effects: yes
+Change Scopes: yes
+Save Token: dynasty
+Stores Variables: yes
+

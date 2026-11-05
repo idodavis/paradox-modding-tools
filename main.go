@@ -1,99 +1,109 @@
+// Package main starts Paradox Modding Tools. Started with --steam-publish, it runs as the copy of the app that
+// publishes to the Workshop.
 package main
 
 import (
 	"embed"
 	"log"
-
-	"paradox-modding-tools/services"
+	"os"
 
 	"github.com/wailsapp/wails/v3/pkg/application"
-	"github.com/wailsapp/wails/v3/pkg/updater"
-	"github.com/wailsapp/wails/v3/pkg/updater/providers/github"
+	logservice "github.com/wailsapp/wails/v3/pkg/services/log"
+
+	"paradox-modding-tools/services/agent"
+	"paradox-modding-tools/services/app"
+	"paradox-modding-tools/services/draw"
+	"paradox-modding-tools/services/git"
+	"paradox-modding-tools/services/graph"
+	"paradox-modding-tools/services/health"
+	"paradox-modding-tools/services/lsp"
+	"paradox-modding-tools/services/mcp"
+	"paradox-modding-tools/services/search"
+	"paradox-modding-tools/services/steam"
+	"paradox-modding-tools/services/terminal"
+	"paradox-modding-tools/services/wiki"
+	"paradox-modding-tools/services/workspace"
 )
 
-// Wails uses Go's `embed` package to embed the frontend files into the binary.
-// Any files in the frontend/dist folder will be embedded into the binary and
-// made available to the frontend.
-// See https://pkg.go.dev/embed for more information.
-
+// assets is the built frontend, embedded so the app ships as one file.
+//
 //go:embed all:frontend/dist
 var assets embed.FS
 
-var version = "dev" // This will be replaced by the build process with the actual version number
+// version is the app's version, set by the build. It is app.DevBuild in a dev run.
+var version = app.DevBuild
 
-// main function serves as the application's entry point. It initializes the application, creates a window,
-// and starts a goroutine that emits a time-based event every second. It subsequently runs the application and
-// logs any error that might occur.
+// main runs the app, or the Workshop publisher when started as one.
 func main() {
-	// Main application initialization
-	dbSvc := &services.DbService{}
-	if err := dbSvc.ServiceStartup(); err != nil {
-		log.Fatalf("db startup: %v", err)
+	if exitCode, served := steam.ServePublish(os.Args[1:]); served {
+		os.Exit(exitCode)
 	}
-
-	logSvc := &services.LogService{}
-	if err := logSvc.ServiceStartup(); err != nil {
-		log.Fatalf("log startup: %v", err)
+	config, err := app.OpenConfig()
+	if err != nil {
+		log.Fatalf("config: %v", err)
 	}
+	logger, err := app.OpenLog(config, version)
+	if err != nil {
+		log.Fatalf("log: %v", err)
+	}
+	appService := &app.Service{Config: config, Build: version}
 
-	fileSvc := &services.FileService{}
-	mergeSvc := &services.MergeService{FileService: fileSvc}
-	modDocSvc := &services.ModDocService{FileService: fileSvc, DB: dbSvc.DB}
-	settingsSvc := &services.SettingsService{DB: dbSvc.DB, Version: version}
-	steamSvc := &services.SteamService{DB: dbSvc.DB}
-	invSvc := &services.InventoryService{DB: dbSvc.DB}
-
-	app := application.New(application.Options{
+	pmt := application.New(application.Options{
 		Name:        "paradox-modding-tools",
-		Description: "A demo of using raw HTML & CSS",
-		Services: []application.Service{
-			application.NewService(logSvc),
-			application.NewService(dbSvc),
-			application.NewService(fileSvc),
-			application.NewService(&services.BrowserService{}),
-			application.NewService(&services.CompareService{}),
-			application.NewService(modDocSvc),
-			application.NewService(settingsSvc),
-			application.NewService(steamSvc),
-			application.NewService(&services.ClipboardService{}),
-			application.NewService(invSvc),
-			application.NewService(mergeSvc),
-		},
+		Description: "Desktop tools for Paradox Interactive game modding",
+		Logger:      logger,
+		Services:    listServices(config, appService),
 		Assets: application.AssetOptions{
 			Handler: application.BundledAssetFileServer(assets),
+			// a log line per loaded file would fill pmt.log
+			DisableLogging: true,
 		},
-		Mac: application.MacOptions{
-			ApplicationShouldTerminateAfterLastWindowClosed: true,
+		// two copies would overwrite each other's config.json
+		SingleInstance: &application.SingleInstanceOptions{
+			UniqueID: "com.idodavis.paradox-modding-tools",
+			OnSecondInstanceLaunch: func(application.SecondInstanceData) {
+				if window := application.Get().Window.Current(); window != nil {
+					window.Restore()
+					window.Focus()
+				}
+			},
 		},
 	})
+	appService.OpenMainWindow()
 
-	// Initialize the GitHub updater provider with the specified repository.
-	// This allows the application to check for updates from the GitHub repository releases.
-	// Using SHA256SUMS sidecar for checksum verification of downloaded updates.
-	gh, err := github.New(github.Config{Repository: "idodavis/paradox-modding-tools", ChecksumAsset: "SHA256SUMS"})
-	if err != nil {
-		log.Fatalf("github.New: %v", err)
-	}
-
-	if err := app.Updater.Init(updater.Config{CurrentVersion: version, Providers: []updater.Provider{gh}}); err != nil {
-		log.Fatalf("updater.Init: %v", err)
-	}
-
-	// Main App Window
-	app.Window.NewWithOptions(application.WebviewWindowOptions{
-		Title:  "Paradox Modding Tools",
-		Width:  1300,
-		Height: 900,
-		Mac: application.MacWindow{
-			InvisibleTitleBarHeight: 50,
-			Backdrop:                application.MacBackdropTranslucent,
-			TitleBar:                application.MacTitleBarHiddenInset,
-		},
-		URL: "/",
-	})
-
-	// Run the application. This blocks until the application has been exited.
-	if err := app.Run(); err != nil {
+	if err := pmt.Run(); err != nil {
 		log.Fatalf("app.Run: %v", err)
+	}
+}
+
+// listServices returns the app's services, the given app service first. Most of the others reach the config and the
+// open workspace through the workspace service.
+func listServices(config *app.ConfigFile, appService *app.Service) []application.Service {
+	wsp := &workspace.Service{Config: config, Build: version}
+	gitService := &git.Service{Workspace: wsp}
+	lspService := &lsp.Service{Workspace: wsp}
+	healthService := &health.Service{Workspace: wsp}
+	graphService := &graph.Service{Workspace: wsp}
+	wikiService := &wiki.Service{Workspace: wsp}
+	drawService := &draw.Service{Workspace: wsp}
+	mcpService := &mcp.Service{
+		Workspace: wsp, LSP: lspService, Health: healthService, Graph: graphService, Wiki: wikiService,
+		Draw: drawService, Build: version,
+	}
+	return []application.Service{
+		application.NewService(appService),
+		application.NewService(logservice.New()),
+		application.NewServiceWithOptions(wsp, application.ServiceOptions{Route: "/files"}),
+		application.NewService(lspService),
+		application.NewService(&terminal.Service{Workspace: wsp, Config: config}),
+		application.NewService(drawService),
+		application.NewService(healthService),
+		application.NewService(graphService),
+		application.NewService(&search.Service{Workspace: wsp}),
+		application.NewService(wikiService),
+		application.NewService(mcpService),
+		application.NewService(&agent.Service{Workspace: wsp, MCP: mcpService}),
+		application.NewService(gitService),
+		application.NewService(&steam.Service{Workspace: wsp, Git: gitService}),
 	}
 }

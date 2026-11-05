@@ -1,65 +1,201 @@
-name: Build and Release (Cross-Platform)
+# Drafts a release on each push to main that changes more than Markdown: the tests first, then the Windows and Linux
+# zips, their SHA256SUMS and attestations. The maintainer writes the notes and publishes the draft. While a draft is
+# open, a later push replaces its zips under the same version.
+name: Build and Release
 
 on:
   push:
-    tags: ["v*"]
+    branches: [main]
+    paths-ignore:
+      - "**/*.md"
+  workflow_dispatch:
+    inputs:
+      version:
+        description: Override version (e.g. v0.5.0). Empty = the open draft's, else a patch bump, floor v0.5.0.
+        required: false
+        default: ""
 
 permissions:
   contents: write
-  discussions: write
+
+concurrency:
+  group: release-main
+  cancel-in-progress: false
 
 jobs:
-  build-and-release:
+  test:
+    uses: ./.github/workflows/test.yml
+
+  version:
+    runs-on: ubuntu-latest
+    outputs:
+      version: ${{ steps.next.outputs.version }}
+      tag: ${{ steps.next.outputs.tag }}
+    steps:
+      - uses: actions/checkout@v7
+        with:
+          fetch-depth: 0
+      - id: next
+        shell: bash
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: |
+          set -euo pipefail
+          raw="${{ github.event.inputs.version }}"
+          # a draft has no tag until it is published, so an open one keeps its version
+          draft="$(gh release list --repo "${GITHUB_REPOSITORY}" --json tagName,isDraft \
+            --jq '[.[] | select(.isDraft)][0].tagName // ""')"
+          if [[ -n "${raw}" ]]; then
+            ver="${raw#v}"
+          elif [[ -n "${draft}" ]]; then
+            ver="${draft#v}"
+          else
+            git fetch --tags --force
+            latest="$(git tag -l 'v[0-9]*' --sort=-v:refname | head -n1 || true)"
+            floor="0.5.0"
+            ver="${floor}"
+            if [[ -n "${latest}" ]]; then
+              IFS=. read -r maj min pat _ <<< "${latest#v}."
+              maj="${maj:-0}"; min="${min:-0}"; pat="${pat:-0}"
+              if [[ "${maj}" -gt 0 || "${min}" -ge 5 ]]; then
+                ver="${maj}.${min}.$((pat + 1))"
+              fi
+            fi
+          fi
+          echo "version=${ver}" >> "$GITHUB_OUTPUT"
+          echo "tag=v${ver}" >> "$GITHUB_OUTPUT"
+          echo "next ${ver} (open draft: ${draft:-none})"
+
+  build:
+    needs: [test, version]
     runs-on: ubuntu-latest
     environment: Production
-
+    strategy:
+      fail-fast: false
+      matrix:
+        include:
+          - goos: windows
+            goarch: amd64
+            task: windows:build
+            binary: paradox-modding-tools.exe
+            zip: paradox-modding-tools-windows-amd64.zip
+          - goos: linux
+            goarch: amd64
+            task: linux:build
+            binary: paradox-modding-tools
+            zip: paradox-modding-tools-linux-amd64.zip
     steps:
-      - uses: actions/checkout@v4
+      - uses: actions/checkout@v7
 
-      - name: Set release version
-        shell: bash
-        run: echo "RELEASE_VERSION=${GITHUB_REF_NAME#v}" >> "$GITHUB_ENV"
-
-      - name: Setup Go
-        uses: actions/setup-go@v5
+      - uses: actions/setup-go@v7
         with:
-          go-version: "1.26"
+          go-version-file: go.mod
 
-      - name: Setup Wails Linux Dependencies
+      - uses: actions/setup-node@v7
+        with:
+          node-version: "24"
+          cache: npm
+          cache-dependency-path: frontend/package-lock.json
+
+      - name: Linux GTK4 / WebKitGTK 6
+        if: matrix.goos == 'linux'
         run: |
           sudo apt-get update
-          sudo apt install build-essential pkg-config libgtk-4-dev libwebkitgtk-6.0-dev
+          sudo apt-get install -y build-essential pkg-config libgtk-4-dev libwebkitgtk-6.0-dev
 
-      - name: Install Wails
-        run: go install github.com/wailsapp/wails/v3/cmd/wails3@latest
-
-      - name: Build Windows amd64
+      - name: Install the Wails CLI and go-licenses
         run: |
-          wails3 task windows:build VERSION="$RELEASE_VERSION" GOARCH=amd64
-          cp bin/paradox-modding-tools.exe bin/paradox-modding-tools-windows-x64.exe
+          go install "github.com/wailsapp/wails/v3/cmd/wails3@$(go list -m -f '{{.Version}}' github.com/wailsapp/wails/v3)"
+          go install github.com/google/go-licenses@latest
+          echo "$(go env GOPATH)/bin" >> "$GITHUB_PATH"
 
-      - name: Build Windows arm64
+      - name: Stamp the version into the build assets
+        run: wails3 task common:update:build-assets VERSION="${{ needs.version.outputs.version }}"
+
+      - name: Build ${{ matrix.zip }}
         run: |
-          wails3 task windows:build VERSION="$RELEASE_VERSION" GOARCH=arm64
-          cp bin/paradox-modding-tools.exe bin/paradox-modding-tools-windows-arm64.exe
+          set -euo pipefail
+          wails3 task "${{ matrix.task }}" \
+            VERSION="${{ needs.version.outputs.version }}" \
+            ARCH="${{ matrix.goarch }}"
+          test -f "bin/${{ matrix.binary }}"
 
-      - name: Build Linux amd64
+      # the Go modules the binary links for its system, and the frontend's production packages
+      - name: Third-party notices
         run: |
-          wails3 task linux:build VERSION="$RELEASE_VERSION" GOARCH=amd64
-          cp bin/paradox-modding-tools bin/paradox-modding-tools-linux-amd64
+          set -euo pipefail
+          {
+            echo 'Paradox Modding Tools includes the following third-party software.'
+            echo
+            echo '== Go modules (module, license page, license) =='
+            GOOS="${{ matrix.goos }}" go-licenses report . --ignore paradox-modding-tools
+            echo
+            echo '== Frontend packages =='
+            (cd frontend && npx --yes license-checker-rseidelsohn --production --plainVertical)
+          } > THIRD_PARTY_NOTICES.txt
 
-      - name: Build Linux arm64
+      - name: Zip the binary, LICENSE, NOTICE, README.txt and the notices
         run: |
-          wails3 task linux:build VERSION="$RELEASE_VERSION" GOARCH=arm64
-          cp bin/paradox-modding-tools bin/paradox-modding-tools-linux-arm64
+          set -euo pipefail
+          stage="$(mktemp -d)"
+          cp "bin/${{ matrix.binary }}" LICENSE NOTICE THIRD_PARTY_NOTICES.txt "${stage}/"
+          printf '%s\n' \
+            'Paradox Modding Tools' \
+            'https://github.com/idodavis/paradox-modding-tools' \
+            '' \
+            'Extract this folder somewhere you can write to and run the binary.' \
+            'Windows needs WebView2 (Windows 11 has it).' \
+            'Linux needs the GTK 4 and WebKitGTK 6 runtime libraries.' \
+            '' \
+            'Publishing to the Steam Workshop needs the Steam client running,' \
+            'signed in as the Workshop item owner, with the game installed.' \
+            '' \
+            'License: Apache-2.0 (see LICENSE and NOTICE).' \
+            > "${stage}/README.txt"
+          (cd "${stage}" && zip -9 "${GITHUB_WORKSPACE}/${{ matrix.zip }}" \
+            "${{ matrix.binary }}" LICENSE NOTICE README.txt THIRD_PARTY_NOTICES.txt)
 
-      - name: Publish GitHub Release
-        uses: softprops/action-gh-release@v2
+      - uses: actions/upload-artifact@v7
+        with:
+          name: ${{ matrix.zip }}
+          path: ${{ matrix.zip }}
+          if-no-files-found: error
+
+  publish:
+    needs: [version, build]
+    runs-on: ubuntu-latest
+    permissions:
+      contents: write
+      id-token: write
+      attestations: write
+    steps:
+      - uses: actions/download-artifact@v8
+        with:
+          path: dist
+          merge-multiple: true
+
+      - name: SHA256SUMS
+        working-directory: dist
+        run: sha256sum paradox-modding-tools-*.zip > SHA256SUMS
+
+      - uses: actions/attest-build-provenance@v3
+        with:
+          subject-path: |
+            dist/*.zip
+            dist/SHA256SUMS
+
+      # a draft: only the repository's writers see it, so the updater offers nothing until it is published
+      - uses: softprops/action-gh-release@v3
         env:
           GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
         with:
-          tag_name: ${{ github.ref_name }}
-          name: ${{ github.ref_name }}
+          tag_name: ${{ needs.version.outputs.tag }}
+          name: ${{ needs.version.outputs.tag }}
+          target_commitish: ${{ github.sha }}
           generate_release_notes: true
-          make_latest: true
-          files: bin/*
+          draft: true
+          prerelease: false
+          overwrite_files: true
+          files: |
+            dist/*.zip
+            dist/SHA256SUMS

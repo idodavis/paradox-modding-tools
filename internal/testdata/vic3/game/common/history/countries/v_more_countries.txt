@@ -1,0 +1,5 @@
+COUNTRIES = {
+	c:FRA = {
+		set_tax_level = low
+	}
+}

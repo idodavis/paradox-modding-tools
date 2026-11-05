@@ -1,0 +1,7 @@
+europe = {
+	INJECT_OR_CREATE:western_europe = {
+		iberia_region = {
+			madrid_area = { madrid toledo }
+		}
+	}
+}

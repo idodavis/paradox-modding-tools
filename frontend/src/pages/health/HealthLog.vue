@@ -1,0 +1,328 @@
+<!-- The game's error log, with the lines about your mods set apart, listed by mod or by message. -->
+<script setup lang="ts">
+import { computed, shallowRef } from "vue";
+import { useMutation, useQuery } from "@pinia/colada";
+import { sortBy } from "es-toolkit";
+import type { Finding, GameLog, Group } from "@services/health/models";
+import type { Part } from "@services/lsp/models";
+import type { Mod } from "@services/workspace/models";
+import {
+  countFindings,
+  describeCount,
+  describeTime,
+  joinParts,
+  listSiteKeys,
+  matchQuery,
+  plural,
+  toSiteKey,
+} from "../../lib/format";
+import { levelsQuery, loadQuery, placeQuery, snippetsQuery } from "../../queries";
+import { useEditorStore } from "../../stores/editor";
+import { useWorkspaceStore } from "../../stores/workspace";
+import FactText from "../../ui/FactText.vue";
+import ModTitle from "../../ui/ModTitle.vue";
+import OriginChip from "../../ui/OriginChip.vue";
+import ProblemRow from "../../ui/ProblemRow.vue";
+import HealthFrame from "./HealthFrame.vue";
+import { PANES, ROWS } from "./HealthList.vue";
+import HealthLink from "./HealthLink.vue";
+import HealthSection from "./HealthSection.vue";
+import HealthSite, { openSite } from "./HealthSite.vue";
+
+const {
+  log = undefined,
+  error = null,
+  mods,
+  groups,
+  yours,
+  external,
+  game,
+  opened = undefined,
+} = defineProps<{
+  log?: GameLog;
+  /** Why the log could not be read, or null. */
+  error?: Error | null;
+  mods: Mod[];
+  /** The groups of the mods' problems. */
+  groups: Group[];
+  /** How many lines of the log are the user's own mods'. */
+  yours: number;
+  /** How many lines of the log are the external mods'. */
+  external: number;
+  /** How many lines of the log are the game's own. */
+  game: number;
+  /** The open row, or undefined for none. */
+  opened?: Finding;
+}>();
+const emit = defineEmits<{ open: [finding: Finding]; fix: [mod: string, finding: Finding] }>();
+const filter = defineModel<string>("filter", { default: "" });
+
+/** A HeadRow is the row above one mod's lines, or above the game's own lines. */
+type HeadRow = { mod: string; count: number; folded: boolean };
+
+const GROUPINGS = [
+  { label: "By mod", value: "mod" },
+  { label: "By message", value: "message" },
+];
+
+const workspace = useWorkspaceStore();
+const editor = useEditorStore();
+const { data: levels } = useQuery(levelsQuery);
+const scope = shallowRef<string | number>("mods");
+const grouping = shallowRef<string | number>("mod");
+/** The mods whose sections are folded. */
+const folded = shallowRef<string[]>([]);
+
+const logRows = computed(() => log?.findings ?? []);
+/** Whether any line repeats, which gives every row a column for its count. */
+const repeated = computed(() => logRows.value.some((row) => row.count > 1));
+/** The lines of each scope: the user's mods, the external mods and the game's own. */
+const scopeRows = computed(() => ({
+  mods: logRows.value.filter((row) => row.origin && !workspace.isExternal(row.origin)),
+  external: logRows.value.filter((row) => row.origin && workspace.isExternal(row.origin)),
+  game: logRows.value.filter((row) => !row.origin),
+}));
+const scopes = computed(() => [
+  { label: `From your mods ${describeCount(yours)}`, value: "mods" },
+  ...(mods.some((mod) => mod.external)
+    ? [{ label: `From external mods ${describeCount(external)}`, value: "external" }]
+    : []),
+  { label: `The game's own ${describeCount(game)}`, value: "game" },
+]);
+const rows = computed((): (HeadRow | Finding)[] => {
+  const matches = scopeRows.value[scope.value as keyof typeof scopeRows.value].filter((row) =>
+    matchQuery(filter.value, joinParts(row.message), row.detail),
+  );
+  if (scope.value !== "game" && grouping.value === "mod") {
+    const grouped = mods.flatMap((mod) => {
+      const own = matches.filter((row) => row.origin === mod.id);
+      const isFolded = folded.value.includes(mod.id);
+      const head = { mod: mod.id, count: countFindings(own), folded: isFolded };
+      return own.length ? [head, ...(isFolded ? [] : own)] : [];
+    });
+    return grouped.length && game ? [...grouped, { mod: "", count: game, folded: true }] : grouped;
+  }
+  return sortBy(matches, [(row) => -row.count]);
+});
+const empty = computed(() => {
+  if (error) return "The game's log could not be read.";
+  if (!log) return "Reading the game's log.";
+  if (!log.findings?.length) return "The game has not logged anything yet.";
+  if (filter.value.trim()) return "No line matches the filter.";
+  if (scope.value === "mods") return "No line of the game's last run names your mods.";
+  return scope.value === "external"
+    ? "No line of the game's last run names an external mod."
+    : "Every line names a mod.";
+});
+const lastRun = computed(() => (log?.writtenAt ? describeTime(log.writtenAt) : ""));
+/** A warning that the run did not read every mod from its own folder, or "". */
+const runNote = computed(() => {
+  const unloaded = (log?.unloaded ?? []).map((mod) => workspace.originName(mod));
+  const copies = Object.entries(log?.copies ?? {}).map(([mod, folder]) => `${workspace.originName(mod)} (${folder})`);
+  const parts = [
+    unloaded.length ? `It did not load ${unloaded.join(", ")}.` : "",
+    copies.length ? `It loaded another copy of ${copies.join(", ")}.` : "",
+  ].filter(Boolean);
+  return parts.length
+    ? `This log is from a run without all of this workspace's mods. ${parts.join(" ")} Their lines count as the game's.`
+    : "";
+});
+const sites = computed(() => opened?.sites ?? []);
+const { data: snippets } = useQuery(() => ({
+  ...snippetsQuery(sites.value),
+  enabled: workspace.isOpen() && sites.value.length > 0,
+}));
+/** The mods' first problem at each place, with its mod. */
+const faults = computed(() => {
+  const byPlace = new Map<string, { mod: string; finding: Finding }>();
+  for (const group of groups) {
+    for (const finding of group.findings ?? []) {
+      for (const place of listSiteKeys(finding))
+        if (!byPlace.has(place)) byPlace.set(place, { mod: group.mod, finding });
+    }
+  }
+  return byPlace;
+});
+/** The mod's problem at the open row's place, if any, with a sentence saying its own check finds it too. */
+const fault = computed(() => {
+  const shared = opened && faults.value.get(toSiteKey(opened));
+  if (!shared) return undefined;
+  const modPart: Part = { text: workspace.originName(shared.mod), style: "mod" };
+  const parts: Part[] = [
+    modPart,
+    { text: "'s own check finds the same problem: ", style: "" },
+    ...(shared.finding.message ?? []),
+    { text: " Open it in ", style: "" },
+    modPart,
+    { text: "'s problems.", style: "" },
+  ];
+  return { ...shared, parts };
+});
+
+const { mutate: openFile } = useMutation({
+  mutation: async (path: string) => {
+    const place = await loadQuery(placeQuery(path));
+    if (place) editor.show(place);
+  },
+});
+
+/** fold folds a mod's section, or unfolds it. */
+function fold(mod: string): void {
+  folded.value = folded.value.includes(mod) ? folded.value.filter((id) => id !== mod) : [...folded.value, mod];
+}
+
+/** describeFaultColor returns the level color of the mod's problem at a row's place, or undefined for none. */
+function describeFaultColor(finding: Finding): string | undefined {
+  const shared = faults.value.get(toSiteKey(finding));
+  return shared && levels.value?.find((level) => level.id === shared.finding.level)?.color;
+}
+
+/** showGame shows the game's own rows. */
+function showGame(): void {
+  scope.value = "game";
+}
+</script>
+
+<template>
+  <div class="flex h-full min-h-0 min-w-0 flex-col">
+    <div class="flex shrink-0 items-center gap-2.5 px-4 pt-3.5 pb-2.5">
+      <span class="text-16 text-highlighted">Game log</span>
+      <span v-if="workspace.isOpen()" class="flex items-center gap-1.5 text-11 text-dimmed">
+        <span class="size-1.5 rounded-full" style="background: var(--ui-success)" />
+        Live<template v-if="lastRun"> · last run {{ lastRun }}</template>
+      </span>
+      <span class="grow" />
+      <UButton
+        v-if="log && lastRun"
+        label="Open error.log"
+        icon="i-lucide-code"
+        variant="ghost"
+        color="neutral"
+        @click="openFile(log.path)"
+      />
+    </div>
+    <UAlert v-if="error" color="error" variant="subtle" :description="error.message" class="mx-4 mb-2.5 shrink-0" />
+    <UAlert v-if="runNote" color="warning" variant="subtle" :description="runNote" class="mx-4 mb-2.5 shrink-0" />
+    <div class="flex shrink-0 flex-wrap items-center gap-2 px-4 pb-2.5">
+      <UTabs v-model="scope" :items="scopes" :content="false" size="xs" variant="pill" color="neutral" />
+      <span class="grow" />
+      <UTabs
+        v-if="scope !== 'game'"
+        v-model="grouping"
+        :items="GROUPINGS"
+        :content="false"
+        size="xs"
+        variant="pill"
+        color="neutral"
+      />
+      <UInput v-model="filter" icon="i-lucide-filter" size="xs" placeholder="Filter" class="w-40" />
+    </div>
+    <USplitter
+      :items="PANES"
+      auto-save-id="pmt.health.log"
+      class="min-h-0 grow overflow-hidden border-t border-default"
+    >
+      <template #list>
+        <UScrollArea
+          v-if="rows.length"
+          v-slot="{ item }"
+          :items="rows"
+          :virtualize="ROWS"
+          class="h-full w-full border-e border-default bg-muted"
+        >
+          <button
+            v-if="'mod' in item && item.mod"
+            type="button"
+            class="flex h-8 w-full items-center gap-2 border-b border-default px-3 text-12 font-medium text-toned hover:bg-accented"
+            :aria-expanded="!item.folded"
+            @click="fold(item.mod)"
+          >
+            <ModTitle :origin="item.mod" />
+            <span class="text-11 font-normal text-dimmed tabular-nums">{{ plural(item.count, "line") }}</span>
+            <span class="grow" />
+            <UIcon
+              :name="item.folded ? 'i-lucide-chevron-right' : 'i-lucide-chevron-down'"
+              class="size-3.5 text-dimmed"
+            />
+          </button>
+          <button
+            v-else-if="'mod' in item"
+            type="button"
+            class="flex h-8 w-full items-center gap-2 border-b border-default px-3 text-12 font-medium text-toned hover:bg-accented"
+            @click="showGame"
+          >
+            The game's own
+            <span class="text-11 font-normal text-dimmed tabular-nums">{{ plural(item.count, "line") }}, hidden</span>
+          </button>
+          <ProblemRow
+            v-else
+            :message="joinParts(item.message)"
+            :detail="item.detail"
+            :mono="!!item.sites?.length"
+            :selected="item === opened"
+            @open="emit('open', item)"
+          >
+            <template #message><FactText :parts="item.message" /></template>
+            <template v-if="repeated" #leading>
+              <span class="flex w-9 shrink-0 justify-center">
+                <UBadge v-if="item.count > 1" :label="`×${describeCount(item.count)}`" size="sm" />
+              </span>
+            </template>
+            <template #trailing>
+              <OriginChip v-if="grouping === 'message' && item.origin" :origin="item.origin" dot />
+              <UBadge
+                v-if="describeFaultColor(item)"
+                label="in Health"
+                :color="describeFaultColor(item)"
+                variant="subtle"
+                size="sm"
+                class="shrink-0"
+              />
+            </template>
+          </ProblemRow>
+        </UScrollArea>
+        <p v-else class="w-full border-e border-default bg-muted p-4 text-12 text-dimmed">{{ empty }}</p>
+      </template>
+      <template #detail>
+        <HealthFrame v-if="opened" icon="i-lucide-terminal" label="Game log">
+          <template #title><FactText :parts="opened.message" /></template>
+          <template #line>
+            <span v-if="opened.count > 1" class="whitespace-nowrap text-toned">
+              ×{{ describeCount(opened.count) }} this run
+            </span>
+            <span v-if="opened.facts?.time" class="whitespace-nowrap">· last at {{ opened.facts.time }}</span>
+            <template v-if="opened.origin">· <ModTitle :origin="opened.origin" /></template>
+          </template>
+          <template #buttons>
+            <UButton
+              v-if="sites[0]"
+              label="Open in the IDE"
+              icon="i-lucide-code"
+              @click="sites[0] && openSite(sites[0])"
+            />
+          </template>
+          <HealthSection title="What the game logged">
+            <pre
+              class="overflow-auto rounded-md bg-(--bg-0) px-3 py-2.5 font-mono text-11.5 leading-4.5 whitespace-pre-wrap text-toned"
+            >
+[{{ opened.facts?.time }}][{{ opened.facts?.source }}]: {{ opened.facts?.message }}</pre>
+          </HealthSection>
+          <HealthSection v-if="opened.origin" :title="`Why it's listed under ${workspace.originName(opened.origin)}`">
+            <p class="max-w-[74ch] text-13 leading-5.5 text-toned"><FactText :parts="opened.why" /></p>
+          </HealthSection>
+          <HealthSection v-if="sites[0]" title="Where it points" @open="sites[0] && openSite(sites[0])">
+            <HealthSite v-for="(site, index) in sites" :key="index" :site="site" :snippet="snippets?.[index]" />
+          </HealthSection>
+          <HealthSection v-if="fault" title="Health found it too">
+            <HealthLink
+              :level="fault.finding.level"
+              :parts="fault.parts"
+              @open="fault && emit('fix', fault.mod, fault.finding)"
+            />
+          </HealthSection>
+        </HealthFrame>
+        <p v-else class="p-4 text-12 text-dimmed">Select a row.</p>
+      </template>
+    </USplitter>
+  </div>
+</template>

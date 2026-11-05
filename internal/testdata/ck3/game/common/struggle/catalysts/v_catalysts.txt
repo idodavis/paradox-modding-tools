@@ -1,0 +1,2 @@
+catalyst_struggle_war = { }
+catalyst_struggle_peace = { }

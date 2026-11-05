@@ -1,0 +1,67 @@
+version: "2"
+
+run:
+  go: "1.27"
+
+linters:
+  default: none
+  enable:
+    - errcheck
+    - govet
+    - staticcheck
+    - unused
+    - revive
+    - gocritic
+    - nestif
+    - funlen
+    - goconst
+    - misspell
+  settings:
+    revive:
+      rules:
+        - name: exported
+        - name: receiver-naming
+        - name: var-naming
+        - name: error-strings
+    nestif:
+      min-complexity: 4
+    funlen:
+      lines: 60
+      statements: 40
+      ignore-comments: true
+    misspell:
+      locale: US
+  exclusions:
+    generated: lax
+    paths:
+      - frontend
+    rules:
+      # the registry's rows repeat a word as data: two rows naming one database are two facts
+      - path: internal/game/(databases|language|coat|gui)\.go
+        linters: [goconst]
+      # the databases' role and precedence words are plain words the rows and their readers share
+      - linters: [goconst]
+        text: 'string `(history|on_actions|events|lists|functions|concepts|first|last|key|field|file|column|nothing)`'
+      # the format table's rows repeat a word as data
+      - path: internal/files/files\.go
+        linters: [goconst]
+      # the registry's rows and the OS words repeat as data
+      - path: internal/game/(game|install)\.go
+        linters: [goconst]
+      # a game's own part of a topic carries the game's word: GUI and Coat are the rules every game shares
+      - path: internal/game/(gui|coat|databases)\.go
+        linters: [revive]
+        text: 'game\.Game(GUI|Coat|Events) by other packages'
+      # the settings catalog's rows repeat their section, type and choice words as data
+      - path: services/app/config\.go
+        linters: [goconst]
+      # the code table spells each code, and each report names its own
+      - path: services/lsp/diagnostics\.go
+        linters: [goconst]
+      # show's query table and the starter tasks repeat a page's id, a key and a chip's kind as data
+      - path: services/mcp/(checks|mcp)\.go
+        linters: [goconst]
+
+formatters:
+  enable:
+    - gofmt

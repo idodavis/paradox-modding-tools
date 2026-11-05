@@ -1,0 +1,7 @@
+INJECT:GBR = {
+	capital = STATE_AWAY
+}
+REPLACE:FRA = {
+	color = { 1 2 3 }
+	capital = STATE_AWAY
+}

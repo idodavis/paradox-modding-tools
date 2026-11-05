@@ -1,0 +1,8 @@
+NGame = {
+	START_DATE = "867.1.1"
+	MAX_AGE = 100
+}
+NWar = {
+	WAR_COST = 5
+	SIEGE_DAYS = { 10 20 }
+}

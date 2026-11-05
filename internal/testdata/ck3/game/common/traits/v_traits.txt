@@ -1,0 +1,33 @@
+brave = {
+	category = personality
+	diplomacy = 0
+	icon = "gfx/interface/icons/traits/brave.dds"
+}
+craven = {
+	category = personality
+	diplomacy = 1
+}
+ambitious = {
+	category = personality
+	diplomacy = 2
+}
+content = {
+	category = personality
+	diplomacy = 3
+}
+lazy = {
+	category = personality
+	diplomacy = 4
+}
+diligent = {
+	category = personality
+	diplomacy = 5
+}
+zealous = {
+	category = personality
+	diplomacy = 6
+}
+cynical = {
+	category = personality
+	diplomacy = 7
+}

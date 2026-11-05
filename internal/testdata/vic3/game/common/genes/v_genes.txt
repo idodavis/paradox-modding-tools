@@ -1,0 +1,8 @@
+portrait = {
+	genes = {
+		hair = {
+			20 = empty
+			80 = empty
+		}
+	}
+}

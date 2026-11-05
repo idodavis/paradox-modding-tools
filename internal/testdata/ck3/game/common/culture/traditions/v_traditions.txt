@@ -1,0 +1,6 @@
+tradition_x = {
+	category = regional
+}
+tradition_y = {
+	category = regional
+}

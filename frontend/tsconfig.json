@@ -1,38 +1,32 @@
 {
-  "extends": "@tsconfig/svelte/tsconfig.json",
   "compilerOptions": {
-    "allowJs": true,
-
-    "noEmit": true,
-    "skipLibCheck": true,
-
+    "target": "ESNext",
+    "useDefineForClassFields": true,
     "module": "ESNext",
     "moduleResolution": "bundler",
+    "strict": true,
+    "jsx": "preserve",
     "resolveJsonModule": true,
     "isolatedModules": true,
-    "verbatimModuleSyntax": true,
-
-    "lib": [
-      "DOM",
-      "DOM.Iterable",
-      "ESNext",
-    ],
-
-    "strict": true,
-    "noUnusedLocals": true,
-    "noUnusedParameters": false,
-    "noImplicitAny": false,
-    "noImplicitReturns": true,
-    "noFallthroughCasesInSwitch": true,
+    "esModuleInterop": true,
+    "lib": ["ESNext", "DOM", "DOM.Iterable"],
+    "skipLibCheck": true,
+    "types": ["vite/client"],
     "paths": {
       "@services/*": ["./bindings/paradox-modding-tools/services/*"],
-      "@components": ["./src/lib/components"],
-      "@components/wrappers/*": ["./src/lib/components/wrappers/*"],
-      "@pages/*": ["./src/lib/pages/*"],
-      "@stores/*": ["./src/lib/stores/*"],
-      "@assets/*": ["./src/assets/*"],
-      "@utils/*": ["./src/lib/utils/*"]
+      "@internal/*": ["./bindings/paradox-modding-tools/internal/*"],
+      "@assets/*": ["./src/assets/*"]
     }
   },
-  "include": ["src", "bindings"]
+  "vueCompilerOptions": {
+    "strictTemplates": true,
+    "dataAttributes": ["data-*", "aria-*"]
+  },
+  "include": [
+    "src/**/*.ts",
+    "src/**/*.vue",
+    "bindings/**/*.ts",
+    "auto-imports.d.ts",
+    "components.d.ts"
+  ]
 }

@@ -1,0 +1,8 @@
+type textbox = textbox {
+	font = "v_font"
+	fontsize = 12
+}
+type container = container { }
+type background = background { }
+type hbox = hbox { }
+type flowcontainer = flowcontainer { }

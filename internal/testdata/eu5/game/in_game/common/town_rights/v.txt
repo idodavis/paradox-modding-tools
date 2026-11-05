@@ -1,0 +1,3 @@
+aga_tr = {
+	local_trades_per_burgher = 0.25
+}

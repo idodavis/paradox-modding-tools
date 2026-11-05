@@ -157,33 +157,41 @@ watch(order, (next, previous) => {
     void router.replace({ query: { ...router.currentRoute.value.query, row: undefined } });
 });
 
-const rail = computed((): { title: string; rows: RailRow[] }[] => [
-  { title: "", rows: [{ view: "summary", label: "Summary", icon: "i-lucide-gauge" }] },
-  {
-    title: "Workspace",
-    rows: [
-      {
-        view: "compatibility",
-        label: "Compatibility",
-        icon: "i-lucide-git-merge",
-        levels: report.value?.compatibility.counts,
-      },
-    ],
-  },
-  {
-    title: "Mods",
-    rows: mods.value.map((workspaceMod) => ({
-      view: "mod",
-      mod: workspaceMod,
-      label: workspaceMod.descriptor.name,
-      levels: groups.value[workspaceMod.id]?.counts,
-    })),
-  },
-  {
-    title: "Game log",
-    rows: [{ view: "log", label: "error.log", icon: "i-lucide-terminal", count: yours.value }],
-  },
-]);
+const rail = computed((): { title: string; rows: RailRow[] }[] =>
+  [
+    { title: "", rows: [{ view: "summary", label: "Summary", icon: "i-lucide-gauge" }] },
+    {
+      title: "Workspace",
+      rows: [
+        {
+          view: "compatibility",
+          label: "Compatibility",
+          icon: "i-lucide-git-merge",
+          levels: report.value?.compatibility.counts,
+        },
+      ],
+    },
+    { title: "Your mods", rows: mods.value.filter((workspaceMod) => !workspaceMod.external).map(toModRow) },
+    {
+      title: "External mods · not yours to fix",
+      rows: mods.value.filter((workspaceMod) => workspaceMod.external).map(toModRow),
+    },
+    {
+      title: "Game log",
+      rows: [{ view: "log", label: "error.log", icon: "i-lucide-terminal", count: yours.value }],
+    },
+  ].filter((group) => group.rows.length),
+);
+
+/** toModRow returns the rail's row of a mod. */
+function toModRow(workspaceMod: Mod): RailRow {
+  return {
+    view: "mod",
+    mod: workspaceMod,
+    label: workspaceMod.descriptor.name,
+    levels: groups.value[workspaceMod.id]?.counts,
+  };
+}
 
 /** matchFinding reports whether a finding has the name or check asked for. */
 function matchFinding(finding: Finding): boolean {
@@ -280,6 +288,9 @@ function openRow(finding: Finding): void {
                 <UIcon :name="railRow.icon" class="size-3.5 text-toned" />
               </span>
               <span class="min-w-0 grow truncate font-medium">{{ railRow.label }}</span>
+              <UTooltip v-if="railRow.mod?.external" text="External mod">
+                <UIcon name="i-lucide-package" class="size-3.5 shrink-0 text-dimmed" aria-label="External mod" />
+              </UTooltip>
               <LeftOutMark v-if="railRow.mod?.leftOut" />
               <LevelCounts v-if="railRow.levels" :levels="railRow.levels" />
               <span v-else-if="railRow.count !== undefined" class="shrink-0 text-11 text-toned tabular-nums">

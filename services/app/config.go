@@ -105,6 +105,7 @@ type Mod struct {
 	WorkshopID string   `json:"workshopId"` // "" unpublished
 	Ignore     string   `json:"ignore"`     // the upload exclusions, one pattern per line
 	LeftOut    bool     `json:"leftOut"`    // left out of the workspace's compatibility checks
+	External   bool     `json:"external"`   // someone else's mod, which the workspace checks its own mods against
 }
 
 // A Workspace is one recorded workspace, a game install and the mods loaded with it.

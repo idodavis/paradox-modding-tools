@@ -72,7 +72,8 @@ flowchart TD
   version. The picked version is cleared after any failure.
 - **One at a time.** A check or an install holds a lock, so a check cannot change the release an install is about to
   download.
-- **The list.** `ListReleases` returns every published release, the newest first, without drafts and prereleases. Each
+- **The list.** `ListReleases` returns every published release, the newest first, without drafts, prereleases and the
+  releases before `firstRelease` (0.5.0), which are an older app the repository keeps on GitHub. Each
   says whether it is the running one and whether it is older. A build that is no release, such as a dev build, gets the
   newest only.
 - `FetchURL` downloads a web address with PMT's user agent, for this service and the others that read the web.

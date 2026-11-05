@@ -368,11 +368,13 @@ func (wsp *Service) DeleteWorkspace(id string) error {
 }
 
 // Open opens a workspace in the background, closing the open one first. It sends workspace:opened or workspace:failed
-// at the end.
+// at the end, and workspace:opened at once for the workspace that is open already.
 func (wsp *Service) Open(workspaceID string) {
 	wsp.mu.Lock()
+	// a page that asks again, as one that loaded while the first open ran, learns that it is open
 	if wsp.session != nil && wsp.session.ID == workspaceID {
 		wsp.mu.Unlock()
+		application.Get().Event.Emit(EventOpened, workspaceID)
 		return
 	}
 	wsp.closeSession()
@@ -764,7 +766,8 @@ func (wsp *Service) Locate(path string) Place {
 }
 
 // ServeHTTP serves the file the request's path names. A DDS or TGA, or a request for a frame or a mip level, is
-// served as PNG. A file outside the recorded installs and mods is refused.
+// served as PNG. A file outside the recorded installs and mods, and outside the Workshop folders of their games, is
+// refused.
 func (wsp *Service) ServeHTTP(writer http.ResponseWriter, request *http.Request) {
 	query := request.URL.Query()
 	path := query.Get("path")
@@ -777,7 +780,12 @@ func (wsp *Service) ServeHTTP(writer http.ResponseWriter, request *http.Request)
 		_, ok := files.ToRel(dir, path)
 		return ok
 	})
-	if !isRecorded {
+	// a Workshop mod's thumbnail is shown before the mod is added, as the Workshop picker lists it
+	isDownloaded := lo.ContainsBy(records.Installs, func(install app.Install) bool {
+		row := game.LookupGame(install.Game)
+		return row != nil && row.IsWorkshopFolder(path)
+	})
+	if !isRecorded && !isDownloaded {
 		http.Error(writer, "the path is outside every recorded install and mod", http.StatusForbidden)
 		return
 	}

@@ -8,8 +8,6 @@ frontend/dist
 frontend/node_modules
 frontend/auto-imports.d.ts
 frontend/components.d.ts
-build/linux/appimage/build
-build/windows/nsis/MicrosoftEdgeWebview2Setup.exe
 
 # `go test -c` output: <pkg>.test.exe next to the package
 *.test

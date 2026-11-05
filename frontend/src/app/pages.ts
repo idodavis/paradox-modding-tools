@@ -85,7 +85,7 @@ export const PAGES = {
       "Save with Ctrl S. Problems show as squiggles, and all of them in the Problems panel, Ctrl J.",
     ],
     help: [
-      "The explorer shows this workspace's mods in load order, then the game's files, which are read only; edit in a mod folder. The filter button in each tree's header shows a box that filters that tree's files by path, in folders you have not opened too; pressing it again or Escape hides the box and clears the filter. Ctrl P finds a file by its path, Ctrl Shift F searches the files' text and can replace it.",
+      "The explorer shows this workspace's mods in load order, then its external mods, then the game's files, which are read only; edit in a mod folder. The filter button in each tree's header shows a box that filters that tree's files by path, in folders you have not opened too; pressing it again or Escape hides the box and clears the filter. Ctrl P finds a file by its path, Ctrl Shift F searches the files' text and can replace it.",
       "A single click opens a file in a preview tab that the next single click replaces; a double click or an edit keeps it. Drag a tab to another group, or out to a window of its own. A tab's right-click menu closes the others, the tabs to its right, the saved ones or all of them, asking once before it drops changes not saved; Reveal in explorer selects its file in the explorer. The open tabs come back when you reopen the workspace, unless you turn that off in Settings.",
       "Rest the pointer on a key or a value for what it is and where it is defined. Ctrl click goes to a definition, F2 renames a name in every mod file, and completion offers what fits the block you are in. Problems show as squiggles and with quick fixes. The Problems panel (Ctrl J) lists them for the open files, then Health's compatibility findings about those files.",
       "The editor's right-click menu also finds what fires an event, an on_action, a decision or a scripted effect, listed in the sidebar's search; looks the name up in the Wiki pane, as a lexicon entry or its file's page; and compares a mod's file with the game's copy or with another file you pick. Ctrl Shift D compares the active file with its last commit.",
@@ -134,6 +134,7 @@ export const PAGES = {
       "Compatibility shows the load order. How the game picks a copy, at its top, says for this workspace's game which copy the game keeps and what the load order can change. Drag the order's chips to preview another order without saving it; the page then lists the names that change hands, Save as workspace order keeps it, and Back to the workspace order drops it. A row opens beside the list with each copy, whether the game uses it and why, and Compare the two puts them side by side. Where the load order decides a conflict and another order would fix it, Try this order previews it. A row's menu can ignore the conflicts between two mods; Stop ignoring brings them back.",
       "A mod's view says which of the workspace's mods it is judged with, counts what it holds, filters its problems by topic, and shows each language's share of its localization keys. Write the missing keys adds the keys a language lacks to its files, with the base language's text as the placeholder. A problem the game also logged says so.",
       "The game log lists the lines from your mods apart from the game's own, by mod or by message, with repeats folded. Each line says why it is a mod's. Open error.log opens the log in the IDE as it was when you opened it; the tab does not follow the game's later writes. Live means the list follows the log while the workspace is open.",
+      "External mods: add subscribed Workshop mods, or copies of other people's mods, as external mods to check your mods against them. PMT never publishes an external mod and keeps it out of your totals.",
     ],
   },
   "patch-notes": {
@@ -166,6 +167,7 @@ export const PAGES = {
       "Steam must be running and signed in as the item's owner. A new item stays private until you make it public on its Workshop page. Do not load a local copy and a Workshop subscription of the same mod together.",
       "A mod can have a separate Workshop item for an older game version. Pick it from the mod's name at the top, or add one from the same menu.",
       "Paradox Mods has no API: use Copy for Paradox Mods in the description's BBCode view and paste it in the Paradox Launcher's Upload Mod.",
+      "External mods: add subscribed Workshop mods, or copies of other people's mods, as external mods to check your mods against them. PMT never publishes an external mod and keeps it out of your totals.",
     ],
   },
 } as const satisfies Record<string, Page>;

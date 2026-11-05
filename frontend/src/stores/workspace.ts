@@ -69,6 +69,9 @@ export const useWorkspaceStore = defineStore("workspace", () => {
   /** isLeftOut reports whether the active workspace leaves a mod out of its compatibility checks. */
   const isLeftOut = (modId: string): boolean => !!findMod(modId)?.leftOut;
 
+  /** isExternal reports whether a mod of the active workspace is an external mod. */
+  const isExternal = (modId: string): boolean => !!findMod(modId)?.external;
+
   /** isCustom reports whether a mod's color is a CSS color rather than one of the theme's slots. */
   const isCustom = (color: string | undefined): boolean => !!color && !SLOTS.includes(color);
 
@@ -77,6 +80,9 @@ export const useWorkspaceStore = defineStore("workspace", () => {
 
   /** listWritableMods returns the mods PMT writes into: all but Steam's read-only Workshop copies and broken mods. */
   const listWritableMods = (): Mod[] => listMods().filter((mod) => !mod.workshop && !mod.broken);
+
+  /** listOwnMods returns the user's own mods, the ones PMT publishes: all but external mods and broken mods. */
+  const listOwnMods = (): Mod[] => listMods().filter((mod) => !mod.external && !mod.broken);
 
   /** listModIds returns the ids of the active workspace's mods in load order. */
   const listModIds = (): string[] => listMods().map((mod) => mod.id);
@@ -90,13 +96,13 @@ export const useWorkspaceStore = defineStore("workspace", () => {
   /** create records a workspace with its mods, opens it and shows a page. If a mod fails, it deletes the workspace. */
   async function create(
     record: Pick<Workspace, "name" | "install" | "language">,
-    mods: { dir?: string; title: string }[],
+    mods: { dir?: string; title: string; external?: boolean }[],
     page: { name: WorkspacePage; query?: LocationQueryRaw },
   ): Promise<Workspace> {
     const row = await workspace.CreateWorkspace(record.name, record.install, record.language);
     try {
       for (const mod of mods) {
-        if (mod.dir) await workspace.AddMod(row.id, mod.dir);
+        if (mod.dir) await workspace.AddMod(row.id, mod.dir, mod.external ?? false);
         else await workspace.CreateMod(row.id, "", mod.title, record.language);
       }
     } catch (error) {
@@ -138,9 +144,11 @@ export const useWorkspaceStore = defineStore("workspace", () => {
     describeFolder,
     originColor,
     isLeftOut,
+    isExternal,
     isCustom,
     listMods,
     listWritableMods,
+    listOwnMods,
     listModIds,
     open,
     create,

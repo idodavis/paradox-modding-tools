@@ -6,9 +6,9 @@ body:
   - type: markdown
     attributes:
       value: |
-        Check the [roadmap](https://github.com/idodavis/paradox-modding-tools/blob/main/ROADMAP.md)
-        and the [supported systems](https://github.com/idodavis/paradox-modding-tools#supported-os)
-        first.
+        Check the [roadmap](https://github.com/idodavis/paradox-modding-tools/blob/main/ROADMAP.md) first: if
+        your idea is on it, give its issue a 👍 instead. Questions go to
+        [Discussions](https://github.com/idodavis/paradox-modding-tools/discussions).
 
   - type: textarea
     id: summary
@@ -36,6 +36,9 @@ body:
         - IDE
         - Source control
         - Wiki pane
+        - Terminal
+        - Assistant
+        - Save as DDS
         - Event Graph
         - Health
         - Patch Notes
@@ -52,21 +55,6 @@ body:
     id: area-other
     attributes:
       label: If you selected Other, specify
-
-  - type: dropdown
-    id: roadmap
-    attributes:
-      label: Roadmap bucket
-      description: Closest match if this is a larger ask.
-      options:
-        - Patching / retarget after a game update
-        - GUI preview
-        - Map editor
-        - Multi-window
-        - Game coverage
-        - Other / polish
-    validations:
-      required: true
 
   - type: dropdown
     id: game

@@ -1,7 +1,11 @@
-<!-- The status bar: the install and its scan, the page's facts, the agent, the windows, Help and the version. -->
+<!--
+  The status bar: the install and its scan, the page's facts, the agent, the windows and the version. It also holds
+  the Help dialog, which the top bar's button opens.
+-->
 <script setup lang="ts">
 import type { ToastProps } from "@nuxt/ui";
 import { useMutation, useQuery } from "@pinia/colada";
+import { useEventBus } from "@vueuse/core";
 import { Events } from "@wailsio/runtime";
 import { computed, onScopeDispose, shallowRef, watch } from "vue";
 import { useRoute } from "vue-router";
@@ -15,7 +19,7 @@ import { confirm, copyText } from "../lib/feedback";
 import { day, installLine } from "../lib/format";
 import { crashedQuery, levelsQuery, releasesQuery, stateQuery, updateQuery, versionQuery } from "../queries";
 import { useAgentStore } from "../stores/agent";
-import { describeWindow, THIS_WINDOW, useWindowsStore } from "../stores/windows";
+import { COMMAND_BUS, describeWindow, THIS_WINDOW, useWindowsStore } from "../stores/windows";
 import HowModWorks from "../ui/HowModWorks.vue";
 import TermInfo from "../ui/TermInfo.vue";
 import { isWorkspacePage, PAGES, PANE_HELP, TERMS, type Page } from "./pages";
@@ -26,6 +30,9 @@ const windows = useWindowsStore();
 const agent = useAgentStore();
 
 const page = computed<Page | undefined>(() => (route.name ? PAGES[route.name] : undefined));
+// The Help dialog opens on the help.open command, from the top bar's button, F1 or the palette.
+const helping = shallowRef(false);
+useEventBus(COMMAND_BUS).on((command) => command === "help.open" && (helping.value = true));
 const explaining = shallowRef(false);
 const agentDot = computed(() => {
   if (!agent.active) return "";
@@ -171,8 +178,7 @@ const ITEM = "flex h-6 items-center gap-1.25 hover:text-highlighted";
         <UIcon name="i-lucide-app-window" class="size-3" />{{ others.length + 1 }} windows
       </button>
     </UDropdownMenu>
-    <UModal :title="`Help: ${page?.title ?? 'PMT'}`" :ui="{ content: 'h-118 sm:max-w-2xl' }">
-      <button type="button" :class="ITEM">Help</button>
+    <UModal v-model:open="helping" :title="`Help: ${page?.title ?? 'PMT'}`" :ui="{ content: 'h-[80vh] sm:max-w-4xl' }">
       <template #body>
         <div class="flex flex-col gap-3 text-13 text-toned">
           <section class="flex flex-col gap-3 rounded-lg bg-elevated p-3.5">

@@ -124,6 +124,7 @@ var api struct {
 	utilsInterface      func() uintptr
 	userInterface       func() uintptr
 	isLoggedOn          func(user uintptr) bool
+	steamID             func(user uintptr) uint64
 	initialize          func() bool
 	shutdown            func()
 	runCallbacks        func()
@@ -168,6 +169,7 @@ var bindings = map[string]any{
 	"SteamAPI_SteamUtils_v010":                            &api.utilsInterface,
 	"SteamAPI_SteamUser_v021":                             &api.userInterface,
 	"SteamAPI_ISteamUser_BLoggedOn":                       &api.isLoggedOn,
+	"SteamAPI_ISteamUser_GetSteamID":                      &api.steamID,
 	"SteamAPI_Init":                                       &api.initialize,
 	"SteamAPI_Shutdown":                                   &api.shutdown,
 	"SteamAPI_RunCallbacks":                               &api.runCallbacks,
@@ -285,6 +287,9 @@ func (client *Client) FetchDetails(workshopID string) (Details, error) {
 		return Details{}, err
 	}
 	details := decodeDetails(raw)
+	// a contributor the owner added counts as not the owner
+	user := api.userInterface()
+	details.Owned = user != 0 && binary.LittleEndian.Uint64(raw[detailsOwner:]) == api.steamID(user)
 	details.Previews = client.listQueryPreviews(query)
 	details.Dependencies = client.listChildren(query, raw)
 	details.DLC, details.DLCCount, err = client.fetchDLC(id)
@@ -427,6 +432,9 @@ func (client *Client) Submit(workshopID string, params Params, progress func(Pro
 	if params.WorkshopID != "" {
 		if details, err = client.FetchDetails(workshopID); err != nil {
 			return err
+		}
+		if !details.Owned {
+			return errors.New("the Workshop item belongs to another Steam user, so PMT cannot update it")
 		}
 	}
 	listing := params.Listing

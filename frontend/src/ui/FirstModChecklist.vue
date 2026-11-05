@@ -25,7 +25,7 @@ const workspace = useWorkspaceStore();
 const guiding = shallowRef(false);
 
 const record = computed(() => workspace.active()?.record);
-const mods = computed(() => workspace.listWritableMods());
+const mods = computed(() => workspace.listOwnMods());
 const wanted = computed(
   () => settings.isGuided() && !record.value?.hideChecklist && workspace.isOpen() && !!mods.value.length,
 );

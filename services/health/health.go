@@ -72,7 +72,7 @@ type Use struct {
 // A Finding is one problem, or one fact about the mods.
 type Finding struct {
 	Code     string     `json:"code"`            // an lsp.Codes id
-	Question string     `json:"question"`        // the code's question
+	Question string     `json:"question"`        // the code's question, or compatibility where another mod is concerned
 	Level    string     `json:"level"`           // the code's level, or a contest's own
 	Label    string     `json:"label"`           // the code's title
 	Topic    string     `json:"topic"`           // the code's topic
@@ -93,6 +93,8 @@ type Finding struct {
 	Uses []Use `json:"uses,omitempty"`
 	// Defined is where the workspace defines the name, in a mod the finding's mod does not depend on.
 	Defined []lsp.Site `json:"defined,omitempty"`
+	// Diagnosed is true for one of the editor's own diagnostics, which the editor shows itself.
+	Diagnosed bool `json:"diagnosed"`
 	// Comparable is true when the kept statement and the ones it replaces can be shown side by side.
 	Comparable bool     `json:"comparable"`
 	Order      []string `json:"order,omitempty"` // a load order that fixes a contest
@@ -147,7 +149,7 @@ type Report struct {
 	Tally                   // all the findings of the compatibility and of the mods
 	Compatibility Group     `json:"compatibility"`
 	Mods          []Group   `json:"mods"` // in load order
-	Own           Tally     `json:"own"`  // the findings of the mods together, the compatibility's left out
+	Own           Tally     `json:"own"`  // the findings of the user's own mods together, external mods' left out
 	CheckedAt     time.Time `json:"checkedAt"`
 	Changes       []Change  `json:"changes"` // none for the workspace's own order
 }
@@ -246,7 +248,8 @@ func (hlt *Service) BuildReport(order []string) (Report, error) {
 	group.Wait()
 	findings, pairs := slices.Concat(results...), record.IgnoredPairs
 	resolveFindings(ws, findings, ids, declared, pairs)
-	report := groupReport(slices.Concat(findings, listPairFindings(ws, compatible, findings, pairs)), ids)
+	pairFindings := listPairFindings(ws, compatible, findings, pairs)
+	report := groupReport(slices.Concat(findings, pairFindings), ids, hlt.listExternal())
 	if isPreview {
 		previous := base.Narrow(checked)
 		report.Changes = append(listDefinitionChanges(ws, previous, compatible, kept),
@@ -276,9 +279,17 @@ func resolveFindings(ws *workspace.Session, findings []Finding, order []string, 
 	}
 }
 
+// listExternal returns the ids of the open workspace's external mods.
+func (hlt *Service) listExternal() map[string]bool {
+	return lo.FilterSliceToMap(hlt.Workspace.ListMods(), func(mod workspace.Mod) (string, bool, bool) {
+		return mod.ID, true, mod.External
+	})
+}
+
 // groupReport fills in the words of the findings, folds them and groups them into the workspace's compatibility and
-// each mod of the load order. A finding about a mod outside the order is left out. The report has no changes.
-func groupReport(findings []Finding, order []string) Report {
+// each mod of the load order. A finding about a mod outside the order is left out, and the tally of the user's own
+// mods leaves out the given external ones. The report has no changes.
+func groupReport(findings []Finding, order []string, external map[string]bool) Report {
 	for position := range findings {
 		describeFinding(&findings[position])
 	}
@@ -292,11 +303,14 @@ func groupReport(findings []Finding, order []string) Report {
 	problemsByMod, languagesByMod := lo.GroupBy(problems, findOwner), lo.GroupBy(languages, findOwner)
 	mods := lo.Map(order, func(id string, _ int) Group { return makeGroup(id, problemsByMod[id], languagesByMod[id]) })
 	modFindings := lo.FlatMap(mods, func(group Group, _ int) []Finding { return group.Findings })
+	ownFindings := lo.FlatMap(mods, func(group Group, _ int) []Finding {
+		return lo.Ternary(external[group.Mod], nil, group.Findings)
+	})
 	return Report{
 		Tally:         makeTally(slices.Concat(compatibility, modFindings)),
 		Compatibility: makeGroup("", compatibility, nil),
 		Mods:          mods,
-		Own:           makeTally(modFindings),
+		Own:           makeTally(ownFindings),
 		CheckedAt:     time.Now(),
 		Changes:       []Change{},
 	}
@@ -330,8 +344,9 @@ func splitBrief(finding Finding) []lsp.Part {
 	}
 	hasUses := len(finding.Uses) > 0
 	if hasUses {
-		add(lsp.SplitMessage(lo.Ternary(finding.Facts["count"] == "1", "{count} name still used · {uses} uses",
-			"{count} names still used · {uses} uses"), finding.Facts)...)
+		used := lo.Ternary(finding.Facts["count"] == "1", "{count} entry still used", "{count} entries still used")
+		add(lsp.SplitMessage(used+lo.Ternary(finding.Facts["uses"] == "1", " · {uses} use", " · {uses} uses"),
+			finding.Facts)...)
 	}
 	if other := finding.Facts["other"]; other != "" {
 		add(lsp.Part{Text: "only in "}, lsp.Part{Text: other, Style: "mod"})
@@ -731,9 +746,9 @@ func listUnused(ws *workspace.Session, mods *index.Index, sites []index.Site, wi
 	return findings
 }
 
-// describeRemoved fills in the finding for a mod file that removes names in use: its Uses and the facts its message
-// counts. The "definitions" fact names the kind of definition in the plural, such as "scripted triggers", or is "names"
-// for several kinds.
+// describeRemoved fills in the finding for a mod file that leaves out entries in use: its Uses and the facts its
+// message counts. The "definitions" fact names the kind of definition in the plural, such as "scripted triggers", or
+// is "entries" for several kinds.
 func describeRemoved(ws *workspace.Session, mods *index.Index, finding *Finding, uses []Use) {
 	original, _ := lo.Find(finding.Sites, func(site lsp.Site) bool { return site.Place.Origin == game.OriginVanilla })
 	kept, _ := lo.Find(finding.Sites, func(site lsp.Site) bool { return site.Kept })
@@ -744,7 +759,7 @@ func describeRemoved(ws *workspace.Session, mods *index.Index, finding *Finding,
 	finding.Uses = uses
 	finding.Facts["mod"] = ws.DescribeMod(finding.Origin)
 	finding.Facts["total"] = strconv.Itoa(len(lo.Uniq(original.Defines)))
-	finding.Facts["definitions"] = "names"
+	finding.Facts["definitions"] = "entries"
 	if len(databases) == 1 {
 		finding.Facts["definitions"] = game.DescribeDefinition(databases[0], true)
 	}
@@ -754,14 +769,15 @@ func describeRemoved(ws *workspace.Session, mods *index.Index, finding *Finding,
 }
 
 // listRemovedUses returns the names the game's copy of a file defines that no file the game reads defines, each with
-// the uses the game's files make of it, the most used first. A name nothing uses is left out, and so is one the copy
-// defines for itself alone or saves while the game runs.
-func listRemovedUses(ws *workspace.Session, mods *index.Index, path string) []Use {
+// the uses the game's files make of it, the most used first, and the sources whose files make those uses. A name
+// nothing uses is left out, and so is one the copy defines for itself alone or saves while the game runs.
+func listRemovedUses(ws *workspace.Session, mods *index.Index, path string) ([]Use, []string) {
 	position, ok := mods.FindFile(path)
 	if !ok {
-		return nil
+		return nil, nil
 	}
 	var uses []Use
+	var users []string
 	seen := map[schema.Reference]bool{}
 	for number, occurrence := range mods.Occurrences[position] {
 		reference := mods.ToReference(index.Site{File: position, Occurrence: int32(number)})
@@ -775,9 +791,12 @@ func listRemovedUses(ws *workspace.Session, mods *index.Index, path string) []Us
 		if len(loaded) > 0 {
 			uses = append(uses, Use{Name: reference.Name, Count: len(loaded), First: lsp.MakeSite(ws, mods, loaded[0])})
 		}
+		for _, site := range loaded {
+			users = append(users, mods.File(site).Origin)
+		}
 	}
 	slices.SortStableFunc(uses, func(first, second Use) int { return cmp.Compare(second.Count, first.Count) })
-	return uses
+	return uses, lo.Uniq(users)
 }
 
 // listDeclared returns the pairs of mods where the first depends on the second, directly or down the chain. A
@@ -914,7 +933,7 @@ func listDiagnostics(ws *workspace.Session, mods *index.Index) []Finding {
 		for _, diagnostic := range diagnostics[position] {
 			site := lsp.Site{Place: place, Line: diagnostic.Range.StartLine, Range: diagnostic.Range}
 			finding := makeFinding(mods, diagnostic.Code, diagnostic.Facts, []lsp.Site{site})
-			finding.Defined = diagnostic.Defined
+			finding.Defined, finding.Diagnosed = diagnostic.Defined, true
 			findings = append(findings, finding)
 		}
 	}

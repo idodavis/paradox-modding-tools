@@ -7,7 +7,7 @@ body:
     attributes:
       value: |
         Thanks for the report. Fill this in so we can reproduce it.
-        Read README.md and ROADMAP.md first.
+        Questions and ideas go to [Discussions](https://github.com/idodavis/paradox-modding-tools/discussions).
 
   - type: dropdown
     id: area
@@ -19,6 +19,9 @@ body:
         - IDE
         - Source control
         - Wiki pane
+        - Terminal
+        - Assistant
+        - Save as DDS
         - Event Graph
         - Health
         - Patch Notes
@@ -46,6 +49,32 @@ body:
         - Victoria 3
         - Europa Universalis V
         - None / not game-specific
+    validations:
+      required: true
+
+  - type: dropdown
+    id: os
+    attributes:
+      label: Operating system
+      options:
+        - Windows 10
+        - Windows 11
+        - Linux
+    validations:
+      required: true
+
+  - type: input
+    id: distro
+    attributes:
+      label: If Linux, which distribution?
+      placeholder: e.g. Ubuntu 26.04, Fedora 44, Arch
+
+  - type: input
+    id: version
+    attributes:
+      label: PMT version
+      description: The footer of the app shows it.
+      placeholder: e.g. 0.5.0
     validations:
       required: true
 
@@ -84,7 +113,7 @@ body:
     id: diagnostics
     attributes:
       label: Diagnostics
-      description: In the app, click Copy diagnostics (on a workspace's settings page, or on the notice after a crash) and paste it here.
+      description: In the app, click Copy diagnostics (in Help, the ? in the top bar or F1, or on the notice after a crash) and paste it here.
       render: text
 
   - type: textarea
@@ -93,8 +122,8 @@ body:
       label: Log file
       description: |
         If the app won't open, drag pmt.log here.
-        Windows: `%APPDATA%\Paradox Modding Tools\pmt.log`
-        Linux: `~/.config/Paradox Modding Tools/pmt.log`
+        Windows: `%LOCALAPPDATA%\paradox-modding-tools\pmt.log`
+        Linux: `~/.cache/paradox-modding-tools/pmt.log`
 
   - type: textarea
     id: additional-context

@@ -3,7 +3,7 @@
 import { computed, shallowRef } from "vue";
 import { useMutation, useQuery } from "@pinia/colada";
 
-import { confirm } from "../../lib/feedback";
+import { removeMod } from "../commands";
 import { describePicture, joinParts } from "../../lib/format";
 import { headerQuery, listingQuery, reportQuery } from "../../queries";
 import { SLOTS, useWorkspaceStore } from "../../stores/workspace";
@@ -54,19 +54,11 @@ const { mutate: link, isLoading: linking } = useMutation({
   mutation: (text: string) => steam.LinkItem(mod.id, "", text),
   onSuccess: () => (item.value = ""),
 });
-const { mutate: removeMod } = useMutation({ mutation: () => workspace.RemoveMod(workspaceId, mod.id) });
+const { mutate: setExternal } = useMutation({
+  mutation: (external: boolean) => workspace.SetExternal(workspaceId, mod.id, external),
+});
+const { mutate: remove } = useMutation({ mutation: () => removeMod(workspaceId, mod.id, mod.descriptor.name) });
 const { mutate: showFolder } = useMutation({ mutation: () => app.ShowFolder(mod.dir) });
-
-/** remove asks, then takes the mod out of the workspace but not off the disk. */
-async function remove(): Promise<void> {
-  const confirmed = await confirm.open({
-    title: `Remove ${mod.descriptor.name || "this mod"}?`,
-    body: "The mod leaves this workspace. Its folder stays on disk.",
-    confirm: "Remove mod",
-    destructive: true,
-  });
-  if (confirmed) removeMod();
-}
 
 /** updateEras saves the mod's calendar with a new list of eras. */
 function updateEras(next: Era[]): void {
@@ -99,11 +91,21 @@ function updateMonth(index: number, text: string): void {
         <span class="truncate text-16">{{ mod.descriptor.name }}</span>
         <span class="truncate font-mono text-12 text-dimmed">{{ mod.dir }}</span>
         <span v-if="mod.broken" class="text-12 text-error">Its folder was not found. Pick where it is now.</span>
-        <span v-if="mod.workshop" class="text-12 text-dimmed">Workshop copy, read only</span>
+        <span v-if="mod.workshop" class="text-12 text-dimmed">External mod · Steam's copy, read only</span>
       </div>
       <UButton label="Open folder" icon="i-lucide-folder" :disabled="mod.broken" @click="showFolder()" />
-      <UButton label="Remove from workspace" variant="ghost" class="text-error" @click="remove" />
+      <UButton label="Remove from workspace" variant="ghost" class="text-error" @click="remove()" />
     </div>
+
+    <section class="border-b border-default px-5 py-4">
+      <UFormField
+        label="External mod"
+        description="Someone else's mod, which your mods are checked against. PMT never publishes it, and Health keeps its problems out of your totals."
+        orientation="horizontal"
+      >
+        <USwitch :model-value="mod.external" :disabled="mod.workshop" @update:model-value="setExternal" />
+      </UFormField>
+    </section>
 
     <div class="grid grid-cols-1 @2xl:grid-cols-2">
       <div class="flex flex-col border-b border-default @2xl:border-e @2xl:border-b-0">

@@ -74,18 +74,20 @@ const rows = computed(() => log?.findings ?? []);
 const loggedPlaces = computed(() => new Set(rows.value.map(toSiteKey)));
 /** The report's group of each mod, by mod id. */
 const groups = computed(() => keyBy(report.mods ?? [], (group) => group.mod));
-/** Each mod with its group and its lead, the first problem of its worst level. */
+/** Each of the user's own mods with its group and its lead, the first problem of its worst level. */
 const modRows = computed(() =>
-  mods.map((mod) => {
-    const group = groups.value[mod.id];
-    const lead = group?.findings?.[0];
-    return {
-      mod,
-      group,
-      lead,
-      logged: !!lead && listSiteKeys(lead).some((place) => loggedPlaces.value.has(place)),
-    };
-  }),
+  mods
+    .filter((mod) => !mod.external)
+    .map((mod) => {
+      const group = groups.value[mod.id];
+      const lead = group?.findings?.[0];
+      return {
+        mod,
+        group,
+        lead,
+        logged: !!lead && listSiteKeys(lead).some((place) => loggedPlaces.value.has(place)),
+      };
+    }),
 );
 const busiest = computed(() =>
   Math.max(
@@ -145,7 +147,7 @@ const panels = computed(() => [
   },
   {
     view: "mod",
-    kicker: "Mods",
+    kicker: "Your mods",
     icon: "i-lucide-package",
     color: resolveColor(report.own),
     verdict: describeVerdict(
@@ -154,7 +156,7 @@ const panels = computed(() => [
     ),
     note: problemLevels.value.flatMap((level) => report.own.phrases?.[level.id] ?? []).join(" · "),
     footer: "Open the mods",
-    modId: mods[0]?.id,
+    modId: modRows.value[0]?.mod.id,
   },
   {
     view: "log",

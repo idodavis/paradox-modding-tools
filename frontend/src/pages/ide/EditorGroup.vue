@@ -531,6 +531,7 @@ const actions = computed<DropdownMenuItem[]>(() => [
               size="sm"
               :color="editor.wiki ? 'primary' : 'neutral'"
               :variant="editor.wiki ? 'soft' : 'ghost'"
+              :ui="{ leadingIcon: !editor.wiki && 'text-info' }"
               aria-label="Wiki pane"
               :aria-pressed="editor.wiki"
               @click="editor.wiki = !editor.wiki"

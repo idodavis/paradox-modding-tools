@@ -286,6 +286,26 @@ func (agt *Service) InstallAgent(id string) error {
 	return nil
 }
 
+// UninstallAgent removes an agent PMT offers from PMT's folder, every version of it, and sends EventChanged. It returns
+// an error if PMT offers no such agent, npm is installing it, or a folder cannot be removed, as while the agent runs.
+func (agt *Service) UninstallAgent(id string) error {
+	if !lo.ContainsBy(agents, func(row app.Agent) bool { return row.ID == id }) {
+		return fmt.Errorf("PMT offers no agent %s", id)
+	}
+	if _, isRunning := agt.installs.Load(id); isRunning {
+		return fmt.Errorf("npm is installing %s", id)
+	}
+	defer application.Get().Event.Emit(EventChanged, id)
+	// a version npm left half installed goes too
+	dirs, _ := filepath.Glob(filepath.Join(agt.resolveDir(), id+"@*"))
+	for _, dir := range dirs {
+		if err := os.RemoveAll(dir); err != nil {
+			return err
+		}
+	}
+	return nil
+}
+
 // findAgent returns the agent with the given id, if it can start. It returns an error if there is no such agent, it is
 // not installed, or no Node is new enough.
 func (agt *Service) findAgent(id string) (Agent, error) {

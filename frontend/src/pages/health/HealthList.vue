@@ -145,9 +145,12 @@ function describeShared(members: Finding[]): Part[] {
   return owners.length === 1 && owners[0] ? [{ text: workspace.originName(owners[0]), style: "mod" }] : [];
 }
 
-/** describePlace returns where a mod's own problem is, as its file's name and line, or "" for any other. */
+/**
+ * describePlace returns where a mod's own problem is, as its file's name and line, or "" for any other. A problem
+ * with a copy in the game names the mod's copy.
+ */
 function describePlace(finding: Finding): string {
-  const site = finding.sites?.[0];
+  const site = finding.sites?.find((other) => other.place.origin === findOwner(finding)) ?? finding.sites?.[0];
   return finding.question === "health" && site ? `${site.place.name}:${site.line}` : "";
 }
 

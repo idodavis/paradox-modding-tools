@@ -68,3 +68,11 @@ export function ListAgents(): $CancellablePromise<$models.Agent[] | null> {
 export function RemoveAgent(id: string): $CancellablePromise<void> {
     return $Call.ByID(3908135754, id);
 }
+
+/**
+ * UninstallAgent removes an agent PMT offers from PMT's folder, every version of it, and sends EventChanged. It returns
+ * an error if PMT offers no such agent, npm is installing it, or a folder cannot be removed, as while the agent runs.
+ */
+export function UninstallAgent(id: string): $CancellablePromise<void> {
+    return $Call.ByID(2219574446, id);
+}

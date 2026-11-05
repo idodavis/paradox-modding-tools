@@ -1,14 +1,13 @@
 <!-- The IDE page: the sidebar, the editors, the bottom panel and the Wiki pane. A pop-out shows one part alone. -->
 <script setup lang="ts">
 import { computed, nextTick, reactive, shallowRef, useTemplateRef, watch } from "vue";
-import { useMutation, useQuery } from "@pinia/colada";
+import { useQuery } from "@pinia/colada";
 import { createReusableTemplate, useEventBus, useEventListener, useLocalStorage } from "@vueuse/core";
 import { countBy } from "es-toolkit";
 import type { SplitterItem } from "@nuxt/ui";
 
 import type { Diagnostic } from "@services/lsp/models";
 import type { Chip } from "@services/mcp/models";
-import * as workspaceApi from "@services/workspace/service";
 import type { Place } from "@services/workspace/models";
 
 import { useShown } from "../../app/pages";
@@ -28,10 +27,10 @@ import { useEditorStore } from "../../stores/editor";
 import { useGitStore } from "../../stores/git";
 import { useSettingsStore } from "../../stores/settings";
 import { useTerminalStore } from "../../stores/terminal";
-import { COMMAND_BUS, THIS_WINDOW, useWindowsStore } from "../../stores/windows";
+import { COMMAND_BUS, describeWindow, THIS_WINDOW, useWindowsStore } from "../../stores/windows";
 import { useWorkspaceStore, VANILLA } from "../../stores/workspace";
 import CompareView from "../../ui/CompareView.vue";
-import FileSelector from "../../ui/FileSelector.vue";
+import AddModMenu from "../../ui/AddModMenu.vue";
 import OriginChip from "../../ui/OriginChip.vue";
 import ProblemRow from "../../ui/ProblemRow.vue";
 import { EDITOR_LANGUAGES } from "../../ui/ScriptSnippet.vue";
@@ -47,7 +46,8 @@ import WikiPane from "./WikiPane.vue";
 import { describeLanguage } from "./editor/monaco";
 import { findModel } from "./editor/models";
 
-const { id } = defineProps<{ id: string }>();
+// The route names the workspace; the page reads the open one from the workspace store.
+defineProps<{ id: string }>();
 
 /** A Problem is one entry in the problems list: an editor diagnostic, or a Health finding marked with `health`. */
 type Problem = { problem: Diagnostic; health?: true };
@@ -104,8 +104,9 @@ const tabs = computed(() =>
 );
 const visualGroup = computed(() => (isVisual.value ? editor.activeGroup() : null));
 const gameOpen = useLocalStorage("pmt.ide.gameOpen", true);
+const externalOpen = useLocalStorage("pmt.ide.externalOpen", true);
 /** filtering says which trees show their filter box. */
-const filtering = reactive({ mods: false, game: false, own: false });
+const filtering = reactive({ mods: false, external: false, game: false, own: false });
 const [DefineFilterButton, FilterButton] = createReusableTemplate<{ tree: keyof typeof filtering }>();
 const visible = useShown();
 // The active file and its selected lines go with an agent's prompt as a chip. While the active tab is one Follow the
@@ -121,6 +122,7 @@ const fileChip = computed<Chip | null>((previous) => {
 useChip(() => fileChip.value);
 const splitter = useTemplateRef("splitter");
 const modTree = useTemplateRef("modTree");
+const externalTree = useTemplateRef("externalTree");
 const gameTree = useTemplateRef("gameTree");
 const commandBus = useEventBus(COMMAND_BUS);
 const comparing = shallowRef<{ left: Place; right: Place }>();
@@ -137,7 +139,9 @@ commandBus.on((command) => {
   if (command === "explorer.reveal") {
     showSidebar("explorer");
     if (editor.activeFile()?.origin === VANILLA) gameOpen.value = true;
-    void nextTick().then(() => Promise.all([modTree.value?.reveal(), gameTree.value?.reveal()]));
+    void nextTick().then(() =>
+      Promise.all([modTree.value?.reveal(), externalTree.value?.reveal(), gameTree.value?.reveal()]),
+    );
   }
   if (command === "terminal.sendFile") {
     if (layout.value === "full") editor.showPanel("terminal");
@@ -167,7 +171,7 @@ const layout = computed(() => {
   if (part === "terminal") return "terminal";
   if (part === "wiki") return "wiki";
   if (part === "editor") return "editor";
-  return part === "game" || part === "files" ? "files" : "full";
+  return part === "game" || part === "external" || part === "files" ? "files" : "full";
 });
 
 const { data: roots } = useQuery(() => ({ ...rootsQuery, enabled: workspace.isOpen() }));
@@ -175,12 +179,16 @@ const { data: folderPlace } = useQuery(() => ({
   ...placeQuery(THIS_WINDOW.slice("files:".length)),
   enabled: part === "files",
 }));
-const mods = computed(() => (roots.value ?? []).filter((root) => root.origin !== VANILLA));
+const mods = computed(() =>
+  (roots.value ?? []).filter((root) => root.origin !== VANILLA && !workspace.isExternal(root.origin)),
+);
+const externals = computed(() => (roots.value ?? []).filter((root) => workspace.isExternal(root.origin)));
 const game = computed(() => (roots.value ?? []).filter((root) => root.origin === VANILLA));
 // Only the setting decides, because a pane that appears as the roots load, while the explorer is hidden, gets no room.
 const gameShown = computed(() => settings.isOn("ide.gameFiles"));
 const own = computed(() => {
   if (part === "game") return game.value;
+  if (part === "external") return externals.value;
   return folderPlace.value ? [folderPlace.value] : [];
 });
 
@@ -238,11 +246,16 @@ const explorerPanes = computed<SplitterItem[]>(() => [
     order: 1,
     ...(gameShown.value && gameOpen.value ? { sizeUnit: PIXELS, defaultSize: 320, minSize: 120 } : {}),
   },
+  ...(!externals.value.length
+    ? []
+    : externalOpen.value
+      ? [{ id: "external", slot: "external", order: 2, sizeUnit: PIXELS, defaultSize: 160, minSize: 90 }]
+      : [foldPane("external-folded", "external", 2)]),
   ...(!gameShown.value
     ? []
     : gameOpen.value
-      ? [{ id: "game", slot: "game", order: 2, sizeUnit: PIXELS, minSize: 120 }]
-      : [{ id: "folded", slot: "game", order: 2, sizeUnit: PIXELS, defaultSize: 33, minSize: 33, maxSize: 33 }]),
+      ? [{ id: "game", slot: "game", order: 3, sizeUnit: PIXELS, minSize: 120 }]
+      : [foldPane("folded", "game", 3)]),
 ]);
 // The terminal's own window shows the Terminal tab alone. The simple interface leaves out the tabs it hides, unless
 // one is the open one.
@@ -321,7 +334,11 @@ const { data: indentation } = useQuery(() => ({
   enabled: !side.value && !!activeModel.value,
 }));
 
-const { mutate: addMod } = useMutation({ mutation: (dir: string) => workspaceApi.AddMod(id, dir) });
+/** foldPane returns an explorer pane folded to its header, which is 2rem tall at the app's scale. */
+function foldPane(id: string, slot: string, order: number): SplitterItem {
+  const size = settings.toPixels(2);
+  return { id, slot, order, sizeUnit: PIXELS, defaultSize: size, minSize: size, maxSize: size };
+}
 
 /** show opens a place from the explorer, in a preview tab or a pinned one. */
 function show(place: Place, preview: boolean): void {
@@ -355,10 +372,11 @@ function choose(value: string, collapsed: boolean, collapse: () => void): void {
   else showSidebar(value);
 }
 
-/** toggleFilter shows or hides a tree's filter box. Showing the game files' box unfolds them. */
+/** toggleFilter shows or hides a tree's filter box. Showing the game files' or the external mods' box unfolds them. */
 function toggleFilter(tree: keyof typeof filtering): void {
   filtering[tree] = !filtering[tree];
   if (tree === "game" && filtering.game) gameOpen.value = true;
+  if (tree === "external" && filtering.external) externalOpen.value = true;
 }
 
 /** toggleProblems shows the panel on Problems, or closes it if it shows Problems already. */
@@ -389,22 +407,25 @@ function listProblems(): { place: Place; problems: Problem[] }[] {
   });
 }
 
-/** listFindings returns Health's compatibility findings in a file, as problems. */
+/** listFindings returns Health's findings in a file that the editor does not make itself, as problems. */
 function listFindings(place: Place): Problem[] {
   const disabled = settings.value("ide.checks").split(",");
-  return (report.value?.compatibility.findings ?? []).flatMap((finding) => {
-    if (finding.question !== "compatibility" || disabled.includes(finding.code)) return [];
-    const { code, level, facts } = finding;
-    const message = joinParts(finding.message);
-    return [...(finding.sites ?? []), ...(finding.repeats ?? [])].flatMap(({ place: site, line, range }) => {
-      if (site.key !== place.key) return [];
-      // a definition's site carries its line but no range, since Go reads no file to make it
-      const shown = range.startLineNumber
-        ? range
-        : { startLineNumber: line, startColumn: 1, endLineNumber: line, endColumn: 1 };
-      return [{ problem: { code, level, message, range: shown, facts }, health: true as const }];
+  const groups = report.value ? [report.value.compatibility, ...(report.value.mods ?? [])] : [];
+  return groups
+    .flatMap((group) => group.findings ?? [])
+    .flatMap((finding) => {
+      if (finding.diagnosed || disabled.includes(finding.code)) return [];
+      const { code, level, facts } = finding;
+      const message = joinParts(finding.message);
+      return [...(finding.sites ?? []), ...(finding.repeats ?? [])].flatMap(({ place: site, line, range }) => {
+        if (site.key !== place.key) return [];
+        // a definition's site carries its line but no range, since Go reads no file to make it
+        const shown = range.startLineNumber
+          ? range
+          : { startLineNumber: line, startColumn: 1, endLineNumber: line, endColumn: 1 };
+        return [{ problem: { code, level, message, range: shown, facts }, health: true as const }];
+      });
     });
-  });
 }
 
 /** describePlace returns the label of a file in the compare. */
@@ -415,6 +436,7 @@ function describePlace(place: Place): string {
 /** collapseAll folds every folder of both explorers. */
 function collapseAll(): void {
   modTree.value?.collapseAll();
+  externalTree.value?.collapseAll();
   gameTree.value?.collapseAll();
 }
 </script>
@@ -474,7 +496,7 @@ function collapseAll(): void {
             <USplitter
               :items="explorerPanes"
               orientation="vertical"
-              :disabled="!gameOpen"
+              :disabled="!gameOpen && !(externals.length && externalOpen)"
               auto-save-id="pmt.ide.explorer"
               class="absolute inset-0 py-1"
               :class="shownSidebar !== 'explorer' && 'invisible'"
@@ -487,22 +509,60 @@ function collapseAll(): void {
                     Workspace<span class="ms-1 font-normal text-dimmed">{{ plural(mods.length, "mod") }}</span>
                     <span class="grow" />
                     <FilterButton tree="mods" />
-                    <FileSelector path="" folder :filter="[]" @update:path="addMod">
-                      <template #default="{ browse }">
-                        <UTooltip text="Add a mod">
-                          <UButton
-                            icon="i-lucide-plus"
-                            variant="ghost"
-                            size="xs"
-                            square
-                            aria-label="Add a mod"
-                            @click="browse"
-                          />
-                        </UTooltip>
-                      </template>
-                    </FileSelector>
+                    <AddModMenu>
+                      <UTooltip text="Add a mod">
+                        <UButton icon="i-lucide-plus" variant="ghost" size="xs" square aria-label="Add a mod" />
+                      </UTooltip>
+                    </AddModMenu>
                   </div>
                   <ExplorerTree ref="modTree" v-model:filtering="filtering.mods" :roots="mods" @open="show" />
+                </div>
+              </template>
+              <template #external>
+                <div class="flex min-h-0 min-w-0 flex-1 flex-col">
+                  <div class="flex h-8 shrink-0 items-center border-t border-default pe-1">
+                    <button
+                      type="button"
+                      class="flex h-8 min-w-0 flex-1 cursor-pointer items-center gap-1 ps-1.5 text-11 font-semibold whitespace-nowrap text-toned hover:text-highlighted"
+                      :aria-expanded="externalOpen"
+                      @click="externalOpen = !externalOpen"
+                    >
+                      <UIcon
+                        :name="externalOpen ? 'i-lucide-chevron-down' : 'i-lucide-chevron-right'"
+                        class="size-3.5 shrink-0"
+                      />External mods<span class="ms-1 truncate font-normal text-dimmed">never published</span>
+                    </button>
+                    <FilterButton v-if="!windows.listWindows().includes('external')" tree="external" />
+                    <UTooltip text="Open in its own window">
+                      <UButton
+                        icon="i-lucide-app-window"
+                        variant="ghost"
+                        size="xs"
+                        square
+                        aria-label="Open in its own window"
+                        @click="windows.popOut('external')"
+                      />
+                    </UTooltip>
+                  </div>
+                  <div
+                    v-if="windows.listWindows().includes('external')"
+                    v-show="externalOpen"
+                    class="flex flex-col gap-2 px-3 py-1.5 text-12 text-dimmed"
+                  >
+                    In its own window.
+                    <div class="flex gap-1.5">
+                      <UButton label="Bring back" size="xs" variant="soft" @click="windows.closeOther('external')" />
+                      <UButton label="Show window" size="xs" variant="ghost" @click="windows.showWindow('external')" />
+                    </div>
+                  </div>
+                  <ExplorerTree
+                    v-else
+                    v-show="externalOpen"
+                    ref="externalTree"
+                    v-model:filtering="filtering.external"
+                    :roots="externals"
+                    @open="show"
+                  />
                 </div>
               </template>
               <template #game>
@@ -514,10 +574,8 @@ function collapseAll(): void {
                       :aria-expanded="gameOpen"
                       @click="gameOpen = !gameOpen"
                     >
-                      <UIcon
-                        :name="gameOpen ? 'i-lucide-chevron-down' : 'i-lucide-chevron-right'"
-                        class="size-3.5"
-                      />Game files
+                      <UIcon :name="gameOpen ? 'i-lucide-chevron-down' : 'i-lucide-chevron-right'" class="size-3.5" />
+                      Game files<span class="ms-1 truncate font-normal text-dimmed">never edited</span>
                     </button>
                     <FilterButton v-if="!windows.listWindows().includes('game')" tree="game" />
                     <UTooltip text="Open in its own window">
@@ -562,7 +620,7 @@ function collapseAll(): void {
           <div
             class="flex h-7 shrink-0 items-center gap-1 ps-2.5 pe-1 text-11 font-semibold whitespace-nowrap text-toned"
           >
-            {{ part === "game" ? "Game files" : folderPlace?.name }}
+            {{ part === "game" || part === "external" ? describeWindow(part) : folderPlace?.name }}
             <span class="grow" />
             <FilterButton tree="own" />
           </div>
@@ -732,11 +790,9 @@ function collapseAll(): void {
                 </template>
                 <TerminalPanel v-else-if="panelTab === 'terminal'" />
                 <div v-else ref="output" class="min-h-0 flex-1 overflow-y-auto px-3 py-1.5 font-mono text-11">
-                  <pre
-                    v-for="(line, index) in git.output()"
-                    :key="index"
-                    class="pb-0.5 whitespace-pre-wrap text-toned"
-                    >{{ line }}</pre>
+                  <pre v-for="(line, index) in git.output()" :key="index" class="pb-0.5 whitespace-pre-wrap text-toned"
+                    >{{ line }}
+    </pre>
                   <p v-if="!git.output().length" class="font-sans text-12 text-dimmed">The output of git shows here.</p>
                 </div>
               </div>

@@ -1,31 +1,37 @@
-# Gate every PR to main on a full build, the backend tests and the frontend typecheck. -race is the only thing
-# that catches a lock-discipline regression. The real-install tier needs the three games
-# installed, so its gates stay manual: `task test:gate`.
+# Checks every pull request to main, and every release before it builds: `task check` on Windows and Linux, the race
+# detector, the full build, and the built app starting. The real-install gates need the three games installed, so
+# they stay with the maintainer: `task test:gate`.
 name: Test
 
 on:
   pull_request:
-    types: [opened, synchronize, reopened, edited]
     branches: [main]
     paths-ignore:
       - "**/*.md"
-      - ".github/workflows/test.yml"
   workflow_dispatch:
+  workflow_call:
 
 concurrency:
-  group: test-${{ github.ref }}
+  group: test-${{ github.workflow }}-${{ github.ref }}-${{ github.event_name }}
   cancel-in-progress: true
 
 jobs:
-  backend:
-    name: Build and Go tests (race)
-    runs-on: ubuntu-latest
+  check:
+    name: task check (${{ matrix.os }})
+    runs-on: ${{ matrix.os }}
+    strategy:
+      fail-fast: false
+      matrix:
+        os: [ubuntu-latest, windows-latest]
+    defaults:
+      run:
+        shell: bash
     steps:
       - uses: actions/checkout@v7
 
       - uses: actions/setup-go@v7
         with:
-          go-version: "1.27.3"
+          go-version-file: go.mod
 
       - uses: actions/setup-node@v7
         with:
@@ -34,53 +40,61 @@ jobs:
           cache-dependency-path: frontend/package-lock.json
 
       - name: Linux GTK4 / WebKitGTK 6
+        if: runner.os == 'Linux'
         run: |
           sudo apt-get update
-          sudo apt-get install -y build-essential pkg-config libgtk-4-dev libwebkitgtk-6.0-dev
+          sudo apt-get install -y build-essential pkg-config libgtk-4-dev libwebkitgtk-6.0-dev xvfb
 
-      - name: Install Wails CLI
+      # the versions `task check` is written against
+      - name: Install Task, the Wails CLI, staticcheck and golangci-lint
         run: |
+          set -euo pipefail
+          go install github.com/go-task/task/v3/cmd/task@latest
           go install "github.com/wailsapp/wails/v3/cmd/wails3@$(go list -m -f '{{.Version}}' github.com/wailsapp/wails/v3)"
+          go install honnef.co/go/tools/cmd/staticcheck@2026.2.2
+          go install github.com/golangci/golangci-lint/v2/cmd/golangci-lint@v2.14.0
           echo "$(go env GOPATH)/bin" >> "$GITHUB_PATH"
 
-      # the full build a release makes: the frontend, the bindings and the app
-      - name: Build
-        run: |
-          set -euo pipefail
-          wails3 task linux:build
-          test -f bin/paradox-modding-tools
-
-      - name: gofmt
-        run: |
-          set -euo pipefail
-          out="$(gofmt -l main.go internal services)"
-          if [ -n "${out}" ]; then
-            echo "::error::gofmt needed on:"; echo "${out}"; exit 1
-          fi
-
-      - name: go vet
-        run: go vet ./...
-
-      # -timeout 60s is the contract: move a test that needs longer, do not raise the number
-      - name: go test -race
-        run: go test -short -race -timeout 60s ./...
-
-  frontend:
-    name: Frontend typecheck
-    runs-on: ubuntu-latest
-    steps:
-      - uses: actions/checkout@v7
-
-      - uses: actions/setup-node@v7
-        with:
-          node-version: "24"
-          cache: npm
-          cache-dependency-path: frontend/package-lock.json
-
-      - name: Install
+      - name: npm ci
         working-directory: frontend
         run: npm ci
 
-      - name: Typecheck
-        working-directory: frontend
-        run: npm run check
+      - name: task check
+        run: task check
+
+      # the race detector needs cgo, which Windows has only where the image ships gcc
+      - name: task test:race
+        run: |
+          set -euo pipefail
+          if [[ "${RUNNER_OS}" == "Windows" ]] && ! command -v gcc > /dev/null; then
+            echo "No gcc on this image, so task check's tests stand for the race run."
+            exit 0
+          fi
+          CGO_ENABLED=1 task test:race
+
+      - name: Build
+        run: |
+          set -euo pipefail
+          task build VERSION=0.0.0-ci
+          ls bin
+
+      # passes when the built app writes its start line to pmt.log within 60 s and is still running 10 s later
+      - name: Launch the app
+        run: |
+          set -euo pipefail
+          if [[ "${RUNNER_OS}" == "Windows" ]]; then
+            log="${LOCALAPPDATA}/paradox-modding-tools/pmt.log"
+            ./bin/paradox-modding-tools.exe &
+          else
+            log="${HOME}/.cache/paradox-modding-tools/pmt.log"
+            xvfb-run --auto-servernum ./bin/paradox-modding-tools &
+          fi
+          app=$!
+          for _ in $(seq 60); do
+            if grep -q "msg=started" "${log}" 2> /dev/null; then break; fi
+            sleep 1
+          done
+          grep -q "msg=started" "${log}" || { echo "::error::no start line in pmt.log within 60 s"; exit 1; }
+          sleep 10
+          kill -0 "${app}" || { echo "::error::the app stopped after starting"; cat "${log}"; exit 1; }
+          kill "${app}" || true

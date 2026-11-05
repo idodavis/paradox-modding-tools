@@ -65,7 +65,7 @@ export interface Finding {
     "code": string;
 
     /**
-     * the code's question
+     * the code's question, or compatibility where another mod is concerned
      */
     "question": string;
 
@@ -136,6 +136,11 @@ export interface Finding {
      * Defined is where the workspace defines the name, in a mod the finding's mod does not depend on.
      */
     "defined"?: lsp$0.Site[] | null;
+
+    /**
+     * Diagnosed is true for one of the editor's own diagnostics, which the editor shows itself.
+     */
+    "diagnosed": boolean;
 
     /**
      * Comparable is true when the kept statement and the ones it replaces can be shown side by side.
@@ -279,7 +284,7 @@ export interface Report {
     "mods": Group[] | null;
 
     /**
-     * the findings of the mods together, the compatibility's left out
+     * the findings of the user's own mods together, external mods' left out
      */
     "own": Tally;
     "checkedAt": string;

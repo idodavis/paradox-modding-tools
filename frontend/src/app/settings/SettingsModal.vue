@@ -14,6 +14,7 @@ import { describeDumps, matchQuery } from "../../lib/format";
 import {
   environmentQuery,
   languagesQuery,
+  ownListingsQuery,
   programsQuery,
   settingsCatalogQuery,
   stateQuery,
@@ -22,6 +23,7 @@ import {
 import { gameIcon, THEME_FAMILIES, useSettingsStore } from "../../stores/settings";
 import { COMMAND_BUS } from "../../stores/windows";
 import { useWorkspaceStore, VANILLA } from "../../stores/workspace";
+import AddModMenu from "../../ui/AddModMenu.vue";
 import ColorPicker from "../../ui/ColorPicker.vue";
 import CreateModForm from "../../ui/CreateModForm.vue";
 import FileSelector from "../../ui/FileSelector.vue";
@@ -184,6 +186,9 @@ const { data: languages } = useQuery(() => ({
   enabled: !!record.value?.install,
 }));
 const mods = computed(() => store.listMods());
+const ownIds = computed(() => store.listOwnMods().map((mod) => mod.id));
+// a mod's own listing holds its Workshop id as Go resolves it, from its record or else its descriptor
+const { data: ownListings } = useQuery(() => ({ ...ownListingsQuery(ownIds.value), enabled: store.isOpen() }));
 const selected = computed(
   () => mods.value.find((mod) => mod.id === origin.value) ?? (origin.value === VANILLA ? undefined : mods.value[0]),
 );
@@ -242,7 +247,6 @@ const { mutate: reorder } = useMutation({
   mutation: (ids: string[]) => workspace.ReorderMods(id.value, ids),
   onError: () => (preview.value = undefined),
 });
-const { mutate: addMod } = useMutation({ mutation: (dir: string) => workspace.AddMod(id.value, dir) });
 const { mutate: updateMod } = useMutation({
   mutation: ({ modId, dir }: { modId: string; dir: string }) => store.updateMod(id.value, modId, { dir }),
 });
@@ -275,6 +279,19 @@ const { mutate: writeShell } = useMutation({
     if (path) settings.write("terminal.shell", path === DEFAULT_SHELL ? "" : path);
   },
 });
+
+/** describeStanding returns what a mod's row says after its version: its role, or its state on Steam. */
+function describeStanding(mod: Mod): string {
+  if (mod.workshop) return "Steam's copy";
+  if (mod.external) return "External mod";
+  return ownListings.value?.[ownIds.value.indexOf(mod.id)]?.workshopId ? "On Steam" : "Not published";
+}
+
+/** pickIcon returns the icon at the end of a mod's row: a lock for Steam's copy, a package for an external mod. */
+function pickIcon(mod: Mod): string {
+  if (mod.workshop) return "i-lucide-lock";
+  return mod.external ? "i-lucide-package" : "i-lucide-chevron-right";
+}
 
 /** resetSection puts every setting of the given section back to its default. */
 function resetSection(value: string): void {
@@ -534,11 +551,14 @@ async function remove(): Promise<void> {
           >
             <template #actions>
               <UButton label="Create a new mod" size="md" @click="creating = true" />
-              <FileSelector path="" folder :filter="[]" @update:path="addMod">
-                <template #default="{ browse }">
-                  <UButton label="Add an existing mod" icon="i-lucide-plus" size="md" @click="browse" />
-                </template>
-              </FileSelector>
+              <AddModMenu>
+                <UButton
+                  label="Add an existing mod"
+                  icon="i-lucide-plus"
+                  trailing-icon="i-lucide-chevron-down"
+                  size="md"
+                />
+              </AddModMenu>
             </template>
             <USplitter :items="PANES" auto-save-id="pmt.settings.mods" class="min-h-0 grow" :ui="{ handle: 'mx-2.5' }">
               <template #list>
@@ -590,7 +610,7 @@ async function remove(): Promise<void> {
                           <span class="truncate text-13 font-medium">{{ mod.descriptor.name }}</span>
                           <span v-if="mod.broken" class="truncate text-11 text-error">Folder not found</span>
                           <span v-else class="truncate text-11 text-dimmed">
-                            {{ mod.descriptor.version }} · {{ mod.workshopId ? "On Steam" : "Not published" }}
+                            {{ mod.descriptor.version }} · {{ describeStanding(mod) }}
                           </span>
                         </span>
                         <FileSelector
@@ -604,7 +624,7 @@ async function remove(): Promise<void> {
                             <UButton label="Locate" @click.stop="browse" />
                           </template>
                         </FileSelector>
-                        <UIcon v-else name="i-lucide-chevron-right" class="size-3.5 shrink-0 text-dimmed" />
+                        <UIcon v-else :name="pickIcon(mod)" class="size-3.5 shrink-0 text-dimmed" />
                       </div>
                     </div>
                   </div>

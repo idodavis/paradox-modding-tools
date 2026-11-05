@@ -87,6 +87,11 @@ export interface Mod {
      * left out of the workspace's compatibility checks
      */
     "leftOut": boolean;
+
+    /**
+     * someone else's mod, which the workspace checks its own mods against
+     */
+    "external": boolean;
 }
 
 /**

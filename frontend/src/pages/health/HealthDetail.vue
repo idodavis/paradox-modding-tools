@@ -28,7 +28,7 @@ const comparing = defineModel<boolean>("comparing", { default: false });
 
 /** The checks about a localization key. */
 const MESSAGE_CODES = ["missing-message", "duplicate-message", "shared-message"];
-/** How many of the names still used show before the rest fold behind a button. */
+/** How many of the entries still used show before the rest fold behind a button. */
 const USES_SHOWN = 6;
 
 const workspace = useWorkspaceStore();
@@ -67,7 +67,7 @@ const replacing = computed(() =>
 /** Whether the finding suggests a load order other than the current one. */
 const reorders = computed(() => !!finding.order?.length && !isEqual(order, finding.order));
 
-/** The text a name still used must match to be listed, and whether the list shows all of them. */
+/** The text an entry still used must match to be listed, and whether the list shows all of them. */
 const usesFilter = shallowRef("");
 const allUses = shallowRef(false);
 const uses = computed(() => (finding.uses ?? []).filter((use) => matchQuery(usesFilter.value, use.name)));
@@ -75,7 +75,7 @@ const shownUses = computed(() => (allUses.value || usesFilter.value ? uses.value
 const mostUses = computed(() => maxBy(finding.uses ?? [], (use) => use.count)?.count ?? 1);
 const hiddenUses = computed(() => uses.value.slice(shownUses.value.length));
 const hiddenUseCount = computed(() => sumBy(hiddenUses.value, (use) => use.count));
-/** The names the kept file leaves out that are not among the names still used. */
+/** The entries the kept file leaves out that are not among the entries still used. */
 const unused = computed(() =>
   (finding.removed ?? []).filter((removed) => !finding.uses?.some((use) => use.name === removed)),
 );
@@ -239,7 +239,7 @@ function describeSite(site: Site): string {
           v-model="usesFilter"
           icon="i-lucide-filter"
           size="xs"
-          placeholder="Filter names"
+          placeholder="Filter entries"
           class="w-44 font-normal"
         />
       </template>
@@ -273,12 +273,12 @@ function describeSite(site: Site): string {
           <UIcon name="i-lucide-chevron-down" class="size-3.5" />
           Show {{ describeCount(hiddenUses.length) }} more, used {{ plural(hiddenUseCount, "time") }}
         </button>
-        <p v-if="!uses.length" class="text-12 text-dimmed">No name matches.</p>
+        <p v-if="!uses.length" class="text-12 text-dimmed">No entry matches.</p>
       </div>
     </HealthSection>
     <HealthSection
       v-if="finding.uses?.length && unused.length"
-      title="The other names it leaves out"
+      title="The other entries it leaves out"
       :count="unused.length"
       fold
     >

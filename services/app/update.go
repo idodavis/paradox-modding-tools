@@ -27,6 +27,8 @@ const (
 	assetURLKey = "github.asset.url"
 	pageSize    = 100 // the most releases GitHub lists in one page
 	apiTimeout  = 15 * time.Second
+	// firstRelease is this app's first version. The releases before it are an older app the repository keeps.
+	firstRelease = "0.5.0"
 )
 
 // An Update is the result of a check for a newer version of the app. It is the data of the app:update event.
@@ -194,9 +196,9 @@ func (app *Service) InstallRelease(version string) error {
 	return pmt.Updater.Restart(context.Background())
 }
 
-// ListReleases returns every published release, the newest first, each with its notes. A build that is no release,
-// such as a dev build, gets the newest only. It returns an error if GitHub cannot be reached or answers with an
-// error.
+// ListReleases returns every published release of this app, the newest first, each with its notes. A release before
+// firstRelease is left out. A build that is no release, such as a dev build, gets the newest only. It returns an error
+// if GitHub cannot be reached or answers with an error.
 func (app *Service) ListReleases() ([]Release, error) {
 	running := app.running()
 	var releases []Release
@@ -206,10 +208,10 @@ func (app *Service) ListReleases() ([]Release, error) {
 			return nil, err
 		}
 		for _, published := range listed {
-			if published.Draft || published.Prerelease {
+			version := strings.TrimPrefix(published.Tag, "v")
+			if published.Draft || published.Prerelease || semver.Compare("v"+version, "v"+firstRelease) < 0 {
 				continue
 			}
-			version := strings.TrimPrefix(published.Tag, "v")
 			releases = append(releases, Release{
 				Version: version, Date: published.Published, Notes: published.Body,
 				Running: version == running, Older: isOlder(version, running),

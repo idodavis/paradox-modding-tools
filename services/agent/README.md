@@ -52,6 +52,8 @@ Everything is kept under `agents/` in PMT's cache folder, so Reset data removes 
 - **Node** is the system's if it is version 22 or newer, else the copy in `node/`, else none. `InstallNode` downloads
   that copy: the newest long-term release from nodejs.org, checked against the sums nodejs.org publishes. It is a zip
   on Windows and a gzipped tar on Linux.
+- **Uninstalling** an agent (`UninstallAgent`) deletes every `<id>@<version>/` it has. Settings offers it only while
+  none of the agent's sessions runs, since Windows refuses to delete a running program's files.
 - **One install per agent at a time.** Two npm runs in one folder delete each other's files, so a second is refused.
   `ListAgents` gives a running install's start time as `Installing`, and `agent:changed` marks its start and end.
 

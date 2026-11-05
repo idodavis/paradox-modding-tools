@@ -90,6 +90,11 @@ export interface Details {
     "description": string;
     "updatedAt": string;
     "visibility": string;
+
+    /**
+     * the signed-in Steam user owns the item
+     */
+    "owned": boolean;
     "tags": string[] | null;
     "previews": Preview[] | null;
 

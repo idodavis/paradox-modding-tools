@@ -1,5 +1,6 @@
 <!--
-  The top bar of every window: the PMT menu, the workspace switcher and page tabs, search and the window's buttons.
+  The top bar of every window: the PMT menu, the workspace switcher and page tabs, search, Help and the window's
+  buttons.
   The main window also reports what the game's error log says about the mods when the launched game closes.
 -->
 <script setup lang="ts">
@@ -285,7 +286,8 @@ function styleButton(region: string): string[] {
         </UButton>
       </UDropdownMenu>
 
-      <nav v-if="active" class="-my-px ms-1 flex min-w-0 gap-0.5 self-stretch">
+      <!-- the tabs keep their width; the search bar gives way first, and the compact bar below that -->
+      <nav v-if="active" class="-my-px ms-1 flex shrink-0 gap-0.5 self-stretch">
         <UContextMenu v-for="name in tools" :key="name" :items="tabMenu(name)" :disabled="!canPopOut(name)">
           <button
             v-if="isPopped(name)"
@@ -332,6 +334,16 @@ function styleButton(region: string): string[] {
       <span class="font-medium text-highlighted">{{ describeWindow(THIS_WINDOW) }}</span>
       <span class="truncate text-dimmed">{{ active?.record.name }}</span>
     </span>
+    <button
+      type="button"
+      class="flex h-6.5 w-64 min-w-8 shrink items-center gap-2 overflow-hidden rounded-md border border-default bg-default px-2 text-12 text-dimmed hover:border-accented hover:text-toned"
+      @click="commandBus.emit('palette.open')"
+    >
+      <UIcon name="i-lucide-search" class="size-3.5 shrink-0" />
+      <span class="grow truncate text-start">Search and commands</span>
+      <UKbd v-for="kbd in findKbds('palette.open')" :key="kbd" :value="kbd" size="sm" />
+    </button>
+    <span :class="CAPTION" class="min-w-6 grow" @dblclick="Window.ToggleMaximise()" />
 
     <UTooltip v-if="IS_MAIN && active" text="Agent pane" :kbds="findKbds('agent.togglePane')">
       <UChip :show="agent.sessions.some(agent.isWaiting)" color="warning" inset size="sm">
@@ -340,19 +352,20 @@ function styleButton(region: string): string[] {
           :variant="agent.isPaneOpen ? 'soft' : 'ghost'"
           size="sm"
           square
+          :ui="{ leadingIcon: 'text-secondary' }"
           aria-label="Agent pane"
           @click="agent.togglePane()"
         />
       </UChip>
     </UTooltip>
-    <UTooltip text="Search and commands" :kbds="findKbds('palette.open')">
+    <UTooltip text="Help" :kbds="findKbds('help.open')">
       <UButton
-        icon="i-lucide-search"
+        icon="i-lucide-circle-help"
         variant="ghost"
         size="sm"
         square
-        aria-label="Search and commands"
-        @click="commandBus.emit('palette.open')"
+        aria-label="Help"
+        @click="commandBus.emit('help.open')"
       />
     </UTooltip>
     <div class="-my-px flex shrink-0 self-stretch" :class="ROUND && 'items-center gap-2.5 pe-2.5'">

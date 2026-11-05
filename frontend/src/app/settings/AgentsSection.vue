@@ -14,7 +14,7 @@ import { computed } from "vue";
 import type { Agent } from "@services/agent/models";
 import * as agentApi from "@services/agent/service";
 import * as mcp from "@services/mcp/service";
-import { copyText } from "../../lib/feedback";
+import { confirm, copyText } from "../../lib/feedback";
 import { abbreviate, parseTime, splitError } from "../../lib/format";
 import { accessQuery, agentsQuery, keys, nodeQuery } from "../../queries";
 import { useAgentStore } from "../../stores/agent";
@@ -78,6 +78,18 @@ const { mutate: add } = useMutation({
   },
 });
 const { mutate: remove } = useMutation({ mutation: (id: string) => agentApi.RemoveAgent(id) });
+const { mutate: uninstall } = useMutation({
+  mutation: async (row: Agent) => {
+    const confirmed = await confirm.open({
+      title: `Uninstall ${row.name}?`,
+      body: `${row.name} is deleted from PMT's folder. Install puts it back.`,
+      confirm: "Uninstall",
+      destructive: true,
+    });
+    if (confirmed) await agentApi.UninstallAgent(row.id);
+  },
+  onSettled: refresh,
+});
 
 /** describeAgent returns the line under an agent's name: its install progress, its sessions, or its install. */
 function describeAgent(row: Agent): { text: string; dot: string } {
@@ -95,6 +107,11 @@ function describeAgent(row: Agent): { text: string; dot: string } {
   return row.installed === row.version
     ? { text: `Version ${row.installed}, installed`, dot: "" }
     : { text: `Version ${row.installed}; ${row.version} is out`, dot: "bg-primary" };
+}
+
+/** isRunning reports whether one of an agent's sessions has its program running here, which keeps its files. */
+function isRunning(row: Agent): boolean {
+  return agent.sessions.some((session) => session.agent.id === row.id && session.state !== "ended");
 }
 
 /** isInstalling reports whether npm is installing an agent, as Go's list says or this view just asked. */
@@ -164,6 +181,16 @@ function quote(path: string): string {
         :loading="isInstalling(row)"
         @click="install(row.id)"
       />
+      <UTooltip v-if="row.installed" :text="isRunning(row) ? 'Close its sessions first' : undefined">
+        <UButton
+          label="Uninstall"
+          icon="i-lucide-trash-2"
+          color="error"
+          variant="ghost"
+          :disabled="isInstalling(row) || isRunning(row)"
+          @click="uninstall(row)"
+        />
+      </UTooltip>
       <UAlert
         v-if="installFailure && installed === row.id"
         class="basis-full"

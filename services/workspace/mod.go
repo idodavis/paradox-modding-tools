@@ -207,9 +207,18 @@ func (mod Mod) ResolveWorkshopID() string {
 	return cmp.Or(mod.WorkshopID, mod.Descriptor.WorkshopID)
 }
 
-// AddMod adds a mod folder to a workspace and gives the mod a color slot. It returns an error if the workspace is not
+// withRecord returns the mod with a record in place of its own. Steam's copy of a Workshop mod is always an external
+// mod, whatever its record says.
+func (mod Mod) withRecord(record app.Mod) Mod {
+	mod.Mod = record
+	mod.External = record.External || mod.Workshop
+	return mod
+}
+
+// AddMod adds a mod folder to a workspace as one of the user's mods or an external mod, and gives the mod a color slot.
+// Steam's copy of a Workshop mod is added as an external mod either way. It returns an error if the workspace is not
 // recorded, the folder cannot be a mod of its game (see CheckModFolder), or the workspace has the mod already.
-func (wsp *Service) AddMod(workspaceID, dir string) (Mod, error) {
+func (wsp *Service) AddMod(workspaceID, dir string, external bool) (Mod, error) {
 	_, install, row, err := findRecords(wsp.Config.Config(), workspaceID)
 	if err != nil {
 		return Mod{}, err
@@ -217,7 +226,7 @@ func (wsp *Service) AddMod(workspaceID, dir string) (Mod, error) {
 	if err = checkModFolder(row, install, dir); err != nil {
 		return Mod{}, err
 	}
-	record := app.Mod{ID: rand.Text(), Dir: dir}
+	record := app.Mod{ID: rand.Text(), Dir: dir, External: external}
 	err = wsp.updateWorkspace(workspaceID, func(workspace *app.Workspace) error {
 		if lo.ContainsBy(workspace.Mods, func(mod app.Mod) bool { return files.ToKey(mod.Dir) == files.ToKey(dir) }) {
 			return fmt.Errorf("%s is a mod of the workspace already", dir)
@@ -244,7 +253,7 @@ func (wsp *Service) ListMods() []Mod {
 	record, _, _, _ := findRecords(wsp.Config.Config(), ws.ID)
 	return lo.Map(*ws.Order.Load(), func(mod Mod, _ int) Mod {
 		if position := slices.IndexFunc(record.Mods, func(other app.Mod) bool { return other.ID == mod.ID }); position >= 0 {
-			mod.Mod = record.Mods[position]
+			mod = mod.withRecord(record.Mods[position])
 		}
 		return mod
 	})
@@ -283,7 +292,7 @@ func (wsp *Service) CreateMod(workspaceID, dir, name, language string) (Mod, err
 			return Mod{}, err
 		}
 	}
-	return wsp.AddMod(workspaceID, folder)
+	return wsp.AddMod(workspaceID, folder, false)
 }
 
 // ResolveModFolder returns the folder CreateMod would make for a mod of the given install. With no name, it returns
@@ -360,6 +369,41 @@ func (wsp *Service) ResetColors(workspaceID string) error {
 		for position := range workspace.Mods {
 			workspace.Mods[position].Color = makeSlot(position)
 		}
+		return nil
+	})
+}
+
+// ListWorkshopMods returns, as external mods, the Workshop mods Steam has downloaded for an install's game, sorted by
+// name, each with its descriptor and thumbnail; a mod's id is "" until it is added. It returns an error if the install
+// is not recorded.
+func (wsp *Service) ListWorkshopMods(installID string) ([]Mod, error) {
+	_, row, err := findInstall(wsp.Config.Config(), installID)
+	if err != nil {
+		return nil, err
+	}
+	mods := lo.Map(row.ListWorkshopFolders(), func(dir string, _ int) Mod { return readMod(row, app.Mod{Dir: dir}) })
+	slices.SortFunc(mods, func(mod, other Mod) int {
+		return cmp.Compare(strings.ToLower(mod.Descriptor.Name), strings.ToLower(other.Descriptor.Name))
+	})
+	return mods, nil
+}
+
+// SetExternal makes a mod of a workspace an external mod, or one of the user's own. It returns an error if the
+// workspace is not recorded, has no such mod, or the mod is Steam's copy of a Workshop mod, which is always external.
+func (wsp *Service) SetExternal(workspaceID, modID string, external bool) error {
+	_, _, row, err := findRecords(wsp.Config.Config(), workspaceID)
+	if err != nil {
+		return err
+	}
+	return wsp.updateWorkspace(workspaceID, func(workspace *app.Workspace) error {
+		position := slices.IndexFunc(workspace.Mods, func(mod app.Mod) bool { return mod.ID == modID })
+		switch {
+		case position < 0:
+			return fmt.Errorf("the workspace has no mod %s", modID)
+		case row.IsWorkshopFolder(workspace.Mods[position].Dir):
+			return errors.New("steam's copy of a Workshop mod is always an external mod")
+		}
+		workspace.Mods[position].External = external
 		return nil
 	})
 }

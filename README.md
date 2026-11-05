@@ -15,7 +15,8 @@ your events, a health check of your load order, the wiki's patch notes and Works
 
 Get the latest zip from [Releases](https://github.com/idodavis/paradox-modding-tools/releases):
 `paradox-modding-tools-windows-amd64.zip` or `paradox-modding-tools-linux-amd64.zip`. Each release has a
-`SHA256SUMS` file to check the zip against.
+`SHA256SUMS` file to check the zip against. Each zip is also attested as built by this repository's workflow; with the
+[GitHub CLI](https://cli.github.com/), `gh attestation verify <zip> --repo idodavis/paradox-modding-tools` checks it.
 
 ## Getting started
 
@@ -49,7 +50,7 @@ The Steam Deck, Flatpak and AppImage are not supported, and neither is macOS.
 
 ## Troubleshooting
 
-- **Report a bug.** Open Help in the status bar and press **Copy diagnostics**: your version, your system, your
+- **Report a bug.** Open Help (the ? in the top bar, or F1) and press **Copy diagnostics**: your version, your system, your
   installs and the end of PMT's log. Paste them into a bug report.
 - **The log** is `pmt.log`, in `%LocalAppData%\paradox-modding-tools` on Windows and in
   `~/.cache/paradox-modding-tools` on Linux.
@@ -83,6 +84,9 @@ it, which you can delete if you no longer want it.
 - Questions and ideas: [Discussions](https://github.com/idodavis/paradox-modding-tools/discussions).
 - Bugs and feature requests: [the issue forms](https://github.com/idodavis/paradox-modding-tools/issues/new/choose).
 - The author on Discord: [discord.com/users/168438474905616386](https://discord.com/users/168438474905616386).
+- A security problem: report it privately, as [SECURITY.md](SECURITY.md) says.
+
+Everyone taking part follows the [code of conduct](CODE_OF_CONDUCT.md).
 
 Building PMT from source is in [CONTRIBUTING.md](CONTRIBUTING.md), and how it is made is in
 [ARCHITECTURE.md](ARCHITECTURE.md).

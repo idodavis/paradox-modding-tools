@@ -114,6 +114,10 @@ export const languagesQuery = defineQueryOptions((installId: string) => ({
   key: [...keys.installs, installId, "languages"],
   query: () => workspace.ListLanguages(installId),
 }));
+export const workshopModsQuery = defineQueryOptions((installId: string) => ({
+  key: [...keys.installs, installId, "workshop"],
+  query: () => workspace.ListWorkshopMods(installId),
+}));
 export const fileQuery = defineQueryOptions((path: string) => ({
   key: keys.file(path),
   query: () => workspace.Read(path),

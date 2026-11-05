@@ -1,0 +1,9 @@
+# Sorts a release's generated notes by the pull requests' labels.
+changelog:
+  categories:
+    - title: Features
+      labels: [enhancement]
+    - title: Fixes
+      labels: [bug]
+    - title: Other
+      labels: ["*"]

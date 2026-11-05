@@ -2,6 +2,7 @@
 <script setup lang="ts">
 import { computed, shallowRef, useTemplateRef } from "vue";
 import { useMutation, useQuery } from "@pinia/colada";
+import { createReusableTemplate } from "@vueuse/core";
 import { useSortable } from "@vueuse/integrations/useSortable";
 import type { StepperItem } from "@nuxt/ui";
 
@@ -12,8 +13,13 @@ import FileSelector from "../../ui/FileSelector.vue";
 import InstallPicker from "../../ui/InstallPicker.vue";
 import SettingsSection from "../../ui/SettingsSection.vue";
 import StatusFacts from "../../ui/StatusFacts.vue";
+import WorkshopPicker from "../../ui/WorkshopPicker.vue";
+
+/** A WizardMod is a mod folder to add, or a new mod to create when it has no folder, in one of the two lists. */
+type WizardMod = { id: string; dir: string; title: string; external: boolean };
 
 const STEPS = ["Game", "Install", "Mods", "Details"];
+const LIST = "flex flex-col divide-y divide-default rounded-lg border border-default bg-muted";
 
 // A game named by the route starts the wizard at its install.
 const { game: routeGame = "" } = defineProps<{ game?: string }>();
@@ -23,7 +29,10 @@ const step = shallowRef(routeGame ? 1 : 0);
 const selectedGame = shallowRef(routeGame);
 const selectedInstall = shallowRef("");
 const newMod = shallowRef("");
-const mods = shallowRef<{ id: string; dir: string; title: string }[]>([]);
+const mods = shallowRef<WizardMod[]>([]);
+const externals = shallowRef<WizardMod[]>([]);
+const picking = shallowRef(false);
+const [DefineRow, Row] = createReusableTemplate<{ mod: WizardMod; index: number }>();
 const title = shallowRef("");
 const language = shallowRef<string>();
 
@@ -50,34 +59,44 @@ const steps = computed<StepperItem[]>(() =>
     disabled: index > 1 && !installId.value,
   })),
 );
+/** The folders of the mods in both lists. */
+const listed = computed(() => [...mods.value, ...externals.value].map((mod) => mod.dir));
 // One entry per step, in order. The mods step asks for nothing.
 const blocked = computed(() => [!gameId.value, !installId.value, false, !title.value.trim()][step.value]);
 
-useSortable(useTemplateRef<HTMLElement>("list"), mods, { handle: ".mod-handle", animation: 150, watchElement: true });
+const SORTING = { handle: ".mod-handle", animation: 150, watchElement: true };
+useSortable(useTemplateRef<HTMLElement>("list"), mods, SORTING);
+useSortable(useTemplateRef<HTMLElement>("externalList"), externals, SORTING);
 
 const { mutate: create, isLoading: creating } = useMutation({
   mutation: () =>
-    store.create({ name: title.value.trim(), install: installId.value, language: language.value ?? "" }, mods.value, {
-      name: "workspace-ide",
-    }),
+    store.create(
+      { name: title.value.trim(), install: installId.value, language: language.value ?? "" },
+      [...mods.value, ...externals.value],
+      { name: "workspace-ide" },
+    ),
 });
 
-/** addFolder adds a mod folder to the load order, unless it is there already. */
-function addFolder(dir: string): void {
-  if (!mods.value.some((mod) => mod.dir === dir))
-    mods.value = [...mods.value, { id: crypto.randomUUID(), dir, title: "" }];
+/** addFolders adds mod folders to the user's mods or to the external mods, leaving out those listed already. */
+function addFolders(dirs: string[], external: boolean): void {
+  const added = dirs
+    .filter((dir) => !listed.value.includes(dir))
+    .map((dir) => ({ id: crypto.randomUUID(), dir, title: "", external }));
+  if (external) externals.value = [...externals.value, ...added];
+  else mods.value = [...mods.value, ...added];
 }
 
 /** addNewMod adds a mod to create, with the typed title, unless it is blank. */
 function addNewMod(): void {
   const text = newMod.value.trim();
   newMod.value = "";
-  if (text) mods.value = [...mods.value, { id: crypto.randomUUID(), dir: "", title: text }];
+  if (text) mods.value = [...mods.value, { id: crypto.randomUUID(), dir: "", title: text, external: false }];
 }
 
 /** removeMod takes a mod out of the load order. */
-function removeMod(mod: { id: string }): void {
+function removeMod(mod: WizardMod): void {
   mods.value = mods.value.filter((other) => other.id !== mod.id);
+  externals.value = externals.value.filter((other) => other.id !== mod.id);
 }
 
 /** setStep shows one step of the wizard. It ignores a value that is not a number. */
@@ -141,12 +160,8 @@ function setStep(index: string | number | undefined): void {
               Mods load top to bottom after the game; drag them into order. You can also leave the game files alone.
             </p>
           </div>
-          <div
-            v-if="mods.length"
-            ref="list"
-            class="flex flex-col divide-y divide-default rounded-lg border border-default bg-muted"
-          >
-            <div v-for="(mod, index) in mods" :key="mod.id" class="flex h-10 items-center gap-2.5 ps-2 pe-1.5">
+          <DefineRow v-slot="{ mod, index }">
+            <div class="flex h-10 items-center gap-2.5 ps-2 pe-1.5">
               <UIcon name="i-lucide-grip-vertical" class="mod-handle size-3.5 cursor-grab text-dimmed" />
               <span class="w-3.5 text-center font-mono text-11 text-dimmed">{{ index + 1 }}</span>
               <span class="min-w-0 grow truncate font-mono text-12">{{ mod.dir || mod.title }}</span>
@@ -160,8 +175,11 @@ function setStep(index: string | number | undefined): void {
                 @click="removeMod(mod)"
               />
             </div>
+          </DefineRow>
+          <div v-if="mods.length" ref="list" :class="LIST">
+            <Row v-for="(mod, index) in mods" :key="mod.id" :mod="mod" :index="index" />
           </div>
-          <FileSelector path="" folder :filter="[]" class="self-start" @update:path="addFolder">
+          <FileSelector path="" folder :filter="[]" class="self-start" @update:path="addFolders([$event], false)">
             <template #default="{ browse }">
               <UButton label="Add an existing mod" icon="i-lucide-plus" @click="browse" />
             </template>
@@ -172,6 +190,31 @@ function setStep(index: string | number | undefined): void {
             </UFormField>
             <UButton type="submit" label="Add" icon="i-lucide-plus" :disabled="!newMod.trim()" />
           </form>
+
+          <div class="flex flex-col gap-1 border-t border-default pt-5">
+            <h2 class="text-16">Which mods do you check yours against?</h2>
+            <p class="text-13 text-dimmed">
+              External mods: someone else's, loaded after yours and never published. Steam's copies of your
+              subscriptions are always external.
+            </p>
+          </div>
+          <div v-if="externals.length" ref="externalList" :class="LIST">
+            <Row v-for="(mod, index) in externals" :key="mod.id" :mod="mod" :index="mods.length + index" />
+          </div>
+          <div class="flex gap-2">
+            <FileSelector path="" folder :filter="[]" @update:path="addFolders([$event], true)">
+              <template #default="{ browse }">
+                <UButton label="Add an external mod" icon="i-lucide-plus" @click="browse" />
+              </template>
+            </FileSelector>
+            <UButton label="From the Workshop…" icon="i-lucide-download" @click="picking = true" />
+          </div>
+          <WorkshopPicker
+            v-model:open="picking"
+            :install-id="installId"
+            :taken="listed"
+            @add="addFolders($event, true)"
+          />
         </template>
 
         <template #details>

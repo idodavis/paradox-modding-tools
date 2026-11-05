@@ -95,6 +95,11 @@ A `Mod` is the config's record of a mod with its `Descriptor`, its thumbnail, an
 missing) or a Workshop mod's copy. The descriptor is the mod's own description: CK3's `.mod` file, or Vic3's and EU5's
 `.metadata/metadata.json`. Writing it back keeps the fields PMT does not model.
 
+A mod is the user's own or an external mod: someone else's, which the workspace checks the user's mods against and
+PMT never publishes. `External` is on its record, set by `AddMod` and `SetExternal`; Steam's copy of a Workshop mod
+is always one, whatever its record says, so every page reads the one field. `ListWorkshopMods` lists the mods Steam
+has downloaded for an install's game, from the Workshop folder in each of Steam's libraries, to add as external mods.
+
 - `CreateMod` makes a new mod's skeleton: its folder, the folders the game expects, a descriptor, a launcher file
   where the game needs one, and a localization file with only its header.
 - `ResolveFolder` gives the folder a shell or a coding agent starts in: the mod that holds the active file, else the
@@ -135,6 +140,7 @@ missing) or a Workshop mod's copy. The descriptor is the mod's own description: 
 - **Mod**: one mod of the open workspace: the recorded mod with its descriptor.
 - **Descriptor**: a mod's own description, as its game writes it.
 - **Broken**: a mod whose folder is missing.
+- **External mod**: someone else's mod, which the workspace checks the user's mods against and PMT never publishes.
 - **Watcher**: what watches the mods' folders and reports a burst of changes together.
 - **State**: the open workspace as the frontend sees it.
 - **FileText**: a file's text in its encoding, with its place and the editor's draft.

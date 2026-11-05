@@ -1,4 +1,6 @@
-# Zip Windows/Linux builds on main pushes that change more than Markdown. Tag only after every matrix cell succeeds.
+# Drafts a release on each push to main that changes more than Markdown: the tests first, then the Windows and Linux
+# zips, their SHA256SUMS and attestations. The maintainer writes the notes and publishes the draft. While a draft is
+# open, a later push replaces its zips under the same version.
 name: Build and Release
 
 on:
@@ -9,7 +11,7 @@ on:
   workflow_dispatch:
     inputs:
       version:
-        description: Override version (e.g. v0.5.0). Empty = auto patch-bump, floor v0.4.0.
+        description: Override version (e.g. v0.5.0). Empty = the open draft's, else a patch bump, floor v0.5.0.
         required: false
         default: ""
 
@@ -21,6 +23,9 @@ concurrency:
   cancel-in-progress: false
 
 jobs:
+  test:
+    uses: ./.github/workflows/test.yml
+
   version:
     runs-on: ubuntu-latest
     outputs:
@@ -32,36 +37,37 @@ jobs:
           fetch-depth: 0
       - id: next
         shell: bash
+        env:
+          GH_TOKEN: ${{ github.token }}
         run: |
           set -euo pipefail
           raw="${{ github.event.inputs.version }}"
+          # a draft has no tag until it is published, so an open one keeps its version
+          draft="$(gh release list --repo "${GITHUB_REPOSITORY}" --json tagName,isDraft \
+            --jq '[.[] | select(.isDraft)][0].tagName // ""')"
           if [[ -n "${raw}" ]]; then
             ver="${raw#v}"
-            echo "version=${ver}" >> "$GITHUB_OUTPUT"
-            echo "tag=v${ver}" >> "$GITHUB_OUTPUT"
-            exit 0
-          fi
-          git fetch --tags --force
-          latest="$(git tag -l 'v[0-9]*' --sort=-v:refname | head -n1 || true)"
-          floor="0.4.0"
-          if [[ -z "${latest}" ]]; then
-            next="${floor}"
+          elif [[ -n "${draft}" ]]; then
+            ver="${draft#v}"
           else
-            ver="${latest#v}"
-            IFS=. read -r maj min pat _ <<< "${ver}."
-            maj="${maj:-0}"; min="${min:-0}"; pat="${pat:-0}"
-            if [[ "${maj}" -eq 0 && "${min}" -lt 4 ]]; then
-              next="${floor}"
-            else
-              next="${maj}.${min}.$((pat + 1))"
+            git fetch --tags --force
+            latest="$(git tag -l 'v[0-9]*' --sort=-v:refname | head -n1 || true)"
+            floor="0.5.0"
+            ver="${floor}"
+            if [[ -n "${latest}" ]]; then
+              IFS=. read -r maj min pat _ <<< "${latest#v}."
+              maj="${maj:-0}"; min="${min:-0}"; pat="${pat:-0}"
+              if [[ "${maj}" -gt 0 || "${min}" -ge 5 ]]; then
+                ver="${maj}.${min}.$((pat + 1))"
+              fi
             fi
           fi
-          echo "version=${next}" >> "$GITHUB_OUTPUT"
-          echo "tag=v${next}" >> "$GITHUB_OUTPUT"
-          echo "next ${next} (latest tag: ${latest:-none})"
+          echo "version=${ver}" >> "$GITHUB_OUTPUT"
+          echo "tag=v${ver}" >> "$GITHUB_OUTPUT"
+          echo "next ${ver} (open draft: ${draft:-none})"
 
   build:
-    needs: version
+    needs: [test, version]
     runs-on: ubuntu-latest
     environment: Production
     strategy:
@@ -83,7 +89,7 @@ jobs:
 
       - uses: actions/setup-go@v7
         with:
-          go-version: "1.27.3"
+          go-version-file: go.mod
 
       - uses: actions/setup-node@v7
         with:
@@ -97,9 +103,10 @@ jobs:
           sudo apt-get update
           sudo apt-get install -y build-essential pkg-config libgtk-4-dev libwebkitgtk-6.0-dev
 
-      - name: Install Wails CLI
+      - name: Install the Wails CLI and go-licenses
         run: |
           go install "github.com/wailsapp/wails/v3/cmd/wails3@$(go list -m -f '{{.Version}}' github.com/wailsapp/wails/v3)"
+          go install github.com/google/go-licenses@latest
           echo "$(go env GOPATH)/bin" >> "$GITHUB_PATH"
 
       - name: Stamp the version into the build assets
@@ -113,27 +120,40 @@ jobs:
             ARCH="${{ matrix.goarch }}"
           test -f "bin/${{ matrix.binary }}"
 
-      - name: Zip binary + LICENSE + README.txt
+      # the Go modules the binary links for its system, and the frontend's production packages
+      - name: Third-party notices
+        run: |
+          set -euo pipefail
+          {
+            echo 'Paradox Modding Tools includes the following third-party software.'
+            echo
+            echo '== Go modules (module, license page, license) =='
+            GOOS="${{ matrix.goos }}" go-licenses report . --ignore paradox-modding-tools
+            echo
+            echo '== Frontend packages =='
+            (cd frontend && npx --yes license-checker-rseidelsohn --production --plainVertical)
+          } > THIRD_PARTY_NOTICES.txt
+
+      - name: Zip the binary, LICENSE, NOTICE, README.txt and the notices
         run: |
           set -euo pipefail
           stage="$(mktemp -d)"
-          cp "bin/${{ matrix.binary }}" "${stage}/"
-          cp LICENSE "${stage}/"
+          cp "bin/${{ matrix.binary }}" LICENSE NOTICE THIRD_PARTY_NOTICES.txt "${stage}/"
           printf '%s\n' \
             'Paradox Modding Tools' \
             'https://github.com/idodavis/paradox-modding-tools' \
             '' \
-            'Extract this folder and run the binary.' \
-            'Windows needs WebView2 (Windows 11 usually has it).' \
-            'Linux needs GTK 4 and WebKitGTK 6 runtime libraries.' \
+            'Extract this folder somewhere you can write to and run the binary.' \
+            'Windows needs WebView2 (Windows 11 has it).' \
+            'Linux needs the GTK 4 and WebKitGTK 6 runtime libraries.' \
             '' \
-            'Steam Workshop publish requires the Steam client, signed in as' \
-            'the Workshop owner, with the game installed.' \
+            'Publishing to the Steam Workshop needs the Steam client running,' \
+            'signed in as the Workshop item owner, with the game installed.' \
             '' \
-            'License: GPL-3.0-or-later (see LICENSE).' \
+            'License: Apache-2.0 (see LICENSE and NOTICE).' \
             > "${stage}/README.txt"
           (cd "${stage}" && zip -9 "${GITHUB_WORKSPACE}/${{ matrix.zip }}" \
-            "${{ matrix.binary }}" LICENSE README.txt)
+            "${{ matrix.binary }}" LICENSE NOTICE README.txt THIRD_PARTY_NOTICES.txt)
 
       - uses: actions/upload-artifact@v7
         with:
@@ -146,6 +166,8 @@ jobs:
     runs-on: ubuntu-latest
     permissions:
       contents: write
+      id-token: write
+      attestations: write
     steps:
       - uses: actions/download-artifact@v8
         with:
@@ -156,6 +178,13 @@ jobs:
         working-directory: dist
         run: sha256sum paradox-modding-tools-*.zip > SHA256SUMS
 
+      - uses: actions/attest-build-provenance@v3
+        with:
+          subject-path: |
+            dist/*.zip
+            dist/SHA256SUMS
+
+      # a draft: only the repository's writers see it, so the updater offers nothing until it is published
       - uses: softprops/action-gh-release@v3
         env:
           GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
@@ -164,8 +193,9 @@ jobs:
           name: ${{ needs.version.outputs.tag }}
           target_commitish: ${{ github.sha }}
           generate_release_notes: true
+          draft: true
           prerelease: false
-          make_latest: true
+          overwrite_files: true
           files: |
             dist/*.zip
             dist/SHA256SUMS

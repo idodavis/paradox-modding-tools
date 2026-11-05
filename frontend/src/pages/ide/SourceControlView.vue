@@ -51,7 +51,7 @@ const workspace = useWorkspaceStore();
 const [DefineLane, Lane] = createReusableTemplate<{ entry: Entry }>();
 
 const bare = computed(() =>
-  workspace.listMods().filter((mod) => !mod.broken && !git.repositories.some((repo) => repo.mods?.includes(mod.id))),
+  workspace.listWritableMods().filter((mod) => !git.repositories.some((repo) => repo.mods?.includes(mod.id))),
 );
 // The repository the Graph shows: the one picked, else the active file's, else the first.
 const dir = computed(

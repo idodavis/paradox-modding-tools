@@ -204,7 +204,7 @@ func removeEntries(dir, base string) error {
 // readMod returns a recorded mod with its descriptor and thumbnail, read by the given game's rule. A mod whose folder
 // is missing is broken, and one whose descriptor cannot be read has an empty one.
 func readMod(row *game.Game, record app.Mod) Mod {
-	mod := Mod{Mod: record, Workshop: row.IsWorkshopFolder(record.Dir)}
+	mod := Mod{Workshop: row.IsWorkshopFolder(record.Dir)}.withRecord(record)
 	if files.IsFolder(record.Dir) {
 		mod.Descriptor, _ = ReadDescriptor(row, record.Dir)
 		mod.Thumbnail = findThumbnail(row, record.Dir, mod.Descriptor.Thumbnail)

@@ -49,7 +49,7 @@ const workspace = useWorkspaceStore();
 const guiding = shallowRef(false);
 
 const row = computed(() => workspace.active());
-const mods = computed(() => workspace.listWritableMods());
+const mods = computed(() => workspace.listOwnMods());
 const roots = computed(() => [...new Set(mods.value.flatMap((mod) => git.findRoot({ origin: mod.id }) || []))]);
 
 const { data: state } = useQuery(stateQuery);

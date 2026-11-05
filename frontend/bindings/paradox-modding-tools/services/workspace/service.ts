@@ -40,11 +40,12 @@ export function AddInstall(gameID: string, path: string, name: string, version: 
 }
 
 /**
- * AddMod adds a mod folder to a workspace and gives the mod a color slot. It returns an error if the workspace is not
+ * AddMod adds a mod folder to a workspace as one of the user's mods or an external mod, and gives the mod a color slot.
+ * Steam's copy of a Workshop mod is added as an external mod either way. It returns an error if the workspace is not
  * recorded, the folder cannot be a mod of its game (see CheckModFolder), or the workspace has the mod already.
  */
-export function AddMod(workspaceID: string, dir: string): $CancellablePromise<$models.Mod> {
-    return $Call.ByID(4245476076, workspaceID, dir);
+export function AddMod(workspaceID: string, dir: string, external: boolean): $CancellablePromise<$models.Mod> {
+    return $Call.ByID(4245476076, workspaceID, dir, external);
 }
 
 /**
@@ -203,6 +204,15 @@ export function ListRoots(): $CancellablePromise<$models.Place[] | null> {
 }
 
 /**
+ * ListWorkshopMods returns, as external mods, the Workshop mods Steam has downloaded for an install's game, sorted by
+ * name, each with its descriptor and thumbnail; a mod's id is "" until it is added. It returns an error if the install
+ * is not recorded.
+ */
+export function ListWorkshopMods(installID: string): $CancellablePromise<$models.Mod[] | null> {
+    return $Call.ByID(3154882433, installID);
+}
+
+/**
  * ListWorkspaces returns every recorded workspace with its install, its game and its mods, each mod's descriptor read
  * from disk.
  */
@@ -220,7 +230,7 @@ export function Locate(path: string): $CancellablePromise<$models.Place> {
 
 /**
  * Open opens a workspace in the background, closing the open one first. It sends workspace:opened or workspace:failed
- * at the end.
+ * at the end, and workspace:opened at once for the workspace that is open already.
  */
 export function Open(workspaceID: string): $CancellablePromise<void> {
     return $Call.ByID(2144133549, workspaceID);
@@ -311,6 +321,14 @@ export function Restore(trashed: string, path: string): $CancellablePromise<void
  */
 export function RevertHunks(path: string, edits: ($models.Hunk[] | null)[] | null, isNew: boolean): $CancellablePromise<void> {
     return $Call.ByID(1562964112, path, edits, isNew);
+}
+
+/**
+ * SetExternal makes a mod of a workspace an external mod, or one of the user's own. It returns an error if the
+ * workspace is not recorded, has no such mod, or the mod is Steam's copy of a Workshop mod, which is always external.
+ */
+export function SetExternal(workspaceID: string, modID: string, external: boolean): $CancellablePromise<void> {
+    return $Call.ByID(3985825244, workspaceID, modID, external);
 }
 
 /**

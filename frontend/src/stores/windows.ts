@@ -63,7 +63,15 @@ export function describeWindow(name: WindowName): string {
   if (kind === "page") return isPage(rest) ? PAGES[rest].title : rest;
   if (kind === "editor") return `Editor ${rest}`;
   if (kind === "files") return rest.split(/[\\/]/).at(-1) ?? rest;
-  return { main: "Main window", game: "Game files", terminal: "Terminal", wiki: "Wiki", agent: "Agent" }[kind] ?? name;
+  const names: Record<string, string> = {
+    main: "Main window",
+    game: "Game files",
+    external: "External mods",
+    terminal: "Terminal",
+    wiki: "Wiki",
+    agent: "Agent",
+  };
+  return names[kind] ?? name;
 }
 
 export const useWindowsStore = defineStore("windows", () => {

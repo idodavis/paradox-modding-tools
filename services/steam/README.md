@@ -61,6 +61,8 @@ item's details first and makes the update a diff against them. The compare lists
   the cache. One with transparency stays a PNG, any other becomes a JPEG, and both are scaled down until they fit. A GIF
   that big is refused, since shrinking would lose its animation.
 - **A new item's id** is linked to the listing as soon as Steam makes it, even if the upload then fails.
+- **Someone else's item** is refused. `Details.Owned` says whether the signed-in Steam user owns the item; a
+  contributor the owner added counts as not the owner.
 - **Canceling** ends the second copy, and the error says Steam may already have applied part of the upload.
 
 `DescribeSteam` says why Steam cannot take an upload now, or nothing if it can.

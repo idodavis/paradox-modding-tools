@@ -1,0 +1,77 @@
+# Labels each new or edited issue by its form's area, game and system, and closes an issue that waits on its author
+# for three weeks.
+name: Triage
+
+on:
+  issues:
+    types: [opened, edited]
+  schedule:
+    - cron: "0 6 * * *"
+
+permissions:
+  issues: write
+
+jobs:
+  label:
+    if: github.event_name == 'issues'
+    runs-on: ubuntu-latest
+    steps:
+      # a form writes each answer under its question as "### question", so the labels come from the answers of the
+      # area, game and system questions
+      - uses: actions/github-script@v9
+        with:
+          script: |
+            const QUESTIONS = ["Which part of the app was affected?", "Related area", "Game", "Operating system"];
+            const LABELS = {
+              "Library": "area: library",
+              "New workspace": "area: new workspace",
+              "IDE": "area: ide",
+              "Source control": "area: ide",
+              "Wiki pane": "area: ide",
+              "Terminal": "area: ide",
+              "Assistant": "area: ide",
+              "Save as DDS": "area: ide",
+              "Language / scan / cache": "area: ide",
+              "Event Graph": "area: event graph",
+              "Health": "area: health",
+              "Patch Notes": "area: patch notes",
+              "Publish / Steam Workshop": "area: publish",
+              "Settings": "area: settings",
+              "Appearance / themes": "area: settings",
+              "Crusader Kings III": "game: ck3",
+              "Victoria 3": "game: vic3",
+              "Europa Universalis V": "game: eu5",
+              "Windows 10": "os: windows",
+              "Windows 11": "os: windows",
+              "Linux": "os: linux",
+            };
+            const labels = new Set();
+            for (const section of (context.payload.issue.body ?? "").split(/^### /m)) {
+              const [question, ...answer] = section.split("\n");
+              const label = LABELS[answer.join("\n").trim()];
+              if (QUESTIONS.includes(question.trim()) && label) labels.add(label);
+            }
+            if (labels.size) {
+              await github.rest.issues.addLabels({ ...context.repo, issue_number: context.issue.number, labels: [...labels] });
+            }
+
+  stale:
+    if: github.event_name == 'schedule'
+    runs-on: ubuntu-latest
+    # stale keeps where it got to in the Actions cache
+    permissions:
+      actions: write
+      issues: write
+    steps:
+      # only issues that wait on their author: a warning after 14 days, closed 7 days later
+      - uses: actions/stale@v11
+        with:
+          only-labels: needs-info
+          days-before-stale: 14
+          days-before-close: 7
+          days-before-pr-stale: -1
+          days-before-pr-close: -1
+          stale-issue-message: >-
+            This issue is waiting on more information. It closes in 7 days unless someone adds it; a comment
+            reopens it any time.
+          close-issue-message: Closed for lack of the information asked for. Comment to reopen it.

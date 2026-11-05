@@ -222,13 +222,13 @@ var Codes = []Code{
 		Label:   "Override of the game",
 		Message: "{name}: a mod and the game both define this {database}, and the game keeps {kept}.",
 		Advice:  "Check that the copy the game keeps is the one you want."},
-	{ID: "removed-names", Question: QuestionCompatibility, Level: LevelCritical, Topic: "definitions",
-		Label: "Replaced file removes names in use",
-		Message: "{mod} replaces the game's copy of this file with its own. Its copy leaves out {removed} of the " +
-			"{total} {definitions} the game's copy defines. {count} of them are defined nowhere else and still used, " +
-			"{uses} times in all, and each of those uses now finds nothing.",
-		Advice: "Put the missing definitions back into your copy, or stop using them."},
-	{ID: "unused-copy", Question: QuestionCompatibility, Level: LevelCritical, Topic: "definitions",
+	{ID: "removed-names", Question: QuestionHealth, Level: LevelCritical, Topic: "definitions",
+		Label: "Replaced file leaves out entries in use",
+		Message: "{mod} replaces the game's copy of this file with its own, which leaves out {removed} of the " +
+			"{total} {definitions} the game's copy defines. Still used and defined nowhere else: {count}. Each of " +
+			"their uses, {uses} in all, now finds nothing.",
+		Advice: "Put the missing entries back into your copy, or stop using them."},
+	{ID: "unused-copy", Question: QuestionHealth, Level: LevelCritical, Topic: "definitions",
 		Label:   "Copy never used",
 		Message: "{beaten}'s copy of {name} is never used: the game keeps its own.",
 		Advice:  "Delete the copy, or rename it if it should be a new entry."},

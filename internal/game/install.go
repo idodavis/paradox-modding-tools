@@ -13,6 +13,8 @@ import (
 	"strings"
 	"time"
 
+	"github.com/samber/lo"
+
 	"paradox-modding-tools/internal/files"
 )
 
@@ -75,9 +77,29 @@ func (game *Game) FindInstalls() []DetectedInstall {
 
 // IsWorkshopFolder reports whether a folder is under the game's Steam Workshop folder in one of Steam's libraries.
 func (game *Game) IsWorkshopFolder(dir string) bool {
+	return slices.ContainsFunc(game.listWorkshopRoots(), func(root string) bool { return files.IsUnder(root, dir) })
+}
+
+// ListWorkshopFolders returns the folder of each Workshop item Steam has downloaded for the game, in each of Steam's
+// libraries. It returns none if Steam has none.
+func (game *Game) ListWorkshopFolders() []string {
+	var folders []string
+	for _, root := range game.listWorkshopRoots() {
+		entries, _ := os.ReadDir(root)
+		for _, entry := range entries {
+			if entry.IsDir() {
+				folders = append(folders, filepath.Join(root, entry.Name()))
+			}
+		}
+	}
+	return folders
+}
+
+// listWorkshopRoots returns the game's Steam Workshop folder in each of Steam's libraries.
+func (game *Game) listWorkshopRoots() []string {
 	appID := strconv.Itoa(game.SteamAppID)
-	return slices.ContainsFunc(findSteamLibraries(), func(library string) bool {
-		return files.IsUnder(filepath.Join(library, "steamapps", "workshop", "content", appID), dir)
+	return lo.Map(findSteamLibraries(), func(library string, _ int) string {
+		return filepath.Join(library, "steamapps", "workshop", "content", appID)
 	})
 }
 

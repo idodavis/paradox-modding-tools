@@ -44,6 +44,7 @@ type Details struct {
 	Description  string    `json:"description"`
 	UpdatedAt    time.Time `json:"updatedAt"`
 	Visibility   string    `json:"visibility"`
+	Owned        bool      `json:"owned"` // the signed-in Steam user owns the item
 	Tags         []string  `json:"tags"`
 	Previews     []Preview `json:"previews"`
 	DLC          []string  `json:"dlc"`          // nil when Steam's library cannot read them

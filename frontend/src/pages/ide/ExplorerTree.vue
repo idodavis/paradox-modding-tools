@@ -12,6 +12,7 @@ import {
   preparePresortedFileTreeInput,
   type FileTreeDensityKeyword,
   type FileTreeDirectoryHandle,
+  type FileTreeRowDecoration,
   type GitStatus,
   type GitStatusEntry,
 } from "@pierre/trees";
@@ -22,7 +23,16 @@ import * as lsp from "@services/lsp/service";
 import * as service from "@services/workspace/service";
 import type { FileChange, Place } from "@services/workspace/models";
 
-import { canCopyToMod, canSaveAsDds, COMMANDS, compare, copyToMod, findCommand, trashFile } from "../../app/commands";
+import {
+  canCopyToMod,
+  canSaveAsDds,
+  COMMANDS,
+  compare,
+  copyToMod,
+  findCommand,
+  removeMod,
+  trashFile,
+} from "../../app/commands";
 import { fileSearchQuery, folderQuery, gitStatusQuery, loadQuery, placeQuery, workspacesQuery } from "../../queries";
 import { tabId, useEditorStore } from "../../stores/editor";
 import { useGitStore } from "../../stores/git";
@@ -49,20 +59,33 @@ const GIT_MARKS: Record<string, GitStatus> = {
 };
 /** SYMBOLS maps each file icon to its symbol id in the tree's sprite. */
 const SYMBOLS = new Map(listIcons().map((icon, index) => [icon, `pmt-${index}`]));
-/** SPRITE is the SVG sheet of the file icons, one symbol for each. */
+/** PACKAGE_PATHS and LOCK_PATHS draw the package of an external mod and the lock of a read-only root. */
+const PACKAGE_PATHS = `<path d="m7.5 4.27 9 5.15"/><path d="M21 8a2 2 0 0 0-1-1.73l-7-4a2 2 0 0 0-2 0l-7 4A2 2 0 0 0 3 8v8a2 2 0 0 0 1 1.73l7 4a2 2 0 0 0 2 0l7-4A2 2 0 0 0 21 16Z"/><path d="m3.3 7 8.7 5 8.7-5"/><path d="M12 22V12"/>`;
+const LOCK_PATHS = `<rect width="18" height="11" x="3" y="11" rx="2"/><path d="M7 11V7a5 5 0 0 1 10 0v4"/>`;
+/** STROKE is how the root marks are drawn: lines in the row's text color. */
+const STROKE = `fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"`;
+/** EXTERNAL and EXTERNAL_READ_ONLY are the root marks of an external mod, and of Steam's copy, which is also locked. */
+const EXTERNAL = { name: "pmt-external", width: 16, height: 16, viewBox: "0 0 16 16" };
+const EXTERNAL_READ_ONLY = { name: "pmt-external-read-only", width: 32, height: 16, viewBox: "0 0 32 16" };
+/** SPRITE is the SVG sheet of the file icons, one symbol for each, and of the root marks. */
 const SPRITE = `<svg xmlns="http://www.w3.org/2000/svg" width="0" height="0" style="position: absolute">${[...SYMBOLS]
   .map(
     ([icon, id]) =>
       `<symbol id="${id}" viewBox="0 0 800 800"><image href="${icon}" width="800" height="800"/></symbol>`,
   )
-  .join("")}</svg>`;
+  .join(
+    "",
+  )}<symbol id="${EXTERNAL.name}" viewBox="0 0 24 24" ${STROKE}>${PACKAGE_PATHS}</symbol><symbol id="${EXTERNAL_READ_ONLY.name}" viewBox="0 0 48 24" ${STROKE}>${PACKAGE_PATHS}<g transform="translate(24 0)">${LOCK_PATHS}</g></symbol></svg>`;
 /** FILTER_HITS is how many files the filter asks the file search for. */
 const FILTER_HITS = 500;
 /** MENU_CONTENT is the context menu's content options, one object so the menu is not drawn again on each render. */
 const MENU_CONTENT = { onCloseAutoFocus: resume };
 
-/** A Move is one rename or move done in the explorer, with the path on disk before it and the path after it. */
-type Move = { oldPath: string; newPath: string };
+/**
+ * A Move is one rename, move or delete done in the explorer, with the path on disk before it and the path after it.
+ * A delete's path after it is in PMT's trash, and `isTrash` marks it.
+ */
+type Move = { oldPath: string; newPath: string; isTrash?: true };
 
 const editor = useEditorStore();
 const git = useGitStore();
@@ -148,16 +171,7 @@ function mount(): void {
     density: settings.value("ide.density") as FileTreeDensityKeyword,
     stickyFolders: settings.isOn("ide.stickyFolders"),
     unsafeCSS: buildStyles(),
-    renderRowDecoration: ({ item }) =>
-      isRoot(item.path) && !isWritable(item.path)
-        ? {
-            icon: "file-tree-icon-lock",
-            title:
-              roots[rootIndex(item.path)]?.origin === VANILLA
-                ? "Read only"
-                : "Read only: Steam's copy of a Workshop mod",
-          }
-        : null,
+    renderRowDecoration: ({ item }) => (isRoot(item.path) ? markRoot(roots[rootIndex(item.path)]) : null),
     onSelectionChange: select,
     renaming: writable.value && {
       canRename: ({ path, isFolder }) => {
@@ -198,6 +212,17 @@ function buildStyles(): string {
       return `[data-item-path="${row}"] { font-weight: 600; ${text} border-radius: 0; box-shadow: inset 3px 0 0 ${color}; }`;
     })
     .join("\n");
+}
+
+/** markRoot returns the mark at the end of a root's row: a package for an external mod, a lock for read-only files. */
+function markRoot(root: Place | undefined): FileTreeRowDecoration | null {
+  if (!root) return null;
+  if (!workspace.isExternal(root.origin)) {
+    return root.readOnly ? { icon: "file-tree-icon-lock", title: "Read only" } : null;
+  }
+  return root.readOnly
+    ? { icon: EXTERNAL_READ_ONLY, title: "External mod, read only: Steam's copy of a Workshop mod" }
+    : { icon: EXTERNAL, title: "External mod" };
 }
 
 /** rootIndex returns the index of the root a row is under, or -1 for a row under none. */
@@ -434,24 +459,36 @@ const { mutate: rename } = useMutation({
   onSuccess: (move, { source }) => {
     drafts.get(source)?.stop();
     drafts.delete(source);
-    history.done.push(move);
-    history.undone = [];
+    record(move);
     forget(source);
   },
   onError: (_error, { source, destination }) => view.value?.move(destination, source),
 });
 
+/** record adds a move to the history and drops the moves undone before it. */
+function record(move: Move): void {
+  history.done.push(move);
+  history.undone = [];
+}
+
+// Undoing a delete brings the file back from the trash, and redoing it deletes it again. The watcher updates the tree.
 const { mutate: replay } = useMutation({
   mutation: async (isUndo: boolean) => {
     const [stack, opposite] = isUndo ? [history.done, history.undone] : [history.undone, history.done];
     const move = stack.pop();
     if (!move) return;
-    await (isUndo ? editor.rename(move.newPath, move.oldPath) : editor.rename(move.oldPath, move.newPath));
+    if (!move.isTrash) {
+      await (isUndo ? editor.rename(move.newPath, move.oldPath) : editor.rename(move.oldPath, move.newPath));
+    } else if (isUndo) {
+      await service.Restore(move.newPath, move.oldPath);
+    } else {
+      move.newPath = await service.Delete(move.oldPath);
+    }
     opposite.push(move);
   },
 });
 
-/** step moves through the rename history: back for Ctrl Z, forward for Ctrl Y or Ctrl Shift Z. */
+/** step moves through the explorer's history: back for Ctrl Z, forward for Ctrl Y or Ctrl Shift Z. */
 function step(event: KeyboardEvent): void {
   const key = event.key.toLowerCase();
   const isTyping = event
@@ -492,21 +529,29 @@ const { mutate: create } = useMutation({
   },
 });
 
-/** remove moves a row to PMT's trash once the user agrees. A new row that never got a name is deleted unasked. */
+/**
+ * remove moves a row to PMT's trash once the user agrees, and Ctrl Z brings it back. A new row that never got a name
+ * is deleted unasked, and a mod's own folder is not in the history, since the mod left the workspace with it.
+ */
 const { mutate: remove } = useMutation({
   mutation: async (row: string) => {
     const path = findPath(row);
-    if (!drafts.has(row)) return trashFile(path, path, isRoot(row) ? " The mod also leaves this workspace." : "");
-    await service.Delete(path);
-    return true;
+    if (drafts.has(row)) return service.Delete(path);
+    return trashFile(path, path, isRoot(row) ? " The mod also leaves this workspace." : "");
   },
-  onSuccess: (deleted, row) => {
+  onSuccess: (trashed, row) => {
+    if (trashed && !drafts.has(row) && !isRoot(row))
+      record({ oldPath: findPath(row), newPath: trashed, isTrash: true });
     drafts.get(row)?.stop();
     drafts.delete(row);
-    if (!deleted) return;
+    if (!trashed) return;
     if (view.value?.getItem(row)) view.value.remove(row, { recursive: true });
     forget(row);
   },
+});
+
+const { mutate: leaveWorkspace } = useMutation({
+  mutation: (root: Place) => removeMod(workspace.activeId(), root.origin, workspace.originName(root.origin)),
 });
 
 // What each command of the command table does in the context menu. `writes` marks one that changes files, `shows`
@@ -533,7 +578,7 @@ const ACTIONS: Record<
   "file.copyToMod": { writes: false, shows: (row) => canCopyToMod(places.get(row)), run: onPlace(copyToMod) },
   "image.saveDds": {
     writes: true,
-    shows: (row) => (row.endsWith("/") ? holdsPictures(row) : canSaveAsDds(places.get(row))),
+    shows: (row) => !isRoot(row) && (row.endsWith("/") ? holdsPictures(row) : canSaveAsDds(places.get(row))),
     label: (row) => (row.endsWith("/") ? "Save its pictures as DDS…" : undefined),
     run: onPlace((place) => void saveDds.open({ place })),
   },
@@ -590,6 +635,16 @@ function buildMenu(row: string): ContextMenuItem[][] {
           },
         ]
       : [];
+  const leave: ContextMenuItem[] =
+    isRoot(row) && place && place.origin !== VANILLA
+      ? [
+          {
+            label: "Remove from workspace",
+            icon: "i-lucide-circle-minus",
+            onSelect: () => leaveWorkspace(place),
+          },
+        ]
+      : [];
   const selected = findCommand("compare.selected");
   const comparisons = file
     ? [
@@ -602,7 +657,7 @@ function buildMenu(row: string): ContextMenuItem[][] {
         ...(selected?.when() ? [{ label: "Compare the two selected", onSelect: selected.onSelect }] : []),
       ]
     : [];
-  return [buildOpenItems(file, dir), readme, coat, init, commands, comparisons].filter((group) => group.length);
+  return [buildOpenItems(file, dir), readme, coat, init, commands, leave, comparisons].filter((group) => group.length);
 }
 
 /** buildOpenItems builds the menu items that open a row elsewhere: beside the editor, in a window or in Visual. */

@@ -95,14 +95,19 @@ func listPathFindings(ws *workspace.Session, mods *index.Index, path string) []F
 	facts := lsp.DescribeReference(schema.Reference{Database: game.File, Name: installed[0].Place.Rel})
 	facts["kept"] = lo.Ternary(kept, "the mod's", "its own")
 	var uses []Use
+	var users []string
 	if kept {
-		uses = listRemovedUses(ws, mods, installed[0].Place.Path)
+		uses, users = listRemovedUses(ws, mods, installed[0].Place.Path)
 	}
 	override := makeFinding(mods, lo.Ternary(len(uses) > 0, "removed-names", "override"), facts,
 		slices.Concat(installed[:1], shipped))
 	override.Removed = listRemoved(override.Sites)
 	if len(uses) > 0 {
 		describeRemoved(ws, mods, &override, uses)
+	}
+	// entries a replaced file leaves out are its mod's own problem, unless another mod uses one
+	if lo.SomeBy(users, func(origin string) bool { return origin != override.Origin && origin != game.OriginVanilla }) {
+		override.Question = lsp.QuestionCompatibility
 	}
 	return append(findings, override)
 }

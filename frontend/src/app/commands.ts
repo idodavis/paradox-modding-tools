@@ -459,6 +459,14 @@ export const COMMANDS: readonly Command[] = [
     onSelect: () => commandBus.emit("settings.open"),
   },
   {
+    id: "help.open",
+    label: "Help",
+    icon: "i-lucide-circle-help",
+    kbds: ["F1"],
+    when: () => true,
+    onSelect: () => commandBus.emit("help.open"),
+  },
+  {
     id: "game.launch",
     label: "Launch the game",
     icon: "i-lucide-play",
@@ -671,14 +679,28 @@ export function findGameCopy(place: Place, copies: Place[] | null | undefined): 
   return place.origin !== VANILLA && first?.origin === VANILLA ? first : undefined;
 }
 
-/** trashFile asks whether to move a file or folder to PMT's trash, moves it and offers to bring it back. */
-export async function trashFile(path: string, label: string, note = ""): Promise<boolean> {
+/**
+ * trashFile asks whether to move a file or folder to PMT's trash, moves it and offers to bring it back. It returns
+ * where the file went in the trash, or "" if the user said no.
+ */
+export async function trashFile(path: string, label: string, note = ""): Promise<string> {
   const body = `${label} goes to PMT's trash.${note}`;
-  if (!(await confirm.open({ title: "Delete?", body, confirm: "Delete", destructive: true }))) return false;
+  if (!(await confirm.open({ title: "Delete?", body, confirm: "Delete", destructive: true }))) return "";
   const trashed = await workspaceApi.Delete(path);
   const undo = () => run(() => workspaceApi.Restore(trashed, path));
   toast?.add({ title: "Deleted", description: label, actions: [{ label: "Undo", onClick: undo }] });
-  return true;
+  return trashed;
+}
+
+/** removeMod asks, then takes a mod out of a workspace but not off the disk. The mod is named by the given name. */
+export async function removeMod(workspaceId: string, modId: string, name: string): Promise<void> {
+  const confirmed = await confirm.open({
+    title: `Remove ${name || "this mod"}?`,
+    body: "The mod leaves this workspace. Its folder stays on disk.",
+    confirm: "Remove mod",
+    destructive: true,
+  });
+  if (confirmed) await workspaceApi.RemoveMod(workspaceId, modId);
 }
 
 /** activeModel returns the model of the active tab's file, or null. */

@@ -18,15 +18,15 @@ export const GAMES: readonly { id: string; icon: string }[] = [
   { id: "eu5", icon: eu5Icon },
 ];
 
-/** THEME_FAMILIES holds the theme families, with the note the Appearance page shows under each name. */
-export const THEME_FAMILIES: readonly { id: string; label: string; note: string }[] = [
-  { id: "pmt", label: "PMT", note: "PMT's own" },
-  { id: "catppuccin", label: "Catppuccin", note: "Mocha and Latte" },
-  { id: "one", label: "One", note: "One Dark and One Light" },
-  { id: "pierre", label: "Pierre Soft", note: "Pierre Dark Soft and Pierre Light Soft" },
-  { id: "ck3", label: "Crusader Kings", note: "CK3 workspaces" },
-  { id: "eu5", label: "Europa Universalis", note: "EU5 workspaces" },
-  { id: "vic3", label: "Victoria", note: "Vic3 workspaces" },
+/** THEME_FAMILIES holds the theme families. */
+export const THEME_FAMILIES: readonly { id: string; label: string }[] = [
+  { id: "pmt", label: "PMT" },
+  { id: "catppuccin", label: "Catppuccin" },
+  { id: "one", label: "One" },
+  { id: "pierre", label: "Pierre Soft" },
+  { id: "ck3", label: "Crusader Kings" },
+  { id: "eu5", label: "Europa Universalis" },
+  { id: "vic3", label: "Victoria" },
 ];
 
 /** SIMPLE_HIDES holds what the simple interface hides, each by its id and the label the start page names it by. */

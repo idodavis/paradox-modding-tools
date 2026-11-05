@@ -4,6 +4,7 @@
 package lsp
 
 import (
+	"cmp"
 	"errors"
 	"fmt"
 	"slices"
@@ -71,8 +72,7 @@ func findReference(ws *workspace.Session, mods *index.Index, tree *jomini.Tree, 
 		_, reference := describeMessage(ws, tree, place, offset)
 		return reference.Span, reference
 	}
-	visitor := &hoverVisitor{tree: tree, offset: offset}
-	ws.Schema.WalkTo(tree, place.File, offset, visitor)
+	visitor := walkTo(ws, tree, place, offset)
 	span, reference := findHit(visitor)
 	return span, resolveHit(mods, place, reference, visitor.context.References)
 }
@@ -253,7 +253,7 @@ func lookupTitle(ws *workspace.Session, mods *index.Index, file int32, definitio
 	if !ok {
 		return ""
 	}
-	return ws.LookupTitle(mods, site)
+	return ws.LookupDefinitionText(mods, site, game.TitleKey)
 }
 
 // Leave closes the symbol of the statement, if it opened one.
@@ -263,47 +263,59 @@ func (visitor *symbolsVisitor) Leave(tree *jomini.Tree, statement int32, context
 	}
 }
 
-// FindSymbols returns up to the given limit of definitions whose name contains the query, then the localization keys
-// that do. In each group the mods' files come before the game's. It returns an empty list for an empty query.
-func (lsp *Service) FindSymbols(query string, limit int) ([]WorkspaceSymbol, error) {
+// FindSymbols returns up to the given limit of names that contain the query: the definitions, or the localization keys
+// when the second argument is true. The best match comes first: the name that is the query, then the names that start
+// with it, then the rest. Within each of these the mods' files come before the game's. It returns an empty list for an
+// empty query.
+func (lsp *Service) FindSymbols(query string, localization bool, limit int) ([]WorkspaceSymbol, error) {
 	ws, err := lsp.Workspace.Session()
 	if err != nil {
 		return nil, err
 	}
 	mods := ws.Mods.Load()
-	symbols := []WorkspaceSymbol{}
-	lower := strings.ToLower(query)
-	if lower == "" || limit <= 0 {
-		return symbols, nil
+	query = strings.ToLower(query)
+	if query == "" || limit <= 0 {
+		return []WorkspaceSymbol{}, nil
 	}
-	checked, matches := make([]bool, len(mods.Names.Texts)), make([]bool, len(mods.Names.Texts))
-	isMatch := func(name uint32) bool {
-		if !checked[name] {
-			checked[name], matches[name] = true, strings.Contains(strings.ToLower(mods.Names.Texts[name]), lower)
+	role := index.RoleDefines
+	if localization {
+		role = index.RoleLocalizes
+	}
+	type match struct {
+		site index.Site
+		rank int
+	}
+	ranks := map[uint32]int{} // each name's rank, -1 for a name that does not contain the query
+	classify := func(name uint32) int {
+		if rank, ok := ranks[name]; ok {
+			return rank
 		}
-		return matches[name]
+		lower := strings.ToLower(mods.Names.Texts[name])
+		ranks[name] = -1
+		if strings.Contains(lower, query) {
+			ranks[name] = files.ClassifyMatch(lower, query)
+		}
+		return ranks[name]
 	}
 	// the mods' files are searched first, and a key is listed once, not once for each language
-	for _, role := range []index.Role{index.RoleDefines, index.RoleLocalizes} {
-		listed := map[string]bool{}
-		for _, position := range slices.Concat(mods.ListOwnFiles(), ws.Install.ListOwnFiles()) {
-			for number, occurrence := range mods.Occurrences[position] {
-				name := mods.Names.Texts[occurrence.Name]
-				if occurrence.Role != role || !isMatch(occurrence.Name) || role == index.RoleLocalizes && listed[name] {
-					continue
-				}
-				listed[name] = true
-				site := index.Site{File: position, Occurrence: int32(number)}
-				reference := mods.ToReference(site)
-				symbols = append(symbols, WorkspaceSymbol{
-					Name: reference.Name, Database: reference.Database,
-					Site: LocateSite(ws, mods, site), Category: schema.CategoryDefinition,
-				})
-				if len(symbols) == limit {
-					return symbols, nil
-				}
+	var matches []match
+	listed := map[string]bool{}
+	for _, position := range slices.Concat(mods.ListOwnFiles(), ws.Install.ListOwnFiles()) {
+		for number, occurrence := range mods.Occurrences[position] {
+			name := mods.Names.Texts[occurrence.Name]
+			if occurrence.Role != role || classify(occurrence.Name) < 0 || localization && listed[name] {
+				continue
 			}
+			listed[name] = true
+			matches = append(matches, match{index.Site{File: position, Occurrence: int32(number)}, ranks[occurrence.Name]})
 		}
 	}
-	return symbols, nil
+	slices.SortStableFunc(matches, func(first, second match) int { return cmp.Compare(first.rank, second.rank) })
+	return lo.Map(matches[:min(limit, len(matches))], func(one match, _ int) WorkspaceSymbol {
+		reference := mods.ToReference(one.site)
+		return WorkspaceSymbol{
+			Name: reference.Name, Database: reference.Database,
+			Site: LocateSite(ws, mods, one.site), Category: schema.CategoryDefinition,
+		}
+	}), nil
 }

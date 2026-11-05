@@ -4,7 +4,7 @@ import type { CommandPaletteGroup, CommandPaletteItem } from "@nuxt/ui";
 import { useQuery } from "@pinia/colada";
 import { useEventBus, useLocalStorage } from "@vueuse/core";
 import { useFuse } from "@vueuse/integrations/useFuse";
-import { computed, shallowRef } from "vue";
+import { computed, nextTick, shallowRef } from "vue";
 
 import type { WorkspaceSymbol } from "@services/lsp/models";
 import type { Place } from "@services/workspace/models";
@@ -20,7 +20,7 @@ import { router } from "./router";
 
 const open = defineModel<boolean>("open", { default: false });
 
-/** How many files the palette lists for a search. */
+/** How many files the palette lists for a search. It is also the most rows the palette shows in a group. */
 const FILE_HITS = 50;
 const RECENT = 5;
 // The settings that hold a list. The palette switches each item on a row of its own.
@@ -34,13 +34,15 @@ const term = shallowRef("");
 const choices = shallowRef<CommandPaletteGroup | null>(null);
 const recent = useLocalStorage<string[]>("pmt.palette.recent", []);
 
-// What the search looks through: > for commands, @ or # for definitions, anything else for files.
+// What the search looks through: > for commands, @ for definitions, # for localization keys, anything else for files.
 const mode = computed(() => {
   if (choices.value) return "choices";
   if (term.value.startsWith(">")) return "commands";
   return /^[@#]/.test(term.value) ? "symbols" : "files";
 });
 const query = computed(() => (mode.value === "files" ? term.value : term.value.slice(1)).trim());
+// # lists localization keys, @ definitions.
+const localization = computed(() => term.value.startsWith("#"));
 
 const { data: workspaces } = useQuery(workspacesQuery);
 const { data: catalog } = useQuery(settingsCatalogQuery);
@@ -51,7 +53,7 @@ const { data: files } = useQuery(() => ({
   placeholderData: (previous: Place[] | null | undefined) => previous,
 }));
 const { data: symbols } = useQuery(() => ({
-  ...symbolsQuery(query.value),
+  ...symbolsQuery({ query: query.value, localization: localization.value }),
   enabled: open.value && mode.value === "symbols" && !!query.value && workspace.isOpen(),
   placeholderData: (previous: WorkspaceSymbol[] | null | undefined) => previous,
 }));
@@ -90,7 +92,7 @@ const { results } = useFuse(
   query,
   () => available.value.flatMap((group) => group.items.map((item) => ({ ...item, group: group.id }))),
   {
-    fuseOptions: { keys: ["label", "prefix", "suffix", "words"], threshold: 0.4 },
+    fuseOptions: { keys: [{ name: "label", weight: 3 }, "prefix", "suffix", "words"], threshold: 0.3 },
     matchAllWhenSearchEmpty: true,
     resultLimit: 40,
   },
@@ -115,13 +117,16 @@ const groups = computed<CommandPaletteGroup[]>(() => {
       onSelect: () =>
         editor.show(site.place, { lineNumber: site.range.startLineNumber, column: site.range.startColumn }),
     }));
-    return [{ id: "symbols", label: "Definitions", ignoreFilter: true, items }];
+    const label = localization.value ? "Localization keys" : "Definitions";
+    return [{ id: "symbols", label, ignoreFilter: true, items }];
   }
-  return available.value.map((group) => ({
-    id: group.id,
-    label: group.label,
+  // The group of the best match comes first.
+  const hits = results.value.map((hit) => hit.item);
+  return [...new Set(hits.map((item) => item.group))].map((id) => ({
+    id,
+    label: available.value.find((group) => group.id === id)?.label,
     ignoreFilter: true,
-    items: results.value.filter((hit) => hit.item.group === group.id).map((hit) => hit.item),
+    items: hits.filter((item) => item.group === id),
   }));
 });
 
@@ -214,17 +219,36 @@ function goBack(event: KeyboardEvent): void {
   event.preventDefault();
   choices.value = null;
   term.value = "> ";
+  void nextTick(() => placeCaret(event.target as HTMLInputElement));
+}
+
+/** focusSearch focuses the search box as the palette opens, with the caret after its text and nothing selected. */
+function focusSearch(event: Event): void {
+  event.preventDefault();
+  const input = (event.target as HTMLElement).querySelector("input");
+  input?.focus();
+  if (input) placeCaret(input);
+}
+
+/** placeCaret puts the caret of a search box after its text. */
+function placeCaret(input: HTMLInputElement): void {
+  input.setSelectionRange(input.value.length, input.value.length);
 }
 </script>
 
 <template>
-  <UModal v-model:open="open" :ui="{ content: 'top-14 translate-y-0 sm:max-w-160' }">
+  <UModal
+    v-model:open="open"
+    :content="{ onOpenAutoFocus: focusSearch }"
+    :ui="{ content: 'top-14 translate-y-0 sm:max-w-160' }"
+  >
     <template #content>
       <!-- The search box's keys pass through here on their way up. -->
       <div class="contents" @keydown.backspace="goBack">
         <UCommandPalette
           v-model:search-term="term"
           :groups="groups"
+          :fuse="{ resultLimit: FILE_HITS }"
           :placeholder="choices?.label ?? 'Search files, or > for commands and settings'"
           :close="true"
           class="max-h-120"
@@ -247,7 +271,7 @@ function goBack(event: KeyboardEvent): void {
             </p>
             <p v-else class="text-11 text-dimmed">
               {{ mode === "commands" ? "Delete the > to open files." : "> for commands and settings." }}
-              @ or # finds definitions and localization keys. Enter flips a switch where you are.
+              @ finds definitions and # finds localization keys. Enter flips a switch where you are.
             </p>
           </template>
         </UCommandPalette>

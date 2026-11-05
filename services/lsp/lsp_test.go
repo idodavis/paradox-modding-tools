@@ -311,7 +311,7 @@ func TestHoverNamesWhatItIs(t *testing.T) {
 	if card := hover(13, 5); card == nil || card.What != "keyword" || card.Class != "saving" || card.Blurb == "" {
 		t.Errorf("a keyword: %+v", card)
 	}
-	if card := hover(4, 3); card == nil || card.What != "field" || card.Takes.Type == "" || !card.Inferred {
+	if card := hover(4, 3); card == nil || card.What != "field" || card.Takes == "" || !card.Inferred {
 		t.Errorf("a field: %+v", card)
 	}
 	if card := hover(15, 10); card == nil || card.What != "saved scope" || card.Title != "made" || len(card.Sites) != 0 {

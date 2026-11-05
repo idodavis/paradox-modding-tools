@@ -12,35 +12,30 @@ import (
 
 // A Change is one changed file as git status reports it.
 type Change struct {
-	Path     string `json:"path"`
-	From     string `json:"from,omitempty"` // a rename's old path
-	Status   string `json:"status"`         // modified, added, deleted, renamed, untracked, conflict
-	Staged   bool   `json:"staged"`         // the change is in the index
-	Unstaged bool   `json:"unstaged"`       // the change is in the working tree
-	// Place is where the file is in the open workspace; it is empty while none is open.
-	Place workspace.Place `json:"place"`
+	Path     string          `json:"path"`
+	From     string          `json:"from,omitempty"` // a rename's old path
+	Status   string          `json:"status"`         // modified, added, deleted, renamed, untracked, conflict
+	Staged   bool            `json:"staged"`         // the change is in the index
+	Unstaged bool            `json:"unstaged"`       // the change is in the working tree
+	Place    workspace.Place `json:"place"`          // where the file is in the open workspace; empty while none is open
 }
 
 // A Status is what git status reports for one repository.
 type Status struct {
-	Branch   string   `json:"branch"`   // "" when detached
-	Upstream string   `json:"upstream"` // "" when there is none
-	Ahead    int      `json:"ahead"`
-	Behind   int      `json:"behind"`
-	Changes  []Change `json:"changes"`
-	// Ignored is where the files and folders git ignores are in the open workspace. They are empty places while none
-	// is open.
-	Ignored []workspace.Place `json:"ignored"`
+	Branch   string            `json:"branch"`   // "" when detached
+	Upstream string            `json:"upstream"` // "" when there is none
+	Ahead    int               `json:"ahead"`
+	Behind   int               `json:"behind"`
+	Changes  []Change          `json:"changes"`
+	Ignored  []workspace.Place `json:"ignored"` // where the files and folders git ignores are in the open workspace; empty places while none is open
 }
 
 // A Ref is one branch, remote branch or tag.
 type Ref struct {
-	Name string `json:"name"`
-	Type string `json:"type"` // branch, remote, tag; "" for another name a commit is decorated with
-	Hash string `json:"hash"`
-	// Date is when the commit it points to was made, or when an annotated tag was. It is the zero time if the object
-	// has no date.
-	Date    time.Time `json:"date"`
+	Name    string    `json:"name"`
+	Type    string    `json:"type"` // branch, remote, tag; "" for another name a commit is decorated with
+	Hash    string    `json:"hash"`
+	Date    time.Time `json:"date"` // when the commit it points to was made, or when an annotated tag was; the zero time if the object has no date
 	Current bool      `json:"current"`
 }
 

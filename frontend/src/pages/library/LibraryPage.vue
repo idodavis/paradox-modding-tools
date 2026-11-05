@@ -3,7 +3,7 @@
 import { computed, shallowRef } from "vue";
 import { useRouter } from "vue-router";
 import { useMutation, useQuery } from "@pinia/colada";
-import { useEventBus } from "@vueuse/core";
+import { until, useEventBus } from "@vueuse/core";
 import type { DropdownMenuItem } from "@nuxt/ui";
 
 import { findCommand } from "../../app/commands";
@@ -41,19 +41,20 @@ const { data: state } = useQuery(stateQuery);
 const { data: report } = useQuery(() => ({ ...reportQuery(store.listModIds()), enabled: store.isOpen() }));
 
 const rows = computed(() =>
-  (workspaces.value ?? [])
-    .map((row) => ({
-      ...row,
-      active: row.record.id === store.activeId(),
-      line: row.install.id ? installLine(row.install.name, row.install.version, row.install.scannedAt) : "",
-    }))
-    .sort((first, second) => Number(second.active) - Number(first.active)),
+  (workspaces.value ?? []).map((row) => ({
+    ...row,
+    line: row.install.id ? installLine(row.install.name, row.install.version, row.install.scannedAt) : "",
+  })),
 );
-const active = computed(() => rows.value.find((row) => row.active));
+const active = computed(() => rows.value.find((row) => row.record.id === store.activeId()));
+// A game's group counts all its workspaces and lists the cards of those but the active one, which has the hero above.
 const groups = computed(() =>
   [...(games.value ?? []), undefined]
-    .map((game) => ({ game, rows: rows.value.filter((row) => row.game?.id === game?.id) }))
-    .filter((group) => group.rows.length),
+    .map((game) => {
+      const own = rows.value.filter((row) => row.game?.id === game?.id);
+      return { game, count: own.length, cards: own.filter((row) => row !== active.value) };
+    })
+    .filter((group) => group.count),
 );
 const summary = computed(
   () => `${plural(rows.value.length, "workspace")} across ${plural(groups.value.length, "game")}.`,
@@ -76,16 +77,22 @@ const { mutate: resetData, isLoading: resettingData } = useMutation({
   },
 });
 
-/** open goes to a workspace's home page, which makes it the active one. */
-function open(record: Workspace) {
-  return router.push(homeRoute(record.id, record.homePage));
+/**
+ * open goes to a workspace's home page, which makes it the active one. Given an action, it stays on the page where the
+ * workspace is already open, and runs the action once the workspace is open. It runs nothing if the page change fails.
+ */
+async function open(record: Workspace, action?: () => void): Promise<void> {
+  if (!action || record.id !== store.activeId() || !store.isOpen()) {
+    if (await router.push(homeRoute(record.id, record.homePage))) return;
+    if (!action) return;
+    await until(() => store.isOpen()).toBe(true, { timeout: 10_000 });
+  }
+  action();
 }
 
 /** openSettings opens Settings on a workspace, opening the workspace first if it is not the open one. */
-async function openSettings(record: Workspace): Promise<void> {
-  const isCurrent = record.id === store.activeId() && store.isOpen();
-  if (!isCurrent && (await open(record))) return;
-  commandBus.emit("settings.open");
+function openSettings(record: Workspace): Promise<void> {
+  return open(record, () => commandBus.emit("settings.open"));
 }
 
 /** openModDialog opens the new mod dialog, or Make a new mod if no workspace is open. */
@@ -94,10 +101,19 @@ function openModDialog(): void {
   else void router.push({ name: "new-mod" });
 }
 
-/** describeMenu returns a workspace's menu: the given leading items, then Remove. */
-function describeMenu(record: Workspace, leading: DropdownMenuItem[]): DropdownMenuItem[] {
+/** describeMenu returns a workspace's menu: Launch the game, Settings and Remove. */
+function describeMenu(record: Workspace): DropdownMenuItem[] {
   return [
-    ...leading,
+    {
+      label: "Launch the game",
+      icon: "i-lucide-play",
+      onSelect: () => void open(record, () => LAUNCH?.onSelect?.()),
+    },
+    {
+      label: "Settings",
+      icon: "i-lucide-settings",
+      onSelect: () => void openSettings(record),
+    },
     { label: "Remove from PMT…", icon: "i-lucide-trash-2", color: "error", onSelect: () => void store.remove(record) },
   ];
 }
@@ -108,7 +124,7 @@ function describeMenu(record: Workspace, leading: DropdownMenuItem[]): DropdownM
     <div class="flex w-280 max-w-full flex-col gap-6 self-start">
       <div class="flex items-center gap-4">
         <div class="flex min-w-0 flex-col gap-0.5">
-          <h1 class="text-20">Workspaces</h1>
+          <h1 class="text-20">Library</h1>
           <p class="text-13 text-dimmed">
             {{ summary }} A workspace is one game install plus the mods you load with it.
           </p>
@@ -212,13 +228,7 @@ function describeMenu(record: Workspace, leading: DropdownMenuItem[]): DropdownM
           />
           <UButton label="Health" size="md" :to="{ name: 'health', params: { id: active.record.id } }" />
           <UButton label="Settings" size="md" @click="openSettings(active.record)" />
-          <UDropdownMenu
-            :items="
-              describeMenu(active.record, [
-                { label: 'Launch the game', icon: 'i-lucide-play', onSelect: (event) => LAUNCH?.onSelect?.(event) },
-              ])
-            "
-          >
+          <UDropdownMenu :items="describeMenu(active.record)">
             <UButton icon="i-lucide-ellipsis" size="md" square aria-label="More" />
           </UDropdownMenu>
         </div>
@@ -240,7 +250,7 @@ function describeMenu(record: Workspace, leading: DropdownMenuItem[]): DropdownM
           </div>
           <div class="flex min-w-0 flex-col gap-2">
             <span class="flex items-center gap-1 text-12 font-medium text-toned">
-              Game knowledge
+              Game documentation
               <TermInfo term="game documentation" />
             </span>
             <button
@@ -267,7 +277,7 @@ function describeMenu(record: Workspace, leading: DropdownMenuItem[]): DropdownM
                 @click="guiding = true"
               />
             </span>
-            <span v-else class="text-12 text-dimmed">{{ dumps ? lexicon : "Read when the workspace opens." }}</span>
+            <span v-else class="text-12 text-dimmed">{{ dumps ? lexicon : "Read when you open the IDE." }}</span>
           </div>
           <div class="flex min-w-0 flex-col gap-2">
             <span class="text-12 font-medium text-toned">Health</span>
@@ -275,7 +285,7 @@ function describeMenu(record: Workspace, leading: DropdownMenuItem[]): DropdownM
               <LevelCounts :levels="report.counts" />
               <span class="text-12 text-dimmed">From the last scan.</span>
             </template>
-            <span v-else class="text-12 text-dimmed">Counted once the workspace is open.</span>
+            <span v-else class="text-12 text-dimmed">Counted when you open the IDE.</span>
           </div>
         </div>
         <FirstModChecklist />
@@ -285,14 +295,21 @@ function describeMenu(record: Workspace, leading: DropdownMenuItem[]): DropdownM
         <div class="flex items-center gap-2.5">
           <img v-if="group.game" :src="gameIcon(group.game.id)" :alt="group.game.name" class="size-4.5 rounded-sm" />
           <span class="text-13 font-semibold">{{ group.game?.name ?? "No game" }}</span>
-          <span class="text-12 text-dimmed">{{ plural(group.rows.length, "workspace") }}</span>
+          <span class="text-12 text-dimmed">{{ plural(group.count, "workspace") }}</span>
+          <span class="grow" />
+          <UButton
+            label="New workspace"
+            icon="i-lucide-plus"
+            variant="ghost"
+            size="xs"
+            :to="{ name: 'wizard', query: { game: group.game?.id } }"
+          />
         </div>
-        <div class="grid grid-cols-3 gap-4">
+        <div v-if="group.cards.length" class="grid grid-cols-3 gap-4">
           <div
-            v-for="row in group.rows"
+            v-for="row in group.cards"
             :key="row.record.id"
-            class="flex min-w-0 cursor-pointer flex-col gap-3 rounded-lg border bg-muted p-4 hover:border-accented"
-            :class="row.active ? 'border-primary' : 'border-default'"
+            class="flex min-w-0 cursor-pointer flex-col gap-3 rounded-lg border border-default bg-muted p-4 hover:border-accented"
             role="link"
             tabindex="0"
             @click="open(row.record)"
@@ -301,19 +318,7 @@ function describeMenu(record: Workspace, leading: DropdownMenuItem[]): DropdownM
             <div class="flex min-w-0 items-center gap-2">
               <span class="truncate text-13 font-semibold">{{ row.record.name }}</span>
               <span class="grow" />
-              <UBadge v-if="row.active" label="Active" color="primary" />
-              <UDropdownMenu
-                v-else
-                :items="
-                  describeMenu(row.record, [
-                    {
-                      label: 'Settings',
-                      icon: 'i-lucide-settings',
-                      onSelect: () => openSettings(row.record),
-                    },
-                  ])
-                "
-              >
+              <UDropdownMenu :items="describeMenu(row.record)">
                 <UButton icon="i-lucide-ellipsis" variant="ghost" size="sm" square aria-label="More" @click.stop />
               </UDropdownMenu>
             </div>
@@ -328,13 +333,6 @@ function describeMenu(record: Workspace, leading: DropdownMenuItem[]): DropdownM
               <span v-if="!row.mods?.length" class="text-12 text-dimmed">No mods, game files only</span>
             </div>
           </div>
-          <RouterLink
-            :to="{ name: 'wizard', query: { game: group.game?.id } }"
-            class="flex items-center justify-center gap-1.5 rounded-lg border border-dashed border-default p-4 text-dimmed hover:border-accented hover:text-toned"
-          >
-            <UIcon name="i-lucide-plus" class="size-4" />
-            <span class="text-12 font-medium">New workspace for this game</span>
-          </RouterLink>
         </div>
       </section>
 
@@ -348,7 +346,7 @@ function describeMenu(record: Workspace, leading: DropdownMenuItem[]): DropdownM
         title="Reset all of PMT's data?"
         description="Mods, game files and your settings stay."
       >
-        <button type="button" class="h-6 hover:text-highlighted">Reset all PMT data</button>
+        <button type="button" class="h-6 text-error hover:underline">Reset all PMT data</button>
         <template #body>
           <ul class="flex list-disc flex-col gap-1 ps-4 text-13 text-toned">
             <li>Every workspace is removed from PMT, and every install record: add your installs again.</li>

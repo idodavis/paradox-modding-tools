@@ -9,8 +9,7 @@ import (
 
 // A WidgetType is how a built-in widget type lays its children out and draws its own text.
 type WidgetType struct {
-	// Holding is how it holds its children: row, column, flow, grid or scroll; "" means by their anchors.
-	Holding     string `json:"holding,omitempty"`
+	Holding     string `json:"holding,omitempty"`     // how it holds its children: row, column, flow, grid or scroll; "" means by their anchors
 	Clips       bool   `json:"clips,omitempty"`       // it clips them
 	Fills       bool   `json:"fills,omitempty"`       // it fills its holder
 	CentersText bool   `json:"centersText,omitempty"` // its own text is centered
@@ -20,15 +19,11 @@ type WidgetType struct {
 
 // A WidgetSlot is a key whose block is a widget that no type names.
 type WidgetSlot struct {
-	// Role is what the block is to its widget: skin (a background), chrome (a scroll bar), attachment (a tooltip) or
-	// label (its text).
-	Role    string
+	Role    string // what the block is to its widget: skin (a background), chrome (a scroll bar), attachment (a tooltip) or label (its text)
 	Type    string // the built-in type the block is drawn as; "" means the block's own
 	Floats  bool   // the block floats apart from its widget, as a tooltip does, so it is drawn as no child of it
 	Dresses bool   // the block only dresses its widget, so a picture it lacks draws no placeholder
-	// Labels says the block's widgets show their widget's text. They come before its other children, and the next
-	// label replaces them.
-	Labels bool
+	Labels  bool   // the block's widgets show their widget's text; they come before its other children, and the next label replaces them
 }
 
 // An Animation is how one state of a widget leads to others: the keys of the next state, the calls run as it ends
@@ -56,11 +51,9 @@ type VariableSystem struct {
 // FontRules is how a font file names the files of a font: a block for each style, naming a definition of files, which
 // has groups of languages, each with the files they read, the font's own file first.
 type FontRules struct {
-	Key     string // the key of a widget that names its font
-	SizeKey string // the key of a widget that sets the size of its text
-	// TextType is the built-in type of a text, whose own type in the game's files gives a text with no font its font
-	// and size.
-	TextType      string
+	Key           string // the key of a widget that names its font
+	SizeKey       string // the key of a widget that sets the size of its text
+	TextType      string // the built-in type of a text, whose own type in the game's files gives a text with no font its font and size
 	Database      string // the database of fonts
 	StyleKey      string // the key of a font's block for one of its styles
 	StyleValueKey string // the key in that block whose value is the style, such as regular or bold|italic
@@ -95,12 +88,10 @@ type TierFrames struct {
 
 // A Placeholder is a shape PMT draws where a picture has no file, for the things the picture can be of.
 type Placeholder struct {
-	Games []string // the games it holds for; none means every game
-	Shape string
-	// Terms are what the picture can be of, as keys, data types and data functions write it, in lower case with
-	// spaces ("coat of arms").
-	Terms   []string
-	Runtime bool // only the running game draws its pictures, from what it holds, so no file is looked for
+	Games   []string // the games it holds for; none means every game
+	Shape   string
+	Terms   []string // what the picture can be of, as keys, data types and data functions write it, in lower case with spaces
+	Runtime bool     // only the running game draws its pictures, from what it holds, so no file is looked for
 }
 
 // Illustrations is where the pictures are that a definition names by a path below a folder: the key that names the
@@ -112,15 +103,13 @@ type Illustrations struct {
 
 // A GameGUI is what one game does with GUI files beyond what every game does.
 type GameGUI struct {
-	Holders     map[string]string // the window a window made from a type is laid out in, by the type
-	Undeclared  []string          // the widget types it draws though no file of its install declares them
-	DropsHidden []string          // the types beyond GUI.Types in which a hidden child takes no room
-	// SuffixStems maps the stem of the defines for a picture field to the stem its suffix define is written under, where
-	// the two differ.
-	SuffixStems   map[string]string
-	DefineGroup   string        // the define group whose defines say where its icons and pictures are
-	Tiers         TierFrames    // how it draws a title's tier from a sheet of cells; zero for none
-	Illustrations Illustrations // where the pictures are that a definition names by a path below a folder
+	Holders       map[string]string // the window a window made from a type is laid out in, by the type
+	Undeclared    []string          // the widget types it draws though no file of its install declares them
+	DropsHidden   []string          // the types beyond GUI.Types in which a hidden child takes no room
+	SuffixStems   map[string]string // the stem of the defines for a picture field, and the stem its suffix define is written under where the two differ
+	DefineGroup   string            // the define group whose defines say where its icons and pictures are
+	Tiers         TierFrames        // how it draws a title's tier from a sheet of cells; zero for none
+	Illustrations Illustrations     // where the pictures are that a definition names by a path below a folder
 }
 
 // Levels says how a level, such as prestige_level, finds its pictures: Ending marks a name as a level, and Prefix
@@ -132,118 +121,77 @@ type Levels struct {
 
 // GUIRules is the rules for GUI files beyond their syntax. GUI is its one row.
 type GUIRules struct {
-	// Declares is the keys before a top block that declare a definition of gui.<key>, or that group definitions
-	// (types x { }).
-	Declares  []string
-	TypeKey   string            // the key that declares a type; a type no file defines is marked missing under it
-	BlockKey  string            // the key that declares a labeled block, which a widget's BlockCalls block replaces
-	NameKeyOf map[string]string // a block key at any depth, and the key whose value names its definition
-	// WidgetKey is the key that names every other top block, a definition of WidgetDatabase. The file's only block
-	// written under a key that writes none is named after the file.
-	WidgetKey      string
-	DatabasePrefix string // what a GUI database's name starts with, before the key that declares it
-	WidgetDatabase string // the database of every top block that no key of Declares declares
-	TagCalls       string // the caller of the type a block's key names, as Callable.Callers lists it
-	TemplateCalls  string // the key that calls a template
-	BlockCalls     string // the key that calls the block a template or type leaves for a widget to replace
-	ContextKey     string // the key whose value is the data call its block's bindings read in
-	TextFormats    string // the database a text's #format names
-	TextIcons      string // the database an icon in a text, @icon!, names
-	// EditorFolders hold the files of the game's own GUI editor, which call functions of the editor no dump declares;
-	// they are not judged.
-	EditorFolders []string
-	Slots         map[string]WidgetSlot
-	ItemKey       string // the key of a data model's block for the widgets of each of its items
-	// Types is the row of each built-in widget type. Any other type holds its children by their anchors and keeps a
-	// hidden child's room.
-	Types           map[string]WidgetType
-	OpeningStates   []string          // the states run by name as a window opens
-	OpeningTriggers map[string]string // the states run as a window opens by a key's value
-	// StateKey is the key of a widget's block for one of its states; StateKeys are the keys inside one.
-	StateKey     string
-	StateKeys    []string // the keys of a state that are its own rather than end values
-	OpeningCalls string   // the key of a state whose calls run as the state starts
-	Animation    Animation
-	// RepeatedKeys is the keys a widget keeps every value of, in the order written, each adding to the ones before.
-	RepeatedKeys []string
-	// TextKeys is the keys that write a widget's one text, the localized one first and then the one shown as written.
-	// The last one written wins.
-	TextKeys     []string
-	MultilineKey string // the key whose yes lets a widget's text run over several lines
-	ResizeKey    string // the key whose yes resizes a widget to fit what it holds
-	SizeKey      string // the key that sets a widget's size
-	// OverlayKey is the key of a block that lays a texture over its widget's own, and OverlayTextureKey the key in it of
-	// that texture.
-	OverlayKey        string
-	OverlayTextureKey string
-	// CallOutputs is what a data call in a text writes, a number or text, by the type its last function returns. A
-	// type with no row writes text, and a call that DateCalls knows writes a date.
-	CallOutputs map[string]string
-	DateCalls   DateCalls
-	DateForm    DateForm
-	// PercentCode and SignCode are format codes a data call in a text writes after |: a percent, and a plus sign before
-	// a number above zero. A digit among the codes is the number's decimals.
-	PercentCode string
-	SignCode    string
-	ColorType   string // the data type that a binding of a color returns
-	// SelectPrefix is the start of the name of the data functions that give their second argument where their first
-	// holds, else their third: Select_float, Select_CString and the rest.
-	SelectPrefix string
-	ClickKeys    []string // the keys whose calls run as a widget is clicked
-	// DownKey is the key whose condition holds while a button is drawn down. Two or more buttons of one type side by
-	// side, each written with it, are a strip of tabs.
-	DownKey       string
-	CheckedKey    string // the key whose condition holds while a box is drawn checked
-	ValidFunction string // the data function that asks whether an object exists
-	// OpeningFacts is the data functions, called with no arguments, that hold as a window opens whatever it is about:
-	// an object exists, or a list has the items the window draws.
-	OpeningFacts []string
-	// SampleFacts is the data functions, called with no arguments, that hold of the Visual view's sample: the player's
-	// own living, landed ruler with legitimacy, on a council whose councilors can be replaced.
-	SampleFacts []string
-	// SampleAbsent is the data functions that reach an object the sample lacks, so that an existence test of it, or of
-	// anything past it, fails.
-	SampleAbsent []string
-	Variables    VariableSystem
-	PortraitKey  string // the key whose binding draws a character's portrait
-	CoatKey      string // the key whose binding draws a coat of arms
-	// MaskKeys is the keys whose image cuts a widget's picture to its shape: a coat of arms' mask, and a widget's own.
-	MaskKeys []string
-	Fonts    FontRules
-	Getters  []string // how the name of a data function that only reaches an object starts, such as Get
-	// HiddenKeys is the keys whose no hides a widget. The first one a widget writes decides: visible_at_creation only
-	// says how a widget starts until its visible condition is read.
-	HiddenKeys     []string
-	DropsHiddenKey string // the key whose yes makes a hidden child of a widget take no room
-	// CallTargets is the data functions whose quoted arguments are names, by function: the database each argument's
-	// names are in, in order, and "" for one that is no name.
-	CallTargets map[string][]string
-	DefineCall  string // the data function that reads a define; its CallTargets row names the defines' databases
-	// StepDatabases are the databases whose definitions a data call names as a step of its own, which no dump declares.
-	StepDatabases []string
-	// Booleans is the data functions a binding combines conditions with, by name without the argument count.
-	Booleans map[string]string
-	Literals map[string]bool // a condition's plain values, in lower case, and whether each holds
-	// Comparisons is the data functions that compare two numbers, by name without the type after the underscore:
-	// the results of comparing the first with the second, as cmp.Compare gives them, for which each holds.
-	Comparisons    map[string][]int
-	ModelSize      string   // the data function that gives how many items a data model has
-	ModelEmpty     string   // the data function that asks whether a data model has no items
-	ModelHas       string   // the data function that asks whether a data model has items
-	IconPathFile   string   // the file in an icon folder that names the paths its icons are read from
-	PictureKeys    []string // the keys a definition names its picture by, tried in this order
-	IconPathSuffix string   // the ending of the defines that name a folder of icons
-	// FolderDefineSuffix, PrefixDefineSuffix and NameDefineSuffix end, after a database and field, the defines that say
-	// where a data function finds its pictures: their folder, the start of each file's name and its ending.
-	FolderDefineSuffix string
-	PrefixDefineSuffix string
-	NameDefineSuffix   string
+	Declares           []string          // the keys before a top block that declare a definition of gui.<key>, or that group definitions (types x { })
+	TypeKey            string            // the key that declares a type; a type no file defines is marked missing under it
+	BlockKey           string            // the key that declares a labeled block, which a widget's BlockCalls block replaces
+	NameKeyOf          map[string]string // a block key at any depth, and the key whose value names its definition
+	WidgetKey          string            // the key that names any other top block; a file's only block that writes none is named after the file
+	DatabasePrefix     string            // what a GUI database's name starts with, before the key that declares it
+	WidgetDatabase     string            // the database of every top block that no key of Declares declares
+	TagCalls           string            // the caller of the type a block's key names, as Callable.Callers lists it
+	TemplateCalls      string            // the key that calls a template
+	BlockCalls         string            // the key that calls the block a template or type leaves for a widget to replace
+	ContextKey         string            // the key whose value is the data call its block's bindings read in
+	TextFormats        string            // the database a text's #format names
+	TextIcons          string            // the database an icon in a text, @icon!, names
+	EditorFolders      []string          // the folders of the game's own GUI editor files, which call editor functions no dump declares; they are not judged
+	Slots              map[string]WidgetSlot
+	ItemKey            string                // the key of a data model's block for the widgets of each of its items
+	Types              map[string]WidgetType // the row of each built-in widget type; any other type holds its children by their anchors and keeps a hidden child's room
+	OpeningStates      []string              // the states run by name as a window opens
+	OpeningTriggers    map[string]string     // the states run as a window opens by a key's value
+	StateKey           string                // the key of a widget's block for one of its states
+	StateKeys          []string              // the keys inside one that are the state's own rather than end values
+	OpeningCalls       string                // the key of a state whose calls run as the state starts
+	Animation          Animation
+	RepeatedKeys       []string          // the keys a widget keeps every value of, in the order written, each adding to the ones before
+	TextKeys           []string          // the keys that write a widget's one text, the localized one first and then the one shown as written; the last one written wins
+	MultilineKey       string            // the key whose yes lets a widget's text run over several lines
+	ResizeKey          string            // the key whose yes resizes a widget to fit what it holds
+	SizeKey            string            // the key that sets a widget's size
+	OverlayKey         string            // the key of a block that lays a texture over its widget's own
+	OverlayTextureKey  string            // the key, in that block, of the texture
+	CallOutputs        map[string]string // what a data call in a text writes, number or text, by its last function's return type; a type with no row writes text
+	DateCalls          DateCalls
+	DateForm           DateForm
+	PercentCode        string   // the format code a data call in a text writes after | for a percent; a digit among the codes is the number's decimals
+	SignCode           string   // the format code a data call in a text writes after | for a plus sign before a number above zero
+	ColorType          string   // the data type that a binding of a color returns
+	SelectPrefix       string   // the start of the data functions that give their second argument if their first holds, else their third, as Select_float
+	ClickKeys          []string // the keys whose calls run as a widget is clicked
+	DownKey            string   // the key whose condition holds while a button is drawn down; side-by-side buttons of one type that write it are tabs
+	CheckedKey         string   // the key whose condition holds while a box is drawn checked
+	ValidFunction      string   // the data function that asks whether an object exists
+	OpeningFacts       []string // the argument-less data functions that hold whenever a window opens, as an object existing or a list having items
+	SampleFacts        []string // the argument-less data functions that hold of the Visual view's sample: a living, landed player ruler with legitimacy and a council
+	SampleAbsent       []string // the data functions that reach an object the sample lacks, so an existence test of it, or of anything past it, fails
+	Variables          VariableSystem
+	PortraitKey        string   // the key whose binding draws a character's portrait
+	CoatKey            string   // the key whose binding draws a coat of arms
+	MaskKeys           []string // the keys whose image cuts a widget's picture to its shape: a coat of arms' mask, and a widget's own
+	Fonts              FontRules
+	Getters            []string            // how the name of a data function that only reaches an object starts, such as Get
+	NoTooltip          string              // how the name of a data function ends when it shows the same as the function without it but turns off the tooltip
+	HiddenKeys         []string            // the keys whose no hides a widget; the first one written decides
+	DropsHiddenKey     string              // the key whose yes makes a hidden child of a widget take no room
+	CallTargets        map[string][]string // the data functions whose quoted arguments are names, with each argument's database in order; "" means no name
+	DefineCall         string              // the data function that reads a define; its CallTargets row names the defines' databases
+	StepDatabases      []string            // the databases whose definitions a data call names as a step of its own, which no dump declares
+	Booleans           map[string]string   // the data functions a binding combines conditions with, by name without the argument count
+	Literals           map[string]bool     // a condition's plain values, in lower case, and whether each holds
+	Comparisons        map[string][]int    // the data functions that compare two numbers, by name before the underscore, each with the cmp.Compare results it holds for
+	ModelSize          string              // the data function that gives how many items a data model has
+	ModelEmpty         string              // the data function that asks whether a data model has no items
+	ModelHas           string              // the data function that asks whether a data model has items
+	IconPathFile       string              // the file in an icon folder that names the paths its icons are read from
+	PictureKeys        []string            // the keys a definition names its picture by, tried in this order
+	IconPathSuffix     string              // the ending of the defines that name a folder of icons
+	FolderDefineSuffix string              // the ending, after a database and field, of the define that says the folder where a data function finds its pictures
+	PrefixDefineSuffix string              // the ending, after a database and field, of the define that says the start of each picture file's name
+	NameDefineSuffix   string              // the ending, after a database and field, of the define that says the ending of each picture file's name
 	Levels             Levels
-	// DefaultPicture is the name in such a folder of the picture drawn for a definition with none of its own.
-	DefaultPicture string
-	// ShownFirst is the database whose first definition in a GUI file is the one the file shows first, wherever the
-	// file writes it: its main window, which CK3 writes at the top and EU5 after its types.
-	ShownFirst string
+	DefaultPicture     string // the name, in the folder of a definition's pictures, of the picture drawn for a definition with none of its own
+	ShownFirst         string // the database whose first definition in a GUI file is the one the file shows first, wherever the file writes it: its main window
 }
 
 // The keys, callers and values that GUI shares with another table or with another of its own fields, each written
@@ -380,9 +328,10 @@ var GUI = GUIRules{
 		FilesDatabase: "font.fontfiles", GroupKey: "group", LanguagesKey: "languages", PathsKey: "files",
 	},
 	Getters:        []string{"Get", "Access"},
+	NoTooltip:      "NoTooltip",
 	HiddenKeys:     []string{"visible", "visible_at_creation"},
 	DropsHiddenKey: "ignoreinvisible",
-	// a data binding is called by its own name (the data_binding row's NamedBy call), as a customizable localization is
+	// a data binding is called by its own name, as a customizable localization is
 	StepDatabases: []string{"data_binding", CustomLocalization},
 	CallTargets: map[string][]string{
 		guiDefineCall:       {"defines", "defines.define"},

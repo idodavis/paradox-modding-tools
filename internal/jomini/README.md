@@ -46,6 +46,7 @@ columns are `lsp`'s, which converts at its edge.
 
 `FindStatement` returns the innermost statement that covers an offset. `LookupStatement` returns the one that starts at
 an offset, which is how an edit names a block. Where several children have a key, `FindChild` takes the last one.
+`FindComment` returns the comment lines written just above a statement.
 
 ## The parse
 

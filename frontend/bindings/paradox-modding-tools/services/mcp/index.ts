@@ -13,5 +13,6 @@ export type {
     Page,
     Show,
     Task,
+    Tool,
     View
 } from "./models.js";

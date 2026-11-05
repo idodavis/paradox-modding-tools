@@ -169,7 +169,7 @@ func buildDocFields(row *game.Game, field, doc *Field, holder string) {
 // holdsScript reports whether a field's block holds script rather than fields. It does if the field states a shape or a
 // number to work out, or if its key is a keyword of the given game that gives its block a shape under the key above.
 func holdsScript(row *game.Game, holder, key string, field *Field) bool {
-	keyword, ok := row.LookupKeyword("", holder, key)
+	keyword, ok := row.LookupKeyword("", holder, key, "")
 	return field.Shape.IsStated() || field.Value.Value.Type == ValueNumber || ok && keyword.Shape != ""
 }
 

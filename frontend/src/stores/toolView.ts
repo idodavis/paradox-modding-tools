@@ -1,4 +1,5 @@
 /** The tool view store: tells Go the open page and its chip for the agents' tools, and shows what the tools ask for. */
+import { useQuery } from "@pinia/colada";
 import { useEventListener } from "@vueuse/core";
 import { Events } from "@wailsio/runtime";
 import { defineStore } from "pinia";
@@ -8,7 +9,7 @@ import { useRoute, useRouter } from "vue-router";
 import type { Chip, Show } from "@services/mcp/models";
 import * as mcp from "@services/mcp/service";
 import { isPage, isWorkspacePage, PAGES } from "../app/pages";
-import { drawablesQuery, loadQuery, placeQuery } from "../queries";
+import { drawablesQuery, loadQuery, placeQuery, tasksQuery } from "../queries";
 import { useDrawStore } from "./draw";
 import { useEditorStore } from "./editor";
 import { THIS_WINDOW, useWindowsStore } from "./windows";
@@ -24,6 +25,18 @@ export const useToolViewStore = defineStore("toolView", () => {
   const chip = computed(() => chips.get(String(route.name)) ?? null);
   const chipLeftOut = shallowRef(false);
   const promptChip = computed(() => (chipLeftOut.value ? null : chip.value));
+  const { data: starters } = useQuery(tasksQuery);
+  /**
+   * The starter tasks the page shown offers. A file's task needs a file open, and one that edits the file needs one
+   * the user can change. The event's task needs an event open in the Event Graph.
+   */
+  const tasks = computed(() =>
+    (starters.value ?? []).filter((task) => {
+      if (task.chip === "file") return !!chip.value?.path && !(task.edits && editor.activeFile()?.readOnly);
+      if (task.chip === "event") return route.name === "event-graph" && !!chip.value;
+      return true;
+    }),
+  );
 
   watch(chip, () => (chipLeftOut.value = false));
   const sendView = (): void =>
@@ -35,7 +48,13 @@ export const useToolViewStore = defineStore("toolView", () => {
   watch([() => route.fullPath, chip], sendView, { immediate: true });
   useEventListener(window, "focus", sendView);
   if (THIS_WINDOW === "main") {
-    void mcp.SetPages(Object.entries(PAGES).map(([id, page]) => ({ id, title: page.title, help: [...page.help] })));
+    void mcp.SetPages(
+      Object.entries(PAGES).map(([id, page]) => ({
+        id,
+        title: page.title,
+        help: page.help.map((section) => `${section.heading}: ${section.text}`),
+      })),
+    );
     onScopeDispose(Events.On("mcp:show", ({ data }: { data: Show }) => void show(data)));
   }
 
@@ -81,7 +100,7 @@ export const useToolViewStore = defineStore("toolView", () => {
     }
   }
 
-  return { chip, chipLeftOut, promptChip, setChip, followFile };
+  return { chip, chipLeftOut, promptChip, tasks, setChip, followFile };
 });
 
 /** useChip sets the chip the calling page offers a prompt, and updates it when the source changes. */

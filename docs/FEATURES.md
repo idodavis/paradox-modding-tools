@@ -5,33 +5,46 @@ What Paradox Modding Tools (PMT) does, page by page, for a modder. Getting it an
 [architecture](ARCHITECTURE.md).
 
 PMT works on one workspace at a time: a game install and the mods you load with it, in load order. Every page below
-reads that workspace. Each page also has its own Help, the ? in the top bar or F1.
+reads that workspace. Each page also has its own Help, in the top bar's gear menu or F1.
 
-- [Library](#library)
-- [New workspace](#new-workspace)
-- [IDE](#ide)
-- [Event Graph](#event-graph)
-- [Health](#health)
-- [Patch Notes](#patch-notes)
-- [Publish](#publish)
-- [Settings](#settings)
-- [The IDE's parts](#the-ides-parts): [Visual view](#visual-view), [Save as DDS](#save-as-dds),
-  [source control](#source-control), [Wiki pane](#wiki-pane), [Terminal](#terminal), [assistant](#assistant),
-  [pop-out windows](#pop-out-windows)
-- [External mods](#external-mods)
-- [Each game](#each-game)
-- [Each system](#each-system)
+- [Features](#features)
+  - [Library](#library)
+  - [New workspace](#new-workspace)
+  - [IDE](#ide)
+  - [Event Graph](#event-graph)
+  - [Health](#health)
+  - [Patch Notes](#patch-notes)
+  - [Publish](#publish)
+  - [Settings](#settings)
+  - [The IDE's parts](#the-ides-parts)
+    - [Visual view](#visual-view)
+      - [GUI](#gui)
+      - [CoA](#coa)
+    - [Save as DDS](#save-as-dds)
+    - [Source control](#source-control)
+    - [Wiki pane](#wiki-pane)
+    - [Terminal](#terminal)
+    - [Assistant](#assistant)
+    - [Pop-out windows](#pop-out-windows)
+  - [External mods](#external-mods)
+  - [Each game](#each-game)
+    - [Crusader Kings III](#crusader-kings-iii)
+    - [Victoria 3](#victoria-3)
+    - [Europa Universalis V](#europa-universalis-v)
+  - [Each system](#each-system)
 
 ## Library
 
 ![Library](images/library.png)
 
-Your workspaces, as cards, grouped by game. The active one is at the top. Open another card to make it active, then
-press **Open IDE** to start working.
+Your workspaces, grouped by game. The active one is at the top. Open another's card to make it active, then press
+**Open IDE** to start working. The PMT logo in the top bar goes back here.
 
-- **New workspace** starts the setup. **New mod** makes a new mod, or adds one to the open workspace.
-- A card's menu has **Launch**, which starts the game with its debug flag. When the game closes, PMT says what your
-  mods logged. If the game wrote fresher documentation, it offers to scan the install again.
+- **New workspace** starts the setup, and so does the button on each game's group. **New mod** makes a new mod, or adds
+  one to the open workspace.
+- Every workspace's menu has **Launch the game**, which starts the game with its debug flag, and **Settings**. When the
+  game closes, PMT says what your mods logged. If the game wrote fresher documentation, it offers to scan the install
+  again.
 - **Remove from PMT** takes a workspace out of PMT. Your mod folders stay on disk.
 - A new modder sees a short checklist for a first mod on the card. Settings can turn it off.
 - **Reset all PMT data**, in the status bar, removes every workspace, install record and cache. Your mods, the game's
@@ -51,9 +64,11 @@ mods into load order. A second list takes mods you only want to check yours agai
 
 Everything can be changed later in Settings. The new workspace opens on the page you chose to start on.
 
-**Make a new mod** is the short way in for a new modder. Pick the game, name the mod and choose its language. PMT shows
-the folder it will make, makes a workspace with the mod in it, and opens the IDE. **How a mod works** explains what the
-mod's folders are for. Guidance for new modders, in Settings, shows it and the first-mod checklist.
+**Make a new mod** is the short way in for a new modder. Pick the game, name the mod and choose its language, which
+starts as the game's base language. The mod goes in the game's mod folder unless you choose another folder. Victoria 3
+and Europa Universalis V read local mods only from their mod folder, so they have no choice. PMT shows the folder it
+will make, makes a workspace with the mod in it, and opens the IDE. **How a mod works** explains what the mod's folders
+are for. Guidance for new modders, in Settings, shows it and the first-mod checklist.
 
 ## IDE
 
@@ -67,7 +82,8 @@ An editor that knows the game's script, localization and GUI files.
 - **Tabs.** A single click opens a preview tab that the next click replaces. A double click or an edit keeps it. Drag a
   tab to another group, or out to a window of its own. Your open tabs come back when you open the workspace again.
 - **Hover.** Rest the pointer on a key or a value to see what it is, what it takes and where it is defined. For a
-  name, the card shows the copy the game keeps first.
+  name, the card shows the copy the game keeps first. For a definition, it also shows the name and description the
+  game shows for it, and the comment written above it.
 - **Go to.** Ctrl click goes to a definition. A search for references finds every use. F2 renames a name in every mod
   file. Alt Left and Alt Right step back and forward through the places you jumped between.
 - **Completion** offers what fits the block you are in, and then what fits the value.
@@ -155,14 +171,15 @@ Workshop page. PMT never touches an item that belongs to someone else, and never
 
 ![Settings](images/settings.png)
 
-Opened from the top bar. It has three groups.
+Opened from the top bar's gear menu (Ctrl ,), which also switches the theme and light or dark, lists the keyboard
+shortcuts and opens Help. It has three groups.
 
 - **App**, for every workspace:
   - Appearance: the theme (PMT, Catppuccin, One, Pierre, or a look for each game), light or dark, the interface scale,
     the pages shown, and a simple interface that hides the IDE's advanced parts.
   - Guidance, keyboard shortcuts, the Terminal's default shell, and Agents and tools.
-- **IDE**, kept for each workspace: the editor, the explorer, the language features, the checks, the Visual view and
-  the wiki.
+- **IDE**, for every workspace: the editor, the explorer, the language features, the Visual view and the wiki. The
+  Health checks, which pick the problems the editor shows, are kept for each workspace.
 - **Workspace:**
   - General: the name, the localization language, the page it opens on and the IDE's start.
   - Game install: the install this workspace reads, and **Launch**.
@@ -172,8 +189,10 @@ Opened from the top bar. It has three groups.
 ## The IDE's parts
 
 ### Visual view
-
-![The Visual view](images/visual-view.png)
+#### GUI
+![The GUI Visual view](images/visual-view-gui.png)
+#### CoA
+![The Coats Visual view](images/visual-view-coat.png)
 
 A GUI file or a coat of arms file can open as a picture instead of code. Switch with the Code and Visual buttons at the
 end of the tab, or Ctrl Shift V.
@@ -186,7 +205,8 @@ end of the tab, or Ctrl Shift V.
   lets you add, move and remove them.
 - Click a widget or a layer to see where it is written. The Structure list in the sidebar lists everything the file
   draws.
-- Tools over the picture: Save, the resolution or the coat's frame, Bounds, Grid, and the code beside the picture.
+- Tools over the picture: Save picture, the resolution or the coat's frame, Bounds, Grid, and the code beside the
+  picture.
 
 PMT writes your changes to the code in the editor, so undo works as it always does.
 
@@ -235,7 +255,9 @@ registry into its own folder, with Node if your system has none new enough.
 
 - The agent is given PMT's tools, so it finds names, problems, Health's findings and the Event Graph as PMT does, with
   your unsaved text. The same tools can be added to an agent you run yourself.
-- What it asks permission for shows in the session. Nothing opens before you choose.
+- What it asks permission for shows in the session. Nothing opens before you choose. PMT's own tools that only read
+  need no asking. **Always allow** is remembered for that agent and tool, and Settings lists what is allowed, to remove.
+- A new session starts with the model, effort and mode the agent was last given.
 - What the page has in front of you goes with your prompt as an attachment.
 - **Follow the agent** opens the files it reads. An edit can be undone from its row, or all of a session's at once.
 

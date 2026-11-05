@@ -9,7 +9,16 @@ import type { Page } from "@services/wiki/models";
 import FindBox from "./FindBox.vue";
 import ScriptSnippet from "./ScriptSnippet.vue";
 
-const { page, find = "" } = defineProps<{ page: Page; find?: string }>();
+const {
+  page,
+  find = "",
+  jump = "",
+} = defineProps<{
+  page: Page;
+  find?: string;
+  /** A word a heading holds. The first such heading gets a "Jump to" button beside find. */
+  jump?: string;
+}>();
 
 const BLOCKS = "p, li, h1, h2, h3, h4, h5, h6, td, th, pre, blockquote";
 const HEADING_CLASSES: Record<number, string> = {
@@ -36,6 +45,9 @@ const panes = computed(() => [
     : []),
   { id: "article", slot: "article", order: 2 },
 ]);
+const jumpHeading = computed(() =>
+  jump ? headings.value.find((heading) => heading.textContent?.includes(jump)) : undefined,
+);
 let marked: HTMLElement | undefined;
 
 watch(
@@ -102,7 +114,15 @@ function follow(event: MouseEvent): void {
 
 <template>
   <article class="flex min-h-0 min-w-0 flex-1 flex-col">
-    <div class="flex shrink-0 justify-end px-3 pt-2.5 pb-2">
+    <div class="flex shrink-0 items-center justify-end gap-2 px-3 pt-2.5 pb-2">
+      <UButton
+        v-if="jumpHeading"
+        :label="`Jump to ${jump}`"
+        icon="i-lucide-arrow-down-to-line"
+        variant="ghost"
+        size="xs"
+        @click="jumpHeading.scrollIntoView({ block: 'start' })"
+      />
       <FindBox v-model:term="term" :texts="texts" @hit="show" @close="clear" />
     </div>
     <USplitter :items="panes" auto-save-id="pmt.wiki" class="min-h-0 flex-1 border-t border-default">

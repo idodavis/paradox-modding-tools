@@ -56,43 +56,37 @@ type Shading struct {
 
 // A Layer is one layer of a coat: the pattern, an emblem or a sub-coat.
 type Layer struct {
-	// Role is the key as written: "pattern", "colored_emblem", "textured_emblem" or "sub".
-	Role string `json:"role"`
-	// Texture is as written; "missing:x" when `list "x"` names a list that does not exist.
-	Texture      string    `json:"texture"`
-	Path         string    `json:"path"`         // the image file for the texture
-	Emblem       bool      `json:"emblem"`       // the layer is an emblem, colored or textured
-	Writer       string    `json:"writer"`       // the parent coat that writes the layer; "" for the coat's own
-	Mask         string    `json:"mask"`         // the image file of the pattern whose regions an emblem shows in
-	MaskRange    lsp.Range `json:"maskRange"`    // where the emblem's mask is written; zero where it writes none
-	Regions      []int     `json:"regions"`      // the pattern's color regions an emblem shows in; none means all of them
-	MaskChannels []string  `json:"maskChannels"` // the pattern channel of each of those regions; none without a mask
-	Colors       []string  `json:"colors"`       // CSS colors, the fallback first and then one for each slot of the game
-	ColorNames   []string  `json:"colorNames"`   // the named color of each of those, "" for one written as numbers
-	Recolor      *Recolor  `json:"recolor"`      // how the game colors its texture; nil where it keeps its pixels
-	Lists        []Group   `json:"lists"`        // the template lists its values are drawn from, each with its options
-	// Inputs is how the panel edits each key the layer's role may write, by key.
-	Inputs map[string]string `json:"inputs"`
-	// Instances are in the order written. Each one's Rank says when the coat draws it.
-	Instances []Instance      `json:"instances"`
-	Sub       *Coat           `json:"sub,omitempty"`
-	Range     lsp.Range       `json:"range"`
-	Place     workspace.Place `json:"place"` // the file the layer is written in
+	Role         string            `json:"role"`         // the key as written: "pattern", "colored_emblem", "textured_emblem" or "sub"
+	Texture      string            `json:"texture"`      // as written; "missing:x" when `list "x"` names a list that does not exist
+	Path         string            `json:"path"`         // the image file for the texture
+	Emblem       bool              `json:"emblem"`       // the layer is an emblem, colored or textured
+	Writer       string            `json:"writer"`       // the parent coat that writes the layer; "" for the coat's own
+	Mask         string            `json:"mask"`         // the image file of the pattern whose regions an emblem shows in
+	MaskRange    lsp.Range         `json:"maskRange"`    // where the emblem's mask is written; zero where it writes none
+	Regions      []int             `json:"regions"`      // the pattern's color regions an emblem shows in; none means all of them
+	MaskChannels []string          `json:"maskChannels"` // the pattern channel of each of those regions; none without a mask
+	Colors       []string          `json:"colors"`       // CSS colors, the fallback first and then one for each slot of the game
+	ColorNames   []string          `json:"colorNames"`   // the named color of each of those, "" for one written as numbers
+	Recolor      *Recolor          `json:"recolor"`      // how the game colors its texture; nil where it keeps its pixels
+	Lists        []Group           `json:"lists"`        // the template lists its values are drawn from, each with its options
+	Inputs       map[string]string `json:"inputs"`       // how the panel edits each key the layer's role may write, by key
+	Instances    []Instance        `json:"instances"`    // in the order written; each one's Rank says when the coat draws it
+	Sub          *Coat             `json:"sub,omitempty"`
+	Range        lsp.Range         `json:"range"`
+	Place        workspace.Place   `json:"place"` // the file the layer is written in
 }
 
 // A Coat is a coat of arms resolved for drawing, as its layers.
 type Coat struct {
-	Name   string          `json:"name"`
-	Layers []Layer         `json:"layers"`
-	Range  lsp.Range       `json:"range"`
-	Place  workspace.Place `json:"place"`
-	// Width and Height are the size of its field in pixels; 0 for a sub-coat or where the game gives none.
-	Width  int `json:"width"`
-	Height int `json:"height"`
-	// Shading is nil where the game shades no coat.
-	Shading *Shading `json:"shading"`
-	Regions []int    `json:"regions"` // the pattern's color regions, each one an emblem can show in
-	Slots   []string `json:"slots"`   // the keys that write the color slots, slot 1 first
+	Name    string          `json:"name"`
+	Layers  []Layer         `json:"layers"`
+	Range   lsp.Range       `json:"range"`
+	Place   workspace.Place `json:"place"`
+	Width   int             `json:"width"`   // the width of its field in pixels; 0 for a sub-coat or where the game gives none
+	Height  int             `json:"height"`  // the height of its field in pixels; 0 for a sub-coat or where the game gives none
+	Shading *Shading        `json:"shading"` // nil where the game shades no coat
+	Regions []int           `json:"regions"` // the pattern's color regions, each one an emblem can show in
+	Slots   []string        `json:"slots"`   // the keys that write the color slots, slot 1 first
 }
 
 // An Image is one image file the panel offers, with its label.

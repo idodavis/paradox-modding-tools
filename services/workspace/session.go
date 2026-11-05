@@ -87,8 +87,10 @@ func (wsp *Service) openSession(workspaceID string, progress func(stage string, 
 	_ = removeEntries(filepath.Dir(folder), filepath.Base(folder))
 	order := lo.Map(record.Mods, func(mod app.Mod, _ int) Mod { return readMod(row, mod) })
 	ws.Order.Store(&order)
-	progress("mods", 0)
-	mods, err := ws.ScanOrder(lo.Map(record.Mods, func(mod app.Mod, _ int) string { return mod.ID }))
+	const stage = "Reading your mods"
+	progress(stage, 0)
+	mods, err := ws.ScanOrder(lo.Map(record.Mods, func(mod app.Mod, _ int) string { return mod.ID }),
+		func(percent int) { progress(stage, percent) })
 	if err != nil {
 		return nil, err
 	}
@@ -157,7 +159,7 @@ func (ws *Session) loadInstall(installPath, version string, progress func(stage 
 		ws.Schema, ws.Install = language, install
 		return nil
 	}
-	progress("listing", 0)
+	progress("Listing the game's files", -1)
 	roots, err := game.ListInstallRoots(installPath)
 	if err != nil {
 		return err
@@ -167,7 +169,7 @@ func (ws *Session) loadInstall(installPath, version string, progress func(stage 
 		return err
 	}
 	if !hasSchema {
-		progress("schema", 0)
+		progress("Reading the game's documentation", -1)
 		if language, err = schema.Build(ws.Game, installPath, listing, index.ParseFile); err != nil {
 			return err
 		}
@@ -226,9 +228,9 @@ func (ws *Session) refreshMod(modID string) {
 	ws.Order.Store(&order)
 }
 
-// ScanOrder returns an index of the mods scanned in another load order. It returns an error if the ids do not name
-// each mod once.
-func (ws *Session) ScanOrder(modIDs []string) (*index.Index, error) {
+// ScanOrder returns an index of the mods scanned in another load order, calling the given function with the percent of
+// their files scanned. It returns an error if the ids do not name each mod once.
+func (ws *Session) ScanOrder(modIDs []string, progress func(percent int)) (*index.Index, error) {
 	ordered, err := reorderMods(*ws.Order.Load(), modIDs, func(mod Mod) string { return mod.ID })
 	if err != nil {
 		return nil, err
@@ -241,7 +243,7 @@ func (ws *Session) ScanOrder(modIDs []string) (*index.Index, error) {
 			replaced = append(replaced, mod.Descriptor.ReplacePaths)
 		}
 	}
-	return index.ScanMods(ws.Schema, ws.Install, roots, replaced)
+	return index.ScanMods(ws.Schema, ws.Install, roots, replaced, progress)
 }
 
 // Close stops the watcher and drops the open files' buffers and documents.
@@ -387,34 +389,24 @@ func (ws *Session) findText(mods *index.Index, site index.Site, language string)
 	return message.Text
 }
 
-// LookupTitle returns the title of a definition, or "" if it has none. A definition with no title key is titled by its
-// name, or by the game's own key for a concept or a message.
-func (ws *Session) LookupTitle(mods *index.Index, site index.Site) string {
-	if key, ok := ws.FindTitleKey(mods, site); ok {
-		if text, _, ok := ws.LookupText(mods, key); ok {
-			return text
+// LookupDefinitionText returns a definition's text under the given key, game.TitleKey for its title or
+// game.DescriptionKey for its description. It is the text of the localization key the definition writes there, else
+// of the key the game builds from its name for its database. It returns "" if no such text exists.
+func (ws *Session) LookupDefinitionText(mods *index.Index, site index.Site, key string) string {
+	if tree, statement, err := ws.FindStatement(mods, site); err == nil {
+		if written, ok := FindTextKey(tree, statement, key); ok {
+			if text, _, ok := ws.LookupText(mods, written); ok {
+				return text
+			}
 		}
 	}
 	reference := mods.ToReference(site)
-	key := reference.Name
-	switch {
-	case reference.Database == ws.Schema.Concepts:
-		key = ws.Game.ConceptPrefix + key
-	case reference.Database == ws.Schema.Messages && ws.Game.MessageTitle != "":
-		key = fmt.Sprintf(ws.Game.MessageTitle, key)
+	pattern, ok := ws.Game.LookupTextKey(reference.Database, key)
+	if !ok {
+		return ""
 	}
-	text, _, _ := ws.LookupText(mods, key)
+	text, _, _ := ws.LookupText(mods, fmt.Sprintf(pattern, reference.Name))
 	return text
-}
-
-// FindTitleKey returns the localization key a definition writes as its title. It returns false if the definition
-// writes none or its statement cannot be found.
-func (ws *Session) FindTitleKey(mods *index.Index, site index.Site) (string, bool) {
-	tree, statement, err := ws.FindStatement(mods, site)
-	if err != nil {
-		return "", false
-	}
-	return FindTextKey(tree, statement, game.TitleKey)
 }
 
 // FindTextKey returns the localization key a statement writes under the given key, such as an event's title. A key

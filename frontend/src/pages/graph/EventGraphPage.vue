@@ -42,7 +42,7 @@ const RECENT = 8;
 /** START_SHOWN is how many roots each list of the start page shows. */
 const START_SHOWN = 4;
 /** START_ROW is the classes of a root's row on the start page. */
-const START_ROW = "flex h-8.5 w-full items-center gap-2.5 rounded-md px-2 text-start hover:bg-elevated";
+const START_ROW = "flex h-8.5 w-full items-center gap-2.5 rounded-md px-2 text-start hover:bg-accented";
 const LAYOUTS = [
   { label: "Detail below", icon: "i-lucide-panel-bottom", value: "panel" },
   { label: "Detail beside", icon: "i-lucide-panel-right", value: "drawer" },
@@ -149,7 +149,8 @@ const count = computed(() => {
   return total > drawn ? `${drawn} of ${plural(total, "node")}` : plural(total, "node");
 });
 const facts = computed(() => {
-  if (!graph.value) return [{ label: "No root", value: "pick one to draw" }];
+  if (!root) return [{ label: "No root", value: "" }];
+  if (!graph.value) return [];
   const drawn = [count.value];
   if (graph.value.truncated) drawn.push("stopped at the node limit");
   if (graph.value.nodes?.some((entry) => entry.deep)) drawn.push("the depth limit");
@@ -429,14 +430,24 @@ function setNumber(key: "depth" | "limit", value: number | null | undefined): vo
       <USeparator v-if="!isFullscreen" orientation="vertical" class="h-5" />
       <UButton icon="i-lucide-scan" square aria-label="Fit to view" :disabled="!graph" @click="canvas?.fit()" />
       <UDropdownMenu :items="EXPORTS" :content="{ align: 'end' }">
-        <UButton label="Export" icon="i-lucide-download" trailing-icon="i-lucide-chevron-down" :disabled="!graph" />
+        <UButton
+          label="Export"
+          icon="i-lucide-download"
+          trailing-icon="i-lucide-chevron-down"
+          :disabled="!root || !graph"
+        />
       </UDropdownMenu>
       <UButton v-if="isFullscreen" label="Exit full screen" icon="i-lucide-minimize-2" @click="toggleFullscreen()">
         <template #trailing><UKbd value="Esc" /></template>
       </UButton>
       <template v-else>
         <UTooltip text="Fold back every group and every dashed node you opened">
-          <UButton label="Collapse all" icon="i-lucide-fold-vertical" :disabled="!graph" @click="collapseAll" />
+          <UButton
+            label="Collapse all"
+            icon="i-lucide-fold-vertical"
+            :disabled="!root || !graph"
+            @click="collapseAll"
+          />
         </UTooltip>
         <UButton icon="i-lucide-maximize-2" square aria-label="Full screen" @click="toggleFullscreen()" />
         <USeparator orientation="vertical" class="h-5" />

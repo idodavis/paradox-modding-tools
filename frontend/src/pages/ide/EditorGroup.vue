@@ -21,7 +21,7 @@ import {
   findOverride,
   overrideEntry,
 } from "../../app/commands";
-import { copiesQuery, fileQuery } from "../../queries";
+import { copiesQuery, fileQuery, folderQuery, loadQuery, outlineQuery } from "../../queries";
 import { canSplit, useEditorStore, type Group, type Side, type Tab } from "../../stores/editor";
 import { THIS_WINDOW, useWindowsStore } from "../../stores/windows";
 import { useWorkspaceStore, VANILLA } from "../../stores/workspace";
@@ -54,6 +54,8 @@ const MODES = [
   { label: "Code", icon: "i-lucide-code", value: "code" },
   { label: "Visual", icon: "i-lucide-eye", value: "visual" },
 ];
+/** CRUMB holds the classes of a breadcrumb that opens a menu. */
+const CRUMB = "-mx-1 rounded-sm px-1 hover:bg-accented hover:text-highlighted";
 const REVEAL = findCommand("explorer.reveal");
 const CREATE = findCommand("mod.create");
 const SAVE_ALL = findCommand("editor.saveAll");
@@ -91,6 +93,8 @@ const { mutate: locateCaret, data: located } = useMutation({
 const card = computed(() => located.value?.card);
 const crumbs = computed(() => [...(place.value?.rel.split("/") ?? []), ...(card.value?.within ?? [])]);
 const folderCount = computed(() => (place.value?.rel.split("/").length ?? 1) - 1);
+// The menu of the breadcrumb pressed, filled as it opens.
+const crumbMenu = shallowRef<DropdownMenuItem[]>([]);
 // A game file that a mod replaces shows the replacing mod.
 const { data: copies } = useQuery(() => ({
   ...copiesQuery(place.value?.path ?? ""),
@@ -127,11 +131,7 @@ const notice = computed(() => {
   if (!activePlace?.readOnly || activeTab.value?.side || closedNotices.has(group.active ?? "")) return null;
   if (activePlace.origin === VANILLA) {
     if (activePlace.format === Format.FormatReadme || activePlace.format === Format.FormatMarkdown) return null;
-    return {
-      text: "Game files are read only. Your mod changes an entry by overriding it.",
-      detail: "",
-      workshop: false,
-    };
+    return { text: "Game files are read only.", detail: "", workshop: false };
   }
   return {
     text: `${workspace.originName(activePlace.origin)} is from the Steam Workshop, so PMT keeps it read only.`,
@@ -177,6 +177,52 @@ function overrideHere(fileModel: Model): void {
     card.value?.within?.[0] ?? "",
     modId,
   ).then(() => locateCaret(fileModel));
+}
+
+/**
+ * loadCrumb fills the breadcrumbs' menu as one opens: the entries of the given folder, or the active file's entries
+ * when no folder is given.
+ */
+async function loadCrumb(dir?: string): Promise<void> {
+  crumbMenu.value = [];
+  crumbMenu.value = dir === undefined ? await describeEntries() : await describeFolder(dir);
+}
+
+/** toFolder returns the path of the folder a breadcrumb names, by its index among the crumbs. */
+function toFolder(index: number): string {
+  const shown = place.value;
+  return shown
+    ? `${shown.root}/${shown.rel
+        .split("/")
+        .slice(0, index + 1)
+        .join("/")}`
+    : "";
+}
+
+/** describeFolder returns the menu of a folder's entries. A file opens, and a folder lists its own entries instead. */
+async function describeFolder(dir: string): Promise<DropdownMenuItem[]> {
+  const entries = (await loadQuery(folderQuery(dir))) ?? [];
+  return entries.map((entry) => ({
+    label: entry.name,
+    icon: entry.isDir ? "i-lucide-folder" : findIcon(entry),
+    onSelect: entry.isDir
+      ? (event: Event) => {
+          event.preventDefault();
+          void loadCrumb(entry.path);
+        }
+      : () => editor.show(entry),
+  }));
+}
+
+/** describeEntries returns the menu of the active file's entries, each going to its line. */
+async function describeEntries(): Promise<DropdownMenuItem[]> {
+  const shown = place.value;
+  if (!shown) return [];
+  const symbols = (await loadQuery(outlineQuery(shown.path))) ?? [];
+  return symbols.map((symbol) => ({
+    label: symbol.title || symbol.name,
+    onSelect: () => editor.show(shown, { lineNumber: symbol.range.startLineNumber, column: symbol.range.startColumn }),
+  }));
 }
 
 /** describe returns what the strip shows for a tab: its file, label, icon and marks. */
@@ -604,13 +650,26 @@ const actions = computed<DropdownMenuItem[]>(() => [
       v-if="place && !activeTab?.side"
       class="flex h-7 shrink-0 items-center gap-1.5 overflow-hidden border-b border-default bg-(--bg-0) px-3.5 text-12 whitespace-nowrap text-dimmed"
     >
-      <OriginChip :origin="place.origin" dot />
-      <span>{{ workspace.originName(place.origin) }}</span>
+      <UDropdownMenu
+        :items="crumbMenu"
+        :content="{ align: 'start' }"
+        @update:open="(open) => open && loadCrumb(place?.root)"
+      >
+        <button type="button" :class="CRUMB" class="flex items-center gap-1.5">
+          <OriginChip :origin="place.origin" dot />{{ workspace.originName(place.origin) }}
+        </button>
+      </UDropdownMenu>
       <template v-for="(part, index) in crumbs" :key="index">
         <UIcon name="i-lucide-chevron-right" class="size-3 shrink-0" />
-        <span :class="{ 'font-mono text-highlighted': index > folderCount, 'text-toned': index === folderCount }">{{
-          part
-        }}</span>
+        <UDropdownMenu
+          v-if="index <= folderCount"
+          :items="crumbMenu"
+          :content="{ align: 'start' }"
+          @update:open="(open) => open && loadCrumb(index < folderCount ? toFolder(index) : undefined)"
+        >
+          <button type="button" :class="[CRUMB, index === folderCount && 'text-toned']">{{ part }}</button>
+        </UDropdownMenu>
+        <span v-else class="font-mono text-highlighted">{{ part }}</span>
       </template>
       <span class="grow" />
       <template v-if="replacement">

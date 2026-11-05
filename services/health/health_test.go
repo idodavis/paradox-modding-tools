@@ -197,7 +197,7 @@ func TestBuildReportFindsContestsOverridesAndProblems(t *testing.T) {
 		t.Errorf("unused copy of brave: %+v", unused)
 	}
 	replaced := findFinding(t, findings, "override", "events/v_events.txt", game.File)
-	if replaced.Facts["kept"] != "the mod's" || len(replaced.Sites) != 2 || !replaced.Sites[0].Kept || replaced.Sites[1].Kept ||
+	if replaced.Facts["kept"] != "the game keeps the mod's" || len(replaced.Sites) != 2 || !replaced.Sites[0].Kept || replaced.Sites[1].Kept ||
 		lo.ContainsBy(findings, func(finding Finding) bool { return finding.Code == "override" && finding.Name == "v.1" }) {
 		t.Errorf("override of the file v_events.txt: %+v", replaced)
 	}
@@ -211,7 +211,7 @@ func TestBuildReportFindsContestsOverridesAndProblems(t *testing.T) {
 	if script := findFinding(t, findings, "unclosed-block", "", ""); script.Question != lsp.QuestionHealth {
 		t.Errorf("script problem: %+v", script)
 	}
-	assertGroups(t, report, []string{modA, modB})
+	assertGroups(t, report, []string{modA, modB}, nil)
 	if report.Compatibility.Worst != lsp.LevelCritical || report.Compatibility.Checks[0].Level != lsp.LevelCritical {
 		t.Errorf("compatibility: worst %q, checks %+v", report.Compatibility.Worst, report.Compatibility.Checks)
 	}
@@ -219,7 +219,7 @@ func TestBuildReportFindsContestsOverridesAndProblems(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	assertGroups(t, previewed, []string{modB, modA})
+	assertGroups(t, previewed, []string{modB, modA}, nil)
 	kept := findFinding(t, listFindings(previewed), "file-contest", "common/traits/m_traits.txt", game.File).Sites
 	if len(kept) != 2 || !kept[0].Kept || kept[0].Place.Origin != modA {
 		t.Errorf("contest of the file m_traits.txt with the first mod loaded last: %+v", kept)
@@ -239,8 +239,8 @@ func listFindings(report Report) []Finding {
 }
 
 // assertGroups checks that a report has a group for each mod in the order, and that each group's tally, checks and
-// sort say what its findings do.
-func assertGroups(t *testing.T, report Report, order []string) {
+// sort say what its findings do. The tally of the user's own mods leaves out the groups of the given external mods.
+func assertGroups(t *testing.T, report Report, order []string, external map[string]bool) {
 	t.Helper()
 	if ids := lo.Map(report.Mods, func(group Group, _ int) string { return group.Mod }); !slices.Equal(ids, order) {
 		t.Fatalf("the mods' groups are %v, want %v", ids, order)
@@ -258,14 +258,15 @@ func assertGroups(t *testing.T, report Report, order []string) {
 		if !slices.IsSorted(levels) {
 			t.Errorf("group %q: findings are not sorted worst first: %v", group.Mod, levels)
 		}
-		if group.Mod != "" {
+		if group.Mod != "" && !external[group.Mod] {
 			own = slices.Concat(own, group.Findings)
 		}
 	}
 	if want := makeTally(own); report.Own.Worst == "" || !maps.Equal(report.Own.Counts, want.Counts) {
-		t.Errorf("the mods' tally is %+v, want %+v", report.Own, want)
+		t.Errorf("the own mods' tally is %+v, want %+v", report.Own, want)
 	}
-	if want := makeTally(slices.Concat(report.Compatibility.Findings, own)); !maps.Equal(report.Counts, want.Counts) {
+	every := lo.FlatMap(report.Mods, func(group Group, _ int) []Finding { return group.Findings })
+	if want := makeTally(slices.Concat(report.Compatibility.Findings, every)); !maps.Equal(report.Counts, want.Counts) {
 		t.Errorf("the report's tally is %+v, want %+v", report.Tally, want)
 	}
 }
@@ -364,7 +365,7 @@ func TestBuildReportInstalls(t *testing.T) {
 			}
 			t.Logf("%d findings, %v counted, in %s", len(listFindings(report)), report.Counts,
 				time.Since(started).Round(time.Millisecond))
-			assertGroups(t, report, lo.Map(mods, func(mod app.Mod, _ int) string { return mod.ID }))
+			assertGroups(t, report, lo.Map(mods, func(mod app.Mod, _ int) string { return mod.ID }), hlt.listExternal())
 			logCounts(t, report)
 			started = time.Now()
 			gameLog, err := hlt.ListErrorLog()
@@ -409,7 +410,8 @@ func logCounts(t *testing.T, report Report) {
 	}
 }
 
-// compareDiagnostics fails the test if the report's counts of the editor's codes differ from what the editor finds.
+// compareDiagnostics fails the test if the report's counts of the codes the editor gives differ from what the editor
+// finds. The codes only Health's report finds are left out.
 func compareDiagnostics(t *testing.T, hlt *Service, report Report) {
 	t.Helper()
 	ws, err := hlt.Workspace.Session()
@@ -419,7 +421,8 @@ func compareDiagnostics(t *testing.T, hlt *Service, report Report) {
 	mods := ws.Mods.Load()
 	want := map[string]int{}
 	for _, file := range mods.Files[len(ws.Install.Files):] {
-		if _, known := mods.FindFile(file.Path); !known || !file.Format.IsScript() && file.Format != files.FormatLocalization {
+		judged := file.Format.IsScript() || file.Format == files.FormatLocalization || file.Format == files.FormatDescriptor
+		if _, known := mods.FindFile(file.Path); !known || !judged {
 			continue
 		}
 		diagnostics, _ := lsp.DiagnoseFile(ws, mods, file.Path)
@@ -427,11 +430,9 @@ func compareDiagnostics(t *testing.T, hlt *Service, report Report) {
 			want[diagnostic.Code]++
 		}
 	}
-	// the report's own health findings, and the descriptors', which the loop above does not judge
-	own := []string{"coverage", "supported-version"}
 	got := map[string]int{}
 	for _, finding := range listFindings(report) {
-		if finding.Question == lsp.QuestionHealth && !slices.Contains(own, finding.Code) {
+		if !lsp.LookupCode(finding.Code).HealthOnly {
 			got[finding.Code] += len(finding.Sites) + len(finding.Repeats)
 		}
 	}

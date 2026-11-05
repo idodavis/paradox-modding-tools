@@ -60,8 +60,10 @@ variable, a list, a flag) and no key that only switches a name on. Peek and Find
 
 - **Hover.** `Hover` walks to the position and returns a `Card`: what the key or value is, what it takes, where it
   leads, a date in the mod's calendar, a color, an image's header, a localization key's text and the sites that
-  define the name, the one the game keeps first. A command's card shows the scopes the dumps give it, or says they
-  name none. A fact learned only from the game's files marks the card inferred. `Classes` are the wiki lexicon's, in the
+  define the name, the one the game keeps first. What a value takes is worded in the game's words. A definition's card
+  also has its localized name and description, the comment lines just above it and, for a scripted effect or trigger,
+  its parameters. A command's card shows the scopes the dumps give it, or says they name none. A fact learned only
+  from the game's files marks the card inferred. `Classes` are the wiki lexicon's, in the
   order of its tabs, and `Card.Lexicon` names the one that lists what the card is about.
 - **Completion.** `Complete` returns what fits at a key: the language's operators for the block, then its commands,
   the scripted definitions the block's caller calls and, where the block reads links, the links written alone that
@@ -78,12 +80,14 @@ variable, a list, a flag) and no key that only switches a name on. Peek and Find
   its equals sign. A definition local to another file is never offered.
 - **Navigation.** `Definition` returns where a name is defined, the kept definition first. `References` adds where it is
   used. `Rename` returns its edits grouped by the mod file they change, and `PrepareRename` refuses a name the game
-  defines too, or one no mod defines. `ListSymbols` is a file's outline, and `FindSymbols` searches the workspace.
+  defines too, or one no mod defines. `ListSymbols` is a file's outline, and `FindSymbols` searches the workspace's
+  definitions, or its localization keys, best match first. Only a script file is walked to a position, since the
+  schema has no rules for the keys of any other file.
 - **Tokens.** `Tokens` returns the color category of every key and value, from the walk, encoded as Monaco's semantic
   tokens against `ListLegend`.
 - **Edits.** `Format` keeps the file's own indentation, and gives no edits for a read-only file, a file that does not
   parse, or one that would change in more than its spacing. `ListFixes` gives the quick fixes: the nearest defined
-  name for one nothing defines, a missing key with its default, an entry mode out of place removed, and the file's
+  name for one nothing defines, which for a call is also a command the block allows, a missing key with its default, an entry mode out of place removed, and the file's
   localization keys that have no base-language text added to the mod's localization file, which the fix creates first
   if it is missing. `BuildOverride` copies an entry into a mod, and `DraftFile` names and starts a new file.
 - **Details.** `ListFolds` returns every block that spans lines. `ListHints` reads each date in the mod's calendar and
@@ -94,10 +98,10 @@ variable, a list, a flag) and no key that only switches a name on. Peek and Find
 ## Diagnostics
 
 A `Diagnostic` is a code, a range and its facts, with its code's level and its message filled in. `Codes` is the one
-table of every code: its id, the question Health asks it under, its level, its topic, its label and its message, a
-template that the facts fill. A sentence about a problem is written once, there, and the editor's markers and Health's
-rows both read the level from it. `SplitMessage` fills a template as `Part`s, each fact in its style, and `JoinParts`
-joins them into the plain text.
+table of every code: its id, the question Health asks it under, its level, its topic, its label, its description and its
+message, a template that the facts fill. A sentence about a problem is written once, there, and the editor's markers
+and Health's rows both read the level from it. `SplitMessage` fills a template as `Part`s, each fact in its style, and
+`JoinParts` joins them into the plain text.
 
 - `Diagnose` judges a file against the open session, without the checks the user turned off (`ide.checks`).
   `DiagnoseFile` does the same against any session and index. `DiagnoseFiles` judges many files in parallel, as Health

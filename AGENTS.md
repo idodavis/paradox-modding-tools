@@ -62,7 +62,9 @@ Each rule says what checks it; "review" means nothing does, so the author and th
   says what an instance is, not its fields; a package's says in two sentences what it does; a Vue or TS header is
   one or two plain sentences on what the file shows or does. Never the algorithm (that is a comment inside the
   body), never who calls it, never a library inventory, and no history, plan, stage, ruling, date or person. A
-  comment line fits in 120 columns, a tab counting 2. A comment that restates the next line is deleted. The sample
+  comment line fits in 120 columns, a tab counting 2. A struct field's comment sits beside the field, on its line, a
+  short phrase of what it holds and its special value ("" means none); that line may run to 240 columns, and no field
+  takes a comment above or below it. A comment that restates the next line is deleted. The sample
   is `services/draw/*.go` in this repository. Before and after, from it: "ResolveWindow resolves a
   window of a file: its types and templates the ones the game keeps, block overrides applied, each property by the
   last written" became "ResolveWindow resolves one window in a GUI file. It applies the window's type and

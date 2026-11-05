@@ -39,6 +39,7 @@ const emit = defineEmits<{ open: [finding: Finding]; save: [] }>();
 /** The tried load order, as mod ids. */
 const order = defineModel<string[]>("order", { required: true });
 const filter = defineModel<string>("filter", { default: "" });
+const checks = defineModel<string[]>("checks", { default: () => [] });
 
 /** The checks whose rows have a menu to compare, open or ignore their copies. */
 const MENU_CODES = ["contest", "file-contest", "undecided-contest", "shared-message"];
@@ -183,6 +184,7 @@ function buildMenu(finding: Finding): DropdownMenuItem[][] {
     </div>
     <HealthList
       v-model:filter="filter"
+      v-model:checks="checks"
       :findings="findings"
       empty="No two mods write the same thing, and none uses another's names."
       :opened="opened"

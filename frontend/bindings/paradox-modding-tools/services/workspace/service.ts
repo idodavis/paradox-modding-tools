@@ -159,8 +159,9 @@ export function ListCopies(path: string): $CancellablePromise<$models.Place[] | 
 }
 
 /**
- * ListFolder returns the places of a folder's entries, folders first. Binary files are left out unless the workspace
- * shows them. It returns an error if no workspace is open or the folder cannot be read.
+ * ListFolder returns the places of a folder's entries, folders first. Hidden folders, such as .git, are left out, and
+ * so are binary files while the setting to hide them is on. It returns an error if no workspace is open or the folder
+ * cannot be read.
  */
 export function ListFolder(dir: string): $CancellablePromise<$models.Place[] | null> {
     return $Call.ByID(434589381, dir);

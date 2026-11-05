@@ -97,7 +97,7 @@ async function snapshot(): Promise<Blob | null> {
           v-for="mip in levels"
           :key="mip.index"
           type="button"
-          class="flex h-10 shrink-0 items-center gap-2.5 px-3 text-12 text-toned hover:bg-elevated"
+          class="flex h-10 shrink-0 items-center gap-2.5 px-3 text-12 text-toned hover:bg-accented"
           :class="mip.index === level && 'bg-(--accent-soft) text-highlighted'"
           @click="level = mip.index"
         >

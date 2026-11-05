@@ -65,17 +65,16 @@ type State struct {
 
 // A Scanning is how far an install's scan has come. The install:scanning event carries it.
 type Scanning struct {
-	Stage   string `json:"stage"`
-	Percent int    `json:"percent"`
+	Stage   string `json:"stage"`   // the stage in words
+	Percent int    `json:"percent"` // how far the stage has come; -1 for a stage that reports none
 }
 
 // A FileText is a file's text with its place in the workspace.
 type FileText struct {
-	Place Place      `json:"place"`
-	Text  files.Text `json:"text"`
-	// Draft is the editor's unsaved text of the file. It is "" if there is none or it matches the disk.
-	Draft  string `json:"draft"`
-	Binary bool   `json:"binary"` // the file is not text, so it has no text
+	Place  Place      `json:"place"`
+	Text   files.Text `json:"text"`
+	Draft  string     `json:"draft"`  // the editor's unsaved text of the file; "" if there is none or it matches the disk
+	Binary bool       `json:"binary"` // the file is not text, so it has no text
 }
 
 // A Workspace is one recorded workspace as the pages list it: its record, its install, its game and its mods in load
@@ -217,7 +216,9 @@ func (wsp *Service) ListLanguages(installID string) ([]loc.Language, error) {
 	languages := []loc.Language{}
 	for _, entry := range entries {
 		if entry.IsDir() {
-			languages = append(languages, loc.Language{Folder: entry.Name(), Label: loc.DescribeLanguage(entry.Name())})
+			languages = append(languages, loc.Language{
+				Folder: entry.Name(), Label: loc.DescribeLanguage(entry.Name()), Base: entry.Name() == game.BaseLanguage,
+			})
 		}
 	}
 	return languages, nil
@@ -641,8 +642,9 @@ func (wsp *Service) FindWritable(paths ...string) (*Session, error) {
 	return ws, nil
 }
 
-// ListFolder returns the places of a folder's entries, folders first. Binary files are left out unless the workspace
-// shows them. It returns an error if no workspace is open or the folder cannot be read.
+// ListFolder returns the places of a folder's entries, folders first. Hidden folders, such as .git, are left out, and
+// so are binary files while the setting to hide them is on. It returns an error if no workspace is open or the folder
+// cannot be read.
 func (wsp *Service) ListFolder(dir string) ([]Place, error) {
 	ws, err := wsp.Session()
 	if err != nil {
@@ -652,12 +654,15 @@ func (wsp *Service) ListFolder(dir string) ([]Place, error) {
 	if err != nil {
 		return nil, err
 	}
-	record, _, _, _ := findRecords(wsp.Config.Config(), ws.ID)
+	hidden, _ := wsp.Config.LookupSetting(ws.ID, "ide.hideBinaries")
 	mods := ws.Mods.Load()
 	places := lo.FilterMap(entries, func(entry os.DirEntry, _ int) (Place, bool) {
 		place := ws.Locate(mods, filepath.Join(dir, entry.Name()))
 		place.IsDir = entry.IsDir()
-		return place, place.IsDir || record.ShowBinaries || place.Format.IsText()
+		if place.IsDir {
+			return place, !files.IsHiddenDir(entry.Name())
+		}
+		return place, hidden != "true" || place.Format.IsText()
 	})
 	slices.SortStableFunc(places, func(first, second Place) int {
 		return cmp.Compare(lo.Ternary(first.IsDir, 0, 1), lo.Ternary(second.IsDir, 0, 1)) // folders first

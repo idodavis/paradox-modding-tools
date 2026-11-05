@@ -38,7 +38,7 @@ const fixtureModID = "mod-a"
 var createApp = sync.OnceFunc(func() { application.New(application.Options{}) })
 
 // warmStages are the stages an open reports when both caches are there: only the mods are scanned.
-var warmStages = []string{"mods"}
+var warmStages = []string{"Reading your mods"}
 
 // resolveFixture returns the absolute path of a folder under internal/testdata.
 func resolveFixture(t *testing.T, parts ...string) string {
@@ -139,7 +139,8 @@ func TestOpenLoadsCachesOnSecondOpen(t *testing.T) {
 		t.Fatal(err)
 	}
 	ws, stages, _ := listOpenStages(t, config)
-	if want := []string{"listing", "schema", "indexing", "postings", "mods"}; !slices.Equal(stages, want) {
+	if want := []string{"Listing the game's files", "Reading the game's documentation", "Reading the game's files",
+		"Indexing names", "Reading your mods"}; !slices.Equal(stages, want) {
 		t.Errorf("first open stages: %v, want %v", stages, want)
 	}
 	dumpsAt := ws.Schema.Dumps.WrittenAt.Unix()
@@ -274,9 +275,9 @@ func TestLookupTextPrefersReplaceFolder(t *testing.T) {
 	}
 }
 
-// TestLookupTitleReadsTitleKey checks that a definition's title is the message its title key names, else the message of
-// its name, and that a game concept's has the concept prefix in front.
-func TestLookupTitleReadsTitleKey(t *testing.T) {
+// TestLookupDefinitionTextReadsTitleKey checks that a definition's title is the message its title key names, else the
+// message of its name, and that a game concept's has the concept prefix in front.
+func TestLookupDefinitionTextReadsTitleKey(t *testing.T) {
 	ws, _ := openFixture(t)
 	mods := ws.Mods.Load()
 	for _, want := range []struct{ database, name, title string }{
@@ -285,7 +286,8 @@ func TestLookupTitleReadsTitleKey(t *testing.T) {
 		{ws.Schema.Events, "v.1", "Hello"}, // its title key names v.1.t
 		{"on_action", "on_birth", ""},      // no title key, and no message of its name
 	} {
-		if title := ws.LookupTitle(mods, findDefinition(t, mods, want.database, want.name)); title != want.title {
+		site := findDefinition(t, mods, want.database, want.name)
+		if title := ws.LookupDefinitionText(mods, site, game.TitleKey); title != want.title {
 			t.Errorf("title of %s %s: %q, want %q", want.database, want.name, title, want.title)
 		}
 	}
@@ -583,14 +585,15 @@ func TestWriteDescriptorKeepsOtherFields(t *testing.T) {
 }
 
 // TestCreateModFolderMakesSkeleton checks that a new mod gets its folder, the game's folders and a descriptor, that
-// CK3 also gets the launcher's file beside the folder, and that an existing folder is an error.
+// CK3 also gets the launcher's file in the launcher's folder, and that an existing folder is an error.
 func TestCreateModFolderMakesSkeleton(t *testing.T) {
 	versions := map[string]string{ck3: "1.20.1.2", eu5: "build 12345"}
 	supported := map[string]string{ck3: "1.20.*", eu5: ""}
 	for _, gameID := range []string{ck3, eu5} {
 		row := game.LookupGame(gameID)
 		holder := filepath.Join(t.TempDir(), "mod")
-		made, err := createModFolder(row, holder, "My New Mod", versions[gameID])
+		launcherDir := filepath.Join(t.TempDir(), "launcher")
+		made, err := createModFolder(row, holder, launcherDir, "My New Mod", versions[gameID])
 		folder := filepath.Join(holder, "my_new_mod")
 		if err != nil || made != folder {
 			t.Fatalf("%s: %q, %v", gameID, made, err)
@@ -604,13 +607,13 @@ func TestCreateModFolderMakesSkeleton(t *testing.T) {
 			read.SupportedVersion != supported[gameID] || read.Path != files.Join(folder, row.ModDescriptor) {
 			t.Errorf("%s: descriptor %+v, %v", gameID, read, err)
 		}
-		launcher, err := os.ReadFile(filepath.Join(holder, "my_new_mod.mod"))
+		launcher, err := os.ReadFile(filepath.Join(launcherDir, "my_new_mod.mod"))
 		if hasLauncher := err == nil; hasLauncher != (gameID == ck3) || hasLauncher &&
 			(!strings.Contains(string(launcher), `path="`+filepath.ToSlash(folder)+`"`) ||
 				!strings.Contains(string(launcher), `supported_version="1.20.*"`)) {
 			t.Errorf("%s: launcher file %q, %v", gameID, launcher, err)
 		}
-		if _, err := createModFolder(row, holder, "My New Mod", versions[gameID]); err == nil {
+		if _, err := createModFolder(row, holder, launcherDir, "My New Mod", versions[gameID]); err == nil {
 			t.Errorf("%s: a folder that exists was made again", gameID)
 		}
 	}
@@ -645,7 +648,7 @@ func TestServiceReadsOpenWorkspace(t *testing.T) {
 		t.Errorf("fonts with binaries hidden: %+v, %v", children, err)
 	}
 	err = config.Update("", func(records *app.Config) error {
-		records.Workspaces[0].ShowBinaries = true
+		records.Settings = map[string]string{"ide.hideBinaries": "false"}
 		return nil
 	})
 	if children, _ = wsp.ListFolder(fonts); err != nil || len(children) != 3 {

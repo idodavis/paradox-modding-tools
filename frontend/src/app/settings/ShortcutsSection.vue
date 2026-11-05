@@ -1,4 +1,7 @@
-<!-- The keyboard shortcuts of every command that has one. A click on one records new keys for it. -->
+<!--
+  The keyboard shortcuts of every command that has one, and the editor's own keys. A click on a command's shortcut
+  records new keys for it.
+-->
 <script setup lang="ts">
 import { useEventListener } from "@vueuse/core";
 import { computed, shallowRef } from "vue";
@@ -17,6 +20,15 @@ import {
 
 /** MODIFIERS holds the keys that cannot be a shortcut alone. */
 const MODIFIERS = new Set(["Control", "Shift", "Alt", "Meta"]);
+/** EDITOR_KEYS holds the keys Monaco binds in the editor and PMT teaches. They cannot be changed. */
+const EDITOR_KEYS = [
+  { label: "Go to definition", kbds: ["F12"] },
+  { label: "Peek definition", kbds: ["alt", "F12"] },
+  { label: "Peek references", kbds: ["shift", "F12"] },
+  { label: "Rename", kbds: ["F2"] },
+  { label: "Suggest", kbds: ["meta", "Space"] },
+  { label: "Quick fix", kbds: ["meta", "."] },
+];
 
 const { getKbdKey } = useKbd();
 const recording = shallowRef<{ command: Command; slot: number }>();
@@ -106,6 +118,17 @@ function captureKeys(event: KeyboardEvent): void {
       <p v-if="refused?.command === row.command && refused.slot === row.slot" class="text-end text-12 text-warning">
         {{ refused.reason }}
       </p>
+    </div>
+    <div class="flex flex-col gap-0.5">
+      <h3 class="text-13 font-semibold">Editor</h3>
+      <p class="text-12 text-dimmed">The editor's own keys, which stay as they are.</p>
+    </div>
+    <div v-for="row in EDITOR_KEYS" :key="row.label" class="flex items-center gap-2.5 text-13">
+      <span class="min-w-0 grow truncate">{{ row.label }}</span>
+      <span class="flex min-w-36 justify-center gap-0.5">
+        <UKbd v-for="(key, index) in row.kbds" :key="index" :value="key" />
+      </span>
+      <span class="size-8 shrink-0" />
     </div>
   </div>
 </template>

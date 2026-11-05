@@ -460,8 +460,8 @@ func listCommands(commands map[string]*schema.Command, holder *schema.Context, r
 	var candidates []Completion
 	for _, key := range slices.Sorted(maps.Keys(commands)) {
 		command := commands[key]
-		declaration, ok := holder.FindDeclaration(command)
-		if !ok || command.Wild {
+		declaration, ok := findAllowed(command, holder)
+		if !ok {
 			continue
 		}
 		candidates = append(candidates, makeKey(Completion{
@@ -472,11 +472,21 @@ func listCommands(commands map[string]*schema.Command, holder *schema.Context, r
 	return candidates
 }
 
-// isBlockCommand reports whether a command is written with a block: it takes block arguments, leads to a scope or
-// walks a list.
+// findAllowed returns how the dumps declare a command, among the ways the given block takes it. It returns false if
+// the block does not take the command, or the command is a pattern that no written name matches.
+func findAllowed(command *schema.Command, holder *schema.Context) (string, bool) {
+	declaration, ok := holder.FindDeclaration(command)
+	return declaration, ok && !command.Wild
+}
+
+// isBlockCommand reports whether a command is only ever written with a block: every form of it takes block arguments,
+// or it leads to a scope or walks a list, and the game's own files never write it as a plain value.
 func isBlockCommand(command *schema.Command) bool {
-	return slices.ContainsFunc(slices.Collect(maps.Values(command.Arguments)), isBlockField) || command.Target != "" ||
-		command.Lists
+	arguments := slices.Collect(maps.Values(command.Arguments))
+	if slices.ContainsFunc(arguments, func(field *schema.Field) bool { return field != nil && len(field.Vanilla.Values) > 0 }) {
+		return false
+	}
+	return command.Target != "" || command.Lists || len(arguments) > 0 && lo.EveryBy(arguments, isBlockField)
 }
 
 // makeKey returns the given candidate with its insert text set: the key and an equals sign, and an empty block if the

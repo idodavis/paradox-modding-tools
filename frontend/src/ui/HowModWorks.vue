@@ -5,8 +5,14 @@ import { useRouter } from "vue-router";
 import { useQuery } from "@pinia/colada";
 
 import { toSentence } from "../lib/format";
-import { gamesQuery, precedenceQuery } from "../queries";
+import { gamesQuery } from "../queries";
 import { useWorkspaceStore } from "../stores/workspace";
+
+const RULES = [
+  "Mods load after the game, in the workspace's load order, top to bottom.",
+  "A mod file at the same path as one of the game's replaces that whole file. Every entry in it is then the mod's to keep up to date when the game is patched.",
+  "When two files define the same name, its kind decides which copy stays. For most kinds the game keeps the last copy it reads, so a mod's copy wins when its file name sorts after the others. Health's compatibility lists the rule for every kind.",
+];
 
 const open = defineModel<boolean>("open", { required: true });
 const { gameId, modTitle } = defineProps<{ gameId: string; modTitle: string }>();
@@ -16,25 +22,12 @@ const workspace = useWorkspaceStore();
 const { data: games } = useQuery(gamesQuery);
 const game = computed(() => games.value?.find((row) => row.id === gameId) ?? games.value?.[0]);
 const example = computed(() => game.value?.example);
-const { data: precedence } = useQuery(() => ({
-  ...precedenceQuery({
-    gameId: game.value?.id ?? "",
-    database: example.value?.database ?? "",
-    folder: example.value?.folder ?? "",
-  }),
-  enabled: open.value && !!example.value,
-}));
 
 const title = computed(() => modTitle.trim() || "Your mod");
 const newEntry = computed(() => `${title.value.toLowerCase().replace(/\W+/g, "_")}_new`);
 const uses = computed(() => [
   ...(example.value?.names ?? []).map((entry, index) => ({ entry, modCopy: index === 0 })),
   { entry: newEntry.value, modCopy: true },
-]);
-const rules = computed(() => [
-  "Mods load after the game, in the workspace's load order, top to bottom.",
-  "A mod file at the same path as one of the game's replaces that whole file. Every entry in it is then the mod's to keep up to date when the game is patched.",
-  `When two files define the same name, its kind decides which copy stays. ${precedence.value ?? ""}`,
 ]);
 
 /** openCompatibility shows Health's compatibility for the open workspace and closes the dialog. */
@@ -99,7 +92,7 @@ function openCompatibility(): void {
           </div>
         </div>
         <ol class="flex flex-col gap-2.5">
-          <li v-for="(rule, index) in rules" :key="index" class="flex items-start gap-2.5">
+          <li v-for="(rule, index) in RULES" :key="index" class="flex items-start gap-2.5">
             <span
               class="mt-0.5 flex size-5 shrink-0 items-center justify-center rounded-full bg-accented text-11 font-medium"
             >

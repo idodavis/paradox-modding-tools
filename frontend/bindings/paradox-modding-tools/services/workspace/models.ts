@@ -206,7 +206,14 @@ export interface Place {
  * A Scanning is how far an install's scan has come. The install:scanning event carries it.
  */
 export interface Scanning {
+    /**
+     * the stage in words
+     */
     "stage": string;
+
+    /**
+     * how far the stage has come; -1 for a stage that reports none
+     */
     "percent": number;
 }
 

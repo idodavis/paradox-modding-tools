@@ -205,6 +205,15 @@ export const COMMANDS: readonly Command[] = [
     onSelect: () => useWindowsStore().sendCommand("editor.toggleWiki"),
   },
   {
+    id: "editor.togglePanel",
+    label: "Show or hide the bottom panel",
+    prefix: "IDE:",
+    icon: "i-lucide-panel-bottom",
+    kbds: ["meta", "J"],
+    when: isIde,
+    onSelect: () => commandBus.emit("editor.togglePanel"),
+  },
+  {
     id: "editor.undo",
     label: "Undo",
     icon: "i-lucide-undo-2",
@@ -703,7 +712,10 @@ export async function trashFile(path: string, label: string, note = ""): Promise
   return trashed;
 }
 
-/** removeMod asks, then takes a mod out of a workspace but not off the disk. The mod is named by the given name. */
+/**
+ * removeMod asks, then closes the mod's tabs and takes it out of a workspace but not off the disk. The mod is named
+ * by the given name. It asks once more when closing the tabs would drop unsaved text, and keeps the mod on a no.
+ */
 export async function removeMod(workspaceId: string, modId: string, name: string): Promise<void> {
   const confirmed = await confirm.open({
     title: `Remove ${name || "this mod"}?`,
@@ -711,7 +723,12 @@ export async function removeMod(workspaceId: string, modId: string, name: string
     confirm: "Remove mod",
     destructive: true,
   });
-  if (confirmed) await workspaceApi.RemoveMod(workspaceId, modId);
+  const editor = useEditorStore();
+  const isActive = workspaceId === useWorkspaceStore().activeId();
+  const tabs = isActive ? editor.listTabs().filter((tab) => editor.placeOf(tab.key)?.origin === modId) : [];
+  if (!confirmed || !(await editor.confirmClose(tabs))) return;
+  tabs.forEach((tab) => editor.close(tab.id));
+  await workspaceApi.RemoveMod(workspaceId, modId);
 }
 
 /** activeModel returns the model of the active tab's file, or null. */

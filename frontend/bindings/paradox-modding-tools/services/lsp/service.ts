@@ -77,11 +77,13 @@ export function DraftFile(folder: string): $CancellablePromise<$models.Draft> {
 }
 
 /**
- * FindSymbols returns up to the given limit of definitions whose name contains the query, then the localization keys
- * that do. In each group the mods' files come before the game's. It returns an empty list for an empty query.
+ * FindSymbols returns up to the given limit of names that contain the query: the definitions, or the localization keys
+ * when the second argument is true. The best match comes first: the name that is the query, then the names that start
+ * with it, then the rest. Within each of these the mods' files come before the game's. It returns an empty list for an
+ * empty query.
  */
-export function FindSymbols(query: string, limit: number): $CancellablePromise<$models.WorkspaceSymbol[] | null> {
-    return $Call.ByID(3280846261, query, limit);
+export function FindSymbols(query: string, localization: boolean, limit: number): $CancellablePromise<$models.WorkspaceSymbol[] | null> {
+    return $Call.ByID(3280846261, query, localization, limit);
 }
 
 /**

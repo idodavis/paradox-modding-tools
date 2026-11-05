@@ -49,11 +49,9 @@ type Definition struct {
 type Reference struct {
 	Database string      `json:"database"`
 	Name     string      `json:"name"`
-	Span     jomini.Span `json:"span"`             // the name alone: no quotes, no prefix
-	Caller   string      `json:"caller,omitempty"` // the caller it is resolved through; "" if none
-	// Inferred is set when the reference never accuses: it rests only on what the game's own files write, or it names
-	// a database whose names need no definition (game.Database.Optional).
-	Inferred bool `json:"inferred,omitempty"`
+	Span     jomini.Span `json:"span"`               // the name alone: no quotes, no prefix
+	Caller   string      `json:"caller,omitempty"`   // the caller it is resolved through; "" if none
+	Inferred bool        `json:"inferred,omitempty"` // it is never an error: it rests only on the game's own files, or its database needs no entry
 }
 
 // ToID returns the id the pages give a referenced name: its database and its name.
@@ -451,7 +449,7 @@ func (walker *walker) resolveKey(context *Context, statement int32, level int) {
 		key, span = step.Text, step.Span
 	}
 	var keyword *game.Keyword
-	if row, ok := walker.row.LookupKeyword(findShape(parent), walker.frames[level-1].label, key); ok {
+	if row, ok := walker.row.LookupKeyword(findShape(parent), walker.frames[level-1].label, key, findKeywordKey(parent)); ok {
 		keyword = new(row)
 	}
 	fit, fits := walker.findMatch(parent, key, walker.tree.Statements[statement].IsBlock())
@@ -502,6 +500,14 @@ func (walker *walker) resolveKey(context *Context, statement int32, level int) {
 // findShape returns the shape of the block that a context holds, game.ShapeUnknown by default.
 func findShape(context *Context) string {
 	return cmp.Or(context.Shape, game.ShapeUnknown)
+}
+
+// findKeywordKey returns the Key of the keyword row that a context is, or "" if the context is no keyword.
+func findKeywordKey(context *Context) string {
+	if context.Keyword == nil {
+		return ""
+	}
+	return context.Keyword.Key
 }
 
 // findEnclosing returns the shape of the block that a link or an "enclosing" keyword written in the block of a context
@@ -842,13 +848,14 @@ func (walker *walker) resolveAlias(context *Context, statement int32, level int)
 	current, parent := walker.tree.Statements[statement], walker.frames[level-1].context
 	database := walker.schema.Databases[parent.Database]
 	if database == nil || !parent.Defines || parent.Category != CategoryDefinition || current.IsBlock() ||
-		current.Value.IsEmpty() || !slices.Contains(database.Row.AliasKeys, walker.frames[level].label) {
+		current.Value.IsEmpty() {
 		return
 	}
+	target, isAlias := database.Row.Aliases[walker.frames[level].label]
 	span := walker.tree.UnquotedSpan(current.Value)
-	if label := walker.tree.Text(span); label != "" && !jomini.IsParameter(label) {
+	if label := walker.tree.Text(span); isAlias && label != "" && !jomini.IsParameter(label) {
 		context.Definition = &Definition{
-			Database: cmp.Or(database.Row.AliasTarget, database.Name), Name: label, Span: span, Statement: statement, Alias: true,
+			Database: cmp.Or(target, database.Name), Name: label, Span: span, Statement: statement, Alias: true,
 		}
 		context.Defines = true
 	}
@@ -937,7 +944,7 @@ func (walker *walker) resolveValueReferences(context *Context, statement int32, 
 				name = fmt.Sprintf(stem, text)
 			}
 			context.References = append(context.References, Reference{
-				Database: database, Name: name, Span: span, Inferred: position == 0 && inferred || walker.isOptional(database),
+				Database: database, Name: name, Span: span, Inferred: position == 0 && inferred || walker.allowsUndefined(database),
 			})
 		}
 	}
@@ -1037,10 +1044,10 @@ func (walker *walker) findValueDatabase(context *Context, level int, text string
 	if database, ok := walker.findPictureDatabase(context.Database, keys); ok && !strings.Contains(text, "/") {
 		return database, "", true
 	}
-	database := walker.schema.Databases[context.Database]
-	if database != nil && slices.Contains(database.Row.AliasKeys, key) &&
-		(!context.Defines || !context.Definition.Alias) {
-		return cmp.Or(database.Row.AliasTarget, database.Name), "", true
+	if database := walker.schema.Databases[context.Database]; database != nil && (!context.Defines || !context.Definition.Alias) {
+		if target, isAlias := database.Row.Aliases[key]; isAlias {
+			return cmp.Or(target, database.Name), "", true
+		}
 	}
 	return "", "", false
 }
@@ -1106,10 +1113,10 @@ func (walker *walker) hasNamespace(id string) bool {
 	return walker.schema.Namespaces[namespace] || walker.namespaces[namespace]
 }
 
-// isOptional reports whether a database's names need no definition, as its row says.
-func (walker *walker) isOptional(label string) bool {
+// allowsUndefined reports whether a reference to a database needs no entry there, as its row says.
+func (walker *walker) allowsUndefined(label string) bool {
 	database := walker.schema.Databases[label]
-	return database != nil && database.Row.Optional
+	return database != nil && database.Row.AllowsUndefined
 }
 
 // listPrefixed returns the references a chain of links makes after prefixes that have a database. A name that is itself

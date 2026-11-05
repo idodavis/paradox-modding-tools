@@ -52,7 +52,15 @@ type Task struct {
 	Name  string `json:"name"`
 	Title string `json:"title"`
 	Text  string `json:"text"`
-	Chip  string `json:"chip"` // file, page, mod or event
+	Chip  string `json:"chip"`  // file, page, mod or event
+	Edits bool   `json:"edits"` // it changes the file it is about, so it needs one the user can change
+}
+
+// A Tool is one of PMT's tools, as an agent is told of it.
+type Tool struct {
+	Name     string `json:"name"`
+	Title    string `json:"title"`    // a short phrase for what the tool does, such as "Read a file"
+	ReadOnly bool   `json:"readOnly"` // it changes no file
 }
 
 // An Access is what an agent needs to reach the server.
@@ -63,7 +71,7 @@ type Access struct {
 
 // Tasks holds the starter tasks. Each text works with the chip attached, and without it through describe_view.
 var Tasks = []Task{
-	{Name: "fix-problems", Title: "Fix this file's problems", Chip: "file",
+	{Name: "fix-problems", Title: "Fix this file's problems", Chip: "file", Edits: true,
 		Text: "Fix the problems of the file I have open in PMT: the attached file, or the one describe_view names. " +
 			"List them with diagnose, change only what each one needs, and diagnose the file again before you finish."},
 	{Name: "explain-file", Title: "Explain this file", Chip: "file",
@@ -210,9 +218,34 @@ func (mcp *Service) setToken(token string) {
 	_ = os.Setenv(variableToken, token)
 }
 
-// newHandler returns the server's HTTP handler, which answers MCP at /mcp. It refuses a request without the token and
-// one sent from a web page of another site.
-func (mcp *Service) newHandler() http.Handler {
+// ListTools returns PMT's tools, each with its title and whether it only reads. It returns an error if the tools cannot
+// be listed.
+func (mcp *Service) ListTools() ([]Tool, error) {
+	ctx := context.Background()
+	serverEnd, clientEnd := sdk.NewInMemoryTransports()
+	serverSession, err := mcp.newServer().Connect(ctx, serverEnd, nil)
+	if err != nil {
+		return nil, err
+	}
+	defer func() { _ = serverSession.Close() }()
+	clientSession, err := sdk.NewClient(&sdk.Implementation{Name: ServerName}, nil).Connect(ctx, clientEnd, nil)
+	if err != nil {
+		return nil, err
+	}
+	defer func() { _ = clientSession.Close() }()
+	var tools []Tool
+	for tool, err := range clientSession.Tools(ctx, nil) {
+		if err != nil {
+			return nil, err
+		}
+		tools = append(tools, Tool{Name: tool.Name, Title: tool.Title,
+			ReadOnly: tool.Annotations != nil && tool.Annotations.ReadOnlyHint})
+	}
+	return tools, nil
+}
+
+// newServer returns an MCP server with PMT's tools and starter tasks.
+func (mcp *Service) newServer() *sdk.Server {
 	server := sdk.NewServer(
 		&sdk.Implementation{Name: ServerName, Title: "Paradox Modding Tools", Version: mcp.Build},
 		&sdk.ServerOptions{Instructions: instructions},
@@ -228,6 +261,13 @@ func (mcp *Service) newHandler() http.Handler {
 				}}, nil
 			})
 	}
+	return server
+}
+
+// newHandler returns the server's HTTP handler, which answers MCP at /mcp. It refuses a request without the token and
+// one sent from a web page of another site.
+func (mcp *Service) newHandler() http.Handler {
+	server := mcp.newServer()
 	streamable := sdk.NewStreamableHTTPHandler(func(*http.Request) *sdk.Server { return server },
 		&sdk.StreamableHTTPOptions{Stateless: true})
 	gate := http.HandlerFunc(func(writer http.ResponseWriter, request *http.Request) {

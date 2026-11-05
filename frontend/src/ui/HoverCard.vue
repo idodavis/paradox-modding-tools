@@ -3,11 +3,12 @@
 import { computed } from "vue";
 import { useQuery } from "@pinia/colada";
 
-import { ValueType } from "@internal/schema/models";
 import type { Card, Diagnostic } from "@services/lsp/models";
 
 import { codesQuery, levelsQuery } from "../queries";
 import { useSettingsStore } from "../stores/settings";
+import { useWorkspaceStore } from "../stores/workspace";
+import OriginChip from "./OriginChip.vue";
 import ProblemRow from "./ProblemRow.vue";
 import SourceLink from "./SourceLink.vue";
 
@@ -21,6 +22,7 @@ const KEYS = [
 ];
 
 const settings = useSettingsStore();
+const workspace = useWorkspaceStore();
 const { data: codes } = useQuery(codesQuery);
 const { data: levels } = useQuery(levelsQuery);
 const short = computed(() => settings.isHidden("hover.details"));
@@ -34,20 +36,6 @@ function describeProblem(problem: Diagnostic): [string, string][] {
   return all.filter((row): row is [string, string] => !!row[1]);
 }
 
-const takes = computed(() => {
-  const expected = card?.takes;
-  if (!expected) return "";
-  const type = expected.type === ValueType.ValueUnknown ? "" : expected.type;
-  return [
-    type,
-    expected.scope && `leading to ${expected.scope}`,
-    expected.database && `of ${expected.database}`,
-    expected.choices?.join(" | "),
-    expected.values && "or a script value",
-  ]
-    .filter(Boolean)
-    .join(" ");
-});
 // What a block holds and the scope it runs in, as "effects, on a landed_title".
 const inside = computed(() => {
   const scope = card?.leads && `on ${/^[aeio]/.test(card.leads) ? "an" : "a"} ${card.leads}`;
@@ -61,7 +49,7 @@ const rows = computed(() => {
   const all: [string, string | null | undefined][] = [
     ["Needed", card?.need],
     ["Supported scopes", card?.runs],
-    ["Takes", takes.value || card?.target],
+    ["Takes", card?.takes || card?.target || card?.parameters?.join(", ")],
     ["Usually", card?.writes?.join(", ")],
     ["Returns", card?.returns],
     ["Inside its block", inside.value],
@@ -123,16 +111,27 @@ const sites = computed(() => (card?.sites ?? []).slice(0, SITES_SHOWN));
           </template>
         </div>
       </div>
-      <div v-if="card.quote || card.blurb || (!short && card.about)" class="flex flex-col gap-1.5 px-3.5 py-2.5">
+      <div
+        v-if="card.quote || card.blurb || card.description || (!short && card.comment)"
+        class="flex flex-col gap-1.5 px-3.5 py-2.5"
+      >
         <blockquote v-if="card.quote" class="border-l-2 border-accented ps-2.5 text-12 whitespace-pre-line text-toned">
           {{ card.quote }}
         </blockquote>
         <p v-if="card.blurb" class="text-12 whitespace-pre-line text-toned">{{ card.blurb }}</p>
-        <p v-if="!short && card.about" class="text-11 text-dimmed">{{ card.about }}</p>
+        <p v-if="card.description" class="text-12 whitespace-pre-line text-toned">{{ card.description }}</p>
+        <p v-if="!short && card.comment" class="font-mono text-11 whitespace-pre-line text-(--syn-comment) italic">
+          {{ card.comment }}
+        </p>
       </div>
       <div v-if="sites.length" class="flex flex-col gap-1.5 px-3.5 py-2.5">
         <div v-for="site in sites" :key="`${site.place.key}:${site.line}`" class="flex min-w-0 items-center gap-2">
-          <SourceLink :place="site.place" :line="site.line" />
+          <SourceLink :place="site.place" :line="site.line" class="text-11">
+            <template #leading>
+              <OriginChip :origin="site.place.origin" dot />
+              <span class="max-w-32 truncate font-sans text-dimmed">{{ workspace.originName(site.place.origin) }}</span>
+            </template>
+          </SourceLink>
           <UBadge v-if="site.holder" :label="site.holder" size="sm" class="font-mono" />
           <template v-if="!site.holder || !site.kept">
             <UBadge v-if="site.kept && (card.sites?.length ?? 0) > 1" label="Kept" color="success" size="sm" />
@@ -144,7 +143,7 @@ const sites = computed(() => (card?.sites ?? []).slice(0, SITES_SHOWN));
         >
       </div>
       <p v-if="!short && card.inferred" class="px-3.5 py-1.5 text-end text-tiny text-dimmed">
-        inferred from game files
+        Learned from the game's own files
       </p>
       <div
         v-if="!short"

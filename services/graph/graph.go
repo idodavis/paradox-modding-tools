@@ -6,14 +6,13 @@ import (
 	"cmp"
 	"fmt"
 	"slices"
-	"sort"
 	"strings"
 
 	"github.com/samber/lo"
 
+	"paradox-modding-tools/internal/files"
 	"paradox-modding-tools/internal/game"
 	"paradox-modding-tools/internal/index"
-	"paradox-modding-tools/internal/jomini"
 	"paradox-modding-tools/internal/schema"
 	"paradox-modding-tools/services/lsp"
 	"paradox-modding-tools/services/workspace"
@@ -26,44 +25,37 @@ type Service struct {
 
 // A Node is one entry of the event graph, or a fold standing for the rest of a node's firings.
 type Node struct {
-	ID       string `json:"id"` // database:name; more:<id> or more-in:<id> for a fold
-	Database string `json:"database"`
-	Name     string `json:"name"`
-	What     string `json:"what"`  // what a definition of its database is called, such as "scripted effect"
-	Title    string `json:"title"` // its localized title, each data call in words; "" if it has none
-	// Display is how the player sees an event or a message: window, hidden or message; "" for any other entry.
-	Display    string `json:"display,omitempty"`
-	Background string `json:"background,omitempty"` // the path of an event's picture; "" if none is found
-	// Trigger is its own trigger in words. It is nil for none, for a fold, and outside a graph and a detail.
-	Trigger   []Condition `json:"trigger,omitempty"`
-	Comment   string      `json:"comment,omitempty"`   // the comment lines just above its definition, joined by newlines
-	Hardcoded bool        `json:"hardcoded,omitempty"` // an on_action the game calls from its own code
-	// CopyOrigin is the origin of the latest-loaded copy of its name that its definition hides; "" for none.
-	CopyOrigin string     `json:"copyOrigin,omitempty"`
-	Definition index.Site `json:"-"` // the definition the node stands for, which only Go reads
-	Site       lsp.Site   `json:"site"`
-	Step       int        `json:"step"`   // its distance from the root, negative for a firer
-	Parent     string     `json:"parent"` // the drawn node one step nearer the root; "" for the root
-	Count      int        `json:"count"`  // the firings a fold stands for; 0 for a definition
-	Deep       bool       `json:"deep"`   // the depth stopped at it, and it links further to a next step
-	// Looped is true for a firer the backward reach found through a node the root itself fires: it fires the root
-	// only round a loop of the root's own chain.
-	Looped bool `json:"looped,omitempty"`
-	// Fires is every firing it makes, in the order written. It is nil outside a detail.
-	Fires []Edge `json:"fires,omitempty"`
+	ID         string      `json:"id"` // database:name; more:<id> or more-in:<id> for a fold
+	Database   string      `json:"database"`
+	Name       string      `json:"name"`
+	What       string      `json:"what"`                 // what a definition of its database is called, such as "scripted effect"
+	Title      string      `json:"title"`                // its localized title, each data call in words; "" if it has none
+	Display    string      `json:"display,omitempty"`    // how the player sees an event or a message: window, hidden or message; "" for any other entry
+	Background string      `json:"background,omitempty"` // the path of an event's picture; "" if none is found
+	Trigger    []Condition `json:"trigger,omitempty"`    // its own trigger in words; nil for none, for a fold, and outside a graph and a detail
+	Comment    string      `json:"comment,omitempty"`    // the comment lines just above its definition, joined by newlines
+	Hardcoded  bool        `json:"hardcoded,omitempty"`  // an on_action the game calls from its own code
+	CopyOrigin string      `json:"copyOrigin,omitempty"` // the origin of the latest-loaded copy of its name that its definition hides; "" for none
+	Definition index.Site  `json:"-"`                    // the definition the node stands for, which only Go reads
+	Site       lsp.Site    `json:"site"`
+	Step       int         `json:"step"`             // its distance from the root, negative for a firer
+	Parent     string      `json:"parent"`           // the drawn node one step nearer the root; "" for the root
+	Count      int         `json:"count"`            // the firings a fold stands for; 0 for a definition
+	Deep       bool        `json:"deep"`             // the depth stopped at it, and it links further to a next step
+	Looped     bool        `json:"looped,omitempty"` // a firer the backward reach found through a node the root itself fires: it fires the root only round a loop of the root's own chain
+	Fires      []Edge      `json:"fires,omitempty"`  // every firing it makes, in the order written; nil outside a detail
 }
 
 // An Edge is one firing, from a firer to what it fires.
 type Edge struct {
-	From   string `json:"from"`
-	To     string `json:"to"`
-	Delay  string `json:"delay,omitempty"`  // the delay in words, such as 7 days or 10–30 days; "" for none
-	Steps  []Step `json:"steps,omitempty"`  // the blocks it is written inside, from the top of its definition
-	Effect string `json:"effect,omitempty"` // the key of the statement that writes it, such as trigger_event
-	Title  string `json:"title,omitempty"`  // the title that statement gives it, each data call in words
-	// Via is the scripted effects passed through, when they are not drawn as nodes.
-	Via  []string `json:"via,omitempty"`
-	Site lsp.Site `json:"site"` // where the firing is written
+	From   string   `json:"from"`
+	To     string   `json:"to"`
+	Delay  string   `json:"delay,omitempty"`  // the delay in words, such as 7 days or 10–30 days; "" for none
+	Steps  []Step   `json:"steps,omitempty"`  // the blocks it is written inside, from the top of its definition
+	Effect string   `json:"effect,omitempty"` // the key of the statement that writes it, such as trigger_event
+	Title  string   `json:"title,omitempty"`  // the title that statement gives it, each data call in words
+	Via    []string `json:"via,omitempty"`    // the scripted effects passed through, when they are not drawn as nodes
+	Site   lsp.Site `json:"site"`             // where the firing is written
 }
 
 // A Filter says what the graph shows and how far it reaches from its root.
@@ -156,7 +148,7 @@ func makeNode(ws *workspace.Session, mods *index.Index, site index.Site, step in
 		Database:   reference.Database,
 		Name:       reference.Name,
 		What:       game.DescribeDefinition(reference.Database, false),
-		Title:      toTitle(ws, mods, ws.LookupTitle(mods, site)),
+		Title:      toTitle(ws, mods, ws.LookupDefinitionText(mods, site, game.TitleKey)),
 		Definition: site,
 		Site:       lsp.MakeSite(ws, mods, site),
 		Step:       step,
@@ -171,7 +163,7 @@ func makeNode(ws *workspace.Session, mods *index.Index, site index.Site, step in
 	if err != nil {
 		return node
 	}
-	node.Comment = findComment(tree, statement)
+	node.Comment = tree.FindComment(statement)
 	switch reference.Database {
 	case ws.Schema.Messages:
 		node.Display = displayMessage
@@ -193,26 +185,6 @@ func drawNode(ws *workspace.Session, mods *index.Index, site index.Site, step in
 		node.Trigger = findCondition(ws, mods, tree, statement)
 	}
 	return node
-}
-
-// findComment returns the comment lines written just above a statement, joined by newlines, or "" if there are none. A
-// comment after code on its line is not one of them.
-func findComment(tree *jomini.Tree, statement int32) string {
-	start := tree.Statements[statement].Span.Start
-	line := tree.Lines.ToPosition(start).Line
-	var lines []string
-	after := sort.Search(len(tree.Comments), func(position int) bool { return tree.Comments[position].Start >= start })
-	for position := after - 1; position >= 0; position-- {
-		comment := tree.Comments[position]
-		commentLine := line - len(lines) - 1
-		if tree.Lines.ToPosition(comment.Start).Line != commentLine ||
-			strings.TrimSpace(tree.Src[tree.Lines.LineSpan(commentLine).Start:comment.Start]) != "" {
-			break
-		}
-		lines = append(lines, strings.TrimSpace(tree.Text(comment)))
-	}
-	slices.Reverse(lines)
-	return strings.Join(lines, "\n")
 }
 
 // findCopy returns the latest-loaded copy of a definition's name that the definition hides, or false if it hides none.
@@ -482,7 +454,7 @@ func (gph *Service) FindRoots(query string, limit int) []Node {
 		for _, site := range mods.ListDefinitions(database) {
 			name := strings.ToLower(mods.ToReference(site).Name)
 			if strings.Contains(name, query) && isKept(ws, mods, site) {
-				matches = append(matches, match{site, name, rankRoot(name, query)})
+				matches = append(matches, match{site, name, files.ClassifyMatch(name, query)})
 			}
 		}
 	}
@@ -492,18 +464,6 @@ func (gph *Service) FindRoots(query string, limit int) []Node {
 	return lo.Map(matches[:min(limit, len(matches))], func(one match, _ int) Node {
 		return makeNode(ws, mods, one.site, 0)
 	})
-}
-
-// rankRoot returns where a name that holds the query sorts among a search's roots, best first.
-func rankRoot(name, query string) int {
-	switch {
-	case name == query:
-		return 0
-	case strings.HasPrefix(name, query):
-		return 1
-	default:
-		return 2
-	}
 }
 
 // isKept reports whether a definition is the one the game keeps of its name.

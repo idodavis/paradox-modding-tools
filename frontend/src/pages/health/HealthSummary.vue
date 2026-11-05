@@ -32,13 +32,16 @@ const {
   report,
   log = undefined,
   yours,
+  external,
   game,
 } = defineProps<{
   mods: Mod[];
   report: Report;
   log?: GameLog;
-  /** How many lines of the game's log are the mods'. */
+  /** How many lines of the game's log are the user's own mods'. */
   yours: number;
+  /** How many lines of the game's log are the external mods'. */
+  external: number;
   /** How many lines of the game's log are the game's own. */
   game: number;
 }>();
@@ -46,6 +49,8 @@ const emit = defineEmits<{ open: [view: string, mod?: string, finding?: Finding]
 
 /** How many rows a panel lists. */
 const ROWS_SHOWN = 4;
+/** How many of a mod's worst problems its row lists. */
+const MOD_ROWS_SHOWN = 3;
 /** The plain words for compatibility's info. */
 const INFO_WORDS: readonly { checks: readonly string[]; one: string; many: string }[] = [
   { checks: ["override"], one: "override of the game", many: "overrides of the game" },
@@ -74,19 +79,17 @@ const rows = computed(() => log?.findings ?? []);
 const loggedPlaces = computed(() => new Set(rows.value.map(toSiteKey)));
 /** The report's group of each mod, by mod id. */
 const groups = computed(() => keyBy(report.mods ?? [], (group) => group.mod));
-/** Each of the user's own mods with its group and its lead, the first problem of its worst level. */
+/** Each of the user's own mods with its group and its leads, its worst problems first. */
 const modRows = computed(() =>
   mods
     .filter((mod) => !mod.external)
     .map((mod) => {
       const group = groups.value[mod.id];
-      const lead = group?.findings?.[0];
-      return {
-        mod,
-        group,
+      const leads = (group?.findings ?? []).slice(0, MOD_ROWS_SHOWN).map((lead) => ({
         lead,
-        logged: !!lead && listSiteKeys(lead).some((place) => loggedPlaces.value.has(place)),
-      };
+        logged: listSiteKeys(lead).some((place) => loggedPlaces.value.has(place)),
+      }));
+      return { mod, group, leads };
     }),
 );
 const busiest = computed(() =>
@@ -98,13 +101,19 @@ const busiest = computed(() =>
 const brokenCount = computed(
   () => modRows.value.filter(({ group }) => fixLevels.value.includes(group?.worst ?? "")).length,
 );
-/** The mods' share of the log's lines, as the meter's width. */
-const logShare = computed(() => `${(yours / Math.max(1, yours + game)) * 100}%`);
+/** The segments of the log's meter: the user's mods', the external mods' and the game's own lines. */
+const logShares = computed(() => {
+  const all = Math.max(1, yours + external + game);
+  return [
+    { color: "bg-(--fg-2)", width: `${(yours / all) * 100}%` },
+    { color: "bg-(--fg-3)", width: `${(external / all) * 100}%` },
+  ];
+});
 const lastRun = computed(() => (log?.writtenAt ? describeTime(log.writtenAt) : ""));
-/** The mods' log rows that repeat most. */
+/** The user's own mods' log rows that repeat most. */
 const top = computed(() =>
   sortBy(
-    rows.value.filter((row) => row.origin),
+    rows.value.filter((row) => row.origin && !workspace.isExternal(row.origin)),
     [(row) => -row.count],
   ).slice(0, ROWS_SHOWN - 1),
 );
@@ -164,7 +173,7 @@ const panels = computed(() => [
     icon: "i-lucide-terminal",
     color: "neutral",
     verdict: yours ? `${plural(yours, "line")} from your mods` : "Nothing from your mods",
-    note: [`${plural(yours + game, "line")} in all`, lastRun.value && `last run ${lastRun.value}`]
+    note: [`${plural(yours + external + game, "line")} in all`, lastRun.value && `last run ${lastRun.value}`]
       .filter(Boolean)
       .join(" · "),
     footer: "Open the game log",
@@ -277,33 +286,35 @@ function describeLogPlace(finding: Finding): Part[] {
                     <LeftOutMark v-if="modRow.mod.leftOut" />
                     <LevelCounts :levels="modRow.group?.counts" />
                   </span>
-                  <span class="flex h-1.5 overflow-hidden rounded-full bg-accented">
-                    <span
-                      v-for="segment in describeMeter(modRow.group?.counts)"
-                      :key="segment.color"
-                      class="h-full"
-                      :style="{ width: segment.width, background: `var(--ui-${segment.color})` }"
-                    />
-                  </span>
+                  <UTooltip text="Problems by level, against the mod with the most">
+                    <span class="flex h-1.5 overflow-hidden rounded-full bg-accented">
+                      <span
+                        v-for="segment in describeMeter(modRow.group?.counts)"
+                        :key="segment.color"
+                        class="h-full"
+                        :style="{ width: segment.width, background: `var(--ui-${segment.color})` }"
+                      />
+                    </span>
+                  </UTooltip>
                 </span>
               </button>
               <ProblemRow
-                v-if="modRow.lead"
-                :level="modRow.lead.level"
-                :message="joinParts(modRow.lead.message)"
+                v-for="({ lead, logged }, position) in modRow.leads"
+                :key="position"
+                :level="lead.level"
+                :message="joinParts(lead.message)"
                 class="ps-12"
-                @open="emit('open', 'mod', modRow.mod.id, modRow.lead)"
+                @open="emit('open', 'mod', modRow.mod.id, lead)"
               >
-                <template v-if="modRow.lead.name" #message>
-                  <span class="font-mono text-12"><FactText :parts="splitSubject(modRow.lead)" /></span>
+                <template v-if="lead.name" #message>
+                  <span class="font-mono text-12"><FactText :parts="splitSubject(lead)" /></span>
                 </template>
-                <template #detail>
+                <template v-if="lead.name || lead.brief?.length" #detail>
                   <span class="min-w-0 truncate text-11 text-dimmed">
-                    {{ modRow.lead.label }}
-                    <template v-if="modRow.lead.brief?.length">· <FactText :parts="modRow.lead.brief" /></template>
+                    <FactText :parts="lead.name ? lead.message : lead.brief" />
                   </span>
                 </template>
-                <template v-if="modRow.logged" #trailing>
+                <template v-if="logged" #trailing>
                   <UBadge label="in the log" color="neutral" variant="subtle" size="sm" class="shrink-0" />
                 </template>
               </ProblemRow>
@@ -312,14 +323,23 @@ function describeLogPlace(finding: Finding): Part[] {
           <template v-else>
             <div class="flex flex-col gap-1.5 px-4 pt-2 pb-2.5">
               <span class="flex h-2 overflow-hidden rounded-full bg-accented">
-                <span class="h-full bg-(--fg-2)" :style="{ width: logShare }" />
+                <span
+                  v-for="share in logShares"
+                  :key="share.color"
+                  class="h-full"
+                  :class="share.color"
+                  :style="{ width: share.width }"
+                />
               </span>
               <span class="flex items-center gap-3 text-11 text-dimmed">
                 <span class="flex items-center gap-1.25">
-                  <span class="size-1.5 rounded-full bg-(--fg-2)" />{{ describeCount(yours) }} from your mods
+                  <span class="size-1.5 rounded-full bg-(--fg-2)" />{{ plural(yours, "line") }} from your mods
+                </span>
+                <span v-if="external" class="flex items-center gap-1.25">
+                  <span class="size-1.5 rounded-full bg-(--fg-3)" />{{ plural(external, "line") }} from external mods
                 </span>
                 <span class="flex items-center gap-1.25">
-                  <span class="size-1.5 rounded-full bg-accented" />{{ describeCount(game) }} the game's own
+                  <span class="size-1.5 rounded-full bg-accented" />{{ plural(game, "line") }} the game's own
                 </span>
               </span>
             </div>

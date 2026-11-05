@@ -24,15 +24,14 @@ import (
 
 // Params is what a second copy of the app needs to upload a mod or work on an item.
 type Params struct {
-	LibraryPath string    `json:"libraryPath"` // the game's copy of Steam's library
-	AppID       int       `json:"appId"`
-	UploadDir   string    `json:"uploadDir"`
-	WorkshopID  string    `json:"workshopId"` // "" creates the item
-	UpdatedAt   time.Time `json:"updatedAt"`  // when Steam last updated the item, which a download waits for
-	Listing     Listing   `json:"listing"`
-	Visibility  string    `json:"visibility"` // private, friends, public or unlisted; "" keeps the item's own
-	// ModWorkshopIDs are the Workshop ids of the workspace's mods. An upload removes no other required item.
-	ModWorkshopIDs []string `json:"modWorkshopIds"`
+	LibraryPath    string    `json:"libraryPath"` // the game's copy of Steam's library
+	AppID          int       `json:"appId"`
+	UploadDir      string    `json:"uploadDir"`
+	WorkshopID     string    `json:"workshopId"` // "" creates the item
+	UpdatedAt      time.Time `json:"updatedAt"`  // when Steam last updated the item, which a download waits for
+	Listing        Listing   `json:"listing"`
+	Visibility     string    `json:"visibility"`     // private, friends, public or unlisted; "" keeps the item's own
+	ModWorkshopIDs []string  `json:"modWorkshopIds"` // the Workshop ids of the workspace's mods; an upload removes no other required item
 }
 
 // The arguments that start the app as a second copy, one per kind of work.

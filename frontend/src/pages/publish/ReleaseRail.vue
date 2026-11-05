@@ -119,18 +119,20 @@ function change(changes: Partial<Listing>): void {
             />
           </UFormField>
           <span v-if="older" class="text-11 text-dimmed">From the zip</span>
-          <span v-else class="flex flex-wrap gap-1">
-            <UButton
-              v-for="bump in bumps"
-              :key="bump"
-              :label="bump"
-              color="neutral"
-              variant="subtle"
-              size="xs"
-              class="font-mono"
-              :disabled="locked"
-              @click="change({ version: bump })"
-            />
+          <span v-else class="flex flex-wrap items-center gap-1">
+            <span class="text-11 text-dimmed">Next:</span>
+            <template v-for="(bump, position) in bumps" :key="bump">
+              <span v-if="position" class="text-11 text-dimmed">·</span>
+              <UButton
+                :label="bump"
+                color="neutral"
+                variant="subtle"
+                size="xs"
+                class="font-mono"
+                :disabled="locked"
+                @click="change({ version: bump })"
+              />
+            </template>
           </span>
         </div>
         <div class="flex min-w-0 flex-col gap-1.5">
@@ -242,7 +244,7 @@ function change(changes: Partial<Listing>): void {
             <button
               type="button"
               :disabled="!fileSummary.id"
-              class="flex h-7 w-full items-center gap-2 ps-3 pe-2.5 text-start text-12 enabled:hover:bg-elevated"
+              class="flex h-7 w-full items-center gap-2 ps-3 pe-2.5 text-start text-12 enabled:hover:bg-accented"
               :class="{ 'bg-(--accent-soft) shadow-[inset_2px_0_0_var(--accent)]': fileSummary.lit }"
               @click="emit('compare', fileSummary.id)"
             >

@@ -443,7 +443,7 @@ function openCompare(differenceId: string): void {
             <div v-else-if="draft" class="flex min-h-0 grow flex-col gap-4 overflow-y-auto px-7 pt-5.5 pb-8">
               <div
                 v-if="listingKey"
-                class="flex max-w-210 items-center gap-2.5 rounded-lg border border-default bg-muted px-3 py-2.5 text-13"
+                class="flex max-w-300 items-center gap-2.5 rounded-lg border border-default bg-muted px-3 py-2.5 text-13"
               >
                 <UIcon name="i-lucide-info" class="size-4 shrink-0 text-dimmed" />
                 <span class="grow">
@@ -462,7 +462,7 @@ function openCompare(differenceId: string): void {
                   </template>
                 </FileSelector>
               </div>
-              <div class="flex max-w-210 flex-col gap-4.5">
+              <div class="flex max-w-300 flex-col gap-4.5">
                 <WorkshopPage :listing="draft" @update:listing="edit" />
                 <ListingImages :mod-id="modId" :listing-key="listingKey" :listing="draft" :comparison="comparison" />
                 <DescriptionEditor

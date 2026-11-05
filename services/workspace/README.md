@@ -30,7 +30,7 @@ flowchart TD
 ```
 
 - The open runs in the background and holds the service's lock, so a call that needs the session waits for it.
-  `install:scanning` reports each stage, and `workspace:opened` or `workspace:failed` ends it.
+  `install:scanning` reports each stage in words, and `workspace:opened` or `workspace:failed` ends it.
 - The schema and the install's index are cached as two gob files, in a folder named for the install's version, the
   time of its dumps and PMT's version. A game patch, fresh dumps or a new build of PMT each scan again, and the open
   deletes the game's older cache folders.
@@ -48,7 +48,8 @@ index, the mods in load order and the language.
   editor's text, its buffer, which the lsp service hands over as the user types; `Edits` counts each change to the
   buffers. Any other file is parsed when asked and kept in a bounded cache.
 - **Texts.** A localization key's text comes in the workspace's language, else the base language, with the message
-  the game keeps. A definition's title is the text the game shows it by.
+  the game keeps. A definition's title and description are the texts the game shows it by: the keys it writes, else
+  the keys `game.DefinitionTexts` builds from its name.
 - **Other load orders.** `ScanOrder` scans the mods in another order and keeps the result nowhere, for Health's
   preview of a load order.
 
@@ -84,8 +85,8 @@ sequenceDiagram
   Session-->>Page: fs:changed for each path
 ```
 
-It watches the mods' folders and every folder made under them. Hidden folders are left out, but for the dot folders
-the explorer shows: the coding agents' `.claude`, `.codex` and `.github`, and the Workshop listing's `.workshop`.
+It watches the mods' folders and every folder made under them. Hidden folders are left out, but for the coding agents'
+`.claude`, `.codex` and `.github`, and the Workshop listing's `.workshop`.
 Renaming or deleting a folder stops watching under it for the move, since Windows refuses to move a folder that is
 being watched.
 
@@ -101,7 +102,9 @@ is always one, whatever its record says, so every page reads the one field. `Lis
 has downloaded for an install's game, from the Workshop folder in each of Steam's libraries, to add as external mods.
 
 - `CreateMod` makes a new mod's skeleton: its folder, the folders the game expects, a descriptor, a launcher file
-  where the game needs one, and a localization file with only its header.
+  where the game needs one, and a localization file with only its header. The folder can be any folder, except for a
+  game whose launcher reads local mods only from its mod folder (`Game.FixedModFolder`). The launcher file always goes
+  in the game's mod folder.
 - `ResolveFolder` gives the folder a shell or a coding agent starts in: the mod that holds the active file, else the
   first mod whose folder exists, else the home folder.
 - `Launch` starts the game with its debug flag. When the game exits, `game:exited` says whether it wrote fresher dumps
@@ -145,4 +148,5 @@ has downloaded for an install's game, from the Workshop folder in each of Steam'
 - **State**: the open workspace as the frontend sees it.
 - **FileText**: a file's text in its encoding, with its place and the editor's draft.
 - **FileChange**: one file that changed or was deleted on disk.
-- **Scanning**: one stage of an install's scan, with the percent of its files done.
+- **Scanning**: one stage of an install's scan, in words, with the percent of its files done, or -1 for a stage that
+  reports none.

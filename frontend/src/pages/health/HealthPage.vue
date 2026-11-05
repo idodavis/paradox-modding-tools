@@ -99,7 +99,12 @@ const compatibility = computed(() => report.value?.compatibility.findings ?? [])
 /** The report's group of each mod, by mod id. */
 const groups = computed(() => keyBy(report.value?.mods ?? [], (group) => group.mod));
 const logRows = computed(() => gameLog.value?.findings ?? []);
-const yours = computed(() => countFindings(logRows.value.filter((finding) => finding.origin)));
+const yours = computed(() =>
+  countFindings(logRows.value.filter((finding) => finding.origin && !workspace.isExternal(finding.origin))),
+);
+const external = computed(() =>
+  countFindings(logRows.value.filter((finding) => finding.origin && workspace.isExternal(finding.origin))),
+);
 const game = computed(() => countFindings(logRows.value.filter((finding) => !finding.origin)));
 
 /** The name or check asked for. It opens the first view with a row for it. */
@@ -123,8 +128,17 @@ watch(
 );
 const currentId = computed(() => mod || landing.value.mod);
 const current = computed(() => mods.value.find((candidate) => candidate.id === currentId.value) ?? mods.value[0]);
-const filter = shallowRef(wanted.value);
-watch(wanted, (next) => (filter.value = next));
+const filter = shallowRef(name);
+watch(
+  () => name,
+  (next) => (filter.value = next),
+);
+/** The checks picked in the checks menu. A check asked for is picked there, not typed into the filter. */
+const checks = shallowRef<string[]>(code ? [code] : []);
+watch(
+  () => code,
+  (next) => (checks.value = next ? [next] : []),
+);
 /** The findings of the view shown, where the route's row is the index of the open one. */
 const shownFindings = computed(() => listFindings(shown.value, current.value?.id));
 const openFinding = computed((): Finding | undefined => (row ? shownFindings.value[Number(row)] : undefined));
@@ -215,9 +229,10 @@ function listFindings(view: string, modId?: string): Finding[] {
   return view === "mod" ? (groups.value[modId ?? ""]?.findings ?? []) : [];
 }
 
-/** show shows a view, with a mod and a finding open if given. It clears the filter. */
+/** show shows a view, with a mod and a finding open if given. It clears the filter and the checks picked. */
 function show(next: string, modId?: string, finding?: Finding): void {
   filter.value = "";
+  checks.value = [];
   void router.replace({
     query: { view: next, mod: modId, row: finding && String(listFindings(next, modId).indexOf(finding)) },
   });
@@ -310,6 +325,7 @@ function openRow(finding: Finding): void {
             :mods="mods"
             :groups="report?.mods ?? []"
             :yours="yours"
+            :external="external"
             :game="game"
             :opened="openFinding"
             @open="openRow"
@@ -322,6 +338,7 @@ function openRow(finding: Finding): void {
             :report="report"
             :log="gameLog"
             :yours="yours"
+            :external="external"
             :game="game"
             @open="show"
             @check="showCheck"
@@ -330,6 +347,7 @@ function openRow(finding: Finding): void {
             v-else-if="shown === 'compatibility'"
             v-model:order="order"
             v-model:filter="filter"
+            v-model:checks="checks"
             :findings="compatibility"
             :changes="report.changes ?? []"
             :mods="mods"
@@ -343,6 +361,7 @@ function openRow(finding: Finding): void {
             v-else-if="current"
             :key="current.id"
             v-model:filter="filter"
+            v-model:checks="checks"
             :mod="current"
             :findings="groups[current.id]?.findings ?? []"
             :languages="groups[current.id]?.languages ?? []"

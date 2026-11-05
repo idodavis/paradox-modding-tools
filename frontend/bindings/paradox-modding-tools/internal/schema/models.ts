@@ -62,30 +62,6 @@ export enum Category {
 };
 
 /**
- * Expected is what a field's value must be.
- */
-export interface Expected {
-    "type": ValueType;
-    "database"?: string;
-
-    /**
-     * the scope a target's link leads to
-     */
-    "scope"?: string;
-    "choices"?: string[] | null;
-
-    /**
-     * a number that may be a script value too
-     */
-    "values"?: boolean;
-
-    /**
-     * a name of a database nested in Database too
-     */
-    "nested"?: boolean;
-}
-
-/**
  * A SourceState says where one source's data came from and how fresh it is.
  */
 export interface SourceState {
@@ -105,44 +81,3 @@ export interface SourceState {
      */
     "folders": string[] | null;
 }
-
-/**
- * A ValueType is the type of value a field takes.
- */
-export enum ValueType {
-    /**
-     * The Go zero value for the underlying type of the enum.
-     */
-    $zero = "",
-
-    /**
-     * The types a field's value can have.
-     */
-    ValueUnknown = "unknown",
-    ValueBool = "bool",
-    ValueNumber = "number",
-    ValueDate = "date",
-    ValueText = "text",
-
-    /**
-     * a name of Expected.Database
-     */
-    ValueReference = "reference",
-
-    /**
-     * a link to Expected.Scope, or a name of Expected.Database where it is set
-     */
-    ValueTarget = "target",
-
-    /**
-     * one of Expected.Choices
-     */
-    ValueChoice = "choice",
-    ValueColor = "color",
-    ValueBlock = "block",
-
-    /**
-     * a data call
-     */
-    ValueCall = "call",
-};

@@ -43,6 +43,8 @@ const {
 const emit = defineEmits<{ open: [finding: Finding] }>();
 /** The text a row must contain to be listed. */
 const filter = defineModel<string>("filter", { default: "" });
+/** The checks whose findings are listed. With none picked, every check's are. */
+const checks = defineModel<string[]>("checks", { default: () => [] });
 
 /** A LevelHead is the head row of one level, with the level's words and color. */
 type LevelHead = { level: string; label: string; color: string; count: number };
@@ -67,7 +69,6 @@ const shown = computed({
 });
 /** Whether each check's rows show, set when its head is pressed. */
 const pressed = shallowRef<Record<string, boolean>>({});
-const checks = shallowRef<string[]>([]);
 const sort = shallowRef("level");
 // A check picked among other findings is dropped once no finding has it.
 watch(
@@ -200,7 +201,7 @@ function toggleCheck(head: CheckHead): void {
         :ui="{ content: 'min-w-fit' }"
       />
       <span class="ms-auto flex items-center gap-1.5">
-        <USelect v-model="sort" :items="SORTS" size="xs" class="w-28" />
+        <USelect v-model="sort" :items="SORTS" size="xs" class="w-36" />
         <UInput v-model="filter" icon="i-lucide-filter" size="xs" placeholder="Filter" class="w-36" />
       </span>
     </div>

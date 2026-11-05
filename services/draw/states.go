@@ -24,30 +24,20 @@ import (
 // A Group is one choice the page lets the user switch: a data call a window's conditions read, or a template list a
 // coat's value is drawn from.
 type Group struct {
-	// ID is the group's call. A call that reads the object of a data context is written from the window down to that
-	// object, so the same call about two objects is two groups.
-	ID string `json:"id"`
-	// Subject is the kind of object it asks about, such as Character or Relation; Game for a call of one step, Pictures
-	// for a list of pictures, and "" for a coat's list.
-	Subject string `json:"subject,omitempty"`
-	Key     string `json:"key,omitempty"` // the key that picks its object out of its kind, such as a relation's lover
-	Label   string `json:"label"`         // what it asks, in words
-	// Exists is true when it asks whether an object further on than its subject exists.
-	Exists bool `json:"exists,omitempty"`
-	// Options is the values it can take: the values the window asks of it, then every value at once where it has
-	// none or several, then none.
-	Options  []string          `json:"options"`
-	Captions map[string]string `json:"captions,omitempty"` // by option, how the panel writes it
-	Box      Box               `json:"box"`                // the box of the States tab that it starts in
-	// Picked is the option a coat's list draws now. A window's group leaves it empty, as its value is in
-	// States.Values.
-	Picked    string  `json:"picked,omitempty"`
-	Clickable bool    `json:"clickable,omitempty"` // a press of a widget of the window sets it
-	Reach     int     `json:"reach,omitempty"`     // how many widgets that draw something it shows or hides
-	Item      int32   `json:"item,omitempty"`      // the data model item whose rows alone read it; 0 for the window
-	Readers   []int32 `json:"readers,omitempty"`   // the widgets whose own condition reads it
-	// Pictures is where the pictures it picks among are listed, for a group of a picture binding; nil otherwise.
-	Pictures *PictureList `json:"pictures,omitempty"`
+	ID        string            `json:"id"`                  // the group's call; a call that reads the object of a data context is written from the window down to that object, so the same call about two objects is two groups
+	Subject   string            `json:"subject,omitempty"`   // the kind of object it asks about, such as Character or Relation; Game for a call of one step, Pictures for a list of pictures, and "" for a coat's list
+	Key       string            `json:"key,omitempty"`       // the key that picks its object out of its kind, such as a relation's lover
+	Label     string            `json:"label"`               // what it asks, in words
+	Exists    bool              `json:"exists,omitempty"`    // it asks whether an object further on than its subject exists
+	Options   []string          `json:"options"`             // the values it can take: the values the window asks of it, then every value at once where it has none or several, then none
+	Captions  map[string]string `json:"captions,omitempty"`  // by option, how the panel writes it
+	Box       Box               `json:"box"`                 // the box of the States tab that it starts in
+	Picked    string            `json:"picked,omitempty"`    // the option a coat's list draws now; empty in a window's group, whose value is in States.Values
+	Clickable bool              `json:"clickable,omitempty"` // a press of a widget of the window sets it
+	Reach     int               `json:"reach,omitempty"`     // how many widgets that draw something it shows or hides
+	Item      int32             `json:"item,omitempty"`      // the data model item whose rows alone read it; 0 for the window
+	Readers   []int32           `json:"readers,omitempty"`   // the widgets whose own condition reads it
+	Pictures  *PictureList      `json:"pictures,omitempty"`  // where the pictures it picks among are listed, for a group of a picture binding; nil otherwise
 }
 
 // A Box is one of the boxes the States tab sorts a window's groups into: the window's own, what an object has, an
@@ -61,13 +51,10 @@ type Box struct {
 
 // States is one way of drawing a window: as it opens, changed by the picks.
 type States struct {
-	// Values is, by group, the value each of the window's groups is at.
-	Values map[string]string `json:"values"`
-	Hidden []int32           `json:"hidden"` // the IDs of the widgets that the values hide
-	// Applies is, by group, the widgets under no hidden widget whose own condition its value decides.
-	Applies map[string][]int32 `json:"applies"`
-	// Choices is, by widget, the values the groups give its properties.
-	Choices map[int32][]Choice `json:"choices"`
+	Values  map[string]string  `json:"values"`  // by group, the value each of the window's groups is at
+	Hidden  []int32            `json:"hidden"`  // the IDs of the widgets that the values hide
+	Applies map[string][]int32 `json:"applies"` // by group, the widgets under no hidden widget whose own condition its value decides
+	Choices map[int32][]Choice `json:"choices"` // by widget, the values the groups give its properties
 }
 
 // A context is what a widget's bindings read in: by data type, the call that reaches the object of that type from

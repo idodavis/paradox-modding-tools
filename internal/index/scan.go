@@ -37,12 +37,13 @@ type collector struct {
 
 // Scan builds the index of an install's files, in parallel. The roots are the game's, then each DLC's, in load order,
 // and the listing is what ListFiles returns for them. The progress function is called with the name of each stage, and
-// with the percent done during indexing.
+// with the percent done during the reading of the files. A stage that reports no progress has the percent -1.
 func Scan(schema *schema.Schema, roots []files.Root, listing []files.File, progress func(stage string, percent int)) *Index {
 	index := newIndex(schema, nil, roots, listing)
-	progress("indexing", 0)
-	index.scanFiles(schema, func(percent int) { progress("indexing", percent) })
-	progress("postings", 0)
+	const stage = "Reading the game's files"
+	progress(stage, 0)
+	index.scanFiles(schema, func(percent int) { progress(stage, percent) })
+	progress("Indexing names", -1)
 	index.buildPostings()
 	return index
 }
@@ -70,15 +71,18 @@ func ParseFile(path string) (*jomini.Tree, error) {
 }
 
 // ScanMods builds the index of a workspace's mods on top of the install's. The replaced folders are one list for each
-// of the given roots, holding the folders its mod's replace_path names. It returns an error if a root cannot be walked.
-func ScanMods(schema *schema.Schema, install *Index, roots []files.Root, replaced [][]string) (*Index, error) {
+// of the given roots, holding the folders its mod's replace_path names. The progress function is called with the
+// percent of the files scanned. It returns an error if a root cannot be walked.
+func ScanMods(
+	schema *schema.Schema, install *Index, roots []files.Root, replaced [][]string, progress func(percent int),
+) (*Index, error) {
 	listing, err := ListFiles(roots)
 	if err != nil {
 		return nil, err
 	}
 	schema.SetScripted(listing, ParseFile)
 	index := newIndex(schema, install, roots, listing)
-	index.scanFiles(schema, func(int) {})
+	index.scanFiles(schema, progress)
 	index.buildPostings()
 	index.Replaced = slices.Concat(make([][]string, len(install.Roots)), replaced)
 	index.replacedKeys = lo.Map(index.Replaced, func(folders []string, _ int) []string {

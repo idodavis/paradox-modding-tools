@@ -121,14 +121,9 @@ const drawable = computed(() => {
 watchEffect(() => {
   if (drawable.value && file.value.drawable !== drawable.value) store.draw(model.place.path, drawable.value);
 });
-watch(
-  [caret, () => !!drawables.value],
-  () => {
-    const entry = findEntry(caret.value);
-    if (entry) store.draw(model.place.path, entry.name);
-  },
-  { immediate: true },
-);
+// Moving the caret into another entry draws that entry. The same caret again draws nothing, so a pick stays drawn.
+const caretEntry = computed(() => findEntry(caret.value)?.name);
+watch(caretEntry, (name) => name && store.draw(model.place.path, name));
 watch(drawable, () => viewport.value?.fit());
 
 const {
@@ -592,7 +587,7 @@ function applyKey(event: KeyboardEvent): void {
     <Teleport defer to="#visual-tools">
       <UTooltip text="Save" :kbds="findKbds('editor.save')">
         <UButton
-          label="Save"
+          label="Save picture"
           icon="i-lucide-save"
           size="sm"
           :disabled="!model.unsaved"
@@ -720,7 +715,7 @@ function applyKey(event: KeyboardEvent): void {
                     <li
                       v-for="(row, ordinal) in list.rows"
                       :key="ordinal"
-                      class="flex items-center rounded hover:bg-elevated"
+                      class="flex items-center rounded hover:bg-accented"
                     >
                       <button
                         type="button"

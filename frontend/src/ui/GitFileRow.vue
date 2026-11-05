@@ -19,7 +19,7 @@ const COLORS: Record<string, string> = {
 
 <template>
   <div
-    class="group flex h-7 w-full shrink-0 cursor-pointer items-center gap-2 pe-2 text-start whitespace-nowrap text-toned hover:bg-elevated"
+    class="group flex h-7 w-full shrink-0 cursor-pointer items-center gap-2 pe-2 text-start whitespace-nowrap text-toned hover:bg-accented"
     :class="{ 'ps-3.5': !$slots.lane }"
     :title="change.from ? `${change.from} → ${change.path}` : change.path"
   >

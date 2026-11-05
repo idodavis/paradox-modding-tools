@@ -11,35 +11,26 @@ import (
 	"github.com/samber/lo"
 )
 
-// A Database is the row for one database's folder. A folder with no row is a database whose top-level keys name its
-// definitions.
+// A Database is the row for one database's folder. A definition's name is the word script calls it by: brave in
+// brave = { … }, which has_trait = brave refers to. A definition is named by its top key unless its row says otherwise.
 type Database struct {
-	Folder        string   // the folder or file its definitions are written in, from a stage
-	Games         []string // the games it holds for; none means every game
-	Contents      Contents // what it holds beyond definitions; "" means definitions alone
-	NamedBy       string   // how a definition is named: "" means its own key, else field, call, file, column or nothing
-	NameKey       string   // the key whose value names a definition, or holds the call that does
-	RootKey       string   // the key in a definition whose value names the scope its script starts in; "" means none
-	WrapperKeys   []string // keys at the top that only wrap definitions
-	DeclaringKeys []string // keys that declare a definition inline: scripted_effect x = { }
-	AliasKeys     []string // the keys whose value names a definition a second time
-	AliasTarget   string   // the database whose name an alias key's value is; "" means its own
-	// RunOrder is a definition's blocks in the order they run. Unlisted keys run after them, as written.
-	RunOrder []string
-	Shape    string // what a definition's block holds, a Shapes key; "" means its own fields
-	Target   string // the database whose definitions its own set up or are named for; "" means none
-	// Mirrors marks a database whose definitions are named after other databases', so it never wins a vote it shares.
-	Mirrors   bool
-	FoldsCase bool     // its references match without regard to case
-	Prefixes  []string // the link prefixes script writes before a definition's name, as in dynasty:<key>
-	// Separator is the character between a definition's name and a key nested in it, as | in define:NAI|X. "" means none.
-	Separator string
-	// BoolKey is the key a definition writes as yes when the name it defines takes yes or no, and a number otherwise.
-	// "" means none.
-	BoolKey string
-	// Optional marks a database whose names need no definition: where one is missing, the game reads the localization
-	// keys built on the name. A reference to such a name never accuses.
-	Optional bool
+	Folder          string            // the folder or file its definitions are written in
+	Games           []string          // the games it holds for; none means every game
+	Contents        Contents          // what it holds beyond definitions; "" means definitions alone
+	NameKey         string            // the key whose value is a definition's name in place of its top key, as id = x; "" means none
+	NamedBy         string            // what names a definition in place of a key: file (a file is one), column (a table's first) or nothing (no top key defines one)
+	RootKey         string            // the key whose value names the scope a definition's script starts in; "" means none
+	WrapperKeys     []string          // keys at the top that only wrap definitions
+	DeclaringKeys   []string          // keys that declare a definition inline: scripted_effect x = { }
+	Aliases         map[string]string // keys whose value is a second name for a definition, as group = x, each with the database it is in; "" means its own
+	RunOrder        []string          // a definition's blocks in the order they run; unlisted keys run after them, as written
+	Shape           string            // what a definition's block holds, a Shapes key; "" means its own fields
+	Target          string            // the database whose definitions its own set up or are named after; "" means none
+	Mirrors         bool              // its definitions are named after several other databases'
+	FoldsCase       bool              // its references match without regard to case
+	Prefixes        []string          // the link prefixes written before a definition's name, as in dynasty:<key>
+	Separator       string            // the character joining a definition's name to a nested key, as | in NAI|X; "" means none
+	AllowsUndefined bool              // a reference needs no entry here: the game falls back to localization keys such as <effect>_first
 }
 
 // A Contents is what a database holds beyond definitions. The zero Contents is definitions alone.
@@ -62,13 +53,11 @@ type Nesting struct {
 	Games    []string // the games it holds for; none means every game
 	Parent   string   // the folder or file whose definitions hold its keys
 	KeyPath  string   // the key path from the holding definition to its keys; "" means its block, * any key, ** any depth
-	Database string   // its own name after the parent's; "" means the parent's own definitions (a title inside a title)
-	// Keys is the pattern a key must fit to define one; any other key is a field. With a Database of its own, "" means
-	// every key.
-	Keys    string
-	NameKey string // the key whose value names a definition; "" means the key that defines it
-	Target  string // the database whose definitions its own set up; "" means none
-	Sets    bool   // its keys switch a name on or give a definition a second name; they define nothing
+	Database string   // its name after the parent's and a dot; "" means the parent's own database
+	Keys     string   // the pattern a key fits to define one, other keys being fields; "" means every key
+	NameKey  string   // the key whose value names a definition; "" means the key that defines it
+	Target   string   // the database whose definitions its own set up; "" means none
+	Sets     bool     // its keys switch a name on or give a definition a second name; they define nothing
 }
 
 // Label returns the name of the database a nesting defines: the parent's name, then a dot and its own Database, if any.
@@ -87,9 +76,8 @@ type Callable struct {
 	Local      bool     // its definitions answer only in the file that declares them
 	FoldsCase  bool     // its references match without regard to case
 	Proves     []string // the shapes a block that calls one of its definitions can have
-	// Command is the command a definition acts as where it is called, an effect or a trigger, or "" for neither.
-	Command string
-	Values  []string // what a call writes as its value where it passes no parameters; none means a call writes none
+	Command    string   // the command a definition acts as where it is called, an effect or a trigger; "" means neither
+	Values     []string // what a call writes as its value where it passes no parameters; none means a call writes none
 }
 
 // A FileType is what a file's extension says about a file, beyond what the databases of its folder say.
@@ -101,31 +89,25 @@ type FileType struct {
 
 // A Precedence is how definitions of one name combine in the databases it holds for.
 type Precedence struct {
-	Games []string // the games it holds for; none means every game
-	// Databases is the databases it holds for, by name or by a path.Match pattern, as setup/* for those under setup.
-	Databases   []string
+	Games       []string // the games it holds for; none means every game
+	Databases   []string // the databases it holds for, by name or path.Match pattern
 	Folders     []string // the folders it holds for, each with everything below it
 	Keeps       string   // which definition the game keeps: first, last, highest or merged
 	ByPlayset   bool     // the order is the playset's, not the load order's
 	Modes       string   // where an entry mode is written: entry or wrapped; "" means none
 	PriorityKey string   // the key carrying a definition's override priority; "" means none
 	Overrides   []string // the keys a higher priority replaces; nil means the whole definition
-	// Injects is what a mode that adds does: "" adds, replaces makes INJECT act as REPLACE, and unsettled means the
-	// sources do not say for any mode that adds.
-	Injects string
-	// Contested is the blocks that merged definitions cannot both write. Which copy the game keeps is not documented.
-	Contested []string
+	Injects     string   // what INJECT does: "" adds, replaces acts as REPLACE, unsettled is undocumented
+	Contested   []string // the blocks two merged copies cannot both write
 }
 
 // A Reference is a key path whose values name definitions.
 type Reference struct {
-	Games []string // the games it holds for; none means every game
-	// Database is the database whose definitions hold the key path. "" means a GUI file's widgets, where the key path
-	// is one key.
-	Database string
-	KeyPath  string // the key path from the definition; <number> matches a number key
-	Target   string // the database the values name; "" means the row's own
-	Folder   string // the folder a file named with no folder of its own is in; "" means none
+	Games    []string // the games it holds for; none means every game
+	Database string   // the database whose definitions hold the key path; "" means a GUI file's widgets, with a one-key path
+	KeyPath  string   // the key path from the definition; <number> matches a number key
+	Target   string   // the database the values name; "" means the row's own
+	Folder   string   // the folder a file named with no folder of its own is in; "" means none
 }
 
 // An EntryMode is a prefix written before a definition's name, and what it does to a definition already loaded.
@@ -138,9 +120,7 @@ type EntryMode struct {
 
 // A PictureStep is one hop from an event toward its picture.
 type PictureStep struct {
-	// Key is the key path read in the block the hop starts from. A key written key[field=value] reads, of the blocks
-	// of that key, the one that writes the value at the field.
-	Key      string
+	Key      string // the key path read in the hop's block; key[field=value] picks the block of that key whose field is the value
 	Database string // the database whose definition the key's value names
 	Match    string // the key path in each definition whose values are matched with the value; "" means its name
 }
@@ -217,6 +197,9 @@ const LabelKey = "text"
 // alike.
 const HiddenKey = "hidden"
 
+// ModifierBoolKey is the key whose yes makes a modifier type take yes or no rather than a number.
+const ModifierBoolKey = "boolean"
+
 // EventDelay is how a firing's delay is written.
 var EventDelay = struct {
 	Units []string // the keys that write how long the firing waits, in the order they are looked for
@@ -240,6 +223,99 @@ var CustomTexts = struct {
 	Block string // the key of a block that holds one of the texts
 	Key   string // the key in that block that names the text's localization key
 }{"text", "localization_key"}
+
+// A TextKeys row says how the localization keys of some databases' definitions are named where a definition does not
+// write them, with the definition's name at %s. A database with no row has its definitions' names as their titles and
+// no description.
+type TextKeys struct {
+	Games       []string // the games it holds for; none means every game
+	Title       string   // the key of a definition's title; "" means the definition's name
+	Description string   // the key of a definition's description; "" means none
+	Databases   []string // the databases it holds for
+}
+
+// DefinitionTexts holds the rows of the databases whose definitions' texts are not under their plain names.
+var DefinitionTexts = []TextKeys{
+	{Games: []string{ck3, eu5}, Title: "game_concept_%s", Databases: []string{"game_concepts"}},
+	// localization/english/content_304_l_english.yml:228 titles arranged_accident_failed by this form
+	{Games: []string{vic3}, Title: "notification_%s_name", Databases: []string{"messages"}},
+	{Games: []string{ck3}, Description: "%s_desc", Databases: []string{
+		"activities/activity_locales", "activities/activity_types", "activities/activity_types.phase",
+		"activities/intents", "ai_war_stances", "bookmarks/bookmarks", "bookmarks/challenge_characters",
+		"character_memory_types", "council_positions", "court_positions/tasks", "court_positions/types",
+		"court_types", "culture/eras", "culture/innovations", "decisions", "dlc_metadata", "factions", "governments",
+		"history/faiths", "important_actions", "inspirations", "lease_contracts", "modifiers", "nicknames",
+		"puppets/types", "raids/intents", "religion/faith_types", "religion/religion_types", "religion/rite_types",
+		"schemes/agent_types", "secret_types", "situation/catalysts", "struggle/catalysts", "struggle/struggles",
+		"subject_contracts/groups", "suggestions", "task_contracts", "travel/travel_options", "vassal_stances",
+	}},
+	{Games: []string{ck3}, Title: "%s_name", Databases: []string{
+		"culture/aesthetics_bundles", "culture/creation_names", "dynasty_perks", "lifestyle_perks",
+		"religion/doctrine_group_types",
+	}},
+	{Games: []string{ck3}, Title: "%s_name", Description: "%s_desc", Databases: []string{
+		"culture/traditions", "dynasty_legacies", "lifestyles", "religion/doctrine_types", "religion/tenet_types",
+	}},
+	{Games: []string{ck3}, Title: "%s_title", Databases: []string{"activities/pulse_actions"}},
+	{Games: []string{ck3}, Title: "activity_group_type_%s", Databases: []string{"activities/activity_group_types"}},
+	{Games: []string{ck3}, Title: "building_%s", Description: "building_%s_desc", Databases: []string{"buildings"}},
+	{Games: []string{ck3}, Title: "confederation_type_%s_name", Databases: []string{"confederation_types"}},
+	{Games: []string{ck3}, Title: "decision_group_type_%s", Databases: []string{"decision_group_types"}},
+	{Games: []string{ck3}, Title: "epidemic_%s", Databases: []string{"epidemics"}},
+	{Games: []string{ck3}, Title: "feature_%s", Databases: []string{"artifacts/features"}},
+	{Games: []string{ck3}, Title: "message_group_type_%s", Databases: []string{"message_group_types"}},
+	{Games: []string{ck3}, Title: "situation_%s", Description: "situation_%s_desc", Databases: []string{
+		"situation/situations",
+	}},
+	{Games: []string{ck3}, Title: "situation_group_type_%s", Databases: []string{"situation/situation_group_types"}},
+	{Games: []string{eu5}, Description: "%s_desc", Databases: []string{
+		"advances", "age", "ai_personalities", "artist_work", "avatars", "building_categories", "building_types",
+		"bureaucracies", "cabinet_actions", "casus_belli", "character_interactions", "child_educations",
+		"chivalric_orders", "climates", "colonial_charter_goals", "country_interactions", "country_ranks",
+		"culture_groups", "disasters", "diseases", "employment_systems", "estate_privileges", "estates",
+		"expedition_types", "formable_countries", "generic_actions", "gfx/map/flatmap",
+		"gfx/map/spline_network/spline_styles", "gods", "gods.omen", "goods", "government_reforms",
+		"government_types", "hegemons", "heir_selections", "historical_scores", "holy_site_types", "industry_types",
+		"institution", "international_organization_payments", "international_organization_special_statuses",
+		"international_organizations", "laws", "laws.policy", "location_ranks", "movements", "parliament_agendas",
+		"parliament_issues", "parliament_types", "peace_treaties", "pop_types", "recruitment_method", "regencies",
+		"religion_groups", "religions", "religious_aspects", "religious_factions", "religious_figures",
+		"religious_focuses", "religious_order_callings", "religious_order_types", "religious_schools", "resolutions",
+		"road_types", "scenarios", "setup/1337.building", "setup/1337.institution", "setup/1337.situation",
+		"setup/1337.work_of_art", "situations", "societal_values", "subject_military_stances", "subject_types",
+		"topography", "town_rights", "unit_abilities", "unit_categories", "unit_formation_preference", "unit_types",
+		"vegetation",
+	}},
+	{Games: []string{eu5}, Title: "%s_name", Description: "%s_desc", Databases: []string{"bookmarks"}},
+	{Games: []string{vic3}, Description: "%s_desc", Databases: []string{
+		"acceptance_statuses", "ai_regional_objectives", "ai_strategic_region_stance_types", "ai_strategies",
+		"amendments", "battle_conditions", "character_interactions", "character_traits", "combat_unit_groups",
+		"combat_unit_types", "commander_orders", "company_charter_types", "country_ranks", "decisions", "decrees",
+		"diplomatic_actions", "diplomatic_catalysts", "dlc_metadata", "gfx/map/fleet_entities", "glossary",
+		"government_types", "harvest_condition_types", "ideologies", "institutions", "interest_group_traits",
+		"interest_groups", "interest_tier_types", "labels", "law_groups", "laws", "mobilization_option_groups",
+		"mobilization_options", "modifier_type_definitions", "naval_battle_conditions", "naval_mission_types",
+		"objectives", "political_lobby_appeasement", "pop_types", "power_bloc_identities",
+		"power_bloc_principle_groups", "power_bloc_principles", "ship_groups", "ship_types", "social_classes",
+		"social_hierarchies", "technology/technologies", "themes", "treaty_articles",
+	}},
+	{Games: []string{vic3}, Title: "%s_name", Description: "%s_desc", Databases: []string{"proposal_types"}},
+}
+
+// LookupTextKey returns how the localization key that a database's definitions leave unwritten under the given key is
+// named, with the definition's name at %s: TitleKey for the title, DescriptionKey for the description. A database with
+// no row for the title is titled by the name itself. It returns false where the game has no such key.
+func (game *Game) LookupTextKey(database, key string) (string, bool) {
+	for _, row := range DefinitionTexts {
+		if !game.Matches(row.Games) || !slices.Contains(row.Databases, database) {
+			continue
+		}
+		if pattern := lo.Ternary(key == TitleKey, row.Title, row.Description); pattern != "" {
+			return pattern, true
+		}
+	}
+	return "%s", key == TitleKey
+}
 
 // MisspelledFolders maps folder names the game never reads to the name it reads instead.
 var MisspelledFolders = map[string]string{"localisation": "localization"}
@@ -320,7 +396,7 @@ var Databases = []Database{
 		RunOrder: []string{"is_shown", "is_valid", "cost", "cooldown", "effect"},
 	},
 	// a group is also a name, which has_trait holds for any trait in it (_traits.info:3,181,183)
-	{Folder: "common/traits", Games: []string{ck3}, AliasKeys: []string{"group", "group_equivalence"}},
+	{Folder: "common/traits", Games: []string{ck3}, Aliases: map[string]string{"group": "", "group_equivalence": ""}},
 	{Folder: "common/opinion_modifiers", Games: []string{ck3}}, // the DLC subfolder writes the same blocks
 	{Folder: "gfx/map/map_object_data", Games: ck3AndVic3, NamedBy: "nothing"},
 	{Folder: "history/titles", Games: []string{ck3}, Target: "landed_titles"},
@@ -356,24 +432,23 @@ var Databases = []Database{
 	{Folder: "events", Games: vic3AndEU5, Contents: ContentsEvents, RunOrder: eventOrder},
 	{Folder: "common/decisions", Games: []string{vic3}, Contents: ContentsDecisions},
 	{
-		Folder: "gfx/map/post_effects", Games: []string{vic3}, NamedBy: "field", NameKey: "name",
-		WrapperKeys: []string{"posteffect_volumes"},
+		Folder: "gfx/map/post_effects", Games: []string{vic3}, NameKey: "name", WrapperKeys: []string{"posteffect_volumes"},
 	},
 	// COUNTRIES = { … }: effects
 	{Folder: "common/history", Games: []string{vic3}, NamedBy: "nothing", Shape: "effects"},
 	// scripted_tests.md:2 "Every file is a test suite"
 	{Folder: "tools/scripted_tests", Games: []string{vic3}, NamedBy: "file"},
 	// Vic3 modifier_types.md:1-3,16-17 and EU5 00_modifier_types.txt:1,3
-	{Folder: "common/modifier_type_definitions", Games: vic3AndEU5, Contents: ContentsModifiers, BoolKey: "boolean"},
+	{Folder: "common/modifier_type_definitions", Games: vic3AndEU5, Contents: ContentsModifiers},
 	// map_data/province_terrains.txt:21698 defines x7F25CD, common/history/states/00_states.txt:137 writes x7f25cd
 	{Folder: "map_data/province_terrains.txt", Games: []string{vic3}, FoldsCase: true},
 	{Folder: "common/static_modifiers", Games: []string{vic3}, Shape: ShapeModifiers}, // modifier_types.md:2
 	// common/geographic_regions/geographic_regions.md:4 names its lists by the short_key: every_country_in_<short_key>
-	{Folder: "common/geographic_regions", Games: []string{vic3}, AliasKeys: []string{"short_key"}},
+	{Folder: "common/geographic_regions", Games: []string{vic3}, Aliases: map[string]string{"short_key": ""}},
 	// in_game/common/formable_countries/00_formable_countries.txt:18, tag = SCA: a formable names the country it forms
-	{Folder: "common/formable_countries", Games: []string{eu5}, AliasKeys: []string{"tag"}, AliasTarget: "setup/countries"},
+	{Folder: "common/formable_countries", Games: []string{eu5}, Aliases: map[string]string{"tag": "setup/countries"}},
 	{Folder: "gfx/map/map_objects", Games: []string{eu5}, NamedBy: "nothing"},
-	{Folder: "gfx/map/city_data", Games: []string{eu5}, NamedBy: "field", NameKey: "name"},
+	{Folder: "gfx/map/city_data", Games: []string{eu5}, NameKey: "name"},
 	// A reference to a concept matches in either case.
 	{Folder: "common/game_concepts", Games: []string{eu5}, Contents: ContentsConcepts, FoldsCase: true},
 	// Its top keys are the managers that hold the nestings.
@@ -400,10 +475,10 @@ var Databases = []Database{
 	{Folder: "common/scripted_effects", DeclaringKeys: []string{"scripted_effect"}},
 	{Folder: "common/scripted_triggers", DeclaringKeys: []string{"scripted_trigger"}},
 	{Folder: "common/scripted_lists", Contents: ContentsLists},
-	// without an entry the game reads the keys built on the name (CK3 _effect_localization.info:9-17,
-	// _trigger_localization.info:15); EU5 international_organization_effects.txt:169 names one no entry defines
-	{Folder: "common/effect_localization", Optional: true},
-	{Folder: "common/trigger_localization", Optional: true},
+	// CK3 _effect_localization.info:9-17 and _trigger_localization.info:15; EU5
+	// international_organization_effects.txt:169 refers to one no entry defines
+	{Folder: "common/effect_localization", AllowsUndefined: true},
+	{Folder: "common/trigger_localization", AllowsUndefined: true},
 	// its subfolders write the same define groups. define:Namespace|Name reads one (CK3 event_targets.log:109, the
 	// Vic3 wiki's Event target page)
 	{Folder: "common/defines", Prefixes: []string{"define", "array_define"}, Separator: "|"},
@@ -412,9 +487,9 @@ var Databases = []Database{
 		WrapperKeys: []string{"color_genes", "special_genes", "morph_genes", "accessory_genes", "decal_atlases", "age_presets"},
 	},
 	{Folder: "common/named_colors", WrapperKeys: []string{"colors"}},
-	{Folder: "data_binding", NamedBy: "call", NameKey: "definition"},
+	{Folder: "data_binding", NameKey: "definition"},
 	{Folder: "common/game_concepts", Contents: ContentsConcepts},
-	{Folder: "common/achievement_groups.txt", NamedBy: "field", NameKey: "name"},
+	{Folder: "common/achievement_groups.txt", NameKey: "name"},
 	{Folder: "common/coat_of_arms/options", NamedBy: "nothing"},
 	{Folder: "common/coat_of_arms/coat_of_arms", WrapperKeys: []string{"template"}, Mirrors: true},
 	{
@@ -425,7 +500,7 @@ var Databases = []Database{
 		},
 	},
 	{Folder: "gui/scripted_widgets", NamedBy: "nothing"},
-	{Folder: "music/music_player_categories", NamedBy: "field", NameKey: "id"},
+	{Folder: "music/music_player_categories", NameKey: "id"},
 	// its blocks are pattern_textures, pattern_layout and variation, each a database of its own
 	{Folder: "gfx/portraits/accessory_variations", NamedBy: "nothing"},
 }

@@ -70,7 +70,7 @@ rest, field by field, and only where nothing else does:
 - **Shape.** The shape the keys written in a field's blocks tell. If the keys disagree, the shape is unknown.
 - **Value.** A stated value is kept, except a reference with no database. Where vanilla writes a reference, it is the
   database that defines every value written there. A field written only as scalars gets the first type all its values
-  fit; one always written as a block is a color or a block.
+  fit, such as a target where they are all scopes or links; one always written as a block is a color or a block.
 - **Keys.** Where every key that only vanilla writes in a block is a definition of one database, the block's keys name
   that database, as a culture's opinions name cultures. Those keys fold into `<any>`, and the walk reads such a key as
   a reference. A command's own block keeps its keys apart, except where a `game.CommandKeys` row says they name a

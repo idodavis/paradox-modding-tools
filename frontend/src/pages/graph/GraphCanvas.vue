@@ -79,9 +79,9 @@ function stopFollowing({ event }: FlowEvents["moveStart"]): void {
   if ("sourceEvent" in event && event.sourceEvent) following = false;
 }
 
-/** fit fits the view to everything drawn. */
+/** fit fits the view to everything drawn, never smaller than half size so the text stays readable. */
 function fit(): Promise<boolean> {
-  return fitView({ padding: 0.15, maxZoom: 1 });
+  return fitView({ padding: 0.15, minZoom: 0.5, maxZoom: 1 });
 }
 
 /**

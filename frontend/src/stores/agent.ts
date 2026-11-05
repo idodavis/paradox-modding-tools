@@ -7,19 +7,22 @@ import * as v2 from "@agentclientprotocol/sdk/experimental/v2";
 import { useQuery } from "@pinia/colada";
 import { until, useLocalStorage } from "@vueuse/core";
 import { Browser, JSONStream } from "@wailsio/runtime";
-import { groupBy } from "es-toolkit";
+import { groupBy, lowerFirst } from "es-toolkit";
 import { defineStore } from "pinia";
 import { computed, markRaw, reactive, shallowRef } from "vue";
 
 import type { Agent } from "@services/agent/models";
+import type { Tool } from "@services/mcp/models";
 import type { Place } from "@services/workspace/models";
 import { confirm } from "../lib/feedback";
 import { describeError, plural } from "../lib/format";
-import { accessQuery, agentsQuery } from "../queries";
+import { accessQuery, agentsQuery, toolsQuery } from "../queries";
 import { useEditorStore } from "./editor";
-import { listEdits, listLatestEdits, toEdits, undoFile, type DiffContent, type FileEdit } from "./edits";
+import { fileLabel, listEdits, listLatestEdits, toEdits, undoFile, type DiffContent, type FileEdit } from "./edits";
+import { useSettingsStore } from "./settings";
 import { useToolViewStore } from "./toolView";
 import { useWindowsStore, WINDOW_QUERY } from "./windows";
+import { useWorkspaceStore } from "./workspace";
 
 /** A Protocol is a version of the Agent Client Protocol. */
 type Protocol = 1 | 2;
@@ -46,7 +49,13 @@ export type Entry =
       terminals: string[];
     }
   | { kind: "plan"; id: string; steps: { text: string; status: string }[] }
-  | { kind: "permission"; id: string; title: string; options: { id: string; name: string; kind: string }[] }
+  | {
+      kind: "permission";
+      id: string;
+      title: string;
+      permit: string; // the agent and the tool, as the setting of tools allowed always writes them
+      options: { id: string; name: string; kind: string }[];
+    }
   | { kind: "link"; id: string; message: string; url: string }
   | { kind: "notice"; id: string; text: string };
 
@@ -73,6 +82,8 @@ export type Session = {
 /** A SessionRecord is one session as every window's sessions list remembers it. */
 export type SessionRecord = {
   agent: string;
+  /** The id of the workspace the session was started in. */
+  workspace: string;
   id: string;
   title: string;
   updatedAt: number;
@@ -128,6 +139,22 @@ type MessageUpdate = { kind: "user" | "agent" | "thought"; isWhole: boolean };
 
 /** PROTOCOLS is the local storage key of the version each agent answered last. */
 const PROTOCOLS = "pmt.agent.protocol";
+/** OPTIONS is the local storage key of the model, effort and mode each agent was last given. */
+const OPTIONS = "pmt.agent.options";
+/** ALLOWED is the setting that holds the tools the user allowed always, each with its agent. */
+export const ALLOWED = "agents.allowed";
+/**
+ * FILE_KINDS holds the kinds of tool call an agent allows always as a whole, as Claude's "allow all edits" does, with
+ * the words Settings shows for each. Any other tool is allowed always by its title, such as one command.
+ */
+export const FILE_KINDS: Record<string, string> = {
+  read: "Reading files",
+  edit: "Changing files",
+  delete: "Deleting files",
+  move: "Moving files",
+};
+/** PMT_TOOL matches the title of a tool call for one of PMT's tools, in each form agents write it. */
+const PMT_TOOL = /^(?:mcp__pmt__|pmt[_:/])(.+)$/;
 /** AUTH_REQUIRED is the error code an agent answers with while the user has not signed in. */
 const AUTH_REQUIRED = -32000;
 /** CLIENT is how PMT names itself to an agent. */
@@ -136,15 +163,20 @@ const CLIENT = { name: "pmt", title: "Paradox Modding Tools", version: "1" };
 export const useAgentStore = defineStore("agent", () => {
   const toast = useToast();
   const editor = useEditorStore();
+  const workspace = useWorkspaceStore();
   const windows = useWindowsStore();
   const toolView = useToolViewStore();
+  const settings = useSettingsStore();
   const { data: agents } = useQuery(agentsQuery);
   const { data: access } = useQuery(accessQuery);
+  const { data: tools } = useQuery(toolsQuery);
   const sessions = reactive<Session[]>([]);
   const links = new Map<string, Link>();
   const protocols = useLocalStorage<Record<string, Protocol>>(PROTOCOLS, {});
   const records = useLocalStorage<SessionRecord[]>("pmt.agent.sessions", []);
   const lastAgent = useLocalStorage("pmt.agent.last", "");
+  // The options the user last picked for each agent, by agent and by option.
+  const lastOptions = useLocalStorage<Record<string, Record<string, string | boolean>>>(OPTIONS, {});
   const activeKey = shallowRef("");
   const isPaneOpen = shallowRef(false);
   // Follow the agent: whether to open the files the agent's tool calls name.
@@ -166,7 +198,7 @@ export const useAgentStore = defineStore("agent", () => {
     if (!session) return "";
     const name = session.agent.name;
     const asking = session.entries.find((entry) => entry.kind === "permission");
-    if (asking?.kind === "permission") return `${name} asks: ${asking.title}`;
+    if (asking?.kind === "permission") return asking.title;
     if (session.entries.some((entry) => entry.kind === "link")) return `${name} asks to open a link`;
     if (session.state === "running") return `${name} is working: ${describeTitle(session)}`;
     if (session.state === "sign-in") return `${name} needs you to sign in`;
@@ -226,6 +258,7 @@ export const useAgentStore = defineStore("agent", () => {
       else session.id = await dialect.create(startMessage);
       session.state = "idle";
       remember(session);
+      if (step === "create") await applyLastOptions(session);
     } catch (error) {
       if (isAuthRequired(error)) {
         session.state = "sign-in";
@@ -532,7 +565,10 @@ export const useAgentStore = defineStore("agent", () => {
     remember(session);
   }
 
-  /** ask shows a permission request in a session and answers the agent with the option the user picks. */
+  /**
+   * ask answers a permission request at once if PMT may, else shows it in a session and answers the agent with the
+   * option the user picks.
+   */
   function ask(
     session: Session,
     answers: Answers,
@@ -541,18 +577,36 @@ export const useAgentStore = defineStore("agent", () => {
     options: v2.PermissionOption[],
   ): Promise<PermissionAnswer> {
     if (toolCall) applyTool(session, toolCall);
+    const toolTitle = toolCall?.title || title;
+    const tool = tools.value?.find((row) => row.name === toPmtTool(toolTitle));
+    const scope = toolCall?.kind && toolCall.kind in FILE_KINDS ? toolCall.kind : toolTitle;
+    const permit = `${session.agent.id}:${scope.replaceAll(",", ";")}`;
+    const allowed = pickAllowed(tool, permit, options);
+    if (allowed) return Promise.resolve(toAnswer(allowed.optionId));
     const id = `p${session.entries.length}`;
     session.entries.push({
       kind: "permission",
       id,
-      title: title || toolCall?.title || "Allow this?",
+      title: tool ? describeWish(session, tool, toolCall) : `${session.agent.name} asks: ${toolTitle || "allow this?"}`,
+      permit,
       options: options.map((option) => ({ id: option.optionId, name: option.name, kind: option.kind })),
     });
-    return new Promise((resolve) =>
-      answers.set(id, (optionId) =>
-        resolve({ outcome: optionId ? { outcome: "selected", optionId } : { outcome: "cancelled" } }),
-      ),
-    );
+    return new Promise((resolve) => answers.set(id, (optionId) => resolve(toAnswer(optionId))));
+  }
+
+  /**
+   * pickAllowed returns the option that answers a permission request without asking the user: for a tool of PMT's
+   * that only reads, the one that allows it once, and for a tool the user allowed always, the one that allows it
+   * always. It returns undefined if the user must be asked.
+   */
+  function pickAllowed(
+    tool: Tool | undefined,
+    permit: string,
+    options: v2.PermissionOption[],
+  ): v2.PermissionOption | undefined {
+    if (tool?.readOnly) return findOption(options, "allow_once", "allow_always");
+    if (settings.value(ALLOWED).split(",").includes(permit)) return findOption(options, "allow_always", "allow_once");
+    return undefined;
   }
 
   /** askLink shows a link an agent asks to open and answers with the user's choice. It declines a form. */
@@ -585,7 +639,11 @@ export const useAgentStore = defineStore("agent", () => {
   /** answer answers a session's open request with an option, an action, or null to cancel it. */
   const answer = (session: Session, id: string, choice: string | null): void => {
     const link = links.get(session.key);
-    if (link) closeEntry(session, link.answers, id, choice);
+    if (!link) return;
+    const entry = session.entries.find((candidate) => candidate.kind === "permission" && candidate.id === id);
+    if (entry?.kind === "permission" && entry.options.some((row) => row.id === choice && row.kind === "allow_always"))
+      settings.writeItem(ALLOWED, entry.permit, true);
+    closeEntry(session, link.answers, id, choice);
   };
 
   /** prompt sends the user's text to a session, with the picked files and the page's chip as links. */
@@ -616,16 +674,35 @@ export const useAgentStore = defineStore("agent", () => {
     }
   };
 
-  /** configure sets one of a session's settings. If the agent refuses, the error goes in the transcript. */
+  /**
+   * configure sets one of a session's settings and keeps the value for the agent's next session. If the agent
+   * refuses, the error goes in the transcript.
+   */
   const configure = async (session: Session, configId: string, value: string | boolean): Promise<void> => {
     const link = links.get(session.key);
     if (!link) return;
     try {
       applyOffers(session, await link.dialect.configure(session.id, configId, value));
+      lastOptions.value = {
+        ...lastOptions.value,
+        [session.agent.id]: { ...lastOptions.value[session.agent.id], [configId]: value },
+      };
     } catch (error) {
       session.entries.push({ kind: "notice", id: `n${session.entries.length}`, text: describeError(error) });
     }
   };
+
+  /**
+   * applyLastOptions gives a new session each option its agent was last given that the session offers and has
+   * otherwise.
+   */
+  async function applyLastOptions(session: Session): Promise<void> {
+    for (const [configId, value] of Object.entries(lastOptions.value[session.agent.id] ?? {})) {
+      const option = session.options.find((row) => row.configId === configId);
+      if (option && option.currentValue !== value && isOffered(option, value))
+        await configure(session, configId, value);
+    }
+  }
 
   /** cancel asks a session's agent to stop its turn. */
   const cancel = (session: Session): void => void links.get(session.key)?.dialect.cancel(session.id);
@@ -658,17 +735,23 @@ export const useAgentStore = defineStore("agent", () => {
     void connect(session, session.id ? "resume" : "create");
   };
 
+  /** listRecords lists the remembered sessions of the active workspace, newest first. */
+  const listRecords = (): SessionRecord[] =>
+    records.value.filter((record) => record.workspace === workspace.activeId());
+
   /** remember writes a session to every window's sessions list, newest first. */
   function remember(session: Session): void {
     if (!session.id) return;
+    const previous = records.value.find((other) => other.id === session.id);
     const record = {
       agent: session.agent.id,
+      workspace: previous?.workspace ?? workspace.activeId(),
       id: session.id,
       title: session.title,
       updatedAt: Date.now(),
       resumable: session.resumable,
       deletable: session.deletable,
-      isArchived: records.value.find((other) => other.id === session.id)?.isArchived ?? false,
+      isArchived: previous?.isArchived ?? false,
       isRenamed: session.isRenamed,
     };
     records.value = [record, ...records.value.filter((other) => other.id !== session.id)].slice(0, 50);
@@ -801,6 +884,7 @@ export const useAgentStore = defineStore("agent", () => {
   return {
     sessions,
     records,
+    listRecords,
     activeKey,
     active,
     lastAgent,
@@ -869,6 +953,44 @@ function applyOffers(session: Session, offers: Offers): void {
   );
   if (options) session.options = options;
   if (offers.availableCommands) session.commands = offers.availableCommands;
+}
+
+/** toPmtTool returns the name of the PMT tool a tool call's title names, or "" if it names one of the agent's own. */
+export function toPmtTool(title: string): string {
+  return PMT_TOOL.exec(title)?.[1] ?? "";
+}
+
+/** toAnswer returns the answer to a permission request that selects an option, or cancels it for null. */
+function toAnswer(optionId: string | null): PermissionAnswer {
+  return { outcome: optionId ? { outcome: "selected", optionId } : { outcome: "cancelled" } };
+}
+
+/** findOption returns the first option of a permission request that has one of the kinds, in their order. */
+function findOption(options: v2.PermissionOption[], ...kinds: string[]): v2.PermissionOption | undefined {
+  return kinds.flatMap((kind) => options.filter((option) => option.kind === kind))[0];
+}
+
+/** isOffered reports whether a session's option takes the value: a switch takes a boolean, a list one of its own. */
+function isOffered(option: v2.SessionConfigOption, value: string | boolean): boolean {
+  if (option.type === "boolean") return typeof value === "boolean";
+  const values = (option as Extract<v2.SessionConfigOption, { type: "select" }>).options as (
+    v2.SessionConfigSelectOption | v2.SessionConfigSelectGroup
+  )[];
+  return values.flatMap((row) => ("options" in row ? row.options : [row])).some((row) => row.value === value);
+}
+
+/** describeWish returns a permission prompt for a tool of PMT's: who wants to do what, and to which file if one. */
+function describeWish(session: Session, tool: Tool, toolCall: v2.ToolCallUpdate | undefined): string {
+  const path = findPath(toolCall);
+  return `${session.agent.name} wants to ${lowerFirst(tool.title)}${path ? `: ${fileLabel(path)}` : ""}`;
+}
+
+/** findPath returns the one file a tool call names, by its locations or its input, or "" if it names none or many. */
+function findPath(toolCall: v2.ToolCallUpdate | undefined): string {
+  const paths = new Set(toolCall?.locations?.map((location) => location.path));
+  const input = toolCall?.rawInput as { path?: unknown } | null | undefined;
+  if (typeof input?.path === "string") paths.add(input.path);
+  return paths.size === 1 ? ([...paths][0] ?? "") : "";
 }
 
 /** toSignIn returns how to sign in with a method. Its command is empty if PMT asks the agent itself. */

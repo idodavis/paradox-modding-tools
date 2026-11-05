@@ -129,7 +129,7 @@ function updateMonth(index: number, text: string): void {
         <ColorPicker
           :model-value="mod.color"
           :items="SLOT_COLORS"
-          note="A slot of the theme"
+          note="The mod's color in the explorer, tabs and Health."
           class="border-b border-default px-5 py-4"
           @update:model-value="update({ color: $event })"
         />

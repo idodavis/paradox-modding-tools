@@ -15,50 +15,35 @@ import (
 
 // A ShapeRule is how a block of one shape reads its keys.
 type ShapeRule struct {
-	Rules  []string // the key rules tried in order; the first that fits wins
-	Caller string   // the caller a call here is looked up by, among Callable.Callers; AnyCall means every callable
-	Allows []string // the declared commands it holds; inside a trigger, never an effect
-	// Values is the database every value written in a block of this shape names; "" means none.
-	Values string
-	// Blocks is the shape of a block written in a block of this shape where its key gives none; "" means the key's rule
-	// decides.
-	Blocks string
-	// Encloses is the shape of the block that a link or an "enclosing" keyword written in a block of this shape holds;
-	// "" means the shape itself.
-	Encloses string
+	Rules    []string // the key rules tried in order; the first that fits wins
+	Caller   string   // the caller a call here is looked up by, among Callable.Callers; AnyCall means every callable
+	Allows   []string // the declared commands it holds; inside a trigger, never an effect
+	Values   string   // the database every value in the block names; "" means none
+	Blocks   string   // the shape of a block written in it where its key gives none; "" means the key's rule decides
+	Encloses string   // the shape of the block a link or an "enclosing" keyword in it holds; "" means the shape itself
 }
 
 // A Keyword is a key of the language itself: one it gives a fixed shape to, or one of its operators. The first row
 // that fits a key wins.
 type Keyword struct {
-	// Key is a key path in lower case. Written command/key, it fits the key only in that command's block.
-	Key    string
-	Games  []string // the games it holds for; none means every game
-	Holder string   // fits only in a block of this shape; "" means any
-	Shape  string   // what its block holds, a Shapes key or "enclosing"; "" means what the key's rule gives
-	Caller string   // the caller its calls are looked up by; "" means the shape's own
-	Shows  string   // a description marker: which of its texts it shows, first, random or leaf
-	Class  string   // the operator class: logical, conditional, flow, display, saving, math, list; "" means none
-	Blurb  string   // the one line a hover card shows
-	// Says is how a condition in English reads it, a * standing for the rest of a prefix key; "" means its key with
-	// spaces for underscores.
-	Says string
-	// Covers marks a keyword whose own text is shown in place of the conditions written inside it.
-	Covers bool
-	// ValueFirst marks a keyword whose value a condition in English reads first, as what it is about: X exists.
-	ValueFirst bool
-	// Negates marks a keyword that is true when what it holds is false.
-	Negates bool
-	// Follows are the keys, in lower case, one of which must be written just before it in its block; empty means any.
-	Follows []string
-	// Weighted marks a keyword whose branches are weights: a branch's key is a number, and its chance is its share.
-	Weighted bool
-	// Modifies marks a keyword whose block changes the weight of the block it is written in.
-	Modifies bool
-	// Preview marks a keyword whose block is shown in the tooltip and never run.
-	Preview bool
-	// Values is the database of the text it shows, written as its value or as the text key in its block; "" means none.
-	Values string
+	Key        string   // a key path in lower case; written command/key, it fits only in that command's block
+	Games      []string // the games it holds for; none means every game
+	Holder     string   // fits only in a block of this shape; "" means any
+	Shape      string   // what its block holds, a Shapes key or "enclosing"; "" means what the key's rule gives
+	Caller     string   // the caller its calls are looked up by; "" means the shape's own
+	Shows      string   // which of its texts it shows: first, random or leaf
+	Class      string   // the operator class: logical, conditional, flow, display, saving, math, list; "" means none
+	Blurb      string   // the line a hover card shows
+	Says       string   // how a condition in English reads it, a * for the rest of a prefix key; "" means the key as words
+	Covers     bool     // its own text is shown in place of the conditions inside it
+	ValueFirst bool     // a condition in English reads its value first, as in "X exists"
+	Negates    bool     // true when what it holds is false
+	Follows    []string // the keys, one of which must be written just before it in its block; none means any
+	Continues  []string // the Keys of the rows, one of which must be the keyword of the block holding it; none means any
+	Weighted   bool     // its branches are weights: a branch's key is a number, and its chance is its share
+	Modifies   bool     // its block changes the weight of the block it is written in
+	Preview    bool     // its block is shown in the tooltip and never run
+	Values     string   // the database of the text it shows, as its value or its text key; "" means none
 }
 
 // AnyCall is the Caller of a block that resolves a call in every callable.
@@ -273,6 +258,13 @@ var Keywords = []Keyword{
 	{Key: "all_false", Shape: "triggers", Class: "logical", Says: "none of", Negates: true, Blurb: "True only when nothing inside it is true (the same as NOR)."},
 	{Key: "any_false", Shape: "triggers", Class: "logical", Says: "not all of", Negates: true, Blurb: "True when at least one thing inside it is false (the same as NAND)."},
 	{Key: "always", Class: "logical", Blurb: "True or false as written: always = yes is always true."},
+	// Vic3 common/scripted_progress_bars/scripted_progress_bars.md: an else inside a progress_condition takes over when
+	// its limit fails, "chained as deep as you need", so it is written inside the block, after its body; the else of
+	// such an else is written inside it in the same way
+	{Games: []string{vic3}, Key: "progress_condition/else", Shape: "enclosing", Class: "conditional",
+		Blurb: "Takes over when the limit of the progress condition around it fails."},
+	{Games: []string{vic3}, Key: "else/else", Continues: []string{"progress_condition/else", "else/else"},
+		Shape: "enclosing", Class: "conditional", Blurb: "Takes over when the limit of the else around it fails."},
 	{Key: "if", Shape: "enclosing", Class: "conditional", Blurb: "Runs what is inside it when its limit holds."},
 	{Key: "else_if", Shape: "enclosing", Class: "conditional", Blurb: "Runs when the if or else_if before it did not, and its own limit holds.", Follows: []string{"if", "else_if"}},
 	{Key: "else", Shape: "enclosing", Class: "conditional", Blurb: "Runs when no if or else_if before it ran.", Follows: []string{"if", "else_if"}},
@@ -445,8 +437,9 @@ var keywordPositions = func() map[string][]int {
 }()
 
 // LookupKeyword returns the game's keyword for a key in a block of the given shape and command, the key and the command
-// in any letter case. Where several fit, it is the first row of Keywords. It returns false if none fits.
-func (game *Game) LookupKeyword(shape, command, key string) (Keyword, bool) {
+// in any letter case. The outer is the Key of the keyword row of the block that holds the key, or "" if it has none.
+// Where several fit, it is the first row of Keywords. It returns false if none fits.
+func (game *Game) LookupKeyword(shape, command, key, outer string) (Keyword, bool) {
 	command, key = strings.ToLower(command), strings.ToLower(key)
 	candidates := []string{key, AnyKey}
 	if jomini.IsNumberKey(key) {
@@ -461,7 +454,8 @@ func (game *Game) LookupKeyword(shape, command, key string) (Keyword, bool) {
 			row := Keywords[position]
 			holder, _, held := strings.Cut(row.Key, "/")
 			fits, _ := path.Match(holder, command)
-			if (row.Holder == "" || row.Holder == shape) && (!held || fits) && game.Matches(row.Games) {
+			continues := len(row.Continues) == 0 || slices.Contains(row.Continues, outer)
+			if (row.Holder == "" || row.Holder == shape) && (!held || fits) && continues && game.Matches(row.Games) {
 				best, ok = position, true
 				break
 			}

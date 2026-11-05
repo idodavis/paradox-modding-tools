@@ -65,6 +65,28 @@ export interface Task {
      * file, page, mod or event
      */
     "chip": string;
+
+    /**
+     * it changes the file it is about, so it needs one the user can change
+     */
+    "edits": boolean;
+}
+
+/**
+ * A Tool is one of PMT's tools, as an agent is told of it.
+ */
+export interface Tool {
+    "name": string;
+
+    /**
+     * a short phrase for what the tool does, such as "Read a file"
+     */
+    "title": string;
+
+    /**
+     * it changes no file
+     */
+    "readOnly": boolean;
 }
 
 /**

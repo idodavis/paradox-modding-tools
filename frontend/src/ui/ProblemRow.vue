@@ -1,4 +1,4 @@
-<!-- One problem as a row with its level's mark, its message and a second line. -->
+<!-- One problem as a row with its level's mark, its message and a second line. A long message wraps to two lines. -->
 <script setup lang="ts">
 import { computed } from "vue";
 import { useQuery } from "@pinia/colada";
@@ -41,7 +41,7 @@ const file = computed(() => detail.slice(folder.value.length));
     :tabindex="plain ? undefined : 0"
     class="flex w-full text-start text-toned"
     :class="[
-      dense ? 'h-6 items-center gap-2 px-3 text-12 whitespace-nowrap' : 'items-start gap-2.5 px-3 py-2',
+      dense ? 'min-h-6 items-center gap-2 px-3 py-0.5 text-12' : 'items-start gap-2.5 px-3 py-2',
       plain ? 'cursor-default' : 'cursor-pointer hover:bg-accented',
       { 'bg-(--accent-soft) shadow-[inset_2px_0_0_var(--accent)]': selected },
     ]"
@@ -58,7 +58,7 @@ const file = computed(() => detail.slice(folder.value.length));
       :style="{ color: `var(--ui-${mark.color})` }"
     />
     <span class="flex min-w-0 grow" :class="dense ? 'items-center gap-2' : 'flex-col'">
-      <span :class="dense ? 'min-w-0 truncate' : 'line-clamp-2 text-13 break-words text-highlighted'">
+      <span class="line-clamp-2 break-words" :class="dense ? 'min-w-0' : 'text-13 text-highlighted'">
         <slot name="message"
           ><span :title="message">{{ message }}</span></slot
         >

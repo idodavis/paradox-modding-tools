@@ -16,8 +16,9 @@ import * as agentApi from "@services/agent/service";
 import * as mcp from "@services/mcp/service";
 import { confirm, copyText } from "../../lib/feedback";
 import { abbreviate, parseTime, splitError } from "../../lib/format";
-import { accessQuery, agentsQuery, keys, nodeQuery } from "../../queries";
-import { useAgentStore } from "../../stores/agent";
+import { accessQuery, agentsQuery, keys, nodeQuery, toolsQuery } from "../../queries";
+import { ALLOWED, FILE_KINDS, toPmtTool, useAgentStore } from "../../stores/agent";
+import { useSettingsStore } from "../../stores/settings";
 import FileSelector from "../../ui/FileSelector.vue";
 import SettingsSection from "../../ui/SettingsSection.vue";
 
@@ -28,9 +29,11 @@ const NOTES: Record<string, string> = { "codex-acp": "# add to ~/.codex/config.t
 
 const cache = useQueryCache();
 const agent = useAgentStore();
+const settings = useSettingsStore();
 const { data: access } = useQuery(accessQuery);
 const { data: agents } = useQuery(agentsQuery);
 const { data: node } = useQuery(nodeQuery);
+const { data: tools } = useQuery(toolsQuery);
 const name = shallowRef("");
 const command = shallowRef("");
 const now = useNow({ scheduler: (tick) => useIntervalFn(tick, 1000) });
@@ -43,6 +46,25 @@ const own = computed(() =>
   (agents.value ?? [])
     .filter((row) => !row.version && row.program)
     .map((row) => ({ row, text: [row.program ?? "", ...(row.args ?? [])].map(quote).join(" ") })),
+);
+
+const readers = computed(() => (tools.value ?? []).filter((row) => row.readOnly));
+// Each entry of the setting is the agent's id, a colon, and a kind of file work or the tool as the agent named it.
+const permits = computed(() =>
+  settings
+    .value(ALLOWED)
+    .split(",")
+    .filter(Boolean)
+    .map((permit) => {
+      const agentId = permit.slice(0, permit.indexOf(":"));
+      const title = permit.slice(permit.indexOf(":") + 1);
+      const tool = tools.value?.find((row) => row.name === toPmtTool(title));
+      return {
+        permit,
+        agentName: agents.value?.find((row) => row.id === agentId)?.name ?? agentId,
+        toolTitle: FILE_KINDS[title] ?? tool?.title ?? title,
+      };
+    }),
 );
 
 const refresh = () => cache.invalidateQueries({ key: keys.agents });
@@ -218,6 +240,28 @@ function quote(path: string): string {
     </div>
   </section>
   <SettingsSection section="agents" />
+  <section id="setting-agents.allowed" class="flex flex-col gap-2.5 border-b border-accented pb-5">
+    <h2 class="text-13 font-semibold">Allowed without asking</h2>
+    <p class="text-12 text-dimmed">
+      PMT allows its tools that only read, so an agent never waits on you for them. A tool you chose Always allow for is
+      added here until you remove it.
+    </p>
+    <div class="flex flex-wrap gap-1.5">
+      <UBadge v-for="tool in readers" :key="tool.name" :label="tool.title" color="neutral" variant="subtle" />
+    </div>
+    <div v-for="row in permits" :key="row.permit" class="flex items-center gap-3 border-b border-accented py-2">
+      <span class="w-48 truncate text-13 font-medium">{{ row.agentName }}</span>
+      <span class="min-w-0 grow truncate text-12 text-toned">{{ row.toolTitle }}</span>
+      <UButton
+        label="Remove"
+        icon="i-lucide-trash-2"
+        color="error"
+        variant="ghost"
+        size="sm"
+        @click="settings.writeItem(ALLOWED, row.permit, false)"
+      />
+    </div>
+  </section>
   <section class="grid grid-cols-[260px_minmax(0,1fr)] gap-8 border-b border-accented pb-5">
     <div class="min-w-0">
       <h2 class="text-13 font-semibold">Token</h2>

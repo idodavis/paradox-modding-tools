@@ -28,8 +28,9 @@ A table is a Go slice or map of rows written out as literals. No function builds
 - **Fixed values.** A column that takes one of a few fixed values, such as `Keeps` (first, last, highest or merged),
   lists them in its comment.
 - **One value per game.** A fact that is a single value for each game is a field of that game's row in `game.go`,
-  not a table. Examples are its Steam app id, its mod descriptor, its stage folders, the forms its error log names a
-  line in, and the text Health shows on how it picks a copy.
+  not a table. Examples are its Steam app id, its mod descriptor, whether its launcher reads local mods only from its
+  mod folder (`FixedModFolder`), its stage folders, the forms its error log names a line in, and the text Health shows
+  on how it picks a copy.
 
 ## From a file to its rows
 
@@ -60,7 +61,8 @@ flowchart TD
    entry mode before its name, such as `REPLACE:` (`EntryModes`).
 5. **What names what.** `References` are key paths whose values name other definitions. An on_action's `on_actions`
    list names on_actions, and a customizable localization's `text/localization_key` names a localization key.
-   `FiringFields` are the fields whose value fires an event, an on_action or a decision.
+   `FiringFields` are the fields whose value fires an event, an on_action or a decision. `DefinitionTexts` says how a
+   database names the localization keys of its definitions' titles and descriptions when they are not the plain name.
 6. **How each block reads.** Every block has a shape: fields, triggers, effects, a value, modifiers and a few more.
    `Shapes` gives each shape its rules for reading a key, tried in order. `Keywords` are the language's own keys,
    such as `limit`, `every_*`, `random_list` and a value block's `add`. Each has a fixed shape and the line a hover
@@ -93,10 +95,10 @@ them.
 ## Installs
 
 `install.go` finds a game on this machine. `FindInstalls` looks through Steam's library folders. `LoadVersion` reads
-the game's version from the launcher's settings. Without them it reads the day the game was built, as "build <date>",
-from the log the game writes at each start, if the game has started since its last update, and else Steam's build
-number. The file also finds the game's user-data and
-dump folders and the program that starts it in debug mode.
+the game's version from the launcher's settings. Without them it reads the version the game checks, from its debug log,
+or else the day the game was built, as "build <date>", from its revision log, if the game has started since its last
+update, and else Steam's build number. The file also finds the game's user-data and dump folders and the program that
+starts it in debug mode.
 
 ## Adding a fact
 

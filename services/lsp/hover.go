@@ -33,33 +33,35 @@ type CardDate struct {
 
 // A Card is a hover card: the facts about a key or a value, for the page to lay out.
 type Card struct {
-	Title    string          `json:"title"`
-	What     string          `json:"what"`            // what it is: the database's singular, "effect", "keyword"
-	Class    string          `json:"class,omitempty"` // an operator's class
-	Blurb    string          `json:"blurb,omitempty"`
-	Quote    string          `json:"quote,omitempty"`   // the game's own text for the word: a localization key's
-	Takes    schema.Expected `json:"takes"`             // what the key's value may be
-	Need     string          `json:"need,omitempty"`    // whether a field is required: optional, always or conditional
-	About    string          `json:"about,omitempty"`   // what the database says of its definitions
-	Writes   []string        `json:"writes,omitempty"`  // the game's eight most written values for an undeclared field
-	Returns  string          `json:"returns,omitempty"` // what a call of a scripted definition gives
-	Command  string          `json:"command,omitempty"` // the kind of command a workspace's scripted definition acts as
-	Lexicon  string          `json:"lexicon,omitempty"` // the id of the lexicon class that lists it; "" for none
-	Holds    string          `json:"holds,omitempty"`   // what its block holds, in words
-	Leads    string          `json:"leads,omitempty"`   // the scope its block runs in, where a command or link moves it
-	Target   string          `json:"target,omitempty"`  // the scope its value must be for a command or link with no block
-	Stale    bool            `json:"stale,omitempty"`   // a fact comes from dumps older than the install
-	Weight   int             `json:"weight,omitempty"`  // a branch of a random list: its percent of the branches' numbers
-	Node     string          `json:"node,omitempty"`    // the Event Graph's id of the name; "" if it is not drawn
-	Within   []string        `json:"within,omitempty"`  // the definition the position is in, then the blocks inside it
-	Runs     string          `json:"runs,omitempty"`    // the scopes the dumps give a command, else "The game does not say"
-	Date     *CardDate       `json:"date,omitempty"`
-	Color    string          `json:"color,omitempty"`  // a CSS color
-	Number   *float64        `json:"number,omitempty"` // the number a constant stands for
-	Image    *texture.Header `json:"image,omitempty"`
-	Sites    []Site          `json:"sites,omitempty"`
-	Inferred bool            `json:"inferred"` // a fact was learned from the game's files
-	Range    Range           `json:"range"`    // what the card is about
+	Title       string          `json:"title"`
+	What        string          `json:"what"`            // what it is: the database's singular, "effect", "keyword"
+	Class       string          `json:"class,omitempty"` // an operator's class
+	Blurb       string          `json:"blurb,omitempty"`
+	Quote       string          `json:"quote,omitempty"`       // the game's own text for the word, in the workspace's language: a localization key's text, or the title of a definition
+	Takes       string          `json:"takes,omitempty"`       // what the key's value may be, in words
+	Need        string          `json:"need,omitempty"`        // whether a field is required: optional, always or conditional
+	Description string          `json:"description,omitempty"` // the text the game shows as an entry's description
+	Comment     string          `json:"comment,omitempty"`     // the comment lines just above an entry, without their hashes
+	Parameters  []string        `json:"parameters,omitempty"`  // the parameters a scripted effect or trigger takes, without dollars
+	Writes      []string        `json:"writes,omitempty"`      // the game's eight most written values for an undeclared field
+	Returns     string          `json:"returns,omitempty"`     // what a call of a scripted definition gives
+	Command     string          `json:"command,omitempty"`     // the kind of command a workspace's scripted definition acts as
+	Lexicon     string          `json:"lexicon,omitempty"`     // the id of the lexicon class that lists it; "" for none
+	Holds       string          `json:"holds,omitempty"`       // what its block holds, in words
+	Leads       string          `json:"leads,omitempty"`       // the scope its block runs in, where a command or link moves it
+	Target      string          `json:"target,omitempty"`      // the scope its value must be for a command or link with no block
+	Stale       bool            `json:"stale,omitempty"`       // a fact comes from dumps older than the install
+	Weight      int             `json:"weight,omitempty"`      // a branch of a random list: its percent of the branches' numbers
+	Node        string          `json:"node,omitempty"`        // the Event Graph's id of the name; "" if it is not drawn
+	Within      []string        `json:"within,omitempty"`      // the definition the position is in, then the blocks inside it
+	Runs        string          `json:"runs,omitempty"`        // the scopes the dumps give a command, else "The game does not say"
+	Date        *CardDate       `json:"date,omitempty"`
+	Color       string          `json:"color,omitempty"`  // a CSS color
+	Number      *float64        `json:"number,omitempty"` // the number a constant stands for
+	Image       *texture.Header `json:"image,omitempty"`
+	Sites       []Site          `json:"sites,omitempty"`
+	Inferred    bool            `json:"inferred"` // a fact was learned from the game's files
+	Range       Range           `json:"range"`    // what the card is about
 }
 
 // A Class is one class of the wiki's lexicon, by which a card and a completion name the commands the game declares.
@@ -107,8 +109,7 @@ func (lsp *Service) Hover(path string, line, column int) (*Card, error) {
 		}
 		return card, nil
 	}
-	visitor := &hoverVisitor{tree: tree, offset: offset}
-	ws.Schema.WalkTo(tree, place.File, offset, visitor)
+	visitor := walkTo(ws, tree, place, offset)
 	card := lsp.describeHit(ws, mods, place, visitor)
 	if card != nil {
 		card.Lexicon = findLexicon(card)
@@ -132,16 +133,7 @@ func (lsp *Service) describeHit(ws *workspace.Session, mods *index.Index, place 
 	case reference.Database == game.Localization:
 		describeKey(ws, mods, place, card, reference)
 	case reference.Name != "":
-		sites, winner := listSites(ws, mods, place, reference)
-		card.What, card.Sites, card.Image, card.Color = game.DescribeDefinition(reference.Database, false),
-			MakeSites(ws, mods, listEntries(ws, mods, sites), winner), describeImage(mods, reference), findDefinedColor(ws, mods, winner)
-		if slices.Contains(ws.Schema.FireDatabases, reference.Database) {
-			card.Node = reference.ToID()
-		}
-		if database := ws.Schema.Databases[reference.Database]; database != nil {
-			card.About, card.Returns, card.Command = database.Definition.Blurb.Value, returnsLabels[database.Callable.Shape],
-				lo.Ternary(len(sites) > 0, database.Callable.Command, "")
-		}
+		describeDefinitions(card, ws, mods, place, reference)
 		if reference.Database == game.Constant {
 			describeNumber(card, tree, reference.Span)
 		}
@@ -173,6 +165,42 @@ func (lsp *Service) describeHit(ws *workspace.Session, mods *index.Index, place 
 	return card
 }
 
+// describeDefinitions fills a card for a name that definitions define: what they are, where they are, the picture and
+// color they stand for, and what the first of them says of itself.
+func describeDefinitions(card *Card, ws *workspace.Session, mods *index.Index, place workspace.Place, reference schema.Reference) {
+	sites, winner := listSites(ws, mods, place, reference)
+	entries := listEntries(ws, mods, sites)
+	card.What, card.Sites, card.Image, card.Color = game.DescribeDefinition(reference.Database, false),
+		MakeSites(ws, mods, entries, winner), describeImage(mods, reference), findDefinedColor(ws, mods, winner)
+	if slices.Contains(ws.Schema.FireDatabases, reference.Database) {
+		card.Node = reference.ToID()
+	}
+	if database := ws.Schema.Databases[reference.Database]; database != nil {
+		card.Returns, card.Command = returnsLabels[database.Callable.Shape], lo.Ternary(len(sites) > 0, database.Callable.Command, "")
+	}
+	if len(entries) > 0 {
+		describeEntry(card, ws, mods, entries[0])
+	}
+}
+
+// describeEntry fills a card with what a definition says of itself: its localized name and description, the comment
+// just above it and, for a scripted effect or trigger, the parameters it takes.
+func describeEntry(card *Card, ws *workspace.Session, mods *index.Index, site index.Site) {
+	card.Quote = ws.LookupDefinitionText(mods, site, game.TitleKey)
+	card.Description = ws.LookupDefinitionText(mods, site, game.DescriptionKey)
+	tree, statement, err := ws.FindStatement(mods, site)
+	if err != nil {
+		return
+	}
+	lines := strings.Split(tree.FindComment(statement), "\n")
+	card.Comment = strings.Join(lo.Map(lines, func(line string, _ int) string {
+		return strings.TrimSpace(strings.TrimLeft(line, "#"))
+	}), "\n")
+	if database := ws.Schema.Databases[mods.ToReference(site).Database]; database != nil && database.Callable.Parameters {
+		card.Parameters = slices.Sorted(maps.Keys(schema.ListParameters(tree, statement).Children))
+	}
+}
+
 // listEntries returns the given definitions that really define their name. It leaves out a second name of a definition,
 // such as a trait's group, a name a command makes, such as a saved scope, and a name a definition only switches on.
 func listEntries(ws *workspace.Session, mods *index.Index, sites []index.Site) []index.Site {
@@ -190,6 +218,16 @@ type hoverVisitor struct {
 	statement int32 // 0, the file, if there is none
 	context   schema.Context
 	ancestors []string // the definition's name, then the keys of the blocks that hold the offset
+}
+
+// walkTo walks a file to an offset and returns the visitor that holds the innermost statement there. Only a script file
+// is walked, since the schema has no rules for the keys of any other file; the visitor of any other holds no statement.
+func walkTo(ws *workspace.Session, tree *jomini.Tree, place workspace.Place, offset int) *hoverVisitor {
+	visitor := &hoverVisitor{tree: tree, offset: offset}
+	if place.Format.IsScript() {
+		ws.Schema.WalkTo(tree, place.File, offset, visitor)
+	}
+	return visitor
 }
 
 // Enter keeps the context when the statement covers the offset, with the name of the definition the offset is in and
@@ -481,11 +519,13 @@ func describeField(card *Card, context *schema.Context) {
 	card.Inferred = card.Inferred || field.Shape.Source == game.SourceVanilla
 }
 
-// describeTakes gives a card the type a field's value takes, where a source states one, and marks the card inferred
-// where the game's own files state it. A nil field takes nothing.
+// describeTakes gives a card the words for what a field's value takes, where a source states it, and marks the card
+// inferred where the game's own files state it. A nil field takes nothing.
 func describeTakes(card *Card, field *schema.Field) {
 	if field != nil && field.Value.IsStated() {
-		card.Takes, card.Inferred = field.Value.Value, field.Value.Source == game.SourceVanilla
+		expected := field.Value.Value
+		card.Takes = describeExpected(expected) + lo.Ternary(expected.Values, ", or a script value", "")
+		card.Inferred = field.Value.Source == game.SourceVanilla
 	}
 }
 

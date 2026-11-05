@@ -10,6 +10,7 @@ import { toSentence } from "../../lib/format";
 import { gamesQuery, languagesQuery, modFolderQuery } from "../../queries";
 import { gameIcon, useSettingsStore } from "../../stores/settings";
 import { useWorkspaceStore } from "../../stores/workspace";
+import FileSelector from "../../ui/FileSelector.vue";
 import GameInstalls from "../../ui/GameInstalls.vue";
 import HowModWorks from "../../ui/HowModWorks.vue";
 import StatusFacts from "../../ui/StatusFacts.vue";
@@ -20,20 +21,23 @@ const gameId = shallowRef("");
 const installId = shallowRef("");
 const title = shallowRef("");
 const language = shallowRef<string>();
+// The folder the mod is made in, or "" for the game's mod folder.
+const folder = shallowRef("");
 const explaining = shallowRef(false);
 
 const { data: games } = useQuery(gamesQuery);
 const { data: languages } = useQuery(() => ({ ...languagesQuery(installId.value), enabled: !!installId.value }));
 const { data: parent } = useQuery(() => ({
-  ...modFolderQuery({ installId: installId.value, dir: "", name: "" }),
+  ...modFolderQuery({ installId: installId.value, dir: folder.value, name: "" }),
   enabled: !!installId.value,
 }));
 const { data: modDir, error: nameError } = useQuery(() => ({
-  ...modFolderQuery({ installId: installId.value, dir: "", name: title.value.trim() }),
+  ...modFolderQuery({ installId: installId.value, dir: folder.value, name: title.value.trim() }),
   enabled: !!installId.value && !!title.value.trim(),
 }));
 
 const current = computed(() => games.value?.find((game) => game.id === gameId.value));
+const shownLanguage = computed(() => language.value ?? languages.value?.find((row) => row.base)?.folder);
 
 const { mutate: pick } = useMutation({
   mutation: async ({ game, recorded, local }: { game: Game; recorded?: Install; local?: DetectedInstall }) => {
@@ -45,13 +49,14 @@ const { mutate: pick } = useMutation({
     gameId.value = choice.gameId;
     installId.value = choice.installId;
     language.value = undefined;
+    folder.value = "";
   },
 });
 const { mutate: make, isLoading: making } = useMutation({
   mutation: () =>
     store.create(
       { name: title.value.trim(), install: installId.value, language: language.value ?? "" },
-      [{ title: title.value.trim() }],
+      [{ title: title.value.trim(), folder: folder.value }],
       { name: "workspace-ide" },
     ),
 });
@@ -109,18 +114,28 @@ const { mutate: make, isLoading: making } = useMutation({
         <template v-if="installId">
           <div class="grid grid-cols-2 gap-5">
             <UFormField label="Mod name" help="Shown in the game's launcher and on the Workshop.">
-              <UInput v-model="title" class="w-full" autofocus />
+              <UInput v-model="title" placeholder="Better Feasts" class="w-full" autofocus />
             </UFormField>
             <UFormField label="Language" help="The mod's text starts in this language. Others can be added later.">
               <USelect
-                v-model="language"
+                :model-value="shownLanguage"
                 :items="languages ?? []"
                 value-key="folder"
-                placeholder="The game's base language"
+                placeholder="Choose a language"
                 class="w-full"
+                @update:model-value="language = $event"
               />
             </UFormField>
           </div>
+
+          <UFormField
+            v-if="!current?.fixedModFolder"
+            label="Folder"
+            help="The game's mod folder, unless you choose another."
+          >
+            <FileSelector :path="folder || parent" folder :filter="[]" @update:path="folder = $event" />
+          </UFormField>
+          <p v-else class="text-12 text-dimmed">{{ current?.name }} reads local mods only from its mod folder.</p>
 
           <div class="flex flex-col gap-2">
             <span class="text-12 font-medium text-toned">PMT makes</span>
@@ -163,6 +178,6 @@ const { mutate: make, isLoading: making } = useMutation({
       <HowModWorks v-model:open="explaining" :game-id="gameId" :mod-title="title" />
     </div>
 
-    <StatusFacts :facts="[{ label: 'Making a mod for', value: current?.name ?? '' }]" />
+    <StatusFacts v-if="current" :facts="[{ label: 'Making a mod for', value: current.name }]" />
   </div>
 </template>

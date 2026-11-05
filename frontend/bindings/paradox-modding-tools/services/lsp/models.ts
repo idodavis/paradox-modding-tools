@@ -38,14 +38,15 @@ export interface Card {
     "blurb"?: string;
 
     /**
-     * the game's own text for the word: a localization key's
+     * Quote is the game's own text for the word, in the workspace's language: a localization key's text, or the title
+     * of a definition.
      */
     "quote"?: string;
 
     /**
-     * what the key's value may be
+     * what the key's value may be, in words
      */
-    "takes": schema$0.Expected;
+    "takes"?: string;
 
     /**
      * whether a field is required: optional, always or conditional
@@ -53,9 +54,19 @@ export interface Card {
     "need"?: string;
 
     /**
-     * what the database says of its definitions
+     * the text the game shows as an entry's description
      */
-    "about"?: string;
+    "description"?: string;
+
+    /**
+     * the comment lines just above an entry, without their hashes
+     */
+    "comment"?: string;
+
+    /**
+     * the parameters a scripted effect or trigger takes, without dollars
+     */
+    "parameters"?: string[] | null;
 
     /**
      * the game's eight most written values for an undeclared field
@@ -195,6 +206,11 @@ export interface Code {
     "label": string;
 
     /**
+     * Description is one plain sentence on what the check looks for.
+     */
+    "description": string;
+
+    /**
      * a template the facts fill, such as {name}
      */
     "message": string;
@@ -209,6 +225,11 @@ export interface Code {
      * none.
      */
     "elsewhere"?: string;
+
+    /**
+     * HealthOnly is true where the editor never gives the code and only Health's report finds it.
+     */
+    "healthOnly": boolean;
 }
 
 /**

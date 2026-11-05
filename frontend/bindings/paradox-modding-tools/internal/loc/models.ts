@@ -11,6 +11,11 @@ import * as jomini$0 from "../jomini/models.js";
 export interface Language {
     "folder": string;
     "label": string;
+
+    /**
+     * it is the game's base language
+     */
+    "base": boolean;
 }
 
 /**

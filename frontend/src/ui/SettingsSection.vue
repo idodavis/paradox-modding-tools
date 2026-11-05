@@ -1,9 +1,9 @@
 <!-- One section of the settings catalog as fields. A setting the simple interface hides shows off and disabled. -->
 <script lang="ts">
-/** SETTING_ROWS holds the classes of a list of settings. */
-export const SETTING_ROWS = "flex flex-col *:border-b *:border-accented *:py-2.5";
-/** SETTING_HIGHLIGHT holds the classes of the row of the setting the palette opened Settings at. */
-export const SETTING_HIGHLIGHT = "rounded-md bg-(--accent-soft)";
+/** SETTING_ROWS holds the classes of a list of settings. Each row's label starts at the list's left edge. */
+export const SETTING_ROWS = "flex flex-col *:border-b *:border-accented *:px-0 *:py-2.5";
+/** SETTING_HIGHLIGHT holds the classes of the row of the setting the palette opened Settings at. The ring pads it. */
+export const SETTING_HIGHLIGHT = "rounded-md bg-(--accent-soft) ring-8 ring-(--accent-soft)";
 </script>
 
 <script setup lang="ts">
@@ -18,8 +18,9 @@ import ValueField from "./ValueField.vue";
 import type { Setting } from "@services/app/models";
 
 const CONTROLS = ["switch", "choice", "number", "port", "text"] as const;
-// The Appearance page draws these apart: the theme as tiles, and the simple interface's switch above them.
-const DRAWN_APART = ["appearance.theme", "appearance.simple"];
+// Their pages draw these apart: the theme as a gallery, the simple interface's switch above it, and the tools an
+// agent may use without asking as a list.
+const DRAWN_APART = ["appearance.theme", "appearance.simple", "agents.allowed"];
 
 const { section, highlight = "", keys = [] } = defineProps<{ section: string; highlight?: string; keys?: string[] }>();
 
@@ -92,18 +93,18 @@ function describeScales(row: Setting) {
         v-bind="markRow(row.key)"
         :label="row.label"
         :description="row.help"
-        class="ps-3.5 pt-3"
+        class="pt-3"
       >
         <div v-for="group in groups" :key="group.title" class="mt-3">
           <p class="text-13 font-medium text-highlighted">{{ group.title }}</p>
-          <div class="mt-1 flex flex-col divide-y divide-accented">
+          <div class="mt-1 flex flex-col divide-y divide-accented *:px-0">
             <ValueField
               v-for="code in group.codes"
               :key="code.id"
               kind="switch"
               :value="String(!off.includes(code.id))"
               :label="code.label"
-              :help="code.id"
+              :help="code.description"
               @update:value="settings.writeItem('ide.checks', code.id, $event !== 'true')"
             />
           </div>

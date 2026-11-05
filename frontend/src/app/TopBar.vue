@@ -1,6 +1,6 @@
 <!--
-  The top bar of every window: the PMT menu, the workspace switcher and page tabs, search, Help and the window's
-  buttons.
+  The top bar of every window: the PMT logo that opens the Library, the workspace switcher and page tabs, search, the
+  agent pane's button on a workspace page, the gear menu of Settings and Help, and the window's buttons.
   The main window also reports what the game's error log says about the mods when the launched game closes.
 -->
 <script setup lang="ts">
@@ -9,7 +9,7 @@ import { useMutation, useQuery } from "@pinia/colada";
 import { until, useDebounceFn, useElementSize, useEventBus, useEventListener } from "@vueuse/core";
 import { Events, System, Window } from "@wailsio/runtime";
 import { computed, onScopeDispose, reactive, shallowRef, useTemplateRef, watch } from "vue";
-import { useRoute, useRouter } from "vue-router";
+import { RouterLink, useRoute, useRouter } from "vue-router";
 
 import logoIcon from "@assets/PMT-Logo-Icon.svg?url";
 import * as health from "@services/health/service";
@@ -36,7 +36,8 @@ const SQUARE_BUTTON = "flex w-11.5 items-center justify-center text-toned";
 const ROUND_BUTTON =
   "flex size-6 items-center justify-center rounded-full bg-accented text-toned hover:text-highlighted";
 // A tab's line on top matches its highlight below, so its icon and label center on the bar's middle.
-const TAB = "flex items-center gap-1.5 px-2.5 border-y-2 border-transparent text-13 font-medium whitespace-nowrap";
+const TAB =
+  "flex items-center gap-1.5 px-2.5 border-y-2 border-transparent text-13 font-medium whitespace-nowrap hover:bg-accented";
 const CAPTION = "self-stretch [--wails-draggable:drag]";
 
 const route = useRoute();
@@ -103,10 +104,9 @@ const mode = computed(() =>
     : { label: "Switch to dark", icon: "i-lucide-moon" },
 );
 
-const menu = computed(
+const gearMenu = computed(
   () =>
     [
-      [{ label: "Library", icon: "i-lucide-layout-grid", to: { name: "library" as const } }],
       [
         {
           label: "Settings",
@@ -115,11 +115,24 @@ const menu = computed(
           onSelect: () => commandBus.emit("settings.open"),
         },
         {
+          label: "Theme…",
+          icon: "i-lucide-palette",
+          onSelect: () => commandBus.emit("settings.open", "appearance.theme"),
+        },
+        { ...mode.value, onSelect: toggleDark },
+        {
           label: "Keyboard shortcuts",
           icon: "i-lucide-keyboard",
           onSelect: () => commandBus.emit("settings.open", "shortcuts"),
         },
-        { ...mode.value, onSelect: toggleDark },
+      ],
+      [
+        {
+          label: "Help",
+          icon: "i-lucide-circle-help",
+          kbds: findKbds("help.open"),
+          onSelect: () => commandBus.emit("help.open"),
+        },
       ],
     ] satisfies DropdownMenuItem[][],
 );
@@ -245,26 +258,29 @@ function styleButton(region: string): string[] {
     ref="bar"
     class="flex h-9 shrink-0 items-center gap-3 border-y border-default border-t-transparent bg-muted ps-3.5"
   >
-    <UDropdownMenu :items="menu" :content="{ align: 'start' }" :disabled="!IS_MAIN">
-      <button
-        type="button"
-        :aria-label="IS_MAIN ? 'PMT menu' : 'PMT'"
-        class="-my-px flex shrink-0 items-center gap-1.5 self-stretch border-y-2 border-transparent px-1 text-13 font-semibold text-highlighted"
-        :class="(route.name === 'library' || route.name === 'new-mod' || route.name === 'wizard') && 'border-b-primary'"
-        data-art
-      >
-        <span
-          class="size-4.5 bg-secondary"
-          :style="{
-            maskImage: `url(${logoIcon})`,
-            maskRepeat: 'no-repeat',
-            maskPosition: 'center',
-            maskSize: 'contain',
-          }"
-        />
-        PMT
-      </button>
-    </UDropdownMenu>
+    <!-- The logo opens the Library; another window has no Library, so there it is the logo alone. -->
+    <component
+      :is="IS_MAIN ? RouterLink : 'span'"
+      :to="IS_MAIN ? { name: 'library' } : undefined"
+      :aria-label="IS_MAIN ? 'Library' : 'PMT'"
+      class="-my-px flex shrink-0 items-center gap-1.5 self-stretch border-y-2 border-transparent px-1 text-13 font-semibold text-highlighted"
+      :class="[
+        IS_MAIN && 'hover:bg-accented',
+        (route.name === 'library' || route.name === 'new-mod' || route.name === 'wizard') && 'border-b-primary',
+      ]"
+      data-art
+    >
+      <span
+        class="size-4.5 bg-secondary"
+        :style="{
+          maskImage: `url(${logoIcon})`,
+          maskRepeat: 'no-repeat',
+          maskPosition: 'center',
+          maskSize: 'contain',
+        }"
+      />
+      PMT
+    </component>
     <span class="mx-1 h-4.5 w-px shrink-0 bg-accented" />
 
     <template v-if="IS_MAIN">
@@ -353,7 +369,11 @@ function styleButton(region: string): string[] {
     </button>
     <span :class="CAPTION" class="min-w-6 grow" @dblclick="Window.ToggleMaximise()" />
 
-    <UTooltip v-if="IS_MAIN && active" text="Agent pane" :kbds="findKbds('agent.togglePane')">
+    <UTooltip
+      v-if="IS_MAIN && route.name && isWorkspacePage(route.name)"
+      text="Agent pane"
+      :kbds="findKbds('agent.togglePane')"
+    >
       <UChip :show="agent.sessions.some(agent.isWaiting)" color="warning" inset size="sm">
         <UButton
           icon="i-lucide-sparkles"
@@ -366,16 +386,9 @@ function styleButton(region: string): string[] {
         />
       </UChip>
     </UTooltip>
-    <UTooltip text="Help" :kbds="findKbds('help.open')">
-      <UButton
-        icon="i-lucide-circle-help"
-        variant="ghost"
-        size="sm"
-        square
-        aria-label="Help"
-        @click="commandBus.emit('help.open')"
-      />
-    </UTooltip>
+    <UDropdownMenu :items="gearMenu" :content="{ align: 'end' }">
+      <UButton icon="i-lucide-settings" variant="ghost" size="sm" square aria-label="Settings and help" />
+    </UDropdownMenu>
     <div class="-my-px flex shrink-0 self-stretch" :class="ROUND && 'items-center gap-2.5 pe-2.5'">
       <button
         v-for="button in windowButtons"

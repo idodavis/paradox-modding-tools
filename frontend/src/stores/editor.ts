@@ -597,6 +597,7 @@ export const useEditorStore = defineStore("editor", () => {
     panel,
     compareFile,
     mode,
+    tracking,
     layout,
     listGroups,
     listTabs,

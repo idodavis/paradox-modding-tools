@@ -229,9 +229,9 @@ export const outlineQuery = defineQueryOptions((path: string) => ({
   key: [...keys.draw(path), "outline"],
   query: () => lsp.ListSymbols(path),
 }));
-export const symbolsQuery = defineQueryOptions((query: string) => ({
-  key: [...keys.lsp, "symbols", query],
-  query: () => lsp.FindSymbols(query, 50),
+export const symbolsQuery = defineQueryOptions(({ query, localization }: { query: string; localization: boolean }) => ({
+  key: [...keys.lsp, "symbols", query, localization],
+  query: () => lsp.FindSymbols(query, localization, 50),
 }));
 
 export const graphQuery = defineQueryOptions(({ root, filter }: { root: string; filter: Filter }) => ({
@@ -337,6 +337,7 @@ export const environmentQuery = defineQueryOptions({
 export const agentsQuery = defineQueryOptions({ key: [...keys.agents, "list"], query: () => agent.ListAgents() });
 export const nodeQuery = defineQueryOptions({ key: [...keys.agents, "node"], query: () => agent.DescribeNode() });
 export const tasksQuery = defineQueryOptions({ key: ["mcp", "tasks"], query: () => mcp.ListTasks() });
+export const toolsQuery = defineQueryOptions({ key: ["mcp", "tools"], query: () => mcp.ListTools() });
 export const accessQuery = defineQueryOptions({ key: ["mcp", "access"], query: () => mcp.ResolveAccess() });
 
 // A listing's key is "" for the mod's own listing.

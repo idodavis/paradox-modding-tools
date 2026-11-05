@@ -35,6 +35,7 @@ const {
   mods,
   groups,
   yours,
+  external,
   game,
   opened = undefined,
 } = defineProps<{
@@ -44,8 +45,10 @@ const {
   mods: Mod[];
   /** The groups of the mods' problems. */
   groups: Group[];
-  /** How many lines of the log are the mods'. */
+  /** How many lines of the log are the user's own mods'. */
   yours: number;
+  /** How many lines of the log are the external mods'. */
+  external: number;
   /** How many lines of the log are the game's own. */
   game: number;
   /** The open row, or undefined for none. */
@@ -71,19 +74,26 @@ const grouping = shallowRef<string | number>("mod");
 const folded = shallowRef<string[]>([]);
 
 const logRows = computed(() => log?.findings ?? []);
-const gameRows = computed(() => logRows.value.filter((row) => !row.origin));
 /** Whether any line repeats, which gives every row a column for its count. */
 const repeated = computed(() => logRows.value.some((row) => row.count > 1));
-const modRows = computed(() => logRows.value.filter((row) => row.origin));
+/** The lines of each scope: the user's mods, the external mods and the game's own. */
+const scopeRows = computed(() => ({
+  mods: logRows.value.filter((row) => row.origin && !workspace.isExternal(row.origin)),
+  external: logRows.value.filter((row) => row.origin && workspace.isExternal(row.origin)),
+  game: logRows.value.filter((row) => !row.origin),
+}));
 const scopes = computed(() => [
   { label: `From your mods ${describeCount(yours)}`, value: "mods" },
+  ...(mods.some((mod) => mod.external)
+    ? [{ label: `From external mods ${describeCount(external)}`, value: "external" }]
+    : []),
   { label: `The game's own ${describeCount(game)}`, value: "game" },
 ]);
 const rows = computed((): (HeadRow | Finding)[] => {
-  const matches = (scope.value === "mods" ? modRows.value : gameRows.value).filter((row) =>
+  const matches = scopeRows.value[scope.value as keyof typeof scopeRows.value].filter((row) =>
     matchQuery(filter.value, joinParts(row.message), row.detail),
   );
-  if (scope.value === "mods" && grouping.value === "mod") {
+  if (scope.value !== "game" && grouping.value === "mod") {
     const grouped = mods.flatMap((mod) => {
       const own = matches.filter((row) => row.origin === mod.id);
       const isFolded = folded.value.includes(mod.id);
@@ -99,7 +109,10 @@ const empty = computed(() => {
   if (!log) return "Reading the game's log.";
   if (!log.findings?.length) return "The game has not logged anything yet.";
   if (filter.value.trim()) return "No line matches the filter.";
-  return scope.value === "mods" ? "No line of the game's last run names your mods." : "Every line names your mods.";
+  if (scope.value === "mods") return "No line of the game's last run names your mods.";
+  return scope.value === "external"
+    ? "No line of the game's last run names an external mod."
+    : "Every line names a mod.";
 });
 const lastRun = computed(() => (log?.writtenAt ? describeTime(log.writtenAt) : ""));
 /** A warning that the run did not read every mod from its own folder, or "". */
@@ -194,7 +207,7 @@ function showGame(): void {
       <UTabs v-model="scope" :items="scopes" :content="false" size="xs" variant="pill" color="neutral" />
       <span class="grow" />
       <UTabs
-        v-if="scope === 'mods'"
+        v-if="scope !== 'game'"
         v-model="grouping"
         :items="GROUPINGS"
         :content="false"

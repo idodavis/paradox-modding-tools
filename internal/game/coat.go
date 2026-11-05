@@ -74,30 +74,28 @@ type CoatTemplate struct {
 
 // CoatRules is the rules for a game's coats of arms beyond their syntax. Coat is its one row.
 type CoatRules struct {
-	Database       string                 // the database of coats
-	ColorsDatabase string                 // the named colors its slots name
-	ListsDatabase  string                 // the template lists that a list "x" value names
-	FieldFile      string                 // the file whose first atlas' tile_size sizes the field
-	TextureFolders map[string]string      // the folder each texture key's files are under
-	Recolors       map[string]CoatRecolor // how each texture key's files are colored; none keeps their pixels
-	Regions        []string               // the pattern channel of each mask region, region n at n-1
-	Fallback       string                 // the color a pattern starts from, as CSS
-	// Slots are the color slots a coat or a layer writes, in order; the shaders read the first three.
-	Slots     []CoatSlot
-	Placement map[string]map[string]CoatPlace // what a placed layer's keys do to it, by the layer's type
-	Inputs    map[string]string               // how each coat key's value is edited
-	Template  CoatTemplate
-	FrameMask string // where a named frame's mask is, with the name at %s
-	// PatternKey is the key of a coat's pattern, which draws under every emblem and has no instance.
-	PatternKey  string
-	InstanceKey string // the key of one placement of an emblem or a sub, and Placement's row for an emblem
-	SubKey      string // the key of a sub-coat, and Placement's row for a sub
-	ParentKey   string // the key that names the coat a coat or a sub is laid over
-	NoParent    string // the parent that names no coat
-	TextureKey  string // the key of an emblem's texture
-	MaskKey     string // the key of the pattern's regions an emblem shows in
-	TileSizeKey string // the key of an atlas' tile size in FieldFile
-	ListTag     string // the tag of a value drawn from a template list, as list "x" writes it
+	Database       string                          // the database of coats
+	ColorsDatabase string                          // the named colors its slots name
+	ListsDatabase  string                          // the template lists that a list "x" value names
+	FieldFile      string                          // the file whose first atlas' tile_size sizes the field
+	TextureFolders map[string]string               // the folder each texture key's files are under
+	Recolors       map[string]CoatRecolor          // how each texture key's files are colored; none keeps their pixels
+	Regions        []string                        // the pattern channel of each mask region, region n at n-1
+	Fallback       string                          // the color a pattern starts from, as CSS
+	Slots          []CoatSlot                      // the color slots a coat or a layer writes, in order; the shaders read the first three
+	Placement      map[string]map[string]CoatPlace // what a placed layer's keys do to it, by the layer's type
+	Inputs         map[string]string               // how each coat key's value is edited
+	Template       CoatTemplate
+	FrameMask      string // where a named frame's mask is, with the name at %s
+	PatternKey     string // the key of a coat's pattern, which draws under every emblem and has no instance
+	InstanceKey    string // the key of one placement of an emblem or a sub, and Placement's row for an emblem
+	SubKey         string // the key of a sub-coat, and Placement's row for a sub
+	ParentKey      string // the key that names the coat a coat or a sub is laid over
+	NoParent       string // the parent that names no coat
+	TextureKey     string // the key of an emblem's texture
+	MaskKey        string // the key of the pattern's regions an emblem shows in
+	TileSizeKey    string // the key of an atlas' tile size in FieldFile
+	ListTag        string // the tag of a value drawn from a template list, as list "x" writes it
 }
 
 // A GameCoat is what one game does with coats of arms beyond what every game does.

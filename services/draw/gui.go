@@ -37,9 +37,8 @@ type Service struct {
 // A Property is one property of a widget, with the place where it is written. That place can be a template or the
 // widget's type instead of the widget itself.
 type Property struct {
-	Key string `json:"key"`
-	// Value is what the game reads: a constant, an expression or a GetDefine call is worked out, also inside a block.
-	Value  string    `json:"value"`
+	Key    string    `json:"key"`
+	Value  string    `json:"value"` // what the game reads: a constant, an expression or a GetDefine call is worked out, also inside a block
 	Range  lsp.Range `json:"range"`
 	Place  int32     `json:"place"`  // the position of the file it is written in among its window's places
 	Origin string    `json:"origin"` // "widget", "template" or "type"; "missing" if no file defines the source
@@ -49,35 +48,25 @@ type Property struct {
 
 // A Widget is one element of a resolved window, with everything needed to draw it. The page lays it out.
 type Widget struct {
-	ID int32 `json:"id"`
-	// Parent is the widget that holds it; the window's own widget is 0, and so is its parent.
-	Parent int32           `json:"parent"`
-	Name   string          `json:"name"`
-	Type   string          `json:"type"`
-	Row    game.WidgetType `json:"row"` // the game's row for its type
-	// Builtin is the engine's type its type comes down to, such as widget, hbox or icon.
-	Builtin string `json:"builtin"`
-	// TypeDefined is true when a file defines its type, which can then be opened; a built-in type is not defined.
-	TypeDefined bool   `json:"typeDefined"`
-	Slot        string `json:"slot"` // the key of the slot it fills, such as scrollbar_vertical; "" for none
-	Role        string `json:"role"` // the slot it fills in its holder, or "" for a plain child
-	Item        bool   `json:"item"` // it is an item of a data model
-	// Properties is the positions of its properties among its window's properties, the last written of each key.
-	Properties []int32 `json:"properties"`
-	// Texts is, by property key, the plain text and the data calls of each text it shows.
-	Texts    map[string][]loc.Segment `json:"texts"`
-	Textures map[string]string        `json:"textures"` // by property key; the image file for the property's path
-	// Colors is, by property key, the CSS color that a binding of a definition's color leads to.
-	Colors map[string]string `json:"colors"`
-	// Placeholder is the shape among the page's placeholders that it draws where its picture has no file; "" for a
-	// widget with a picture, a background or no picture.
-	Placeholder string `json:"placeholder"`
-	// Pictures is where the pictures are listed that its picture binding may draw, where no file is found for the
-	// binding as written. It draws the first of them; nil means no list.
-	Pictures *PictureList `json:"pictures,omitempty"`
-	Overlays []int32      `json:"overlays"` // the positions of the textures laid over its own among its window's overlays
-	Range    lsp.Range    `json:"range"`
-	Place    int32        `json:"place"` // the position of the file it is written in among its window's places
+	ID          int32                    `json:"id"`
+	Parent      int32                    `json:"parent"` // the widget that holds it; the window's own widget is 0, and so is its parent
+	Name        string                   `json:"name"`
+	Type        string                   `json:"type"`
+	Row         game.WidgetType          `json:"row"`                // the game's row for its type
+	Builtin     string                   `json:"builtin"`            // the engine's type its type comes down to, such as widget, hbox or icon
+	TypeDefined bool                     `json:"typeDefined"`        // a file defines its type, which can then be opened; a built-in type is not defined
+	Slot        string                   `json:"slot"`               // the key of the slot it fills, such as scrollbar_vertical; "" for none
+	Role        string                   `json:"role"`               // the slot it fills in its holder, or "" for a plain child
+	Item        bool                     `json:"item"`               // it is an item of a data model
+	Properties  []int32                  `json:"properties"`         // the positions of its properties among its window's properties, the last written of each key
+	Texts       map[string][]loc.Segment `json:"texts"`              // by property key, the plain text and the data calls of each text it shows
+	Textures    map[string]string        `json:"textures"`           // by property key; the image file for the property's path
+	Colors      map[string]string        `json:"colors"`             // by property key, the CSS color that a binding of a definition's color leads to
+	Placeholder string                   `json:"placeholder"`        // the shape among the page's placeholders that it draws where its picture has no file; "" for a widget with a picture, a background or no picture
+	Pictures    *PictureList             `json:"pictures,omitempty"` // where the pictures are listed that its picture binding may draw, where no file is found for the binding as written; it draws the first of them; nil means no list
+	Overlays    []int32                  `json:"overlays"`           // the positions of the textures laid over its own among its window's overlays
+	Range       lsp.Range                `json:"range"`
+	Place       int32                    `json:"place"` // the position of the file it is written in among its window's places
 }
 
 // An Overlay is one texture laid over a widget's own, as a modify_texture block writes it.
@@ -96,28 +85,19 @@ type Missing struct {
 // A Window is one GUI window resolved for drawing. Its widgets are in document order, and its holders are the game
 // windows that contain it, outermost first, each its own widget alone.
 type Window struct {
-	Name    string   `json:"name"`
-	Widgets []Widget `json:"widgets"`
-	Holders []Widget `json:"holders"`
-	// Places is the places of the files that its widgets and holders are written in, each once.
-	Places []workspace.Place `json:"places"`
-	Fonts  []Font            `json:"fonts"` // every style of the fonts its widgets name
-	// Rows is, by the item of a data model, the rows its list draws; an item whose widgets read no database is left out.
-	Rows map[int32][]Row `json:"rows"`
-	// Conditions is, by widget, the conditions it is shown on, as written. A widget shown on none is left out.
-	Conditions map[int32][]string `json:"conditions"`
-	// Missing is the types and templates its widgets use that no file defines.
-	Missing []Missing `json:"missing"`
-	// Groups is what the panel lets the user switch: the groups its widgets' conditions read, its lists of pictures,
-	// then its tiers. The value each is at is in States.Values.
-	Groups []Group `json:"groups"`
-	// TextFont and TextSize are the font and size of a text that sets neither, or "" if the game sets none.
-	TextFont string `json:"textFont"`
-	TextSize string `json:"textSize"`
-	// Properties is the properties of its widgets, its holders and their overlays, each once.
-	Properties []Property `json:"properties"`
-	// Overlays is the textures laid over its widgets' own, each once.
-	Overlays []Overlay `json:"overlays"`
+	Name       string             `json:"name"`
+	Widgets    []Widget           `json:"widgets"`
+	Holders    []Widget           `json:"holders"`
+	Places     []workspace.Place  `json:"places"`     // the places of the files that its widgets and holders are written in, each once
+	Fonts      []Font             `json:"fonts"`      // every style of the fonts its widgets name
+	Rows       map[int32][]Row    `json:"rows"`       // by the item of a data model, the rows its list draws; an item whose widgets read no database is left out
+	Conditions map[int32][]string `json:"conditions"` // by widget, the conditions it is shown on, as written; a widget shown on none is left out
+	Missing    []Missing          `json:"missing"`    // the types and templates its widgets use that no file defines
+	Groups     []Group            `json:"groups"`     // what the panel lets the user switch: the groups its widgets' conditions read, its lists of pictures, then its tiers; the value each is at is in States.Values
+	TextFont   string             `json:"textFont"`   // the font of a text that sets none; "" if the game sets none
+	TextSize   string             `json:"textSize"`   // the size of a text that sets none; "" if the game sets none
+	Properties []Property         `json:"properties"` // the properties of its widgets, its holders and their overlays, each once
+	Overlays   []Overlay          `json:"overlays"`   // the textures laid over its widgets' own, each once
 }
 
 // A Setting is one property to set in a block: the key and the value to write for it.
@@ -148,12 +128,10 @@ type child struct {
 type gathering struct {
 	overrides map[string]clause // the blocks it replaces, by the block they replace
 	children  []child
-	missing   []Property // the types and templates it uses that no file defines
-	states    []clause   // the states it has
-	overlays  []int32    // the positions of the textures it overlays among its window's overlays
-	// triggers holds, by the name of a widget under it, the labels of the states that an opening call of this widget
-	// or one above it starts on that widget with FindChild and TriggerAnimation.
-	triggers map[string][]string
+	missing   []Property          // the types and templates it uses that no file defines
+	states    []clause            // the states it has
+	overlays  []int32             // the positions of the textures it overlays among its window's overlays
+	triggers  map[string][]string // by the name of a widget under it, the labels of the states that an opening call of this widget or one above it starts on that widget with FindChild and TriggerAnimation
 }
 
 // A resolver makes the widgets of one window and holds them until the window is done.

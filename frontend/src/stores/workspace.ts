@@ -18,6 +18,17 @@ export const VANILLA = "vanilla";
 /** SLOTS lists the theme's color slots a mod picks from. */
 export const SLOTS = Array.from({ length: 16 }, (_, index) => `o${index + 1}`);
 
+/** LAYOUT_KEY begins the key under which a workspace's editor rows keep their sizes. The workspace's id follows. */
+export const LAYOUT_KEY = "pmt.ide.layout.";
+
+/** deleteLayouts deletes the splitter sizes kept for a workspace's editor rows, except the rows under the given ids. */
+export function deleteLayouts(workspaceId: string, keep: string[] = []): void {
+  const prefix = `reka:${LAYOUT_KEY}${workspaceId}.`;
+  for (const key of Object.keys(localStorage)) {
+    if (key.startsWith(prefix) && !keep.includes(key.slice(prefix.length))) localStorage.removeItem(key);
+  }
+}
+
 export const useWorkspaceStore = defineStore("workspace", () => {
   const id = useLocalStorage("pmt.workspace.activeId", "");
   const toast = useToast();
@@ -30,6 +41,7 @@ export const useWorkspaceStore = defineStore("workspace", () => {
     mutation: (record: Workspace) => workspace.DeleteWorkspace(record.id),
     onSuccess: (_, record) => {
       toast.add({ title: `${record.name} removed`, color: "success" });
+      deleteLayouts(record.id);
       if (id.value === record.id) id.value = "";
     },
   });
@@ -96,14 +108,14 @@ export const useWorkspaceStore = defineStore("workspace", () => {
   /** create records a workspace with its mods, opens it and shows a page. If a mod fails, it deletes the workspace. */
   async function create(
     record: Pick<Workspace, "name" | "install" | "language">,
-    mods: { dir?: string; title: string; external?: boolean }[],
+    mods: { dir?: string; folder?: string; title: string; external?: boolean }[],
     page: { name: WorkspacePage; query?: LocationQueryRaw },
   ): Promise<Workspace> {
     const row = await workspace.CreateWorkspace(record.name, record.install, record.language);
     try {
       for (const mod of mods) {
         if (mod.dir) await workspace.AddMod(row.id, mod.dir, mod.external ?? false);
-        else await workspace.CreateMod(row.id, "", mod.title, record.language);
+        else await workspace.CreateMod(row.id, mod.folder ?? "", mod.title, record.language);
       }
     } catch (error) {
       await workspace.DeleteWorkspace(row.id);

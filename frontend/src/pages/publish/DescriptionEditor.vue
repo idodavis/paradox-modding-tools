@@ -279,7 +279,7 @@ function insert(target: Editor, run: (target: Editor, address: string) => unknow
         class="me-1.5"
         @click="copySteamText"
       />
-      <span class="me-2 text-11 text-dimmed">{{ plural(words, "word") }}</span>
+      <span class="me-2 shrink-0 text-11 whitespace-nowrap text-dimmed">{{ plural(words, "word") }}</span>
       <UTabs :model-value="view" :items="VIEWS" :content="false" size="xs" @update:model-value="choose" />
     </div>
     <p v-if="lossy" class="border-b border-default px-5.5 py-1.5 text-12 text-warning">{{ LOSSY_NOTES[view] }}</p>

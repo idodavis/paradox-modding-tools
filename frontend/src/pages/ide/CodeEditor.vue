@@ -21,7 +21,7 @@ import {
   findOverride,
   overrideEntry,
 } from "../../app/commands";
-import { copiesQuery, detailQuery, loadQuery, wikiPagesQuery } from "../../queries";
+import { copiesQuery, detailQuery, loadQuery, reportQuery, wikiPagesQuery } from "../../queries";
 import { useAgentStore } from "../../stores/agent";
 import { useEditorStore } from "../../stores/editor";
 import { useSearchStore } from "../../stores/search";
@@ -106,6 +106,17 @@ const { data: copies } = useQuery(() => ({
   enabled: model.place.origin !== VANILLA,
 }));
 const gameCopy = computed(() => findGameCopy(model.place, copies.value));
+// Health's report is built while the menu is open, because building it checks every mod.
+const menuOpen = shallowRef(false);
+const { data: report } = useQuery(() => ({
+  ...reportQuery(workspace.listModIds()),
+  enabled: menuOpen.value && workspace.isOpen(),
+}));
+const hasFinding = computed(() =>
+  [report.value?.compatibility, ...(report.value?.mods ?? [])].some((group) =>
+    group?.findings?.some((finding) => finding.name === card.value?.title),
+  ),
+);
 
 onMounted(() => {
   if (!host.value) return;
@@ -162,6 +173,9 @@ watch(
   },
   { immediate: true },
 );
+
+// The caret's facts are read as the context menu opens.
+watch(menuOpen, (open) => open && loadCaret());
 
 /** listReferences puts the sites in the references list under the given heading and shows it in the main window. */
 function listReferences(heading: string, sites: Site[]): void {
@@ -225,14 +239,8 @@ const groups = computed<ContextMenuItem[][]>(() => [
   ],
   [
     { label: "Go to definition", kbds: ["F12"], onSelect: () => run("editor.action.revealDefinition") },
-    { label: "Go to references", kbds: ["Shift F12"], onSelect: () => run("editor.action.goToReferences") },
-    {
-      label: "Peek",
-      children: [
-        { label: "Peek definition", kbds: ["Alt F12"], onSelect: () => run("editor.action.peekDefinition") },
-        { label: "Peek references", onSelect: () => run("editor.action.referenceSearch.trigger") },
-      ],
-    },
+    { label: "Peek definition", kbds: ["Alt F12"], onSelect: () => run("editor.action.peekDefinition") },
+    { label: "Peek references", kbds: ["Shift F12"], onSelect: () => run("editor.action.goToReferences") },
     { label: "Find all references", kbds: ["Shift Alt F12"], onSelect: () => findAll() },
     ...(card.value?.node
       ? [{ label: "Find what fires this", onSelect: () => card.value && findFirers(card.value) }]
@@ -248,7 +256,7 @@ const groups = computed<ContextMenuItem[][]>(() => [
     },
     {
       label: "Show in Health",
-      disabled: !card.value,
+      disabled: !hasFinding.value,
       onSelect: () =>
         void router.push({ name: "health", params: { id: workspace.activeId() }, query: { name: card.value?.title } }),
     },
@@ -302,10 +310,10 @@ const menu = computed(() => groups.value.filter((group) => group.length));
 <template>
   <!-- The menu's trigger takes its child's ref, so the editor's element sits inside the wrapper div. -->
   <UContextMenu
+    v-model:open="menuOpen"
     :items="menu"
     :ui="{ content: 'min-w-79 max-w-130' }"
     :content="{ onCloseAutoFocus: keepMovedFocus }"
-    @update:open="(open) => open && loadCaret()"
   >
     <div class="flex min-h-0 flex-1">
       <div ref="host" class="min-w-0 flex-1 border-s-12 border-(--bg-0)" />

@@ -128,6 +128,10 @@ type Preview struct {
 // defaultLimit is how many answers a tool gives when it is not told.
 const defaultLimit = 50
 
+// readsOnly marks a tool that only reads or shows a place and changes no file. PMT answers an agent's request to use
+// such a tool itself.
+var readsOnly = &sdk.ToolAnnotations{ReadOnlyHint: true}
+
 // The guide's topics. Each says what PMT does in the words its pages use.
 const (
 	guideTopics = `PMT's guide has four topics:
@@ -165,72 +169,86 @@ Localization: a mod's localization files are YAML under localization/<language>/
 // addEditorTools adds the tools that answer as PMT's editor does: a file's problems and names, what is valid at a
 // position, and the files' text.
 func (mcp *Service) addEditorTools(server *sdk.Server) {
-	sdk.AddTool(server, &sdk.Tool{Name: "search_text", Description: "Searches the text of the workspace's " +
-		"files, the user's unsaved text included."}, mcp.searchText)
-	sdk.AddTool(server, &sdk.Tool{Name: "read_file", Description: "Reads a file of the workspace or the game, " +
-		"with where it sits and the user's unsaved text of it as its draft."},
+	sdk.AddTool(server, &sdk.Tool{Name: "search_text", Title: "Search the files' text", Annotations: readsOnly,
+		Description: "Searches the text of the workspace's files, the user's unsaved text included."}, mcp.searchText)
+	sdk.AddTool(server, &sdk.Tool{Name: "read_file", Title: "Read a file", Annotations: readsOnly,
+		Description: "Reads a file of the workspace or the game, with where it sits and the user's unsaved text of " +
+			"it as its draft."},
 		answer(func(request document) (workspace.FileText, error) {
 			if _, err := mcp.locateFile(request.Path); err != nil {
 				return workspace.FileText{}, err
 			}
 			return mcp.Workspace.Read(request.Path)
 		}))
-	sdk.AddTool(server, &sdk.Tool{Name: "diagnose", Description: "Lists a file's problems as PMT's editor shows " +
-		"them, or the problems of text you would write there."}, answer(func(request draft) ([]lsp.Diagnostic, error) {
+	sdk.AddTool(server, &sdk.Tool{Name: "diagnose", Title: "Check a file for problems", Annotations: readsOnly,
+		Description: "Lists a file's problems as PMT's editor shows them, or the problems of text you would write " +
+			"there."}, answer(func(request draft) ([]lsp.Diagnostic, error) {
 		if request.Text != "" {
 			return mcp.LSP.DiagnoseText(request.Path, request.Text)
 		}
 		return mcp.LSP.Diagnose(request.Path)
 	}))
-	sdk.AddTool(server, &sdk.Tool{Name: "definition", Description: "Finds where the name at a position is " +
-		"defined, in the mods and the game."}, answer(func(request position) ([]lsp.Site, error) {
-		return mcp.LSP.Definition(request.Path, request.Line, request.Column)
-	}))
-	sdk.AddTool(server, &sdk.Tool{Name: "references", Description: "Finds every place the name at a position " +
-		"is defined or used."}, answer(func(request position) ([]lsp.Site, error) {
-		return mcp.LSP.References(request.Path, request.Line, request.Column)
-	}))
-	sdk.AddTool(server, &sdk.Tool{Name: "list_symbols", Description: "Lists a file's entries, nested as " +
-		"they are written, or a localization file's keys."}, answer(func(request document) ([]lsp.Symbol, error) {
-		return mcp.LSP.ListSymbols(request.Path)
-	}))
-	sdk.AddTool(server, &sdk.Tool{Name: "find_symbols", Description: "Finds definitions by their name in the " +
-		"mods and the game."}, answer(func(request textQuery) ([]lsp.WorkspaceSymbol, error) {
-		return mcp.LSP.FindSymbols(request.Query, resolveLimit(request.Limit, defaultLimit))
-	}))
-	sdk.AddTool(server, &sdk.Tool{Name: "complete", Description: "Lists what can be written at a position: " +
-		"the keys, values and names that fit there."}, answer(func(request position) ([]lsp.Completion, error) {
-		return mcp.LSP.Complete(request.Path, request.Line, request.Column)
-	}))
-	sdk.AddTool(server, &sdk.Tool{Name: "hover", Description: "Says what the key or value at a position is " +
-		"and where it is defined, as PMT's hover card does."}, answer(func(request position) (*lsp.Card, error) {
-		return mcp.LSP.Hover(request.Path, request.Line, request.Column)
-	}))
-	sdk.AddTool(server, &sdk.Tool{Name: "signature", Description: "Says what the effect or macro being " +
-		"filled in at a position takes."}, answer(func(request position) (*lsp.Signature, error) {
-		return mcp.LSP.Signature(request.Path, request.Line, request.Column)
-	}))
+	sdk.AddTool(server, &sdk.Tool{Name: "definition", Title: "Find where a name is defined", Annotations: readsOnly,
+		Description: "Finds where the name at a position is defined, in the mods and the game."},
+		answer(func(request position) ([]lsp.Site, error) {
+			return mcp.LSP.Definition(request.Path, request.Line, request.Column)
+		}))
+	sdk.AddTool(server, &sdk.Tool{Name: "references", Title: "Find where a name is used", Annotations: readsOnly,
+		Description: "Finds every place the name at a position is defined or used."},
+		answer(func(request position) ([]lsp.Site, error) {
+			return mcp.LSP.References(request.Path, request.Line, request.Column)
+		}))
+	sdk.AddTool(server, &sdk.Tool{Name: "list_symbols", Title: "List a file's entries", Annotations: readsOnly,
+		Description: "Lists a file's entries, nested as they are written, or a localization file's keys."},
+		answer(func(request document) ([]lsp.Symbol, error) {
+			return mcp.LSP.ListSymbols(request.Path)
+		}))
+	sdk.AddTool(server, &sdk.Tool{Name: "find_symbols", Title: "Find definitions by name", Annotations: readsOnly,
+		Description: "Finds definitions by their name in the mods and the game."},
+		answer(func(request textQuery) ([]lsp.WorkspaceSymbol, error) {
+			return mcp.LSP.FindSymbols(request.Query, false, resolveLimit(request.Limit, defaultLimit))
+		}))
+	sdk.AddTool(server, &sdk.Tool{Name: "complete", Title: "List what fits at a position", Annotations: readsOnly,
+		Description: "Lists what can be written at a position: the keys, values and names that fit there."},
+		answer(func(request position) ([]lsp.Completion, error) {
+			return mcp.LSP.Complete(request.Path, request.Line, request.Column)
+		}))
+	sdk.AddTool(server, &sdk.Tool{Name: "hover", Title: "Look up a name", Annotations: readsOnly,
+		Description: "Says what the key or value at a position is and where it is defined, as PMT's hover card does."},
+		answer(func(request position) (*lsp.Card, error) {
+			return mcp.LSP.Hover(request.Path, request.Line, request.Column)
+		}))
+	sdk.AddTool(server, &sdk.Tool{Name: "signature", Title: "Look up what an effect takes", Annotations: readsOnly,
+		Description: "Says what the effect or macro being filled in at a position takes."},
+		answer(func(request position) (*lsp.Signature, error) {
+			return mcp.LSP.Signature(request.Path, request.Line, request.Column)
+		}))
 }
 
 // addPageTools adds the tools that answer as PMT's pages do: Health, the Event Graph and the game's wiki.
 func (mcp *Service) addPageTools(server *sdk.Server) {
-	sdk.AddTool(server, &sdk.Tool{Name: "build_report", Description: "Gives Health's findings for the " +
-		"workspace's load order: how the mods touch the same things, each mod's own problems, and each " +
-		"language's localization coverage (the coverage check). The findings come in groups, the compatibility and " +
-		"each mod, with the counts of each level and check; a finding's count says how many it folds."}, answer(mcp.buildReport))
-	sdk.AddTool(server, &sdk.Tool{Name: "list_overview", Description: "Counts what each mod holds: its " +
-		"definitions by kind, its files and its localization keys."}, answer(func(struct{}) ([]health.Overview, error) {
-		return mcp.Health.ListOverview()
-	}))
-	sdk.AddTool(server, &sdk.Tool{Name: "list_codes", Description: "Lists Health's checks: each one's id, " +
-		"question, level and message."}, answer(func(struct{}) ([]lsp.Code, error) { return mcp.Health.ListCodes(), nil }))
-	sdk.AddTool(server, &sdk.Tool{Name: "find_roots", Description: "Finds the events, on_actions, decisions, " +
-		"messages and scripted effects an Event Graph can be drawn from, by id, namespace or number."},
+	sdk.AddTool(server, &sdk.Tool{Name: "build_report", Title: "Get Health's findings", Annotations: readsOnly,
+		Description: "Gives Health's findings for the workspace's load order: how the mods touch the same things, " +
+			"each mod's own problems, and each language's localization coverage (the coverage check). The findings " +
+			"come in groups, the compatibility and each mod, with the counts of each level and check; a finding's " +
+			"count says how many it folds."}, answer(mcp.buildReport))
+	sdk.AddTool(server, &sdk.Tool{Name: "list_overview", Title: "Count what each mod holds", Annotations: readsOnly,
+		Description: "Counts what each mod holds: its definitions by kind, its files and its localization keys."},
+		answer(func(struct{}) ([]health.Overview, error) {
+			return mcp.Health.ListOverview()
+		}))
+	sdk.AddTool(server, &sdk.Tool{Name: "list_codes", Title: "List Health's checks", Annotations: readsOnly,
+		Description: "Lists Health's checks: each one's id, question, level and message."},
+		answer(func(struct{}) ([]lsp.Code, error) { return mcp.Health.ListCodes(), nil }))
+	sdk.AddTool(server, &sdk.Tool{Name: "find_roots", Title: "Find an event to draw", Annotations: readsOnly,
+		Description: "Finds the events, on_actions, decisions, messages and scripted effects an Event Graph can be " +
+			"drawn from, by id, namespace or number."},
 		answer(func(request textQuery) ([]graph.Node, error) {
 			return mcp.Graph.FindRoots(request.Query, resolveLimit(request.Limit, defaultLimit)), nil
 		}))
-	sdk.AddTool(server, &sdk.Tool{Name: "build_graph", Description: "Draws the Event Graph of a root: what it " +
-		"fires and what fires it, step by step, each firing with the blocks it sits in and its delay."},
+	sdk.AddTool(server, &sdk.Tool{Name: "build_graph", Title: "Draw an Event Graph", Annotations: readsOnly,
+		Description: "Draws the Event Graph of a root: what it fires and what fires it, step by step, each firing " +
+			"with the blocks it sits in and its delay."},
 		answer(func(request graphRoot) (graph.Graph, error) {
 			eventGraph, err := mcp.Graph.BuildGraph(request.Root, lo.FromPtrOr(request.Filter, mcp.Graph.Defaults()))
 			if err != nil {
@@ -238,41 +256,47 @@ func (mcp *Service) addPageTools(server *sdk.Server) {
 			}
 			return eventGraph, nil
 		}))
-	sdk.AddTool(server, &sdk.Tool{Name: "build_detail", Description: "Gives one Event Graph node's detail: its " +
-		"texts, what it fires and what fires it, the game rules it reads, the game's copy it replaces, and its " +
-		"script."}, answer(mcp.buildDetail))
-	sdk.AddTool(server, &sdk.Tool{Name: "search_pages", Description: "Finds the game wiki's modding pages " +
-		"that hold a text."}, answer(func(request textQuery) ([]wiki.Summary, error) {
-		pages, err := mcp.Wiki.SearchPages(request.Query)
-		return pages[:min(len(pages), resolveLimit(request.Limit, defaultLimit))], err
-	}))
-	sdk.AddTool(server, &sdk.Tool{Name: "read_page", Description: "Reads a page of the game's wiki, as HTML."},
+	sdk.AddTool(server, &sdk.Tool{Name: "build_detail", Title: "Read an Event Graph node", Annotations: readsOnly,
+		Description: "Gives one Event Graph node's detail: its texts, what it fires and what fires it, the game " +
+			"rules it reads, the game's copy it replaces, and its script."}, answer(mcp.buildDetail))
+	sdk.AddTool(server, &sdk.Tool{Name: "search_pages", Title: "Search the game's wiki", Annotations: readsOnly,
+		Description: "Finds the game wiki's modding pages that hold a text."},
+		answer(func(request textQuery) ([]wiki.Summary, error) {
+			pages, err := mcp.Wiki.SearchPages(request.Query)
+			return pages[:min(len(pages), resolveLimit(request.Limit, defaultLimit))], err
+		}))
+	sdk.AddTool(server, &sdk.Tool{Name: "read_page", Title: "Read a wiki page", Annotations: readsOnly,
+		Description: "Reads a page of the game's wiki, as HTML."},
 		answer(func(request pageTitle) (wiki.Page, error) { return mcp.Wiki.ReadPage(request.Title) }))
-	sdk.AddTool(server, &sdk.Tool{Name: "build_lexicon", Description: "Lists the game's effects, triggers, " +
-		"links, scopes or functions, each with what it does, where it runs and examples from the game's files."},
-		answer(mcp.buildLexicon))
+	sdk.AddTool(server, &sdk.Tool{Name: "build_lexicon", Title: "Look up the game's effects and triggers",
+		Annotations: readsOnly, Description: "Lists the game's effects, triggers, links, scopes or functions, each " +
+			"with what it does, where it runs and examples from the game's files."}, answer(mcp.buildLexicon))
 }
 
 // addAppTools adds the tools of PMT itself: its guide, what the user has in front of them, what an agent asks PMT to
 // show, and the changes that preview first.
 func (mcp *Service) addAppTools(server *sdk.Server) {
-	sdk.AddTool(server, &sdk.Tool{Name: "read_guide", Description: "Reads PMT's guide: its pages and their " +
-		"controls, how to make a change with PMT, which copy the game keeps of a definition in each folder, or the " +
-		"open workspace's mods and folders."}, answer(mcp.readGuide))
-	sdk.AddTool(server, &sdk.Tool{Name: "describe_view", Description: "Says what the user has in front of them in " +
-		"PMT: the page shown, what it shows, and the file, lines or item they have selected."}, answer(mcp.describeView))
-	sdk.AddTool(server, &sdk.Tool{Name: "rename", Description: "Renames the name at a position in every mod " +
-		"file. Without a token it answers with the edits and a token; called again with the token, it makes " +
-		"them."}, answer(mcp.rename))
-	sdk.AddTool(server, &sdk.Tool{Name: "apply_edit", Description: "Replaces one entry of a mod's file with " +
-		"new text. Without a token it answers with the edit and a token; called again with the token, it makes " +
-		"it."}, answer(mcp.applyEdit))
-	sdk.AddTool(server, &sdk.Tool{Name: "write_scaffold", Description: "Writes the localization keys a mod " +
-		"lacks in a language, with the base language's text as the placeholder, at the end of the language's " +
-		"files, creating those that do not exist. Without a token it answers with the files and a token; called " +
-		"again with the token, it writes them."}, answer(mcp.writeScaffold))
-	sdk.AddTool(server, &sdk.Tool{Name: "show", Description: "Brings a file, a page or a Wiki look-up to the " +
-		"front in PMT's main window. read_guide's pages topic says what each page can show."}, answer(mcp.show))
+	sdk.AddTool(server, &sdk.Tool{Name: "read_guide", Title: "Read PMT's guide", Annotations: readsOnly,
+		Description: "Reads PMT's guide: its pages and their controls, how to make a change with PMT, which copy " +
+			"the game keeps of a definition in each folder, or the open workspace's mods and folders."},
+		answer(mcp.readGuide))
+	sdk.AddTool(server, &sdk.Tool{Name: "describe_view", Title: "See what is in front of you", Annotations: readsOnly,
+		Description: "Says what the user has in front of them in PMT: the page shown, what it shows, and the file, " +
+			"lines or item they have selected."}, answer(mcp.describeView))
+	sdk.AddTool(server, &sdk.Tool{Name: "rename", Title: "Rename a name in the mods",
+		Description: "Renames the name at a position in every mod file. Without a token it answers with the edits " +
+			"and a token; called again with the token, it makes them."}, answer(mcp.rename))
+	sdk.AddTool(server, &sdk.Tool{Name: "apply_edit", Title: "Change a file",
+		Description: "Replaces one entry of a mod's file with new text. Without a token it answers with the edit " +
+			"and a token; called again with the token, it makes it."}, answer(mcp.applyEdit))
+	sdk.AddTool(server, &sdk.Tool{Name: "write_scaffold", Title: "Write a mod's missing localization",
+		Description: "Writes the localization keys a mod lacks in a language, with the base language's text as the " +
+			"placeholder, at the end of the language's files, creating those that do not exist. Without a token it " +
+			"answers with the files and a token; called again with the token, it writes them."},
+		answer(mcp.writeScaffold))
+	sdk.AddTool(server, &sdk.Tool{Name: "show", Title: "Show something in PMT", Annotations: readsOnly,
+		Description: "Brings a file, a page or a Wiki look-up to the front in PMT's main window. read_guide's pages " +
+			"topic says what each page can show."}, answer(mcp.show))
 }
 
 // answer makes a tool's handler from a function that answers from the tool's input alone.

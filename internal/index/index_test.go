@@ -251,7 +251,7 @@ func scanFixtureMods(t *testing.T) (*schema.Schema, *Index, *Index) {
 		t.Fatal(err)
 	}
 	roots := []files.Root{{Dir: dir, Origin: "fixture-mod"}}
-	mods, err := ScanMods(built, install, roots, [][]string{{"common/opinion_modifiers"}})
+	mods, err := ScanMods(built, install, roots, [][]string{{"common/opinion_modifiers"}}, func(int) {})
 	if err != nil {
 		t.Fatal(err)
 	}

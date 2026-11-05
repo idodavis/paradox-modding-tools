@@ -4,7 +4,7 @@
 -->
 <script setup lang="ts">
 import { computed, onBeforeUnmount, onMounted, shallowRef, useTemplateRef, watch } from "vue";
-import { useMutation, useQuery } from "@pinia/colada";
+import { useMutation } from "@pinia/colada";
 import { useDebounceFn, useEventBus, watchDebounced } from "@vueuse/core";
 import { Clipboard, Events } from "@wailsio/runtime";
 import {
@@ -33,7 +33,7 @@ import {
   removeMod,
   trashFile,
 } from "../../app/commands";
-import { fileSearchQuery, folderQuery, gitStatusQuery, loadQuery, placeQuery, workspacesQuery } from "../../queries";
+import { fileSearchQuery, folderQuery, gitStatusQuery, loadQuery, placeQuery } from "../../queries";
 import { tabId, useEditorStore } from "../../stores/editor";
 import { useGitStore } from "../../stores/git";
 import { useSettingsStore } from "../../stores/settings";
@@ -112,7 +112,6 @@ const history = { done: [] as Move[], undone: [] as Move[] };
 // What a menu item chose to do, run once the menu has closed and released the keyboard.
 let deferred: (() => void) | undefined;
 
-const { data: workspaces } = useQuery(workspacesQuery);
 const labels = computed(() => {
   const counts = new Map<string, number>();
   return roots.map((root) => {
@@ -133,7 +132,7 @@ const shape = computed(() =>
     settings.isOn("ide.stickyFolders"),
     settings.isOn("ide.rootColors"),
     settings.value("ide.density"),
-    workspaces.value?.find((entry) => entry.record.id === workspace.activeId())?.record.showBinaries,
+    settings.isOn("ide.hideBinaries"),
   ].join("\n"),
 );
 

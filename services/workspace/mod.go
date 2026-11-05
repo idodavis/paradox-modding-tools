@@ -26,17 +26,16 @@ import (
 
 // A Descriptor is a mod's own description, read from its game's descriptor file.
 type Descriptor struct {
-	Path             string   `json:"path"`
-	ID               string   `json:"id"` // the id metadata.json gives the mod; "" if none
-	Name             string   `json:"name"`
-	Version          string   `json:"version"`
-	SupportedVersion string   `json:"supportedVersion"`
-	Tags             []string `json:"tags"`
-	ReplacePaths     []string `json:"replacePaths"` // folders whose earlier files the game does not load
-	Thumbnail        string   `json:"thumbnail"`    // the full path of the picture file the descriptor names
-	WorkshopID       string   `json:"workshopId"`
-	// Dependencies are the mods it needs. They are never written.
-	Dependencies []Dependency `json:"dependencies"`
+	Path             string       `json:"path"`
+	ID               string       `json:"id"` // the id metadata.json gives the mod; "" if none
+	Name             string       `json:"name"`
+	Version          string       `json:"version"`
+	SupportedVersion string       `json:"supportedVersion"`
+	Tags             []string     `json:"tags"`
+	ReplacePaths     []string     `json:"replacePaths"` // folders whose earlier files the game does not load
+	Thumbnail        string       `json:"thumbnail"`    // the full path of the picture file the descriptor names
+	WorkshopID       string       `json:"workshopId"`
+	Dependencies     []Dependency `json:"dependencies"` // the mods it needs; they are never written
 }
 
 // A Dependency is one mod a descriptor says its mod needs.
@@ -283,7 +282,8 @@ func (wsp *Service) CreateMod(workspaceID, dir, name, language string) (Mod, err
 	if err != nil {
 		return Mod{}, err
 	}
-	folder, err := createModFolder(row, resolveModDir(row, install, dir), name, resolveVersion(row, install))
+	folder, err := createModFolder(row, resolveModDir(row, install, dir), resolveModDir(row, install, ""), name,
+		resolveVersion(row, install))
 	if err != nil {
 		return Mod{}, err
 	}
@@ -320,8 +320,12 @@ func (wsp *Service) CheckModFolder(installID, dir string) error {
 	return checkModFolder(row, install, dir)
 }
 
-// resolveModDir returns the folder a mod is made in. With no folder, it is the game's mod folder.
+// resolveModDir returns the folder a mod is made in. With no folder, it is the game's mod folder. A game whose launcher
+// reads local mods only from its mod folder always gets that folder.
 func resolveModDir(row *game.Game, install app.Install, dir string) string {
+	if row.FixedModFolder {
+		dir = ""
+	}
 	return cmp.Or(dir, filepath.Join(row.FindUserDataDir(install.Path), game.LauncherModFolder))
 }
 
@@ -418,9 +422,10 @@ func (wsp *Service) UpdateMod(workspaceID string, mod app.Mod) error {
 	})
 }
 
-// createModFolder makes a mod's folder with its descriptor and the folders the game expects, and returns it. It returns
-// an error if the name makes no folder name or the folder exists already.
-func createModFolder(row *game.Game, dir, name, version string) (string, error) {
+// createModFolder makes a mod's folder in a folder of mods with its descriptor and the folders the game expects, and
+// returns it. A game with a script descriptor also gets a .mod file in the given folder of the game's launcher. It
+// returns an error if the name makes no folder name or the folder exists already.
+func createModFolder(row *game.Game, dir, launcherDir, name, version string) (string, error) {
 	folder, err := resolveModFolder(dir, name)
 	if err != nil {
 		return "", err
@@ -443,9 +448,9 @@ func createModFolder(row *game.Game, dir, name, version string) (string, error) 
 	if _, metadata := resolveDescriptor(row, folder); metadata {
 		return folder, nil
 	}
-	// a game with a script descriptor lists its mods by a .mod file beside the folder
+	// a game with a script descriptor lists its mods by a .mod file in the launcher's folder
 	launcher := encodeDescriptorScript("", descriptor) + `path="` + filepath.ToSlash(folder) + "\"\n"
-	err = files.WriteText(filepath.Join(dir, files.ToSlug(name)+".mod"), files.Text{Text: launcher, Encoding: files.EncodingUTF8})
+	err = files.WriteText(filepath.Join(launcherDir, files.ToSlug(name)+".mod"), files.Text{Text: launcher, Encoding: files.EncodingUTF8})
 	return folder, err
 }
 

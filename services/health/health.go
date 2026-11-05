@@ -95,40 +95,30 @@ type Use struct {
 
 // A Finding is one problem, or one fact about the mods.
 type Finding struct {
-	Code     string     `json:"code"`            // an lsp.Codes id
-	Question string     `json:"question"`        // the code's question, or compatibility where another mod is concerned
-	Level    string     `json:"level"`           // the code's level, or a contest's own
-	Label    string     `json:"label"`           // the code's title
-	Topic    string     `json:"topic"`           // the code's topic
-	Message  []lsp.Part `json:"message"`         // the code's template filled with the facts, or a log row's line
-	Brief    []lsp.Part `json:"brief,omitempty"` // the line under its name in a list
-	Detail   string     `json:"detail"`          // its place, such as a.txt:12, or what a log row names
-	Why      []lsp.Part `json:"why,omitempty"`   // why the winner's copy wins, or why a log row is a mod's
-	Name     string     `json:"name"`
-	Database string     `json:"database"` // what the database calls a definition
-	// Origin is the mod the finding is about, or "" for the game's own log row.
-	Origin string            `json:"origin"`
-	Mods   []string          `json:"mods"` // the mods it concerns, in load order
-	Facts  map[string]string `json:"facts"`
-	Sites  []lsp.Site        `json:"sites"`
-	// Removed holds the names the replaced sites define that the kept file does not.
-	Removed []string `json:"removed,omitempty"`
-	// Uses holds the removed names that the files the game reads still use, the most used first.
-	Uses []Use `json:"uses,omitempty"`
-	// Defined is where the workspace defines the name, in a mod the finding's mod does not depend on.
-	Defined []lsp.Site `json:"defined,omitempty"`
-	// Diagnosed is true for one of the editor's own diagnostics, which the editor shows itself.
-	Diagnosed bool `json:"diagnosed"`
-	// Comparable is true when the kept statement and the ones it replaces can be shown side by side.
-	Comparable bool     `json:"comparable"`
-	Order      []string `json:"order,omitempty"` // a load order that fixes a contest
-	// Count is how many findings or game log lines the row stands for: 1 unless a report folded findings into it or the
-	// log repeated the line.
-	Count int `json:"count"`
-	// Repeats holds the sites of the findings a report folded into this one.
-	Repeats []lsp.Site `json:"repeats,omitempty"`
-	// Pairs are each two workspace mods the finding sets against each other, in load order, which can be ignored.
-	Pairs [][2]string `json:"pairs"`
+	Code       string            `json:"code"`            // an lsp.Codes id
+	Question   string            `json:"question"`        // the code's question, or compatibility where another mod is concerned
+	Level      string            `json:"level"`           // the code's level, or a contest's own
+	Label      string            `json:"label"`           // the code's title
+	Topic      string            `json:"topic"`           // the code's topic
+	Message    []lsp.Part        `json:"message"`         // the code's template filled with the facts, or a log row's line
+	Brief      []lsp.Part        `json:"brief,omitempty"` // the line under its name in a list
+	Detail     string            `json:"detail"`          // its place, such as a.txt:12, or what a log row names
+	Why        []lsp.Part        `json:"why,omitempty"`   // why the winner's copy wins, or why a log row is a mod's
+	Name       string            `json:"name"`
+	Database   string            `json:"database"` // what the database calls a definition
+	Origin     string            `json:"origin"`   // the mod the finding is about; "" for the game's own log row
+	Mods       []string          `json:"mods"`     // the mods it concerns, in load order
+	Facts      map[string]string `json:"facts"`
+	Sites      []lsp.Site        `json:"sites"`
+	Removed    []string          `json:"removed,omitempty"` // the names the replaced sites define that the kept file does not
+	Uses       []Use             `json:"uses,omitempty"`    // the removed names that the files the game reads still use, the most used first
+	Defined    []lsp.Site        `json:"defined,omitempty"` // where the workspace defines the name, in a mod the finding's mod does not depend on
+	Diagnosed  bool              `json:"diagnosed"`         // one of the editor's own diagnostics, which the editor shows itself
+	Comparable bool              `json:"comparable"`        // the kept statement and the ones it replaces can be shown side by side
+	Order      []string          `json:"order,omitempty"`   // a load order that fixes a contest
+	Count      int               `json:"count"`             // how many findings or game log lines the row stands for: 1 unless a report folded findings into it or the log repeated the line
+	Repeats    []lsp.Site        `json:"repeats,omitempty"` // the sites of the findings a report folded into this one
+	Pairs      [][2]string       `json:"pairs"`             // each two workspace mods the finding sets against each other, in load order, which can be ignored
 }
 
 // A Change is one name whose kept copy moves to another mod in a previewed load order.
@@ -141,11 +131,9 @@ type Change struct {
 
 // A Tally is how many findings there are of each level.
 type Tally struct {
-	Counts map[string]int `json:"counts"` // by level, with every level in it
-	// Phrases holds each level's count as a phrase, such as 235 critical problems, by level. A level with no finding
-	// has none.
-	Phrases map[string]string `json:"phrases"`
-	Worst   string            `json:"worst"` // the worst level that has a finding, or "" if none has
+	Counts  map[string]int    `json:"counts"`  // by level, with every level in it
+	Phrases map[string]string `json:"phrases"` // each level's count as a phrase, such as 235 critical problems, by level; a level with no finding has none
+	Worst   string            `json:"worst"`   // the worst level that has a finding, or "" if none has
 }
 
 // A Check is one kind of finding at one level, and how many findings it has.
@@ -159,13 +147,10 @@ type Check struct {
 // A Group is the findings of the workspace's compatibility or of one mod, folded, counted and sorted.
 type Group struct {
 	Tally
-	Mod string `json:"mod"` // the mod's id, or "" for the workspace's compatibility
-	// Findings are sorted by level, the worst first, then by check, the one with the most findings first, then by
-	// weight. A mod's findings leave out its coverage.
-	Findings []Finding `json:"findings"`
-	// Languages holds the mod's coverage findings, one for each language beside the base one.
-	Languages []Finding `json:"languages"`
-	Checks    []Check   `json:"checks"` // in the order of the findings
+	Mod       string    `json:"mod"`       // the mod's id, or "" for the workspace's compatibility
+	Findings  []Finding `json:"findings"`  // sorted by level, the worst first, then by check, the one with the most findings first, then by weight; a mod's leave out its coverage
+	Languages []Finding `json:"languages"` // the mod's coverage findings, one for each language beside the base one
+	Checks    []Check   `json:"checks"`    // in the order of the findings
 }
 
 // A Report is the findings for one load order, grouped and counted, and what that order changes.
@@ -180,13 +165,11 @@ type Report struct {
 
 // A GameLog is what the game's last run wrote to its error log, folded into rows.
 type GameLog struct {
-	Findings  []Finding `json:"findings"`
-	Path      string    `json:"path"`      // the log file's full path
-	WrittenAt time.Time `json:"writtenAt"` // when the game last wrote it, or zero if there is no log
-	// Unloaded holds the workspace's mods the run that wrote the log did not read, by id. Their rows stay the game's.
-	Unloaded []string `json:"unloaded"`
-	// Copies holds, by mod id, the folder of another copy of a workspace mod that the run read in its place.
-	Copies map[string]string `json:"copies"`
+	Findings  []Finding         `json:"findings"`
+	Path      string            `json:"path"`      // the log file's full path
+	WrittenAt time.Time         `json:"writtenAt"` // when the game last wrote it, or zero if there is no log
+	Unloaded  []string          `json:"unloaded"`  // the workspace's mods the run that wrote the log did not read, by id; their rows stay the game's
+	Copies    map[string]string `json:"copies"`    // by mod id, the folder of another copy of a workspace mod that the run read in its place
 }
 
 // An Overview is what one mod holds, counted, and the mods it is judged with.
@@ -195,8 +178,7 @@ type Overview struct {
 	Counts   map[string]int `json:"counts"` // definitions, by what a database calls them
 	Files    int            `json:"files"`
 	Messages int            `json:"messages"`
-	// Judged holds the ids of the mods this mod's own problems are judged with: the mods it depends on, directly or not.
-	Judged []string `json:"judged"`
+	Judged   []string       `json:"judged"` // the ids of the mods this mod's own problems are judged with: the mods it depends on, directly or not
 }
 
 // A Compared is the texts of two statements, as the two sides of a compare.
@@ -282,7 +264,7 @@ func (hlt *Service) makeReport(ws *workspace.Session, order []string) (Report, e
 	mods, ids := base, lo.Map(*ws.Order.Load(), func(mod workspace.Mod, _ int) string { return mod.ID })
 	isPreview := !slices.Equal(order, ids)
 	if isPreview {
-		scanned, err := ws.ScanOrder(order)
+		scanned, err := ws.ScanOrder(order, func(int) {})
 		if err != nil {
 			return Report{}, err
 		}

@@ -98,7 +98,7 @@ useChip(() =>
               <span v-if="item.parent" class="font-mono text-11 text-muted">{{ item.version }}</span>
               <span v-else class="flex min-w-0 flex-1 items-center gap-2">
                 <span class="shrink-0 font-mono text-12 font-medium text-highlighted">{{ item.version }}</span>
-                <span class="ms-auto min-w-0 truncate text-11 text-dimmed">{{ item.title }}</span>
+                <span class="ms-auto min-w-0 truncate text-11 text-dimmed">{{ item.released }}</span>
               </span>
             </template>
             <template #item-trailing="{ item }">
@@ -125,7 +125,7 @@ useChip(() =>
               @click="Browser.OpenURL(page.url)"
             />
           </div>
-          <WikiArticle v-if="page" :page="page" :find="find" class="min-h-0 flex-1" />
+          <WikiArticle v-if="page" :page="page" :find="find" jump="Modding" class="min-h-0 flex-1" />
           <p v-else-if="!isLoading" class="px-8 pt-4 text-13 text-dimmed">No notes for this version.</p>
         </section>
       </template>

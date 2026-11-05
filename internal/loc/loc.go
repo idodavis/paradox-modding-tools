@@ -38,6 +38,7 @@ type File struct {
 type Language struct {
 	Folder string `json:"folder"`
 	Label  string `json:"label"`
+	Base   bool   `json:"base"` // it is the game's base language
 }
 
 var (

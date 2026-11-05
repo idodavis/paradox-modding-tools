@@ -197,14 +197,13 @@ func (schema *Schema) lookupDefinition(table map[string]ScriptedDefinition, call
 }
 
 // declares reports whether a file declares definitions that script or GUI files call by name, or event namespaces. A
-// GUI file does, and so does a file of a database that has callers, a file of a database whose definitions say what
-// their names take, and an events file.
+// GUI file does, and so does a file of a database that has callers, a modifier types file and an events file.
 func (schema *Schema) declares(file files.File) bool {
 	if file.Format == files.FormatGUI {
 		return true
 	}
 	database, ok := schema.FindDatabase(file.Rel)
-	return ok && (len(database.Callable.Callers) > 0 || database.Row.BoolKey != "" ||
+	return ok && (len(database.Callable.Callers) > 0 || database.Row.Contents == game.ContentsModifiers ||
 		database.Row.Contents == game.ContentsEvents)
 }
 
@@ -256,8 +255,8 @@ func (declarer *declarer) declare(definition Definition, tree *jomini.Tree, stat
 	if database == nil {
 		return
 	}
-	if database.Row.BoolKey != "" {
-		declarer.modifiers[definition.Name] = makeModifierField(tree, statement, database.Row.BoolKey)
+	if database.Row.Contents == game.ContentsModifiers {
+		declarer.modifiers[definition.Name] = makeModifierField(tree, statement)
 	}
 	base := tree.Unquoted(tree.Statements[statement].Tag)
 	if base != "" && slices.Contains(database.Callable.Callers, game.GUI.TagCalls) {
@@ -290,11 +289,11 @@ func (declarer *declarer) keep(pending *body) {
 	}
 }
 
-// makeModifierField returns what the name of a modifier type takes: yes or no if its definition writes yes at the given
-// key, else a number or a script value.
-func makeModifierField(tree *jomini.Tree, statement int32, key string) *Field {
+// makeModifierField returns what the name of a modifier type takes: yes or no if its definition writes yes at
+// game.ModifierBoolKey, else a number or a script value.
+func makeModifierField(tree *jomini.Tree, statement int32) *Field {
 	expected := Expected{Type: ValueNumber, Values: true}
-	if value, _ := tree.FindChildValue(statement, key); value == yes {
+	if value, _ := tree.FindChildValue(statement, game.ModifierBoolKey); value == yes {
 		expected = Expected{Type: ValueBool}
 	}
 	return &Field{Claims: Claims{Value: Claim[Expected]{Value: expected, Source: game.SourceDefinitions}}}

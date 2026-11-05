@@ -15,7 +15,7 @@ const emit = defineEmits<{ add: [mods: Mod[]] }>();
 /** ROW_UI lays a row out as its box, the mod's picture, and its name over its version, centered on one line. */
 const ROW_UI = {
   fieldset: "gap-y-px",
-  item: "items-center rounded-md px-2 py-1 hover:bg-elevated",
+  item: "items-center rounded-md px-2 py-1 hover:bg-accented",
   wrapper: "flex min-w-0 grow items-center",
   label: "flex min-w-0 grow items-center gap-2.5",
 };

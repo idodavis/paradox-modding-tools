@@ -4,7 +4,6 @@ import { computed, shallowRef, useTemplateRef, watch } from "vue";
 import { useQuery } from "@pinia/colada";
 import { createReusableTemplate, useInfiniteScroll, useLocalStorage } from "@vueuse/core";
 import { Browser } from "@wailsio/runtime";
-import type { DropdownMenuItem } from "@nuxt/ui";
 
 import type { Change, Commit } from "@services/git/models";
 
@@ -49,6 +48,7 @@ const git = useGitStore();
 const editor = useEditorStore();
 const workspace = useWorkspaceStore();
 const [DefineLane, Lane] = createReusableTemplate<{ entry: Entry }>();
+const [DefineBare, Bare] = createReusableTemplate();
 
 const bare = computed(() =>
   workspace.listWritableMods().filter((mod) => !git.repositories.some((repo) => repo.mods?.includes(mod.id))),
@@ -118,14 +118,6 @@ const entries = computed<Entry[]>(() =>
   ]),
 );
 
-const initializeMenu = computed<DropdownMenuItem[]>(() =>
-  bare.value.map((mod) => ({
-    label: `Initialize ${workspace.originName(mod.id)}`,
-    origin: mod.id,
-    onSelect: () => git.initialize(mod.dir),
-  })),
-);
-
 /** buildGraph returns a GraphRow for each commit of the log: its lane and the other lanes that touch its row. */
 function buildGraph(log: readonly Commit[]): GraphRow[] {
   const lanes: string[] = [];
@@ -173,6 +165,13 @@ function buildLines(row: GraphRow): { path: string; lane: number }[] {
 
 <template>
   <div class="flex min-h-0 flex-1 flex-col">
+    <DefineBare>
+      <div v-for="mod in bare" :key="mod.id" class="flex items-center gap-2">
+        <OriginChip :origin="mod.id" dot />
+        <span class="min-w-0 grow truncate">{{ workspace.originName(mod.id) }}</span>
+        <UButton label="Initialize" icon="i-lucide-git-branch-plus" size="xs" @click="git.initialize(mod.dir)" />
+      </div>
+    </DefineBare>
     <DefineLane v-slot="{ entry }">
       <svg :width="LANE_WIDTH * laneCount + 4" :height="ROW_HEIGHT" class="shrink-0" aria-hidden="true">
         <path
@@ -192,15 +191,6 @@ function buildLines(row: GraphRow): { path: string; lane: number }[] {
         />
       </svg>
     </DefineLane>
-    <Teleport v-if="git.isInstalled && git.repositories.length && bare.length" defer to="#sidebar-actions">
-      <UDropdownMenu :items="initializeMenu" :content="{ align: 'end' }">
-        <UButton icon="i-lucide-git-branch-plus" variant="ghost" square aria-label="Initialize a repository" />
-        <template #item-leading="{ item }">
-          <OriginChip v-if="'origin' in item" :origin="String(item.origin)" dot />
-        </template>
-      </UDropdownMenu>
-      <USeparator orientation="vertical" class="mx-0.5 h-4" />
-    </Teleport>
     <div v-if="!git.isInstalled" class="p-3">
       <div class="flex flex-col gap-3 rounded-lg border border-accented bg-elevated p-3.5">
         <div class="flex items-center gap-2">
@@ -222,11 +212,7 @@ function buildLines(row: GraphRow): { path: string; lane: number }[] {
     </div>
     <div v-else-if="!git.repositories.length" class="flex flex-col gap-1 px-3 py-2.5">
       <p class="pb-1.5 text-dimmed">None of this workspace's mods is in a git repository.</p>
-      <div v-for="mod in bare" :key="mod.id" class="flex items-center gap-2">
-        <OriginChip :origin="mod.id" dot />
-        <span class="min-w-0 grow truncate">{{ workspace.originName(mod.id) }}</span>
-        <UButton label="Initialize" icon="i-lucide-git-branch-plus" size="xs" @click="git.initialize(mod.dir)" />
-      </div>
+      <Bare />
     </div>
     <USplitter
       v-else
@@ -244,6 +230,10 @@ function buildLines(row: GraphRow): { path: string; lane: number }[] {
       <template #repositories>
         <div class="flex min-h-0 min-w-0 flex-1 flex-col overflow-y-auto py-1">
           <RepositorySection v-for="{ root, mods } in git.repositories" :key="root" :root="root" :mods="mods ?? []" />
+          <div v-if="bare.length" class="flex flex-col gap-1 px-3 py-2.5">
+            <p class="pb-1.5 text-dimmed">Not in a git repository</p>
+            <Bare />
+          </div>
         </div>
       </template>
       <template #graph>

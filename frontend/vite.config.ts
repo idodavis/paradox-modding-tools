@@ -270,7 +270,7 @@ export default defineConfig({
             {
               color: "primary",
               class: {
-                link: "data-selected:bg-(--accent-soft) data-selected:text-highlighted data-selected:shadow-[inset_2px_0_0_var(--accent)] data-selected:before:bg-transparent",
+                link: "hover:before:bg-accented data-selected:bg-(--accent-soft) data-selected:text-highlighted data-selected:shadow-[inset_2px_0_0_var(--accent)] data-selected:before:bg-transparent",
               },
             },
           ],

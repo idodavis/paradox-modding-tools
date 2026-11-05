@@ -29,8 +29,7 @@ type LexiconRow struct {
 	Scopes   []string   `json:"scopes,omitempty"`
 	Target   string     `json:"target,omitempty"`
 	Examples []lsp.Site `json:"examples"`
-	// Defined is where the game's copy of a scripted effect or trigger is; nil for what the dumps declare.
-	Defined *lsp.Site `json:"defined,omitempty"`
+	Defined  *lsp.Site  `json:"defined,omitempty"` // where the game's copy of a scripted effect or trigger is; nil for what the dumps declare
 }
 
 // ListClasses returns the lexicon's classes, in the order its tabs show them.

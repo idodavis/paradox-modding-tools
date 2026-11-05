@@ -4,6 +4,7 @@ package jomini
 
 import (
 	"iter"
+	"slices"
 	"sort"
 	"strings"
 )
@@ -197,6 +198,26 @@ func (tree *Tree) FindChild(statement int32, key string) (int32, bool) {
 		}
 	}
 	return match, ok
+}
+
+// FindComment returns the comment lines written just above a statement, joined by newlines, or "" if there are none. A
+// comment after code on its line is not one of them.
+func (tree *Tree) FindComment(statement int32) string {
+	start := tree.Statements[statement].Span.Start
+	line := tree.Lines.ToPosition(start).Line
+	var lines []string
+	after := sort.Search(len(tree.Comments), func(position int) bool { return tree.Comments[position].Start >= start })
+	for position := after - 1; position >= 0; position-- {
+		comment := tree.Comments[position]
+		commentLine := line - len(lines) - 1
+		if tree.Lines.ToPosition(comment.Start).Line != commentLine ||
+			strings.TrimSpace(tree.Src[tree.Lines.LineSpan(commentLine).Start:comment.Start]) != "" {
+			break
+		}
+		lines = append(lines, strings.TrimSpace(tree.Text(comment)))
+	}
+	slices.Reverse(lines)
+	return strings.Join(lines, "\n")
 }
 
 // FindChildValue returns the unquoted value of the child FindChild finds. It returns false if there is none or the key

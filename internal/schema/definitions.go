@@ -42,22 +42,16 @@ func (walker *walker) findScriptDefinition(statement int32, level int, pending s
 	if database == nil || !walker.frames[level-1].wraps {
 		return Definition{}, false
 	}
-	switch database.Row.NamedBy {
-	case "nothing", "file", "column":
+	switch {
+	case database.Row.NamedBy != "":
 		return Definition{}, false
-	case "field":
+	case database.Row.NameKey != "":
 		name, ok := walker.findNameSpan(statement, database.Row.NameKey)
 		if !ok {
 			return Definition{}, false
 		}
-		span, label = name, walker.tree.Text(name)
-	case "call":
-		name, ok := walker.findNameSpan(statement, database.Row.NameKey)
-		call, parsed := jomini.ParseCall(walker.tree.Text(name), name.Start)
-		if !ok || !parsed {
-			return Definition{}, false
-		}
-		span, label = call.Steps[0].Span, call.Steps[0].Text
+		label, _, _ = strings.Cut(walker.tree.Text(name), "(") // a macro's name is written before its parameters
+		span = jomini.Span{Start: name.Start, End: name.Start + len(label)}
 	}
 	if label == "" || slices.Contains(database.Row.WrapperKeys, label) {
 		return Definition{}, false

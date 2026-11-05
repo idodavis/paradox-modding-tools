@@ -39,7 +39,7 @@ const custom = computed(() => !!color.value && !items.some((item) => item.value 
       <ValueField
         kind="color"
         :value="custom ? color : ''"
-        label="Custom…"
+        label="Custom color"
         class="px-0"
         @update:value="color = $event"
       />

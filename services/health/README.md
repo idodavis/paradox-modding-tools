@@ -59,14 +59,15 @@ the game keeps one copy. The kept copy's mod is the winner. The beaten mods are 
   Otherwise it is `critical`. A declared dependency forgiving a contest is Health's judgment, not a game rule.
 - Where no source says which copy the game keeps (`index.ReasonUnsettled`), the copies are one `undecided-contest`
   with no site kept. So are two copies of a block that merged copies cannot both write, such as an on_action's effect.
-  It is `info` when every pair of its mods is a declared dependency or an ignored pair, and `critical` otherwise. A pair
+  It is `info` when every pair of its mods is a declared dependency or an ignored pair, and `warning` otherwise. A pair
   with the game is never forgiven.
 - A localization key that two or more mods define in one language is a `shared-message`, with no winner. It follows the
-  same forgiveness, with a warning in place of `critical`.
-- A name both a mod and the game define is an `override` where the game keeps the mod's copy. Where it keeps its own,
-  each mod none of whose copies it uses has an `unused-copy`. A mod's file shipped over the game's own is a
-  `removed-names`, instead of an `override`, when the game's file defines names that no file the game reads defines and
-  the game's files still use.
+  same forgiveness.
+- A name both a mod and the game define is an `override` where the game keeps the mod's copy. Its message says by the
+  copy's entry mode whether the mod's entry replaces the game's, adds to it or is kept in its place. Where the game
+  keeps its own, each mod none of whose copies it uses has an `unused-copy`. A mod's file shipped over the game's own is
+  a `removed-names`, instead of an `override`, when the game's file defines names that no file the game reads defines
+  and the game's files still use.
 - The load order decides only a file two mods ship at one path, and a name whose reason is `playset`. A critical
   contest of either kind, with one beaten mod that depends on the winner, carries in `Finding.Order` the load order
   that fixes it: the beaten mod moved just after the winner.

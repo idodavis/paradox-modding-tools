@@ -43,7 +43,7 @@ type Rule struct {
 
 // Tags is the set of Workshop tags a listing may carry.
 type Tags struct {
-	Categories []string `json:"categories"` // Steam's category tags, with those the workspace's mods carry
+	Categories []string `json:"categories"` // Steam's category tags
 	Versions   []string `json:"versions"`   // Steam's version tags
 }
 
@@ -164,8 +164,7 @@ func (stm *Service) ListTags() (Tags, error) {
 	if err != nil {
 		return Tags{}, err
 	}
-	modTags := lo.FlatMap(*ws.Order.Load(), func(mod workspace.Mod, _ int) []string { return mod.Descriptor.Tags })
-	categories := toCategoryTags(declared.Versions, lo.Uniq(slices.Concat(declared.Categories, modTags)))
+	categories := toCategoryTags(declared.Versions, declared.Categories)
 	slices.Sort(categories)
 	return Tags{Categories: categories, Versions: declared.Versions}, nil
 }

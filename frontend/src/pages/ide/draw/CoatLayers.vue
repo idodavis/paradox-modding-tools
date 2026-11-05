@@ -20,11 +20,11 @@ import { plural, toSentence } from "../../../lib/format";
 import { colorsQuery, texturesQuery } from "../../../queries";
 import { useDrawStore } from "../../../stores/draw";
 import { useWorkspaceStore } from "../../../stores/workspace";
+import ChoiceGallery from "../../../ui/ChoiceGallery.vue";
+import type { GalleryChoice } from "../../../ui/ChoiceGallery.vue";
 import ValueField from "../../../ui/ValueField.vue";
 import { applyEdits } from "../editor/models";
 import type { Model } from "../editor/models";
-import ChoiceGallery from "./ChoiceGallery.vue";
-import type { GalleryChoice } from "./ChoiceGallery.vue";
 import { drawTile, isOwn, toRgba } from "./coat";
 import type { Rgba } from "./coat";
 

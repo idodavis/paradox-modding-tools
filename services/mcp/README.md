@@ -54,7 +54,12 @@ four topics: the pages and what `show` can bring to the front on each, how a cha
 copy the game keeps when several definitions share a name, and the open workspace's game, mods and folders.
 
 The starter tasks (`Tasks`) are served as MCP prompts, and `ListTasks` lists them for the assistant pane. Each text
-works with the page's chip attached and, outside PMT, through `describe_view`.
+works with the page's chip attached and, outside PMT, through `describe_view`. A task that changes the file it is about
+is marked `Edits`, and the page offers it only with a file the user can change open.
+
+Each tool has a short title, and a tool that changes no file is marked read only. `ListTools` lists them for the
+assistant pane, which answers an agent's request to use a read-only tool itself, in every mode. `rename`, `apply_edit`
+and `write_scaffold` are the tools not marked, and they ask.
 
 ## What the tools check
 
@@ -84,7 +89,7 @@ and the page catalog the main window sends once (`SetPages`).
 
 | file | what it holds |
 |---|---|
-| `mcp.go` | The service: the starter tasks, the instructions, the token, and the HTTP handler with its checks. |
+| `mcp.go` | The service: the starter tasks, the instructions, the token, the tool list and the HTTP handler. |
 | `tools.go` | The tools' inputs and answers, the guide's texts, and the write tools' previews and tokens. |
 | `app.go` | The view and pages the windows sent, and `show`. |
 | `checks.go` | The queries `show` takes, and the checks of what the tools and `show` are given. |
@@ -98,6 +103,7 @@ and the page catalog the main window sends once (`SetPages`).
 ## Terms
 
 - **Task**: a starter task, a prompt PMT offers an agent, with the chip of the page it carries.
+- **Tool**: one of PMT's tools, with its title and whether it only reads.
 - **Access**: the address and token an agent needs to reach the server.
 - **View**: the page a window shows and its chip, as the window sent them last.
 - **Chip**: what the page shown offers an agent's prompt, a file with its selected lines or a text.

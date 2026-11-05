@@ -243,7 +243,7 @@ export interface Rule {
  */
 export interface Tags {
     /**
-     * Steam's category tags, with those the workspace's mods carry
+     * Steam's category tags
      */
     "categories": string[] | null;
 

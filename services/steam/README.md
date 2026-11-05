@@ -129,7 +129,7 @@ was stopped with the app leaves.
 
 - **Tags.** `ListTags` fetches the tags a game's Workshop browse page declares, leaves out those only Steam's admins may
   set, and keeps them in the cache for each app id, to use when a later fetch fails. The group whose tags start with a
-  version number is the version tags. The category tags add those the workspace's mods carry.
+  version number is the version tags. The rest are the category tags, which the page offers with the listing's own.
 - **Change notes.** `ListChangeNotes` drafts the next note from git, with one line for the subject of each commit of the
   mod's folder since Steam last updated the item, and from the section of the mod's changelog file under the first
   heading that holds the version. `1.2` is not in `## 1.21`.

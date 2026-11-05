@@ -25,7 +25,7 @@ your events, a health check of your load order, the wiki's patch notes and Works
 |---|---|
 | [<img src="docs/images/ide.png" width="400" alt="IDE">](docs/FEATURES.md#ide) | [<img src="docs/images/event-graph.png" width="400" alt="Event Graph">](docs/FEATURES.md#event-graph) |
 | **[IDE](docs/FEATURES.md#ide):** an editor that knows the game's script: hover cards, completion, go to definition, checks as you type, and the game's own files beside yours. | **[Event Graph](docs/FEATURES.md#event-graph):** what fires what, from any event, with each branch's conditions. |
-| [<img src="docs/images/health.png" width="400" alt="Health">](docs/FEATURES.md#health) | [<img src="docs/images/visual-view.png" width="400" alt="Visual view">](docs/FEATURES.md#visual-view) |
+| [<img src="docs/images/health.png" width="400" alt="Health">](docs/FEATURES.md#health) | [<img src="docs/images/visual-view-gui.png" width="400" alt="Visual view">](docs/FEATURES.md#visual-view) |
 | **[Health](docs/FEATURES.md#health):** what conflicts between your mods and the game, and what is wrong in each mod, worst first. | **[Visual view](docs/FEATURES.md#visual-view):** GUI windows and coats of arms drawn as the game draws them. |
 | [<img src="docs/images/publish.png" width="400" alt="Publish">](docs/FEATURES.md#publish) | [<img src="docs/images/patch-notes.png" width="400" alt="Patch Notes">](docs/FEATURES.md#patch-notes) |
 | **[Publish](docs/FEATURES.md#publish):** your Workshop page, written and uploaded from PMT, and compared with Steam's copy. | **[Patch Notes](docs/FEATURES.md#patch-notes):** the wiki's notes for each game version. |
@@ -80,7 +80,7 @@ The Steam Deck, Flatpak and AppImage are not supported, and neither is macOS.
 
 ## Troubleshooting
 
-- **Report a bug.** Open Help (the ? in the top bar, or F1) and press **Copy diagnostics**: your version, your system, your
+- **Report a bug.** Open Help (in the top bar's gear menu, or F1) and press **Copy diagnostics**: your version, your system, your
   installs and the end of PMT's log. Paste them into a bug report.
 - **The log** is `pmt.log`, in `%LocalAppData%\paradox-modding-tools` on Windows and in
   `~/.cache/paradox-modding-tools` on Linux.

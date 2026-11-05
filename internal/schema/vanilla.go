@@ -50,7 +50,7 @@ type holder struct {
 
 // valueTests are the types a count can give a field, in the order they are tried. A field gets the first type that
 // every value written at it fits.
-var valueTests = []ValueType{ValueBool, ValueNumber, ValueDate, ValueCall, ValueText}
+var valueTests = []ValueType{ValueBool, ValueNumber, ValueDate, ValueCall, ValueTarget, ValueText}
 
 // ExampleCount is how many places of a name are kept as its examples.
 const ExampleCount = 5

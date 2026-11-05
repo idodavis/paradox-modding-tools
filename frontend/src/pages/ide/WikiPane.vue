@@ -300,11 +300,14 @@ function jump(index: number): void {
           ref="list"
           v-slot="{ item }"
           :items="visible"
-          :virtualize="{ estimateSize: 120 }"
+          :virtualize="{ estimateSize: (index) => (visible[index]?.blurb || visible[index]?.usage ? 120 : 32) }"
           class="min-h-0 flex-1"
           @scroll="markLetter"
         >
-          <div class="flex flex-col gap-1.5 border-b border-default px-3.5 py-2.5">
+          <div
+            class="flex flex-col gap-1.5 border-b border-default px-3.5"
+            :class="item.blurb || item.usage ? 'py-2.5' : 'py-1.5'"
+          >
             <div class="flex items-baseline gap-2">
               <div class="flex min-w-0 flex-1 flex-wrap items-center gap-x-2 gap-y-1">
                 <span class="font-mono text-13 font-semibold break-all text-highlighted">{{ item.name }}</span>

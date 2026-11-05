@@ -191,11 +191,6 @@ export interface Workspace {
     "resetTabs": boolean;
 
     /**
-     * the explorer lists images, fonts and other binary files
-     */
-    "showBinaries": boolean;
-
-    /**
      * the Library's card does not show the first-mod checklist
      */
     "hideChecklist": boolean;

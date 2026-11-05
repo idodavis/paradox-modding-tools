@@ -201,8 +201,7 @@ func (lsp *Service) Signature(path string, line, column int) (*Signature, error)
 		return nil, err
 	}
 	offset := ToOffset(tree.Src, tree.Lines, line, column)
-	visitor := &hoverVisitor{tree: tree, offset: offset}
-	ws.Schema.WalkTo(tree, ws.Locate(ws.Mods.Load(), path).File, offset, visitor)
+	visitor := walkTo(ws, tree, ws.Locate(ws.Mods.Load(), path), offset)
 	call, callee, key, ok := findCall(ws, visitor)
 	if !ok {
 		return nil, nil

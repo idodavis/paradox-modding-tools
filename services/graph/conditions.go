@@ -17,13 +17,10 @@ import (
 
 // A Condition is one statement of a block of triggers in words, with the statements of its block under it.
 type Condition struct {
-	// Subject is what it is about, as written, read first: a key that names a scope, or the value of a keyword that
-	// reads its value first, as in X exists; "" for any other.
-	Subject string `json:"subject,omitempty"`
-	Text    string `json:"text,omitempty"`  // the key and its operator in words, such as "has trait"
-	Value   string `json:"value,omitempty"` // the value as written; "" for a block, a yes, a no or a subject
-	// Title is the in-game name of what its value names, or its subject where that is its value; "" for none.
-	Title      string      `json:"title,omitempty"`
+	Subject    string      `json:"subject,omitempty"`    // what it is about, as written, read first: a key that names a scope, or the value of a keyword that reads its value first; "" for any other
+	Text       string      `json:"text,omitempty"`       // the key and its operator in words, such as "has trait"
+	Value      string      `json:"value,omitempty"`      // the value as written; "" for a block, a yes, a no or a subject
+	Title      string      `json:"title,omitempty"`      // the in-game name of what its value names, or its subject where that is its value; "" for none
 	Negated    bool        `json:"negated,omitempty"`    // it must be false
 	Line       int         `json:"line"`                 // counted from one
 	Conditions []Condition `json:"conditions,omitempty"` // the statements of its block, in the order written
@@ -53,7 +50,7 @@ func makeCondition(ws *workspace.Session, mods *index.Index, tree *jomini.Tree, 
 	current := tree.Statements[statement]
 	key := tree.Unquoted(current.Key)
 	condition := Condition{Value: tree.Unquoted(current.Value), Line: toSourceLine(tree, current.Span)}
-	keyword, ok := ws.Game.LookupKeyword(game.ShapeTriggers, "", key)
+	keyword, ok := ws.Game.LookupKeyword(game.ShapeTriggers, "", key, "")
 	if !ok {
 		keyword, _ = game.MatchListIterator(strings.ToLower(key))
 	}
@@ -82,7 +79,7 @@ func makeCondition(ws *workspace.Session, mods *index.Index, tree *jomini.Tree, 
 	prefix, label, isPrefixed := jomini.SplitPrefixed(condition.Value)
 	if database := ws.Schema.Prefixes[prefix]; isPrefixed && database != "" {
 		if winner, ok := mods.FindKept(ws.Schema, schema.Reference{Database: database, Name: label}); ok {
-			condition.Title = toTitle(ws, mods, ws.LookupTitle(mods, winner.Site))
+			condition.Title = toTitle(ws, mods, ws.LookupDefinitionText(mods, winner.Site, game.TitleKey))
 		}
 	}
 	if keyword.ValueFirst {

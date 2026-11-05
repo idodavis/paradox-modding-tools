@@ -7,6 +7,7 @@ import (
 	"cmp"
 	"errors"
 	"fmt"
+	"maps"
 	"path"
 	"path/filepath"
 	"slices"
@@ -195,10 +196,7 @@ func (lsp *Service) ListFixes(path string, diagnostics []Diagnostic) ([]Fix, err
 	mods := ws.Mods.Load()
 	place := ws.Locate(mods, path)
 	walk := func(diagnostic Diagnostic) *hoverVisitor {
-		offset := ToOffset(tree.Src, tree.Lines, diagnostic.Range.StartLine, diagnostic.Range.StartColumn)
-		visitor := &hoverVisitor{tree: tree, offset: offset}
-		ws.Schema.WalkTo(tree, place.File, offset, visitor)
-		return visitor
+		return walkTo(ws, tree, place, ToOffset(tree.Src, tree.Lines, diagnostic.Range.StartLine, diagnostic.Range.StartColumn))
 	}
 	fixes := []Fix{}
 	for _, diagnostic := range diagnostics {
@@ -206,7 +204,7 @@ func (lsp *Service) ListFixes(path string, diagnostics []Diagnostic) ([]Fix, err
 		var edits []Edit
 		switch diagnostic.Code {
 		case unresolvedCode:
-			title, edits = buildReferenceFix(mods, walk(diagnostic), diagnostic)
+			title, edits = buildReferenceFix(ws.Schema, mods, walk(diagnostic), diagnostic)
 		case "missing-key":
 			title, edits = buildMissingFix(ws.Schema, walk(diagnostic), diagnostic)
 		case "misplaced-mode":
@@ -276,8 +274,11 @@ func buildAppendFix(ws *workspace.Session, mods *index.Index, target, source, ad
 }
 
 // buildReferenceFix returns the fix for a reference nothing defines: a change to the nearest name its database defines.
-// The edits are empty if no name is near enough.
-func buildReferenceFix(mods *index.Index, visitor *hoverVisitor, diagnostic Diagnostic) (string, []Edit) {
+// A reference to a callable database also draws on the commands the block it is written in takes. The edits are empty
+// if no name is near enough.
+func buildReferenceFix(
+	language *schema.Schema, mods *index.Index, visitor *hoverVisitor, diagnostic Diagnostic,
+) (string, []Edit) {
 	diff := diffmatchpatch.New()
 	best, nearest := fixDistance, ""
 	for _, reference := range visitor.context.References {
@@ -289,6 +290,12 @@ func buildReferenceFix(mods *index.Index, visitor *hoverVisitor, diagnostic Diag
 		keys := lo.Map(mods.ListDefinitions(reference.Database), func(site index.Site, _ int) string {
 			return mods.ToReference(site).Name
 		})
+		if database := language.Databases[reference.Database]; database != nil && database.Callable.Command != "" {
+			keys = slices.Concat(keys, lo.Filter(slices.Sorted(maps.Keys(language.Commands)), func(key string, _ int) bool {
+				_, ok := findAllowed(language.Commands[key], visitor.context.Parent)
+				return ok
+			}))
+		}
 		for _, key := range lo.Uniq(keys) {
 			// names that differ in length by the best distance so far or more are that far apart
 			if max(utf8.RuneCountInString(key)-length, length-utf8.RuneCountInString(key)) >= best {
@@ -493,9 +500,7 @@ func (lsp *Service) BuildOverride(path string, line, column int, modID string) (
 // findEntry returns the definition at an offset of a file that a mod can override: one written in a folder of its
 // database. It returns an error if the offset is in none.
 func findEntry(ws *workspace.Session, tree *jomini.Tree, place workspace.Place, offset int) (*schema.Definition, error) {
-	visitor := &hoverVisitor{tree: tree, offset: offset}
-	ws.Schema.WalkTo(tree, place.File, offset, visitor)
-	definition := visitor.context.Definition
+	definition := walkTo(ws, tree, place, offset).context.Definition
 	if definition == nil || definition.Statement == 0 || !hasFolder(ws.Schema.Databases[definition.Database]) {
 		return nil, errors.New("there is no entry to override at this position")
 	}

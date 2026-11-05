@@ -189,11 +189,11 @@ function show(place: Place, line: number): void {
           <span class="grow" />
           <Tabs v-if="below" :ui="{ list: 'border-0' }" />
           <UButton
+            v-if="route.query.root !== id"
             label="Set as root"
             icon="i-lucide-target"
             color="primary"
             variant="solid"
-            :disabled="route.query.root === id"
             @click="setRoot(id)"
           />
           <UButton label="Open in IDE" icon="i-lucide-external-link" @click="show(node.site.place, node.site.line)" />
@@ -266,6 +266,10 @@ function show(place: Place, line: number): void {
                 </div>
               </li>
             </ol>
+            <p v-if="!firedBy.length && !node.hardcoded" class="px-4 pt-2 text-12 leading-4.5 text-dimmed">
+              Nothing fires this yet. An event runs when an on_action, a decision, a character interaction or another
+              event fires it.
+            </p>
           </section>
           <section v-if="detail.rules?.length">
             <template v-for="rule in detail.rules" :key="rule.id">

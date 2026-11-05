@@ -1,10 +1,10 @@
-<!-- The one picker of the Visual panel: the current choice, opening to a search and a grid of every choice. -->
+<!-- A picker of one choice from many: the current choice, opening to a search and a grid of every choice. -->
 <script setup lang="ts">
 import { refDebounced } from "@vueuse/core";
 import { computed, shallowRef } from "vue";
 
-import { matchQuery } from "../../../lib/format";
-import { fileUrl } from "../../../queries";
+import { matchQuery } from "../lib/format";
+import { fileUrl } from "../queries";
 
 /** A GalleryChoice is one choice: its value, its name, and the image file or the color that shows it. */
 export type GalleryChoice = { value: string; label: string; path?: string; color?: string };
@@ -62,7 +62,7 @@ const caption = computed(() => {
     <div class="flex items-center gap-2">
       <button
         type="button"
-        class="-m-1 flex min-w-0 grow items-center gap-3 rounded-md p-1 text-start enabled:hover:bg-elevated"
+        class="-m-1 flex min-w-0 grow items-center gap-3 rounded-md p-1 text-start enabled:hover:bg-accented"
         :disabled="disabled"
         :aria-expanded="isOpen && !disabled"
         @click="isOpen = !isOpen"

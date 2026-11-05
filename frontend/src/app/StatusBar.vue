@@ -1,6 +1,6 @@
 <!--
   The status bar: the install and its scan, the page's facts, the agent, the windows and the version. It also holds
-  the Help dialog, which the top bar's button opens.
+  the Help dialog, which the top bar's gear menu opens.
 -->
 <script setup lang="ts">
 import type { ToastProps } from "@nuxt/ui";
@@ -8,7 +8,7 @@ import { useMutation, useQuery } from "@pinia/colada";
 import { useEventBus } from "@vueuse/core";
 import { Events } from "@wailsio/runtime";
 import { computed, onScopeDispose, shallowRef, watch } from "vue";
-import { useRoute } from "vue-router";
+import { useRoute, useRouter } from "vue-router";
 
 import * as app from "@services/app/service";
 import type { Release } from "@services/app/models";
@@ -21,17 +21,24 @@ import { crashedQuery, levelsQuery, releasesQuery, stateQuery, updateQuery, vers
 import { useAgentStore } from "../stores/agent";
 import { COMMAND_BUS, describeWindow, THIS_WINDOW, useWindowsStore } from "../stores/windows";
 import HowModWorks from "../ui/HowModWorks.vue";
+import { STATUS_ITEM } from "../ui/StatusFacts.vue";
 import TermInfo from "../ui/TermInfo.vue";
 import { findCommand } from "./commands";
 import { isWorkspacePage, PAGES, PANE_HELP, TERMS, type Page } from "./pages";
 
 const route = useRoute();
+const router = useRouter();
 const toast = useToast();
 const windows = useWindowsStore();
 const agent = useAgentStore();
 
 const page = computed<Page | undefined>(() => (route.name ? PAGES[route.name] : undefined));
-// The Help dialog opens on the help.open command, from the top bar's button, F1 or the palette.
+// A workspace page's help is followed by the agent pane's.
+const sections = computed(() => [
+  ...(page.value?.help ?? []),
+  ...(route.name && isWorkspacePage(route.name) ? PANE_HELP : []),
+]);
+// The Help dialog opens on the help.open command, from the top bar's gear menu, F1 or the palette.
 const helping = shallowRef(false);
 useEventBus(COMMAND_BUS).on((command) => command === "help.open" && (helping.value = true));
 const explaining = shallowRef(false);
@@ -115,6 +122,13 @@ watch(
         description: `Game updated from ${current.updatedFrom} to ${current.install.version} — rescanned.`,
         color: "warning",
         icon: "i-lucide-refresh-cw",
+        actions: [
+          {
+            label: "Open Patch Notes",
+            color: "warning",
+            onClick: () => void router.push({ name: "patch-notes", params: { id: current.id } }),
+          },
+        ],
       });
     }
   },
@@ -128,7 +142,6 @@ function showToast(key: string, options: Partial<ToastProps>): void {
   toast.add({ ...options, duration: 0 });
 }
 
-const ITEM = "flex h-6 items-center gap-1.25 hover:text-highlighted";
 const LAUNCH = findCommand("game.launch");
 </script>
 
@@ -144,7 +157,7 @@ const LAUNCH = findCommand("game.launch");
         />
         <template v-if="scan">
           <span>{{ scan.stage }}</span>
-          <span class="tabular-nums">{{ scan.percent }}%</span>
+          <span v-if="scan.percent >= 0" class="tabular-nums">{{ scan.percent }}%</span>
         </template>
         <span v-else-if="state?.installFound === false">Install not found</span>
         <span v-else-if="state?.open">
@@ -157,7 +170,7 @@ const LAUNCH = findCommand("game.launch");
       >
         <button
           type="button"
-          :class="ITEM"
+          :class="STATUS_ITEM"
           :aria-label="`Launch ${state.game?.name} in debug mode`"
           @click="LAUNCH?.onSelect?.()"
         >
@@ -169,7 +182,7 @@ const LAUNCH = findCommand("game.launch");
     <div id="status-start" class="contents" />
     <span class="grow" />
     <div id="status-end" class="contents" />
-    <button v-if="agent.status && agent.active" type="button" :class="ITEM" @click="agent.showPane()">
+    <button v-if="agent.status && agent.active" type="button" :class="STATUS_ITEM" @click="agent.showPane()">
       <span class="size-1.5 shrink-0 rounded-full" :class="agentDot" />
       {{ agent.status }}
     </button>
@@ -178,7 +191,7 @@ const LAUNCH = findCommand("game.launch");
       {{ state?.game?.name ?? "Game" }} wiki: {{ wiki.done }} of {{ wiki.total }}
     </span>
     <UPopover v-if="wikiFailure && !wiki" :content="{ side: 'top' }">
-      <button type="button" :class="[ITEM, 'text-warning']">
+      <button type="button" :class="[STATUS_ITEM, 'text-warning']">
         <UIcon name="i-lucide-triangle-alert" class="size-3" />Wiki not fetched
       </button>
       <template #content>
@@ -189,7 +202,7 @@ const LAUNCH = findCommand("game.launch");
       </template>
     </UPopover>
     <UDropdownMenu v-if="THIS_WINDOW === 'main' && others.length" :items="others" :content="{ side: 'top' }">
-      <button type="button" :class="ITEM">
+      <button type="button" :class="STATUS_ITEM">
         <UIcon name="i-lucide-app-window" class="size-3" />{{ others.length + 1 }} windows
       </button>
     </UDropdownMenu>
@@ -220,11 +233,10 @@ const LAUNCH = findCommand("game.launch");
               <span class="text-11 text-dimmed">The same words show beside an (i) on the pages that use them.</span>
             </div>
           </section>
-          <p v-for="(paragraph, index) in page?.help ?? []" :key="index">{{ paragraph }}</p>
-          <template v-if="route.name && isWorkspacePage(route.name)">
-            <h3 class="mt-2 text-13 font-semibold text-highlighted">The agent pane</h3>
-            <p v-for="(paragraph, index) in PANE_HELP" :key="`pane${index}`">{{ paragraph }}</p>
-          </template>
+          <section v-for="section in sections" :key="section.heading" class="flex flex-col gap-1">
+            <h3 class="text-13 font-semibold text-highlighted">{{ section.heading }}</h3>
+            <p>{{ section.text }}</p>
+          </section>
           <UButton label="How a mod works" icon="i-lucide-layers" class="mt-2 self-start" @click="explaining = true" />
         </div>
       </template>
@@ -239,10 +251,19 @@ const LAUNCH = findCommand("game.launch");
       :ui="{ content: 'h-130 sm:max-w-2xl' }"
       @update:open="(opened) => opened && refetchReleases()"
     >
-      <UTooltip v-if="update?.available" text="A newer version is out">
-        <UButton :label="version" icon="i-lucide-download" size="xs" color="primary" variant="soft" />
+      <UTooltip :text="update?.available ? 'Releases and updates: a newer version is out' : 'Releases and updates'">
+        <UButton
+          v-if="update?.available"
+          :label="version"
+          icon="i-lucide-download"
+          size="xs"
+          color="primary"
+          variant="soft"
+        />
+        <button v-else type="button" :class="STATUS_ITEM">
+          <UIcon name="i-lucide-tag" class="size-3" />{{ version }}
+        </button>
       </UTooltip>
-      <button v-else type="button" :class="ITEM">{{ version }}</button>
       <template #body>
         <div class="flex flex-col gap-5">
           <section v-for="release in releases ?? []" :key="release.version" class="flex flex-col gap-1.5">

@@ -69,6 +69,12 @@ export interface Game {
      * the descriptor file's path from the mod's root
      */
     "descriptor"?: string;
+
+    /**
+     * FixedModFolder says that the game's launcher reads local mods only from its mod folder, so a mod made elsewhere
+     * is never loaded.
+     */
+    "fixedModFolder": boolean;
     "guide": Guide;
     "example": Example;
 }

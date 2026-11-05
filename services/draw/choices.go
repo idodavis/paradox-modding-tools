@@ -43,15 +43,11 @@ type PictureList struct {
 	Key      string `json:"key"` // the key of the property whose binding draws them
 	Database string `json:"database"`
 	Name     string `json:"name"`
-	// Type is the kind of object the binding reads, as its data type or its words; Field is the field it reads of one
-	// (realm_frame), and Argument the argument it passes as written (62), each "" for none.
-	Type     string `json:"type"`
-	Field    string `json:"field"`
-	Argument string `json:"argument"`
-	// Folder is, for a kind whose objects are the subfolders of its icon folder rather than definitions, that folder
-	// (graphical_cultures/european_gfx); each subfolder holds the object's images, named by the argument.
-	Folder string `json:"folder"`
-	Shown  string `json:"shown"` // what it draws with nothing picked: a definition's or a folder's name, or a file
+	Type     string `json:"type"`     // the kind of object the binding reads, as its data type or its words; "" for none
+	Field    string `json:"field"`    // the field it reads of one; "" for none
+	Argument string `json:"argument"` // the argument it passes, as written; "" for none
+	Folder   string `json:"folder"`   // for a kind whose objects are the subfolders of its icon folder rather than definitions, that folder; each subfolder holds the object's images, named by the argument
+	Shown    string `json:"shown"`    // what it draws with nothing picked: a definition's or a folder's name, or a file
 }
 
 // A Picture is one picture a picture binding may draw, labeled by its file or its definition. Picking it sets its file,

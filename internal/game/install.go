@@ -40,13 +40,14 @@ const DLCFolder = "dlc"
 // LauncherModFolder is the folder under a game's user-data folder where its launcher keeps mods.
 const LauncherModFolder = "mod"
 
-// The patterns that read Steam's library file, an app manifest and its build id, and the day the game was built in
-// its revision log.
+// The patterns that read Steam's library file, an app manifest and its build id, the day the game was built in its
+// revision log and the version it checks in its debug log.
 var (
 	vdfPathRe       = regexp.MustCompile(`"path"\s*"([^"]+)"`)
 	installDirRe    = regexp.MustCompile(`"installdir"\s*"([^"]+)"`)
 	buildIDRe       = regexp.MustCompile(`"buildid"\s*"(\d+)"`)
 	gameTimestampRe = regexp.MustCompile(`\]: game_timestamp: (\d{4}-\d{2}-\d{2})`)
+	gameVersionRe   = regexp.MustCompile(`\]: Feeding game version into checksum: (\S+)`)
 )
 
 // FindInstalls returns the installs of the game that Steam's libraries hold.
@@ -156,9 +157,9 @@ func listDefaultSteamRoots() []string {
 	}
 }
 
-// LoadVersion returns the version of an install of the game, from its launcher settings, else its revision log if the
-// game started since the last update as "build <date>", else its Steam manifest as "build <id>". It returns "" if none
-// of them says.
+// LoadVersion returns the version of an install of the game, from its launcher settings, else its debug log if the
+// game started since the last update, else its revision log in the same case as "build <date>", else its Steam manifest
+// as "build <id>". It returns "" if none of them says.
 func (game *Game) LoadVersion(installPath string) string {
 	settings := loadLauncher(installPath)
 	if settings.RawVersion != "" {
@@ -169,18 +170,31 @@ func (game *Game) LoadVersion(installPath string) string {
 		return version
 	}
 	if user := game.FindUserDataDir(installPath); user != "" {
-		path := files.Join(user, revisionLogRel)
-		info, err := os.Stat(path)
-		if err == nil && !info.ModTime().Before(ReadInstallUpdatedAt(installPath)) {
-			data, err := os.ReadFile(path)
-			if match := gameTimestampRe.FindSubmatch(data); err == nil && match != nil {
-				return "build " + string(match[1])
-			}
+		if match := findCurrentMatch(installPath, files.Join(user, debugLogRel), gameVersionRe); match != "" {
+			return match
+		}
+		if match := findCurrentMatch(installPath, files.Join(user, revisionLogRel), gameTimestampRe); match != "" {
+			return "build " + match
 		}
 	}
 	manifest, err := os.ReadFile(filepath.Join(installPath, "..", "..", "appmanifest_"+strconv.Itoa(game.SteamAppID)+".acf"))
 	if match := buildIDRe.FindSubmatch(manifest); err == nil && match != nil {
 		return "build " + string(match[1])
+	}
+	return ""
+}
+
+// findCurrentMatch returns the first group of the pattern's first match in a log of the game, if the game wrote the log
+// since the install was last updated. It returns "" if the log is older, missing or unread, or the pattern matches
+// nothing in it.
+func findCurrentMatch(installPath, path string, pattern *regexp.Regexp) string {
+	info, err := os.Stat(path)
+	if err != nil || info.ModTime().Before(ReadInstallUpdatedAt(installPath)) {
+		return ""
+	}
+	data, err := os.ReadFile(path)
+	if match := pattern.FindSubmatch(data); err == nil && match != nil {
+		return string(match[1])
 	}
 	return ""
 }

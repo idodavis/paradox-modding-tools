@@ -7,6 +7,7 @@ import (
 	"path/filepath"
 	"strings"
 	"unicode"
+	"unicode/utf8"
 
 	"golang.org/x/text/runes"
 	"golang.org/x/text/transform"
@@ -62,6 +63,32 @@ func ToSlug(text string) string {
 		}
 	}
 	return slug.String()
+}
+
+// ClassifyMatch returns how well a path, or a name with no folders, matches a search's query, as the class its results
+// sort by, best first. Both are lower case. It is 0 when the path's last element is the query, 1 when that element
+// starts with it, 2 when the path holds it, and 3 when the path holds its letters in order. It is -1 when the path does
+// not match.
+func ClassifyMatch(path, query string) int {
+	last := path[strings.LastIndexByte(path, '/')+1:]
+	switch {
+	case last == query:
+		return 0
+	case strings.HasPrefix(last, query):
+		return 1
+	case strings.Contains(path, query):
+		return 2
+	}
+	matched := 0
+	for _, character := range path {
+		if wanted, size := utf8.DecodeRuneInString(query[matched:]); matched < len(query) && character == wanted {
+			matched += size
+		}
+	}
+	if matched == len(query) {
+		return 3
+	}
+	return -1
 }
 
 // toSlash returns a path cleaned and with forward slashes, from either platform's spelling.

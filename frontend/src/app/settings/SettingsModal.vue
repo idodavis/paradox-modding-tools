@@ -24,6 +24,7 @@ import { gameIcon, THEME_FAMILIES, useSettingsStore } from "../../stores/setting
 import { COMMAND_BUS } from "../../stores/windows";
 import { useWorkspaceStore, VANILLA } from "../../stores/workspace";
 import AddModMenu from "../../ui/AddModMenu.vue";
+import ChoiceGallery from "../../ui/ChoiceGallery.vue";
 import ColorPicker from "../../ui/ColorPicker.vue";
 import FileSelector from "../../ui/FileSelector.vue";
 import InstallPicker from "../../ui/InstallPicker.vue";
@@ -69,7 +70,7 @@ const GROUPS = [
   {
     label: "IDE",
     mark: "i-lucide-code",
-    sub: "Kept for this workspace",
+    sub: "Checks are kept per workspace",
     workspace: true,
     catalog: true,
     sections: [
@@ -84,7 +85,11 @@ const GROUPS = [
         label: "Language features",
         about: "Completion, hover cards, predicted text and signature help.",
       },
-      { value: "checks", label: "Checks", about: "Which problems the editor marks. Health counts them all." },
+      {
+        value: "checks",
+        label: "Health checks",
+        about: "Which problems the editor shows. Health still counts them all.",
+      },
       { value: "visual", label: "Visual view", about: "When a GUI file opens drawn, and how it is drawn." },
       { value: "wiki", label: "Wiki", about: "Whether the Wiki pane follows the file you are editing." },
     ],
@@ -151,11 +156,13 @@ const GAME_COLORS = [{ value: "", background: "var(--game)", label: "Automatic" 
 // chosen with the file dialog.
 const DEFAULT_SHELL = "default";
 const OTHER_SHELL = "other";
-const SIDEBAR = [
-  { label: "Sunset Invasion", origin: "--o1" },
-  { label: "sir_events.txt" },
-  { label: "SIR Music", origin: "--o2" },
-  { label: "Crusader Kings III", origin: "--game" },
+const THEMES = THEME_FAMILIES.map((family) => ({ value: family.id, label: family.label }));
+// The lines of code in a theme's tile, each in a color of the code's palette.
+const PREVIEW_LINES = [
+  { color: "bg-(--syn-entry)", width: "w-3/5" },
+  { color: "bg-(--syn-field)", width: "ms-2 w-2/5" },
+  { color: "bg-(--syn-string)", width: "ms-2 w-1/2" },
+  { color: "bg-(--syn-comment)", width: "ms-2 w-1/3" },
 ];
 
 const [DefinePage, Page] = createReusableTemplate<
@@ -205,6 +212,8 @@ const { data: languages } = useQuery(() => ({
   ...languagesQuery(record.value?.install ?? ""),
   enabled: !!record.value?.install,
 }));
+// A workspace with no language of its own uses the game's base language.
+const baseLanguage = computed(() => languages.value?.find((language) => language.base)?.folder);
 const mods = computed(() => store.listMods());
 const ownIds = computed(() => store.listOwnMods().map((mod) => mod.id));
 // a mod's own listing holds its Workshop id as Go resolves it, from its record or else its descriptor
@@ -362,7 +371,7 @@ async function remove(): Promise<void> {
                   v-for="item in group.sections"
                   :key="item.value"
                   type="button"
-                  class="flex flex-col items-start rounded-md px-2 py-1.5 text-start hover:bg-elevated"
+                  class="flex flex-col items-start rounded-md px-2 py-1.5 text-start hover:bg-accented"
                   @click="openSection(item.value)"
                 >
                   <span class="text-13 text-highlighted">{{ item.label }}</span>
@@ -444,7 +453,12 @@ async function remove(): Promise<void> {
           <template v-else>{{ item.label }}</template>
         </template>
         <template #content="{ item }">
-          <Page :title="item.label ?? ''" note="Kept for this workspace.">
+          <Page
+            :title="item.label ?? ''"
+            :note="
+              item.value === 'checks' ? 'Kept for this workspace.' : 'Applies to every workspace and every PMT window.'
+            "
+          >
             <template #actions>
               <UButton
                 :label="item.value === 'checks' ? 'Reset the checks' : 'Reset this section'"
@@ -478,10 +492,9 @@ async function remove(): Promise<void> {
                 orientation="horizontal"
               >
                 <USelect
-                  :model-value="record.language"
+                  :model-value="record.language || baseLanguage"
                   :items="languages ?? []"
                   value-key="folder"
-                  placeholder="The game's base language"
                   class="w-60"
                   @update:model-value="update({ ...record, language: $event })"
                 />
@@ -528,16 +541,6 @@ async function remove(): Promise<void> {
                   @update:model-value="update({ ...record, hideChecklist: !$event })"
                 />
               </UFormField>
-              <UFormField
-                label="Hide binaries in the explorer"
-                description="Leaves images, fonts and other binary files out of the explorer's tree."
-                orientation="horizontal"
-              >
-                <USwitch
-                  :model-value="!record.showBinaries"
-                  @update:model-value="update({ ...record, showBinaries: !$event })"
-                />
-              </UFormField>
             </div>
           </Page>
         </template>
@@ -556,14 +559,14 @@ async function remove(): Promise<void> {
             <p v-if="!state.installFound" class="text-12 text-error">
               The install's folder was not found. Pick where the game is now with Change folder.
             </p>
-            <div class="flex flex-col gap-3 border-t border-accented pt-5">
-              <div class="flex flex-col gap-0.75">
+            <div class="flex items-center gap-4 border-t border-accented pt-4">
+              <div class="flex min-w-0 grow flex-col gap-0.75">
                 <h2 class="text-13 font-semibold">Launch</h2>
                 <p class="text-12 text-dimmed">Starts {{ state.game?.name }} with its debug flag.</p>
               </div>
-              <UButton label="Launch" icon="i-lucide-play" class="self-start" @click="LAUNCH?.onSelect?.($event)" />
+              <UButton label="Launch" icon="i-lucide-play" @click="LAUNCH?.onSelect?.($event)" />
             </div>
-            <div class="flex flex-col gap-3 border-t border-accented pt-5">
+            <div class="flex flex-col gap-2.5 border-t border-accented pt-4">
               <div class="flex flex-col gap-0.75">
                 <h2 class="flex items-center gap-1.5 text-13 font-semibold">
                   Game documentation
@@ -574,8 +577,8 @@ async function remove(): Promise<void> {
                   its own copy for when it is missing.
                 </p>
               </div>
-              <UBadge :label="dumps?.label" :color="dumps?.current ? 'success' : 'warning'" class="self-start" />
-              <div class="flex gap-2">
+              <div class="flex flex-wrap items-center gap-2">
+                <UBadge :label="dumps?.label" :color="dumps?.current ? 'success' : 'warning'" />
                 <UButton
                   label="How to get the game's documentation"
                   icon="i-lucide-book-open"
@@ -618,7 +621,7 @@ async function remove(): Promise<void> {
                     <button
                       type="button"
                       class="w-full text-dimmed"
-                      :class="[ROW, selected ? 'hover:bg-elevated' : PICKED]"
+                      :class="[ROW, selected ? 'hover:bg-accented' : PICKED]"
                       @click="origin = VANILLA"
                     >
                       <span class="w-3.5 shrink-0" />
@@ -639,7 +642,7 @@ async function remove(): Promise<void> {
                         :key="mod.id"
                         role="button"
                         tabindex="0"
-                        :class="[ROW, selected?.id === mod.id ? PICKED : 'hover:bg-elevated']"
+                        :class="[ROW, selected?.id === mod.id ? PICKED : 'hover:bg-accented']"
                         @click="origin = mod.id"
                         @keydown.enter="origin = mod.id"
                       >
@@ -712,88 +715,69 @@ async function remove(): Promise<void> {
             <Row
               setting="appearance.theme"
               title="Theme"
-              note="Every theme is the same set of tokens with different values, so all pages and the editor change together. Each comes dark and light."
+              note="Each theme comes dark and light and colors every page and the editor."
             >
-              <div class="grid grid-cols-3 gap-3.5">
-                <button
-                  v-for="family in THEME_FAMILIES"
-                  :key="family.id"
-                  type="button"
-                  class="flex flex-col gap-2 rounded-tile border bg-muted p-2 text-start"
-                  :class="family.id === pickedFamily ? 'border-primary ring-2 ring-primary/15' : 'border-default'"
-                  @click="settings.write('appearance.theme', family.id)"
-                >
+              <ChoiceGallery
+                :choices="THEMES"
+                :value="pickedFamily"
+                title="Theme"
+                shape="wide"
+                @pick="settings.write('appearance.theme', $event)"
+              >
+                <template #tile="{ choice }">
                   <div
-                    :data-theme="`${family.id}-${theme.dark ? 'dark' : 'light'}`"
-                    class="flex h-33 flex-col overflow-hidden rounded-md border border-(--line-2) bg-(--bg-1) text-[9px] leading-[1.45] text-(--fg-1)"
+                    :data-theme="`${choice.value}-${theme.dark ? 'dark' : 'light'}`"
+                    class="flex size-full flex-col bg-(--bg-1)"
                   >
-                    <div
-                      class="flex h-5 flex-none items-center gap-2 border-b border-(--line-1) bg-(--bg-2) px-1.75 text-(--fg-2)"
-                    >
-                      <span class="size-2.25 rounded-[3px] bg-(--accent)" />
-                      <span class="flex h-5 items-center border-b-[1.5px] border-(--accent) text-(--fg-1)">IDE</span>
-                      <span>Health</span>
-                      <span>Graph</span>
+                    <div class="flex h-1/5 items-center gap-1 border-b border-(--line-1) bg-(--bg-2) px-1">
+                      <span class="size-1.5 rounded-[2px] bg-(--accent)" />
+                      <span class="h-0.5 w-3 rounded-full bg-(--fg-2)" />
+                      <span class="h-0.5 w-3 rounded-full bg-(--fg-3)" />
                     </div>
                     <div class="flex min-h-0 grow">
-                      <div
-                        class="flex w-19 flex-none flex-col gap-px border-e border-(--line-1) bg-(--bg-2) py-1 text-(--fg-2)"
-                      >
+                      <div class="flex w-1/4 flex-col gap-1 border-e border-(--line-1) bg-(--bg-2) py-1 ps-1">
                         <span
-                          v-for="row in SIDEBAR"
-                          :key="row.label"
-                          class="ms-1 block h-2.75 truncate ps-1.25 leading-[11px]"
-                          :class="{ 'bg-(--bg-4) text-(--fg-1)': !row.origin }"
-                          :style="{ boxShadow: row.origin && `inset 2px 0 0 var(${row.origin})` }"
-                        >
-                          {{ row.label }}
-                        </span>
+                          v-for="n in 3"
+                          :key="n"
+                          class="h-0.5 w-3/4 rounded-full"
+                          :style="{ background: `var(--o${n})` }"
+                        />
                       </div>
-                      <pre
-                        class="m-0 grow overflow-hidden bg-(--bg-0) py-1 font-mono text-[8.5px] leading-3"
-                      ><span class="text-(--fg-3)">4  </span><span class="text-(--syn-entry)">sunset_invasion.0001</span> <span class="text-(--syn-operator)">=</span> {
-<span class="text-(--fg-3)">5  </span>    <span class="text-(--syn-block)">trigger</span> = { <span class="text-(--syn-field)">is_adult</span> = <span class="text-(--syn-literal)">yes</span> }
-<span class="text-(--fg-3)">6  </span>    <span class="text-(--syn-comment)"># envoys arrive</span>
-<span class="text-(--fg-3)">7  </span>    <span class="text-(--syn-scope)">scope:envoy</span> = { <span class="text-(--syn-field)">add_gold</span> = <span class="text-(--syn-number)">50</span> }
-<span class="text-(--fg-3)">8  </span>    <span class="text-(--syn-field)">title</span> = <span class="text-(--syn-string)">sir.0001.t</span></pre>
+                      <div class="flex grow flex-col justify-center gap-1 bg-(--bg-0) px-1.5">
+                        <span
+                          v-for="line in PREVIEW_LINES"
+                          :key="line.color"
+                          class="h-0.5 rounded-full"
+                          :class="[line.color, line.width]"
+                        />
+                      </div>
                     </div>
-                    <div class="flex h-5.5 flex-none items-center gap-1 border-t border-(--line-1) bg-(--bg-1) px-1.5">
-                      <span
-                        class="rounded-[3px] bg-(--accent) px-1.25 text-[8px] leading-[13px] font-semibold text-(--accent-ink)"
-                      >
-                        Upload
-                      </span>
-                      <span class="rounded-[3px] bg-(--red-soft) px-1 text-[8px] text-(--red)">1</span>
-                      <span class="rounded-[3px] bg-(--orange-soft) px-1 text-[8px] text-(--orange)">2</span>
-                      <span
-                        v-for="n in 3"
-                        :key="n"
-                        class="size-1.5 rounded-full"
-                        :style="{ background: `var(--o${n})` }"
-                      />
-                      <span class="ms-auto px-1 text-[8px] text-(--link)">link</span>
+                    <div class="flex h-1/5 items-center gap-1 border-t border-(--line-1) bg-(--bg-1) px-1">
+                      <span class="h-1.5 w-3 rounded-[2px] bg-(--accent)" />
+                      <span class="h-1.5 w-1.5 rounded-[2px] bg-(--red)" />
+                      <span class="h-1.5 w-1.5 rounded-[2px] bg-(--orange)" />
                     </div>
                   </div>
-                  <span class="flex min-w-0 items-center gap-1.5 px-1 pb-0.5 text-12 font-medium whitespace-nowrap">
-                    {{ family.label }}
-                    <span class="grow" />
-                    <UBadge v-if="family.id === pickedFamily" label="Your pick" size="sm" />
-                    <UBadge v-else-if="family.id === theme.family" label="In use here" color="secondary" size="sm" />
-                    <span v-else class="truncate text-11 font-normal text-dimmed">{{ family.note }}</span>
-                  </span>
-                </button>
-              </div>
+                </template>
+              </ChoiceGallery>
             </Row>
             <SettingsSection section="appearance" :highlight="highlighted" />
             <Row
               v-if="record"
               title="Mod colors"
-              note="Each mod gets a color when it joins a workspace and keeps it. Pick one by hand in Mods and load order."
+              note="Each mod gets a color when it joins a workspace and keeps it."
               last
             >
               <div class="flex flex-wrap items-center gap-3">
                 <OriginChip v-for="chip in chips" :key="chip" :origin="chip" />
                 <span class="grow" />
+                <UButton
+                  label="Open Mods and load order"
+                  variant="link"
+                  color="secondary"
+                  class="h-auto p-0 text-12"
+                  @click="openSection('mods')"
+                />
                 <UButton label="Reset all to automatic" size="sm" :disabled="!custom" @click="resetColors()" />
               </div>
             </Row>

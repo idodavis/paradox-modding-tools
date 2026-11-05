@@ -19,7 +19,7 @@ const emit = defineEmits<{ pick: [id: string] }>();
       v-for="difference in group.differences"
       :key="toDifferenceId(difference)"
       type="button"
-      class="flex h-7 w-full items-center gap-2 ps-3 pe-2.5 text-start text-12 hover:bg-elevated"
+      class="flex h-7 w-full items-center gap-2 ps-3 pe-2.5 text-start text-12 hover:bg-accented"
       :class="{ 'bg-(--accent-soft) shadow-[inset_2px_0_0_var(--accent)]': toDifferenceId(difference) === lit }"
       @click="emit('pick', toDifferenceId(difference))"
     >

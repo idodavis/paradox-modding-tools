@@ -50,6 +50,7 @@ const {
 }>();
 const emit = defineEmits<{ open: [finding: Finding]; log: [finding: Finding]; compatibility: [finding: Finding] }>();
 const filter = defineModel<string>("filter", { default: "" });
+const checks = defineModel<string[]>("checks", { default: () => [] });
 
 /** How many databases show before the rest fold behind a button. */
 const DATABASES_SHOWN = 5;
@@ -239,6 +240,7 @@ function listHits(finding: Finding): Finding[] {
     </UCollapsible>
     <HealthList
       v-model:filter="filter"
+      v-model:checks="checks"
       :findings="topicFindings"
       empty="No problems."
       :opened="opened"
@@ -267,7 +269,7 @@ function listHits(finding: Finding): Finding[] {
         />
       </template>
       <template #detail>
-        <HealthDetail v-if="opened" :finding="opened">
+        <HealthDetail v-if="opened" :finding="opened" :outdated="outdated">
           <HealthSection v-if="related" title="Related">
             <HealthLink :level="related.level" :parts="relation" @open="emit('compatibility', related)" />
           </HealthSection>

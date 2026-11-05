@@ -86,18 +86,12 @@ type Field struct {
 
 // A Command is one effect, trigger or link the dumps declare.
 type Command struct {
-	Declared []string // what declares it: game.DeclaredEffect, DeclaredTrigger, DeclaredLink, in dump order
-	Scopes   []string // the scopes the dumps say it runs in; empty if they name none
-	Target   string   // the scope a link leads to; "" for none
-	// Arguments are the keys it takes, as fields, by declaration: an effect and a trigger of one name each take their
-	// own.
-	Arguments map[string]*Field
-	// Union is the keys of its effect and its trigger together, which it takes in a block that allows either. It is
-	// nil unless the dumps declare it as both.
-	Union *Field
-	// ArgumentKey is the key that the argument in parentheses after its name stands for, as in
-	// aptitude(court_jester_court_position); "" if none.
-	ArgumentKey string
+	Declared    []string          // what declares it: game.DeclaredEffect, DeclaredTrigger, DeclaredLink, in dump order
+	Scopes      []string          // the scopes the dumps say it runs in; empty if they name none
+	Target      string            // the scope a link leads to; "" for none
+	Arguments   map[string]*Field // the keys it takes, as fields, by declaration: an effect and a trigger of one name each take their own
+	Union       *Field            // the keys of its effect and its trigger together, which it takes in a block that allows either; nil unless the dumps declare it as both
+	ArgumentKey string            // the key that the argument in parentheses after its name stands for; "" if none
 	Blurb       string
 	Usage       string    // the dump's usage lines; "" if none
 	Examples    []Example // the first places the game's own files write it, by path and then line
@@ -230,19 +224,16 @@ type SourceState struct {
 
 // A Schema is the language of one game version, as built from the dumps, the docs and the game's own files.
 type Schema struct {
-	Game      string
-	Version   string // the install's version; Build leaves it ""
-	Dumps     SourceState
-	Databases map[string]*Database
-	// Setups holds the folders that the game's bookmarks name for their start setups, without the stage folder. A game
-	// with a single start has none.
-	Setups   []string
-	Callees  map[string][]string // by caller: the databases a call through it resolves in
-	Commands map[string]*Command
-	Scopes   map[string]ScopeType
-	Saved    map[string]bool // scope names the game saves from code
-	// Customs are the customizable localizations the dumps name, though the game's files may define none.
-	Customs             map[string]bool
+	Game                string
+	Version             string // the install's version; Build leaves it ""
+	Dumps               SourceState
+	Databases           map[string]*Database
+	Setups              []string            // the folders that the game's bookmarks name for their start setups, without the stage folder; none for a game with a single start
+	Callees             map[string][]string // by caller: the databases a call through it resolves in
+	Commands            map[string]*Command
+	Scopes              map[string]ScopeType
+	Saved               map[string]bool // scope names the game saves from code
+	Customs             map[string]bool // the customizable localizations the dumps name, though the game's files may define none
 	Modifiers           map[string]Modifier
 	OnActions           map[string]OnAction
 	DataTypes           map[string]DataType
@@ -252,26 +243,19 @@ type Schema struct {
 	ModifierFields      map[string]*Field // by modifier type the game defines: what its name takes in a modifiers block
 	ScriptedDefinitions map[string]ScriptedDefinition
 	WidgetTypes         map[string]bool
-	Namespaces          map[string]bool // the event namespaces the game's events files declare
-	// UnlistedCalls holds the data call steps that no dump declares for the type before them, though the game's own
-	// localization and GUI text write them. A key is Type.step.
-	UnlistedCalls map[string]bool
-	// CommandPatterns holds the patterns the dumps name commands by, sorted by key and database.
-	CommandPatterns []CommandPattern
-	// TopFolders holds the first folder of each of the game's files in lower case, without the stage folder: the
-	// folders under which the game reads a mod's files.
-	TopFolders    map[string]bool
-	Lists         string   // the database of scripted lists; "" if none
-	Events        string   // the database of events; "" if none
-	Messages      string   // the database of the messages an effect sends the player; "" if none
-	Concepts      string   // the database of game concepts; "" if none
-	ModifierTypes string   // the database of modifier types; "" if none
-	Effects       string   // the database of scripted effects; "" if none
-	Values        string   // the database of script values; "" if none
-	FireDatabases []string // the databases that are fired: those whose row's contents are one of game.FireContents
-	// mods is the mods' scripted definitions, which a call finds after the game's. No cache keeps them, and a rescan
-	// puts a new table in place.
-	mods atomic.Pointer[modScripted]
+	Namespaces          map[string]bool             // the event namespaces the game's events files declare
+	UnlistedCalls       map[string]bool             // the data call steps, as Type.step, that no dump declares for the type before them, though the game's own localization and GUI text write them
+	CommandPatterns     []CommandPattern            // the patterns the dumps name commands by, sorted by key and database
+	TopFolders          map[string]bool             // the first folder of each of the game's files in lower case, without the stage folder: the folders under which the game reads a mod's files
+	Lists               string                      // the database of scripted lists; "" if none
+	Events              string                      // the database of events; "" if none
+	Messages            string                      // the database of the messages an effect sends the player; "" if none
+	Concepts            string                      // the database of game concepts; "" if none
+	ModifierTypes       string                      // the database of modifier types; "" if none
+	Effects             string                      // the database of scripted effects; "" if none
+	Values              string                      // the database of script values; "" if none
+	FireDatabases       []string                    // the databases that are fired: those whose row's contents are one of game.FireContents
+	mods                atomic.Pointer[modScripted] // the mods' scripted definitions, which a call finds after the game's; a rescan puts a new table in place
 }
 
 // The origins of a source's data: the install, the shipped backup, or none.

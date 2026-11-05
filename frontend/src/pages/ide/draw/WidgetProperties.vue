@@ -13,9 +13,9 @@ import { matchQuery, toSentence } from "../../../lib/format";
 import { picturesQuery, statesQuery } from "../../../queries";
 import { useDrawStore } from "../../../stores/draw";
 import { useWorkspaceStore } from "../../../stores/workspace";
+import ChoiceGallery from "../../../ui/ChoiceGallery.vue";
+import type { GalleryChoice } from "../../../ui/ChoiceGallery.vue";
 import { applyEdits, openModel } from "../editor/models";
-import ChoiceGallery from "./ChoiceGallery.vue";
-import type { GalleryChoice } from "./ChoiceGallery.vue";
 import { listProperties } from "./picture";
 import { findTypeIcon, splitColor, toCss } from "./properties";
 
@@ -122,7 +122,7 @@ function setChannel(position: number, text: string): void {
           <UIcon v-if="ordinal" name="i-lucide-chevron-right" class="size-3 shrink-0" />
           <button
             type="button"
-            class="flex shrink-0 items-center gap-1 rounded px-1 py-0.5 hover:bg-elevated"
+            class="flex shrink-0 items-center gap-1 rounded px-1 py-0.5 hover:bg-accented"
             :class="crumb.id === widget.id ? 'text-highlighted' : 'hover:text-toned'"
             @click="store.select(path, crumb.id)"
             @mouseenter="store.hover(path, crumb.id)"
@@ -193,7 +193,7 @@ function setChannel(position: number, text: string): void {
     <template v-for="{ property, ordinal } in rows" :key="ordinal">
       <button
         type="button"
-        class="grid min-h-7 shrink-0 grid-cols-[minmax(0,10rem)_minmax(0,1fr)_minmax(0,8rem)] items-center border-b border-default px-4 text-start text-12 hover:bg-elevated"
+        class="grid min-h-7 shrink-0 grid-cols-[minmax(0,10rem)_minmax(0,1fr)_minmax(0,8rem)] items-center border-b border-default px-4 text-start text-12 hover:bg-accented"
         :class="openRow === ordinal && 'bg-(--accent-soft)'"
         @click="open(ordinal, property)"
       >

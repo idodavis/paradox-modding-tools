@@ -51,42 +51,29 @@ type Log struct {
 // A Game is one supported game with every fact that is its own. The tables beside it hold the facts it shares, each
 // row naming the games it holds for.
 type Game struct {
-	ID            string             `json:"id"`
-	Name          string             `json:"name"` // also its folder under Documents
-	ShortName     string             `json:"shortName"`
-	StageRoots    []string           `json:"-"`                    // EU5's stages at a root, in the order it mounts them
-	ModDescriptor string             `json:"descriptor,omitempty"` // the descriptor file's path from the mod's root
-	ThumbnailDir  string             `json:"-"`                    // where a new listing image goes; "" means the root
-	SteamAppID    int                `json:"-"`
-	SteamLibrary  map[string]string  `json:"-"` // by GOOS, where its copy of Steam's library sits
-	ModFolders    []string           `json:"-"` // the folders a new mod gets, from its root
-	Program       map[string]Program `json:"-"` // by GOOS; a GOOS with no row has no build
-	// ErrorLocations are the forms in which the error log names a line of a script file, each with the groups path and
-	// line; empty where it names none.
-	ErrorLocations []*regexp.Regexp `json:"-"`
-	Events         GameEvents       `json:"-"`
-	// TakesModes says whether a definition's name may start with an entry mode, as REPLACE:x does.
-	TakesModes    bool   `json:"-"`
-	ConceptPrefix string `json:"-"` // a concept's loc key prefix; "" means none
-	// LocReplaceFolders are the forms of the folder whose localization overrides every other, with the language at %s,
-	// the winning one first.
-	LocReplaceFolders []string `json:"-"`
-	// LogsRepeatedKey says whether the game logs a localization key that a mod and the game both write outside a
-	// replace folder.
-	LogsRepeatedKey bool `json:"-"`
-	// DecisionEffects are the effects that run the decision they name, as its dumps declare them. With none, no effect
-	// fires a decision.
-	DecisionEffects []string `json:"-"`
-	// MessageTitle is the localization key of a message's title where the message writes none, with its name at %s.
-	// "" means the name itself.
-	MessageTitle string `json:"-"`
-	// BookmarkFolder is the folder of the files that write the game's bookmarks, and SetupKey the key in a bookmark
-	// whose value is the folder of its start setup. A game with a single start has neither.
-	BookmarkFolder, SetupKey string   `json:"-"`
-	GUI                      GameGUI  `json:"-"`
-	Coat                     GameCoat `json:"-"`
-	Guide                    Guide    `json:"guide"`
-	Example                  Example  `json:"example"`
+	ID                string             `json:"id"`
+	Name              string             `json:"name"` // also its folder under Documents
+	ShortName         string             `json:"shortName"`
+	StageRoots        []string           `json:"-"`                    // EU5's stages at a root, in the order it mounts them
+	ModDescriptor     string             `json:"descriptor,omitempty"` // the descriptor file's path from the mod's root
+	FixedModFolder    bool               `json:"fixedModFolder"`       // the launcher reads local mods only from its mod folder, so a mod made elsewhere is never loaded
+	ThumbnailDir      string             `json:"-"`                    // where a new listing image goes; "" means the root
+	SteamAppID        int                `json:"-"`
+	SteamLibrary      map[string]string  `json:"-"` // by GOOS, where its copy of Steam's library sits
+	ModFolders        []string           `json:"-"` // the folders a new mod gets, from its root
+	Program           map[string]Program `json:"-"` // by GOOS; a GOOS with no row has no build
+	ErrorLocations    []*regexp.Regexp   `json:"-"` // the forms in which the error log names a line of a script file, with the groups path and line; none means it names none
+	Events            GameEvents         `json:"-"`
+	TakesModes        bool               `json:"-"` // a definition's name may start with an entry mode, as REPLACE:x does
+	LocReplaceFolders []string           `json:"-"` // the forms of the folder whose localization overrides every other, with the language at %s, the winning one first
+	LogsRepeatedKey   bool               `json:"-"` // it logs a localization key that a mod and the game both write outside a replace folder
+	DecisionEffects   []string           `json:"-"` // the effects that run the decision they name, as its dumps declare them; none means no effect fires a decision
+	BookmarkFolder    string             `json:"-"` // the folder of the files that write its bookmarks; "" for a game with a single start
+	SetupKey          string             `json:"-"` // the key in a bookmark whose value is the folder of its start setup; "" for a game with a single start
+	GUI               GameGUI            `json:"-"`
+	Coat              GameCoat           `json:"-"`
+	Guide             Guide              `json:"guide"`
+	Example           Example            `json:"example"`
 }
 
 // An Example is three definitions of one database that show how a mod and the game's files work together.
@@ -94,9 +81,7 @@ type Example struct {
 	Database string   `json:"database"`
 	Folder   string   `json:"folder"` // from the game's folder
 	Names    []string `json:"names"`
-	// Modes is true where a mod changes one of the definitions by writing REPLACE: in front of its name, as the
-	// database's precedence row says. ListGames fills it.
-	Modes bool `json:"modes"`
+	Modes    bool     `json:"modes"` // a mod changes one of the definitions by writing REPLACE: before its name, as its precedence row says
 }
 
 // A Guide is how a game picks which copy of a file or a definition it keeps, in the sentences where the games differ.
@@ -164,9 +149,10 @@ var WikiTopics = []WikiTopic{
 	{Folder: "gfx/map", Terms: []string{"map modding"}},
 }
 
-// The revision log every start writes, the launcher's settings file and the build's checksum.
+// The revision log and the debug log every start writes, the launcher's settings file and the build's checksum.
 const (
 	revisionLogRel = "logs/code_revisions.log"
+	debugLogRel    = "logs/debug.log"
 	launcherFile   = "launcher/launcher-settings.json"
 	checksumRel    = "binaries/checksum.txt"
 )
@@ -231,7 +217,6 @@ var games = map[string]*Game{
 				},
 			},
 		}},
-		ConceptPrefix: "game_concept_",
 		// the wiki's Localization page: localization/replace/english takes precedence over localization/english/replace
 		LocReplaceFolders: []string{"localization/replace/%s", "localization/%s/replace"},
 		// the wiki's Modding page; ck3.exe "Duplicate localization key. Key '%s' is defined in both '%s' and '%s'."
@@ -279,13 +264,14 @@ var games = map[string]*Game{
 		Example: Example{Database: "traits", Folder: "common/traits", Names: []string{"gregarious", "shy", "brave"}},
 	},
 	vic3: {
-		ID:            vic3,
-		Name:          "Victoria 3",
-		ShortName:     "Vic3",
-		ModDescriptor: MetadataDir + "/metadata.json",
-		SteamAppID:    529340,
-		SteamLibrary:  steamLibrary,
-		ModFolders:    []string{"common", "events", "localization"},
+		ID:             vic3,
+		Name:           "Victoria 3",
+		ShortName:      "Vic3",
+		ModDescriptor:  MetadataDir + "/metadata.json",
+		FixedModFolder: true,
+		SteamAppID:     529340,
+		SteamLibrary:   steamLibrary,
+		ModFolders:     []string{"common", "events", "localization"},
 		Program: map[string]Program{
 			"windows": {Executable: "binaries/victoria3.exe", DebugArgs: []string{"-debug_mode"}, Settings: launcherFile},
 			"linux":   {DebugArgs: []string{"-debug_mode"}, Settings: launcherFile},
@@ -298,8 +284,6 @@ var games = map[string]*Game{
 			}},
 		}},
 		TakesModes: true,
-		// localization/english/content_304_l_english.yml:228 titles arranged_accident_failed by this form
-		MessageTitle: "notification_%s_name",
 		// victoria3.exe matches the path part /replace/; no source says which form wins
 		LocReplaceFolders: []string{"localization/%s/replace", "localization/replace/%s"},
 		GUI: GameGUI{
@@ -327,12 +311,13 @@ var games = map[string]*Game{
 		Name:      "Europa Universalis V",
 		ShortName: "EU5",
 		// debug.log:5372-5394 mounts each root's stages in this order, and only them; the wiki's Mod structure, l.46-57
-		StageRoots:    []string{"loading_screen", "main_menu", "in_game"},
-		ModDescriptor: MetadataDir + "/metadata.json",
-		ThumbnailDir:  MetadataDir, // where EU5 mods keep it
-		SteamAppID:    3450310,
-		SteamLibrary:  map[string]string{"windows": "binaries/steam_api64.dll"}, // no Linux build: Proton
-		ModFolders:    []string{"in_game/common", "in_game/events", "main_menu/localization"},
+		StageRoots:     []string{"loading_screen", "main_menu", "in_game"},
+		ModDescriptor:  MetadataDir + "/metadata.json",
+		FixedModFolder: true,
+		ThumbnailDir:   MetadataDir, // where EU5 mods keep it
+		SteamAppID:     3450310,
+		SteamLibrary:   map[string]string{"windows": "binaries/steam_api64.dll"}, // no Linux build: Proton
+		ModFolders:     []string{"in_game/common", "in_game/events", "main_menu/localization"},
 		Program: map[string]Program{
 			"windows": {Executable: "binaries/eu5.exe", DebugArgs: []string{"-debug_mode"}},
 		},
@@ -349,8 +334,7 @@ var games = map[string]*Game{
 				FileKey: "illustration_image/texture_file",
 			}},
 		}},
-		TakesModes:    true,
-		ConceptPrefix: "game_concept_",
+		TakesModes: true,
 		// the wiki's Mod compatibility, l.209, and Localization, l.2, name only this form
 		LocReplaceFolders: []string{"localization/%s/replace"},
 		// main_menu/common/bookmarks/00_bookmarks.txt:4

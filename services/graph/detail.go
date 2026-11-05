@@ -140,7 +140,7 @@ func listVersions(ws *workspace.Session, mods *index.Index, tree *jomini.Tree, s
 	var versions []Version
 	for child := range tree.Children(statement) {
 		key := tree.Text(tree.Statements[child].Key)
-		row, _ := ws.Game.LookupKeyword(game.ShapeDescription, "", key)
+		row, _ := ws.Game.LookupKeyword(game.ShapeDescription, "", key, "")
 		switch {
 		case row.Shows == "leaf" || key == game.DescriptionKey || key == game.OptionTitleKey:
 			if version, ok := makeVersion(ws, mods, tree, child); ok {
@@ -178,8 +178,8 @@ func makeVersion(ws *workspace.Session, mods *index.Index, tree *jomini.Tree, st
 	}, true
 }
 
-// describeCalls returns a text's pieces with each data call replaced by its words. A call keeps its markup and has the
-// kind callKind.
+// describeCalls returns a text's pieces with each data call replaced by its words, which leave out the function's
+// ending that only turns off its tooltip. A call keeps its markup and has the kind callKind.
 func describeCalls(ws *workspace.Session, mods *index.Index, text string) []loc.Segment {
 	segments := loc.Segments(text, 0)
 	for position, segment := range segments {
@@ -188,6 +188,7 @@ func describeCalls(ws *workspace.Session, mods *index.Index, text string) []loc.
 			continue
 		}
 		step := call.Steps[len(call.Steps)-1]
+		step.Text = strings.TrimSuffix(step.Text, game.GUI.NoTooltip)
 		segments[position].Text = cmp.Or(describeCustom(ws, mods, step), schema.DescribeStep(step, true))
 		segments[position].Kind = callKind
 	}
@@ -222,12 +223,15 @@ func describeCustom(ws *workspace.Session, mods *index.Index, step jomini.Step) 
 	return strings.Join(lo.Uniq(lo.Compact(texts)), "/")
 }
 
-// toTitle returns a text as the one line a player reads, each data call in its words.
+// toTitle returns a text as the one line a player reads, each data call in its words between brackets.
 func toTitle(ws *workspace.Session, mods *index.Index, text string) string {
 	var title strings.Builder
 	for _, segment := range describeCalls(ws, mods, text) {
-		if segment.Markup == loc.MarkupText || segment.Markup == loc.MarkupCall {
+		switch segment.Markup {
+		case loc.MarkupText:
 			title.WriteString(segment.Text)
+		case loc.MarkupCall:
+			title.WriteString("[" + segment.Text + "]")
 		}
 	}
 	return strings.TrimSpace(title.String())

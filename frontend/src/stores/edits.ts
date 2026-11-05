@@ -44,14 +44,18 @@ export function undoFile(edits: FileEdit[]): Promise<void> {
   return workspaceApi.RevertHunks(edits[0]?.path ?? "", hunks, !!edits[0]?.isNew);
 }
 
+/** fileLabel returns a file's name without its folders. */
+export function fileLabel(path: string): string {
+  return path.split(/[\\/]/).at(-1) ?? path;
+}
+
 /** toEdits returns the files a diff changes. */
 export function toEdits(diff: DiffContent): FileEdit[] {
-  const label = (path: string): string => path.split(/[\\/]/).at(-1) ?? path;
   if (diff.path) {
     return [
       {
         path: diff.path,
-        label: label(diff.path),
+        label: fileLabel(diff.path),
         before: diff.oldText ?? null,
         after: diff.newText ?? null,
         patch: "",
@@ -65,10 +69,10 @@ export function toEdits(diff: DiffContent): FileEdit[] {
   }
   const patch = diff.patch?.text ?? "";
   return (diff.changes ?? []).map((change) => {
-    const lines = splitPatch(patch, label(change.path));
+    const lines = splitPatch(patch, fileLabel(change.path));
     return {
       path: change.path,
-      label: label(change.path),
+      label: fileLabel(change.path),
       before: null,
       after: null,
       patch,

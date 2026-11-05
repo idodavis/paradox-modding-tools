@@ -3,6 +3,7 @@
 package search
 
 import (
+	"cmp"
 	"errors"
 	"fmt"
 	"regexp"
@@ -140,34 +141,31 @@ func (sch *Service) ReplaceText(query Query, replacement string) (int, error) {
 	return count, failure
 }
 
-// SearchFiles returns the files whose path contains the query's characters in order, the mods' files first, up to the
-// given limit.
+// SearchFiles returns the files whose path contains the query's characters in order, up to the given limit. The best
+// match comes first: a file named as the query, then one whose name starts with it, then one whose path holds it, then
+// the rest. Within each of these the mods' files come before the game's.
 func (sch *Service) SearchFiles(query string, limit int) []workspace.Place {
 	ws, err := sch.Workspace.Session()
 	if err != nil {
 		return nil
 	}
 	mods := ws.Mods.Load()
-	characters := []rune(strings.ToLower(query))
-	var places []workspace.Place
+	query = strings.ToLower(query)
+	type match struct {
+		file files.File
+		rank int
+	}
+	var matches []match
 	for _, position := range slices.Concat(mods.ListOwnFiles(), ws.Install.ListOwnFiles()) {
-		if len(places) >= limit {
-			return places
-		}
-		file, rest := mods.Files[position], characters
-		for _, character := range strings.ToLower(file.Rel) {
-			if len(rest) == 0 {
-				break
-			}
-			if character == rest[0] {
-				rest = rest[1:]
-			}
-		}
-		if len(rest) == 0 {
-			places = append(places, ws.Locate(mods, file.Path))
+		file := mods.Files[position]
+		if rank := files.ClassifyMatch(strings.ToLower(file.Rel), query); rank >= 0 {
+			matches = append(matches, match{file, rank})
 		}
 	}
-	return places
+	slices.SortStableFunc(matches, func(first, second match) int { return cmp.Compare(first.rank, second.rank) })
+	return lo.Map(matches[:max(min(limit, len(matches)), 0)], func(one match, _ int) workspace.Place {
+		return ws.Locate(mods, one.file.Path)
+	})
 }
 
 // run runs one text search, giving each file's hits to the tally. It stops at the tally's limit or when the given
@@ -290,10 +288,11 @@ func parseQuery(query Query) (*regexp.Regexp, error) {
 	return regexp.Compile(expression)
 }
 
-// listFiles returns the text files a query names: those of its origins that its globs let through.
+// listFiles returns the text files a query names: those of its origins that its globs let through. The mods' files
+// come first, in the mods' load order, then the game's.
 func listFiles(mods *index.Index, query Query) []files.File {
 	include, exclude := parseGlobs(query.Include), parseGlobs(query.Exclude)
-	return lo.Filter(mods.Files, func(file files.File, position int) bool {
+	matches := lo.Filter(mods.Files, func(file files.File, position int) bool {
 		searched := file.Origin != game.OriginVanilla
 		if len(query.Origins) > 0 {
 			searched = slices.Contains(query.Origins, file.Origin)
@@ -303,6 +302,8 @@ func listFiles(mods *index.Index, query Query) []files.File {
 		}
 		return (include == nil || include.Match(file.Rel, false)) && !exclude.Match(file.Rel, false)
 	})
+	own, vanilla := lo.FilterReject(matches, func(file files.File, _ int) bool { return file.Origin != game.OriginVanilla })
+	return slices.Concat(own, vanilla)
 }
 
 // parseGlobs parses glob patterns separated by commas outside braces, or by line breaks, into ignore rules.

@@ -365,7 +365,7 @@ func TestBuildGraphOnInstalls(t *testing.T) {
 					len(graph.Nodes), len(graph.Edges), delays, titles, graph.Truncated, time.Since(started).Round(time.Millisecond))
 				logDetails(t, gph, root, graph)
 			}
-			branches := findNode(buildGraph(t, gph, row.weighted, filter), row.weighted)
+			branches := buildDetail(t, gph, row.weighted).Node
 			if !slices.ContainsFunc(branches.Fires, func(edge Edge) bool {
 				return slices.ContainsFunc(edge.Steps, func(step Step) bool { return step.Kind == kindWeight })
 			}) {
@@ -384,16 +384,17 @@ func checkBirth(t *testing.T, gph *Service, filter Filter) {
 	t.Helper()
 	graph := buildGraph(t, gph, "events:birth.0001", filter)
 	root := findNode(graph, "events:birth.0001")
-	findFire := func(node Node, to string) Edge {
-		edge, _ := lo.Find(node.Fires, func(edge Edge) bool { return edge.To == to })
+	fires := buildDetail(t, gph, "events:birth.0001").Node.Fires
+	findFire := func(to string) Edge {
+		edge, _ := lo.Find(fires, func(edge Edge) bool { return edge.To == to })
 		return edge
 	}
-	if steps := findFire(root, "events:birth.1001").Steps; !slices.ContainsFunc(steps, func(step Step) bool {
+	if steps := findFire("events:birth.1001").Steps; !slices.ContainsFunc(steps, func(step Step) bool {
 		return step.Kind == kindWeight && step.Weight == "95"
 	}) {
 		t.Errorf("the steps to birth.1001: %+v", steps)
 	}
-	steps := lo.Map(findFire(root, "events:birth.1010").Steps, func(step Step, _ int) string {
+	steps := lo.Map(findFire("events:birth.1010").Steps, func(step Step, _ int) string {
 		return step.Key + " " + step.Kind
 	})
 	want := []string{"scope:child.dynasty scope", "if branch", "random_player list"}
@@ -410,7 +411,7 @@ func checkBirth(t *testing.T, gph *Service, filter Filter) {
 	}
 	message := buildGraph(t, gph, "events:birth.1100", filter)
 	sends := slices.ContainsFunc(message.Nodes, func(node Node) bool { return node.Display == displayMessage })
-	titled := slices.ContainsFunc(findNode(message, "events:birth.1100").Fires, func(edge Edge) bool {
+	titled := slices.ContainsFunc(buildDetail(t, gph, "events:birth.1100").Node.Fires, func(edge Edge) bool {
 		return edge.Title != ""
 	})
 	if !sends || !titled {
@@ -449,6 +450,16 @@ func buildGraph(t *testing.T, gph *Service, root string, filter Filter) Graph {
 		t.Fatal(err)
 	}
 	return graph
+}
+
+// buildDetail builds the detail of a node, and fails the test if that is an error.
+func buildDetail(t *testing.T, gph *Service, id string) Detail {
+	t.Helper()
+	detail, err := gph.BuildDetail(id)
+	if err != nil {
+		t.Fatal(err)
+	}
+	return detail
 }
 
 // findDescription returns the text of a detail's first description, or "" if it writes none.

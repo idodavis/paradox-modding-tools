@@ -31,6 +31,14 @@ export function ListTasks(): $CancellablePromise<$models.Task[] | null> {
 }
 
 /**
+ * ListTools returns PMT's tools, each with its title and whether it only reads. It returns an error if the tools cannot
+ * be listed.
+ */
+export function ListTools(): $CancellablePromise<$models.Tool[] | null> {
+    return $Call.ByID(1999710081);
+}
+
+/**
  * ResolveAccess returns the address an agent reaches the server at and the token it sends.
  */
 export function ResolveAccess(): $CancellablePromise<$models.Access> {

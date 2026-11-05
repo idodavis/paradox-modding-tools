@@ -364,7 +364,7 @@ function outline(group: Group | null): void {
           <div
             v-for="group in listRows(box).filter((row) => box.look === 'rows' || listValues(row).length > 1)"
             :key="group.id"
-            class="flex min-h-8 items-center gap-2 px-3 text-13 hover:bg-elevated"
+            class="flex min-h-8 items-center gap-2 px-3 text-13 hover:bg-accented"
             @mouseenter="outline(group)"
             @mouseleave="outline(null)"
           >

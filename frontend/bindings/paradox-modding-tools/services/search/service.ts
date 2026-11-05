@@ -27,8 +27,9 @@ export function ReplaceText(query: $models.Query, replacement: string): $Cancell
 }
 
 /**
- * SearchFiles returns the files whose path contains the query's characters in order, the mods' files first, up to the
- * given limit.
+ * SearchFiles returns the files whose path contains the query's characters in order, up to the given limit. The best
+ * match comes first: a file named as the query, then one whose name starts with it, then one whose path holds it, then
+ * the rest. Within each of these the mods' files come before the game's.
  */
 export function SearchFiles(query: string, limit: number): $CancellablePromise<workspace$0.Place[] | null> {
     return $Call.ByID(2092092931, query, limit);

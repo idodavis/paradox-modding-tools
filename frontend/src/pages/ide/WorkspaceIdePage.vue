@@ -4,13 +4,14 @@ import { computed, nextTick, reactive, shallowRef, useTemplateRef, watch } from 
 import { useQuery } from "@pinia/colada";
 import { createReusableTemplate, useEventBus, useEventListener, useLocalStorage } from "@vueuse/core";
 import { countBy } from "es-toolkit";
+import { FILE_TREE_DENSITY_PRESETS, type FileTreeDensityKeyword } from "@pierre/trees";
 import type { SplitterItem } from "@nuxt/ui";
 
-import type { Diagnostic } from "@services/lsp/models";
+import type { Diagnostic, Level } from "@services/lsp/models";
 import type { Chip } from "@services/mcp/models";
 import type { Place } from "@services/workspace/models";
 
-import { useShown } from "../../app/pages";
+import { PAGES, useShown } from "../../app/pages";
 import { joinParts, matchQuery, plural } from "../../lib/format";
 import {
   codesQuery,
@@ -28,12 +29,13 @@ import { useGitStore } from "../../stores/git";
 import { useSettingsStore } from "../../stores/settings";
 import { useTerminalStore } from "../../stores/terminal";
 import { COMMAND_BUS, describeWindow, THIS_WINDOW, useWindowsStore } from "../../stores/windows";
-import { useWorkspaceStore, VANILLA } from "../../stores/workspace";
+import { deleteLayouts, LAYOUT_KEY, useWorkspaceStore, VANILLA } from "../../stores/workspace";
 import CompareView from "../../ui/CompareView.vue";
 import AddModMenu from "../../ui/AddModMenu.vue";
 import OriginChip from "../../ui/OriginChip.vue";
 import ProblemRow from "../../ui/ProblemRow.vue";
 import { EDITOR_LANGUAGES } from "../../ui/ScriptSnippet.vue";
+import { STATUS_ITEM } from "../../ui/StatusFacts.vue";
 import CoatDialog from "./draw/CoatDialog.vue";
 import SaveDdsModal from "./SaveDdsModal.vue";
 import EditorGroup from "./EditorGroup.vue";
@@ -131,6 +133,7 @@ commandBus.on((command) => {
   if (command === "editor.findInFiles") showSidebar("search");
   if (command === "git.commit") showSidebar("git");
   if (command === "editor.toggleWiki") toggleWiki();
+  if (command === "editor.togglePanel") togglePanel();
   if (command === "draw.newCoat") void coatDialog.open();
   if (command === "image.saveDds") {
     const active = editor.activeFile();
@@ -150,14 +153,14 @@ commandBus.on((command) => {
   if (command === "terminal.show" && layout.value === "full") editor.showPanel("terminal");
 });
 defineShortcuts(
-  computed(() =>
-    visible.value
-      ? {
-          meta_j: { handler: togglePanel, usingInput: true },
-          meta_shift_e: { handler: () => showSidebar("explorer"), usingInput: true },
-        }
-      : {},
-  ),
+  computed(() => (visible.value ? { meta_shift_e: { handler: () => showSidebar("explorer"), usingInput: true } } : {})),
+);
+// Following the active file unfolds Game files when the file is one of the game's.
+watch(
+  () => editor.activeFile()?.key,
+  () => {
+    if (editor.activeFile()?.origin === VANILLA && settings.isOn("ide.followFile")) gameOpen.value = true;
+  },
 );
 // The mouse's back and forward buttons walk the IDE's history, not the page's.
 useEventListener(document, "mouseup", (event) => {
@@ -239,12 +242,19 @@ watch(
   () => editor.panel,
   (tab) => tab && void nextTick(() => editorSplitter.value?.panelsRef.at(-1)?.expand()),
 );
+// The Workspace section opens as high as its header and a row for each mod, so External mods sits right under it.
+const modsHeight = computed(() => {
+  const row = FILE_TREE_DENSITY_PRESETS[settings.value("ide.density") as FileTreeDensityKeyword].itemHeight;
+  return Math.min(320, settings.toPixels(2.25) + mods.value.length * row);
+});
 const explorerPanes = computed<SplitterItem[]>(() => [
   {
     id: "mods",
     slot: "mods",
     order: 1,
-    ...(gameShown.value && gameOpen.value ? { sizeUnit: PIXELS, defaultSize: 320, minSize: 120 } : {}),
+    ...(gameShown.value && gameOpen.value
+      ? { sizeUnit: PIXELS, defaultSize: modsHeight.value, minSize: Math.min(120, modsHeight.value) }
+      : {}),
   },
   ...(!externals.value.length
     ? []
@@ -288,6 +298,16 @@ const problemCounts = computed(() =>
     (entry) => entry.problem.level,
   ),
 );
+// The counts are of the open files. The worst level also shows Health's last check when that has more.
+const healthWorst = computed(() => {
+  const level = problemLevels.value[0];
+  const count = (level && report.value?.counts?.[level.id]) ?? 0;
+  if (!level || count <= (problemCounts.value[level.id] ?? 0)) return null;
+  return {
+    label: `Health: ${count} ${level.label.toLowerCase()}`,
+    text: `${plural(count, level.noun, level.nouns)} in Health's last check. Open Health to see them.`,
+  };
+});
 const rows = computed<Row[]>(() =>
   panelProblems.value.flatMap(({ place, problems: listed }) => {
     const shown = listed
@@ -317,14 +337,13 @@ const groupRows = computed(() =>
     columns: row.columns.map((group, index) => ({ id: group.id, slot: "column", order: index, minSize: 10, group })),
   })),
 );
-const layoutKey = computed(() => `pmt.ide.layout.${workspace.activeId()}`);
+const layoutKey = computed(() => `${LAYOUT_KEY}${workspace.activeId()}`);
 // A row's splitter keeps its sizes under its first group's id, which never comes back once the row loses that group.
+// The sizes of rows gone are removed once the saved layout has loaded.
 watch(
-  () => groupRows.value.map((row) => row.id),
-  (ids, previousIds) => {
-    for (const staleId of previousIds.filter((rowId) => !ids.includes(rowId)))
-      localStorage.removeItem(`reka:${layoutKey.value}.${staleId}`);
-  },
+  [() => groupRows.value.map((row) => row.id), () => editor.tracking],
+  ([ids, loaded]) => loaded && deleteLayouts(workspace.activeId(), ["rows", ...ids]),
+  { immediate: true },
 );
 const leftFile = useQuery(() => ({ ...fileQuery(comparing.value?.left.path ?? ""), enabled: !!comparing.value }));
 const rightFile = useQuery(() => ({ ...fileQuery(comparing.value?.right.path ?? ""), enabled: !!comparing.value }));
@@ -428,6 +447,11 @@ function listFindings(place: Place): Problem[] {
     });
 }
 
+/** describeProblems says how many problems of a level the open files have, such as "2 errors in the open files". */
+function describeProblems(level: Level): string {
+  return `${plural(problemCounts.value[level.id] ?? 0, level.noun, level.nouns)} in the open files`;
+}
+
 /** describePlace returns the label of a file in the compare. */
 function describePlace(place: Place): string {
   return `${workspace.originName(place.origin)} · ${place.rel}`;
@@ -457,7 +481,7 @@ function collapseAll(): void {
         />
       </UTooltip>
     </DefineFilterButton>
-    <USplitter ref="splitter" :items="panes" auto-save-id="pmt.ide.panes" class="min-w-0 flex-1">
+    <USplitter ref="splitter" :items="panes" class="min-w-0 flex-1">
       <template #sidebar="{ collapsed, collapse }">
         <aside
           v-if="layout === 'full'"
@@ -494,6 +518,7 @@ function collapseAll(): void {
           <!-- The explorer turns invisible, not hidden, behind another view, so its splitter keeps its height. -->
           <div v-if="!collapsed" class="relative flex min-h-0 flex-1 flex-col">
             <USplitter
+              v-if="roots"
               :items="explorerPanes"
               orientation="vertical"
               :disabled="!gameOpen && !(externals.length && externalOpen)"
@@ -530,7 +555,7 @@ function collapseAll(): void {
                       <UIcon
                         :name="externalOpen ? 'i-lucide-chevron-down' : 'i-lucide-chevron-right'"
                         class="size-3.5 shrink-0"
-                      />External mods<span class="ms-1 truncate font-normal text-dimmed">never published</span>
+                      />External mods<span class="ms-1 truncate font-normal text-dimmed">read only</span>
                     </button>
                     <FilterButton v-if="!windows.listWindows().includes('external')" tree="external" />
                     <UTooltip text="Open in its own window">
@@ -575,7 +600,7 @@ function collapseAll(): void {
                       @click="gameOpen = !gameOpen"
                     >
                       <UIcon :name="gameOpen ? 'i-lucide-chevron-down' : 'i-lucide-chevron-right'" class="size-3.5" />
-                      Game files<span class="ms-1 truncate font-normal text-dimmed">never edited</span>
+                      Game files<span class="ms-1 truncate font-normal text-dimmed">read only</span>
                     </button>
                     <FilterButton v-if="!windows.listWindows().includes('game')" tree="game" />
                     <UTooltip text="Open in its own window">
@@ -674,12 +699,14 @@ function collapseAll(): void {
                   <template #trailing="{ item }">
                     <template v-if="item.value === 'problems'">
                       <template v-for="level in problemLevels" :key="level.id">
-                        <UBadge
-                          v-if="problemCounts[level.id]"
-                          :label="String(problemCounts[level.id])"
-                          :color="level.color"
-                          size="sm"
-                        />
+                        <UTooltip v-if="problemCounts[level.id]" :text="describeProblems(level)">
+                          <UBadge
+                            :label="String(problemCounts[level.id])"
+                            :color="level.color"
+                            size="sm"
+                            :aria-label="describeProblems(level)"
+                          />
+                        </UTooltip>
                       </template>
                     </template>
                   </template>
@@ -728,7 +755,7 @@ function collapseAll(): void {
                     v-if="rows.length"
                     v-slot="{ item }"
                     :items="rows"
-                    :virtualize="{ estimateSize: settings.toPixels(1.5), skipMeasurement: true }"
+                    :virtualize="{ estimateSize: settings.toPixels(1.5) }"
                     class="min-h-0 flex-1 py-1"
                   >
                     <!-- The row's tooltip holds its whole message, so the message takes no title. -->
@@ -809,16 +836,26 @@ function collapseAll(): void {
       </template>
     </USplitter>
     <Teleport v-if="!['terminal', 'wiki'].includes(layout) && visible" defer to="#status-start">
-      <button
-        v-for="level in problemLevels"
-        :key="level.id"
-        class="flex items-center gap-1"
-        :style="{ color: `var(--ui-${level.color})` }"
-        @click="toggleProblems"
-      >
-        <UIcon :name="level.icon" class="size-3" />{{ problemCounts[level.id] ?? 0 }}
-      </button>
-      <button v-if="status" class="flex items-center gap-1 hover:text-highlighted" @click="showSidebar('git')">
+      <UTooltip v-for="level in problemLevels" :key="level.id" :text="describeProblems(level)">
+        <button
+          :class="STATUS_ITEM"
+          :style="{ color: `var(--ui-${level.color})` }"
+          :aria-label="describeProblems(level)"
+          @click="toggleProblems"
+        >
+          <UIcon :name="level.icon" class="size-3" />{{ problemCounts[level.id] ?? 0 }}
+        </button>
+      </UTooltip>
+      <UTooltip v-if="healthWorst" :text="healthWorst.text">
+        <RouterLink
+          :to="{ name: 'health', params: { id: workspace.activeId() } }"
+          :class="STATUS_ITEM"
+          :aria-label="healthWorst.text"
+        >
+          <UIcon :name="PAGES.health.icon" class="size-3" />{{ healthWorst.label }}
+        </RouterLink>
+      </UTooltip>
+      <button v-if="status" :class="STATUS_ITEM" @click="showSidebar('git')">
         <UIcon name="i-lucide-git-branch" class="size-3" />{{ status.branch || "detached HEAD" }}
         <template v-if="status.upstream">
           <UIcon name="i-lucide-arrow-down-up" class="size-3" />{{ status.ahead }} up, {{ status.behind }} down

@@ -64,15 +64,29 @@ func listDefinitionFindings(ws *workspace.Session, mods *index.Index, reference 
 	if !lo.SomeBy(sites, isGame) || lo.EveryBy(sites, isGame) {
 		return findings
 	}
-	if lo.SomeBy(sites, func(site index.Site) bool { return isMod(mods, site) && winner.IsKept(site) }) {
+	if site, ok := lo.Find(sites, func(site index.Site) bool { return isMod(mods, site) && winner.IsKept(site) }); ok {
 		facts := lsp.DescribeReference(reference)
-		facts["kept"] = "the mod's"
+		facts["kept"] = describeKept(mods, site)
 		findings = append(findings, makeFinding(mods, "override", facts, lsp.MakeSites(ws, mods, sites, &winner)))
 	}
 	if isGame(winner.Site) {
 		findings = append(findings, listUnused(ws, mods, sites, winner)...)
 	}
 	return findings
+}
+
+// describeKept returns what the game does with a mod's copy of a name the game also defines, as the end of a sentence.
+// A copy written with an entry mode replaces the game's or adds to it, as its mode says; a plain copy is kept in its
+// place.
+func describeKept(mods *index.Index, site index.Site) string {
+	mode, ok := mods.FindMode(site)
+	switch {
+	case !ok:
+		return "the game keeps the mod's"
+	case mode.Replaces:
+		return "the mod's entry replaces the game's"
+	}
+	return "the mod adds to the game's entry"
 }
 
 // listPathFindings lists the findings about the files the mods ship at one path: file contests, overrides and
@@ -93,7 +107,7 @@ func listPathFindings(ws *workspace.Session, mods *index.Index, path string) []F
 		return findings
 	}
 	facts := lsp.DescribeReference(schema.Reference{Database: game.File, Name: installed[0].Place.Rel})
-	facts["kept"] = lo.Ternary(kept, "the mod's", "its own")
+	facts["kept"] = lo.Ternary(kept, "the game keeps the mod's", "the game keeps its own")
 	var uses []Use
 	var users []string
 	if kept {

@@ -6,7 +6,7 @@
 import type { TreeItem } from "@nuxt/ui";
 import { useQuery } from "@pinia/colada";
 import { createReusableTemplate, refDebounced } from "@vueuse/core";
-import { computed, shallowRef, useTemplateRef } from "vue";
+import { computed, shallowRef, useTemplateRef, watch } from "vue";
 
 import { Format } from "@internal/files/models";
 import type { Symbol } from "@services/lsp/models";
@@ -18,6 +18,7 @@ import { useEditorStore } from "../../stores/editor";
 import { useWorkspaceStore } from "../../stores/workspace";
 import CoatDialog from "./draw/CoatDialog.vue";
 import { drawCoat } from "./draw/coat";
+import { findTypeIcon } from "./draw/properties";
 
 /** A Heading is the row over one kind of entry, with the count of its entries. */
 type Heading = { heading: string; count: number };
@@ -56,8 +57,8 @@ const widgets = computed(() => {
   const nodes = list.map(({ id, name, type, role }) => ({
     value: String(id),
     label: name || type,
+    icon: findTypeIcon(type),
     role,
-    defaultExpanded: id === 0,
     children: [] as TreeItem[],
   }));
   for (const { id, parent } of list) {
@@ -66,6 +67,9 @@ const widgets = computed(() => {
   }
   return nodes;
 });
+/** The widgets whose children show. A window opens with only its own row unfolded. */
+const expanded = shallowRef(["0"]);
+watch(drawn, () => (expanded.value = ["0"]));
 const windowNames = computed(() => entries.value.map(({ name }) => name));
 const windowRow = computed(() => widgets.value.slice(0, 1));
 const selectedWidget = computed(() => widgets.value[store.file(place.value?.path ?? "").selected ?? -1]);
@@ -108,6 +112,11 @@ function openEntry(entry: Symbol): void {
   editor.show(place.value, { lineNumber: entry.range.startLineNumber, column: entry.range.startColumn });
 }
 
+/** expandAll unfolds every widget that holds others. */
+function expandAll(): void {
+  expanded.value = widgets.value.filter((node) => node.children.length).map((node) => node.value);
+}
+
 /** selectWidget selects the widget of a tree row. A click that would clear the row leaves the selection alone. */
 function selectWidget(row: TreeItem | undefined): void {
   if (place.value && row) store.select(place.value.path, Number(row.value));
@@ -133,6 +142,30 @@ async function drawThumbnail(canvas: unknown, name: string): Promise<void> {
     <div class="flex h-9 shrink-0 items-center gap-1.5 ps-3 pe-1.5 font-semibold text-toned">
       In this file<span class="font-normal text-dimmed">{{ entries.length }}</span>
       <span class="grow" />
+      <template v-if="isWindow && entries.length">
+        <UTooltip text="Expand all">
+          <UButton
+            icon="i-lucide-chevrons-up-down"
+            aria-label="Expand all"
+            variant="ghost"
+            color="neutral"
+            size="xs"
+            square
+            @click="expandAll"
+          />
+        </UTooltip>
+        <UTooltip text="Collapse all">
+          <UButton
+            icon="i-lucide-chevrons-down-up"
+            aria-label="Collapse all"
+            variant="ghost"
+            color="neutral"
+            size="xs"
+            square
+            @click="expanded = ['0']"
+          />
+        </UTooltip>
+      </template>
       <UTooltip v-if="isCoat && !place?.readOnly" text="New coat of arms">
         <UButton
           icon="i-lucide-plus"
@@ -156,13 +189,12 @@ async function drawThumbnail(canvas: unknown, name: string): Promise<void> {
         />
         <UTree
           :key="drawn ?? ''"
+          v-model:expanded="expanded"
           :items="windowRow"
           :model-value="selectedWidget"
           :get-key="(row) => row.value"
           selection-behavior="replace"
-          size="sm"
-          virtualize
-          class="min-h-0 flex-1 px-1"
+          class="min-h-0 flex-1 overflow-y-auto px-1"
           @update:model-value="selectWidget"
         >
           <template #item-label="{ item }">
@@ -188,7 +220,7 @@ async function drawThumbnail(canvas: unknown, name: string): Promise<void> {
             <button
               v-else-if="isCoat"
               type="button"
-              class="flex h-19 w-full min-w-0 items-center gap-2.5 px-3 text-start hover:bg-elevated"
+              class="flex h-19 w-full min-w-0 items-center gap-2.5 px-3 text-start hover:bg-accented"
               :class="item.entry.name === drawn && 'bg-(--accent-soft) shadow-[inset_2px_0_0_var(--accent)]'"
               :title="item.entry.name"
               @click="openEntry(item.entry)"
@@ -209,7 +241,7 @@ async function drawThumbnail(canvas: unknown, name: string): Promise<void> {
             <button
               v-else
               type="button"
-              class="flex w-full min-w-0 flex-col px-3 py-1 text-start hover:bg-elevated"
+              class="flex w-full min-w-0 flex-col px-3 py-1 text-start hover:bg-accented"
               :title="item.entry.name"
               @click="openEntry(item.entry)"
             >

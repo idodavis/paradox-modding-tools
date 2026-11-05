@@ -61,7 +61,9 @@ folder. `FindZipFolder` finds that top folder, so a zip read in place starts fro
 
 Two paths are compared by their `Key`, whichever platform wrote them. A map of files is keyed by it. `ToRel` and
 `IsUnder` compare by key too. `ToSlug` makes a user's text into a file or folder name: it folds a letter with a mark to
-its plain form and drops a letter with none.
+its plain form and drops a letter with none. `ClassifyMatch` says how well a path matches a search's query: the last
+element is the query, starts with it, or the path holds it, or holds its letters in order. The file search and the
+symbol search both sort their results by it.
 
 ## Ignore rules
 

@@ -1,15 +1,14 @@
 <!-- The agent pane, docked beside the workspace pages or in a window of its own. -->
 <script setup lang="ts">
 import type { DropdownMenuItem } from "@nuxt/ui";
-import { useQuery } from "@pinia/colada";
 import { until, useEventBus } from "@vueuse/core";
 import { computed, nextTick, shallowRef, useTemplateRef } from "vue";
 
 import type { Task } from "@services/mcp/models";
 import { abbreviate, describeAge, plural } from "../lib/format";
-import { tasksQuery } from "../queries";
 import { describeTitle, useAgentStore, type SessionRecord } from "../stores/agent";
 import { listLatestEdits } from "../stores/edits";
+import { useToolViewStore } from "../stores/toolView";
 import { COMMAND_BUS, THIS_WINDOW } from "../stores/windows";
 import AgentSession from "../ui/AgentSession.vue";
 
@@ -17,7 +16,7 @@ const IS_WINDOW = THIS_WINDOW === "agent";
 
 const agent = useAgentStore();
 const commandBus = useEventBus(COMMAND_BUS);
-const { data: tasks } = useQuery(tasksQuery);
+const toolView = useToolViewStore();
 const field = useTemplateRef("field");
 const isFullscreen = shallowRef(false);
 const draft = shallowRef<string | null>(null);
@@ -25,7 +24,8 @@ const draft = shallowRef<string | null>(null);
 const session = computed(() => agent.active);
 const changes = computed(() => (session.value ? listLatestEdits(session.value) : []));
 const recent = computed(() =>
-  agent.records
+  agent
+    .listRecords()
     .filter((record) => !record.isArchived)
     .flatMap((record) => {
       const row = agent.ready.find((candidate) => candidate.id === record.agent);
@@ -37,15 +37,19 @@ const recent = computed(() =>
 /** The session menu. */
 const menu = computed(() => {
   const shown = session.value;
-  const own = agent.records.filter((record) => record.agent === shown?.agent.id);
+  const own = agent.listRecords().filter((record) => record.agent === shown?.agent.id);
   const listed = own.filter((record) => !record.isArchived);
   const archived = own.filter((record) => record.isArchived);
-  const toItem = (record: SessionRecord) => ({
-    label: describeTitle(record),
-    slot: "session" as const,
-    record,
-    onSelect: () => agent.open(record),
-  });
+  const toItem = (record: SessionRecord) => {
+    const title = describeTitle(record);
+    const isUntitled = !title || title === "New session";
+    return {
+      label: isUntitled ? `Untitled session · ${describeAge(new Date(record.updatedAt), "short")}` : title,
+      slot: "session" as const,
+      record,
+      onSelect: () => agent.open(record),
+    };
+  };
   return [
     shown && listed.length
       ? [{ type: "label" as const, label: `Sessions with ${shown.agent.name}` }, ...listed.map(toItem)]
@@ -62,14 +66,7 @@ const menu = computed(() => {
       },
       { label: "Agents and tools", icon: "i-lucide-settings", onSelect: openSettings },
     ],
-    shown
-      ? [
-          {
-            type: "label" as const,
-            label: `ACP version ${shown.protocol} · ${plural(agent.sessions.length, "session")} running here`,
-          },
-        ]
-      : [],
+    shown ? [{ type: "label" as const, label: `${plural(agent.sessions.length, "session")} running here` }] : [],
   ] satisfies DropdownMenuItem[][];
 });
 
@@ -262,7 +259,7 @@ async function runTask(task: Task): Promise<void> {
           v-for="{ record, line } in recent"
           :key="record.id"
           type="button"
-          class="flex items-center gap-2 rounded-md px-2 py-1.5 text-start text-12 hover:bg-elevated"
+          class="flex items-center gap-2 rounded-md px-2 py-1.5 text-start text-12 hover:bg-accented"
           :title="record.title"
           @click="agent.open(record)"
         >
@@ -275,7 +272,7 @@ async function runTask(task: Task): Promise<void> {
       </template>
       <template v-if="agent.current">
         <UButton
-          v-for="task in tasks ?? []"
+          v-for="task in toolView.tasks"
           :key="task.name"
           :label="task.title"
           icon="i-lucide-sparkles"

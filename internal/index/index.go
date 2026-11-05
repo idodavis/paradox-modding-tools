@@ -90,31 +90,26 @@ type placement struct {
 
 // An Index is what a scan found in one list of files. A mods' index stands on the install's.
 type Index struct {
-	Game        string // the game's id
-	Files       []files.File
-	Roots       []files.Root   // in load order; a file under two belongs to the inner one
-	Replaced    [][]string     // per root: its mod's replace_path folders as relative paths; empty for the game's
-	Occurrences [][]Occurrence // per file, as Files lists them; in source order, a definition before what it holds
-	Texts       [][]string     // per file: each message's text
-	Caseless    []string       // the databases whose names match without regard to case, stored in lower case
-	Databases   Table
-	Names       Table
-	Modes       Table
-	Languages   Table
-	// install is the install's index that a mods' index stands on, whose postings it reads. It is nil for the
-	// install's own.
-	install  *Index
-	row      *game.Game                    // the game's row, looked up once when the index is made or loaded
-	postings map[Posting]map[uint32][]Site // by a posting, then by a name's ordinal
-	byKey    map[string]int32              // by a file's key: its position in Files
-	// byRel holds the positions of the files that share a path from a root, in load order. The path is in lower case
-	// and has no stage folder.
-	byRel        map[string][]int32
-	placements   []placement // per file, as Files lists them: where the game mounts it
-	replacedKeys [][]string  // by root, its mod's replace_path folders as group keys
-	rootKeys     []string    // by root, as Roots lists them: its folder's key, ending in a slash
-	// origins are the ids of the mods a narrowed index answers for; nil means every mod.
-	origins map[string]struct{}
+	Game         string // the game's id
+	Files        []files.File
+	Roots        []files.Root   // in load order; a file under two belongs to the inner one
+	Replaced     [][]string     // per root: its mod's replace_path folders as relative paths; empty for the game's
+	Occurrences  [][]Occurrence // per file, as Files lists them; in source order, a definition before what it holds
+	Texts        [][]string     // per file: each message's text
+	Caseless     []string       // the databases whose names match without regard to case, stored in lower case
+	Databases    Table
+	Names        Table
+	Modes        Table
+	Languages    Table
+	install      *Index                        // the install's index that a mods' index stands on, whose postings it reads; nil for the install's own
+	row          *game.Game                    // the game's row, looked up once when the index is made or loaded
+	postings     map[Posting]map[uint32][]Site // by a posting, then by a name's ordinal
+	byKey        map[string]int32              // by a file's key: its position in Files
+	byRel        map[string][]int32            // the positions of the files that share a path from a root, in load order; the path is in lower case with no stage folder
+	placements   []placement                   // per file, as Files lists them: where the game mounts it
+	replacedKeys [][]string                    // by root, its mod's replace_path folders as group keys
+	rootKeys     []string                      // by root, as Roots lists them: its folder's key, ending in a slash
+	origins      map[string]struct{}           // the ids of the mods a narrowed index answers for; nil means every mod
 }
 
 // Narrow returns a copy of a mods' index that answers for the install and the given mods only: the other mods' files,

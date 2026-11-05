@@ -78,8 +78,10 @@ func (watcher *Watcher) run(change func(changes []FileChange)) {
 			if event.Op == fsnotify.Chmod || (files.IsFolder(event.Name) && !isWatched(filepath.Base(event.Name))) {
 				continue
 			}
+			// a new folder is watched off this goroutine: on Windows, fsnotify's Add waits for its reader, which waits
+			// for this goroutine to take the next event
 			if event.Has(fsnotify.Create) {
-				_ = addFolders(watcher.notifier, event.Name)
+				go func() { _ = addFolders(watcher.notifier, event.Name) }()
 			}
 			if len(pending) == 0 {
 				batch = time.After(200 * time.Millisecond)

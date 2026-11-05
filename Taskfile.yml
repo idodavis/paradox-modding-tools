@@ -8,6 +8,8 @@ vars:
   # Target OS for build/package/run, and the platform Taskfile the tasks below dispatch to: the
   # host OS unless `wails3 build GOOS=...` or the GOOS env var sets it for cross-compilation.
   GOOS: "{{.GOOS | default OS}}"
+  # the app's Go packages; ./... would also take the Go that npm packages ship in frontend/node_modules
+  PACKAGES: ". ./internal/... ./services/..."
 
 includes:
   common: ./build/Taskfile.yml
@@ -40,14 +42,14 @@ tasks:
     cmds:
       # -timeout 60s is the contract: a test that needs longer belongs behind an opt-in task, so
       # move the test, do not raise the number
-      - go test -short -timeout 60s ./...
+      - go test -short -timeout 60s {{.PACKAGES}}
 
   test:race:
     summary: >
       The fast tests under the race detector, which CI runs after task check before a release. It is the only thing
       that can catch a lock-discipline regression, such as the open workspace's rescans against its readers.
     cmds:
-      - go test -short -race -timeout 5m ./...
+      - go test -short -race -timeout 5m {{.PACKAGES}}
 
   check:
     summary: Everything a commit must pass, Go and frontend. Run it before every commit.
@@ -65,12 +67,12 @@ tasks:
       - test -z "$(gofmt -l main.go internal services)"
       # plain vet skips the files of other systems; these three cover them. Wails' server tag leaves out its Linux
       # window code, which needs cgo, so that the services' Linux files are vetted too
-      - go vet ./...
+      - go vet {{.PACKAGES}}
       - GOOS=linux go vet {{.ENGINE}}
       - GOOS=windows go vet {{.ENGINE}}
       - GOOS=linux go vet -tags server ./services/...
-      - staticcheck ./...
-      - golangci-lint run ./...
+      - staticcheck {{.PACKAGES}}
+      - golangci-lint run {{.PACKAGES}}
       - task: test
 
   check:dist:
@@ -111,7 +113,7 @@ tasks:
     dotenv: ["{{.TASKFILE_DIR}}/.env"]
     cmds:
       # not 60s: each gate here scans three real installs
-      - go test -count=1 -timeout 1800s {{.PKGS | default "./..."}}
+      - go test -count=1 -timeout 1800s {{.PKGS | default .PACKAGES}}
 
   test:sweep:
     summary: >

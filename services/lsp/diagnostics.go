@@ -180,10 +180,6 @@ var Codes = []Code{
 		Label:   "Entry mode with nothing to change",
 		Message: "The {database} {name} is written with {mode}, and no {database} {name} is loaded for it to change.",
 		Advice:  "Fix the name, or load the mod that defines it before this one."},
-	{ID: "duplicate-definition", Question: QuestionHealth, Level: LevelCritical, Topic: "definitions",
-		Label:   "Duplicate definition",
-		Message: "The {database} {name} is defined more than once, and the game keeps only one.",
-		Advice:  "Delete one copy, or give one a new name."},
 	{ID: "conflicting-priority", Question: QuestionHealth, Level: LevelCritical, Topic: "definitions",
 		Label: "Conflicting priority",
 		Message: "{name} has the same override priority in two files. The game logs an error and keeps one copy; " +
@@ -727,13 +723,9 @@ func (visitor *diagnoseVisitor) diagnoseDefinition(tree *jomini.Tree, statement 
 	case definition.Mode != "" && visitor.isOrphan(definition):
 		facts["mode"] = definition.Mode
 		visitor.diagnostics = append(visitor.diagnostics, makeDiagnostic(tree, definition.Span, "inject-without-target", facts))
-	case definition.Mode == "" && !definition.Local:
-		if code := visitor.classifyDuplicate(definition, database.Precedence); code != "" {
-			if database.Precedence.PriorityKey != "" {
-				facts["key"] = database.Precedence.PriorityKey
-			}
-			visitor.diagnostics = append(visitor.diagnostics, makeDiagnostic(tree, definition.Span, code, facts))
-		}
+	case definition.Mode == "" && !definition.Local && visitor.isPriorityTied(definition, database.Precedence):
+		facts["key"] = database.Precedence.PriorityKey
+		visitor.diagnostics = append(visitor.diagnostics, makeDiagnostic(tree, definition.Span, "conflicting-priority", facts))
 	}
 	if key, ok := tree.FindChildValue(statement, game.TitleKey); ok && jomini.IsIdentifier(key) && !visitor.hasMessage(key) {
 		missing := DescribeReference(schema.Reference{Database: definition.Database, Name: definition.Name})
@@ -765,32 +757,24 @@ func (visitor *diagnoseVisitor) isOwn(site index.Site, definition *schema.Defini
 	return site.File == visitor.place.Position && visitor.index.Occurrence(site).Span == definition.Span
 }
 
-// classifyDuplicate returns the code of the problem a definition has because others share its name, or "" for none.
-func (visitor *diagnoseVisitor) classifyDuplicate(definition *schema.Definition, precedence game.Precedence) string {
+// isPriorityTied reports whether a definition has the same override priority as another loaded plain copy of its
+// name, in a database where the game keeps the copy with the highest priority. It is false in any other database.
+func (visitor *diagnoseVisitor) isPriorityTied(definition *schema.Definition, precedence game.Precedence) bool {
+	if precedence.Keeps != "highest" {
+		return false
+	}
 	mods := visitor.index
 	reference := schema.Reference{Database: definition.Database, Name: definition.Name}
-	defined := lo.Filter(mods.ResolveLocal(reference, visitor.place.Position), func(site index.Site, _ int) bool {
-		return mods.Occurrence(site).Mode == 0 && !mods.Occurrence(site).Alias
+	sites := lo.Filter(mods.ResolveLocal(reference, visitor.place.Position), func(site index.Site, _ int) bool {
+		occurrence := mods.Occurrence(site)
+		return occurrence.Mode == 0 && !occurrence.Alias && mods.IsLoaded(site.File)
 	})
-	sites := lo.Filter(defined, func(site index.Site, _ int) bool { return mods.IsLoaded(site.File) })
 	own := slices.IndexFunc(sites, func(site index.Site) bool { return visitor.isOwn(site, definition) })
-	if len(sites) < 2 || own < 0 || precedence.KeepsEvery() {
-		return ""
+	if len(sites) < 2 || own < 0 {
+		return false
 	}
-	if precedence.Keeps == "highest" {
-		priority := mods.Occurrence(sites[own]).Priority
-		if lo.CountBy(sites, func(site index.Site) bool { return mods.Occurrence(site).Priority == priority }) > 1 {
-			return "conflicting-priority"
-		}
-		return ""
-	}
-	byGame := lo.CountBy(defined, func(site index.Site) bool { return mods.File(site).Origin == game.OriginVanilla })
-	winner, kept := findKept(visitor.ws, mods, reference, visitor.place.Position)
-	if kept && winner.Reason != index.ReasonUnsettled && byGame < 2 && winner.Site != sites[own] &&
-		mods.Occurrence(winner.Site).Mode == 0 && mods.File(winner.Site).Origin == visitor.place.Origin {
-		return "duplicate-definition"
-	}
-	return ""
+	priority := mods.Occurrence(sites[own]).Priority
+	return lo.CountBy(sites, func(site index.Site) bool { return mods.Occurrence(site).Priority == priority }) > 1
 }
 
 // diagnoseNamespace records an event at the top of an events file that is outside the file's namespaces.

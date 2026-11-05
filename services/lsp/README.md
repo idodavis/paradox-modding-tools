@@ -118,8 +118,6 @@ write otherwise.
 
 - A copy with the same override priority as another loaded copy is `conflicting-priority`, which the game logs as an
   error.
-- A plain copy that its own mod's other copy wins over is `duplicate-definition`, put on the copy the game drops. There
-  is none in a database whose copies all stay.
 - A localization key outside a replace folder is `duplicate-message` against its own mod's other copies, and against
   the game's only where the game logs that as an error. EU5's stages count as one folder for both checks.
 

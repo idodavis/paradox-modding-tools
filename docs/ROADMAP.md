@@ -35,6 +35,8 @@ a 👍, or open a feature request.
 
 ### Health and publishing
 
+- **A field written twice where the game takes one**, such as two `title`s in one event, once a source says which
+  fields take a single value.
 - **More of the game's logs:** read its other log files, with the mods most likely at fault.
 - **Workshop import:** bring a whole listing made outside PMT into your mod in one step.
 

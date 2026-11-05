@@ -44,7 +44,6 @@ const (
 	traitsPath           = "common/traits/m_traits.txt"
 	unresolvedReference  = "unresolved-reference"
 	wrongNamespace       = "wrong-namespace"
-	duplicateDefinition  = "duplicate-definition"
 	artifactsPath        = "common/artifacts/z_artifacts.txt"
 	artifactsDocsPath    = "game/common/artifacts/_artifacts.info"
 	artifactsShippedPath = "game/common/artifacts/v_artifacts.txt"
@@ -232,49 +231,37 @@ func TestDiagnoseReportsEachVerdict(t *testing.T) {
 			"\timmediate = {\n\t\tcapital_county = { add_gold = 1 }\n\t}\n}\nother.1 = {\n\ttype = character_event\n}\n",
 		"events/t_tie.txt":           "namespace = v\n\nv.1 = {\n\tid_override_priority = 5\n\ttype = character_event\n}\n",
 		"events/t_default.txt":       "namespace = n\n\nn.1 = {\n\ttype = character_event\n}\n",
-		"common/traits/d_traits.txt": "dup_trait = {\n\tcategory = personality\n}\n",
 		"common/traits/t_traits.txt": "bold = {\n\tcategory = personality\n\tdiplomacy = \"very high\"\n}\n",
 		"common/traits/t_broken.txt": "broken = {\n\tcategory = personality\n",
 		messagesPath:                 "l_english:\n a:0 \"x\"\n a:0 \"y\"\n broken\n",
 	}, map[string]string{
-		"events/u_tie.txt":           "namespace = v\n\nv.1 = {\n\tid_override_priority = 5\n\ttype = character_event\n}\n",
-		"events/u_default.txt":       "namespace = n\n\nn.1 = {\n\ttype = character_event\n}\n",
-		"common/traits/e_traits.txt": "dup_trait = {\n\tcategory = personality\n}\n",
+		"events/u_tie.txt":     "namespace = v\n\nv.1 = {\n\tid_override_priority = 5\n\ttype = character_event\n}\n",
+		"events/u_default.txt": "namespace = n\n\nn.1 = {\n\ttype = character_event\n}\n",
 	})
 	// each mod is judged on its own, so a priority the two share is no tie of either; Health reports it once
 	checkCodes(t, ide, dirs[0], map[string][]string{
 		eventsPath:                   {unresolvedReference, wrongNamespace, "wrong-scope"},
 		"events/t_tie.txt":           {},
 		"events/t_default.txt":       {},
-		"common/traits/d_traits.txt": {},
-		traitsPath:                   {duplicateDefinition},
+		traitsPath:                   {},
 		"common/traits/t_traits.txt": {"wrong-value"},
 		"common/traits/t_broken.txt": {"unclosed-block"},
 		messagesPath:                 {"duplicate-message", "duplicate-message", "malformed-line", "missing-bom"},
 		"events/m_events.txt":        {},
 	})
 	checkCodes(t, ide, dirs[1], map[string][]string{
-		"events/u_tie.txt":           {},
-		"events/u_default.txt":       {},
-		"common/traits/e_traits.txt": {},
+		"events/u_tie.txt":     {},
+		"events/u_default.txt": {},
 	})
 }
 
-// TestDiagnoseGradesEntryModesAndFirstDefinitions checks in the Vic3 fixture that only an entry mode out of place is
-// reported, and that the later of two definitions is a duplicate only within one mod.
-func TestDiagnoseGradesEntryModesAndFirstDefinitions(t *testing.T) {
-	event := "namespace = ww\n\nww.1 = {\n\ttype = country_event\n}\n"
-	ide, dirs := openFixtures(t, vic3, map[string]string{
-		genesPath:              "INJECT:hair = {\n\tgenes = { }\n}\n",
-		"events/zz_events.txt": event, "events/zza_events.txt": event,
-	}, map[string]string{"events/zzz_events.txt": event, "events/zzzz_events.txt": event})
+// TestDiagnoseGradesEntryModes checks in the Vic3 fixture that only an entry mode out of place is reported.
+func TestDiagnoseGradesEntryModes(t *testing.T) {
+	ide, dirs := openFixtures(t, vic3, map[string]string{genesPath: "INJECT:hair = {\n\tgenes = { }\n}\n"})
 	checkCodes(t, ide, dirs[0], map[string][]string{
 		"common/country_definitions/m_countries.txt": {},
-		genesPath:               {"misplaced-mode"},
-		"events/zz_events.txt":  {},
-		"events/zza_events.txt": {duplicateDefinition},
+		genesPath: {"misplaced-mode"},
 	})
-	checkCodes(t, ide, dirs[1], map[string][]string{"events/zzz_events.txt": {}, "events/zzzz_events.txt": {duplicateDefinition}})
 }
 
 // TestDiagnoseReportsKeysEveryShippedDefinitionWrites checks that a missing key is reported only if every definition

@@ -60,6 +60,7 @@ Besides `Run`, three commands hold a rule of their own:
 | file | what it holds |
 |---|---|
 | `git.go` | The service, running git, repositories, remotes and the commands, and where a path lies in the workspace. |
+| `git_windows.go`, `git_linux.go` | Starting git with no console window, which Windows opens for each run otherwise. |
 | `status.go` | The status of a repository and its refs. |
 | `log.go` | The commits of the log and the files a commit changed. |
 | `diff.go` | The change bars: the lines a text changes from its file's last commit. |

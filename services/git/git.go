@@ -82,6 +82,7 @@ func (git *Service) run(dir string, args ...string) (string, error) {
 		return "", err
 	}
 	cmd := exec.Command(path, slices.Concat([]string{"-C", dir}, args)...)
+	hideConsole(cmd)
 	// English messages, since the package reads them; and a read never takes the index lock
 	cmd.Env = append(os.Environ(), "GIT_TERMINAL_PROMPT=0", "LC_ALL=C", "GIT_OPTIONAL_LOCKS=0")
 	var stdout, stderr strings.Builder

@@ -15,6 +15,8 @@ const mod = computed(() => workspace.listMods().find((row) => row.id === origin)
   <span class="inline-flex min-w-0 items-center gap-1.5 font-semibold text-highlighted">
     <ModAvatar v-if="mod" :mod="mod" size="3xs" />
     <span v-else class="size-2 shrink-0 rounded-full" :style="{ background: workspace.originColor(origin) }" />
-    <span class="truncate">{{ workspace.originName(origin) }}</span>
+    <span class="truncate" :style="{ color: workspace.originTextColor(origin) }">{{
+      workspace.originName(origin)
+    }}</span>
   </span>
 </template>

@@ -347,7 +347,7 @@ func (mcp *Service) describePages() string {
 	pages := lo.PartitionBy(queryKeys, func(row queryKey) string { return row.Page })
 	for _, rows := range pages {
 		keys := lo.Map(rows, func(row queryKey, _ int) string {
-			values := lo.Ternary(len(row.Values) > 0, health.JoinList(row.Values, "or")+": ", "")
+			values := lo.Ternary(len(row.Values) > 0, lsp.JoinList(row.Values, "or")+": ", "")
 			return fmt.Sprintf("%s (%s%s)", row.Key, values, row.Help)
 		})
 		fmt.Fprintf(&guide, "\n- %s: %s.", rows[0].Page, strings.Join(keys, "; "))
@@ -427,7 +427,7 @@ func (mcp *Service) buildReport(filter findingFilter) (health.Report, error) {
 	}
 	levels := lo.Map(lsp.Levels, func(level lsp.Level, _ int) string { return level.ID })
 	if filter.Level != "" && !slices.Contains(levels, filter.Level) {
-		errs = append(errs, fmt.Errorf("a finding's level is %s, not %q", health.JoinList(levels, "or"), filter.Level))
+		errs = append(errs, fmt.Errorf("a finding's level is %s, not %q", lsp.JoinList(levels, "or"), filter.Level))
 	}
 	if err := errors.Join(errs...); err != nil {
 		return health.Report{}, err

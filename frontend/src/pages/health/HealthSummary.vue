@@ -303,16 +303,16 @@ function describeLogPlace(finding: Finding): Part[] {
                 :key="position"
                 :level="lead.level"
                 :message="joinParts(lead.message)"
-                class="ps-12"
+                class="ps-4.75"
                 @open="emit('open', 'mod', modRow.mod.id, lead)"
               >
                 <template v-if="lead.name" #message>
-                  <span class="font-mono text-12"><FactText :parts="splitSubject(lead)" /></span>
+                  <span class="block truncate font-mono text-12" :title="lead.name"
+                    ><FactText :parts="splitSubject(lead)"
+                  /></span>
                 </template>
-                <template v-if="lead.name || lead.brief?.length" #detail>
-                  <span class="min-w-0 truncate text-11 text-dimmed">
-                    <FactText :parts="lead.name ? lead.message : lead.brief" />
-                  </span>
+                <template v-if="lead.brief?.length" #detail>
+                  <span class="min-w-0 truncate text-11 text-dimmed"><FactText :parts="lead.brief" /></span>
                 </template>
                 <template v-if="logged" #trailing>
                   <UBadge label="in the log" color="neutral" variant="subtle" size="sm" class="shrink-0" />

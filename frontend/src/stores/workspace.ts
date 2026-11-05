@@ -78,6 +78,9 @@ export const useWorkspaceStore = defineStore("workspace", () => {
     return SLOTS.includes(color) ? `var(--${color})` : color;
   };
 
+  /** originTextColor returns an origin's color for its name in text, lifted toward the text so a dark one reads. */
+  const originTextColor = (origin: string): string => `color-mix(in oklab, ${originColor(origin)} 70%, var(--fg-1))`;
+
   /** isLeftOut reports whether the active workspace leaves a mod out of its compatibility checks. */
   const isLeftOut = (modId: string): boolean => !!findMod(modId)?.leftOut;
 
@@ -155,6 +158,7 @@ export const useWorkspaceStore = defineStore("workspace", () => {
     originName,
     describeFolder,
     originColor,
+    originTextColor,
     isLeftOut,
     isExternal,
     isCustom,

@@ -57,8 +57,18 @@ const style = computed(() => {
   const { fontFamily, fontSize, padding } = settings.codeFont();
   return { fontFamily, fontSize: `${fontSize}px`, lineHeight: `${lineHeight.value}px`, paddingTop: `${padding.top}px` };
 });
-// Trailing line breaks are dropped, since Monaco would draw them as an empty line.
-const code = computed(() => text.replace(/[\r\n]+$/, ""));
+// Trailing line breaks are dropped, since Monaco would draw them as an empty line, and so is the indent every line
+// shares, so deeply nested code starts at the left.
+const code = computed(() => {
+  const rows = text.replace(/[\r\n]+$/, "").split(/\r\n|\r|\n/);
+  const indents = rows.filter((row) => row.trim()).map((row) => /^[\t ]*/.exec(row)?.[0] ?? "");
+  const shared = indents.reduce((common, indent) => {
+    let end = 0;
+    while (end < common.length && common[end] === indent[end]) end++;
+    return common.slice(0, end);
+  }, indents[0] ?? "");
+  return rows.map((row) => row.slice(shared.length)).join("\n");
+});
 const lineNumbers = computed(() => (line ? code.value.split(/\r\n|\r|\n/).map((_text, index) => line + index) : []));
 const gutter = computed(() => ({
   width: `${Math.max(settings.codeFont().lineNumbersMinChars, String(lineNumbers.value.at(-1)).length)}ch`,
@@ -106,7 +116,7 @@ watch(
     />
     <div
       v-if="lineNumbers.length"
-      class="relative shrink-0 text-right text-(--fg-3) tabular-nums select-none"
+      class="relative box-content shrink-0 ps-3 text-right text-(--fg-3) tabular-nums select-none"
       :style="gutter"
     >
       <div v-for="number in lineNumbers" :key="number">{{ number }}</div>

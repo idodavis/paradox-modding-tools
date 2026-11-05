@@ -4,7 +4,7 @@ import { computed, shallowRef } from "vue";
 import { useQuery } from "@pinia/colada";
 import { groupBy, isEqual, maxBy, sumBy } from "es-toolkit";
 import type { Finding } from "@services/health/models";
-import type { Site } from "@services/lsp/models";
+import type { Part, Site } from "@services/lsp/models";
 import { compareWithGame } from "../../app/commands";
 import { describeCount, matchQuery, plural } from "../../lib/format";
 import { codesQuery, comparedQuery, levelsQuery, readersQuery, snippetsQuery } from "../../queries";
@@ -74,6 +74,14 @@ const replacing = computed(() =>
 );
 /** Whether the finding suggests a load order other than the current one. */
 const reorders = computed(() => !!finding.order?.length && !isEqual(order, finding.order));
+/** The sentence that says which mod to move after which, the mods in their colors. */
+const reorderParts = computed((): Part[] => [
+  { text: "Put " },
+  { text: finding.facts?.beaten ?? "", style: "mod" },
+  { text: " after " },
+  { text: finding.facts?.winner ?? "", style: "mod" },
+  { text: "." },
+]);
 
 /** The text an entry still used must match to be listed, and whether the list shows all of them. */
 const usesFilter = shallowRef("");
@@ -127,7 +135,10 @@ function describeSite(site: Site): string {
               >{{ folder }}/<wbr /></template></span
           >{{ file.name }}
         </template>
-        <template v-else>{{ finding.name || finding.label || finding.code }}</template>
+        <template v-else-if="finding.name"
+          ><template v-for="(piece, at) in finding.name.split(/(?<=_)/)" :key="at">{{ piece }}<wbr /></template
+        ></template>
+        <template v-else>{{ finding.label || finding.code }}</template>
       </span>
     </template>
     <template #line>
@@ -173,8 +184,7 @@ function describeSite(site: Site): string {
         <UButton label="Try this order" @click="emit('preview', finding.order ?? [])" />
       </template>
       <p class="max-w-[74ch] text-13 leading-5.5 text-toned">
-        Put <b class="font-semibold text-highlighted">{{ finding.facts?.beaten }}</b> after {{ finding.facts?.winner }}.
-        The preview shows what else would change hands before you keep the order.
+        <FactText :parts="reorderParts" /> The preview shows what else would change hands before you keep the order.
       </p>
     </HealthSection>
     <HealthSection

@@ -197,11 +197,11 @@ var Codes = []Code{
 	{ID: "unmounted-folder", Question: QuestionHealth, Level: LevelWarning, Topic: "definitions", HealthOnly: true,
 		Label:       "Folder the game never reads",
 		Description: "Files in a folder the game never reads.",
-		Message: "{name} is outside the in_game, main_menu and loading_screen folders, " +
+		Message: "This folder is outside the in_game, main_menu and loading_screen folders, " +
 			"so the game never reads the files in it: {count}.",
 		Advice: "Move the files into one of those folders."},
 	{ID: "supported-version", Question: QuestionHealth, Level: LevelWarning, Topic: "descriptor",
-		Label: "Made for another game version", Description: "A mod made for another game version than the installed one.", Message: "{name} is made for game {supported}; the game is {version}.",
+		Label: "Made for another game version", Description: "A mod made for another game version than the installed one.", Message: "{mod} is made for game {supported}; the game is {version}.",
 		Advice: "Test the mod in this version, then set the version it supports to match."},
 	{ID: "contest", Question: QuestionCompatibility, Level: LevelCritical, Topic: "definitions", HealthOnly: true,
 		Label:       "Contested definition",
@@ -212,19 +212,19 @@ var Codes = []Code{
 	{ID: "file-contest", Question: QuestionCompatibility, Level: LevelCritical, Topic: "definitions", HealthOnly: true,
 		Label:       "Contested file",
 		Description: "A file that two or more mods both ship.",
-		Message: "{winner} and {beaten} both ship {name}. The game reads {winner}'s, which is lower in the load order, " +
+		Message: "{winner} and {beaten} both ship this file. The game reads {winner}'s, which is lower in the load order, " +
 			"so {beaten}'s is never used.",
 		Advice: "Rename your file, or delete the copy you do not want."},
 	{ID: "undecided-contest", Question: QuestionCompatibility, Level: LevelWarning, Topic: "definitions", HealthOnly: true,
 		Label:       "Copy the game may not keep",
 		Description: "A name written by several mods where no source says which copy the game keeps.",
-		Message:     "{mods} each write {name}. Which copy the game uses, or whether they combine, is not documented: {why}.",
+		Message:     "{mods} each write this {database}. Which copy the game uses, or whether they combine, is not documented: {why}.",
 		Advice: "PMT can't tell which copy the game keeps here: no source says how this folder combines copies. " +
 			"Check it in the game."},
 	{ID: "shared-message", Question: QuestionCompatibility, Level: LevelWarning, Topic: "localization", HealthOnly: true,
 		Label:       "Localization key in several mods",
 		Description: "A localization key that two or more mods define in one language.",
-		Message: "{mods} define the localization key {name} in {language}. The game shows one copy's text, " +
+		Message: "{mods} define this localization key in {language}. The game shows one copy's text, " +
 			"and a copy in a replace folder wins.",
 		Advice: "Give each mod its own key."},
 	{ID: "missing-dependency", Question: QuestionCompatibility, Level: LevelCritical, Topic: "descriptor", HealthOnly: true,
@@ -235,7 +235,7 @@ var Codes = []Code{
 	{ID: "override", Question: QuestionCompatibility, Level: LevelInfo, Topic: "definitions", HealthOnly: true,
 		Label:       "Override of the game",
 		Description: "A name or file that a mod writes and the game also has.",
-		Message:     "{name}: a mod and the game both define this {database}, and {kept}.",
+		Message:     "A mod and the game both define this {database}, and {kept}.",
 		Advice:      "Check that the copy the game keeps is the one you want."},
 	{ID: "removed-names", Question: QuestionHealth, Level: LevelCritical, Topic: "definitions", HealthOnly: true,
 		Label:       "Replaced file leaves out entries in use",
@@ -247,7 +247,7 @@ var Codes = []Code{
 	{ID: "unused-copy", Question: QuestionHealth, Level: LevelCritical, Topic: "definitions", HealthOnly: true,
 		Label:       "Copy never used",
 		Description: "A mod's copy of a name that the game never uses, because it keeps its own.",
-		Message:     "{beaten}'s copy of {name} is never used: the game keeps its own.",
+		Message:     "{beaten}'s copy is never used: the game keeps its own.",
 		Advice:      "Delete the copy, or rename it if it should be a new entry."},
 	{ID: "ignored-pair", Question: QuestionCompatibility, Level: LevelInfo, Topic: "definitions", HealthOnly: true,
 		Label:       "Ignored conflicts",
@@ -551,7 +551,7 @@ func (visitor *diagnoseVisitor) diagnoseDescriptor(tree *jomini.Tree) []Diagnost
 		}
 	}
 	facts := DescribeReference(schema.Reference{Name: cmp.Or(descriptor.Name, "This mod")})
-	facts["supported"], facts["version"] = descriptor.SupportedVersion, version
+	facts["mod"], facts["supported"], facts["version"] = facts["name"], descriptor.SupportedVersion, version
 	return []Diagnostic{makeDiagnostic(tree, span, "supported-version", facts)}
 }
 
@@ -626,7 +626,7 @@ func (visitor *diagnoseVisitor) diagnoseMissing(tree *jomini.Tree, references []
 		databases := lo.Uniq(lo.Map(alternatives, func(other schema.Reference, _ int) string {
 			return game.DescribeDefinition(other.Database, false)
 		}))
-		facts := map[string]string{"name": reference.Name, "database": strings.Join(databases, " or ")}
+		facts := map[string]string{"name": reference.Name, "database": JoinList(databases, "or")}
 		if code == "loc-markup" {
 			facts["why"] = "no file declares the " + facts["database"] + " " + reference.Name
 		}
@@ -657,6 +657,15 @@ func classifyMissing(alternatives []schema.Reference) string {
 		return codes[0]
 	}
 	return unresolvedCode
+}
+
+// JoinList returns the given texts joined as in a sentence, the last two by the given conjunction: "A", "A and B"
+// or "A, B and C". It returns "" for none.
+func JoinList(texts []string, conjunction string) string {
+	if len(texts) < 2 {
+		return strings.Join(texts, "")
+	}
+	return strings.Join(texts[:len(texts)-1], ", ") + " " + conjunction + " " + texts[len(texts)-1]
 }
 
 // canJudge reports whether a reference can be judged dangling. A saved name, such as a scope or a variable, never is.
@@ -818,7 +827,7 @@ func (visitor *diagnoseVisitor) diagnoseFollows(tree *jomini.Tree, statement int
 		return
 	}
 	facts := DescribeReference(schema.Reference{Name: tree.Unquoted(current.Key)})
-	facts["follows"] = strings.Join(keyword.Follows, " or ")
+	facts["follows"] = JoinList(keyword.Follows, "or")
 	visitor.diagnostics = append(visitor.diagnostics, makeDiagnostic(tree, current.Key, "else-without-if", facts))
 }
 

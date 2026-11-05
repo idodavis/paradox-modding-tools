@@ -241,7 +241,7 @@ func splitWhy(finding Finding) []lsp.Part {
 			!site.Kept && site.Place.Origin != game.OriginVanilla
 	})
 	facts := maps.Clone(finding.Facts)
-	facts["folder"], facts["file"], facts["beatenFile"] = folder+"/", winner.Place.Name, JoinList(beaten, "and")
+	facts["folder"], facts["file"], facts["beatenFile"] = folder+"/", winner.Place.Name, lsp.JoinList(beaten, "and")
 	return lsp.SplitMessage(index.Reasons[winner.Reason].Why, facts)
 }
 
@@ -280,16 +280,7 @@ func listBeaten(finding Finding) []string {
 
 // describeMods returns the titles of mods joined as in a sentence, such as "A, B and C". It returns "" for none.
 func describeMods(ws *workspace.Session, modIDs []string) string {
-	return JoinList(lo.Map(modIDs, func(id string, _ int) string { return ws.DescribeMod(id) }), "and")
-}
-
-// JoinList returns the given texts joined as in a sentence, the last two by the given conjunction: "A", "A and B"
-// or "A, B and C". It returns "" for none.
-func JoinList(texts []string, conjunction string) string {
-	if len(texts) < 2 {
-		return strings.Join(texts, "")
-	}
-	return strings.Join(texts[:len(texts)-1], ", ") + " " + conjunction + " " + texts[len(texts)-1]
+	return lsp.JoinList(lo.Map(modIDs, func(id string, _ int) string { return ws.DescribeMod(id) }), "and")
 }
 
 // resolveOrder gives a critical contest that the load order decides the order that fixes it: the beaten mod moved just

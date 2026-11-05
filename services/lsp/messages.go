@@ -86,7 +86,8 @@ func diagnoseFolders(tree *jomini.Tree, place workspace.Place) []Diagnostic {
 }
 
 // diagnoseCalls records a problem for each data call in the segments of a text that has a step unknown after the type
-// before it, read in the given data context. A first step in lower case is a saved scope, not a problem.
+// before it, read in the given data context. A first step in lower case, or one a file saves a scope by, is a saved
+// scope, not a problem.
 func (visitor *diagnoseVisitor) diagnoseCalls(tree *jomini.Tree, segments []loc.Segment, datacontext string) {
 	for _, call := range loc.ListCalls(segments) {
 		step, before, ok := visitor.ws.Schema.FindUnlisted(call, datacontext)
@@ -94,10 +95,10 @@ func (visitor *diagnoseVisitor) diagnoseCalls(tree *jomini.Tree, segments []loc.
 			continue
 		}
 		name := call.Steps[step].Text
-		saved := step == 0 && name != "" && unicode.IsLower(rune(name[0]))
 		isDefined := func(database string) bool {
 			return len(visitor.index.Resolve(schema.Reference{Database: database, Name: name})) > 0
 		}
+		saved := step == 0 && name != "" && (unicode.IsLower(rune(name[0])) || isDefined(game.SavedScopes))
 		if saved || visitor.ws.Schema.UnlistedCalls[before+"."+name] || lo.SomeBy(game.GUI.StepDatabases, isDefined) {
 			continue
 		}

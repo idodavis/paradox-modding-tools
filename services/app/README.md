@@ -1,6 +1,6 @@
 # app
 
-[Architecture](../../ARCHITECTURE.md) › [Services](../../ARCHITECTURE.md#the-services) › app
+[Architecture](../../docs/ARCHITECTURE.md) › [Services](../../docs/ARCHITECTURE.md#the-services) › app
 
 The app service is PMT's own: its version and updates, its settings, its log and its windows. It also holds PMT's
 folders on this machine and config.json, which every other service reads and writes. `main` opens the one `ConfigFile`
@@ -21,7 +21,8 @@ trash holds deleted files until the next start empties it.
 
 A `ConfigFile` is config.json held in memory. `Config` returns it as held, and the caller must not change it. `Update`
 changes a copy under a lock, saves it whole and emits `config:changed` with the section it wrote. A change that returns
-an error saves and emits nothing.
+an error saves and emits nothing. `Revision` counts the changes `Update` made since the app started, so a reader can
+tell whether the config changed since it last looked.
 
 - A missing file is a first run. Any other read failure gives an empty config that is read only, so a passing fault
   never overwrites the real file.
@@ -70,6 +71,7 @@ flowchart TD
   from the config.
 - **Errors.** A release with no file for this platform or no line in SHA256SUMS is refused, and so is the running
   version. The picked version is cleared after any failure.
+- **Dev build.** A dev build (`DevBuild`) is no release, so `CheckUpdate` finds no update and does not ask GitHub.
 - **One at a time.** A check or an install holds a lock, so a check cannot change the release an install is about to
   download.
 - **The list.** `ListReleases` returns every published release, the newest first, without drafts, prereleases and the

@@ -10,8 +10,10 @@ import (
 	"slices"
 	"strconv"
 	"strings"
+	"sync"
 
 	"github.com/samber/lo"
+	"golang.org/x/sync/errgroup"
 
 	"paradox-modding-tools/internal/files"
 	"paradox-modding-tools/internal/game"
@@ -318,7 +320,7 @@ func (lsp *Service) DiagnoseText(path, text string) ([]Diagnostic, error) {
 		return []Diagnostic{}, nil
 	}
 	document := workspace.ParseDocument(place.Format, path, text)
-	return lsp.listEnabled(ws.ID, describeDiagnostics(newVisitor(ws, mods, place).diagnoseTree(document))), nil
+	return lsp.listEnabled(ws.ID, describeDiagnostics(newVisitor(ws, mods, place, &sync.Map{}).diagnoseTree(document))), nil
 }
 
 // DescribeReference returns the facts that say which name a problem is about.
@@ -329,6 +331,30 @@ func DescribeReference(reference schema.Reference) map[string]string {
 // DiagnoseFile returns the problems of a file in a workspace, judged on its document: the editor's text where the file
 // is open, else the text on disk. It returns an error if the file cannot be read.
 func DiagnoseFile(ws *workspace.Session, mods *index.Index, path string) ([]Diagnostic, error) {
+	return diagnoseFile(ws, mods, path, &sync.Map{})
+}
+
+// DiagnoseFiles returns the problems of each of the given files in a workspace, as DiagnoseFile judges them, in the
+// order the paths are given. It judges the files in parallel. A file that cannot be read has no problems.
+func DiagnoseFiles(ws *workspace.Session, mods *index.Index, paths []string) [][]Diagnostic {
+	// one map of the callees' parameters serves every file, so each callee's copy is read once in this run
+	parameters := &sync.Map{}
+	diagnostics := make([][]Diagnostic, len(paths))
+	var group errgroup.Group
+	group.SetLimit(files.Workers)
+	for position, path := range paths {
+		group.Go(func() error {
+			diagnostics[position], _ = diagnoseFile(ws, mods, path, parameters)
+			return nil
+		})
+	}
+	_ = group.Wait()
+	return diagnostics
+}
+
+// diagnoseFile returns the problems of a file in a workspace, as DiagnoseFile does. The given map holds the
+// parameters of the callees read so far, by the site of the copy the game keeps, and gains the ones this file reads.
+func diagnoseFile(ws *workspace.Session, mods *index.Index, path string, parameters *sync.Map) ([]Diagnostic, error) {
 	place := ws.Locate(mods, path)
 	if !isDiagnosed(place) {
 		return []Diagnostic{}, nil
@@ -337,7 +363,7 @@ func DiagnoseFile(ws *workspace.Session, mods *index.Index, path string) ([]Diag
 	if err != nil {
 		return nil, err
 	}
-	return describeDiagnostics(newVisitor(ws, mods, place).diagnoseTree(document)), nil
+	return describeDiagnostics(newVisitor(ws, mods, place, parameters).diagnoseTree(document)), nil
 }
 
 // isDiagnosed reports whether a file can have problems: it is script, localization or a mod's descriptor, or a mod's
@@ -449,19 +475,27 @@ func Plural(count int, noun, nouns string) string {
 
 // A diagnoseVisitor collects the problems of one file.
 type diagnoseVisitor struct {
-	ws          *workspace.Session
-	index       *index.Index // the mods' index, narrowed to the file's mod and the mods it depends on
-	whole       *index.Index // the mods' index, every mod of the workspace
-	place       workspace.Place
-	parseOnly   bool // the file is the game's, so only its parse errors are judged
+	ws        *workspace.Session
+	index     *index.Index // the mods' index, narrowed to the file's mod and the mods it depends on
+	whole     *index.Index // the mods' index, every mod of the workspace
+	place     workspace.Place
+	parseOnly bool // the file is the game's, so only its parse errors are judged
+	// parameters holds the parameters of each callee read so far, by the site of the copy the game keeps. It is shared
+	// by every file of one run.
+	parameters *sync.Map
+	// enclosing holds the parameters of each definition of the file read so far, by the definition's statement. It
+	// lives as long as the visitor, which judges one file.
+	enclosing   map[int32]*schema.Field
 	diagnostics []Diagnostic
 }
 
 // newVisitor returns the visitor that judges a file of a workspace. A mod's file is judged as the mod on its own, with
 // the index narrowed to its mod and the mods it depends on. A file of the game is judged for its parse errors only.
-func newVisitor(ws *workspace.Session, mods *index.Index, place workspace.Place) *diagnoseVisitor {
+// The given map holds the parameters of the callees the run has read.
+func newVisitor(ws *workspace.Session, mods *index.Index, place workspace.Place, parameters *sync.Map) *diagnoseVisitor {
 	visitor := &diagnoseVisitor{
 		ws: ws, index: mods, whole: mods, place: place, parseOnly: place.Origin == game.OriginVanilla,
+		parameters: parameters, enclosing: map[int32]*schema.Field{},
 	}
 	if place.Origin != "" && place.Origin != game.OriginVanilla {
 		visitor.index = mods.Narrow(append([]string{place.Origin}, ws.ListDependencies(place.Origin)...))
@@ -640,9 +674,7 @@ func (visitor *diagnoseVisitor) isKnown(reference schema.Reference) bool {
 			return file.Key == visitor.place.Key || mods.IsLoaded(site.File) || ok && hiding.Origin != visitor.place.Origin
 		})
 	}
-	return lo.SomeBy(mods.ListUses(reference.Database, reference.Name), func(site index.Site) bool {
-		return mods.File(site).Origin == game.OriginVanilla
-	})
+	return mods.IsUsedByGame(reference.Database, reference.Name)
 }
 
 // findElsewhere returns the definition the whole workspace supplies for a name the file's mod does not define. It
@@ -909,10 +941,7 @@ func (visitor *diagnoseVisitor) diagnoseCall(tree *jomini.Tree, statement int32,
 	if parameters == nil {
 		return
 	}
-	enclosing := &schema.Field{}
-	if context.Definition != nil {
-		enclosing = schema.ListParameters(tree, context.Definition.Statement)
-	}
+	enclosing := visitor.listEnclosingParameters(tree, context.Definition)
 	add := func(span jomini.Span, name, why string) {
 		facts := DescribeReference(schema.Reference{Name: name})
 		facts["why"], facts["callee"] = why, tree.Unquoted(current.Key)
@@ -936,18 +965,41 @@ func (visitor *diagnoseVisitor) diagnoseCall(tree *jomini.Tree, statement int32,
 }
 
 // listCalleeParameters returns the parameters of the scripted definition a call names, read from the copy the game
-// keeps, else those the walk knows. It returns nil if the call names no scripted definition that takes parameters.
+// keeps, else those the walk knows. A copy read once in the run is not read again. It returns nil if the call names
+// no scripted definition that takes parameters.
 func (visitor *diagnoseVisitor) listCalleeParameters(key string, callee *schema.ScriptedDefinition) *schema.Field {
 	if callee == nil || callee.Parameters == nil {
 		return nil
 	}
 	reference := schema.Reference{Database: callee.Database, Name: key}
-	if winner, ok := findKept(visitor.ws, visitor.index, reference, visitor.place.Position); ok {
-		if tree, statement, err := visitor.ws.FindStatement(visitor.index, winner.Site); err == nil {
-			return schema.ListParameters(tree, statement)
-		}
+	winner, ok := findKept(visitor.ws, visitor.index, reference, visitor.place.Position)
+	if !ok {
+		return callee.Parameters
 	}
-	return callee.Parameters
+	if parameters, ok := visitor.parameters.Load(winner.Site); ok {
+		return parameters.(*schema.Field)
+	}
+	tree, statement, err := visitor.ws.FindStatement(visitor.index, winner.Site)
+	if err != nil {
+		return callee.Parameters
+	}
+	parameters := schema.ListParameters(tree, statement)
+	visitor.parameters.Store(winner.Site, parameters)
+	return parameters
+}
+
+// listEnclosingParameters returns the parameters of the definition a call is written in, read from the file being
+// judged. A definition read once is not read again. It returns no parameters if the call is in no definition.
+func (visitor *diagnoseVisitor) listEnclosingParameters(tree *jomini.Tree, definition *schema.Definition) *schema.Field {
+	if definition == nil {
+		return &schema.Field{}
+	}
+	parameters, ok := visitor.enclosing[definition.Statement]
+	if !ok {
+		parameters = schema.ListParameters(tree, definition.Statement)
+		visitor.enclosing[definition.Statement] = parameters
+	}
+	return parameters
 }
 
 // isWritten reports whether a definition that a winner merges, other than the one walked, writes a key.

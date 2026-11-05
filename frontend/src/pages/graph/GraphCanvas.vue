@@ -5,7 +5,6 @@ import {
   BaseEdge,
   EdgeLabelRenderer,
   VueFlow,
-  getBezierPath,
   getRectOfNodes,
   useVueFlow,
   type Edge as FlowEdge,
@@ -84,7 +83,7 @@ function fit(): Promise<boolean> {
   return fitView({ padding: 0.15, maxZoom: 1 });
 }
 
-/** buildPath builds a firing's path and label place. */
+/** buildPath builds a firing's path and label place. The label sits where ELK put it, or midway along the route. */
 function buildPath(edge: EdgeProps): { path: string; x: number; y: number } {
   const points: Point[] = edge.data.points;
   if (edge.source === edge.target) {
@@ -92,17 +91,13 @@ function buildPath(edge: EdgeProps): { path: string; x: number; y: number } {
     const top = y - edge.sourceNode.dimensions.height / 2;
     return { path: `M${x},${y} C${x + 40},${y} ${x + 24},${top - 32} ${x - 16},${top}`, x: x + 18, y: top - 14 };
   }
-  if (!points.length) {
-    const [path, x, y] = getBezierPath(edge);
-    return { path, x, y };
-  }
   const path = points.slice(1).reduce((route, point, position) => {
     const previous = points[position];
     const half = (point.x - previous.x) / 2;
     return `${route} C${previous.x + half},${previous.y} ${point.x - half},${point.y} ${point.x},${point.y}`;
   }, `M${points[0].x},${points[0].y}`);
-  const middle = points[Math.floor(points.length / 2)];
-  return { path, x: middle.x, y: middle.y };
+  const { x, y }: Point = edge.data.label ?? points[Math.floor(points.length / 2)];
+  return { path, x, y };
 }
 
 /** resolveColor returns the minimap color of a node. */

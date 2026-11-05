@@ -1,6 +1,6 @@
 # lsp
 
-[Architecture](../../ARCHITECTURE.md) › [Services](../../ARCHITECTURE.md#the-services) › lsp
+[Architecture](../../docs/ARCHITECTURE.md) › [Services](../../docs/ARCHITECTURE.md#the-services) › lsp
 
 The lsp service is the editor's language service. It answers what the editor asks about a file: hover cards,
 completions, definitions, diagnostics, tokens, folds and the rest. Every range it returns is in Monaco's own form.
@@ -91,8 +91,10 @@ rows both read the level from it. `SplitMessage` fills a template as `Part`s, ea
 joins them into the plain text.
 
 - `Diagnose` judges a file against the open session, without the checks the user turned off (`ide.checks`).
-  `DiagnoseFile` does the same against any session and index, which Health uses. `DiagnoseText` judges the text a file
-  would have, as a coding agent's change through PMT's tools, and is not bound to the page.
+  `DiagnoseFile` does the same against any session and index. `DiagnoseFiles` judges many files in parallel, as Health
+  does; the run reads the parameters of each callee's kept copy once for all its files, and a file's own definitions'
+  parameters once for all the calls in that file. `DiagnoseText` judges the text a file would have, as a coding agent's
+  change through PMT's tools, and is not bound to the page.
 - A file of the game has its parse errors only. A mod's file is judged with the index narrowed to its mod and the mods
   it depends on. A name nothing defines there, but a mod it does not depend on does, has an `Elsewhere` message.
 - The parse errors and the localization checks come from `jomini` and `loc`, under the same table.

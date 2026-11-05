@@ -8,8 +8,8 @@ your events, a health check of your load order, the wiki's patch notes and Works
 
 **Alpha: expect bugs.** Windows and Linux. Unofficial, and not affiliated with Paradox Interactive.
 
-[Download](https://github.com/idodavis/paradox-modding-tools/releases) · [Features](FEATURES.md) ·
-[Roadmap](ROADMAP.md) · [Contributing](CONTRIBUTING.md) · [Architecture](ARCHITECTURE.md)
+[Download](https://github.com/idodavis/paradox-modding-tools/releases) · [Features](docs/FEATURES.md) ·
+[Roadmap](docs/ROADMAP.md) · [Contributing](docs/CONTRIBUTING.md) · [Architecture](docs/ARCHITECTURE.md)
 
 ## Download
 
@@ -84,12 +84,12 @@ it, which you can delete if you no longer want it.
 - Questions and ideas: [Discussions](https://github.com/idodavis/paradox-modding-tools/discussions).
 - Bugs and feature requests: [the issue forms](https://github.com/idodavis/paradox-modding-tools/issues/new/choose).
 - The author on Discord: [discord.com/users/168438474905616386](https://discord.com/users/168438474905616386).
-- A security problem: report it privately, as [SECURITY.md](SECURITY.md) says.
+- A security problem: report it privately, as [SECURITY.md](docs/SECURITY.md) says.
 
-Everyone taking part follows the [code of conduct](CODE_OF_CONDUCT.md).
+Everyone taking part follows the [code of conduct](docs/CODE_OF_CONDUCT.md).
 
-Building PMT from source is in [CONTRIBUTING.md](CONTRIBUTING.md), and how it is made is in
-[ARCHITECTURE.md](ARCHITECTURE.md).
+Building PMT from source is in [CONTRIBUTING.md](docs/CONTRIBUTING.md), and how it is made is in
+[ARCHITECTURE.md](docs/ARCHITECTURE.md).
 
 ## License
 

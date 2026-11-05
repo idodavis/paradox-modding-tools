@@ -123,7 +123,7 @@ func (app *Service) startUpdater() error {
 }
 
 // CheckUpdate asks the project's GitHub releases whether a newer version exists, and emits app:update if one does.
-// It returns an empty Update if none does.
+// It returns an empty Update if none does. A dev build is no release, so it never asks.
 func (app *Service) CheckUpdate() (Update, error) {
 	app.updating.Lock()
 	defer app.updating.Unlock()
@@ -132,6 +132,9 @@ func (app *Service) CheckUpdate() (Update, error) {
 
 // check is CheckUpdate for a caller that holds the update lock.
 func (app *Service) check() (Update, error) {
+	if app.Build == DevBuild {
+		return Update{}, nil
+	}
 	release, err := application.Get().Updater.Check(context.Background())
 	if err != nil || release == nil {
 		return Update{}, err

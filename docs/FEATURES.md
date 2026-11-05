@@ -1,7 +1,7 @@
 # Features
 
 What Paradox Modding Tools (PMT) does, page by page, for a modder. Getting it and setting it up is in the
-[README](README.md). What comes next is in the [roadmap](ROADMAP.md), and how it is built is in the
+[README](../README.md). What comes next is in the [roadmap](ROADMAP.md), and how it is built is in the
 [architecture](ARCHITECTURE.md).
 
 PMT works on one workspace at a time: a game install and the mods you load with it, in load order. Every page below
@@ -24,7 +24,7 @@ reads that workspace. Each page also has its own Help, the ? in the top bar or F
 
 ## Library
 
-![Library](docs/images/library.png)
+![Library](images/library.png)
 
 Your workspaces, as cards, grouped by game. The active one is at the top. Open another card to make it active, then
 press **Open IDE** to start working.
@@ -42,7 +42,7 @@ Releases list can also install an older one, and PMT restarts into it.
 
 ## New workspace
 
-![New workspace](docs/images/new-workspace.png)
+![New workspace](images/new-workspace.png)
 
 Pick the game, the install PMT reads its files from, and the mods you work on. Then name the workspace. PMT finds
 Steam's installs itself, and you can add one by hand. Add a mod folder you already have or make a new mod, and drag the
@@ -66,7 +66,7 @@ Settings.
 
 ## IDE
 
-![IDE](docs/images/ide.png)
+![IDE](images/ide.png)
 
 An editor that knows the game's script, localization and GUI files.
 
@@ -92,7 +92,7 @@ An editor that knows the game's script, localization and GUI files.
 
 ## Event Graph
 
-![Event Graph](docs/images/event-graph.png)
+![Event Graph](images/event-graph.png)
 
 Type an event id, a namespace or a number in **Root**. The graph shows what that event, on_action, decision, message
 or scripted effect fires, and what fires it. It reads left to right, one step at a time.
@@ -111,7 +111,7 @@ sent without a type is not drawn.
 
 ## Health
 
-![Health](docs/images/health.png)
+![Health](images/health.png)
 
 Three questions, each with its own panel, worst rows first:
 
@@ -133,14 +133,14 @@ how things are.
 
 ## Patch Notes
 
-![Patch Notes](docs/images/patch-notes.png)
+![Patch Notes](images/patch-notes.png)
 
 The game's patch notes, from its wiki, for the game of the open workspace. Pick a version to read it. A dot marks a
 note with a Modding section. Ctrl F finds in the note shown. PMT reads the notes when it starts and keeps them.
 
 ## Publish
 
-![Publish](docs/images/publish.png)
+![Publish](images/publish.png)
 
 The mod's Workshop page, as players see it. Click the name, tags, requirements, pictures or description to change
 them. Every change is saved in the mod's files as you stop typing.
@@ -160,7 +160,7 @@ Workshop page. PMT never touches an item that belongs to someone else, and never
 
 ## Settings
 
-![Settings](docs/images/settings.png)
+![Settings](images/settings.png)
 
 Opened from the top bar. It has three groups.
 
@@ -180,7 +180,7 @@ Opened from the top bar. It has three groups.
 
 ### Visual view
 
-![The Visual view](docs/images/visual-view.png)
+![The Visual view](images/visual-view.png)
 
 A GUI file or a coat of arms file can open as a picture instead of code. Switch with the Code and Visual buttons at the
 end of the tab, or Ctrl Shift V.
@@ -199,7 +199,7 @@ PMT writes your changes to the code in the editor, so undo works as it always do
 
 ### Save as DDS
 
-![Save as DDS](docs/images/save-as-dds.png)
+![Save as DDS](images/save-as-dds.png)
 
 Right-click a PNG or TGA picture, or a folder of them, and choose **Save as DDS**. PMT writes a `.dds` beside each one,
 either uncompressed (exact) or BC3 (a quarter of the size, with slightly blurred colors). Mipmaps are optional. The
@@ -208,7 +208,7 @@ game's own DDS at that place.
 
 ### Source control
 
-![Source control](docs/images/source-control.png)
+![Source control](images/source-control.png)
 
 The sidebar's third view runs the git installed on your computer on each mod that is a repository. Each repository has
 a section with its branch, its commit box and its changes. The Graph shows the history of the active file's repository.
@@ -217,7 +217,7 @@ Diffs open as tabs. Merge conflicts are resolved in the editor. PMT reimplements
 
 ### Wiki pane
 
-![Wiki pane](docs/images/wiki-pane.png)
+![Wiki pane](images/wiki-pane.png)
 
 The Wiki button at the end of the editor's tabs (Ctrl Shift W) opens the wiki's pages for the file you are in. It
 can follow the open file. It also holds the **Lexicon**: the game's triggers, effects and scopes, each with where the
@@ -225,7 +225,7 @@ game's own files use it. Look a name up from the editor's right-click menu.
 
 ### Terminal
 
-![Terminal](docs/images/terminal.png)
+![Terminal](images/terminal.png)
 
 A shell in the IDE's bottom panel, started in the folder of the mod you are editing. It shows file names with a line
 number in its output as links to the file. Windows offers PowerShell, Git Bash and WSL where they are installed. Linux
@@ -234,7 +234,7 @@ window of its own.
 
 ### Assistant
 
-![Assistant](docs/images/assistant.png)
+![Assistant](images/assistant.png)
 
 A pane that chats with a coding agent: Claude, GitHub Copilot, Codex, or one of your own. Each runs on your computer
 and signs in to its own account. PMT never sees it. PMT installs the agent for you from the Agent Client Protocol's
@@ -248,7 +248,7 @@ registry into its own folder, with Node if your system has none new enough.
 
 ### Pop-out windows
 
-![A pop-out window](docs/images/pop-out.png)
+![A pop-out window](images/pop-out.png)
 
 Drag an editor tab out of the window to make a window of its own for it. Every page but the IDE can open in a window
 of its own from the top bar, so Health can sit on a second screen. The Terminal and the Wiki pane can too. A window can
@@ -256,7 +256,7 @@ hand its tabs back to the main window.
 
 ## External mods
 
-![External mods](docs/images/external-mods.png)
+![External mods](images/external-mods.png)
 
 Some mods in a workspace are not yours: a Workshop mod you subscribe to, or a copy of someone else's work. Add them as
 **external mods** to check your own against them. PMT never publishes an external mod, and keeps it out of your totals.
@@ -316,4 +316,4 @@ PMT runs on Windows 10 and 11 and on desktop Linux. macOS is not supported.
 | EU5 | Native | Through Proton. PMT cannot start it, and publishing EU5 to the Workshop from Linux is untested. |
 | Your data | `%AppData%` and `%LocalAppData%` | `~/.config` and `~/.cache` |
 
-Everything else is the same on both. Setup and troubleshooting are in the [README](README.md).
+Everything else is the same on both. Setup and troubleshooting are in the [README](../README.md).

@@ -23,7 +23,10 @@ const ROUTES = {
   release: { path: "release", component: () => import("../pages/publish/ReleasePage.vue") },
 } satisfies Record<PageName, Pick<RouteRecordRaw, "path" | "component">>;
 
-/** router is the app's router. Its guard writes the active workspace id. */
+/**
+ * router is the app's router. Its guard sends a route to the window that owns the page, and writes the active
+ * workspace id.
+ */
 export const router: Router = createRouter({
   history: createWebHashHistory(),
   routes: [
@@ -36,8 +39,15 @@ export const router: Router = createRouter({
 });
 
 router.beforeEach(async (target, previous) => {
+  const windows = useWindowsStore();
+  // A page with a window of its own shows only there. Any other page change in a window but the main one goes there.
+  const holder = windows.holderOfPage(String(target.name));
+  if (holder) {
+    windows.openPage(target.fullPath, holder);
+    return false;
+  }
   if (THIS_WINDOW !== "main" && previous.name && target.name !== previous.name) {
-    useWindowsStore().openPage(target.fullPath);
+    windows.openPage(target.fullPath);
     return false;
   }
   const params = target.params;

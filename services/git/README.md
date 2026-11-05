@@ -1,6 +1,6 @@
 # git
 
-[Architecture](../../ARCHITECTURE.md) › [Services](../../ARCHITECTURE.md#the-services) › git
+[Architecture](../../docs/ARCHITECTURE.md) › [Services](../../docs/ARCHITECTURE.md#the-services) › git
 
 The git service is the IDE's source control. It runs the git installed on this machine over each mod's repository and
 reads git's machine output. Nothing of git is reimplemented, and no git library is used. The

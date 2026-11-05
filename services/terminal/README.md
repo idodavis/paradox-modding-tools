@@ -1,6 +1,6 @@
 # terminal
 
-[Architecture](../../ARCHITECTURE.md) › [Services](../../ARCHITECTURE.md#the-services) › terminal
+[Architecture](../../docs/ARCHITECTURE.md) › [Services](../../docs/ARCHITECTURE.md#the-services) › terminal
 
 The terminal service runs the shells of the IDE's Terminal. It starts them, holds each by id until it ends, streams each
 to the window that shows it, and finds the files that a shell's output names.

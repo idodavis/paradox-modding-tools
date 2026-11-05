@@ -1,4 +1,5 @@
-// scripted.go reads the scripted definitions and the modifier types that the workspace's files declare.
+// scripted.go reads the scripted definitions, the modifier types and the event namespaces that the workspace's files
+// declare.
 
 package schema
 
@@ -15,21 +16,22 @@ import (
 	"paradox-modding-tools/internal/jomini"
 )
 
-// A declarer is the visitor of a walk over one file. It records the definitions that script and GUI files call by name.
-// It reads only the top statements.
+// A declarer is the visitor of a walk over one file. It records the definitions that script and GUI files call by name,
+// and the event namespaces that event ids are written with. It reads only the top statements.
 type declarer struct {
-	schema    *Schema
-	scripted  map[string]ScriptedDefinition // by caller and name
-	widgets   []string                      // the widget types the file defines or builds on
-	modifiers map[string]*Field             // by modifier type: what its name takes
+	schema     *Schema
+	scripted   map[string]ScriptedDefinition // by caller and name
+	widgets    []string                      // the widget types the file defines or builds on
+	modifiers  map[string]*Field             // by modifier type: what its name takes
+	namespaces []string                      // the event namespaces the file declares
 }
 
 // parameterRe matches a parameter in a scripted definition's body, with its default if it has one.
 var parameterRe = regexp.MustCompile(`\$([A-Za-z0-9_]+)(?:\|([^$]*))?\$`)
 
-// SetScripted reads, with the given parser, the scripted definitions and modifier types that the given files of the
-// workspace's mods declare, in place of what those files declared before, so calls to them are known calls. A file
-// that cannot be parsed, or is gone, declares nothing.
+// SetScripted reads, with the given parser, the scripted definitions, modifier types and event namespaces that the
+// given files of the workspace's mods declare, in place of what those files declared before, so calls to them are
+// known calls. A file that cannot be parsed, or is gone, declares nothing.
 func (schema *Schema) SetScripted(changed []files.File, parse func(path string) (*jomini.Tree, error)) {
 	declaring := slices.DeleteFunc(slices.Clone(changed), func(file files.File) bool {
 		return file.Format != files.FormatScript || !schema.declares(file)
@@ -37,6 +39,7 @@ func (schema *Schema) SetScripted(changed []files.File, parse func(path string) 
 	declarers := schema.listDeclarers(declaring, parse)
 	next := &modScripted{
 		byFile: map[string]*declarer{}, all: map[string]ScriptedDefinition{}, modifiers: map[string]*Field{},
+		namespaces: map[string]bool{},
 	}
 	if previous := schema.mods.Load(); previous != nil {
 		next.byFile = maps.Clone(previous.byFile)
@@ -56,6 +59,9 @@ func (schema *Schema) SetScripted(changed []files.File, parse func(path string) 
 			next.all[name] = scripted
 		}
 		maps.Copy(next.modifiers, next.byFile[key].modifiers)
+		for _, namespace := range next.byFile[key].namespaces {
+			next.namespaces[namespace] = true
+		}
 	}
 	schema.resolveSaves(next.all, next.all)
 	schema.mods.Store(next)
@@ -126,14 +132,16 @@ func (schema *Schema) lookupDefinition(table map[string]ScriptedDefinition, call
 	return callee, ok && database != nil && database.Callable.FoldsCase
 }
 
-// declares reports whether a file declares definitions that script or GUI files call by name. A GUI file does, and so
-// does a file of a database that has callers, or a file of a database whose definitions say what their names take.
+// declares reports whether a file declares definitions that script or GUI files call by name, or event namespaces. A
+// GUI file does, and so does a file of a database that has callers, a file of a database whose definitions say what
+// their names take, and an events file.
 func (schema *Schema) declares(file files.File) bool {
 	if file.Format == files.FormatGUI {
 		return true
 	}
 	database, ok := schema.FindDatabase(file.Rel)
-	return ok && (len(database.Callable.Callers) > 0 || database.Row.BoolKey != "")
+	return ok && (len(database.Callable.Callers) > 0 || database.Row.BoolKey != "" ||
+		database.Row.Contents == game.ContentsEvents)
 }
 
 // eachParsed parses the listed files in parallel and calls visit on each result with the worker's number and the file's
@@ -158,11 +166,14 @@ func eachParsed[T any](listing []files.File, parse func(path string) (T, error),
 	return slices.DeleteFunc(failures, func(err error) bool { return err == nil })
 }
 
-// Enter records the definition that a statement makes, if its database is called by name. It goes into the top blocks
-// that only group definitions, and into a file that is one definition.
+// Enter records the definition that a statement makes, if its database is called by name, and the event namespace it
+// declares. It goes into the top blocks that only group definitions, and into a file that is one definition.
 func (declarer *declarer) Enter(tree *jomini.Tree, statement int32, context *Context) bool {
 	if context.Defines && context.Category == CategoryDefinition {
 		declarer.declare(*context.Definition, tree, statement)
+	}
+	if context.Parent != nil && slices.Contains(context.Parent.Namespaces, statement) {
+		declarer.namespaces = append(declarer.namespaces, tree.Unquoted(tree.Statements[statement].Value))
 	}
 	return statement == 0 || !context.Defines && tree.Statements[statement].Parent == 0
 }
@@ -275,5 +286,8 @@ func (declarer *declarer) build() {
 	maps.Copy(declarer.schema.ModifierFields, declarer.modifiers)
 	for _, widget := range declarer.widgets {
 		declarer.schema.WidgetTypes[widget] = true
+	}
+	for _, namespace := range declarer.namespaces {
+		declarer.schema.Namespaces[namespace] = true
 	}
 }

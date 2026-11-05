@@ -4,7 +4,11 @@ import { Events } from "@wailsio/runtime";
 
 import { errorLogQuery, isGitStatus, keys, updateQuery } from "../queries";
 
-/** An EventRow is what an event makes stale, from its data. A row that forgets empties the cached data first. */
+/**
+ * An EventRow is what an event makes stale, from its data. A row that forgets empties the cached data and makes
+ * nothing stale: the data belongs to a workspace that is gone, and a query that asks Go again before the next
+ * workspace opens would be answered by that one.
+ */
 type EventRow<E extends keyof Events.CustomEvents> = {
   stale: (data: Events.CustomEvents[E]) => readonly (readonly unknown[])[];
   forgets?: true;
@@ -76,7 +80,10 @@ export function subscribeEvents(): void {
   ][]) {
     Events.On(event, ({ data }) => {
       const affected = stale(data);
-      if (forgets) affected.forEach((key) => forget(cache, key));
+      if (forgets) {
+        affected.forEach((key) => forget(cache, key));
+        return;
+      }
       // A query that fails keeps its error for the page that shows it.
       for (const key of affected) cache.invalidateQueries({ key: key as EntryKey }).catch(() => undefined);
     });

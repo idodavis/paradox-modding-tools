@@ -10,7 +10,7 @@ import { findCommand } from "../../app/commands";
 import { homeRoute, useShown } from "../../app/pages";
 import { describeDumps, describeLexicon, installLine, plural } from "../../lib/format";
 import { gamesQuery, reportQuery, stateQuery, workspacesQuery } from "../../queries";
-import { gameIcon } from "../../stores/settings";
+import { gameIcon, useSettingsStore } from "../../stores/settings";
 import { COMMAND_BUS } from "../../stores/windows";
 import { useWorkspaceStore, VANILLA } from "../../stores/workspace";
 import CreateModForm from "../../ui/CreateModForm.vue";
@@ -30,6 +30,7 @@ const LAUNCH = findCommand("game.launch");
 const router = useRouter();
 const toast = useToast();
 const store = useWorkspaceStore();
+const settings = useSettingsStore();
 const commandBus = useEventBus(COMMAND_BUS);
 const creatingMod = shallowRef(false);
 const guiding = shallowRef(false);
@@ -90,9 +91,9 @@ async function openSettings(record: Workspace): Promise<void> {
   commandBus.emit("settings.open");
 }
 
-/** openModDialog opens the new mod dialog, or Make a new mod if no workspace is open. */
+/** openModDialog opens the new mod dialog, or Make a new mod if no workspace is open or Guidance is on. */
 function openModDialog(): void {
-  if (state.value?.open) creatingMod.value = true;
+  if (state.value?.open && !settings.isGuided()) creatingMod.value = true;
   else void router.push({ name: "new-mod" });
 }
 

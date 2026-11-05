@@ -121,6 +121,7 @@ type walker struct {
 	inline     map[string]ScriptedDefinition // each name the file declared for itself so far
 	mods       map[string]ScriptedDefinition // the mods' scripted definitions when the walk began
 	modifiers  map[string]*Field             // what the mods' modifier types take when the walk began
+	namespaces map[string]bool               // the event namespaces the mods declared when the walk began
 	frames     []frame                       // frames[0] is the file's; frames[n] is that of the statements n levels down
 	saved      []Saved
 }
@@ -177,7 +178,7 @@ func (schema *Schema) newWalker(tree *jomini.Tree, file files.File, visitor Visi
 	}
 	walker := &walker{
 		schema: schema, row: row, tree: tree, file: file, visitor: visitor, inline: map[string]ScriptedDefinition{},
-		mods: mods.all, modifiers: mods.modifiers,
+		mods: mods.all, modifiers: mods.modifiers, namespaces: mods.namespaces,
 	}
 	_, walker.rel = row.SplitStage(file.Rel)
 	walker.stem = strings.TrimSuffix(path.Base(walker.rel), path.Ext(walker.rel))
@@ -917,9 +918,10 @@ func (walker *walker) resolveValueReferences(context *Context, statement int32, 
 	if database != "" && placed == "" && !strings.Contains(text, " ") {
 		databases = append(databases, database)
 	}
-	// a value shaped like an event id may name an event, unless its field claims another database
+	// a value shaped like an event id names an event where its field claims events, and where its field claims nothing
+	// and an events file declares its namespace
 	if walker.schema.Events != "" && walker.file.Format == files.FormatScript && jomini.IsEventID(text) &&
-		(claim == "" || claim == walker.schema.Events) {
+		(claim == walker.schema.Events || claim == "" && walker.hasNamespace(text)) {
 		databases = append(databases, walker.schema.Events)
 	}
 	// the claim is inferred if it rests on the game's own files and no other rule makes it
@@ -1097,6 +1099,13 @@ func findTextDatabase(context *Context) string {
 		return keyword.Values
 	}
 	return ""
+}
+
+// hasNamespace reports whether an events file of the game or of the workspace's mods declares the namespace of an
+// event id.
+func (walker *walker) hasNamespace(id string) bool {
+	namespace, _, _ := strings.Cut(id, ".")
+	return walker.schema.Namespaces[namespace] || walker.namespaces[namespace]
 }
 
 // isOptional reports whether a database's names need no definition, as its row says.

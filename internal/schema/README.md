@@ -1,6 +1,6 @@
 # schema
 
-[Architecture](../../ARCHITECTURE.md) › [Engine](../../ARCHITECTURE.md#the-engine) › schema
+[Architecture](../../docs/ARCHITECTURE.md) › [Engine](../../docs/ARCHITECTURE.md#the-engine) › schema
 
 The schema is the language of one game version: which databases exist, what each key takes and which commands run in
 which scope. It is built from the game's dumps, the docs the install ships and the game's own files. It also owns the
@@ -113,7 +113,8 @@ earlier one left out. A file of data, with more script lines than prose, is skip
 its message keys. The DLC folder is left out. It runs in two passes.
 
 1. The `declarer` reads the files that declare what script and GUI files call by name: scripted definitions with the
-   parameters their bodies write, widget types and modifier types. A later key under a call then counts as a call.
+   parameters their bodies write, widget types, modifier types and the event namespaces events files declare. A later
+   key under a call then counts as a call.
 2. The `counter` counts what the files write, on `files.Workers` workers, each with fields of its own that are added
    together after. It counts the keys under each database's definitions, each value, the shapes a block's keys tell,
    the names after each prefix and where each command and data function is written.
@@ -127,9 +128,9 @@ game's own definitions.
 
 A `ScriptedDefinition` is a scripted effect, trigger, value or list, with the parameters its body writes and the names
 it saves. A modifier type's definition says whether its name takes yes or no, or a number. The `declarer` reads both
-from the game's files. `SetScripted` reads them from the workspace's mods, in place of what those files declared
-before, so a call to a mod's scripted definition is a known call. A call finds the game's definition first, and a
-mod's never takes the place of a command the dumps declare.
+from the game's files, and the event namespaces too. `SetScripted` reads them from the workspace's mods, in place of
+what those files declared before, so a call to a mod's scripted definition is a known call. A call finds the game's
+definition first, and a mod's never takes the place of a command the dumps declare.
 
 ## The walk
 
@@ -158,6 +159,8 @@ Some decisions the walk makes:
   the scopes the earlier ones saved.
 - **References.** The references a statement makes are found here and nowhere else: the names its key calls, the
   names after a link's prefixes, the database its field claims, and the names in a data call or a macro's expansion.
+  A value shaped like an event id names an event where its field claims events, or claims nothing and an events file
+  of the game or the mods declares its namespace.
 
 A data call's steps are read by the dumps' data types. `ResolveCallTypes` and `FindFunction` follow a call from a GUI
 block's data context, `ResolveMacro` expands the game's data binding macros, and `ListCallReferences` gives the names

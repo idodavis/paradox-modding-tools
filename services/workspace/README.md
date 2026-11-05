@@ -1,6 +1,6 @@
 # workspace
 
-[Architecture](../../ARCHITECTURE.md) › [Services](../../ARCHITECTURE.md#the-services) › workspace
+[Architecture](../../docs/ARCHITECTURE.md) › [Services](../../docs/ARCHITECTURE.md#the-services) › workspace
 
 The workspace service holds the one open workspace: a game install and the mods being edited, in load order. Opening
 one loads the install's schema and index, or builds them, scans the mods on top and watches their folders. Every other
@@ -45,8 +45,8 @@ index, the mods in load order and the language.
 - **No locks for readers.** The mods' index sits in an atomic pointer. A reader loads it once and keeps that copy to
   its end, and a rescan changes a clone and swaps it in.
 - **Each file parsed once.** A `Document` is one file parsed in its format's dialect. An open file's document is the
-  editor's text, its buffer, which the lsp service hands over as the user types. Any other file is parsed when asked
-  and kept in a bounded cache.
+  editor's text, its buffer, which the lsp service hands over as the user types; `Edits` counts each change to the
+  buffers. Any other file is parsed when asked and kept in a bounded cache.
 - **Texts.** A localization key's text comes in the workspace's language, else the base language, with the message
   the game keeps. A definition's title is the text the game shows it by.
 - **Other load orders.** `ScanOrder` scans the mods in another order and keeps the result nowhere, for Health's

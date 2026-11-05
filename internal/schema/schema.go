@@ -204,9 +204,10 @@ type relay struct {
 
 // modScripted is what the files of the workspace's mods declare, by file and all together.
 type modScripted struct {
-	byFile    map[string]*declarer          // by a file's key
-	all       map[string]ScriptedDefinition // as ScriptedDefinitions holds them
-	modifiers map[string]*Field             // as ModifierFields holds them
+	byFile     map[string]*declarer          // by a file's key
+	all        map[string]ScriptedDefinition // as ScriptedDefinitions holds them
+	modifiers  map[string]*Field             // as ModifierFields holds them
+	namespaces map[string]bool               // as Namespaces holds them
 }
 
 // A SourceState says where one source's data came from and how fresh it is.
@@ -241,6 +242,7 @@ type Schema struct {
 	ModifierFields      map[string]*Field // by modifier type the game defines: what its name takes in a modifiers block
 	ScriptedDefinitions map[string]ScriptedDefinition
 	WidgetTypes         map[string]bool
+	Namespaces          map[string]bool // the event namespaces the game's events files declare
 	// UnlistedCalls holds the data call steps that no dump declares for the type before them, though the game's own
 	// localization and GUI text write them. A key is Type.step.
 	UnlistedCalls map[string]bool
@@ -289,6 +291,7 @@ func Build(row *game.Game, installPath string, listing []files.File, parse func(
 		ModifierFields:      map[string]*Field{},
 		ScriptedDefinitions: map[string]ScriptedDefinition{},
 		WidgetTypes:         map[string]bool{},
+		Namespaces:          map[string]bool{},
 		UnlistedCalls:       map[string]bool{},
 		TopFolders:          map[string]bool{},
 	}
@@ -698,7 +701,7 @@ func ReturnType(function DataFunction) string {
 
 // FindUnlisted returns the position of the first step of a data call that the dumps do not declare, and the type before
 // it, which for the first step is the data context's type, else Global. It returns false if the dumps declare every
-// step or the type before the step is unknown.
+// step, or do not name the type before the step.
 func (schema *Schema) FindUnlisted(call jomini.Call, datacontext string) (int, string, bool) {
 	owners, functions := schema.listCallOwners(call, datacontext)
 	step := slices.Index(owners, "")
@@ -707,7 +710,7 @@ func (schema *Schema) FindUnlisted(call jomini.Call, datacontext string) (int, s
 	}
 	before := cmp.Or(datacontext, game.GlobalType)
 	if step > 0 {
-		before = functions[step-1].Returns
+		before = ReturnType(functions[step-1])
 	}
 	return step, before, before != ""
 }

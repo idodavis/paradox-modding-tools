@@ -1,6 +1,6 @@
 # jomini
 
-[Architecture](../../ARCHITECTURE.md) › [Engine](../../ARCHITECTURE.md#the-engine) › jomini
+[Architecture](../../docs/ARCHITECTURE.md) › [Engine](../../docs/ARCHITECTURE.md#the-engine) › jomini
 
 The jomini package parses Paradox script, GUI and asset files into a flat tree. It also tells what shape a written word
 has: a number, a date, a parameter, a color or a data call. It answers only what the text says, such as where each

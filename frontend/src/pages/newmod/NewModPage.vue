@@ -7,6 +7,7 @@ import type { DetectedInstall, Game } from "@internal/game/models";
 import type { Install } from "@services/app/models";
 import * as workspace from "@services/workspace/service";
 import { toSentence } from "../../lib/format";
+import { GOALS, isPicked } from "../../lib/goals";
 import { gamesQuery, languagesQuery, modCheckQuery, modFolderQuery } from "../../queries";
 import { gameIcon, useSettingsStore } from "../../stores/settings";
 import { useWorkspaceStore } from "../../stores/workspace";
@@ -15,76 +16,11 @@ import GameInstalls from "../../ui/GameInstalls.vue";
 import HowModWorks from "../../ui/HowModWorks.vue";
 import StatusFacts from "../../ui/StatusFacts.vue";
 
-/** GOALS lists what a modder may want to make, in the order the first screen shows them. */
-const GOALS = [
-  {
-    id: "change",
-    icon: "i-lucide-pencil",
-    label: "Change something in the game",
-    blurb:
-      "A trait's numbers, a building's cost, a rule. Your mod changes just that entry and leaves the rest to the game.",
-    hint: "Find it in the game's files, then Override",
-    existing: 0,
-    makes: true,
-    opens: { name: "workspace-ide" },
-  },
-  {
-    id: "add",
-    icon: "i-lucide-plus",
-    label: "Add something new",
-    blurb: "A trait, an event, a decision. They live in a mod of your own, apart from the game's files.",
-    hint: "Name the mod, then New in the explorer",
-    existing: 0,
-    makes: true,
-    opens: { name: "workspace-ide" },
-  },
-  {
-    id: "translate",
-    icon: "i-lucide-languages",
-    label: "Translate a mod",
-    blurb: "Write a mod's text in another language, as a small mod that loads after it.",
-    hint: "Pick the mod and the language; Health lists the keys",
-    existing: 1,
-    makes: true,
-    opens: { name: "health", query: { view: "mod" } },
-  },
-  {
-    id: "together",
-    icon: "i-lucide-layers",
-    label: "Make two mods work together",
-    blurb: "A small mod that loads after both and settles what they both change.",
-    hint: "Pick the two mods; Health shows what they share",
-    existing: 2,
-    makes: true,
-    opens: { name: "health", query: { view: "compatibility" } },
-  },
-  {
-    id: "fix",
-    icon: "i-lucide-activity",
-    label: "Fix a mod I have",
-    blurb: "See what the game's log and Health say about it, worst first, and work down the list.",
-    hint: "Choose its folder; Health opens first",
-    existing: 1,
-    makes: false,
-    opens: { name: "health" },
-  },
-  {
-    id: "browse",
-    icon: "i-lucide-book-open",
-    label: "Look around the game's files",
-    blurb: "A workspace of the game alone, to read how it does things. The files are read only, so nothing can break.",
-    hint: "The IDE, with the game's files",
-    existing: 0,
-    makes: false,
-    opens: { name: "workspace-ide" },
-  },
-] as const;
-
 const { goal: routeGoal = "" } = defineProps<{ goal?: string }>();
 
 const settings = useSettingsStore();
 const store = useWorkspaceStore();
-const goalId = shallowRef<(typeof GOALS)[number]["id"]>(GOALS.find((goal) => goal.id === routeGoal)?.id ?? "add");
+const goalId = shallowRef(GOALS.find((goal) => goal.id === routeGoal)?.id ?? "add");
 const chosen = shallowRef(!!routeGoal);
 const gameId = shallowRef("");
 const installId = shallowRef("");
@@ -122,11 +58,9 @@ const workspaceName = computed(
 const blocked = computed(
   () =>
     !installId.value ||
-    picked.value.some((folder) => !folder) ||
-    new Set(picked.value).size < picked.value.length ||
+    !isPicked(selected.value, picked.value, language.value) ||
     checks.slice(0, selected.value.existing).some((check) => !!check.error.value) ||
-    (selected.value.makes && (!title.value.trim() || !!nameError.value)) ||
-    (selected.value.id === "translate" && !language.value),
+    (selected.value.makes && (!title.value.trim() || !!nameError.value)),
 );
 
 const { mutate: pick } = useMutation({

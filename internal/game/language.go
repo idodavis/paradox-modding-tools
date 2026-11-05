@@ -138,6 +138,12 @@ var DocTypes = map[string]DocType{
 
 	// EU5 in_game/common/estate_privileges/readme.txt:17 and 22 more lines of its readmes
 	"scaled and triggered modifier": {Value: "block", Shape: ShapeModifiers},
+	// CK3 court_positions/types/_court_positions.info:13 and tasks/_court_position_tasks.info:12 write "Path to
+	// animation played in GUI"; the game's files write an animation's name there, as 00_court_positions.txt's reading
+	"path to animation": {Value: "reference", Database: "gfx/portraits/portrait_animations"},
+	// CK3 story_cycles/_story_cycles.info:129 "Effect group will fire only if trigger is satisfied" opens the comment
+	// on a block of triggers, which names no type
+	"effect group": {Value: "block"},
 }
 
 // The shapes that Go code names. Each is the key of its row in Shapes.

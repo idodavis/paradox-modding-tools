@@ -344,6 +344,7 @@ type ConfigFile struct {
 	path     string
 	mu       sync.RWMutex
 	config   Config
+	revision int // how many times Update has changed the config since the app started
 	readOnly bool
 }
 
@@ -360,6 +361,13 @@ func (file *ConfigFile) Config() Config {
 	file.mu.RLock()
 	defer file.mu.RUnlock()
 	return file.config
+}
+
+// Revision returns how many times Update has changed the config since the app started.
+func (file *ConfigFile) Revision() int {
+	file.mu.RLock()
+	defer file.mu.RUnlock()
+	return file.revision
 }
 
 // Update runs a change on a copy of the config, saves the result and emits config:changed with the given section
@@ -386,6 +394,7 @@ func (file *ConfigFile) Update(section string, change func(config *Config) error
 		return err
 	}
 	file.config = next
+	file.revision++
 	application.Get().Event.Emit(EventConfigChanged, section)
 	return nil
 }

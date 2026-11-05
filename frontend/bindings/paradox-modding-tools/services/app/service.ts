@@ -31,7 +31,7 @@ export function BuildDiagnostics(): $CancellablePromise<string> {
 
 /**
  * CheckUpdate asks the project's GitHub releases whether a newer version exists, and emits app:update if one does.
- * It returns an empty Update if none does.
+ * It returns an empty Update if none does. A dev build is no release, so it never asks.
  */
 export function CheckUpdate(): $CancellablePromise<$models.Update> {
     return $Call.ByID(622473172);
@@ -65,9 +65,9 @@ export function InstallRelease(version: string): $CancellablePromise<void> {
 }
 
 /**
- * ListReleases returns every published release, the newest first, each with its notes. A build that is no release,
- * such as a dev build, gets the newest only. It returns an error if GitHub cannot be reached or answers with an
- * error.
+ * ListReleases returns every published release of this app, the newest first, each with its notes. A release before
+ * firstRelease is left out. A build that is no release, such as a dev build, gets the newest only. It returns an error
+ * if GitHub cannot be reached or answers with an error.
  */
 export function ListReleases(): $CancellablePromise<$models.Release[] | null> {
     return $Call.ByID(449327985);

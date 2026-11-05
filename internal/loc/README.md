@@ -1,6 +1,6 @@
 # loc
 
-[Architecture](../../ARCHITECTURE.md) › [Engine](../../ARCHITECTURE.md#the-engine) › loc
+[Architecture](../../docs/ARCHITECTURE.md) › [Engine](../../docs/ARCHITECTURE.md#the-engine) › loc
 
 The loc package reads and writes localization files. It parses a file into its messages, decides the file's language,
 splits a message's text into its markup, and gives the plain text a player sees.

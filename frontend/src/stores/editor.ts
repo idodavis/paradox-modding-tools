@@ -56,8 +56,8 @@ export type Layout = { rows: { columns: Group[] }[] };
 /** A SavedLayout is a workspace's saved layout. */
 type SavedLayout = { layout: Layout; active: string; paths: Record<string, string> };
 
-/** A Source is what showed a place: the explorer, a jump, the history, or Follow the agent. */
-export type Source = "explorer" | "navigate" | "history" | "agent" | "edit";
+/** A Source is what showed a place: the explorer, Source control's lists, a jump, the history, or Follow the agent. */
+export type Source = "explorer" | "changes" | "navigate" | "history" | "agent" | "edit";
 
 /** A Visit is one place the user was in: a file and a caret position in it. */
 type Visit = { place: Place; position: IPosition };
@@ -72,6 +72,7 @@ const START = { key: "", start: true } as const;
 /** SOURCES holds what each source does to the place it shows: preview tab, history record, Follow the agent. */
 const SOURCES: Record<Source, { preview?: true; record?: false; follow?: true }> = {
   explorer: { preview: true },
+  changes: { preview: true },
   navigate: {},
   history: { record: false },
   agent: { preview: true, follow: true },
@@ -335,8 +336,16 @@ export const useEditorStore = defineStore("editor", () => {
   /** isFollowed reports whether the active tab is the one Follow the agent showed last. */
   const isFollowed = (): boolean => !!agentTab.value && activeTab()?.id === agentTab.value;
 
-  /** open makes a tab of a file, a diff or the start page the active one, as the user's pick. */
-  const open = (target: Omit<Tab, "id" | "preview">, place?: Place | null, groupId?: string): void => {
+  /**
+   * open makes a tab of a file, a diff or the start page the active one, as the user's pick. A new tab is a preview tab
+   * if the given source opens one.
+   */
+  const open = (
+    target: Omit<Tab, "id" | "preview">,
+    place?: Place | null,
+    groupId?: string,
+    source: Source = "navigate",
+  ): void => {
     const id = tabId(target);
     const preferred = listGroups().find((candidate) => candidate.id === groupId) ?? activeGroup();
     const group = find(id, preferred)?.group ?? preferred;
@@ -345,7 +354,7 @@ export const useEditorStore = defineStore("editor", () => {
       places.set(place.key, place);
       record(locate(place));
     }
-    add(group, { ...target, id, preview: false });
+    add(group, { ...target, id, preview: !!SOURCES[source].preview });
     activeId.value = group.id;
     release(id);
   };

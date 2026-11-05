@@ -61,6 +61,15 @@ func (index *Index) ListUses(database, name string) []Site {
 	return slices.SortedFunc(slices.Values(slices.Concat(uses, index.listPosting(RoleRefers, game.AnyCall, name))), compareSites)
 }
 
+// IsUsedByGame reports whether the game's own files refer to a name in a database. For a database whose definitions
+// script calls, the calls that may be to any callable database count too.
+func (index *Index) IsUsedByGame(database, name string) bool {
+	// the game's own files are the install's, whose postings answer without a list of every use being built
+	install := cmp.Or(index.install, index)
+	return len(install.listPosting(RoleRefers, database, name)) > 0 ||
+		len(game.Callables[database].Callers) > 0 && len(install.listPosting(RoleRefers, game.AnyCall, name)) > 0
+}
+
 // ListCallees returns the references that a reference stands for. A reference in game.AnyCall stands for the name in
 // each callable database, in database name order. Any other reference stands for itself.
 func ListCallees(reference schema.Reference) []schema.Reference {

@@ -15,7 +15,10 @@ import SettingsSection from "../../ui/SettingsSection.vue";
 import StatusFacts from "../../ui/StatusFacts.vue";
 import WorkshopPicker from "../../ui/WorkshopPicker.vue";
 
-/** A WizardMod is a mod folder to add, or a new mod to create when it has no folder, in one of the two lists. */
+/**
+ * A WizardMod is a mod folder to add, or a new mod to create when it has no folder, in one of the two lists. Its title
+ * is the name shown for it, which a folder picked from disk does not have.
+ */
 type WizardMod = { id: string; dir: string; title: string; external: boolean };
 
 const STEPS = ["Game", "Install", "Mods", "Details"];
@@ -77,11 +80,11 @@ const { mutate: create, isLoading: creating } = useMutation({
     ),
 });
 
-/** addFolders adds mod folders to the user's mods or to the external mods, leaving out those listed already. */
-function addFolders(dirs: string[], external: boolean): void {
-  const added = dirs
-    .filter((dir) => !listed.value.includes(dir))
-    .map((dir) => ({ id: crypto.randomUUID(), dir, title: "", external }));
+/** addFolders adds mods to the user's mods or to the external mods, leaving out those listed already. */
+function addFolders(folders: Pick<WizardMod, "dir" | "title">[], external: boolean): void {
+  const added = folders
+    .filter(({ dir }) => !listed.value.includes(dir))
+    .map((folder) => ({ ...folder, id: crypto.randomUUID(), external }));
   if (external) externals.value = [...externals.value, ...added];
   else mods.value = [...mods.value, ...added];
 }
@@ -164,7 +167,7 @@ function setStep(index: string | number | undefined): void {
             <div class="flex h-10 items-center gap-2.5 ps-2 pe-1.5">
               <UIcon name="i-lucide-grip-vertical" class="mod-handle size-3.5 cursor-grab text-dimmed" />
               <span class="w-3.5 text-center font-mono text-11 text-dimmed">{{ index + 1 }}</span>
-              <span class="min-w-0 grow truncate font-mono text-12">{{ mod.dir || mod.title }}</span>
+              <span class="min-w-0 grow truncate font-mono text-12">{{ mod.title || mod.dir }}</span>
               <UBadge v-if="!mod.dir" label="New" />
               <UButton
                 icon="i-lucide-x"
@@ -179,7 +182,13 @@ function setStep(index: string | number | undefined): void {
           <div v-if="mods.length" ref="list" :class="LIST">
             <Row v-for="(mod, index) in mods" :key="mod.id" :mod="mod" :index="index" />
           </div>
-          <FileSelector path="" folder :filter="[]" class="self-start" @update:path="addFolders([$event], false)">
+          <FileSelector
+            path=""
+            folder
+            :filter="[]"
+            class="self-start"
+            @update:path="addFolders([{ dir: $event, title: '' }], false)"
+          >
             <template #default="{ browse }">
               <UButton label="Add an existing mod" icon="i-lucide-plus" @click="browse" />
             </template>
@@ -202,7 +211,7 @@ function setStep(index: string | number | undefined): void {
             <Row v-for="(mod, index) in externals" :key="mod.id" :mod="mod" :index="mods.length + index" />
           </div>
           <div class="flex gap-2">
-            <FileSelector path="" folder :filter="[]" @update:path="addFolders([$event], true)">
+            <FileSelector path="" folder :filter="[]" @update:path="addFolders([{ dir: $event, title: '' }], true)">
               <template #default="{ browse }">
                 <UButton label="Add an external mod" icon="i-lucide-plus" @click="browse" />
               </template>
@@ -213,7 +222,12 @@ function setStep(index: string | number | undefined): void {
             v-model:open="picking"
             :install-id="installId"
             :taken="listed"
-            @add="addFolders($event, true)"
+            @add="
+              addFolders(
+                $event.map((mod) => ({ dir: mod.dir, title: mod.descriptor.name })),
+                true,
+              )
+            "
           />
         </template>
 

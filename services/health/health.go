@@ -12,10 +12,10 @@ import (
 	"strings"
 	"sync"
 	"time"
+	"weak"
 
 	"github.com/samber/lo"
 	"github.com/wailsapp/wails/v3/pkg/application"
-	"golang.org/x/sync/errgroup"
 
 	"paradox-modding-tools/internal/files"
 	"paradox-modding-tools/internal/game"
@@ -37,8 +37,27 @@ func init() { application.RegisterEvent[struct{}](EventErrorLogChanged) }
 // Service is the Wails service behind the Health page.
 type Service struct {
 	Workspace *workspace.Service
-	mu        sync.Mutex // guards stop
-	stop      func()     // ends the error log's watch, or nil
+	mu        sync.Mutex        // guards stop and reports
+	stop      func()            // ends the error log's watch, or nil
+	reports   map[string]*build // the reports kept, by the load order each judges
+}
+
+// A build is one load order's report, built or being built, which every caller that asks for it shares.
+type build struct {
+	stamp  stamp
+	done   chan struct{} // closed once the report is built
+	report Report
+	err    error
+}
+
+// A stamp is what a report is built from. A kept report is out of date once the workspace's stamp is another. Its weak
+// pointers keep no session, index or load order alive.
+type stamp struct {
+	session weak.Pointer[workspace.Session]
+	mods    weak.Pointer[index.Index]
+	order   weak.Pointer[[]workspace.Mod]
+	edits   int64 // the session's count of the editor's changes to its buffers
+	config  int   // config.json's revision
 }
 
 // ServiceStartup watches the game's error log while a workspace is open. The watch stops when the workspace closes.
@@ -52,7 +71,12 @@ func (hlt *Service) ServiceStartup(ctx context.Context, options application.Serv
 		}
 		hlt.setStop(watchErrorLog(ws, func() { application.Get().Event.Emit(EventErrorLogChanged, struct{}{}) }))
 	})
-	events.On(workspace.EventClosed, func(*application.CustomEvent) { hlt.setStop(nil) })
+	events.On(workspace.EventClosed, func(*application.CustomEvent) {
+		hlt.setStop(nil)
+		hlt.mu.Lock()
+		defer hlt.mu.Unlock()
+		clear(hlt.reports)
+	})
 	return nil
 }
 
@@ -194,21 +218,75 @@ const snippetContext = 2
 // coverageCode is the code of the finding that says how far a language covers a mod.
 const coverageCode = "coverage"
 
-// BuildReport builds the report of the mods' problems in a load order. An empty order means the workspace's own.
-// Another order is not saved. The report lists what it changes. It returns an error if the mods cannot be scanned.
+// BuildReport returns the report of the mods' problems in a load order. An empty order means the workspace's own.
+// Another order is not saved. The report lists what it changes. A report is built once and kept until the workspace,
+// its files, the editor's unsaved text or config.json change, and a caller that asks while it is built waits for it.
+// It returns an error if the mods cannot be scanned.
 func (hlt *Service) BuildReport(order []string) (Report, error) {
 	ws, err := hlt.Workspace.Session()
 	if err != nil {
 		return Report{}, err
 	}
+	if len(order) == 0 {
+		order = lo.Map(*ws.Order.Load(), func(mod workspace.Mod, _ int) string { return mod.ID })
+	}
+	kept, isNew := hlt.findBuild(ws, order)
+	if isNew {
+		kept.report, kept.err = hlt.makeReport(ws, order)
+		close(kept.done)
+	}
+	<-kept.done
+	return kept.report, kept.err
+}
+
+// findBuild returns the build of a load order's report for the workspace as it is now, and whether the caller is to
+// build it. A kept build of another stamp, or one that failed, is replaced. The workspace's own order and the last
+// preview are kept.
+func (hlt *Service) findBuild(ws *workspace.Session, order []string) (*build, bool) {
+	now := stamp{
+		session: weak.Make(ws),
+		mods:    weak.Make(ws.Mods.Load()),
+		order:   weak.Make(ws.Order.Load()),
+		edits:   ws.Edits.Load(),
+		config:  hlt.Workspace.Config.Revision(),
+	}
+	key := strings.Join(order, " ")
+	own := strings.Join(lo.Map(*ws.Order.Load(), func(mod workspace.Mod, _ int) string { return mod.ID }), " ")
+	hlt.mu.Lock()
+	defer hlt.mu.Unlock()
+	if kept, ok := hlt.reports[key]; ok && kept.stamp == now && !kept.failed() {
+		return kept, false
+	}
+	hlt.reports = lo.PickBy(hlt.reports, func(other string, kept *build) bool {
+		return kept.stamp == now && (other == own || key == own)
+	})
+	next := &build{stamp: now, done: make(chan struct{})}
+	hlt.reports[key] = next
+	return next, true
+}
+
+// failed reports whether the build is done and ended in an error.
+func (kept *build) failed() bool {
+	select {
+	case <-kept.done:
+		return kept.err != nil
+	default:
+		return false
+	}
+}
+
+// makeReport builds the report of the mods' problems in a load order. The workspace's own order is the base, and
+// another is a preview. It returns an error if the mods cannot be scanned.
+func (hlt *Service) makeReport(ws *workspace.Session, order []string) (Report, error) {
 	base := ws.Mods.Load()
 	mods, ids := base, lo.Map(*ws.Order.Load(), func(mod workspace.Mod, _ int) string { return mod.ID })
-	isPreview := len(order) > 0 && !slices.Equal(order, ids)
+	isPreview := !slices.Equal(order, ids)
 	if isPreview {
-		if mods, err = ws.ScanOrder(order); err != nil {
+		scanned, err := ws.ScanOrder(order)
+		if err != nil {
 			return Report{}, err
 		}
-		ids = order
+		mods, ids = scanned, order
 	}
 	// the compatibility checks judge the mods as if those left out were not loaded; each mod's own checks see them all
 	record, _ := lo.Find(hlt.Workspace.Config.Config().Workspaces, func(record app.Workspace) bool { return record.ID == ws.ID })
@@ -916,17 +994,7 @@ func listDiagnostics(ws *workspace.Session, mods *index.Index) []Finding {
 			paths = append(paths, mod.Descriptor.Path)
 		}
 	}
-	diagnostics := make([][]lsp.Diagnostic, len(paths))
-	var group errgroup.Group
-	group.SetLimit(files.Workers)
-	for position, target := range paths {
-		group.Go(func() error {
-			// a file that cannot be read has no problems
-			diagnostics[position], _ = lsp.DiagnoseFile(ws, mods, target)
-			return nil
-		})
-	}
-	_ = group.Wait()
+	diagnostics := lsp.DiagnoseFiles(ws, mods, paths)
 	var findings []Finding
 	for position, target := range paths {
 		place := ws.Locate(mods, target)

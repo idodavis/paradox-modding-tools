@@ -27,8 +27,10 @@ export function AddIgnoredPair(first: string, second: string): $CancellablePromi
 }
 
 /**
- * BuildReport builds the report of the mods' problems in a load order. An empty order means the workspace's own.
- * Another order is not saved. The report lists what it changes. It returns an error if the mods cannot be scanned.
+ * BuildReport returns the report of the mods' problems in a load order. An empty order means the workspace's own.
+ * Another order is not saved. The report lists what it changes. A report is built once and kept until the workspace,
+ * its files, the editor's unsaved text or config.json change, and a caller that asks while it is built waits for it.
+ * It returns an error if the mods cannot be scanned.
  */
 export function BuildReport(order: string[] | null): $CancellablePromise<$models.Report> {
     return $Call.ByID(2998965940, order);

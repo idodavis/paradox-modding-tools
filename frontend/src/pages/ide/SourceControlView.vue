@@ -283,6 +283,8 @@ function buildLines(row: GraphRow): { path: string; lane: number }[] {
                   editor.open(
                     { key: entry.change.place.key, side: 'commit', root: dir, hash: entry.row.commit.hash },
                     entry.change.place,
+                    undefined,
+                    'changes',
                   )
                 "
               >

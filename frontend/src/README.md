@@ -1,9 +1,9 @@
 # frontend/src
 
-[Architecture](../../ARCHITECTURE.md) › Frontend
+[Architecture](../../docs/ARCHITECTURE.md) › Frontend
 
 The Vue app that every PMT window runs. It shows what Go returns and handles interaction: the facts, paths and checks
-all come from the [services](../../ARCHITECTURE.md#the-services), and the app draws them as they are.
+all come from the [services](../../docs/ARCHITECTURE.md#the-services), and the app draws them as they are.
 
 It is Vue 3 with `<script setup>` and TypeScript, [Nuxt UI](https://ui.nuxt.com/) for components, Pinia for state and
 [Pinia Colada](https://pinia-colada.esm.dev/) for reading Go. The editor is Monaco, the explorer `@pierre/trees`, the

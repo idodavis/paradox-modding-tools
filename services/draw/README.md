@@ -1,6 +1,6 @@
 # draw
 
-[Architecture](../../ARCHITECTURE.md) › [Services](../../ARCHITECTURE.md#the-services) › draw
+[Architecture](../../docs/ARCHITECTURE.md) › [Services](../../docs/ARCHITECTURE.md#the-services) › draw
 
 The draw service builds what the Visual view shows. It resolves a GUI window into its widgets and a coat of arms into
 its layers, and it makes the text edits the view's panels ask for. It also saves pictures as DDS files.

@@ -1,6 +1,6 @@
 # index
 
-[Architecture](../../ARCHITECTURE.md) › [Engine](../../ARCHITECTURE.md#the-engine) › index
+[Architecture](../../docs/ARCHITECTURE.md) › [Engine](../../docs/ARCHITECTURE.md#the-engine) › index
 
 The index records what a scan found in the files of an install or of a workspace's mods: every definition, reference
 and localization message, with lookups by name. It decides which file and which definition the game keeps when several
@@ -85,7 +85,8 @@ listed once, under the inner one, as `FindRoot` finds it for any path.
 `Resolve` returns the definitions that a reference names, in load order. A local definition never counts; `ResolveLocal`
 lets the definitions local to the reference's own file count too. A reference in `game.AnyCall`, a call that may name
 any callable database, stands for one reference per callable database, as `ListCallees` lists them. `ListUses` returns
-the references to a name, and for a callable database the `game.AnyCall` references to it as well.
+the references to a name, and for a callable database the `game.AnyCall` references to it as well. `IsUsedByGame` asks
+only whether the game's own files make such a reference, from the install's postings, without building that list.
 
 A localization key is defined by its messages, so its role is `RoleLocalizes` where every other database's is
 `RoleDefines`.

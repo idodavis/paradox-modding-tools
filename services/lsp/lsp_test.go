@@ -619,7 +619,7 @@ func TestSweepMods(t *testing.T) {
 
 // judgeAsMod returns a function that judges a file of a workspace as a mod's file is judged, a file of the game too.
 func judgeAsMod(ws *workspace.Session) func(path string) ([]Diagnostic, error) {
-	mods := ws.Mods.Load()
+	mods, parameters := ws.Mods.Load(), &sync.Map{}
 	return func(path string) ([]Diagnostic, error) {
 		place := ws.Locate(mods, path)
 		if !isDiagnosed(place) {
@@ -629,7 +629,7 @@ func judgeAsMod(ws *workspace.Session) func(path string) ([]Diagnostic, error) {
 		if err != nil {
 			return nil, err
 		}
-		visitor := newVisitor(ws, mods, place)
+		visitor := newVisitor(ws, mods, place, parameters)
 		visitor.parseOnly = false
 		return visitor.diagnoseTree(document), nil
 	}

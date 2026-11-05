@@ -6,7 +6,7 @@ import { describeCount } from "../../lib/format";
 import { fileUrl } from "../../queries";
 import OriginChip from "../../ui/OriginChip.vue";
 import ConditionList from "./ConditionList.vue";
-import type { Drawn, Row } from "./layout";
+import { measureNode, type Drawn, type Row } from "./layout";
 
 const { drawn, labels = {} } = defineProps<{ drawn: Drawn; labels?: Record<string, string | undefined> }>();
 const emit = defineEmits<{ fold: [id: string] }>();
@@ -20,6 +20,8 @@ const HATCHED = "bg-[repeating-linear-gradient(135deg,var(--bg-2)_0_6px,var(--bg
 const KEYS: Record<string, string> = { branch: "var(--syn-block)", list: "var(--syn-scope)" };
 
 const node = computed(() => drawn.node);
+/** openWidth is an open node's width in rem, as the layout sizes it. */
+const openWidth = computed(() => `${measureNode(drawn).width / 16}rem`);
 const hidden = computed(() => node.value.display === "hidden");
 /** dashed is true for a node beyond the depth limit that is not the root. */
 const dashed = computed(() => node.value.deep && node.value.step !== 0);
@@ -68,7 +70,12 @@ function openMore(event: MouseEvent): void {
     <span class="truncate">{{ node.count }} more</span>
     <UIcon name="i-lucide-chevron-right" class="ms-auto size-3 shrink-0" />
   </div>
-  <div v-else-if="drawn.open" :class="STATE" class="relative w-59 rounded-lg border border-(--line-2) bg-(--bg-3)">
+  <div
+    v-else-if="drawn.open"
+    :class="STATE"
+    :style="{ width: openWidth }"
+    class="relative rounded-lg border border-(--line-2) bg-(--bg-3)"
+  >
     <div
       class="relative isolate flex flex-col gap-px rounded-t-lg py-1.75 ps-2.75 pe-2.5 whitespace-nowrap"
       :class="[

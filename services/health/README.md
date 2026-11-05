@@ -1,6 +1,6 @@
 # health
 
-[Architecture](../../ARCHITECTURE.md) › [Services](../../ARCHITECTURE.md#the-services) › health
+[Architecture](../../docs/ARCHITECTURE.md) › [Services](../../docs/ARCHITECTURE.md#the-services) › health
 
 The health service builds the Health report: how the open workspace's mods touch each other, and what is wrong in each
 one. It also lists the game's error log, watches it, and keeps the pairs of mods whose conflicts the workspace ignores.
@@ -31,6 +31,10 @@ flowchart TD
 - A preview is a load order the page asks about. It is scanned with `workspace.Session.ScanOrder` and saved nowhere.
   The report then lists the `Changes` against the workspace's own order: each name or path whose kept copy moves to
   another mod.
+- A report is built once and kept while what it is built from stays: the session, its index and load order, the
+  editor's buffers (`Session.Edits`) and `config.json` (`ConfigFile.Revision`). Every window and page that asks for
+  the same order gets the kept report, and one that asks while it is built waits for that build. The workspace's own
+  order and the last preview are kept, a failed build is not, and closing the workspace drops them all.
 - The seven lists are the definitions, the shipped paths, the shared localization keys, the descriptors, the unmounted
   folders, the editor's problems for every mod file, and the language coverage. The compatibility ones read the index
   narrowed to the checked mods. A mod the workspace marks `LeftOut` is not checked, but its own problems are still

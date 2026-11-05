@@ -1,6 +1,6 @@
 # game
 
-[Architecture](../../ARCHITECTURE.md) › [Engine](../../ARCHITECTURE.md#the-engine) › game
+[Architecture](../../docs/ARCHITECTURE.md) › [Engine](../../docs/ARCHITECTURE.md#the-engine) › game
 
 Every fact PMT knows about the three games, as tables of rows. It covers where each game keeps its files, what each
 folder holds, which copy of a definition the game keeps, and how a block of script reads its keys. It also says where

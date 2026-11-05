@@ -12,7 +12,7 @@ import { useRouter } from "vue-router";
 
 import * as app from "@services/app/service";
 import type { Place } from "@services/workspace/models";
-import { isPage, PAGES, WORKSPACE_TOOLS } from "../app/pages";
+import { isPage, PAGES, WORKSPACE_TOOLS, type WorkspacePage } from "../app/pages";
 import { findModel, openModel, saveUnsaved } from "../pages/ide/editor/models";
 import { useEditorStore, type Source, type Tab } from "./editor";
 import { useWorkspaceStore } from "./workspace";
@@ -54,8 +54,25 @@ export const THIS_WINDOW: WindowName = WINDOW_QUERY.get("window") ?? "main";
 /** HAS_EDITORS reports whether this window holds editors, as the main window and an editor window do. */
 export const HAS_EDITORS = THIS_WINDOW === "main" || THIS_WINDOW.startsWith("editor:");
 
+/** POP_OUT_PAGES holds the pages that open in a window of their own: every workspace page but the IDE. */
+export const POP_OUT_PAGES: readonly WorkspacePage[] = WORKSPACE_TOOLS.filter((tool) => tool !== "workspace-ide");
+
+/** IDE_WINDOWS holds each kind of window that shows one part of the IDE, by its kind, with its title. */
+const IDE_WINDOWS: Record<string, string> = {
+  editor: "Editor",
+  files: "Folder",
+  game: "Game files",
+  external: "External mods",
+  terminal: "Terminal",
+  wiki: "Wiki",
+  agent: "Agent",
+};
+
 /** COMMAND_BUS is the key of the bus a command travels on. */
 export const COMMAND_BUS: EventBusKey<string> = Symbol("pmt.command");
+
+/** pageWindow returns the name of the window of its own that shows the page with the given route name. */
+export const pageWindow = (name: string): WindowName => `page:${name}`;
 
 /** describeWindow returns what the given window shows, such as Health, Editor 2 or a folder's name. */
 export function describeWindow(name: WindowName): string {
@@ -63,15 +80,8 @@ export function describeWindow(name: WindowName): string {
   if (kind === "page") return isPage(rest) ? PAGES[rest].title : rest;
   if (kind === "editor") return `Editor ${rest}`;
   if (kind === "files") return rest.split(/[\\/]/).at(-1) ?? rest;
-  const names: Record<string, string> = {
-    main: "Main window",
-    game: "Game files",
-    external: "External mods",
-    terminal: "Terminal",
-    wiki: "Wiki",
-    agent: "Agent",
-  };
-  return names[kind] ?? name;
+  if (kind === "main") return "Main window";
+  return IDE_WINDOWS[kind] ?? name;
 }
 
 export const useWindowsStore = defineStore("windows", () => {
@@ -231,14 +241,18 @@ export const useWindowsStore = defineStore("windows", () => {
   const holderOf = (key: string): WindowName =>
     [state.value, ...others.values()].find((held) => held.files.includes(key))?.name ?? "";
 
-  /** popOut opens the window of the given name with the given tabs, or brings it to the front if it is open. */
+  /**
+   * popOut opens the window of the given name with the given tabs, or brings it to the front if it is open. The name is
+   * a page's window or one of the IDE's parts; any other name does nothing.
+   */
   const popOut = (name: WindowName, tabIds: string[] = [], query: Record<string, string> = {}): void => {
     const target = name === "editor" ? resolveEditor() : name;
+    const tool = POP_OUT_PAGES.find((candidate) => pageWindow(candidate) === target);
+    if (!tool && !(target.split(":")[0] in IDE_WINDOWS)) return;
     if (others.has(target)) {
       showWindow(target);
       return;
     }
-    const tool = WORKSPACE_TOOLS.find((candidate) => `page:${candidate}` === target);
     const route = router.resolve({ name: tool ?? "workspace-ide", params: { id: workspace.activeId() } });
     const url = `/?${new URLSearchParams({ window: target, ...query })}${route.href}`;
     const tabs = tabIds.flatMap((id) => editor.listTabs().find((tab) => tab.id === id && !tab.start) ?? []);
@@ -259,11 +273,14 @@ export const useWindowsStore = defineStore("windows", () => {
     showWindow(window);
   };
 
-  /** openPage shows a route in the main window and brings the window to the front. */
-  const openPage = (path: string): void => {
-    link("main").post({ type: "page", path });
-    showWindow("main");
+  /** openPage shows a route in the given window, the main one unless another is given, and brings it to the front. */
+  const openPage = (path: string, window: WindowName = "main"): void => {
+    link(window).post({ type: "page", path });
+    showWindow(window);
   };
+
+  /** holderOfPage returns the other window that shows the page with the given route name, or "" when none does. */
+  const holderOfPage = (name: string): WindowName => (others.has(pageWindow(name)) ? pageWindow(name) : "");
 
   /** findActive returns the place the given window's active tab shows, or null. */
   const findActive = (name: WindowName): Place | null => others.get(name)?.active ?? null;
@@ -307,6 +324,7 @@ export const useWindowsStore = defineStore("windows", () => {
     requestTab,
     showElsewhere,
     openPage,
+    holderOfPage,
     findActive,
     resolveTerminal,
     showWindow,

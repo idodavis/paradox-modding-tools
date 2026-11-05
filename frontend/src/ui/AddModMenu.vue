@@ -8,6 +8,7 @@ import type { DropdownMenuItem } from "@nuxt/ui";
 import { useWorkspaceStore } from "../stores/workspace";
 import WorkshopPicker from "./WorkshopPicker.vue";
 import * as workspace from "@services/workspace/service";
+import type { Mod } from "@services/workspace/models";
 
 const ROW = "h-auto py-1.5";
 // A closing menu must not take the focus back from the dialog it opened.
@@ -23,8 +24,8 @@ const { mutate: addFolder } = useMutation({
   },
 });
 const { mutate: addWorkshop } = useMutation({
-  mutation: async (dirs: string[]) => {
-    for (const dir of dirs) await workspace.AddMod(store.activeId(), dir, true);
+  mutation: async (mods: Mod[]) => {
+    for (const mod of mods) await workspace.AddMod(store.activeId(), mod.dir, true);
   },
 });
 

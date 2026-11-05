@@ -1,6 +1,6 @@
 # texture
 
-[Architecture](../../ARCHITECTURE.md) › [Engine](../../ARCHITECTURE.md#the-engine) › texture
+[Architecture](../../docs/ARCHITECTURE.md) › [Engine](../../docs/ARCHITECTURE.md#the-engine) › texture
 
 The texture package decodes DDS, TGA and PNG images to pixels, writes pictures as DDS files, and reads an image's header
 without decoding it. It also finds the image file that a path written in script names.

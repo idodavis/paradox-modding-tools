@@ -1,6 +1,6 @@
 # files
 
-[Architecture](../../ARCHITECTURE.md) › [Engine](../../ARCHITECTURE.md#the-engine) › files
+[Architecture](../../docs/ARCHITECTURE.md) › [Engine](../../docs/ARCHITECTURE.md#the-engine) › files
 
 The files package lists the files of an install, a mod or a dump folder and tells what format each one is. It reads and
 writes a file's text in its own encoding, compares and joins paths, unpacks a zip and applies ignore rules.

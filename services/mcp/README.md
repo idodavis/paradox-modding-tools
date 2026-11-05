@@ -1,6 +1,6 @@
 # mcp
 
-[Architecture](../../ARCHITECTURE.md) › [Services](../../ARCHITECTURE.md#the-services) › mcp
+[Architecture](../../docs/ARCHITECTURE.md) › [Services](../../docs/ARCHITECTURE.md#the-services) › mcp
 
 The mcp service is PMT's tool server for coding agents. It serves PMT's tools, its instructions and its starter tasks
 over MCP to the agents on this computer, and passes on to the main window what an agent asks it to show.

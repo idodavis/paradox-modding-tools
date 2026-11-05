@@ -6,7 +6,7 @@
 <script setup lang="ts">
 import type { ContextMenuItem, DropdownMenuItem } from "@nuxt/ui";
 import { useMutation, useQuery } from "@pinia/colada";
-import { useDebounceFn, useElementSize, useEventBus, useEventListener } from "@vueuse/core";
+import { until, useDebounceFn, useElementSize, useEventBus, useEventListener } from "@vueuse/core";
 import { Events, System, Window } from "@wailsio/runtime";
 import { computed, onScopeDispose, reactive, shallowRef, useTemplateRef, watch } from "vue";
 import { useRoute, useRouter } from "vue-router";
@@ -18,7 +18,14 @@ import { countFindings, list, plural } from "../lib/format";
 import { gamesQuery, workspacesQuery } from "../queries";
 import { useAgentStore } from "../stores/agent";
 import { gameIcon, useSettingsStore } from "../stores/settings";
-import { COMMAND_BUS, describeWindow, THIS_WINDOW, useWindowsStore } from "../stores/windows";
+import {
+  COMMAND_BUS,
+  describeWindow,
+  pageWindow,
+  POP_OUT_PAGES,
+  THIS_WINDOW,
+  useWindowsStore,
+} from "../stores/windows";
 import { useWorkspaceStore } from "../stores/workspace";
 import { findKbds } from "./commands";
 import { homeRoute, isWorkspacePage, listShownTools, PAGES, type WorkspacePage } from "./pages";
@@ -77,13 +84,10 @@ const compact = computed(
   () => width.value > 0 && width.value < (1110 * (Number(settings.value("appearance.scale")) || 100)) / 100,
 );
 
-/** resolvePageWindow returns the name of the window of its own that shows a page. */
-const resolvePageWindow = (name: WorkspacePage) => `page:${name}`;
 /** isPopped reports whether a page is shown in a window of its own. */
-const isPopped = (name: WorkspacePage) =>
-  resolvePageWindow(name) !== THIS_WINDOW && windows.listWindows().includes(resolvePageWindow(name));
+const isPopped = (name: WorkspacePage) => !!windows.holderOfPage(name);
 /** canPopOut reports whether a page can open in a window of its own. The IDE stays in the main window. */
-const canPopOut = (name: WorkspacePage) => name !== "workspace-ide";
+const canPopOut = (name: WorkspacePage) => POP_OUT_PAGES.includes(name);
 
 // The full path each page was last shown at, by its path without the query.
 const paths = reactive(new Map<string, string>());
@@ -168,23 +172,27 @@ function tabMenu(name: WorkspacePage): ContextMenuItem[] {
   if (!isPopped(name))
     return [{ label: "Open in a new window", icon: "i-lucide-app-window", onSelect: () => popOut(name) }];
   return [
-    { label: "Show window", icon: "i-lucide-app-window", onSelect: () => windows.showWindow(resolvePageWindow(name)) },
+    { label: "Show window", icon: "i-lucide-app-window", onSelect: () => windows.showWindow(pageWindow(name)) },
     {
       label: "Back into the main window",
       icon: "i-lucide-panel-top-close",
-      onSelect: () => {
-        windows.closeOther(resolvePageWindow(name));
-        void router.push({ name, params: { id: workspace.activeId() } });
-      },
+      onSelect: () => void dockPage(name),
     },
   ];
 }
 
-/** popOut opens a page in a window of its own and shows another page here. */
+/** popOut opens a page in a window of its own and shows another page here, the IDE if no other tab is free. */
 function popOut(name: WorkspacePage): void {
-  windows.popOut(resolvePageWindow(name));
-  const next = tools.value.find((tool) => tool !== name && !isPopped(tool));
-  if (route.name === name && next) void router.push({ name: next, params: { id: workspace.activeId() } });
+  windows.popOut(pageWindow(name));
+  const next = tools.value.find((tool) => tool !== name && !isPopped(tool)) ?? "workspace-ide";
+  if (route.name === name) void router.push({ name: next, params: { id: workspace.activeId() } });
+}
+
+/** dockPage closes a page's window and shows the page here once the window is gone. */
+async function dockPage(name: WorkspacePage): Promise<void> {
+  windows.closeOther(pageWindow(name));
+  await until(() => !isPopped(name)).toBe(true, { timeout: 5_000 });
+  await router.push({ name, params: { id: workspace.activeId() } });
 }
 
 /** announceExit toasts that the launched game closed. If the game wrote fresher documentation, the toast stays. */
@@ -294,7 +302,7 @@ function styleButton(region: string): string[] {
             type="button"
             :class="tabClass(false)"
             :aria-label="`${PAGES[name].title}, in its own window`"
-            @click="windows.showWindow(resolvePageWindow(name))"
+            @click="windows.showWindow(pageWindow(name))"
           >
             <UIcon :name="PAGES[name].icon" class="size-4" />
             <span v-if="!compact">{{ PAGES[name].title }}</span>

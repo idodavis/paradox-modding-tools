@@ -871,6 +871,10 @@
 .monaco-editor .pmt-conflict-incoming {
   background: var(--blue-soft);
 }
+/* A diff's + and − signs sit in the middle of their lane, clear of the line numbers and the text. */
+.monaco-diff-editor .cldr {
+  justify-content: center;
+}
 /* The lines changed since the last commit get a bar beside the line numbers, and a wedge where lines were removed. */
 .monaco-editor .pmt-change-added,
 .monaco-editor .pmt-change-changed {

@@ -48,7 +48,7 @@ There are four layers, and each calls only the ones below it.
 
 | Layer | Folder | What it does |
 |---|---|---|
-| Frontend | `frontend/src/` | Shows what Go returns and handles interaction. [Its README](frontend/src/README.md) covers its folders. |
+| Frontend | `frontend/src/` | Shows what Go returns and handles interaction. [Its README](../frontend/src/README.md) covers its folders. |
 | Bindings | `frontend/bindings/` | TypeScript that Wails generates from the services' methods and types: `task common:generate:bindings`. |
 | Services | `services/` | One Wails service per feature. Their methods are what the pages call. |
 | Engine | `internal/` | Reads and models the games' files. It knows nothing of Wails, so it builds and tests alone. |
@@ -81,16 +81,16 @@ Arrows point to what a package imports. An import that follows from others is le
 
 | Package | What it does |
 |---|---|
-| [jomini](internal/jomini/README.md) | Parses Paradox script, GUI and asset files into a flat tree. |
-| [loc](internal/loc/README.md) | Reads and writes localization files: messages, languages and markup. |
-| [files](internal/files/README.md) | Lists the files of an install, a mod or a dump folder, and tells each one's format. |
-| [texture](internal/texture/README.md) | Decodes DDS, TGA and PNG images, reads their headers, and writes DDS. |
-| [game](internal/game/README.md) | Every fact about the supported games, as tables: installs, folders, file layout, language rules. |
-| [schema](internal/schema/README.md) | The language of one game version, and the one walk over a file that every reader of script uses. |
-| [index](internal/index/README.md) | Every definition, reference and localization message a scan found, and which copy the game keeps. |
-| [terminal](internal/terminal/README.md) | Runs shells under Windows' pseudo console or a Linux pty. |
+| [jomini](../internal/jomini/README.md) | Parses Paradox script, GUI and asset files into a flat tree. |
+| [loc](../internal/loc/README.md) | Reads and writes localization files: messages, languages and markup. |
+| [files](../internal/files/README.md) | Lists the files of an install, a mod or a dump folder, and tells each one's format. |
+| [texture](../internal/texture/README.md) | Decodes DDS, TGA and PNG images, reads their headers, and writes DDS. |
+| [game](../internal/game/README.md) | Every fact about the supported games, as tables: installs, folders, file layout, language rules. |
+| [schema](../internal/schema/README.md) | The language of one game version, and the one walk over a file that every reader of script uses. |
+| [index](../internal/index/README.md) | Every definition, reference and localization message a scan found, and which copy the game keeps. |
+| [terminal](../internal/terminal/README.md) | Runs shells under Windows' pseudo console or a Linux pty. |
 
-[`schema/gen`](internal/schema/gen/) writes the shipped backup schemas, the only game data the app embeds.
+[`schema/gen`](../internal/schema/gen/) writes the shipped backup schemas, the only game data the app embeds.
 
 ### The services
 
@@ -110,19 +110,19 @@ flowchart TD
 
 | Package | What it does |
 |---|---|
-| [app](services/app/README.md) | The app itself: `config.json`, settings, the log, windows and updates. |
-| [workspace](services/workspace/README.md) | The one open workspace: its schema and indexes, its files, and the watcher on its mods. |
-| [lsp](services/lsp/README.md) | The editor's language features: hover cards, completion, checks, go-to and references. |
-| [draw](services/draw/README.md) | The Visual view: GUI windows as widgets, and coats of arms. |
-| [graph](services/graph/README.md) | The Event Graph: what fires what, from one root. |
-| [health](services/health/README.md) | The Health report: what is wrong in the workspace's mods, and the game's error log. |
-| [search](services/search/) | Text search and replace over the workspace, and the file search behind Ctrl P. |
-| [git](services/git/README.md) | Source control, through the git installed on the machine. |
-| [wiki](services/wiki/README.md) | The community wiki: cached pages, patch notes, and the Wiki pane's pages for a file. |
-| [steam](services/steam/README.md) | Publishing to the Steam Workshop, and the compare with Steam. |
-| [terminal](services/terminal/README.md) | The IDE's Terminal: its shells, streamed to the window that shows them. |
-| [mcp](services/mcp/README.md) | PMT's tool server for coding agents. |
-| [agent](services/agent/README.md) | Installs and runs the coding agents of the assistant pane. |
+| [app](../services/app/README.md) | The app itself: `config.json`, settings, the log, windows and updates. |
+| [workspace](../services/workspace/README.md) | The one open workspace: its schema and indexes, its files, and the watcher on its mods. |
+| [lsp](../services/lsp/README.md) | The editor's language features: hover cards, completion, checks, go-to and references. |
+| [draw](../services/draw/README.md) | The Visual view: GUI windows as widgets, and coats of arms. |
+| [graph](../services/graph/README.md) | The Event Graph: what fires what, from one root. |
+| [health](../services/health/README.md) | The Health report: what is wrong in the workspace's mods, and the game's error log. |
+| [search](../services/search/) | Text search and replace over the workspace, and the file search behind Ctrl P. |
+| [git](../services/git/README.md) | Source control, through the git installed on the machine. |
+| [wiki](../services/wiki/README.md) | The community wiki: cached pages, patch notes, and the Wiki pane's pages for a file. |
+| [steam](../services/steam/README.md) | Publishing to the Steam Workshop, and the compare with Steam. |
+| [terminal](../services/terminal/README.md) | The IDE's Terminal: its shells, streamed to the window that shows them. |
+| [mcp](../services/mcp/README.md) | PMT's tool server for coding agents. |
+| [agent](../services/agent/README.md) | Installs and runs the coding agents of the assistant pane. |
 
 ## The data
 
@@ -273,10 +273,10 @@ flowchart LR
 
 | Doc | For |
 |---|---|
-| [README.md](README.md) | What PMT is, the download, getting started |
+| [README.md](../README.md) | What PMT is, the download, getting started |
 | [FEATURES.md](FEATURES.md) | Every page and what it does |
 | [CONTRIBUTING.md](CONTRIBUTING.md) | Building from source, the tests, a first change |
-| [AGENTS.md](AGENTS.md) | The code conventions, for people and the coding agents they bring |
+| [AGENTS.md](../AGENTS.md) | The code conventions, for people and the coding agents they bring |
 | [RELEASING.md](RELEASING.md) | How a release goes out, and its checklist |
 | [ROADMAP.md](ROADMAP.md) | What comes next |
-| [frontend/src/README.md](frontend/src/README.md) | The Vue app's folders and patterns |
+| [frontend/src/README.md](../frontend/src/README.md) | The Vue app's folders and patterns |

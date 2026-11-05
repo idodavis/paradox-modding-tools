@@ -1,6 +1,6 @@
 # agent
 
-[Architecture](../../ARCHITECTURE.md) › [Services](../../ARCHITECTURE.md#the-services) › agent
+[Architecture](../../docs/ARCHITECTURE.md) › [Services](../../docs/ARCHITECTURE.md#the-services) › agent
 
 The agent service starts the coding agents the assistant pane chats with. It lists them, installs them from the ACP
 registry with npm on Node, and pipes each running agent to the window that chats with it.

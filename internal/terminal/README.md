@@ -1,6 +1,6 @@
 # terminal
 
-[Architecture](../../ARCHITECTURE.md) › [Engine](../../ARCHITECTURE.md#the-engine) › terminal
+[Architecture](../../docs/ARCHITECTURE.md) › [Engine](../../docs/ARCHITECTURE.md#the-engine) › terminal
 
 The terminal package runs shells under the system's own pseudo-terminal: Windows' pseudo console (ConPTY), or a Linux
 pty. It keeps each shell's recent output and the screen a window last drew, so that another window can take a shell

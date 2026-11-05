@@ -327,7 +327,7 @@ function toggle(): void {
 
 /** open opens a changed file, or its diff on the given side. A conflicted file opens as a file. */
 function open(place: Place, side?: Section["side"]): void {
-  if (side && side !== "conflict") editor.open({ key: place.key, side, root }, place);
+  if (side && side !== "conflict") editor.open({ key: place.key, side, root }, place, undefined, "changes");
   else editor.show(place);
 }
 

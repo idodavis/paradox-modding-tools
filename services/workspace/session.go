@@ -37,6 +37,7 @@ type Session struct {
 	Install     *index.Index
 	Mods        atomic.Pointer[index.Index] // on top of Install; a rescan replaces it whole
 	Order       atomic.Pointer[[]Mod]       // the mods in load order; a descriptor read again puts a new copy in place
+	Edits       atomic.Int64                // how many times the editor's buffers have changed
 	Language    string                      // the localization language shown beside the game's base language
 	updatedFrom string                      // the install's recorded version when the open found another
 	mu          sync.RWMutex                // over the buffers, the documents and the load order, one rescan at a time
@@ -300,6 +301,7 @@ func (ws *Session) SetText(path, text string) {
 	ws.mu.Lock()
 	defer ws.mu.Unlock()
 	ws.buffers[files.ToKey(path)] = document
+	ws.Edits.Add(1)
 }
 
 // CloseBuffer drops an open file's buffer. A file with none is left alone.
@@ -307,6 +309,7 @@ func (ws *Session) CloseBuffer(path string) {
 	ws.mu.Lock()
 	defer ws.mu.Unlock()
 	delete(ws.buffers, files.ToKey(path))
+	ws.Edits.Add(1)
 }
 
 // LookupBuffer returns the editor's text for an open file. It returns false if the editor does not have the file

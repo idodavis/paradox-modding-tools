@@ -1,5 +1,5 @@
 /** How the graph's nodes look and where they go. ELK lays them out left to right, a column for each step. */
-import ELK, { type ElkNode, type ElkPoint, type ElkPort } from "elkjs/lib/elk-api";
+import ELK, { type ElkExtendedEdge, type ElkNode, type ElkPort } from "elkjs/lib/elk-api";
 import workerUrl from "elkjs/lib/elk-worker.min.js?url";
 import { groupBy } from "es-toolkit";
 import type { Edge as FlowEdge, Node as FlowNode } from "@vue-flow/core";
@@ -27,8 +27,10 @@ const SIZES = {
   frame: { width: 196, height: 97 },
   toast: { width: 196, height: 46 },
   pill: { width: 176, height: 26 },
-  open: { width: 236, head: 46, line: 16, row: 22, padding: 9 },
+  open: { width: 320, head: 46, line: 16, row: 22, padding: 9 },
 };
+/** LABEL is the pixel size of a drawn edge label: a character's width, the padding on both sides and the height. */
+const LABEL = { char: 6.3, padding: 8, height: 16 };
 const ACTIONS: Look = { shape: "pill", filled: true, color: "var(--green)", icon: "i-lucide-timer" };
 /** LOOKS is each database's look, by Go's database id. */
 const LOOKS: Record<string, Look> = {
@@ -40,11 +42,12 @@ const LOOKS: Record<string, Look> = {
   scripted_effects: { shape: "pill", filled: false, color: "var(--purple)", icon: "i-lucide-zap" },
 };
 const QUIET: Look = { shape: "pill", filled: false, color: "var(--fg-3)", icon: "i-lucide-box" };
-/** LAYOUT is ELK's options: layered, left to right, each step a partition. */
+/** LAYOUT is ELK's options: layered, left to right, each step a partition, edge labels on their edges. */
 const LAYOUT = {
   "elk.algorithm": "layered",
   "elk.direction": "RIGHT",
   "elk.partitioning.activate": "true",
+  "elk.edgeLabels.inline": "true",
   "elk.layered.layering.strategy": "LONGEST_PATH_SOURCE",
   "elk.edgeRouting": "POLYLINE",
   "elk.layered.nodePlacement.bk.fixedAlignment": "BALANCED",
@@ -139,11 +142,11 @@ export async function buildLayout(graph: Graph, options: Options): Promise<{ nod
       lit && !lit.near.has(item.node.id) && "dim",
     ],
   }));
-  const routes = new Map((placed.edges ?? []).map((edge) => [edge.id, edge.sections?.[0]]));
+  const routes = new Map((placed.edges ?? []).map((edge) => [edge.id, edge]));
   return { nodes: [...heads, ...nodes], edges: buildEdges(graph, drawn, routes, lit) };
 }
 
-/** placeNodes lays a graph's nodes out with ELK, each in the partition of its step. */
+/** placeNodes lays a graph's nodes out with ELK, each in the partition of its step. Every edge brings its label. */
 function placeNodes(graph: Graph, drawn: Drawn[], unit: number): Promise<ElkNode> {
   const first = Math.min(...drawn.map((item) => item.node.step));
   const byId = new Map(drawn.map((item) => [item.node.id, item]));
@@ -164,12 +167,15 @@ function placeNodes(graph: Graph, drawn: Drawn[], unit: number): Promise<ElkNode
   const edges = listSpans(graph)
     .filter(({ edge }) => edge.from !== edge.to)
     .map(({ edge, id }) => {
-      const handle = findHandle(byId.get(edge.from), edge);
-      return { id, sources: [handle ? `${edge.from}|${handle}` : edge.from], targets: [edge.to] };
+      const firer = byId.get(edge.from);
+      const handle = findHandle(firer, edge);
+      const text = describeLabel(edge, firer);
+      const labels = text ? [{ text, width: text.length * LABEL.char + LABEL.padding, height: LABEL.height }] : [];
+      return { id, sources: [handle ? `${edge.from}|${handle}` : edge.from], targets: [edge.to], labels };
     });
   const spacing = {
     "elk.spacing.nodeNode": String(12 * unit),
-    "elk.layered.spacing.nodeNodeBetweenLayers": String(60 * unit),
+    "elk.layered.spacing.nodeNodeBetweenLayers": String(30 * unit),
     "elk.padding": `[top=${40 * unit},left=${20 * unit},bottom=${40 * unit},right=${20 * unit}]`,
   };
   return elk.layout({ id: "graph", layoutOptions: { ...LAYOUT, ...spacing }, children, edges });
@@ -211,28 +217,34 @@ function listSpans(graph: Graph): { edge: Edge; span: number; id: string }[] {
   }));
 }
 
-/** buildEdges builds the canvas's edges. An edge that goes back follows ELK's route around the nodes between. */
-function buildEdges(
-  graph: Graph,
-  drawn: Drawn[],
-  routes: Map<string, { startPoint: ElkPoint; bendPoints?: ElkPoint[]; endPoint: ElkPoint } | undefined>,
-  lit: Lit | null,
-): FlowEdge[] {
+/** describeLabel returns an edge's label: its delay and the events it goes via. It is "" if the firer is open. */
+function describeLabel(edge: Edge, firer: Drawn | undefined): string {
+  if (firer?.open) return "";
+  const via = edge.via?.length ? `via ${edge.via.join(", ")}` : "";
+  return [edge.delay, via].filter(Boolean).join(" · ");
+}
+
+/** buildEdges builds the canvas's edges. Each follows ELK's route, and its label sits where ELK put it. */
+function buildEdges(graph: Graph, drawn: Drawn[], routes: Map<string, ElkExtendedEdge>, lit: Lit | null): FlowEdge[] {
   const byId = new Map(drawn.map((item) => [item.node.id, item]));
   return listSpans(graph).map(({ edge, span, id }) => {
     const firer = byId.get(edge.from);
     const touches = !!lit && [edge.from, edge.to].includes(lit.selected);
-    const route = span < 0 ? routes.get(id) : undefined;
-    const via = edge.via?.length ? `via ${edge.via.join(", ")}` : "";
+    const placed = routes.get(id);
+    const route = placed?.sections?.[0];
+    const label = placed?.labels?.[0];
     return {
       id,
       source: edge.from,
       target: edge.to,
       sourceHandle: findHandle(firer, edge),
       type: "fire",
-      label: touches && !firer?.open ? [edge.delay, via].filter(Boolean).join(" · ") : "",
+      label: touches ? describeLabel(edge, firer) : "",
       class: lit && isLit(lit, edge.from, edge.to) ? "lit" : [lit && "dim", span < 0 && "back"],
-      data: { points: route ? [route.startPoint, ...(route.bendPoints ?? []), route.endPoint] : [] },
+      data: {
+        points: route ? [route.startPoint, ...(route.bendPoints ?? []), route.endPoint] : [],
+        label: label && { x: (label.x ?? 0) + (label.width ?? 0) / 2, y: (label.y ?? 0) + (label.height ?? 0) / 2 },
+      },
     };
   });
 }

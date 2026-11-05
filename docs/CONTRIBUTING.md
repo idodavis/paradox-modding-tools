@@ -1,8 +1,8 @@
 # Contributing
 
 How to build Paradox Modding Tools from source, run its tests and send a first change. What the app does is in
-[README.md](README.md) and [FEATURES.md](FEATURES.md). How it is built is in [ARCHITECTURE.md](ARCHITECTURE.md), and
-the code's conventions are in [AGENTS.md](AGENTS.md). PMT runs on Windows and Linux; macOS is not supported.
+[README.md](../README.md) and [FEATURES.md](FEATURES.md). How it is built is in [ARCHITECTURE.md](ARCHITECTURE.md), and
+the code's conventions are in [AGENTS.md](../AGENTS.md). PMT runs on Windows and Linux; macOS is not supported.
 
 ## What you need
 
@@ -103,7 +103,7 @@ change `internal/texture`.
    explains its part.
 3. Pick an issue. Those marked [good first issue](https://github.com/idodavis/paradox-modding-tools/labels/good%20first%20issue)
    are a good start.
-4. Make the change, following [AGENTS.md](AGENTS.md). Run `task check`.
+4. Make the change, following [AGENTS.md](../AGENTS.md). Run `task check`.
 5. Open a pull request. Its template asks what you changed and why, which games and system you tried it on, and for
    a screenshot when something on screen changed.
 
@@ -112,5 +112,5 @@ goes out is in [RELEASING.md](RELEASING.md).
 
 ## License
 
-PMT is licensed under [Apache-2.0](LICENSE). By sending a change, you agree that it is licensed the same way, as
+PMT is licensed under [Apache-2.0](../LICENSE). By sending a change, you agree that it is licensed the same way, as
 section 5 of the license says.

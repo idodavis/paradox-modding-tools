@@ -1,4 +1,4 @@
-<!-- The dialog that lists the Workshop mods Steam has downloaded and hands back the folders of the ones checked. -->
+<!-- The dialog that lists the Workshop mods Steam has downloaded and hands back the ones checked. -->
 <script setup lang="ts">
 import { computed, shallowRef, watch } from "vue";
 import { useQuery } from "@pinia/colada";
@@ -6,10 +6,11 @@ import { useQuery } from "@pinia/colada";
 import { matchQuery, plural } from "../lib/format";
 import { workshopModsQuery } from "../queries";
 import ModAvatar from "./ModAvatar.vue";
+import type { Mod } from "@services/workspace/models";
 
 const { installId, taken } = defineProps<{ installId: string; taken: string[] }>();
 const open = defineModel<boolean>("open", { required: true });
-const emit = defineEmits<{ add: [dirs: string[]] }>();
+const emit = defineEmits<{ add: [mods: Mod[]] }>();
 
 /** ROW_UI lays a row out as its box, the mod's picture, and its name over its version, centered on one line. */
 const ROW_UI = {
@@ -54,9 +55,12 @@ watch(open, (opened) => {
   picked.value = [];
 });
 
-/** add hands back the checked folders and closes the dialog. */
+/** add hands back the checked mods and closes the dialog. */
 function add(): void {
-  emit("add", picked.value);
+  emit(
+    "add",
+    (mods.value ?? []).filter((mod) => picked.value.includes(mod.dir)),
+  );
   open.value = false;
 }
 </script>

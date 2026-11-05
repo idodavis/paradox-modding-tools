@@ -45,6 +45,8 @@ onMounted(() => {
     readOnly: true,
     automaticLayout: true,
     renderSideBySide: split.value,
+    // the lane of the + and − signs, wide enough to keep them off the line numbers and the text
+    lineDecorationsWidth: "3ch",
     ignoreTrimWhitespace: false,
     useInlineViewWhenSpaceIsLimited: false,
     hideUnchangedRegions: { enabled: !all.value },

@@ -1,6 +1,6 @@
 # graph
 
-[Architecture](../../ARCHITECTURE.md) › [Services](../../ARCHITECTURE.md#the-services) › graph
+[Architecture](../../docs/ARCHITECTURE.md) › [Services](../../docs/ARCHITECTURE.md#the-services) › graph
 
 The graph service builds the Event Graph: what fires what, from one root. It also builds the detail of one node, with
 its texts, its firings and the game rules it reads.

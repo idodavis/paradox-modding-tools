@@ -341,6 +341,8 @@ var Databases = []Database{
 	{Folder: "common/coat_of_arms/dynamic_definitions", Games: []string{ck3}, Target: "landed_titles"},
 	// scene_settings_byzantine_1_g1.txt:1-6 writes one setting's fields
 	{Folder: "gfx/court_scene/scene_settings", Games: []string{ck3}, NamedBy: "file"},
+	// court_scene_environment.txt:1-10 writes one environment's fields
+	{Folder: "gfx/court_scene/scene_environment", Games: []string{ck3}, NamedBy: "file"},
 	// gfx/map/environment/environment.info:1
 	{Folder: "gfx/map/environment", Games: []string{ck3}, NamedBy: "file"},
 	// _dynasties.info:3
@@ -531,6 +533,15 @@ var Precedences = []Precedence{
 	// a group of defines is opened in several files (CK3 00_defines.txt:1793 and 00_graphics.txt:1124, Vic3
 	// 00_defines.txt:1382,1749, the EU5 wiki's Defines, l.86); a GUI block belongs to its type, so many share a name
 	{Databases: []string{"defines", "gui.block"}, Keeps: "merged"},
+	// the game's own files write one name in several files, as CK3 catholic.txt:107 and crusaders.txt:107 write the
+	// pattern_textures catholic_silk_brocade_01, so every copy stays
+	{
+		Databases: []string{
+			"gfx/portraits/accessory_variations.pattern_textures", "gfx/portraits/accessory_variations.pattern_layout",
+			"gfx/portraits/accessory_variations.variation",
+		},
+		Keeps: "merged",
+	},
 	// CK3 20_doctrines.txt:2066,2079,2102 set coronation_artifact in three doctrines; an activity's categories are
 	// unique only within it (_activity_type.info:138-141); dated history entries stack (_history.info:3-13), as
 	// 01_admin_titles_tgp.txt:6339,6435 write c_nf_wang_738b_7 twice
@@ -610,6 +621,14 @@ var References = []Reference{
 	{Database: "on_action", KeyPath: "first_valid_on_action"}, {Database: "on_action", KeyPath: "fallback"},
 	{Database: "on_actions", KeyPath: "on_actions"}, {Database: "on_actions", KeyPath: "random_on_actions/<number>"},
 	{Database: "on_actions", KeyPath: "first_valid_on_action"}, {Database: "on_actions", KeyPath: "fallback"},
+	// an on_action's event lists name events: CK3 _on_actions.info:47-80 and Vic3 _on_actions.md:58-90 write events,
+	// random_events (a weight, then the event) and first_valid; EU5's on_action files write the same lists
+	{Database: "on_action", KeyPath: "events", Target: "events"},
+	{Database: "on_action", KeyPath: "random_events/<number>", Target: "events"},
+	{Database: "on_action", KeyPath: "first_valid", Target: "events"},
+	{Database: "on_actions", KeyPath: "events", Target: "events"},
+	{Database: "on_actions", KeyPath: "random_events/<number>", Target: "events"},
+	{Database: "on_actions", KeyPath: "first_valid", Target: "events"},
 	// a customizable localization's texts name their keys: CK3 common/customizable_localization/_custom_loc.info:18-38,
 	// EU5 in_game/common/customizable_localization/customizable_localization.info:1-10, and Vic3's own files there
 	{Database: CustomLocalization, KeyPath: "text/localization_key", Target: Localization},

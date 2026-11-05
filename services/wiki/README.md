@@ -1,6 +1,6 @@
 # wiki
 
-[Architecture](../../ARCHITECTURE.md) › [Services](../../ARCHITECTURE.md#the-services) › wiki
+[Architecture](../../docs/ARCHITECTURE.md) › [Services](../../docs/ARCHITECTURE.md#the-services) › wiki
 
 The wiki service reads the community wiki of the open workspace's game. It caches the wiki's pages, lists the patch
 notes, finds the pages that belong to a file, and builds the lexicon of the game's commands. The game's row names its

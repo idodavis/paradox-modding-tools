@@ -1,8 +1,8 @@
 # AGENTS.md
 
 The conventions for changing Paradox Modding Tools, for contributors and the coding agents they bring. Setting up a
-machine, running the app and opening a pull request are in [CONTRIBUTING.md](CONTRIBUTING.md). How the app is built,
-and where each feature lives, is in [ARCHITECTURE.md](ARCHITECTURE.md), which links every package's README.
+machine, running the app and opening a pull request are in [CONTRIBUTING.md](docs/CONTRIBUTING.md). How the app is built,
+and where each feature lives, is in [ARCHITECTURE.md](docs/ARCHITECTURE.md), which links every package's README.
 
 ## What PMT is
 

@@ -1,6 +1,6 @@
 # steam
 
-[Architecture](../../ARCHITECTURE.md) › [Services](../../ARCHITECTURE.md#the-services) › steam
+[Architecture](../../docs/ARCHITECTURE.md) › [Services](../../docs/ARCHITECTURE.md#the-services) › steam
 
 The steam service publishes mods to the Steam Workshop. It keeps each mod's Workshop pages, called listings, in the
 mod's own files, shows what the next upload changes against what Steam has, and uploads from a second copy of the app

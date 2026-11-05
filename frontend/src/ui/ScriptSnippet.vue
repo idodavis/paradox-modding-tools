@@ -58,7 +58,7 @@ const style = computed(() => {
   return { fontFamily, fontSize: `${fontSize}px`, lineHeight: `${lineHeight.value}px`, paddingTop: `${padding.top}px` };
 });
 // Trailing line breaks are dropped, since Monaco would draw them as an empty line.
-const code = computed(() => text.replace(/(\r\n|\r|\n)+$/, ""));
+const code = computed(() => text.replace(/[\r\n]+$/, ""));
 const lineNumbers = computed(() => (line ? code.value.split(/\r\n|\r|\n/).map((_text, index) => line + index) : []));
 const gutter = computed(() => ({
   width: `${Math.max(settings.codeFont().lineNumbersMinChars, String(lineNumbers.value.at(-1)).length)}ch`,

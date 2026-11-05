@@ -417,14 +417,13 @@ func untar(archive []byte, dir string) error {
 		if err != nil {
 			return err
 		}
-		_, rest, ok := strings.Cut(filepath.ToSlash(header.Name), "/")
-		target := filepath.Join(dir, filepath.FromSlash(rest))
-		rel, err := filepath.Rel(dir, target)
-		isTop := !ok || rest == ""
-		isOutside := err != nil || strings.HasPrefix(rel, "..")
-		if header.Typeflag != tar.TypeReg || isTop || isOutside {
+		// the top folder's own entry leaves an empty path, which is not local either
+		_, rest, _ := strings.Cut(filepath.ToSlash(header.Name), "/")
+		rel := filepath.FromSlash(rest)
+		if header.Typeflag != tar.TypeReg || !filepath.IsLocal(rel) {
 			continue
 		}
+		target := filepath.Join(dir, rel)
 		if err := os.MkdirAll(filepath.Dir(target), 0o755); err != nil {
 			return err
 		}
